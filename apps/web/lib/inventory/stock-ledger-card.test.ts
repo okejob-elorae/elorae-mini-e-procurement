@@ -221,6 +221,13 @@ describe("buildRefTypeCondition", () => {
     expect(buildRefTypeCondition([], false)).toEqual({ refType: { in: [] } });
   });
 
+  it("refTypes undefined but includeUnregisteredRefTypes explicitly false => also matches nothing, not \"no filter\"", () => {
+    /* Only BOTH undefined means "no filter" — this is reachable directly through the
+       action (which validates membership/shape, not that the two fields travel
+       together), even though the control itself never sends this exact combination. */
+    expect(buildRefTypeCondition(undefined, false)).toEqual({ refType: { in: [] } });
+  });
+
   it("a duplicate-bearing array of registry length does NOT collapse to no filter", () => {
     /* Twenty copies of one member: `.length` equals the registry's length but the SET of
        real members has size 1. The action validates membership, never uniqueness, so this

@@ -185,15 +185,25 @@ export function isSectionTruncated(entryCount: number): boolean {
  * moment an operator narrows the movement-type filter at all.
  *
  * Both undefined => no filter, unchanged from every caller before this flag existed.
+ * `refTypes` undefined but `includeUnregisteredRefTypes` explicitly `false` does NOT
+ * fall into that same "no filter" case — only BOTH undefined does; this combination
+ * falls through to the "nothing selected" case at the bottom of this list and matches
+ * nothing instead. The MultiSelectFilter control on the movement view never produces
+ * this exact combination on its own (it always sends both fields together or neither),
+ * but this function backs an independently-callable "use server" action, and neither
+ * that action's validation nor this function itself rejects a caller who sends only
+ * one of the two — so, unlike the fully-unselected case below, this one IS reachable
+ * today, just not through today's UI.
  * Registered subset, unregistered excluded => `refType IN (subset)`.
  * Registered subset, unregistered included  => `refType IN (subset) OR refType NOT IN (registry)`.
  * Unregistered only (no registered member picked) => `refType NOT IN (registry)`.
  * Every registered member AND unregistered both selected collapses to "no filter" (same
  * result set, no reason to ship a no-op OR).
- * Nothing selected at all is unreachable from the control's own empty-selection guard,
- * but must not silently fall back to "unfiltered" if some future caller ever reaches it
- * — it means "match nothing", the same as an operator's empty selection is SUPPOSED to
- * mean everywhere else in this feature.
+ * Nothing selected at all (`refTypes: []`, `includeUnregisteredRefTypes: false`) IS
+ * unreachable from the control's own empty-selection guard, but must not silently fall
+ * back to "unfiltered" if some future caller ever reaches it — it means "match nothing",
+ * the same as an operator's empty selection is SUPPOSED to mean everywhere else in this
+ * feature.
  */
 export function buildRefTypeCondition(
   refTypes: StockLedgerRefType[] | undefined,

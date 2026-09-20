@@ -30,8 +30,15 @@ export const LEDGER_ROW_SELECT = {
  * `readonly`, and every caller spreads it into a fresh array. One exported array handed
  * directly to two `orderBy` clauses is shared mutable state: a later `.sort()` or `.reverse()`
  * in one reader would silently reorder the other surface, and nothing would point at the
- * caller that did it. The readonly type makes that a compile error; the spread is what keeps
+ * caller that did it. The readonly type makes THAT a compile error; the spread is what keeps
  * Prisma happy, since it expects a mutable array.
+ *
+ * That guarantee is shallow, not a promise the value can never be corrupted: `readonly T[]`
+ * blocks array-level mutators (push/sort/reverse/splice) on this array specifically, but the
+ * spread each caller makes is also shallow — it copies the array, not the two element objects
+ * inside it. `LEDGER_ORDER_BY[0].createdAt = "asc"` still compiles and would still mutate the
+ * one shared object both callers' spreads point at. Nothing here defends against that; only
+ * the top-level array shape is covered.
  */
 export const LEDGER_ORDER_BY: readonly Prisma.StockLedgerEntryOrderByWithRelationInput[] = [
   { createdAt: "desc" },

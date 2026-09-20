@@ -314,4 +314,31 @@ d("getItemMovementCard", () => {
     expect(card.sections).toEqual([]);
     expect(card.hasAnyHistory).toBe(false);
   });
+
+  /*
+   * The refType half of this predicate sharing had exactly this pair of tests; the
+   * locationType half did not, which is how the two arms of buildLocationTypeCondition's
+   * sibling disagreed once already on this branch. Deleting either `Object.assign(...,
+   * locationTypeCondition)` call in getItemMovementCard should fail one of these two:
+   * dropping the `where` one changes which sections come back (the first assertion
+   * below), dropping the `historyWhere` one leaves hasAnyHistory reading the unfiltered
+   * itemId/variant predicates alone (the second assertion, which is the one that proves
+   * the two `where`s share the condition rather than each carrying their own copy).
+   */
+  it("narrows sections to MAIN when locationTypes excludes STORE, and hasAnyHistory stays true", async () => {
+    const card = await getItemMovementCard({ itemId, locationTypes: ["MAIN"] });
+
+    expect(card.sections.every((s) => s.locationType === "MAIN")).toBe(true);
+    expect(card.sections.some((s) => s.locationType === "STORE")).toBe(false);
+    expect(card.hasAnyHistory).toBe(true);
+  });
+
+  it("agrees between sections and hasAnyHistory when locationTypes matches nothing at all", async () => {
+    /* The fixture has MAIN and STORE rows and no VAN row at all — a locationType-only
+       count on `{ itemId }` would read hasAnyHistory: true regardless of this filter. */
+    const card = await getItemMovementCard({ itemId, locationTypes: ["VAN"] });
+
+    expect(card.sections).toEqual([]);
+    expect(card.hasAnyHistory).toBe(false);
+  });
 });

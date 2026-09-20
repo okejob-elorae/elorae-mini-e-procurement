@@ -38,6 +38,7 @@ import { formatDateOnly, parseDateOnly } from "@/lib/date-only";
 import { getCurrentStockSummary, getItemVariantOptions } from "@/app/actions/stock-card";
 import { getItemMovementsAction, type ItemMovementsResult } from "@/app/actions/stock-movements";
 import { ledgerRefMessageKey } from "@/lib/inventory/ledger-ref-display";
+import { WAREHOUSE_OPTION_KEY, WAREHOUSE_TYPES, type WarehouseType } from "@/lib/inventory/warehouse-option-display";
 /* Subpath import, not the main barrel: this is a "use client" file, and the barrel
    eagerly pulls in Prisma and the mariadb driver. STOCK_LEDGER_REF_TYPES is a plain
    string tuple with no such baggage on its own — only the barrel does. The type import
@@ -45,20 +46,6 @@ import { ledgerRefMessageKey } from "@/lib/inventory/ledger-ref-display";
 import { STOCK_LEDGER_REF_TYPES, type StockLedgerRefType } from "@elorae/db/stock-ledger-ref";
 
 const ALL_VARIANTS_VALUE = "__all__";
-
-/* Closed set the query layer accepts for `locationTypes` (getItemMovementCard /
-   LedgerLocationType). Kept local rather than imported: the only exported home for this
-   union is stock-ledger-card.ts, which is a server module (imports the @elorae/db
-   barrel) — a type-only import would likely get erased before bundling, but a plain
-   local literal removes any doubt for a "use client" file. */
-const WAREHOUSE_TYPES = ["MAIN", "STORE", "VAN"] as const;
-type WarehouseType = (typeof WAREHOUSE_TYPES)[number];
-
-const WAREHOUSE_OPTION_KEY: Record<WarehouseType, string> = {
-  MAIN: "warehouseOption.main",
-  STORE: "warehouseOption.store",
-  VAN: "warehouseOption.van",
-};
 
 /*
  * `StockLedgerEntry.refType` is a free-form column and genuinely holds values the
@@ -99,10 +86,11 @@ type MultiSelectOption = { value: string; label: string };
  * one, because an empty result screen with every box unticked is a worse thing to hand an
  * operator than simply declining the last uncheck: unchecking the last remaining box is a
  * no-op. Do NOT drop this refusal on the grounds that the query layer is safe now, and do
- * NOT relax the query layer on the grounds that this control cannot produce an empty. The
- * "everything ticked" state is reported upward as `options.length === selected.length`
- * and it is the CALLER's job (see the two call sites below) to collapse that back to
- * "send nothing" on the wire.
+ * NOT relax the query layer on the grounds that this control cannot produce an empty.
+ * Nothing is reported upward here — there is no such callback. "Everything ticked" is
+ * simply `options.length === selected.length`, a test each CALLER (see the two call
+ * sites below) recomputes independently on its own `selected` state, and it is that
+ * caller's job to collapse the result back to "send nothing" on the wire.
  */
 function MultiSelectFilter({
   options,
@@ -257,6 +245,33 @@ export function MovementsPageClient() {
     { value: UNREGISTERED_REF_TYPE_VALUE, label: t("otherMovementType") },
   ];
 
+  /*
+   * Split the sentinel back out of `refTypes` here, at the component's top level rather
+   * than inside the fetch effect below — these three are pure derivations of `refTypes`
+   * state and are needed in TWO places: the wire payload (the effect) and the
+   * "which of the three controls, if any, is narrowing this view" test the empty-state
+   * copy below depends on. Computing it twice would let the two silently drift apart on
+   * what "narrowed" means; one calculation, two readers.
+   */
+  const includeUnregisteredRefTypes = refTypes.includes(UNREGISTERED_REF_TYPE_VALUE);
+  const registeredRefTypes = refTypes.filter(
+    (v): v is StockLedgerRefType => v !== UNREGISTERED_REF_TYPE_VALUE,
+  );
+  const allRefTypesSelected =
+    registeredRefTypes.length === STOCK_LEDGER_REF_TYPES.length && includeUnregisteredRefTypes;
+
+  /*
+   * Whether ANY of the three filter controls (variant, warehouse, movement type) is
+   * currently narrowing the view — used below to pick between "no history at all" and
+   * "nothing matches the current filters". The variant filter predates this branch but
+   * carries the exact same defect (it can just as easily zero out `hasAnyHistory`), so
+   * it belongs in this test too, not just the two controls this branch added.
+   */
+  const isAnyFilterNarrowed =
+    variantSku !== "" ||
+    locationTypes.length !== WAREHOUSE_TYPES.length ||
+    !allRefTypesSelected;
+
   const [data, setData] = useState<ItemMovementsResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -307,19 +322,12 @@ export function MovementsPageClient() {
     setIsLoading(true);
     setLoadError(false);
     /*
-     * Split the sentinel back out of `refTypes` into its own boolean here, at the very
-     * last moment before the wire call — see UNREGISTERED_REF_TYPE_VALUE's doc comment.
-     * `registeredRefTypes` and `includeUnregisteredRefTypes` always travel TOGETHER as
-     * either both undefined ("no filter") or both defined: sending one without the
+     * registeredRefTypes/includeUnregisteredRefTypes/allRefTypesSelected are computed
+     * once at the component's top level (see the comment there) — reused here as-is,
+     * both undefined ("no filter") or both defined together: sending one without the
      * other would leave getItemMovementCard's buildRefTypeCondition guessing at a state
      * this control never actually produces.
      */
-    const includeUnregisteredRefTypes = refTypes.includes(UNREGISTERED_REF_TYPE_VALUE);
-    const registeredRefTypes = refTypes.filter(
-      (v): v is StockLedgerRefType => v !== UNREGISTERED_REF_TYPE_VALUE,
-    );
-    const allRefTypesSelected =
-      registeredRefTypes.length === STOCK_LEDGER_REF_TYPES.length && includeUnregisteredRefTypes;
     getItemMovementsAction({
       itemId,
       variantSku: variantSku || undefined,
@@ -346,6 +354,12 @@ export function MovementsPageClient() {
         setLoadError(true);
         setIsLoading(false);
       });
+    /* registeredRefTypes/includeUnregisteredRefTypes/allRefTypesSelected deliberately
+       omitted: each is a pure derivation of `refTypes`, which IS listed, recomputed
+       fresh on every render — listing them too would fire this effect on every render
+       instead of only when refTypes actually changes, since a derived array's
+       reference is never stable across renders even when its contents are not. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemId, variantSku, dateFrom, dateTo, locationTypes, refTypes, reloadToken]);
 
   return (
@@ -485,7 +499,19 @@ export function MovementsPageClient() {
           <CardContent className="py-12 text-center">
             <History className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <p className="text-muted-foreground">
-              {data.hasAnyHistory ? t("noMovementsInRange") : t("noLedgerHistory")}
+              {/*
+               * Three distinct states, not two: hasAnyHistory already ignores the date
+               * window (see the comment on historyWhere in stock-ledger-card.ts), so a
+               * false reading here can ALSO mean "the variant/warehouse/movement-type
+               * filters rule out every row", which is not the same claim as "no history
+               * at all" — that claim must stay true whenever it renders, and it was not
+               * before this filter was narrowed to something other than "everything".
+               */}
+              {data.hasAnyHistory
+                ? t("noMovementsInRange")
+                : isAnyFilterNarrowed
+                  ? t("noMovementsForFilters")
+                  : t("noLedgerHistory")}
             </p>
           </CardContent>
         </Card>

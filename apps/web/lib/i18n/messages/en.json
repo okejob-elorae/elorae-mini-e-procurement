@@ -1176,6 +1176,7 @@
     "noItemSelected": "Select an item above to see its stock movements.",
     "loading": "Loading stock movements…",
     "noMovementsInRange": "No movements found in this date range. Try widening it.",
+    "noMovementsForFilters": "No movements match the current filters. Try widening them.",
     "noLedgerHistory": "This item has no ledger history at all — not just in this range.",
     "cutoverBanner": "Ledger history starts at the cutover date; nothing earlier was recorded here. For main-warehouse movements before that, check the Stock Card.",
     "sectionTruncated": "Showing the {limit} most recent movements for this location. Older ones are hidden.",
