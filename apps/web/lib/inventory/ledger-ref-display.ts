@@ -19,6 +19,7 @@ export const LEDGER_REF_MESSAGE_KEY: Record<StockLedgerRefType, string> = {
   FieldSalesConsume: "refType.fieldSalesConsume",
   FulfillmentConsume: "refType.fulfillmentConsume",
   GRN: "refType.grn",
+  GRNReversal: "refType.grnReversal",
   JubelioStockAdjustment: "refType.jubelioStockAdjustment",
   KonsiTransfer: "refType.konsiTransfer",
   MaterialIssue: "refType.materialIssue",

@@ -44,6 +44,7 @@ export const STOCK_LEDGER_REF_TYPES = [
   "FieldSalesConsume",
   "FulfillmentConsume",
   "GRN",
+  "GRNReversal",
   "JubelioStockAdjustment",
   "KonsiTransfer",
   "MaterialIssue",

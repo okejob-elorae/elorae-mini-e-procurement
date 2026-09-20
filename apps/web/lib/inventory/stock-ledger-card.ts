@@ -216,9 +216,10 @@ export function buildRefTypeCondition(
 
   /*
    * SET equality, not a length count: the action validates membership
-   * (`every(isStockLedgerRefType)`) but never uniqueness, so twenty copies of one
-   * registered member is a legal input that has `registered.length ===
-   * STOCK_LEDGER_REF_TYPES.length` while covering only one real member. A length-only
+   * (`every(isStockLedgerRefType)`) but never uniqueness, so an array of repeated copies
+   * of one registered member, padded out to the registry's own length, is a legal input
+   * that has `registered.length === STOCK_LEDGER_REF_TYPES.length` while covering only
+   * one real member. A length-only
    * check collapsed that to "no filter" — every row for the item, not the one member
    * actually asked for. Unreachable from today's control (which never produces a
    * duplicate), but this function is exported and separately unit-tested specifically

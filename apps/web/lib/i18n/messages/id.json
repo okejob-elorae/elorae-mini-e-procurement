@@ -1220,6 +1220,7 @@
       "fieldSalesConsume": "Pengiriman Putus",
       "fulfillmentConsume": "Pemenuhan Marketplace",
       "grn": "Penerimaan Barang (GRN)",
+      "grnReversal": "Pembalikan GRN",
       "jubelioStockAdjustment": "Jubelio Stock Adjustment",
       "konsiTransfer": "Transfer Konsinyasi",
       "materialIssue": "Terbitan Material",

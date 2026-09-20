@@ -746,7 +746,7 @@ export async function declineGRNByOwner(id: string, userId: string) {
         new Decimal(unitCost),
         tx,
         variantKey,
-        { refType: 'GRN' satisfies StockLedgerRefType, refId: grn.id, refDocNumber: grn.docNumber, createdById: userId }
+        { refType: 'GRNReversal' satisfies StockLedgerRefType, refId: grn.id, refDocNumber: grn.docNumber, createdById: userId }
       );
 
       const lineTotal = new Decimal(qty).mul(unitCost).toNumber();

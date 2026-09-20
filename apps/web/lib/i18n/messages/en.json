@@ -1220,6 +1220,7 @@
       "fieldSalesConsume": "Putus Delivery",
       "fulfillmentConsume": "Marketplace Fulfillment",
       "grn": "Goods Receipt (GRN)",
+      "grnReversal": "GRN Reversal",
       "jubelioStockAdjustment": "Jubelio Stock Adjustment",
       "konsiTransfer": "Konsi Transfer",
       "materialIssue": "Material Issue",
