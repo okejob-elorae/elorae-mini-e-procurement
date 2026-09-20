@@ -23,7 +23,9 @@ d("getStoreStockCard", () => {
   let spgSaleEntryId = "";
   let mainEntryId = "";
   let otherStoreEntryId = "";
+  let zeroQtyEntryId = "";
 
+  const T0 = new Date("2026-01-14T00:00:00.000Z");
   const T1 = new Date("2026-01-15T00:00:00.000Z");
   const T2 = new Date("2026-01-16T00:00:00.000Z");
   const T3 = new Date("2026-01-17T00:00:00.000Z");
@@ -43,6 +45,7 @@ d("getStoreStockCard", () => {
     spgSaleEntryId = "";
     mainEntryId = "";
     otherStoreEntryId = "";
+    zeroQtyEntryId = "";
 
     const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-SSC-${token}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
@@ -203,6 +206,31 @@ d("getStoreStockCard", () => {
       },
     });
     otherStoreEntryId = otherStoreEntry.id;
+
+    /*
+     * Deliberate change from the old document-joined behaviour: moveStoreStock (the DELTA
+     * mover) has no zero-delta short-circuit — unlike its sibling setStoreStock, which does —
+     * so a konsi retur approved crediting zero (the "lost sack" case, where an all-zero
+     * receive count is explicitly valid) still writes a qty: 0 STORE ledger row. The card does
+     * not filter it out: the ledger is the record of what happened, and a processed retur that
+     * credited nothing back is a real event an operator should see, not a row to hide.
+     */
+    const zeroQtyEntry = await prisma.stockLedgerEntry.create({
+      data: {
+        locationType: "STORE",
+        locationId: storeId,
+        itemId: itemAId,
+        variantSku: "",
+        type: "OUT",
+        qty: 0,
+        balanceQty: 6,
+        refType: "FieldReturn",
+        refId: `TEST-SSC-RET-ZERO-${token}`,
+        refDocNumber: `TEST-SSC-RET-ZERO-${token}`,
+        createdAt: T0,
+      },
+    });
+    zeroQtyEntryId = zeroQtyEntry.id;
   });
 
   afterEach(async () => {
@@ -215,6 +243,7 @@ d("getStoreStockCard", () => {
             seededId(spgSaleEntryId),
             seededId(mainEntryId),
             seededId(otherStoreEntryId),
+            seededId(zeroQtyEntryId),
           ],
         },
       },
@@ -256,7 +285,7 @@ d("getStoreStockCard", () => {
     const docNos = card.movements.map((m) => m.docNo);
     expect(docNos).not.toContain(`GRN/TEST-SSC/${token}`);
     expect(docNos).not.toContain(`KONSITRF-OTHER/TEST-SSC/${token}`);
-    expect(card.movements).toHaveLength(3);
+    expect(card.movements).toHaveLength(4);
   });
 
   it("includes the konsi transfer, resolving its href through the order it was issued for", async () => {
@@ -297,6 +326,15 @@ d("getStoreStockCard", () => {
       `SPGSALE/TEST-SSC/${token}`,
       `TEST-SSC-RET-${token}`,
       `KONSITRF/TEST-SSC/${token}`,
+      `TEST-SSC-RET-ZERO-${token}`,
     ]);
+  });
+
+  it("shows a zero-quantity movement rather than filtering it out", async () => {
+    const card = await getStoreStockCard(storeId);
+    const m = card.movements.find((mv) => mv.docNo === `TEST-SSC-RET-ZERO-${token}`);
+    expect(m).toBeDefined();
+    expect(m!.qty).toBe(0);
+    expect(m!.refType).toBe("FieldReturn");
   });
 });

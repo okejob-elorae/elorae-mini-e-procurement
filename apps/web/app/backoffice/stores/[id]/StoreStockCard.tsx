@@ -3,8 +3,11 @@
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { AlertTriangle, ArrowUpDown, Info, Layers } from "lucide-react";
-import type { StockLedgerRefType } from "@elorae/db";
-import { isStockLedgerRefType } from "@elorae/db";
+/* Subpath import, not the main barrel: this is a client component, and @elorae/db's barrel
+   eagerly pulls in Prisma and the mariadb driver, which would follow it into the browser
+   bundle. */
+import type { StockLedgerRefType } from "@elorae/db/stock-ledger-ref";
+import { isStockLedgerRefType } from "@elorae/db/stock-ledger-ref";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
