@@ -17,6 +17,7 @@ d("getItemMovementCard", () => {
   let mainEntry2Id = "";
   let storeEntryId = "";
   let goneStoreEntryId = "";
+  let variantEntryId = "";
 
   const T1 = new Date("2026-01-01T00:00:00.000Z");
   const T2 = new Date("2026-01-02T00:00:00.000Z");
@@ -32,6 +33,7 @@ d("getItemMovementCard", () => {
     mainEntry2Id = "";
     storeEntryId = "";
     goneStoreEntryId = "";
+    variantEntryId = "";
 
     const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-SLC-${token}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
@@ -121,6 +123,25 @@ d("getItemMovementCard", () => {
       },
     });
     goneStoreEntryId = goneStoreEntry.id;
+
+    /* Only the RED variant of this item ever moved — variant BLUE has no row at all, under
+       any date range. This is the fixture the hasAnyHistory-scoping fix exists for. */
+    const variantEntry = await prisma.stockLedgerEntry.create({
+      data: {
+        locationType: "MAIN",
+        locationId: "",
+        itemId,
+        variantSku: "RED",
+        type: "IN",
+        qty: 5,
+        balanceQty: 5,
+        refType: "GRN",
+        refId: `TEST-SLC-GRN-RED-${token}`,
+        refDocNumber: `GRN-RED/${token}`,
+        createdAt: T1,
+      },
+    });
+    variantEntryId = variantEntry.id;
   });
 
   afterEach(async () => {
@@ -132,6 +153,7 @@ d("getItemMovementCard", () => {
             seededId(mainEntry2Id),
             seededId(storeEntryId),
             seededId(goneStoreEntryId),
+            seededId(variantEntryId),
           ],
         },
       },
@@ -144,8 +166,12 @@ d("getItemMovementCard", () => {
   it("groups rows into ordered sections, resolving the real store's name", async () => {
     const card = await getItemMovementCard({ itemId });
 
-    expect(card.sections).toHaveLength(3);
+    /* 4, not 3 — the RED-variant MAIN row is its own (locationType, locationId, variantSku)
+       section alongside the "" variant MAIN section, the real store section and the gone
+       store section. */
+    expect(card.sections).toHaveLength(4);
     expect(card.sections[0].locationType).toBe("MAIN");
+    expect(card.sections[0].variantSku).toBe("");
     expect(card.sections[0].entries.map((e) => e.id)).toEqual([mainEntry1Id, mainEntry2Id]);
     expect(card.sections[0].closingBalance).toBe(80);
 
@@ -181,5 +207,21 @@ d("getItemMovementCard", () => {
 
     expect(card.sections).toEqual([]);
     expect(card.hasAnyHistory).toBe(true);
+  });
+
+  /*
+   * The failure this fix exists for: an item with variants RED (has rows) and BLUE (never
+   * moved). Picking BLUE with no date range must NOT tell the operator to widen a date
+   * range that doesn't exist — hasAnyHistory has to be scoped to the variant filter, not
+   * just itemId.
+   */
+  it("scopes hasAnyHistory to the variant filter — a variant with zero rows reads as no history, not an empty date range", async () => {
+    const redCard = await getItemMovementCard({ itemId, variantSku: "RED" });
+    expect(redCard.sections).toHaveLength(1);
+    expect(redCard.hasAnyHistory).toBe(true);
+
+    const blueCard = await getItemMovementCard({ itemId, variantSku: "BLUE" });
+    expect(blueCard.sections).toEqual([]);
+    expect(blueCard.hasAnyHistory).toBe(false);
   });
 });

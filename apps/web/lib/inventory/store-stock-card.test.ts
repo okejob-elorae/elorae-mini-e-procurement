@@ -1,6 +1,25 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { getStoreStockCard } from "./store-stock-card";
+import { getStoreStockCard, isStoreMovementsTruncated, STORE_MOVEMENT_LIMIT } from "./store-stock-card";
+
+/*
+ * Pure logic only — no DB fixtures. Exercising the real cap would need STORE_MOVEMENT_LIMIT
+ * (500) rows seeded on the shared :3308 test bed, not worth littering the bed for one
+ * boolean. Same idiom as stock-ledger-card.test.ts's isQueryTruncated tests.
+ */
+describe("isStoreMovementsTruncated", () => {
+  it("is false below the ceiling", () => {
+    expect(isStoreMovementsTruncated(STORE_MOVEMENT_LIMIT - 1)).toBe(false);
+  });
+
+  it("is true exactly AT the ceiling — the take cap was hit, so older rows were dropped", () => {
+    expect(isStoreMovementsTruncated(STORE_MOVEMENT_LIMIT)).toBe(true);
+  });
+
+  it("is false for zero rows", () => {
+    expect(isStoreMovementsTruncated(0)).toBe(false);
+  });
+});
 
 /* Read-only, but the fixtures write real rows — never run against the shared prod DB (port 3307 tunnel / VPS host). */
 const url = process.env.DATABASE_URL ?? "";

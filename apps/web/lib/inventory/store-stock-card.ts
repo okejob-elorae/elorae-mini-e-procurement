@@ -39,7 +39,34 @@ export type StoreStockCardData = {
   rows: StoreStockRow[];
   negativeCount: number;
   movements: StoreStockMovement[];
+  /** True when the movement fetch below hit `STORE_MOVEMENT_LIMIT` — older rows exist and were dropped. */
+  movementsTruncated: boolean;
+  movementLimit: number;
 };
+
+/**
+ * Ceiling on movement rows fetched for one store's card, across every item and variant. The
+ * fetch below is already ordered newest-first, so applying `take` here keeps the recent end
+ * and drops the oldest rows for free — no re-sort needed, unlike the item-scoped ledger card's
+ * QUERY_ENTRY_LIMIT. 500 matches the display cap that sibling card already renders per section
+ * without pagination or virtualization, a size proven to render fine in this same Table
+ * component. The ledger repoint widened this card's input set from just KonsiTransfer +
+ * approved FieldReturnLine to every SPG sale, store stocktake (up to ~300 rows per approval)
+ * and admin-return receipt line touching this store, so an active KONSI store can reach
+ * roughly 4-5k ledger rows a year — well past what this unpaginated single table should hold.
+ */
+export const STORE_MOVEMENT_LIMIT = 500;
+
+/**
+ * True when the fetch returned exactly STORE_MOVEMENT_LIMIT rows — the `take` ceiling was
+ * hit, so older rows exist beyond it and were dropped. Equality, not `>=`: the fetch is
+ * already bounded by `take`, so `rowCount` can never exceed the limit. Same reasoning as
+ * the item-scoped ledger card's `isQueryTruncated`, pulled out as its own function so the
+ * comparison is unit-testable without seeding STORE_MOVEMENT_LIMIT rows on the shared bed.
+ */
+export function isStoreMovementsTruncated(rowCount: number): boolean {
+  return rowCount === STORE_MOVEMENT_LIMIT;
+}
 
 /**
  * Resolves a movement's detail-page link from its ledger refType + refId. KonsiTransfer has
@@ -112,9 +139,14 @@ export async function getStoreStockCard(storeId: string): Promise<StoreStockCard
 
   const ledgerRows = await prisma.stockLedgerEntry.findMany({
     where: { locationType: "STORE", locationId: storeId },
-    /* Newest first — this card has never paginated or capped its movement list, unlike the
-       item-scoped ledger card, so there is no query-level truncation concern here. */
+    /*
+     * Newest first, and now capped at STORE_MOVEMENT_LIMIT. The `take` ceiling on a
+     * descending fetch drops the OLDEST rows first — the end an operator can afford to
+     * lose, since this card's whole purpose is "what happened here recently", not a full
+     * archive. Same reasoning as the item-scoped ledger card's queryTruncated.
+     */
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: STORE_MOVEMENT_LIMIT,
     select: {
       id: true,
       itemId: true,
@@ -167,5 +199,11 @@ export async function getStoreStockCard(storeId: string): Promise<StoreStockCard
     qty: Number(r.qty),
   }));
 
-  return { rows, negativeCount, movements };
+  return {
+    rows,
+    negativeCount,
+    movements,
+    movementsTruncated: isStoreMovementsTruncated(ledgerRows.length),
+    movementLimit: STORE_MOVEMENT_LIMIT,
+  };
 }

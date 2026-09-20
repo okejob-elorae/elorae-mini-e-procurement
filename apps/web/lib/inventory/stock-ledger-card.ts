@@ -90,7 +90,11 @@ export function groupLedgerEntries(rows: RawLedgerRow[], labels: LedgerLabels): 
     (a, b) =>
       LOCATION_ORDER[a.locationType] - LOCATION_ORDER[b.locationType] ||
       a.locationLabel.localeCompare(b.locationLabel) ||
-      a.variantSku.localeCompare(b.variantSku),
+      a.variantSku.localeCompare(b.variantSku) ||
+      /* Two different locations can share a label (two stores with the same name) and the
+         same variant — without this, order falls out of Map insertion order and produces
+         two visually identical section headers with nothing distinguishing them on screen. */
+      a.locationId.localeCompare(b.locationId),
   );
 
   return sections;
@@ -179,6 +183,23 @@ export async function getItemMovementCard(input: ItemMovementCardInput): Promise
     where.locationType = { in: input.locationTypes };
   }
 
+  /*
+   * Same predicates as `where` above, MINUS the date window — this is what makes
+   * hasAnyHistory answer the right question. The empty-state copy branches on this flag to
+   * tell the operator either "nothing in this range, try widening it" or "this item has no
+   * history at all", so the count must ignore exactly the filter that copy offers to widen
+   * (the date range) and respect every other one. A bare `{ itemId }` count let a variant
+   * with zero rows under ANY date range still read as "try widening the date range" — there
+   * was no date range to widen, because variantSku, refTypes and locationTypes can each
+   * independently rule out every row on their own.
+   */
+  const historyWhere: Prisma.StockLedgerEntryWhereInput = { itemId: input.itemId };
+  if (input.variantSku !== undefined) historyWhere.variantSku = input.variantSku;
+  if (input.refTypes !== undefined && input.refTypes.length > 0) historyWhere.refType = { in: input.refTypes };
+  if (input.locationTypes !== undefined && input.locationTypes.length > 0) {
+    historyWhere.locationType = { in: input.locationTypes };
+  }
+
   const [rows, historyCount] = await Promise.all([
     /*
      * DESCENDING, not ascending, before the take ceiling applies. An ascending fetch capped
@@ -212,10 +233,11 @@ export async function getItemMovementCard(input: ItemMovementCardInput): Promise
         createdAt: true,
       },
     }),
-    /* Answers "does this item have ANY ledger row at all" — no date, type or location
-       filter. Never derive this from sections.length, which only proves nothing moved in
-       THIS window, a different fact from this item never having moved at all. */
-    prisma.stockLedgerEntry.count({ where: { itemId: input.itemId } }),
+    /* Answers "does this item (under these variant/refType/locationType filters, if any)
+       have ANY ledger row at all, ignoring only the date window" — see historyWhere above.
+       Never derive this from sections.length, which only proves nothing moved in THIS
+       window, a different fact from there being no matching row under any date range. */
+    prisma.stockLedgerEntry.count({ where: historyWhere }),
   ]);
 
   const storeIds = Array.from(new Set(rows.filter((r) => r.locationType === "STORE").map((r) => r.locationId)));

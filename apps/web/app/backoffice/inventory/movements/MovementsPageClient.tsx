@@ -311,7 +311,12 @@ export function MovementsPageClient() {
                                     {messageKey ? t(messageKey) : entry.refType}
                                   </TableCell>
                                   <TableCell className="max-w-[160px] truncate font-medium">
-                                    {entry.refDocNumber}
+                                    {/* refDocNumber defaults to "" for the opening-balance
+                                        migration rows and a few writers that omit it —
+                                        render a placeholder rather than a dead cell. */}
+                                    {entry.refDocNumber || (
+                                      <span className="font-normal text-muted-foreground">{t("noDocument")}</span>
+                                    )}
                                   </TableCell>
                                   <TableCell
                                     className={cn(
