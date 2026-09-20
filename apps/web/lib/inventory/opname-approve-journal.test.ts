@@ -69,7 +69,7 @@ d("opname approve auto-journal integration (test bed only)", () => {
       await prisma.journal.delete({ where: { id: journal.id } });
     }
     await restoreMappings(mappingSnapshot);
-    await prisma.stockMovement.deleteMany({ where: { refType: "OPNAME", refId: opnameId } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { refType: "StockOpname", refId: opnameId } });
     await prisma.chartAccount.deleteMany({ where: { id: { in: [inventoryId, varianceId] } } });
     await prisma.stockOpname.delete({ where: { id: opnameId } });
     await prisma.item.delete({ where: { id: itemId } });
@@ -77,12 +77,13 @@ d("opname approve auto-journal integration (test bed only)", () => {
     await prisma.user.delete({ where: { id: userId } });
   });
 
-  async function seedMovement(totalCost: number, qty: number): Promise<void> {
-    await prisma.stockMovement.create({
+  async function seedLedgerEntry(totalCost: number, qty: number): Promise<void> {
+    await prisma.stockLedgerEntry.create({
       data: {
+        locationType: "MAIN",
         itemId,
         type: "ADJUSTMENT",
-        refType: "OPNAME",
+        refType: "StockOpname",
         refId: opnameId,
         refDocNumber: `OPN-APPR-TEST-${token}`,
         qty,
@@ -105,7 +106,7 @@ d("opname approve auto-journal integration (test bed only)", () => {
       update: { chartAccountId: varianceId },
     });
 
-    await seedMovement(400, 4);
+    await seedLedgerEntry(400, 4);
 
     const r = await postOpnameJournal(opnameId, userId, prisma);
     expect(r).toMatchObject({ ok: true, created: true });
@@ -136,7 +137,7 @@ d("opname approve auto-journal integration (test bed only)", () => {
       update: { chartAccountId: varianceId },
     });
 
-    await seedMovement(400, 4);
+    await seedLedgerEntry(400, 4);
 
     const r = await postOpnameJournal(opnameId, userId, prisma);
     expect(r).toMatchObject({ ok: false, code: "UNMAPPED_ROLE", role: "INVENTORY" });
