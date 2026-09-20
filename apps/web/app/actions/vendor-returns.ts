@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { Decimal } from 'decimal.js';
 import { z } from 'zod';
 import { prisma } from '@elorae/db';
+import type { StockLedgerRefType } from '@elorae/db';
 import { generateDocNumber } from '@/lib/docNumber';
 import { reverseInventoryValue } from '@/lib/inventory/costing';
 import { getActorName, notifyVendorReturnCreated, notifyVendorReturnStatusUpdated } from '@/app/actions/notifications';
@@ -433,7 +434,7 @@ export async function processReturn(id: string, userId: string) {
           unitCost,
           tx,
           variantKey,
-          { refType: 'VendorReturn', refId: ret.id, refDocNumber: ret.docNumber, createdById: userId }
+          { refType: 'VendorReturn' satisfies StockLedgerRefType, refId: ret.id, refDocNumber: ret.docNumber, createdById: userId }
         );
         const outgoingValue = qty.mul(unitCost);
         await tx.stockMovement.create({

@@ -12,6 +12,18 @@
  * lib/inventory/reconciliation-runner.ts — so never fold the two sets together.
  *
  * "OpeningBalance" is written by the cutover migration itself and has no document.
+ *
+ * A ledger `refType` is not always a literal sitting next to the mover call. Three
+ * functions in apps/web/lib/inventory/costing.ts — calculateMovingAverage,
+ * reverseMovingAverage, reverseInventoryValue — take a `ref: StockRef` parameter and
+ * spread it (`...ref`) into their own internal moveMainStock call, so the literal that
+ * actually reaches this column lives in the CALLER, one or more files away from any
+ * mover name. "VendorReturn" (apps/web/app/actions/vendor-returns.ts, via
+ * reverseInventoryValue) was missed on the first sweep for exactly this reason — a grep
+ * for a refType literal near a mover call cannot see it. Re-derive this list by tracing
+ * every caller of appendStockLedger/moveMainStock/moveStoreStock/moveVanStock/
+ * setMainStock/setStoreStock AND every caller of those three costing.ts functions, not
+ * by grepping for `refType:` near a mover name.
  */
 export const STOCK_LEDGER_REF_TYPES = [
   "FGReceipt",
@@ -33,6 +45,7 @@ export const STOCK_LEDGER_REF_TYPES = [
   "VanLoad",
   "VanReconcile",
   "VanSale",
+  "VendorReturn",
 ] as const;
 
 export type StockLedgerRefType = (typeof STOCK_LEDGER_REF_TYPES)[number];
