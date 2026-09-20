@@ -1188,6 +1188,16 @@
     "allVariants": "All variants",
     "dateRangeLabel": "Date range",
     "dateRangePlaceholder": "All time",
+    "warehouseLabel": "Warehouse",
+    "allWarehouses": "All warehouses",
+    "warehouseOption": {
+      "main": "Main warehouse",
+      "store": "Stores",
+      "van": "Vans"
+    },
+    "movementTypeLabel": "Movement type",
+    "allMovementTypes": "All movement types",
+    "filterSelectedCount": "{count} selected",
     "loadError": "Failed to load stock movements. Try again.",
     "retryButton": "Retry",
     "colDate": "Date",

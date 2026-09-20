@@ -1188,6 +1188,16 @@
     "allVariants": "Semua varian",
     "dateRangeLabel": "Rentang tanggal",
     "dateRangePlaceholder": "Sepanjang waktu",
+    "warehouseLabel": "Gudang",
+    "allWarehouses": "Semua gudang",
+    "warehouseOption": {
+      "main": "Gudang utama",
+      "store": "Toko",
+      "van": "Van"
+    },
+    "movementTypeLabel": "Jenis pergerakan",
+    "allMovementTypes": "Semua jenis pergerakan",
+    "filterSelectedCount": "{count} dipilih",
     "loadError": "Gagal memuat pergerakan stok. Coba lagi.",
     "retryButton": "Coba lagi",
     "colDate": "Tanggal",

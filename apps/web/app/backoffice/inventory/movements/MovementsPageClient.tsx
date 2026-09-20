@@ -6,6 +6,7 @@ import { format } from "date-fns";
 import { AlertTriangle, ChevronDown, History, Info, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +15,16 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+} from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Table,
   TableBody,
@@ -27,14 +38,147 @@ import { formatDateOnly, parseDateOnly } from "@/lib/date-only";
 import { getCurrentStockSummary, getItemVariantOptions } from "@/app/actions/stock-card";
 import { getItemMovementsAction, type ItemMovementsResult } from "@/app/actions/stock-movements";
 import { ledgerRefMessageKey } from "@/lib/inventory/ledger-ref-display";
+/* Subpath import, not the main barrel: this is a "use client" file, and the barrel
+   eagerly pulls in Prisma and the mariadb driver. STOCK_LEDGER_REF_TYPES is a plain
+   string tuple with no such baggage on its own — only the barrel does. The type import
+   is erased entirely at compile time, so it carries no bundle risk either. */
+import { STOCK_LEDGER_REF_TYPES, type StockLedgerRefType } from "@elorae/db/stock-ledger-ref";
 
 const ALL_VARIANTS_VALUE = "__all__";
+
+/* Closed set the query layer accepts for `locationTypes` (getItemMovementCard /
+   LedgerLocationType). Kept local rather than imported: the only exported home for this
+   union is stock-ledger-card.ts, which is a server module (imports the @elorae/db
+   barrel) — a type-only import would likely get erased before bundling, but a plain
+   local literal removes any doubt for a "use client" file. */
+const WAREHOUSE_TYPES = ["MAIN", "STORE", "VAN"] as const;
+type WarehouseType = (typeof WAREHOUSE_TYPES)[number];
+
+const WAREHOUSE_OPTION_KEY: Record<WarehouseType, string> = {
+  MAIN: "warehouseOption.main",
+  STORE: "warehouseOption.store",
+  VAN: "warehouseOption.van",
+};
 
 type LedgerSection = ItemMovementsResult["sections"][number];
 
 function sectionTitleKey(section: LedgerSection): "sectionTitle.main" | "sectionTitle.store" | "sectionTitle.van" {
   if (section.locationType === "MAIN") return "sectionTitle.main";
   return section.locationType === "STORE" ? "sectionTitle.store" : "sectionTitle.van";
+}
+
+type MultiSelectOption = { value: string; label: string };
+
+/**
+ * Multi-select filter, built on the same Popover + Command shell as the single-select
+ * combobox above (`SearchableCombobox`) rather than a new control idiom — the only real
+ * differences are that a selection toggles membership instead of replacing it, and the
+ * popover stays open across clicks so several boxes can be ticked in one pass.
+ *
+ * `selected` is guarded to NEVER become an empty array. `getItemMovementCard` treats an
+ * empty `locationTypes`/`refTypes` array identically to `undefined` — "no filter, match
+ * everything" — which is the exact opposite of what an operator unticking every box
+ * means. Rather than invent a sentinel for "match nothing", this control simply refuses
+ * the toggle that would produce it: unchecking the last remaining box is a no-op. The
+ * "everything ticked" state is reported upward as `options.length === selected.length`
+ * and it is the CALLER's job (see the two call sites below) to collapse that back to
+ * "send nothing" on the wire.
+ */
+function MultiSelectFilter({
+  options,
+  selected,
+  onChange,
+  allLabel,
+  selectedCountLabel,
+  placeholder,
+  searchable = false,
+  triggerClassName,
+}: {
+  options: MultiSelectOption[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+  allLabel: string;
+  selectedCountLabel: (count: number) => string;
+  placeholder: string;
+  searchable?: boolean;
+  triggerClassName?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const allSelected = selected.length === options.length;
+  const label = allSelected
+    ? allLabel
+    : selected.length === 1
+      ? options.find((opt) => opt.value === selected[0])?.label ?? selected[0]
+      : selectedCountLabel(selected.length);
+
+  const filtered = searchable
+    ? options.filter((opt) => opt.label.toLowerCase().includes(query.trim().toLowerCase()))
+    : options;
+
+  function toggle(value: string) {
+    const next = selected.includes(value)
+      ? selected.filter((v) => v !== value)
+      : [...selected, value];
+    if (next.length === 0) return; /* the empty-selection trap — see doc comment above */
+    onChange(next);
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className={cn(
+            "border-input flex h-9 w-full items-center justify-between gap-2 rounded-md border bg-transparent px-3 py-2 text-sm font-normal shadow-xs transition-[color,box-shadow] outline-none hover:bg-transparent focus-visible:ring-[3px] focus-visible:ring-ring/50",
+            triggerClassName,
+          )}
+        >
+          <span className="truncate">{label || placeholder}</span>
+          <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] min-w-[10rem] p-0" align="start">
+        <Command shouldFilter={false}>
+          {searchable && <CommandInput placeholder="Search..." value={query} onValueChange={setQuery} />}
+          <CommandList>
+            <CommandEmpty>No results found.</CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                value={allLabel}
+                onSelect={() => onChange(options.map((opt) => opt.value))}
+                className="min-h-[40px] font-medium"
+              >
+                <Checkbox checked={allSelected} tabIndex={-1} className="pointer-events-none mr-2" />
+                <span className="truncate">{allLabel}</span>
+              </CommandItem>
+            </CommandGroup>
+            <CommandSeparator />
+            <CommandGroup>
+              {filtered.map((opt) => {
+                const checked = selected.includes(opt.value);
+                return (
+                  <CommandItem
+                    key={opt.value}
+                    value={opt.label}
+                    onSelect={() => toggle(opt.value)}
+                    className="min-h-[40px]"
+                  >
+                    <Checkbox checked={checked} tabIndex={-1} className="pointer-events-none mr-2" />
+                    <span className="truncate">{opt.label}</span>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 export function MovementsPageClient() {
@@ -46,6 +190,21 @@ export function MovementsPageClient() {
   const [variantSku, setVariantSku] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  /* Both default to "everything ticked", which is what "all, no filter" looks like in
+     this control (see MultiSelectFilter's doc comment for why that can never collapse
+     to an empty array on its own). */
+  const [locationTypes, setLocationTypes] = useState<WarehouseType[]>([...WAREHOUSE_TYPES]);
+  const [refTypes, setRefTypes] = useState<string[]>([...STOCK_LEDGER_REF_TYPES]);
+
+  const warehouseOptions: MultiSelectOption[] = WAREHOUSE_TYPES.map((wt) => ({
+    value: wt,
+    label: t(WAREHOUSE_OPTION_KEY[wt]),
+  }));
+
+  const refTypeOptions: MultiSelectOption[] = STOCK_LEDGER_REF_TYPES.map((refType) => {
+    const messageKey = ledgerRefMessageKey(refType);
+    return { value: refType, label: messageKey ? t(messageKey) : refType };
+  });
 
   const [data, setData] = useState<ItemMovementsResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -101,6 +260,14 @@ export function MovementsPageClient() {
       variantSku: variantSku || undefined,
       from: dateFrom || undefined,
       to: dateTo || undefined,
+      /* "Everything ticked" is this control's spelling of "all" — send nothing rather
+         than the full list, matching how variantSku/dateFrom/dateTo already collapse
+         their own "no filter" state to undefined above. */
+      locationTypes: locationTypes.length === WAREHOUSE_TYPES.length ? undefined : locationTypes,
+      refTypes:
+        refTypes.length === STOCK_LEDGER_REF_TYPES.length
+          ? undefined
+          : (refTypes as StockLedgerRefType[]),
     })
       .then((result) => {
         if (requestIdRef.current !== requestId) return;
@@ -113,7 +280,7 @@ export function MovementsPageClient() {
         setLoadError(true);
         setIsLoading(false);
       });
-  }, [itemId, variantSku, dateFrom, dateTo, reloadToken]);
+  }, [itemId, variantSku, dateFrom, dateTo, locationTypes, refTypes, reloadToken]);
 
   return (
     <div className="space-y-6">
@@ -123,7 +290,7 @@ export function MovementsPageClient() {
 
       <Card>
         <CardContent className="pt-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
             <div className="space-y-2 lg:col-span-2">
               <Label>{t("itemLabel")}</Label>
               <SearchableCombobox
@@ -169,6 +336,31 @@ export function MovementsPageClient() {
                   setDateFrom(range?.from ? formatDateOnly(range.from) : "");
                   setDateTo(range?.to ? formatDateOnly(range.to) : "");
                 }}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{t("warehouseLabel")}</Label>
+              <MultiSelectFilter
+                options={warehouseOptions}
+                selected={locationTypes}
+                onChange={(next) => setLocationTypes(next as WarehouseType[])}
+                allLabel={t("allWarehouses")}
+                selectedCountLabel={(count) => t("filterSelectedCount", { count })}
+                placeholder={t("allWarehouses")}
+                triggerClassName="min-h-[44px]"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{t("movementTypeLabel")}</Label>
+              <MultiSelectFilter
+                options={refTypeOptions}
+                selected={refTypes}
+                onChange={setRefTypes}
+                allLabel={t("allMovementTypes")}
+                selectedCountLabel={(count) => t("filterSelectedCount", { count })}
+                placeholder={t("allMovementTypes")}
+                searchable
+                triggerClassName="min-h-[44px]"
               />
             </div>
           </div>
