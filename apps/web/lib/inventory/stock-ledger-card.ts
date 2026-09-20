@@ -1,4 +1,4 @@
-import { prisma, Prisma, type StockLedgerRefType } from "@elorae/db";
+import { prisma, Prisma, STOCK_LEDGER_REF_TYPES, type StockLedgerRefType } from "@elorae/db";
 import { isCeilingReached, LEDGER_ORDER_BY, LEDGER_ROW_SELECT } from "./ledger-query";
 
 export type LedgerLocationType = "MAIN" | "STORE" | "VAN";
@@ -107,6 +107,13 @@ export type ItemMovementCardInput = {
   from?: Date;
   to?: Date;
   refTypes?: StockLedgerRefType[];
+  /*
+   * A SEPARATE flag, never a sentinel folded into `refTypes` — a sentinel string
+   * travelling inside an `in`/`notIn` array can leak straight through into the SQL list
+   * if any later code forgets to strip it first; a boolean cannot. See
+   * buildRefTypeCondition for how the two combine.
+   */
+  includeUnregisteredRefTypes?: boolean;
   locationTypes?: LedgerLocationType[];
 };
 
@@ -164,12 +171,66 @@ export function isSectionTruncated(entryCount: number): boolean {
 }
 
 /**
+ * Builds the refType condition shared by BOTH `where` and `historyWhere` below, from a
+ * single call whose result is reused verbatim in both places — never written twice.
+ * Two independent predicates answering the same question is exactly how `hasAnyHistory`
+ * and `sections` disagreed before the previous slice's fix; the fix here is structural
+ * (one value, two consumers) rather than a promise to keep two literals in sync by hand.
+ *
+ * `refTypes` narrows to REGISTERED members only (validated at the action boundary before
+ * this is ever called). `includeUnregisteredRefTypes` is what lets a value the registry
+ * does not know about — a fixture row, or a writer shipped before its registry entry
+ * landed, both of which are real on this column (see the comment on `RawLedgerRow.refType`
+ * above) — participate as its own selectable class instead of silently vanishing the
+ * moment an operator narrows the movement-type filter at all.
+ *
+ * Both undefined => no filter, unchanged from every caller before this flag existed.
+ * Registered subset, unregistered excluded => `refType IN (subset)`.
+ * Registered subset, unregistered included  => `refType IN (subset) OR refType NOT IN (registry)`.
+ * Unregistered only (no registered member picked) => `refType NOT IN (registry)`.
+ * Every registered member AND unregistered both selected collapses to "no filter" (same
+ * result set, no reason to ship a no-op OR).
+ * Nothing selected at all is unreachable from the control's own empty-selection guard,
+ * but must not silently fall back to "unfiltered" if some future caller ever reaches it
+ * — it means "match nothing", the same as an operator's empty selection is SUPPOSED to
+ * mean everywhere else in this feature.
+ */
+export function buildRefTypeCondition(
+  refTypes: StockLedgerRefType[] | undefined,
+  includeUnregisteredRefTypes: boolean | undefined,
+): Prisma.StockLedgerEntryWhereInput | undefined {
+  if (refTypes === undefined && includeUnregisteredRefTypes === undefined) return undefined;
+
+  const registered = refTypes ?? [];
+  const includeUnregistered = includeUnregisteredRefTypes === true;
+
+  if (registered.length === STOCK_LEDGER_REF_TYPES.length && includeUnregistered) {
+    return undefined;
+  }
+  if (registered.length > 0 && includeUnregistered) {
+    return { OR: [{ refType: { in: registered } }, { refType: { notIn: [...STOCK_LEDGER_REF_TYPES] } }] };
+  }
+  if (registered.length > 0) {
+    return { refType: { in: registered } };
+  }
+  if (includeUnregistered) {
+    return { refType: { notIn: [...STOCK_LEDGER_REF_TYPES] } };
+  }
+  return { refType: { in: [] } };
+}
+
+/**
  * Read-only query behind the item movement / stock ledger card. Fetches this item's
  * StockLedgerEntry rows (optionally narrowed by variant, date range, refType, or location
  * type), resolves STORE/VAN location ids to names via two batched lookups, and folds the
  * rows into per-(location, variant) sections with groupLedgerEntries.
  */
 export async function getItemMovementCard(input: ItemMovementCardInput): Promise<ItemMovementCard> {
+  /* Computed ONCE and applied verbatim to both `where` and `historyWhere` below — see
+     buildRefTypeCondition's own doc comment for why that structural sharing, rather than
+     writing the same condition twice, is the point. */
+  const refTypeCondition = buildRefTypeCondition(input.refTypes, input.includeUnregisteredRefTypes);
+
   const where: Prisma.StockLedgerEntryWhereInput = { itemId: input.itemId };
   if (input.variantSku !== undefined) where.variantSku = input.variantSku;
   if (input.from !== undefined || input.to !== undefined) {
@@ -177,7 +238,7 @@ export async function getItemMovementCard(input: ItemMovementCardInput): Promise
     if (input.from !== undefined) where.createdAt.gte = input.from;
     if (input.to !== undefined) where.createdAt.lte = input.to;
   }
-  if (input.refTypes !== undefined && input.refTypes.length > 0) where.refType = { in: input.refTypes };
+  if (refTypeCondition !== undefined) Object.assign(where, refTypeCondition);
   if (input.locationTypes !== undefined && input.locationTypes.length > 0) {
     where.locationType = { in: input.locationTypes };
   }
@@ -194,7 +255,7 @@ export async function getItemMovementCard(input: ItemMovementCardInput): Promise
    */
   const historyWhere: Prisma.StockLedgerEntryWhereInput = { itemId: input.itemId };
   if (input.variantSku !== undefined) historyWhere.variantSku = input.variantSku;
-  if (input.refTypes !== undefined && input.refTypes.length > 0) historyWhere.refType = { in: input.refTypes };
+  if (refTypeCondition !== undefined) Object.assign(historyWhere, refTypeCondition);
   if (input.locationTypes !== undefined && input.locationTypes.length > 0) {
     historyWhere.locationType = { in: input.locationTypes };
   }

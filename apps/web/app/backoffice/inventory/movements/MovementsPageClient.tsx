@@ -60,6 +60,21 @@ const WAREHOUSE_OPTION_KEY: Record<WarehouseType, string> = {
   VAN: "warehouseOption.van",
 };
 
+/*
+ * `StockLedgerEntry.refType` is a free-form column and genuinely holds values the
+ * registry does not know about (a fixture row, or a writer shipped before its registry
+ * entry landed) — see ledger-ref-display.ts's own comment. This sentinel represents
+ * that whole class as ONE more item in the movement-type list, so it participates in
+ * "select all" and the empty-selection guard exactly like any registered member.
+ *
+ * It never reaches the wire as a string. The fetch effect below splits it back out into
+ * its own boolean (`includeUnregisteredRefTypes`) before calling the action — the query
+ * layer takes a separate flag, never a sentinel folded into the refTypes array, because
+ * a sentinel string travelling inside an `in`/`notIn` list can leak straight through if
+ * anything downstream forgets to strip it first.
+ */
+const UNREGISTERED_REF_TYPE_VALUE = "__unregistered__";
+
 type LedgerSection = ItemMovementsResult["sections"][number];
 
 function sectionTitleKey(section: LedgerSection): "sectionTitle.main" | "sectionTitle.store" | "sectionTitle.van" {
@@ -192,19 +207,30 @@ export function MovementsPageClient() {
   const [dateTo, setDateTo] = useState("");
   /* Both default to "everything ticked", which is what "all, no filter" looks like in
      this control (see MultiSelectFilter's doc comment for why that can never collapse
-     to an empty array on its own). */
+     to an empty array on its own). refTypes' default includes the unregistered
+     sentinel too, for the same reason. */
   const [locationTypes, setLocationTypes] = useState<WarehouseType[]>([...WAREHOUSE_TYPES]);
-  const [refTypes, setRefTypes] = useState<string[]>([...STOCK_LEDGER_REF_TYPES]);
+  const [refTypes, setRefTypes] = useState<string[]>([...STOCK_LEDGER_REF_TYPES, UNREGISTERED_REF_TYPE_VALUE]);
 
   const warehouseOptions: MultiSelectOption[] = WAREHOUSE_TYPES.map((wt) => ({
     value: wt,
     label: t(WAREHOUSE_OPTION_KEY[wt]),
   }));
 
-  const refTypeOptions: MultiSelectOption[] = STOCK_LEDGER_REF_TYPES.map((refType) => {
-    const messageKey = ledgerRefMessageKey(refType);
-    return { value: refType, label: messageKey ? t(messageKey) : refType };
-  });
+  /*
+   * The unregistered sentinel is appended as one more plain option, deliberately not a
+   * special case inside MultiSelectFilter — it just rides along with "select all" and
+   * the empty-selection guard for free. Everything registry-shaped is untouched: the
+   * sentinel is stripped back out into includeUnregisteredRefTypes below, right before
+   * the wire call.
+   */
+  const refTypeOptions: MultiSelectOption[] = [
+    ...STOCK_LEDGER_REF_TYPES.map((refType) => {
+      const messageKey = ledgerRefMessageKey(refType);
+      return { value: refType, label: messageKey ? t(messageKey) : refType };
+    }),
+    { value: UNREGISTERED_REF_TYPE_VALUE, label: t("otherMovementType") },
+  ];
 
   const [data, setData] = useState<ItemMovementsResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -255,6 +281,20 @@ export function MovementsPageClient() {
     const requestId = ++requestIdRef.current;
     setIsLoading(true);
     setLoadError(false);
+    /*
+     * Split the sentinel back out of `refTypes` into its own boolean here, at the very
+     * last moment before the wire call — see UNREGISTERED_REF_TYPE_VALUE's doc comment.
+     * `registeredRefTypes` and `includeUnregisteredRefTypes` always travel TOGETHER as
+     * either both undefined ("no filter") or both defined: sending one without the
+     * other would leave getItemMovementCard's buildRefTypeCondition guessing at a state
+     * this control never actually produces.
+     */
+    const includeUnregisteredRefTypes = refTypes.includes(UNREGISTERED_REF_TYPE_VALUE);
+    const registeredRefTypes = refTypes.filter(
+      (v): v is StockLedgerRefType => v !== UNREGISTERED_REF_TYPE_VALUE,
+    );
+    const allRefTypesSelected =
+      registeredRefTypes.length === STOCK_LEDGER_REF_TYPES.length && includeUnregisteredRefTypes;
     getItemMovementsAction({
       itemId,
       variantSku: variantSku || undefined,
@@ -262,12 +302,13 @@ export function MovementsPageClient() {
       to: dateTo || undefined,
       /* "Everything ticked" is this control's spelling of "all" — send nothing rather
          than the full list, matching how variantSku/dateFrom/dateTo already collapse
-         their own "no filter" state to undefined above. */
+         their own "no filter" state to undefined above. Registry-all-ticked-but-
+         unregistered-unticked is a REAL filter, not "no filter" — it must still send
+         both fields explicitly, which is exactly what allRefTypesSelected being false
+         does here. */
       locationTypes: locationTypes.length === WAREHOUSE_TYPES.length ? undefined : locationTypes,
-      refTypes:
-        refTypes.length === STOCK_LEDGER_REF_TYPES.length
-          ? undefined
-          : (refTypes as StockLedgerRefType[]),
+      refTypes: allRefTypesSelected ? undefined : registeredRefTypes,
+      includeUnregisteredRefTypes: allRefTypesSelected ? undefined : includeUnregisteredRefTypes,
     })
       .then((result) => {
         if (requestIdRef.current !== requestId) return;

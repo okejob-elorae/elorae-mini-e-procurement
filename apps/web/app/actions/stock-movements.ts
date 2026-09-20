@@ -28,6 +28,8 @@ export type GetItemMovementsInput = {
   to?: string;
   locationTypes?: LedgerLocationType[];
   refTypes?: StockLedgerRefType[];
+  /** Separate flag, not a sentinel in `refTypes` — see stock-ledger-card.ts's buildRefTypeCondition. */
+  includeUnregisteredRefTypes?: boolean;
 };
 
 /*
@@ -63,6 +65,12 @@ export async function getItemMovementsAction(input: GetItemMovementsInput): Prom
   if (input.refTypes !== undefined && !input.refTypes.every(isStockLedgerRefType)) {
     throw new Error("INVALID_REF_TYPE");
   }
+  if (
+    input.includeUnregisteredRefTypes !== undefined &&
+    typeof input.includeUnregisteredRefTypes !== "boolean"
+  ) {
+    throw new Error("INVALID_INCLUDE_UNREGISTERED_REF_TYPES");
+  }
 
   const card = await getItemMovementCard({
     itemId: input.itemId,
@@ -77,6 +85,7 @@ export async function getItemMovementsAction(input: GetItemMovementsInput): Prom
     to: input.to ? parseDateOnlyEnd(input.to) : undefined,
     locationTypes: input.locationTypes,
     refTypes: input.refTypes,
+    includeUnregisteredRefTypes: input.includeUnregisteredRefTypes,
   });
 
   return { ...card, queryEntryLimit: QUERY_ENTRY_LIMIT };

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { STOCK_LEDGER_REF_TYPES, type StockLedgerRefType } from "@elorae/db";
 import {
+  buildRefTypeCondition,
   groupLedgerEntries,
   isQueryTruncated,
   isSectionTruncated,
@@ -173,5 +175,48 @@ describe("isSectionTruncated", () => {
 
   it("is true above the limit — the display cap now hides real entries", () => {
     expect(isSectionTruncated(SECTION_ENTRY_LIMIT + 1)).toBe(true);
+  });
+});
+
+/*
+ * Pure predicate shapes, no DB — the integration-level proof that `where` and
+ * `historyWhere` actually SHARE this value (rather than each building their own copy)
+ * lives in stock-ledger-card.query.test.ts, seeded against a real unregistered-refType
+ * row. This block pins the four reachable selection states plus the one unreachable one.
+ */
+describe("buildRefTypeCondition", () => {
+  const subset = STOCK_LEDGER_REF_TYPES.slice(0, 3) as StockLedgerRefType[];
+  const fullRegistry = [...STOCK_LEDGER_REF_TYPES] as StockLedgerRefType[];
+
+  it("both undefined => no filter at all", () => {
+    expect(buildRefTypeCondition(undefined, undefined)).toBeUndefined();
+  });
+
+  it("registered subset, unregistered excluded => refType IN (subset)", () => {
+    expect(buildRefTypeCondition(subset, false)).toEqual({ refType: { in: subset } });
+  });
+
+  it("registered subset, unregistered included => IN (subset) OR NOT IN (registry)", () => {
+    expect(buildRefTypeCondition(subset, true)).toEqual({
+      OR: [{ refType: { in: subset } }, { refType: { notIn: fullRegistry } }],
+    });
+  });
+
+  it("unregistered only, nothing from the registry => refType NOT IN (registry)", () => {
+    expect(buildRefTypeCondition([], true)).toEqual({ refType: { notIn: fullRegistry } });
+  });
+
+  it("every registered member ticked AND unregistered included => collapses to no filter", () => {
+    expect(buildRefTypeCondition(fullRegistry, true)).toBeUndefined();
+  });
+
+  it("every registered member ticked but unregistered EXCLUDED is a real filter, not \"all\"", () => {
+    /* This is the state the previous round's collapse got wrong: registry-all-ticked
+       does not mean "no filter" unless the unregistered class is ticked too. */
+    expect(buildRefTypeCondition(fullRegistry, false)).toEqual({ refType: { in: fullRegistry } });
+  });
+
+  it("nothing selected at all (unreachable via the control's own guard) => matches nothing, not everything", () => {
+    expect(buildRefTypeCondition([], false)).toEqual({ refType: { in: [] } });
   });
 });

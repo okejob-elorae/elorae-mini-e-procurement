@@ -1197,6 +1197,7 @@
     },
     "movementTypeLabel": "Jenis pergerakan",
     "allMovementTypes": "Semua jenis pergerakan",
+    "otherMovementType": "Lainnya",
     "filterSelectedCount": "{count} dipilih",
     "loadError": "Gagal memuat pergerakan stok. Coba lagi.",
     "retryButton": "Coba lagi",

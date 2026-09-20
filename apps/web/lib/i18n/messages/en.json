@@ -1197,6 +1197,7 @@
     },
     "movementTypeLabel": "Movement type",
     "allMovementTypes": "All movement types",
+    "otherMovementType": "Other",
     "filterSelectedCount": "{count} selected",
     "loadError": "Failed to load stock movements. Try again.",
     "retryButton": "Retry",
