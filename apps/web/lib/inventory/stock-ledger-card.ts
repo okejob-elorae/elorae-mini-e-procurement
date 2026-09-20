@@ -1,3 +1,5 @@
+import { prisma, Prisma, type StockLedgerRefType } from "@elorae/db";
+
 export type LedgerLocationType = "MAIN" | "STORE" | "VAN";
 
 export type RawLedgerRow = {
@@ -92,4 +94,129 @@ export function groupLedgerEntries(rows: RawLedgerRow[], labels: LedgerLabels): 
   );
 
   return sections;
+}
+
+export type ItemMovementCardInput = {
+  itemId: string;
+  variantSku?: string;
+  from?: Date;
+  to?: Date;
+  refTypes?: StockLedgerRefType[];
+  locationTypes?: LedgerLocationType[];
+};
+
+export type ItemMovementCard = {
+  sections: LedgerSection[];
+  hasAnyHistory: boolean;
+  sectionLimit: number;
+};
+
+/** Ceiling on total rows fetched for one item's movement card, across every location + variant. */
+export const QUERY_ENTRY_LIMIT = 2000;
+
+/** Per-section entry count at or above which that section is flagged truncated. */
+export const SECTION_ENTRY_LIMIT = 500;
+
+/**
+ * Read-only query behind the item movement / stock ledger card. Fetches this item's
+ * StockLedgerEntry rows (optionally narrowed by variant, date range, refType, or location
+ * type), resolves STORE/VAN location ids to names via two batched lookups, and folds the
+ * rows into per-(location, variant) sections with groupLedgerEntries.
+ */
+export async function getItemMovementCard(input: ItemMovementCardInput): Promise<ItemMovementCard> {
+  const where: Prisma.StockLedgerEntryWhereInput = { itemId: input.itemId };
+  if (input.variantSku !== undefined) where.variantSku = input.variantSku;
+  if (input.from !== undefined || input.to !== undefined) {
+    where.createdAt = {};
+    if (input.from !== undefined) where.createdAt.gte = input.from;
+    if (input.to !== undefined) where.createdAt.lte = input.to;
+  }
+  if (input.refTypes !== undefined && input.refTypes.length > 0) where.refType = { in: input.refTypes };
+  if (input.locationTypes !== undefined && input.locationTypes.length > 0) {
+    where.locationType = { in: input.locationTypes };
+  }
+
+  const [rows, historyCount] = await Promise.all([
+    /*
+     * DESCENDING, not ascending, before the take ceiling applies. An ascending fetch capped
+     * at QUERY_ENTRY_LIMIT keeps the OLDEST rows and silently drops the newest, which would
+     * make closingBalance the balance as of row 2000 rather than the item's balance right
+     * now — wrong on a screen whose whole job is saying where stock is TODAY. Descending
+     * keeps the newest rows; groupLedgerEntries re-sorts each section back to ascending for
+     * display regardless of the order rows arrive in, so feeding it descending is safe.
+     */
+    prisma.stockLedgerEntry.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: QUERY_ENTRY_LIMIT,
+      select: {
+        id: true,
+        locationType: true,
+        locationId: true,
+        variantSku: true,
+        refType: true,
+        refId: true,
+        refDocNumber: true,
+        qty: true,
+        balanceQty: true,
+        unitCost: true,
+        createdById: true,
+        createdAt: true,
+      },
+    }),
+    /* Answers "does this item have ANY ledger row at all" — no date, type or location
+       filter. Never derive this from sections.length, which only proves nothing moved in
+       THIS window, a different fact from this item never having moved at all. */
+    prisma.stockLedgerEntry.count({ where: { itemId: input.itemId } }),
+  ]);
+
+  const storeIds = Array.from(new Set(rows.filter((r) => r.locationType === "STORE").map((r) => r.locationId)));
+  const vanUserIds = Array.from(new Set(rows.filter((r) => r.locationType === "VAN").map((r) => r.locationId)));
+
+  /*
+   * locationId is polymorphic (empty string for MAIN, a storeId for STORE, a userId for
+   * VAN) and relationMode = "prisma" means there is no FK to join on — so this is two
+   * batched lookups, never a per-row query and never a join. Skip a lookup entirely when
+   * its id list is empty: an `in: []` is a pointless round trip, and an `in: undefined` is
+   * a filter Prisma DROPS, which would fetch every store/user in the database.
+   */
+  const [stores, users] = await Promise.all([
+    storeIds.length > 0
+      ? prisma.store.findMany({ where: { id: { in: storeIds ?? [] } }, select: { id: true, name: true } })
+      : Promise.resolve([]),
+    vanUserIds.length > 0
+      ? prisma.user.findMany({ where: { id: { in: vanUserIds ?? [] } }, select: { id: true, name: true, email: true } })
+      : Promise.resolve([]),
+  ]);
+
+  const labels: LedgerLabels = {
+    stores: new Map(stores.map((s) => [s.id, s.name])),
+    users: new Map(users.map((u) => [u.id, u.name ?? u.email])),
+  };
+
+  const rawRows: RawLedgerRow[] = rows.map((r) => ({
+    id: r.id,
+    locationType: r.locationType,
+    locationId: r.locationId,
+    variantSku: r.variantSku,
+    refType: r.refType,
+    refId: r.refId,
+    refDocNumber: r.refDocNumber,
+    qty: Number(r.qty),
+    balanceQty: Number(r.balanceQty),
+    unitCost: r.unitCost === null ? null : Number(r.unitCost),
+    createdById: r.createdById,
+    createdAt: r.createdAt,
+  }));
+
+  const sections = groupLedgerEntries(rawRows, labels);
+  for (const section of sections) {
+    section.truncated = section.entries.length >= SECTION_ENTRY_LIMIT;
+  }
+
+  return {
+    sections,
+    hasAnyHistory: historyCount > 0,
+    sectionLimit: SECTION_ENTRY_LIMIT,
+  };
 }
