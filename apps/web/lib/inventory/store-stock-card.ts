@@ -11,14 +11,24 @@ export type StoreStockRow = {
   vanQty: number;
 };
 
-export type StoreStockMovementKind = "TRANSFER_IN" | "RETUR_OUT";
-
 export type StoreStockMovement = {
   id: string;
-  kind: StoreStockMovementKind;
+  /*
+   * Raw StockLedgerEntry.refType — a free-form String column, not the narrowed
+   * StockLedgerRefType union. A fixture row or a future writer that reaches StoreStock
+   * before its registry entry lands still has to render here rather than being dropped or
+   * throwing; the component resolves it to a label/badge through a guard with a fallback,
+   * the same way ledgerRefMessageKey does.
+   */
+  refType: string;
   docNo: string;
-  /** Where clicking this row should navigate — the source document's own detail page. */
-  href: string;
+  /**
+   * Where clicking this row should navigate — the source document's own detail page, or
+   * `null` when this refType has no known destination (an unregistered refType, or a
+   * registered one this card has not been taught a URL for yet). `null` renders the row
+   * with no link rather than guessing a URL that 404s.
+   */
+  href: string | null;
   occurredAt: Date;
   itemName: string;
   variantSku: string;
@@ -32,17 +42,43 @@ export type StoreStockCardData = {
 };
 
 /**
+ * Resolves a movement's detail-page link from its ledger refType + refId. KonsiTransfer has
+ * no detail page of its own, so it links to the order it was issued for, resolved via
+ * `transferOrderIds` (a batched KonsiTransfer lookup — refId alone is the transfer's id, not
+ * the order's). Every other known kind links straight to its own document by refId. Anything
+ * else — a refType this card has not been taught, or one outside the registry entirely —
+ * gets no link.
+ */
+function movementHref(refType: string, refId: string, transferOrderIds: Map<string, string>): string | null {
+  switch (refType) {
+    case "KonsiTransfer": {
+      const orderId = transferOrderIds.get(refId);
+      return orderId ? `/backoffice/field-sales-orders/${orderId}` : null;
+    }
+    case "FieldReturn":
+      return `/backoffice/field-returns/${refId}`;
+    case "SpgSale":
+      return `/backoffice/spg-sales/${refId}`;
+    case "StoreStocktake":
+      return `/backoffice/store-stocktakes/${refId}`;
+    default:
+      return null;
+  }
+}
+
+/**
  * Read-only view for the store detail page's konsi stock card. Combines the store's own
  * `StoreStock` ledger with `getStockAcrossLocations` for the "where else does this sit"
  * figure — main warehouse and van — never an "available" number (that helper deliberately
  * exposes none, and this must not invent one either).
  *
- * Movements are derived from the two documents that actually move store stock, never a new
- * ledger table: `KonsiTransferLine` rows (stock in, one per konsi transfer) and `FieldReturnLine`
- * rows on an APPROVED retur (stock out, credited qty — the same figure the writer itself
- * decremented by). Each links back to the document that caused it: a transfer has no detail
- * page of its own, so it links to the order it was issued for; a retur links to its own detail
- * page.
+ * Movements come straight from `StockLedgerEntry` scoped to `locationType: "STORE"` and this
+ * store's id — every writer that ever touches this store's balance shows up here (konsi
+ * transfer, konsi retur, an SPG sale, a store stocktake, the admin-return receipt-time
+ * decrement), not just the two documents the old list could join through. One consequence:
+ * the ledger only starts at the cutover date, so this card shows LESS pre-cutover history than
+ * it used to — the UI carries a standing note about that rather than trying to merge in the
+ * old document-derived rows.
  */
 export async function getStoreStockCard(storeId: string): Promise<StoreStockCardData> {
   const stockRows = await prisma.storeStock.findMany({
@@ -74,72 +110,62 @@ export async function getStoreStockCard(storeId: string): Promise<StoreStockCard
 
   const negativeCount = rows.filter((r) => r.qty < 0).length;
 
-  const [transferLines, returnLines] = await Promise.all([
-    prisma.konsiTransferLine.findMany({
-      where: { transfer: { storeId } },
-      select: {
-        id: true,
-        productName: true,
-        variantSku: true,
-        qty: true,
-        transfer: { select: { docNo: true, createdAt: true, orderId: true } },
-      },
-    }),
-    prisma.fieldReturnLine.findMany({
-      where: { returnDoc: { storeId, status: "APPROVED" } },
-      select: {
-        id: true,
-        variantSku: true,
-        creditedQty: true,
-        item: { select: { nameId: true } },
-        returnDoc: { select: { id: true, docNo: true, approvedAt: true, createdAt: true } },
-      },
-    }),
-  ]);
+  const ledgerRows = await prisma.stockLedgerEntry.findMany({
+    where: { locationType: "STORE", locationId: storeId },
+    /* Newest first — this card has never paginated or capped its movement list, unlike the
+       item-scoped ledger card, so there is no query-level truncation concern here. */
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: {
+      id: true,
+      itemId: true,
+      variantSku: true,
+      refType: true,
+      refId: true,
+      refDocNumber: true,
+      qty: true,
+      createdAt: true,
+    },
+  });
 
   /*
-   * The StoreStock decrement on an approved konsi retur only exists from this branch onward — a
-   * retur approved before the store's FIRST konsi transfer ever happened cannot have touched a
-   * ledger that did not yet exist, no matter what FieldReturnLine.creditedQty says. Without this
-   * floor, a KONSI store with pre-branch retur history would list RETUR_OUT rows against a
-   * balance those rows never actually moved — a card that visibly does not add up, with no
-   * explanation. Filtering to "on or after the first transfer" (rather than a disclosure line) is
-   * the same idiom the surat keluar button already uses for a pre-branch order: degrade the data
-   * itself so it stays honest, not bolt a caveat onto numbers that are simply wrong. A store with
-   * no transfer yet has no ledger at all, so its retur history is excluded outright.
+   * StockLedgerEntry carries no relation to Item (itemId is a plain string column, and
+   * relationMode = "prisma" means no FK to join on regardless), so item names are a batched
+   * lookup — same idiom as the store/user label lookups in stock-ledger-card.ts. Item ids here
+   * may include ones no longer in `rows` (fully returned/depleted stock still has history).
    */
-  const firstTransferAt = transferLines.reduce<Date | null>(
-    (min, l) => (min === null || l.transfer.createdAt < min ? l.transfer.createdAt : min),
-    null,
-  );
+  const ledgerItemIds = Array.from(new Set(ledgerRows.map((r) => r.itemId)));
+  const ledgerItems =
+    ledgerItemIds.length > 0
+      ? await prisma.item.findMany({ where: { id: { in: ledgerItemIds } }, select: { id: true, nameId: true } })
+      : [];
+  const itemNameById = new Map(ledgerItems.map((i) => [i.id, i.nameId]));
 
-  const movements: StoreStockMovement[] = [
-    ...transferLines.map((l): StoreStockMovement => ({
-      id: `ktrf-${l.id}`,
-      kind: "TRANSFER_IN",
-      docNo: l.transfer.docNo,
-      href: `/backoffice/field-sales-orders/${l.transfer.orderId}`,
-      occurredAt: l.transfer.createdAt,
-      itemName: l.productName,
-      variantSku: l.variantSku,
-      qty: l.qty.toNumber(),
-    })),
-    ...returnLines
-      .filter((l) => l.creditedQty !== null && l.creditedQty > 0)
-      .filter((l) => firstTransferAt !== null && (l.returnDoc.approvedAt ?? l.returnDoc.createdAt) >= firstTransferAt)
-      .map((l): StoreStockMovement => ({
-        id: `fret-${l.id}`,
-        kind: "RETUR_OUT",
-        docNo: l.returnDoc.docNo,
-        href: `/backoffice/field-returns/${l.returnDoc.id}`,
-        /* approvedAt is when the decrement actually happened; falls back only for a row that
-           somehow reads APPROVED with no stamped approvedAt. */
-        occurredAt: l.returnDoc.approvedAt ?? l.returnDoc.createdAt,
-        itemName: l.item.nameId,
-        variantSku: l.variantSku,
-        qty: l.creditedQty as number,
-      })),
-  ].sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime());
+  /*
+   * KonsiTransfer has no detail page of its own, so its movement links to the order it was
+   * issued for — which means resolving refId (the transfer's own id) to its orderId via a
+   * second batched lookup, never a join.
+   */
+  const transferRefIds = Array.from(
+    new Set(ledgerRows.filter((r) => r.refType === "KonsiTransfer").map((r) => r.refId)),
+  );
+  const transfers =
+    transferRefIds.length > 0
+      ? await prisma.konsiTransfer.findMany({ where: { id: { in: transferRefIds } }, select: { id: true, orderId: true } })
+      : [];
+  const transferOrderIds = new Map(transfers.map((t) => [t.id, t.orderId]));
+
+  const movements: StoreStockMovement[] = ledgerRows.map((r) => ({
+    id: r.id,
+    refType: r.refType,
+    docNo: r.refDocNumber,
+    href: movementHref(r.refType, r.refId, transferOrderIds),
+    occurredAt: r.createdAt,
+    /* An item the lookup missed (hard-deleted, in principle) still renders — the raw id
+       rather than a dropped row, same fallback the ledger card's location resolution uses. */
+    itemName: itemNameById.get(r.itemId) ?? r.itemId,
+    variantSku: r.variantSku,
+    qty: Number(r.qty),
+  }));
 
   return { rows, negativeCount, movements };
 }

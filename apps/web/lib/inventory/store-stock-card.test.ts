@@ -12,31 +12,37 @@ d("getStoreStockCard", () => {
   let uomId = "";
   let userId = "";
   let storeId = "";
+  let otherStoreId = "";
   let itemAId = "";
   let itemBId = "";
-  let orderId = "";
   let visitId = "";
+  let orderId = "";
   let transferId = "";
-  let returnCreditedId = "";
-  let returnZeroId = "";
-  let returnPreCutoffId = "";
+  let transferEntryId = "";
+  let returnEntryId = "";
+  let spgSaleEntryId = "";
+  let mainEntryId = "";
+  let otherStoreEntryId = "";
 
-  const FIRST_TRANSFER_AT = new Date("2026-01-15T00:00:00.000Z");
-  const AFTER_CUTOFF_APPROVED_AT = new Date("2026-02-01T00:00:00.000Z");
-  const BEFORE_CUTOFF_APPROVED_AT = new Date("2025-12-01T00:00:00.000Z");
+  const T1 = new Date("2026-01-15T00:00:00.000Z");
+  const T2 = new Date("2026-01-16T00:00:00.000Z");
+  const T3 = new Date("2026-01-17T00:00:00.000Z");
 
   beforeEach(async () => {
     uomId = "";
     userId = "";
     storeId = "";
+    otherStoreId = "";
     itemAId = "";
     itemBId = "";
-    orderId = "";
     visitId = "";
+    orderId = "";
     transferId = "";
-    returnCreditedId = "";
-    returnZeroId = "";
-    returnPreCutoffId = "";
+    transferEntryId = "";
+    returnEntryId = "";
+    spgSaleEntryId = "";
+    mainEntryId = "";
+    otherStoreEntryId = "";
 
     const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-SSC-${token}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
@@ -48,6 +54,15 @@ d("getStoreStockCard", () => {
       data: { code: `TEST-SSC-STORE-${token}`, name: "Test Konsi Store", address: "Test address", termsType: "KONSI", marginPercent: 20, isActive: true },
     });
     storeId = store.id;
+
+    /* Minted then deleted right away, to get a genuine cuid for the "wrong store" scoping
+       assertion below — same idiom stock-ledger-card.query.test.ts uses for its "deleted
+       store" case, reused here purely for a real, distinct id. */
+    const other = await prisma.store.create({
+      data: { code: `TEST-SSC-OTHER-${token}`, name: "Other Store", address: "Test address", termsType: "KONSI", marginPercent: 20, isActive: true },
+    });
+    otherStoreId = other.id;
+    await prisma.store.delete({ where: { id: otherStoreId } });
 
     /* itemA sits in main + van too — exercises the getStockAcrossLocations join. */
     const itemA = await prisma.item.create({
@@ -82,76 +97,128 @@ d("getStoreStockCard", () => {
     });
     orderId = order.id;
 
+    /* No KonsiTransferLine any more — the card reads the ledger, not this document's lines.
+       The transfer document itself still has to exist: a KonsiTransfer movement has no detail
+       page of its own and links to this order through a batched lookup on refId. */
     const transfer = await prisma.konsiTransfer.create({
       data: {
         docNo: `KONSITRF/TEST-SSC/${token}`,
         orderId,
         storeId,
         transferredById: userId,
-        createdAt: FIRST_TRANSFER_AT,
-        lines: { create: [{ itemId: itemAId, variantSku: "", productName: "Item A", qty: 6, unitCost: 1000 }] },
+        createdAt: T1,
       },
     });
     transferId = transfer.id;
 
-    /* Approved AFTER the store's first transfer — the only movement expected to render. */
-    const returnCredited = await prisma.fieldReturn.create({
+    const transferEntry = await prisma.stockLedgerEntry.create({
       data: {
-        docNo: `TEST-SSC-RET-CR-${token}`,
-        storeId,
-        raisedById: userId,
-        status: "APPROVED",
-        approvedAt: AFTER_CUTOFF_APPROVED_AT,
-        transport: "SELF_CARRY",
-        notaPhotoUrl: "https://cdn.example/nota.jpg",
-        notaPhotoR2Key: "field-returns/x/nota.jpg",
-        lines: { create: [{ itemId: itemAId, variantSku: "", qty: 2, reason: "UNSOLD", creditedQty: 2 }] },
+        locationType: "STORE",
+        locationId: storeId,
+        itemId: itemAId,
+        variantSku: "",
+        type: "IN",
+        qty: 6,
+        balanceQty: 6,
+        refType: "KonsiTransfer",
+        refId: transferId,
+        refDocNumber: transfer.docNo,
+        createdAt: T1,
       },
     });
-    returnCreditedId = returnCredited.id;
+    transferEntryId = transferEntry.id;
 
-    /* Approved after the cutoff too, but creditedQty 0 — nothing was actually credited back. */
-    const returnZero = await prisma.fieldReturn.create({
+    /* A retur-driven decrement. No real FieldReturn document is needed — the card's href
+       builder for "FieldReturn" is a plain template over refId, never a join. */
+    const returnEntry = await prisma.stockLedgerEntry.create({
       data: {
-        docNo: `TEST-SSC-RET-ZERO-${token}`,
-        storeId,
-        raisedById: userId,
-        status: "APPROVED",
-        approvedAt: AFTER_CUTOFF_APPROVED_AT,
-        transport: "SELF_CARRY",
-        notaPhotoUrl: "https://cdn.example/nota.jpg",
-        notaPhotoR2Key: "field-returns/x/nota.jpg",
-        lines: { create: [{ itemId: itemBId, variantSku: "", qty: 3, reason: "UNSOLD", creditedQty: 0 }] },
+        locationType: "STORE",
+        locationId: storeId,
+        itemId: itemAId,
+        variantSku: "",
+        type: "OUT",
+        qty: -2,
+        balanceQty: 4,
+        refType: "FieldReturn",
+        refId: `TEST-SSC-RET-${token}`,
+        refDocNumber: `TEST-SSC-RET-${token}`,
+        createdAt: T2,
       },
     });
-    returnZeroId = returnZero.id;
+    returnEntryId = returnEntry.id;
 
-    /* Approved BEFORE the store's first transfer ever happened — its StoreStock decrement, if
-       any, could not have touched a ledger that did not yet exist. Must not render. */
-    const returnPreCutoff = await prisma.fieldReturn.create({
+    /* An SPG sale decrement — a movement kind the old KonsiTransferLine + FieldReturnLine list
+       could never show, since it read neither of those two tables. This is the case the whole
+       task exists to prove. */
+    const spgSaleEntry = await prisma.stockLedgerEntry.create({
       data: {
-        docNo: `TEST-SSC-RET-PRE-${token}`,
-        storeId,
-        raisedById: userId,
-        status: "APPROVED",
-        approvedAt: BEFORE_CUTOFF_APPROVED_AT,
-        transport: "SELF_CARRY",
-        notaPhotoUrl: "https://cdn.example/nota.jpg",
-        notaPhotoR2Key: "field-returns/x/nota.jpg",
-        lines: { create: [{ itemId: itemAId, variantSku: "", qty: 5, reason: "UNSOLD", creditedQty: 5 }] },
+        locationType: "STORE",
+        locationId: storeId,
+        itemId: itemBId,
+        variantSku: "",
+        type: "OUT",
+        qty: -1,
+        balanceQty: -4,
+        refType: "SpgSale",
+        refId: `TEST-SSC-SPG-${token}`,
+        refDocNumber: `SPGSALE/TEST-SSC/${token}`,
+        createdAt: T3,
       },
     });
-    returnPreCutoffId = returnPreCutoff.id;
+    spgSaleEntryId = spgSaleEntry.id;
+
+    /* Same item, MAIN location — proves the query scopes on locationType, not just itemId. */
+    const mainEntry = await prisma.stockLedgerEntry.create({
+      data: {
+        locationType: "MAIN",
+        locationId: "",
+        itemId: itemAId,
+        variantSku: "",
+        type: "IN",
+        qty: 50,
+        balanceQty: 50,
+        refType: "GRN",
+        refId: `TEST-SSC-GRN-${token}`,
+        refDocNumber: `GRN/TEST-SSC/${token}`,
+        createdAt: T1,
+      },
+    });
+    mainEntryId = mainEntry.id;
+
+    /* Same locationType, a DIFFERENT store id — proves the query scopes on locationId, not
+       just locationType. */
+    const otherStoreEntry = await prisma.stockLedgerEntry.create({
+      data: {
+        locationType: "STORE",
+        locationId: otherStoreId,
+        itemId: itemAId,
+        variantSku: "",
+        type: "IN",
+        qty: 9,
+        balanceQty: 9,
+        refType: "KonsiTransfer",
+        refId: `TEST-SSC-OTHER-KTF-${token}`,
+        refDocNumber: `KONSITRF-OTHER/TEST-SSC/${token}`,
+        createdAt: T1,
+      },
+    });
+    otherStoreEntryId = otherStoreEntry.id;
   });
 
   afterEach(async () => {
-    for (const returnId of [returnCreditedId, returnZeroId, returnPreCutoffId]) {
-      await prisma.fieldReturnLine.deleteMany({ where: { returnId: seededId(returnId) } });
-    }
-    await prisma.fieldReturn.deleteMany({
-      where: { id: { in: [seededId(returnCreditedId), seededId(returnZeroId), seededId(returnPreCutoffId)] } },
+    await prisma.stockLedgerEntry.deleteMany({
+      where: {
+        id: {
+          in: [
+            seededId(transferEntryId),
+            seededId(returnEntryId),
+            seededId(spgSaleEntryId),
+            seededId(mainEntryId),
+            seededId(otherStoreEntryId),
+          ],
+        },
+      },
     });
-    await prisma.konsiTransferLine.deleteMany({ where: { transferId: seededId(transferId) } });
     await prisma.konsiTransfer.deleteMany({ where: { id: seededId(transferId) } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
     await prisma.storeVisit.deleteMany({ where: { id: seededId(visitId) } });
@@ -184,24 +251,52 @@ d("getStoreStockCard", () => {
     expect(rowB.vanQty).toBe(0);
   });
 
-  it("produces no movement row for a retur line with creditedQty 0", async () => {
-    const card = await getStoreStockCard(storeId);
-    expect(card.movements.some((m) => m.id === `fret-${returnZeroId}` || m.docNo === `TEST-SSC-RET-ZERO-${token}`)).toBe(false);
-  });
-
-  it("includes the transfer and a post-cutoff retur, but excludes a retur approved before the store's first transfer", async () => {
+  it("scopes movements to this store's own STORE-located ledger rows, excluding MAIN and another store", async () => {
     const card = await getStoreStockCard(storeId);
     const docNos = card.movements.map((m) => m.docNo);
-    expect(docNos).toContain(`KONSITRF/TEST-SSC/${token}`);
-    expect(docNos).toContain(`TEST-SSC-RET-CR-${token}`);
-    expect(docNos).not.toContain(`TEST-SSC-RET-PRE-${token}`);
+    expect(docNos).not.toContain(`GRN/TEST-SSC/${token}`);
+    expect(docNos).not.toContain(`KONSITRF-OTHER/TEST-SSC/${token}`);
+    expect(card.movements).toHaveLength(3);
+  });
 
-    const transferMovement = card.movements.find((m) => m.docNo === `KONSITRF/TEST-SSC/${token}`)!;
-    expect(transferMovement.kind).toBe("TRANSFER_IN");
-    expect(transferMovement.qty).toBe(6);
+  it("includes the konsi transfer, resolving its href through the order it was issued for", async () => {
+    const card = await getStoreStockCard(storeId);
+    const m = card.movements.find((mv) => mv.docNo === `KONSITRF/TEST-SSC/${token}`);
+    expect(m).toBeDefined();
+    expect(m!.refType).toBe("KonsiTransfer");
+    expect(m!.qty).toBe(6);
+    expect(m!.href).toBe(`/backoffice/field-sales-orders/${orderId}`);
+  });
 
-    const returMovement = card.movements.find((m) => m.docNo === `TEST-SSC-RET-CR-${token}`)!;
-    expect(returMovement.kind).toBe("RETUR_OUT");
-    expect(returMovement.qty).toBe(2);
+  it("includes the field return decrement, linking straight to its own detail page", async () => {
+    const card = await getStoreStockCard(storeId);
+    const m = card.movements.find((mv) => mv.docNo === `TEST-SSC-RET-${token}`);
+    expect(m).toBeDefined();
+    expect(m!.refType).toBe("FieldReturn");
+    expect(m!.qty).toBe(-2);
+    expect(m!.href).toBe(`/backoffice/field-returns/TEST-SSC-RET-${token}`);
+  });
+
+  /*
+   * The point of this task: the old list joined KonsiTransferLine and FieldReturnLine only, so
+   * an SPG sale could never appear no matter how the query was tuned. Reading the ledger
+   * instead makes it show up for free.
+   */
+  it("includes an SPG sale — a movement kind the old KonsiTransferLine/FieldReturnLine list could never show", async () => {
+    const card = await getStoreStockCard(storeId);
+    const m = card.movements.find((mv) => mv.docNo === `SPGSALE/TEST-SSC/${token}`);
+    expect(m).toBeDefined();
+    expect(m!.refType).toBe("SpgSale");
+    expect(m!.qty).toBe(-1);
+    expect(m!.href).toBe(`/backoffice/spg-sales/TEST-SSC-SPG-${token}`);
+  });
+
+  it("orders movements newest first", async () => {
+    const card = await getStoreStockCard(storeId);
+    expect(card.movements.map((m) => m.docNo)).toEqual([
+      `SPGSALE/TEST-SSC/${token}`,
+      `TEST-SSC-RET-${token}`,
+      `KONSITRF/TEST-SSC/${token}`,
+    ]);
   });
 });
