@@ -13,8 +13,11 @@ export type WarehouseType = (typeof WAREHOUSE_TYPES)[number];
  * apps/web/lib/i18n/messages/{en,id}.json.
  *
  * Mirrors ledger-ref-display.ts's LEDGER_REF_MESSAGE_KEY: `Record<WarehouseType, string>`
- * is exhaustive over the UNION, so a third warehouse type would fail to compile the
- * moment it landed here without a matching key. It is NOT exhaustive over the LOCALE
+ * is exhaustive over the UNION, so a FOURTH warehouse type — there are three today —
+ * would fail to compile the moment it landed here without a matching key. That compile
+ * error is also the ONLY one in the whole chain of hand-written copies of this member
+ * set, and it fires only after the union itself has already been widened, so it catches
+ * nothing on its own. It is NOT exhaustive over the LOCALE
  * side of that promise — nothing stops a key here from losing its entry in en.json or
  * id.json, which is what warehouse-option-display.test.ts's parity check is for.
  */
