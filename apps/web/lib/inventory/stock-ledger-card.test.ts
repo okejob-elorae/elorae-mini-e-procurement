@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { STOCK_LEDGER_REF_TYPES, type StockLedgerRefType } from "@elorae/db";
 import {
+  buildLocationTypeCondition,
   buildRefTypeCondition,
   groupLedgerEntries,
   isQueryTruncated,
@@ -218,5 +219,33 @@ describe("buildRefTypeCondition", () => {
 
   it("nothing selected at all (unreachable via the control's own guard) => matches nothing, not everything", () => {
     expect(buildRefTypeCondition([], false)).toEqual({ refType: { in: [] } });
+  });
+});
+
+/*
+ * The sibling of buildRefTypeCondition, and these cases exist because the two used to
+ * DISAGREE about an empty array: refTypes matched nothing while locationTypes silently
+ * matched everything. A caller narrowing to nothing and being shown the whole unfiltered set
+ * is the exact inversion this pair now refuses.
+ */
+describe("buildLocationTypeCondition", () => {
+  it("undefined => no filter at all", () => {
+    expect(buildLocationTypeCondition(undefined)).toBeUndefined();
+  });
+
+  it("an empty selection matches NOTHING, it does not mean unfiltered", () => {
+    expect(buildLocationTypeCondition([])).toEqual({ locationType: { in: [] } });
+  });
+
+  it("a subset filters to that subset", () => {
+    expect(buildLocationTypeCondition(["MAIN", "VAN"])).toEqual({
+      locationType: { in: ["MAIN", "VAN"] },
+    });
+  });
+
+  it("every member is still a real filter, not collapsed to undefined", () => {
+    expect(buildLocationTypeCondition(["MAIN", "STORE", "VAN"])).toEqual({
+      locationType: { in: ["MAIN", "STORE", "VAN"] },
+    });
   });
 });

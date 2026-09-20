@@ -220,6 +220,23 @@ export function buildRefTypeCondition(
 }
 
 /**
+ * The locationType half, deliberately the same shape as buildRefTypeCondition above — and
+ * deliberately NOT the `length > 0` guard it used to be.
+ *
+ * That older guard made an EMPTY array mean "no filter", identical to `undefined`, so a caller
+ * that had narrowed to nothing was shown EVERYTHING instead. Once refTypes started failing
+ * closed on the same input, the two sibling arguments of one function disagreed about what an
+ * empty selection means, with nothing on either saying why. `in: []` matches nothing, which is
+ * what a caller who selected nothing asked for.
+ */
+export function buildLocationTypeCondition(
+  locationTypes: LedgerLocationType[] | undefined,
+): Prisma.StockLedgerEntryWhereInput | undefined {
+  if (locationTypes === undefined) return undefined;
+  return { locationType: { in: locationTypes } };
+}
+
+/**
  * Read-only query behind the item movement / stock ledger card. Fetches this item's
  * StockLedgerEntry rows (optionally narrowed by variant, date range, refType, or location
  * type), resolves STORE/VAN location ids to names via two batched lookups, and folds the
@@ -230,6 +247,7 @@ export async function getItemMovementCard(input: ItemMovementCardInput): Promise
      buildRefTypeCondition's own doc comment for why that structural sharing, rather than
      writing the same condition twice, is the point. */
   const refTypeCondition = buildRefTypeCondition(input.refTypes, input.includeUnregisteredRefTypes);
+  const locationTypeCondition = buildLocationTypeCondition(input.locationTypes);
 
   const where: Prisma.StockLedgerEntryWhereInput = { itemId: input.itemId };
   if (input.variantSku !== undefined) where.variantSku = input.variantSku;
@@ -239,9 +257,7 @@ export async function getItemMovementCard(input: ItemMovementCardInput): Promise
     if (input.to !== undefined) where.createdAt.lte = input.to;
   }
   if (refTypeCondition !== undefined) Object.assign(where, refTypeCondition);
-  if (input.locationTypes !== undefined && input.locationTypes.length > 0) {
-    where.locationType = { in: input.locationTypes };
-  }
+  if (locationTypeCondition !== undefined) Object.assign(where, locationTypeCondition);
 
   /*
    * Same predicates as `where` above, MINUS the date window — this is what makes
@@ -256,9 +272,7 @@ export async function getItemMovementCard(input: ItemMovementCardInput): Promise
   const historyWhere: Prisma.StockLedgerEntryWhereInput = { itemId: input.itemId };
   if (input.variantSku !== undefined) historyWhere.variantSku = input.variantSku;
   if (refTypeCondition !== undefined) Object.assign(historyWhere, refTypeCondition);
-  if (input.locationTypes !== undefined && input.locationTypes.length > 0) {
-    historyWhere.locationType = { in: input.locationTypes };
-  }
+  if (locationTypeCondition !== undefined) Object.assign(historyWhere, locationTypeCondition);
 
   const [rows, historyCount] = await Promise.all([
     /*
