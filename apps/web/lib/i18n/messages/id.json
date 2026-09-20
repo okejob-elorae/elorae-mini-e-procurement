@@ -74,6 +74,7 @@
     "inventory": "Inventori",
     "navStockOpname": "Stock Opname",
     "navStockReconciliation": "Rekonsiliasi",
+    "navStockMovements": "Pergerakan",
     "workOrders": "Perintah Kerja",
     "navWorkOrdersList": "Daftar Perintah Kerja",
     "registerNotaCmt": "Register Nota CMT",

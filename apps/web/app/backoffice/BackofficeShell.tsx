@@ -166,6 +166,7 @@ const navItems: NavItem[] = [
         href: '/backoffice/inventory/reconciliation',
         permission: PERMISSIONS.INVENTORY_RECONCILIATION_VIEW,
       },
+      { labelKey: 'navStockMovements', href: '/backoffice/inventory/movements' },
     ],
   },
   {

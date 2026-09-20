@@ -74,6 +74,7 @@
     "inventory": "Inventory",
     "navStockOpname": "Stock Opname",
     "navStockReconciliation": "Reconciliation",
+    "navStockMovements": "Movements",
     "workOrders": "Work Orders",
     "navWorkOrdersList": "Work Orders List",
     "registerNotaCmt": "Register Nota CMT",
