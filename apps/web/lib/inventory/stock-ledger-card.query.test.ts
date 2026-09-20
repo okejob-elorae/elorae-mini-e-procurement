@@ -157,6 +157,10 @@ d("getItemMovementCard", () => {
 
     expect(card.hasAnyHistory).toBe(true);
     expect(card.sectionLimit).toBe(500);
+    /* Well under QUERY_ENTRY_LIMIT (2000) — confirms the field is wired end to end. The
+       equality-based logic itself is pinned cheaply in stock-ledger-card.test.ts instead of
+       seeding 2000 rows on the shared bed. */
+    expect(card.queryTruncated).toBe(false);
   });
 
   it("renders the deleted store's raw id, unresolved, rather than dropping the section", async () => {

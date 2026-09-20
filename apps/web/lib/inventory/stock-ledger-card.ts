@@ -109,6 +109,16 @@ export type ItemMovementCard = {
   sections: LedgerSection[];
   hasAnyHistory: boolean;
   sectionLimit: number;
+  /*
+   * True when the QUERY-level ceiling was reached: this item's history is cut off entirely
+   * and the oldest end is missing, regardless of what any individual section's own
+   * `truncated` flag says. A section at its own SECTION_ENTRY_LIMIT means "this location has
+   * more movements than we show"; this means "this item's history is cut off, full stop" —
+   * a section spread thin enough (five sections of 400 each, under a 2000-row query cap)
+   * can have every section report itself complete while the query still dropped rows. The
+   * two flags mean different things and a reader needs to know which bound they hit.
+   */
+  queryTruncated: boolean;
 };
 
 /** Ceiling on total rows fetched for one item's movement card, across every location + variant. */
@@ -116,6 +126,18 @@ export const QUERY_ENTRY_LIMIT = 2000;
 
 /** Per-section entry count at or above which that section is flagged truncated. */
 export const SECTION_ENTRY_LIMIT = 500;
+
+/**
+ * True when the fetch returned exactly QUERY_ENTRY_LIMIT rows — the `take` ceiling was hit,
+ * so rows beyond it exist and were dropped. Equality, not `>=`: the fetch itself is capped
+ * by `take`, so `rowCount` can never exceed the limit; testing for it is just being explicit
+ * about which comparison is meaningful. This can false-positive when the item's true total
+ * is exactly QUERY_ENTRY_LIMIT (nothing was actually dropped) — the harmless direction: it
+ * over-warns rather than under-warns, which is the trade this view wants on an audit surface.
+ */
+export function isQueryTruncated(rowCount: number): boolean {
+  return rowCount === QUERY_ENTRY_LIMIT;
+}
 
 /**
  * Read-only query behind the item movement / stock ledger card. Fetches this item's
@@ -144,6 +166,11 @@ export async function getItemMovementCard(input: ItemMovementCardInput): Promise
      * now — wrong on a screen whose whole job is saying where stock is TODAY. Descending
      * keeps the newest rows; groupLedgerEntries re-sorts each section back to ascending for
      * display regardless of the order rows arrive in, so feeding it descending is safe.
+     *
+     * This ordering is also what makes a query-level truncation (queryTruncated below)
+     * SURVIVABLE rather than silently wrong: when the cap actually bites, the rows it drops
+     * are always the oldest ones, so the closing balance stays correct and only the far end
+     * of history — the end you can afford to lose — goes missing.
      */
     prisma.stockLedgerEntry.findMany({
       where,
@@ -218,5 +245,6 @@ export async function getItemMovementCard(input: ItemMovementCardInput): Promise
     sections,
     hasAnyHistory: historyCount > 0,
     sectionLimit: SECTION_ENTRY_LIMIT,
+    queryTruncated: isQueryTruncated(rows.length),
   };
 }

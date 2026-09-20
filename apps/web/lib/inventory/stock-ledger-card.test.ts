@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupLedgerEntries, type RawLedgerRow } from "./stock-ledger-card";
+import { groupLedgerEntries, isQueryTruncated, QUERY_ENTRY_LIMIT, type RawLedgerRow } from "./stock-ledger-card";
 
 const row = (over: Partial<RawLedgerRow>): RawLedgerRow => ({
   id: "e1",
@@ -116,5 +116,30 @@ describe("groupLedgerEntries", () => {
 
   it("returns no sections for no rows", () => {
     expect(groupLedgerEntries([], { stores: new Map(), users: new Map() })).toEqual([]);
+  });
+});
+
+/*
+ * Pure logic only — no DB fixtures. Exercising the real query-level truncation would need
+ * QUERY_ENTRY_LIMIT (2000) rows seeded on the shared :3308 test bed, which is not worth
+ * littering the bed for one boolean; the constant is also not injectable into
+ * getItemMovementCard. Pinning the comparison directly against isQueryTruncated is the
+ * cheap route: it is the exact function the query layer calls with `rows.length`.
+ */
+describe("isQueryTruncated", () => {
+  it("is false below the ceiling", () => {
+    expect(isQueryTruncated(QUERY_ENTRY_LIMIT - 1)).toBe(false);
+  });
+
+  it("is true exactly AT the ceiling — the take cap was hit, so rows beyond it were dropped", () => {
+    expect(isQueryTruncated(QUERY_ENTRY_LIMIT)).toBe(true);
+  });
+
+  it("is false above the ceiling too — unreachable in practice since `take` bounds the fetch, but pins the equality (not >=) choice", () => {
+    expect(isQueryTruncated(QUERY_ENTRY_LIMIT + 1)).toBe(false);
+  });
+
+  it("is false for zero rows", () => {
+    expect(isQueryTruncated(0)).toBe(false);
   });
 });
