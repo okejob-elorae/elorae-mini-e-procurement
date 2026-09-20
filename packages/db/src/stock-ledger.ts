@@ -15,6 +15,8 @@ export type AppendStockLedgerInput = {
   qty: number;
   balanceQty: number;
   unitCost?: number | null;
+  totalCost?: number | null;
+  balanceValue?: number | null;
   refType: string;
   refId: string;
   refDocNumber?: string;
@@ -68,6 +70,8 @@ export async function appendStockLedger(
       qty: input.qty,
       balanceQty: input.balanceQty,
       unitCost: input.unitCost ?? null,
+      totalCost: input.totalCost ?? null,
+      balanceValue: input.balanceValue ?? null,
       refType: input.refType,
       refId: input.refId,
       refDocNumber: input.refDocNumber ?? "",

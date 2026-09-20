@@ -3053,6 +3053,8 @@ model StockLedgerEntry {
   qty          Decimal           @db.Decimal(10, 2)
   unitCost     Decimal?          @db.Decimal(15, 2)
   balanceQty   Decimal           @db.Decimal(10, 2)
+  totalCost    Decimal?          @db.Decimal(15, 2)
+  balanceValue Decimal?          @db.Decimal(15, 2)
   refType      String
   refId        String
   refDocNumber String            @default("")
