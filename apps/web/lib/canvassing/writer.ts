@@ -1,4 +1,5 @@
 import { prisma, Prisma, moveMainStock, moveVanStock } from "@elorae/db";
+import type { StockLedgerRefType } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { weightedAvgCost } from "@/lib/inventory/weighted-avg-cost";
@@ -84,7 +85,7 @@ export async function loadVan(input: {
         qtyDelta: -l.qty,
         totalValue: newQty * avgCost,
         inventoryValueId: inv.id,
-        refType: "VanLoad",
+        refType: "VanLoad" satisfies StockLedgerRefType,
         refId: load.id,
         refDocNumber: docNo,
         createdById: input.loadedById,
@@ -122,7 +123,7 @@ export async function loadVan(input: {
         variantSku: l.variantSku,
         qtyDelta: l.qty,
         avgCost: newVanAvg,
-        refType: "VanLoad",
+        refType: "VanLoad" satisfies StockLedgerRefType,
         refId: load.id,
         refDocNumber: docNo,
         createdById: input.loadedById,

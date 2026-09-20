@@ -1,4 +1,5 @@
 import { prisma, Prisma, moveVanStock } from "@elorae/db";
+import type { StockLedgerRefType } from "@elorae/db";
 import { computeStorePrice, roundToWholeRupiah } from "@elorae/db/pricing";
 import { buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
 import { runSerializable } from "@/lib/db/tx-retry";
@@ -124,7 +125,7 @@ export async function recordVanSale(input: {
         itemId: p.line.itemId,
         variantSku: p.line.variantSku,
         qtyDelta: -p.line.qty,
-        refType: "VanSale",
+        refType: "VanSale" satisfies StockLedgerRefType,
         refId: sale.id,
         refDocNumber: docNo,
       });

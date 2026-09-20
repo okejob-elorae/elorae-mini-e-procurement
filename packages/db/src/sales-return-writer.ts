@@ -2,6 +2,7 @@ import type { Prisma } from "../generated/prisma/client";
 import { moveMainStock } from "./stock-balance";
 import type { StockAdjustmentSource } from "./stock-adjustment-source";
 import type { JubelioOutboxEntityType } from "./jubelio-outbox";
+import type { StockLedgerRefType } from "./stock-ledger-ref";
 
 export type SalesReturnStatusLiteral = "PENDING" | "ACCEPTED" | "REJECTED" | "PARTIAL";
 
@@ -124,7 +125,7 @@ export async function acceptReturnItem(
     qtyDelta: qty,
     totalValue: newQty * avgCost,
     inventoryValueId: inv.id,
-    refType: "SalesReturn",
+    refType: "SalesReturn" satisfies StockLedgerRefType,
     refId: item.salesReturnId,
     refDocNumber: item.salesReturn.jubelioReturnNo ?? undefined,
     createdById: input.changedById,

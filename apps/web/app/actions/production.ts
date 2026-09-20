@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { Decimal } from 'decimal.js';
 import { prisma, recalcItemSellingPrice, moveMainStock } from '@elorae/db';
+import type { StockLedgerRefType } from '@elorae/db';
 import { apiFetch } from "@/lib/internal-api";
 import { generateDocNumber } from '@/lib/docNumber';
 import { generateMaterialPlan } from '@/lib/production/planning';
@@ -741,7 +742,7 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
           // null/"" bucket would otherwise let moveMainStock's own re-resolution collapse both
           // iterations onto one row, double-decrementing it.
           inventoryValueId: row.id,
-          refType: 'MaterialIssue',
+          refType: 'MaterialIssue' satisfies StockLedgerRefType,
           refId: issue.id,
           refDocNumber: docNumber,
           createdById: userId,
@@ -1208,7 +1209,7 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
             avgCostPerUnit,
             tx,
             row.variantSku,
-            { refType: 'FGReceipt', refId: receipt.id, refDocNumber: docNumber, createdById: userId }
+            { refType: 'FGReceipt' satisfies StockLedgerRefType, refId: receipt.id, refDocNumber: docNumber, createdById: userId }
           );
           const rowCost = avgCostPerUnit.mul(row.qty).toNumber();
           await tx.stockMovement.create({
@@ -1243,7 +1244,7 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
           avgCostPerUnit,
           tx,
           fgVariantSku,
-          { refType: 'FGReceipt', refId: receipt.id, refDocNumber: docNumber, createdById: userId }
+          { refType: 'FGReceipt' satisfies StockLedgerRefType, refId: receipt.id, refDocNumber: docNumber, createdById: userId }
         );
         await tx.stockMovement.create({
           data: {

@@ -1,4 +1,5 @@
 import { InventoryValueMissingError, moveMainStock, moveStoreStock, type Prisma } from "@elorae/db";
+import type { StockLedgerRefType } from "@elorae/db";
 import { weightedAvgCost } from "@/lib/inventory/weighted-avg-cost";
 import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 import { generateDocNumber } from "@/lib/docNumber";
@@ -76,7 +77,7 @@ export async function issueKonsiTransfer(
       qtyDelta: -l.qty,
       totalValue: newQty * avgCost,
       inventoryValueId: main.id,
-      refType: "KonsiTransfer",
+      refType: "KonsiTransfer" satisfies StockLedgerRefType,
       refId: transfer.id,
       refDocNumber: docNo,
       createdById: input.transferredById,
@@ -134,7 +135,7 @@ export async function issueKonsiTransfer(
       variantSku: l.variantSku,
       qtyDelta: l.qty,
       avgCost: nextStoreAvgCost,
-      refType: "KonsiTransfer",
+      refType: "KonsiTransfer" satisfies StockLedgerRefType,
       refId: transfer.id,
       refDocNumber: docNo,
       createdById: input.transferredById,

@@ -1,4 +1,4 @@
-import type { Prisma, ReconDirection, ReconTrigger, StockAdjustmentSource } from "@elorae/db";
+import type { Prisma, ReconDirection, ReconTrigger, StockAdjustmentSource, StockLedgerRefType } from "@elorae/db";
 import { moveMainStock, prisma } from "@elorae/db";
 import { Decimal } from "decimal.js";
 import { generateDocNumber } from "@/lib/docNumber";
@@ -117,7 +117,7 @@ async function applyMatchJubelio(
     totalValue: newTotalValue.toNumber(),
     unitCost: prevAvgCost.toNumber(),
     inventoryValueId: inv.id,
-    refType: "Reconciliation",
+    refType: "Reconciliation" satisfies StockLedgerRefType,
     refId: adjustment.id,
     refDocNumber: adjDoc,
     createdById: params.userId ?? null,
