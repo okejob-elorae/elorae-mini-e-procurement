@@ -125,7 +125,12 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     prisma.gRN.count({
       where: { grnDate: { gte: weekStart } },
     }),
-    prisma.stockMovement.count({
+    /* Counts every location (main, store, van), not just MAIN - this is the more truthful
+     * answer to "what happened today" now that the ledger sees store/van movements that
+     * StockMovement never recorded. That makes this number RISE relative to what the
+     * dashboard showed before, on any day with store or van activity - that is a
+     * correction, not a regression. */
+    prisma.stockLedgerEntry.count({
       where: { createdAt: { gte: todayStart } },
     }),
     prisma.auditLog.findMany({

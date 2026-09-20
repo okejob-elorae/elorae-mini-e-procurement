@@ -131,16 +131,21 @@ export async function getStockCard(
   };
 }
 
-/** Returns variant SKU options for an item (from item.variants and from stock movement history). Use to populate variant combobox when item is selected, before Load. */
+/** Returns variant SKU options for an item (from item.variants and from the stock ledger). Use to populate variant combobox when item is selected, before Load. */
 export async function getItemVariantOptions(itemId: string): Promise<string[]> {
   const [item, movementVariants] = await Promise.all([
     prisma.item.findUnique({
       where: { id: itemId },
       select: { variants: true },
     }),
-    prisma.stockMovement.groupBy({
+    /* StockLedgerEntry.variantSku is NOT NULL with a '' default (unlike StockMovement's
+     * nullable column), so the variantless bucket is excluded with `{ not: '' }`, not
+     * `{ not: null }` - the latter would exclude nothing and surface an empty-string option.
+     * Not scoped by locationType: this closes the gap where a variant that only ever moved
+     * through a store/van path never wrote StockMovement and so never appeared here. */
+    prisma.stockLedgerEntry.groupBy({
       by: ['variantSku'],
-      where: { itemId, variantSku: { not: null } },
+      where: { itemId, variantSku: { not: '' } },
       _count: { id: true },
     }),
   ]);
@@ -153,7 +158,7 @@ export async function getItemVariantOptions(itemId: string): Promise<string[]> {
   }
   const fromMovements = movementVariants
     .map((g) => g.variantSku)
-    .filter((s): s is string => s != null && s.trim() !== '');
+    .filter((s) => s.trim() !== '');
   const set = new Set<string>([...fromItem, ...fromMovements]);
   return Array.from(set).sort();
 }
