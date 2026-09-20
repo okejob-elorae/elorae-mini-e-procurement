@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { groupLedgerEntries, isQueryTruncated, QUERY_ENTRY_LIMIT, type RawLedgerRow } from "./stock-ledger-card";
+import {
+  groupLedgerEntries,
+  isQueryTruncated,
+  isSectionTruncated,
+  QUERY_ENTRY_LIMIT,
+  SECTION_ENTRY_LIMIT,
+  type RawLedgerRow,
+} from "./stock-ledger-card";
 
 const row = (over: Partial<RawLedgerRow>): RawLedgerRow => ({
   id: "e1",
@@ -141,5 +148,26 @@ describe("isQueryTruncated", () => {
 
   it("is false for zero rows", () => {
     expect(isQueryTruncated(0)).toBe(false);
+  });
+});
+
+/*
+ * Deliberately the OPPOSITE comparison from isQueryTruncated (`>` here, `===` there) — see
+ * the comment on isSectionTruncated itself. The section's real entry count is fully known
+ * (nothing caps it before this point), so at exactly SECTION_ENTRY_LIMIT entries the display
+ * cap hides nothing and truncated must be false. That "exactly at the limit" case is the one
+ * this fix round exists for, so it is pinned explicitly below.
+ */
+describe("isSectionTruncated", () => {
+  it("is false below the limit", () => {
+    expect(isSectionTruncated(SECTION_ENTRY_LIMIT - 1)).toBe(false);
+  });
+
+  it("is false exactly AT the limit — every entry is shown, so nothing is hidden", () => {
+    expect(isSectionTruncated(SECTION_ENTRY_LIMIT)).toBe(false);
+  });
+
+  it("is true above the limit — the display cap now hides real entries", () => {
+    expect(isSectionTruncated(SECTION_ENTRY_LIMIT + 1)).toBe(true);
   });
 });

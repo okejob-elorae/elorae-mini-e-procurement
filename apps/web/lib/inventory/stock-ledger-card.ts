@@ -124,7 +124,13 @@ export type ItemMovementCard = {
 /** Ceiling on total rows fetched for one item's movement card, across every location + variant. */
 export const QUERY_ENTRY_LIMIT = 2000;
 
-/** Per-section entry count at or above which that section is flagged truncated. */
+/**
+ * Display cap: the page renders at most this many of a section's entries
+ * (`section.entries.slice(-SECTION_ENTRY_LIMIT)`) and shows a "more history hidden" notice
+ * only when `section.truncated`. This is a DISPLAY cap, not a data cap — the query layer
+ * never slices `section.entries` itself; `sectionLimit` is exported precisely so the page
+ * can apply the same number it was flagged against.
+ */
 export const SECTION_ENTRY_LIMIT = 500;
 
 /**
@@ -137,6 +143,21 @@ export const SECTION_ENTRY_LIMIT = 500;
  */
 export function isQueryTruncated(rowCount: number): boolean {
   return rowCount === QUERY_ENTRY_LIMIT;
+}
+
+/**
+ * True when a section holds MORE than SECTION_ENTRY_LIMIT entries — strictly greater, not
+ * `>=`. This is deliberately the OPPOSITE choice from isQueryTruncated's `===` above, and the
+ * two must not be "harmonised": at the query level `take` caps the fetch, so a true total
+ * above QUERY_ENTRY_LIMIT is indistinguishable from one exactly at it — `===` over-warns
+ * there because it has no way not to. At the section level the real entry count is fully
+ * known (nothing caps `section.entries` before this point), so the honest comparison is
+ * available and must be used: at exactly SECTION_ENTRY_LIMIT entries, the display cap hides
+ * nothing (every entry is shown), so flagging it truncated would tell the operator entries
+ * are missing when none are.
+ */
+export function isSectionTruncated(entryCount: number): boolean {
+  return entryCount > SECTION_ENTRY_LIMIT;
 }
 
 /**
@@ -209,10 +230,10 @@ export async function getItemMovementCard(input: ItemMovementCardInput): Promise
    */
   const [stores, users] = await Promise.all([
     storeIds.length > 0
-      ? prisma.store.findMany({ where: { id: { in: storeIds ?? [] } }, select: { id: true, name: true } })
+      ? prisma.store.findMany({ where: { id: { in: storeIds } }, select: { id: true, name: true } })
       : Promise.resolve([]),
     vanUserIds.length > 0
-      ? prisma.user.findMany({ where: { id: { in: vanUserIds ?? [] } }, select: { id: true, name: true, email: true } })
+      ? prisma.user.findMany({ where: { id: { in: vanUserIds } }, select: { id: true, name: true, email: true } })
       : Promise.resolve([]),
   ]);
 
@@ -238,7 +259,7 @@ export async function getItemMovementCard(input: ItemMovementCardInput): Promise
 
   const sections = groupLedgerEntries(rawRows, labels);
   for (const section of sections) {
-    section.truncated = section.entries.length >= SECTION_ENTRY_LIMIT;
+    section.truncated = isSectionTruncated(section.entries.length);
   }
 
   return {
