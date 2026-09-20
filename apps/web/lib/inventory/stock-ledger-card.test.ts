@@ -79,6 +79,41 @@ describe("groupLedgerEntries", () => {
     expect(sections[0].locationLabel).toBe("gone");
   });
 
+  it("resolves entry order by id when createdAt is shared", () => {
+    const sameTime = new Date("2026-09-18T00:00:00Z");
+    const sections = groupLedgerEntries(
+      [
+        row({ id: "z", createdAt: sameTime }),
+        row({ id: "a", createdAt: sameTime }),
+        row({ id: "m", createdAt: sameTime }),
+      ],
+      { stores: new Map(), users: new Map() },
+    );
+
+    expect(sections[0].entries.map((e) => e.id)).toEqual(["a", "m", "z"]);
+  });
+
+  it("orders sections by location type, then label, then variant", () => {
+    const sections = groupLedgerEntries(
+      [
+        row({ id: "s2", locationType: "STORE", locationId: "s2", variantSku: "RED" }),
+        row({ id: "s1", locationType: "STORE", locationId: "s1", variantSku: "BLUE" }),
+        row({ id: "v1", locationType: "VAN", locationId: "u1", variantSku: "RED" }),
+        row({ id: "m2", variantSku: "RED" }),
+        row({ id: "m1", variantSku: "BLUE" }),
+      ],
+      { stores: new Map([["s1", "Toko Awal"], ["s2", "Toko Akhir"]]), users: new Map([["u1", "Budi"]]) },
+    );
+
+    expect(sections.map((s) => ({ type: s.locationType, label: s.locationLabel, variant: s.variantSku }))).toEqual([
+      { type: "MAIN", label: "MAIN", variant: "BLUE" },
+      { type: "MAIN", label: "MAIN", variant: "RED" },
+      { type: "STORE", label: "Toko Awal", variant: "BLUE" },
+      { type: "STORE", label: "Toko Akhir", variant: "RED" },
+      { type: "VAN", label: "Budi", variant: "RED" },
+    ]);
+  });
+
   it("returns no sections for no rows", () => {
     expect(groupLedgerEntries([], { stores: new Map(), users: new Map() })).toEqual([]);
   });

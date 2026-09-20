@@ -1,5 +1,3 @@
-import type { StockLedgerRefType } from "@elorae/db";
-
 export type LedgerLocationType = "MAIN" | "STORE" | "VAN";
 
 export type RawLedgerRow = {
@@ -7,6 +5,11 @@ export type RawLedgerRow = {
   locationType: LedgerLocationType;
   locationId: string;
   variantSku: string;
+  /* refType is a free-form string that can hold values the registry does not know —
+     a fixture row, or one written by a future writer before its registry entry lands.
+     This layer carries what is there; narrowing happens where rendered via
+     isStockLedgerRefType with fallback to raw value. Same rule as unresolved locationId:
+     render what you have, never drop, never throw. */
   refType: string;
   refId: string;
   refDocNumber: string;
