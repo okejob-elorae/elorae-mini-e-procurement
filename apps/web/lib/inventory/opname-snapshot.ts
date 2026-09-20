@@ -108,11 +108,21 @@ export async function syncFabricAggregateQty(
     // exists to remove. inventoryValueId pins the write to the exact row `existing` was just
     // read from.
     const avgCost = Number(existing.avgCost);
+    // Unlike most other set-mover calls, this one DOES carry totalCost/balanceValue: its sibling
+    // StockMovement row (applyFabricAdjustments in opname-approve.ts) carries them too, and
+    // opnameNetDelta sums every OPNAME ledger row for the journal, so a null here would either
+    // fail that posting or post it short for any opname with a fabric component. `delta` mirrors
+    // the same qty change applyFabricAdjustments derives as `netDelta` (its own prevQty is
+    // `total - netDelta`, the identical identity used here in reverse) — same null-when-no-cost
+    // treatment as that sibling row's totalCost, so the two agree on the zero-cost case too.
+    const delta = total - Number(existing.qtyOnHand);
     await setMainStock(tx, {
       itemId,
       variantSku: variantKey,
       nextQty: total,
       totalValue: total * avgCost,
+      totalCost: avgCost ? delta * avgCost : null,
+      balanceValue: total * avgCost,
       inventoryValueId: existing.id,
       refType: "StockOpname" satisfies StockLedgerRefType,
       refId: ref.refId,
