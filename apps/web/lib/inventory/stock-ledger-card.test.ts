@@ -109,14 +109,18 @@ describe("groupLedgerEntries", () => {
         row({ id: "m2", variantSku: "RED" }),
         row({ id: "m1", variantSku: "BLUE" }),
       ],
-      { stores: new Map([["s1", "Toko Awal"], ["s2", "Toko Akhir"]]), users: new Map([["u1", "Budi"]]) },
+      /* Labels are compared by COLLATION, not by what the words mean. An earlier version of
+         this fixture used "Toko Awal"/"Toko Akhir" — beginning and end — and asserted them in
+         that semantic order, which is the reverse of how they actually sort. Names whose
+         alphabetical order is unmistakable keep the next reader from making the same trade. */
+      { stores: new Map([["s1", "Toko Anggrek"], ["s2", "Toko Bakung"]]), users: new Map([["u1", "Budi"]]) },
     );
 
     expect(sections.map((s) => ({ type: s.locationType, label: s.locationLabel, variant: s.variantSku }))).toEqual([
       { type: "MAIN", label: "MAIN", variant: "BLUE" },
       { type: "MAIN", label: "MAIN", variant: "RED" },
-      { type: "STORE", label: "Toko Awal", variant: "BLUE" },
-      { type: "STORE", label: "Toko Akhir", variant: "RED" },
+      { type: "STORE", label: "Toko Anggrek", variant: "BLUE" },
+      { type: "STORE", label: "Toko Bakung", variant: "RED" },
       { type: "VAN", label: "Budi", variant: "RED" },
     ]);
   });
