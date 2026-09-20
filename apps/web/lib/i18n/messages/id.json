@@ -1170,6 +1170,39 @@
       "CANCELLED": "Dibatalkan"
     }
   },
+  "stockMovements": {
+    "title": "Pergerakan Stok",
+    "noItemSelected": "Pilih item di atas untuk melihat pergerakan stoknya.",
+    "loading": "Memuat pergerakan stok…",
+    "noMovementsInRange": "Tidak ada pergerakan pada rentang tanggal ini. Coba perluas rentangnya.",
+    "noLedgerHistory": "Item ini belum punya riwayat di ledger sama sekali — bukan hanya di rentang ini.",
+    "cutoverBanner": "Riwayat di ledger ini dimulai dari tanggal cutover; sebelum itu tidak ada yang tercatat di sini. Untuk pergerakan gudang utama sebelum itu, cek Stock Card.",
+    "sectionTruncated": "Menampilkan {limit} pergerakan terbaru untuk lokasi ini. Yang lebih lama disembunyikan.",
+    "queryTruncated": "Item ini punya lebih dari {limit} pergerakan. Yang paling lama disembunyikan, tapi saldo akhir tiap lokasi di bawah tetap akurat.",
+    "unresolvedLocation": "Lokasi tidak dikenali",
+    "refType": {
+      "fgReceipt": "Penerimaan Barang Jadi",
+      "fieldReturn": "Retur Lapangan",
+      "fieldSalesConsume": "Pengiriman Putus",
+      "fulfillmentConsume": "Pemenuhan Marketplace",
+      "grn": "Penerimaan Barang (GRN)",
+      "jubelioStockAdjustment": "Jubelio Stock Adjustment",
+      "konsiTransfer": "Transfer Konsinyasi",
+      "materialIssue": "Terbitan Material",
+      "openingBalance": "Saldo Awal (Cutover)",
+      "openingStock": "Stok Awal",
+      "reconciliation": "Rekonsiliasi Jubelio",
+      "salesReturn": "Retur Penjualan",
+      "spgSale": "Penjualan SPG",
+      "stockAdjustment": "Stock Adjustment",
+      "stockOpname": "Stock Opname",
+      "storeStocktake": "Perhitungan Stok Toko",
+      "vanLoad": "Muat Van",
+      "vanReconcile": "Rekonsiliasi Van",
+      "vanSale": "Penjualan Van",
+      "vendorReturn": "Retur Pemasok"
+    }
+  },
   "stockReconciliation": {
     "title": "Rekonsiliasi Jubelio",
     "subtitle": "Bandingkan stok Elorae vs Jubelio (FG)",
