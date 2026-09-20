@@ -24,7 +24,10 @@ d("getStoreStockCard", () => {
   let mainEntryId = "";
   let otherStoreEntryId = "";
   let zeroQtyEntryId = "";
+  let danglingTransferId = "";
+  let danglingEntryId = "";
 
+  const T_DANGLING = new Date("2026-01-13T00:00:00.000Z");
   const T0 = new Date("2026-01-14T00:00:00.000Z");
   const T1 = new Date("2026-01-15T00:00:00.000Z");
   const T2 = new Date("2026-01-16T00:00:00.000Z");
@@ -46,6 +49,8 @@ d("getStoreStockCard", () => {
     mainEntryId = "";
     otherStoreEntryId = "";
     zeroQtyEntryId = "";
+    danglingTransferId = "";
+    danglingEntryId = "";
 
     const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-SSC-${token}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
@@ -231,6 +236,45 @@ d("getStoreStockCard", () => {
       },
     });
     zeroQtyEntryId = zeroQtyEntry.id;
+
+    /* Minted then deleted right away, to get a genuine cuid for a KonsiTransfer refId that
+       matches no row — the "dangling refId" case below. Same idiom as the "other store" mint
+       above. */
+    const danglingTransfer = await prisma.konsiTransfer.create({
+      data: {
+        docNo: `KONSITRF-DANGLING/TEST-SSC/${token}`,
+        orderId,
+        storeId,
+        transferredById: userId,
+      },
+    });
+    danglingTransferId = danglingTransfer.id;
+    await prisma.konsiTransfer.delete({ where: { id: danglingTransferId } });
+
+    /*
+     * relationMode = "prisma" means there is no database foreign key behind refId — a
+     * StockLedgerEntry can outlive the KonsiTransfer it points at. Ledger history outliving its
+     * referents is the intended design here (the same "render what you have, never drop"
+     * reasoning the ledger card's location resolution already relies on), not an anomaly, so
+     * movementHref's fall-through to null on an unresolved transfer has to actually be exercised,
+     * not just reasoned about.
+     */
+    const danglingEntry = await prisma.stockLedgerEntry.create({
+      data: {
+        locationType: "STORE",
+        locationId: storeId,
+        itemId: itemAId,
+        variantSku: "",
+        type: "IN",
+        qty: 3,
+        balanceQty: 9,
+        refType: "KonsiTransfer",
+        refId: danglingTransferId,
+        refDocNumber: `KONSITRF-DANGLING/TEST-SSC/${token}`,
+        createdAt: T_DANGLING,
+      },
+    });
+    danglingEntryId = danglingEntry.id;
   });
 
   afterEach(async () => {
@@ -244,6 +288,7 @@ d("getStoreStockCard", () => {
             seededId(mainEntryId),
             seededId(otherStoreEntryId),
             seededId(zeroQtyEntryId),
+            seededId(danglingEntryId),
           ],
         },
       },
@@ -285,7 +330,7 @@ d("getStoreStockCard", () => {
     const docNos = card.movements.map((m) => m.docNo);
     expect(docNos).not.toContain(`GRN/TEST-SSC/${token}`);
     expect(docNos).not.toContain(`KONSITRF-OTHER/TEST-SSC/${token}`);
-    expect(card.movements).toHaveLength(4);
+    expect(card.movements).toHaveLength(5);
   });
 
   it("includes the konsi transfer, resolving its href through the order it was issued for", async () => {
@@ -327,6 +372,7 @@ d("getStoreStockCard", () => {
       `TEST-SSC-RET-${token}`,
       `KONSITRF/TEST-SSC/${token}`,
       `TEST-SSC-RET-ZERO-${token}`,
+      `KONSITRF-DANGLING/TEST-SSC/${token}`,
     ]);
   });
 
@@ -336,5 +382,14 @@ d("getStoreStockCard", () => {
     expect(m).toBeDefined();
     expect(m!.qty).toBe(0);
     expect(m!.refType).toBe("FieldReturn");
+  });
+
+  it("still shows a KonsiTransfer movement with href: null when its transfer row no longer exists", async () => {
+    const card = await getStoreStockCard(storeId);
+    const m = card.movements.find((mv) => mv.docNo === `KONSITRF-DANGLING/TEST-SSC/${token}`);
+    expect(m).toBeDefined();
+    expect(m!.refType).toBe("KonsiTransfer");
+    expect(m!.qty).toBe(3);
+    expect(m!.href).toBeNull();
   });
 });
