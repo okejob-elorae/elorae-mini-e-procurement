@@ -272,17 +272,6 @@ export async function getInventoryValue(itemId: string, variantSku?: string | nu
   };
 }
 
-// Get stock card (movement history) for an item
-export async function getStockCard(itemId: string, limit: number = 100) {
-  const movements = await prisma.stockMovement.findMany({
-    where: { itemId },
-    orderBy: { createdAt: 'desc' },
-    take: limit
-  });
-  
-  return movements;
-}
-
 const inventorySnapshotInclude = {
   item: {
     select: {
