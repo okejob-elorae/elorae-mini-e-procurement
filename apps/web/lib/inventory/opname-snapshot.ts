@@ -110,18 +110,26 @@ export async function syncFabricAggregateQty(
     const avgCost = Number(existing.avgCost);
     // Unlike most other set-mover calls, this one DOES carry totalCost/balanceValue: its sibling
     // StockMovement row (applyFabricAdjustments in opname-approve.ts) carries them too, and
-    // opnameNetDelta sums every OPNAME ledger row for the journal, so a null here would either
-    // fail that posting or post it short for any opname with a fabric component. `delta` mirrors
-    // the same qty change applyFabricAdjustments derives as `netDelta` (its own prevQty is
-    // `total - netDelta`, the identical identity used here in reverse) — same null-when-no-cost
-    // treatment as that sibling row's totalCost, so the two agree on the zero-cost case too.
+    // opnameNetDelta sums every OPNAME ledger row for the journal, treating a null totalCost as a
+    // hard error — null means "this predates the value columns", not "this item is uncosted".
+    // `delta` mirrors the same qty change applyFabricAdjustments derives as `netDelta` (its own
+    // prevQty is `total - netDelta`, the identical identity used here in reverse).
+    //
+    // No avgCost-guard here, unlike the sibling StockMovement row's `avgCost ? … : null`: null
+    // and 0 mean different things in this column. Null means "we don't know what this was
+    // worth" (true of every pre-migration row, since the moving average at that instant was
+    // never recorded); 0 means "this was worth nothing", which is exactly true for a fabric item
+    // whose avgCost is 0 (never costed through a GRN) — a known zero, not an unknown. Stamping
+    // null here would make every opname on an as-yet-uncosted fabric item refuse to post.
+    // `delta * avgCost` already evaluates to 0 when avgCost is 0, so the plain expression is
+    // both simpler and more truthful than the guarded one.
     const delta = total - Number(existing.qtyOnHand);
     await setMainStock(tx, {
       itemId,
       variantSku: variantKey,
       nextQty: total,
       totalValue: total * avgCost,
-      totalCost: avgCost ? delta * avgCost : null,
+      totalCost: delta * avgCost,
       balanceValue: total * avgCost,
       inventoryValueId: existing.id,
       refType: "StockOpname" satisfies StockLedgerRefType,
@@ -142,6 +150,11 @@ export async function syncFabricAggregateQty(
     // A freshly created row at the snapshot total has no prior balance to move from — it is a
     // row-provisioning event, not a movement, so it is appended directly rather than through
     // setMainStock (which throws when no row exists).
+    //
+    // totalCost/balanceValue are stamped as an explicit 0, not omitted: the row above is created
+    // at avgCost: 0, so 0 is the correct recorded value for a never-before-costed item — a known
+    // zero, not an unknown. Leaving them undefined would store null, which this column reserves
+    // for "we don't know", and opnameNetDelta treats a null totalCost as a hard error.
     await appendStockLedger(tx, {
       location: { type: "MAIN" },
       itemId,
@@ -149,6 +162,8 @@ export async function syncFabricAggregateQty(
       type: "OPENING",
       qty: total,
       balanceQty: total,
+      totalCost: 0,
+      balanceValue: 0,
       refType: "StockOpname" satisfies StockLedgerRefType,
       refId: ref.refId,
       refDocNumber: ref.refDocNumber,
