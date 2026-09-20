@@ -579,8 +579,8 @@ d("getInTransitAdminReturnQty (test bed only)", () => {
      * Raised the same way, then received CLEAN (claimed == received) — lands PENDING_APPROVAL.
      * The receipt-time decrement (`receive-writer.ts`) has already applied, and the return has
      * not reached APPROVED yet, so this must now move from `raisedQty` to `receivedQty` rather
-     * than being excluded outright: the units are off the shelf but there is still no
-     * `RETUR_OUT` movement row to explain the drop until approval.
+     * than being excluded outright: the units are off the shelf, and the `StockLedgerEntry` that
+     * receipt wrote explains the drop but says nothing about the return still being unresolved.
      */
     const createdReceived = await createFieldReturn({
       storeId: storeReceivedId,

@@ -491,27 +491,30 @@ export async function previewKonsiReturStockImpact(returnId: string): Promise<Ko
 }
 
 /**
- * Two figures describing an ADMIN-origin return that has left this store's `StoreStock` ledger
+ * Two figures describing an ADMIN-origin return that has left this store's `StoreStock` balance
  * (or is about to) but has not yet reached APPROVED — split by WHERE the return currently sits,
  * so the store card can tell "still on a truck" from "already off the shelf" instead of the two
- * reading identically:
+ * reading identically. "Ledger" is avoided deliberately below: `StockLedgerEntry` is now a real
+ * table, and these figures are about the `StoreStock` BALANCE, which is a different thing.
  *
- * - `raisedQty`: claimed by a return still `PENDING_WAREHOUSE_RECEIVING` — the ledger's
- *   temporary OVERSTATEMENT `receive-writer.ts` documents. `StoreStock` for an ADMIN return only
- *   decrements at receipt, so between raise and receipt the store's own ledger still counts
- *   units that are physically on a truck.
+ * - `raisedQty`: claimed by a return still `PENDING_WAREHOUSE_RECEIVING` — the temporary
+ *   OVERSTATEMENT of `StoreStock` that `receive-writer.ts` documents. `StoreStock` for an ADMIN
+ *   return only decrements at receipt, so between raise and receipt the store's balance still
+ *   counts units that are physically on a truck, and no `StockLedgerEntry` exists for them yet.
  * - `receivedQty`: what the warehouse actually counted in on a return sitting in
- *   `MISMATCH_PENDING_RESOLUTION` or `PENDING_APPROVAL` — `receive-writer.ts` has already
- *   applied this decrement, so it is the ledger's temporary UNDERSTATEMENT: the units are gone
- *   from `StoreStock` but there is no `RETUR_OUT` movement row to explain the drop until the
- *   return reaches APPROVED (`getStoreStockCard` only lists movements for an APPROVED return).
- *   An `INVESTIGATE` resolution can hold a return here indefinitely.
+ *   `MISMATCH_PENDING_RESOLUTION` or `PENDING_APPROVAL` — `receive-writer.ts` has already applied
+ *   this decrement through `moveStoreStock`, so a `FieldReturn` `StockLedgerEntry` explaining the
+ *   drop exists from the moment it applies and `getStoreStockCard` lists it without waiting for
+ *   APPROVED. What that entry does NOT say is that the return is still unresolved — an
+ *   `INVESTIGATE` resolution can hold one here indefinitely — which is why the quantity is
+ *   surfaced separately instead of being left to the movement list to imply.
  *
- * Together these cover every ADMIN-origin status except `APPROVED` (by then the movement row
- * exists) and `CANCELLED` (nothing left the ledger). Deliberately NOT folded into
- * `getStoreStockCard` or netted out of the stocktake's `expectedQty` — both read the ledger
- * as-is, by design; this is a separate, purely informational pair for the store card to display
- * alongside it.
+ * Together these cover every ADMIN-origin status except `APPROVED` (by then the decrement is
+ * complete and the return is settled) and `CANCELLED` (nothing left the store). Deliberately NOT
+ * folded into `getStoreStockCard` or netted out of the stocktake's `expectedQty`: the card renders
+ * the `StockLedgerEntry` rows as they stand and `expectedQty` reads the `StoreStock` balance as it
+ * stands — two different tables, neither of them adjusted for a return in flight. This is a
+ * separate, purely informational pair for the store card to display alongside them.
  */
 export type InTransitAdminReturnQty = {
   raisedQty: number;
