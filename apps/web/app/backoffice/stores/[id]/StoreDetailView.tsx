@@ -120,6 +120,8 @@ type StockCardProps = {
   negativeCount: number;
   inTransitAdminReturn: { raisedQty: number; receivedQty: number };
   movements: SerializedStockMovement[];
+  movementsTruncated: boolean;
+  movementLimit: number;
   gaps: AssortmentGapRow[];
 };
 
@@ -908,6 +910,8 @@ export function StoreDetailView({
           negativeCount={stockCard.negativeCount}
           inTransitAdminReturn={stockCard.inTransitAdminReturn}
           movements={stockCard.movements}
+          movementsTruncated={stockCard.movementsTruncated}
+          movementLimit={stockCard.movementLimit}
           gaps={stockCard.gaps}
         />
       )}

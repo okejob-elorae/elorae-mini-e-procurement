@@ -1,6 +1,7 @@
 import { AdjustmentType, Prisma, type PrismaClient } from "../generated/prisma/client";
 import { moveMainStock } from "./stock-balance";
 import type { StockAdjustmentSource } from "./stock-adjustment-source";
+import type { StockLedgerRefType } from "./stock-ledger-ref";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
@@ -77,7 +78,7 @@ export async function applyJubelioStockAdjustment(
         qtyDelta: delta,
         totalValue: input.newQty * avgCost,
         inventoryValueId: inv.id,
-        refType: "JubelioStockAdjustment",
+        refType: "JubelioStockAdjustment" satisfies StockLedgerRefType,
         refId: created.id,
         refDocNumber: created.docNumber,
       });

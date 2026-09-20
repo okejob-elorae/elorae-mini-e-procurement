@@ -2,7 +2,13 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { AlertTriangle, ArrowUpDown, Layers } from "lucide-react";
+import { AlertTriangle, ArrowUpDown, Info, Layers } from "lucide-react";
+/* Subpath import, not the main barrel: this is a client component, and @elorae/db's barrel
+   eagerly pulls in Prisma and the mariadb driver, which would follow it into the browser
+   bundle. */
+import type { StockLedgerRefType } from "@elorae/db/stock-ledger-ref";
+import { isStockLedgerRefType } from "@elorae/db/stock-ledger-ref";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -13,11 +19,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type {
-  StoreStockCardData,
-  StoreStockMovementKind,
-} from "@/lib/inventory/store-stock-card";
+import type { StoreStockCardData } from "@/lib/inventory/store-stock-card";
+import { ledgerRefMessageKey } from "@/lib/inventory/ledger-ref-display";
 import type { AssortmentGapRow } from "@/lib/stores/assortment/queries";
+import { cn } from "@/lib/utils";
 
 export type SerializedStockMovement = Omit<StoreStockCardData["movements"][number], "occurredAt"> & {
   occurredAtIso: string;
@@ -38,6 +43,9 @@ type Props = {
    */
   inTransitAdminReturn: { raisedQty: number; receivedQty: number };
   movements: SerializedStockMovement[];
+  /** True when the movement fetch hit `movementLimit` — older movements exist and were dropped. */
+  movementsTruncated: boolean;
+  movementLimit: number;
   /**
    * The store's assortment lines the ledger falls short on. A row missing from `rows` entirely
    * is the never-received case; a row present in `rows` at or under target is depleted — the two
@@ -57,13 +65,57 @@ function formatDateTime(iso: string): string {
   });
 }
 
-const MOVEMENT_BADGE_VARIANT: Record<StoreStockMovementKind, "default" | "secondary"> = {
-  TRANSFER_IN: "default",
-  RETUR_OUT: "secondary",
+/**
+ * Badge color per registry member — exhaustive over ALL twenty StockLedgerRefType members,
+ * even though only KonsiTransfer, FieldReturn, SpgSale and StoreStocktake can ever appear on
+ * a card scoped to `locationType: "STORE"` (see AGENTS.md's "StoreStock has FIVE writers"
+ * landmine entry). A member added to the registry later fails to compile here until it is
+ * placed, the same guard `LEDGER_REF_MESSAGE_KEY` applies to copy. Every refType that cannot
+ * reach this card stays "secondary" — there is no direction to signal for it here.
+ */
+const MOVEMENT_BADGE_VARIANT: Record<StockLedgerRefType, "default" | "secondary"> = {
+  FGReceipt: "secondary",
+  FieldReturn: "secondary",
+  FieldSalesConsume: "secondary",
+  FulfillmentConsume: "secondary",
+  GRN: "secondary",
+  JubelioStockAdjustment: "secondary",
+  KonsiTransfer: "default",
+  MaterialIssue: "secondary",
+  OpeningBalance: "secondary",
+  OpeningStock: "secondary",
+  Reconciliation: "secondary",
+  SalesReturn: "secondary",
+  SpgSale: "secondary",
+  StockAdjustment: "secondary",
+  StockOpname: "secondary",
+  StoreStocktake: "secondary",
+  VanLoad: "secondary",
+  VanReconcile: "secondary",
+  VanSale: "secondary",
+  VendorReturn: "secondary",
 };
 
-export function StoreStockCard({ rows, negativeCount, inTransitAdminReturn, movements, gaps }: Props) {
+/**
+ * Falls back to "secondary" for a raw refType outside the registry — the column is a
+ * free-form String and fixture rows on the shared dev database genuinely hold values like
+ * "TEST". Same shape as `ledgerRefMessageKey`: never index the Record directly.
+ */
+function movementBadgeVariant(refType: string): "default" | "secondary" {
+  return isStockLedgerRefType(refType) ? MOVEMENT_BADGE_VARIANT[refType] : "secondary";
+}
+
+export function StoreStockCard({
+  rows,
+  negativeCount,
+  inTransitAdminReturn,
+  movements,
+  movementsTruncated,
+  movementLimit,
+  gaps,
+}: Props) {
   const t = useTranslations("stores.stockCard");
+  const tMovements = useTranslations("stockMovements");
   const stockedKeys = new Set(rows.map((row) => `${row.itemId}::${row.variantSku}`));
 
   return (
@@ -216,7 +268,23 @@ export function StoreStockCard({ rows, negativeCount, inTransitAdminReturn, move
             <span className="text-sm font-normal text-muted-foreground ml-2">({movements.length})</span>
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
+          {/*
+           * Always visible, regardless of movements.length — without it an empty list on a
+           * store whose whole history predates the ledger cutover reads as "no movements ever
+           * happened" rather than "not recorded here", the same misreading the movements
+           * page's own cutover banner exists to prevent.
+           */}
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription>{t("movementsCutoverNote")}</AlertDescription>
+          </Alert>
+          {movementsTruncated && (
+            <Alert>
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>{t("movementsTruncated", { limit: movementLimit })}</AlertDescription>
+            </Alert>
+          )}
           {movements.length === 0 ? (
             <div className="text-center py-8">
               <ArrowUpDown className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
@@ -235,28 +303,49 @@ export function StoreStockCard({ rows, negativeCount, inTransitAdminReturn, move
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {movements.map((m) => (
-                    <TableRow key={m.id}>
-                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                        {formatDateTime(m.occurredAtIso)}
-                      </TableCell>
-                      <TableCell>
-                        <Link href={m.href} className="font-mono text-xs text-primary hover:underline">
-                          {m.docNo}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {m.itemName}
-                        {m.variantSku && <span className="text-muted-foreground"> · {m.variantSku}</span>}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={MOVEMENT_BADGE_VARIANT[m.kind]}>
-                          {m.kind === "TRANSFER_IN" ? t("movementIn") : t("movementOut")}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">{m.qty}</TableCell>
-                    </TableRow>
-                  ))}
+                  {movements.map((m) => {
+                    const refTypeKey = ledgerRefMessageKey(m.refType);
+                    const refTypeLabel = refTypeKey ? tMovements(refTypeKey) : m.refType;
+                    return (
+                      <TableRow key={m.id}>
+                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                          {formatDateTime(m.occurredAtIso)}
+                        </TableCell>
+                        <TableCell>
+                          {/* refDocNumber defaults to "" for the opening-balance migration
+                              rows and a few writers that omit it — render a placeholder
+                              rather than a dead cell, never a bare link with empty text. */}
+                          {m.docNo ? (
+                            m.href ? (
+                              <Link href={m.href} className="font-mono text-xs text-primary hover:underline">
+                                {m.docNo}
+                              </Link>
+                            ) : (
+                              <span className="font-mono text-xs text-muted-foreground">{m.docNo}</span>
+                            )
+                          ) : (
+                            <span className="font-mono text-xs text-muted-foreground">{tMovements("noDocument")}</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {m.itemName}
+                          {m.variantSku && <span className="text-muted-foreground"> · {m.variantSku}</span>}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={movementBadgeVariant(m.refType)}>{refTypeLabel}</Badge>
+                        </TableCell>
+                        <TableCell
+                          className={cn(
+                            "text-right tabular-nums",
+                            m.qty > 0 && "text-emerald-600 dark:text-emerald-400",
+                            m.qty < 0 && "text-red-600 dark:text-red-400",
+                          )}
+                        >
+                          {m.qty > 0 ? `+${m.qty.toLocaleString()}` : m.qty.toLocaleString()}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>

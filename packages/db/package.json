@@ -25,6 +25,10 @@
       "types": "./dist/src/pricing.d.ts",
       "default": "./dist/src/pricing.js"
     },
+    "./stock-ledger-ref": {
+      "types": "./dist/src/stock-ledger-ref.d.ts",
+      "default": "./dist/src/stock-ledger-ref.js"
+    },
     "./pack-ratio": {
       "types": "./dist/src/pack-ratio.d.ts",
       "default": "./dist/src/pack-ratio.js"

@@ -3,6 +3,7 @@
 import { Decimal } from 'decimal.js';
 import { z } from 'zod';
 import { prisma } from '@elorae/db';
+import type { StockLedgerRefType } from '@elorae/db';
 import { calculateMovingAverage, reverseMovingAverage, findExistingInventoryValueRow } from '@/lib/inventory/costing';
 import { revalidatePath } from 'next/cache';
 import { getActorName, notifyGRNCreated, notifyMaterialArrivedForPo } from '@/app/actions/notifications';
@@ -205,7 +206,7 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
         unitCost,
         tx,
         item.variantKey,
-        { refType: 'GRN', refId: grn.id, refDocNumber: docNumber, createdById: userId }
+        { refType: 'GRN' satisfies StockLedgerRefType, refId: grn.id, refDocNumber: docNumber, createdById: userId }
       );
 
       await tx.stockMovement.create({
@@ -745,7 +746,7 @@ export async function declineGRNByOwner(id: string, userId: string) {
         new Decimal(unitCost),
         tx,
         variantKey,
-        { refType: 'GRN', refId: grn.id, refDocNumber: grn.docNumber, createdById: userId }
+        { refType: 'GRN' satisfies StockLedgerRefType, refId: grn.id, refDocNumber: grn.docNumber, createdById: userId }
       );
 
       const lineTotal = new Decimal(qty).mul(unitCost).toNumber();

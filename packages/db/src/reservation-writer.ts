@@ -1,5 +1,6 @@
 import { AdjustmentType, Prisma, type PrismaClient } from "../generated/prisma/client";
 import type { StockAdjustmentSource } from "./stock-adjustment-source";
+import type { StockLedgerRefType } from "./stock-ledger-ref";
 import { ledgerTypeForDelta } from "./stock-balance";
 import { appendStockLedger } from "./stock-ledger";
 import { InventoryValueMissingError } from "./stock-writer";
@@ -144,7 +145,7 @@ export async function consumeOrder(
         qty: -qty,
         balanceQty: newOnHand,
         unitCost: avgCost,
-        refType: "FulfillmentConsume",
+        refType: "FulfillmentConsume" satisfies StockLedgerRefType,
         refId: row.id,
         refDocNumber: input.salesorderNo,
       });
@@ -390,7 +391,7 @@ export async function consumeFieldSalesOrderPartial(
         qty: -qty,
         balanceQty: newOnHand,
         unitCost: p.avgCost,
-        refType: "FieldSalesConsume",
+        refType: "FieldSalesConsume" satisfies StockLedgerRefType,
         refId: p.line.fieldSalesLineId,
         refDocNumber: input.orderNo,
       });
@@ -464,7 +465,7 @@ export async function consumeFieldSalesOrder(
         qty: -qty,
         balanceQty: newOnHand,
         unitCost: avgCost,
-        refType: "FieldSalesConsume",
+        refType: "FieldSalesConsume" satisfies StockLedgerRefType,
         refId: row.fieldSalesLineId ?? row.id,
         refDocNumber: input.orderNo,
       });

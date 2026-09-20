@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { Decimal } from 'decimal.js';
 import { moveMainStock, prisma } from '@elorae/db';
+import type { StockLedgerRefType } from '@elorae/db';
 import { findExistingInventoryValueRow } from '@/lib/inventory/costing';
 import { variantDetailForSku } from '@/lib/items/variants';
 import { verifyPinForAction } from '@/app/actions/security/pin-auth';
@@ -157,7 +158,7 @@ export async function createStockAdjustment(
       totalValue: newTotalValue.toNumber(),
       unitCost: prevAvgCost.toNumber(),
       inventoryValueId: current.id,
-      refType: "StockAdjustment",
+      refType: "StockAdjustment" satisfies StockLedgerRefType,
       refId: adjustment.id,
       refDocNumber: adjustment.docNumber,
       createdById: effectiveUserId,

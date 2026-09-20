@@ -1,4 +1,4 @@
-import type { ItemType, OpnameScope, Prisma } from "@elorae/db";
+import type { ItemType, OpnameScope, Prisma, StockLedgerRefType } from "@elorae/db";
 import { appendStockLedger, prisma, setMainStock } from "@elorae/db";
 import { findExistingInventoryValueRow } from "./costing";
 import { normalizeVariantKey } from "./opname";
@@ -114,7 +114,7 @@ export async function syncFabricAggregateQty(
       nextQty: total,
       totalValue: total * avgCost,
       inventoryValueId: existing.id,
-      refType: "StockOpname",
+      refType: "StockOpname" satisfies StockLedgerRefType,
       refId: ref.refId,
       refDocNumber: ref.refDocNumber,
     });
@@ -139,7 +139,7 @@ export async function syncFabricAggregateQty(
       type: "OPENING",
       qty: total,
       balanceQty: total,
-      refType: "StockOpname",
+      refType: "StockOpname" satisfies StockLedgerRefType,
       refId: ref.refId,
       refDocNumber: ref.refDocNumber,
     });

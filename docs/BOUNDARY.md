@@ -454,8 +454,10 @@ Only `health.controller.ts` and `webhooks.controller.ts` opt out via
   `VanStock.qty` — via bare `prisma.*.update/upsert/create`. Always go through
   a mover in `packages/db/src/stock-balance.ts`, which moves the balance and
   appends the `StockLedgerEntry` in one transaction; a direct write leaves the
-  movement invisible to the ledger, which is the table the read side will
-  trust. `apps/web/lib/inventory/stock-balance-guard.test.ts` fails the suite
+  movement invisible to the ledger, which is the table the read side now
+  trusts — `/backoffice/inventory/movements` and the store detail card both
+  render straight from it, so a skipped append is a movement an operator
+  cannot see happened. `apps/web/lib/inventory/stock-balance-guard.test.ts` fails the suite
   on any such write it can see (it greps Prisma model calls, so raw SQL is
   invisible to it) and carries the documented `ALLOWED` exemptions. Creating a
   row at quantity 0 is provisioning, not a movement, and is exempt.

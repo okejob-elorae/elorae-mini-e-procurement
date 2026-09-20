@@ -1,4 +1,5 @@
 import { moveStoreStock, prisma, Prisma } from "@elorae/db";
+import type { StockLedgerRefType } from "@elorae/db";
 import { computeStorePrice, roundToWholeRupiah } from "@elorae/db/pricing";
 import { buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
 import { runSerializable } from "@/lib/db/tx-retry";
@@ -172,7 +173,7 @@ export async function recordSpgSale(input: {
           itemId: p.line.itemId,
           variantSku: p.line.variantSku,
           qtyDelta: -p.line.qty,
-          refType: "SpgSale",
+          refType: "SpgSale" satisfies StockLedgerRefType,
           refId: sale.id,
           refDocNumber: docNo,
           createdById: input.createdById ?? input.salesmanId,

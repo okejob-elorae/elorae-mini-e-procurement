@@ -1,4 +1,4 @@
-import type { Prisma, StockAdjustmentSource } from "@elorae/db";
+import type { Prisma, StockAdjustmentSource, StockLedgerRefType } from "@elorae/db";
 import { prisma, setMainStock } from "@elorae/db";
 import { Decimal } from "decimal.js";
 import { generateDocNumber } from "@/lib/docNumber";
@@ -177,7 +177,7 @@ export async function applyFgAccessoriesAdjustments(
       totalValue: newTotalValue.toNumber(),
       unitCost: prevAvgCost.toNumber(),
       inventoryValueId: inv.id,
-      refType: "StockOpname",
+      refType: "StockOpname" satisfies StockLedgerRefType,
       refId: opnameId,
       refDocNumber: docNumber,
       createdById: userId,

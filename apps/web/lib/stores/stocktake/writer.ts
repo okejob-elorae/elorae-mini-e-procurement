@@ -1,4 +1,5 @@
 import { Prisma, setStoreStock } from "@elorae/db";
+import type { StockLedgerRefType } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { buildStocktakeLines, previousApprovedCountedAt } from "./queries";
@@ -332,7 +333,7 @@ export async function approveStoreStocktake(input: {
         itemId: l.itemId,
         variantSku: l.variantSku,
         nextQty: l.counted,
-        refType: "StoreStocktake",
+        refType: "StoreStocktake" satisfies StockLedgerRefType,
         refId: st.id,
         refDocNumber: st.docNo,
         createdById: input.approvedById,

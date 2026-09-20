@@ -1,0 +1,227 @@
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { prisma, seededId } from "@elorae/db";
+import { getItemMovementCard } from "./stock-ledger-card";
+
+/* Read-only, but the fixtures write real rows — never run against the shared prod DB (port 3307 tunnel / VPS host). */
+const url = process.env.DATABASE_URL ?? "";
+const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
+const d = isProd ? describe.skip : describe;
+
+d("getItemMovementCard", () => {
+  const token = Math.random().toString(36).slice(2, 10);
+  let uomId = "";
+  let itemId = "";
+  let storeId = "";
+  let goneStoreId = "";
+  let mainEntry1Id = "";
+  let mainEntry2Id = "";
+  let storeEntryId = "";
+  let goneStoreEntryId = "";
+  let variantEntryId = "";
+
+  const T1 = new Date("2026-01-01T00:00:00.000Z");
+  const T2 = new Date("2026-01-02T00:00:00.000Z");
+  const T3 = new Date("2026-01-03T00:00:00.000Z");
+  const T4 = new Date("2026-01-04T00:00:00.000Z");
+
+  beforeEach(async () => {
+    uomId = "";
+    itemId = "";
+    storeId = "";
+    goneStoreId = "";
+    mainEntry1Id = "";
+    mainEntry2Id = "";
+    storeEntryId = "";
+    goneStoreEntryId = "";
+    variantEntryId = "";
+
+    const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-SLC-${token}`, nameId: "pcs", nameEn: "pcs" } });
+    uomId = uom.id;
+
+    const item = await prisma.item.create({
+      data: { sku: `TEST-SLC-ITEM-${token}`, nameId: "Item Ledger", nameEn: "Item Ledger", type: "FINISHED_GOOD", uomId, isActive: true },
+    });
+    itemId = item.id;
+
+    const store = await prisma.store.create({
+      data: { code: `TEST-SLC-STORE-${token}`, name: "Toko Ledger", address: "Test address", termsType: "KONSI", marginPercent: 20, isActive: true },
+    });
+    storeId = store.id;
+
+    /* Minted then deleted right away, to get a genuine cuid that used to resolve — the
+       "deleted store" case this test exists to cover. */
+    const gone = await prisma.store.create({
+      data: { code: `TEST-SLC-GONE-${token}`, name: "Toko Hilang", address: "Test address", termsType: "KONSI", marginPercent: 20, isActive: true },
+    });
+    goneStoreId = gone.id;
+    await prisma.store.delete({ where: { id: goneStoreId } });
+
+    const mainEntry1 = await prisma.stockLedgerEntry.create({
+      data: {
+        locationType: "MAIN",
+        locationId: "",
+        itemId,
+        variantSku: "",
+        type: "IN",
+        qty: 100,
+        balanceQty: 100,
+        refType: "GRN",
+        refId: `TEST-SLC-GRN-${token}`,
+        refDocNumber: `GRN/${token}`,
+        createdAt: T1,
+      },
+    });
+    mainEntry1Id = mainEntry1.id;
+
+    const mainEntry2 = await prisma.stockLedgerEntry.create({
+      data: {
+        locationType: "MAIN",
+        locationId: "",
+        itemId,
+        variantSku: "",
+        type: "ADJUSTMENT",
+        qty: -20,
+        balanceQty: 80,
+        refType: "StockAdjustment",
+        refId: `TEST-SLC-ADJ-${token}`,
+        refDocNumber: `ADJ/${token}`,
+        createdAt: T2,
+      },
+    });
+    mainEntry2Id = mainEntry2.id;
+
+    const storeEntry = await prisma.stockLedgerEntry.create({
+      data: {
+        locationType: "STORE",
+        locationId: storeId,
+        itemId,
+        variantSku: "",
+        type: "IN",
+        qty: 50,
+        balanceQty: 50,
+        refType: "KonsiTransfer",
+        refId: `TEST-SLC-KTF-${token}`,
+        refDocNumber: `KONSITRF/${token}`,
+        createdAt: T3,
+      },
+    });
+    storeEntryId = storeEntry.id;
+
+    const goneStoreEntry = await prisma.stockLedgerEntry.create({
+      data: {
+        locationType: "STORE",
+        locationId: goneStoreId,
+        itemId,
+        variantSku: "",
+        type: "IN",
+        qty: 10,
+        balanceQty: 10,
+        refType: "KonsiTransfer",
+        refId: `TEST-SLC-KTF-GONE-${token}`,
+        refDocNumber: `KONSITRF-GONE/${token}`,
+        createdAt: T4,
+      },
+    });
+    goneStoreEntryId = goneStoreEntry.id;
+
+    /* Only the RED variant of this item ever moved — variant BLUE has no row at all, under
+       any date range. This is the fixture the hasAnyHistory-scoping fix exists for. */
+    const variantEntry = await prisma.stockLedgerEntry.create({
+      data: {
+        locationType: "MAIN",
+        locationId: "",
+        itemId,
+        variantSku: "RED",
+        type: "IN",
+        qty: 5,
+        balanceQty: 5,
+        refType: "GRN",
+        refId: `TEST-SLC-GRN-RED-${token}`,
+        refDocNumber: `GRN-RED/${token}`,
+        createdAt: T1,
+      },
+    });
+    variantEntryId = variantEntry.id;
+  });
+
+  afterEach(async () => {
+    await prisma.stockLedgerEntry.deleteMany({
+      where: {
+        id: {
+          in: [
+            seededId(mainEntry1Id),
+            seededId(mainEntry2Id),
+            seededId(storeEntryId),
+            seededId(goneStoreEntryId),
+            seededId(variantEntryId),
+          ],
+        },
+      },
+    });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+  });
+
+  it("groups rows into ordered sections, resolving the real store's name", async () => {
+    const card = await getItemMovementCard({ itemId });
+
+    /* 4, not 3 — the RED-variant MAIN row is its own (locationType, locationId, variantSku)
+       section alongside the "" variant MAIN section, the real store section and the gone
+       store section. */
+    expect(card.sections).toHaveLength(4);
+    expect(card.sections[0].locationType).toBe("MAIN");
+    expect(card.sections[0].variantSku).toBe("");
+    expect(card.sections[0].entries.map((e) => e.id)).toEqual([mainEntry1Id, mainEntry2Id]);
+    expect(card.sections[0].closingBalance).toBe(80);
+
+    const storeSection = card.sections.find((s) => s.locationId === storeId)!;
+    expect(storeSection.locationType).toBe("STORE");
+    expect(storeSection.locationLabel).toBe("Toko Ledger");
+    expect(storeSection.locationResolved).toBe(true);
+    expect(storeSection.closingBalance).toBe(50);
+
+    expect(card.hasAnyHistory).toBe(true);
+    expect(card.sectionLimit).toBe(500);
+    /* Well under QUERY_ENTRY_LIMIT (2000) — confirms the field is wired end to end. The
+       equality-based logic itself is pinned cheaply in stock-ledger-card.test.ts instead of
+       seeding 2000 rows on the shared bed. */
+    expect(card.queryTruncated).toBe(false);
+  });
+
+  it("renders the deleted store's raw id, unresolved, rather than dropping the section", async () => {
+    const card = await getItemMovementCard({ itemId });
+
+    const goneSection = card.sections.find((s) => s.locationId === goneStoreId)!;
+    expect(goneSection).toBeDefined();
+    expect(goneSection.locationResolved).toBe(false);
+    expect(goneSection.locationLabel).toBe(goneStoreId);
+  });
+
+  it("keeps hasAnyHistory true for a window with no matching rows, distinct from sections being empty", async () => {
+    const card = await getItemMovementCard({
+      itemId,
+      from: new Date("2030-01-01T00:00:00.000Z"),
+      to: new Date("2030-01-02T00:00:00.000Z"),
+    });
+
+    expect(card.sections).toEqual([]);
+    expect(card.hasAnyHistory).toBe(true);
+  });
+
+  /*
+   * The failure this fix exists for: an item with variants RED (has rows) and BLUE (never
+   * moved). Picking BLUE with no date range must NOT tell the operator to widen a date
+   * range that doesn't exist — hasAnyHistory has to be scoped to the variant filter, not
+   * just itemId.
+   */
+  it("scopes hasAnyHistory to the variant filter — a variant with zero rows reads as no history, not an empty date range", async () => {
+    const redCard = await getItemMovementCard({ itemId, variantSku: "RED" });
+    expect(redCard.sections).toHaveLength(1);
+    expect(redCard.hasAnyHistory).toBe(true);
+
+    const blueCard = await getItemMovementCard({ itemId, variantSku: "BLUE" });
+    expect(blueCard.sections).toEqual([]);
+    expect(blueCard.hasAnyHistory).toBe(false);
+  });
+});

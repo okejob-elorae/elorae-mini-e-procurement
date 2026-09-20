@@ -87,6 +87,8 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
               negativeCount: stockCard.negativeCount,
               inTransitAdminReturn,
               movements: stockCard.movements.map(({ occurredAt, ...m }) => ({ ...m, occurredAtIso: occurredAt.toISOString() })),
+              movementsTruncated: stockCard.movementsTruncated,
+              movementLimit: stockCard.movementLimit,
               gaps: assortmentGaps,
             }
           : null

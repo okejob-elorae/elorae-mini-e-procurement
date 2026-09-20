@@ -67,6 +67,11 @@ export {
   type StockAdjustmentSource,
 } from "./stock-adjustment-source";
 export {
+  STOCK_LEDGER_REF_TYPES,
+  isStockLedgerRefType,
+  type StockLedgerRefType,
+} from "./stock-ledger-ref";
+export {
   recalcItemSellingPrice,
   type RecalcItemSellingPriceInput,
   type RecalcItemSellingPriceResult,

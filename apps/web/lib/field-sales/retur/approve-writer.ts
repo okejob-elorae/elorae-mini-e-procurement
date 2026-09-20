@@ -1,4 +1,5 @@
 import { moveMainStock, moveStoreStock } from "@elorae/db";
+import type { StockLedgerRefType } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 import { generateDocNumber } from "@/lib/docNumber";
@@ -112,7 +113,7 @@ export async function approveFieldReturn(input: {
           totalValue: newQty * newAvgCost,
           createIfMissing: true,
           inventoryValueId: main?.id,
-          refType: "FieldReturn",
+          refType: "FieldReturn" satisfies StockLedgerRefType,
           refId: ret.id,
           refDocNumber: ret.docNo,
           createdById: input.approvedById,
@@ -329,7 +330,7 @@ export async function approveFieldReturn(input: {
           itemId: line.itemId,
           variantSku: line.variantSku,
           qtyDelta: -decrementQty,
-          refType: "FieldReturn",
+          refType: "FieldReturn" satisfies StockLedgerRefType,
           refId: ret.id,
           refDocNumber: ret.docNo,
           createdById: input.approvedById,

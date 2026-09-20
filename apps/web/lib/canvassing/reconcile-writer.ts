@@ -1,4 +1,5 @@
 import { moveMainStock, moveVanStock } from "@elorae/db";
+import type { StockLedgerRefType } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { variantDetailForSku } from "@/lib/items/variants";
@@ -99,7 +100,7 @@ export async function recordVanReconcile(input: {
           totalValue: newQty * newAvg,
           createIfMissing: true,
           inventoryValueId: main?.id,
-          refType: "VanReconcile",
+          refType: "VanReconcile" satisfies StockLedgerRefType,
           refId: rec.id,
           refDocNumber: docNo,
           createdById: input.reconciledById,
@@ -129,7 +130,7 @@ export async function recordVanReconcile(input: {
         itemId: l.itemId,
         variantSku: l.variantSku,
         qtyDelta: -l.expected,
-        refType: "VanReconcile",
+        refType: "VanReconcile" satisfies StockLedgerRefType,
         refId: rec.id,
         refDocNumber: docNo,
       });

@@ -1,0 +1,54 @@
+"use server";
+
+import { auth } from "@/lib/auth";
+import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
+import {
+  getItemMovementCard,
+  QUERY_ENTRY_LIMIT,
+  type ItemMovementCard,
+} from "@/lib/inventory/stock-ledger-card";
+
+export type GetItemMovementsInput = {
+  itemId: string;
+  variantSku?: string;
+  /** Calendar-day strings ("yyyy-MM-dd"), anchored to WIB, never a raw ISO instant. */
+  from?: string;
+  to?: string;
+};
+
+/*
+ * The client never imports stock-ledger-card.ts directly — that module imports the
+ * @elorae/db barrel (Prisma) at the top, and a "use client" file importing anything from
+ * it, even a plain constant, risks dragging Prisma into the browser bundle. So the query
+ * ceiling is folded into this action's own return shape instead of being re-exported for
+ * the client to import on its own.
+ */
+export type ItemMovementsResult = ItemMovementCard & { queryEntryLimit: number };
+
+/**
+ * Every "use server" export is independently callable regardless of what the page gated
+ * on, so this re-checks inventory:view itself rather than trusting the page's redirect.
+ */
+export async function getItemMovementsAction(input: GetItemMovementsInput): Promise<ItemMovementsResult> {
+  const session = await auth();
+  const permissions = session?.user?.permissions ?? [];
+  if (!hasPermission(permissions, PERMISSIONS.INVENTORY_VIEW)) {
+    throw new Error("FORBIDDEN");
+  }
+
+  const card = await getItemMovementCard({
+    itemId: input.itemId,
+    variantSku: input.variantSku,
+    /*
+     * WIB-anchored, not a bare `new Date(string)`: the process may run UTC in prod, and a
+     * naive parse would shift both boundaries ~7h and pull rows from the wrong calendar day
+     * into (or out of) the filter — same class of bug the aging report's landmine entry
+     * names for daysOverdue.
+     */
+    from: input.from ? parseDateOnly(input.from) : undefined,
+    to: input.to ? parseDateOnlyEnd(input.to) : undefined,
+  });
+
+  return { ...card, queryEntryLimit: QUERY_ENTRY_LIMIT };
+}

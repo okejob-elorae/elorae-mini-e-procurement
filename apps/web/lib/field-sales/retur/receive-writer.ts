@@ -1,4 +1,5 @@
 import { moveStoreStock, type AdminNotification } from "@elorae/db";
+import type { StockLedgerRefType } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { FieldReturnError } from "./errors";
@@ -86,7 +87,7 @@ export async function receiveFieldReturn(input: {
           itemId: l.itemId,
           variantSku: l.variantSku,
           qtyDelta: -c.receivedQty,
-          refType: "FieldReturn",
+          refType: "FieldReturn" satisfies StockLedgerRefType,
           refId: ret.id,
           refDocNumber: ret.docNo,
           createdById: input.receivedById,
