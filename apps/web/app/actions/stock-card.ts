@@ -123,29 +123,37 @@ export async function getStockCard(
       notes: m.notes,
     })),
     closingBalance,
-    variantBreakdown: await prisma.stockMovement.groupBy({
-      by: ['variantSku'],
-      where: { itemId, variantSku: { not: null } },
-      _count: { id: true },
-    }),
   };
 }
 
-/** Returns variant SKU options for an item (from item.variants and from the stock ledger). Use to populate variant combobox when item is selected, before Load. */
+/** Returns variant SKU options for an item (from item.variants, the stock ledger, and stock movement history - the two movement sources are unioned, not swapped, because each covers a gap the other has). Use to populate variant combobox when item is selected, before Load. */
 export async function getItemVariantOptions(itemId: string): Promise<string[]> {
-  const [item, movementVariants] = await Promise.all([
+  const [item, ledgerVariants, movementVariants] = await Promise.all([
     prisma.item.findUnique({
       where: { id: itemId },
       select: { variants: true },
     }),
-    /* StockLedgerEntry.variantSku is NOT NULL with a '' default (unlike StockMovement's
-     * nullable column), so the variantless bucket is excluded with `{ not: '' }`, not
-     * `{ not: null }` - the latter would exclude nothing and surface an empty-string option.
-     * Not scoped by locationType: this closes the gap where a variant that only ever moved
-     * through a store/van path never wrote StockMovement and so never appeared here. */
+    /* Ledger and StockMovement have complementary blind spots, so this unions both rather
+     * than swapping one for the other. The ledger's cutover backfill only wrote rows for
+     * non-zero balances, so a variant that sat at zero at cutover and has not moved since
+     * has zero ledger rows - StockMovement still holds its full history. The ledger in
+     * turn covers store/van variants that never wrote StockMovement at all. Keep both
+     * until the stock card itself (still on StockMovement, for its value columns) leaves
+     * that table. The two also cannot share a filter: StockLedgerEntry.variantSku is NOT
+     * NULL with a '' default, so `{ not: '' }` is its variantless exclusion here -
+     * `{ not: null }` (the StockMovement spelling below) does not compile against this
+     * column, since null is not assignable to a plain-string StringFilter. */
     prisma.stockLedgerEntry.groupBy({
       by: ['variantSku'],
       where: { itemId, variantSku: { not: '' } },
+      _count: { id: true },
+    }),
+    /* StockMovement.variantSku is nullable, so `{ not: null }` is its own variantless
+     * exclusion, distinct from the ledger's `{ not: '' }` above - see that comment for why
+     * the two cannot be unified into one filter. */
+    prisma.stockMovement.groupBy({
+      by: ['variantSku'],
+      where: { itemId, variantSku: { not: null } },
       _count: { id: true },
     }),
   ]);
@@ -156,10 +164,13 @@ export async function getItemVariantOptions(itemId: string): Promise<string[]> {
       if (sku) fromItem.push(sku);
     }
   }
-  const fromMovements = movementVariants
+  const fromLedger = ledgerVariants
     .map((g) => g.variantSku)
     .filter((s) => s.trim() !== '');
-  const set = new Set<string>([...fromItem, ...fromMovements]);
+  const fromMovements = movementVariants
+    .map((g) => g.variantSku)
+    .filter((s): s is string => s != null && s.trim() !== '');
+  const set = new Set<string>([...fromItem, ...fromLedger, ...fromMovements]);
   return Array.from(set).sort();
 }
 
