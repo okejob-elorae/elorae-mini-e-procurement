@@ -738,6 +738,9 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
           variantSku: effectiveSku,
           qtyDelta: -take,
           totalValue: newValue,
+          // Same expressions the movementData push below carries into its stockMovement.create.
+          totalCost: take * row.avgCost,
+          balanceValue: newValue,
           // Pins the write to the exact row this iteration just read — two rows in the same
           // null/"" bucket would otherwise let moveMainStock's own re-resolution collapse both
           // iterations onto one row, double-decrementing it.

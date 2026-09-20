@@ -110,12 +110,15 @@ async function applyMatchJubelio(
   });
 
   const newTotalValue = newQty.mul(prevAvgCost);
+  // Same expressions the stockMovement.create below stamps as totalCost/balanceValue.
   await moveMainStock(tx, {
     itemId: params.itemId,
     variantSku: variantKey,
     qtyDelta: adjQty,
     totalValue: newTotalValue.toNumber(),
     unitCost: prevAvgCost.toNumber(),
+    totalCost: adjQty * prevAvgCost.toNumber(),
+    balanceValue: newTotalValue.toNumber(),
     inventoryValueId: inv.id,
     refType: "Reconciliation" satisfies StockLedgerRefType,
     refId: adjustment.id,

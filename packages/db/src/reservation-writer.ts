@@ -136,6 +136,11 @@ export async function consumeOrder(
        * reservation, but that half moves nothing and is deliberately not a second entry.
        * balanceQty comes from the update's own return value, never a follow-up read, so it
        * cannot race the concurrent webhook workers.
+       *
+       * totalCost/balanceValue reuse the SAME `qty * avgCost` expression the update above just
+       * decremented totalValue by (also the SAME figure stamped onto SalesOrderItem.cogs below)
+       * — avgCost does not change on a consume, so newOnHand * avgCost is the row's real new
+       * total value, not a re-derivation.
        */
       await appendStockLedger(tx, {
         location: { type: "MAIN" },
@@ -145,6 +150,8 @@ export async function consumeOrder(
         qty: -qty,
         balanceQty: newOnHand,
         unitCost: avgCost,
+        totalCost: -(qty * avgCost),
+        balanceValue: newOnHand * avgCost,
         refType: "FulfillmentConsume" satisfies StockLedgerRefType,
         refId: row.id,
         refDocNumber: input.salesorderNo,
@@ -382,6 +389,10 @@ export async function consumeFieldSalesOrderPartial(
       /**
        * One ledger entry for the qtyOnHand movement only. The guarded update also released the
        * reservation in the same statement, but that half moves nothing and is not a second entry.
+       *
+       * totalCost/balanceValue reuse the SAME `qty * p.avgCost` expression the raw UPDATE above
+       * just decremented totalValue by — avgCost is unchanged by a consume, so
+       * newOnHand * p.avgCost is the row's real new total value.
        */
       await appendStockLedger(tx, {
         location: { type: "MAIN" },
@@ -391,6 +402,8 @@ export async function consumeFieldSalesOrderPartial(
         qty: -qty,
         balanceQty: newOnHand,
         unitCost: p.avgCost,
+        totalCost: -(qty * p.avgCost),
+        balanceValue: newOnHand * p.avgCost,
         refType: "FieldSalesConsume" satisfies StockLedgerRefType,
         refId: p.line.fieldSalesLineId,
         refDocNumber: input.orderNo,
@@ -456,6 +469,10 @@ export async function consumeFieldSalesOrder(
        * reservation, but that half moves nothing and is deliberately not a second entry.
        * The where clause above already restricts to non-null fieldSalesLineId; the fallback to
        * the reservation row id only keeps refId typed as a string.
+       *
+       * totalCost/balanceValue reuse the SAME `qty * avgCost` expression the update above just
+       * decremented totalValue by — avgCost is unchanged by a consume, so newOnHand * avgCost is
+       * the row's real new total value.
        */
       await appendStockLedger(tx, {
         location: { type: "MAIN" },
@@ -465,6 +482,8 @@ export async function consumeFieldSalesOrder(
         qty: -qty,
         balanceQty: newOnHand,
         unitCost: avgCost,
+        totalCost: -(qty * avgCost),
+        balanceValue: newOnHand * avgCost,
         refType: "FieldSalesConsume" satisfies StockLedgerRefType,
         refId: row.fieldSalesLineId ?? row.id,
         refDocNumber: input.orderNo,

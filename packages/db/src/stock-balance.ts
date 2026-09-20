@@ -19,6 +19,14 @@ type MoveCommon = {
    */
   avgCost?: number | null;
   totalValue?: number | null;
+  /*
+   * The ledger's own value columns, forwarded to appendStockLedger untouched. The caller already
+   * computes these for the StockMovement row a few lines away from this call — pass the SAME
+   * expressions here rather than re-deriving them, or the two records disagree about the cost of
+   * the identical movement.
+   */
+  totalCost?: number | null;
+  balanceValue?: number | null;
   refType: string;
   refId: string;
   refDocNumber?: string;
@@ -163,6 +171,8 @@ export async function moveMainStock(tx: Tx, input: MoveMainStockInput): Promise<
       qty: input.qtyDelta,
       balanceQty,
       unitCost: input.unitCost,
+      totalCost: input.totalCost,
+      balanceValue: input.balanceValue,
       refType: input.refType,
       refId: input.refId,
       refDocNumber: input.refDocNumber,
@@ -226,6 +236,8 @@ export async function moveMainStock(tx: Tx, input: MoveMainStockInput): Promise<
       qty: input.qtyDelta,
       balanceQty: input.qtyDelta,
       unitCost: input.unitCost,
+      totalCost: input.totalCost,
+      balanceValue: input.balanceValue,
       refType: input.refType,
       refId: input.refId,
       refDocNumber: input.refDocNumber,
@@ -279,6 +291,8 @@ export async function moveMainStock(tx: Tx, input: MoveMainStockInput): Promise<
     qty: input.qtyDelta,
     balanceQty,
     unitCost: input.unitCost,
+    totalCost: input.totalCost,
+    balanceValue: input.balanceValue,
     refType: input.refType,
     refId: input.refId,
     refDocNumber: input.refDocNumber,
@@ -324,6 +338,8 @@ export async function moveStoreStock(tx: Tx, input: MoveStoreStockInput): Promis
     qty: input.qtyDelta,
     balanceQty,
     unitCost: input.unitCost,
+    totalCost: input.totalCost,
+    balanceValue: input.balanceValue,
     refType: input.refType,
     refId: input.refId,
     refDocNumber: input.refDocNumber,
@@ -369,6 +385,8 @@ export async function moveVanStock(tx: Tx, input: MoveVanStockInput): Promise<{ 
     qty: input.qtyDelta,
     balanceQty,
     unitCost: input.unitCost,
+    totalCost: input.totalCost,
+    balanceValue: input.balanceValue,
     refType: input.refType,
     refId: input.refId,
     refDocNumber: input.refDocNumber,
@@ -388,6 +406,13 @@ type SetCommon = {
    * would for the identical movement; omit it and the entry is simply costless.
    */
   unitCost?: number | null;
+  /*
+   * The ledger's own value columns, mirroring the unitCost contract above exactly: recorded on
+   * the ledger entry only, never reaching the balance table. Forward the SAME expressions the
+   * caller already computes for its StockMovement row.
+   */
+  totalCost?: number | null;
+  balanceValue?: number | null;
   refType: string;
   refId: string;
   refDocNumber?: string;
@@ -485,6 +510,8 @@ export async function setMainStock(
       qty: delta,
       balanceQty,
       unitCost: input.unitCost,
+      totalCost: input.totalCost,
+      balanceValue: input.balanceValue,
       refType: input.refType,
       refId: input.refId,
       refDocNumber: input.refDocNumber,
@@ -534,6 +561,8 @@ export async function setMainStock(
     qty: delta,
     balanceQty: input.nextQty,
     unitCost: input.unitCost,
+    totalCost: input.totalCost,
+    balanceValue: input.balanceValue,
     refType: input.refType,
     refId: input.refId,
     refDocNumber: input.refDocNumber,
@@ -583,6 +612,8 @@ export async function setStoreStock(
     qty: delta,
     balanceQty: input.nextQty,
     unitCost: input.unitCost,
+    totalCost: input.totalCost,
+    balanceValue: input.balanceValue,
     refType: input.refType,
     refId: input.refId,
     refDocNumber: input.refDocNumber,

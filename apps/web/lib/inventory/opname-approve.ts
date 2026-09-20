@@ -161,6 +161,15 @@ export async function applyFgAccessoriesAdjustments(
     const newTotalValue = newQty.mul(prevAvgCost);
     const adjQty = type === "POSITIVE" ? qtyChange.toNumber() : -qtyChange.toNumber();
 
+    // Same expression the stockMovement.create below stamps as totalCost — computed here so the
+    // ledger entry and the movement row carry the identical figure. This is the figure the
+    // opname journal reads to post the inventory-variance GL entry, so it must equal the
+    // StockMovement row's totalCost by construction, not by a later reconciliation.
+    const totalCostAdj =
+      type === "POSITIVE"
+        ? qtyChange.mul(prevAvgCost).toNumber()
+        : qtyChange.mul(prevAvgCost).neg().toNumber();
+
     /*
      * setMainStock, not moveMainStock: an opname line is an absolute physical count, and the
      * counted figure is what must land. Routed as a delta the row ends at prevActual + adjQty —
@@ -176,17 +185,14 @@ export async function applyFgAccessoriesAdjustments(
       nextQty: newQty.toNumber(),
       totalValue: newTotalValue.toNumber(),
       unitCost: prevAvgCost.toNumber(),
+      totalCost: totalCostAdj,
+      balanceValue: newTotalValue.toNumber(),
       inventoryValueId: inv.id,
       refType: "StockOpname" satisfies StockLedgerRefType,
       refId: opnameId,
       refDocNumber: docNumber,
       createdById: userId,
     });
-
-    const totalCostAdj =
-      type === "POSITIVE"
-        ? qtyChange.mul(prevAvgCost).toNumber()
-        : qtyChange.mul(prevAvgCost).neg().toNumber();
 
     await tx.stockMovement.create({
       data: {

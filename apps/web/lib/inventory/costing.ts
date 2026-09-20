@@ -116,12 +116,17 @@ export async function calculateMovingAverage(
   // never-before-stocked item, matching the upsert this replaced). When it did find a row,
   // inventoryValueId pins the write to that exact row instead of letting moveMainStock
   // re-resolve independently and potentially land on a sibling null/"" row.
+  // totalCost/balanceValue mirror what every caller of this function stamps onto its own
+  // stockMovement.create — incomingTotalValue and newTotalValue are the same expressions grn.ts
+  // passes as totalCost/balanceValue there, computed here first.
   await moveMainStock(prismaClient, {
     itemId,
     variantSku,
     qtyDelta: incomingQty.toNumber(),
     avgCost: newAvgCost.toNumber(),
     totalValue: newTotalValue.toNumber(),
+    totalCost: incomingTotalValue.toNumber(),
+    balanceValue: newTotalValue.toNumber(),
     createIfMissing: true,
     inventoryValueId: current?.id,
     ...ref,
@@ -177,12 +182,16 @@ export async function reverseInventoryValue(
   // OR-tolerant read finds the row regardless of null/"" spelling, so it fires only when neither
   // spelling exists), so this never legitimately creates a row — no createIfMissing.
   // inventoryValueId pins the write to the exact row `current` was just read from.
+  // totalCost mirrors vendor-returns.ts's own `outgoingValue` expression for its
+  // stockMovement.create — same variable, computed above; balanceValue is the new total.
   await moveMainStock(prismaClient, {
     itemId,
     variantSku,
     qtyDelta: outgoingQty.neg().toNumber(),
     avgCost: newAvgCost.toNumber(),
     totalValue: newTotalValue.toNumber(),
+    totalCost: outgoingValue.toNumber(),
+    balanceValue: newTotalValue.toNumber(),
     inventoryValueId: current.id,
     ...ref,
   });
@@ -220,12 +229,16 @@ export async function reverseMovingAverage(
   // variantSku null or "" — inventoryValueId pins moveMainStock's write to that same row. A
   // genuinely missing row (neither spelling exists) still reaches moveMainStock's own lookup
   // with no createIfMissing set, so it still throws — that part is unchanged.
+  // grn.ts's declineGRNByOwner negates this same outgoingTotalValue for its own
+  // stockMovement.create's totalCost, matching the negated qtyDelta below.
   await moveMainStock(prismaClient, {
     itemId,
     variantSku,
     qtyDelta: outgoingQty.neg().toNumber(),
     avgCost: newAvgCost.toNumber(),
     totalValue: newTotalValue.toNumber(),
+    totalCost: outgoingTotalValue.neg().toNumber(),
+    balanceValue: newTotalValue.toNumber(),
     inventoryValueId: current?.id,
     ...ref,
   });
