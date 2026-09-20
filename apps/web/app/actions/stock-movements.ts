@@ -3,11 +3,22 @@
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
+import { isStockLedgerRefType, type StockLedgerRefType } from "@elorae/db/stock-ledger-ref";
 import {
   getItemMovementCard,
   QUERY_ENTRY_LIMIT,
   type ItemMovementCard,
+  type LedgerLocationType,
 } from "@/lib/inventory/stock-ledger-card";
+
+/* Closed set mirroring LedgerLocationType — that type has no runtime array of its own
+   (it's a plain string union), so this is the one place that needs to check membership
+   against real values rather than just the type. */
+const LEDGER_LOCATION_TYPES: readonly LedgerLocationType[] = ["MAIN", "STORE", "VAN"];
+
+function isLedgerLocationType(value: unknown): value is LedgerLocationType {
+  return typeof value === "string" && (LEDGER_LOCATION_TYPES as readonly string[]).includes(value);
+}
 
 export type GetItemMovementsInput = {
   itemId: string;
@@ -15,6 +26,10 @@ export type GetItemMovementsInput = {
   /** Calendar-day strings ("yyyy-MM-dd"), anchored to WIB, never a raw ISO instant. */
   from?: string;
   to?: string;
+  locationTypes?: LedgerLocationType[];
+  refTypes?: StockLedgerRefType[];
+  /** Separate flag, not a sentinel in `refTypes` — see stock-ledger-card.ts's buildRefTypeCondition. */
+  includeUnregisteredRefTypes?: boolean;
 };
 
 /*
@@ -37,6 +52,35 @@ export async function getItemMovementsAction(input: GetItemMovementsInput): Prom
     throw new Error("FORBIDDEN");
   }
 
+  /*
+   * The control only ever sends members of the closed set / registry it renders, but this
+   * export is independently callable, so the form withholding a bad value is not a
+   * guarantee. Reject outright rather than dropping the offending member and proceeding:
+   * a silently-narrowed filter would hand the operator a result set that looks like it
+   * matches their filter selection when it does not.
+   */
+  /* Array.isArray first: `.every` on a non-array (e.g. a bare string passed where the
+     type says string[]) throws TypeError instead of the intended error code — a caller
+     bypassing the type system still gets a clean rejection, not an unhandled throw. */
+  if (
+    input.locationTypes !== undefined &&
+    (!Array.isArray(input.locationTypes) || !input.locationTypes.every(isLedgerLocationType))
+  ) {
+    throw new Error("INVALID_LOCATION_TYPE");
+  }
+  if (
+    input.refTypes !== undefined &&
+    (!Array.isArray(input.refTypes) || !input.refTypes.every(isStockLedgerRefType))
+  ) {
+    throw new Error("INVALID_REF_TYPE");
+  }
+  if (
+    input.includeUnregisteredRefTypes !== undefined &&
+    typeof input.includeUnregisteredRefTypes !== "boolean"
+  ) {
+    throw new Error("INVALID_INCLUDE_UNREGISTERED_REF_TYPES");
+  }
+
   const card = await getItemMovementCard({
     itemId: input.itemId,
     variantSku: input.variantSku,
@@ -48,6 +92,9 @@ export async function getItemMovementsAction(input: GetItemMovementsInput): Prom
      */
     from: input.from ? parseDateOnly(input.from) : undefined,
     to: input.to ? parseDateOnlyEnd(input.to) : undefined,
+    locationTypes: input.locationTypes,
+    refTypes: input.refTypes,
+    includeUnregisteredRefTypes: input.includeUnregisteredRefTypes,
   });
 
   return { ...card, queryEntryLimit: QUERY_ENTRY_LIMIT };

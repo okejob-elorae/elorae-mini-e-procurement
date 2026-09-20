@@ -1,4 +1,5 @@
 import { prisma } from "@elorae/db";
+import { isCeilingReached, LEDGER_ORDER_BY, LEDGER_ROW_SELECT } from "./ledger-query";
 import { getStockAcrossLocations } from "./stock-across-locations";
 
 export type StoreStockRow = {
@@ -58,14 +59,12 @@ export type StoreStockCardData = {
 export const STORE_MOVEMENT_LIMIT = 500;
 
 /**
- * True when the fetch returned exactly STORE_MOVEMENT_LIMIT rows — the `take` ceiling was
- * hit, so older rows exist beyond it and were dropped. Equality, not `>=`: the fetch is
- * already bounded by `take`, so `rowCount` can never exceed the limit. Same reasoning as
- * the item-scoped ledger card's `isQueryTruncated`, pulled out as its own function so the
- * comparison is unit-testable without seeding STORE_MOVEMENT_LIMIT rows on the shared bed.
+ * Thin wrapper over the shared `isCeilingReached` (see `ledger-query.ts`) pinned to this
+ * card's own ceiling. Kept as its own named export — rather than repointing call sites to
+ * the shared helper directly — because existing tests import it by this name.
  */
 export function isStoreMovementsTruncated(rowCount: number): boolean {
-  return rowCount === STORE_MOVEMENT_LIMIT;
+  return isCeilingReached(rowCount, STORE_MOVEMENT_LIMIT);
 }
 
 /**
@@ -140,22 +139,15 @@ export async function getStoreStockCard(storeId: string): Promise<StoreStockCard
   const ledgerRows = await prisma.stockLedgerEntry.findMany({
     where: { locationType: "STORE", locationId: storeId },
     /*
-     * Newest first, and now capped at STORE_MOVEMENT_LIMIT. The `take` ceiling on a
-     * descending fetch drops the OLDEST rows first — the end an operator can afford to
-     * lose, since this card's whole purpose is "what happened here recently", not a full
-     * archive. Same reasoning as the item-scoped ledger card's queryTruncated.
+     * LEDGER_ORDER_BY is descending — see ledger-query.ts. Capped at STORE_MOVEMENT_LIMIT,
+     * that drops the OLDEST rows first, the end an operator can afford to lose, since this
+     * card's whole purpose is "what happened here recently", not a full archive.
      */
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    orderBy: [...LEDGER_ORDER_BY],
     take: STORE_MOVEMENT_LIMIT,
     select: {
-      id: true,
+      ...LEDGER_ROW_SELECT,
       itemId: true,
-      variantSku: true,
-      refType: true,
-      refId: true,
-      refDocNumber: true,
-      qty: true,
-      createdAt: true,
     },
   });
 

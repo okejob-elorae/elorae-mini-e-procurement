@@ -1,4 +1,5 @@
-import { prisma, Prisma, type StockLedgerRefType } from "@elorae/db";
+import { prisma, Prisma, STOCK_LEDGER_REF_TYPES, type StockLedgerRefType } from "@elorae/db";
+import { isCeilingReached, LEDGER_ORDER_BY, LEDGER_ROW_SELECT } from "./ledger-query";
 
 export type LedgerLocationType = "MAIN" | "STORE" | "VAN";
 
@@ -106,6 +107,13 @@ export type ItemMovementCardInput = {
   from?: Date;
   to?: Date;
   refTypes?: StockLedgerRefType[];
+  /*
+   * A SEPARATE flag, never a sentinel folded into `refTypes` — a sentinel string
+   * travelling inside an `in`/`notIn` array can leak straight through into the SQL list
+   * if any later code forgets to strip it first; a boolean cannot. See
+   * buildRefTypeCondition for how the two combine.
+   */
+  includeUnregisteredRefTypes?: boolean;
   locationTypes?: LedgerLocationType[];
 };
 
@@ -138,15 +146,13 @@ export const QUERY_ENTRY_LIMIT = 2000;
 export const SECTION_ENTRY_LIMIT = 500;
 
 /**
- * True when the fetch returned exactly QUERY_ENTRY_LIMIT rows — the `take` ceiling was hit,
- * so rows beyond it exist and were dropped. Equality, not `>=`: the fetch itself is capped
- * by `take`, so `rowCount` can never exceed the limit; testing for it is just being explicit
- * about which comparison is meaningful. This can false-positive when the item's true total
- * is exactly QUERY_ENTRY_LIMIT (nothing was actually dropped) — the harmless direction: it
- * over-warns rather than under-warns, which is the trade this view wants on an audit surface.
+ * Thin wrapper over the shared `isCeilingReached` (see `ledger-query.ts` for the equality-
+ * vs-`isSectionTruncated` reasoning) pinned to this card's own ceiling. Kept as its own named
+ * export — rather than repointing call sites to the shared helper directly — because existing
+ * tests import it by this name.
  */
 export function isQueryTruncated(rowCount: number): boolean {
-  return rowCount === QUERY_ENTRY_LIMIT;
+  return isCeilingReached(rowCount, QUERY_ENTRY_LIMIT);
 }
 
 /**
@@ -165,12 +171,105 @@ export function isSectionTruncated(entryCount: number): boolean {
 }
 
 /**
+ * Builds the refType condition shared by BOTH `where` and `historyWhere` below, from a
+ * single call whose result is reused verbatim in both places — never written twice.
+ * Two independent predicates answering the same question is exactly how `hasAnyHistory`
+ * and `sections` disagreed before the previous slice's fix; the fix here is structural
+ * (one value, two consumers) rather than a promise to keep two literals in sync by hand.
+ *
+ * `refTypes` narrows to REGISTERED members only (validated at the action boundary before
+ * this is ever called). `includeUnregisteredRefTypes` is what lets a value the registry
+ * does not know about — a fixture row, or a writer shipped before its registry entry
+ * landed, both of which are real on this column (see the comment on `RawLedgerRow.refType`
+ * above) — participate as its own selectable class instead of silently vanishing the
+ * moment an operator narrows the movement-type filter at all.
+ *
+ * Both undefined => no filter, unchanged from every caller before this flag existed.
+ * `refTypes` undefined but `includeUnregisteredRefTypes` explicitly `false` does NOT
+ * fall into that same "no filter" case — only BOTH undefined does; this combination
+ * falls through to the "nothing selected" case at the bottom of this list and matches
+ * nothing instead. The MultiSelectFilter control on the movement view never produces
+ * this exact combination on its own (it always sends both fields together or neither),
+ * but this function backs an independently-callable "use server" action, and neither
+ * that action's validation nor this function itself rejects a caller who sends only
+ * one of the two — so, unlike the fully-unselected case below, this one IS reachable
+ * today, just not through today's UI.
+ * Registered subset, unregistered excluded => `refType IN (subset)`.
+ * Registered subset, unregistered included  => `refType IN (subset) OR refType NOT IN (registry)`.
+ * Unregistered only (no registered member picked) => `refType NOT IN (registry)`.
+ * Every registered member AND unregistered both selected collapses to "no filter" (same
+ * result set, no reason to ship a no-op OR).
+ * Nothing selected at all (`refTypes: []`, `includeUnregisteredRefTypes: false`) IS
+ * unreachable from the control's own empty-selection guard, but must not silently fall
+ * back to "unfiltered" if some future caller ever reaches it — it means "match nothing",
+ * the same as an operator's empty selection is SUPPOSED to mean everywhere else in this
+ * feature.
+ */
+export function buildRefTypeCondition(
+  refTypes: StockLedgerRefType[] | undefined,
+  includeUnregisteredRefTypes: boolean | undefined,
+): Prisma.StockLedgerEntryWhereInput | undefined {
+  if (refTypes === undefined && includeUnregisteredRefTypes === undefined) return undefined;
+
+  const registered = refTypes ?? [];
+  const includeUnregistered = includeUnregisteredRefTypes === true;
+
+  /*
+   * SET equality, not a length count: the action validates membership
+   * (`every(isStockLedgerRefType)`) but never uniqueness, so twenty copies of one
+   * registered member is a legal input that has `registered.length ===
+   * STOCK_LEDGER_REF_TYPES.length` while covering only one real member. A length-only
+   * check collapsed that to "no filter" — every row for the item, not the one member
+   * actually asked for. Unreachable from today's control (which never produces a
+   * duplicate), but this function is exported and separately unit-tested specifically
+   * so a future caller can reach it directly; the set check is what makes it safe to.
+   */
+  const registeredSet = new Set(registered);
+  if (registeredSet.size === STOCK_LEDGER_REF_TYPES.length && includeUnregistered) {
+    return undefined;
+  }
+  if (registered.length > 0 && includeUnregistered) {
+    return { OR: [{ refType: { in: registered } }, { refType: { notIn: [...STOCK_LEDGER_REF_TYPES] } }] };
+  }
+  if (registered.length > 0) {
+    return { refType: { in: registered } };
+  }
+  if (includeUnregistered) {
+    return { refType: { notIn: [...STOCK_LEDGER_REF_TYPES] } };
+  }
+  return { refType: { in: [] } };
+}
+
+/**
+ * The locationType half, deliberately the same shape as buildRefTypeCondition above — and
+ * deliberately NOT the `length > 0` guard it used to be.
+ *
+ * That older guard made an EMPTY array mean "no filter", identical to `undefined`, so a caller
+ * that had narrowed to nothing was shown EVERYTHING instead. Once refTypes started failing
+ * closed on the same input, the two sibling arguments of one function disagreed about what an
+ * empty selection means, with nothing on either saying why. `in: []` matches nothing, which is
+ * what a caller who selected nothing asked for.
+ */
+export function buildLocationTypeCondition(
+  locationTypes: LedgerLocationType[] | undefined,
+): Prisma.StockLedgerEntryWhereInput | undefined {
+  if (locationTypes === undefined) return undefined;
+  return { locationType: { in: locationTypes } };
+}
+
+/**
  * Read-only query behind the item movement / stock ledger card. Fetches this item's
  * StockLedgerEntry rows (optionally narrowed by variant, date range, refType, or location
  * type), resolves STORE/VAN location ids to names via two batched lookups, and folds the
  * rows into per-(location, variant) sections with groupLedgerEntries.
  */
 export async function getItemMovementCard(input: ItemMovementCardInput): Promise<ItemMovementCard> {
+  /* Computed ONCE and applied verbatim to both `where` and `historyWhere` below — see
+     buildRefTypeCondition's own doc comment for why that structural sharing, rather than
+     writing the same condition twice, is the point. */
+  const refTypeCondition = buildRefTypeCondition(input.refTypes, input.includeUnregisteredRefTypes);
+  const locationTypeCondition = buildLocationTypeCondition(input.locationTypes);
+
   const where: Prisma.StockLedgerEntryWhereInput = { itemId: input.itemId };
   if (input.variantSku !== undefined) where.variantSku = input.variantSku;
   if (input.from !== undefined || input.to !== undefined) {
@@ -178,10 +277,8 @@ export async function getItemMovementCard(input: ItemMovementCardInput): Promise
     if (input.from !== undefined) where.createdAt.gte = input.from;
     if (input.to !== undefined) where.createdAt.lte = input.to;
   }
-  if (input.refTypes !== undefined && input.refTypes.length > 0) where.refType = { in: input.refTypes };
-  if (input.locationTypes !== undefined && input.locationTypes.length > 0) {
-    where.locationType = { in: input.locationTypes };
-  }
+  if (refTypeCondition !== undefined) Object.assign(where, refTypeCondition);
+  if (locationTypeCondition !== undefined) Object.assign(where, locationTypeCondition);
 
   /*
    * Same predicates as `where` above, MINUS the date window — this is what makes
@@ -195,42 +292,31 @@ export async function getItemMovementCard(input: ItemMovementCardInput): Promise
    */
   const historyWhere: Prisma.StockLedgerEntryWhereInput = { itemId: input.itemId };
   if (input.variantSku !== undefined) historyWhere.variantSku = input.variantSku;
-  if (input.refTypes !== undefined && input.refTypes.length > 0) historyWhere.refType = { in: input.refTypes };
-  if (input.locationTypes !== undefined && input.locationTypes.length > 0) {
-    historyWhere.locationType = { in: input.locationTypes };
-  }
+  if (refTypeCondition !== undefined) Object.assign(historyWhere, refTypeCondition);
+  if (locationTypeCondition !== undefined) Object.assign(historyWhere, locationTypeCondition);
 
   const [rows, historyCount] = await Promise.all([
     /*
-     * DESCENDING, not ascending, before the take ceiling applies. An ascending fetch capped
-     * at QUERY_ENTRY_LIMIT keeps the OLDEST rows and silently drops the newest, which would
-     * make closingBalance the balance as of row 2000 rather than the item's balance right
-     * now — wrong on a screen whose whole job is saying where stock is TODAY. Descending
-     * keeps the newest rows; groupLedgerEntries re-sorts each section back to ascending for
-     * display regardless of the order rows arrive in, so feeding it descending is safe.
-     *
-     * This ordering is also what makes a query-level truncation (queryTruncated below)
-     * SURVIVABLE rather than silently wrong: when the cap actually bites, the rows it drops
-     * are always the oldest ones, so the closing balance stays correct and only the far end
-     * of history — the end you can afford to lose — goes missing.
+     * LEDGER_ORDER_BY is descending (see ledger-query.ts for why that's load-bearing under a
+     * `take` ceiling in general). Here specifically: closingBalance is read off the LAST entry
+     * of a section, so keeping the newest rows is what makes that balance the item's balance
+     * TODAY rather than as of row QUERY_ENTRY_LIMIT — groupLedgerEntries re-sorts each section
+     * back to ascending for display regardless of fetch order, so feeding it descending is
+     * safe. It's also what makes queryTruncated (below) SURVIVABLE rather than silently
+     * wrong: when the cap bites, the dropped rows are always the oldest, so the closing
+     * balance stays correct and only the far end of history goes missing.
      */
     prisma.stockLedgerEntry.findMany({
       where,
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      orderBy: [...LEDGER_ORDER_BY],
       take: QUERY_ENTRY_LIMIT,
       select: {
-        id: true,
+        ...LEDGER_ROW_SELECT,
         locationType: true,
         locationId: true,
-        variantSku: true,
-        refType: true,
-        refId: true,
-        refDocNumber: true,
-        qty: true,
         balanceQty: true,
         unitCost: true,
         createdById: true,
-        createdAt: true,
       },
     }),
     /* Answers "does this item (under these variant/refType/locationType filters, if any)

@@ -18,6 +18,7 @@ d("getItemMovementCard", () => {
   let storeEntryId = "";
   let goneStoreEntryId = "";
   let variantEntryId = "";
+  let unregisteredEntryId = "";
 
   const T1 = new Date("2026-01-01T00:00:00.000Z");
   const T2 = new Date("2026-01-02T00:00:00.000Z");
@@ -34,6 +35,7 @@ d("getItemMovementCard", () => {
     storeEntryId = "";
     goneStoreEntryId = "";
     variantEntryId = "";
+    unregisteredEntryId = "";
 
     const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-SLC-${token}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
@@ -142,6 +144,29 @@ d("getItemMovementCard", () => {
       },
     });
     variantEntryId = variantEntry.id;
+
+    /*
+     * refType "TEST" is not a STOCK_LEDGER_REF_TYPES member — deliberately, matching the
+     * kind of row ledger-ref-display.ts's own comment says genuinely exists on this
+     * shared bed. Its own variant ("UNREG") keeps it in its own section, so a test can
+     * assert its presence/absence without disentangling it from mainEntry1/2.
+     */
+    const unregisteredEntry = await prisma.stockLedgerEntry.create({
+      data: {
+        locationType: "MAIN",
+        locationId: "",
+        itemId,
+        variantSku: "UNREG",
+        type: "IN",
+        qty: 7,
+        balanceQty: 7,
+        refType: "TEST",
+        refId: `TEST-SLC-UNREG-${token}`,
+        refDocNumber: `UNREG/${token}`,
+        createdAt: T1,
+      },
+    });
+    unregisteredEntryId = unregisteredEntry.id;
   });
 
   afterEach(async () => {
@@ -154,6 +179,7 @@ d("getItemMovementCard", () => {
             seededId(storeEntryId),
             seededId(goneStoreEntryId),
             seededId(variantEntryId),
+            seededId(unregisteredEntryId),
           ],
         },
       },
@@ -166,10 +192,11 @@ d("getItemMovementCard", () => {
   it("groups rows into ordered sections, resolving the real store's name", async () => {
     const card = await getItemMovementCard({ itemId });
 
-    /* 4, not 3 — the RED-variant MAIN row is its own (locationType, locationId, variantSku)
-       section alongside the "" variant MAIN section, the real store section and the gone
-       store section. */
-    expect(card.sections).toHaveLength(4);
+    /* 5, not 4 — the UNREG-variant MAIN row (unregistered refType "TEST") is its own
+       (locationType, locationId, variantSku) section alongside the "" and RED variant
+       MAIN sections and the two STORE sections. Unfiltered means unfiltered: an
+       unregistered refType renders like any other row when nothing narrows refType. */
+    expect(card.sections).toHaveLength(5);
     expect(card.sections[0].locationType).toBe("MAIN");
     expect(card.sections[0].variantSku).toBe("");
     expect(card.sections[0].entries.map((e) => e.id)).toEqual([mainEntry1Id, mainEntry2Id]);
@@ -223,5 +250,95 @@ d("getItemMovementCard", () => {
     const blueCard = await getItemMovementCard({ itemId, variantSku: "BLUE" });
     expect(blueCard.sections).toEqual([]);
     expect(blueCard.hasAnyHistory).toBe(false);
+  });
+
+  /*
+   * The fix round this block exists for: narrowing the movement-type filter used to make
+   * an unregistered-refType row (refType "TEST", genuinely reachable on this column —
+   * see RawLedgerRow's own comment) vanish with no signal, because the old filter was
+   * built as `refType IN (registered subset)` with no way to opt the unregistered class
+   * back in. `includeUnregisteredRefTypes` is that opt-in, and every case below also
+   * asserts hasAnyHistory agrees with sections.length === 0 — the two are built from the
+   * SAME buildRefTypeCondition call now, so a divergence here would mean that sharing
+   * broke, not just that the option itself doesn't work.
+   */
+  it("includes the unregistered row when its class is selected alongside a registered subset", async () => {
+    const card = await getItemMovementCard({
+      itemId,
+      refTypes: ["GRN"],
+      includeUnregisteredRefTypes: true,
+    });
+
+    /* GRN (mainEntry1, variantEntry) + the unregistered TEST row — StockAdjustment and
+       KonsiTransfer rows are registered but not GRN, so they must NOT appear. */
+    const variants = card.sections.filter((s) => s.locationType === "MAIN").map((s) => s.variantSku);
+    expect(variants.sort()).toEqual(["", "RED", "UNREG"]);
+    expect(card.sections.some((s) => s.locationType === "STORE")).toBe(false);
+    expect(card.hasAnyHistory).toBe(true);
+  });
+
+  it("excludes the unregistered row when its class is unticked, even with a registered subset selected", async () => {
+    const card = await getItemMovementCard({
+      itemId,
+      refTypes: ["GRN"],
+      includeUnregisteredRefTypes: false,
+    });
+
+    const variants = card.sections.filter((s) => s.locationType === "MAIN").map((s) => s.variantSku);
+    expect(variants.sort()).toEqual(["", "RED"]);
+    expect(card.hasAnyHistory).toBe(true);
+  });
+
+  it("selects only the unregistered class when no registered member is picked", async () => {
+    const card = await getItemMovementCard({
+      itemId,
+      refTypes: [],
+      includeUnregisteredRefTypes: true,
+    });
+
+    expect(card.sections).toHaveLength(1);
+    expect(card.sections[0].variantSku).toBe("UNREG");
+    expect(card.hasAnyHistory).toBe(true);
+  });
+
+  it("agrees between sections and hasAnyHistory when a registered filter matches nothing at all", async () => {
+    /* FGReceipt has zero rows anywhere in this fixture. If historyWhere ever drifted from
+       `where` (e.g. by rebuilding the condition instead of reusing the same value), this
+       would read hasAnyHistory: true off the itemId/variant predicates alone. */
+    const card = await getItemMovementCard({
+      itemId,
+      refTypes: ["FGReceipt"],
+      includeUnregisteredRefTypes: false,
+    });
+
+    expect(card.sections).toEqual([]);
+    expect(card.hasAnyHistory).toBe(false);
+  });
+
+  /*
+   * The refType half of this predicate sharing had exactly this pair of tests; the
+   * locationType half did not, which is how the two arms of buildLocationTypeCondition's
+   * sibling disagreed once already on this branch. Deleting either `Object.assign(...,
+   * locationTypeCondition)` call in getItemMovementCard should fail one of these two:
+   * dropping the `where` one changes which sections come back (the first assertion
+   * below), dropping the `historyWhere` one leaves hasAnyHistory reading the unfiltered
+   * itemId/variant predicates alone (the second assertion, which is the one that proves
+   * the two `where`s share the condition rather than each carrying their own copy).
+   */
+  it("narrows sections to MAIN when locationTypes excludes STORE, and hasAnyHistory stays true", async () => {
+    const card = await getItemMovementCard({ itemId, locationTypes: ["MAIN"] });
+
+    expect(card.sections.every((s) => s.locationType === "MAIN")).toBe(true);
+    expect(card.sections.some((s) => s.locationType === "STORE")).toBe(false);
+    expect(card.hasAnyHistory).toBe(true);
+  });
+
+  it("agrees between sections and hasAnyHistory when locationTypes matches nothing at all", async () => {
+    /* The fixture has MAIN and STORE rows and no VAN row at all — a locationType-only
+       count on `{ itemId }` would read hasAnyHistory: true regardless of this filter. */
+    const card = await getItemMovementCard({ itemId, locationTypes: ["VAN"] });
+
+    expect(card.sections).toEqual([]);
+    expect(card.hasAnyHistory).toBe(false);
   });
 });
