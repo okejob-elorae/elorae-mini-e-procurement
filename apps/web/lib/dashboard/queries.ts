@@ -125,7 +125,16 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     prisma.gRN.count({
       where: { grnDate: { gte: weekStart } },
     }),
-    prisma.stockMovement.count({
+    /* Counts every location (main, store, van), not just MAIN - this is the more truthful
+     * answer to "what happened today" now that the ledger sees store/van movements that
+     * StockMovement never recorded. That makes this number RISE relative to what the
+     * dashboard showed before, on any day with store or van activity - that is a
+     * correction, not a regression. A second, unrelated cause of a rise: the ledger's
+     * cutover backfill stamps createdAt: NOW(3) on every OPENING row it writes, so on the
+     * day that migration runs, this count also includes one row per non-zero balance
+     * across main/store/van. Historical on production, but live every time the shared dev
+     * bed or a fresh environment gets migrated - that is a one-day artefact, not a bug. */
+    prisma.stockLedgerEntry.count({
       where: { createdAt: { gte: todayStart } },
     }),
     prisma.auditLog.findMany({
