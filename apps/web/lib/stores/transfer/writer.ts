@@ -16,11 +16,14 @@ export type CreateStoreTransferLine = {
  * approve, in `approveStoreTransfer` below.
  *
  * Each line's `unitCost` is snapshotted from the SOURCE store's current `StoreStock.avgCost` at
- * creation time (0 when the source carries no row for that item/variant yet). This is the "same
- * cost basis on both sides" figure `approveStoreTransfer` later hands to both `moveStoreStock`
- * calls unchanged — captured now rather than re-read at approve, because the source balance can
- * legitimately move between creation and approval and the transfer must carry the cost it was
- * valued at when staged, not whatever the source happens to hold later.
+ * creation time (0 when the source carries no row for that item/variant yet). This is the
+ * DOCUMENT's own figure — what the transfer was estimated at when raised, fine for a screen to
+ * show — and NOTHING ELSE reads it: `approveStoreTransfer` deliberately re-reads the source's
+ * avgCost at approve time instead of reusing this snapshot, because the source can legitimately
+ * reprice between creation and approval (an ordinary konsi transfer arriving is enough), and a
+ * stale snapshot as the ledger's cost basis would move value into or out of existence rather
+ * than merely disagreeing with itself. Do not wire this field back into the movement's cost
+ * basis — see the comment on `approveStoreTransfer` for the full reasoning.
  */
 export async function createStoreTransfer(input: {
   fromStoreId: string;
@@ -99,9 +102,17 @@ export async function createStoreTransfer(input: {
  * lib/delivery/shipment-writer.ts, rather than the read-then-plain-update shape older approval
  * writers in this repo (e.g. field-sales/retur/approve-writer.ts) still use.
  *
- * Cost basis: each line's `unitCost` — snapshotted once at creation (see `createStoreTransfer`
- * above) — is passed to BOTH `moveStoreStock` calls, so the value leaving the source is exactly
- * the value landing at the destination; nothing appears or vanishes in transit.
+ * Cost basis: BOTH `moveStoreStock` calls use `sourceAvgCost` — the source store's `avgCost` read
+ * fresh from `StoreStock`, INSIDE this transaction, at approve time — never `line.unitCost` (the
+ * create-time snapshot on `StoreTransferLine`, see the comment on `createStoreTransfer` above).
+ * The two figures can legitimately diverge: the source can reprice between creation and approval
+ * (an ordinary konsi transfer landing there is enough), and using the stale snapshot as the cost
+ * basis while the source's own `balanceValue` is computed from its CURRENT average would move
+ * value into or out of existence — the source's decrement would report leaving at the old price
+ * while its own row closes at the new one, and the destination would receive a different value
+ * than the source actually gave up. Reading the current average for both legs is what keeps the
+ * source's row internally consistent and makes the destination receive exactly what the source
+ * gave up, regardless of what happened between create and approve.
  *
  * The source decrement leaves `StoreStock.avgCost` untouched (omits the `avgCost` param), matching
  * every other store-side decrement in this codebase (field-sales/retur/approve-writer.ts's konsi
@@ -129,7 +140,10 @@ export async function approveStoreTransfer(input: {
         toStoreId: true,
         lines: {
           orderBy: { id: "asc" },
-          select: { id: true, itemId: true, variantSku: true, qty: true, unitCost: true },
+          /* No `unitCost` here on purpose — see the function doc above. That column is the
+             document's create-time snapshot; this function's cost basis is `sourceAvgCost`,
+             read fresh from `StoreStock` below. */
+          select: { id: true, itemId: true, variantSku: true, qty: true },
         },
       },
     });
@@ -148,8 +162,15 @@ export async function approveStoreTransfer(input: {
 
     for (const line of transfer.lines) {
       const qty = line.qty.toNumber();
-      const unitCost = line.unitCost.toNumber();
 
+      /*
+       * Both reads below run INSIDE this transaction, after the CAS above has already claimed
+       * the approval — never before it and never outside runSerializable. Under SERIALIZABLE
+       * isolation a concurrent transaction touching either StoreStock row forces one of the two
+       * transactions to fail with a serialization conflict and retry (handled by runSerializable's
+       * withRetry), so neither read can observe a balance that a concurrent mover is still in the
+       * middle of changing — there is no stale-read window to guard against by hand here.
+       */
       const sourceKey = {
         storeId_itemId_variantSku: { storeId: transfer.fromStoreId, itemId: line.itemId, variantSku: line.variantSku },
       };
@@ -163,8 +184,8 @@ export async function approveStoreTransfer(input: {
         itemId: line.itemId,
         variantSku: line.variantSku,
         qtyDelta: -qty,
-        unitCost,
-        totalCost: -(qty * unitCost),
+        unitCost: sourceAvgCost,
+        totalCost: -(qty * sourceAvgCost),
         balanceValue: newSourceQty * sourceAvgCost,
         refType: "StoreTransfer" satisfies StockLedgerRefType,
         refId: transfer.id,
@@ -183,9 +204,10 @@ export async function approveStoreTransfer(input: {
        * are not physically there. Blending this transfer's incoming cost against those units would
        * use a negative weight and inflate the blended average past the true cost, so the blend
        * clamps the existing qty to 0 — the qty actually moved below still uses the real prevDestQty.
+       * The incoming cost itself is `sourceAvgCost` (see the function doc above), not `line.unitCost`.
        */
       const blendQty = Math.max(prevDestQty, 0);
-      const newDestAvgCost = destStock ? weightedAvgCost(blendQty, prevDestAvgCost, qty, unitCost) : unitCost;
+      const newDestAvgCost = destStock ? weightedAvgCost(blendQty, prevDestAvgCost, qty, sourceAvgCost) : sourceAvgCost;
       const newDestQty = prevDestQty + qty;
 
       await moveStoreStock(tx, {
@@ -194,8 +216,8 @@ export async function approveStoreTransfer(input: {
         variantSku: line.variantSku,
         qtyDelta: qty,
         avgCost: newDestAvgCost,
-        unitCost,
-        totalCost: qty * unitCost,
+        unitCost: sourceAvgCost,
+        totalCost: qty * sourceAvgCost,
         balanceValue: newDestQty * newDestAvgCost,
         refType: "StoreTransfer" satisfies StockLedgerRefType,
         refId: transfer.id,
