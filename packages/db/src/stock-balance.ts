@@ -21,9 +21,9 @@ type MoveCommon = {
   totalValue?: number | null;
   /*
    * The ledger's own value columns, forwarded to appendStockLedger untouched. The caller already
-   * computes these for the StockMovement row a few lines away from this call — pass the SAME
-   * expressions here rather than re-deriving them, or the two records disagree about the cost of
-   * the identical movement.
+   * computes these as part of its own cost calculation a few lines away from this call — pass
+   * the SAME expressions here rather than re-deriving them, or the ledger disagrees with the
+   * cost calc about the value of the identical movement.
    */
   totalCost?: number | null;
   balanceValue?: number | null;
@@ -409,7 +409,7 @@ type SetCommon = {
   /*
    * The ledger's own value columns, mirroring the unitCost contract above exactly: recorded on
    * the ledger entry only, never reaching the balance table. Forward the SAME expressions the
-   * caller already computes for its StockMovement row.
+   * caller already computes as part of its own cost calculation.
    */
   totalCost?: number | null;
   balanceValue?: number | null;

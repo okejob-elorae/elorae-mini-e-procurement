@@ -108,21 +108,20 @@ export async function syncFabricAggregateQty(
     // exists to remove. inventoryValueId pins the write to the exact row `existing` was just
     // read from.
     const avgCost = Number(existing.avgCost);
-    // Unlike most other set-mover calls, this one DOES carry totalCost/balanceValue: its sibling
-    // StockMovement row (applyFabricAdjustments in opname-approve.ts) carries them too, and
+    // Unlike most other set-mover calls, this one DOES carry totalCost/balanceValue:
     // opnameNetDelta sums every OPNAME ledger row for the journal, treating a null totalCost as a
     // hard error — null means "this predates the value columns", not "this item is uncosted".
-    // `delta` mirrors the same qty change applyFabricAdjustments derives as `netDelta` (its own
-    // prevQty is `total - netDelta`, the identical identity used here in reverse).
+    // `delta` mirrors the same qty change applyFabricAdjustments (opname-approve.ts) accumulates
+    // per item as `netDelta` (its own prevQty is `total - netDelta`, the identical identity used
+    // here in reverse).
     //
-    // No avgCost-guard here, unlike the sibling StockMovement row's `avgCost ? … : null`: null
-    // and 0 mean different things in this column. Null means "we don't know what this was
-    // worth" (true of every pre-migration row, since the moving average at that instant was
-    // never recorded); 0 means "this was worth nothing", which is exactly true for a fabric item
-    // whose avgCost is 0 (never costed through a GRN) — a known zero, not an unknown. Stamping
-    // null here would make every opname on an as-yet-uncosted fabric item refuse to post.
-    // `delta * avgCost` already evaluates to 0 when avgCost is 0, so the plain expression is
-    // both simpler and more truthful than the guarded one.
+    // No avgCost-guard here: null and 0 mean different things in this column. Null means "we
+    // don't know what this was worth" (true of every pre-migration row, since the moving average
+    // at that instant was never recorded); 0 means "this was worth nothing", which is exactly
+    // true for a fabric item whose avgCost is 0 (never costed through a GRN) — a known zero, not
+    // an unknown. Stamping null here would make every opname on an as-yet-uncosted fabric item
+    // refuse to post. `delta * avgCost` already evaluates to 0 when avgCost is 0, so the plain
+    // expression is both simpler and more truthful than a guarded one.
     const delta = total - Number(existing.qtyOnHand);
     await setMainStock(tx, {
       itemId,

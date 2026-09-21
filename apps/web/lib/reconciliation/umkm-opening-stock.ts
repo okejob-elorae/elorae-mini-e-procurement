@@ -575,8 +575,7 @@ export async function applyUmkmManifest(
         const newTotalValue = newQty.mul(prevAvgCost);
         const adjQty = type === "POSITIVE" ? qtyChange : -qtyChange;
 
-        // Same expression the stockMovement.create below stamps as totalCost — computed here so
-        // the ledger entry and the movement row carry the identical figure.
+        // Computed here so it can be passed straight into the ledger mover below as totalCost.
         const totalCostAdj =
           type === "POSITIVE"
             ? qtyDecimal.mul(prevAvgCost).toNumber()
@@ -595,23 +594,6 @@ export async function applyUmkmManifest(
           refId: adjustment.id,
           refDocNumber: adjustment.docNumber,
           createdById: userId,
-        });
-
-        await tx.stockMovement.create({
-          data: {
-            itemId,
-            variantSku: variantKey,
-            type: "ADJUSTMENT",
-            refType: "ADJUSTMENT",
-            refId: adjustment.id,
-            refDocNumber: idempotencyDoc,
-            qty: adjQty,
-            unitCost: prevAvgCost.toNumber(),
-            totalCost: totalCostAdj,
-            balanceQty: newQty.toNumber(),
-            balanceValue: newTotalValue.toNumber(),
-            notes: reason,
-          },
         });
 
         await tx.auditLog.create({

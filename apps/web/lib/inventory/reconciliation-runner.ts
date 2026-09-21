@@ -110,7 +110,6 @@ async function applyMatchJubelio(
   });
 
   const newTotalValue = newQty.mul(prevAvgCost);
-  // Same expressions the stockMovement.create below stamps as totalCost/balanceValue.
   await moveMainStock(tx, {
     itemId: params.itemId,
     variantSku: variantKey,
@@ -124,23 +123,6 @@ async function applyMatchJubelio(
     refId: adjustment.id,
     refDocNumber: adjDoc,
     createdById: params.userId ?? null,
-  });
-
-  await tx.stockMovement.create({
-    data: {
-      itemId: params.itemId,
-      variantSku: variantKey,
-      type: "ADJUSTMENT",
-      refType: "RECON",
-      refId: params.runId,
-      refDocNumber: params.runId,
-      qty: adjQty,
-      unitCost: prevAvgCost.toNumber(),
-      totalCost: adjQty * prevAvgCost.toNumber(),
-      balanceQty: newQty.toNumber(),
-      balanceValue: newTotalValue.toNumber(),
-      notes: "Jubelio reconciliation auto-correct",
-    },
   });
 }
 

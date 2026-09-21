@@ -428,7 +428,7 @@ export async function processReturn(id: string, userId: string) {
         const variantKey = line.variantSku ?? null;
         const qty = new Decimal(parsedQty);
         const unitCost = parsedQty === 0 ? new Decimal(0) : new Decimal(parsedCostValue).div(parsedQty);
-        const costResult = await reverseInventoryValue(
+        await reverseInventoryValue(
           line.itemId,
           qty,
           unitCost,
@@ -436,23 +436,6 @@ export async function processReturn(id: string, userId: string) {
           variantKey,
           { refType: 'VendorReturn' satisfies StockLedgerRefType, refId: ret.id, refDocNumber: ret.docNumber, createdById: userId }
         );
-        const outgoingValue = qty.mul(unitCost);
-        await tx.stockMovement.create({
-          data: {
-            itemId: line.itemId,
-            variantSku: variantKey,
-            type: 'OUT',
-            refType: 'VENDOR_RETURN',
-            refId: ret.id,
-            refDocNumber: ret.docNumber,
-            qty: -parsedQty,
-            unitCost: unitCost.toNumber(),
-            totalCost: outgoingValue.toNumber(),
-            balanceQty: costResult.newQty.toNumber(),
-            balanceValue: costResult.newTotalValue.toNumber(),
-            notes: ret.woId ? `Vendor return ${ret.docNumber} (WO)` : `Vendor return ${ret.docNumber}`,
-          },
-        });
         if (line.type === 'FABRIC' && line.rollId) {
           await tx.fabricRoll.update({
             where: { id: line.rollId },
