@@ -379,6 +379,7 @@ export const ITEM_DELETE_BLOCKED = "ITEM_DELETE_BLOCKED";
 export async function deleteItem(id: string) {
   const [
     movements,
+    ledgerEntryCount,
     poItems,
     workOrderFinishedGoodCount,
     workOrderConsumptionMaterialCount,
@@ -401,7 +402,19 @@ export async function deleteItem(id: string) {
     vanReconcileLineCount,
     spgSaleLineCount,
   ] = await Promise.all([
+    /*
+     * Two counts guard two different failures, not the same one twice. `StockMovement` writes
+     * stopped (history now lands in `StockLedgerEntry`), but its existing rows are a frozen
+     * archive, not a retired table — `StockMovement.item` is still a REQUIRED Prisma relation, so
+     * an old row left pointing at a deleted item throws "Inconsistent query result" on every read
+     * that joins it, forever. Stopping the writes did not make that risk go away; it only stopped
+     * new rows from adding to it. `StockLedgerEntry.itemId` carries no relation at all, so an
+     * orphaned ledger row cannot crash a read — but it would still silently strand real stock
+     * history, which is what this second count refuses. Do not drop the `StockMovement` count
+     * because the table stopped being written, and do not fold the two into one.
+     */
     prisma.stockMovement.count({ where: { itemId: id } }),
+    prisma.stockLedgerEntry.count({ where: { itemId: id } }),
     prisma.pOItem.count({ where: { itemId: id } }),
     prisma.workOrder.count({ where: { finishedGoodId: id } }),
     prisma.workOrder.count({ where: { consumptionMaterialId: id } }),
@@ -434,6 +447,7 @@ export async function deleteItem(id: string) {
 
   const hasLinkedRecords =
     movements > 0 ||
+    ledgerEntryCount > 0 ||
     poItems > 0 ||
     workOrderFinishedGoodCount > 0 ||
     workOrderConsumptionMaterialCount > 0 ||
