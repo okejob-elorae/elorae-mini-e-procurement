@@ -97,6 +97,8 @@ model User {
   spgSales      SpgSale[] @relation("SpgSaleSalesman")
   spgSalesCreated SpgSale[] @relation("SpgSaleCreatedBy")
   konsiTransfers KonsiTransfer[] @relation("KonsiTransferUser")
+  storeTransfersCreated  StoreTransfer[] @relation("StoreTransferCreatedBy")
+  storeTransfersApproved StoreTransfer[] @relation("StoreTransferApprovedBy")
   paymentsRecorded Payment[] @relation("PaymentRecordedBy")
   paymentsVoided   Payment[] @relation("PaymentVoidedBy")
   receivablesToCollect  Receivable[]           @relation("ReceivableCollector")
@@ -341,6 +343,8 @@ model Store {
   receivables    Receivable[]
   payments       Payment[]
   settlements    StoreSettlement[]
+  storeTransfersFrom StoreTransfer[] @relation("StoreTransferFromStore")
+  storeTransfersTo   StoreTransfer[] @relation("StoreTransferToStore")
 
   @@index([isActive, name])
 }
@@ -938,6 +942,48 @@ model KonsiTransferLine {
   @@index([itemId])
 }
 
+enum StoreTransferStatus {
+  PENDING
+  APPROVED
+}
+
+model StoreTransfer {
+  id           String              @id @default(cuid())
+  docNo        String              @unique
+  fromStoreId  String
+  toStoreId    String
+  status       StoreTransferStatus @default(PENDING)
+  note         String?             @db.Text
+  createdById  String
+  createdAt    DateTime            @default(now())
+  approvedById String?
+  approvedAt   DateTime?
+  fromStore    Store               @relation("StoreTransferFromStore", fields: [fromStoreId], references: [id])
+  toStore      Store               @relation("StoreTransferToStore", fields: [toStoreId], references: [id])
+  createdBy    User                @relation("StoreTransferCreatedBy", fields: [createdById], references: [id])
+  approvedBy   User?               @relation("StoreTransferApprovedBy", fields: [approvedById], references: [id])
+  lines        StoreTransferLine[]
+
+  @@index([fromStoreId, createdAt])
+  @@index([toStoreId, createdAt])
+  @@index([status])
+}
+
+model StoreTransferLine {
+  id          String        @id @default(cuid())
+  transferId  String
+  itemId      String
+  variantSku  String        @default("")
+  productName String
+  qty         Decimal       @db.Decimal(10, 2)
+  unitCost    Decimal       @db.Decimal(15, 2)
+  transfer    StoreTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  item        Item          @relation(fields: [itemId], references: [id])
+
+  @@index([transferId])
+  @@index([itemId])
+}
+
 enum StoreStocktakeStatus {
   DRAFT
   PENDING_VERIFICATION
@@ -1138,6 +1184,7 @@ model Item {
   konsiTransferLines KonsiTransferLine[]
   stocktakeLines   StoreStocktakeLine[]
   assortmentLines  StoreAssortmentLine[]
+  storeTransferLines StoreTransferLine[]
   @@index([type, isActive])
   @@index([sku])
   @@index([uomId])
@@ -2362,6 +2409,7 @@ enum DocType {
   STOCKTAKE
   PAYMENT
   BKM
+  STORETRF
 }
 
 enum OpnameScope {
