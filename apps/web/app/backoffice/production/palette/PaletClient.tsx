@@ -76,6 +76,7 @@ import { IkonHarmoni } from './IkonHarmoni';
 import { KartuKain } from './KartuKain';
 import { KartuKomposisiDesain } from './KartuKomposisiDesain';
 import { KartuRekomendasi } from './KartuRekomendasi';
+import { KartuKeterbacaanPantone } from './KartuKeterbacaanPantone';
 import { HURUF_SABLON, KartuSablon } from './KartuSablon';
 import { KartuTintaDasar } from './KartuTintaDasar';
 import { KartuWarnaLaris } from './KartuWarnaLaris';
@@ -268,6 +269,16 @@ export function PaletClient({
     setKunci((k) => {
       const set = new Set(k.includes(h) ? k.filter((x) => x !== h) : [...k, h]);
       return [...hex.filter((x) => set.has(x)), ...[...set].filter((x) => !hex.includes(x))];
+    });
+  }
+
+  /** Warna dari buku keterbacaan dipasang ke satu tinta — bisa diurungkan. */
+  function pakaiDariBuku(i: number, hexBaru: string, kode: string) {
+    if (tintaTerkunci(i)) return;
+    const sebelum = palet;
+    setPaletSendiri(gantiHexPalet(sebelum, i, hexBaru));
+    toast.success(t('readabilityBook.applied', { code: kode, letter: HURUF_SABLON[i] }), {
+      action: { label: t('undo'), onClick: () => setPaletSendiri(sebelum) },
     });
   }
 
@@ -802,6 +813,17 @@ export function PaletClient({
           }}
           onSarankanUlang={() => ubah((p) => sarankanDariKain(p, katalogC(), indeksKunci))}
           onSalin={(teks) => salin(teks, tSablon('copied'))}
+        />
+      )}
+
+      {palet.kain && (
+        <KartuKeterbacaanPantone
+          kainHex={palet.kain}
+          namaKain={namaKain}
+          katalogC={katalogC()}
+          hexTinta={hex}
+          indeksKunci={indeksKunci}
+          onPakai={pakaiDariBuku}
         />
       )}
 

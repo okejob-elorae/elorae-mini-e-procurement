@@ -1855,7 +1855,31 @@
     "guessInkCount": "Number of inks",
     "guessComposition": "Guess composition",
     "inkShare": "Ink {letter} · {role} · {percent}% of print",
-    "compositionHint": "Print share = each ink’s part of the whole printed area (the fabric is not counted). Use as print inks applies these shares."
+    "compositionHint": "Print share = each ink’s part of the whole printed area (the fabric is not counted). Use as print inks applies these shares.",
+    "readabilityBook": {
+      "title": "Pantone C readability on this fabric",
+      "description": "Every Pantone C as lettering on {fabric} fabric, with its contrast number — the higher, the easier to read. Pick a colour to see sample lettering.",
+      "searchLabel": "Search code",
+      "searchPlaceholder": "e.g. 541 or Warm Red",
+      "sort": "Sort",
+      "sorts": {
+        "KONTRAS": "Highest contrast",
+        "WARNA": "By colour family",
+        "KODE": "Pantone book order"
+      },
+      "hideSpecial": "Hide metallic & neon",
+      "readabilityLabel": "Filter by readability",
+      "empty": "No colour matches these filters.",
+      "tileLabel": "{code}, {readability}, contrast {ratio}",
+      "sampleHeadline": "Large lettering",
+      "sampleBody": "Medium lettering, like a tagline under a logo.",
+      "sampleSmall": "Small lettering — size labels, fabric notes, a store address.",
+      "useFor": "Use for ink",
+      "useForInk": "Use for ink {letter}",
+      "lockedInk": "Ink {letter} is locked",
+      "applied": "{code} applied to ink {letter}.",
+      "pickHint": "Pick a colour on the left to see sample lettering."
+    }
   },
   "productionPrint": {
     "copySummary": "Copy summary",

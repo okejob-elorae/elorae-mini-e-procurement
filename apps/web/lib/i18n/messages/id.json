@@ -1855,7 +1855,31 @@
     "guessInkCount": "Jumlah tinta",
     "guessComposition": "Tebak komposisi",
     "inkShare": "Tinta {letter} · {role} · {percent}% sablon",
-    "compositionHint": "Persen sablon = bagian tiap tinta dari seluruh area cetak (kain tidak dihitung). Jadikan tinta sablon memakai persen ini."
+    "compositionHint": "Persen sablon = bagian tiap tinta dari seluruh area cetak (kain tidak dihitung). Jadikan tinta sablon memakai persen ini.",
+    "readabilityBook": {
+      "title": "Keterbacaan Pantone C di kain ini",
+      "description": "Setiap Pantone C sebagai tulisan di atas kain {fabric}, dengan angka kontrasnya — makin besar makin mudah dibaca. Pilih satu warna untuk melihat contoh tulisannya.",
+      "searchLabel": "Cari kode",
+      "searchPlaceholder": "mis. 541 atau Warm Red",
+      "sort": "Urutkan",
+      "sorts": {
+        "KONTRAS": "Kontras tertinggi",
+        "WARNA": "Per keluarga warna",
+        "KODE": "Urutan buku Pantone"
+      },
+      "hideSpecial": "Sembunyikan metalik & neon",
+      "readabilityLabel": "Saring menurut keterbacaan",
+      "empty": "Tidak ada warna yang cocok dengan saringan ini.",
+      "tileLabel": "{code}, {readability}, kontras {ratio}",
+      "sampleHeadline": "Tulisan besar",
+      "sampleBody": "Tulisan sedang, seperti tagline di bawah logo.",
+      "sampleSmall": "Tulisan kecil — label ukuran, keterangan bahan, alamat toko.",
+      "useFor": "Pakai untuk tinta",
+      "useForInk": "Pakai untuk tinta {letter}",
+      "lockedInk": "Tinta {letter} terkunci",
+      "applied": "{code} dipasang di tinta {letter}.",
+      "pickHint": "Pilih warna di sebelah kiri untuk melihat contoh tulisannya."
+    }
   },
   "productionPrint": {
     "copySummary": "Salin ringkasan",

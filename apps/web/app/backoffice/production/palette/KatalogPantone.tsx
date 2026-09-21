@@ -19,7 +19,7 @@ const PER_HALAMAN = 96;
 const JUMLAH_VARIASI = 12;
 
 /** Titik warna penanda tiap keluarga di tombol saring. */
-const WARNA_KELUARGA: Record<KeluargaWarna, string> = {
+export const WARNA_KELUARGA: Record<KeluargaWarna, string> = {
   MERAH: '#d0312d',
   ORANYE: '#f08c21',
   KUNING: '#f2c832',
