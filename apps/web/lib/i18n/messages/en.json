@@ -3460,6 +3460,7 @@
       "stockShort": "stok: {qty}",
       "available": "Available",
       "overNote": "more than what this store currently holds",
+      "qtyRequired": "Enter a quantity greater than zero, or remove this line.",
       "removeLine": "Remove line",
       "addLine": "Add Item",
       "submit": "Create Transfer",
@@ -3477,13 +3478,15 @@
       "approvedAt": "Approved At",
       "note": "Note",
       "pendingNote": "This transfer has not moved any stock yet. Stock only moves when it is approved.",
+      "estimateNote": "Unit cost, line value and total below are a snapshot of the source store's average cost taken when this transfer was created — not necessarily the value actually moved on approval.",
+      "approvedValueNote": "This transfer is approved. The cost basis it actually moved was re-read from the source store at approval time and can differ from the creation-time estimate below — check that store's stock ledger for the exact figure.",
       "linesTitle": "Lines",
       "colProduct": "Product",
       "colVariant": "Variant",
       "colQty": "Qty",
-      "colUnitCost": "Unit Cost",
-      "colLineValue": "Line Value",
-      "colTotal": "Total"
+      "colUnitCost": "Est. Unit Cost",
+      "colLineValue": "Est. Line Value",
+      "colTotal": "Est. Total"
     },
     "approve": {
       "button": "Approve",

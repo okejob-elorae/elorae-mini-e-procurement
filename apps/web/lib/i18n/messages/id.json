@@ -3460,6 +3460,7 @@
       "stockShort": "stok: {qty}",
       "available": "Tersedia",
       "overNote": "lebih dari stok yang dimiliki toko ini saat ini",
+      "qtyRequired": "Masukkan jumlah lebih dari nol, atau hapus baris ini.",
       "removeLine": "Hapus baris",
       "addLine": "Tambah Barang",
       "submit": "Buat Transfer",
@@ -3477,13 +3478,15 @@
       "approvedAt": "Disetujui Pada",
       "note": "Catatan",
       "pendingNote": "Transfer ini belum memindahkan stok apa pun. Stok baru berpindah setelah transfer disetujui.",
+      "estimateNote": "Harga satuan, nilai baris, dan total di bawah adalah cuplikan harga rata-rata toko asal saat transfer ini dibuat — belum tentu nilai yang benar-benar berpindah saat disetujui.",
+      "approvedValueNote": "Transfer ini sudah disetujui. Basis biaya yang benar-benar berpindah dibaca ulang dari toko asal pada saat persetujuan dan bisa berbeda dari perkiraan saat dibuat di bawah ini — cek kartu stok toko tersebut untuk angka pastinya.",
       "linesTitle": "Rincian Barang",
       "colProduct": "Produk",
       "colVariant": "Varian",
       "colQty": "Qty",
-      "colUnitCost": "Harga Satuan",
-      "colLineValue": "Nilai Baris",
-      "colTotal": "Total"
+      "colUnitCost": "Perkiraan Harga Satuan",
+      "colLineValue": "Perkiraan Nilai Baris",
+      "colTotal": "Perkiraan Total"
     },
     "approve": {
       "button": "Setujui",

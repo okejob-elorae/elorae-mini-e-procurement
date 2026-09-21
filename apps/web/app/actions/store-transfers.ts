@@ -46,8 +46,12 @@ function isValidCreateInput(input: unknown): input is CreateStoreTransferActionI
 /**
  * Every user-visible string this document produces goes through the SAME error-code union the
  * writer throws — `StoreTransferError`'s codes plus the action-layer three (`FORBIDDEN`,
- * `INVALID_REQUEST`, `ERROR`) — so a code added to the writer without a matching UI string is a
- * type error in the detail/new clients, not a silent gap.
+ * `INVALID_REQUEST`, `ERROR`). Nothing enforces that at compile time — both clients build their
+ * locale key with a plain template literal (`err.${code}`) and pass a bare `string` to `t(...)`,
+ * and no `IntlMessages` augmentation exists anywhere in `apps/web`, so `tsc` stays silent either
+ * way. Keeping every code covered in BOTH `en.json`/`id.json` is a review discipline, not a
+ * compiler guarantee — miss one and the operator reads the raw `err.<CODE>` key off the screen
+ * instead of a type error at build time.
  */
 function toResult(e: unknown): StoreTransferActionResult {
   if (e instanceof StoreTransferError) return { ok: false, code: e.code };

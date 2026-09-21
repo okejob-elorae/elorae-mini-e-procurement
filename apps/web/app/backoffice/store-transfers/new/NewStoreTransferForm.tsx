@@ -46,6 +46,21 @@ function emptyLine(): Line {
   return { id: `ln-${Date.now()}-${Math.random().toString(36).slice(2)}`, key: "", qty: "" };
 }
 
+/**
+ * Splits a "itemId::variantSku" composite key on the FIRST separator only. A naive
+ * `.split("::")` truncates a `variantSku` that itself contains "::" to its first segment — the
+ * writer then finds no matching source `StoreStock` row under the truncated key, `sourceAvgCost`
+ * falls to 0, and `moveStoreStock` opens a brand-new phantom row at negative quantity while the
+ * real row's stock sits untouched (and the ledger is append-only, so that split can never be
+ * merged back). `itemId` is a cuid and never contains "::", so the separator is always the FIRST
+ * one and everything after it — however many more "::" the variant SKU itself holds — is the
+ * variant.
+ */
+function splitLineKey(key: string): { itemId: string; variantSku: string } {
+  const sepIdx = key.indexOf("::");
+  return sepIdx === -1 ? { itemId: key, variantSku: "" } : { itemId: key.slice(0, sepIdx), variantSku: key.slice(sepIdx + 2) };
+}
+
 export function NewStoreTransferForm({ storeOptions }: Props) {
   const t = useTranslations("storeTransfers");
   const tNew = useTranslations("storeTransfers.new");
@@ -58,6 +73,10 @@ export function NewStoreTransferForm({ storeOptions }: Props) {
   const [note, setNote] = useState("");
   const [lines, setLines] = useState<Line[]>([emptyLine()]);
   const [sourceStock, setSourceStock] = useState<SourceStockState>({ status: "idle" });
+  // Only surface a started-but-empty-qty row as an error AFTER a submit was attempted — flagging
+  // it the instant an item is picked, before the operator has had a chance to type a quantity,
+  // would nag rather than inform.
+  const [submitAttempted, setSubmitAttempted] = useState(false);
 
   const fromOptions = useMemo(
     () => storeOptions.filter((s) => s.id !== toStoreId).map((s) => ({ value: s.id, label: s.name })),
@@ -119,18 +138,34 @@ export function NewStoreTransferForm({ storeOptions }: Props) {
     setLines((prev) => (prev.length <= 1 ? prev : prev.filter((l) => l.id !== id)));
   }
 
-  const validLines = lines
-    .filter((l) => l.key && (parseFloat(l.qty) || 0) > 0)
-    .map((l) => {
-      const [itemId, variantSku] = l.key.split("::");
-      return { itemId, variantSku, qty: parseFloat(l.qty) };
-    });
+  // A "started" line is one with an item picked (it has a matching source-stock row) — an
+  // untouched blank row at the end is never started and is silently ignored, same as before.
+  // A STARTED row with no positive quantity is different: it used to be dropped from the
+  // submitted payload with no warning, quietly shrinking a four-line transfer to two. Now it
+  // blocks submission instead (see `invalidQtyLineIds` and the inline error under each such
+  // row's quantity input) — silence was the actual defect, not which of the two fixes was
+  // picked.
+  const qtyOf = (l: Line): number => parseFloat(l.qty) || 0;
+  const startedLines = lines.filter((l) => rowByKey.get(l.key) != null);
+  const invalidQtyLineIds = new Set(startedLines.filter((l) => !(qtyOf(l) > 0)).map((l) => l.id));
+  const hasInvalidQty = invalidQtyLineIds.size > 0;
+
+  const validLines = startedLines
+    .filter((l) => qtyOf(l) > 0)
+    .map((l) => ({ ...splitLineKey(l.key), qty: qtyOf(l) }));
 
   const sameStore = !!fromStoreId && !!toStoreId && fromStoreId === toStoreId;
-  const canSubmit = !!fromStoreId && !!toStoreId && !sameStore && validLines.length > 0 && !pending;
+  // What the SUBMIT BUTTON is gated on — everything except quantity validity. Quantity errors
+  // are deliberately left able to reach `onSubmit` (rather than disabling the button for them
+  // too) so a click with an empty qty on a started row actually fires the handler below and
+  // surfaces the inline error, instead of the button just sitting inertly disabled with no
+  // feedback at all.
+  const formReady = !!fromStoreId && !!toStoreId && !sameStore && startedLines.length > 0 && !pending;
+  const canSubmit = formReady && !hasInvalidQty;
 
   function onSubmit(e: React.FormEvent): void {
     e.preventDefault();
+    setSubmitAttempted(true);
     if (!canSubmit) return;
 
     startSubmitTransition(async () => {
@@ -239,6 +274,7 @@ export function NewStoreTransferForm({ storeOptions }: Props) {
                   const row = rowByKey.get(line.key);
                   const qtyNum = parseFloat(line.qty) || 0;
                   const over = row != null && qtyNum > row.qty;
+                  const invalidQty = submitAttempted && invalidQtyLineIds.has(line.id);
                   return (
                     <div key={line.id} className="space-y-2 rounded-md border p-3">
                       <div className="flex items-start gap-2">
@@ -268,26 +304,36 @@ export function NewStoreTransferForm({ storeOptions }: Props) {
                         </Button>
                       </div>
                       {row && (
-                        <div className="flex items-center gap-3">
-                          <p
-                            className={`flex-1 text-xs ${
-                              over ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground"
-                            }`}
-                          >
-                            {tNew("available")}: <span className="tabular-nums">{row.qty}</span>
-                            {over && ` — ${tNew("overNote")}`}
-                          </p>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            inputMode="decimal"
-                            disabled={pending}
-                            value={line.qty}
-                            onChange={(e) => updateLine(line.id, { qty: e.target.value })}
-                            placeholder="0"
-                            className="w-28 shrink-0 text-right min-h-[40px]"
-                          />
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-3">
+                            <p
+                              className={`flex-1 text-xs ${
+                                over ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground"
+                              }`}
+                            >
+                              {tNew("available")}: <span className="tabular-nums">{row.qty}</span>
+                              {over && ` — ${tNew("overNote")}`}
+                            </p>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              inputMode="decimal"
+                              disabled={pending}
+                              aria-invalid={invalidQty}
+                              value={line.qty}
+                              onChange={(e) => updateLine(line.id, { qty: e.target.value })}
+                              placeholder="0"
+                              className={`w-28 shrink-0 text-right min-h-[40px] ${
+                                invalidQty ? "border-destructive focus-visible:ring-destructive/20" : ""
+                              }`}
+                            />
+                          </div>
+                          {invalidQty && (
+                            <p className="text-right text-xs text-destructive" role="alert">
+                              {tNew("qtyRequired")}
+                            </p>
+                          )}
                         </div>
                       )}
                     </div>
@@ -303,7 +349,7 @@ export function NewStoreTransferForm({ storeOptions }: Props) {
           </CardContent>
         </Card>
 
-        <Button type="submit" disabled={!canSubmit} className="w-full sm:w-auto min-h-[44px]">
+        <Button type="submit" disabled={!formReady} className="w-full sm:w-auto min-h-[44px]">
           {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {pending ? tNew("submitting") : tNew("submit")}
         </Button>

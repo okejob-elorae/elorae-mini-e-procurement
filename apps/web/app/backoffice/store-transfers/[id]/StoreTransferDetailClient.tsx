@@ -12,7 +12,7 @@ import {
   cancelStoreTransferAction,
   type StoreTransferActionResult,
 } from "@/app/actions/store-transfers";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -211,9 +211,25 @@ export function StoreTransferDetailClient({ transfer, canManage }: Props) {
         </Alert>
       )}
 
+      {/*
+       * StoreTransferLine.unitCost is the create-time snapshot of the source's avgCost — the
+       * approve path (cancelStoreTransfer's sibling, approveStoreTransfer) deliberately RE-READS
+       * the source's avgCost fresh at approval instead of reusing this snapshot, because the
+       * source can reprice between creation and approval. So once APPROVED, the unit
+       * cost/line value/total below can genuinely disagree with what the ledger actually moved —
+       * this alert says so explicitly rather than letting the estimate stand in for the real
+       * figure on a document that already happened.
+       */}
+      {transfer.status === "APPROVED" && (
+        <Alert>
+          <AlertDescription>{tDetail("approvedValueNote")}</AlertDescription>
+        </Alert>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">{tDetail("linesTitle")}</CardTitle>
+          <CardDescription>{tDetail("estimateNote")}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
