@@ -59,7 +59,6 @@ d("opname NULL-variant InventoryValue lookup (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.stockMovement.deleteMany({ where: { refType: "OPNAME", refId: seededId(opnameId) } });
     await prisma.stockAdjustment.deleteMany({ where: { externalRef: seededId(opnameId) } });
     await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockOpnameItem.deleteMany({ where: { opnameId: seededId(opnameId) } });
@@ -92,7 +91,16 @@ d("opname NULL-variant InventoryValue lookup (test bed only)", () => {
     const inv = await prisma.inventoryValue.findFirst({ where: { itemId } });
     expect(Number(inv!.qtyOnHand)).toBe(130);
 
-    const mv = await prisma.stockMovement.findFirst({ where: { refType: "OPNAME", refId: opnameId } });
-    expect(Number(mv!.totalCost)).toBe(10 * 20000);
+    // StockMovement stopped being written (stock-movement-retirement) - the writer now lands
+    // this on StockLedgerEntry instead. Note the refType spelling changed too: the old
+    // StockMovement row was "OPNAME", the ledger row applyFgAccessoriesAdjustments writes is
+    // "StockOpname" (see the landmine index) - querying the old spelling here would return null
+    // and fail exactly like the bug this test exists to catch.
+    const led = await prisma.stockLedgerEntry.findFirst({
+      where: { itemId, refType: "StockOpname", refId: opnameId },
+    });
+    expect(led).not.toBeNull();
+    expect(Number(led!.totalCost)).toBe(10 * 20000);
+    expect(Number(led!.balanceQty)).toBe(130);
   });
 });
