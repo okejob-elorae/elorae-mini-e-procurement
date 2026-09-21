@@ -124,6 +124,8 @@ export async function acceptReturnItem(
     variantSku: item.variantSku,
     qtyDelta: qty,
     totalValue: newQty * avgCost,
+    totalCost: qty * avgCost,
+    balanceValue: newQty * avgCost,
     inventoryValueId: inv.id,
     refType: "SalesReturn" satisfies StockLedgerRefType,
     refId: item.salesReturnId,

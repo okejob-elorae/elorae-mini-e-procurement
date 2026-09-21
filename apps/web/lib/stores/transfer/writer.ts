@@ -39,6 +39,18 @@ export async function createStoreTransfer(input: {
       if (!Number.isFinite(l.qty) || l.qty <= 0) throw new StoreTransferError("BAD_QTY");
     }
 
+    /*
+     * `StoreTransfer.fromStore`/`toStore` are REQUIRED relations under relationMode = "prisma" —
+     * no database FK backs them, so a bad id would otherwise create the row and only surface
+     * later as `listStoreTransfers`'s `Inconsistent query result` on every read. The SAME_STORE
+     * guard above already guarantees these are two distinct ids by the time we get here, but the
+     * count is compared against the DEDUPED id list rather than a hardcoded 2 so this stays
+     * correct on its own even if that ordering ever changes.
+     */
+    const storeIds = Array.from(new Set([input.fromStoreId, input.toStoreId]));
+    const storeCount = await tx.store.count({ where: { id: { in: storeIds } } });
+    if (storeCount !== storeIds.length) throw new StoreTransferError("STORE_NOT_FOUND");
+
     const itemIds = Array.from(new Set(input.lines.map((l) => l.itemId)));
     const items = await tx.item.findMany({ where: { id: { in: itemIds } }, select: { id: true, nameId: true } });
     const byId = new Map(items.map((i) => [i.id, i]));

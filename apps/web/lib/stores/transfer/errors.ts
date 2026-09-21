@@ -4,7 +4,8 @@ export type StoreTransferErrorCode =
   | "SAME_STORE"
   | "NO_LINES"
   | "BAD_QTY"
-  | "ITEM_NOT_FOUND";
+  | "ITEM_NOT_FOUND"
+  | "STORE_NOT_FOUND";
 
 export class StoreTransferError extends Error {
   constructor(public code: StoreTransferErrorCode) {

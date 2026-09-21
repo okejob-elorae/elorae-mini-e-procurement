@@ -77,6 +77,8 @@ export async function applyJubelioStockAdjustment(
         variantSku: input.variantSku,
         qtyDelta: delta,
         totalValue: input.newQty * avgCost,
+        totalCost: delta * avgCost,
+        balanceValue: input.newQty * avgCost,
         inventoryValueId: inv.id,
         refType: "JubelioStockAdjustment" satisfies StockLedgerRefType,
         refId: created.id,
