@@ -2,7 +2,7 @@
 
 import { Plus, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { tintaDi } from './BarisSablon';
+import { tintaDi } from '@/lib/production-colors/palet/kontras';
 
 /**
  * Deretan warna palet. Lima kotak untuk palet bebas; satu sampai enam untuk

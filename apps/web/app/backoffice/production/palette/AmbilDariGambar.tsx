@@ -459,7 +459,7 @@ export function AmbilDariGambar({
                                 </span>
                               ) : w.porsi !== undefined && w.peran ? (
                                 <span className="ml-2 text-xs font-medium">
-                                  {t('inkShare', { letter: hurufTinta.get(w.id) ?? '?', role: t(`recommend.roles.${w.peran}`), percent: w.porsi })}{' '}
+                                  {t('inkShare', { letter: hurufTinta.get(w.id) ?? '?', role: t(`inkRoles.${w.peran}`), percent: w.porsi })}{' '}
                                   <span className="font-normal tabular-nums text-muted-foreground">
                                     · {t('share', { percent: Math.round((w.bagian ?? 0) * 100) })}
                                   </span>

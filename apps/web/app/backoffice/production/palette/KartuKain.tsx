@@ -9,7 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import type { WarnaPantone } from '@/lib/production-colors/palet/pantone';
 import { hexKeHsb } from '@/lib/production-colors/palet/warna';
 import { EditorWarna, type ModeMasukan } from './EditorWarna';
-import { tintaDi } from './BarisSablon';
+import { tintaDi } from '@/lib/production-colors/palet/kontras';
 
 /**
  * Saklar yang membuat palet menjadi palet sablon.

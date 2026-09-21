@@ -3,7 +3,7 @@
 import { useId, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
-import { Lock, TrendingDown, TrendingUp } from 'lucide-react';
+import { TrendingDown, TrendingUp } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,7 +29,6 @@ export function KartuWarnaLaris({
   onKategori,
   bolehMengelola,
   onJadikanKain,
-  onKunci,
   onPetakan,
 }: {
   hasil: HasilWarnaLaris;
@@ -39,7 +38,6 @@ export function KartuWarnaLaris({
   onKategori: (k: string | null) => void;
   bolehMengelola: boolean;
   onJadikanKain: (hex: string, nama: string) => void;
-  onKunci: (hex: string, nama: string) => void;
   onPetakan: (nama: string, hex: string) => Promise<boolean>;
 }) {
   const t = useTranslations('productionPalette.bestSellers');
@@ -114,15 +112,9 @@ export function KartuWarnaLaris({
                       <div className="h-full rounded-full ring-1 ring-inset ring-foreground/25" style={{ width: `${tertinggi ? (w.qty / tertinggi) * 100 : 0}%`, background: w.hex }} />
                     </div>
                   </div>
-                  <div className="flex shrink-0 flex-col gap-1">
-                    <Button type="button" variant="outline" size="xs" onClick={() => onJadikanKain(w.hex, w.label)}>
-                      {t('asFabric')}
-                    </Button>
-                    <Button type="button" variant="ghost" size="xs" onClick={() => onKunci(w.hex, w.label)}>
-                      <Lock className="h-3 w-3" />
-                      {t('lock')}
-                    </Button>
-                  </div>
+                  <Button type="button" variant="outline" size="xs" className="shrink-0" onClick={() => onJadikanKain(w.hex, w.label)}>
+                    {t('asFabric')}
+                  </Button>
                 </li>
               ))}
             </ul>

@@ -2,7 +2,6 @@
 
 import { useDeferredValue, useMemo, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -41,14 +40,13 @@ const NADA_BACA: Record<KeterbacaanSablon, StatusTone> = {
  * dengan angka kontrasnya — jadi orang melihat sendiri warna mana yang terbaca
  * kuat dan mana yang tidak, alih-alih menunggu saran ditebak. Memilih satu
  * warna memperlihatkan tulisannya dalam beberapa ukuran, dan bisa langsung
- * dipasang ke tinta mana pun yang tidak dikunci.
+ * dipasang ke tinta mana pun.
  */
 export function KartuKeterbacaanPantone({
   kainHex,
   namaKain,
   katalogC,
   hexTinta,
-  indeksKunci,
   onPakai,
 }: {
   kainHex: string;
@@ -56,7 +54,6 @@ export function KartuKeterbacaanPantone({
   katalogC: readonly WarnaPantone[];
   /** Tinta palet, untuk tombol "pakai untuk tinta". */
   hexTinta: readonly string[];
-  indeksKunci: readonly number[];
   onPakai: (indeks: number, hex: string, kode: string) => void;
 }) {
   const t = useTranslations('productionPalette.readabilityBook');
@@ -261,7 +258,7 @@ export function KartuKeterbacaanPantone({
                   </span>
                   {terpilih.khusus && (
                     <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset', STATUS_TONE_CLASS.waiting)}>
-                      {tSablon(`options.${terpilih.khusus}`)}
+                      {t(`special.${terpilih.khusus}`)}
                     </span>
                   )}
                 </div>
@@ -271,25 +268,20 @@ export function KartuKeterbacaanPantone({
                 <div className="space-y-1.5">
                   <p className="text-xs font-medium">{t('useFor')}</p>
                   <div className="flex flex-wrap gap-1.5">
-                    {hexTinta.map((hex, i) => {
-                      const terkunci = indeksKunci.includes(i);
-                      return (
-                        <Button
-                          key={i}
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          disabled={terkunci}
-                          title={terkunci ? t('lockedInk', { letter: HURUF_SABLON[i] }) : t('useForInk', { letter: HURUF_SABLON[i] })}
-                          aria-label={terkunci ? t('lockedInk', { letter: HURUF_SABLON[i] }) : t('useForInk', { letter: HURUF_SABLON[i] })}
-                          onClick={() => onPakai(i, terpilih.warna.hex, terpilih.warna.kode)}
-                        >
-                          <span aria-hidden className="size-3 rounded-sm ring-1 ring-inset ring-black/15" style={{ background: hex }} />
-                          {HURUF_SABLON[i]}
-                          {terkunci && <Lock className="h-3 w-3" />}
-                        </Button>
-                      );
-                    })}
+                    {hexTinta.map((hex, i) => (
+                      <Button
+                        key={i}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        title={t('useForInk', { letter: HURUF_SABLON[i] })}
+                        aria-label={t('useForInk', { letter: HURUF_SABLON[i] })}
+                        onClick={() => onPakai(i, terpilih.warna.hex, terpilih.warna.kode)}
+                      >
+                        <span aria-hidden className="size-3 rounded-sm ring-1 ring-inset ring-black/15" style={{ background: hex }} />
+                        {HURUF_SABLON[i]}
+                      </Button>
+                    ))}
                   </div>
                 </div>
               )}

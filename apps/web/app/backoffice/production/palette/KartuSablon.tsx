@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { Copy, Lock, Sparkles } from 'lucide-react';
+import { Copy, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -12,16 +12,13 @@ import type { AturanHarmoni } from '@/lib/production-colors/palet/harmoni';
 import { rasioKontras } from '@/lib/production-colors/palet/kontras';
 import { pantoneTerdekat, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
 import { bagiGram, resepCampur } from '@/lib/production-colors/sablon/campur';
-import { OPSI_GANTI, calonUntukKain, saranSemuaPilihan, type OpsiGanti, type SaranPengganti } from '@/lib/production-colors/sablon/pengganti';
 import { susunRingkasan } from '@/lib/production-colors/sablon/ringkasan';
 import { HURUF_SABLON, keterbacaanSablon, peranUntuk } from '@/lib/production-colors/sablon/saran';
 import type { TintaDasar } from '@/lib/production-colors/sablon/tinta-dasar';
-import { BarisSablon } from './BarisSablon';
 import { PratinjauKaos } from './PratinjauKaos';
 
 export { HURUF_SABLON };
 
-const KOSONG = Object.fromEntries(OPSI_GANTI.map((o) => [o, []])) as unknown as Record<OpsiGanti, SaranPengganti[]>;
 
 /**
  * Resep tiap warna sablon, dicari ulang hanya saat warna, tinta dasar, atau
@@ -38,23 +35,10 @@ function useResep(hexWarna: string, hexTinta: string, maksTinta: number) {
 }
 
 /**
- * Pengganti tiap tinta: berbagai jenis warna yang masuk dengan kain. Calon
- * yang terbaca hanya bergantung pada kain, jadi dihitung sekali per kain;
- * daftar per tinta murah. Masukannya teks untuk alasan yang sama dengan `useResep`.
- */
-function useSaranPengganti(kainHex: string, hexWarna: string, porsiTeks: string, aturan: AturanHarmoni, katalogC: readonly WarnaPantone[]) {
-  const calon = useMemo(() => calonUntukKain(kainHex, katalogC), [kainHex, katalogC]);
-  return useMemo(() => {
-    const hex = hexWarna ? hexWarna.split(',') : [];
-    const porsi = porsiTeks.split(',').map(Number);
-    // Porsi ikut menentukan: tinta besar di kain kalem tidak diberi warna mencolok.
-    return hex.map((_, i) => saranSemuaPilihan({ calon, hex, indeks: i, aturanUtama: aturan, porsi: porsi[i] }));
-  }, [calon, hexWarna, porsiTeks, aturan]);
-}
-
-/**
- * Bagian sablon dari palet berkain: pratinjau di kaos, porsi, resep campur,
- * dan ringkasan untuk tukang sablon.
+ * Bagian sablon dari palet berkain: pratinjau di kaos, porsi tiap tinta, dan
+ * ringkasan untuk tukang sablon (termasuk resep campurnya). Baris per tinta —
+ * porsi, ganti, kunci, resep — dihapus atas permintaan pemilik pada 2026-09-21;
+ * warna tinta dipilih dari kartu Keterbacaan Pantone C.
  */
 export function KartuSablon({
   kainHex,
@@ -69,10 +53,6 @@ export function KartuSablon({
   beratTeks,
   onBeratTeks,
   katalogC,
-  terkunci,
-  onKunci,
-  onPorsi,
-  onGanti,
   onSarankanUlang,
   onSalin,
 }: {
@@ -89,10 +69,6 @@ export function KartuSablon({
   onBeratTeks: (teks: string) => void;
   katalogC: readonly WarnaPantone[];
   /** Indeks tinta yang dikunci. */
-  terkunci: readonly number[];
-  onKunci: (indeks: number) => void;
-  onPorsi: (indeks: number, nilai: number) => void;
-  onGanti: (indeks: number, hex: string) => void;
   onSarankanUlang: () => void;
   onSalin: (teks: string) => void;
 }) {
@@ -105,7 +81,6 @@ export function KartuSablon({
   const berat = Math.max(0, Math.round(Number(beratTeks) || 0));
   const resep = useResep(hex.join(','), tintaDasar.map((x) => x.hex).join(','), maksTinta);
   const pantone = hex.map((h) => pantoneTerdekat(katalogC, h));
-  const saran = useSaranPengganti(kainHex, hex.join(','), porsi.join(','), aturan, katalogC);
   const totalPorsi = porsi.reduce((s, x) => s + x, 0);
 
   function ringkasan(): string {
@@ -182,7 +157,6 @@ export function KartuSablon({
                   <span className="font-medium">{HURUF_SABLON[i]}</span>
                   <span className="min-w-0 flex-1 truncate text-muted-foreground">
                     {pantone[i]?.warna.kode ?? h.toUpperCase()}
-                    {terkunci.includes(i) && <Lock aria-label={t('lockedHint')} className="ml-1.5 inline h-3 w-3" />}
                   </span>
                   <span className="tabular-nums">{porsi[i]}%</span>
                 </li>
@@ -226,29 +200,6 @@ export function KartuSablon({
             </div>
           </div>
         </div>
-
-        <ul className="space-y-3">
-          {hex.map((h, i) => (
-            <BarisSablon
-              key={i}
-              huruf={HURUF_SABLON[i]}
-              hex={h}
-              pantone={pantone[i] ? { kode: pantone[i]!.warna.kode, deltaE: pantone[i]!.deltaE } : null}
-              peran={peranUntuk(i, hex.length)}
-              porsi={porsi[i] ?? 0}
-              kainHex={kainHex}
-              resep={resep[i] ?? null}
-              tintaDasar={tintaDasar}
-              berat={berat}
-              katalogC={katalogC}
-              saran={saran[i] ?? KOSONG}
-              terkunci={terkunci.includes(i)}
-              onKunci={() => onKunci(i)}
-              onPorsi={(n) => onPorsi(i, n)}
-              onGanti={(baru) => onGanti(i, baru)}
-            />
-          ))}
-        </ul>
 
         <p className="text-xs text-muted-foreground">{t('recipeNote')}</p>
       </CardContent>

@@ -1701,9 +1701,7 @@
       "trendDown": "turun {percent}%",
       "trendNew": "baru",
       "asFabric": "Jadikan kain",
-      "lock": "Kunci sebagai tinta",
       "fabricSet": "Kain diganti ke {name}.",
-      "locked": "{name} dikunci di rekomendasi.",
       "unknownTitle": "Nama warna belum dikenal ({count})",
       "unknownHint": "Petakan sekali ke warnanya — setelah itu ikut dihitung di warna laris dan rekomendasi.",
       "mapLabel": "Warna untuk “{name}”",
@@ -1735,62 +1733,6 @@
       "previewLabel": "Desain di kain {fabric}",
       "useOnFabric": "Pakai di kain {fabric}",
       "adapted": "Tinta disesuaikan ke kain {fabric} supaya tetap terbaca:"
-    },
-    "recommend": {
-      "title": "Rekomendasi komposisi",
-      "description": "Susunan tinta siap pakai untuk kain {fabric}. Klik Pakai untuk memasangnya — bisa diurungkan.",
-      "lockLabel": "Warna wajib",
-      "lockNone": "Tanpa kunci",
-      "lockInk": "Tinta {letter} · {code}",
-      "lockKept": "Terkunci · {code}",
-      "lockHint": "Warna yang dikunci muncul di setiap rekomendasi. Kunci beberapa tinta untuk mencari sisanya saja.",
-      "count": "Jumlah tinta",
-      "countOption": "{count} tinta",
-      "style": "Gaya",
-      "styleAll": "Semua gaya",
-      "source": "Sumber warna",
-      "sources": {
-        "LARIS": "Laris di toko Anda",
-        "EARTH": "Tren lokal · earth tone",
-        "PASTEL": "Tren lokal · pastel & dusty",
-        "CERAH": "Tren lokal · cerah",
-        "BAWAAN": "Sablon populer"
-      },
-      "sourceHints": {
-        "LARIS": "Dari warna produk yang terjual 90 hari terakhir di toko Anda.",
-        "TREN": "Tren umum pasar lokal — bukan data toko Anda.",
-        "BAWAAN": "Tujuh warna sablon yang umum dipakai."
-      },
-      "shuffle": "Acak lagi",
-      "styles": {
-        "CERAH": "Cerah",
-        "REDAM": "Redam"
-      },
-      "use": "Pakai",
-      "applied": "Komposisi “{name}” dipasang.",
-      "empty": "Tidak ada komposisi yang terbaca jelas di kain ini.",
-      "previewLabel": "{name} di kain {fabric}",
-      "patterns": {
-        "SATU": "Satu tinta — {role}",
-        "TONAL": "Tonal, {count} tingkat"
-      },
-      "roles": {
-        "AKSEN": "Aksen",
-        "AKSEN_2": "Aksen 2",
-        "AKSEN_3": "Aksen 3",
-        "AKSEN_TUA": "Aksen tua",
-        "NETRAL": "Netral",
-        "NADA": "Tone-on-tone",
-        "TONAL": "Tonal"
-      },
-      "lockedCount": "{count} tinta dikunci",
-      "lockMax": "Paling banyak {count} tinta — satu tinta selalu disisakan untuk direkomendasikan.",
-      "lockClear": "Lepas semua kunci",
-      "lockThis": "Kunci {code}",
-      "unlockThis": "Lepas kunci {code}",
-      "lockSelected": "Kunci {count} tinta, cari sisanya",
-      "lockCardHint": "Suka sebagian tinta di sebuah kartu? Klik gembok di tinta itu, lalu Kunci — sisanya direkomendasikan ulang.",
-      "fillHint": "Tinta terkunci tetap di tempat dan porsinya. Sisa tinta diisi dari sumber warna di atas, diurutkan dari yang paling menonjol di kain ini."
     },
     "export": {
       "button": "Ekspor",
@@ -1837,7 +1779,6 @@
     "allFabric": "Semua warna terambil sama dengan kain, jadi tidak ada yang bisa dijadikan tinta.",
     "fabricSet": "Kain diganti ke {hex}",
     "appliedTo": "{hex} dipakai untuk {label}",
-    "inkLocked": "Tinta {letter} terkunci — buka gemboknya dulu untuk mengubahnya.",
     "fabricLock": "Kunci kain",
     "fabricLockedLabel": "Kain dikunci",
     "fabricUnlock": "Buka kunci kain",
@@ -1876,9 +1817,17 @@
       "sampleSmall": "Tulisan kecil — label ukuran, keterangan bahan, alamat toko.",
       "useFor": "Pakai untuk tinta",
       "useForInk": "Pakai untuk tinta {letter}",
-      "lockedInk": "Tinta {letter} terkunci",
       "applied": "{code} dipasang di tinta {letter}.",
-      "pickHint": "Pilih warna di sebelah kiri untuk melihat contoh tulisannya."
+      "pickHint": "Pilih warna di sebelah kiri untuk melihat contoh tulisannya.",
+      "special": {
+        "METALIK": "Metalik",
+        "NEON": "Neon"
+      }
+    },
+    "inkRoles": {
+      "AKSEN": "Aksen",
+      "NETRAL": "Netral",
+      "NADA": "Tone-on-tone"
     }
   },
   "productionPrint": {
@@ -1889,21 +1838,11 @@
     "maxInksOption": "{n} tinta",
     "batchLabel": "Berat adonan per warna (gram)",
     "printTitle": "Warna sablon",
-    "printDescription": "Porsi, keterbacaan di kain, dan resep campur untuk tiap warna sablon. Porsi adalah titik mulai — ubah sesuai desain.",
+    "printDescription": "Pratinjau di kaos dan porsi tiap tinta. Resep campurnya ikut di ringkasan untuk tukang sablon — atur jumlah tinta dasar dan berat adonannya di bawah.",
     "previewLabel": "Pratinjau porsi sablon di kain {fabric}",
     "previewNote": "Luas tiap warna di desain kaos sesuai porsinya. Arahkan kursor ke kaos untuk memiringkannya.",
-    "portionLabel": "Porsi warna {letter} di desain, persen",
     "portionTotal": "Total porsi {total}%",
     "portionWarn": "Total porsi {total}% — seharusnya 100%.",
-    "replace": "Ganti",
-    "searchC": "Cari Pantone C, mis. 186 C atau Warm Red",
-    "searchEmpty": "Tidak ada Pantone C yang cocok dengan “{q}”.",
-    "recipeTitle": "Resep campur · {grams} g",
-    "recipeNoInks": "Tambahkan tinta dasar di bawah untuk melihat resep campur warna ini.",
-    "target": "Target",
-    "estimate": "Perkiraan campuran",
-    "recipeFar": "Tinta dasar yang ada belum bisa mendekati warna ini. Tambahkan tinta dasar yang ronanya lebih dekat.",
-    "recipeNear": "Cukup dekat — sesuaikan sedikit saat membuat sampel.",
     "recipeNote": "Resep adalah perkiraan awal dari warna layar (model Kubelka-Munk), bukan resep pasti. Di dunia nyata campuran dengan putih biasanya lebih terang dari perkiraan, dan jenis tinta serta kain ikut berpengaruh. Buat sampel kecil dulu dan cocokkan dengan buku Pantone.",
     "roles": {
       "DOMINAN": "Dominan",
@@ -1951,43 +1890,7 @@
     "nearestPantone": "≈ PANTONE {code} · ΔE {de}",
     "resuggest": "Sarankan ulang dari kain",
     "followingSuggestion": "Mengikuti saran dari kain — ikut berubah saat kain, aturan, atau jumlah warna diganti.",
-    "editedHint": "Sudah disunting, jadi mengganti kain atau jumlah warna tidak mengubah warna Anda. Memilih aturan harmoni menyusun ulang semuanya.",
-    "lockInk": "Kunci tinta {letter}",
-    "unlockInk": "Lepas kunci tinta {letter}",
-    "lockedHint": "Terkunci — tidak ikut berubah saat aturan, kain, atau tinta lain diganti. Klik untuk membuka.",
-    "nextColour": "Warna lain",
-    "nextColourHint": "Ganti ke saran {option} berikutnya — semuanya masuk dengan kain. Klik terus sampai cocok, lalu kunci. Pilih jenisnya di panah sebelahnya.",
-    "ruleSuggestionsHint": "Ronanya mengikuti aturan harmoni terhadap kain, dan tidak kembar dengan tinta lain. Angka di tiap warna adalah kontrasnya di kain.",
-    "suggestionTag": "{kind} · {rule}",
-    "nextColourAs": "Warna lain: {option}",
-    "chooseOption": "Pilih mau diganti menjadi apa (tinta {letter})",
-    "replaceAs": "Ganti menjadi",
-    "optionEmpty": "Tidak ada warna {option} yang masuk dengan kain ini.",
-    "options": {
-      "SEMUA": "Semua jenis",
-      "KALEM": "Kalem",
-      "KONTRAS": "Kontras kuat",
-      "SOLID": "Solid",
-      "NEON": "Neon",
-      "PASTEL": "Pastel",
-      "REDAM": "Redam",
-      "GELAP": "Gelap",
-      "METALIK": "Metalik"
-    },
-    "optionHints": {
-      "SEMUA": "Bergiliran solid, neon, pastel, redam, gelap, metalik.",
-      "KALEM": "Kontras di bawah 2 — samar, menyatu lembut dengan kain.",
-      "KONTRAS": "Kontras 4,5 ke atas — jelas dari jauh.",
-      "SOLID": "Pekat dan jelas, tinta biasa.",
-      "NEON": "Berpendar — tinta khusus, pastikan tersedia di tempat sablon.",
-      "PASTEL": "Terang dan lembut.",
-      "REDAM": "Kalem, gaya vintage, tetap terbaca.",
-      "GELAP": "Tua dan pekat.",
-      "METALIK": "Berkilau — tinta khusus, pastikan tersedia di tempat sablon."
-    },
-    "tooLoud": "Terlalu mencolok untuk {percent}%",
-    "tooLoudHint": "Kain ini kalem, jadi tinta sebesar ini sebaiknya ikut kalem. Warna sepekat ini cocok untuk tinta kecil (aksen di bawah 20%).",
-    "loudCapNote": "Tinta ini {percent}% dari desain dan kainnya kalem, jadi warna yang terlalu mencolok tidak ditawarkan — pola 60-30-10: yang besar paling tenang, yang mencolok untuk aksen di bawah 20%."
+    "editedHint": "Sudah disunting, jadi mengganti kain atau jumlah warna tidak mengubah warna Anda. Memilih aturan harmoni menyusun ulang semuanya."
   },
   "planning": {
     "title": "Plan Kerja",

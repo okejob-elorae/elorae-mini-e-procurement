@@ -46,7 +46,7 @@ export function KartuKomposisiDesain({
   onPakai: (kainHex: string, k: Komposisi, kainLabel: string) => void;
 }) {
   const t = useTranslations('productionPalette.design');
-  const tPeran = useTranslations('productionPalette.recommend.roles');
+  const tPeran = useTranslations('productionPalette.inkRoles');
   const analisis = useMemo(() => bacaKomposisiDesain(warnaGambar), [warnaGambar]);
 
   const { acuan, asli, aksenLain } = useMemo(() => {

@@ -1701,9 +1701,7 @@
       "trendDown": "down {percent}%",
       "trendNew": "new",
       "asFabric": "Use as fabric",
-      "lock": "Lock as ink",
       "fabricSet": "Fabric changed to {name}.",
-      "locked": "{name} locked in the recommendations.",
       "unknownTitle": "Unrecognised colour names ({count})",
       "unknownHint": "Map each once to its colour — after that it counts towards best sellers and recommendations.",
       "mapLabel": "Colour for “{name}”",
@@ -1735,62 +1733,6 @@
       "previewLabel": "Design on {fabric} fabric",
       "useOnFabric": "Use on {fabric}",
       "adapted": "Inks adjusted to {fabric} so they stay readable:"
-    },
-    "recommend": {
-      "title": "Recommended compositions",
-      "description": "Ready-to-use ink sets for {fabric} fabric. Click Use to apply one — you can undo it.",
-      "lockLabel": "Must-have colour",
-      "lockNone": "No lock",
-      "lockInk": "Ink {letter} · {code}",
-      "lockKept": "Locked · {code}",
-      "lockHint": "Locked colours appear in every recommendation. Lock several inks to look for the rest only.",
-      "count": "Number of inks",
-      "countOption": "{count, plural, one {# ink} other {# inks}}",
-      "style": "Style",
-      "styleAll": "All styles",
-      "source": "Colour source",
-      "sources": {
-        "LARIS": "Your best sellers",
-        "EARTH": "Local trend · earth tones",
-        "PASTEL": "Local trend · pastel & dusty",
-        "CERAH": "Local trend · bright",
-        "BAWAAN": "Popular print inks"
-      },
-      "sourceHints": {
-        "LARIS": "From the product colours sold in your store over the last 90 days.",
-        "TREN": "General local market trend — not your store's data.",
-        "BAWAAN": "Seven commonly used print colours."
-      },
-      "shuffle": "Shuffle",
-      "styles": {
-        "CERAH": "Bright",
-        "REDAM": "Muted"
-      },
-      "use": "Use",
-      "applied": "Composition “{name}” applied.",
-      "empty": "No composition reads clearly enough on this fabric.",
-      "previewLabel": "{name} on {fabric} fabric",
-      "patterns": {
-        "SATU": "One ink — {role}",
-        "TONAL": "Tonal, {count} steps"
-      },
-      "roles": {
-        "AKSEN": "Accent",
-        "AKSEN_2": "Accent 2",
-        "AKSEN_3": "Accent 3",
-        "AKSEN_TUA": "Deep accent",
-        "NETRAL": "Neutral",
-        "NADA": "Tone-on-tone",
-        "TONAL": "Tonal"
-      },
-      "lockedCount": "{count} inks locked",
-      "lockMax": "Up to {count, plural, one {# ink} other {# inks}} — one ink is always left for a recommendation.",
-      "lockClear": "Unlock all",
-      "lockThis": "Lock {code}",
-      "unlockThis": "Unlock {code}",
-      "lockSelected": "Lock {count, plural, one {# ink} other {# inks}}, find the rest",
-      "lockCardHint": "Like some inks on a card? Click the padlock on those inks, then Lock — the rest is recommended again.",
-      "fillHint": "Locked inks keep their place and share. The remaining inks come from the colour source above, ordered from the one that stands out most on this fabric."
     },
     "export": {
       "button": "Export",
@@ -1837,7 +1779,6 @@
     "allFabric": "Every picked colour matches the fabric, so none can be used as an ink.",
     "fabricSet": "Fabric changed to {hex}",
     "appliedTo": "{hex} used for {label}",
-    "inkLocked": "Ink {letter} is locked — unlock it first to change it.",
     "fabricLock": "Lock fabric",
     "fabricLockedLabel": "Fabric locked",
     "fabricUnlock": "Unlock fabric",
@@ -1876,9 +1817,17 @@
       "sampleSmall": "Small lettering — size labels, fabric notes, a store address.",
       "useFor": "Use for ink",
       "useForInk": "Use for ink {letter}",
-      "lockedInk": "Ink {letter} is locked",
       "applied": "{code} applied to ink {letter}.",
-      "pickHint": "Pick a colour on the left to see sample lettering."
+      "pickHint": "Pick a colour on the left to see sample lettering.",
+      "special": {
+        "METALIK": "Metallic",
+        "NEON": "Neon"
+      }
+    },
+    "inkRoles": {
+      "AKSEN": "Accent",
+      "NETRAL": "Neutral",
+      "NADA": "Tone-on-tone"
     }
   },
   "productionPrint": {
@@ -1889,21 +1838,11 @@
     "maxInksOption": "{n} inks",
     "batchLabel": "Batch weight per colour (grams)",
     "printTitle": "Print colours",
-    "printDescription": "Share, readability on the fabric, and a mix recipe for each print colour. Shares are a starting point — adjust them to the design.",
+    "printDescription": "Preview on the tee and each ink’s share. The mixing recipes go into the summary for the printer — set the base-ink count and batch weight below.",
     "previewLabel": "Preview of print shares on {fabric} fabric",
     "previewNote": "Each colour's area in the shirt design matches its share. Point at the shirt to tilt it.",
-    "portionLabel": "Share of colour {letter} in the design, percent",
     "portionTotal": "Total share {total}%",
     "portionWarn": "Total share {total}% — it should be 100%.",
-    "replace": "Replace",
-    "searchC": "Search Pantone C, e.g. 186 C or Warm Red",
-    "searchEmpty": "No Pantone C matches “{q}”.",
-    "recipeTitle": "Mix recipe · {grams} g",
-    "recipeNoInks": "Add base inks below to see a mix recipe for this colour.",
-    "target": "Target",
-    "estimate": "Estimated mix",
-    "recipeFar": "Your base inks can't get close to this colour. Add a base ink with a closer hue.",
-    "recipeNear": "Fairly close — adjust a little when making the sample.",
     "recipeNote": "Recipes are a first estimate from on-screen colour (Kubelka-Munk model), not an exact formula. Real mixes with white usually come out lighter than estimated, and ink type and fabric matter too. Make a small sample first and check it against the Pantone book.",
     "roles": {
       "DOMINAN": "Dominant",
@@ -1951,43 +1890,7 @@
     "nearestPantone": "≈ PANTONE {code} · ΔE {de}",
     "resuggest": "Suggest again from fabric",
     "followingSuggestion": "Following the fabric suggestion — it updates when the fabric, rule, or number of colours changes.",
-    "editedHint": "Edited, so changing the fabric or number of colours leaves your colours alone. Choosing a harmony rule rearranges them all.",
-    "lockInk": "Lock ink {letter}",
-    "unlockInk": "Unlock ink {letter}",
-    "lockedHint": "Locked — stays put when the rule, fabric, or other inks change. Click to unlock.",
-    "nextColour": "Another colour",
-    "nextColourHint": "Switch to the next {option} suggestion — all of them suit the fabric. Keep clicking until it fits, then lock it. Choose the kind with the arrow beside it.",
-    "ruleSuggestionsHint": "Each hue follows a harmony rule against the fabric and does not duplicate another ink. The number on each colour is its contrast on the fabric.",
-    "suggestionTag": "{kind} · {rule}",
-    "nextColourAs": "Another colour: {option}",
-    "chooseOption": "Choose what to change ink {letter} to",
-    "replaceAs": "Change to",
-    "optionEmpty": "No {option} colour suits this fabric.",
-    "options": {
-      "SEMUA": "All kinds",
-      "KALEM": "Calm",
-      "KONTRAS": "High contrast",
-      "SOLID": "Solid",
-      "NEON": "Neon",
-      "PASTEL": "Pastel",
-      "REDAM": "Muted",
-      "GELAP": "Deep",
-      "METALIK": "Metallic"
-    },
-    "optionHints": {
-      "SEMUA": "Rotates solid, neon, pastel, muted, deep, metallic.",
-      "KALEM": "Contrast below 2 — faint, blending softly into the fabric.",
-      "KONTRAS": "Contrast 4.5 and up — clear from a distance.",
-      "SOLID": "Strong and clear, regular ink.",
-      "NEON": "Fluorescent — special ink, check your printer stocks it.",
-      "PASTEL": "Light and soft.",
-      "REDAM": "Calm, vintage feel, still readable.",
-      "GELAP": "Dark and rich.",
-      "METALIK": "Shimmering — special ink, check your printer stocks it."
-    },
-    "tooLoud": "Too loud for {percent}%",
-    "tooLoudHint": "This fabric is muted, so an ink this large should be calm too. A colour this strong suits a small ink (an accent under 20%).",
-    "loudCapNote": "This ink is {percent}% of the design on a muted fabric, so colours that are too loud are left out — the 60-30-10 pattern: the largest colour is the calmest, the loud one is an accent under 20%."
+    "editedHint": "Edited, so changing the fabric or number of colours leaves your colours alone. Choosing a harmony rule rearranges them all."
   },
   "planning": {
     "title": "Production Plan",

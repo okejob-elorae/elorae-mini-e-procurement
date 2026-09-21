@@ -51,3 +51,8 @@ export function tingkatKontras(rasio: number): TingkatKontras {
 export function tampilRasio(rasio: number): number {
   return Math.floor(rasio * 10 + 1e-9) / 10;
 }
+
+/** Warna tulisan (putih atau hitam) yang paling terbaca di atas `hex` — untuk huruf di atas contoh warna. */
+export function tintaDi(hex: string): '#ffffff' | '#000000' {
+  return rasioKontras(hex, '#ffffff') >= rasioKontras(hex, '#000000') ? '#ffffff' : '#000000';
+}

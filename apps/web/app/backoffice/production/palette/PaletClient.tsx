@@ -49,7 +49,6 @@ import {
   sarankanDariKain,
   ubahJumlahSablon,
   ubahKecerahanPalet,
-  ubahPorsiPalet,
   type Palet,
 } from '@/lib/production-colors/palet/keadaan';
 import { hexKeLab, pantoneTerdekat, siapkanKatalog, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
@@ -75,7 +74,6 @@ import { EditorWarna, type ModeMasukan } from './EditorWarna';
 import { IkonHarmoni } from './IkonHarmoni';
 import { KartuKain } from './KartuKain';
 import { KartuKomposisiDesain } from './KartuKomposisiDesain';
-import { KartuRekomendasi } from './KartuRekomendasi';
 import { KartuKeterbacaanPantone } from './KartuKeterbacaanPantone';
 import { HURUF_SABLON, KartuSablon } from './KartuSablon';
 import { KartuTintaDasar } from './KartuTintaDasar';
@@ -179,8 +177,6 @@ export function PaletClient({
   const [maksTinta, setMaksTinta] = useState(3);
   /** Di palet berkain, menggeser satu tinta memutar semuanya — seperti harmoni di roda Adobe. */
   const [tintaTerhubung, setTintaTerhubung] = useState(true);
-  /** Warna yang wajib ada di setiap rekomendasi komposisi, berurutan seperti tintanya. */
-  const [kunci, setKunci] = useState<string[]>([]);
   /** Kain terkunci: patokan semua saran, dan tidak ada yang boleh menggantinya sampai dibuka. */
   const [kainTerkunci, setKainTerkunci] = useState(false);
   const [kategoriLaris, setKategoriLaris] = useState<string | null>(null);
@@ -236,20 +232,10 @@ export function PaletClient({
     });
   }
 
-  /** Memasang komposisi menimpa tinta yang ada — jadi selalu bisa diurungkan. */
-  function pakaiKomposisi(k: Komposisi, judul: string) {
-    const sebelum = palet;
-    setPaletSendiri(terapkanKomposisi(sebelum, k));
-    setTerpilih(0);
-    toast.success(t('recommend.applied', { name: judul }), {
-      action: { label: t('undo'), onClick: () => setPaletSendiri(sebelum) },
-    });
-  }
-
   /** Memilih aturan menimpa warna sablon yang sudah disunting — jadi selalu bisa diurungkan. */
   function pilihAturan(aturan: AturanHarmoni) {
     const sebelum = palet;
-    setPaletSendiri(pilihAturanPalet(sebelum, aturan, katalogC(), indeksKunci));
+    setPaletSendiri(pilihAturanPalet(sebelum, aturan, katalogC()));
     if (sebelum.kain !== null && !sebelum.saranUtuh) {
       toast.success(t('ruleReplacedInks', { rule: t(`rules.${aturanSablonDari(aturan)}.name`) }), {
         action: { label: t('undo'), onClick: () => setPaletSendiri(sebelum) },
@@ -259,22 +245,8 @@ export function PaletClient({
 
   const berkain = palet.kain !== null;
   const hex = palet.warna.map(hsbKeHex);
-  /** Tinta palet yang warnanya ada di daftar kunci — tidak diubah oleh apa pun sampai dibuka. */
-  const indeksKunci = berkain ? hex.flatMap((h, i) => (kunci.includes(h) ? [i] : [])) : [];
-
-  /** Mengunci atau membuka satu tinta; urutan kunci mengikuti urutan tinta, supaya rekomendasi memberi porsinya di tempat yang sama. */
-  function alihKunciTinta(i: number) {
-    const h = hex[i];
-    if (!h) return;
-    setKunci((k) => {
-      const set = new Set(k.includes(h) ? k.filter((x) => x !== h) : [...k, h]);
-      return [...hex.filter((x) => set.has(x)), ...[...set].filter((x) => !hex.includes(x))];
-    });
-  }
-
   /** Warna dari buku keterbacaan dipasang ke satu tinta — bisa diurungkan. */
   function pakaiDariBuku(i: number, hexBaru: string, kode: string) {
-    if (tintaTerkunci(i)) return;
     const sebelum = palet;
     setPaletSendiri(gantiHexPalet(sebelum, i, hexBaru));
     toast.success(t('readabilityBook.applied', { code: kode, letter: HURUF_SABLON[i] }), {
@@ -282,12 +254,6 @@ export function PaletClient({
     });
   }
 
-  /** Suntingan langsung ke tinta terkunci ditolak dengan pesan — sekali, bukan di setiap gerakan geser. */
-  function tintaTerkunci(i: number): boolean {
-    if (!indeksKunci.includes(i)) return false;
-    toast.info(t('inkLocked', { letter: HURUF_SABLON[i] }), { id: 'tinta-terkunci' });
-    return true;
-  }
   const warnaTerpilih = palet.warna[terpilih];
   const hexTerpilih = hex[terpilih];
   const totalPorsi = palet.porsi?.reduce((s, x) => s + x, 0) ?? 100;
@@ -311,7 +277,7 @@ export function PaletClient({
   function nyalakanKain(nyala: boolean) {
     if (!nyala && kainDikunci()) return;
     if (nyala) {
-      ubah((p) => pasangKain(p, kainTerakhir, katalogC(), indeksKunci));
+      ubah((p) => pasangKain(p, kainTerakhir, katalogC()));
       setTerpilih(0);
     } else {
       ubah(lepasKain);
@@ -508,7 +474,7 @@ export function PaletClient({
         onGantiKain={(baru) => {
           if (kainDikunci(baru)) return;
           setKainTerakhir(baru);
-          ubah((p) => pasangKain(p, baru, katalogC(), indeksKunci));
+          ubah((p) => pasangKain(p, baru, katalogC()));
         }}
         onSalin={(teks) => salin(teks, t('copied', { hex: teks }))}
         katalogC={katalogC()}
@@ -526,14 +492,8 @@ export function PaletClient({
           if (kainDikunci(hexKain)) return;
           setKainTerakhir(hexKain);
           if (!berkain) setTerpilih(0);
-          ubah((p) => pasangKain(p, hexKain, katalogC(), indeksKunci));
+          ubah((p) => pasangKain(p, hexKain, katalogC()));
           toast.success(t('bestSellers.fabricSet', { name: namaWarna }));
-        }}
-        onKunci={(hexKunci, namaWarna) => {
-          // Ditambahkan ke kunci yang ada; kalau sudah penuh, kunci terakhir yang diganti.
-          const maks = Math.max(1, hex.length - 1);
-          setKunci((k) => (k.includes(hexKunci) ? k : [...k.slice(0, maks - 1), hexKunci]));
-          toast.success(t('bestSellers.locked', { name: namaWarna }));
         }}
         onPetakan={async (namaWarna, hexWarna) => {
           const h = await simpanPemetaanWarnaAction(namaWarna, hexWarna);
@@ -558,11 +518,10 @@ export function PaletClient({
           if (kainDikunci(hex)) return;
           setKainTerakhir(hex);
           if (!berkain) setTerpilih(0);
-          ubah((p) => pasangKain(p, hex, katalogC(), indeksKunci));
+          ubah((p) => pasangKain(p, hex, katalogC()));
           toast.success(t('fabricSet', { hex: hex.toUpperCase() }));
         }}
         onPakaiUntukTerpilih={(hex) => {
-          if (tintaTerkunci(terpilih)) return;
           ubah((p) => gantiHexPalet(p, terpilih, hex));
           toast.success(t('appliedTo', { hex: hex.toUpperCase(), label: labelWarna(terpilih) }));
         }}
@@ -586,23 +545,6 @@ export function PaletClient({
           kainTerkunci={kainTerkunci && palet.kain ? { hex: palet.kain, label: namaKain } : null}
           aksenKandidat={aksenKandidat}
           onPakai={pakaiVariasiDesain}
-        />
-      )}
-
-      {palet.kain && (
-        <KartuRekomendasi
-          warnaLaris={hasilLaris.laris}
-          kainHex={palet.kain}
-          namaKain={namaKain}
-          katalogC={katalogC()}
-          hexTinta={hex}
-          kunci={kunci}
-          onKunci={setKunci}
-          onJumlah={(n) => {
-            ubah((p) => ubahJumlahSablon(p, n, katalogC(), indeksKunci));
-            setTerpilih((i) => Math.min(i, n - 1));
-          }}
-          onPakai={pakaiKomposisi}
         />
       )}
 
@@ -651,10 +593,7 @@ export function PaletClient({
                 warna={palet.warna}
                 terpilih={terpilih}
                 onPilih={setTerpilih}
-                onGeser={(i, h, s) => {
-                  if (tintaTerkunci(i)) return;
-                  ubah((p) => (berkain && tintaTerhubung ? geserSemuaTinta(p, i, h, s, indeksKunci) : geserPeganganPalet(p, i, h, s)));
-                }}
+                onGeser={(i, h, s) => ubah((p) => (berkain && tintaTerhubung ? geserSemuaTinta(p, i, h, s) : geserPeganganPalet(p, i, h, s)))}
                 terhubung={berkain && tintaTerhubung}
                 indeksDasar={berkain ? null : INDEKS_DASAR}
                 kain={palet.kain ? { hex: palet.kain, label: t('fabricMarker', { hex: palet.kain.toUpperCase() }) } : null}
@@ -689,10 +628,7 @@ export function PaletClient({
                   max={100}
                   step={1}
                   value={Math.round(warnaTerpilih.b * 100)}
-                  onChange={(e) => {
-                    if (tintaTerkunci(terpilih)) return;
-                    ubah((p) => ubahKecerahanPalet(p, terpilih, Number(e.target.value) / 100));
-                  }}
+                  onChange={(e) => ubah((p) => ubahKecerahanPalet(p, terpilih, Number(e.target.value) / 100))}
                   className={cn(
                     'h-3 w-full cursor-pointer appearance-none rounded-full ring-1 ring-inset ring-black/10 dark:ring-white/10',
                     'focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring',
@@ -731,18 +667,12 @@ export function PaletClient({
               tandaUbin={(i) => (berkain ? HURUF_SABLON[i] : i === INDEKS_DASAR ? t('base') : null)}
               onSalin={(kode) => salin(kode.toUpperCase(), t('copied', { hex: kode.toUpperCase() }))}
               judulSalin={(kode) => t('copyHex', { hex: kode.toUpperCase() })}
-              onHapus={
-                berkain
-                  ? (i) => {
-                      if (!tintaTerkunci(i)) ubah((p) => hapusWarnaSablon(p, i));
-                    }
-                  : undefined
-              }
+              onHapus={berkain ? (i) => ubah((p) => hapusWarnaSablon(p, i)) : undefined}
               labelHapus={(i) => t('removeInk', { letter: HURUF_SABLON[i] })}
               onTambah={
                 berkain && palet.warna.length < JUMLAH_SABLON_MAKS
                   ? () => {
-                      ubah((p) => ubahJumlahSablon(p, p.warna.length + 1, katalogC(), indeksKunci));
+                      ubah((p) => ubahJumlahSablon(p, p.warna.length + 1, katalogC()));
                       setTerpilih(palet.warna.length);
                     }
                   : undefined
@@ -757,9 +687,7 @@ export function PaletClient({
               hsb={warnaTerpilih}
               mode={modeMasukan}
               onMode={setModeMasukan}
-              onGantiHex={(baru) => {
-                if (!tintaTerkunci(terpilih)) ubah((p) => gantiHexPalet(p, terpilih, baru));
-              }}
+              onGantiHex={(baru) => ubah((p) => gantiHexPalet(p, terpilih, baru))}
               onSalin={(teks) => salin(teks, t('copied', { hex: teks }))}
               katalogC={katalogC()}
               katalogTcx={katalogTcx}
@@ -805,13 +733,7 @@ export function PaletClient({
           beratTeks={beratTeks}
           onBeratTeks={setBeratTeks}
           katalogC={katalogC()}
-          terkunci={indeksKunci}
-          onKunci={alihKunciTinta}
-          onPorsi={(i, n) => ubah((p) => ubahPorsiPalet(p, i, n))}
-          onGanti={(i, baru) => {
-            if (!tintaTerkunci(i)) ubah((p) => gantiHexPalet(p, i, baru));
-          }}
-          onSarankanUlang={() => ubah((p) => sarankanDariKain(p, katalogC(), indeksKunci))}
+          onSarankanUlang={() => ubah((p) => sarankanDariKain(p, katalogC()))}
           onSalin={(teks) => salin(teks, tSablon('copied'))}
         />
       )}
@@ -822,7 +744,6 @@ export function PaletClient({
           namaKain={namaKain}
           katalogC={katalogC()}
           hexTinta={hex}
-          indeksKunci={indeksKunci}
           onPakai={pakaiDariBuku}
         />
       )}
