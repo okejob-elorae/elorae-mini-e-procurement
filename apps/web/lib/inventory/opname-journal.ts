@@ -35,6 +35,43 @@ export async function opnameNetDelta(opnameId: string, client: AnyClient = prism
   return sum;
 }
 
+export type OpnameNetDeltaProbe =
+  | { computable: true; delta: number }
+  | { computable: false; reason: "no_ledger_rows" | "missing_cost_data" };
+
+/**
+ * Read-only, non-throwing sibling of `opnameNetDelta`, for a caller that only wants to
+ * decide whether a "Post journal" control should render — never to post — and must not
+ * fail the page it backs just to answer that.
+ *
+ * Two distinct "no number" causes, kept apart rather than both reported as delta 0:
+ *  - `no_ledger_rows`: this opname predates the 2026-09-15 ledger cutover, so whatever
+ *    delta it had lived in the retired `StockMovement` archive instead. We don't know if
+ *    it needs a journal.
+ *  - `missing_cost_data`: rows exist but at least one `totalCost` is null — the same gap
+ *    `opnameNetDelta` refuses to guess through, because the row predates this branch's
+ *    cost columns (2026-09-21, nullable, no backfill). We don't know here either.
+ * Both are "cannot compute", distinguishable from a genuine zero-drift `computable: true`
+ * result, so the caller can show "unknown" instead of silently offering nothing.
+ */
+export async function probeOpnameNetDelta(
+  opnameId: string,
+  client: AnyClient = prisma,
+): Promise<OpnameNetDeltaProbe> {
+  const rows = await client.stockLedgerEntry.findMany({
+    where: { refType: OPNAME_REF_TYPE, refId: opnameId },
+    select: { totalCost: true },
+  });
+  if (rows.length === 0) return { computable: false, reason: "no_ledger_rows" };
+
+  let sum = 0;
+  for (const row of rows) {
+    if (row.totalCost == null) return { computable: false, reason: "missing_cost_data" };
+    sum += Number(row.totalCost);
+  }
+  return { computable: true, delta: sum };
+}
+
 export async function postOpnameJournal(
   opnameId: string,
   postedById: string,

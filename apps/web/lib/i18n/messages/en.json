@@ -1154,6 +1154,7 @@
       "postJournal": "Post journal",
       "postedToast": "Journal posted successfully",
       "alreadyPostedToast": "Journal was already posted",
+      "unknownDelta": "Journal value can't be verified — check manually",
       "err": {
         "UNMAPPED_ROLE": "Posting role \"{role}\" is unmapped — map it in Account Mapping, then try again.",
         "UNBALANCED": "Journal is not balanced (debit ≠ credit).",

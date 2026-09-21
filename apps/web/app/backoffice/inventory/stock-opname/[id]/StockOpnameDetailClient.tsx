@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { ArrowLeft, BookText, ExternalLink } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BookText, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -275,6 +275,11 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
               <BookText className={`h-4 w-4 mr-2 ${postingJournal ? "animate-pulse" : ""}`} />
               {t("journal.postJournal")}
             </Button>
+          ) : status === "APPROVED" && opname.journalDeltaUnknown ? (
+            <Badge variant="outline" className="gap-1 text-amber-700 border-amber-300">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              {t("journal.unknownDelta")}
+            </Badge>
           ) : null}
         </div>
       </div>

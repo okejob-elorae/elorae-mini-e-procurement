@@ -1154,6 +1154,7 @@
       "postJournal": "Posting jurnal",
       "postedToast": "Jurnal berhasil diposting",
       "alreadyPostedToast": "Jurnal sudah pernah diposting",
+      "unknownDelta": "Nilai jurnal tidak dapat diverifikasi — periksa manual",
       "err": {
         "UNMAPPED_ROLE": "Role posting \"{role}\" belum dipetakan — petakan di Account Mapping lalu coba lagi.",
         "UNBALANCED": "Jurnal tidak balance (debit ≠ kredit).",
