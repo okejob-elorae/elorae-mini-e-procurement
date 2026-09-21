@@ -3509,6 +3509,7 @@
       "NO_LINES": "Tambahkan minimal satu barang untuk ditransfer.",
       "BAD_QTY": "Setiap baris membutuhkan jumlah lebih dari nol.",
       "ITEM_NOT_FOUND": "Salah satu barang pada dokumen ini sudah tidak ada.",
+      "STORE_NOT_FOUND": "Toko itu sudah tidak ada. Muat ulang dan pilih yang lain.",
       "INVALID_REQUEST": "Data yang dikirim tidak valid. Muat ulang halaman dan coba lagi.",
       "ERROR": "Terjadi kesalahan. Coba lagi."
     }
