@@ -31,6 +31,7 @@ export const LEDGER_REF_MESSAGE_KEY: Record<StockLedgerRefType, string> = {
   StockAdjustment: "refType.stockAdjustment",
   StockOpname: "refType.stockOpname",
   StoreStocktake: "refType.storeStocktake",
+  StoreTransfer: "refType.storeTransfer",
   VanLoad: "refType.vanLoad",
   VanReconcile: "refType.vanReconcile",
   VanSale: "refType.vanSale",

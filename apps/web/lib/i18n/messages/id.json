@@ -1235,6 +1235,7 @@
       "stockAdjustment": "Stock Adjustment",
       "stockOpname": "Stock Opname",
       "storeStocktake": "Perhitungan Stok Toko",
+      "storeTransfer": "Transfer Toko",
       "vanLoad": "Muat Van",
       "vanReconcile": "Rekonsiliasi Van",
       "vanSale": "Penjualan Van",

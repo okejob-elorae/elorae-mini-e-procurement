@@ -1235,6 +1235,7 @@
       "stockAdjustment": "Stock Adjustment",
       "stockOpname": "Stock Opname",
       "storeStocktake": "Store Stocktake",
+      "storeTransfer": "Store Transfer",
       "vanLoad": "Van Load",
       "vanReconcile": "Van Reconciliation",
       "vanSale": "Van Sale",
