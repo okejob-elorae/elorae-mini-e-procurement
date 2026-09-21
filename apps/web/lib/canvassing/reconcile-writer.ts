@@ -98,6 +98,8 @@ export async function recordVanReconcile(input: {
           qtyDelta: l.counted,
           avgCost: newAvg,
           totalValue: newQty * newAvg,
+          totalCost: l.counted * newAvg,
+          balanceValue: newQty * newAvg,
           createIfMissing: true,
           inventoryValueId: main?.id,
           refType: "VanReconcile" satisfies StockLedgerRefType,

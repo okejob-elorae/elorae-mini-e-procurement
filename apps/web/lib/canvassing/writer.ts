@@ -84,6 +84,8 @@ export async function loadVan(input: {
         variantSku: l.variantSku,
         qtyDelta: -l.qty,
         totalValue: newQty * avgCost,
+        totalCost: -l.qty * avgCost,
+        balanceValue: newQty * avgCost,
         inventoryValueId: inv.id,
         refType: "VanLoad" satisfies StockLedgerRefType,
         refId: load.id,

@@ -111,6 +111,8 @@ export async function approveFieldReturn(input: {
           qtyDelta: sellableQty,
           avgCost: newAvgCost,
           totalValue: newQty * newAvgCost,
+          totalCost: sellableQty * newAvgCost,
+          balanceValue: newQty * newAvgCost,
           createIfMissing: true,
           inventoryValueId: main?.id,
           refType: "FieldReturn" satisfies StockLedgerRefType,
