@@ -35,6 +35,7 @@ import {
   type DecisionActionResult,
 } from "@/app/actions/sales-return-decision";
 import type { SalesReturnDetail } from "@/lib/sales-returns/queries";
+import { PackingVideoActions } from "@/components/packing-video-actions";
 import {
   RETURN_STATUS_TAILWIND,
   ITEM_DECISION_TAILWIND,
@@ -186,17 +187,14 @@ export function ReturnDecisionCard({ ret, canDecide, canPostJournal }: Props) {
           <span>{ret.buyerName ?? "—"}</span>
           <span className="text-muted-foreground">{t("receivedAt")}</span>
           <span>{fmtDateTime(ret.receivedAt, locale)}</span>
-          {ret.packingVideoUrl ? (
+          {ret.packingVideoUrl && ret.salesOrder?.id ? (
             <>
               <span className="text-muted-foreground">Video packing</span>
-              <a
-                href={ret.packingVideoUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="break-all font-medium text-blue-600 underline underline-offset-2 hover:text-blue-700"
-              >
-                {ret.packingVideoUrl}
-              </a>
+              <PackingVideoActions
+                videoUrl={ret.packingVideoUrl}
+                salesOrderId={ret.salesOrder.id}
+                showFullUrl
+              />
             </>
           ) : null}
         </div>

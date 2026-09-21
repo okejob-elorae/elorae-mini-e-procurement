@@ -15,6 +15,11 @@ const nextConfig: NextConfig = {
     unoptimized: true,
   },
   serverExternalPackages: ["@prisma/client", "@prisma/adapter-mariadb", "mariadb"],
+  // Packer videos can be tens of MB. Default proxy body buffer is 10MB and
+  // truncates multipart → "Failed to parse body as FormData".
+  experimental: {
+    proxyClientMaxBodySize: "100mb",
+  },
   async redirects() {
     return [
       { source: '/backoffice/reports', destination: '/backoffice/dashboard', permanent: false },

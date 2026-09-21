@@ -27,7 +27,19 @@ export async function POST(req: NextRequest) {
   }
 
   const perms = session.user.permissions ?? [];
-  const form = await req.formData();
+  let form: FormData;
+  try {
+    form = await req.formData();
+  } catch (err) {
+    console.error("packer upload formData parse failed:", err);
+    return NextResponse.json(
+      {
+        error:
+          "Gagal baca file upload (body terlalu besar atau terpotong). Coba rekam lebih pendek, atau restart dev server setelah update limit.",
+      },
+      { status: 413 },
+    );
+  }
   const replace = String(form.get("replace") ?? "false") === "true";
   const canUpload =
     hasPermission(perms, PERMISSIONS.PACKER_RECORD) ||
