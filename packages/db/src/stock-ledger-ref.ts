@@ -56,6 +56,7 @@ export const STOCK_LEDGER_REF_TYPES = [
   "StockAdjustment",
   "StockOpname",
   "StoreStocktake",
+  "StoreTransfer",
   "VanLoad",
   "VanReconcile",
   "VanSale",

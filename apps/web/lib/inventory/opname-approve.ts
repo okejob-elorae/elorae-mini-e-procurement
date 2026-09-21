@@ -159,16 +159,22 @@ export async function applyFgAccessoriesAdjustments(
     });
 
     const newTotalValue = newQty.mul(prevAvgCost);
-    const adjQty = type === "POSITIVE" ? qtyChange.toNumber() : -qtyChange.toNumber();
+
+    // Computed here and passed straight into the ledger mover below as totalCost — this is the
+    // figure the opname journal reads to post the inventory-variance GL entry.
+    const totalCostAdj =
+      type === "POSITIVE"
+        ? qtyChange.mul(prevAvgCost).toNumber()
+        : qtyChange.mul(prevAvgCost).neg().toNumber();
 
     /*
      * setMainStock, not moveMainStock: an opname line is an absolute physical count, and the
-     * counted figure is what must land. Routed as a delta the row ends at prevActual + adjQty —
-     * which is NOT countedQty if anything moved between the read above and the write — while the
-     * StockAdjustment row created just above records newQty: countedQty, so the two disagree with
-     * nothing to reconcile them. The ledger type is wrong the same way: ledgerTypeForDelta types a
-     * count IN or OUT, where every other count in this system writes ADJUSTMENT, and the ledger is
-     * append-only so that spelling would be permanent.
+     * counted figure is what must land. Routed as a delta the row ends at prevActual + the
+     * signed delta — which is NOT countedQty if anything moved between the read above and the
+     * write — while the StockAdjustment row created just above records newQty: countedQty, so
+     * the two disagree with nothing to reconcile them. The ledger type is wrong the same way:
+     * ledgerTypeForDelta types a count IN or OUT, where every other count in this system writes
+     * ADJUSTMENT, and the ledger is append-only so that spelling would be permanent.
      */
     await setMainStock(tx, {
       itemId: row.itemId,
@@ -176,33 +182,13 @@ export async function applyFgAccessoriesAdjustments(
       nextQty: newQty.toNumber(),
       totalValue: newTotalValue.toNumber(),
       unitCost: prevAvgCost.toNumber(),
+      totalCost: totalCostAdj,
+      balanceValue: newTotalValue.toNumber(),
       inventoryValueId: inv.id,
       refType: "StockOpname" satisfies StockLedgerRefType,
       refId: opnameId,
       refDocNumber: docNumber,
       createdById: userId,
-    });
-
-    const totalCostAdj =
-      type === "POSITIVE"
-        ? qtyChange.mul(prevAvgCost).toNumber()
-        : qtyChange.mul(prevAvgCost).neg().toNumber();
-
-    await tx.stockMovement.create({
-      data: {
-        itemId: row.itemId,
-        variantSku: variantKey,
-        type: "ADJUSTMENT",
-        refType: "OPNAME",
-        refId: opnameId,
-        refDocNumber: docNumber,
-        qty: adjQty,
-        unitCost: prevAvgCost.toNumber(),
-        totalCost: totalCostAdj,
-        balanceQty: newQty.toNumber(),
-        balanceValue: newTotalValue.toNumber(),
-        notes: `Opname adjustment: ${docNumber}`,
-      },
     });
 
     await tx.stockOpnameItem.update({
@@ -262,36 +248,10 @@ export async function applyFabricAdjustments(
     }
   }
 
-  for (const [itemId, netDelta] of itemDeltas) {
-    const newAggregate = await syncFabricAggregateQty(tx, itemId, {
+  for (const itemId of itemDeltas.keys()) {
+    await syncFabricAggregateQty(tx, itemId, {
       refId: opnameId,
       refDocNumber: docNumber,
-    });
-    /*
-     * Same helper syncFabricAggregateQty just resolved and wrote through, tie-break included.
-     * This re-resolve used to hand-roll the OR without the orderBy, so on an item carrying both a
-     * null-spelled and a ""-spelled row it could read a DIFFERENT row than the one the line above
-     * had just set — and the StockMovement.balanceQty below is derived from what comes back here.
-     */
-    const inv = await findExistingInventoryValueRow(tx, itemId, "");
-    const prevQty = inv ? toNum(inv.qtyOnHand) - netDelta : newAggregate - netDelta;
-    const avgCost = inv ? toNum(inv.avgCost) : 0;
-
-    await tx.stockMovement.create({
-      data: {
-        itemId,
-        variantSku: "",
-        type: "ADJUSTMENT",
-        refType: "OPNAME",
-        refId: opnameId,
-        refDocNumber: docNumber,
-        qty: netDelta,
-        unitCost: avgCost || null,
-        totalCost: avgCost ? netDelta * avgCost : null,
-        balanceQty: newAggregate,
-        balanceValue: newAggregate * avgCost,
-        notes: `Fabric opname aggregate: ${docNumber}`,
-      },
     });
   }
 

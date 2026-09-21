@@ -575,39 +575,25 @@ export async function applyUmkmManifest(
         const newTotalValue = newQty.mul(prevAvgCost);
         const adjQty = type === "POSITIVE" ? qtyChange : -qtyChange;
 
+        // Computed here so it can be passed straight into the ledger mover below as totalCost.
+        const totalCostAdj =
+          type === "POSITIVE"
+            ? qtyDecimal.mul(prevAvgCost).toNumber()
+            : qtyDecimal.mul(prevAvgCost).neg().toNumber();
+
         await moveMainStock(tx, {
           itemId,
           variantSku: variantKey,
           qtyDelta: adjQty,
           totalValue: newTotalValue.toNumber(),
           unitCost: prevAvgCost.toNumber(),
+          totalCost: totalCostAdj,
+          balanceValue: newTotalValue.toNumber(),
           inventoryValueId: current.id,
           refType: "OpeningStock" satisfies StockLedgerRefType,
           refId: adjustment.id,
           refDocNumber: adjustment.docNumber,
           createdById: userId,
-        });
-
-        const totalCostAdj =
-          type === "POSITIVE"
-            ? qtyDecimal.mul(prevAvgCost).toNumber()
-            : qtyDecimal.mul(prevAvgCost).neg().toNumber();
-
-        await tx.stockMovement.create({
-          data: {
-            itemId,
-            variantSku: variantKey,
-            type: "ADJUSTMENT",
-            refType: "ADJUSTMENT",
-            refId: adjustment.id,
-            refDocNumber: idempotencyDoc,
-            qty: adjQty,
-            unitCost: prevAvgCost.toNumber(),
-            totalCost: totalCostAdj,
-            balanceQty: newQty.toNumber(),
-            balanceValue: newTotalValue.toNumber(),
-            notes: reason,
-          },
         });
 
         await tx.auditLog.create({

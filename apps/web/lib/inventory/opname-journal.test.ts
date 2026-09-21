@@ -1,24 +1,32 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { opnameNetDelta, postOpnameJournal } from "./opname-journal";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../finance/journals/mapping-test-fixture";
 
-// Posts journal + mapping rows and stock movements — never run against the shared prod DB (port 3307 tunnel / VPS host).
+// Posts journal + mapping rows and stock ledger entries — never run against the shared prod DB (port 3307 tunnel / VPS host).
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
 d("postOpnameJournal (test bed only)", () => {
   let token: string;
-  let userId: string;
-  let uomId: string;
-  let itemId: string;
-  let inventoryId: string;
-  let varianceId: string;
-  let opnameId: string;
+  let userId = "";
+  let uomId = "";
+  let itemId = "";
+  let inventoryId = "";
+  let varianceId = "";
+  let opnameId = "";
   let mappingSnapshot: MappingSnapshot;
 
   beforeEach(async () => {
+    /* Reset before anything can throw: an unassigned id makes Prisma DROP the filter
+       term, collapsing a scoped deleteMany into an unscoped one on the shared bed. */
+    userId = "";
+    uomId = "";
+    itemId = "";
+    inventoryId = "";
+    varianceId = "";
+    opnameId = "";
     token = Math.floor(Math.random() * 10_000_000).toString();
     mappingSnapshot = await snapshotMappings(["INVENTORY", "INVENTORY_VARIANCE"]);
 
@@ -79,20 +87,21 @@ d("postOpnameJournal (test bed only)", () => {
       await prisma.journal.delete({ where: { id: journal.id } });
     }
     await restoreMappings(mappingSnapshot);
-    await prisma.stockMovement.deleteMany({ where: { refType: "OPNAME", refId: opnameId } });
-    await prisma.chartAccount.deleteMany({ where: { id: { in: [inventoryId, varianceId] } } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { refType: "StockOpname", refId: seededId(opnameId) } });
+    await prisma.chartAccount.deleteMany({ where: { id: { in: [seededId(inventoryId), seededId(varianceId)] } } });
     await prisma.stockOpname.delete({ where: { id: opnameId } });
     await prisma.item.delete({ where: { id: itemId } });
     await prisma.uOM.delete({ where: { id: uomId } });
     await prisma.user.delete({ where: { id: userId } });
   });
 
-  async function seedMovement(totalCost: number | null, qty: number): Promise<void> {
-    await prisma.stockMovement.create({
+  async function seedLedgerEntry(totalCost: number | null, qty: number): Promise<void> {
+    await prisma.stockLedgerEntry.create({
       data: {
+        locationType: "MAIN",
         itemId,
         type: "ADJUSTMENT",
-        refType: "OPNAME",
+        refType: "StockOpname",
         refId: opnameId,
         refDocNumber: `OPN-TEST-${token}`,
         qty,
@@ -103,15 +112,20 @@ d("postOpnameJournal (test bed only)", () => {
     });
   }
 
-  it("opnameNetDelta sums totalCost across movements, treating null as 0", async () => {
-    await seedMovement(300, 3);
-    await seedMovement(null, 0);
-    await seedMovement(200, 2);
+  it("opnameNetDelta sums totalCost across ledger entries, both non-null", async () => {
+    await seedLedgerEntry(300, 3);
+    await seedLedgerEntry(200, 2);
     expect(await opnameNetDelta(opnameId, prisma)).toBe(500);
   });
 
+  it("opnameNetDelta throws when a ledger row has a null totalCost, instead of treating it as 0", async () => {
+    await seedLedgerEntry(300, 3);
+    await seedLedgerEntry(null, 0);
+    await expect(opnameNetDelta(opnameId, prisma)).rejects.toThrow();
+  });
+
   it("surplus (net +500) posts DR INVENTORY 500 / CR INVENTORY_VARIANCE 500, balanced", async () => {
-    await seedMovement(500, 5);
+    await seedLedgerEntry(500, 5);
 
     const r = await postOpnameJournal(opnameId, userId, prisma);
     expect(r).toMatchObject({ ok: true, created: true });
@@ -134,7 +148,7 @@ d("postOpnameJournal (test bed only)", () => {
   });
 
   it("shrinkage (net -300) posts DR INVENTORY_VARIANCE 300 / CR INVENTORY 300", async () => {
-    await seedMovement(-300, -3);
+    await seedLedgerEntry(-300, -3);
 
     const r = await postOpnameJournal(opnameId, userId, prisma);
     expect(r).toMatchObject({ ok: true, created: true });
@@ -154,15 +168,15 @@ d("postOpnameJournal (test bed only)", () => {
   });
 
   it("net 0 returns NOTHING_TO_POST", async () => {
-    await seedMovement(300, 3);
-    await seedMovement(-300, -3);
+    await seedLedgerEntry(300, 3);
+    await seedLedgerEntry(-300, -3);
 
     const r = await postOpnameJournal(opnameId, userId, prisma);
     expect(r).toMatchObject({ ok: false, code: "NOTHING_TO_POST" });
   });
 
   it("is idempotent (re-post returns created:false)", async () => {
-    await seedMovement(500, 5);
+    await seedLedgerEntry(500, 5);
     const a = await postOpnameJournal(opnameId, userId, prisma);
     const b = await postOpnameJournal(opnameId, userId, prisma);
     expect(a).toMatchObject({ ok: true, created: true });

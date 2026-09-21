@@ -30,30 +30,28 @@ function serializeItemForClient(
   } as SerializedItemForStockCard;
 }
 
-function formatMovementDescription(refType: string): string {
-  switch (refType) {
-    case 'GRN':
-      return 'Penerimaan Barang';
-    case 'WO_ISSUE':
-      return 'Pengeluaran untuk Produksi';
-    case 'WO_RECEIPT':
-    case 'FG_RECEIPT':
-      return 'Penerimaan Hasil Produksi';
-    case 'ADJUSTMENT':
-      return 'Penyesuaian Stok';
-    case 'RETURN':
-      return 'Retur';
-    case 'VENDOR_RETURN':
-      return 'Pengembalian Vendor';
-    case 'OPNAME':
-      return 'Stock Opname';
-    case 'RECON':
-      return 'Rekonsiliasi Jubelio';
-    case 'GRN_OWNER_DECLINE':
-      return 'GRN ditolak owner (pembatalan penerimaan)';
-    default:
-      return refType;
-  }
+/*
+ * Splits a signed ledger qty into in/out columns by SIGN, not by StockLedgerType. The two
+ * enums do not line up: StockLedgerType.ADJUSTMENT is signed either way (a physical-count
+ * correction from setMainStock/setStoreStock can move the balance up or down), and OPENING is
+ * a balance snapshot, not a movement (its qty equals its own balanceQty). A zero-qty
+ * ADJUSTMENT (a value-only correction, or a true no-op) renders in neither column. The `type`
+ * field itself is still returned for reference/badge use, but never consulted here.
+ */
+function splitInOut(qty: number): { in: number | null; out: number | null } {
+  if (qty > 0) return { in: qty, out: null };
+  if (qty < 0) return { in: null, out: Math.abs(qty) };
+  return { in: null, out: null };
+}
+
+/*
+ * balanceValue/unitCost/totalCost are nullable on StockLedgerEntry: every row written before
+ * Tasks A1/A2 added those columns has them null, and none can be reconstructed. Null must
+ * stay null all the way to the screen - `Number(null)` is 0, which would silently render an
+ * unrecorded value as "Rp 0" and assert the stock was worthless.
+ */
+function nullableNumber(v: unknown): number | null {
+  return v == null ? null : Number(v);
 }
 
 export async function getStockCard(
@@ -61,37 +59,40 @@ export async function getStockCard(
   dateRange: { from: Date; to: Date },
   variantSku?: string
 ) {
-  const movementWhere: Record<string, unknown> = {
+  const ledgerWhere: Record<string, unknown> = {
     itemId,
+    /* The ledger also holds STORE and VAN rows - this card is main-warehouse only, and
+       without this filter it would silently start blending in store/van movements for the
+       same item without looking obviously wrong on screen. */
+    locationType: 'MAIN',
   };
   if (variantSku) {
-    movementWhere.variantSku = variantSku;
+    ledgerWhere.variantSku = variantSku;
   }
 
-  const openingMovement = await prisma.stockMovement.findFirst({
+  const openingEntry = await prisma.stockLedgerEntry.findFirst({
     where: {
-      ...movementWhere,
+      ...ledgerWhere,
       createdAt: { lt: dateRange.from },
     },
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
   });
 
-  const openingBalance = openingMovement
-    ? Number(openingMovement.balanceQty)
-    : 0;
-  const openingValue = openingMovement
-    ? Number(openingMovement.balanceValue)
-    : 0;
+  /* No prior row means no ledger history before this range at all, i.e. balance and value
+     are both genuinely zero - not "not recorded". "Not recorded" only applies once a row
+     exists whose balanceValue was never populated (see nullableNumber above). */
+  const openingBalance = openingEntry ? Number(openingEntry.balanceQty) : 0;
+  const openingValue = openingEntry ? nullableNumber(openingEntry.balanceValue) : 0;
 
-  const movements = await prisma.stockMovement.findMany({
+  const entries = await prisma.stockLedgerEntry.findMany({
     where: {
-      ...movementWhere,
+      ...ledgerWhere,
       createdAt: {
         gte: dateRange.from,
         lte: dateRange.to,
       },
     },
-    orderBy: { createdAt: 'asc' },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
   });
 
   const itemRow = await prisma.item.findUnique({
@@ -100,28 +101,36 @@ export async function getStockCard(
   });
 
   const closingBalance =
-    movements.length > 0
-      ? Number(movements[movements.length - 1].balanceQty)
+    entries.length > 0
+      ? Number(entries[entries.length - 1].balanceQty)
       : openingBalance;
 
   return {
     item: serializeItemForClient(itemRow),
     openingBalance,
     openingValue,
-    movements: movements.map((m) => ({
-      id: m.id,
-      date: m.createdAt,
-      docNumber: m.refDocNumber,
-      variantSku: m.variantSku ?? null,
-      description: formatMovementDescription(m.refType),
-      type: m.type,
-      in: m.type === 'IN' ? Number(m.qty) : null,
-      out: m.type !== 'IN' ? Math.abs(Number(m.qty)) : null,
-      balance: Number(m.balanceQty),
-      unitCost: m.unitCost != null ? Number(m.unitCost) : null,
-      balanceValue: Number(m.balanceValue),
-      notes: m.notes,
-    })),
+    movements: entries.map((e) => {
+      const qty = Number(e.qty);
+      const { in: qtyIn, out: qtyOut } = splitInOut(qty);
+      return {
+        id: e.id,
+        date: e.createdAt,
+        docNumber: e.refDocNumber,
+        variantSku: e.variantSku || null,
+        /* Raw refType (StockLedgerRefType vocabulary, not StockMovement's) - the page
+           resolves it to a label via ledgerRefMessageKey, the same idiom the movement card
+           and the store detail card already use for this exact column. */
+        refType: e.refType,
+        type: e.type,
+        in: qtyIn,
+        out: qtyOut,
+        balance: Number(e.balanceQty),
+        unitCost: nullableNumber(e.unitCost),
+        balanceValue: nullableNumber(e.balanceValue),
+        /* StockLedgerEntry has no notes column and nothing to derive one from - see the
+           landmine note on this file for why it is dropped rather than left stale. */
+      };
+    }),
     closingBalance,
   };
 }
@@ -137,12 +146,14 @@ export async function getItemVariantOptions(itemId: string): Promise<string[]> {
      * than swapping one for the other. The ledger's cutover backfill only wrote rows for
      * non-zero balances, so a variant that sat at zero at cutover and has not moved since
      * has zero ledger rows - StockMovement still holds its full history. The ledger in
-     * turn covers store/van variants that never wrote StockMovement at all. Keep both
-     * until the stock card itself (still on StockMovement, for its value columns) leaves
-     * that table. The two also cannot share a filter: StockLedgerEntry.variantSku is NOT
-     * NULL with a '' default, so `{ not: '' }` is its variantless exclusion here -
-     * `{ not: null }` (the StockMovement spelling below) does not compile against this
-     * column, since null is not assignable to a plain-string StringFilter. */
+     * turn covers store/van variants that never wrote StockMovement at all. This function
+     * is NOT part of the ledger repoint above and deliberately keeps reading both tables -
+     * it still needs whichever one saw a given variant at all, which the stock card queries
+     * above no longer need now that they read the ledger's own value columns. The two
+     * cannot share a filter: StockLedgerEntry.variantSku is NOT NULL with a '' default, so
+     * `{ not: '' }` is its variantless exclusion here - `{ not: null }` (the StockMovement
+     * spelling below) does not compile against this column, since null is not assignable
+     * to a plain-string StringFilter. */
     prisma.stockLedgerEntry.groupBy({
       by: ['variantSku'],
       where: { itemId, variantSku: { not: '' } },
@@ -215,21 +226,22 @@ export async function getCurrentStockSummary() {
 export type StockCardByTypeItem = {
   item: SerializedItemForStockCard | null;
   openingBalance: number;
-  openingValue: number;
+  /* null means "not recorded" (a pre-value-column ledger row), never coerced to 0. */
+  openingValue: number | null;
   closingBalance: number;
-  closingValue: number;
+  closingValue: number | null;
   movements: Array<{
     id: string;
     date: Date;
-    docNumber: string | null;
-    description: string;
+    docNumber: string;
+    /* Raw StockLedgerRefType-vocabulary string - resolve via ledgerRefMessageKey on the page. */
+    refType: string;
     type: string;
     in: number | null;
     out: number | null;
     balance: number;
     unitCost: number | null;
-    balanceValue: number;
-    notes: string | null;
+    balanceValue: number | null;
   }>;
 };
 
@@ -250,41 +262,44 @@ export async function getStockCardByType(
   }
   const itemIds = items.map((i) => i.id);
 
-  const openingMovements = await prisma.stockMovement.findMany({
+  const openingEntries = await prisma.stockLedgerEntry.findMany({
     where: {
       itemId: { in: itemIds },
+      locationType: 'MAIN',
       createdAt: { lt: dateRange.from },
     },
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
   });
-  const lastBeforeByItem = new Map<string, (typeof openingMovements)[0]>();
-  for (const m of openingMovements) {
-    if (!lastBeforeByItem.has(m.itemId)) lastBeforeByItem.set(m.itemId, m);
+  const lastBeforeByItem = new Map<string, (typeof openingEntries)[0]>();
+  for (const e of openingEntries) {
+    if (!lastBeforeByItem.has(e.itemId)) lastBeforeByItem.set(e.itemId, e);
   }
 
-  const movementsInRange = await prisma.stockMovement.findMany({
+  const entriesInRange = await prisma.stockLedgerEntry.findMany({
     where: {
       itemId: { in: itemIds },
+      locationType: 'MAIN',
       createdAt: { gte: dateRange.from, lte: dateRange.to },
     },
-    orderBy: [{ itemId: 'asc' }, { createdAt: 'asc' }],
+    orderBy: [{ itemId: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
   });
 
   const byItem = new Map<
     string,
-    { openingBalance: number; openingValue: number; movements: typeof movementsInRange }
+    { openingBalance: number; openingValue: number | null; entries: typeof entriesInRange }
   >();
   for (const item of items) {
     const last = lastBeforeByItem.get(item.id);
     byItem.set(item.id, {
       openingBalance: last ? Number(last.balanceQty) : 0,
-      openingValue: last ? Number(last.balanceValue) : 0,
-      movements: [],
+      /* No prior row = no history before this range = genuinely 0, same as getStockCard. */
+      openingValue: last ? nullableNumber(last.balanceValue) : 0,
+      entries: [],
     });
   }
-  for (const m of movementsInRange) {
-    const rec = byItem.get(m.itemId);
-    if (rec) rec.movements.push(m);
+  for (const e of entriesInRange) {
+    const rec = byItem.get(e.itemId);
+    if (rec) rec.entries.push(e);
   }
 
   const result: StockCardByTypeItem[] = items.map((item) => {
@@ -292,21 +307,22 @@ export async function getStockCardByType(
     let balance = rec.openingBalance;
     let balanceValue = rec.openingValue;
     const serialized: StockCardByTypeItem['movements'] = [];
-    for (const m of rec.movements) {
-      balance = Number(m.balanceQty);
-      balanceValue = Number(m.balanceValue);
+    for (const e of rec.entries) {
+      const qty = Number(e.qty);
+      const { in: qtyIn, out: qtyOut } = splitInOut(qty);
+      balance = Number(e.balanceQty);
+      balanceValue = nullableNumber(e.balanceValue);
       serialized.push({
-        id: m.id,
-        date: m.createdAt,
-        docNumber: m.refDocNumber,
-        description: formatMovementDescription(m.refType),
-        type: m.type,
-        in: m.type === 'IN' ? Number(m.qty) : null,
-        out: m.type !== 'IN' ? Math.abs(Number(m.qty)) : null,
+        id: e.id,
+        date: e.createdAt,
+        docNumber: e.refDocNumber,
+        refType: e.refType,
+        type: e.type,
+        in: qtyIn,
+        out: qtyOut,
         balance,
-        unitCost: m.unitCost != null ? Number(m.unitCost) : null,
+        unitCost: nullableNumber(e.unitCost),
         balanceValue,
-        notes: m.notes,
       });
     }
     return {
@@ -344,41 +360,44 @@ export async function getStockCardByCategory(
   }
   const itemIds = items.map((i) => i.id);
 
-  const openingMovements = await prisma.stockMovement.findMany({
+  const openingEntries = await prisma.stockLedgerEntry.findMany({
     where: {
       itemId: { in: itemIds },
+      locationType: 'MAIN',
       createdAt: { lt: dateRange.from },
     },
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
   });
-  const lastBeforeByItem = new Map<string, (typeof openingMovements)[0]>();
-  for (const m of openingMovements) {
-    if (!lastBeforeByItem.has(m.itemId)) lastBeforeByItem.set(m.itemId, m);
+  const lastBeforeByItem = new Map<string, (typeof openingEntries)[0]>();
+  for (const e of openingEntries) {
+    if (!lastBeforeByItem.has(e.itemId)) lastBeforeByItem.set(e.itemId, e);
   }
 
-  const movementsInRange = await prisma.stockMovement.findMany({
+  const entriesInRange = await prisma.stockLedgerEntry.findMany({
     where: {
       itemId: { in: itemIds },
+      locationType: 'MAIN',
       createdAt: { gte: dateRange.from, lte: dateRange.to },
     },
-    orderBy: [{ itemId: 'asc' }, { createdAt: 'asc' }],
+    orderBy: [{ itemId: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
   });
 
   const byItem = new Map<
     string,
-    { openingBalance: number; openingValue: number; movements: typeof movementsInRange }
+    { openingBalance: number; openingValue: number | null; entries: typeof entriesInRange }
   >();
   for (const item of items) {
     const last = lastBeforeByItem.get(item.id);
     byItem.set(item.id, {
       openingBalance: last ? Number(last.balanceQty) : 0,
-      openingValue: last ? Number(last.balanceValue) : 0,
-      movements: [],
+      /* No prior row = no history before this range = genuinely 0, same as getStockCard. */
+      openingValue: last ? nullableNumber(last.balanceValue) : 0,
+      entries: [],
     });
   }
-  for (const m of movementsInRange) {
-    const rec = byItem.get(m.itemId);
-    if (rec) rec.movements.push(m);
+  for (const e of entriesInRange) {
+    const rec = byItem.get(e.itemId);
+    if (rec) rec.entries.push(e);
   }
 
   const result: StockCardByTypeItem[] = items.map((item) => {
@@ -386,21 +405,22 @@ export async function getStockCardByCategory(
     let balance = rec.openingBalance;
     let balanceValue = rec.openingValue;
     const serialized: StockCardByTypeItem['movements'] = [];
-    for (const m of rec.movements) {
-      balance = Number(m.balanceQty);
-      balanceValue = Number(m.balanceValue);
+    for (const e of rec.entries) {
+      const qty = Number(e.qty);
+      const { in: qtyIn, out: qtyOut } = splitInOut(qty);
+      balance = Number(e.balanceQty);
+      balanceValue = nullableNumber(e.balanceValue);
       serialized.push({
-        id: m.id,
-        date: m.createdAt,
-        docNumber: m.refDocNumber,
-        description: formatMovementDescription(m.refType),
-        type: m.type,
-        in: m.type === 'IN' ? Number(m.qty) : null,
-        out: m.type !== 'IN' ? Math.abs(Number(m.qty)) : null,
+        id: e.id,
+        date: e.createdAt,
+        docNumber: e.refDocNumber,
+        refType: e.refType,
+        type: e.type,
+        in: qtyIn,
+        out: qtyOut,
         balance,
-        unitCost: m.unitCost != null ? Number(m.unitCost) : null,
+        unitCost: nullableNumber(e.unitCost),
         balanceValue,
-        notes: m.notes,
       });
     }
     return {

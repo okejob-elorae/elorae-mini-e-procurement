@@ -25,7 +25,7 @@ import {
   type DriftRow,
 } from "@/lib/inventory/opname-approve";
 import { freezeFabricRollSnapshot, freezeItemSnapshot } from "@/lib/inventory/opname-snapshot";
-import { postOpnameJournal, opnameNetDelta } from "@/lib/inventory/opname-journal";
+import { postOpnameJournal, probeOpnameNetDelta } from "@/lib/inventory/opname-journal";
 import { serializeForClient } from "@/lib/serialize-for-client";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
@@ -424,9 +424,12 @@ export async function getOpnameById(opnameId: string) {
     select: { id: true },
   });
 
-  // Only offer the post-journal action when there is an unposted, non-zero value delta —
-  // a no-drift opname (or one with no cost basis) has nothing to journal.
-  const netDelta = j ? 0 : await opnameNetDelta(opnameId, prisma);
+  // Offer the post-journal action only when the delta is both computable and non-zero.
+  // `probeOpnameNetDelta` never throws: a null totalCost, or an opname with no ledger
+  // rows at all (it predates the 2026-09-15 ledger cutover), means we genuinely can't
+  // tell — that is surfaced through `journalDeltaUnknown` rather than being folded into
+  // "nothing to post", which would hide the button on exactly the opnames that need it.
+  const probe = j ? null : await probeOpnameNetDelta(opnameId, prisma);
 
   return serializeOpname({
     ...opname,
@@ -441,6 +444,7 @@ export async function getOpnameById(opnameId: string) {
       ? (userNames.get(opname.assignedToId) ?? null)
       : null,
     journalId: j?.id ?? null,
-    hasPostableJournal: !j && Math.abs(netDelta) >= 0.01,
+    hasPostableJournal: !j && probe !== null && probe.computable && Math.abs(probe.delta) >= 0.01,
+    journalDeltaUnknown: !j && probe !== null && !probe.computable,
   });
 }

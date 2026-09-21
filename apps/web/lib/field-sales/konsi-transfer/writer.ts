@@ -76,6 +76,8 @@ export async function issueKonsiTransfer(
       variantSku: l.variantSku,
       qtyDelta: -l.qty,
       totalValue: newQty * avgCost,
+      totalCost: -l.qty * avgCost,
+      balanceValue: newQty * avgCost,
       inventoryValueId: main.id,
       refType: "KonsiTransfer" satisfies StockLedgerRefType,
       refId: transfer.id,

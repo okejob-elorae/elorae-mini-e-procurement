@@ -180,8 +180,7 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
     // (not Promise.all) — the schema doesn't forbid the same itemId twice in one payload, and
     // interleaved awaits on a never-before-stocked item could otherwise fork a duplicate
     // InventoryValue row (MySQL treats variantSku null as distinct in the unique index, so the
-    // @@unique([itemId, variantSku]) constraint doesn't catch it). The stockMovement.create call
-    // below is untouched from before this migration.
+    // @@unique([itemId, variantSku]) constraint doesn't catch it).
     const processedItems: Array<{
       itemId: string;
       variantSku: string | null;
@@ -208,23 +207,6 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
         item.variantKey,
         { refType: 'GRN' satisfies StockLedgerRefType, refId: grn.id, refDocNumber: docNumber, createdById: userId }
       );
-
-      await tx.stockMovement.create({
-        data: {
-          itemId: item.itemId,
-          variantSku: item.variantKey,
-          type: 'IN',
-          refType: 'GRN',
-          refId: 'temp',
-          refDocNumber: docNumber,
-          qty: item.qty,
-          unitCost: item.unitCost,
-          totalCost: item.totalCost,
-          balanceQty: costCalc.newQty.toNumber(),
-          balanceValue: costCalc.newTotalValue.toNumber(),
-          notes: validated.notes ?? undefined,
-        },
-      });
 
       processedItems.push({
         itemId: item.itemId,
@@ -279,11 +261,6 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
     if (rollCreates.length > 0) {
       await tx.fabricRoll.createMany({ data: rollCreates });
     }
-
-    await tx.stockMovement.updateMany({
-      where: { refDocNumber: docNumber },
-      data: { refId: grn.id },
-    });
 
     if (validated.poId) {
       for (let i = 0; i < validated.items.length; i++) {
@@ -740,7 +717,7 @@ export async function declineGRNByOwner(id: string, userId: string) {
         );
       }
 
-      const costResult = await reverseMovingAverage(
+      await reverseMovingAverage(
         itemId,
         new Decimal(qty),
         new Decimal(unitCost),
@@ -749,23 +726,6 @@ export async function declineGRNByOwner(id: string, userId: string) {
         { refType: 'GRNReversal' satisfies StockLedgerRefType, refId: grn.id, refDocNumber: grn.docNumber, createdById: userId }
       );
 
-      const lineTotal = new Decimal(qty).mul(unitCost).toNumber();
-      await tx.stockMovement.create({
-        data: {
-          itemId,
-          variantSku: variantKey,
-          type: 'OUT',
-          refType: 'GRN_OWNER_DECLINE',
-          refId: grn.id,
-          refDocNumber: grn.docNumber,
-          qty: new Decimal(qty).neg().toNumber(),
-          unitCost,
-          totalCost: -lineTotal,
-          balanceQty: costResult.newQty.toNumber(),
-          balanceValue: costResult.newTotalValue.toNumber(),
-          notes: 'Owner declined over-receive GRN — receipt reversed',
-        },
-      });
       reversedLines += 1;
     }
 

@@ -25,7 +25,9 @@ export type StockCardMovementRowFull = {
   out: number | null;
   balance: number;
   unitCost: number | null;
-  balanceValue: number;
+  /* null means "not recorded" (a StockLedgerEntry row from before the value columns
+     existed) - render a placeholder, never coerce to 0. */
+  balanceValue: number | null;
 };
 
 export type StockCardMovementRowCompact = {
@@ -94,9 +96,10 @@ export type BuildStockCardPrintHtmlByItem = {
   dateFromLabel: string;
   dateToLabel: string;
   openingBalance: number;
-  openingValue: number;
+  /* null means "not recorded" - see StockCardMovementRowFull.balanceValue above. */
+  openingValue: number | null;
   closingBalance: number;
-  closingValue: number;
+  closingValue: number | null;
   movements: StockCardMovementRowFull[];
   labels?: Partial<StockCardPrintLabels>;
   issuerName?: string;
@@ -156,7 +159,7 @@ function renderSingleItemTable(
           <td class="right">${m.out != null ? Number(m.out).toLocaleString() : '—'}</td>
           <td class="right">${Number(m.balance).toLocaleString()}</td>
           <td class="right">${m.unitCost != null ? `Rp ${Number(m.unitCost).toLocaleString()}` : '—'}</td>
-          <td class="right">Rp ${Number(m.balanceValue).toLocaleString()}</td>
+          <td class="right">${m.balanceValue != null ? `Rp ${Number(m.balanceValue).toLocaleString()}` : '—'}</td>
         </tr>`
           )
           .join('');
@@ -251,11 +254,11 @@ export function buildStockCardPrintHtml(opts: BuildStockCardPrintHtmlOptions): s
     </div>
     <div>
       <div class="sk">${esc(labels.openingValue)}</div>
-      <div class="sv">Rp ${Number(opts.openingValue).toLocaleString()}</div>
+      <div class="sv">${opts.openingValue != null ? `Rp ${Number(opts.openingValue).toLocaleString()}` : '—'}</div>
     </div>
     <div>
       <div class="sk">${esc(labels.closingValue)}</div>
-      <div class="sv">Rp ${Number(opts.closingValue).toLocaleString()}</div>
+      <div class="sv">${opts.closingValue != null ? `Rp ${Number(opts.closingValue).toLocaleString()}` : '—'}</div>
     </div>
   </div>
 

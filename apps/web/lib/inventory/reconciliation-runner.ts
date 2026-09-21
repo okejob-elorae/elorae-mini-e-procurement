@@ -116,28 +116,13 @@ async function applyMatchJubelio(
     qtyDelta: adjQty,
     totalValue: newTotalValue.toNumber(),
     unitCost: prevAvgCost.toNumber(),
+    totalCost: adjQty * prevAvgCost.toNumber(),
+    balanceValue: newTotalValue.toNumber(),
     inventoryValueId: inv.id,
     refType: "Reconciliation" satisfies StockLedgerRefType,
     refId: adjustment.id,
     refDocNumber: adjDoc,
     createdById: params.userId ?? null,
-  });
-
-  await tx.stockMovement.create({
-    data: {
-      itemId: params.itemId,
-      variantSku: variantKey,
-      type: "ADJUSTMENT",
-      refType: "RECON",
-      refId: params.runId,
-      refDocNumber: params.runId,
-      qty: adjQty,
-      unitCost: prevAvgCost.toNumber(),
-      totalCost: adjQty * prevAvgCost.toNumber(),
-      balanceQty: newQty.toNumber(),
-      balanceValue: newTotalValue.toNumber(),
-      notes: "Jubelio reconciliation auto-correct",
-    },
   });
 }
 

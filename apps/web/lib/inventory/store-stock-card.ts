@@ -87,6 +87,8 @@ function movementHref(refType: string, refId: string, transferOrderIds: Map<stri
       return `/backoffice/spg-sales/${refId}`;
     case "StoreStocktake":
       return `/backoffice/store-stocktakes/${refId}`;
+    case "StoreTransfer":
+      return `/backoffice/store-transfers/${refId}`;
     default:
       return null;
   }
@@ -101,7 +103,8 @@ function movementHref(refType: string, refId: string, transferOrderIds: Map<stri
  * Movements come straight from `StockLedgerEntry` scoped to `locationType: "STORE"` and this
  * store's id — every writer that ever touches this store's balance shows up here (konsi
  * transfer, konsi retur, an SPG sale, a store stocktake, the admin-return receipt-time
- * decrement), not just the two documents the old list could join through. One consequence:
+ * decrement, a store-to-store transfer's out or in leg), not just the two documents the old
+ * list could join through. One consequence:
  * the ledger only starts at the cutover date, so this card shows LESS pre-cutover history than
  * it used to — the UI carries a standing note about that rather than trying to merge in the
  * old document-derived rows.

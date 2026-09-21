@@ -150,6 +150,12 @@ export async function createStockAdjustment(
     const adjQtyNum = qtyChange.toNumber();
     const adjQty = data.type === 'POSITIVE' ? adjQtyNum : -adjQtyNum;
 
+    // Computed here so it can be passed straight into the ledger mover below as totalCost.
+    const totalCostAdj =
+      data.type === 'POSITIVE'
+        ? qtyChange.mul(prevAvgCost).toNumber()
+        : qtyChange.mul(prevAvgCost).neg().toNumber();
+
     // Update inventory (avg cost unchanged)
     await moveMainStock(tx, {
       itemId: data.itemId,
@@ -157,34 +163,13 @@ export async function createStockAdjustment(
       qtyDelta: adjQty,
       totalValue: newTotalValue.toNumber(),
       unitCost: prevAvgCost.toNumber(),
+      totalCost: totalCostAdj,
+      balanceValue: newTotalValue.toNumber(),
       inventoryValueId: current.id,
       refType: "StockAdjustment" satisfies StockLedgerRefType,
       refId: adjustment.id,
       refDocNumber: adjustment.docNumber,
       createdById: effectiveUserId,
-    });
-
-    // Create stock movement (in base UOM)
-    const totalCostAdj =
-      data.type === 'POSITIVE'
-        ? qtyChange.mul(prevAvgCost).toNumber()
-        : qtyChange.mul(prevAvgCost).neg().toNumber();
-
-    await tx.stockMovement.create({
-      data: {
-        itemId: data.itemId,
-        variantSku: variantKey,
-        type: 'ADJUSTMENT',
-        refType: 'ADJUSTMENT',
-        refId: adjustment.id,
-        refDocNumber: docNumber,
-        qty: adjQty,
-        unitCost: prevAvgCost.toNumber(),
-        totalCost: totalCostAdj,
-        balanceQty: newQty.toNumber(),
-        balanceValue: newTotalValue.toNumber(),
-        notes: `Adjustment: ${data.reason}`,
-      },
     });
 
     // Audit log (before = state at start of tx)

@@ -647,15 +647,6 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
 
     const docNumber = await generateDocNumber('ISSUE', tx);
     let totalCost = new Decimal(0);
-    const movementData: Array<{
-      itemId: string;
-      variantSku: string | null;
-      qty: number;
-      unitCost: number;
-      totalCost: number;
-      balanceQty: number;
-      balanceValue: number;
-    }> = [];
     const issueItemsForJson: Array<{
       itemId: string;
       qty: number;
@@ -738,6 +729,8 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
           variantSku: effectiveSku,
           qtyDelta: -take,
           totalValue: newValue,
+          totalCost: take * row.avgCost,
+          balanceValue: newValue,
           // Pins the write to the exact row this iteration just read — two rows in the same
           // null/"" bucket would otherwise let moveMainStock's own re-resolution collapse both
           // iterations onto one row, double-decrementing it.
@@ -749,15 +742,6 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
         });
         weightedCostSum += take * row.avgCost;
         remainingToDeduct -= take;
-        movementData.push({
-          itemId: item.itemId,
-          variantSku: effectiveSku,
-          qty: -take,
-          unitCost: row.avgCost,
-          totalCost: take * row.avgCost,
-          balanceQty: newQty,
-          balanceValue: newValue
-        });
       }
 
       const avgCostNum = remainingToDeduct < item.qty ? weightedCostSum / item.qty : (rowsToUse[0]?.avgCost ?? 0);
@@ -865,25 +849,6 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
       },
       select: { totalCost: true },
     });
-
-    for (const mov of movementData) {
-      await tx.stockMovement.create({
-        data: {
-          itemId: mov.itemId,
-          variantSku: mov.variantSku,
-          type: 'OUT',
-          refType: 'WO_ISSUE',
-          refId: issue.id,
-          refDocNumber: docNumber,
-          qty: mov.qty,
-          unitCost: mov.unitCost,
-          totalCost: mov.totalCost,
-          balanceQty: mov.balanceQty,
-          balanceValue: mov.balanceValue,
-          notes: `Issue to WO ${wo.docNumber}`
-        }
-      });
-    }
 
     const plan = parseConsumptionPlan(wo.consumptionPlan) as Array<{ itemId: string; issuedQty?: number }>;
     for (const issued of validated.items) {
@@ -1203,7 +1168,7 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
       if (hasPerVariantBreakdown) {
         for (const row of data.skuBreakdown!) {
           if (row.qty <= 0) continue;
-          const costResult = await calculateMovingAverage(
+          await calculateMovingAverage(
             wo.finishedGoodId,
             new Decimal(row.qty),
             avgCostPerUnit,
@@ -1211,23 +1176,6 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
             row.variantSku,
             { refType: 'FGReceipt' satisfies StockLedgerRefType, refId: receipt.id, refDocNumber: docNumber, createdById: userId }
           );
-          const rowCost = avgCostPerUnit.mul(row.qty).toNumber();
-          await tx.stockMovement.create({
-            data: {
-              itemId: wo.finishedGoodId,
-              type: 'IN',
-              refType: 'FG_RECEIPT',
-              refId: receipt.id,
-              refDocNumber: docNumber,
-              qty: row.qty,
-              variantSku: row.variantSku,
-              unitCost: avgCostPerUnit.toNumber(),
-              totalCost: rowCost,
-              balanceQty: costResult.newQty.toNumber(),
-              balanceValue: costResult.newTotalValue.toNumber(),
-              notes: `FG receipt ${docNumber}`
-            }
-          });
         }
       } else {
         const fgVariantSku =
@@ -1238,7 +1186,7 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
                 return (raw as { variantSku?: string } | null)?.variantSku ?? null;
               })()
             : null;
-        const costResult = await calculateMovingAverage(
+        await calculateMovingAverage(
           wo.finishedGoodId,
           new Decimal(qtyAccepted),
           avgCostPerUnit,
@@ -1246,22 +1194,6 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
           fgVariantSku,
           { refType: 'FGReceipt' satisfies StockLedgerRefType, refId: receipt.id, refDocNumber: docNumber, createdById: userId }
         );
-        await tx.stockMovement.create({
-          data: {
-            itemId: wo.finishedGoodId,
-            type: 'IN',
-            refType: 'FG_RECEIPT',
-            refId: receipt.id,
-            refDocNumber: docNumber,
-            qty: qtyAccepted,
-            variantSku: fgVariantSku,
-            unitCost: avgCostPerUnit.toNumber(),
-            totalCost: totalMaterialCost.toNumber(),
-            balanceQty: costResult.newQty.toNumber(),
-            balanceValue: costResult.newTotalValue.toNumber(),
-            notes: `FG receipt ${docNumber}`
-          }
-        });
       }
     }
 

@@ -116,12 +116,16 @@ export async function calculateMovingAverage(
   // never-before-stocked item, matching the upsert this replaced). When it did find a row,
   // inventoryValueId pins the write to that exact row instead of letting moveMainStock
   // re-resolve independently and potentially land on a sibling null/"" row.
+  // totalCost/balanceValue are incomingTotalValue and newTotalValue, computed above and passed
+  // straight into the ledger mover below.
   await moveMainStock(prismaClient, {
     itemId,
     variantSku,
     qtyDelta: incomingQty.toNumber(),
     avgCost: newAvgCost.toNumber(),
     totalValue: newTotalValue.toNumber(),
+    totalCost: incomingTotalValue.toNumber(),
+    balanceValue: newTotalValue.toNumber(),
     createIfMissing: true,
     inventoryValueId: current?.id,
     ...ref,
@@ -177,12 +181,16 @@ export async function reverseInventoryValue(
   // OR-tolerant read finds the row regardless of null/"" spelling, so it fires only when neither
   // spelling exists), so this never legitimately creates a row — no createIfMissing.
   // inventoryValueId pins the write to the exact row `current` was just read from.
+  // totalCost is outgoingValue, computed above; balanceValue is the new total — both passed
+  // straight into the ledger mover below.
   await moveMainStock(prismaClient, {
     itemId,
     variantSku,
     qtyDelta: outgoingQty.neg().toNumber(),
     avgCost: newAvgCost.toNumber(),
     totalValue: newTotalValue.toNumber(),
+    totalCost: outgoingValue.toNumber(),
+    balanceValue: newTotalValue.toNumber(),
     inventoryValueId: current.id,
     ...ref,
   });
@@ -220,12 +228,15 @@ export async function reverseMovingAverage(
   // variantSku null or "" — inventoryValueId pins moveMainStock's write to that same row. A
   // genuinely missing row (neither spelling exists) still reaches moveMainStock's own lookup
   // with no createIfMissing set, so it still throws — that part is unchanged.
+  // totalCost is outgoingTotalValue negated below, matching the negated qtyDelta.
   await moveMainStock(prismaClient, {
     itemId,
     variantSku,
     qtyDelta: outgoingQty.neg().toNumber(),
     avgCost: newAvgCost.toNumber(),
     totalValue: newTotalValue.toNumber(),
+    totalCost: outgoingTotalValue.neg().toNumber(),
+    balanceValue: newTotalValue.toNumber(),
     inventoryValueId: current?.id,
     ...ref,
   });
