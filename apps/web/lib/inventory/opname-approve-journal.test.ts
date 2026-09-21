@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { postOpnameJournal } from "./opname-journal";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../finance/journals/mapping-test-fixture";
 
@@ -11,15 +11,23 @@ const d = isProd ? describe.skip : describe;
 
 d("opname approve auto-journal integration (test bed only)", () => {
   let token: string;
-  let userId: string;
-  let uomId: string;
-  let itemId: string;
-  let inventoryId: string;
-  let varianceId: string;
-  let opnameId: string;
+  let userId = "";
+  let uomId = "";
+  let itemId = "";
+  let inventoryId = "";
+  let varianceId = "";
+  let opnameId = "";
   let mappingSnapshot: MappingSnapshot;
 
   beforeEach(async () => {
+    /* Reset before anything can throw: an unassigned id makes Prisma DROP the filter
+       term, collapsing a scoped deleteMany into an unscoped one on the shared bed. */
+    userId = "";
+    uomId = "";
+    itemId = "";
+    inventoryId = "";
+    varianceId = "";
+    opnameId = "";
     token = Math.floor(Math.random() * 10_000_000).toString();
     mappingSnapshot = await snapshotMappings(["INVENTORY", "INVENTORY_VARIANCE"]);
 
@@ -69,8 +77,8 @@ d("opname approve auto-journal integration (test bed only)", () => {
       await prisma.journal.delete({ where: { id: journal.id } });
     }
     await restoreMappings(mappingSnapshot);
-    await prisma.stockLedgerEntry.deleteMany({ where: { refType: "StockOpname", refId: opnameId } });
-    await prisma.chartAccount.deleteMany({ where: { id: { in: [inventoryId, varianceId] } } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { refType: "StockOpname", refId: seededId(opnameId) } });
+    await prisma.chartAccount.deleteMany({ where: { id: { in: [seededId(inventoryId), seededId(varianceId)] } } });
     await prisma.stockOpname.delete({ where: { id: opnameId } });
     await prisma.item.delete({ where: { id: itemId } });
     await prisma.uOM.delete({ where: { id: uomId } });

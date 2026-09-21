@@ -1,4 +1,4 @@
--- Store-to-store transfer document (EPIC-19-02). The system can already move stock main->store
+-- Store-to-store transfer document. The system can already move stock main->store
 -- (KonsiTransfer, implicitly main-origin, bound to a FieldSalesOrder) and store->main (a field
 -- return), but not store->store. StoreTransfer is a new pair of models, not a widened
 -- KonsiTransfer -- that model has no source-store concept at all and is bound to an order this
