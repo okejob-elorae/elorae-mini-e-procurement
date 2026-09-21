@@ -945,6 +945,7 @@ model KonsiTransferLine {
 enum StoreTransferStatus {
   PENDING
   APPROVED
+  CANCELLED
 }
 
 model StoreTransfer {
