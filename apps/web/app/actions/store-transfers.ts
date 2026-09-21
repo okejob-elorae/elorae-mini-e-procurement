@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { createStoreTransfer, approveStoreTransfer } from "@/lib/stores/transfer/writer";
+import { createStoreTransfer, approveStoreTransfer, cancelStoreTransfer } from "@/lib/stores/transfer/writer";
 import { StoreTransferError, type StoreTransferErrorCode } from "@/lib/stores/transfer/errors";
 import { getStoreStockForTransfer, type StoreStockOptionRow } from "@/lib/stores/transfer/queries";
 
@@ -104,6 +104,31 @@ export async function approveStoreTransferAction(transferId: string): Promise<St
     if (typeof transferId !== "string" || transferId === "") return { ok: false, code: "INVALID_REQUEST" };
 
     await approveStoreTransfer({ transferId, approvedById: session.user.id });
+
+    revalidatePath("/backoffice/store-transfers");
+    revalidatePath(`/backoffice/store-transfers/${transferId}`);
+    return { ok: true, id: transferId };
+  } catch (e) {
+    return toResult(e);
+  }
+}
+
+/**
+ * Cancels a PENDING transfer — no stock has moved yet, so this is a pure status flip (see
+ * `cancelStoreTransfer`'s doc comment for why it moves nothing). Same `stores:manage` gate as
+ * create/approve; the writer's own CAS is what actually stops this from ever reaching an
+ * APPROVED transfer, regardless of what this action or the UI ever check.
+ */
+export async function cancelStoreTransferAction(transferId: string): Promise<StoreTransferActionResult> {
+  try {
+    const session = await auth();
+    const permissions = session?.user?.permissions ?? [];
+    if (!session?.user?.id || !hasPermission(permissions, PERMISSIONS.STORES_MANAGE)) {
+      return { ok: false, code: "FORBIDDEN" };
+    }
+    if (typeof transferId !== "string" || transferId === "") return { ok: false, code: "INVALID_REQUEST" };
+
+    await cancelStoreTransfer({ transferId, cancelledById: session.user.id });
 
     revalidatePath("/backoffice/store-transfers");
     revalidatePath(`/backoffice/store-transfers/${transferId}`);

@@ -207,3 +207,58 @@ export async function approveStoreTransfer(input: {
     return { ok: true as const };
   });
 }
+
+/**
+ * Cancels a PENDING transfer. Much shorter than `approveStoreTransfer` above for a real reason,
+ * not an oversight: a PENDING transfer has not moved any stock — only `approveStoreTransfer`
+ * calls `moveStoreStock` — so there is nothing to reverse. No `moveStoreStock` call, no ledger
+ * entry, here.
+ *
+ * The status flip is the same CAS shape as the approve path (`updateMany` filtered on
+ * `status: "PENDING"`, a non-1 match count throwing `INVALID_STATE`), and that CAS is also what
+ * makes cancelling an APPROVED transfer structurally impossible rather than merely guarded
+ * against: the `where` only ever matches a row still `PENDING`, so an already-approved transfer
+ * (stock already moved, a different document with different accounting to reverse) can never
+ * reach past this line. Every failure path throws rather than returning — `runSerializable` is a
+ * plain `prisma.$transaction`, which COMMITS on a normal return, so a `return { error }` after
+ * this `updateMany` would commit the cancel while reporting failure (the same trap
+ * `updateDeliveryDatesAction` and `approveSettlement`'s re-validation guards are named for in
+ * this repo's landmine index).
+ *
+ * `StoreTransfer` carries no `cancelledById`/`cancelledAt` columns — unlike `StoreStocktake`,
+ * which has both plus a `cancelReason` — and reusing `approvedById`/`approvedAt` for a cancel
+ * would misrepresent the document as approved. Adding dedicated columns is a schema migration
+ * outside this writer's scope, so the actor and timestamp are recorded on the existing shared
+ * `AuditLog` table instead, the same way `rejectCollection`
+ * (`lib/finance/collections/reject-writer.ts`) covers the identical gap on
+ * `CollectionSubmission` (no `rejectedById`/`rejectedAt` column there either).
+ */
+export async function cancelStoreTransfer(input: {
+  transferId: string;
+  cancelledById: string;
+}): Promise<{ ok: true }> {
+  return runSerializable(async (tx) => {
+    const transfer = await tx.storeTransfer.findUnique({
+      where: { id: input.transferId },
+      select: { id: true },
+    });
+    if (!transfer) throw new StoreTransferError("NOT_FOUND");
+
+    const claimed = await tx.storeTransfer.updateMany({
+      where: { id: transfer.id, status: "PENDING" },
+      data: { status: "CANCELLED" },
+    });
+    if (claimed.count !== 1) throw new StoreTransferError("INVALID_STATE");
+
+    await tx.auditLog.create({
+      data: {
+        userId: input.cancelledById,
+        action: "STORE_TRANSFER_CANCEL",
+        entityType: "StoreTransfer",
+        entityId: transfer.id,
+      },
+    });
+
+    return { ok: true as const };
+  });
+}

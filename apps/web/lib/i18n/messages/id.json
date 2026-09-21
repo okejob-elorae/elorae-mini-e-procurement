@@ -3492,6 +3492,14 @@
       "submitting": "Menyetujui…",
       "success": "Transfer disetujui, stok telah berpindah."
     },
+    "cancel": {
+      "button": "Batalkan",
+      "confirmTitle": "Konfirmasi Pembatalan Transfer",
+      "confirmDescription": "Membatalkan transfer ini akan menghentikannya secara permanen. Belum ada stok yang berpindah, jadi tidak ada yang perlu dibalikkan.",
+      "confirmAction": "Batalkan Transfer",
+      "submitting": "Membatalkan…",
+      "success": "Transfer dibatalkan."
+    },
     "err": {
       "FORBIDDEN": "Anda tidak memiliki izin untuk mengelola transfer toko.",
       "NOT_FOUND": "Transfer tidak ditemukan.",

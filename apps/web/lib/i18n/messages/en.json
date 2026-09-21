@@ -3492,6 +3492,14 @@
       "submitting": "Approving…",
       "success": "Transfer approved, stock moved."
     },
+    "cancel": {
+      "button": "Cancel",
+      "confirmTitle": "Confirm Transfer Cancellation",
+      "confirmDescription": "Cancelling this transfer stops it here permanently. No stock has moved yet, so nothing needs to be reversed.",
+      "confirmAction": "Cancel Transfer",
+      "submitting": "Cancelling…",
+      "success": "Transfer cancelled."
+    },
     "err": {
       "FORBIDDEN": "You do not have permission to manage store transfers.",
       "NOT_FOUND": "The transfer was not found.",

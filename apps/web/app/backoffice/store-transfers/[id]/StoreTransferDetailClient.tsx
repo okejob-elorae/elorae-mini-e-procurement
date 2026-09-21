@@ -5,9 +5,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { toast } from "sonner";
-import { ArrowLeft, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, XCircle } from "lucide-react";
 import type { StoreTransferDetail, StoreTransferStatusValue } from "@/lib/stores/transfer/queries";
-import { approveStoreTransferAction, type StoreTransferActionResult } from "@/app/actions/store-transfers";
+import {
+  approveStoreTransferAction,
+  cancelStoreTransferAction,
+  type StoreTransferActionResult,
+} from "@/app/actions/store-transfers";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -63,6 +67,7 @@ export function StoreTransferDetailClient({ transfer, canManage }: Props) {
   const t = useTranslations("storeTransfers");
   const tDetail = useTranslations("storeTransfers.detail");
   const tApprove = useTranslations("storeTransfers.approve");
+  const tCancel = useTranslations("storeTransfers.cancel");
   const tCommon = useTranslations("common");
   const locale = useLocale();
   const router = useRouter();
@@ -70,7 +75,11 @@ export function StoreTransferDetailClient({ transfer, canManage }: Props) {
   const [approveOpen, setApproveOpen] = useState(false);
   const [approving, startApproveTransition] = useTransition();
 
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelling, startCancelTransition] = useTransition();
+
   const canApprove = canManage && transfer.status === "PENDING";
+  const canCancel = canManage && transfer.status === "PENDING";
 
   function formatDateTime(date: Date): string {
     return new Intl.DateTimeFormat(locale, {
@@ -100,6 +109,24 @@ export function StoreTransferDetailClient({ transfer, canManage }: Props) {
     });
   }
 
+  function callCancel(): void {
+    startCancelTransition(async () => {
+      try {
+        const result = await cancelStoreTransferAction(transfer.id);
+        setCancelOpen(false);
+        if (result.ok) {
+          toast.success(tCancel("success"));
+          router.refresh();
+          return;
+        }
+        toast.error(t(errKey(result.code)));
+      } catch {
+        setCancelOpen(false);
+        toast.error(t(errKey("ERROR")));
+      }
+    });
+  }
+
   const totalQty = transfer.lines.reduce((sum, l) => sum + l.qty, 0);
   const totalValue = transfer.lines.reduce((sum, l) => sum + l.lineValue, 0);
 
@@ -118,12 +145,25 @@ export function StoreTransferDetailClient({ transfer, canManage }: Props) {
             {t(`status.${transfer.status}`)}
           </Badge>
         </div>
-        {canApprove && (
-          <Button className="h-10" disabled={approving} onClick={() => setApproveOpen(true)}>
-            <CheckCircle2 className="h-4 w-4" />
-            {tApprove("button")}
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {canCancel && (
+            <Button
+              variant="outline"
+              className="h-10 text-destructive"
+              disabled={cancelling}
+              onClick={() => setCancelOpen(true)}
+            >
+              <XCircle className="h-4 w-4" />
+              {tCancel("button")}
+            </Button>
+          )}
+          {canApprove && (
+            <Button className="h-10" disabled={approving} onClick={() => setApproveOpen(true)}>
+              <CheckCircle2 className="h-4 w-4" />
+              {tApprove("button")}
+            </Button>
+          )}
+        </div>
       </div>
 
       <Card className="p-4 space-y-2">
@@ -233,6 +273,29 @@ export function StoreTransferDetailClient({ transfer, canManage }: Props) {
               }}
             >
               {approving ? tApprove("submitting") : tApprove("confirmAction")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={cancelOpen} onOpenChange={(open) => !cancelling && setCancelOpen(open)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{tCancel("confirmTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>{tCancel("confirmDescription")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cancelling}>{tCommon("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={cancelling}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(e) => {
+                /* Keep the dialog open so the pending label is visible; callCancel() closes it. */
+                e.preventDefault();
+                callCancel();
+              }}
+            >
+              {cancelling ? tCancel("submitting") : tCancel("confirmAction")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
