@@ -87,6 +87,8 @@ function movementHref(refType: string, refId: string, transferOrderIds: Map<stri
       return `/backoffice/spg-sales/${refId}`;
     case "StoreStocktake":
       return `/backoffice/store-stocktakes/${refId}`;
+    case "StoreTransfer":
+      return `/backoffice/store-transfers/${refId}`;
     default:
       return null;
   }

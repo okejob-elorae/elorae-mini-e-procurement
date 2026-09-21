@@ -133,6 +133,11 @@ const navItems: NavItem[] = [
         permission: PERMISSIONS.STORES_MANAGE,
       },
       {
+        labelKey: "storeTransfers",
+        href: "/backoffice/store-transfers",
+        permission: PERMISSIONS.STORES_MANAGE,
+      },
+      {
         labelKey: 'leadTime',
         href: '/backoffice/lead-time',
         permission: PERMISSIONS.LEAD_TIME_VIEW,
