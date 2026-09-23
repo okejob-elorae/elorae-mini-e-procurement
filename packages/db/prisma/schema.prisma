@@ -325,6 +325,7 @@ model Store {
   lat            Decimal?       @db.Decimal(10, 7)
   lng            Decimal?       @db.Decimal(10, 7)
   checkinRadiusMeters Int?
+  sellThroughMethod SellThroughMethod?
   isActive       Boolean        @default(true)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
@@ -345,6 +346,7 @@ model Store {
   settlements    StoreSettlement[]
   storeTransfersFrom StoreTransfer[] @relation("StoreTransferFromStore")
   storeTransfersTo   StoreTransfer[] @relation("StoreTransferToStore")
+  sellThroughs   KonsiSellThrough[]
 
   @@index([isActive, name])
 }
@@ -988,6 +990,79 @@ model StoreTransferLine {
   @@index([itemId])
 }
 
+enum SellThroughMethod {
+  SPG_POS
+  SHELF_COUNT
+}
+
+enum SellThroughStatus {
+  DRAFT
+  APPROVED
+  CANCELLED
+}
+
+enum SellThroughResolution {
+  BILL
+  SHRINKAGE
+  BILL_POS
+  REDUCE
+}
+
+model KonsiSellThrough {
+  id                 String                 @id @default(cuid())
+  docNo              String                 @unique
+  storeId            String
+  method             SellThroughMethod
+  status             SellThroughStatus      @default(DRAFT)
+  closingStocktakeId String
+  stocktakeKey       String?                @unique
+  previousId         String?
+  chainKey           String?                @unique
+  periodStart        DateTime?
+  periodEnd          DateTime
+  createdById        String
+  createdAt          DateTime               @default(now())
+  approvedById       String?
+  approvedAt         DateTime?
+  cancelledById      String?
+  cancelledAt        DateTime?
+  cancelReason       String?                @db.Text
+  store              Store                  @relation(fields: [storeId], references: [id])
+  lines              KonsiSellThroughLine[]
+
+  @@index([storeId, createdAt])
+  @@index([status])
+  @@index([closingStocktakeId])
+}
+
+model KonsiSellThroughLine {
+  id               String                 @id @default(cuid())
+  sellThroughId    String
+  itemId           String
+  variantSku       String                 @default("")
+  productName      String
+  openingQty       Decimal                @db.Decimal(10, 2)
+  inQty            Decimal                @db.Decimal(10, 2)
+  outQty           Decimal                @db.Decimal(10, 2)
+  posSoldQty       Decimal                @db.Decimal(10, 2)
+  gapQty           Decimal                @db.Decimal(10, 2)
+  closingQty       Decimal                @db.Decimal(10, 2)
+  countedQty       Decimal?               @db.Decimal(10, 2)
+  billedQty        Decimal                @db.Decimal(10, 2)
+  shrinkageQty     Decimal                @default(0) @db.Decimal(10, 2)
+  negativeSold     Boolean                @default(false)
+  suggestedResolution SellThroughResolution?
+  resolution       SellThroughResolution?
+  resolutionReason String?                @db.Text
+  unitCost         Decimal                @db.Decimal(15, 2)
+  sellThrough      KonsiSellThrough       @relation(fields: [sellThroughId], references: [id], onDelete: Cascade)
+  item             Item                   @relation(fields: [itemId], references: [id])
+
+  @@unique([sellThroughId, itemId, variantSku])
+  @@index([sellThroughId])
+  @@index([itemId])
+}
+
 enum StoreStocktakeStatus {
   DRAFT
   PENDING_VERIFICATION
@@ -1189,6 +1264,7 @@ model Item {
   stocktakeLines   StoreStocktakeLine[]
   assortmentLines  StoreAssortmentLine[]
   storeTransferLines StoreTransferLine[]
+  sellThroughLines KonsiSellThroughLine[]
   @@index([type, isActive])
   @@index([sku])
   @@index([uomId])
@@ -2414,6 +2490,7 @@ enum DocType {
   PAYMENT
   BKM
   STORETRF
+  SELLTHRU
 }
 
 enum OpnameScope {
