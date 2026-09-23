@@ -9,6 +9,7 @@ import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
 import { NoActiveVisitError, MinQtyViolationError, InvalidOrderTransitionError, InsufficientStockError, InvalidAddedLineError, CreditLimitExceededError } from "./errors";
 import { sentItemIds } from "./queries";
+import { openKonsiQtyByKey } from "./konsi-open-qty";
 
 type CreateLine = {
   itemId: string;
@@ -235,6 +236,10 @@ export async function createFieldSalesOrder(input: {
  * `targetQty !== null` means a minimum (`onHandQty < targetQty`). Run inside the caller's own
  * transaction so the gap read is consistent with the `StoreStock` state the approval itself acts
  * on, not a stale snapshot from before the transaction opened.
+ *
+ * `onHandQty` also folds in `openKonsiQtyByKey` (same helper `listAssortmentGaps` uses), so a
+ * store already carrying an approved-but-undelivered konsi line for this item is not offered back
+ * as a gap while those units are still in transit.
  */
 async function currentAssortmentGapKeys(
   tx: Prisma.TransactionClient,
@@ -253,10 +258,11 @@ async function currentAssortmentGapKeys(
     select: { itemId: true, variantSku: true, qty: true },
   });
   const onHandByKey = new Map(stockRows.map((r) => [`${r.itemId}::${r.variantSku ?? ""}`, r.qty.toNumber()]));
+  const openByKey = await openKonsiQtyByKey(tx, storeId, itemIds);
   const gapKeys = new Set<string>();
   for (const line of lines) {
     const key = `${line.itemId}::${line.variantSku ?? ""}`;
-    const onHandQty = onHandByKey.get(key) ?? 0;
+    const onHandQty = (onHandByKey.get(key) ?? 0) + (openByKey.get(key) ?? 0);
     const targetQty = line.targetQty === null ? null : line.targetQty.toNumber();
     const isGap = targetQty === null ? onHandQty <= 0 : onHandQty < targetQty;
     if (isGap) gapKeys.add(key);

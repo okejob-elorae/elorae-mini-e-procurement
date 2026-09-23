@@ -1,5 +1,6 @@
 import { prisma } from "@elorae/db";
 import { variantDetailForSku } from "@/lib/items/variants";
+import { openKonsiQtyByKey } from "@/lib/field-sales/konsi-open-qty";
 
 export type AssortmentLineRow = {
   id: string;
@@ -70,6 +71,10 @@ export type AssortmentGapRow = {
  * Grain is per assortment line, i.e. per (itemId, variantSku) — never aggregated to item level.
  * Two variants of one item are two independent lines and two independent `StoreStock` rows; one
  * stocked and one not must produce exactly one gap.
+ *
+ * `onHandQty` also folds in `openKonsiQtyByKey` — konsi stock reserved for this store on an
+ * APPROVED order but not yet delivered, which sits on nobody's `StoreStock` row until a delivery
+ * shipment completes it, so a reader of `StoreStock` alone would wrongly call it a gap.
  */
 export async function listAssortmentGaps(storeId: string): Promise<AssortmentGapRow[]> {
   const lines = await prisma.storeAssortmentLine.findMany({
@@ -89,10 +94,12 @@ export async function listAssortmentGaps(storeId: string): Promise<AssortmentGap
     select: { itemId: true, variantSku: true, qty: true },
   });
   const onHandByKey = new Map(stockRows.map((r) => [`${r.itemId}::${r.variantSku}`, r.qty.toNumber()]));
+  const openByKey = await openKonsiQtyByKey(prisma, storeId, itemIds);
 
   const gaps: AssortmentGapRow[] = [];
   for (const line of lines) {
-    const onHandQty = onHandByKey.get(`${line.itemId}::${line.variantSku}`) ?? 0;
+    const key = `${line.itemId}::${line.variantSku}`;
+    const onHandQty = (onHandByKey.get(key) ?? 0) + (openByKey.get(key) ?? 0);
     const targetQty = line.targetQty === null ? null : line.targetQty.toNumber();
     const isGap = targetQty === null ? onHandQty <= 0 : onHandQty < targetQty;
     if (!isGap) continue;

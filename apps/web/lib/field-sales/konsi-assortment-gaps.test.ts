@@ -2,6 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { listKonsiAssortmentGaps, listKonsiSuggestions } from "./queries";
 import { listAssortmentGaps } from "@/lib/stores/assortment/queries";
+import { approveFieldSalesOrder } from "./writer";
+import { closeFieldSalesOrderRemainder } from "./delivery/writer";
+import { openKonsiQtyByKey } from "./konsi-open-qty";
 
 /* Read-only against a shared dev DB, but the fixture still writes rows — keep the same guard as sibling specs. */
 const url = process.env.DATABASE_URL ?? "";
@@ -20,9 +23,11 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
   let overlapItemId = "";
   let zeroAvailItemId = "";
   let dualRowItemId = "";
+  let openGapItemId = "";
   let orderId = "";
   let priorOrderId = "";
   let putusOrderId = "";
+  let openGapOrderId = "";
   const assortmentLineIds: string[] = [];
   const storeStockIds: string[] = [];
 
@@ -37,9 +42,11 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
     overlapItemId = "";
     zeroAvailItemId = "";
     dualRowItemId = "";
+    openGapItemId = "";
     orderId = "";
     priorOrderId = "";
     putusOrderId = "";
+    openGapOrderId = "";
     assortmentLineIds.length = 0;
     storeStockIds.length = 0;
 
@@ -168,6 +175,39 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
     });
     assortmentLineIds.push(lineDual.id);
 
+    /**
+     * On the assortment, approved as a KONSI order for this store but not yet delivered — approve
+     * now only RESERVES konsi stock, so this never lands on `StoreStock` until a delivery shipment
+     * completes it. `openKonsiQtyByKey` is what stops this from reading as a gap while the units
+     * are in transit; closing the order's remainder (below) is what makes the gap reappear once
+     * they never arrive.
+     */
+    const openGapItem = await prisma.item.create({
+      data: { sku: `TEST-KAG-OPEN-${token}`, nameId: "In-transit konsi item", nameEn: "In-transit konsi item", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 22000 },
+    });
+    openGapItemId = openGapItem.id;
+    await prisma.inventoryValue.create({ data: { itemId: openGapItemId, variantSku: "", qtyOnHand: 20, reservedQty: 0, avgCost: 900, totalValue: 18000 } });
+    const lineOpenGap = await prisma.storeAssortmentLine.create({
+      data: { storeId, itemId: openGapItemId, variantSku: "", targetQty: null, createdById: userId },
+    });
+    assortmentLineIds.push(lineOpenGap.id);
+    const openGapOrder = await prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `KONSI/TEST-KAG-OPEN-${token}`,
+        orderType: "KONSI",
+        storeId,
+        salesmanId: userId,
+        status: "PENDING_APPROVAL",
+        subtotal: 6000,
+        total: 6000,
+        lines: {
+          create: [{ itemId: openGapItemId, variantSku: "", productName: "In-transit konsi item", qty: 6, unitPrice: 1000, lineTotal: 6000 }],
+        },
+      },
+    });
+    openGapOrderId = openGapOrder.id;
+    await approveFieldSalesOrder({ orderId: openGapOrderId, approvedById: userId });
+
     const order = await prisma.fieldSalesOrder.create({
       data: {
         orderNo: `KONSI/TEST-KAG-${token}`,
@@ -235,10 +275,13 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
       seededId(overlapItemId),
       seededId(zeroAvailItemId),
       seededId(dualRowItemId),
+      seededId(openGapItemId),
     ];
-    const allOrderIds = [seededId(orderId), seededId(priorOrderId), seededId(putusOrderId)];
+    const allOrderIds = [seededId(orderId), seededId(priorOrderId), seededId(putusOrderId), seededId(openGapOrderId)];
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: { in: allOrderIds } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: allOrderIds } } });
+    /* approveFieldSalesOrder (KONSI) reserves via StockReservation, and closeFieldSalesOrderRemainder only flips it RELEASED, never deletes it. */
+    await prisma.stockReservation.deleteMany({ where: { itemId: { in: allItemIds } } });
     await prisma.storeAssortmentLine.deleteMany({ where: { id: { in: assortmentLineIds } } });
     await prisma.storeStock.deleteMany({ where: { id: { in: storeStockIds } } });
     await prisma.store.deleteMany({ where: { id: { in: [seededId(storeId), seededId(putusStoreId)] } } });
@@ -314,5 +357,22 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
     expect(row).toBeDefined();
     expect(row!.available).toBe(3);
     expect(row!.available).not.toBe(13);
+  });
+
+  it("openKonsiQtyByKey returns the full remaining qty for an approved konsi order and nothing for a still-pending one", async () => {
+    const openMap = await openKonsiQtyByKey(prisma, storeId, [openGapItemId, variantItemId]);
+    expect(openMap.get(`${openGapItemId}::`)).toBe(6);
+    expect(openMap.get(`${variantItemId}::V1`)).toBeUndefined();
+  });
+
+  it("an approved-but-undelivered konsi line is netted into on-hand and does not read as an assortment gap", async () => {
+    const gaps = await listAssortmentGaps(storeId);
+    expect(gaps.find((g) => g.itemId === openGapItemId)).toBeUndefined();
+  });
+
+  it("closing the order's remainder (never delivered) makes the gap reappear", async () => {
+    await closeFieldSalesOrderRemainder({ orderId: openGapOrderId, closedById: userId, reason: "test: never delivered" });
+    const gaps = await listAssortmentGaps(storeId);
+    expect(gaps.find((g) => g.itemId === openGapItemId)).toBeDefined();
   });
 });
