@@ -50,6 +50,7 @@ export type AssortmentGapRow = {
   productName: string;
   itemSku: string;
   onHandQty: number;
+  inTransitQty: number;
   targetQty: number | null;
 };
 
@@ -72,9 +73,13 @@ export type AssortmentGapRow = {
  * Two variants of one item are two independent lines and two independent `StoreStock` rows; one
  * stocked and one not must produce exactly one gap.
  *
- * `onHandQty` also folds in `openKonsiQtyByKey` — konsi stock reserved for this store on an
- * APPROVED order but not yet delivered, which sits on nobody's `StoreStock` row until a delivery
- * shipment completes it, so a reader of `StoreStock` alone would wrongly call it a gap.
+ * `onHandQty` stays PHYSICAL `StoreStock` only — it is what the store keeper can point to on a
+ * shelf, so it must never silently include stock that has not arrived. `inTransitQty` is the
+ * separate `openKonsiQtyByKey` figure: konsi stock reserved for this store on an APPROVED order
+ * but not yet delivered, which sits on nobody's `StoreStock` row until a delivery shipment
+ * completes it. The gap TEST still sums the two (`onHandQty + inTransitQty`) — an item already
+ * in transit is not a gap to re-send — but a reader of `StoreStock` alone would wrongly call it
+ * one, which is exactly why the two figures are reported separately rather than pre-added.
  */
 export async function listAssortmentGaps(storeId: string): Promise<AssortmentGapRow[]> {
   const lines = await prisma.storeAssortmentLine.findMany({
@@ -99,9 +104,10 @@ export async function listAssortmentGaps(storeId: string): Promise<AssortmentGap
   const gaps: AssortmentGapRow[] = [];
   for (const line of lines) {
     const key = `${line.itemId}::${line.variantSku}`;
-    const onHandQty = (onHandByKey.get(key) ?? 0) + (openByKey.get(key) ?? 0);
+    const onHandQty = onHandByKey.get(key) ?? 0;
+    const inTransitQty = openByKey.get(key) ?? 0;
     const targetQty = line.targetQty === null ? null : line.targetQty.toNumber();
-    const isGap = targetQty === null ? onHandQty <= 0 : onHandQty < targetQty;
+    const isGap = targetQty === null ? onHandQty + inTransitQty <= 0 : onHandQty + inTransitQty < targetQty;
     if (!isGap) continue;
     gaps.push({
       itemId: line.itemId,
@@ -109,6 +115,7 @@ export async function listAssortmentGaps(storeId: string): Promise<AssortmentGap
       productName: line.item.nameId,
       itemSku: line.item.sku,
       onHandQty,
+      inTransitQty,
       targetQty,
     });
   }

@@ -24,10 +24,12 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
   let zeroAvailItemId = "";
   let dualRowItemId = "";
   let openGapItemId = "";
+  let partialGapItemId = "";
   let orderId = "";
   let priorOrderId = "";
   let putusOrderId = "";
   let openGapOrderId = "";
+  let partialGapOrderId = "";
   const assortmentLineIds: string[] = [];
   const storeStockIds: string[] = [];
 
@@ -43,10 +45,12 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
     zeroAvailItemId = "";
     dualRowItemId = "";
     openGapItemId = "";
+    partialGapItemId = "";
     orderId = "";
     priorOrderId = "";
     putusOrderId = "";
     openGapOrderId = "";
+    partialGapOrderId = "";
     assortmentLineIds.length = 0;
     storeStockIds.length = 0;
 
@@ -208,6 +212,38 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
     openGapOrderId = openGapOrder.id;
     await approveFieldSalesOrder({ orderId: openGapOrderId, approvedById: userId });
 
+    /**
+     * A target the in-transit qty alone still doesn't meet (target 10, approved-but-undelivered
+     * 6, physical 0) — a genuine gap that ALSO has units in transit, so the row exposes both
+     * `onHandQty` (physical, must read 0) and `inTransitQty` (must read 6) rather than one
+     * pre-summed figure that would hide which part is actually on the shelf.
+     */
+    const partialGapItem = await prisma.item.create({
+      data: { sku: `TEST-KAG-PARTIAL-${token}`, nameId: "Partially in-transit gap item", nameEn: "Partially in-transit gap item", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 17000 },
+    });
+    partialGapItemId = partialGapItem.id;
+    await prisma.inventoryValue.create({ data: { itemId: partialGapItemId, variantSku: "", qtyOnHand: 20, reservedQty: 0, avgCost: 850, totalValue: 17000 } });
+    const linePartialGap = await prisma.storeAssortmentLine.create({
+      data: { storeId, itemId: partialGapItemId, variantSku: "", targetQty: 10, createdById: userId },
+    });
+    assortmentLineIds.push(linePartialGap.id);
+    const partialGapOrder = await prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `KONSI/TEST-KAG-PARTIAL-${token}`,
+        orderType: "KONSI",
+        storeId,
+        salesmanId: userId,
+        status: "PENDING_APPROVAL",
+        subtotal: 6000,
+        total: 6000,
+        lines: {
+          create: [{ itemId: partialGapItemId, variantSku: "", productName: "Partially in-transit gap item", qty: 6, unitPrice: 1000, lineTotal: 6000 }],
+        },
+      },
+    });
+    partialGapOrderId = partialGapOrder.id;
+    await approveFieldSalesOrder({ orderId: partialGapOrderId, approvedById: userId });
+
     const order = await prisma.fieldSalesOrder.create({
       data: {
         orderNo: `KONSI/TEST-KAG-${token}`,
@@ -242,8 +278,13 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
         total: 2000,
         lines: {
           create: [
-            { itemId: prevSentItemId, variantSku: "", productName: "Previously sent, now gapped", qty: 1, unitPrice: 1000, lineTotal: 1000 },
-            { itemId: targetItemId, variantSku: "", productName: "Target gap item", qty: 1, unitPrice: 1000, lineTotal: 1000 },
+            /* deliveredQty: qty — this order represents STOCK ALREADY DELIVERED and since consumed
+             * back down to the gap this fixture tests, never units still in transit. Left at the
+             * default 0, openKonsiQtyByKey would (correctly, per its own contract) count these as
+             * still-outstanding konsi qty and net them into onHandQty, masking the very gap this
+             * fixture exists to prove. */
+            { itemId: prevSentItemId, variantSku: "", productName: "Previously sent, now gapped", qty: 1, deliveredQty: 1, unitPrice: 1000, lineTotal: 1000 },
+            { itemId: targetItemId, variantSku: "", productName: "Target gap item", qty: 1, deliveredQty: 1, unitPrice: 1000, lineTotal: 1000 },
           ],
         },
       },
@@ -276,8 +317,15 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
       seededId(zeroAvailItemId),
       seededId(dualRowItemId),
       seededId(openGapItemId),
+      seededId(partialGapItemId),
     ];
-    const allOrderIds = [seededId(orderId), seededId(priorOrderId), seededId(putusOrderId), seededId(openGapOrderId)];
+    const allOrderIds = [
+      seededId(orderId),
+      seededId(priorOrderId),
+      seededId(putusOrderId),
+      seededId(openGapOrderId),
+      seededId(partialGapOrderId),
+    ];
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: { in: allOrderIds } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: allOrderIds } } });
     /* approveFieldSalesOrder (KONSI) reserves via StockReservation, and closeFieldSalesOrderRemainder only flips it RELEASED, never deletes it. */
@@ -365,14 +413,26 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
     expect(openMap.get(`${variantItemId}::V1`)).toBeUndefined();
   });
 
-  it("an approved-but-undelivered konsi line is netted into on-hand and does not read as an assortment gap", async () => {
+  it("an approved-but-undelivered konsi line is netted (onHand + inTransit) and does not read as an assortment gap", async () => {
     const gaps = await listAssortmentGaps(storeId);
     expect(gaps.find((g) => g.itemId === openGapItemId)).toBeUndefined();
   });
 
-  it("closing the order's remainder (never delivered) makes the gap reappear", async () => {
+  it("closing the order's remainder (never delivered) makes the gap reappear, with onHandQty staying physical (0) and inTransitQty dropping to 0", async () => {
     await closeFieldSalesOrderRemainder({ orderId: openGapOrderId, closedById: userId, reason: "test: never delivered" });
     const gaps = await listAssortmentGaps(storeId);
-    expect(gaps.find((g) => g.itemId === openGapItemId)).toBeDefined();
+    const row = gaps.find((g) => g.itemId === openGapItemId);
+    expect(row).toBeDefined();
+    expect(row!.onHandQty).toBe(0);
+    expect(row!.inTransitQty).toBe(0);
+  });
+
+  it("a gap whose target the in-transit qty alone doesn't meet reports onHandQty (physical) and inTransitQty separately, never pre-summed", async () => {
+    const gaps = await listAssortmentGaps(storeId);
+    const row = gaps.find((g) => g.itemId === partialGapItemId);
+    expect(row).toBeDefined();
+    expect(row!.onHandQty).toBe(0);
+    expect(row!.inTransitQty).toBe(6);
+    expect(row!.targetQty).toBe(10);
   });
 });

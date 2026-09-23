@@ -237,9 +237,11 @@ export async function createFieldSalesOrder(input: {
  * transaction so the gap read is consistent with the `StoreStock` state the approval itself acts
  * on, not a stale snapshot from before the transaction opened.
  *
- * `onHandQty` also folds in `openKonsiQtyByKey` (same helper `listAssortmentGaps` uses), so a
- * store already carrying an approved-but-undelivered konsi line for this item is not offered back
- * as a gap while those units are still in transit.
+ * The gap test itself sums physical `StoreStock` with `openKonsiQtyByKey` (same helper
+ * `listAssortmentGaps` uses) into an `effectiveQty`, so a store already carrying an
+ * approved-but-undelivered konsi line for this item is not offered back as a gap while those
+ * units are still in transit — this function returns only keys, so unlike `listAssortmentGaps`
+ * it has no reason to report the physical and in-transit figures separately.
  */
 async function currentAssortmentGapKeys(
   tx: Prisma.TransactionClient,
@@ -262,9 +264,11 @@ async function currentAssortmentGapKeys(
   const gapKeys = new Set<string>();
   for (const line of lines) {
     const key = `${line.itemId}::${line.variantSku ?? ""}`;
-    const onHandQty = (onHandByKey.get(key) ?? 0) + (openByKey.get(key) ?? 0);
+    const onHandQty = onHandByKey.get(key) ?? 0;
+    const inTransitQty = openByKey.get(key) ?? 0;
+    const effectiveQty = onHandQty + inTransitQty;
     const targetQty = line.targetQty === null ? null : line.targetQty.toNumber();
-    const isGap = targetQty === null ? onHandQty <= 0 : onHandQty < targetQty;
+    const isGap = targetQty === null ? effectiveQty <= 0 : effectiveQty < targetQty;
     if (isGap) gapKeys.add(key);
   }
   return gapKeys;

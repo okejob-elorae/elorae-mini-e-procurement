@@ -538,6 +538,7 @@ export type KonsiAssortmentGapSuggestion = {
   available: number;
   targetQty: number | null;
   onHandQty: number;
+  inTransitQty: number;
 };
 
 /**
@@ -617,6 +618,7 @@ export async function listKonsiAssortmentGaps(orderId: string): Promise<KonsiAss
       available,
       targetQty: gap.targetQty,
       onHandQty: gap.onHandQty,
+      inTransitQty: gap.inTransitQty,
     });
   }
   return rows.sort((a, b) => a.sku.localeCompare(b.sku) || a.variantSku.localeCompare(b.variantSku));

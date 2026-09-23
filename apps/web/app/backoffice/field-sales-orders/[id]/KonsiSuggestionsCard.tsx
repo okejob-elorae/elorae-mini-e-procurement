@@ -53,7 +53,7 @@ type StageableSuggestion = {
 
 type PickerCandidate = StageableSuggestion & { source: "neverSent" | "gap" };
 
-type GapInfo = { onHandQty: number; targetQty: number | null };
+type GapInfo = { onHandQty: number; inTransitQty: number; targetQty: number | null };
 
 /** Cap mounted qty steppers so a large candidate list cannot freeze the detail page. */
 const PAGE_SIZE = 50;
@@ -114,7 +114,7 @@ export function KonsiSuggestionsCard({
 
   const gapInfoByKey = useMemo(() => {
     const map = new Map<string, GapInfo>();
-    for (const g of gapSuggestions) map.set(keyOf(g.itemId, g.variantSku), { onHandQty: g.onHandQty, targetQty: g.targetQty });
+    for (const g of gapSuggestions) map.set(keyOf(g.itemId, g.variantSku), { onHandQty: g.onHandQty, inTransitQty: g.inTransitQty, targetQty: g.targetQty });
     return map;
   }, [gapSuggestions]);
 
@@ -281,7 +281,14 @@ export function KonsiSuggestionsCard({
         </TableCell>
         {gap && (
           <>
-            <TableCell className="text-right tabular-nums">{gap.onHandQty}</TableCell>
+            <TableCell className="text-right tabular-nums">
+              {gap.onHandQty}
+              {gap.inTransitQty > 0 && (
+                <span className="block text-xs text-muted-foreground">
+                  {t("konsiSuggestions.gapInTransit", { qty: gap.inTransitQty })}
+                </span>
+              )}
+            </TableCell>
             <TableCell className="text-sm whitespace-nowrap">
               {gap.targetQty === null
                 ? t("konsiSuggestions.gapTargetMustBePresent")
