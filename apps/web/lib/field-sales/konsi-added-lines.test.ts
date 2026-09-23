@@ -218,21 +218,20 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
     expect(Number(order.total)).toBe(225000);
   });
 
-  it("reserves the added line then immediately transfers it to the store's virtual warehouse", async () => {
+  it("reserves the added line; nothing moves until a shipment for it completes", async () => {
     await approveFieldSalesOrder({ orderId, approvedById: userId, addedLines: [{ itemId: neverSentItemId, variantSku: "", qty: 3 }] });
     const res = await prisma.stockReservation.findFirst({ where: { itemId: seededId(neverSentItemId) } });
     expect(res).not.toBeNull();
     expect(res!.source).toBe("FIELD_SALES_KONSI");
     expect(Number(res!.qty)).toBe(3);
-    /* reserve (+3) and consume (-3) both run inside this one approve() call, so the reservation
-       resolves to CONSUMED and reservedQty nets back to 0 rather than staying held. */
-    expect(res!.state).toBe("CONSUMED");
-    expect(Number(res!.consumedQty)).toBe(3);
+    /* Approve only reserves now — the added line holds a RESERVED reservation and nothing moves
+       until a shipment for it completes. */
+    expect(res!.state).toBe("RESERVED");
+    expect(Number(res!.consumedQty)).toBe(0);
     const inv = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(neverSentItemId) } });
-    expect(Number(inv.reservedQty)).toBe(0);
-    expect(Number(inv.qtyOnHand)).toBe(47); // 50 - 3
-    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(neverSentItemId) } });
-    expect(Number(ss.qty)).toBe(3);
+    expect(Number(inv.reservedQty)).toBe(3);
+    expect(Number(inv.qtyOnHand)).toBe(50);
+    expect(await prisma.storeStock.count({ where: { storeId: seededId(storeId), itemId: seededId(neverSentItemId) } })).toBe(0);
   });
 
   it("hard-blocks an added line that exceeds available stock and creates no line", async () => {

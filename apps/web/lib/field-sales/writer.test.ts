@@ -650,7 +650,7 @@ d("approveFieldSalesOrder — konsi", () => {
     await prisma.uOM.deleteMany({ where: { id: uomId } });
   });
 
-  it("moves stock to the store's virtual warehouse at approve, stores gross-up, writes NO SalesHistory", async () => {
+  it("reserves stock at approve, stores gross-up, writes NO SalesHistory", async () => {
     await seedItemWithStock(10, 10000);
     const { orderId } = await createFieldSalesOrder({
       storeId,
@@ -668,17 +668,16 @@ d("approveFieldSalesOrder — konsi", () => {
     expect(Number(order!.lines[0].unitPrice)).toBe(12500);
     expect(Number(order!.lines[0].lineTotal)).toBe(50000);
     expect(Number(order!.total)).toBe(50000);
-    // stock moves out of main and into the store's virtual warehouse — reserve (+4) then
-    // consume (-4) both run inside this one approve() call, so reservedQty nets back to 0.
+    /* Approve only reserves now — stock moves at delivery-shipment completion, not here. */
     const inv = await prisma.inventoryValue.findFirst({ where: { itemId } });
-    expect(Number(inv!.reservedQty)).toBe(0);
-    expect(Number(inv!.qtyOnHand)).toBe(6); // 10 - 4
+    expect(Number(inv!.reservedQty)).toBe(4);
+    expect(Number(inv!.qtyOnHand)).toBe(10);
     const rsv = await prisma.stockReservation.findUnique({ where: { fieldSalesLineId: order!.lines[0].id } });
     expect(rsv!.source).toBe("FIELD_SALES_KONSI");
-    expect(rsv!.state).toBe("CONSUMED");
-    expect(Number(rsv!.consumedQty)).toBe(4);
-    const ss = await prisma.storeStock.findFirst({ where: { storeId, itemId } });
-    expect(Number(ss!.qty)).toBe(4);
+    expect(rsv!.state).toBe("RESERVED");
+    expect(Number(rsv!.consumedQty)).toBe(0);
+    expect(await prisma.storeStock.count({ where: { storeId, itemId } })).toBe(0);
+    expect(await prisma.konsiTransfer.count({ where: { orderId } })).toBe(0);
     // NO SalesHistory written — a transfer is not a sale
     expect(await prisma.salesHistory.count()).toBe(before);
   });

@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { createFieldSalesOrder, approveFieldSalesOrder } from "../writer";
-import { InsufficientStockError } from "../errors";
+import { InsufficientStockError, KonsiTransferReservationMismatchError } from "../errors";
+import { createDeliveryShipment } from "@/lib/delivery/shipment-writer";
+import { issueKonsiTransfer } from "./writer";
 
 /* Stock-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host). */
 const url = process.env.DATABASE_URL ?? "";
@@ -11,7 +13,7 @@ const d = isProd ? describe.skip : describe;
 /* Stubbed so the create-time fan-out cannot queue push notifications on the shared dev DB. */
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
 
-d("issueKonsiTransfer via approveFieldSalesOrder (test bed only)", () => {
+d("issueKonsiTransfer at shipment completion (test bed only)", () => {
   const token = Math.random().toString(36).slice(2, 10);
   let uomId = "";
   let itemId = "";
@@ -20,6 +22,7 @@ d("issueKonsiTransfer via approveFieldSalesOrder (test bed only)", () => {
   let storeId = "";
   let salesmanId = "";
   let visitId = "";
+  let shipmentIds: string[] = [];
 
   /* Main scenario: item at avgCost 10.000, one KONSI order of qty 6. */
   let orderId = "";
@@ -58,6 +61,7 @@ d("issueKonsiTransfer via approveFieldSalesOrder (test bed only)", () => {
     shortOrderId = "";
     negativeItemId = "";
     negativeOrderId = "";
+    shipmentIds = [];
 
     const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-KTW-${token}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
@@ -118,6 +122,40 @@ d("issueKonsiTransfer via approveFieldSalesOrder (test bed only)", () => {
     negativeOrderId = await mkOrder({ itemId: negativeItemId, variantSku: "", qty: 10 });
   });
 
+  /**
+   * Approve (which now only reserves), pack a shipment for `qty` of the order's single line, then
+   * run the transfer exactly as shipment completion does — inside one transaction, linked to that
+   * shipment. Returns the ids the assertions need.
+   */
+  const transferVia = async (targetOrderId: string, qty?: number) => {
+    await approveFieldSalesOrder({ orderId: targetOrderId, approvedById: salesmanId });
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({
+      where: { id: seededId(targetOrderId) },
+      include: { lines: true },
+    });
+    const line = order.lines[0];
+    const drawQty = qty ?? line.qty;
+    const { shipmentId } = await createDeliveryShipment({
+      orderId: targetOrderId,
+      method: "EXPEDITION",
+      lines: [{ orderLineId: line.id, qty: drawQty }],
+      packedById: salesmanId,
+    });
+    shipmentIds.push(shipmentId);
+    await prisma.$transaction((tx) =>
+      issueKonsiTransfer(tx, {
+        order: {
+          id: order.id,
+          storeId: order.storeId,
+          lines: [{ id: line.id, itemId: line.itemId, variantSku: line.variantSku, productName: line.productName, qty: drawQty }],
+        },
+        shipmentId,
+        transferredById: salesmanId,
+      }),
+    );
+    return { shipmentId, lineId: line.id };
+  };
+
   afterEach(async () => {
     const itemIds = [seededId(itemId), seededId(variantlessItemId), seededId(shortItemId), seededId(negativeItemId)];
     const orderIds = [seededId(orderId), seededId(secondOrderId), seededId(variantlessOrderId), seededId(shortOrderId), seededId(negativeOrderId)];
@@ -138,6 +176,8 @@ d("issueKonsiTransfer via approveFieldSalesOrder (test bed only)", () => {
       .map((n) => n.id);
     if (leakedNotifIds.length > 0) await prisma.adminNotification.deleteMany({ where: { id: { in: leakedNotifIds } } });
 
+    await prisma.deliveryShipmentLine.deleteMany({ where: { shipment: { orderId: { in: orderIds } } } });
+    await prisma.deliveryShipment.deleteMany({ where: { orderId: { in: orderIds } } });
     await prisma.konsiTransferLine.deleteMany({ where: { itemId: { in: itemIds } } });
     await prisma.konsiTransfer.deleteMany({ where: { orderId: { in: orderIds } } });
     await prisma.storeStock.deleteMany({ where: { storeId: seededId(storeId) } });
@@ -154,23 +194,102 @@ d("issueKonsiTransfer via approveFieldSalesOrder (test bed only)", () => {
     await prisma.user.deleteMany({ where: { id: seededId(salesmanId) } });
   });
 
-  it("nets qtyOnHand down and reservedQty back to its pre-order level across reserve-then-consume in one transaction", async () => {
-    /*
-     * reserveKonsiFieldSalesOrder bumps reservedQty by +6 and issueKonsiTransfer immediately
-     * consumes it back by -6, both inside the same approve() transaction — so the net change
-     * visible from outside is qtyOnHand -6, reservedQty +0. A broken implementation that
-     * decremented qtyOnHand but forgot to release the just-created reservation would instead
-     * leave reservedQty elevated by +6 forever, which is exactly what this pins.
-     */
+  it("approve reserves but moves nothing: no transfer, no StoreStock, main qtyOnHand unchanged", async () => {
     const before = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
     await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
+    const after = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
+    expect(Number(after.qtyOnHand)).toBe(Number(before.qtyOnHand));
+    expect(Number(after.reservedQty)).toBe(Number(before.reservedQty) + 6);
+    expect(await prisma.konsiTransfer.count({ where: { orderId: seededId(orderId) } })).toBe(0);
+    expect(await prisma.storeStock.count({ where: { storeId: seededId(storeId), itemId: seededId(itemId) } })).toBe(0);
+    expect(await prisma.stockLedgerEntry.count({ where: { itemId: seededId(itemId) } })).toBe(0);
+    const res = await prisma.stockReservation.findUniqueOrThrow({ where: { fieldSalesLineId: seededId(lineId) } });
+    expect(res.state).toBe("RESERVED");
+    expect(Number(res.consumedQty)).toBe(0);
+  });
+
+  it("a full transfer nets qtyOnHand down and reservedQty back to its pre-order level", async () => {
+    const before = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
+    await transferVia(orderId);
     const after = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
     expect(Number(after.qtyOnHand)).toBe(Number(before.qtyOnHand) - 6);
     expect(Number(after.reservedQty)).toBe(Number(before.reservedQty));
   });
 
-  it("creates StoreStock at the transferred qty and cost on a first transfer into an empty store", async () => {
+  it("a partial draw advances consumedQty and leaves the reservation RESERVED; the final draw flips it CONSUMED", async () => {
+    await transferVia(orderId, 4);
+    let res = await prisma.stockReservation.findUniqueOrThrow({ where: { fieldSalesLineId: seededId(lineId) } });
+    expect(res.state).toBe("RESERVED");
+    expect(Number(res.consumedQty)).toBe(4);
+    let inv = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
+    expect(Number(inv.qtyOnHand)).toBe(96);
+    expect(Number(inv.reservedQty)).toBe(2);
+
+    const line = await prisma.fieldSalesOrderLine.findUniqueOrThrow({ where: { id: seededId(lineId) } });
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: seededId(orderId) } });
+    const { shipmentId } = await createDeliveryShipment({
+      orderId,
+      method: "EXPEDITION",
+      lines: [{ orderLineId: line.id, qty: 2 }],
+      packedById: salesmanId,
+    });
+    shipmentIds.push(shipmentId);
+    await prisma.$transaction((tx) =>
+      issueKonsiTransfer(tx, {
+        order: { id: order.id, storeId: order.storeId, lines: [{ id: line.id, itemId: line.itemId, variantSku: line.variantSku, productName: line.productName, qty: 2 }] },
+        shipmentId,
+        transferredById: salesmanId,
+      }),
+    );
+    res = await prisma.stockReservation.findUniqueOrThrow({ where: { fieldSalesLineId: seededId(lineId) } });
+    expect(res.state).toBe("CONSUMED");
+    expect(Number(res.consumedQty)).toBe(6);
+    expect(res.resolvedAt).not.toBeNull();
+    inv = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
+    expect(Number(inv.qtyOnHand)).toBe(94);
+    expect(Number(inv.reservedQty)).toBe(0);
+    expect(await prisma.konsiTransfer.count({ where: { orderId: seededId(orderId) } })).toBe(2);
+  });
+
+  it("refuses an over-draw before any balance moves", async () => {
     await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: seededId(orderId) }, include: { lines: true } });
+    const line = order.lines[0];
+    const { shipmentId } = await createDeliveryShipment({
+      orderId,
+      method: "EXPEDITION",
+      lines: [{ orderLineId: line.id, qty: 6 }],
+      packedById: salesmanId,
+    });
+    shipmentIds.push(shipmentId);
+    const before = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
+    await expect(
+      prisma.$transaction((tx) =>
+        issueKonsiTransfer(tx, {
+          order: { id: order.id, storeId: order.storeId, lines: [{ id: line.id, itemId: line.itemId, variantSku: line.variantSku, productName: line.productName, qty: 7 }] },
+          shipmentId,
+          transferredById: salesmanId,
+        }),
+      ),
+    ).rejects.toBeInstanceOf(KonsiTransferReservationMismatchError);
+    const after = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
+    expect(Number(after.qtyOnHand)).toBe(Number(before.qtyOnHand));
+    expect(Number(after.reservedQty)).toBe(Number(before.reservedQty));
+    expect(await prisma.storeStock.count({ where: { storeId: seededId(storeId), itemId: seededId(itemId) } })).toBe(0);
+  });
+
+  it("links the transfer to its shipment and keeps orderLineId provenance", async () => {
+    const { shipmentId } = await transferVia(orderId);
+    const t = await prisma.konsiTransfer.findFirstOrThrow({ where: { orderId: seededId(orderId) }, include: { lines: true } });
+    expect(t.shipmentId).toBe(shipmentId);
+    expect(t.docNo.startsWith("KTRF/")).toBe(true);
+    expect(t.lines).toHaveLength(1);
+    expect(t.lines[0].orderLineId).toBe(lineId);
+    expect(Number(t.lines[0].qty)).toBe(6);
+  });
+
+  it("creates StoreStock at the transferred qty and cost on a first transfer into an empty store", async () => {
+    await transferVia(orderId);
     const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemId) } });
     expect(Number(ss.qty)).toBe(6);
     expect(Number(ss.avgCost)).toBe(10_000);
@@ -178,41 +297,25 @@ d("issueKonsiTransfer via approveFieldSalesOrder (test bed only)", () => {
 
   it("blends rather than overwrites on a second transfer into a non-empty store", async () => {
     /* first transfer 6 @ 10.000, then a second order of 6 against inventory re-stocked at 20.000 */
-    await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
+    await transferVia(orderId);
     const inv = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
     await prisma.inventoryValue.update({ where: { id: inv.id }, data: { avgCost: 20_000 } });
-    await approveFieldSalesOrder({ orderId: secondOrderId, approvedById: salesmanId });
+    await transferVia(secondOrderId);
     const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemId) } });
     expect(Number(ss.qty)).toBe(12);
     expect(Number(ss.avgCost)).toBe(15_000);
   });
 
-  it("flips the line's reservation to CONSUMED", async () => {
-    await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
-    const res = await prisma.stockReservation.findFirstOrThrow({ where: { fieldSalesLineId: seededId(lineId) } });
-    expect(res.state).toBe("CONSUMED");
-    expect(Number(res.consumedQty)).toBe(6);
-    expect(res.resolvedAt).not.toBeNull();
-  });
-
   it("writes a NEGATIVE StockAdjustment sourced KONSI_TRANSFER", async () => {
-    await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
+    await transferVia(orderId);
     const adj = await prisma.stockAdjustment.findFirstOrThrow({ where: { itemId: seededId(itemId), source: "KONSI_TRANSFER" } });
     expect(adj.type).toBe("NEGATIVE");
     expect(Number(adj.qtyChange)).toBe(-6);
   });
 
-  it("creates the transfer document with a KTRF number and orderLineId provenance", async () => {
-    await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
-    const t = await prisma.konsiTransfer.findFirstOrThrow({ where: { orderId: seededId(orderId) }, include: { lines: true } });
-    expect(t.docNo.startsWith("KTRF/")).toBe(true);
-    expect(t.lines).toHaveLength(1);
-    expect(t.lines[0].orderLineId).toBe(lineId);
-  });
-
   it('writes "" into StoreStock for a variantless line while reading the null InventoryValue row', async () => {
     /* the fixture's inventory row is seeded with variantSku: null */
-    await approveFieldSalesOrder({ orderId: variantlessOrderId, approvedById: salesmanId });
+    await transferVia(variantlessOrderId);
     const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(variantlessItemId) } });
     expect(ss.variantSku).toBe("");
     const inv = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(variantlessItemId) } });
@@ -236,10 +339,13 @@ d("issueKonsiTransfer via approveFieldSalesOrder (test bed only)", () => {
     expect(await prisma.konsiTransfer.count({ where: { orderId: seededId(shortOrderId) } })).toBe(0);
   });
 
-  it("creates no second transfer when an already-APPROVED order is re-approved", async () => {
+  it("re-approving an APPROVED order creates no transfer and no second reservation", async () => {
+    const before = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
     await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
     await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
-    expect(await prisma.konsiTransfer.count({ where: { orderId: seededId(orderId) } })).toBe(1);
+    const after = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
+    expect(await prisma.konsiTransfer.count({ where: { orderId: seededId(orderId) } })).toBe(0);
+    expect(Number(after.reservedQty)).toBe(Number(before.reservedQty) + 6);
   });
 
   it("clamps a negative StoreStock qty to 0 for the avgCost blend rather than inflating it", async () => {
@@ -254,7 +360,7 @@ d("issueKonsiTransfer via approveFieldSalesOrder (test bed only)", () => {
     await prisma.storeStock.create({
       data: { storeId: seededId(storeId), itemId: seededId(negativeItemId), variantSku: "", qty: -6, avgCost: 0 },
     });
-    await approveFieldSalesOrder({ orderId: negativeOrderId, approvedById: salesmanId });
+    await transferVia(negativeOrderId);
     const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(negativeItemId) } });
     expect(Number(ss.qty)).toBe(4);
     expect(Number(ss.avgCost)).toBe(10_000);
