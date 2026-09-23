@@ -396,6 +396,8 @@ d("konsi sell-through window (test bed only)", () => {
     let curStocktakeId = "";
     let p1Id = "";
     let p2Id = "";
+    let lowerEdgeAtId = "";
+    let lowerEdgeAfterId = "";
     let midId = "";
     let c1Id = "";
     let c2Id = "";
@@ -417,6 +419,8 @@ d("konsi sell-through window (test bed only)", () => {
       curStocktakeId = "";
       p1Id = "";
       p2Id = "";
+      lowerEdgeAtId = "";
+      lowerEdgeAfterId = "";
       midId = "";
       c1Id = "";
       c2Id = "";
@@ -483,6 +487,43 @@ d("konsi sell-through window (test bed only)", () => {
         },
       });
       p2Id = p2.id;
+
+      /* Pins the window's LOWER edge as EXCLUSIVE. A row at exactly the previous boundary (T_P2)
+         is an ordinary movement, not a StoreStocktake row for either stocktake — if the lower
+         bound were `gte` instead of `gt`, it would leak into BOTH this report's window and the
+         previous one's, double-counting it. Its sibling 1ms later must be included. */
+      const lowerEdgeAt = await prisma.stockLedgerEntry.create({
+        data: {
+          locationType: "STORE",
+          locationId: storeId,
+          itemId,
+          variantSku: "",
+          type: "OUT",
+          qty: -4,
+          balanceQty: 3,
+          refType: "SpgSale",
+          refId: `TEST-KSW2-SPG-LOWER-AT-${token}`,
+          refDocNumber: `SPGSALE/TEST-KSW2-LOWER-AT/${token}`,
+          createdAt: T_P2,
+        },
+      });
+      lowerEdgeAtId = lowerEdgeAt.id;
+      const lowerEdgeAfter = await prisma.stockLedgerEntry.create({
+        data: {
+          locationType: "STORE",
+          locationId: storeId,
+          itemId,
+          variantSku: "",
+          type: "OUT",
+          qty: -5,
+          balanceQty: 2,
+          refType: "SpgSale",
+          refId: `TEST-KSW2-SPG-LOWER-AFTER-${token}`,
+          refDocNumber: `SPGSALE/TEST-KSW2-LOWER-AFTER/${token}`,
+          createdAt: new Date(T_P2.getTime() + 1),
+        },
+      });
+      lowerEdgeAfterId = lowerEdgeAfter.id;
 
       const prevReport = await prisma.konsiSellThrough.create({
         data: {
@@ -603,7 +644,9 @@ d("konsi sell-through window (test bed only)", () => {
     });
 
     afterEach(async () => {
-      await prisma.stockLedgerEntry.deleteMany({ where: { id: { in: [seededId(p1Id), seededId(p2Id), seededId(midId), seededId(c1Id), seededId(c2Id)] } } });
+      await prisma.stockLedgerEntry.deleteMany({
+        where: { id: { in: [seededId(p1Id), seededId(p2Id), seededId(lowerEdgeAtId), seededId(lowerEdgeAfterId), seededId(midId), seededId(c1Id), seededId(c2Id)] } },
+      });
       await prisma.konsiSellThroughLine.deleteMany({ where: { id: seededId(prevLineId) } });
       await prisma.konsiSellThrough.deleteMany({ where: { id: seededId(prevReportId) } });
       await prisma.storeStocktakeLine.deleteMany({ where: { stocktakeId: seededId(curStocktakeId) } });
@@ -632,7 +675,7 @@ d("konsi sell-through window (test bed only)", () => {
       expect(qtys).toContain(-3);
       expect(qtys).not.toContain(-2);
       expect(qtys).not.toContain(-1);
-      expect(result.rows).toHaveLength(3);
+      expect(result.rows).toHaveLength(4);
     });
 
     it("takes openings from the previous report's line closingQty", async () => {
@@ -640,6 +683,15 @@ d("konsi sell-through window (test bed only)", () => {
         loadSellThroughInputs(tx, { storeId, closingStocktakeId: curStocktakeId, previous: { id: prevReportId, closingStocktakeId: prevStocktakeId } }),
       );
       expect(result.openings).toEqual([{ itemId, variantSku: "", qty: 7 }]);
+    });
+
+    it("excludes a row at exactly the previous boundary and includes one 1ms after — the lower window edge is exclusive", async () => {
+      const result = await prisma.$transaction((tx) =>
+        loadSellThroughInputs(tx, { storeId, closingStocktakeId: curStocktakeId, previous: { id: prevReportId, closingStocktakeId: prevStocktakeId } }),
+      );
+      const refIds = result.rows.map((r) => r.refId);
+      expect(refIds).not.toContain(`TEST-KSW2-SPG-LOWER-AT-${token}`);
+      expect(refIds).toContain(`TEST-KSW2-SPG-LOWER-AFTER-${token}`);
     });
   });
 });
