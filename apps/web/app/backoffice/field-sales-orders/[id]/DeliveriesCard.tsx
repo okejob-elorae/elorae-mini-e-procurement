@@ -175,7 +175,7 @@ export function DeliveriesCard({
   const [editDueDate, setEditDueDate] = useState("");
   const [editReason, setEditReason] = useState("");
 
-  /* Konsi transfers never deliver in this slice, and a not-yet-approved order has nothing to show. */
+  /* Konsi orders render KonsiShipmentsCard instead — no accounting deliveries exist for them. */
   if (orderType === "KONSI") return null;
   if (status !== "APPROVED" && deliveries.length === 0) return null;
 

@@ -2862,9 +2862,9 @@
     "colType": "Tipe",
     "colAvailable": "Tersedia",
     "colOnHand": "Stok",
-    "konsiTransferNote": "Transfer konsinyasi — bukan penjualan; barang berpindah dari gudang utama ke stok toko saat disetujui.",
+    "konsiTransferNote": "Transfer konsinyasi — bukan penjualan; barang berpindah dari gudang utama ke stok toko saat pengiriman untuk barang ini diselesaikan.",
     "konsiMarginUnset": "Margin toko tidak valid atau belum diset — harga gross-up memakai harga jual apa adanya.",
-    "approveConfirmKonsi": "Setujui transfer konsinyasi ini? Barang akan berpindah dari gudang utama ke stok toko (bukan dijual).",
+    "approveConfirmKonsi": "Setujui transfer konsinyasi ini? Stok akan direservasi di gudang utama dan berpindah ke toko saat pengiriman untuk pesanan ini diselesaikan (bukan dijual).",
     "rejectConfirmKonsi": "Tolak transfer konsinyasi ini?",
     "promoBelowCost": "Peringatan: harga bersih di bawah HPP",
     "appealBadge": "Diajukan",
@@ -2964,7 +2964,6 @@
       "gudangTitle": "NOTA GUDANG",
       "tagihanTitle": "NOTA TAGIHAN",
       "suratKeluarTitle": "SURAT KELUAR BARANG",
-      "suratKeluarNoTransfer": "Dokumen transfer belum ada untuk order ini (disetujui sebelum fitur ini ada).",
       "consignmentNote": "Konsinyasi — penyerahan barang titipan, bukan penjualan. Tanpa harga dan tanpa tagihan.",
       "preparedBy": "Disiapkan",
       "receivedBy": "Diterima",
@@ -2976,6 +2975,16 @@
       "tagihanDialogFootnotePlaceholder": "Contoh: Barang yang sudah dibeli tidak dapat ditukar/dikembalikan",
       "tagihanDialogCancel": "Batal",
       "tagihanDialogPrint": "Cetak"
+    },
+    "konsiShipments": {
+      "title": "Pengiriman konsinyasi",
+      "empty": "Belum ada pengiriman. Buat pengiriman untuk mengirim barang pesanan ini ke toko.",
+      "note": "Stok baru berpindah ke toko saat pengiriman diselesaikan dengan bukti pengiriman.",
+      "colMethod": "Metode",
+      "colStatus": "Status",
+      "colPackedAt": "Dikemas",
+      "colPlanned": "Rencana",
+      "colDelivered": "Terkirim"
     },
     "konsiSuggestions": {
       "title": "Saran Produk",

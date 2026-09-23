@@ -2862,9 +2862,9 @@
     "colType": "Type",
     "colAvailable": "Available",
     "colOnHand": "On Hand",
-    "konsiTransferNote": "Consignment transfer — not a sale; goods move from the main warehouse into the store's stock on approval.",
+    "konsiTransferNote": "Consignment transfer — not a sale; goods move from the main warehouse into the store's stock when each delivery shipment is completed.",
     "konsiMarginUnset": "Store margin invalid or not set — gross-up uses the raw selling price.",
-    "approveConfirmKonsi": "Approve this consignment transfer? Goods will move from the main warehouse into the store's stock (not sold).",
+    "approveConfirmKonsi": "Approve this consignment transfer? Stock will be reserved in the main warehouse and moves to the store when a delivery shipment for it is completed (not sold).",
     "rejectConfirmKonsi": "Reject this consignment transfer?",
     "promoBelowCost": "Warning: net price below cost",
     "appealBadge": "Requested",
@@ -2964,7 +2964,6 @@
       "gudangTitle": "WAREHOUSE NOTE",
       "tagihanTitle": "INVOICE",
       "suratKeluarTitle": "GOODS ISSUE NOTE",
-      "suratKeluarNoTransfer": "No transfer document exists for this order yet (approved before this feature shipped).",
       "consignmentNote": "Consignment — handover of consigned goods, not a sale. No price, no invoice.",
       "preparedBy": "Prepared by",
       "receivedBy": "Received by",
@@ -2976,6 +2975,16 @@
       "tagihanDialogFootnotePlaceholder": "e.g. Purchased items cannot be exchanged/returned",
       "tagihanDialogCancel": "Cancel",
       "tagihanDialogPrint": "Print"
+    },
+    "konsiShipments": {
+      "title": "Consignment shipments",
+      "empty": "No shipments yet. Create one to send this order's goods to the store.",
+      "note": "Stock moves into the store only when a shipment is completed with proof of delivery.",
+      "colMethod": "Method",
+      "colStatus": "Status",
+      "colPackedAt": "Packed",
+      "colPlanned": "Planned",
+      "colDelivered": "Delivered"
     },
     "konsiSuggestions": {
       "title": "Product Suggestions",

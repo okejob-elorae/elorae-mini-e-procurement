@@ -23,10 +23,14 @@ import {
 } from "@/components/ui/table";
 import { ApproveRejectCard, type AppealedLine, type LineRef } from "./ApproveRejectCard";
 import { DeliveriesCard } from "./DeliveriesCard";
+import { KonsiShipmentsCard } from "./KonsiShipmentsCard";
 import { KonsiSuggestionsCard, type StagedAddition } from "./KonsiSuggestionsCard";
 import type { DeliverableLine } from "./DeliveryFormDialog";
+import type { OrderShipmentSummary } from "@/lib/delivery/shipment-queries";
 import { logPrint } from "@/app/actions/audit";
 import { buildSuratKeluarPrintHtml } from "@/lib/print/konsi-surat-keluar-html";
+import { printHtmlInIframe } from "@/lib/print/print-html-in-iframe";
+import { buildSuratKeluarLabels } from "./surat-keluar-labels";
 
 type Props = {
   order: FieldSalesOrderDetail;
@@ -36,6 +40,7 @@ type Props = {
   konsiSuggestions: KonsiSuggestion[];
   konsiAssortmentGaps: KonsiAssortmentGapSuggestion[];
   creditCheck: { exposure: number; limit: number; overLimit: boolean } | null;
+  shipments: OrderShipmentSummary[];
 };
 
 const STATUS_BADGE_VARIANT: Record<FieldSalesOrderStatus, "secondary" | "default" | "destructive"> = {
@@ -58,19 +63,6 @@ function formatRupiah(value: number): string {
   }).format(value);
 }
 
-function printHtml(html: string, title: string) {
-  const iframe = document.createElement("iframe");
-  iframe.setAttribute("style", "position:absolute;width:0;height:0;border:0;visibility:hidden;");
-  iframe.setAttribute("title", title);
-  document.body.appendChild(iframe);
-  const doc = iframe.contentWindow?.document;
-  if (doc) {
-    doc.open(); doc.write(html); doc.close();
-    setTimeout(() => iframe.contentWindow?.print(), 350);
-  }
-  setTimeout(() => document.body.removeChild(iframe), 500);
-}
-
 export function FieldSalesOrderDetailClient({
   order,
   canApprove,
@@ -79,6 +71,7 @@ export function FieldSalesOrderDetailClient({
   konsiSuggestions,
   konsiAssortmentGaps,
   creditCheck,
+  shipments,
 }: Props) {
   const t = useTranslations("fieldSalesOrders");
   const locale = useLocale();
@@ -139,43 +132,29 @@ export function FieldSalesOrderDetailClient({
       minute: "2-digit",
     }).format(date);
 
-  const konsiTransfer = order.legacyKonsiTransfer;
+  const legacyKonsiTransfer = order.legacyKonsiTransfer;
 
   const handlePrintSuratKeluar = async () => {
-    /* The button is disabled when there is no transfer, but that's a UI affordance, not the real
-       guard — this handler must never itself try to build a document out of an order that has
-       none (an order approved before this branch shipped; the migration carries no backfill). */
-    if (!konsiTransfer) return;
+    /* The button only renders when a legacy transfer exists, but that's a UI affordance, not the
+       real guard — this handler must never itself try to build a document out of an order that
+       has none (an order approved before this branch shipped; the migration carries no backfill). */
+    if (!legacyKonsiTransfer) return;
     await logPrint("KonsiSuratKeluar", order.id);
     const html = buildSuratKeluarPrintHtml({
-      orderNo: konsiTransfer.docNo,
+      orderNo: legacyKonsiTransfer.docNo,
       storeName: order.storeName,
       salesmanName: order.salesmanName,
-      approvedAt: konsiTransfer.createdAt,
+      approvedAt: legacyKonsiTransfer.createdAt,
       status: order.status,
-      lines: konsiTransfer.lines.map((line) => ({
+      lines: legacyKonsiTransfer.lines.map((line) => ({
         productName: line.productName,
         variantSku: line.variantSku,
         variantLabel: line.variantLabel,
         qty: line.qty,
       })),
-      labels: {
-        title: t("print.suratKeluarTitle"),
-        doc: t("print.docLabel"),
-        store: t("print.storeLabel"),
-        salesman: t("print.salesmanLabel"),
-        date: t("print.dateLabel"),
-        status: t("print.statusLabel"),
-        no: t("print.colNo"),
-        product: t("print.colProduct"),
-        qty: t("print.colQty"),
-        consignmentNote: t("print.consignmentNote"),
-        handedBy: t("print.handedBy"),
-        receivedBy: t("print.receivedBy"),
-        issuedBy: t("print.issuedBy"),
-      },
+      labels: buildSuratKeluarLabels(t as (key: string) => string),
     });
-    printHtml(html, t("print.suratKeluar"));
+    printHtmlInIframe(html, t("print.suratKeluar"));
   };
 
   return (
@@ -192,16 +171,17 @@ export function FieldSalesOrderDetailClient({
           {t(STATUS_LABEL_KEY[order.status])}
         </Badge>
         <Badge variant="outline">{isKonsi ? t("typeKonsi") : t("typePutus")}</Badge>
-        {/* Putus notas now print per-delivery from DeliveriesCard; konsi has no deliveries in this slice. */}
-        {isKonsi && order.status === "APPROVED" && (
+        {/**
+         * Putus notas print per-delivery from DeliveriesCard; a konsi order with a real transfer
+         * prints per shipment from KonsiShipmentsCard. This header button covers only the legacy
+         * approve-time transfer (`shipmentId: null`), so it renders solely while one still exists.
+         */}
+        {isKonsi && order.status === "APPROVED" && legacyKonsiTransfer && (
           <div className="flex items-center gap-2 ml-auto">
-            <Button variant="outline" size="sm" onClick={handlePrintSuratKeluar} disabled={!konsiTransfer}>
+            <Button variant="outline" size="sm" onClick={handlePrintSuratKeluar}>
               <Printer className="h-4 w-4 mr-2" />
               {t("print.suratKeluar")}
             </Button>
-            {!konsiTransfer && (
-              <span className="text-xs text-muted-foreground">{t("print.suratKeluarNoTransfer")}</span>
-            )}
           </div>
         )}
       </div>
@@ -231,20 +211,34 @@ export function FieldSalesOrderDetailClient({
         />
       )}
 
-      <DeliveriesCard
-        orderId={order.id}
-        orderNo={order.orderNo}
-        storeName={order.storeName}
-        salesmanName={order.salesmanName}
-        orderType={order.orderType}
-        status={order.status}
-        deliveryStatus={order.deliveryStatus}
-        deliveries={order.deliveries}
-        lines={deliverableLines}
-        paymentTempo={order.paymentTempo}
-        canDeliver={canDeliver}
-        canShipShipment={canShipShipment}
-      />
+      {isKonsi ? (
+        <KonsiShipmentsCard
+          orderId={order.id}
+          storeName={order.storeName}
+          salesmanName={order.salesmanName}
+          status={order.status}
+          deliveryStatus={order.deliveryStatus}
+          lines={deliverableLines}
+          shipments={shipments}
+          canDeliver={canDeliver}
+          canShipShipment={canShipShipment}
+        />
+      ) : (
+        <DeliveriesCard
+          orderId={order.id}
+          orderNo={order.orderNo}
+          storeName={order.storeName}
+          salesmanName={order.salesmanName}
+          orderType={order.orderType}
+          status={order.status}
+          deliveryStatus={order.deliveryStatus}
+          deliveries={order.deliveries}
+          lines={deliverableLines}
+          paymentTempo={order.paymentTempo}
+          canDeliver={canDeliver}
+          canShipShipment={canShipShipment}
+        />
+      )}
 
       <Card className="p-4 space-y-2">
         <h2 className="font-semibold">{t("detailTitle")}</h2>

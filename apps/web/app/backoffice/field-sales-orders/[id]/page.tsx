@@ -9,6 +9,7 @@ import {
   type KonsiAssortmentGapSuggestion,
 } from "@/lib/field-sales/queries";
 import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
+import { listShipmentsForOrder, type OrderShipmentSummary } from "@/lib/delivery/shipment-queries";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { FieldSalesOrderDetailClient } from "./FieldSalesOrderDetailClient";
 
@@ -93,6 +94,19 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
     }
   }
 
+  /**
+   * Degrades to an empty card rather than taking the page down with it — same stance as the
+   * konsi suggestions block above, for the same reason (no `error.tsx` under `app/`).
+   */
+  let shipments: OrderShipmentSummary[] = [];
+  if (order.orderType === "KONSI") {
+    try {
+      shipments = await listShipmentsForOrder(id);
+    } catch (error) {
+      console.error("[field-sales-orders] listShipmentsForOrder failed", { orderId: id, error });
+    }
+  }
+
   return (
     <FieldSalesOrderDetailClient
       order={order}
@@ -102,6 +116,7 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
       konsiSuggestions={konsiSuggestions}
       konsiAssortmentGaps={konsiAssortmentGaps}
       creditCheck={creditCheck}
+      shipments={shipments}
     />
   );
 }
