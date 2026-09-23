@@ -239,9 +239,9 @@ export async function createFieldSalesOrder(input: {
  *
  * The gap test itself sums physical `StoreStock` with `openKonsiQtyByKey` (same helper
  * `listAssortmentGaps` uses) into an `effectiveQty`, so a store already carrying an
- * approved-but-undelivered konsi line for this item is not offered back as a gap while those
- * units are still in transit — this function returns only keys, so unlike `listAssortmentGaps`
- * it has no reason to report the physical and in-transit figures separately.
+ * approved-but-undelivered konsi line for this item is not offered back as a gap before those
+ * units are delivered — this function returns only keys, so unlike `listAssortmentGaps` it has
+ * no reason to report the physical and not-yet-delivered figures separately.
  */
 async function currentAssortmentGapKeys(
   tx: Prisma.TransactionClient,

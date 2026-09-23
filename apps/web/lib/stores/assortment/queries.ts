@@ -77,9 +77,10 @@ export type AssortmentGapRow = {
  * shelf, so it must never silently include stock that has not arrived. `inTransitQty` is the
  * separate `openKonsiQtyByKey` figure: konsi stock reserved for this store on an APPROVED order
  * but not yet delivered, which sits on nobody's `StoreStock` row until a delivery shipment
- * completes it. The gap TEST still sums the two (`onHandQty + inTransitQty`) — an item already
- * in transit is not a gap to re-send — but a reader of `StoreStock` alone would wrongly call it
- * one, which is exactly why the two figures are reported separately rather than pre-added.
+ * completes it, packed or not (the field name predates that wording). The gap TEST still sums
+ * the two (`onHandQty + inTransitQty`) — an item already on order and not yet delivered is not a
+ * gap to re-send — but a reader of `StoreStock` alone would wrongly call it one, which is exactly
+ * why the two figures are reported separately rather than pre-added.
  */
 export async function listAssortmentGaps(storeId: string): Promise<AssortmentGapRow[]> {
   const lines = await prisma.storeAssortmentLine.findMany({
