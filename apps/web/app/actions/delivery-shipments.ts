@@ -165,8 +165,8 @@ export async function completeShipmentAction(input: {
   shipmentId: string;
   proofPhotoUrl: string;
   proofPhotoR2Key: string;
-  invoiceDate: string;
-  dueDate: string;
+  invoiceDate?: string;
+  dueDate?: string;
   lines: Array<{ shipmentLineId: string; deliveredQty: number }>;
 }): Promise<ShipmentActionResult> {
   const session = await auth();
@@ -174,16 +174,19 @@ export async function completeShipmentAction(input: {
     return { ok: false, reason: "FORBIDDEN" };
   }
   /**
-   * Both dates are validated HERE, before the writer, not left to the writer's own guard. A server
-   * action is a network endpoint, so an emptied or malformed field is not a client-side problem —
-   * and an Invalid Date defeats the downstream ordering check rather than tripping it.
+   * Both dates are validated HERE when supplied, before the writer, not left to the writer's own
+   * guard. A server action is a network endpoint, so an emptied or malformed field is not a
+   * client-side problem — and an Invalid Date defeats the downstream ordering check rather than
+   * tripping it. Optional now: a konsi order raises no invoice and the dialog sends neither date,
+   * which parses to `undefined` on both — `completeDeliveryShipment`'s own konsi branch never asks
+   * for them, and its non-konsi branch still throws MISSING_DATES if either is absent.
    */
-  const invoiceDate = parseCalendarDay(input.invoiceDate);
-  const dueDate = parseCalendarDay(input.dueDate);
-  if (!invoiceDate || !dueDate) {
+  const invoiceDate = input.invoiceDate ? parseCalendarDay(input.invoiceDate) : undefined;
+  const dueDate = input.dueDate ? parseCalendarDay(input.dueDate) : undefined;
+  if ((input.invoiceDate && !invoiceDate) || (input.dueDate && !dueDate)) {
     return { ok: false, reason: "INVALID_REQUEST" };
   }
-  if (dueDate.getTime() < invoiceDate.getTime()) {
+  if (invoiceDate && dueDate && dueDate.getTime() < invoiceDate.getTime()) {
     return { ok: false, reason: "INVALID_DATES" };
   }
 

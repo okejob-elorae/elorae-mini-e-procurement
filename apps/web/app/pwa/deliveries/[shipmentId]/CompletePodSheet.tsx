@@ -23,6 +23,7 @@ type Props = {
   storeLat: number | null;
   storeLng: number | null;
   effectiveRadiusMeters: number;
+  isKonsi: boolean;
   lines: Line[];
 };
 
@@ -44,7 +45,7 @@ function fileCheckPasses(file: File): { ok: true } | { ok: false; reasonKey: str
 }
 
 export function CompletePodSheet({
-  shipmentId, storeName, docNo, storeLat, storeLng, effectiveRadiusMeters, lines,
+  shipmentId, storeName, docNo, storeLat, storeLng, effectiveRadiusMeters, isKonsi, lines,
 }: Props) {
   const t = useTranslations("pwa.deliveries");
   const tErr = useTranslations("deliveryShipments");
@@ -281,7 +282,7 @@ export function CompletePodSheet({
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="pod-nota-proof">{t("notaPhotoLabel")}</Label>
+        <Label htmlFor="pod-nota-proof">{isKonsi ? t("notaPhotoLabelKonsi") : t("notaPhotoLabel")}</Label>
         <Input
           id="pod-nota-proof"
           type="file"

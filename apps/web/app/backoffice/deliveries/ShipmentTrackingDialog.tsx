@@ -39,6 +39,7 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
   const [carriedById, setCarriedById] = useState("");
   const [invoiceDate, setInvoiceDate] = useState("");
   const [dueDate, setDueDate] = useState("");
+  const [isKonsi, setIsKonsi] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -50,6 +51,7 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
       setCarriedById(detail?.carriedById ?? "");
       setInvoiceDate(detail?.invoiceDate ? formatDateOnlyJakarta(detail.invoiceDate) : "");
       setDueDate(detail?.dueDate ? formatDateOnlyJakarta(detail.dueDate) : "");
+      setIsKonsi(detail?.orderType === "KONSI");
     });
   }, [open, shipmentId]);
 
@@ -84,7 +86,8 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
   }
 
   function handleShip(): void {
-    if (method === "SALESMAN_CARRY" && (!carriedById || !invoiceDate || !dueDate)) {
+    /* A konsi order raises no invoice, so it carries no nota dates — only the carrier is required. */
+    if (method === "SALESMAN_CARRY" && (!carriedById || (!isKonsi && (!invoiceDate || !dueDate)))) {
       toast.error(t("err.MISSING_CARRIER"));
       return;
     }
@@ -94,8 +97,9 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
      * this dialog ships the shipment the dates freeze and the salesman meets them in the field.
      * Both values are `YYYY-MM-DD` strings straight out of `<input type="date">`, so a plain
      * string comparison is exactly a chronological one — no `Date` round-trip needed. Self-gating
-     * on both being non-empty, which is why it needs no `method` check of its own: the date
-     * inputs only render for SALESMAN_CARRY, and the server-side guard covers the rest.
+     * on both being non-empty, which is why it needs no `method`/`isKonsi` check of its own: the
+     * date inputs only render for a non-konsi SALESMAN_CARRY shipment, and the server-side guard
+     * covers the rest.
      */
     if (invoiceDate && dueDate && dueDate < invoiceDate) {
       toast.error(t("dueDateBeforeInvoice"));
@@ -178,21 +182,23 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
                   placeholder={t("carriedByPlaceholder")}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label htmlFor="invoiceDate">{t("invoiceDateLabel")}</Label>
-                  <Input
-                    id="invoiceDate"
-                    type="date"
-                    value={invoiceDate}
-                    onChange={(e) => setInvoiceDate(e.target.value)}
-                  />
+              {!isKonsi && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="invoiceDate">{t("invoiceDateLabel")}</Label>
+                    <Input
+                      id="invoiceDate"
+                      type="date"
+                      value={invoiceDate}
+                      onChange={(e) => setInvoiceDate(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="dueDate2">{t("dueDateLabel2")}</Label>
+                    <Input id="dueDate2" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                  </div>
                 </div>
-                <div>
-                  <Label htmlFor="dueDate2">{t("dueDateLabel2")}</Label>
-                  <Input id="dueDate2" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-                </div>
-              </div>
+              )}
             </>
           )}
         </div>
