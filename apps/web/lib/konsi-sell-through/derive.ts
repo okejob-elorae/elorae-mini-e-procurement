@@ -150,6 +150,23 @@ export function isLineHeld(
   return method === "SPG_POS" && line.gapQty !== 0 && line.resolution === null;
 }
 
+/**
+ * The one spelling of which resolution arms a gap's sign allows — a shortfall (gap > 0) can only
+ * be BILLed or written off as SHRINKAGE, a surplus (gap < 0) can only be billed at BILL_POS or
+ * REDUCEd, and a zero gap has no arm at all. `applyResolution`'s WRONG_ARM check and the backoffice
+ * detail screen's `Select` both read this instead of each keeping its own copy.
+ */
+export function resolutionArmsFor(gapQty: number): readonly SellThroughResolutionValue[] {
+  if (gapQty > 0) return ["BILL", "SHRINKAGE"];
+  if (gapQty < 0) return ["BILL_POS", "REDUCE"];
+  return [];
+}
+
+/* The one spelling of which arms need a written reason — SHRINKAGE and REDUCE both write off value, BILL and BILL_POS don't. */
+export function resolutionNeedsReason(resolution: SellThroughResolutionValue): boolean {
+  return resolution === "SHRINKAGE" || resolution === "REDUCE";
+}
+
 export function applyResolution(
   line: { posSoldQty: number; gapQty: number },
   method: SellThroughMethodValue,
@@ -157,10 +174,9 @@ export function applyResolution(
   reason: string | null,
 ): { billedQty: number; shrinkageQty: number; resolutionReason: string | null } {
   if (method !== "SPG_POS" || line.gapQty === 0) throw new InvalidResolutionError("NOT_HELD");
-  const shortfall = line.gapQty > 0;
-  if (shortfall !== (resolution === "BILL" || resolution === "SHRINKAGE")) throw new InvalidResolutionError("WRONG_ARM");
+  if (!resolutionArmsFor(line.gapQty).includes(resolution)) throw new InvalidResolutionError("WRONG_ARM");
   const trimmed = reason?.trim() ?? "";
-  const needsReason = resolution === "SHRINKAGE" || resolution === "REDUCE";
+  const needsReason = resolutionNeedsReason(resolution);
   if (needsReason && trimmed === "") throw new InvalidResolutionError("REASON_REQUIRED");
   const resolutionReason = needsReason ? trimmed : trimmed === "" ? null : trimmed;
   switch (resolution) {

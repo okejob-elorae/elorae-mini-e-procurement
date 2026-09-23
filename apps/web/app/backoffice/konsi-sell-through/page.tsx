@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { listSellThroughs, type SellThroughStatusValue } from "@/lib/konsi-sell-through/queries";
-import { listStoreOptions } from "@/lib/stores/queries";
+import { listStores } from "@/lib/stores/queries";
 import { SellThroughPageClient } from "./SellThroughPageClient";
 
 export const dynamic = "force-dynamic";
@@ -41,10 +41,12 @@ export default async function KonsiSellThroughPage({ searchParams }: PageProps) 
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const pageSize = parsePageSize(sp.pageSize);
 
-  const [{ items, total }, storeOptions] = await Promise.all([
+  const [{ items, total }, { items: allStores }] = await Promise.all([
     listSellThroughs({ storeId, status, page, pageSize }),
-    listStoreOptions(),
+    listStores({}),
   ]);
+  /* Sell-through reports only ever exist for a KONSI store, so a PUTUS store in this filter would just filter to nothing. */
+  const storeOptions = allStores.filter((s) => s.termsType === "KONSI").map((s) => ({ id: s.id, name: s.name }));
 
   return (
     <SellThroughPageClient

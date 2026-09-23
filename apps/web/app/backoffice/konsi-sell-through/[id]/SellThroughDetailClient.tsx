@@ -7,7 +7,7 @@ import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { AlertTriangle, ArrowLeft, CheckCircle2, ClipboardList, XCircle } from "lucide-react";
 import type { SellThroughDetail, SellThroughLineDetail } from "@/lib/konsi-sell-through/queries";
-import type { SellThroughResolutionValue } from "@/lib/konsi-sell-through/derive";
+import { resolutionArmsFor, resolutionNeedsReason, type SellThroughResolutionValue } from "@/lib/konsi-sell-through/derive";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import {
   resolveSellThroughLineAction,
@@ -52,19 +52,6 @@ const STATUS_BADGE_VARIANT: Record<SellThroughDetail["status"], "secondary" | "d
   APPROVED: "default",
   CANCELLED: "destructive",
 };
-
-const SHORTFALL_ARMS: SellThroughResolutionValue[] = ["BILL", "SHRINKAGE"];
-const SURPLUS_ARMS: SellThroughResolutionValue[] = ["BILL_POS", "REDUCE"];
-
-function armsFor(gapQty: number): SellThroughResolutionValue[] {
-  if (gapQty > 0) return SHORTFALL_ARMS;
-  if (gapQty < 0) return SURPLUS_ARMS;
-  return [];
-}
-
-function needsReason(resolution: SellThroughResolutionValue | ""): boolean {
-  return resolution === "SHRINKAGE" || resolution === "REDUCE";
-}
 
 export function SellThroughDetailClient({
   report,
@@ -121,7 +108,7 @@ export function SellThroughDetailClient({
     const resolution = effectiveResolution(line);
     if (resolution === "") return;
     const reason = effectiveReason(line).trim();
-    if (needsReason(resolution) && reason === "") return;
+    if (resolutionNeedsReason(resolution) && reason === "") return;
 
     setSavingLineId(line.id);
     startSaveTransition(async () => {
@@ -301,10 +288,10 @@ export function SellThroughDetailClient({
                 </TableHeader>
                 <TableBody>
                   {report.lines.map((line) => {
-                    const arms = armsFor(line.gapQty);
+                    const arms = resolutionArmsFor(line.gapQty);
                     const resolution = effectiveResolution(line);
                     const reason = effectiveReason(line);
-                    const reasonRequired = needsReason(resolution);
+                    const reasonRequired = resolution !== "" && resolutionNeedsReason(resolution);
                     const canSave = resolution !== "" && (!reasonRequired || reason.trim() !== "");
                     const suggested = isSuggested(line);
                     const saving = savingLineId === line.id;

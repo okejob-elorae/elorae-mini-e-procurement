@@ -31,7 +31,7 @@ import {
   type StoreStocktakeActionResult,
 } from "@/app/actions/store-stocktakes";
 import { createSellThroughAction } from "@/app/actions/konsi-sell-through";
-import type { SellThroughErrorCode } from "@/lib/konsi-sell-through/errors";
+import type { getSellThroughEligibility } from "@/lib/konsi-sell-through/queries";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -104,9 +104,7 @@ function errKey(code: ActionErrorCode): string {
   return `err.${code}`;
 }
 
-type SellThroughEligibility =
-  | { eligible: true }
-  | { eligible: false; reason: SellThroughErrorCode; existingId?: string };
+type SellThroughEligibility = Awaited<ReturnType<typeof getSellThroughEligibility>>;
 
 /** Blank means "not counted" — never coerced to 0, never treated as invalid. */
 function parseCountedInput(raw: string): { value: number | null; valid: boolean } {
@@ -377,7 +375,7 @@ export function StocktakeDetailClient({
           router.push(`/backoffice/konsi-sell-through/${result.id}`);
           return;
         }
-        toast.error(tDetail(`sellThrough.reason.${result.reason}` as any));
+        toast.error(tDetail(`sellThrough.reason.${result.reason}`));
       } catch {
         toast.error(tDetail("sellThrough.reason.UNEXPECTED"));
       }
@@ -494,7 +492,7 @@ export function StocktakeDetailClient({
                     {tDetail("sellThrough.createButton")}
                   </Button>
                   <p className="text-xs text-muted-foreground max-w-[280px] text-right">
-                    {tDetail(`sellThrough.reason.${sellThroughEligibility.reason}` as any)}
+                    {tDetail(`sellThrough.reason.${sellThroughEligibility.reason}`)}
                   </p>
                 </div>
               )}

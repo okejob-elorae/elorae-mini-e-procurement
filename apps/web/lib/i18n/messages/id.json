@@ -3348,6 +3348,7 @@
           "NOT_FULL_COUNT": "Hanya perhitungan penuh (full count) yang bisa memulai laporan sell-through.",
           "NOT_KONSI": "Toko ini bukan toko dengan skema konsinyasi.",
           "METHOD_NOT_SET": "Toko ini belum memiliki metode sell-through — atur di pengaturan Toko.",
+          "ALREADY_USED": "Laporan sell-through untuk perhitungan ini sudah ada — muat ulang halaman.",
           "DRAFT_EXISTS": "Toko ini sudah memiliki draft laporan sell-through yang terbuka. Selesaikan atau batalkan dulu.",
           "OUT_OF_ORDER": "Perhitungan ini ditutup sebelum periode laporan sell-through terakhir toko ini — laporan sell-through harus mengikuti urutan perhitungan toko.",
           "UNKNOWN_REF_TYPE": "Ditemukan pergerakan stok yang tidak dikenali saat menyusun laporan ini. Hubungi admin.",

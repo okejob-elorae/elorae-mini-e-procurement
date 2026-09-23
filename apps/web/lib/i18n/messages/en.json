@@ -3348,6 +3348,7 @@
           "NOT_FULL_COUNT": "Only a full-count stocktake can start a sell-through report.",
           "NOT_KONSI": "This store is not on consignment terms.",
           "METHOD_NOT_SET": "This store has no sell-through method set — configure it in Store settings.",
+          "ALREADY_USED": "A sell-through report already exists for this count — reload the page.",
           "DRAFT_EXISTS": "This store already has a draft sell-through report open. Resolve or cancel it first.",
           "OUT_OF_ORDER": "This stocktake closes before the store's last sell-through report period — sell-through reports must follow the store's counting order.",
           "UNKNOWN_REF_TYPE": "An unrecognised stock movement was found while building this report. Contact an admin.",
