@@ -340,14 +340,15 @@ export type StoreSentItemRow = {
 };
 
 /**
- * Putus counts what actually SHIPPED — the delivery lines — not what was approved. Approval became
- * paperwork when delivery got its own document: an approved order can sit undelivered, or be
- * partly delivered and have its remainder closed, and neither leaves the warehouse. Konsi has no
- * delivery document (the transfer is recorded at approve and nothing ships afterwards), so its
- * approved lines stay the only signal there.
+ * Counts what actually reached the store, never what was approved: an approved order can sit
+ * undelivered, or be partly delivered and have its remainder closed, and neither leaves the
+ * warehouse. Putus reads its delivery lines. Konsi has no delivery document — its stock moves
+ * through a KonsiTransfer when a delivery shipment completes — so it reads the order lines'
+ * `deliveredQty`, which that completion advances. A legacy konsi order the backfill marked
+ * delivered carries `deliveredQty = qty`, so it counts in full, as it did before.
  */
 export async function getStoreSentItems(storeId: string): Promise<StoreSentItemRow[]> {
-  const [deliveredPutus, approvedKonsi] = await Promise.all([
+  const [deliveredPutus, deliveredKonsi] = await Promise.all([
     prisma.fieldSalesDeliveryLine.groupBy({
       by: ["itemId", "variantSku"],
       where: { delivery: { order: { storeId } } },
@@ -355,17 +356,21 @@ export async function getStoreSentItems(storeId: string): Promise<StoreSentItemR
     }),
     prisma.fieldSalesOrderLine.groupBy({
       by: ["itemId", "variantSku"],
-      where: { order: { storeId, status: "APPROVED", orderType: "KONSI" } },
-      _sum: { qty: true },
+      where: { deliveredQty: { gt: 0 }, order: { storeId, status: "APPROVED", orderType: "KONSI" } },
+      _sum: { deliveredQty: true },
     }),
   ]);
 
+  const sums = [
+    ...deliveredPutus.map((g) => ({ itemId: g.itemId, variantSku: g.variantSku, qty: g._sum.qty ?? 0 })),
+    ...deliveredKonsi.map((g) => ({ itemId: g.itemId, variantSku: g.variantSku, qty: g._sum.deliveredQty ?? 0 })),
+  ];
   const byKey = new Map<string, { itemId: string; variantSku: string; totalQty: number }>();
-  for (const g of [...deliveredPutus, ...approvedKonsi]) {
+  for (const g of sums) {
     const key = `${g.itemId}::${g.variantSku}`;
     const existing = byKey.get(key);
-    if (existing) existing.totalQty += g._sum.qty ?? 0;
-    else byKey.set(key, { itemId: g.itemId, variantSku: g.variantSku, totalQty: g._sum.qty ?? 0 });
+    if (existing) existing.totalQty += g.qty;
+    else byKey.set(key, { itemId: g.itemId, variantSku: g.variantSku, totalQty: g.qty });
   }
   const grouped = Array.from(byKey.values());
   if (grouped.length === 0) return [];
@@ -391,16 +396,26 @@ export async function getStoreSentItems(storeId: string): Promise<StoreSentItemR
     .sort((a, b) => a.articleSku.localeCompare(b.articleSku) || a.variantSku.localeCompare(b.variantSku));
 }
 
+/**
+ * Items this store has had on any non-rejected konsi order line that is not fully cancelled —
+ * the "already sent" set behind the never-sent suggestions and the approve writer's ALREADY_SENT
+ * check. A line closed with nothing delivered (`cancelledQty >= qty`) never reached the store, so
+ * it does not count. PENDING_APPROVAL stays IN on purpose, the order under approval included —
+ * that is why the approve writer checks DUPLICATE before ALREADY_SENT, and its DUPLICATE test
+ * pins which code fires for an item already on the order.
+ *
+ * Filtered in JS because Prisma cannot compare two columns in a `where`; `distinct` is dropped
+ * with it, since it would pick one row per item arbitrarily and could discard the uncancelled one.
+ */
 export async function sentItemIds(
   storeId: string,
   tx: { fieldSalesOrderLine: typeof prisma.fieldSalesOrderLine } = prisma,
 ): Promise<Set<string>> {
   const rows = await tx.fieldSalesOrderLine.findMany({
     where: { order: { storeId, orderType: "KONSI", status: { not: "REJECTED" } } },
-    select: { itemId: true },
-    distinct: ["itemId"],
+    select: { itemId: true, qty: true, cancelledQty: true },
   });
-  return new Set(rows.map((r) => r.itemId));
+  return new Set(rows.filter((r) => r.cancelledQty < r.qty).map((r) => r.itemId));
 }
 
 export async function getSmartRequestHistory(storeId: string, candidateItemIds: string[]): Promise<PlanHistory> {
@@ -542,8 +557,9 @@ export type KonsiAssortmentGapSuggestion = {
 /**
  * The store's assortment gaps, restyled as stageable rows for the SAME konsi approval panel that
  * shows `listKonsiSuggestions` — a deliberately DIFFERENT signal, not a variant of it.
- * `sentItemIds` drops an item the moment any unit of it was ever sent, even if the store now
- * holds zero, so "never sent" can never re-flag a depleted item. An assortment gap catches
+ * `sentItemIds` drops an item the moment it appears on any non-rejected konsi order line that is
+ * not fully cancelled, even if the store now holds zero, so "never sent" can never re-flag a
+ * depleted item. An assortment gap catches
  * exactly that case, so this reads `listAssortmentGaps` directly and never filters through
  * `sentItemIds`. This function is the authoritative source for a gap row: `listKonsiSuggestions`
  * is the one that defers to IT, suppressing its own row for any (itemId, variantSku) this

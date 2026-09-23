@@ -29,15 +29,21 @@ function toDecimalOrNull(v: number | null): Prisma.Decimal | null {
 }
 
 /**
- * Thrown by updateStore when a KONSI → PUTUS edit would strand consignment stock: the store
- * still holds a non-zero StoreStock row, so its goods are physically sitting on the store's
- * floor with no correction path once the store stops being read as KONSI (the stock card, and
- * the konsi retur decrement, are both gated on termsType === "KONSI"). The store must return or
- * transfer that stock first.
+ * Thrown by updateStore when a KONSI → PUTUS edit would strand consignment stock, now or later:
+ *
+ * - the store still holds a non-zero StoreStock row, so its goods are physically sitting on the
+ *   store's floor with no correction path once the store stops being read as KONSI (the stock
+ *   card, and the konsi retur decrement, are both gated on termsType === "KONSI");
+ * - or it has a konsi order still awaiting approval, or approved with qty neither delivered nor
+ *   closed. Konsi stock reaches StoreStock only when a delivery shipment completes, so that qty
+ *   is on no store balance yet — but completing it after the switch would land it on a PUTUS
+ *   store's StoreStock, where nothing can ever correct it.
+ *
+ * The store must return or transfer its stock, and settle those orders, first.
  */
 export class StoreHasConsignmentStockError extends Error {
   constructor(readonly storeId: string) {
-    super(`Store ${storeId} still holds consignment stock and cannot switch off KONSI`);
+    super(`Store ${storeId} still holds consignment stock or undelivered konsi orders and cannot switch off KONSI`);
     this.name = "StoreHasConsignmentStockError";
   }
 }
@@ -197,6 +203,23 @@ export async function updateStore(id: string, input: StoreFields): Promise<Store
         select: { id: true },
       });
       if (strandedStock) throw new StoreHasConsignmentStockError(id);
+
+      const pendingKonsi = await prisma.fieldSalesOrder.findFirst({
+        where: { storeId: id, orderType: "KONSI", status: "PENDING_APPROVAL" },
+        select: { id: true },
+      });
+      if (pendingKonsi) throw new StoreHasConsignmentStockError(id);
+
+      /* Prisma cannot compare columns, so the open remainder is summed in JS. */
+      const approvedKonsiLines = await prisma.fieldSalesOrderLine.findMany({
+        where: { order: { storeId: id, orderType: "KONSI", status: "APPROVED" } },
+        select: { qty: true, deliveredQty: true, cancelledQty: true },
+      });
+      const openKonsiQty = approvedKonsiLines.reduce(
+        (sum, l) => sum + Math.max(l.qty - l.deliveredQty - l.cancelledQty, 0),
+        0,
+      );
+      if (openKonsiQty > 0) throw new StoreHasConsignmentStockError(id);
     }
   }
 

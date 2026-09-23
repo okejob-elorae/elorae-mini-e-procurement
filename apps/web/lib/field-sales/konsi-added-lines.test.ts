@@ -126,7 +126,13 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
     });
     putusOrderId = newPutusOrderId;
 
-    /* A separate, already-APPROVED konsi order for the same store, carrying an item not on `orderId`. */
+    /**
+     * A separate, already-APPROVED konsi order for the same store, carrying an item not on
+     * `orderId`. Its line carries deliveredQty: qty — it represents stock already delivered, never
+     * units still on their way. Left at the default 0, openKonsiQtyByKey would (correctly, per its
+     * own contract) count them as open konsi qty and net them into the gap test, so the item would
+     * stop reading as a gap and the exemption tests below would hit ALREADY_SENT.
+     */
     const priorOrder = await prisma.fieldSalesOrder.create({
       data: {
         orderNo: `KONSI/TEST-KAL-PRIOR-${token}`,
@@ -137,7 +143,7 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
         subtotal: 1000,
         total: 1000,
         lines: {
-          create: [{ itemId: alreadySentItemId, variantSku: "", productName: "Already sent item", qty: 1, unitPrice: 1000, lineTotal: 1000 }],
+          create: [{ itemId: alreadySentItemId, variantSku: "", productName: "Already sent item", qty: 1, deliveredQty: 1, unitPrice: 1000, lineTotal: 1000 }],
         },
       },
     });
@@ -365,7 +371,8 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
         subtotal: 1000,
         total: 1000,
         lines: {
-          create: [{ itemId: variantItemId, variantSku: "RED", productName: "Variant item", qty: 1, unitPrice: 1000, lineTotal: 1000 }],
+          /* Already delivered, not in transit — same reason as the priorOrder fixture. */
+          create: [{ itemId: variantItemId, variantSku: "RED", productName: "Variant item", qty: 1, deliveredQty: 1, unitPrice: 1000, lineTotal: 1000 }],
         },
       },
     });

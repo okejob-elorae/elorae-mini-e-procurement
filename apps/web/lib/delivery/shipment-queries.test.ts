@@ -48,8 +48,10 @@ describe("shipment-queries", () => {
   });
 
   afterEach(async () => {
-    await prisma.deliveryShipmentLine.deleteMany({ where: { shipmentId: seededId(shipmentId) } });
-    await prisma.deliveryShipment.deleteMany({ where: { id: seededId(shipmentId) } });
+    /* Scoped by order, not by the fixture's own shipment id, so a shipment a test creates on top
+       is still cleaned up when that test's assertions fail before it could tidy up after itself. */
+    await prisma.deliveryShipmentLine.deleteMany({ where: { shipment: { orderId: seededId(orderId) } } });
+    await prisma.deliveryShipment.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
@@ -126,8 +128,5 @@ describe("shipment-queries", () => {
     expect(shipments[0].lines[0].productName).toBe("Query Item 2");
     expect(shipments[1].lines).toHaveLength(1);
     expect(shipments[1].lines[0].productName).toBe("Query Item");
-
-    await prisma.deliveryShipmentLine.deleteMany({ where: { shipmentId: seededId(second.shipmentId) } });
-    await prisma.deliveryShipment.deleteMany({ where: { id: seededId(second.shipmentId) } });
   });
 });

@@ -5,6 +5,12 @@ import { listAssortmentGaps } from "@/lib/stores/assortment/queries";
 import { approveFieldSalesOrder } from "./writer";
 import { closeFieldSalesOrderRemainder } from "./delivery/writer";
 import { openKonsiQtyByKey } from "./konsi-open-qty";
+import {
+  createDeliveryShipment,
+  updateShipmentTracking,
+  shipDeliveryShipment,
+  completeDeliveryShipment,
+} from "@/lib/delivery/shipment-writer";
 
 /* Read-only against a shared dev DB, but the fixture still writes rows — keep the same guard as sibling specs. */
 const url = process.env.DATABASE_URL ?? "";
@@ -326,6 +332,14 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
       seededId(openGapOrderId),
       seededId(partialGapOrderId),
     ];
+    /* Rows a completed shipment writes — scoped to this spec's own orders, items and store. */
+    await prisma.deliveryShipmentLine.deleteMany({ where: { shipment: { orderId: { in: allOrderIds } } } });
+    await prisma.deliveryShipment.deleteMany({ where: { orderId: { in: allOrderIds } } });
+    await prisma.konsiTransferLine.deleteMany({ where: { itemId: { in: allItemIds } } });
+    await prisma.konsiTransfer.deleteMany({ where: { orderId: { in: allOrderIds } } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: allItemIds } } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: allItemIds } } });
+    await prisma.storeStock.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: { in: allOrderIds } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: allOrderIds } } });
     /* approveFieldSalesOrder (KONSI) reserves via StockReservation, and closeFieldSalesOrderRemainder only flips it RELEASED, never deletes it. */
@@ -433,6 +447,34 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
     expect(row).toBeDefined();
     expect(row!.onHandQty).toBe(0);
     expect(row!.inTransitQty).toBe(6);
+    expect(row!.targetQty).toBe(10);
+  });
+
+  it("a delivered line counts through StoreStock instead: onHandQty reads the delivered qty and inTransitQty drops to 0", async () => {
+    const line = await prisma.fieldSalesOrderLine.findFirstOrThrow({ where: { orderId: seededId(partialGapOrderId) } });
+    const { shipmentId } = await createDeliveryShipment({
+      orderId: partialGapOrderId,
+      method: "EXPEDITION",
+      lines: [{ orderLineId: line.id, qty: 6 }],
+      packedById: userId,
+    });
+    await updateShipmentTracking({ shipmentId, carrierName: "JNE", resiNumber: `RESI-KAG-${token}` });
+    await shipDeliveryShipment({ shipmentId, shippedById: userId });
+    const shipment = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: shipmentId }, include: { lines: true } });
+    await completeDeliveryShipment({
+      shipmentId,
+      deliveredById: userId,
+      proofPhotoUrl: "https://r2.example/proof.jpg",
+      proofPhotoR2Key: `delivery-proofs/${shipmentId}/goods.jpg`,
+      lines: [{ shipmentLineId: shipment.lines[0].id, deliveredQty: 6 }],
+    });
+
+    /* Target 10, six delivered: still a gap, now carried by the physical figure alone. */
+    const gaps = await listAssortmentGaps(storeId);
+    const row = gaps.find((g) => g.itemId === partialGapItemId);
+    expect(row).toBeDefined();
+    expect(row!.onHandQty).toBe(6);
+    expect(row!.inTransitQty).toBe(0);
     expect(row!.targetQty).toBe(10);
   });
 });
