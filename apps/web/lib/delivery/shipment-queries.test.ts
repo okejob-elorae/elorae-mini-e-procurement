@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { listDeliveryShipments, getDeliveryShipment, listMyDeliveries } from "./shipment-queries";
+import { listDeliveryShipments, getDeliveryShipment, listMyDeliveries, listShipmentsForOrder } from "./shipment-queries";
 import { createDeliveryShipment, updateShipmentTracking, shipDeliveryShipment } from "./shipment-writer";
 
 describe("shipment-queries", () => {
@@ -48,8 +48,10 @@ describe("shipment-queries", () => {
   });
 
   afterEach(async () => {
-    await prisma.deliveryShipmentLine.deleteMany({ where: { shipmentId: seededId(shipmentId) } });
-    await prisma.deliveryShipment.deleteMany({ where: { id: seededId(shipmentId) } });
+    /* Scoped by order, not by the fixture's own shipment id, so a shipment a test creates on top
+       is still cleaned up when that test's assertions fail before it could tidy up after itself. */
+    await prisma.deliveryShipmentLine.deleteMany({ where: { shipment: { orderId: seededId(orderId) } } });
+    await prisma.deliveryShipment.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
@@ -95,5 +97,36 @@ describe("shipment-queries", () => {
     const someoneElsesId = "does-not-exist-as-a-carrier";
     const notMine = await listMyDeliveries(someoneElsesId);
     expect(notMine.some((m) => m.id === shipmentId)).toBe(false);
+  });
+
+  it("returns orderType on getDeliveryShipment", async () => {
+    const detail = await getDeliveryShipment(shipmentId);
+    expect(detail?.orderType).toBe("PUTUS");
+  });
+
+  it("lists shipments for an order, newest first, with lines and productName", async () => {
+    const extraLine = await prisma.fieldSalesOrderLine.create({
+      data: { orderId, itemId, productName: "Query Item 2", qty: 3, unitPrice: 10000, lineTotal: 30000 },
+    });
+    const second = await createDeliveryShipment({
+      orderId,
+      method: "EXPEDITION",
+      lines: [{ orderLineId: extraLine.id, qty: 3 }],
+      packedById: userId,
+    });
+    /* Backdate the first shipment so ordering is deterministic rather than racing on `now()`. */
+    await prisma.deliveryShipment.update({
+      where: { id: shipmentId },
+      data: { packedAt: new Date(Date.now() - 60_000) },
+    });
+
+    const shipments = await listShipmentsForOrder(orderId);
+    expect(shipments).toHaveLength(2);
+    expect(shipments[0].id).toBe(second.shipmentId);
+    expect(shipments[1].id).toBe(shipmentId);
+    expect(shipments[0].lines).toHaveLength(1);
+    expect(shipments[0].lines[0].productName).toBe("Query Item 2");
+    expect(shipments[1].lines).toHaveLength(1);
+    expect(shipments[1].lines[0].productName).toBe("Query Item");
   });
 });

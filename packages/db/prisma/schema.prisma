@@ -574,6 +574,7 @@ model DeliveryShipment {
   carriedBy       User?                   @relation("DeliveryShipmentCarriedBy", fields: [carriedById], references: [id])
   delivery        FieldSalesDelivery?     @relation(fields: [deliveryId], references: [id])
   lines           DeliveryShipmentLine[]
+  konsiTransfer   KonsiTransfer?
   @@index([orderId])
   @@index([status])
 }
@@ -916,10 +917,12 @@ model KonsiTransfer {
   storeId         String
   transferredById String
   note            String?             @db.Text
+  shipmentId      String?             @unique
   createdAt       DateTime            @default(now())
   order           FieldSalesOrder     @relation(fields: [orderId], references: [id])
   store           Store               @relation(fields: [storeId], references: [id])
   transferredBy   User                @relation("KonsiTransferUser", fields: [transferredById], references: [id])
+  shipment        DeliveryShipment?   @relation(fields: [shipmentId], references: [id])
   lines           KonsiTransferLine[]
 
   @@index([storeId, createdAt])

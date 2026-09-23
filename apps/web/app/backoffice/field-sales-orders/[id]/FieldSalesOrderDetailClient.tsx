@@ -23,10 +23,14 @@ import {
 } from "@/components/ui/table";
 import { ApproveRejectCard, type AppealedLine, type LineRef } from "./ApproveRejectCard";
 import { DeliveriesCard } from "./DeliveriesCard";
+import { KonsiShipmentsCard } from "./KonsiShipmentsCard";
 import { KonsiSuggestionsCard, type StagedAddition } from "./KonsiSuggestionsCard";
 import type { DeliverableLine } from "./DeliveryFormDialog";
+import type { OrderShipmentSummary } from "@/lib/delivery/shipment-queries";
 import { logPrint } from "@/app/actions/audit";
 import { buildSuratKeluarPrintHtml } from "@/lib/print/konsi-surat-keluar-html";
+import { printHtmlInIframe } from "@/lib/print/print-html-in-iframe";
+import { buildSuratKeluarLabels } from "./surat-keluar-labels";
 
 type Props = {
   order: FieldSalesOrderDetail;
@@ -36,6 +40,7 @@ type Props = {
   konsiSuggestions: KonsiSuggestion[];
   konsiAssortmentGaps: KonsiAssortmentGapSuggestion[];
   creditCheck: { exposure: number; limit: number; overLimit: boolean } | null;
+  shipments: OrderShipmentSummary[];
 };
 
 const STATUS_BADGE_VARIANT: Record<FieldSalesOrderStatus, "secondary" | "default" | "destructive"> = {
@@ -58,19 +63,6 @@ function formatRupiah(value: number): string {
   }).format(value);
 }
 
-function printHtml(html: string, title: string) {
-  const iframe = document.createElement("iframe");
-  iframe.setAttribute("style", "position:absolute;width:0;height:0;border:0;visibility:hidden;");
-  iframe.setAttribute("title", title);
-  document.body.appendChild(iframe);
-  const doc = iframe.contentWindow?.document;
-  if (doc) {
-    doc.open(); doc.write(html); doc.close();
-    setTimeout(() => iframe.contentWindow?.print(), 350);
-  }
-  setTimeout(() => document.body.removeChild(iframe), 500);
-}
-
 export function FieldSalesOrderDetailClient({
   order,
   canApprove,
@@ -79,6 +71,7 @@ export function FieldSalesOrderDetailClient({
   konsiSuggestions,
   konsiAssortmentGaps,
   creditCheck,
+  shipments,
 }: Props) {
   const t = useTranslations("fieldSalesOrders");
   const locale = useLocale();
@@ -88,18 +81,21 @@ export function FieldSalesOrderDetailClient({
   const showKonsiSuggestions = isKonsi && order.status === "PENDING_APPROVAL" && canApprove;
   const shortLineCount = order.lines.filter((line) => line.qty > line.available).length;
   /**
-   * Outstanding only means something once a putus order is approved and can be delivered.
-   * Rejecting releases the reservation without cancelling the lines, so a rejected order
-   * would otherwise report its full qty as still owed.
+   * Outstanding only means something once an order is approved and can be delivered — putus
+   * through a delivery or a shipment, konsi through a shipment. Rejecting releases the
+   * reservation without cancelling the lines, so a rejected order would otherwise report its
+   * full qty as still owed.
    */
-  const showOutstanding = !isKonsi && order.status === "APPROVED";
+  const showOutstanding = order.status === "APPROVED";
   const lineColumnCount = 4 + (showOutstanding ? 1 : 0) + (showMoney ? 3 : 0);
   /**
-   * Putus reserves at create and consumes at delivery, so `available` stays depressed by this
-   * order's own reservation and would contradict the delivery dialog. Konsi reserves at approve
-   * and never delivers, so `available` is the honest number there.
+   * Once an order holds its own reservation, `available` stays depressed by it until delivery
+   * consumes it and would contradict the shipment and delivery dialogs — putus reserves at create,
+   * konsi at approve. A konsi order still awaiting approval holds none yet, so `available` is the
+   * honest number for the approver deciding whether it can be reserved at all.
    */
-  const stockLabel = isKonsi ? t("colAvailable") : t("colOnHand");
+  const showAvailable = isKonsi && order.status === "PENDING_APPROVAL";
+  const stockLabel = showAvailable ? t("colAvailable") : t("colOnHand");
   const deliverableLines: DeliverableLine[] = order.lines.map((line) => ({
     id: line.id,
     productName: line.productName,
@@ -139,43 +135,43 @@ export function FieldSalesOrderDetailClient({
       minute: "2-digit",
     }).format(date);
 
-  const konsiTransfer = order.konsiTransfer;
+  const legacyKonsiTransfer = order.legacyKonsiTransfer;
+  /**
+   * An order the previous consignment flow delivered in full at approve: no shipment, nothing
+   * outstanding, DELIVERED. The backfill is what makes a legacy order read this way; an order
+   * closed without ever shipping reads CLOSED instead, so it never lands here.
+   */
+  const legacyKonsiDelivered =
+    isKonsi &&
+    order.status === "APPROVED" &&
+    order.deliveryStatus === "DELIVERED" &&
+    shipments.length === 0 &&
+    order.lines.every((line) => line.outstanding === 0);
 
   const handlePrintSuratKeluar = async () => {
-    /* The button is disabled when there is no transfer, but that's a UI affordance, not the real
-       guard — this handler must never itself try to build a document out of an order that has
-       none (an order approved before this branch shipped; the migration carries no backfill). */
-    if (!konsiTransfer) return;
+    /**
+     * The button only renders when a legacy transfer exists, but that's a UI affordance, not the
+     * real guard — this handler must never itself try to build a document out of an order that
+     * has none: an order approved since stock moved to shipment completion prints per shipment,
+     * and one approved before the transfer document existed never had one.
+     */
+    if (!legacyKonsiTransfer) return;
     await logPrint("KonsiSuratKeluar", order.id);
     const html = buildSuratKeluarPrintHtml({
-      orderNo: konsiTransfer.docNo,
+      orderNo: legacyKonsiTransfer.docNo,
       storeName: order.storeName,
       salesmanName: order.salesmanName,
-      approvedAt: konsiTransfer.createdAt,
+      approvedAt: legacyKonsiTransfer.createdAt,
       status: order.status,
-      lines: konsiTransfer.lines.map((line) => ({
+      lines: legacyKonsiTransfer.lines.map((line) => ({
         productName: line.productName,
         variantSku: line.variantSku,
         variantLabel: line.variantLabel,
         qty: line.qty,
       })),
-      labels: {
-        title: t("print.suratKeluarTitle"),
-        doc: t("print.docLabel"),
-        store: t("print.storeLabel"),
-        salesman: t("print.salesmanLabel"),
-        date: t("print.dateLabel"),
-        status: t("print.statusLabel"),
-        no: t("print.colNo"),
-        product: t("print.colProduct"),
-        qty: t("print.colQty"),
-        consignmentNote: t("print.consignmentNote"),
-        handedBy: t("print.handedBy"),
-        receivedBy: t("print.receivedBy"),
-        issuedBy: t("print.issuedBy"),
-      },
+      labels: buildSuratKeluarLabels(t as (key: string) => string),
     });
-    printHtml(html, t("print.suratKeluar"));
+    printHtmlInIframe(html, t("print.suratKeluar"));
   };
 
   return (
@@ -192,16 +188,17 @@ export function FieldSalesOrderDetailClient({
           {t(STATUS_LABEL_KEY[order.status])}
         </Badge>
         <Badge variant="outline">{isKonsi ? t("typeKonsi") : t("typePutus")}</Badge>
-        {/* Putus notas now print per-delivery from DeliveriesCard; konsi has no deliveries in this slice. */}
-        {isKonsi && order.status === "APPROVED" && (
+        {/**
+         * Putus notas print per-delivery from DeliveriesCard; a konsi order with a real transfer
+         * prints per shipment from KonsiShipmentsCard. This header button covers only the legacy
+         * approve-time transfer (`shipmentId: null`), so it renders solely while one still exists.
+         */}
+        {isKonsi && order.status === "APPROVED" && legacyKonsiTransfer && (
           <div className="flex items-center gap-2 ml-auto">
-            <Button variant="outline" size="sm" onClick={handlePrintSuratKeluar} disabled={!konsiTransfer}>
+            <Button variant="outline" size="sm" onClick={handlePrintSuratKeluar}>
               <Printer className="h-4 w-4 mr-2" />
               {t("print.suratKeluar")}
             </Button>
-            {!konsiTransfer && (
-              <span className="text-xs text-muted-foreground">{t("print.suratKeluarNoTransfer")}</span>
-            )}
           </div>
         )}
       </div>
@@ -231,20 +228,36 @@ export function FieldSalesOrderDetailClient({
         />
       )}
 
-      <DeliveriesCard
-        orderId={order.id}
-        orderNo={order.orderNo}
-        storeName={order.storeName}
-        salesmanName={order.salesmanName}
-        orderType={order.orderType}
-        status={order.status}
-        deliveryStatus={order.deliveryStatus}
-        deliveries={order.deliveries}
-        lines={deliverableLines}
-        paymentTempo={order.paymentTempo}
-        canDeliver={canDeliver}
-        canShipShipment={canShipShipment}
-      />
+      {isKonsi ? (
+        <KonsiShipmentsCard
+          orderId={order.id}
+          storeName={order.storeName}
+          salesmanName={order.salesmanName}
+          status={order.status}
+          deliveryStatus={order.deliveryStatus}
+          lines={deliverableLines}
+          shipments={shipments}
+          legacyDelivered={legacyKonsiDelivered}
+          hasLegacyTransfer={legacyKonsiTransfer !== null}
+          canDeliver={canDeliver}
+          canShipShipment={canShipShipment}
+        />
+      ) : (
+        <DeliveriesCard
+          orderId={order.id}
+          orderNo={order.orderNo}
+          storeName={order.storeName}
+          salesmanName={order.salesmanName}
+          orderType={order.orderType}
+          status={order.status}
+          deliveryStatus={order.deliveryStatus}
+          deliveries={order.deliveries}
+          lines={deliverableLines}
+          paymentTempo={order.paymentTempo}
+          canDeliver={canDeliver}
+          canShipShipment={canShipShipment}
+        />
+      )}
 
       <Card className="p-4 space-y-2">
         <h2 className="font-semibold">{t("detailTitle")}</h2>
@@ -270,7 +283,10 @@ export function FieldSalesOrderDetailClient({
       </Card>
 
       <Card className="p-4">
-        {isKonsi && <p className="text-xs text-muted-foreground mb-2">{t("konsiTransferNote")}</p>}
+        {/* A legacy order moved stock at approve — its card explains that instead of this note. */}
+        {isKonsi && !legacyKonsiDelivered && (
+          <p className="text-xs text-muted-foreground mb-2">{t("konsiTransferNote")}</p>
+        )}
         <Table>
           <TableHeader>
             <TableRow>
@@ -311,7 +327,7 @@ export function FieldSalesOrderDetailClient({
                     <TableCell className="text-right tabular-nums">{line.outstanding}</TableCell>
                   )}
                   <TableCell className="text-right tabular-nums">
-                    {isKonsi ? line.available : line.onHand}
+                    {showAvailable ? line.available : line.onHand}
                   </TableCell>
                   {showMoney && (
                     <>

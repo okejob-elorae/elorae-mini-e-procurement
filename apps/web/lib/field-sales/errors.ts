@@ -49,7 +49,14 @@ export type DeliveryErrorCode =
   | "NO_LINES"
   | "OVER_DELIVER"
   | "INSUFFICIENT_STOCK"
-  | "INVALID_DATES";
+  | "INVALID_DATES"
+  /**
+   * Close remainder refused while the order still has a PACKED or IN_TRANSIT delivery shipment.
+   * Closing releases the whole line reservation, so the in-flight shipment would then complete
+   * against nothing — KONSI_NOT_RESERVED for konsi, OVER_DELIVER for putus — with its goods
+   * already on the truck. Complete or cancel the shipment first.
+   */
+  | "SHIPMENT_IN_FLIGHT";
 
 export class DeliveryError extends Error {
   constructor(
@@ -62,24 +69,21 @@ export class DeliveryError extends Error {
 }
 
 /**
- * issueKonsiTransfer's defence-in-depth check: the StockReservation created by
- * reserveKonsiFieldSalesOrder earlier in the same transaction must resolve to exactly one row
- * flipped to CONSUMED. This catches a reservation that is NOT sitting RESERVED on this
- * fieldSalesLineId (already CONSUMED/RELEASED, or missing) — 0 rows matched would leave
- * reservedQty decremented with no reservation ever released against it, the exact invariant this
- * module exists to protect. It does NOT catch reserveKonsiFieldSalesOrder's own silent-skip
- * branch (an existing RESERVED row on the same fieldSalesLineId short-circuits without
- * incrementing reservedQty): that row is still RESERVED, so this still matches exactly 1 and
- * passes, even though reservedQty was never incremented for it. Not known to be reachable
- * through the current approve() guards; kept as a hard failure rather than a silent no-op
- * regardless.
+ * issueKonsiTransfer's partial-consume guard: a delivered-quantity draw against the
+ * StockReservation reserveKonsiFieldSalesOrder created must fit inside that row's remaining
+ * headroom (`qty − consumedQty`) AND find it still RESERVED. The guard is one atomic
+ * `UPDATE … WHERE state = 'RESERVED' AND consumedQty + n <= qty` — zero rows affected means
+ * either the reservation is not RESERVED at all (already CONSUMED/RELEASED, or missing) or the
+ * draw would exceed what is left, and this throws BEFORE any balance move for the line runs.
+ * Also thrown, ahead of that statement, for a draw that is not a positive integer, which the
+ * guard would otherwise pass (zero) or turn into a stock increase (negative).
  */
 export class KonsiTransferReservationMismatchError extends Error {
   constructor(
     public fieldSalesLineId: string,
     public matchedCount: number,
   ) {
-    super(`Expected exactly one RESERVED StockReservation for fieldSalesLineId=${fieldSalesLineId}, matched ${matchedCount}`);
+    super(`No RESERVED StockReservation with enough headroom for fieldSalesLineId=${fieldSalesLineId} (matched ${matchedCount})`);
     this.name = "KonsiTransferReservationMismatchError";
   }
 }

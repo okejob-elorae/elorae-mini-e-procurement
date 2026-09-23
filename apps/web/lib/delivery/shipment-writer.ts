@@ -1,8 +1,11 @@
-import { prisma } from "@elorae/db";
+import { prisma, InventoryValueMissingError, MainStockNegativeError } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { recordFieldSalesDelivery } from "@/lib/field-sales/delivery/writer";
 import { evaluateCheckinRadius, resolveEffectiveRadius, parseRadiusSetting } from "@/lib/pwa/checkin-radius";
+import { issueKonsiTransfer } from "@/lib/field-sales/konsi-transfer/writer";
+import { DeliveryError, KonsiTransferReservationMismatchError } from "@/lib/field-sales/errors";
+import { nextDeliveryStatus } from "@/lib/field-sales/delivery/plan";
 import { DeliveryShipmentError } from "./errors";
 
 export async function createDeliveryShipment(input: {
@@ -24,6 +27,14 @@ export async function createDeliveryShipment(input: {
       include: { lines: true },
     });
     if (!order) throw new DeliveryShipmentError("NOT_FOUND");
+    /**
+     * Only an APPROVED order can ship. A pending or rejected one can never complete: putus
+     * completion goes through `recordFieldSalesDelivery`, which refuses anything not APPROVED, and a
+     * konsi order holds no reservation for completion to draw down until approve creates one
+     * (KONSI_NOT_RESERVED). Refused here, the shipment is never packed rather than dying at
+     * completion after the goods have left.
+     */
+    if (order.status !== "APPROVED") throw new DeliveryShipmentError("INVALID_STATE");
 
     const packer = await tx.user.findUnique({
       where: { id: input.packedById },
@@ -122,7 +133,10 @@ export async function shipDeliveryShipment(input: {
   shipmentId: string;
   shippedById: string;
 }): Promise<{ ok: true }> {
-  const shipment = await prisma.deliveryShipment.findUnique({ where: { id: input.shipmentId } });
+  const shipment = await prisma.deliveryShipment.findUnique({
+    where: { id: input.shipmentId },
+    include: { order: { select: { orderType: true } } },
+  });
   if (!shipment) throw new DeliveryShipmentError("NOT_FOUND");
   if (shipment.status !== "PACKED") throw new DeliveryShipmentError("INVALID_STATE");
   if (shipment.method === "EXPEDITION" && !shipment.resiNumber) {
@@ -131,7 +145,12 @@ export async function shipDeliveryShipment(input: {
   if (shipment.method === "SALESMAN_CARRY" && !shipment.carriedById) {
     throw new DeliveryShipmentError("MISSING_CARRIER");
   }
-  if (shipment.method === "SALESMAN_CARRY" && (!shipment.invoiceDate || !shipment.dueDate)) {
+  /* A konsi order raises no invoice, so it carries no nota dates. */
+  if (
+    shipment.method === "SALESMAN_CARRY" &&
+    shipment.order.orderType === "PUTUS" &&
+    (!shipment.invoiceDate || !shipment.dueDate)
+  ) {
     throw new DeliveryShipmentError("MISSING_DATES");
   }
 
@@ -149,11 +168,12 @@ export async function completeDeliveryShipment(input: {
   proofPhotoUrl: string;
   proofPhotoR2Key: string;
   /**
-   * EXPEDITION only. A SALESMAN_CARRY completion IGNORES these and reads the dates the admin
+   * PUTUS EXPEDITION only. A SALESMAN_CARRY completion IGNORES these and reads the dates the admin
    * committed to the shipment row at pack/ship time instead — the salesman in the field carries a
    * printed nota bearing those dates, so the accounting record must match the paper, not whatever
-   * the phone happens to send at completion time. Optional in the type, still mandatory at
-   * runtime for EXPEDITION (MISSING_DATES).
+   * the phone happens to send at completion time. A konsi completion raises no invoice and never
+   * reads them. Optional in the type, still mandatory at runtime for a PUTUS EXPEDITION
+   * completion (MISSING_DATES).
    */
   invoiceDate?: Date;
   dueDate?: Date;
@@ -199,6 +219,7 @@ export async function completeDeliveryShipment(input: {
     return { ok: true, deliveryId: shipment.deliveryId ?? "" };
   }
   if (shipment.status !== "IN_TRANSIT") throw new DeliveryShipmentError("INVALID_STATE");
+  const isKonsi = shipment.order.orderType === "KONSI";
 
   if (input.lines.length === 0) throw new DeliveryShipmentError("NO_LINES");
   const proofPhotoUrl = input.proofPhotoUrl?.trim();
@@ -225,11 +246,13 @@ export async function completeDeliveryShipment(input: {
    *
    * Note this keys on `shipment.method` (`DeliveryShipment.method`), NOT on
    * `shipment.order.orderType` — two different fields on two different rows. A KONSI order shipped
-   * by EXPEDITION skips this whole block; a KONSI order carried by a salesman passes through it and
-   * then still skips the stock/accounting path below, the two being independent sections.
+   * by EXPEDITION skips this whole block; a KONSI order carried by a salesman passes through its
+   * location and proof gates like any other, the two being independent sections. What a konsi
+   * order skips is the accounting path — no invoice, no receivable, no journal — and with it the
+   * date source, on both methods; its stock still moves, in the konsi tail below.
    */
-  let effectiveInvoiceDate: Date;
-  let effectiveDueDate: Date;
+  let effectiveInvoiceDate: Date | undefined;
+  let effectiveDueDate: Date | undefined;
   let salesmanCarryGps: { lat: number; lng: number; distanceMeters: number } | undefined;
   let salesmanCarrySignature: { url: string; r2Key: string; signedByName: string } | undefined;
 
@@ -253,17 +276,20 @@ export async function completeDeliveryShipment(input: {
       throw new DeliveryShipmentError("NOT_CARRIER");
     }
 
-    /**
-     * Defense in depth: `shipDeliveryShipment` already refuses to move a SALESMAN_CARRY shipment
-     * to IN_TRANSIT without both dates, so this should be unreachable. It stays because every
-     * write path here is independently callable and the alternative to refusing is passing
-     * `undefined` into the accounting record.
-     */
-    if (!shipment.invoiceDate || !shipment.dueDate) {
-      throw new DeliveryShipmentError("MISSING_DATES");
+    if (!isKonsi) {
+      /**
+       * Defense in depth: `shipDeliveryShipment` already refuses to move a SALESMAN_CARRY shipment
+       * to IN_TRANSIT without both dates, so this should be unreachable. It stays because every
+       * write path here is independently callable and the alternative to refusing is passing
+       * `undefined` into the accounting record. A konsi order raises no invoice and carries no
+       * dates.
+       */
+      if (!shipment.invoiceDate || !shipment.dueDate) {
+        throw new DeliveryShipmentError("MISSING_DATES");
+      }
+      effectiveInvoiceDate = shipment.invoiceDate;
+      effectiveDueDate = shipment.dueDate;
     }
-    effectiveInvoiceDate = shipment.invoiceDate;
-    effectiveDueDate = shipment.dueDate;
 
     if (!input.gps) throw new DeliveryShipmentError("MISSING_GPS");
     /**
@@ -358,7 +384,7 @@ export async function completeDeliveryShipment(input: {
       r2Key: signatureR2Key,
       signedByName,
     };
-  } else {
+  } else if (!isKonsi) {
     if (!input.invoiceDate || !input.dueDate) throw new DeliveryShipmentError("MISSING_DATES");
     effectiveInvoiceDate = input.invoiceDate;
     effectiveDueDate = input.dueDate;
@@ -395,60 +421,158 @@ export async function completeDeliveryShipment(input: {
     const shipmentLine = lineById.get(line.shipmentLineId)!;
     return line.deliveredQty < shipmentLine.plannedQty;
   });
-  const nextStatus = anyShort ? "PARTIALLY_DELIVERED" : "DELIVERED";
+  /**
+   * Annotated explicitly rather than left to infer: `completionData` below is an object literal,
+   * and a `const` whose inferred type is this widening literal union would widen to `string` once
+   * placed in a mutable object property — `tx.deliveryShipment.updateMany({ data: completionData })`
+   * then fails `tsc` against the `status` enum column. vitest would not catch it.
+   */
+  const nextStatus: "PARTIALLY_DELIVERED" | "DELIVERED" = anyShort ? "PARTIALLY_DELIVERED" : "DELIVERED";
 
-  const isKonsi = shipment.order.orderType === "KONSI";
+  /* Status + POD fields, written by the same CAS in both branches. */
+  const completionData = {
+    status: nextStatus,
+    deliveredAt: effectiveDeliveredAt,
+    deliveredById: input.deliveredById,
+    proofPhotoUrl,
+    proofPhotoR2Key: input.proofPhotoR2Key,
+    ...(input.completedOffline ? { completedOfflineAt: now } : {}),
+    /* The GPS audit trail and the status it justifies land in one write, never as a second write. */
+    ...(salesmanCarryGps
+      ? {
+          gpsLat: salesmanCarryGps.lat,
+          gpsLng: salesmanCarryGps.lng,
+          gpsDistanceMeters: salesmanCarryGps.distanceMeters,
+        }
+      : {}),
+    ...(salesmanCarrySignature
+      ? {
+          signatureUrl: salesmanCarrySignature.url,
+          signatureR2Key: salesmanCarrySignature.r2Key,
+          signedByName: salesmanCarrySignature.signedByName,
+        }
+      : {}),
+  };
+
+  if (isKonsi) {
+    /**
+     * Konsi stock moves HERE, at completion, one `KonsiTransfer` per shipment — approve only
+     * reserved it. All of it is one transaction, so the status, the stock move and the order-line
+     * counters land together or not at all. The CAS runs FIRST: a concurrent second completion
+     * loses it and throws before any stock moves. No `FieldSalesDelivery`, no `Receivable`, no
+     * journal — a konsi transfer is a stock move, not a sale.
+     */
+    await runSerializable(async (tx) => {
+      const result = await tx.deliveryShipment.updateMany({
+        where: { id: input.shipmentId, status: "IN_TRANSIT" },
+        data: completionData,
+      });
+      if (result.count === 0) throw new DeliveryShipmentError("INVALID_STATE");
+
+      for (const line of input.lines) {
+        await tx.deliveryShipmentLine.update({
+          where: { id: line.shipmentLineId },
+          data: { deliveredQty: line.deliveredQty },
+        });
+      }
+
+      const delivered = input.lines
+        .filter((line) => line.deliveredQty > 0)
+        .map((line) => ({ shipmentLine: lineById.get(line.shipmentLineId)!, qty: line.deliveredQty }));
+
+      if (delivered.length > 0) {
+        const deliveredOrderLines = await tx.fieldSalesOrderLine.findMany({
+          where: { id: { in: delivered.map((d) => d.shipmentLine.orderLineId) } },
+          select: { id: true, productName: true },
+        });
+        const productNameById = new Map(deliveredOrderLines.map((l) => [l.id, l.productName]));
+        try {
+          await issueKonsiTransfer(tx, {
+            order: {
+              id: shipment.orderId,
+              storeId: shipment.order.storeId,
+              lines: delivered.map((d) => ({
+                id: d.shipmentLine.orderLineId,
+                itemId: d.shipmentLine.itemId,
+                variantSku: d.shipmentLine.variantSku,
+                productName: productNameById.get(d.shipmentLine.orderLineId) ?? "",
+                qty: d.qty,
+              })),
+            },
+            shipmentId: input.shipmentId,
+            transferredById: input.deliveredById,
+          });
+        } catch (error) {
+          /**
+           * Every refusal the transfer can raise leaves as a typed code rather than UNEXPECTED —
+           * the PWA offline queue retries an unmapped failure up to its ceiling, and none of these
+           * clears on a retry. Rethrown inside the transaction, so the CAS above rolls back too and
+           * the shipment stays IN_TRANSIT. `instanceof`, never the message: the codes overlap
+           * nothing, but the classes are what the transfer actually throws.
+           */
+          if (error instanceof KonsiTransferReservationMismatchError) {
+            throw new DeliveryShipmentError("KONSI_NOT_RESERVED");
+          }
+          if (error instanceof MainStockNegativeError) throw new DeliveryError("INSUFFICIENT_STOCK");
+          if (error instanceof InventoryValueMissingError) throw new DeliveryShipmentError("NO_INVENTORY_ROW");
+          throw error;
+        }
+        for (const d of delivered) {
+          await tx.fieldSalesOrderLine.update({
+            where: { id: d.shipmentLine.orderLineId },
+            data: { deliveredQty: { increment: d.qty } },
+          });
+        }
+      }
+
+      const orderLines = await tx.fieldSalesOrderLine.findMany({
+        where: { orderId: shipment.orderId },
+        select: { id: true, qty: true, deliveredQty: true, cancelledQty: true },
+      });
+      await tx.fieldSalesOrder.update({
+        where: { id: shipment.orderId },
+        data: {
+          deliveryStatus: nextDeliveryStatus(
+            orderLines.map((l) => ({
+              orderLineId: l.id,
+              qty: l.qty,
+              deliveredQty: l.deliveredQty,
+              cancelledQty: l.cancelledQty,
+            })),
+          ),
+        },
+      });
+    });
+    return { ok: true, deliveryId: "" };
+  }
+
+  /* A runtime guard rather than an assertion: the non-konsi branches above always set both. */
+  if (!effectiveInvoiceDate || !effectiveDueDate) throw new DeliveryShipmentError("MISSING_DATES");
+
   let deliveryId = "";
-
-  if (!isKonsi) {
-    const deliveredLines = input.lines
-      .filter((line) => line.deliveredQty > 0)
-      .map((line) => {
-        const shipmentLine = lineById.get(line.shipmentLineId)!;
-        return { orderLineId: shipmentLine.orderLineId, qty: line.deliveredQty };
-      });
-    if (deliveredLines.length > 0) {
-      const delivery = await recordFieldSalesDelivery({
-        orderId: shipment.orderId,
-        deliveredById: input.deliveredById,
-        lines: deliveredLines,
-        invoiceDate: effectiveInvoiceDate,
-        dueDate: effectiveDueDate,
-        idempotencyKey: `shipment-${input.shipmentId}`,
-        deliveredAt: effectiveDeliveredAt,
-      });
-      deliveryId = delivery.deliveryId;
-    }
+  const deliveredLines = input.lines
+    .filter((line) => line.deliveredQty > 0)
+    .map((line) => {
+      const shipmentLine = lineById.get(line.shipmentLineId)!;
+      return { orderLineId: shipmentLine.orderLineId, qty: line.deliveredQty };
+    });
+  if (deliveredLines.length > 0) {
+    const delivery = await recordFieldSalesDelivery({
+      orderId: shipment.orderId,
+      deliveredById: input.deliveredById,
+      lines: deliveredLines,
+      invoiceDate: effectiveInvoiceDate,
+      dueDate: effectiveDueDate,
+      idempotencyKey: `shipment-${input.shipmentId}`,
+      deliveredAt: effectiveDeliveredAt,
+    });
+    deliveryId = delivery.deliveryId;
   }
 
   await runSerializable(async (tx) => {
     const result = await tx.deliveryShipment.updateMany({
       where: { id: input.shipmentId, status: "IN_TRANSIT" },
-      data: {
-        status: nextStatus,
-        deliveredAt: effectiveDeliveredAt,
-        deliveredById: input.deliveredById,
-        proofPhotoUrl,
-        proofPhotoR2Key: input.proofPhotoR2Key,
-        ...(deliveryId ? { deliveryId } : {}),
-        ...(input.completedOffline ? { completedOfflineAt: now } : {}),
-        /* Same CAS-guarded write that moves the status — the GPS audit trail and the status it
-         * justifies must land together or not at all, never as a second write. */
-        ...(salesmanCarryGps
-          ? {
-              gpsLat: salesmanCarryGps.lat,
-              gpsLng: salesmanCarryGps.lng,
-              gpsDistanceMeters: salesmanCarryGps.distanceMeters,
-            }
-          : {}),
-        ...(salesmanCarrySignature
-          ? {
-              signatureUrl: salesmanCarrySignature.url,
-              signatureR2Key: salesmanCarrySignature.r2Key,
-              signedByName: salesmanCarrySignature.signedByName,
-            }
-          : {}),
-      },
+      data: { ...completionData, ...(deliveryId ? { deliveryId } : {}) },
     });
     if (result.count === 0) throw new DeliveryShipmentError("INVALID_STATE");
 

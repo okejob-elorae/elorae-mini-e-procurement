@@ -124,9 +124,9 @@ function totalQty(delivery: FieldSalesDeliverySummary): number {
 }
 
 /**
- * Hidden-iframe print mechanism, identical to the one on the order detail page — the konsi
- * Surat Keluar trigger there still owns its own copy since it prints from the order, not a
- * delivery.
+ * Hidden-iframe print mechanism for this card's nota prints — one of the hand-rolled copies
+ * `docs/FOLLOWUPS.md` logs for repointing onto the shared `printHtmlInIframe`, which the order
+ * detail page's konsi Surat Keluar prints already use.
  */
 function printHtml(html: string, title: string) {
   const iframe = document.createElement("iframe");
@@ -175,7 +175,7 @@ export function DeliveriesCard({
   const [editDueDate, setEditDueDate] = useState("");
   const [editReason, setEditReason] = useState("");
 
-  /* Konsi transfers never deliver in this slice, and a not-yet-approved order has nothing to show. */
+  /* Konsi orders render KonsiShipmentsCard instead — no accounting deliveries exist for them. */
   if (orderType === "KONSI") return null;
   if (status !== "APPROVED" && deliveries.length === 0) return null;
 

@@ -17,20 +17,25 @@ export type IssueKonsiTransferLine = {
 
 /**
  * Moves konsi stock out of the main warehouse and into a store's virtual warehouse, inside the
- * caller's transaction.
+ * caller's transaction. Runs at delivery-shipment COMPLETION (one call per completed shipment,
+ * one transfer per shipment), never at approve — approve only reserves. Each line's `qty` is the
+ * DELIVERED quantity for that shipment, not the order-line quantity, so the reservation approve
+ * created is consumed PARTIALLY: a short or refused delivery never lands units at the store, and
+ * a second shipment against the same line draws down the same reservation further.
  *
- * qtyOnHand and reservedQty must decrement TOGETHER. reserveKonsiFieldSalesOrder has already
- * reserved these exact quantities earlier in this same transaction, so decrementing one without
- * the other would leave stock reserved against nothing, forever. The quantity goes through
- * moveMainStock, pinned to the row id resolved below; the reservedQty decrement follows
- * immediately after on that same id, as a plain atomic update outside the mover — it writes no
- * ledger entry, because a reservation resolving is not a stock movement. A future edit must not
- * separate the two writes or let anything run between them.
+ * qtyOnHand and reservedQty must decrement TOGETHER. The reservation approve created already
+ * covers this line's qty, so decrementing one without the other would leave stock reserved
+ * against nothing, forever. The quantity goes through moveMainStock, pinned to the row id
+ * resolved below; the reservedQty decrement follows immediately after on that same id, as a plain
+ * atomic update outside the mover — it writes no ledger entry, because a reservation resolving is
+ * not a stock movement. A future edit must not separate the two writes or let anything run
+ * between them.
  */
 export async function issueKonsiTransfer(
   tx: TxClient,
   input: {
     order: { id: string; storeId: string; lines: IssueKonsiTransferLine[] };
+    shipmentId: string;
     transferredById: string;
   },
 ): Promise<{ transferId: string; docNo: string }> {
@@ -41,6 +46,7 @@ export async function issueKonsiTransfer(
       docNo,
       orderId: input.order.id,
       storeId: input.order.storeId,
+      shipmentId: input.shipmentId,
       transferredById: input.transferredById,
     },
     select: { id: true },
@@ -49,6 +55,28 @@ export async function issueKonsiTransfer(
   const lineData: Array<{ transferId: string; orderLineId: string; itemId: string; variantSku: string; productName: string; qty: number; unitCost: number }> = [];
 
   for (const l of input.order.lines) {
+    /**
+     * The caller filters to delivered lines today; a zero draw would pass the guard below as a
+     * no-op and a negative one would move stock INTO main, so neither is left to the caller.
+     */
+    if (!Number.isInteger(l.qty) || l.qty <= 0) throw new KonsiTransferReservationMismatchError(l.id, 0);
+
+    /**
+     * Partial consume of the reservation approve created, folded into one guarded statement so a
+     * concurrent completion cannot pass a stale read — the same idiom
+     * `consumeFieldSalesOrderPartial` uses. It runs BEFORE any balance write for this line, so an
+     * over-draw, or a reservation that is not RESERVED at all (a konsi order approved before
+     * stock moved at completion, whose reservation was consumed at approve), refuses with nothing
+     * moved. `StockReservation` is not a balance table, so this raw statement needs no entry in
+     * the stock-balance guard.
+     */
+    const reserved = await tx.$executeRaw`
+      UPDATE StockReservation
+      SET consumedQty = consumedQty + ${l.qty}
+      WHERE fieldSalesLineId = ${l.id} AND state = 'RESERVED' AND consumedQty + ${l.qty} <= qty
+    `;
+    if (reserved === 0) throw new KonsiTransferReservationMismatchError(l.id, 0);
+
     /*
      * findExistingInventoryValueRow is THE spelling of this lookup: OR-tolerant, because a
      * variantless InventoryValue row keys on null OR "" and a strict ""-keyed lookup misses the
@@ -143,28 +171,18 @@ export async function issueKonsiTransfer(
       createdById: input.transferredById,
     });
 
-    /*
-     * The reservation reserveKonsiFieldSalesOrder created earlier in this same transaction is
-     * now resolved — flip it to CONSUMED rather than leaving it RESERVED against nothing.
-     *
-     * Guarded, not fire-and-forget: this only catches a reservation that is NOT sitting in
-     * RESERVED state on this fieldSalesLineId — i.e. already CONSUMED or RELEASED, or missing
-     * outright — where this updateMany would silently match 0 rows while qtyOnHand and
-     * reservedQty above had already been decremented unconditionally. It does NOT catch
-     * reserveKonsiFieldSalesOrder's silent-skip branch (an existing reservation on the same
-     * fieldSalesLineId short-circuits without incrementing reservedQty): that branch leaves the
-     * existing row RESERVED, so this updateMany still matches exactly 1 and the guard passes,
-     * even though reservedQty was never incremented for it and this transfer decrements it
-     * unconditionally regardless. The current approve() guards (status !== PENDING_APPROVAL
-     * rejects re-entry) mean neither case is observed today, but the match count is checked
-     * rather than discarded so the reachable half of this drift is caught the moment it stops
-     * being theoretical.
-     */
-    const resolved = await tx.stockReservation.updateMany({
-      where: { fieldSalesLineId: l.id, state: "RESERVED" },
-      data: { state: "CONSUMED", consumedQty: l.qty, resolvedAt: new Date() },
+    /* Only the draw that exhausts the reservation resolves it; an earlier partial draw leaves it
+       RESERVED for the next shipment or for a close-remainder release. */
+    const reservation = await tx.stockReservation.findUniqueOrThrow({
+      where: { fieldSalesLineId: l.id },
+      select: { qty: true, consumedQty: true },
     });
-    if (resolved.count !== 1) throw new KonsiTransferReservationMismatchError(l.id, resolved.count);
+    if (Number(reservation.consumedQty) >= Number(reservation.qty)) {
+      await tx.stockReservation.updateMany({
+        where: { fieldSalesLineId: l.id, state: "RESERVED" },
+        data: { state: "CONSUMED", resolvedAt: new Date() },
+      });
+    }
 
     lineData.push({
       transferId: transfer.id,

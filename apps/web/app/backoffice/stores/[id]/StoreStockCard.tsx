@@ -245,6 +245,11 @@ export function StoreStockCard({
                           <Badge variant={isMissing ? "outline" : "destructive"} className="ml-2">
                             {isMissing ? t("gapStatusMissing") : t("gapStatusDepleted")}
                           </Badge>
+                          {gap.inTransitQty > 0 && (
+                            <span className="block text-xs text-muted-foreground">
+                              {t("gapInTransit", { qty: gap.inTransitQty })}
+                            </span>
+                          )}
                         </TableCell>
                         <TableCell className="text-sm">
                           {gap.targetQty === null ? (

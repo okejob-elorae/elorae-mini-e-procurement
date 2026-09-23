@@ -2,7 +2,6 @@ import { reserveFieldSalesOrder, releaseFieldSalesOrder, reserveKonsiFieldSalesO
 import { effectiveMinQty, validateMinQtyLines } from "@elorae/db/field-sales";
 import { computeStorePrice } from "@elorae/db/pricing";
 import { applyItemAggregatedPromos } from "./promo-apply";
-import { issueKonsiTransfer } from "./konsi-transfer/writer";
 import { fetchActivePromosForStore } from "@/lib/promos/queries";
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
@@ -10,6 +9,7 @@ import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
 import { NoActiveVisitError, MinQtyViolationError, InvalidOrderTransitionError, InsufficientStockError, InvalidAddedLineError, CreditLimitExceededError } from "./errors";
 import { sentItemIds } from "./queries";
+import { openKonsiQtyByKey } from "./konsi-open-qty";
 
 type CreateLine = {
   itemId: string;
@@ -230,12 +230,18 @@ export async function createFieldSalesOrder(input: {
 
 /**
  * Which of the given (itemId, variantSku) candidates are CURRENT assortment gaps for this store,
- * batched into two queries regardless of candidate count. Mirrors `listAssortmentGaps`'s gap test
- * (`packages/db` has no access to that helper, and it reads through the un-transacted `prisma`
- * singleton anyway) — `targetQty === null` means "must merely be present" (`onHandQty <= 0`),
- * `targetQty !== null` means a minimum (`onHandQty < targetQty`). Run inside the caller's own
- * transaction so the gap read is consistent with the `StoreStock` state the approval itself acts
- * on, not a stale snapshot from before the transaction opened.
+ * batched into a fixed handful of queries regardless of candidate count. Mirrors
+ * `listAssortmentGaps`'s gap test (which reads through the un-transacted `prisma` singleton) —
+ * `targetQty === null` means "must merely be present" (`effectiveQty <= 0`), `targetQty !== null`
+ * means a minimum (`effectiveQty < targetQty`). Run inside the approval's own transaction so the
+ * `StoreStock` and open-konsi-order reads are consistent with each other and with the order lines
+ * the approval is about to write, not a stale snapshot from before the transaction opened.
+ *
+ * The gap test itself sums physical `StoreStock` with `openKonsiQtyByKey` (same helper
+ * `listAssortmentGaps` uses) into an `effectiveQty`, so a store already carrying an
+ * approved-but-undelivered konsi line for this item is not offered back as a gap before those
+ * units are delivered — this function returns only keys, so unlike `listAssortmentGaps` it has
+ * no reason to report the physical and not-yet-delivered figures separately.
  */
 async function currentAssortmentGapKeys(
   tx: Prisma.TransactionClient,
@@ -254,12 +260,15 @@ async function currentAssortmentGapKeys(
     select: { itemId: true, variantSku: true, qty: true },
   });
   const onHandByKey = new Map(stockRows.map((r) => [`${r.itemId}::${r.variantSku ?? ""}`, r.qty.toNumber()]));
+  const openByKey = await openKonsiQtyByKey(tx, storeId, itemIds);
   const gapKeys = new Set<string>();
   for (const line of lines) {
     const key = `${line.itemId}::${line.variantSku ?? ""}`;
     const onHandQty = onHandByKey.get(key) ?? 0;
+    const inTransitQty = openByKey.get(key) ?? 0;
+    const effectiveQty = onHandQty + inTransitQty;
     const targetQty = line.targetQty === null ? null : line.targetQty.toNumber();
-    const isGap = targetQty === null ? onHandQty <= 0 : onHandQty < targetQty;
+    const isGap = targetQty === null ? effectiveQty <= 0 : effectiveQty < targetQty;
     if (isGap) gapKeys.add(key);
   }
   return gapKeys;
@@ -399,20 +408,12 @@ export async function approveFieldSalesOrder(input: {
       }
 
       /**
-       * Konsi is a transfer, not a sale: stock leaves main and lands in the store's virtual
-       * warehouse right here, in the same transaction that just reserved it — never through
-       * consumeFieldSalesOrder (packages/db/src/reservation-writer.ts), which is an orphaned
-       * FIELD_SALES_CONSUME trap with no production caller. No SalesHistory is written for konsi.
+       * Approve only RESERVES konsi stock. It moves main → the store's virtual warehouse at
+       * delivery-shipment completion (`completeDeliveryShipment`), one `KonsiTransfer` per
+       * completed shipment, so a short or refused delivery never lands at the store. Never
+       * through `consumeFieldSalesOrder` (packages/db/src/reservation-writer.ts), which is an
+       * orphaned FIELD_SALES_CONSUME trap with no production caller. No SalesHistory for konsi.
        */
-      await issueKonsiTransfer(tx, {
-        order: {
-          id: order.id,
-          storeId: order.storeId,
-          lines: lines.map((l) => ({ id: l.id, itemId: l.itemId, variantSku: l.variantSku, productName: l.productName, qty: l.qty })),
-        },
-        transferredById: input.approvedById,
-      });
-
       await tx.fieldSalesOrder.update({
         where: { id: order.id },
         data: { status: "APPROVED", approvedAt: new Date(), approvedById: input.approvedById, subtotal: total, total },

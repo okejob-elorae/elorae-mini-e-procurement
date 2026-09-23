@@ -8,6 +8,7 @@ import {
   KonsiPriceDiscountNotAllowedError,
   type StoreFields,
 } from "./queries";
+import { closeFieldSalesOrderRemainder } from "@/lib/field-sales/delivery/writer";
 
 /* Store-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host). */
 const url = process.env.DATABASE_URL ?? "";
@@ -95,6 +96,96 @@ d("updateStore KONSI → PUTUS guard (test bed only)", () => {
     const result = await updateStore(laggingStoreId, konsiFields);
     expect(result.termsType).toBe("KONSI");
     expect(result.name).toBe("Renamed");
+  });
+});
+
+d("updateStore KONSI → PUTUS guard over undelivered konsi orders (test bed only)", () => {
+  const token = Math.random().toString(36).slice(2, 10);
+  let uomId = "";
+  let itemId = "";
+  let userId = "";
+  let storeId = "";
+  let orderId = "";
+
+  const putusFields = (): StoreFields => ({
+    code: `TEST-SQ-OPEN-${token}`,
+    name: "Open konsi order store",
+    address: "Test address",
+    phone: null,
+    contactName: null,
+    termsType: "PUTUS",
+    paymentTempo: 0,
+    marginPercent: 20,
+    priceDiscountPercent: null,
+    creditLimit: null,
+    npwp: null,
+    lat: null,
+    lng: null,
+    checkinRadiusMeters: null,
+  });
+
+  beforeEach(async () => {
+    uomId = "";
+    itemId = "";
+    userId = "";
+    storeId = "";
+    orderId = "";
+
+    const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-SQO-${token}`, nameId: "pcs", nameEn: "pcs" } });
+    uomId = uom.id;
+    const item = await prisma.item.create({
+      data: { sku: `TEST-SQO-ITEM-${token}`, nameId: "Open konsi item", nameEn: "Open konsi item", type: "FINISHED_GOOD", uomId, isActive: true },
+    });
+    itemId = item.id;
+    const user = await prisma.user.create({ data: { email: `test-sqo-${token}@example.com`, name: "Test SQO Admin" } });
+    userId = user.id;
+
+    /* No StoreStock at all: the only thing holding this store on KONSI is the order below. */
+    const store = await prisma.store.create({
+      data: { code: `TEST-SQ-OPEN-${token}`, name: "Open konsi order store", address: "Test address", termsType: "KONSI", marginPercent: 20, isActive: true },
+    });
+    storeId = store.id;
+  });
+
+  afterEach(async () => {
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: seededId(orderId) } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.user.deleteMany({ where: { id: seededId(userId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+  });
+
+  const seedKonsiOrder = async (status: "PENDING_APPROVAL" | "APPROVED") => {
+    const order = await prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `KONSI/TEST-SQO-${token}`,
+        orderType: "KONSI",
+        storeId,
+        salesmanId: userId,
+        status,
+        subtotal: 3000,
+        total: 3000,
+        lines: { create: [{ itemId, variantSku: "", productName: "Open konsi item", qty: 3, unitPrice: 1000, lineTotal: 3000 }] },
+      },
+    });
+    orderId = order.id;
+  };
+
+  it("refuses the switch while an approved konsi order is undelivered, and allows it once the remainder is closed", async () => {
+    await seedKonsiOrder("APPROVED");
+    await expect(updateStore(storeId, putusFields())).rejects.toBeInstanceOf(StoreHasConsignmentStockError);
+    const stillKonsi = await prisma.store.findUnique({ where: { id: seededId(storeId) }, select: { termsType: true } });
+    expect(stillKonsi?.termsType).toBe("KONSI");
+
+    await closeFieldSalesOrderRemainder({ orderId, closedById: userId, reason: "test: store switching terms" });
+    const result = await updateStore(storeId, putusFields());
+    expect(result.termsType).toBe("PUTUS");
+  });
+
+  it("refuses the switch while a konsi order is still awaiting approval", async () => {
+    await seedKonsiOrder("PENDING_APPROVAL");
+    await expect(updateStore(storeId, putusFields())).rejects.toBeInstanceOf(StoreHasConsignmentStockError);
   });
 });
 

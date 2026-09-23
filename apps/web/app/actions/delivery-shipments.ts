@@ -18,12 +18,13 @@ import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
 import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "@/lib/finance/ar/delivery-journal";
 
 /**
- * `DeliveryErrorCode` is in here because completion calls straight through to
+ * `DeliveryErrorCode` is in here because a putus completion calls straight through to
  * `recordFieldSalesDelivery`, which throws `DeliveryError` — a DIFFERENT class from
- * `DeliveryShipmentError` — for OVER_DELIVER, INSUFFICIENT_STOCK, INVALID_DATES and NO_LINES.
- * Those are reachable through ordinary operator sequences (two shipments claiming one order line,
- * a stock-out between packing and delivery), not rare edge cases. The two unions overlap on
- * NOT_FOUND / INVALID_STATE / NO_LINES, which is fine — a union dedupes.
+ * `DeliveryShipmentError` — for OVER_DELIVER, INSUFFICIENT_STOCK, INVALID_DATES and NO_LINES, and
+ * the konsi completion maps a main-stock floor refusal onto the same `DeliveryError`
+ * INSUFFICIENT_STOCK. Those are reachable through ordinary operator sequences (two shipments
+ * claiming one order line, a stock-out between packing and delivery), not rare edge cases. The two
+ * unions overlap on NOT_FOUND / INVALID_STATE / NO_LINES, which is fine — a union dedupes.
  */
 export type ShipmentActionReason =
   | "FORBIDDEN"
@@ -165,8 +166,8 @@ export async function completeShipmentAction(input: {
   shipmentId: string;
   proofPhotoUrl: string;
   proofPhotoR2Key: string;
-  invoiceDate: string;
-  dueDate: string;
+  invoiceDate?: string;
+  dueDate?: string;
   lines: Array<{ shipmentLineId: string; deliveredQty: number }>;
 }): Promise<ShipmentActionResult> {
   const session = await auth();
@@ -174,16 +175,20 @@ export async function completeShipmentAction(input: {
     return { ok: false, reason: "FORBIDDEN" };
   }
   /**
-   * Both dates are validated HERE, before the writer, not left to the writer's own guard. A server
-   * action is a network endpoint, so an emptied or malformed field is not a client-side problem —
-   * and an Invalid Date defeats the downstream ordering check rather than tripping it.
+   * Both dates are validated HERE when supplied, before the writer, not left to the writer's own
+   * guard. A server action is a network endpoint, so an emptied or malformed field is not a
+   * client-side problem — and an Invalid Date defeats the downstream ordering check rather than
+   * tripping it. Optional now: a konsi order raises no invoice and the dialog sends neither date,
+   * which parses to `undefined` on both — `completeDeliveryShipment`'s own konsi branch never asks
+   * for them, and its non-konsi branch still throws MISSING_DATES if either is absent.
    */
-  const invoiceDate = parseCalendarDay(input.invoiceDate);
-  const dueDate = parseCalendarDay(input.dueDate);
-  if (!invoiceDate || !dueDate) {
+  const invoiceDate = input.invoiceDate ? parseCalendarDay(input.invoiceDate) : undefined;
+  const dueDate = input.dueDate ? parseCalendarDay(input.dueDate) : undefined;
+  /* null means supplied-but-malformed, undefined means absent; `=== null` also narrows both to `Date | undefined`. */
+  if (invoiceDate === null || dueDate === null) {
     return { ok: false, reason: "INVALID_REQUEST" };
   }
-  if (dueDate.getTime() < invoiceDate.getTime()) {
+  if (invoiceDate && dueDate && dueDate.getTime() < invoiceDate.getTime()) {
     return { ok: false, reason: "INVALID_DATES" };
   }
 
@@ -204,10 +209,11 @@ export async function completeShipmentAction(input: {
      * app/actions/field-sales-deliveries.ts. completeDeliveryShipment itself stays a pure DB
      * writer with no journal-posting side effect, same as recordFieldSalesDelivery.
      *
-     * result.deliveryId is "" for a KONSI order (completeDeliveryShipment's own konsi branch
-     * skips recordFieldSalesDelivery entirely, since KonsiTransfer already moved stock at
-     * approve) — guard on it being non-empty or these post against a delivery that doesn't
-     * exist.
+     * result.deliveryId is "" for a KONSI order — completeDeliveryShipment's konsi branch moves
+     * the stock itself through a KonsiTransfer inside its own transaction and never calls
+     * recordFieldSalesDelivery, because a konsi transfer is a stock move, not a sale, and has no
+     * delivery document or journal — guard on it being non-empty or these post against a delivery
+     * that doesn't exist.
      */
     if (result.deliveryId) {
       await postArJournalSafely("field_delivery_revenue", result.deliveryId, () =>

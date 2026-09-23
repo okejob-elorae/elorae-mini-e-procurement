@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { serializeListItem, listFieldSalesOrders, getFieldSalesOrderById, sentItemIds, getStoreSentItems } from "./queries";
 import { createFieldSalesOrder } from "./writer";
+import { createDeliveryShipment } from "@/lib/delivery/shipment-writer";
 import { Prisma, prisma, seededId } from "@elorae/db";
 
 describe("serializeListItem", () => {
@@ -60,9 +61,12 @@ d("konsi queries (test bed only)", () => {
   let storeId = "";
   let salesmanId = "";
   let visitId = "";
+  /* The order a test hangs a shipment or a konsi transfer off, so afterEach can clean both up. */
+  let transferOrderId = "";
 
   beforeEach(async () => {
     itemId2 = "";
+    transferOrderId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
     const item = await prisma.item.create({ data: { sku, nameId: "T", nameEn: "T", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 35000 } });
@@ -77,6 +81,10 @@ d("konsi queries (test bed only)", () => {
   });
 
   afterEach(async () => {
+    await prisma.konsiTransferLine.deleteMany({ where: { transfer: { orderId: seededId(transferOrderId) } } });
+    await prisma.konsiTransfer.deleteMany({ where: { orderId: seededId(transferOrderId) } });
+    await prisma.deliveryShipmentLine.deleteMany({ where: { shipment: { orderId: seededId(transferOrderId) } } });
+    await prisma.deliveryShipment.deleteMany({ where: { orderId: seededId(transferOrderId) } });
     await prisma.salesHistory.deleteMany({ where: { itemId } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId } });
     if (itemId2) {
@@ -142,6 +150,19 @@ d("konsi queries (test bed only)", () => {
     expect(sent.has(itemId2)).toBe(false);
   });
 
+  it("sentItemIds ignores an approved konsi line closed with nothing delivered", async () => {
+    const item2 = await prisma.item.create({ data: { sku: `${sku}-C`, nameId: "T3", nameEn: "T3", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 35000 } });
+    itemId2 = item2.id;
+
+    const closed = await seedOrder({ orderType: "KONSI", status: "APPROVED", forItemId: itemId2 });
+    await prisma.fieldSalesOrderLine.updateMany({ where: { orderId: seededId(closed.id) }, data: { cancelledQty: 1 } });
+    expect((await sentItemIds(storeId)).has(itemId2)).toBe(false);
+
+    /* A partly closed line still reached the store for what was delivered, so it still counts. */
+    await prisma.fieldSalesOrderLine.updateMany({ where: { orderId: seededId(closed.id) }, data: { qty: 2, deliveredQty: 1, cancelledQty: 1 } });
+    expect((await sentItemIds(storeId)).has(itemId2)).toBe(true);
+  });
+
   it("getFieldSalesOrderById computes available per line as qtyOnHand - reservedQty", async () => {
     const order = await seedOrder({ orderType: "KONSI" });
 
@@ -152,7 +173,7 @@ d("konsi queries (test bed only)", () => {
     expect(detail!.lines[0].available).toBe(15); // qtyOnHand 20 - reservedQty 5
   });
 
-  it("getFieldSalesOrderById resolves a konsiTransfer line's human variant label from Item.variants, not the raw SKU", async () => {
+  it("getFieldSalesOrderById resolves a legacyKonsiTransfer line's human variant label from Item.variants, not the raw SKU", async () => {
     const item2 = await prisma.item.create({
       data: {
         sku: `${sku}-VAR`,
@@ -168,7 +189,9 @@ d("konsi queries (test bed only)", () => {
     itemId2 = item2.id;
     await prisma.inventoryValue.create({ data: { itemId: itemId2, variantSku: "27000101P-BLK-XL", qtyOnHand: 20, reservedQty: 0, avgCost: 1000, totalValue: 20000 } });
 
-    const order = await seedOrder({ orderType: "KONSI", forItemId: itemId2 });
+    /* APPROVED: a shipment can only be packed against an approved order. */
+    const order = await seedOrder({ orderType: "KONSI", status: "APPROVED", forItemId: itemId2 });
+    transferOrderId = order.id;
     const transfer = await prisma.konsiTransfer.create({
       data: {
         docNo: `KONSITRF/TEST/${Math.random().toString(36).slice(2, 10)}`,
@@ -182,13 +205,38 @@ d("konsi queries (test bed only)", () => {
     });
 
     const detail = await getFieldSalesOrderById(order.id);
-    expect(detail!.konsiTransfer).not.toBeNull();
-    expect(detail!.konsiTransfer!.lines).toHaveLength(1);
-    expect(detail!.konsiTransfer!.lines[0].variantSku).toBe("27000101P-BLK-XL");
-    expect(detail!.konsiTransfer!.lines[0].variantLabel).toBe("color: Hitam · size: XL");
+    expect(detail!.legacyKonsiTransfer).not.toBeNull();
+    expect(detail!.legacyKonsiTransfer!.lines).toHaveLength(1);
+    expect(detail!.legacyKonsiTransfer!.lines[0].variantSku).toBe("27000101P-BLK-XL");
+    expect(detail!.legacyKonsiTransfer!.lines[0].variantLabel).toBe("color: Hitam · size: XL");
 
-    await prisma.konsiTransferLine.deleteMany({ where: { transferId: transfer.id } });
-    await prisma.konsiTransfer.deleteMany({ where: { id: transfer.id } });
+    /**
+     * A transfer written against a real shipment must not surface here — legacyKonsiTransfer
+     * stays pinned to the null-shipmentId row created above.
+     */
+    const orderLines = await prisma.fieldSalesOrderLine.findMany({ where: { orderId: order.id } });
+    const shipment = await createDeliveryShipment({
+      orderId: order.id,
+      method: "EXPEDITION",
+      lines: [{ orderLineId: orderLines[0].id, qty: 1 }],
+      packedById: salesmanId,
+    });
+    const shipmentTransfer = await prisma.konsiTransfer.create({
+      data: {
+        docNo: `KONSITRF/TEST/${Math.random().toString(36).slice(2, 10)}`,
+        orderId: order.id,
+        storeId,
+        transferredById: salesmanId,
+        shipmentId: shipment.shipmentId,
+        lines: {
+          create: [{ itemId: itemId2, variantSku: "27000101P-BLK-XL", productName: "Kaos Polos", qty: 1, unitCost: 1000 }],
+        },
+      },
+    });
+
+    const detailAfterShipment = await getFieldSalesOrderById(order.id);
+    expect(detailAfterShipment!.legacyKonsiTransfer!.docNo).toBe(transfer.docNo);
+    expect(shipmentTransfer.shipmentId).toBe(shipment.shipmentId);
   });
 
   it("getFieldSalesOrderById exposes addedById per line so the admin-added badge has something to read", async () => {
@@ -265,7 +313,7 @@ d("getStoreSentItems (test bed only)", () => {
   const seedOrder = async (opts: {
     orderType: "PUTUS" | "KONSI";
     status: "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
-    lines: Array<{ variantSku: string; qty: number }>;
+    lines: Array<{ variantSku: string; qty: number; deliveredQty?: number }>;
   }) => {
     return prisma.fieldSalesOrder.create({
       data: {
@@ -279,7 +327,7 @@ d("getStoreSentItems (test bed only)", () => {
         total: 0,
         lines: {
           create: opts.lines.map((l) => ({
-            itemId, variantSku: l.variantSku, productName: "Kaos Test", qty: l.qty, unitPrice: 0, lineTotal: 0,
+            itemId, variantSku: l.variantSku, productName: "Kaos Test", qty: l.qty, deliveredQty: l.deliveredQty ?? 0, unitPrice: 0, lineTotal: 0,
           })),
         },
       },
@@ -315,11 +363,12 @@ d("getStoreSentItems (test bed only)", () => {
     });
   };
 
-  it("counts putus by what was delivered, not what was approved, and konsi by its approved lines", async () => {
+  it("counts putus and konsi alike by what was delivered, not what was approved", async () => {
     /* Putus ordered 3 M + 2 L but only 1 M ever shipped — the other 4 units never left the warehouse. */
     const putus = await seedOrder({ orderType: "PUTUS", status: "APPROVED", lines: [{ variantSku: "M", qty: 3 }, { variantSku: "L", qty: 2 }] });
     await seedDelivery(putus, [{ variantSku: "M", qty: 1 }]);
-    await seedOrder({ orderType: "KONSI", status: "APPROVED", lines: [{ variantSku: "M", qty: 4 }] });
+    /* Konsi approved 4 M, of which a completed shipment delivered 3, plus 6 L still undelivered. */
+    await seedOrder({ orderType: "KONSI", status: "APPROVED", lines: [{ variantSku: "M", qty: 4, deliveredQty: 3 }, { variantSku: "L", qty: 6 }] });
     await seedOrder({ orderType: "PUTUS", status: "REJECTED", lines: [{ variantSku: "M", qty: 100 }] });
     await seedOrder({ orderType: "KONSI", status: "PENDING_APPROVAL", lines: [{ variantSku: "L", qty: 50 }] });
 
@@ -327,8 +376,8 @@ d("getStoreSentItems (test bed only)", () => {
     expect(rows).toHaveLength(1);
 
     const bySize = new Map(rows.map((r) => [r.variantSku, r]));
-    expect(bySize.get("M")?.totalQty).toBe(5); // 1 delivered (putus) + 4 (konsi), excludes rejected 100
-    expect(bySize.has("L")).toBe(false); // approved but never delivered, and the pending konsi 50 is excluded
+    expect(bySize.get("M")?.totalQty).toBe(4); // 1 delivered (putus) + 3 delivered (konsi), excludes rejected 100
+    expect(bySize.has("L")).toBe(false); // approved but never delivered on either side, and the pending konsi 50 is excluded
     for (const r of rows) {
       expect(r.itemId).toBe(itemId);
       expect(r.articleSku).toBe(sku);

@@ -575,6 +575,7 @@
     "method": "Method",
     "methodExpedition": "Expedition",
     "methodSalesmanCarry": "Salesman Carry",
+    "typeKonsi": "Consignment",
     "status": "Status",
     "statusPacked": "Packed",
     "statusInTransit": "In Transit",
@@ -600,6 +601,7 @@
     "completeDescription": "Upload proof of delivery and confirm the quantity received at each line.",
     "proofPhoto": "Proof photo",
     "proofPhotoRequired": "A proof photo is required to complete this delivery.",
+    "konsiCompleteNote": "Completing moves the delivered quantity into the store's consignment stock. No invoice is raised.",
     "uploadPhoto": "Upload photo",
     "uploading": "Uploading...",
     "deliveredQty": "Delivered qty",
@@ -643,8 +645,11 @@
       "MISSING_GPS": "Location is required to complete this delivery.",
       "STORE_NOT_GEOCODED": "This store has no location on record — contact an admin before completing here.",
       "GPS_OUT_OF_RADIUS": "You're too far from the store to complete this delivery.",
-      "MISSING_NOTA_PHOTO": "Take a photo of the signed nota before completing.",
+      "MISSING_NOTA_PHOTO": "Take a photo of the signed delivery document before completing.",
       "MISSING_SIGNED_BY": "Enter the name of who signed for this delivery.",
+      "KONSI_NOT_RESERVED": "This consignment order has no reserved stock left for this shipment. Ask an admin to check the order and cancel this shipment.",
+      "NO_INVENTORY_ROW": "A product on this shipment has no main-warehouse stock record, so nothing can move to the store. Ask an admin to check the product's stock.",
+      "SHIPMENT_IN_FLIGHT": "This order still has a shipment packed or in transit. Complete or cancel that shipment first.",
       "INVALID_FILE_TYPE": "That file type isn't supported. Use JPEG, PNG, or WEBP.",
       "FILE_TOO_LARGE": "That photo is too large (max 10MB). Try a smaller photo."
     }
@@ -2271,7 +2276,7 @@
       "codeUnique": "Store code already exists.",
       "forbidden": "Permission denied.",
       "notFound": "Store not found.",
-      "hasConsignmentStock": "This store still holds consignment stock and must return or transfer it before switching off Konsi.",
+      "hasConsignmentStock": "This store still holds consignment stock or has consignment orders awaiting approval or not yet fully delivered. Return or transfer the stock and settle those orders before switching off Konsi.",
       "invalidPriceDiscount": "Price discount must be between 0 and under 100.",
       "discountNotAllowedForKonsi": "A Konsi store cannot carry a price discount."
     },
@@ -2425,6 +2430,7 @@
       "gapColArticle": "Article",
       "gapColSize": "Size",
       "gapColOnHand": "Current Stock",
+      "gapInTransit": "+{qty} on order, not yet delivered",
       "gapColTarget": "Target",
       "gapStatusMissing": "Never received",
       "gapStatusDepleted": "Out of stock",
@@ -2783,6 +2789,7 @@
       "queuedToast": "Saved — will send automatically when back online.",
       "queuedSuccess": "Delivery saved offline. It will sync automatically.",
       "notaPhotoLabel": "Signed nota photo",
+      "notaPhotoLabelKonsi": "Photo of the signed Surat Keluar",
       "notaPhotoUploaded": "Selected: {name}",
       "signedByLabel": "Signed by",
       "signedByPlaceholder": "Receiver's name",
@@ -2860,9 +2867,9 @@
     "colType": "Type",
     "colAvailable": "Available",
     "colOnHand": "On Hand",
-    "konsiTransferNote": "Consignment transfer — not a sale; goods move from the main warehouse into the store's stock on approval.",
+    "konsiTransferNote": "Consignment transfer — not a sale; goods move from the main warehouse into the store's stock when each delivery shipment is completed.",
     "konsiMarginUnset": "Store margin invalid or not set — gross-up uses the raw selling price.",
-    "approveConfirmKonsi": "Approve this consignment transfer? Goods will move from the main warehouse into the store's stock (not sold).",
+    "approveConfirmKonsi": "Approve this consignment transfer? Stock will be reserved in the main warehouse and moves to the store when a delivery shipment for it is completed (not sold).",
     "rejectConfirmKonsi": "Reject this consignment transfer?",
     "promoBelowCost": "Warning: net price below cost",
     "appealBadge": "Requested",
@@ -2936,7 +2943,8 @@
         "INVALID_DATES": "The due date cannot be earlier than the invoice date.",
         "CONFLICT": "Someone else just changed this nota's dates. Reload the page and try again.",
         "NOT_RETRYABLE": "This delivery's journals were never flagged as failed, so there is nothing to retry.",
-        "RECEIVABLE_HAS_PAYMENTS": "This invoice already has a payment applied, so its dates can't be corrected. Void the payment first, then try again."
+        "RECEIVABLE_HAS_PAYMENTS": "This invoice already has a payment applied, so its dates can't be corrected. Void the payment first, then try again.",
+        "SHIPMENT_IN_FLIGHT": "This order still has a shipment packed or in transit. Complete or cancel that shipment before closing the remainder."
       }
     },
     "print": {
@@ -2962,7 +2970,6 @@
       "gudangTitle": "WAREHOUSE NOTE",
       "tagihanTitle": "INVOICE",
       "suratKeluarTitle": "GOODS ISSUE NOTE",
-      "suratKeluarNoTransfer": "No transfer document exists for this order yet (approved before this feature shipped).",
       "consignmentNote": "Consignment — handover of consigned goods, not a sale. No price, no invoice.",
       "preparedBy": "Prepared by",
       "receivedBy": "Received by",
@@ -2974,6 +2981,20 @@
       "tagihanDialogFootnotePlaceholder": "e.g. Purchased items cannot be exchanged/returned",
       "tagihanDialogCancel": "Cancel",
       "tagihanDialogPrint": "Print"
+    },
+    "konsiShipments": {
+      "title": "Consignment shipments",
+      "empty": "No shipments yet. Create one to send this order's goods to the store.",
+      "note": "Stock moves into the store only when a shipment is completed with proof of delivery.",
+      "colMethod": "Method",
+      "colStatus": "Status",
+      "colPackedAt": "Packed",
+      "colPlanned": "Planned",
+      "colDelivered": "Delivered",
+      "legacyDelivered": "Delivered in full at approval under the previous consignment flow.",
+      "legacyPrintFromHeader": "Print the Surat Keluar from the order header.",
+      "legacyNoTransfer": "No transfer document was recorded for this order.",
+      "closeBlockedInFlight": "Complete or cancel the shipment in progress before closing the remainder."
     },
     "konsiSuggestions": {
       "title": "Product Suggestions",
@@ -2989,6 +3010,7 @@
       "colAvailable": "Available",
       "colQty": "Qty",
       "gapColOnHand": "On Hand",
+      "gapInTransit": "+{qty} on order, not yet delivered",
       "gapColTarget": "Target",
       "gapTargetMustBePresent": "Must be stocked",
       "gapTargetMin": "Min {qty}",

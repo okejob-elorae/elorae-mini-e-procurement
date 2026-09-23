@@ -115,7 +115,8 @@ export async function updateStoreAction(id: string, input: StoreFields): Promise
       return {
         ok: false,
         code: "has_consignment_stock",
-        message: "This store still holds consignment stock and must return or transfer it before switching off Konsi.",
+        message:
+          "This store still holds consignment stock or has consignment orders awaiting approval or not yet fully delivered. Return or transfer the stock and settle those orders before switching off Konsi.",
       };
     }
     if (e instanceof InvalidPriceDiscountPercentError) {

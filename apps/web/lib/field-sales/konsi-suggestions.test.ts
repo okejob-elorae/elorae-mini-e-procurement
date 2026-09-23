@@ -129,7 +129,8 @@ d("listKonsiSuggestions (test bed only)", () => {
         subtotal: 1000,
         total: 1000,
         lines: {
-          create: [{ itemId: previouslySentItemId, variantSku: "", productName: "Previously sent item", qty: 1, unitPrice: 1000, lineTotal: 1000 }],
+          /* Already delivered, not in transit — this order stands for stock the store has received. */
+          create: [{ itemId: previouslySentItemId, variantSku: "", productName: "Previously sent item", qty: 1, deliveredQty: 1, unitPrice: 1000, lineTotal: 1000 }],
         },
       },
     });
@@ -146,7 +147,7 @@ d("listKonsiSuggestions (test bed only)", () => {
         subtotal: 1000,
         total: 1000,
         lines: {
-          create: [{ itemId: variantItemId, variantSku: "RED", productName: "Variant item", qty: 1, unitPrice: 1000, lineTotal: 1000 }],
+          create: [{ itemId: variantItemId, variantSku: "RED", productName: "Variant item", qty: 1, deliveredQty: 1, unitPrice: 1000, lineTotal: 1000 }],
         },
       },
     });

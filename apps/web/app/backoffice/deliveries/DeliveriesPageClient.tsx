@@ -22,6 +22,7 @@ type ShipmentRow = {
   docNo: string;
   status: string;
   method: string;
+  orderType: "PUTUS" | "KONSI";
   storeName: string;
   orderNo: string;
   carrierName: string | null;
@@ -228,7 +229,10 @@ export function DeliveriesPageClient({
                         <TableCell>{item.orderNo}</TableCell>
                         <TableCell className="max-w-[160px] truncate">{item.storeName}</TableCell>
                         <TableCell>
-                          {item.method === "EXPEDITION" ? t("methodExpedition") : t("methodSalesmanCarry")}
+                          <div className="flex items-center gap-2">
+                            <span>{item.method === "EXPEDITION" ? t("methodExpedition") : t("methodSalesmanCarry")}</span>
+                            {item.orderType === "KONSI" && <Badge variant="outline">{t("typeKonsi")}</Badge>}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <Badge className={STATUS_BADGE[item.status] ?? ""}>

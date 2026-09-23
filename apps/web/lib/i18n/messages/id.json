@@ -575,6 +575,7 @@
     "method": "Metode",
     "methodExpedition": "Ekspedisi",
     "methodSalesmanCarry": "Dibawa Salesman",
+    "typeKonsi": "Konsinyasi",
     "status": "Status",
     "statusPacked": "Dikemas",
     "statusInTransit": "Dalam Perjalanan",
@@ -600,6 +601,7 @@
     "completeDescription": "Unggah bukti pengiriman dan konfirmasi jumlah yang diterima di tiap baris.",
     "proofPhoto": "Foto bukti",
     "proofPhotoRequired": "Foto bukti wajib diunggah untuk menyelesaikan pengiriman ini.",
+    "konsiCompleteNote": "Menyelesaikan pengiriman memindahkan jumlah terkirim ke stok konsinyasi toko. Tidak ada tagihan yang dibuat.",
     "uploadPhoto": "Unggah foto",
     "uploading": "Mengunggah...",
     "deliveredQty": "Qty terkirim",
@@ -643,8 +645,11 @@
       "MISSING_GPS": "Lokasi diperlukan untuk menyelesaikan pengiriman ini.",
       "STORE_NOT_GEOCODED": "Toko ini belum memiliki lokasi tercatat — hubungi admin sebelum menyelesaikan di sini.",
       "GPS_OUT_OF_RADIUS": "Anda terlalu jauh dari toko untuk menyelesaikan pengiriman ini.",
-      "MISSING_NOTA_PHOTO": "Ambil foto nota yang sudah ditandatangani sebelum menyelesaikan.",
+      "MISSING_NOTA_PHOTO": "Ambil foto dokumen pengiriman yang sudah ditandatangani sebelum menyelesaikan.",
       "MISSING_SIGNED_BY": "Masukkan nama penerima yang menandatangani pengiriman ini.",
+      "KONSI_NOT_RESERVED": "Pesanan konsinyasi ini tidak punya stok tercadang untuk pengiriman ini. Minta admin memeriksa pesanan dan membatalkan pengiriman ini.",
+      "NO_INVENTORY_ROW": "Ada produk di pengiriman ini yang tidak punya catatan stok gudang utama, jadi tidak ada yang bisa dipindahkan ke toko. Minta admin memeriksa stok produk tersebut.",
+      "SHIPMENT_IN_FLIGHT": "Pesanan ini masih punya pengiriman yang sudah dikemas atau sedang dikirim. Selesaikan atau batalkan pengiriman itu terlebih dahulu.",
       "INVALID_FILE_TYPE": "Jenis file tidak didukung. Gunakan JPEG, PNG, atau WEBP.",
       "FILE_TOO_LARGE": "Foto terlalu besar (maks 10MB). Coba foto yang lebih kecil."
     }
@@ -2271,7 +2276,7 @@
       "codeUnique": "Kode toko sudah dipakai.",
       "forbidden": "Akses ditolak.",
       "notFound": "Toko tidak ditemukan.",
-      "hasConsignmentStock": "Toko ini masih memiliki stok konsinyasi dan harus meretur atau mentransfernya sebelum beralih dari Konsi.",
+      "hasConsignmentStock": "Toko ini masih memiliki stok konsinyasi atau pesanan konsinyasi yang menunggu persetujuan atau belum terkirim penuh. Retur atau transfer stoknya dan selesaikan pesanan tersebut sebelum beralih dari Konsi.",
       "invalidPriceDiscount": "Diskon harga harus antara 0 dan di bawah 100.",
       "discountNotAllowedForKonsi": "Toko Konsi tidak boleh memiliki diskon harga."
     },
@@ -2425,6 +2430,7 @@
       "gapColArticle": "Artikel",
       "gapColSize": "Ukuran",
       "gapColOnHand": "Stok Saat Ini",
+      "gapInTransit": "+{qty} dipesan, belum diterima",
       "gapColTarget": "Target",
       "gapStatusMissing": "Belum pernah diterima",
       "gapStatusDepleted": "Stok habis",
@@ -2783,6 +2789,7 @@
       "queuedToast": "Tersimpan — akan dikirim otomatis saat kembali online.",
       "queuedSuccess": "Pengiriman tersimpan offline. Akan tersinkron otomatis.",
       "notaPhotoLabel": "Foto nota bertanda tangan",
+      "notaPhotoLabelKonsi": "Foto Surat Keluar yang sudah ditandatangani",
       "notaPhotoUploaded": "Dipilih: {name}",
       "signedByLabel": "Ditandatangani oleh",
       "signedByPlaceholder": "Nama penerima",
@@ -2860,9 +2867,9 @@
     "colType": "Tipe",
     "colAvailable": "Tersedia",
     "colOnHand": "Stok",
-    "konsiTransferNote": "Transfer konsinyasi — bukan penjualan; barang berpindah dari gudang utama ke stok toko saat disetujui.",
+    "konsiTransferNote": "Transfer konsinyasi — bukan penjualan; barang berpindah dari gudang utama ke stok toko saat pengiriman untuk barang ini diselesaikan.",
     "konsiMarginUnset": "Margin toko tidak valid atau belum diset — harga gross-up memakai harga jual apa adanya.",
-    "approveConfirmKonsi": "Setujui transfer konsinyasi ini? Barang akan berpindah dari gudang utama ke stok toko (bukan dijual).",
+    "approveConfirmKonsi": "Setujui transfer konsinyasi ini? Stok akan direservasi di gudang utama dan berpindah ke toko saat pengiriman untuk pesanan ini diselesaikan (bukan dijual).",
     "rejectConfirmKonsi": "Tolak transfer konsinyasi ini?",
     "promoBelowCost": "Peringatan: harga bersih di bawah HPP",
     "appealBadge": "Diajukan",
@@ -2936,7 +2943,8 @@
         "INVALID_DATES": "Tanggal jatuh tempo tidak boleh lebih awal dari tanggal nota.",
         "CONFLICT": "Tanggal nota ini baru saja diubah orang lain. Muat ulang halaman dan coba lagi.",
         "NOT_RETRYABLE": "Jurnal pengiriman ini belum pernah ditandai gagal, jadi tidak ada yang perlu dicoba ulang.",
-        "RECEIVABLE_HAS_PAYMENTS": "Nota ini sudah memiliki pembayaran yang diterapkan, jadi tanggalnya tidak bisa dikoreksi. Batalkan (void) pembayarannya dahulu, lalu coba lagi."
+        "RECEIVABLE_HAS_PAYMENTS": "Nota ini sudah memiliki pembayaran yang diterapkan, jadi tanggalnya tidak bisa dikoreksi. Batalkan (void) pembayarannya dahulu, lalu coba lagi.",
+        "SHIPMENT_IN_FLIGHT": "Pesanan ini masih punya pengiriman yang sudah dikemas atau sedang dikirim. Selesaikan atau batalkan pengiriman itu sebelum menutup sisa pesanan."
       }
     },
     "print": {
@@ -2962,7 +2970,6 @@
       "gudangTitle": "NOTA GUDANG",
       "tagihanTitle": "NOTA TAGIHAN",
       "suratKeluarTitle": "SURAT KELUAR BARANG",
-      "suratKeluarNoTransfer": "Dokumen transfer belum ada untuk order ini (disetujui sebelum fitur ini ada).",
       "consignmentNote": "Konsinyasi — penyerahan barang titipan, bukan penjualan. Tanpa harga dan tanpa tagihan.",
       "preparedBy": "Disiapkan",
       "receivedBy": "Diterima",
@@ -2974,6 +2981,20 @@
       "tagihanDialogFootnotePlaceholder": "Contoh: Barang yang sudah dibeli tidak dapat ditukar/dikembalikan",
       "tagihanDialogCancel": "Batal",
       "tagihanDialogPrint": "Cetak"
+    },
+    "konsiShipments": {
+      "title": "Pengiriman konsinyasi",
+      "empty": "Belum ada pengiriman. Buat pengiriman untuk mengirim barang pesanan ini ke toko.",
+      "note": "Stok baru berpindah ke toko saat pengiriman diselesaikan dengan bukti pengiriman.",
+      "colMethod": "Metode",
+      "colStatus": "Status",
+      "colPackedAt": "Dikemas",
+      "colPlanned": "Rencana",
+      "colDelivered": "Terkirim",
+      "legacyDelivered": "Terkirim penuh saat disetujui dengan alur konsinyasi sebelumnya.",
+      "legacyPrintFromHeader": "Cetak Surat Keluar dari bagian atas pesanan.",
+      "legacyNoTransfer": "Tidak ada dokumen transfer yang tercatat untuk pesanan ini.",
+      "closeBlockedInFlight": "Selesaikan atau batalkan pengiriman yang sedang berjalan sebelum menutup sisa pesanan."
     },
     "konsiSuggestions": {
       "title": "Saran Produk",
@@ -2989,6 +3010,7 @@
       "colAvailable": "Tersedia",
       "colQty": "Qty",
       "gapColOnHand": "Stok Saat Ini",
+      "gapInTransit": "+{qty} dipesan, belum diterima",
       "gapColTarget": "Target",
       "gapTargetMustBePresent": "Harus tersedia",
       "gapTargetMin": "Min {qty}",
