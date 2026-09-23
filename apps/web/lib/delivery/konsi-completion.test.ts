@@ -226,7 +226,12 @@ d("completeDeliveryShipment konsi stock move (test bed only)", () => {
     try {
       await expect(completeExpedition(shipmentId, shipmentLineId, 6)).rejects.toMatchObject({ code: "INVALID_STATE" });
     } finally {
-      spy.mockRestore();
+      /**
+       * mockReset, NOT mockRestore: a Prisma model delegate serves findUnique through its proxy
+       * rather than as an own property, so mockRestore leaves the method undefined for every later
+       * test in this file. mockReset keeps the spy but points it back at the original function.
+       */
+      spy.mockReset();
     }
     expect(await prisma.konsiTransfer.count({ where: { orderId: seededId(orderId) } })).toBe(0);
     const inv = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
