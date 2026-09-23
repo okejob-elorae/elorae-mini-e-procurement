@@ -516,8 +516,13 @@ export async function releaseFieldSalesOrder(
   input: { fieldSalesLineIds: string[] },
 ): Promise<ReleaseOrderResult> {
   const run = async (tx: Prisma.TransactionClient): Promise<ReleaseOrderResult> => {
+    /* Both field-sales sources: a konsi order reserves at approve and releases its remainder here too. Callers pass explicit line ids, so the wider source cannot reach another order. */
     const rows = await tx.stockReservation.findMany({
-      where: { source: "FIELD_SALES", fieldSalesLineId: { in: input.fieldSalesLineIds }, state: "RESERVED" },
+      where: {
+        source: { in: ["FIELD_SALES", "FIELD_SALES_KONSI"] },
+        fieldSalesLineId: { in: input.fieldSalesLineIds },
+        state: "RESERVED",
+      },
     });
     let released = 0;
     for (const row of rows) {

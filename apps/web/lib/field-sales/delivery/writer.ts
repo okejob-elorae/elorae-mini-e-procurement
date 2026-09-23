@@ -239,7 +239,7 @@ export async function closeFieldSalesOrderRemainder(input: {
       include: { lines: true },
     });
     if (!order) throw new DeliveryError("NOT_FOUND");
-    if (order.status !== "APPROVED" || order.orderType !== "PUTUS") throw new DeliveryError("INVALID_STATE");
+    if (order.status !== "APPROVED") throw new DeliveryError("INVALID_STATE");
 
     const openLines = order.lines.filter((l) => outstandingQty(l) > 0);
     if (openLines.length === 0) throw new DeliveryError("INVALID_STATE");

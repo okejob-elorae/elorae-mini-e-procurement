@@ -7,6 +7,7 @@ import {
   shipDeliveryShipment,
   completeDeliveryShipment,
 } from "./shipment-writer";
+import { closeFieldSalesOrderRemainder } from "@/lib/field-sales/delivery/writer";
 
 /* Stock-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host). */
 const url = process.env.DATABASE_URL ?? "";
@@ -236,5 +237,30 @@ d("completeDeliveryShipment konsi stock move (test bed only)", () => {
     expect(await prisma.konsiTransfer.count({ where: { orderId: seededId(orderId) } })).toBe(0);
     const line = await prisma.fieldSalesOrderLine.findUniqueOrThrow({ where: { id: seededId(lineId) } });
     expect(line.deliveredQty).toBe(0);
+  });
+
+  it("close remainder on an untouched konsi order releases the whole reservation", async () => {
+    await closeFieldSalesOrderRemainder({ orderId, closedById: salesmanId, reason: "Toko batal" });
+    const res = await prisma.stockReservation.findUniqueOrThrow({ where: { fieldSalesLineId: seededId(lineId) } });
+    expect(res.state).toBe("RELEASED");
+    const inv = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
+    expect(Number(inv.reservedQty)).toBe(0);
+    expect(Number(inv.qtyOnHand)).toBe(50);
+    const line = await prisma.fieldSalesOrderLine.findUniqueOrThrow({ where: { id: seededId(lineId) } });
+    expect(line.cancelledQty).toBe(6);
+  });
+
+  it("close remainder after a partial konsi delivery releases only the undelivered qty", async () => {
+    const { shipmentId, shipmentLineId } = await packAndShip("EXPEDITION", 6);
+    await completeExpedition(shipmentId, shipmentLineId, 4);
+    await closeFieldSalesOrderRemainder({ orderId, closedById: salesmanId, reason: "Sisa rusak" });
+    const inv = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
+    expect(Number(inv.qtyOnHand)).toBe(46);
+    expect(Number(inv.reservedQty)).toBe(0);
+    const line = await prisma.fieldSalesOrderLine.findUniqueOrThrow({ where: { id: seededId(lineId) } });
+    expect(line.deliveredQty).toBe(4);
+    expect(line.cancelledQty).toBe(2);
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: seededId(orderId) } });
+    expect(order.deliveryStatus).toBe("CLOSED");
   });
 });
