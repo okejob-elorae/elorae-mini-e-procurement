@@ -103,7 +103,8 @@
     "expandSidebar": "Expand sidebar",
     "profileAccounts": "Profile Accounts",
     "navDeliveries": "Deliveries",
-    "navFinanceStoreSettlements": "Store Settlements"
+    "navFinanceStoreSettlements": "Store Settlements",
+    "navKonsiSellThrough": "Sell-Through Reports"
   },
   "notifications": {
     "title": "Notifications",
@@ -3335,7 +3336,31 @@
       "varianceMatch": "Matches",
       "varianceSurplus": "Over {n}",
       "varianceShort": "Short {n}",
-      "readOnlyNote": "This stocktake is no longer open — counts can no longer be edited."
+      "readOnlyNote": "This stocktake is no longer open — counts can no longer be edited.",
+      "sellThrough": {
+        "createButton": "Create sell-through report",
+        "creating": "Creating…",
+        "viewButton": "View sell-through report",
+        "created": "Sell-through report {docNo} created.",
+        "reason": {
+          "NOT_FOUND": "This stocktake or store could not be found.",
+          "STOCKTAKE_NOT_APPROVED": "This stocktake must be approved before a sell-through report can be created.",
+          "NOT_FULL_COUNT": "Only a full-count stocktake can start a sell-through report.",
+          "NOT_KONSI": "This store is not on consignment terms.",
+          "METHOD_NOT_SET": "This store has no sell-through method set — configure it in Store settings.",
+          "DRAFT_EXISTS": "This store already has a draft sell-through report open. Resolve or cancel it first.",
+          "OUT_OF_ORDER": "This stocktake closes before the store's last sell-through report period — sell-through reports must follow the store's counting order.",
+          "UNKNOWN_REF_TYPE": "An unrecognised stock movement was found while building this report. Contact an admin.",
+          "HELD": "This report has lines awaiting resolution.",
+          "STALE": "Stock moved after this report was opened. Cancel and recreate it.",
+          "INVALID_STATE": "This report is not in a state that allows this action.",
+          "INVALID_RESOLUTION": "That resolution is not valid for this line.",
+          "REASON_REQUIRED": "A reason is required for this resolution.",
+          "FORBIDDEN": "You do not have permission to create a sell-through report.",
+          "INVALID_REQUEST": "The submitted data was invalid. Reload the page and try again.",
+          "UNEXPECTED": "Something went wrong. Try again."
+        }
+      }
     },
     "footer": {
       "tally": "{counted}/{total} counted",
@@ -3446,6 +3471,113 @@
         "INVALID_STATE": "This count can no longer be edited from here. Reload the page.",
         "ERROR": "Something went wrong. Please try again."
       }
+    }
+  },
+  "konsiSellThrough": {
+    "pageTitle": "Konsi Sell-Through Reports",
+    "subtitle": "Billing derived from consignment store stock counts",
+    "filterStore": "All stores",
+    "storeSearchPlaceholder": "Search store",
+    "storeSearchEmpty": "No matching store.",
+    "filterStatus": "All statuses",
+    "reset": "Reset",
+    "cardTitle": "Sell-Through Reports",
+    "colDocNo": "Doc No.",
+    "colStore": "Store",
+    "colMethod": "Method",
+    "colPeriod": "Period",
+    "colStatus": "Status",
+    "colHeld": "Held",
+    "colBilled": "Billed Qty",
+    "colCreated": "Created",
+    "empty": "No sell-through reports yet.",
+    "emptyFiltered": "No sell-through reports match this filter.",
+    "periodFirst": "— {end}",
+    "periodRange": "{start} – {end}",
+    "method": {
+      "SPG_POS": "SPG / POS",
+      "SHELF_COUNT": "Shelf Count"
+    },
+    "status": {
+      "DRAFT": "Draft",
+      "APPROVED": "Approved",
+      "CANCELLED": "Cancelled"
+    },
+    "resolution": {
+      "BILL": "Bill the gap",
+      "SHRINKAGE": "Shrinkage",
+      "BILL_POS": "Bill POS only",
+      "REDUCE": "Reduce billed qty"
+    },
+    "detail": {
+      "back": "Back",
+      "summaryTitle": "Summary",
+      "store": "Store",
+      "method": "Method",
+      "period": "Period",
+      "closingStocktake": "Closing Stocktake",
+      "previousReport": "Previous Report",
+      "none": "—",
+      "cancelReason": "Cancel Reason",
+      "linesTitle": "Lines",
+      "colProduct": "Product",
+      "colOpening": "Opening",
+      "colIn": "In",
+      "colOut": "Out",
+      "colPosSold": "POS Sold",
+      "colGap": "Gap",
+      "colClosing": "Closing",
+      "colCounted": "Counted",
+      "colBilled": "Billed",
+      "colShrinkage": "Shrinkage",
+      "colResolution": "Resolution",
+      "notCounted": "—",
+      "negativeSoldWarning": "Sold quantity computed negative — check the ledger movements behind this line.",
+      "suggestedBadge": "Suggested",
+      "resolutionPlaceholder": "Choose resolution",
+      "resolutionReasonPlaceholder": "Reason (required for this resolution)",
+      "saveResolution": "Save",
+      "saving": "Saving…",
+      "resolutionSaved": "Resolution saved.",
+      "readOnlyNote": "This report is no longer open — lines can no longer be resolved."
+    },
+    "approve": {
+      "button": "Approve",
+      "disabledHeld": "{n} lines need a resolution",
+      "confirmTitle": "Approve this sell-through report?",
+      "confirmDescription": "Approving freezes the figures on this report. No stock or money moves in this slice.",
+      "confirmAction": "Approve",
+      "submitting": "Approving…",
+      "success": "Sell-through report approved."
+    },
+    "cancel": {
+      "button": "Cancel Report",
+      "confirmTitle": "Cancel this sell-through report?",
+      "confirmDescription": "This abandons the draft report. The store's stocktake stays approved.",
+      "reasonLabel": "Reason",
+      "reasonPlaceholder": "Why is this report being cancelled?",
+      "confirmAction": "Cancel Report",
+      "submitting": "Cancelling…",
+      "success": "Sell-through report cancelled."
+    },
+    "err": {
+      "FORBIDDEN": "You do not have permission to manage sell-through reports.",
+      "INVALID_REQUEST": "The submitted data was invalid. Reload the page and try again.",
+      "UNEXPECTED": "Something went wrong. Try again.",
+      "NOT_FOUND": "The sell-through report or line was not found.",
+      "STOCKTAKE_NOT_APPROVED": "This stocktake must be approved before a sell-through report can be created.",
+      "NOT_FULL_COUNT": "Only a full-count stocktake can start a sell-through report.",
+      "NOT_KONSI": "This store is not on consignment terms.",
+      "METHOD_NOT_SET": "This store has no sell-through method set — configure it in Store settings.",
+      "ALREADY_USED": "This stocktake already has a sell-through report.",
+      "DRAFT_EXISTS": "This store already has a draft sell-through report open. Resolve or cancel it first.",
+      "OUT_OF_ORDER": "This stocktake closes before the store's last sell-through report period.",
+      "UNKNOWN_REF_TYPE": "An unrecognised stock movement was found on this report. Contact an admin.",
+      "HELD": "Every line with a gap needs a saved resolution before this report can be approved.",
+      "STALE": "Stock moved after this report was opened, so the figures no longer match. Cancel and recreate it.",
+      "INVALID_STATE": "This report is not in a state that allows this action.",
+      "INVALID_RESOLUTION": "That resolution is not valid for this line.",
+      "REASON_REQUIRED": "A reason is required for this resolution."
     }
   },
   "storeTransfers": {

@@ -103,7 +103,8 @@
     "expandSidebar": "Perluas sidebar",
     "profileAccounts": "Akun Profil",
     "navDeliveries": "Pengiriman",
-    "navFinanceStoreSettlements": "Pelunasan Toko"
+    "navFinanceStoreSettlements": "Pelunasan Toko",
+    "navKonsiSellThrough": "Laporan Sell-Through"
   },
   "notifications": {
     "title": "Notifikasi",
@@ -3335,7 +3336,31 @@
       "varianceMatch": "Sesuai",
       "varianceSurplus": "Lebih {n}",
       "varianceShort": "Kurang {n}",
-      "readOnlyNote": "Perhitungan ini sudah tidak berjalan lagi — hasil hitung tidak bisa diubah dari sini."
+      "readOnlyNote": "Perhitungan ini sudah tidak berjalan lagi — hasil hitung tidak bisa diubah dari sini.",
+      "sellThrough": {
+        "createButton": "Buat laporan sell-through",
+        "creating": "Membuat…",
+        "viewButton": "Lihat laporan sell-through",
+        "created": "Laporan sell-through {docNo} berhasil dibuat.",
+        "reason": {
+          "NOT_FOUND": "Perhitungan atau toko ini tidak ditemukan.",
+          "STOCKTAKE_NOT_APPROVED": "Perhitungan ini harus disetujui dulu sebelum laporan sell-through bisa dibuat.",
+          "NOT_FULL_COUNT": "Hanya perhitungan penuh (full count) yang bisa memulai laporan sell-through.",
+          "NOT_KONSI": "Toko ini bukan toko dengan skema konsinyasi.",
+          "METHOD_NOT_SET": "Toko ini belum memiliki metode sell-through — atur di pengaturan Toko.",
+          "DRAFT_EXISTS": "Toko ini sudah memiliki draft laporan sell-through yang terbuka. Selesaikan atau batalkan dulu.",
+          "OUT_OF_ORDER": "Perhitungan ini ditutup sebelum periode laporan sell-through terakhir toko ini — laporan sell-through harus mengikuti urutan perhitungan toko.",
+          "UNKNOWN_REF_TYPE": "Ditemukan pergerakan stok yang tidak dikenali saat menyusun laporan ini. Hubungi admin.",
+          "HELD": "Laporan ini memiliki baris yang menunggu penyelesaian.",
+          "STALE": "Stok berubah setelah laporan ini dibuka. Batalkan dan buat ulang.",
+          "INVALID_STATE": "Laporan ini sedang tidak dalam status yang tepat untuk tindakan ini.",
+          "INVALID_RESOLUTION": "Resolusi tersebut tidak valid untuk baris ini.",
+          "REASON_REQUIRED": "Alasan wajib diisi untuk resolusi ini.",
+          "FORBIDDEN": "Anda tidak memiliki izin untuk membuat laporan sell-through.",
+          "INVALID_REQUEST": "Data yang dikirim tidak valid. Muat ulang halaman dan coba lagi.",
+          "UNEXPECTED": "Terjadi kesalahan. Coba lagi."
+        }
+      }
     },
     "footer": {
       "tally": "{counted}/{total} terhitung",
@@ -3446,6 +3471,113 @@
         "INVALID_STATE": "Laporan ini sudah tidak bisa diubah dari sini. Muat ulang halaman.",
         "ERROR": "Terjadi kesalahan. Coba lagi."
       }
+    }
+  },
+  "konsiSellThrough": {
+    "pageTitle": "Laporan Sell-Through Konsi",
+    "subtitle": "Penagihan yang dihitung dari perhitungan stok toko konsinyasi",
+    "filterStore": "Semua toko",
+    "storeSearchPlaceholder": "Cari toko",
+    "storeSearchEmpty": "Tidak ada toko yang cocok.",
+    "filterStatus": "Semua status",
+    "reset": "Reset",
+    "cardTitle": "Laporan Sell-Through",
+    "colDocNo": "No. Dokumen",
+    "colStore": "Toko",
+    "colMethod": "Metode",
+    "colPeriod": "Periode",
+    "colStatus": "Status",
+    "colHeld": "Ditahan",
+    "colBilled": "Qty Ditagih",
+    "colCreated": "Dibuat",
+    "empty": "Belum ada laporan sell-through.",
+    "emptyFiltered": "Tidak ada laporan sell-through yang cocok dengan filter ini.",
+    "periodFirst": "— {end}",
+    "periodRange": "{start} – {end}",
+    "method": {
+      "SPG_POS": "SPG / POS",
+      "SHELF_COUNT": "Hitung Rak"
+    },
+    "status": {
+      "DRAFT": "Draft",
+      "APPROVED": "Disetujui",
+      "CANCELLED": "Dibatalkan"
+    },
+    "resolution": {
+      "BILL": "Tagih selisihnya",
+      "SHRINKAGE": "Susut",
+      "BILL_POS": "Tagih sesuai POS saja",
+      "REDUCE": "Kurangi qty ditagih"
+    },
+    "detail": {
+      "back": "Kembali",
+      "summaryTitle": "Ringkasan",
+      "store": "Toko",
+      "method": "Metode",
+      "period": "Periode",
+      "closingStocktake": "Perhitungan Penutup",
+      "previousReport": "Laporan Sebelumnya",
+      "none": "—",
+      "cancelReason": "Alasan Pembatalan",
+      "linesTitle": "Rincian Barang",
+      "colProduct": "Produk",
+      "colOpening": "Awal",
+      "colIn": "Masuk",
+      "colOut": "Keluar",
+      "colPosSold": "Terjual POS",
+      "colGap": "Selisih",
+      "colClosing": "Akhir",
+      "colCounted": "Hasil Hitung",
+      "colBilled": "Ditagih",
+      "colShrinkage": "Susut",
+      "colResolution": "Resolusi",
+      "notCounted": "—",
+      "negativeSoldWarning": "Qty terjual terhitung negatif — periksa pergerakan ledger di balik baris ini.",
+      "suggestedBadge": "Saran",
+      "resolutionPlaceholder": "Pilih resolusi",
+      "resolutionReasonPlaceholder": "Alasan (wajib untuk resolusi ini)",
+      "saveResolution": "Simpan",
+      "saving": "Menyimpan…",
+      "resolutionSaved": "Resolusi berhasil disimpan.",
+      "readOnlyNote": "Laporan ini sudah tidak berjalan lagi — baris tidak bisa diselesaikan dari sini."
+    },
+    "approve": {
+      "button": "Setujui",
+      "disabledHeld": "{n} baris perlu diselesaikan",
+      "confirmTitle": "Setujui laporan sell-through ini?",
+      "confirmDescription": "Menyetujui akan membekukan angka-angka pada laporan ini. Tidak ada stok atau uang yang bergerak pada tahap ini.",
+      "confirmAction": "Setujui",
+      "submitting": "Menyetujui…",
+      "success": "Laporan sell-through disetujui."
+    },
+    "cancel": {
+      "button": "Batalkan Laporan",
+      "confirmTitle": "Batalkan laporan sell-through ini?",
+      "confirmDescription": "Ini akan menggugurkan draft laporan ini. Perhitungan stok toko tetap disetujui.",
+      "reasonLabel": "Alasan",
+      "reasonPlaceholder": "Mengapa laporan ini dibatalkan?",
+      "confirmAction": "Batalkan Laporan",
+      "submitting": "Membatalkan…",
+      "success": "Laporan sell-through dibatalkan."
+    },
+    "err": {
+      "FORBIDDEN": "Anda tidak memiliki izin untuk mengelola laporan sell-through.",
+      "INVALID_REQUEST": "Data yang dikirim tidak valid. Muat ulang halaman dan coba lagi.",
+      "UNEXPECTED": "Terjadi kesalahan. Coba lagi.",
+      "NOT_FOUND": "Laporan sell-through atau barisnya tidak ditemukan.",
+      "STOCKTAKE_NOT_APPROVED": "Perhitungan ini harus disetujui dulu sebelum laporan sell-through bisa dibuat.",
+      "NOT_FULL_COUNT": "Hanya perhitungan penuh (full count) yang bisa memulai laporan sell-through.",
+      "NOT_KONSI": "Toko ini bukan toko dengan skema konsinyasi.",
+      "METHOD_NOT_SET": "Toko ini belum memiliki metode sell-through — atur di pengaturan Toko.",
+      "ALREADY_USED": "Perhitungan ini sudah memiliki laporan sell-through.",
+      "DRAFT_EXISTS": "Toko ini sudah memiliki draft laporan sell-through yang terbuka. Selesaikan atau batalkan dulu.",
+      "OUT_OF_ORDER": "Perhitungan ini ditutup sebelum periode laporan sell-through terakhir toko ini.",
+      "UNKNOWN_REF_TYPE": "Ditemukan pergerakan stok yang tidak dikenali pada laporan ini. Hubungi admin.",
+      "HELD": "Setiap baris dengan selisih perlu resolusi tersimpan sebelum laporan ini bisa disetujui.",
+      "STALE": "Stok berubah setelah laporan ini dibuka, sehingga angkanya sudah tidak sesuai lagi. Batalkan dan buat ulang.",
+      "INVALID_STATE": "Laporan ini sedang tidak dalam status yang tepat untuk tindakan ini.",
+      "INVALID_RESOLUTION": "Resolusi tersebut tidak valid untuk baris ini.",
+      "REASON_REQUIRED": "Alasan wajib diisi untuk resolusi ini."
     }
   },
   "storeTransfers": {
