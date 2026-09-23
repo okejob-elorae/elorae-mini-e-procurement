@@ -53,6 +53,13 @@ type Props = {
   deliveryStatus: FieldSalesDeliveryStatus;
   lines: Array<{ id: string; productName: string; variantLabel: string | null; outstanding: number }>;
   shipments: OrderShipmentSummary[];
+  /**
+   * A legacy order the previous consignment flow delivered in full at approve — no shipment, no
+   * open qty, DELIVERED. Decided by the parent, which also scopes its own konsi note on it.
+   */
+  legacyDelivered: boolean;
+  /** Whether that legacy order carries an approve-time transfer the header can print. */
+  hasLegacyTransfer: boolean;
   canDeliver: boolean;
   canShipShipment: boolean;
 };
@@ -124,6 +131,8 @@ export function KonsiShipmentsCard({
   deliveryStatus,
   lines,
   shipments,
+  legacyDelivered,
+  hasLegacyTransfer,
   canDeliver,
   canShipShipment,
 }: Props) {
@@ -140,11 +149,18 @@ export function KonsiShipmentsCard({
   if (status !== "APPROVED" && shipments.length === 0) return null;
 
   const hasOutstanding = lines.some((line) => line.outstanding > 0);
+  /* The writer refuses a close while a shipment is PACKED or IN_TRANSIT (SHIPMENT_IN_FLIGHT). */
+  const hasShipmentInFlight = shipments.some((s) => s.status === "PACKED" || s.status === "IN_TRANSIT");
+  const closeBlocked = hasOutstanding && hasShipmentInFlight;
   const showActions = status === "APPROVED";
   const statusKey = `delivery.status.${deliveryStatus}`;
+  const legacyDetailKey = hasLegacyTransfer
+    ? "konsiShipments.legacyPrintFromHeader"
+    : "konsiShipments.legacyNoTransfer";
 
   const handlePrint = async (shipment: OrderShipmentSummary) => {
-    await logPrint("KonsiSuratKeluar", shipment.id);
+    /* Its own entity type: the legacy header print logs "KonsiSuratKeluar" against the ORDER id. */
+    await logPrint("KonsiShipmentSuratKeluar", shipment.id);
     const html = buildSuratKeluarPrintHtml({
       orderNo: shipment.docNo,
       storeName,
@@ -211,7 +227,8 @@ export function KonsiShipmentsCard({
               <Button
                 variant="outline"
                 className="h-10"
-                disabled={isPending || !hasOutstanding}
+                disabled={isPending || !hasOutstanding || closeBlocked}
+                title={closeBlocked ? t("konsiShipments.closeBlockedInFlight") : undefined}
                 onClick={() => setCloseOpen(true)}
               >
                 {t("delivery.close")}
@@ -222,8 +239,19 @@ export function KonsiShipmentsCard({
       </CardHeader>
 
       <CardContent>
-        <p className="mb-4 text-xs text-muted-foreground">{t("konsiShipments.note")}</p>
-        {shipments.length === 0 ? (
+        {!legacyDelivered && (
+          <p className="mb-4 text-xs text-muted-foreground">{t("konsiShipments.note")}</p>
+        )}
+        {showActions && canDeliver && closeBlocked && (
+          <p className="mb-4 text-xs text-muted-foreground">{t("konsiShipments.closeBlockedInFlight")}</p>
+        )}
+        {legacyDelivered ? (
+          <div className="py-10 text-center">
+            <Truck className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">{t("konsiShipments.legacyDelivered")}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{t(legacyDetailKey)}</p>
+          </div>
+        ) : shipments.length === 0 ? (
           <div className="py-10 text-center">
             <Truck className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">{t("konsiShipments.empty")}</p>
@@ -265,21 +293,22 @@ export function KonsiShipmentsCard({
                       {delivered === null ? <span className="text-muted-foreground">—</span> : delivered}
                     </TableCell>
                     <TableCell className="w-12 text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" aria-label={tCommon("actions")}>
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          {shipment.status !== "CANCELLED" && (
+                      {/* A cancelled shipment has no action at all, so it gets no menu to open empty. */}
+                      {shipment.status !== "CANCELLED" && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" aria-label={tCommon("actions")}>
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => handlePrint(shipment)}>
                               <Printer className="mr-2 h-4 w-4" />
                               {t("print.suratKeluar")}
                             </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
                     </TableCell>
                   </TableRow>
                 );

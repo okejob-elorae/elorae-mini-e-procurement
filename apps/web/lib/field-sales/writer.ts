@@ -230,12 +230,12 @@ export async function createFieldSalesOrder(input: {
 
 /**
  * Which of the given (itemId, variantSku) candidates are CURRENT assortment gaps for this store,
- * batched into two queries regardless of candidate count. Mirrors `listAssortmentGaps`'s gap test
- * (`packages/db` has no access to that helper, and it reads through the un-transacted `prisma`
- * singleton anyway) — `targetQty === null` means "must merely be present" (`onHandQty <= 0`),
- * `targetQty !== null` means a minimum (`onHandQty < targetQty`). Run inside the caller's own
- * transaction so the gap read is consistent with the `StoreStock` state the approval itself acts
- * on, not a stale snapshot from before the transaction opened.
+ * batched into a fixed handful of queries regardless of candidate count. Mirrors
+ * `listAssortmentGaps`'s gap test (which reads through the un-transacted `prisma` singleton) —
+ * `targetQty === null` means "must merely be present" (`effectiveQty <= 0`), `targetQty !== null`
+ * means a minimum (`effectiveQty < targetQty`). Run inside the approval's own transaction so the
+ * `StoreStock` and open-konsi-order reads are consistent with each other and with the order lines
+ * the approval is about to write, not a stale snapshot from before the transaction opened.
  *
  * The gap test itself sums physical `StoreStock` with `openKonsiQtyByKey` (same helper
  * `listAssortmentGaps` uses) into an `effectiveQty`, so a store already carrying an

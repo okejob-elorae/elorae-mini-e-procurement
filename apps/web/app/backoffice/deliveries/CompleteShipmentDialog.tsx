@@ -36,6 +36,8 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
   const [invoiceDate, setInvoiceDate] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [isKonsi, setIsKonsi] = useState(false);
+  /* Gates the konsi-or-putus block: until the detail arrives, `isKonsi` is a default, not a fact. */
+  const [detailLoaded, setDetailLoaded] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [isPending, startTransition] = useTransition();
 
@@ -51,12 +53,14 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
     setDueDate("");
     setProofPhotoUrl("");
     setProofPhotoR2Key("");
+    setDetailLoaded(false);
     getShipmentAction(shipmentId).then((detail) => {
       if (!detail) return;
       const nextLines = detail.lines.map((l) => ({ id: l.id, productName: l.productName, plannedQty: l.plannedQty }));
       setLines(nextLines);
       setQtyInputs(Object.fromEntries(nextLines.map((l) => [l.id, String(l.plannedQty)])));
       setIsKonsi(detail.orderType === "KONSI");
+      setDetailLoaded(true);
     });
   }, [open, shipmentId]);
 
@@ -160,9 +164,10 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
               <img src={proofPhotoUrl} alt="" className="mt-2 h-24 w-24 rounded object-cover" />
             )}
           </div>
-          {isKonsi ? (
+          {detailLoaded && isKonsi && (
             <p className="text-sm text-muted-foreground">{t("konsiCompleteNote")}</p>
-          ) : (
+          )}
+          {detailLoaded && !isKonsi && (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1">
                 <Label htmlFor="invoiceDate">{t("invoiceDate")}</Label>

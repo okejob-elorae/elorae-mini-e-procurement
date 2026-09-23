@@ -645,9 +645,11 @@
       "MISSING_GPS": "Location is required to complete this delivery.",
       "STORE_NOT_GEOCODED": "This store has no location on record — contact an admin before completing here.",
       "GPS_OUT_OF_RADIUS": "You're too far from the store to complete this delivery.",
-      "MISSING_NOTA_PHOTO": "Take a photo of the signed nota before completing.",
+      "MISSING_NOTA_PHOTO": "Take a photo of the signed delivery document before completing.",
       "MISSING_SIGNED_BY": "Enter the name of who signed for this delivery.",
-      "KONSI_NOT_RESERVED": "This consignment order has no reserved stock left for this shipment. It was likely approved before consignment stock moved at delivery — cancel this shipment.",
+      "KONSI_NOT_RESERVED": "This consignment order has no reserved stock left for this shipment. Ask an admin to check the order and cancel this shipment.",
+      "NO_INVENTORY_ROW": "A product on this shipment has no main-warehouse stock record, so nothing can move to the store. Ask an admin to check the product's stock.",
+      "SHIPMENT_IN_FLIGHT": "This order still has a shipment packed or in transit. Complete or cancel that shipment first.",
       "INVALID_FILE_TYPE": "That file type isn't supported. Use JPEG, PNG, or WEBP.",
       "FILE_TOO_LARGE": "That photo is too large (max 10MB). Try a smaller photo."
     }
@@ -2274,7 +2276,7 @@
       "codeUnique": "Store code already exists.",
       "forbidden": "Permission denied.",
       "notFound": "Store not found.",
-      "hasConsignmentStock": "This store still holds consignment stock and must return or transfer it before switching off Konsi.",
+      "hasConsignmentStock": "This store still holds consignment stock or has consignment orders awaiting approval or not yet fully delivered. Return or transfer the stock and settle those orders before switching off Konsi.",
       "invalidPriceDiscount": "Price discount must be between 0 and under 100.",
       "discountNotAllowedForKonsi": "A Konsi store cannot carry a price discount."
     },
@@ -2428,7 +2430,7 @@
       "gapColArticle": "Article",
       "gapColSize": "Size",
       "gapColOnHand": "Current Stock",
-      "gapInTransit": "+{qty} in transit",
+      "gapInTransit": "+{qty} on order, not yet delivered",
       "gapColTarget": "Target",
       "gapStatusMissing": "Never received",
       "gapStatusDepleted": "Out of stock",
@@ -2941,7 +2943,8 @@
         "INVALID_DATES": "The due date cannot be earlier than the invoice date.",
         "CONFLICT": "Someone else just changed this nota's dates. Reload the page and try again.",
         "NOT_RETRYABLE": "This delivery's journals were never flagged as failed, so there is nothing to retry.",
-        "RECEIVABLE_HAS_PAYMENTS": "This invoice already has a payment applied, so its dates can't be corrected. Void the payment first, then try again."
+        "RECEIVABLE_HAS_PAYMENTS": "This invoice already has a payment applied, so its dates can't be corrected. Void the payment first, then try again.",
+        "SHIPMENT_IN_FLIGHT": "This order still has a shipment packed or in transit. Complete or cancel that shipment before closing the remainder."
       }
     },
     "print": {
@@ -2987,7 +2990,11 @@
       "colStatus": "Status",
       "colPackedAt": "Packed",
       "colPlanned": "Planned",
-      "colDelivered": "Delivered"
+      "colDelivered": "Delivered",
+      "legacyDelivered": "Delivered in full at approval under the previous consignment flow.",
+      "legacyPrintFromHeader": "Print the Surat Keluar from the order header.",
+      "legacyNoTransfer": "No transfer document was recorded for this order.",
+      "closeBlockedInFlight": "Complete or cancel the shipment in progress before closing the remainder."
     },
     "konsiSuggestions": {
       "title": "Product Suggestions",
@@ -3003,7 +3010,7 @@
       "colAvailable": "Available",
       "colQty": "Qty",
       "gapColOnHand": "On Hand",
-      "gapInTransit": "+{qty} in transit",
+      "gapInTransit": "+{qty} on order, not yet delivered",
       "gapColTarget": "Target",
       "gapTargetMustBePresent": "Must be stocked",
       "gapTargetMin": "Min {qty}",

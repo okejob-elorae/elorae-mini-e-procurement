@@ -81,18 +81,21 @@ export function FieldSalesOrderDetailClient({
   const showKonsiSuggestions = isKonsi && order.status === "PENDING_APPROVAL" && canApprove;
   const shortLineCount = order.lines.filter((line) => line.qty > line.available).length;
   /**
-   * Outstanding only means something once a putus order is approved and can be delivered.
-   * Rejecting releases the reservation without cancelling the lines, so a rejected order
-   * would otherwise report its full qty as still owed.
+   * Outstanding only means something once an order is approved and can be delivered — putus
+   * through a delivery or a shipment, konsi through a shipment. Rejecting releases the
+   * reservation without cancelling the lines, so a rejected order would otherwise report its
+   * full qty as still owed.
    */
-  const showOutstanding = !isKonsi && order.status === "APPROVED";
+  const showOutstanding = order.status === "APPROVED";
   const lineColumnCount = 4 + (showOutstanding ? 1 : 0) + (showMoney ? 3 : 0);
   /**
-   * Putus reserves at create and consumes at delivery, so `available` stays depressed by this
-   * order's own reservation and would contradict the delivery dialog. Konsi reserves at approve
-   * and never delivers, so `available` is the honest number there.
+   * Once an order holds its own reservation, `available` stays depressed by it until delivery
+   * consumes it and would contradict the shipment and delivery dialogs — putus reserves at create,
+   * konsi at approve. A konsi order still awaiting approval holds none yet, so `available` is the
+   * honest number for the approver deciding whether it can be reserved at all.
    */
-  const stockLabel = isKonsi ? t("colAvailable") : t("colOnHand");
+  const showAvailable = isKonsi && order.status === "PENDING_APPROVAL";
+  const stockLabel = showAvailable ? t("colAvailable") : t("colOnHand");
   const deliverableLines: DeliverableLine[] = order.lines.map((line) => ({
     id: line.id,
     productName: line.productName,
@@ -133,11 +136,25 @@ export function FieldSalesOrderDetailClient({
     }).format(date);
 
   const legacyKonsiTransfer = order.legacyKonsiTransfer;
+  /**
+   * An order the previous consignment flow delivered in full at approve: no shipment, nothing
+   * outstanding, DELIVERED. The backfill is what makes a legacy order read this way; an order
+   * closed without ever shipping reads CLOSED instead, so it never lands here.
+   */
+  const legacyKonsiDelivered =
+    isKonsi &&
+    order.status === "APPROVED" &&
+    order.deliveryStatus === "DELIVERED" &&
+    shipments.length === 0 &&
+    order.lines.every((line) => line.outstanding === 0);
 
   const handlePrintSuratKeluar = async () => {
-    /* The button only renders when a legacy transfer exists, but that's a UI affordance, not the
-       real guard — this handler must never itself try to build a document out of an order that
-       has none (an order approved before this branch shipped; the migration carries no backfill). */
+    /**
+     * The button only renders when a legacy transfer exists, but that's a UI affordance, not the
+     * real guard — this handler must never itself try to build a document out of an order that
+     * has none: an order approved since stock moved to shipment completion prints per shipment,
+     * and one approved before the transfer document existed never had one.
+     */
     if (!legacyKonsiTransfer) return;
     await logPrint("KonsiSuratKeluar", order.id);
     const html = buildSuratKeluarPrintHtml({
@@ -220,6 +237,8 @@ export function FieldSalesOrderDetailClient({
           deliveryStatus={order.deliveryStatus}
           lines={deliverableLines}
           shipments={shipments}
+          legacyDelivered={legacyKonsiDelivered}
+          hasLegacyTransfer={legacyKonsiTransfer !== null}
           canDeliver={canDeliver}
           canShipShipment={canShipShipment}
         />
@@ -264,7 +283,10 @@ export function FieldSalesOrderDetailClient({
       </Card>
 
       <Card className="p-4">
-        {isKonsi && <p className="text-xs text-muted-foreground mb-2">{t("konsiTransferNote")}</p>}
+        {/* A legacy order moved stock at approve — its card explains that instead of this note. */}
+        {isKonsi && !legacyKonsiDelivered && (
+          <p className="text-xs text-muted-foreground mb-2">{t("konsiTransferNote")}</p>
+        )}
         <Table>
           <TableHeader>
             <TableRow>
@@ -305,7 +327,7 @@ export function FieldSalesOrderDetailClient({
                     <TableCell className="text-right tabular-nums">{line.outstanding}</TableCell>
                   )}
                   <TableCell className="text-right tabular-nums">
-                    {isKonsi ? line.available : line.onHand}
+                    {showAvailable ? line.available : line.onHand}
                   </TableCell>
                   {showMoney && (
                     <>

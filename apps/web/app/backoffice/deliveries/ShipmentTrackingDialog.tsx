@@ -40,10 +40,13 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
   const [invoiceDate, setInvoiceDate] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [isKonsi, setIsKonsi] = useState(false);
+  /* Gates the putus date block: until the detail arrives, `isKonsi` is a default, not a fact. */
+  const [detailLoaded, setDetailLoaded] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     if (!open) return;
+    setDetailLoaded(false);
     getShipmentAction(shipmentId).then((detail) => {
       setCarrierName(detail?.carrierName ?? "");
       setResiNumber(detail?.resiNumber ?? "");
@@ -52,6 +55,7 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
       setInvoiceDate(detail?.invoiceDate ? formatDateOnlyJakarta(detail.invoiceDate) : "");
       setDueDate(detail?.dueDate ? formatDateOnlyJakarta(detail.dueDate) : "");
       setIsKonsi(detail?.orderType === "KONSI");
+      setDetailLoaded(true);
     });
   }, [open, shipmentId]);
 
@@ -182,7 +186,7 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
                   placeholder={t("carriedByPlaceholder")}
                 />
               </div>
-              {!isKonsi && (
+              {detailLoaded && !isKonsi && (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label htmlFor="invoiceDate">{t("invoiceDateLabel")}</Label>
