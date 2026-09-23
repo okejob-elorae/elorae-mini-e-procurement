@@ -65,12 +65,11 @@ export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
   deliveryStatus: FieldSalesDeliveryStatus;
   deliveries: FieldSalesDeliverySummary[];
   /**
-   * The one konsi transfer this order's approval issued (KONSI orders only — always null for
-   * PUTUS). `null` for an APPROVED konsi order means this order predates the transfer document
-   * (approved before this branch shipped, and the migration carries no backfill) — the print
-   * button must degrade to disabled-with-reason, never throw, for that case.
+   * The approve-time transfer of a konsi order approved before stock moved at shipment
+   * completion (`shipmentId: null`) — per-shipment transfers are not surfaced here. `null` for
+   * every konsi order approved since.
    */
-  konsiTransfer: {
+  legacyKonsiTransfer: {
     docNo: string;
     createdAt: Date;
     lines: Array<{ productName: string; variantSku: string; variantLabel: string | null; qty: number }>;
@@ -187,6 +186,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
         },
       },
       konsiTransfers: {
+        where: { shipmentId: null },
         orderBy: { createdAt: "asc" },
         select: {
           docNo: true,
@@ -247,10 +247,8 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
     orderDiscountAmount: toNum(row.orderDiscountAmount),
     appliedOrderPromoName: row.appliedOrderPromoId ? promoNameById.get(row.appliedOrderPromoId) ?? null : null,
     deliveryStatus: row.deliveryStatus,
-    /* An approved konsi order always has exactly one — [0] rather than a find, since ordering
-       by createdAt asc already puts the real one first for any pre-existing order that somehow
-       carries more than the expected single row. */
-    konsiTransfer: row.konsiTransfers[0]
+    /* Only the legacy approve-time transfer is filtered in, so at most one row. */
+    legacyKonsiTransfer: row.konsiTransfers[0]
       ? {
           docNo: row.konsiTransfers[0].docNo,
           createdAt: row.konsiTransfers[0].createdAt,

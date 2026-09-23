@@ -139,7 +139,7 @@ export function FieldSalesOrderDetailClient({
       minute: "2-digit",
     }).format(date);
 
-  const konsiTransfer = order.konsiTransfer;
+  const konsiTransfer = order.legacyKonsiTransfer;
 
   const handlePrintSuratKeluar = async () => {
     /* The button is disabled when there is no transfer, but that's a UI affordance, not the real

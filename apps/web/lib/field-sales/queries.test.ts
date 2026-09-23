@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { serializeListItem, listFieldSalesOrders, getFieldSalesOrderById, sentItemIds, getStoreSentItems } from "./queries";
 import { createFieldSalesOrder } from "./writer";
+import { createDeliveryShipment } from "@/lib/delivery/shipment-writer";
 import { Prisma, prisma, seededId } from "@elorae/db";
 
 describe("serializeListItem", () => {
@@ -152,7 +153,7 @@ d("konsi queries (test bed only)", () => {
     expect(detail!.lines[0].available).toBe(15); // qtyOnHand 20 - reservedQty 5
   });
 
-  it("getFieldSalesOrderById resolves a konsiTransfer line's human variant label from Item.variants, not the raw SKU", async () => {
+  it("getFieldSalesOrderById resolves a legacyKonsiTransfer line's human variant label from Item.variants, not the raw SKU", async () => {
     const item2 = await prisma.item.create({
       data: {
         sku: `${sku}-VAR`,
@@ -182,11 +183,40 @@ d("konsi queries (test bed only)", () => {
     });
 
     const detail = await getFieldSalesOrderById(order.id);
-    expect(detail!.konsiTransfer).not.toBeNull();
-    expect(detail!.konsiTransfer!.lines).toHaveLength(1);
-    expect(detail!.konsiTransfer!.lines[0].variantSku).toBe("27000101P-BLK-XL");
-    expect(detail!.konsiTransfer!.lines[0].variantLabel).toBe("color: Hitam · size: XL");
+    expect(detail!.legacyKonsiTransfer).not.toBeNull();
+    expect(detail!.legacyKonsiTransfer!.lines).toHaveLength(1);
+    expect(detail!.legacyKonsiTransfer!.lines[0].variantSku).toBe("27000101P-BLK-XL");
+    expect(detail!.legacyKonsiTransfer!.lines[0].variantLabel).toBe("color: Hitam · size: XL");
 
+    /* A transfer written against a real shipment must not surface here — legacyKonsiTransfer
+       stays pinned to the null-shipmentId row created above. */
+    const orderLines = await prisma.fieldSalesOrderLine.findMany({ where: { orderId: order.id } });
+    const shipment = await createDeliveryShipment({
+      orderId: order.id,
+      method: "EXPEDITION",
+      lines: [{ orderLineId: orderLines[0].id, qty: 1 }],
+      packedById: salesmanId,
+    });
+    const shipmentTransfer = await prisma.konsiTransfer.create({
+      data: {
+        docNo: `KONSITRF/TEST/${Math.random().toString(36).slice(2, 10)}`,
+        orderId: order.id,
+        storeId,
+        transferredById: salesmanId,
+        shipmentId: shipment.shipmentId,
+        lines: {
+          create: [{ itemId: itemId2, variantSku: "27000101P-BLK-XL", productName: "Kaos Polos", qty: 1, unitCost: 1000 }],
+        },
+      },
+    });
+
+    const detailAfterShipment = await getFieldSalesOrderById(order.id);
+    expect(detailAfterShipment!.legacyKonsiTransfer!.docNo).toBe(transfer.docNo);
+
+    await prisma.konsiTransferLine.deleteMany({ where: { transferId: shipmentTransfer.id } });
+    await prisma.konsiTransfer.deleteMany({ where: { id: shipmentTransfer.id } });
+    await prisma.deliveryShipmentLine.deleteMany({ where: { shipmentId: shipment.shipmentId } });
+    await prisma.deliveryShipment.deleteMany({ where: { id: shipment.shipmentId } });
     await prisma.konsiTransferLine.deleteMany({ where: { transferId: transfer.id } });
     await prisma.konsiTransfer.deleteMany({ where: { id: transfer.id } });
   });

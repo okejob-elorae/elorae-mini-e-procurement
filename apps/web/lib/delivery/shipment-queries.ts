@@ -14,6 +14,7 @@ export async function listDeliveryShipments(input: {
     docNo: string;
     status: string;
     method: string;
+    orderType: "PUTUS" | "KONSI";
     storeName: string;
     orderNo: string;
     carrierName: string | null;
@@ -53,6 +54,7 @@ export async function listDeliveryShipments(input: {
       docNo: row.docNo,
       status: row.status,
       method: row.method,
+      orderType: row.order.orderType,
       storeName: row.order.store.name,
       orderNo: row.order.orderNo,
       carrierName: row.carrierName,
@@ -68,6 +70,7 @@ export async function getDeliveryShipment(id: string): Promise<{
   docNo: string;
   status: string;
   method: string;
+  orderType: "PUTUS" | "KONSI";
   carrierName: string | null;
   resiNumber: string | null;
   carriedById: string | null;
@@ -111,6 +114,7 @@ export async function getDeliveryShipment(id: string): Promise<{
     docNo: row.docNo,
     status: row.status,
     method: row.method,
+    orderType: row.order.orderType,
     carrierName: row.carrierName,
     resiNumber: row.resiNumber,
     carriedById: row.carriedById,
@@ -134,6 +138,48 @@ export async function getDeliveryShipment(id: string): Promise<{
       deliveredQty: line.deliveredQty,
     })),
   };
+}
+
+export type OrderShipmentSummary = {
+  id: string;
+  docNo: string;
+  status: "PACKED" | "IN_TRANSIT" | "DELIVERED" | "PARTIALLY_DELIVERED" | "CANCELLED";
+  method: "EXPEDITION" | "SALESMAN_CARRY";
+  packedAt: Date;
+  carrierName: string | null;
+  resiNumber: string | null;
+  lines: Array<{ id: string; orderLineId: string; productName: string; variantSku: string; plannedQty: number; deliveredQty: number | null }>;
+};
+
+export async function listShipmentsForOrder(orderId: string): Promise<OrderShipmentSummary[]> {
+  const rows = await prisma.deliveryShipment.findMany({
+    where: { orderId },
+    orderBy: { packedAt: "desc" },
+    include: { lines: { orderBy: { id: "asc" } } },
+  });
+  if (rows.length === 0) return [];
+  const orderLines = await prisma.fieldSalesOrderLine.findMany({
+    where: { orderId },
+    select: { id: true, productName: true },
+  });
+  const productNameById = new Map(orderLines.map((l) => [l.id, l.productName]));
+  return rows.map((row) => ({
+    id: row.id,
+    docNo: row.docNo,
+    status: row.status,
+    method: row.method,
+    packedAt: row.packedAt,
+    carrierName: row.carrierName,
+    resiNumber: row.resiNumber,
+    lines: row.lines.map((line) => ({
+      id: line.id,
+      orderLineId: line.orderLineId,
+      productName: productNameById.get(line.orderLineId) ?? "",
+      variantSku: line.variantSku,
+      plannedQty: line.plannedQty,
+      deliveredQty: line.deliveredQty,
+    })),
+  }));
 }
 
 export async function listMyDeliveries(carriedById: string): Promise<Array<{
