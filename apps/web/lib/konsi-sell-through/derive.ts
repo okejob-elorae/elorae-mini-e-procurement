@@ -1,5 +1,8 @@
 export type SellThroughMethodValue = "SPG_POS" | "SHELF_COUNT";
 export type SellThroughResolutionValue = "BILL" | "SHRINKAGE" | "BILL_POS" | "REDUCE";
+
+/* The one spelling of the valid resolution arms — writer.ts and the server actions both validate against this instead of each keeping its own copy. */
+export const SELL_THROUGH_RESOLUTIONS = ["BILL", "SHRINKAGE", "BILL_POS", "REDUCE"] as const satisfies readonly SellThroughResolutionValue[];
 export type LedgerRow = { itemId: string; variantSku: string; qty: number; refType: string; refId: string };
 export type OpeningFigure = { itemId: string; variantSku: string; qty: number };
 export type CountedFigure = {

@@ -1,8 +1,8 @@
 import { prisma } from "@elorae/db";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { isLineHeld, roundQty, type SellThroughMethodValue, type SellThroughResolutionValue } from "./derive";
-import { stocktakeBoundary } from "./window";
-import type { SellThroughErrorCode } from "./errors";
+import { checkSellThroughPreconditions } from "./writer";
+import { SellThroughError, type SellThroughErrorCode } from "./errors";
 
 export type SellThroughStatusValue = "DRAFT" | "APPROVED" | "CANCELLED";
 
@@ -253,52 +253,26 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
 }
 
 /**
- * Read-only mirror of `createSellThrough`'s preconditions (writer.ts), in the SAME order, up to
- * and including `DRAFT_EXISTS` — the last check before the write path derives lines and creates
- * the row. Deliberately does NOT run `loadSellThroughInputs`/`deriveSellThroughLines`: an unknown
- * ledger refType or a dangling item id are write-time failures the eligibility check has no
- * business predicting, and the real create call remains the authoritative gate regardless of what
- * this reports — this is advisory, same as the create-time credit-limit flag elsewhere in the
- * app. Kept as its own read-only implementation rather than sharing writer.ts's transaction body,
- * so this task cannot risk writer.ts's already-passing behaviour.
+ * Runs `checkSellThroughPreconditions` (writer.ts) read-only against the plain client — the same
+ * function `createSellThrough` runs inside its own transaction — so this can never drift from what
+ * create actually enforces. Deliberately stops there rather than also running
+ * `loadSellThroughInputs`/`deriveSellThroughLines`: an unknown ledger refType or a dangling item id
+ * are write-time failures this check has no business predicting, and the real create call remains
+ * the authoritative gate regardless of what this reports — advisory only, same as the create-time
+ * credit-limit flag elsewhere in the app.
  */
 export async function getSellThroughEligibility(
   stocktakeId: string,
 ): Promise<{ eligible: true } | { eligible: false; reason: SellThroughErrorCode; existingId?: string }> {
-  return prisma.$transaction(async (tx) => {
-    const stocktake = await tx.storeStocktake.findUnique({
-      where: { id: stocktakeId },
-      select: { id: true, storeId: true, status: true, isFullCount: true },
-    });
-    if (!stocktake) return { eligible: false, reason: "NOT_FOUND" };
-    if (stocktake.status !== "APPROVED") return { eligible: false, reason: "STOCKTAKE_NOT_APPROVED" };
-    if (!stocktake.isFullCount) return { eligible: false, reason: "NOT_FULL_COUNT" };
-
-    const storeId = stocktake.storeId;
-    const store = await tx.store.findUnique({ where: { id: storeId }, select: { termsType: true, sellThroughMethod: true } });
-    if (!store) return { eligible: false, reason: "NOT_FOUND" };
-    if (store.termsType !== "KONSI") return { eligible: false, reason: "NOT_KONSI" };
-    if (!store.sellThroughMethod) return { eligible: false, reason: "METHOD_NOT_SET" };
-
-    const used = await tx.konsiSellThrough.findUnique({ where: { stocktakeKey: stocktake.id }, select: { id: true } });
-    if (used) return { eligible: false, reason: "ALREADY_USED", existingId: used.id };
-
-    const previous = await tx.konsiSellThrough.findFirst({
-      where: { storeId, status: "APPROVED" },
-      orderBy: [{ periodEnd: "desc" }, { id: "desc" }],
-      select: { id: true, closingStocktakeId: true },
-    });
-    if (previous) {
-      const closingBoundary = await stocktakeBoundary(tx, storeId, stocktake.id);
-      const previousBoundary = await stocktakeBoundary(tx, storeId, previous.closingStocktakeId);
-      if (closingBoundary.getTime() <= previousBoundary.getTime()) {
-        return { eligible: false, reason: "OUT_OF_ORDER" };
-      }
-    }
-
-    const draft = await tx.konsiSellThrough.findFirst({ where: { storeId, status: "DRAFT" }, select: { id: true } });
-    if (draft) return { eligible: false, reason: "DRAFT_EXISTS" };
-
+  try {
+    await checkSellThroughPreconditions(prisma, stocktakeId);
     return { eligible: true };
-  });
+  } catch (e) {
+    if (e instanceof SellThroughError) {
+      return e.code === "ALREADY_USED"
+        ? { eligible: false, reason: e.code, existingId: e.detail }
+        : { eligible: false, reason: e.code };
+    }
+    throw e;
+  }
 }

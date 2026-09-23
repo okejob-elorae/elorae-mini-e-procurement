@@ -1,4 +1,4 @@
-import { Prisma } from "@elorae/db";
+import { prisma, Prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import {
@@ -7,8 +7,10 @@ import {
   InvalidResolutionError,
   isLineHeld,
   roundQty,
+  SELL_THROUGH_RESOLUTIONS,
   UnknownLedgerRefTypeError,
   type DerivedLine,
+  type SellThroughMethodValue,
   type SellThroughResolutionValue,
 } from "./derive";
 import { loadSellThroughInputs, stocktakeBoundary } from "./window";
@@ -16,8 +18,6 @@ import { SellThroughError } from "./errors";
 
 /* A UX bound on a free-text reason — the column itself is TEXT. */
 const REASON_MAX_LENGTH = 1000;
-
-const RESOLUTIONS: readonly SellThroughResolutionValue[] = ["BILL", "SHRINKAGE", "BILL_POS", "REDUCE"];
 
 /* The ledger-derived figures approve re-derives and compares; everything else on a line is a snapshot or an admin decision. */
 const DERIVED_FIGURES = ["openingQty", "inQty", "outQty", "posSoldQty", "gapQty", "closingQty"] as const;
@@ -44,9 +44,76 @@ function isUniqueViolationOn(e: unknown, column: string): boolean {
 }
 
 /**
- * Creates a DRAFT report from an approved FULL store stocktake of a KONSI store. The store is
+ * The read-only precondition sequence `createSellThrough` enforces before it derives or writes
+ * anything, extracted so `getSellThroughEligibility` (queries.ts) can run the exact same checks
+ * read-only instead of hand-maintaining a second copy that could drift from this one. The store is
  * derived from the stocktake itself, never from the caller, and ownership/approval/full-count are
- * all checked before `stocktakeBoundary` runs, because that helper trusts its inputs.
+ * all checked before `stocktakeBoundary` runs, because that helper trusts its inputs. Order, codes
+ * and details are exactly what `createSellThrough` threw before this was extracted, with ONE
+ * addition: `ALREADY_USED` now carries the existing report's id as `detail`, so the eligibility
+ * check can surface it as `existingId` without a second lookup — that id was previously discarded.
+ *
+ * Takes `Prisma.TransactionClient | typeof prisma` — `createSellThrough` always passes its own
+ * `tx`, `getSellThroughEligibility` passes the plain client since it performs no writes and needs
+ * no transaction of its own.
+ */
+export async function checkSellThroughPreconditions(
+  client: Prisma.TransactionClient | typeof prisma,
+  closingStocktakeId: string,
+): Promise<{
+  stocktake: {
+    id: string;
+    storeId: string;
+    lines: Array<{ itemId: string; variantSku: string; productName: string }>;
+  };
+  store: { termsType: string; sellThroughMethod: SellThroughMethodValue | null };
+  method: SellThroughMethodValue;
+  previous: { id: string; closingStocktakeId: string } | null;
+}> {
+  const stocktake = await client.storeStocktake.findUnique({
+    where: { id: closingStocktakeId },
+    select: {
+      id: true,
+      storeId: true,
+      status: true,
+      isFullCount: true,
+      lines: { select: { itemId: true, variantSku: true, productName: true } },
+    },
+  });
+  if (!stocktake) throw new SellThroughError("NOT_FOUND", "STOCKTAKE");
+  if (stocktake.status !== "APPROVED") throw new SellThroughError("STOCKTAKE_NOT_APPROVED");
+  if (!stocktake.isFullCount) throw new SellThroughError("NOT_FULL_COUNT");
+
+  const storeId = stocktake.storeId;
+  const store = await client.store.findUnique({ where: { id: storeId }, select: { termsType: true, sellThroughMethod: true } });
+  if (!store) throw new SellThroughError("NOT_FOUND", "STORE");
+  if (store.termsType !== "KONSI") throw new SellThroughError("NOT_KONSI");
+  if (!store.sellThroughMethod) throw new SellThroughError("METHOD_NOT_SET");
+  const method = store.sellThroughMethod;
+
+  const used = await client.konsiSellThrough.findUnique({ where: { stocktakeKey: stocktake.id }, select: { id: true } });
+  if (used) throw new SellThroughError("ALREADY_USED", used.id);
+
+  const previous = await client.konsiSellThrough.findFirst({
+    where: { storeId, status: "APPROVED" },
+    orderBy: [{ periodEnd: "desc" }, { id: "desc" }],
+    select: { id: true, closingStocktakeId: true },
+  });
+  if (previous) {
+    const closingBoundary = await stocktakeBoundary(client, storeId, stocktake.id);
+    const previousBoundary = await stocktakeBoundary(client, storeId, previous.closingStocktakeId);
+    if (closingBoundary.getTime() <= previousBoundary.getTime()) throw new SellThroughError("OUT_OF_ORDER");
+  }
+
+  const draft = await client.konsiSellThrough.findFirst({ where: { storeId, status: "DRAFT" }, select: { id: true } });
+  if (draft) throw new SellThroughError("DRAFT_EXISTS");
+
+  return { stocktake, store, method, previous };
+}
+
+/**
+ * Creates a DRAFT report from an approved FULL store stocktake of a KONSI store — preconditions
+ * enforced by `checkSellThroughPreconditions` above.
  *
  * `stocktakeKey` and `chainKey` are the live uniqueness keys: one live report per closing count,
  * and one live child per (store, previous report) — which is what makes "at most one DRAFT per
@@ -58,43 +125,8 @@ export async function createSellThrough(input: {
   createdById: string;
 }): Promise<{ id: string; docNo: string }> {
   return runSerializable(async (tx) => {
-    const stocktake = await tx.storeStocktake.findUnique({
-      where: { id: input.closingStocktakeId },
-      select: {
-        id: true,
-        storeId: true,
-        status: true,
-        isFullCount: true,
-        lines: { select: { itemId: true, variantSku: true, productName: true } },
-      },
-    });
-    if (!stocktake) throw new SellThroughError("NOT_FOUND", "STOCKTAKE");
-    if (stocktake.status !== "APPROVED") throw new SellThroughError("STOCKTAKE_NOT_APPROVED");
-    if (!stocktake.isFullCount) throw new SellThroughError("NOT_FULL_COUNT");
-
+    const { stocktake, method, previous } = await checkSellThroughPreconditions(tx, input.closingStocktakeId);
     const storeId = stocktake.storeId;
-    const store = await tx.store.findUnique({ where: { id: storeId }, select: { termsType: true, sellThroughMethod: true } });
-    if (!store) throw new SellThroughError("NOT_FOUND", "STORE");
-    if (store.termsType !== "KONSI") throw new SellThroughError("NOT_KONSI");
-    if (!store.sellThroughMethod) throw new SellThroughError("METHOD_NOT_SET");
-    const method = store.sellThroughMethod;
-
-    const used = await tx.konsiSellThrough.findUnique({ where: { stocktakeKey: stocktake.id }, select: { id: true } });
-    if (used) throw new SellThroughError("ALREADY_USED");
-
-    const previous = await tx.konsiSellThrough.findFirst({
-      where: { storeId, status: "APPROVED" },
-      orderBy: [{ periodEnd: "desc" }, { id: "desc" }],
-      select: { id: true, closingStocktakeId: true },
-    });
-    if (previous) {
-      const closingBoundary = await stocktakeBoundary(tx, storeId, stocktake.id);
-      const previousBoundary = await stocktakeBoundary(tx, storeId, previous.closingStocktakeId);
-      if (closingBoundary.getTime() <= previousBoundary.getTime()) throw new SellThroughError("OUT_OF_ORDER");
-    }
-
-    const draft = await tx.konsiSellThrough.findFirst({ where: { storeId, status: "DRAFT" }, select: { id: true } });
-    if (draft) throw new SellThroughError("DRAFT_EXISTS");
 
     const inputs = await loadSellThroughInputs(tx, { storeId, closingStocktakeId: stocktake.id, previous });
     const lines = derive({ method, openings: inputs.openings, rows: inputs.rows, counted: inputs.counted });
@@ -180,7 +212,7 @@ export async function resolveSellThroughLine(input: {
   userId: string;
 }): Promise<{ ok: true }> {
   return runSerializable(async (tx) => {
-    if (!RESOLUTIONS.includes(input.resolution)) throw new SellThroughError("INVALID_RESOLUTION", "UNKNOWN_RESOLUTION");
+    if (!SELL_THROUGH_RESOLUTIONS.includes(input.resolution)) throw new SellThroughError("INVALID_RESOLUTION", "UNKNOWN_RESOLUTION");
     if ((input.reason?.trim().length ?? 0) > REASON_MAX_LENGTH) throw new SellThroughError("INVALID_RESOLUTION", "REASON_TOO_LONG");
 
     const line = await tx.konsiSellThroughLine.findUnique({

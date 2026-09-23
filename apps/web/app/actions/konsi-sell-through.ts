@@ -11,9 +11,7 @@ import {
   cancelSellThrough,
 } from "@/lib/konsi-sell-through/writer";
 import { SellThroughError, type SellThroughErrorCode } from "@/lib/konsi-sell-through/errors";
-import type { SellThroughResolutionValue } from "@/lib/konsi-sell-through/derive";
-
-const RESOLUTIONS: readonly SellThroughResolutionValue[] = ["BILL", "SHRINKAGE", "BILL_POS", "REDUCE"];
+import { SELL_THROUGH_RESOLUTIONS, type SellThroughResolutionValue } from "@/lib/konsi-sell-through/derive";
 
 export type SellThroughActionReason = SellThroughErrorCode | "FORBIDDEN" | "INVALID_REQUEST" | "UNEXPECTED";
 
@@ -73,7 +71,7 @@ function isValidResolveInput(
   if (typeof input !== "object" || input === null) return false;
   const i = input as Record<string, unknown>;
   if (typeof i.lineId !== "string" || i.lineId === "") return false;
-  if (typeof i.resolution !== "string" || !RESOLUTIONS.includes(i.resolution as SellThroughResolutionValue)) return false;
+  if (typeof i.resolution !== "string" || !SELL_THROUGH_RESOLUTIONS.includes(i.resolution as SellThroughResolutionValue)) return false;
   if (i.reason !== null && typeof i.reason !== "string") return false;
   return true;
 }
