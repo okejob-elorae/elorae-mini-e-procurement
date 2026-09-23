@@ -2272,13 +2272,23 @@
       "konsi": "Konsi",
       "inactive": "Inactive"
     },
+    "sellThroughMethod": {
+      "label": "Sell-through method",
+      "help": "Decides how sold quantity is measured on this store's sell-through reports.",
+      "notSet": "Not set",
+      "options": {
+        "SPG_POS": "SPG POS sales",
+        "SHELF_COUNT": "Shelf count"
+      }
+    },
     "errors": {
       "codeUnique": "Store code already exists.",
       "forbidden": "Permission denied.",
       "notFound": "Store not found.",
       "hasConsignmentStock": "This store still holds consignment stock or has consignment orders awaiting approval or not yet fully delivered. Return or transfer the stock and settle those orders before switching off Konsi.",
       "invalidPriceDiscount": "Price discount must be between 0 and under 100.",
-      "discountNotAllowedForKonsi": "A Konsi store cannot carry a price discount."
+      "discountNotAllowedForKonsi": "A Konsi store cannot carry a price discount.",
+      "sellThroughMethodRequiresKonsi": "A sell-through method can only be set on a Konsi store."
     },
     "detail": {
       "infoTitle": "Store details",

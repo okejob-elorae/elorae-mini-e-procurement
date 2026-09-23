@@ -14,6 +14,7 @@ import {
   StoreHasConsignmentStockError,
   InvalidPriceDiscountPercentError,
   KonsiPriceDiscountNotAllowedError,
+  SellThroughMethodRequiresKonsiError,
   type StoreFields,
 } from "@/lib/stores/queries";
 
@@ -34,6 +35,7 @@ const storeInputSchema = z.object({
   lat: z.number().min(-90).max(90).nullable(),
   lng: z.number().min(-180).max(180).nullable(),
   checkinRadiusMeters: z.number().int().min(0).max(100000).nullable(),
+  sellThroughMethod: z.enum(["SPG_POS", "SHELF_COUNT"]).nullable(),
 });
 
 async function requireManage(): Promise<
@@ -91,6 +93,13 @@ export async function createStoreAction(input: StoreFields): Promise<ActionResul
         message: "A Konsi store cannot carry a price discount.",
       };
     }
+    if (e instanceof SellThroughMethodRequiresKonsiError) {
+      return {
+        ok: false,
+        code: "sell_through_method_requires_konsi",
+        message: "A sell-through method can only be set on a Konsi store.",
+      };
+    }
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
       return { ok: false, code: "code_unique", message: "Store code already exists." };
     }
@@ -131,6 +140,13 @@ export async function updateStoreAction(id: string, input: StoreFields): Promise
         ok: false,
         code: "konsi_discount_not_allowed",
         message: "A Konsi store cannot carry a price discount.",
+      };
+    }
+    if (e instanceof SellThroughMethodRequiresKonsiError) {
+      return {
+        ok: false,
+        code: "sell_through_method_requires_konsi",
+        message: "A sell-through method can only be set on a Konsi store.",
       };
     }
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {

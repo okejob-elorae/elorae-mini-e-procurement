@@ -15,6 +15,7 @@ export type StoreFields = {
   lat: number | null;
   lng: number | null;
   checkinRadiusMeters: number | null;
+  sellThroughMethod: "SPG_POS" | "SHELF_COUNT" | null;
 };
 
 export type StoreListItem = StoreFields & {
@@ -88,6 +89,27 @@ function assertValidPriceDiscount(input: Pick<StoreFields, "termsType" | "priceD
   }
 }
 
+/**
+ * Thrown when a non-null `sellThroughMethod` is carried by a non-KONSI store — the field
+ * configures how a KONSI store's own sell-through report measures units sold, and a PUTUS store
+ * has no such report to configure. Also fires on a KONSI → PUTUS switch that still carries a
+ * method: the switch must clear the field explicitly in the same call, never dropped silently,
+ * mirroring how `assertValidPriceDiscount` refuses a discount on the opposite terms type.
+ */
+export class SellThroughMethodRequiresKonsiError extends Error {
+  constructor() {
+    super("sellThroughMethod can only be set on a KONSI store");
+    this.name = "SellThroughMethodRequiresKonsiError";
+  }
+}
+
+function assertValidSellThroughMethod(input: Pick<StoreFields, "termsType" | "sellThroughMethod">): void {
+  if (input.sellThroughMethod === null) return;
+  if (input.termsType !== "KONSI") {
+    throw new SellThroughMethodRequiresKonsiError();
+  }
+}
+
 function serializeStore(s: {
   id: string;
   code: string;
@@ -104,6 +126,7 @@ function serializeStore(s: {
   lat: Prisma.Decimal | null;
   lng: Prisma.Decimal | null;
   checkinRadiusMeters: number | null;
+  sellThroughMethod: "SPG_POS" | "SHELF_COUNT" | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -124,6 +147,7 @@ function serializeStore(s: {
     lat: s.lat ? s.lat.toNumber() : null,
     lng: s.lng ? s.lng.toNumber() : null,
     checkinRadiusMeters: s.checkinRadiusMeters,
+    sellThroughMethod: s.sellThroughMethod,
     isActive: s.isActive,
     createdAt: s.createdAt,
     updatedAt: s.updatedAt,
@@ -171,6 +195,7 @@ export async function getStore(id: string) {
 
 export async function createStore(input: StoreFields): Promise<StoreListItem> {
   assertValidPriceDiscount(input);
+  assertValidSellThroughMethod(input);
   const created = await prisma.store.create({
     data: {
       code: input.code,
@@ -187,6 +212,7 @@ export async function createStore(input: StoreFields): Promise<StoreListItem> {
       lat: toDecimalOrNull(input.lat),
       lng: toDecimalOrNull(input.lng),
       checkinRadiusMeters: input.checkinRadiusMeters,
+      sellThroughMethod: input.sellThroughMethod,
     },
   });
   return serializeStore(created);
@@ -194,6 +220,7 @@ export async function createStore(input: StoreFields): Promise<StoreListItem> {
 
 export async function updateStore(id: string, input: StoreFields): Promise<StoreListItem> {
   assertValidPriceDiscount(input);
+  assertValidSellThroughMethod(input);
 
   if (input.termsType === "PUTUS") {
     const current = await prisma.store.findUnique({ where: { id }, select: { termsType: true } });
@@ -240,6 +267,7 @@ export async function updateStore(id: string, input: StoreFields): Promise<Store
       lat: toDecimalOrNull(input.lat),
       lng: toDecimalOrNull(input.lng),
       checkinRadiusMeters: input.checkinRadiusMeters,
+      sellThroughMethod: input.sellThroughMethod,
     },
   });
   return serializeStore(updated);

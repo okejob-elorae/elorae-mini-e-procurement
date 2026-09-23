@@ -2272,13 +2272,23 @@
       "konsi": "Konsi",
       "inactive": "Nonaktif"
     },
+    "sellThroughMethod": {
+      "label": "Metode sell-through",
+      "help": "Menentukan cara menghitung jumlah terjual pada laporan sell-through toko ini.",
+      "notSet": "Belum diatur",
+      "options": {
+        "SPG_POS": "Penjualan POS SPG",
+        "SHELF_COUNT": "Hitung rak"
+      }
+    },
     "errors": {
       "codeUnique": "Kode toko sudah dipakai.",
       "forbidden": "Akses ditolak.",
       "notFound": "Toko tidak ditemukan.",
       "hasConsignmentStock": "Toko ini masih memiliki stok konsinyasi atau pesanan konsinyasi yang menunggu persetujuan atau belum terkirim penuh. Retur atau transfer stoknya dan selesaikan pesanan tersebut sebelum beralih dari Konsi.",
       "invalidPriceDiscount": "Diskon harga harus antara 0 dan di bawah 100.",
-      "discountNotAllowedForKonsi": "Toko Konsi tidak boleh memiliki diskon harga."
+      "discountNotAllowedForKonsi": "Toko Konsi tidak boleh memiliki diskon harga.",
+      "sellThroughMethodRequiresKonsi": "Metode sell-through hanya bisa diatur pada toko Konsi."
     },
     "detail": {
       "infoTitle": "Detail toko",
