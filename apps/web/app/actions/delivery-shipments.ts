@@ -184,7 +184,8 @@ export async function completeShipmentAction(input: {
    */
   const invoiceDate = input.invoiceDate ? parseCalendarDay(input.invoiceDate) : undefined;
   const dueDate = input.dueDate ? parseCalendarDay(input.dueDate) : undefined;
-  if ((input.invoiceDate && !invoiceDate) || (input.dueDate && !dueDate)) {
+  /* null means supplied-but-malformed, undefined means absent; `=== null` also narrows both to `Date | undefined`. */
+  if (invoiceDate === null || dueDate === null) {
     return { ok: false, reason: "INVALID_REQUEST" };
   }
   if (invoiceDate && dueDate && dueDate.getTime() < invoiceDate.getTime()) {
