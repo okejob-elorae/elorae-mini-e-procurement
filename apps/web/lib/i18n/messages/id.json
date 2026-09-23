@@ -645,6 +645,7 @@
       "GPS_OUT_OF_RADIUS": "Anda terlalu jauh dari toko untuk menyelesaikan pengiriman ini.",
       "MISSING_NOTA_PHOTO": "Ambil foto nota yang sudah ditandatangani sebelum menyelesaikan.",
       "MISSING_SIGNED_BY": "Masukkan nama penerima yang menandatangani pengiriman ini.",
+      "KONSI_NOT_RESERVED": "Pesanan konsinyasi ini tidak punya stok tercadang untuk pengiriman ini. Kemungkinan disetujui sebelum stok konsinyasi berpindah saat pengiriman — batalkan pengiriman ini.",
       "INVALID_FILE_TYPE": "Jenis file tidak didukung. Gunakan JPEG, PNG, atau WEBP.",
       "FILE_TOO_LARGE": "Foto terlalu besar (maks 10MB). Coba foto yang lebih kecil."
     }

@@ -617,7 +617,7 @@ describe("completeDeliveryShipment", () => {
     ).rejects.toMatchObject({ code: "INVALID_STATE" });
   });
 
-  it("does not call the stock-consuming delivery path for a KONSI order", async () => {
+  it("refuses a KONSI completion whose order line holds no reservation", async () => {
     const store = await prisma.store.create({
       data: { code: `ST-${Date.now()}`, name: "Konsi Store", address: "x", termsType: "KONSI" },
     });
@@ -656,21 +656,18 @@ describe("completeDeliveryShipment", () => {
     await updateShipmentTracking({ shipmentId, carrierName: "JNE", resiNumber: "RESI-K" });
     await shipDeliveryShipment({ shipmentId, shippedById: userId });
 
-    const result = await completeDeliveryShipment({
-      shipmentId,
-      deliveredById: userId,
-      proofPhotoUrl: "https://r2.example/proof.jpg",
-      proofPhotoR2Key: "delivery-proofs/k.jpg",
-      invoiceDate: new Date(),
-      dueDate: new Date(Date.now() + 7 * 86400000),
-      lines: [{ shipmentLineId, deliveredQty: 4 }],
-    });
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: "delivery-proofs/k.jpg",
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "KONSI_NOT_RESERVED" });
 
     const finalShipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
-    expect(finalShipment?.status).toBe("DELIVERED");
-    expect(finalShipment?.deliveryId).toBeNull();
-    expect(result.deliveryId).toBe("");
-
+    expect(finalShipment?.status).toBe("IN_TRANSIT");
     const orderLine = await prisma.fieldSalesOrderLine.findUnique({ where: { id: lineId } });
     expect(orderLine?.deliveredQty).toBe(0);
   });

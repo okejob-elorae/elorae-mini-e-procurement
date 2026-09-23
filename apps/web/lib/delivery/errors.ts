@@ -16,7 +16,7 @@ export type DeliveryShipmentErrorCode =
   /** SALESMAN_CARRY ship transition with no carriedById set — symmetric with MISSING_RESI. */
   | "MISSING_CARRIER"
   /**
-   * A SALESMAN_CARRY shipment reaches either the ship transition or completion with
+   * A PUTUS SALESMAN_CARRY shipment reaches either the ship transition or completion with
    * invoiceDate/dueDate still unset on the shipment row — the admin never entered them at
    * pack/ship time.
    */
@@ -37,7 +37,13 @@ export type DeliveryShipmentErrorCode =
   /** SALESMAN_CARRY completion with no photo of the signed physical nota. */
   | "MISSING_NOTA_PHOTO"
   /** SALESMAN_CARRY completion with no (or blank, after trimming) typed receiver name. */
-  | "MISSING_SIGNED_BY";
+  | "MISSING_SIGNED_BY"
+  /**
+   * A KONSI completion whose order line holds no RESERVED reservation with enough headroom — in
+   * practice a konsi order approved before stock moved at completion, whose reservation was
+   * consumed at approve. Refused so its stock cannot move twice.
+   */
+  | "KONSI_NOT_RESERVED";
 
 export class DeliveryShipmentError extends Error {
   constructor(readonly code: DeliveryShipmentErrorCode) {

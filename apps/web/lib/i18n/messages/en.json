@@ -645,6 +645,7 @@
       "GPS_OUT_OF_RADIUS": "You're too far from the store to complete this delivery.",
       "MISSING_NOTA_PHOTO": "Take a photo of the signed nota before completing.",
       "MISSING_SIGNED_BY": "Enter the name of who signed for this delivery.",
+      "KONSI_NOT_RESERVED": "This consignment order has no reserved stock left for this shipment. It was likely approved before consignment stock moved at delivery — cancel this shipment.",
       "INVALID_FILE_TYPE": "That file type isn't supported. Use JPEG, PNG, or WEBP.",
       "FILE_TOO_LARGE": "That photo is too large (max 10MB). Try a smaller photo."
     }
