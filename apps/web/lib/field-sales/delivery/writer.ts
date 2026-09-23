@@ -244,6 +244,18 @@ export async function closeFieldSalesOrderRemainder(input: {
     const openLines = order.lines.filter((l) => outstandingQty(l) > 0);
     if (openLines.length === 0) throw new DeliveryError("INVALID_STATE");
 
+    /**
+     * Refused, not netted, while a shipment is still PACKED or IN_TRANSIT. The release below flips
+     * each line's whole reservation — a partial release per reservation is not expressible — so
+     * the in-flight shipment would then complete against nothing, and netting its planned qty out
+     * would still let the admin close units that are physically on a truck. Checked before any
+     * write, for putus as well as konsi.
+     */
+    const inFlight = await tx.deliveryShipment.count({
+      where: { orderId: order.id, status: { in: ["PACKED", "IN_TRANSIT"] } },
+    });
+    if (inFlight > 0) throw new DeliveryError("SHIPMENT_IN_FLIGHT");
+
     for (const l of openLines) {
       await tx.fieldSalesOrderLine.update({
         where: { id: l.id },

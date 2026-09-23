@@ -224,6 +224,8 @@ d("issueKonsiTransfer at shipment completion (test bed only)", () => {
     let inv = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
     expect(Number(inv.qtyOnHand)).toBe(96);
     expect(Number(inv.reservedQty)).toBe(2);
+    const afterFirstDraw = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemId) } });
+    expect(Number(afterFirstDraw.qty)).toBe(4);
 
     const line = await prisma.fieldSalesOrderLine.findUniqueOrThrow({ where: { id: seededId(lineId) } });
     const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: seededId(orderId) } });
@@ -251,7 +253,7 @@ d("issueKonsiTransfer at shipment completion (test bed only)", () => {
     expect(await prisma.konsiTransfer.count({ where: { orderId: seededId(orderId) } })).toBe(2);
   });
 
-  it("refuses an over-draw before any balance moves", async () => {
+  it("refuses an over-draw and rolls back everything", async () => {
     await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
     const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: seededId(orderId) }, include: { lines: true } });
     const line = order.lines[0];
@@ -276,6 +278,35 @@ d("issueKonsiTransfer at shipment completion (test bed only)", () => {
     expect(Number(after.qtyOnHand)).toBe(Number(before.qtyOnHand));
     expect(Number(after.reservedQty)).toBe(Number(before.reservedQty));
     expect(await prisma.storeStock.count({ where: { storeId: seededId(storeId), itemId: seededId(itemId) } })).toBe(0);
+    expect(await prisma.stockLedgerEntry.count({ where: { itemId: seededId(itemId) } })).toBe(0);
+    expect(await prisma.konsiTransfer.count({ where: { orderId: seededId(orderId) } })).toBe(0);
+    const res = await prisma.stockReservation.findUniqueOrThrow({ where: { fieldSalesLineId: seededId(lineId) } });
+    expect(res.state).toBe("RESERVED");
+    expect(Number(res.consumedQty)).toBe(0);
+  });
+
+  it("refuses a zero draw rather than passing the reservation guard as a no-op", async () => {
+    await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: seededId(orderId) }, include: { lines: true } });
+    const line = order.lines[0];
+    const { shipmentId } = await createDeliveryShipment({
+      orderId,
+      method: "EXPEDITION",
+      lines: [{ orderLineId: line.id, qty: 6 }],
+      packedById: salesmanId,
+    });
+    shipmentIds.push(shipmentId);
+    await expect(
+      prisma.$transaction((tx) =>
+        issueKonsiTransfer(tx, {
+          order: { id: order.id, storeId: order.storeId, lines: [{ id: line.id, itemId: line.itemId, variantSku: line.variantSku, productName: line.productName, qty: 0 }] },
+          shipmentId,
+          transferredById: salesmanId,
+        }),
+      ),
+    ).rejects.toBeInstanceOf(KonsiTransferReservationMismatchError);
+    expect(await prisma.konsiTransfer.count({ where: { orderId: seededId(orderId) } })).toBe(0);
+    expect(await prisma.stockLedgerEntry.count({ where: { itemId: seededId(itemId) } })).toBe(0);
   });
 
   it("links the transfer to its shipment and keeps orderLineId provenance", async () => {
@@ -325,10 +356,9 @@ d("issueKonsiTransfer at shipment completion (test bed only)", () => {
 
   it("moves nothing when a line is short — the existing reserve guard still aborts", async () => {
     /*
-     * The KonsiTransfer document is created LAST, so a bare count of 0 on it would also pass for
-     * a half-run transfer that had already moved stock and then thrown partway through — it only
-     * proves the last step never finished, not that nothing moved. Assert the whole-transaction
-     * rollback directly: qtyOnHand and reservedQty both unchanged, and no StoreStock row exists.
+     * Approve no longer transfers anything, so this pins the reserve half alone: the guarded
+     * reserve refuses the short order, and the approval rolls back with nothing reserved — the
+     * reservedQty assertion is the one that proves it — and nothing moved into the store.
      */
     const before = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(shortItemId) } });
     await expect(approveFieldSalesOrder({ orderId: shortOrderId, approvedById: salesmanId })).rejects.toBeInstanceOf(InsufficientStockError);

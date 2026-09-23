@@ -202,6 +202,59 @@ d("completeDeliveryShipment konsi stock move (test bed only)", () => {
     expect(Number(inv.qtyOnHand)).toBe(44);
   });
 
+  it("a completion that loses the status CAS moves no stock", async () => {
+    const { shipmentId, shipmentLineId } = await packAndShip("EXPEDITION", 6);
+    /*
+     * The writer's own read is spied so it captures the shipment while still IN_TRANSIT, then a
+     * concurrent completion by someone else is simulated committing before the konsi tail runs.
+     * The read-time status check has already passed by then, so only the CAS inside the
+     * transaction can still refuse — and it must do so before any stock moves.
+     */
+    const original = prisma.deliveryShipment.findUnique.bind(prisma.deliveryShipment);
+    const spy = vi.spyOn(prisma.deliveryShipment, "findUnique").mockImplementationOnce(
+      /* Cast needed: the real findUnique returns a Prisma client thenable, not a plain Promise. */
+      (async (args: unknown) => {
+        const stale = await original(args as Parameters<typeof original>[0]);
+        await prisma.deliveryShipment.update({ where: { id: shipmentId }, data: { status: "DELIVERED" } });
+        return stale;
+      }) as unknown as typeof prisma.deliveryShipment.findUnique,
+    );
+    try {
+      await expect(completeExpedition(shipmentId, shipmentLineId, 6)).rejects.toMatchObject({ code: "INVALID_STATE" });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await prisma.konsiTransfer.count({ where: { orderId: seededId(orderId) } })).toBe(0);
+    const inv = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
+    expect(Number(inv.qtyOnHand)).toBe(50);
+    expect(Number(inv.reservedQty)).toBe(6);
+    expect(await prisma.storeStock.count({ where: { storeId: seededId(storeId), itemId: seededId(itemId) } })).toBe(0);
+    const line = await prisma.fieldSalesOrderLine.findUniqueOrThrow({ where: { id: seededId(lineId) } });
+    expect(line.deliveredQty).toBe(0);
+  });
+
+  it("close remainder is refused while a shipment is in transit and allowed once it completes", async () => {
+    const { shipmentId, shipmentLineId } = await packAndShip("EXPEDITION", 4);
+    await expect(
+      closeFieldSalesOrderRemainder({ orderId, closedById: salesmanId, reason: "Sisa batal" }),
+    ).rejects.toMatchObject({ code: "SHIPMENT_IN_FLIGHT" });
+    let res = await prisma.stockReservation.findUniqueOrThrow({ where: { fieldSalesLineId: seededId(lineId) } });
+    expect(res.state).toBe("RESERVED");
+    let line = await prisma.fieldSalesOrderLine.findUniqueOrThrow({ where: { id: seededId(lineId) } });
+    expect(line.cancelledQty).toBe(0);
+
+    await completeExpedition(shipmentId, shipmentLineId, 4);
+    await closeFieldSalesOrderRemainder({ orderId, closedById: salesmanId, reason: "Sisa batal" });
+    res = await prisma.stockReservation.findUniqueOrThrow({ where: { fieldSalesLineId: seededId(lineId) } });
+    expect(res.state).toBe("RELEASED");
+    line = await prisma.fieldSalesOrderLine.findUniqueOrThrow({ where: { id: seededId(lineId) } });
+    expect(line.deliveredQty).toBe(4);
+    expect(line.cancelledQty).toBe(2);
+    const inv = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
+    expect(Number(inv.qtyOnHand)).toBe(46);
+    expect(Number(inv.reservedQty)).toBe(0);
+  });
+
   it("salesman-carry konsi ships and completes with no nota dates on the shipment", async () => {
     const { shipmentId, shipmentLineId } = await packAndShip("SALESMAN_CARRY", 6);
     await completeDeliveryShipment({

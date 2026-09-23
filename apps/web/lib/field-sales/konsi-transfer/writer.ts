@@ -56,6 +56,12 @@ export async function issueKonsiTransfer(
 
   for (const l of input.order.lines) {
     /**
+     * The caller filters to delivered lines today; a zero draw would pass the guard below as a
+     * no-op and a negative one would move stock INTO main, so neither is left to the caller.
+     */
+    if (!Number.isInteger(l.qty) || l.qty <= 0) throw new KonsiTransferReservationMismatchError(l.id, 0);
+
+    /**
      * Partial consume of the reservation approve created, folded into one guarded statement so a
      * concurrent completion cannot pass a stale read — the same idiom
      * `consumeFieldSalesOrderPartial` uses. It runs BEFORE any balance write for this line, so an

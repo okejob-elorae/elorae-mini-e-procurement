@@ -104,6 +104,21 @@ describe("createDeliveryShipment", () => {
       }),
     ).rejects.toMatchObject({ code: "OVER_PLANNED" });
   });
+
+  it("refuses an order that is not APPROVED and creates nothing", async () => {
+    for (const status of ["PENDING_APPROVAL", "REJECTED"] as const) {
+      await prisma.fieldSalesOrder.update({ where: { id: seededId(orderId) }, data: { status } });
+      await expect(
+        createDeliveryShipment({
+          orderId,
+          method: "EXPEDITION",
+          lines: [{ orderLineId: lineId, qty: 4 }],
+          packedById: userId,
+        }),
+      ).rejects.toMatchObject({ code: "INVALID_STATE" });
+    }
+    expect(await prisma.deliveryShipment.count({ where: { orderId: seededId(orderId) } })).toBe(0);
+  });
 });
 
 describe("updateShipmentTracking + shipDeliveryShipment", () => {

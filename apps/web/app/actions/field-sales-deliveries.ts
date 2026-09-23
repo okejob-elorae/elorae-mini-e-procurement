@@ -29,7 +29,8 @@ export type DeliveryActionResult =
         | "OVER_DELIVER"
         | "INSUFFICIENT_STOCK"
         | "NOT_RETRYABLE"
-        | "RECEIVABLE_HAS_PAYMENTS";
+        | "RECEIVABLE_HAS_PAYMENTS"
+        | "SHIPMENT_IN_FLIGHT";
       shortLines?: Array<{ orderLineId: string; requested: number; onHand: number }>;
     };
 

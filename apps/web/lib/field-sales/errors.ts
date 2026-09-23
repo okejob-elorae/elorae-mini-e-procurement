@@ -49,7 +49,14 @@ export type DeliveryErrorCode =
   | "NO_LINES"
   | "OVER_DELIVER"
   | "INSUFFICIENT_STOCK"
-  | "INVALID_DATES";
+  | "INVALID_DATES"
+  /**
+   * Close remainder refused while the order still has a PACKED or IN_TRANSIT delivery shipment.
+   * Closing releases the whole line reservation, so the in-flight shipment would then complete
+   * against nothing — KONSI_NOT_RESERVED for konsi, OVER_DELIVER for putus — with its goods
+   * already on the truck. Complete or cancel the shipment first.
+   */
+  | "SHIPMENT_IN_FLIGHT";
 
 export class DeliveryError extends Error {
   constructor(
@@ -68,6 +75,8 @@ export class DeliveryError extends Error {
  * `UPDATE … WHERE state = 'RESERVED' AND consumedQty + n <= qty` — zero rows affected means
  * either the reservation is not RESERVED at all (already CONSUMED/RELEASED, or missing) or the
  * draw would exceed what is left, and this throws BEFORE any balance move for the line runs.
+ * Also thrown, ahead of that statement, for a draw that is not a positive integer, which the
+ * guard would otherwise pass (zero) or turn into a stock increase (negative).
  */
 export class KonsiTransferReservationMismatchError extends Error {
   constructor(

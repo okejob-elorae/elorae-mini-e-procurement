@@ -18,12 +18,13 @@ import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
 import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "@/lib/finance/ar/delivery-journal";
 
 /**
- * `DeliveryErrorCode` is in here because completion calls straight through to
+ * `DeliveryErrorCode` is in here because a putus completion calls straight through to
  * `recordFieldSalesDelivery`, which throws `DeliveryError` — a DIFFERENT class from
- * `DeliveryShipmentError` — for OVER_DELIVER, INSUFFICIENT_STOCK, INVALID_DATES and NO_LINES.
- * Those are reachable through ordinary operator sequences (two shipments claiming one order line,
- * a stock-out between packing and delivery), not rare edge cases. The two unions overlap on
- * NOT_FOUND / INVALID_STATE / NO_LINES, which is fine — a union dedupes.
+ * `DeliveryShipmentError` — for OVER_DELIVER, INSUFFICIENT_STOCK, INVALID_DATES and NO_LINES, and
+ * the konsi completion maps a main-stock floor refusal onto the same `DeliveryError`
+ * INSUFFICIENT_STOCK. Those are reachable through ordinary operator sequences (two shipments
+ * claiming one order line, a stock-out between packing and delivery), not rare edge cases. The two
+ * unions overlap on NOT_FOUND / INVALID_STATE / NO_LINES, which is fine — a union dedupes.
  */
 export type ShipmentActionReason =
   | "FORBIDDEN"
@@ -207,10 +208,11 @@ export async function completeShipmentAction(input: {
      * app/actions/field-sales-deliveries.ts. completeDeliveryShipment itself stays a pure DB
      * writer with no journal-posting side effect, same as recordFieldSalesDelivery.
      *
-     * result.deliveryId is "" for a KONSI order (completeDeliveryShipment's own konsi branch
-     * skips recordFieldSalesDelivery entirely, since KonsiTransfer already moved stock at
-     * approve) — guard on it being non-empty or these post against a delivery that doesn't
-     * exist.
+     * result.deliveryId is "" for a KONSI order — completeDeliveryShipment's konsi branch moves
+     * the stock itself through a KonsiTransfer inside its own transaction and never calls
+     * recordFieldSalesDelivery, because a konsi transfer is a stock move, not a sale, and has no
+     * delivery document or journal — guard on it being non-empty or these post against a delivery
+     * that doesn't exist.
      */
     if (result.deliveryId) {
       await postArJournalSafely("field_delivery_revenue", result.deliveryId, () =>

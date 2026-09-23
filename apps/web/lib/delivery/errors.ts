@@ -39,11 +39,19 @@ export type DeliveryShipmentErrorCode =
   /** SALESMAN_CARRY completion with no (or blank, after trimming) typed receiver name. */
   | "MISSING_SIGNED_BY"
   /**
-   * A KONSI completion whose order line holds no RESERVED reservation with enough headroom — in
-   * practice a konsi order approved before stock moved at completion, whose reservation was
-   * consumed at approve. Refused so its stock cannot move twice.
+   * A KONSI completion whose order line holds no RESERVED reservation with enough headroom.
+   * Packing is refused on a non-APPROVED order and close remainder is refused while a shipment is
+   * in flight, so what remains is a konsi shipment packed before stock moved at completion, or an
+   * order the previous release approved after the migration ran (its reservation was consumed at
+   * approve). The whole completion rolls back, so its stock cannot move twice.
    */
-  | "KONSI_NOT_RESERVED";
+  | "KONSI_NOT_RESERVED"
+  /**
+   * A KONSI completion whose line has no main-warehouse InventoryValue row to move stock out of.
+   * Approve's reservation needed that row too, so in practice it was removed after approve. The
+   * whole completion rolls back.
+   */
+  | "NO_INVENTORY_ROW";
 
 export class DeliveryShipmentError extends Error {
   constructor(readonly code: DeliveryShipmentErrorCode) {

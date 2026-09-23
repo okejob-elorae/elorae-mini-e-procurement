@@ -1,10 +1,10 @@
-import { prisma } from "@elorae/db";
+import { prisma, InventoryValueMissingError, MainStockNegativeError } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { recordFieldSalesDelivery } from "@/lib/field-sales/delivery/writer";
 import { evaluateCheckinRadius, resolveEffectiveRadius, parseRadiusSetting } from "@/lib/pwa/checkin-radius";
 import { issueKonsiTransfer } from "@/lib/field-sales/konsi-transfer/writer";
-import { KonsiTransferReservationMismatchError } from "@/lib/field-sales/errors";
+import { DeliveryError, KonsiTransferReservationMismatchError } from "@/lib/field-sales/errors";
 import { nextDeliveryStatus } from "@/lib/field-sales/delivery/plan";
 import { DeliveryShipmentError } from "./errors";
 
@@ -27,6 +27,14 @@ export async function createDeliveryShipment(input: {
       include: { lines: true },
     });
     if (!order) throw new DeliveryShipmentError("NOT_FOUND");
+    /**
+     * Only an APPROVED order can ship. A pending or rejected one can never complete: putus
+     * completion goes through `recordFieldSalesDelivery`, which refuses anything not APPROVED, and a
+     * konsi order holds no reservation for completion to draw down until approve creates one
+     * (KONSI_NOT_RESERVED). Refused here, the shipment is never packed rather than dying at
+     * completion after the goods have left.
+     */
+    if (order.status !== "APPROVED") throw new DeliveryShipmentError("INVALID_STATE");
 
     const packer = await tx.user.findUnique({
       where: { id: input.packedById },
@@ -160,11 +168,12 @@ export async function completeDeliveryShipment(input: {
   proofPhotoUrl: string;
   proofPhotoR2Key: string;
   /**
-   * EXPEDITION only. A SALESMAN_CARRY completion IGNORES these and reads the dates the admin
+   * PUTUS EXPEDITION only. A SALESMAN_CARRY completion IGNORES these and reads the dates the admin
    * committed to the shipment row at pack/ship time instead — the salesman in the field carries a
    * printed nota bearing those dates, so the accounting record must match the paper, not whatever
-   * the phone happens to send at completion time. Optional in the type, still mandatory at
-   * runtime for EXPEDITION (MISSING_DATES).
+   * the phone happens to send at completion time. A konsi completion raises no invoice and never
+   * reads them. Optional in the type, still mandatory at runtime for a PUTUS EXPEDITION
+   * completion (MISSING_DATES).
    */
   invoiceDate?: Date;
   dueDate?: Date;
@@ -237,9 +246,10 @@ export async function completeDeliveryShipment(input: {
    *
    * Note this keys on `shipment.method` (`DeliveryShipment.method`), NOT on
    * `shipment.order.orderType` — two different fields on two different rows. A KONSI order shipped
-   * by EXPEDITION skips this whole block; a KONSI order carried by a salesman passes through it and
-   * then still skips the stock/accounting path below, the two being independent sections. A konsi
-   * order skips the date source entirely on both methods.
+   * by EXPEDITION skips this whole block; a KONSI order carried by a salesman passes through its
+   * location and proof gates like any other, the two being independent sections. What a konsi
+   * order skips is the accounting path — no invoice, no receivable, no journal — and with it the
+   * date source, on both methods; its stock still moves, in the konsi tail below.
    */
   let effectiveInvoiceDate: Date | undefined;
   let effectiveDueDate: Date | undefined;
@@ -471,11 +481,11 @@ export async function completeDeliveryShipment(input: {
         .map((line) => ({ shipmentLine: lineById.get(line.shipmentLineId)!, qty: line.deliveredQty }));
 
       if (delivered.length > 0) {
-        const orderLines = await tx.fieldSalesOrderLine.findMany({
+        const deliveredOrderLines = await tx.fieldSalesOrderLine.findMany({
           where: { id: { in: delivered.map((d) => d.shipmentLine.orderLineId) } },
           select: { id: true, productName: true },
         });
-        const productNameById = new Map(orderLines.map((l) => [l.id, l.productName]));
+        const productNameById = new Map(deliveredOrderLines.map((l) => [l.id, l.productName]));
         try {
           await issueKonsiTransfer(tx, {
             order: {
@@ -493,9 +503,18 @@ export async function completeDeliveryShipment(input: {
             transferredById: input.deliveredById,
           });
         } catch (error) {
+          /**
+           * Every refusal the transfer can raise leaves as a typed code rather than UNEXPECTED —
+           * the PWA offline queue retries an unmapped failure up to its ceiling, and none of these
+           * clears on a retry. Rethrown inside the transaction, so the CAS above rolls back too and
+           * the shipment stays IN_TRANSIT. `instanceof`, never the message: the codes overlap
+           * nothing, but the classes are what the transfer actually throws.
+           */
           if (error instanceof KonsiTransferReservationMismatchError) {
             throw new DeliveryShipmentError("KONSI_NOT_RESERVED");
           }
+          if (error instanceof MainStockNegativeError) throw new DeliveryError("INSUFFICIENT_STOCK");
+          if (error instanceof InventoryValueMissingError) throw new DeliveryShipmentError("NO_INVENTORY_ROW");
           throw error;
         }
         for (const d of delivered) {
