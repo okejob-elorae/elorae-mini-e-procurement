@@ -1,0 +1,173 @@
+export type SellThroughMethodValue = "SPG_POS" | "SHELF_COUNT";
+export type SellThroughResolutionValue = "BILL" | "SHRINKAGE" | "BILL_POS" | "REDUCE";
+export type LedgerRow = { itemId: string; variantSku: string; qty: number; refType: string; refId: string };
+export type OpeningFigure = { itemId: string; variantSku: string; qty: number };
+export type CountedFigure = {
+  itemId: string;
+  variantSku: string;
+  countedQty: number | null;
+  cause: "SHRINKAGE" | "UNRECORDED_SALE" | null;
+};
+export type DerivedLine = {
+  itemId: string;
+  variantSku: string;
+  openingQty: number;
+  inQty: number;
+  outQty: number;
+  posSoldQty: number;
+  gapQty: number;
+  closingQty: number;
+  countedQty: number | null;
+  billedQty: number;
+  shrinkageQty: number;
+  negativeSold: boolean;
+  suggestedResolution: SellThroughResolutionValue | null;
+};
+
+export class UnknownLedgerRefTypeError extends Error {
+  constructor(readonly refType: string) {
+    super(`Unknown store ledger refType: ${refType}`);
+    this.name = "UnknownLedgerRefTypeError";
+  }
+}
+
+export class InvalidResolutionError extends Error {
+  constructor(readonly reason: "WRONG_ARM" | "REASON_REQUIRED" | "NOT_HELD") {
+    super(`Invalid sell-through resolution: ${reason}`);
+    this.name = "InvalidResolutionError";
+  }
+}
+
+export function roundQty(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+type Bucket = { opening: number; inQty: number; outQty: number; posSold: number; gap: number };
+
+/*
+ * Deliberately import-free — a client component may import it for a preview. Every store-side
+ * movement refType is classified explicitly; anything else refuses rather than being ignored,
+ * because the refType registry is exhaustive over the union and NOT over the column.
+ */
+export function deriveSellThroughLines(input: {
+  method: SellThroughMethodValue;
+  openings: OpeningFigure[];
+  rows: LedgerRow[];
+  counted: CountedFigure[];
+}): DerivedLine[] {
+  const keyOf = (itemId: string, variantSku: string) => `${itemId}::${variantSku}`;
+  const buckets = new Map<string, Bucket & { itemId: string; variantSku: string }>();
+  const bucket = (itemId: string, variantSku: string) => {
+    const key = keyOf(itemId, variantSku);
+    let b = buckets.get(key);
+    if (!b) {
+      b = { itemId, variantSku, opening: 0, inQty: 0, outQty: 0, posSold: 0, gap: 0 };
+      buckets.set(key, b);
+    }
+    return b;
+  };
+
+  for (const o of input.openings) bucket(o.itemId, o.variantSku).opening += o.qty;
+  for (const r of input.rows) {
+    const b = bucket(r.itemId, r.variantSku);
+    switch (r.refType) {
+      case "OpeningBalance":
+        b.opening += r.qty;
+        break;
+      case "KonsiTransfer":
+        b.inQty += r.qty;
+        break;
+      case "StoreTransfer":
+        if (r.qty >= 0) b.inQty += r.qty;
+        else b.outQty += -r.qty;
+        break;
+      case "FieldReturn":
+        b.outQty += -r.qty;
+        break;
+      case "SpgSale":
+        b.posSold += -r.qty;
+        break;
+      case "StoreStocktake":
+        b.gap += -r.qty;
+        break;
+      default:
+        throw new UnknownLedgerRefTypeError(r.refType);
+    }
+  }
+  const countedByKey = new Map(input.counted.map((c) => [keyOf(c.itemId, c.variantSku), c]));
+  for (const c of input.counted) bucket(c.itemId, c.variantSku);
+
+  const lines: DerivedLine[] = [];
+  for (const [key, b] of buckets) {
+    const counted = countedByKey.get(key) ?? null;
+    const openingQty = roundQty(b.opening);
+    const inQty = roundQty(b.inQty);
+    const outQty = roundQty(b.outQty);
+    const posSoldQty = roundQty(b.posSold);
+    const gapQty = roundQty(b.gap);
+    const closingQty = roundQty(openingQty + inQty - outQty - posSoldQty - gapQty);
+    const countedQty = counted?.countedQty ?? null;
+    if (openingQty === 0 && inQty === 0 && outQty === 0 && posSoldQty === 0 && gapQty === 0 && closingQty === 0 && countedQty === null) continue;
+
+    let billedQty: number;
+    let negativeSold = false;
+    let suggestedResolution: SellThroughResolutionValue | null = null;
+    if (input.method === "SHELF_COUNT") {
+      const raw = roundQty(openingQty + inQty - outQty - closingQty);
+      negativeSold = raw < 0;
+      billedQty = Math.max(raw, 0);
+    } else {
+      billedQty = posSoldQty;
+      if (gapQty > 0 && counted?.cause === "UNRECORDED_SALE") suggestedResolution = "BILL";
+      if (gapQty > 0 && counted?.cause === "SHRINKAGE") suggestedResolution = "SHRINKAGE";
+    }
+    lines.push({
+      itemId: b.itemId,
+      variantSku: b.variantSku,
+      openingQty,
+      inQty,
+      outQty,
+      posSoldQty,
+      gapQty,
+      closingQty,
+      countedQty,
+      billedQty,
+      shrinkageQty: 0,
+      negativeSold,
+      suggestedResolution,
+    });
+  }
+  return lines.sort((a, b) => (a.itemId === b.itemId ? a.variantSku.localeCompare(b.variantSku) : a.itemId.localeCompare(b.itemId)));
+}
+
+export function isLineHeld(
+  line: { gapQty: number; resolution: SellThroughResolutionValue | null },
+  method: SellThroughMethodValue,
+): boolean {
+  return method === "SPG_POS" && line.gapQty !== 0 && line.resolution === null;
+}
+
+export function applyResolution(
+  line: { posSoldQty: number; gapQty: number },
+  method: SellThroughMethodValue,
+  resolution: SellThroughResolutionValue,
+  reason: string | null,
+): { billedQty: number; shrinkageQty: number; resolutionReason: string | null } {
+  if (method !== "SPG_POS" || line.gapQty === 0) throw new InvalidResolutionError("NOT_HELD");
+  const shortfall = line.gapQty > 0;
+  if (shortfall !== (resolution === "BILL" || resolution === "SHRINKAGE")) throw new InvalidResolutionError("WRONG_ARM");
+  const trimmed = reason?.trim() ?? "";
+  const needsReason = resolution === "SHRINKAGE" || resolution === "REDUCE";
+  if (needsReason && trimmed === "") throw new InvalidResolutionError("REASON_REQUIRED");
+  const resolutionReason = needsReason ? trimmed : trimmed === "" ? null : trimmed;
+  switch (resolution) {
+    case "BILL":
+      return { billedQty: roundQty(line.posSoldQty + line.gapQty), shrinkageQty: 0, resolutionReason };
+    case "SHRINKAGE":
+      return { billedQty: line.posSoldQty, shrinkageQty: line.gapQty, resolutionReason };
+    case "BILL_POS":
+      return { billedQty: line.posSoldQty, shrinkageQty: 0, resolutionReason };
+    case "REDUCE":
+      return { billedQty: Math.max(roundQty(line.posSoldQty + line.gapQty), 0), shrinkageQty: 0, resolutionReason };
+  }
+}
