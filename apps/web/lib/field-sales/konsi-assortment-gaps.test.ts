@@ -332,11 +332,15 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
       seededId(openGapOrderId),
       seededId(partialGapOrderId),
     ];
-    /* Rows a completed shipment writes — scoped to this spec's own orders, items and store. */
-    await prisma.deliveryShipmentLine.deleteMany({ where: { shipment: { orderId: { in: allOrderIds } } } });
-    await prisma.deliveryShipment.deleteMany({ where: { orderId: { in: allOrderIds } } });
+    /**
+     * Rows a completed shipment writes — scoped to this spec's own orders, items and store.
+     * Transfers go BEFORE shipments: deleting several shipments that each hold a transfer trips
+     * Prisma's emulated 1:1 relation check ("Expected zero or one element, got 2").
+     */
     await prisma.konsiTransferLine.deleteMany({ where: { itemId: { in: allItemIds } } });
     await prisma.konsiTransfer.deleteMany({ where: { orderId: { in: allOrderIds } } });
+    await prisma.deliveryShipmentLine.deleteMany({ where: { shipment: { orderId: { in: allOrderIds } } } });
+    await prisma.deliveryShipment.deleteMany({ where: { orderId: { in: allOrderIds } } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: allItemIds } } });
     await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: allItemIds } } });
     await prisma.storeStock.deleteMany({ where: { storeId: seededId(storeId) } });

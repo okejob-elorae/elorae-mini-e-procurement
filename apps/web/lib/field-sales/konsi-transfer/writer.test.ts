@@ -176,10 +176,14 @@ d("issueKonsiTransfer at shipment completion (test bed only)", () => {
       .map((n) => n.id);
     if (leakedNotifIds.length > 0) await prisma.adminNotification.deleteMany({ where: { id: { in: leakedNotifIds } } });
 
-    await prisma.deliveryShipmentLine.deleteMany({ where: { shipment: { orderId: { in: orderIds } } } });
-    await prisma.deliveryShipment.deleteMany({ where: { orderId: { in: orderIds } } });
+    /**
+     * Transfers BEFORE shipments: deleting several shipments that each hold a transfer trips
+     * Prisma's emulated 1:1 relation check ("Expected zero or one element, got 2").
+     */
     await prisma.konsiTransferLine.deleteMany({ where: { itemId: { in: itemIds } } });
     await prisma.konsiTransfer.deleteMany({ where: { orderId: { in: orderIds } } });
+    await prisma.deliveryShipmentLine.deleteMany({ where: { shipment: { orderId: { in: orderIds } } } });
+    await prisma.deliveryShipment.deleteMany({ where: { orderId: { in: orderIds } } });
     await prisma.storeStock.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: itemIds } } });
     await prisma.stockReservation.deleteMany({ where: { itemId: { in: itemIds } } });
