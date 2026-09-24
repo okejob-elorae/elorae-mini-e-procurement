@@ -3,12 +3,13 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { AlertTriangle, ArrowLeft, CheckCircle2, ClipboardList, XCircle } from "lucide-react";
 import type { SellThroughDetail, SellThroughLineDetail } from "@/lib/konsi-sell-through/queries";
 import { resolutionArmsFor, resolutionNeedsReason, type SellThroughResolutionValue } from "@/lib/konsi-sell-through/derive";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
+import { formatDateTime } from "@/lib/sales-orders/format";
 import {
   resolveSellThroughLineAction,
   approveSellThroughAction,
@@ -69,6 +70,7 @@ export function SellThroughDetailClient({
   const tApprove = useTranslations("konsiSellThrough.approve");
   const tCancel = useTranslations("konsiSellThrough.cancel");
   const tCommon = useTranslations("common");
+  const locale = useLocale();
   const router = useRouter();
 
   const [resolutions, setResolutions] = useState<Record<string, SellThroughResolutionValue | "">>({});
@@ -85,7 +87,8 @@ export function SellThroughDetailClient({
 
   const isDraft = report.status === "DRAFT";
   const isSpgPos = report.method === "SPG_POS";
-  const showResolutionColumn = isSpgPos && isDraft && canManage;
+  /* Every SPG_POS report shows its resolutions; only a DRAFT viewed by a manager can edit them. */
+  const canEditResolution = isSpgPos && isDraft && canManage;
   const heldLines = report.lines.filter((l) => l.held);
 
   /* An over-long reason arrives under two different codes (INVALID_RESOLUTION on resolve, REASON_REQUIRED on cancel) and gets its own copy on both. */
@@ -261,6 +264,22 @@ export function SellThroughDetailClient({
               )}
             </span>
           </div>
+          <div className="flex justify-between gap-4 text-sm">
+            <span className="text-muted-foreground">{tDetail("createdBy")}</span>
+            <span className="text-right">{`${report.createdByLabel} · ${formatDateTime(report.createdAt, locale)}`}</span>
+          </div>
+          {report.approvedByLabel && report.approvedAt && (
+            <div className="flex justify-between gap-4 text-sm">
+              <span className="text-muted-foreground">{tDetail("approvedBy")}</span>
+              <span className="text-right">{`${report.approvedByLabel} · ${formatDateTime(report.approvedAt, locale)}`}</span>
+            </div>
+          )}
+          {report.cancelledByLabel && report.cancelledAt && (
+            <div className="flex justify-between gap-4 text-sm">
+              <span className="text-muted-foreground">{tDetail("cancelledBy")}</span>
+              <span className="text-right">{`${report.cancelledByLabel} · ${formatDateTime(report.cancelledAt, locale)}`}</span>
+            </div>
+          )}
         </div>
         {report.status === "CANCELLED" && report.cancelReason && (
           <p className="text-sm text-muted-foreground">
@@ -293,7 +312,9 @@ export function SellThroughDetailClient({
                     <TableHead className="text-right">{tDetail("colCounted")}</TableHead>
                     <TableHead className="text-right">{tDetail("colBilled")}</TableHead>
                     <TableHead className="text-right">{tDetail("colShrinkage")}</TableHead>
-                    {showResolutionColumn && <TableHead className="min-w-[260px]">{tDetail("colResolution")}</TableHead>}
+                    {isSpgPos && (
+                      <TableHead className={canEditResolution ? "min-w-[260px]" : "min-w-[180px]"}>{tDetail("colResolution")}</TableHead>
+                    )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -312,6 +333,11 @@ export function SellThroughDetailClient({
                           <p className="font-medium">{line.productName}</p>
                           {(line.variantLabel || line.variantSku) && (
                             <p className="text-xs text-muted-foreground font-mono">{line.variantLabel ?? line.variantSku}</p>
+                          )}
+                          {isDraft && line.held && (
+                            <Badge variant="outline" className="mt-1 border-amber-600 text-amber-700">
+                              {tDetail("heldBadge")}
+                            </Badge>
                           )}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">{line.openingQty}</TableCell>
@@ -345,7 +371,32 @@ export function SellThroughDetailClient({
                           </span>
                         </TableCell>
                         <TableCell className="text-right tabular-nums">{line.shrinkageQty}</TableCell>
-                        {showResolutionColumn && (
+                        {isSpgPos && !canEditResolution && (
+                          <TableCell>
+                            {arms.length === 0 ? (
+                              <span className="text-muted-foreground">{tDetail("none")}</span>
+                            ) : line.resolution ? (
+                              <div className="space-y-0.5">
+                                <p>{t(`resolution.${line.resolution}`)}</p>
+                                {line.resolutionReason && (
+                                  <p className="max-w-xs truncate text-xs text-muted-foreground" title={line.resolutionReason}>
+                                    {line.resolutionReason}
+                                  </p>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="space-y-0.5">
+                                <p className="text-muted-foreground">{tDetail("unresolved")}</p>
+                                {line.suggestedResolution && (
+                                  <p className="text-xs text-muted-foreground">
+                                    {tDetail("suggestedLabel", { resolution: t(`resolution.${line.suggestedResolution}`) })}
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </TableCell>
+                        )}
+                        {canEditResolution && (
                           <TableCell>
                             {arms.length === 0 ? (
                               <span className="text-muted-foreground">{tDetail("none")}</span>

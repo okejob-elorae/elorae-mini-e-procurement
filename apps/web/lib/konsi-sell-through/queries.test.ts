@@ -159,6 +159,9 @@ d("konsi sell-through queries (test bed only)", () => {
     const approved = await getSellThrough(id);
     expect(approved!.status).toBe("APPROVED");
     expect(approved!.approvedById).toBe(state.userId);
+    expect(approved!.approvedByLabel).toBe("Test Sell-through User");
+    expect(approved!.createdByLabel).toBe("Test Sell-through User");
+    expect(approved!.cancelledByLabel).toBeNull();
     expect(approved!.approvedAt).not.toBeNull();
   }, SLOW);
 

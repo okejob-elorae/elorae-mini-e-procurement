@@ -143,10 +143,13 @@ export type SellThroughDetail = {
   periodStart: Date | null;
   periodEnd: Date;
   createdById: string;
+  createdByLabel: string;
   createdAt: Date;
   approvedById: string | null;
+  approvedByLabel: string | null;
   approvedAt: Date | null;
   cancelledById: string | null;
+  cancelledByLabel: string | null;
   cancelledAt: Date | null;
   cancelReason: string | null;
   lines: SellThroughLineDetail[];
@@ -201,13 +204,24 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
   });
   if (!doc) return null;
 
-  /* relationMode = "prisma": neither closingStocktakeId nor previousId carries a database FK, so both docNo lookups are best-effort and fall back to an empty/null label rather than throwing. */
-  const [closingStocktake, previous] = await Promise.all([
+  /**
+   * relationMode = "prisma": neither closingStocktakeId nor previousId carries a database FK, so
+   * both docNo lookups are best-effort and fall back to an empty/null label rather than throwing.
+   * The three actor ids are bare scalars with no relation at all, so their labels are one batched
+   * user lookup, falling back to "—" for an id that resolves to nobody.
+   */
+  const userIds = Array.from(
+    new Set([doc.createdById, doc.approvedById, doc.cancelledById].filter((x): x is string => x !== null)),
+  );
+  const [closingStocktake, previous, users] = await Promise.all([
     prisma.storeStocktake.findUnique({ where: { id: doc.closingStocktakeId }, select: { docNo: true } }),
     doc.previousId
       ? prisma.konsiSellThrough.findUnique({ where: { id: doc.previousId }, select: { docNo: true } })
       : Promise.resolve(null),
+    prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true, email: true } }),
   ]);
+  const labelById = new Map(users.map((u) => [u.id, u.name ?? u.email]));
+  const labelFor = (userId: string | null): string | null => (userId ? labelById.get(userId) ?? "—" : null);
 
   return {
     id: doc.id,
@@ -223,10 +237,13 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
     periodStart: doc.periodStart,
     periodEnd: doc.periodEnd,
     createdById: doc.createdById,
+    createdByLabel: labelFor(doc.createdById) ?? "—",
     createdAt: doc.createdAt,
     approvedById: doc.approvedById,
+    approvedByLabel: labelFor(doc.approvedById),
     approvedAt: doc.approvedAt,
     cancelledById: doc.cancelledById,
+    cancelledByLabel: labelFor(doc.cancelledById),
     cancelledAt: doc.cancelledAt,
     cancelReason: doc.cancelReason,
     lines: doc.lines.map((l) => ({
