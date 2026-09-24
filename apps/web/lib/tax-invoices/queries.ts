@@ -48,10 +48,10 @@ export async function listTaxInvoices(params: {
   const [rows, total, countRows] = await Promise.all([
     prisma.taxInvoice.findMany({
       where,
-      /* Delivery-only sort key: no SELL_THROUGH faktur exists in prod yet, so ordering by the
-         delivery's own invoiceDate alone is unchanged for this slice. Slice C must add a
-         source-agnostic invoice-date sort key before a SELL_THROUGH faktur can carry a real one
-         (logged in docs/FOLLOWUPS.md by Task 6). */
+      /**
+       * Delivery-only sort key, correct only while no sell-through faktur exists; it must become
+       * source-agnostic before invoicing creates one (see docs/FOLLOWUPS.md).
+       */
       orderBy: { delivery: { invoiceDate: "desc" } },
       skip: (params.page - 1) * params.perPage,
       take: params.perPage,

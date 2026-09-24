@@ -11,11 +11,11 @@ import { Card, CardContent } from "@/components/ui/card";
  * Segment-scoped error boundary for everything under `/pwa`, the sibling of `not-found.tsx`
  * beside it and there for the same reason: an installed PWA has no browser chrome, so a thrown
  * error that falls through to Next's default error page is an unescapable dead end with no back
- * button and no URL bar. It is reachable on the BKM route in particular — `Receivable.delivery`
- * is a REQUIRED relation under `relationMode = "prisma"`, so there is no database FK behind it
- * and a dangling `deliveryId` makes the read itself throw `Inconsistent query result` rather
- * than resolving to null. Retry first (the failure may be transient), then a way back to `/pwa`
- * for the case where it is not.
+ * button and no URL bar. It is reachable on the BKM route in particular — `relationMode = "prisma"`
+ * puts no database FK behind `Receivable.deliveryId`, so a receivable whose delivery row is gone
+ * reads back with neither source relation, and `getSettlementForPrint` throws
+ * `ReceivableSourceMissingError` out of `resolveReceivableSource`. Retry first (the failure may be
+ * transient), then a way back to `/pwa` for the case where it is not.
  *
  * Next requires this file to be a client component and hands it `reset` to re-render the
  * segment. `error.digest` — the server-side correlation id — goes to the console rather than

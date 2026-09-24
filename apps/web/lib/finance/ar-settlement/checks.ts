@@ -253,10 +253,10 @@ export function buildCollectibilityCheck(
   }
   if (blocked.length === 0) return pass("INVOICES_COLLECTIBLE");
   /**
-   * A receivable with no delivery docNo can only be named by its cuid, and a bare cuid is
-   * unactionable. `subjectKind` is one value for the whole check, so the labelled kind is used
-   * as soon as ANY row falls back to an id — a docNo rendered as "invoice DLV/0009" still reads
-   * correctly, while an unlabelled cuid does not.
+   * A receivable whose docNo could not be resolved can only be named by its cuid, and a bare
+   * cuid is unactionable. `subjectKind` is one value for the whole check, so the labelled kind is
+   * used as soon as ANY row falls back to an id — a docNo rendered as "invoice DLV/0009" still
+   * reads correctly, while an unlabelled cuid does not.
    */
   const invoiceKind = blocked.every((row) => row.docNo !== null) ? "INVOICE" : "INVOICE_ID";
   return fail(

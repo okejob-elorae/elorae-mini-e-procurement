@@ -7,10 +7,8 @@
  * `FieldSalesDelivery.total` — no runtime `@elorae/db` import, so this module stays cheap to pull
  * into anything, the same policy as `lib/field-sales/retur/variance.ts` and
  * `lib/tax-invoices/status-display.ts`. The two `SELECT` constants are plain object literals typed
- * with `as const`; a `satisfies Prisma.ReceivableSelect`/`Prisma.TaxInvoiceSelect` annotation was
- * tried and dropped — the generated client is not regenerated for this task, so there is no way to
- * confirm the annotation compiles, and the brief allows relying on the consumers' own inference
- * instead.
+ * with `as const`. They carry no `satisfies Prisma.ReceivableSelect`/`TaxInvoiceSelect` annotation;
+ * each consumer's own `select` inference type-checks them.
  *
  * `resolve*` prefers `delivery` when both relations are somehow set, and throws
  * `ReceivableSourceMissingError` when neither is — both branches are unreachable through the normal
@@ -133,12 +131,10 @@ export function resolveReceivableSource(row: ReceivableSourceRow): ReceivableSou
 }
 
 /**
- * The DELIVERY arm copies EXACTLY the `delivery` selection `lib/tax-invoices/queries.ts`'s
- * `listTaxInvoices` reads today, field for field, so a later swap of that hand-rolled select for
- * this one changes no output. The SELL_THROUGH arm adds `id` (needed for `sellThroughId`, which the
- * comment shape in the plan omits but every consumer of `TaxInvoiceSource` requires) and `storeId`
- * alongside the nested `store` relation, mirroring the delivery arm's own `orderId` +
- * `order.store.*` shape.
+ * The DELIVERY arm is field for field the `delivery` selection `lib/tax-invoices/queries.ts`'s
+ * `listTaxInvoices` read before it switched to this constant, so the switch changed no output.
+ * The SELL_THROUGH arm adds `id` (needed for `sellThroughId`) and `storeId` alongside the nested
+ * `store` relation, mirroring the delivery arm's own `orderId` + `order.store.*` shape.
  */
 export const TAX_INVOICE_SOURCE_SELECT = {
   delivery: {
@@ -199,7 +195,7 @@ export type TaxInvoiceSource =
       storeId: string;
       storeName: string;
       storeNpwp: string | null;
-      /* Only a delivery-backed faktur carries these until slice C invoices a sell-through report. */
+      /* A report carries no invoice date, due date or total until invoicing stamps them; this arm must read them off the report once it does. */
       invoiceDate: null;
       dueDate: null;
       total: null;

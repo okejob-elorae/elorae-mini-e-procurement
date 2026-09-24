@@ -286,8 +286,10 @@ d("listTaxInvoices (test bed only)", () => {
     expect(row.orderId).toBeNull();
     expect(row.storeId).toBe(sellThroughStoreId);
     expect(row.storeName).toBe(sellThroughStoreName);
-    /* Slice C invoices a sell-through report; until then these three stay null rather than
-       borrowing a delivery's figures the row does not have. */
+    /**
+     * Until invoicing stamps a sell-through report, these three stay null rather than borrowing a
+     * delivery's figures the row does not have.
+     */
     expect(row.invoiceDate).toBeNull();
     expect(row.dueDate).toBeNull();
     expect(row.total).toBeNull();
