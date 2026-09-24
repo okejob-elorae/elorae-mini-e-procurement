@@ -19,7 +19,7 @@ import { priceSellThroughLines } from "./pricing";
 import { isInvoiceDateAllowed, dueDateFor } from "./invoice-dates";
 import { isSellThroughSalesmanCandidate } from "./salesman-candidates";
 
-/* A UX bound on a free-text reason — both columns are TEXT. The screens cap their inputs at the same figure. */
+/* A UX bound on a free-text reason — all three columns (resolutionReason, baselineReason, cancelReason) are TEXT. The screens cap their inputs at the same figure. */
 const REASON_MAX_LENGTH = 1000;
 
 /* The ledger-derived figures approve re-derives and compares; everything else on a line is a snapshot or an admin decision. */

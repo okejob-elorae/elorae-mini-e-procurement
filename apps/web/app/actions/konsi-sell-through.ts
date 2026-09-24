@@ -35,8 +35,10 @@ export type SellThroughActionResult = { ok: true } | SellThroughActionFailure;
 export type CreateSellThroughActionResult = { ok: true; id: string; docNo: string } | SellThroughActionFailure;
 
 /**
- * A single ADMIN-facing gate for every write in this module — reads are gated on `stores:view`
- * in the backoffice pages themselves, never here, since this file exports no read action.
+ * A single ADMIN-facing gate for every action in this module. Page reads are gated on
+ * `stores:view` in the backoffice pages themselves; the one read action here,
+ * `getSellThroughNotaAction`, still takes this gate because it only serves the print button,
+ * which only a `stores:manage` holder is offered.
  */
 async function guard(): Promise<{ userId: string } | { ok: false; reason: "FORBIDDEN" }> {
   const session = await auth();
