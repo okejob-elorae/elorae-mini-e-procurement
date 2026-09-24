@@ -36,10 +36,9 @@ export type Amplop = {
  * (`Receivable.collectorId`), stores where `userId` is a DELIVERY-backed receivable's ORDER's
  * salesman (`delivery.order.salesmanId`) — deliberately NOT `delivery.deliveredById`, which since
  * the delivery-shipment work is frequently a backoffice admin completing an expedition shipment
- * rather than the salesman who actually visits the store — and stores where `userId` is a
- * SELL_THROUGH-backed receivable's report's own salesman (`sellThrough.salesmanId`). Keying on
- * `deliveredById` would file stores into that admin's amplop and silently drop them from the
- * salesman's.
+ * rather than the salesman who actually visits the store; keying on `deliveredById` would file
+ * stores into that admin's amplop and silently drop them from the salesman's — and stores where
+ * `userId` is a SELL_THROUGH-backed receivable's report's own salesman (`sellThrough.salesmanId`).
  *
  * `asOf` defaults to `new Date()` but is a real parameter so aging is deterministic in tests.
  */
@@ -99,9 +98,11 @@ export async function listAmplop(userId: string, asOf: Date = new Date()): Promi
       dueDate: r.dueDate,
       outstandingAmount,
       daysOverdue: daysOverdue(r.dueDate, asOf),
-      /* Exactly one of the two arms is ever set, so reading either's `taxInvoice` first and
+      /**
+       * Exactly one of the two arms is ever set, so reading either's `taxInvoice` first and
        * falling back to the other resolves to the row's real faktur status either way — a
-       * sell-through receivable's faktur hangs off the report, not a delivery. */
+       * sell-through receivable's faktur hangs off the report, not a delivery.
+       */
       taxInvoiceStatus: r.delivery?.taxInvoice?.status ?? r.sellThrough?.taxInvoice?.status ?? null,
       pendingSubmittedAmount: roundCents(r.submissions.reduce((sum, sub) => sum + Number(sub.amount), 0)),
     };

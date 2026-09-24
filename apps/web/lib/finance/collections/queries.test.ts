@@ -171,8 +171,11 @@ d("collection queries — sell-through source (test bed only)", () => {
   });
 
   afterEach(async () => {
-    /* Children of the 1:1 relation to KonsiSellThrough go before their parent. */
-    await prisma.collectionSubmission.deleteMany({ where: { id: seededId(submissionId) } });
+    /* Children of the 1:1 relation to KonsiSellThrough go before their parent. Scoped by
+     * receivableId, not submissionId — the one test that creates a submission could fail before
+     * assigning submissionId, and a submission left behind under that receivable would still need
+     * to go before the receivable delete below. */
+    await prisma.collectionSubmission.deleteMany({ where: { receivableId: seededId(sellThroughRecId) } });
     await prisma.receivable.deleteMany({ where: { id: seededId(sellThroughRecId) } });
     await prisma.konsiSellThrough.deleteMany({ where: { id: seededId(sellThroughId) } });
     await prisma.user.deleteMany({ where: { id: { in: [seededId(salesmanId), seededId(collectorId)] } } });

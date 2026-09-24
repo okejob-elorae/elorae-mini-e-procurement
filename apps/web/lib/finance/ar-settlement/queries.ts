@@ -850,9 +850,9 @@ export async function getSettlementForPrint(
    * back to `sellThrough.docNo` — `Receivable.delivery` is OPTIONAL as of the delivery/sell-through
    * source split (`Receivable.sellThroughId`, `lib/finance/ar/receivable-source.ts`), so a
    * receivable backed by a `KonsiSellThrough` report resolves through the `sellThrough` arm
-   * instead of throwing on a `null` `delivery`. A dangling `deliveryId` is a different failure and
-   * still throws inside the `findMany` itself, before this line runs. Shared by
-   * `getSettlementForApproval`'s equivalent lookup.
+   * instead of throwing on a `null` `delivery`. A receivable whose delivery row was deleted (no FK
+   * under `relationMode = "prisma"`) resolves both arms to `null`, and the resolver throws
+   * `ReceivableSourceMissingError` here. Shared by `getSettlementForApproval`'s equivalent lookup.
    */
   const docNoByReceivableId = new Map(
     receivables.map((receivable) => [receivable.id, resolveReceivableSource(receivable).docNo] as const),

@@ -96,8 +96,10 @@ d("amplop queries (test bed only)", () => {
   let itemId = "";
   let uomId = "";
 
-  /* Sell-through source coverage: a store whose receivable is backed by a KonsiSellThrough
-   * report rather than a delivery, with its own salesman and a real TaxInvoice. */
+  /**
+   * Sell-through source coverage: a store whose receivable is backed by a KonsiSellThrough
+   * report rather than a delivery, with its own salesman and a real TaxInvoice.
+   */
   let sellThroughStoreId = "";
   let sellThroughSalesmanId = "";
   let sellThroughId = "";
@@ -348,8 +350,10 @@ d("amplop queries (test bed only)", () => {
     });
     returId = fieldReturn.id;
 
-    /* Sell-through source: a separate store, a dedicated salesman, and a receivable whose docNo
-     * and salesman are read off the KonsiSellThrough report rather than a delivery's order. */
+    /**
+     * Sell-through source: a separate store, a dedicated salesman, and a receivable whose docNo
+     * and salesman are read off the KonsiSellThrough report rather than a delivery's order.
+     */
     const sellThroughSalesman = await prisma.user.create({
       data: { email: `amplop-st-${token}@test.local`, name: `Sales ST ${token}` },
     });

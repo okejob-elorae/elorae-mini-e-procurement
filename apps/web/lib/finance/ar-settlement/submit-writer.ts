@@ -224,7 +224,8 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
     /**
      * Then load every selected receivable, verify it belongs to this store, is still collectible,
      * and — this is the part the screen's own scoping was standing in for — that the SUBMITTING
-     * salesman actually has a relationship to it (its collector, or its order's salesman). Without
+     * salesman actually has a relationship to it (its collector, or its source's salesman — the
+     * order's for a delivery, the report's for a sell-through). Without
      * this a raw request naming a receivable assigned to a DIFFERENT salesman/collector at a
      * shared store would still pass every other guard and stamp a PENDING settlement over money
      * that isn't this caller's to claim. The only release path is a `collections:manage` holder
@@ -255,8 +256,8 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
        * The owning salesman is the resolved source's own `salesmanId` — a delivery's order salesman
        * for a DELIVERY row, the report's own salesman for a SELL_THROUGH row. A SELL_THROUGH row
        * whose report has no salesman yet resolves to `null`, which never equals `input.salesmanId`
-       * (a real user id), so it falls through to the same `NOT_ASSIGNED` refusal rather than being
-       * owned by nobody in particular.
+       * (a real user id), so it falls through to the same `NOT_ASSIGNED` refusal: a report with no
+       * salesman is claimable only by its collector.
        */
       if (receivable.collectorId !== input.salesmanId && resolveReceivableSource(receivable).salesmanId !== input.salesmanId) {
         throw new SettlementError("NOT_ASSIGNED");
