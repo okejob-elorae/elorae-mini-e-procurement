@@ -38,38 +38,43 @@ RUN pnpm --filter @elorae/db generate \
 # ---------- 4. prod-deps (production-only workspace install) ----------
 # Skips devDependencies (prisma CLI, tsx, typescript, @nestjs/cli, ts-jest, etc.)
 # --ignore-scripts prevents @elorae/db's postinstall prisma-generate — we bring
-# the already-generated client from the builder stage.
+# the already-generated client from the builder stage. For the same reason this
+# stage copies no schema or migrations: nothing here reads them, and copying them
+# ahead of the install made every migration invalidate the prod node_modules layer.
 FROM base AS prod-deps
 WORKDIR /repo
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json turbo.json ./
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
-COPY packages/db/package.json packages/db/prisma.config.ts packages/db/
-COPY packages/db/prisma packages/db/prisma
+COPY packages/db/package.json packages/db/
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile --prod --ignore-scripts
 
 # ---------- 5. runtime ----------
 FROM base AS runtime
+# Non-root user, created before any COPY so every COPY can take --chown.
+# Never go back to a trailing `chown -R /app`: it rewrites the metadata of every
+# file, node_modules included, so the image carries a second full copy of /app
+# in a layer that changes on every build and every deploy has to pull it.
+RUN useradd --create-home --shell /bin/sh elorae \
+  && mkdir -p /app \
+  && chown elorae:elorae /app
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3001
 # node_modules from prod-deps (no dev deps)
-COPY --from=prod-deps /repo/node_modules ./node_modules
-COPY --from=prod-deps /repo/apps/api/node_modules ./apps/api/node_modules
-COPY --from=prod-deps /repo/packages/db/node_modules ./packages/db/node_modules
+COPY --chown=elorae:elorae --from=prod-deps /repo/node_modules ./node_modules
+COPY --chown=elorae:elorae --from=prod-deps /repo/apps/api/node_modules ./apps/api/node_modules
+COPY --chown=elorae:elorae --from=prod-deps /repo/packages/db/node_modules ./packages/db/node_modules
 # Built artifacts + prisma generated client from builder
-COPY --from=builder /repo/packages/db/dist ./packages/db/dist
-COPY --from=builder /repo/packages/db/generated ./packages/db/generated
-COPY --from=builder /repo/packages/db/package.json ./packages/db/package.json
-COPY --from=builder /repo/packages/db/prisma ./packages/db/prisma
-COPY --from=builder /repo/apps/api/dist ./apps/api/dist
-COPY --from=builder /repo/apps/api/package.json ./apps/api/package.json
-COPY --from=builder /repo/package.json ./package.json
-COPY --from=builder /repo/pnpm-workspace.yaml ./pnpm-workspace.yaml
-# Non-root user
-RUN useradd --create-home --shell /bin/sh elorae \
-  && chown -R elorae:elorae /app
+COPY --chown=elorae:elorae --from=builder /repo/packages/db/dist ./packages/db/dist
+COPY --chown=elorae:elorae --from=builder /repo/packages/db/generated ./packages/db/generated
+COPY --chown=elorae:elorae --from=builder /repo/packages/db/package.json ./packages/db/package.json
+COPY --chown=elorae:elorae --from=builder /repo/packages/db/prisma ./packages/db/prisma
+COPY --chown=elorae:elorae --from=builder /repo/apps/api/dist ./apps/api/dist
+COPY --chown=elorae:elorae --from=builder /repo/apps/api/package.json ./apps/api/package.json
+COPY --chown=elorae:elorae --from=builder /repo/package.json ./package.json
+COPY --chown=elorae:elorae --from=builder /repo/pnpm-workspace.yaml ./pnpm-workspace.yaml
 USER elorae
 WORKDIR /app/apps/api
 EXPOSE 3001

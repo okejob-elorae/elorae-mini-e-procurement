@@ -55,17 +55,20 @@ RUN pnpm --filter @elorae/db generate \
 
 # ---------- 4. runtime ----------
 FROM base AS runtime
+# Non-root user, created before any COPY so every COPY can take --chown (see the
+# api Dockerfile: a trailing `chown -R /app` duplicates the whole app into one more
+# layer on every build).
+RUN useradd --create-home --shell /bin/sh elorae \
+  && mkdir -p /app \
+  && chown elorae:elorae /app
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV NEXT_TELEMETRY_DISABLED=1
 # Copy standalone output (self-contained) + static + public
-COPY --from=builder /repo/apps/web/.next/standalone ./
-COPY --from=builder /repo/apps/web/.next/static ./apps/web/.next/static
-COPY --from=builder /repo/apps/web/public ./apps/web/public
-# Non-root user
-RUN useradd --create-home --shell /bin/sh elorae \
-  && chown -R elorae:elorae /app
+COPY --chown=elorae:elorae --from=builder /repo/apps/web/.next/standalone ./
+COPY --chown=elorae:elorae --from=builder /repo/apps/web/.next/static ./apps/web/.next/static
+COPY --chown=elorae:elorae --from=builder /repo/apps/web/public ./apps/web/public
 USER elorae
 EXPOSE 3000
 WORKDIR /app/apps/web
