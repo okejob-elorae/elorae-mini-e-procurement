@@ -263,15 +263,16 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
  */
 export async function getSellThroughEligibility(
   stocktakeId: string,
-): Promise<{ eligible: true } | { eligible: false; reason: SellThroughErrorCode; existingId?: string }> {
+): Promise<{ eligible: true } | { eligible: false; reason: SellThroughErrorCode; existingId?: string; detail?: string }> {
   try {
     await checkSellThroughPreconditions(prisma, stocktakeId);
     return { eligible: true };
   } catch (e) {
     if (e instanceof SellThroughError) {
-      return e.code === "ALREADY_USED"
-        ? { eligible: false, reason: e.code, existingId: e.detail }
-        : { eligible: false, reason: e.code };
+      if (e.code === "ALREADY_USED") return { eligible: false, reason: e.code, existingId: e.detail };
+      /* The retur docNos the reason copy names, so the admin knows which returns to finish or cancel. */
+      if (e.code === "RETUR_IN_FLIGHT") return { eligible: false, reason: e.code, detail: e.detail };
+      return { eligible: false, reason: e.code };
     }
     throw e;
   }

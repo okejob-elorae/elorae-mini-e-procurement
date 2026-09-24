@@ -15,11 +15,11 @@ import { SELL_THROUGH_RESOLUTIONS, type SellThroughResolutionValue } from "@/lib
 
 export type SellThroughActionReason = SellThroughErrorCode | "FORBIDDEN" | "INVALID_REQUEST" | "UNEXPECTED";
 
-export type SellThroughActionResult = { ok: true } | { ok: false; reason: SellThroughActionReason };
+export type SellThroughActionFailure = { ok: false; reason: SellThroughActionReason; detail?: string };
 
-export type CreateSellThroughActionResult =
-  | { ok: true; id: string; docNo: string }
-  | { ok: false; reason: SellThroughActionReason };
+export type SellThroughActionResult = { ok: true } | SellThroughActionFailure;
+
+export type CreateSellThroughActionResult = { ok: true; id: string; docNo: string } | SellThroughActionFailure;
 
 /**
  * A single ADMIN-facing gate for every write in this module — reads are gated on `stores:view`
@@ -37,10 +37,12 @@ async function guard(): Promise<{ userId: string } | { ok: false; reason: "FORBI
  * `SellThroughError.code` already reads as a stable, screen-facing reason on its own, so it is
  * passed straight through — same shape as `toResult` in `app/actions/store-settlements.ts` —
  * rather than keeping a second `Record<SellThroughErrorCode, …>` map that could drift out of sync
- * with `errors.ts`.
+ * with `errors.ts`. `detail` travels with it because two screens read it: the retur docNos a
+ * `RETUR_IN_FLIGHT` refusal names, and `REASON_TOO_LONG`, which gets its own copy instead of the
+ * generic code's.
  */
-function toResult(e: unknown): { ok: false; reason: SellThroughActionReason } {
-  if (e instanceof SellThroughError) return { ok: false, reason: e.code };
+function toResult(e: unknown): SellThroughActionFailure {
+  if (e instanceof SellThroughError) return e.detail ? { ok: false, reason: e.code, detail: e.detail } : { ok: false, reason: e.code };
   console.error("[konsi-sell-through] unexpected failure", e);
   return { ok: false, reason: "UNEXPECTED" };
 }

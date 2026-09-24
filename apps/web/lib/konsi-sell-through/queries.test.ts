@@ -17,7 +17,7 @@ const SLOW = 60_000;
 
 d("konsi sell-through queries (test bed only)", () => {
   const fx = createSellThroughFixtures();
-  const { state, tick, setMethod, transferIn, spgSell, count } = fx;
+  const { state, tick, setMethod, transferIn, spgSell, count, raiseRetur } = fx;
 
   beforeEach(fx.beforeEach);
   afterEach(fx.afterEach);
@@ -222,6 +222,20 @@ d("konsi sell-through queries (test bed only)", () => {
     await approveSellThrough({ id: report.id, approvedById: state.userId });
 
     await expect(getSellThroughEligibility(earlier)).resolves.toEqual({ eligible: false, reason: "OUT_OF_ORDER" });
+  }, SLOW);
+
+  it("returns RETUR_IN_FLIGHT with the unsettled returns' docNos as detail", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const first = await raiseRetur(1);
+    const second = await raiseRetur(1);
+    await tick();
+    const stocktakeId = await count(4, { cause: "SHRINKAGE", reason: "two units off the shelf" });
+    await expect(getSellThroughEligibility(stocktakeId)).resolves.toEqual({
+      eligible: false,
+      reason: "RETUR_IN_FLIGHT",
+      detail: `${first.docNo}, ${second.docNo}`,
+    });
   }, SLOW);
 
   it("returns DRAFT_EXISTS while an earlier report of the store is still DRAFT", async () => {

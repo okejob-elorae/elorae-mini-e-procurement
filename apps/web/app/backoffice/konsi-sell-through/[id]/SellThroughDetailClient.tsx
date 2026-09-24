@@ -130,7 +130,7 @@ export function SellThroughDetailClient({
           router.refresh();
           return;
         }
-        toast.error(t(`err.${result.reason}`));
+        toast.error(t(`err.${result.reason}`, { detail: result.detail ?? "" }));
       } catch {
         setSavingLineId(null);
         toast.error(t("err.UNEXPECTED"));
@@ -148,7 +148,7 @@ export function SellThroughDetailClient({
           router.refresh();
           return;
         }
-        toast.error(t(`err.${result.reason}`));
+        toast.error(t(`err.${result.reason}`, { detail: result.detail ?? "" }));
       } catch {
         setApproveOpen(false);
         toast.error(t("err.UNEXPECTED"));
@@ -168,7 +168,7 @@ export function SellThroughDetailClient({
           router.refresh();
           return;
         }
-        toast.error(t(`err.${result.reason}`));
+        toast.error(t(`err.${result.reason}`, { detail: result.detail ?? "" }));
       } catch {
         setCancelOpen(false);
         toast.error(t("err.UNEXPECTED"));

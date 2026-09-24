@@ -43,15 +43,55 @@ function isUniqueViolationOn(e: unknown, column: string): boolean {
   return `${e.message} ${JSON.stringify(e.meta ?? {})}`.includes(column);
 }
 
+/* The retur statuses in which goods have left the store's shelf without StoreStock having dropped yet. */
+const RETUR_IN_FLIGHT_STATUSES = ["PENDING_WAREHOUSE_RECEIVING", "MISMATCH_PENDING_RESOLUTION", "PENDING_APPROVAL"] as const;
+
+/**
+ * Refuses `RETUR_IN_FLIGHT`, naming the returns in `detail`, when a closing count was taken while
+ * a retur was in flight: raised on or before the count moment (`countFinishedAt`, or `approvedAt`
+ * for a count saved before that column existed) and not approved until after it — still open, or
+ * approved later. A retur takes its goods off the shelf when it is raised, but StoreStock only
+ * drops when it is approved, so a count in that window records the returned units as a shortfall
+ * and the report would bill them. Settling the retur afterwards does not clean the count, which is
+ * why a later approval refuses as well as a pending status. CANCELLED never refuses. `approvedAt`
+ * is the settle moment for both origins — conservative for an ADMIN retur, whose clean receipt
+ * already decremented at `receivedAt`, but its approve-time delta still lands at `approvedAt`.
+ *
+ * The remedy is never to use this count: finish or cancel the returns, then close the period with
+ * a later count. This count's own ledger rows then sit mid-period and net out against the later
+ * count's, since the window sums every stocktake row in it.
+ */
+async function assertNoReturInFlight(
+  client: Prisma.TransactionClient | typeof prisma,
+  storeId: string,
+  countMoment: Date,
+): Promise<void> {
+  const unsettled = await client.fieldReturn.findMany({
+    where: {
+      storeId,
+      createdAt: { lte: countMoment },
+      OR: [{ status: { in: [...RETUR_IN_FLIGHT_STATUSES] } }, { status: "APPROVED", approvedAt: { gt: countMoment } }],
+    },
+    orderBy: { docNo: "asc" },
+    select: { docNo: true },
+  });
+  if (unsettled.length > 0) throw new SellThroughError("RETUR_IN_FLIGHT", unsettled.map((r) => r.docNo).join(", "));
+}
+
 /**
  * The read-only precondition sequence `createSellThrough` enforces before it derives or writes
  * anything, extracted so `getSellThroughEligibility` (queries.ts) can run the exact same checks
  * read-only instead of hand-maintaining a second copy that could drift from this one. The store is
  * derived from the stocktake itself, never from the caller, and ownership/approval/full-count are
- * all checked before `stocktakeBoundary` runs, because that helper trusts its inputs. Order, codes
- * and details are exactly what `createSellThrough` threw before this was extracted, with ONE
- * addition: `ALREADY_USED` now carries the existing report's id as `detail`, so the eligibility
- * check can surface it as `existingId` without a second lookup — that id was previously discarded.
+ * all checked before `stocktakeBoundary` runs, because that helper trusts its inputs.
+ *
+ * The order is what the eligibility check shows, so it runs from the reasons that make THIS count
+ * unusable towards the ones that clear by themselves. `ALREADY_USED` comes before every other
+ * count-level refusal because it is the one the stocktake page turns into a link to the existing
+ * report (its id rides in `detail`). `BEFORE_LEDGER_CUTOVER` and `OUT_OF_ORDER` are permanent for
+ * the count. `RETUR_IN_FLIGHT` sits after them, since chasing returns is wasted on a count that
+ * can never close a period anyway, and before `DRAFT_EXISTS`, which clears once the other draft
+ * is approved or cancelled.
  *
  * Takes `Prisma.TransactionClient | typeof prisma` — `createSellThrough` always passes its own
  * `tx`, `getSellThroughEligibility` passes the plain client since it performs no writes and needs
@@ -77,11 +117,13 @@ export async function checkSellThroughPreconditions(
       storeId: true,
       status: true,
       isFullCount: true,
+      countFinishedAt: true,
+      approvedAt: true,
       lines: { select: { itemId: true, variantSku: true, productName: true } },
     },
   });
   if (!stocktake) throw new SellThroughError("NOT_FOUND", "STOCKTAKE");
-  if (stocktake.status !== "APPROVED") throw new SellThroughError("STOCKTAKE_NOT_APPROVED");
+  if (stocktake.status !== "APPROVED" || !stocktake.approvedAt) throw new SellThroughError("STOCKTAKE_NOT_APPROVED");
   if (!stocktake.isFullCount) throw new SellThroughError("NOT_FULL_COUNT");
 
   const storeId = stocktake.storeId;
@@ -94,16 +136,30 @@ export async function checkSellThroughPreconditions(
   const used = await client.konsiSellThrough.findUnique({ where: { stocktakeKey: stocktake.id }, select: { id: true } });
   if (used) throw new SellThroughError("ALREADY_USED", used.id);
 
+  /**
+   * A count whose boundary precedes the store's earliest STORE ledger row closes a window with no
+   * history behind it — a count approved before the ledger's cutover, or before the store's first
+   * recorded movement — and the report it would produce means nothing.
+   */
+  const closingBoundary = await stocktakeBoundary(client, storeId, stocktake.id);
+  const earliest = await client.stockLedgerEntry.findFirst({
+    where: { locationType: "STORE", locationId: storeId },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: { createdAt: true },
+  });
+  if (earliest && closingBoundary.getTime() < earliest.createdAt.getTime()) throw new SellThroughError("BEFORE_LEDGER_CUTOVER");
+
   const previous = await client.konsiSellThrough.findFirst({
     where: { storeId, status: "APPROVED" },
     orderBy: [{ periodEnd: "desc" }, { id: "desc" }],
     select: { id: true, closingStocktakeId: true },
   });
   if (previous) {
-    const closingBoundary = await stocktakeBoundary(client, storeId, stocktake.id);
     const previousBoundary = await stocktakeBoundary(client, storeId, previous.closingStocktakeId);
     if (closingBoundary.getTime() <= previousBoundary.getTime()) throw new SellThroughError("OUT_OF_ORDER");
   }
+
+  await assertNoReturInFlight(client, storeId, stocktake.countFinishedAt ?? stocktake.approvedAt);
 
   const draft = await client.konsiSellThrough.findFirst({ where: { storeId, status: "DRAFT" }, select: { id: true } });
   if (draft) throw new SellThroughError("DRAFT_EXISTS");
@@ -252,11 +308,17 @@ export async function resolveSellThroughLine(input: {
 }
 
 /**
- * Freezes a DRAFT report. Slice A moves no money and no stock here. Refused while any SPG_POS
- * gap line lacks a saved resolution, and refused `STALE` when re-deriving the period inside this
- * transaction no longer yields the stored figures — a movement committed into the window after
- * creation (a late-approved retur, say). The remedy for STALE is cancel and recreate, never an
- * in-place refresh, so an approved report always shows the figures the admin actually reviewed.
+ * Freezes a DRAFT report. It moves no money and no stock. Re-checks, in order: the store is still
+ * KONSI (`NOT_KONSI`), no retur was in flight at the closing count (`RETUR_IN_FLIGHT` — a DRAFT
+ * created before that rule existed must not slip through), the period still derives to the
+ * stored figures (`STALE`), and every SPG_POS gap line has a saved resolution (`HELD`).
+ *
+ * `STALE` catches the one movement that can still reach a window after creation: a row stamped at
+ * or before the boundary by a transaction that committed after the report read it (the race in
+ * docs/FOLLOWUPS.md) — in-flight returns are refused up front instead. Its remedy is cancel and
+ * recreate, never an in-place refresh, so an approved report always shows the figures the admin
+ * actually reviewed. It runs BEFORE the hold, so an admin is never sent to resolve lines on a
+ * report that has to be cancelled anyway.
  */
 export async function approveSellThrough(input: { id: string; approvedById: string }): Promise<{ ok: true }> {
   return runSerializable(async (tx) => {
@@ -269,6 +331,7 @@ export async function approveSellThrough(input: { id: string; approvedById: stri
         status: true,
         closingStocktakeId: true,
         previousId: true,
+        store: { select: { termsType: true } },
         lines: {
           select: {
             itemId: true,
@@ -286,12 +349,15 @@ export async function approveSellThrough(input: { id: string; approvedById: stri
     });
     if (!doc) throw new SellThroughError("NOT_FOUND");
     if (doc.status !== "DRAFT") throw new SellThroughError("INVALID_STATE");
+    if (doc.store.termsType !== "KONSI") throw new SellThroughError("NOT_KONSI");
 
-    for (const l of doc.lines) {
-      if (isLineHeld({ gapQty: roundQty(l.gapQty.toNumber()), resolution: l.resolution }, doc.method)) {
-        throw new SellThroughError("HELD", lineKey(l.itemId, l.variantSku));
-      }
-    }
+    const closing = await tx.storeStocktake.findUnique({
+      where: { id: doc.closingStocktakeId },
+      select: { countFinishedAt: true, approvedAt: true },
+    });
+    const countMoment = closing?.countFinishedAt ?? closing?.approvedAt ?? null;
+    if (!countMoment) throw new SellThroughError("NOT_FOUND", "STOCKTAKE");
+    await assertNoReturInFlight(tx, doc.storeId, countMoment);
 
     /* An APPROVED report cannot be cancelled, so a stored previousId always resolves; the check is a guard, not a path. */
     const previous = doc.previousId
@@ -310,6 +376,12 @@ export async function approveSellThrough(input: { id: string; approvedById: stri
       if (!fresh) throw new SellThroughError("STALE", key);
       for (const figure of DERIVED_FIGURES) {
         if (roundQty(stored[figure].toNumber()) !== fresh[figure]) throw new SellThroughError("STALE", key);
+      }
+    }
+
+    for (const l of doc.lines) {
+      if (isLineHeld({ gapQty: roundQty(l.gapQty.toNumber()), resolution: l.resolution }, doc.method)) {
+        throw new SellThroughError("HELD", lineKey(l.itemId, l.variantSku));
       }
     }
 

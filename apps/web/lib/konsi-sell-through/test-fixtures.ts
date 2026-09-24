@@ -8,6 +8,9 @@ import {
 } from "@/lib/delivery/shipment-writer";
 import { recordSpgSale } from "@/lib/spg/sale-writer";
 import { createStoreStocktake, saveStocktakeCounts, approveStoreStocktake } from "@/lib/stores/stocktake/writer";
+import { createFieldReturn } from "@/lib/field-sales/retur/writer";
+import { receiveFieldReturn } from "@/lib/field-sales/retur/receive-writer";
+import { approveFieldReturn } from "@/lib/field-sales/retur/approve-writer";
 
 export type SellThroughFixtureState = {
   run: string;
@@ -112,6 +115,8 @@ export function createSellThroughFixtures() {
 
     await prisma.konsiSellThroughLine.deleteMany({ where: { sellThrough: { storeId: seededId(state.storeId) } } });
     await prisma.konsiSellThrough.deleteMany({ where: { storeId: seededId(state.storeId) } });
+    await prisma.fieldReturnLine.deleteMany({ where: { returnDoc: { storeId: seededId(state.storeId) } } });
+    await prisma.fieldReturn.deleteMany({ where: { storeId: seededId(state.storeId) } });
     await prisma.storeStocktakeLine.deleteMany({ where: { stocktake: { storeId: seededId(state.storeId) } } });
     await prisma.storeStocktake.deleteMany({ where: { storeId: seededId(state.storeId) } });
     await prisma.spgSaleLine.deleteMany({ where: { spgSale: { storeId: seededId(state.storeId) } } });
@@ -206,10 +211,35 @@ export function createSellThroughFixtures() {
     return id;
   };
 
+  /* One FIELD retur raised at the store: the goods leave the shelf now, but StoreStock only drops when it is approved. */
+  const raiseRetur = async (qty: number) => {
+    const { returnId, docNo } = await createFieldReturn({
+      storeId: state.storeId,
+      raisedById: state.userId,
+      origin: "FIELD",
+      transport: "SELF_CARRY",
+      notaPhotoUrl: "https://r2.example/nota.jpg",
+      notaPhotoR2Key: `field-return-notas/${state.run}/nota.jpg`,
+      lines: [{ itemId: state.itemId, variantSku: "", qty, reason: "UNSOLD" }],
+    });
+    return { returnId, docNo };
+  };
+
+  /* Receives the retur in full and approves it, which writes its FieldReturn store row (−qty). */
+  const settleRetur = async (returnId: string) => {
+    const lines = await prisma.fieldReturnLine.findMany({ where: { returnId: seededId(returnId) }, select: { id: true, qty: true } });
+    await receiveFieldReturn({
+      returnId,
+      receivedById: state.userId,
+      counts: lines.map((l) => ({ lineId: l.id, receivedQty: l.qty, sellableQty: l.qty, rejectedQty: 0 })),
+    });
+    await approveFieldReturn({ returnId, approvedById: state.userId });
+  };
+
   const onlyLine = (sellThroughId: string) =>
     prisma.konsiSellThroughLine.findFirstOrThrow({ where: { sellThroughId: seededId(sellThroughId) } });
 
-  return { state, beforeEach, afterEach, tick, setMethod, transferIn, spgSell, count, onlyLine };
+  return { state, beforeEach, afterEach, tick, setMethod, transferIn, spgSell, count, raiseRetur, settleRetur, onlyLine };
 }
 
 export type SellThroughFixtures = ReturnType<typeof createSellThroughFixtures>;

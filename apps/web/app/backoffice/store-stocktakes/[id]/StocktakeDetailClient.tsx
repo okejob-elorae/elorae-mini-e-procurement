@@ -375,7 +375,7 @@ export function StocktakeDetailClient({
           router.push(`/backoffice/konsi-sell-through/${result.id}`);
           return;
         }
-        toast.error(tDetail(`sellThrough.reason.${result.reason}`));
+        toast.error(tDetail(`sellThrough.reason.${result.reason}`, { detail: result.detail ?? "" }));
       } catch {
         toast.error(tDetail("sellThrough.reason.UNEXPECTED"));
       }
@@ -492,7 +492,7 @@ export function StocktakeDetailClient({
                     {tDetail("sellThrough.createButton")}
                   </Button>
                   <p className="text-xs text-muted-foreground max-w-[280px] text-right">
-                    {tDetail(`sellThrough.reason.${sellThroughEligibility.reason}`)}
+                    {tDetail(`sellThrough.reason.${sellThroughEligibility.reason}`, { detail: sellThroughEligibility.detail ?? "" })}
                   </p>
                 </div>
               )}

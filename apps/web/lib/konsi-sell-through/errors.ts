@@ -7,6 +7,8 @@ export type SellThroughErrorCode =
   | "ALREADY_USED"
   | "DRAFT_EXISTS"
   | "OUT_OF_ORDER"
+  | "BEFORE_LEDGER_CUTOVER"
+  | "RETUR_IN_FLIGHT"
   | "UNKNOWN_REF_TYPE"
   | "HELD"
   | "STALE"

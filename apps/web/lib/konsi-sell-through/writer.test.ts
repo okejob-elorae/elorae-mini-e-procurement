@@ -17,7 +17,7 @@ const SLOW = 60_000;
 
 d("konsi sell-through writer (test bed only)", () => {
   const fx = createSellThroughFixtures();
-  const { state, tick, setMethod, transferIn, spgSell, count, onlyLine } = fx;
+  const { state, tick, setMethod, transferIn, spgSell, count, raiseRetur, settleRetur, onlyLine } = fx;
 
   beforeEach(fx.beforeEach);
   afterEach(fx.afterEach);
@@ -112,6 +112,83 @@ d("konsi sell-through writer (test bed only)", () => {
       code: "UNKNOWN_REF_TYPE",
       detail: "LegacyMystery",
     });
+  }, SLOW);
+
+  it("refuses BEFORE_LEDGER_CUTOVER for a count whose boundary precedes the store's first ledger row", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    /* A matching count writes no ledger row, so its boundary is its approvedAt — moved a day before the transfer, test-only. */
+    const stocktakeId = await count(6);
+    const earliest = await prisma.stockLedgerEntry.findFirstOrThrow({
+      where: { locationType: "STORE", locationId: seededId(state.storeId) },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+    const before = new Date(earliest.createdAt.getTime() - 86_400_000);
+    await prisma.storeStocktake.update({ where: { id: stocktakeId }, data: { approvedAt: before, countFinishedAt: before } });
+    await expect(createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId })).rejects.toMatchObject({ code: "BEFORE_LEDGER_CUTOVER" });
+  }, SLOW);
+
+  /* create — returns in flight at the closing count */
+
+  it("refuses RETUR_IN_FLIGHT while a retur raised before the count is unsettled, still refuses that count once the retur settles after it, and a later count bills the returned units 0", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    /* The salesman takes 2 back before the count; StoreStock still holds 6 until the retur is approved. */
+    const { returnId, docNo } = await raiseRetur(2);
+    await tick();
+    const contaminated = await count(4, { cause: "SHRINKAGE", reason: "two units off the shelf" });
+    await expect(createSellThrough({ closingStocktakeId: contaminated, createdById: state.userId })).rejects.toMatchObject({
+      code: "RETUR_IN_FLIGHT",
+      detail: docNo,
+    });
+
+    /* Settling it after the count does not clean the count — it saw 2 fewer units than StoreStock held. */
+    await tick();
+    await settleRetur(returnId);
+    await expect(createSellThrough({ closingStocktakeId: contaminated, createdById: state.userId })).rejects.toMatchObject({
+      code: "RETUR_IN_FLIGHT",
+      detail: docNo,
+    });
+
+    /* StoreStock 4 − 2 = 2; the shelf still holds 4, so the later count finds a +2 surplus that nets out the earlier −2. */
+    await tick();
+    const closing = await count(4, { reason: "the earlier count missed the returned units" });
+    const { id } = await createSellThrough({ closingStocktakeId: closing, createdById: state.userId });
+    const line = await onlyLine(id);
+    /* opening 0 + in 6 − out 2 − pos 0 − gap (2 − 2 = 0) = closing 4; billed = 0 + 6 − 2 − 4 = 0. */
+    expect(Number(line.inQty)).toBe(6);
+    expect(Number(line.outQty)).toBe(2);
+    expect(Number(line.gapQty)).toBe(0);
+    expect(Number(line.closingQty)).toBe(4);
+    expect(Number(line.billedQty)).toBe(0);
+  }, SLOW);
+
+  it("does not refuse over a retur that was raised and settled before the count", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const { returnId } = await raiseRetur(2);
+    await settleRetur(returnId);
+    await tick();
+    const stocktakeId = await count(4);
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+    const line = await onlyLine(id);
+    expect(Number(line.outQty)).toBe(2);
+    expect(Number(line.billedQty)).toBe(0);
+  }, SLOW);
+
+  it("approve refuses RETUR_IN_FLIGHT when an unsettled retur raised before the count reaches a DRAFT", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(6);
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+
+    /* Stands in for a DRAFT created before this rule existed: the retur's createdAt is moved before the count, test-only. */
+    const { returnId, docNo } = await raiseRetur(1);
+    const { countFinishedAt } = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(stocktakeId) }, select: { countFinishedAt: true } });
+    await prisma.fieldReturn.update({ where: { id: returnId }, data: { createdAt: new Date(countFinishedAt!.getTime() - 1000) } });
+
+    await expect(approveSellThrough({ id, approvedById: state.userId })).rejects.toMatchObject({ code: "RETUR_IN_FLIGHT", detail: docNo });
+    expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("DRAFT");
   }, SLOW);
 
   /* SHELF_COUNT */
@@ -280,6 +357,36 @@ d("konsi sell-through writer (test bed only)", () => {
     await prisma.stockLedgerEntry.update({ where: { id: saleRow.id }, data: { createdAt: new Date(doc.periodEnd.getTime() - 1000) } });
 
     await expect(approveSellThrough({ id, approvedById: state.userId })).rejects.toMatchObject({ code: "STALE" });
+    expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("DRAFT");
+  }, SLOW);
+
+  it("approve refuses STALE ahead of HELD, so a report that must be recreated never asks for resolutions first", async () => {
+    await setMethod("SPG_POS");
+    await transferIn(6);
+    await spgSell(3);
+    /* Gap 2 and unresolved, so the line holds. */
+    const stocktakeId = await count(1, { cause: "SHRINKAGE", reason: "two units missing" });
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+    const doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } });
+
+    /* Test-only: a later sale's row moved one second inside the window, standing in for a movement that committed after creation. */
+    const saleId = await spgSell(1);
+    const saleRow = await prisma.stockLedgerEntry.findFirstOrThrow({
+      where: { locationType: "STORE", locationId: seededId(state.storeId), refType: "SpgSale", refId: seededId(saleId) },
+    });
+    await prisma.stockLedgerEntry.update({ where: { id: saleRow.id }, data: { createdAt: new Date(doc.periodEnd.getTime() - 1000) } });
+
+    await expect(approveSellThrough({ id, approvedById: state.userId })).rejects.toMatchObject({ code: "STALE" });
+  }, SLOW);
+
+  it("approve refuses NOT_KONSI when the store left consignment terms while the report was DRAFT", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(6);
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+    /* Direct flip for the test only — the store edit writer refuses this switch while a report is DRAFT. */
+    await prisma.store.update({ where: { id: state.storeId }, data: { termsType: "PUTUS" } });
+    await expect(approveSellThrough({ id, approvedById: state.userId })).rejects.toMatchObject({ code: "NOT_KONSI" });
     expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("DRAFT");
   }, SLOW);
 
