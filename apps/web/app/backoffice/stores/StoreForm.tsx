@@ -178,6 +178,7 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
         else if (result.code === "forbidden") setError(tErr("forbidden"));
         else if (result.code === "not_found") setError(tErr("notFound"));
         else if (result.code === "has_consignment_stock") setError(tErr("hasConsignmentStock"));
+        else if (result.code === "has_draft_sell_through") setError(tErr("hasDraftSellThrough"));
         else if (result.code === "invalid_price_discount") setError(tErr("invalidPriceDiscount"));
         else if (result.code === "konsi_discount_not_allowed") setError(tErr("discountNotAllowedForKonsi"));
         else if (result.code === "sell_through_method_requires_konsi") setError(tErr("sellThroughMethodRequiresKonsi"));

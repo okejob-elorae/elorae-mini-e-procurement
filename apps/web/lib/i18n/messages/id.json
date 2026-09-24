@@ -2287,6 +2287,7 @@
       "forbidden": "Akses ditolak.",
       "notFound": "Toko tidak ditemukan.",
       "hasConsignmentStock": "Toko ini masih memiliki stok konsinyasi atau pesanan konsinyasi yang menunggu persetujuan atau belum terkirim penuh. Retur atau transfer stoknya dan selesaikan pesanan tersebut sebelum beralih dari Konsi.",
+      "hasDraftSellThrough": "Toko ini masih memiliki draft laporan sell-through. Setujui atau batalkan dulu sebelum beralih dari Konsi.",
       "invalidPriceDiscount": "Diskon harga harus antara 0 dan di bawah 100.",
       "discountNotAllowedForKonsi": "Toko Konsi tidak boleh memiliki diskon harga.",
       "sellThroughMethodRequiresKonsi": "Metode sell-through hanya bisa diatur pada toko Konsi."

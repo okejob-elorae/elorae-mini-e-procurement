@@ -15,6 +15,7 @@ import {
   InvalidPriceDiscountPercentError,
   KonsiPriceDiscountNotAllowedError,
   SellThroughMethodRequiresKonsiError,
+  StoreHasDraftSellThroughError,
   type StoreFields,
 } from "@/lib/stores/queries";
 
@@ -126,6 +127,13 @@ export async function updateStoreAction(id: string, input: StoreFields): Promise
         code: "has_consignment_stock",
         message:
           "This store still holds consignment stock or has consignment orders awaiting approval or not yet fully delivered. Return or transfer the stock and settle those orders before switching off Konsi.",
+      };
+    }
+    if (e instanceof StoreHasDraftSellThroughError) {
+      return {
+        ok: false,
+        code: "has_draft_sell_through",
+        message: "This store has a draft sell-through report. Approve or cancel it before switching off Konsi.",
       };
     }
     if (e instanceof InvalidPriceDiscountPercentError) {

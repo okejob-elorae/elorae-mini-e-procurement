@@ -90,6 +90,18 @@ function assertValidPriceDiscount(input: Pick<StoreFields, "termsType" | "priceD
 }
 
 /**
+ * Thrown when a KONSI → PUTUS switch meets a DRAFT konsi sell-through report. The report can only
+ * be approved while the store is KONSI (`approveSellThrough` re-checks the terms), so switching
+ * first would strand it — approve or cancel it before switching off Konsi.
+ */
+export class StoreHasDraftSellThroughError extends Error {
+  constructor(readonly storeId: string) {
+    super(`Store ${storeId} has a draft konsi sell-through report and cannot switch off KONSI`);
+    this.name = "StoreHasDraftSellThroughError";
+  }
+}
+
+/**
  * Thrown when a non-null `sellThroughMethod` is carried by a non-KONSI store — the field
  * configures how a KONSI store's own sell-through report measures units sold, and a PUTUS store
  * has no such report to configure. Also fires on a KONSI → PUTUS switch that still carries a
@@ -225,6 +237,12 @@ export async function updateStore(id: string, input: StoreFields): Promise<Store
   if (input.termsType === "PUTUS") {
     const current = await prisma.store.findUnique({ where: { id }, select: { termsType: true } });
     if (current?.termsType === "KONSI") {
+      const draftSellThrough = await prisma.konsiSellThrough.findFirst({
+        where: { storeId: id, status: "DRAFT" },
+        select: { id: true },
+      });
+      if (draftSellThrough) throw new StoreHasDraftSellThroughError(id);
+
       const strandedStock = await prisma.storeStock.findFirst({
         where: { storeId: id, qty: { not: 0 } },
         select: { id: true },
