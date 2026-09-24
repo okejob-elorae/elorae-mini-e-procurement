@@ -3383,13 +3383,13 @@
     "approve": {
       "button": "Setujui",
       "confirmTitle": "Konfirmasi Persetujuan Perhitungan",
-      "confirmDescription": "Menyetujui akan menulis stok toko menjadi tepat sesuai hasil hitung pada dokumen ini. Baris yang dibiarkan kosong tidak akan disentuh — stok yang ada tetap seperti sekarang.",
+      "confirmDescription": "Menyetujui akan menulis stok toko sesuai hasil hitung pada dokumen ini, ditambah pergerakan stok toko yang tercatat setelah hasil hitung disimpan — penjualan atau pengiriman selama perhitungan ini menunggu tetap dihitung, tidak terhapus. Baris yang dibiarkan kosong tidak akan disentuh — stok yang ada tetap seperti sekarang.",
       "confirmAction": "Setujui",
       "submitting": "Menyetujui…",
       "success": "Perhitungan disetujui, stok toko telah diperbarui.",
       "driftTitle": "Stok berubah sejak perhitungan ini dibuka",
       "driftLine": "{product}{variant}: seharusnya {expected}, sekarang {live}",
-      "driftNote": "Ini hanya informasi — persetujuan tetap berjalan dan selalu menulis hasil hitung yang tercatat."
+      "driftNote": "Ini hanya informasi — persetujuan tetap berjalan. Yang ditulis adalah hasil hitung ditambah pergerakan yang terjadi setelah hasil hitung disimpan."
     },
     "cancel": {
       "button": "Batalkan Perhitungan",

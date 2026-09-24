@@ -3383,13 +3383,13 @@
     "approve": {
       "button": "Approve",
       "confirmTitle": "Confirm Stocktake Approval",
-      "confirmDescription": "Approving writes the store's stock to exactly the counted figures on this document. Any line left blank is not touched — its existing stock stands as-is.",
+      "confirmDescription": "Approving writes the store's stock to the counted figures on this document, plus any stock movement recorded at the store after the count was saved — a sale or delivery while this count waited is kept, not erased. Any line left blank is not touched — its existing stock stands as-is.",
       "confirmAction": "Approve",
       "submitting": "Approving…",
       "success": "Stocktake approved, store stock updated.",
       "driftTitle": "Stock has moved since this count was opened",
       "driftLine": "{product}{variant}: snapshot {expected}, now {live}",
-      "driftNote": "This is informational only — approval proceeds regardless and always writes the counted figure."
+      "driftNote": "This is informational only — approval proceeds regardless. It writes the counted figure plus whatever moved after the count was saved."
     },
     "cancel": {
       "button": "Cancel Stocktake",

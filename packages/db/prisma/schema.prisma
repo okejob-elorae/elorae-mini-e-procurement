@@ -1089,6 +1089,7 @@ model StoreStocktake {
   createdAt     DateTime             @default(now())
   submittedById String?
   submittedAt   DateTime?
+  countFinishedAt DateTime?
   approvedById  String?
   approvedAt    DateTime?
   cancelledById String?

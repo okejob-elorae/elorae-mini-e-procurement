@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { createSellThrough, resolveSellThroughLine, approveSellThrough, cancelSellThrough } from "./writer";
 import { createSellThroughFixtures } from "./test-fixtures";
+import { approveStoreStocktake } from "@/lib/stores/stocktake/writer";
 
 /* Stock-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host). */
 const url = process.env.DATABASE_URL ?? "";
@@ -197,6 +198,32 @@ d("konsi sell-through writer (test bed only)", () => {
     expect(resolved.resolutionReason).toBe("confirmed theft");
     expect(Number(resolved.billedQty)).toBe(3);
     expect(Number(resolved.shrinkageQty)).toBe(2);
+
+    await approveSellThrough({ id, approvedById: state.userId });
+    expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("APPROVED");
+  }, SLOW);
+
+  it("SPG_POS: a POS sale while the count waits for approval is carried through it — no gap on the line, billed = POS", async () => {
+    await setMethod("SPG_POS");
+    await transferIn(6);
+    /* The shelf is counted at 6, then POS sells 2 before an admin approves the count. */
+    const stocktakeId = await count(6, { approve: false });
+    await tick();
+    await spgSell(2);
+    await approveStoreStocktake({ stocktakeId, approvedById: state.userId });
+
+    const stock = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(state.storeId), itemId: seededId(state.itemId) } });
+    expect(Number(stock.qty)).toBe(4);
+
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+    const line = await onlyLine(id);
+    /* opening 0 + in 6 − out 0 − pos 2 − gap 0 = closing 4; before the fix the approval re-set 6 and wrote a +2 phantom surplus. */
+    expect(Number(line.inQty)).toBe(6);
+    expect(Number(line.posSoldQty)).toBe(2);
+    expect(Number(line.gapQty)).toBe(0);
+    expect(Number(line.closingQty)).toBe(4);
+    expect(Number(line.billedQty)).toBe(2);
+    expect(line.suggestedResolution).toBeNull();
 
     await approveSellThrough({ id, approvedById: state.userId });
     expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("APPROVED");

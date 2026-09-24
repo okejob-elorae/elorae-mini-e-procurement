@@ -95,6 +95,13 @@ export async function createStoreStocktake(input: {
  * fire on an added line exactly as it would have had the line existed on the original snapshot.
  * The reason check is NOT enforced here at save time — see the comment at the added-lines block
  * below for why — only the structural guards (`ITEM_NOT_FOUND`, `DUPLICATE_LINE`) are.
+ *
+ * `countFinishedAt` is stamped whenever a save changes a count figure — a line's `countedQty` or
+ * any added line — and the last such save wins. It is the moment `approveStoreStocktake` treats
+ * the counted figures as true, re-applying every store movement recorded after it. A save that
+ * changes only causes or reasons leaves it alone: the backoffice resends every line when an admin
+ * fills in a reason at verification time, and re-stamping there would silently drop every sale
+ * or delivery between the physical count and that edit.
  */
 export async function saveStocktakeCounts(input: {
   stocktakeId: string;
@@ -106,12 +113,18 @@ export async function saveStocktakeCounts(input: {
   return runSerializable(async (tx) => {
     const st = await tx.storeStocktake.findUnique({
       where: { id: input.stocktakeId },
-      select: { id: true, storeId: true, status: true, lines: { select: { id: true, itemId: true, variantSku: true, expectedQty: true } } },
+      select: {
+        id: true,
+        storeId: true,
+        status: true,
+        lines: { select: { id: true, itemId: true, variantSku: true, expectedQty: true, countedQty: true } },
+      },
     });
     if (!st) throw new StoreStocktakeError("NOT_FOUND");
     if (st.status !== "DRAFT" && st.status !== "PENDING_VERIFICATION") throw new StoreStocktakeError("INVALID_STATE");
 
     const expectedByLineId = new Map(st.lines.map((l) => [l.id, l.expectedQty.toNumber()]));
+    const storedCountByLineId = new Map(st.lines.map((l) => [l.id, l.countedQty === null ? null : l.countedQty.toNumber()]));
 
     /*
      * Every line id must already belong to this document, and every countedQty must be a
@@ -233,12 +246,21 @@ export async function saveStocktakeCounts(input: {
       }
     }
 
+    /* Compared at the column's own 2dp scale, so a resend of the same figure is never a change. */
+    const toCents = (n: number | null) => (n === null ? null : Math.round(n * 100));
+    const countsChanged =
+      normalizedAdded.length > 0 ||
+      input.lines.some((line) => toCents(line.countedQty) !== toCents(storedCountByLineId.get(line.lineId) ?? null));
+
     let status = st.status;
-    if (input.submit) {
-      status = "PENDING_VERIFICATION";
+    if (input.submit || countsChanged) {
+      if (input.submit) status = "PENDING_VERIFICATION";
       await tx.storeStocktake.update({
         where: { id: st.id },
-        data: { status: "PENDING_VERIFICATION", submittedAt: new Date(), submittedById: input.userId },
+        data: {
+          ...(input.submit ? { status: "PENDING_VERIFICATION" as const, submittedAt: new Date(), submittedById: input.userId } : {}),
+          ...(countsChanged ? { countFinishedAt: new Date() } : {}),
+        },
       });
     }
 
@@ -247,11 +269,17 @@ export async function saveStocktakeCounts(input: {
 }
 
 /**
- * Approves a count. Every guard below runs before any write. The count is the truth — that is
- * the whole premise of this document — so `StoreStock.qty` is written to the counted figure for
- * every line that carries one, even a live row that has drifted since the snapshot. Nothing here
- * refuses on an unbalanced count: a store may legitimately end approval still holding negative
- * rows, and that is recorded and surfaced, never blocked.
+ * Approves a count. Every guard below runs before any write. The count is the truth at the moment
+ * it was taken — that is the whole premise of this document — so every counted line SETs
+ * `StoreStock.qty` to its counted figure PLUS every store ledger movement for that item::variant
+ * recorded after `countFinishedAt`: a POS sale or a konsi delivery while the count waited for an
+ * admin happened after the shelf was counted, and setting the bare counted figure would erase it.
+ * The ledger entry `setStoreStock` writes is then the true shrinkage or surplus at the count
+ * moment, whatever moved since. A stocktake whose `countFinishedAt` is null was counted before
+ * that column existed, and keeps the old behaviour: the bare counted figure. Nothing here refuses
+ * on an unbalanced count: a store may legitimately end approval still holding negative rows —
+ * a post-count sale can take a line below zero too — and that is recorded and surfaced, never
+ * blocked.
  *
  * `varianceQty` is (re)computed here from the line's own `countedQty`/`expectedQty` rather than
  * trusted from whatever `saveStocktakeCounts` last wrote — the two computations use the exact
@@ -270,6 +298,7 @@ export async function approveStoreStocktake(input: {
         docNo: true,
         storeId: true,
         status: true,
+        countFinishedAt: true,
         lines: {
           select: { id: true, itemId: true, variantSku: true, expectedQty: true, countedQty: true, cause: true, reason: true },
         },
@@ -308,6 +337,24 @@ export async function approveStoreStocktake(input: {
       if (!existingItemIds.has(id)) throw new StoreStocktakeError("ITEM_NOT_FOUND");
     }
 
+    /*
+     * Every store movement recorded after the count was saved, summed per item::variant in cents.
+     * Only one stocktake per store can be open (`openKey`), so none of these rows is another
+     * count's. Null `countFinishedAt` (a count saved before the column existed) re-applies
+     * nothing, which is exactly the old SET-the-counted-figure behaviour.
+     */
+    const postCountCentsByKey = new Map<string, number>();
+    if (st.countFinishedAt) {
+      const postCount = await tx.stockLedgerEntry.findMany({
+        where: { locationType: "STORE", locationId: st.storeId, createdAt: { gt: st.countFinishedAt } },
+        select: { itemId: true, variantSku: true, qty: true },
+      });
+      for (const r of postCount) {
+        const key = `${r.itemId}::${r.variantSku}`;
+        postCountCentsByKey.set(key, (postCountCentsByKey.get(key) ?? 0) + Math.round(r.qty.toNumber() * 100));
+      }
+    }
+
     let isFullCount = st.lines.length > 0;
 
     for (const l of computed) {
@@ -318,21 +365,24 @@ export async function approveStoreStocktake(input: {
 
       const key = { storeId_itemId_variantSku: { storeId: st.storeId, itemId: l.itemId, variantSku: l.variantSku ?? "" } };
       const live = await tx.storeStock.findUnique({ where: key, select: { qty: true } });
+      const postCountCents = postCountCentsByKey.get(`${l.itemId}::${l.variantSku ?? ""}`) ?? 0;
+      const target = (Math.round(l.counted * 100) + postCountCents) / 100;
 
       /*
        * avgCost is NEVER touched — not on update, and 0 on a created row. Both existing
        * store-side decrement paths leave it alone, and a count carries no cost information to
        * invent one from. See the sibling comment in the design doc for the full rationale.
        *
-       * setStoreStock (not the delta mover): the count is the truth, so the line's countedQty is
-       * written as an absolute figure, not a delta off whatever the live row happened to hold. A
-       * line whose count matches the live qty writes no ledger entry — nothing moved.
+       * setStoreStock (not the delta mover): the count is the truth at the count moment, so the
+       * target — counted plus what moved since — is written as an absolute figure, not a delta off
+       * whatever the live row happened to hold. A line whose target matches the live qty writes no
+       * ledger entry — nothing was lost or found.
        */
       await setStoreStock(tx, {
         storeId: st.storeId,
         itemId: l.itemId,
         variantSku: l.variantSku,
-        nextQty: l.counted,
+        nextQty: target,
         refType: "StoreStocktake" satisfies StockLedgerRefType,
         refId: st.id,
         refDocNumber: st.docNo,
@@ -344,7 +394,7 @@ export async function approveStoreStocktake(input: {
         data: {
           varianceQty: l.variance,
           qtyAtApproval: live ? live.qty.toNumber() : 0,
-          appliedQty: l.counted,
+          appliedQty: target,
         },
       });
     }

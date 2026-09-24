@@ -18,11 +18,19 @@
 -- columns over the one Prisma enum, and skipping either dies with a data-truncation error the
 -- first time a SELLTHRU number is generated. No FOREIGN KEY: relationMode = "prisma".
 -- Additive, no backfill.
+--
+-- StoreStocktake gains countFinishedAt: when a save last changed the count's figures. Stocktake
+-- approval re-applies every store ledger movement recorded after it on top of the counted figure,
+-- so a sale or delivery while a count waits for approval is not erased. NULL on every stocktake
+-- counted before this column existed, and approval falls back to setting the bare counted figure
+-- for those.
 
 ALTER TABLE `DocNumberConfig` MODIFY `docType` ENUM('PO','GRN','WO','ADJ','RET','ISSUE','RECEIPT','OPN','PUTUS','KONSI','VANLOAD','VANSALE','VANRECON','SPGSALE','DELIVERY','FIELDRET','KONSITRF','STOCKTAKE','PAYMENT','BKM','STORETRF','SELLTHRU') NOT NULL;
 ALTER TABLE `DocumentNumber` MODIFY `docType` ENUM('PO','GRN','WO','ADJ','RET','ISSUE','RECEIPT','OPN','PUTUS','KONSI','VANLOAD','VANSALE','VANRECON','SPGSALE','DELIVERY','FIELDRET','KONSITRF','STOCKTAKE','PAYMENT','BKM','STORETRF','SELLTHRU') NOT NULL;
 
 ALTER TABLE `Store` ADD COLUMN `sellThroughMethod` ENUM('SPG_POS', 'SHELF_COUNT') NULL;
+
+ALTER TABLE `StoreStocktake` ADD COLUMN `countFinishedAt` DATETIME(3) NULL;
 
 CREATE TABLE IF NOT EXISTS `KonsiSellThrough` (
   `id` VARCHAR(191) NOT NULL,
