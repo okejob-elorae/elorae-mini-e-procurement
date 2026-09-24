@@ -3702,6 +3702,9 @@
       "sameStoreError": "The source and destination store must be different.",
       "note": "Note",
       "notePlaceholder": "Optional note for this transfer",
+      "movedAt": "Date and time the goods moved",
+      "movedAtHint": "When the goods physically left the source store (WIB). Stock in the ERP still moves only when this transfer is approved.",
+      "movedAtRequired": "Pick when the goods moved — now or earlier.",
       "linesTitle": "Items to Transfer",
       "selectFromStoreFirst": "Select the source store first to see what it currently holds.",
       "stockLoadError": "Failed to load this store's stock. Try again.",
@@ -3766,6 +3769,8 @@
       "BAD_QTY": "Every line needs a quantity greater than zero.",
       "ITEM_NOT_FOUND": "One of the items on this document no longer exists.",
       "STORE_NOT_FOUND": "That store no longer exists. Refresh and pick another.",
+      "MOVED_AT_IN_FUTURE": "The time the goods moved cannot be later than now.",
+      "COUNTED_SINCE_MOVE": "Stocktake {detail} counted items on this transfer after the goods moved, so the move already stands in that count as a shortfall at one store and a surplus at the other. Approving would record it twice — cancel this transfer instead.",
       "INVALID_REQUEST": "The submitted data was invalid. Reload the page and try again.",
       "ERROR": "Something went wrong. Please try again."
     }

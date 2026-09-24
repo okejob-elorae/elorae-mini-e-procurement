@@ -3702,6 +3702,9 @@
       "sameStoreError": "Toko asal dan tujuan harus berbeda.",
       "note": "Catatan",
       "notePlaceholder": "Catatan opsional untuk transfer ini",
+      "movedAt": "Tanggal dan jam barang dipindahkan",
+      "movedAtHint": "Saat barang benar-benar keluar dari toko asal (WIB). Stok di ERP tetap baru berpindah saat transfer ini disetujui.",
+      "movedAtRequired": "Pilih kapan barang dipindahkan — sekarang atau sebelumnya.",
       "linesTitle": "Barang yang Ditransfer",
       "selectFromStoreFirst": "Pilih toko asal terlebih dahulu untuk melihat stok yang dimilikinya.",
       "stockLoadError": "Gagal memuat stok toko ini. Coba lagi.",
@@ -3766,6 +3769,8 @@
       "BAD_QTY": "Setiap baris membutuhkan jumlah lebih dari nol.",
       "ITEM_NOT_FOUND": "Salah satu barang pada dokumen ini sudah tidak ada.",
       "STORE_NOT_FOUND": "Toko itu sudah tidak ada. Muat ulang dan pilih yang lain.",
+      "MOVED_AT_IN_FUTURE": "Waktu barang dipindahkan tidak boleh setelah saat ini.",
+      "COUNTED_SINCE_MOVE": "Perhitungan stok {detail} menghitung barang pada transfer ini setelah barang dipindahkan, sehingga perpindahan ini sudah tercatat di perhitungan tersebut sebagai kekurangan di satu toko dan kelebihan di toko lainnya. Menyetujui akan mencatatnya dua kali — batalkan transfer ini.",
       "INVALID_REQUEST": "Data yang dikirim tidak valid. Muat ulang halaman dan coba lagi.",
       "ERROR": "Terjadi kesalahan. Coba lagi."
     }

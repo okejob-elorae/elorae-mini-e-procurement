@@ -965,6 +965,7 @@ model StoreTransfer {
   toStoreId    String
   status       StoreTransferStatus @default(PENDING)
   note         String?             @db.Text
+  movedAt      DateTime
   createdById  String
   createdAt    DateTime            @default(now())
   approvedById String?

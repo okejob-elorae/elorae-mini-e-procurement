@@ -6,16 +6,19 @@ import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { createStoreTransfer, approveStoreTransfer, cancelStoreTransfer } from "@/lib/stores/transfer/writer";
 import { StoreTransferError, type StoreTransferErrorCode } from "@/lib/stores/transfer/errors";
 import { getStoreStockForTransfer, type StoreStockOptionRow } from "@/lib/stores/transfer/queries";
+import { parseMovedAtInput } from "@/lib/stores/transfer/moved-at";
 
 export type StoreTransferActionResult =
   | { ok: true; id: string; docNo?: string }
-  | { ok: false; code: StoreTransferErrorCode | "FORBIDDEN" | "INVALID_REQUEST" | "ERROR" };
+  | { ok: false; code: StoreTransferErrorCode | "FORBIDDEN" | "INVALID_REQUEST" | "ERROR"; detail?: string };
 
 export type CreateStoreTransferLineInput = { itemId: string; variantSku: string; qty: number };
 
 export type CreateStoreTransferActionInput = {
   fromStoreId: string;
   toStoreId: string;
+  /* A datetime-local value (YYYY-MM-DDTHH:mm), read as WIB. */
+  movedAt: string;
   note?: string;
   lines: CreateStoreTransferLineInput[];
 };
@@ -38,6 +41,7 @@ function isValidCreateInput(input: unknown): input is CreateStoreTransferActionI
   const i = input as Record<string, unknown>;
   if (typeof i.fromStoreId !== "string" || i.fromStoreId === "") return false;
   if (typeof i.toStoreId !== "string" || i.toStoreId === "") return false;
+  if (typeof i.movedAt !== "string") return false;
   if (i.note !== undefined && typeof i.note !== "string") return false;
   if (!Array.isArray(i.lines) || i.lines.length === 0) return false;
   return i.lines.every(isValidLine);
@@ -51,19 +55,21 @@ function isValidCreateInput(input: unknown): input is CreateStoreTransferActionI
  * and no `IntlMessages` augmentation exists anywhere in `apps/web`, so `tsc` stays silent either
  * way. Keeping every code covered in BOTH `en.json`/`id.json` is a review discipline, not a
  * compiler guarantee — miss one and the operator reads the raw `err.<CODE>` key off the screen
- * instead of a type error at build time.
+ * instead of a type error at build time. The stocktake doc numbers a `COUNTED_SINCE_MOVE`
+ * refusal names ride in `detail`, which both clients pass to the copy as `{detail}`.
  */
 function toResult(e: unknown): StoreTransferActionResult {
-  if (e instanceof StoreTransferError) return { ok: false, code: e.code };
+  if (e instanceof StoreTransferError) return e.detail ? { ok: false, code: e.code, detail: e.detail } : { ok: false, code: e.code };
   return { ok: false, code: "ERROR" };
 }
 
 /**
  * Creates a PENDING transfer. `stores:manage` — the same permission that gates opening a store
  * stocktake — because this, like that document, moves consignment stock on a store's behalf
- * rather than reading it. The writer's own `SAME_STORE`/`NO_LINES`/`BAD_QTY`/`ITEM_NOT_FOUND`
- * guards still run regardless of what this input check catches, since this action is callable
- * independently of whatever the form ever sends.
+ * rather than reading it. The writer's own `SAME_STORE`/`NO_LINES`/`BAD_QTY`/`MOVED_AT_IN_FUTURE`/
+ * `ITEM_NOT_FOUND` guards still run regardless of what this input check catches, since this action
+ * is callable independently of whatever the form ever sends. A move time that does not round-trip
+ * through WIB (`parseMovedAtInput`) is `INVALID_REQUEST`, never a domain code.
  */
 export async function createStoreTransferAction(
   input: CreateStoreTransferActionInput,
@@ -75,10 +81,13 @@ export async function createStoreTransferAction(
       return { ok: false, code: "FORBIDDEN" };
     }
     if (!isValidCreateInput(input)) return { ok: false, code: "INVALID_REQUEST" };
+    const movedAt = parseMovedAtInput(input.movedAt);
+    if (!movedAt) return { ok: false, code: "INVALID_REQUEST" };
 
     const { transferId, docNo } = await createStoreTransfer({
       fromStoreId: input.fromStoreId,
       toStoreId: input.toStoreId,
+      movedAt,
       note: input.note?.trim() || null,
       createdById: session.user.id,
       lines: input.lines,
