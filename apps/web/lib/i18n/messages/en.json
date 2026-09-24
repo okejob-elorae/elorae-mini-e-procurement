@@ -3354,7 +3354,7 @@
           "OUT_OF_ORDER": "This stocktake closes before the store's last sell-through report period — sell-through reports must follow the store's counting order.",
           "BEFORE_LEDGER_CUTOVER": "This count was approved before the store's first recorded stock movement, so there is no stock history for a report to cover. Use a later count.",
           "RETUR_IN_FLIGHT": "This count cannot close a period: returns {detail} were raised before it and still unsettled when it was taken. Finish or cancel them if they are still open, then close the period with a later count.",
-          "TRANSFER_IN_FLIGHT": "This count cannot close a period yet: store transfers {detail} moved goods it counted before it was taken and are still pending. Cancel them — this count already took the move as a shortfall or surplus — then create the report.",
+          "TRANSFER_IN_FLIGHT": "This count cannot close a period yet: store transfers {detail} moved goods it counted before it was taken, are still pending, and can no longer be approved. Cancel each one — this count already took its move as a shortfall or surplus — and raise it again for any items this count did not include, or with the real move time if the goods moved after the count. Then create the report.",
           "UNKNOWN_REF_TYPE": "An unrecognised stock movement was found while building this report. Contact an admin.",
           "HELD": "This report has lines awaiting resolution.",
           "STALE": "Stock moved after this report was opened. Cancel and recreate it.",
@@ -3387,13 +3387,13 @@
     "approve": {
       "button": "Approve",
       "confirmTitle": "Confirm Stocktake Approval",
-      "confirmDescription": "Approving writes the store's stock to the counted figures on this document, plus any stock movement recorded at the store after the count was saved — a sale or delivery while this count waited is kept, not erased. Any line left blank is not touched — its existing stock stands as-is.",
+      "confirmDescription": "Approving writes the store's stock to the counted figures on this document, plus any stock movement recorded at the store after the count was saved — a sale or delivery while this count waited is kept, not erased. Returns raised and store transfers moved before the count are not re-applied, because the count already saw them. Any line left blank is not touched — its existing stock stands as-is.",
       "confirmAction": "Approve",
       "submitting": "Approving…",
       "success": "Stocktake approved, store stock updated.",
       "driftTitle": "Stock has moved since this count was opened",
       "driftLine": "{product}{variant}: snapshot {expected}, now {live}",
-      "driftNote": "This is informational only — approval proceeds regardless. It writes the counted figure plus whatever moved after the count was saved."
+      "driftNote": "This is informational only — the drift itself does not block approval. It writes the counted figure plus whatever moved after the count was saved, except returns raised and store transfers moved before the count, which the count already saw. A pending store transfer that moved counted goods before the count does block approval until it is approved or cancelled."
     },
     "cancel": {
       "button": "Cancel Stocktake",
@@ -3426,7 +3426,7 @@
       "ITEM_NOT_FOUND": "One of the items on this document no longer exists.",
       "INVALID_REQUEST": "The submitted data was invalid. Reload the page and try again.",
       "DUPLICATE_LINE": "That item and variant is already on this document.",
-      "TRANSFER_PENDING": "Store transfer {detail} moved goods this count includes before the count was taken, and is still pending. Approve or cancel it first, then approve this count.",
+      "TRANSFER_PENDING": "Store transfer {detail} moved goods this count includes before the count was taken, and is still pending. Approve it first, then approve this count. If the transfer is wrong, cancel it and raise it again with the right items and move time.",
       "NO_ASSIGNED_STORE": "You are not assigned to a store.",
       "NO_ACTIVE_VISIT": "You must be checked in at your store first.",
       "ERROR": "Something went wrong. Please try again."
@@ -3658,7 +3658,7 @@
       "OUT_OF_ORDER": "This stocktake closes before the store's last sell-through report period.",
       "BEFORE_LEDGER_CUTOVER": "This stocktake was approved before the store's first recorded stock movement, so there is no stock history for a report to cover. Close the period with a later count.",
       "RETUR_IN_FLIGHT": "Returns {detail} were raised before the closing count and were still unsettled when it was taken, so the count missed units already off the shelf. Finish or cancel them if they are still open, then close the period with a later count.",
-      "TRANSFER_IN_FLIGHT": "Store transfers {detail} moved goods the closing count includes before it was taken and are still pending, so the count holds a move the stock ledger has not recorded. The count is already approved, so they can no longer be approved: cancel them — the move then stands in this count as a shortfall or surplus — and create the report again.",
+      "TRANSFER_IN_FLIGHT": "Store transfers {detail} moved goods the closing count includes before it was taken and are still pending, so the count holds a move the stock ledger has not recorded. The count is already approved, so they can no longer be approved. Before closing the period on this count, cancel each one — its move then stands in this count as a shortfall or surplus — and raise it again for any items the count did not include, or with the real move time if the goods moved after the count.",
       "UNKNOWN_REF_TYPE": "An unrecognised stock movement was found on this report. Contact an admin.",
       "HELD": "Every line with a gap needs a saved resolution before this report can be approved.",
       "STALE": "Stock moved after this report was opened, so the figures no longer match. Cancel and recreate it.",
@@ -3709,7 +3709,7 @@
       "note": "Note",
       "notePlaceholder": "Optional note for this transfer",
       "movedAt": "Date and time the goods moved",
-      "movedAtHint": "When the goods physically left the source store (WIB). Stock in the ERP still moves only when this transfer is approved.",
+      "movedAtHint": "When the goods physically left the source store (WIB). If the goods already moved, set when they moved — not when you are recording it. A wrong time can double-count the move at a stocktake. Stock in the ERP still moves only when this transfer is approved.",
       "movedAtRequired": "Pick when the goods moved — now or earlier.",
       "linesTitle": "Items to Transfer",
       "selectFromStoreFirst": "Select the source store first to see what it currently holds.",
@@ -3776,8 +3776,8 @@
       "BAD_QTY": "Every line needs a quantity greater than zero.",
       "ITEM_NOT_FOUND": "One of the items on this document no longer exists.",
       "STORE_NOT_FOUND": "That store no longer exists. Refresh and pick another.",
-      "MOVED_AT_IN_FUTURE": "The time the goods moved cannot be later than now.",
-      "COUNTED_SINCE_MOVE": "Stocktake {detail} counted items on this transfer after the goods moved, so the move already stands in that count as a shortfall at one store and a surplus at the other. Approving would record it twice — cancel this transfer instead.",
+      "MOVED_AT_IN_FUTURE": "The time the goods moved cannot be in the future.",
+      "COUNTED_SINCE_MOVE": "Stocktake {detail} counted items on this transfer after the goods moved, so the move already stands in that count as a shortfall at one store and a surplus at the other. Approving would record it twice. Cancel this transfer, then raise a new one for any items that count did not include — or with the real move time, if the goods actually moved after that count.",
       "INVALID_REQUEST": "The submitted data was invalid. Reload the page and try again.",
       "ERROR": "Something went wrong. Please try again."
     }

@@ -3354,7 +3354,7 @@
           "OUT_OF_ORDER": "Perhitungan ini ditutup sebelum periode laporan sell-through terakhir toko ini — laporan sell-through harus mengikuti urutan perhitungan toko.",
           "BEFORE_LEDGER_CUTOVER": "Perhitungan ini disetujui sebelum pergerakan stok pertama yang tercatat di toko ini, sehingga tidak ada riwayat stok yang bisa dicakup laporan. Gunakan perhitungan yang lebih baru.",
           "RETUR_IN_FLIGHT": "Perhitungan ini tidak bisa menutup periode: retur {detail} diajukan sebelumnya dan belum selesai saat perhitungan dilakukan. Selesaikan atau batalkan retur tersebut jika masih terbuka, lalu tutup periode dengan perhitungan yang lebih baru.",
-          "TRANSFER_IN_FLIGHT": "Perhitungan ini belum bisa menutup periode: transfer toko {detail} memindahkan barang yang dihitungnya sebelum perhitungan dilakukan dan masih menunggu persetujuan. Batalkan transfer tersebut — perhitungan ini sudah mencatat perpindahannya sebagai kekurangan atau kelebihan — lalu buat laporannya.",
+          "TRANSFER_IN_FLIGHT": "Perhitungan ini belum bisa menutup periode: transfer toko {detail} memindahkan barang yang dihitungnya sebelum perhitungan dilakukan, masih menunggu persetujuan, dan tidak bisa disetujui lagi. Batalkan setiap transfer tersebut — perhitungan ini sudah mencatat perpindahannya sebagai kekurangan atau kelebihan — lalu buat ulang untuk barang yang tidak termasuk dalam perhitungan ini, atau dengan waktu pemindahan yang sebenarnya jika barang dipindahkan setelah perhitungan. Setelah itu, buat laporannya.",
           "UNKNOWN_REF_TYPE": "Ditemukan pergerakan stok yang tidak dikenali saat menyusun laporan ini. Hubungi admin.",
           "HELD": "Laporan ini memiliki baris yang menunggu penyelesaian.",
           "STALE": "Stok berubah setelah laporan ini dibuka. Batalkan dan buat ulang.",
@@ -3387,13 +3387,13 @@
     "approve": {
       "button": "Setujui",
       "confirmTitle": "Konfirmasi Persetujuan Perhitungan",
-      "confirmDescription": "Menyetujui akan menulis stok toko sesuai hasil hitung pada dokumen ini, ditambah pergerakan stok toko yang tercatat setelah hasil hitung disimpan — penjualan atau pengiriman selama perhitungan ini menunggu tetap dihitung, tidak terhapus. Baris yang dibiarkan kosong tidak akan disentuh — stok yang ada tetap seperti sekarang.",
+      "confirmDescription": "Menyetujui akan menulis stok toko sesuai hasil hitung pada dokumen ini, ditambah pergerakan stok toko yang tercatat setelah hasil hitung disimpan — penjualan atau pengiriman selama perhitungan ini menunggu tetap dihitung, tidak terhapus. Retur yang diajukan dan transfer toko yang dipindahkan sebelum perhitungan tidak diterapkan ulang, karena perhitungan sudah mencakupnya. Baris yang dibiarkan kosong tidak akan disentuh — stok yang ada tetap seperti sekarang.",
       "confirmAction": "Setujui",
       "submitting": "Menyetujui…",
       "success": "Perhitungan disetujui, stok toko telah diperbarui.",
       "driftTitle": "Stok berubah sejak perhitungan ini dibuka",
       "driftLine": "{product}{variant}: seharusnya {expected}, sekarang {live}",
-      "driftNote": "Ini hanya informasi — persetujuan tetap berjalan. Yang ditulis adalah hasil hitung ditambah pergerakan yang terjadi setelah hasil hitung disimpan."
+      "driftNote": "Ini hanya informasi — selisih ini sendiri tidak menghalangi persetujuan. Yang ditulis adalah hasil hitung ditambah pergerakan yang terjadi setelah hasil hitung disimpan, kecuali retur yang diajukan dan transfer toko yang dipindahkan sebelum perhitungan, karena perhitungan sudah mencakupnya. Transfer toko yang masih menunggu persetujuan dan memindahkan barang yang dihitung sebelum perhitungan tetap menghalangi persetujuan sampai transfer tersebut disetujui atau dibatalkan."
     },
     "cancel": {
       "button": "Batalkan Perhitungan",
@@ -3426,7 +3426,7 @@
       "ITEM_NOT_FOUND": "Salah satu barang pada dokumen ini sudah tidak ada.",
       "INVALID_REQUEST": "Data yang dikirim tidak valid. Muat ulang halaman dan coba lagi.",
       "DUPLICATE_LINE": "Barang dan varian ini sudah ada pada dokumen ini.",
-      "TRANSFER_PENDING": "Transfer toko {detail} memindahkan barang yang dihitung di perhitungan ini sebelum perhitungan dilakukan, dan masih menunggu persetujuan. Setujui atau batalkan transfer tersebut terlebih dahulu, lalu setujui perhitungan ini.",
+      "TRANSFER_PENDING": "Transfer toko {detail} memindahkan barang yang dihitung di perhitungan ini sebelum perhitungan dilakukan, dan masih menunggu persetujuan. Setujui transfer tersebut terlebih dahulu, lalu setujui perhitungan ini. Jika transfernya keliru, batalkan lalu buat ulang dengan barang dan waktu pemindahan yang benar.",
       "NO_ASSIGNED_STORE": "Anda tidak ditugaskan ke toko manapun.",
       "NO_ACTIVE_VISIT": "Anda harus check-in di toko Anda terlebih dahulu.",
       "ERROR": "Terjadi kesalahan. Coba lagi."
@@ -3658,7 +3658,7 @@
       "OUT_OF_ORDER": "Perhitungan ini ditutup sebelum periode laporan sell-through terakhir toko ini.",
       "BEFORE_LEDGER_CUTOVER": "Perhitungan ini disetujui sebelum pergerakan stok pertama yang tercatat di toko ini, sehingga tidak ada riwayat stok yang bisa dicakup laporan. Tutup periode dengan perhitungan yang lebih baru.",
       "RETUR_IN_FLIGHT": "Retur {detail} diajukan sebelum perhitungan penutup dan belum selesai saat perhitungan dilakukan, sehingga perhitungan tidak mencakup unit yang sudah keluar dari rak. Selesaikan atau batalkan retur tersebut jika masih terbuka, lalu tutup periode dengan perhitungan yang lebih baru.",
-      "TRANSFER_IN_FLIGHT": "Transfer toko {detail} memindahkan barang yang dihitung di perhitungan penutup sebelum perhitungan dilakukan dan masih menunggu persetujuan, sehingga perhitungan mencakup perpindahan yang belum tercatat di ledger stok. Perhitungan sudah disetujui, jadi transfer tersebut tidak bisa disetujui lagi: batalkan — perpindahannya lalu tercatat di perhitungan ini sebagai kekurangan atau kelebihan — dan buat laporannya lagi.",
+      "TRANSFER_IN_FLIGHT": "Transfer toko {detail} memindahkan barang yang dihitung di perhitungan penutup sebelum perhitungan dilakukan dan masih menunggu persetujuan, sehingga perhitungan mencakup perpindahan yang belum tercatat di ledger stok. Perhitungan sudah disetujui, jadi transfer tersebut tidak bisa disetujui lagi. Sebelum menutup periode dengan perhitungan ini, batalkan setiap transfer tersebut — perpindahannya lalu tercatat di perhitungan ini sebagai kekurangan atau kelebihan — lalu buat ulang untuk barang yang tidak termasuk dalam perhitungan, atau dengan waktu pemindahan yang sebenarnya jika barang dipindahkan setelah perhitungan.",
       "UNKNOWN_REF_TYPE": "Ditemukan pergerakan stok yang tidak dikenali pada laporan ini. Hubungi admin.",
       "HELD": "Setiap baris dengan selisih perlu resolusi tersimpan sebelum laporan ini bisa disetujui.",
       "STALE": "Stok berubah setelah laporan ini dibuka, sehingga angkanya sudah tidak sesuai lagi. Batalkan dan buat ulang.",
@@ -3709,7 +3709,7 @@
       "note": "Catatan",
       "notePlaceholder": "Catatan opsional untuk transfer ini",
       "movedAt": "Tanggal dan jam barang dipindahkan",
-      "movedAtHint": "Saat barang benar-benar keluar dari toko asal (WIB). Stok di ERP tetap baru berpindah saat transfer ini disetujui.",
+      "movedAtHint": "Saat barang benar-benar keluar dari toko asal (WIB). Jika barang sudah dipindahkan, isi waktu barang dipindahkan — bukan waktu Anda mencatatnya. Waktu yang salah bisa membuat perpindahan terhitung dua kali saat perhitungan stok. Stok di ERP tetap baru berpindah saat transfer ini disetujui.",
       "movedAtRequired": "Pilih kapan barang dipindahkan — sekarang atau sebelumnya.",
       "linesTitle": "Barang yang Ditransfer",
       "selectFromStoreFirst": "Pilih toko asal terlebih dahulu untuk melihat stok yang dimilikinya.",
@@ -3776,8 +3776,8 @@
       "BAD_QTY": "Setiap baris membutuhkan jumlah lebih dari nol.",
       "ITEM_NOT_FOUND": "Salah satu barang pada dokumen ini sudah tidak ada.",
       "STORE_NOT_FOUND": "Toko itu sudah tidak ada. Muat ulang dan pilih yang lain.",
-      "MOVED_AT_IN_FUTURE": "Waktu barang dipindahkan tidak boleh setelah saat ini.",
-      "COUNTED_SINCE_MOVE": "Perhitungan stok {detail} menghitung barang pada transfer ini setelah barang dipindahkan, sehingga perpindahan ini sudah tercatat di perhitungan tersebut sebagai kekurangan di satu toko dan kelebihan di toko lainnya. Menyetujui akan mencatatnya dua kali — batalkan transfer ini.",
+      "MOVED_AT_IN_FUTURE": "Waktu barang dipindahkan tidak boleh di masa mendatang.",
+      "COUNTED_SINCE_MOVE": "Perhitungan stok {detail} menghitung barang pada transfer ini setelah barang dipindahkan, sehingga perpindahan ini sudah tercatat di perhitungan tersebut sebagai kekurangan di satu toko dan kelebihan di toko lainnya. Menyetujui akan mencatatnya dua kali. Batalkan transfer ini, lalu buat transfer baru untuk barang yang tidak termasuk dalam perhitungan tersebut — atau dengan waktu pemindahan yang sebenarnya, jika barang ternyata dipindahkan setelah perhitungan itu.",
       "INVALID_REQUEST": "Data yang dikirim tidak valid. Muat ulang halaman dan coba lagi.",
       "ERROR": "Terjadi kesalahan. Coba lagi."
     }
