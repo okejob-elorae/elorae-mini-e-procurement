@@ -88,6 +88,7 @@ export type StoreTransferDetail = {
   fromStoreName: string;
   toStoreId: string;
   toStoreName: string;
+  movedAt: Date;
   status: StoreTransferStatusValue;
   note: string | null;
   createdByLabel: string;
@@ -105,6 +106,7 @@ export async function getStoreTransferById(id: string): Promise<StoreTransferDet
       docNo: true,
       fromStoreId: true,
       toStoreId: true,
+      movedAt: true,
       status: true,
       note: true,
       createdById: true,
@@ -149,6 +151,7 @@ export async function getStoreTransferById(id: string): Promise<StoreTransferDet
     fromStoreName: r.fromStore.name,
     toStoreId: r.toStoreId,
     toStoreName: r.toStore.name,
+    movedAt: r.movedAt,
     status: r.status,
     note: r.note,
     createdByLabel: labelFor(r.createdById) ?? "—",
