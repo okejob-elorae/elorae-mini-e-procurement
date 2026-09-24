@@ -231,9 +231,9 @@ d("listTaxInvoices (test bed only)", () => {
     expect(second.rows).toHaveLength(1);
 
     /* Newest invoiceDate first — A (Feb) leads, B (Jan) lands on page 2. */
-    expect(first.rows[0].invoiceDate.getTime()).toBe(invoiceDateA.getTime());
-    expect(second.rows[0].invoiceDate.getTime()).toBe(invoiceDateB.getTime());
-    expect(second.rows[0].dueDate.getTime()).toBe(dueDateB.getTime());
+    expect(first.rows[0].invoiceDate?.getTime()).toBe(invoiceDateA.getTime());
+    expect(second.rows[0].invoiceDate?.getTime()).toBe(invoiceDateB.getTime());
+    expect(second.rows[0].dueDate?.getTime()).toBe(dueDateB.getTime());
     expect(first.rows[0].id).not.toBe(second.rows[0].id);
   });
 
