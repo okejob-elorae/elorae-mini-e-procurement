@@ -52,9 +52,9 @@ async function guard(): Promise<{ userId: string } | { ok: false; reason: "FORBI
  * `SellThroughError.code` already reads as a stable, screen-facing reason on its own, so it is
  * passed straight through — same shape as `toResult` in `app/actions/store-settlements.ts` —
  * rather than keeping a second `Record<SellThroughErrorCode, …>` map that could drift out of sync
- * with `errors.ts`. `detail` travels with it because two screens read it: the retur docNos a
- * `RETUR_IN_FLIGHT` refusal names, and `REASON_TOO_LONG`, which gets its own copy instead of the
- * generic code's.
+ * with `errors.ts`. `detail` travels with it because two screens read it: the retur or transfer
+ * docNos a `RETUR_IN_FLIGHT` or `TRANSFER_IN_FLIGHT` refusal names, and `REASON_TOO_LONG`, which
+ * gets its own copy instead of the generic code's.
  */
 function toResult(e: unknown): SellThroughActionFailure {
   if (e instanceof SellThroughError) return e.detail ? { ok: false, reason: e.code, detail: e.detail } : { ok: false, reason: e.code };

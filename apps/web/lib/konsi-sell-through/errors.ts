@@ -9,6 +9,7 @@ export type SellThroughErrorCode =
   | "OUT_OF_ORDER"
   | "BEFORE_LEDGER_CUTOVER"
   | "RETUR_IN_FLIGHT"
+  | "TRANSFER_IN_FLIGHT"
   | "UNKNOWN_REF_TYPE"
   | "HELD"
   | "STALE"

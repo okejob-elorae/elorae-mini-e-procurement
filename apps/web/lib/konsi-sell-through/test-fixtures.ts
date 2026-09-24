@@ -11,6 +11,7 @@ import { createStoreStocktake, saveStocktakeCounts, approveStoreStocktake } from
 import { createFieldReturn } from "@/lib/field-sales/retur/writer";
 import { receiveFieldReturn } from "@/lib/field-sales/retur/receive-writer";
 import { approveFieldReturn } from "@/lib/field-sales/retur/approve-writer";
+import { createStoreTransfer, approveStoreTransfer } from "@/lib/stores/transfer/writer";
 import { approveSellThrough } from "./writer";
 
 export type SellThroughFixtureState = {
@@ -18,6 +19,7 @@ export type SellThroughFixtureState = {
   uomId: string;
   itemId: string;
   storeId: string;
+  otherStoreId: string;
   userId: string;
   visitId: string;
   orderIds: string[];
@@ -43,6 +45,7 @@ export function createSellThroughFixtures() {
     uomId: "",
     itemId: "",
     storeId: "",
+    otherStoreId: "",
     userId: "",
     visitId: "",
     orderIds: [],
@@ -55,6 +58,7 @@ export function createSellThroughFixtures() {
     state.uomId = "";
     state.itemId = "";
     state.storeId = "";
+    state.otherStoreId = "";
     state.userId = "";
     state.visitId = "";
     state.orderIds = [];
@@ -136,6 +140,11 @@ export function createSellThroughFixtures() {
 
     const seededOrderIds = state.orderIds.map((id) => seededId(id));
 
+    /* Store transfers touching the fixture store go before any store or stock row: lines first, then the documents. */
+    const transferWhere = { OR: [{ fromStoreId: seededId(state.storeId) }, { toStoreId: seededId(state.storeId) }] };
+    await prisma.storeTransferLine.deleteMany({ where: { transfer: transferWhere } });
+    await prisma.storeTransfer.deleteMany({ where: transferWhere });
+
     /* Children of a report's optional 1:1 go first: deleting the report would null their source column and the one-source CHECK refuses that. */
     await prisma.taxInvoice.deleteMany({ where: { sellThrough: { storeId: seededId(state.storeId) } } });
     await prisma.receivable.deleteMany({ where: { storeId: seededId(state.storeId) } });
@@ -157,6 +166,7 @@ export function createSellThroughFixtures() {
     await prisma.deliveryShipmentLine.deleteMany({ where: { shipment: { orderId: { in: seededOrderIds } } } });
     await prisma.deliveryShipment.deleteMany({ where: { orderId: { in: seededOrderIds } } });
     await prisma.storeStock.deleteMany({ where: { storeId: seededId(state.storeId) } });
+    await prisma.storeStock.deleteMany({ where: { storeId: seededId(state.otherStoreId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(state.itemId) } });
     await prisma.stockReservation.deleteMany({ where: { itemId: seededId(state.itemId) } });
     await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(state.itemId) } });
@@ -166,6 +176,7 @@ export function createSellThroughFixtures() {
     await prisma.storeVisit.deleteMany({ where: { id: seededId(state.visitId) } });
     await prisma.item.deleteMany({ where: { id: seededId(state.itemId) } });
     await prisma.store.deleteMany({ where: { id: seededId(state.storeId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(state.otherStoreId) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(state.uomId) } });
     await prisma.user.deleteMany({ where: { id: seededId(state.userId) } });
     await prisma.user.deleteMany({ where: { id: seededId(state.salesmanId) } });
@@ -264,6 +275,37 @@ export function createSellThroughFixtures() {
     await approveFieldReturn({ returnId, approvedById: state.userId });
   };
 
+  /* The second store a store-to-store transfer needs, created on first use so specs that never transfer pay nothing for it. */
+  async function otherStore(): Promise<string> {
+    if (state.otherStoreId) return state.otherStoreId;
+    const store = await prisma.store.create({
+      data: {
+        code: `TEST-KSTW-STORE2-${state.run}`,
+        name: "Test Sell-through Other Store",
+        address: "Test address",
+        termsType: "KONSI",
+        marginPercent: 20,
+        isActive: true,
+      },
+    });
+    state.otherStoreId = store.id;
+    return store.id;
+  }
+
+  /* A PENDING store-to-store transfer of the fixture item (variantless unless told otherwise): OUT of the fixture store, or IN to it from the other store. */
+  const storeTransfer = async (opts: { direction: "OUT" | "IN"; qty: number; movedAt: Date; variantSku?: string }) => {
+    const other = await otherStore();
+    return createStoreTransfer({
+      fromStoreId: opts.direction === "OUT" ? state.storeId : other,
+      toStoreId: opts.direction === "OUT" ? other : state.storeId,
+      movedAt: opts.movedAt,
+      createdById: state.userId,
+      lines: [{ itemId: state.itemId, variantSku: opts.variantSku ?? "", qty: opts.qty }],
+    });
+  };
+
+  const approveTransfer = (transferId: string) => approveStoreTransfer({ transferId, approvedById: state.userId });
+
   const onlyLine = (sellThroughId: string) =>
     prisma.konsiSellThroughLine.findFirstOrThrow({ where: { sellThroughId: seededId(sellThroughId) } });
 
@@ -292,6 +334,8 @@ export function createSellThroughFixtures() {
     count,
     raiseRetur,
     settleRetur,
+    storeTransfer,
+    approveTransfer,
     onlyLine,
     approve,
     approveBaseline,

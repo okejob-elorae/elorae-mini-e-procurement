@@ -263,6 +263,92 @@ d("konsi sell-through writer (test bed only)", () => {
     expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("DRAFT");
   }, SLOW);
 
+  /* create — store transfers in flight at the closing count */
+
+  /* Reads the closing count's moment, so a transfer can be dated just before it. */
+  const countMomentOf = async (stocktakeId: string) =>
+    (await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(stocktakeId) }, select: { countFinishedAt: true } })).countFinishedAt!;
+
+  it("refuses TRANSFER_IN_FLIGHT while a transfer out of the store, moved before the count, is still pending", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(6);
+    /* Recorded only after the count was approved, so the stocktake's own TRANSFER_PENDING guard never saw it. */
+    const { docNo } = await fx.storeTransfer({ direction: "OUT", qty: 2, movedAt: new Date((await countMomentOf(stocktakeId)).getTime() - 60_000) });
+    await expect(createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId })).rejects.toMatchObject({
+      code: "TRANSFER_IN_FLIGHT",
+      detail: docNo,
+    });
+  }, SLOW);
+
+  it("refuses TRANSFER_IN_FLIGHT for a pending transfer INTO the store as well", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(6);
+    const { docNo } = await fx.storeTransfer({ direction: "IN", qty: 2, movedAt: new Date((await countMomentOf(stocktakeId)).getTime() - 60_000) });
+    await expect(createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId })).rejects.toMatchObject({
+      code: "TRANSFER_IN_FLIGHT",
+      detail: docNo,
+    });
+  }, SLOW);
+
+  it("does not refuse over a pending transfer whose goods moved moments after the count", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(6);
+    await fx.storeTransfer({ direction: "OUT", qty: 2, movedAt: new Date() });
+    await expect(createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId })).resolves.toMatchObject({ id: expect.any(String) });
+  }, SLOW);
+
+  it("does not refuse over a pending transfer of a key the closing count never counted", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(6);
+    /*
+     * A closing count is a full count, so "a key it never counted" is one the store held no row for:
+     * here the item's OTHER variant. The count cannot have seen that move.
+     */
+    await fx.storeTransfer({ direction: "OUT", qty: 1, variantSku: "OTHER", movedAt: new Date((await countMomentOf(stocktakeId)).getTime() - 60_000) });
+    await expect(createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId })).resolves.toMatchObject({ id: expect.any(String) });
+  }, SLOW);
+
+  it("approve refuses TRANSFER_IN_FLIGHT when a pending transfer moved before the count reaches a DRAFT", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(6);
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+    const { docNo } = await fx.storeTransfer({ direction: "OUT", qty: 2, movedAt: new Date((await countMomentOf(stocktakeId)).getTime() - 60_000) });
+
+    await expect(fx.approve(id)).rejects.toMatchObject({ code: "TRANSFER_IN_FLIGHT", detail: docNo });
+    expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("DRAFT");
+  }, SLOW);
+
+  it("a transfer moved before the count and approved before the count's approval derives as out, with no gap", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const { transferId } = await fx.storeTransfer({ direction: "OUT", qty: 2, movedAt: new Date(Date.now() - 60_000) });
+    await tick();
+    /* The shelf shows 4: two units already went to the other store. */
+    const stocktakeId = await count(4, { cause: "SHRINKAGE", reason: "two units went to the other store", approve: false });
+    await tick();
+    await fx.approveTransfer(transferId);
+    await approveStoreStocktake({ stocktakeId, approvedById: state.userId });
+
+    const stock = await prisma.storeStock.findUniqueOrThrow({
+      where: { storeId_itemId_variantSku: { storeId: state.storeId, itemId: state.itemId, variantSku: "" } },
+    });
+    expect(Number(stock.qty)).toBe(4);
+
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+    const line = await onlyLine(id);
+    /* opening 0 + in 6 − out 2 − pos 0 − gap 0 = closing 4; billed = 0 + 6 − 2 − 4 = 0. */
+    expect(Number(line.inQty)).toBe(6);
+    expect(Number(line.outQty)).toBe(2);
+    expect(Number(line.gapQty)).toBe(0);
+    expect(Number(line.closingQty)).toBe(4);
+    expect(Number(line.billedQty)).toBe(0);
+  }, SLOW);
+
   /* SHELF_COUNT */
 
   it("SHELF_COUNT: 6 transferred in, 2 counted → one line billed 4, and approve succeeds with no resolution", async () => {

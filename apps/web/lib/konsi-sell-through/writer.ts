@@ -83,6 +83,51 @@ async function assertNoReturInFlight(
 }
 
 /**
+ * Refuses `TRANSFER_IN_FLIGHT`, naming the transfers in `detail`, when a store-to-store transfer
+ * touching the store — from it or to it — that moves an item::variant the count counted is still
+ * PENDING although its goods moved on or before the count moment (`movedAt ≤ countMoment`). A
+ * transfer of keys the count never counted cannot be in it and does not refuse; both variantSku
+ * columns are non-nullable, so `countedKeys` match exactly. The count saw the move and StoreStock has not
+ * recorded it, so the count's variance holds the moved units: a shortfall at the source that the
+ * report would bill, a surplus at the destination. Stocktake approval refuses this case while the
+ * count is still open (`TRANSFER_PENDING`), so what reaches here is a transfer first recorded after
+ * the count was approved, or a count saved before `countFinishedAt` existed. Such a transfer can no
+ * longer be approved (`COUNTED_SINCE_MOVE`); the remedy is to cancel it, after which the move
+ * stands in the count as variance.
+ *
+ * Unlike `assertNoReturInFlight` there is deliberately no "approved after the count" arm. A
+ * transfer approved after the count has its ledger rows inside this report's window, and stocktake
+ * approval skipped exactly those rows when it re-applied post-count movements (its
+ * `movedAt ≤ countFinishedAt` exclusion), so StoreStock and the window both carry the move once and
+ * the report derives it as in/out with no gap. Copying the retur's approved-later arm across would
+ * refuse a correct report.
+ */
+async function assertNoTransferInFlight(
+  client: Prisma.TransactionClient | typeof prisma,
+  storeId: string,
+  countMoment: Date,
+  countedKeys: Array<{ itemId: string; variantSku: string }>,
+): Promise<void> {
+  if (countedKeys.length === 0) return;
+  const pending = await client.storeTransfer.findMany({
+    where: {
+      status: "PENDING",
+      movedAt: { lte: countMoment },
+      OR: [{ fromStoreId: storeId }, { toStoreId: storeId }],
+      lines: { some: { OR: countedKeys } },
+    },
+    orderBy: { docNo: "asc" },
+    select: { docNo: true },
+  });
+  if (pending.length > 0) throw new SellThroughError("TRANSFER_IN_FLIGHT", pending.map((t) => t.docNo).join(", "));
+}
+
+/* The item::variant keys a stocktake actually counted — the only keys a transfer can have been seen under. */
+function countedKeysOf(lines: Array<{ itemId: string; variantSku: string; countedQty: unknown }>): Array<{ itemId: string; variantSku: string }> {
+  return lines.filter((l) => l.countedQty !== null).map((l) => ({ itemId: l.itemId, variantSku: l.variantSku ?? "" }));
+}
+
+/**
  * The read-only precondition sequence `createSellThrough` enforces before it derives or writes
  * anything, extracted so `getSellThroughEligibility` (queries.ts) can run the exact same checks
  * read-only instead of hand-maintaining a second copy that could drift from this one. The store is
@@ -93,9 +138,9 @@ async function assertNoReturInFlight(
  * unusable towards the ones that clear by themselves. `ALREADY_USED` comes before every other
  * count-level refusal because it is the one the stocktake page turns into a link to the existing
  * report (its id rides in `detail`). `BEFORE_LEDGER_CUTOVER` and `OUT_OF_ORDER` are permanent for
- * the count. `RETUR_IN_FLIGHT` sits after them, since chasing returns is wasted on a count that
- * can never close a period anyway, and before `DRAFT_EXISTS`, which clears once the other draft
- * is approved or cancelled.
+ * the count. The two in-flight refusals, `RETUR_IN_FLIGHT` then `TRANSFER_IN_FLIGHT`, sit after
+ * them, since chasing returns or transfers is wasted on a count that can never close a period
+ * anyway, and before `DRAFT_EXISTS`, which clears once the other draft is approved or cancelled.
  *
  * Takes `Prisma.TransactionClient | typeof prisma` — `createSellThrough` always passes its own
  * `tx`, `getSellThroughEligibility` passes the plain client since it performs no writes and needs
@@ -123,7 +168,7 @@ export async function checkSellThroughPreconditions(
       isFullCount: true,
       countFinishedAt: true,
       approvedAt: true,
-      lines: { select: { itemId: true, variantSku: true, productName: true } },
+      lines: { select: { itemId: true, variantSku: true, productName: true, countedQty: true } },
     },
   });
   if (!stocktake) throw new SellThroughError("NOT_FOUND", "STOCKTAKE");
@@ -163,7 +208,9 @@ export async function checkSellThroughPreconditions(
     if (closingBoundary.getTime() <= previousBoundary.getTime()) throw new SellThroughError("OUT_OF_ORDER");
   }
 
-  await assertNoReturInFlight(client, storeId, stocktake.countFinishedAt ?? stocktake.approvedAt);
+  const countMoment = stocktake.countFinishedAt ?? stocktake.approvedAt;
+  await assertNoReturInFlight(client, storeId, countMoment);
+  await assertNoTransferInFlight(client, storeId, countMoment, countedKeysOf(stocktake.lines));
 
   const draft = await client.konsiSellThrough.findFirst({ where: { storeId, status: "DRAFT" }, select: { id: true } });
   if (draft) throw new SellThroughError("DRAFT_EXISTS");
@@ -322,17 +369,18 @@ export type ApproveSellThroughInput =
  * report only: it freezes the figures with a reason and bills nothing, for a period already
  * invoiced by hand outside the ERP. Journals are posted by the action after commit, not here.
  *
- * It moves no stock. Re-checks, in order: the store is still KONSI (`NOT_KONSI`), no retur was in
- * flight at the closing count (`RETUR_IN_FLIGHT` — a DRAFT created before that rule existed must
- * not slip through), the period still derives to the stored figures (`STALE`), and every SPG_POS
- * gap line has a saved resolution (`HELD`).
+ * It moves no stock. Re-checks, in order: the store is still KONSI (`NOT_KONSI`), no retur and no
+ * store transfer was in flight at the closing count (`RETUR_IN_FLIGHT`, `TRANSFER_IN_FLIGHT` — a
+ * DRAFT created before either rule existed, or a transfer recorded after the report was created,
+ * must not slip through), the period still derives to the stored figures (`STALE`), and every
+ * SPG_POS gap line has a saved resolution (`HELD`).
  *
  * `STALE` catches the one movement that can still reach a window after creation: a row stamped at
  * or before the boundary by a transaction that committed after the report read it (the race in
- * docs/FOLLOWUPS.md) — in-flight returns are refused up front instead. Its remedy is cancel and
- * recreate, never an in-place refresh, so an approved report always shows the figures the admin
- * actually reviewed. It runs BEFORE the hold, so an admin is never sent to resolve lines on a
- * report that has to be cancelled anyway.
+ * docs/FOLLOWUPS.md) — in-flight returns and transfers are refused up front instead. Its remedy is
+ * cancel and recreate, never an in-place refresh, so an approved report always shows the figures
+ * the admin actually reviewed. It runs BEFORE the hold, so an admin is never sent to resolve lines
+ * on a report that has to be cancelled anyway.
  */
 export async function approveSellThrough(input: ApproveSellThroughInput): Promise<{ ok: true; invoiced: boolean }> {
   return runSerializable(async (tx) => {
@@ -371,11 +419,12 @@ export async function approveSellThrough(input: ApproveSellThroughInput): Promis
 
     const closing = await tx.storeStocktake.findUnique({
       where: { id: doc.closingStocktakeId },
-      select: { countFinishedAt: true, approvedAt: true },
+      select: { countFinishedAt: true, approvedAt: true, lines: { select: { itemId: true, variantSku: true, countedQty: true } } },
     });
     const countMoment = closing?.countFinishedAt ?? closing?.approvedAt ?? null;
     if (!countMoment) throw new SellThroughError("NOT_FOUND", "STOCKTAKE");
     await assertNoReturInFlight(tx, doc.storeId, countMoment);
+    await assertNoTransferInFlight(tx, doc.storeId, countMoment, countedKeysOf(closing?.lines ?? []));
 
     /* An APPROVED report cannot be cancelled, so a stored previousId always resolves; the check is a guard, not a path. */
     const previous = doc.previousId

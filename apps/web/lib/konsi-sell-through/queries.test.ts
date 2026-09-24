@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { createSellThrough, resolveSellThroughLine, cancelSellThrough } from "./writer";
 import { createSellThroughFixtures } from "./test-fixtures";
 import { listSellThroughs, getSellThrough, getSellThroughEligibility } from "./queries";
@@ -305,6 +305,15 @@ d("konsi sell-through queries (test bed only)", () => {
       reason: "RETUR_IN_FLIGHT",
       detail: `${first.docNo}, ${second.docNo}`,
     });
+  }, SLOW);
+
+  it("returns TRANSFER_IN_FLIGHT with the pending transfers' docNos as detail", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(6);
+    const { countFinishedAt } = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(stocktakeId) }, select: { countFinishedAt: true } });
+    const { docNo } = await fx.storeTransfer({ direction: "OUT", qty: 2, movedAt: new Date(countFinishedAt!.getTime() - 60_000) });
+    await expect(getSellThroughEligibility(stocktakeId)).resolves.toEqual({ eligible: false, reason: "TRANSFER_IN_FLIGHT", detail: docNo });
   }, SLOW);
 
   it("returns DRAFT_EXISTS while an earlier report of the store is still DRAFT", async () => {

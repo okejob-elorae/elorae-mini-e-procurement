@@ -377,8 +377,8 @@ export async function getSellThroughEligibility(
   } catch (e) {
     if (e instanceof SellThroughError) {
       if (e.code === "ALREADY_USED") return { eligible: false, reason: e.code, existingId: e.detail };
-      /* The retur docNos the reason copy names, so the admin knows which returns to finish or cancel. */
-      if (e.code === "RETUR_IN_FLIGHT") return { eligible: false, reason: e.code, detail: e.detail };
+      /* The retur or transfer docNos the reason copy names, so the admin knows which documents to finish or cancel. */
+      if (e.code === "RETUR_IN_FLIGHT" || e.code === "TRANSFER_IN_FLIGHT") return { eligible: false, reason: e.code, detail: e.detail };
       return { eligible: false, reason: e.code };
     }
     throw e;
