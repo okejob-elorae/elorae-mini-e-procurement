@@ -12,7 +12,6 @@ import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { formatDateTime } from "@/lib/sales-orders/format";
 import {
   resolveSellThroughLineAction,
-  approveSellThroughAction,
   cancelSellThroughAction,
   type SellThroughActionFailure,
 } from "@/app/actions/konsi-sell-through";
@@ -33,6 +32,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -48,6 +48,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { SellThroughApproveDialog } from "./SellThroughApproveDialog";
+import { SellThroughInvoiceCard } from "./SellThroughInvoiceCard";
+import { formatRupiahExact, productNamesForKeys } from "./display";
 
 const STATUS_BADGE_VARIANT: Record<SellThroughDetail["status"], "secondary" | "destructive" | "default"> = {
   DRAFT: "secondary",
@@ -61,9 +64,13 @@ const REASON_MAX_LENGTH = 1000;
 export function SellThroughDetailClient({
   report,
   canManage,
+  canPrint,
+  salesmanCandidates,
 }: {
   report: SellThroughDetail;
   canManage: boolean;
+  canPrint: boolean;
+  salesmanCandidates: Array<{ id: string; name: string }>;
 }) {
   const t = useTranslations("konsiSellThrough");
   const tDetail = useTranslations("konsiSellThrough.detail");
@@ -79,7 +86,6 @@ export function SellThroughDetailClient({
   const [, startSaveTransition] = useTransition();
 
   const [approveOpen, setApproveOpen] = useState(false);
-  const [approving, startApproveTransition] = useTransition();
 
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
@@ -90,10 +96,22 @@ export function SellThroughDetailClient({
   /* Every SPG_POS report shows its resolutions; only a DRAFT viewed by a manager can edit them. */
   const canEditResolution = isSpgPos && isDraft && canManage;
   const heldLines = report.lines.filter((l) => l.held);
+  const statusKey = report.status === "APPROVED" ? (report.baseline ? "APPROVED_BASELINE" : "APPROVED_INVOICED") : report.status;
+  /* Every column left of Line Total, so the footer's total sits under it. */
+  const totalLabelSpan = isSpgPos ? 10 : 9;
 
-  /* An over-long reason arrives under two different codes (INVALID_RESOLUTION on resolve, REASON_REQUIRED on cancel) and gets its own copy on both. */
+  /**
+   * An over-long reason arrives under three different codes (INVALID_RESOLUTION on resolve,
+   * REASON_REQUIRED on cancel, BASELINE_REASON_REQUIRED on a baseline approve) and gets its own
+   * copy on all three. UNPRICED carries the refused line keys, comma-joined, which are named back
+   * as products; with no detail it falls back to the preview's own unpriced keys.
+   */
   function errorMessage(result: SellThroughActionFailure): string {
     if (result.detail === "REASON_TOO_LONG") return t("err.REASON_TOO_LONG");
+    if (result.reason === "UNPRICED") {
+      const keys = result.detail ? result.detail.split(",") : report.unpricedKeys;
+      return t("err.UNPRICED", { products: productNamesForKeys(report.lines, keys), n: keys.length });
+    }
     return t(`err.${result.reason}`, { detail: result.detail ?? "" });
   }
 
@@ -151,24 +169,6 @@ export function SellThroughDetailClient({
     });
   }
 
-  function callApprove(): void {
-    startApproveTransition(async () => {
-      try {
-        const result = await approveSellThroughAction(report.id);
-        setApproveOpen(false);
-        if (result.ok) {
-          toast.success(tApprove("success"));
-          router.refresh();
-          return;
-        }
-        toast.error(errorMessage(result));
-      } catch {
-        setApproveOpen(false);
-        toast.error(t("err.UNEXPECTED"));
-      }
-    });
-  }
-
   function callCancel(): void {
     if (!cancelReason.trim()) return;
     startCancelTransition(async () => {
@@ -200,7 +200,7 @@ export function SellThroughDetailClient({
             </Link>
           </Button>
           <h1 className="text-2xl font-semibold font-mono">{report.docNo}</h1>
-          <Badge variant={STATUS_BADGE_VARIANT[report.status]}>{t(`status.${report.status}`)}</Badge>
+          <Badge variant={STATUS_BADGE_VARIANT[report.status]}>{t(`status.${statusKey}`)}</Badge>
         </div>
         <div className="flex items-center gap-2">
           {canManage && isDraft && (
@@ -210,7 +210,7 @@ export function SellThroughDetailClient({
             </Button>
           )}
           {canManage && isDraft && (
-            <Button className="h-10" disabled={approving || heldLines.length > 0} onClick={() => setApproveOpen(true)}>
+            <Button className="h-10" disabled={heldLines.length > 0} onClick={() => setApproveOpen(true)}>
               <CheckCircle2 className="h-4 w-4" />
               {tApprove("button")}
             </Button>
@@ -288,6 +288,10 @@ export function SellThroughDetailClient({
         )}
       </Card>
 
+      {report.status === "APPROVED" && (
+        <SellThroughInvoiceCard report={report} canPrint={canPrint} canManage={canManage} describeError={errorMessage} />
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -312,6 +316,8 @@ export function SellThroughDetailClient({
                     <TableHead className="text-right">{tDetail("colClosing")}</TableHead>
                     <TableHead className="text-right">{tDetail("colCounted")}</TableHead>
                     <TableHead className="text-right">{tDetail("colBilled")}</TableHead>
+                    <TableHead className="text-right">{tDetail("colUnitPrice")}</TableHead>
+                    <TableHead className="text-right">{tDetail("colLineTotal")}</TableHead>
                     <TableHead className="text-right">{tDetail("colShrinkage")}</TableHead>
                     {isSpgPos && (
                       <TableHead className={canEditResolution ? "min-w-[260px]" : "min-w-[180px]"}>{tDetail("colResolution")}</TableHead>
@@ -370,6 +376,14 @@ export function SellThroughDetailClient({
                               </Tooltip>
                             )}
                           </span>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums whitespace-nowrap">
+                          {line.unitPrice === null ? <span className="text-muted-foreground">—</span> : formatRupiahExact(line.unitPrice)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums whitespace-nowrap">
+                          {line.unitPrice === null || line.lineTotal === null
+                            ? <span className="text-muted-foreground">—</span>
+                            : formatRupiahExact(line.lineTotal)}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">{line.shrinkageQty}</TableCell>
                         {isSpgPos && !canEditResolution && (
@@ -450,33 +464,38 @@ export function SellThroughDetailClient({
                     );
                   })}
                 </TableBody>
+                {report.total !== null && (
+                  <TableFooter>
+                    <TableRow>
+                      <TableCell colSpan={totalLabelSpan} className="text-right font-medium">
+                        {tDetail("total")}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold tabular-nums whitespace-nowrap">
+                        {formatRupiahExact(report.total)}
+                      </TableCell>
+                      <TableCell colSpan={isSpgPos ? 2 : 1} />
+                    </TableRow>
+                  </TableFooter>
+                )}
               </Table>
             </div>
           </TooltipProvider>
         </CardContent>
       </Card>
 
-      <AlertDialog open={approveOpen} onOpenChange={(open) => !approving && setApproveOpen(open)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{tApprove("confirmTitle")}</AlertDialogTitle>
-            <AlertDialogDescription>{tApprove("confirmDescription")}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={approving}>{tCommon("cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={approving}
-              onClick={(e) => {
-                /* Keep the dialog open so the pending label is visible; callApprove() closes it. */
-                e.preventDefault();
-                callApprove();
-              }}
-            >
-              {approving ? tApprove("submitting") : tApprove("confirmAction")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {canManage && isDraft && (
+        <SellThroughApproveDialog
+          open={approveOpen}
+          onOpenChange={setApproveOpen}
+          report={report}
+          salesmanCandidates={salesmanCandidates}
+          onApproved={() => {
+            setApproveOpen(false);
+            router.refresh();
+          }}
+          describeError={errorMessage}
+        />
+      )}
 
       <AlertDialog open={cancelOpen} onOpenChange={(open) => !cancelling && setCancelOpen(open)}>
         <AlertDialogContent>

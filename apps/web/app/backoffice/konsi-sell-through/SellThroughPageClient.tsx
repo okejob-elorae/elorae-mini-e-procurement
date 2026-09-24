@@ -37,6 +37,12 @@ const STATUS_BADGE_VARIANT: Record<SellThroughStatusValue, "secondary" | "destru
   CANCELLED: "destructive",
 };
 
+/* An APPROVED report is either invoiced or a baseline, and the list says which; the filter keeps the three real statuses. */
+function statusKey(r: SellThroughListItem): SellThroughStatusValue | "APPROVED_BASELINE" | "APPROVED_INVOICED" {
+  if (r.status !== "APPROVED") return r.status;
+  return r.baseline ? "APPROVED_BASELINE" : "APPROVED_INVOICED";
+}
+
 type Props = {
   items: SellThroughListItem[];
   total: number;
@@ -167,7 +173,7 @@ export function SellThroughPageClient(props: Props) {
                         <TableCell className="whitespace-nowrap">{t(`method.${r.method}`)}</TableCell>
                         <TableCell className="whitespace-nowrap">{periodLabel(r.periodStart, r.periodEnd)}</TableCell>
                         <TableCell>
-                          <Badge variant={STATUS_BADGE_VARIANT[r.status]}>{t(`status.${r.status}`)}</Badge>
+                          <Badge variant={STATUS_BADGE_VARIANT[r.status]}>{t(`status.${statusKey(r)}`)}</Badge>
                         </TableCell>
                         <TableCell className="text-right">
                           {r.heldCount > 0 ? (
