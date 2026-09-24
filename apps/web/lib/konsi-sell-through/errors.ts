@@ -14,7 +14,13 @@ export type SellThroughErrorCode =
   | "STALE"
   | "INVALID_STATE"
   | "INVALID_RESOLUTION"
-  | "REASON_REQUIRED";
+  | "REASON_REQUIRED"
+  | "UNPRICED"
+  | "INVALID_INVOICE_DATE"
+  | "SALESMAN_REQUIRED"
+  | "SALESMAN_INVALID"
+  | "BASELINE_NOT_FIRST"
+  | "BASELINE_REASON_REQUIRED";
 
 export class SellThroughError extends Error {
   constructor(
