@@ -658,6 +658,130 @@ d("konsi sell-through writer (test bed only)", () => {
     expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(r2.id) } })).status).toBe("APPROVED");
   }, SLOW);
 
+  /* carry-forward of late movements */
+
+  describe("carry-forward", () => {
+    const approvedReport = (id: string) =>
+      prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) }, include: { lines: true, receivable: true } });
+
+    it("bills a sale that committed inside the previous report's period after its approval, flags the line, and leaves the previous report untouched", async () => {
+      const r1 = await buildFirstReportOfChain();
+      await fx.approve(r1.id);
+      const r1Doc = await approvedReport(r1.id);
+      await tick();
+      await fx.lateSale(1, r1Doc.periodEnd);
+      await tick();
+      /* StoreStock 2 − 1 = 1 and the shelf holds 1: the count matches and writes no row. */
+      const second = await count(1);
+      const r2 = await createSellThrough({ closingStocktakeId: second, createdById: state.userId });
+
+      const line = await onlyLine(r2.id);
+      /* opening 2 + in 0 − out 0 − pos 1 (late) − gap 0 = closing 1; SHELF_COUNT billed = 2 − 1 = 1. */
+      expect(Number(line.openingQty)).toBe(2);
+      expect(Number(line.posSoldQty)).toBe(1);
+      expect(Number(line.latePosSoldQty)).toBe(1);
+      expect(Number(line.lateInQty)).toBe(0);
+      expect(Number(line.lateOutQty)).toBe(0);
+      expect(Number(line.lateGapQty)).toBe(0);
+      expect(line.hasLateMovements).toBe(true);
+      expect(Number(line.closingQty)).toBe(1);
+      expect(Number(line.billedQty)).toBe(1);
+
+      await fx.approve(r2.id);
+      expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(r2.id) } })).status).toBe("APPROVED");
+
+      const r1After = await approvedReport(r1.id);
+      expect(Number(r1After.lines[0].posSoldQty)).toBe(0);
+      expect(Number(r1After.lines[0].closingQty)).toBe(2);
+      expect(Number(r1After.total)).toBe(Number(r1Doc.total));
+      expect(Number(r1After.receivable!.originalAmount)).toBe(Number(r1Doc.receivable!.originalAmount));
+    }, SLOW);
+
+    it("a chain with nothing late carries no late figures and flags no line", async () => {
+      const r1 = await buildFirstReportOfChain();
+      await fx.approve(r1.id);
+      const r2 = await buildSecondReportOfChain();
+      const line = await onlyLine(r2.id);
+      expect(line.hasLateMovements).toBe(false);
+      expect(Number(line.lateInQty)).toBe(0);
+      expect(Number(line.lateOutQty)).toBe(0);
+      expect(Number(line.latePosSoldQty)).toBe(0);
+      expect(Number(line.lateGapQty)).toBe(0);
+    }, SLOW);
+
+    it("approve refuses STALE when a late row lands in the previous report's period after this report was created", async () => {
+      const r1 = await buildFirstReportOfChain();
+      await fx.approve(r1.id);
+      const r1Doc = await approvedReport(r1.id);
+      const r2 = await buildSecondReportOfChain();
+      await tick();
+      await fx.lateSale(1, r1Doc.periodEnd);
+
+      await expect(fx.approve(r2.id)).rejects.toMatchObject({ code: "STALE" });
+      expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(r2.id) } })).status).toBe("DRAFT");
+    }, SLOW);
+
+    it("a late row for a key the previous report never had becomes its own flagged line", async () => {
+      const r1 = await buildFirstReportOfChain();
+      await fx.approve(r1.id);
+      const r1Doc = await approvedReport(r1.id);
+      /* Inserted directly — a variant the store holds no StoreStock row for — one second inside report 1's period. */
+      await prisma.stockLedgerEntry.create({
+        data: {
+          locationType: "STORE",
+          locationId: state.storeId,
+          itemId: state.itemId,
+          variantSku: "LATE",
+          type: "OUT",
+          qty: -1,
+          balanceQty: -1,
+          refType: "SpgSale",
+          refId: `TEST-KSTW-LATE-${state.run}`,
+          refDocNumber: `LATE/${state.run}`,
+          createdAt: new Date(r1Doc.periodEnd.getTime() - 1000),
+        },
+      });
+      await tick();
+      const second = await count(2);
+      const r2 = await createSellThrough({ closingStocktakeId: second, createdById: state.userId });
+
+      const lines = await prisma.konsiSellThroughLine.findMany({ where: { sellThroughId: seededId(r2.id) } });
+      const late = lines.find((l) => l.variantSku === "LATE");
+      expect(late).toBeDefined();
+      expect(Number(late!.openingQty)).toBe(0);
+      expect(Number(late!.posSoldQty)).toBe(1);
+      expect(Number(late!.closingQty)).toBe(-1);
+      expect(late!.countedQty).toBeNull();
+      expect(Number(late!.billedQty)).toBe(1);
+      expect(late!.hasLateMovements).toBe(true);
+      expect(lines.find((l) => l.variantSku === "")!.hasLateMovements).toBe(false);
+    }, SLOW);
+
+    it("the report after one that carried late movements does not bill them again", async () => {
+      const r1 = await buildFirstReportOfChain();
+      await fx.approve(r1.id);
+      const r1Doc = await approvedReport(r1.id);
+      await tick();
+      await fx.lateSale(1, r1Doc.periodEnd);
+      await tick();
+      const second = await count(1);
+      const r2 = await createSellThrough({ closingStocktakeId: second, createdById: state.userId });
+      await fx.approve(r2.id);
+      await tick();
+      const third = await count(1);
+      const r3 = await createSellThrough({ closingStocktakeId: third, createdById: state.userId });
+
+      const line = await onlyLine(r3.id);
+      /* Report 2's own window holds nothing; the sale it carried is subtracted, not re-billed negated. */
+      expect(line.hasLateMovements).toBe(false);
+      expect(Number(line.openingQty)).toBe(1);
+      expect(Number(line.posSoldQty)).toBe(0);
+      expect(Number(line.closingQty)).toBe(1);
+      expect(Number(line.billedQty)).toBe(0);
+      expect(line.negativeSold).toBe(false);
+    }, SLOW);
+  });
+
   /* cancel */
 
   it("cancel requires a reason, frees the closing stocktake for a new report, and refuses a second cancel", async () => {

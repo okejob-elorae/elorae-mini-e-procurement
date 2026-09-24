@@ -11,6 +11,8 @@ export type CountedFigure = {
   countedQty: number | null;
   cause: "SHRINKAGE" | "UNRECORDED_SALE" | null;
 };
+/* A per-key difference carried in from the previous report's period — see late.ts. Signed; added into the bucket like a ledger row already classified. */
+export type LateMovement = { itemId: string; variantSku: string; inQty: number; outQty: number; posSold: number; gap: number };
 export type DerivedLine = {
   itemId: string;
   variantSku: string;
@@ -25,6 +27,11 @@ export type DerivedLine = {
   shrinkageQty: number;
   negativeSold: boolean;
   suggestedResolution: SellThroughResolutionValue | null;
+  lateInQty: number;
+  lateOutQty: number;
+  latePosSoldQty: number;
+  lateGapQty: number;
+  hasLateMovements: boolean;
 };
 
 export class UnknownLedgerRefTypeError extends Error {
@@ -45,18 +52,31 @@ export function roundQty(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-type Bucket = { opening: number; inQty: number; outQty: number; posSold: number; gap: number };
+type Bucket = {
+  opening: number;
+  inQty: number;
+  outQty: number;
+  posSold: number;
+  gap: number;
+  lateIn: number;
+  lateOut: number;
+  latePosSold: number;
+  lateGap: number;
+};
 
 /**
  * Deliberately import-free — a client component may import it for a preview. Every store-side
  * movement refType is classified explicitly; anything else refuses rather than being ignored,
  * because the refType registry is exhaustive over the union and NOT over the column.
+ * `lateMovements` are added into their key's figures before closing and billing are computed, and
+ * are also reported apart as the `late*` figures, so a key present only there still becomes a line.
  */
 export function deriveSellThroughLines(input: {
   method: SellThroughMethodValue;
   openings: OpeningFigure[];
   rows: LedgerRow[];
   counted: CountedFigure[];
+  lateMovements?: LateMovement[];
 }): DerivedLine[] {
   const keyOf = (itemId: string, variantSku: string) => `${itemId}::${variantSku}`;
   const buckets = new Map<string, Bucket & { itemId: string; variantSku: string }>();
@@ -64,7 +84,7 @@ export function deriveSellThroughLines(input: {
     const key = keyOf(itemId, variantSku);
     let b = buckets.get(key);
     if (!b) {
-      b = { itemId, variantSku, opening: 0, inQty: 0, outQty: 0, posSold: 0, gap: 0 };
+      b = { itemId, variantSku, opening: 0, inQty: 0, outQty: 0, posSold: 0, gap: 0, lateIn: 0, lateOut: 0, latePosSold: 0, lateGap: 0 };
       buckets.set(key, b);
     }
     return b;
@@ -97,6 +117,17 @@ export function deriveSellThroughLines(input: {
         throw new UnknownLedgerRefTypeError(r.refType);
     }
   }
+  for (const l of input.lateMovements ?? []) {
+    const b = bucket(l.itemId, l.variantSku);
+    b.inQty += l.inQty;
+    b.outQty += l.outQty;
+    b.posSold += l.posSold;
+    b.gap += l.gap;
+    b.lateIn += l.inQty;
+    b.lateOut += l.outQty;
+    b.latePosSold += l.posSold;
+    b.lateGap += l.gap;
+  }
   const countedByKey = new Map(input.counted.map((c) => [keyOf(c.itemId, c.variantSku), c]));
   for (const c of input.counted) bucket(c.itemId, c.variantSku);
 
@@ -110,7 +141,13 @@ export function deriveSellThroughLines(input: {
     const gapQty = roundQty(b.gap);
     const closingQty = roundQty(openingQty + inQty - outQty - posSoldQty - gapQty);
     const countedQty = counted?.countedQty ?? null;
-    if (openingQty === 0 && inQty === 0 && outQty === 0 && posSoldQty === 0 && gapQty === 0 && closingQty === 0 && countedQty === null) continue;
+    const lateInQty = roundQty(b.lateIn);
+    const lateOutQty = roundQty(b.lateOut);
+    const latePosSoldQty = roundQty(b.latePosSold);
+    const lateGapQty = roundQty(b.lateGap);
+    const hasLateMovements = lateInQty !== 0 || lateOutQty !== 0 || latePosSoldQty !== 0 || lateGapQty !== 0;
+    /* A line whose totals net to zero still stays while it carries late figures: dropping it would lose them, and the next report would then re-carry its window as late. */
+    if (openingQty === 0 && inQty === 0 && outQty === 0 && posSoldQty === 0 && gapQty === 0 && closingQty === 0 && countedQty === null && !hasLateMovements) continue;
 
     let billedQty: number;
     let negativeSold = false;
@@ -138,6 +175,11 @@ export function deriveSellThroughLines(input: {
       shrinkageQty: 0,
       negativeSold,
       suggestedResolution,
+      lateInQty,
+      lateOutQty,
+      latePosSoldQty,
+      lateGapQty,
+      hasLateMovements,
     });
   }
   return lines.sort((a, b) => (a.itemId === b.itemId ? a.variantSku.localeCompare(b.variantSku) : a.itemId.localeCompare(b.itemId)));

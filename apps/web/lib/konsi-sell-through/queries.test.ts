@@ -235,6 +235,23 @@ d("konsi sell-through queries (test bed only)", () => {
     expect(detail!.previousDocNo).toBe(r1.docNo);
   }, SLOW);
 
+  it("exposes hasLateMovements on a line that carried a late movement", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const first = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
+    const r1 = await createSellThrough({ closingStocktakeId: first, createdById: state.userId });
+    await fx.approve(r1.id);
+    const r1Doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(r1.id) } });
+    await tick();
+    await fx.lateSale(1, r1Doc.periodEnd);
+    await tick();
+    const second = await count(1);
+    const r2 = await createSellThrough({ closingStocktakeId: second, createdById: state.userId });
+
+    const detail = await getSellThrough(r2.id);
+    expect(detail!.lines[0].hasLateMovements).toBe(true);
+  }, SLOW);
+
   /* getSellThroughEligibility */
 
   it("returns NOT_FOUND for a stocktake that does not exist", async () => {

@@ -309,6 +309,19 @@ export function createSellThroughFixtures() {
   const onlyLine = (sellThroughId: string) =>
     prisma.konsiSellThroughLine.findFirstOrThrow({ where: { sellThroughId: seededId(sellThroughId) } });
 
+  /**
+   * One real POS sale whose store row is then moved one second inside a report's period — test-only
+   * — standing in for a row stamped inside that period by a transaction that committed only after
+   * the report was approved (the boundary race). StoreStock drops by `qty` exactly as for any sale.
+   */
+  const lateSale = async (qty: number, periodEnd: Date) => {
+    const saleId = await spgSell(qty);
+    const saleRow = await prisma.stockLedgerEntry.findFirstOrThrow({
+      where: { locationType: "STORE", locationId: seededId(state.storeId), refType: "SpgSale", refId: seededId(saleId) },
+    });
+    await prisma.stockLedgerEntry.update({ where: { id: saleRow.id }, data: { createdAt: new Date(periodEnd.getTime() - 1000) } });
+  };
+
   async function approve(id: string, overrides: Partial<{ invoiceDate: Date; salesmanId: string | null }> = {}) {
     return approveSellThrough({
       id,
@@ -337,6 +350,7 @@ export function createSellThroughFixtures() {
     storeTransfer,
     approveTransfer,
     onlyLine,
+    lateSale,
     approve,
     approveBaseline,
   };

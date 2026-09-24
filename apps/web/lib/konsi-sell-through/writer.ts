@@ -3,17 +3,15 @@ import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import {
   applyResolution,
-  deriveSellThroughLines,
   InvalidResolutionError,
   isLineHeld,
   roundQty,
   SELL_THROUGH_RESOLUTIONS,
-  UnknownLedgerRefTypeError,
-  type DerivedLine,
   type SellThroughMethodValue,
   type SellThroughResolutionValue,
 } from "./derive";
 import { loadSellThroughInputs, stocktakeBoundary } from "./window";
+import { computeLateMovements, deriveOrRefuse } from "./late";
 import { SellThroughError } from "./errors";
 import { priceSellThroughLines } from "./pricing";
 import { isInvoiceDateAllowed, dueDateFor } from "./invoice-dates";
@@ -22,19 +20,21 @@ import { isSellThroughSalesmanCandidate } from "./salesman-candidates";
 /* A UX bound on a free-text reason — all three columns (resolutionReason, baselineReason, cancelReason) are TEXT. The screens cap their inputs at the same figure. */
 const REASON_MAX_LENGTH = 1000;
 
-/* The ledger-derived figures approve re-derives and compares; everything else on a line is a snapshot or an admin decision. */
-const DERIVED_FIGURES = ["openingQty", "inQty", "outQty", "posSoldQty", "gapQty", "closingQty"] as const;
+/* The ledger-derived figures approve re-derives and compares — the late ones included, since the next report re-derives this one against them; everything else on a line is a snapshot or an admin decision. */
+const DERIVED_FIGURES = [
+  "openingQty",
+  "inQty",
+  "outQty",
+  "posSoldQty",
+  "gapQty",
+  "closingQty",
+  "lateInQty",
+  "lateOutQty",
+  "latePosSoldQty",
+  "lateGapQty",
+] as const;
 
 const lineKey = (itemId: string, variantSku: string) => `${itemId}::${variantSku}`;
-
-function derive(input: Parameters<typeof deriveSellThroughLines>[0]): DerivedLine[] {
-  try {
-    return deriveSellThroughLines(input);
-  } catch (e) {
-    if (e instanceof UnknownLedgerRefTypeError) throw new SellThroughError("UNKNOWN_REF_TYPE", e.refType);
-    throw e;
-  }
-}
 
 /**
  * The mariadb adapter reports a unique violation's constraint as the INDEX NAME
@@ -226,6 +226,11 @@ export async function checkSellThroughPreconditions(
  * and one live child per (store, previous report) — which is what makes "at most one DRAFT per
  * store" structural under concurrent creation. Both explicit checks exist only to return a
  * readable code; a racing insert that slips past them is mapped from its P2002 to the same code.
+ *
+ * The derivation also carries forward the previous report's late movements (`computeLateMovements`,
+ * late.ts): rows stamped inside that report's period that committed only after it was approved.
+ * They are billed here, on lines flagged `hasLateMovements`, with their share stored in the
+ * `late*Qty` columns.
  */
 export async function createSellThrough(input: {
   closingStocktakeId: string;
@@ -236,7 +241,8 @@ export async function createSellThrough(input: {
     const storeId = stocktake.storeId;
 
     const inputs = await loadSellThroughInputs(tx, { storeId, closingStocktakeId: stocktake.id, previous });
-    const lines = derive({ method, openings: inputs.openings, rows: inputs.rows, counted: inputs.counted });
+    const lateMovements = await computeLateMovements(tx, storeId, previous);
+    const lines = deriveOrRefuse({ method, openings: inputs.openings, rows: inputs.rows, counted: inputs.counted, lateMovements });
 
     /**
      * relationMode = "prisma": KonsiSellThroughLine.item is a required relation with no FK
@@ -289,6 +295,11 @@ export async function createSellThrough(input: {
                 billedQty: l.billedQty,
                 shrinkageQty: l.shrinkageQty,
                 negativeSold: l.negativeSold,
+                lateInQty: l.lateInQty,
+                lateOutQty: l.lateOutQty,
+                latePosSoldQty: l.latePosSoldQty,
+                lateGapQty: l.lateGapQty,
+                hasLateMovements: l.hasLateMovements,
                 suggestedResolution: l.suggestedResolution,
                 resolution: null,
                 unitCost: avgCostByKey.get(key) ?? 0,
@@ -375,12 +386,13 @@ export type ApproveSellThroughInput =
  * must not slip through), the period still derives to the stored figures (`STALE`), and every
  * SPG_POS gap line has a saved resolution (`HELD`).
  *
- * `STALE` catches the one movement that can still reach a window after creation: a row stamped at
- * or before the boundary by a transaction that committed after the report read it (the race in
- * docs/FOLLOWUPS.md) — in-flight returns and transfers are refused up front instead. Its remedy is
- * cancel and recreate, never an in-place refresh, so an approved report always shows the figures
- * the admin actually reviewed. It runs BEFORE the hold, so an admin is never sent to resolve lines
- * on a report that has to be cancelled anyway.
+ * `STALE` catches any movement that reached the period after creation: a row stamped at or before
+ * this report's boundary by a transaction that committed after the report read it, or a late row
+ * landing in the PREVIOUS report's period, which the carry-forward picks up — its late figures are
+ * part of the comparison. In-flight returns and transfers are refused up front instead. Its
+ * remedy is cancel and recreate, never an in-place refresh, so an approved report always shows the
+ * figures the admin actually reviewed. It runs BEFORE the hold, so an admin is never sent to
+ * resolve lines on a report that has to be cancelled anyway.
  */
 export async function approveSellThrough(input: ApproveSellThroughInput): Promise<{ ok: true; invoiced: boolean }> {
   return runSerializable(async (tx) => {
@@ -406,6 +418,10 @@ export async function approveSellThrough(input: ApproveSellThroughInput): Promis
             posSoldQty: true,
             gapQty: true,
             closingQty: true,
+            lateInQty: true,
+            lateOutQty: true,
+            latePosSoldQty: true,
+            lateGapQty: true,
             resolution: true,
             billedQty: true,
             item: { select: { sellingPrice: true } },
@@ -433,7 +449,8 @@ export async function approveSellThrough(input: ApproveSellThroughInput): Promis
     if (doc.previousId && !previous) throw new SellThroughError("NOT_FOUND", "PREVIOUS_REPORT");
 
     const inputs = await loadSellThroughInputs(tx, { storeId: doc.storeId, closingStocktakeId: doc.closingStocktakeId, previous });
-    const recomputed = derive({ method: doc.method, openings: inputs.openings, rows: inputs.rows, counted: inputs.counted });
+    const lateMovements = await computeLateMovements(tx, doc.storeId, previous);
+    const recomputed = deriveOrRefuse({ method: doc.method, openings: inputs.openings, rows: inputs.rows, counted: inputs.counted, lateMovements });
 
     const freshByKey = new Map(recomputed.map((l) => [lineKey(l.itemId, l.variantSku), l]));
     if (freshByKey.size !== doc.lines.length) throw new SellThroughError("STALE");

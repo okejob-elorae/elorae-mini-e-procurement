@@ -90,3 +90,75 @@ describe("applyResolution", () => {
     expect(() => applyResolution({ posSoldQty: 4, gapQty: 0 }, "SPG_POS", "BILL", null)).toThrow(InvalidResolutionError);
   });
 });
+
+describe("deriveSellThroughLines — late movements", () => {
+  it("adds a late delta into its key's figures before closing and billing, and flags the line", () => {
+    const [l] = deriveSellThroughLines({
+      method: "SHELF_COUNT",
+      openings: [{ itemId: "i1", variantSku: "", qty: 2 }],
+      rows: [],
+      counted: [{ itemId: "i1", variantSku: "", countedQty: 1, cause: null }],
+      lateMovements: [{ itemId: "i1", variantSku: "", inQty: 0, outQty: 0, posSold: 1, gap: 0 }],
+    });
+    expect(l).toMatchObject({
+      openingQty: 2,
+      posSoldQty: 1,
+      closingQty: 1,
+      billedQty: 1,
+      lateInQty: 0,
+      lateOutQty: 0,
+      latePosSoldQty: 1,
+      lateGapQty: 0,
+      hasLateMovements: true,
+    });
+  });
+
+  it("carries every figure of a late delta — in, out and gap as well as POS", () => {
+    const [l] = deriveSellThroughLines({
+      method: "SPG_POS",
+      openings: [{ itemId: "i1", variantSku: "", qty: 10 }],
+      rows: [],
+      counted: [{ itemId: "i1", variantSku: "", countedQty: 10, cause: null }],
+      lateMovements: [{ itemId: "i1", variantSku: "", inQty: 4, outQty: 1, posSold: 2, gap: 1 }],
+    });
+    expect(l).toMatchObject({ inQty: 4, outQty: 1, posSoldQty: 2, gapQty: 1, closingQty: 10, lateInQty: 4, lateOutQty: 1, latePosSoldQty: 2, lateGapQty: 1 });
+  });
+
+  it("a key present only in the late movements becomes its own line", () => {
+    const lines = deriveSellThroughLines({
+      method: "SHELF_COUNT",
+      openings: [],
+      rows: [row("KonsiTransfer", 3)],
+      counted: [{ itemId: "i1", variantSku: "", countedQty: 3, cause: null }],
+      lateMovements: [{ itemId: "i1", variantSku: "LATE", inQty: 0, outQty: 0, posSold: 1, gap: 0 }],
+    });
+    expect(lines).toHaveLength(2);
+    expect(lines.find((l) => l.variantSku === "LATE")).toMatchObject({ openingQty: 0, posSoldQty: 1, closingQty: -1, countedQty: null, billedQty: 1, hasLateMovements: true });
+    expect(lines.find((l) => l.variantSku === "")).toMatchObject({ hasLateMovements: false, latePosSoldQty: 0 });
+  });
+
+  it("an all-zero late entry flags nothing and creates no line", () => {
+    const lines = deriveSellThroughLines({
+      method: "SHELF_COUNT",
+      openings: [{ itemId: "i1", variantSku: "", qty: 2 }],
+      rows: [],
+      counted: [{ itemId: "i1", variantSku: "", countedQty: 2, cause: null }],
+      lateMovements: [{ itemId: "ghost", variantSku: "", inQty: 0, outQty: 0, posSold: 0, gap: 0 }],
+    });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ hasLateMovements: false, lateInQty: 0, lateOutQty: 0, latePosSoldQty: 0, lateGapQty: 0 });
+  });
+
+  it("keeps a line whose totals net to zero while it carries late figures", () => {
+    /* A surplus row in this window (gap −1) against a late shortfall carried from the previous one (gap +1). */
+    const lines = deriveSellThroughLines({
+      method: "SPG_POS",
+      openings: [],
+      rows: [row("StoreStocktake", 1, "i1", "NET")],
+      counted: [],
+      lateMovements: [{ itemId: "i1", variantSku: "NET", inQty: 0, outQty: 0, posSold: 0, gap: 1 }],
+    });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ variantSku: "NET", gapQty: 0, closingQty: 0, lateGapQty: 1, hasLateMovements: true });
+  });
+});
