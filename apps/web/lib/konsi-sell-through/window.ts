@@ -27,10 +27,11 @@ export async function stocktakeBoundary(
 }
 
 /**
- * Loads every input `deriveSellThroughLines` (Task 3) needs for one report's period: the store
+ * Loads every input `deriveSellThroughLines` (derive.ts) needs for one report's period: the store
  * ledger rows in the window, the previous report's closing figures as openings, and the closing
- * stocktake's own counted lines. See the design doc's "Period and contiguity" for the window
- * invariant this implements.
+ * stocktake's own counted lines. The window invariant this implements — every STORE ledger row of
+ * the store in exactly one report — is written up in the konsi sell-through entry of
+ * docs/ARCHITECTURE-NOTES.md.
  */
 export async function loadSellThroughInputs(
   client: Prisma.TransactionClient,

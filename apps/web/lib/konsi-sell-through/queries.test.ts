@@ -207,7 +207,7 @@ d("konsi sell-through queries (test bed only)", () => {
     await setMethod("SHELF_COUNT");
     await transferIn(6);
     const notKonsiStocktake = await count(6);
-    /* Direct flip for the test only — the store edit writer would also clear the method. */
+    /* Direct flip for the test only — the store edit writer refuses a switch still carrying a method; the form clears it client-side. */
     await prisma.store.update({ where: { id: state.storeId }, data: { termsType: "PUTUS" } });
     await expect(getSellThroughEligibility(notKonsiStocktake)).resolves.toEqual({ eligible: false, reason: "NOT_KONSI" });
   }, SLOW);

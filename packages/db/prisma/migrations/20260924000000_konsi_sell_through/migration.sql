@@ -1,7 +1,8 @@
 -- Konsi (consignment) sell-through period report. A report closes a counting period for a
 -- konsi store: opening/in/out/POS-sold/gap/closing/counted/billed quantities per item variant,
--- with a suggested vs. actual resolution (bill, write off as shrinkage, bill at POS price, or
--- reduce future consignment).
+-- with a suggested vs. actual resolution for a counted gap: BILL adds a shortfall to the billed
+-- qty, SHRINKAGE writes it off, BILL_POS bills a surplus at the POS qty only, and REDUCE lowers
+-- this report's billed qty to POS + gap.
 --
 -- Two partial-unique keys enforce the report's lifecycle, mirroring StoreStocktake.openKey:
 --   - stocktakeKey holds the closing stocktake id while the report is not cancelled, and is

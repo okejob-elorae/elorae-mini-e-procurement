@@ -81,7 +81,11 @@ d("konsi sell-through writer (test bed only)", () => {
     await setMethod("SHELF_COUNT");
     await transferIn(6);
     const stocktakeId = await count(6);
-    /* Direct flip for the test only — the store edit writer would also clear the method; left set here so NOT_KONSI is the only failing precondition. */
+    /**
+     * Direct flip for the test only — the store edit writer refuses this switch (a method still set,
+     * or a DRAFT report pending); the store form clears the method client-side before it submits.
+     * The method is left set here so NOT_KONSI is the only failing precondition.
+     */
     await prisma.store.update({ where: { id: state.storeId }, data: { termsType: "PUTUS" } });
     await expect(createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId })).rejects.toMatchObject({ code: "NOT_KONSI" });
   }, SLOW);

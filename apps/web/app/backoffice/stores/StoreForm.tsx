@@ -158,11 +158,13 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    // Mirrors the termsType onValueChange handler below: a store that was already on one terms
-    // type when this form loaded (so the handler never fired) can still carry a stored value the
-    // OTHER terms type's hidden control never got a chance to clear — priceDiscountPercent only
-    // applies to PUTUS, sellThroughMethod only to KONSI — so submit must normalise both itself or
-    // the writer's assertValidPriceDiscount / assertValidSellThroughMethod rejects an unrelated edit.
+    /**
+     * Mirrors the termsType onValueChange handler below: a store that was already on one terms
+     * type when this form loaded (so the handler never fired) can still carry a stored value the
+     * OTHER terms type's hidden control never got a chance to clear — priceDiscountPercent only
+     * applies to PUTUS, sellThroughMethod only to KONSI — so submit must normalise both itself or
+     * the writer's assertValidPriceDiscount / assertValidSellThroughMethod rejects an unrelated edit.
+     */
     const payload: StoreFields = {
       ...form,
       priceDiscountPercent: form.termsType === "KONSI" ? null : form.priceDiscountPercent,
@@ -480,11 +482,15 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
                   setForm((prev) => ({
                     ...prev,
                     termsType: next,
-                    /* A discount only applies to PUTUS pricing — drop any leftover value from
-                     * local state so a switch-then-save can never carry one into the writer. */
+                    /**
+                     * A discount only applies to PUTUS pricing — drop any leftover value from
+                     * local state so a switch-then-save can never carry one into the writer.
+                     */
                     priceDiscountPercent: next === "PUTUS" ? prev.priceDiscountPercent : null,
-                    /* A sell-through method only applies to a KONSI store's own report — same
-                     * reasoning, opposite direction. */
+                    /**
+                     * A sell-through method only applies to a KONSI store's own report — same
+                     * reasoning, opposite direction.
+                     */
                     sellThroughMethod: next === "KONSI" ? prev.sellThroughMethod : null,
                   }));
                 }}

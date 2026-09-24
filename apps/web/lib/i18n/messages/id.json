@@ -2427,7 +2427,7 @@
       "colElsewhere": "Lokasi lain",
       "elsewhere": "Gudang: {main} · Van: {van}",
       "negativeBadge": "Stok negatif",
-      "negativeNote": "Stok negatif akan diserap otomatis oleh pengiriman konsi berikutnya ke toko ini. Tidak ada cara mengoreksinya secara manual pada tahap ini.",
+      "negativeNote": "Stok negatif akan diserap otomatis oleh pengiriman konsi berikutnya ke toko ini, atau dikoreksi dengan menyetujui perhitungan stok toko.",
       "inTransitNote": "{qty} unit sedang dalam retur admin yang belum diterima gudang — stok toko ini masih menghitung unit tersebut sampai gudang benar-benar menerimanya.",
       "receivedAwaitingApprovalNote": "{qty} unit sudah diterima gudang dari retur admin yang masih menunggu persetujuan — stok toko ini sudah berkurang sejumlah itu, meskipun retur belum selesai.",
       "movementsTitle": "Pergerakan Stok",
@@ -3273,7 +3273,7 @@
       "error": "Gagal memeriksa dampak ke stok toko. Anda tetap bisa melanjutkan persetujuan.",
       "title": "Stok toko akan menjadi negatif",
       "line": "{itemName} ({variantSku}): stok toko saat ini {storeQty}, akan berkurang {creditedQty} — kurang {shortfall}",
-      "noManualFix": "Stok negatif akan diserap otomatis oleh pengiriman konsi berikutnya ke toko ini. Tidak ada cara mengoreksinya secara manual pada tahap ini."
+      "noManualFix": "Stok negatif akan diserap otomatis oleh pengiriman konsi berikutnya ke toko ini, atau dikoreksi dengan menyetujui perhitungan stok toko."
     }
   },
   "storeStocktakes": {

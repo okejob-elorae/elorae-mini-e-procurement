@@ -2427,7 +2427,7 @@
       "colElsewhere": "Elsewhere",
       "elsewhere": "Main: {main} · Van: {van}",
       "negativeBadge": "Negative stock",
-      "negativeNote": "A negative row is absorbed automatically by the next konsi transfer to this store. There is no manual correction path in this slice.",
+      "negativeNote": "A negative row is absorbed automatically by the next konsi transfer to this store, or corrected by approving a store stocktake.",
       "inTransitNote": "{qty} unit(s) are on an admin return the warehouse has not received yet — this store's stock still counts those units until the warehouse actually receives them.",
       "receivedAwaitingApprovalNote": "{qty} unit(s) were already received by the warehouse on an admin return still awaiting approval — this store's stock has already dropped by that amount, even though the return has not settled yet.",
       "movementsTitle": "Stock Movements",
@@ -3273,7 +3273,7 @@
       "error": "Could not check the impact on store stock. You can still proceed with approval.",
       "title": "Store stock will go negative",
       "line": "{itemName} ({variantSku}): store stock is currently {storeQty}, will decrease by {creditedQty} — short by {shortfall}",
-      "noManualFix": "A negative row is absorbed automatically by the next konsi transfer to this store. There is no manual correction path in this slice."
+      "noManualFix": "A negative row is absorbed automatically by the next konsi transfer to this store, or corrected by approving a store stocktake."
     }
   },
   "storeStocktakes": {

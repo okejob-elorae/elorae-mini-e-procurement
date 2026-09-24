@@ -47,7 +47,7 @@ export function roundQty(n: number): number {
 
 type Bucket = { opening: number; inQty: number; outQty: number; posSold: number; gap: number };
 
-/*
+/**
  * Deliberately import-free — a client component may import it for a preview. Every store-side
  * movement refType is classified explicitly; anything else refuses rather than being ignored,
  * because the refType registry is exhaustive over the union and NOT over the column.

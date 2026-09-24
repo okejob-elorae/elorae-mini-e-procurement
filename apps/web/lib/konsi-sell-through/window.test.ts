@@ -56,9 +56,11 @@ d("konsi sell-through window (test bed only)", () => {
       });
       stRowsId = stRows.id;
 
-      /* Two own ledger rows at different times — boundary must be the LATER one, not the first
-         written and not the stocktake's approvedAt (which is deliberately set earlier than both,
-         so a wrong implementation clamping to approvedAt would be caught). */
+      /**
+       * Two own ledger rows at different times — boundary must be the LATER one, not the first
+       * written and not the stocktake's approvedAt (which is deliberately set earlier than both,
+       * so a wrong implementation clamping to approvedAt would be caught).
+       */
       const rowA = await prisma.stockLedgerEntry.create({
         data: {
           locationType: "STORE",
@@ -278,8 +280,10 @@ d("konsi sell-through window (test bed only)", () => {
       });
       rOwn2Id = rOwn2.id;
 
-      /* Exactly at the boundary (same instant as the stocktake's own latest row) — must be
-         included, the inclusive edge of the window. */
+      /**
+       * Exactly at the boundary (same instant as the stocktake's own latest row) — must be
+       * included, the inclusive edge of the window.
+       */
       const rAt = await prisma.stockLedgerEntry.create({
         data: {
           locationType: "STORE",
@@ -452,9 +456,11 @@ d("konsi sell-through window (test bed only)", () => {
       });
       prevStocktakeId = prevStocktake.id;
 
-      /* Two own rows for the PREVIOUS stocktake — the later one (p2) is what correctly defines
-         the previous boundary. Both must be excluded from the CURRENT report's window regardless
-         of which one a wrong implementation might mistake for "the" boundary. */
+      /**
+       * Two own rows for the PREVIOUS stocktake — the later one (p2) is what correctly defines
+       * the previous boundary. Both must be excluded from the CURRENT report's window regardless
+       * of which one a wrong implementation might mistake for "the" boundary.
+       */
       const p1 = await prisma.stockLedgerEntry.create({
         data: {
           locationType: "STORE",
@@ -488,10 +494,12 @@ d("konsi sell-through window (test bed only)", () => {
       });
       p2Id = p2.id;
 
-      /* Pins the window's LOWER edge as EXCLUSIVE. A row at exactly the previous boundary (T_P2)
-         is an ordinary movement, not a StoreStocktake row for either stocktake — if the lower
-         bound were `gte` instead of `gt`, it would leak into BOTH this report's window and the
-         previous one's, double-counting it. Its sibling 1ms later must be included. */
+      /**
+       * Pins the window's LOWER edge as EXCLUSIVE. A row at exactly the previous boundary (T_P2)
+       * is an ordinary movement, not a StoreStocktake row for either stocktake — if the lower
+       * bound were `gte` instead of `gt`, it would leak into BOTH this report's window and the
+       * previous one's, double-counting it. Its sibling 1ms later must be included.
+       */
       const lowerEdgeAt = await prisma.stockLedgerEntry.create({
         data: {
           locationType: "STORE",
@@ -578,9 +586,11 @@ d("konsi sell-through window (test bed only)", () => {
       });
       midId = mid.id;
 
-      /* approvedAt is set EARLIER than c2's createdAt — proves the closing stocktake's own rows
-         are included regardless of that ordering (the writer note: ledger rows land via
-         setStoreStock before approvedAt is stamped, so this is a real, not contrived, ordering). */
+      /**
+       * approvedAt is set EARLIER than c2's createdAt — proves the closing stocktake's own rows
+       * are included regardless of that ordering (the writer note: ledger rows land via
+       * setStoreStock before approvedAt is stamped, so this is a real, not contrived, ordering).
+       */
       const curStocktake = await prisma.storeStocktake.create({
         data: {
           docNo: `SST/TEST-KSW2-CUR/${token}`,
