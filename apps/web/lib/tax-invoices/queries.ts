@@ -1,4 +1,5 @@
 import { prisma, Prisma } from "@elorae/db";
+import { TAX_INVOICE_SOURCE_SELECT, resolveTaxInvoiceSource } from "@/lib/finance/ar/receivable-source";
 
 export type TaxInvoiceRow = {
   id: string;
@@ -12,10 +13,12 @@ export type TaxInvoiceRow = {
   storeId: string;
   storeName: string;
   storeNpwp: string | null;
-  orderId: string;
-  invoiceDate: Date;
-  dueDate: Date;
-  total: number;
+  orderId: string | null;
+  sourceKind: "DELIVERY" | "SELL_THROUGH";
+  sellThroughId: string | null;
+  invoiceDate: Date | null;
+  dueDate: Date | null;
+  total: number | null;
 };
 
 export type TaxInvoiceStatusFilter = "PENDING" | "CREATED" | "SENT_TO_STORE" | "NOT_REQUIRED";
@@ -37,6 +40,7 @@ export async function listTaxInvoices(params: {
     baseWhere.OR = [
       { invoiceNo: { contains: q } },
       { delivery: { OR: [{ docNo: { contains: q } }, { order: { store: { name: { contains: q } } } }] } },
+      { sellThrough: { OR: [{ docNo: { contains: q } }, { store: { name: { contains: q } } }] } },
     ];
   }
   const where: Prisma.TaxInvoiceWhereInput = params.status ? { ...baseWhere, status: params.status } : baseWhere;
@@ -44,6 +48,10 @@ export async function listTaxInvoices(params: {
   const [rows, total, countRows] = await Promise.all([
     prisma.taxInvoice.findMany({
       where,
+      /**
+       * Delivery-only sort key, correct only while no sell-through faktur exists; it must become
+       * source-agnostic before invoicing creates one (see docs/FOLLOWUPS.md).
+       */
       orderBy: { delivery: { invoiceDate: "desc" } },
       skip: (params.page - 1) * params.perPage,
       take: params.perPage,
@@ -55,16 +63,7 @@ export async function listTaxInvoices(params: {
         taxableAmount: true,
         ppnAmount: true,
         notaPrintedAt: true,
-        delivery: {
-          select: {
-            docNo: true,
-            invoiceDate: true,
-            dueDate: true,
-            total: true,
-            orderId: true,
-            order: { select: { store: { select: { id: true, name: true, npwp: true } } } },
-          },
-        },
+        ...TAX_INVOICE_SOURCE_SELECT,
       },
     }),
     prisma.taxInvoice.count({ where }),
@@ -82,15 +81,16 @@ export async function listTaxInvoices(params: {
 
   /**
    * The migration declares no foreign key (`relationMode = "prisma"`), so a `TaxInvoice` can
-   * outlive its delivery. Prisma types the relation as always present, but a dangling row comes
-   * back with `delivery` null at runtime, and dereferencing it would reject the whole query — one
-   * orphan would blank the entire queue page, with no way to fix it from any UI. Orphans are
-   * skipped instead; `total` and `counts` still include them, which is a deliberately visible
-   * discrepancy rather than a silently smaller page.
+   * outlive its delivery or sell-through report. Prisma types both relations as optional, and a
+   * row carrying neither is an orphan whose backing document was deleted out from under it —
+   * dereferencing it would reject the whole query, so one orphan would blank the entire queue
+   * page with no way to fix it from any UI. Orphans are skipped instead; `total` and `counts`
+   * still include them, which is a deliberately visible discrepancy rather than a silently
+   * smaller page.
    */
   const mapped = rows.map((r): TaxInvoiceRow | null => {
-    const delivery: (typeof r)["delivery"] | null = r.delivery;
-    if (!delivery) return null;
+    if (!r.delivery && !r.sellThrough) return null;
+    const source = resolveTaxInvoiceSource(r);
     return {
       id: r.id,
       status: r.status,
@@ -99,14 +99,16 @@ export async function listTaxInvoices(params: {
       taxableAmount: r.taxableAmount !== null ? Number(r.taxableAmount) : null,
       ppnAmount: r.ppnAmount !== null ? Number(r.ppnAmount) : null,
       notaPrintedAt: r.notaPrintedAt,
-      docNo: delivery.docNo,
-      storeId: delivery.order.store.id,
-      storeName: delivery.order.store.name,
-      storeNpwp: delivery.order.store.npwp,
-      orderId: delivery.orderId,
-      invoiceDate: delivery.invoiceDate,
-      dueDate: delivery.dueDate,
-      total: Number(delivery.total),
+      docNo: source.docNo,
+      storeId: source.storeId,
+      storeName: source.storeName,
+      storeNpwp: source.storeNpwp,
+      orderId: source.kind === "DELIVERY" ? source.orderId : null,
+      sourceKind: source.kind,
+      sellThroughId: source.kind === "SELL_THROUGH" ? source.sellThroughId : null,
+      invoiceDate: source.invoiceDate,
+      dueDate: source.dueDate,
+      total: source.total,
     };
   });
 

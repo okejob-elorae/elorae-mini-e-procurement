@@ -56,9 +56,10 @@ d("getStorePiutangSummary (test bed only)", () => {
   });
 
   /*
-   * Receivable.delivery is a REQUIRED relation under relationMode="prisma" — a deliveryId that does
-   * not resolve to a real FieldSalesDelivery throws "Inconsistent query result" the moment a query
-   * selects through it (getStorePiutangSummary goes through listReceivables, which does). So every
+   * relationMode="prisma" puts no FK behind Receivable.deliveryId — a deliveryId that does not
+   * resolve to a real FieldSalesDelivery reads back with neither source relation, and
+   * resolveReceivableSource throws ReceivableSourceMissingError when the row is resolved
+   * (getStorePiutangSummary goes through listReceivables, which does). So every
    * seeded row needs a real Store -> FieldSalesOrder -> FieldSalesDelivery -> Receivable chain, the
    * same shape credit-exposure.test.ts and queries.test.ts already use for this exact model.
    */

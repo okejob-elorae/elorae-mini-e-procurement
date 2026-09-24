@@ -1,6 +1,7 @@
 import { prisma } from "@elorae/db";
 import { daysOverdue } from "./aging";
 import { OVERDUE_THRESHOLD_SETTING_KEY, parseOverdueThresholds } from "./overdue-thresholds";
+import { RECEIVABLE_SOURCE_SELECT, resolveReceivableSource } from "./receivable-source";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { sendNotificationToUsers } from "@/lib/notifications/recipients";
 
@@ -69,7 +70,7 @@ export async function runOverdueSweep(options?: {
       outstandingAmount: true,
       dueDate: true,
       store: { select: { name: true } },
-      delivery: { select: { docNo: true } },
+      ...RECEIVABLE_SOURCE_SELECT,
       collectorId: true,
       collector: { select: { name: true, fcmToken: true } },
     },
@@ -124,12 +125,13 @@ export async function runOverdueSweep(options?: {
     const collectorName = r.collector?.name ?? null;
     if (!collectorId || !r.collector) unassigned++;
 
+    const docNo = resolveReceivableSource(r).docNo;
     const outstandingAmount = Number(r.outstandingAmount);
     const title = collectorName
       ? `Piutang jatuh tempo ${days} hari — ${r.store.name}`
       : `Piutang jatuh tempo ${days} hari (belum ada penagih) — ${r.store.name}`;
     const message =
-      `Nota ${r.delivery.docNo} sebesar ${outstandingAmount} sudah lewat ${days} hari dari jatuh tempo.` +
+      `Nota ${docNo} sebesar ${outstandingAmount} sudah lewat ${days} hari dari jatuh tempo.` +
       (collectorName ? ` Ditugaskan ke ${collectorName}.` : " Belum ada penagih yang ditugaskan.");
 
     /*
@@ -151,7 +153,7 @@ export async function runOverdueSweep(options?: {
           daysOverdue: days,
           storeId: r.storeId,
           storeName: r.store.name,
-          docNo: r.delivery.docNo,
+          docNo,
           outstandingAmount,
           collectorId: collectorId ?? "",
           collectorName: collectorName ?? "",
@@ -172,7 +174,7 @@ export async function runOverdueSweep(options?: {
     if (collectorId && r.collector) {
       await notifyCollectorOfOverdue(collectorId, r.collector.fcmToken, {
         title: `Piutang jatuh tempo ${days} hari`,
-        body: `Nota ${r.delivery.docNo} di ${r.store.name} sebesar ${outstandingAmount} sudah lewat ${days} hari dari jatuh tempo.`,
+        body: `Nota ${docNo} di ${r.store.name} sebesar ${outstandingAmount} sudah lewat ${days} hari dari jatuh tempo.`,
         data: { receivableId: r.id, thresholdDays: String(tStar), daysOverdue: String(days) },
       });
       collectorNotified++;

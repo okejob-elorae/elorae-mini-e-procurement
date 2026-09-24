@@ -81,7 +81,7 @@ export function FakturPajakPageClient(props: Props) {
   const [searchInput, setSearchInput] = useState(props.q);
   const [dialog, setDialog] = useState<{ kind: DialogKind; row: SelectedRow } | null>(null);
   const [fieldValue, setFieldValue] = useState("");
-  const [markCreatedRow, setMarkCreatedRow] = useState<{ id: string; docNo: string; storeId: string; storeNpwp: string | null; total: number } | null>(null);
+  const [markCreatedRow, setMarkCreatedRow] = useState<{ id: string; docNo: string; storeId: string; storeNpwp: string | null; total: number | null } | null>(null);
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -291,13 +291,25 @@ export function FakturPajakPageClient(props: Props) {
                               <TableCell className="font-medium whitespace-nowrap">{row.docNo}</TableCell>
                               <TableCell className="max-w-[180px] truncate">{row.storeName}</TableCell>
                               <TableCell className="whitespace-nowrap">
-                                {formatDateOnlyJakarta(row.invoiceDate)}
+                                {row.invoiceDate ? (
+                                  formatDateOnlyJakarta(row.invoiceDate)
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
                               </TableCell>
                               <TableCell className="whitespace-nowrap">
-                                {formatDateOnlyJakarta(row.dueDate)}
+                                {row.dueDate ? (
+                                  formatDateOnlyJakarta(row.dueDate)
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
                               </TableCell>
                               <TableCell className="text-right whitespace-nowrap">
-                                {formatRupiah(row.total)}
+                                {row.total !== null ? (
+                                  formatRupiah(row.total)
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
                               </TableCell>
                               <TableCell className="whitespace-nowrap">
                                 {row.notaPrintedAt ? (

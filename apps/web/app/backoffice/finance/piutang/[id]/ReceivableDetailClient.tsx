@@ -135,6 +135,7 @@ export function ReceivableDetailClient({
   collectorCandidates,
 }: Props) {
   const t = useTranslations("piutang");
+  const tSellThrough = useTranslations("konsiSellThrough");
   const router = useRouter();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [postingJournal, setPostingJournal] = useState(false);
@@ -145,6 +146,10 @@ export function ReceivableDetailClient({
     ? t(status === "PAID" ? "detail.primaryActionDisabledPaid" : "detail.primaryActionDisabledWrittenOff")
     : t("recordPaymentAction");
   const isOverdueBucket = r.bucket !== "CURRENT";
+  /* Only a DELIVERY-sourced receivable has a delivery to post a journal against; `journalRetryable`
+   * (server-resolved) already stays false for a SELL_THROUGH row, so this is a defensive narrow, not
+   * the real gate. */
+  const deliveryId = r.source.kind === "DELIVERY" ? r.source.deliveryId : null;
 
   /**
    * `stillPending` is read from the action's own returned outcome, never from re-checking
@@ -154,9 +159,10 @@ export function ReceivableDetailClient({
    * would be a flat-success lie over a half-done retry.
    */
   async function handlePostJournal(): Promise<void> {
+    if (!deliveryId) return;
     setPostingJournal(true);
     try {
-      const result = await postFieldDeliveryJournalsAction(r.deliveryId);
+      const result = await postFieldDeliveryJournalsAction(deliveryId);
       if (result.ok) {
         if (result.stillPending.length === 0) {
           toast.success(t("journalWarning.successAll"));
@@ -184,9 +190,12 @@ export function ReceivableDetailClient({
               {t("detail.back")}
             </Link>
           </Button>
-          <h1 className="text-2xl font-semibold font-mono truncate">{r.delivery.docNo}</h1>
+          <h1 className="text-2xl font-semibold font-mono truncate">{r.source.docNo}</h1>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {r.source.kind === "SELL_THROUGH" && (
+            <Badge variant="outline">{t("detail.sourceSellThrough")}</Badge>
+          )}
           <Badge className={STATUS_BADGE_CLASS[status]}>{t(STATUS_LABEL_KEY[status])}</Badge>
           {canManagePayments && (
             <Button className="h-10" disabled={isSettled} onClick={() => setSheetOpen(true)}>
@@ -223,15 +232,36 @@ export function ReceivableDetailClient({
         <div className="flex justify-between gap-4 text-sm">
           <span className="text-muted-foreground">{t("colDocNo")}</span>
           <Link
-            href={`/backoffice/field-sales-orders/${r.delivery.order.id}`}
+            href={
+              r.source.kind === "DELIVERY"
+                ? `/backoffice/field-sales-orders/${r.source.orderId}`
+                : `/backoffice/konsi-sell-through/${r.source.sellThroughId}`
+            }
             className="inline-flex items-center gap-1 font-mono hover:underline"
           >
-            {r.delivery.docNo}
+            {r.source.docNo}
             <ExternalLink className="h-3 w-3" />
           </Link>
         </div>
         <Field label={t("colStore")} value={r.store.name} />
-        <Field label={t("colSalesman")} value={r.delivery.order.salesman.name} />
+        {r.source.kind === "DELIVERY" ? (
+          <Field label={t("colSalesman")} value={r.source.salesmanName} />
+        ) : (
+          <Field label={t("colSalesman")} value={r.source.salesmanName || "—"} />
+        )}
+        {r.source.kind === "SELL_THROUGH" && (
+          <Field
+            label={t("detail.colPeriod")}
+            value={
+              r.source.periodStart
+                ? tSellThrough("periodRange", {
+                    start: formatDateOnlyJakarta(r.source.periodStart),
+                    end: formatDateOnlyJakarta(r.source.periodEnd),
+                  })
+                : tSellThrough("periodFirst", { end: formatDateOnlyJakarta(r.source.periodEnd) })
+            }
+          />
+        )}
         <Field label={t("colInvoiceDate")} value={formatDateOnlyJakarta(r.invoiceDate)} />
         <Field label={t("colDueDate")} value={formatDateOnlyJakarta(r.dueDate)} />
         <div className="flex justify-between gap-4 text-sm">

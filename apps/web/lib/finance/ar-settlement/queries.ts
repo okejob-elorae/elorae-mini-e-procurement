@@ -27,6 +27,7 @@ import {
   type InvoiceRow,
 } from "./approve-writer";
 import { findArJournalPendingFlags } from "@/lib/finance/ar/journal-pending";
+import { RECEIVABLE_SOURCE_SELECT, resolveReceivableSource } from "@/lib/finance/ar/receivable-source";
 
 /**
  * Re-exported so the screen components import their types from one place. The definitions live in
@@ -339,7 +340,7 @@ export async function getSettlementForApproval(
       status: true,
       dueDate: true,
       outstandingAmount: true,
-      delivery: { select: { docNo: true } },
+      ...RECEIVABLE_SOURCE_SELECT,
     },
   });
   const receivableById = new Map(receivables.map((receivable) => [receivable.id, receivable]));
@@ -348,7 +349,7 @@ export async function getSettlementForApproval(
     const receivable = receivableById.get(row.receivableId);
     return {
       receivableId: row.receivableId,
-      docNo: receivable?.delivery.docNo ?? null,
+      docNo: receivable ? resolveReceivableSource(receivable).docNo : null,
       agreedAmount: row.amount,
       liveOutstanding: receivable ? roundCents(Number(receivable.outstandingAmount)) : null,
       receivableStatus: receivable?.status ?? null,
@@ -841,21 +842,20 @@ export async function getSettlementForPrint(
     receivableIds.length > 0
       ? await prisma.receivable.findMany({
           where: { id: { in: receivableIds } },
-          select: { id: true, delivery: { select: { docNo: true } } },
+          select: { id: true, ...RECEIVABLE_SOURCE_SELECT },
         })
       : [];
   /**
-   * `receivable.delivery.docNo` is read without `?.` on purpose: `Receivable.delivery` is a
-   * required, FK-less relation under `relationMode = "prisma"`, so a dangling `deliveryId` would
-   * throw inside this `findMany` before this line runs — `?.` here would only pretend the row
-   * could resolve with `delivery` absent, which it cannot without a throw already having happened.
-   * This traversal is a pre-existing exposure shared with `getSettlementForApproval`'s equivalent
-   * lookup; splitting it into a `deliveryId`-scalar-plus-separate-`findMany` shape (as the
-   * `store`/`salesman` guard above now does) would cost an extra query for a case not in this
-   * task's scope, so it is left as is and logged as a follow-up rather than fixed here.
+   * `docNo` is read through `resolveReceivableSource`, which prefers `delivery.docNo` and falls
+   * back to `sellThrough.docNo` — `Receivable.delivery` is OPTIONAL as of the delivery/sell-through
+   * source split (`Receivable.sellThroughId`, `lib/finance/ar/receivable-source.ts`), so a
+   * receivable backed by a `KonsiSellThrough` report resolves through the `sellThrough` arm
+   * instead of throwing on a `null` `delivery`. A receivable whose delivery row was deleted (no FK
+   * under `relationMode = "prisma"`) resolves both arms to `null`, and the resolver throws
+   * `ReceivableSourceMissingError` here. Shared by `getSettlementForApproval`'s equivalent lookup.
    */
   const docNoByReceivableId = new Map(
-    receivables.map((receivable) => [receivable.id, receivable.delivery.docNo] as const),
+    receivables.map((receivable) => [receivable.id, resolveReceivableSource(receivable).docNo] as const),
   );
 
   /**

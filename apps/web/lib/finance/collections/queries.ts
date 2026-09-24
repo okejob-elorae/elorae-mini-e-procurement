@@ -1,5 +1,6 @@
 import { prisma, type Prisma } from "@elorae/db";
 import { daysOverdue, agingBucket, type AgingBucket } from "@/lib/finance/ar/aging";
+import { RECEIVABLE_SOURCE_SELECT, resolveReceivableSource } from "@/lib/finance/ar/receivable-source";
 
 export type CollectionQueueRow = {
   receivableId: string;
@@ -21,7 +22,7 @@ export async function listCollectionQueue(collectorId: string, asOf: Date = new 
       outstandingAmount: true,
       dueDate: true,
       store: { select: { name: true } },
-      delivery: { select: { docNo: true } },
+      ...RECEIVABLE_SOURCE_SELECT,
       submissions: { where: { status: "PENDING" }, select: { amount: true } },
     },
   });
@@ -29,7 +30,7 @@ export async function listCollectionQueue(collectorId: string, asOf: Date = new 
   return receivables.map((r) => ({
     receivableId: r.id,
     storeName: r.store.name,
-    docNo: r.delivery.docNo,
+    docNo: resolveReceivableSource(r).docNo,
     outstandingAmount: Number(r.outstandingAmount),
     dueDate: r.dueDate,
     daysOverdue: daysOverdue(r.dueDate, asOf),
@@ -73,7 +74,7 @@ export async function listPendingCollections(filters: PendingCollectionFilters):
         paidAt: true,
         createdAt: true,
         collector: { select: { name: true, email: true } },
-        receivable: { select: { store: { select: { name: true } }, delivery: { select: { docNo: true } } } },
+        receivable: { select: { store: { select: { name: true } }, ...RECEIVABLE_SOURCE_SELECT } },
       },
     }),
     prisma.collectionSubmission.count({ where }),
@@ -84,7 +85,7 @@ export async function listPendingCollections(filters: PendingCollectionFilters):
       id: f.id,
       receivableId: f.receivableId,
       storeName: f.receivable.store.name,
-      docNo: f.receivable.delivery.docNo,
+      docNo: resolveReceivableSource(f.receivable).docNo,
       collectorName: f.collector.name ?? f.collector.email,
       amount: Number(f.amount),
       method: f.method,
@@ -114,7 +115,7 @@ export async function getCollectionSubmission(id: string) {
           storeId: true,
           outstandingAmount: true,
           store: { select: { name: true } },
-          delivery: { select: { docNo: true } },
+          ...RECEIVABLE_SOURCE_SELECT,
         },
       },
     },
@@ -133,7 +134,7 @@ export async function getCollectionSubmission(id: string) {
     collectorName: s.collector.name ?? s.collector.email,
     storeId: s.receivable.storeId,
     storeName: s.receivable.store.name,
-    docNo: s.receivable.delivery.docNo,
+    docNo: resolveReceivableSource(s.receivable).docNo,
     liveOutstanding: Number(s.receivable.outstandingAmount),
   };
 }
@@ -184,7 +185,7 @@ export async function getReceivableForCollection(receivableId: string, collector
       outstandingAmount: true,
       dueDate: true,
       store: { select: { name: true } },
-      delivery: { select: { docNo: true } },
+      ...RECEIVABLE_SOURCE_SELECT,
       submissions: { where: { status: "PENDING" }, select: { amount: true } },
     },
   });
@@ -193,7 +194,7 @@ export async function getReceivableForCollection(receivableId: string, collector
   return {
     receivableId: r.id,
     storeName: r.store.name,
-    docNo: r.delivery.docNo,
+    docNo: resolveReceivableSource(r).docNo,
     outstandingAmount: Number(r.outstandingAmount),
     dueDate: r.dueDate,
     pendingSubmittedAmount: r.submissions.reduce((s, sub) => s + Number(sub.amount), 0),

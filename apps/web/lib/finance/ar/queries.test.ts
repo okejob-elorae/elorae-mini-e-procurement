@@ -7,6 +7,7 @@ import {
   getPayment,
   listAllocationCandidatesForStore,
   getPendingSettlementInvoiceClaimsMap,
+  listReceivablesForExport,
 } from "./queries";
 import { recordPayment } from "./payment-writer";
 import { voidPayment } from "./void-writer";
@@ -66,10 +67,11 @@ d("AR queries (test bed only)", () => {
     userId = user.id;
 
     /*
-     * Receivable.delivery is a REQUIRED relation under relationMode="prisma" — a deliveryId that
-     * does not resolve to a real FieldSalesDelivery throws "Inconsistent query result" the moment a
-     * query selects through it, which both listReceivables and getReceivable do (docNo,
-     * order.salesman.name). So the delivery/order chain has to be real rows, not a fake string id.
+     * relationMode="prisma" puts no FK behind Receivable.deliveryId — a deliveryId that does not
+     * resolve to a real FieldSalesDelivery reads back with neither source relation, and
+     * resolveReceivableSource throws ReceivableSourceMissingError the moment listReceivables or
+     * getReceivable resolves the row (docNo, order.salesman.name). So the delivery/order chain has
+     * to be real rows, not a fake string id.
      */
     const orderA = await prisma.fieldSalesOrder.create({
       data: { orderNo: `TEST-ARQ-ORD1-${token}`, storeId, salesmanId: userId, subtotal: 1000, total: 1000 },
@@ -477,5 +479,221 @@ d("AR queries (test bed only)", () => {
   it("getPendingSettlementInvoiceClaimsMap returns an empty map for an empty id list", async () => {
     const map = await getPendingSettlementInvoiceClaimsMap([]);
     expect(map.size).toBe(0);
+  });
+});
+
+/*
+ * A separate store and describe block, deliberately NOT nested inside the fixture above: that
+ * fixture's own tests pin exact bucketTotals/grandOutstanding figures for one store, and adding a
+ * sell-through-backed receivable to the SAME store would change every one of those pinned numbers.
+ */
+d("AR queries — sell-through source (test bed only)", () => {
+  let token = "";
+  let storeId = "";
+  let putusSalesmanId = "";
+  let sellThroughSalesmanId = "";
+  let orderId = "";
+  let deliveryId = "";
+  let putusRecId = "";
+  let sellThroughId = "";
+  let sellThroughRecId = "";
+  let paymentId = "";
+
+  beforeEach(async () => {
+    token = Math.random().toString(36).slice(2, 10);
+    storeId = ""; putusSalesmanId = ""; sellThroughSalesmanId = ""; orderId = ""; deliveryId = "";
+    putusRecId = ""; sellThroughId = ""; sellThroughRecId = ""; paymentId = "";
+
+    const store = await prisma.store.create({
+      data: { code: `TEST-ARQ2-${token}`, name: `Toko ${token}`, address: "test", termsType: "KONSI" },
+    });
+    storeId = store.id;
+
+    const putusSalesman = await prisma.user.create({
+      data: { email: `arq2-putus-${token}@test.local`, name: `Sales Putus ${token}` },
+    });
+    putusSalesmanId = putusSalesman.id;
+
+    const sellThroughSalesman = await prisma.user.create({
+      data: { email: `arq2-st-${token}@test.local`, name: `Sales ST ${token}` },
+    });
+    sellThroughSalesmanId = sellThroughSalesman.id;
+
+    const order = await prisma.fieldSalesOrder.create({
+      data: { orderNo: `TEST-ARQ2-ORD-${token}`, storeId, salesmanId: putusSalesmanId, subtotal: 1000, total: 1000 },
+    });
+    orderId = order.id;
+
+    const delivery = await prisma.fieldSalesDelivery.create({
+      data: {
+        docNo: `TEST-ARQ2-DLV-${token}`,
+        orderId,
+        deliveredAt: new Date("2026-05-20T00:00:00.000+07:00"),
+        deliveredById: putusSalesmanId,
+        invoiceDate: new Date("2026-05-20T00:00:00.000+07:00"),
+        dueDate: new Date("2026-06-20T00:00:00.000+07:00"),
+        subtotal: 1000,
+        total: 1000,
+      },
+    });
+    deliveryId = delivery.id;
+
+    const putusRec = await prisma.receivable.create({
+      data: {
+        deliveryId, storeId,
+        invoiceDate: new Date("2026-05-20T00:00:00.000+07:00"),
+        dueDate: new Date("2026-06-20T00:00:00.000+07:00"),
+        originalAmount: 1000, outstandingAmount: 1000,
+      },
+    });
+    putusRecId = putusRec.id;
+
+    const sellThrough = await prisma.konsiSellThrough.create({
+      data: {
+        docNo: `TEST-ARQ2-KST-${token}`,
+        storeId,
+        method: "SPG_POS",
+        closingStocktakeId: `TEST-ARQ2-STK-${token}`,
+        periodStart: new Date("2026-05-01T00:00:00.000+07:00"),
+        periodEnd: new Date("2026-05-31T00:00:00.000+07:00"),
+        salesmanId: sellThroughSalesmanId,
+        createdById: putusSalesmanId,
+      },
+    });
+    sellThroughId = sellThrough.id;
+
+    const sellThroughRec = await prisma.receivable.create({
+      data: {
+        sellThroughId, storeId,
+        invoiceDate: new Date("2026-05-31T00:00:00.000+07:00"),
+        dueDate: new Date("2026-06-30T00:00:00.000+07:00"),
+        originalAmount: 500, outstandingAmount: 500,
+      },
+    });
+    sellThroughRecId = sellThroughRec.id;
+  });
+
+  afterEach(async () => {
+    /**
+     * The getPayment test's payment and its allocation go first of all, allocation before payment
+     * and both before the receivable they point at. The journal cleanup is defensive, as in the
+     * fixture above: `recordPayment` posts no journal itself.
+     */
+    await prisma.journalLine.deleteMany({ where: { journal: { sourceId: seededId(paymentId) } } });
+    await prisma.journal.deleteMany({ where: { sourceId: seededId(paymentId) } });
+    await prisma.paymentAllocation.deleteMany({
+      where: { receivableId: { in: [seededId(putusRecId), seededId(sellThroughRecId)] } },
+    });
+    await prisma.payment.deleteMany({ where: { storeId: seededId(storeId) } });
+    /* Children of the 1:1 relation to KonsiSellThrough (and to FieldSalesDelivery) go before their
+     * parents — both receivables first, then the sellThrough, then the delivery/order/users/store. */
+    await prisma.receivable.deleteMany({
+      where: { id: { in: [seededId(putusRecId), seededId(sellThroughRecId)] } },
+    });
+    await prisma.konsiSellThrough.deleteMany({ where: { id: seededId(sellThroughId) } });
+    await prisma.fieldSalesDelivery.deleteMany({ where: { id: seededId(deliveryId) } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
+    await prisma.user.deleteMany({
+      where: { id: { in: [seededId(putusSalesmanId), seededId(sellThroughSalesmanId)] } },
+    });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+  });
+
+  it("returns both a putus and a sell-through-backed receivable with the right docNo, salesmanName and sourceKind", async () => {
+    const res = await listReceivables({ storeId });
+    const byId = new Map(res.rows.map((r) => [r.id, r]));
+
+    const putusRow = byId.get(putusRecId)!;
+    expect(putusRow.docNo).toBe(`TEST-ARQ2-DLV-${token}`);
+    expect(putusRow.salesmanName).toBe(`Sales Putus ${token}`);
+    expect(putusRow.sourceKind).toBe("DELIVERY");
+
+    const sellThroughRow = byId.get(sellThroughRecId)!;
+    expect(sellThroughRow.docNo).toBe(`TEST-ARQ2-KST-${token}`);
+    expect(sellThroughRow.salesmanName).toBe(`Sales ST ${token}`);
+    expect(sellThroughRow.sourceKind).toBe("SELL_THROUGH");
+  });
+
+  it("filters by salesmanId across both a delivery's order and a sell-through report's own salesman", async () => {
+    const putusFiltered = await listReceivables({ storeId, salesmanId: putusSalesmanId });
+    expect(putusFiltered.rows.map((r) => r.id)).toEqual([putusRecId]);
+
+    const sellThroughFiltered = await listReceivables({ storeId, salesmanId: sellThroughSalesmanId });
+    expect(sellThroughFiltered.rows.map((r) => r.id)).toEqual([sellThroughRecId]);
+  });
+
+  it("finds a sell-through-backed receivable by its report docNo, case-insensitively", async () => {
+    const res = await listReceivables({ storeId, search: `kst-${token}` });
+    expect(res.rows.map((r) => r.id)).toEqual([sellThroughRecId]);
+  });
+
+  it("applies a salesman filter and a search together, neither overwriting the other", async () => {
+    /**
+     * Both filters are an `OR` of their own. If either replaced the other instead of being ANDed
+     * with it, the first query would return one of the two receivables rather than neither.
+     */
+    const mismatched = await listReceivables({
+      storeId,
+      salesmanId: putusSalesmanId,
+      search: `TEST-ARQ2-KST-${token}`,
+    });
+    expect(mismatched.rows).toEqual([]);
+
+    const matched = await listReceivables({
+      storeId,
+      salesmanId: sellThroughSalesmanId,
+      search: `TEST-ARQ2-KST-${token}`,
+    });
+    expect(matched.rows.map((r) => r.id)).toEqual([sellThroughRecId]);
+  });
+
+  it("getReceivable resolves a DELIVERY-backed row's source", async () => {
+    const detail = await getReceivable(putusRecId);
+    expect(detail).not.toBeNull();
+    expect(detail!.source.kind).toBe("DELIVERY");
+    if (detail!.source.kind === "DELIVERY") {
+      expect(detail!.source.docNo).toBe(`TEST-ARQ2-DLV-${token}`);
+      expect(detail!.source.orderId).toBe(orderId);
+      expect(detail!.source.salesmanName).toBe(`Sales Putus ${token}`);
+    }
+  });
+
+  it("getReceivable resolves a SELL_THROUGH-backed row's source", async () => {
+    const detail = await getReceivable(sellThroughRecId);
+    expect(detail).not.toBeNull();
+    expect(detail!.source.kind).toBe("SELL_THROUGH");
+    if (detail!.source.kind === "SELL_THROUGH") {
+      expect(detail!.source.docNo).toBe(`TEST-ARQ2-KST-${token}`);
+      expect(detail!.source.sellThroughId).toBe(sellThroughId);
+      expect(detail!.source.salesmanName).toBe(`Sales ST ${token}`);
+    }
+  });
+
+  it("getPayment resolves a sell-through allocation's docNo off the report", async () => {
+    const payment = await recordPayment({
+      storeId, paidAt: asOf, method: "CASH", recordedById: putusSalesmanId,
+      amount: 200, allocations: [{ receivableId: sellThroughRecId, amount: 200 }],
+    });
+    paymentId = payment.paymentId;
+
+    const detail = await getPayment(paymentId);
+    expect(detail).not.toBeNull();
+    expect(detail!.allocations).toHaveLength(1);
+    expect(detail!.allocations[0].receivableId).toBe(sellThroughRecId);
+    expect(detail!.allocations[0].docNo).toBe(`TEST-ARQ2-KST-${token}`);
+    expect(detail!.allocations[0].outstandingAmount).toBe(300);
+  });
+
+  it("includes both receivables in the export, tagged with the right sourceKind", async () => {
+    const { rows } = await listReceivablesForExport({ storeId });
+    const byDocNo = new Map(rows.map((r) => [r.docNo, r]));
+
+    const putusRow = byDocNo.get(`TEST-ARQ2-DLV-${token}`);
+    expect(putusRow?.sourceKind).toBe("DELIVERY");
+    expect(putusRow?.salesmanName).toBe(`Sales Putus ${token}`);
+
+    const sellThroughRow = byDocNo.get(`TEST-ARQ2-KST-${token}`);
+    expect(sellThroughRow?.sourceKind).toBe("SELL_THROUGH");
+    expect(sellThroughRow?.salesmanName).toBe(`Sales ST ${token}`);
   });
 });

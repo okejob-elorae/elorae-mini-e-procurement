@@ -1,6 +1,7 @@
 import { prisma, type Prisma } from "@elorae/db";
 import { roundCents } from "@elorae/db/pricing";
 import { agingBucket, AGING_BUCKETS, daysOverdue, type AgingBucket } from "./aging";
+import { RECEIVABLE_SOURCE_SELECT, resolveReceivableSource } from "./receivable-source";
 import type { PaymentMethodValue } from "./payment-method-display";
 
 export type ReceivableFilters = {
@@ -23,7 +24,10 @@ export type ReceivableRow = {
   storeId: string;
   storeName: string;
   docNo: string;
-  salesmanName: string;
+  /** Null only for a SELL_THROUGH row whose report has no salesman yet; a DELIVERY row keeps the
+   * pre-existing "" fallback so existing output is byte-identical. */
+  salesmanName: string | null;
+  sourceKind: "DELIVERY" | "SELL_THROUGH";
   invoiceDate: Date;
   dueDate: Date;
   originalAmount: number;
@@ -43,27 +47,44 @@ export function whereFor(f: ReceivableFilters): Prisma.ReceivableWhereInput {
   if (f.storeId) where.storeId = f.storeId;
   if (f.collectorId) where.collectorId = f.collectorId;
   if (f.status) where.status = f.status;
-  if (f.salesmanId) where.delivery = { order: { salesmanId: f.salesmanId } };
   if (f.dateFrom || f.dateTo) {
     where.invoiceDate = {};
     if (f.dateFrom) where.invoiceDate.gte = f.dateFrom;
     if (f.dateTo) where.invoiceDate.lte = f.dateTo;
   }
+
+  /*
+   * One `AND` element per independent `OR`: a receivable's salesman lives on either its delivery's
+   * order or its sellThrough report, so that filter is itself an `OR` now — and the search filter
+   * below is its own `OR` too. Two sibling `where.OR` assignments on the same object would silently
+   * overwrite each other, so each is nested inside its own `AND` element instead, keeping them
+   * independent. With no salesman filter this reduces to exactly the prior shape: a single `AND`
+   * element holding the search `OR`.
+   */
+  const andClauses: Prisma.ReceivableWhereInput[] = [];
+
+  if (f.salesmanId) {
+    andClauses.push({
+      OR: [
+        { delivery: { order: { salesmanId: f.salesmanId } } },
+        { sellThrough: { salesmanId: f.salesmanId } },
+      ],
+    });
+  }
+
   const search = f.search?.trim();
   if (search) {
-    /*
-     * AND-wrapped so this cannot collide with the `delivery` key the salesman filter already uses:
-     * two sibling `delivery` properties on the same object would overwrite each other.
-     */
-    where.AND = [
-      {
-        OR: [
-          { store: { name: { contains: search } } },
-          { delivery: { docNo: { contains: search } } },
-        ],
-      },
-    ];
+    andClauses.push({
+      OR: [
+        { store: { name: { contains: search } } },
+        { delivery: { docNo: { contains: search } } },
+        { sellThrough: { docNo: { contains: search } } },
+      ],
+    });
   }
+
+  if (andClauses.length > 0) where.AND = andClauses;
+
   return where;
 }
 
@@ -137,29 +158,33 @@ export async function listReceivables(filters: ReceivableFilters): Promise<{
       outstandingAmount: true,
       status: true,
       store: { select: { name: true } },
-      delivery: {
-        select: { docNo: true, order: { select: { salesman: { select: { name: true } } } } },
-      },
+      ...RECEIVABLE_SOURCE_SELECT,
       collector: { select: { name: true } },
     },
   });
 
-  const mapped: ReceivableRow[] = found.map((r) => ({
-    id: r.id,
-    storeId: r.storeId,
-    storeName: r.store.name,
-    docNo: r.delivery.docNo,
-    salesmanName: r.delivery.order.salesman.name ?? "",
-    invoiceDate: r.invoiceDate,
-    dueDate: r.dueDate,
-    originalAmount: Number(r.originalAmount),
-    paidAmount: Number(r.paidAmount),
-    outstandingAmount: Number(r.outstandingAmount),
-    status: r.status,
-    daysOverdue: daysOverdue(r.dueDate, asOf),
-    bucket: agingBucket(r.dueDate, asOf),
-    collectorName: r.collector?.name ?? null,
-  }));
+  const mapped: ReceivableRow[] = found.map((r) => {
+    const source = resolveReceivableSource(r);
+    return {
+      id: r.id,
+      storeId: r.storeId,
+      storeName: r.store.name,
+      docNo: source.docNo,
+      /* DELIVERY keeps the pre-existing "" fallback byte-identical; SELL_THROUGH may genuinely
+       * have no salesman yet, so it stays null rather than being coerced to "". */
+      salesmanName: source.kind === "DELIVERY" ? (source.salesmanName ?? "") : source.salesmanName,
+      sourceKind: source.kind,
+      invoiceDate: r.invoiceDate,
+      dueDate: r.dueDate,
+      originalAmount: Number(r.originalAmount),
+      paidAmount: Number(r.paidAmount),
+      outstandingAmount: Number(r.outstandingAmount),
+      status: r.status,
+      daysOverdue: daysOverdue(r.dueDate, asOf),
+      bucket: agingBucket(r.dueDate, asOf),
+      collectorName: r.collector?.name ?? null,
+    };
+  });
 
   if (filters.bucket === undefined) {
     const total = await prisma.receivable.count({ where });
@@ -181,7 +206,6 @@ export async function getReceivable(id: string, asOf: Date = new Date()) {
     select: {
       id: true,
       storeId: true,
-      deliveryId: true,
       invoiceDate: true,
       dueDate: true,
       originalAmount: true,
@@ -190,12 +214,7 @@ export async function getReceivable(id: string, asOf: Date = new Date()) {
       status: true,
       collectorId: true,
       store: { select: { name: true, code: true } },
-      delivery: {
-        select: {
-          docNo: true,
-          order: { select: { id: true, orderNo: true, salesman: { select: { name: true } } } },
-        },
-      },
+      ...RECEIVABLE_SOURCE_SELECT,
       /*
        * VOIDED payments stay in the history. Hiding them makes the arithmetic unexplainable — the
        * balance moved twice and the ledger would show neither move. `status` is exposed so the UI can
@@ -225,8 +244,10 @@ export async function getReceivable(id: string, asOf: Date = new Date()) {
     },
   });
   if (!r) return null;
+  const { delivery: _delivery, sellThrough: _sellThrough, ...rest } = r;
   return {
-    ...r,
+    ...rest,
+    source: resolveReceivableSource(r),
     originalAmount: Number(r.originalAmount),
     paidAmount: Number(r.paidAmount),
     outstandingAmount: Number(r.outstandingAmount),
@@ -430,7 +451,7 @@ export async function getPayment(id: string) {
         select: {
           amount: true,
           receivable: {
-            select: { id: true, outstandingAmount: true, delivery: { select: { docNo: true } } },
+            select: { id: true, outstandingAmount: true, ...RECEIVABLE_SOURCE_SELECT },
           },
         },
       },
@@ -445,7 +466,7 @@ export async function getPayment(id: string) {
     allocations: p.allocations.map((a) => ({
       amount: Number(a.amount),
       receivableId: a.receivable.id,
-      docNo: a.receivable.delivery.docNo,
+      docNo: resolveReceivableSource(a.receivable).docNo,
       outstandingAmount: Number(a.receivable.outstandingAmount),
     })),
   };
@@ -463,7 +484,9 @@ export type ReceivableExportRow = {
   outstandingAmount: number;
   status: string;
   collectorName: string | null;
-  salesmanName: string;
+  /** Null only for a SELL_THROUGH row whose report has no salesman yet; see `ReceivableRow`. */
+  salesmanName: string | null;
+  sourceKind: "DELIVERY" | "SELL_THROUGH";
 };
 
 /**
@@ -511,25 +534,29 @@ export async function listReceivablesForExport(
       outstandingAmount: true,
       status: true,
       store: { select: { name: true } },
-      delivery: { select: { docNo: true, order: { select: { salesman: { select: { name: true } } } } } },
+      ...RECEIVABLE_SOURCE_SELECT,
       collector: { select: { name: true } },
     },
   });
 
-  let rows: ReceivableExportRow[] = found.map((r) => ({
-    storeName: r.store.name,
-    docNo: r.delivery.docNo,
-    invoiceDate: r.invoiceDate,
-    dueDate: r.dueDate,
-    daysOverdue: daysOverdue(r.dueDate, asOf),
-    bucket: agingBucket(r.dueDate, asOf),
-    originalAmount: Number(r.originalAmount),
-    paidAmount: Number(r.paidAmount),
-    outstandingAmount: Number(r.outstandingAmount),
-    status: r.status,
-    collectorName: r.collector?.name ?? null,
-    salesmanName: r.delivery.order.salesman.name ?? "",
-  }));
+  let rows: ReceivableExportRow[] = found.map((r) => {
+    const source = resolveReceivableSource(r);
+    return {
+      storeName: r.store.name,
+      docNo: source.docNo,
+      invoiceDate: r.invoiceDate,
+      dueDate: r.dueDate,
+      daysOverdue: daysOverdue(r.dueDate, asOf),
+      bucket: agingBucket(r.dueDate, asOf),
+      originalAmount: Number(r.originalAmount),
+      paidAmount: Number(r.paidAmount),
+      outstandingAmount: Number(r.outstandingAmount),
+      status: r.status,
+      collectorName: r.collector?.name ?? null,
+      salesmanName: source.kind === "DELIVERY" ? (source.salesmanName ?? "") : source.salesmanName,
+      sourceKind: source.kind,
+    };
+  });
 
   if (filters.bucket !== undefined) {
     rows = rows.filter((r) => r.bucket === filters.bucket);

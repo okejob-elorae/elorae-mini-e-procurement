@@ -4953,7 +4953,7 @@
   },
   "fakturPajak": {
     "pageTitle": "Tax Invoices",
-    "subtitle": "Track and manage tax invoice status for each putus delivery.",
+    "subtitle": "Track and manage tax invoice status for each nota tagihan.",
     "listTitle": "Tax Invoice List",
     "searchPlaceholder": "Search by nota number, store name, or invoice number...",
     "reset": "Reset",
@@ -5093,6 +5093,8 @@
     "detail": {
       "back": "Back",
       "invoiceFactsTitle": "Invoice Details",
+      "sourceSellThrough": "Sell-through report",
+      "colPeriod": "Period",
       "moneyTitle": "Amount",
       "paid": "Paid",
       "allocationHistoryTitle": "Payment History",

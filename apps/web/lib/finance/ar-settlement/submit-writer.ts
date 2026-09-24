@@ -4,6 +4,7 @@ import { generateDocNumber } from "@/lib/docNumber";
 import { urlFromKey } from "@/lib/r2";
 import { computeSettlementTotals, computeVariance, EPSILON } from "./calc";
 import { SettlementError } from "./errors";
+import { RECEIVABLE_SOURCE_SELECT, resolveReceivableSource } from "@/lib/finance/ar/receivable-source";
 
 export type SettlementDeductionInputRow = {
   type: "RETUR_OFFSET" | "PROGRAM" | "ADMIN_FEE";
@@ -223,7 +224,8 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
     /**
      * Then load every selected receivable, verify it belongs to this store, is still collectible,
      * and — this is the part the screen's own scoping was standing in for — that the SUBMITTING
-     * salesman actually has a relationship to it (its collector, or its order's salesman). Without
+     * salesman actually has a relationship to it (its collector, or its source's salesman — the
+     * order's for a delivery, the report's for a sell-through). Without
      * this a raw request naming a receivable assigned to a DIFFERENT salesman/collector at a
      * shared store would still pass every other guard and stamp a PENDING settlement over money
      * that isn't this caller's to claim. The only release path is a `collections:manage` holder
@@ -239,7 +241,7 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
       where: { id: { in: receivableIds } },
       select: {
         id: true, storeId: true, status: true, outstandingAmount: true, collectorId: true,
-        delivery: { select: { order: { select: { salesmanId: true } } } },
+        ...RECEIVABLE_SOURCE_SELECT,
       },
     });
     const receivableById = new Map(receivables.map((r) => [r.id, r]));
@@ -250,7 +252,14 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
       if (receivable.status !== "OUTSTANDING" && receivable.status !== "PARTIAL") {
         throw new SettlementError("NOT_OUTSTANDING");
       }
-      if (receivable.collectorId !== input.salesmanId && receivable.delivery.order.salesmanId !== input.salesmanId) {
+      /*
+       * The owning salesman is the resolved source's own `salesmanId` — a delivery's order salesman
+       * for a DELIVERY row, the report's own salesman for a SELL_THROUGH row. A SELL_THROUGH row
+       * whose report has no salesman yet resolves to `null`, which never equals `input.salesmanId`
+       * (a real user id), so it falls through to the same `NOT_ASSIGNED` refusal: a report with no
+       * salesman is claimable only by its collector.
+       */
+      if (receivable.collectorId !== input.salesmanId && resolveReceivableSource(receivable).salesmanId !== input.salesmanId) {
         throw new SettlementError("NOT_ASSIGNED");
       }
 
