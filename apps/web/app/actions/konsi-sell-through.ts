@@ -111,7 +111,10 @@ export async function resolveSellThroughLineAction(input: unknown): Promise<Sell
   }
 }
 
-type ApproveRequest = Omit<ApproveSellThroughInput, "approvedById">;
+/* A plain `Omit` over a union keeps only the keys every member shares, so it would drop `reason`, `invoiceDate` and `salesmanId`. */
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+type ApproveRequest = DistributiveOmit<ApproveSellThroughInput, "approvedById">;
 
 function parseApproveRequest(input: unknown): ApproveRequest | null {
   if (typeof input !== "object" || input === null) return null;
