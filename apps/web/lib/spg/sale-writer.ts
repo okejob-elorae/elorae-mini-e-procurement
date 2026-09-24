@@ -1,10 +1,11 @@
 import { moveStoreStock, prisma, Prisma } from "@elorae/db";
 import type { StockLedgerRefType } from "@elorae/db";
-import { computeStorePrice, roundToWholeRupiah } from "@elorae/db/pricing";
+import { roundToWholeRupiah } from "@elorae/db/pricing";
 import { buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { variantDetailForSku } from "@/lib/items/variants";
+import { SPG_STORE_PRICING_SELECT, spgStorePricingFrom, spgUnitPrice } from "./pricing";
 
 export type SpgSaleLineInput = { itemId: string; variantSku: string | null; qty: number };
 export type RecordSpgSaleResult =
@@ -57,15 +58,16 @@ export async function recordSpgSale(input: {
       if (existing) return { ok: true, spgSaleId: existing.id, docNo: existing.docNo, changeGiven: Number(existing.changeGiven) };
     }
 
-    const store = await tx.store.findUnique({ where: { id: input.storeId }, select: { markupPercent: true, termsType: true, priceDiscountPercent: true } });
+    const store = await tx.store.findUnique({ where: { id: input.storeId }, select: SPG_STORE_PRICING_SELECT });
     if (!store) return { ok: false, code: "STORE_NOT_FOUND" };
-    const markupPercent = store.markupPercent === null ? null : Number(store.markupPercent);
-    const priceDiscountPercent = store.priceDiscountPercent === null ? null : Number(store.priceDiscountPercent);
+    const pricing = spgStorePricingFrom(store);
 
-    // Load item price + meta for each line
-    // (SPG sales are always retail/PUTUS to the end customer, regardless of the
-    // store's own consignment terms with Elorae — a KONSI store's own margin
-    // never applies to what an SPG charges a walk-in shopper.)
+    /*
+     * Priced with the store's REAL terms through spgUnitPrice, the helper the catalog preview also
+     * uses: a KONSI store charges its markup, a PUTUS store its list price less its discount. A
+     * KONSI store with no valid markup refuses NO_PRICE rather than selling at the catalog price,
+     * which would undercharge silently. Every return below runs before the first write.
+     */
     const itemIds = Array.from(new Set(merged.map((l) => l.itemId)));
     const items = await tx.item.findMany({
       where: { id: { in: itemIds } },
@@ -80,7 +82,7 @@ export async function recordSpgSale(input: {
       const item = itemById.get(l.itemId);
       if (!item) return { ok: false, code: "NO_PRICE" };
       const sp = item.sellingPrice === null ? null : Number(item.sellingPrice);
-      const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", markupPercent, priceDiscountPercent });
+      const price = spgUnitPrice(pricing, sp);
       if (price === null) return { ok: false, code: "NO_PRICE" };
       priced.push({ line: l, item, unitPrice: price });
     }

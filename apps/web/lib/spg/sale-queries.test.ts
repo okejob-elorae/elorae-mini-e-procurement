@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { getSellableCatalogForSpg } from "./sale-queries";
+import { getSellableCatalogForSpg, getSpgStorePricing } from "./sale-queries";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -15,9 +15,10 @@ d("getSellableCatalogForSpg (test bed only)", () => {
   let storeAId = "";
   let storeBId = "";
   let discountStoreId = "";
+  let putusStoreId = "";
 
   beforeEach(async () => {
-    uomId = ""; itemId = ""; shortItemId = ""; neverHeldItemId = ""; storeAId = ""; storeBId = ""; discountStoreId = "";
+    uomId = ""; itemId = ""; shortItemId = ""; neverHeldItemId = ""; storeAId = ""; storeBId = ""; discountStoreId = ""; putusStoreId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${tag}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
 
@@ -37,7 +38,7 @@ d("getSellableCatalogForSpg (test bed only)", () => {
     neverHeldItemId = neverHeldItem.id;
 
     const storeA = await prisma.store.create({
-      data: { code: `${tag}-A`, name: "Toko SPG Catalog A", address: "Jl. Test A", termsType: "KONSI", isActive: true },
+      data: { code: `${tag}-A`, name: "Toko SPG Catalog A", address: "Jl. Test A", termsType: "KONSI", markupPercent: 20, isActive: true },
     });
     storeAId = storeA.id;
 
@@ -51,6 +52,11 @@ d("getSellableCatalogForSpg (test bed only)", () => {
     });
     discountStoreId = discountStore.id;
 
+    const putusStore = await prisma.store.create({
+      data: { code: `${tag}-PUTUS`, name: "Toko SPG Catalog Putus", address: "Jl. Test D", termsType: "PUTUS", isActive: true },
+    });
+    putusStoreId = putusStore.id;
+
     /* storeA holds 7 of itemId; storeB holds 3 of the same item — proves the figure is per-store. */
     await prisma.storeStock.create({ data: { storeId: storeAId, itemId, variantSku: "", qty: 7, avgCost: 0 } });
     await prisma.storeStock.create({ data: { storeId: storeBId, itemId, variantSku: "", qty: 3, avgCost: 0 } });
@@ -60,7 +66,7 @@ d("getSellableCatalogForSpg (test bed only)", () => {
   });
 
   afterEach(async () => {
-    const storeIds = [seededId(storeAId), seededId(storeBId), seededId(discountStoreId)];
+    const storeIds = [seededId(storeAId), seededId(storeBId), seededId(discountStoreId), seededId(putusStoreId)];
     await prisma.storeStock.deleteMany({ where: { storeId: { in: storeIds } } });
     await prisma.item.deleteMany({ where: { id: { in: [seededId(itemId), seededId(shortItemId), seededId(neverHeldItemId)] } } });
     await prisma.store.deleteMany({ where: { id: { in: storeIds } } });
@@ -90,13 +96,32 @@ d("getSellableCatalogForSpg (test bed only)", () => {
     expect(row!.onCounterQty).toBe(0);
   });
 
-  it("prices off the store's priceDiscountPercent, and at list for a store with none", async () => {
+  it("prices a PUTUS store off its priceDiscountPercent, and at list for one with none", async () => {
     const discounted = await getSellableCatalogForSpg(seededId(discountStoreId));
     const discountedRow = discounted.find((r) => r.itemId === itemId && r.variantSku === null)!;
-    expect(discountedRow.price).toBe(3750); // 5000 * (1 - 25/100)
+    expect(discountedRow.price).toBe(3750); /* 5000 * (1 - 25/100) */
 
-    const undiscounted = await getSellableCatalogForSpg(seededId(storeAId));
-    const undiscountedRow = undiscounted.find((r) => r.itemId === itemId && r.variantSku === null)!;
-    expect(undiscountedRow.price).toBe(5000);
+    const list = await getSellableCatalogForSpg(seededId(putusStoreId));
+    const listRow = list.find((r) => r.itemId === itemId && r.variantSku === null)!;
+    expect(listRow.price).toBe(5000);
+  });
+
+  it("prices a KONSI store at its markup", async () => {
+    const rows = await getSellableCatalogForSpg(seededId(storeAId));
+    const row = rows.find((r) => r.itemId === itemId && r.variantSku === null)!;
+    expect(row.price).toBe(6000); /* 5000 * (1 + 20/100) */
+  });
+
+  it("still offers a KONSI store's products when the store has no markup, but unpriced rather than at the catalog price", async () => {
+    const rows = await getSellableCatalogForSpg(seededId(storeBId));
+    const row = rows.find((r) => r.itemId === itemId && r.variantSku === null);
+    expect(row).toBeDefined();
+    expect(row!.price).toBeNull();
+    expect(row!.onCounterQty).toBe(3);
+  });
+
+  it("reads a store's pricing terms as numbers, and null for an unknown store", async () => {
+    expect(await getSpgStorePricing(seededId(storeAId))).toEqual({ termsType: "KONSI", markupPercent: 20, priceDiscountPercent: null });
+    expect(await getSpgStorePricing("does-not-exist")).toBeNull();
   });
 });

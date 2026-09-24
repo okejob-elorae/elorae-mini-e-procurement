@@ -1,6 +1,6 @@
 import { prisma } from "@elorae/db";
-import { computeStorePrice } from "@elorae/db/pricing";
 import { parseItemVariants, variantDetailForSku } from "@/lib/items/variants";
+import { SPG_STORE_PRICING_SELECT, spgStorePricingFrom, spgUnitPrice, type SpgStorePricing } from "./pricing";
 
 export type SpgCatalogRow = {
   itemId: string;
@@ -12,14 +12,19 @@ export type SpgCatalogRow = {
   onCounterQty: number;
 };
 
+/* The store's SPG pricing terms, read over the same columns recordSpgSale reads. Null for an unknown store. */
+export async function getSpgStorePricing(storeId: string): Promise<SpgStorePricing | null> {
+  const store = await prisma.store.findUnique({ where: { id: storeId }, select: SPG_STORE_PRICING_SELECT });
+  return store ? spgStorePricingFrom(store) : null;
+}
+
 /**
- * SPG record-sale catalog — active finished goods, priced PUTUS (retail),
- * mirroring the pricing recordSpgSale itself applies (PUTUS ignores
- * markupPercent, so this never needs the store's own consignment terms —
- * but it DOES need the store's priceDiscountPercent, since that applies to
- * every PUTUS-priced line regardless of the store's own consignment terms;
- * looked up below so this preview matches what recordSpgSale actually
- * charges). The set stays UNRESTRICTED — every active finished good
+ * SPG record-sale catalog — active finished goods, priced through spgUnitPrice over the same
+ * store columns recordSpgSale reads, so each row's price is exactly what the writer charges and
+ * what the SPG collects cash against: a KONSI store at its markup, a PUTUS store at list less its
+ * priceDiscountPercent. A null price means the row cannot be sold — no selling price, or a KONSI
+ * store with no valid markup (the sale page shows a banner for the latter). An unknown store
+ * prices nothing. The set stays UNRESTRICTED — every active finished good
  * is offered, including one with no StoreStock row at all (reports 0).
  * recordSpgSale is no longer fully record-only — it decrements StoreStock at
  * a KONSI store (see its doc comment) — but this query still enforces NO
@@ -45,8 +50,7 @@ export type SpgCatalogRow = {
  * with a StoreStock row) since there is no stock check.
  */
 export async function getSellableCatalogForSpg(storeId: string): Promise<SpgCatalogRow[]> {
-  const store = await prisma.store.findUnique({ where: { id: storeId }, select: { priceDiscountPercent: true } });
-  const priceDiscountPercent = store?.priceDiscountPercent == null ? null : Number(store.priceDiscountPercent);
+  const pricing = await getSpgStorePricing(storeId);
 
   const rows = await prisma.item.findMany({
     where: { isActive: true, type: "FINISHED_GOOD" },
@@ -67,7 +71,7 @@ export async function getSellableCatalogForSpg(storeId: string): Promise<SpgCata
   const out: SpgCatalogRow[] = [];
   for (const r of rows) {
     const sp = r.sellingPrice === null ? null : Number(r.sellingPrice);
-    const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", markupPercent: null, priceDiscountPercent });
+    const price = pricing ? spgUnitPrice(pricing, sp) : null;
     const variantSkus = parseItemVariants(r.variants)
       .map((v) => (v.sku ?? "").trim())
       .filter(Boolean);

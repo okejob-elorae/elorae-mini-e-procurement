@@ -532,6 +532,7 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
                   update("markupPercent", e.target.value === "" ? null : Number(e.target.value))
                 }
               />
+              <p className="text-xs text-muted-foreground">{t("markupPercentHint")}</p>
             </div>
           </div>
 

@@ -65,9 +65,10 @@ export class InvalidPriceDiscountPercentError extends Error {
 
 /**
  * Thrown when a non-null `priceDiscountPercent` is set on a KONSI store. KONSI pricing runs on
- * `markupPercent` only — a discount must never apply there, even though the SPG/van pricing
- * paths hardcode PUTUS pricing (they run at consignment stores too, since an SPG is an in-store
- * promoter at a KONSI store selling at retail).
+ * `markupPercent` only, and a discount must never apply there. The SPG writer prices a KONSI store
+ * at its markup, but the van writer still prices every sale on the PUTUS path, discount included,
+ * even at a consignment store — so a KONSI store holding a discount would silently discount its
+ * van sales.
  */
 export class KonsiPriceDiscountNotAllowedError extends Error {
   constructor() {

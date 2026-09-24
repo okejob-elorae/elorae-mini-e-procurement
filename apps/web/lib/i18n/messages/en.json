@@ -2227,6 +2227,7 @@
       "termsKonsi": "Konsi",
       "paymentTempo": "Payment tempo (days)",
       "markupPercent": "Markup (%)",
+      "markupPercentHint": "Konsi stores: the SPG sells at the catalog price plus this markup (100,000 at 20% sells for 120,000). The store is invoiced at the catalog price.",
       "priceDiscountPercent": "Store price discount (%)",
       "priceDiscountPercentKonsiNotice": "Price discount only applies to Putus stores. Konsi stores price off markup, not a discount, so this field isn't available here.",
       "creditLimit": "Credit Limit (Rp)",
@@ -4066,6 +4067,7 @@
     "cashTenderedLabel": "Cash tendered",
     "changeLabel": "Change",
     "onCounterQty": "{qty} at the store",
+    "markupMissing": "This store's markup isn't set, so its products can't be priced yet. Ask an admin to set the store's markup.",
     "backoffice": {
       "list": {
         "pageTitle": "SPG Sales",

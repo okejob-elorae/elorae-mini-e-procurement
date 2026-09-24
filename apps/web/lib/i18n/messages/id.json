@@ -2227,6 +2227,7 @@
       "termsKonsi": "Konsi",
       "paymentTempo": "Tempo pembayaran (hari)",
       "markupPercent": "Markup (%)",
+      "markupPercentHint": "Toko Konsi: SPG menjual dengan harga katalog ditambah markup ini (100.000 dengan 20% dijual 120.000). Toko ditagih sesuai harga katalog.",
       "priceDiscountPercent": "Diskon harga toko (%)",
       "priceDiscountPercentKonsiNotice": "Diskon harga hanya berlaku untuk toko Putus. Toko Konsi memakai markup, bukan diskon harga, jadi kolom ini tidak tersedia di sini.",
       "creditLimit": "Limit Kredit (Rp)",
@@ -4066,6 +4067,7 @@
     "cashTenderedLabel": "Uang diterima",
     "changeLabel": "Kembalian",
     "onCounterQty": "{qty} di toko",
+    "markupMissing": "Markup toko ini belum diatur, jadi produknya belum bisa diberi harga. Minta admin mengatur markup toko.",
     "backoffice": {
       "list": {
         "pageTitle": "Penjualan SPG",
