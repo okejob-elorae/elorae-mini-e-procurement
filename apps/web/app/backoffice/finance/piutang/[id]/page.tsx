@@ -36,7 +36,8 @@ export default async function ReceivableDetailPage({ params }: PageProps) {
    *
    * `field_delivery_revenue`/`field_delivery_cogs` are delivery-backed journal kinds only — a
    * SELL_THROUGH-sourced receivable has no delivery to retry a journal against, so it never gets a
-   * journal-pending alert on this path.
+   * journal-pending alert on this path. Its own journals are retried from the sell-through report's
+   * own page, which this detail links to.
    */
   const deliveryId = receivable.source.kind === "DELIVERY" ? receivable.source.deliveryId : null;
   const [revenueRetryable, cogsRetryable, allocationCandidates, collectorCandidates] = await Promise.all([

@@ -179,7 +179,7 @@ describe("resolveTaxInvoiceSource", () => {
     expect(resolveTaxInvoiceSource(row).total).toBe(150000);
   });
 
-  it("maps every SELL_THROUGH field, with invoiceDate/dueDate/total null", () => {
+  it("maps every SELL_THROUGH field, reading the report's own invoice date, due date and total", () => {
     const row: TaxInvoiceSourceRow = {
       delivery: null,
       sellThrough: {
@@ -188,6 +188,38 @@ describe("resolveTaxInvoiceSource", () => {
         storeId: "store-2",
         store: { id: "store-2", name: "Toko Sejahtera", npwp: null },
         periodEnd: new Date("2026-08-31T00:00:00Z"),
+        invoiceDate: new Date("2026-09-01T00:00:00Z"),
+        dueDate: new Date("2026-09-15T00:00:00Z"),
+        total: 200000,
+      },
+    };
+
+    expect(resolveTaxInvoiceSource(row)).toEqual({
+      kind: "SELL_THROUGH",
+      docNo: "KST/0001",
+      sellThroughId: "sellthrough-1",
+      storeId: "store-2",
+      storeName: "Toko Sejahtera",
+      storeNpwp: null,
+      invoiceDate: new Date("2026-09-01T00:00:00Z"),
+      dueDate: new Date("2026-09-15T00:00:00Z"),
+      total: 200000,
+      periodEnd: new Date("2026-08-31T00:00:00Z"),
+    });
+  });
+
+  it("maps a SELL_THROUGH row never invoiced, with invoiceDate/dueDate/total null", () => {
+    const row: TaxInvoiceSourceRow = {
+      delivery: null,
+      sellThrough: {
+        id: "sellthrough-1",
+        docNo: "KST/0001",
+        storeId: "store-2",
+        store: { id: "store-2", name: "Toko Sejahtera", npwp: null },
+        periodEnd: new Date("2026-08-31T00:00:00Z"),
+        invoiceDate: null,
+        dueDate: null,
+        total: null,
       },
     };
 

@@ -1,8 +1,13 @@
 import { prisma } from "@elorae/db";
+import { roundCents } from "@elorae/db/pricing";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { isLineHeld, roundQty, type SellThroughMethodValue, type SellThroughResolutionValue } from "./derive";
 import { checkSellThroughPreconditions } from "./writer";
 import { SellThroughError, type SellThroughErrorCode } from "./errors";
+import { priceSellThroughLines } from "./pricing";
+import { sellThroughCostTotals, SELL_THROUGH_JOURNAL_KINDS } from "./journal";
+import { defaultSellThroughSalesmanId } from "./salesman-candidates";
+import { isArJournalRetryable } from "@/lib/finance/ar/journal-pending";
 
 export type SellThroughStatusValue = "DRAFT" | "APPROVED" | "CANCELLED";
 
@@ -18,6 +23,7 @@ export type SellThroughListItem = {
   heldCount: number;
   billedTotalQty: number;
   createdAt: Date;
+  baseline: boolean;
 };
 
 /**
@@ -55,6 +61,7 @@ export async function listSellThroughs(input: {
         periodStart: true,
         periodEnd: true,
         createdAt: true,
+        baseline: true,
         store: { select: { name: true } },
       },
     }),
@@ -101,6 +108,7 @@ export async function listSellThroughs(input: {
       heldCount: heldCountByReportId.get(r.id) ?? 0,
       billedTotalQty: billedTotalByReportId.get(r.id) ?? 0,
       createdAt: r.createdAt,
+      baseline: r.baseline,
     })),
     total,
   };
@@ -126,6 +134,8 @@ export type SellThroughLineDetail = {
   resolution: SellThroughResolutionValue | null;
   resolutionReason: string | null;
   unitCost: number;
+  unitPrice: number | null;
+  lineTotal: number | null;
   held: boolean;
 };
 
@@ -152,6 +162,21 @@ export type SellThroughDetail = {
   cancelledByLabel: string | null;
   cancelledAt: Date | null;
   cancelReason: string | null;
+  storeMarginPercent: number | null;
+  storePaymentTempo: number;
+  total: number | null;
+  unpricedKeys: string[];
+  invoiceDate: Date | null;
+  dueDate: Date | null;
+  salesmanId: string | null;
+  salesmanLabel: string | null;
+  baseline: boolean;
+  baselineReason: string | null;
+  unrelievedCost: number | null;
+  receivableId: string | null;
+  taxInvoiceId: string | null;
+  journalPending: boolean;
+  defaultSalesmanId: string | null;
   lines: SellThroughLineDetail[];
 };
 
@@ -175,7 +200,15 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
       cancelledById: true,
       cancelledAt: true,
       cancelReason: true,
-      store: { select: { name: true } },
+      invoiceDate: true,
+      dueDate: true,
+      total: true,
+      salesmanId: true,
+      baseline: true,
+      baselineReason: true,
+      store: { select: { name: true, marginPercent: true, paymentTempo: true } },
+      receivable: { select: { id: true } },
+      taxInvoice: { select: { id: true } },
       lines: {
         orderBy: { id: "asc" },
         select: {
@@ -197,7 +230,9 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
           resolution: true,
           resolutionReason: true,
           unitCost: true,
-          item: { select: { variants: true } },
+          unitPrice: true,
+          lineTotal: true,
+          item: { select: { variants: true, sellingPrice: true } },
         },
       },
     },
@@ -211,7 +246,9 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
    * user lookup, falling back to "—" for an id that resolves to nobody.
    */
   const userIds = Array.from(
-    new Set([doc.createdById, doc.approvedById, doc.cancelledById].filter((x): x is string => x !== null)),
+    new Set(
+      [doc.createdById, doc.approvedById, doc.cancelledById, doc.salesmanId].filter((x): x is string => x !== null),
+    ),
   );
   const [closingStocktake, previous, users] = await Promise.all([
     prisma.storeStocktake.findUnique({ where: { id: doc.closingStocktakeId }, select: { docNo: true } }),
@@ -222,6 +259,41 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
   ]);
   const labelById = new Map(users.map((u) => [u.id, u.name ?? u.email]));
   const labelFor = (userId: string | null): string | null => (userId ? labelById.get(userId) ?? "—" : null);
+
+  /**
+   * The DRAFT preview runs the same pricing rule the approve writer uses, so the screen never shows
+   * a number invoicing would then disagree with. Once APPROVED (and not a baseline), the lines and
+   * total already carry the stored, invoiced figures instead.
+   */
+  const preview =
+    doc.status === "DRAFT"
+      ? priceSellThroughLines({
+          marginPercent: doc.store.marginPercent === null ? null : Number(doc.store.marginPercent),
+          lines: doc.lines.map((l) => ({
+            key: `${l.itemId}::${l.variantSku}`,
+            billedQty: roundQty(l.billedQty.toNumber()),
+            sellingPrice: l.item.sellingPrice === null ? null : Number(l.item.sellingPrice),
+          })),
+        })
+      : null;
+  const invoiced = doc.status === "APPROVED" && !doc.baseline;
+  const [defaultSalesmanId, journalFlags] = await Promise.all([
+    doc.status === "DRAFT" ? defaultSellThroughSalesmanId(doc.storeId) : Promise.resolve(null),
+    invoiced ? Promise.all(SELL_THROUGH_JOURNAL_KINDS.map((k) => isArJournalRetryable(k, doc.id))) : Promise.resolve([]),
+  ]);
+  /* A baseline report was invoiced by hand before go-live: nothing here relieved its cost from GL inventory. */
+  const unrelievedCost = doc.baseline
+    ? (() => {
+        const c = sellThroughCostTotals(
+          doc.lines.map((l) => ({
+            billedQty: l.billedQty.toNumber(),
+            shrinkageQty: l.shrinkageQty.toNumber(),
+            unitCost: l.unitCost.toNumber(),
+          })),
+        );
+        return roundCents(c.cogs + c.shrinkage);
+      })()
+    : null;
 
   return {
     id: doc.id,
@@ -246,7 +318,22 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
     cancelledByLabel: labelFor(doc.cancelledById),
     cancelledAt: doc.cancelledAt,
     cancelReason: doc.cancelReason,
-    lines: doc.lines.map((l) => ({
+    storeMarginPercent: doc.store.marginPercent === null ? null : Number(doc.store.marginPercent),
+    storePaymentTempo: doc.store.paymentTempo,
+    total: preview ? preview.total : doc.total === null ? null : Number(doc.total),
+    unpricedKeys: preview?.unpricedKeys ?? [],
+    invoiceDate: doc.invoiceDate,
+    dueDate: doc.dueDate,
+    salesmanId: doc.salesmanId,
+    salesmanLabel: labelFor(doc.salesmanId),
+    baseline: doc.baseline,
+    baselineReason: doc.baselineReason,
+    unrelievedCost,
+    receivableId: doc.receivable?.id ?? null,
+    taxInvoiceId: doc.taxInvoice?.id ?? null,
+    journalPending: journalFlags.some(Boolean),
+    defaultSalesmanId,
+    lines: doc.lines.map((l, i) => ({
       id: l.id,
       itemId: l.itemId,
       variantSku: l.variantSku,
@@ -266,6 +353,8 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
       resolution: l.resolution,
       resolutionReason: l.resolutionReason,
       unitCost: l.unitCost.toNumber(),
+      unitPrice: preview ? preview.lines[i].unitPrice : l.unitPrice === null ? null : Number(l.unitPrice),
+      lineTotal: preview ? preview.lines[i].lineTotal : l.lineTotal === null ? null : Number(l.lineTotal),
       held: isLineHeld({ gapQty: roundQty(l.gapQty.toNumber()), resolution: l.resolution }, doc.method),
     })),
   };

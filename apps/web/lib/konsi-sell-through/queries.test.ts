@@ -165,6 +165,57 @@ d("konsi sell-through queries (test bed only)", () => {
     expect(approved!.approvedAt).not.toBeNull();
   }, SLOW);
 
+  it("a DRAFT report previews unit prices, line totals and the total from the same pricing rule approve uses", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    /* SHELF_COUNT billing 4 @ margin 20 on sellingPrice 40000 */
+    const stocktakeId = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+
+    const detail = await getSellThrough(id);
+    expect(detail?.lines[0]).toMatchObject({ unitPrice: 50000, lineTotal: 200000 });
+    expect(detail?.total).toBe(200000);
+    expect(detail?.unpricedKeys).toEqual([]);
+    /* the fixture's konsi order salesman is not a candidate */
+    expect(detail?.defaultSalesmanId).toBeNull();
+  }, SLOW);
+
+  it("an invoiced report returns the stored invoice, receivable and faktur ids", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+
+    await fx.approve(id);
+    const detail = await getSellThrough(id);
+    expect(detail).toMatchObject({ baseline: false, total: 200000, salesmanId: state.salesmanId, unrelievedCost: null, journalPending: false });
+    expect(detail?.receivableId).not.toBeNull();
+    expect(detail?.taxInvoiceId).not.toBeNull();
+  }, SLOW);
+
+  it("a baseline report shows the cost not relieved from GL inventory and no prices", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+
+    await fx.approveBaseline(id);
+    const detail = await getSellThrough(id);
+    expect(detail).toMatchObject({ baseline: true, total: null, unrelievedCost: 40000 });
+    expect(detail?.lines[0].unitPrice).toBeNull();
+  }, SLOW);
+
+  it("the list flags a baseline report", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+
+    await fx.approveBaseline(id);
+    const { items } = await listSellThroughs({ storeId: state.storeId, page: 1, pageSize: 10 });
+    expect(items.find((i) => i.id === id)?.baseline).toBe(true);
+  }, SLOW);
+
   it("chains: the second report's previousDocNo names the first report's docNo", async () => {
     await setMethod("SHELF_COUNT");
     await transferIn(6);

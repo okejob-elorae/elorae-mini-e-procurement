@@ -48,11 +48,8 @@ export async function listTaxInvoices(params: {
   const [rows, total, countRows] = await Promise.all([
     prisma.taxInvoice.findMany({
       where,
-      /**
-       * Delivery-only sort key, correct only while no sell-through faktur exists; it must become
-       * source-agnostic before invoicing creates one (see docs/FOLLOWUPS.md).
-       */
-      orderBy: { delivery: { invoiceDate: "desc" } },
+      /* Issue order for both sources — delivery completion for putus, invoicing for konsi. */
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       skip: (params.page - 1) * params.perPage,
       take: params.perPage,
       select: {
