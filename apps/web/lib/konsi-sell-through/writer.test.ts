@@ -385,8 +385,8 @@ d("konsi sell-through writer (test bed only)", () => {
 
     /**
      * The real writer stamps the sale "now", after the boundary. Its ledger row is moved one
-     * second inside the window — test-only — to stand in for a movement that belongs to the
-     * period but committed after creation (a late-approved retur, say). Recomputed: pos 1,
+     * second inside the window — test-only — to stand in for a movement stamped inside the period
+     * whose transaction committed after creation (the boundary race). Recomputed: pos 1,
      * closing 0 + 6 − 0 − 1 − 4 = 1, against the stored pos 0 / closing 2.
      */
     const saleId = await spgSell(1);
