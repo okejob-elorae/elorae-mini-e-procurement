@@ -3425,6 +3425,7 @@
       "ITEM_NOT_FOUND": "One of the items on this document no longer exists.",
       "INVALID_REQUEST": "The submitted data was invalid. Reload the page and try again.",
       "DUPLICATE_LINE": "That item and variant is already on this document.",
+      "TRANSFER_PENDING": "Store transfer {detail} moved goods this count includes before the count was taken, and is still pending. Approve or cancel it first, then approve this count.",
       "NO_ASSIGNED_STORE": "You are not assigned to a store.",
       "NO_ACTIVE_VISIT": "You must be checked in at your store first.",
       "ERROR": "Something went wrong. Please try again."

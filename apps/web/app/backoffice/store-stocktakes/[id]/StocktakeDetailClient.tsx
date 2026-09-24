@@ -338,7 +338,7 @@ export function StocktakeDetailClient({
           router.refresh();
           return;
         }
-        toast.error(t(errKey(result.code)));
+        toast.error(t(errKey(result.code), { detail: result.detail ?? "" }));
       } catch {
         setApproveOpen(false);
         toast.error(t(errKey("ERROR")));
