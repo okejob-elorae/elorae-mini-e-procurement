@@ -278,10 +278,14 @@ export async function saveStocktakeCounts(input: {
  * excluded — the count already saw their goods gone or arrived, even though their ledger rows land
  * later (see the post-count block below). A transfer like that which is still PENDING, and moves
  * an item::variant this count counted, refuses the approval instead (`TRANSFER_PENDING`), because
- * once this count is approved the transfer can never be approved.
+ * once this count is approved the transfer can never be approved. That refusal still runs for a
+ * count whose `countFinishedAt` is null — it falls back to this approval's own instant as the
+ * count moment, matching the fallback `approveStoreTransfer`'s `COUNTED_SINCE_MOVE` guard already
+ * uses, so a legacy count can never approve first and strand a transfer behind that guard forever.
  * The ledger entry `setStoreStock` writes is then the true shrinkage or surplus at the count
  * moment, whatever moved since. A stocktake whose `countFinishedAt` is null was counted before
- * that column existed, and keeps the old behaviour: the bare counted figure. Nothing here refuses
+ * that column existed, and keeps the old behaviour for re-application: the bare counted figure,
+ * with the post-count exclusion below never running for it. Nothing here refuses
  * on an unbalanced count: a store may legitimately end approval still holding negative rows —
  * a post-count sale can take a line below zero too — and that is recorded and surfaced, never
  * blocked.
@@ -311,6 +315,13 @@ export async function approveStoreStocktake(input: {
     });
     if (!st) throw new StoreStocktakeError("NOT_FOUND");
     if (st.status !== "DRAFT" && st.status !== "PENDING_VERIFICATION") throw new StoreStocktakeError("INVALID_STATE");
+
+    /*
+     * Computed once, up front, so every use of "now" inside this approval — the TRANSFER_PENDING
+     * fallback count moment below and the `approvedAt` stamp at the end — is the exact same
+     * instant rather than two separate `new Date()` calls that could straddle a millisecond.
+     */
+    const approvedAt = new Date();
 
     const computed = st.lines.map((l) => {
       const expected = l.expectedQty.toNumber();
@@ -348,18 +359,26 @@ export async function approveStoreStocktake(input: {
      * PENDING: the count holds a move StoreStock has not recorded, and once this count is approved
      * the transfer is refused `COUNTED_SINCE_MOVE` forever. Refused here, naming the transfers, so
      * the admin approves or cancels them first. A transfer of keys this count left uncounted or
-     * never had cannot be in the count, so it does not refuse. A count with no `countFinishedAt`
-     * sets the bare counted figure and has no count moment to compare against, so it is not
-     * checked. Both variantSku columns are non-nullable, so the keys match exactly.
+     * never had cannot be in the count, so it does not refuse. The count moment is
+     * `countFinishedAt` — or, for a count saved before that column existed, `approvedAt` above
+     * (the same instant this approval stamps on the document below, not a second `new Date()`).
+     * That fallback matches the one `approveStoreTransfer`'s own `COUNTED_SINCE_MOVE` guard already
+     * uses for a null-`countFinishedAt` count (`approvedAt` there too), so the two guards agree on
+     * the same instant for the same document; without it a legacy count could approve first and
+     * strand the transfer behind `COUNTED_SINCE_MOVE` forever, unable to ever approve. This
+     * fallback governs the refusal only — the post-count exclusion below still skips entirely for
+     * a null `countFinishedAt`, unchanged. Both variantSku columns are non-nullable, so the keys
+     * match exactly.
      */
     const countedKeys = computed
       .filter((l) => l.counted !== null)
       .map((l) => ({ itemId: l.itemId, variantSku: l.variantSku ?? "" }));
-    if (st.countFinishedAt && countedKeys.length > 0) {
+    if (countedKeys.length > 0) {
+      const countMoment = st.countFinishedAt ?? approvedAt;
       const pendingTransfers = await tx.storeTransfer.findMany({
         where: {
           status: "PENDING",
-          movedAt: { lte: st.countFinishedAt },
+          movedAt: { lte: countMoment },
           OR: [{ fromStoreId: st.storeId }, { toStoreId: st.storeId }],
           lines: { some: { OR: countedKeys } },
         },
@@ -463,7 +482,7 @@ export async function approveStoreStocktake(input: {
       where: { id: st.id },
       data: {
         status: "APPROVED",
-        approvedAt: new Date(),
+        approvedAt,
         approvedById: input.approvedById,
         openKey: null,
         isFullCount,

@@ -485,8 +485,34 @@ d("store stocktake writer (test bed only)", () => {
     expect(st.status).toBe("APPROVED");
   });
 
-  it("skips the TRANSFER_PENDING check for a count saved before countFinishedAt existed", async () => {
-    await recordTransfer(storeId, storeBId, new Date(Date.now() - 120_000));
+  it("refuses TRANSFER_PENDING for a count saved before countFinishedAt existed, falling back to the approval instant as the count moment", async () => {
+    /*
+     * No countFinishedAt on this document (created directly, never through saveStocktakeCounts),
+     * so the only count moment available is this approval's own instant — matching the fallback
+     * `approveStoreTransfer`'s own COUNTED_SINCE_MOVE guard already uses for the same case, so the
+     * two guards never disagree about whether this count saw the move.
+     */
+    const { docNo } = await recordTransfer(storeId, storeBId, new Date(Date.now() - 120_000));
+    const id = await mkStocktake({
+      lines: [{ itemId: itemMainId, variantSku: "", productName: "Main", expectedQty: 10, countedQty: 7, reason: "recount", cause: "SHRINKAGE" }],
+    });
+
+    await expect(approveStoreStocktake({ stocktakeId: id, approvedById: adminId })).rejects.toMatchObject({ code: "TRANSFER_PENDING", detail: docNo });
+
+    const st = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } });
+    expect(st.status).toBe("DRAFT");
+    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId) } });
+    expect(Number(ss.qty)).toBe(10);
+  });
+
+  it("keeps setting the bare counted figure for a null-countFinishedAt count once the pending transfer is out of the way", async () => {
+    /*
+     * Same shape as the refusal case above, but the transfer is cancelled first — the pending
+     * check has nothing left to refuse, and the null-countFinishedAt re-application behaviour
+     * (bare counted figure, no post-count exclusion) is unchanged by this fix.
+     */
+    const { transferId } = await recordTransfer(storeId, storeBId, new Date(Date.now() - 120_000));
+    await prisma.storeTransfer.update({ where: { id: transferId }, data: { status: "CANCELLED" } });
     const id = await mkStocktake({
       lines: [{ itemId: itemMainId, variantSku: "", productName: "Main", expectedQty: 10, countedQty: 7, reason: "recount", cause: "SHRINKAGE" }],
     });
