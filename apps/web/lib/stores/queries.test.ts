@@ -242,6 +242,13 @@ d("store price discount guard (test bed only)", () => {
     await prisma.store.deleteMany({ where: { id: { in: createdIds.map((id) => seededId(id)) } } });
   });
 
+  /* A refusal that wrongly succeeds still created a row; record its id so the teardown removes it. */
+  const tracked = (created: Promise<{ id: string }>) =>
+    created.then((row) => {
+      createdIds.push(row.id);
+      return row;
+    });
+
   it("accepts a valid percent and stores it", async () => {
     const created = await createStore(putusFields(`TEST-SQ-DISC-OK-${token}`, 15));
     createdIds.push(created.id);
@@ -260,27 +267,36 @@ d("store price discount guard (test bed only)", () => {
     expect(created.priceDiscountPercent).toBe(0);
   });
 
+  it("stores the value it validated, so -0.005 lands as 0 and 99.994 as 99.99", async () => {
+    for (const [suffix, given, stored] of [["RNEG", -0.005, 0], ["RDN", 99.994, 99.99]] as const) {
+      const created = await createStore(putusFields(`TEST-SQ-DISC-${suffix}-${token}`, given));
+      createdIds.push(created.id);
+      const row = await prisma.store.findUniqueOrThrow({ where: { id: seededId(created.id) }, select: { priceDiscountPercent: true } });
+      expect(Number(row.priceDiscountPercent)).toBe(stored);
+    }
+  });
+
   it("refuses a negative percent", async () => {
     await expect(
-      createStore(putusFields(`TEST-SQ-DISC-NEG-${token}`, -5)),
+      tracked(createStore(putusFields(`TEST-SQ-DISC-NEG-${token}`, -5))),
     ).rejects.toBeInstanceOf(InvalidPriceDiscountPercentError);
   });
 
   it("refuses a percent of exactly 100", async () => {
     await expect(
-      createStore(putusFields(`TEST-SQ-DISC-100-${token}`, 100)),
+      tracked(createStore(putusFields(`TEST-SQ-DISC-100-${token}`, 100))),
     ).rejects.toBeInstanceOf(InvalidPriceDiscountPercentError);
   });
 
   it("refuses a percent above 100", async () => {
     await expect(
-      createStore(putusFields(`TEST-SQ-DISC-150-${token}`, 150)),
+      tracked(createStore(putusFields(`TEST-SQ-DISC-150-${token}`, 150))),
     ).rejects.toBeInstanceOf(InvalidPriceDiscountPercentError);
   });
 
   it("refuses a non-null percent on a KONSI store", async () => {
     await expect(
-      createStore(konsiFields(`TEST-SQ-DISC-KONSI-${token}`, 10)),
+      tracked(createStore(konsiFields(`TEST-SQ-DISC-KONSI-${token}`, 10))),
     ).rejects.toBeInstanceOf(KonsiPriceDiscountNotAllowedError);
   });
 
@@ -366,6 +382,13 @@ d("store sell-through method guard (test bed only)", () => {
     await prisma.store.deleteMany({ where: { id: { in: createdIds.map((id) => seededId(id)) } } });
   });
 
+  /* A refusal that wrongly succeeds still created a row; record its id so the teardown removes it. */
+  const tracked = (created: Promise<{ id: string }>) =>
+    created.then((row) => {
+      createdIds.push(row.id);
+      return row;
+    });
+
   it("persists SPG_POS on a KONSI store", async () => {
     const created = await createStore(konsiFields(`TEST-SQ-STM-OK-${token}`, "SPG_POS"));
     createdIds.push(created.id);
@@ -374,7 +397,7 @@ d("store sell-through method guard (test bed only)", () => {
 
   it("refuses a non-null method on a PUTUS store", async () => {
     await expect(
-      createStore(putusFields(`TEST-SQ-STM-PUTUS-${token}`, "SPG_POS")),
+      tracked(createStore(putusFields(`TEST-SQ-STM-PUTUS-${token}`, "SPG_POS"))),
     ).rejects.toBeInstanceOf(SellThroughMethodRequiresKonsiError);
   });
 
@@ -479,6 +502,13 @@ d("store markup guard (test bed only)", () => {
     await prisma.store.deleteMany({ where: { id: { in: createdIds.map((id) => seededId(id)) } } });
   });
 
+  /* A refusal that wrongly succeeds still created a row; record its id so the teardown removes it. */
+  const tracked = (created: Promise<{ id: string }>) =>
+    created.then((row) => {
+      createdIds.push(row.id);
+      return row;
+    });
+
   it("stores a valid markup, null, 0 and the column ceiling as given", async () => {
     for (const [suffix, markupPercent] of [["OK", 20], ["NULL", null], ["ZERO", 0], ["MAX", 999.99]] as const) {
       const created = await createStore(konsiFields(`TEST-SQ-MKP-${suffix}-${token}`, markupPercent));
@@ -487,15 +517,33 @@ d("store markup guard (test bed only)", () => {
     }
   });
 
-  it("validates what the column will store, so 999.994 is accepted as 999.99", async () => {
-    const created = await createStore(konsiFields(`TEST-SQ-MKP-RDN-${token}`, 999.994));
+  /**
+   * The writer persists the value it validated. A raw -0.005 would otherwise pass the guard (it
+   * rounds to 0) and land as -0.01, since MariaDB rounds half away from zero — a stored markup every
+   * SPG sale at the store then refuses as `NO_PRICE`.
+   */
+  it("stores the value it validated, so -0.005 lands as 0 and 999.994 as 999.99", async () => {
+    for (const [suffix, given, stored] of [["RNEG", -0.005, 0], ["RDN", 999.994, 999.99]] as const) {
+      const created = await createStore(konsiFields(`TEST-SQ-MKP-${suffix}-${token}`, given));
+      createdIds.push(created.id);
+      expect(created.markupPercent).toBe(stored);
+      const row = await prisma.store.findUniqueOrThrow({ where: { id: seededId(created.id) }, select: { markupPercent: true } });
+      expect(Number(row.markupPercent)).toBe(stored);
+    }
+  });
+
+  it("stores the rounded value on update too", async () => {
+    const created = await createStore(konsiFields(`TEST-SQ-MKP-URND-${token}`, 20));
     createdIds.push(created.id);
-    expect(created.markupPercent).toBe(999.99);
+    const updated = await updateStore(created.id, konsiFields(`TEST-SQ-MKP-URND-${token}`, -0.005));
+    expect(updated.markupPercent).toBe(0);
+    const row = await prisma.store.findUniqueOrThrow({ where: { id: seededId(created.id) }, select: { markupPercent: true } });
+    expect(Number(row.markupPercent)).toBe(0);
   });
 
   it("refuses a negative markup, one above the ceiling, and one that rounds above it in the column", async () => {
     for (const [suffix, markupPercent] of [["NEG", -1], ["OVER", 1000], ["RUP", 999.996]] as const) {
-      await expect(createStore(konsiFields(`TEST-SQ-MKP-${suffix}-${token}`, markupPercent))).rejects.toBeInstanceOf(
+      await expect(tracked(createStore(konsiFields(`TEST-SQ-MKP-${suffix}-${token}`, markupPercent)))).rejects.toBeInstanceOf(
         InvalidMarkupPercentError,
       );
     }

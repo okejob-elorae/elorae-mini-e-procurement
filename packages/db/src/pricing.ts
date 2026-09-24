@@ -49,8 +49,8 @@ export function roundToWholeRupiah(value: number): number {
  * Whether a store markup can price a KONSI sale: a finite number from 0 to MARKUP_PERCENT_MAX
  * inclusive. `undefined` counts as invalid on purpose — it is what a Prisma `select` that forgot
  * the column hands over, and treating it as invalid flags the price instead of computing NaN.
- * The one spelling of the rule: the KONSI pricing branch, the store write boundary and the konsi
- * order screen all call it.
+ * The one spelling of the rule: the KONSI pricing branch, the SPG POS's `isSpgStoreMarkupMissing`,
+ * the store write boundary and the konsi order screen all call it.
  */
 export function isValidMarkupPercent(markupPercent: number | null | undefined): markupPercent is number {
   return (

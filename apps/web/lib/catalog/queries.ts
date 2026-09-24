@@ -47,7 +47,7 @@ export function serializeCatalogItem(
   globalMin: number,
 ): CatalogItem {
   const inv = aggregateInventoryValues(row.inventoryValues);
-  /* Konsi is a consignment transfer, not a sale: the salesman never sees pricing (spec D6/D9). Keep the retail price off the wire entirely, not just hidden in the UI. */
+  /* Konsi is a consignment transfer, not a sale: the salesman never sees pricing. Keep the retail price off the wire entirely, not just hidden in the UI. */
   const isKonsi = store.termsType === "KONSI";
   const { price, label } = isKonsi
     ? { price: null, label: null }

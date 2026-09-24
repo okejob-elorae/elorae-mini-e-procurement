@@ -77,13 +77,32 @@ export class KonsiPriceDiscountNotAllowedError extends Error {
   }
 }
 
+/**
+ * Rounds a percent to the two decimals its Decimal(5,2) column holds. `createStore`/`updateStore`
+ * validate AND persist this value, never the raw input, so a guard cannot pass a figure the column
+ * then stores differently: 99.999 passes a raw `< 100` check but lands as 100.00, and a raw -0.005
+ * lands as -0.01 because MariaDB rounds half away from zero, while `Math.round` takes it to 0 —
+ * either stored figure is one `computeStorePrice` flags. `Math.round` yields -0 there, which is
+ * normalised to 0.
+ */
+function toPercentColumnScale(percent: number | null): number | null {
+  if (percent === null) return null;
+  const rounded = Math.round(percent * 100) / 100;
+  return rounded === 0 ? 0 : rounded;
+}
+
+function atColumnScale(input: StoreFields): StoreFields {
+  return {
+    ...input,
+    markupPercent: toPercentColumnScale(input.markupPercent),
+    priceDiscountPercent: toPercentColumnScale(input.priceDiscountPercent),
+  };
+}
+
+/* Takes the fields `atColumnScale` returns, so the range check runs on the figure the column stores. */
 function assertValidPriceDiscount(input: Pick<StoreFields, "termsType" | "priceDiscountPercent">): void {
   if (input.priceDiscountPercent === null) return;
-  // Validate what `toDecimalOrNull` will actually persist (Decimal(5,2)), not the raw JS number —
-  // e.g. 99.999 passes a raw `< 100` check but rounds to 100.00 in the column, which
-  // computeStorePrice then flags and prices at full list.
-  const stored = Math.round(input.priceDiscountPercent * 100) / 100;
-  if (stored < 0 || stored >= 100) {
+  if (input.priceDiscountPercent < 0 || input.priceDiscountPercent >= 100) {
     throw new InvalidPriceDiscountPercentError(input.priceDiscountPercent);
   }
   if (input.termsType === "KONSI") {
@@ -104,11 +123,10 @@ export class InvalidMarkupPercentError extends Error {
   }
 }
 
+/* Takes the fields `atColumnScale` returns, like `assertValidPriceDiscount`. */
 function assertValidMarkupPercent(input: Pick<StoreFields, "markupPercent">): void {
   if (input.markupPercent === null) return;
-  /* Validate what the Decimal(5,2) column will persist, the same way assertValidPriceDiscount does. */
-  const stored = Math.round(input.markupPercent * 100) / 100;
-  if (!isValidMarkupPercent(stored)) {
+  if (!isValidMarkupPercent(input.markupPercent)) {
     throw new InvalidMarkupPercentError(input.markupPercent);
   }
 }
@@ -229,7 +247,8 @@ export async function getStore(id: string) {
   return s ? serializeStore(s) : null;
 }
 
-export async function createStore(input: StoreFields): Promise<StoreListItem> {
+export async function createStore(rawInput: StoreFields): Promise<StoreListItem> {
+  const input = atColumnScale(rawInput);
   assertValidMarkupPercent(input);
   assertValidPriceDiscount(input);
   assertValidSellThroughMethod(input);
@@ -255,7 +274,8 @@ export async function createStore(input: StoreFields): Promise<StoreListItem> {
   return serializeStore(created);
 }
 
-export async function updateStore(id: string, input: StoreFields): Promise<StoreListItem> {
+export async function updateStore(id: string, rawInput: StoreFields): Promise<StoreListItem> {
+  const input = atColumnScale(rawInput);
   assertValidMarkupPercent(input);
   assertValidPriceDiscount(input);
   assertValidSellThroughMethod(input);
