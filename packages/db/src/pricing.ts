@@ -53,7 +53,7 @@ export function computeStorePrice(input: StorePriceInput): StorePrice {
     return { price: roundCents(sellingPrice * (1 - pct / 100)), label: SALE_LABEL, flagged: false };
   }
 
-  // KONSI: gross up to the store's retail price (informational). Unaffected by priceDiscountPercent.
+  /* KONSI: gross up to the store's retail price — the price a sell-through report invoices the store at. Unaffected by priceDiscountPercent. */
   const m = marginPercent;
   if (m === null || m < 0 || m >= 100) {
     return { price: sellingPrice, label: SALE_LABEL, flagged: true };

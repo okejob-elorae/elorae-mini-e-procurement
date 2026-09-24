@@ -11,6 +11,7 @@ import { createStoreStocktake, saveStocktakeCounts, approveStoreStocktake } from
 import { createFieldReturn } from "@/lib/field-sales/retur/writer";
 import { receiveFieldReturn } from "@/lib/field-sales/retur/receive-writer";
 import { approveFieldReturn } from "@/lib/field-sales/retur/approve-writer";
+import { approveSellThrough } from "./writer";
 
 export type SellThroughFixtureState = {
   run: string;
@@ -20,6 +21,8 @@ export type SellThroughFixtureState = {
   userId: string;
   visitId: string;
   orderIds: string[];
+  salesmanId: string;
+  roleId: string;
 };
 
 /**
@@ -43,6 +46,8 @@ export function createSellThroughFixtures() {
     userId: "",
     visitId: "",
     orderIds: [],
+    salesmanId: "",
+    roleId: "",
   };
 
   async function beforeEach() {
@@ -53,6 +58,8 @@ export function createSellThroughFixtures() {
     state.userId = "";
     state.visitId = "";
     state.orderIds = [];
+    state.salesmanId = "";
+    state.roleId = "";
     state.run = `${token}-${++runCounter}`;
 
     const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-KSTW-${state.run}`, nameId: "pcs", nameEn: "pcs" } });
@@ -94,6 +101,22 @@ export function createSellThroughFixtures() {
 
     const visit = await prisma.storeVisit.create({ data: { storeId: state.storeId, userId: state.userId, checkinLat: -6.2, checkinLng: 106.8 } });
     state.visitId = visit.id;
+
+    const permission = (code: string) => ({
+      connectOrCreate: { where: { code }, create: { code, module: code.split(":")[0], action: code.split(":")[1] } },
+    });
+    const role = await prisma.roleDefinition.create({
+      data: {
+        name: `TEST-KSTW-SALESMAN-${state.run}`,
+        isSystem: false,
+        permissions: { create: [{ permission: permission("settlements:submit") }, { permission: permission("pwa:access") }] },
+      },
+    });
+    state.roleId = role.id;
+    const salesman = await prisma.user.create({
+      data: { email: `test-kstw-sm-${state.run}@example.com`, name: "Test Sell-through Salesman", roleId: state.roleId },
+    });
+    state.salesmanId = salesman.id;
   }
 
   async function afterEach() {
@@ -113,6 +136,9 @@ export function createSellThroughFixtures() {
 
     const seededOrderIds = state.orderIds.map((id) => seededId(id));
 
+    /* Children of a report's optional 1:1 go first: deleting the report would null their source column and the one-source CHECK refuses that. */
+    await prisma.taxInvoice.deleteMany({ where: { sellThrough: { storeId: seededId(state.storeId) } } });
+    await prisma.receivable.deleteMany({ where: { storeId: seededId(state.storeId) } });
     await prisma.konsiSellThroughLine.deleteMany({ where: { sellThrough: { storeId: seededId(state.storeId) } } });
     await prisma.konsiSellThrough.deleteMany({ where: { storeId: seededId(state.storeId) } });
     await prisma.fieldReturnLine.deleteMany({ where: { returnDoc: { storeId: seededId(state.storeId) } } });
@@ -142,6 +168,8 @@ export function createSellThroughFixtures() {
     await prisma.store.deleteMany({ where: { id: seededId(state.storeId) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(state.uomId) } });
     await prisma.user.deleteMany({ where: { id: seededId(state.userId) } });
+    await prisma.user.deleteMany({ where: { id: seededId(state.salesmanId) } });
+    await prisma.roleDefinition.deleteMany({ where: { id: seededId(state.roleId) } });
   }
 
   /**
@@ -239,7 +267,35 @@ export function createSellThroughFixtures() {
   const onlyLine = (sellThroughId: string) =>
     prisma.konsiSellThroughLine.findFirstOrThrow({ where: { sellThroughId: seededId(sellThroughId) } });
 
-  return { state, beforeEach, afterEach, tick, setMethod, transferIn, spgSell, count, raiseRetur, settleRetur, onlyLine };
+  async function approve(id: string, overrides: Partial<{ invoiceDate: Date; salesmanId: string | null }> = {}) {
+    return approveSellThrough({
+      id,
+      approvedById: state.userId,
+      mode: "INVOICE",
+      invoiceDate: overrides.invoiceDate ?? new Date(),
+      salesmanId: overrides.salesmanId === undefined ? state.salesmanId : overrides.salesmanId,
+    });
+  }
+
+  async function approveBaseline(id: string, reason = "Billed by hand before go-live.") {
+    return approveSellThrough({ id, approvedById: state.userId, mode: "BASELINE", reason });
+  }
+
+  return {
+    state,
+    beforeEach,
+    afterEach,
+    tick,
+    setMethod,
+    transferIn,
+    spgSell,
+    count,
+    raiseRetur,
+    settleRetur,
+    onlyLine,
+    approve,
+    approveBaseline,
+  };
 }
 
 export type SellThroughFixtures = ReturnType<typeof createSellThroughFixtures>;

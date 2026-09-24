@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma } from "@elorae/db";
-import { createSellThrough, resolveSellThroughLine, approveSellThrough, cancelSellThrough } from "./writer";
+import { createSellThrough, resolveSellThroughLine, cancelSellThrough } from "./writer";
 import { createSellThroughFixtures } from "./test-fixtures";
 import { listSellThroughs, getSellThrough, getSellThroughEligibility } from "./queries";
 
@@ -30,7 +30,7 @@ d("konsi sell-through queries (test bed only)", () => {
     /* Expected 6, counted 2 → the stocktake writes a −4 store row, i.e. gapQty 4. */
     const firstStocktake = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
     const r1 = await createSellThrough({ closingStocktakeId: firstStocktake, createdById: state.userId });
-    await approveSellThrough({ id: r1.id, approvedById: state.userId });
+    await fx.approve(r1.id);
 
     await tick();
     /* StoreStock now 2 (unchanged from report 1's closing); a matching count writes no ledger row. */
@@ -155,7 +155,7 @@ d("konsi sell-through queries (test bed only)", () => {
     expect(resolvedLine.shrinkageQty).toBe(2);
     expect(resolvedLine.held).toBe(false);
 
-    await approveSellThrough({ id, approvedById: state.userId });
+    await fx.approve(id);
     const approved = await getSellThrough(id);
     expect(approved!.status).toBe("APPROVED");
     expect(approved!.approvedById).toBe(state.userId);
@@ -165,12 +165,64 @@ d("konsi sell-through queries (test bed only)", () => {
     expect(approved!.approvedAt).not.toBeNull();
   }, SLOW);
 
+  it("a DRAFT report previews unit prices, line totals and the total from the same pricing rule approve uses", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    /* SHELF_COUNT billing 4 @ margin 20 on sellingPrice 40000 */
+    const stocktakeId = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+
+    const detail = await getSellThrough(id);
+    expect(detail?.lines[0]).toMatchObject({ unitPrice: 50000, lineTotal: 200000 });
+    expect(detail?.total).toBe(200000);
+    expect(detail?.unpricedKeys).toEqual([]);
+    /* the fixture's konsi order salesman is not a candidate */
+    expect(detail?.defaultSalesmanId).toBeNull();
+  }, SLOW);
+
+  it("an invoiced report returns the stored invoice, receivable and faktur ids", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+
+    await fx.approve(id);
+    const detail = await getSellThrough(id);
+    /* The writer posts no journal — the action does, after commit — so revenue and COGS are both still owed here. */
+    expect(detail).toMatchObject({ baseline: false, total: 200000, salesmanId: state.salesmanId, unrelievedCost: null, journalPending: true });
+    expect(detail?.receivableId).not.toBeNull();
+    expect(detail?.taxInvoiceId).not.toBeNull();
+  }, SLOW);
+
+  it("a baseline report shows the cost not relieved from GL inventory and no prices", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+
+    await fx.approveBaseline(id);
+    const detail = await getSellThrough(id);
+    expect(detail).toMatchObject({ baseline: true, total: null, unrelievedCost: 40000, journalPending: false });
+    expect(detail?.lines[0].unitPrice).toBeNull();
+  }, SLOW);
+
+  it("the list flags a baseline report", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+
+    await fx.approveBaseline(id);
+    const { items } = await listSellThroughs({ storeId: state.storeId, page: 1, pageSize: 10 });
+    expect(items.find((i) => i.id === id)?.baseline).toBe(true);
+  }, SLOW);
+
   it("chains: the second report's previousDocNo names the first report's docNo", async () => {
     await setMethod("SHELF_COUNT");
     await transferIn(6);
     const first = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
     const r1 = await createSellThrough({ closingStocktakeId: first, createdById: state.userId });
-    await approveSellThrough({ id: r1.id, approvedById: state.userId });
+    await fx.approve(r1.id);
 
     await tick();
     await spgSell(1);
@@ -236,7 +288,7 @@ d("konsi sell-through queries (test bed only)", () => {
     await tick();
     const later = await count(6);
     const report = await createSellThrough({ closingStocktakeId: later, createdById: state.userId });
-    await approveSellThrough({ id: report.id, approvedById: state.userId });
+    await fx.approve(report.id);
 
     await expect(getSellThroughEligibility(earlier)).resolves.toEqual({ eligible: false, reason: "OUT_OF_ORDER" });
   }, SLOW);

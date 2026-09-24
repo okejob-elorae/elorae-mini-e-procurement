@@ -15,8 +15,11 @@ import {
 } from "./derive";
 import { loadSellThroughInputs, stocktakeBoundary } from "./window";
 import { SellThroughError } from "./errors";
+import { priceSellThroughLines } from "./pricing";
+import { isInvoiceDateAllowed, dueDateFor } from "./invoice-dates";
+import { isSellThroughSalesmanCandidate } from "./salesman-candidates";
 
-/* A UX bound on a free-text reason — both columns are TEXT. The screens cap their inputs at the same figure. */
+/* A UX bound on a free-text reason — all three columns (resolutionReason, baselineReason, cancelReason) are TEXT. The screens cap their inputs at the same figure. */
 const REASON_MAX_LENGTH = 1000;
 
 /* The ledger-derived figures approve re-derives and compares; everything else on a line is a snapshot or an admin decision. */
@@ -308,11 +311,21 @@ export async function resolveSellThroughLine(input: {
   });
 }
 
+export type ApproveSellThroughInput =
+  | { id: string; approvedById: string; mode: "INVOICE"; invoiceDate: Date; salesmanId: string | null }
+  | { id: string; approvedById: string; mode: "BASELINE"; reason: string };
+
 /**
- * Freezes a DRAFT report. It moves no money and no stock. Re-checks, in order: the store is still
- * KONSI (`NOT_KONSI`), no retur was in flight at the closing count (`RETUR_IN_FLIGHT` — a DRAFT
- * created before that rule existed must not slip through), the period still derives to the
- * stored figures (`STALE`), and every SPG_POS gap line has a saved resolution (`HELD`).
+ * Freezes a DRAFT report — and approving IS invoicing. INVOICE mode prices every line at the
+ * store's price, stamps the invoice date, the due date, the total and the salesman, and creates
+ * the receivable and faktur when the total is above zero. BASELINE mode is for a store's first
+ * report only: it freezes the figures with a reason and bills nothing, for a period already
+ * invoiced by hand outside the ERP. Journals are posted by the action after commit, not here.
+ *
+ * It moves no stock. Re-checks, in order: the store is still KONSI (`NOT_KONSI`), no retur was in
+ * flight at the closing count (`RETUR_IN_FLIGHT` — a DRAFT created before that rule existed must
+ * not slip through), the period still derives to the stored figures (`STALE`), and every SPG_POS
+ * gap line has a saved resolution (`HELD`).
  *
  * `STALE` catches the one movement that can still reach a window after creation: a row stamped at
  * or before the boundary by a transaction that committed after the report read it (the race in
@@ -321,7 +334,7 @@ export async function resolveSellThroughLine(input: {
  * actually reviewed. It runs BEFORE the hold, so an admin is never sent to resolve lines on a
  * report that has to be cancelled anyway.
  */
-export async function approveSellThrough(input: { id: string; approvedById: string }): Promise<{ ok: true }> {
+export async function approveSellThrough(input: ApproveSellThroughInput): Promise<{ ok: true; invoiced: boolean }> {
   return runSerializable(async (tx) => {
     const doc = await tx.konsiSellThrough.findUnique({
       where: { id: input.id },
@@ -332,9 +345,11 @@ export async function approveSellThrough(input: { id: string; approvedById: stri
         status: true,
         closingStocktakeId: true,
         previousId: true,
-        store: { select: { termsType: true } },
+        periodEnd: true,
+        store: { select: { termsType: true, marginPercent: true, paymentTempo: true } },
         lines: {
           select: {
+            id: true,
             itemId: true,
             variantSku: true,
             openingQty: true,
@@ -344,6 +359,8 @@ export async function approveSellThrough(input: { id: string; approvedById: stri
             gapQty: true,
             closingQty: true,
             resolution: true,
+            billedQty: true,
+            item: { select: { sellingPrice: true } },
           },
         },
       },
@@ -386,13 +403,73 @@ export async function approveSellThrough(input: { id: string; approvedById: stri
       }
     }
 
+    const approvedAt = new Date();
+
+    if (input.mode === "BASELINE") {
+      if (doc.previousId !== null) throw new SellThroughError("BASELINE_NOT_FIRST");
+      const reason = input.reason?.trim() ?? "";
+      if (reason === "") throw new SellThroughError("BASELINE_REASON_REQUIRED");
+      if (reason.length > REASON_MAX_LENGTH) throw new SellThroughError("BASELINE_REASON_REQUIRED", "REASON_TOO_LONG");
+      const flipped = await tx.konsiSellThrough.updateMany({
+        where: { id: doc.id, status: "DRAFT" },
+        data: { status: "APPROVED", approvedById: input.approvedById, approvedAt, baseline: true, baselineReason: reason },
+      });
+      if (flipped.count === 0) throw new SellThroughError("INVALID_STATE");
+      return { ok: true as const, invoiced: false };
+    }
+
+    const pricing = priceSellThroughLines({
+      marginPercent: doc.store.marginPercent === null ? null : Number(doc.store.marginPercent),
+      lines: doc.lines.map((l) => ({
+        key: lineKey(l.itemId, l.variantSku),
+        billedQty: roundQty(l.billedQty.toNumber()),
+        sellingPrice: l.item.sellingPrice === null ? null : Number(l.item.sellingPrice),
+      })),
+    });
+    if (pricing.unpricedKeys.length > 0) throw new SellThroughError("UNPRICED", pricing.unpricedKeys.join(","));
+    if (!isInvoiceDateAllowed(input.invoiceDate, doc.periodEnd, approvedAt)) throw new SellThroughError("INVALID_INVOICE_DATE");
+    if (pricing.total > 0 && input.salesmanId === null) throw new SellThroughError("SALESMAN_REQUIRED");
+    if (input.salesmanId !== null && !(await isSellThroughSalesmanCandidate(tx, input.salesmanId))) {
+      throw new SellThroughError("SALESMAN_INVALID");
+    }
+    const dueDate = dueDateFor(input.invoiceDate, doc.store.paymentTempo);
+
     const flipped = await tx.konsiSellThrough.updateMany({
       where: { id: doc.id, status: "DRAFT" },
-      data: { status: "APPROVED", approvedById: input.approvedById, approvedAt: new Date() },
+      data: {
+        status: "APPROVED",
+        approvedById: input.approvedById,
+        approvedAt,
+        invoiceDate: input.invoiceDate,
+        dueDate,
+        total: pricing.total,
+        salesmanId: input.salesmanId,
+      },
     });
     if (flipped.count === 0) throw new SellThroughError("INVALID_STATE");
 
-    return { ok: true as const };
+    for (const [i, l] of doc.lines.entries()) {
+      await tx.konsiSellThroughLine.update({
+        where: { id: l.id },
+        data: { unitPrice: pricing.lines[i].unitPrice, lineTotal: pricing.lines[i].lineTotal },
+      });
+    }
+
+    if (pricing.total > 0) {
+      await tx.receivable.create({
+        data: {
+          sellThroughId: doc.id,
+          storeId: doc.storeId,
+          invoiceDate: input.invoiceDate,
+          dueDate,
+          originalAmount: pricing.total,
+          outstandingAmount: pricing.total,
+        },
+      });
+      await tx.taxInvoice.create({ data: { sellThroughId: doc.id } });
+    }
+
+    return { ok: true as const, invoiced: true };
   });
 }
 

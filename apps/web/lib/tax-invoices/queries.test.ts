@@ -8,7 +8,7 @@ const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
-/* Newer nota first, so `orderBy: { delivery: { invoiceDate: "desc" } }` puts A on page 1. */
+/* A has the newer invoice date but the older faktur: createdAt desc puts B on page 1, an invoiceDate sort would put A. */
 const invoiceDateA = new Date("2026-02-01T00:00:00.000+07:00");
 const dueDateA = new Date("2026-02-08T00:00:00.000+07:00");
 const invoiceDateB = new Date("2026-01-01T00:00:00.000+07:00");
@@ -121,6 +121,20 @@ d("listTaxInvoices (test bed only)", () => {
     });
     deliveryBId = deliveryB.deliveryId;
 
+    /**
+     * Pin creation order explicitly, and against the invoice dates: both writes can land within the
+     * same millisecond otherwise, and an order that agreed with invoiceDate could not tell the two
+     * sort keys apart.
+     */
+    await prisma.taxInvoice.update({
+      where: { deliveryId: deliveryAId },
+      data: { createdAt: new Date("2026-01-02T00:00:00.000+07:00") },
+    });
+    await prisma.taxInvoice.update({
+      where: { deliveryId: deliveryBId },
+      data: { createdAt: new Date("2026-02-02T00:00:00.000+07:00") },
+    });
+
     /* B is the CREATED one; A stays PENDING. Set directly — the transition itself is the writer
        spec's subject, and going through it would add audit rows this teardown does not own. */
     await prisma.taxInvoice.update({
@@ -230,10 +244,10 @@ d("listTaxInvoices (test bed only)", () => {
     expect(first.rows).toHaveLength(1);
     expect(second.rows).toHaveLength(1);
 
-    /* Newest invoiceDate first — A (Feb) leads, B (Jan) lands on page 2. */
-    expect(first.rows[0].invoiceDate?.getTime()).toBe(invoiceDateA.getTime());
-    expect(second.rows[0].invoiceDate?.getTime()).toBe(invoiceDateB.getTime());
-    expect(second.rows[0].dueDate?.getTime()).toBe(dueDateB.getTime());
+    /* Newest faktur first — B leads despite its older invoice date, A lands on page 2. */
+    expect(first.rows[0].invoiceDate?.getTime()).toBe(invoiceDateB.getTime());
+    expect(first.rows[0].dueDate?.getTime()).toBe(dueDateB.getTime());
+    expect(second.rows[0].invoiceDate?.getTime()).toBe(invoiceDateA.getTime());
     expect(first.rows[0].id).not.toBe(second.rows[0].id);
   });
 
@@ -274,6 +288,13 @@ d("listTaxInvoices (test bed only)", () => {
   });
 
   it("represents a SELL_THROUGH-sourced faktur with the report's docNo and store, not the delivery's", async () => {
+    const sellThroughInvoiceDate = new Date("2026-03-31T00:00:00.000+07:00");
+    const sellThroughDueDate = new Date("2026-04-30T00:00:00.000+07:00");
+    await prisma.konsiSellThrough.update({
+      where: { id: sellThroughId },
+      data: { invoiceDate: sellThroughInvoiceDate, dueDate: sellThroughDueDate, total: 200000 },
+    });
+
     const { rows, total } = await listTaxInvoices({ q: sellThroughStoreName, page: 1, perPage: 10 });
     expect(total).toBe(1);
     expect(rows).toHaveLength(1);
@@ -286,13 +307,10 @@ d("listTaxInvoices (test bed only)", () => {
     expect(row.orderId).toBeNull();
     expect(row.storeId).toBe(sellThroughStoreId);
     expect(row.storeName).toBe(sellThroughStoreName);
-    /**
-     * Until invoicing stamps a sell-through report, these three stay null rather than borrowing a
-     * delivery's figures the row does not have.
-     */
-    expect(row.invoiceDate).toBeNull();
-    expect(row.dueDate).toBeNull();
-    expect(row.total).toBeNull();
+    /* The faktur resolver reads these straight off the report once invoicing has stamped them. */
+    expect(row.invoiceDate?.getTime()).toBe(sellThroughInvoiceDate.getTime());
+    expect(row.dueDate?.getTime()).toBe(sellThroughDueDate.getTime());
+    expect(row.total).toBe(200000);
   });
 
   it("finds a SELL_THROUGH-sourced faktur by the report's own docNo", async () => {

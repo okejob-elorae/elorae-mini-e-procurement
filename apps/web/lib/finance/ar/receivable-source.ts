@@ -134,7 +134,9 @@ export function resolveReceivableSource(row: ReceivableSourceRow): ReceivableSou
  * The DELIVERY arm is field for field the `delivery` selection `lib/tax-invoices/queries.ts`'s
  * `listTaxInvoices` read before it switched to this constant, so the switch changed no output.
  * The SELL_THROUGH arm adds `id` (needed for `sellThroughId`) and `storeId` alongside the nested
- * `store` relation, mirroring the delivery arm's own `orderId` + `order.store.*` shape.
+ * `store` relation, mirroring the delivery arm's own `orderId` + `order.store.*` shape, and reads
+ * `invoiceDate`/`dueDate`/`total` straight off the report, which stays null on every column until
+ * invoicing stamps them.
  */
 export const TAX_INVOICE_SOURCE_SELECT = {
   delivery: {
@@ -154,6 +156,9 @@ export const TAX_INVOICE_SOURCE_SELECT = {
       storeId: true,
       store: { select: { id: true, name: true, npwp: true } },
       periodEnd: true,
+      invoiceDate: true,
+      dueDate: true,
+      total: true,
     },
   },
 } as const;
@@ -173,6 +178,9 @@ export type TaxInvoiceSourceRow = {
     storeId: string;
     store: { id: string; name: string; npwp: string | null };
     periodEnd: Date;
+    invoiceDate: Date | null;
+    dueDate: Date | null;
+    total: Prisma.Decimal | number | null;
   } | null;
 };
 
@@ -195,13 +203,10 @@ export type TaxInvoiceSource =
       storeId: string;
       storeName: string;
       storeNpwp: string | null;
-      /**
-       * A report carries no invoice date, due date or total until invoicing stamps them; this arm
-       * must read them off the report once it does.
-       */
-      invoiceDate: null;
-      dueDate: null;
-      total: null;
+      /* Null only on a report never invoiced, which has no faktur; kept nullable because the row type cannot prove that. */
+      invoiceDate: Date | null;
+      dueDate: Date | null;
+      total: number | null;
       periodEnd: Date;
     };
 
@@ -227,9 +232,9 @@ export function resolveTaxInvoiceSource(row: TaxInvoiceSourceRow): TaxInvoiceSou
       storeId: row.sellThrough.storeId,
       storeName: row.sellThrough.store.name,
       storeNpwp: row.sellThrough.store.npwp,
-      invoiceDate: null,
-      dueDate: null,
-      total: null,
+      invoiceDate: row.sellThrough.invoiceDate,
+      dueDate: row.sellThrough.dueDate,
+      total: row.sellThrough.total === null ? null : Number(row.sellThrough.total),
       periodEnd: row.sellThrough.periodEnd,
     };
   }

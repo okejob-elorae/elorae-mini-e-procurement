@@ -379,6 +379,9 @@ export async function closeRemainderAction(orderId: string, reason: string): Pro
 /**
  * Stamps the first print of a nota tagihan and pings finance that a faktur pajak is now due.
  *
+ * A missing or empty id returns before anything runs: Prisma drops an `undefined` filter term, so
+ * the CAS below would otherwise match every unprinted faktur in the table.
+ *
  * Compare-and-swap, not read-then-write: a double-click on the print button would otherwise pass
  * a read-then-check twice before either write lands, notifying finance twice for the same
  * document. `updateMany`'s `count` says whether THIS call was the one that flipped
@@ -400,6 +403,7 @@ export async function closeRemainderAction(orderId: string, reason: string): Pro
  * silently stop reprints being audited at all.
  */
 export async function recordNotaTagihanPrinted(deliveryId: string): Promise<void> {
+  if (typeof deliveryId !== "string" || deliveryId === "") return;
   try {
     const session = await auth();
     if (!session?.user?.id) return;

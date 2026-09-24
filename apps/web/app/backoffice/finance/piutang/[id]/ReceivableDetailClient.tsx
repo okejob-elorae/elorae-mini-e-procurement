@@ -148,7 +148,7 @@ export function ReceivableDetailClient({
   const isOverdueBucket = r.bucket !== "CURRENT";
   /* Only a DELIVERY-sourced receivable has a delivery to post a journal against; `journalRetryable`
    * (server-resolved) already stays false for a SELL_THROUGH row, so this is a defensive narrow, not
-   * the real gate. */
+   * the real gate. Sell-through journals are retried from the report's own page. */
   const deliveryId = r.source.kind === "DELIVERY" ? r.source.deliveryId : null;
 
   /**
