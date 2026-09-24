@@ -6,7 +6,6 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { parseDateOnly } from "@/lib/date-only";
 import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
-import { isArJournalRetryable } from "@/lib/finance/ar/journal-pending";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import type { BuildKonsiSellThroughNotaOptions } from "@/lib/print/konsi-sell-through-nota-html";
@@ -19,7 +18,12 @@ import {
 } from "@/lib/konsi-sell-through/writer";
 import { SellThroughError, type SellThroughErrorCode } from "@/lib/konsi-sell-through/errors";
 import { SELL_THROUGH_RESOLUTIONS, type SellThroughResolutionValue } from "@/lib/konsi-sell-through/derive";
-import { SELL_THROUGH_JOURNAL_KINDS, SELL_THROUGH_JOURNAL_POSTERS, type SellThroughJournalKind } from "@/lib/konsi-sell-through/journal";
+import {
+  SELL_THROUGH_JOURNAL_KINDS,
+  SELL_THROUGH_JOURNAL_POSTERS,
+  sellThroughJournalGaps,
+  type SellThroughJournalKind,
+} from "@/lib/konsi-sell-through/journal";
 import { logPrint } from "./audit";
 
 export type SellThroughActionReason = SellThroughErrorCode | "FORBIDDEN" | "INVALID_REQUEST" | "UNEXPECTED" | "NOT_RETRYABLE";
@@ -136,9 +140,10 @@ function parseApproveRequest(input: unknown): ApproveRequest | null {
 
 /**
  * Posts every sell-through journal after the approve has committed. Each goes through
- * `postArJournalSafely`, so an unmapped account degrades to a JOURNAL_PENDING flag the report page
- * offers to retry, never a failed approve. `NOTHING_TO_POST` counts as posted on both the approve
- * path and the retry path — there is nothing left for that kind to post, so it is done either way.
+ * `postArJournalSafely`, so an unmapped account degrades to a JOURNAL_PENDING flag and a journal
+ * still missing, which the report page offers to retry, never a failed approve. `NOTHING_TO_POST`
+ * counts as posted on both the approve path and the retry path — there is nothing left for that
+ * kind to post, so it is done either way.
  */
 async function postSellThroughJournals(id: string, userId: string, kinds: readonly SellThroughJournalKind[]) {
   const posted: SellThroughJournalKind[] = [];
@@ -176,23 +181,23 @@ export type RetrySellThroughJournalsResult =
   | SellThroughActionFailure;
 
 /**
- * Re-posts the sell-through journals a JOURNAL_PENDING flag says failed. The entry gate is the
- * flag, never a missing journal: a report whose journal simply has nothing to post has none by
- * construction. Success is read from `postArJournalSafely`'s outcome, not a re-check of the gate,
- * which reads "still pending" forever once a kind has failed once.
+ * Posts the sell-through journals a report still owes. The entry gate is the missing journal
+ * itself (`sellThroughJournalGaps`), not a JOURNAL_PENDING flag: a flag never clears, and a crash
+ * between the approve commit and the posts leaves none at all. That gate is safe here because every
+ * report approved before invoicing existed is a baseline, which owes nothing — unlike the delivery
+ * sibling in `app/actions/field-sales-deliveries.ts`, whose backfilled receivables carry no journal
+ * by construction and so must stay gated on the flag. Each post still goes through
+ * `postArJournalSafely`, so a retry that fails again writes a flag like the first attempt did.
  */
 export async function retrySellThroughJournalsAction(id: unknown): Promise<RetrySellThroughJournalsResult> {
   const g = await guard();
   if ("ok" in g) return g;
   if (typeof id !== "string" || id === "") return { ok: false, reason: "INVALID_REQUEST" };
 
-  const retryable: SellThroughJournalKind[] = [];
-  for (const kind of SELL_THROUGH_JOURNAL_KINDS) {
-    if (await isArJournalRetryable(kind, id)) retryable.push(kind);
-  }
-  if (retryable.length === 0) return { ok: false, reason: "NOT_RETRYABLE" };
+  const owed = await sellThroughJournalGaps(id);
+  if (owed.length === 0) return { ok: false, reason: "NOT_RETRYABLE" };
 
-  const result = await postSellThroughJournals(id, g.userId, retryable);
+  const result = await postSellThroughJournals(id, g.userId, owed);
   revalidatePath(`/backoffice/konsi-sell-through/${id}`);
   return { ok: true, ...result };
 }

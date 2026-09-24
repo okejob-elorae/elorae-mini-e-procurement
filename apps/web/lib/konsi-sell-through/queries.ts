@@ -5,9 +5,8 @@ import { isLineHeld, roundQty, type SellThroughMethodValue, type SellThroughReso
 import { checkSellThroughPreconditions } from "./writer";
 import { SellThroughError, type SellThroughErrorCode } from "./errors";
 import { priceSellThroughLines } from "./pricing";
-import { sellThroughCostTotals, SELL_THROUGH_JOURNAL_KINDS } from "./journal";
+import { sellThroughCostTotals, sellThroughJournalGaps } from "./journal";
 import { defaultSellThroughSalesmanId } from "./salesman-candidates";
-import { isArJournalRetryable } from "@/lib/finance/ar/journal-pending";
 
 export type SellThroughStatusValue = "DRAFT" | "APPROVED" | "CANCELLED";
 
@@ -277,11 +276,11 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
         })
       : null;
   const invoiced = doc.status === "APPROVED" && !doc.baseline;
-  const [defaultSalesmanId, journalFlags] = await Promise.all([
+  const [defaultSalesmanId, journalGaps] = await Promise.all([
     doc.status === "DRAFT" ? defaultSellThroughSalesmanId(doc.storeId) : Promise.resolve(null),
-    invoiced ? Promise.all(SELL_THROUGH_JOURNAL_KINDS.map((k) => isArJournalRetryable(k, doc.id))) : Promise.resolve([]),
+    invoiced ? sellThroughJournalGaps(doc.id) : Promise.resolve([]),
   ]);
-  /* A baseline report was invoiced by hand before go-live: nothing here relieved its cost from GL inventory. */
+  /* A baseline period was billed outside the ERP, or approved before invoicing existed: nothing here relieved its cost from GL inventory. */
   const unrelievedCost = doc.baseline
     ? (() => {
         const c = sellThroughCostTotals(
@@ -331,7 +330,7 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
     unrelievedCost,
     receivableId: doc.receivable?.id ?? null,
     taxInvoiceId: doc.taxInvoice?.id ?? null,
-    journalPending: journalFlags.some(Boolean),
+    journalPending: journalGaps.length > 0,
     defaultSalesmanId,
     lines: doc.lines.map((l, i) => ({
       id: l.id,
