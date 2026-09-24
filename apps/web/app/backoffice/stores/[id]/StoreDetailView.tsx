@@ -586,8 +586,8 @@ export function StoreDetailView({
                 {store.termsType === "PUTUS" ? tForm("termsPutus") : tForm("termsKonsi")}
               </DetailField>
               <DetailField label={tForm("paymentTempo")}>{store.paymentTempo}</DetailField>
-              <DetailField label={tForm("marginPercent")}>
-                {store.marginPercent !== null ? `${store.marginPercent}%` : "—"}
+              <DetailField label={tForm("markupPercent")}>
+                {store.markupPercent !== null ? `${store.markupPercent}%` : "—"}
               </DetailField>
               <DetailField label={tForm("priceDiscountPercent")}>
                 {store.priceDiscountPercent !== null ? `${store.priceDiscountPercent}%` : "—"}
@@ -628,7 +628,7 @@ export function StoreDetailView({
             </DetailField>
             <DetailField label={tDetail("stats.terms")}>
               <span className="tabular-nums">
-                {store.paymentTempo}d · {store.marginPercent ?? "—"}%
+                {store.paymentTempo}d · {store.markupPercent ?? "—"}%
               </span>
             </DetailField>
           </dl>

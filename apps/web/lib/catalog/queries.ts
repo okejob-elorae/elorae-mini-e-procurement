@@ -21,7 +21,7 @@ export type CatalogItem = {
 };
 
 export type CatalogPayload = {
-  store: { id: string; termsType: "PUTUS" | "KONSI"; marginPercent: number | null; priceDiscountPercent: number | null };
+  store: { id: string; termsType: "PUTUS" | "KONSI"; markupPercent: number | null; priceDiscountPercent: number | null };
   items: CatalogItem[];
 };
 
@@ -41,21 +41,20 @@ const toNum = (v: unknown): number | null => (v == null ? null : Number(v));
 
 export function serializeCatalogItem(
   row: CatalogRow,
-  store: { termsType: "PUTUS" | "KONSI"; marginPercent: number | null; priceDiscountPercent: number | null },
+  store: { termsType: "PUTUS" | "KONSI"; markupPercent: number | null; priceDiscountPercent: number | null },
   imageUrl: string | null,
   neverSent: boolean,
   globalMin: number,
 ): CatalogItem {
   const inv = aggregateInventoryValues(row.inventoryValues);
-  // Konsi is a consignment transfer, not a sale: the salesman never sees pricing
-  // (spec D6/D9). Keep the gross-up off the wire entirely, not just hidden in the UI.
+  /* Konsi is a consignment transfer, not a sale: the salesman never sees pricing (spec D6/D9). Keep the retail price off the wire entirely, not just hidden in the UI. */
   const isKonsi = store.termsType === "KONSI";
   const { price, label } = isKonsi
     ? { price: null, label: null }
     : computeStorePrice({
         sellingPrice: toNum(row.sellingPrice),
         termsType: store.termsType,
-        marginPercent: store.marginPercent,
+        markupPercent: store.markupPercent,
         priceDiscountPercent: store.priceDiscountPercent,
       });
   const labelBySku = new Map(
@@ -93,14 +92,14 @@ export async function listCatalogForPwa(
 ): Promise<CatalogPayload | null> {
   const store = await prisma.store.findUnique({
     where: { id: storeId },
-    select: { id: true, isActive: true, termsType: true, marginPercent: true, priceDiscountPercent: true },
+    select: { id: true, isActive: true, termsType: true, markupPercent: true, priceDiscountPercent: true },
   });
   if (!store || !store.isActive) return null;
 
   const storeCtx = {
     id: store.id,
     termsType: store.termsType,
-    marginPercent: store.marginPercent ? store.marginPercent.toNumber() : null,
+    markupPercent: store.markupPercent ? store.markupPercent.toNumber() : null,
     priceDiscountPercent: store.priceDiscountPercent ? store.priceDiscountPercent.toNumber() : null,
   };
 

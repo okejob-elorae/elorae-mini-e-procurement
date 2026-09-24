@@ -34,7 +34,7 @@ d("konsi sell-through window (test bed only)", () => {
       const user = await prisma.user.create({ data: { email: `test-ksb-${token}@example.com`, name: "Test Admin" } });
       userId = user.id;
       const store = await prisma.store.create({
-        data: { code: `TEST-KSB-STORE-${token}`, name: "Test Konsi Store", address: "Test address", termsType: "KONSI", marginPercent: 20, isActive: true },
+        data: { code: `TEST-KSB-STORE-${token}`, name: "Test Konsi Store", address: "Test address", termsType: "KONSI", markupPercent: 20, isActive: true },
       });
       storeId = store.id;
       const item = await prisma.item.create({
@@ -170,11 +170,11 @@ d("konsi sell-through window (test bed only)", () => {
       const user = await prisma.user.create({ data: { email: `test-ksw1-${token}@example.com`, name: "Test Admin" } });
       userId = user.id;
       const store = await prisma.store.create({
-        data: { code: `TEST-KSW1-STORE-${token}`, name: "Test Konsi Store", address: "Test address", termsType: "KONSI", marginPercent: 20, isActive: true },
+        data: { code: `TEST-KSW1-STORE-${token}`, name: "Test Konsi Store", address: "Test address", termsType: "KONSI", markupPercent: 20, isActive: true },
       });
       storeId = store.id;
       const otherStore = await prisma.store.create({
-        data: { code: `TEST-KSW1-OTHER-${token}`, name: "Other Konsi Store", address: "Test address", termsType: "KONSI", marginPercent: 20, isActive: true },
+        data: { code: `TEST-KSW1-OTHER-${token}`, name: "Other Konsi Store", address: "Test address", termsType: "KONSI", markupPercent: 20, isActive: true },
       });
       otherStoreId = otherStore.id;
       const itemA = await prisma.item.create({
@@ -434,7 +434,7 @@ d("konsi sell-through window (test bed only)", () => {
       const user = await prisma.user.create({ data: { email: `test-ksw2-${token}@example.com`, name: "Test Admin" } });
       userId = user.id;
       const store = await prisma.store.create({
-        data: { code: `TEST-KSW2-STORE-${token}`, name: "Test Konsi Store", address: "Test address", termsType: "KONSI", marginPercent: 20, isActive: true },
+        data: { code: `TEST-KSW2-STORE-${token}`, name: "Test Konsi Store", address: "Test address", termsType: "KONSI", markupPercent: 20, isActive: true },
       });
       storeId = store.id;
       const item = await prisma.item.create({

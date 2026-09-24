@@ -114,7 +114,7 @@ async function upsertStore(
       address: "TBD — legacy import from LAIN-LAIN (address pending)",
       termsType: "PUTUS",
       paymentTempo: 0,
-      marginPercent: null,
+      markupPercent: null,
       isActive: true,
     },
   });

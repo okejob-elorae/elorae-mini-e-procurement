@@ -32,7 +32,7 @@ type StoreProps = {
   contactName: string | null;
   termsType: "PUTUS" | "KONSI";
   paymentTempo: number;
-  marginPercent: number | null;
+  markupPercent: number | null;
   lat: number | null;
   lng: number | null;
 };

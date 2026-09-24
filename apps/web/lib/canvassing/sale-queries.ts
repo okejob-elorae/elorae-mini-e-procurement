@@ -37,7 +37,7 @@ export async function getSellableVanStock(salesmanId: string, storeId?: string |
   });
   return rows.map((r) => {
     const sp = r.item.sellingPrice === null ? null : Number(r.item.sellingPrice);
-    const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", marginPercent: null, priceDiscountPercent });
+    const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", markupPercent: null, priceDiscountPercent });
     return {
       itemId: r.itemId, sku: r.item.sku, productName: r.item.nameId,
       variantSku: r.variantSku, variantLabel: variantDetailForSku(r.item.variants, r.variantSku),

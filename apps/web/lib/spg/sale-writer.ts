@@ -57,9 +57,9 @@ export async function recordSpgSale(input: {
       if (existing) return { ok: true, spgSaleId: existing.id, docNo: existing.docNo, changeGiven: Number(existing.changeGiven) };
     }
 
-    const store = await tx.store.findUnique({ where: { id: input.storeId }, select: { marginPercent: true, termsType: true, priceDiscountPercent: true } });
+    const store = await tx.store.findUnique({ where: { id: input.storeId }, select: { markupPercent: true, termsType: true, priceDiscountPercent: true } });
     if (!store) return { ok: false, code: "STORE_NOT_FOUND" };
-    const marginPercent = store.marginPercent === null ? null : Number(store.marginPercent);
+    const markupPercent = store.markupPercent === null ? null : Number(store.markupPercent);
     const priceDiscountPercent = store.priceDiscountPercent === null ? null : Number(store.priceDiscountPercent);
 
     // Load item price + meta for each line
@@ -80,7 +80,7 @@ export async function recordSpgSale(input: {
       const item = itemById.get(l.itemId);
       if (!item) return { ok: false, code: "NO_PRICE" };
       const sp = item.sellingPrice === null ? null : Number(item.sellingPrice);
-      const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", marginPercent, priceDiscountPercent });
+      const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", markupPercent, priceDiscountPercent });
       if (price === null) return { ok: false, code: "NO_PRICE" };
       priced.push({ line: l, item, unitPrice: price });
     }

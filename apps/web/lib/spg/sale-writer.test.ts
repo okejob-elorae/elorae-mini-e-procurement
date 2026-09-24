@@ -20,7 +20,7 @@ d("recordSpgSale (test bed only)", () => {
     await prisma.inventoryValue.create({ data: { itemId, variantSku: "", qtyOnHand: 100, reservedQty: 0, avgCost: 2000, totalValue: 200000 } });
     const s = await prisma.user.findFirstOrThrow({ where: { email: "salesman@elorae.com" } });
     salesmanId = s.id;
-    const store = await prisma.store.create({ data: { code: tag, name: "Toko SPG Test", address: "Jl. Test", termsType: "KONSI", marginPercent: 20, isActive: true } });
+    const store = await prisma.store.create({ data: { code: tag, name: "Toko SPG Test", address: "Jl. Test", termsType: "KONSI", markupPercent: 20, isActive: true } });
     storeId = store.id;
 
     const shortItem = await prisma.item.create({ data: { sku: `${tag}-SHORT`, nameId: "TS", nameEn: "TS", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 5000 } });

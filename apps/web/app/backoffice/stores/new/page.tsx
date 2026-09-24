@@ -19,7 +19,7 @@ export default async function NewStorePage() {
         contactName: null,
         termsType: "PUTUS",
         paymentTempo: 0,
-        marginPercent: null,
+        markupPercent: null,
         priceDiscountPercent: null,
         creditLimit: null,
         npwp: null,

@@ -64,7 +64,7 @@ d("store-change lifecycle writer (test bed only)", () => {
   });
 
   it("approve applies proposed to Store, clears pendingKey, leaves terms untouched", async () => {
-    const before = await prisma.store.findUnique({ where: { id: storeId }, select: { termsType: true, marginPercent: true } });
+    const before = await prisma.store.findUnique({ where: { id: storeId }, select: { termsType: true, markupPercent: true } });
     const sub = await submitStoreChangeRequest({ storeId, visitId, userId, proposed: base });
     const requestId = (sub as { ok: true; requestId: string }).requestId;
     const res = await approveStoreChangeRequest({ requestId, reviewerId: userId });
@@ -73,7 +73,7 @@ d("store-change lifecycle writer (test bed only)", () => {
     expect(store!.name).toBe("New Name");
     expect(Number(store!.lat)).toBeCloseTo(1.23);
     expect(store!.termsType).toBe(before!.termsType);
-    expect(store!.marginPercent).toEqual(before!.marginPercent);
+    expect(store!.markupPercent).toEqual(before!.markupPercent);
     const row = await prisma.storeChangeRequest.findUnique({ where: { id: requestId } });
     expect(row!.status).toBe("APPROVED");
     expect(row!.pendingKey).toBeNull();

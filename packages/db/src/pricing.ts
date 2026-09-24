@@ -1,7 +1,7 @@
 export type StorePriceInput = {
   sellingPrice: number | null;
   termsType: "PUTUS" | "KONSI";
-  marginPercent: number | null;
+  markupPercent: number | null;
   priceDiscountPercent: number | null;
 };
 
@@ -12,7 +12,14 @@ export type StorePrice = {
 };
 
 const SALE_LABEL = "Harga";
-const KONSI_LABEL = "Retail (info)";
+const KONSI_LABEL = "Harga retail";
+
+/**
+ * The largest markup a store can carry: the ceiling of the `Store.markupPercent` Decimal(5,2)
+ * column. The store write boundary refuses above it and `computeStorePrice` flags above it, and
+ * both read this one constant so the two bounds cannot drift apart.
+ */
+export const MARKUP_PERCENT_MAX = 999.99;
 
 /* Half-up to two decimal places (sen). */
 export function roundCents(value: number): number {
@@ -38,8 +45,24 @@ export function roundToWholeRupiah(value: number): number {
   return Math.round(value);
 }
 
+/**
+ * Whether a store markup can price a KONSI sale: a finite number from 0 to MARKUP_PERCENT_MAX
+ * inclusive. `undefined` counts as invalid on purpose — it is what a Prisma `select` that forgot
+ * the column hands over, and treating it as invalid flags the price instead of computing NaN.
+ * The one spelling of the rule: the KONSI pricing branch, the store write boundary and the konsi
+ * order screen all call it.
+ */
+export function isValidMarkupPercent(markupPercent: number | null | undefined): markupPercent is number {
+  return (
+    typeof markupPercent === "number" &&
+    Number.isFinite(markupPercent) &&
+    markupPercent >= 0 &&
+    markupPercent <= MARKUP_PERCENT_MAX
+  );
+}
+
 export function computeStorePrice(input: StorePriceInput): StorePrice {
-  const { sellingPrice, termsType, marginPercent, priceDiscountPercent } = input;
+  const { sellingPrice, termsType, markupPercent, priceDiscountPercent } = input;
   if (sellingPrice === null) return { price: null, label: null, flagged: false };
 
   if (termsType === "PUTUS") {
@@ -53,10 +76,14 @@ export function computeStorePrice(input: StorePriceInput): StorePrice {
     return { price: roundCents(sellingPrice * (1 - pct / 100)), label: SALE_LABEL, flagged: false };
   }
 
-  /* KONSI: gross up to the store's retail price — the price a sell-through report invoices the store at. Unaffected by priceDiscountPercent. */
-  const m = marginPercent;
-  if (m === null || m < 0 || m >= 100) {
+  /**
+   * KONSI: the retail price a konsi store's customer pays, the catalog price marked up by the
+   * store's markupPercent — 100,000 at 20% is 120,000. Unaffected by priceDiscountPercent. A
+   * missing or out-of-range markup returns the catalog price flagged: a caller that charges this
+   * price must refuse a flagged one rather than undercharge at the catalog price.
+   */
+  if (!isValidMarkupPercent(markupPercent)) {
     return { price: sellingPrice, label: SALE_LABEL, flagged: true };
   }
-  return { price: roundCents(sellingPrice / (1 - m / 100)), label: KONSI_LABEL, flagged: false };
+  return { price: roundCents(sellingPrice * (1 + markupPercent / 100)), label: KONSI_LABEL, flagged: false };
 }

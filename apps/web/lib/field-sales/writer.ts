@@ -66,10 +66,10 @@ export async function createFieldSalesOrder(input: {
 
     const store = await tx.store.findUniqueOrThrow({
       where: { id: input.storeId },
-      select: { termsType: true, marginPercent: true, priceDiscountPercent: true, creditLimit: true },
+      select: { termsType: true, markupPercent: true, priceDiscountPercent: true, creditLimit: true },
     });
     const isKonsi = store.termsType === "KONSI";
-    const margin = store.marginPercent === null ? null : Number(store.marginPercent);
+    const markup = store.markupPercent === null ? null : Number(store.markupPercent);
     const priceDiscount = store.priceDiscountPercent === null ? null : Number(store.priceDiscountPercent);
 
     // Server-authoritative putus price: the salesman never sets it, the office rules (store price) do.
@@ -92,11 +92,11 @@ export async function createFieldSalesOrder(input: {
     }
 
     const orderNo = await generateDocNumber(isKonsi ? "KONSI" : "PUTUS", tx);
-    // Konsi lines carry no salesman price; gross-up is computed later at approve.
+    /* Konsi lines carry no salesman price; the retail value at the store's markup is computed later at approve. */
     const linesData = input.lines.map((l) => {
       const unitPrice = isKonsi
         ? 0
-        : computeStorePrice({ sellingPrice: priceByItemId.get(l.itemId) ?? null, termsType: "PUTUS", marginPercent: margin, priceDiscountPercent: priceDiscount }).price ?? 0;
+        : computeStorePrice({ sellingPrice: priceByItemId.get(l.itemId) ?? null, termsType: "PUTUS", markupPercent: markup, priceDiscountPercent: priceDiscount }).price ?? 0;
       return {
         ...l,
         unitPrice,
@@ -285,7 +285,7 @@ export async function approveFieldSalesOrder(input: {
     const order = await tx.fieldSalesOrder.findUnique({
       where: { id: input.orderId },
       include: {
-        store: { select: { marginPercent: true, priceDiscountPercent: true, creditLimit: true } },
+        store: { select: { markupPercent: true, priceDiscountPercent: true, creditLimit: true } },
         lines: { include: { item: { select: { sku: true, sellingPrice: true, category: { select: { name: true } } } } } },
       },
     });
@@ -391,14 +391,14 @@ export async function approveFieldSalesOrder(input: {
       });
       if (shortLines.length > 0) throw new InsufficientStockError(shortLines);
 
-      const margin = order.store.marginPercent === null ? null : Number(order.store.marginPercent);
+      const markup = order.store.markupPercent === null ? null : Number(order.store.markupPercent);
       const priceDiscount = order.store.priceDiscountPercent === null ? null : Number(order.store.priceDiscountPercent);
       let total = 0;
       for (const l of lines) {
         const { price } = computeStorePrice({
           sellingPrice: l.item.sellingPrice === null ? null : Number(l.item.sellingPrice),
           termsType: "KONSI",
-          marginPercent: margin,
+          markupPercent: markup,
           priceDiscountPercent: priceDiscount,
         });
         const unit = price ?? 0;

@@ -51,7 +51,7 @@ d("completeDeliveryShipment konsi stock move (test bed only)", () => {
         name: "Test Konsi Completion Store",
         address: "Test address",
         termsType: "KONSI",
-        marginPercent: 20,
+        markupPercent: 20,
         isActive: true,
         lat: -6.2,
         lng: 106.8,

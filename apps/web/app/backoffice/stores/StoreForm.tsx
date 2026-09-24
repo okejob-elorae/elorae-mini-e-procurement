@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { ChevronDown, Loader2, MapPin, Search } from "lucide-react";
+import { MARKUP_PERCENT_MAX } from "@elorae/db/pricing";
 import { parseCoordsPaste } from "@/lib/geo/coords";
 import {
   createStoreAction,
@@ -182,6 +183,7 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
         else if (result.code === "has_consignment_stock") setError(tErr("hasConsignmentStock"));
         else if (result.code === "has_draft_sell_through") setError(tErr("hasDraftSellThrough"));
         else if (result.code === "invalid_price_discount") setError(tErr("invalidPriceDiscount"));
+        else if (result.code === "invalid_markup_percent") setError(tErr("invalidMarkupPercent"));
         else if (result.code === "konsi_discount_not_allowed") setError(tErr("discountNotAllowedForKonsi"));
         else if (result.code === "sell_through_method_requires_konsi") setError(tErr("sellThroughMethodRequiresKonsi"));
         else setError(result.message);
@@ -517,15 +519,17 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="marginPercent">{t("marginPercent")}</Label>
+              <Label htmlFor="markupPercent">{t("markupPercent")}</Label>
               <Input
-                id="marginPercent"
+                id="markupPercent"
                 disabled={pending || readOnly}
                 type="number"
+                min={0}
+                max={MARKUP_PERCENT_MAX}
                 step="0.01"
-                value={form.marginPercent ?? ""}
+                value={form.markupPercent ?? ""}
                 onChange={(e) =>
-                  update("marginPercent", e.target.value === "" ? null : Number(e.target.value))
+                  update("markupPercent", e.target.value === "" ? null : Number(e.target.value))
                 }
               />
             </div>

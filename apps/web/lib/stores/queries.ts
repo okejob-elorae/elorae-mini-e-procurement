@@ -1,4 +1,5 @@
 import { prisma, Prisma } from "@elorae/db";
+import { isValidMarkupPercent, MARKUP_PERCENT_MAX } from "@elorae/db/pricing";
 
 export type StoreFields = {
   code: string;
@@ -8,7 +9,7 @@ export type StoreFields = {
   contactName: string | null;
   termsType: "PUTUS" | "KONSI";
   paymentTempo: number;
-  marginPercent: number | null;
+  markupPercent: number | null;
   priceDiscountPercent: number | null;
   creditLimit: number | null;
   npwp: string | null;
@@ -64,7 +65,7 @@ export class InvalidPriceDiscountPercentError extends Error {
 
 /**
  * Thrown when a non-null `priceDiscountPercent` is set on a KONSI store. KONSI pricing runs on
- * `marginPercent` only — a discount must never apply there, even though the SPG/van pricing
+ * `markupPercent` only — a discount must never apply there, even though the SPG/van pricing
  * paths hardcode PUTUS pricing (they run at consignment stores too, since an SPG is an in-store
  * promoter at a KONSI store selling at retail).
  */
@@ -86,6 +87,28 @@ function assertValidPriceDiscount(input: Pick<StoreFields, "termsType" | "priceD
   }
   if (input.termsType === "KONSI") {
     throw new KonsiPriceDiscountNotAllowedError();
+  }
+}
+
+/**
+ * Thrown when `markupPercent` is outside `0 <= percent <= MARKUP_PERCENT_MAX`. The column cannot
+ * hold more, and `computeStorePrice` flags anything outside the range, which the SPG writer then
+ * refuses as `NO_PRICE` — so an out-of-range value is refused here, where the operator can fix it,
+ * rather than at the POS.
+ */
+export class InvalidMarkupPercentError extends Error {
+  constructor(readonly percent: number) {
+    super(`markupPercent must satisfy 0 <= percent <= ${MARKUP_PERCENT_MAX}, got ${percent}`);
+    this.name = "InvalidMarkupPercentError";
+  }
+}
+
+function assertValidMarkupPercent(input: Pick<StoreFields, "markupPercent">): void {
+  if (input.markupPercent === null) return;
+  /* Validate what the Decimal(5,2) column will persist, the same way assertValidPriceDiscount does. */
+  const stored = Math.round(input.markupPercent * 100) / 100;
+  if (!isValidMarkupPercent(stored)) {
+    throw new InvalidMarkupPercentError(input.markupPercent);
   }
 }
 
@@ -131,7 +154,7 @@ function serializeStore(s: {
   contactName: string | null;
   termsType: "PUTUS" | "KONSI";
   paymentTempo: number;
-  marginPercent: Prisma.Decimal | null;
+  markupPercent: Prisma.Decimal | null;
   priceDiscountPercent: Prisma.Decimal | null;
   creditLimit: Prisma.Decimal | null;
   npwp: string | null;
@@ -152,7 +175,7 @@ function serializeStore(s: {
     contactName: s.contactName,
     termsType: s.termsType,
     paymentTempo: s.paymentTempo,
-    marginPercent: s.marginPercent ? s.marginPercent.toNumber() : null,
+    markupPercent: s.markupPercent ? s.markupPercent.toNumber() : null,
     priceDiscountPercent: s.priceDiscountPercent ? s.priceDiscountPercent.toNumber() : null,
     creditLimit: s.creditLimit !== null ? s.creditLimit.toNumber() : null,
     npwp: s.npwp,
@@ -206,6 +229,7 @@ export async function getStore(id: string) {
 }
 
 export async function createStore(input: StoreFields): Promise<StoreListItem> {
+  assertValidMarkupPercent(input);
   assertValidPriceDiscount(input);
   assertValidSellThroughMethod(input);
   const created = await prisma.store.create({
@@ -217,7 +241,7 @@ export async function createStore(input: StoreFields): Promise<StoreListItem> {
       contactName: input.contactName,
       termsType: input.termsType,
       paymentTempo: input.paymentTempo,
-      marginPercent: toDecimalOrNull(input.marginPercent),
+      markupPercent: toDecimalOrNull(input.markupPercent),
       priceDiscountPercent: toDecimalOrNull(input.priceDiscountPercent),
       creditLimit: toDecimalOrNull(input.creditLimit),
       npwp: input.npwp,
@@ -231,6 +255,7 @@ export async function createStore(input: StoreFields): Promise<StoreListItem> {
 }
 
 export async function updateStore(id: string, input: StoreFields): Promise<StoreListItem> {
+  assertValidMarkupPercent(input);
   assertValidPriceDiscount(input);
   assertValidSellThroughMethod(input);
 
@@ -278,7 +303,7 @@ export async function updateStore(id: string, input: StoreFields): Promise<Store
       contactName: input.contactName,
       termsType: input.termsType,
       paymentTempo: input.paymentTempo,
-      marginPercent: toDecimalOrNull(input.marginPercent),
+      markupPercent: toDecimalOrNull(input.markupPercent),
       priceDiscountPercent: toDecimalOrNull(input.priceDiscountPercent),
       creditLimit: toDecimalOrNull(input.creditLimit),
       npwp: input.npwp,

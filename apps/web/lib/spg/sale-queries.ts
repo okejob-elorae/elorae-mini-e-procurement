@@ -15,7 +15,7 @@ export type SpgCatalogRow = {
 /**
  * SPG record-sale catalog — active finished goods, priced PUTUS (retail),
  * mirroring the pricing recordSpgSale itself applies (PUTUS ignores
- * marginPercent, so this never needs the store's own consignment terms —
+ * markupPercent, so this never needs the store's own consignment terms —
  * but it DOES need the store's priceDiscountPercent, since that applies to
  * every PUTUS-priced line regardless of the store's own consignment terms;
  * looked up below so this preview matches what recordSpgSale actually
@@ -67,7 +67,7 @@ export async function getSellableCatalogForSpg(storeId: string): Promise<SpgCata
   const out: SpgCatalogRow[] = [];
   for (const r of rows) {
     const sp = r.sellingPrice === null ? null : Number(r.sellingPrice);
-    const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", marginPercent: null, priceDiscountPercent });
+    const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", markupPercent: null, priceDiscountPercent });
     const variantSkus = parseItemVariants(r.variants)
       .map((v) => (v.sku ?? "").trim())
       .filter(Boolean);

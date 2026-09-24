@@ -33,7 +33,7 @@ d("getStockAcrossLocations", () => {
     canvasserId = canvasser.id;
 
     const store = await prisma.store.create({
-      data: { code: `TEST-SAL-STORE-${token}`, name: "Test Cross-Location Store", address: "Test address", termsType: "KONSI", marginPercent: 20, isActive: true },
+      data: { code: `TEST-SAL-STORE-${token}`, name: "Test Cross-Location Store", address: "Test address", termsType: "KONSI", markupPercent: 20, isActive: true },
     });
     storeId = store.id;
 

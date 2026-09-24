@@ -873,7 +873,7 @@ d("konsi sell-through writer (test bed only)", () => {
 
     it("invoices at the catalog price even when the store's markup was cleared after creation", async () => {
       const { id } = await buildShelfCountReportBilling4();
-      await prisma.store.update({ where: { id: state.storeId }, data: { marginPercent: null } });
+      await prisma.store.update({ where: { id: state.storeId }, data: { markupPercent: null } });
       await expect(fx.approve(id)).resolves.toEqual({ ok: true, invoiced: true });
       const doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id }, include: { lines: true } });
       expect(Number(doc.total)).toBe(160000);

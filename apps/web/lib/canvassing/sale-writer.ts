@@ -63,7 +63,7 @@ export async function recordVanSale(input: {
       const item = itemById.get(l.itemId);
       if (!item) return { ok: false, code: "NO_PRICE" };
       const sp = item.sellingPrice === null ? null : Number(item.sellingPrice);
-      const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", marginPercent: null, priceDiscountPercent: priceDiscount });
+      const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", markupPercent: null, priceDiscountPercent: priceDiscount });
       if (price === null) return { ok: false, code: "NO_PRICE" };
 
       const van = await tx.vanStock.findUnique({

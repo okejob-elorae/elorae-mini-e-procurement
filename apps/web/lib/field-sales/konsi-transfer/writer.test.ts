@@ -92,7 +92,7 @@ d("issueKonsiTransfer at shipment completion (test bed only)", () => {
     await prisma.inventoryValue.create({ data: { itemId: negativeItemId, variantSku: "", qtyOnHand: 100, reservedQty: 0, avgCost: 10000, totalValue: 1000000 } });
 
     const store = await prisma.store.create({
-      data: { code: `TEST-KTW-STORE-${token}`, name: "Test Konsi Transfer Store", address: "Test address", termsType: "KONSI", marginPercent: 20, isActive: true },
+      data: { code: `TEST-KTW-STORE-${token}`, name: "Test Konsi Transfer Store", address: "Test address", termsType: "KONSI", markupPercent: 20, isActive: true },
     });
     storeId = store.id;
 
