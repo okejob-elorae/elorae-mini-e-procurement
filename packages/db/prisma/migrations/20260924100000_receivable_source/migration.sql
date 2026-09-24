@@ -8,16 +8,21 @@
 --
 -- `MODIFY ... NULL` keeps the existing unique index on each `deliveryId` column in MariaDB; it is
 -- not dropped or recreated here.
+--
+-- Safe to re-run after a partial failure (MariaDB commits each DDL statement on its own): every
+-- statement is idempotent, and each CHECK is dropped if present before it is added.
 
 ALTER TABLE `Receivable` MODIFY `deliveryId` VARCHAR(191) NULL;
-ALTER TABLE `Receivable` ADD COLUMN `sellThroughId` VARCHAR(191) NULL;
-CREATE UNIQUE INDEX `Receivable_sellThroughId_key` ON `Receivable`(`sellThroughId`);
+ALTER TABLE `Receivable` ADD COLUMN IF NOT EXISTS `sellThroughId` VARCHAR(191) NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS `Receivable_sellThroughId_key` ON `Receivable`(`sellThroughId`);
+ALTER TABLE `Receivable` DROP CONSTRAINT IF EXISTS `Receivable_one_source_check`;
 ALTER TABLE `Receivable` ADD CONSTRAINT `Receivable_one_source_check` CHECK ((`deliveryId` IS NULL) <> (`sellThroughId` IS NULL));
 
 ALTER TABLE `TaxInvoice` MODIFY `deliveryId` VARCHAR(191) NULL;
-ALTER TABLE `TaxInvoice` ADD COLUMN `sellThroughId` VARCHAR(191) NULL;
-CREATE UNIQUE INDEX `TaxInvoice_sellThroughId_key` ON `TaxInvoice`(`sellThroughId`);
+ALTER TABLE `TaxInvoice` ADD COLUMN IF NOT EXISTS `sellThroughId` VARCHAR(191) NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS `TaxInvoice_sellThroughId_key` ON `TaxInvoice`(`sellThroughId`);
+ALTER TABLE `TaxInvoice` DROP CONSTRAINT IF EXISTS `TaxInvoice_one_source_check`;
 ALTER TABLE `TaxInvoice` ADD CONSTRAINT `TaxInvoice_one_source_check` CHECK ((`deliveryId` IS NULL) <> (`sellThroughId` IS NULL));
 
-ALTER TABLE `KonsiSellThrough` ADD COLUMN `salesmanId` VARCHAR(191) NULL;
-CREATE INDEX `KonsiSellThrough_salesmanId_idx` ON `KonsiSellThrough`(`salesmanId`);
+ALTER TABLE `KonsiSellThrough` ADD COLUMN IF NOT EXISTS `salesmanId` VARCHAR(191) NULL;
+CREATE INDEX IF NOT EXISTS `KonsiSellThrough_salesmanId_idx` ON `KonsiSellThrough`(`salesmanId`);
