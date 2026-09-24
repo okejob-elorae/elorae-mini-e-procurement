@@ -168,13 +168,13 @@ d("konsi sell-through queries (test bed only)", () => {
   it("a DRAFT report previews unit prices, line totals and the total from the same pricing rule approve uses", async () => {
     await setMethod("SHELF_COUNT");
     await transferIn(6);
-    /* SHELF_COUNT billing 4 @ margin 20 on sellingPrice 40000 */
+    /* SHELF_COUNT billing 4 at the catalog selling price 40000 */
     const stocktakeId = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
     const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
 
     const detail = await getSellThrough(id);
-    expect(detail?.lines[0]).toMatchObject({ unitPrice: 50000, lineTotal: 200000 });
-    expect(detail?.total).toBe(200000);
+    expect(detail?.lines[0]).toMatchObject({ unitPrice: 40000, lineTotal: 160000 });
+    expect(detail?.total).toBe(160000);
     expect(detail?.unpricedKeys).toEqual([]);
     /* the fixture's konsi order salesman is not a candidate */
     expect(detail?.defaultSalesmanId).toBeNull();
@@ -189,7 +189,7 @@ d("konsi sell-through queries (test bed only)", () => {
     await fx.approve(id);
     const detail = await getSellThrough(id);
     /* The writer posts no journal — the action does, after commit — so revenue and COGS are both still owed here. */
-    expect(detail).toMatchObject({ baseline: false, total: 200000, salesmanId: state.salesmanId, unrelievedCost: null, journalPending: true });
+    expect(detail).toMatchObject({ baseline: false, total: 160000, salesmanId: state.salesmanId, unrelievedCost: null, journalPending: true });
     expect(detail?.receivableId).not.toBeNull();
     expect(detail?.taxInvoiceId).not.toBeNull();
   }, SLOW);

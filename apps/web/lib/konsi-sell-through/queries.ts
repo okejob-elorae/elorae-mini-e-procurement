@@ -162,7 +162,6 @@ export type SellThroughDetail = {
   cancelledByLabel: string | null;
   cancelledAt: Date | null;
   cancelReason: string | null;
-  storeMarginPercent: number | null;
   storePaymentTempo: number;
   total: number | null;
   unpricedKeys: string[];
@@ -206,7 +205,7 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
       salesmanId: true,
       baseline: true,
       baselineReason: true,
-      store: { select: { name: true, marginPercent: true, paymentTempo: true } },
+      store: { select: { name: true, paymentTempo: true } },
       receivable: { select: { id: true } },
       taxInvoice: { select: { id: true } },
       lines: {
@@ -269,7 +268,6 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
   const preview =
     doc.status === "DRAFT"
       ? priceSellThroughLines({
-          marginPercent: doc.store.marginPercent === null ? null : Number(doc.store.marginPercent),
           lines: doc.lines.map((l) => ({
             key: `${l.itemId}::${l.variantSku}`,
             billedQty: roundQty(l.billedQty.toNumber()),
@@ -319,7 +317,6 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
     cancelledByLabel: labelFor(doc.cancelledById),
     cancelledAt: doc.cancelledAt,
     cancelReason: doc.cancelReason,
-    storeMarginPercent: doc.store.marginPercent === null ? null : Number(doc.store.marginPercent),
     storePaymentTempo: doc.store.paymentTempo,
     total: preview ? preview.total : doc.total === null ? null : Number(doc.total),
     unpricedKeys: preview?.unpricedKeys ?? [],

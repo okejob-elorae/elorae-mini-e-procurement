@@ -1,4 +1,4 @@
-import { computeStorePrice, roundCents } from "@elorae/db/pricing";
+import { roundCents } from "@elorae/db/pricing";
 
 export type SellThroughPricingLineInput = { key: string; billedQty: number; sellingPrice: number | null };
 
@@ -11,23 +11,14 @@ export type SellThroughPricing = { lines: SellThroughPricedLine[]; total: number
  * screen's preview so the two can never disagree. Import-free beyond the client-safe pricing
  * subpath, so a client component may call it too.
  *
- * `computeStorePrice`'s KONSI branch never reads the discount (a KONSI store cannot hold one) and,
- * for a missing or out-of-range margin, returns the raw selling price with `flagged: true` rather
- * than null. A flagged price is therefore treated as no price: billing the raw selling price would
- * silently invoice below the store price.
+ * A konsi store is invoiced at the item's catalog selling price. The store's markup is the retail
+ * price its own customer pays at the SPG POS, which the store keeps, so it never reaches the
+ * invoice and this rule does not read it. A billed line is unpriced only when its item has no
+ * usable selling price.
  */
-export function priceSellThroughLines(input: {
-  marginPercent: number | null;
-  lines: SellThroughPricingLineInput[];
-}): SellThroughPricing {
+export function priceSellThroughLines(input: { lines: SellThroughPricingLineInput[] }): SellThroughPricing {
   const lines = input.lines.map((l) => {
-    const p = computeStorePrice({
-      termsType: "KONSI",
-      sellingPrice: l.sellingPrice,
-      marginPercent: input.marginPercent,
-      priceDiscountPercent: null,
-    });
-    const unitPrice = p.price === null || p.flagged || !Number.isFinite(p.price) ? null : p.price;
+    const unitPrice = l.sellingPrice === null || !Number.isFinite(l.sellingPrice) ? null : roundCents(l.sellingPrice);
     const lineTotal = unitPrice === null ? 0 : roundCents(l.billedQty * unitPrice);
     return { key: l.key, unitPrice, lineTotal };
   });

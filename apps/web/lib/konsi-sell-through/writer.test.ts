@@ -57,7 +57,7 @@ d("konsi sell-through writer (test bed only)", () => {
   beforeEach(fx.beforeEach);
   afterEach(fx.afterEach);
 
-  /* SHELF_COUNT: 6 transferred in, 2 counted → one line billed 4 (unit price 50000 at margin 20). */
+  /* SHELF_COUNT: 6 transferred in, 2 counted → one line billed 4 (unit price 40000, the catalog selling price). */
   async function buildShelfCountReportBilling4() {
     await setMethod("SHELF_COUNT");
     await transferIn(6);
@@ -829,15 +829,15 @@ d("konsi sell-through writer (test bed only)", () => {
       const doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id }, include: { lines: true, receivable: true, taxInvoice: true } });
       expect(doc.status).toBe("APPROVED");
       expect(doc.baseline).toBe(false);
-      expect(Number(doc.total)).toBe(200000);
+      expect(Number(doc.total)).toBe(160000);
       expect(doc.salesmanId).toBe(state.salesmanId);
       expect(doc.invoiceDate?.toISOString()).toBe(invoiceDate.toISOString());
       expect(doc.dueDate?.getTime()).toBe(invoiceDate.getTime() + store.paymentTempo * 86_400_000);
-      expect(Number(doc.lines[0].unitPrice)).toBe(50000);
-      expect(Number(doc.lines[0].lineTotal)).toBe(200000);
+      expect(Number(doc.lines[0].unitPrice)).toBe(40000);
+      expect(Number(doc.lines[0].lineTotal)).toBe(160000);
       expect(doc.receivable).toMatchObject({ storeId: state.storeId, status: "OUTSTANDING" });
-      expect(Number(doc.receivable?.originalAmount)).toBe(200000);
-      expect(Number(doc.receivable?.outstandingAmount)).toBe(200000);
+      expect(Number(doc.receivable?.originalAmount)).toBe(160000);
+      expect(Number(doc.receivable?.outstandingAmount)).toBe(160000);
       expect(doc.receivable?.dueDate.getTime()).toBe(doc.dueDate?.getTime());
       expect(doc.taxInvoice).toMatchObject({ status: "PENDING", deliveryId: null });
     }, SLOW);
@@ -871,10 +871,20 @@ d("konsi sell-through writer (test bed only)", () => {
       await expect(fx.approve(id, { invoiceDate: new Date(doc.periodEnd.getTime() - 2 * 86_400_000) })).rejects.toMatchObject({ code: "INVALID_INVOICE_DATE" });
     }, SLOW);
 
-    it("refuses UNPRICED naming the line when the store margin was cleared after creation", async () => {
+    it("invoices at the catalog price even when the store's markup was cleared after creation", async () => {
       const { id } = await buildShelfCountReportBilling4();
       await prisma.store.update({ where: { id: state.storeId }, data: { marginPercent: null } });
+      await expect(fx.approve(id)).resolves.toEqual({ ok: true, invoiced: true });
+      const doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id }, include: { lines: true } });
+      expect(Number(doc.total)).toBe(160000);
+      expect(Number(doc.lines[0].unitPrice)).toBe(40000);
+    }, SLOW);
+
+    it("refuses UNPRICED naming the line when the item's selling price was cleared after creation", async () => {
+      const { id } = await buildShelfCountReportBilling4();
+      await prisma.item.update({ where: { id: state.itemId }, data: { sellingPrice: null } });
       await expect(fx.approve(id)).rejects.toMatchObject({ code: "UNPRICED", detail: `${state.itemId}::` });
+      expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id } })).status).toBe("DRAFT");
     }, SLOW);
 
     it("a double approve creates exactly one receivable and one faktur", async () => {

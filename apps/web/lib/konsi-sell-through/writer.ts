@@ -407,7 +407,7 @@ export async function approveSellThrough(input: ApproveSellThroughInput): Promis
         closingStocktakeId: true,
         previousId: true,
         periodEnd: true,
-        store: { select: { termsType: true, marginPercent: true, paymentTempo: true } },
+        store: { select: { termsType: true, paymentTempo: true } },
         lines: {
           select: {
             id: true,
@@ -486,7 +486,6 @@ export async function approveSellThrough(input: ApproveSellThroughInput): Promis
     }
 
     const pricing = priceSellThroughLines({
-      marginPercent: doc.store.marginPercent === null ? null : Number(doc.store.marginPercent),
       lines: doc.lines.map((l) => ({
         key: lineKey(l.itemId, l.variantSku),
         billedQty: roundQty(l.billedQty.toNumber()),
