@@ -5,7 +5,7 @@ import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { AlertTriangle } from "lucide-react";
 import type { SellThroughDetail } from "@/lib/konsi-sell-through/queries";
-import { dueDateFor } from "@/lib/konsi-sell-through/invoice-dates";
+import { dueDateFor, isInvoiceDateAllowed } from "@/lib/konsi-sell-through/invoice-dates";
 import { formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
 import { cn } from "@/lib/utils";
 import { approveSellThroughAction, type SellThroughActionFailure } from "@/app/actions/konsi-sell-through";
@@ -49,7 +49,8 @@ export function SellThroughApproveDialog({
   const tApprove = useTranslations("konsiSellThrough.approve");
   const tCommon = useTranslations("common");
 
-  const [today] = useState(() => formatDateOnlyJakarta(new Date()));
+  const [now] = useState(() => new Date());
+  const today = formatDateOnlyJakarta(now);
   const [mode, setMode] = useState<ApproveMode>("INVOICE");
   const [invoiceDate, setInvoiceDate] = useState(today);
   const [salesmanId, setSalesmanId] = useState(() => {
@@ -75,7 +76,7 @@ export function SellThroughApproveDialog({
 
   const minDate = formatDateOnlyJakarta(report.periodEnd);
   const parsedInvoiceDate = DATE_ONLY_PATTERN.test(invoiceDate) ? parseDateOnly(invoiceDate) : undefined;
-  const dateValid = parsedInvoiceDate !== undefined && invoiceDate >= minDate && invoiceDate <= today;
+  const dateValid = parsedInvoiceDate !== undefined && isInvoiceDateAllowed(parsedInvoiceDate, report.periodEnd, now);
 
   const reasonBlank = reason.trim() === "";
   const submitDisabled =
