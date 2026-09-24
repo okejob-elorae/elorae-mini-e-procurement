@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId, type Prisma } from "@elorae/db";
-import { createSellThrough, resolveSellThroughLine, approveSellThrough, cancelSellThrough } from "./writer";
+import { createSellThrough, resolveSellThroughLine, cancelSellThrough } from "./writer";
 import { createSellThroughFixtures } from "./test-fixtures";
 import { approveStoreStocktake } from "@/lib/stores/stocktake/writer";
 
@@ -56,6 +56,39 @@ d("konsi sell-through writer (test bed only)", () => {
 
   beforeEach(fx.beforeEach);
   afterEach(fx.afterEach);
+
+  /* SHELF_COUNT: 6 transferred in, 2 counted → one line billed 4 (unit price 50000 at margin 20). */
+  async function buildShelfCountReportBilling4() {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
+    return createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+  }
+
+  /* SHELF_COUNT: 2 transferred in, 2 counted → the one line bills 0. */
+  async function buildShelfCountReportBilling0() {
+    await setMethod("SHELF_COUNT");
+    await transferIn(2);
+    const stocktakeId = await count(2);
+    return createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+  }
+
+  /* Report 1 of a chain: opening 0 + in 6 − gap 4 = closing 2. Left unapproved for the caller to approve. */
+  async function buildFirstReportOfChain() {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const first = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
+    return createSellThrough({ closingStocktakeId: first, createdById: state.userId });
+  }
+
+  /* Report 2 of a chain: assumes report 1 is already APPROVED, so it chains off its closing. */
+  async function buildSecondReportOfChain() {
+    await tick();
+    await spgSell(1);
+    await tick();
+    const second = await count(1);
+    return createSellThrough({ closingStocktakeId: second, createdById: state.userId });
+  }
 
   /* create — preconditions */
 
@@ -122,7 +155,7 @@ d("konsi sell-through writer (test bed only)", () => {
     await tick();
     const later = await count(6);
     const report = await createSellThrough({ closingStocktakeId: later, createdById: state.userId });
-    await approveSellThrough({ id: report.id, approvedById: state.userId });
+    await fx.approve(report.id);
     await expect(createSellThrough({ closingStocktakeId: earlier, createdById: state.userId })).rejects.toMatchObject({ code: "OUT_OF_ORDER" });
   }, SLOW);
 
@@ -226,7 +259,7 @@ d("konsi sell-through writer (test bed only)", () => {
     const { countFinishedAt } = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(stocktakeId) }, select: { countFinishedAt: true } });
     await prisma.fieldReturn.update({ where: { id: returnId }, data: { createdAt: new Date(countFinishedAt!.getTime() - 1000) } });
 
-    await expect(approveSellThrough({ id, approvedById: state.userId })).rejects.toMatchObject({ code: "RETUR_IN_FLIGHT", detail: docNo });
+    await expect(fx.approve(id)).rejects.toMatchObject({ code: "RETUR_IN_FLIGHT", detail: docNo });
     expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("DRAFT");
   }, SLOW);
 
@@ -276,7 +309,7 @@ d("konsi sell-through writer (test bed only)", () => {
     expect(line.resolution).toBeNull();
     expect(Number(line.unitCost)).toBe(10000);
 
-    await approveSellThrough({ id, approvedById: state.userId });
+    await fx.approve(id);
     const approved = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } });
     expect(approved.status).toBe("APPROVED");
     expect(approved.approvedById).toBe(state.userId);
@@ -304,7 +337,7 @@ d("konsi sell-through writer (test bed only)", () => {
     expect(line.suggestedResolution).toBe("SHRINKAGE");
     expect(line.resolution).toBeNull();
 
-    await expect(approveSellThrough({ id, approvedById: state.userId })).rejects.toMatchObject({ code: "HELD" });
+    await expect(fx.approve(id)).rejects.toMatchObject({ code: "HELD" });
     expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("DRAFT");
 
     await resolveSellThroughLine({ lineId: line.id, resolution: "SHRINKAGE", reason: "confirmed theft", userId: state.userId });
@@ -315,7 +348,7 @@ d("konsi sell-through writer (test bed only)", () => {
     expect(Number(resolved.billedQty)).toBe(3);
     expect(Number(resolved.shrinkageQty)).toBe(2);
 
-    await approveSellThrough({ id, approvedById: state.userId });
+    await fx.approve(id);
     expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("APPROVED");
   }, SLOW);
 
@@ -341,7 +374,7 @@ d("konsi sell-through writer (test bed only)", () => {
     expect(Number(line.billedQty)).toBe(2);
     expect(line.suggestedResolution).toBeNull();
 
-    await approveSellThrough({ id, approvedById: state.userId });
+    await fx.approve(id);
     expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("APPROVED");
   }, SLOW);
 
@@ -370,7 +403,7 @@ d("konsi sell-through writer (test bed only)", () => {
     await resolveSellThroughLine({ lineId: line.id, resolution: "BILL", reason: null, userId: state.userId });
     expect(Number((await onlyLine(id)).billedQty)).toBe(5);
 
-    await approveSellThrough({ id, approvedById: state.userId });
+    await fx.approve(id);
     await expect(resolveSellThroughLine({ lineId: line.id, resolution: "SHRINKAGE", reason: "too late", userId: state.userId })).rejects.toMatchObject({ code: "INVALID_STATE" });
   }, SLOW);
 
@@ -395,7 +428,7 @@ d("konsi sell-through writer (test bed only)", () => {
     });
     await prisma.stockLedgerEntry.update({ where: { id: saleRow.id }, data: { createdAt: new Date(doc.periodEnd.getTime() - 1000) } });
 
-    await expect(approveSellThrough({ id, approvedById: state.userId })).rejects.toMatchObject({ code: "STALE" });
+    await expect(fx.approve(id)).rejects.toMatchObject({ code: "STALE" });
     expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("DRAFT");
   }, SLOW);
 
@@ -415,7 +448,7 @@ d("konsi sell-through writer (test bed only)", () => {
     });
     await prisma.stockLedgerEntry.update({ where: { id: saleRow.id }, data: { createdAt: new Date(doc.periodEnd.getTime() - 1000) } });
 
-    await expect(approveSellThrough({ id, approvedById: state.userId })).rejects.toMatchObject({ code: "STALE" });
+    await expect(fx.approve(id)).rejects.toMatchObject({ code: "STALE" });
   }, SLOW);
 
   it("approve refuses NOT_KONSI when the store left consignment terms while the report was DRAFT", async () => {
@@ -425,7 +458,7 @@ d("konsi sell-through writer (test bed only)", () => {
     const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
     /* Direct flip for the test only — the store edit writer refuses this switch while a report is DRAFT. */
     await prisma.store.update({ where: { id: state.storeId }, data: { termsType: "PUTUS" } });
-    await expect(approveSellThrough({ id, approvedById: state.userId })).rejects.toMatchObject({ code: "NOT_KONSI" });
+    await expect(fx.approve(id)).rejects.toMatchObject({ code: "NOT_KONSI" });
     expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("DRAFT");
   }, SLOW);
 
@@ -445,7 +478,7 @@ d("konsi sell-through writer (test bed only)", () => {
     const stockBefore = await stockOf();
     const ledgerBefore = await ledgerCountOf();
 
-    await approveSellThrough({ id, approvedById: state.userId });
+    await fx.approve(id);
 
     expect((await stockOf()).map((r) => ({ ...r, qty: Number(r.qty), avgCost: Number(r.avgCost) }))).toEqual(
       stockBefore.map((r) => ({ ...r, qty: Number(r.qty), avgCost: Number(r.avgCost) })),
@@ -463,7 +496,7 @@ d("konsi sell-through writer (test bed only)", () => {
     await prisma.konsiSellThrough.update({ where: { id }, data: { status: "CANCELLED" } });
     txSeam.wrap = withStaleDraftRead;
     try {
-      await expect(approveSellThrough({ id, approvedById: state.userId })).rejects.toMatchObject({ code: "INVALID_STATE" });
+      await expect(fx.approve(id)).rejects.toMatchObject({ code: "INVALID_STATE" });
     } finally {
       txSeam.wrap = null;
     }
@@ -483,7 +516,7 @@ d("konsi sell-through writer (test bed only)", () => {
 
     await setMethod("SHELF_COUNT");
 
-    await expect(approveSellThrough({ id, approvedById: state.userId })).rejects.toMatchObject({ code: "HELD" });
+    await expect(fx.approve(id)).rejects.toMatchObject({ code: "HELD" });
     const doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } });
     expect(doc.method).toBe("SPG_POS");
     expect(doc.status).toBe("DRAFT");
@@ -495,8 +528,8 @@ d("konsi sell-through writer (test bed only)", () => {
     await transferIn(6);
     const stocktakeId = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
     const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
-    await approveSellThrough({ id, approvedById: state.userId });
-    await expect(approveSellThrough({ id, approvedById: state.userId })).rejects.toMatchObject({ code: "INVALID_STATE" });
+    await fx.approve(id);
+    await expect(fx.approve(id)).rejects.toMatchObject({ code: "INVALID_STATE" });
   }, SLOW);
 
   /* chain */
@@ -507,7 +540,7 @@ d("konsi sell-through writer (test bed only)", () => {
     /* Report 1: opening 0 + in 6 − gap 4 = closing 2. */
     const first = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
     const r1 = await createSellThrough({ closingStocktakeId: first, createdById: state.userId });
-    await approveSellThrough({ id: r1.id, approvedById: state.userId });
+    await fx.approve(r1.id);
     const r1Doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(r1.id) }, include: { lines: true } });
     expect(Number(r1Doc.lines[0].closingQty)).toBe(2);
 
@@ -535,7 +568,7 @@ d("konsi sell-through writer (test bed only)", () => {
     expect(Number(line.closingQty)).toBe(1);
     expect(Number(line.billedQty)).toBe(1);
 
-    await approveSellThrough({ id: r2.id, approvedById: state.userId });
+    await fx.approve(r2.id);
     expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(r2.id) } })).status).toBe("APPROVED");
   }, SLOW);
 
@@ -572,4 +605,95 @@ d("konsi sell-through writer (test bed only)", () => {
     expect(recreated.stocktakeKey).toBe(stocktakeId);
     expect(recreated.chainKey).toBe(`${state.storeId}:root`);
   }, SLOW);
+
+  /* approve invoices */
+
+  describe("approve invoices", () => {
+    it("stamps prices, dates, total and salesman, and creates one receivable and one faktur", async () => {
+      const { id } = await buildShelfCountReportBilling4();
+      const store = await prisma.store.update({ where: { id: state.storeId }, data: { paymentTempo: 30 } });
+      const invoiceDate = new Date();
+      const res = await fx.approve(id, { invoiceDate });
+      expect(res).toEqual({ ok: true, invoiced: true });
+
+      const doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id }, include: { lines: true, receivable: true, taxInvoice: true } });
+      expect(doc.status).toBe("APPROVED");
+      expect(doc.baseline).toBe(false);
+      expect(Number(doc.total)).toBe(200000);
+      expect(doc.salesmanId).toBe(state.salesmanId);
+      expect(doc.invoiceDate?.toISOString()).toBe(invoiceDate.toISOString());
+      expect(doc.dueDate?.getTime()).toBe(invoiceDate.getTime() + store.paymentTempo * 86_400_000);
+      expect(Number(doc.lines[0].unitPrice)).toBe(50000);
+      expect(Number(doc.lines[0].lineTotal)).toBe(200000);
+      expect(doc.receivable).toMatchObject({ storeId: state.storeId, status: "OUTSTANDING" });
+      expect(Number(doc.receivable?.originalAmount)).toBe(200000);
+      expect(Number(doc.receivable?.outstandingAmount)).toBe(200000);
+      expect(doc.receivable?.dueDate.getTime()).toBe(doc.dueDate?.getTime());
+      expect(doc.taxInvoice).toMatchObject({ status: "PENDING", deliveryId: null });
+    }, SLOW);
+
+    it("a report that bills nothing approves with no salesman and creates no receivable or faktur", async () => {
+      const { id } = await buildShelfCountReportBilling0();
+      await expect(fx.approve(id, { salesmanId: null })).resolves.toEqual({ ok: true, invoiced: true });
+      const doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id }, include: { receivable: true, taxInvoice: true } });
+      expect(Number(doc.total)).toBe(0);
+      expect(doc.salesmanId).toBeNull();
+      expect(doc.receivable).toBeNull();
+      expect(doc.taxInvoice).toBeNull();
+    }, SLOW);
+
+    it("refuses SALESMAN_REQUIRED when something is billed and no salesman is given, and approves nothing", async () => {
+      const { id } = await buildShelfCountReportBilling4();
+      await expect(fx.approve(id, { salesmanId: null })).rejects.toMatchObject({ code: "SALESMAN_REQUIRED" });
+      expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id } })).status).toBe("DRAFT");
+      expect(await prisma.receivable.count({ where: { sellThroughId: id } })).toBe(0);
+    }, SLOW);
+
+    it("refuses SALESMAN_INVALID for a user who is not a salesman candidate", async () => {
+      const { id } = await buildShelfCountReportBilling4();
+      await expect(fx.approve(id, { salesmanId: state.userId })).rejects.toMatchObject({ code: "SALESMAN_INVALID" });
+    }, SLOW);
+
+    it("refuses INVALID_INVOICE_DATE for tomorrow and for a day before the period end", async () => {
+      const { id } = await buildShelfCountReportBilling4();
+      const doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id } });
+      await expect(fx.approve(id, { invoiceDate: new Date(Date.now() + 2 * 86_400_000) })).rejects.toMatchObject({ code: "INVALID_INVOICE_DATE" });
+      await expect(fx.approve(id, { invoiceDate: new Date(doc.periodEnd.getTime() - 2 * 86_400_000) })).rejects.toMatchObject({ code: "INVALID_INVOICE_DATE" });
+    }, SLOW);
+
+    it("refuses UNPRICED naming the line when the store margin was cleared after creation", async () => {
+      const { id } = await buildShelfCountReportBilling4();
+      await prisma.store.update({ where: { id: state.storeId }, data: { marginPercent: null } });
+      await expect(fx.approve(id)).rejects.toMatchObject({ code: "UNPRICED", detail: `${state.itemId}::` });
+    }, SLOW);
+
+    it("a double approve creates exactly one receivable and one faktur", async () => {
+      const { id } = await buildShelfCountReportBilling4();
+      const results = await Promise.allSettled([fx.approve(id), fx.approve(id)]);
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+      expect(await prisma.receivable.count({ where: { sellThroughId: id } })).toBe(1);
+      expect(await prisma.taxInvoice.count({ where: { sellThroughId: id } })).toBe(1);
+    }, SLOW);
+
+    it("baseline: allowed on a store's first report with a reason, stamps no invoice and creates nothing", async () => {
+      const { id } = await buildShelfCountReportBilling4();
+      await expect(fx.approveBaseline(id, "  ")).rejects.toMatchObject({ code: "BASELINE_REASON_REQUIRED" });
+      await expect(fx.approveBaseline(id)).resolves.toEqual({ ok: true, invoiced: false });
+      const doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id }, include: { lines: true, receivable: true, taxInvoice: true } });
+      expect(doc).toMatchObject({ status: "APPROVED", baseline: true, baselineReason: "Billed by hand before go-live.", invoiceDate: null, total: null, salesmanId: null });
+      expect(doc.lines[0].unitPrice).toBeNull();
+      expect(doc.receivable).toBeNull();
+      expect(doc.taxInvoice).toBeNull();
+    }, SLOW);
+
+    it("baseline: refused BASELINE_NOT_FIRST on a store's second report, and the second report opens from the baseline's closing", async () => {
+      const r1 = await buildFirstReportOfChain();
+      await fx.approveBaseline(r1.id);
+      const r2 = await buildSecondReportOfChain();
+      await expect(fx.approveBaseline(r2.id)).rejects.toMatchObject({ code: "BASELINE_NOT_FIRST" });
+      const r1Lines = await prisma.konsiSellThroughLine.findMany({ where: { sellThroughId: r1.id } });
+      const r2Lines = await prisma.konsiSellThroughLine.findMany({ where: { sellThroughId: r2.id } });
+      expect(Number(r2Lines[0].openingQty)).toBe(Number(r1Lines[0].closingQty));
+    }, SLOW);
+  });
 });

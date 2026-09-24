@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma } from "@elorae/db";
-import { createSellThrough, resolveSellThroughLine, approveSellThrough, cancelSellThrough } from "./writer";
+import { createSellThrough, resolveSellThroughLine, cancelSellThrough } from "./writer";
 import { createSellThroughFixtures } from "./test-fixtures";
 import { listSellThroughs, getSellThrough, getSellThroughEligibility } from "./queries";
 
@@ -30,7 +30,7 @@ d("konsi sell-through queries (test bed only)", () => {
     /* Expected 6, counted 2 → the stocktake writes a −4 store row, i.e. gapQty 4. */
     const firstStocktake = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
     const r1 = await createSellThrough({ closingStocktakeId: firstStocktake, createdById: state.userId });
-    await approveSellThrough({ id: r1.id, approvedById: state.userId });
+    await fx.approve(r1.id);
 
     await tick();
     /* StoreStock now 2 (unchanged from report 1's closing); a matching count writes no ledger row. */
@@ -155,7 +155,7 @@ d("konsi sell-through queries (test bed only)", () => {
     expect(resolvedLine.shrinkageQty).toBe(2);
     expect(resolvedLine.held).toBe(false);
 
-    await approveSellThrough({ id, approvedById: state.userId });
+    await fx.approve(id);
     const approved = await getSellThrough(id);
     expect(approved!.status).toBe("APPROVED");
     expect(approved!.approvedById).toBe(state.userId);
@@ -170,7 +170,7 @@ d("konsi sell-through queries (test bed only)", () => {
     await transferIn(6);
     const first = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
     const r1 = await createSellThrough({ closingStocktakeId: first, createdById: state.userId });
-    await approveSellThrough({ id: r1.id, approvedById: state.userId });
+    await fx.approve(r1.id);
 
     await tick();
     await spgSell(1);
@@ -236,7 +236,7 @@ d("konsi sell-through queries (test bed only)", () => {
     await tick();
     const later = await count(6);
     const report = await createSellThrough({ closingStocktakeId: later, createdById: state.userId });
-    await approveSellThrough({ id: report.id, approvedById: state.userId });
+    await fx.approve(report.id);
 
     await expect(getSellThroughEligibility(earlier)).resolves.toEqual({ eligible: false, reason: "OUT_OF_ORDER" });
   }, SLOW);
