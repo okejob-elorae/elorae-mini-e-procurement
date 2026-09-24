@@ -3583,7 +3583,8 @@
       "STALE": "Stok berubah setelah laporan ini dibuka, sehingga angkanya sudah tidak sesuai lagi. Batalkan dan buat ulang.",
       "INVALID_STATE": "Laporan ini sedang tidak dalam status yang tepat untuk tindakan ini.",
       "INVALID_RESOLUTION": "Resolusi tersebut tidak valid untuk baris ini.",
-      "REASON_REQUIRED": "Alasan wajib diisi untuk resolusi ini."
+      "REASON_REQUIRED": "Alasan wajib diisi untuk resolusi ini.",
+      "REASON_TOO_LONG": "Alasan terlalu panjang — maksimal 1.000 karakter."
     }
   },
   "storeTransfers": {

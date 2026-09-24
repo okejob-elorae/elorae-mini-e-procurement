@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { prisma, seededId } from "@elorae/db";
+import { prisma, seededId, type Prisma } from "@elorae/db";
 import { createSellThrough, resolveSellThroughLine, approveSellThrough, cancelSellThrough } from "./writer";
 import { createSellThroughFixtures } from "./test-fixtures";
 import { approveStoreStocktake } from "@/lib/stores/stocktake/writer";
@@ -11,6 +11,41 @@ const d = isProd ? describe.skip : describe;
 
 /* Stubbed so the order-create fan-out cannot queue push notifications on the shared dev DB. */
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
+
+/**
+ * A pass-through seam on `runSerializable`: while `txSeam.wrap` is set, the writer's transaction
+ * client is handed through it first. It exists for the CAS-loser case alone. A serializable read
+ * is a locking read, so no concurrent write can land between approve's read and its CAS — the
+ * only way to reach `flipped.count === 0` is to let the read report a stale status. A spy on the
+ * base client's delegate would not reach inside the transaction, whose client is its own object.
+ */
+const txSeam = vi.hoisted(() => ({ wrap: null as null | ((tx: Prisma.TransactionClient) => Prisma.TransactionClient) }));
+vi.mock("@/lib/db/tx-retry", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/db/tx-retry")>();
+  return {
+    ...actual,
+    runSerializable: <T>(cb: (tx: Prisma.TransactionClient) => Promise<T>) =>
+      actual.runSerializable((tx) => cb(txSeam.wrap ? txSeam.wrap(tx) : tx)),
+  };
+});
+
+/* Serves every konsiSellThrough.findUnique through the real client, then reports the row as still DRAFT. */
+const withStaleDraftRead = (tx: Prisma.TransactionClient): Prisma.TransactionClient =>
+  new Proxy(tx, {
+    get(target, prop) {
+      if (prop !== "konsiSellThrough") return Reflect.get(target, prop);
+      const delegate = target.konsiSellThrough;
+      return new Proxy(delegate, {
+        get(d, p) {
+          if (p !== "findUnique") return Reflect.get(d, p);
+          return async (args: unknown) => {
+            const row = (await d.findUnique(args as never)) as Record<string, unknown> | null;
+            return row ? { ...row, status: "DRAFT" } : row;
+          };
+        },
+      });
+    },
+  });
 
 /* Every case drives several real serializable writers end to end, well past vitest's 5s default. */
 const SLOW = 60_000;
@@ -390,6 +425,67 @@ d("konsi sell-through writer (test bed only)", () => {
     expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("DRAFT");
   }, SLOW);
 
+  it("approve moves no stock: every StoreStock row and the store's ledger row count are unchanged", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+
+    const stockOf = () =>
+      prisma.storeStock.findMany({
+        where: { storeId: seededId(state.storeId) },
+        orderBy: [{ itemId: "asc" }, { variantSku: "asc" }],
+        select: { itemId: true, variantSku: true, qty: true, avgCost: true },
+      });
+    const ledgerCountOf = () => prisma.stockLedgerEntry.count({ where: { locationType: "STORE", locationId: seededId(state.storeId) } });
+    const stockBefore = await stockOf();
+    const ledgerBefore = await ledgerCountOf();
+
+    await approveSellThrough({ id, approvedById: state.userId });
+
+    expect((await stockOf()).map((r) => ({ ...r, qty: Number(r.qty), avgCost: Number(r.avgCost) }))).toEqual(
+      stockBefore.map((r) => ({ ...r, qty: Number(r.qty), avgCost: Number(r.avgCost) })),
+    );
+    expect(await ledgerCountOf()).toBe(ledgerBefore);
+  }, SLOW);
+
+  it("approve that loses the status CAS refuses INVALID_STATE and approves nothing", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+
+    /* A concurrent cancel that committed before the CAS; approve's own read is made to report the stale DRAFT. */
+    await prisma.konsiSellThrough.update({ where: { id }, data: { status: "CANCELLED" } });
+    txSeam.wrap = withStaleDraftRead;
+    try {
+      await expect(approveSellThrough({ id, approvedById: state.userId })).rejects.toMatchObject({ code: "INVALID_STATE" });
+    } finally {
+      txSeam.wrap = null;
+    }
+
+    const doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } });
+    expect(doc.status).toBe("CANCELLED");
+    expect(doc.approvedById).toBeNull();
+    expect(doc.approvedAt).toBeNull();
+  }, SLOW);
+
+  it("reads the method snapshotted at creation: switching the store to SHELF_COUNT does not release a held SPG_POS line", async () => {
+    await setMethod("SPG_POS");
+    await transferIn(6);
+    await spgSell(3);
+    const stocktakeId = await count(1, { cause: "SHRINKAGE", reason: "two units missing" });
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+
+    await setMethod("SHELF_COUNT");
+
+    await expect(approveSellThrough({ id, approvedById: state.userId })).rejects.toMatchObject({ code: "HELD" });
+    const doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } });
+    expect(doc.method).toBe("SPG_POS");
+    expect(doc.status).toBe("DRAFT");
+    expect(Number((await onlyLine(id)).billedQty)).toBe(3);
+  }, SLOW);
+
   it("a second approve of the same report refuses INVALID_STATE", async () => {
     await setMethod("SHELF_COUNT");
     await transferIn(6);
@@ -448,6 +544,10 @@ d("konsi sell-through writer (test bed only)", () => {
     const first = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
 
     await expect(cancelSellThrough({ id: first.id, cancelledById: state.userId, reason: "   " })).rejects.toMatchObject({ code: "REASON_REQUIRED" });
+    await expect(cancelSellThrough({ id: first.id, cancelledById: state.userId, reason: "x".repeat(1001) })).rejects.toMatchObject({
+      code: "REASON_REQUIRED",
+      detail: "REASON_TOO_LONG",
+    });
 
     await cancelSellThrough({ id: first.id, cancelledById: state.userId, reason: "  wrong count  " });
     const cancelled = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(first.id) } });

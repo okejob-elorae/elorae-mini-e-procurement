@@ -3583,7 +3583,8 @@
       "STALE": "Stock moved after this report was opened, so the figures no longer match. Cancel and recreate it.",
       "INVALID_STATE": "This report is not in a state that allows this action.",
       "INVALID_RESOLUTION": "That resolution is not valid for this line.",
-      "REASON_REQUIRED": "A reason is required for this resolution."
+      "REASON_REQUIRED": "A reason is required for this resolution.",
+      "REASON_TOO_LONG": "The reason is too long — keep it under 1,000 characters."
     }
   },
   "storeTransfers": {

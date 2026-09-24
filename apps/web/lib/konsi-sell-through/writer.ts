@@ -16,7 +16,7 @@ import {
 import { loadSellThroughInputs, stocktakeBoundary } from "./window";
 import { SellThroughError } from "./errors";
 
-/* A UX bound on a free-text reason — the column itself is TEXT. */
+/* A UX bound on a free-text reason — both columns are TEXT. The screens cap their inputs at the same figure. */
 const REASON_MAX_LENGTH = 1000;
 
 /* The ledger-derived figures approve re-derives and compares; everything else on a line is a snapshot or an admin decision. */
@@ -404,6 +404,7 @@ export async function cancelSellThrough(input: { id: string; cancelledById: stri
   return runSerializable(async (tx) => {
     const reason = input.reason?.trim() ?? "";
     if (reason === "") throw new SellThroughError("REASON_REQUIRED");
+    if (reason.length > REASON_MAX_LENGTH) throw new SellThroughError("REASON_REQUIRED", "REASON_TOO_LONG");
 
     const doc = await tx.konsiSellThrough.findUnique({ where: { id: input.id }, select: { id: true } });
     if (!doc) throw new SellThroughError("NOT_FOUND");

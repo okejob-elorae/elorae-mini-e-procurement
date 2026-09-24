@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma } from "@elorae/db";
-import { createSellThrough, resolveSellThroughLine, approveSellThrough } from "./writer";
+import { createSellThrough, resolveSellThroughLine, approveSellThrough, cancelSellThrough } from "./writer";
 import { createSellThroughFixtures } from "./test-fixtures";
 import { listSellThroughs, getSellThrough, getSellThroughEligibility } from "./queries";
 
@@ -85,6 +85,20 @@ d("konsi sell-through queries (test bed only)", () => {
     expect(resolved.items[0].heldCount).toBe(0);
     /* SHRINKAGE keeps billed at POS 3. */
     expect(resolved.items[0].billedTotalQty).toBe(3);
+  }, SLOW);
+
+  it("counts held lines on a DRAFT report only — a cancelled report with an unresolved gap shows 0", async () => {
+    await setMethod("SPG_POS");
+    await transferIn(6);
+    await spgSell(3);
+    const stocktakeId = await count(1, { cause: "SHRINKAGE", reason: "two units missing" });
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+    await cancelSellThrough({ id, cancelledById: state.userId, reason: "recount needed" });
+
+    const list = await listSellThroughs({ storeId: state.storeId, page: 1, pageSize: 10 });
+    expect(list.items).toHaveLength(1);
+    expect(list.items[0].status).toBe("CANCELLED");
+    expect(list.items[0].heldCount).toBe(0);
   }, SLOW);
 
   /* getSellThrough */

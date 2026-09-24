@@ -13,6 +13,7 @@ import {
   resolveSellThroughLineAction,
   approveSellThroughAction,
   cancelSellThroughAction,
+  type SellThroughActionFailure,
 } from "@/app/actions/konsi-sell-through";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -53,6 +54,9 @@ const STATUS_BADGE_VARIANT: Record<SellThroughDetail["status"], "secondary" | "d
   CANCELLED: "destructive",
 };
 
+/* Mirrors the writer's cap on both free-text reasons, so the input stops where the writer would refuse. */
+const REASON_MAX_LENGTH = 1000;
+
 export function SellThroughDetailClient({
   report,
   canManage,
@@ -83,6 +87,12 @@ export function SellThroughDetailClient({
   const isSpgPos = report.method === "SPG_POS";
   const showResolutionColumn = isSpgPos && isDraft && canManage;
   const heldLines = report.lines.filter((l) => l.held);
+
+  /* An over-long reason arrives under two different codes (INVALID_RESOLUTION on resolve, REASON_REQUIRED on cancel) and gets its own copy on both. */
+  function errorMessage(result: SellThroughActionFailure): string {
+    if (result.detail === "REASON_TOO_LONG") return t("err.REASON_TOO_LONG");
+    return t(`err.${result.reason}`, { detail: result.detail ?? "" });
+  }
 
   function effectiveResolution(line: SellThroughLineDetail): SellThroughResolutionValue | "" {
     return resolutions[line.id] ?? line.resolution ?? line.suggestedResolution ?? "";
@@ -130,7 +140,7 @@ export function SellThroughDetailClient({
           router.refresh();
           return;
         }
-        toast.error(t(`err.${result.reason}`, { detail: result.detail ?? "" }));
+        toast.error(errorMessage(result));
       } catch {
         setSavingLineId(null);
         toast.error(t("err.UNEXPECTED"));
@@ -148,7 +158,7 @@ export function SellThroughDetailClient({
           router.refresh();
           return;
         }
-        toast.error(t(`err.${result.reason}`, { detail: result.detail ?? "" }));
+        toast.error(errorMessage(result));
       } catch {
         setApproveOpen(false);
         toast.error(t("err.UNEXPECTED"));
@@ -168,7 +178,7 @@ export function SellThroughDetailClient({
           router.refresh();
           return;
         }
-        toast.error(t(`err.${result.reason}`, { detail: result.detail ?? "" }));
+        toast.error(errorMessage(result));
       } catch {
         setCancelOpen(false);
         toast.error(t("err.UNEXPECTED"));
@@ -367,6 +377,7 @@ export function SellThroughDetailClient({
                                     placeholder={tDetail("resolutionReasonPlaceholder")}
                                     className="h-10"
                                     disabled={saving}
+                                    maxLength={REASON_MAX_LENGTH}
                                     value={reason}
                                     onChange={(e) => updateReason(line.id, e.target.value)}
                                   />
@@ -431,6 +442,7 @@ export function SellThroughDetailClient({
               onChange={(e) => setCancelReason(e.target.value)}
               placeholder={tCancel("reasonPlaceholder")}
               disabled={cancelling}
+              maxLength={REASON_MAX_LENGTH}
               rows={3}
             />
           </div>

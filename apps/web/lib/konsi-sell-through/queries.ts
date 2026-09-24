@@ -21,11 +21,13 @@ export type SellThroughListItem = {
 };
 
 /**
- * `heldCount` only ever fires for a SPG_POS report — `isLineHeld` is false by construction for
- * SHELF_COUNT (see `derive.ts`) — so the held lookup is scoped to the SPG_POS ids among the page
- * rather than fetching every line of every report. `billedTotalQty` is a plain sum over the whole
- * page in one `groupBy`, unfiltered by method — a SHELF_COUNT total is exactly as meaningful as a
- * SPG_POS one, both being `KonsiSellThroughLine.billedQty`.
+ * `heldCount` only ever fires for a DRAFT SPG_POS report — `isLineHeld` is false by construction
+ * for SHELF_COUNT (see `derive.ts`), an APPROVED report cannot hold a line, and a CANCELLED one's
+ * unresolved gaps will never be resolved, so counting them would flag a report nobody can act on.
+ * The held lookup is therefore scoped to the DRAFT SPG_POS ids among the page rather than fetching
+ * every line of every report. `billedTotalQty` is a plain sum over the whole page in one `groupBy`,
+ * unfiltered by method — a SHELF_COUNT total is exactly as meaningful as a SPG_POS one, both being
+ * `KonsiSellThroughLine.billedQty`.
  */
 export async function listSellThroughs(input: {
   storeId?: string;
@@ -62,7 +64,7 @@ export async function listSellThroughs(input: {
   if (rows.length === 0) return { items: [], total };
 
   const reportIds = rows.map((r) => r.id);
-  const spgReportIds = rows.filter((r) => r.method === "SPG_POS").map((r) => r.id);
+  const draftSpgReportIds = rows.filter((r) => r.method === "SPG_POS" && r.status === "DRAFT").map((r) => r.id);
 
   const billedAgg = await prisma.konsiSellThroughLine.groupBy({
     by: ["sellThroughId"],
@@ -70,9 +72,9 @@ export async function listSellThroughs(input: {
     _sum: { billedQty: true },
   });
   const heldLines =
-    spgReportIds.length > 0
+    draftSpgReportIds.length > 0
       ? await prisma.konsiSellThroughLine.findMany({
-          where: { sellThroughId: { in: spgReportIds } },
+          where: { sellThroughId: { in: draftSpgReportIds } },
           select: { sellThroughId: true, gapQty: true, resolution: true },
         })
       : [];
