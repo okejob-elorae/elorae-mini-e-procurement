@@ -395,7 +395,7 @@ export function PiutangPageClient(props: Props) {
                             >
                               <TableCell className="max-w-[180px] truncate font-medium">{row.storeName}</TableCell>
                               <TableCell className="whitespace-nowrap font-mono text-xs">{row.docNo}</TableCell>
-                              <TableCell className="max-w-[140px] truncate">{row.salesmanName}</TableCell>
+                              <TableCell className="max-w-[140px] truncate">{row.salesmanName ?? "—"}</TableCell>
                               <TableCell className="max-w-[140px] truncate">{row.collectorName ?? "—"}</TableCell>
                               <TableCell className="whitespace-nowrap">
                                 {formatDateOnlyJakarta(row.invoiceDate)}

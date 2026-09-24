@@ -135,6 +135,7 @@ export function ReceivableDetailClient({
   collectorCandidates,
 }: Props) {
   const t = useTranslations("piutang");
+  const tSellThrough = useTranslations("konsiSellThrough");
   const router = useRouter();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [postingJournal, setPostingJournal] = useState(false);
@@ -243,14 +244,22 @@ export function ReceivableDetailClient({
           </Link>
         </div>
         <Field label={t("colStore")} value={r.store.name} />
-        <div className="flex justify-between gap-4 text-sm">
-          <span className="text-muted-foreground">{t("colSalesman")}</span>
-          <span className="text-right">{r.source.salesmanName ?? "—"}</span>
-        </div>
+        {r.source.kind === "DELIVERY" ? (
+          <Field label={t("colSalesman")} value={r.source.salesmanName} />
+        ) : (
+          <Field label={t("colSalesman")} value={r.source.salesmanName || "—"} />
+        )}
         {r.source.kind === "SELL_THROUGH" && (
           <Field
             label={t("detail.colPeriod")}
-            value={`${r.source.periodStart ? formatDateOnlyJakarta(r.source.periodStart) : "—"} – ${formatDateOnlyJakarta(r.source.periodEnd)}`}
+            value={
+              r.source.periodStart
+                ? tSellThrough("periodRange", {
+                    start: formatDateOnlyJakarta(r.source.periodStart),
+                    end: formatDateOnlyJakarta(r.source.periodEnd),
+                  })
+                : tSellThrough("periodFirst", { end: formatDateOnlyJakarta(r.source.periodEnd) })
+            }
           />
         )}
         <Field label={t("colInvoiceDate")} value={formatDateOnlyJakarta(r.invoiceDate)} />

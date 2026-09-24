@@ -206,7 +206,6 @@ export async function getReceivable(id: string, asOf: Date = new Date()) {
     select: {
       id: true,
       storeId: true,
-      deliveryId: true,
       invoiceDate: true,
       dueDate: true,
       originalAmount: true,
@@ -245,7 +244,7 @@ export async function getReceivable(id: string, asOf: Date = new Date()) {
     },
   });
   if (!r) return null;
-  const { delivery, sellThrough, ...rest } = r;
+  const { delivery: _delivery, sellThrough: _sellThrough, ...rest } = r;
   return {
     ...rest,
     source: resolveReceivableSource(r),
