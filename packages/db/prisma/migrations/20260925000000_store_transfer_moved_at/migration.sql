@@ -9,7 +9,10 @@
 -- approval (COUNTED_SINCE_MOVE): cancel it and raise it again with the real move time.
 --
 -- Re-runnable: the column add is IF NOT EXISTS, the backfill only touches NULL rows, and the
--- MODIFY is idempotent.
+-- MODIFY is idempotent. If the old image creates a transfer between the backfill and the MODIFY,
+-- that row's NULL `movedAt` fails the MODIFY; running the migration again (after
+-- `prisma migrate resolve --rolled-back 20260925000000_store_transfer_moved_at`) backfills it and
+-- completes.
 
 ALTER TABLE `StoreTransfer` ADD COLUMN IF NOT EXISTS `movedAt` DATETIME(3) NULL;
 

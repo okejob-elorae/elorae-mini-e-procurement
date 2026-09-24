@@ -87,13 +87,14 @@ async function assertNoReturInFlight(
  * touching the store — from it or to it — that moves an item::variant the count counted is still
  * PENDING although its goods moved on or before the count moment (`movedAt ≤ countMoment`). A
  * transfer of keys the count never counted cannot be in it and does not refuse; both variantSku
- * columns are non-nullable, so `countedKeys` match exactly. The count saw the move and StoreStock has not
- * recorded it, so the count's variance holds the moved units: a shortfall at the source that the
- * report would bill, a surplus at the destination. Stocktake approval refuses this case while the
- * count is still open (`TRANSFER_PENDING`), so what reaches here is a transfer first recorded after
- * the count was approved, or a count saved before `countFinishedAt` existed. Such a transfer can no
- * longer be approved (`COUNTED_SINCE_MOVE`); the remedy is to cancel it, after which the move
- * stands in the count as variance.
+ * columns are non-nullable, so `countedKeys` match exactly. The count saw the move and StoreStock
+ * has not recorded it, so the count's variance holds the moved units: a shortfall at the source
+ * that the report would bill, a surplus at the destination. Stocktake approval refuses this case
+ * while the count is still open (`TRANSFER_PENDING`), so what reaches here is a transfer first
+ * recorded after the count was approved, or a count approved before that refusal existed. Such a
+ * transfer can no longer be approved (`COUNTED_SINCE_MOVE`); the remedy is to cancel it, after
+ * which the move stands in the count as variance, and to raise it again for any keys the count did
+ * not count, or with the real move time if the goods moved after the count.
  *
  * Unlike `assertNoReturInFlight` there is deliberately no "approved after the count" arm. A
  * transfer approved after the count has its ledger rows inside this report's window, and stocktake
