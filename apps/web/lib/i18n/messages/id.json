@@ -4953,7 +4953,7 @@
   },
   "fakturPajak": {
     "pageTitle": "Faktur Pajak",
-    "subtitle": "Pantau dan kelola status faktur pajak untuk setiap pengiriman putus.",
+    "subtitle": "Pantau dan kelola status faktur pajak untuk setiap nota tagihan.",
     "listTitle": "Daftar Faktur Pajak",
     "searchPlaceholder": "Cari nomor nota, nama toko, atau nomor faktur...",
     "reset": "Reset",
