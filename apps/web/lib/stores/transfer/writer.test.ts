@@ -96,6 +96,7 @@ d("store transfer writer (test bed only)", () => {
     otherItemId = "";
     storeAId = "";
     storeBId = "";
+    stocktakeCounter = 0;
     run += 1;
 
     const uom = await prisma.uOM.create({ data: { code: `U-${tag}-${run}`, nameId: "pcs", nameEn: "pcs" } });

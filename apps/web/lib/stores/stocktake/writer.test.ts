@@ -485,6 +485,37 @@ d("store stocktake writer (test bed only)", () => {
     expect(st.status).toBe("APPROVED");
   });
 
+  it("does not refuse TRANSFER_PENDING when the transferred item's line was left uncounted", async () => {
+    /* The count lists itemMain but left it blank and counted itemZero only, so it never saw the move. */
+    await recordTransfer(storeId, storeBId, new Date(Date.now() - 120_000));
+    const id = await mkStocktake({
+      status: "PENDING_VERIFICATION",
+      lines: [
+        { itemId: itemMainId, expectedQty: 10, countedQty: null },
+        { itemId: itemZeroId, expectedQty: 0, countedQty: 0 },
+      ],
+    });
+    await prisma.storeStocktake.update({ where: { id }, data: { countFinishedAt: new Date(Date.now() - 1000) } });
+
+    await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+    const st = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } });
+    expect(st.status).toBe("APPROVED");
+    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId), variantSku: "" } });
+    expect(Number(ss.qty)).toBe(10);
+  });
+
+  it("does not refuse TRANSFER_PENDING when the count counted another variant of the transferred item", async () => {
+    /* The transfer moves itemMain's variantless key; this count counted itemMain under "RED" only. */
+    await recordTransfer(storeId, storeBId, new Date(Date.now() - 120_000));
+    const id = await countThroughSave({ itemId: itemMainId, variantSku: "RED", expectedQty: 0, countedQty: 0 });
+
+    await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+    const st = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } });
+    expect(st.status).toBe("APPROVED");
+  });
+
   it("refuses TRANSFER_PENDING for a count saved before countFinishedAt existed, falling back to the approval instant as the count moment", async () => {
     /*
      * No countFinishedAt on this document (created directly, never through saveStocktakeCounts),

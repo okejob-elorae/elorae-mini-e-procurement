@@ -725,7 +725,7 @@ d("konsi sell-through writer (test bed only)", () => {
       const r1 = await buildFirstReportOfChain();
       await fx.approve(r1.id);
       const r1Doc = await approvedReport(r1.id);
-      /* Inserted directly — a variant the store holds no StoreStock row for — one second inside report 1's period. */
+      /* Inserted directly, one second inside report 1's period. No StoreStock row for "LATE" on purpose: this pins the late diff for a key new to the window. */
       await prisma.stockLedgerEntry.create({
         data: {
           locationType: "STORE",
