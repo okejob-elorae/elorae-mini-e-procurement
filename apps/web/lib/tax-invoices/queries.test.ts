@@ -36,11 +36,25 @@ d("listTaxInvoices (test bed only)", () => {
   let deliveryAId = "";
   let deliveryBId = "";
 
+  /**
+   * Sell-through source coverage: a separate store/report/faktur chain, independent of the
+   * delivery fixture above, scoped by its own `q` so it never collides with the unfiltered
+   * `counts`/`total` assertions the existing DELIVERY tests make on `storeName`.
+   */
+  let sellThroughStoreName = "";
+  let sellThroughStoreId = "";
+  let sellThroughSalesmanId = "";
+  let sellThroughId = "";
+  let sellThroughDocNo = "";
+  let sellThroughTaxInvoiceId = "";
+
   beforeEach(async () => {
     token = Math.random().toString(36).slice(2, 10);
     storeName = `Test TIQ Store ${token}`;
     uomId = ""; itemId = ""; invId = ""; storeId = ""; userId = ""; orderId = ""; lineId = "";
     deliveryAId = ""; deliveryBId = "";
+    sellThroughStoreName = ""; sellThroughStoreId = ""; sellThroughSalesmanId = ""; sellThroughId = "";
+    sellThroughDocNo = ""; sellThroughTaxInvoiceId = "";
 
     const uom = await prisma.uOM.create({
       data: { code: `TEST-UOM-TIQ-${token}`, nameId: "test", nameEn: "test" },
@@ -113,9 +127,47 @@ d("listTaxInvoices (test bed only)", () => {
       where: { deliveryId: deliveryBId },
       data: { status: "CREATED", invoiceNo: `010.000-26.${token}`, markedAt: new Date(), markedById: userId },
     });
+
+    /* Sell-through source: its own store, its own salesman, a KonsiSellThrough report created
+       directly (no writer for it exists yet), and a TaxInvoice backed by `sellThroughId` alone. */
+    sellThroughStoreName = `Test TIQ ST Store ${token}`;
+    const sellThroughStore = await prisma.store.create({
+      data: { code: `TEST-TIQ-ST-STORE-${token}`, name: sellThroughStoreName, address: "Test address", termsType: "KONSI", isActive: true },
+    });
+    sellThroughStoreId = sellThroughStore.id;
+
+    const sellThroughSalesman = await prisma.user.create({
+      data: { email: `test-tiq-st-${token}@example.com`, name: "Test TIQ ST Salesman" },
+    });
+    sellThroughSalesmanId = sellThroughSalesman.id;
+
+    sellThroughDocNo = `TEST-TIQ-KST-${token}`;
+    const sellThrough = await prisma.konsiSellThrough.create({
+      data: {
+        docNo: sellThroughDocNo,
+        storeId: sellThroughStoreId,
+        method: "SPG_POS",
+        closingStocktakeId: `TEST-TIQ-STK-${token}`,
+        periodEnd: new Date("2026-03-31T00:00:00.000+07:00"),
+        salesmanId: sellThroughSalesmanId,
+        createdById: userId,
+      },
+    });
+    sellThroughId = sellThrough.id;
+
+    const sellThroughTaxInvoice = await prisma.taxInvoice.create({
+      data: { sellThroughId, status: "PENDING" },
+    });
+    sellThroughTaxInvoiceId = sellThroughTaxInvoice.id;
   });
 
   afterEach(async () => {
+    /* Children of the 1:1 relation to KonsiSellThrough go before their parent. */
+    await prisma.taxInvoice.deleteMany({ where: { id: seededId(sellThroughTaxInvoiceId) } });
+    await prisma.konsiSellThrough.deleteMany({ where: { id: seededId(sellThroughId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(sellThroughStoreId) } });
+    await prisma.user.deleteMany({ where: { id: seededId(sellThroughSalesmanId) } });
+
     await prisma.salesHistory.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.taxInvoice.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
@@ -219,5 +271,42 @@ d("listTaxInvoices (test bed only)", () => {
     expect(filtered.rows).toHaveLength(1);
     expect(filtered.rows[0].id).toBe(sent.id);
     expect(filtered.rows[0].status).toBe("SENT_TO_STORE");
+  });
+
+  it("represents a SELL_THROUGH-sourced faktur with the report's docNo and store, not the delivery's", async () => {
+    const { rows, total } = await listTaxInvoices({ q: sellThroughStoreName, page: 1, perPage: 10 });
+    expect(total).toBe(1);
+    expect(rows).toHaveLength(1);
+
+    const row = rows[0];
+    expect(row.id).toBe(sellThroughTaxInvoiceId);
+    expect(row.sourceKind).toBe("SELL_THROUGH");
+    expect(row.docNo).toBe(sellThroughDocNo);
+    expect(row.sellThroughId).toBe(sellThroughId);
+    expect(row.orderId).toBeNull();
+    expect(row.storeId).toBe(sellThroughStoreId);
+    expect(row.storeName).toBe(sellThroughStoreName);
+    /* Slice C invoices a sell-through report; until then these three stay null rather than
+       borrowing a delivery's figures the row does not have. */
+    expect(row.invoiceDate).toBeNull();
+    expect(row.dueDate).toBeNull();
+    expect(row.total).toBeNull();
+  });
+
+  it("finds a SELL_THROUGH-sourced faktur by the report's own docNo", async () => {
+    const { rows, total } = await listTaxInvoices({ q: sellThroughDocNo, page: 1, perPage: 10 });
+    expect(total).toBe(1);
+    expect(rows[0].id).toBe(sellThroughTaxInvoiceId);
+    expect(rows[0].sourceKind).toBe("SELL_THROUGH");
+  });
+
+  it("marks every existing DELIVERY row with sourceKind DELIVERY and a real orderId", async () => {
+    const { rows } = await listTaxInvoices({ q: storeName, page: 1, perPage: 10 });
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.sourceKind).toBe("DELIVERY");
+      expect(row.orderId).toBe(orderId);
+      expect(row.sellThroughId).toBeNull();
+    }
   });
 });

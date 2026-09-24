@@ -17,7 +17,7 @@ import {
 import { markCreatedAction } from "@/app/actions/tax-invoices";
 import { looksLikeDjpInvoiceNumber } from "@/lib/tax-invoices/invoice-number-format";
 
-type Row = { id: string; docNo: string; storeId: string; storeNpwp: string | null; total: number };
+type Row = { id: string; docNo: string; storeId: string; storeNpwp: string | null; total: number | null };
 
 type Props = {
   row: Row | null;
@@ -41,7 +41,7 @@ export function MarkCreatedDialog({ row, ppnRatePercent, onClose, onSuccess }: P
      so these initializers re-run fresh for every faktur rather than carrying a stale figure. */
   const [taxableAmount, setTaxableAmount] = useState<number | "">(row?.total ?? "");
   const [ppnAmount, setPpnAmount] = useState<number | "">(
-    row ? roundCents((row.total * ppnRatePercent) / 100) : "",
+    row && row.total !== null ? roundCents((row.total * ppnRatePercent) / 100) : "",
   );
   const [ppnTouched, setPpnTouched] = useState(false);
 
@@ -76,7 +76,7 @@ export function MarkCreatedDialog({ row, ppnRatePercent, onClose, onSuccess }: P
     setInvoiceNo("");
     setBuyerNpwp(row?.storeNpwp ?? "");
     setTaxableAmount(row?.total ?? "");
-    setPpnAmount(row ? roundCents((row.total * ppnRatePercent) / 100) : "");
+    setPpnAmount(row && row.total !== null ? roundCents((row.total * ppnRatePercent) / 100) : "");
     setPpnTouched(false);
     onClose();
   }
