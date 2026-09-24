@@ -188,7 +188,8 @@ d("konsi sell-through queries (test bed only)", () => {
 
     await fx.approve(id);
     const detail = await getSellThrough(id);
-    expect(detail).toMatchObject({ baseline: false, total: 200000, salesmanId: state.salesmanId, unrelievedCost: null, journalPending: false });
+    /* The writer posts no journal — the action does, after commit — so revenue and COGS are both still owed here. */
+    expect(detail).toMatchObject({ baseline: false, total: 200000, salesmanId: state.salesmanId, unrelievedCost: null, journalPending: true });
     expect(detail?.receivableId).not.toBeNull();
     expect(detail?.taxInvoiceId).not.toBeNull();
   }, SLOW);
@@ -201,7 +202,7 @@ d("konsi sell-through queries (test bed only)", () => {
 
     await fx.approveBaseline(id);
     const detail = await getSellThrough(id);
-    expect(detail).toMatchObject({ baseline: true, total: null, unrelievedCost: 40000 });
+    expect(detail).toMatchObject({ baseline: true, total: null, unrelievedCost: 40000, journalPending: false });
     expect(detail?.lines[0].unitPrice).toBeNull();
   }, SLOW);
 

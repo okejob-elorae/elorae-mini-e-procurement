@@ -7,6 +7,7 @@ import {
   postSellThroughRevenueJournal,
   postSellThroughCogsJournal,
   postSellThroughShrinkageJournal,
+  sellThroughJournalGaps,
 } from "./journal";
 import { createSellThrough, resolveSellThroughLine } from "./writer";
 import { createSellThroughFixtures } from "./test-fixtures";
@@ -28,7 +29,7 @@ d("konsi sell-through journals (test bed only)", () => {
   const fx = createSellThroughFixtures();
   const { state, setMethod, transferIn, count, onlyLine } = fx;
 
-  let mappingSnapshot: MappingSnapshot;
+  let mappingSnapshot: MappingSnapshot | undefined;
   let arId = "";
   let salesRevenueId = "";
   let cogsId = "";
@@ -37,8 +38,14 @@ d("konsi sell-through journals (test bed only)", () => {
   let reportIds: string[] = [];
 
   beforeEach(async () => {
-    await fx.beforeEach();
     reportIds = [];
+    mappingSnapshot = undefined;
+    arId = "";
+    salesRevenueId = "";
+    cogsId = "";
+    inventoryId = "";
+    inventoryVarianceId = "";
+    await fx.beforeEach();
     mappingSnapshot = await snapshotMappings(MAPPED_ROLES);
 
     const mk = async (suffix: string, type: "ASET" | "PENDAPATAN" | "HPP" | "BEBAN") =>
@@ -59,14 +66,22 @@ d("konsi sell-through journals (test bed only)", () => {
   });
 
   afterEach(async () => {
-    /* Journals are the record this file's own writes leave behind — cleared BEFORE the mappings and
-     * chart accounts they point at, and before the fixture's own afterEach tears the report down. */
-    const ids = reportIds.map((id) => seededId(id));
-    await prisma.journalLine.deleteMany({ where: { journal: { sourceType: { startsWith: "KONSI_SELLTHRU_" }, sourceId: { in: ids } } } });
-    await prisma.journal.deleteMany({ where: { sourceType: { startsWith: "KONSI_SELLTHRU_" }, sourceId: { in: ids } } });
-    await restoreMappings(mappingSnapshot);
-    await prisma.chartAccount.deleteMany({ where: { id: { in: [arId, salesRevenueId, cogsId, inventoryId, inventoryVarianceId] } } });
-    await fx.afterEach();
+    /**
+     * Journals are the record this file's own writes leave behind — cleared BEFORE the mappings and
+     * chart accounts they point at, and before the fixture's own afterEach tears the report down.
+     * The fixture teardown runs in `finally`, so a `beforeEach` that failed part-way (no snapshot
+     * yet, or no chart accounts) still never leaks the fixture's rows.
+     */
+    try {
+      const ids = reportIds.map((id) => seededId(id));
+      await prisma.journalLine.deleteMany({ where: { journal: { sourceType: { startsWith: "KONSI_SELLTHRU_" }, sourceId: { in: ids } } } });
+      await prisma.journal.deleteMany({ where: { sourceType: { startsWith: "KONSI_SELLTHRU_" }, sourceId: { in: ids } } });
+      if (mappingSnapshot) await restoreMappings(mappingSnapshot);
+      const chartAccountIds = [arId, salesRevenueId, cogsId, inventoryId, inventoryVarianceId].map((id) => seededId(id));
+      await prisma.chartAccount.deleteMany({ where: { id: { in: chartAccountIds } } });
+    } finally {
+      await fx.afterEach();
+    }
   });
 
   it("sellThroughCostTotals sums billed and shrinkage cost at the line's unit cost, rounded", () => {
@@ -112,21 +127,26 @@ d("konsi sell-through journals (test bed only)", () => {
   }, SLOW);
 
   it("returns NOTHING_TO_POST for shrinkage when nothing shrank, and for all three on a baseline report", async () => {
-    /* The store's first report: exact count, nothing billed, approved as a baseline. */
+    /**
+     * The store's first report bills 4 of 6 and is approved as a baseline, so a billed amount
+     * exists and only the baseline guard stops the posters.
+     */
     await setMethod("SHELF_COUNT");
     await transferIn(6);
-    const baselineStocktake = await count(6);
+    const baselineStocktake = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
     const { id: baselineId } = await createSellThrough({ closingStocktakeId: baselineStocktake, createdById: state.userId });
     reportIds.push(baselineId);
+    expect(Number((await onlyLine(baselineId)).billedQty)).toBe(4);
     await fx.approveBaseline(baselineId);
     await expect(postSellThroughRevenueJournal(baselineId, state.userId)).resolves.toMatchObject({ ok: false, code: "NOTHING_TO_POST" });
     await expect(postSellThroughCogsJournal(baselineId, state.userId)).resolves.toMatchObject({ ok: false, code: "NOTHING_TO_POST" });
     await expect(postSellThroughShrinkageJournal(baselineId, state.userId)).resolves.toMatchObject({ ok: false, code: "NOTHING_TO_POST" });
+    expect(await sellThroughJournalGaps(baselineId)).toEqual([]);
 
     /* The second report of the chain bills a real amount but shrinks nothing (SHELF_COUNT never carries a shrinkageQty). */
     await fx.tick();
     await transferIn(4);
-    const stocktakeId = await count(6, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
+    const stocktakeId = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
     const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
     reportIds.push(id);
     await fx.approve(id);
@@ -160,6 +180,9 @@ d("konsi sell-through journals (test bed only)", () => {
     expect(doc.receivable).toBeNull();
     expect(doc.taxInvoice).toBeNull();
 
+    /* A zero amount is never owed: only the shrinkage journal is a gap. */
+    expect(await sellThroughJournalGaps(id)).toEqual(["konsi_sell_through_shrinkage"]);
+
     /* revenue & cogs → NOTHING_TO_POST; shrinkage → ok, Dr INVENTORY_VARIANCE 20000 / Cr INVENTORY 20000 */
     await expect(postSellThroughRevenueJournal(id, state.userId)).resolves.toMatchObject({ ok: false, code: "NOTHING_TO_POST" });
     await expect(postSellThroughCogsJournal(id, state.userId)).resolves.toMatchObject({ ok: false, code: "NOTHING_TO_POST" });
@@ -172,6 +195,28 @@ d("konsi sell-through journals (test bed only)", () => {
     });
     expect(Number(journal.lines.find((l) => l.chartAccountId === inventoryVarianceId)!.debit)).toBe(20000);
     expect(Number(journal.lines.find((l) => l.chartAccountId === inventoryId)!.credit)).toBe(20000);
+    expect(await sellThroughJournalGaps(id)).toEqual([]);
+  }, SLOW);
+
+  it("sellThroughJournalGaps lists each owed kind until its journal lands, skipping a zero amount", async () => {
+    /* SHELF_COUNT billing 4 with no shrinkage: revenue and COGS are owed, shrinkage never is. */
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+    reportIds.push(id);
+
+    /* A DRAFT owes nothing yet. */
+    expect(await sellThroughJournalGaps(id)).toEqual([]);
+
+    await fx.approve(id);
+    expect(await sellThroughJournalGaps(id)).toEqual(["konsi_sell_through_revenue", "konsi_sell_through_cogs"]);
+
+    await postSellThroughRevenueJournal(id, state.userId);
+    expect(await sellThroughJournalGaps(id)).toEqual(["konsi_sell_through_cogs"]);
+
+    await postSellThroughCogsJournal(id, state.userId);
+    expect(await sellThroughJournalGaps(id)).toEqual([]);
   }, SLOW);
 
   it("re-posting is idempotent: the second call returns created: false and writes no second journal", async () => {

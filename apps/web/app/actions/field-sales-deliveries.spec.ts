@@ -632,6 +632,17 @@ describe("recordNotaTagihanPrinted", () => {
     await expect(recordNotaTagihanPrinted(deliveryId)).resolves.toBeUndefined();
   });
 
+  /* Prisma drops an `undefined` filter term, so without the guard the CAS would match every unprinted faktur. */
+  it("does nothing at all for a missing or empty delivery id", async () => {
+    mockUpdateMany.mockResolvedValue({ count: 1 });
+    await recordNotaTagihanPrinted(undefined as unknown as string);
+    await recordNotaTagihanPrinted("");
+    expect(mockAuth).not.toHaveBeenCalled();
+    expect(mockLogAudit).not.toHaveBeenCalled();
+    expect(mockUpdateMany).not.toHaveBeenCalled();
+    expect(mockAdminNotificationCreate).not.toHaveBeenCalled();
+  });
+
   it("does nothing without the field_sales_orders:view permission", async () => {
     mockAuth.mockResolvedValue({ user: { id: userId, permissions: [] } });
     mockUpdateMany.mockResolvedValue({ count: 1 });
