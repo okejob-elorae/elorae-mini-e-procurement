@@ -26,6 +26,7 @@ export default async function NewStorePage() {
         lat: null,
         lng: null,
         checkinRadiusMeters: null,
+        sellThroughMethod: null,
         isActive: true,
       }} />
     </div>

@@ -158,11 +158,18 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    // Mirrors the termsType onValueChange handler below: a store that was already KONSI when
-    // this form loaded (so the handler never fired) can still carry a stored priceDiscountPercent
-    // — the field the KONSI branch hides is the only control that could clear it, so submit must
-    // normalise it itself or the writer's assertValidPriceDiscount rejects an unrelated edit.
-    const payload: StoreFields = { ...form, priceDiscountPercent: form.termsType === "KONSI" ? null : form.priceDiscountPercent };
+    /**
+     * Mirrors the termsType onValueChange handler below: a store that was already on one terms
+     * type when this form loaded (so the handler never fired) can still carry a stored value the
+     * OTHER terms type's hidden control never got a chance to clear — priceDiscountPercent only
+     * applies to PUTUS, sellThroughMethod only to KONSI — so submit must normalise both itself or
+     * the writer's assertValidPriceDiscount / assertValidSellThroughMethod rejects an unrelated edit.
+     */
+    const payload: StoreFields = {
+      ...form,
+      priceDiscountPercent: form.termsType === "KONSI" ? null : form.priceDiscountPercent,
+      sellThroughMethod: form.termsType === "KONSI" ? form.sellThroughMethod : null,
+    };
     startTransition(async () => {
       const result =
         mode === "create"
@@ -173,8 +180,10 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
         else if (result.code === "forbidden") setError(tErr("forbidden"));
         else if (result.code === "not_found") setError(tErr("notFound"));
         else if (result.code === "has_consignment_stock") setError(tErr("hasConsignmentStock"));
+        else if (result.code === "has_draft_sell_through") setError(tErr("hasDraftSellThrough"));
         else if (result.code === "invalid_price_discount") setError(tErr("invalidPriceDiscount"));
         else if (result.code === "konsi_discount_not_allowed") setError(tErr("discountNotAllowedForKonsi"));
+        else if (result.code === "sell_through_method_requires_konsi") setError(tErr("sellThroughMethodRequiresKonsi"));
         else setError(result.message);
         return;
       }
@@ -473,9 +482,16 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
                   setForm((prev) => ({
                     ...prev,
                     termsType: next,
-                    /* A discount only applies to PUTUS pricing — drop any leftover value from
-                     * local state so a switch-then-save can never carry one into the writer. */
+                    /**
+                     * A discount only applies to PUTUS pricing — drop any leftover value from
+                     * local state so a switch-then-save can never carry one into the writer.
+                     */
                     priceDiscountPercent: next === "PUTUS" ? prev.priceDiscountPercent : null,
+                    /**
+                     * A sell-through method only applies to a KONSI store's own report — same
+                     * reasoning, opposite direction.
+                     */
+                    sellThroughMethod: next === "KONSI" ? prev.sellThroughMethod : null,
                   }));
                 }}
               >
@@ -535,6 +551,28 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
               </div>
             ) : (
               <p className="text-xs text-muted-foreground self-end pb-2">{t("priceDiscountPercentKonsiNotice")}</p>
+            )}
+            {form.termsType === "KONSI" && (
+              <div className="space-y-1.5">
+                <Label htmlFor="sellThroughMethod">{tRoot("sellThroughMethod.label")}</Label>
+                <Select
+                  disabled={pending || readOnly}
+                  value={form.sellThroughMethod ?? "__none__"}
+                  onValueChange={(v) =>
+                    update("sellThroughMethod", v === "__none__" ? null : (v as "SPG_POS" | "SHELF_COUNT"))
+                  }
+                >
+                  <SelectTrigger id="sellThroughMethod" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">{tRoot("sellThroughMethod.notSet")}</SelectItem>
+                    <SelectItem value="SPG_POS">{tRoot("sellThroughMethod.options.SPG_POS")}</SelectItem>
+                    <SelectItem value="SHELF_COUNT">{tRoot("sellThroughMethod.options.SHELF_COUNT")}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">{tRoot("sellThroughMethod.help")}</p>
+              </div>
             )}
             <div className="space-y-1.5">
               <Label htmlFor="creditLimit">{t("creditLimit")}</Label>

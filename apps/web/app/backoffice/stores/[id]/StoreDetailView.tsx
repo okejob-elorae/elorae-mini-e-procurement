@@ -592,6 +592,13 @@ export function StoreDetailView({
               <DetailField label={tForm("priceDiscountPercent")}>
                 {store.priceDiscountPercent !== null ? `${store.priceDiscountPercent}%` : "—"}
               </DetailField>
+              {store.termsType === "KONSI" && (
+                <DetailField label={t("sellThroughMethod.label")}>
+                  {store.sellThroughMethod
+                    ? t(`sellThroughMethod.options.${store.sellThroughMethod}`)
+                    : t("sellThroughMethod.notSet")}
+                </DetailField>
+              )}
               <DetailField label={tForm("creditLimit")}>
                 {store.creditLimit !== null ? formatRupiah(store.creditLimit) : tDetail("creditLimitUnlimited")}
               </DetailField>

@@ -30,6 +30,8 @@ import {
   cancelAction,
   type StoreStocktakeActionResult,
 } from "@/app/actions/store-stocktakes";
+import { createSellThroughAction } from "@/app/actions/konsi-sell-through";
+import type { getSellThroughEligibility } from "@/lib/konsi-sell-through/queries";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -101,6 +103,8 @@ type ActionErrorCode = Exclude<StoreStocktakeActionResult, { ok: true }>["code"]
 function errKey(code: ActionErrorCode): string {
   return `err.${code}`;
 }
+
+type SellThroughEligibility = Awaited<ReturnType<typeof getSellThroughEligibility>>;
 
 /** Blank means "not counted" — never coerced to 0, never treated as invalid. */
 function parseCountedInput(raw: string): { value: number | null; valid: boolean } {
@@ -189,9 +193,11 @@ function VarianceBadge({ counted, variance }: { counted: number | null; variance
 export function StocktakeDetailClient({
   stocktake,
   canManage,
+  sellThroughEligibility,
 }: {
   stocktake: StoreStocktakeDetail;
   canManage: boolean;
+  sellThroughEligibility: SellThroughEligibility | null;
 }) {
   const t = useTranslations("storeStocktakes");
   const tDetail = useTranslations("storeStocktakes.detail");
@@ -215,6 +221,8 @@ export function StocktakeDetailClient({
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelling, startCancelTransition] = useTransition();
+
+  const [creatingSellThrough, startCreateSellThroughTransition] = useTransition();
 
   const [addItemOpen, setAddItemOpen] = useState(false);
   const [addItemValue, setAddItemValue] = useState("");
@@ -358,6 +366,22 @@ export function StocktakeDetailClient({
     });
   }
 
+  function callCreateSellThrough(): void {
+    startCreateSellThroughTransition(async () => {
+      try {
+        const result = await createSellThroughAction(stocktake.id);
+        if (result.ok) {
+          toast.success(tDetail("sellThrough.created", { docNo: result.docNo }));
+          router.push(`/backoffice/konsi-sell-through/${result.id}`);
+          return;
+        }
+        toast.error(tDetail(`sellThrough.reason.${result.reason}`, { detail: result.detail ?? "" }));
+      } catch {
+        toast.error(tDetail("sellThrough.reason.UNEXPECTED"));
+      }
+    });
+  }
+
   function openAddItemDialog(): void {
     setAddItemOpen(true);
     setAddItemValue("");
@@ -446,6 +470,33 @@ export function StocktakeDetailClient({
               <CheckCircle2 className="h-4 w-4" />
               {tApprove("button")}
             </Button>
+          )}
+          {canManage && sellThroughEligibility && (
+            <>
+              {sellThroughEligibility.eligible ? (
+                <Button className="h-10" disabled={creatingSellThrough} onClick={callCreateSellThrough}>
+                  <ShoppingBag className="h-4 w-4" />
+                  {creatingSellThrough ? tDetail("sellThrough.creating") : tDetail("sellThrough.createButton")}
+                </Button>
+              ) : sellThroughEligibility.reason === "ALREADY_USED" && sellThroughEligibility.existingId ? (
+                <Button className="h-10" variant="outline" asChild>
+                  <Link href={`/backoffice/konsi-sell-through/${sellThroughEligibility.existingId}`}>
+                    <ShoppingBag className="h-4 w-4" />
+                    {tDetail("sellThrough.viewButton")}
+                  </Link>
+                </Button>
+              ) : (
+                <div className="flex flex-col items-end gap-1">
+                  <Button className="h-10" disabled>
+                    <ShoppingBag className="h-4 w-4" />
+                    {tDetail("sellThrough.createButton")}
+                  </Button>
+                  <p className="text-xs text-muted-foreground max-w-[280px] text-right">
+                    {tDetail(`sellThrough.reason.${sellThroughEligibility.reason}`, { detail: sellThroughEligibility.detail ?? "" })}
+                  </p>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

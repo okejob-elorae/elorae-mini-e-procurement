@@ -43,6 +43,7 @@ const DEFAULT_CONFIGS: Record<
   PAYMENT: { prefix: 'KWT/', resetPeriod: 'MONTHLY', padding: 4 },
   BKM: { prefix: 'BKM/', resetPeriod: 'YEARLY', padding: 4 },
   STORETRF: { prefix: 'STRF/', resetPeriod: 'YEARLY', padding: 4 },
+  SELLTHRU: { prefix: 'SLT/', resetPeriod: 'YEARLY', padding: 4 },
 };
 
 export async function getDocNumberConfigs(): Promise<DocNumberConfigRow[]> {

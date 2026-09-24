@@ -6,6 +6,8 @@ import {
   StoreHasConsignmentStockError,
   InvalidPriceDiscountPercentError,
   KonsiPriceDiscountNotAllowedError,
+  SellThroughMethodRequiresKonsiError,
+  StoreHasDraftSellThroughError,
   type StoreFields,
 } from "./queries";
 import { closeFieldSalesOrderRemainder } from "@/lib/field-sales/delivery/writer";
@@ -41,6 +43,7 @@ d("updateStore KONSI → PUTUS guard (test bed only)", () => {
     lat: null,
     lng: null,
     checkinRadiusMeters: null,
+    sellThroughMethod: null,
   });
 
   beforeEach(async () => {
@@ -122,6 +125,7 @@ d("updateStore KONSI → PUTUS guard over undelivered konsi orders (test bed onl
     lat: null,
     lng: null,
     checkinRadiusMeters: null,
+    sellThroughMethod: null,
   });
 
   beforeEach(async () => {
@@ -208,6 +212,7 @@ d("store price discount guard (test bed only)", () => {
     lat: null,
     lng: null,
     checkinRadiusMeters: null,
+    sellThroughMethod: null,
   });
 
   const konsiFields = (code: string, priceDiscountPercent: number | null): StoreFields => ({
@@ -225,6 +230,7 @@ d("store price discount guard (test bed only)", () => {
     lat: null,
     lng: null,
     checkinRadiusMeters: null,
+    sellThroughMethod: null,
   });
 
   beforeEach(() => {
@@ -308,5 +314,136 @@ d("store price discount guard (test bed only)", () => {
 
     const updated = await updateStore(created.id, { ...putusFields(`TEST-SQ-NPWP-${token}`, null), npwp: "09.876.543.2-109.000" });
     expect(updated.npwp).toBe("09.876.543.2-109.000");
+  });
+});
+
+d("store sell-through method guard (test bed only)", () => {
+  const token = Math.random().toString(36).slice(2, 10);
+  let createdIds: string[] = [];
+
+  const konsiFields = (code: string, sellThroughMethod: StoreFields["sellThroughMethod"]): StoreFields => ({
+    code,
+    name: "Sell-through guard konsi store",
+    address: "Test address",
+    phone: null,
+    contactName: null,
+    termsType: "KONSI",
+    paymentTempo: 0,
+    marginPercent: 20,
+    priceDiscountPercent: null,
+    creditLimit: null,
+    npwp: null,
+    lat: null,
+    lng: null,
+    checkinRadiusMeters: null,
+    sellThroughMethod,
+  });
+
+  const putusFields = (code: string, sellThroughMethod: StoreFields["sellThroughMethod"]): StoreFields => ({
+    code,
+    name: "Sell-through guard putus store",
+    address: "Test address",
+    phone: null,
+    contactName: null,
+    termsType: "PUTUS",
+    paymentTempo: 0,
+    marginPercent: null,
+    priceDiscountPercent: null,
+    creditLimit: null,
+    npwp: null,
+    lat: null,
+    lng: null,
+    checkinRadiusMeters: null,
+    sellThroughMethod,
+  });
+
+  beforeEach(() => {
+    createdIds = [];
+  });
+
+  afterEach(async () => {
+    await prisma.store.deleteMany({ where: { id: { in: createdIds.map((id) => seededId(id)) } } });
+  });
+
+  it("persists SPG_POS on a KONSI store", async () => {
+    const created = await createStore(konsiFields(`TEST-SQ-STM-OK-${token}`, "SPG_POS"));
+    createdIds.push(created.id);
+    expect(created.sellThroughMethod).toBe("SPG_POS");
+  });
+
+  it("refuses a non-null method on a PUTUS store", async () => {
+    await expect(
+      createStore(putusFields(`TEST-SQ-STM-PUTUS-${token}`, "SPG_POS")),
+    ).rejects.toBeInstanceOf(SellThroughMethodRequiresKonsiError);
+  });
+
+  it("refuses switching a KONSI store with a method set to PUTUS unless the same call clears it", async () => {
+    const created = await createStore(konsiFields(`TEST-SQ-STM-SWITCH-${token}`, "SHELF_COUNT"));
+    createdIds.push(created.id);
+
+    await expect(
+      updateStore(created.id, putusFields(`TEST-SQ-STM-SWITCH-${token}`, "SHELF_COUNT")),
+    ).rejects.toBeInstanceOf(SellThroughMethodRequiresKonsiError);
+
+    const cleared = await updateStore(created.id, putusFields(`TEST-SQ-STM-SWITCH-${token}`, null));
+    expect(cleared.termsType).toBe("PUTUS");
+    expect(cleared.sellThroughMethod).toBeNull();
+  });
+});
+
+d("updateStore KONSI → PUTUS guard over a draft sell-through report (test bed only)", () => {
+  const token = Math.random().toString(36).slice(2, 10);
+  let storeId = "";
+
+  const fields = (termsType: "KONSI" | "PUTUS"): StoreFields => ({
+    code: `TEST-SQ-SLT-${token}`,
+    name: "Sell-through draft guard store",
+    address: "Test address",
+    phone: null,
+    contactName: null,
+    termsType,
+    paymentTempo: 0,
+    marginPercent: termsType === "KONSI" ? 20 : null,
+    priceDiscountPercent: null,
+    creditLimit: null,
+    npwp: null,
+    lat: null,
+    lng: null,
+    checkinRadiusMeters: null,
+    sellThroughMethod: termsType === "KONSI" ? "SHELF_COUNT" : null,
+  });
+
+  beforeEach(async () => {
+    storeId = "";
+    const created = await createStore(fields("KONSI"));
+    storeId = created.id;
+  });
+
+  afterEach(async () => {
+    await prisma.konsiSellThrough.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+  });
+
+  it("refuses the switch while the store has a DRAFT report, and allows it once the report is cancelled", async () => {
+    /* Seeded directly: the guard reads only the status, and a real report needs a whole counted period behind it. */
+    const report = await prisma.konsiSellThrough.create({
+      data: {
+        docNo: `SLT/TEST-SQ-${token}`,
+        storeId,
+        method: "SHELF_COUNT",
+        status: "DRAFT",
+        closingStocktakeId: `TEST-SQ-STK-${token}`,
+        periodEnd: new Date(),
+        createdById: `TEST-SQ-USER-${token}`,
+      },
+      select: { id: true },
+    });
+
+    await expect(updateStore(storeId, fields("PUTUS"))).rejects.toBeInstanceOf(StoreHasDraftSellThroughError);
+    expect((await prisma.store.findUniqueOrThrow({ where: { id: seededId(storeId) } })).termsType).toBe("KONSI");
+
+    await prisma.konsiSellThrough.update({ where: { id: report.id }, data: { status: "CANCELLED" } });
+    const switched = await updateStore(storeId, fields("PUTUS"));
+    expect(switched.termsType).toBe("PUTUS");
   });
 });

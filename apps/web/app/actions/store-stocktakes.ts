@@ -364,7 +364,8 @@ export async function saveCountsAction(input: SaveCountsActionInput): Promise<St
 }
 
 /**
- * Approves a count, writing `StoreStock.qty` to the counted figure. Admin-only — verification is
+ * Approves a count, writing `StoreStock.qty` to the counted figure plus every store movement
+ * recorded after the count was saved (see `approveStoreStocktake`). Admin-only — verification is
  * the one step an SPG never performs on their own count.
  */
 export async function approveAction(stocktakeId: string): Promise<StoreStocktakeActionResult> {

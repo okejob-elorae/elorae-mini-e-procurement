@@ -133,6 +133,11 @@ const navItems: NavItem[] = [
         permission: PERMISSIONS.STORES_MANAGE,
       },
       {
+        labelKey: "navKonsiSellThrough",
+        href: "/backoffice/konsi-sell-through",
+        permission: PERMISSIONS.STORES_VIEW,
+      },
+      {
         labelKey: "storeTransfers",
         href: "/backoffice/store-transfers",
         permission: PERMISSIONS.STORES_MANAGE,
@@ -438,7 +443,8 @@ function Sidebar({
       path.startsWith('/backoffice/suppliers') ||
       path.startsWith('/backoffice/lead-time') ||
       path.startsWith('/backoffice/stores') ||
-      path.startsWith('/backoffice/store-stocktakes')
+      path.startsWith('/backoffice/store-stocktakes') ||
+      path.startsWith('/backoffice/konsi-sell-through')
     ) {
       return '/backoffice/suppliers';
     }
