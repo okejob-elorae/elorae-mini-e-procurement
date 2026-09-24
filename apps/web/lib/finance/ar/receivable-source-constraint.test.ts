@@ -68,9 +68,12 @@ d("Receivable / TaxInvoice exactly-one-source CHECK (test bed only)", () => {
   });
 
   afterEach(async () => {
-    /* Children of the 1:1 relation to KonsiSellThrough (and to FieldSalesDelivery) must go before
-     * their parents. Only the "only sellThroughId succeeds" tests actually persist a row here --
-     * the "neither"/"both" cases are expected to throw and never commit anything. */
+    /**
+     * Children of the 1:1 relation to KonsiSellThrough (and to FieldSalesDelivery) must go before
+     * their parents. Only the "only sellThroughId succeeds" tests are meant to persist a row here;
+     * the "neither"/"both" cases capture the id too, so a missing CHECK that lets one of them
+     * through still has its row cleaned rather than left to block the parent deletes below.
+     */
     await prisma.taxInvoice.deleteMany({ where: { id: seededId(taxInvoiceId) } });
     await prisma.receivable.deleteMany({ where: { id: seededId(receivableId) } });
     await prisma.konsiSellThrough.deleteMany({ where: { id: seededId(sellThroughId) } });
@@ -81,8 +84,8 @@ d("Receivable / TaxInvoice exactly-one-source CHECK (test bed only)", () => {
   });
 
   it("rejects a receivable with neither deliveryId nor sellThroughId", async () => {
-    await expect(
-      prisma.receivable.create({
+    const attempt = prisma.receivable
+      .create({
         data: {
           storeId,
           invoiceDate: new Date("2026-05-20T00:00:00.000+07:00"),
@@ -90,13 +93,17 @@ d("Receivable / TaxInvoice exactly-one-source CHECK (test bed only)", () => {
           originalAmount: 100,
           outstandingAmount: 100,
         },
-      }),
-    ).rejects.toThrow();
+      })
+      .then((row) => {
+        receivableId = row.id;
+        return row;
+      });
+    await expect(attempt).rejects.toThrow(/Receivable_one_source_check/);
   });
 
   it("rejects a receivable with both deliveryId and sellThroughId", async () => {
-    await expect(
-      prisma.receivable.create({
+    const attempt = prisma.receivable
+      .create({
         data: {
           deliveryId,
           sellThroughId,
@@ -106,8 +113,12 @@ d("Receivable / TaxInvoice exactly-one-source CHECK (test bed only)", () => {
           originalAmount: 100,
           outstandingAmount: 100,
         },
-      }),
-    ).rejects.toThrow();
+      })
+      .then((row) => {
+        receivableId = row.id;
+        return row;
+      });
+    await expect(attempt).rejects.toThrow(/Receivable_one_source_check/);
   });
 
   it("accepts a receivable with only sellThroughId", async () => {
@@ -127,13 +138,19 @@ d("Receivable / TaxInvoice exactly-one-source CHECK (test bed only)", () => {
   });
 
   it("rejects a tax invoice with neither deliveryId nor sellThroughId", async () => {
-    await expect(prisma.taxInvoice.create({ data: {} })).rejects.toThrow();
+    const attempt = prisma.taxInvoice.create({ data: {} }).then((row) => {
+      taxInvoiceId = row.id;
+      return row;
+    });
+    await expect(attempt).rejects.toThrow(/TaxInvoice_one_source_check/);
   });
 
   it("rejects a tax invoice with both deliveryId and sellThroughId", async () => {
-    await expect(
-      prisma.taxInvoice.create({ data: { deliveryId, sellThroughId } }),
-    ).rejects.toThrow();
+    const attempt = prisma.taxInvoice.create({ data: { deliveryId, sellThroughId } }).then((row) => {
+      taxInvoiceId = row.id;
+      return row;
+    });
+    await expect(attempt).rejects.toThrow(/TaxInvoice_one_source_check/);
   });
 
   it("accepts a tax invoice with only sellThroughId", async () => {

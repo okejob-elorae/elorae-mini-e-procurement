@@ -496,11 +496,12 @@ d("AR queries — sell-through source (test bed only)", () => {
   let putusRecId = "";
   let sellThroughId = "";
   let sellThroughRecId = "";
+  let paymentId = "";
 
   beforeEach(async () => {
     token = Math.random().toString(36).slice(2, 10);
     storeId = ""; putusSalesmanId = ""; sellThroughSalesmanId = ""; orderId = ""; deliveryId = "";
-    putusRecId = ""; sellThroughId = ""; sellThroughRecId = "";
+    putusRecId = ""; sellThroughId = ""; sellThroughRecId = ""; paymentId = "";
 
     const store = await prisma.store.create({
       data: { code: `TEST-ARQ2-${token}`, name: `Toko ${token}`, address: "test", termsType: "KONSI" },
@@ -572,6 +573,17 @@ d("AR queries — sell-through source (test bed only)", () => {
   });
 
   afterEach(async () => {
+    /**
+     * The getPayment test's payment and its allocation go first of all, allocation before payment
+     * and both before the receivable they point at. The journal cleanup is defensive, as in the
+     * fixture above: `recordPayment` posts no journal itself.
+     */
+    await prisma.journalLine.deleteMany({ where: { journal: { sourceId: seededId(paymentId) } } });
+    await prisma.journal.deleteMany({ where: { sourceId: seededId(paymentId) } });
+    await prisma.paymentAllocation.deleteMany({
+      where: { receivableId: { in: [seededId(putusRecId), seededId(sellThroughRecId)] } },
+    });
+    await prisma.payment.deleteMany({ where: { storeId: seededId(storeId) } });
     /* Children of the 1:1 relation to KonsiSellThrough (and to FieldSalesDelivery) go before their
      * parents — both receivables first, then the sellThrough, then the delivery/order/users/store. */
     await prisma.receivable.deleteMany({
@@ -614,6 +626,26 @@ d("AR queries — sell-through source (test bed only)", () => {
     expect(res.rows.map((r) => r.id)).toEqual([sellThroughRecId]);
   });
 
+  it("applies a salesman filter and a search together, neither overwriting the other", async () => {
+    /**
+     * Both filters are an `OR` of their own. If either replaced the other instead of being ANDed
+     * with it, the first query would return one of the two receivables rather than neither.
+     */
+    const mismatched = await listReceivables({
+      storeId,
+      salesmanId: putusSalesmanId,
+      search: `TEST-ARQ2-KST-${token}`,
+    });
+    expect(mismatched.rows).toEqual([]);
+
+    const matched = await listReceivables({
+      storeId,
+      salesmanId: sellThroughSalesmanId,
+      search: `TEST-ARQ2-KST-${token}`,
+    });
+    expect(matched.rows.map((r) => r.id)).toEqual([sellThroughRecId]);
+  });
+
   it("getReceivable resolves a DELIVERY-backed row's source", async () => {
     const detail = await getReceivable(putusRecId);
     expect(detail).not.toBeNull();
@@ -634,6 +666,21 @@ d("AR queries — sell-through source (test bed only)", () => {
       expect(detail!.source.sellThroughId).toBe(sellThroughId);
       expect(detail!.source.salesmanName).toBe(`Sales ST ${token}`);
     }
+  });
+
+  it("getPayment resolves a sell-through allocation's docNo off the report", async () => {
+    const payment = await recordPayment({
+      storeId, paidAt: asOf, method: "CASH", recordedById: putusSalesmanId,
+      amount: 200, allocations: [{ receivableId: sellThroughRecId, amount: 200 }],
+    });
+    paymentId = payment.paymentId;
+
+    const detail = await getPayment(paymentId);
+    expect(detail).not.toBeNull();
+    expect(detail!.allocations).toHaveLength(1);
+    expect(detail!.allocations[0].receivableId).toBe(sellThroughRecId);
+    expect(detail!.allocations[0].docNo).toBe(`TEST-ARQ2-KST-${token}`);
+    expect(detail!.allocations[0].outstandingAmount).toBe(300);
   });
 
   it("includes both receivables in the export, tagged with the right sourceKind", async () => {

@@ -605,6 +605,16 @@ d("amplop queries (test bed only)", () => {
     expect(row?.docNo).toBe(`TEST-AMP-KST-${token}`);
   });
 
+  it("puts a receivable whose report names no salesman in no salesman's amplop", async () => {
+    await prisma.konsiSellThrough.update({ where: { id: sellThroughId }, data: { salesmanId: null } });
+
+    const formerOwner = await listAmplop(sellThroughSalesmanId, asOf);
+    expect(formerOwner.stores.find((s) => s.storeId === sellThroughStoreId)).toBeUndefined();
+
+    const putusSalesman = await listAmplop(salesmanUserId, asOf);
+    expect(putusSalesman.stores.find((s) => s.storeId === sellThroughStoreId)).toBeUndefined();
+  });
+
   it("resolves a sell-through receivable's faktur status off the report, not the delivery", async () => {
     const amplop = await listAmplop(sellThroughSalesmanId, asOf);
     const row = amplop.stores
