@@ -6,13 +6,19 @@ export type ArJournalKind =
   | "field_delivery_revenue"
   | "field_delivery_cogs"
   | "ar_payment"
-  | "ar_payment_void";
+  | "ar_payment_void"
+  | "konsi_sell_through_revenue"
+  | "konsi_sell_through_cogs"
+  | "konsi_sell_through_shrinkage";
 
 const TITLE: Record<ArJournalKind, string> = {
   field_delivery_revenue: "Nota tagihan revenue journal not posted",
   field_delivery_cogs: "Nota tagihan COGS journal not posted",
   ar_payment: "Payment receipt journal not posted",
   ar_payment_void: "Payment void reversal journal not posted",
+  konsi_sell_through_revenue: "Konsi sell-through revenue journal not posted",
+  konsi_sell_through_cogs: "Konsi sell-through COGS journal not posted",
+  konsi_sell_through_shrinkage: "Konsi sell-through shrinkage journal not posted",
 };
 
 /**
@@ -27,6 +33,9 @@ const RETRY_HINT: Record<ArJournalKind, string> = {
   field_delivery_cogs: "retry from the receivable's detail page",
   ar_payment: "retry from the payment's detail page",
   ar_payment_void: 'open the payment and use the standing-payment warning\'s "Post reversal journal" action',
+  konsi_sell_through_revenue: "retry from the sell-through report's page",
+  konsi_sell_through_cogs: "retry from the sell-through report's page",
+  konsi_sell_through_shrinkage: "retry from the sell-through report's page",
 };
 
 export type ArPostOutcome = GenerateAutoJournalResult | { ok: false; code: "ERROR" };

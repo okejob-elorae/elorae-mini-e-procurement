@@ -4,16 +4,21 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { parseDateOnly } from "@/lib/date-only";
+import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
+import { isArJournalRetryable } from "@/lib/finance/ar/journal-pending";
 import {
   createSellThrough,
   resolveSellThroughLine,
   approveSellThrough,
   cancelSellThrough,
+  type ApproveSellThroughInput,
 } from "@/lib/konsi-sell-through/writer";
 import { SellThroughError, type SellThroughErrorCode } from "@/lib/konsi-sell-through/errors";
 import { SELL_THROUGH_RESOLUTIONS, type SellThroughResolutionValue } from "@/lib/konsi-sell-through/derive";
+import { SELL_THROUGH_JOURNAL_KINDS, SELL_THROUGH_JOURNAL_POSTERS, type SellThroughJournalKind } from "@/lib/konsi-sell-through/journal";
 
-export type SellThroughActionReason = SellThroughErrorCode | "FORBIDDEN" | "INVALID_REQUEST" | "UNEXPECTED";
+export type SellThroughActionReason = SellThroughErrorCode | "FORBIDDEN" | "INVALID_REQUEST" | "UNEXPECTED" | "NOT_RETRYABLE";
 
 export type SellThroughActionFailure = { ok: false; reason: SellThroughActionReason; detail?: string };
 
@@ -102,20 +107,87 @@ export async function resolveSellThroughLineAction(input: unknown): Promise<Sell
   }
 }
 
-export async function approveSellThroughAction(id: unknown): Promise<SellThroughActionResult> {
+type ApproveRequest = Omit<ApproveSellThroughInput, "approvedById">;
+
+function parseApproveRequest(input: unknown): ApproveRequest | null {
+  if (typeof input !== "object" || input === null) return null;
+  const i = input as Record<string, unknown>;
+  if (typeof i.id !== "string" || i.id === "") return null;
+  if (i.mode === "BASELINE") {
+    if (typeof i.reason !== "string") return null;
+    return { id: i.id, mode: "BASELINE", reason: i.reason };
+  }
+  if (i.mode === "INVOICE") {
+    if (typeof i.invoiceDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(i.invoiceDate)) return null;
+    const invoiceDate = parseDateOnly(i.invoiceDate);
+    if (!invoiceDate) return null;
+    if (i.salesmanId !== null && (typeof i.salesmanId !== "string" || i.salesmanId === "")) return null;
+    return { id: i.id, mode: "INVOICE", invoiceDate, salesmanId: i.salesmanId as string | null };
+  }
+  return null;
+}
+
+/**
+ * Posts every sell-through journal after the approve has committed. Each goes through
+ * `postArJournalSafely`, so an unmapped account degrades to a JOURNAL_PENDING flag the report page
+ * offers to retry, never a failed approve. `NOTHING_TO_POST` counts as posted on both the approve
+ * path and the retry path — there is nothing left for that kind to post, so it is done either way.
+ */
+async function postSellThroughJournals(id: string, userId: string, kinds: readonly SellThroughJournalKind[]) {
+  const posted: SellThroughJournalKind[] = [];
+  const stillPending: SellThroughJournalKind[] = [];
+  for (const kind of kinds) {
+    const outcome = await postArJournalSafely(kind, id, () => SELL_THROUGH_JOURNAL_POSTERS[kind](id, userId));
+    if (outcome.ok || outcome.code === "NOTHING_TO_POST") posted.push(kind);
+    else stillPending.push(kind);
+  }
+  return { posted, stillPending };
+}
+
+export async function approveSellThroughAction(input: unknown): Promise<SellThroughActionResult> {
   const g = await guard();
   if ("ok" in g) return g;
-  if (typeof id !== "string" || id === "") return { ok: false, reason: "INVALID_REQUEST" };
+  const req = parseApproveRequest(input);
+  if (!req) return { ok: false, reason: "INVALID_REQUEST" };
 
-  const doc = await prisma.konsiSellThrough.findUnique({ where: { id }, select: { closingStocktakeId: true } });
+  const doc = await prisma.konsiSellThrough.findUnique({ where: { id: req.id }, select: { closingStocktakeId: true } });
 
   try {
-    await approveSellThrough({ id, approvedById: g.userId });
-    if (doc) revalidateSellThrough(id, doc.closingStocktakeId);
+    const result = await approveSellThrough({ ...req, approvedById: g.userId });
+    if (result.invoiced) await postSellThroughJournals(req.id, g.userId, SELL_THROUGH_JOURNAL_KINDS);
+    if (doc) revalidateSellThrough(req.id, doc.closingStocktakeId);
+    revalidatePath("/backoffice/finance/piutang");
+    revalidatePath("/backoffice/finance/faktur-pajak");
     return { ok: true };
   } catch (e) {
     return toResult(e);
   }
+}
+
+export type RetrySellThroughJournalsResult =
+  | { ok: true; posted: SellThroughJournalKind[]; stillPending: SellThroughJournalKind[] }
+  | SellThroughActionFailure;
+
+/**
+ * Re-posts the sell-through journals a JOURNAL_PENDING flag says failed. The entry gate is the
+ * flag, never a missing journal: a report whose journal simply has nothing to post has none by
+ * construction. Success is read from `postArJournalSafely`'s outcome, not a re-check of the gate,
+ * which reads "still pending" forever once a kind has failed once.
+ */
+export async function retrySellThroughJournalsAction(id: unknown): Promise<RetrySellThroughJournalsResult> {
+  const g = await guard();
+  if ("ok" in g) return g;
+  if (typeof id !== "string" || id === "") return { ok: false, reason: "INVALID_REQUEST" };
+
+  const retryable: SellThroughJournalKind[] = [];
+  for (const kind of SELL_THROUGH_JOURNAL_KINDS) {
+    if (await isArJournalRetryable(kind, id)) retryable.push(kind);
+  }
+  if (retryable.length === 0) return { ok: false, reason: "NOT_RETRYABLE" };
+
+  const result = await postSellThroughJournals(id, g.userId, retryable);
+  revalidatePath(`/backoffice/konsi-sell-through/${id}`);
+  return { ok: true, ...result };
 }
 
 export async function cancelSellThroughAction(id: unknown, reason: unknown): Promise<SellThroughActionResult> {
