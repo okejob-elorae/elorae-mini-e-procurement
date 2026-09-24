@@ -51,8 +51,9 @@ const RETUR_IN_FLIGHT_STATUSES = ["PENDING_WAREHOUSE_RECEIVING", "MISMATCH_PENDI
  * a retur was in flight: raised on or before the count moment (`countFinishedAt`, or `approvedAt`
  * for a count saved before that column existed) and not approved until after it — still open, or
  * approved later. A retur takes its goods off the shelf when it is raised, but StoreStock only
- * drops when it is approved, so a count in that window records the returned units as a shortfall
- * and the report would bill them. Settling the retur afterwards does not clean the count, which is
+ * drops later — at approve for a FIELD retur, at receipt plus an approve-time delta for an ADMIN
+ * one — so a count in that window records the returned units as a shortfall and the report would
+ * bill them. Settling the retur afterwards does not clean the count, which is
  * why a later approval refuses as well as a pending status. CANCELLED never refuses. `approvedAt`
  * is the settle moment for both origins — conservative for an ADMIN retur, whose clean receipt
  * already decremented at `receivedAt`, but its approve-time delta still lands at `approvedAt`.

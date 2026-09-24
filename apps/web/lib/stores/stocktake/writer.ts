@@ -345,13 +345,14 @@ export async function approveStoreStocktake(input: {
      * count's. Null `countFinishedAt` (a count saved before the column existed) re-applies
      * nothing, which is exactly the old SET-the-counted-figure behaviour.
      *
-     * The ONE exception is a retur's store row whose retur was RAISED on or before
-     * `countFinishedAt`. A retur is the only store writer whose ledger row lags the physical
-     * movement: the goods leave the shelf when it is raised, but its store row lands later — at
-     * approve for a FIELD retur, at receipt plus an approve-time delta for an ADMIN one. The count
-     * already saw those units gone, so re-applying the row would take them off twice. Both retur
-     * writers stamp the FieldReturn id as the row's `refId`. A retur raised after the count still
-     * counts: its goods left after the shelf was counted.
+     * Excluded: a retur's store row whose retur was RAISED on or before `countFinishedAt`. A
+     * retur's ledger row lags the physical movement — the goods leave the shelf when it is raised,
+     * but its store row lands later, at approve for a FIELD retur, at receipt plus an approve-time
+     * delta for an ADMIN one — so the count already saw those units gone, and re-applying the row
+     * would take them off twice. Both retur writers stamp the FieldReturn id as the row's `refId`.
+     * A retur raised after the count still counts: its goods left after the shelf was counted.
+     * The store-to-store transfer can lag the same way (goods moved before its approval) and is
+     * NOT excluded — logged in docs/FOLLOWUPS.md.
      */
     const postCountCentsByKey = new Map<string, number>();
     if (st.countFinishedAt) {
