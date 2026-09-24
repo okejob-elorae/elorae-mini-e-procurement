@@ -606,16 +606,17 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       duplicate re-file is refused by `INVOICE_OVERCLAIMED`, so the exposure is a wasted document
       number and a confusing dead end, not double-collected money) (feat/settlement-document,
       feat/settlement-bkm-print).
-- [ ] Konsi stores can never appear in a settlement either, for exactly the reason they cannot appear
-      in an amplop (see the konsi item above): the settlement selects `Receivable` rows and a konsi
-      order creates none. A receivable CAN now be backed by a `KonsiSellThrough` report, and the
-      settlement already reads one: its queries resolve each invoice's `docNo` through
-      `resolveReceivableSource`, the filing screen takes its store card from the amplop, and
-      `submitSettlement`'s ownership check accepts the report's own `salesmanId` beside the assigned
-      collector. But nothing creates such a receivable until report approval becomes invoicing, and
-      that same work has to stamp `KonsiSellThrough.salesmanId` — a sell-through receivable reaches a
-      salesman's settlement only once the report names him; until then only its assigned collector
-      can file it (feat/settlement-document; source arm added in PR number on merge).
+- [ ] Konsi stores cannot appear in a settlement yet, and will not until sell-through invoicing
+      exists, for exactly the reason they cannot appear in an amplop (see the konsi item above): the
+      settlement selects `Receivable` rows and a konsi order creates none. A receivable CAN now be
+      backed by a `KonsiSellThrough` report, and the settlement already reads one: its queries
+      resolve each invoice's `docNo` through `resolveReceivableSource`, the filing screen takes its
+      store card from the amplop, and `submitSettlement`'s ownership check accepts the report's own
+      `salesmanId` beside the assigned collector. But nothing creates such a receivable until report
+      approval becomes invoicing, and that same work has to stamp `KonsiSellThrough.salesmanId` — a
+      sell-through receivable reaches a salesman's settlement only once the report names a salesman;
+      until then only its assigned collector can file it (feat/settlement-document; source arm added
+      in PR number on merge).
 - [ ] A `RETUR_OFFSET` deduction's `proofUrl`/`proofR2Key` are persisted from the caller unvalidated
       — the writer's prefix/uniqueness/derive-from-key handling only runs for `PROGRAM`/`ADMIN_FEE`
       rows (`if (deduction.type === "RETUR_OFFSET") continue;` skips it entirely, since a retur

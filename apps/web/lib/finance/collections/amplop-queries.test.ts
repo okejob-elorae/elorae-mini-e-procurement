@@ -613,6 +613,9 @@ d("amplop queries (test bed only)", () => {
 
     const putusSalesman = await listAmplop(salesmanUserId, asOf);
     expect(putusSalesman.stores.find((s) => s.storeId === sellThroughStoreId)).toBeUndefined();
+
+    const reportCreator = await listAmplop(adminUserId, asOf);
+    expect(reportCreator.stores.find((s) => s.storeId === sellThroughStoreId)).toBeUndefined();
   });
 
   it("resolves a sell-through receivable's faktur status off the report, not the delivery", async () => {

@@ -10,7 +10,9 @@
 -- not dropped or recreated here.
 --
 -- Safe to re-run after a partial failure (MariaDB commits each DDL statement on its own): every
--- statement is idempotent, and each CHECK is dropped if present before it is added.
+-- statement is idempotent, and each CHECK is dropped if present before it is added. Prisma still
+-- records a partially applied migration as failed, so run
+-- `prisma migrate resolve --rolled-back 20260924100000_receivable_source` before re-deploying.
 
 ALTER TABLE `Receivable` MODIFY `deliveryId` VARCHAR(191) NULL;
 ALTER TABLE `Receivable` ADD COLUMN IF NOT EXISTS `sellThroughId` VARCHAR(191) NULL;

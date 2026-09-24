@@ -67,12 +67,12 @@ d("recordPayment (test bed only)", () => {
     userId = user.id;
 
     /*
-     * Receivable.delivery is a REQUIRED relation under relationMode="prisma" — a deliveryId that
-     * does not resolve to a real FieldSalesDelivery throws "Inconsistent query result" the moment a
-     * query selects through it (e.g. listReceivables's docNo / order.salesman.name). recordPayment
-     * itself never selects through delivery, but a fake string id here still leaves an orphan
-     * Receivable behind on the shared bed if the teardown is ever interrupted, so the chain is real
-     * rows, not a synthetic string.
+     * relationMode="prisma" puts no FK behind Receivable.deliveryId — a deliveryId that does not
+     * resolve to a real FieldSalesDelivery reads back with neither source relation, and
+     * resolveReceivableSource throws ReceivableSourceMissingError wherever the row is resolved
+     * (e.g. listReceivables's docNo / order.salesman.name). recordPayment itself never resolves the
+     * source, but a fake string id here still leaves an orphan Receivable behind on the shared bed
+     * if the teardown is ever interrupted, so the chain is real rows, not a synthetic string.
      */
     const orderA = await prisma.fieldSalesOrder.create({
       data: { orderNo: `TEST-ARPW-ORDA-${token}`, storeId, salesmanId: userId, subtotal: 1000, total: 1000 },

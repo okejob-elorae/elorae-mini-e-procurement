@@ -195,7 +195,10 @@ export type TaxInvoiceSource =
       storeId: string;
       storeName: string;
       storeNpwp: string | null;
-      /* A report carries no invoice date, due date or total until invoicing stamps them; this arm must read them off the report once it does. */
+      /**
+       * A report carries no invoice date, due date or total until invoicing stamps them; this arm
+       * must read them off the report once it does.
+       */
       invoiceDate: null;
       dueDate: null;
       total: null;

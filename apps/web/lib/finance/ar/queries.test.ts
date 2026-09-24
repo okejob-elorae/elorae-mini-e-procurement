@@ -67,10 +67,11 @@ d("AR queries (test bed only)", () => {
     userId = user.id;
 
     /*
-     * Receivable.delivery is a REQUIRED relation under relationMode="prisma" — a deliveryId that
-     * does not resolve to a real FieldSalesDelivery throws "Inconsistent query result" the moment a
-     * query selects through it, which both listReceivables and getReceivable do (docNo,
-     * order.salesman.name). So the delivery/order chain has to be real rows, not a fake string id.
+     * relationMode="prisma" puts no FK behind Receivable.deliveryId — a deliveryId that does not
+     * resolve to a real FieldSalesDelivery reads back with neither source relation, and
+     * resolveReceivableSource throws ReceivableSourceMissingError the moment listReceivables or
+     * getReceivable resolves the row (docNo, order.salesman.name). So the delivery/order chain has
+     * to be real rows, not a fake string id.
      */
     const orderA = await prisma.fieldSalesOrder.create({
       data: { orderNo: `TEST-ARQ-ORD1-${token}`, storeId, salesmanId: userId, subtotal: 1000, total: 1000 },
