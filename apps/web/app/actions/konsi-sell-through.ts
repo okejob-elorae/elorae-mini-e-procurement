@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { parseDateOnly } from "@/lib/date-only";
+import { formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
 import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
@@ -131,7 +131,8 @@ function parseApproveRequest(input: unknown): ApproveRequest | null {
   if (i.mode === "INVOICE") {
     if (typeof i.invoiceDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(i.invoiceDate)) return null;
     const invoiceDate = parseDateOnly(i.invoiceDate);
-    if (!invoiceDate) return null;
+    /* The round-trip refuses a day the calendar does not have: `2026-02-30` parses, rolled over to 2 March. */
+    if (!invoiceDate || formatDateOnlyJakarta(invoiceDate) !== i.invoiceDate) return null;
     if (i.salesmanId !== null && (typeof i.salesmanId !== "string" || i.salesmanId === "")) return null;
     return { id: i.id, mode: "INVOICE", invoiceDate, salesmanId: i.salesmanId as string | null };
   }
@@ -295,6 +296,9 @@ export async function getSellThroughNotaAction(id: unknown): Promise<SellThrough
  * pajak is now due — the sell-through counterpart of `recordNotaTagihanPrinted` in
  * `app/actions/field-sales-deliveries.ts`, same shape for the same reasons.
  *
+ * A missing or empty id returns before anything runs: Prisma drops an `undefined` filter term, so
+ * the CAS below would otherwise match every unprinted faktur in the table.
+ *
  * Compare-and-swap, not read-then-write: a double-click on the print button would otherwise pass
  * a read-then-check twice before either write lands, notifying finance twice for the same
  * document. `updateMany`'s `count` says whether THIS call was the one that flipped
@@ -315,7 +319,8 @@ export async function getSellThroughNotaAction(id: unknown): Promise<SellThrough
  * on purpose, so a reprint still gets its own audit row; moving it after the early return would
  * silently stop reprints being audited at all.
  */
-export async function recordSellThroughNotaPrinted(id: string): Promise<void> {
+export async function recordSellThroughNotaPrinted(id: unknown): Promise<void> {
+  if (typeof id !== "string" || id === "") return;
   try {
     const session = await auth();
     if (!session?.user?.id) return;
