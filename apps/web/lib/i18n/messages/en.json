@@ -3549,7 +3549,8 @@
       "saveResolution": "Save",
       "saving": "Saving…",
       "resolutionSaved": "Resolution saved.",
-      "readOnlyNote": "This report is no longer open — lines can no longer be resolved."
+      "readOnlyNote": "This report is no longer open — lines can no longer be resolved.",
+      "closingVsCountedNote": "Closing comes from the ledger and includes movements recorded between the closing count and its approval, so it can differ from Counted."
     },
     "approve": {
       "button": "Approve",

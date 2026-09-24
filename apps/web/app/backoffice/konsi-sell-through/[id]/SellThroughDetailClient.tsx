@@ -297,6 +297,7 @@ export function SellThroughDetailClient({
         </CardHeader>
         <CardContent>
           {!isDraft && <p className="mb-3 text-sm text-muted-foreground">{tDetail("readOnlyNote")}</p>}
+          <p className="mb-3 text-xs text-muted-foreground">{tDetail("closingVsCountedNote")}</p>
           <TooltipProvider>
             <div className="overflow-x-auto">
               <Table>

@@ -3549,7 +3549,8 @@
       "saveResolution": "Simpan",
       "saving": "Menyimpan…",
       "resolutionSaved": "Resolusi berhasil disimpan.",
-      "readOnlyNote": "Laporan ini sudah tidak berjalan lagi — baris tidak bisa diselesaikan dari sini."
+      "readOnlyNote": "Laporan ini sudah tidak berjalan lagi — baris tidak bisa diselesaikan dari sini.",
+      "closingVsCountedNote": "Akhir dihitung dari ledger dan mencakup pergerakan yang tercatat antara perhitungan penutup dan persetujuannya, sehingga bisa berbeda dari Hasil Hitung."
     },
     "approve": {
       "button": "Setujui",
