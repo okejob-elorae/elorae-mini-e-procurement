@@ -3353,7 +3353,7 @@
           "DRAFT_EXISTS": "This store already has a draft sell-through report open. Approve or cancel it first.",
           "OUT_OF_ORDER": "This stocktake closes before the store's last sell-through report period — sell-through reports must follow the store's counting order.",
           "BEFORE_LEDGER_CUTOVER": "This count was approved before the store's first recorded stock movement, so there is no stock history for a report to cover. Use a later count.",
-          "RETUR_IN_FLIGHT": "This count cannot close a period: returns {detail} were raised before it and still unsettled when it was taken. Finish or cancel those returns, then close the period with a later count.",
+          "RETUR_IN_FLIGHT": "This count cannot close a period: returns {detail} were raised before it and still unsettled when it was taken. Finish or cancel them if they are still open, then close the period with a later count.",
           "UNKNOWN_REF_TYPE": "An unrecognised stock movement was found while building this report. Contact an admin.",
           "HELD": "This report has lines awaiting resolution.",
           "STALE": "Stock moved after this report was opened. Cancel and recreate it.",
@@ -3583,14 +3583,14 @@
       "DRAFT_EXISTS": "This store already has a draft sell-through report open. Approve or cancel it first.",
       "OUT_OF_ORDER": "This stocktake closes before the store's last sell-through report period.",
       "BEFORE_LEDGER_CUTOVER": "This stocktake was approved before the store's first recorded stock movement, so there is no stock history for a report to cover. Close the period with a later count.",
-      "RETUR_IN_FLIGHT": "Returns {detail} were raised before the closing count and were still unsettled when it was taken, so the count missed units already off the shelf. Finish or cancel those returns, then close the period with a later count.",
+      "RETUR_IN_FLIGHT": "Returns {detail} were raised before the closing count and were still unsettled when it was taken, so the count missed units already off the shelf. Finish or cancel them if they are still open, then close the period with a later count.",
       "UNKNOWN_REF_TYPE": "An unrecognised stock movement was found on this report. Contact an admin.",
       "HELD": "Every line with a gap needs a saved resolution before this report can be approved.",
       "STALE": "Stock moved after this report was opened, so the figures no longer match. Cancel and recreate it.",
       "INVALID_STATE": "This report is not in a state that allows this action.",
       "INVALID_RESOLUTION": "That resolution is not valid for this line.",
       "REASON_REQUIRED": "A reason is required for this resolution.",
-      "REASON_TOO_LONG": "The reason is too long — keep it under 1,000 characters."
+      "REASON_TOO_LONG": "The reason is too long — keep it to 1,000 characters or fewer."
     }
   },
   "storeTransfers": {
