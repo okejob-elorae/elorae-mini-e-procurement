@@ -274,6 +274,8 @@ export async function saveStocktakeCounts(input: {
  * `StoreStock.qty` to its counted figure PLUS every store ledger movement for that item::variant
  * recorded after `countFinishedAt`: a POS sale or a konsi delivery while the count waited for an
  * admin happened after the shelf was counted, and setting the bare counted figure would erase it.
+ * A retur raised before the count is excluded — its goods were already off the shelf the count
+ * saw, even though its ledger row lands later (see the post-count block below).
  * The ledger entry `setStoreStock` writes is then the true shrinkage or surplus at the count
  * moment, whatever moved since. A stocktake whose `countFinishedAt` is null was counted before
  * that column existed, and keeps the old behaviour: the bare counted figure. Nothing here refuses
@@ -337,19 +339,33 @@ export async function approveStoreStocktake(input: {
       if (!existingItemIds.has(id)) throw new StoreStocktakeError("ITEM_NOT_FOUND");
     }
 
-    /*
+    /**
      * Every store movement recorded after the count was saved, summed per item::variant in cents.
      * Only one stocktake per store can be open (`openKey`), so none of these rows is another
      * count's. Null `countFinishedAt` (a count saved before the column existed) re-applies
      * nothing, which is exactly the old SET-the-counted-figure behaviour.
+     *
+     * The ONE exception is a retur's store row whose retur was RAISED on or before
+     * `countFinishedAt`. A retur is the only store writer whose ledger row lags the physical
+     * movement: the goods leave the shelf when it is raised, but its store row lands later — at
+     * approve for a FIELD retur, at receipt plus an approve-time delta for an ADMIN one. The count
+     * already saw those units gone, so re-applying the row would take them off twice. Both retur
+     * writers stamp the FieldReturn id as the row's `refId`. A retur raised after the count still
+     * counts: its goods left after the shelf was counted.
      */
     const postCountCentsByKey = new Map<string, number>();
     if (st.countFinishedAt) {
       const postCount = await tx.stockLedgerEntry.findMany({
         where: { locationType: "STORE", locationId: st.storeId, createdAt: { gt: st.countFinishedAt } },
-        select: { itemId: true, variantSku: true, qty: true },
+        select: { itemId: true, variantSku: true, qty: true, refType: true, refId: true },
       });
+      const returIds = Array.from(new Set(postCount.filter((r) => r.refType === "FieldReturn").map((r) => r.refId)));
+      const preCountReturs = returIds.length > 0
+        ? await tx.fieldReturn.findMany({ where: { id: { in: returIds }, createdAt: { lte: st.countFinishedAt } }, select: { id: true } })
+        : [];
+      const preCountReturIds = new Set(preCountReturs.map((r) => r.id));
       for (const r of postCount) {
+        if (r.refType === "FieldReturn" && preCountReturIds.has(r.refId)) continue;
         const key = `${r.itemId}::${r.variantSku}`;
         postCountCentsByKey.set(key, (postCountCentsByKey.get(key) ?? 0) + Math.round(r.qty.toNumber() * 100));
       }
