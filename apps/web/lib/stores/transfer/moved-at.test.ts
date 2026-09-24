@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { formatMovedAtInput, isMovedAtInFuture, parseMovedAtInput } from "./moved-at";
+import { MOVED_AT_FUTURE_TOLERANCE_MS, formatMovedAtInput, isMovedAtInFuture, parseMovedAtInput } from "./moved-at";
 
 /**
  * The parse and format cases run under process timezones other than WIB, because a regression to
@@ -63,8 +63,14 @@ underTimezone("America/New_York", "2026-09-24T13:30:00.000Z");
 describe("isMovedAtInFuture", () => {
   const now = new Date("2026-09-24T02:30:00.000Z");
 
-  it("compares instants: one millisecond after now is future", () => {
-    expect(isMovedAtInFuture(new Date(now.getTime() + 1), now)).toBe(true);
+  it("allows a move up to the tolerance ahead of now, so a slightly fast browser clock is not refused", () => {
+    expect(MOVED_AT_FUTURE_TOLERANCE_MS).toBe(5 * 60_000);
+    expect(isMovedAtInFuture(new Date(now.getTime() + 60_000), now)).toBe(false);
+    expect(isMovedAtInFuture(new Date(now.getTime() + MOVED_AT_FUTURE_TOLERANCE_MS), now)).toBe(false);
+  });
+
+  it("compares instants: one millisecond past the tolerance is future", () => {
+    expect(isMovedAtInFuture(new Date(now.getTime() + MOVED_AT_FUTURE_TOLERANCE_MS + 1), now)).toBe(true);
   });
 
   it("is false for now itself and for anything earlier", () => {

@@ -30,7 +30,8 @@ export type CreateStoreTransferLine = {
  * time and often recorded after the fact. Every lag guard — this writer's `COUNTED_SINCE_MOVE`,
  * stocktake approval's `TRANSFER_PENDING` and exclusion, the sell-through report's
  * `TRANSFER_IN_FLIGHT` — compares it as an instant against a count moment, so a count earlier on
- * the same day as the move stays before it. A moment after now is refused.
+ * the same day as the move stays before it. A moment more than `MOVED_AT_FUTURE_TOLERANCE_MS`
+ * after now is refused (`isMovedAtInFuture`).
  */
 export async function createStoreTransfer(input: {
   fromStoreId: string;

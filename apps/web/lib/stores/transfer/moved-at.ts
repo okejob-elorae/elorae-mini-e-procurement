@@ -33,7 +33,14 @@ export function parseMovedAtInput(value: unknown): Date | null {
   return formatMovedAtInput(parsed) === value ? parsed : null;
 }
 
-/* True when the move is later than `now`. */
+/**
+ * How far past `now` a move may be stamped before it counts as future. The form defaults to the
+ * browser's now and the writer compares against the server's, so a browser clock running slightly
+ * fast must not refuse that default.
+ */
+export const MOVED_AT_FUTURE_TOLERANCE_MS = 5 * 60_000;
+
+/* True when the move is more than `MOVED_AT_FUTURE_TOLERANCE_MS` after `now`. */
 export function isMovedAtInFuture(movedAt: Date, now: Date): boolean {
-  return movedAt.getTime() > now.getTime();
+  return movedAt.getTime() - now.getTime() > MOVED_AT_FUTURE_TOLERANCE_MS;
 }

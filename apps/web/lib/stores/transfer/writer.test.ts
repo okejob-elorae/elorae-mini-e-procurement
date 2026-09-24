@@ -146,8 +146,12 @@ d("store transfer writer (test bed only)", () => {
       await expect(newTransfer(new Date())).resolves.toMatchObject({ transferId: expect.any(String) });
     });
 
-    it("refuses MOVED_AT_IN_FUTURE for a move a minute from now, and creates nothing", async () => {
-      await expect(newTransfer(new Date(Date.now() + 60_000))).rejects.toMatchObject({ code: "MOVED_AT_IN_FUTURE" });
+    it("accepts a move a minute ahead of the server clock, as a slightly fast browser clock would stamp it", async () => {
+      await expect(newTransfer(new Date(Date.now() + 60_000))).resolves.toMatchObject({ transferId: expect.any(String) });
+    });
+
+    it("refuses MOVED_AT_IN_FUTURE for a move ten minutes from now, and creates nothing", async () => {
+      await expect(newTransfer(new Date(Date.now() + 10 * 60_000))).rejects.toMatchObject({ code: "MOVED_AT_IN_FUTURE" });
       expect(await prisma.storeTransfer.count({ where: { fromStoreId: seededId(storeAId) } })).toBe(0);
     });
   });
