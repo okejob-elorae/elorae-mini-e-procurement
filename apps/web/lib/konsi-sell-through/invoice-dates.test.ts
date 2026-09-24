@@ -20,8 +20,8 @@ describe("isInvoiceDateAllowed", () => {
   });
 
   it("compares WIB calendar days, not UTC ones", () => {
-    /* 06:30 WIB on 1 Oct is still 30 Sep in UTC. */
-    expect(isInvoiceDateAllowed(wib("2026-10-01T06:30:00.000"), wib("2026-10-01T05:00:00.000"), now)).toBe(true);
+    /* Both are 1 Oct in WIB; in UTC the invoice date is 30 Sep 17:00 and the period end 1 Oct 01:00, so a UTC-day comparison refuses it. */
+    expect(isInvoiceDateAllowed(wib("2026-10-01T00:00:00.000"), wib("2026-10-01T08:00:00.000"), now)).toBe(true);
   });
 });
 

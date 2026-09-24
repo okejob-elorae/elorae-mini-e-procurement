@@ -8,7 +8,7 @@ const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
-/* A's faktur is pinned newer than B's, so createdAt desc puts A on page 1. */
+/* A has the newer invoice date but the older faktur: createdAt desc puts B on page 1, an invoiceDate sort would put A. */
 const invoiceDateA = new Date("2026-02-01T00:00:00.000+07:00");
 const dueDateA = new Date("2026-02-08T00:00:00.000+07:00");
 const invoiceDateB = new Date("2026-01-01T00:00:00.000+07:00");
@@ -121,14 +121,18 @@ d("listTaxInvoices (test bed only)", () => {
     });
     deliveryBId = deliveryB.deliveryId;
 
-    /* Pin creation order explicitly: both writes can land within the same millisecond otherwise. */
+    /**
+     * Pin creation order explicitly, and against the invoice dates: both writes can land within the
+     * same millisecond otherwise, and an order that agreed with invoiceDate could not tell the two
+     * sort keys apart.
+     */
     await prisma.taxInvoice.update({
       where: { deliveryId: deliveryAId },
-      data: { createdAt: new Date("2026-02-02T00:00:00.000+07:00") },
+      data: { createdAt: new Date("2026-01-02T00:00:00.000+07:00") },
     });
     await prisma.taxInvoice.update({
       where: { deliveryId: deliveryBId },
-      data: { createdAt: new Date("2026-01-02T00:00:00.000+07:00") },
+      data: { createdAt: new Date("2026-02-02T00:00:00.000+07:00") },
     });
 
     /* B is the CREATED one; A stays PENDING. Set directly — the transition itself is the writer
@@ -240,10 +244,10 @@ d("listTaxInvoices (test bed only)", () => {
     expect(first.rows).toHaveLength(1);
     expect(second.rows).toHaveLength(1);
 
-    /* Newest faktur first — A leads, B lands on page 2. */
-    expect(first.rows[0].invoiceDate?.getTime()).toBe(invoiceDateA.getTime());
-    expect(second.rows[0].invoiceDate?.getTime()).toBe(invoiceDateB.getTime());
-    expect(second.rows[0].dueDate?.getTime()).toBe(dueDateB.getTime());
+    /* Newest faktur first — B leads despite its older invoice date, A lands on page 2. */
+    expect(first.rows[0].invoiceDate?.getTime()).toBe(invoiceDateB.getTime());
+    expect(first.rows[0].dueDate?.getTime()).toBe(dueDateB.getTime());
+    expect(second.rows[0].invoiceDate?.getTime()).toBe(invoiceDateA.getTime());
     expect(first.rows[0].id).not.toBe(second.rows[0].id);
   });
 
