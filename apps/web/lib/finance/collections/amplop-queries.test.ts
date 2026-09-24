@@ -96,6 +96,14 @@ d("amplop queries (test bed only)", () => {
   let itemId = "";
   let uomId = "";
 
+  /* Sell-through source coverage: a store whose receivable is backed by a KonsiSellThrough
+   * report rather than a delivery, with its own salesman and a real TaxInvoice. */
+  let sellThroughStoreId = "";
+  let sellThroughSalesmanId = "";
+  let sellThroughId = "";
+  let sellThroughReceivableId = "";
+  let sellThroughTaxInvoiceId = "";
+
   const remainingCreditForFixture = 300;
   const pendingAmountForFixture = 150;
 
@@ -116,6 +124,8 @@ d("amplop queries (test bed only)", () => {
     storeLowOrderId = ""; storeLowDeliveryId = ""; storeLowReceivableId = "";
     storeZeroOrderId = ""; storeZeroDeliveryId = ""; storeZeroReceivableId = "";
     returId = ""; itemId = ""; uomId = "";
+    sellThroughStoreId = ""; sellThroughSalesmanId = ""; sellThroughId = ""; sellThroughReceivableId = "";
+    sellThroughTaxInvoiceId = "";
 
     const [collectorUser, salesmanUser, adminUser, bothRoleUser, multiStoreUser, emptyUser] = await Promise.all([
       prisma.user.create({ data: { email: `amplop-collector-${token}@test.local`, name: `Collector ${token}` } }),
@@ -337,9 +347,58 @@ d("amplop queries (test bed only)", () => {
       },
     });
     returId = fieldReturn.id;
+
+    /* Sell-through source: a separate store, a dedicated salesman, and a receivable whose docNo
+     * and salesman are read off the KonsiSellThrough report rather than a delivery's order. */
+    const sellThroughSalesman = await prisma.user.create({
+      data: { email: `amplop-st-${token}@test.local`, name: `Sales ST ${token}` },
+    });
+    sellThroughSalesmanId = sellThroughSalesman.id;
+
+    const sellThroughStore = await prisma.store.create({
+      data: { code: `TEST-AMP-ST-${token}`, name: `Toko ST ${token}`, address: "test", termsType: "KONSI" },
+    });
+    sellThroughStoreId = sellThroughStore.id;
+
+    const sellThrough = await prisma.konsiSellThrough.create({
+      data: {
+        docNo: `TEST-AMP-KST-${token}`,
+        storeId: sellThroughStoreId,
+        method: "SPG_POS",
+        closingStocktakeId: `TEST-AMP-STK-${token}`,
+        periodStart: new Date("2026-05-01T00:00:00.000+07:00"),
+        periodEnd: new Date("2026-05-31T00:00:00.000+07:00"),
+        salesmanId: sellThroughSalesmanId,
+        createdById: adminUserId,
+      },
+    });
+    sellThroughId = sellThrough.id;
+
+    const sellThroughReceivable = await prisma.receivable.create({
+      data: {
+        sellThroughId,
+        storeId: sellThroughStoreId,
+        invoiceDate: new Date("2026-05-31T00:00:00.000+07:00"),
+        dueDate: new Date("2026-05-31T00:00:00.000+07:00"),
+        originalAmount: 250, outstandingAmount: 250,
+      },
+    });
+    sellThroughReceivableId = sellThroughReceivable.id;
+
+    const sellThroughTaxInvoice = await prisma.taxInvoice.create({
+      data: { sellThroughId, status: "CREATED" },
+    });
+    sellThroughTaxInvoiceId = sellThroughTaxInvoice.id;
   });
 
   afterEach(async () => {
+    /* Children of the 1:1 relation to KonsiSellThrough go before their parent. */
+    await prisma.taxInvoice.deleteMany({ where: { id: seededId(sellThroughTaxInvoiceId) } });
+    await prisma.receivable.deleteMany({ where: { id: seededId(sellThroughReceivableId) } });
+    await prisma.konsiSellThrough.deleteMany({ where: { id: seededId(sellThroughId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(sellThroughStoreId) } });
+    await prisma.user.deleteMany({ where: { id: seededId(sellThroughSalesmanId) } });
+
     await prisma.taxInvoice.deleteMany({ where: { id: seededId(submittedTaxInvoiceId) } });
     await prisma.collectionSubmission.deleteMany({
       where: { id: { in: [submissionId, rejectedSubmissionId].map(seededId) } },
@@ -532,5 +591,21 @@ d("amplop queries (test bed only)", () => {
   it("returns an empty amplop for a user with no receivables", async () => {
     const amplop = await listAmplop(emptyUserId, asOf);
     expect(amplop).toEqual({ stores: [], totalOutstanding: 0, totalOverdue: 0 });
+  });
+
+  it("includes a store where the user is a sell-through report's own salesman", async () => {
+    const amplop = await listAmplop(sellThroughSalesmanId, asOf);
+    const card = amplop.stores.find((s) => s.storeId === sellThroughStoreId);
+    expect(card).toBeDefined();
+    const row = card?.rows.find((r) => r.receivableId === sellThroughReceivableId);
+    expect(row?.docNo).toBe(`TEST-AMP-KST-${token}`);
+  });
+
+  it("resolves a sell-through receivable's faktur status off the report, not the delivery", async () => {
+    const amplop = await listAmplop(sellThroughSalesmanId, asOf);
+    const row = amplop.stores
+      .flatMap((s) => s.rows)
+      .find((r) => r.receivableId === sellThroughReceivableId);
+    expect(row?.taxInvoiceStatus).toBe("CREATED");
   });
 });

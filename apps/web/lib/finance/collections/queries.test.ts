@@ -1,7 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { submitCollection } from "./submit-writer";
-import { listCollectionQueue, getReceivableForCollection } from "./queries";
+import {
+  listCollectionQueue,
+  getReceivableForCollection,
+  listPendingCollections,
+  getCollectionSubmission,
+} from "./queries";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -107,5 +112,105 @@ d("listCollectionQueue (test bed only)", () => {
     expect(result).not.toBeNull();
     expect(result!.receivableId).toBe(receivableAId);
     expect(result!.outstandingAmount).toBe(1000);
+  });
+});
+
+/*
+ * Separate describe block, deliberately not nested in the fixture above: a sell-through-backed
+ * receivable resolves its docNo through a different source (`KonsiSellThrough.docNo`, not
+ * `FieldSalesDelivery.docNo`) and this pins that every collections read surface renders it
+ * instead of throwing on the now-optional `delivery` relation.
+ */
+d("collection queries — sell-through source (test bed only)", () => {
+  let token = "";
+  let storeId = "";
+  let salesmanId = "";
+  let collectorId = "";
+  let sellThroughId = "";
+  let sellThroughRecId = "";
+  let submissionId = "";
+
+  beforeEach(async () => {
+    token = Math.random().toString(36).slice(2, 10);
+    storeId = ""; salesmanId = ""; collectorId = "";
+    sellThroughId = ""; sellThroughRecId = ""; submissionId = "";
+
+    const store = await prisma.store.create({
+      data: { code: `TEST-CQST-${token}`, name: `Toko ${token}`, address: "test", termsType: "KONSI" },
+    });
+    storeId = store.id;
+    const salesman = await prisma.user.create({ data: { email: `cqst-sales-${token}@test.local`, name: "sales" } });
+    salesmanId = salesman.id;
+    const collector = await prisma.user.create({ data: { email: `cqst-collector-${token}@test.local`, name: "collector", role: "ADMIN" } });
+    collectorId = collector.id;
+
+    const sellThrough = await prisma.konsiSellThrough.create({
+      data: {
+        docNo: `TEST-CQST-KST-${token}`,
+        storeId,
+        method: "SPG_POS",
+        closingStocktakeId: `TEST-CQST-STK-${token}`,
+        periodStart: new Date("2026-05-01T00:00:00.000+07:00"),
+        periodEnd: new Date("2026-05-31T00:00:00.000+07:00"),
+        salesmanId,
+        createdById: salesmanId,
+      },
+    });
+    sellThroughId = sellThrough.id;
+
+    const sellThroughRec = await prisma.receivable.create({
+      data: {
+        sellThroughId, storeId,
+        invoiceDate: new Date("2026-05-31T00:00:00.000+07:00"),
+        dueDate: new Date("2026-06-30T00:00:00.000+07:00"),
+        originalAmount: 500, outstandingAmount: 500,
+        collectorId,
+      },
+    });
+    sellThroughRecId = sellThroughRec.id;
+  });
+
+  afterEach(async () => {
+    /* Children of the 1:1 relation to KonsiSellThrough go before their parent. */
+    await prisma.collectionSubmission.deleteMany({ where: { id: seededId(submissionId) } });
+    await prisma.receivable.deleteMany({ where: { id: seededId(sellThroughRecId) } });
+    await prisma.konsiSellThrough.deleteMany({ where: { id: seededId(sellThroughId) } });
+    await prisma.user.deleteMany({ where: { id: { in: [seededId(salesmanId), seededId(collectorId)] } } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+  });
+
+  it("listCollectionQueue resolves a sell-through-backed receivable's docNo", async () => {
+    const rows = await listCollectionQueue(collectorId);
+    const row = rows.find((r) => r.receivableId === sellThroughRecId);
+    expect(row).toBeDefined();
+    expect(row!.docNo).toBe(`TEST-CQST-KST-${token}`);
+  });
+
+  it("getReceivableForCollection resolves a sell-through-backed receivable's docNo", async () => {
+    const result = await getReceivableForCollection(sellThroughRecId, collectorId);
+    expect(result).not.toBeNull();
+    expect(result!.docNo).toBe(`TEST-CQST-KST-${token}`);
+  });
+
+  it("listPendingCollections and getCollectionSubmission resolve a sell-through-backed receivable's docNo", async () => {
+    const submission = await prisma.collectionSubmission.create({
+      data: {
+        receivableId: sellThroughRecId,
+        collectorId,
+        amount: 200,
+        method: "CASH",
+        paidAt: new Date(),
+        status: "PENDING",
+      },
+    });
+    submissionId = submission.id;
+
+    const pending = await listPendingCollections({ collectorId });
+    const pendingRow = pending.rows.find((r) => r.id === submissionId);
+    expect(pendingRow).toBeDefined();
+    expect(pendingRow!.docNo).toBe(`TEST-CQST-KST-${token}`);
+
+    const detail = await getCollectionSubmission(submissionId);
+    expect(detail?.docNo).toBe(`TEST-CQST-KST-${token}`);
   });
 });

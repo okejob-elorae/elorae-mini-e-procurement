@@ -673,3 +673,140 @@ d("submitSettlement (test bed only)", () => {
     expect(second.settlementId).toBeTruthy();
   });
 });
+
+/*
+ * Separate describe block, deliberately not nested in the fixture above: a sell-through-backed
+ * receivable's owning salesman comes from the report's own `salesmanId`, not an order — this pins
+ * that the ownership guard (step 3 of the writer) resolves through the source correctly,
+ * including the null-salesman case, which must refuse with `NOT_ASSIGNED` rather than throw a
+ * TypeError on a null `.salesmanId`.
+ */
+d("submitSettlement — sell-through source (test bed only)", () => {
+  let token = "";
+  let storeId = "";
+  let ownerSalesmanId = "";
+  let otherSalesmanId = "";
+  let ownedSellThroughId = "";
+  let ownedReceivableId = "";
+  let orphanSellThroughId = "";
+  let orphanReceivableId = "";
+
+  beforeEach(async () => {
+    token = Math.random().toString(36).slice(2, 10);
+    storeId = ""; ownerSalesmanId = ""; otherSalesmanId = "";
+    ownedSellThroughId = ""; ownedReceivableId = ""; orphanSellThroughId = ""; orphanReceivableId = "";
+
+    const store = await prisma.store.create({
+      data: { code: `TEST-STLST-${token}`, name: `Toko ${token}`, address: "test", termsType: "KONSI" },
+    });
+    storeId = store.id;
+
+    const ownerSalesman = await prisma.user.create({ data: { email: `stlst-owner-${token}@test.local`, name: `Owner ${token}` } });
+    ownerSalesmanId = ownerSalesman.id;
+    const otherSalesman = await prisma.user.create({ data: { email: `stlst-other-${token}@test.local`, name: `Other ${token}` } });
+    otherSalesmanId = otherSalesman.id;
+
+    const ownedSellThrough = await prisma.konsiSellThrough.create({
+      data: {
+        docNo: `TEST-STLST-KST-${token}`,
+        storeId,
+        method: "SPG_POS",
+        closingStocktakeId: `TEST-STLST-STK-${token}`,
+        periodStart: new Date("2026-05-01T00:00:00.000+07:00"),
+        periodEnd: new Date("2026-05-31T00:00:00.000+07:00"),
+        salesmanId: ownerSalesmanId,
+        createdById: ownerSalesmanId,
+      },
+    });
+    ownedSellThroughId = ownedSellThrough.id;
+
+    const ownedReceivable = await prisma.receivable.create({
+      data: {
+        sellThroughId: ownedSellThroughId, storeId,
+        invoiceDate: new Date("2026-05-31T00:00:00.000+07:00"),
+        dueDate: new Date("2026-06-30T00:00:00.000+07:00"),
+        originalAmount: 400, outstandingAmount: 400,
+      },
+    });
+    ownedReceivableId = ownedReceivable.id;
+
+    /* No `salesmanId` at all — the report has not been assigned one yet. */
+    const orphanSellThrough = await prisma.konsiSellThrough.create({
+      data: {
+        docNo: `TEST-STLST-KSTO-${token}`,
+        storeId,
+        method: "SPG_POS",
+        closingStocktakeId: `TEST-STLST-STKO-${token}`,
+        periodEnd: new Date("2026-05-31T00:00:00.000+07:00"),
+        createdById: ownerSalesmanId,
+      },
+    });
+    orphanSellThroughId = orphanSellThrough.id;
+
+    const orphanReceivable = await prisma.receivable.create({
+      data: {
+        sellThroughId: orphanSellThroughId, storeId,
+        invoiceDate: new Date("2026-05-31T00:00:00.000+07:00"),
+        dueDate: new Date("2026-06-30T00:00:00.000+07:00"),
+        originalAmount: 200, outstandingAmount: 200,
+      },
+    });
+    orphanReceivableId = orphanReceivable.id;
+  });
+
+  afterEach(async () => {
+    const settlements = await prisma.storeSettlement.findMany({
+      where: { storeId: seededId(storeId) },
+      select: { id: true },
+    });
+    const settlementIds = settlements.map((s) => s.id);
+    await prisma.storeSettlementDeduction.deleteMany({ where: { settlementId: { in: settlementIds } } });
+    await prisma.storeSettlementInvoice.deleteMany({ where: { settlementId: { in: settlementIds } } });
+    await prisma.storeSettlement.deleteMany({ where: { id: { in: settlementIds } } });
+
+    /* Children of the 1:1 relation to KonsiSellThrough go before their parents. */
+    await prisma.receivable.deleteMany({
+      where: { id: { in: [seededId(ownedReceivableId), seededId(orphanReceivableId)] } },
+    });
+    await prisma.konsiSellThrough.deleteMany({
+      where: { id: { in: [seededId(ownedSellThroughId), seededId(orphanSellThroughId)] } },
+    });
+    await prisma.user.deleteMany({ where: { id: { in: [seededId(ownerSalesmanId), seededId(otherSalesmanId)] } } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+  });
+
+  it("accepts a sell-through receivable submitted by the report's own salesman", async () => {
+    const result = await submitSettlement({
+      draftId: `stlst-owner-${token}`,
+      storeId,
+      salesmanId: ownerSalesmanId,
+      invoices: [{ receivableId: ownedReceivableId, amount: 400 }],
+      deductions: [],
+      actualAmount: 400,
+    });
+    expect(result.settlementId).toBeTruthy();
+    expect(result.docNo).toMatch(/^BKM\//);
+  });
+
+  it("refuses a sell-through receivable submitted by a salesman other than the report's own", async () => {
+    await expect(submitSettlement({
+      draftId: `stlst-other-${token}`,
+      storeId,
+      salesmanId: otherSalesmanId,
+      invoices: [{ receivableId: ownedReceivableId, amount: 400 }],
+      deductions: [],
+      actualAmount: 400,
+    })).rejects.toMatchObject({ code: "NOT_ASSIGNED" });
+  });
+
+  it("refuses a sell-through receivable whose report has no salesman, never a TypeError", async () => {
+    await expect(submitSettlement({
+      draftId: `stlst-orphan-${token}`,
+      storeId,
+      salesmanId: ownerSalesmanId,
+      invoices: [{ receivableId: orphanReceivableId, amount: 200 }],
+      deductions: [],
+      actualAmount: 200,
+    })).rejects.toMatchObject({ code: "NOT_ASSIGNED" });
+  });
+});

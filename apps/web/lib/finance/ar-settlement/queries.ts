@@ -27,6 +27,7 @@ import {
   type InvoiceRow,
 } from "./approve-writer";
 import { findArJournalPendingFlags } from "@/lib/finance/ar/journal-pending";
+import { RECEIVABLE_SOURCE_SELECT, resolveReceivableSource } from "@/lib/finance/ar/receivable-source";
 
 /**
  * Re-exported so the screen components import their types from one place. The definitions live in
@@ -339,7 +340,7 @@ export async function getSettlementForApproval(
       status: true,
       dueDate: true,
       outstandingAmount: true,
-      delivery: { select: { docNo: true } },
+      ...RECEIVABLE_SOURCE_SELECT,
     },
   });
   const receivableById = new Map(receivables.map((receivable) => [receivable.id, receivable]));
@@ -348,7 +349,7 @@ export async function getSettlementForApproval(
     const receivable = receivableById.get(row.receivableId);
     return {
       receivableId: row.receivableId,
-      docNo: receivable?.delivery.docNo ?? null,
+      docNo: receivable ? resolveReceivableSource(receivable).docNo : null,
       agreedAmount: row.amount,
       liveOutstanding: receivable ? roundCents(Number(receivable.outstandingAmount)) : null,
       receivableStatus: receivable?.status ?? null,
@@ -841,25 +842,20 @@ export async function getSettlementForPrint(
     receivableIds.length > 0
       ? await prisma.receivable.findMany({
           where: { id: { in: receivableIds } },
-          select: { id: true, delivery: { select: { docNo: true } } },
+          select: { id: true, ...RECEIVABLE_SOURCE_SELECT },
         })
       : [];
   /**
-   * `receivable.delivery.docNo` is read without `?.` — this is now a real gap, not a pre-existing
-   * one. `Receivable.delivery` is OPTIONAL as of the delivery/sell-through source split
-   * (`Receivable.sellThroughId`, `lib/finance/ar/receivable-source.ts`): a receivable backed by a
-   * `KonsiSellThrough` report resolves `delivery` to `null` here rather than throwing, and this line
-   * then throws a plain `TypeError` on `.docNo` instead. A dangling `deliveryId` (the original
-   * concern this comment described) is a different failure and still throws inside the `findMany`
-   * itself, before this line runs.
-   *
-   * Fixing this means resolving through `resolveReceivableSource`/`RECEIVABLE_SOURCE_SELECT`, which
-   * this settlement-print query does not yet do — out of scope for the task that introduced the
-   * optional relation, so left as a known gap rather than fixed here. Shared by
+   * `docNo` is read through `resolveReceivableSource`, which prefers `delivery.docNo` and falls
+   * back to `sellThrough.docNo` — `Receivable.delivery` is OPTIONAL as of the delivery/sell-through
+   * source split (`Receivable.sellThroughId`, `lib/finance/ar/receivable-source.ts`), so a
+   * receivable backed by a `KonsiSellThrough` report resolves through the `sellThrough` arm
+   * instead of throwing on a `null` `delivery`. A dangling `deliveryId` is a different failure and
+   * still throws inside the `findMany` itself, before this line runs. Shared by
    * `getSettlementForApproval`'s equivalent lookup.
    */
   const docNoByReceivableId = new Map(
-    receivables.map((receivable) => [receivable.id, receivable.delivery.docNo] as const),
+    receivables.map((receivable) => [receivable.id, resolveReceivableSource(receivable).docNo] as const),
   );
 
   /**

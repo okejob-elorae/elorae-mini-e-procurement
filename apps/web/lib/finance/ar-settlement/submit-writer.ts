@@ -4,6 +4,7 @@ import { generateDocNumber } from "@/lib/docNumber";
 import { urlFromKey } from "@/lib/r2";
 import { computeSettlementTotals, computeVariance, EPSILON } from "./calc";
 import { SettlementError } from "./errors";
+import { RECEIVABLE_SOURCE_SELECT, resolveReceivableSource } from "@/lib/finance/ar/receivable-source";
 
 export type SettlementDeductionInputRow = {
   type: "RETUR_OFFSET" | "PROGRAM" | "ADMIN_FEE";
@@ -239,7 +240,7 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
       where: { id: { in: receivableIds } },
       select: {
         id: true, storeId: true, status: true, outstandingAmount: true, collectorId: true,
-        delivery: { select: { order: { select: { salesmanId: true } } } },
+        ...RECEIVABLE_SOURCE_SELECT,
       },
     });
     const receivableById = new Map(receivables.map((r) => [r.id, r]));
@@ -250,7 +251,14 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
       if (receivable.status !== "OUTSTANDING" && receivable.status !== "PARTIAL") {
         throw new SettlementError("NOT_OUTSTANDING");
       }
-      if (receivable.collectorId !== input.salesmanId && receivable.delivery.order.salesmanId !== input.salesmanId) {
+      /*
+       * The owning salesman is the resolved source's own `salesmanId` — a delivery's order salesman
+       * for a DELIVERY row, the report's own salesman for a SELL_THROUGH row. A SELL_THROUGH row
+       * whose report has no salesman yet resolves to `null`, which never equals `input.salesmanId`
+       * (a real user id), so it falls through to the same `NOT_ASSIGNED` refusal rather than being
+       * owned by nobody in particular.
+       */
+      if (receivable.collectorId !== input.salesmanId && resolveReceivableSource(receivable).salesmanId !== input.salesmanId) {
         throw new SettlementError("NOT_ASSIGNED");
       }
 
