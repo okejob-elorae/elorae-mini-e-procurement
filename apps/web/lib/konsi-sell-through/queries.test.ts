@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { createSellThrough, resolveSellThroughLine, cancelSellThrough } from "./writer";
 import { createSellThroughFixtures } from "./test-fixtures";
 import { listSellThroughs, getSellThrough, getSellThroughEligibility } from "./queries";
@@ -235,6 +235,23 @@ d("konsi sell-through queries (test bed only)", () => {
     expect(detail!.previousDocNo).toBe(r1.docNo);
   }, SLOW);
 
+  it("exposes hasLateMovements on a line that carried a late movement", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const first = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
+    const r1 = await createSellThrough({ closingStocktakeId: first, createdById: state.userId });
+    await fx.approve(r1.id);
+    const r1Doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(r1.id) } });
+    await tick();
+    await fx.lateSale(1, r1Doc.periodEnd);
+    await tick();
+    const second = await count(1);
+    const r2 = await createSellThrough({ closingStocktakeId: second, createdById: state.userId });
+
+    const detail = await getSellThrough(r2.id);
+    expect(detail!.lines[0].hasLateMovements).toBe(true);
+  }, SLOW);
+
   /* getSellThroughEligibility */
 
   it("returns NOT_FOUND for a stocktake that does not exist", async () => {
@@ -305,6 +322,15 @@ d("konsi sell-through queries (test bed only)", () => {
       reason: "RETUR_IN_FLIGHT",
       detail: `${first.docNo}, ${second.docNo}`,
     });
+  }, SLOW);
+
+  it("returns TRANSFER_IN_FLIGHT with the pending transfers' docNos as detail", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(6);
+    const { countFinishedAt } = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(stocktakeId) }, select: { countFinishedAt: true } });
+    const { docNo } = await fx.storeTransfer({ direction: "OUT", qty: 2, movedAt: new Date(countFinishedAt!.getTime() - 60_000) });
+    await expect(getSellThroughEligibility(stocktakeId)).resolves.toEqual({ eligible: false, reason: "TRANSFER_IN_FLIGHT", detail: docNo });
   }, SLOW);
 
   it("returns DRAFT_EXISTS while an earlier report of the store is still DRAFT", async () => {

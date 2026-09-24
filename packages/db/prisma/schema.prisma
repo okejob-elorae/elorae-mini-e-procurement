@@ -965,6 +965,7 @@ model StoreTransfer {
   toStoreId    String
   status       StoreTransferStatus @default(PENDING)
   note         String?             @db.Text
+  movedAt      DateTime
   createdById  String
   createdAt    DateTime            @default(now())
   approvedById String?
@@ -1066,6 +1067,11 @@ model KonsiSellThroughLine {
   billedQty        Decimal                @db.Decimal(10, 2)
   shrinkageQty     Decimal                @default(0) @db.Decimal(10, 2)
   negativeSold     Boolean                @default(false)
+  lateInQty        Decimal                @default(0) @db.Decimal(10, 2)
+  lateOutQty       Decimal                @default(0) @db.Decimal(10, 2)
+  latePosSoldQty   Decimal                @default(0) @db.Decimal(10, 2)
+  lateGapQty       Decimal                @default(0) @db.Decimal(10, 2)
+  hasLateMovements Boolean                @default(false)
   suggestedResolution SellThroughResolution?
   resolution       SellThroughResolution?
   resolutionReason String?                @db.Text

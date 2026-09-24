@@ -503,6 +503,12 @@ describe("store stocktake actions (unit — writers mocked)", () => {
       });
     }
 
+    it("maps a writer TRANSFER_PENDING onto its own code and carries the transfers it names", async () => {
+      mockApprove.mockRejectedValue(new StoreStocktakeError("TRANSFER_PENDING", "STRF/2609/0001"));
+      const res = await approveAction("st1");
+      expect(res).toEqual({ ok: false, code: "TRANSFER_PENDING", detail: "STRF/2609/0001" });
+    });
+
     it("maps an unknown throw onto ERROR without leaking it", async () => {
       mockApprove.mockRejectedValue(new Error("boom"));
       const res = await approveAction("st1");

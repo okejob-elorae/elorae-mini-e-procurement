@@ -274,11 +274,18 @@ export async function saveStocktakeCounts(input: {
  * `StoreStock.qty` to its counted figure PLUS every store ledger movement for that item::variant
  * recorded after `countFinishedAt`: a POS sale or a konsi delivery while the count waited for an
  * admin happened after the shelf was counted, and setting the bare counted figure would erase it.
- * A retur raised before the count is excluded — its goods were already off the shelf the count
- * saw, even though its ledger row lands later (see the post-count block below).
+ * A retur raised before the count, and a store-to-store transfer whose goods moved before it, are
+ * excluded — the count already saw their goods gone or arrived, even though their ledger rows land
+ * later (see the post-count block below). A transfer like that which is still PENDING, and moves
+ * an item::variant this count counted, refuses the approval instead (`TRANSFER_PENDING`), because
+ * once this count is approved the transfer can never be approved. That refusal still runs for a
+ * count whose `countFinishedAt` is null — it falls back to this approval's own instant as the
+ * count moment, matching the fallback `approveStoreTransfer`'s `COUNTED_SINCE_MOVE` guard already
+ * uses, so a legacy count can never approve first and strand a transfer behind that guard forever.
  * The ledger entry `setStoreStock` writes is then the true shrinkage or surplus at the count
  * moment, whatever moved since. A stocktake whose `countFinishedAt` is null was counted before
- * that column existed, and keeps the old behaviour: the bare counted figure. Nothing here refuses
+ * that column existed, and keeps the old behaviour for re-application: the bare counted figure,
+ * with the post-count exclusion below never running for it. Nothing here refuses
  * on an unbalanced count: a store may legitimately end approval still holding negative rows —
  * a post-count sale can take a line below zero too — and that is recorded and surfaced, never
  * blocked.
@@ -308,6 +315,13 @@ export async function approveStoreStocktake(input: {
     });
     if (!st) throw new StoreStocktakeError("NOT_FOUND");
     if (st.status !== "DRAFT" && st.status !== "PENDING_VERIFICATION") throw new StoreStocktakeError("INVALID_STATE");
+
+    /*
+     * Computed once, up front, so every use of "now" inside this approval — the TRANSFER_PENDING
+     * fallback count moment below and the `approvedAt` stamp at the end — is the exact same
+     * instant rather than two separate `new Date()` calls that could straddle a millisecond.
+     */
+    const approvedAt = new Date();
 
     const computed = st.lines.map((l) => {
       const expected = l.expectedQty.toNumber();
@@ -339,6 +353,43 @@ export async function approveStoreStocktake(input: {
       if (!existingItemIds.has(id)) throw new StoreStocktakeError("ITEM_NOT_FOUND");
     }
 
+    /*
+     * A store-to-store transfer touching this store — from it or to it — whose goods moved on or
+     * before the count, which moves an item::variant this count counted, and which is still
+     * PENDING: the count holds a move StoreStock has not recorded, and once this count is approved
+     * the transfer is refused `COUNTED_SINCE_MOVE` forever. Refused here, naming the transfers, so
+     * the admin approves or cancels them first. A transfer of keys this count left uncounted or
+     * never had cannot be in the count, so it does not refuse. The count moment is
+     * `countFinishedAt` — or, for a count saved before that column existed, `approvedAt` above
+     * (the same instant this approval stamps on the document below, not a second `new Date()`).
+     * That fallback matches the one `approveStoreTransfer`'s own `COUNTED_SINCE_MOVE` guard already
+     * uses for a null-`countFinishedAt` count (`approvedAt` there too), so the two guards agree on
+     * the same instant for the same document; without it a legacy count could approve first and
+     * strand the transfer behind `COUNTED_SINCE_MOVE` forever, unable to ever approve. This
+     * fallback governs the refusal only — the post-count exclusion below still skips entirely for
+     * a null `countFinishedAt`, unchanged. Both variantSku columns are non-nullable, so the keys
+     * match exactly.
+     */
+    const countedKeys = computed
+      .filter((l) => l.counted !== null)
+      .map((l) => ({ itemId: l.itemId, variantSku: l.variantSku ?? "" }));
+    if (countedKeys.length > 0) {
+      const countMoment = st.countFinishedAt ?? approvedAt;
+      const pendingTransfers = await tx.storeTransfer.findMany({
+        where: {
+          status: "PENDING",
+          movedAt: { lte: countMoment },
+          OR: [{ fromStoreId: st.storeId }, { toStoreId: st.storeId }],
+          lines: { some: { OR: countedKeys } },
+        },
+        orderBy: { docNo: "asc" },
+        select: { docNo: true },
+      });
+      if (pendingTransfers.length > 0) {
+        throw new StoreStocktakeError("TRANSFER_PENDING", pendingTransfers.map((t) => t.docNo).join(", "));
+      }
+    }
+
     /**
      * Every store movement recorded after the count was saved, summed per item::variant in cents.
      * Only one stocktake per store can be open (`openKey`), so none of these rows is another
@@ -351,8 +402,13 @@ export async function approveStoreStocktake(input: {
      * delta for an ADMIN one — so the count already saw those units gone, and re-applying the row
      * would take them off twice. Both retur writers stamp the FieldReturn id as the row's `refId`.
      * A retur raised after the count still counts: its goods left after the shelf was counted.
-     * The store-to-store transfer can lag the same way (goods moved before its approval) and is
-     * NOT excluded — logged in docs/FOLLOWUPS.md.
+     * Excluded the same way: a store-to-store transfer's rows — BOTH legs, the source's −q and the
+     * destination's +q — whose transfer's `movedAt` is on or before `countFinishedAt`. Stock moves
+     * at transfer approve, which can land after the goods physically moved, so a count taken in
+     * between already saw them gone or arrived. Both legs stamp the StoreTransfer id as `refId`.
+     * A transfer whose goods moved after the count is still re-applied. The skip is per ledger
+     * row, and only a counted line reads these sums at all, so it only ever affects items this
+     * count counted — a transfer's row for an uncounted item never reaches a target either way.
      */
     const postCountCentsByKey = new Map<string, number>();
     if (st.countFinishedAt) {
@@ -365,8 +421,14 @@ export async function approveStoreStocktake(input: {
         ? await tx.fieldReturn.findMany({ where: { id: { in: returIds }, createdAt: { lte: st.countFinishedAt } }, select: { id: true } })
         : [];
       const preCountReturIds = new Set(preCountReturs.map((r) => r.id));
+      const transferIds = Array.from(new Set(postCount.filter((r) => r.refType === "StoreTransfer").map((r) => r.refId)));
+      const preCountTransfers = transferIds.length > 0
+        ? await tx.storeTransfer.findMany({ where: { id: { in: transferIds }, movedAt: { lte: st.countFinishedAt } }, select: { id: true } })
+        : [];
+      const preCountTransferIds = new Set(preCountTransfers.map((t) => t.id));
       for (const r of postCount) {
         if (r.refType === "FieldReturn" && preCountReturIds.has(r.refId)) continue;
+        if (r.refType === "StoreTransfer" && preCountTransferIds.has(r.refId)) continue;
         const key = `${r.itemId}::${r.variantSku}`;
         postCountCentsByKey.set(key, (postCountCentsByKey.get(key) ?? 0) + Math.round(r.qty.toNumber() * 100));
       }
@@ -420,7 +482,7 @@ export async function approveStoreStocktake(input: {
       where: { id: st.id },
       data: {
         status: "APPROVED",
-        approvedAt: new Date(),
+        approvedAt,
         approvedById: input.approvedById,
         openKey: null,
         isFullCount,

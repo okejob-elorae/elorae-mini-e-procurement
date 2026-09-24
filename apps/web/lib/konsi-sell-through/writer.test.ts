@@ -263,6 +263,92 @@ d("konsi sell-through writer (test bed only)", () => {
     expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("DRAFT");
   }, SLOW);
 
+  /* create — store transfers in flight at the closing count */
+
+  /* Reads the closing count's moment, so a transfer can be dated just before it. */
+  const countMomentOf = async (stocktakeId: string) =>
+    (await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(stocktakeId) }, select: { countFinishedAt: true } })).countFinishedAt!;
+
+  it("refuses TRANSFER_IN_FLIGHT while a transfer out of the store, moved before the count, is still pending", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(6);
+    /* Recorded only after the count was approved, so the stocktake's own TRANSFER_PENDING guard never saw it. */
+    const { docNo } = await fx.storeTransfer({ direction: "OUT", qty: 2, movedAt: new Date((await countMomentOf(stocktakeId)).getTime() - 60_000) });
+    await expect(createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId })).rejects.toMatchObject({
+      code: "TRANSFER_IN_FLIGHT",
+      detail: docNo,
+    });
+  }, SLOW);
+
+  it("refuses TRANSFER_IN_FLIGHT for a pending transfer INTO the store as well", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(6);
+    const { docNo } = await fx.storeTransfer({ direction: "IN", qty: 2, movedAt: new Date((await countMomentOf(stocktakeId)).getTime() - 60_000) });
+    await expect(createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId })).rejects.toMatchObject({
+      code: "TRANSFER_IN_FLIGHT",
+      detail: docNo,
+    });
+  }, SLOW);
+
+  it("does not refuse over a pending transfer whose goods moved moments after the count", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(6);
+    await fx.storeTransfer({ direction: "OUT", qty: 2, movedAt: new Date() });
+    await expect(createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId })).resolves.toMatchObject({ id: expect.any(String) });
+  }, SLOW);
+
+  it("does not refuse over a pending transfer of a key the closing count never counted", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(6);
+    /*
+     * A closing count is a full count, so "a key it never counted" is one the store held no row for:
+     * here the item's OTHER variant. The count cannot have seen that move.
+     */
+    await fx.storeTransfer({ direction: "OUT", qty: 1, variantSku: "OTHER", movedAt: new Date((await countMomentOf(stocktakeId)).getTime() - 60_000) });
+    await expect(createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId })).resolves.toMatchObject({ id: expect.any(String) });
+  }, SLOW);
+
+  it("approve refuses TRANSFER_IN_FLIGHT when a pending transfer moved before the count reaches a DRAFT", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(6);
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+    const { docNo } = await fx.storeTransfer({ direction: "OUT", qty: 2, movedAt: new Date((await countMomentOf(stocktakeId)).getTime() - 60_000) });
+
+    await expect(fx.approve(id)).rejects.toMatchObject({ code: "TRANSFER_IN_FLIGHT", detail: docNo });
+    expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("DRAFT");
+  }, SLOW);
+
+  it("a transfer moved before the count and approved before the count's approval derives as out, with no gap", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const { transferId } = await fx.storeTransfer({ direction: "OUT", qty: 2, movedAt: new Date(Date.now() - 60_000) });
+    await tick();
+    /* The shelf shows 4: two units already went to the other store. */
+    const stocktakeId = await count(4, { cause: "SHRINKAGE", reason: "two units went to the other store", approve: false });
+    await tick();
+    await fx.approveTransfer(transferId);
+    await approveStoreStocktake({ stocktakeId, approvedById: state.userId });
+
+    const stock = await prisma.storeStock.findUniqueOrThrow({
+      where: { storeId_itemId_variantSku: { storeId: state.storeId, itemId: state.itemId, variantSku: "" } },
+    });
+    expect(Number(stock.qty)).toBe(4);
+
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+    const line = await onlyLine(id);
+    /* opening 0 + in 6 − out 2 − pos 0 − gap 0 = closing 4; billed = 0 + 6 − 2 − 4 = 0. */
+    expect(Number(line.inQty)).toBe(6);
+    expect(Number(line.outQty)).toBe(2);
+    expect(Number(line.gapQty)).toBe(0);
+    expect(Number(line.closingQty)).toBe(4);
+    expect(Number(line.billedQty)).toBe(0);
+  }, SLOW);
+
   /* SHELF_COUNT */
 
   it("SHELF_COUNT: 6 transferred in, 2 counted → one line billed 4, and approve succeeds with no resolution", async () => {
@@ -571,6 +657,130 @@ d("konsi sell-through writer (test bed only)", () => {
     await fx.approve(r2.id);
     expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(r2.id) } })).status).toBe("APPROVED");
   }, SLOW);
+
+  /* carry-forward of late movements */
+
+  describe("carry-forward", () => {
+    const approvedReport = (id: string) =>
+      prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) }, include: { lines: true, receivable: true } });
+
+    it("bills a sale that committed inside the previous report's period after its approval, flags the line, and leaves the previous report untouched", async () => {
+      const r1 = await buildFirstReportOfChain();
+      await fx.approve(r1.id);
+      const r1Doc = await approvedReport(r1.id);
+      await tick();
+      await fx.lateSale(1, r1Doc.periodEnd);
+      await tick();
+      /* StoreStock 2 − 1 = 1 and the shelf holds 1: the count matches and writes no row. */
+      const second = await count(1);
+      const r2 = await createSellThrough({ closingStocktakeId: second, createdById: state.userId });
+
+      const line = await onlyLine(r2.id);
+      /* opening 2 + in 0 − out 0 − pos 1 (late) − gap 0 = closing 1; SHELF_COUNT billed = 2 − 1 = 1. */
+      expect(Number(line.openingQty)).toBe(2);
+      expect(Number(line.posSoldQty)).toBe(1);
+      expect(Number(line.latePosSoldQty)).toBe(1);
+      expect(Number(line.lateInQty)).toBe(0);
+      expect(Number(line.lateOutQty)).toBe(0);
+      expect(Number(line.lateGapQty)).toBe(0);
+      expect(line.hasLateMovements).toBe(true);
+      expect(Number(line.closingQty)).toBe(1);
+      expect(Number(line.billedQty)).toBe(1);
+
+      await fx.approve(r2.id);
+      expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(r2.id) } })).status).toBe("APPROVED");
+
+      const r1After = await approvedReport(r1.id);
+      expect(Number(r1After.lines[0].posSoldQty)).toBe(0);
+      expect(Number(r1After.lines[0].closingQty)).toBe(2);
+      expect(Number(r1After.total)).toBe(Number(r1Doc.total));
+      expect(Number(r1After.receivable!.originalAmount)).toBe(Number(r1Doc.receivable!.originalAmount));
+    }, SLOW);
+
+    it("a chain with nothing late carries no late figures and flags no line", async () => {
+      const r1 = await buildFirstReportOfChain();
+      await fx.approve(r1.id);
+      const r2 = await buildSecondReportOfChain();
+      const line = await onlyLine(r2.id);
+      expect(line.hasLateMovements).toBe(false);
+      expect(Number(line.lateInQty)).toBe(0);
+      expect(Number(line.lateOutQty)).toBe(0);
+      expect(Number(line.latePosSoldQty)).toBe(0);
+      expect(Number(line.lateGapQty)).toBe(0);
+    }, SLOW);
+
+    it("approve refuses STALE when a late row lands in the previous report's period after this report was created", async () => {
+      const r1 = await buildFirstReportOfChain();
+      await fx.approve(r1.id);
+      const r1Doc = await approvedReport(r1.id);
+      const r2 = await buildSecondReportOfChain();
+      await tick();
+      await fx.lateSale(1, r1Doc.periodEnd);
+
+      await expect(fx.approve(r2.id)).rejects.toMatchObject({ code: "STALE" });
+      expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(r2.id) } })).status).toBe("DRAFT");
+    }, SLOW);
+
+    it("a late row for a key the previous report never had becomes its own flagged line", async () => {
+      const r1 = await buildFirstReportOfChain();
+      await fx.approve(r1.id);
+      const r1Doc = await approvedReport(r1.id);
+      /* Inserted directly, one second inside report 1's period. No StoreStock row for "LATE" on purpose: this pins the late diff for a key new to the window. */
+      await prisma.stockLedgerEntry.create({
+        data: {
+          locationType: "STORE",
+          locationId: state.storeId,
+          itemId: state.itemId,
+          variantSku: "LATE",
+          type: "OUT",
+          qty: -1,
+          balanceQty: -1,
+          refType: "SpgSale",
+          refId: `TEST-KSTW-LATE-${state.run}`,
+          refDocNumber: `LATE/${state.run}`,
+          createdAt: new Date(r1Doc.periodEnd.getTime() - 1000),
+        },
+      });
+      await tick();
+      const second = await count(2);
+      const r2 = await createSellThrough({ closingStocktakeId: second, createdById: state.userId });
+
+      const lines = await prisma.konsiSellThroughLine.findMany({ where: { sellThroughId: seededId(r2.id) } });
+      const late = lines.find((l) => l.variantSku === "LATE");
+      expect(late).toBeDefined();
+      expect(Number(late!.openingQty)).toBe(0);
+      expect(Number(late!.posSoldQty)).toBe(1);
+      expect(Number(late!.closingQty)).toBe(-1);
+      expect(late!.countedQty).toBeNull();
+      expect(Number(late!.billedQty)).toBe(1);
+      expect(late!.hasLateMovements).toBe(true);
+      expect(lines.find((l) => l.variantSku === "")!.hasLateMovements).toBe(false);
+    }, SLOW);
+
+    it("the report after one that carried late movements does not bill them again", async () => {
+      const r1 = await buildFirstReportOfChain();
+      await fx.approve(r1.id);
+      const r1Doc = await approvedReport(r1.id);
+      await tick();
+      await fx.lateSale(1, r1Doc.periodEnd);
+      await tick();
+      const second = await count(1);
+      const r2 = await createSellThrough({ closingStocktakeId: second, createdById: state.userId });
+      await fx.approve(r2.id);
+      await tick();
+      const third = await count(1);
+      const r3 = await createSellThrough({ closingStocktakeId: third, createdById: state.userId });
+
+      const line = await onlyLine(r3.id);
+      /* Report 2's own window holds nothing; the sale it carried is subtracted, not re-billed negated. */
+      expect(line.hasLateMovements).toBe(false);
+      expect(Number(line.openingQty)).toBe(1);
+      expect(Number(line.posSoldQty)).toBe(0);
+      expect(Number(line.closingQty)).toBe(1);
+      expect(Number(line.billedQty)).toBe(0);
+      expect(line.negativeSold).toBe(false);
+    }, SLOW);
+  });
 
   /* cancel */
 

@@ -91,6 +91,18 @@ export function StoreTransferDetailClient({ transfer, canManage }: Props) {
     }).format(date);
   }
 
+  /* The move time was entered in WIB, so it is shown in WIB — a browser in another timezone would otherwise shift it. */
+  function formatMovedAt(date: Date): string {
+    return new Intl.DateTimeFormat(locale, {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "Asia/Jakarta",
+    }).format(date);
+  }
+
   function callApprove(): void {
     startApproveTransition(async () => {
       try {
@@ -101,7 +113,7 @@ export function StoreTransferDetailClient({ transfer, canManage }: Props) {
           router.refresh();
           return;
         }
-        toast.error(t(errKey(result.code)));
+        toast.error(t(errKey(result.code), { detail: result.detail ?? "" }));
       } catch {
         setApproveOpen(false);
         toast.error(t(errKey("ERROR")));
@@ -176,6 +188,10 @@ export function StoreTransferDetailClient({ transfer, canManage }: Props) {
           <div className="flex justify-between gap-4 text-sm">
             <span className="text-muted-foreground">{tDetail("toStore")}</span>
             <span className="text-right">{transfer.toStoreName}</span>
+          </div>
+          <div className="flex justify-between gap-4 text-sm">
+            <span className="text-muted-foreground">{tDetail("movedAt")}</span>
+            <span className="text-right">{formatMovedAt(transfer.movedAt)}</span>
           </div>
           <div className="flex justify-between gap-4 text-sm">
             <span className="text-muted-foreground">{tDetail("createdBy")}</span>

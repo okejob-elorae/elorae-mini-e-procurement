@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId, moveStoreStock } from "@elorae/db";
 import { createStoreStocktake, saveStocktakeCounts, approveStoreStocktake, cancelStoreStocktake } from "./writer";
 import { createFieldReturn } from "@/lib/field-sales/retur/writer";
+import { createStoreTransfer, approveStoreTransfer } from "@/lib/stores/transfer/writer";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -18,6 +19,7 @@ d("store stocktake writer (test bed only)", () => {
   let bogusItemId = "";
   let itemIds: string[] = [];
   let storeId = "";
+  let storeBId = "";
   let stocktakeIds: string[] = [];
   let stkCounter = 0;
 
@@ -34,13 +36,14 @@ d("store stocktake writer (test bed only)", () => {
     isAdded?: boolean;
   };
 
-  const mkStocktake = async (opts: { status?: "DRAFT" | "PENDING_VERIFICATION"; openKey?: string | null; lines: LineSeed[] }) => {
+  const mkStocktake = async (opts: { status?: "DRAFT" | "PENDING_VERIFICATION"; openKey?: string | null; storeId?: string; lines: LineSeed[] }) => {
+    const target = opts.storeId ?? storeId;
     const st = await prisma.storeStocktake.create({
       data: {
         docNo: docNo(),
-        storeId,
+        storeId: target,
         status: opts.status ?? "DRAFT",
-        openKey: opts.openKey === undefined ? storeId : opts.openKey,
+        openKey: opts.openKey === undefined ? target : opts.openKey,
         countedAt: new Date(),
         createdById: adminId,
         lines: {
@@ -67,8 +70,8 @@ d("store stocktake writer (test bed only)", () => {
    * stamp a second into the past — test-only — so a movement recorded right after it can never
    * share its millisecond and fall outside the strict `createdAt > countFinishedAt` window.
    */
-  const countThroughSave = async (line: LineSeed) => {
-    const id = await mkStocktake({ lines: [{ ...line, countedQty: null }] });
+  const countThroughSave = async (line: LineSeed, target: string = storeId) => {
+    const id = await mkStocktake({ storeId: target, lines: [{ ...line, countedQty: null }] });
     const row = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id) }, select: { id: true } });
     await saveStocktakeCounts({
       stocktakeId: id,
@@ -109,10 +112,14 @@ d("store stocktake writer (test bed only)", () => {
     return returnId;
   };
 
-  const stocktakeLedgerRows = (stocktakeId: string, itemId: string) =>
+  const stocktakeLedgerRows = (stocktakeId: string, itemId: string, target: string = storeId) =>
     prisma.stockLedgerEntry.findMany({
-      where: { locationType: "STORE", locationId: seededId(storeId), itemId: seededId(itemId), refType: "StoreStocktake", refId: seededId(stocktakeId) },
+      where: { locationType: "STORE", locationId: seededId(target), itemId: seededId(itemId), refType: "StoreStocktake", refId: seededId(stocktakeId) },
     });
+
+  /* Three units of itemMain moved between the two stores through the real transfer writer, left PENDING. */
+  const recordTransfer = (fromStoreId: string, toStoreId: string, movedAt: Date) =>
+    createStoreTransfer({ fromStoreId, toStoreId, movedAt, createdById: adminId, lines: [{ itemId: itemMainId, variantSku: "", qty: 3 }] });
 
   beforeEach(async () => {
     uomId = "";
@@ -124,6 +131,7 @@ d("store stocktake writer (test bed only)", () => {
     bogusItemId = "";
     itemIds = [];
     storeId = "";
+    storeBId = "";
     stocktakeIds = [];
     stkCounter = 0;
 
@@ -146,6 +154,8 @@ d("store stocktake writer (test bed only)", () => {
 
     const store = await prisma.store.create({ data: { code: `${tag}-STORE`, name: "Test Stocktake Writer Store", address: "Jl. Test", termsType: "KONSI", isActive: true } });
     storeId = store.id;
+    const storeB = await prisma.store.create({ data: { code: `${tag}-STORE-B`, name: "Test Stocktake Writer Store B", address: "Jl. Test", termsType: "KONSI", isActive: true } });
+    storeBId = storeB.id;
 
     /*
      * Fresh StoreStock rows every test (beforeEach runs per-test, not per-suite) — itemMain at
@@ -159,15 +169,19 @@ d("store stocktake writer (test bed only)", () => {
   });
 
   afterEach(async () => {
+    const bothStores = [seededId(storeId), seededId(storeBId)];
+    const transferWhere = { OR: [{ fromStoreId: { in: bothStores } }, { toStoreId: { in: bothStores } }] };
+    await prisma.storeTransferLine.deleteMany({ where: { transfer: transferWhere } });
+    await prisma.storeTransfer.deleteMany({ where: transferWhere });
     await prisma.fieldReturnLine.deleteMany({ where: { returnDoc: { storeId: seededId(storeId) } } });
     await prisma.fieldReturn.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.storeStocktakeLine.deleteMany({ where: { stocktakeId: { in: stocktakeIds } } });
     await prisma.storeStocktake.deleteMany({ where: { id: { in: stocktakeIds } } });
-    await prisma.storeStock.deleteMany({ where: { storeId: seededId(storeId), itemId: { in: itemIds } } });
+    await prisma.storeStock.deleteMany({ where: { storeId: { in: bothStores }, itemId: { in: itemIds } } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: { in: itemIds } } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: itemIds } } });
     await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: itemIds } } });
-    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.store.deleteMany({ where: { id: { in: bothStores } } });
     await prisma.item.deleteMany({ where: { id: { in: [seededId(itemMainId), seededId(itemNegativeId), seededId(itemZeroId), seededId(itemAddedId)] } } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
@@ -427,6 +441,142 @@ d("store stocktake writer (test bed only)", () => {
       where: { locationType: "STORE", locationId: seededId(storeId), itemId: seededId(itemMainId), refType: "SpgSale" },
       data: { createdAt: new Date(Date.now() - 60_000) },
     });
+
+    await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId) } });
+    expect(Number(ss.qty)).toBe(7);
+    expect(await stocktakeLedgerRows(id, itemMainId)).toHaveLength(0);
+  });
+
+  it("refuses TRANSFER_PENDING while a transfer out of the store, moved before the count, is still pending, and writes nothing", async () => {
+    const { docNo } = await recordTransfer(storeId, storeBId, new Date(Date.now() - 120_000));
+    const id = await countThroughSave({ itemId: itemMainId, expectedQty: 10, countedQty: 7, cause: "SHRINKAGE", reason: "three moved to store B" });
+
+    await expect(approveStoreStocktake({ stocktakeId: id, approvedById: adminId })).rejects.toMatchObject({ code: "TRANSFER_PENDING", detail: docNo });
+
+    const st = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } });
+    expect(st.status).toBe("PENDING_VERIFICATION");
+    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId) } });
+    expect(Number(ss.qty)).toBe(10);
+  });
+
+  it("refuses TRANSFER_PENDING for a pending transfer INTO the store as well", async () => {
+    const { docNo } = await recordTransfer(storeBId, storeId, new Date(Date.now() - 120_000));
+    const id = await countThroughSave({ itemId: itemMainId, expectedQty: 10, countedQty: 13, reason: "three arrived from store B" });
+    await expect(approveStoreStocktake({ stocktakeId: id, approvedById: adminId })).rejects.toMatchObject({ code: "TRANSFER_PENDING", detail: docNo });
+  });
+
+  it("does not refuse over a pending transfer whose goods moved moments after the count", async () => {
+    const id = await countThroughSave({ itemId: itemMainId, expectedQty: 10, countedQty: 10 });
+    /* countFinishedAt is a second ago and the move is now: compared as instants, the move is after the count. */
+    await recordTransfer(storeId, storeBId, new Date());
+    await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId) } });
+    expect(Number(ss.qty)).toBe(10);
+  });
+
+  it("does not refuse TRANSFER_PENDING over a pending transfer of an item this count never counted", async () => {
+    /* The transfer moves itemMain; this partial count only counted itemZero, so it never saw the move. */
+    await recordTransfer(storeId, storeBId, new Date(Date.now() - 120_000));
+    const id = await countThroughSave({ itemId: itemZeroId, expectedQty: 0, countedQty: 0 });
+    await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+    const st = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } });
+    expect(st.status).toBe("APPROVED");
+  });
+
+  it("does not refuse TRANSFER_PENDING when the transferred item's line was left uncounted", async () => {
+    /* The count lists itemMain but left it blank and counted itemZero only, so it never saw the move. */
+    await recordTransfer(storeId, storeBId, new Date(Date.now() - 120_000));
+    const id = await mkStocktake({
+      status: "PENDING_VERIFICATION",
+      lines: [
+        { itemId: itemMainId, expectedQty: 10, countedQty: null },
+        { itemId: itemZeroId, expectedQty: 0, countedQty: 0 },
+      ],
+    });
+    await prisma.storeStocktake.update({ where: { id }, data: { countFinishedAt: new Date(Date.now() - 1000) } });
+
+    await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+    const st = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } });
+    expect(st.status).toBe("APPROVED");
+    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId), variantSku: "" } });
+    expect(Number(ss.qty)).toBe(10);
+  });
+
+  it("does not refuse TRANSFER_PENDING when the count counted another variant of the transferred item", async () => {
+    /* The transfer moves itemMain's variantless key; this count counted itemMain under "RED" only. */
+    await recordTransfer(storeId, storeBId, new Date(Date.now() - 120_000));
+    const id = await countThroughSave({ itemId: itemMainId, variantSku: "RED", expectedQty: 0, countedQty: 0 });
+
+    await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+    const st = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } });
+    expect(st.status).toBe("APPROVED");
+  });
+
+  it("refuses TRANSFER_PENDING for a count saved before countFinishedAt existed, falling back to the approval instant as the count moment", async () => {
+    /*
+     * No countFinishedAt on this document (created directly, never through saveStocktakeCounts),
+     * so the only count moment available is this approval's own instant — matching the fallback
+     * `approveStoreTransfer`'s own COUNTED_SINCE_MOVE guard already uses for the same case, so the
+     * two guards never disagree about whether this count saw the move.
+     */
+    const { docNo } = await recordTransfer(storeId, storeBId, new Date(Date.now() - 120_000));
+    const id = await mkStocktake({
+      lines: [{ itemId: itemMainId, variantSku: "", productName: "Main", expectedQty: 10, countedQty: 7, reason: "recount", cause: "SHRINKAGE" }],
+    });
+
+    await expect(approveStoreStocktake({ stocktakeId: id, approvedById: adminId })).rejects.toMatchObject({ code: "TRANSFER_PENDING", detail: docNo });
+
+    const st = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } });
+    expect(st.status).toBe("DRAFT");
+    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId) } });
+    expect(Number(ss.qty)).toBe(10);
+  });
+
+  it("keeps setting the bare counted figure for a null-countFinishedAt count once the pending transfer is out of the way", async () => {
+    /*
+     * Same shape as the refusal case above, but the transfer is cancelled first — the pending
+     * check has nothing left to refuse, and the null-countFinishedAt re-application behaviour
+     * (bare counted figure, no post-count exclusion) is unchanged by this fix.
+     */
+    const { transferId } = await recordTransfer(storeId, storeBId, new Date(Date.now() - 120_000));
+    await prisma.storeTransfer.update({ where: { id: transferId }, data: { status: "CANCELLED" } });
+    const id = await mkStocktake({
+      lines: [{ itemId: itemMainId, variantSku: "", productName: "Main", expectedQty: 10, countedQty: 7, reason: "recount", cause: "SHRINKAGE" }],
+    });
+    await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId) } });
+    expect(Number(ss.qty)).toBe(7);
+  });
+
+  it("does not re-apply either leg of a transfer moved before the count and approved after it: both stores end at their counted figures", async () => {
+    /* The goods left A for B two minutes ago; both shelves were counted after that, and the transfer is recorded as approved only now. */
+    const { transferId } = await recordTransfer(storeId, storeBId, new Date(Date.now() - 120_000));
+    const idA = await countThroughSave({ itemId: itemMainId, expectedQty: 10, countedQty: 7, cause: "SHRINKAGE", reason: "three moved to store B" });
+    const idB = await countThroughSave({ itemId: itemMainId, expectedQty: 0, countedQty: 3, reason: "three arrived from store A" }, storeBId);
+    await approveStoreTransfer({ transferId, approvedById: adminId });
+
+    await approveStoreStocktake({ stocktakeId: idA, approvedById: adminId });
+    await approveStoreStocktake({ stocktakeId: idB, approvedById: adminId });
+
+    const ssA = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId) } });
+    const ssB = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeBId), itemId: seededId(itemMainId) } });
+    /* Not 7 − 3 = 4 and 3 + 3 = 6: each count already saw the move. */
+    expect(Number(ssA.qty)).toBe(7);
+    expect(Number(ssB.qty)).toBe(3);
+    expect(await stocktakeLedgerRows(idA, itemMainId)).toHaveLength(0);
+    expect(await stocktakeLedgerRows(idB, itemMainId, storeBId)).toHaveLength(0);
+    const lineA = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(idA) } });
+    expect(Number(lineA.appliedQty)).toBe(7);
+  });
+
+  it("still re-applies a transfer whose goods moved moments after the count", async () => {
+    const id = await countThroughSave({ itemId: itemMainId, expectedQty: 10, countedQty: 10 });
+    const { transferId } = await recordTransfer(storeId, storeBId, new Date());
+    await approveStoreTransfer({ transferId, approvedById: adminId });
 
     await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
 

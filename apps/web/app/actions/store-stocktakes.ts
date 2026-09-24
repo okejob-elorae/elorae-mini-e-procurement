@@ -27,9 +27,11 @@ export type StoreStocktakeActionResult =
         | "ITEM_NOT_FOUND"
         | "INVALID_REQUEST"
         | "DUPLICATE_LINE"
+        | "TRANSFER_PENDING"
         | "NO_ASSIGNED_STORE"
         | "NO_ACTIVE_VISIT"
         | "ERROR";
+      detail?: string;
     };
 
 type CauseValue = "SHRINKAGE" | "UNRECORDED_SALE";
@@ -81,15 +83,20 @@ const ERROR_CODE_MAP: Record<StoreStocktakeErrorCode, Exclude<StoreStocktakeActi
   ITEM_NOT_FOUND: "ITEM_NOT_FOUND",
   INVALID_REQUEST: "INVALID_REQUEST",
   DUPLICATE_LINE: "DUPLICATE_LINE",
+  TRANSFER_PENDING: "TRANSFER_PENDING",
 };
 
 /**
  * A caught `StoreStocktakeError` keeps its own code via the map above; anything else (a network
  * hiccup, a programmer error, `auth()` itself throwing) becomes `ERROR` rather than leaking a
- * thrown message — production digest-masking would swallow it anyway.
+ * thrown message — production digest-masking would swallow it anyway. The transfer doc numbers a
+ * `TRANSFER_PENDING` refusal names ride in `detail`.
  */
 function toResult(e: unknown): StoreStocktakeActionResult {
-  if (e instanceof StoreStocktakeError) return { ok: false, code: ERROR_CODE_MAP[e.code] };
+  if (e instanceof StoreStocktakeError) {
+    const code = ERROR_CODE_MAP[e.code];
+    return e.detail ? { ok: false, code, detail: e.detail } : { ok: false, code };
+  }
   return { ok: false, code: "ERROR" };
 }
 

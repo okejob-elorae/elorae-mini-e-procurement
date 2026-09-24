@@ -129,6 +129,7 @@ export type SellThroughLineDetail = {
   billedQty: number;
   shrinkageQty: number;
   negativeSold: boolean;
+  hasLateMovements: boolean;
   suggestedResolution: SellThroughResolutionValue | null;
   resolution: SellThroughResolutionValue | null;
   resolutionReason: string | null;
@@ -225,6 +226,7 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
           billedQty: true,
           shrinkageQty: true,
           negativeSold: true,
+          hasLateMovements: true,
           suggestedResolution: true,
           resolution: true,
           resolutionReason: true,
@@ -348,6 +350,7 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
       billedQty: roundQty(l.billedQty.toNumber()),
       shrinkageQty: roundQty(l.shrinkageQty.toNumber()),
       negativeSold: l.negativeSold,
+      hasLateMovements: l.hasLateMovements,
       suggestedResolution: l.suggestedResolution,
       resolution: l.resolution,
       resolutionReason: l.resolutionReason,
@@ -377,8 +380,8 @@ export async function getSellThroughEligibility(
   } catch (e) {
     if (e instanceof SellThroughError) {
       if (e.code === "ALREADY_USED") return { eligible: false, reason: e.code, existingId: e.detail };
-      /* The retur docNos the reason copy names, so the admin knows which returns to finish or cancel. */
-      if (e.code === "RETUR_IN_FLIGHT") return { eligible: false, reason: e.code, detail: e.detail };
+      /* The retur or transfer docNos the reason copy names, so the admin knows which documents to finish or cancel. */
+      if (e.code === "RETUR_IN_FLIGHT" || e.code === "TRANSFER_IN_FLIGHT") return { eligible: false, reason: e.code, detail: e.detail };
       return { eligible: false, reason: e.code };
     }
     throw e;

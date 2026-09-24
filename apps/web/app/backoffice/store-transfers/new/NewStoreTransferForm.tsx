@@ -12,6 +12,7 @@ import {
   type StoreTransferActionResult,
 } from "@/app/actions/store-transfers";
 import type { StoreStockOptionRow } from "@/lib/stores/transfer/queries";
+import { formatMovedAtInput, isMovedAtInFuture, parseMovedAtInput } from "@/lib/stores/transfer/moved-at";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -71,6 +72,7 @@ export function NewStoreTransferForm({ storeOptions }: Props) {
   const [fromStoreId, setFromStoreId] = useState("");
   const [toStoreId, setToStoreId] = useState("");
   const [note, setNote] = useState("");
+  const [movedAt, setMovedAt] = useState(() => formatMovedAtInput(new Date()));
   const [lines, setLines] = useState<Line[]>([emptyLine()]);
   const [sourceStock, setSourceStock] = useState<SourceStockState>({ status: "idle" });
   // Only surface a started-but-empty-qty row as an error AFTER a submit was attempted — flagging
@@ -155,12 +157,14 @@ export function NewStoreTransferForm({ storeOptions }: Props) {
     .map((l) => ({ ...splitLineKey(l.key), qty: qtyOf(l) }));
 
   const sameStore = !!fromStoreId && !!toStoreId && fromStoreId === toStoreId;
+  const movedAtDate = parseMovedAtInput(movedAt);
+  const movedAtValid = movedAtDate !== null && !isMovedAtInFuture(movedAtDate, new Date());
   // What the SUBMIT BUTTON is gated on — everything except quantity validity. Quantity errors
   // are deliberately left able to reach `onSubmit` (rather than disabling the button for them
   // too) so a click with an empty qty on a started row actually fires the handler below and
   // surfaces the inline error, instead of the button just sitting inertly disabled with no
   // feedback at all.
-  const formReady = !!fromStoreId && !!toStoreId && !sameStore && startedLines.length > 0 && !pending;
+  const formReady = !!fromStoreId && !!toStoreId && !sameStore && movedAtValid && startedLines.length > 0 && !pending;
   const canSubmit = formReady && !hasInvalidQty;
 
   function onSubmit(e: React.FormEvent): void {
@@ -173,6 +177,7 @@ export function NewStoreTransferForm({ storeOptions }: Props) {
         const result = await createStoreTransferAction({
           fromStoreId,
           toStoreId,
+          movedAt,
           note: note.trim() || undefined,
           lines: validLines,
         });
@@ -181,7 +186,7 @@ export function NewStoreTransferForm({ storeOptions }: Props) {
           router.push(`/backoffice/store-transfers/${result.id}`);
           return;
         }
-        toast.error(t(errKey(result.code)));
+        toast.error(t(errKey(result.code), { detail: result.detail ?? "" }));
       } catch {
         toast.error(t(errKey("ERROR")));
       }
@@ -237,6 +242,30 @@ export function NewStoreTransferForm({ storeOptions }: Props) {
               </div>
             </div>
             {sameStore && <p className="text-sm text-destructive">{tNew("sameStoreError")}</p>}
+            <div className="space-y-1.5 sm:max-w-xs">
+              <Label htmlFor="transfer-moved-at">{tNew("movedAt")}</Label>
+              <Input
+                id="transfer-moved-at"
+                type="datetime-local"
+                className="min-h-[44px]"
+                required
+                max={formatMovedAtInput(new Date())}
+                value={movedAt}
+                disabled={pending}
+                aria-invalid={!movedAtValid}
+                aria-describedby="transfer-moved-at-hint"
+                onChange={(e) => setMovedAt(e.target.value)}
+              />
+              {movedAtValid ? (
+                <p id="transfer-moved-at-hint" className="text-xs text-muted-foreground">
+                  {tNew("movedAtHint")}
+                </p>
+              ) : (
+                <p id="transfer-moved-at-hint" className="text-xs text-destructive" role="alert">
+                  {tNew("movedAtRequired")}
+                </p>
+              )}
+            </div>
             <div className="space-y-1.5">
               <Label htmlFor="transfer-note">{tNew("note")}</Label>
               <Textarea

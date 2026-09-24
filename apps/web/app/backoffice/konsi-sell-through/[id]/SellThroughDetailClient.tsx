@@ -96,6 +96,7 @@ export function SellThroughDetailClient({
   /* Every SPG_POS report shows its resolutions; only a DRAFT viewed by a manager can edit them. */
   const canEditResolution = isSpgPos && isDraft && canManage;
   const heldLines = report.lines.filter((l) => l.held);
+  const lateLineCount = report.lines.filter((l) => l.hasLateMovements).length;
   const statusKey = report.status === "APPROVED" ? (report.baseline ? "APPROVED_BASELINE" : "APPROVED_INVOICED") : report.status;
   /* Every column left of Line Total, so the footer's total sits under it. */
   const totalLabelSpan = isSpgPos ? 10 : 9;
@@ -302,6 +303,11 @@ export function SellThroughDetailClient({
         <CardContent>
           {!isDraft && <p className="mb-3 text-sm text-muted-foreground">{tDetail("readOnlyNote")}</p>}
           <p className="mb-3 text-xs text-muted-foreground">{tDetail("closingVsCountedNote")}</p>
+          {lateLineCount > 0 && (
+            <p className="mb-3 text-sm text-amber-700 dark:text-amber-500">
+              {tDetail("lateMovementsNote", { n: lateLineCount, docNo: report.previousDocNo ?? "" })}
+            </p>
+          )}
           <TooltipProvider>
             <div className="overflow-x-auto">
               <Table>
@@ -345,6 +351,22 @@ export function SellThroughDetailClient({
                             <Badge variant="outline" className="mt-1 border-amber-600 text-amber-700">
                               {tDetail("heldBadge")}
                             </Badge>
+                          )}
+                          {line.hasLateMovements && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="mt-1 ml-1 inline-flex rounded-md"
+                                  aria-label={tDetail("lateBadgeHint", { docNo: report.previousDocNo ?? "" })}
+                                >
+                                  <Badge variant="secondary">{tDetail("lateBadge")}</Badge>
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-xs">
+                                {tDetail("lateBadgeHint", { docNo: report.previousDocNo ?? "" })}
+                              </TooltipContent>
+                            </Tooltip>
                           )}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">{line.openingQty}</TableCell>

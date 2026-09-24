@@ -4,6 +4,7 @@ import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { weightedAvgCost } from "@/lib/inventory/weighted-avg-cost";
 import { StoreTransferError } from "./errors";
+import { isMovedAtInFuture } from "./moved-at";
 
 export type CreateStoreTransferLine = {
   itemId: string;
@@ -24,10 +25,18 @@ export type CreateStoreTransferLine = {
  * stale snapshot as the ledger's cost basis would move value into or out of existence rather
  * than merely disagreeing with itself. Do not wire this field back into the movement's cost
  * basis — see the comment on `approveStoreTransfer` for the full reasoning.
+ *
+ * `movedAt` is the moment the goods physically left the source store, entered as a WIB date and
+ * time and often recorded after the fact. Every lag guard — this writer's `COUNTED_SINCE_MOVE`,
+ * stocktake approval's `TRANSFER_PENDING` and exclusion, the sell-through report's
+ * `TRANSFER_IN_FLIGHT` — compares it as an instant against a count moment, so a count earlier on
+ * the same day as the move stays before it. A moment more than `MOVED_AT_FUTURE_TOLERANCE_MS`
+ * after now is refused (`isMovedAtInFuture`).
  */
 export async function createStoreTransfer(input: {
   fromStoreId: string;
   toStoreId: string;
+  movedAt: Date;
   note?: string | null;
   createdById: string;
   lines: CreateStoreTransferLine[];
@@ -38,6 +47,7 @@ export async function createStoreTransfer(input: {
     for (const l of input.lines) {
       if (!Number.isFinite(l.qty) || l.qty <= 0) throw new StoreTransferError("BAD_QTY");
     }
+    if (isMovedAtInFuture(input.movedAt, new Date())) throw new StoreTransferError("MOVED_AT_IN_FUTURE");
 
     /*
      * `StoreTransfer.fromStore`/`toStore` are REQUIRED relations under relationMode = "prisma" —
@@ -65,6 +75,7 @@ export async function createStoreTransfer(input: {
         docNo,
         fromStoreId: input.fromStoreId,
         toStoreId: input.toStoreId,
+        movedAt: input.movedAt,
         note: input.note ?? null,
         createdById: input.createdById,
       },
@@ -114,6 +125,16 @@ export async function createStoreTransfer(input: {
  * lib/delivery/shipment-writer.ts, rather than the read-then-plain-update shape older approval
  * writers in this repo (e.g. field-sales/retur/approve-writer.ts) still use.
  *
+ * A transfer is refused `COUNTED_SINCE_MOVE`, naming the counts, when either store has an APPROVED
+ * stocktake that counted one of this transfer's item::variant keys (a line with a `countedQty`)
+ * at a count moment (`countFinishedAt`, or `approvedAt` for a count saved before that column
+ * existed) on or after `movedAt`. That count already recorded the move as a shortfall at one store
+ * and a surplus at the other, and moving the stock now would record it twice. A count that left
+ * those keys uncounted, or never had them, did not see the move and does not refuse. The only way
+ * out is to cancel the transfer; the move then stands in the count. The check runs after the CAS —
+ * so a repeat approval still reports `INVALID_STATE` — and before any stock moves, and it throws,
+ * which rolls the CAS back with it.
+ *
  * Cost basis: BOTH `moveStoreStock` calls use `sourceAvgCost` — the source store's `avgCost` read
  * fresh from `StoreStock`, INSIDE this transaction, at approve time — never `line.unitCost` (the
  * create-time snapshot on `StoreTransferLine`, see the comment on `createStoreTransfer` above).
@@ -150,6 +171,7 @@ export async function approveStoreTransfer(input: {
         docNo: true,
         fromStoreId: true,
         toStoreId: true,
+        movedAt: true,
         lines: {
           orderBy: { id: "asc" },
           /* No `unitCost` here on purpose — see the function doc above. That column is the
@@ -171,6 +193,24 @@ export async function approveStoreTransfer(input: {
       data: { status: "APPROVED", approvedAt: new Date(), approvedById: input.approvedById },
     });
     if (claimed.count !== 1) throw new StoreTransferError("INVALID_STATE");
+
+    const transferKeys = transfer.lines.map((l) => ({ itemId: l.itemId, variantSku: l.variantSku ?? "" }));
+    const countedSinceMove = await tx.storeStocktake.findMany({
+      where: {
+        status: "APPROVED",
+        storeId: { in: [transfer.fromStoreId, transfer.toStoreId] },
+        OR: [
+          { countFinishedAt: { gte: transfer.movedAt } },
+          { countFinishedAt: null, approvedAt: { gte: transfer.movedAt } },
+        ],
+        lines: { some: { countedQty: { not: null }, OR: transferKeys } },
+      },
+      orderBy: { docNo: "asc" },
+      select: { docNo: true },
+    });
+    if (countedSinceMove.length > 0) {
+      throw new StoreTransferError("COUNTED_SINCE_MOVE", countedSinceMove.map((s) => s.docNo).join(", "));
+    }
 
     for (const line of transfer.lines) {
       const qty = line.qty.toNumber();
