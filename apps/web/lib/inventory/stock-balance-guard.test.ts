@@ -50,6 +50,12 @@ const REPO_ROOT = join(__dirname, "..", "..", "..", "..");
  * import-legacy-master.ts provisions an InventoryValue row at qtyOnHand: 0 alongside a new Item.
  * A create at zero moves nothing, same as opname-snapshot.ts and items/mutations.ts above.
  *
+ * konsi-sell-through/test-fixtures.ts creates a main InventoryValue row holding real stock with no
+ * ledger entry — it is the shared spec fixture behind the sell-through writer and query specs, so
+ * it is not named *.test.ts and the filter below cannot see that it is test-only. It provisions
+ * the starting stock a konsi order draws on, runs only inside specs on the :3308 test bed, and is
+ * never part of a business flow. Same standing as cleanup-test-stores.ts: not a pattern to copy.
+ *
  * The rest are row provisioning (a create at qty 0 moves nothing), fixtures, and one-off scripts.
  */
 const ALLOWED = [
@@ -65,6 +71,7 @@ const ALLOWED = [
   "packages/db/prisma/backfill-reservations.ts",
   "apps/web/scripts/cleanup-test-stores.ts",
   "apps/web/scripts/import-legacy-master.ts",
+  "apps/web/lib/konsi-sell-through/test-fixtures.ts",
 ];
 
 const FORBIDDEN = String.raw`(inventoryValue|storeStock|vanStock)\.(update|upsert|create|updateMany|createMany)`;

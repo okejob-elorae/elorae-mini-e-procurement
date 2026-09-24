@@ -402,6 +402,7 @@ export async function deleteItem(id: string) {
     vanSaleLineCount,
     vanReconcileLineCount,
     spgSaleLineCount,
+    konsiSellThroughLineCount,
   ] = await Promise.all([
     /*
      * Two counts guard two different failures, not the same one twice. `StockMovement` writes
@@ -445,6 +446,7 @@ export async function deleteItem(id: string) {
     prisma.vanSaleLine.count({ where: { itemId: id } }),
     prisma.vanReconcileLine.count({ where: { itemId: id } }),
     prisma.spgSaleLine.count({ where: { itemId: id } }),
+    prisma.konsiSellThroughLine.count({ where: { itemId: id } }),
   ]);
 
   const hasLinkedRecords =
@@ -471,7 +473,8 @@ export async function deleteItem(id: string) {
     vanLoadLineCount > 0 ||
     vanSaleLineCount > 0 ||
     vanReconcileLineCount > 0 ||
-    spgSaleLineCount > 0;
+    spgSaleLineCount > 0 ||
+    konsiSellThroughLineCount > 0;
 
   if (hasLinkedRecords) {
     throw new Error(ITEM_DELETE_BLOCKED);
