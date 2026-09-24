@@ -5093,6 +5093,8 @@
     "detail": {
       "back": "Back",
       "invoiceFactsTitle": "Invoice Details",
+      "sourceSellThrough": "Sell-through report",
+      "colPeriod": "Period",
       "moneyTitle": "Amount",
       "paid": "Paid",
       "allocationHistoryTitle": "Payment History",

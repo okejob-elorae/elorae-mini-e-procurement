@@ -845,14 +845,18 @@ export async function getSettlementForPrint(
         })
       : [];
   /**
-   * `receivable.delivery.docNo` is read without `?.` on purpose: `Receivable.delivery` is a
-   * required, FK-less relation under `relationMode = "prisma"`, so a dangling `deliveryId` would
-   * throw inside this `findMany` before this line runs — `?.` here would only pretend the row
-   * could resolve with `delivery` absent, which it cannot without a throw already having happened.
-   * This traversal is a pre-existing exposure shared with `getSettlementForApproval`'s equivalent
-   * lookup; splitting it into a `deliveryId`-scalar-plus-separate-`findMany` shape (as the
-   * `store`/`salesman` guard above now does) would cost an extra query for a case not in this
-   * task's scope, so it is left as is and logged as a follow-up rather than fixed here.
+   * `receivable.delivery.docNo` is read without `?.` — this is now a real gap, not a pre-existing
+   * one. `Receivable.delivery` is OPTIONAL as of the delivery/sell-through source split
+   * (`Receivable.sellThroughId`, `lib/finance/ar/receivable-source.ts`): a receivable backed by a
+   * `KonsiSellThrough` report resolves `delivery` to `null` here rather than throwing, and this line
+   * then throws a plain `TypeError` on `.docNo` instead. A dangling `deliveryId` (the original
+   * concern this comment described) is a different failure and still throws inside the `findMany`
+   * itself, before this line runs.
+   *
+   * Fixing this means resolving through `resolveReceivableSource`/`RECEIVABLE_SOURCE_SELECT`, which
+   * this settlement-print query does not yet do — out of scope for the task that introduced the
+   * optional relation, so left as a known gap rather than fixed here. Shared by
+   * `getSettlementForApproval`'s equivalent lookup.
    */
   const docNoByReceivableId = new Map(
     receivables.map((receivable) => [receivable.id, receivable.delivery.docNo] as const),

@@ -5093,6 +5093,8 @@
     "detail": {
       "back": "Kembali",
       "invoiceFactsTitle": "Detail Faktur",
+      "sourceSellThrough": "Laporan sell-through",
+      "colPeriod": "Periode",
       "moneyTitle": "Nilai",
       "paid": "Sudah Dibayar",
       "allocationHistoryTitle": "Riwayat Pembayaran",
