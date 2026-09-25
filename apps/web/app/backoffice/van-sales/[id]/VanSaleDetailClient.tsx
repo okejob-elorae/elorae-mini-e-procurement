@@ -4,13 +4,14 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { ArrowLeft, BookText, ExternalLink, MapPin, Printer } from "lucide-react";
 import type { VanSaleDetail } from "@/lib/canvassing/sale-queries";
 import { postVanSaleJournalAction } from "@/app/actions/van-sale";
 import { vanSaleNotaHtml } from "@/lib/print/van-sale-nota-html";
 import { hasPermission } from "@/lib/rbac";
+import { formatDisplayDateTime } from "@/lib/date-only";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,16 +36,6 @@ function formatRupiah(value: number): string {
   }).format(value);
 }
 
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString("id-ID", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 function Field({ label, value }: { label: string; value: string | null }) {
   if (!value) return null;
   return (
@@ -58,6 +49,7 @@ function Field({ label, value }: { label: string; value: string | null }) {
 export function VanSaleDetailClient({ sale }: Props) {
   const t = useTranslations("vanSale.backoffice.detail");
   const tVanSale = useTranslations("vanSale");
+  const locale = useLocale();
   const router = useRouter();
   const { data: session } = useSession();
   const canPostJournal = hasPermission(session?.user?.permissions ?? [], "journals:manage");
@@ -158,7 +150,7 @@ export function VanSaleDetailClient({ sale }: Props) {
         <Field label={t("salesmanLabel")} value={sale.salesmanLabel} />
         <Field label={t("buyerLabel")} value={sale.storeName ?? sale.buyerName ?? t("buyerWalkIn")} />
         <Field label={t("buyerPhoneLabel")} value={sale.buyerPhone} />
-        <Field label={t("dateLabel")} value={formatDateTime(sale.createdAtIso)} />
+        <Field label={t("dateLabel")} value={formatDisplayDateTime(sale.createdAtIso, locale)} />
         {sale.saleLat !== null && sale.saleLng !== null && (
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">{t("gpsLabel")}</span>
@@ -207,7 +199,7 @@ export function VanSaleDetailClient({ sale }: Props) {
             <TableBody>
               {sale.lines.map((line, i) => (
                 <TableRow key={i}>
-                  <TableCell>{line.productName}</TableCell>
+                  <TableCell className="min-w-[12rem] whitespace-normal">{line.productName}</TableCell>
                   <TableCell className="font-mono text-sm">{line.variantSku || "—"}</TableCell>
                   <TableCell className="text-right">{line.qty}</TableCell>
                   <TableCell className="text-right">{formatRupiah(line.unitPrice)}</TableCell>

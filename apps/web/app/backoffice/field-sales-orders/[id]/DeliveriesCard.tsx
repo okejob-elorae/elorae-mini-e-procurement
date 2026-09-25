@@ -44,8 +44,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { formatDateTime, formatIDR } from "@/lib/sales-orders/format";
-import { formatDateOnlyJakarta } from "@/lib/date-only";
+import { formatIDR } from "@/lib/sales-orders/format";
+import { formatDateOnlyJakarta, formatDisplayDate, formatDisplayDateTime } from "@/lib/date-only";
 import type {
   FieldSalesDeliveryStatus,
   FieldSalesDeliverySummary,
@@ -106,15 +106,6 @@ const ACTION_SLOT_CLASS = [
   "max-sm:col-start-1 max-sm:row-start-2 max-sm:row-span-1",
   "max-sm:justify-self-start max-sm:justify-start",
 ].join(" ");
-
-function formatDay(date: Date, locale: string): string {
-  return new Intl.DateTimeFormat(locale, {
-    timeZone: "Asia/Jakarta",
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(date);
-}
 
 function totalQty(delivery: FieldSalesDeliverySummary): number {
   return delivery.lines.reduce((sum, line) => sum + line.qty, 0);
@@ -406,7 +397,7 @@ export function DeliveriesCard({
                 <TableRow key={delivery.id}>
                   <TableCell className="font-mono whitespace-nowrap">{delivery.docNo}</TableCell>
                   <TableCell className="whitespace-nowrap">
-                    {formatDateTime(delivery.deliveredAt, locale)}
+                    {formatDisplayDateTime(delivery.deliveredAt, locale)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{totalQty(delivery)}</TableCell>
                   <TableCell className="text-right tabular-nums whitespace-nowrap">
@@ -414,12 +405,17 @@ export function DeliveriesCard({
                   </TableCell>
                   <TableCell className="max-w-40 truncate">{delivery.deliveredByName}</TableCell>
                   <TableCell className="whitespace-nowrap">
-                    {formatDay(delivery.dueDate, locale)}
+                    {formatDisplayDate(delivery.dueDate, locale)}
                   </TableCell>
                   <TableCell className="w-12 text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" aria-label={tCommon("actions")}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={tCommon("actions")}
+                          title={tCommon("actions")}
+                        >
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>

@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { Receipt, X } from "lucide-react";
 import type { VanSaleListRow } from "@/lib/canvassing/sale-queries";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Pager } from "@/components/Pager";
+import { formatDisplayDateTime } from "@/lib/date-only";
 
 type Props = {
   sales: VanSaleListRow[];
@@ -46,16 +47,6 @@ function formatRupiah(value: number): string {
   }).format(value);
 }
 
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString("id-ID", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 export function VanSalesListClient({
   sales,
   totalCount,
@@ -68,6 +59,7 @@ export function VanSalesListClient({
 }: Props) {
   const t = useTranslations("vanSale.backoffice.list");
   const tTable = useTranslations("vanSale.backoffice.list.table");
+  const locale = useLocale();
   const router = useRouter();
   const sp = useSearchParams();
   const [, startTransition] = useTransition();
@@ -161,6 +153,16 @@ export function VanSalesListClient({
               <p className="text-muted-foreground">
                 {hasFilters ? t("noResults") : t("empty")}
               </p>
+              {hasFilters && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => pushParams({ salesmanId: undefined, from: undefined, to: undefined })}
+                >
+                  {t("clearFilters")}
+                </Button>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -184,11 +186,11 @@ export function VanSalesListClient({
                       }
                     >
                       <TableCell className="font-mono text-xs">{s.docNo}</TableCell>
-                      <TableCell className="font-medium">{s.salesmanLabel}</TableCell>
-                      <TableCell className="text-muted-foreground">{s.buyerLabel}</TableCell>
+                      <TableCell className="min-w-[8rem] whitespace-normal font-medium">{s.salesmanLabel}</TableCell>
+                      <TableCell className="min-w-[8rem] whitespace-normal text-muted-foreground">{s.buyerLabel}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatRupiah(s.total)}</TableCell>
                       <TableCell className="whitespace-nowrap text-muted-foreground">
-                        {formatDateTime(s.createdAtIso)}
+                        {formatDisplayDateTime(s.createdAtIso, locale)}
                       </TableCell>
                     </TableRow>
                   ))}

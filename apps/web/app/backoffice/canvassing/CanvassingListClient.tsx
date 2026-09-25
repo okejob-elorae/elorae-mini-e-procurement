@@ -3,7 +3,7 @@
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { Truck } from "lucide-react";
+import { ChevronRight, Truck } from "lucide-react";
 import type { CanvasserSummary } from "@/lib/canvassing/queries";
 import {
   Card,
@@ -57,13 +57,14 @@ export function CanvassingListClient({ canvassers }: Props) {
                     <TableHead>{t("colCanvasser")}</TableHead>
                     <TableHead className="text-right">{t("colLines")}</TableHead>
                     <TableHead className="text-right">{t("colTotalQty")}</TableHead>
+                    <TableHead className="w-10" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {canvassers.map((c) => (
                     <TableRow
                       key={c.id}
-                      className="cursor-pointer hover:bg-muted/50"
+                      className="group cursor-pointer hover:bg-muted/50"
                       onClick={() =>
                         startTransition(() => router.push(`/backoffice/canvassing/${c.id}`))
                       }
@@ -74,6 +75,12 @@ export function CanvassingListClient({ canvassers }: Props) {
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{c.lineCount}</TableCell>
                       <TableCell className="text-right tabular-nums">{c.totalQty}</TableCell>
+                      <TableCell className="w-10 text-right">
+                        <ChevronRight
+                          className="ml-auto h-4 w-4 text-muted-foreground transition-colors group-hover:text-foreground"
+                          aria-hidden
+                        />
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

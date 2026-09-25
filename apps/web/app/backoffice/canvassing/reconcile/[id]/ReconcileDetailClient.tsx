@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { ArrowLeft, BookText, ExternalLink, Printer } from "lucide-react";
 import type { VanReconcileDetail } from "@/lib/canvassing/reconcile-queries";
@@ -23,20 +23,11 @@ import { logPrint } from "@/app/actions/audit";
 import { postVanReconcileJournalAction } from "@/app/actions/van-reconcile";
 import { buildVanReconcilePrintHtml } from "@/lib/print/van-reconcile-html";
 import { hasPermission } from "@/lib/rbac";
+import { formatDisplayDateTime } from "@/lib/date-only";
 
 type Props = {
   reconcile: VanReconcileDetail;
 };
-
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString("id-ID", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 function printHtml(html: string, title: string) {
   const iframe = document.createElement("iframe");
@@ -63,6 +54,7 @@ function Field({ label, value }: { label: string; value: string | null }) {
 
 export function ReconcileDetailClient({ reconcile }: Props) {
   const t = useTranslations("canvassing");
+  const locale = useLocale();
   const router = useRouter();
   const { data: session } = useSession();
   const canPostJournal = hasPermission(session?.user?.permissions ?? [], "journals:manage");
@@ -185,7 +177,7 @@ export function ReconcileDetailClient({ reconcile }: Props) {
         <h2 className="font-semibold">{t("reconcileSectionTitle")}</h2>
         <Field label={t("colCanvasser")} value={reconcile.canvasserLabel} />
         <Field label={t("colReconciledBy")} value={reconcile.reconciledByLabel} />
-        <Field label={t("colDate")} value={formatDateTime(reconcile.createdAtIso)} />
+        <Field label={t("colDate")} value={formatDisplayDateTime(reconcile.createdAtIso, locale)} />
         <Field label={t("note")} value={reconcile.note} />
         <div className="pt-2 border-t space-y-1">
           <div className="flex justify-between text-sm font-semibold">
@@ -215,7 +207,7 @@ export function ReconcileDetailClient({ reconcile }: Props) {
             <TableBody>
               {reconcile.lines.map((line, i) => (
                 <TableRow key={i}>
-                  <TableCell>{line.productName}</TableCell>
+                  <TableCell className="min-w-[12rem] whitespace-normal">{line.productName}</TableCell>
                   <TableCell className="font-mono text-sm">{line.variantSku || "—"}</TableCell>
                   <TableCell className="text-right tabular-nums">{line.expectedQty}</TableCell>
                   <TableCell className="text-right tabular-nums">{line.countedQty}</TableCell>

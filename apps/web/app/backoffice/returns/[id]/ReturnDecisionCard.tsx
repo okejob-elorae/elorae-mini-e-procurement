@@ -39,6 +39,8 @@ import {
   RETURN_STATUS_TAILWIND,
   ITEM_DECISION_TAILWIND,
 } from "@/lib/sales-returns/format";
+import { CHANNEL_BADGE } from "@/lib/sales-orders/badges";
+import { formatDisplayDateTime } from "@/lib/date-only";
 
 type Props = {
   ret: SalesReturnDetail;
@@ -55,17 +57,10 @@ function fmtCurrency(v: unknown, locale: string): string {
   }).format(n);
 }
 
-function fmtDateTime(d: Date | string | null | undefined, locale: string): string {
-  if (!d) return "—";
-  return new Intl.DateTimeFormat(locale === "id" ? "id-ID" : "en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(d));
-}
-
 export function ReturnDecisionCard({ ret, canDecide, canPostJournal }: Props) {
   const t = useTranslations("salesReturns.decision");
   const tj = useTranslations("salesReturns");
+  const tOrders = useTranslations("salesOrders");
   const locale = useLocale();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -179,19 +174,23 @@ export function ReturnDecisionCard({ ret, canDecide, canPostJournal }: Props) {
 
         <div className="grid grid-cols-2 text-sm gap-y-1">
           <span className="text-muted-foreground">{t("channel")}</span>
-          <span>{ret.channel}</span>
+          <span>
+            {tOrders(
+              `channel.${CHANNEL_BADGE[ret.channel as keyof typeof CHANNEL_BADGE]?.labelKey ?? "other"}` as never,
+            )}
+          </span>
           <span className="text-muted-foreground">{t("orderNo")}</span>
           <span className="font-mono">{ret.channelOrderNo ?? "—"}</span>
           <span className="text-muted-foreground">{t("buyer")}</span>
           <span>{ret.buyerName ?? "—"}</span>
           <span className="text-muted-foreground">{t("receivedAt")}</span>
-          <span>{fmtDateTime(ret.receivedAt, locale)}</span>
+          <span>{formatDisplayDateTime(ret.receivedAt, locale)}</span>
         </div>
 
         {locked && (
           <div className="text-sm bg-muted px-3 py-2 rounded">
             {t("lockedBanner", {
-              when: fmtDateTime(ret.decidedAt, locale),
+              when: formatDisplayDateTime(ret.decidedAt, locale),
               who: ret.decidedBy?.name ?? "—",
             })}
           </div>
@@ -242,7 +241,9 @@ export function ReturnDecisionCard({ ret, canDecide, canPostJournal }: Props) {
               <TableHead className="text-right">{t("col.unitPrice")}</TableHead>
               <TableHead className="text-right">{t("col.subtotal")}</TableHead>
               <TableHead>{t("col.decision")}</TableHead>
-              {canDecide && !locked && <TableHead>{t("col.actions")}</TableHead>}
+              {canDecide && !locked && (
+                <TableHead className="sticky right-0 bg-card">{t("col.actions")}</TableHead>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -250,7 +251,7 @@ export function ReturnDecisionCard({ ret, canDecide, canPostJournal }: Props) {
               const pending = item.decision === "PENDING";
               return (
                 <TableRow key={item.id}>
-                  <TableCell>{item.productName}</TableCell>
+                  <TableCell className="min-w-[12rem] whitespace-normal">{item.productName}</TableCell>
                   <TableCell className="font-mono text-xs">
                     {item.variantSku ?? item.externalSku}
                   </TableCell>
@@ -269,7 +270,7 @@ export function ReturnDecisionCard({ ret, canDecide, canPostJournal }: Props) {
                     </span>
                   </TableCell>
                   {canDecide && !locked && (
-                    <TableCell>
+                    <TableCell className="sticky right-0 bg-card">
                       <div className="flex gap-2">
                         <Button
                           size="sm"

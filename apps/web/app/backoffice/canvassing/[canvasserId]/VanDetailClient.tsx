@@ -4,9 +4,9 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { ArrowLeft, BookText, ClipboardCheck, Clock, ExternalLink, Package, Truck } from "lucide-react";
+import { ArrowLeft, BookText, ChevronRight, ClipboardCheck, Clock, ExternalLink, Package, Truck } from "lucide-react";
 import type { VanStockRow, VanLoadRow, LoadableInventoryRow } from "@/lib/canvassing/queries";
 import type { VanReconcileRow, VanReconcileListRow } from "@/lib/canvassing/reconcile-queries";
 import { logPrint } from "@/app/actions/audit";
@@ -14,6 +14,7 @@ import { getVanLoadPrintData } from "@/app/actions/van-load-print";
 import { postVanLoadJournalAction } from "@/app/actions/canvassing";
 import { buildVanLoadPrintHtml } from "@/lib/print/van-load-html";
 import { hasPermission } from "@/lib/rbac";
+import { formatDisplayDateTime } from "@/lib/date-only";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -43,16 +44,6 @@ type Props = {
   reconciles: VanReconcileListRow[];
 };
 
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString([], {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 function printHtml(html: string, title: string) {
   const iframe = document.createElement("iframe");
   iframe.setAttribute("style", "position:absolute;width:0;height:0;border:0;visibility:hidden;");
@@ -68,6 +59,7 @@ function printHtml(html: string, title: string) {
 
 export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, itemOptions, loadableInventory, reconcileRows, reconciles }: Props) {
   const t = useTranslations("canvassing");
+  const locale = useLocale();
   const router = useRouter();
   const { data: session } = useSession();
   const canPostJournal = hasPermission(session?.user?.permissions ?? [], "journals:manage");
@@ -186,11 +178,11 @@ export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, i
                     <TableBody>
                       {vanStock.map((row) => (
                         <TableRow key={`${row.itemId}::${row.variantSku ?? ""}`}>
-                          <TableCell className="font-medium">
+                          <TableCell className="min-w-[10rem] whitespace-normal font-medium">
                             <div>{row.productName}</div>
                             <div className="text-xs text-muted-foreground font-mono">{row.sku}</div>
                           </TableCell>
-                          <TableCell>{row.variantLabel ?? row.variantSku ?? "—"}</TableCell>
+                          <TableCell className="whitespace-normal">{row.variantLabel ?? row.variantSku ?? "—"}</TableCell>
                           <TableCell className="text-right tabular-nums">{row.qty}</TableCell>
                           <TableCell className="text-right tabular-nums">
                             {row.avgCost.toLocaleString("id-ID")}
@@ -227,16 +219,16 @@ export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, i
                         <TableHead>{t("colDate")}</TableHead>
                         <TableHead className="text-right">{t("colLines")}</TableHead>
                         <TableHead>{t("colJournal")}</TableHead>
-                        <TableHead className="text-right">{t("print.vanLoadButton")}</TableHead>
+                        <TableHead className="sticky right-0 bg-card text-right">{t("print.vanLoadButton")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {loads.map((load) => (
                         <TableRow key={load.id}>
                           <TableCell className="font-mono text-xs">{load.docNo}</TableCell>
-                          <TableCell>{load.loadedByLabel}</TableCell>
+                          <TableCell className="min-w-[7rem] whitespace-normal">{load.loadedByLabel}</TableCell>
                           <TableCell className="text-muted-foreground">
-                            {formatDateTime(load.createdAtIso)}
+                            {formatDisplayDateTime(load.createdAtIso, locale)}
                           </TableCell>
                           <TableCell className="text-right tabular-nums">{load.lineCount}</TableCell>
                           <TableCell>
@@ -262,7 +254,7 @@ export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, i
                               <span className="text-muted-foreground text-xs">—</span>
                             )}
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="sticky right-0 bg-card text-right">
                             <Button variant="ghost" size="sm" onClick={() => handlePrintLoad(load.id)}>
                               {t("print.vanLoadButton")}
                             </Button>
@@ -299,22 +291,29 @@ export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, i
                         <TableHead>{t("colReconciledBy")}</TableHead>
                         <TableHead className="text-right">{t("colTotalReturned")}</TableHead>
                         <TableHead className="text-right">{t("colVariance")}</TableHead>
+                        <TableHead className="w-10" />
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {reconciles.map((rec) => (
                         <TableRow
                           key={rec.id}
-                          className="cursor-pointer hover:bg-muted/50"
+                          className="group cursor-pointer hover:bg-muted/50"
                           onClick={() => router.push(`/backoffice/canvassing/reconcile/${rec.id}`)}
                         >
                           <TableCell className="font-mono text-xs">{rec.docNo}</TableCell>
                           <TableCell className="text-muted-foreground">
-                            {formatDateTime(rec.createdAtIso)}
+                            {formatDisplayDateTime(rec.createdAtIso, locale)}
                           </TableCell>
-                          <TableCell>{rec.reconciledByLabel}</TableCell>
+                          <TableCell className="min-w-[7rem] whitespace-normal">{rec.reconciledByLabel}</TableCell>
                           <TableCell className="text-right tabular-nums">{rec.totalReturnedQty}</TableCell>
                           <TableCell className="text-right tabular-nums">{rec.totalVarianceQty}</TableCell>
+                          <TableCell className="w-10 text-right">
+                            <ChevronRight
+                              className="ml-auto h-4 w-4 text-muted-foreground transition-colors group-hover:text-foreground"
+                              aria-hidden
+                            />
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

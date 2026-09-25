@@ -5,7 +5,8 @@ import { useTranslations, useLocale } from "next-intl";
 import { ArrowLeft } from "lucide-react";
 import type { SalesOrderDetail, SalesOrderItemRow } from "@/lib/sales-orders/queries";
 import { CHANNEL_BADGE, STATUS_BADGE } from "@/lib/sales-orders/badges";
-import { formatIDR, formatDateTime } from "@/lib/sales-orders/format";
+import { formatIDR } from "@/lib/sales-orders/format";
+import { formatDisplayDateTime } from "@/lib/date-only";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -110,9 +111,9 @@ export function SalesOrderDetailClient({ order, items, canFulfill, lineImages = 
 
         <Card className="p-4 space-y-2">
           <h2 className="font-semibold">{t("detail.section.orderMeta")}</h2>
-          <Field label={t("detail.field.transactionDate")} value={formatDateTime(order.transactionDate, locale)} />
+          <Field label={t("detail.field.transactionDate")} value={formatDisplayDateTime(order.transactionDate, locale)} />
           <Field label={t("detail.field.paymentMethod")} value={order.paymentMethod} />
-          <Field label={t("detail.field.paymentDate")} value={order.paymentDate ? formatDateTime(order.paymentDate, locale) : null} />
+          <Field label={t("detail.field.paymentDate")} value={order.paymentDate ? formatDisplayDateTime(order.paymentDate, locale) : null} />
           <Field label={t("detail.field.courier")} value={order.courier} />
           <Field label={t("detail.field.trackingNumber")} value={order.trackingNumber} />
         </Card>
@@ -155,7 +156,7 @@ export function SalesOrderDetailClient({ order, items, canFulfill, lineImages = 
                       ? <Link href={`/backoffice/items/${it.itemId}`} className="hover:underline">{it.jubelioItemCode}</Link>
                       : it.jubelioItemCode}
                   </TableCell>
-                  <TableCell>{it.productName}</TableCell>
+                  <TableCell className="min-w-[12rem] whitespace-normal">{it.productName}</TableCell>
                   <TableCell className="text-right">{it.qty}</TableCell>
                   <TableCell className="text-right">{formatIDR(it.unitPrice)}</TableCell>
                   <TableCell className="text-right">{formatIDR(it.discAmount)}</TableCell>

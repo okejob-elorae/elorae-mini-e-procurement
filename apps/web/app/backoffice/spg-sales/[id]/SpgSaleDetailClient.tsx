@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { ArrowLeft, ExternalLink, MapPin, Printer } from "lucide-react";
 import type { SpgSaleDetail } from "@/lib/spg/sale-queries";
 import { spgSaleNotaHtml } from "@/lib/print/spg-sale-nota-html";
+import { formatDisplayDateTime } from "@/lib/date-only";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,16 +29,6 @@ function formatRupiah(value: number): string {
   }).format(value);
 }
 
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString("id-ID", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 function Field({ label, value }: { label: string; value: string | null }) {
   if (!value) return null;
   return (
@@ -51,6 +42,7 @@ function Field({ label, value }: { label: string; value: string | null }) {
 export function SpgSaleDetailClient({ sale }: Props) {
   const t = useTranslations("spgSale.backoffice.detail");
   const tSpgSale = useTranslations("spgSale");
+  const locale = useLocale();
 
   function handlePrint() {
     const html = spgSaleNotaHtml(sale);
@@ -87,7 +79,7 @@ export function SpgSaleDetailClient({ sale }: Props) {
         <h2 className="font-semibold">{t("summaryTitle")}</h2>
         <Field label={t("salesmanLabel")} value={sale.salesmanLabel} />
         <Field label={t("storeLabel")} value={sale.storeName} />
-        <Field label={t("dateLabel")} value={formatDateTime(sale.createdAtIso)} />
+        <Field label={t("dateLabel")} value={formatDisplayDateTime(sale.createdAtIso, locale)} />
         {sale.saleLat !== null && sale.saleLng !== null && (
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">{t("gpsLabel")}</span>
@@ -135,7 +127,7 @@ export function SpgSaleDetailClient({ sale }: Props) {
             <TableBody>
               {sale.lines.map((line, i) => (
                 <TableRow key={i}>
-                  <TableCell>{line.productName}</TableCell>
+                  <TableCell className="min-w-[12rem] whitespace-normal">{line.productName}</TableCell>
                   <TableCell className="font-mono text-sm">{line.variantSku || "—"}</TableCell>
                   <TableCell className="text-right">{line.qty}</TableCell>
                   <TableCell className="text-right">{formatRupiah(line.unitPrice)}</TableCell>

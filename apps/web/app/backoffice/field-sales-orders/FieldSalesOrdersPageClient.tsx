@@ -25,6 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Pager } from "@/components/Pager";
+import { formatDisplayDateTime } from "@/lib/date-only";
 
 type StatusFilter = FieldSalesOrderStatus | "ALL";
 
@@ -90,14 +91,17 @@ export function FieldSalesOrdersPageClient(props: Props) {
     startTransition(() => router.push("/backoffice/field-sales-orders"));
   }
 
-  const formatDate = (date: Date) =>
-    new Intl.DateTimeFormat(locale, {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(date);
+  /*
+   * The bare route defaults to PENDING_APPROVAL, which is itself a narrowing filter. Clearing
+   * from the empty state has to land on every order, hence the explicit ALL sentinel.
+   */
+  function clearFilters() {
+    setSearchInput("");
+    startTransition(() => router.push("/backoffice/field-sales-orders?status=ALL"));
+  }
+
+  const hasFilter =
+    !!props.search || props.status !== "ALL" || props.orderType !== "ALL" || props.storeId !== "ALL";
 
   return (
     <div className="space-y-4">
@@ -107,16 +111,16 @@ export function FieldSalesOrdersPageClient(props: Props) {
       </div>
 
       <Card className="p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-6">
-          <div className="lg:col-span-2">
-            <label className="text-xs text-muted-foreground mb-1 block">{t("search")}</label>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[16rem] flex-[1_1_20rem]">
+            <label className="text-xs text-muted-foreground mb-1 block">{t("searchLabel")}</label>
             <Input
               placeholder={t("search")}
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
             />
           </div>
-          <div>
+          <div className="w-full sm:w-52">
             <label className="text-xs text-muted-foreground mb-1 block">{t("status")}</label>
             <Select value={props.status} onValueChange={(v) => pushParam("status", v)}>
               <SelectTrigger className="w-full">
@@ -130,7 +134,7 @@ export function FieldSalesOrdersPageClient(props: Props) {
               </SelectContent>
             </Select>
           </div>
-          <div>
+          <div className="w-full sm:w-32">
             <label className="text-xs text-muted-foreground mb-1 block">{t("orderType")}</label>
             <Select value={props.orderType} onValueChange={(v) => pushParam("orderType", v === "ALL" ? undefined : v)}>
               <SelectTrigger className="w-full">
@@ -143,23 +147,24 @@ export function FieldSalesOrdersPageClient(props: Props) {
               </SelectContent>
             </Select>
           </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">{t("storeFilter")}</label>
-            <SearchableCombobox
-              options={[
-                { value: "ALL", label: t("storeAll") },
-                ...props.storeOptions.map((s) => ({ value: s.id, label: s.name })),
-              ]}
-              value={props.storeId}
-              onValueChange={(v) => pushParam("storeId", v === "ALL" ? undefined : v)}
-              placeholder={t("storeAll")}
-              searchPlaceholder={t("storeSearchPlaceholder")}
-              emptyMessage={t("storeSearchEmpty")}
-              triggerClassName="w-full"
-            />
-          </div>
-          <div className="flex flex-col justify-end">
-            <Button variant="outline" onClick={reset} className="w-full">
+          {/* Store and Reset wrap as one unit so Reset never ends up alone on a row. */}
+          <div className="flex w-full items-end gap-3 sm:w-auto">
+            <div className="min-w-0 flex-1 sm:w-52 sm:flex-none">
+              <label className="text-xs text-muted-foreground mb-1 block">{t("storeFilter")}</label>
+              <SearchableCombobox
+                options={[
+                  { value: "ALL", label: t("storeAll") },
+                  ...props.storeOptions.map((s) => ({ value: s.id, label: s.name })),
+                ]}
+                value={props.storeId}
+                onValueChange={(v) => pushParam("storeId", v === "ALL" ? undefined : v)}
+                placeholder={t("storeAll")}
+                searchPlaceholder={t("storeSearchPlaceholder")}
+                emptyMessage={t("storeSearchEmpty")}
+                triggerClassName="w-full"
+              />
+            </div>
+            <Button variant="outline" onClick={reset} className="shrink-0">
               {t("reset")}
             </Button>
           </div>
@@ -171,7 +176,7 @@ export function FieldSalesOrdersPageClient(props: Props) {
           <TableHeader>
             <TableRow>
               <TableHead>{t("colOrderNo")}</TableHead>
-              <TableHead>{t("colType")}</TableHead>
+              <TableHead className="hidden 2xl:table-cell">{t("colType")}</TableHead>
               <TableHead>{t("colStore")}</TableHead>
               <TableHead>{t("colSalesman")}</TableHead>
               <TableHead className="text-right">{t("colTotal")}</TableHead>
@@ -182,8 +187,17 @@ export function FieldSalesOrdersPageClient(props: Props) {
           <TableBody>
             {props.orders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                  {t("empty")}
+                <TableCell colSpan={7} className="whitespace-normal py-8 text-center text-muted-foreground">
+                  {hasFilter ? (
+                    <div className="flex flex-col items-center gap-3">
+                      <span>{t("emptyFiltered")}</span>
+                      <Button variant="outline" size="sm" onClick={clearFilters}>
+                        {t("clearFilters")}
+                      </Button>
+                    </div>
+                  ) : (
+                    t("empty")
+                  )}
                 </TableCell>
               </TableRow>
             ) : (
@@ -196,13 +210,13 @@ export function FieldSalesOrdersPageClient(props: Props) {
                   }
                 >
                   <TableCell className="font-mono text-sm">{o.orderNo}</TableCell>
-                  <TableCell>
+                  <TableCell className="hidden 2xl:table-cell">
                     <Badge variant="outline">
                       {o.orderType === "KONSI" ? t("typeKonsi") : t("typePutus")}
                     </Badge>
                   </TableCell>
-                  <TableCell className="max-w-[200px] truncate">{o.storeName}</TableCell>
-                  <TableCell className="max-w-[160px] truncate">{o.salesmanName}</TableCell>
+                  <TableCell className="min-w-[9rem] max-w-[14rem] whitespace-normal">{o.storeName}</TableCell>
+                  <TableCell className="min-w-[7rem] max-w-[10rem] whitespace-normal">{o.salesmanName}</TableCell>
                   <TableCell className="text-right">
                     {/* Pending/rejected KONSI has no finalized retail price — the writer keeps
                       * total at 0 until approve. Showing "Rp 0" reads as a real zero invoice. */}
@@ -210,7 +224,7 @@ export function FieldSalesOrdersPageClient(props: Props) {
                       ? "—"
                       : formatRupiah(o.total)}
                   </TableCell>
-                  <TableCell className="whitespace-nowrap">{formatDate(o.createdAt)}</TableCell>
+                  <TableCell className="whitespace-nowrap">{formatDisplayDateTime(o.createdAt, locale)}</TableCell>
                   <TableCell>
                     <Badge variant={STATUS_BADGE_VARIANT[o.status]}>
                       {t(STATUS_LABEL_KEY[o.status])}

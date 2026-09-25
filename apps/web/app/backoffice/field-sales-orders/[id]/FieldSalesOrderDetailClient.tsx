@@ -22,6 +22,7 @@ import { KonsiSuggestionsCard, type StagedAddition } from "./KonsiSuggestionsCar
 import type { DeliverableLine } from "./DeliveryFormDialog";
 import { logPrint } from "@/app/actions/audit";
 import { buildSuratKeluarPrintHtml } from "@/lib/print/konsi-surat-keluar-html";
+import { formatDisplayDateTime } from "@/lib/date-only";
 
 type Props = {
   order: FieldSalesOrderDetail;
@@ -114,14 +115,7 @@ export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver, kon
     variantLabel: line.variantLabel,
   }));
 
-  const formatDate = (date: Date) =>
-    new Intl.DateTimeFormat(locale, {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(date);
+  const formatDate = (date: Date) => formatDisplayDateTime(date, locale);
 
   const handlePrintSuratKeluar = async () => {
     await logPrint("KonsiSuratKeluar", order.id);
@@ -265,7 +259,7 @@ export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver, kon
             {order.lines.map((line) => (
               <Fragment key={line.id}>
                 <TableRow>
-                  <TableCell>
+                  <TableCell className="min-w-[12rem] whitespace-normal">
                     {line.productName}
                     {line.addedById != null && (
                       <Badge

@@ -26,6 +26,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Pager } from "@/components/Pager";
+import { formatDisplayDate } from "@/lib/date-only";
 
 type PromoTypeFilter = "ALL" | "PERCENT" | "FIXED" | "TIERED";
 type ActiveFilter = "ALL" | "true" | "false";
@@ -73,14 +74,9 @@ export function PromosPageClient(props: Props) {
     startTransition(() => router.push("/backoffice/promos"));
   }
 
-  const formatDate = (date: Date | null) =>
-    date
-      ? new Intl.DateTimeFormat(locale, {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-        }).format(date)
-      : null;
+  const formatDate = (date: Date | null) => (date ? formatDisplayDate(date, locale) : null);
+
+  const hasFilter = !!props.search || props.type !== "ALL" || props.active !== "ALL";
 
   const formatWindow = (startsAt: Date | null, endsAt: Date | null) => {
     const start = formatDate(startsAt);
@@ -105,8 +101,8 @@ export function PromosPageClient(props: Props) {
       </div>
 
       <Card className="p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
-          <div className="lg:col-span-2">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[16rem] flex-[1_1_20rem]">
             <label className="text-xs text-muted-foreground mb-1 block">{t("search")}</label>
             <Input
               placeholder={t("search")}
@@ -114,7 +110,7 @@ export function PromosPageClient(props: Props) {
               onChange={(e) => setSearchInput(e.target.value)}
             />
           </div>
-          <div>
+          <div className="w-full sm:w-40">
             <label className="text-xs text-muted-foreground mb-1 block">{t("type")}</label>
             <Select value={props.type} onValueChange={(v) => pushParam("type", v === "ALL" ? undefined : v)}>
               <SelectTrigger className="w-full">
@@ -128,7 +124,7 @@ export function PromosPageClient(props: Props) {
               </SelectContent>
             </Select>
           </div>
-          <div>
+          <div className="w-full sm:w-40">
             <label className="text-xs text-muted-foreground mb-1 block">{t("active")}</label>
             <Select value={props.active} onValueChange={(v) => pushParam("active", v === "ALL" ? undefined : v)}>
               <SelectTrigger className="w-full">
@@ -141,9 +137,7 @@ export function PromosPageClient(props: Props) {
               </SelectContent>
             </Select>
           </div>
-        </div>
-        <div className="mt-3 flex justify-end">
-          <Button variant="outline" onClick={reset}>
+          <Button variant="outline" onClick={reset} className="shrink-0">
             {t("reset")}
           </Button>
         </div>
@@ -163,8 +157,17 @@ export function PromosPageClient(props: Props) {
           <TableBody>
             {props.promos.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                  {t("empty")}
+                <TableCell colSpan={5} className="whitespace-normal py-8 text-center text-muted-foreground">
+                  {hasFilter ? (
+                    <div className="flex flex-col items-center gap-3">
+                      <span>{t("emptyFiltered")}</span>
+                      <Button variant="outline" size="sm" onClick={reset}>
+                        {t("clearFilters")}
+                      </Button>
+                    </div>
+                  ) : (
+                    t("empty")
+                  )}
                 </TableCell>
               </TableRow>
             ) : (

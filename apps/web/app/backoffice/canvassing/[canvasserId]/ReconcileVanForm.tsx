@@ -113,7 +113,7 @@ export function ReconcileVanForm({ canvasserId, rows }: Props) {
               const variance = variances[idx];
               return (
                 <TableRow key={key}>
-                  <TableCell className="font-medium">
+                  <TableCell className="min-w-[8rem] whitespace-normal font-medium">
                     <div>{row.productName}</div>
                     {row.variantLabel && <div className="text-xs text-muted-foreground">{row.variantLabel}</div>}
                     <div className="text-xs text-muted-foreground font-mono">{row.sku}{row.variantSku ? ` · ${row.variantSku}` : ""}</div>
