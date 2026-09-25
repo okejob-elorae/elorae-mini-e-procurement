@@ -270,6 +270,38 @@ html[data-ui-theme='studio'] {
 .anim-stagger > *:nth-child(7) { animation-delay: 240ms; }
 .anim-stagger > *:nth-child(n + 8) { animation-delay: 280ms; }
 
+/*
+ * Skeleton blocks (app/backoffice/loading.tsx). A soft sheen travelling across
+ * a muted block — the same idea as `animate-pulse`, but the sweep reads as
+ * "loading" rather than "blinking", and it is quieter on a dark theme.
+ */
+@keyframes skeleton-sheen {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+.skeleton-block {
+  background: linear-gradient(
+      90deg,
+      transparent 0%,
+      color-mix(in oklab, var(--foreground) 6%, transparent) 50%,
+      transparent 100%
+    )
+    0 0 / 200% 100%,
+    var(--muted);
+  animation: skeleton-sheen 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-block {
+    animation: none;
+  }
+}
+
 /* A card that leads somewhere should say so before it is clicked. */
 .card-interactive {
   transition:
@@ -391,15 +423,57 @@ html.backoffice-shell [data-slot="card-content"]:has(> table) {
   color: var(--muted-foreground);
 }
 
-@keyframes global-loading-bar {
+/*
+ * Page-change progress bar (components/GlobalLoadingBar.tsx).
+ *
+ * It creeps and never arrives: fast at first, so the click visibly registered,
+ * then slower and slower towards 90 % — it cannot know how long the server
+ * will take, and a bar that fills and then waits reads as frozen. The page
+ * arriving plays the short "done" run to the end, then it fades.
+ */
+@keyframes global-loading-creep {
   0% {
-    transform: translateX(-100%);
+    transform: scaleX(0.04);
   }
-  50% {
-    transform: translateX(200%);
+  20% {
+    transform: scaleX(0.45);
+  }
+  60% {
+    transform: scaleX(0.75);
   }
   100% {
-    transform: translateX(-100%);
+    transform: scaleX(0.9);
+  }
+}
+
+@keyframes global-loading-done {
+  from {
+    transform: scaleX(0.9);
+    opacity: 1;
+  }
+  to {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+}
+
+.global-loading-bar {
+  transform-origin: left;
+  animation: global-loading-creep 8s cubic-bezier(0.1, 0.7, 0.2, 1) both;
+  box-shadow: 0 0 8px color-mix(in oklab, var(--primary) 60%, transparent);
+}
+
+.global-loading-bar-done {
+  transform-origin: left;
+  animation: global-loading-done 250ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .global-loading-bar,
+  .global-loading-bar-done {
+    animation: none;
+    transform: none;
+    opacity: 0.6;
   }
 }
 

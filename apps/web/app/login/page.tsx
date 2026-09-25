@@ -1,6 +1,6 @@
 'use client';
 
-import { useLayoutEffect, useState } from 'react';
+import { useLayoutEffect, useState, type CSSProperties } from 'react';
 import { signIn } from 'next-auth/react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
@@ -43,6 +43,13 @@ const SMOKE = '#8E8E82';
  * kedipan pertama pun sudah terasa merek ini dan bukan halaman yang belum jadi.
  */
 const LIME_BAWAAN = '#C8F04A';
+
+/**
+ * Staggered entrance: wordmark first, then its line, then the form — the eye
+ * lands on the brand before it is asked to type. Uses the shared `anim-rise`
+ * (260 ms, off under reduced motion); only the delay differs per element.
+ */
+const tunda = (ms: number) => ({ '--anim-delay': `${ms}ms` }) as CSSProperties;
 
 /** Yang benar-benar dikerjakan di dalam, dipakai sebagai teks berjalan. */
 const LINGKUP = [
@@ -134,7 +141,7 @@ export default function LoginPage() {
           }}
         />
 
-        <div className="relative">
+        <div className="anim-rise relative" style={tunda(0)}>
           <p
             className="text-[11px] font-medium uppercase tracking-[0.3em]"
             style={{ color: SMOKE }}
@@ -157,14 +164,14 @@ export default function LoginPage() {
               memecah wordmark jadi dua benda: sebuah kata, lalu sebuah huruf
               yang tampak salah warna. */}
           <h1
-            className="select-none text-[clamp(2.75rem,8vw,7rem)] font-extrabold leading-[0.92] tracking-[0.12em]"
-            style={{ color: merekDiGelap }}
+            className="anim-rise select-none text-[clamp(2.75rem,8vw,7rem)] font-extrabold leading-[0.92] tracking-[0.12em]"
+            style={{ color: merekDiGelap, ...tunda(80) }}
           >
             ELORAÉ
           </h1>
           <p
-            className="mt-5 max-w-sm text-base leading-relaxed lg:text-lg"
-            style={{ color: SMOKE }}
+            className="anim-rise mt-5 max-w-sm text-base leading-relaxed lg:text-lg"
+            style={{ color: SMOKE, ...tunda(160) }}
           >
             {t('brandLine')}
           </p>
@@ -183,7 +190,10 @@ export default function LoginPage() {
               'linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent)',
           }}
         >
-          <div className="marquee flex w-max gap-3 whitespace-nowrap">
+          {/* `pr-3` equals the gap: the list is doubled and slides by exactly
+              50 %, and without it that half-width is one gap short of a full
+              cycle — the chips visibly jumped 6 px back every 26 seconds. */}
+          <div className="marquee flex w-max gap-3 whitespace-nowrap pr-3">
             {[...LINGKUP, ...LINGKUP].map((x, i) => (
               <span
                 key={i}
@@ -199,7 +209,7 @@ export default function LoginPage() {
 
       {/* ── Formulir ─────────────────────────────────────────────────────── */}
       <section className="flex flex-col justify-center px-6 py-14 lg:px-14">
-        <div className="mx-auto w-full max-w-sm">
+        <div className="anim-rise mx-auto w-full max-w-sm" style={tunda(240)}>
           <h2 className="text-3xl font-bold tracking-tight">{t('welcomeTitle')}</h2>
           <p className="mt-2 text-sm" style={{ color: '#6F6F63' }}>
             {t('welcomeBody')}
