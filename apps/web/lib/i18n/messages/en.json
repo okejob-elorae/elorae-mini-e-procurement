@@ -3995,7 +3995,8 @@
     "previous": "Previous",
     "next": "Next",
     "previousAria": "Previous page",
-    "nextAria": "Next page"
+    "nextAria": "Next page",
+    "rowsPerPage": "Rows per page"
   },
   "tableHeaders": {
     "name": "Name",
@@ -5159,5 +5160,34 @@
     "deleteManyTitle": "Delete {count} posts?",
     "deleteManyBody": "All of them go at once. Their images are swept a few hours later unless another post uses them.",
     "okDeletedMany": "{count} posts deleted."
+  },
+  "dateRangePicker": {
+    "placeholder": "Pick a date range",
+    "title": "Date range",
+    "searchPresets": "Search presets",
+    "noPresets": "No presets found",
+    "includeTime": "Include time",
+    "startDate": "Start date",
+    "startTime": "Start time",
+    "endDate": "End date",
+    "endTime": "End time",
+    "cancel": "Cancel",
+    "apply": "Apply",
+    "presets": {
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "last24Hours": "Last 24 hours",
+      "thisWeek": "This week",
+      "lastWeek": "Last week",
+      "last7Days": "Last 7 days",
+      "thisMonth": "This month",
+      "lastMonth": "Last month",
+      "last28Days": "Last 28 days",
+      "last30Days": "Last 30 days",
+      "last60Days": "Last 60 days",
+      "last90Days": "Last 90 days",
+      "last180Days": "Last 180 days",
+      "ytd": "Year to date"
+    }
   }
 }

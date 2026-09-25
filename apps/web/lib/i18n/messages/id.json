@@ -3995,7 +3995,8 @@
     "previous": "Sebelumnya",
     "next": "Berikutnya",
     "previousAria": "Halaman sebelumnya",
-    "nextAria": "Halaman berikutnya"
+    "nextAria": "Halaman berikutnya",
+    "rowsPerPage": "Baris per halaman"
   },
   "tableHeaders": {
     "name": "Nama",
@@ -5159,5 +5160,34 @@
     "deleteManyTitle": "Hapus {count} konten?",
     "deleteManyBody": "Semuanya akan dihapus sekaligus. Gambarnya ikut terhapus otomatis beberapa jam kemudian kalau tidak dipakai konten lain.",
     "okDeletedMany": "{count} konten dihapus."
+  },
+  "dateRangePicker": {
+    "placeholder": "Pilih rentang tanggal",
+    "title": "Rentang tanggal",
+    "searchPresets": "Cari pilihan cepat",
+    "noPresets": "Pilihan tidak ditemukan",
+    "includeTime": "Sertakan jam",
+    "startDate": "Tanggal mulai",
+    "startTime": "Jam mulai",
+    "endDate": "Tanggal akhir",
+    "endTime": "Jam akhir",
+    "cancel": "Batal",
+    "apply": "Terapkan",
+    "presets": {
+      "today": "Hari ini",
+      "yesterday": "Kemarin",
+      "last24Hours": "24 jam terakhir",
+      "thisWeek": "Minggu ini",
+      "lastWeek": "Minggu lalu",
+      "last7Days": "7 hari terakhir",
+      "thisMonth": "Bulan ini",
+      "lastMonth": "Bulan lalu",
+      "last28Days": "28 hari terakhir",
+      "last30Days": "30 hari terakhir",
+      "last60Days": "60 hari terakhir",
+      "last90Days": "90 hari terakhir",
+      "last180Days": "180 hari terakhir",
+      "ytd": "Sejak awal tahun"
+    }
   }
 }

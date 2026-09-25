@@ -22,10 +22,8 @@ function serializeItemForClient(
   item: { reorderPoint?: unknown; overReceiveThreshold?: unknown; sellingPrice?: unknown; [k: string]: unknown } | null
 ): SerializedItemForStockCard | null {
   if (!item) return null;
-  return {
-    ...item,
-    ...itemDecimalsToNumbers(item),
-  } as SerializedItemForStockCard;
+  const serialized: Record<string, unknown> = { ...item, ...itemDecimalsToNumbers(item) };
+  return serialized as SerializedItemForStockCard;
 }
 
 function formatMovementDescription(refType: string): string {

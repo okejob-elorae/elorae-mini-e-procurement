@@ -41,11 +41,57 @@ export function endOfTodayJakarta(): Date {
 }
 
 export function toDisplayDate(date: Date): string {
-  return date.toLocaleDateString('id-ID', {
+  return formatDisplayDate(date);
+}
+
+/**
+ * The ONE on-screen date format: "26 Agu 2026" (English: "26 Aug 2026").
+ *
+ * Pinned to WIB like every other date helper here. The screens used to mix
+ * three spellings of the same day — "27 Jul 2026", "8/26/2026, 12:00:00 AM"
+ * and "2026-08-19" — and a bare `toLocaleDateString()` also formats in the
+ * browser's zone, so a WIB-midnight date read one day early anywhere west of
+ * WIB. English falls back to en-GB so the day still leads.
+ */
+export function formatDisplayDate(
+  value: Date | string | number | null | undefined,
+  locale: string = 'id-ID',
+): string {
+  const date = toValidDate(value);
+  if (!date) return '—';
+  return new Intl.DateTimeFormat(displayLocale(locale), {
+    timeZone: 'Asia/Jakarta',
     day: 'numeric',
     month: 'short',
     year: 'numeric',
-  });
+  }).format(date);
+}
+
+/** `formatDisplayDate` plus the WIB time: "26 Agu 2026, 14.30". */
+export function formatDisplayDateTime(
+  value: Date | string | number | null | undefined,
+  locale: string = 'id-ID',
+): string {
+  const date = toValidDate(value);
+  if (!date) return '—';
+  return new Intl.DateTimeFormat(displayLocale(locale), {
+    timeZone: 'Asia/Jakarta',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
+function displayLocale(locale: string): string {
+  return locale.toLowerCase().startsWith('en') ? 'en-GB' : 'id-ID';
+}
+
+function toValidDate(value: Date | string | number | null | undefined): Date | undefined {
+  if (value == null || value === '') return undefined;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
 export function coerceToDate(value: Date | string | null | undefined): Date | undefined {

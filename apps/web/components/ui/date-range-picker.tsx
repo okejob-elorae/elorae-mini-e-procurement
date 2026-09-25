@@ -2,10 +2,11 @@
 
 import * as React from "react";
 import { ChevronDownIcon, SearchIcon } from "lucide-react";
+import { useLocale, useTranslations } from "next-intl";
 import type { DateRange } from "react-day-picker";
 
 import { cn } from "@/lib/utils";
-import { toDisplayDate } from "@/lib/date-only";
+import { formatDisplayDate } from "@/lib/date-only";
 import {
   DATE_RANGE_PRESETS,
   type DateRangePresetId,
@@ -59,12 +60,13 @@ const DEFAULT_END_TIME = "23:59";
 function formatRangeLabel(
   range: DateRange | undefined,
   placeholder: string,
-  showTimeInLabel: boolean
+  showTimeInLabel: boolean,
+  locale: string
 ): string {
   if (!range?.from) return placeholder;
-  const fromLabel = toDisplayDate(range.from);
+  const fromLabel = formatDisplayDate(range.from, locale);
   const toDate = range.to;
-  const toLabel = toDate ? toDisplayDate(toDate) : null;
+  const toLabel = toDate ? formatDisplayDate(toDate, locale) : null;
 
   if (!toLabel || !toDate) {
     if (showTimeInLabel && rangeHasExplicitTime({ from: range.from })) {
@@ -99,7 +101,7 @@ function draftFromValue(value: DateRange | undefined, allowTime: boolean): Draft
 export function DateRangePicker({
   value,
   onChange,
-  placeholder = "Pick a date range",
+  placeholder,
   disabled = false,
   className,
   id,
@@ -110,6 +112,8 @@ export function DateRangePicker({
   showPresets = true,
   weekStartsOn = 1,
 }: DateRangePickerProps) {
+  const t = useTranslations("dateRangePicker");
+  const locale = useLocale();
   const [open, setOpen] = React.useState(false);
   const [months, setMonths] = React.useState(2);
   const [presetQuery, setPresetQuery] = React.useState("");
@@ -136,13 +140,16 @@ export function DateRangePicker({
   const filteredPresets = React.useMemo(() => {
     const q = presetQuery.trim().toLowerCase();
     if (!q) return DATE_RANGE_PRESETS;
-    return DATE_RANGE_PRESETS.filter((preset) => preset.label.toLowerCase().includes(q));
-  }, [presetQuery]);
+    return DATE_RANGE_PRESETS.filter((preset) =>
+      t(`presets.${preset.id}`).toLowerCase().includes(q)
+    );
+  }, [presetQuery, t]);
 
   const displayLabel = formatRangeLabel(
     value,
-    placeholder,
-    allowTime && rangeHasExplicitTime(value)
+    placeholder ?? t("placeholder"),
+    allowTime && rangeHasExplicitTime(value),
+    locale
   );
 
   const handleOpenChange = (nextOpen: boolean) => {
@@ -204,22 +211,22 @@ export function DateRangePicker({
           {showPresets ? (
             <div className="flex w-full shrink-0 flex-col border-b sm:w-52 sm:border-r sm:border-b-0">
               <div className="border-b p-2">
-                <p className="px-1 pb-2 text-sm font-medium">Date range</p>
+                <p className="px-1 pb-2 text-sm font-medium">{t("title")}</p>
                 <div className="relative">
                   <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     value={presetQuery}
                     onChange={(e) => setPresetQuery(e.target.value)}
-                    placeholder="Search presets"
+                    placeholder={t("searchPresets")}
                     className="h-8 pl-8"
-                    aria-label="Search date presets"
+                    aria-label={t("searchPresets")}
                   />
                 </div>
               </div>
               <ScrollArea className="h-56 sm:h-auto sm:max-h-[22rem] sm:flex-1">
                 <div className="space-y-0.5 p-2">
                   {filteredPresets.length === 0 ? (
-                    <p className="px-2 py-3 text-sm text-muted-foreground">No presets found</p>
+                    <p className="px-2 py-3 text-sm text-muted-foreground">{t("noPresets")}</p>
                   ) : (
                     filteredPresets.map((preset) => (
                       <button
@@ -232,7 +239,7 @@ export function DateRangePicker({
                             "bg-accent font-medium text-accent-foreground"
                         )}
                       >
-                        {preset.label}
+                        {t(`presets.${preset.id}`)}
                       </button>
                     ))
                   )}
@@ -262,7 +269,7 @@ export function DateRangePicker({
               {allowTime ? (
                 <div className="flex items-center justify-between gap-3">
                   <Label htmlFor={`${id ?? "date-range"}-include-time`} className="text-sm">
-                    Include time
+                    {t("includeTime")}
                   </Label>
                   <Switch
                     id={`${id ?? "date-range"}-include-time`}
@@ -282,12 +289,12 @@ export function DateRangePicker({
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor={`${id ?? "date-range"}-start-date`} className="text-xs text-muted-foreground">
-                    Start date
+                    {t("startDate")}
                   </Label>
                   <Input
                     id={`${id ?? "date-range"}-start-date`}
                     readOnly
-                    value={draft.range?.from ? toDisplayDate(draft.range.from) : ""}
+                    value={draft.range?.from ? formatDisplayDate(draft.range.from, locale) : ""}
                     placeholder="—"
                     className="h-8 bg-muted/30"
                   />
@@ -295,7 +302,7 @@ export function DateRangePicker({
                 {allowTime && draft.includeTime ? (
                   <div className="space-y-1.5">
                     <Label htmlFor={`${id ?? "date-range"}-start-time`} className="text-xs text-muted-foreground">
-                      Start time
+                      {t("startTime")}
                     </Label>
                     <Input
                       id={`${id ?? "date-range"}-start-time`}
@@ -314,12 +321,12 @@ export function DateRangePicker({
                 ) : null}
                 <div className="space-y-1.5">
                   <Label htmlFor={`${id ?? "date-range"}-end-date`} className="text-xs text-muted-foreground">
-                    End date
+                    {t("endDate")}
                   </Label>
                   <Input
                     id={`${id ?? "date-range"}-end-date`}
                     readOnly
-                    value={draft.range?.to ? toDisplayDate(draft.range.to) : ""}
+                    value={draft.range?.to ? formatDisplayDate(draft.range.to, locale) : ""}
                     placeholder="—"
                     className="h-8 bg-muted/30"
                   />
@@ -327,7 +334,7 @@ export function DateRangePicker({
                 {allowTime && draft.includeTime ? (
                   <div className="space-y-1.5">
                     <Label htmlFor={`${id ?? "date-range"}-end-time`} className="text-xs text-muted-foreground">
-                      End time
+                      {t("endTime")}
                     </Label>
                     <Input
                       id={`${id ?? "date-range"}-end-time`}
@@ -349,10 +356,10 @@ export function DateRangePicker({
 
             <div className="flex justify-end gap-2 border-t p-3">
               <Button type="button" variant="outline" size="sm" onClick={() => handleOpenChange(false)}>
-                Cancel
+                {t("cancel")}
               </Button>
               <Button type="button" size="sm" disabled={!canApply} onClick={handleApply}>
-                Apply
+                {t("apply")}
               </Button>
             </div>
           </div>
