@@ -60,6 +60,7 @@ type Permission = {
 
 export default function RBACSettingsPage() {
   const tUi = useTranslations('ui');
+  const t = useTranslations('settings.rbac');
   const { data: session } = useSession();
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] = useState<Record<string, Permission[]>>({});
@@ -88,7 +89,7 @@ export default function RBACSettingsPage() {
       setRoles(rolesData);
       setPermissions(permissionsData);
     } catch (error: any) {
-      toast.error(error.message || 'Failed to load RBAC data');
+      toast.error(error.message || t('loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -115,11 +116,11 @@ export default function RBACSettingsPage() {
   async function handleSaveCreate() {
     try {
       await createRole(formData, Array.from(selectedPermissions));
-      toast.success('Role created successfully');
+      toast.success(t('created'));
       setIsCreateDialogOpen(false);
       loadData();
     } catch (error: any) {
-      toast.error(error.message || 'Failed to create role');
+      toast.error(error.message || t('createFailed'));
     }
   }
 
@@ -127,12 +128,12 @@ export default function RBACSettingsPage() {
     if (!selectedRole) return;
     try {
       await updateRolePermissions(selectedRole.id, Array.from(selectedPermissions));
-      toast.success('Role permissions updated successfully');
+      toast.success(t('updated'));
       setIsEditDialogOpen(false);
       setSelectedRole(null);
       loadData();
     } catch (error: any) {
-      toast.error(error.message || 'Failed to update role');
+      toast.error(error.message || t('updateFailed'));
     }
   }
 
@@ -140,12 +141,12 @@ export default function RBACSettingsPage() {
     if (!roleToDelete) return;
     try {
       await deleteRole(roleToDelete.id);
-      toast.success('Role deleted successfully');
+      toast.success(t('deleted'));
       setIsDeleteDialogOpen(false);
       setRoleToDelete(null);
       loadData();
     } catch (error: any) {
-      toast.error(error.message || 'Failed to delete role');
+      toast.error(error.message || t('deleteFailed'));
     }
   }
 
@@ -179,29 +180,29 @@ export default function RBACSettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">RBAC Settings</h1>
-          <p className="text-muted-foreground">Manage roles and permissions</p>
+          <h1 className="text-2xl font-bold tracking-tight">{t('pageTitle')}</h1>
+          <p className="text-muted-foreground">{t('pageSubtitle')}</p>
         </div>
         {canManage && (
           <Button onClick={handleCreateRole}>
             <Plus className="mr-2 h-4 w-4" />
-            Create Role
+            {t('createRole')}
           </Button>
         )}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {roles.map((role) => (
-          <Card key={role.id}>
+          <Card key={role.id} className="h-full">
             <CardHeader>
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <CardTitle className="flex items-center gap-2">
                     {role.name}
                     {role.isSystem && (
-                      <Badge variant="secondary" className="text-xs">System</Badge>
+                      <Badge variant="secondary" className="text-xs">{t('system')}</Badge>
                     )}
                   </CardTitle>
                   {role.description && (
@@ -210,16 +211,19 @@ export default function RBACSettingsPage() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
+            {/* Card is already a flex column; growing the content and pushing the
+                button row to its end keeps Edit at the same height across cards
+                whose descriptions differ in length. */}
+            <CardContent className="flex flex-1 flex-col">
+              <div className="flex flex-1 flex-col gap-2">
                 <div className="text-sm text-muted-foreground">
-                  {role.userCount} user{role.userCount !== 1 ? 's' : ''} assigned
+                  {t('usersAssigned', { count: role.userCount })}
                 </div>
                 <div className="text-sm text-muted-foreground">
-                  {role.permissions.length} permission{role.permissions.length !== 1 ? 's' : ''}
+                  {t('permissionsCount', { count: role.permissions.length })}
                 </div>
                 {canManage && !role.isSystem && (
-                  <div className="flex gap-2 pt-2">
+                  <div className="mt-auto flex gap-2 pt-2">
                     <Button
                       variant="outline"
                       size="sm"
@@ -227,13 +231,15 @@ export default function RBACSettingsPage() {
                       className="flex-1"
                     >
                       <Edit2 className="mr-1 h-3 w-3" />
-                      Edit
+                      {t('edit')}
                     </Button>
                     {role.userCount === 0 && (
                       <Button
                         variant="destructive"
                         size="sm"
                         onClick={() => handleDeleteRole(role)}
+                        aria-label={t('deleteAria', { name: role.name })}
+                        title={t('deleteAria', { name: role.name })}
                       >
                         <Trash2 className="h-3 w-3" />
                       </Button>
@@ -250,17 +256,17 @@ export default function RBACSettingsPage() {
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Create Role</DialogTitle>
-            <DialogDescription>Create a new role and assign permissions</DialogDescription>
+            <DialogTitle>{t('createRole')}</DialogTitle>
+            <DialogDescription>{t('createDescription')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="name">Role Name *</Label>
+              <Label htmlFor="name">{t('roleName')} *</Label>
               <Input
                 id="name"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="e.g., Manager"
+                placeholder={t('roleNamePlaceholder')}
               />
             </div>
             <div className="space-y-2">
@@ -269,12 +275,12 @@ export default function RBACSettingsPage() {
                 id="description"
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Role description"
+                placeholder={t('descriptionPlaceholder')}
                 rows={2}
               />
             </div>
             <div className="space-y-4">
-              <Label>Permissions</Label>
+              <Label>{t('permissions')}</Label>
               {Object.entries(permissions).map(([module, perms]) => (
                 <div key={module} className="space-y-2 border rounded-lg p-4">
                   <div className="flex items-center justify-between">
@@ -285,7 +291,7 @@ export default function RBACSettingsPage() {
                       size="sm"
                       onClick={() => toggleModule(module)}
                     >
-                      {perms.every(p => selectedPermissions.has(p.id)) ? 'Deselect All' : 'Select All'}
+                      {perms.every(p => selectedPermissions.has(p.id)) ? t('deselectAll') : t('selectAll')}
                     </Button>
                   </div>
                   <div className="space-y-2 pl-4">
@@ -311,10 +317,10 @@ export default function RBACSettingsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
-              Cancel
+              {t('cancel')}
             </Button>
             <Button onClick={handleSaveCreate} disabled={!formData.name}>
-              Create Role
+              {t('createRole')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -324,17 +330,17 @@ export default function RBACSettingsPage() {
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Edit Role: {selectedRole?.name}</DialogTitle>
-            <DialogDescription>Update role permissions</DialogDescription>
+            <DialogTitle>{t('editTitle', { name: selectedRole?.name ?? '' })}</DialogTitle>
+            <DialogDescription>{t('editDescription')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {selectedRole?.isSystem && (
               <div className="bg-muted p-3 rounded-md text-sm text-muted-foreground">
-                This is a system role. All permissions are enabled and cannot be modified.
+                {t('systemNote')}
               </div>
             )}
             <div className="space-y-4">
-              <Label>Permissions</Label>
+              <Label>{t('permissions')}</Label>
               {Object.entries(permissions).map(([module, perms]) => (
                 <div key={module} className="space-y-2 border rounded-lg p-4">
                   <div className="flex items-center justify-between">
@@ -346,7 +352,7 @@ export default function RBACSettingsPage() {
                       onClick={() => toggleModule(module)}
                       disabled={selectedRole?.isSystem}
                     >
-                      {perms.every(p => selectedPermissions.has(p.id)) ? 'Deselect All' : 'Select All'}
+                      {perms.every(p => selectedPermissions.has(p.id)) ? t('deselectAll') : t('selectAll')}
                     </Button>
                   </div>
                   <div className="space-y-2 pl-4">
@@ -373,10 +379,10 @@ export default function RBACSettingsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
-              Cancel
+              {t('cancel')}
             </Button>
             <Button onClick={handleSaveEdit} disabled={selectedRole?.isSystem}>
-              Save Changes
+              {t('saveChanges')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -386,15 +392,15 @@ export default function RBACSettingsPage() {
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Role</AlertDialogTitle>
+            <AlertDialogTitle>{t('deleteTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete the role &quot;{roleToDelete?.name}&quot;? This action cannot be undone.
+              {t('deleteBody', { name: roleToDelete?.name ?? '' })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{tUi('cancel')}</AlertDialogCancel>
             <AlertDialogAction onClick={handleConfirmDelete} className="bg-destructive text-destructive-foreground">
-              Delete
+              {t('delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -22,13 +22,15 @@ import {
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+// Tokens are literal template syntax and stay as typed; only the explanation
+// beside each one is translated (itemCodes.hints.*).
 const PLACEHOLDER_HINTS = [
-  "{categoryCode} — item category code (e.g. 0224)",
-  "{parentSku} — parent item SKU",
-  "{parentSeq:6} — numeric body from parent SKU, zero-padded (6 digits)",
-  "{attrs} — all variant attribute values concatenated (e.g. T03, PXL)",
-  "{attr:Size} — one attribute by name",
-];
+  { token: "{categoryCode}", key: "categoryCode" },
+  { token: "{parentSku}", key: "parentSku" },
+  { token: "{parentSeq:6}", key: "parentSeq" },
+  { token: "{attrs}", key: "attrs" },
+  { token: "{attr:Size}", key: "attr" },
+] as const;
 
 export default function ItemCodesSettingsPage() {
   const t = useTranslations("itemCodes");
@@ -58,7 +60,7 @@ export default function ItemCodesSettingsPage() {
       await saveVariantBarcodeFormat(template);
       toast.success(t("saveSuccess"));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : tToasts("saveFailed"));
+      toast.error(err instanceof Error ? err.message : tToasts("failedToSave"));
     } finally {
       setIsSaving(false);
     }
@@ -73,13 +75,13 @@ export default function ItemCodesSettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
         <p className="text-muted-foreground">{t("description")}</p>
       </div>
 
-      <Card>
+      <Card className="max-w-2xl">
         <CardHeader>
           <CardTitle>{t("barcodeFormatTitle")}</CardTitle>
           <CardDescription>{t("barcodeFormatDescription")}</CardDescription>
@@ -100,9 +102,9 @@ export default function ItemCodesSettingsPage() {
             <p className="mb-2 font-medium text-foreground">{t("placeholdersTitle")}</p>
             <ul className="list-inside list-disc space-y-1">
               {PLACEHOLDER_HINTS.map((hint) => (
-                <li key={hint}>
-                  <code className="text-xs">{hint.split(" — ")[0]}</code>
-                  {hint.includes(" — ") ? ` — ${hint.split(" — ").slice(1).join(" — ")}` : ""}
+                <li key={hint.key}>
+                  <code className="text-xs">{hint.token}</code>
+                  {` — ${t(`hints.${hint.key}`)}`}
                 </li>
               ))}
             </ul>

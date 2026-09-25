@@ -109,7 +109,7 @@ export function JenisPotonganClient({ baris }: { baris: BarisJenisPotongan[] }) 
                 <TableBody>
                   {baris.map((b) => (
                     <TableRow key={b.id} className={cn(!b.aktif && 'opacity-60')}>
-                      <TableCell className="font-medium">
+                      <TableCell className="min-w-[180px] max-w-[320px] whitespace-normal font-medium">
                         {b.nama}
                         {!b.aktif && (
                           <span className="ml-2 text-xs text-muted-foreground">
@@ -122,7 +122,7 @@ export function JenisPotonganClient({ baris }: { baris: BarisJenisPotongan[] }) 
                           {td(`method_${b.cara}`)}
                         </StatusPill>
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
+                      <TableCell className="min-w-[180px] whitespace-normal text-xs text-muted-foreground">
                         {[
                           b.wajibCatatan && t('ruleNote'),
                           b.hanyaPkp && t('rulePkp'),
@@ -274,7 +274,7 @@ function Saklar({
         <span className="block text-sm font-medium">{label}</span>
         <span className="block text-xs text-muted-foreground">{petunjuk}</span>
       </span>
-      <Switch checked={nilai} onCheckedChange={onChange} />
+      <Switch checked={nilai} onCheckedChange={onChange} aria-label={label} />
     </div>
   );
 }

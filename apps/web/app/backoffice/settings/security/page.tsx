@@ -33,13 +33,13 @@ import {
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { Loader2, Shield, History, UserX, Lock } from 'lucide-react';
 import { toast } from 'sonner';
+import { formatDisplayDateTime } from '@/lib/date-only';
 
 export default function SecuritySettingsPage() {
   const locale = useLocale() as 'en' | 'id';
   const t = useTranslations('security');
   const { data: session, status } = useSession();
   const router = useRouter();
-  const dateLocale = locale === 'id' ? 'id-ID' : 'en-US';
 
   const actionLabel = (action: string) => {
     try {
@@ -237,8 +237,9 @@ export default function SecuritySettingsPage() {
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-1 max-w-md">
             <div className="space-y-2">
-              <Label>{t('currentPinLabel')}</Label>
+              <Label htmlFor="current-pin">{t('currentPinLabel')}</Label>
               <Input
+                id="current-pin"
                 type="password"
                 inputMode="numeric"
                 maxLength={6}
@@ -248,8 +249,9 @@ export default function SecuritySettingsPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label>{t('newPinLabel')}</Label>
+              <Label htmlFor="new-pin">{t('newPinLabel')}</Label>
               <Input
+                id="new-pin"
                 type="password"
                 inputMode="numeric"
                 maxLength={6}
@@ -259,8 +261,9 @@ export default function SecuritySettingsPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label>{t('confirmPinLabel')}</Label>
+              <Label htmlFor="confirm-pin">{t('confirmPinLabel')}</Label>
               <Input
+                id="confirm-pin"
                 type="password"
                 inputMode="numeric"
                 maxLength={6}
@@ -293,7 +296,7 @@ export default function SecuritySettingsPage() {
                 <li key={a.action}>
                   <span className="font-medium">{actionLabel(a.action)}</span>
                   {' — '}
-                  {new Date(a.at).toLocaleString(dateLocale)}
+                  {formatDisplayDateTime(a.at, locale)}
                 </li>
               ))}
             </ul>
@@ -320,7 +323,7 @@ export default function SecuritySettingsPage() {
               <TableBody>
                 {attempts.map((a) => (
                   <TableRow key={a.id}>
-                    <TableCell className="text-sm">{new Date(a.createdAt).toLocaleString(dateLocale)}</TableCell>
+                    <TableCell className="text-sm">{formatDisplayDateTime(a.createdAt, locale)}</TableCell>
                     <TableCell>{actionLabel(a.action)}</TableCell>
                     <TableCell>{a.success ? t('success') : t('failed')}</TableCell>
                     <TableCell className="text-muted-foreground">{a.ipAddress ?? '-'}</TableCell>

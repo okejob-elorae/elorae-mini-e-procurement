@@ -43,7 +43,7 @@ export default function TaxSettingsPage() {
   const handleSave = async () => {
     const num = Number.parseFloat(rate);
     if (!Number.isFinite(num) || num < 0 || num > 100) {
-      toast.error('Enter a percentage between 0 and 100');
+      toast.error(t('invalidRate'));
       return;
     }
     setSaving(true);
@@ -74,10 +74,8 @@ export default function TaxSettingsPage() {
 
       <Card className="max-w-md">
         <CardHeader>
-          <CardTitle>PPN rate</CardTitle>
-          <CardDescription>
-            When a PO line is marked &quot;Exclude PPN&quot;, this rate is applied to the line price for work order material cost.
-          </CardDescription>
+          <CardTitle>{t('cardTitle')}</CardTitle>
+          <CardDescription>{t('cardDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">

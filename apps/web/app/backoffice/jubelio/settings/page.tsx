@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { useLocale, useTranslations } from 'next-intl';
 import {
   getJubelioTokenState,
   refreshJubelioToken,
@@ -20,18 +21,17 @@ import {
 } from '@/app/actions/jubelio-push-defaults';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, RefreshCw, Cloud } from 'lucide-react';
+import { AlertTriangle, Loader2, RefreshCw, Cloud } from 'lucide-react';
 import { toast } from 'sonner';
-
-function formatTimestamp(iso: string | null): string {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString();
-}
+import { formatDisplayDateTime } from '@/lib/date-only';
 
 export default function JubelioSettingsPage() {
+  const t = useTranslations('jubelio.settings');
+  const locale = useLocale();
   const { status } = useSession();
   const router = useRouter();
   const [tokenState, setTokenState] = useState<JubelioTokenState | null>(null);
+  const [tokenLoadFailed, setTokenLoadFailed] = useState(false);
   const [isLoadingState, setIsLoadingState] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -42,6 +42,9 @@ export default function JubelioSettingsPage() {
   const [defaults, setDefaults] = useState<JubelioPushDefaultsState | null>(null);
   const [defaultsDraft, setDefaultsDraft] = useState<JubelioPushDefaultsInput | null>(null);
   const [isLoadingDefaults, setIsLoadingDefaults] = useState(true);
+  // Kept apart from "still loading": a failed load used to leave defaultsDraft
+  // null, and the card read that as loading and spun forever.
+  const [defaultsLoadError, setDefaultsLoadError] = useState<string | null>(null);
   const [isSavingDefaults, setIsSavingDefaults] = useState(false);
 
   useEffect(() => {
@@ -52,9 +55,16 @@ export default function JubelioSettingsPage() {
     if (status !== 'authenticated') return;
 
     getJubelioTokenState()
-      .then(setTokenState)
-      .catch((err: Error) => toast.error(`Failed to load token state: ${err.message}`))
+      .then((state) => {
+        setTokenState(state);
+        setTokenLoadFailed(false);
+      })
+      .catch((err: Error) => {
+        setTokenLoadFailed(true);
+        toast.error(t('token.loadFailedToast', { message: err.message }));
+      })
       .finally(() => setIsLoadingState(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- t from useTranslations
   }, [status, router]);
 
   useEffect(() => {
@@ -65,9 +75,14 @@ export default function JubelioSettingsPage() {
         const { id: _id, updatedAt: _u, updatedById: _b, ...input } = d;
         void _id; void _u; void _b;
         setDefaultsDraft(input);
+        setDefaultsLoadError(null);
       })
-      .catch((err: Error) => toast.error(`Failed to load defaults: ${err.message}`))
+      .catch((err: Error) => {
+        setDefaultsLoadError(err.message || '');
+        toast.error(t('defaults.loadFailedToast', { message: err.message }));
+      })
       .finally(() => setIsLoadingDefaults(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- t from useTranslations
   }, [status]);
 
   const handleRefresh = async () => {
@@ -75,9 +90,10 @@ export default function JubelioSettingsPage() {
     try {
       const state = await refreshJubelioToken();
       setTokenState(state);
-      toast.success('Jubelio token refreshed');
+      setTokenLoadFailed(false);
+      toast.success(t('token.refreshed'));
     } catch (err) {
-      toast.error(`Refresh failed: ${(err as Error).message}`);
+      toast.error(t('token.refreshFailed', { message: (err as Error).message }));
     } finally {
       setIsRefreshing(false);
     }
@@ -86,7 +102,7 @@ export default function JubelioSettingsPage() {
   const handleRequestDelete = () => {
     const n = Number(groupIdInput.trim());
     if (!Number.isFinite(n) || n <= 0) {
-      toast.error('Enter a valid Jubelio item_group_id');
+      toast.error(t('cleanup.invalidId'));
       return;
     }
     setPendingDeleteId(n);
@@ -98,7 +114,7 @@ export default function JubelioSettingsPage() {
     setPendingDeleteId(null);
     try {
       const r = await deleteJubelioProduct(pendingDeleteId);
-      toast.success(`Deleted group ${r.jubelioGroupId} + ${r.deletedMappings} local mapping(s)`);
+      toast.success(t('cleanup.deleted', { id: r.jubelioGroupId, count: r.deletedMappings }));
       setGroupIdInput('');
     } catch (err) {
       toast.error((err as Error).message);
@@ -120,11 +136,11 @@ export default function JubelioSettingsPage() {
         const count = await getMarginFallbackItemCount();
         const confirmText =
           count > 500
-            ? `${count} items will be recalculated and pushed to Jubelio in batches. This may take a few seconds. Continue?`
-            : `${count} items will be recalculated and pushed to Jubelio. Continue?`;
+            ? t('defaults.confirmLarge', { count })
+            : t('defaults.confirm', { count });
         if (!confirm(confirmText)) return;
       } catch (err) {
-        toast.error(`Failed to count affected items: ${(err as Error).message}`);
+        toast.error(t('defaults.countFailed', { message: (err as Error).message }));
         return;
       }
     }
@@ -133,7 +149,7 @@ export default function JubelioSettingsPage() {
     try {
       const saved = await saveJubelioPushDefaults(defaultsDraft);
       setDefaults(saved);
-      toast.success(`Saved. ${saved.fanOutCount} items recalculated.`);
+      toast.success(t('defaults.saved', { count: saved.fanOutCount }));
     } catch (err) {
       toast.error((err as Error).message);
     } finally {
@@ -147,12 +163,11 @@ export default function JubelioSettingsPage() {
       const result = await syncJubelioCatalog({ dryRun });
       setLastSync(result);
       const { created, updated, skipped, errors } = result.summary;
-      const action = dryRun ? 'preview' : 'sync';
       toast.success(
-        `${action}: ${created} create, ${updated} update, ${skipped} skip, ${errors} error`,
+        t(dryRun ? 'catalog.toastPreview' : 'catalog.toastSync', { created, updated, skipped, errors }),
       );
     } catch (err) {
-      toast.error(`Sync failed: ${(err as Error).message}`);
+      toast.error(t('catalog.syncFailed', { message: (err as Error).message }));
     } finally {
       setIsSyncing(false);
     }
@@ -160,37 +175,40 @@ export default function JubelioSettingsPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-4xl">
-      <h1 className="text-2xl font-bold">Jubelio integration</h1>
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">{t('title')}</h1>
+        <p className="text-muted-foreground">{t('subtitle')}</p>
+      </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Session token</CardTitle>
-          <CardDescription>
-            Token managed by apps/api. Refresh credentials read from JUBELIO_USER / JUBELIO_PASS env.
-          </CardDescription>
+          <CardTitle>{t('token.title')}</CardTitle>
+          <CardDescription>{t('token.description')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {isLoadingState ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading status...
+              <Loader2 className="h-4 w-4 animate-spin" /> {t('token.loading')}
             </div>
           ) : tokenState ? (
             <dl className="grid grid-cols-2 gap-3 text-sm">
-              <dt className="text-muted-foreground">Has token</dt>
-              <dd>{tokenState.hasToken ? 'yes' : 'no'}</dd>
-              <dt className="text-muted-foreground">Last refresh</dt>
-              <dd>{formatTimestamp(tokenState.updatedAt)}</dd>
-              <dt className="text-muted-foreground">Expires</dt>
-              <dd>{formatTimestamp(tokenState.expiresAt)}</dd>
-              <dt className="text-muted-foreground">Expires in</dt>
+              <dt className="text-muted-foreground">{t('token.hasToken')}</dt>
+              <dd>{tokenState.hasToken ? t('token.yes') : t('token.no')}</dd>
+              <dt className="text-muted-foreground">{t('token.lastRefresh')}</dt>
+              <dd>{formatDisplayDateTime(tokenState.updatedAt, locale)}</dd>
+              <dt className="text-muted-foreground">{t('token.expires')}</dt>
+              <dd>{formatDisplayDateTime(tokenState.expiresAt, locale)}</dd>
+              <dt className="text-muted-foreground">{t('token.expiresIn')}</dt>
               <dd>
                 {tokenState.expiresInSeconds != null
-                  ? `${Math.round(tokenState.expiresInSeconds / 60)} min`
+                  ? t('token.minutes', { count: Math.round(tokenState.expiresInSeconds / 60) })
                   : '—'}
               </dd>
             </dl>
+          ) : tokenLoadFailed ? (
+            <p className="text-sm text-destructive">{t('token.loadError')}</p>
           ) : (
-            <p className="text-sm text-muted-foreground">No token state</p>
+            <p className="text-sm text-muted-foreground">{t('token.none')}</p>
           )}
 
           <Button onClick={handleRefresh} disabled={isRefreshing} size="sm">
@@ -199,20 +217,18 @@ export default function JubelioSettingsPage() {
             ) : (
               <RefreshCw className="mr-2 h-4 w-4" />
             )}
-            Refresh token now
+            {t('token.refresh')}
           </Button>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Catalog sync</CardTitle>
-          <CardDescription>
-            Pull Jubelio items, map to ERP catalog drafts, upsert Items + JubelioProductMapping.
-          </CardDescription>
+          <CardTitle>{t('catalog.title')}</CardTitle>
+          <CardDescription>{t('catalog.description')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               onClick={() => handleSync(true)}
               disabled={isSyncing}
@@ -220,40 +236,42 @@ export default function JubelioSettingsPage() {
               variant="outline"
             >
               {isSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Cloud className="mr-2 h-4 w-4" />}
-              Preview sync (dry run)
+              {t('catalog.preview')}
             </Button>
             <Button onClick={() => handleSync(false)} disabled={isSyncing} size="sm">
               {isSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Cloud className="mr-2 h-4 w-4" />}
-              Import catalog
+              {t('catalog.import')}
             </Button>
           </div>
 
           {lastSync && (
             <div className="rounded border p-3 text-sm space-y-2">
               <div className="font-medium">
-                Last run: {lastSync.dryRun ? 'dry run' : 'applied'}
+                {t('catalog.lastRun', {
+                  mode: lastSync.dryRun ? t('catalog.modeDryRun') : t('catalog.modeApplied'),
+                })}
               </div>
               <dl className="grid grid-cols-4 gap-2">
-                <dt className="text-muted-foreground">Created</dt>
+                <dt className="text-muted-foreground">{t('catalog.created')}</dt>
                 <dd>{lastSync.summary.created}</dd>
-                <dt className="text-muted-foreground">Updated</dt>
+                <dt className="text-muted-foreground">{t('catalog.updated')}</dt>
                 <dd>{lastSync.summary.updated}</dd>
-                <dt className="text-muted-foreground">Skipped</dt>
+                <dt className="text-muted-foreground">{t('catalog.skipped')}</dt>
                 <dd>{lastSync.summary.skipped}</dd>
-                <dt className="text-muted-foreground">Errors</dt>
+                <dt className="text-muted-foreground">{t('catalog.errors')}</dt>
                 <dd>{lastSync.summary.errors}</dd>
               </dl>
               {lastSync.summary.warnings.length > 0 && (
                 <details>
                   <summary className="cursor-pointer text-muted-foreground">
-                    {lastSync.summary.warnings.length} warning(s)
+                    {t('catalog.warnings', { count: lastSync.summary.warnings.length })}
                   </summary>
                   <ul className="mt-2 list-disc pl-5 text-xs text-muted-foreground space-y-1">
                     {lastSync.summary.warnings.slice(0, 20).map((w, i) => (
                       <li key={i}>{w}</li>
                     ))}
                     {lastSync.summary.warnings.length > 20 && (
-                      <li>…and {lastSync.summary.warnings.length - 20} more</li>
+                      <li>{t('catalog.moreWarnings', { count: lastSync.summary.warnings.length - 20 })}</li>
                     )}
                   </ul>
                 </details>
@@ -261,12 +279,12 @@ export default function JubelioSettingsPage() {
               {lastSync.errors.length > 0 && (
                 <details>
                   <summary className="cursor-pointer text-destructive">
-                    {lastSync.errors.length} error(s)
+                    {t('catalog.errorCount', { count: lastSync.errors.length })}
                   </summary>
                   <ul className="mt-2 list-disc pl-5 text-xs text-destructive space-y-1">
                     {lastSync.errors.map((e, i) => (
                       <li key={i}>
-                        {e.parentSku ?? `group ${e.jubelioItemGroupId}`}: {e.message}
+                        {e.parentSku ?? t('catalog.group', { id: String(e.jubelioItemGroupId) })}: {e.message}
                       </li>
                     ))}
                   </ul>
@@ -278,101 +296,115 @@ export default function JubelioSettingsPage() {
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle>Push defaults</CardTitle>
-          <CardDescription>
-            Tax, account, brand, UOM, and package defaults applied to every product push.
-            Match these to your Jubelio tenant configuration.
-          </CardDescription>
+          <CardTitle>{t('defaults.title')}</CardTitle>
+          <CardDescription>{t('defaults.description')}</CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoadingDefaults || !defaultsDraft ? (
+          {isLoadingDefaults ? (
             <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+          ) : !defaultsDraft ? (
+            <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm" role="alert">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+              <div className="min-w-0 space-y-1">
+                <p>{t('defaults.loadError')}</p>
+                {defaultsLoadError && (
+                  <p className="break-words font-mono text-xs text-muted-foreground">{defaultsLoadError}</p>
+                )}
+              </div>
+            </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <NumField label="Sell Tax ID" value={defaultsDraft.sellTaxId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, sellTaxId: v ?? 0 })} />
-              <NumField label="Buy Tax ID" value={defaultsDraft.buyTaxId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyTaxId: v ?? 0 })} />
-              <NumField label="Sales Acct ID" value={defaultsDraft.salesAcctId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, salesAcctId: v ?? 0 })} />
-              <NumField label="COGS Acct ID" value={defaultsDraft.cogsAcctId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, cogsAcctId: v ?? 0 })} />
-              <NumField label="Inventory Acct ID" value={defaultsDraft.invtAcctId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, invtAcctId: v ?? 0 })} />
-              <NumField label="Purchase Acct ID (nullable)" value={defaultsDraft.purchAcctId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, purchAcctId: v })} nullable />
-              <NumField label="UOM ID" value={defaultsDraft.uomId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, uomId: v ?? 0 })} />
-              <StrField label="Brand ID (nullable)" value={defaultsDraft.brandId ?? ''} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, brandId: v || null })} />
-              <StrField label="Brand Name (nullable)" value={defaultsDraft.brandName ?? ''} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, brandName: v || null })} />
-              <StrField label="Sell Unit" value={defaultsDraft.sellUnit} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, sellUnit: v })} />
-              <StrField label="Buy Unit" value={defaultsDraft.buyUnit} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyUnit: v })} />
-              <NumField label="Package Weight (g)" value={defaultsDraft.packageWeight} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, packageWeight: v ?? 0 })} />
-              <NumField label="Buy Price (default)" value={defaultsDraft.buyPrice} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyPrice: v ?? 0 })} />
-              <NumField label="Default Margin (%)" value={defaultsDraft.defaultMarginPercent} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, defaultMarginPercent: v ?? null })} nullable />
-              <NumField label="Default Additional Cost (Rp)" value={defaultsDraft.defaultAdditionalCost} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, defaultAdditionalCost: v ?? null })} nullable />
-              <NumField label="Re-order Point" value={defaultsDraft.rop} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, rop: v ?? 0 })} />
-              <NumField label="Store Priority Treshold" value={defaultsDraft.storePriorityQtyTreshold} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, storePriorityQtyTreshold: v ?? 0 })} />
-              <BoolField label="Sell This" value={defaultsDraft.sellThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, sellThis: v })} />
-              <BoolField label="Buy This" value={defaultsDraft.buyThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyThis: v })} />
-              <BoolField label="Stock This" value={defaultsDraft.stockThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, stockThis: v })} />
-              <BoolField label="Dropship This" value={defaultsDraft.dropshipThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, dropshipThis: v })} />
-              <BoolField label="Is Active (default)" value={defaultsDraft.isActive} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, isActive: v })} />
-              <BoolField label="Use Single Image Set" value={defaultsDraft.useSingleImageSet} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, useSingleImageSet: v })} />
-              <BoolField label="Use Serial Number" value={defaultsDraft.useSerialNumber} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, useSerialNumber: v })} />
+              <NumField label={t('defaults.field.sellTaxId')} value={defaultsDraft.sellTaxId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, sellTaxId: v ?? 0 })} />
+              <NumField label={t('defaults.field.buyTaxId')} value={defaultsDraft.buyTaxId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyTaxId: v ?? 0 })} />
+              <NumField label={t('defaults.field.salesAcctId')} value={defaultsDraft.salesAcctId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, salesAcctId: v ?? 0 })} />
+              <NumField label={t('defaults.field.cogsAcctId')} value={defaultsDraft.cogsAcctId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, cogsAcctId: v ?? 0 })} />
+              <NumField label={t('defaults.field.invtAcctId')} value={defaultsDraft.invtAcctId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, invtAcctId: v ?? 0 })} />
+              <NumField label={t('defaults.field.purchAcctId')} value={defaultsDraft.purchAcctId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, purchAcctId: v })} nullable />
+              <NumField label={t('defaults.field.uomId')} value={defaultsDraft.uomId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, uomId: v ?? 0 })} />
+              <StrField label={t('defaults.field.brandId')} value={defaultsDraft.brandId ?? ''} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, brandId: v || null })} />
+              <StrField label={t('defaults.field.brandName')} value={defaultsDraft.brandName ?? ''} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, brandName: v || null })} />
+              <StrField label={t('defaults.field.sellUnit')} value={defaultsDraft.sellUnit} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, sellUnit: v })} />
+              <StrField label={t('defaults.field.buyUnit')} value={defaultsDraft.buyUnit} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyUnit: v })} />
+              <NumField label={t('defaults.field.packageWeight')} value={defaultsDraft.packageWeight} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, packageWeight: v ?? 0 })} />
+              <NumField label={t('defaults.field.buyPrice')} value={defaultsDraft.buyPrice} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyPrice: v ?? 0 })} />
+              <NumField label={t('defaults.field.defaultMarginPercent')} value={defaultsDraft.defaultMarginPercent} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, defaultMarginPercent: v ?? null })} nullable />
+              <NumField label={t('defaults.field.defaultAdditionalCost')} value={defaultsDraft.defaultAdditionalCost} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, defaultAdditionalCost: v ?? null })} nullable />
+              <NumField label={t('defaults.field.rop')} value={defaultsDraft.rop} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, rop: v ?? 0 })} />
+              <NumField label={t('defaults.field.storePriorityQtyTreshold')} value={defaultsDraft.storePriorityQtyTreshold} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, storePriorityQtyTreshold: v ?? 0 })} />
+              <BoolField label={t('defaults.field.sellThis')} value={defaultsDraft.sellThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, sellThis: v })} />
+              <BoolField label={t('defaults.field.buyThis')} value={defaultsDraft.buyThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyThis: v })} />
+              <BoolField label={t('defaults.field.stockThis')} value={defaultsDraft.stockThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, stockThis: v })} />
+              <BoolField label={t('defaults.field.dropshipThis')} value={defaultsDraft.dropshipThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, dropshipThis: v })} />
+              <BoolField label={t('defaults.field.isActive')} value={defaultsDraft.isActive} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, isActive: v })} />
+              <BoolField label={t('defaults.field.useSingleImageSet')} value={defaultsDraft.useSingleImageSet} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, useSingleImageSet: v })} />
+              <BoolField label={t('defaults.field.useSerialNumber')} value={defaultsDraft.useSerialNumber} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, useSerialNumber: v })} />
             </div>
           )}
         </CardContent>
         <CardContent className="flex items-center justify-between border-t pt-4">
           <p className="text-xs text-muted-foreground">
-            {defaults ? `Last saved ${new Date(defaults.updatedAt).toLocaleString()}` : '—'}
+            {defaults ? t('defaults.lastSaved', { when: formatDisplayDateTime(defaults.updatedAt, locale) }) : '—'}
           </p>
           <Button onClick={() => void handleSaveDefaults()} disabled={isSavingDefaults || !defaultsDraft}>
-            {isSavingDefaults ? 'Saving…' : 'Save defaults'}
+            {isSavingDefaults ? t('defaults.saving') : t('defaults.save')}
           </Button>
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Test cleanup</CardTitle>
-          <CardDescription>
-            Delete a Jubelio product (whole item_group) for testing. This removes the live
-            marketplace listing AND drops local JubelioProductMapping rows pointing at the group.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex items-end gap-3">
-            <div className="flex-1">
-              <label className="mb-1 block text-sm font-medium">Jubelio item_group_id</label>
-              <input
-                type="number"
-                min="1"
-                value={groupIdInput}
-                onChange={(e) => setGroupIdInput(e.target.value)}
-                placeholder="e.g. 12345"
-                className="block w-full rounded border bg-background px-3 py-2 text-sm"
-                disabled={isDeleting || pendingDeleteId !== null}
-              />
-            </div>
-            <Button
-              variant="destructive"
-              onClick={handleRequestDelete}
-              disabled={isDeleting || pendingDeleteId !== null}
-            >
-              {isDeleting ? 'Deleting…' : 'Delete from Jubelio'}
-            </Button>
-          </div>
-          {pendingDeleteId !== null && (
-            <div className="rounded border border-destructive/50 bg-destructive/5 p-3 text-sm">
-              <p className="mb-2 font-medium text-destructive">
-                Remove group_id {pendingDeleteId} from Jubelio? This deletes the live marketplace
-                listing and local mapping rows. This cannot be undone.
-              </p>
-              <div className="flex gap-2">
-                <Button size="sm" variant="destructive" onClick={() => void handleConfirmDelete()}>
-                  Yes, delete
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setPendingDeleteId(null)}>
-                  Cancel
-                </Button>
+
+      <section className="space-y-3 border-t border-destructive/30 pt-6" aria-labelledby="jubelio-danger-zone">
+        <div>
+          <h2 id="jubelio-danger-zone" className="flex items-center gap-2 text-lg font-semibold text-destructive">
+            <AlertTriangle className="h-5 w-5" />
+            {t('danger.heading')}
+          </h2>
+          <p className="text-sm text-muted-foreground">{t('danger.warning')}</p>
+        </div>
+        <Card className="border-destructive/40">
+          <CardHeader>
+            <CardTitle>{t('cleanup.title')}</CardTitle>
+            <CardDescription>{t('cleanup.description')}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="min-w-[200px] flex-1">
+                <label htmlFor="jubelio-cleanup-group-id" className="mb-1 block text-sm font-medium">{t('cleanup.groupIdLabel')}</label>
+                <input
+                  id="jubelio-cleanup-group-id"
+                  type="number"
+                  min="1"
+                  value={groupIdInput}
+                  onChange={(e) => setGroupIdInput(e.target.value)}
+                  placeholder={t('cleanup.placeholder')}
+                  className="block w-full rounded border bg-background px-3 py-2 text-sm"
+                  disabled={isDeleting || pendingDeleteId !== null}
+                />
               </div>
+              <Button
+                variant="destructive"
+                onClick={handleRequestDelete}
+                disabled={isDeleting || pendingDeleteId !== null}
+              >
+                {isDeleting ? t('cleanup.deleting') : t('cleanup.delete')}
+              </Button>
             </div>
-          )}
-        </CardContent>
-      </Card>
+            {pendingDeleteId !== null && (
+              <div className="rounded border border-destructive/50 bg-destructive/5 p-3 text-sm">
+                <p className="mb-2 font-medium text-destructive">
+                  {t('cleanup.confirm', { id: String(pendingDeleteId) })}
+                </p>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="destructive" onClick={() => void handleConfirmDelete()}>
+                    {t('cleanup.yes')}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setPendingDeleteId(null)}>
+                    {t('cleanup.cancel')}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </section>
     </div>
   );
 }
@@ -383,10 +415,12 @@ function NumField({ label, value, onChange, nullable }: {
   onChange: (v: number | null) => void;
   nullable?: boolean;
 }) {
+  const id = useId();
   return (
     <div>
-      <label className="mb-1 block text-sm font-medium">{label}</label>
+      <label htmlFor={id} className="mb-1 block text-sm font-medium">{label}</label>
       <input
+        id={id}
         type="number"
         value={value ?? ''}
         onChange={(e) => {
@@ -406,10 +440,12 @@ function StrField({ label, value, onChange }: {
   value: string;
   onChange: (v: string) => void;
 }) {
+  const id = useId();
   return (
     <div>
-      <label className="mb-1 block text-sm font-medium">{label}</label>
+      <label htmlFor={id} className="mb-1 block text-sm font-medium">{label}</label>
       <input
+        id={id}
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}

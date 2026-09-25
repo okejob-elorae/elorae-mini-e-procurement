@@ -49,6 +49,10 @@ export default function PackRatioSettingsPage() {
   const [rows, setRows] = useState<PackRatioRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // The validation message waits until the user has changed something or
+  // tried to save — on first load an empty list is the starting point, not a
+  // mistake, and the empty-state line already says what to do.
+  const [touched, setTouched] = useState(false);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -69,20 +73,24 @@ export default function PackRatioSettingsPage() {
   };
 
   const handleRemoveRow = (index: number) => {
+    setTouched(true);
     setRows((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleSizeChange = (index: number, size: string) => {
+    setTouched(true);
     setRows((prev) => prev.map((row, i) => (i === index ? { ...row, size } : row)));
   };
 
   const handleQtyChange = (index: number, value: string) => {
+    setTouched(true);
     const parsed = Number.parseInt(value, 10);
     const qty = value === "" || Number.isNaN(parsed) ? 0 : parsed;
     setRows((prev) => prev.map((row, i) => (i === index ? { ...row, qty } : row)));
   };
 
   const handleSave = async () => {
+    setTouched(true);
     if (error) {
       toast.error(t(ERROR_MESSAGE_KEY[error]));
       return;
@@ -112,6 +120,11 @@ export default function PackRatioSettingsPage() {
 
   return (
     <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
+        <p className="text-muted-foreground">{t("description")}</p>
+      </div>
+
       <Card className="max-w-2xl">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -162,8 +175,8 @@ export default function PackRatioSettingsPage() {
             </div>
           )}
 
-          {error && (
-            <p className="text-sm text-destructive">{t(ERROR_MESSAGE_KEY[error])}</p>
+          {touched && error && (
+            <p className="text-sm text-destructive" role="alert">{t(ERROR_MESSAGE_KEY[error])}</p>
           )}
 
           <div className="flex flex-wrap gap-2 pt-2">
@@ -171,7 +184,7 @@ export default function PackRatioSettingsPage() {
               <Plus className="h-4 w-4 mr-2" />
               {t("addSize")}
             </Button>
-            <Button onClick={handleSave} disabled={saving || error !== null}>
+            <Button onClick={handleSave} disabled={saving || (touched && error !== null)}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : t("save")}
             </Button>
           </div>

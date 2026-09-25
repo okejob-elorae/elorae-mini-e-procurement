@@ -19,6 +19,8 @@ import {
   retryJubelioOutboxRow,
 } from "@/app/actions/jubelio-outbox";
 import { toast } from "sonner";
+import { useLocale, useTranslations } from "next-intl";
+import { formatDisplayDateTime } from "@/lib/date-only";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -56,7 +58,12 @@ function statusVariant(call: CallRow): "default" | "secondary" | "destructive" {
   return "default";
 }
 
+type WebhookStatus = "RECEIVED" | "PROCESSING" | "PROCESSED" | "SKIPPED" | "DEAD";
+type OutboxStatus = "PENDING" | "PROCESSING" | "DONE" | "SKIPPED" | "DEAD";
+
 export default function JubelioAdminPage() {
+  const t = useTranslations("jubelio.admin");
+  const locale = useLocale();
   const { status } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -201,20 +208,20 @@ export default function JubelioAdminPage() {
   const handleRetry = async (id: string) => {
     const result = await retryJubelioWebhookEvent(id);
     if (result.ok) {
-      toast.success("Re-queued. Sweeper picks up within 10 min.");
+      toast.success(t("webhookRetryOk"));
       void loadWebhooks();
     } else {
-      toast.error("Retry not allowed (status must be DEAD or SKIPPED).");
+      toast.error(t("retryNotAllowed"));
     }
   };
 
   const handleBulkPush = async () => {
-    if (!confirm("Push stock for all mapped items to Jubelio?")) return;
+    if (!confirm(t("bulkPushConfirm"))) return;
     setBulkPushing(true);
     try {
       const r = await bulkPushAllStockToJubelio();
-      if (r.ok) toast.success(`Queued ${r.count} items. Pushes drain over the next few minutes.`);
-      else toast.error("Bulk push failed (admin only).");
+      if (r.ok) toast.success(t("bulkPushOk", { count: r.count }));
+      else toast.error(t("bulkPushFailed"));
       void loadOutbox();
     } finally {
       setBulkPushing(false);
@@ -222,13 +229,13 @@ export default function JubelioAdminPage() {
   };
 
   const handleOutboxRetry = async (id: string) => {
-    if (!confirm("Re-queue this row? Worker will re-push to Jubelio.")) return;
+    if (!confirm(t("outboxRetryConfirm"))) return;
     const r = await retryJubelioOutboxRow(id);
     if (r.ok) {
-      toast.success("Re-queued. Poller picks up within ~5 seconds.");
+      toast.success(t("outboxRetryOk"));
       void loadOutbox();
     } else {
-      toast.error("Retry not allowed (status must be DEAD or SKIPPED).");
+      toast.error(t("retryNotAllowed"));
     }
   };
 
@@ -250,27 +257,23 @@ export default function JubelioAdminPage() {
       <Card>
         <CardContent className="flex items-center justify-between gap-4 pt-6">
           <div>
-            <p className="font-medium">Bulk push stock to Jubelio</p>
-            <p className="text-sm text-muted-foreground">
-              Creates one outbox row per mapped item. Worker drains within minutes.
-            </p>
+            <p className="font-medium">{t("bulkPushTitle")}</p>
+            <p className="text-sm text-muted-foreground">{t("bulkPushBody")}</p>
           </div>
           <Button onClick={() => void handleBulkPush()} disabled={bulkPushing}>
-            {bulkPushing ? "Queuing…" : "Sync all stock"}
+            {bulkPushing ? t("bulkPushQueuing") : t("bulkPushButton")}
           </Button>
         </CardContent>
       </Card>
 
-      <div className="flex items-start justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Jubelio API Calls</h1>
-          <p className="text-muted-foreground">
-            Outbound call log, latency, and rate-limit activity.
-          </p>
+          <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
+          <p className="text-muted-foreground">{t("subtitle")}</p>
         </div>
         <Button variant="outline" size="sm" onClick={() => void load()}>
           <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-          Refresh
+          {t("refresh")}
         </Button>
       </div>
 
@@ -278,31 +281,31 @@ export default function JubelioAdminPage() {
         <Card>
           <CardHeader className="pb-2">
             <div className="text-sm text-muted-foreground">
-              Total calls (last {stats?.windowHours ?? 24}h)
+              {t("kpiTotal", { hours: stats?.windowHours ?? 24 })}
             </div>
             <div className="text-3xl font-bold">{stats?.total ?? 0}</div>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <div className="text-sm text-muted-foreground">Error rate</div>
+            <div className="text-sm text-muted-foreground">{t("kpiErrorRate")}</div>
             <div className="text-3xl font-bold">
               {errorRate}%
               <span className="ml-2 text-sm font-normal text-muted-foreground">
-                ({stats?.errors ?? 0} failed)
+                {t("kpiFailed", { count: stats?.errors ?? 0 })}
               </span>
             </div>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <div className="text-sm text-muted-foreground">Rate-limited (429)</div>
+            <div className="text-sm text-muted-foreground">{t("kpiRateLimited")}</div>
             <div className="text-3xl font-bold">{stats?.rateLimited ?? 0}</div>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <div className="text-sm text-muted-foreground">Avg latency</div>
+            <div className="text-sm text-muted-foreground">{t("kpiLatency")}</div>
             <div className="text-3xl font-bold">{stats?.avgLatencyMs ?? 0}ms</div>
           </CardHeader>
         </Card>
@@ -310,8 +313,8 @@ export default function JubelioAdminPage() {
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Recent calls</CardTitle>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle>{t("recentCalls")}</CardTitle>
             <Button
               variant={callsFilter === "errors" ? "default" : "outline"}
               size="sm"
@@ -322,7 +325,7 @@ export default function JubelioAdminPage() {
                 })
               }
             >
-              {callsFilter === "errors" ? "Showing errors only" : "Show errors only"}
+              {callsFilter === "errors" ? t("showingErrorsOnly") : t("showErrorsOnly")}
             </Button>
           </div>
         </CardHeader>
@@ -337,12 +340,12 @@ export default function JubelioAdminPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Time</TableHead>
-                      <TableHead>Method</TableHead>
-                      <TableHead>Path</TableHead>
-                      <TableHead className="text-right">Status</TableHead>
-                      <TableHead className="text-right">Latency</TableHead>
-                      <TableHead>Flags</TableHead>
+                      <TableHead>{t("col.time")}</TableHead>
+                      <TableHead>{t("col.method")}</TableHead>
+                      <TableHead>{t("col.path")}</TableHead>
+                      <TableHead className="text-right">{t("col.status")}</TableHead>
+                      <TableHead className="text-right">{t("col.latency")}</TableHead>
+                      <TableHead>{t("col.flags")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -352,14 +355,14 @@ export default function JubelioAdminPage() {
                           colSpan={6}
                           className="py-8 text-center text-muted-foreground"
                         >
-                          No API calls logged yet.
+                          {t("emptyCalls")}
                         </TableCell>
                       </TableRow>
                     ) : (
                       calls.map((call) => (
                         <TableRow key={call.id}>
                           <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                            {new Date(call.createdAt).toLocaleString()}
+                            {formatDisplayDateTime(call.createdAt, locale)}
                           </TableCell>
                           <TableCell className="font-mono text-xs">{call.method}</TableCell>
                           <TableCell className="max-w-[280px] truncate font-mono text-xs">
@@ -373,7 +376,7 @@ export default function JubelioAdminPage() {
                           <TableCell className="text-right text-sm tabular-nums">
                             {call.latencyMs}ms
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="min-w-[180px] whitespace-normal">
                             {call.rateLimited && (
                               <Badge variant="secondary" className="mr-1">
                                 429
@@ -413,7 +416,7 @@ export default function JubelioAdminPage() {
         {(["RECEIVED", "PROCESSING", "PROCESSED", "SKIPPED", "DEAD"] as const).map((s) => (
           <Card key={s}>
             <CardHeader className="pb-2">
-              <div className="text-sm text-muted-foreground">{s}</div>
+              <StatusTileLabel label={t(`status.${s}`)} code={s} />
               <div className="text-2xl font-bold">{whStats?.byStatus?.[s] ?? 0}</div>
             </CardHeader>
           </Card>
@@ -422,9 +425,9 @@ export default function JubelioAdminPage() {
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Webhook events</CardTitle>
-            <div className="flex gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle>{t("webhookEvents")}</CardTitle>
+            <div className="flex flex-wrap gap-2" role="group" aria-label={t("filterLabel")}>
               {(["all", "errors", "DEAD"] as const).map((f) => (
                 <Button
                   key={f}
@@ -432,7 +435,7 @@ export default function JubelioAdminPage() {
                   variant={whFilter === f ? "default" : "outline"}
                   onClick={() => updateUrl({ whFilter: f === "all" ? null : f, whPage: "1" })}
                 >
-                  {f}
+                  {t(`filter.${f}`)}
                 </Button>
               ))}
             </div>
@@ -444,13 +447,15 @@ export default function JubelioAdminPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-8"></TableHead>
-                    <TableHead>Time</TableHead>
-                    <TableHead>Event</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Attempts</TableHead>
-                    <TableHead>Flags / reason</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
+                    <TableHead className="w-8">
+                      <span className="sr-only">{t("col.details")}</span>
+                    </TableHead>
+                    <TableHead>{t("col.time")}</TableHead>
+                    <TableHead>{t("col.event")}</TableHead>
+                    <TableHead>{t("col.status")}</TableHead>
+                    <TableHead className="text-right">{t("col.attempts")}</TableHead>
+                    <TableHead>{t("col.reason")}</TableHead>
+                    <TableHead className="sticky right-0 bg-card text-right">{t("col.action")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -460,7 +465,7 @@ export default function JubelioAdminPage() {
                         colSpan={7}
                         className="py-8 text-center text-muted-foreground"
                       >
-                        No webhook events.
+                        {t("emptyWebhooks")}
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -477,6 +482,9 @@ export default function JubelioAdminPage() {
                                 onClick={() =>
                                   setExpandedWebhookId(isExpanded ? null : e.id)
                                 }
+                                aria-expanded={isExpanded}
+                                aria-label={isExpanded ? t("hideDetails") : t("showDetails")}
+                                title={isExpanded ? t("hideDetails") : t("showDetails")}
                               >
                                 {isExpanded ? (
                                   <ChevronDown className="h-4 w-4" />
@@ -486,11 +494,12 @@ export default function JubelioAdminPage() {
                               </Button>
                             </TableCell>
                             <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                              {new Date(e.receivedAt).toLocaleString()}
+                              {formatDisplayDateTime(e.receivedAt, locale)}
                             </TableCell>
                             <TableCell className="font-mono text-xs">{e.event}</TableCell>
                             <TableCell>
                               <Badge
+                                title={e.status}
                                 variant={
                                   e.status === "DEAD"
                                     ? "destructive"
@@ -499,23 +508,23 @@ export default function JubelioAdminPage() {
                                       : "default"
                                 }
                               >
-                                {e.status}
+                                {t(`status.${e.status as WebhookStatus}`)}
                               </Badge>
                             </TableCell>
                             <TableCell className="text-right text-sm tabular-nums">
                               {e.attempts}
                             </TableCell>
-                            <TableCell className="text-xs">
+                            <TableCell className="min-w-[200px] max-w-[320px] whitespace-normal break-words text-xs">
                               {e.skipReason ?? e.lastError?.slice(0, 60) ?? "—"}
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="sticky right-0 bg-card text-right">
                               {(e.status === "DEAD" || e.status === "SKIPPED") && (
                                 <Button
                                   size="sm"
                                   variant="outline"
                                   onClick={() => void handleRetry(e.id)}
                                 >
-                                  Retry
+                                  {t("retry")}
                                 </Button>
                               )}
                             </TableCell>
@@ -525,47 +534,39 @@ export default function JubelioAdminPage() {
                               <TableCell colSpan={7} className="bg-muted/50">
                                 <div className="p-4 space-y-2 text-sm">
                                   <p>
-                                    <span className="font-medium">Signature:</span>{" "}
+                                    <span className="font-medium">{t("detail.signature")}:</span>{" "}
                                     <span className="font-mono text-xs break-all">
                                       {e.signature ?? "—"}
                                     </span>
                                   </p>
                                   <div className="grid grid-cols-2 gap-x-6 gap-y-1">
                                     <p>
-                                      <span className="font-medium">receivedAt:</span>{" "}
-                                      {e.receivedAt
-                                        ? new Date(e.receivedAt).toLocaleString()
-                                        : "—"}
+                                      <span className="font-medium">{t("detail.receivedAt")}:</span>{" "}
+                                      {formatDisplayDateTime(e.receivedAt, locale)}
                                     </p>
                                     <p>
-                                      <span className="font-medium">processedAt:</span>{" "}
-                                      {e.processedAt
-                                        ? new Date(e.processedAt).toLocaleString()
-                                        : "—"}
+                                      <span className="font-medium">{t("detail.processedAt")}:</span>{" "}
+                                      {formatDisplayDateTime(e.processedAt, locale)}
                                     </p>
                                     <p>
-                                      <span className="font-medium">deadAt:</span>{" "}
-                                      {e.deadAt
-                                        ? new Date(e.deadAt).toLocaleString()
-                                        : "—"}
+                                      <span className="font-medium">{t("detail.deadAt")}:</span>{" "}
+                                      {formatDisplayDateTime(e.deadAt, locale)}
                                     </p>
                                     <p>
-                                      <span className="font-medium">lastEnqueuedAt:</span>{" "}
-                                      {e.lastEnqueuedAt
-                                        ? new Date(e.lastEnqueuedAt).toLocaleString()
-                                        : "—"}
+                                      <span className="font-medium">{t("detail.lastEnqueuedAt")}:</span>{" "}
+                                      {formatDisplayDateTime(e.lastEnqueuedAt, locale)}
                                     </p>
                                   </div>
                                   {e.lastError && (
                                     <div>
-                                      <p className="font-medium">lastError:</p>
+                                      <p className="font-medium">{t("detail.lastError")}:</p>
                                       <pre className="bg-background p-3 rounded text-xs overflow-auto max-h-32 whitespace-pre-wrap break-all">
                                         {e.lastError}
                                       </pre>
                                     </div>
                                   )}
                                   <div>
-                                    <p className="font-medium">Raw payload:</p>
+                                    <p className="font-medium">{t("detail.rawPayload")}:</p>
                                     <pre className="bg-background p-3 rounded text-xs overflow-auto max-h-64">
                                       {JSON.stringify(e.rawPayload, null, 2)}
                                     </pre>
@@ -598,7 +599,7 @@ export default function JubelioAdminPage() {
         {(["PENDING", "PROCESSING", "DONE", "SKIPPED", "DEAD"] as const).map((s) => (
           <Card key={s}>
             <CardHeader className="pb-2">
-              <div className="text-sm text-muted-foreground">{s}</div>
+              <StatusTileLabel label={t(`status.${s}`)} code={s} />
               <div className="text-2xl font-bold">{outboxStats?.byStatus?.[s] ?? 0}</div>
             </CardHeader>
           </Card>
@@ -607,9 +608,9 @@ export default function JubelioAdminPage() {
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Outbox events</CardTitle>
-            <div className="flex gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle>{t("outboxEvents")}</CardTitle>
+            <div className="flex flex-wrap gap-2" role="group" aria-label={t("filterLabel")}>
               {(["all", "errors", "DEAD"] as const).map((f) => (
                 <Button
                   key={f}
@@ -619,7 +620,7 @@ export default function JubelioAdminPage() {
                     updateUrl({ outboxFilter: f === "all" ? null : f, outboxPage: "1" })
                   }
                 >
-                  {f}
+                  {t(`filter.${f}`)}
                 </Button>
               ))}
             </div>
@@ -631,13 +632,15 @@ export default function JubelioAdminPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-8" />
-                    <TableHead>Time</TableHead>
-                    <TableHead>Entity</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Attempts</TableHead>
-                    <TableHead>Flags / reason</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
+                    <TableHead className="w-8">
+                      <span className="sr-only">{t("col.details")}</span>
+                    </TableHead>
+                    <TableHead>{t("col.time")}</TableHead>
+                    <TableHead>{t("col.entity")}</TableHead>
+                    <TableHead>{t("col.status")}</TableHead>
+                    <TableHead className="text-right">{t("col.attempts")}</TableHead>
+                    <TableHead>{t("col.reason")}</TableHead>
+                    <TableHead className="sticky right-0 bg-card text-right">{t("col.action")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -647,7 +650,7 @@ export default function JubelioAdminPage() {
                         colSpan={7}
                         className="py-8 text-center text-muted-foreground"
                       >
-                        No outbox events.
+                        {t("emptyOutbox")}
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -666,6 +669,9 @@ export default function JubelioAdminPage() {
                                 onClick={() =>
                                   setExpandedOutboxId(expanded ? null : r.id)
                                 }
+                                aria-expanded={expanded}
+                                aria-label={expanded ? t("hideDetails") : t("showDetails")}
+                                title={expanded ? t("hideDetails") : t("showDetails")}
                               >
                                 {expanded ? (
                                   <ChevronDown className="h-4 w-4" />
@@ -675,13 +681,14 @@ export default function JubelioAdminPage() {
                               </Button>
                             </TableCell>
                             <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                              {new Date(r.createdAt).toLocaleString()}
+                              {formatDisplayDateTime(r.createdAt, locale)}
                             </TableCell>
                             <TableCell className="font-mono text-xs">
                               {r.entityType}:{r.entityId.slice(0, 8)}
                             </TableCell>
                             <TableCell>
                               <Badge
+                                title={r.status}
                                 variant={
                                   r.status === "DEAD"
                                     ? "destructive"
@@ -690,23 +697,23 @@ export default function JubelioAdminPage() {
                                       : "default"
                                 }
                               >
-                                {r.status}
+                                {t(`status.${r.status as OutboxStatus}`)}
                               </Badge>
                             </TableCell>
                             <TableCell className="text-right text-sm tabular-nums">
                               {r.attempts}
                             </TableCell>
-                            <TableCell className="text-xs">
+                            <TableCell className="min-w-[200px] max-w-[320px] whitespace-normal break-words text-xs">
                               {r.skipReason ?? r.lastError?.slice(0, 60) ?? "—"}
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="sticky right-0 bg-card text-right">
                               {(r.status === "DEAD" || r.status === "SKIPPED") && (
                                 <Button
                                   size="sm"
                                   variant="outline"
                                   onClick={() => void handleOutboxRetry(r.id)}
                                 >
-                                  Retry
+                                  {t("retry")}
                                 </Button>
                               )}
                             </TableCell>
@@ -716,30 +723,24 @@ export default function JubelioAdminPage() {
                               <TableCell colSpan={7} className="bg-muted/50">
                                 <div className="space-y-2 p-4 text-sm">
                                   <p>
-                                    <span className="font-medium">Enqueued by:</span>{" "}
+                                    <span className="font-medium">{t("detail.enqueuedBy")}:</span>{" "}
                                     {enqueuedByLabel}
                                   </p>
                                   <p>
-                                    <span className="font-medium">createdAt:</span>{" "}
-                                    {new Date(r.createdAt).toLocaleString()}
+                                    <span className="font-medium">{t("detail.createdAt")}:</span>{" "}
+                                    {formatDisplayDateTime(r.createdAt, locale)}
                                   </p>
                                   <p>
-                                    <span className="font-medium">lastEnqueuedAt:</span>{" "}
-                                    {r.lastEnqueuedAt
-                                      ? new Date(r.lastEnqueuedAt).toLocaleString()
-                                      : "—"}
+                                    <span className="font-medium">{t("detail.lastEnqueuedAt")}:</span>{" "}
+                                    {formatDisplayDateTime(r.lastEnqueuedAt, locale)}
                                   </p>
                                   <p>
-                                    <span className="font-medium">processedAt:</span>{" "}
-                                    {r.processedAt
-                                      ? new Date(r.processedAt).toLocaleString()
-                                      : "—"}
+                                    <span className="font-medium">{t("detail.processedAt")}:</span>{" "}
+                                    {formatDisplayDateTime(r.processedAt, locale)}
                                   </p>
                                   <p>
-                                    <span className="font-medium">deadAt:</span>{" "}
-                                    {r.deadAt
-                                      ? new Date(r.deadAt).toLocaleString()
-                                      : "—"}
+                                    <span className="font-medium">{t("detail.deadAt")}:</span>{" "}
+                                    {formatDisplayDateTime(r.deadAt, locale)}
                                   </p>
                                   {r.lastError && (
                                     <pre className="bg-background max-h-32 overflow-auto rounded p-3 text-xs">
@@ -772,6 +773,20 @@ export default function JubelioAdminPage() {
           </div>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+/** Indonesian label first; the technical state name stays underneath, small, when it differs. */
+function StatusTileLabel({ label, code }: { label: string; code: string }) {
+  return (
+    <div className="text-sm text-muted-foreground">
+      {label}
+      {label !== code && (
+        <span className="block font-mono text-[10px] uppercase tracking-wide opacity-70">
+          {code}
+        </span>
+      )}
     </div>
   );
 }

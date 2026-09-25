@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Pager } from "@/components/Pager";
-import { formatDateTime } from "@/lib/sales-orders/format";
+import { formatDisplayDateTime } from "@/lib/date-only";
 import {
   syncJubelioCouriers,
   type CourierSortDir,
@@ -106,7 +106,7 @@ export function CouriersPageClient(props: Props) {
 
       {lastSyncedAt && (
         <p className="text-sm text-muted-foreground">
-          {t("lastSyncedAt", { when: formatDateTime(lastSyncedAt, locale) })}
+          {t("lastSyncedAt", { when: formatDisplayDateTime(lastSyncedAt, locale) })}
         </p>
       )}
 
@@ -169,9 +169,9 @@ export function CouriersPageClient(props: Props) {
               props.couriers.map((c) => (
                 <TableRow key={c.id}>
                   <TableCell className="font-mono text-sm">{c.id}</TableCell>
-                  <TableCell>{c.name}</TableCell>
+                  <TableCell className="whitespace-normal">{c.name}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {formatDateTime(c.syncedAt, locale)}
+                    {formatDisplayDateTime(c.syncedAt, locale)}
                   </TableCell>
                 </TableRow>
               ))

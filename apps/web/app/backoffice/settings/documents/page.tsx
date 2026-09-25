@@ -39,6 +39,9 @@ import { DocType } from '@/lib/constants/enums';
 
 const DOC_TYPES: DocType[] = ['PO', 'GRN', 'WO', 'ADJ', 'RET', 'ISSUE', 'RECEIPT', 'OPN'];
 
+// Not shown on screen (the table reads `documents.docTypes.*`). Kept only for
+// the empty-prefix fallback in handleSave, whose output must not change with
+// the viewer's locale.
 const DOC_TYPE_LABELS: Record<DocType, string> = {
   PO: 'Purchase Order',
   GRN: 'Goods Receipt',
@@ -137,7 +140,7 @@ export default function DocumentNumbersSettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Config</CardTitle>
+          <CardTitle>{t('configTitle')}</CardTitle>
           <CardDescription>{t('tableDescription')}</CardDescription>
         </CardHeader>
         <CardContent>
@@ -148,21 +151,25 @@ export default function DocumentNumbersSettingsPage() {
                 <TableHead>{t('prefix')}</TableHead>
                 <TableHead>{t('resetPeriod')}</TableHead>
                 <TableHead>{t('padding')}</TableHead>
-                <TableHead className="w-[100px]">Last #</TableHead>
-                <TableHead className="w-[80px]"></TableHead>
+                <TableHead className="w-[100px]">{t('lastNumber')}</TableHead>
+                <TableHead className="w-[80px]">
+                  <span className="sr-only">{t('save')}</span>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {DOC_TYPES.map((docType) => {
                 const c = configs.find((x) => x.docType === docType);
                 const e = getEdit(docType);
+                const label = t(`docTypes.${docType}`);
                 return (
                   <TableRow key={docType}>
                     <TableCell className="font-medium">
-                      {DOC_TYPE_LABELS[docType]}
+                      {label}
                     </TableCell>
                     <TableCell>
                       <Input
+                        aria-label={`${t('prefix')} — ${label}`}
                         value={e.prefix}
                         onChange={(ev) => setEdit(docType, 'prefix', ev.target.value)}
                         placeholder="PO/"
@@ -174,13 +181,16 @@ export default function DocumentNumbersSettingsPage() {
                         value={e.resetPeriod}
                         onValueChange={(v) => setEdit(docType, 'resetPeriod', v)}
                       >
-                        <SelectTrigger className="w-[140px]">
+                        <SelectTrigger
+                          className="w-[140px]"
+                          aria-label={`${t('resetPeriod')} — ${label}`}
+                        >
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="YEARLY">Yearly</SelectItem>
-                          <SelectItem value="MONTHLY">Monthly</SelectItem>
-                          <SelectItem value="NEVER">Never</SelectItem>
+                          <SelectItem value="YEARLY">{t('period.YEARLY')}</SelectItem>
+                          <SelectItem value="MONTHLY">{t('period.MONTHLY')}</SelectItem>
+                          <SelectItem value="NEVER">{t('period.NEVER')}</SelectItem>
                         </SelectContent>
                       </Select>
                     </TableCell>
@@ -189,6 +199,7 @@ export default function DocumentNumbersSettingsPage() {
                         type="number"
                         min={1}
                         max={8}
+                        aria-label={`${t('padding')} — ${label}`}
                         value={e.padding}
                         onChange={(ev) => setEdit(docType, 'padding', ev.target.value)}
                         className="w-20"
@@ -202,6 +213,7 @@ export default function DocumentNumbersSettingsPage() {
                         size="sm"
                         onClick={() => handleSave(docType)}
                         disabled={savingType === docType}
+                        aria-label={`${t('save')} — ${label}`}
                       >
                         {savingType === docType ? (
                           <Loader2 className="h-4 w-4 animate-spin" />

@@ -353,7 +353,7 @@ export default function SettingsPage() {
                     key={key}
                     className="h-9 w-14 rounded-md border"
                     style={{ backgroundColor: color }}
-                    title={key}
+                    title={tTheme(`swatch.${key}`)}
                   />
                 ))}
               </div>
