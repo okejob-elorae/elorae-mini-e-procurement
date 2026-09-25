@@ -74,6 +74,7 @@ export function DocumentArchive({
               <Input
                 className="h-9 pl-9 text-sm"
                 placeholder={searchPlaceholder}
+                aria-label={searchPlaceholder}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />

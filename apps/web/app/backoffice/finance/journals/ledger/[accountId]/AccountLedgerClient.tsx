@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { formatDisplayDate } from "@/lib/date-only";
 
 type Props = {
   accountId: string;
@@ -39,10 +40,7 @@ export function AccountLedgerClient({ accountId, ledger, filters }: Props) {
 
   const basePath = `/backoffice/finance/journals/ledger/${accountId}`;
 
-  const formatDate = (iso: string) =>
-    new Intl.DateTimeFormat(locale, { day: "2-digit", month: "short", year: "numeric" }).format(
-      new Date(iso),
-    );
+  const formatDate = (iso: string) => formatDisplayDate(iso, locale);
 
   function pushParam(key: string, value: string | undefined) {
     const params = new URLSearchParams(sp.toString());

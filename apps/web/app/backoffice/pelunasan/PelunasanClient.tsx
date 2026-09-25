@@ -126,7 +126,7 @@ export function PelunasanClient({
                     <TableHead className="text-right">{t('colInvoice')}</TableHead>
                     <TableHead className="text-right">{t('colReceived')}</TableHead>
                     <TableHead>{t('colStatus')}</TableHead>
-                    <TableHead className="text-right">{t('colAction')}</TableHead>
+                    <TableHead className="sticky right-0 bg-card text-right">{t('colAction')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -145,7 +145,7 @@ export function PelunasanClient({
                           {b.docNo}
                         </Link>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-normal min-w-[9rem] max-w-[14rem]">
                         {b.storeName}
                         {b.salesmanName && (
                           <span className="block text-xs text-muted-foreground">
@@ -154,7 +154,7 @@ export function PelunasanClient({
                         )}
                       </TableCell>
                       <TableCell>{tanggal(b.claimedTransferAt)}</TableCell>
-                      <TableCell className="text-right text-muted-foreground">
+                      <TableCell className="text-right text-muted-foreground whitespace-normal min-w-[7.5rem]">
                         {rupiah(b.invoiceAmount)}
                         {b.deductionCount > 0 && (
                           <span className="block text-xs">
@@ -180,9 +180,11 @@ export function PelunasanClient({
                           {t(`status${b.status}` as never)}
                         </StatusPill>
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="sticky right-0 bg-card text-right">
                         {b.status === 'DIKIRIM' && bolehMemutuskan && (
-                          <span className="inline-flex gap-2">
+                          // Stacked like kontrabon: side by side, the two
+                          // buttons pushed the table past its card at 1280 px.
+                          <span className="inline-flex flex-col items-end gap-1">
                             <Button
                               size="sm"
                               disabled={pending}

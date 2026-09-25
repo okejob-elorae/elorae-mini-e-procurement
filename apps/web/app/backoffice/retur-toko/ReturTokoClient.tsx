@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Camera, Link2, PackageOpen, Plus, Scale } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -53,15 +53,9 @@ import { NADA_LANGKAH, URUT_LANGKAH } from './langkah';
 import { UnggahFoto, type NilaiFoto } from '@/components/foto/UnggahFoto';
 import { BarisBarangEditor, type PilihanBarang } from './BarisBarangEditor';
 import { BacaNota } from '@/components/ocr/BacaNota';
+import { formatDisplayDate } from '@/lib/date-only';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
-const tanggal = (iso: string) =>
-  new Date(iso).toLocaleDateString('id-ID', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    timeZone: 'Asia/Jakarta',
-  });
 
 function hariIniWib(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
@@ -96,6 +90,8 @@ export function ReturTokoClient({
   bolehMenghitung: boolean;
 }) {
   const t = useTranslations('storeReturns');
+  const locale = useLocale();
+  const tanggal = (iso: string) => formatDisplayDate(iso, locale);
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [saring, setSaring] = useState<LangkahRetur | 'kerja' | null>('kerja');
@@ -267,7 +263,7 @@ export function ReturTokoClient({
                     <TableHead className="text-right">{t('colClaimed')}</TableHead>
                     <TableHead className="text-right">{t('colCounted')}</TableHead>
                     <TableHead>{t('colNextStep')}</TableHead>
-                    <TableHead className="text-right">{t('colAction')}</TableHead>
+                    <TableHead className="sticky right-0 bg-card text-right">{t('colAction')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -278,7 +274,7 @@ export function ReturTokoClient({
                          latar merah tipis. */
                       className={cn(b.langkah === 'keputusan' && 'bg-destructive/[0.06]')}
                     >
-                      <TableCell className="align-top">
+                      <TableCell className="align-top whitespace-normal min-w-[9rem] max-w-[11rem]">
                         <span className="font-medium">{b.nomor}</span>
                         {b.nomorPasangan && (
                           <span className="block text-xs text-muted-foreground">
@@ -295,7 +291,7 @@ export function ReturTokoClient({
                           </span>
                         )}
                       </TableCell>
-                      <TableCell className="align-top">
+                      <TableCell className="align-top whitespace-normal min-w-[140px] max-w-[220px]">
                         {b.storeName ?? (
                           <span className="text-muted-foreground">{t('storeUnknown')}</span>
                         )}
@@ -329,7 +325,7 @@ export function ReturTokoClient({
                       </TableCell>
                       {/* Inti halamannya: keadaan + giliran siapa + akibatnya.
                           Tanpa kalimat ini yang tersisa cuma tabel angka. */}
-                      <TableCell className="align-top">
+                      <TableCell className="align-top whitespace-normal min-w-[16rem]">
                         <div className="max-w-sm space-y-1">
                           <StatusPill tone={NADA_LANGKAH[b.langkah]}>
                             {label(b.langkah)}
@@ -350,7 +346,7 @@ export function ReturTokoClient({
                           )}
                         </div>
                       </TableCell>
-                      <TableCell className="align-top text-right">
+                      <TableCell className="sticky right-0 bg-card align-top text-right">
                         <span className="inline-flex flex-wrap justify-end gap-2">
                           {b.langkah === 'cek' && bolehMenghitung && (
                             <Button

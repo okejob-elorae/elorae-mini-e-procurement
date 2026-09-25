@@ -26,10 +26,12 @@ import {
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { ChevronDown, ChevronRight, Loader2, FileDown, Filter, X } from 'lucide-react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
+import { formatDisplayDateTime } from '@/lib/date-only';
+import { auditActionLabel, auditEntityLabel } from '@/lib/audit/action-label';
 
 type AuditLogRow = Awaited<ReturnType<typeof getAuditLogs>>['logs'][number];
 
@@ -74,6 +76,8 @@ function exportToCSV(logs: AuditLogRow[]): string {
 
 export default function AuditTrailPage() {
   const tAudit = useTranslations('audit');
+  const tAuditActions = useTranslations('auditActions');
+  const locale = useLocale();
   const { data: _session, status } = useSession();
   void _session;
   const router = useRouter();
@@ -94,7 +98,7 @@ export default function AuditTrailPage() {
       setLogs(res.logs);
       setTotal(res.total);
     } catch {
-      toast.error('Failed to load audit logs');
+      toast.error(tAudit('trail.loadFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -125,7 +129,7 @@ export default function AuditTrailPage() {
         a.click();
         URL.revokeObjectURL(url);
       })
-      .catch(() => toast.error('Export failed'));
+      .catch(() => toast.error(tAudit('trail.exportFailed')));
   };
 
   if (status === 'loading') {
@@ -139,10 +143,8 @@ export default function AuditTrailPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Audit Trail</h1>
-        <p className="text-muted-foreground">
-          View and filter system audit logs. Entries are immutable.
-        </p>
+        <h1 className="text-2xl font-bold tracking-tight">{tAudit('trail.pageTitle')}</h1>
+        <p className="text-muted-foreground">{tAudit('trail.subtitle')}</p>
       </div>
 
       <Card className="border-muted/60 shadow-sm">
@@ -152,7 +154,7 @@ export default function AuditTrailPage() {
               <Filter className="h-4 w-4" />
             </div>
             <div>
-              <CardTitle className="text-lg">Filters</CardTitle>
+              <CardTitle className="text-lg">{tAudit('trail.filtersTitle')}</CardTitle>
               <CardDescription className="mt-0.5">
                 {tAudit('filterDescription')}
               </CardDescription>
@@ -163,12 +165,12 @@ export default function AuditTrailPage() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             <div className="space-y-2">
               <Label htmlFor="audit-user" className="text-muted-foreground">
-                User
+                {tAudit('trail.user')}
               </Label>
               <SearchableCombobox
                 id="audit-user"
                 options={[
-                  { value: '__all__', label: 'All users' },
+                  { value: '__all__', label: tAudit('trail.allUsers') },
                   ...users.map((u) => ({
                     value: u.id,
                     label: u.name || u.email || u.id,
@@ -182,17 +184,17 @@ export default function AuditTrailPage() {
                     offset: 0,
                   }))
                 }
-                placeholder="All users"
+                placeholder={tAudit('trail.allUsers')}
                 triggerClassName="h-9 w-full"
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="audit-action" className="text-muted-foreground">
-                Action
+                {tAudit('trail.action')}
               </Label>
               <Input
                 id="audit-action"
-                placeholder="e.g. VIEW_BANK_ACCOUNT"
+                placeholder={tAudit('trail.actionPlaceholder')}
                 value={filters.action ?? ''}
                 onChange={(e) =>
                   setFilters((f) => ({ ...f, action: e.target.value || undefined, offset: 0 }))
@@ -202,11 +204,11 @@ export default function AuditTrailPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="audit-entity" className="text-muted-foreground">
-                Entity search
+                {tAudit('trail.entitySearch')}
               </Label>
               <Input
                 id="audit-entity"
-                placeholder="Entity ID or doc #"
+                placeholder={tAudit('trail.entitySearchPlaceholder')}
                 value={filters.entitySearch ?? ''}
                 onChange={(e) =>
                   setFilters((f) => ({ ...f, entitySearch: e.target.value || undefined, offset: 0 }))
@@ -216,7 +218,7 @@ export default function AuditTrailPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="audit-date-range" className="text-muted-foreground">
-                Date range
+                {tAudit('trail.dateRange')}
               </Label>
               <DateRangePicker
                 id="audit-date-range"
@@ -254,11 +256,11 @@ export default function AuditTrailPage() {
               }
             >
               <X className="mr-1.5 h-3.5 w-3.5" />
-              Clear filters
+              {tAudit('trail.clearFilters')}
             </Button>
             <Button variant="outline" size="sm" onClick={handleExport} className="ml-auto">
               <FileDown className="mr-1.5 h-3.5 w-3.5" />
-              Export CSV
+              {tAudit('trail.exportCsv')}
             </Button>
           </div>
         </CardContent>
@@ -266,10 +268,8 @@ export default function AuditTrailPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Logs</CardTitle>
-          <CardDescription>
-            {total} entry(ies). Expand row for before/after and details.
-          </CardDescription>
+          <CardTitle>{tAudit('trail.logsTitle')}</CardTitle>
+          <CardDescription>{tAudit('trail.logsDescription', { total })}</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -282,19 +282,19 @@ export default function AuditTrailPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-8"></TableHead>
-                    <TableHead>Time</TableHead>
-                    <TableHead>User</TableHead>
-                    <TableHead>Action</TableHead>
-                    <TableHead>Entity</TableHead>
-                    <TableHead>ID</TableHead>
-                    <TableHead>IP</TableHead>
+                    <TableHead>{tAudit('trail.colTime')}</TableHead>
+                    <TableHead>{tAudit('trail.colUser')}</TableHead>
+                    <TableHead>{tAudit('trail.colAction')}</TableHead>
+                    <TableHead>{tAudit('trail.colEntity')}</TableHead>
+                    <TableHead>{tAudit('trail.colId')}</TableHead>
+                    <TableHead className="hidden 2xl:table-cell">{tAudit('trail.colIp')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {logs.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                        No audit logs found.
+                        {tAudit('trail.empty')}
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -318,6 +318,11 @@ export default function AuditTrailPage() {
                                 variant="ghost"
                                 size="icon"
                                 className="h-8 w-8"
+                                aria-expanded={isExpanded}
+                                aria-label={
+                                  isExpanded ? tAudit('trail.collapseRow') : tAudit('trail.expandRow')
+                                }
+                                title={isExpanded ? tAudit('trail.collapseRow') : tAudit('trail.expandRow')}
                                 onClick={() => setExpandedId(isExpanded ? null : log.id)}
                               >
                                 {isExpanded ? (
@@ -328,40 +333,48 @@ export default function AuditTrailPage() {
                               </Button>
                             </TableCell>
                             <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
-                              {log.createdAt instanceof Date
-                                ? log.createdAt.toLocaleString()
-                                : new Date(log.createdAt).toLocaleString()}
+                              {formatDisplayDateTime(log.createdAt, locale)}
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="whitespace-normal min-w-[120px] max-w-[200px] break-words">
                               {user?.name || user?.email || log.userId}
                             </TableCell>
-                            <TableCell className="font-medium">{log.action}</TableCell>
-                            <TableCell>{log.entityType}</TableCell>
+                            <TableCell
+                              className="font-medium whitespace-normal min-w-[180px] max-w-[280px]"
+                              title={log.action}
+                            >
+                              {auditActionLabel(tAuditActions, log.action, log.entityType)}
+                            </TableCell>
+                            <TableCell
+                              className="whitespace-normal min-w-[140px] max-w-[220px]"
+                              title={log.entityType}
+                            >
+                              {auditEntityLabel(tAuditActions, log.entityType)}
+                            </TableCell>
                             <TableCell className="font-mono text-xs max-w-[120px] truncate">
                               {log.entityId}
                             </TableCell>
-                            <TableCell className="text-muted-foreground text-sm">
+                            <TableCell className="hidden 2xl:table-cell text-muted-foreground text-sm">
                               {log.ipAddress ?? '—'}
                             </TableCell>
                           </TableRow>
                           {isExpanded && (
                             <TableRow key={`${log.id}-detail`}>
-                              <TableCell colSpan={7} className="bg-muted/50">
+                              <TableCell colSpan={7} className="bg-muted/50 whitespace-normal">
                                 <div className="p-4 space-y-2 text-sm">
                                   {log.sensitiveDataAccessed && (
                                     <p>
-                                      <span className="font-medium">Sensitive:</span>{' '}
+                                      <span className="font-medium">{tAudit('trail.sensitive')}</span>{' '}
                                       {log.sensitiveDataAccessed}
                                     </p>
                                   )}
                                   {log.reason && (
                                     <p>
-                                      <span className="font-medium">Reason:</span> {log.reason}
+                                      <span className="font-medium">{tAudit('trail.reason')}</span> {log.reason}
                                     </p>
                                   )}
                                   {log.userAgent && (
                                     <p>
-                                      <span className="font-medium">User-Agent:</span>{' '}
+                                      <span className="font-medium">{tAudit('trail.userAgent')}</span>{' '}
                                       <span className="break-all">{log.userAgent}</span>
                                     </p>
                                   )}

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { ArrowLeft, FileText } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -18,14 +18,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import type { StoreDeliveryRow } from '@/lib/archive/queries';
-
-const fmtDate = (iso: string) =>
-  new Date(iso).toLocaleDateString('id-ID', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    timeZone: 'Asia/Jakarta',
-  });
+import { formatDisplayDate } from '@/lib/date-only';
 
 export function StoreArchiveClient({
   storeId,
@@ -43,6 +36,8 @@ export function StoreArchiveClient({
   const t = useTranslations('archive');
   const tStatus = useTranslations('statuses');
   const tTable = useTranslations('tableHeaders');
+  const locale = useLocale();
+  const fmtDate = (iso: string) => formatDisplayDate(iso, locale);
 
   return (
     <div className="space-y-6">

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { Receipt, Search, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { Pagination } from "@/components/ui/pagination";
 import { cn } from "@/lib/utils";
-import { formatDateOnlyJakarta } from "@/lib/date-only";
+import { formatDisplayDate } from "@/lib/date-only";
 import type { TaxInvoiceRow, TaxInvoiceStatusFilter } from "@/lib/tax-invoices/queries";
 import {
   markCreatedAction,
@@ -84,6 +84,7 @@ export function FakturPajakPageClient(props: Props) {
   const sp = useSearchParams();
   const t = useTranslations("fakturPajak");
   const tCommon = useTranslations("common");
+  const locale = useLocale();
   const [isNavPending, startNavTransition] = useTransition();
   const [isActionPending, startActionTransition] = useTransition();
 
@@ -292,17 +293,17 @@ export function FakturPajakPageClient(props: Props) {
                               <TableCell className="font-medium whitespace-nowrap">{row.docNo}</TableCell>
                               <TableCell className="max-w-[180px] truncate">{row.storeName}</TableCell>
                               <TableCell className="whitespace-nowrap">
-                                {formatDateOnlyJakarta(row.invoiceDate)}
+                                {formatDisplayDate(row.invoiceDate, locale)}
                               </TableCell>
                               <TableCell className="whitespace-nowrap">
-                                {formatDateOnlyJakarta(row.dueDate)}
+                                {formatDisplayDate(row.dueDate, locale)}
                               </TableCell>
                               <TableCell className="text-right whitespace-nowrap">
                                 {formatRupiah(row.total)}
                               </TableCell>
                               <TableCell className="whitespace-nowrap">
                                 {row.notaPrintedAt ? (
-                                  formatDateOnlyJakarta(row.notaPrintedAt)
+                                  formatDisplayDate(row.notaPrintedAt, locale)
                                 ) : (
                                   <span className="text-muted-foreground">—</span>
                                 )}

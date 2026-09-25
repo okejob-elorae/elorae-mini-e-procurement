@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Info, Wallet } from "lucide-react";
 import type { getCashFlowReport } from "@/app/actions/finance-reports";
@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/table";
 import { ReportExportButtons } from "../ReportExportButtons";
 import { exportCashFlowExcel } from "@/app/actions/finance-reports";
+import { formatDisplayDate, parseDateOnly } from "@/lib/date-only";
 
 type Report = Awaited<ReturnType<typeof getCashFlowReport>>;
 
@@ -41,10 +42,19 @@ function formatRupiah(value: number): string {
   return `Rp ${Math.round(value).toLocaleString("id-ID")}`;
 }
 
+/**
+ * The server builds the period label with machine dates ("2026-07-01 — 2026-07-31")
+ * because the Excel export shares it; on screen each date reads in the one display format.
+ */
+function displayPeriodLabel(label: string, locale: string): string {
+  return label.replace(/\d{4}-\d{2}-\d{2}/g, (iso) => formatDisplayDate(parseDateOnly(iso), locale));
+}
+
 export function CashFlowClient({ report, filters, canManageJournals }: Props) {
   const router = useRouter();
   const sp = useSearchParams();
   const t = useTranslations("financeReports");
+  const locale = useLocale();
   const [isPending, startTransition] = useTransition();
 
   const cmp = report.comparison;
@@ -244,7 +254,9 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
               </CardTitle>
               {report.previousPeriodLabel && (
                 <p className="text-sm text-muted-foreground">
-                  {t("cashFlow.comparisonHint", { period: report.previousPeriodLabel })}
+                  {t("cashFlow.comparisonHint", {
+                    period: displayPeriodLabel(report.previousPeriodLabel, locale),
+                  })}
                 </p>
               )}
             </CardHeader>

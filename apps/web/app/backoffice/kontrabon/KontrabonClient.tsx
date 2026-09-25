@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { ClipboardList, Plus } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -32,17 +32,11 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import { formatDisplayDate } from '@/lib/date-only';
 import { buatKontrabonAction, tutupKontrabonAction } from '@/app/actions/collections';
 import type { BarisKontrabon, TokoSiapKontrabon } from '@/lib/receivables/collection-queries';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
-const tanggal = (iso: string) =>
-  new Date(iso).toLocaleDateString('id-ID', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    timeZone: 'Asia/Jakarta',
-  });
 
 /** Tanggal hari ini di WIB sebagai "YYYY-MM-DD" untuk nilai awal input. */
 function hariIniWib(tambahHari = 0): string {
@@ -66,6 +60,8 @@ export function KontrabonClient({
   bolehMengelola: boolean;
 }) {
   const t = useTranslations('collections');
+  const locale = useLocale();
+  const tanggal = (iso: string) => formatDisplayDate(iso, locale);
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
@@ -182,7 +178,7 @@ export function KontrabonClient({
                     <TableHead className="text-right">{t('colHandoverValue')}</TableHead>
                     <TableHead className="text-right">{t('colRemaining')}</TableHead>
                     <TableHead>{t('colStatus')}</TableHead>
-                    <TableHead className="text-right">{t('colAction')}</TableHead>
+                    <TableHead className="sticky right-0 bg-card text-right">{t('colAction')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -203,7 +199,7 @@ export function KontrabonClient({
                           {b.docNo}
                         </Link>
                       </TableCell>
-                        <TableCell>
+                        <TableCell className="whitespace-normal min-w-[160px] max-w-[240px]">
                           {b.storeName}
                           <span className="block text-xs text-muted-foreground">
                             {[
@@ -244,9 +240,12 @@ export function KontrabonClient({
                             {t(`status${b.status}` as never)}
                           </StatusPill>
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="sticky right-0 bg-card text-right">
                           {b.status === 'BERJALAN' && bolehMengelola && (
-                            <span className="inline-flex gap-2">
+                            // Stacked, not side by side: two buttons in a row made
+                            // this sticky column ~225 px and pushed the table past
+                            // its card at 1280 px.
+                            <span className="inline-flex flex-col items-end gap-1">
                               <Button
                                 size="sm"
                                 variant="outline"

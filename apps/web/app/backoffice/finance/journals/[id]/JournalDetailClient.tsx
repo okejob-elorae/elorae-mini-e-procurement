@@ -16,6 +16,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { formatDisplayDate } from "@/lib/date-only";
+import { journalSourceLabel } from "../journal-source-label";
 
 type Props = {
   journal: JournalDetail;
@@ -29,10 +31,7 @@ export function JournalDetailClient({ journal }: Props) {
   const t = useTranslations("financeJournals");
   const locale = useLocale();
 
-  const formatDate = (iso: string) =>
-    new Intl.DateTimeFormat(locale, { day: "2-digit", month: "short", year: "numeric" }).format(
-      new Date(iso),
-    );
+  const formatDate = (iso: string) => formatDisplayDate(iso, locale);
 
   const totalDebit = journal.lines.reduce((sum, l) => sum + l.debit, 0);
   const totalCredit = journal.lines.reduce((sum, l) => sum + l.credit, 0);
@@ -54,7 +53,7 @@ export function JournalDetailClient({ journal }: Props) {
           {journal.isManual ? (
             <Badge variant="secondary">{t("sourceManual")}</Badge>
           ) : (
-            <Badge variant="outline">{journal.sourceType ?? t("sourceAuto")}</Badge>
+            <Badge variant="outline">{journalSourceLabel(t, journal.sourceType)}</Badge>
           )}
         </div>
       </div>
@@ -80,11 +79,13 @@ export function JournalDetailClient({ journal }: Props) {
               <TableBody>
                 {journal.lines.map((line, idx) => (
                   <TableRow key={idx}>
-                    <TableCell>
+                    <TableCell className="whitespace-normal min-w-[200px]">
                       <span className="font-mono text-sm mr-2">{line.accountCode}</span>
                       <span>{line.accountName}</span>
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{line.memo ?? "—"}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground whitespace-normal min-w-[160px] max-w-[360px]">
+                      {line.memo ?? "—"}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {line.debit > 0 ? formatRupiah(line.debit) : "—"}
                     </TableCell>

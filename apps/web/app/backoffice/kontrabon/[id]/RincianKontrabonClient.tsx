@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { ArrowLeft } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,18 +20,12 @@ import {
 } from '@/components/ui/table';
 import { UnggahFoto, type NilaiFoto } from '@/components/foto/UnggahFoto';
 import { cn } from '@/lib/utils';
+import { formatDisplayDate } from '@/lib/date-only';
 import { dinamis } from '@/lib/i18n/dinamis';
 import { pasangFotoKontrabonAction } from '@/app/actions/collections';
 import type { RincianKontrabon } from '@/lib/receivables/collection-queries';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
-const tanggal = (iso: string) =>
-  new Date(iso).toLocaleDateString('id-ID', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    timeZone: 'Asia/Jakarta',
-  });
 
 const NADA: Record<RincianKontrabon['baris']['status'], StatusTone> = {
   BERJALAN: 'waiting',
@@ -48,6 +42,8 @@ export function RincianKontrabonClient({
 }) {
   const t = useTranslations('collections');
   const td = dinamis(t);
+  const locale = useLocale();
+  const tanggal = (iso: string) => formatDisplayDate(iso, locale);
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [foto, setFoto] = useState<NilaiFoto>(

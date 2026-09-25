@@ -26,6 +26,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Pagination } from "@/components/ui/pagination";
+import { formatDisplayDate } from "@/lib/date-only";
+import { journalSourceLabel } from "./journal-source-label";
 
 type Props = {
   items: JournalListRow[];
@@ -57,10 +59,7 @@ export function JournalsPageClient({ items, totalCount, page, pageSize, canManag
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput]);
 
-  const formatDate = (iso: string) =>
-    new Intl.DateTimeFormat(locale, { day: "2-digit", month: "short", year: "numeric" }).format(
-      new Date(iso),
-    );
+  const formatDate = (iso: string) => formatDisplayDate(iso, locale);
 
   function pushParam(key: string, value: string | undefined) {
     const params = new URLSearchParams(sp.toString());
@@ -101,8 +100,8 @@ export function JournalsPageClient({ items, totalCount, page, pageSize, canManag
       </div>
 
       <Card className="p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-5">
-          <div className="lg:col-span-2">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="w-full min-w-[220px] sm:w-auto sm:flex-[2_1_260px]">
             <label className="text-xs text-muted-foreground mb-1 block">{t("filter.search")}</label>
             <Input
               placeholder={t("filter.searchPlaceholder")}
@@ -110,7 +109,7 @@ export function JournalsPageClient({ items, totalCount, page, pageSize, canManag
               onChange={(e) => setSearchInput(e.target.value)}
             />
           </div>
-          <div>
+          <div className="w-full sm:w-auto sm:flex-[1_1_160px]">
             <label className="text-xs text-muted-foreground mb-1 block">{t("filter.source")}</label>
             <Select
               value={filters.source || "ALL"}
@@ -125,7 +124,7 @@ export function JournalsPageClient({ items, totalCount, page, pageSize, canManag
               </SelectContent>
             </Select>
           </div>
-          <div>
+          <div className="w-full sm:w-auto sm:flex-[1_1_160px]">
             <label className="text-xs text-muted-foreground mb-1 block">{t("filter.dateFrom")}</label>
             <Input
               type="date"
@@ -133,19 +132,17 @@ export function JournalsPageClient({ items, totalCount, page, pageSize, canManag
               onChange={(e) => pushParam("from", e.target.value || undefined)}
             />
           </div>
-          <div className="flex items-end gap-2">
-            <div className="flex-1">
-              <label className="text-xs text-muted-foreground mb-1 block">{t("filter.dateTo")}</label>
-              <Input
-                type="date"
-                value={filters.to}
-                onChange={(e) => pushParam("to", e.target.value || undefined)}
-              />
-            </div>
-            <Button variant="outline" onClick={reset}>
-              {t("filter.reset")}
-            </Button>
+          <div className="w-full sm:w-auto sm:flex-[1_1_160px]">
+            <label className="text-xs text-muted-foreground mb-1 block">{t("filter.dateTo")}</label>
+            <Input
+              type="date"
+              value={filters.to}
+              onChange={(e) => pushParam("to", e.target.value || undefined)}
+            />
           </div>
+          <Button variant="outline" onClick={reset}>
+            {t("filter.reset")}
+          </Button>
         </div>
       </Card>
 
@@ -191,7 +188,7 @@ export function JournalsPageClient({ items, totalCount, page, pageSize, canManag
                           {row.isManual ? (
                             <Badge variant="secondary">{t("sourceManual")}</Badge>
                           ) : (
-                            <Badge variant="outline">{row.sourceType ?? t("sourceAuto")}</Badge>
+                            <Badge variant="outline">{journalSourceLabel(t, row.sourceType)}</Badge>
                           )}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">

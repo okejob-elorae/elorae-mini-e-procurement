@@ -38,6 +38,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { formatDisplayDate } from "@/lib/date-only";
 
 const RESYNC_POLL_INTERVAL_MS = 2000;
 
@@ -72,10 +73,7 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
     if (stored) setResyncBatchId(stored);
   }, [resyncStorageKey]);
 
-  const formatDate = (iso: string) =>
-    new Intl.DateTimeFormat(locale, { day: "2-digit", month: "short", year: "numeric" }).format(
-      new Date(iso),
-    );
+  const formatDate = (iso: string) => formatDisplayDate(iso, locale);
 
   const matchedLines = settlement.lines.filter((l) => l.matchStatus === "MATCHED");
   const unmatchedLines = settlement.lines.filter((l) => l.matchStatus !== "MATCHED");
@@ -261,7 +259,10 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
         </Button>
         <div>
           <h1 className="text-xl font-semibold">
-            {settlement.marketplace} · {settlement.seller}
+            {t.has(`marketplaceOption.${settlement.marketplace}`)
+              ? t(`marketplaceOption.${settlement.marketplace}`)
+              : settlement.marketplace}{" "}
+            · {settlement.seller}
           </h1>
           <p className="text-sm text-muted-foreground">
             {formatDate(settlement.periodFromIso)} – {formatDate(settlement.periodToIso)}

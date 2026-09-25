@@ -1,15 +1,14 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { toast } from "sonner";
-import { FileSpreadsheet, Upload, AlertCircle } from "lucide-react";
+import { FileSpreadsheet, Upload, AlertCircle, Paperclip } from "lucide-react";
 import type { SettlementListRow } from "@/lib/finance/settlement/queries";
 /* Type-only: erased at compile, so the parser's xlsx dependency never reaches the client bundle. */
 import type { SettlementParseError } from "@/lib/finance/settlement/shopee-settlement-parser";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -28,6 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Pagination } from "@/components/ui/pagination";
+import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-only";
 
 const UPLOAD_MARKETPLACES = ["SHOPEE", "TIKTOK"] as const;
 type UploadMarketplace = (typeof UPLOAD_MARKETPLACES)[number];
@@ -59,24 +59,18 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
 
   const [file, setFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [marketplace, setMarketplace] = useState<UploadMarketplace>("SHOPEE");
   const [uploading, setUploading] = useState(false);
   const [uploadErrors, setUploadErrors] = useState<SettlementParseError[] | null>(null);
   const [uploadErrorMessage, setUploadErrorMessage] = useState<string | null>(null);
 
-  const formatDate = (iso: string) =>
-    new Intl.DateTimeFormat(locale, { day: "2-digit", month: "short", year: "numeric" }).format(
-      new Date(iso),
-    );
+  const formatDate = (iso: string) => formatDisplayDate(iso, locale);
 
-  const formatDateTime = (iso: string) =>
-    new Intl.DateTimeFormat(locale, {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(iso));
+  const formatDateTime = (iso: string) => formatDisplayDateTime(iso, locale);
+
+  const marketplaceLabel = (m: string): string =>
+    t.has(`marketplaceOption.${m}`) ? t(`marketplaceOption.${m}`) : m;
 
   function goToPage(p: number) {
     startTransition(() => router.push(`/backoffice/finance/settlements?page=${p}`));
@@ -168,24 +162,46 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid gap-2 flex-1">
-                <label className="text-xs text-muted-foreground">{t("uploadFileLabel")}</label>
-                <Input
+              <div className="grid gap-2 flex-1 min-w-0">
+                <label id="settlement-file-label" className="text-xs text-muted-foreground">
+                  {t("uploadFileLabel")}
+                </label>
+                {/* The native control renders the browser's own "Choose File / No file chosen"
+                    in the browser's language, so it stays hidden behind a translated button. */}
+                <input
                   key={fileInputKey}
+                  ref={fileInputRef}
                   type="file"
+                  className="hidden"
                   accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                   disabled={uploading}
                   onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                 />
+                <div className="flex h-9 min-w-0 items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={uploading}
+                    onClick={() => fileInputRef.current?.click()}
+                    aria-describedby="settlement-file-name"
+                    aria-labelledby="settlement-file-label settlement-file-choose"
+                  >
+                    <Paperclip className="mr-2 h-4 w-4" />
+                    <span id="settlement-file-choose">{t("chooseFile")}</span>
+                  </Button>
+                  <span
+                    id="settlement-file-name"
+                    className="min-w-0 truncate text-sm text-muted-foreground"
+                    title={file?.name}
+                  >
+                    {file ? file.name : t("noFileChosen")}
+                  </span>
+                </div>
               </div>
               <Button onClick={handleUpload} disabled={!file || uploading} className="sm:w-auto">
                 {uploading ? t("uploading") : t("uploadButton")}
               </Button>
             </div>
-
-            {file && !uploading && (
-              <p className="text-xs text-muted-foreground truncate">{t("selectedFile", { name: file.name })}</p>
-            )}
 
             {uploadErrorMessage && (
               <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
@@ -260,8 +276,8 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
                         <TableCell className="whitespace-nowrap">
                           {formatDate(row.periodFromIso)} – {formatDate(row.periodToIso)}
                         </TableCell>
-                        <TableCell className="font-medium">{row.marketplace}</TableCell>
-                        <TableCell>{row.seller}</TableCell>
+                        <TableCell className="font-medium">{marketplaceLabel(row.marketplace)}</TableCell>
+                        <TableCell className="whitespace-normal min-w-[120px] max-w-[220px]">{row.seller}</TableCell>
                         <TableCell>
                           {row.checksumOk ? (
                             <Badge variant="secondary">{t("checksumOk")}</Badge>

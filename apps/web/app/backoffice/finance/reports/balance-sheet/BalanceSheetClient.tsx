@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { ReportSection } from "../ReportSection";
 import { ReportExportButtons } from "../ReportExportButtons";
 import { exportBalanceSheetExcel } from "@/app/actions/finance-reports";
+import { formatDisplayDate } from "@/lib/date-only";
 
 type Props = {
   report: BalanceSheet;
@@ -44,18 +45,11 @@ export function BalanceSheetClient({ report, openingWarningDate, filters }: Prop
   }
 
   /**
-   * Pinned to WIB so the SSR pass (prod runs UTC) and the browser agree, and so
-   * this matches `formatOpeningDate` in `disclosures.ts`, which the print view
-   * and the Excel export use for the same warning.
+   * Pinned to WIB (inside `formatDisplayDate`) so the SSR pass (prod runs UTC)
+   * and the browser agree on the day `formatOpeningDate` in `disclosures.ts`
+   * prints for the same warning.
    */
-  const formattedEarliest = openingWarningDate
-    ? new Intl.DateTimeFormat(locale, {
-        timeZone: "Asia/Jakarta",
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      }).format(new Date(openingWarningDate))
-    : "";
+  const formattedEarliest = openingWarningDate ? formatDisplayDate(openingWarningDate, locale) : "";
 
   return (
     <div className="space-y-6">

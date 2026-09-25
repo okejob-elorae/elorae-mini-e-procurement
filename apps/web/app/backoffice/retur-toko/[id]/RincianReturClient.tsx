@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { ArrowLeft, Camera, Printer, Unlink } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -44,15 +44,9 @@ import {
 } from '@/app/actions/store-returns';
 import type { RincianRetur } from '@/lib/receivables/return-queries';
 import { NADA_LANGKAH } from '../langkah';
+import { formatDisplayDate } from '@/lib/date-only';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
-const tanggal = (iso: string) =>
-  new Date(iso).toLocaleDateString('id-ID', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    timeZone: 'Asia/Jakarta',
-  });
 
 const BEBAN = ['TOKO', 'SALES', 'GUDANG', 'PERUSAHAAN'] as const;
 
@@ -66,6 +60,8 @@ export function RincianReturClient({
   bolehMengelola: boolean;
 }) {
   const t = useTranslations('storeReturns');
+  const locale = useLocale();
+  const tanggal = (iso: string) => formatDisplayDate(iso, locale);
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [bebanTerbuka, setBebanTerbuka] = useState<(typeof BEBAN)[number] | null>(null);
@@ -297,7 +293,7 @@ export function RincianReturClient({
                     const belum = p.qtyFisik === null;
                     return (
                       <TableRow key={p.nama} className={cn(kurang && 'bg-destructive/[0.06]')}>
-                        <TableCell className="font-medium">{p.nama}</TableCell>
+                        <TableCell className="font-medium whitespace-normal min-w-[160px]">{p.nama}</TableCell>
                         <TableCell className="text-right tabular-nums">{p.qtyKlaim}</TableCell>
                         <TableCell
                           className={cn(

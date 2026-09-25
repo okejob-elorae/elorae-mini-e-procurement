@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { History, Undo2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { batalkanImporAction } from '@/app/actions/receivable-import';
+import { formatDisplayDateTime } from '@/lib/date-only';
 import type { BatchImpor } from '@/lib/receivables/impor/batal';
 
 /**
@@ -30,6 +31,7 @@ import type { BatchImpor } from '@/lib/receivables/impor/batal';
  */
 export function RiwayatImpor({ batch }: { batch: BatchImpor[] }) {
   const t = useTranslations('imporPiutang');
+  const locale = useLocale();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [target, setTarget] = useState<BatchImpor | null>(null);
@@ -74,11 +76,7 @@ export function RiwayatImpor({ batch }: { batch: BatchImpor[] }) {
             >
               <div className="min-w-0 flex-1">
                 <p className="text-sm">
-                  {new Date(b.saat).toLocaleString('id-ID', {
-                    dateStyle: 'medium',
-                    timeStyle: 'short',
-                    timeZone: 'Asia/Jakarta',
-                  })}
+                  {formatDisplayDateTime(b.saat, locale)}
                   {b.oleh && <span className="text-muted-foreground"> · {b.oleh}</span>}
                 </p>
                 <p className="text-xs text-muted-foreground">

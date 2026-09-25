@@ -144,7 +144,7 @@ export default function HPPPage() {
     if (!isAdmin || selectedWoIds.size === 0) return;
     const margin = bulkMarginValue.trim() === "" ? undefined : parseFloat(bulkMarginValue);
     if (margin !== undefined && (Number.isNaN(margin) || margin < 0)) {
-      toast.error("Margin must be ≥ 0");
+      toast.error(t("marginInvalid"));
       return;
     }
     setBulkSaving(true);
@@ -152,13 +152,13 @@ export default function HPPPage() {
       for (const woId of selectedWoIds) {
         await updateWOHppAdjustments(woId, { hppMarginPercent: margin });
       }
-      toast.success(`Margin set for ${selectedWoIds.size} work order(s)`);
+      toast.success(t("marginSetSuccess", { count: selectedWoIds.size }));
       setBulkMarginOpen(false);
       setBulkMarginValue("");
       setSelectedWoIds(new Set());
       loadData();
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to set margin");
+      toast.error(err instanceof Error ? err.message : t("marginSetFailed"));
     } finally {
       setBulkSaving(false);
     }
@@ -171,18 +171,18 @@ export default function HPPPage() {
       const margin = editMargin === "" ? undefined : parseFloat(editMargin);
       const additional = editAdditional === "" ? undefined : parseFloat(editAdditional);
       if (margin !== undefined && (Number.isNaN(margin) || margin < 0)) {
-        toast.error("Margin must be ≥ 0");
+        toast.error(t("marginInvalid"));
         return;
       }
       if (additional !== undefined && (Number.isNaN(additional) || additional < 0)) {
-        toast.error("Additional cost must be ≥ 0");
+        toast.error(t("additionalCostInvalid"));
         return;
       }
       await updateWOHppAdjustments(detailRow.woId, {
         hppMarginPercent: margin,
         hppAdditionalCost: additional,
       });
-      toast.success("HPP adjustments saved");
+      toast.success(t("adjustmentsSaved"));
       const dateFrom = filterDateFrom ? new Date(filterDateFrom + "T00:00:00") : undefined;
       const dateTo = filterDateTo
         ? new Date(filterDateTo + "T23:59:59.999")
@@ -197,7 +197,7 @@ export default function HPPPage() {
       if (found) setDetailRow(found);
       setRows(updated);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to save");
+      toast.error(e instanceof Error ? e.message : t("saveFailed"));
     } finally {
       setSavingAdjustments(false);
     }
@@ -207,7 +207,12 @@ export default function HPPPage() {
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Link href="/backoffice/dashboard">
-          <Button variant="ghost" size="icon">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={t("backToDashboard")}
+            title={t("backToDashboard")}
+          >
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
@@ -298,10 +303,10 @@ export default function HPPPage() {
               {isAdmin && selectedWoIds.size > 0 && (
                 <div className="flex items-center gap-2 px-4 pt-2">
                   <Button variant="default" size="sm" onClick={() => setBulkMarginOpen(true)}>
-                    Set margin ({selectedWoIds.size} selected)
+                    {t("setMarginSelected", { count: selectedWoIds.size })}
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => setSelectedWoIds(new Set())}>
-                    Clear selection
+                    {t("clearSelection")}
                   </Button>
                 </div>
               )}
@@ -315,21 +320,24 @@ export default function HPPPage() {
                             type="checkbox"
                             checked={rows.length > 0 && selectedWoIds.size === rows.length}
                             onChange={toggleSelectAll}
-                            aria-label="Select all"
+                            aria-label={t("selectAll")}
                           />
                         </TableHead>
                       )}
                       <TableHead>{t("woDocNumber")}</TableHead>
                       <TableHead>{t("articleFg")}</TableHead>
-                      <TableHead className="text-right">{t("actualQty")}</TableHead>
-                      <TableHead className="text-right">{t("fabricCostPcs")}</TableHead>
-                      <TableHead className="text-right">{t("accessoriesCostPcs")}</TableHead>
-                      <TableHead className="text-right">{t("serviceCostPcs")}</TableHead>
-                      <TableHead className="text-right">{t("hppPcs")}</TableHead>
-                      <TableHead>{t("ppnStatus")}</TableHead>
-                      <TableHead className="text-right">{t("marginPercent")}</TableHead>
-                      <TableHead className="text-right">{t("sellingPrice")}</TableHead>
-                      <TableHead></TableHead>
+                      <TableHead className="text-right whitespace-normal">{t("actualQty")}</TableHead>
+                      <TableHead className="hidden text-right whitespace-normal 2xl:table-cell">{t("fabricCostPcs")}</TableHead>
+                      <TableHead className="hidden text-right whitespace-normal 2xl:table-cell">{t("accessoriesCostPcs")}</TableHead>
+                      <TableHead className="hidden text-right whitespace-normal 2xl:table-cell">{t("serviceCostPcs")}</TableHead>
+                      <TableHead className="text-right whitespace-normal 2xl:hidden">{t("costComponentsPcs")}</TableHead>
+                      <TableHead className="text-right whitespace-normal">{t("hppPcs")}</TableHead>
+                      <TableHead className="hidden 2xl:table-cell">{t("ppnStatus")}</TableHead>
+                      <TableHead className="text-right whitespace-normal">{t("marginPercent")}</TableHead>
+                      <TableHead className="text-right whitespace-normal">{t("sellingPrice")}</TableHead>
+                      <TableHead className="sticky right-0 bg-card">
+                        <span className="sr-only">{t("detail")}</span>
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -341,22 +349,36 @@ export default function HPPPage() {
                               type="checkbox"
                               checked={selectedWoIds.has(row.woId)}
                               onChange={() => toggleSelectWo(row.woId)}
-                              aria-label={`Select ${row.woDocNumber}`}
+                              aria-label={t("selectRow", { docNo: row.woDocNumber })}
                             />
                           </TableCell>
                         )}
                         <TableCell className="font-medium">{row.woDocNumber}</TableCell>
-                        <TableCell>
+                        <TableCell className="whitespace-normal min-w-[160px] max-w-[260px]">
                           {row.finishedGoodSku} — {row.finishedGoodName}
                         </TableCell>
                         <TableCell className="text-right">
                           {fmtNum((row as { actualQty?: number }).actualQty ?? row.plannedQty)}
                         </TableCell>
-                        <TableCell className="text-right">{fmt(row.fabricCostPerPcs)}</TableCell>
-                        <TableCell className="text-right">{fmt(row.accessoriesCostPerPcs)}</TableCell>
-                        <TableCell className="text-right">{fmt(row.serviceCostPerPcs)}</TableCell>
+                        <TableCell className="hidden text-right 2xl:table-cell">{fmt(row.fabricCostPerPcs)}</TableCell>
+                        <TableCell className="hidden text-right 2xl:table-cell">{fmt(row.accessoriesCostPerPcs)}</TableCell>
+                        <TableCell className="hidden text-right 2xl:table-cell">{fmt(row.serviceCostPerPcs)}</TableCell>
+                        {/* Below 2xl the three components stack in one cell:
+                            as separate columns the report was ~180 px wider
+                            than its card at 1280 px. */}
+                        <TableCell className="text-right text-xs leading-5 2xl:hidden">
+                          <div>
+                            <span className="text-muted-foreground">{t("componentFabric")}</span> {fmt(row.fabricCostPerPcs)}
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">{t("componentAccessories")}</span> {fmt(row.accessoriesCostPerPcs)}
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">{t("componentService")}</span> {fmt(row.serviceCostPerPcs)}
+                          </div>
+                        </TableCell>
                         <TableCell className="text-right font-medium">{fmt(row.subtotal)}</TableCell>
-                        <TableCell>
+                        <TableCell className="hidden 2xl:table-cell">
                           <Badge variant={row.hasMixedPPN ? "secondary" : "outline"}>
                             {row.hasMixedPPN ? t("ppnMixed") : t("ppnOk")}
                           </Badge>
@@ -365,7 +387,7 @@ export default function HPPPage() {
                           {row.marginPercent != null ? `${fmtNum(row.marginPercent)}%` : "—"}
                         </TableCell>
                         <TableCell className="text-right">{fmt(row.sellingPrice)}</TableCell>
-                        <TableCell>
+                        <TableCell className="sticky right-0 bg-card">
                           <Button
                             variant="outline"
                             size="sm"
@@ -374,7 +396,7 @@ export default function HPPPage() {
                             aria-label={`${t("detail")} — ${row.woDocNumber}`}
                           >
                             <Eye className="h-4 w-4" />
-                            {t("detail")}
+                            <span className="hidden 2xl:inline">{t("detail")}</span>
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -390,11 +412,11 @@ export default function HPPPage() {
       <Dialog open={bulkMarginOpen} onOpenChange={(open) => !open && setBulkMarginOpen(false)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Set margin for selected work orders</DialogTitle>
+            <DialogTitle>{t("bulkMarginTitle")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>Margin %</Label>
+              <Label>{t("bulkMarginLabel")}</Label>
               <Input
                 type="number"
                 min={0}
@@ -402,16 +424,16 @@ export default function HPPPage() {
                 step={0.01}
                 value={bulkMarginValue}
                 onChange={(e) => setBulkMarginValue(e.target.value)}
-                placeholder="e.g. 25"
+                placeholder={t("bulkMarginPlaceholder")}
               />
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setBulkMarginOpen(false)}>
-                Cancel
+                {t("cancel")}
               </Button>
               <Button onClick={handleBulkSetMargin} disabled={bulkSaving}>
                 {bulkSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Apply to {selectedWoIds.size} WO(s)
+                {t("applyToCount", { count: selectedWoIds.size })}
               </Button>
             </div>
           </div>
@@ -435,29 +457,33 @@ export default function HPPPage() {
                     <TableHead className="text-right">{t("unitCost")}</TableHead>
                     <TableHead className="text-right">{t("qtyPerPcs")}</TableHead>
                     <TableHead className="text-right">{t("costPerPcs")}</TableHead>
-                    <TableHead className="text-right">Final Price</TableHead>
+                    <TableHead className="text-right">{t("finalPrice")}</TableHead>
                     <TableHead>{t("ppnIncluded")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {detailRow.lines.map((line, i) => (
                     <TableRow key={i}>
-                      <TableCell>{line.category}</TableCell>
-                      <TableCell>{line.itemName}</TableCell>
+                      <TableCell>
+                        {t.has(`categoryLabel.${line.category}`)
+                          ? t(`categoryLabel.${line.category}`)
+                          : line.category}
+                      </TableCell>
+                      <TableCell className="whitespace-normal min-w-[160px]">{line.itemName}</TableCell>
                       <TableCell className="text-right">{fmt(line.unitCost)}</TableCell>
                       <TableCell className="text-right">{fmtNum(line.qtyPerPcs)}</TableCell>
                       <TableCell className="text-right">{fmt(line.costPerPcs)}</TableCell>
                       <TableCell className="text-right">
                         {fmt((line as { nettCostPerPcs?: number }).nettCostPerPcs ?? line.costPerPcs)}
                       </TableCell>
-                      <TableCell>{line.ppnIncluded ? "Yes" : "No"}</TableCell>
+                      <TableCell>{line.ppnIncluded ? t("yes") : t("no")}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
               <div className="flex flex-wrap gap-4 pt-2 border-t">
                 <div className="font-medium">
-                  Subtotal (HPP/pcs):{" "}
+                  {t("subtotalPerPcs")}{" "}
                   {fmt(
                     (detailRow as { nettSubtotal?: number }).nettSubtotal ?? detailRow.subtotal,
                   )}

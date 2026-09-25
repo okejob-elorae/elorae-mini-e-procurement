@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { ArrowLeft, FileSpreadsheet, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,23 +19,17 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import { formatDisplayDate } from '@/lib/date-only';
 import { bacaLembar, type BarisImpor } from '@/lib/receivables/impor/baris';
 import { simpanImporAction, tinjauImporAction } from '@/app/actions/receivable-import';
 import type { TinjauanImpor } from '@/lib/receivables/impor/writer';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
-const tanggal = (d: Date | string | null) =>
-  d === null
-    ? '—'
-    : new Date(d).toLocaleDateString('id-ID', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-        timeZone: 'Asia/Jakarta',
-      });
 
 export function ImporClient() {
   const t = useTranslations('imporPiutang');
+  const locale = useLocale();
+  const tanggal = (d: Date | string | null) => formatDisplayDate(d, locale);
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [membaca, setMembaca] = useState(false);
@@ -215,7 +209,7 @@ export function ImporClient() {
                             {b.baris}
                           </TableCell>
                           <TableCell className="font-medium">{b.noFaktur || '—'}</TableCell>
-                          <TableCell>
+                          <TableCell className="whitespace-normal min-w-[140px] max-w-[220px]">
                             {b.kodeToko ?? b.namaToko ?? (
                               <span className="text-muted-foreground">—</span>
                             )}

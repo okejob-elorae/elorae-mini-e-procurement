@@ -362,9 +362,14 @@ export function CoaPageClient({ tree, includeInactive, canManage, canViewLedger 
               {(canManage || (canViewLedger && node.isLeaf)) && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0"
+                      aria-label={t("actionsMenu", { name: node.name })}
+                      title={t("col.actions")}
+                    >
                       <MoreHorizontal className="h-4 w-4" />
-                      <span className="sr-only">Actions</span>
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
@@ -482,7 +487,9 @@ export function CoaPageClient({ tree, includeInactive, canManage, canViewLedger 
               <TableHead>{t("col.name")}</TableHead>
               <TableHead className="w-36">{t("col.type")}</TableHead>
               <TableHead className="w-28">{t("col.status")}</TableHead>
-              <TableHead className="w-12 text-right" />
+              <TableHead className="w-12 text-right">
+                <span className="sr-only">{t("col.actions")}</span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

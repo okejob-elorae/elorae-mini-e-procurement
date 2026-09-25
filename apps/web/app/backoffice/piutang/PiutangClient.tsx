@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { FileSpreadsheet, PenLine, Receipt } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { FakturManualDialog, type PilihanBarang } from './FakturManualDialog';
@@ -20,17 +20,11 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import { formatDisplayDate } from '@/lib/date-only';
 import type { BarisPiutang, RingkasanPiutang } from '@/lib/receivables/queries';
 import type { KeadaanPiutang } from '@/lib/receivables/rules';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
-const tanggal = (iso: string) =>
-  new Date(iso).toLocaleDateString('id-ID', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    timeZone: 'Asia/Jakarta',
-  });
 
 /**
  * Nada per keadaan. `lewat` dan `tertahan` merah karena keduanya berarti uang
@@ -62,6 +56,8 @@ export function PiutangClient({
   bolehMengelola: boolean;
 }) {
   const t = useTranslations('receivables');
+  const locale = useLocale();
+  const tanggal = (iso: string) => formatDisplayDate(iso, locale);
   const [saring, setSaring] = useState<KeadaanPiutang | null>(null);
   const [manualTerbuka, setManualTerbuka] = useState(false);
 
@@ -176,7 +172,7 @@ export function PiutangClient({
                     <TableHead>{t('colDue')}</TableHead>
                     <TableHead className="text-right">{t('colAmount')}</TableHead>
                     <TableHead className="text-right">{t('colOutstanding')}</TableHead>
-                    <TableHead className="min-w-[22rem]">{t('colState')}</TableHead>
+                    <TableHead className="min-w-[16rem]">{t('colState')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -198,7 +194,7 @@ export function PiutangClient({
                           </CategoryBadge>
                         </span>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-normal min-w-[140px] max-w-[220px]">
                         {b.storeName}
                         {b.salesmanName && (
                           <span className="block text-xs text-muted-foreground">
@@ -206,14 +202,14 @@ export function PiutangClient({
                           </span>
                         )}
                       </TableCell>
-                      <TableCell>{tanggal(b.dueDate)}</TableCell>
+                      <TableCell className="whitespace-nowrap">{tanggal(b.dueDate)}</TableCell>
                       <TableCell className="text-right text-muted-foreground">
                         {rupiah(b.amount)}
                       </TableCell>
                       <TableCell className="text-right font-semibold">
                         {rupiah(b.outstanding)}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-normal min-w-[16rem] max-w-[26rem]">
                         <StatusPill tone={NADA[b.keadaan]}>{label(b.keadaan)}</StatusPill>
                         <span className="mt-1 block text-xs leading-snug text-muted-foreground">
                           {alasan(b)}

@@ -48,7 +48,7 @@ export const CASH_FLOW_COVERAGE_BODY =
  * zero does equal zero. Refusing is the only honest output.
  */
 export const CASH_FLOW_NO_CASH_ACCOUNT_NOTE =
-  "Akun kas belum ditetapkan, sehingga laporan arus kas tidak dapat disusun. Petakan peran BANK atau CASH di Keuangan → Pemetaan Akun, atau tetapkan sebuah akun sebagai Kas di Klasifikasi Arus Kas.";
+  "Laporan arus kas tidak dapat disusun tanpa akun kas. Pilih akun Bank atau Kas di Keuangan → Pemetaan Akun, atau tetapkan sebuah akun sebagai Kas di Klasifikasi Arus Kas.";
 
 export const CASH_FLOW_RECONCILED_NOTE =
   "Perubahan kas hasil perhitungan sama dengan pergerakan saldo kas sebenarnya. Karena setiap jurnal sudah divalidasi seimbang saat diposting, kesamaan ini memang diharapkan — pemeriksaan ini hanya mendeteksi data yang rusak.";
