@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { KOLOM_DECIMAL_ITEM } from './queries';
+import { Prisma } from '@elorae/db';
+import { KOLOM_DECIMAL_ITEM, itemDecimalsToNumbers } from './queries';
 
 /**
  * Penjaga batas server → klien.
@@ -50,5 +51,24 @@ describe('kolom Decimal Item', () => {
     // membandingkan kosong lawan kosong — dan tidak menjaga apa pun.
     expect(kolomDecimalItem().length).toBeGreaterThanOrEqual(5);
     expect(kolomDecimalItem()).toContain('sellingPrice');
+  });
+});
+
+describe('itemDecimalsToNumbers', () => {
+  it('mengubah SETIAP kolom Decimal menjadi angka biasa', () => {
+    // Serializer halaman Inventori dulu hanya mengubah tiga kolom, dan
+    // `commissionPerPcs` lolos mentah ke browser. Satu pembantu untuk semua.
+    const item = Object.fromEntries(
+      KOLOM_DECIMAL_ITEM.map((k, i) => [k, new Prisma.Decimal(i + 0.5)]),
+    );
+    const hasil = itemDecimalsToNumbers(item);
+    for (const [i, k] of KOLOM_DECIMAL_ITEM.entries()) {
+      expect(hasil[k]).toBe(i + 0.5);
+    }
+  });
+
+  it('membiarkan kolom kosong tetap null', () => {
+    const hasil = itemDecimalsToNumbers({ sellingPrice: null });
+    for (const k of KOLOM_DECIMAL_ITEM) expect(hasil[k]).toBeNull();
   });
 });

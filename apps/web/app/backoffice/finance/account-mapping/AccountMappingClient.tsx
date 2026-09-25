@@ -122,8 +122,9 @@ export function AccountMappingClient({ mappings, accounts, canManage }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
         <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
+        <p className="text-muted-foreground">{t("subtitle")}</p>
       </div>
 
       <Card>
@@ -138,9 +139,9 @@ export function AccountMappingClient({ mappings, accounts, canManage }: Props) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-56">{t("col.role")}</TableHead>
+                  <TableHead className="w-48">{t("col.role")}</TableHead>
                   <TableHead>{t("col.description")}</TableHead>
-                  <TableHead className="w-80">{t("col.account")}</TableHead>
+                  <TableHead className="w-80 min-w-72">{t("col.account")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -150,7 +151,7 @@ export function AccountMappingClient({ mappings, accounts, canManage }: Props) {
                   const rowPending = isPending && savingRole === role;
                   return (
                     <TableRow key={role}>
-                      <TableCell className="align-top font-medium">
+                      <TableCell className="align-top font-medium whitespace-normal">
                         {t(`role.${role}` as never)}
                         {!value && (
                           <div className="mt-1">
@@ -160,7 +161,7 @@ export function AccountMappingClient({ mappings, accounts, canManage }: Props) {
                           </div>
                         )}
                       </TableCell>
-                      <TableCell className="align-top text-sm text-muted-foreground">
+                      <TableCell className="align-top text-sm text-muted-foreground whitespace-normal min-w-64">
                         {t(`desc.${role}` as never)}
                       </TableCell>
                       <TableCell className="align-top">

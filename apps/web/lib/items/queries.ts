@@ -100,6 +100,25 @@ export const KOLOM_DECIMAL_ITEM = [
   'commissionPerPcs',
 ] as const;
 
+/**
+ * Every Decimal column of an Item as a plain number (null stays null).
+ *
+ * Every serializer that spreads an Item into a client payload uses this, so a
+ * new Decimal column only needs adding to `KOLOM_DECIMAL_ITEM`. The inventory
+ * page's two local serializers each converted only three of them and let
+ * `commissionPerPcs` through raw.
+ */
+export function itemDecimalsToNumbers(
+  item: Record<string, unknown>,
+): Record<(typeof KOLOM_DECIMAL_ITEM)[number], number | null> {
+  const angka = {} as Record<(typeof KOLOM_DECIMAL_ITEM)[number], number | null>;
+  for (const k of KOLOM_DECIMAL_ITEM) {
+    const v = item[k];
+    angka[k] = v != null ? toNum(v) : null;
+  }
+  return angka;
+}
+
 function serializeListItemForClient(item: {
   reorderPoint?: unknown;
   overReceiveThreshold?: unknown;
@@ -115,14 +134,9 @@ function serializeListItemForClient(item: {
   const { inventoryValues: _omit, fgConsumptions: _omitFg, ...rest } = item;
   void _omit;
   void _omitFg;
-  const angka: Record<string, number | null> = {};
-  for (const k of KOLOM_DECIMAL_ITEM) {
-    const v = (item as Record<string, unknown>)[k];
-    angka[k] = v != null ? toNum(v) : null;
-  }
   return {
     ...rest,
-    ...angka,
+    ...itemDecimalsToNumbers(item),
     inventoryValue: inv,
   };
 }

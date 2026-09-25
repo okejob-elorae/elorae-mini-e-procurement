@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { Decimal } from 'decimal.js';
 import { prisma } from '@elorae/db';
 import { variantDetailForSku } from '@/lib/items/variants';
+import { itemDecimalsToNumbers } from '@/lib/items/queries';
 import { verifyPinForAction } from '@/app/actions/security/pin-auth';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
@@ -266,9 +267,7 @@ function serializeItemForClient(item: {
   if (!item) return null;
   return {
     ...item,
-    reorderPoint: item.reorderPoint != null ? toNum(item.reorderPoint) : null,
-    overReceiveThreshold: item.overReceiveThreshold != null ? toNum(item.overReceiveThreshold) : null,
-    sellingPrice: item.sellingPrice != null ? toNum(item.sellingPrice) : null,
+    ...itemDecimalsToNumbers(item),
   };
 }
 

@@ -2,8 +2,8 @@
 
 import { prisma } from '@elorae/db';
 import { ItemType } from '@elorae/db';
+import { itemDecimalsToNumbers } from '@/lib/items/queries';
 
-const toNum = (v: unknown): number | null => (v == null ? null : Number(v));
 
 /** Serialized item shape returned to client (no Decimal) */
 export type SerializedItemForStockCard = {
@@ -24,9 +24,7 @@ function serializeItemForClient(
   if (!item) return null;
   return {
     ...item,
-    reorderPoint: item.reorderPoint != null ? toNum(item.reorderPoint) : null,
-    overReceiveThreshold: item.overReceiveThreshold != null ? toNum(item.overReceiveThreshold) : null,
-    sellingPrice: item.sellingPrice != null ? toNum(item.sellingPrice) : null,
+    ...itemDecimalsToNumbers(item),
   } as SerializedItemForStockCard;
 }
 
