@@ -227,7 +227,7 @@ export default function StockOpnameCountPageClient({ opnameId }: { opnameId: str
   };
 
   if (loading || !opname) {
-    return <p className="text-muted-foreground py-8">{loading ? "Loading..." : "Not found"}</p>;
+    return <p className="text-muted-foreground py-8">{loading ? t("loading") : t("notFound")}</p>;
   }
 
   const isFabric = opname.scope === "FABRIC";
@@ -240,7 +240,7 @@ export default function StockOpnameCountPageClient({ opnameId }: { opnameId: str
           <p className="text-muted-foreground">{String(opname.docNumber)}</p>
         </div>
         <Link href={`/backoffice/inventory/stock-opname/${opnameId}`}>
-          <Button variant="outline">Back</Button>
+          <Button variant="outline">{t("back")}</Button>
         </Link>
       </div>
 
@@ -284,7 +284,7 @@ export default function StockOpnameCountPageClient({ opnameId }: { opnameId: str
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Roll</TableHead>
+                          <TableHead>{t("roll")}</TableHead>
                           <TableHead>{t("snapshot")}</TableHead>
                           <TableHead>{t("counted")}</TableHead>
                         </TableRow>
@@ -322,7 +322,7 @@ export default function StockOpnameCountPageClient({ opnameId }: { opnameId: str
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Item</TableHead>
+                  <TableHead>{t("item")}</TableHead>
                   <TableHead>{t("snapshot")}</TableHead>
                   <TableHead>{t("counted")}</TableHead>
                 </TableRow>

@@ -33,6 +33,7 @@ import { savePendingGRN } from '@/lib/offline/db';
 import { isOnline } from '@/lib/offline/sync';
 import { toast } from 'sonner';
 import { useSession } from 'next-auth/react';
+import { useTranslations } from 'next-intl';
 import { FabricRollInput, FabricRackPreview } from '@/components/grn/FabricRollInput';
 import { parseItemVariants, variantSelectOptions } from '@/lib/items/variants';
 import {
@@ -94,6 +95,8 @@ interface GRNFormProps {
 
 export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
   const { data: session } = useSession();
+  const t = useTranslations('inventory.grnForm');
+  const tToasts = useTranslations('toasts');
   const [poId, setPoId] = useState<string>('');
   const [supplierId, setSupplierId] = useState<string>('');
   const [lines, setLines] = useState<LineRow[]>([
@@ -205,10 +208,10 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
         }));
         if (rows.length > 0) setLines(rows);
       } catch {
-        toast.error('Failed to load PO details');
+        toast.error(t('loadPoFailed'));
       }
     })();
-  }, [poId]);
+  }, [poId, t]);
 
   const addLine = () => {
     setErrors((e) => ({ ...e, lines: undefined }));
@@ -323,9 +326,9 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
         }, 0);
       }
       setScanOpen(false);
-      toast.success(`Added ${item.sku}`);
+      toast.success(t('scanAdded', { sku: item.sku }));
     } else {
-      toast.error(`Item not found for: ${trimmed}`);
+      toast.error(t('scanNotFound', { code: trimmed }));
     }
   };
 
@@ -364,16 +367,16 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
     e.preventDefault();
     setErrors({});
     if (!session?.user?.id) {
-      toast.error('You must be logged in');
+      toast.error(tToasts('youMustBeLoggedIn'));
       return;
     }
     const nextErrors: { supplierId?: string; lines?: string } = {};
-    if (!supplierId) nextErrors.supplierId = 'Select a supplier';
+    if (!supplierId) nextErrors.supplierId = t('errSelectSupplier');
     const validLines = lines.filter((l) => l.itemId && l.qty > 0 && l.unitCost >= 0);
-    if (validLines.length === 0) nextErrors.lines = 'Add at least one item with qty and cost';
+    if (validLines.length === 0) nextErrors.lines = t('errLines');
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
-      toast.error('Please fix the errors below');
+      toast.error(tToasts('pleaseFixErrorsBelow'));
       return;
     }
 
@@ -381,7 +384,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
       const rowItem = items.find((i) => i.id === l.itemId);
       const vOpts = variantSelectOptions(parseItemVariants(rowItem?.variants));
       if (vOpts.length > 0 && !l.variantSku?.trim()) {
-        toast.error('Select a variant for each line item that has variants');
+        toast.error(t('errVariant'));
         return;
       }
     }
@@ -424,10 +427,10 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
           totalAmount: runningTotal,
           status: 'PENDING',
         });
-        toast.success('Menyimpan lokal. Akan sinkron saat online.');
+        toast.success(t('savedOffline'));
         onSuccess?.();
       } catch (err: unknown) {
-        toast.error(err instanceof Error ? err.message : 'Failed to save locally');
+        toast.error(err instanceof Error ? err.message : t('saveOfflineFailed'));
       } finally {
         setIsLoading(false);
       }
@@ -448,7 +451,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
           urls = [...urls, ...(data.urls || [])];
         }
       } catch {
-        toast.error('Photo upload failed');
+        toast.error(tToasts('photoUploadFailed'));
       }
     }
 
@@ -479,10 +482,10 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
         photoUrls: urls.length > 0 ? urls : undefined,
       };
       await createGRN(data, session.user.id);
-      toast.success('Goods receipt created');
+      toast.success(t('createdToast'));
       onSuccess?.();
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create GRN');
+      toast.error(err instanceof Error ? err.message : t('createFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -493,22 +496,22 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
       {!isOnline() && (
         <Alert>
           <AlertDescription>
-            Offline. GRN will be saved locally and synced when back online (Menyimpan lokal).
+            {t('offlineNotice')}
           </AlertDescription>
         </Alert>
       )}
       <Card>
         <CardHeader>
-          <CardTitle>Goods Receipt (GRN)</CardTitle>
+          <CardTitle>{t('cardTitle')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2 w-full">
-              <Label htmlFor="categoryId">Category (filter)</Label>
+              <Label htmlFor="categoryId">{t('categoryFilter')}</Label>
               <SearchableCombobox
                 id="categoryId"
                 options={[
-                  { value: '__all__', label: 'All categories' },
+                  { value: '__all__', label: t('allCategories') },
                   ...categories.map((c) => ({
                     value: c.id,
                     label: (c.code ? `${c.code} - ` : '') + c.name,
@@ -516,26 +519,26 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                 ]}
                 value={categoryId || '__all__'}
                 onValueChange={(v) => setCategoryId(v === '__all__' ? '' : v)}
-                placeholder="All categories"
+                placeholder={t('allCategories')}
                 triggerClassName="min-h-[44px] w-full"
               />
             </div>
             <div className="space-y-2 w-full">
-              <Label htmlFor="poId">PO Reference (optional)</Label>
+              <Label htmlFor="poId">{t('poReference')}</Label>
               <SearchableCombobox
                 id="poId"
                 options={[
-                  { value: '__none__', label: 'None' },
+                  { value: '__none__', label: t('noPo') },
                   ...poList.map((po) => ({ value: po.id, label: po.docNumber })),
                 ]}
                 value={poId || '__none__'}
                 onValueChange={(v) => setPoId(v === '__none__' ? '' : v)}
-                placeholder="Select PO"
+                placeholder={t('selectPo')}
                 triggerClassName="min-h-[44px] w-full"
               />
             </div>
             <div className="space-y-2 w-full">
-              <Label htmlFor="supplierId">Supplier *</Label>
+              <Label htmlFor="supplierId">{t('supplier')} *</Label>
               <SearchableCombobox
                 id="supplierId"
                 options={suppliers.map((s) => ({ value: s.id, label: `${s.code} – ${s.name}` }))}
@@ -544,7 +547,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                   setSupplierId(v);
                   setErrors((e) => ({ ...e, supplierId: undefined }));
                 }}
-                placeholder="Select supplier"
+                placeholder={t('selectSupplier')}
                 aria-invalid={!!errors.supplierId}
                 className={errors.supplierId ? 'border-destructive focus-visible:ring-destructive/20' : ''}
                 triggerClassName="min-h-[44px] w-full"
@@ -559,7 +562,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
 
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2 flex-wrap">
-              <Label>Line items</Label>
+              <Label>{t('lineItems')}</Label>
               <div className="flex gap-2">
                 <Button
                   type="button"
@@ -569,11 +572,11 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                   onClick={() => setScanOpen(true)}
                 >
                   <Barcode className="mr-2 h-4 w-4" />
-                  Scan Barcode
+                  {t('scanBarcode')}
                 </Button>
                 <Button type="button" variant="outline" size="sm" onClick={addLine} className="min-h-[44px]">
                   <Plus className="mr-2 h-4 w-4" />
-                  Add line
+                  {t('addLine')}
                 </Button>
               </div>
             </div>
@@ -586,14 +589,16 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Item</TableHead>
-                    <TableHead>Variant</TableHead>
-                    <TableHead>UOM</TableHead>
-                    <TableHead className="min-w-[280px]">Roll lengths (fabric)</TableHead>
-                    <TableHead className="w-24">Qty</TableHead>
-                    <TableHead className="w-32">Unit cost</TableHead>
-                    <TableHead className="w-32">Total</TableHead>
-                    <TableHead className="w-10" />
+                    <TableHead>{t('colItem')}</TableHead>
+                    <TableHead>{t('colVariant')}</TableHead>
+                    <TableHead>{t('colUom')}</TableHead>
+                    <TableHead className="min-w-[280px]">{t('colRollLengths')}</TableHead>
+                    <TableHead className="w-24">{t('colQty')}</TableHead>
+                    <TableHead className="w-32">{t('colUnitCost')}</TableHead>
+                    <TableHead className="w-32">{t('colTotal')}</TableHead>
+                    <TableHead className="w-10 sticky right-0 bg-card">
+                      <span className="sr-only">{t('colActions')}</span>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -613,7 +618,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                               const item = items.find((i) => i.id === v);
                               if (item) setLineItem(row.id, item);
                             }}
-                            placeholder="Select item"
+                            placeholder={t('selectItem')}
                             triggerClassName="min-h-[44px]"
                           />
                         </TableCell>
@@ -628,10 +633,10 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                               }
                             >
                               <SelectTrigger className="min-h-[44px] w-full max-w-[14rem]">
-                                <SelectValue placeholder="Variant" />
+                                <SelectValue placeholder={t('colVariant')} />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="__none__">Select variant</SelectItem>
+                                <SelectItem value="__none__">{t('selectVariant')}</SelectItem>
                                 {rowVOpts.map((o) => (
                                   <SelectItem key={o.sku} value={o.sku}>
                                     {o.label}
@@ -651,7 +656,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                               poOrderedQty={row.poOrderedQty}
                               placeholder="100, 50, 100..."
                               showRackPreview={false}
-                              aria-label={`Roll lengths for ${row.sku || 'fabric'}`}
+                              aria-label={t('rollLengthsFor', { sku: row.sku || t('fabricFallback') })}
                               className="min-w-[260px]"
                             />
                           ) : (
@@ -665,6 +670,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                             step="any"
                             inputMode="decimal"
                             className="min-h-[44px]"
+                            aria-label={t('colQty')}
                             value={row.qty || ''}
                             disabled={row.itemType === 'FABRIC'}
                             onChange={(e) => setLineQty(row.id, parseFloat(e.target.value) || 0)}
@@ -677,6 +683,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                             step="0.01"
                             inputMode="decimal"
                             className="min-h-[44px]"
+                            aria-label={t('colUnitCost')}
                             value={row.unitCost || ''}
                             onChange={(e) => setLineUnitCost(row.id, parseFloat(e.target.value) || 0)}
                           />
@@ -684,12 +691,14 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                         <TableCell>
                           {((row.qty || 0) * (row.unitCost || 0)).toLocaleString('id-ID')}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="sticky right-0 bg-card">
                           <Button
                             type="button"
                             variant="ghost"
                             size="icon"
                             className="min-h-[44px] min-w-[44px]"
+                            aria-label={t('removeLine')}
+                            title={t('removeLine')}
                             onClick={() => removeLine(row.id)}
                           >
                             <Trash2 className="h-4 w-4" />
@@ -705,16 +714,24 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                           <TableRow>
                             <TableCell colSpan={8} className="bg-muted/20 py-2">
                               <p className="text-sm text-muted-foreground mb-3">
-                                {rollVals.length} roll{rollVals.length !== 1 ? 's' : ''}
+                                {t('rollCount', { count: rollVals.length })}
                                 {invalidCount > 0 && (
-                                  <span className="text-destructive"> ({invalidCount} invalid)</span>
+                                  <span className="text-destructive"> {t('rollInvalid', { count: invalidCount })}</span>
                                 )}{' '}
                                 · {totalLength.toLocaleString('id-ID')} {row.uomCode || 'MTR'}
                                 {row.poOrderedQty != null && Number.isFinite(row.poOrderedQty) && (
                                   <span className="ml-1">
-                                    (Received {totalLength.toLocaleString('id-ID')} / {Number(row.poOrderedQty).toLocaleString('id-ID')} {row.uomCode || 'MTR'}
+                                    ({t('receivedOfOrdered', {
+                                      received: totalLength.toLocaleString('id-ID'),
+                                      ordered: Number(row.poOrderedQty).toLocaleString('id-ID'),
+                                      uom: row.uomCode || 'MTR',
+                                    })}
                                     {(row.poAlreadyReceivedQty != null && Number(row.poAlreadyReceivedQty) > 0) || poGrnCount > 0
-                                      ? ` · Already received: ${Number(row.poAlreadyReceivedQty ?? 0).toLocaleString('id-ID')} ${row.uomCode || 'MTR'} in ${poGrnCount} GRN${poGrnCount !== 1 ? 's' : ''}`
+                                      ? ` · ${t('alreadyReceived', {
+                                          qty: Number(row.poAlreadyReceivedQty ?? 0).toLocaleString('id-ID'),
+                                          uom: row.uomCode || 'MTR',
+                                          count: poGrnCount,
+                                        })}`
                                       : ''}
                                     )
                                   </span>
@@ -740,11 +757,11 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                 </TableBody>
               </Table>
             </div>
-            <p className="text-sm font-medium">Running total: Rp {runningTotal.toLocaleString('id-ID')}</p>
+            <p className="text-sm font-medium">{t('runningTotal', { total: runningTotal.toLocaleString('id-ID') })}</p>
           </div>
 
           <div className="space-y-2">
-            <Label>Photos (optional)</Label>
+            <Label>{t('photosOptional')}</Label>
             <Input
               type="file"
               accept="image/*"
@@ -754,7 +771,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
             />
             {photoFiles.length > 0 && (
               <>
-                <p className="text-sm text-muted-foreground">{photoFiles.length} file(s) selected</p>
+                <p className="text-sm text-muted-foreground">{t('filesSelected', { count: photoFiles.length })}</p>
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-2">
                   {photoPreviewUrls.map((url, index) => (
                     <div
@@ -764,7 +781,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                       {/* eslint-disable-next-line @next/next/no-img-element -- object URL preview, not a static asset */}
                       <img
                         src={url}
-                        alt={`Preview ${index + 1}`}
+                        alt={t('photoPreview', { index: index + 1 })}
                         className="w-full h-full object-cover"
                       />
                       <Button
@@ -773,7 +790,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                         size="icon"
                         className="absolute top-1 right-1 h-7 w-7 opacity-90 group-hover:opacity-100"
                         onClick={() => removePhoto(index)}
-                        aria-label="Remove photo"
+                        aria-label={t('removePhoto')}
                       >
                         <X className="h-4 w-4" />
                       </Button>
@@ -785,11 +802,11 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
           </div>
 
           <div className="space-y-2">
-            <Label>Notes</Label>
+            <Label>{t('notes')}</Label>
             <Textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Optional notes"
+              placeholder={t('notesPlaceholder')}
               rows={2}
             />
           </div>
@@ -800,17 +817,17 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
         {isLoading ? (
           <>
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Creating...
+            {t('creating')}
           </>
         ) : (
-          'Create GRN'
+          t('createButton')
         )}
       </Button>
 
       <Dialog open={scanOpen} onOpenChange={setScanOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Scan barcode</DialogTitle>
+            <DialogTitle>{t('scanBarcodeTitle')}</DialogTitle>
           </DialogHeader>
           <BarcodeScanner
             onScan={handleScan}

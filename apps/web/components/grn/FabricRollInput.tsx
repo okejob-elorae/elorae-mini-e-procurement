@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 
@@ -51,6 +52,7 @@ export function FabricRackPreview({
   disabled = false,
   className,
 }: FabricRackPreviewProps) {
+  const t = useTranslations('inventory.grnForm');
   const validWithSource = React.useMemo(
     () => validLengthsWithSource(rollValues),
     [rollValues]
@@ -69,7 +71,7 @@ export function FabricRackPreview({
           <Card key={rackIndex} className="overflow-hidden">
             <CardContent className="p-2">
               <p className="mb-2 text-xs font-medium text-muted-foreground">
-                Rack {rackIndex + 1}
+                {t('rack', { index: rackIndex + 1 })}
               </p>
               <div className="grid grid-cols-5 grid-rows-5 gap-1 justify-items-center">
                 {Array.from({ length: ROLLS_PER_RACK }, (_, i) => {
@@ -78,7 +80,11 @@ export function FabricRackPreview({
                   const sourceIndex = item?.sourceIndex;
                   const label =
                     length != null && sourceIndex != null
-                      ? `#${rackIndex * ROLLS_PER_RACK + i + 1} · ${length} ${uomCode} (click to remove)`
+                      ? t('rollLabel', {
+                          index: rackIndex * ROLLS_PER_RACK + i + 1,
+                          length,
+                          uom: uomCode,
+                        })
                       : '';
                   const canRemove = !disabled && length != null && onRemoveRoll != null;
                   return (
@@ -92,6 +98,7 @@ export function FabricRackPreview({
                       )}
                       title={label || undefined}
                       role={canRemove ? 'button' : undefined}
+                      aria-label={canRemove ? label : undefined}
                       tabIndex={canRemove ? 0 : undefined}
                       onClick={
                         canRemove && sourceIndex != null

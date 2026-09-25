@@ -60,6 +60,7 @@ export function SupplierChainCardView({
 }: Props) {
   const t = useTranslations("leadTime.papan");
   const tp = useTranslations("leadTime.pustaka");
+  const tc = useTranslations("leadTime.common");
   const [editStepId, setEditStepId] = useState<string | null>(null);
 
   const weeks = (card.totalDaysFixedOnly / 7).toFixed(1);
@@ -167,7 +168,7 @@ export function SupplierChainCardView({
                   <div className="font-medium flex items-center gap-1 flex-wrap">
                     <span className="truncate">
                       {tmpl.name}
-                      {archived ? " (arsip)" : ""}
+                      {archived ? ` ${tc("archivedSuffix")}` : ""}
                     </span>
                     {tmpl.isApproval && (
                       <Badge
@@ -211,6 +212,8 @@ export function SupplierChainCardView({
                       size="icon"
                       variant="ghost"
                       className="h-7 w-7"
+                      aria-label={t("moveUpAria", { name: tmpl.name })}
+                      title={t("moveUp")}
                       onClick={() => move(index, -1)}
                       disabled={index === 0}
                     >
@@ -220,6 +223,8 @@ export function SupplierChainCardView({
                       size="icon"
                       variant="ghost"
                       className="h-7 w-7"
+                      aria-label={t("moveDownAria", { name: tmpl.name })}
+                      title={t("moveDown")}
                       onClick={() => move(index, 1)}
                       disabled={index === card.steps.length - 1}
                     >
@@ -231,7 +236,13 @@ export function SupplierChainCardView({
                       step={step}
                       onSaved={onUpdated}
                       trigger={
-                        <Button size="icon" variant="ghost" className="h-7 w-7">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7"
+                          aria-label={t("editStepAria", { name: tmpl.name })}
+                          title={t("editStepAria", { name: tmpl.name })}
+                        >
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
                       }
@@ -240,6 +251,8 @@ export function SupplierChainCardView({
                       size="icon"
                       variant="ghost"
                       className="h-7 w-7"
+                      aria-label={t("removeStepAria", { name: tmpl.name })}
+                      title={t("removeStepAria", { name: tmpl.name })}
                       onClick={() =>
                         onRemove(step.id, step.processTemplate.name)
                       }

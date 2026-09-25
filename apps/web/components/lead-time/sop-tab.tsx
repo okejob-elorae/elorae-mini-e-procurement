@@ -1,7 +1,8 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import { formatDisplayDate } from "@/lib/date-only";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -79,6 +80,8 @@ type Props = { canManage: boolean };
 export function SopTab({ canManage }: Props) {
   const t = useTranslations("leadTime.sop");
   const tp = useTranslations("leadTime.pustaka");
+  const tc = useTranslations("leadTime.common");
+  const locale = useLocale();
   const [rows, setRows] = useState<ChainRow[]>([]);
   const [processes, setProcesses] = useState<ProcessOption[]>([]);
   const [search, setSearch] = useState("");
@@ -112,7 +115,7 @@ export function SopTab({ canManage }: Props) {
         }))
       );
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to load");
+      toast.error(err instanceof Error ? err.message : tc("loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -164,7 +167,7 @@ export function SopTab({ canManage }: Props) {
   async function onSave() {
     const steps = formSteps.filter((s) => s.processTemplateId);
     if (!formName.trim() || steps.length === 0) {
-      toast.error("Name and at least one step required");
+      toast.error(t("form.nameAndStepRequired"));
       return;
     }
     setSaving(true);
@@ -181,10 +184,10 @@ export function SopTab({ canManage }: Props) {
         ? await updateChainTemplate(editing.id, payload)
         : await createChainTemplate(payload);
       if (!result.success) {
-        toast.error(result.error ?? "Failed");
+        toast.error(result.error ?? tc("failed"));
         return;
       }
-      toast.success("OK");
+      toast.success(tc("saved"));
       setDialogOpen(false);
       void load();
     } finally {
@@ -196,10 +199,10 @@ export function SopTab({ canManage }: Props) {
     if (!confirm(t("deactivateConfirm", { name: row.name }))) return;
     const result = await deactivateChainTemplate(row.id);
     if (!result.success) {
-      toast.error(result.error ?? "Failed");
+      toast.error(result.error ?? tc("failed"));
       return;
     }
-    toast.success("OK");
+    toast.success(tc("saved"));
     void load();
   }
 
@@ -220,6 +223,7 @@ export function SopTab({ canManage }: Props) {
           <div className="flex items-center gap-2">
             <Switch
               id="show-inactive-sop"
+              aria-label={t("showInactive")}
               checked={showInactive}
               onCheckedChange={setShowInactive}
             />
@@ -264,10 +268,7 @@ export function SopTab({ canManage }: Props) {
             ) : (
               filtered.map((row) => {
                 const open = expandedId === row.id;
-                const updated =
-                  typeof row.updatedAt === "string"
-                    ? row.updatedAt.slice(0, 10)
-                    : new Date(row.updatedAt).toISOString().slice(0, 10);
+                const updated = formatDisplayDate(row.updatedAt, locale);
                 return (
                   <Fragment key={row.id}>
                     <TableRow
@@ -278,6 +279,8 @@ export function SopTab({ canManage }: Props) {
                           size="icon"
                           variant="ghost"
                           className="h-7 w-7"
+                          aria-label={t("toggleSteps", { name: row.name })}
+                          aria-expanded={open}
                           onClick={() =>
                             setExpandedId(open ? null : row.id)
                           }
@@ -315,6 +318,8 @@ export function SopTab({ canManage }: Props) {
                             <Button
                               size="icon"
                               variant="ghost"
+                              aria-label={t("editAria", { name: row.name })}
+                              title={t("editAria", { name: row.name })}
                               onClick={() => openEdit(row)}
                             >
                               <Pencil className="h-4 w-4" />
@@ -323,6 +328,8 @@ export function SopTab({ canManage }: Props) {
                               <Button
                                 size="icon"
                                 variant="ghost"
+                                aria-label={t("deactivateAria", { name: row.name })}
+                                title={t("deactivateAria", { name: row.name })}
                                 onClick={() => void onDeactivate(row)}
                               >
                                 <Trash2 className="h-4 w-4" />
@@ -347,7 +354,7 @@ export function SopTab({ canManage }: Props) {
                                         rateQty: s.rateQty ?? 0,
                                       })
                                     : tp("days", { days: s.days })}
-                                  {!s.isActive ? " (arsip)" : ""}
+                                  {!s.isActive ? ` ${tc("archivedSuffix")}` : ""}
                                 </span>
                               </li>
                             ))}
@@ -434,6 +441,8 @@ export function SopTab({ canManage }: Props) {
                     variant="ghost"
                     className="h-8 w-8"
                     disabled={index === 0}
+                    aria-label={t("form.moveStepUp")}
+                    title={t("form.moveStepUp")}
                     onClick={() => moveStep(index, -1)}
                   >
                     <ArrowUp className="h-3.5 w-3.5" />
@@ -444,6 +453,8 @@ export function SopTab({ canManage }: Props) {
                     variant="ghost"
                     className="h-8 w-8"
                     disabled={index === formSteps.length - 1}
+                    aria-label={t("form.moveStepDown")}
+                    title={t("form.moveStepDown")}
                     onClick={() => moveStep(index, 1)}
                   >
                     <ArrowDown className="h-3.5 w-3.5" />
@@ -453,6 +464,8 @@ export function SopTab({ canManage }: Props) {
                     size="icon"
                     variant="ghost"
                     className="h-8 w-8"
+                    aria-label={t("form.removeStep")}
+                    title={t("form.removeStep")}
                     onClick={() =>
                       setFormSteps((prev) => prev.filter((_, i) => i !== index))
                     }

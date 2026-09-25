@@ -42,6 +42,7 @@ export function StepOverridePopover({
   trigger,
 }: Props) {
   const t = useTranslations("leadTime.papan");
+  const tc = useTranslations("leadTime.common");
   const [overrideDays, setOverrideDays] = useState("");
   const [overrideRateQty, setOverrideRateQty] = useState("");
   const [notes, setNotes] = useState("");
@@ -63,10 +64,10 @@ export function StepOverridePopover({
       notes: clear ? null : notes.trim() || null,
     });
     if (!result.success) {
-      toast.error(result.error ?? "Failed");
+      toast.error(result.error ?? tc("failed"));
       return;
     }
-    toast.success("OK");
+    toast.success(tc("saved"));
     onOpenChange(false);
     onSaved();
   }
@@ -98,7 +99,7 @@ export function StepOverridePopover({
           </div>
         )}
         <div className="space-y-1">
-          <Label>Notes</Label>
+          <Label>{t("notes")}</Label>
           <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
         </div>
         <div className="flex gap-2">

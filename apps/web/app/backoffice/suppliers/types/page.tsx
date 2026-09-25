@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -55,18 +55,22 @@ import { toast } from 'sonner';
 import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 
-const schema = z.object({
-  code: z.string().min(1, 'Code is required').max(50),
-  name: z.string().min(1, 'Name is required'),
-  isActive: z.boolean(),
-  // Coerce empty string from number input to undefined so validation passes
-  sortOrder: z.preprocess(
-    (val) => (val === '' || val === undefined ? undefined : Number(val)),
-    z.number().int().optional()
-  ),
-});
+type Translate = ReturnType<typeof useTranslations>;
 
-type FormData = z.infer<typeof schema>;
+function makeSchema(t: Translate) {
+  return z.object({
+    code: z.string().min(1, t('codeRequired')).max(50),
+    name: z.string().min(1, t('nameRequired')),
+    isActive: z.boolean(),
+    // Coerce empty string from number input to undefined so validation passes
+    sortOrder: z.preprocess(
+      (val) => (val === '' || val === undefined ? undefined : Number(val)),
+      z.number().int().optional()
+    ),
+  });
+}
+
+type FormData = z.infer<ReturnType<typeof makeSchema>>;
 
 interface SupplierTypeRecord {
   id: string;
@@ -82,6 +86,7 @@ export default function SupplierTypesPage() {
   const tUi = useTranslations('ui');
   const tTable = useTranslations('tableHeaders');
   const tSupplierTypes = useTranslations('supplierTypes');
+  const schema = useMemo(() => makeSchema(tSupplierTypes), [tSupplierTypes]);
   const [types, setTypes] = useState<SupplierTypeRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -124,7 +129,7 @@ export default function SupplierTypesPage() {
       }
     } catch (e) {
       console.error(e);
-      toast.error('Failed to load supplier types');
+      toast.error(tSupplierTypes('loadFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -160,15 +165,15 @@ export default function SupplierTypesPage() {
       } = await import('@/app/actions/supplier-types');
       if (editingId) {
         await updateSupplierTypeAction(editingId, data);
-        toast.success('Supplier type updated');
+        toast.success(tSupplierTypes('updatedToast'));
       } else {
         await createSupplierTypeAction(data);
-        toast.success('Supplier type created');
+        toast.success(tSupplierTypes('createdToast'));
       }
       setIsDialogOpen(false);
       fetchTypes();
     } catch (e: any) {
-      toast.error(e.message || 'Failed to save');
+      toast.error(e.message || tSupplierTypes('saveFailed'));
     }
   };
 
@@ -178,11 +183,11 @@ export default function SupplierTypesPage() {
     try {
       const { deleteSupplierTypeAction } = await import('@/app/actions/supplier-types');
       await deleteSupplierTypeAction(deleteId);
-      toast.success('Supplier type deleted');
+      toast.success(tSupplierTypes('deletedToast'));
       setDeleteId(null);
       fetchTypes();
     } catch (e: any) {
-      toast.error(e.message || 'Failed to delete');
+      toast.error(e.message || tSupplierTypes('deleteFailed'));
     } finally {
       setIsDeleting(false);
     }
@@ -219,18 +224,18 @@ export default function SupplierTypesPage() {
               </Button>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>{editingId ? 'Edit supplier type' : 'New supplier type'}</DialogTitle>
+                  <DialogTitle>{editingId ? tSupplierTypes('editTitle') : tSupplierTypes('createTitle')}</DialogTitle>
                   <DialogDescription>
-                    {editingId ? 'Update code, name, and status.' : 'Add a new supplier type.'}
+                    {editingId ? tSupplierTypes('editDescription') : tSupplierTypes('createDescription')}
                   </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="code">Code *</Label>
+                    <Label htmlFor="code">{tUi('code')} *</Label>
                     <Input
                       id="code"
                       {...register('code')}
-                      placeholder="e.g. FABRIC"
+                      placeholder={tSupplierTypes('codePlaceholder')}
                       disabled={!!editingId}
                     />
                     {errors.code && (
@@ -238,8 +243,8 @@ export default function SupplierTypesPage() {
                     )}
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="name">Name *</Label>
-                    <Input id="name" {...register('name')} placeholder="e.g. Fabric" />
+                    <Label htmlFor="name">{tUi('name')} *</Label>
+                    <Input id="name" {...register('name')} placeholder={tSupplierTypes('namePlaceholder')} />
                     {errors.name && (
                       <p className="text-sm text-destructive">{errors.name.message}</p>
                     )}
@@ -270,11 +275,11 @@ export default function SupplierTypesPage() {
                       variant="outline"
                       onClick={() => setIsDialogOpen(false)}
                     >
-                      Cancel
+                      {tUi('cancel')}
                     </Button>
                     <Button type="submit" disabled={isSubmitting}>
                       {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                      {editingId ? 'Update' : 'Create'}
+                      {editingId ? tSupplierTypes('updateButton') : tUi('create')}
                     </Button>
                   </DialogFooter>
                 </form>
@@ -346,13 +351,13 @@ export default function SupplierTypesPage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => openEdit(row)}>
-                            Edit
+                            {tUi('edit')}
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             className="text-destructive"
                             onClick={() => setDeleteId(row.id)}
                           >
-                            Delete
+                            {tUi('delete')}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -392,7 +397,7 @@ export default function SupplierTypesPage() {
               disabled={isDeleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Delete'}
+              {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : tUi('delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

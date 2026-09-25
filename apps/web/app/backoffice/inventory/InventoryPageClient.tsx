@@ -14,7 +14,8 @@ import {
   ChevronRight,
   Printer,
 } from 'lucide-react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatDisplayDate } from '@/lib/date-only';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -162,6 +163,9 @@ export function InventoryPageClient({
   const tTable = useTranslations('tableHeaders');
   const t = useTranslations("inventory");
   const tWall = useTranslations("inventory.wallboard");
+  const tp = useTranslations("inventory.page");
+  const tToasts = useTranslations("toasts");
+  const locale = useLocale();
   const { data: session } = useSession();
   const searchParams = useSearchParams();
   const [inventory, setInventory] = useState<InventoryItem[]>(initialInventory);
@@ -281,7 +285,7 @@ export function InventoryPageClient({
         setAdjTotalCount(adjList.length);
       }
     } catch {
-      toast.error('Failed to load inventory data');
+      toast.error(tToasts('failedToLoadInventoryData'));
     } finally {
       setIsLoading(false);
     }
@@ -462,24 +466,24 @@ export function InventoryPageClient({
           <Link href="/backoffice/inventory/grn/new">
             <Button variant="outline" className="min-h-[44px]">
               <ArrowDownLeft className="mr-2 h-4 w-4" />
-              Receive Goods
+              {tp('receiveGoods')}
             </Button>
           </Link>
           <Link href="/backoffice/inventory/stock-card">
             <Button variant="outline" className="min-h-[44px]">
               <History className="mr-2 h-4 w-4" />
-              Stock Card
+              {tp('stockCard')}
             </Button>
           </Link>
           <Link href="/backoffice/inventory/adjustment/new">
             <Button className="min-h-[44px]">
               <Plus className="mr-2 h-4 w-4" />
-              Adjustment
+              {tp('adjustment')}
             </Button>
           </Link>
           <Link href="/backoffice/inventory/rejected-goods">
             <Button variant="outline" className="min-h-[44px]">
-              Rejected Goods
+              {tp('rejectedGoods')}
             </Button>
           </Link>
           <Button
@@ -499,7 +503,7 @@ export function InventoryPageClient({
                 });
                 const iframe = document.createElement('iframe');
                 iframe.setAttribute('style', 'position:absolute;width:0;height:0;border:0;visibility:hidden;');
-                iframe.setAttribute('title', 'Print Inventory Report');
+                iframe.setAttribute('title', tp('printReportFrameTitle'));
                 document.body.appendChild(iframe);
                 const doc = iframe.contentWindow?.document;
                 if (doc) {
@@ -514,12 +518,12 @@ export function InventoryPageClient({
                   document.body.removeChild(iframe);
                 }, 1000);
               } catch {
-                toast.error('Failed to load inventory report for print');
+                toast.error(tp('printReportFailed'));
               }
             }}
           >
             <Printer className="mr-2 h-4 w-4" />
-            Print Report
+            {tp('printReport')}
           </Button>
         </div>
       </div>
@@ -642,7 +646,7 @@ export function InventoryPageClient({
           <div className="relative max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search GRN number, supplier, PO..."
+              placeholder={tp('grnSearchPlaceholder')}
               value={grnSearchQuery}
               onChange={(e) => setGrnSearchQuery(e.target.value)}
               className="pl-9"
@@ -655,10 +659,10 @@ export function InventoryPageClient({
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-10" />
-                      <TableHead>GRN Number</TableHead>
+                      <TableHead>{tp('grnNumber')}</TableHead>
                       <TableHead>{tTable('date')}</TableHead>
                       <TableHead>{tTable('supplier')}</TableHead>
-                      <TableHead>PO Reference</TableHead>
+                      <TableHead>{tp('poReference')}</TableHead>
                       <TableHead className="text-right">{tTable('amount')}</TableHead>
                       <TableHead className="min-w-[200px]">{tTable('overReceive')}</TableHead>
                     </TableRow>
@@ -674,7 +678,8 @@ export function InventoryPageClient({
                               onClick={() =>
                                 setExpandedGrnId(expandedGrnId === grn.id ? null : grn.id)
                               }
-                              aria-label="Toggle rolls"
+                              aria-label={tp('toggleRolls', { doc: grn.docNumber })}
+                              aria-expanded={expandedGrnId === grn.id}
                             >
                               {expandedGrnId === grn.id ? (
                                 <ChevronDown className="h-4 w-4" />
@@ -685,9 +690,9 @@ export function InventoryPageClient({
                           </TableCell>
                           <TableCell className="font-medium">{grn.docNumber}</TableCell>
                           <TableCell>
-                            {new Date(grn.grnDate).toLocaleDateString('id-ID')}
+                            {formatDisplayDate(grn.grnDate, locale)}
                           </TableCell>
-                          <TableCell>{grn.supplier.name}</TableCell>
+                          <TableCell className="whitespace-normal min-w-[160px]">{grn.supplier.name}</TableCell>
                           <TableCell>{grn.po?.docNumber || '-'}</TableCell>
                           <TableCell className="text-right">
                             Rp {Number(grn.totalAmount).toLocaleString('id-ID')}
@@ -695,12 +700,12 @@ export function InventoryPageClient({
                           <TableCell>
                             {grn.ownerDeclinedAt ? (
                               <Badge variant="outline" className="border-destructive/50 text-destructive w-fit">
-                                Declined by owner
+                                {tp('declinedByOwner')}
                               </Badge>
                             ) : grn.requiresOwnerApproval && !grn.ownerApprovedAt ? (
                               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
                                 <Badge variant="outline" className="border-amber-500 text-amber-700 dark:text-amber-400 w-fit">
-                                  Awaiting owner approval
+                                  {tp('awaitingOwnerApproval')}
                                 </Badge>
                                 {session?.user?.role === 'ADMIN' && (
                                   <>
@@ -714,18 +719,18 @@ export function InventoryPageClient({
                                         setApprovingGrnId(grn.id);
                                         try {
                                           await approveGRNByOwner(grn.id, session.user.id);
-                                          toast.success('Over-receive GRN approved. PO status updated.');
+                                          toast.success(tp('grnApprovedToast'));
                                           await fetchData();
                                         } catch (err) {
                                           toast.error(
-                                            err instanceof Error ? err.message : 'Failed to approve GRN'
+                                            err instanceof Error ? err.message : tp('grnApproveFailed')
                                           );
                                         } finally {
                                           setApprovingGrnId(null);
                                         }
                                       }}
                                     >
-                                      Approve
+                                      {tp('approve')}
                                     </Button>
                                     <Button
                                       type="button"
@@ -736,33 +741,31 @@ export function InventoryPageClient({
                                       onClick={async () => {
                                         if (!session?.user?.id) return;
                                         if (
-                                          !window.confirm(
-                                            'Decline this over-receive GRN? Stock and PO received quantities for this receipt will be reversed. Fabric rolls on this GRN must be unused.'
-                                          )
+                                          !window.confirm(tp('grnDeclineConfirm'))
                                         ) {
                                           return;
                                         }
                                         setDecliningGrnId(grn.id);
                                         try {
                                           await declineGRNByOwner(grn.id, session.user.id);
-                                          toast.success('Over-receive GRN declined. Receipt reversed.');
+                                          toast.success(tp('grnDeclinedToast'));
                                           await fetchData();
                                         } catch (err) {
                                           toast.error(
-                                            err instanceof Error ? err.message : 'Failed to decline GRN'
+                                            err instanceof Error ? err.message : tp('grnDeclineFailed')
                                           );
                                         } finally {
                                           setDecliningGrnId(null);
                                         }
                                       }}
                                     >
-                                      Decline
+                                      {tp('decline')}
                                     </Button>
                                   </>
                                 )}
                               </div>
                             ) : grn.ownerApprovedAt ? (
-                              <span className="text-xs text-muted-foreground">Owner approved</span>
+                              <span className="text-xs text-muted-foreground">{tp('ownerApproved')}</span>
                             ) : (
                               <span className="text-muted-foreground">—</span>
                             )}
@@ -771,9 +774,9 @@ export function InventoryPageClient({
                         {expandedGrnId === grn.id && (
                           <TableRow>
                             <TableCell colSpan={7} className="bg-muted/30 p-4">
-                              <p className="text-sm font-medium mb-2">Fabric rolls in this GRN</p>
+                              <p className="text-sm font-medium mb-2">{tp('rollsInGrn')}</p>
                               {grnRolls.length === 0 ? (
-                                <p className="text-sm text-muted-foreground">No rolls</p>
+                                <p className="text-sm text-muted-foreground">{tp('noRolls')}</p>
                               ) : (
                                 <Table>
                                   <TableHeader>
@@ -783,8 +786,8 @@ export function InventoryPageClient({
                                       <TableHead>{tTable('item')}</TableHead>
                                       <TableHead className="text-right">{tTable('initial')}</TableHead>
                                       <TableHead className="text-right">{tTable('remaining')}</TableHead>
-                                      <TableHead>UOM</TableHead>
-                                      <TableHead>Status</TableHead>
+                                      <TableHead>{tTable('uom')}</TableHead>
+                                      <TableHead>{tTable('status')}</TableHead>
                                     </TableRow>
                                   </TableHeader>
                                   <TableBody>
@@ -796,7 +799,7 @@ export function InventoryPageClient({
                                         <TableCell className="text-right">{r.initialLength.toLocaleString('id-ID')}</TableCell>
                                         <TableCell className="text-right">{r.remainingLength.toLocaleString('id-ID')}</TableCell>
                                         <TableCell>{r.uom.code}</TableCell>
-                                        <TableCell>{r.isClosed ? <Badge variant="secondary">Closed</Badge> : <Badge variant="default">Open</Badge>}</TableCell>
+                                        <TableCell>{r.isClosed ? <Badge variant="secondary">{tp('rollClosed')}</Badge> : <Badge variant="default">{tp('rollOpen')}</Badge>}</TableCell>
                                       </TableRow>
                                     ))}
                                   </TableBody>
@@ -871,37 +874,37 @@ export function InventoryPageClient({
             <div className="relative flex-1 min-w-[200px] max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search roll code, ref, item, GRN..."
+                placeholder={tp('rollsSearchPlaceholder')}
                 value={rollsSearchQuery}
                 onChange={(e) => setRollsSearchQuery(e.target.value)}
                 className="pl-9"
               />
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground whitespace-nowrap">Filter by GRN</span>
+              <span className="text-sm text-muted-foreground whitespace-nowrap">{tp('filterByGrn')}</span>
               <SearchableCombobox
-                options={[{ value: ROLLS_FILTER_ALL, label: 'All GRNs' }, ...rollGrnOptions]}
+                options={[{ value: ROLLS_FILTER_ALL, label: tp('allGrns') }, ...rollGrnOptions]}
                 value={rollsFilterGrnId}
                 onValueChange={(value) => {
                   setRollsFilterGrnId(value);
                   setRollsPage(1);
                 }}
-                placeholder="All GRNs"
-                searchPlaceholder="Search GRN..."
+                placeholder={tp('allGrns')}
+                searchPlaceholder={tp('searchGrn')}
                 triggerClassName="w-[220px]"
               />
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground whitespace-nowrap">Filter by item</span>
+              <span className="text-sm text-muted-foreground whitespace-nowrap">{tp('filterByItem')}</span>
               <SearchableCombobox
-                options={[{ value: ROLLS_FILTER_ALL, label: 'All items' }, ...rollItemOptions]}
+                options={[{ value: ROLLS_FILTER_ALL, label: tp('allItems') }, ...rollItemOptions]}
                 value={rollsFilterItemId}
                 onValueChange={(value) => {
                   setRollsFilterItemId(value);
                   setRollsPage(1);
                 }}
-                placeholder="All items"
-                searchPlaceholder="Search item..."
+                placeholder={tp('allItems')}
+                searchPlaceholder={tp('searchItem')}
                 triggerClassName="w-[260px]"
               />
             </div>
@@ -923,16 +926,16 @@ export function InventoryPageClient({
                           <TableHead>{tTable('item')}</TableHead>
                           <TableHead className="text-right">{tTable('initial')}</TableHead>
                           <TableHead className="text-right">{tTable('remaining')}</TableHead>
-                          <TableHead>UOM</TableHead>
+                          <TableHead>{tTable('uom')}</TableHead>
                           <TableHead>GRN</TableHead>
-                          <TableHead>Status</TableHead>
+                          <TableHead>{tTable('status')}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {rolls.length === 0 ? (
                           <TableRow>
                             <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                              No fabric rolls found.
+                              {tp('noFabricRolls')}
                             </TableCell>
                           </TableRow>
                         ) : (
@@ -940,7 +943,7 @@ export function InventoryPageClient({
                             <TableRow key={r.id}>
                               <TableCell className="font-mono text-sm">{r.rollCode}</TableCell>
                               <TableCell>{r.rollRef}</TableCell>
-                              <TableCell>{r.item.sku} – {r.item.nameId}</TableCell>
+                              <TableCell className="whitespace-normal min-w-[180px]">{r.item.sku} – {r.item.nameId}</TableCell>
                               <TableCell className="text-right">
                                 {(r.initialLength ?? 0).toLocaleString('id-ID')}
                               </TableCell>
@@ -948,8 +951,8 @@ export function InventoryPageClient({
                                 {(r.remainingLength ?? 0).toLocaleString('id-ID')}
                               </TableCell>
                               <TableCell>{r.uom.code}</TableCell>
-                              <TableCell>{r.grn ? `${r.grn.docNumber} (${new Date(r.grn.grnDate).toLocaleDateString('id-ID')})` : '-'}</TableCell>
-                              <TableCell>{r.isClosed ? <Badge variant="secondary">Closed</Badge> : <Badge variant="default">Open</Badge>}</TableCell>
+                              <TableCell>{r.grn ? `${r.grn.docNumber} (${formatDisplayDate(r.grn.grnDate, locale)})` : '-'}</TableCell>
+                              <TableCell>{r.isClosed ? <Badge variant="secondary">{tp('rollClosed')}</Badge> : <Badge variant="default">{tp('rollOpen')}</Badge>}</TableCell>
                             </TableRow>
                           ))
                         )}
@@ -974,17 +977,17 @@ export function InventoryPageClient({
             <div className="relative max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search doc number, item, reason..."
+                placeholder={tp('adjSearchPlaceholder')}
                 value={adjustmentSearchQuery}
                 onChange={(e) => setAdjustmentSearchQuery(e.target.value)}
                 className="pl-9"
               />
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground whitespace-nowrap">Filter by item</span>
+              <span className="text-sm text-muted-foreground whitespace-nowrap">{tp('filterByItem')}</span>
               <SearchableCombobox
                 options={[
-                  { value: ADJ_FILTER_ALL, label: 'All items' },
+                  { value: ADJ_FILTER_ALL, label: tp('allItems') },
                   ...adjustmentItemList.map((row) => ({
                     value: row.itemId,
                     label: `${row.item?.sku ?? row.itemId} – ${row.item?.nameId ?? ''}`,
@@ -995,7 +998,7 @@ export function InventoryPageClient({
                   setAdjItemFilter(value);
                   setAdjPage(1);
                 }}
-                placeholder="All items"
+                placeholder={tp('allItems')}
                 triggerClassName="w-[220px]"
               />
             </div>
@@ -1007,14 +1010,16 @@ export function InventoryPageClient({
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-10" />
-                      <TableHead>Doc Number</TableHead>
+                      <TableHead>{tp('docNumber')}</TableHead>
                       <TableHead>{tTable('date')}</TableHead>
                       <TableHead>{tTable('item')}</TableHead>
                       <TableHead>{tTable('type')}</TableHead>
-                      <TableHead className="text-right">Qty</TableHead>
-                      <TableHead>Reason</TableHead>
-                      <TableHead>Created by</TableHead>
-                      <TableHead className="w-[100px]">Actions</TableHead>
+                      <TableHead className="text-right">{tTable('qty')}</TableHead>
+                      <TableHead>{tp('reason')}</TableHead>
+                      {/* Pembuat disembunyikan di bawah 2xl supaya kolom Nota
+                          tidak terdorong keluar layar 1280 px. */}
+                      <TableHead className="hidden 2xl:table-cell">{tp('createdBy')}</TableHead>
+                      <TableHead className="w-[100px] sticky right-0 bg-card">{tp('actions')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1028,7 +1033,8 @@ export function InventoryPageClient({
                               onClick={() =>
                                 setExpandedAdjustmentId(expandedAdjustmentId === adj.id ? null : adj.id)
                               }
-                              aria-label="Toggle details"
+                              aria-label={tp('toggleDetails', { doc: adj.docNumber })}
+                              aria-expanded={expandedAdjustmentId === adj.id}
                             >
                               {expandedAdjustmentId === adj.id ? (
                                 <ChevronDown className="h-4 w-4" />
@@ -1039,9 +1045,9 @@ export function InventoryPageClient({
                           </TableCell>
                           <TableCell className="font-medium">{adj.docNumber}</TableCell>
                           <TableCell>
-                            {new Date(adj.createdAt).toLocaleDateString('id-ID')}
+                            {formatDisplayDate(adj.createdAt, locale)}
                           </TableCell>
-                          <TableCell>{adj.item.nameId}</TableCell>
+                          <TableCell className="whitespace-normal min-w-[160px]">{adj.item.nameId}</TableCell>
                           <TableCell>
                             <Badge variant={adj.type === 'POSITIVE' ? 'default' : 'destructive'}>
                               {adj.type === 'POSITIVE' ? (
@@ -1049,17 +1055,17 @@ export function InventoryPageClient({
                               ) : (
                                 <ArrowUpRight className="h-3 w-3 mr-1" />
                               )}
-                              {adj.type}
+                              {adj.type === 'POSITIVE' ? tp('adjPositive') : tp('adjNegative')}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">
                             {Number(adj.qtyChange).toLocaleString('id-ID')}
                           </TableCell>
-                          <TableCell>{adj.reason}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
+                          <TableCell className="whitespace-normal min-w-[200px] max-w-[320px]">{adj.reason}</TableCell>
+                          <TableCell className="hidden 2xl:table-cell text-sm text-muted-foreground">
                             {adj.createdBy?.name || adj.createdBy?.email || '—'}
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="sticky right-0 bg-card">
                             <Link href={`/backoffice/inventory/adjustment/${adj.id}`}>
                               <Button variant="ghost" size="sm">
                                 <Printer className="mr-1 h-3 w-3" />
@@ -1073,20 +1079,26 @@ export function InventoryPageClient({
                             <TableCell colSpan={9}>
                               <div className="grid gap-4 py-2 sm:grid-cols-2">
                                 <div className="space-y-1">
-                                  <p className="text-sm font-semibold">Reason</p>
+                                  <p className="text-sm font-semibold">{tp('reason')}</p>
                                   <p className="text-sm text-muted-foreground">{adj.reason}</p>
                                 </div>
+                                <div className="space-y-1 2xl:hidden">
+                                  <p className="text-sm font-semibold">{tp('createdBy')}</p>
+                                  <p className="text-sm text-muted-foreground">
+                                    {adj.createdBy?.name || adj.createdBy?.email || '—'}
+                                  </p>
+                                </div>
                                 <div className="space-y-1">
-                                  <p className="text-sm font-semibold">Evidence</p>
+                                  <p className="text-sm font-semibold">{tp('evidence')}</p>
                                   {adj.evidenceUrl ? (
                                     // eslint-disable-next-line @next/next/no-img-element -- dynamic evidence URL from storage
                                     <img
                                       src={adj.evidenceUrl}
-                                      alt="Adjustment evidence"
+                                      alt={tp('evidenceAlt')}
                                       className="max-h-40 rounded-md border object-cover"
                                     />
                                   ) : (
-                                    <p className="text-sm text-muted-foreground">No image provided</p>
+                                    <p className="text-sm text-muted-foreground">{t('noImageProvided')}</p>
                                   )}
                                 </div>
                               </div>

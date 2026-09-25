@@ -21,9 +21,13 @@ import {
 } from '@/components/ui/table';
 import { getRejectedGoodsRecap } from '@/app/actions/inventory';
 import { Pagination } from '@/components/ui/pagination';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatDisplayDate } from '@/lib/date-only';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 
 export default function RejectedGoodsPage() {
+  const t = useTranslations('inventory.rejected');
+  const locale = useLocale();
   const [data, setData] = useState<{ items: Awaited<ReturnType<typeof getRejectedGoodsRecap>>['items']; totalCount: number }>({
     items: [],
     totalCount: 0,
@@ -45,23 +49,28 @@ export default function RejectedGoodsPage() {
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Link href="/backoffice/inventory">
-          <Button variant="ghost" size="icon">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={t('backToInventory')}
+            title={t('backToInventory')}
+          >
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Rejected Goods</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t('title')}</h1>
           <p className="text-muted-foreground">
-            Recap of rejected / waste quantities (not in active inventory)
+            {t('subtitle')}
           </p>
         </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Rejected goods ledger</CardTitle>
+          <CardTitle>{t('cardTitle')}</CardTitle>
           <CardDescription>
-            Items recorded as rejected on FG receipt. These quantities are stored separately from active stock.
+            {t('cardDescription')}
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
@@ -72,8 +81,8 @@ export default function RejectedGoodsPage() {
           ) : data.items.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
               <Package className="h-12 w-12 mb-4" />
-              <p>No rejected goods recorded yet.</p>
-              <p className="text-sm mt-1">Rejected qty is recorded when you receive FG with &quot;Rejected&quot; &gt; 0.</p>
+              <p>{t('emptyTitle')}</p>
+              <p className="text-sm mt-1">{t('emptyHint')}</p>
             </div>
           ) : (
             <>
@@ -81,20 +90,20 @@ export default function RejectedGoodsPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Doc #</TableHead>
-                      <TableHead>Item (SKU)</TableHead>
-                      <TableHead>Name</TableHead>
-                      <TableHead className="text-right">Rejected Qty</TableHead>
+                      <TableHead>{t('colDate')}</TableHead>
+                      <TableHead>{t('colDoc')}</TableHead>
+                      <TableHead>{t('colSku')}</TableHead>
+                      <TableHead>{t('colName')}</TableHead>
+                      <TableHead className="text-right">{t('colQty')}</TableHead>
                       <TableHead>WO</TableHead>
-                      <TableHead>Notes</TableHead>
+                      <TableHead>{t('colNotes')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {data.items.map((row) => (
                       <TableRow key={row.id}>
                         <TableCell>
-                          {new Date(row.receivedAt).toLocaleDateString('id-ID')}
+                          {formatDisplayDate(row.receivedAt, locale)}
                         </TableCell>
                         <TableCell className="font-medium">{row.refDocNumber}</TableCell>
                         <TableCell>
@@ -105,7 +114,7 @@ export default function RejectedGoodsPage() {
                             </span>
                           ) : null}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="whitespace-normal min-w-[160px]">
                           <span>{row.item.nameId}</span>
                           {row.variantDetail ? (
                             <span className="mt-0.5 block text-xs text-muted-foreground">
@@ -117,7 +126,7 @@ export default function RejectedGoodsPage() {
                           {row.qty.toLocaleString('id-ID')}
                         </TableCell>
                         <TableCell>{row.woId ?? '—'}</TableCell>
-                        <TableCell className="max-w-[200px] truncate text-muted-foreground">
+                        <TableCell className="whitespace-normal min-w-[160px] max-w-[260px] text-muted-foreground">
                           {row.notes ?? '—'}
                         </TableCell>
                       </TableRow>

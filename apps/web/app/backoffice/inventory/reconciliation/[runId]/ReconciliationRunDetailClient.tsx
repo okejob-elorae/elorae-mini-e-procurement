@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import { AlertTriangle } from "lucide-react";
+import { formatDisplayDateTime } from "@/lib/date-only";
+import { reconciliationFailureReason } from "../failure-reason";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -41,6 +44,7 @@ function actionBadgeVariant(action: string): "default" | "secondary" | "destruct
 
 export function ReconciliationRunDetailClient({ runId }: { runId: string }) {
   const t = useTranslations("stockReconciliation");
+  const locale = useLocale();
   const { data: session } = useSession();
   const canManage = hasPermission(
     session?.user?.permissions ?? [],
@@ -86,17 +90,37 @@ export function ReconciliationRunDetailClient({ runId }: { runId: string }) {
     return <p className="text-muted-foreground py-8">{t("notFound")}</p>;
   }
 
+  const failure = run.status === "FAILED" ? reconciliationFailureReason(run.errorMessage, t) : null;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">{t("runTitle", { id: runId.slice(0, 8) })}</h1>
-          <p className="text-muted-foreground">{new Date(run.startedAt).toLocaleString()}</p>
+          <p className="text-muted-foreground">{formatDisplayDateTime(run.startedAt, locale)}</p>
         </div>
         <Link href="/backoffice/inventory/reconciliation">
           <Button variant="outline">{t("back")}</Button>
         </Link>
       </div>
+
+      {failure && (
+        <div
+          role="alert"
+          className="flex gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm"
+        >
+          <AlertTriangle className="h-5 w-5 shrink-0 text-destructive" aria-hidden />
+          <div className="space-y-1">
+            <p className="font-medium">{t("failureTitle")}</p>
+            <p className="text-muted-foreground">{failure.reason}</p>
+            {failure.technical && (
+              <p className="text-xs text-muted-foreground">
+                {t("failureTechnical", { detail: failure.technical })}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       <Card>
         <CardHeader>

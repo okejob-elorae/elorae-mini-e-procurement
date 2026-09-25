@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, Controller } from 'react-hook-form';
@@ -94,26 +94,30 @@ interface Supplier {
   status?: SupplierStatus;
 }
 
-const supplierSchema = z.object({
-  code: z.string().optional(),
-  name: z.string().min(1, 'Name is required'),
-  typeId: z.string().min(1, 'Supplier type is required'),
-  address: z.string().optional(),
-  phone: z.string().optional(),
-  email: z.string().email('Invalid email').optional().or(z.literal('')),
-  bankName: z.string().optional(),
-  bankAccount: z.string().optional(),
-  bankAccountName: z.string().optional(),
-});
+type Translate = ReturnType<typeof useTranslations>;
 
-type SupplierForm = z.infer<typeof supplierSchema>;
+function makeSupplierSchema(t: Translate) {
+  return z.object({
+    code: z.string().optional(),
+    name: z.string().min(1, t('nameRequired')),
+    typeId: z.string().min(1, t('typeRequired')),
+    address: z.string().optional(),
+    phone: z.string().optional(),
+    email: z.string().email(t('invalidEmail')).optional().or(z.literal('')),
+    bankName: z.string().optional(),
+    bankAccount: z.string().optional(),
+    bankAccountName: z.string().optional(),
+  });
+}
+
+type SupplierForm = z.infer<ReturnType<typeof makeSupplierSchema>>;
 
 export default function SuppliersPage() {
   const t = useTranslations('toasts');
   const tSecurity = useTranslations('security');
   const tSupplier = useTranslations('supplier');
-  const _tCommon = useTranslations('common');
-  void _tCommon;
+  const tUi = useTranslations('ui');
+  const supplierSchema = useMemo(() => makeSupplierSchema(tSupplier), [tSupplier]);
   const { data: session } = useSession();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierTypes, setSupplierTypes] = useState<SupplierTypeOption[]>([]);
@@ -305,7 +309,7 @@ export default function SuppliersPage() {
   };
 
   const handleDeleteClick = (id: string) => {
-    if (!confirm('Are you sure you want to delete this supplier?')) return;
+    if (!confirm(tSupplier('deleteConfirm'))) return;
     setDeleteTargetId(id);
     setDeletePinModalOpen(true);
   };
@@ -377,8 +381,8 @@ export default function SuppliersPage() {
                 </DialogTitle>
                 <DialogDescription>
                   {supplierDialogMode === 'edit'
-                    ? 'Update supplier details'
-                    : 'Add a new supplier to your database'}
+                    ? tSupplier('editDescription')
+                    : tSupplier('createDescription')}
                 </DialogDescription>
               </DialogHeader>
               <form
@@ -389,11 +393,11 @@ export default function SuppliersPage() {
                 className="space-y-4"
               >
                 <div className="space-y-2">
-                  <Label htmlFor="code">Supplier Code (optional)</Label>
+                  <Label htmlFor="code">{tSupplier('codeOptional')}</Label>
                   <Input
                     id="code"
                     {...register('code')}
-                    placeholder="Leave blank to auto-generate"
+                    placeholder={tSupplier('codePlaceholder')}
                     aria-invalid={!!errors.code}
                     className={errors.code ? 'border-destructive focus-visible:ring-destructive/20' : ''}
                   />
@@ -405,7 +409,7 @@ export default function SuppliersPage() {
                 </div>
     
                 <div className="space-y-2">
-                  <Label htmlFor="name">Supplier Name *</Label>
+                  <Label htmlFor="name">{tSupplier('name')} *</Label>
                   <Input
                     id="name"
                     {...register('name')}
@@ -420,7 +424,7 @@ export default function SuppliersPage() {
                 </div>
     
                 <div className="space-y-2">
-                  <Label htmlFor="typeId">Supplier Type *</Label>
+                  <Label htmlFor="typeId">{tSupplier('type')} *</Label>
                   <Controller
                     name="typeId"
                     control={control}
@@ -434,7 +438,7 @@ export default function SuppliersPage() {
                           aria-invalid={!!errors.typeId}
                           className={errors.typeId ? 'border-destructive focus-visible:ring-destructive/20' : ''}
                         >
-                          <SelectValue placeholder="Select type" />
+                          <SelectValue placeholder={tSupplier('selectType')} />
                         </SelectTrigger>
                         <SelectContent>
                           {supplierTypes.map((st) => (
@@ -454,7 +458,7 @@ export default function SuppliersPage() {
                 </div>
     
                 <div className="space-y-2">
-                  <Label htmlFor="address">Address</Label>
+                  <Label htmlFor="address">{tSupplier('address')}</Label>
                   <Input
                     id="address"
                     {...register('address')}
@@ -470,7 +474,7 @@ export default function SuppliersPage() {
     
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="phone">Phone</Label>
+                    <Label htmlFor="phone">{tSupplier('phone')}</Label>
                     <Input
                       id="phone"
                       {...register('phone')}
@@ -484,7 +488,7 @@ export default function SuppliersPage() {
                     )}
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="email">Email</Label>
+                    <Label htmlFor="email">{tSupplier('email')}</Label>
                     <Input
                       id="email"
                       type="email"
@@ -501,10 +505,10 @@ export default function SuppliersPage() {
                 </div>
     
                 <div className="border-t pt-4">
-                  <h4 className="text-sm font-medium mb-3">Bank Information</h4>
+                  <h4 className="text-sm font-medium mb-3">{tSupplier('bankInfo')}</h4>
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="bankName">Bank Name</Label>
+                      <Label htmlFor="bankName">{tSupplier('bankName')}</Label>
                       <Input
                         id="bankName"
                         {...register('bankName')}
@@ -518,7 +522,7 @@ export default function SuppliersPage() {
                       )}
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="bankAccount">Account Number</Label>
+                      <Label htmlFor="bankAccount">{tSupplier('accountNumber')}</Label>
                       <Input
                         id="bankAccount"
                         {...register('bankAccount')}
@@ -532,7 +536,7 @@ export default function SuppliersPage() {
                       )}
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="bankAccountName">Account Holder Name</Label>
+                      <Label htmlFor="bankAccountName">{tSupplier('bankAccountName')}</Label>
                       <Input
                         id="bankAccountName"
                         {...register('bankAccountName')}
@@ -557,11 +561,11 @@ export default function SuppliersPage() {
                       setEditSupplier(null);
                     }}
                   >
-                    Cancel
+                    {tUi('cancel')}
                   </Button>
                   <Button type="submit" disabled={isSubmitting}>
                     {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    {supplierDialogMode === 'edit' ? 'Update Supplier' : 'Create Supplier'}
+                    {supplierDialogMode === 'edit' ? tSupplier('updateButton') : tSupplier('createButton')}
                   </Button>
                 </DialogFooter>
               </form>
@@ -586,7 +590,7 @@ export default function SuppliersPage() {
           onValueChange={(v) => setTypeFilter(v === 'all' ? null : v)}
         >
           <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="Type" />
+            <SelectValue placeholder={tSupplier('typeFilter')} />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{tSupplier('allTypes')}</SelectItem>
@@ -602,13 +606,13 @@ export default function SuppliersPage() {
           onValueChange={(v) => setStatusFilter(v === 'all' ? null : v)}
         >
           <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Status" />
+            <SelectValue placeholder={tSupplier('statusFilter')} />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{tSupplier('allStatuses')}</SelectItem>
-            <SelectItem value="PENDING_APPROVAL">Pending approval</SelectItem>
-            <SelectItem value="ACTIVE">Active</SelectItem>
-            <SelectItem value="REJECTED">Rejected</SelectItem>
+            <SelectItem value="PENDING_APPROVAL">{tSupplier('statusPendingApproval')}</SelectItem>
+            <SelectItem value="ACTIVE">{tSupplier('statusActive')}</SelectItem>
+            <SelectItem value="REJECTED">{tSupplier('statusRejected')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -623,8 +627,16 @@ export default function SuppliersPage() {
           <CardContent className="p-0">
             <EmptyState
               icon={Building2}
-              title={tSupplier('emptyTitle')}
-              description={tSupplier('emptyDescription')}
+              title={
+                searchQuery.trim() || typeFilter || statusFilter
+                  ? tSupplier('emptyFilteredTitle')
+                  : tSupplier('emptyTitle')
+              }
+              description={
+                searchQuery.trim() || typeFilter || statusFilter
+                  ? tSupplier('emptyFilteredDescription')
+                  : tSupplier('emptyDescription')
+              }
               action={
                 <Button variant="outline" onClick={() => setSupplierDialogMode('create')}>
                   <Plus className="mr-2 h-4 w-4" />
@@ -647,7 +659,12 @@ export default function SuppliersPage() {
                   </div>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={tSupplier('cardMenu', { name: supplier.name })}
+                        title={tSupplier('cardMenu', { name: supplier.name })}
+                      >
                         <MoreHorizontal className="h-4 w-4" />
                       </Button>
                     </DropdownMenuTrigger>
@@ -660,7 +677,7 @@ export default function SuppliersPage() {
                         }}
                       >
                         <Eye className="mr-2 h-4 w-4" />
-                        View Details
+                        {tSupplier('viewDetails')}
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => {
@@ -669,7 +686,7 @@ export default function SuppliersPage() {
                         }}
                       >
                         <Edit className="mr-2 h-4 w-4" />
-                        Edit
+                        {tUi('edit')}
                       </DropdownMenuItem>
                       {supplier.status === 'PENDING_APPROVAL' &&
                         (session?.user as { role?: string })?.role === Role.ADMIN && (
@@ -680,7 +697,7 @@ export default function SuppliersPage() {
                                 try {
                                   const { approveSupplierAction } = await import('@/app/actions/suppliers');
                                   await approveSupplierAction(supplier.id);
-                                  toast.success('Supplier approved');
+                                  toast.success(tSupplier('approvedToast'));
                                   fetchSuppliers();
                                 } finally {
                                   setIsApproving(false);
@@ -689,7 +706,7 @@ export default function SuppliersPage() {
                               disabled={isApproving}
                             >
                               <CheckCircle className="mr-2 h-4 w-4" />
-                              Approve
+                              {tSupplier('approve')}
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="text-destructive"
@@ -699,7 +716,7 @@ export default function SuppliersPage() {
                               }}
                             >
                               <XCircle className="mr-2 h-4 w-4" />
-                              Reject
+                              {tSupplier('reject')}
                             </DropdownMenuItem>
                           </>
                         )}
@@ -708,7 +725,7 @@ export default function SuppliersPage() {
                         onClick={() => handleDeleteClick(supplier.id)}
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
-                        Delete
+                        {tUi('delete')}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -731,10 +748,10 @@ export default function SuppliersPage() {
                       }
                     >
                       {supplier.status === 'PENDING_APPROVAL'
-                        ? 'Pending'
+                        ? tSupplier('statusPending')
                         : supplier.status === 'ACTIVE'
-                          ? 'Active'
-                          : 'Rejected'}
+                          ? tSupplier('statusActive')
+                          : tSupplier('statusRejected')}
                     </Badge>
                   )}
                 </div>
@@ -789,43 +806,43 @@ export default function SuppliersPage() {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label className="text-muted-foreground">Type</Label>
+                <Label className="text-muted-foreground">{tSupplier('typeFilter')}</Label>
                 <p className="font-medium">
                   {selectedSupplier?.type?.name ?? '—'}
                 </p>
               </div>
               <div>
-                <Label className="text-muted-foreground">Status</Label>
+                <Label className="text-muted-foreground">{tSupplier('statusFilter')}</Label>
                 <p className="font-medium">
-                  {selectedSupplier?.isActive ? 'Active' : 'Inactive'}
+                  {selectedSupplier?.isActive ? tUi('active') : tUi('inactive')}
                 </p>
               </div>
             </div>
 
             {selectedSupplier?.phone && (
               <div>
-                <Label className="text-muted-foreground">Phone</Label>
+                <Label className="text-muted-foreground">{tSupplier('phone')}</Label>
                 <p className="font-medium">{selectedSupplier.phone}</p>
               </div>
             )}
 
             {selectedSupplier?.email && (
               <div>
-                <Label className="text-muted-foreground">Email</Label>
+                <Label className="text-muted-foreground">{tSupplier('email')}</Label>
                 <p className="font-medium">{selectedSupplier.email}</p>
               </div>
             )}
 
             {selectedSupplier?.address && (
               <div>
-                <Label className="text-muted-foreground">Address</Label>
+                <Label className="text-muted-foreground">{tSupplier('address')}</Label>
                 <p className="font-medium">{selectedSupplier.address}</p>
               </div>
             )}
 
             {selectedSupplier?.bankAccountEnc && (
               <div className="border-t pt-4">
-                <Label className="text-muted-foreground">Bank Account</Label>
+                <Label className="text-muted-foreground">{tSupplier('bankAccount')}</Label>
                 <div className="mt-2 space-y-3">
                   <p className="font-medium">{selectedSupplier.bankName}</p>
                   <p className="font-medium">{selectedSupplier.bankAccountName}</p>
@@ -845,7 +862,7 @@ export default function SuppliersPage() {
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       )}
                       <Lock className="mr-2 h-4 w-4" />
-                      View Account Number
+                      {tSupplier('viewAccountNumber')}
                     </Button>
                   )}
                 </div>
@@ -859,7 +876,7 @@ export default function SuppliersPage() {
         isOpen={bankPinModalOpen}
         onClose={() => setBankPinModalOpen(false)}
         onConfirm={handleViewBankAccountConfirm}
-        action="melihat nomor rekening bank"
+        action={tSupplier('pinActionViewBank')}
       />
       <PinAuthModal
         isOpen={deletePinModalOpen}
@@ -868,7 +885,7 @@ export default function SuppliersPage() {
           setDeleteTargetId(null);
         }}
         onConfirm={handleDeletePinConfirm}
-        action="menghapus supplier"
+        action={tSupplier('pinActionDelete')}
       />
 
       <Dialog
@@ -882,17 +899,17 @@ export default function SuppliersPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Reject supplier</DialogTitle>
-            <DialogDescription>Provide a reason for rejection. The supplier status will be set to Rejected.</DialogDescription>
+            <DialogTitle>{tSupplier('rejectTitle')}</DialogTitle>
+            <DialogDescription>{tSupplier('rejectDescription')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="reject-reason">Reason *</Label>
+              <Label htmlFor="reject-reason">{tSupplier('rejectReason')} *</Label>
               <Textarea
                 id="reject-reason"
                 value={rejectReason}
                 onChange={(e) => setRejectReason(e.target.value)}
-                placeholder="Reason for rejection..."
+                placeholder={tSupplier('rejectReasonPlaceholder')}
                 rows={3}
               />
             </div>
@@ -905,7 +922,7 @@ export default function SuppliersPage() {
                 setRejectReason('');
               }}
             >
-              Cancel
+              {tUi('cancel')}
             </Button>
             <Button
               variant="destructive"
@@ -916,7 +933,7 @@ export default function SuppliersPage() {
                 try {
                   const { rejectSupplierAction } = await import('@/app/actions/suppliers');
                   await rejectSupplierAction(rejectTargetId, rejectReason.trim());
-                  toast.success('Supplier rejected');
+                  toast.success(tSupplier('rejectedToast'));
                   setRejectTargetId(null);
                   setRejectReason('');
                   fetchSuppliers();
@@ -925,7 +942,7 @@ export default function SuppliersPage() {
                 }
               }}
             >
-              Reject
+              {tSupplier('reject')}
             </Button>
           </DialogFooter>
         </DialogContent>

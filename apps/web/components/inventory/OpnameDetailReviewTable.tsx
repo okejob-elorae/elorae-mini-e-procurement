@@ -168,6 +168,8 @@ export function OpnameDetailReviewTable({ lines, isFabric }: OpnameDetailReviewT
                     variant="outline"
                     size="sm"
                     disabled={safePage <= 1}
+                    aria-label={t("previousPage")}
+                    title={t("previousPage")}
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                   >
                     <ChevronLeft className="h-4 w-4" />
@@ -177,6 +179,8 @@ export function OpnameDetailReviewTable({ lines, isFabric }: OpnameDetailReviewT
                     variant="outline"
                     size="sm"
                     disabled={safePage >= totalPages}
+                    aria-label={t("nextPage")}
+                    title={t("nextPage")}
                     onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   >
                     <ChevronRight className="h-4 w-4" />

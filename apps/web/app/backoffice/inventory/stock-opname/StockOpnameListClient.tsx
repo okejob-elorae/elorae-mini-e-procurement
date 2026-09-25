@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import { formatDisplayDateTime } from "@/lib/date-only";
 import { Plus, Loader2, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +29,7 @@ type OpnameRow = Awaited<ReturnType<typeof getOpnames>>[number];
 
 export function StockOpnameListClient() {
   const t = useTranslations("stockOpname");
+  const locale = useLocale();
   const [rows, setRows] = useState<OpnameRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("__all__");
@@ -70,7 +72,7 @@ export function StockOpnameListClient() {
           <SelectValue placeholder={t("status")} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="__all__">All</SelectItem>
+          <SelectItem value="__all__">{t("filterAllStatuses")}</SelectItem>
           {(["CREATED", "COUNTING", "SUBMITTED", "APPROVED", "CANCELLED"] as const).map((s) => (
             <SelectItem key={s} value={s}>
               {t(`statuses.${s}`)}
@@ -92,7 +94,9 @@ export function StockOpnameListClient() {
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
           ) : rows.length === 0 ? (
-            <p className="text-center text-muted-foreground py-12">No sessions yet</p>
+            <p className="text-center text-muted-foreground py-12">
+              {statusFilter === "__all__" ? t("emptySessions") : t("emptyFiltered")}
+            </p>
           ) : (
             <Table>
               <TableHeader>
@@ -121,7 +125,7 @@ export function StockOpnameListClient() {
                     <TableCell>{t(`statuses.${row.status as string}`)}</TableCell>
                     <TableCell>{Number((row as { rowCount?: number }).rowCount ?? 0)}</TableCell>
                     <TableCell className="text-muted-foreground text-sm">
-                      {row.createdAt ? new Date(String(row.createdAt)).toLocaleString() : "—"}
+                      {row.createdAt ? formatDisplayDateTime(String(row.createdAt), locale) : "—"}
                     </TableCell>
                   </TableRow>
                 ))}

@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import { formatDisplayDateTime } from "@/lib/date-only";
 import {
   ArrowLeft,
   Clock,
@@ -97,16 +98,6 @@ type Props = {
   } | null;
 };
 
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString([], {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 function formatRupiah(value: number): string {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
@@ -120,14 +111,20 @@ const ORDER_STATUS_LABEL: Record<"PENDING_APPROVAL" | "APPROVED", "statusPending
   APPROVED: "statusApproved",
 };
 
-function formatDuration(startIso: string, endIso: string | null): string {
+function formatDuration(
+  startIso: string,
+  endIso: string | null,
+  t: ReturnType<typeof useTranslations>,
+): string {
   if (!endIso) return "—";
   const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
   const mins = Math.round(ms / 60_000);
-  if (mins < 60) return `${mins}m`;
+  if (mins < 60) return t("durationMinutes", { minutes: mins });
   const hours = Math.floor(mins / 60);
   const rem = mins % 60;
-  return rem === 0 ? `${hours}h` : `${hours}h ${rem}m`;
+  return rem === 0
+    ? t("durationHours", { hours })
+    : t("durationHoursMinutes", { hours, minutes: rem });
 }
 
 function groupSentItemsByArticle(
@@ -169,6 +166,8 @@ export function StoreDetailView({ store, canEdit, visits, orders, sentItems, pen
   const tOrders = useTranslations("stores.orders");
   const tSentItems = useTranslations("stores.sentItems");
   const tFso = useTranslations("fieldSalesOrders");
+  const locale = useLocale();
+  const formatDateTime = (iso: string) => formatDisplayDateTime(iso, locale);
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [lightbox, setLightbox] = useState<{ url: string; caption: string | null } | null>(null);
@@ -334,7 +333,7 @@ export function StoreDetailView({ store, canEdit, visits, orders, sentItems, pen
             </DetailField>
             <DetailField label={tDetail("stats.terms")}>
               <span className="tabular-nums">
-                {store.paymentTempo}d · {store.marginPercent ?? "—"}%
+                {tTable("tempoDays", { days: store.paymentTempo })} · {store.marginPercent ?? "—"}%
               </span>
             </DetailField>
           </dl>
@@ -365,7 +364,7 @@ export function StoreDetailView({ store, canEdit, visits, orders, sentItems, pen
                     <TableHead>{tDetail("visitTable.duration")}</TableHead>
                     <TableHead>{tDetail("visitTable.user")}</TableHead>
                     <TableHead>{tDetail("visitTable.coords")}</TableHead>
-                    <TableHead>Foto</TableHead>
+                    <TableHead>{tDetail("visitTable.photos")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -385,7 +384,7 @@ export function StoreDetailView({ store, canEdit, visits, orders, sentItems, pen
                         )}
                       </TableCell>
                       <TableCell className="tabular-nums text-muted-foreground">
-                        {formatDuration(v.checkinAtIso, v.checkoutAtIso)}
+                        {formatDuration(v.checkinAtIso, v.checkoutAtIso, tDetail)}
                       </TableCell>
                       <TableCell className="text-muted-foreground">{v.userLabel}</TableCell>
                       <TableCell>
@@ -414,7 +413,7 @@ export function StoreDetailView({ store, canEdit, visits, orders, sentItems, pen
                               setGallery({ label: formatDateTime(v.checkinAtIso), photos: v.photos })
                             }
                           >
-                            <Images className="h-4 w-4" /> {v.photos.length} foto
+                            <Images className="h-4 w-4" /> {tDetail("photoCount", { count: v.photos.length })}
                           </Button>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
@@ -540,7 +539,7 @@ export function StoreDetailView({ store, canEdit, visits, orders, sentItems, pen
 
       <Dialog open={!!gallery} onOpenChange={(o) => !o && setGallery(null)}>
         <DialogContent className="max-w-2xl">
-          <DialogTitle>Foto Kunjungan{gallery ? ` — ${gallery.label}` : ""}</DialogTitle>
+          <DialogTitle>{tDetail("galleryTitle")}{gallery ? ` — ${gallery.label}` : ""}</DialogTitle>
           {gallery && (
             <div className="grid max-h-[70vh] grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-3">
               {gallery.photos.map((p) => (
@@ -549,7 +548,7 @@ export function StoreDetailView({ store, canEdit, visits, orders, sentItems, pen
                   type="button"
                   onClick={() => setLightbox({ url: p.url, caption: p.caption })}
                   className="space-y-1 text-left"
-                  aria-label={p.caption ?? "Foto kunjungan"}
+                  aria-label={p.caption ?? tDetail("visitPhoto")}
                 >
                   <div className="aspect-square overflow-hidden rounded-md border bg-muted">
                     <img src={p.url} alt={p.caption ?? ""} className="h-full w-full object-cover" loading="lazy" />
@@ -564,7 +563,7 @@ export function StoreDetailView({ store, canEdit, visits, orders, sentItems, pen
 
       <Dialog open={!!lightbox} onOpenChange={(o) => !o && setLightbox(null)}>
         <DialogContent className="max-w-lg">
-          <DialogTitle className="sr-only">Foto kunjungan</DialogTitle>
+          <DialogTitle className="sr-only">{tDetail("visitPhoto")}</DialogTitle>
           {lightbox && (
             <div className="space-y-2">
               <img

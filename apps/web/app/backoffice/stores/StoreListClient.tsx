@@ -109,6 +109,7 @@ export function StoreListClient({
         <div className="flex items-center gap-2">
           <Checkbox
             id="show-inactive"
+            aria-label={tList("showInactive")}
             checked={showInactive}
             onCheckedChange={(checked) => toggleShowInactive(checked === true)}
           />
@@ -175,7 +176,7 @@ export function StoreListClient({
                           {s.termsType === "PUTUS" ? tBadge("putus") : tBadge("konsi")}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">{s.paymentTempo}d</TableCell>
+                      <TableCell className="text-right tabular-nums">{tTable("tempoDays", { days: s.paymentTempo })}</TableCell>
                       <TableCell className="text-right tabular-nums">{s.marginPercent ?? "—"}</TableCell>
                       <TableCell className="truncate max-w-[220px] text-muted-foreground" title={s.address}>
                         {s.address}

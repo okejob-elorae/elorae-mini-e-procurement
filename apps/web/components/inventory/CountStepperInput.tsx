@@ -1,6 +1,7 @@
 "use client";
 
 import { Minus, Plus } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -42,6 +43,7 @@ export function CountStepperInput({
   inputClassName,
   disabled = false,
 }: CountStepperInputProps) {
+  const t = useTranslations("stockOpname");
   const applyStep = (delta: number) => {
     const next = Math.max(min, parseCount(value) + delta);
     const formatted = formatCount(next, step);
@@ -57,7 +59,7 @@ export function CountStepperInput({
         className="h-8 w-8 shrink-0"
         disabled={disabled}
         onClick={() => applyStep(-step)}
-        aria-label="Decrease count"
+        aria-label={t("decreaseCount")}
       >
         <Minus className="h-4 w-4" />
       </Button>
@@ -69,6 +71,7 @@ export function CountStepperInput({
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
         onBlur={onBlur}
+        aria-label={t("counted")}
         className={cn("h-8 w-20 text-center px-1", inputClassName)}
       />
       <Button
@@ -78,7 +81,7 @@ export function CountStepperInput({
         className="h-8 w-8 shrink-0"
         disabled={disabled}
         onClick={() => applyStep(step)}
-        aria-label="Increase count"
+        aria-label={t("increaseCount")}
       >
         <Plus className="h-4 w-4" />
       </Button>

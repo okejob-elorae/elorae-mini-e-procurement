@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { ArrowLeft, ArrowRight, Plus, Trash2 } from "lucide-react";
 import type { ItemImageSubmission } from "@/lib/items/images/types";
 
@@ -13,6 +14,7 @@ type Props = {
 };
 
 export function ImageGallery({ variantSku, items, onChange, onUpload, canManage }: Props) {
+  const t = useTranslations("items.images");
   const [busy, setBusy] = useState(false);
 
   async function handlePick(e: React.ChangeEvent<HTMLInputElement>) {
@@ -62,7 +64,7 @@ export function ImageGallery({ variantSku, items, onChange, onUpload, canManage 
                 type="button"
                 onClick={() => move(idx, -1)}
                 className="text-white"
-                aria-label="Move left"
+                aria-label={t("moveLeft")}
               >
                 <ArrowLeft className="h-3 w-3" />
               </button>
@@ -70,7 +72,7 @@ export function ImageGallery({ variantSku, items, onChange, onUpload, canManage 
                 type="button"
                 onClick={() => move(idx, +1)}
                 className="text-white"
-                aria-label="Move right"
+                aria-label={t("moveRight")}
               >
                 <ArrowRight className="h-3 w-3" />
               </button>
@@ -78,7 +80,7 @@ export function ImageGallery({ variantSku, items, onChange, onUpload, canManage 
                 type="button"
                 onClick={() => remove(idx)}
                 className="text-white"
-                aria-label="Remove image"
+                aria-label={t("removeImage")}
               >
                 <Trash2 className="h-3 w-3" />
               </button>
@@ -87,7 +89,11 @@ export function ImageGallery({ variantSku, items, onChange, onUpload, canManage 
         </div>
       ))}
       {canManage && (
-        <label className="w-20 h-20 rounded border-2 border-dashed flex items-center justify-center cursor-pointer hover:bg-muted/50">
+        <label
+          className="w-20 h-20 rounded border-2 border-dashed flex items-center justify-center cursor-pointer hover:bg-muted/50"
+          title={t("addImage")}
+        >
+          <span className="sr-only">{t("addImage")}</span>
           <input
             type="file"
             accept="image/jpeg,image/png,image/webp"

@@ -49,10 +49,10 @@ export function ItemDetailClient({
 
   const handlePushStock = async () => {
     if (!initialData?.id) return;
-    if (!confirm("Push this item's current stock to Jubelio?")) return;
+    if (!confirm(tItems('detail.pushStockConfirm'))) return;
     const r = await pushItemStockToJubelio(initialData.id);
-    if (r.ok) toast.success("Queued. Pushes within ~5 seconds.");
-    else toast.error("Push failed (admin only).");
+    if (r.ok) toast.success(tItems('detail.pushStockQueued'));
+    else toast.error(tItems('detail.pushStockFailed'));
   };
 
   const handleSubmit = async (
@@ -71,10 +71,10 @@ export function ItemDetailClient({
       if (data.type === ItemType.FINISHED_GOOD && consumptionRules) {
         await saveConsumptionRules(initialData.id, consumptionRules);
       }
-      toast.success('Item updated successfully');
+      toast.success(tItems('detail.updatedToast'));
       router.push('/backoffice/items');
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Failed to update item';
+      const message = error instanceof Error ? error.message : tItems('detail.updateFailed');
       toast.error(message);
     } finally {
       setIsSaving(false);
@@ -86,7 +86,12 @@ export function ItemDetailClient({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link href="/backoffice/items">
-            <Button variant="ghost" size="icon">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={tItems('detail.backToItems')}
+              title={tItems('detail.backToItems')}
+            >
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
@@ -98,7 +103,7 @@ export function ItemDetailClient({
         <div className="flex items-center gap-2">
           {isAdmin && (
             <Button variant="outline" size="sm" onClick={() => void handlePushStock()}>
-              Push stock to Jubelio
+              {tItems('detail.pushStock')}
             </Button>
           )}
           <Badge variant={isActive ? 'default' : 'secondary'}>{itemTypeLabel}</Badge>
@@ -107,8 +112,8 @@ export function ItemDetailClient({
 
       <Tabs defaultValue="details" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="details">Details</TabsTrigger>
-          <TabsTrigger value="price-history">Price History</TabsTrigger>
+          <TabsTrigger value="details">{tItems('detail.tabDetails')}</TabsTrigger>
+          <TabsTrigger value="price-history">{tItems('priceHistory.tab')}</TabsTrigger>
         </TabsList>
         <TabsContent value="details" className="space-y-4">
           <ItemForm initialData={initialData} onSubmit={handleSubmit} isLoading={isSaving} />
@@ -119,7 +124,7 @@ export function ItemDetailClient({
             <PriceHistoryTable itemId={initialData.id} />
           ) : (
             <div className="text-sm text-muted-foreground">
-              Save the item first to see price history.
+              {tItems('detail.saveFirst')}
             </div>
           )}
         </TabsContent>

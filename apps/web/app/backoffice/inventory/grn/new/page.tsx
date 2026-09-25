@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { offlineDB } from '@/lib/offline/db';
 import { isOnline } from '@/lib/offline/sync';
 import { getSuppliersForSelect } from '@/app/actions/suppliers';
+import { useTranslations } from 'next-intl';
 
 interface Supplier {
   id: string;
@@ -19,6 +20,8 @@ interface Supplier {
 
 export default function NewGRNPage() {
   const router = useRouter();
+  const t = useTranslations('inventory.grnForm');
+  const tToasts = useTranslations('toasts');
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [isLoadingSuppliers, setIsLoadingSuppliers] = useState(true);
 
@@ -36,13 +39,13 @@ export default function NewGRNPage() {
         }
       } catch (error) {
         console.error('Failed to fetch suppliers:', error);
-        toast.error('Failed to load suppliers');
+        toast.error(tToasts('failedToLoadSuppliers'));
       } finally {
         setIsLoadingSuppliers(false);
       }
     };
     fetchSuppliers();
-  }, []);
+  }, [tToasts]);
 
   const handleSuccess = () => {
     router.push('/backoffice/inventory');
@@ -61,14 +64,14 @@ export default function NewGRNPage() {
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild className="shrink-0">
-          <Link href="/backoffice/inventory">
+          <Link href="/backoffice/inventory" aria-label={t('backToInventory')} title={t('backToInventory')}>
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Create Goods Receipt (GRN)</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t('pageTitle')}</h1>
           <p className="text-muted-foreground">
-            Record received goods with or without a PO reference
+            {t('pageSubtitle')}
           </p>
         </div>
       </div>

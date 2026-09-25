@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -59,17 +59,21 @@ import {
   deleteItemCategory,
 } from '@/app/actions/item-categories';
 
-const schema = z.object({
-  name: z.string().min(1, 'Name is required'),
-  code: z.string().max(50).optional().or(z.literal('')),
-  isActive: z.boolean(),
-  sortOrder: z.preprocess(
-    (val) => (val === '' || val === undefined ? undefined : Number(val)),
-    z.number().int().optional()
-  ),
-});
+type Translate = ReturnType<typeof useTranslations>;
 
-type FormData = z.infer<typeof schema>;
+function makeSchema(t: Translate) {
+  return z.object({
+    name: z.string().min(1, t('nameRequired')),
+    code: z.string().max(50).optional().or(z.literal('')),
+    isActive: z.boolean(),
+    sortOrder: z.preprocess(
+      (val) => (val === '' || val === undefined ? undefined : Number(val)),
+      z.number().int().optional()
+    ),
+  });
+}
+
+type FormData = z.infer<ReturnType<typeof makeSchema>>;
 
 interface ItemCategoryRecord {
   id: string;
@@ -84,8 +88,9 @@ interface ItemCategoryRecord {
 export default function ItemCategoriesPage() {
   const tUi = useTranslations('ui');
   const tTable = useTranslations('tableHeaders');
-  const t = useTranslations('items');
   const tCommon = useTranslations('common');
+  const tCat = useTranslations('items.categories');
+  const schema = useMemo(() => makeSchema(tCat), [tCat]);
   const [categories, setCategories] = useState<ItemCategoryRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -124,7 +129,7 @@ export default function ItemCategoriesPage() {
       );
     } catch (e) {
       console.error(e);
-      toast.error('Failed to load item categories');
+      toast.error(tCat('loadFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -160,7 +165,7 @@ export default function ItemCategoriesPage() {
           sortOrder: data.sortOrder,
           isActive: data.isActive,
         });
-        toast.success(tCommon('update') + ' OK');
+        toast.success(tCat('updatedToast'));
       } else {
         await createItemCategory({
           name: data.name,
@@ -168,12 +173,12 @@ export default function ItemCategoriesPage() {
           sortOrder: data.sortOrder,
           isActive: data.isActive,
         });
-        toast.success(tCommon('create') + ' OK');
+        toast.success(tCat('createdToast'));
       }
       setIsDialogOpen(false);
       fetchCategories();
     } catch (e: any) {
-      toast.error(e?.message || 'Failed to save');
+      toast.error(e?.message || tCat('saveFailed'));
     }
   };
 
@@ -182,11 +187,11 @@ export default function ItemCategoriesPage() {
     setIsDeleting(true);
     try {
       await deleteItemCategory(deleteId);
-      toast.success(tCommon('delete') + ' OK');
+      toast.success(tCat('deletedToast'));
       setDeleteId(null);
       fetchCategories();
     } catch (e: any) {
-      toast.error(e?.message || 'Failed to delete');
+      toast.error(e?.message || tCat('deleteFailed'));
     } finally {
       setIsDeleting(false);
     }
@@ -204,14 +209,14 @@ export default function ItemCategoriesPage() {
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild className="shrink-0">
-          <Link href="/backoffice/items">
+          <Link href="/backoffice/items" aria-label={tCat('backToItems')} title={tCat('backToItems')}>
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">{t('title')} – Category</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{tCat('pageTitle')}</h1>
           <p className="text-muted-foreground">
-            Manage item categories. Categories can be assigned to items for grouping.
+            {tCat('pageDescription')}
           </p>
         </div>
       </div>
@@ -220,35 +225,35 @@ export default function ItemCategoriesPage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Categories</CardTitle>
-              <CardDescription>Add, edit, or remove item categories. Categories in use cannot be deleted.</CardDescription>
+              <CardTitle>{tCat('cardTitle')}</CardTitle>
+              <CardDescription>{tCat('cardDescription')}</CardDescription>
             </div>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <Button variant="outline" size="sm" onClick={openCreate}>
                 <Plus className="h-4 w-4 mr-2" />
-                New category
+                {tCat('newCategory')}
               </Button>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>{editingId ? 'Edit category' : 'New category'}</DialogTitle>
+                  <DialogTitle>{editingId ? tCat('editTitle') : tCat('newCategory')}</DialogTitle>
                   <DialogDescription>
-                    {editingId ? 'Update name, code, and status.' : 'Add a new item category.'}
+                    {editingId ? tCat('editDescription') : tCat('createDescription')}
                   </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="name">Name *</Label>
-                    <Input id="name" {...register('name')} placeholder="e.g. Cotton" />
+                    <Label htmlFor="name">{tUi('name')} *</Label>
+                    <Input id="name" {...register('name')} placeholder={tCat('namePlaceholder')} />
                     {errors.name && (
                       <p className="text-sm text-destructive">{errors.name.message}</p>
                     )}
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="code">Code (optional)</Label>
+                    <Label htmlFor="code">{tCat('codeOptional')}</Label>
                     <Input
                       id="code"
                       {...register('code')}
-                      placeholder="e.g. COTTON"
+                      placeholder={tCat('codePlaceholder')}
                       disabled={!!editingId}
                     />
                     {errors.code && (
@@ -264,7 +269,7 @@ export default function ItemCategoriesPage() {
                     <Label htmlFor="isActive">{tUi('active')}</Label>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="sortOrder">Sort order (optional)</Label>
+                    <Label htmlFor="sortOrder">{tCat('sortOrderOptional')}</Label>
                     <Input
                       id="sortOrder"
                       type="number"
@@ -295,14 +300,14 @@ export default function ItemCategoriesPage() {
         </CardHeader>
         <CardContent>
           {categories.length === 0 ? (
-            <p className="text-muted-foreground py-8 text-center">No categories yet. Create one to get started.</p>
+            <p className="text-muted-foreground py-8 text-center">{tCat('empty')}</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>{tUi('name')}</TableHead>
                   <TableHead>{tUi('code')}</TableHead>
-                  <TableHead>Sort</TableHead>
+                  <TableHead>{tCat('sort')}</TableHead>
                   <TableHead>{tTable('status')}</TableHead>
                   <TableHead className="w-[80px]">{tCommon('actions')}</TableHead>
                 </TableRow>
@@ -322,7 +327,7 @@ export default function ItemCategoriesPage() {
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <span className="sr-only">Open menu</span>
+                            <span className="sr-only">{tCat('openMenu', { name: row.name })}</span>
                             <Pencil className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
@@ -350,9 +355,9 @@ export default function ItemCategoriesPage() {
       <AlertDialog open={!!deleteId} onOpenChange={() => !isDeleting && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete category?</AlertDialogTitle>
+            <AlertDialogTitle>{tCat('deleteTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
-              This cannot be undone. Categories that are assigned to items cannot be deleted.
+              {tCat('deleteBody')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

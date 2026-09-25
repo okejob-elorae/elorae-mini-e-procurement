@@ -41,6 +41,7 @@ type Props = { canManage: boolean };
 
 export function PustakaTab({ canManage }: Props) {
   const t = useTranslations("leadTime.pustaka");
+  const tc = useTranslations("leadTime.common");
   const [rows, setRows] = useState<Template[]>([]);
   const [search, setSearch] = useState("");
   const [showArchived, setShowArchived] = useState(false);
@@ -54,7 +55,7 @@ export function PustakaTab({ canManage }: Props) {
       const data = await getProcessTemplates(showArchived);
       setRows(data as Template[]);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to load");
+      toast.error(err instanceof Error ? err.message : tc("loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -74,10 +75,10 @@ export function PustakaTab({ canManage }: Props) {
     if (!confirm(t("deactivateConfirm", { name: row.name }))) return;
     const result = await deactivateProcessTemplate(row.id);
     if (!result.success) {
-      toast.error(result.error ?? "Failed");
+      toast.error(result.error ?? tc("failed"));
       return;
     }
-    toast.success("OK");
+    toast.success(tc("saved"));
     void load();
   }
 
@@ -98,6 +99,7 @@ export function PustakaTab({ canManage }: Props) {
           <div className="flex items-center gap-2">
             <Switch
               id="show-archived"
+              aria-label={t("showArchived")}
               checked={showArchived}
               onCheckedChange={setShowArchived}
             />
@@ -186,6 +188,8 @@ export function PustakaTab({ canManage }: Props) {
                         <Button
                           size="icon"
                           variant="ghost"
+                          aria-label={t("editAria", { name: row.name })}
+                          title={t("editAria", { name: row.name })}
                           onClick={() => {
                             setEditing(row);
                             setDialogOpen(true);
@@ -197,6 +201,8 @@ export function PustakaTab({ canManage }: Props) {
                           <Button
                             size="icon"
                             variant="ghost"
+                            aria-label={t("deactivateAria", { name: row.name })}
+                            title={t("deactivateAria", { name: row.name })}
                             onClick={() => void onDeactivate(row)}
                           >
                             <Trash2 className="h-4 w-4" />

@@ -194,7 +194,7 @@ export function ItemsPageClient({
         <Link href="/backoffice/items/new">
           <Button>
             <Plus className="mr-2 h-4 w-4" />
-            New Item
+            {tItems('newItem')}
           </Button>
         </Link>
       </div>
@@ -202,7 +202,7 @@ export function ItemsPageClient({
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Items</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tItems('totalItems')}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">{counts.total}</p>
@@ -210,7 +210,7 @@ export function ItemsPageClient({
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Fabric</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tItems('fabric')}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">{counts.byType.FABRIC}</p>
@@ -218,7 +218,7 @@ export function ItemsPageClient({
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Accessories</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tItems('accessories')}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">{counts.byType.ACCESSORIES}</p>
@@ -226,7 +226,7 @@ export function ItemsPageClient({
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Finished Good</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tItems('finishedGood')}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">{counts.byType.FINISHED_GOOD}</p>
@@ -234,7 +234,7 @@ export function ItemsPageClient({
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Active</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{tItems('active')}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">{counts.active}</p>
@@ -281,14 +281,14 @@ export function ItemsPageClient({
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Package className="h-5 w-5" />
-            Item List
+            {tItems('itemList')}
           </CardTitle>
         </CardHeader>
         <CardContent>
           {items.length === 0 ? (
             <div className="text-center py-12">
               <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">No items found</p>
+              <p className="text-muted-foreground">{tItems('noItemsFound')}</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -300,13 +300,19 @@ export function ItemsPageClient({
                     <TableHead>SKU</TableHead>
                     <TableHead>{tTable('name')}</TableHead>
                     <TableHead>{tTable('type')}</TableHead>
-                    <TableHead>UOM</TableHead>
+                    {/* Satuan, harga rata-rata dan nilai disembunyikan di bawah
+                        2xl: di layar 1280 px kolom-kolom ini mendorong Harga
+                        Jual keluar layar. Ketiganya tetap ada di halaman
+                        detail barang dan di Inventori. */}
+                    <TableHead className="hidden 2xl:table-cell">{tTable('uom')}</TableHead>
                     <TableHead className="text-right">{tTable('stock')}</TableHead>
                     <TableHead className="text-right">{tTable('available')}</TableHead>
-                    <TableHead className="text-right">{tTable('avgCost')}</TableHead>
-                    <TableHead className="text-right">{tTable('value')}</TableHead>
+                    <TableHead className="hidden 2xl:table-cell text-right">{tTable('avgCost')}</TableHead>
+                    <TableHead className="hidden 2xl:table-cell text-right">{tTable('value')}</TableHead>
                     <TableHead className="text-right">{tTable('sellingPrice')}</TableHead>
-                    <TableHead className="w-12"></TableHead>
+                    <TableHead className="w-12 sticky right-0 bg-card">
+                      <span className="sr-only">{tItems('actions')}</span>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -320,7 +326,8 @@ export function ItemsPageClient({
                             onClick={() =>
                               setExpandedId(expandedId === item.id ? null : item.id)
                             }
-                            aria-label="Toggle details"
+                            aria-label={tItems('toggleDetails')}
+                            aria-expanded={expandedId === item.id}
                           >
                             {expandedId === item.id ? (
                               <ChevronDown className="h-4 w-4" />
@@ -342,7 +349,7 @@ export function ItemsPageClient({
                           )}
                         </TableCell>
                         <TableCell className="font-medium">{item.sku}</TableCell>
-                        <TableCell>
+                        <TableCell className="whitespace-normal min-w-[160px]">
                           <p className="font-medium">
                             {locale === 'en' ? item.nameEn : item.nameId}
                           </p>
@@ -352,7 +359,7 @@ export function ItemsPageClient({
                             {itemTypeLabels[item.type]}
                           </CategoryBadge>
                         </TableCell>
-                        <TableCell>{item.uom.code}</TableCell>
+                        <TableCell className="hidden 2xl:table-cell">{item.uom.code}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-2">
                             {isLowStock(item) && (
@@ -374,10 +381,10 @@ export function ItemsPageClient({
                             {Number(item.inventoryValue?.available ?? 0).toLocaleString('id-ID')}
                           </span>
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="hidden 2xl:table-cell text-right">
                           Rp {Number(item.inventoryValue?.avgCost || 0).toLocaleString('id-ID')}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="hidden 2xl:table-cell text-right">
                           Rp {Number(item.inventoryValue?.totalValue || 0).toLocaleString('id-ID')}
                         </TableCell>
                         <TableCell className="text-right">
@@ -385,10 +392,15 @@ export function ItemsPageClient({
                             ? `Rp ${Number(item.sellingPrice).toLocaleString('id-ID')}`
                             : '—'}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="sticky right-0 bg-card">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label={tItems('rowMenu', { sku: item.sku })}
+                                title={tItems('rowMenu', { sku: item.sku })}
+                              >
                                 <MoreHorizontal className="h-4 w-4" />
                               </Button>
                             </DropdownMenuTrigger>
@@ -396,7 +408,7 @@ export function ItemsPageClient({
                               <DropdownMenuItem asChild>
                                 <Link href={`/backoffice/items/${item.id}`}>
                                   <Edit className="mr-2 h-4 w-4" />
-                                  Edit
+                                  {tItems('edit')}
                                 </Link>
                               </DropdownMenuItem>
                               <DropdownMenuItem
@@ -404,7 +416,7 @@ export function ItemsPageClient({
                                 onClick={() => handleDelete(item.id)}
                               >
                                 <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
+                                {tItems('delete')}
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -415,7 +427,7 @@ export function ItemsPageClient({
                           <TableCell colSpan={12}>
                             <div className="grid gap-3 sm:grid-cols-2">
                               <div className="space-y-1">
-                                <p className="text-sm font-semibold">Variants</p>
+                                <p className="text-sm font-semibold">{tItems('variants')}</p>
                                 {item.variants && item.variants.length > 0 ? (
                                   <div className="space-y-1 text-sm">
                                     {item.variants.map((variant, idx) => (
@@ -462,7 +474,7 @@ export function ItemsPageClient({
                                 )}
                               </div>
                               <div className="space-y-1">
-                                <p className="text-sm font-semibold">BOM</p>
+                                <p className="text-sm font-semibold">{tItems('bom')}</p>
                                 {item.fgConsumptions && item.fgConsumptions.length > 0 ? (
                                   <div className="space-y-1 text-sm">
                                     {item.fgConsumptions.map((rule, idx) => (
@@ -471,10 +483,10 @@ export function ItemsPageClient({
                                           {rule.material?.sku || '-'} {rule.material?.nameId || ''}
                                         </span>
                                         <span className="text-muted-foreground">
-                                          Qty: {rule.qtyRequired}
+                                          {tItems('bomQty', { qty: rule.qtyRequired })}
                                         </span>
                                         <span className="text-muted-foreground">
-                                          Waste: {rule.wastePercent}%
+                                          {tItems('bomWaste', { percent: rule.wastePercent })}
                                         </span>
                                       </div>
                                     ))}

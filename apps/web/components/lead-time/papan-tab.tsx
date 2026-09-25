@@ -22,6 +22,7 @@ type Props = { canManage: boolean };
 
 export function PapanTab({ canManage }: Props) {
   const t = useTranslations("leadTime.papan");
+  const tc = useTranslations("leadTime.common");
   const [templates, setTemplates] = useState<PickerTemplate[]>([]);
   const [cards, setCards] = useState<SupplierChainCard[]>([]);
   const [sopOptions, setSopOptions] = useState<SopOption[]>([]);
@@ -55,7 +56,7 @@ export function PapanTab({ canManage }: Props) {
         }))
       );
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to load");
+      toast.error(err instanceof Error ? err.message : tc("loadFailed"));
     }
   }
 
@@ -85,10 +86,10 @@ export function PapanTab({ canManage }: Props) {
       processTemplateId: selected.id,
     });
     if (!result.success) {
-      toast.error(result.error ?? "Failed");
+      toast.error(result.error ?? tc("failed"));
       return;
     }
-    toast.success("OK");
+    toast.success(tc("saved"));
     void reload();
   }
 
@@ -96,7 +97,7 @@ export function PapanTab({ canManage }: Props) {
     if (!confirm(t("removeConfirm", { name, supplier: supplierName }))) return;
     const result = await removeSupplierProcessStep(stepId);
     if (!result.success) {
-      toast.error(result.error ?? "Failed");
+      toast.error(result.error ?? tc("failed"));
       return;
     }
     void reload();
@@ -105,7 +106,7 @@ export function PapanTab({ canManage }: Props) {
   async function onReorder(supplierId: string, orderedStepIds: string[]) {
     const result = await reorderSupplierChain({ supplierId, orderedStepIds });
     if (!result.success) {
-      toast.error(result.error ?? "Failed");
+      toast.error(result.error ?? tc("failed"));
       return;
     }
     void reload();
@@ -138,10 +139,10 @@ export function PapanTab({ canManage }: Props) {
       mode,
     });
     if (!result.success) {
-      toast.error(result.error ?? "Failed");
+      toast.error(result.error ?? tc("failed"));
       return;
     }
-    toast.success("OK");
+    toast.success(tc("saved"));
     void reload();
   }
 

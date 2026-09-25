@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
-import { formatDateOnly, parseDateOnly } from '@/lib/date-only';
+import { formatDateOnly, formatDisplayDateTime, parseDateOnly } from '@/lib/date-only';
+import { useLocale, useTranslations } from 'next-intl';
 import {
   Select,
   SelectContent,
@@ -54,7 +55,7 @@ const stockCardPrintLabelsId: Partial<StockCardPrintLabels> = {
   noMovements: 'Tidak ada mutasi pada periode ini.',
 };
 
-function printHtmlInIframe(html: string, iframeTitle: string) {
+function printHtmlInIframe(html: string, iframeTitle: string, loadFailedMessage: string) {
   const iframe = document.createElement('iframe');
   iframe.setAttribute('style', 'position:absolute;width:0;height:0;border:0;visibility:hidden;');
   iframe.setAttribute('title', iframeTitle);
@@ -62,7 +63,7 @@ function printHtmlInIframe(html: string, iframeTitle: string) {
   const doc = iframe.contentWindow?.document;
   if (!doc) {
     iframe.remove();
-    toast.error('Failed to load for print');
+    toast.error(loadFailedMessage);
     return;
   }
   doc.open();
@@ -82,6 +83,8 @@ const defaultTo = endOfDay(new Date());
 type ViewMode = 'by-item' | 'by-type' | 'by-category';
 
 export default function StockCardPage() {
+  const t = useTranslations('inventory.stockCard');
+  const locale = useLocale();
   const [viewMode, setViewMode] = useState<ViewMode>('by-item');
   const [itemId, setItemId] = useState<string>('');
   const [dateFrom, setDateFrom] = useState(format(defaultFrom, 'yyyy-MM-dd'));
@@ -105,22 +108,22 @@ export default function StockCardPage() {
       const list = await getCurrentStockSummary();
       setSummary(list);
     } catch {
-      toast.error('Failed to load items');
+      toast.error(t('loadItemsFailed'));
     }
-  }, []);
+  }, [t]);
 
   const loadCategories = useCallback(async () => {
     try {
       const list = await getItemCategories(true);
       setCategories(list);
     } catch {
-      toast.error('Failed to load categories');
+      toast.error(t('loadCategoriesFailed'));
     }
-  }, []);
+  }, [t]);
 
   const loadStockCard = useCallback(async () => {
     if (!itemId) {
-      toast.error('Select an item');
+      toast.error(t('selectItemFirst'));
       return;
     }
     setIsLoading(true);
@@ -131,12 +134,12 @@ export default function StockCardPage() {
       setData(result);
       setLoadedOnce(true);
     } catch {
-      toast.error('Failed to load stock card');
+      toast.error(t('loadFailed'));
       setData(null);
     } finally {
       setIsLoading(false);
     }
-  }, [itemId, dateFrom, dateTo, variantSku]);
+  }, [itemId, dateFrom, dateTo, variantSku, t]);
 
   const loadStockCardByType = useCallback(async () => {
     setIsLoading(true);
@@ -147,16 +150,16 @@ export default function StockCardPage() {
       setDataByType(result);
       setLoadedOnce(true);
     } catch {
-      toast.error('Failed to load stock card by type');
+      toast.error(t('loadByTypeFailed'));
       setDataByType(null);
     } finally {
       setIsLoading(false);
     }
-  }, [typeFilter, dateFrom, dateTo]);
+  }, [typeFilter, dateFrom, dateTo, t]);
 
   const loadStockCardByCategory = useCallback(async () => {
     if (!categoryId) {
-      toast.error('Select a category');
+      toast.error(t('selectCategoryFirst'));
       return;
     }
     setIsLoading(true);
@@ -167,12 +170,12 @@ export default function StockCardPage() {
       setDataByCategory(result);
       setLoadedOnce(true);
     } catch {
-      toast.error('Failed to load stock card by category');
+      toast.error(t('loadByCategoryFailed'));
       setDataByCategory(null);
     } finally {
       setIsLoading(false);
     }
-  }, [categoryId, dateFrom, dateTo]);
+  }, [categoryId, dateFrom, dateTo, t]);
 
   useEffect(() => {
     loadSummary();
@@ -227,7 +230,7 @@ export default function StockCardPage() {
 
   const handlePrintByItem = async () => {
     if (!data?.item) {
-      toast.error('Load stock card data before printing');
+      toast.error(t('loadBeforePrint'));
       return;
     }
     try {
@@ -241,7 +244,7 @@ export default function StockCardPage() {
         itemSku: data.item.sku ?? '-',
         itemName: data.item.nameId ?? '-',
         uomCode: data.item.uom?.code ?? '',
-        variantFilterLabel: variantSku.trim() ? variantSku : 'All variants',
+        variantFilterLabel: variantSku.trim() ? variantSku : t('allVariants'),
         dateFromLabel: dateFrom,
         dateToLabel: dateTo,
         openingBalance: data.openingBalance,
@@ -262,21 +265,21 @@ export default function StockCardPage() {
         })),
         labels: stockCardPrintLabelsId,
       });
-      printHtmlInIframe(html, 'Print stock card');
+      printHtmlInIframe(html, t('printFrameTitle'), t('printLoadFailed'));
     } catch {
-      toast.error('Failed to print stock card');
+      toast.error(t('printFailed'));
     }
   };
 
   const handlePrintByType = async () => {
     if (!dataByType) {
-      toast.error('Load stock card by type before printing');
+      toast.error(t('loadByTypeBeforePrint'));
       return;
     }
     try {
       await logPrint('StockCard', `by-type:${dataByType.type}`);
       const typeTitle =
-        dataByType.type === 'raw' ? 'Raw materials (Fabric + Accessories)' : 'Finished goods';
+        dataByType.type === 'raw' ? t('typeRawLong') : t('typeFinished');
       const html = buildStockCardPrintHtml({
         kind: 'byType',
         typeTitle,
@@ -300,22 +303,22 @@ export default function StockCardPage() {
         })),
         labels: stockCardPrintLabelsId,
       });
-      printHtmlInIframe(html, 'Print stock card by type');
+      printHtmlInIframe(html, t('printByTypeFrameTitle'), t('printLoadFailed'));
     } catch {
-      toast.error('Failed to print stock card');
+      toast.error(t('printFailed'));
     }
   };
 
   const handlePrintByCategory = async () => {
     if (!dataByCategory) {
-      toast.error('Load stock card by category before printing');
+      toast.error(t('loadByCategoryBeforePrint'));
       return;
     }
     try {
       await logPrint('StockCard', `by-category:${categoryId}`);
       const html = buildStockCardPrintHtml({
         kind: 'byCategory',
-        categoryTitle: dataByCategory.category.name || 'Category',
+        categoryTitle: dataByCategory.category.name || t('categoryFallback'),
         categoryCode: dataByCategory.category.code,
         dateFromLabel: dateFrom,
         dateToLabel: dateTo,
@@ -337,9 +340,9 @@ export default function StockCardPage() {
         })),
         labels: stockCardPrintLabelsId,
       });
-      printHtmlInIframe(html, 'Print stock card by category');
+      printHtmlInIframe(html, t('printByCategoryFrameTitle'), t('printLoadFailed'));
     } catch {
-      toast.error('Failed to print stock card');
+      toast.error(t('printFailed'));
     }
   };
 
@@ -347,21 +350,21 @@ export default function StockCardPage() {
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild className="shrink-0">
-          <Link href="/backoffice/inventory">
+          <Link href="/backoffice/inventory" aria-label={t('backToInventory')} title={t('backToInventory')}>
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Stock Card</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t('title')}</h1>
           <p className="text-muted-foreground">
-            Movement history and running balance by item, by item type, or by item category
+            {t('subtitle')}
           </p>
         </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Date range</CardTitle>
+          <CardTitle>{t('dateRange')}</CardTitle>
         </CardHeader>
         <CardContent>
           <DateRangePicker
@@ -381,20 +384,20 @@ export default function StockCardPage() {
 
       <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
         <TabsList>
-          <TabsTrigger value="by-item">By item</TabsTrigger>
-          <TabsTrigger value="by-type">By item type</TabsTrigger>
-          <TabsTrigger value="by-category">By item category</TabsTrigger>
+          <TabsTrigger value="by-item">{t('tabByItem')}</TabsTrigger>
+          <TabsTrigger value="by-type">{t('tabByType')}</TabsTrigger>
+          <TabsTrigger value="by-category">{t('tabByCategory')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="by-item" className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Filter</CardTitle>
+          <CardTitle>{t('filter')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
             <div className="space-y-2">
-              <Label>Item</Label>
+              <Label>{t('item')}</Label>
               <SearchableCombobox
                 options={summary.map((s) => ({
                   value: s.itemId,
@@ -406,7 +409,7 @@ export default function StockCardPage() {
                   setData(null);
                   setVariantSku('');
                 }}
-                placeholder="Select item"
+                placeholder={t('selectItem')}
                 triggerClassName="min-h-[44px]"
               />
             </div>
@@ -419,20 +422,20 @@ export default function StockCardPage() {
                 {isLoading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  'Load'
+                  t('load')
                 )}
               </Button>
             </div>
             <div className="space-y-2">
-              <Label>Variant (optional)</Label>
+              <Label>{t('variantOptional')}</Label>
               <SearchableCombobox
                 options={[
-                  { value: '__all__', label: 'All variants' },
+                  { value: '__all__', label: t('allVariants') },
                   ...variantOptions.map((sku) => ({ value: sku, label: sku })),
                 ]}
                 value={variantSku || '__all__'}
                 onValueChange={(v) => setVariantSku(v === '__all__' ? '' : v)}
-                placeholder="All variants"
+                placeholder={t('allVariants')}
                 triggerClassName="min-h-[44px]"
               />
             </div>
@@ -454,18 +457,18 @@ export default function StockCardPage() {
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={handlePrintByItem} className="min-h-[44px]">
                 <Printer className="mr-2 h-4 w-4" />
-                Print
+                {t('print')}
               </Button>
               <Button variant="outline" size="sm" onClick={handleExport} className="min-h-[44px]">
                 <Download className="mr-2 h-4 w-4" />
-                Export CSV
+                {t('exportCsv')}
               </Button>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <p className="text-sm text-muted-foreground">Opening balance</p>
+                <p className="text-sm text-muted-foreground">{t('openingBalance')}</p>
                 <p className="text-lg font-semibold">
                   {data.openingBalance.toLocaleString('id-ID')} {data.item?.uom?.code ?? ''}
                 </p>
@@ -474,7 +477,7 @@ export default function StockCardPage() {
                 </p>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Closing balance</p>
+                <p className="text-sm text-muted-foreground">{t('closingBalance')}</p>
                 <p className="text-lg font-semibold">
                   {data.closingBalance.toLocaleString('id-ID')} {data.item?.uom?.code ?? ''}
                 </p>
@@ -485,25 +488,25 @@ export default function StockCardPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Tanggal</TableHead>
-                    <TableHead>Dokumen</TableHead>
-                    <TableHead>Keterangan</TableHead>
-                    <TableHead>Notes</TableHead>
-                    <TableHead>Variant</TableHead>
-                    <TableHead className="text-right text-green-600 dark:text-green-400">Masuk</TableHead>
-                    <TableHead className="text-right text-red-600 dark:text-red-400">Keluar</TableHead>
-                    <TableHead className="text-right">Sisa</TableHead>
-                    <TableHead className="text-right">Harga Satuan</TableHead>
-                    <TableHead className="text-right">Nilai Persediaan</TableHead>
+                    <TableHead>{t('colDate')}</TableHead>
+                    <TableHead>{t('colDoc')}</TableHead>
+                    <TableHead>{t('colDesc')}</TableHead>
+                    <TableHead>{t('colNotes')}</TableHead>
+                    <TableHead>{t('colVariant')}</TableHead>
+                    <TableHead className="text-right text-green-600 dark:text-green-400">{t('colIn')}</TableHead>
+                    <TableHead className="text-right text-red-600 dark:text-red-400">{t('colOut')}</TableHead>
+                    <TableHead className="text-right">{t('colBalance')}</TableHead>
+                    <TableHead className="text-right">{t('colUnitCost')}</TableHead>
+                    <TableHead className="text-right">{t('colBalanceValue')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {data.movements.map((m) => (
                     <TableRow key={m.id}>
-                      <TableCell>{format(new Date(m.date), 'dd/MM/yyyy HH:mm')}</TableCell>
+                      <TableCell>{formatDisplayDateTime(m.date, locale)}</TableCell>
                       <TableCell className="font-medium">{m.docNumber}</TableCell>
-                      <TableCell>{m.description}</TableCell>
-                      <TableCell>{(m as { notes?: string | null }).notes ?? '-'}</TableCell>
+                      <TableCell className="whitespace-normal min-w-[180px]">{m.description}</TableCell>
+                      <TableCell className="whitespace-normal min-w-[140px]">{(m as { notes?: string | null }).notes ?? '-'}</TableCell>
                       <TableCell>{m.variantSku ?? '-'}</TableCell>
                       <TableCell className="text-right text-green-600 dark:text-green-400">
                         {m.in != null ? m.in.toLocaleString('id-ID') : '-'}
@@ -533,7 +536,7 @@ export default function StockCardPage() {
 
       {loadedOnce && data && data.movements.length === 0 && (
         <p className="text-muted-foreground text-center py-8">
-          No movements in the selected date range.
+          {t('noMovements')}
         </p>
       )}
         </TabsContent>
@@ -541,12 +544,12 @@ export default function StockCardPage() {
         <TabsContent value="by-type" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Filter</CardTitle>
+              <CardTitle>{t('filter')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label>Item type</Label>
+                  <Label>{t('itemType')}</Label>
                   <Select
                     value={typeFilter}
                     onValueChange={(v) => {
@@ -558,8 +561,8 @@ export default function StockCardPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="raw">Raw materials (Fabric + Accessories)</SelectItem>
-                      <SelectItem value="finished">Finished goods</SelectItem>
+                      <SelectItem value="raw">{t('typeRawLong')}</SelectItem>
+                      <SelectItem value="finished">{t('typeFinished')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -572,7 +575,7 @@ export default function StockCardPage() {
                     {isLoading ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
-                      'Load'
+                      t('load')
                     )}
                   </Button>
                 </div>
@@ -584,11 +587,11 @@ export default function StockCardPage() {
             <Card>
               <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
                 <CardTitle>
-                  Stock card by type: {typeFilter === 'raw' ? 'Raw materials' : 'Finished goods'}
+                  {t('byTypeTitle', { type: typeFilter === 'raw' ? t('typeRaw') : t('typeFinished') })}
                 </CardTitle>
                 <Button variant="outline" size="sm" onClick={() => void handlePrintByType()} className="min-h-[44px]">
                   <Printer className="mr-2 h-4 w-4" />
-                  Print
+                  {t('print')}
                 </Button>
               </CardHeader>
               <CardContent>
@@ -598,11 +601,11 @@ export default function StockCardPage() {
                       <TableRow>
                         <TableHead className="w-8"></TableHead>
                         <TableHead>SKU</TableHead>
-                        <TableHead>Item</TableHead>
-                        <TableHead>UOM</TableHead>
-                        <TableHead className="text-right">Opening</TableHead>
-                        <TableHead className="text-right">Closing</TableHead>
-                        <TableHead className="text-right">Movements</TableHead>
+                        <TableHead>{t('colItem')}</TableHead>
+                        <TableHead>{t('colUom')}</TableHead>
+                        <TableHead className="text-right">{t('colOpening')}</TableHead>
+                        <TableHead className="text-right">{t('colClosing')}</TableHead>
+                        <TableHead className="text-right">{t('colMovements')}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -628,7 +631,7 @@ export default function StockCardPage() {
                                   className="h-8 w-8 shrink-0"
                                   onClick={toggle}
                                   aria-expanded={isOpen}
-                                  aria-label={isOpen ? 'Collapse row' : 'Expand row'}
+                                  aria-label={t(isOpen ? 'collapseRow' : 'expandRow', { sku: row.item?.sku ?? '-' })}
                                 >
                                   {isOpen ? (
                                     <ChevronDown className="h-4 w-4" />
@@ -638,7 +641,7 @@ export default function StockCardPage() {
                                 </Button>
                               </TableCell>
                               <TableCell className="font-medium whitespace-nowrap">{row.item?.sku ?? '-'}</TableCell>
-                              <TableCell className="whitespace-nowrap">{row.item?.nameId ?? '-'}</TableCell>
+                              <TableCell className="whitespace-normal min-w-[180px]">{row.item?.nameId ?? '-'}</TableCell>
                               <TableCell className="whitespace-nowrap">{row.item?.uom?.code ?? '-'}</TableCell>
                               <TableCell className="text-right whitespace-nowrap">
                                 {row.openingBalance.toLocaleString('id-ID')}
@@ -655,22 +658,22 @@ export default function StockCardPage() {
                                     <Table>
                                       <TableHeader>
                                         <TableRow>
-                                          <TableHead>Date</TableHead>
-                                          <TableHead>Doc</TableHead>
-                                          <TableHead>Description</TableHead>
-                                          <TableHead>Notes</TableHead>
-                                          <TableHead className="text-right">In</TableHead>
-                                          <TableHead className="text-right">Out</TableHead>
-                                          <TableHead className="text-right">Balance</TableHead>
+                                          <TableHead>{t('colDate')}</TableHead>
+                                          <TableHead>{t('colDoc')}</TableHead>
+                                          <TableHead>{t('colDesc')}</TableHead>
+                                          <TableHead>{t('colNotes')}</TableHead>
+                                          <TableHead className="text-right">{t('colIn')}</TableHead>
+                                          <TableHead className="text-right">{t('colOut')}</TableHead>
+                                          <TableHead className="text-right">{t('colBalance')}</TableHead>
                                         </TableRow>
                                       </TableHeader>
                                       <TableBody>
                                         {row.movements.map((m) => (
                                           <TableRow key={m.id}>
-                                            <TableCell className="whitespace-nowrap">{format(new Date(m.date), 'dd/MM/yyyy HH:mm')}</TableCell>
+                                            <TableCell className="whitespace-nowrap">{formatDisplayDateTime(m.date, locale)}</TableCell>
                                             <TableCell className="font-medium">{m.docNumber ?? '-'}</TableCell>
-                                            <TableCell>{m.description}</TableCell>
-                                            <TableCell>{(m as { notes?: string | null }).notes ?? '-'}</TableCell>
+                                            <TableCell className="whitespace-normal min-w-[180px]">{m.description}</TableCell>
+                                            <TableCell className="whitespace-normal min-w-[140px]">{(m as { notes?: string | null }).notes ?? '-'}</TableCell>
                                             <TableCell className="text-right text-green-600 dark:text-green-400">
                                               {m.in != null ? m.in.toLocaleString('id-ID') : '-'}
                                             </TableCell>
@@ -694,7 +697,7 @@ export default function StockCardPage() {
                 </div>
                 {dataByType.items.length === 0 && (
                   <p className="text-muted-foreground text-center py-6">
-                    No items of this type or no movements in the selected date range.
+                    {t('noItemsByType')}
                   </p>
                 )}
               </CardContent>
@@ -705,12 +708,12 @@ export default function StockCardPage() {
         <TabsContent value="by-category" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Filter</CardTitle>
+              <CardTitle>{t('filter')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label>Item category</Label>
+                  <Label>{t('itemCategory')}</Label>
                   <Select
                     value={categoryId || '__none__'}
                     onValueChange={(v) => {
@@ -719,10 +722,10 @@ export default function StockCardPage() {
                     }}
                   >
                     <SelectTrigger className="min-h-[44px]">
-                      <SelectValue placeholder="Select category" />
+                      <SelectValue placeholder={t('selectCategory')} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="__none__">Select category</SelectItem>
+                      <SelectItem value="__none__">{t('selectCategory')}</SelectItem>
                       {categories.map((c) => (
                         <SelectItem key={c.id} value={c.id}>
                           {c.name}
@@ -741,7 +744,7 @@ export default function StockCardPage() {
                     {isLoading ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
-                      'Load'
+                      t('load')
                     )}
                   </Button>
                 </div>
@@ -753,7 +756,7 @@ export default function StockCardPage() {
             <Card>
               <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
                 <CardTitle>
-                  Stock card by category: {dataByCategory.category.name}
+                  {t('byCategoryTitle', { category: dataByCategory.category.name })}
                   {dataByCategory.category.code && (
                     <span className="ml-2 text-sm font-normal text-muted-foreground">
                       ({dataByCategory.category.code})
@@ -762,7 +765,7 @@ export default function StockCardPage() {
                 </CardTitle>
                 <Button variant="outline" size="sm" onClick={() => void handlePrintByCategory()} className="min-h-[44px]">
                   <Printer className="mr-2 h-4 w-4" />
-                  Print
+                  {t('print')}
                 </Button>
               </CardHeader>
               <CardContent>
@@ -772,11 +775,11 @@ export default function StockCardPage() {
                       <TableRow>
                         <TableHead className="w-8"></TableHead>
                         <TableHead>SKU</TableHead>
-                        <TableHead>Item</TableHead>
-                        <TableHead>UOM</TableHead>
-                        <TableHead className="text-right">Opening</TableHead>
-                        <TableHead className="text-right">Closing</TableHead>
-                        <TableHead className="text-right">Movements</TableHead>
+                        <TableHead>{t('colItem')}</TableHead>
+                        <TableHead>{t('colUom')}</TableHead>
+                        <TableHead className="text-right">{t('colOpening')}</TableHead>
+                        <TableHead className="text-right">{t('colClosing')}</TableHead>
+                        <TableHead className="text-right">{t('colMovements')}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -802,7 +805,7 @@ export default function StockCardPage() {
                                   className="h-8 w-8 shrink-0"
                                   onClick={toggle}
                                   aria-expanded={isOpen}
-                                  aria-label={isOpen ? 'Collapse row' : 'Expand row'}
+                                  aria-label={t(isOpen ? 'collapseRow' : 'expandRow', { sku: row.item?.sku ?? '-' })}
                                 >
                                   {isOpen ? (
                                     <ChevronDown className="h-4 w-4" />
@@ -812,7 +815,7 @@ export default function StockCardPage() {
                                 </Button>
                               </TableCell>
                               <TableCell className="font-medium whitespace-nowrap">{row.item?.sku ?? '-'}</TableCell>
-                              <TableCell className="whitespace-nowrap">{row.item?.nameId ?? '-'}</TableCell>
+                              <TableCell className="whitespace-normal min-w-[180px]">{row.item?.nameId ?? '-'}</TableCell>
                               <TableCell className="whitespace-nowrap">{row.item?.uom?.code ?? '-'}</TableCell>
                               <TableCell className="text-right whitespace-nowrap">
                                 {row.openingBalance.toLocaleString('id-ID')}
@@ -829,22 +832,22 @@ export default function StockCardPage() {
                                     <Table>
                                       <TableHeader>
                                         <TableRow>
-                                          <TableHead>Date</TableHead>
-                                          <TableHead>Doc</TableHead>
-                                          <TableHead>Description</TableHead>
-                                          <TableHead>Notes</TableHead>
-                                          <TableHead className="text-right">In</TableHead>
-                                          <TableHead className="text-right">Out</TableHead>
-                                          <TableHead className="text-right">Balance</TableHead>
+                                          <TableHead>{t('colDate')}</TableHead>
+                                          <TableHead>{t('colDoc')}</TableHead>
+                                          <TableHead>{t('colDesc')}</TableHead>
+                                          <TableHead>{t('colNotes')}</TableHead>
+                                          <TableHead className="text-right">{t('colIn')}</TableHead>
+                                          <TableHead className="text-right">{t('colOut')}</TableHead>
+                                          <TableHead className="text-right">{t('colBalance')}</TableHead>
                                         </TableRow>
                                       </TableHeader>
                                       <TableBody>
                                         {row.movements.map((m) => (
                                           <TableRow key={m.id}>
-                                            <TableCell className="whitespace-nowrap">{format(new Date(m.date), 'dd/MM/yyyy HH:mm')}</TableCell>
+                                            <TableCell className="whitespace-nowrap">{formatDisplayDateTime(m.date, locale)}</TableCell>
                                             <TableCell className="font-medium">{m.docNumber ?? '-'}</TableCell>
-                                            <TableCell>{m.description}</TableCell>
-                                            <TableCell>{(m as { notes?: string | null }).notes ?? '-'}</TableCell>
+                                            <TableCell className="whitespace-normal min-w-[180px]">{m.description}</TableCell>
+                                            <TableCell className="whitespace-normal min-w-[140px]">{(m as { notes?: string | null }).notes ?? '-'}</TableCell>
                                             <TableCell className="text-right text-green-600 dark:text-green-400">
                                               {m.in != null ? m.in.toLocaleString('id-ID') : '-'}
                                             </TableCell>
@@ -868,7 +871,7 @@ export default function StockCardPage() {
                 </div>
                 {dataByCategory.items.length === 0 && (
                   <p className="text-muted-foreground text-center py-6">
-                    No items in this category or no movements in the selected date range.
+                    {t('noItemsByCategory')}
                   </p>
                 )}
               </CardContent>

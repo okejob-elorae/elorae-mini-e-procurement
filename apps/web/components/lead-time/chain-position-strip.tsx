@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { formatDistanceToNow } from "date-fns";
+import { enGB, id as idLocale } from "date-fns/locale";
 import {
   getExpectedPosition,
   getPositionDrift,
@@ -66,6 +67,8 @@ export function ChainPositionStrip({
   createdAt,
 }: Props) {
   const t = useTranslations("leadTime.po");
+  const tc = useTranslations("leadTime.common");
+  const locale = useLocale();
   const docType = docTypeProp ?? "PO";
   const docId = docIdProp ?? poId ?? "";
   const clockStart = clockStartProp ?? createdAt ?? new Date();
@@ -128,10 +131,10 @@ export function ChainPositionStrip({
       stepIndex,
     });
     if (!result.success) {
-      toast.error(result.error ?? "Failed");
+      toast.error(result.error ?? tc("failed"));
       return;
     }
-    toast.success("OK");
+    toast.success(tc("saved"));
     onUpdated?.();
   }
 
@@ -198,7 +201,7 @@ export function ChainPositionStrip({
                   <button
                     type="button"
                     className="text-muted-foreground hover:text-foreground text-xs underline-offset-2"
-                    aria-label="SOP"
+                    aria-label={t("sopInfo")}
                   >
                     ⓘ
                   </button>
@@ -216,7 +219,10 @@ export function ChainPositionStrip({
               <span className="text-muted-foreground">{t("confirmed")}: </span>
               {snapshot[confirmedIndex]?.name ?? "—"}
               {confirmedAt
-                ? ` · ${formatDistanceToNow(confirmedAt, { addSuffix: true })}`
+                ? ` · ${formatDistanceToNow(confirmedAt, {
+                    addSuffix: true,
+                    locale: locale.startsWith("en") ? enGB : idLocale,
+                  })}`
                 : ""}
               {confirmedSource === "AUTO" ? ` · ${t("autoSource")}` : ""}
               {parkedOnApproval ? ` · ${t("awaitingAccShort")}` : ""}

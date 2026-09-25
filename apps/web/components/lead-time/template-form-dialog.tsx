@@ -52,6 +52,7 @@ export function TemplateFormDialog({
   onSaved,
 }: Props) {
   const t = useTranslations("leadTime.pustaka.form");
+  const tc = useTranslations("leadTime.common");
   const [name, setName] = useState("");
   const [leadTimeType, setLeadTimeType] = useState<"FIXED" | "PER_QTY">("FIXED");
   const [days, setDays] = useState("1");
@@ -88,10 +89,10 @@ export function TemplateFormDialog({
         ? await updateProcessTemplate(initial.id, payload)
         : await createProcessTemplate(payload);
       if (!result.success) {
-        toast.error(result.error ?? "Failed");
+        toast.error(result.error ?? tc("failed"));
         return;
       }
-      toast.success("OK");
+      toast.success(tc("saved"));
       onOpenChange(false);
       onSaved();
     } finally {

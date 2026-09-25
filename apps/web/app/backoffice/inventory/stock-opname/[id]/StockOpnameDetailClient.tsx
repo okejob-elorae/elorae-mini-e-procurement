@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import { formatDisplayDateTime } from "@/lib/date-only";
 import { toast } from "sonner";
 import { ArrowLeft, BookText, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -34,10 +35,9 @@ import { useSession } from "next-auth/react";
 
 type OpnameDetail = NonNullable<Awaited<ReturnType<typeof getOpnameById>>>;
 
-function formatWhen(value: unknown): string {
+function formatWhen(value: unknown, locale: string): string {
   if (!value) return "—";
-  const d = new Date(String(value));
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString('id-ID');
+  return formatDisplayDateTime(String(value), locale);
 }
 
 function StatCard({ label, value }: { label: string; value: number }) {
@@ -53,6 +53,7 @@ function StatCard({ label, value }: { label: string; value: number }) {
 
 export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
   const t = useTranslations("stockOpname");
+  const locale = useLocale();
   const { data: session } = useSession();
   const perms = session?.user?.permissions ?? [];
   const [opname, setOpname] = useState<OpnameDetail | null>(null);
@@ -203,7 +204,7 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
   const summary = useMemo(() => summarizeLines(lines), [lines]);
 
   if (loading || !opname) {
-    return <p className="text-muted-foreground py-8">{loading ? "Loading..." : "Not found"}</p>;
+    return <p className="text-muted-foreground py-8">{loading ? t("loading") : t("notFound")}</p>;
   }
 
   const status = String(opname.status);
@@ -317,12 +318,12 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
           <dl className="grid gap-3 sm:grid-cols-2 text-sm">
             <div>
               <dt className="text-muted-foreground">{t("snapshotAt")}</dt>
-              <dd className="font-medium">{formatWhen(opname.snapshotAt)}</dd>
+              <dd className="font-medium">{formatWhen(opname.snapshotAt, locale)}</dd>
             </div>
             <div>
               <dt className="text-muted-foreground">{t("created")}</dt>
               <dd className="font-medium">
-                {formatWhen(opname.createdAt)}
+                {formatWhen(opname.createdAt, locale)}
                 {opname.createdByName ? ` · ${String(opname.createdByName)}` : ""}
               </dd>
             </div>
@@ -336,7 +337,7 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
               <div>
                 <dt className="text-muted-foreground">{t("submittedAt")}</dt>
                 <dd className="font-medium">
-                  {formatWhen(opname.submittedAt)}
+                  {formatWhen(opname.submittedAt, locale)}
                   {opname.submittedByName ? ` · ${String(opname.submittedByName)}` : ""}
                 </dd>
               </div>
@@ -345,7 +346,7 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
               <div>
                 <dt className="text-muted-foreground">{t("approvedAt")}</dt>
                 <dd className="font-medium">
-                  {formatWhen(opname.approvedAt)}
+                  {formatWhen(opname.approvedAt, locale)}
                   {opname.approvedByName ? ` · ${String(opname.approvedByName)}` : ""}
                 </dd>
               </div>
@@ -353,7 +354,7 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
             {opname.cancelledAt ? (
               <div>
                 <dt className="text-muted-foreground">{t("cancelledAt")}</dt>
-                <dd className="font-medium">{formatWhen(opname.cancelledAt)}</dd>
+                <dd className="font-medium">{formatWhen(opname.cancelledAt, locale)}</dd>
               </div>
             ) : null}
           </dl>
@@ -377,16 +378,16 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
           <ul className="text-sm space-y-2 max-h-60 overflow-auto">
             {driftRows.map((d, i) => (
               <li key={i}>
-                <strong>{d.label}</strong>: snapshot {d.snapshotQty} → current {d.currentQty}
+                <strong>{d.label}</strong>: {t("driftLine", { snapshot: d.snapshotQty, current: d.currentQty })}
               </li>
             ))}
           </ul>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDriftOpen(false)}>
-              Cancel
+              {t("closeDialog")}
             </Button>
             <Button onClick={() => handleApprove(true)} disabled={busy}>
-              Confirm & Approve
+              {t("confirmApprove")}
             </Button>
           </DialogFooter>
         </DialogContent>

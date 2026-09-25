@@ -188,7 +188,9 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
     startTransition(async () => {
       const result = await deactivateStoreAction(storeId);
       if (!result.ok) {
-        setError(result.message);
+        if (result.code === "forbidden") setError(tErr("forbidden"));
+        else if (result.code === "not_found") setError(tErr("notFound"));
+        else setError(result.message);
         return;
       }
       router.push("/backoffice/stores");

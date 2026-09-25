@@ -29,13 +29,13 @@ export default function NewStockOpnamePage() {
     try {
       const result = await createOpname({ scope, notes: notes || undefined });
       if (!result.success || !result.opnameId) {
-        toast.error(result.error ?? "Failed");
+        toast.error(result.error ?? t("failed"));
         return;
       }
-      toast.success("Opname created");
+      toast.success(t("createdToast"));
       router.push(`/backoffice/inventory/stock-opname/${result.opnameId}`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed");
+      toast.error(err instanceof Error ? err.message : t("failed"));
     } finally {
       setSaving(false);
     }
@@ -68,11 +68,11 @@ export default function NewStockOpnamePage() {
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>Notes</Label>
+            <Label>{t("notes")}</Label>
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
           </div>
           <Button onClick={handleCreate} disabled={saving}>
-            {saving ? "Creating..." : t("new")}
+            {saving ? t("creating") : t("new")}
           </Button>
         </CardContent>
       </Card>

@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import { formatDisplayDateTime } from "@/lib/date-only";
+import { reconciliationFailureReason } from "./failure-reason";
 import { toast } from "sonner";
 import { Loader2, Play, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -49,6 +51,7 @@ function actionBadgeVariant(action: string): "default" | "secondary" | "destruct
 
 export function ReconciliationListClient() {
   const t = useTranslations("stockReconciliation");
+  const locale = useLocale();
   const { data: session } = useSession();
   const canManage = hasPermission(
     session?.user?.permissions ?? [],
@@ -198,27 +201,43 @@ export function ReconciliationListClient() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {runs.map((run) => (
-                  <TableRow key={run.id}>
-                    <TableCell>
-                      <Link
-                        href={`/backoffice/inventory/reconciliation/${run.id}`}
-                        className="text-primary hover:underline"
-                      >
-                        {new Date(run.startedAt).toLocaleString()}
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={actionBadgeVariant(run.status)}>
-                        {t(`runStatuses.${run.status as "RUNNING" | "COMPLETED" | "FAILED"}`)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{run.totalScanned}</TableCell>
-                    <TableCell>{run.inSync}</TableCell>
-                    <TableCell>{run.flagged}</TableCell>
-                    <TableCell>{run.autoCorrected}</TableCell>
-                  </TableRow>
-                ))}
+                {runs.map((run) => {
+                  const failed = run.status === "FAILED";
+                  const failure = failed ? reconciliationFailureReason(run.errorMessage, t) : null;
+                  // A run that failed before checking anything has no counts —
+                  // zeros would read as "checked, all fine".
+                  const noCounts = failed && run.totalScanned === 0;
+                  const count = (n: number) => (noCounts ? "—" : n);
+                  return (
+                    <TableRow key={run.id}>
+                      <TableCell className="align-top">
+                        <Link
+                          href={`/backoffice/inventory/reconciliation/${run.id}`}
+                          className="text-primary hover:underline"
+                        >
+                          {formatDisplayDateTime(run.startedAt, locale)}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="align-top whitespace-normal min-w-[180px] max-w-[360px]">
+                        <Badge variant={actionBadgeVariant(run.status)}>
+                          {t(`runStatuses.${run.status as "RUNNING" | "COMPLETED" | "FAILED"}`)}
+                        </Badge>
+                        {failure && (
+                          <p
+                            className="mt-1 text-xs text-muted-foreground"
+                            title={failure.technical ?? undefined}
+                          >
+                            {failure.reason}
+                          </p>
+                        )}
+                      </TableCell>
+                      <TableCell className="align-top tabular-nums">{count(run.totalScanned)}</TableCell>
+                      <TableCell className="align-top tabular-nums">{count(run.inSync)}</TableCell>
+                      <TableCell className="align-top tabular-nums">{count(run.flagged)}</TableCell>
+                      <TableCell className="align-top tabular-nums">{count(run.autoCorrected)}</TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
