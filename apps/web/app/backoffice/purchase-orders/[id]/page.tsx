@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import {
   getPOById,
   changePOStatus,
@@ -39,6 +39,8 @@ import { PinAuthModal } from '@/components/security/PinAuthModal';
 import { ChainPositionStrip } from '@/components/lead-time/chain-position-strip';
 import { PERMISSIONS, hasPermission } from '@/lib/rbac';
 import type { SnapshotStep } from '@/lib/leadtime/calculations';
+import { formatDisplayDate, formatDisplayDateTime } from '@/lib/date-only';
+import { getStatusMeta } from '@/lib/ui/status-map';
 
 const statusLabels: Record<POStatus, string> = {
   DRAFT: 'Draft',
@@ -75,6 +77,11 @@ export default function PODetailPage() {
   const [isTogglingPaid, setIsTogglingPaid] = useState(false);
   const [isPostingReversal, setIsPostingReversal] = useState(false);
   const tSupplierPayments = useTranslations('supplierPayments');
+  const tPO = useTranslations('purchaseOrders');
+  const tStatus = useTranslations('statuses');
+  const locale = useLocale();
+  const statusLabel = (status: string) =>
+    tStatus(getStatusMeta('purchaseOrder', status).labelKey as never);
 
   /**
    * The toggle always commits, so the outcome — not the absence of a throw —
@@ -132,12 +139,14 @@ export default function PODetailPage() {
               );
         toast.warning(warning, { duration: 12000 });
       } else {
-        toast.success(next != null ? 'Marked as paid' : 'Marked as unpaid');
+        toast.success(
+          next != null ? tSupplierPayments('markedPaid') : tSupplierPayments('markedUnpaid')
+        );
       }
       const updated = await getPOById(po.id);
       setPO(updated);
     } catch (e: any) {
-      toast.error(e.message || 'Failed');
+      toast.error(e.message || tSupplierPayments('actionFailed'));
     } finally {
       setIsTogglingPaid(false);
     }
@@ -173,7 +182,7 @@ export default function PODetailPage() {
       const updated = await getPOById(po.id);
       setPO(updated);
     } catch (e: any) {
-      toast.error(e.message || 'Failed');
+      toast.error(e.message || tSupplierPayments('actionFailed'));
     } finally {
       setIsPostingReversal(false);
     }
@@ -194,12 +203,12 @@ export default function PODetailPage() {
             .catch(() => {});
         })
         .catch(() => {
-          toast.error('Failed to load PO');
+          toast.error(tPO('loadPOFailed'));
           router.push('/backoffice/purchase-orders');
         })
         .finally(() => setIsLoading(false));
     }
-  }, [params.id, router]);
+  }, [params.id, router, tPO]);
 
   const handleStatusChange = async (newStatus: 'SUBMITTED' | 'CANCELLED' | 'CLOSED', notes?: string) => {
     if (!session?.user?.id || !po) return;
@@ -214,13 +223,17 @@ export default function PODetailPage() {
     setIsSaving(true);
     try {
       await changePOStatus(po.id, newStatus, session.user.id, notes);
-      toast.success(`PO ${newStatus.toLowerCase()} successfully`);
+      toast.success(
+        newStatus === 'SUBMITTED' ? tPO('toastSubmitted')
+        : newStatus === 'CLOSED' ? tPO('toastClosed')
+        : tPO('toastCancelled')
+      );
       router.refresh();
       const updated = await getPOById(po.id);
       setPO(updated);
       setCancelDialogOpen(false);
     } catch (error: any) {
-      toast.error(error.message || 'Failed to update status');
+      toast.error(error.message || tPO('updateStatusFailed'));
     } finally {
       setIsSaving(false);
     }
@@ -233,12 +246,12 @@ export default function PODetailPage() {
     try {
       if (pendingAction === 'cancel') {
         await changePOStatus(po.id, 'CANCELLED', session.user.id, cancelReason, pin);
-        toast.success('PO cancelled successfully');
+        toast.success(tPO('toastCancelled'));
         setCancelDialogOpen(false);
         setCancelReason('');
       } else if (pendingAction === 'update' && pendingUpdateData) {
         await updatePO(po.id, pendingUpdateData, session.user.id, pin);
-        toast.success('PO updated successfully');
+        toast.success(tPO('toastUpdated'));
         setIsEditMode(false);
         setPendingUpdateData(null);
       }
@@ -248,7 +261,7 @@ export default function PODetailPage() {
       const updated = await getPOById(po.id);
       setPO(updated);
     } catch (error: any) {
-      toast.error(error.message || 'Failed');
+      toast.error(error.message || tSupplierPayments('actionFailed'));
       throw error;
     } finally {
       setIsSaving(false);
@@ -268,13 +281,13 @@ export default function PODetailPage() {
     setIsSaving(true);
     try {
       await updatePO(po.id, data, session.user.id);
-      toast.success('PO updated successfully');
+      toast.success(tPO('toastUpdated'));
       setIsEditMode(false);
       router.refresh();
       const updated = await getPOById(po.id);
       setPO(updated);
     } catch (error: any) {
-      toast.error(error.message || 'Failed to update PO');
+      toast.error(error.message || tPO('updateFailed'));
     } finally {
       setIsSaving(false);
     }
@@ -403,7 +416,7 @@ export default function PODetailPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link href="/backoffice/purchase-orders">
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" aria-label={tPO('backToList')} title={tPO('backToList')}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
@@ -415,15 +428,15 @@ export default function PODetailPage() {
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={handlePrint}>
             <Printer className="mr-2 h-4 w-4" />
-            Print PO
+            {tPO('printPO')}
           </Button>
           <Badge className={statusColors[po.status as POStatus]}>
-            {statusLabels[po.status as POStatus]}
+            {statusLabel(po.status)}
           </Badge>
           {po.paidAt ? (
-            <Badge variant="default" className="bg-green-600">Paid</Badge>
+            <Badge variant="default" className="bg-green-600">{tSupplierPayments('paid')}</Badge>
           ) : (
-            <Badge variant="secondary">Unpaid</Badge>
+            <Badge variant="secondary">{tSupplierPayments('unpaid')}</Badge>
           )}
           {po.etaDate && (
             <ETABadge etaDate={po.etaDate} status={po.status} />
@@ -515,54 +528,54 @@ export default function PODetailPage() {
           {/* PO Details */}
           <Card>
             <CardHeader>
-              <CardTitle>PO Details</CardTitle>
+              <CardTitle>{tPO('detailsTitle')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm text-muted-foreground">Supplier</p>
+                  <p className="text-sm text-muted-foreground">{tPO('supplierLabel')}</p>
                   <p className="font-medium">{po.supplier.name} ({po.supplier.code})</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">ETA Date</p>
+                  <p className="text-sm text-muted-foreground">{tPO('etaDateLabel')}</p>
                   <p className="font-medium">
-                    {po.etaDate ? new Date(po.etaDate).toLocaleDateString('id-ID') : '-'}
+                    {po.etaDate ? formatDisplayDate(po.etaDate, locale) : '-'}
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Payment due date</p>
+                  <p className="text-sm text-muted-foreground">{tPO('paymentDueDateLabel')}</p>
                   <p className="font-medium">
-                    {po.paymentDueDate ? new Date(po.paymentDueDate).toLocaleDateString('id-ID') : '-'}
+                    {po.paymentDueDate ? formatDisplayDate(po.paymentDueDate, locale) : '-'}
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Payment status</p>
+                  <p className="text-sm text-muted-foreground">{tPO('paymentStatusLabel')}</p>
                   <p className="font-medium">
                     {po.paidAt
-                      ? `Paid on ${new Date(po.paidAt).toLocaleDateString('id-ID')}`
-                      : 'Unpaid'}
+                      ? tSupplierPayments('paidOn', { date: formatDisplayDate(po.paidAt, locale) })
+                      : tSupplierPayments('unpaid')}
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Total Amount</p>
+                  <p className="text-sm text-muted-foreground">{tPO('totalAmountLabel')}</p>
                   <p className="font-medium">Rp {Number(po.grandTotal).toLocaleString('id-ID')}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Created</p>
+                  <p className="text-sm text-muted-foreground">{tPO('createdLabel')}</p>
                   <p className="font-medium">
-                    {new Date(po.createdAt).toLocaleDateString('id-ID')}
+                    {formatDisplayDate(po.createdAt, locale)}
                   </p>
                 </div>
               </div>
               {po.notes && (
                 <div>
-                  <p className="text-sm text-muted-foreground">Notes</p>
+                  <p className="text-sm text-muted-foreground">{tPO('notesLabel')}</p>
                   <p className="font-medium">{po.notes}</p>
                 </div>
               )}
               {po.terms && (
                 <div>
-                  <p className="text-sm text-muted-foreground">Payment Terms</p>
+                  <p className="text-sm text-muted-foreground">{tPO('paymentTermsLabel')}</p>
                   <p className="font-medium">{po.terms}</p>
                 </div>
               )}
@@ -577,7 +590,7 @@ export default function PODetailPage() {
                         onClick={() => handlePaidToggle(null)}
                       >
                         {isTogglingPaid && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        Unmark paid
+                        {tSupplierPayments('unmarkPaid')}
                       </Button>
                     ) : (
                       <Button
@@ -587,7 +600,7 @@ export default function PODetailPage() {
                         onClick={() => handlePaidToggle(new Date())}
                       >
                         {isTogglingPaid && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        Mark as paid
+                        {tSupplierPayments('markAsPaid')}
                       </Button>
                     )}
                   </div>
@@ -604,25 +617,25 @@ export default function PODetailPage() {
           {/* Line Items */}
           <Card>
             <CardHeader>
-              <CardTitle>Line Items</CardTitle>
+              <CardTitle>{tPO('lineItemsTitle')}</CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Item</TableHead>
-                    <TableHead>Variant</TableHead>
-                    <TableHead>Qty</TableHead>
-                    <TableHead>UOM</TableHead>
-                    <TableHead className="text-right">Price</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                    <TableHead>Received</TableHead>
+                    <TableHead>{tPO('colItem')}</TableHead>
+                    <TableHead>{tPO('colVariant')}</TableHead>
+                    <TableHead>{tPO('colQty')}</TableHead>
+                    <TableHead>{tPO('colUom')}</TableHead>
+                    <TableHead className="text-right">{tPO('colPrice')}</TableHead>
+                    <TableHead className="text-right">{tPO('colTotal')}</TableHead>
+                    <TableHead>{tPO('colReceived')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {po.items.map((item: any) => (
                     <TableRow key={item.id}>
-                      <TableCell>
+                      <TableCell className="min-w-[180px] whitespace-normal">
                         <div>
                           <p className="font-medium">{item.item.sku}</p>
                           <p className="text-sm text-muted-foreground">{item.item.nameId}</p>
@@ -652,7 +665,7 @@ export default function PODetailPage() {
           {/* Status History */}
           <Card>
             <CardHeader>
-              <CardTitle>Status History</CardTitle>
+              <CardTitle>{tPO('statusHistoryTitle')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -661,10 +674,10 @@ export default function PODetailPage() {
                   const isPaymentUnmarked = history.paymentEvent === 'UNMARKED';
                   const isPaymentEvent = isPaymentMarked || isPaymentUnmarked;
                   const badgeLabel = isPaymentMarked
-                    ? 'Supplier payment marked'
+                    ? tSupplierPayments('historyMarked')
                     : isPaymentUnmarked
-                      ? 'Supplier payment unmarked'
-                      : statusLabels[history.status as POStatus];
+                      ? tSupplierPayments('historyUnmarked')
+                      : statusLabel(history.status);
                   const badgeClass = isPaymentMarked
                     ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
                     : isPaymentUnmarked
@@ -686,12 +699,12 @@ export default function PODetailPage() {
                             {badgeLabel}
                           </Badge>
                           <span className="text-sm text-muted-foreground">
-                            {new Date(history.createdAt).toLocaleString('id-ID')}
+                            {formatDisplayDateTime(history.createdAt, locale)}
                           </span>
                         </div>
                         {history.changedBy && (
                           <p className="text-sm text-muted-foreground mt-1">
-                            by {history.changedBy.name || history.changedBy.email}
+                            {tPO('byUser', { name: history.changedBy.name || history.changedBy.email })}
                           </p>
                         )}
                         {history.notes && !isPaymentEvent && (
@@ -710,7 +723,7 @@ export default function PODetailPage() {
             {canOpenEditForm && (
               <Button onClick={() => setIsEditMode(true)}>
                 <Edit className="h-4 w-4 mr-2" />
-                Edit PO
+                {tPO('editPO')}
               </Button>
             )}
             {canSubmit && (
@@ -719,7 +732,7 @@ export default function PODetailPage() {
                 disabled={isSaving}
               >
                 <CheckCircle className="h-4 w-4 mr-2" />
-                Submit PO
+                {tPO('submitPO')}
               </Button>
             )}
             {canCancel && (
@@ -727,24 +740,22 @@ export default function PODetailPage() {
                 <DialogTrigger asChild>
                   <Button variant="destructive" disabled={isSaving}>
                     <XCircle className="h-4 w-4 mr-2" />
-                    Cancel PO
+                    {tPO('cancelPO')}
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>Cancel Purchase Order</DialogTitle>
-                    <DialogDescription>
-                      Are you sure you want to cancel this PO? Please provide a reason.
-                    </DialogDescription>
+                    <DialogTitle>{tPO('cancelDialogTitle')}</DialogTitle>
+                    <DialogDescription>{tPO('cancelDialogDescription')}</DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="cancelReason">Reason</Label>
+                      <Label htmlFor="cancelReason">{tPO('reasonLabel')}</Label>
                       <Textarea
                         id="cancelReason"
                         value={cancelReason}
                         onChange={(e) => setCancelReason(e.target.value)}
-                        placeholder="Enter cancellation reason..."
+                        placeholder={tPO('reasonPlaceholder')}
                         rows={3}
                       />
                     </div>
@@ -757,14 +768,14 @@ export default function PODetailPage() {
                         setCancelReason('');
                       }}
                     >
-                      No, Keep PO
+                      {tPO('keepPO')}
                     </Button>
                     <Button
                       variant="destructive"
                       onClick={() => handleStatusChange('CANCELLED', cancelReason || 'PO Cancelled')}
                       disabled={isSaving}
                     >
-                      Yes, Cancel PO
+                      {tPO('confirmCancelButton')}
                     </Button>
                   </DialogFooter>
                 </DialogContent>
@@ -782,7 +793,7 @@ export default function PODetailPage() {
           setPendingUpdateData(null);
         }}
         onConfirm={handlePinConfirm}
-        action={pendingAction === 'cancel' ? 'membatalkan PO' : 'menyunting PO yang sudah diposting'}
+        action={pendingAction === 'cancel' ? tPO('pinActionCancelPO') : tPO('pinActionEditPosted')}
       />
     </div>
   );

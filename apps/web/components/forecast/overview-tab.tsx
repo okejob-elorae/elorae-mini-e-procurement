@@ -209,13 +209,13 @@ export function ForecastOverviewTab({
     try {
       const res = await runForecast({ targetYear: year });
       if (!res.success) {
-        toast.error(res.error ?? 'Forecast failed');
+        toast.error(res.error ?? t('results.runFailed'));
         return;
       }
-      toast.success(`Forecast complete: ${res.articleCount ?? 0} articles`);
+      toast.success(t('results.runComplete', { count: res.articleCount ?? 0 }));
       onRefresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Forecast failed');
+      toast.error(err instanceof Error ? err.message : t('results.runFailed'));
     } finally {
       setRunning(false);
     }
@@ -378,7 +378,7 @@ export function ForecastOverviewTab({
                   >
                     <TableCell>{(page - 1) * PAGE_SIZE + idx + 1}</TableCell>
                     <TableCell className="font-mono text-sm">{row.parentSku}</TableCell>
-                    <TableCell>{row.productName}</TableCell>
+                    <TableCell className="min-w-[180px] whitespace-normal">{row.productName}</TableCell>
                     <TableCell>
                       <Badge className={abcBadgeClass(row.abcClass)}>{row.abcClass}</Badge>
                     </TableCell>

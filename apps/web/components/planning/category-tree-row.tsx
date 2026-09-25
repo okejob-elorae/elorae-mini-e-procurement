@@ -114,6 +114,11 @@ export function CategoryTreeRow({
               className="inline-flex"
               onClick={isParent ? onToggleExpand : onToggleDetail}
               aria-expanded={isParent ? expanded : detailExpanded}
+              aria-label={
+                isParent
+                  ? tc(expanded ? "collapseChildren" : "expandChildren", { code: category.code })
+                  : tc(detailExpanded ? "collapseDetail" : "expandDetail", { code: category.code })
+              }
             >
               {isParent ? (
                 expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />
@@ -166,7 +171,14 @@ export function CategoryTreeRow({
           {!disabled && onDelete && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button type="button" size="icon" variant="ghost" className="h-8 w-8">
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8"
+                  aria-label={t("actions.delete")}
+                  title={t("actions.delete")}
+                >
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </AlertDialogTrigger>

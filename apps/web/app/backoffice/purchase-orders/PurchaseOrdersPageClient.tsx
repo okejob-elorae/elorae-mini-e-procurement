@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { 
   Plus, 
   Search, 
@@ -13,6 +13,7 @@ import {
   AlertCircle,
   CheckCircle,
   Clock,
+  Send,
   XCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -52,6 +53,7 @@ import { Progress } from '@/components/ui/progress';
 import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 import { cn } from '@/lib/utils';
+import { formatDisplayDate } from '@/lib/date-only';
 
 export interface PurchaseOrder {
   id: string;
@@ -138,6 +140,7 @@ export function PurchaseOrdersPageClient({
   const tPO = useTranslations('purchaseOrders');
   const tStatus = useTranslations('statuses');
   const tTable = useTranslations('tableHeaders');
+  const locale = useLocale();
   const [pos, setPOs] = useState<PurchaseOrder[]>(initialPOs ?? []);
   const [isLoading, setIsLoading] = useState(!initialPOs);
   const [searchQuery, setSearchQuery] = useState('');
@@ -164,7 +167,7 @@ export function PurchaseOrdersPageClient({
         setTotalCount(list.length);
       }
     } catch {
-      toast.error('Failed to load purchase orders');
+      toast.error(tPO('loadFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -285,9 +288,9 @@ export function PurchaseOrdersPageClient({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="__all__">{tPO('allStatus')}</SelectItem>
-            {(Object.entries(statusLabels) as [POStatus, string][]).map(([status, label]) => (
+            {(Object.keys(statusLabels) as POStatus[]).map((status) => (
               <SelectItem key={status} value={status}>
-                {label}
+                {tStatus(getStatusMeta('purchaseOrder', status).labelKey as never)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -308,10 +311,19 @@ export function PurchaseOrdersPageClient({
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
             </div>
           ) : filteredPOs.length === 0 ? (
-            <div className="text-center py-12">
-              <ShoppingCart className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">No purchase orders found</p>
-            </div>
+            searchQuery || statusFilter ? (
+              <EmptyState
+                icon={ShoppingCart}
+                title={tPO('emptyFilteredTitle')}
+                description={tPO('emptyFilteredDescription')}
+              />
+            ) : (
+              <EmptyState
+                icon={ShoppingCart}
+                title={tPO('emptyTitle')}
+                description={tPO('emptyDescription')}
+              />
+            )
           ) : (
             <>
             <div className="overflow-x-auto">
@@ -319,38 +331,52 @@ export function PurchaseOrdersPageClient({
                 <TableHeader>
                   <TableRow>
                     <TableHead>{tTable('poNumber')}</TableHead>
-                    <TableHead>{tTable('supplier')}</TableHead>
+                    <TableHead className="min-w-[148px]">{tTable('supplier')}</TableHead>
                     <TableHead>{tTable('status')}</TableHead>
                     <TableHead>{tTable('eta')}</TableHead>
-                    <TableHead>{tTable('payment')}</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                    <TableHead className="min-w-[120px]">Progress</TableHead>
-                    <TableHead className="text-right">Pending</TableHead>
-                    <TableHead className="w-12"></TableHead>
+                    <TableHead className="hidden 2xl:table-cell">{tTable('payment')}</TableHead>
+                    <TableHead className="text-right">{tPO('colTotal')}</TableHead>
+                    <TableHead className="min-w-[120px]">{tTable('progress')}</TableHead>
+                    <TableHead className="hidden text-right 2xl:table-cell">{tPO('colPending')}</TableHead>
+                    <TableHead className="sticky right-0 w-12 bg-card">
+                      <span className="sr-only">{tPO('colActions')}</span>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredPOs.map((po) => (
                     <TableRow key={po.id}>
                       <TableCell className="font-medium">{po.docNumber}</TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-normal">
                         <div>
                           <p className="font-medium">{po.supplier.name}</p>
                           <p className="text-sm text-muted-foreground">{po.supplier.code}</p>
                         </div>
                       </TableCell>
                       <TableCell>
-                        {(() => {
-                          const meta = getStatusMeta('purchaseOrder', po.status);
-                          return <StatusPill tone={meta.tone}>{tStatus(meta.labelKey as never)}</StatusPill>;
-                        })()}
+                        {/* Below 2xl the payment state stacks under the status
+                            pill instead of taking its own column: at 1280 px
+                            the table was ~200 px wider than its card. */}
+                        <div className="flex flex-col items-start gap-1">
+                          {(() => {
+                            const meta = getStatusMeta('purchaseOrder', po.status);
+                            return <StatusPill tone={meta.tone}>{tStatus(meta.labelKey as never)}</StatusPill>;
+                          })()}
+                          <span className="2xl:hidden">
+                            {po.paidAt ? (
+                              <StatusPill tone="settled">{tPO('paid')}</StatusPill>
+                            ) : (
+                              <StatusPill tone="waiting">{tPO('unpaid')}</StatusPill>
+                            )}
+                          </span>
+                        </div>
                       </TableCell>
                       <TableCell>
                         {po.etaDate ? (
                           <div className="flex flex-col gap-1">
                             <div className="flex items-center gap-2">
                               <Calendar className="h-4 w-4 text-muted-foreground" />
-                              {new Date(po.etaDate).toLocaleDateString('id-ID')}
+                              {formatDisplayDate(po.etaDate, locale)}
                             </div>
                             <ETABadge etaDate={new Date(po.etaDate)} status={po.status} />
                           </div>
@@ -358,14 +384,14 @@ export function PurchaseOrdersPageClient({
                           <span className="text-muted-foreground">-</span>
                         )}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden 2xl:table-cell">
                         {po.paidAt ? (
                           <StatusPill tone="settled">{tPO('paid')}</StatusPill>
                         ) : (
                           <StatusPill tone="waiting">{tPO('unpaid')}</StatusPill>
                         )}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-right whitespace-nowrap">
                         Rp {Number(po.grandTotal).toLocaleString('id-ID')}
                       </TableCell>
                       <TableCell>
@@ -386,39 +412,48 @@ export function PurchaseOrdersPageClient({
                                 overReceived ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-muted-foreground'
                               )}>
                                 {totalReceived.toLocaleString('id-ID')} / {totalOrdered.toLocaleString('id-ID')}
-                                {overReceived && <span className="ml-1">(over)</span>}
+                                {overReceived && <span className="ml-1">{tPO('overShort')}</span>}
                               </p>
                             </div>
                           );
                         })()}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="hidden text-right 2xl:table-cell">
                         {getPendingQty(po).toLocaleString('id-ID')}
                       </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
+                      <TableCell className="sticky right-0 bg-card">
+                        <div className="flex items-center gap-1">
                           <Link href={`/backoffice/purchase-orders/${po.id}`}>
-                            <Button variant="ghost" size="icon">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={tPO('viewPO', { docNumber: po.docNumber })}
+                              title={tPO('viewPO', { docNumber: po.docNumber })}
+                            >
                               <Eye className="h-4 w-4" />
                             </Button>
                           </Link>
                           {po.status === 'DRAFT' && (
-                            <Button 
-                              variant="ghost" 
-                              size="sm"
+                            <Button
+                              variant="ghost"
+                              size="icon"
                               onClick={() => handleSubmit(po.id)}
+                              aria-label={`${tPO('submit')} — ${po.docNumber}`}
+                              title={tPO('submit')}
                             >
-                              Submit
+                              <Send className="h-4 w-4" />
                             </Button>
                           )}
                           {(po.status === 'DRAFT' || po.status === 'SUBMITTED') && (
-                            <Button 
-                              variant="ghost" 
-                              size="sm"
+                            <Button
+                              variant="ghost"
+                              size="icon"
                               className="text-destructive"
                               onClick={() => handleCancel(po.id)}
+                              aria-label={`${tPO('cancel')} — ${po.docNumber}`}
+                              title={tPO('cancel')}
                             >
-                              Cancel
+                              <XCircle className="h-4 w-4" />
                             </Button>
                           )}
                         </div>

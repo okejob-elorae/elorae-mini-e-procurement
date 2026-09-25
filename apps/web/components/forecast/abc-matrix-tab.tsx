@@ -99,7 +99,7 @@ export function ForecastAbcMatrixTab({ results, onSelectArticle }: AbcMatrixTabP
                   <CardHeader className="p-3 pb-1">
                     <CardTitle className="text-xs font-mono">{key}</CardTitle>
                     <p className="text-xs text-muted-foreground">
-                      {articles.length} article{articles.length !== 1 ? 's' : ''}
+                      {t('matrixModal.articleCount', { count: articles.length })}
                     </p>
                   </CardHeader>
                   <CardContent className="space-y-1 p-3 pt-0">
@@ -109,7 +109,9 @@ export function ForecastAbcMatrixTab({ results, onSelectArticle }: AbcMatrixTabP
                       </p>
                     ))}
                     {articles.length > 5 && (
-                      <p className="text-xs text-muted-foreground">+{articles.length - 5} more</p>
+                      <p className="text-xs text-muted-foreground">
+                        {t('matrix.more', { count: articles.length - 5 })}
+                      </p>
                     )}
                     <p className="mt-2 border-t pt-2 text-[10px] text-muted-foreground">
                       {t(`recommendations.${key}` as Parameters<typeof t>[0])}
@@ -170,7 +172,7 @@ export function ForecastAbcMatrixTab({ results, onSelectArticle }: AbcMatrixTabP
                     >
                       <TableCell>{idx + 1}</TableCell>
                       <TableCell className="font-mono text-sm">{article.parentSku}</TableCell>
-                      <TableCell>{article.productName}</TableCell>
+                      <TableCell className="min-w-[180px] whitespace-normal">{article.productName}</TableCell>
                       <TableCell className="text-right">
                         {Math.round(article.avgMonthlyDemand).toLocaleString('id-ID')}
                       </TableCell>

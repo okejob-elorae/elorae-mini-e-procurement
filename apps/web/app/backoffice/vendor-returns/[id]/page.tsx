@@ -32,7 +32,8 @@ import {
   DialogTrigger
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatDisplayDateTime } from '@/lib/date-only';
 import {
   getVendorReturnById,
   processReturn,
@@ -46,6 +47,21 @@ export default function VendorReturnDetailPage() {
   const router = useRouter();
   const { data: session } = useSession();
   const t = useTranslations('vendorReturn');
+  const tList = useTranslations('vendorReturnsList');
+  const locale = useLocale();
+  const statusLabel = (status: string) =>
+    status === 'DRAFT' ? tList('statusDraft')
+    : status === 'PROCESSED' ? tList('statusProcessed')
+    : status === 'COMPLETED' ? tList('statusCompleted')
+    : status;
+  const lineTypeLabel = (type: string) =>
+    type === 'FABRIC' || type === 'ACCESSORIES' || type === 'FG_REJECT'
+      ? t(`lineType.${type}`)
+      : type;
+  const conditionLabel = (condition: string) =>
+    condition === 'GOOD' || condition === 'DAMAGED' || condition === 'DEFECTIVE'
+      ? t(`condition.${condition}`)
+      : condition;
   const id = typeof params.id === 'string' ? params.id : '';
   const printRef = useRef<HTMLDivElement>(null);
   const [ret, setRet] = useState<Awaited<ReturnType<typeof getVendorReturnById>>>(null);
@@ -67,21 +83,21 @@ export default function VendorReturnDetailPage() {
     getVendorReturnById(id)
       .then(setRet)
       .catch(() => {
-        toast.error('Failed to load return');
+        toast.error(t('loadFailed'));
         router.push('/backoffice/vendor-returns');
       })
       .finally(() => setIsLoading(false));
-  }, [id, router]);
+  }, [id, router, t]);
 
   const handleProcess = async () => {
     if (!session?.user?.id || !ret) return;
     setIsProcessing(true);
     try {
       await processReturn(ret.id, session.user.id);
-      toast.success('Return processed');
+      toast.success(tList('processed'));
       refresh();
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to process');
+      toast.error(err instanceof Error ? err.message : tList('processFailed'));
     } finally {
       setIsProcessing(false);
     }
@@ -156,11 +172,11 @@ export default function VendorReturnDetailPage() {
     if (!session?.user?.id || !ret) return;
     const tn = trackingNumber.trim();
     if (!tn) {
-      setCompleteError('Tracking number is required');
+      setCompleteError(t('trackingRequired'));
       return;
     }
     if (!receiptFile) {
-      setCompleteError('Receipt file is required');
+      setCompleteError(t('receiptRequired'));
       return;
     }
     setIsCompleting(true);
@@ -170,23 +186,23 @@ export default function VendorReturnDetailPage() {
       const res = await fetch('/api/upload/grn-photo', { method: 'POST', body: formData });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data?.error ?? 'Upload failed');
+        throw new Error(data?.error ?? t('uploadFailed'));
       }
       const data = await res.json();
       const receiptFileUrl = data.urls?.[0];
-      if (!receiptFileUrl) throw new Error('No receipt URL returned');
+      if (!receiptFileUrl) throw new Error(t('uploadFailed'));
       await completeReturn(ret.id, session.user.id, {
         trackingNumber: tn,
         receiptFileUrl
       });
-      toast.success('Return completed');
+      toast.success(t('completedToast'));
       setCompleteOpen(false);
       setTrackingNumber('');
       setReceiptFile(null);
       refresh();
     } catch (err: unknown) {
-      setCompleteError(err instanceof Error ? err.message : 'Failed to complete');
-      toast.error(err instanceof Error ? err.message : 'Failed to complete');
+      setCompleteError(err instanceof Error ? err.message : t('completeFailed'));
+      toast.error(err instanceof Error ? err.message : t('completeFailed'));
     } finally {
       setIsCompleting(false);
     }
@@ -244,7 +260,12 @@ export default function VendorReturnDetailPage() {
         <div className="flex items-center justify-between gap-4 no-print">
           <div className="flex items-center gap-4">
             <Link href="/backoffice/vendor-returns">
-              <Button variant="ghost" size="icon">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={t('backToList')}
+                title={t('backToList')}
+              >
                 <ArrowLeft className="h-4 w-4" />
               </Button>
             </Link>
@@ -256,14 +277,14 @@ export default function VendorReturnDetailPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant={statusBadgeVariant}>{ret.status}</Badge>
+            <Badge variant={statusBadgeVariant}>{statusLabel(ret.status)}</Badge>
             <Button variant="outline" size="sm" onClick={handlePrint}>
               <Printer className="mr-2 h-4 w-4" />
-              Print Nota Retur
+              {t('printNotaRetur')}
             </Button>
             {ret.status === 'DRAFT' && (
               <Button onClick={handleProcess} disabled={isProcessing}>
-                {isProcessing ? 'Processing...' : 'Process Return'}
+                {isProcessing ? tList('processing') : t('processReturn')}
               </Button>
             )}
             {ret.status === 'PROCESSED' && (
@@ -271,26 +292,26 @@ export default function VendorReturnDetailPage() {
                 <DialogTrigger asChild>
                   <Button>
                     <CheckCircle className="mr-2 h-4 w-4" />
-                    Complete return
+                    {t('completeReturn')}
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>Complete return</DialogTitle>
+                    <DialogTitle>{t('completeReturn')}</DialogTitle>
                   </DialogHeader>
                   <form onSubmit={handleCompleteSubmit} className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="trackingNumber">Tracking number *</Label>
+                      <Label htmlFor="trackingNumber">{t('trackingNumber')} *</Label>
                       <Input
                         id="trackingNumber"
                         value={trackingNumber}
                         onChange={(e) => setTrackingNumber(e.target.value)}
-                        placeholder="Resi / tracking number"
+                        placeholder={t('trackingPlaceholder')}
                         required
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="receiptFile">Receipt (upload) *</Label>
+                      <Label htmlFor="receiptFile">{t('receiptUpload')} *</Label>
                       <Input
                         id="receiptFile"
                         type="file"
@@ -310,10 +331,10 @@ export default function VendorReturnDetailPage() {
                         variant="outline"
                         onClick={() => setCompleteOpen(false)}
                       >
-                        Cancel
+                        {t('cancel')}
                       </Button>
                       <Button type="submit" disabled={isCompleting}>
-                        {isCompleting ? 'Completing...' : 'Complete'}
+                        {isCompleting ? t('completing') : t('complete')}
                       </Button>
                     </div>
                   </form>
@@ -325,14 +346,14 @@ export default function VendorReturnDetailPage() {
 
         <div ref={printRef}>
           <div className="mb-4 text-center print:block">
-            <h2 className="text-lg font-semibold">Nota Retur</h2>
+            <h2 className="text-lg font-semibold">{t('notaReturTitle')}</h2>
             <p className="text-sm text-muted-foreground">{ret.docNumber}</p>
           </div>
 
           <Card>
             <CardHeader>
-              <CardTitle>Summary</CardTitle>
-              <CardDescription>Total value and related WO</CardDescription>
+              <CardTitle>{t('summaryTitle')}</CardTitle>
+              <CardDescription>{t('totalValueAndWO')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
               <div>
@@ -346,7 +367,7 @@ export default function VendorReturnDetailPage() {
               </div>
               {wo && (
                 <p>
-                  <span className="text-muted-foreground">Work order:</span>{' '}
+                  <span className="text-muted-foreground">{t('workOrderLabel')}</span>{' '}
                   <Link
                     href={`/backoffice/work-orders/${wo.id}`}
                     className="text-primary hover:underline print:no-underline print:text-inherit"
@@ -363,31 +384,31 @@ export default function VendorReturnDetailPage() {
               )}
               {ret.processedAt && (
                 <p className="text-sm text-muted-foreground">
-                  Processed: {new Date(ret.processedAt).toLocaleString()}
+                  {t('processedAt', { date: formatDisplayDateTime(ret.processedAt, locale) })}
                 </p>
               )}
               {ret.status === 'COMPLETED' && ret.trackingNumber && (
                 <p className="text-sm">
-                  <span className="text-muted-foreground">Tracking:</span>{' '}
+                  <span className="text-muted-foreground">{t('trackingLabel')}</span>{' '}
                   {ret.trackingNumber}
                 </p>
               )}
               {ret.status === 'COMPLETED' && ret.receiptFileUrl && (
                 <p className="text-sm">
-                  <span className="text-muted-foreground">Receipt:</span>{' '}
+                  <span className="text-muted-foreground">{t('receiptLabel')}</span>{' '}
                   <a
                     href={ret.receiptFileUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-primary hover:underline"
                   >
-                    View receipt
+                    {t('viewReceipt')}
                   </a>
                 </p>
               )}
               {ret.completedAt && (
                 <p className="text-sm text-muted-foreground">
-                  Completed: {new Date(ret.completedAt).toLocaleString()}
+                  {t('completedAt', { date: formatDisplayDateTime(ret.completedAt, locale) })}
                 </p>
               )}
             </CardContent>
@@ -395,35 +416,35 @@ export default function VendorReturnDetailPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Lines</CardTitle>
-              <CardDescription>Items returned</CardDescription>
+              <CardTitle>{t('linesTitle')}</CardTitle>
+              <CardDescription>{t('itemsReturned')}</CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Item</TableHead>
-                    <TableHead className="text-right">Qty</TableHead>
-                    <TableHead>Condition</TableHead>
-                    <TableHead>Reason</TableHead>
-                    <TableHead className="text-right">Value</TableHead>
+                    <TableHead>{t('colType')}</TableHead>
+                    <TableHead>{t('colItem')}</TableHead>
+                    <TableHead className="text-right">{t('colQty')}</TableHead>
+                    <TableHead>{t('colCondition')}</TableHead>
+                    <TableHead>{t('colReason')}</TableHead>
+                    <TableHead className="text-right">{t('colValue')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {lines.map((line, i) => (
                     <TableRow key={i}>
-                      <TableCell>{line.type}</TableCell>
-                      <TableCell>
+                      <TableCell>{lineTypeLabel(line.type)}</TableCell>
+                      <TableCell className="min-w-[200px] whitespace-normal">
                         {line.type === 'FABRIC' && line.rollRef
                           ? `${line.itemName ?? line.itemId} – ${line.rollRef} (${line.qty})`
                           : line.type === 'FG_REJECT'
-                            ? `${line.itemName ?? line.itemId} — Source: Reject stock`
+                            ? t('sourceReject', { name: line.itemName ?? line.itemId })
                             : line.itemName ?? line.itemId}
                       </TableCell>
                       <TableCell className="text-right">{line.qty}</TableCell>
-                      <TableCell>{line.condition}</TableCell>
-                      <TableCell>{line.reason}</TableCell>
+                      <TableCell>{conditionLabel(line.condition)}</TableCell>
+                      <TableCell className="min-w-[160px] whitespace-normal">{line.reason}</TableCell>
                       <TableCell className="text-right">
                         {(line.costValue ?? 0).toLocaleString(undefined, {
                           minimumFractionDigits: 2
@@ -439,7 +460,7 @@ export default function VendorReturnDetailPage() {
           {ret.evidenceUrls && (
             <Card>
               <CardHeader>
-                <CardTitle>Evidence</CardTitle>
+                <CardTitle>{t('evidenceTitle')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <ul className="list-inside list-disc text-sm">

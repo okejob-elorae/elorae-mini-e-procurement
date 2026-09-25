@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { Heart } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { togglePantoneFavorite } from '@/app/actions/production-colors';
@@ -22,6 +23,7 @@ export function FavoriteButton({
   className,
   onToggle,
 }: FavoriteButtonProps) {
+  const t = useTranslations('productionColors');
   const [favorited, setFavorited] = useState(initialFavorited);
   const [pending, startTransition] = useTransition();
 
@@ -34,7 +36,7 @@ export function FavoriteButton({
         setFavorited(next);
         onToggle?.(next);
       } catch {
-        toast.error('Could not update favorite');
+        toast.error(t('favoriteError'));
       }
     });
   };
@@ -47,7 +49,8 @@ export function FavoriteButton({
       className={cn('shrink-0', className)}
       disabled={pending}
       onClick={handleClick}
-      aria-label={favorited ? 'Remove favorite' : 'Add favorite'}
+      aria-label={favorited ? t('removeFavorite') : t('addFavorite')}
+      title={favorited ? t('removeFavorite') : t('addFavorite')}
     >
       <Heart
         className={cn(

@@ -106,8 +106,8 @@ export function ForecastImportPageClient() {
   }, []);
 
   useEffect(() => {
-    refresh().catch((err) => toast.error(err instanceof Error ? err.message : 'Load failed'));
-  }, [refresh]);
+    refresh().catch((err) => toast.error(err instanceof Error ? err.message : t('import.loadFailed')));
+  }, [refresh, t]);
 
   useEffect(() => {
     const totalPages = Math.max(1, Math.ceil(imports.length / historyPageSize));
@@ -125,7 +125,7 @@ export function ForecastImportPageClient() {
 
   const handleUpload = async () => {
     if (!file) {
-      toast.error('Select a file');
+      toast.error(t('import.selectFile'));
       return;
     }
     setUploading(true);
@@ -142,7 +142,7 @@ export function ForecastImportPageClient() {
       });
       const res = (await response.json()) as ImportApiResponse;
       if (!response.ok || !res.success) {
-        toast.error(res.error ?? 'Import failed');
+        toast.error(res.error ?? t('import.failed'));
         return;
       }
       toast.success(
@@ -156,7 +156,7 @@ export function ForecastImportPageClient() {
       setFileInputKey((k) => k + 1);
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Import failed');
+      toast.error(err instanceof Error ? err.message : t('import.failed'));
     } finally {
       setUploading(false);
     }
@@ -177,10 +177,10 @@ export function ForecastImportPageClient() {
     }
     const res = await deleteSalesHistoryImport(row.id);
     if (!res.success) {
-      toast.error(res.error ?? 'Delete failed');
+      toast.error(res.error ?? t('import.deleteFailed'));
       return;
     }
-    toast.success('Import deleted');
+    toast.success(t('import.deleted'));
     await refresh();
   };
 
@@ -195,7 +195,7 @@ export function ForecastImportPageClient() {
       setSkippedRows(result.rows);
       setSkippedDetailAvailable(result.detailAvailable);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load skipped rows');
+      toast.error(err instanceof Error ? err.message : t('import.skippedLoadFailed'));
       setSkippedModalOpen(false);
       setSkippedModalImport(null);
     } finally {
@@ -209,10 +209,10 @@ export function ForecastImportPageClient() {
   };
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
-          <Link href="/backoffice/forecast">
+          <Link href="/backoffice/forecast" aria-label={t('backToForecast')} title={t('backToForecast')}>
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
@@ -224,7 +224,7 @@ export function ForecastImportPageClient() {
 
       <Card className="py-4">
         <CardHeader>
-          <CardTitle>Upload</CardTitle>
+          <CardTitle>{t('import.uploadTitle')}</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4">
           <div className="grid gap-4 lg:grid-cols-12">
@@ -242,7 +242,7 @@ export function ForecastImportPageClient() {
             </div>
 
             <div className="grid gap-2 lg:col-span-2">
-              <Label>{t('import.period')} (bulan)</Label>
+              <Label>{t('import.periodMonth')}</Label>
               <Select value={periodMonth} onValueChange={setPeriodMonth}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
@@ -258,7 +258,7 @@ export function ForecastImportPageClient() {
             </div>
 
             <div className="grid gap-2 lg:col-span-2">
-              <Label>Tahun</Label>
+              <Label>{t('import.periodYear')}</Label>
               <Select value={periodYear} onValueChange={setPeriodYear}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
@@ -291,7 +291,9 @@ export function ForecastImportPageClient() {
           </div>
 
           {file && (
-            <p className="text-xs text-muted-foreground truncate">Selected: {file.name}</p>
+            <p className="text-xs text-muted-foreground truncate">
+              {t('import.selectedFile', { name: file.name })}
+            </p>
           )}
         </CardContent>
       </Card>
@@ -332,10 +334,10 @@ export function ForecastImportPageClient() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Channel</TableHead>
-                <TableHead>Periode</TableHead>
-                <TableHead>File</TableHead>
-                <TableHead className="text-right">Imported</TableHead>
+                <TableHead>{t('import.channel')}</TableHead>
+                <TableHead>{t('import.period')}</TableHead>
+                <TableHead>{t('import.file')}</TableHead>
+                <TableHead className="text-right">{t('import.importedColumn')}</TableHead>
                 <TableHead className="text-right">
                   <span className="inline-flex items-center justify-end gap-1">
                     {t('import.unmappedSkusColumn')}
@@ -416,7 +418,13 @@ export function ForecastImportPageClient() {
                     )}
                   </TableCell>
                   <TableCell>
-                    <Button variant="ghost" size="icon" onClick={() => handleDelete(row)}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleDelete(row)}
+                      aria-label={t('import.deleteImport')}
+                      title={t('import.deleteImport')}
+                    >
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   </TableCell>
@@ -509,8 +517,11 @@ export function ForecastImportPageClient() {
           <CardContent>
             <DataCoverageBar coverage={coverage} />
             <p className="mt-4 text-sm text-muted-foreground">
-              {coverage.totalArticles} articles · {coverage.totalMonthsCovered} months covered
-              · {coverage.mappingCoveragePercent}% SKU mapping
+              {t('import.coverageSummary', {
+                articles: coverage.totalArticles,
+                months: coverage.totalMonthsCovered,
+                mapping: coverage.mappingCoveragePercent,
+              })}
             </p>
           </CardContent>
         </Card>

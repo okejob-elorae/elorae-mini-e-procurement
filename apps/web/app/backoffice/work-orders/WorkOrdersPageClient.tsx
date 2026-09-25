@@ -42,7 +42,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatDisplayDate, formatDisplayDateTime } from '@/lib/date-only';
 import { PageHeader } from '@/components/ui/page-header';
 import { StatusPill } from '@/components/ui/status-pill';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -117,6 +118,7 @@ export function WorkOrdersPageClient() {
   const tWO = useTranslations('workOrders');
   const tStatus = useTranslations('statuses');
   const tTable = useTranslations('tableHeaders');
+  const locale = useLocale();
 
   const fetchWorkOrders = async () => {
     setIsLoading(true);
@@ -134,7 +136,7 @@ export function WorkOrdersPageClient() {
         setTotalCount(list.length);
       }
     } catch {
-      toast.error('Failed to load work orders');
+      toast.error(tWO('loadFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -152,22 +154,22 @@ export function WorkOrdersPageClient() {
   const handleIssue = async (id: string) => {
     try {
       await issueWorkOrder(id, 'user-id'); // TODO: Get actual user ID
-      toast.success('Work Order issued successfully');
+      toast.success(tWO('toastIssued'));
       fetchWorkOrders();
     } catch (error: any) {
-      toast.error(error.message || 'Failed to issue Work Order');
+      toast.error(error.message || tWO('issueFailed'));
     }
   };
 
   const handleCancel = async (id: string) => {
-    if (!confirm('Are you sure you want to cancel this Work Order?')) return;
+    if (!confirm(tWO('confirmCancelWO'))) return;
     
     try {
       await cancelWorkOrder(id, 'user-id'); // TODO: Get actual user ID
-      toast.success('Work Order cancelled successfully');
+      toast.success(tWO('toastCancelled'));
       fetchWorkOrders();
     } catch (error: any) {
-      toast.error(error.message || 'Failed to cancel Work Order');
+      toast.error(error.message || tWO('cancelFailed'));
     }
   };
 
@@ -184,18 +186,18 @@ export function WorkOrdersPageClient() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{tWO('pageTitle')}</h1>
-          <p className="max-w-2xl text-sm text-muted-foreground">{tWO('pageDescription')}</p>
-        </div>
-        <Link href="/backoffice/work-orders/new">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            {tWO('newWO')}
-          </Button>
-        </Link>
-      </div>
+      <PageHeader
+        title={tWO('pageTitle')}
+        description={tWO('pageDescription')}
+        actions={
+          <Link href="/backoffice/work-orders/new">
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              {tWO('newWO')}
+            </Button>
+          </Link>
+        }
+      />
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-4">
@@ -217,9 +219,9 @@ export function WorkOrdersPageClient() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="__all__">{tWO('allStatus')}</SelectItem>
-            {(Object.entries(statusLabels) as [WOStatus, string][]).map(([status, label]) => (
+            {(Object.keys(statusLabels) as WOStatus[]).map((status) => (
               <SelectItem key={status} value={status}>
-                {label}
+                {tStatus(getStatusMeta('workOrder', status).labelKey as never)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -231,7 +233,7 @@ export function WorkOrdersPageClient() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <ClipboardList className="h-5 w-5" />
-            Work Order List
+            {tWO('listTitle')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -252,21 +254,23 @@ export function WorkOrdersPageClient() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>{tTable('woNumber')}</TableHead>
-                    <TableHead>{tTable('vendor')}</TableHead>
+                    <TableHead className="min-w-[160px]">{tTable('vendor')}</TableHead>
                     <TableHead>{tTable('status')}</TableHead>
-                    <TableHead>Target Date</TableHead>
-                    <TableHead>{tWO('completedAt')}</TableHead>
+                    <TableHead>{tWO('colTargetDate')}</TableHead>
+                    <TableHead className="hidden 2xl:table-cell">{tWO('completedAt')}</TableHead>
                     <TableHead>{tTable('progress')}</TableHead>
-                    <TableHead className="text-right">Issues</TableHead>
-                    <TableHead className="text-right">Receipts</TableHead>
-                    <TableHead className="w-12"></TableHead>
+                    <TableHead className="hidden text-right 2xl:table-cell">{tWO('colIssues')}</TableHead>
+                    <TableHead className="hidden text-right 2xl:table-cell">{tWO('colReceipts')}</TableHead>
+                    <TableHead className="sticky right-0 w-12 bg-card">
+                      <span className="sr-only">{tWO('colActions')}</span>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredWOs.map((wo) => (
                     <TableRow key={wo.id}>
                       <TableCell className="font-medium">{wo.docNumber}</TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-normal">
                         <div>
                           <p className="font-medium">{wo.vendor.name}</p>
                           <p className="text-sm text-muted-foreground">{wo.vendor.code}</p>
@@ -298,21 +302,26 @@ export function WorkOrdersPageClient() {
                         {wo.targetDate ? (
                           <div className="flex items-center gap-2">
                             <Calendar className="h-4 w-4 text-muted-foreground" />
-                            {new Date(wo.targetDate).toLocaleDateString('id-ID')}
+                            {formatDisplayDate(wo.targetDate, locale)}
                           </div>
                         ) : (
                           <span className="text-muted-foreground">-</span>
                         )}
+                        {/* Below 2xl the completion time rides under the
+                            target date instead of taking its own column. */}
+                        {wo.completedAt ? (
+                          <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground 2xl:hidden">
+                            <CheckCircle className="h-3.5 w-3.5 shrink-0 text-green-600 dark:text-green-400" />
+                            {formatDisplayDateTime(wo.completedAt, locale)}
+                          </div>
+                        ) : null}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden 2xl:table-cell">
                         {wo.completedAt ? (
                           <div className="flex items-center gap-2 text-sm">
                             <CheckCircle className="h-4 w-4 shrink-0 text-green-600 dark:text-green-400" />
                             <span>
-                              {new Date(wo.completedAt).toLocaleString('id-ID', {
-                                dateStyle: 'short',
-                                timeStyle: 'short',
-                              })}
+                              {formatDisplayDateTime(wo.completedAt, locale)}
                             </span>
                           </div>
                         ) : (
@@ -330,39 +339,53 @@ export function WorkOrdersPageClient() {
                           <Progress value={getCompletionPercent(wo)} className="h-2" />
                         </div>
                       </TableCell>
-                      <TableCell className="text-right">{wo._count.issues}</TableCell>
-                      <TableCell className="text-right">{wo._count.receipts}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
+                      <TableCell className="hidden text-right 2xl:table-cell">{wo._count.issues}</TableCell>
+                      <TableCell className="hidden text-right 2xl:table-cell">{wo._count.receipts}</TableCell>
+                      <TableCell className="sticky right-0 bg-card">
+                        <div className="flex items-center gap-1">
                           <Link href={`/backoffice/work-orders/${wo.id}`}>
-                            <Button variant="ghost" size="icon" title="View">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title={tWO('viewWO', { docNumber: wo.docNumber })}
+                              aria-label={tWO('viewWO', { docNumber: wo.docNumber })}
+                            >
                               <Eye className="h-4 w-4" />
                             </Button>
                           </Link>
                           {wo.status === 'DRAFT' && (
                             <>
                               <Link href={`/backoffice/work-orders/${wo.id}/edit`}>
-                                <Button variant="ghost" size="icon" title="Edit">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  title={tWO('editWO', { docNumber: wo.docNumber })}
+                                  aria-label={tWO('editWO', { docNumber: wo.docNumber })}
+                                >
                                   <Pencil className="h-4 w-4" />
                                 </Button>
                               </Link>
-                              <Button 
-                                variant="ghost" 
-                                size="sm"
+                              <Button
+                                variant="ghost"
+                                size="icon"
                                 onClick={() => handleIssue(wo.id)}
+                                aria-label={`${tWO('issue')} — ${wo.docNumber}`}
+                                title={tWO('issue')}
                               >
-                                Issue
+                                <Play className="h-4 w-4" />
                               </Button>
                             </>
                           )}
                           {(wo.status === 'DRAFT' || wo.status === 'ISSUED') && (
-                            <Button 
-                              variant="ghost" 
-                              size="sm"
+                            <Button
+                              variant="ghost"
+                              size="icon"
                               className="text-destructive"
                               onClick={() => handleCancel(wo.id)}
+                              aria-label={`${tWO('cancelWO')} — ${wo.docNumber}`}
+                              title={tWO('cancelWO')}
                             >
-                              Cancel
+                              <XCircle className="h-4 w-4" />
                             </Button>
                           )}
                         </div>

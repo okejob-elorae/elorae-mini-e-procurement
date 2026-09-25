@@ -53,14 +53,14 @@ export function ForecastConfigModal({
         notes: notes || undefined,
       });
       if (!result.success) {
-        toast.error(result.error ?? 'Failed to save config');
+        toast.error(result.error ?? t('saveFailed'));
         return;
       }
-      toast.success('Config saved');
+      toast.success(t('saved'));
       onOpenChange(false);
       onSaved();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save');
+      toast.error(err instanceof Error ? err.message : t('saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -95,10 +95,10 @@ export function ForecastConfigModal({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t('cancel')}
           </Button>
           <Button onClick={handleSave} disabled={saving}>
-            {saving ? '...' : 'Save'}
+            {saving ? '...' : t('save')}
           </Button>
         </DialogFooter>
       </DialogContent>

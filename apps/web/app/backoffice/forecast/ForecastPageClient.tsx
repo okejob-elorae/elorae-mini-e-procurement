@@ -65,9 +65,9 @@ export function ForecastPageClient() {
       setCoverageMonths(coverage.totalMonthsCovered);
       setCoverage(coverage);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load forecast');
+      toast.error(err instanceof Error ? err.message : t('loadFailed'));
     }
-  }, [year]);
+  }, [year, t]);
 
   useEffect(() => {
     refresh();
@@ -90,11 +90,15 @@ export function ForecastPageClient() {
 
   const configSummary =
     config ?
-      `Lookback ${config.lookbackMonths} mo · Growth ${config.growthFactorPercent}% · Decay ${config.weightDecay}`
-    : 'Default config (run forecast to create)';
+      t('config.summary', {
+        lookback: config.lookbackMonths,
+        growth: config.growthFactorPercent,
+        decay: config.weightDecay,
+      })
+    : t('config.defaultSummary');
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">{t('title')}</h1>

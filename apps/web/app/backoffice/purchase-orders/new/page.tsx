@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { useTranslations } from 'next-intl';
+import { PageHeader } from '@/components/ui/page-header';
 import { POForm } from '@/components/forms/POForm';
 import { createPO } from '@/app/actions/purchase-orders';
 import { toast } from 'sonner';
@@ -19,6 +21,8 @@ interface Supplier {
 export default function NewPOPage() {
   const router = useRouter();
   const { data: session } = useSession();
+  const tPO = useTranslations('purchaseOrders');
+  const tToasts = useTranslations('toasts');
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingSuppliers, setIsLoadingSuppliers] = useState(true);
@@ -40,28 +44,28 @@ export default function NewPOPage() {
         }
       } catch (error) {
         console.error('Failed to fetch suppliers:', error);
-        toast.error('Failed to load suppliers');
+        toast.error(tPO('loadSuppliersFailed'));
       } finally {
         setIsLoadingSuppliers(false);
       }
     };
 
     fetchSuppliers();
-  }, []);
+  }, [tPO]);
 
   const handleSubmit = async (data: Parameters<typeof POForm>[0]['onSubmit'] extends (data: infer T) => any ? T : never) => {
     if (!session?.user?.id) {
-      toast.error('You must be logged in');
+      toast.error(tToasts('youMustBeLoggedIn'));
       return;
     }
 
     setIsLoading(true);
     try {
       const po = await createPO(data, session.user.id);
-      toast.success('Purchase Order created successfully');
+      toast.success(tPO('toastCreated'));
       router.push(`/backoffice/purchase-orders/${po.id}`);
     } catch (error: any) {
-      toast.error(error.message || 'Failed to create PO');
+      toast.error(error.message || tPO('createFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -102,10 +106,10 @@ export default function NewPOPage() {
         notes: data.notes,
         status: 'PENDING_SYNC',
       });
-      toast.success('PO saved locally. It will sync when online.');
+      toast.success(tPO('savedLocally'));
       router.push('/backoffice/purchase-orders');
     } catch (error: any) {
-      toast.error(error.message || 'Failed to save PO locally');
+      toast.error(error.message || tPO('saveLocallyFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -121,12 +125,7 @@ export default function NewPOPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Create New Purchase Order</h1>
-        <p className="text-muted-foreground">
-          Create a new purchase order for procurement
-        </p>
-      </div>
+      <PageHeader title={tPO('newPageTitle')} description={tPO('newPageDescription')} />
 
       <POForm
         suppliers={suppliers}

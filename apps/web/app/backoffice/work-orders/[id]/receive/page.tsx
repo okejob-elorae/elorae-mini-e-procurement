@@ -22,6 +22,7 @@ import { getWorkOrderById, receiveFG } from '@/app/actions/production';
 
 export default function WorkOrderReceivePage() {
   const t = useTranslations('toasts');
+  const tRc = useTranslations('workOrders.receive');
   const params = useParams();
   const router = useRouter();
   const { data: session } = useSession();
@@ -89,13 +90,13 @@ export default function WorkOrderReceivePage() {
     if (needsVariantBreakdown) {
       const sumAccepted = variantQtys.reduce((s, x) => s + x.qty, 0);
       if (Math.abs(sumAccepted - accepted) > 0.01) {
-        toast.error('Sum of variant qtys must equal qty accepted');
+        toast.error(tRc('variantSumMismatch'));
         return;
       }
       if (rejected > 0) {
         const sumRejected = rejectedVariantQtys.reduce((s, x) => s + x.qty, 0);
         if (Math.abs(sumRejected - rejected) > 0.01) {
-          toast.error('Sum of rejected variant qtys must equal qty rejected');
+          toast.error(tRc('rejectedSumMismatch'));
           return;
         }
       }
@@ -143,29 +144,26 @@ export default function WorkOrderReceivePage() {
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Link href={`/backoffice/work-orders/${id}`}>
-          <Button variant="ghost" size="icon">
+          <Button variant="ghost" size="icon" aria-label={tRc('backToWO')} title={tRc('backToWO')}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
         <div>
-          <h1 className="text-2xl font-bold">Receive Finished Goods</h1>
+          <h1 className="text-2xl font-bold">{tRc('title')}</h1>
           <p className="text-muted-foreground">{String(wo.docNumber ?? '')}</p>
         </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Receipt</CardTitle>
-          <CardDescription>
-            Enter received and rejected quantities. Material cost is allocated
-            from issues.
-          </CardDescription>
+          <CardTitle>{tRc('cardTitle')}</CardTitle>
+          <CardDescription>{tRc('cardDescription')}</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-2">
-                <Label>Qty Received (good)</Label>
+                <Label>{tRc('qtyReceived')}</Label>
                 <Input
                   type="number"
                   min={0}
@@ -176,7 +174,7 @@ export default function WorkOrderReceivePage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Qty Rejected (defects)</Label>
+                <Label>{tRc('qtyRejected')}</Label>
                 <Input
                   type="number"
                   min={0}
@@ -187,7 +185,7 @@ export default function WorkOrderReceivePage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Qty Accepted (net)</Label>
+                <Label>{tRc('qtyAccepted')}</Label>
                 <Input
                   type="text"
                   readOnly
@@ -197,18 +195,18 @@ export default function WorkOrderReceivePage() {
               </div>
             </div>
             <div className="rounded-lg border bg-muted/50 p-4">
-              <p className="text-sm font-medium">Cost allocation</p>
+              <p className="text-sm font-medium">{tRc('costAllocation')}</p>
               <p className="text-muted-foreground">
-                Total material cost: {totalMaterialCost.toLocaleString('id-ID')} →{' '}
+                {tRc('totalMaterialCost', { value: totalMaterialCost.toLocaleString('id-ID') })} →{' '}
                 {accepted > 0
-                  ? `${costPerUnit.toFixed(2)} per unit (${accepted} accepted)`
-                  : 'N/A'}
+                  ? tRc('costPerUnit', { cost: costPerUnit.toFixed(2), accepted })
+                  : tRc('notAvailable')}
               </p>
             </div>
             {variantQtys.length > 1 && (
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Per-variant breakdown (sum must equal qty accepted)</Label>
+                  <Label>{tRc('variantBreakdown')}</Label>
                   {variantQtys.map((row, i) => (
                     <div key={row.variantSku} className="flex items-center gap-2">
                       <span className="w-48 truncate text-sm">{row.variantSku}</span>
@@ -227,12 +225,15 @@ export default function WorkOrderReceivePage() {
                     </div>
                   ))}
                   <p className="text-xs text-muted-foreground">
-                    Sum: {variantQtys.reduce((s, x) => s + x.qty, 0).toLocaleString('id-ID')} / {accepted.toLocaleString('id-ID')} accepted
+                    {tRc('sumAccepted', {
+                      sum: variantQtys.reduce((s, x) => s + x.qty, 0).toLocaleString('id-ID'),
+                      accepted: accepted.toLocaleString('id-ID'),
+                    })}
                   </p>
                 </div>
                 {rejected > 0 && (
                   <div className="space-y-2">
-                    <Label>Per-variant rejected (sum must equal qty rejected)</Label>
+                    <Label>{tRc('variantRejected')}</Label>
                     {rejectedVariantQtys.map((row, i) => (
                       <div key={row.variantSku} className="flex items-center gap-2">
                         <span className="w-48 truncate text-sm">{row.variantSku}</span>
@@ -253,28 +254,31 @@ export default function WorkOrderReceivePage() {
                       </div>
                     ))}
                     <p className="text-xs text-muted-foreground">
-                      Sum: {rejectedVariantQtys.reduce((s, x) => s + x.qty, 0).toLocaleString('id-ID')} / {rejected.toLocaleString('id-ID')} rejected
+                      {tRc('sumRejected', {
+                        sum: rejectedVariantQtys.reduce((s, x) => s + x.qty, 0).toLocaleString('id-ID'),
+                        rejected: rejected.toLocaleString('id-ID'),
+                      })}
                     </p>
                   </div>
                 )}
               </div>
             )}
             <div className="space-y-2">
-              <Label>QC Notes</Label>
+              <Label>{tRc('qcNotes')}</Label>
               <Textarea
                 value={qcNotes}
                 onChange={(e) => setQcNotes(e.target.value)}
-                placeholder="Quality check notes"
+                placeholder={tRc('qcNotesPlaceholder')}
                 rows={3}
               />
             </div>
             <div className="flex gap-4">
               <Button type="submit" disabled={isSubmitting || received <= 0}>
-                {isSubmitting ? 'Saving...' : 'Save Receipt'}
+                {isSubmitting ? tRc('saving') : tRc('save')}
               </Button>
               <Link href={`/backoffice/work-orders/${id}`}>
                 <Button type="button" variant="outline">
-                  Cancel
+                  {tRc('cancel')}
                 </Button>
               </Link>
             </div>

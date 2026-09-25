@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
+import { CalendarPlus } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
 import { ItemType } from "@/lib/constants/enums";
 import { PERMISSIONS, hasPermission } from "@/lib/rbac";
 import { getItemCategories } from "@/app/actions/item-categories";
@@ -51,6 +53,8 @@ export function PlanningPageClient() {
   const { data: session } = useSession();
   const tCmt = useTranslations("planning.cmt");
   const tColors = useTranslations("planning.colors");
+  const tToast = useTranslations("planning.toasts");
+  const tEmpty = useTranslations("planning.empty");
   const activeTab = searchParams.get("tab") || "grid";
 
   const isAdmin = session?.user?.role === "ADMIN";
@@ -68,6 +72,7 @@ export function PlanningPageClient() {
   >([]);
   const [selectedYearId, setSelectedYearId] = useState("");
   const [detail, setDetail] = useState<PlanYearDetail | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [dashboard, setDashboard] = useState<PlanDashboardData | null>(null);
   const [newYear, setNewYear] = useState(String(new Date().getFullYear()));
   const [itemOptions, setItemOptions] = useState<ComboboxOption[]>([]);
@@ -102,9 +107,11 @@ export function PlanningPageClient() {
   };
 
   useEffect(() => {
-    refreshAll().catch((err: unknown) => {
-      toast.error(err instanceof Error ? err.message : "Failed to load planning");
-    });
+    refreshAll()
+      .catch((err: unknown) => {
+        toast.error(err instanceof Error ? err.message : tToast("loadFailed"));
+      })
+      .finally(() => setLoaded(true));
     Promise.all([
       getItemsByType(ItemType.FINISHED_GOOD),
       getItemsByType(ItemType.ACCESSORIES),
@@ -145,7 +152,7 @@ export function PlanningPageClient() {
   useEffect(() => {
     if (!selectedYearId) return;
     refreshAll(selectedYearId).catch((err: unknown) => {
-      toast.error(err instanceof Error ? err.message : "Failed to load plan year");
+      toast.error(err instanceof Error ? err.message : tToast("loadYearFailed"));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedYearId]);
@@ -203,9 +210,20 @@ export function PlanningPageClient() {
     try {
       await createWorkOrderFromStage(stageId);
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to create WO");
+      toast.error(err instanceof Error ? err.message : tToast("createWoFailed"));
     }
   };
+
+  // Before the first load finishes there is nothing to say yet; after it, a
+  // missing plan gets an explanation instead of a blank space under the tabs.
+  const emptyPlan = loaded ? (
+    <EmptyState
+      icon={CalendarPlus}
+      className="rounded-xl border bg-card"
+      title={tEmpty("title")}
+      description={canManage ? tEmpty("descriptionManage") : tEmpty("descriptionView")}
+    />
+  ) : null;
 
   return (
     <PlanningPageShell
@@ -225,16 +243,16 @@ export function PlanningPageClient() {
         if (!canManage) return;
         const year = Number(newYear);
         if (!Number.isInteger(year)) {
-          toast.error("Invalid year");
+          toast.error(tToast("invalidYear"));
           return;
         }
         try {
           const created = await createPlanYear({ year });
           await refreshAll(created.id);
           setNewYear(String(year + 1));
-          toast.success("Plan year created");
+          toast.success(tToast("yearCreated"));
         } catch (err: unknown) {
-          toast.error(err instanceof Error ? err.message : "Failed to create year");
+          toast.error(err instanceof Error ? err.message : tToast("createYearFailed"));
         }
       }}
       onToggleLock={async () => {
@@ -252,9 +270,9 @@ export function PlanningPageClient() {
         try {
           await activatePlanYear(detail.id);
           await refreshAll(detail.id);
-          toast.success("Plan activated");
+          toast.success(tToast("activated"));
         } catch (err: unknown) {
-          toast.error(err instanceof Error ? err.message : "Activation failed");
+          toast.error(err instanceof Error ? err.message : tToast("activateFailed"));
         }
       }}
       onReopenPlan={async () => {
@@ -262,9 +280,9 @@ export function PlanningPageClient() {
         try {
           await reopenPlanYear(detail.id);
           await refreshAll(detail.id);
-          toast.success("Plan reopened to draft");
+          toast.success(tToast("reopened"));
         } catch (err: unknown) {
-          toast.error(err instanceof Error ? err.message : "Reopen failed");
+          toast.error(err instanceof Error ? err.message : tToast("reopenFailed"));
         }
       }}
       onDownloadTemplate={async () => {
@@ -275,7 +293,7 @@ export function PlanningPageClient() {
           link.download = filename;
           link.click();
         } catch (err: unknown) {
-          toast.error(err instanceof Error ? err.message : "Download failed");
+          toast.error(err instanceof Error ? err.message : tToast("downloadFailed"));
         }
       }}
       onImportExcel={async (file) => {
@@ -290,15 +308,19 @@ export function PlanningPageClient() {
           const result = await importPlanFromExcel(detail.id, base64);
           await refreshAll(detail.id);
           toast.success(
-            `Import: ${result.created} created, ${result.updated} updated, ${result.errors.length} errors`
+            tToast("importSummary", {
+              created: result.created,
+              updated: result.updated,
+              errors: result.errors.length,
+            })
           );
         } catch (err: unknown) {
-          toast.error(err instanceof Error ? err.message : "Import failed");
+          toast.error(err instanceof Error ? err.message : tToast("importFailed"));
         }
       }}
     >
       <PlanningTabPanel value="grid">
-        {detail && (
+        {detail ? (
           <PlanGridTab
             detail={detail}
             disabled={disabled}
@@ -356,15 +378,15 @@ export function PlanningPageClient() {
             }}
             onCreateWo={handleCreateWo}
           />
-        )}
+        ) : emptyPlan}
       </PlanningTabPanel>
 
       <PlanningTabPanel value="dashboard">
-        {dashboard && <PlanDashboardTab dashboard={dashboard} />}
+        {dashboard ? <PlanDashboardTab dashboard={dashboard} /> : emptyPlan}
       </PlanningTabPanel>
 
       <PlanningTabPanel value="rincian">
-        {detail && (
+        {detail ? (
           <PlanDetailsTab
             detail={detail}
             supplierOptions={tailorOptions}
@@ -380,25 +402,25 @@ export function PlanningPageClient() {
             onDeleteStage={(id) => deletePlanStage(id)}
             onCreateWo={handleCreateWo}
           />
-        )}
+        ) : emptyPlan}
       </PlanningTabPanel>
 
       <PlanningTabPanel value="warna">
-        {detail && (
+        {detail ? (
           <PlanColorsTab
             detail={detail}
             disabled={disabled}
             onRefresh={() => refreshAll(detail.id)}
             onSave={async (categoryId, month, allocations) => {
               await upsertMonthlyColorAllocations(categoryId, month, allocations);
-              toast.success("Color allocations saved");
+              toast.success(tToast("colorsSaved"));
             }}
           />
-        )}
+        ) : emptyPlan}
       </PlanningTabPanel>
 
       <PlanningTabPanel value="jahitan">
-        {detail && (
+        {detail ? (
           <PlanCmtTab
             detail={detail}
             tailorOptions={tailorOptions}
@@ -408,7 +430,7 @@ export function PlanningPageClient() {
             onRefresh={() => refreshAll(detail.id)}
             onSave={async (categoryId, month, variantSku, allocations) => {
               await upsertMonthlyCmtAllocations(categoryId, month, variantSku, allocations);
-              toast.success("CMT allocations saved");
+              toast.success(tToast("cmtSaved"));
             }}
             onGenerateWorkOrders={async (filters) => {
               const result = await generateWorkOrdersFromPlan(detail.id, filters);
@@ -426,11 +448,11 @@ export function PlanningPageClient() {
               return result;
             }}
           />
-        )}
+        ) : emptyPlan}
       </PlanningTabPanel>
 
       <PlanningTabPanel value="aksesoris">
-        {detail && (
+        {detail ? (
           <PlanAccessoriesTab
             detail={detail}
             accessoryOptions={accessoryOptions}
@@ -441,7 +463,7 @@ export function PlanningPageClient() {
             }}
             onSuggestBom={(categoryId) => suggestAccessoryFromBom(categoryId)}
           />
-        )}
+        ) : emptyPlan}
       </PlanningTabPanel>
     </PlanningPageShell>
   );

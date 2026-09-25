@@ -91,6 +91,8 @@ function plannedRollsStillAvailable(
 export default function WorkOrderIssuePage() {
   const t = useTranslations('toasts');
   const tWO = useTranslations('workOrders');
+  const tF = useTranslations('workOrders.form');
+  const tI = useTranslations('workOrders.issuePage');
   const params = useParams();
   const router = useRouter();
   const { data: session } = useSession();
@@ -201,7 +203,7 @@ export default function WorkOrderIssuePage() {
   const switchIssueType = (nextType: "FABRIC" | "ACCESSORIES") => {
     if (nextType === issueType) return;
     if (lines.length > 0) {
-      toast.info("Issue type changed. Cleared staged lines to keep the payload consistent.");
+      toast.info(tI('typeChanged'));
       setLines([]);
     }
     setIssueType(nextType);
@@ -267,7 +269,7 @@ export default function WorkOrderIssuePage() {
       return issueType === "FABRIC" ? isFabricItem(p.itemId) : !isFabricItem(p.itemId);
     });
     if (withRemaining.length === 0) {
-      toast.info("No remaining qty to issue for this type.");
+      toast.info(tI('nothingRemaining'));
       return;
     }
     setLines(
@@ -284,7 +286,7 @@ export default function WorkOrderIssuePage() {
         };
       })
     );
-    toast.success(withRemaining.length === 1 ? '1 line filled.' : `${withRemaining.length} lines filled with remaining qty.`);
+    toast.success(tI('linesFilled', { count: withRemaining.length }));
   };
 
   const handleScan = (skuOrId: string) => {
@@ -335,7 +337,7 @@ export default function WorkOrderIssuePage() {
         fabricIssueQty
       );
       if (suggestion.selected.length === 0) {
-        toast.error("No available fabric rolls found");
+        toast.error(tF('noRollsFound'));
         return;
       }
       setRollBreakdown(
@@ -345,12 +347,12 @@ export default function WorkOrderIssuePage() {
         }))
       );
       if (suggestion.unallocated > 0) {
-        toast.error(`Insufficient roll stock, unallocated: ${suggestion.unallocated.toFixed(2)}`);
+        toast.error(tF('insufficientRolls', { qty: suggestion.unallocated.toFixed(2) }));
       } else {
-        toast.success("Best-fit roll suggestion applied");
+        toast.success(tF('suggestionApplied'));
       }
     } catch {
-      toast.error("Failed to suggest roll allocation");
+      toast.error(tF('suggestFailed'));
     } finally {
       setIsSuggestingRolls(false);
     }
@@ -370,7 +372,10 @@ export default function WorkOrderIssuePage() {
     const rollSum = rollBreakdown.reduce((sum, row) => sum + row.qty, 0);
     if (issueType === "FABRIC" && fabricQty > 0 && rollBreakdown.length > 0 && rollSum + 1e-6 < fabricQty) {
       toast.error(
-        `Total roll (${rollSum.toLocaleString(undefined, { maximumFractionDigits: 2 })}) is less than issued fabric qty (${fabricQty.toLocaleString(undefined, { maximumFractionDigits: 2 })}).`
+        tI('rollBelowFabric', {
+          roll: rollSum.toLocaleString(undefined, { maximumFractionDigits: 2 }),
+          fabric: fabricQty.toLocaleString(undefined, { maximumFractionDigits: 2 }),
+        })
       );
       return;
     }
@@ -413,12 +418,12 @@ export default function WorkOrderIssuePage() {
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Link href={`/backoffice/work-orders/${id}`}>
-          <Button variant="ghost" size="icon">
+          <Button variant="ghost" size="icon" aria-label={tWO('recon.backToWO')} title={tWO('recon.backToWO')}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
         <div>
-          <h1 className="text-2xl font-bold">Issue Materials</h1>
+          <h1 className="text-2xl font-bold">{tWO('issueMaterials')}</h1>
           <p className="text-muted-foreground">{String(wo.docNumber ?? '')}</p>
         </div>
       </div>
@@ -426,17 +431,17 @@ export default function WorkOrderIssuePage() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Material Plan</CardTitle>
+            <CardTitle>{tF('materialPlanTitle')}</CardTitle>
             <CardDescription>{tWO('plannedVsIssued')}</CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Material</TableHead>
+                  <TableHead>{tWO('material')}</TableHead>
                   <TableHead className="text-right">{tWO('estimatedConsumptionPerPcs')}</TableHead>
-                  <TableHead className="text-right">Issued</TableHead>
-                  <TableHead className="text-right">Remaining</TableHead>
+                  <TableHead className="text-right">{tI('colIssued')}</TableHead>
+                  <TableHead className="text-right">{tI('colRemaining')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -461,29 +466,27 @@ export default function WorkOrderIssuePage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Issue Form</CardTitle>
-            <CardDescription>
-              Add materials to issue. Use barcode to quick-add.
-            </CardDescription>
+            <CardTitle>{tI('formTitle')}</CardTitle>
+            <CardDescription>{tI('formDescription')}</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label>Issue Type</Label>
+                <Label>{tI('issueType')}</Label>
                 <div className="flex flex-wrap gap-2">
                   <Button
                     type="button"
                     variant={issueType === "FABRIC" ? "default" : "outline"}
                     onClick={() => switchIssueType("FABRIC")}
                   >
-                    Fabric
+                    {tI('fabric')}
                   </Button>
                   <Button
                     type="button"
                     variant={issueType === "ACCESSORIES" ? "default" : "outline"}
                     onClick={() => switchIssueType("ACCESSORIES")}
                   >
-                    Accessories
+                    {tI('accessories')}
                   </Button>
                 </div>
               </div>
@@ -493,31 +496,40 @@ export default function WorkOrderIssuePage() {
                   checked={isPartial}
                   onCheckedChange={(c) => setIsPartial(!!c)}
                 />
-                <Label htmlFor="partial">Partial / split allocation</Label>
+                <Label htmlFor="partial">{tI('partial')}</Label>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Label>Add material</Label>
+                <Label>{tI('addMaterial')}</Label>
                 <SearchableCombobox
                   options={planWithRemaining
                     .filter((p) => !lines.some((l) => l.itemId === p.itemId))
                     .map((p) => ({
                       value: p.itemId,
-                      label: `${p.itemName} (remaining ${(p.plannedQty - p.issuedQty).toLocaleString('id-ID')})`,
+                      label: tI('materialRemaining', {
+                        name: p.itemName,
+                        qty: (p.plannedQty - p.issuedQty).toLocaleString('id-ID'),
+                      }),
                     }))}
                   value=""
                   onValueChange={(itemId) => addLine(itemId)}
-                  placeholder="Select material"
+                  placeholder={tWO('selectMaterial')}
                   triggerClassName="w-[200px]"
                 />
                 <Dialog open={scanOpen} onOpenChange={setScanOpen}>
                   <DialogTrigger asChild>
-                    <Button type="button" variant="outline" size="icon">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      aria-label={tI('scanBarcode')}
+                      title={tI('scanBarcode')}
+                    >
                       <Barcode className="h-4 w-4" />
                     </Button>
                   </DialogTrigger>
                   <DialogContent>
                     <DialogHeader>
-                      <DialogTitle>Scan Barcode</DialogTitle>
+                      <DialogTitle>{tI('scanBarcode')}</DialogTitle>
                     </DialogHeader>
                     <BarcodeScanner
                       onScan={handleScan}
@@ -526,17 +538,19 @@ export default function WorkOrderIssuePage() {
                   </DialogContent>
                 </Dialog>
                 <Button type="button" variant="secondary" onClick={autoFillRemaining}>
-                  Auto-fill remaining
+                  {tI('autoFill')}
                 </Button>
               </div>
               {lines.length > 0 && (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Material</TableHead>
-                      <TableHead className="text-right">Qty</TableHead>
-                      <TableHead className="text-right">Unit Price (optional)</TableHead>
-                      <TableHead className="w-12"></TableHead>
+                      <TableHead>{tWO('material')}</TableHead>
+                      <TableHead className="text-right">{tWO('qty')}</TableHead>
+                      <TableHead className="text-right">{tI('colUnitPrice')}</TableHead>
+                      <TableHead className="w-12">
+                        <span className="sr-only">{tWO('detail.colActions')}</span>
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -554,7 +568,7 @@ export default function WorkOrderIssuePage() {
                               updateLineQty(l.itemId, v === '' ? 0 : Number(v));
                             }}
                             className="w-24 text-right"
-                            placeholder={l.maxQty > 0 ? `max ${l.maxQty}` : 'over-issue ok'}
+                            placeholder={l.maxQty > 0 ? tI('maxQty', { max: l.maxQty }) : tI('overIssueOk')}
                           />
                         </TableCell>
                         <TableCell className="text-right">
@@ -562,7 +576,7 @@ export default function WorkOrderIssuePage() {
                             type="number"
                             min={0}
                             step="0.01"
-                            placeholder={itemAvgCosts[l.itemId] != null ? Number(itemAvgCosts[l.itemId]).toFixed(2) : 'Avg cost'}
+                            placeholder={itemAvgCosts[l.itemId] != null ? Number(itemAvgCosts[l.itemId]).toFixed(2) : tI('avgCost')}
                             value={l.unitPrice != null ? l.unitPrice.toFixed(2) : ''}
                             onChange={(e) => {
                               const v = e.target.value;
@@ -578,7 +592,7 @@ export default function WorkOrderIssuePage() {
                             size="sm"
                             onClick={() => removeLine(l.itemId)}
                           >
-                            Remove
+                            {tF('remove')}
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -590,17 +604,19 @@ export default function WorkOrderIssuePage() {
                 <div className="space-y-2 border-t pt-4">
                   <Label>Alokasi per roll (opsional)</Label>
                   <p className="text-xs text-muted-foreground">
-                    Pilih roll utuh. Total allocated minimal sama dengan qty kain yang di-issue.
+                    {tI('rollHint')}
                   </p>
                   {rollBreakdown.length > 0 && (
                     <div className="overflow-x-auto">
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Roll / Ref</TableHead>
-                            <TableHead className="text-right">Qty (whole roll)</TableHead>
-                            <TableHead>Notes</TableHead>
-                            <TableHead className="w-12" />
+                            <TableHead>{tWO('detail.colRollRef')}</TableHead>
+                            <TableHead className="text-right">{tF('colWholeRollQty')}</TableHead>
+                            <TableHead>{tWO('notes')}</TableHead>
+                            <TableHead className="w-12">
+                              <span className="sr-only">{tWO('detail.colActions')}</span>
+                            </TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -614,7 +630,7 @@ export default function WorkOrderIssuePage() {
                                 <Input
                                   value={row.notes ?? ""}
                                   onChange={(e) => updateRollNotes(i, e.target.value)}
-                                  placeholder="Optional"
+                                  placeholder={tF('optional')}
                                   className="h-8"
                                 />
                               </TableCell>
@@ -625,6 +641,8 @@ export default function WorkOrderIssuePage() {
                                   size="icon"
                                   className="h-8 w-8"
                                   onClick={() => removeRollRow(i)}
+                                  aria-label={tF('removeRoll', { ref: row.rollRef })}
+                                  title={tF('removeRoll', { ref: row.rollRef })}
                                 >
                                   ×
                                 </Button>
@@ -641,7 +659,10 @@ export default function WorkOrderIssuePage() {
                         .filter((r) => !rollBreakdown.some((b) => b.rollRef === r.rollCode || b.rollRef === r.rollRef))
                         .map((r) => ({
                           value: r.rollId,
-                          label: `${r.rollCode} — ${r.remainingLength.toLocaleString('id-ID')} remaining`,
+                          label: tF('rollRemaining', {
+                            code: r.rollCode,
+                            qty: r.remainingLength.toLocaleString('id-ID'),
+                          }),
                         }))}
                       value={addRollValue}
                       onValueChange={(value) => {
@@ -651,8 +672,8 @@ export default function WorkOrderIssuePage() {
                           setAddRollValue("");
                         }
                       }}
-                      placeholder="Add roll..."
-                      emptyMessage="No more rolls"
+                      placeholder={tF('addRollPlaceholder')}
+                      emptyMessage={tF('noMoreRolls')}
                       triggerClassName="w-[280px]"
                     />
                     <Button
@@ -662,17 +683,19 @@ export default function WorkOrderIssuePage() {
                       onClick={() => void handleSuggestRolls()}
                       disabled={!consumptionMaterialId || fabricIssueQty <= 0 || isSuggestingRolls}
                     >
-                      {isSuggestingRolls ? "Suggesting..." : "Suggest best-fit"}
+                      {isSuggestingRolls ? tF('suggesting') : tF('suggestBestFit')}
                     </Button>
                   </div>
                   {rollBreakdown.length > 0 && (
                     <p className="text-sm">
-                      Total allocated: {rollSum.toLocaleString(undefined, { maximumFractionDigits: 2 })}.
                       {fabricIssueQty > 0
-                        ? rollSum >= fabricIssueQty - 1e-6
-                          ? ` +${(rollSum - fabricIssueQty).toLocaleString(undefined, { maximumFractionDigits: 2 })} over`
-                          : ` ${(rollSum - fabricIssueQty).toLocaleString(undefined, { maximumFractionDigits: 2 })} short`
-                        : ""}
+                        ? tF(rollSum >= fabricIssueQty - 1e-6 ? 'allocatedOver' : 'allocatedShort', {
+                            total: rollSum.toLocaleString(undefined, { maximumFractionDigits: 2 }),
+                            diff: Math.abs(rollSum - fabricIssueQty).toLocaleString(undefined, { maximumFractionDigits: 2 }),
+                          })
+                        : tI('allocatedTotal', {
+                            total: rollSum.toLocaleString(undefined, { maximumFractionDigits: 2 }),
+                          })}
                     </p>
                   )}
                   {!rollValid && (
@@ -683,7 +706,7 @@ export default function WorkOrderIssuePage() {
                 </div>
               )}
               <Button type="submit" disabled={isSubmitting || lines.length === 0 || !rollValid}>
-                {isSubmitting ? 'Issuing...' : 'Issue Materials'}
+                {isSubmitting ? tI('issuing') : tWO('issueMaterials')}
               </Button>
             </form>
           </CardContent>

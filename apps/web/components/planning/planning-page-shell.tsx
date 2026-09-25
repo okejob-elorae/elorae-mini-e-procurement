@@ -3,7 +3,8 @@
 import { Lock, Unlock, Plus, Download, Upload } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -68,11 +69,8 @@ export function PlanningPageShell({
 
   return (
     <div className="space-y-4">
+      <PageHeader title={t("title")} description={t("subtitle")} />
       <Card>
-        <CardHeader>
-          <CardTitle>{t("title")}</CardTitle>
-          <p className="text-sm text-muted-foreground">{t("subtitle")}</p>
-        </CardHeader>
         <CardContent className="space-y-3">
           {isLocked && (
             <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">

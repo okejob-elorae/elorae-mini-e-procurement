@@ -28,10 +28,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
-import { formatDateOnly, parseDateOnly } from '@/lib/date-only';
+import { formatDateOnly, formatDisplayDate, parseDateOnly } from '@/lib/date-only';
+import { PageHeader } from '@/components/ui/page-header';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { getPOById, getPOs, setPOPaidAt } from '@/app/actions/purchase-orders';
 import { supplierPaymentJournalErrorKey } from '@/lib/purchasing/supplier-payment-journal-message';
 import { logPrint } from '@/app/actions/audit';
@@ -107,6 +108,8 @@ export default function SupplierPaymentsPage() {
   const [printingPoId, setPrintingPoId] = useState<string | null>(null);
   const [togglingPoId, setTogglingPoId] = useState<string | null>(null);
   const tSupplierPayments = useTranslations('supplierPayments');
+  const tTable = useTranslations('tableHeaders');
+  const locale = useLocale();
 
   const fetchSuppliers = async () => {
     try {
@@ -159,7 +162,7 @@ export default function SupplierPaymentsPage() {
         setTotalCount(list.length);
       }
     } catch {
-      toast.error('Failed to load POs');
+      toast.error(tSupplierPayments('loadFailed'));
       setPOs([]);
       setTotalCount(0);
     } finally {
@@ -239,11 +242,13 @@ export default function SupplierPaymentsPage() {
               );
         toast.warning(warning, { duration: 12000 });
       } else {
-        toast.success(paid ? 'Marked as paid' : 'Marked as unpaid');
+        toast.success(
+          paid ? tSupplierPayments('markedPaid') : tSupplierPayments('markedUnpaid')
+        );
       }
       fetchPOs();
     } catch (e: any) {
-      toast.error(e.message || 'Failed');
+      toast.error(e.message || tSupplierPayments('actionFailed'));
     } finally {
       setTogglingPoId(null);
     }
@@ -271,7 +276,7 @@ export default function SupplierPaymentsPage() {
     try {
       const po = await getPOById(poId);
       if (!po) {
-        toast.error('PO not found');
+        toast.error(tSupplierPayments('poNotFound'));
         return;
       }
       await logPrint('PurchaseOrderInvoice', poId);
@@ -322,7 +327,7 @@ export default function SupplierPaymentsPage() {
       });
       printHtmlInIframe(html, 'Print purchase invoice');
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Failed to print');
+      toast.error(e instanceof Error ? e.message : tSupplierPayments('printFailed'));
     } finally {
       setPrintingPoId(null);
     }
@@ -333,11 +338,11 @@ export default function SupplierPaymentsPage() {
     try {
       const po = await getPOById(poId);
       if (!po) {
-        toast.error('PO not found');
+        toast.error(tSupplierPayments('poNotFound'));
         return;
       }
       if (!po.paidAt) {
-        toast.error('Mark this PO as paid before printing a receipt');
+        toast.error(tSupplierPayments('receiptNeedsPaid'));
         return;
       }
       await logPrint('PurchaseOrderPaymentReceipt', poId);
@@ -376,7 +381,7 @@ export default function SupplierPaymentsPage() {
       });
       printHtmlInIframe(html, 'Print payment receipt');
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Failed to print');
+      toast.error(e instanceof Error ? e.message : tSupplierPayments('printFailed'));
     } finally {
       setPrintingPoId(null);
     }
@@ -384,34 +389,32 @@ export default function SupplierPaymentsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Supplier Payment</h1>
-        <p className="text-muted-foreground">
-          View and record supplier payments by PO
-        </p>
-      </div>
+      <PageHeader
+        title={tSupplierPayments('pageTitle')}
+        description={tSupplierPayments('pageDescription')}
+      />
 
       {/* Filters */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Filters</CardTitle>
+          <CardTitle className="text-base">{tSupplierPayments('filtersTitle')}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-4">
           <div className="space-y-2">
-            <Label>Supplier</Label>
+            <Label>{tSupplierPayments('supplierLabel')}</Label>
             <SearchableCombobox
               options={[
-                { value: 'all', label: 'All suppliers' },
+                { value: 'all', label: tSupplierPayments('allSuppliers') },
                 ...suppliers.map((s) => ({ value: s.id, label: `${s.name} (${s.code})` })),
               ]}
               value={supplierId || 'all'}
               onValueChange={(v) => setSupplierId(v === 'all' ? '' : v)}
-              placeholder="All suppliers"
+              placeholder={tSupplierPayments('allSuppliers')}
               triggerClassName="w-[200px]"
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="payment-due-range">Payment due range</Label>
+            <Label htmlFor="payment-due-range">{tSupplierPayments('dueRangeLabel')}</Label>
             <DateRangePicker
               id="payment-due-range"
               triggerClassName="w-[220px]"
@@ -426,15 +429,15 @@ export default function SupplierPaymentsPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label>Payment status</Label>
+            <Label>{tSupplierPayments('paymentStatusLabel')}</Label>
             <Select value={paymentFilter} onValueChange={(v: 'all' | 'paid' | 'unpaid') => setPaymentFilter(v)}>
               <SelectTrigger className="w-[140px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All</SelectItem>
-                <SelectItem value="paid">Paid</SelectItem>
-                <SelectItem value="unpaid">Unpaid</SelectItem>
+                <SelectItem value="all">{tSupplierPayments('filterAll')}</SelectItem>
+                <SelectItem value="paid">{tSupplierPayments('paid')}</SelectItem>
+                <SelectItem value="unpaid">{tSupplierPayments('unpaid')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -447,17 +450,21 @@ export default function SupplierPaymentsPage() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
               <DollarSign className="h-4 w-4" />
-              Outstanding (unpaid)
+              {tSupplierPayments('outstandingTitle')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">Rp {unpaidTotal.toLocaleString('id-ID')}</p>
-            <p className="text-xs text-muted-foreground">{unpaidCount} PO(s)</p>
+            <p className="text-xs text-muted-foreground">
+              {tSupplierPayments('poCount', { count: unpaidCount })}
+            </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Unpaid</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              {tSupplierPayments('unpaid')}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">{unpaidCount}</p>
@@ -465,7 +472,9 @@ export default function SupplierPaymentsPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Paid</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              {tSupplierPayments('paid')}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">{paidCount}</p>
@@ -478,7 +487,7 @@ export default function SupplierPaymentsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <CheckCircle className="h-5 w-5" />
-            Purchase orders
+            {tSupplierPayments('listTitle')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -487,19 +496,23 @@ export default function SupplierPaymentsPage() {
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
             </div>
           ) : pos.length === 0 ? (
-            <p className="text-muted-foreground text-center py-8">No POs match the filters.</p>
+            <p className="text-muted-foreground text-center py-8">
+              {tSupplierPayments('noPOsMatchFilters')}
+            </p>
           ) : (
             <>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>PO Number</TableHead>
-                  <TableHead>Supplier</TableHead>
-                  <TableHead>Total</TableHead>
-                  <TableHead>Payment due</TableHead>
-                  <TableHead>Paid date</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="min-w-[220px] text-right">Actions</TableHead>
+                  <TableHead>{tTable('poNumber')}</TableHead>
+                  <TableHead className="min-w-[160px]">{tTable('supplier')}</TableHead>
+                  <TableHead>{tSupplierPayments('colTotal')}</TableHead>
+                  <TableHead>{tSupplierPayments('colDue')}</TableHead>
+                  <TableHead>{tSupplierPayments('colPaidDate')}</TableHead>
+                  <TableHead>{tTable('status')}</TableHead>
+                  <TableHead className="sticky right-0 min-w-[220px] bg-card text-right">
+                    {tSupplierPayments('colActions')}
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -510,7 +523,7 @@ export default function SupplierPaymentsPage() {
                         {po.docNumber}
                       </Link>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-normal">
                       <div>
                         <p className="font-medium">{po.supplier.name}</p>
                         <p className="text-sm text-muted-foreground">{po.supplier.code}</p>
@@ -518,22 +531,29 @@ export default function SupplierPaymentsPage() {
                     </TableCell>
                     <TableCell>Rp {po.grandTotal.toLocaleString('id-ID')}</TableCell>
                     <TableCell>
-                      {po.paymentDueDate ? po.paymentDueDate.toLocaleDateString('id-ID') : '-'}
+                      {po.paymentDueDate ? formatDisplayDate(po.paymentDueDate, locale) : '-'}
                     </TableCell>
                     <TableCell>
-                      {po.paidAt ? po.paidAt.toLocaleDateString('id-ID') : '-'}
+                      {po.paidAt ? formatDisplayDate(po.paidAt, locale) : '-'}
                     </TableCell>
                     <TableCell>
                       {po.paidAt ? (
-                        <Badge variant="default" className="bg-green-600">Paid</Badge>
+                        <Badge variant="default" className="bg-green-600">
+                          {tSupplierPayments('paid')}
+                        </Badge>
                       ) : (
-                        <Badge variant="secondary">Unpaid</Badge>
+                        <Badge variant="secondary">{tSupplierPayments('unpaid')}</Badge>
                       )}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="sticky right-0 bg-card text-right">
                       <div className="flex flex-wrap items-center justify-end gap-1">
                         <Link href={`/backoffice/purchase-orders/${po.id}`}>
-                          <Button variant="ghost" size="icon" title="View PO">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title={tSupplierPayments('viewPO')}
+                            aria-label={tSupplierPayments('viewPO')}
+                          >
                             <Eye className="h-4 w-4" />
                           </Button>
                         </Link>
@@ -544,10 +564,9 @@ export default function SupplierPaymentsPage() {
                               size="sm"
                               className="gap-1"
                               disabled={printingPoId === po.id}
-                              title="Print"
                             >
                               <Printer className="h-3.5 w-3.5" />
-                              Print
+                              {tSupplierPayments('print')}
                               <ChevronDown className="h-3 w-3 opacity-60" />
                             </Button>
                           </DropdownMenuTrigger>
@@ -557,7 +576,7 @@ export default function SupplierPaymentsPage() {
                                 void handlePrintInvoice(po.id);
                               }}
                             >
-                              Print invoice
+                              {tSupplierPayments('printInvoice')}
                             </DropdownMenuItem>
                             {po.paidAt ? (
                               <DropdownMenuItem
@@ -565,7 +584,7 @@ export default function SupplierPaymentsPage() {
                                   void handlePrintReceipt(po.id);
                                 }}
                               >
-                                Print receipt
+                                {tSupplierPayments('printReceipt')}
                               </DropdownMenuItem>
                             ) : null}
                           </DropdownMenuContent>
@@ -577,7 +596,9 @@ export default function SupplierPaymentsPage() {
                             disabled={togglingPoId === po.id}
                             onClick={() => handleMarkPaid(po.id, false)}
                           >
-                            {togglingPoId === po.id ? 'Unmarking…' : 'Unmark'}
+                            {togglingPoId === po.id
+                              ? tSupplierPayments('unmarking')
+                              : tSupplierPayments('unmark')}
                           </Button>
                         ) : (
                           <Button
@@ -585,7 +606,9 @@ export default function SupplierPaymentsPage() {
                             disabled={togglingPoId === po.id || po.paymentJournalStandingWhileUnpaid}
                             onClick={() => handleMarkPaid(po.id, true)}
                           >
-                            {togglingPoId === po.id ? 'Marking…' : 'Mark paid'}
+                            {togglingPoId === po.id
+                              ? tSupplierPayments('marking')
+                              : tSupplierPayments('markPaid')}
                           </Button>
                         )}
                       </div>

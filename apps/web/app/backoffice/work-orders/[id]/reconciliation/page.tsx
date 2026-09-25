@@ -22,7 +22,8 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatDisplayDate } from '@/lib/date-only';
 import { getWorkOrderById, getReconciliation } from '@/app/actions/production';
 import { buildReconciliationPrintHtml } from '@/lib/print/reconciliation-html';
 
@@ -54,6 +55,8 @@ export default function WorkOrderReconciliationPage() {
   const params = useParams();
   const t = useTranslations('production');
   const tWO = useTranslations('workOrders');
+  const tR = useTranslations('workOrders.recon');
+  const locale = useLocale();
   const id = typeof params.id === 'string' ? params.id : '';
   const [wo, setWO] = useState<Awaited<ReturnType<typeof getWorkOrderById>>>(null);
   const [recon, setRecon] = useState<{
@@ -69,9 +72,9 @@ export default function WorkOrderReconciliationPage() {
         setWO(w);
         setRecon(r);
       })
-      .catch(() => toast.error('Failed to load reconciliation'))
+      .catch(() => toast.error(tR('loadFailed')))
       .finally(() => setIsLoading(false));
-  }, [id]);
+  }, [id, tR]);
 
   const efficiencyPercent =
     recon && recon.summary.totalIssuedValue > 0
@@ -80,12 +83,10 @@ export default function WorkOrderReconciliationPage() {
 
   const handleExportPDF = () => {
     if (!wo || !recon) return;
-    const printDate =
-      wo.updatedAt instanceof Date
-        ? wo.updatedAt.toLocaleDateString()
-        : wo.updatedAt
-          ? new Date(wo.updatedAt as string).toLocaleDateString()
-          : new Date().toLocaleDateString();
+    const printDate = formatDisplayDate(
+      (wo.updatedAt as Date | string | null | undefined) ?? new Date(),
+      locale
+    );
     const subtitle =
       wo.finishedGood && typeof wo.finishedGood === 'object' && 'nameEn' in wo.finishedGood
         ? (wo.finishedGood as { nameEn?: string; nameId?: string }).nameEn ??
@@ -128,7 +129,7 @@ export default function WorkOrderReconciliationPage() {
 
     const doc = iframe.contentDocument ?? iframe.contentWindow?.document;
     if (!doc) {
-      toast.error('Unable to create print view.');
+      toast.error(tR('printViewFailed'));
       iframe.remove();
       return;
     }
@@ -145,7 +146,7 @@ export default function WorkOrderReconciliationPage() {
       try {
         iframe.contentWindow?.print();
       } catch {
-        toast.error('Print failed.');
+        toast.error(tR('printFailed'));
       }
       setTimeout(removeIframe, 500);
     }, 350);
@@ -164,12 +165,12 @@ export default function WorkOrderReconciliationPage() {
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <Link href={`/backoffice/work-orders/${id}`}>
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" aria-label={tR('backToWO')} title={tR('backToWO')}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold">Reconciliation</h1>
+            <h1 className="text-2xl font-bold">{tWO('reconciliationTitle')}</h1>
             <p className="text-muted-foreground">{String(wo.docNumber ?? '')}</p>
             <p className="text-sm text-muted-foreground mt-1">
               {String(
@@ -189,7 +190,7 @@ export default function WorkOrderReconciliationPage() {
         </div>
         <Button variant="outline" size="sm" onClick={handleExportPDF}>
           <FileDown className="mr-2 h-4 w-4" />
-          Print / Export PDF
+          {tR('exportPdf')}
         </Button>
       </div>
 
@@ -197,7 +198,7 @@ export default function WorkOrderReconciliationPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total Material Cost (Used)
+              {tR('totalMaterialCost')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -211,7 +212,7 @@ export default function WorkOrderReconciliationPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Efficiency %
+              {tR('efficiency')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -219,14 +220,14 @@ export default function WorkOrderReconciliationPage() {
               {efficiencyPercent.toFixed(1)}%
             </p>
             <p className="text-xs text-muted-foreground">
-              Used vs issued value
+              {tR('usedVsIssued')}
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Cost Variance
+              {tR('costVariance')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -250,9 +251,14 @@ export default function WorkOrderReconciliationPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{t('selisih')} by material</CardTitle>
+          <CardTitle>{tR('byMaterial', { selisih: t('selisih') })}</CardTitle>
           <CardDescription>
-            {t('cuttingPlanned')} vs {t('issuedToCmt')} vs {t('setoran')}; {t('selisihFromEstimate')} per line.
+            {tR('byMaterialDesc', {
+              planned: t('cuttingPlanned'),
+              issued: t('issuedToCmt'),
+              setoran: t('setoran'),
+              estimate: t('selisihFromEstimate'),
+            })}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -260,16 +266,16 @@ export default function WorkOrderReconciliationPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Material</TableHead>
+                  <TableHead>{tWO('material')}</TableHead>
                   <TableHead className="text-right" title={t('cuttingPlanned')}>{tWO('estimatedConsumptionPerPcs')}</TableHead>
                   <TableHead className="text-right" title={t('issuedToCmt')}>{t('issuedToCmt')}</TableHead>
-                  <TableHead className="text-right">Returned</TableHead>
+                  <TableHead className="text-right">{tWO('returned')}</TableHead>
                   <TableHead className="text-right">{t('setoran')}</TableHead>
-                  <TableHead className="text-right">Theoretical</TableHead>
+                  <TableHead className="text-right">{tWO('theoretical')}</TableHead>
                   <TableHead className="text-right" title={t('selisihFromEstimate')}>{t('selisih')}</TableHead>
                   <TableHead className="text-right">{t('selisih')} %</TableHead>
-                  <TableHead className="text-right">Value Impact</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">{tWO('valueImpact')}</TableHead>
+                  <TableHead>{tWO('status')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -284,7 +290,7 @@ export default function WorkOrderReconciliationPage() {
                           : undefined
                     }
                   >
-                    <TableCell>
+                    <TableCell className="min-w-[180px] whitespace-normal">
                       <span className="font-medium">{line.itemName}</span>
                       {line.itemSku && (
                         <span className="ml-1 text-muted-foreground">
@@ -331,7 +337,7 @@ export default function WorkOrderReconciliationPage() {
                               : 'default'
                         }
                       >
-                        {line.status}
+                        {tR(`status${line.status}`)}
                       </Badge>
                     </TableCell>
                   </TableRow>

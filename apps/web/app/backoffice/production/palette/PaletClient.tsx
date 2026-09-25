@@ -67,6 +67,7 @@ import { ATURAN_SABLON, JUMLAH_SABLON_MAKS } from '@/lib/production-colors/sablo
 import type { TintaDasar } from '@/lib/production-colors/sablon/tinta-dasar';
 import { salinTeks } from '@/lib/ui/salin-teks';
 import { cn } from '@/lib/utils';
+import { formatDisplayDate } from '@/lib/date-only';
 import { AmbilDariGambar } from './AmbilDariGambar';
 import { DeretWarna } from './DeretWarna';
 import { buatGambarPalet, cetakHtml, namaBerkas, unduh } from './ekspor-palet';
@@ -805,7 +806,7 @@ export function PaletClient({
                           p.kain ? t('savedFabric', { fabric: namaKainDari(p.kain) }) : null,
                           t(`rules.${p.aturan}.name`),
                           p.dibuatOleh,
-                          tanggal.format(new Date(p.dibuatPada)),
+                          formatDisplayDate(p.dibuatPada, locale),
                         ]
                           .filter(Boolean)
                           .join(' · ')}

@@ -4,6 +4,7 @@ import { Fragment, useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
+import { useTranslations } from 'next-intl';
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -115,6 +116,15 @@ export default function EditVendorReturnPage() {
   const params = useParams();
   const router = useRouter();
   const { data: session } = useSession();
+  const t = useTranslations('vendorReturn');
+  const lineTypeLabel = (type: string) =>
+    type === 'FABRIC' || type === 'ACCESSORIES' || type === 'FG_REJECT'
+      ? t(`lineType.${type}`)
+      : type;
+  const conditionLabel = (condition: string) =>
+    condition === 'GOOD' || condition === 'DAMAGED' || condition === 'DEFECTIVE'
+      ? t(`condition.${condition}`)
+      : condition;
   const id = typeof params.id === 'string' ? params.id : '';
 
   const [vendors, setVendors] = useState<Supplier[]>([]);
@@ -151,7 +161,7 @@ export default function EditVendorReturnPage() {
         ]);
 
         if (!ret || ret.status !== 'DRAFT') {
-          toast.error('Return not found or cannot be edited');
+          toast.error(t('form.notEditable'));
           router.replace('/backoffice/vendor-returns');
           return;
         }
@@ -297,14 +307,14 @@ export default function EditVendorReturnPage() {
           : [];
         setItems(itemList);
       } catch {
-        toast.error('Failed to load data');
+        toast.error(t('form.loadDataFailed'));
         router.replace('/backoffice/vendor-returns');
       } finally {
         setIsLoading(false);
       }
     };
     load();
-  }, [id, router]);
+  }, [id, router, t]);
 
   /** Filter items by line type: FABRIC → fabric items, ACCESSORIES → accessories, FG_REJECT → finished goods. */
   const itemOptionsForLineType = (lineType: LineType): ItemOption[] => {
@@ -364,13 +374,13 @@ export default function EditVendorReturnPage() {
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i];
       if (!l.itemId || (l.reason?.trim().length ?? 0) < 3) {
-        toast.error(`Line ${i + 1}: item and reason (min 3 chars) required`);
+        toast.error(t('form.lineItemReasonRequired', { line: i + 1 }));
         return;
       }
       if (l.type === 'FABRIC') {
         const rollIds = l.rollIds ?? [];
         if (rollIds.length === 0) {
-          toast.error(`Line ${i + 1}: select at least one roll for fabric item`);
+          toast.error(t('form.lineRollRequired', { line: i + 1 }));
           return;
         }
         const itemRollOpts = fabricRollOptions[l.itemId] ?? [];
@@ -392,18 +402,18 @@ export default function EditVendorReturnPage() {
       }
       const qty = Number(l.qty);
       if (!(qty > 0)) {
-        toast.error(`Line ${i + 1}: qty > 0 required`);
+        toast.error(t('form.lineQtyRequired', { line: i + 1 }));
         return;
       }
       if (l.type === 'FG_REJECT') {
         try {
           const available = await getAvailableRejectQtyByItem(l.itemId);
           if (qty > available) {
-            toast.error(`Line ${i + 1}: reject qty exceeds available rejects (max ${available})`);
+            toast.error(t('form.lineRejectExceeds', { line: i + 1, max: available }));
             return;
           }
         } catch {
-          toast.error(`Line ${i + 1}: could not check available reject qty`);
+          toast.error(t('form.lineRejectCheckFailed', { line: i + 1 }));
           return;
         }
       }
@@ -418,7 +428,7 @@ export default function EditVendorReturnPage() {
     }
 
     if (!vendorId) {
-      toast.error('Select a vendor');
+      toast.error(t('form.selectVendorToast'));
       return;
     }
 
@@ -437,7 +447,7 @@ export default function EditVendorReturnPage() {
         }
       });
       if (invalidUrl) {
-        toast.error('Invalid evidence URL: ' + invalidUrl);
+        toast.error(t('form.invalidEvidenceUrl', { url: invalidUrl }));
         setIsSubmitting(false);
         return;
       }
@@ -453,10 +463,10 @@ export default function EditVendorReturnPage() {
         },
         session.user.id
       );
-      toast.success('Vendor return updated');
+      toast.success(t('form.updated'));
       router.replace('/backoffice/vendor-returns');
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update');
+      toast.error(err instanceof Error ? err.message : t('form.updateFailed'));
     } finally {
       setIsSubmitting(false);
     }
@@ -474,79 +484,79 @@ export default function EditVendorReturnPage() {
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Link href="/backoffice/vendor-returns">
-          <Button variant="ghost" size="icon">
+          <Button variant="ghost" size="icon" aria-label={t('backToList')} title={t('backToList')}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
         <div>
-          <h1 className="text-2xl font-bold">Edit Vendor Return</h1>
-          <p className="text-muted-foreground">
-            Update draft return (vendor, work order, lines, evidence)
-          </p>
+          <h1 className="text-2xl font-bold">{t('form.editTitle')}</h1>
+          <p className="text-muted-foreground">{t('form.editSubtitle')}</p>
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>Vendor Return</CardTitle>
-            <CardDescription>Vendor and optional work order / GRN reference. Add line items below.</CardDescription>
+            <CardTitle>{t('form.cardTitle')}</CardTitle>
+            <CardDescription>{t('form.cardDescription')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-2">
-                <Label>Vendor *</Label>
+                <Label>{t('form.vendorLabel')}</Label>
                 <SearchableCombobox
                   options={vendors.map((v) => ({ value: v.id, label: `${v.code} – ${v.name}` }))}
                   value={vendorId}
                   onValueChange={setVendorId}
-                  placeholder="Select vendor"
+                  placeholder={t('form.selectVendor')}
                 />
               </div>
               <div className="space-y-2">
-                <Label>Work Order (optional)</Label>
+                <Label>{t('form.woLabel')}</Label>
                 <SearchableCombobox
                   options={[
-                    { value: '__none__', label: 'None' },
+                    { value: '__none__', label: t('form.none') },
                     ...workOrders.map((w) => ({ value: w.id, label: w.docNumber })),
                   ]}
                   value={woId}
                   onValueChange={setWoId}
-                  placeholder="None"
+                  placeholder={t('form.none')}
                 />
               </div>
               <div className="space-y-2">
-                <Label>GRN (optional)</Label>
+                <Label>{t('form.grnLabel')}</Label>
                 <SearchableCombobox
                   options={[
-                    { value: '__none__', label: 'None' },
+                    { value: '__none__', label: t('form.none') },
                     ...grns.map((grn) => ({ value: grn.id, label: grn.docNumber })),
                   ]}
                   value={grnId}
                   onValueChange={setGrnId}
-                  placeholder="Select GRN"
+                  placeholder={t('form.selectGrn')}
                 />
               </div>
             </div>
 
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2 flex-wrap">
-                <Label>Line items</Label>
+                <Label>{t('form.lineItems')}</Label>
                 <Button type="button" variant="outline" size="sm" onClick={addLine}>
                   <Plus className="mr-2 h-4 w-4" />
-                  Add line
+                  {t('form.addLine')}
                 </Button>
               </div>
             <div className="overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Item</TableHead>
-                    <TableHead className="w-24">Qty</TableHead>
-                    <TableHead>Condition</TableHead>
-                    <TableHead>Reason</TableHead>
-                    <TableHead className="w-12"></TableHead>
+                    <TableHead>{t('colType')}</TableHead>
+                    <TableHead>{t('colItem')}</TableHead>
+                    <TableHead className="w-24">{t('colQty')}</TableHead>
+                    <TableHead>{t('colCondition')}</TableHead>
+                    <TableHead>{t('colReason')}</TableHead>
+                    <TableHead className="w-12">
+                      <span className="sr-only">{t('form.colActions')}</span>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -558,13 +568,13 @@ export default function EditVendorReturnPage() {
                             value={line.type}
                             onValueChange={(v) => updateLine(i, 'type', v)}
                           >
-                            <SelectTrigger className="w-[130px]">
+                            <SelectTrigger className="w-[150px]">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="FABRIC">FABRIC</SelectItem>
-                              <SelectItem value="ACCESSORIES">ACCESSORIES</SelectItem>
-                              <SelectItem value="FG_REJECT">FG_REJECT</SelectItem>
+                              <SelectItem value="FABRIC">{lineTypeLabel('FABRIC')}</SelectItem>
+                              <SelectItem value="ACCESSORIES">{lineTypeLabel('ACCESSORIES')}</SelectItem>
+                              <SelectItem value="FG_REJECT">{lineTypeLabel('FG_REJECT')}</SelectItem>
                             </SelectContent>
                           </Select>
                         </TableCell>
@@ -576,7 +586,7 @@ export default function EditVendorReturnPage() {
                             }))}
                             value={line.itemId}
                             onValueChange={(v) => updateLine(i, 'itemId', v)}
-                            placeholder="Select item"
+                            placeholder={t('form.selectItem')}
                             triggerClassName="min-w-[180px]"
                           />
                         </TableCell>
@@ -597,7 +607,7 @@ export default function EditVendorReturnPage() {
                                   )
                                 );
                               }}
-                              placeholder="Select roll"
+                              placeholder={t('form.selectRoll')}
                               triggerClassName="min-w-[160px]"
                             />
                           ) : (
@@ -620,9 +630,9 @@ export default function EditVendorReturnPage() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="GOOD">GOOD</SelectItem>
-                              <SelectItem value="DAMAGED">DAMAGED</SelectItem>
-                              <SelectItem value="DEFECTIVE">DEFECTIVE</SelectItem>
+                              <SelectItem value="GOOD">{conditionLabel('GOOD')}</SelectItem>
+                              <SelectItem value="DAMAGED">{conditionLabel('DAMAGED')}</SelectItem>
+                              <SelectItem value="DEFECTIVE">{conditionLabel('DEFECTIVE')}</SelectItem>
                             </SelectContent>
                           </Select>
                         </TableCell>
@@ -630,7 +640,7 @@ export default function EditVendorReturnPage() {
                           <Input
                             value={line.reason}
                             onChange={(e) => updateLine(i, 'reason', e.target.value)}
-                            placeholder="Reason (min 3 chars)"
+                            placeholder={t('form.reasonPlaceholder')}
                             className="min-w-[160px]"
                           />
                         </TableCell>
@@ -641,6 +651,8 @@ export default function EditVendorReturnPage() {
                             size="icon"
                             onClick={() => removeLine(i)}
                             disabled={lines.length <= 1}
+                            aria-label={t('form.removeLine', { line: i + 1 })}
+                            title={t('form.removeLine', { line: i + 1 })}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -650,7 +662,7 @@ export default function EditVendorReturnPage() {
                         <TableRow className="bg-muted/40">
                           <TableCell colSpan={6}>
                             <div className="flex flex-wrap items-center gap-2 text-xs">
-                              <span className="font-medium text-muted-foreground">Rolls:</span>
+                              <span className="font-medium text-muted-foreground">{t('form.rolls')}</span>
                               {(line.rollIds ?? []).map((rollId) => {
                                 const opts = fabricRollOptions[line.itemId] ?? [];
                                 const selected = opts.find((o) => o.value === rollId);
@@ -676,7 +688,7 @@ export default function EditVendorReturnPage() {
                                           )
                                         );
                                       }}
-                                      aria-label={`Remove roll ${label}`}
+                                      aria-label={t('form.removeRoll', { label })}
                                     >
                                       {label}
                                       <span
@@ -699,17 +711,17 @@ export default function EditVendorReturnPage() {
               </Table>
             </div>
             <p className="mt-2 text-sm text-muted-foreground">
-              Total value is calculated on save from current average cost.
+              {t('form.totalValueNote')}
             </p>
             </div>
 
             <div className="space-y-2">
-              <Label>Evidence URLs (optional)</Label>
+              <Label>{t('form.evidenceLabel')}</Label>
               <textarea
                 className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 value={evidenceUrls}
                 onChange={(e) => setEvidenceUrls(e.target.value)}
-                placeholder="One URL per line, or comma/newline separated (https://...)"
+                placeholder={t('form.evidencePlaceholder')}
               />
             </div>
           </CardContent>
@@ -717,11 +729,11 @@ export default function EditVendorReturnPage() {
 
         <div className="flex gap-4">
           <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? 'Saving...' : 'Save Changes'}
+            {isSubmitting ? t('form.saving') : t('form.saveChanges')}
           </Button>
           <Link href="/backoffice/vendor-returns">
             <Button type="button" variant="outline">
-              Cancel
+              {t('cancel')}
             </Button>
           </Link>
         </div>

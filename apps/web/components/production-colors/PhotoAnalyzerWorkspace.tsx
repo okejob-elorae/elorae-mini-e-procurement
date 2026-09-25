@@ -114,10 +114,10 @@ export function PhotoAnalyzerWorkspace() {
         );
       } catch {
         setSamples((prev) => prev.filter((s) => s.id !== id));
-        toast.error('Failed to match color');
+        toast.error(t('matchFailed'));
       }
     },
-    []
+    [t]
   );
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -346,6 +346,8 @@ export function PhotoAnalyzerWorkspace() {
                     type="button"
                     variant="ghost"
                     size="icon"
+                    aria-label={t('copyHex')}
+                    title={t('copyHex')}
                     onClick={() => {
                       void navigator.clipboard.writeText(sample.hex);
                       toast.success(t('copied'));
@@ -357,13 +359,15 @@ export function PhotoAnalyzerWorkspace() {
                     type="button"
                     variant="ghost"
                     size="icon"
+                    aria-label={t('photoRemoveSample')}
+                    title={t('photoRemoveSample')}
                     onClick={() => setSamples((p) => p.filter((s) => s.id !== sample.id))}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
                 {sample.loading ? (
-                  <p className="text-xs text-muted-foreground">Matching…</p>
+                  <p className="text-xs text-muted-foreground">{t('matching')}</p>
                 ) : (
                   <div className="space-y-2">
                     <p className="text-xs font-medium text-muted-foreground">{t('photoMatchTitle')}</p>

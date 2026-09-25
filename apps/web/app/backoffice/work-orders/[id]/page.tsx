@@ -42,7 +42,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Printer } from 'lucide-react';
 import { toast } from 'sonner';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatDisplayDate, formatDisplayDateTime } from '@/lib/date-only';
 import {
   getWorkOrderById,
   getWorkOrderRollAllocationStatus,
@@ -79,6 +80,13 @@ export default function WorkOrderDetailPage() {
   const t = useTranslations('production');
   const tToasts = useTranslations('toasts');
   const tWO = useTranslations('workOrders');
+  const tD = useTranslations('workOrders.detail');
+  const tNota = useTranslations('notaRegister');
+  const tTable = useTranslations('tableHeaders');
+  const tCommon = useTranslations('common');
+  const locale = useLocale();
+  const issueTypeLabel = (type: string) =>
+    type === 'FABRIC' ? tNota('typeFabric') : type === 'ACCESSORIES' ? tNota('typeAccessories') : type;
   const statusLabels: Record<WOStatus, string> = {
     DRAFT: tWO('draft'),
     ISSUED: tWO('issued'),
@@ -256,16 +264,16 @@ export default function WorkOrderDetailPage() {
         hppAdditionalCost: hppAdditionalCost.trim() ? Number(hppAdditionalCost) : undefined,
       });
       setWO(updated as any);
-      toast.success('HPP adjustments updated');
+      toast.success(tD('hppUpdated'));
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update HPP');
+      toast.error(err instanceof Error ? err.message : tD('hppUpdateFailed'));
     }
   };
 
   const loadAdditionalPreview = async () => {
     const qty = parseInt(additionalQtyInput, 10);
     if (!id || !Number.isInteger(qty) || qty <= 0) {
-      toast.error('Enter a positive integer for additional qty');
+      toast.error(tD('additionalQtyInvalid'));
       return;
     }
     setAdditionalPreviewLoading(true);
@@ -274,7 +282,7 @@ export default function WorkOrderDetailPage() {
       const preview = await getAdditionalMaterialsPreview(id, qty);
       setAdditionalPreview(preview);
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load preview');
+      toast.error(err instanceof Error ? err.message : tD('previewFailed'));
     } finally {
       setAdditionalPreviewLoading(false);
     }
@@ -285,20 +293,20 @@ export default function WorkOrderDetailPage() {
     if (!session?.user?.id || !id || !Number.isInteger(qty) || qty <= 0) return;
     const allSufficient = additionalPreview?.lines.every((l) => l.sufficient) ?? false;
     if (!allSufficient) {
-      toast.error('Cannot issue: some items have insufficient stock');
+      toast.error(tD('insufficientStock'));
       return;
     }
     setAdditionalSubmitLoading(true);
     try {
       await issueAdditionalMaterials(id, qty, session.user.id);
-      toast.success('Additional materials issued');
+      toast.success(tD('additionalIssued'));
       setAdditionalMaterialsOpen(false);
       setAdditionalQtyInput('');
       setAdditionalPreview(null);
       const updated = await getWorkOrderById(id);
       setWO(updated);
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to issue');
+      toast.error(err instanceof Error ? err.message : tWO('issueFailed'));
     } finally {
       setAdditionalSubmitLoading(false);
     }
@@ -325,7 +333,7 @@ export default function WorkOrderDetailPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <Link href="/backoffice/work-orders">
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" aria-label={tD('backToList')} title={tD('backToList')}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
@@ -345,24 +353,21 @@ export default function WorkOrderDetailPage() {
           {wo.status === 'COMPLETED' && (wo as { completedAt?: string | Date | null }).completedAt && (
             <span className="text-sm text-muted-foreground">
               {tWO('completedAt')}:{' '}
-              {new Date((wo as { completedAt: string | Date }).completedAt).toLocaleString(
-                undefined,
-                { dateStyle: 'medium', timeStyle: 'short' }
-              )}
+              {formatDisplayDateTime((wo as { completedAt: string | Date }).completedAt, locale)}
             </span>
           )}
           {wo.status === 'DRAFT' && (
-            <Button onClick={handleIssue}>Issue</Button>
+            <Button onClick={handleIssue}>{tWO('issue')}</Button>
           )}
           {(wo.status === 'DRAFT' || wo.status === 'ISSUED') && (
             <Button variant="destructive" onClick={handleCancel}>
-              Cancel
+              {tWO('cancelWO')}
             </Button>
           )}
           {wo.status !== 'DRAFT' && wo.status !== 'CANCELLED' && (
             <>
               <Link href={`/backoffice/work-orders/${id}/issue`}>
-                <Button variant="outline">Issue Materials</Button>
+                <Button variant="outline">{tWO('issueMaterials')}</Button>
               </Link>
               {wo.status === 'IN_PRODUCTION' && (
                 <Button
@@ -373,11 +378,11 @@ export default function WorkOrderDetailPage() {
                     setAdditionalPreview(null);
                   }}
                 >
-                  Issue Additional Materials
+                  {tD('issueAdditional')}
                 </Button>
               )}
               <Link href={`/backoffice/work-orders/${id}/receive`}>
-                <Button variant="outline">Receive FG</Button>
+                <Button variant="outline">{tWO('receiveFG')}</Button>
               </Link>
             </>
           )}
@@ -420,7 +425,7 @@ export default function WorkOrderDetailPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <ClipboardList className="h-5 w-5" />
-            Progress
+            {tD('progressTitle')}
           </CardTitle>
           <CardDescription>
             {t('progressTarget')}: {planned.toLocaleString('id-ID')} pcs · {t('progressActual')}: {actual.toLocaleString('id-ID')}
@@ -451,12 +456,14 @@ export default function WorkOrderDetailPage() {
           {(wo as any).targetDate && (
             <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
               <Calendar className="h-4 w-4" />
-              {t('progressTarget')}: {new Date((wo as any).targetDate).toLocaleDateString('id-ID')}
+              {t('progressTarget')}: {formatDisplayDate((wo as any).targetDate, locale)}
             </div>
           )}
           {(wo as any).expectedConsumption != null && Number((wo as any).expectedConsumption) > 0 && (
             <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
-              Expected consumption: {(wo as any).expectedConsumption.toLocaleString('id-ID')}
+              {tD('expectedConsumption', {
+                value: (wo as any).expectedConsumption.toLocaleString('id-ID'),
+              })}
             </div>
           )}
         </CardContent>
@@ -465,12 +472,12 @@ export default function WorkOrderDetailPage() {
       {rollBreakdown && rollBreakdown.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Alokasi per roll</CardTitle>
+            <CardTitle>{tWO('allocationPerRoll')}</CardTitle>
             <CardDescription>
               {tWO('notaKainPerRollDesc')}
               {rollAllocationStatus != null && (
                 <span className="block mt-1 text-muted-foreground">
-                  Initial / Remaining / Used = qty on roll when created; qty left after issues; qty already issued from this roll.
+                  {tD('rollStatusHint')}
                 </span>
               )}
             </CardDescription>
@@ -479,16 +486,16 @@ export default function WorkOrderDetailPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Roll / Ref</TableHead>
-                  <TableHead className="text-right">Allocated</TableHead>
+                  <TableHead>{tD('colRollRef')}</TableHead>
+                  <TableHead className="text-right">{tD('colAllocated')}</TableHead>
                   {rollAllocationStatus != null && (
                     <>
-                      <TableHead className="text-right">Initial</TableHead>
-                      <TableHead className="text-right">Remaining</TableHead>
-                      <TableHead className="text-right">Used</TableHead>
+                      <TableHead className="text-right">{tTable('initial')}</TableHead>
+                      <TableHead className="text-right">{tTable('remaining')}</TableHead>
+                      <TableHead className="text-right">{tD('colUsed')}</TableHead>
                     </>
                   )}
-                  <TableHead>Notes</TableHead>
+                  <TableHead>{tWO('notes')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -546,7 +553,7 @@ export default function WorkOrderDetailPage() {
               }}
             >
               <Printer className="mr-2 h-4 w-4" />
-              Print Nota Kain per Roll
+              {tD('printNotaKain')}
             </Button>
           </CardContent>
         </Card>
@@ -555,12 +562,12 @@ export default function WorkOrderDetailPage() {
       {session?.user?.role === 'ADMIN' && (
         <Card>
           <CardHeader>
-            <CardTitle>HPP Adjustment</CardTitle>
-            <CardDescription>Owner/Admin only: margin and additional costs.</CardDescription>
+            <CardTitle>{tD('hppTitle')}</CardTitle>
+            <CardDescription>{tD('hppDescription')}</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-2">
-              <Label>Margin %</Label>
+              <Label>{tD('marginLabel')}</Label>
               <Input
                 type="number"
                 min={0}
@@ -571,7 +578,7 @@ export default function WorkOrderDetailPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Additional cost</Label>
+              <Label>{tD('additionalCostLabel')}</Label>
               <Input
                 type="number"
                 min={0}
@@ -581,7 +588,7 @@ export default function WorkOrderDetailPage() {
               />
             </div>
             <div className="flex items-end">
-              <Button onClick={handleSaveHpp}>Save HPP</Button>
+              <Button onClick={handleSaveHpp}>{tD('saveHpp')}</Button>
             </div>
           </CardContent>
         </Card>
@@ -589,32 +596,32 @@ export default function WorkOrderDetailPage() {
 
       <Tabs defaultValue="details">
         <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="details">Details</TabsTrigger>
-          <TabsTrigger value="issues">Material Issues</TabsTrigger>
-          <TabsTrigger value="receipts">FG Receipts</TabsTrigger>
-          <TabsTrigger value="reconciliation">Reconciliation</TabsTrigger>
+          <TabsTrigger value="details">{tWO('details')}</TabsTrigger>
+          <TabsTrigger value="issues">{tWO('materialIssues')}</TabsTrigger>
+          <TabsTrigger value="receipts">{tWO('fgReceipts')}</TabsTrigger>
+          <TabsTrigger value="reconciliation">{tWO('reconciliation')}</TabsTrigger>
         </TabsList>
         <TabsContent value="details" className="space-y-4">
           {Array.isArray((wo as any).steps) && (wo as any).steps.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>Production Steps</CardTitle>
+                <CardTitle>{tD('productionSteps')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Step</TableHead>
-                      <TableHead>Supplier</TableHead>
-                      <TableHead className="text-right">Service price</TableHead>
-                      <TableHead className="text-right">Qty</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead>{tD('colStep')}</TableHead>
+                      <TableHead>{tTable('supplier')}</TableHead>
+                      <TableHead className="text-right">{tD('colServicePrice')}</TableHead>
+                      <TableHead className="text-right">{tWO('qty')}</TableHead>
+                      <TableHead className="text-right">{tD('colTotal')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {(wo as any).steps.map((step: any) => (
                       <TableRow key={step.id}>
-                        <TableCell>{step.stepName || `Step ${step.sequence}`}</TableCell>
+                        <TableCell>{step.stepName || tD('stepN', { n: step.sequence })}</TableCell>
                         <TableCell>{step.supplier?.name || step.supplier?.code || '-'}</TableCell>
                         <TableCell className="text-right">
                           {Number(step.servicePrice || 0).toLocaleString('id-ID')}
@@ -634,17 +641,19 @@ export default function WorkOrderDetailPage() {
           )}
           <Card>
             <CardHeader>
-              <CardTitle>Consumption Plan</CardTitle>
-              <CardDescription>{t('cuttingPlanned')} vs {t('issuedToCmt')} per material</CardDescription>
+              <CardTitle>{tWO('consumptionPlan')}</CardTitle>
+              <CardDescription>
+                {tD('consumptionPlanDesc', { planned: t('cuttingPlanned'), issued: t('issuedToCmt') })}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Material</TableHead>
+                    <TableHead>{tWO('material')}</TableHead>
                     <TableHead className="text-right" title={t('cuttingPlanned')}>{tWO('estimatedConsumptionPerPcs')}</TableHead>
                     <TableHead className="text-right" title={t('issuedToCmt')}>{t('issuedToCmt')}</TableHead>
-                    <TableHead className="text-right">Returned</TableHead>
+                    <TableHead className="text-right">{tWO('returned')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -672,10 +681,10 @@ export default function WorkOrderDetailPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Truck className="h-5 w-5" />
-                Material Issues
+                {tWO('materialIssues')}
               </CardTitle>
               <CardDescription>
-                {(wo as any).issues?.length ?? 0} issue(s)
+                {tD('issuesCount', { count: (wo as any).issues?.length ?? 0 })}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -685,11 +694,11 @@ export default function WorkOrderDetailPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Doc #</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead className="text-right">Total Cost</TableHead>
-                      <TableHead className="w-[100px]">Actions</TableHead>
+                      <TableHead>{tD('colDoc')}</TableHead>
+                      <TableHead>{tWO('type')}</TableHead>
+                      <TableHead>{tWO('date')}</TableHead>
+                      <TableHead className="text-right">{tWO('totalCost')}</TableHead>
+                      <TableHead className="w-[100px]">{tD('colActions')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -698,9 +707,9 @@ export default function WorkOrderDetailPage() {
                         <TableCell className="font-medium">
                           {iss.docNumber}
                         </TableCell>
-                        <TableCell>{iss.issueType}</TableCell>
+                        <TableCell>{issueTypeLabel(iss.issueType)}</TableCell>
                         <TableCell>
-                          {new Date(iss.issuedAt).toLocaleDateString('id-ID')}
+                          {formatDisplayDate(iss.issuedAt, locale)}
                         </TableCell>
                         <TableCell className="text-right">
                           {Number(iss.totalCost).toLocaleString('id-ID')}
@@ -710,6 +719,8 @@ export default function WorkOrderDetailPage() {
                             variant="ghost"
                             size="sm"
                             onClick={() => openPrintNota(iss.id)}
+                            aria-label={tNota('printNota', { docNumber: iss.docNumber })}
+                            title={tNota('printNota', { docNumber: iss.docNumber })}
                           >
                             <Printer className="h-4 w-4" />
                           </Button>
@@ -727,10 +738,10 @@ export default function WorkOrderDetailPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Package className="h-5 w-5" />
-                FG Receipts
+                {tWO('fgReceipts')}
               </CardTitle>
               <CardDescription>
-                {(wo as any).receipts?.length ?? 0} receipt(s)
+                {tD('receiptsCount', { count: (wo as any).receipts?.length ?? 0 })}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -740,11 +751,11 @@ export default function WorkOrderDetailPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Doc #</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead className="text-right">Received</TableHead>
-                      <TableHead className="text-right">Rejected</TableHead>
-                      <TableHead className="text-right">Accepted</TableHead>
+                      <TableHead>{tD('colDoc')}</TableHead>
+                      <TableHead>{tWO('date')}</TableHead>
+                      <TableHead className="text-right">{tWO('received')}</TableHead>
+                      <TableHead className="text-right">{tWO('rejected')}</TableHead>
+                      <TableHead className="text-right">{tD('colAccepted')}</TableHead>
                       <TableHead>{tWO("receiptJournal.column")}</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -755,7 +766,7 @@ export default function WorkOrderDetailPage() {
                           {r.docNumber}
                         </TableCell>
                         <TableCell>
-                          {new Date(r.receivedAt).toLocaleDateString('id-ID')}
+                          {formatDisplayDate(r.receivedAt, locale)}
                         </TableCell>
                         <TableCell className="text-right">
                           {Number(r.qtyReceived).toLocaleString('id-ID')}
@@ -798,15 +809,15 @@ export default function WorkOrderDetailPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <BarChart3 className="h-5 w-5" />
-                Reconciliation
+                {tWO('reconciliation')}
               </CardTitle>
               <CardDescription>
-                Actual vs theoretical usage
+                {tD('reconciliationDesc')}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <Link href={`/backoffice/work-orders/${id}/reconciliation`}>
-                <Button variant="outline">View full reconciliation report</Button>
+                <Button variant="outline">{tWO('viewFullReconciliationReport')}</Button>
               </Link>
             </CardContent>
           </Card>
@@ -821,23 +832,23 @@ export default function WorkOrderDetailPage() {
             }}
           />
           <DialogHeader>
-            <DialogTitle>Nota ke CMT</DialogTitle>
+            <DialogTitle>{tWO('notaToCmt')}</DialogTitle>
           </DialogHeader>
           {printData ? (
             <div className="space-y-4">
               <div className="text-sm space-y-1">
-                <p><span className="text-muted-foreground">Doc:</span> {printData.docNumber}</p>
-                <p><span className="text-muted-foreground">WO:</span> {printData.woDocNumber}</p>
-                <p><span className="text-muted-foreground">Vendor:</span> {printData.vendorName}</p>
-                <p><span className="text-muted-foreground">Date:</span> {new Date(printData.issuedAt).toLocaleDateString('id-ID')}</p>
-                <p><span className="text-muted-foreground">Type:</span> {printData.issueType}</p>
+                <p><span className="text-muted-foreground">{tWO('docLabel')}</span> {printData.docNumber}</p>
+                <p><span className="text-muted-foreground">{tWO('woLabel')}</span> {printData.woDocNumber}</p>
+                <p><span className="text-muted-foreground">{tWO('vendorLabel')}</span> {printData.vendorName}</p>
+                <p><span className="text-muted-foreground">{tWO('dateLabel')}</span> {formatDisplayDate(printData.issuedAt, locale)}</p>
+                <p><span className="text-muted-foreground">{tWO('typeLabel')}</span> {issueTypeLabel(printData.issueType)}</p>
               </div>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Item</TableHead>
-                    <TableHead className="text-right">Qty</TableHead>
-                    <TableHead>UOM</TableHead>
+                    <TableHead>{tWO('item')}</TableHead>
+                    <TableHead className="text-right">{tWO('qty')}</TableHead>
+                    <TableHead>{tNota('colUom')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -850,14 +861,16 @@ export default function WorkOrderDetailPage() {
                   ))}
                 </TableBody>
               </Table>
-              <p className="font-semibold">Total cost: {Number(printData.totalCost ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+              <p className="font-semibold">
+                {tWO('totalCost')}: {Number(printData.totalCost ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </p>
               <div className="flex gap-2 no-print">
-                <Button variant="outline" onClick={closePrintNota}>Close</Button>
-                <Button onClick={handlePrintNota}><Printer className="mr-2 h-4 w-4" />Print</Button>
+                <Button variant="outline" onClick={closePrintNota}>{tWO('close')}</Button>
+                <Button onClick={handlePrintNota}><Printer className="mr-2 h-4 w-4" />{tWO('print')}</Button>
               </div>
             </div>
           ) : (
-            <p className="text-muted-foreground">Loading...</p>
+            <p className="text-muted-foreground">{tCommon('loading')}</p>
           )}
         </DialogContent>
       </Dialog>
@@ -865,28 +878,26 @@ export default function WorkOrderDetailPage() {
       <Dialog open={additionalMaterialsOpen} onOpenChange={(open) => !open && setAdditionalMaterialsOpen(false)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Issue Additional Materials</DialogTitle>
-            <CardDescription>
-              Issue only accessories for over-production. Fabric stays at vendor. Planned qty is not changed.
-            </CardDescription>
+            <DialogTitle>{tD('issueAdditional')}</DialogTitle>
+            <CardDescription>{tD('additionalDesc')}</CardDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>Additional qty (pcs)</Label>
+              <Label>{tD('additionalQtyLabel')}</Label>
               <div className="flex gap-2">
                 <Input
                   type="number"
                   min={1}
                   value={additionalQtyInput}
                   onChange={(e) => setAdditionalQtyInput(e.target.value)}
-                  placeholder="e.g. 200"
+                  placeholder={tD('additionalQtyPlaceholder')}
                 />
                 <Button
                   variant="outline"
                   onClick={loadAdditionalPreview}
                   disabled={additionalPreviewLoading || !additionalQtyInput.trim()}
                 >
-                  {additionalPreviewLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Preview'}
+                  {additionalPreviewLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : tD('preview')}
                 </Button>
               </div>
             </div>
@@ -895,10 +906,10 @@ export default function WorkOrderDetailPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Item</TableHead>
-                      <TableHead className="text-right">Qty needed</TableHead>
-                      <TableHead className="text-right">On hand</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead>{tWO('item')}</TableHead>
+                      <TableHead className="text-right">{tD('colQtyNeeded')}</TableHead>
+                      <TableHead className="text-right">{tD('colOnHand')}</TableHead>
+                      <TableHead>{tWO('status')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -909,7 +920,7 @@ export default function WorkOrderDetailPage() {
                         <TableCell className="text-right">{line.qtyOnHand.toLocaleString('id-ID')}</TableCell>
                         <TableCell>
                           <span className={line.sufficient ? 'text-green-600' : 'text-red-600'}>
-                            {line.sufficient ? 'OK' : 'Short'}
+                            {line.sufficient ? tD('ok') : tD('short')}
                           </span>
                         </TableCell>
                       </TableRow>
@@ -918,14 +929,14 @@ export default function WorkOrderDetailPage() {
                 </Table>
                 <div className="flex justify-end gap-2">
                   <Button variant="outline" onClick={() => setAdditionalMaterialsOpen(false)}>
-                    Cancel
+                    {tD('cancel')}
                   </Button>
                   <Button
                     onClick={handleIssueAdditionalMaterials}
                     disabled={additionalSubmitLoading || !additionalPreview.lines.every((l) => l.sufficient)}
                   >
                     {additionalSubmitLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Issue accessories
+                    {tD('issueAccessories')}
                   </Button>
                 </div>
               </>

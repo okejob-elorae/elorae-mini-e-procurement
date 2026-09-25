@@ -96,6 +96,7 @@ interface WorkOrderStepForm {
 export default function NewWorkOrderPage() {
   const t = useTranslations('toasts');
   const tWO = useTranslations('workOrders');
+  const tF = useTranslations('workOrders.form');
   const router = useRouter();
   const { data: session } = useSession();
   const [tailors, setTailors] = useState<TailorSupplier[]>([]);
@@ -390,7 +391,7 @@ export default function NewWorkOrderPage() {
         consumptionResult.actualConsumption
       );
       if (suggestion.selected.length === 0) {
-        toast.error('No available fabric rolls found');
+        toast.error(tF('noRollsFound'));
         return;
       }
       setRollBreakdown(
@@ -400,12 +401,12 @@ export default function NewWorkOrderPage() {
         }))
       );
       if (suggestion.unallocated > 0) {
-        toast.error(`Insufficient roll stock, unallocated: ${suggestion.unallocated.toFixed(2)}`);
+        toast.error(tF('insufficientRolls', { qty: suggestion.unallocated.toFixed(2) }));
       } else {
-        toast.success('Best-fit roll suggestion applied');
+        toast.success(tF('suggestionApplied'));
       }
     } catch {
-      toast.error('Failed to suggest roll allocation');
+      toast.error(tF('suggestFailed'));
     } finally {
       setIsSuggestingRolls(false);
     }
@@ -466,46 +467,41 @@ export default function NewWorkOrderPage() {
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Link href="/backoffice/work-orders">
-          <Button variant="ghost" size="icon">
+          <Button variant="ghost" size="icon" aria-label={tWO('detail.backToList')} title={tWO('detail.backToList')}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">New Work Order</h1>
-          <p className="text-muted-foreground">
-            Create a work order for production
-          </p>
+          <h1 className="text-2xl font-bold tracking-tight">{tF('newTitle')}</h1>
+          <p className="text-muted-foreground">{tF('newDescription')}</p>
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>Work Order</CardTitle>
-            <CardDescription>
-              Select vendor (tailor) and finished good. Material needs are
-              calculated from BOM.
-            </CardDescription>
+            <CardTitle>{tF('cardTitle')}</CardTitle>
+            <CardDescription>{tF('cardDescription')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Vendor (Tailor)</Label>
+                <Label>{tF('vendorLabel')}</Label>
                 <SearchableCombobox
                   options={tailors.map((t) => ({ value: t.id, label: `${t.name} (${t.code})` }))}
                   value={vendorId}
                   onValueChange={setVendorId}
-                  placeholder="Select vendor"
+                  placeholder={tF('selectVendor')}
                   disabled={isLoadingSuppliers}
                 />
               </div>
               <div className="space-y-2">
-                <Label>Finished Good</Label>
+                <Label>{tF('finishedGoodLabel')}</Label>
                 <SearchableCombobox
                   options={finishedGoods.map((fg) => ({ value: fg.id, label: `${fg.nameId} (${fg.sku})` }))}
                   value={finishedGoodId}
                   onValueChange={setFinishedGoodId}
-                  placeholder="Select finished good"
+                  placeholder={tF('selectFinishedGood')}
                   disabled={isLoadingFG}
                 />
               </div>
@@ -529,7 +525,7 @@ export default function NewWorkOrderPage() {
               </div>
               {outputMode === 'SKU' && finishedGoodVariants.length > 1 && (
                 <div className="space-y-2">
-                  <Label>Variant ratio % (sum = 100%)</Label>
+                  <Label>{tF('variantRatioLabel')}</Label>
                   {variantRatios.map((row, i) => (
                     <div key={row.variantSku} className="flex items-center gap-2">
                       <span className="w-48 truncate text-sm">{row.variantSku}</span>
@@ -548,7 +544,7 @@ export default function NewWorkOrderPage() {
                       %
                     </div>
                   ))}
-                  <p className="text-xs text-muted-foreground">Sum: {variantRatioSum}%</p>
+                  <p className="text-xs text-muted-foreground">{tF('variantRatioSum', { sum: variantRatioSum })}</p>
                 </div>
               )}
               {outputMode === 'SKU' && finishedGoodVariants.length <= 1 && (
@@ -583,7 +579,7 @@ export default function NewWorkOrderPage() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="targetDate">Target Date</Label>
+                <Label htmlFor="targetDate">{tF('targetDateLabel')}</Label>
                 <DatePicker
                   id="targetDate"
                   value={parseDateOnly(targetDate)}
@@ -606,32 +602,32 @@ export default function NewWorkOrderPage() {
                 )}
               </div>
               <div className="space-y-2">
-                <Label>PO Reference (optional)</Label>
+                <Label>{tF('poRefLabel')}</Label>
                 <SearchableCombobox
                   options={[
-                    { value: '__none__', label: 'None' },
+                    { value: '__none__', label: tF('none') },
                     ...purchaseOrders.map((po) => ({ value: po.id, label: po.docNumber })),
                   ]}
                   value={poId || '__none__'}
                   onValueChange={(v) => setPoId(v === '__none__' ? '' : v)}
-                  placeholder="None"
+                  placeholder={tF('none')}
                   disabled={isLoadingPOs}
                 />
-                <p className="text-xs text-muted-foreground">Link this WO to a purchase order for vendor return tracking</p>
+                <p className="text-xs text-muted-foreground">{tF('poRefHint')}</p>
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Notes</Label>
+              <Label>{tWO('notes')}</Label>
               <Textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Optional notes"
+                placeholder={tF('notesPlaceholder')}
                 rows={2}
               />
             </div>
             <div className="space-y-3 rounded-md border p-3">
               <div className="flex items-center justify-between">
-                <Label>Production Steps (optional)</Label>
+                <Label>{tF('stepsLabel')}</Label>
                 <Button
                   type="button"
                   variant="outline"
@@ -651,13 +647,13 @@ export default function NewWorkOrderPage() {
                     ])
                   }
                 >
-                  + Add step
+                  {tF('addStep')}
                 </Button>
               </div>
               {steps.map((step, index) => (
                 <div key={index} className="grid gap-2 rounded border p-2 sm:grid-cols-5">
                   <Input
-                    placeholder="Step name"
+                    placeholder={tF('stepNamePlaceholder')}
                     value={step.stepName}
                     onChange={(e) =>
                       setSteps((prev) =>
@@ -667,7 +663,7 @@ export default function NewWorkOrderPage() {
                   />
                   <SearchableCombobox
                     options={[
-                      { value: '__none__', label: 'Select supplier' },
+                      { value: '__none__', label: tF('selectSupplier') },
                       ...tailors.map((supplier) => ({ value: supplier.id, label: `${supplier.name} (${supplier.code})` })),
                     ]}
                     value={step.supplierId || '__none__'}
@@ -676,12 +672,12 @@ export default function NewWorkOrderPage() {
                         prev.map((s, i) => (i === index ? { ...s, supplierId: v === '__none__' ? '' : v } : s))
                       )
                     }
-                    placeholder="Select supplier"
+                    placeholder={tF('selectSupplier')}
                   />
                   <Input
                     type="number"
                     min={0}
-                    placeholder="Service price"
+                    placeholder={tF('servicePricePlaceholder')}
                     value={step.servicePrice || ''}
                     onChange={(e) =>
                       setSteps((prev) =>
@@ -705,8 +701,8 @@ export default function NewWorkOrderPage() {
                       <SelectValue placeholder="PPN" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="exclude">Exclude PPN</SelectItem>
-                      <SelectItem value="include">Include PPN</SelectItem>
+                      <SelectItem value="exclude">{tF('ppnExclude')}</SelectItem>
+                      <SelectItem value="include">{tF('ppnInclude')}</SelectItem>
                     </SelectContent>
                   </Select>
                   <Button
@@ -714,7 +710,7 @@ export default function NewWorkOrderPage() {
                     variant="ghost"
                     onClick={() => setSteps((prev) => prev.filter((_, i) => i !== index))}
                   >
-                    Remove
+                    {tF('remove')}
                   </Button>
                 </div>
               ))}
@@ -725,10 +721,8 @@ export default function NewWorkOrderPage() {
         {finishedGoodId && (
           <Card>
             <CardHeader>
-              <CardTitle>Material Plan</CardTitle>
-              <CardDescription>
-                Required materials from BOM. Creation is blocked if any shortage.
-              </CardDescription>
+              <CardTitle>{tF('materialPlanTitle')}</CardTitle>
+              <CardDescription>{tF('materialPlanDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               {consumptionRules.length === 0 ? (
@@ -780,7 +774,7 @@ export default function NewWorkOrderPage() {
                           {isComputingConsumption ? (
                             <>
                               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden />
-                              <span className="text-muted-foreground">Calculating…</span>
+                              <span className="text-muted-foreground">{tF('calculating')}</span>
                             </>
                           ) : (
                               <span>{plannedNum} pcs</span>
@@ -807,19 +801,19 @@ export default function NewWorkOrderPage() {
                     <>
                       {isLoadingPlan ? (
                         <div className="py-8 text-center text-muted-foreground">
-                          Loading plan...
+                          {tF('loadingPlan')}
                         </div>
                       ) : (
                         <div className="overflow-x-auto">
                           <Table>
                             <TableHeader>
                               <TableRow>
-                                <TableHead>Material</TableHead>
+                                <TableHead>{tWO('material')}</TableHead>
                                 <TableHead className="text-right">
-                                  {tWO('estimatedConsumptionPerPcs')} (waste %)
+                                  {tWO('estimatedConsumptionPerPcs')} {tF('wasteSuffix')}
                                 </TableHead>
-                                <TableHead className="text-right">Available</TableHead>
-                                <TableHead className="text-right">Shortage</TableHead>
+                                <TableHead className="text-right">{tF('colAvailable')}</TableHead>
+                                <TableHead className="text-right">{tF('colShortage')}</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -864,16 +858,18 @@ export default function NewWorkOrderPage() {
                       <div className="space-y-2 border-t pt-4">
                         <Label>Alokasi per roll (opsional)</Label>
                         <p className="text-xs text-muted-foreground">
-                          Pilih roll utuh (whole rolls only). Total allocated minimal sama dengan kebutuhan material.
+                          {tF('rollHintNew')}
                         </p>
                         <div className="overflow-x-auto">
                           <Table>
                             <TableHeader>
                               <TableRow>
-                                <TableHead>Roll / Ref</TableHead>
-                                <TableHead className="text-right">Qty (whole roll)</TableHead>
-                                <TableHead>Notes</TableHead>
-                                <TableHead className="w-12" />
+                                <TableHead>{tWO('detail.colRollRef')}</TableHead>
+                                <TableHead className="text-right">{tF('colWholeRollQty')}</TableHead>
+                                <TableHead>{tWO('notes')}</TableHead>
+                                <TableHead className="w-12">
+                                  <span className="sr-only">{tWO('detail.colActions')}</span>
+                                </TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -885,7 +881,7 @@ export default function NewWorkOrderPage() {
                                     <Input
                                       value={row.notes ?? ''}
                                       onChange={(e) => updateRollRow(i, 'notes', e.target.value)}
-                                      placeholder="Optional"
+                                      placeholder={tF('optional')}
                                       className="h-8"
                                     />
                                   </TableCell>
@@ -896,6 +892,8 @@ export default function NewWorkOrderPage() {
                                       size="icon"
                                       className="h-8 w-8"
                                       onClick={() => removeRollRow(i)}
+                                      aria-label={tF('removeRoll', { ref: row.rollRef })}
+                                      title={tF('removeRoll', { ref: row.rollRef })}
                                     >
                                       ×
                                     </Button>
@@ -911,7 +909,10 @@ export default function NewWorkOrderPage() {
                               .filter((r) => !rollBreakdown.some((b) => b.rollRef === r.rollCode || b.rollRef === r.rollRef))
                               .map((r) => ({
                                 value: r.rollId,
-                                label: `${r.rollCode} — ${r.remainingLength.toLocaleString('id-ID')} remaining`,
+                                label: tF('rollRemaining', {
+                                  code: r.rollCode,
+                                  qty: r.remainingLength.toLocaleString('id-ID'),
+                                }),
                               }))}
                             value={addRollValue}
                             onValueChange={(value) => {
@@ -921,8 +922,8 @@ export default function NewWorkOrderPage() {
                                 setAddRollValue('');
                               }
                             }}
-                            placeholder="Add roll..."
-                            emptyMessage="No more rolls"
+                            placeholder={tF('addRollPlaceholder')}
+                            emptyMessage={tF('noMoreRolls')}
                             triggerClassName="w-[280px]"
                           />
                           <Button
@@ -932,15 +933,15 @@ export default function NewWorkOrderPage() {
                             onClick={handleSuggestRolls}
                             disabled={!consumptionMaterialId || isSuggestingRolls}
                           >
-                            {isSuggestingRolls ? 'Suggesting...' : 'Suggest best-fit'}
+                            {isSuggestingRolls ? tF('suggesting') : tF('suggestBestFit')}
                           </Button>
                         </div>
                         {rollBreakdown.length > 0 && (
                           <p className="text-sm">
-                            Total allocated: {rollSum.toLocaleString(undefined, { maximumFractionDigits: 2 })}{consumptionResult ? ` ${consumptionResult.uomCode}` : ''}.
-                            {rollSum >= materialPlannedQtyForRolls - 1e-6
-                              ? ` +${(rollSum - materialPlannedQtyForRolls).toLocaleString(undefined, { maximumFractionDigits: 2 })} over`
-                              : ` ${(rollSum - materialPlannedQtyForRolls).toLocaleString(undefined, { maximumFractionDigits: 2 })} short`}
+                            {tF(rollSum >= materialPlannedQtyForRolls - 1e-6 ? 'allocatedOver' : 'allocatedShort', {
+                              total: `${rollSum.toLocaleString(undefined, { maximumFractionDigits: 2 })}${consumptionResult ? ` ${consumptionResult.uomCode}` : ''}`,
+                              diff: Math.abs(rollSum - materialPlannedQtyForRolls).toLocaleString(undefined, { maximumFractionDigits: 2 }),
+                            })}
                           </p>
                         )}
                         {rollBreakdown.length > 0 && !rollValid && (
@@ -959,11 +960,11 @@ export default function NewWorkOrderPage() {
 
         <div className="flex gap-4">
           <Button type="submit" disabled={!canSubmit}>
-            {isSubmitting ? 'Creating...' : 'Create Work Order'}
+            {isSubmitting ? tF('creating') : tF('createWO')}
           </Button>
           <Link href="/backoffice/work-orders">
             <Button type="button" variant="outline">
-              Cancel
+              {tF('cancel')}
             </Button>
           </Link>
         </div>

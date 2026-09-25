@@ -86,7 +86,7 @@ export function PantoneColorDetailDialog({
         if (!cancelled) setDetail(data);
       })
       .catch(() => {
-        if (!cancelled) toast.error("Failed to load color");
+        if (!cancelled) toast.error(t("loadColorFailed"));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -94,7 +94,7 @@ export function PantoneColorDetailDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, tcx]);
+  }, [open, tcx, t]);
 
   const copy = async (text: string) => {
     await navigator.clipboard.writeText(text);
@@ -142,7 +142,7 @@ export function PantoneColorDetailDialog({
                     className="h-9 w-9 rounded-full bg-black/20 text-white hover:bg-black/30 hover:text-white"
                   >
                     <X className="h-4 w-4" />
-                    <span className="sr-only">Close</span>
+                    <span className="sr-only">{t("close")}</span>
                   </Button>
                 </DialogClose>
               </div>
