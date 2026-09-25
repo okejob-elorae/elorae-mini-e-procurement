@@ -4,7 +4,7 @@ export type SerializedDashboardStats = Omit<DashboardStats, 'recentActivity'> & 
   recentActivity: Array<{
     id: string;
     action: string;
-    label: string;
+    entityType: string;
     userName: string | null;
     createdAt: string;
   }>;

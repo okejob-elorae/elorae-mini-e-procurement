@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { formatDistanceToNow } from 'date-fns';
+import { enGB, id as idLocale } from 'date-fns/locale';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,7 +14,9 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
-import { formatDateOnly, parseDateOnly } from '@/lib/date-only';
+import { formatDateOnly, formatDisplayDate, parseDateOnly } from '@/lib/date-only';
+import { getStatusMeta } from '@/lib/ui/status-map';
+import { auditActionLabel, type AuditLabelTranslator } from '@/lib/audit/action-label';
 import {
   Select,
   SelectContent,
@@ -31,22 +34,16 @@ import {
 } from '@/components/ui/table';
 import { Progress } from '@/components/ui/progress';
 import {
-  ShoppingCart,
   Package,
   ClipboardList,
   Users,
-  TrendingUp,
   Clock,
   Loader2,
   AlertTriangle,
-  Wallet,
   Calendar,
   Download,
   ChevronDown,
-  Info,
-  Store,
 } from 'lucide-react';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Role } from '@/lib/constants/enums';
 import type { SerializedDashboardStats } from '@/lib/dashboard/serialize';
 import type {
@@ -73,7 +70,7 @@ import {
   exportInventorySnapshotReport,
 } from '@/app/actions/reports/inventory';
 import { toast } from 'sonner';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { PipelineBar } from '@/components/dashboard/PipelineBar';
 import { KpiRow } from '@/components/dashboard/KpiRow';
@@ -104,17 +101,6 @@ function getCurrentMonthDateRange(): { from: string; to: string } {
   };
 }
 
-function getRoleLabel(role: Role): string {
-  const labels: Record<Role, string> = {
-    ADMIN: 'Administrator',
-    PURCHASER: 'Purchaser',
-    WAREHOUSE: 'Warehouse Staff',
-    PRODUCTION: 'Production Manager',
-    USER: 'User',
-  };
-  return labels[role] || role;
-}
-
 function formatNumber(n: number): string {
   return new Intl.NumberFormat('id-ID').format(n);
 }
@@ -128,9 +114,12 @@ function formatIdr(value: number): string {
   }).format(value);
 }
 
-function formatRelative(date: Date | string): string {
+function formatRelative(date: Date | string, locale: string): string {
   try {
-    return formatDistanceToNow(new Date(date), { addSuffix: true });
+    return formatDistanceToNow(new Date(date), {
+      addSuffix: true,
+      locale: locale.startsWith('en') ? enGB : idLocale,
+    });
   } catch {
     return '';
   }
@@ -212,6 +201,9 @@ export function DashboardPageClient({
   const tDashboard = useTranslations('dashboard');
   const tTable = useTranslations('tableHeaders');
   const tWO = useTranslations('workOrders');
+  const tStatuses = useTranslations('statuses');
+  const tAuditActions = useTranslations('auditActions') as unknown as AuditLabelTranslator;
+  const locale = useLocale();
   const tabFromUrl = searchParams.get('tab');
   const activeTab: DashboardTab = isDashboardTab(tabFromUrl) ? tabFromUrl : 'overview';
   const setActiveTab = (value: string) => {
@@ -225,7 +217,6 @@ export function DashboardPageClient({
     });
   };
   const [stats] = useState(initialStats);
-  const [error] = useState<string | null>(null);
   const [overduePOs] = useState(initialOverduePOs);
   const [suppliers] = useState(initialSuppliers);
   const [cogsRawVsFinished] = useState(initialCogsRawVsFinished);
@@ -277,7 +268,7 @@ export function DashboardPageClient({
       const result = await getProcurementReport(filters);
       setRp1Data(result);
     } catch {
-      toast.error('Failed to load procurement report');
+      toast.error(tDashboard('toast.loadProcurementFailed'));
     } finally {
       setRp1Loading(false);
     }
@@ -304,9 +295,9 @@ export function DashboardPageClient({
         });
         downloadBlob(blob, result.filename);
       }
-      toast.success('Download started');
+      toast.success(tDashboard('toast.downloadStarted'));
     } catch {
-      toast.error('Export failed');
+      toast.error(tDashboard('toast.exportFailed'));
     } finally {
       setRp1Exporting(null);
     }
@@ -314,7 +305,7 @@ export function DashboardPageClient({
 
   const loadRp2 = async () => {
     if (!rp2VendorId || !rp2From || !rp2To) {
-      toast.error('Select vendor and date range');
+      toast.error(tDashboard('toast.selectVendorRange'));
       return;
     }
     setRp2Loading(true);
@@ -326,7 +317,7 @@ export function DashboardPageClient({
       );
       setRp2Data(data);
     } catch {
-      toast.error('Failed to load vendor performance report');
+      toast.error(tDashboard('toast.loadVendorFailed'));
     } finally {
       setRp2Loading(false);
     }
@@ -334,7 +325,7 @@ export function DashboardPageClient({
 
   const exportRp2 = async (format: 'csv' | 'excel') => {
     if (!rp2VendorId || !rp2From || !rp2To) {
-      toast.error('Select vendor and date range first');
+      toast.error(tDashboard('toast.selectVendorRange'));
       return;
     }
     setRp2Exporting(format);
@@ -358,9 +349,9 @@ export function DashboardPageClient({
           result.filename
         );
       }
-      toast.success('Download started');
+      toast.success(tDashboard('toast.downloadStarted'));
     } catch {
-      toast.error('Export failed');
+      toast.error(tDashboard('toast.exportFailed'));
     } finally {
       setRp2Exporting(null);
     }
@@ -372,7 +363,7 @@ export function DashboardPageClient({
       const data = await getInventoryValueSnapshot();
       setRp3Data(data);
     } catch {
-      toast.error('Failed to load inventory snapshot');
+      toast.error(tDashboard('toast.loadSnapshotFailed'));
     } finally {
       setRp3Loading(false);
     }
@@ -395,9 +386,9 @@ export function DashboardPageClient({
           result.filename
         );
       }
-      toast.success('Download started');
+      toast.success(tDashboard('toast.downloadStarted'));
     } catch {
-      toast.error('Export failed');
+      toast.error(tDashboard('toast.exportFailed'));
     } finally {
       setRp3Exporting(null);
     }
@@ -407,125 +398,7 @@ export function DashboardPageClient({
     return null;
   }
 
-  if (false) {
-    return (
-      <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-            <p className="text-muted-foreground">{tDashboard('loading')}</p>
-          </div>
-          <Badge variant="secondary" className="w-fit">
-            {getRoleLabel((session?.user?.role ?? 'ADMIN') as Role)}
-          </Badge>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Card key={i}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <div className="h-4 w-32 animate-pulse rounded bg-muted" />
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="h-8 w-16 animate-pulse rounded bg-muted" />
-                <div className="mt-2 h-3 w-24 animate-pulse rounded bg-muted" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-        <div className="grid gap-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Clock className="h-5 w-5" />
-                Recent Activity
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
-  }
-
-  if (false) {
-    return (
-      <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-            <p className="text-muted-foreground">{tDashboard('somethingWentWrong')}</p>
-          </div>
-          <Badge variant="secondary" className="w-fit">
-            {getRoleLabel((session?.user?.role ?? 'ADMIN') as Role)}
-          </Badge>
-        </div>
-        <Card className="border-destructive/50">
-          <CardContent className="flex items-center gap-3 pt-6">
-            <AlertTriangle className="h-10 w-10 shrink-0 text-destructive" />
-            <div>
-              <p className="font-medium">{error}</p>
-              <p className="text-sm text-muted-foreground">
-                Check your connection and try again, or refresh the page.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   const s = stats;
-  const statsCards = [
-    {
-      title: tDashboard('purchaseOrders'),
-      value: formatNumber(s.po.submitted),
-      description: tDashboard('pendingApproval'),
-      icon: ShoppingCart,
-      trend:
-        s.po.overdue > 0
-          ? tDashboard('overdue', { count: s.po.overdue })
-          : s.po.thisWeek > 0
-            ? tDashboard('thisWeek', { count: s.po.thisWeek })
-            : tDashboard('noNewThisWeek'),
-      trendWarning: s.po.overdue > 0,
-    },
-    {
-      title: tDashboard('inventoryItems'),
-      value: formatNumber(s.items.activeCount),
-      description: tDashboard('activeSkus'),
-      icon: Package,
-      trend:
-        s.items.lowStockCount > 0
-          ? tDashboard('lowStock', { count: s.items.lowStockCount })
-          : tDashboard('allStocked'),
-      trendWarning: s.items.lowStockCount > 0,
-    },
-    {
-      title: tDashboard('workOrders'),
-      value: formatNumber(s.workOrders.inProduction),
-      description: tDashboard('inProduction'),
-      icon: ClipboardList,
-      trend:
-        s.workOrders.completedToday > 0
-          ? tDashboard('completedToday', { count: s.workOrders.completedToday })
-          : tDashboard('noneCompletedToday'),
-      trendWarning: false,
-    },
-    {
-      title: tDashboard('suppliers'),
-      value: formatNumber(s.suppliers.activeCount),
-      description: tDashboard('activeVendors'),
-      icon: Users,
-      trend: tDashboard('grnsThisWeek', { count: s.grnsThisWeek }),
-      trendWarning: false,
-    },
-  ];
-
   return (
     <div className="space-y-6">
       {/* Welcome Section */}
@@ -537,7 +410,7 @@ export function DashboardPageClient({
           </p>
         </div>
         <Badge variant="secondary" className="w-fit">
-          {getRoleLabel((session?.user?.role ?? 'ADMIN') as Role)}
+          {tDashboard(`roles.${(session?.user?.role ?? 'ADMIN') as Role}`)}
         </Badge>
       </div>
 
@@ -662,200 +535,80 @@ export function DashboardPageClient({
             },
           ]}
         />
+
+        {/*
+          The fourth row holds only what the three above do not: today's
+          marketplace takings, suppliers, and the raw-vs-finished split of the
+          stock value. It replaces three blocks that sat below — a Marketplace
+          pair, a five-card grid and two "COGS" cards — which repeated Nilai
+          Inventori, Stok Kelebihan Pesan, PO waiting and WO running a second
+          time in a different style. (The "COGS" pair was never COGS: it is
+          the inventory value split by item type.)
+        */}
+        <KpiRow
+          judul={tDashboard('kpiMore')}
+          kpi={[
+            {
+              label: tDashboard('kpiMarketplaceToday'),
+              nilai: formatIDR(marketplaceKpi.todaySalesTotal),
+              konteks: tDashboard('todaySalesCount', { count: marketplaceKpi.todaySalesCount }),
+              href: '/backoffice/sales-orders',
+            },
+            {
+              label: tDashboard('kpiSuppliers'),
+              nilai: formatNumber(s.suppliers.activeCount),
+              konteks: tDashboard('kpiSuppliersCtx', { count: formatNumber(s.grnsThisWeek) }),
+              href: '/backoffice/suppliers',
+            },
+            ...(cogsRawVsFinished
+              ? [
+                  {
+                    label: tDashboard('kpiRawValue'),
+                    nilai: formatIdr(cogsRawVsFinished.rawValue),
+                    konteks: tDashboard('kpiRawValueCtx', {
+                      count: formatNumber(cogsRawVsFinished.rawCount),
+                    }),
+                    href: '/backoffice/inventory',
+                  },
+                  {
+                    label: tDashboard('kpiFinishedValue'),
+                    nilai: formatIdr(cogsRawVsFinished.finishedValue),
+                    konteks: tDashboard('kpiFinishedValueCtx', {
+                      count: formatNumber(cogsRawVsFinished.finishedCount),
+                    }),
+                    href: '/backoffice/inventory',
+                  },
+                ]
+              : []),
+          ]}
+        />
       </div>
 
-      {/* Marketplace Section */}
+      {/* Salesmen sales: realised vs outstanding. The realised total is a KPI
+          above; the table carries both totals in its last row. */}
       <div className="space-y-2">
-        <h2 className="text-lg font-semibold">{tDashboard('marketplaceSection')}</h2>
-        <TooltipProvider>
-          <div className="anim-stagger grid gap-4 sm:grid-cols-2">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-1">
-                  {tDashboard('pendingFulfillmentTitle')}
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-xs">
-                      {tDashboard('pendingFulfillmentTooltip')}
-                    </TooltipContent>
-                  </Tooltip>
-                </CardTitle>
-                <Package className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{marketplaceKpi.pendingFulfillmentCount}</div>
-                <p className="text-xs text-muted-foreground">{tDashboard('pendingFulfillmentDesc')}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-1">
-                  {tDashboard('todaySalesTitle')}
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-xs">
-                      {tDashboard('todaySalesTooltip')}
-                    </TooltipContent>
-                  </Tooltip>
-                </CardTitle>
-                <Store className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatIDR(marketplaceKpi.todaySalesTotal)}</div>
-                <p className="text-xs text-muted-foreground">
-                  {tDashboard('todaySalesCount', { count: marketplaceKpi.todaySalesCount })}
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        </TooltipProvider>
-      </div>
-
-      {/* Stats Grid */}
-      <div className="anim-stagger grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <Link href="/backoffice/inventory?tab=stock&oversold=1" className="block h-full">
-          <Card
-            className={cn(
-              'h-full transition-colors hover:border-destructive',
-              oversoldInventory.length > 0 && 'border-destructive/50',
-            )}
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{tDashboard('oversoldTitle')}</CardTitle>
-              <AlertTriangle
-                className={`h-4 w-4 ${oversoldInventory.length > 0 ? 'text-destructive' : 'text-muted-foreground'}`}
-              />
-            </CardHeader>
-            <CardContent>
-              <div className={`text-2xl font-bold ${oversoldInventory.length > 0 ? 'text-destructive' : ''}`}>
-                {oversoldInventory.length}
-              </div>
-              <p className="text-xs text-muted-foreground">{tDashboard('oversoldDesc')}</p>
-            </CardContent>
-          </Card>
-        </Link>
-        {statsCards.map((stat) => {
-          const Icon = stat.icon;
-          return (
-            <Card key={stat.title}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-                <Icon className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stat.value}</div>
-                <p className="text-xs text-muted-foreground">{stat.description}</p>
-                <div
-                  className={`flex items-center gap-1 mt-2 text-xs ${stat.trendWarning ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'}`}
-                >
-                  <TrendingUp className="h-3 w-3" />
-                  {stat.trend}
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{tDashboard('inventoryValue')}</CardTitle>
-            <Wallet className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-bold">{formatIdr(s.inventory.totalValue)}</div>
-            <p className="text-xs text-muted-foreground">{tDashboard('totalOnHand')}</p>
-            <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
-              {tDashboard('movementsToday', { count: s.movementsToday })}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* COGS: Raw vs Finished */}
-      {cogsRawVsFinished && (
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">{tDashboard('cogsRawMaterials')}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-xl font-bold">{formatIdr(cogsRawVsFinished.rawValue)}</div>
-              <p className="text-xs text-muted-foreground">{tDashboard('skuCountFabricAccessories', { count: cogsRawVsFinished.rawCount })}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">{tDashboard('cogsFinishedGoods')}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-xl font-bold">{formatIdr(cogsRawVsFinished.finishedValue)}</div>
-              <p className="text-xs text-muted-foreground">{tDashboard('skuCountSkus', { count: cogsRawVsFinished.finishedCount })}</p>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Salesmen sales: realised vs outstanding */}
-      <div className="space-y-2">
-        <h2 className="text-lg font-semibold">Penjualan Field Sales</h2>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{tDashboard('totalRealised')}</CardTitle>
-              <TrendingUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
-                {formatIdr(salesmenSales.totals.realised.amount)}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {formatNumber(salesmenSales.totals.realised.count)} transaksi (pengiriman putus + van sale)
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{tDashboard('totalOutstanding')}</CardTitle>
-              <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-xl font-bold text-amber-600 dark:text-amber-400">
-                {formatIdr(salesmenSales.totals.outstanding.amount)}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {formatNumber(salesmenSales.totals.outstanding.count)} putus menunggu approval
-              </p>
-            </CardContent>
-          </Card>
-        </div>
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="h-5 w-5" />
-              Realised vs Outstanding per Salesman
+              {tDashboard('salesmanTitle')}
             </CardTitle>
-            <CardDescription>
-              Realised = putus yang sudah dikirim + van sale (all-time). Outstanding = putus menunggu approval. Konsi
-              tidak dihitung.
-            </CardDescription>
+            <CardDescription>{tDashboard('salesmanDesc')}</CardDescription>
           </CardHeader>
           <CardContent>
             {salesmenSales.rows.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4">Belum ada data penjualan salesman.</p>
+              <p className="text-sm text-muted-foreground py-4">{tDashboard('salesmanEmpty')}</p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Salesman</TableHead>
+                    <TableHead>{tDashboard('colSalesman')}</TableHead>
                     {/* Kolom batang, tanpa judul: yang diukurnya sudah disebut
                         kolom Realised di sebelahnya, dan judul kedua untuk
                         ukuran yang sama justru membingungkan. */}
                     <TableHead className="w-[38%]" aria-hidden />
-                    <TableHead className="text-right">Realised</TableHead>
-                    <TableHead className="text-right">Outstanding</TableHead>
+                    <TableHead className="text-right">{tDashboard('colRealised')}</TableHead>
+                    <TableHead className="text-right">{tDashboard('colOutstanding')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -895,7 +648,7 @@ export function DashboardPageClient({
                           {formatIdr(row.realised.amount)}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          {formatNumber(row.realised.count)} transaksi
+                          {tDashboard('txCount', { count: formatNumber(row.realised.count) })}
                         </div>
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
@@ -903,12 +656,32 @@ export function DashboardPageClient({
                           {formatIdr(row.outstanding.amount)}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          {formatNumber(row.outstanding.count)} menunggu
+                          {tDashboard('waitingCount', { count: formatNumber(row.outstanding.count) })}
                         </div>
                       </TableCell>
                     </TableRow>
                     ));
                   })()}
+                  <TableRow className="border-t-2 hover:bg-transparent">
+                    <TableCell className="font-semibold">{tDashboard('totalRow')}</TableCell>
+                    <TableCell />
+                    <TableCell className="text-right tabular-nums">
+                      <div className="font-semibold text-emerald-600 dark:text-emerald-400">
+                        {formatIdr(salesmenSales.totals.realised.amount)}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {tDashboard('txCount', { count: formatNumber(salesmenSales.totals.realised.count) })}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      <div className="font-semibold text-amber-600 dark:text-amber-400">
+                        {formatIdr(salesmenSales.totals.outstanding.amount)}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {tDashboard('waitingCount', { count: formatNumber(salesmenSales.totals.outstanding.count) })}
+                      </div>
+                    </TableCell>
+                  </TableRow>
                 </TableBody>
               </Table>
             )}
@@ -948,13 +721,15 @@ export function DashboardPageClient({
                         className="flex items-center justify-between py-2 border-b last:border-0"
                       >
                         <div>
-                          <p className="text-sm font-medium">{item.label}</p>
+                          <p className="text-sm font-medium">
+                            {auditActionLabel(tAuditActions, item.action, item.entityType)}
+                          </p>
                           <p className="text-xs text-muted-foreground">
                             {tDashboard('byUser', { name: item.userName ?? tDashboard('system') })}
                           </p>
                         </div>
                         <span className="text-xs text-muted-foreground shrink-0 ml-2">
-                          {formatRelative(item.createdAt)}
+                          {formatRelative(item.createdAt, locale)}
                         </span>
                       </div>
                     ))
@@ -970,12 +745,9 @@ export function DashboardPageClient({
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Package className="h-5 w-5" />
-                Raw material shortage (active WOs)
+                {tDashboard('shortageTitle')}
               </CardTitle>
-              <CardDescription>
-                Deficit vs on-hand from consumption plans on work orders in production or partial. Expand a row to see
-                vendors (WO partners) and per-WO planned qty for that material.
-              </CardDescription>
+              <CardDescription>{tDashboard('shortageDesc')}</CardDescription>
             </CardHeader>
             <CardContent>
               {rawMaterialShortage.length === 0 ? (
@@ -985,11 +757,11 @@ export function DashboardPageClient({
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-10 shrink-0 p-2" />
-                      <TableHead>Material</TableHead>
-                      <TableHead className="text-right">Planned</TableHead>
-                      <TableHead className="text-right">On hand</TableHead>
-                      <TableHead className="text-right">Deficit</TableHead>
-                      <TableHead>UOM</TableHead>
+                      <TableHead>{tDashboard('colMaterial')}</TableHead>
+                      <TableHead className="text-right">{tDashboard('colPlanned')}</TableHead>
+                      <TableHead className="text-right">{tDashboard('colOnHand')}</TableHead>
+                      <TableHead className="text-right">{tDashboard('colDeficit')}</TableHead>
+                      <TableHead>{tTable('uom')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1008,7 +780,7 @@ export function DashboardPageClient({
                                   className="h-8 w-8 shrink-0"
                                   onClick={() => toggleShortageRow(row.itemId)}
                                   aria-expanded={expanded}
-                                  aria-label={expanded ? 'Hide vendors' : 'Show vendors'}
+                                  aria-label={expanded ? tDashboard('hideVendors') : tDashboard('showVendors')}
                                 >
                                   <ChevronDown
                                     className={cn('h-4 w-4 transition-transform', expanded && 'rotate-180')}
@@ -1030,7 +802,7 @@ export function DashboardPageClient({
                             <TableRow key={`${row.itemId}-vendors`} className="hover:bg-transparent">
                               <TableCell colSpan={6} className="border-t-0 bg-muted/40 px-4 py-3 align-top">
                                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                                  Vendors to supply (WO planned qty)
+                                  {tDashboard('vendorsToSupply')}
                                 </p>
                                 <ul className="space-y-3 text-sm">
                                   {row.vendors.map((v) => (
@@ -1050,7 +822,7 @@ export function DashboardPageClient({
                                             </Link>
                                             <span className="tabular-nums">
                                               {' '}
-                                              — planned {formatNumber(wo.plannedQty)} {row.uomCode}
+                                              — {tDashboard('plannedQtyOf', { qty: formatNumber(wo.plannedQty), uom: row.uomCode })}
                                             </span>
                                           </li>
                                         ))}
@@ -1074,9 +846,9 @@ export function DashboardPageClient({
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <ClipboardList className="h-5 w-5" />
-                Work orders by status
+                {tDashboard('woByStatusTitle')}
               </CardTitle>
-              <CardDescription>Count and total planned qty per status.</CardDescription>
+              <CardDescription>{tDashboard('woByStatusDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               {/*
@@ -1111,10 +883,10 @@ export function DashboardPageClient({
                   <>
                     <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-muted-foreground">
                       <span className="font-medium text-foreground">{formatNumber(totalCount)}</span>
-                      <span>work orders</span>
+                      <span>{tDashboard('woCountLabel')}</span>
                       <span className="text-muted-foreground/70">·</span>
                       <span className="font-medium text-foreground">{formatNumber(totalPlanned)}</span>
-                      <span>total planned qty</span>
+                      <span>{tDashboard('totalPlannedQtyLabel')}</span>
                     </div>
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                       {woStatusCounts.map((row) => {
@@ -1131,13 +903,13 @@ export function DashboardPageClient({
                                 {label}
                               </Badge>
                               <span className="text-right text-sm tabular-nums text-muted-foreground">
-                                {formatNumber(row.count)} WO{Number(row.count) !== 1 ? 's' : ''}
+                                {tDashboard('woCount', { count: formatNumber(row.count) })}
                               </span>
                             </div>
                             <p className="text-xl font-semibold tabular-nums">{formatNumber(row.totalPlannedQty)}</p>
-                            <p className="text-xs text-muted-foreground">planned qty</p>
+                            <p className="text-xs text-muted-foreground">{tDashboard('plannedQtyLabel')}</p>
                             <Progress value={pct} className="h-1.5" />
-                            <p className="text-xs text-muted-foreground">{pct.toFixed(0)}% of total</p>
+                            <p className="text-xs text-muted-foreground">{tDashboard('pctOfTotal', { pct: pct.toFixed(0) })}</p>
                           </div>
                         );
                       })}
@@ -1154,7 +926,7 @@ export function DashboardPageClient({
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Calendar className="h-5 w-5" />
-                Overdue Purchase Orders
+                {tDashboard('overdueTitle')}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -1170,17 +942,17 @@ export function DashboardPageClient({
                       <div>
                         <div className="flex items-center gap-2">
                           <p className="font-medium">{po.docNumber}</p>
-                          <Badge variant="destructive">{po.daysOverdue} days overdue</Badge>
+                          <Badge variant="destructive">{tDashboard('daysOverdue', { count: po.daysOverdue })}</Badge>
                         </div>
                         <p className="text-sm text-muted-foreground">{po.supplier.name}</p>
                         <p className="text-sm text-muted-foreground">
-                          ETA: {po.etaDate ? new Date(po.etaDate).toLocaleDateString('id-ID') : '-'}
+                          {tDashboard('etaLine', { date: formatDisplayDate(po.etaDate, locale) })}
                         </p>
                       </div>
                       <div className="text-right">
                         <p className="font-medium">Rp {Number(po.grandTotal).toLocaleString('id-ID')}</p>
                         <p className="text-sm text-muted-foreground">
-                          {po.pendingQty?.toLocaleString('id-ID') ?? 0} units pending
+                          {tDashboard('unitsPending', { count: (po.pendingQty ?? 0).toLocaleString('id-ID') })}
                         </p>
                       </div>
                     </div>
@@ -1195,9 +967,7 @@ export function DashboardPageClient({
           <Card>
             <CardHeader>
               <CardTitle>{tDashboard('procurementReport')}</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Outstanding POs with ETA alerts. Default status: SUBMITTED, PARTIAL.
-              </p>
+              <p className="text-sm text-muted-foreground">{tDashboard('procurementDesc')}</p>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-wrap gap-4 items-end">
@@ -1223,7 +993,7 @@ export function DashboardPageClient({
                   <Label>{tTable('supplier')}</Label>
                   <SearchableCombobox
                     options={[
-                      { value: 'all', label: 'All' },
+                      { value: 'all', label: tDashboard('all') },
                       ...suppliers.map((sup) => ({ value: sup.id, label: sup.name })),
                     ]}
                     value={rp1Filters.supplierId || 'all'}
@@ -1246,18 +1016,19 @@ export function DashboardPageClient({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="SUBMITTED,PARTIAL">SUBMITTED, PARTIAL</SelectItem>
-                      <SelectItem value="SUBMITTED">SUBMITTED</SelectItem>
-                      <SelectItem value="PARTIAL">PARTIAL</SelectItem>
-                      <SelectItem value="DRAFT">DRAFT</SelectItem>
-                      <SelectItem value="CLOSED">CLOSED</SelectItem>
-                      <SelectItem value="OVER">OVER</SelectItem>
-                      <SelectItem value="CANCELLED">CANCELLED</SelectItem>
+                      <SelectItem value="SUBMITTED,PARTIAL">
+                        {tStatuses('poSubmitted')} + {tStatuses('poPartial')}
+                      </SelectItem>
+                      {(['SUBMITTED', 'PARTIAL', 'DRAFT', 'CLOSED', 'OVER', 'CANCELLED'] as const).map((st) => (
+                        <SelectItem key={st} value={st}>
+                          {tStatuses(getStatusMeta('purchaseOrder', st).labelKey)}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <Button onClick={loadRp1} disabled={rp1Loading}>
-                  {rp1Loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Load'}
+                  {rp1Loading ? <Loader2 className="h-4 w-4 animate-spin" /> : tDashboard('show')}
                 </Button>
                 <div className="flex gap-2">
                   <Button
@@ -1283,18 +1054,22 @@ export function DashboardPageClient({
               {rp1Data && (
                 <>
                   <p className="text-sm text-muted-foreground">
-                    Total outstanding: Rp {rp1Data.summary.totalOutstanding.toLocaleString('id-ID')} · Overdue: {rp1Data.summary.overdueCount} · Due soon: {rp1Data.summary.dueSoonCount}
+                    {tDashboard('procurementSummary', {
+                      total: formatIdr(rp1Data.summary.totalOutstanding),
+                      overdue: rp1Data.summary.overdueCount,
+                      soon: rp1Data.summary.dueSoonCount,
+                    })}
                   </p>
                   <div className="border rounded-md overflow-auto max-h-[400px]">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Doc #</TableHead>
+                          <TableHead>{tDashboard('colDocNo')}</TableHead>
                           <TableHead>{tTable('supplier')}</TableHead>
                           <TableHead>{tTable('status')}</TableHead>
-                          <TableHead>ETA</TableHead>
-                          <TableHead>ETA Alert</TableHead>
-                          <TableHead className="text-right">Outstanding Qty</TableHead>
+                          <TableHead>{tTable('eta')}</TableHead>
+                          <TableHead>{tDashboard('colEtaAlert')}</TableHead>
+                          <TableHead className="text-right">{tDashboard('colOutstandingQty')}</TableHead>
                           <TableHead className="text-right">{tDashboard('outstandingValue')}</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -1303,10 +1078,8 @@ export function DashboardPageClient({
                           <TableRow key={r.id}>
                             <TableCell className="font-medium">{r.docNumber}</TableCell>
                             <TableCell>{r.supplier.name}</TableCell>
-                            <TableCell>{r.status}</TableCell>
-                            <TableCell>
-                              {r.etaDate ? new Date(r.etaDate).toLocaleDateString() : '-'}
-                            </TableCell>
+                            <TableCell>{tStatuses(getStatusMeta('purchaseOrder', r.status).labelKey)}</TableCell>
+                            <TableCell>{formatDisplayDate(r.etaDate, locale)}</TableCell>
                             <TableCell>
                               <Badge
                                 variant={
@@ -1322,7 +1095,7 @@ export function DashboardPageClient({
                             </TableCell>
                             <TableCell className="text-right">{r.outstandingQty}</TableCell>
                             <TableCell className="text-right">
-                              Rp {r.outstandingValue.toLocaleString('id-ID')}
+                              {formatIdr(r.outstandingValue)}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -1346,7 +1119,7 @@ export function DashboardPageClient({
             <CardContent className="space-y-4">
               <div className="flex flex-wrap gap-4 items-end">
                 <div className="space-y-2">
-                  <Label>Vendor</Label>
+                  <Label>{tTable('vendor')}</Label>
                   <SearchableCombobox
                     options={suppliers.map((sup) => ({ value: sup.id, label: `${sup.name} (${sup.code})` }))}
                     value={rp2VendorId}
@@ -1371,7 +1144,7 @@ export function DashboardPageClient({
                   />
                 </div>
                 <Button onClick={loadRp2} disabled={rp2Loading}>
-                  {rp2Loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Load'}
+                  {rp2Loading ? <Loader2 className="h-4 w-4 animate-spin" /> : tDashboard('show')}
                 </Button>
                 <div className="flex gap-2">
                   <Button
@@ -1399,15 +1172,15 @@ export function DashboardPageClient({
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Doc #</TableHead>
-                        <TableHead>Finished Good</TableHead>
-                        <TableHead className="text-right">Planned</TableHead>
-                        <TableHead className="text-right">Actual</TableHead>
-                        <TableHead className="text-right">Efficiency %</TableHead>
-                        <TableHead className="text-right">Material Cost</TableHead>
+                        <TableHead>{tDashboard('colDocNo')}</TableHead>
+                        <TableHead>{tDashboard('colFinishedGood')}</TableHead>
+                        <TableHead className="text-right">{tDashboard('colPlanned')}</TableHead>
+                        <TableHead className="text-right">{tDashboard('colActual')}</TableHead>
+                        <TableHead className="text-right">{tDashboard('colEfficiency')}</TableHead>
+                        <TableHead className="text-right">{tDashboard('colMaterialCost')}</TableHead>
                         <TableHead className="text-right">{tDashboard('returnValue')}</TableHead>
                         <TableHead>{tTable('status')}</TableHead>
-                        <TableHead className="text-right">Completion (days)</TableHead>
+                        <TableHead className="text-right">{tDashboard('colCompletionDays')}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1418,8 +1191,8 @@ export function DashboardPageClient({
                           <TableCell className="text-right">{r.plannedQty}</TableCell>
                           <TableCell className="text-right">{r.actualQty}</TableCell>
                           <TableCell className="text-right">{r.efficiency}</TableCell>
-                          <TableCell className="text-right">Rp {r.materialCost.toLocaleString('id-ID')}</TableCell>
-                          <TableCell className="text-right">Rp {r.returnValue.toLocaleString('id-ID')}</TableCell>
+                          <TableCell className="text-right">{formatIdr(r.materialCost)}</TableCell>
+                          <TableCell className="text-right">{formatIdr(r.returnValue)}</TableCell>
                           <TableCell>{r.status}</TableCell>
                           <TableCell className="text-right">{r.completionTimeDays ?? '-'}</TableCell>
                         </TableRow>
@@ -1438,15 +1211,13 @@ export function DashboardPageClient({
         <TabsContent value="rp3" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Inventory Snapshot</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Current inventory value by type, value distribution, low stock alerts.
-              </p>
+              <CardTitle>{tDashboard('snapshotTitle')}</CardTitle>
+              <p className="text-sm text-muted-foreground">{tDashboard('snapshotDesc')}</p>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex gap-2 items-center">
                 <Button onClick={loadRp3} disabled={rp3Loading}>
-                  {rp3Loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Load Snapshot'}
+                  {rp3Loading ? <Loader2 className="h-4 w-4 animate-spin" /> : tDashboard('show')}
                 </Button>
                 <div className="flex gap-2">
                   <Button
@@ -1494,7 +1265,7 @@ export function DashboardPageClient({
                       </CardHeader>
                       <CardContent>
                         <div className="text-2xl font-bold">
-                          Rp {rp3Data.summary.totalValue.toLocaleString('id-ID')}
+                          {formatIdr(rp3Data.summary.totalValue)}
                         </div>
                       </CardContent>
                     </Card>
@@ -1504,7 +1275,7 @@ export function DashboardPageClient({
                       </CardHeader>
                       <CardContent>
                         <div className="text-2xl font-bold">
-                          Rp {Math.round(rp3Data.summary.avgValuePerItem).toLocaleString('id-ID')}
+                          {formatIdr(Math.round(rp3Data.summary.avgValuePerItem))}
                         </div>
                       </CardContent>
                     </Card>
@@ -1534,9 +1305,9 @@ export function DashboardPageClient({
                               />
                             </div>
                             <span className="text-sm tabular-nums w-28">
-                              Rp {totalValue.toLocaleString('id-ID')} ({pct.toFixed(1)}%)
+                              {formatIdr(totalValue)} ({pct.toFixed(1)}%)
                             </span>
-                            <span className="text-muted-foreground text-sm">{count} items</span>
+                            <span className="text-muted-foreground text-sm">{tDashboard('itemsCount', { count })}</span>
                           </div>
                         );
                       })}
@@ -1546,12 +1317,12 @@ export function DashboardPageClient({
                     <div>
                       <h4 className="font-medium mb-2 flex items-center gap-2">
                         <AlertTriangle className="h-4 w-4 text-destructive" />
-                        Low stock alerts
+                        {tDashboard('lowStockAlerts')}
                       </h4>
                       <ul className="list-disc list-inside text-sm space-y-1">
                         {rp3Data.lowStockAlerts.map((a) => (
                           <li key={a.itemId}>
-                            {a.sku} – {a.name}: qty {a.qtyOnHand} (reorder: {a.reorderPoint})
+                            {tDashboard('lowStockLine', { sku: a.sku, name: a.name, qty: a.qtyOnHand, reorder: a.reorderPoint })}
                           </li>
                         ))}
                       </ul>
@@ -1564,7 +1335,7 @@ export function DashboardPageClient({
                           <TableHead>SKU</TableHead>
                           <TableHead>{tTable('name')}</TableHead>
                           <TableHead>{tTable('type')}</TableHead>
-                          <TableHead className="text-right">Qty</TableHead>
+                          <TableHead className="text-right">{tTable('qty')}</TableHead>
                           <TableHead className="text-right">{tDashboard('totalValue')}</TableHead>
                           <TableHead className="text-right">{tDashboard('percentOfTotal')}</TableHead>
                         </TableRow>
@@ -1576,7 +1347,7 @@ export function DashboardPageClient({
                             <TableCell>{d.name}</TableCell>
                             <TableCell>{d.type}</TableCell>
                             <TableCell className="text-right">{d.qtyOnHand}</TableCell>
-                            <TableCell className="text-right">Rp {d.totalValue.toLocaleString('id-ID')}</TableCell>
+                            <TableCell className="text-right">{formatIdr(d.totalValue)}</TableCell>
                             <TableCell className="text-right">{d.percentageOfTotal.toFixed(2)}%</TableCell>
                           </TableRow>
                         ))}

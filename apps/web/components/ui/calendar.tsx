@@ -11,6 +11,8 @@ import {
   getDefaultClassNames,
   type DayButton,
 } from "react-day-picker"
+import { enGB, id as idLocale } from "date-fns/locale"
+import { useLocale } from "next-intl"
 
 import { cn } from "@/lib/utils"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -28,9 +30,14 @@ function Calendar({
   buttonVariant?: React.ComponentProps<typeof Button>["variant"]
 }) {
   const defaultClassNames = getDefaultClassNames()
+  // Month and weekday names follow the app's language, not the browser's: a
+  // browser set to English used to show "Sep / Mo Tu We" on Indonesian screens.
+  const appLocale = useLocale()
+  const isEnglish = appLocale.startsWith("en")
 
   return (
     <DayPicker
+      locale={isEnglish ? enGB : idLocale}
       showOutsideDays={showOutsideDays}
       className={cn(
         "bg-background group/calendar p-3 [--cell-size:--spacing(8)] [[data-slot=card-content]_&]:bg-transparent [[data-slot=popover-content]_&]:bg-transparent",
@@ -41,7 +48,7 @@ function Calendar({
       captionLayout={captionLayout}
       formatters={{
         formatMonthDropdown: (date) =>
-          date.toLocaleString("default", { month: "short" }),
+          date.toLocaleString(isEnglish ? "en-GB" : "id-ID", { month: "short" }),
         ...formatters,
       }}
       classNames={{

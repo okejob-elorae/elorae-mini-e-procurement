@@ -2,9 +2,10 @@
 
 import * as React from "react";
 import { ChevronDownIcon } from "lucide-react";
+import { useLocale, useTranslations } from "next-intl";
 
 import { cn } from "@/lib/utils";
-import { coerceToDate, toDisplayDate } from "@/lib/date-only";
+import { coerceToDate, formatDisplayDate } from "@/lib/date-only";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -29,7 +30,7 @@ export interface DatePickerProps {
 export function DatePicker({
   value,
   onChange,
-  placeholder = "Pick a date",
+  placeholder,
   disabled = false,
   className,
   id,
@@ -38,6 +39,8 @@ export function DatePicker({
   fromDate,
   toDate,
 }: DatePickerProps) {
+  const t = useTranslations("dateRangePicker");
+  const locale = useLocale();
   const [open, setOpen] = React.useState(false);
   const selected = coerceToDate(value ?? undefined);
 
@@ -59,7 +62,7 @@ export function DatePicker({
           )}
         >
           <span className="truncate text-left">
-            {selected ? toDisplayDate(selected) : placeholder}
+            {selected ? formatDisplayDate(selected, locale) : (placeholder ?? t("placeholderSingle"))}
           </span>
           <ChevronDownIcon className="h-4 w-4 shrink-0 opacity-50" />
         </Button>

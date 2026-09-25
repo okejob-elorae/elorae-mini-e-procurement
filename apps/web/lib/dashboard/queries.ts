@@ -15,31 +15,6 @@ function getTodayStart(d: Date): Date {
   return date;
 }
 
-function formatActivityLabel(action: string, entityType: string): string {
-  const entityLabels: Record<string, string> = {
-    PurchaseOrder: 'Purchase Order',
-    PO: 'Purchase Order',
-    GRN: 'Goods Receipt',
-    WorkOrder: 'Work Order',
-    WO: 'Work Order',
-    Item: 'Item',
-    Supplier: 'Supplier',
-    StockAdjustment: 'Stock Adjustment',
-    VendorReturn: 'Vendor Return',
-    MaterialIssue: 'Material Issue',
-    FGReceipt: 'FG Receipt',
-  };
-  const entity = entityLabels[entityType] ?? entityType;
-  const actionLower = action.toUpperCase();
-  if (actionLower === 'CREATE' || actionLower === 'CREATED') return `${entity} created`;
-  if (actionLower === 'UPDATE' || actionLower === 'UPDATED') return `${entity} updated`;
-  if (actionLower === 'DELETE' || actionLower === 'DELETED') return `${entity} deleted`;
-  if (actionLower === 'SUBMIT' || actionLower === 'SUBMITTED') return `${entity} submitted`;
-  if (actionLower === 'ADJUST_STOCK') return 'Stock adjusted';
-  if (actionLower === 'VIEW_BANK_ACCOUNT') return 'Bank account viewed';
-  return `${entity}: ${action}`;
-}
-
 export type DashboardStats = {
   po: {
     submitted: number;
@@ -67,7 +42,7 @@ export type DashboardStats = {
   recentActivity: Array<{
     id: string;
     action: string;
-    label: string;
+    entityType: string;
     userName: string | null;
     createdAt: Date;
   }>;
@@ -154,7 +129,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   const recentActivity = auditLogs.map((log) => ({
     id: log.id,
     action: log.action,
-    label: formatActivityLabel(log.action, log.entityType),
+    entityType: log.entityType,
     userName: log.user?.name ?? null,
     createdAt: log.createdAt,
   }));
