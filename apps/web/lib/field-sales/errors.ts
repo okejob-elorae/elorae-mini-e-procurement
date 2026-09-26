@@ -98,3 +98,25 @@ export class CreditLimitExceededError extends Error {
     this.name = "CreditLimitExceededError";
   }
 }
+
+export type KonsiPushErrorCode =
+  | "NOT_FOUND"
+  | "NOT_KONSI"
+  | "STORE_INACTIVE"
+  | "SALESMAN_INVALID"
+  | "NO_LINES"
+  | "BAD_QTY"
+  | "DUPLICATE"
+  | "UNKNOWN_ITEM"
+  | "NO_INVENTORY"
+  | "KEY_CONFLICT";
+
+export class KonsiPushError extends Error {
+  constructor(
+    readonly code: KonsiPushErrorCode,
+    readonly detail?: string,
+  ) {
+    super(detail ? `${code}: ${detail}` : code);
+    this.name = "KonsiPushError";
+  }
+}

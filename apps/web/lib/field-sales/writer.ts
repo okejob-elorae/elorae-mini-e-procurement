@@ -488,6 +488,9 @@ export async function approveFieldSalesOrder(input: {
  * store's markup (an informational value; nothing bills from it) and flip the order to APPROVED.
  * It runs inside the caller's serializable transaction and throws `InsufficientStockError` naming
  * every short line, so the caller's whole transaction rolls back. It moves no stock.
+ * The caller must already have verified a PENDING_APPROVAL KONSI order: this checks neither the
+ * status nor the type. A line that already has a reservation is skipped, not re-reserved, so a
+ * wrong order is not refused here — it is repriced at the konsi markup and flipped to APPROVED.
  */
 export async function approveKonsiOrderInTx(
   tx: Prisma.TransactionClient,
@@ -498,7 +501,7 @@ export async function approveKonsiOrderInTx(
     select: { id: true, orderNo: true, store: { select: { markupPercent: true, priceDiscountPercent: true } } },
   });
 
-  /* Re-read: the lines created above are not in the `order.lines` snapshot taken at the top. */
+  /* Read the lines fresh: the caller may have created some inside this same transaction. */
   const lines = await tx.fieldSalesOrderLine.findMany({
     where: { orderId: order.id },
     include: { item: { select: { sku: true, sellingPrice: true, category: { select: { name: true } } } } },
