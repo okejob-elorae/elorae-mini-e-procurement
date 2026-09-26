@@ -278,7 +278,7 @@ d("listTaxInvoices (test bed only)", () => {
 
     /* A is now SENT_TO_STORE, B is still CREATED — no bucket may be inferred from a default. */
     const { counts } = await listTaxInvoices({ q: storeName, page: 1, perPage: 10 });
-    expect(counts).toEqual({ PENDING: 0, CREATED: 1, SENT_TO_STORE: 1, NOT_REQUIRED: 0 });
+    expect(counts).toEqual({ PENDING: 0, CREATED: 1, SENT_TO_STORE: 1, NOT_REQUIRED: 0, CANCELLED: 0 });
 
     const filtered = await listTaxInvoices({ q: storeName, status: "SENT_TO_STORE", page: 1, perPage: 10 });
     expect(filtered.total).toBe(1);
