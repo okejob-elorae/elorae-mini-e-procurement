@@ -107,10 +107,12 @@ export function SellThroughDetailClient({
   const totalLabelSpan = isSpgPos ? 10 : 9;
 
   /**
-   * An over-long reason arrives under three different codes (INVALID_RESOLUTION on resolve,
-   * REASON_REQUIRED on cancel, BASELINE_REASON_REQUIRED on a baseline approve) and gets its own
-   * copy on all three. UNPRICED carries the refused line keys, comma-joined, which are named back
-   * as products; with no detail it falls back to the preview's own unpriced keys.
+   * An over-long reason arrives under four different codes (INVALID_RESOLUTION on resolve,
+   * REASON_REQUIRED on cancel, BASELINE_REASON_REQUIRED on a baseline approve, VOID_REASON_REQUIRED
+   * on a void) and gets its own copy on all four. UNPRICED carries the refused line keys,
+   * comma-joined, which are named back as products; with no detail it falls back to the preview's
+   * own unpriced keys. HAS_SUCCESSOR and SETTLEMENT_PENDING carry the docNo of the document that
+   * blocks the void, which the copy names.
    */
   function errorMessage(result: SellThroughActionFailure): string {
     if (result.detail === "REASON_TOO_LONG") return t("err.REASON_TOO_LONG");
@@ -227,7 +229,7 @@ export function SellThroughDetailClient({
           {canManage && report.status === "APPROVED" && (
             <Button variant="outline" className="h-10 text-destructive" onClick={() => setVoidOpen(true)}>
               <XCircle className="h-4 w-4" />
-              {tVoid("button")}
+              {report.baseline ? tVoid("buttonBaseline") : tVoid("button")}
             </Button>
           )}
         </div>
@@ -314,9 +316,11 @@ export function SellThroughDetailClient({
                 {tDetail("voidReason")}: {report.voidReason}
               </p>
             )}
-            <Link href={`/backoffice/store-stocktakes/${report.closingStocktakeId}`} className="text-sm text-primary hover:underline">
-              {tVoid("createCorrected")}
-            </Link>
+            {canManage && (
+              <Link href={`/backoffice/store-stocktakes/${report.closingStocktakeId}`} className="text-sm text-primary hover:underline">
+                {tVoid("createCorrected")}
+              </Link>
+            )}
           </div>
         )}
       </Card>

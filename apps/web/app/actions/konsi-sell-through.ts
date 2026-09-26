@@ -53,9 +53,10 @@ async function guard(): Promise<{ userId: string } | { ok: false; reason: "FORBI
  * `SellThroughError.code` already reads as a stable, screen-facing reason on its own, so it is
  * passed straight through — same shape as `toResult` in `app/actions/store-settlements.ts` —
  * rather than keeping a second `Record<SellThroughErrorCode, …>` map that could drift out of sync
- * with `errors.ts`. `detail` travels with it because two screens read it: the retur or transfer
- * docNos a `RETUR_IN_FLIGHT` or `TRANSFER_IN_FLIGHT` refusal names, and `REASON_TOO_LONG`, which
- * gets its own copy instead of the generic code's.
+ * with `errors.ts`. `detail` travels with it whenever the writer set one, because the screens read
+ * it: the docNos a refusal names (a retur or transfer in flight, a live successor, a pending
+ * settlement), the refused line keys of `UNPRICED`, and `REASON_TOO_LONG`, which gets its own copy
+ * instead of the generic code's.
  */
 function toResult(e: unknown): SellThroughActionFailure {
   if (e instanceof SellThroughError) return e.detail ? { ok: false, reason: e.code, detail: e.detail } : { ok: false, reason: e.code };
@@ -187,7 +188,7 @@ export type RetrySellThroughJournalsResult =
 /**
  * Posts the sell-through journals a report still owes. The entry gate is the missing journal
  * itself (`sellThroughJournalGaps`), not a JOURNAL_PENDING flag: a flag never clears, and a crash
- * between the approve commit and the posts leaves none at all. That gate is safe here because every
+ * between an approve or void commit and the posts leaves none at all. That gate is safe here because every
  * report approved before invoicing existed is a baseline, which owes nothing — unlike the delivery
  * sibling in `app/actions/field-sales-deliveries.ts`, whose backfilled receivables carry no journal
  * by construction and so must stay gated on the flag. Each post still goes through
@@ -229,6 +230,12 @@ export async function cancelSellThroughAction(id: unknown, reason: unknown): Pro
  * report whose originals never landed owes, and posts, nothing. Each reversal goes through
  * `postArJournalSafely`: a failure degrades to a JOURNAL_PENDING flag and an owed reversal the
  * report page offers to retry, never an undone void.
+ *
+ * Once the writer has returned, the void is committed and this action reports `{ ok: true }`
+ * whatever happens next. The post-commit steps run in their own try/catch, which only logs: a
+ * throw there (the gaps read itself, say) must not tell the operator a committed void failed, and
+ * the reversal it left unposted still reads as owed on the report page. The revalidation runs in
+ * its `finally`, so the page refreshes either way.
  */
 export async function voidSellThroughAction(id: unknown, reason: unknown): Promise<SellThroughActionResult> {
   const g = await guard();
@@ -236,17 +243,24 @@ export async function voidSellThroughAction(id: unknown, reason: unknown): Promi
   if (typeof id !== "string" || id === "") return { ok: false, reason: "INVALID_REQUEST" };
   if (typeof reason !== "string") return { ok: false, reason: "INVALID_REQUEST" };
 
+  let result: Awaited<ReturnType<typeof voidSellThrough>>;
   try {
-    const result = await voidSellThrough({ id, voidedById: g.userId, reason });
-    const owed = await sellThroughJournalGaps(id);
-    await postSellThroughJournals(id, g.userId, owed);
-    revalidateSellThrough(id, result.closingStocktakeId);
-    revalidatePath("/backoffice/finance/piutang");
-    revalidatePath("/backoffice/finance/faktur-pajak");
-    return { ok: true };
+    result = await voidSellThrough({ id, voidedById: g.userId, reason });
   } catch (e) {
     return toResult(e);
   }
+
+  try {
+    const owed = await sellThroughJournalGaps(id);
+    await postSellThroughJournals(id, g.userId, owed);
+  } catch (e) {
+    console.error("[konsi-sell-through] post-void steps failed", e);
+  } finally {
+    revalidateSellThrough(id, result.closingStocktakeId);
+    revalidatePath("/backoffice/finance/piutang");
+    revalidatePath("/backoffice/finance/faktur-pajak");
+  }
+  return { ok: true };
 }
 
 export type SellThroughNotaResult =
@@ -334,6 +348,10 @@ export async function getSellThroughNotaAction(id: unknown): Promise<SellThrough
  * `notaPrintedAt` from null — 1 means it genuinely won the first print, 0 means somebody already
  * had (a reprint), which must audit but never notify again.
  *
+ * The CAS also requires the report to still be APPROVED. A print that began before a void can
+ * land after it, and without that term it would stamp the CANCELLED faktur and ping finance for a
+ * faktur on a voided invoice; with it the CAS matches nothing, the same silent no-op as a reprint.
+ *
  * Gated on `STORES_MANAGE` directly via `hasPermission` rather than this module's `guard()`
  * helper: `guard()` returns an error result, but this function returns void and must never
  * throw or resolve to anything a caller could branch on.
@@ -362,7 +380,7 @@ export async function recordSellThroughNotaPrinted(id: unknown): Promise<void> {
     }
 
     const swapped = await prisma.taxInvoice.updateMany({
-      where: { sellThroughId: id, notaPrintedAt: null },
+      where: { sellThroughId: id, notaPrintedAt: null, sellThrough: { status: "APPROVED" } },
       data: { notaPrintedAt: new Date(), notaPrintedById: session.user.id },
     });
     if (swapped.count !== 1) return;

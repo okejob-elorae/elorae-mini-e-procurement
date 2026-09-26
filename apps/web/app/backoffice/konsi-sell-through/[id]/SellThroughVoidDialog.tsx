@@ -43,6 +43,8 @@ export function SellThroughVoidDialog({
   const [voiding, startVoidTransition] = useTransition();
 
   const fakturIssued = report.taxInvoiceStatus === "CREATED" || report.taxInvoiceStatus === "SENT_TO_STORE";
+  /* A baseline billed nothing, so its copy never speaks of an invoice. */
+  const confirmLabel = report.baseline ? tVoid("buttonBaseline") : tVoid("confirm");
 
   function callVoid(): void {
     startVoidTransition(async () => {
@@ -50,7 +52,7 @@ export function SellThroughVoidDialog({
         const result = await voidSellThroughAction(report.id, reason.trim());
         if (result.ok) {
           onOpenChange(false);
-          toast.success(tVoid("success"));
+          toast.success(report.baseline ? tVoid("successBaseline") : tVoid("success"));
           setReason("");
           router.refresh();
           return;
@@ -66,8 +68,10 @@ export function SellThroughVoidDialog({
     <AlertDialog open={open} onOpenChange={(next) => !voiding && onOpenChange(next)}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>{tVoid("confirmTitle")}</AlertDialogTitle>
-          <AlertDialogDescription>{tVoid("confirmDescription")}</AlertDialogDescription>
+          <AlertDialogTitle>{report.baseline ? tVoid("confirmTitleBaseline") : tVoid("confirmTitle")}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {report.baseline ? tVoid("confirmDescriptionBaseline") : tVoid("confirmDescription")}
+          </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="space-y-2 text-sm">
           {report.receivableAmount !== null && (
@@ -87,7 +91,7 @@ export function SellThroughVoidDialog({
             id="sell-through-void-reason"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            placeholder={tVoid("reasonPlaceholder")}
+            placeholder={report.baseline ? tVoid("reasonPlaceholderBaseline") : tVoid("reasonPlaceholder")}
             disabled={voiding}
             maxLength={REASON_MAX_LENGTH}
             rows={3}
@@ -103,7 +107,7 @@ export function SellThroughVoidDialog({
               callVoid();
             }}
           >
-            {voiding ? tVoid("voiding") : tVoid("confirm")}
+            {voiding ? tVoid("voiding") : confirmLabel}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

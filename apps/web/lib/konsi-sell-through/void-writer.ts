@@ -33,6 +33,7 @@ export async function voidSellThrough(input: VoidSellThroughInput): Promise<{ id
       where: { id: input.id },
       select: {
         id: true,
+        storeId: true,
         closingStocktakeId: true,
         receivable: { select: { id: true, status: true, paidAmount: true } },
         taxInvoice: { select: { id: true } },
@@ -46,9 +47,16 @@ export async function voidSellThrough(input: VoidSellThroughInput): Promise<{ id
     });
     if (claimed.count === 0) throw new SellThroughError("INVALID_STATE");
 
-    const successor = await tx.konsiSellThrough.findFirst({
-      where: { previousId: doc.id, status: { in: ["DRAFT", "APPROVED"] } },
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    /**
+     * The live successor is found through `chainKey`, never `previousId`. A report's `chainKey` is
+     * `${storeId}:${previousId ?? "root"}` and is non-null only while it is live (DRAFT or
+     * APPROVED): cancel and void both null it. So for a live report `previousId = doc.id` holds
+     * exactly when its `chainKey` is `${doc.storeId}:${doc.id}`, and `@unique` makes that a point
+     * lookup, which a SERIALIZABLE transaction locks at that one key of the index instead of the
+     * broad range a scan on the unindexed `previousId` would lock.
+     */
+    const successor = await tx.konsiSellThrough.findUnique({
+      where: { chainKey: `${doc.storeId}:${doc.id}` },
       select: { docNo: true },
     });
     if (successor) throw new SellThroughError("HAS_SUCCESSOR", successor.docNo);

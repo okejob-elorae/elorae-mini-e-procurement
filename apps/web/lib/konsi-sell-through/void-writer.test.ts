@@ -88,7 +88,7 @@ d("konsi sell-through void (test bed only)", () => {
     expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(report.id) } })).status).toBe("VOIDED");
   }, SLOW);
 
-  it("refuses a blank or over-long reason before touching anything", async () => {
+  it("refuses a blank or over-long reason and leaves the report APPROVED", async () => {
     const { id } = await invoicedReport();
     await expect(voidIt(id, "   ")).rejects.toMatchObject({ code: "VOID_REASON_REQUIRED" });
     await expect(voidIt(id, "x".repeat(1001))).rejects.toMatchObject({ code: "VOID_REASON_REQUIRED", detail: "REASON_TOO_LONG" });
@@ -143,6 +143,21 @@ d("konsi sell-through void (test bed only)", () => {
     await expect(voidIt(first.id)).resolves.toMatchObject({ id: first.id });
   }, SLOW);
 
+  it("approve refuses INVALID_STATE naming PREVIOUS_REPORT once the report before is no longer APPROVED", async () => {
+    const first = await invoicedReport();
+    await tick();
+    await spgSell(1);
+    await tick();
+    const secondCount = await count(1);
+    const second = await createSellThrough({ closingStocktakeId: secondCount, createdById: state.userId });
+
+    /* No writer reaches this state (a void refuses while this DRAFT is live), so the status is set directly to reach the guard. */
+    await prisma.konsiSellThrough.update({ where: { id: first.id }, data: { status: "VOIDED" } });
+
+    await expect(fx.approve(second.id)).rejects.toMatchObject({ code: "INVALID_STATE", detail: "PREVIOUS_REPORT" });
+    expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(second.id) } })).status).toBe("DRAFT");
+  }, SLOW);
+
   it("refuses HAS_PAYMENTS while the receivable carries a payment, and ALREADY_SETTLED for a written-off one", async () => {
     const { id } = await invoicedReport();
     const r = await receivableOf(id);
@@ -191,7 +206,7 @@ d("konsi sell-through void (test bed only)", () => {
     await voidIt(second.id);
     const corrected = await createSellThrough({ closingStocktakeId: secondCount, createdById: state.userId });
     expect(corrected.id).not.toBe(second.id);
-    const doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(corrected.id) }, include: { lines: true } });
+    const doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(corrected.id) }, include: { lines: { orderBy: { id: "asc" } } } });
     expect(doc).toMatchObject({ status: "DRAFT", previousId: first.id, chainKey: `${state.storeId}:${first.id}`, stocktakeKey: secondCount });
 
     const voidedLines = await prisma.konsiSellThroughLine.findMany({ where: { sellThroughId: seededId(second.id) }, orderBy: { id: "asc" } });

@@ -244,6 +244,22 @@ d("konsi sell-through actions (test bed only)", () => {
     expect(faktur.notaPrintedAt).toBeNull();
   }, SLOW);
 
+  it("a print that lands after the void stamps nothing and notifies no one", async () => {
+    const id = await approvedInvoicedReport();
+    await voidSellThroughAction(id, "wrong resolution");
+    mockFanOut.mockClear();
+
+    await recordSellThroughNotaPrinted(id);
+
+    const faktur = await prisma.taxInvoice.findUniqueOrThrow({ where: { sellThroughId: seededId(id) } });
+    expect(faktur).toMatchObject({ status: "CANCELLED", notaPrintedAt: null, notaPrintedById: null });
+    expect(mockFanOut).not.toHaveBeenCalled();
+    const notifications = (
+      await prisma.adminNotification.findMany({ where: { category: "TAX_INVOICE_PENDING" }, select: { metadata: true } })
+    ).filter((n) => (n.metadata as { sellThroughId?: string } | null)?.sellThroughId === id);
+    expect(notifications).toHaveLength(0);
+  }, SLOW);
+
   /* getSellThroughNotaAction */
 
   it("refuses a nota for a baseline report", async () => {
@@ -340,9 +356,36 @@ d("konsi sell-through actions (test bed only)", () => {
     expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("APPROVED");
   }, SLOW);
 
-  it("passes a writer refusal through with its detail", async () => {
+  it("passes a writer refusal through, with its detail when it carries one", async () => {
     const id = await approvedInvoicedReport();
     await expect(voidSellThroughAction(id, "  ")).resolves.toEqual({ ok: false, reason: "VOID_REASON_REQUIRED" });
+    await expect(voidSellThroughAction(id, "x".repeat(1001))).resolves.toEqual({
+      ok: false,
+      reason: "VOID_REASON_REQUIRED",
+      detail: "REASON_TOO_LONG",
+    });
+  }, SLOW);
+
+  it("a failure after the void committed still reports success, and the retry offers the reversals it left", async () => {
+    const id = await approvedInvoicedReport();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    /* The gaps read is the first journal read after the commit, so only the post-commit steps fail. */
+    const journalSpy = vi.spyOn(prisma.journal, "findMany").mockRejectedValueOnce(new Error("simulated read failure"));
+    try {
+      await expect(voidSellThroughAction(id, "wrong resolution")).resolves.toEqual({ ok: true });
+      expect(errorSpy).toHaveBeenCalledWith("[konsi-sell-through] post-void steps failed", expect.any(Error));
+    } finally {
+      journalSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+
+    expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("VOIDED");
+    expect(await journalTypesFor(id)).toEqual(["KONSI_SELLTHRU_COGS", "KONSI_SELLTHRU_REVENUE"]);
+    await expect(retrySellThroughJournalsAction(id)).resolves.toEqual({
+      ok: true,
+      posted: ["konsi_sell_through_revenue_void", "konsi_sell_through_cogs_void"],
+      stillPending: [],
+    });
   }, SLOW);
 
   it("refuses a nota for a voided report", async () => {

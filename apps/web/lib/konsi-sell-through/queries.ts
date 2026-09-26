@@ -252,8 +252,9 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
   /**
    * relationMode = "prisma": neither closingStocktakeId nor previousId carries a database FK, so
    * both docNo lookups are best-effort and fall back to an empty/null label rather than throwing.
-   * The three actor ids are bare scalars with no relation at all, so their labels are one batched
-   * user lookup, falling back to "—" for an id that resolves to nobody.
+   * The four actor ids (creator, approver, canceller, voider) are bare scalars with no relation at
+   * all, so their labels and the salesman's are one batched user lookup, falling back to "—" for an
+   * id that resolves to nobody.
    */
   const userIds = Array.from(
     new Set(

@@ -195,7 +195,7 @@ d("konsi sell-through queries (test bed only)", () => {
     expect(detail?.taxInvoiceId).not.toBeNull();
   }, SLOW);
 
-  it("a voided report reads VOIDED with its void fields, faktur status and receivable amount, and journalPending when a reversal is owed", async () => {
+  it("a voided report reads VOIDED with its void fields, faktur status and receivable amount, and journalPending once an original's reversal is owed", async () => {
     await setMethod("SHELF_COUNT");
     await transferIn(6);
     const stocktakeId = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
@@ -214,6 +214,20 @@ d("konsi sell-through queries (test bed only)", () => {
       taxInvoiceStatus: "CANCELLED",
       journalPending: false,
     });
+
+    /**
+     * A bare revenue original with no reversal beside it is what the void gap reads as owed; the
+     * gap only checks which source types exist, so the row needs no lines. The fixture does not
+     * clean journals, so this one goes in the test's own `finally`.
+     */
+    try {
+      await prisma.journal.create({
+        data: { date: new Date(), description: "Test sell-through revenue original", sourceType: "KONSI_SELLTHRU_REVENUE", sourceId: id, postedById: state.userId },
+      });
+      expect((await getSellThrough(id))?.journalPending).toBe(true);
+    } finally {
+      await prisma.journal.deleteMany({ where: { sourceType: "KONSI_SELLTHRU_REVENUE", sourceId: seededId(id) } });
+    }
   }, SLOW);
 
   it("a baseline report shows the cost not relieved from GL inventory and no prices", async () => {

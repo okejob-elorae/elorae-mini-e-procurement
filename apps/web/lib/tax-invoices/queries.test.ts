@@ -288,8 +288,10 @@ d("listTaxInvoices (test bed only)", () => {
   });
 
   it("counts a cancelled faktur under CANCELLED and filters to it", async () => {
-    /* A is the PENDING one — flipped directly, same as the SENT_TO_STORE case above, because the
-       subject here is the query layer and going through the writer would drag its audit rows in. */
+    /**
+     * A is the PENDING one — flipped directly, same as the SENT_TO_STORE case above, because the
+     * subject here is the query layer and going through the writer would drag its audit rows in.
+     */
     const cancelled = await prisma.taxInvoice.update({
       where: { deliveryId: deliveryAId },
       data: { status: "CANCELLED" },
