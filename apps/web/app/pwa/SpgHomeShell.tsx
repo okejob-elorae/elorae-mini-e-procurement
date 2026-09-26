@@ -58,12 +58,12 @@ export function SpgHomeShell({ userName, store, activeVisit, autoCloseStoreName,
     isKonsi && countDue ? (
       <p
         className={cn(
-          "flex items-center justify-center gap-1 text-sm",
+          "flex min-w-0 items-center justify-center gap-1 text-sm",
           countDue.overdue ? "text-destructive" : "text-muted-foreground",
         )}
       >
         <CalendarClock className="h-4 w-4 shrink-0" />
-        <span className="truncate">
+        <span className="min-w-0 truncate">
           {t(countDue.overdue ? "overdueSince" : "dueBy", {
             date: new Date(countDue.dueAtIso).toLocaleDateString("id-ID", {
               day: "numeric",
