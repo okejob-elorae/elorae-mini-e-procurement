@@ -608,9 +608,12 @@ export async function listStoreGapSuggestions(
   if (remaining.length === 0) return [];
 
   const itemIds = Array.from(new Set(remaining.map((g) => g.itemId)));
-  /* Same isActive/type filter listKonsiSuggestions applies — a deactivated or raw-material item
-   * dropped from the assortment lines table would otherwise still render here as a stageable gap
-   * and abort the approval with UNKNOWN_ITEM (that writer check filters on the same two fields). */
+  /**
+   * Same isActive/type filter `listStoreNeverSentSuggestions` applies — a deactivated or
+   * raw-material item dropped from the assortment lines table would otherwise still render here
+   * as a stageable gap and abort either caller (the order-scoped approve panel or the admin push)
+   * with UNKNOWN_ITEM, since both writers filter on the same two fields.
+   */
   const items = await prisma.item.findMany({
     where: { id: { in: itemIds }, isActive: true, type: "FINISHED_GOOD" },
     select: {
@@ -627,10 +630,11 @@ export async function listStoreGapSuggestions(
     if (!item) continue;
 
     /**
-     * Same null/"" collision `listKonsiSuggestions` guards against: MariaDB permits multiple
-     * NULLs on the (itemId, variantSku) unique index, so an item can carry both a `null` and an
-     * `""` InventoryValue row for the same logical variant. Keep the MINIMUM available across a
-     * collision — same fail-safe direction as the writer's own reservation lookup.
+     * Same null/"" collision `listStoreNeverSentSuggestions` guards against: MariaDB permits
+     * multiple NULLs on the (itemId, variantSku) unique index, so an item can carry both a `null`
+     * and an `""` InventoryValue row for the same logical variant. Keep the MINIMUM available
+     * across a collision — same fail-safe direction as the writer's own reservation lookup. Both
+     * the order-scoped approve panel and the admin push read this list, so either caller benefits.
      */
     let available: number | null = null;
     for (const iv of item.inventoryValues) {

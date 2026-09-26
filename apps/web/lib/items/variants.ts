@@ -39,3 +39,19 @@ export function variantSelectOptions(variants: ItemVariantRow[]): { sku: string;
 export function itemHasSkuVariants(variants: unknown): boolean {
   return variantSelectOptions(parseItemVariants(variants)).length > 0;
 }
+
+/**
+ * True when a stock row can exist for this variant key on an item with these variant rows — a
+ * variant item only stocks its own trimmed SKUs, and a variantless item only stocks the pooled
+ * `""` key. Shared by the konsi push writer's refusal and the push page's own row filter, so the
+ * two agree on which suggestion rows are stageable.
+ */
+export function isStockableVariantKey(variants: unknown, variantSku: string): boolean {
+  if (!itemHasSkuVariants(variants)) return variantSku === "";
+  const variantSkus = new Set(
+    parseItemVariants(variants)
+      .map((v) => (v.sku ?? "").trim())
+      .filter((sku) => sku !== ""),
+  );
+  return variantSkus.has(variantSku);
+}

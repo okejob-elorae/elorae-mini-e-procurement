@@ -3545,7 +3545,7 @@
       "BAD_QTY": "Enter a whole number above 0 for {product}.",
       "DUPLICATE": "{product} is listed twice.",
       "UNKNOWN_ITEM": "{product} is no longer an active product.",
-      "NO_INVENTORY": "{product} has no stock record at the warehouse.",
+      "NO_INVENTORY": "{product} can't be sent: it has no warehouse stock record for that variant.",
       "KEY_CONFLICT": "This submission clashed with another. Reload the page and try again.",
       "INSUFFICIENT_STOCK": "Not enough stock at the warehouse for: {products}.",
       "FORBIDDEN": "You do not have permission to send stock.",

@@ -423,7 +423,7 @@ export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFai
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="space-y-1.5">
-            <Label htmlFor="konsi-push-add-product">{t("addProduct")}</Label>
+            <Label htmlFor={catalog.status === "loaded" ? "konsi-push-add-product" : undefined}>{t("addProduct")}</Label>
             {(catalog.status === "idle" || catalog.status === "loading") && (
               <p className="text-sm text-muted-foreground">{t("catalogLoading")}</p>
             )}

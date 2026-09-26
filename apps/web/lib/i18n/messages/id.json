@@ -3545,7 +3545,7 @@
       "BAD_QTY": "Isi angka bulat di atas 0 untuk {product}.",
       "DUPLICATE": "{product} tercantum dua kali.",
       "UNKNOWN_ITEM": "{product} bukan lagi produk aktif.",
-      "NO_INVENTORY": "{product} tidak punya catatan stok di gudang.",
+      "NO_INVENTORY": "{product} tidak dapat dikirim: tidak ada catatan stok gudang untuk varian tersebut.",
       "KEY_CONFLICT": "Pengiriman ini bentrok dengan yang lain. Muat ulang halaman dan coba lagi.",
       "INSUFFICIENT_STOCK": "Stok gudang tidak cukup untuk: {products}.",
       "FORBIDDEN": "Anda tidak punya izin untuk mengirim stok.",

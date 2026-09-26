@@ -2,7 +2,7 @@ import { prisma, Prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
-import { itemHasSkuVariants, parseItemVariants } from "@/lib/items/variants";
+import { isStockableVariantKey } from "@/lib/items/variants";
 import { isSellThroughSalesmanCandidate } from "@/lib/konsi-sell-through/salesman-candidates";
 import { approveKonsiOrderInTx } from "./writer";
 import { KonsiPushError } from "./errors";
@@ -91,15 +91,10 @@ export async function createKonsiPushOrder(input: CreateKonsiPushOrderInput): Pr
          * Stock is per variant for an item with SKU variants: a "" line would reserve against a
          * pooled variantless row and land StoreStock on "", where per-variant SPG sales and the gap
          * tests never see it. So such an item takes only its own variant SKUs, and a variantless
-         * item takes only "".
+         * item takes only "" — `isStockableVariantKey` is the one spelling of that rule, shared with
+         * the push page's own filter over the same two suggestion lists.
          */
-        const variantSkus = new Set(
-          parseItemVariants(item.variants)
-            .map((v) => (v.sku ?? "").trim())
-            .filter((sku) => sku !== ""),
-        );
-        const variantAllowed = variantSku === "" ? !itemHasSkuVariants(item.variants) : variantSkus.has(variantSku);
-        if (!variantAllowed) throw new KonsiPushError("NO_INVENTORY", key);
+        if (!isStockableVariantKey(item.variants, variantSku)) throw new KonsiPushError("NO_INVENTORY", key);
         if (!(await findExistingInventoryValueRow(tx, line.itemId, variantSku))) throw new KonsiPushError("NO_INVENTORY", key);
       }
 
