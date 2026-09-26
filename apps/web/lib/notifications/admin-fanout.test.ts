@@ -11,6 +11,7 @@ vi.mock("./recipients", () => ({
 }));
 
 import { fanOutAdminNotification, toFcmData } from "./admin-fanout";
+import { KONSI_NOTIFICATION_CATEGORIES } from "@/lib/konsi-count-schedule/categories";
 
 const BASE = {
   id: "notif-1",
@@ -88,6 +89,15 @@ describe("fanOutAdminNotification", () => {
     mockGetUsers.mockClear();
     await fanOutAdminNotification({ ...BASE, category: "AR_OVERDUE" });
     expect(mockGetUsers).toHaveBeenCalledWith("collections:manage");
+  });
+
+  it("routes every konsi count and report category to stores:manage", async () => {
+    expect(KONSI_NOTIFICATION_CATEGORIES).toHaveLength(5);
+    for (const category of KONSI_NOTIFICATION_CATEGORIES) {
+      mockGetUsers.mockClear();
+      await fanOutAdminNotification({ ...BASE, category });
+      expect(mockGetUsers).toHaveBeenCalledWith("stores:manage");
+    }
   });
 
   it("sends the category as the type and carries the source id in data", async () => {
