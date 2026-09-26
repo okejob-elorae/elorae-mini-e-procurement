@@ -5,7 +5,7 @@ import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { capNotificationText } from "@/lib/notifications/text";
 import { sendNotificationToUsers, type NotificationUser } from "@/lib/notifications/recipients";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
-import { KONSI_COUNT_SYSTEM_ACTOR, formatCountDueDate, formatCountMonth, type CountSchedule } from "./schedule";
+import { KONSI_COUNT_SYSTEM_ACTOR, countWindowFor, formatCountDueDate, formatCountMonth, type CountSchedule } from "./schedule";
 import { getStoreCountState, readCountSchedule } from "./queries";
 import { KONSI_COUNT_DUE, KONSI_COUNT_OVERDUE } from "./categories";
 
@@ -56,7 +56,12 @@ function storeMonthKeys(rows: { metadata: unknown }[]): Set<string> {
  * `KONSI_COUNT_DUE` rows already written for (store, month):
  * - A DUE row exists: nothing is opened, even when no count is open. The month's count was opened
  *   already and later cancelled, or approved as partial; an admin opens the next one by hand.
- * - No DUE row and a count is open: that count is announced as it stands, and none is created.
+ * - No DUE row and a count is open: that count is announced as it stands, and none is created,
+ *   unless its `countFinishedAt` is set and falls before the target month's `openFrom`. Such a
+ *   count credits the previous slot once approved, so announcing it would name a count that leaves
+ *   the target month still owed, while the marker blocked every reopen. It gets no announcement
+ *   and no marker, and the first sweep after it closes opens a fresh count. A null
+ *   `countFinishedAt` stays announceable, since its count moment lands later.
  * - Otherwise it opens a DRAFT count through `createStoreStocktake`, which snapshots every
  *   `StoreStock` row plus the assortment prefill, so the count can be a FULL one. The creator is
  *   the store's single assigned SPG, or `KONSI_COUNT_SYSTEM_ACTOR` when the store has none or
@@ -65,7 +70,8 @@ function storeMonthKeys(rows: { metadata: unknown }[]): Set<string> {
  *
  * An announcement pushes the SPGs first and writes the DUE row LAST, because the row is the
  * marker: when anything before it throws, the next morning announces again instead of losing the
- * alert, so the worst case is a duplicate push.
+ * alert. The worst case is a duplicate push, or a second count for the month when the count this
+ * sweep opened is cancelled before the next run, since no marker then stops the reopen.
  *
  * An OVERDUE store also gets one `KONSI_COUNT_OVERDUE` alert per (store, month), whether or not a
  * count was opened. A failure at one store is logged and counted, and never stops the sweep.
@@ -138,7 +144,16 @@ export async function runKonsiCountSweep(input?: {
         let doc: { id: string; docNo: string } | null = null;
         let openedHere = false;
         if (state.openStocktakeId) {
-          doc = await prisma.storeStocktake.findUnique({ where: { id: state.openStocktakeId }, select: { id: true, docNo: true } });
+          /* `openKey` again, so a count closed since the state read is not announced as open. */
+          const open = await prisma.storeStocktake.findFirst({
+            where: { id: state.openStocktakeId, openKey: { not: null } },
+            select: { id: true, docNo: true, countFinishedAt: true },
+          });
+          /* `dueAt` lies inside the target month, so its window is the target's. */
+          const targetOpenFrom = countWindowFor(state.dueAt, schedule).openFrom;
+          if (open && (open.countFinishedAt === null || open.countFinishedAt.getTime() >= targetOpenFrom.getTime())) {
+            doc = { id: open.id, docNo: open.docNo };
+          }
         } else {
           try {
             doc = await createStoreStocktake({

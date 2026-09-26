@@ -302,6 +302,56 @@ d("runKonsiCountSweep (test bed only)", () => {
     expect(await prisma.notificationQueue.count({ where: { userId: seededId(spgId) } })).toBe(0);
   }, SLOW);
 
+  it("does not announce an open count finished before the target window, and opens a fresh one once it closes", async () => {
+    const storeId = await seedStore();
+    const spgId = await seedSpg(storeId);
+    /* Counted on 24 September, before September's window opens on the 27th: once approved it credits August's slot. */
+    const early = await actualWriter.createStoreStocktake({ storeId, createdById: "manual-admin", countedAt: wib("2026-09-20") });
+    await prisma.storeStocktake.update({
+      where: { id: early.id },
+      data: { status: "PENDING_VERIFICATION", countFinishedAt: wib("2026-09-24") },
+    });
+
+    const sep27 = await runKonsiCountSweep({ storeIds: [storeId], now: wib("2026-09-27"), schedule: DEFAULT_COUNT_SCHEDULE });
+    expect(sep27).toEqual({ scanned: 1, opened: 0, alreadyOpen: 0, existingAnnounced: 0, spgNotified: 0, overdueAnnounced: 0, failed: 0 });
+    expect(createStoreStocktake).not.toHaveBeenCalled();
+    expect(await notificationsFor(KONSI_COUNT_DUE, storeId)).toHaveLength(0);
+    expect(await prisma.notificationQueue.count({ where: { userId: seededId(spgId) } })).toBe(0);
+
+    await actualWriter.cancelStoreStocktake({ stocktakeId: early.id, cancelledById: "test", reason: "counted too early" });
+
+    const sep28 = await runKonsiCountSweep({ storeIds: [storeId], now: wib("2026-09-28"), schedule: DEFAULT_COUNT_SCHEDULE });
+    expect(sep28).toEqual({ scanned: 1, opened: 1, alreadyOpen: 0, existingAnnounced: 0, spgNotified: 1, overdueAnnounced: 0, failed: 0 });
+    const fresh = await prisma.storeStocktake.findFirstOrThrow({ where: { storeId: seededId(storeId), openKey: { not: null } } });
+    expect(fresh.id).not.toBe(early.id);
+    const due = await notificationsFor(KONSI_COUNT_DUE, storeId);
+    expect(due).toHaveLength(1);
+    expect(due[0].metadata).toMatchObject({ storeId, stocktakeId: fresh.id, monthKey: "2026-09" });
+  }, SLOW);
+
+  it("announces an open count whose count moment is still to come, or falls on the window's first instant", async () => {
+    /* Opened before the window with no count saved yet: `countedAt` never decides the month. */
+    const pending = await seedStore();
+    const pendingDoc = await actualWriter.createStoreStocktake({ storeId: pending, createdById: "manual-admin", countedAt: wib("2026-09-10") });
+    expect((await prisma.storeStocktake.findUniqueOrThrow({ where: { id: pendingDoc.id } })).countFinishedAt).toBeNull();
+
+    /* Finished at 00:00 WIB on 27 September, the window's `openFrom`, which credits September. */
+    const boundary = await seedStore();
+    const boundaryDoc = await actualWriter.createStoreStocktake({ storeId: boundary, createdById: "manual-admin", countedAt: wib("2026-09-20") });
+    await prisma.storeStocktake.update({
+      where: { id: boundaryDoc.id },
+      data: { status: "PENDING_VERIFICATION", countFinishedAt: wib("2026-09-27", "00:00") },
+    });
+
+    const r = await runKonsiCountSweep({ storeIds: [pending, boundary], now: wib("2026-09-28"), schedule: DEFAULT_COUNT_SCHEDULE });
+    expect(r).toEqual({ scanned: 2, opened: 0, alreadyOpen: 0, existingAnnounced: 2, spgNotified: 0, overdueAnnounced: 0, failed: 0 });
+    expect(createStoreStocktake).not.toHaveBeenCalled();
+    const [pendingDue] = await notificationsFor(KONSI_COUNT_DUE, pending);
+    expect(pendingDue.metadata).toMatchObject({ storeId: pending, stocktakeId: pendingDoc.id, monthKey: "2026-09" });
+    const [boundaryDue] = await notificationsFor(KONSI_COUNT_DUE, boundary);
+    expect(boundaryDue.metadata).toMatchObject({ storeId: boundary, stocktakeId: boundaryDoc.id, monthKey: "2026-09" });
+  }, SLOW);
+
   it("does not reopen a cancelled count for the same month, and still raises OVERDUE for it", async () => {
     const storeId = await seedStore();
 

@@ -674,10 +674,10 @@ d("store stocktake writer (test bed only)", () => {
     });
 
     it("stores the caller's note, and leaves it null when none is given", async () => {
-      const withNote = await createStoreStocktake({ storeId, createdById: adminId, countedAt: new Date(), note: "Opened automatically for the 2026-09 count" });
+      const withNote = await createStoreStocktake({ storeId, createdById: adminId, countedAt: new Date(), note: "Dibuka otomatis untuk perhitungan bulanan September 2026" });
       stocktakeIds.push(withNote.id);
       const noted = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(withNote.id) } });
-      expect(noted.note).toBe("Opened automatically for the 2026-09 count");
+      expect(noted.note).toBe("Dibuka otomatis untuk perhitungan bulanan September 2026");
 
       await cancelStoreStocktake({ stocktakeId: withNote.id, cancelledById: adminId, reason: "reopen without a note" });
       const without = await createStoreStocktake({ storeId, createdById: adminId, countedAt: new Date() });

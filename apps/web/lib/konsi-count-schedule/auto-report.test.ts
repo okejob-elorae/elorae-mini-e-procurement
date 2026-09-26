@@ -5,7 +5,10 @@ import { SellThroughError } from "@/lib/konsi-sell-through/errors";
 import { autoCreateSellThroughAfterCount } from "./auto-report";
 import { KONSI_REPORT_BLOCKED, KONSI_REPORT_HELD, KONSI_REPORT_READY } from "./categories";
 
-/* A pass-through spy on the real writer, so one case can make it throw something unexpected. */
+/**
+ * A pass-through spy on the real writer. Some cases replace one call: a hand-created report winning
+ * the race, an unexpected throw, and a return naming a report that does not exist.
+ */
 vi.mock("@/lib/konsi-sell-through/writer", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/konsi-sell-through/writer")>();
   return { ...actual, createSellThrough: vi.fn(actual.createSellThrough) };
@@ -192,6 +195,22 @@ d("autoCreateSellThroughAfterCount (test bed only)", () => {
 
     expect(outcome).toEqual({ kind: "FAILED" });
     expect((await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(stocktakeId) } })).status).toBe("APPROVED");
+    for (const category of CATEGORIES) expect(await notificationsFor(category)).toHaveLength(0);
+  }, SLOW);
+
+  it("returns FAILED carrying the report id when the read after a successful create throws, and announces nothing", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(6);
+    /* A created report the post-create `findUniqueOrThrow` cannot find, so the throw lands after `createSellThrough` succeeded. */
+    vi.mocked(createSellThrough).mockResolvedValueOnce({ id: "no-such-report", docNo: "SLT/X" });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const outcome = await autoCreateSellThroughAfterCount(stocktakeId, state.userId);
+    errorSpy.mockRestore();
+
+    expect(outcome).toEqual({ kind: "FAILED", sellThroughId: "no-such-report" });
+    expect(await reportsForStore()).toHaveLength(0);
     for (const category of CATEGORIES) expect(await notificationsFor(category)).toHaveLength(0);
   }, SLOW);
 });

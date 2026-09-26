@@ -161,7 +161,7 @@ export async function runOverdueSweep(options?: {
       },
     });
 
-    /*
+    /**
      * AWAITED — a deliberate exception, shared with the konsi count sweep, where no user is
      * waiting either. `reportStuckDeliveryCompletionAction` awaits too, but it is no precedent: the
      * PWA's offline queue calls it mostly from background sync, and also from the pending screen's
