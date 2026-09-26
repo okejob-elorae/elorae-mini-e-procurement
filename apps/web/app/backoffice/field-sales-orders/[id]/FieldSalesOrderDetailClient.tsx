@@ -4,6 +4,7 @@ import { Fragment, useState } from "react";
 import Link from "next/link";
 import { useTranslations, useLocale } from "next-intl";
 import { ArrowLeft, Printer } from "lucide-react";
+import { isValidMarkupPercent } from "@elorae/db/pricing";
 import type {
   FieldSalesOrderDetail,
   FieldSalesOrderStatus,
@@ -397,8 +398,8 @@ export function FieldSalesOrderDetailClient({
           </div>
         )}
 
-        {isKonsi && order.status === "APPROVED" && (order.marginPercent === null || order.marginPercent < 0 || order.marginPercent >= 100) && (
-          <p className="mt-2 text-right text-xs text-amber-600">{t("konsiMarginUnset")}</p>
+        {isKonsi && order.status === "APPROVED" && !isValidMarkupPercent(order.markupPercent) && (
+          <p className="mt-2 text-right text-xs text-amber-600">{t("konsiMarkupUnset")}</p>
         )}
 
         {showMoney && order.lines.some((line) => line.belowCost) && (

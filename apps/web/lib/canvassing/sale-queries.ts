@@ -23,8 +23,11 @@ export type VanSaleDetail = {
  * the total and the change actually handed back, which is real cash, not just a display bug.
  */
 export async function getSellableVanStock(salesmanId: string, storeId?: string | null): Promise<SellableVanRow[]> {
-  // Van sale price = PUTUS = item sellingPrice (store margin only affects KONSI, which van sales never are),
-  // but priceDiscountPercent DOES apply — mirrors recordVanSale's own store lookup.
+  /**
+   * Van sale price = PUTUS = item sellingPrice, even at a KONSI store (the store markup only prices the
+   * KONSI branch, which van sales never take), but priceDiscountPercent DOES apply — mirrors
+   * recordVanSale's own store lookup.
+   */
   let priceDiscountPercent: number | null = null;
   if (storeId) {
     const store = await prisma.store.findUnique({ where: { id: storeId }, select: { priceDiscountPercent: true } });
@@ -37,7 +40,7 @@ export async function getSellableVanStock(salesmanId: string, storeId?: string |
   });
   return rows.map((r) => {
     const sp = r.item.sellingPrice === null ? null : Number(r.item.sellingPrice);
-    const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", marginPercent: null, priceDiscountPercent });
+    const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", markupPercent: null, priceDiscountPercent });
     return {
       itemId: r.itemId, sku: r.item.sku, productName: r.item.nameId,
       variantSku: r.variantSku, variantLabel: variantDetailForSku(r.item.variants, r.variantSku),

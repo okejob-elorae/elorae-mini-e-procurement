@@ -46,14 +46,14 @@ d("getItemMovementCard", () => {
     itemId = item.id;
 
     const store = await prisma.store.create({
-      data: { code: `TEST-SLC-STORE-${token}`, name: "Toko Ledger", address: "Test address", termsType: "KONSI", marginPercent: 20, isActive: true },
+      data: { code: `TEST-SLC-STORE-${token}`, name: "Toko Ledger", address: "Test address", termsType: "KONSI", markupPercent: 20, isActive: true },
     });
     storeId = store.id;
 
     /* Minted then deleted right away, to get a genuine cuid that used to resolve — the
        "deleted store" case this test exists to cover. */
     const gone = await prisma.store.create({
-      data: { code: `TEST-SLC-GONE-${token}`, name: "Toko Hilang", address: "Test address", termsType: "KONSI", marginPercent: 20, isActive: true },
+      data: { code: `TEST-SLC-GONE-${token}`, name: "Toko Hilang", address: "Test address", termsType: "KONSI", markupPercent: 20, isActive: true },
     });
     goneStoreId = gone.id;
     await prisma.store.delete({ where: { id: goneStoreId } });

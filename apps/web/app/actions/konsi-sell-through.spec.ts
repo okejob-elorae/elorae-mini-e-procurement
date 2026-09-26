@@ -114,7 +114,7 @@ d("konsi sell-through actions (test bed only)", () => {
     }
   });
 
-  /* A SHELF_COUNT DRAFT billing 4 @ 50000 (unitCost 10000): revenue 200000, COGS 40000, no shrinkage. */
+  /* A SHELF_COUNT DRAFT billing 4 @ 40000 (unitCost 10000): revenue 160000, COGS 40000, no shrinkage. */
   async function billingDraft(): Promise<string> {
     await setMethod("SHELF_COUNT");
     await transferIn(6);
@@ -283,7 +283,7 @@ d("konsi sell-through actions (test bed only)", () => {
         closingQty: 0,
         billedQty: 0,
         unitCost: 10000,
-        unitPrice: 50000,
+        unitPrice: 40000,
         lineTotal: 0,
       },
     });
@@ -293,7 +293,7 @@ d("konsi sell-through actions (test bed only)", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.nota.lines).toHaveLength(1);
-    expect(result.nota.lines[0]).toMatchObject({ billedQty: 4, unitPrice: 50000, lineTotal: 200000 });
-    expect(result.nota.total).toBe(200000);
+    expect(result.nota.lines[0]).toMatchObject({ billedQty: 4, unitPrice: 40000, lineTotal: 160000 });
+    expect(result.nota.total).toBe(160000);
   }, SLOW);
 });

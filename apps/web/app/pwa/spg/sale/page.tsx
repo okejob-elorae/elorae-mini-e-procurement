@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { getActiveVisit } from "@/lib/stores/queries";
-import { getSellableCatalogForSpg } from "@/lib/spg/sale-queries";
+import { getSellableCatalogForSpg, getSpgStorePricing } from "@/lib/spg/sale-queries";
+import { isSpgStoreMarkupMissing } from "@/lib/spg/pricing";
 import { SpgSaleShell } from "./SpgSaleShell";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +26,10 @@ export default async function SpgSalePage() {
   const active = await getActiveVisit(session.user.id);
   if (!active || active.storeId !== me.assignedStoreId) redirect("/pwa");
 
-  const catalog = await getSellableCatalogForSpg(me.assignedStoreId);
+  const [catalog, pricing] = await Promise.all([
+    getSellableCatalogForSpg(me.assignedStoreId),
+    getSpgStorePricing(me.assignedStoreId),
+  ]);
 
-  return <SpgSaleShell catalog={catalog} />;
+  return <SpgSaleShell catalog={catalog} markupMissing={pricing !== null && isSpgStoreMarkupMissing(pricing)} />;
 }

@@ -78,7 +78,7 @@ d("getStoreStockCard", () => {
     userId = user.id;
 
     const store = await prisma.store.create({
-      data: { code: `TEST-SSC-STORE-${token}`, name: "Test Konsi Store", address: "Test address", termsType: "KONSI", marginPercent: 20, isActive: true },
+      data: { code: `TEST-SSC-STORE-${token}`, name: "Test Konsi Store", address: "Test address", termsType: "KONSI", markupPercent: 20, isActive: true },
     });
     storeId = store.id;
 
@@ -86,7 +86,7 @@ d("getStoreStockCard", () => {
        assertion below — same idiom stock-ledger-card.query.test.ts uses for its "deleted
        store" case, reused here purely for a real, distinct id. */
     const other = await prisma.store.create({
-      data: { code: `TEST-SSC-OTHER-${token}`, name: "Other Store", address: "Test address", termsType: "KONSI", marginPercent: 20, isActive: true },
+      data: { code: `TEST-SSC-OTHER-${token}`, name: "Other Store", address: "Test address", termsType: "KONSI", markupPercent: 20, isActive: true },
     });
     otherStoreId = other.id;
     await prisma.store.delete({ where: { id: otherStoreId } });

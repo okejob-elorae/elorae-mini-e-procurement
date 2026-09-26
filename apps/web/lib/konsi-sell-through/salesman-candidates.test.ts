@@ -46,7 +46,7 @@ d("sell-through salesman candidates (test bed only)", () => {
     outsiderId = (await prisma.user.create({ data: { email: `kst-out-${token}@test.local`, name: "KST Outsider", roleId: otherRoleId } })).id;
     storeId = (
       await prisma.store.create({
-        data: { code: `TEST-KSTSC-${token}`, name: "KST candidate store", address: "x", termsType: "KONSI", marginPercent: 20, isActive: true },
+        data: { code: `TEST-KSTSC-${token}`, name: "KST candidate store", address: "x", termsType: "KONSI", markupPercent: 20, isActive: true },
       })
     ).id;
   });

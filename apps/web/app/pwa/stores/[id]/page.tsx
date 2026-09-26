@@ -44,7 +44,7 @@ export default async function PwaStoreDetail({ params }: { params: Promise<{ id:
         contactName: store.contactName,
         termsType: store.termsType,
         paymentTempo: store.paymentTempo,
-        marginPercent: store.marginPercent,
+        markupPercent: store.markupPercent,
         lat: store.lat,
         lng: store.lng,
       }}

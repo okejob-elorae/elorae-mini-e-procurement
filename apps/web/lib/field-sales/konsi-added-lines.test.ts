@@ -93,7 +93,7 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
      * surviving between setup and assertion.
      */
     const store = await prisma.store.create({
-      data: { code: `KAL-STORE-${token}`, name: "Test Konsi Store", address: "Test address", termsType: "KONSI", marginPercent: 20, isActive: true },
+      data: { code: `KAL-STORE-${token}`, name: "Test Konsi Store", address: "Test address", termsType: "KONSI", markupPercent: 20, isActive: true },
     });
     storeId = store.id;
 
@@ -202,26 +202,26 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
     expect(requested.addedById).toBeNull();
   });
 
-  it("prices the added line with the konsi gross-up (sellingPrice 50000 / (1 - 20%) = 62500), not the passthrough price", async () => {
+  it("prices the added line at the store's konsi markup (sellingPrice 50000 * (1 + 20%) = 60000), not the passthrough price", async () => {
     await approveFieldSalesOrder({ orderId, approvedById: userId, addedLines: [{ itemId: neverSentItemId, variantSku: "", qty: 2 }] });
     const added = await prisma.fieldSalesOrderLine.findFirst({
       where: { orderId: seededId(orderId), itemId: neverSentItemId },
       select: { unitPrice: true, lineTotal: true },
     });
-    expect(Number(added!.unitPrice)).toBe(62500);
-    expect(Number(added!.lineTotal)).toBe(125000);
+    expect(Number(added!.unitPrice)).toBe(60000);
+    expect(Number(added!.lineTotal)).toBe(120000);
   });
 
   it("includes the added line in the order total", async () => {
     await approveFieldSalesOrder({ orderId, approvedById: userId, addedLines: [{ itemId: neverSentItemId, variantSku: "", qty: 2 }] });
     const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: seededId(orderId) }, select: { total: true } });
     /*
-     * On-order line: sellingPrice 40000 / 0.8 = 50000, qty 2 -> lineTotal 100000.
-     * Added line: sellingPrice 50000 / 0.8 = 62500, qty 2 -> lineTotal 125000.
-     * Total = 100000 + 125000 = 225000. Asserted as an absolute figure (not Σ lineTotal, which
+     * On-order line: sellingPrice 40000 * 1.2 = 48000, qty 2 -> lineTotal 96000.
+     * Added line: sellingPrice 50000 * 1.2 = 60000, qty 2 -> lineTotal 120000.
+     * Total = 96000 + 120000 = 216000. Asserted as an absolute figure (not Σ lineTotal, which
      * both a correct and a stale-snapshot implementation would satisfy identically).
      */
-    expect(Number(order.total)).toBe(225000);
+    expect(Number(order.total)).toBe(216000);
   });
 
   it("reserves the added line; nothing moves until a shipment for it completes", async () => {

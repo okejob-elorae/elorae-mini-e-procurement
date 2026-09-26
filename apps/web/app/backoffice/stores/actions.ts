@@ -13,6 +13,7 @@ import {
   deactivateStore,
   StoreHasConsignmentStockError,
   InvalidPriceDiscountPercentError,
+  InvalidMarkupPercentError,
   KonsiPriceDiscountNotAllowedError,
   SellThroughMethodRequiresKonsiError,
   StoreHasDraftSellThroughError,
@@ -29,7 +30,7 @@ const storeInputSchema = z.object({
   contactName: z.string().max(191).nullable(),
   termsType: z.enum(["PUTUS", "KONSI"]),
   paymentTempo: z.number().int().min(0).max(365),
-  marginPercent: z.number().min(0).max(999.99).nullable(),
+  markupPercent: z.number().nullable(),
   priceDiscountPercent: z.number().nullable(),
   creditLimit: z.number().min(0).nullable(),
   npwp: z.string().max(32).nullable(),
@@ -80,6 +81,13 @@ export async function createStoreAction(input: StoreFields): Promise<ActionResul
     revalidatePath("/backoffice/stores");
     return { ok: true, data: { id: created.id } };
   } catch (e) {
+    if (e instanceof InvalidMarkupPercentError) {
+      return {
+        ok: false,
+        code: "invalid_markup_percent",
+        message: "Markup must be between 0 and 999.99.",
+      };
+    }
     if (e instanceof InvalidPriceDiscountPercentError) {
       return {
         ok: false,
@@ -134,6 +142,13 @@ export async function updateStoreAction(id: string, input: StoreFields): Promise
         ok: false,
         code: "has_draft_sell_through",
         message: "This store has a draft sell-through report. Approve or cancel it before switching off Konsi.",
+      };
+    }
+    if (e instanceof InvalidMarkupPercentError) {
+      return {
+        ok: false,
+        code: "invalid_markup_percent",
+        message: "Markup must be between 0 and 999.99.",
       };
     }
     if (e instanceof InvalidPriceDiscountPercentError) {

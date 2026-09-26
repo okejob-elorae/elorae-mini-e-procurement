@@ -91,7 +91,7 @@ export function createSellThroughFixtures() {
         name: "Test Sell-through Store",
         address: "Test address",
         termsType: "KONSI",
-        marginPercent: 20,
+        markupPercent: 20,
         isActive: true,
         lat: -6.2,
         lng: 106.8,
@@ -284,7 +284,7 @@ export function createSellThroughFixtures() {
         name: "Test Sell-through Other Store",
         address: "Test address",
         termsType: "KONSI",
-        marginPercent: 20,
+        markupPercent: 20,
         isActive: true,
       },
     });

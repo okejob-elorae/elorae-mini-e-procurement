@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { ArrowLeft, ChevronRight, Loader2, Minus, Plus } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -38,7 +39,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   NO_ACTIVE_VISIT: "Anda belum check-in di toko. Check-in dulu sebelum mencatat penjualan.",
   EMPTY: "Keranjang masih kosong.",
   STORE_NOT_FOUND: "Toko tidak ditemukan.",
-  NO_PRICE: "Ada produk yang belum punya harga.",
+  NO_PRICE: "Ada produk yang belum punya harga, atau markup toko belum diatur.",
   INSUFFICIENT_PAYMENT: "Uang tunai kurang dari total belanja.",
   VALIDATION: "Data tidak valid, coba lagi.",
 };
@@ -67,7 +68,7 @@ function getPositionBestEffort(): Promise<{ lat: number; lng: number } | null> {
  * derived server-side) and the van-stock cap (SpgSale is record-only, no ledger
  * backs it, so every priced item/variant is sellable, unbounded).
  */
-export function SpgSaleShell({ catalog }: { catalog: SpgCatalogRow[] }) {
+export function SpgSaleShell({ catalog, markupMissing }: { catalog: SpgCatalogRow[]; markupMissing: boolean }) {
   const router = useRouter();
   const t = useTranslations("spgSale");
   const [pending, startTransition] = useTransition();
@@ -177,6 +178,12 @@ export function SpgSaleShell({ catalog }: { catalog: SpgCatalogRow[] }) {
         <h1 className="text-lg font-semibold">Catat Penjualan</h1>
         <p className="text-sm text-muted-foreground">Pilih produk yang terjual di toko ini.</p>
       </div>
+
+      {markupMissing && (
+        <Alert className="border-amber-500/50 text-amber-700 [&>svg]:text-amber-600">
+          <AlertDescription className="text-amber-700">{t("markupMissing")}</AlertDescription>
+        </Alert>
+      )}
 
       <Input placeholder="Cari produk..." value={q} onChange={(e) => setQ(e.target.value)} />
 

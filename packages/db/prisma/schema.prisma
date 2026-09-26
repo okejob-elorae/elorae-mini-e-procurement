@@ -319,7 +319,7 @@ model Store {
   contactName    String?
   termsType      StoreTermsType
   paymentTempo   Int            @default(0)
-  marginPercent  Decimal?       @db.Decimal(5, 2)
+  markupPercent  Decimal?       @map("marginPercent") @db.Decimal(5, 2)
   priceDiscountPercent Decimal? @db.Decimal(5, 2)
   creditLimit    Decimal?       @db.Decimal(15, 2)
   npwp           String?        @db.VarChar(32)

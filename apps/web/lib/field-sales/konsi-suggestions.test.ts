@@ -90,7 +90,7 @@ d("listKonsiSuggestions (test bed only)", () => {
     await prisma.inventoryValue.create({ data: { itemId: collisionItemId, variantSku: "", qtyOnHand: 4, reservedQty: 0, avgCost: 700, totalValue: 2800 } });
 
     const store = await prisma.store.create({
-      data: { code: `TEST-KSG-STORE-${token}`, name: "Test Konsi Suggestions Store", address: "Test address", termsType: "KONSI", marginPercent: 20, isActive: true },
+      data: { code: `TEST-KSG-STORE-${token}`, name: "Test Konsi Suggestions Store", address: "Test address", termsType: "KONSI", markupPercent: 20, isActive: true },
     });
     storeId = store.id;
 

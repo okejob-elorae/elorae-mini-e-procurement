@@ -95,7 +95,7 @@ d("konsi sell-through journals (test bed only)", () => {
   });
 
   it("posts revenue Dr AR / Cr SALES_REVENUE for the total and COGS Dr COGS / Cr INVENTORY at unit cost, dated on the invoice date", async () => {
-    /* SHELF_COUNT report billing 4 @ 50000, unitCost 10000 → revenue 200000, cogs 40000 */
+    /* SHELF_COUNT report billing 4 @ 40000, unitCost 10000 → revenue 160000, cogs 40000 */
     await setMethod("SHELF_COUNT");
     await transferIn(6);
     const stocktakeId = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
@@ -103,7 +103,7 @@ d("konsi sell-through journals (test bed only)", () => {
     reportIds.push(id);
     await fx.approve(id);
     const doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } });
-    expect(Number(doc.total)).toBe(200000);
+    expect(Number(doc.total)).toBe(160000);
 
     const rev = await postSellThroughRevenueJournal(id, state.userId);
     const cogs = await postSellThroughCogsJournal(id, state.userId);
@@ -118,9 +118,9 @@ d("konsi sell-through journals (test bed only)", () => {
     expect(cogsJournal).toBeDefined();
     expect(revenueJournal!.date.toISOString()).toBe(doc.invoiceDate!.toISOString());
     expect(cogsJournal!.date.toISOString()).toBe(doc.invoiceDate!.toISOString());
-    expect(Number(revenueJournal!.lines.find((l) => l.chartAccountId === arId)!.debit)).toBe(200000);
+    expect(Number(revenueJournal!.lines.find((l) => l.chartAccountId === arId)!.debit)).toBe(160000);
     expect(Number(revenueJournal!.lines.find((l) => l.chartAccountId === arId)!.credit)).toBe(0);
-    expect(Number(revenueJournal!.lines.find((l) => l.chartAccountId === salesRevenueId)!.credit)).toBe(200000);
+    expect(Number(revenueJournal!.lines.find((l) => l.chartAccountId === salesRevenueId)!.credit)).toBe(160000);
     expect(Number(revenueJournal!.lines.find((l) => l.chartAccountId === salesRevenueId)!.debit)).toBe(0);
     expect(Number(cogsJournal!.lines.find((l) => l.chartAccountId === cogsId)!.debit)).toBe(40000);
     expect(Number(cogsJournal!.lines.find((l) => l.chartAccountId === inventoryId)!.credit)).toBe(40000);

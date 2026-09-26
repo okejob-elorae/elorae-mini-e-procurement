@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { recordSpgSale } from "./sale-writer";
+import { getSellableCatalogForSpg } from "./sale-queries";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -20,7 +21,7 @@ d("recordSpgSale (test bed only)", () => {
     await prisma.inventoryValue.create({ data: { itemId, variantSku: "", qtyOnHand: 100, reservedQty: 0, avgCost: 2000, totalValue: 200000 } });
     const s = await prisma.user.findFirstOrThrow({ where: { email: "salesman@elorae.com" } });
     salesmanId = s.id;
-    const store = await prisma.store.create({ data: { code: tag, name: "Toko SPG Test", address: "Jl. Test", termsType: "KONSI", marginPercent: 20, isActive: true } });
+    const store = await prisma.store.create({ data: { code: tag, name: "Toko SPG Test", address: "Jl. Test", termsType: "KONSI", markupPercent: 20, isActive: true } });
     storeId = store.id;
 
     const shortItem = await prisma.item.create({ data: { sku: `${tag}-SHORT`, nameId: "TS", nameEn: "TS", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 5000 } });
@@ -61,16 +62,16 @@ d("recordSpgSale (test bed only)", () => {
 
   const line = (qty: number) => ({ itemId, variantSku: null, qty });
 
-  it("records a sale: server-priced at PUTUS (ignores the store's KONSI margin), SpgSale+lines, SalesHistory, change", async () => {
+  it("records a sale at a KONSI store at the store's markup, SpgSale+lines, SalesHistory, change", async () => {
     const res = await recordSpgSale({ salesmanId, storeId, lines: [line(4)], cashReceived: 25000 });
     expect(res.ok).toBe(true);
     if (!res.ok) throw new Error("expected ok");
-    // 4 * 5000 (PUTUS sellingPrice) = 20000, ignoring the store's 20% KONSI margin
-    expect(res.changeGiven).toBe(5000);
+    /* 4 * 5000 * (1 + 20/100) = 24000 */
+    expect(res.changeGiven).toBe(1000);
     const sale = await prisma.spgSale.findUnique({ where: { id: res.spgSaleId }, include: { lines: true } });
     expect(sale!.lines).toHaveLength(1);
-    expect(Number(sale!.lines[0].unitPrice)).toBe(5000);
-    expect(Number(sale!.total)).toBe(20000);
+    expect(Number(sale!.lines[0].unitPrice)).toBe(6000);
+    expect(Number(sale!.total)).toBe(24000);
     const sh = await prisma.salesHistory.findFirst({ where: { itemId, orderId: res.docNo } });
     expect(sh).not.toBeNull();
   });
@@ -101,11 +102,11 @@ d("recordSpgSale (test bed only)", () => {
   });
 
   it("leaves total equal to subtotal when the line sum has no fraction", async () => {
-    const res = await recordSpgSale({ salesmanId, storeId, lines: [line(4)], cashReceived: 20000 });
+    const res = await recordSpgSale({ salesmanId, storeId, lines: [line(4)], cashReceived: 24000 });
     expect(res.ok).toBe(true);
     if (!res.ok) throw new Error("expected ok");
     const sale = await prisma.spgSale.findUnique({ where: { id: res.spgSaleId } });
-    expect(Number(sale!.total)).toBe(20000);
+    expect(Number(sale!.total)).toBe(24000);
     expect(Number(sale!.subtotal)).toBe(Number(sale!.total));
   });
 
@@ -114,7 +115,7 @@ d("recordSpgSale (test bed only)", () => {
     const adjBefore = await prisma.stockAdjustment.count({ where: { itemId } });
     const vanBefore = await prisma.vanStock.count({ where: { userId: salesmanId, itemId } });
 
-    const res = await recordSpgSale({ salesmanId, storeId, lines: [line(3)], cashReceived: 15000 });
+    const res = await recordSpgSale({ salesmanId, storeId, lines: [line(3)], cashReceived: 18000 });
     expect(res.ok).toBe(true);
 
     const invAfter = await prisma.inventoryValue.findUnique({ where: { itemId_variantSku: { itemId, variantSku: "" } } });
@@ -134,7 +135,7 @@ d("recordSpgSale (test bed only)", () => {
   });
 
   it("rejects insufficient payment", async () => {
-    const res = await recordSpgSale({ salesmanId, storeId, lines: [line(4)], cashReceived: 10000 }); // needs 20000
+    const res = await recordSpgSale({ salesmanId, storeId, lines: [line(4)], cashReceived: 10000 }); /* needs 24000 */
     expect(res).toEqual({ ok: false, code: "INSUFFICIENT_PAYMENT" });
   });
 
@@ -144,6 +145,48 @@ d("recordSpgSale (test bed only)", () => {
     expect(res).toEqual({ ok: false, code: "NO_PRICE" });
   });
 
+  it("refuses NO_PRICE at a KONSI store with no markup, and records nothing", async () => {
+    await prisma.store.update({ where: { id: seededId(storeId) }, data: { markupPercent: null } });
+    const res = await recordSpgSale({ salesmanId, storeId, lines: [line(4)], cashReceived: 20000 });
+    expect(res).toEqual({ ok: false, code: "NO_PRICE" });
+    expect(await prisma.spgSale.count({ where: { storeId: seededId(storeId) } })).toBe(0);
+    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemId) } });
+    expect(Number(ss.qty)).toBe(10);
+  });
+
+  it("refuses NO_PRICE at a KONSI store whose markup is negative", async () => {
+    await prisma.store.update({ where: { id: seededId(storeId) }, data: { markupPercent: -5 } });
+    const res = await recordSpgSale({ salesmanId, storeId, lines: [line(1)] });
+    expect(res).toEqual({ ok: false, code: "NO_PRICE" });
+  });
+
+  it("prices a PUTUS store at the plain selling price, whatever markup it carries", async () => {
+    await prisma.store.update({ where: { id: seededId(putusStoreId) }, data: { markupPercent: 20 } });
+    const res = await recordSpgSale({ salesmanId, storeId: putusStoreId, lines: [line(4)], cashReceived: 20000 });
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("expected ok");
+    expect(res.changeGiven).toBe(0);
+    const sale = await prisma.spgSale.findUnique({ where: { id: res.spgSaleId }, include: { lines: true } });
+    expect(Number(sale!.lines[0].unitPrice)).toBe(5000);
+    expect(Number(sale!.total)).toBe(20000);
+  });
+
+  it("charges exactly the price the catalog preview shows, on an off-cent markup", async () => {
+    await prisma.item.update({ where: { id: seededId(itemId) }, data: { sellingPrice: 9999 } });
+    await prisma.store.update({ where: { id: seededId(storeId) }, data: { markupPercent: 12.34 } });
+    const preview = (await getSellableCatalogForSpg(seededId(storeId))).find((r) => r.itemId === itemId && r.variantSku === null)!;
+    /* 9999 * (1 + 12.34/100) = 11232.8766 → 11232.88 a unit; the charged total rounds to whole rupiah */
+    expect(preview.price).toBe(11232.88);
+    const res = await recordSpgSale({ salesmanId, storeId, lines: [line(1)], cashReceived: 11233 });
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("expected ok");
+    const sale = await prisma.spgSale.findUnique({ where: { id: res.spgSaleId }, include: { lines: true } });
+    expect(Number(sale!.lines[0].unitPrice)).toBe(preview.price);
+    expect(Number(sale!.subtotal)).toBe(11232.88);
+    expect(Number(sale!.total)).toBe(11233);
+    expect(res.changeGiven).toBe(0);
+  });
+
   it("STORE_NOT_FOUND for an unknown store", async () => {
     const res = await recordSpgSale({ salesmanId, storeId: "does-not-exist", lines: [line(1)] });
     expect(res).toEqual({ ok: false, code: "STORE_NOT_FOUND" });
@@ -151,8 +194,8 @@ d("recordSpgSale (test bed only)", () => {
 
   it("idempotency replay returns the same sale, writes SalesHistory once", async () => {
     const key = `${tag}-idem`;
-    const a = await recordSpgSale({ salesmanId, storeId, lines: [line(3)], cashReceived: 15000, idempotencyKey: key });
-    const b = await recordSpgSale({ salesmanId, storeId, lines: [line(3)], cashReceived: 15000, idempotencyKey: key });
+    const a = await recordSpgSale({ salesmanId, storeId, lines: [line(3)], cashReceived: 18000, idempotencyKey: key });
+    const b = await recordSpgSale({ salesmanId, storeId, lines: [line(3)], cashReceived: 18000, idempotencyKey: key });
     expect(a.ok && b.ok && a.spgSaleId === b.spgSaleId).toBe(true);
     const count = await prisma.salesHistory.count({ where: { itemId, orderId: a.ok ? a.docNo : "" } });
     expect(count).toBe(1);
@@ -164,13 +207,13 @@ d("recordSpgSale (test bed only)", () => {
   });
 
   it("sums duplicate lines and drops zero/negative lines", async () => {
-    const res = await recordSpgSale({ salesmanId, storeId, lines: [line(2), line(3), line(0)], cashReceived: 25000 });
+    const res = await recordSpgSale({ salesmanId, storeId, lines: [line(2), line(3), line(0)], cashReceived: 30000 });
     expect(res.ok).toBe(true);
     if (!res.ok) throw new Error("expected ok");
     const sale = await prisma.spgSale.findUnique({ where: { id: res.spgSaleId }, include: { lines: true } });
     expect(sale!.lines).toHaveLength(1);
     expect(sale!.lines[0].qty).toBe(5);
-    expect(Number(sale!.total)).toBe(25000);
+    expect(Number(sale!.total)).toBe(30000);
   });
 
   it("stamps the variant label into productName on SpgSale + sales history", async () => {
@@ -182,7 +225,7 @@ d("recordSpgSale (test bed only)", () => {
       },
     });
 
-    const res = await recordSpgSale({ salesmanId, storeId, lines: [{ itemId: vItem.id, variantSku: `${tag}-V-M`, qty: 2 }], cashReceived: 10000 });
+    const res = await recordSpgSale({ salesmanId, storeId, lines: [{ itemId: vItem.id, variantSku: `${tag}-V-M`, qty: 2 }], cashReceived: 12000 });
     expect(res.ok).toBe(true);
     if (!res.ok) throw new Error("expected ok");
     const sale = await prisma.spgSale.findUnique({ where: { id: res.spgSaleId }, include: { lines: true } });

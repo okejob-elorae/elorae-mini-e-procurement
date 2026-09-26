@@ -38,10 +38,12 @@ export async function recordVanSale(input: {
       if (existing) return { ok: true, saleId: existing.id, docNo: existing.docNo, changeAmount: Number(existing.changeAmount) };
     }
 
-    // Load item price + meta for each line
-    // (van sales price at PUTUS = item sellingPrice; store margin only affects KONSI, which van sales never are.
-    // priceDiscountPercent DOES apply though — a van sale attributed to a registered store (input.storeId) still
-    // gets that store's standing discount; a walk-in sale with no storeId gets none.)
+    /**
+     * Van sales always price on the PUTUS path (item sellingPrice), even at a KONSI store: the store
+     * markup only prices the KONSI branch, which this writer never takes. priceDiscountPercent DOES
+     * apply though — a van sale attributed to a registered store (input.storeId) still gets that
+     * store's standing discount; a walk-in sale with no storeId gets none.
+     */
     const itemIds = Array.from(new Set(merged.map((l) => l.itemId)));
     const items = await tx.item.findMany({
       where: { id: { in: itemIds } },
@@ -63,7 +65,7 @@ export async function recordVanSale(input: {
       const item = itemById.get(l.itemId);
       if (!item) return { ok: false, code: "NO_PRICE" };
       const sp = item.sellingPrice === null ? null : Number(item.sellingPrice);
-      const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", marginPercent: null, priceDiscountPercent: priceDiscount });
+      const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", markupPercent: null, priceDiscountPercent: priceDiscount });
       if (price === null) return { ok: false, code: "NO_PRICE" };
 
       const van = await tx.vanStock.findUnique({

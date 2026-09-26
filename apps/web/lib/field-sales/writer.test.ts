@@ -624,7 +624,7 @@ d("approveFieldSalesOrder — konsi", () => {
     const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
     const store = await prisma.store.create({
-      data: { code: `S-${sku}`, name: "T", address: "T", termsType: "KONSI", marginPercent: 20, isActive: true },
+      data: { code: `S-${sku}`, name: "T", address: "T", termsType: "KONSI", markupPercent: 20, isActive: true },
     });
     storeId = store.id;
     const user = await prisma.user.findFirst({ where: { email: "salesman@elorae.com" } });
@@ -650,7 +650,7 @@ d("approveFieldSalesOrder — konsi", () => {
     await prisma.uOM.deleteMany({ where: { id: uomId } });
   });
 
-  it("reserves stock at approve, stores gross-up, writes NO SalesHistory", async () => {
+  it("reserves stock at approve, stores the retail value at markup, writes NO SalesHistory", async () => {
     await seedItemWithStock(10, 10000);
     const { orderId } = await createFieldSalesOrder({
       storeId,
@@ -664,10 +664,10 @@ d("approveFieldSalesOrder — konsi", () => {
 
     const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId }, include: { lines: true } });
     expect(order!.status).toBe("APPROVED");
-    // gross-up: 10000 / (1 - 0.20) = 12500
-    expect(Number(order!.lines[0].unitPrice)).toBe(12500);
-    expect(Number(order!.lines[0].lineTotal)).toBe(50000);
-    expect(Number(order!.total)).toBe(50000);
+    /* retail at markup: 10000 * (1 + 20/100) = 12000 */
+    expect(Number(order!.lines[0].unitPrice)).toBe(12000);
+    expect(Number(order!.lines[0].lineTotal)).toBe(48000);
+    expect(Number(order!.total)).toBe(48000);
     /* Approve only reserves now — stock moves at delivery-shipment completion, not here. */
     const inv = await prisma.inventoryValue.findFirst({ where: { itemId } });
     expect(Number(inv!.reservedQty)).toBe(4);

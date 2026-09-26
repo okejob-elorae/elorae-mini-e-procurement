@@ -2,38 +2,34 @@ import { describe, it, expect } from "vitest";
 import { priceSellThroughLines } from "./pricing";
 
 describe("priceSellThroughLines", () => {
-  it("grosses each line up by the store margin and sums the rounded line totals", () => {
+  it("bills each line at the catalog selling price and sums the rounded line totals", () => {
     const r = priceSellThroughLines({
-      marginPercent: 20,
       lines: [
         { key: "a::", billedQty: 3, sellingPrice: 40000 },
-        { key: "b::", billedQty: 1.2, sellingPrice: 10003 },
+        { key: "b::", billedQty: 1.2, sellingPrice: 10003.33 },
       ],
     });
-    expect(r.lines[0]).toEqual({ key: "a::", unitPrice: 50000, lineTotal: 150000 });
-    /* 10003 / 0.8 = 12503.75; × 1.2 = 15004.5 (values chosen off the half-cent boundary) */
-    expect(r.lines[1]).toEqual({ key: "b::", unitPrice: 12503.75, lineTotal: 15004.5 });
-    expect(r.total).toBe(165004.5);
+    expect(r.lines[0]).toEqual({ key: "a::", unitPrice: 40000, lineTotal: 120000 });
+    /* 1.2 × 10003.33 = 12003.996, rounded to 12004 (values chosen off the half-cent boundary) */
+    expect(r.lines[1]).toEqual({ key: "b::", unitPrice: 10003.33, lineTotal: 12004 });
+    expect(r.total).toBe(132004);
     expect(r.unpricedKeys).toEqual([]);
   });
 
   it("marks a billed line with no selling price unpriced and prices it at 0", () => {
-    const r = priceSellThroughLines({ marginPercent: 20, lines: [{ key: "a::", billedQty: 2, sellingPrice: null }] });
+    const r = priceSellThroughLines({ lines: [{ key: "a::", billedQty: 2, sellingPrice: null }] });
     expect(r.lines[0]).toEqual({ key: "a::", unitPrice: null, lineTotal: 0 });
     expect(r.unpricedKeys).toEqual(["a::"]);
   });
 
-  it("marks every billed line unpriced when the store margin is unset or out of range, instead of billing the raw selling price", () => {
-    for (const marginPercent of [null, 100, -5]) {
-      const r = priceSellThroughLines({ marginPercent, lines: [{ key: "a::", billedQty: 1, sellingPrice: 40000 }] });
-      expect(r.lines[0].unitPrice).toBeNull();
-      expect(r.unpricedKeys).toEqual(["a::"]);
-    }
+  it("marks a billed line whose selling price is not a finite number unpriced", () => {
+    const r = priceSellThroughLines({ lines: [{ key: "a::", billedQty: 1, sellingPrice: Number.NaN }] });
+    expect(r.lines[0]).toEqual({ key: "a::", unitPrice: null, lineTotal: 0 });
+    expect(r.unpricedKeys).toEqual(["a::"]);
   });
 
   it("never flags a line billing 0, priced or not", () => {
     const r = priceSellThroughLines({
-      marginPercent: null,
       lines: [
         { key: "a::", billedQty: 0, sellingPrice: 40000 },
         { key: "b::", billedQty: 0, sellingPrice: null },
@@ -44,7 +40,15 @@ describe("priceSellThroughLines", () => {
   });
 
   it("keeps a unit price on a zero-billed line that prices, for display", () => {
-    const r = priceSellThroughLines({ marginPercent: 20, lines: [{ key: "a::", billedQty: 0, sellingPrice: 40000 }] });
-    expect(r.lines[0]).toEqual({ key: "a::", unitPrice: 50000, lineTotal: 0 });
+    const r = priceSellThroughLines({ lines: [{ key: "a::", billedQty: 0, sellingPrice: 40000 }] });
+    expect(r.lines[0]).toEqual({ key: "a::", unitPrice: 40000, lineTotal: 0 });
+  });
+
+  it("ignores a store markup a stale caller still passes", () => {
+    /* vitest does not type-check, so a caller still sending the old markup input reaches here; it must not move the invoice */
+    const stale = { marginPercent: 20, markupPercent: 20, lines: [{ key: "a::", billedQty: 4, sellingPrice: 40000 }] };
+    const r = priceSellThroughLines(stale as unknown as Parameters<typeof priceSellThroughLines>[0]);
+    expect(r.lines[0]).toEqual({ key: "a::", unitPrice: 40000, lineTotal: 160000 });
+    expect(r.total).toBe(160000);
   });
 });
