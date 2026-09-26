@@ -458,24 +458,20 @@ export type KonsiSuggestion = {
  * the strictly stronger, more actionable claim, so the gap heading wins and this list suppresses
  * the row rather than rendering the same SKU twice under two different urgency framings.
  */
-export async function listKonsiSuggestions(orderId: string): Promise<KonsiSuggestion[]> {
-  const order = await prisma.fieldSalesOrder.findUnique({
-    where: { id: orderId },
-    select: { storeId: true, orderType: true, lines: { select: { itemId: true } } },
-  });
-  if (!order || order.orderType !== "KONSI") return [];
-
-  const sent = await sentItemIds(order.storeId);
-  const onOrder = new Set(order.lines.map((l) => l.itemId));
-  const exclude = new Set<string>([...sent, ...onOrder]);
+export async function listStoreNeverSentSuggestions(
+  storeId: string,
+  opts?: { excludeItemIds?: string[] },
+): Promise<KonsiSuggestion[]> {
+  const sent = await sentItemIds(storeId);
+  const exclude = new Set<string>([...sent, ...(opts?.excludeItemIds ?? [])]);
 
   /**
-   * Raw store gaps, not the order-scoped `listKonsiAssortmentGaps` output: an item already on
-   * this order is excluded from THIS list anyway via the item-grain `onOrder` set above, and
-   * availability is filtered identically (and from the same InventoryValue rows) by both lists,
-   * so the two sources agree on every row that could actually collide here.
+   * Raw store gaps, not the order-scoped `listKonsiAssortmentGaps` output: an item already
+   * excluded above is excluded from THIS list anyway via `exclude`, and availability is filtered
+   * identically (and from the same InventoryValue rows) by both lists, so the two sources agree
+   * on every row that could actually collide here.
    */
-  const gapKeys = new Set((await listAssortmentGaps(order.storeId)).map((g) => `${g.itemId}::${g.variantSku}`));
+  const gapKeys = new Set((await listAssortmentGaps(storeId)).map((g) => `${g.itemId}::${g.variantSku}`));
 
   const where: Prisma.ItemWhereInput = { isActive: true, type: "FINISHED_GOOD" };
   /* Prisma's notIn with an empty array is untrustworthy to lean on — skip the filter entirely. */
@@ -542,6 +538,17 @@ export async function listKonsiSuggestions(orderId: string): Promise<KonsiSugges
   return rows.sort((a, b) => a.sku.localeCompare(b.sku) || a.variantSku.localeCompare(b.variantSku));
 }
 
+/* Scopes `listStoreNeverSentSuggestions` to one order's own store and lines. */
+export async function listKonsiSuggestions(orderId: string): Promise<KonsiSuggestion[]> {
+  const order = await prisma.fieldSalesOrder.findUnique({
+    where: { id: orderId },
+    select: { storeId: true, orderType: true, lines: { select: { itemId: true } } },
+  });
+  if (!order || order.orderType !== "KONSI") return [];
+
+  return listStoreNeverSentSuggestions(order.storeId, { excludeItemIds: order.lines.map((l) => l.itemId) });
+}
+
 export type KonsiAssortmentGapSuggestion = {
   itemId: string;
   variantSku: string;
@@ -565,29 +572,24 @@ export type KonsiAssortmentGapSuggestion = {
  * is the one that defers to IT, suppressing its own row for any (itemId, variantSku) this
  * function would also claim, so the two lists never render the same SKU twice.
  *
- * Same two guards as `listKonsiSuggestions`, kept in sync on purpose:
- * - A missing order, or a non-KONSI order, returns `[]`.
- * - Items already staged on the order under approval are excluded — but at VARIANT grain
- *   (`itemId::variantSku`), not item grain: `FieldSalesOrderLine` is per-variant, so a gap on a
- *   different variant of an item already on the order is still a genuine gap and must still show.
+ * `excludeKeys` are VARIANT grain (`itemId::variantSku`), not item grain: `FieldSalesOrderLine`
+ * is per-variant, so a gap on a different variant of an item on the exclusion list is still a
+ * genuine gap and must still show.
  *
  * Zero/negative main-warehouse availability is dropped for the same reason `listKonsiSuggestions`
  * drops it: nothing here is stageable from THIS panel, so a dead qty stepper is wasted screen
  * space, not information the admin needs here — the store detail page's read-only gap card still
  * shows every gap regardless of main-warehouse stock.
  */
-export async function listKonsiAssortmentGaps(orderId: string): Promise<KonsiAssortmentGapSuggestion[]> {
-  const order = await prisma.fieldSalesOrder.findUnique({
-    where: { id: orderId },
-    select: { storeId: true, orderType: true, lines: { select: { itemId: true, variantSku: true } } },
-  });
-  if (!order || order.orderType !== "KONSI") return [];
-
-  const gaps = await listAssortmentGaps(order.storeId);
+export async function listStoreGapSuggestions(
+  storeId: string,
+  opts?: { excludeKeys?: string[] },
+): Promise<KonsiAssortmentGapSuggestion[]> {
+  const gaps = await listAssortmentGaps(storeId);
   if (gaps.length === 0) return [];
 
-  const onOrder = new Set(order.lines.map((l) => `${l.itemId}::${l.variantSku}`));
-  const remaining = gaps.filter((g) => !onOrder.has(`${g.itemId}::${g.variantSku}`));
+  const excludeKeys = new Set(opts?.excludeKeys ?? []);
+  const remaining = gaps.filter((g) => !excludeKeys.has(`${g.itemId}::${g.variantSku}`));
   if (remaining.length === 0) return [];
 
   const itemIds = Array.from(new Set(remaining.map((g) => g.itemId)));
@@ -636,4 +638,17 @@ export async function listKonsiAssortmentGaps(orderId: string): Promise<KonsiAss
     });
   }
   return rows.sort((a, b) => a.sku.localeCompare(b.sku) || a.variantSku.localeCompare(b.variantSku));
+}
+
+/* Scopes `listStoreGapSuggestions` to one order's own store, excluding that order's own lines. */
+export async function listKonsiAssortmentGaps(orderId: string): Promise<KonsiAssortmentGapSuggestion[]> {
+  const order = await prisma.fieldSalesOrder.findUnique({
+    where: { id: orderId },
+    select: { storeId: true, orderType: true, lines: { select: { itemId: true, variantSku: true } } },
+  });
+  if (!order || order.orderType !== "KONSI") return [];
+
+  return listStoreGapSuggestions(order.storeId, {
+    excludeKeys: order.lines.map((l) => `${l.itemId}::${l.variantSku}`),
+  });
 }
