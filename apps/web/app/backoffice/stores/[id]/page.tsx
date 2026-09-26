@@ -7,6 +7,7 @@ import { getPendingStoreChangeRequest } from "@/lib/store-changes/queries";
 import { getStoreOrderSummary, getStoreSentItems } from "@/lib/field-sales/queries";
 import { getStoreStockCard } from "@/lib/inventory/store-stock-card";
 import { listStoreStocktakes } from "@/lib/stores/stocktake/queries";
+import { getStoreCountState, readCountSchedule } from "@/lib/konsi-count-schedule/queries";
 import { getInTransitAdminReturnQty } from "@/lib/field-sales/retur/queries";
 import { listAssortmentGaps, listAssortmentLines } from "@/lib/stores/assortment/queries";
 import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
@@ -49,6 +50,11 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
   const stocktakes =
     store.termsType === "KONSI"
       ? await listStoreStocktakes({ storeId: store.id, page: 1, perPage: STOCKTAKE_HISTORY_PAGE_SIZE })
+      : null;
+  /* Only a KONSI store with a sell-through method is on the monthly count schedule. */
+  const countState =
+    store.termsType === "KONSI" && store.sellThroughMethod
+      ? await getStoreCountState({ id: store.id, createdAt: store.createdAt }, await readCountSchedule(), new Date())
       : null;
   /**
    * The assortment lines are only ever rendered as an editable list for a KONSI store — a PUTUS
@@ -113,6 +119,22 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
               })),
               total: stocktakes.total,
               openId: openStocktakeId,
+            }
+          : null
+      }
+      countSchedule={
+        countState
+          ? {
+              status: countState.status,
+              monthKey: countState.monthKey,
+              dueAtIso: countState.dueAt.toISOString(),
+              lastFullCount: countState.lastFullCount
+                ? {
+                    id: countState.lastFullCount.id,
+                    docNo: countState.lastFullCount.docNo,
+                    countedAtIso: countState.lastFullCount.countedAt.toISOString(),
+                  }
+                : null,
             }
           : null
       }

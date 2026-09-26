@@ -2461,7 +2461,19 @@
       "colDocNo": "Doc No.",
       "colCountedAt": "Count Date",
       "colStatus": "Status",
-      "colLines": "Lines"
+      "colLines": "Lines",
+      "schedule": {
+        "label": "Monthly count",
+        "status": {
+          "DONE": "Done this month",
+          "NOT_YET": "Not open yet",
+          "DUE": "Due",
+          "OVERDUE": "Overdue"
+        },
+        "dueOn": "{month} · due {date}",
+        "lastFull": "Last full count",
+        "noFullCount": "No approved full count yet"
+      }
     },
     "adminReturn": {
       "cardTitle": "Admin Return to Warehouse",
@@ -3367,7 +3379,8 @@
           "INVALID_REQUEST": "The submitted data was invalid. Reload the page and try again.",
           "UNEXPECTED": "Something went wrong. Try again."
         }
-      }
+      },
+      "createdBySystem": "System"
     },
     "footer": {
       "tally": "{counted}/{total} counted",
@@ -3478,7 +3491,9 @@
         "INVALID_REQUEST": "The submitted data was invalid. Reload the page and try again.",
         "INVALID_STATE": "This count can no longer be edited from here. Reload the page.",
         "ERROR": "Something went wrong. Please try again."
-      }
+      },
+      "dueBy": "Count due by {date}",
+      "overdueSince": "Count overdue — was due {date}"
     }
   },
   "konsiSellThrough": {

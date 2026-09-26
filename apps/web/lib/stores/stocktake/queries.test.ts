@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { buildStocktakeLines, previousApprovedCountedAt } from "./queries";
+import { buildStocktakeLines, getStoreStocktakeById, previousApprovedCountedAt } from "./queries";
+import { KONSI_COUNT_SYSTEM_ACTOR } from "@/lib/konsi-count-schedule/schedule";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -267,5 +268,23 @@ d("store stocktake queries (test bed only)", () => {
     expect(
       lines.map((l) => l.expectedQty).sort((a, b) => a - b),
     ).toEqual([4, 9]);
+  });
+
+  it("flags the count-schedule system actor as the creator instead of resolving it as a user", async () => {
+    const system = await prisma.storeStocktake.create({
+      data: { docNo: `STK/${tag}/sys`, storeId, status: "DRAFT", countedAt: new Date(), createdById: KONSI_COUNT_SYSTEM_ACTOR },
+    });
+    const human = await prisma.storeStocktake.create({
+      data: { docNo: `STK/${tag}/usr`, storeId, status: "DRAFT", countedAt: new Date(), createdById: userId },
+    });
+    stocktakeIds.push(system.id, human.id);
+
+    const bySystem = await getStoreStocktakeById(system.id);
+    expect(bySystem?.createdByIsSystem).toBe(true);
+    expect(bySystem?.createdByLabel).toBe("—");
+
+    const byUser = await getStoreStocktakeById(human.id);
+    expect(byUser?.createdByIsSystem).toBe(false);
+    expect(byUser?.createdByLabel).toBe("Test Stocktake User");
   });
 });

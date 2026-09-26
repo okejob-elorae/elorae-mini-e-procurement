@@ -1,4 +1,5 @@
 import { prisma, Prisma, type PrismaClient } from "@elorae/db";
+import { KONSI_COUNT_SYSTEM_ACTOR } from "@/lib/konsi-count-schedule/schedule";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
@@ -248,6 +249,8 @@ export type StoreStocktakeDetail = {
   isFullCount: boolean;
   note: string | null;
   createdByLabel: string;
+  /** True for a count the daily konsi count sweep opened with no single SPG to credit — `createdById` then holds `KONSI_COUNT_SYSTEM_ACTOR`, which is no user, and the screen shows a translated "System". */
+  createdByIsSystem: boolean;
   createdAt: Date;
   submittedByLabel: string | null;
   submittedAt: Date | null;
@@ -341,6 +344,7 @@ export async function getStoreStocktakeById(id: string): Promise<StoreStocktakeD
     isFullCount: r.isFullCount,
     note: r.note,
     createdByLabel: labelFor(r.createdById) ?? "—",
+    createdByIsSystem: r.createdById === KONSI_COUNT_SYSTEM_ACTOR,
     createdAt: r.createdAt,
     submittedByLabel: labelFor(r.submittedById),
     submittedAt: r.submittedAt,

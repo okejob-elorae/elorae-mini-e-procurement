@@ -514,7 +514,7 @@ export function StocktakeDetailClient({
           </div>
           <div className="flex justify-between gap-4 text-sm">
             <span className="text-muted-foreground">{tDetail("createdBy")}</span>
-            <span className="text-right">{stocktake.createdByLabel}</span>
+            <span className="text-right">{stocktake.createdByIsSystem ? tDetail("createdBySystem") : stocktake.createdByLabel}</span>
           </div>
           {stocktake.submittedByLabel && (
             <div className="flex justify-between gap-4 text-sm">

@@ -7,6 +7,7 @@ import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import {
   ArrowLeft,
+  CalendarClock,
   ClipboardList,
   Clock,
   ExternalLink,
@@ -24,6 +25,7 @@ import {
 import type { StoreListItem } from "@/lib/stores/queries";
 import type { StoreSentItemRow } from "@/lib/field-sales/queries";
 import type { StoreStocktakeStatusValue } from "@/lib/stores/stocktake/queries";
+import type { CountStatus } from "@/lib/konsi-count-schedule/schedule";
 import type { StorePiutangSummary } from "@/lib/finance/ar/queries";
 import { AGING_BUCKETS, AGING_BUCKET_LABELS, isOverdue } from "@/lib/finance/ar/aging";
 import { createAction as createStocktakeAction } from "@/app/actions/store-stocktakes";
@@ -151,6 +153,13 @@ type StocktakesCardProps = {
   openId: string | null;
 };
 
+type CountScheduleProps = {
+  status: CountStatus;
+  monthKey: string;
+  dueAtIso: string;
+  lastFullCount: { id: string; docNo: string; countedAtIso: string } | null;
+};
+
 type Props = {
   store: StoreListItem;
   canEdit: boolean;
@@ -162,6 +171,8 @@ type Props = {
   stockCard: StockCardProps | null;
   /** Only ever populated for a KONSI store — same gate as `stockCard`. */
   stocktakes: StocktakesCardProps | null;
+  /** Only populated for a KONSI store with a sell-through method — the stores on the monthly count schedule. */
+  countSchedule: CountScheduleProps | null;
   /** Only populated for a user with `stores:manage` — the card is gated, not just its controls. */
   assortment: { lines: AssortmentLineViewModel[] } | null;
   pendingChange: {
@@ -189,6 +200,20 @@ const STOCKTAKE_STATUS_BADGE_CLASS: Record<StoreStocktakeStatusValue, string> = 
   PENDING_VERIFICATION: "border-amber-500/40 text-amber-700",
   APPROVED: "",
   CANCELLED: "",
+};
+
+const COUNT_STATUS_BADGE_VARIANT: Record<CountStatus, "secondary" | "destructive" | "default" | "outline"> = {
+  DONE: "default",
+  NOT_YET: "secondary",
+  DUE: "outline",
+  OVERDUE: "destructive",
+};
+
+const COUNT_STATUS_BADGE_CLASS: Record<CountStatus, string> = {
+  DONE: "",
+  NOT_YET: "",
+  DUE: "border-amber-500/40 text-amber-700",
+  OVERDUE: "",
 };
 
 function formatDateTime(iso: string): string {
@@ -294,6 +319,7 @@ export function StoreDetailView({
   sentItems,
   stockCard,
   stocktakes,
+  countSchedule,
   assortment,
   pendingChange,
   creditExposure,
@@ -964,6 +990,42 @@ export function StoreDetailView({
               ))}
           </CardHeader>
           <CardContent>
+            {countSchedule && (
+              <div className="mb-4 flex flex-col gap-2 rounded-md border p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-center gap-2">
+                  <CalendarClock className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="font-medium">{tStocktake("schedule.label")}</span>
+                  <Badge
+                    variant={COUNT_STATUS_BADGE_VARIANT[countSchedule.status]}
+                    className={COUNT_STATUS_BADGE_CLASS[countSchedule.status]}
+                  >
+                    {tStocktake(`schedule.status.${countSchedule.status}`)}
+                  </Badge>
+                </div>
+                <div className="flex min-w-0 flex-col gap-1 text-muted-foreground sm:items-end">
+                  <span>
+                    {tStocktake("schedule.dueOn", {
+                      month: countSchedule.monthKey,
+                      date: formatDateOnlyJakarta(new Date(countSchedule.dueAtIso)),
+                    })}
+                  </span>
+                  {countSchedule.lastFullCount ? (
+                    <span className="truncate">
+                      {tStocktake("schedule.lastFull")}{" "}
+                      <Link
+                        href={`/backoffice/store-stocktakes/${countSchedule.lastFullCount.id}`}
+                        className="font-mono text-primary hover:underline"
+                      >
+                        {countSchedule.lastFullCount.docNo}
+                      </Link>
+                      {` · ${formatDateOnlyJakarta(new Date(countSchedule.lastFullCount.countedAtIso))}`}
+                    </span>
+                  ) : (
+                    <span>{tStocktake("schedule.noFullCount")}</span>
+                  )}
+                </div>
+              </div>
+            )}
             {canEdit && stocktakes.openId && (
               <p className="mb-3 text-sm text-muted-foreground">{tStocktake("openBanner")}</p>
             )}

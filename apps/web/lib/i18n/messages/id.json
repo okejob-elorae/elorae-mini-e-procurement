@@ -2461,7 +2461,19 @@
       "colDocNo": "No. Dokumen",
       "colCountedAt": "Tanggal Hitung",
       "colStatus": "Status",
-      "colLines": "Baris"
+      "colLines": "Baris",
+      "schedule": {
+        "label": "Perhitungan bulanan",
+        "status": {
+          "DONE": "Selesai bulan ini",
+          "NOT_YET": "Belum dibuka",
+          "DUE": "Jatuh tempo",
+          "OVERDUE": "Terlambat"
+        },
+        "dueOn": "{month} · batas waktu {date}",
+        "lastFull": "Perhitungan penuh terakhir",
+        "noFullCount": "Belum ada perhitungan penuh yang disetujui"
+      }
     },
     "adminReturn": {
       "cardTitle": "Retur Admin ke Gudang",
@@ -3367,7 +3379,8 @@
           "INVALID_REQUEST": "Data yang dikirim tidak valid. Muat ulang halaman dan coba lagi.",
           "UNEXPECTED": "Terjadi kesalahan. Coba lagi."
         }
-      }
+      },
+      "createdBySystem": "Sistem"
     },
     "footer": {
       "tally": "{counted}/{total} terhitung",
@@ -3478,7 +3491,9 @@
         "INVALID_REQUEST": "Data yang dikirim tidak valid. Muat ulang halaman lalu coba lagi.",
         "INVALID_STATE": "Laporan ini sudah tidak bisa diubah dari sini. Muat ulang halaman.",
         "ERROR": "Terjadi kesalahan. Coba lagi."
-      }
+      },
+      "dueBy": "Batas hitung {date}",
+      "overdueSince": "Hitungan terlambat — batas {date}"
     }
   },
   "konsiSellThrough": {

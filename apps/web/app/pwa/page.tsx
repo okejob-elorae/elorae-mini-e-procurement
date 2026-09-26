@@ -2,6 +2,7 @@ import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { getActiveVisit, getStore, listActiveStoresForPwa, listRecentVisitsForUser } from "@/lib/stores/queries";
+import { getStoreCountState, readCountSchedule } from "@/lib/konsi-count-schedule/queries";
 import { HomeShell } from "./HomeShell";
 import { SpgHomeShell } from "./SpgHomeShell";
 import { logout } from "./actions";
@@ -69,6 +70,18 @@ export default async function PwaHome() {
     const activeAtThisStore = active && active.storeId === store.id ? active : null;
     const activeAtOtherStoreName = active && active.storeId !== store.id ? active.store.name : null;
 
+    /*
+     * The due hint shows only while the store has an open count that is still owed this cycle.
+     * A count opened after the month is already done carries no deadline.
+     */
+    let countDue: { overdue: boolean; dueAtIso: string } | null = null;
+    if (store.termsType === "KONSI" && store.sellThroughMethod) {
+      const countState = await getStoreCountState({ id: store.id, createdAt: store.createdAt }, await readCountSchedule(), new Date());
+      if (countState.openStocktakeId && countState.status !== "DONE") {
+        countDue = { overdue: countState.status === "OVERDUE", dueAtIso: countState.dueAt.toISOString() };
+      }
+    }
+
     return (
       <SpgHomeShell
         userName={userName}
@@ -92,6 +105,7 @@ export default async function PwaHome() {
             : null
         }
         autoCloseStoreName={activeAtOtherStoreName}
+        countDue={countDue}
         onLogout={logout}
       />
     );

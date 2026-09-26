@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { ClipboardList, Clock, ExternalLink, LogOut, MapPin, ShoppingCart, Store as StoreIcon } from "lucide-react";
+import { CalendarClock, ClipboardList, Clock, ExternalLink, LogOut, MapPin, ShoppingCart, Store as StoreIcon } from "lucide-react";
 import { CheckInButton } from "./stores/[id]/CheckInButton";
 import { CheckOutButton } from "./stores/[id]/CheckOutButton";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { cn } from "@/lib/utils";
 
 type SpgStore = {
   id: string;
@@ -37,6 +38,8 @@ type Props = {
    * through so CheckInButton can warn it'll auto-close that visit.
    */
   autoCloseStoreName: string | null;
+  /** Set only while the store has an open monthly count that is still owed: its due date, and whether it has passed. */
+  countDue: { overdue: boolean; dueAtIso: string } | null;
   onLogout: () => Promise<void>;
 };
 
@@ -45,11 +48,33 @@ type Props = {
  * no roaming store list: always the same store, check-in/out at it, and a
  * "Catat Penjualan" CTA gated on being checked in there.
  */
-export function SpgHomeShell({ userName, store, activeVisit, autoCloseStoreName, onLogout }: Props) {
+export function SpgHomeShell({ userName, store, activeVisit, autoCloseStoreName, countDue, onLogout }: Props) {
   const t = useTranslations("storeStocktakes.spg");
   const isKonsi = store.termsType === "KONSI";
   const mapsUrl =
     store.lat !== null && store.lng !== null ? `https://www.google.com/maps?q=${store.lat},${store.lng}` : null;
+
+  const countDueHint =
+    isKonsi && countDue ? (
+      <p
+        className={cn(
+          "flex items-center justify-center gap-1 text-sm",
+          countDue.overdue ? "text-destructive" : "text-muted-foreground",
+        )}
+      >
+        <CalendarClock className="h-4 w-4 shrink-0" />
+        <span className="truncate">
+          {t(countDue.overdue ? "overdueSince" : "dueBy", {
+            date: new Date(countDue.dueAtIso).toLocaleDateString("id-ID", {
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+              timeZone: "Asia/Jakarta",
+            }),
+          })}
+        </span>
+      </p>
+    ) : null;
 
   return (
     <div className="p-4 space-y-4">
@@ -134,6 +159,7 @@ export function SpgHomeShell({ userName, store, activeVisit, autoCloseStoreName,
               </Link>
             </Button>
           )}
+          {countDueHint}
           <CheckOutButton visitId={activeVisit.id} />
         </>
       ) : (
@@ -148,6 +174,7 @@ export function SpgHomeShell({ userName, store, activeVisit, autoCloseStoreName,
               {t("entryCtaDisabled")}
             </Button>
           )}
+          {countDueHint}
           <CheckInButton storeId={store.id} autoCloseStoreName={autoCloseStoreName} />
         </>
       )}
