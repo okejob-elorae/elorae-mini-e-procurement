@@ -463,6 +463,8 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
 
     const core = await listStoreGapSuggestions(storeId, { excludeKeys });
     const wrapper = await listKonsiAssortmentGaps(orderId);
+    /* Two empty lists would match without proving anything. */
+    expect(core.length).toBeGreaterThan(0);
     expect(core).toEqual(wrapper);
   });
 

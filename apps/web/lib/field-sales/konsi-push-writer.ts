@@ -1,6 +1,8 @@
 import { prisma, Prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
+import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
+import { itemHasSkuVariants, parseItemVariants } from "@/lib/items/variants";
 import { isSellThroughSalesmanCandidate } from "@/lib/konsi-sell-through/salesman-candidates";
 import { approveKonsiOrderInTx } from "./writer";
 import { KonsiPushError } from "./errors";
@@ -73,7 +75,7 @@ export async function createKonsiPushOrder(input: CreateKonsiPushOrderInput): Pr
       const itemIds = Array.from(new Set(input.lines.map((l) => l.itemId)));
       const items = await tx.item.findMany({
         where: { id: { in: itemIds }, isActive: true, type: "FINISHED_GOOD" },
-        select: { id: true, nameId: true },
+        select: { id: true, nameId: true, variants: true },
       });
       const itemById = new Map(items.map((i) => [i.id, i]));
       const seen = new Set<string>();
@@ -83,13 +85,22 @@ export async function createKonsiPushOrder(input: CreateKonsiPushOrderInput): Pr
         if (!Number.isInteger(line.qty) || line.qty <= 0) throw new KonsiPushError("BAD_QTY", key);
         if (seen.has(key)) throw new KonsiPushError("DUPLICATE", key);
         seen.add(key);
-        if (!itemById.has(line.itemId)) throw new KonsiPushError("UNKNOWN_ITEM", key);
-        /* OR-tolerant: a variantless row may be keyed null or "", and either is the item's main stock. */
-        const inventory =
-          variantSku === ""
-            ? await tx.inventoryValue.findFirst({ where: { itemId: line.itemId, OR: [{ variantSku: null }, { variantSku: "" }] }, select: { id: true } })
-            : await tx.inventoryValue.findFirst({ where: { itemId: line.itemId, variantSku }, select: { id: true } });
-        if (!inventory) throw new KonsiPushError("NO_INVENTORY", key);
+        const item = itemById.get(line.itemId);
+        if (!item) throw new KonsiPushError("UNKNOWN_ITEM", key);
+        /**
+         * Stock is per variant for an item with SKU variants: a "" line would reserve against a
+         * pooled variantless row and land StoreStock on "", where per-variant SPG sales and the gap
+         * tests never see it. So such an item takes only its own variant SKUs, and a variantless
+         * item takes only "".
+         */
+        const variantSkus = new Set(
+          parseItemVariants(item.variants)
+            .map((v) => (v.sku ?? "").trim())
+            .filter((sku) => sku !== ""),
+        );
+        const variantAllowed = variantSku === "" ? !itemHasSkuVariants(item.variants) : variantSkus.has(variantSku);
+        if (!variantAllowed) throw new KonsiPushError("NO_INVENTORY", key);
+        if (!(await findExistingInventoryValueRow(tx, line.itemId, variantSku))) throw new KonsiPushError("NO_INVENTORY", key);
       }
 
       const orderNo = await generateDocNumber("KONSI", tx);

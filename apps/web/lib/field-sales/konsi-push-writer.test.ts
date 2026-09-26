@@ -91,6 +91,8 @@ d("createKonsiPushOrder (test bed only)", () => {
     const results = await Promise.allSettled([createKonsiPushOrder(input), createKonsiPushOrder(input)]);
     const ids = new Set(results.flatMap((r) => (r.status === "fulfilled" ? [r.value.orderId] : [])));
     for (const id of ids) state.orderIds.push(id);
+    /* The loser's unique violation is answered with the winner, so both callers succeed. */
+    expect(results.map((r) => r.status)).toEqual(["fulfilled", "fulfilled"]);
     expect(ids.size).toBe(1);
     expect(await prisma.fieldSalesOrder.count({ where: { idempotencyKey: key2 } })).toBe(1);
   }, SLOW);
@@ -149,6 +151,27 @@ d("createKonsiPushOrder (test bed only)", () => {
     const inv = await inventory();
     await prisma.inventoryValue.update({ where: { id: inv.id }, data: { variantSku: null } });
     await expect(push()).resolves.toMatchObject({ orderNo: expect.any(String) });
+  }, SLOW);
+
+  it("takes only an item's own variant SKUs once it has SKU variants, never the pooled row", async () => {
+    const sku = `TEST-KSTW-VAR-${state.run}`;
+    /* The fixture's pooled "" row stays behind, which is exactly what a "" line must not reserve against. */
+    await prisma.item.update({ where: { id: state.itemId }, data: { variants: [{ sku, color: "Red" }] } });
+    await expect(push()).rejects.toMatchObject({ code: "NO_INVENTORY", detail: `${state.itemId}::` });
+    await expect(push({ lines: [{ itemId: state.itemId, variantSku: "NO-SUCH-VARIANT", qty: 1 }] })).rejects.toMatchObject({
+      code: "NO_INVENTORY",
+      detail: `${state.itemId}::NO-SUCH-VARIANT`,
+    });
+    expect(await prisma.fieldSalesOrder.count({ where: { storeId: seededId(state.storeId) } })).toBe(0);
+
+    await prisma.inventoryValue.create({
+      data: { itemId: state.itemId, variantSku: sku, qtyOnHand: 10, reservedQty: 0, avgCost: 10000, totalValue: 100000 },
+    });
+    const { orderId } = await push({ lines: [{ itemId: state.itemId, variantSku: sku, qty: 2 }] });
+    const line = await prisma.fieldSalesOrderLine.findFirstOrThrow({ where: { orderId: seededId(orderId) } });
+    expect(line).toMatchObject({ itemId: state.itemId, variantSku: sku, qty: 2 });
+    const variantRow = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(state.itemId), variantSku: sku } });
+    expect(Number(variantRow.reservedQty)).toBe(2);
   }, SLOW);
 
   it("accepts an item already sent to the store", async () => {

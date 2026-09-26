@@ -283,6 +283,8 @@ d("listKonsiSuggestions (test bed only)", () => {
 
     const core = await listStoreNeverSentSuggestions(storeId, { excludeItemIds });
     const wrapper = await listKonsiSuggestions(orderId);
+    /* Two empty lists would match without proving anything. */
+    expect(core.length).toBeGreaterThan(0);
     expect(core).toEqual(wrapper);
 
     /*
@@ -290,7 +292,8 @@ d("listKonsiSuggestions (test bed only)", () => {
      * including the order's own item when it was never sent before this order — cannot be
      * exercised on this fixture: `sentItemIds` counts any non-REJECTED konsi order line,
      * including this very order's own PENDING_APPROVAL line, so `itemId` is already excluded via
-     * `sent` before `excludeItemIds` is even considered. Not asserted, per the brief's escape hatch.
+     * `sent` before `excludeItemIds` is even considered. Not asserted: on any fixture the order's
+     * own pending line already counts the item as sent, so the bare call has nothing to include.
      */
   });
 });

@@ -124,6 +124,8 @@ export async function approveFieldSalesOrderAction(
 /* The line qty column is a 32-bit Int; a value above this overflows it at the database. */
 const MAX_INT32 = 2147483647;
 const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/* The form caps a note at 500; this is the boundary's own ceiling for a caller that skips the form. */
+const MAX_NOTE_LENGTH = 2000;
 
 function isNonEmptyString(v: unknown): v is string {
   return typeof v === "string" && v.trim() !== "";
@@ -148,7 +150,7 @@ function parseKonsiPushInput(input: unknown): CreateKonsiPushOrderInputWithoutAc
   if (!isNonEmptyString(req.storeId)) return null;
   if (!isNonEmptyString(req.salesmanId)) return null;
   if (!isNonEmptyString(req.idempotencyKey) || !UUID_SHAPE.test(req.idempotencyKey)) return null;
-  if (req.note !== undefined && typeof req.note !== "string") return null;
+  if (req.note !== undefined && (typeof req.note !== "string" || req.note.length > MAX_NOTE_LENGTH)) return null;
   if (!Array.isArray(req.lines)) return null;
 
   const lines: KonsiPushLine[] = [];

@@ -77,6 +77,12 @@ d("createKonsiPushOrderAction (test bed only)", () => {
     expect(res).toEqual({ ok: false, reason: "INVALID_REQUEST" });
   });
 
+  it("returns INVALID_REQUEST for a note longer than 2000 characters", async () => {
+    const res = await push({ note: "x".repeat(2001) });
+    expect(res).toEqual({ ok: false, reason: "INVALID_REQUEST" });
+    expect(await prisma.fieldSalesOrder.count({ where: { storeId: seededId(state.storeId) } })).toBe(0);
+  });
+
   it("creates an ADMIN-origin order on a good push", async () => {
     const res = await push();
     expect(res).toMatchObject({ ok: true, orderNo: expect.any(String) });

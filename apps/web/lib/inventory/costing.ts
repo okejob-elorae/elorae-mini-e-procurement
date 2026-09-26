@@ -51,9 +51,10 @@ const compositeKey = (itemId: string, variantSku?: string | null) => ({
  * one ledger key. Current callers: grn.ts's declineGRNByOwner insufficient-stock guard,
  * inventory.ts, reconciliation-runner.ts, opname-snapshot.ts, opname-approve.ts,
  * canvassing/writer.ts, canvassing/reconcile-writer.ts, konsi-transfer/writer.ts,
- * field-sales/retur/approve-writer.ts, and reverseMovingAverage / calculateMovingAverage /
- * reverseInventoryValue below. The one apps/web lookup NOT routed through here is
- * field-sales/writer.ts's hasInventoryRow, an existence check that pins no id.
+ * field-sales/retur/approve-writer.ts, field-sales/konsi-push-writer.ts, and
+ * reverseMovingAverage / calculateMovingAverage / reverseInventoryValue below. The one apps/web
+ * lookup NOT routed through here is field-sales/writer.ts's hasInventoryRow, an existence check
+ * that pins no id.
  *
  * packages/db cannot import this (it sits above apps/web), so it carries its own copies — and
  * there are FOUR, not two. moveMainStock and setMainStock in stock-balance.ts, the return-accept
