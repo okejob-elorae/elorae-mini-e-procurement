@@ -439,6 +439,7 @@ model FieldSalesOrder {
   status        FieldSalesOrderStatus @default(PENDING_APPROVAL)
   deliveryStatus FieldSalesDeliveryStatus @default(PENDING)
   orderType     FieldSalesOrderType   @default(PUTUS)
+  origin        FieldSalesOrderOrigin @default(FIELD)
   subtotal      Decimal               @db.Decimal(15, 2)
   total         Decimal               @db.Decimal(15, 2)
   orderDiscountAmount Decimal         @default(0) @db.Decimal(15, 2)
@@ -754,6 +755,11 @@ enum FieldSalesOrderStatus {
 enum FieldSalesOrderType {
   PUTUS
   KONSI
+}
+
+enum FieldSalesOrderOrigin {
+  FIELD
+  ADMIN
 }
 
 enum FieldSalesDeliveryStatus {
