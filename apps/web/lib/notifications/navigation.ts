@@ -122,6 +122,34 @@ export function getNotificationHref(
       }
       return '/pwa/pelunasan';
     }
+    case "KONSI_COUNT_DUE":
+    case "KONSI_COUNT_OVERDUE": {
+      if (context === "pwa") return "/pwa/spg/stocktake";
+      const stocktakeId = data.stocktakeId;
+      if (typeof stocktakeId === "string" && stocktakeId !== "") {
+        return `/backoffice/store-stocktakes/${stocktakeId}`;
+      }
+      const storeId = data.storeId;
+      if (typeof storeId === "string" && storeId !== "") {
+        return `/backoffice/stores/${storeId}`;
+      }
+      return "/backoffice/store-stocktakes";
+    }
+    case "KONSI_REPORT_READY":
+    case "KONSI_REPORT_HELD": {
+      const sellThroughId = data.sellThroughId;
+      if (typeof sellThroughId === "string" && sellThroughId !== "") {
+        return `/backoffice/konsi-sell-through/${sellThroughId}`;
+      }
+      return "/backoffice/konsi-sell-through";
+    }
+    case "KONSI_REPORT_BLOCKED": {
+      const stocktakeId = data.stocktakeId;
+      if (typeof stocktakeId === "string" && stocktakeId !== "") {
+        return `/backoffice/store-stocktakes/${stocktakeId}`;
+      }
+      return "/backoffice/store-stocktakes";
+    }
     default:
       return null;
   }

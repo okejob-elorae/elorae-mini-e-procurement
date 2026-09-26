@@ -9,6 +9,7 @@
 
 import { prisma, type Prisma } from '@elorae/db';
 import { messaging } from '@/lib/firebase/admin';
+import { capNotificationText } from "./text";
 
 // ----- Shared helpers for RBAC-filtered push notifications -----
 
@@ -66,12 +67,17 @@ export type NotificationPayload = {
 /**
  * Create NotificationQueue rows for each user and send FCM to those with fcmToken.
  * FCM data must be string key-value; we pass type + entity ids for navigation.
+ *
+ * `title` and `body` are capped to their `VARCHAR(191)` columns here, before the queue insert
+ * and the push, so no caller can lose a notification to an overlong value.
  */
 export async function sendNotificationToUsers(
   users: NotificationUser[],
   payload: NotificationPayload
 ): Promise<void> {
-  const { type, title, body, data } = payload;
+  const { type, data } = payload;
+  const title = capNotificationText(payload.title);
+  const body = capNotificationText(payload.body);
   const fcmData: Record<string, string> = { type, ...data };
   for (const user of users) {
     const queueRow = await prisma.notificationQueue.create({

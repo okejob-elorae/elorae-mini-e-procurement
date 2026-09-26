@@ -3,6 +3,7 @@ import { runCheckOverdue } from "./check-overdue";
 import { runReconciliationCron } from "@/app/actions/stock-reconciliation";
 import { postPendingSalesJournals, GL_CUTOVER_SETTING_KEY } from "@/lib/finance/sales/sweep";
 import { runOverdueSweep } from "@/lib/finance/ar/overdue-sweep";
+import { runKonsiCountSweep } from "@/lib/konsi-count-schedule/sweep";
 
 let registered = false;
 
@@ -44,6 +45,34 @@ export function registerCronJobs(): void {
         );
       } catch (err) {
         console.error("[cron] piutang-overdue failed:", err);
+      }
+    },
+    { timezone: "Asia/Jakarta" },
+  );
+
+  /**
+   * Daily 07:00 Asia/Jakarta — konsi monthly counts: opens or announces a due count and raises the
+   * overdue alert. Its own job, an hour ahead of the AR sweep, so the two never share a log line or
+   * a failure and the count is open before the SPG's shift starts.
+   */
+  cron.schedule(
+    "0 7 * * *",
+    async () => {
+      console.log("[cron] konsi-count tick");
+      try {
+        const r = await runKonsiCountSweep();
+        console.log(
+          "[cron] konsi-count done — scanned=%d opened=%d alreadyOpen=%d existingAnnounced=%d spgNotified=%d overdue=%d failed=%d",
+          r.scanned,
+          r.opened,
+          r.alreadyOpen,
+          r.existingAnnounced,
+          r.spgNotified,
+          r.overdueAnnounced,
+          r.failed,
+        );
+      } catch (err) {
+        console.error("[cron] konsi-count failed:", err);
       }
     },
     { timezone: "Asia/Jakarta" },

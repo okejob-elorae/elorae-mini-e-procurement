@@ -1,5 +1,12 @@
 import { PERMISSIONS } from "@/lib/rbac";
 import { getUsersWithPermission, sendNotificationToUsers } from "./recipients";
+import {
+  KONSI_COUNT_DUE,
+  KONSI_COUNT_OVERDUE,
+  KONSI_REPORT_BLOCKED,
+  KONSI_REPORT_HELD,
+  KONSI_REPORT_READY,
+} from "@/lib/konsi-count-schedule/categories";
 
 /**
  * Which permission decides who is told about each category.
@@ -21,6 +28,11 @@ const CATEGORY_PERMISSION: Record<string, string> = {
   COLLECTION_PENDING_VERIFICATION: PERMISSIONS.PAYMENTS_MANAGE,
   AR_OVERDUE: PERMISSIONS.COLLECTIONS_MANAGE,
   DELIVERY_COMPLETION_STUCK: PERMISSIONS.DELIVERIES_SHIP,
+  [KONSI_COUNT_DUE]: PERMISSIONS.STORES_MANAGE,
+  [KONSI_COUNT_OVERDUE]: PERMISSIONS.STORES_MANAGE,
+  [KONSI_REPORT_READY]: PERMISSIONS.STORES_MANAGE,
+  [KONSI_REPORT_HELD]: PERMISSIONS.STORES_MANAGE,
+  [KONSI_REPORT_BLOCKED]: PERMISSIONS.STORES_MANAGE,
 };
 
 /**
@@ -54,15 +66,19 @@ export function toFcmData(metadata: unknown): Record<string, string> {
  * calls.
  *
  * The whole body sits inside one try/catch so "never throws" is structural rather than a
- * property of which statements happen to be safe. That matters because every call site invokes
- * it as `void fanOutAdminNotification(...)`: a floating promise that rejected would become an
- * unhandled rejection, which Node terminates the process on by default.
+ * property of which statements happen to be safe. That matters because every interactive call site
+ * invokes it as `void fanOutAdminNotification(...)`: a floating promise that rejected would become
+ * an unhandled rejection, which Node terminates the process on by default.
  *
- * Callers must NOT await it. Delivery walks recipients sequentially with an FCM call each, and
- * firebase-admin retries a connection failure for roughly a minute per recipient, so awaiting it
- * stalls the operation that already committed — a canvasser's thermal nota, a PWA order submit.
- * `void` is safe here specifically because web runs as a long-lived Node process on the VPS, not
- * a serverless runtime that freezes on response.
+ * Interactive callers must NOT await it. Delivery walks recipients sequentially with an FCM call
+ * each, and firebase-admin retries a connection failure for roughly a minute per recipient, so
+ * awaiting it stalls the operation that already committed — a canvasser's thermal nota, a PWA
+ * order submit. `void` is safe here specifically because web runs as a long-lived Node process on
+ * the VPS, not a serverless runtime that freezes on response. The two cron sweeps,
+ * `runOverdueSweep` and `runKonsiCountSweep`, await it deliberately: no user is waiting, and an
+ * unawaited batch would stampede FCM. `reportStuckDeliveryCompletionAction` awaits it too: the
+ * PWA's offline completion queue calls it mostly from background sync, but also from the pending
+ * screen's Retry, where a salesman is waiting, so it is no precedent for an interactive path.
  */
 export async function fanOutAdminNotification(notification: {
   id: string;

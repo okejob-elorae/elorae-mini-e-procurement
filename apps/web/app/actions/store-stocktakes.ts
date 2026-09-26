@@ -12,6 +12,7 @@ import {
   cancelStoreStocktake,
 } from "@/lib/stores/stocktake/writer";
 import { StoreStocktakeError, type StoreStocktakeErrorCode } from "@/lib/stores/stocktake/errors";
+import { autoCreateSellThroughAfterCount, type AutoReportOutcome } from "@/lib/konsi-count-schedule/auto-report";
 
 export type StoreStocktakeActionResult =
   | { ok: true; id?: string }
@@ -374,9 +375,16 @@ export async function saveCountsAction(input: SaveCountsActionInput): Promise<St
  * Approves a count, writing `StoreStock.qty` to the counted figure plus every store movement
  * recorded after the count was saved (see `approveStoreStocktake`). Admin-only — verification is
  * the one step an SPG never performs on their own count.
+ *
+ * After the approval has COMMITTED, it tries to create the sell-through report that a full count
+ * at a konsi store closes (`autoCreateSellThroughAfterCount`). That step is best-effort: it runs
+ * outside the stocktake transaction, its outcome only reaches the admins as a notification, and
+ * even an unexpected throw from it leaves this action returning the approval's success. It is
+ * awaited rather than fired, so the revalidated stocktake page already shows the new report.
  */
 export async function approveAction(stocktakeId: string): Promise<StoreStocktakeActionResult> {
   let storeIdForRevalidate = "";
+  let approvedById = "";
   try {
     const session = await auth();
     const permissions = session?.user?.permissions ?? [];
@@ -388,12 +396,26 @@ export async function approveAction(stocktakeId: string): Promise<StoreStocktake
     if (!doc) return { ok: false, code: "NOT_FOUND" };
     storeIdForRevalidate = doc.storeId;
     await approveStoreStocktake({ stocktakeId, approvedById: session.user.id });
+    approvedById = session.user.id;
   } catch (e) {
     return toResult(e);
   }
+
+  let autoReport: AutoReportOutcome = { kind: "FAILED" };
+  try {
+    autoReport = await autoCreateSellThroughAfterCount(stocktakeId, approvedById);
+  } catch (e) {
+    console.error(`[store-stocktakes] auto-report after approving ${stocktakeId} failed`, e);
+  }
+
   revalidatePath("/backoffice/store-stocktakes");
   revalidatePath(`/backoffice/store-stocktakes/${stocktakeId}`);
   revalidatePath(`/backoffice/stores/${storeIdForRevalidate}`);
+  /* Whenever a report exists, a FAILED outcome included: FAILED with an id means created but not announced. */
+  if ("sellThroughId" in autoReport && autoReport.sellThroughId) {
+    revalidatePath("/backoffice/konsi-sell-through");
+    revalidatePath(`/backoffice/konsi-sell-through/${autoReport.sellThroughId}`);
+  }
   return { ok: true, id: stocktakeId };
 }
 

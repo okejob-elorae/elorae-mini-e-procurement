@@ -672,6 +672,19 @@ d("store stocktake writer (test bed only)", () => {
       stocktakeIds.push(first.id);
       await expect(createStoreStocktake({ storeId, createdById: adminId, countedAt: new Date() })).rejects.toMatchObject({ code: "ALREADY_OPEN" });
     });
+
+    it("stores the caller's note, and leaves it null when none is given", async () => {
+      const withNote = await createStoreStocktake({ storeId, createdById: adminId, countedAt: new Date(), note: "Dibuka otomatis untuk perhitungan bulanan September 2026" });
+      stocktakeIds.push(withNote.id);
+      const noted = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(withNote.id) } });
+      expect(noted.note).toBe("Dibuka otomatis untuk perhitungan bulanan September 2026");
+
+      await cancelStoreStocktake({ stocktakeId: withNote.id, cancelledById: adminId, reason: "reopen without a note" });
+      const without = await createStoreStocktake({ storeId, createdById: adminId, countedAt: new Date() });
+      stocktakeIds.push(without.id);
+      const plain = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(without.id) } });
+      expect(plain.note).toBeNull();
+    });
   });
 
   describe("saveStocktakeCounts", () => {

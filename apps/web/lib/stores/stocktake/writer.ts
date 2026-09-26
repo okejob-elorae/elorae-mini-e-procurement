@@ -26,11 +26,15 @@ type AddedLineInput = {
  *
  * `periodFrom` falls out of the store's previous APPROVED count rather than being supplied by
  * the caller, so the sold-in-window figures on the lines below are never a caller-chosen range.
+ *
+ * `note` is optional free text shown on the detail screen; the daily count sweep uses it to mark a
+ * count it opened.
  */
 export async function createStoreStocktake(input: {
   storeId: string;
   createdById: string;
   countedAt: Date;
+  note?: string;
 }): Promise<{ id: string; docNo: string }> {
   return runSerializable(async (tx) => {
     const open = await tx.storeStocktake.findFirst({
@@ -52,6 +56,7 @@ export async function createStoreStocktake(input: {
           countedAt: input.countedAt,
           periodFrom,
           createdById: input.createdById,
+          note: input.note ?? null,
           lines: {
             create: draftLines.map((l) => ({
               itemId: l.itemId,

@@ -133,7 +133,7 @@ contract for the migrations that will introduce them.
 | `JubelioOutbox`                | web insert, api consume/update | — | ✅; `entityType` MUST come from `@elorae/db/jubelio-outbox` registry — see §4.2.1 |
 | `JubelioWebhookEvent`          | api                         | —                           | ✅ |
 | `JubelioApiCall`               | api                         | web (read for admin UI)     | ✅ |
-| `AdminNotification`            | **both** — see §3.5; api on integration alerts, web on ERP-detected alerts (negative-available, opname variance, AR overdue) | — | ✅ schema + api writer; web writer expected with EPIC-07/08/21 |
+| `AdminNotification`            | **both** — see §3.5; api on integration alerts, web on ERP-detected alerts | — | ✅ schema + api writer + web writers — journals, order approvals, store changes, fakturs, retur mismatches, credit holds, collections, AR overdue, stuck deliveries and the konsi count schedule; the live category list is `CATEGORY_PERMISSION` in `apps/web/lib/notifications/admin-fanout.ts` |
 | `SystemSetting` (Jubelio keys) | api                         | web (read for settings UI)  | ✅ (`JUBELIO_SESSION_TOKEN`) |
 | `SystemSetting` (other keys)   | web                         | —                           | ✅ |
 | `AuditLog`                     | both — shared writer        | —                           | ✅ schema; 🟡 shared writer ⏳ |
@@ -180,18 +180,27 @@ against `qtyOnHand` would treat every open reservation as a variance and fight
 the reservation model — the cron would "correct" stock that is intentionally
 held back from sale.
 
-### 3.5 `AdminNotification` writes — two writers (planned)
+### 3.5 `AdminNotification` writes — two writers
 
 - **api** writes integration alerts: token-refresh failure, outbox DLQ growth,
   rate-limit exhaustion, webhook signature failure. (✅ shipped where helpers
   exist.)
-- **web** writes ERP-detected alerts: negative-available stock (EPIC-08-03),
-  opname variance over threshold (EPIC-07-04), AR overdue (EPIC-21-06), konsi
-  sell-through discrepancy (EPIC-22-05). (⏳ ships per EPIC.)
+- **web** writes ERP-detected alerts; the live categories are the entries in
+  `CATEGORY_PERMISSION` (`apps/web/lib/notifications/admin-fanout.ts`), and the
+  §3 table row names them. Negative-available stock and opname variance over
+  threshold are still ⏳ planned. Shipped among them: AR overdue (`AR_OVERDUE`);
+  and the konsi sell-through discrepancy alert, shipped with the konsi count
+  schedule for AUTO-created reports only — a report created automatically after
+  a full count is announced as `KONSI_REPORT_HELD` when lines await a
+  resolution, beside `KONSI_REPORT_READY` and `KONSI_REPORT_BLOCKED`, while a
+  report created by hand that holds lines announces nothing; and the monthly
+  count raises `KONSI_COUNT_DUE` and `KONSI_COUNT_OVERDUE` (✅ shipped).
 
-No shared writer helper is mandated yet — the table is simple. If multiple web
-call sites accumulate, lift into a `@elorae/db/admin-notification-writer.ts`
-helper.
+No shared writer helper exists or is mandated — the table is simple. The web
+call sites have accumulated: each creates its row directly and fans it out
+through `fanOutAdminNotification` (`apps/web/lib/notifications/admin-fanout.ts`).
+Lifting the create into a `@elorae/db/admin-notification-writer.ts` helper
+remains an option.
 
 ### 3.6 Single-owner web tables — default rule
 
