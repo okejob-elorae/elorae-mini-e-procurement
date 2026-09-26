@@ -905,8 +905,9 @@ export function SettlementApprovalClient({ settlement: s, canViewAccountMapping 
          * `pr-28` (112px) is not decoration: `components/QuickActionFAB.tsx` is `fixed bottom-6
          * right-6 z-50` with an `h-14 w-14` button, so it occupies 24-80px from both the bottom and
          * the right on EVERY backoffice route, and its `shadow-lg` spreads ~12px further left. This
-         * is the only `fixed inset-x-0 bottom-0` bar in `app/backoffice`, so nothing else has ever
-         * had to survive it — without the clearance a finance operator on a phone or tablet taps
+         * was the first `fixed inset-x-0 bottom-0` bar in `app/backoffice`; the konsi push form
+         * (`KonsiPushForm.tsx`) carries a second, hand-copied one with the same clearance, so change
+         * both together. Without the clearance a finance operator on a phone or tablet taps
          * the right end of Approve and gets the Quick Action dropdown instead, on the control that
          * moves the money. `lg:` drops the whole thing back to a normal in-flow row.
          */

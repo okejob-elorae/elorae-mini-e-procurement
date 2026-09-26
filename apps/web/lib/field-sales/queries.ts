@@ -458,7 +458,8 @@ export type KonsiSuggestion = {
 };
 
 /**
- * Goods never sent to this store, for the admin to add while approving a konsi order.
+ * Goods never sent to this store, for the admin to add while approving a konsi order or to send
+ * in an admin push.
  * "Never sent" is ITEM-level (matches `sentItemIds` and the writer's ALREADY_SENT check): if any
  * variant of an item was ever sent to this store, the whole item is excluded. Each surviving item
  * is then expanded into one row per variant (real InventoryValue row), because availability and
@@ -574,24 +575,26 @@ export type KonsiAssortmentGapSuggestion = {
 };
 
 /**
- * The store's assortment gaps, restyled as stageable rows for the SAME konsi approval panel that
- * shows `listKonsiSuggestions` — a deliberately DIFFERENT signal, not a variant of it.
+ * The store's assortment gaps, restyled as stageable rows for the same two screens that show the
+ * never-sent list — the konsi approval panel and the admin push page — a deliberately DIFFERENT
+ * signal, not a variant of it.
  * `sentItemIds` drops an item the moment it appears on any non-rejected konsi order line that is
  * not fully cancelled, even if the store now holds zero, so "never sent" can never re-flag a
  * depleted item. An assortment gap catches
  * exactly that case, so this reads `listAssortmentGaps` directly and never filters through
- * `sentItemIds`. This function is the authoritative source for a gap row: `listKonsiSuggestions`
- * is the one that defers to IT, suppressing its own row for any (itemId, variantSku) this
- * function would also claim, so the two lists never render the same SKU twice.
+ * `sentItemIds`. This function is the authoritative source for a gap row:
+ * `listStoreNeverSentSuggestions` is the one that defers to IT, suppressing its own row for any
+ * (itemId, variantSku) this function would also claim, so the two lists never render the same SKU
+ * twice.
  *
  * `excludeKeys` are VARIANT grain (`itemId::variantSku`), not item grain: `FieldSalesOrderLine`
  * is per-variant, so a gap on a different variant of an item on the exclusion list is still a
  * genuine gap and must still show.
  *
- * Zero/negative main-warehouse availability is dropped for the same reason `listKonsiSuggestions`
- * drops it: nothing here is stageable from THIS panel, so a dead qty stepper is wasted screen
- * space, not information the admin needs here — the store detail page's read-only gap card still
- * shows every gap regardless of main-warehouse stock.
+ * Zero/negative main-warehouse availability is dropped for the same reason
+ * `listStoreNeverSentSuggestions` drops it: nothing here is stageable from either screen, so a dead
+ * qty stepper is wasted screen space, not information the admin needs here — the store detail
+ * page's read-only gap card still shows every gap regardless of main-warehouse stock.
  */
 export async function listStoreGapSuggestions(
   storeId: string,
