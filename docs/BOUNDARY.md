@@ -185,9 +185,13 @@ held back from sale.
 - **api** writes integration alerts: token-refresh failure, outbox DLQ growth,
   rate-limit exhaustion, webhook signature failure. (✅ shipped where helpers
   exist.)
-- **web** writes ERP-detected alerts: negative-available stock (EPIC-08-03),
-  opname variance over threshold (EPIC-07-04), AR overdue (EPIC-21-06), konsi
-  sell-through discrepancy (EPIC-22-05). (⏳ ships per EPIC.)
+- **web** writes ERP-detected alerts: negative-available stock and opname
+  variance over threshold (⏳ planned); AR overdue (✅ shipped, `AR_OVERDUE`);
+  and the konsi sell-through discrepancy alert, shipped with the konsi count
+  schedule — a report created automatically after a full count is announced as
+  `KONSI_REPORT_HELD` when lines await a resolution, beside `KONSI_REPORT_READY`
+  and `KONSI_REPORT_BLOCKED`, and the monthly count raises `KONSI_COUNT_DUE` and
+  `KONSI_COUNT_OVERDUE` (✅ shipped).
 
 No shared writer helper is mandated yet — the table is simple. If multiple web
 call sites accumulate, lift into a `@elorae/db/admin-notification-writer.ts`
