@@ -143,11 +143,11 @@ function parseApproveRequest(input: unknown): ApproveRequest | null {
 }
 
 /**
- * Posts every sell-through journal after the approve has committed. Each goes through
- * `postArJournalSafely`, so an unmapped account degrades to a JOURNAL_PENDING flag and a journal
- * still missing, which the report page offers to retry, never a failed approve. `NOTHING_TO_POST`
- * counts as posted on both the approve path and the retry path — there is nothing left for that
- * kind to post, so it is done either way.
+ * Posts the given sell-through journals after an approve or a void has committed. Each goes through
+ * `postArJournalSafely`, so a posting failure degrades to a JOURNAL_PENDING flag and a journal still
+ * missing, which the report page offers to retry, never a failed approve or void. `NOTHING_TO_POST`
+ * counts as posted on the approve, void and retry paths alike — there is nothing left for that kind
+ * to post, so it is done either way.
  */
 async function postSellThroughJournals(id: string, userId: string, kinds: readonly SellThroughAnyJournalKind[]) {
   const posted: SellThroughAnyJournalKind[] = [];
