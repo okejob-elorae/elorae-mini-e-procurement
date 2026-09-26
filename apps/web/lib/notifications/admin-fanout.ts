@@ -76,8 +76,9 @@ export function toFcmData(metadata: unknown): Record<string, string> {
  * order submit. `void` is safe here specifically because web runs as a long-lived Node process on
  * the VPS, not a serverless runtime that freezes on response. The two cron sweeps,
  * `runOverdueSweep` and `runKonsiCountSweep`, await it deliberately: no user is waiting, and an
- * unawaited batch would stampede FCM. `reportStuckDeliveryCompletionAction` awaits it too, since
- * only the PWA's background offline queue calls it.
+ * unawaited batch would stampede FCM. `reportStuckDeliveryCompletionAction` awaits it too: the
+ * PWA's offline completion queue calls it mostly from background sync, but also from the pending
+ * screen's Retry, where a salesman is waiting, so it is no precedent for an interactive path.
  */
 export async function fanOutAdminNotification(notification: {
   id: string;
