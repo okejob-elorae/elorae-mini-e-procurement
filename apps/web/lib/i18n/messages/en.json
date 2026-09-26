@@ -4695,6 +4695,7 @@
     "statusPartial": "Partially Paid",
     "statusPaid": "Paid",
     "statusWrittenOff": "Written Off",
+    "statusVoided": "Voided",
     "statusUnknown": "Unknown",
     "deductionsTitle": "Deductions",
     "deductionsEmpty": "This settlement has no deductions.",
@@ -5093,6 +5094,7 @@
     "statusCreated": "Created",
     "statusSentToStore": "Sent to Store",
     "statusNotRequired": "Not Required",
+    "statusCancelled": "Cancelled",
     "colDocNo": "Nota No.",
     "colStore": "Store",
     "colInvoiceDate": "Invoice Date",
@@ -5163,7 +5165,8 @@
     "statusPending": "Pending",
     "statusCreated": "Created",
     "statusSentToStore": "Sent to Store",
-    "statusNotRequired": "Not Required"
+    "statusNotRequired": "Not Required",
+    "statusCancelled": "Cancelled"
   },
   "piutang": {
     "pageTitle": "Receivables (Piutang)",
@@ -5184,6 +5187,7 @@
     "statusPartial": "Partially Paid",
     "statusPaid": "Paid",
     "statusWrittenOff": "Written Off",
+    "statusVoided": "Voided",
     "colStore": "Store",
     "colDocNo": "Nota No.",
     "colSalesman": "Salesman",
@@ -5237,6 +5241,8 @@
       "voidedBadge": "Cancelled",
       "primaryActionDisabledPaid": "This receivable is already paid off.",
       "primaryActionDisabledWrittenOff": "This receivable has been written off.",
+      "primaryActionDisabledVoided": "This receivable was voided with its sell-through report.",
+      "voidedNote": "Voided with its sell-through report.",
       "assignCollectorTitle": "Collector Assignment",
       "currentCollectorLabel": "Current Collector",
       "assignSuccessToast": "Collector assigned.",

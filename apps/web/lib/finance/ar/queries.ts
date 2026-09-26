@@ -336,8 +336,8 @@ export type StorePiutangSummary = {
 };
 
 /**
- * `bucketTotals`/`grandOutstanding` come from an unfiltered call because PAID/WRITTEN_OFF rows
- * always carry outstandingAmount 0 and so contribute nothing to either fold — filtering by status
+ * `bucketTotals`/`grandOutstanding` come from an unfiltered call because PAID/WRITTEN_OFF/VOIDED
+ * rows always carry outstandingAmount 0 and so contribute nothing to either fold — filtering by status
  * for the totals call would be redundant, not more correct. `rows`/`total` from that call are
  * discarded (they'd include zero-balance historical docs); the display rows come from the same
  * OUTSTANDING+PARTIAL merge `listAllocationCandidatesForStore` already uses above.

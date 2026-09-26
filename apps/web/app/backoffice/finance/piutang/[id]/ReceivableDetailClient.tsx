@@ -28,7 +28,7 @@ import { RecordPaymentSheet } from "./RecordPaymentSheet";
 import { AssignCollectorCard } from "./AssignCollectorCard";
 
 type ReceivableDetail = NonNullable<Awaited<ReturnType<typeof getReceivable>>>;
-type ReceivableStatusValue = "OUTSTANDING" | "PARTIAL" | "PAID" | "WRITTEN_OFF";
+type ReceivableStatusValue = "OUTSTANDING" | "PARTIAL" | "PAID" | "WRITTEN_OFF" | "VOIDED";
 type CollectionSubmissionStatus = "PENDING" | "VERIFIED" | "REJECTED";
 
 type Props = {
@@ -60,16 +60,18 @@ const STATUS_BADGE_CLASS: Record<ReceivableStatusValue, string> = {
   PARTIAL: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
   PAID: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
   WRITTEN_OFF: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200",
+  VOIDED: "bg-gray-100 text-gray-500 line-through dark:bg-gray-900 dark:text-gray-400",
 };
 
 const STATUS_LABEL_KEY: Record<
   ReceivableStatusValue,
-  "statusOutstanding" | "statusPartial" | "statusPaid" | "statusWrittenOff"
+  "statusOutstanding" | "statusPartial" | "statusPaid" | "statusWrittenOff" | "statusVoided"
 > = {
   OUTSTANDING: "statusOutstanding",
   PARTIAL: "statusPartial",
   PAID: "statusPaid",
   WRITTEN_OFF: "statusWrittenOff",
+  VOIDED: "statusVoided",
 };
 
 /**
@@ -141,9 +143,15 @@ export function ReceivableDetailClient({
   const [postingJournal, setPostingJournal] = useState(false);
 
   const status = r.status as ReceivableStatusValue;
-  const isSettled = status === "PAID" || status === "WRITTEN_OFF";
+  const isSettled = status === "PAID" || status === "WRITTEN_OFF" || status === "VOIDED";
   const primaryActionLabel = isSettled
-    ? t(status === "PAID" ? "detail.primaryActionDisabledPaid" : "detail.primaryActionDisabledWrittenOff")
+    ? t(
+        status === "PAID"
+          ? "detail.primaryActionDisabledPaid"
+          : status === "WRITTEN_OFF"
+            ? "detail.primaryActionDisabledWrittenOff"
+            : "detail.primaryActionDisabledVoided",
+      )
     : t("recordPaymentAction");
   const isOverdueBucket = r.bucket !== "CURRENT";
   /* Only a DELIVERY-sourced receivable has a delivery to post a journal against; `journalRetryable`
@@ -205,6 +213,19 @@ export function ReceivableDetailClient({
           )}
         </div>
       </div>
+
+      {status === "VOIDED" && r.source.kind === "SELL_THROUGH" && (
+        <p className="text-sm text-muted-foreground">
+          {t("detail.voidedNote")}{" "}
+          <Link
+            href={`/backoffice/konsi-sell-through/${r.source.sellThroughId}`}
+            className="inline-flex items-center gap-1 font-medium hover:underline"
+          >
+            {r.source.docNo}
+            <ExternalLink className="h-3 w-3" />
+          </Link>
+        </p>
+      )}
 
       {journalRetryable && (
         <Alert variant="destructive">

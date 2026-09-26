@@ -12,7 +12,7 @@ type PageProps = {
   searchParams: Promise<{ status?: string; q?: string; page?: string }>;
 };
 
-const STATUS_VALUES: TaxInvoiceStatusFilter[] = ["PENDING", "CREATED", "SENT_TO_STORE", "NOT_REQUIRED"];
+const STATUS_VALUES: TaxInvoiceStatusFilter[] = ["PENDING", "CREATED", "SENT_TO_STORE", "NOT_REQUIRED", "CANCELLED"];
 
 /**
  * Mirrors the local `DEFAULT_PPN_RATE` in `app/actions/settings/ppn.ts` — that file has the
@@ -69,7 +69,7 @@ export default async function FakturPajakPage({ searchParams }: PageProps) {
       <FakturPajakPageClient
         rows={[]}
         total={0}
-        counts={{ PENDING: 0, CREATED: 0, SENT_TO_STORE: 0, NOT_REQUIRED: 0 }}
+        counts={{ PENDING: 0, CREATED: 0, SENT_TO_STORE: 0, NOT_REQUIRED: 0, CANCELLED: 0 }}
         status={status ?? "ALL"}
         q={q}
         page={page}

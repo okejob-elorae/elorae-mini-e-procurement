@@ -18,7 +18,7 @@ type PageProps = {
 };
 
 const ALLOWED_PAGE_SIZES = [10, 25, 50, 100];
-const STATUS_VALUES: ReadonlySet<string> = new Set(["DRAFT", "APPROVED", "CANCELLED"]);
+const STATUS_VALUES: ReadonlySet<string> = new Set(["DRAFT", "APPROVED", "CANCELLED", "VOIDED"]);
 
 function parsePageSize(raw: string | undefined): number {
   const n = parseInt(raw ?? "", 10);
