@@ -370,12 +370,18 @@ d("konsi sell-through actions (test bed only)", () => {
     const id = await approvedInvoicedReport();
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     /* The gaps read is the first journal read after the commit, so only the post-commit steps fail. */
+    const originalFindMany = prisma.journal.findMany.bind(prisma.journal);
     const journalSpy = vi.spyOn(prisma.journal, "findMany").mockRejectedValueOnce(new Error("simulated read failure"));
     try {
       await expect(voidSellThroughAction(id, "wrong resolution")).resolves.toEqual({ ok: true });
       expect(errorSpy).toHaveBeenCalledWith("[konsi-sell-through] post-void steps failed", expect.any(Error));
     } finally {
-      journalSpy.mockRestore();
+      /**
+       * Pin the spy to the bound original, NOT mockRestore: a Prisma model delegate serves findMany
+       * through its proxy rather than as an own property, so mockRestore leaves the method undefined
+       * for every later read in this file.
+       */
+      journalSpy.mockImplementation(originalFindMany as unknown as typeof prisma.journal.findMany);
       errorSpy.mockRestore();
     }
 
