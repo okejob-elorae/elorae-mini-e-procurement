@@ -21,7 +21,13 @@ export type SellThroughErrorCode =
   | "SALESMAN_REQUIRED"
   | "SALESMAN_INVALID"
   | "BASELINE_NOT_FIRST"
-  | "BASELINE_REASON_REQUIRED";
+  | "BASELINE_REASON_REQUIRED"
+  | "HAS_SUCCESSOR"
+  | "HAS_PAYMENTS"
+  | "SETTLEMENT_PENDING"
+  | "COLLECTION_PENDING"
+  | "ALREADY_SETTLED"
+  | "VOID_REASON_REQUIRED";
 
 export class SellThroughError extends Error {
   constructor(

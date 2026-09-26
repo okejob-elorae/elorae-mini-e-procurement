@@ -66,13 +66,15 @@ export async function voidPayment(input: {
        * costs almost nothing and forces a deliberate un-write-off instead of letting a void quietly
        * resurrect a closed balance with nothing reversing it in the GL. The throw happens before
        * this allocation's restore runs, and — because the whole body is inside `runSerializable` —
-       * it rolls back the status flip above too, so the refusal is total.
+       * it rolls back the status flip above too, so the refusal is total. A VOIDED receivable (its
+       * sell-through report was voided) is terminal the same way — a void that recomputed its
+       * status would revive it.
        */
       const receivable = await tx.receivable.findUnique({
         where: { id: a.receivableId },
         select: { status: true },
       });
-      if (receivable?.status === "WRITTEN_OFF") throw new PaymentError("ALREADY_SETTLED");
+      if (receivable?.status === "WRITTEN_OFF" || receivable?.status === "VOIDED") throw new PaymentError("ALREADY_SETTLED");
 
       const restored = await tx.receivable.update({
         where: { id: a.receivableId },

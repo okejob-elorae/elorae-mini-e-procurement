@@ -650,6 +650,7 @@ enum ReceivableStatus {
   PARTIAL
   PAID
   WRITTEN_OFF
+  VOIDED
 }
 
 model Payment {
@@ -780,6 +781,7 @@ enum TaxInvoiceStatus {
   CREATED
   SENT_TO_STORE
   NOT_REQUIRED
+  CANCELLED
 }
 
 enum FieldReturnStatus {
@@ -1005,6 +1007,7 @@ enum SellThroughStatus {
   DRAFT
   APPROVED
   CANCELLED
+  VOIDED
 }
 
 enum SellThroughResolution {
@@ -1039,6 +1042,9 @@ model KonsiSellThrough {
   cancelledById      String?
   cancelledAt        DateTime?
   cancelReason       String?                @db.Text
+  voidedById         String?
+  voidedAt           DateTime?
+  voidReason         String?                @db.Text
   store              Store                  @relation(fields: [storeId], references: [id])
   salesman           User?                  @relation("KonsiSellThroughSalesman", fields: [salesmanId], references: [id])
   lines              KonsiSellThroughLine[]

@@ -50,12 +50,14 @@ import {
 } from "@/components/ui/alert-dialog";
 import { SellThroughApproveDialog } from "./SellThroughApproveDialog";
 import { SellThroughInvoiceCard } from "./SellThroughInvoiceCard";
+import { SellThroughVoidDialog } from "./SellThroughVoidDialog";
 import { formatRupiahExact, productNamesForKeys } from "./display";
 
 const STATUS_BADGE_VARIANT: Record<SellThroughDetail["status"], "secondary" | "destructive" | "default"> = {
   DRAFT: "secondary",
   APPROVED: "default",
   CANCELLED: "destructive",
+  VOIDED: "destructive",
 };
 
 /* Mirrors the writer's cap on both free-text reasons, so the input stops where the writer would refuse. */
@@ -76,6 +78,7 @@ export function SellThroughDetailClient({
   const tDetail = useTranslations("konsiSellThrough.detail");
   const tApprove = useTranslations("konsiSellThrough.approve");
   const tCancel = useTranslations("konsiSellThrough.cancel");
+  const tVoid = useTranslations("konsiSellThrough.void");
   const tCommon = useTranslations("common");
   const locale = useLocale();
   const router = useRouter();
@@ -91,6 +94,8 @@ export function SellThroughDetailClient({
   const [cancelReason, setCancelReason] = useState("");
   const [cancelling, startCancelTransition] = useTransition();
 
+  const [voidOpen, setVoidOpen] = useState(false);
+
   const isDraft = report.status === "DRAFT";
   const isSpgPos = report.method === "SPG_POS";
   /* Every SPG_POS report shows its resolutions; only a DRAFT viewed by a manager can edit them. */
@@ -102,16 +107,21 @@ export function SellThroughDetailClient({
   const totalLabelSpan = isSpgPos ? 10 : 9;
 
   /**
-   * An over-long reason arrives under three different codes (INVALID_RESOLUTION on resolve,
-   * REASON_REQUIRED on cancel, BASELINE_REASON_REQUIRED on a baseline approve) and gets its own
-   * copy on all three. UNPRICED carries the refused line keys, comma-joined, which are named back
-   * as products; with no detail it falls back to the preview's own unpriced keys.
+   * An over-long reason arrives under four different codes (INVALID_RESOLUTION on resolve,
+   * REASON_REQUIRED on cancel, BASELINE_REASON_REQUIRED on a baseline approve, VOID_REASON_REQUIRED
+   * on a void) and gets its own copy on all four. UNPRICED carries the refused line keys,
+   * comma-joined, which are named back as products; with no detail it falls back to the preview's
+   * own unpriced keys. HAS_SUCCESSOR and SETTLEMENT_PENDING carry the docNo of the document that
+   * blocks the void, which the copy names.
    */
   function errorMessage(result: SellThroughActionFailure): string {
     if (result.detail === "REASON_TOO_LONG") return t("err.REASON_TOO_LONG");
     if (result.reason === "UNPRICED") {
       const keys = result.detail ? result.detail.split(",") : report.unpricedKeys;
       return t("err.UNPRICED", { products: productNamesForKeys(report.lines, keys), n: keys.length });
+    }
+    if (result.reason === "HAS_SUCCESSOR" || result.reason === "SETTLEMENT_PENDING") {
+      return t(`err.${result.reason}`, { docNo: result.detail ?? "" });
     }
     return t(`err.${result.reason}`, { detail: result.detail ?? "" });
   }
@@ -216,6 +226,12 @@ export function SellThroughDetailClient({
               {tApprove("button")}
             </Button>
           )}
+          {canManage && report.status === "APPROVED" && (
+            <Button variant="outline" className="h-10 text-destructive" onClick={() => setVoidOpen(true)}>
+              <XCircle className="h-4 w-4" />
+              {report.baseline ? tVoid("buttonBaseline") : tVoid("button")}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -281,15 +297,35 @@ export function SellThroughDetailClient({
               <span className="text-right">{`${report.cancelledByLabel} · ${formatDateTime(report.cancelledAt, locale)}`}</span>
             </div>
           )}
+          {report.voidedByLabel && report.voidedAt && (
+            <div className="flex justify-between gap-4 text-sm">
+              <span className="text-muted-foreground">{tDetail("voidedBy")}</span>
+              <span className="text-right">{`${report.voidedByLabel} · ${formatDateTime(report.voidedAt, locale)}`}</span>
+            </div>
+          )}
         </div>
         {report.status === "CANCELLED" && report.cancelReason && (
           <p className="text-sm text-muted-foreground">
             {tDetail("cancelReason")}: {report.cancelReason}
           </p>
         )}
+        {report.status === "VOIDED" && (
+          <div className="space-y-1">
+            {report.voidReason && (
+              <p className="text-sm text-muted-foreground">
+                {tDetail("voidReason")}: {report.voidReason}
+              </p>
+            )}
+            {canManage && (
+              <Link href={`/backoffice/store-stocktakes/${report.closingStocktakeId}`} className="text-sm text-primary hover:underline">
+                {tVoid("createCorrected")}
+              </Link>
+            )}
+          </div>
+        )}
       </Card>
 
-      {report.status === "APPROVED" && (
+      {(report.status === "APPROVED" || report.status === "VOIDED") && (
         <SellThroughInvoiceCard report={report} canPrint={canPrint} canManage={canManage} describeError={errorMessage} />
       )}
 
@@ -554,6 +590,8 @@ export function SellThroughDetailClient({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <SellThroughVoidDialog report={report} open={voidOpen} onOpenChange={setVoidOpen} describeError={errorMessage} />
     </div>
   );
 }

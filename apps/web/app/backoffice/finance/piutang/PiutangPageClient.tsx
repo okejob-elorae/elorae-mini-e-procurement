@@ -44,7 +44,7 @@ import { bulkAssignStoreAction, type CollectionActionReason } from "@/app/action
 import { AgingSummary } from "./AgingSummary";
 import { PiutangExportButtons } from "./PiutangExportButtons";
 
-type ReceivableStatusValue = "OUTSTANDING" | "PARTIAL" | "PAID" | "WRITTEN_OFF";
+type ReceivableStatusValue = "OUTSTANDING" | "PARTIAL" | "PAID" | "WRITTEN_OFF" | "VOIDED";
 type StatusFilter = ReceivableStatusValue | "ALL";
 
 type Props = {
@@ -82,16 +82,18 @@ const STATUS_BADGE_CLASS: Record<ReceivableStatusValue, string> = {
   PARTIAL: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
   PAID: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
   WRITTEN_OFF: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200",
+  VOIDED: "bg-gray-100 text-gray-500 line-through dark:bg-gray-900 dark:text-gray-400",
 };
 
 const STATUS_LABEL_KEY: Record<
   ReceivableStatusValue,
-  "statusOutstanding" | "statusPartial" | "statusPaid" | "statusWrittenOff"
+  "statusOutstanding" | "statusPartial" | "statusPaid" | "statusWrittenOff" | "statusVoided"
 > = {
   OUTSTANDING: "statusOutstanding",
   PARTIAL: "statusPartial",
   PAID: "statusPaid",
   WRITTEN_OFF: "statusWrittenOff",
+  VOIDED: "statusVoided",
 };
 
 function errKey(reason: CollectionActionReason): string {
@@ -310,6 +312,7 @@ export function PiutangPageClient(props: Props) {
                 <SelectItem value="PARTIAL">{t("statusPartial")}</SelectItem>
                 <SelectItem value="PAID">{t("statusPaid")}</SelectItem>
                 <SelectItem value="WRITTEN_OFF">{t("statusWrittenOff")}</SelectItem>
+                <SelectItem value="VOIDED">{t("statusVoided")}</SelectItem>
               </SelectContent>
             </Select>
             <Input

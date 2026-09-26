@@ -27,7 +27,7 @@ type PageProps = {
   }>;
 };
 
-const STATUS_VALUES = ["OUTSTANDING", "PARTIAL", "PAID", "WRITTEN_OFF"] as const;
+const STATUS_VALUES = ["OUTSTANDING", "PARTIAL", "PAID", "WRITTEN_OFF", "VOIDED"] as const;
 
 function parseStatus(raw: string | undefined): (typeof STATUS_VALUES)[number] | undefined {
   return raw && (STATUS_VALUES as readonly string[]).includes(raw)

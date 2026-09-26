@@ -278,13 +278,33 @@ d("listTaxInvoices (test bed only)", () => {
 
     /* A is now SENT_TO_STORE, B is still CREATED — no bucket may be inferred from a default. */
     const { counts } = await listTaxInvoices({ q: storeName, page: 1, perPage: 10 });
-    expect(counts).toEqual({ PENDING: 0, CREATED: 1, SENT_TO_STORE: 1, NOT_REQUIRED: 0 });
+    expect(counts).toEqual({ PENDING: 0, CREATED: 1, SENT_TO_STORE: 1, NOT_REQUIRED: 0, CANCELLED: 0 });
 
     const filtered = await listTaxInvoices({ q: storeName, status: "SENT_TO_STORE", page: 1, perPage: 10 });
     expect(filtered.total).toBe(1);
     expect(filtered.rows).toHaveLength(1);
     expect(filtered.rows[0].id).toBe(sent.id);
     expect(filtered.rows[0].status).toBe("SENT_TO_STORE");
+  });
+
+  it("counts a cancelled faktur under CANCELLED and filters to it", async () => {
+    /**
+     * A is the PENDING one — flipped directly, same as the SENT_TO_STORE case above, because the
+     * subject here is the query layer and going through the writer would drag its audit rows in.
+     */
+    const cancelled = await prisma.taxInvoice.update({
+      where: { deliveryId: deliveryAId },
+      data: { status: "CANCELLED" },
+    });
+
+    const { counts } = await listTaxInvoices({ q: storeName, page: 1, perPage: 10 });
+    expect(counts).toEqual({ PENDING: 0, CREATED: 1, SENT_TO_STORE: 0, NOT_REQUIRED: 0, CANCELLED: 1 });
+
+    const filtered = await listTaxInvoices({ q: storeName, status: "CANCELLED", page: 1, perPage: 10 });
+    expect(filtered.total).toBe(1);
+    expect(filtered.rows).toHaveLength(1);
+    expect(filtered.rows[0].id).toBe(cancelled.id);
+    expect(filtered.rows[0].status).toBe("CANCELLED");
   });
 
   it("represents a SELL_THROUGH-sourced faktur with the report's docNo and store, not the delivery's", async () => {

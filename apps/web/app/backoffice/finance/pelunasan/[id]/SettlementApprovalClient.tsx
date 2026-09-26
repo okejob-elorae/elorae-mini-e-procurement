@@ -106,7 +106,7 @@ const DEDUCTION_TYPE_LABEL_KEY: Record<
   ADMIN_FEE: "deductionAdminFee",
 };
 
-type ReceivableStatusValue = "OUTSTANDING" | "PARTIAL" | "PAID" | "WRITTEN_OFF";
+type ReceivableStatusValue = "OUTSTANDING" | "PARTIAL" | "PAID" | "WRITTEN_OFF" | "VOIDED";
 
 /**
  * Exhaustive over `ReceivableStatus`, so a widened enum is a compile error here rather than a raw
@@ -117,12 +117,13 @@ type ReceivableStatusValue = "OUTSTANDING" | "PARTIAL" | "PAID" | "WRITTEN_OFF";
  */
 const RECEIVABLE_STATUS_LABEL_KEY: Record<
   ReceivableStatusValue,
-  "statusOutstanding" | "statusPartial" | "statusPaid" | "statusWrittenOff"
+  "statusOutstanding" | "statusPartial" | "statusPaid" | "statusWrittenOff" | "statusVoided"
 > = {
   OUTSTANDING: "statusOutstanding",
   PARTIAL: "statusPartial",
   PAID: "statusPaid",
   WRITTEN_OFF: "statusWrittenOff",
+  VOIDED: "statusVoided",
 };
 
 function receivableStatusLabelKey(status: string): string {

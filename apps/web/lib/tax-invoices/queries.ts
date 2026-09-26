@@ -21,7 +21,7 @@ export type TaxInvoiceRow = {
   total: number | null;
 };
 
-export type TaxInvoiceStatusFilter = "PENDING" | "CREATED" | "SENT_TO_STORE" | "NOT_REQUIRED";
+export type TaxInvoiceStatusFilter = "PENDING" | "CREATED" | "SENT_TO_STORE" | "NOT_REQUIRED" | "CANCELLED";
 
 /**
  * `counts` deliberately drops the `status` term (kept applying `q`) so the queue's status tabs
@@ -71,7 +71,13 @@ export async function listTaxInvoices(params: {
     }),
   ]);
 
-  const counts: Record<TaxInvoiceStatusFilter, number> = { PENDING: 0, CREATED: 0, SENT_TO_STORE: 0, NOT_REQUIRED: 0 };
+  const counts: Record<TaxInvoiceStatusFilter, number> = {
+    PENDING: 0,
+    CREATED: 0,
+    SENT_TO_STORE: 0,
+    NOT_REQUIRED: 0,
+    CANCELLED: 0,
+  };
   for (const c of countRows) {
     counts[c.status as TaxInvoiceStatusFilter] = c._count._all;
   }

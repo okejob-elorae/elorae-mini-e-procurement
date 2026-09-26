@@ -119,7 +119,11 @@ export async function computeLateMovements(
   });
   if (!report) throw new SellThroughError("NOT_FOUND", "PREVIOUS_REPORT");
 
-  /* An APPROVED report cannot be cancelled, so a stored previousId always resolves; the check is a guard, not a path. */
+  /**
+   * This check guards existence only; it never reads the status. The chain invariants are what keep
+   * the report before APPROVED: cancel is DRAFT-only, and a void refuses while a live successor
+   * exists, which this APPROVED report is. The missing-row throw is a guard, not a path.
+   */
   const beforePrevious = report.previousId
     ? await client.konsiSellThrough.findUnique({ where: { id: report.previousId }, select: { id: true, closingStocktakeId: true } })
     : null;

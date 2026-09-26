@@ -22,6 +22,7 @@ import {
   retrySellThroughJournalsAction,
   recordSellThroughNotaPrinted,
   getSellThroughNotaAction,
+  voidSellThroughAction,
 } from "./konsi-sell-through";
 
 /* Stock-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host). */
@@ -128,6 +129,12 @@ d("konsi sell-through actions (test bed only)", () => {
     (await prisma.journal.findMany({ where: { sourceId: seededId(id) }, select: { sourceType: true } }))
       .map((j) => j.sourceType)
       .sort();
+
+  async function approvedInvoicedReport(): Promise<string> {
+    const id = await billingDraft();
+    await approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId });
+    return id;
+  }
 
   /* approveSellThroughAction */
 
@@ -237,6 +244,22 @@ d("konsi sell-through actions (test bed only)", () => {
     expect(faktur.notaPrintedAt).toBeNull();
   }, SLOW);
 
+  it("a print that lands after the void stamps nothing and notifies no one", async () => {
+    const id = await approvedInvoicedReport();
+    await voidSellThroughAction(id, "wrong resolution");
+    mockFanOut.mockClear();
+
+    await recordSellThroughNotaPrinted(id);
+
+    const faktur = await prisma.taxInvoice.findUniqueOrThrow({ where: { sellThroughId: seededId(id) } });
+    expect(faktur).toMatchObject({ status: "CANCELLED", notaPrintedAt: null, notaPrintedById: null });
+    expect(mockFanOut).not.toHaveBeenCalled();
+    const notifications = (
+      await prisma.adminNotification.findMany({ where: { category: "TAX_INVOICE_PENDING" }, select: { metadata: true } })
+    ).filter((n) => (n.metadata as { sellThroughId?: string } | null)?.sellThroughId === id);
+    expect(notifications).toHaveLength(0);
+  }, SLOW);
+
   /* getSellThroughNotaAction */
 
   it("refuses a nota for a baseline report", async () => {
@@ -295,5 +318,85 @@ d("konsi sell-through actions (test bed only)", () => {
     expect(result.nota.lines).toHaveLength(1);
     expect(result.nota.lines[0]).toMatchObject({ billedQty: 4, unitPrice: 40000, lineTotal: 160000 });
     expect(result.nota.total).toBe(160000);
+  }, SLOW);
+
+  /* voidSellThroughAction */
+
+  it("a void posts every reversal after commit, after which nothing is left to retry", async () => {
+    const id = await approvedInvoicedReport();
+    await expect(voidSellThroughAction(id, "wrong resolution")).resolves.toEqual({ ok: true });
+    const doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } });
+    expect(doc.status).toBe("VOIDED");
+    expect(await journalTypesFor(id)).toEqual(["KONSI_SELLTHRU_COGS", "KONSI_SELLTHRU_COGS_VOID", "KONSI_SELLTHRU_REVENUE", "KONSI_SELLTHRU_REVENUE_VOID"]);
+    await expect(retrySellThroughJournalsAction(id)).resolves.toEqual({ ok: false, reason: "NOT_RETRYABLE" });
+  }, SLOW);
+
+  it("a reversal missing after the void is offered and posted by the retry", async () => {
+    const id = await approvedInvoicedReport();
+    await voidSellThroughAction(id, "wrong resolution");
+    await prisma.journalLine.deleteMany({ where: { journal: { sourceType: "KONSI_SELLTHRU_COGS_VOID", sourceId: id } } });
+    await prisma.journal.deleteMany({ where: { sourceType: "KONSI_SELLTHRU_COGS_VOID", sourceId: id } });
+    await expect(retrySellThroughJournalsAction(id)).resolves.toEqual({ ok: true, posted: ["konsi_sell_through_cogs_void"], stillPending: [] });
+  }, SLOW);
+
+  it("a void of a report whose originals never posted posts nothing and owes nothing", async () => {
+    const id = await billingDraft();
+    await fx.approve(id);
+    await expect(voidSellThroughAction(id, "wrong resolution")).resolves.toEqual({ ok: true });
+    expect(await journalTypesFor(id)).toEqual([]);
+    await expect(retrySellThroughJournalsAction(id)).resolves.toEqual({ ok: false, reason: "NOT_RETRYABLE" });
+  }, SLOW);
+
+  it("refuses a void without stores:manage, and malformed input with INVALID_REQUEST", async () => {
+    const id = await approvedInvoicedReport();
+    mockAuth.mockResolvedValueOnce({ user: { id: state.userId, permissions: ["stores:view"] } });
+    await expect(voidSellThroughAction(id, "x")).resolves.toEqual({ ok: false, reason: "FORBIDDEN" });
+    await expect(voidSellThroughAction("", "x")).resolves.toEqual({ ok: false, reason: "INVALID_REQUEST" });
+    await expect(voidSellThroughAction(id, 42)).resolves.toEqual({ ok: false, reason: "INVALID_REQUEST" });
+    expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("APPROVED");
+  }, SLOW);
+
+  it("passes a writer refusal through, with its detail when it carries one", async () => {
+    const id = await approvedInvoicedReport();
+    await expect(voidSellThroughAction(id, "  ")).resolves.toEqual({ ok: false, reason: "VOID_REASON_REQUIRED" });
+    await expect(voidSellThroughAction(id, "x".repeat(1001))).resolves.toEqual({
+      ok: false,
+      reason: "VOID_REASON_REQUIRED",
+      detail: "REASON_TOO_LONG",
+    });
+  }, SLOW);
+
+  it("a failure after the void committed still reports success, and the retry offers the reversals it left", async () => {
+    const id = await approvedInvoicedReport();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    /* The gaps read is the first journal read after the commit, so only the post-commit steps fail. */
+    const originalFindMany = prisma.journal.findMany.bind(prisma.journal);
+    const journalSpy = vi.spyOn(prisma.journal, "findMany").mockRejectedValueOnce(new Error("simulated read failure"));
+    try {
+      await expect(voidSellThroughAction(id, "wrong resolution")).resolves.toEqual({ ok: true });
+      expect(errorSpy).toHaveBeenCalledWith("[konsi-sell-through] post-void steps failed", expect.any(Error));
+    } finally {
+      /**
+       * Pin the spy to the bound original, NOT mockRestore: a Prisma model delegate serves findMany
+       * through its proxy rather than as an own property, so mockRestore leaves the method undefined
+       * for every later read in this file.
+       */
+      journalSpy.mockImplementation(originalFindMany as unknown as typeof prisma.journal.findMany);
+      errorSpy.mockRestore();
+    }
+
+    expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("VOIDED");
+    expect(await journalTypesFor(id)).toEqual(["KONSI_SELLTHRU_COGS", "KONSI_SELLTHRU_REVENUE"]);
+    await expect(retrySellThroughJournalsAction(id)).resolves.toEqual({
+      ok: true,
+      posted: ["konsi_sell_through_revenue_void", "konsi_sell_through_cogs_void"],
+      stillPending: [],
+    });
+  }, SLOW);
+
+  it("refuses a nota for a voided report", async () => {
+    const id = await approvedInvoicedReport();
+    await voidSellThroughAction(id, "wrong resolution");
+    await expect(getSellThroughNotaAction(id)).resolves.toMatchObject({ ok: false, reason: "INVALID_STATE" });
   }, SLOW);
 });

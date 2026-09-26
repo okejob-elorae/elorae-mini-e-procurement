@@ -443,11 +443,16 @@ export async function approveSellThrough(input: ApproveSellThroughInput): Promis
     await assertNoReturInFlight(tx, doc.storeId, countMoment);
     await assertNoTransferInFlight(tx, doc.storeId, countMoment, countedKeysOf(closing?.lines ?? []));
 
-    /* An APPROVED report cannot be cancelled, so a stored previousId always resolves; the check is a guard, not a path. */
+    /**
+     * An APPROVED report cannot be cancelled, and a void refuses while a live successor exists, so a
+     * DRAFT's stored previousId always resolves to an APPROVED report; both checks are guards, not
+     * paths.
+     */
     const previous = doc.previousId
-      ? await tx.konsiSellThrough.findUnique({ where: { id: doc.previousId }, select: { id: true, closingStocktakeId: true } })
+      ? await tx.konsiSellThrough.findUnique({ where: { id: doc.previousId }, select: { id: true, closingStocktakeId: true, status: true } })
       : null;
     if (doc.previousId && !previous) throw new SellThroughError("NOT_FOUND", "PREVIOUS_REPORT");
+    if (previous && previous.status !== "APPROVED") throw new SellThroughError("INVALID_STATE", "PREVIOUS_REPORT");
 
     const inputs = await loadSellThroughInputs(tx, { storeId: doc.storeId, closingStocktakeId: doc.closingStocktakeId, previous });
     const lateMovements = await computeLateMovements(tx, doc.storeId, previous);

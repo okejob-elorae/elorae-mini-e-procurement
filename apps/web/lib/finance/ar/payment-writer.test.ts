@@ -380,6 +380,14 @@ d("recordPayment (test bed only)", () => {
     expect(err.code).toBe("ALREADY_SETTLED");
   });
 
+  it("rejects a receivable that is VOIDED", async () => {
+    await prisma.receivable.update({ where: { id: recB }, data: { status: "VOIDED", outstandingAmount: 0 } });
+    const err = await recordPayment({
+      ...base(), amount: 100, allocations: [{ receivableId: recB, amount: 100 }],
+    }).catch((e) => e);
+    expect(err.code).toBe("ALREADY_SETTLED");
+  });
+
   it("rejects an empty allocation list", async () => {
     const err = await recordPayment({ ...base(), amount: 100, allocations: [] }).catch((e) => e);
     expect(err.code).toBe("NO_ALLOCATIONS");

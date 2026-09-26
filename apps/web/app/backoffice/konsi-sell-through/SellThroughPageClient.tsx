@@ -29,15 +29,16 @@ import { Pager } from "@/components/Pager";
 
 const ROUTE = "/backoffice/konsi-sell-through";
 const ALL_STORES = "__all__";
-const STATUS_OPTIONS: SellThroughStatusValue[] = ["DRAFT", "APPROVED", "CANCELLED"];
+const STATUS_OPTIONS: SellThroughStatusValue[] = ["DRAFT", "APPROVED", "CANCELLED", "VOIDED"];
 
 const STATUS_BADGE_VARIANT: Record<SellThroughStatusValue, "secondary" | "destructive" | "default"> = {
   DRAFT: "secondary",
   APPROVED: "default",
   CANCELLED: "destructive",
+  VOIDED: "destructive",
 };
 
-/* An APPROVED report is either invoiced or a baseline, and the list says which; the filter keeps the three real statuses. */
+/* An APPROVED report is either invoiced or a baseline, and the list says which; the filter keeps the four real statuses. */
 function statusKey(r: SellThroughListItem): SellThroughStatusValue | "APPROVED_BASELINE" | "APPROVED_INVOICED" {
   if (r.status !== "APPROVED") return r.status;
   return r.baseline ? "APPROVED_BASELINE" : "APPROVED_INVOICED";

@@ -191,7 +191,12 @@ export function FakturPajakPageClient(props: Props) {
     });
   }
 
-  const totalCount = props.counts.PENDING + props.counts.CREATED + props.counts.SENT_TO_STORE + props.counts.NOT_REQUIRED;
+  const totalCount =
+    props.counts.PENDING +
+    props.counts.CREATED +
+    props.counts.SENT_TO_STORE +
+    props.counts.NOT_REQUIRED +
+    props.counts.CANCELLED;
   const copy = dialog ? dialogCopyFor(dialog.kind, dialog.row.docNo) : null;
 
   return (
@@ -235,6 +240,9 @@ export function FakturPajakPageClient(props: Props) {
               </TabsTrigger>
               <TabsTrigger value="NOT_REQUIRED">
                 {t("statusNotRequired")} ({props.counts.NOT_REQUIRED})
+              </TabsTrigger>
+              <TabsTrigger value="CANCELLED">
+                {t("statusCancelled")} ({props.counts.CANCELLED})
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -382,7 +390,7 @@ export function FakturPajakPageClient(props: Props) {
                                           {t("actionRevert")}
                                         </Button>
                                       </>
-                                    ) : (
+                                    ) : status === "CANCELLED" ? null : (
                                       <Button
                                         variant="outline"
                                         size="sm"
