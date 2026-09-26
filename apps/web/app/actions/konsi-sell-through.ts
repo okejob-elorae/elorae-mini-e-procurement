@@ -22,7 +22,7 @@ import {
   SELL_THROUGH_JOURNAL_KINDS,
   SELL_THROUGH_JOURNAL_POSTERS,
   sellThroughJournalGaps,
-  type SellThroughJournalKind,
+  type SellThroughAnyJournalKind,
 } from "@/lib/konsi-sell-through/journal";
 import { logPrint } from "./audit";
 
@@ -148,9 +148,9 @@ function parseApproveRequest(input: unknown): ApproveRequest | null {
  * counts as posted on both the approve path and the retry path — there is nothing left for that
  * kind to post, so it is done either way.
  */
-async function postSellThroughJournals(id: string, userId: string, kinds: readonly SellThroughJournalKind[]) {
-  const posted: SellThroughJournalKind[] = [];
-  const stillPending: SellThroughJournalKind[] = [];
+async function postSellThroughJournals(id: string, userId: string, kinds: readonly SellThroughAnyJournalKind[]) {
+  const posted: SellThroughAnyJournalKind[] = [];
+  const stillPending: SellThroughAnyJournalKind[] = [];
   for (const kind of kinds) {
     const outcome = await postArJournalSafely(kind, id, () => SELL_THROUGH_JOURNAL_POSTERS[kind](id, userId));
     if (outcome.ok || outcome.code === "NOTHING_TO_POST") posted.push(kind);
@@ -180,7 +180,7 @@ export async function approveSellThroughAction(input: unknown): Promise<SellThro
 }
 
 export type RetrySellThroughJournalsResult =
-  | { ok: true; posted: SellThroughJournalKind[]; stillPending: SellThroughJournalKind[] }
+  | { ok: true; posted: SellThroughAnyJournalKind[]; stillPending: SellThroughAnyJournalKind[] }
   | SellThroughActionFailure;
 
 /**

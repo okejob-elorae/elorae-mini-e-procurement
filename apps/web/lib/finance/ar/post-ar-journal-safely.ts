@@ -9,7 +9,10 @@ export type ArJournalKind =
   | "ar_payment_void"
   | "konsi_sell_through_revenue"
   | "konsi_sell_through_cogs"
-  | "konsi_sell_through_shrinkage";
+  | "konsi_sell_through_shrinkage"
+  | "konsi_sell_through_revenue_void"
+  | "konsi_sell_through_cogs_void"
+  | "konsi_sell_through_shrinkage_void";
 
 const TITLE: Record<ArJournalKind, string> = {
   field_delivery_revenue: "Nota tagihan revenue journal not posted",
@@ -19,6 +22,9 @@ const TITLE: Record<ArJournalKind, string> = {
   konsi_sell_through_revenue: "Konsi sell-through revenue journal not posted",
   konsi_sell_through_cogs: "Konsi sell-through COGS journal not posted",
   konsi_sell_through_shrinkage: "Konsi sell-through shrinkage journal not posted",
+  konsi_sell_through_revenue_void: "Konsi sell-through revenue reversal journal not posted",
+  konsi_sell_through_cogs_void: "Konsi sell-through COGS reversal journal not posted",
+  konsi_sell_through_shrinkage_void: "Konsi sell-through shrinkage reversal journal not posted",
 };
 
 /**
@@ -36,6 +42,9 @@ const RETRY_HINT: Record<ArJournalKind, string> = {
   konsi_sell_through_revenue: "retry from the sell-through report's page",
   konsi_sell_through_cogs: "retry from the sell-through report's page",
   konsi_sell_through_shrinkage: "retry from the sell-through report's page",
+  konsi_sell_through_revenue_void: "retry from the voided sell-through report's page",
+  konsi_sell_through_cogs_void: "retry from the voided sell-through report's page",
+  konsi_sell_through_shrinkage_void: "retry from the voided sell-through report's page",
 };
 
 export type ArPostOutcome = GenerateAutoJournalResult | { ok: false; code: "ERROR" };

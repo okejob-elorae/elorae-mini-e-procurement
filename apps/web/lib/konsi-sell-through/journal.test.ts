@@ -7,9 +7,11 @@ import {
   postSellThroughRevenueJournal,
   postSellThroughCogsJournal,
   postSellThroughShrinkageJournal,
+  postSellThroughVoidJournal,
   sellThroughJournalGaps,
 } from "./journal";
 import { createSellThrough, resolveSellThroughLine } from "./writer";
+import { voidSellThrough } from "./void-writer";
 import { createSellThroughFixtures } from "./test-fixtures";
 
 /* Stock-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host). */
@@ -246,4 +248,110 @@ d("konsi sell-through journals (test bed only)", () => {
     await prisma.journalAccountMapping.delete({ where: { role: "SALES_REVENUE" } });
     await expect(postSellThroughRevenueJournal(id, state.userId)).resolves.toMatchObject({ ok: false, code: "UNMAPPED_ROLE", role: "SALES_REVENUE" });
   }, SLOW);
+
+  describe("void reversals", () => {
+    /* The file's own SHELF_COUNT case: billing 4 @ 40000, unitCost 10000 → revenue 160000, cogs 40000, no shrinkage. */
+    async function voidedWithOriginals() {
+      await setMethod("SHELF_COUNT");
+      await transferIn(6);
+      const stocktakeId = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
+      const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+      reportIds.push(id);
+      await fx.approve(id);
+      await postSellThroughRevenueJournal(id, state.userId);
+      await postSellThroughCogsJournal(id, state.userId);
+      await voidSellThrough({ id, voidedById: state.userId, reason: "wrong line billed" });
+      return id;
+    }
+
+    async function voidedBaseline() {
+      await setMethod("SHELF_COUNT");
+      await transferIn(6);
+      const stocktakeId = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
+      const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+      reportIds.push(id);
+      await fx.approveBaseline(id);
+      await voidSellThrough({ id, voidedById: state.userId, reason: "wrong line billed" });
+      return id;
+    }
+
+    const linesOf = async (sourceType: string, id: string) => {
+      const j = await prisma.journal.findFirstOrThrow({ where: { sourceType, sourceId: seededId(id) }, include: { lines: true } });
+      return {
+        date: j.date,
+        lines: j.lines
+          .map((l) => ({ acc: l.chartAccountId, dr: Number(l.debit), cr: Number(l.credit) }))
+          .sort((a, b) => a.acc.localeCompare(b.acc)),
+      };
+    };
+
+    it("each reversal mirrors its original's lines and accounts, dated on the original's date", async () => {
+      const id = await voidedWithOriginals();
+      for (const kind of ["konsi_sell_through_revenue_void", "konsi_sell_through_cogs_void"] as const) {
+        await expect(postSellThroughVoidJournal(kind, id, state.userId)).resolves.toMatchObject({ ok: true, created: true });
+      }
+      await expect(postSellThroughVoidJournal("konsi_sell_through_shrinkage_void", id, state.userId)).resolves.toEqual({
+        ok: false,
+        code: "NOTHING_TO_POST",
+      });
+      for (const [orig, rev] of [
+        ["KONSI_SELLTHRU_REVENUE", "KONSI_SELLTHRU_REVENUE_VOID"],
+        ["KONSI_SELLTHRU_COGS", "KONSI_SELLTHRU_COGS_VOID"],
+      ]) {
+        const o = await linesOf(orig, id);
+        const r = await linesOf(rev, id);
+        expect(r.date.getTime()).toBe(o.date.getTime());
+        expect(r.lines).toEqual(o.lines.map((l) => ({ acc: l.acc, dr: l.cr, cr: l.dr })));
+      }
+    }, SLOW);
+
+    it("mirrors the posted accounts even after the mapping changed", async () => {
+      const id = await voidedWithOriginals();
+      /* A letter suffix can never match the digit suffixes (1–5) beforeEach gives its five accounts. */
+      const other = await prisma.chartAccount.create({
+        data: { code: `9${state.run}R`, name: "t", type: "PENDAPATAN", depth: 1, isActive: true },
+      });
+      try {
+        await prisma.journalAccountMapping.update({ where: { role: "SALES_REVENUE" }, data: { chartAccountId: other.id } });
+        await postSellThroughVoidJournal("konsi_sell_through_revenue_void", id, state.userId);
+        const r = await linesOf("KONSI_SELLTHRU_REVENUE_VOID", id);
+        expect(r.lines.map((l) => l.acc)).not.toContain(other.id);
+        expect(r.lines.map((l) => l.acc)).toContain(salesRevenueId);
+      } finally {
+        await prisma.journalLine.deleteMany({
+          where: { journal: { sourceType: { startsWith: "KONSI_SELLTHRU_" }, sourceId: seededId(id) } },
+        });
+        await prisma.journal.deleteMany({ where: { sourceType: { startsWith: "KONSI_SELLTHRU_" }, sourceId: seededId(id) } });
+        await prisma.journalAccountMapping.update({ where: { role: "SALES_REVENUE" }, data: { chartAccountId: salesRevenueId } });
+        await prisma.chartAccount.delete({ where: { id: other.id } });
+      }
+    }, SLOW);
+
+    it("a replay posts nothing new", async () => {
+      const id = await voidedWithOriginals();
+      await postSellThroughVoidJournal("konsi_sell_through_revenue_void", id, state.userId);
+      await expect(postSellThroughVoidJournal("konsi_sell_through_revenue_void", id, state.userId)).resolves.toMatchObject({
+        ok: true,
+        created: false,
+      });
+      expect(await prisma.journal.count({ where: { sourceType: "KONSI_SELLTHRU_REVENUE_VOID", sourceId: seededId(id) } })).toBe(1);
+    }, SLOW);
+
+    it("gaps: a VOIDED report owes each missing reversal of an existing original and never an original; an original poster refuses it", async () => {
+      const id = await voidedWithOriginals();
+      /* No shrinkage original exists, so no shrinkage reversal is owed. */
+      expect(await sellThroughJournalGaps(id)).toEqual(["konsi_sell_through_revenue_void", "konsi_sell_through_cogs_void"]);
+      await postSellThroughVoidJournal("konsi_sell_through_revenue_void", id, state.userId);
+      expect(await sellThroughJournalGaps(id)).toEqual(["konsi_sell_through_cogs_void"]);
+      await prisma.journalLine.deleteMany({ where: { journal: { sourceType: "KONSI_SELLTHRU_COGS", sourceId: seededId(id) } } });
+      await prisma.journal.deleteMany({ where: { sourceType: "KONSI_SELLTHRU_COGS", sourceId: seededId(id) } });
+      await expect(postSellThroughCogsJournal(id, state.userId)).resolves.toEqual({ ok: false, code: "NOTHING_TO_POST" });
+      expect(await sellThroughJournalGaps(id)).toEqual([]);
+    }, SLOW);
+
+    it("a voided baseline owes nothing", async () => {
+      const id = await voidedBaseline();
+      expect(await sellThroughJournalGaps(id)).toEqual([]);
+    }, SLOW);
+  });
 });
