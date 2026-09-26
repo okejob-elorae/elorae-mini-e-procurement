@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { createSellThroughFixtures } from "@/lib/konsi-sell-through/test-fixtures";
+import { SellThroughError } from "@/lib/konsi-sell-through/errors";
 import { autoCreateSellThroughAfterCount } from "./auto-report";
 import { KONSI_REPORT_BLOCKED, KONSI_REPORT_HELD, KONSI_REPORT_READY } from "./categories";
 
@@ -42,11 +43,14 @@ d("autoCreateSellThroughAfterCount (test bed only)", () => {
   });
 
   afterEach(async () => {
-    /* No storeId column on AdminNotification: match our own store in JS and delete by explicit id list, never by category alone. */
-    const rows = await prisma.adminNotification.findMany({ where: { category: { in: CATEGORIES } }, select: { id: true, metadata: true } });
-    const ours = rows.filter((r) => (r.metadata as { storeId?: string } | null)?.storeId === state.storeId && state.storeId !== "");
-    if (ours.length > 0) await prisma.adminNotification.deleteMany({ where: { id: { in: ours.map((r) => r.id) } } });
-    await fx.afterEach();
+    try {
+      /* No storeId column on AdminNotification: match our own store in JS and delete by explicit id list, never by category alone. */
+      const rows = await prisma.adminNotification.findMany({ where: { category: { in: CATEGORIES } }, select: { id: true, metadata: true } });
+      const ours = rows.filter((r) => (r.metadata as { storeId?: string } | null)?.storeId === state.storeId && state.storeId !== "");
+      if (ours.length > 0) await prisma.adminNotification.deleteMany({ where: { id: { in: ours.map((r) => r.id) } } });
+    } finally {
+      await fx.afterEach();
+    }
   });
 
   it("creates the DRAFT report from an approved full count and announces it READY", async () => {
@@ -85,7 +89,7 @@ d("autoCreateSellThroughAfterCount (test bed only)", () => {
     expect(await notificationsFor(KONSI_REPORT_READY)).toHaveLength(0);
   }, SLOW);
 
-  it("announces BLOCKED with the refusal while the count stays approved, for a retur in flight", async () => {
+  it("announces BLOCKED with a short pointer to the stocktake while the count stays approved, for a retur in flight", async () => {
     await setMethod("SHELF_COUNT");
     await transferIn(6);
     const { docNo } = await raiseRetur(2);
@@ -96,11 +100,15 @@ d("autoCreateSellThroughAfterCount (test bed only)", () => {
     expect(outcome).toEqual({ kind: "BLOCKED", code: "RETUR_IN_FLIGHT", detail: docNo });
 
     expect(await reportsForStore()).toHaveLength(0);
-    expect((await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(stocktakeId) } })).status).toBe("APPROVED");
+    const stocktake = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(stocktakeId) } });
+    expect(stocktake.status).toBe("APPROVED");
     const blocked = await notificationsFor(KONSI_REPORT_BLOCKED);
     expect(blocked).toHaveLength(1);
     expect(blocked[0].metadata).toMatchObject({ storeId: state.storeId, stocktakeId, code: "RETUR_IN_FLIGHT", detail: docNo });
-    expect(blocked[0].message).toContain(docNo);
+    expect(blocked[0].message).toBe(
+      `Perhitungan ${stocktake.docNo} disetujui, tetapi laporan sell-through tidak bisa dibuat otomatis (kode RETUR_IN_FLIGHT). Buka perhitungan ini untuk melihat alasannya.`,
+    );
+    expect(Array.from(blocked[0].message).length).toBeLessThanOrEqual(191);
   }, SLOW);
 
   it("announces BLOCKED DRAFT_EXISTS when the store's previous report is still a draft", async () => {
@@ -114,6 +122,42 @@ d("autoCreateSellThroughAfterCount (test bed only)", () => {
     const outcome = await autoCreateSellThroughAfterCount(second, state.userId);
     expect(outcome).toMatchObject({ kind: "BLOCKED", code: "DRAFT_EXISTS" });
     expect(await reportsForStore()).toHaveLength(1);
+  }, SLOW);
+
+  it("skips a count someone already created the report for by hand (ALREADY_USED), and announces nothing", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(6);
+    const byHand = await actualWriter.createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+
+    expect(await autoCreateSellThroughAfterCount(stocktakeId, state.userId)).toEqual({ kind: "SKIPPED" });
+    expect((await reportsForStore()).map((r) => r.id)).toEqual([byHand.id]);
+    for (const category of CATEGORIES) expect(await notificationsFor(category)).toHaveLength(0);
+  }, SLOW);
+
+  it("skips DRAFT_EXISTS when a live report already closes this count, the race a hand-created report can win", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(6);
+    vi.mocked(createSellThrough).mockImplementationOnce(async (input) => {
+      await actualWriter.createSellThrough(input);
+      throw new SellThroughError("DRAFT_EXISTS");
+    });
+
+    expect(await autoCreateSellThroughAfterCount(stocktakeId, state.userId)).toEqual({ kind: "SKIPPED" });
+    expect(await reportsForStore()).toHaveLength(1);
+    for (const category of CATEGORIES) expect(await notificationsFor(category)).toHaveLength(0);
+  }, SLOW);
+
+  it("skips a stocktake that is not approved, and an unknown stocktake id", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const pending = await count(6, { approve: false });
+
+    expect(await autoCreateSellThroughAfterCount(pending, state.userId)).toEqual({ kind: "SKIPPED" });
+    expect(await autoCreateSellThroughAfterCount("no-such-stocktake", state.userId)).toEqual({ kind: "SKIPPED" });
+    expect(await reportsForStore()).toHaveLength(0);
+    for (const category of CATEGORIES) expect(await notificationsFor(category)).toHaveLength(0);
   }, SLOW);
 
   it("does nothing for a partial count, a store with no method, or a PUTUS store", async () => {

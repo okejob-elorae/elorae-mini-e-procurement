@@ -3,6 +3,7 @@ import {
   countMomentOf,
   countStatusFor,
   countWindowFor,
+  formatCountDueDate,
   formatCountMonth,
   parseCountSchedule,
   DEFAULT_COUNT_SCHEDULE,
@@ -138,6 +139,14 @@ describe("formatCountMonth", () => {
   it("keeps January and December in their own year", () => {
     expect(formatCountMonth("2027-01", "en")).toBe("January 2027");
     expect(formatCountMonth("2026-12", "en")).toBe("December 2026");
+  });
+});
+
+describe("formatCountDueDate", () => {
+  it("names the WIB calendar day of the due instant, not its UTC day", () => {
+    expect(formatCountDueDate(at("2026-09-30T16:59:59.999Z"), "id")).toBe("30 September 2026");
+    expect(formatCountDueDate(at("2026-10-31T16:59:59.999Z"), "id")).toBe("31 Oktober 2026");
+    expect(formatCountDueDate(at("2026-09-30T17:30:00.000Z"), "id")).toBe("1 Oktober 2026");
   });
 });
 

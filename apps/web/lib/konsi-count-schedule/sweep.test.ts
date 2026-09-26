@@ -4,9 +4,9 @@ import { runKonsiCountSweep } from "./sweep";
 import { DEFAULT_COUNT_SCHEDULE, KONSI_COUNT_SYSTEM_ACTOR, type CountSchedule } from "./schedule";
 import { KONSI_COUNT_DUE, KONSI_COUNT_OVERDUE } from "./categories";
 
-/*
- * A pass-through spy on the real writer. Two cases replace one call: one lets a manual open win
- * the race and one makes a store fail.
+/**
+ * A pass-through spy on the real writer. Some cases replace one call: a manual open winning the
+ * race, and a store failing.
  */
 vi.mock("@/lib/stores/stocktake/writer", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/stores/stocktake/writer")>();
@@ -66,7 +66,7 @@ d("runKonsiCountSweep (test bed only)", () => {
   }
 
   async function notificationsFor(category: string, storeId: string) {
-    const rows = await prisma.adminNotification.findMany({ where: { category }, select: { id: true, metadata: true } });
+    const rows = await prisma.adminNotification.findMany({ where: { category }, select: { id: true, message: true, metadata: true } });
     return rows.filter((r) => (r.metadata as { storeId?: string } | null)?.storeId === storeId);
   }
 
@@ -116,7 +116,7 @@ d("runKonsiCountSweep (test bed only)", () => {
     const now = wib("2026-09-28");
 
     const first = await runKonsiCountSweep({ storeIds: [storeId], now, schedule: DEFAULT_COUNT_SCHEDULE });
-    expect(first).toEqual({ scanned: 1, opened: 1, alreadyOpen: 0, spgNotified: 1, overdueAnnounced: 0, failed: 0 });
+    expect(first).toEqual({ scanned: 1, opened: 1, alreadyOpen: 0, existingAnnounced: 0, spgNotified: 1, overdueAnnounced: 0, failed: 0 });
 
     const open = await prisma.storeStocktake.findMany({
       where: { storeId: seededId(storeId), openKey: { not: null } },
@@ -125,7 +125,7 @@ d("runKonsiCountSweep (test bed only)", () => {
     expect(open).toHaveLength(1);
     expect(open[0].status).toBe("DRAFT");
     expect(open[0].createdById).toBe(spgId);
-    expect(open[0].note).toBe("Opened automatically for the 2026-09 count");
+    expect(open[0].note).toBe("Dibuka otomatis untuk perhitungan bulanan September 2026");
     expect(open[0].countedAt.toISOString()).toBe(now.toISOString());
     expect(open[0].lines.map((l) => l.itemId).sort()).toEqual([itemId, assortItemId].sort());
     expect(open[0].lines.every((l) => l.countedQty === null)).toBe(true);
@@ -133,9 +133,10 @@ d("runKonsiCountSweep (test bed only)", () => {
     const due = await notificationsFor(KONSI_COUNT_DUE, storeId);
     expect(due).toHaveLength(1);
     expect(due[0].metadata).toMatchObject({ storeId, stocktakeId: open[0].id, docNo: open[0].docNo, monthKey: "2026-09", dueDate: "2026-09-30" });
+    expect(due[0].message).toBe(`Perhitungan ${open[0].docNo} dibuka otomatis untuk September 2026, batas waktu 30 September 2026.`);
 
     const second = await runKonsiCountSweep({ storeIds: [storeId], now: wib("2026-09-29"), schedule: DEFAULT_COUNT_SCHEDULE });
-    expect(second).toEqual({ scanned: 1, opened: 0, alreadyOpen: 0, spgNotified: 0, overdueAnnounced: 0, failed: 0 });
+    expect(second).toEqual({ scanned: 1, opened: 0, alreadyOpen: 0, existingAnnounced: 0, spgNotified: 0, overdueAnnounced: 0, failed: 0 });
     expect(await prisma.storeStocktake.count({ where: { storeId: seededId(storeId) } })).toBe(1);
     expect(await notificationsFor(KONSI_COUNT_DUE, storeId)).toHaveLength(1);
 
@@ -143,14 +144,14 @@ d("runKonsiCountSweep (test bed only)", () => {
     expect(await prisma.notificationQueue.count({ where: { userId: seededId(spgId) } })).toBe(0);
   }, SLOW);
 
-  it("uses the system actor when the store has two SPGs, and pushes to both; and when it has none", async () => {
+  it("uses the system actor when the store has two SPGs, and pushes to both; and when it has none, says so on the DUE alert", async () => {
     const twoSpgStore = await seedStore();
     const spgA = await seedSpg(twoSpgStore);
     const spgB = await seedSpg(twoSpgStore);
     const noSpgStore = await seedStore();
 
     const r = await runKonsiCountSweep({ storeIds: [twoSpgStore, noSpgStore], now: wib("2026-09-28"), schedule: DEFAULT_COUNT_SCHEDULE });
-    expect(r).toEqual({ scanned: 2, opened: 2, alreadyOpen: 0, spgNotified: 2, overdueAnnounced: 0, failed: 0 });
+    expect(r).toEqual({ scanned: 2, opened: 2, alreadyOpen: 0, existingAnnounced: 0, spgNotified: 2, overdueAnnounced: 0, failed: 0 });
 
     const docs = await prisma.storeStocktake.findMany({
       where: { storeId: { in: [seededId(twoSpgStore), seededId(noSpgStore)] } },
@@ -158,6 +159,12 @@ d("runKonsiCountSweep (test bed only)", () => {
     });
     expect(docs.map((doc) => doc.createdById)).toEqual([KONSI_COUNT_SYSTEM_ACTOR, KONSI_COUNT_SYSTEM_ACTOR]);
     expect(await prisma.notificationQueue.count({ where: { userId: { in: [seededId(spgA), seededId(spgB)] } } })).toBe(0);
+
+    const noSpgSuffix = "Toko ini belum punya SPG, jadi perhitungan perlu diisi dari backoffice.";
+    const [noSpgDue] = await notificationsFor(KONSI_COUNT_DUE, noSpgStore);
+    expect(noSpgDue.message).toContain(noSpgSuffix);
+    const [twoSpgDue] = await notificationsFor(KONSI_COUNT_DUE, twoSpgStore);
+    expect(twoSpgDue.message).not.toContain(noSpgSuffix);
   }, SLOW);
 
   it("skips a counted store, a store not yet due, a store with no method, a PUTUS store and an inactive store", async () => {
@@ -181,13 +188,13 @@ d("runKonsiCountSweep (test bed only)", () => {
     const all = [done, noMethod, putus, inactive];
 
     const r = await runKonsiCountSweep({ storeIds: all, now: wib("2026-09-28"), schedule: DEFAULT_COUNT_SCHEDULE });
-    expect(r).toEqual({ scanned: 1, opened: 0, alreadyOpen: 0, spgNotified: 0, overdueAnnounced: 0, failed: 0 });
+    expect(r).toEqual({ scanned: 1, opened: 0, alreadyOpen: 0, existingAnnounced: 0, spgNotified: 0, overdueAnnounced: 0, failed: 0 });
     /* Only the seeded APPROVED row exists: nothing was opened at any of the four. */
     expect(await prisma.storeStocktake.count({ where: { storeId: { in: all } } })).toBe(1);
 
     const early = await seedStore();
     const notYet = await runKonsiCountSweep({ storeIds: [early], now: wib("2026-09-10"), schedule: DEFAULT_COUNT_SCHEDULE });
-    expect(notYet).toEqual({ scanned: 1, opened: 0, alreadyOpen: 0, spgNotified: 0, overdueAnnounced: 0, failed: 0 });
+    expect(notYet).toEqual({ scanned: 1, opened: 0, alreadyOpen: 0, existingAnnounced: 0, spgNotified: 0, overdueAnnounced: 0, failed: 0 });
   }, SLOW);
 
   it("does not treat an approved PARTIAL count as the month's count", async () => {
@@ -207,7 +214,7 @@ d("runKonsiCountSweep (test bed only)", () => {
     expect(r.opened).toBe(1);
   }, SLOW);
 
-  it("announces OVERDUE once per store and month, stays quiet through the carried days, and announces the next month again", async () => {
+  it("announces OVERDUE once per store and month, stays quiet while the missed month is still the target, and announces the next month again", async () => {
     const storeId = await seedStore();
 
     const sep20 = await runKonsiCountSweep({ storeIds: [storeId], now: wib("2026-09-20"), schedule: DUE_15 });
@@ -217,12 +224,13 @@ d("runKonsiCountSweep (test bed only)", () => {
     const sep21 = await runKonsiCountSweep({ storeIds: [storeId], now: wib("2026-09-21"), schedule: DUE_15 });
     expect(sep21).toMatchObject({ opened: 0, overdueAnnounced: 0 });
 
-    /* 5 October: September is carried as OVERDUE and already announced. */
+    /* 5 October: October's window has not opened, so September is still the OVERDUE target, already announced. */
     const oct5 = await runKonsiCountSweep({ storeIds: [storeId], now: wib("2026-10-05"), schedule: DUE_15 });
-    expect(oct5).toMatchObject({ opened: 0, overdueAnnounced: 0 });
+    expect(oct5).toMatchObject({ opened: 0, existingAnnounced: 0, overdueAnnounced: 0 });
 
+    /* 16 October: October is the target now. The still-open count is announced for it, not re-created. */
     const oct16 = await runKonsiCountSweep({ storeIds: [storeId], now: wib("2026-10-16"), schedule: DUE_15 });
-    expect(oct16).toMatchObject({ opened: 0, overdueAnnounced: 1 });
+    expect(oct16).toMatchObject({ opened: 0, existingAnnounced: 1, overdueAnnounced: 1 });
 
     const rows = await notificationsFor(KONSI_COUNT_OVERDUE, storeId);
     expect(rows.map((n) => (n.metadata as { monthKey: string }).monthKey).sort()).toEqual(["2026-09", "2026-10"]);
@@ -237,24 +245,82 @@ d("runKonsiCountSweep (test bed only)", () => {
     const overdue = await notificationsFor(KONSI_COUNT_OVERDUE, storeId);
     expect(overdue).toHaveLength(1);
     expect(overdue[0].metadata).toMatchObject({ storeId, monthKey: "2026-09", dueDate: "2026-09-30" });
+    expect(overdue[0].message).toBe("Belum ada perhitungan penuh yang disetujui untuk September 2026 (batas waktu 30 September 2026).");
     const doc = await prisma.storeStocktake.findFirstOrThrow({ where: { storeId: seededId(storeId) } });
-    expect(doc.note).toBe("Opened automatically for the 2026-09 count");
+    expect(doc.note).toBe("Dibuka otomatis untuk perhitungan bulanan September 2026");
   }, SLOW);
 
-  it("treats ALREADY_OPEN from a racing manual open as already open, not a failure", async () => {
-    const storeId = await seedStore();
+  /* A manual open lands between the sweep's read and its own create. */
+  function raceWithManualOpen() {
     vi.mocked(createStoreStocktake).mockImplementationOnce(async (input) => {
-      /* A manual open lands between the sweep's read and its own create. */
       await actualWriter.createStoreStocktake({ storeId: input.storeId, createdById: "manual-admin", countedAt: input.countedAt });
       return actualWriter.createStoreStocktake(input);
     });
+  }
+
+  it("treats ALREADY_OPEN from a racing manual open as already open, not a failure, and announces that count", async () => {
+    const storeId = await seedStore();
+    raceWithManualOpen();
 
     const r = await runKonsiCountSweep({ storeIds: [storeId], now: wib("2026-09-28"), schedule: DEFAULT_COUNT_SCHEDULE });
-    expect(r).toEqual({ scanned: 1, opened: 0, alreadyOpen: 1, spgNotified: 0, overdueAnnounced: 0, failed: 0 });
+    expect(r).toEqual({ scanned: 1, opened: 0, alreadyOpen: 1, existingAnnounced: 1, spgNotified: 0, overdueAnnounced: 0, failed: 0 });
 
-    const docs = await prisma.storeStocktake.findMany({ where: { storeId: seededId(storeId) }, select: { createdById: true, openKey: true } });
-    expect(docs).toEqual([{ createdById: "manual-admin", openKey: storeId }]);
-    expect(await notificationsFor(KONSI_COUNT_DUE, storeId)).toHaveLength(0);
+    const docs = await prisma.storeStocktake.findMany({ where: { storeId: seededId(storeId) }, select: { id: true, createdById: true, openKey: true } });
+    expect(docs).toEqual([{ id: expect.any(String), createdById: "manual-admin", openKey: storeId }]);
+    const due = await notificationsFor(KONSI_COUNT_DUE, storeId);
+    expect(due).toHaveLength(1);
+    expect(due[0].metadata).toMatchObject({ storeId, stocktakeId: docs[0].id, monthKey: "2026-09" });
+  }, SLOW);
+
+  it("puts the raced count's id into the OVERDUE alert when ALREADY_OPEN happens while OVERDUE", async () => {
+    const storeId = await seedStore();
+    raceWithManualOpen();
+
+    const r = await runKonsiCountSweep({ storeIds: [storeId], now: wib("2026-09-20"), schedule: DUE_15 });
+    expect(r).toMatchObject({ opened: 0, alreadyOpen: 1, existingAnnounced: 1, overdueAnnounced: 1, failed: 0 });
+
+    const raced = await prisma.storeStocktake.findFirstOrThrow({ where: { storeId: seededId(storeId), openKey: { not: null } } });
+    const overdue = await notificationsFor(KONSI_COUNT_OVERDUE, storeId);
+    expect(overdue).toHaveLength(1);
+    expect(overdue[0].metadata).toMatchObject({ storeId, monthKey: "2026-09", stocktakeId: raced.id });
+  }, SLOW);
+
+  it("announces a count that is already open with no DUE alert yet, and does not create another", async () => {
+    const storeId = await seedStore();
+    const spgId = await seedSpg(storeId);
+    const manual = await actualWriter.createStoreStocktake({ storeId, createdById: "manual-admin", countedAt: wib("2026-09-20") });
+
+    const r = await runKonsiCountSweep({ storeIds: [storeId], now: wib("2026-09-28"), schedule: DEFAULT_COUNT_SCHEDULE });
+    expect(r).toEqual({ scanned: 1, opened: 0, alreadyOpen: 0, existingAnnounced: 1, spgNotified: 1, overdueAnnounced: 0, failed: 0 });
+    expect(createStoreStocktake).not.toHaveBeenCalled();
+    expect(await prisma.storeStocktake.count({ where: { storeId: seededId(storeId) } })).toBe(1);
+
+    const due = await notificationsFor(KONSI_COUNT_DUE, storeId);
+    expect(due).toHaveLength(1);
+    expect(due[0].metadata).toMatchObject({ storeId, stocktakeId: manual.id, docNo: manual.docNo, monthKey: "2026-09" });
+    expect(due[0].message).toBe(`Perhitungan ${manual.docNo} sudah terbuka untuk September 2026, batas waktu 30 September 2026.`);
+    expect(await prisma.notificationQueue.count({ where: { userId: seededId(spgId) } })).toBe(0);
+  }, SLOW);
+
+  it("does not reopen a cancelled count for the same month, and still raises OVERDUE for it", async () => {
+    const storeId = await seedStore();
+
+    const sep13 = await runKonsiCountSweep({ storeIds: [storeId], now: wib("2026-09-13"), schedule: DUE_15 });
+    expect(sep13).toMatchObject({ opened: 1, failed: 0 });
+    const opened = await prisma.storeStocktake.findFirstOrThrow({ where: { storeId: seededId(storeId), openKey: { not: null } } });
+    await actualWriter.cancelStoreStocktake({ stocktakeId: opened.id, cancelledById: "test", reason: "opened by mistake" });
+
+    const sep14 = await runKonsiCountSweep({ storeIds: [storeId], now: wib("2026-09-14"), schedule: DUE_15 });
+    expect(sep14).toEqual({ scanned: 1, opened: 0, alreadyOpen: 0, existingAnnounced: 0, spgNotified: 0, overdueAnnounced: 0, failed: 0 });
+    expect(await prisma.storeStocktake.count({ where: { storeId: seededId(storeId) } })).toBe(1);
+
+    const sep16 = await runKonsiCountSweep({ storeIds: [storeId], now: wib("2026-09-16"), schedule: DUE_15 });
+    expect(sep16).toMatchObject({ opened: 0, existingAnnounced: 0, overdueAnnounced: 1, failed: 0 });
+    expect(await prisma.storeStocktake.count({ where: { storeId: seededId(storeId) } })).toBe(1);
+    expect(await notificationsFor(KONSI_COUNT_DUE, storeId)).toHaveLength(1);
+    const overdue = await notificationsFor(KONSI_COUNT_OVERDUE, storeId);
+    expect(overdue).toHaveLength(1);
+    expect(overdue[0].metadata).toMatchObject({ storeId, monthKey: "2026-09", stocktakeId: "" });
   }, SLOW);
 
   it("keeps sweeping after one store fails", async () => {
@@ -274,7 +340,7 @@ d("runKonsiCountSweep (test bed only)", () => {
   it("scans nothing for an empty storeIds list — never the whole database", async () => {
     const storeId = await seedStore();
     const r = await runKonsiCountSweep({ storeIds: [], now: wib("2026-09-28"), schedule: DEFAULT_COUNT_SCHEDULE });
-    expect(r).toEqual({ scanned: 0, opened: 0, alreadyOpen: 0, spgNotified: 0, overdueAnnounced: 0, failed: 0 });
+    expect(r).toEqual({ scanned: 0, opened: 0, alreadyOpen: 0, existingAnnounced: 0, spgNotified: 0, overdueAnnounced: 0, failed: 0 });
     expect(await prisma.storeStocktake.count({ where: { storeId: seededId(storeId) } })).toBe(0);
   }, SLOW);
 });

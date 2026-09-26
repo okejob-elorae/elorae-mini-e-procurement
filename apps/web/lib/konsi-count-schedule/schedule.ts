@@ -107,6 +107,11 @@ export function formatCountMonth(monthKey: string, locale: string): string {
   return new Intl.DateTimeFormat(locale, { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, 1)));
 }
 
+/* A due instant as its WIB calendar day in `locale`, e.g. "30 September 2026". */
+export function formatCountDueDate(dueAt: Date, locale: string): string {
+  return new Intl.DateTimeFormat(locale, { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Jakarta" }).format(dueAt);
+}
+
 /**
  * The one rule for where a store stands on its monthly count. The store screen, the SPG home
  * and the daily sweep all go through it, so they cannot disagree.

@@ -411,7 +411,8 @@ export async function approveAction(stocktakeId: string): Promise<StoreStocktake
   revalidatePath("/backoffice/store-stocktakes");
   revalidatePath(`/backoffice/store-stocktakes/${stocktakeId}`);
   revalidatePath(`/backoffice/stores/${storeIdForRevalidate}`);
-  if (autoReport.kind === "READY" || autoReport.kind === "HELD") {
+  /* Whenever a report exists, a FAILED outcome included: FAILED with an id means created but not announced. */
+  if ("sellThroughId" in autoReport && autoReport.sellThroughId) {
     revalidatePath("/backoffice/konsi-sell-through");
     revalidatePath(`/backoffice/konsi-sell-through/${autoReport.sellThroughId}`);
   }

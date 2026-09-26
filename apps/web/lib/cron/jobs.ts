@@ -50,10 +50,10 @@ export function registerCronJobs(): void {
     { timezone: "Asia/Jakarta" },
   );
 
-  /*
-   * Daily 07:00 Asia/Jakarta — konsi monthly counts: opens a due count and raises the overdue
-   * alert. Its own job, an hour ahead of the AR sweep, so the two never share a log line or a
-   * failure and the count is open before the SPG's shift starts.
+  /**
+   * Daily 07:00 Asia/Jakarta — konsi monthly counts: opens or announces a due count and raises the
+   * overdue alert. Its own job, an hour ahead of the AR sweep, so the two never share a log line or
+   * a failure and the count is open before the SPG's shift starts.
    */
   cron.schedule(
     "0 7 * * *",
@@ -62,10 +62,11 @@ export function registerCronJobs(): void {
       try {
         const r = await runKonsiCountSweep();
         console.log(
-          "[cron] konsi-count done — scanned=%d opened=%d alreadyOpen=%d spgNotified=%d overdue=%d failed=%d",
+          "[cron] konsi-count done — scanned=%d opened=%d alreadyOpen=%d existingAnnounced=%d spgNotified=%d overdue=%d failed=%d",
           r.scanned,
           r.opened,
           r.alreadyOpen,
+          r.existingAnnounced,
           r.spgNotified,
           r.overdueAnnounced,
           r.failed,

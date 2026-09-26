@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-/*
- * Unit-only: auth, rbac, the visit lookup, the four writers and prisma are all mocked, so
- * nothing here touches the shared dev database. This file exists to pin the permission gate,
- * the dual-shape saveCountsAction guard, and the error-code mapping the actions add on top of
- * the writers from Task 3.
+/**
+ * Unit-only: auth, rbac, the visit lookup, the four stocktake writers (create, save counts,
+ * approve, cancel), the sell-through auto-report and prisma are all mocked, so nothing here
+ * touches the shared dev database. This file exists to pin the permission gate, the dual-shape
+ * saveCountsAction guard, the auto-report hand-off after approval, and the error-code mapping the
+ * actions add on top of the stocktake writers.
  */
 const {
   mockAuth,
@@ -564,6 +565,30 @@ describe("store stocktake actions (unit — writers mocked)", () => {
       await approveAction("st1");
       expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/konsi-sell-through");
       expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/konsi-sell-through/slt-1");
+    });
+
+    it("revalidates the report routes for a READY report", async () => {
+      mockAutoReport.mockResolvedValue({ kind: "READY", sellThroughId: "slt-2", docNo: "SLT/0002" });
+      await approveAction("st1");
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/konsi-sell-through");
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/konsi-sell-through/slt-2");
+    });
+
+    it("revalidates the report routes for a FAILED outcome that still created a report", async () => {
+      mockAutoReport.mockResolvedValue({ kind: "FAILED", sellThroughId: "slt-3" });
+      await approveAction("st1");
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/konsi-sell-through/slt-3");
+    });
+
+    it("does not revalidate the report routes when no report was created", async () => {
+      for (const outcome of [{ kind: "BLOCKED", code: "RETUR_IN_FLIGHT", detail: "FRT/0001" }, { kind: "SKIPPED" }, { kind: "FAILED" }]) {
+        mockRevalidatePath.mockReset();
+        mockAutoReport.mockResolvedValue(outcome);
+        const res = await approveAction("st1");
+        expect(res).toEqual({ ok: true, id: "st1" });
+        expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/store-stocktakes/st1");
+        expect(mockRevalidatePath).not.toHaveBeenCalledWith("/backoffice/konsi-sell-through");
+      }
     });
   });
 
