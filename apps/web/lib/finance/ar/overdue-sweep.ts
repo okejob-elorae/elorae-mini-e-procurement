@@ -162,7 +162,9 @@ export async function runOverdueSweep(options?: {
     });
 
     /*
-     * AWAITED — the one deliberate exception in this codebase. Every other caller fires
+     * AWAITED — a deliberate exception, shared with the konsi count sweep and with
+     * `reportStuckDeliveryCompletionAction`, which the PWA's offline queue calls in the background:
+     * no user is waiting on any of the three. Interactive callers fire
      * `void fanOutAdminNotification(...)` because a user is waiting on an already-committed
      * transaction; in a cron nobody is waiting, and hundreds of unawaited fan-outs in one tick
      * (each an FCM call retrying for roughly a minute on network failure) is a stampede.

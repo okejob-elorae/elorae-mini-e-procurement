@@ -66,15 +66,18 @@ export function toFcmData(metadata: unknown): Record<string, string> {
  * calls.
  *
  * The whole body sits inside one try/catch so "never throws" is structural rather than a
- * property of which statements happen to be safe. That matters because every call site invokes
- * it as `void fanOutAdminNotification(...)`: a floating promise that rejected would become an
- * unhandled rejection, which Node terminates the process on by default.
+ * property of which statements happen to be safe. That matters because every interactive call site
+ * invokes it as `void fanOutAdminNotification(...)`: a floating promise that rejected would become
+ * an unhandled rejection, which Node terminates the process on by default.
  *
- * Callers must NOT await it. Delivery walks recipients sequentially with an FCM call each, and
- * firebase-admin retries a connection failure for roughly a minute per recipient, so awaiting it
- * stalls the operation that already committed — a canvasser's thermal nota, a PWA order submit.
- * `void` is safe here specifically because web runs as a long-lived Node process on the VPS, not
- * a serverless runtime that freezes on response.
+ * Interactive callers must NOT await it. Delivery walks recipients sequentially with an FCM call
+ * each, and firebase-admin retries a connection failure for roughly a minute per recipient, so
+ * awaiting it stalls the operation that already committed — a canvasser's thermal nota, a PWA
+ * order submit. `void` is safe here specifically because web runs as a long-lived Node process on
+ * the VPS, not a serverless runtime that freezes on response. The two cron sweeps,
+ * `runOverdueSweep` and `runKonsiCountSweep`, await it deliberately: no user is waiting, and an
+ * unawaited batch would stampede FCM. `reportStuckDeliveryCompletionAction` awaits it too, since
+ * only the PWA's background offline queue calls it.
  */
 export async function fanOutAdminNotification(notification: {
   id: string;
