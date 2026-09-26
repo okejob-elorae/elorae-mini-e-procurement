@@ -45,7 +45,7 @@ export async function assignCollector(input: {
     });
     if (receivables.length !== input.receivableIds.length) throw new CollectionError("NOT_FOUND");
     for (const r of receivables) {
-      if (r.status === "PAID" || r.status === "WRITTEN_OFF") throw new CollectionError("ALREADY_SETTLED");
+      if (r.status === "PAID" || r.status === "WRITTEN_OFF" || r.status === "VOIDED") throw new CollectionError("ALREADY_SETTLED");
     }
 
     const previousCollectorIds = Array.from(

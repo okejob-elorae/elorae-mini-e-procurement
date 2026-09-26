@@ -209,6 +209,23 @@ d("voidPayment (test bed only)", () => {
     expect(after.status).toBe("WRITTEN_OFF");
   });
 
+  it("refuses to void a payment against a voided receivable", async () => {
+    await prisma.receivable.update({ where: { id: recA }, data: { status: "VOIDED" } });
+
+    const err = await voidPayment({ paymentId, reason: "trying to void", voidedById: userId }).catch((e) => e);
+    expect(err).toBeInstanceOf(PaymentError);
+    expect(err.code).toBe("ALREADY_SETTLED");
+
+    /* The refusal is total: the flip and the voided status both stand, untouched. */
+    const payment = await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
+    expect(payment.status).toBe("POSTED");
+
+    const after = await prisma.receivable.findUniqueOrThrow({ where: { id: recA } });
+    expect(Number(after.paidAmount)).toBe(400);
+    expect(Number(after.outstandingAmount)).toBe(600);
+    expect(after.status).toBe("VOIDED");
+  });
+
   it("restores both receivables when one payment is split across them", async () => {
     const orderB = await prisma.fieldSalesOrder.create({
       data: { orderNo: `TEST-ARVW-ORDB-${token}`, storeId, salesmanId: userId, subtotal: 500, total: 500 },

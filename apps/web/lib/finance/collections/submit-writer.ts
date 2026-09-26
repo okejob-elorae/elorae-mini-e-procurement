@@ -55,7 +55,7 @@ export async function submitCollection(input: SubmitCollectionInput): Promise<{ 
     });
     if (!receivable) throw new CollectionError("NOT_FOUND");
     if (receivable.collectorId !== input.collectorId) throw new CollectionError("NOT_ASSIGNED_COLLECTOR");
-    if (receivable.status === "PAID" || receivable.status === "WRITTEN_OFF") throw new CollectionError("ALREADY_SETTLED");
+    if (receivable.status === "PAID" || receivable.status === "WRITTEN_OFF" || receivable.status === "VOIDED") throw new CollectionError("ALREADY_SETTLED");
 
     /**
      * Netted against PENDING submissions, computed inside this transaction via `tx` (not the

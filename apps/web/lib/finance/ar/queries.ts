@@ -8,7 +8,7 @@ export type ReceivableFilters = {
   storeId?: string;
   salesmanId?: string;
   collectorId?: string;
-  status?: "OUTSTANDING" | "PARTIAL" | "PAID" | "WRITTEN_OFF";
+  status?: "OUTSTANDING" | "PARTIAL" | "PAID" | "WRITTEN_OFF" | "VOIDED";
   bucket?: AgingBucket;
   dateFrom?: Date;
   dateTo?: Date;

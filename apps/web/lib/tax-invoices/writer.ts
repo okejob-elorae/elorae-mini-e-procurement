@@ -3,7 +3,7 @@ import { roundCents } from "@elorae/db/pricing";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { TaxInvoiceError } from "./errors";
 
-type Status = "PENDING" | "CREATED" | "SENT_TO_STORE" | "NOT_REQUIRED";
+type Status = "PENDING" | "CREATED" | "SENT_TO_STORE" | "NOT_REQUIRED" | "CANCELLED";
 
 type TransitionData = Partial<{
   invoiceNo: string | null;

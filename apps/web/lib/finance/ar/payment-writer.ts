@@ -130,7 +130,7 @@ export async function recordPayment(input: RecordPaymentInput): Promise<{ paymen
        * the form, so reaching here means the request did not come from it.
        */
       if (receivable.storeId !== input.storeId) throw new PaymentError("WRONG_STORE");
-      if (receivable.status === "PAID" || receivable.status === "WRITTEN_OFF") {
+      if (receivable.status === "PAID" || receivable.status === "WRITTEN_OFF" || receivable.status === "VOIDED") {
         throw new PaymentError("ALREADY_SETTLED");
       }
       if (a.amount - Number(receivable.outstandingAmount) > EPSILON) {

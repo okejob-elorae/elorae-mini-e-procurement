@@ -147,6 +147,15 @@ d("assignCollector (test bed only)", () => {
     expect(r!.collectorId).toBeNull();
   });
 
+  it("rejects a VOIDED receivable from the target list", async () => {
+    await prisma.receivable.update({ where: { id: settledReceivableId }, data: { status: "VOIDED" } });
+    const err = await assignCollector({ receivableIds: [settledReceivableId], collectorId, assignedById: adminId }).catch((e) => e);
+    expect(err).toBeInstanceOf(CollectionError);
+    expect(err.code).toBe("ALREADY_SETTLED");
+    const r = await prisma.receivable.findUnique({ where: { id: settledReceivableId } });
+    expect(r!.collectorId).toBeNull();
+  });
+
   it("unassigns with collectorId: null and no eligibility check", async () => {
     await assignCollector({ receivableIds: [receivableId], collectorId, assignedById: adminId });
     await assignCollector({ receivableIds: [receivableId], collectorId: null, assignedById: adminId });

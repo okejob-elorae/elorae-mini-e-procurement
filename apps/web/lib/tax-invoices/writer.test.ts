@@ -271,4 +271,20 @@ d("tax-invoice status transitions (test bed only)", () => {
     });
     expect(logs).toHaveLength(0);
   });
+
+  it("refuses to mark a CANCELLED faktur created, not required, sent, or back to pending", async () => {
+    await prisma.taxInvoice.update({ where: { id: taxInvoiceId }, data: { status: "CANCELLED" } });
+
+    await expect(markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000011", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId }))
+      .rejects.toMatchObject({ code: "INVALID_STATE" });
+    await expect(markTaxInvoiceNotRequired({ taxInvoiceId, reason: "x", userId }))
+      .rejects.toMatchObject({ code: "INVALID_STATE" });
+    await expect(markTaxInvoiceSentToStore({ taxInvoiceId, userId }))
+      .rejects.toMatchObject({ code: "INVALID_STATE" });
+    await expect(revertTaxInvoiceToPending({ taxInvoiceId, reason: "x", userId }))
+      .rejects.toMatchObject({ code: "INVALID_STATE" });
+
+    const row = await prisma.taxInvoice.findUniqueOrThrow({ where: { id: seededId(taxInvoiceId) } });
+    expect(row.status).toBe("CANCELLED");
+  });
 });
