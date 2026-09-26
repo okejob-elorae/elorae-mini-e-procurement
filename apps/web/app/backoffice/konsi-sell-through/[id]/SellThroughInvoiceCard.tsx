@@ -109,7 +109,7 @@ export function SellThroughInvoiceCard({
     <div className="flex flex-col gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 sm:flex-row sm:items-center sm:justify-between">
       <p className="flex min-w-0 items-start gap-2">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-        <span>{tInvoice("journalPending")}</span>
+        <span>{report.status === "VOIDED" ? tInvoice("reversalPending") : tInvoice("journalPending")}</span>
       </p>
       {canManage && (
         <Button variant="outline" className="h-10 shrink-0" disabled={retrying} onClick={callRetry}>
@@ -128,6 +128,7 @@ export function SellThroughInvoiceCard({
             <Receipt className="h-5 w-5" />
             {tInvoice("title")}
             <Badge variant="outline">{tInvoice("baselineBadge")}</Badge>
+            {report.status === "VOIDED" && <Badge variant="destructive">{tInvoice("voided")}</Badge>}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -159,8 +160,9 @@ export function SellThroughInvoiceCard({
         <CardTitle className="flex items-center gap-2">
           <Receipt className="h-5 w-5" />
           {tInvoice("title")}
+          {report.status === "VOIDED" && <Badge variant="destructive">{tInvoice("voided")}</Badge>}
         </CardTitle>
-        {canPrint && total > 0 && (
+        {canPrint && total > 0 && report.status !== "VOIDED" && (
           <Button variant="outline" className="h-10" disabled={printing} onClick={callPrint}>
             <Printer className="h-4 w-4" />
             {printing ? tInvoice("printing") : tInvoice("printNota")}

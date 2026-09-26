@@ -22,6 +22,7 @@ import {
   retrySellThroughJournalsAction,
   recordSellThroughNotaPrinted,
   getSellThroughNotaAction,
+  voidSellThroughAction,
 } from "./konsi-sell-through";
 
 /* Stock-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host). */
@@ -128,6 +129,12 @@ d("konsi sell-through actions (test bed only)", () => {
     (await prisma.journal.findMany({ where: { sourceId: seededId(id) }, select: { sourceType: true } }))
       .map((j) => j.sourceType)
       .sort();
+
+  async function approvedInvoicedReport(): Promise<string> {
+    const id = await billingDraft();
+    await approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId });
+    return id;
+  }
 
   /* approveSellThroughAction */
 
@@ -295,5 +302,52 @@ d("konsi sell-through actions (test bed only)", () => {
     expect(result.nota.lines).toHaveLength(1);
     expect(result.nota.lines[0]).toMatchObject({ billedQty: 4, unitPrice: 40000, lineTotal: 160000 });
     expect(result.nota.total).toBe(160000);
+  }, SLOW);
+
+  /* voidSellThroughAction */
+
+  it("a void posts every reversal after commit, after which nothing is left to retry", async () => {
+    const id = await approvedInvoicedReport();
+    await expect(voidSellThroughAction(id, "wrong resolution")).resolves.toEqual({ ok: true });
+    const doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } });
+    expect(doc.status).toBe("VOIDED");
+    expect(await journalTypesFor(id)).toEqual(["KONSI_SELLTHRU_COGS", "KONSI_SELLTHRU_COGS_VOID", "KONSI_SELLTHRU_REVENUE", "KONSI_SELLTHRU_REVENUE_VOID"]);
+    await expect(retrySellThroughJournalsAction(id)).resolves.toEqual({ ok: false, reason: "NOT_RETRYABLE" });
+  }, SLOW);
+
+  it("a reversal missing after the void is offered and posted by the retry", async () => {
+    const id = await approvedInvoicedReport();
+    await voidSellThroughAction(id, "wrong resolution");
+    await prisma.journalLine.deleteMany({ where: { journal: { sourceType: "KONSI_SELLTHRU_COGS_VOID", sourceId: id } } });
+    await prisma.journal.deleteMany({ where: { sourceType: "KONSI_SELLTHRU_COGS_VOID", sourceId: id } });
+    await expect(retrySellThroughJournalsAction(id)).resolves.toEqual({ ok: true, posted: ["konsi_sell_through_cogs_void"], stillPending: [] });
+  }, SLOW);
+
+  it("a void of a report whose originals never posted posts nothing and owes nothing", async () => {
+    const id = await billingDraft();
+    await fx.approve(id);
+    await expect(voidSellThroughAction(id, "wrong resolution")).resolves.toEqual({ ok: true });
+    expect(await journalTypesFor(id)).toEqual([]);
+    await expect(retrySellThroughJournalsAction(id)).resolves.toEqual({ ok: false, reason: "NOT_RETRYABLE" });
+  }, SLOW);
+
+  it("refuses a void without stores:manage, and malformed input with INVALID_REQUEST", async () => {
+    const id = await approvedInvoicedReport();
+    mockAuth.mockResolvedValueOnce({ user: { id: state.userId, permissions: ["stores:view"] } });
+    await expect(voidSellThroughAction(id, "x")).resolves.toEqual({ ok: false, reason: "FORBIDDEN" });
+    await expect(voidSellThroughAction("", "x")).resolves.toEqual({ ok: false, reason: "INVALID_REQUEST" });
+    await expect(voidSellThroughAction(id, 42)).resolves.toEqual({ ok: false, reason: "INVALID_REQUEST" });
+    expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("APPROVED");
+  }, SLOW);
+
+  it("passes a writer refusal through with its detail", async () => {
+    const id = await approvedInvoicedReport();
+    await expect(voidSellThroughAction(id, "  ")).resolves.toEqual({ ok: false, reason: "VOID_REASON_REQUIRED" });
+  }, SLOW);
+
+  it("refuses a nota for a voided report", async () => {
+    const id = await approvedInvoicedReport();
+    await voidSellThroughAction(id, "wrong resolution");
+    await expect(getSellThroughNotaAction(id)).resolves.toMatchObject({ ok: false, reason: "INVALID_STATE" });
   }, SLOW);
 });

@@ -8,7 +8,7 @@ import { priceSellThroughLines } from "./pricing";
 import { sellThroughCostTotals, sellThroughJournalGaps } from "./journal";
 import { defaultSellThroughSalesmanId } from "./salesman-candidates";
 
-export type SellThroughStatusValue = "DRAFT" | "APPROVED" | "CANCELLED";
+export type SellThroughStatusValue = "DRAFT" | "APPROVED" | "CANCELLED" | "VOIDED";
 
 export type SellThroughListItem = {
   id: string;
@@ -162,6 +162,10 @@ export type SellThroughDetail = {
   cancelledByLabel: string | null;
   cancelledAt: Date | null;
   cancelReason: string | null;
+  voidedById: string | null;
+  voidedByLabel: string | null;
+  voidedAt: Date | null;
+  voidReason: string | null;
   storePaymentTempo: number;
   total: number | null;
   unpricedKeys: string[];
@@ -174,6 +178,9 @@ export type SellThroughDetail = {
   unrelievedCost: number | null;
   receivableId: string | null;
   taxInvoiceId: string | null;
+  receivableAmount: number | null;
+  taxInvoiceStatus: string | null;
+  taxInvoiceNo: string | null;
   journalPending: boolean;
   defaultSalesmanId: string | null;
   lines: SellThroughLineDetail[];
@@ -199,6 +206,9 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
       cancelledById: true,
       cancelledAt: true,
       cancelReason: true,
+      voidedById: true,
+      voidedAt: true,
+      voidReason: true,
       invoiceDate: true,
       dueDate: true,
       total: true,
@@ -206,8 +216,8 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
       baseline: true,
       baselineReason: true,
       store: { select: { name: true, paymentTempo: true } },
-      receivable: { select: { id: true } },
-      taxInvoice: { select: { id: true } },
+      receivable: { select: { id: true, originalAmount: true } },
+      taxInvoice: { select: { id: true, status: true, invoiceNo: true } },
       lines: {
         orderBy: { id: "asc" },
         select: {
@@ -247,7 +257,9 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
    */
   const userIds = Array.from(
     new Set(
-      [doc.createdById, doc.approvedById, doc.cancelledById, doc.salesmanId].filter((x): x is string => x !== null),
+      [doc.createdById, doc.approvedById, doc.cancelledById, doc.voidedById, doc.salesmanId].filter(
+        (x): x is string => x !== null,
+      ),
     ),
   );
   const [closingStocktake, previous, users] = await Promise.all([
@@ -278,7 +290,7 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
   const invoiced = doc.status === "APPROVED" && !doc.baseline;
   const [defaultSalesmanId, journalGaps] = await Promise.all([
     doc.status === "DRAFT" ? defaultSellThroughSalesmanId(doc.storeId) : Promise.resolve(null),
-    invoiced ? sellThroughJournalGaps(doc.id) : Promise.resolve([]),
+    invoiced || doc.status === "VOIDED" ? sellThroughJournalGaps(doc.id) : Promise.resolve([]),
   ]);
   /* A baseline period was billed outside the ERP, or approved before invoicing existed: nothing here relieved its cost from GL inventory. */
   const unrelievedCost = doc.baseline
@@ -317,6 +329,10 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
     cancelledByLabel: labelFor(doc.cancelledById),
     cancelledAt: doc.cancelledAt,
     cancelReason: doc.cancelReason,
+    voidedById: doc.voidedById,
+    voidedByLabel: labelFor(doc.voidedById),
+    voidedAt: doc.voidedAt,
+    voidReason: doc.voidReason,
     storePaymentTempo: doc.store.paymentTempo,
     total: preview ? preview.total : doc.total === null ? null : Number(doc.total),
     unpricedKeys: preview?.unpricedKeys ?? [],
@@ -329,6 +345,9 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
     unrelievedCost,
     receivableId: doc.receivable?.id ?? null,
     taxInvoiceId: doc.taxInvoice?.id ?? null,
+    receivableAmount: doc.receivable ? Number(doc.receivable.originalAmount) : null,
+    taxInvoiceStatus: doc.taxInvoice?.status ?? null,
+    taxInvoiceNo: doc.taxInvoice?.invoiceNo ?? null,
     journalPending: journalGaps.length > 0,
     defaultSalesmanId,
     lines: doc.lines.map((l, i) => ({

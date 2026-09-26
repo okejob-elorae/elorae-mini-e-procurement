@@ -16,6 +16,7 @@ import {
   cancelSellThrough,
   type ApproveSellThroughInput,
 } from "@/lib/konsi-sell-through/writer";
+import { voidSellThrough } from "@/lib/konsi-sell-through/void-writer";
 import { SellThroughError, type SellThroughErrorCode } from "@/lib/konsi-sell-through/errors";
 import { SELL_THROUGH_RESOLUTIONS, type SellThroughResolutionValue } from "@/lib/konsi-sell-through/derive";
 import {
@@ -216,6 +217,32 @@ export async function cancelSellThroughAction(id: unknown, reason: unknown): Pro
   try {
     await cancelSellThrough({ id, cancelledById: g.userId, reason });
     if (doc) revalidateSellThrough(id, doc.closingStocktakeId);
+    return { ok: true };
+  } catch (e) {
+    return toResult(e);
+  }
+}
+
+/**
+ * Voids an APPROVED report, then posts the reversals it owes. The owed set is read from
+ * `sellThroughJournalGaps` AFTER the writer commits — the same function the retry reads — so a
+ * report whose originals never landed owes, and posts, nothing. Each reversal goes through
+ * `postArJournalSafely`: a failure degrades to a JOURNAL_PENDING flag and an owed reversal the
+ * report page offers to retry, never an undone void.
+ */
+export async function voidSellThroughAction(id: unknown, reason: unknown): Promise<SellThroughActionResult> {
+  const g = await guard();
+  if ("ok" in g) return g;
+  if (typeof id !== "string" || id === "") return { ok: false, reason: "INVALID_REQUEST" };
+  if (typeof reason !== "string") return { ok: false, reason: "INVALID_REQUEST" };
+
+  try {
+    const result = await voidSellThrough({ id, voidedById: g.userId, reason });
+    const owed = await sellThroughJournalGaps(id);
+    await postSellThroughJournals(id, g.userId, owed);
+    revalidateSellThrough(id, result.closingStocktakeId);
+    revalidatePath("/backoffice/finance/piutang");
+    revalidatePath("/backoffice/finance/faktur-pajak");
     return { ok: true };
   } catch (e) {
     return toResult(e);

@@ -3526,7 +3526,8 @@
       "APPROVED": "Disetujui",
       "APPROVED_INVOICED": "Ditagihkan",
       "APPROVED_BASELINE": "Baseline",
-      "CANCELLED": "Dibatalkan"
+      "CANCELLED": "Dibatalkan",
+      "VOIDED": "Dibatalkan (void)"
     },
     "resolution": {
       "BILL": "Tagih selisihnya",
@@ -3545,8 +3546,10 @@
       "createdBy": "Dibuat Oleh",
       "approvedBy": "Disetujui Oleh",
       "cancelledBy": "Dibatalkan Oleh",
+      "voidedBy": "Di-void oleh",
       "none": "—",
       "cancelReason": "Alasan Pembatalan",
+      "voidReason": "Alasan void",
       "linesTitle": "Rincian Barang",
       "colProduct": "Produk",
       "colOpening": "Awal",
@@ -3619,6 +3622,21 @@
       "submitting": "Membatalkan…",
       "success": "Laporan sell-through dibatalkan."
     },
+    "void": {
+      "button": "Void tagihan",
+      "confirmTitle": "Void tagihan ini?",
+      "confirmDescription": "Laporan, piutang, dan fakturnya di-void, dan jurnalnya dibalik pada tanggal aslinya. Tindakan ini tidak dapat dibatalkan.",
+      "receivable": "Piutang {amount} menjadi void.",
+      "faktur": "Faktur ditandai batal.",
+      "fakturIssued": "Faktur {invoiceNo} sudah terbit: batalkan atau ganti juga di e-Faktur.",
+      "recreateHint": "Setelah itu, buat laporan pengganti dari perhitungan stok yang sama.",
+      "reasonLabel": "Alasan",
+      "reasonPlaceholder": "Mengapa tagihan ini salah?",
+      "confirm": "Void tagihan",
+      "voiding": "Memproses void…",
+      "success": "Tagihan berhasil di-void.",
+      "createCorrected": "Buat laporan pengganti"
+    },
     "invoice": {
       "title": "Tagihan",
       "invoiceDate": "Tanggal Tagihan",
@@ -3628,7 +3646,9 @@
       "viewReceivable": "Lihat piutang",
       "viewFaktur": "Lihat faktur pajak",
       "nothingBilled": "Tidak ada yang ditagih pada periode ini, sehingga tidak ada piutang maupun faktur yang dibuat.",
+      "voided": "Void",
       "journalPending": "Sebagian jurnal laporan ini belum diposting — biasanya karena ada peran posting yang belum dipetakan di Pemetaan Akun. Petakan dulu, lalu coba lagi.",
+      "reversalPending": "Jurnal pembalik untuk void ini belum terposting.",
       "retryJournals": "Posting ulang jurnal",
       "retrying": "Mencoba ulang…",
       "retryDone": "Semua jurnal berhasil diposting.",
@@ -3689,7 +3709,13 @@
       "SALESMAN_INVALID": "Sales tersebut sudah tidak bisa menagih. Pilih sales lain.",
       "BASELINE_NOT_FIRST": "Hanya laporan sell-through pertama toko yang bisa disetujui sebagai baseline.",
       "BASELINE_REASON_REQUIRED": "Alasan wajib diisi untuk menyetujui laporan ini sebagai baseline.",
-      "NOT_RETRYABLE": "Tidak ada jurnal yang menunggu untuk dicoba ulang. Muat ulang halaman."
+      "NOT_RETRYABLE": "Tidak ada jurnal yang menunggu untuk dicoba ulang. Muat ulang halaman.",
+      "HAS_SUCCESSOR": "Laporan berikutnya ({docNo}) dibuka dari laporan ini. Batalkan atau void laporan itu dulu.",
+      "HAS_PAYMENTS": "Piutangnya sudah menerima pembayaran. Batalkan pembayaran itu dulu.",
+      "SETTLEMENT_PENDING": "Pelunasan {docNo} masih menunggu persetujuan untuk piutang ini.",
+      "COLLECTION_PENDING": "Ada setoran penagihan yang menunggu verifikasi untuk piutang ini.",
+      "ALREADY_SETTLED": "Piutangnya sudah dihapusbukukan.",
+      "VOID_REASON_REQUIRED": "Isi alasan void."
     }
   },
   "storeTransfers": {

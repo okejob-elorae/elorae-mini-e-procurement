@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { createSellThrough, resolveSellThroughLine, cancelSellThrough } from "./writer";
+import { voidSellThrough } from "./void-writer";
 import { createSellThroughFixtures } from "./test-fixtures";
 import { listSellThroughs, getSellThrough, getSellThroughEligibility } from "./queries";
 
@@ -192,6 +193,27 @@ d("konsi sell-through queries (test bed only)", () => {
     expect(detail).toMatchObject({ baseline: false, total: 160000, salesmanId: state.salesmanId, unrelievedCost: null, journalPending: true });
     expect(detail?.receivableId).not.toBeNull();
     expect(detail?.taxInvoiceId).not.toBeNull();
+  }, SLOW);
+
+  it("a voided report reads VOIDED with its void fields, faktur status and receivable amount, and journalPending when a reversal is owed", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+
+    await fx.approve(id);
+    /* The writer never posts a journal, so this report has no originals to owe a reversal for. */
+    await voidSellThrough({ id, voidedById: state.userId, reason: "wrong resolution" });
+
+    const detail = await getSellThrough(id);
+    expect(detail).toMatchObject({
+      status: "VOIDED",
+      voidReason: "wrong resolution",
+      voidedByLabel: "Test Sell-through User",
+      receivableAmount: 160000,
+      taxInvoiceStatus: "CANCELLED",
+      journalPending: false,
+    });
   }, SLOW);
 
   it("a baseline report shows the cost not relieved from GL inventory and no prices", async () => {
