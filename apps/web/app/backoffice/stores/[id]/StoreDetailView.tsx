@@ -164,6 +164,8 @@ type Props = {
   store: StoreListItem;
   canEdit: boolean;
   canManageFieldReturns: boolean;
+  /** `field_sales_orders:approve` together with the store being active — the writer's own gates. */
+  canPush: boolean;
   visits: Visit[];
   orders: OrderRow[];
   sentItems: StoreSentItemRow[];
@@ -314,6 +316,7 @@ export function StoreDetailView({
   store,
   canEdit,
   canManageFieldReturns,
+  canPush,
   visits,
   orders,
   sentItems,
@@ -936,7 +939,9 @@ export function StoreDetailView({
         </CardContent>
       </Card>
 
-      {assortment && <StoreAssortmentCard storeId={store.id} termsType={store.termsType} lines={assortment.lines} />}
+      {assortment && (
+        <StoreAssortmentCard storeId={store.id} termsType={store.termsType} lines={assortment.lines} canPush={canPush} />
+      )}
 
       {store.termsType === "KONSI" && stockCard && (
         <StoreStockCard

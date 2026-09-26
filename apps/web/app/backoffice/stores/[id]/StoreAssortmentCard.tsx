@@ -2,9 +2,10 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { ListChecks, Pencil, Plus, Trash2 } from "lucide-react";
+import { ListChecks, Pencil, Plus, Send, Trash2 } from "lucide-react";
 import { getItems } from "@/app/actions/items";
 import { itemHasSkuVariants, parseItemVariants, variantSelectOptions } from "@/lib/items/variants";
 import {
@@ -53,6 +54,8 @@ type Props = {
   storeId: string;
   termsType: "PUTUS" | "KONSI";
   lines: AssortmentLineViewModel[];
+  /** Only ever true for a user with `field_sales_orders:approve` on an active KONSI store — the writer's own gates. */
+  canPush?: boolean;
 };
 
 type CatalogMeta = { itemId: string; itemSku: string; variantSku: string; productName: string };
@@ -98,7 +101,7 @@ function targetRawForDisplay(targetQty: number | null): string {
   return targetQty === null ? "" : String(targetQty);
 }
 
-export function StoreAssortmentCard({ storeId, termsType, lines }: Props) {
+export function StoreAssortmentCard({ storeId, termsType, lines, canPush }: Props) {
   const t = useTranslations("stores.assortment");
   const tCommon = useTranslations("common");
   const router = useRouter();
@@ -290,10 +293,20 @@ export function StoreAssortmentCard({ storeId, termsType, lines }: Props) {
             {t("cardTitle")}
             <span className="text-sm font-normal text-muted-foreground ml-2">({lines.length})</span>
           </CardTitle>
-          <Button size="sm" onClick={openAddDialog}>
-            <Plus className="h-4 w-4" />
-            {t("addButton")}
-          </Button>
+          <div className="flex items-center gap-2">
+            {canPush && (
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/backoffice/stores/${storeId}/konsi-push`}>
+                  <Send className="h-4 w-4" />
+                  {t("sendStock")}
+                </Link>
+              </Button>
+            )}
+            <Button size="sm" onClick={openAddDialog}>
+              <Plus className="h-4 w-4" />
+              {t("addButton")}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">{t("description")}</p>
