@@ -14,6 +14,7 @@ const {
   mockSave,
   mockApprove,
   mockCancel,
+  mockAutoReport,
   mockRevalidatePath,
   mockFindUser,
   mockFindStocktakeFirst,
@@ -27,6 +28,7 @@ const {
   mockSave: vi.fn(),
   mockApprove: vi.fn(),
   mockCancel: vi.fn(),
+  mockAutoReport: vi.fn(),
   mockRevalidatePath: vi.fn(),
   mockFindUser: vi.fn(),
   mockFindStocktakeFirst: vi.fn(),
@@ -46,6 +48,7 @@ vi.mock("@/lib/stores/stocktake/writer", () => ({
   approveStoreStocktake: mockApprove,
   cancelStoreStocktake: mockCancel,
 }));
+vi.mock("@/lib/konsi-count-schedule/auto-report", () => ({ autoCreateSellThroughAfterCount: mockAutoReport }));
 vi.mock("@elorae/db", () => ({
   prisma: {
     user: { findUnique: mockFindUser },
@@ -67,6 +70,7 @@ describe("store stocktake actions (unit — writers mocked)", () => {
     mockSave.mockReset();
     mockApprove.mockReset();
     mockCancel.mockReset();
+    mockAutoReport.mockReset();
     mockRevalidatePath.mockReset();
     mockFindUser.mockReset();
     mockFindStocktakeFirst.mockReset();
@@ -79,6 +83,7 @@ describe("store stocktake actions (unit — writers mocked)", () => {
     mockSave.mockResolvedValue({ ok: true, status: "DRAFT" });
     mockApprove.mockResolvedValue({ ok: true });
     mockCancel.mockResolvedValue({ ok: true });
+    mockAutoReport.mockResolvedValue({ kind: "SKIPPED" });
     mockActiveVisit.mockResolvedValue({ storeId: "s1" });
     mockFindUser.mockResolvedValue({ assignedStoreId: "s1" });
     mockFindStocktakeFirst.mockResolvedValue(null);
@@ -530,6 +535,35 @@ describe("store stocktake actions (unit — writers mocked)", () => {
       expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/store-stocktakes");
       expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/store-stocktakes/st1");
       expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/stores/store-abc");
+    });
+
+    it("runs the auto-report after the approval, with the approver", async () => {
+      const res = await approveAction("st1");
+      expect(res).toEqual({ ok: true, id: "st1" });
+      expect(mockAutoReport).toHaveBeenCalledWith("st1", "user-1");
+      expect(mockApprove.mock.invocationCallOrder[0]).toBeLessThan(mockAutoReport.mock.invocationCallOrder[0]);
+    });
+
+    it("never runs the auto-report when the approval is refused", async () => {
+      mockApprove.mockRejectedValue(new StoreStocktakeError("TRANSFER_PENDING", "STRF/2609/0001"));
+      await approveAction("st1");
+      expect(mockAutoReport).not.toHaveBeenCalled();
+    });
+
+    it("still returns the approval's success, and revalidates, when the auto-report throws", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      mockAutoReport.mockRejectedValue(new Error("boom"));
+      const res = await approveAction("st1");
+      errorSpy.mockRestore();
+      expect(res).toEqual({ ok: true, id: "st1" });
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/store-stocktakes/st1");
+    });
+
+    it("revalidates the report routes when a report was created", async () => {
+      mockAutoReport.mockResolvedValue({ kind: "HELD", sellThroughId: "slt-1", docNo: "SLT/0001", heldCount: 2 });
+      await approveAction("st1");
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/konsi-sell-through");
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/konsi-sell-through/slt-1");
     });
   });
 
