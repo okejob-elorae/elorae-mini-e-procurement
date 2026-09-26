@@ -2,6 +2,7 @@ import { prisma } from "@elorae/db";
 import { createStoreStocktake } from "@/lib/stores/stocktake/writer";
 import { StoreStocktakeError } from "@/lib/stores/stocktake/errors";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import { capNotificationText } from "@/lib/notifications/text";
 import { sendNotificationToUsers, type NotificationUser } from "@/lib/notifications/recipients";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { KONSI_COUNT_SYSTEM_ACTOR, type CountSchedule } from "./schedule";
@@ -114,7 +115,7 @@ export async function runKonsiCountSweep(input?: {
             data: {
               category: KONSI_COUNT_DUE,
               severity: "INFO",
-              title: `Perhitungan stok bulanan dibuka — ${store.name}`,
+              title: capNotificationText(`Perhitungan stok bulanan dibuka — ${store.name}`),
               message:
                 `Perhitungan ${created.docNo} dibuka otomatis untuk periode ${state.monthKey}, batas waktu ${dueDate}.` +
                 (spgs.length === 0 ? " Toko ini belum punya SPG, jadi perhitungan perlu diisi dari backoffice." : ""),
@@ -150,7 +151,7 @@ export async function runKonsiCountSweep(input?: {
             data: {
               category: KONSI_COUNT_OVERDUE,
               severity: "WARNING",
-              title: `Perhitungan stok bulanan terlambat — ${store.name}`,
+              title: capNotificationText(`Perhitungan stok bulanan terlambat — ${store.name}`),
               message: `Belum ada perhitungan penuh yang disetujui untuk periode ${state.monthKey} (batas waktu ${dueDate}).`,
               metadata: { storeId: store.id, storeName: store.name, monthKey: state.monthKey, dueDate, stocktakeId: stocktakeId ?? "" },
             },

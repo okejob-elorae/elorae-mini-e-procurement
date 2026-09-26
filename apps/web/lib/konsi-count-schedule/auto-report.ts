@@ -3,6 +3,7 @@ import { createSellThrough } from "@/lib/konsi-sell-through/writer";
 import { SellThroughError, type SellThroughErrorCode } from "@/lib/konsi-sell-through/errors";
 import { isLineHeld, roundQty } from "@/lib/konsi-sell-through/derive";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import { capNotificationText } from "@/lib/notifications/text";
 import idMessages from "@/lib/i18n/messages/id.json";
 import { KONSI_REPORT_BLOCKED, KONSI_REPORT_HELD, KONSI_REPORT_READY } from "./categories";
 
@@ -65,7 +66,7 @@ export async function autoCreateSellThroughAfterCount(stocktakeId: string, appro
         data: {
           category: KONSI_REPORT_BLOCKED,
           severity: "WARNING",
-          title: `Laporan sell-through tidak bisa dibuat — ${st.store.name}`,
+          title: capNotificationText(`Laporan sell-through tidak bisa dibuat — ${st.store.name}`),
           message: `Perhitungan ${st.docNo} sudah disetujui, tetapi laporan sell-through tidak bisa dibuat otomatis. ${blockedReason(e.code, detail)}`,
           metadata: { ...base, code: e.code, detail },
         },
@@ -86,7 +87,7 @@ export async function autoCreateSellThroughAfterCount(stocktakeId: string, appro
         data: {
           category: KONSI_REPORT_HELD,
           severity: "WARNING",
-          title: `Laporan sell-through menunggu penyelesaian — ${st.store.name}`,
+          title: capNotificationText(`Laporan sell-through menunggu penyelesaian — ${st.store.name}`),
           message: `Laporan ${created.docNo} dibuat otomatis dari perhitungan ${st.docNo}. ${heldCount} baris menunggu penyelesaian sebelum laporan bisa disetujui.`,
           metadata: { ...reportMeta, heldCount },
         },
@@ -99,7 +100,7 @@ export async function autoCreateSellThroughAfterCount(stocktakeId: string, appro
       data: {
         category: KONSI_REPORT_READY,
         severity: "INFO",
-        title: `Laporan sell-through siap ditinjau — ${st.store.name}`,
+        title: capNotificationText(`Laporan sell-through siap ditinjau — ${st.store.name}`),
         message: `Laporan ${created.docNo} dibuat otomatis dari perhitungan ${st.docNo} dan siap ditinjau.`,
         metadata: reportMeta,
       },
