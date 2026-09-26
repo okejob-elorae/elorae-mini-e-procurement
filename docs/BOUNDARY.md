@@ -185,8 +185,10 @@ held back from sale.
 - **api** writes integration alerts: token-refresh failure, outbox DLQ growth,
   rate-limit exhaustion, webhook signature failure. (✅ shipped where helpers
   exist.)
-- **web** writes ERP-detected alerts: negative-available stock and opname
-  variance over threshold (⏳ planned); AR overdue (✅ shipped, `AR_OVERDUE`);
+- **web** writes ERP-detected alerts; the live categories are the entries in
+  `CATEGORY_PERMISSION` (`apps/web/lib/notifications/admin-fanout.ts`), and the
+  §3 table row names them. Negative-available stock and opname variance over
+  threshold are still ⏳ planned. Shipped among them: AR overdue (`AR_OVERDUE`);
   and the konsi sell-through discrepancy alert, shipped with the konsi count
   schedule for AUTO-created reports only — a report created automatically after
   a full count is announced as `KONSI_REPORT_HELD` when lines await a
@@ -194,9 +196,11 @@ held back from sale.
   report created by hand that holds lines announces nothing; and the monthly
   count raises `KONSI_COUNT_DUE` and `KONSI_COUNT_OVERDUE` (✅ shipped).
 
-No shared writer helper is mandated yet — the table is simple. If multiple web
-call sites accumulate, lift into a `@elorae/db/admin-notification-writer.ts`
-helper.
+No shared writer helper exists or is mandated — the table is simple. The web
+call sites have accumulated: each creates its row directly and fans it out
+through `fanOutAdminNotification` (`apps/web/lib/notifications/admin-fanout.ts`).
+Lifting the create into a `@elorae/db/admin-notification-writer.ts` helper
+remains an option.
 
 ### 3.6 Single-owner web tables — default rule
 

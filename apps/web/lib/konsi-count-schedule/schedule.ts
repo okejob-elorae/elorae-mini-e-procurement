@@ -123,6 +123,8 @@ export function formatCountDueDate(dueAt: Date, locale: string): string {
  * October for a missed September credits September, and October's window still opens on time.
  * A count finished BEFORE the target's window opened credits the previous slot instead. That is
  * intended: an early count sits inside the previous month's slot, and it is that month it closes.
+ * It is also why the daily sweep never announces an open count already finished before the
+ * target's `openFrom` as the target's count.
  *
  * A store owes the target month only if it already existed when that month's window opened
  * (`eligibleSince < openFrom`). In order:
