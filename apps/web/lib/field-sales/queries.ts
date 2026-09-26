@@ -10,6 +10,8 @@ export type FieldSalesOrderStatus = "PENDING_APPROVAL" | "APPROVED" | "REJECTED"
 
 export type FieldSalesOrderType = "PUTUS" | "KONSI";
 
+export type FieldSalesOrderOrigin = "FIELD" | "ADMIN";
+
 export type FieldSalesDeliveryStatus = "PENDING" | "PARTIAL" | "DELIVERED" | "CLOSED";
 
 export type FieldSalesDeliveryLineSummary = {
@@ -41,6 +43,7 @@ export type FieldSalesOrderListItem = {
   id: string;
   orderNo: string;
   orderType: FieldSalesOrderType;
+  origin: FieldSalesOrderOrigin;
   storeName: string;
   salesmanName: string;
   status: FieldSalesOrderStatus;
@@ -101,6 +104,7 @@ export function serializeListItem(row: {
   id: string;
   orderNo: string;
   orderType: FieldSalesOrderType;
+  origin: FieldSalesOrderOrigin;
   status: FieldSalesOrderStatus;
   total: Prisma.Decimal | number;
   createdAt: Date;
@@ -112,6 +116,7 @@ export function serializeListItem(row: {
     id: row.id,
     orderNo: row.orderNo,
     orderType: row.orderType,
+    origin: row.origin,
     storeName: row.store.name,
     salesmanName: row.salesman.name ?? "—",
     status: row.status,
@@ -122,12 +127,19 @@ export function serializeListItem(row: {
 }
 
 export async function listFieldSalesOrders(
-  filter: { status?: FieldSalesOrderStatus; search?: string; orderType?: FieldSalesOrderType; storeId?: string },
+  filter: {
+    status?: FieldSalesOrderStatus;
+    search?: string;
+    orderType?: FieldSalesOrderType;
+    origin?: FieldSalesOrderOrigin;
+    storeId?: string;
+  },
   paging: { page: number; pageSize: number },
 ): Promise<{ orders: FieldSalesOrderListItem[]; totalCount: number }> {
   const where: Prisma.FieldSalesOrderWhereInput = {};
   if (filter.status) where.status = filter.status;
   if (filter.orderType) where.orderType = filter.orderType;
+  if (filter.origin) where.origin = filter.origin;
   if (filter.storeId) where.storeId = filter.storeId;
   if (filter.search && filter.search.trim()) {
     const s = filter.search.trim();
@@ -140,7 +152,7 @@ export async function listFieldSalesOrders(
       skip: (paging.page - 1) * paging.pageSize,
       take: paging.pageSize,
       select: {
-        id: true, orderNo: true, orderType: true, status: true, total: true, createdAt: true,
+        id: true, orderNo: true, orderType: true, origin: true, status: true, total: true, createdAt: true,
         creditHoldAtCreate: true,
         store: { select: { name: true } },
         salesman: { select: { name: true } },
@@ -155,7 +167,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
   const row = await prisma.fieldSalesOrder.findUnique({
     where: { id },
     select: {
-      id: true, orderNo: true, orderType: true, status: true, total: true, subtotal: true, note: true,
+      id: true, orderNo: true, orderType: true, origin: true, status: true, total: true, subtotal: true, note: true,
       creditHoldAtCreate: true,
       approvedAt: true, rejectedAt: true, rejectReason: true, createdAt: true,
       closedAt: true, closeReason: true,

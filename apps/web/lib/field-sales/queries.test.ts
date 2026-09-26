@@ -10,6 +10,7 @@ describe("serializeListItem", () => {
       id: "o1",
       orderNo: "PUTUS/2026/0001",
       orderType: "PUTUS" as const,
+      origin: "FIELD" as const,
       status: "PENDING_APPROVAL" as const,
       total: new Prisma.Decimal("210000.00"),
       createdAt: new Date("2026-07-04T00:00:00Z"),
@@ -21,6 +22,7 @@ describe("serializeListItem", () => {
       id: "o1",
       orderNo: "PUTUS/2026/0001",
       orderType: "PUTUS",
+      origin: "FIELD",
       storeName: "Toko A",
       salesmanName: "Budi",
       status: "PENDING_APPROVAL",
@@ -31,7 +33,7 @@ describe("serializeListItem", () => {
   });
   it("falls back when salesman name is null", () => {
     const row = {
-      id: "o2", orderNo: "PUTUS/2026/0002", orderType: "PUTUS" as const, status: "APPROVED" as const,
+      id: "o2", orderNo: "PUTUS/2026/0002", orderType: "PUTUS" as const, origin: "FIELD" as const, status: "APPROVED" as const,
       total: new Prisma.Decimal("0"), createdAt: new Date("2026-07-04T00:00:00Z"),
       store: { name: "Toko B" }, salesman: { name: null },
       creditHoldAtCreate: false,
@@ -40,12 +42,21 @@ describe("serializeListItem", () => {
   });
   it("passes orderType through for a konsi row", () => {
     const row = {
-      id: "o3", orderNo: "KONSI/2026/0001", orderType: "KONSI" as const, status: "PENDING_APPROVAL" as const,
+      id: "o3", orderNo: "KONSI/2026/0001", orderType: "KONSI" as const, origin: "FIELD" as const, status: "PENDING_APPROVAL" as const,
       total: new Prisma.Decimal("0"), createdAt: new Date("2026-07-04T00:00:00Z"),
       store: { name: "Toko C" }, salesman: { name: "Budi" },
       creditHoldAtCreate: false,
     };
     expect(serializeListItem(row).orderType).toBe("KONSI");
+  });
+  it("passes origin through for an admin-pushed row", () => {
+    const row = {
+      id: "o4", orderNo: "KONSI/2026/0002", orderType: "KONSI" as const, origin: "ADMIN" as const, status: "PENDING_APPROVAL" as const,
+      total: new Prisma.Decimal("0"), createdAt: new Date("2026-07-04T00:00:00Z"),
+      store: { name: "Toko D" }, salesman: { name: "Budi" },
+      creditHoldAtCreate: false,
+    };
+    expect(serializeListItem(row).origin).toBe("ADMIN");
   });
 });
 
@@ -135,6 +146,20 @@ d("konsi queries (test bed only)", () => {
     expect(res.orders.every((o) => o.orderType === "KONSI")).toBe(true);
     expect(res.orders.map((o) => o.id)).toContain(konsi.id);
     expect(res.orders.map((o) => o.id)).not.toContain(putus.id);
+  });
+
+  it("filters the order list by origin", async () => {
+    const field = await seedOrder({ orderType: "PUTUS" });
+    const admin = await seedOrder({ orderType: "PUTUS" });
+    await prisma.fieldSalesOrder.update({ where: { id: admin.id }, data: { origin: "ADMIN" } });
+
+    const fieldRes = await listFieldSalesOrders({ origin: "FIELD" }, { page: 1, pageSize: 50 });
+    const adminRes = await listFieldSalesOrders({ origin: "ADMIN" }, { page: 1, pageSize: 50 });
+
+    expect(fieldRes.orders.map((o) => o.id)).toContain(field.id);
+    expect(fieldRes.orders.map((o) => o.id)).not.toContain(admin.id);
+    expect(adminRes.orders.map((o) => o.id)).toContain(admin.id);
+    expect(adminRes.orders.map((o) => o.id)).not.toContain(field.id);
   });
 
   it("sentItemIds includes items on non-rejected konsi lines, excludes rejected-only items", async () => {

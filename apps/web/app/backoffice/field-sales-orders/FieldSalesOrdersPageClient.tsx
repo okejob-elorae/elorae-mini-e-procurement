@@ -34,6 +34,7 @@ type Props = {
   search: string;
   status: StatusFilter;
   orderType: "ALL" | "PUTUS" | "KONSI";
+  origin: "ALL" | "FIELD" | "ADMIN";
   storeId: string;
   storeOptions: { id: string; name: string }[];
   page: number;
@@ -107,7 +108,7 @@ export function FieldSalesOrdersPageClient(props: Props) {
       </div>
 
       <Card className="p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-6">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-7">
           <div className="lg:col-span-2">
             <label className="text-xs text-muted-foreground mb-1 block">{t("search")}</label>
             <Input
@@ -140,6 +141,19 @@ export function FieldSalesOrdersPageClient(props: Props) {
                 <SelectItem value="ALL">{t("typeAll")}</SelectItem>
                 <SelectItem value="PUTUS">{t("typePutus")}</SelectItem>
                 <SelectItem value="KONSI">{t("typeKonsi")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">{t("origin")}</label>
+            <Select value={props.origin} onValueChange={(v) => pushParam("origin", v === "ALL" ? undefined : v)}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={t("origin")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">{t("originAll")}</SelectItem>
+                <SelectItem value="FIELD">{t("originField")}</SelectItem>
+                <SelectItem value="ADMIN">{t("originAdmin")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -195,7 +209,14 @@ export function FieldSalesOrdersPageClient(props: Props) {
                     startTransition(() => router.push(`/backoffice/field-sales-orders/${o.id}`))
                   }
                 >
-                  <TableCell className="font-mono text-sm">{o.orderNo}</TableCell>
+                  <TableCell className="font-mono text-sm">
+                    {o.orderNo}
+                    {o.origin === "ADMIN" && (
+                      <Badge variant="secondary" className="ml-2">
+                        {t("originAdmin")}
+                      </Badge>
+                    )}
+                  </TableCell>
                   <TableCell>
                     <Badge variant="outline">
                       {o.orderType === "KONSI" ? t("typeKonsi") : t("typePutus")}
