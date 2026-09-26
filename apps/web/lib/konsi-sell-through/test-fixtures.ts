@@ -145,6 +145,12 @@ export function createSellThroughFixtures() {
     await prisma.storeTransferLine.deleteMany({ where: { transfer: transferWhere } });
     await prisma.storeTransfer.deleteMany({ where: transferWhere });
 
+    /* Void audit rows reference the store's reports by id and point at a fixture user, so they go before either. */
+    const storeReportIds = (
+      await prisma.konsiSellThrough.findMany({ where: { storeId: seededId(state.storeId) }, select: { id: true } })
+    ).map((r) => r.id);
+    await prisma.auditLog.deleteMany({ where: { entityType: "KonsiSellThrough", entityId: { in: storeReportIds } } });
+
     /* Children of a report's optional 1:1 go first: deleting the report would null their source column and the one-source CHECK refuses that. */
     await prisma.taxInvoice.deleteMany({ where: { sellThrough: { storeId: seededId(state.storeId) } } });
     await prisma.receivable.deleteMany({ where: { storeId: seededId(state.storeId) } });
