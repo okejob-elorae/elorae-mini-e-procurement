@@ -23,7 +23,11 @@ export type CountStatus = "DONE" | "NOT_YET" | "DUE" | "OVERDUE";
 
 export type CountWindow = { monthKey: string; monthStart: Date; monthEnd: Date; openFrom: Date; dueAt: Date };
 
-/** `monthKey` and `dueAt` name the month the status is about, which is the previous month for a carried OVERDUE. */
+/**
+ * `monthKey` and `dueAt` always name the month the status is about: the target month for DUE and
+ * OVERDUE (the previous month while its slot is still running), the current month for DONE, and
+ * the next window to open for NOT_YET.
+ */
 export type CountStatusResult = { status: CountStatus; monthKey: string; dueAt: Date };
 
 const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
@@ -89,46 +93,65 @@ export function countWindowFor(now: Date, schedule: CountSchedule): CountWindow 
 }
 
 /**
+ * The count moment of an approved count: `countFinishedAt ?? approvedAt`, the same moment the
+ * stocktake and sell-through writers read. Never `countedAt`, which is the instant the count was
+ * opened and which a caller supplies.
+ */
+export function countMomentOf(count: { countFinishedAt: Date | null; approvedAt: Date | null }): Date | null {
+  return count.countFinishedAt ?? count.approvedAt;
+}
+
+/* `2026-09` as a month name in `locale`, e.g. "September 2026". UTC on both sides, so the host timezone cannot shift it into a neighbouring month. */
+export function formatCountMonth(monthKey: string, locale: string): string {
+  const [year, month] = monthKey.split("-").map(Number);
+  return new Intl.DateTimeFormat(locale, { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, 1)));
+}
+
+/**
  * The one rule for where a store stands on its monthly count. The store screen, the SPG home
  * and the daily sweep all go through it, so they cannot disagree.
  *
- * A month is counted when an APPROVED FULL count's `countedAt` falls inside it. `countedAt` is
- * the instant the count was opened, so a late count is credited to the month it is taken in. In
- * order:
- * - DONE when the current month is counted.
- * - OVERDUE for the current month once its due day has ended.
- * - OVERDUE for the PREVIOUS month when that month was not counted and the store already existed
- *   when that month's window opened. This carry is what makes the alert reachable at all under
- *   the last-day default: that due day ends on the month's last instant, and the next instant
- *   belongs to the next month.
- * - NOT_YET before the current window opens, DUE inside it.
+ * Each month owns a SLOT that runs from its window's `openFrom` to the next month's `openFrom`.
+ * The TARGET month is the one whose slot contains `now`: the current month once its window has
+ * opened, the previous month before that. A month is counted when the last approved FULL count's
+ * count moment (`countMomentOf`) falls at or after its `openFrom`, so a late count taken on 2
+ * October for a missed September credits September, and October's window still opens on time.
+ * A count finished BEFORE the target's window opened credits the previous slot instead. That is
+ * intended: an early count sits inside the previous month's slot, and it is that month it closes.
+ *
+ * A store owes the target month only if it already existed when that month's window opened
+ * (`eligibleSince < openFrom`). In order:
+ * - NOT_YET, naming the next window to open, when the store does not owe the target month.
+ * - DONE when the target is the current month and it is counted.
+ * - NOT_YET for the current month when the target is the previous month and it is counted.
+ * - DUE for the target month while its due day has not ended, OVERDUE once it has.
+ *
+ * The carry is single-hop by construction: a missed month is dropped the instant the next
+ * month's window opens, and from then on the current month is the one owed.
  */
 export function countStatusFor(input: {
   now: Date;
   schedule: CountSchedule;
-  lastApprovedFullCountedAt: Date | null;
+  lastFullCountMoment: Date | null;
   eligibleSince: Date;
 }): CountStatusResult {
   const now = input.now.getTime();
-  const last = input.lastApprovedFullCountedAt?.getTime() ?? null;
+  const last = input.lastFullCountMoment?.getTime() ?? null;
   const current = countWindowFor(input.now, input.schedule);
-
-  if (last !== null && last >= current.monthStart.getTime() && last <= current.monthEnd.getTime()) {
-    return { status: "DONE", monthKey: current.monthKey, dueAt: current.dueAt };
-  }
-  if (now > current.dueAt.getTime()) {
-    return { status: "OVERDUE", monthKey: current.monthKey, dueAt: current.dueAt };
-  }
-
   const previous = countWindowFor(new Date(current.monthStart.getTime() - 1), input.schedule);
-  const previousMissed =
-    input.eligibleSince.getTime() < previous.openFrom.getTime() && (last === null || last < previous.monthStart.getTime());
-  if (previousMissed) {
-    return { status: "OVERDUE", monthKey: previous.monthKey, dueAt: previous.dueAt };
+  const currentOpen = now >= current.openFrom.getTime();
+  const target = currentOpen ? current : previous;
+
+  if (input.eligibleSince.getTime() >= target.openFrom.getTime()) {
+    const upcoming = currentOpen ? countWindowFor(new Date(current.monthEnd.getTime() + 1), input.schedule) : current;
+    return { status: "NOT_YET", monthKey: upcoming.monthKey, dueAt: upcoming.dueAt };
   }
 
-  if (now < current.openFrom.getTime()) {
-    return { status: "NOT_YET", monthKey: current.monthKey, dueAt: current.dueAt };
+  if (last !== null && last >= target.openFrom.getTime()) {
+    return { status: currentOpen ? "DONE" : "NOT_YET", monthKey: current.monthKey, dueAt: current.dueAt };
   }
-  return { status: "DUE", monthKey: current.monthKey, dueAt: current.dueAt };
+  if (now <= target.dueAt.getTime()) {
+    return { status: "DUE", monthKey: target.monthKey, dueAt: target.dueAt };
+  }
+  return { status: "OVERDUE", monthKey: target.monthKey, dueAt: target.dueAt };
 }

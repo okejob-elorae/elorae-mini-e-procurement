@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -25,7 +25,7 @@ import {
 import type { StoreListItem } from "@/lib/stores/queries";
 import type { StoreSentItemRow } from "@/lib/field-sales/queries";
 import type { StoreStocktakeStatusValue } from "@/lib/stores/stocktake/queries";
-import type { CountStatus } from "@/lib/konsi-count-schedule/schedule";
+import { formatCountMonth, type CountStatus } from "@/lib/konsi-count-schedule/schedule";
 import type { StorePiutangSummary } from "@/lib/finance/ar/queries";
 import { AGING_BUCKETS, AGING_BUCKET_LABELS, isOverdue } from "@/lib/finance/ar/aging";
 import { createAction as createStocktakeAction } from "@/app/actions/store-stocktakes";
@@ -157,7 +157,7 @@ type CountScheduleProps = {
   status: CountStatus;
   monthKey: string;
   dueAtIso: string;
-  lastFullCount: { id: string; docNo: string; countedAtIso: string } | null;
+  lastFullCount: { id: string; docNo: string; countMomentIso: string | null } | null;
 };
 
 type Props = {
@@ -171,7 +171,7 @@ type Props = {
   stockCard: StockCardProps | null;
   /** Only ever populated for a KONSI store — same gate as `stockCard`. */
   stocktakes: StocktakesCardProps | null;
-  /** Only populated for a KONSI store with a sell-through method — the stores on the monthly count schedule. */
+  /** Only populated for an active KONSI store with a sell-through method — the stores on the monthly count schedule. */
   countSchedule: CountScheduleProps | null;
   /** Only populated for a user with `stores:manage` — the card is gated, not just its controls. */
   assortment: { lines: AssortmentLineViewModel[] } | null;
@@ -340,6 +340,7 @@ export function StoreDetailView({
   const tCommon = useTranslations("common");
   const tST = useTranslations("storeStocktakes");
   const tFso = useTranslations("fieldSalesOrders");
+  const locale = useLocale();
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [creatingStocktake, startCreateStocktakeTransition] = useTransition();
@@ -1005,7 +1006,7 @@ export function StoreDetailView({
                 <div className="flex min-w-0 flex-col gap-1 text-muted-foreground sm:items-end">
                   <span>
                     {tStocktake("schedule.dueOn", {
-                      month: countSchedule.monthKey,
+                      month: formatCountMonth(countSchedule.monthKey, locale),
                       date: formatDateOnlyJakarta(new Date(countSchedule.dueAtIso)),
                     })}
                   </span>
@@ -1018,7 +1019,8 @@ export function StoreDetailView({
                       >
                         {countSchedule.lastFullCount.docNo}
                       </Link>
-                      {` · ${formatDateOnlyJakarta(new Date(countSchedule.lastFullCount.countedAtIso))}`}
+                      {countSchedule.lastFullCount.countMomentIso &&
+                        ` · ${formatDateOnlyJakarta(new Date(countSchedule.lastFullCount.countMomentIso))}`}
                     </span>
                   ) : (
                     <span>{tStocktake("schedule.noFullCount")}</span>

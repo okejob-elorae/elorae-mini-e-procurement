@@ -51,9 +51,9 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
     store.termsType === "KONSI"
       ? await listStoreStocktakes({ storeId: store.id, page: 1, perPage: STOCKTAKE_HISTORY_PAGE_SIZE })
       : null;
-  /* Only a KONSI store with a sell-through method is on the monthly count schedule. */
+  /* Only an active KONSI store with a sell-through method is on the monthly count schedule, the same stores the daily sweep reads. */
   const countState =
-    store.termsType === "KONSI" && store.sellThroughMethod
+    store.termsType === "KONSI" && store.sellThroughMethod && store.isActive
       ? await getStoreCountState({ id: store.id, createdAt: store.createdAt }, await readCountSchedule(), new Date())
       : null;
   /**
@@ -132,7 +132,7 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
                 ? {
                     id: countState.lastFullCount.id,
                     docNo: countState.lastFullCount.docNo,
-                    countedAtIso: countState.lastFullCount.countedAt.toISOString(),
+                    countMomentIso: countState.lastFullCount.countMoment?.toISOString() ?? null,
                   }
                 : null,
             }

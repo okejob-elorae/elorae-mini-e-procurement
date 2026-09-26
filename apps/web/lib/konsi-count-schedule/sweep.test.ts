@@ -162,14 +162,16 @@ d("runKonsiCountSweep (test bed only)", () => {
 
   it("skips a counted store, a store not yet due, a store with no method, a PUTUS store and an inactive store", async () => {
     const done = await seedStore();
+    /* Opened before September's window (27 September) but finished inside it: the count moment, not `countedAt`, credits September. */
     await prisma.storeStocktake.create({
       data: {
         docNo: `STK/${tag}/done-${storeCounter}`,
         storeId: done,
         status: "APPROVED",
         isFullCount: true,
-        countedAt: wib("2026-09-05"),
-        approvedAt: wib("2026-09-06"),
+        countedAt: wib("2026-09-20"),
+        countFinishedAt: wib("2026-09-27"),
+        approvedAt: wib("2026-09-27", "15:00"),
         createdById: "test",
       },
     });

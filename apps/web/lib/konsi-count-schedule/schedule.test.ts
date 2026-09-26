@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
+  countMomentOf,
   countStatusFor,
   countWindowFor,
+  formatCountMonth,
   parseCountSchedule,
   DEFAULT_COUNT_SCHEDULE,
   type CountSchedule,
@@ -115,35 +117,57 @@ describe("countWindowFor", () => {
   });
 });
 
+describe("countMomentOf", () => {
+  it("is countFinishedAt when the count was finished", () => {
+    expect(countMomentOf({ countFinishedAt: at("2026-09-20T03:00:00.000Z"), approvedAt: at("2026-09-22T03:00:00.000Z") })).toEqual(
+      at("2026-09-20T03:00:00.000Z"),
+    );
+  });
+
+  it("falls back to approvedAt when countFinishedAt is null", () => {
+    expect(countMomentOf({ countFinishedAt: null, approvedAt: at("2026-09-22T03:00:00.000Z") })).toEqual(at("2026-09-22T03:00:00.000Z"));
+  });
+});
+
+describe("formatCountMonth", () => {
+  it("names the month in the given locale", () => {
+    expect(formatCountMonth("2026-09", "en")).toBe("September 2026");
+    expect(formatCountMonth("2026-10", "id")).toBe("Oktober 2026");
+  });
+
+  it("keeps January and December in their own year", () => {
+    expect(formatCountMonth("2027-01", "en")).toBe("January 2027");
+    expect(formatCountMonth("2026-12", "en")).toBe("December 2026");
+  });
+});
+
 describe("countStatusFor", () => {
   const status = (now: string, last: string | null, schedule: CountSchedule = DEFAULT_COUNT_SCHEDULE, eligibleSince: Date = ELIGIBLE) =>
-    countStatusFor({ now: at(now), schedule, lastApprovedFullCountedAt: last === null ? null : at(last), eligibleSince });
+    countStatusFor({ now: at(now), schedule, lastFullCountMoment: last === null ? null : at(last), eligibleSince });
 
-  it("is DONE when an approved full count falls in the current WIB month", () => {
-    const r = status("2026-09-28T03:00:00.000Z", "2026-09-05T03:00:00.000Z");
-    expect(r.status).toBe("DONE");
-    expect(r.monthKey).toBe("2026-09");
-    expect(r.dueAt.toISOString()).toBe("2026-09-30T16:59:59.999Z");
+  it("is DONE when the count moment falls inside the current month's open window", () => {
+    const r = status("2026-09-28T03:00:00.000Z", "2026-09-27T03:00:00.000Z");
+    expect(r).toEqual({ status: "DONE", monthKey: "2026-09", dueAt: at("2026-09-30T16:59:59.999Z") });
   });
 
-  it("counts 00:30 WIB on 1 September for September", () => {
-    expect(status("2026-09-28T03:00:00.000Z", "2026-08-31T17:30:00.000Z").status).toBe("DONE");
+  it("credits a count finished at 00:30 WIB on the day September's window opens to September", () => {
+    expect(status("2026-09-28T03:00:00.000Z", "2026-09-26T17:30:00.000Z").status).toBe("DONE");
   });
 
-  it("counts 23:30 WIB on 31 August for August", () => {
-    const r = status("2026-09-28T03:00:00.000Z", "2026-08-31T16:30:00.000Z");
+  it("credits a count finished at 23:30 WIB the day before September's window opens to August", () => {
+    const r = status("2026-09-28T03:00:00.000Z", "2026-09-26T16:30:00.000Z");
     expect(r.status).toBe("DUE");
     expect(r.monthKey).toBe("2026-09");
   });
 
-  it("is NOT_YET before the count window opens", () => {
-    const r = status("2026-09-10T03:00:00.000Z", "2026-08-20T03:00:00.000Z");
+  it("is NOT_YET for the current month before its window opens, when the previous month was counted", () => {
+    const r = status("2026-09-10T03:00:00.000Z", "2026-08-29T03:00:00.000Z");
     expect(r).toEqual({ status: "NOT_YET", monthKey: "2026-09", dueAt: at("2026-09-30T16:59:59.999Z") });
   });
 
   it("turns DUE at the exact instant the window opens", () => {
-    expect(status("2026-09-26T16:59:59.999Z", "2026-08-20T03:00:00.000Z").status).toBe("NOT_YET");
-    expect(status("2026-09-26T17:00:00.000Z", "2026-08-20T03:00:00.000Z").status).toBe("DUE");
+    expect(status("2026-09-26T16:59:59.999Z", "2026-08-29T03:00:00.000Z").status).toBe("NOT_YET");
+    expect(status("2026-09-26T17:00:00.000Z", "2026-08-29T03:00:00.000Z").status).toBe("DUE");
   });
 
   it("stays DUE through the end of the due day and turns OVERDUE the instant after", () => {
@@ -152,37 +176,106 @@ describe("countStatusFor", () => {
     expect(r).toEqual({ status: "OVERDUE", monthKey: "2026-09", dueAt: at("2026-09-15T16:59:59.999Z") });
   });
 
-  it("carries a missed month: with the last-day default, 07:00 WIB on 1 October is OVERDUE for September", () => {
+  it("keeps a missed month OVERDUE into the next one: with the last-day default, 07:00 WIB on 1 October is OVERDUE for September", () => {
     const r = status("2026-10-01T00:00:00.000Z", "2026-08-20T03:00:00.000Z");
     expect(r).toEqual({ status: "OVERDUE", monthKey: "2026-09", dueAt: at("2026-09-30T16:59:59.999Z") });
   });
 
-  it("carries a missed month for a store that has never been counted", () => {
+  it("keeps a missed month OVERDUE for a store that has never been counted", () => {
     const r = status("2026-10-01T00:00:00.000Z", null);
     expect(r.status).toBe("OVERDUE");
     expect(r.monthKey).toBe("2026-09");
   });
 
-  it("does not carry a month the store did not exist for when its window opened", () => {
+  it("does not owe a month the store did not exist for when its window opened", () => {
     const r = status("2026-10-01T00:00:00.000Z", null, DEFAULT_COUNT_SCHEDULE, new Date("2026-09-28T00:00:00.000+07:00"));
     expect(r).toEqual({ status: "NOT_YET", monthKey: "2026-10", dueAt: at("2026-10-31T16:59:59.999Z") });
   });
 
-  it("does not carry a month that was counted", () => {
-    expect(status("2026-10-01T00:00:00.000Z", "2026-09-12T03:00:00.000Z").status).toBe("NOT_YET");
-  });
-
-  it("carries across the year boundary", () => {
+  it("keeps a missed month OVERDUE across the year boundary", () => {
     const r = status("2027-01-02T03:00:00.000Z", "2026-11-20T03:00:00.000Z");
     expect(r).toEqual({ status: "OVERDUE", monthKey: "2026-12", dueAt: at("2026-12-31T16:59:59.999Z") });
   });
 
-  it("reports the current month's overdue ahead of a carried one", () => {
+  it("drops a missed month once the next window opens: the current month is the one owed", () => {
     const r = status("2026-10-16T03:00:00.000Z", "2026-08-20T03:00:00.000Z", DUE_15);
     expect(r).toEqual({ status: "OVERDUE", monthKey: "2026-10", dueAt: at("2026-10-15T16:59:59.999Z") });
   });
 
-  it("credits a late count to the month it is counted in", () => {
-    expect(status("2026-10-05T03:00:00.000Z", "2026-10-02T03:00:00.000Z").status).toBe("DONE");
+  it("credits the September count taken on 2 October to September, and still opens October on time", () => {
+    const oct5 = status("2026-10-05T03:00:00.000Z", "2026-10-02T03:00:00.000Z");
+    expect(oct5).toEqual({ status: "NOT_YET", monthKey: "2026-10", dueAt: at("2026-10-31T16:59:59.999Z") });
+    const octOpen = status("2026-10-27T17:00:00.000Z", "2026-10-02T03:00:00.000Z");
+    expect(octOpen).toEqual({ status: "DUE", monthKey: "2026-10", dueAt: at("2026-10-31T16:59:59.999Z") });
+  });
+
+  it("is NOT_YET for the current month when the target is the previous month and it is counted", () => {
+    const r = status("2026-10-01T00:00:00.000Z", "2026-09-28T03:00:00.000Z");
+    expect(r).toEqual({ status: "NOT_YET", monthKey: "2026-10", dueAt: at("2026-10-31T16:59:59.999Z") });
+  });
+
+  describe("numeric due day 15 with 3 lead days", () => {
+    /* No count since the September window opened (00:00 WIB on 12 September). */
+    const beforeSepWindow = "2026-09-11T03:00:00.000Z";
+
+    it("is OVERDUE for September on 5 October", () => {
+      expect(status("2026-10-05T03:00:00.000Z", beforeSepWindow, DUE_15)).toEqual({
+        status: "OVERDUE",
+        monthKey: "2026-09",
+        dueAt: at("2026-09-15T16:59:59.999Z"),
+      });
+    });
+
+    it("is DUE for October on 13 October, and OVERDUE for October on 16 October", () => {
+      expect(status("2026-10-13T03:00:00.000Z", beforeSepWindow, DUE_15)).toEqual({
+        status: "DUE",
+        monthKey: "2026-10",
+        dueAt: at("2026-10-15T16:59:59.999Z"),
+      });
+      expect(status("2026-10-16T03:00:00.000Z", beforeSepWindow, DUE_15)).toEqual({
+        status: "OVERDUE",
+        monthKey: "2026-10",
+        dueAt: at("2026-10-15T16:59:59.999Z"),
+      });
+    });
+
+    it("credits a count finished on 20 September to September", () => {
+      expect(status("2026-09-25T03:00:00.000Z", "2026-09-20T03:00:00.000Z", DUE_15).status).toBe("DONE");
+      expect(status("2026-10-05T03:00:00.000Z", "2026-09-20T03:00:00.000Z", DUE_15)).toEqual({
+        status: "NOT_YET",
+        monthKey: "2026-10",
+        dueAt: at("2026-10-15T16:59:59.999Z"),
+      });
+    });
+
+    it("credits an early count, finished before the window opened, to the previous slot", () => {
+      const early = "2026-09-10T03:00:00.000Z";
+      expect(status("2026-09-11T03:00:00.000Z", early, DUE_15)).toEqual({
+        status: "NOT_YET",
+        monthKey: "2026-09",
+        dueAt: at("2026-09-15T16:59:59.999Z"),
+      });
+      expect(status("2026-09-13T03:00:00.000Z", early, DUE_15).status).toBe("DUE");
+    });
+
+    it("is NOT_YET for next month, not OVERDUE, at a store created on the 20th", () => {
+      const created = new Date("2026-09-20T10:00:00.000+07:00");
+      expect(status("2026-09-25T03:00:00.000Z", null, DUE_15, created)).toEqual({
+        status: "NOT_YET",
+        monthKey: "2026-10",
+        dueAt: at("2026-10-15T16:59:59.999Z"),
+      });
+      expect(status("2026-10-05T03:00:00.000Z", null, DUE_15, created).status).toBe("NOT_YET");
+    });
+
+    it("does not owe the month at a store created exactly as its window opened, and does one instant earlier", () => {
+      const sepOpen = at("2026-09-11T17:00:00.000Z");
+      expect(status("2026-09-14T03:00:00.000Z", null, DUE_15, sepOpen)).toEqual({
+        status: "NOT_YET",
+        monthKey: "2026-10",
+        dueAt: at("2026-10-15T16:59:59.999Z"),
+      });
+      expect(status("2026-09-14T03:00:00.000Z", null, DUE_15, new Date(sepOpen.getTime() - 1)).status).toBe("DUE");
+    });
   });
 });

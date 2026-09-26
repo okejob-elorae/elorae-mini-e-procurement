@@ -2466,7 +2466,7 @@
         "label": "Monthly count",
         "status": {
           "DONE": "Done this month",
-          "NOT_YET": "Not open yet",
+          "NOT_YET": "Not due yet",
           "DUE": "Due",
           "OVERDUE": "Overdue"
         },

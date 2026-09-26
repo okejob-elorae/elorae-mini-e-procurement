@@ -2466,7 +2466,7 @@
         "label": "Perhitungan bulanan",
         "status": {
           "DONE": "Selesai bulan ini",
-          "NOT_YET": "Belum dibuka",
+          "NOT_YET": "Belum jatuh tempo",
           "DUE": "Jatuh tempo",
           "OVERDUE": "Terlambat"
         },
