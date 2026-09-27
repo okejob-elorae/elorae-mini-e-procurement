@@ -59,7 +59,7 @@ describe("deriveJubelioComparison (pure)", () => {
 describe("isEscrowMissing (pure)", () => {
   const base = { matched: true, canceled: false, netIncome: 228583, jubelioNet: null };
 
-  it("flags a matched, paid, non-cancelled line with no Jubelio escrow", () => {
+  it("flags a matched, paid, non-cancelled line with no escrow on the stored order", () => {
     expect(isEscrowMissing(base)).toBe(true);
   });
 
@@ -327,6 +327,7 @@ d("getSettlementById — jubelioNet/netDelta/matches wiring (test bed only)", ()
       expect(lineMatch.jubelioNet).toBe(5000);
       expect(lineMatch.netDelta).toBe(0);
       expect(lineMatch.matches).toBe(true);
+      expect(lineMatch.escrowMissing).toBe(false);
       expect(lineMatch.jubelioFees).toEqual({
         totalAmountMp: 7000,
         serviceFee: 500,
@@ -354,12 +355,14 @@ d("getSettlementById — jubelioNet/netDelta/matches wiring (test bed only)", ()
       expect(lineDiffer.jubelioNet).toBe(2600);
       expect(lineDiffer.netDelta).toBe(400);
       expect(lineDiffer.matches).toBe(false);
+      expect(lineDiffer.escrowMissing).toBe(false);
 
       const lineNoData = detail!.lines.find((l) => l.orderNo === orderNoNoData)!;
       expect(lineNoData.jubelioNet).toBeNull();
       expect(lineNoData.netDelta).toBeNull();
       expect(lineNoData.matches).toBe(false);
       expect(lineNoData.jubelioFees).toBeNull();
+      expect(lineNoData.escrowMissing).toBe(true);
       // Composition is present for a matched order even with no items / zero fields.
       expect(lineNoData.jubelioComposition).toEqual({
         grossProduct: 0,
@@ -369,6 +372,7 @@ d("getSettlementById — jubelioNet/netDelta/matches wiring (test bed only)", ()
       });
 
       expect(detail!.differCount).toBe(1);
+      expect(detail!.missingEscrowCount).toBe(1);
     } finally {
       await prisma.salesOrderItem.deleteMany({ where: { salesOrderId: orderMatch.id } });
       await prisma.salesOrder.deleteMany({

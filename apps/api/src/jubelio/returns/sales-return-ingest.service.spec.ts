@@ -56,6 +56,37 @@ describe("SalesReturnIngestService", () => {
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
   });
 
+  /*
+   * A TikTok Shop return carries source "Shop | Tokopedia"; only the order number
+   * tells it apart. Pins that the ingest hands `salesorder_no` to `detectChannel`.
+   */
+  it("stamps TIKTOK on a TT- return whose source_name says Tokopedia", async () => {
+    let capturedChannel: string | null = null;
+    (prisma.$transaction as jest.Mock).mockImplementation(async (fn) =>
+      fn({
+        salesReturn: {
+          upsert: jest.fn().mockImplementation(({ create }) => {
+            capturedChannel = create.channel;
+            return Promise.resolve({ id: "r1" });
+          }),
+        },
+        salesReturnItem: { upsert: jest.fn().mockResolvedValue({}) },
+        salesOrder: { findUnique: jest.fn().mockResolvedValue(null) },
+        item: { findFirst: jest.fn().mockResolvedValue(null) },
+        inventoryValue: { findFirst: jest.fn().mockResolvedValue(null) },
+      }),
+    );
+
+    await service.upsertFromApiDetail({
+      salesorder_id: 12345,
+      salesorder_no: "TT-584771788142839379-128001",
+      source_name: "Shop | Tokopedia",
+      items: [{ salesorder_detail_id: 1, item_code: "SKU-A", item_name: "A", qty_in_base: "1" }],
+    });
+
+    expect(capturedChannel).toBe("TIKTOK");
+  });
+
   it("resolves salesOrderId via existing SalesOrder by salesorderId", async () => {
     let capturedSalesOrderId: string | null = null;
     (prisma.$transaction as jest.Mock).mockImplementation(async (fn) =>
