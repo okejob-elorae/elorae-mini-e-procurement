@@ -5,6 +5,7 @@ import { JubelioHttpService } from "../http.service";
 import { SKIP_REASONS } from "../queue/webhook-status";
 
 jest.mock("@elorae/db", () => ({
+  ...jest.requireActual("@elorae/db"),
   applyJubelioStockAdjustment: jest.fn(),
 }));
 
@@ -50,12 +51,15 @@ describe("StockWebhookHandler", () => {
   let handler: StockWebhookHandler;
   let prisma: {
     jubelioProductMapping: { findMany: jest.Mock };
+    stockReservation: { groupBy: jest.Mock };
   };
   let http: { get: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
       jubelioProductMapping: { findMany: jest.fn() },
+      // No open offline (field-sales) holds by default; individual tests override.
+      stockReservation: { groupBy: jest.fn().mockResolvedValue([]) },
     };
     http = { get: jest.fn() };
     const mod = await Test.createTestingModule({
@@ -159,6 +163,47 @@ describe("StockWebhookHandler", () => {
     expect(applyJubelioStockAdjustment).toHaveBeenCalledWith(prisma, expect.objectContaining({
       variantSku: "ERP-A-RED", newQty: 7,
     }));
+    expect(result).toEqual({ kind: "processed" });
+  });
+
+  it("adds Elorae's open field-sales hold back onto Jubelio's end_qty", async () => {
+    http.get.mockResolvedValue({
+      item_group_id: 115,
+      product_skus: [{ item_id: 1974, item_code: "SKU-A-RED", end_qty: 50 }],
+    });
+    prisma.jubelioProductMapping.findMany.mockResolvedValue([
+      { itemId: "item_1", erpVariantSku: "ERP-A-RED", jubelioItemId: 1974, jubelioItemCode: "SKU-A-RED" },
+    ]);
+    prisma.stockReservation.groupBy.mockResolvedValue([
+      { itemId: "item_1", variantSku: "ERP-A-RED", _sum: { qty: 4, consumedQty: 0 } },
+    ]);
+    (applyJubelioStockAdjustment as jest.Mock).mockResolvedValue({ adjustmentId: "adj", skipped: false });
+
+    const result = await handler.handle(row(NEW_SHAPE) as never);
+
+    expect(applyJubelioStockAdjustment).toHaveBeenCalledWith(prisma, expect.objectContaining({
+      variantSku: "ERP-A-RED",
+      newQty: 54,
+    }));
+    expect(result).toEqual({ kind: "processed" });
+  });
+
+  it("skips a variant whose end_qty is negative or non-numeric, without failing the event", async () => {
+    http.get.mockResolvedValue({
+      item_group_id: 115,
+      product_skus: [
+        { item_id: 1974, item_code: "SKU-A-RED", end_qty: -1 },
+        { item_id: 2125, item_code: "SKU-A-BLU", end_qty: "not-a-number" },
+      ],
+    });
+    prisma.jubelioProductMapping.findMany.mockResolvedValue([
+      { itemId: "item_1", erpVariantSku: "ERP-A-RED", jubelioItemId: 1974, jubelioItemCode: "SKU-A-RED" },
+      { itemId: "item_1", erpVariantSku: "ERP-A-BLU", jubelioItemId: 2125, jubelioItemCode: "SKU-A-BLU" },
+    ]);
+
+    const result = await handler.handle(row(NEW_SHAPE) as never);
+
+    expect(applyJubelioStockAdjustment).not.toHaveBeenCalled();
     expect(result).toEqual({ kind: "processed" });
   });
 

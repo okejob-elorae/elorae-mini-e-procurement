@@ -1,5 +1,10 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { applyJubelioStockAdjustment } from "@elorae/db";
+import {
+  applyJubelioStockAdjustment,
+  eloraeOnHandFromJubelio,
+  isValidJubelioQty,
+  offlineReservedByKey,
+} from "@elorae/db";
 import type { JubelioWebhookEvent } from "@elorae/db";
 import { PRISMA, type PrismaService } from "../../db/prisma.module";
 import { JubelioHttpService } from "../http.service";
@@ -75,14 +80,31 @@ export class StockWebhookHandler implements WebhookEventHandler {
       return { kind: "skipped", reason: `${SKIP_REASONS.ORPHAN_GROUP}:${groupId}` };
     }
 
+    const offlineByKey = await offlineReservedByKey(
+      this.prisma,
+      mappings.map((m) => ({ itemId: m.itemId, variantSku: m.erpVariantSku })),
+    );
+
     for (const m of mappings) {
-      const newQty = endQtyByItemId.get(m.jubelioItemId);
-      if (newQty === undefined) {
+      const endQty = endQtyByItemId.get(m.jubelioItemId);
+      if (endQty === undefined) {
         this.logger.warn(
           `stock webhook ${row.id}: item_id ${m.jubelioItemId} in payload but missing from group ${groupId} detail — skipping this sku`,
         );
         continue;
       }
+      if (!isValidJubelioQty(endQty)) {
+        this.logger.warn(
+          `stock webhook ${row.id}: item_id ${m.jubelioItemId} end_qty ${endQty} is not a valid Jubelio quantity — skipping this sku`,
+        );
+        continue;
+      }
+
+      // Elorae's on-hand is Jubelio's end_qty plus Elorae's own field-sales holds, which
+      // Jubelio cannot see — see jubelio-stock-contract.ts. Never write end_qty as-is.
+      const offline = offlineByKey.get(`${m.itemId}:${m.erpVariantSku}`) ?? 0;
+      const newQty = eloraeOnHandFromJubelio(endQty, offline);
+
       await applyJubelioStockAdjustment(this.prisma, {
         itemId: m.itemId,
         variantSku: m.erpVariantSku,

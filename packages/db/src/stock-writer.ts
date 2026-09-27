@@ -1,5 +1,5 @@
 import { AdjustmentType, Prisma, type PrismaClient } from "../generated/prisma/client";
-import { moveMainStock } from "./stock-balance";
+import { setMainStock } from "./stock-balance";
 import type { StockAdjustmentSource } from "./stock-adjustment-source";
 import type { StockLedgerRefType } from "./stock-ledger-ref";
 
@@ -14,6 +14,10 @@ export type ApplyJubelioStockAdjustmentInput = {
    * "", so this input's own "" convention alone would miss those rows.
    */
   variantSku: string;
+  /**
+   * The ABSOLUTE target `qtyOnHand`, already carrying the contract's offline add-back (see
+   * `eloraeOnHandFromJubelio` in `jubelio-stock-contract.ts`) — never a delta to increment by.
+   */
   newQty: number;
   idempotencyKey: string;
   externalRef: string;
@@ -72,10 +76,18 @@ export async function applyJubelioStockAdjustment(
         select: { id: true, docNumber: true },
       });
 
-      await moveMainStock(tx, {
+      /*
+       * An absolute set, not a delta increment: input.newQty is already the resolved target
+       * on-hand, so writing it via moveMainStock's `qtyDelta: delta` would silently drift if a
+       * concurrent push or another webhook wrote to this same row between the read above and
+       * this write — the increment would land on whatever qtyOnHand became, not on the prevQty
+       * this delta was computed against. setMainStock writes the literal value instead, so the
+       * final on-hand is always input.newQty regardless of what raced in between.
+       */
+      await setMainStock(tx, {
         itemId: input.itemId,
         variantSku: input.variantSku,
-        qtyDelta: delta,
+        nextQty: input.newQty,
         totalValue: input.newQty * avgCost,
         totalCost: delta * avgCost,
         balanceValue: input.newQty * avgCost,
