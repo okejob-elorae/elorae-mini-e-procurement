@@ -3032,27 +3032,31 @@ enum CashFlowSection {
 // FINANCE — MARKETPLACE SETTLEMENT
 // ==========================================
 model Settlement {
-  id               String           @id @default(cuid())
-  marketplace      String
-  seller           String
-  periodFrom       DateTime
-  periodTo         DateTime
-  fileName         String
-  uploadedById     String
-  status           String           @default("PARSED")
-  totalPendapatan  Decimal          @db.Decimal(18, 2)
-  totalPengeluaran Decimal          @db.Decimal(18, 2)
-  totalDilepas     Decimal          @db.Decimal(18, 2)
-  parsedNetTotal   Decimal          @db.Decimal(18, 2)
-  checksumOk       Boolean
-  checksumVariance Decimal          @db.Decimal(18, 2)
-  summaryRaw       Json
-  sellerFeesRaw    Json
-  adjustmentsRaw   Json
-  createdAt        DateTime         @default(now())
-  lines            SettlementLine[]
+  id                String           @id @default(cuid())
+  marketplace       String
+  seller            String
+  periodFrom        DateTime
+  periodTo          DateTime
+  fileName          String
+  uploadedById      String
+  status            String           @default("PARSED")
+  totalPendapatan   Decimal          @db.Decimal(18, 2)
+  totalPengeluaran  Decimal          @db.Decimal(18, 2)
+  totalDilepas      Decimal          @db.Decimal(18, 2)
+  parsedNetTotal    Decimal          @db.Decimal(18, 2)
+  checksumOk        Boolean
+  checksumVariance  Decimal          @db.Decimal(18, 2)
+  summaryRaw        Json
+  sellerFeesRaw     Json
+  adjustmentsRaw    Json
+  createdAt         DateTime         @default(now())
+  resyncBatchId     String?
+  resyncSeededAt    DateTime?
+  resyncRematchedAt DateTime?
+  lines             SettlementLine[]
 
   @@index([marketplace, periodFrom])
+  @@index([resyncRematchedAt])
 }
 
 model SettlementLine {

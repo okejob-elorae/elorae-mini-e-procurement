@@ -149,7 +149,7 @@ function feeNum(v: string | undefined): number {
  * line reconciles (Matches at 0) instead of showing "n/a". Shared by
  * `deriveJubelioComparison` + `deriveJubelioFees` so both agree.
  */
-function escrowAmountOrNull(
+export function escrowAmountOrNull(
   feeBreakdown: Record<string, string> | null,
   treatZeroAsReal = false,
 ): number | null {
