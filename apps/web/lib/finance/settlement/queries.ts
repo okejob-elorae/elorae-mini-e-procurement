@@ -14,6 +14,7 @@ export type SettlementListRow = {
   lineCount: number;
   matchedCount: number;
   createdAtIso: string;
+  fetchInProgress: boolean;
 };
 
 export async function listSettlements(paging: {
@@ -35,6 +36,8 @@ export async function listSettlements(paging: {
         checksumOk: true,
         checksumVariance: true,
         createdAt: true,
+        resyncBatchId: true,
+        resyncRematchedAt: true,
         _count: { select: { lines: true } },
       },
     }),
@@ -63,6 +66,7 @@ export async function listSettlements(paging: {
     lineCount: r._count.lines,
     matchedCount: matchedCountBySettlementId.get(r.id) ?? 0,
     createdAtIso: r.createdAt.toISOString(),
+    fetchInProgress: r.resyncBatchId !== null && r.resyncRematchedAt === null,
   }));
 
   return { items, totalCount };
@@ -248,6 +252,8 @@ export type SettlementDetail = {
   journalId: string | null;
   differCount: number;
   missingEscrowCount: number;
+  resyncBatchId: string | null;
+  resyncRematchedAt: string | null;
 };
 
 export async function getSettlementById(id: string): Promise<SettlementDetail | null> {
@@ -265,6 +271,8 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
       totalDilepas: true,
       parsedNetTotal: true,
       createdAt: true,
+      resyncBatchId: true,
+      resyncRematchedAt: true,
       lines: {
         select: {
           id: true,
@@ -402,5 +410,7 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
     journalId: journal?.id ?? null,
     differCount,
     missingEscrowCount,
+    resyncBatchId: row.resyncBatchId,
+    resyncRematchedAt: row.resyncRematchedAt === null ? null : row.resyncRematchedAt.toISOString(),
   };
 }

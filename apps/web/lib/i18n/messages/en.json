@@ -4360,6 +4360,11 @@
     "resyncDeadHint": "{count} order(s) failed to resync after retries. Contact a technical admin if this persists.",
     "resyncRematchButton": "Re-match Settlement",
     "resyncSummaryErrForbidden": "Session expired or permission revoked — progress stopped updating.",
+    "autoRematchPending": "Fetching orders from Jubelio. The settlement rematches itself when this finishes — you can leave this page.",
+    "autoRematchSoon": "Fetch finished — rematching within a minute.",
+    "autoRematchedToast": "Settlement rematched with the fetched orders.",
+    "autoRematchSkippedReconciled": "Fetch finished. This settlement is reconciled, so it was not rematched automatically.",
+    "fetchingBadge": "Fetching…",
     "kpiDiffer": "Orders Differ",
     "compare": {
       "expandLabel": "View breakdown",

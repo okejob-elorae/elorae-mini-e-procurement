@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { toast } from "sonner";
-import { FileSpreadsheet, Upload, AlertCircle } from "lucide-react";
+import { FileSpreadsheet, Upload, AlertCircle, Loader2 } from "lucide-react";
 import type { SettlementListRow } from "@/lib/finance/settlement/queries";
 /* Type-only: erased at compile, so the parser's xlsx dependency never reaches the client bundle. */
 import type { SettlementParseError } from "@/lib/finance/settlement/shopee-settlement-parser";
@@ -293,8 +293,18 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
                             </Badge>
                           )}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {row.matchedCount} / {row.lineCount}
+                        <TableCell className="text-right">
+                          <div className="inline-flex items-center justify-end gap-1.5">
+                            <span className="tabular-nums">
+                              {row.matchedCount} / {row.lineCount}
+                            </span>
+                            {row.fetchInProgress && (
+                              <Badge variant="secondary" className="text-muted-foreground">
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                {t("fetchingBadge")}
+                              </Badge>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <Badge variant={statusVariant(row.status)}>{statusLabel(row.status)}</Badge>

@@ -4360,6 +4360,11 @@
     "resyncDeadHint": "{count} pesanan gagal di-resync setelah beberapa percobaan. Hubungi admin teknis jika berulang.",
     "resyncRematchButton": "Cocokkan Ulang Settlement",
     "resyncSummaryErrForbidden": "Sesi berakhir atau izin dicabut — progres berhenti diperbarui.",
+    "autoRematchPending": "Mengambil pesanan dari Jubelio. Settlement akan dicocokkan ulang otomatis setelah selesai — halaman ini boleh ditinggal.",
+    "autoRematchSoon": "Pengambilan selesai — dicocokkan ulang dalam satu menit.",
+    "autoRematchedToast": "Settlement dicocokkan ulang dengan pesanan yang diambil.",
+    "autoRematchSkippedReconciled": "Pengambilan selesai. Settlement ini sudah direkonsiliasi, jadi tidak dicocokkan ulang otomatis.",
+    "fetchingBadge": "Mengambil…",
     "kpiDiffer": "Pesanan Berbeda",
     "compare": {
       "expandLabel": "Lihat rincian",

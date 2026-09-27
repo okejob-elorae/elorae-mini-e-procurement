@@ -63,6 +63,34 @@ export async function getResyncSummary(batchId: string): Promise<ResyncSummaryRe
   };
 }
 
+export type SettlementResyncStateResult =
+  | { ok: true; rematchedAtIso: string | null; batchId: string | null }
+  | { ok: false; code: "FORBIDDEN" };
+
+/**
+ * Read-only peek at a settlement's stamped resync batch, for the detail page's auto-rematch
+ * poller: it waits for `rematchedAtIso` to go non-null after the resync batch itself goes
+ * terminal, rather than polling `getResyncSummary` forever. Same permission check as
+ * `getResyncSummary` — this is settlement-scoped data, not batch-scoped.
+ */
+export async function getSettlementResyncState(settlementId: string): Promise<SettlementResyncStateResult> {
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.SETTLEMENTS_MANAGE)) {
+    return { ok: false, code: "FORBIDDEN" };
+  }
+
+  const row = await prisma.settlement.findUnique({
+    where: { id: settlementId },
+    select: { resyncBatchId: true, resyncRematchedAt: true },
+  });
+
+  return {
+    ok: true,
+    rematchedAtIso: row?.resyncRematchedAt?.toISOString() ?? null,
+    batchId: row?.resyncBatchId ?? null,
+  };
+}
+
 export type TriggerResyncResult =
   | { ok: true; batchId: string; seeded: number }
   | {
