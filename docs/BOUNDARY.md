@@ -92,7 +92,7 @@ truth and a push from an ERP action overwrites it (§3.1).
 | RBAC guard for Jubelio endpoints       |            | ✅          | built as the signed internal channel (`InternalSignGuard`, D16) — per-permission RBAC stays in web |
 | Catalog push (ERP → Jubelio)           |            | ✅          | built (`product_push`) |
 | Marketplace listing                    |            | ⏳          | planned |
-| Stock push                             |            | ✅          | built (`stock_push`, the §3.1 contract formula) — manual, opname and `REASSERT_ELORAE` triggers only; nothing pushes automatically |
+| Stock push                             |            | ✅          | built (`stock_push`, the §3.1 contract formula) — manual, opname and `REASSERT_ELORAE` triggers only; nothing pushes automatically. Gated by the cutover switch `JUBELIO_STOCK_PUSH_ENABLED` (fail-closed, off until cutover — §3.1) |
 | Sales order ingest                     |            | ✅          | built (`salesorder` webhook + resync) |
 | WMS pick / pack / ship                 |            | ✅          | built (`salesorder_pick`/`_pack`/`_ship`) |
 | Returns ingest                         |            | ✅          | built (`salesreturn` webhook + returns sweeper); the decision push back is unwired |
@@ -121,7 +121,7 @@ contract for the migrations that will introduce them.
 | `PlanCmtAllocation`, `PlanStage` | web — WO creation via `createWorkOrder` in `apps/web`; `PlanStage` auto-synced when generating from CMT rows (`planCmtAllocationId`) | — | ✅ |
 | `InventoryValue`               | **both** — see §3.1         |                             | ✅ schema + shared writer — quantity moves ONLY through the movers in `packages/db/src/stock-balance.ts` (`moveMainStock`/`setMainStock`), which append a `StockLedgerEntry` in the same transaction; `stock-writer.ts`'s `applyJubelioStockAdjustment` (the api-side webhook path) already routes through them, and a guard test fails the suite on a bare-prisma balance write. `reservedQty` is the documented exception — it is not a stock movement and is written by `reservation-writer.ts`, plus `issueKonsiTransfer` (konsi shipment completion), the one writer outside that file. Until cutover this table MIRRORS Jubelio, which is the stock source of truth — see §3.1. |
 | `StockAdjustment`              | **both** — see §3.1         |                             | ✅ schema; written by each side's own action beside the balance move, in the same transaction. `source` MUST come from the `@elorae/db` registry — see §3.1. |
-| `StockLedgerEntry`             | **both** — see §3.1         |                             | ✅ schema + writer — append-only movement ledger, written through `appendStockLedger` and (almost always) via the `stock-balance.ts` movers. **api** writes it on two paths: `stock.handler.ts` → `applyJubelioStockAdjustment` → `moveMainStock`, and `salesorder.handler.ts` → `consumeOrder` → `appendStockLedger`. `reserveOrder` is deliberately NOT one of them — it moves only `reservedQty` and appends nothing, because a reservation is not a stock movement; the only `reservation-writer.ts` functions that append are `consumeOrder`, `consumeFieldSalesOrderPartial` and `consumeFieldSalesOrder`. **web** writes it from every ERP path that moves a balance. Never write it outside a transaction that also moves the balance it describes, and never UPDATE or DELETE a row. |
+| `StockLedgerEntry`             | **both** — see §3.1         |                             | ✅ schema + writer — append-only movement ledger, written through `appendStockLedger` and (almost always) via the `stock-balance.ts` movers. **api** writes it on two paths: `stock.handler.ts` → `applyJubelioStockAdjustment` → `setMainStock` (an absolute set, so a no-op webhook appends nothing), and `salesorder.handler.ts` → `consumeOrder` → `appendStockLedger`. `reserveOrder` is deliberately NOT one of them — it moves only `reservedQty` and appends nothing, because a reservation is not a stock movement; the only `reservation-writer.ts` functions that append are `consumeOrder`, `consumeFieldSalesOrderPartial` and `consumeFieldSalesOrder`. **web** writes it from every ERP path that moves a balance. Never write it outside a transaction that also moves the balance it describes, and never UPDATE or DELETE a row. |
 | `StockReservation`             | **both** — see §3.1         |                             | ✅ schema + writer — api (Jubelio salesorder webhook via `reserveOrder`/`consumeOrder`/`releaseOrder` with `source=JUBELIO`), web (ship button `consumeOrder`, field-sales putus orders via `reserveFieldSalesOrder` at create and `consumeFieldSalesOrderPartial` per **delivery** / `releaseFieldSalesOrder` on reject or close-remainder, with `source=FIELD_SALES`). `consumeFieldSalesOrder` (whole-order) still exists but has NO production caller — reaching for it bypasses the delivery document. Konsi orders reserve through `reserveKonsiFieldSalesOrder` at approve and at the admin konsi push (both via `approveKonsiOrderInTx`), with `source=FIELD_SALES_KONSI`. Open non-`JUBELIO` rows are the `offlineReserved` term of the Jubelio stock contract (§3.1). Written through `@elorae/db/reservation-writer.ts` — never bare prisma — with ONE documented exception: `issueKonsiTransfer` (`apps/web/lib/field-sales/konsi-transfer/writer.ts`) draws a konsi reservation down (`consumedQty`, then `CONSUMED` once exhausted) at shipment completion. |
 | `SalesOrder`                   | **both** — see §3.2         | —                           | ✅ api owns Jubelio-derived cols; web owns fulfillment cols via helper |
 | `SalesOrderItem`               | api                         | web (read)                  | ✅ schema + api writer |
@@ -155,9 +155,29 @@ with a mirror that is not yet trustworthy: a negative-on-hand row pushes as
 exist: bulk "push all stock" (`/backoffice/jubelio/admin`,
 `bulkPushAllStockToJubelio`), the per-item push on the item page
 (`pushItemStockToJubelio`), the push after opname approval
-(`pushFgStockAfterOpname`), and reconciliation `REASSERT_ELORAE`. Nothing in
-code guards them before cutover yet — the open decision is in
-`docs/FOLLOWUPS.md`.
+(`pushFgStockAfterOpname`), and reconciliation `REASSERT_ELORAE`.
+
+**The cutover switch.** Every one of those pushes is gated by the
+`SystemSetting` key `JUBELIO_STOCK_PUSH_ENABLED`, read only through
+`isJubelioStockPushEnabled` (`packages/db/src/jubelio-stock-contract.ts`). It
+fails closed: only the exact string `"true"` enables pushing; an absent row
+(nothing seeds it) or any other value is off. `StockPushHandler` is the
+backstop: it reads the switch first and skips EVERY `stock_push` row with
+`stock_push_disabled` while it is off — both buttons, the post-opname push,
+`REASSERT_ELORAE`, rows queued before it went off, and any future automatic
+push. The web refuses first where it can: the two push actions return
+`push_disabled`, the manual `REASSERT_ELORAE` resolve and saving
+`REASSERT_ELORAE` as the direction return `PUSH_DISABLED` (any other direction
+still saves), and the reconciliation run degrades `REASSERT_ELORAE` to
+`FLAGGED`. Skipped rows are not replayed when the switch goes on. The webhook
+direction keeps applying either way; only its field-sales add-back depends on
+the switch (the contract below). Turning it on is the LAST cutover step, on
+`/backoffice/jubelio/admin` (admin only, audited as
+`JUBELIO_STOCK_PUSH_TOGGLE`): after the recount and a clean reconciliation,
+and immediately followed by a bulk push, so Jubelio receives figures net of
+the holds the webhook starts adding back. The rule that keeps it whole: every
+new push path enqueues `stock_push`, and nothing calls
+`PUT /inventory/items/{id}/stock` outside that handler.
 
 **The quantity contract (verified live 2026-09-27).** Jubelio's `end_qty` is
 ON-HAND; `order_qty` is Jubelio's own open marketplace orders; and
@@ -170,9 +190,16 @@ Every path goes through `packages/db/src/jubelio-stock-contract.ts`:
 | Path | Formula |
 | ---- | ------- |
 | Stock push (`stock-push.handler.ts`) | `end_qty = max(0, qtyOnHand − offlineReserved)` |
-| `stock` webhook (`stock.handler.ts`) | `qtyOnHand = end_qty + offlineReserved`; an invalid `end_qty` (non-finite or negative) is skipped |
-| Reconciliation comparison | Elorae `max(0, qtyOnHand − offlineReserved)` vs Jubelio `end_qty` |
-| `MATCH_JUBELIO` correction | `qtyOnHand = end_qty + offlineReserved`, absolute, via `setMainStock` |
+| `stock` webhook (`stock.handler.ts`) | `qtyOnHand = end_qty + offlineReserved`, absolute, via `setMainStock` on the locked row; a raw `end_qty` that `parseJubelioQty` rejects (`null`, `""`, non-numeric, negative) is skipped |
+| Reconciliation comparison | Elorae `max(0, qtyOnHand − offlineReserved)` vs Jubelio `end_qty`; a variant with no Jubelio figure is FLAGGED, never compared as 0 |
+| `MATCH_JUBELIO` correction | `qtyOnHand = end_qty + offlineReserved`, absolute, via `setMainStock` on the locked row |
+
+The `offlineReserved` term on the webhook, comparison and `MATCH_JUBELIO`
+rows applies ONLY while the cutover switch is on
+(`effectiveOfflineReservedQty`/`effectiveOfflineReservedByKey`): only a push
+nets the holds out of Jubelio's `end_qty`, so while pushes are off nothing
+has, and the term is `0`. The push runs only while the switch is on, so it
+always nets.
 
 Never subtract `reservedQty` on any of these paths: it includes the `JUBELIO`
 reservations, which Jubelio already counts in `order_qty`, so subtracting it
@@ -225,12 +252,16 @@ history and the prod damage (cause unproven) are in `docs/landmines/jubelio.md`.
   (`apps/web/lib/inventory/reconciliation-runner.ts`) runs every 6 h from the
   in-process node-cron and on demand from `/backoffice/inventory/reconciliation`.
   It reads Jubelio's `end_qty` through the signed `GET /jubelio/inventory/snapshot`
-  on apps/api and compares by the contract above. Prod runs `FLAG_ONLY`, which
+  on apps/api, which pages through every item group and returns `null` for a
+  variant it has no usable figure for, and compares by the contract above; a
+  `null` row is FLAGGED and never corrected. Prod runs `FLAG_ONLY`, which
   is right until cutover. A `MATCH_JUBELIO` correction writes a
   `StockAdjustment` stamped `source = JUBELIO_RECONCILE` and SETS on-hand
-  through `setMainStock` (`refType: "Reconciliation"`); the manual resolve
-  re-fetches Jubelio's live figure and refuses, writing nothing, when Elorae's
-  stock moved since the run. `MATCH_JUBELIO` is the correct manual-resolution
+  through `setMainStock` (`refType: "Reconciliation"`) on a row it locked
+  first; the manual resolve re-reads that one item group live through
+  `GET /jubelio/inventory/snapshot/group/:groupId` (the id in the path — a
+  query string fails the signed channel) and refuses, writing nothing, when
+  the live figure is missing or invalid or Elorae's stock moved since the run. `MATCH_JUBELIO` is the correct manual-resolution
   direction today. `REASSERT_ELORAE` enqueues a push instead and must not be
   used before cutover.
 - **`StockReservation` ledger writes** (resolved 2026-07-02, D6): api's
@@ -254,7 +285,10 @@ filters and reconcile-cron logic key off the exact values.
 
 Allowed values today: `ERP`, `ERP_OPNAME`, `ERP_RETURN_ACCEPT`,
 `FULFILLMENT_CONSUME`, `FIELD_SALES_CONSUME`, `JUBELIO_WEBHOOK`,
-`JUBELIO_RECONCILE`, `VAN_LOAD`, `VAN_RETURN`.
+`JUBELIO_RECONCILE`, `VAN_LOAD`, `VAN_RETURN`. Two live writers do NOT follow
+the rule yet: `issueKonsiTransfer` writes `KONSI_TRANSFER` and
+`approveFieldReturn` writes `FIELD_RETURN`, neither in the registry nor
+checked with `satisfies` — logged in `docs/FOLLOWUPS.md`.
 
 To add a new source, see [INTEGRATION-GUIDE §2](./INTEGRATION-GUIDE.md).
 
@@ -566,7 +600,11 @@ Only `health.controller.ts` and `webhooks.controller.ts` opt out via
   subtracted on the way out and added back on the way in — §3.1.
 - ❌ Pushing Elorae stock to Jubelio before cutover — the bulk push, the
   per-item push, `REASSERT_ELORAE`. Until then Jubelio is the stock source of
-  truth and `InventoryValue` a mirror of it (§3.1).
+  truth and `InventoryValue` a mirror of it (§3.1). The cutover switch
+  refuses them while it is off; turning it on is the last cutover step.
+- ❌ Calling `PUT /inventory/items/{id}/stock` anywhere but `StockPushHandler`,
+  or adding a push path that does not enqueue `stock_push`. The handler is
+  where the cutover switch is enforced, so any other path bypasses it (§3.1).
 - ❌ Reusing marketplace `SalesOrder` for offline field-sales writes.
   Marketplace SO is api-owned and Jubelio-shaped; offline
   orders use the dedicated web-owned `FieldSalesOrder`/`FieldSalesOrderLine`
@@ -613,7 +651,7 @@ script uses `nest start --watch --builder swc` (SWC honours
 | D2 | Admin alert channel | **In-DB `AdminNotification` table.** Written by api on token-refresh failure, outbox-stuck, rate-limit hit, etc. Consumed by apps/web admin UI. Web may also write for ERP-detected alerts — see §3.5. |
 | D3 | Admin dashboard | **Full UI in apps/web** at `/backoffice/jubelio/admin` — queue depth, failed items, audit log, outbox status, retry buttons. api exposes JSON endpoints; apps/web renders. |
 | D4 | Local Redis | **Docker compose** (`redis:7-alpine`) declared in repo-root `docker-compose.dev.yml`. apps/api reads `REDIS_URL` env. Upstash used for staging/prod. |
-| D5 | Stock reconciliation cron home | **apps/web owns orchestration + persistence.** A secret-guarded `POST /api/cron/reconciliation` (and in-process `node-cron` every 6h on VPS) calls `runReconciliation('CRON')` in web. Config lives in `SystemSetting` (`RECON_AUTO_CORRECT_THRESHOLD`, `RECON_AUTO_CORRECT_DIRECTION`, `RECON_CRON_ENABLED`). Launch posture: `FLAG_ONLY` + threshold 0. **apps/api** exposes signed `GET /jubelio/inventory/snapshot` (InternalSignGuard); web fetches Jubelio `end_qty` via `apiFetch`. Compares by the Jubelio stock contract (§3.1): Elorae `max(0, qtyOnHand − offlineReserved)` vs Jubelio `end_qty`. A `MATCH_JUBELIO` correction writes `StockAdjustment` with `source = JUBELIO_RECONCILE` and SETS on-hand to `end_qty + offlineReserved` through `setMainStock` (ledger `refType = Reconciliation`; `StockMovement` is a frozen archive and gets nothing). FG-only scan (items with `JubelioProductMapping`). Overlap guard skips when a `ReconciliationRun` is already `RUNNING`. Until cutover `FLAG_ONLY` stays the setting, `MATCH_JUBELIO` is the manual-resolution direction, and `REASSERT_ELORAE` must not be used — Jubelio is the source of truth. |
+| D5 | Stock reconciliation cron home | **apps/web owns orchestration + persistence.** A secret-guarded `POST /api/cron/reconciliation` (and in-process `node-cron` every 6h on VPS) calls `runReconciliation('CRON')` in web. Config lives in `SystemSetting` (`RECON_AUTO_CORRECT_THRESHOLD`, `RECON_AUTO_CORRECT_DIRECTION`, `RECON_CRON_ENABLED`). Launch posture: `FLAG_ONLY` + threshold 0. **apps/api** exposes signed `GET /jubelio/inventory/snapshot` (InternalSignGuard); web fetches Jubelio `end_qty` via `apiFetch`. Compares by the Jubelio stock contract (§3.1): Elorae `max(0, qtyOnHand − offlineReserved)` vs Jubelio `end_qty`, the holds counted only while stock pushes are enabled; a variant the snapshot has no figure for is FLAGGED, never compared as 0. A `MATCH_JUBELIO` correction writes `StockAdjustment` with `source = JUBELIO_RECONCILE` and SETS on-hand to `end_qty + offlineReserved` through `setMainStock` (ledger `refType = Reconciliation`; `StockMovement` is a frozen archive and gets nothing). FG-only scan (items with `JubelioProductMapping`). Overlap guard skips when a `ReconciliationRun` is already `RUNNING`. Until cutover `FLAG_ONLY` stays the setting, `MATCH_JUBELIO` is the manual-resolution direction, and `REASSERT_ELORAE` must not be used — Jubelio is the source of truth. |
 | D6 | Reservation modeling | **Resolved.** `StockReservation` ledger — one row per `salesorderDetailId` (unique), `state: ReserveState { RESERVED, CONSUMED, RELEASED }` — plus an aggregate `InventoryValue.reservedQty` (Decimal, default 0) kept in sync by the ledger writes. Three order-level helpers in `@elorae/db/reservation-writer.ts`: `reserveOrder` (webhook ingest — creates ledger rows + bumps `reservedQty`, raises `AdminNotification` on oversell), `consumeOrder` (ship — flips `RESERVED → CONSUMED`, deducts `InventoryValue.qtyOnHand` via a `StockAdjustment` stamped `source = FULFILLMENT_CONSUME`), `releaseOrder` (cancel — flips `RESERVED → RELEASED`, decrements `reservedQty` without touching `qtyOnHand`). Idempotency: unique `salesorderDetailId` on create, and every transition is a conditional `updateMany WHERE state = 'RESERVED'` so the Jubelio ship webhook and the ERP Ship button can both fire — whichever lands first wins, the other is a no-op. Model: **reserve-at-ingest, consume-onHand-at-ship, release-on-cancel**; `available = qtyOnHand - reservedQty`, derived at read time (not stored), is the ERP's own selling figure. It is NOT what the Jubelio stock push sends: `stock-push.handler.ts` sends `max(0, qtyOnHand − offlineReserved)`, because Jubelio's `end_qty` is on-hand and Jubelio already nets these same marketplace reservations as `order_qty` (live-verified 2026-09-27; §3.1). The push sent `available` until then, which subtracted every marketplace order twice. |
 | D7 | Warehouse scope on Jubelio stock push | **Push only main-warehouse stock — excluded by STRUCTURE, not by a subtraction.** Konsi stock lives in `StoreStock` and canvasser stock in `VanStock`, separate tables the push never reads, so no `virtualWarehouseQty` term exists or is needed: units leave `InventoryValue` when they move to a store or a van. The figure pushed is the Jubelio stock contract (§3.1): `end_qty = max(0, qtyOnHand − offlineReserved)`, the field-sales holds being the only subtraction. |
 | D8 | Offline vs marketplace `SalesOrder` | **Resolved (2026-07-04, Taking Order (Putus) backend, PR #98)** — option (b), narrower: dedicated `FieldSalesOrder`/`FieldSalesOrderLine` model (not a generic `OfflineSalesOrder`), web-owned, item-level per D15. |
@@ -625,4 +663,4 @@ script uses `nest start --watch --builder swc` (SWC honours
 | D14 | `StockAdjustment.source` registry | **Single source: `packages/db/src/stock-adjustment-source.ts`.** Same pattern as D13. (Shipped this PR.) |
 | D15 | Putus/konsi order granularity | **SUPERSEDED (2026-07-17, PR #144) — field-sales putus/konsi is now PER-VARIANT.** ~~Originally item-level (order lines `variantSku = ""`, variantless `InventoryValue` row).~~ Reversed after confirming per-variant stock already exists on prod: `InventoryValue` is keyed `(itemId, variantSku)` and Jubelio-ingested variant items are stored **entirely per-variant** (real `variantSku` rows, no pooled row) — so the item-level PWA sell path (which sent `variantSku ""`) actually found no row for variant items → unsellable/oversell. Now: PWA catalog exposes per-variant availability (`CatalogItem.variants[]`); a variant sheet picks variants; order lines carry the **real** `variantSku`; reserve/consume/release (already per-line `variantSku`) hit the exact per-variant row → per-variant `StockReservation`/`reservedQty`. **Min-qty aggregates per item** (variants collectively meet the min); **promos aggregate per item then pro-rate** across variant lines (shared `applyItemAggregatedPromos` used by writer + preview so the quote == recorded order). **Simple items (no `Item.variants`) stay item-level** — `variants: []`, inline stepper, cart line `variantSku ""` (the null/"" bucket + tolerant lookup preserved). No schema migration (schema was already per-variant). **Canvassing (van load/sale/reconcile) is ALSO per-variant — Track B, PR #146 (2026-07-23):** `VanStock` + van docs keyed `(userId, itemId, variantSku)`; the backoffice load form picks per-variant (one item block → its in-stock variants, 0-available hidden), the PWA van sell screen groups by item + opens a variant sheet, and sale/reconcile stamp the variant label into `productName`. No schema migration (van tables already had `variantSku`). Van stock has no reservation dimension, so this is purely a key change; simple items stay item-level (`VanStock` keyed `""`). Caveat: a variant item restocked via ERP GRN/production writes a `null` pooled row the per-variant sale won't see (only matters if variant items are ERP-received; Jubelio feeds them per-variant). |
 | D16 | Cross-service auth bridge (§4.1, §5) | **Resolved (shipped 2026-05-28, commit `188752f`) — pivoted from the original plan.** Original plan was NextAuth-JWT forwarding (web signs a `Bearer <jwt>` with shared `NEXTAUTH_SECRET`, api verifies). Shipped instead as an **HMAC-signed internal channel**: `apps/web/lib/internal-api.ts` (`signInternalRequest`) computes `HMAC-SHA256(method+path+userId+rawBody)` keyed by `INTERNAL_API_SECRET`, sent as `x-internal-sign`/`x-user-id` headers; api's `InternalSignGuard` (`apps/api/src/auth/internal-sign.guard.ts`) verifies with `timingSafeEqual` and is registered globally via `APP_GUARD` in `apps/api/src/auth/auth.module.ts`. Only `health.controller.ts` and `webhooks.controller.ts` opt out via `@Public()`. Simpler than JWT forwarding — no shared session-secret coupling, no token expiry to juggle for service-to-service calls. |
-| D17 | Stock source of truth, and what Jubelio's quantities mean | **Jubelio is the stock source of truth until cutover; Elorae's `InventoryValue` mirrors it.** The client operates on Jubelio today, so Jubelio → Elorae (the `stock` webhook, reconciliation `MATCH_JUBELIO`) must be right now, while Elorae → Jubelio pushes (bulk, per-item, `REASSERT_ELORAE`, post-opname) overwrite the source of truth with an untrusted mirror and are to be avoided until go-live; reconciliation stays `FLAG_ONLY`. Quantities (live-verified 2026-09-27): `end_qty` is on-hand, `order_qty` is Jubelio's own open marketplace orders, `available_qty = end_qty − order_qty`. Push `max(0, qtyOnHand − offlineReserved)`, apply `end_qty + offlineReserved`, where `offlineReserved` is the open non-`JUBELIO` `StockReservation` qty — never subtract `reservedQty`. Helpers in `packages/db/src/jubelio-stock-contract.ts`; full entry in `docs/landmines/jubelio.md`. Whether pushes get a code guard before cutover is an open owner decision (`docs/FOLLOWUPS.md`). |
+| D17 | Stock source of truth, and what Jubelio's quantities mean | **Jubelio is the stock source of truth until cutover; Elorae's `InventoryValue` mirrors it.** The client operates on Jubelio today, so Jubelio → Elorae (the `stock` webhook, reconciliation `MATCH_JUBELIO`) must be right now, while Elorae → Jubelio pushes (bulk, per-item, `REASSERT_ELORAE`, post-opname) overwrite the source of truth with an untrusted mirror and are to be avoided until go-live; reconciliation stays `FLAG_ONLY`. Quantities (live-verified 2026-09-27): `end_qty` is on-hand, `order_qty` is Jubelio's own open marketplace orders, `available_qty = end_qty − order_qty`. Push `max(0, qtyOnHand − offlineReserved)`, apply `end_qty + offlineReserved`, where `offlineReserved` is the open non-`JUBELIO` `StockReservation` qty — never subtract `reservedQty`. The field-sales add-back (webhook, `MATCH_JUBELIO`) and the comparison's subtraction apply only while stock pushes are enabled, because only a push nets the holds out of `end_qty`. Helpers in `packages/db/src/jubelio-stock-contract.ts`; full entry in `docs/landmines/jubelio.md`. **Pushes are gated by the cutover switch** `JUBELIO_STOCK_PUSH_ENABLED` (fail-closed; only `"true"` enables): `StockPushHandler` skips every `stock_push` row with `stock_push_disabled` while it is off, the web refuses first where it can, and skipped rows are not replayed. Enabling it on `/backoffice/jubelio/admin` (admin only, audited) is the last cutover step, after the recount, immediately followed by a bulk push. Every push path goes through `stock_push`; nothing calls `PUT /inventory/items/{id}/stock` outside that handler (§3.1). |
