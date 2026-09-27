@@ -4,6 +4,7 @@ import { runReconciliationCron } from "@/app/actions/stock-reconciliation";
 import { postPendingSalesJournals, GL_CUTOVER_SETTING_KEY } from "@/lib/finance/sales/sweep";
 import { runOverdueSweep } from "@/lib/finance/ar/overdue-sweep";
 import { runKonsiCountSweep } from "@/lib/konsi-count-schedule/sweep";
+import { runSettlementRematchSweep } from "@/lib/finance/settlement/rematch-sweep";
 
 let registered = false;
 
@@ -114,6 +115,28 @@ export function registerCronJobs(): void {
         }
       } catch (err) {
         console.error("[cron] sales-journal failed:", err);
+      }
+    },
+    { timezone: "Asia/Jakarta" },
+  );
+
+  // Every minute — rematch settlements whose stamped Jubelio resync batch has finished.
+  cron.schedule(
+    "* * * * *",
+    async () => {
+      try {
+        const r = await runSettlementRematchSweep();
+        if (r.scanned > 0) {
+          console.log(
+            "[cron] settlement-rematch done — scanned=%d rematched=%d skippedReconciled=%d stillRunning=%d",
+            r.scanned,
+            r.rematched,
+            r.skippedReconciled,
+            r.stillRunning,
+          );
+        }
+      } catch (err) {
+        console.error("[cron] settlement-rematch failed:", err);
       }
     },
     { timezone: "Asia/Jakarta" },
