@@ -26,7 +26,7 @@ The ROI of packing **video evidence** hinges on *why* buyers return:
 **Additional findings (2026-07-28):**
 
 1. Elorae’s Rp ~103M is a **lower bound** — Jubelio still lists **~463 return orders** that Elorae never ingested (~516 lines). See §6.
-2. `TT-` orders are **TikTok Shop**, labelled by Jubelio as `Shop | Tokopedia` and mapped by Elorae to channel `TOKOPEDIA`. Classic Tokopedia (`TP-`) is tiny. See §7.
+2. `TT-` orders are **TikTok Shop**, labelled by Jubelio as `Shop | Tokopedia` and mapped by Elorae to channel `TOKOPEDIA` at the time (mapped to `TIKTOK` by prefix since 2026-09-27, see §3.3). Classic Tokopedia (`TP-`) is tiny. See §7.
 
 ---
 
@@ -92,6 +92,8 @@ Called when SO `internal_status === RETURNED` (webhook + sweeper):
 `ReturnsSweeperService` only calls `GET /sales/orders/returned-list/?page=1&pageSize=100` every 30 minutes and skips IDs already present. Jubelio’s returned-list reports **totalCount ≈ 878**, so page 1 alone cannot backfill the backlog. See §6.
 
 ### 3.3 Channel detection
+
+> **Superseded 2026-09-27 (branch `fix/tiktok-tokopedia-settlement`).** `detectChannel` now keys on the order-number prefix first — `TT-` → `TIKTOK`, `TP-` → `TOKOPEDIA`, `SP-` → `SHOPEE` — and applies the last-token rule below only when no known prefix is present, so a `TT-` return is now `TIKTOK`. Migration `20260927200000_backfill_marketplace_channel_from_prefix` relabels the existing rows. The tables in this document are the 2026-07-28 snapshot and are left as measured. See the channel-detection entry in `docs/landmines/jubelio.md`.
 
 `detectChannel(source_name)` takes the **last** `|`-separated token (`apps/api/src/jubelio/handlers/_shared/channel-detect.ts`):
 
@@ -253,7 +255,7 @@ Colleague concern: client pain is **Shopee + TikTok Shop**, but Elorae shows a l
 
 ### 7.3 Conclusion
 
-- **TT- = TikTok Shop (Tokopedia Shop post-merger).** Jubelio surfaces it as `Shop | Tokopedia`; Elorae correctly applies its token rule → `TOKOPEDIA`. There is essentially **no `TIKTOK` label** on these return rows.
+- **TT- = TikTok Shop (Tokopedia Shop post-merger).** Jubelio surfaces it as `Shop | Tokopedia`; Elorae applied its token rule as written → `TOKOPEDIA` (the rule has since moved to the order prefix, see §3.3). There is essentially **no `TIKTOK` label** on these return rows.
 - **Classic Tokopedia is the tiny `TP-` bucket** (9 lines / 5 orders in Jubelio; 1 header in Elorae) — not the ~150 `TOKOPEDIA`-channel returns in ERP.
 - Client pain on Shopee + TikTok Shop matches the data: **SP- + TT- ≈ 99%** of return lines.
 
@@ -283,7 +285,7 @@ Colleague concern: client pain is **Shopee + TikTok Shop**, but Elorae shows a l
 4. **If building in ERP later**
    - Store buyer `reasonCode` / `reasonText` / `evidenceUrls` separately from admin `rejectReason`
    - Do not overwrite buyer reason on Accept/Reject
-   - Prefer order-prefix (or a dedicated `marketplace` field) over Jubelio’s `TOKOPEDIA` label for TTS vs classic Tokopedia
+   - Prefer order-prefix (or a dedicated `marketplace` field) over Jubelio’s `TOKOPEDIA` label for TTS vs classic Tokopedia — done 2026-09-27: `detectChannel` keys on the prefix first (see §3.3)
    - Map marketplace statuses into the desired outcome enum; treat Jubelio push as Accept/Reject only (and finish wiring `salesreturn_decision_push` if still required for WMS)
 
 ---

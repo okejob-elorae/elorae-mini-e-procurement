@@ -296,6 +296,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Sending a `location_id` to any Jubelio WMS endpoint? It is **`-1`**, the literal id of the only location — not a typo; `1` does not exist and died on FK violations. Pack sends none. Do not "correct" the negative number. → `docs/landmines/jubelio.md`
 - Extending `ALREADY_IN_STATE_MARKERS` because a skip did not fire? Jubelio's body `code` is NOT a stable type (free text one day, SQLSTATE `"23505"` the next) — adding SQLSTATEs to the markers would swallow real defects. → `docs/landmines/jubelio.md`
 - Reading `SalesOrder.fulfillmentStatus`/`pickedAt`/`packedAt` as proof Jubelio agrees? It is not — the local stamp and the outbox row are written in one transaction, but a push that later skips or dies never rolls them back, and nothing reconciles the two. → `docs/landmines/jubelio.md`
+- Deciding which marketplace a Jubelio order came from (`detectChannel`, a new marketplace, a channel backfill)? Key on the order-number prefix (`TT-`/`TP-`/`SP-`, case-sensitive; binary `COLLATE` in SQL) FIRST, never `source_name` alone — TikTok Shop orders arrive as `Shop | Tokopedia`, so its last token labels every one Tokopedia. → `docs/landmines/jubelio.md`
 
 **Print documents**
 
