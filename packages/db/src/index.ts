@@ -152,3 +152,11 @@ export {
   type SetMainStockInput,
   type SetStoreStockInput,
 } from "./stock-balance";
+export {
+  offlineReservedQty,
+  offlineReservedByKey,
+  jubelioEndQtyFor,
+  eloraeOnHandFromJubelio,
+  isValidJubelioQty,
+  type OfflineReservedKey,
+} from "./jubelio-stock-contract";
