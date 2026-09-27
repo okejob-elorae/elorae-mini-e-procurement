@@ -4268,8 +4268,9 @@
     "uploadMarketplaceLabel": "Marketplace",
     "marketplaceOption": {
       "SHOPEE": "Shopee",
-      "TIKTOK": "TikTok Shop"
+      "TIKTOK": "TikTok Shop / Tokopedia"
     },
+    "tiktokIncludesTokopedia": "TikTok's income export includes Tokopedia orders — upload the one file.",
     "uploadFileLabel": "File (.xlsx)",
     "uploadButton": "Upload",
     "uploading": "Uploading…",

@@ -4268,8 +4268,9 @@
     "uploadMarketplaceLabel": "Marketplace",
     "marketplaceOption": {
       "SHOPEE": "Shopee",
-      "TIKTOK": "TikTok Shop"
+      "TIKTOK": "TikTok Shop / Tokopedia"
     },
+    "tiktokIncludesTokopedia": "Export income TikTok sudah memuat pesanan Tokopedia — cukup unggah satu file.",
     "uploadFileLabel": "File (.xlsx)",
     "uploadButton": "Unggah",
     "uploading": "Mengunggah…",

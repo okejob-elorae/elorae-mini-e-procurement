@@ -153,7 +153,7 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
-              <div className="grid gap-2 sm:w-48">
+              <div className="grid gap-2 sm:w-56">
                 <label className="text-xs text-muted-foreground">{t("uploadMarketplaceLabel")}</label>
                 <Select
                   value={marketplace}
@@ -186,6 +186,10 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
                 {uploading ? t("uploading") : t("uploadButton")}
               </Button>
             </div>
+
+            {marketplace === "TIKTOK" && (
+              <p className="text-xs text-muted-foreground">{t("tiktokIncludesTokopedia")}</p>
+            )}
 
             {file && !uploading && (
               <p className="text-xs text-muted-foreground truncate">{t("selectedFile", { name: file.name })}</p>
