@@ -24,23 +24,8 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
 - [ ] `postJournal`'s findUnique-then-create means two concurrent posts for the same source can file a `JOURNAL_PENDING` with `reason: "ERROR"` on a P2002 even though the journal did post — a false alarm, no duplicate and no double-count.
 - [ ] Van "Post journal" retry visibility (`lib/canvassing/journal-pending.ts`) reads every `JOURNAL_PENDING` row and matches `metadata.docId`/`kind` in JS, because JSON-path filtering is unreliable on this adapter. Uncapped by choice — a `take` window would hide a genuinely failed older post — and cheap today (6 such rows on dev). Revisit if `AdminNotification` grows, since nothing prunes it.
 - [ ] Van journal retry is gated on a `JOURNAL_PENDING` notification existing (`hasPostableJournal`), but `postVanJournalSafely`'s own `notify` write is itself best-effort — if the journal post fails AND the notification write also fails (or the process dies after the stock transaction commits but before `notify` runs), the document has no journal, no notification, and no retry button: permanently unpostable except by hand. We can't add a durable attempt marker without a migration, so the real fix is a van equivalent of `lib/finance/sales/sweep.ts`'s `postPendingSalesJournals` — a sweep over van load/sale/reconcile documents that have no journal, independent of whether a notification was ever written. Must be scoped to specific document ids or a date window, per this file's own rule that a test-bed spec must never invoke a DB-wide sweep (see "What NOT to do").
-- [ ] Seed CoA detail postable leaves — Persediaan, Piutang, Selisih Persediaan, Marketplace Fee (Bank `1102`
-      already seeded) so posting-role mappings are wireable out-of-box. Seed is still the 10-account SAK-EMKM
-      skeleton (`coa-sak-emkm.json`). **Prod was fixed by hand on 2026-08-26, the seed was NOT** — 15 leaves
-      were inserted directly (`1103` Piutang Usaha, `1104` Persediaan, `1105` Persediaan Barang Jadi, `1106`
-      Persediaan Van, `2101` Utang Usaha, `2102` Utang Pajak, `4101` Penjualan, `5101` Harga Pokok Penjualan,
-      `6101` Selisih Persediaan, `6201`-`6206` the marketplace fees) and all 17 posting roles mapped, so prod
-      posts journals again. A FRESH environment still starts with every role unmapped and every journal
-      flagging `JOURNAL_PENDING`, which is the actual point of this item. Fold those 15 into
-      `coa-sak-emkm.json` to close it. Two of the hand choices are worth reviewing when that happens: each
-      marketplace-fee role got its OWN expense leaf rather than one shared account (the roles are split by fee
-      type so Laba Rugi can break them out), and `TAX` was mapped to a liability (`Utang Pajak`) rather than an
-      expense — the role permits either. Codes and names are safe to change later; journals reference
-      `ChartAccount.id`, never `code`. Re-pointing a ROLE to a different account is the unsafe edit, since
-      historical journals stay on the old one.
-- [ ] `cashFlowSection` is null on all 25 prod chart accounts, the original ten included, so nothing is
-      classified in the Arus Kas report until someone sets it in Settings → Klasifikasi Arus Kas. Predates the
-      AR slice; the 15 leaves added on 2026-08-26 inherited the same gap.
+- [ ] Seed CoA detail postable leaves — Persediaan, Piutang, Selisih Persediaan, Marketplace Fee (Bank `1102` already seeded) so posting-role mappings are wireable out-of-box. Seed is still the 10-account SAK-EMKM skeleton (`coa-sak-emkm.json`). **Prod was fixed by hand on 2026-08-26, the seed was NOT** — 15 leaves were inserted directly (`1103` Piutang Usaha, `1104` Persediaan, `1105` Persediaan Barang Jadi, `1106` Persediaan Van, `2101` Utang Usaha, `2102` Utang Pajak, `4101` Penjualan, `5101` Harga Pokok Penjualan, `6101` Selisih Persediaan, `6201`-`6206` the marketplace fees) and all 17 posting roles mapped, so prod posts journals again. A FRESH environment still starts with every role unmapped and every journal flagging `JOURNAL_PENDING`, which is the actual point of this item. Fold those 15 into `coa-sak-emkm.json` to close it. Two of the hand choices are worth reviewing when that happens: each marketplace-fee role got its OWN expense leaf rather than one shared account (the roles are split by fee type so Laba Rugi can break them out), and `TAX` was mapped to a liability (`Utang Pajak`) rather than an expense — the role permits either. Codes and names are safe to change later; journals reference `ChartAccount.id`, never `code`. Re-pointing a ROLE to a different account is the unsafe edit, since historical journals stay on the old one.
+- [ ] `cashFlowSection` is null on all 25 prod chart accounts, the original ten included, so nothing is classified in the Arus Kas report until someone sets it in Settings → Klasifikasi Arus Kas. Predates the AR slice; the 15 leaves added on 2026-08-26 inherited the same gap.
 - [ ] `postJournal` integrity-check query — surface any unbalanced or dangling journals.
 - [ ] Settlement journal `UNBALANCED` when the excel summary itself doesn't satisfy `Dilepas + Pengeluaran = Pendapatan`. The `MARKETPLACE_FEE_OTHER` residual absorbs fee-level gaps but is computed from `totalPengeluaran`, so it cannot absorb a summary-level mismatch (`settlement/journal.ts`) (PR #157, #17).
 - [ ] Settlement `SP-`+orderNo match coverage is low for pre-2026-06-14 settlements — revisit if old-period reconciliation matters.
@@ -107,580 +92,101 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
 - [ ] The cash flow comparison table has no `min-w-*`, so on a phone the 4-column layout compresses and wraps rather than scrolling inside its `overflow-x-auto`. Matches `TrialBalanceClient`'s existing house style, so fixing it is a sweep across the finance report clients rather than a one-file change.
 
 ### Finance — AR, payments & piutang
-- [ ] AR rounding residue has no write-off path — `FieldSalesDelivery.total` is not rounded to whole
-      rupiah (unlike `VanSale.total`), so a receivable settled in cash can retain sub-rupiah
-      outstanding and never reach `PAID`. `ReceivableStatus.WRITTEN_OFF` exists but nothing sets it.
-      Needs a write-off/adjustment slice with a journal behind it; do not "fix" it by declaring PAID
-      below one rupiah, which writes money off with no GL entry.
-- [ ] No historical GL backfill for pre-existing deliveries — the AR backfill created receivables for
-      every delivery that predates this slice, but posted no revenue or COGS journals, so Laba Rugi
-      stays incomplete for them. Deliberate: backdating entries into possibly-reported periods is a
-      finance decision. The retry gate blocks doing it one document at a time.
-- [ ] A date correction on a receivable with live payments is REFUSED rather than reconciled — the
-      operator must void the payment, correct, then re-record it. Reconciling properly would mean
-      re-dating the receipt journal too, which would be wrong (the cash moved when it moved). If this
-      refusal proves too blunt in practice, the answer is a supervised re-date flow, not a warning.
-- [ ] `Journal` has no history table and no audit trail of its own, so the `UPDATE_DELIVERY_DATES`
-      AuditLog row is the ONLY record that a posted GL entry was re-dated. If GL mutation ever becomes
-      more than this one path, journals need their own audit.
-- [ ] A narrow GL-dating race exists between a date correction and a journal retry: `delivery-journal.ts`'s
-      retry path reads `invoiceDate` through a NON-transactional client, while `updateDeliveryDatesAction`
-      commits a date correction inside its own serializable transaction. If a correction lands in the
-      window between that read and the journal insert — milliseconds, between commit and post — the
-      journal posts on the STALE date while the receivable already holds the corrected one: a permanent
-      GL-versus-subledger period disagreement, fixable only by hand. Deferred rather than closed because
-      the window is narrow, not because it's harmless.
-- [ ] No unapplied credit / on-account balance — `recordPayment` requires the allocation total to
-      equal the payment amount exactly, so an overpayment cannot be parked. Needs its own GL
-      treatment.
-- [ ] `JOURNAL_PENDING` dedup can emit a duplicate row under cross-domain load — `alreadyFlagged`
-      scans only the most recent 200 UNREAD rows, and that category is shared by the van, supplier-
-      payment and AR journals. If 200+ other-domain failures land between a document's first failure
-      and its retry, the original row has aged out of the window and an identical-reason failure
-      writes a second row. Pre-existing in all three implementations, not introduced by the AR slice.
-      A `metadata`-scoped query or a `kind` column would fix it for all three at once.
-- [ ] A thrown journal exception always dedups under the literal reason `"ERROR"`, with the message
-      excluded from the match — so a second, differently-messaged exception on the same document and
-      kind is silently swallowed as a duplicate. Shared with both sibling implementations (van,
-      supplier payment).
-- [ ] `payment-writer.test.ts` and `void-writer.test.ts` seed `Receivable` rows with fake `deliveryId`
-      strings pointing at no delivery. Safe today only because neither spec reads the receivable's
-      source — under `relationMode = "prisma"` there is no FK, so the insert succeeds (a fake
-      `deliveryId` also satisfies the one-source CHECK, which only asks that exactly one of
-      `deliveryId`/`sellThroughId` is set). Since the relation went optional, a read through it returns
-      `delivery: null` and `resolveReceivableSource` then throws `ReceivableSourceMissingError`, where
-      it used to throw `Inconsistent query result`. The first spec that adds such a query to those
-      files breaks them either way. `queries.test.ts` seeds real order + delivery rows for exactly this
-      reason.
-- [ ] The payment sheet's form-vs-writer tolerance is safe only because both sides pre-round through
-      `roundCents`. The form's mismatch check (0.005) is looser than the writer's (1e-6), but since
-      both normalise first the exact 2dp sum either equals the amount or differs by >= 0.01, so nothing
-      slips through today. Fragile, not wrong — if the `roundCents` normalisation is ever dropped from
-      either side, the form becomes exactly the hole the writer's own tolerance comment warns against.
-- [ ] The piutang and payments list pages' local `formatRupiah` rounds to whole rupiah with no
-      indication of a sub-rupiah fraction, unlike the payment sheet's `formatRupiahExact` — a receivable
-      carrying the AR rounding residue above displays as a round number on the list. Left alone
-      deliberately: 15+ sibling finance list pages already define their own `formatRupiah`, and this one
-      matches house convention rather than diverging for one page.
-- [ ] The receivable detail page's `allocationEmpty` copy is effectively dead — reachable only via a
-      race inside the page's `Promise.all` (the allocation list resolving empty while the receivable's
-      own status concurrently reads as already-allocated) — and even then its wording misdescribes the
-      state it would show. Low materiality; parked here rather than fixed inline.
-- [ ] The payment sheet's outstanding-receivables candidate fetch (two merged `listReceivables` calls,
-      one per `OUTSTANDING`/`PARTIAL` status, since the query takes a single status value) is capped at
-      each call's default `pageSize: 500` with no indication to the operator — a store with more than
-      500 open receivables of one status silently truncates the candidate list.
-- [ ] `apps/web/app/api/upload/payment-proof/route.ts` calls `request.formData()` before checking the
-      uploaded file's size, so the full multipart body is buffered into memory before the 10MB cap is
-      enforced. Identical shape in both sibling upload routes (grn-photo, visit-photo); not introduced
-      by this slice.
-- [ ] The two "post journal" retry action families now express "still pending" in two different result
-      shapes — `postFieldDeliveryJournalsAction` (field-sales-deliveries.ts) returns
-      `{ ok: true, posted, stillPending }` arrays, while `postPaymentJournalAction`/
-      `postPaymentVoidJournalAction` return `{ ok: false, reason: "STILL_PENDING" }`. Both are correct
-      for their own single-vs-multi-kind shape, but a future caller that wants to treat them uniformly
-      has to know both spellings.
-- [ ] Cosmetic: one JSX comment's continuation star sits at column 7 instead of 8 in
-      `PaymentDetailClient.tsx:222-227` — every other multi-line comment in the branch aligns correctly.
-- [ ] Credit-limit exposure is aging-unaware — a flat total, so an overdue rupiah and a current
-      rupiah consume the limit identically. An aging-weighted limit (e.g. block on any invoice past
-      90 days regardless of total) is a plausible future refinement, not built in this slice.
-- [ ] No credit-limit history table — changing `Store.creditLimit` is an ordinary store edit with no
-      audit trail of its own. The per-order `creditLimitAtCreate`/`creditLimitAtApprove` snapshots on
-      `FieldSalesOrder` are the only record of what the limit was at a given moment; they do not answer
-      "what was the limit on 2026-09-01" for a store with no order raised that day.
-- [ ] A flagged over-limit order emits TWO `AdminNotification` bell rows (`PENDING_ORDER_APPROVAL` +
-      `CREDIT_LIMIT_HOLD`) rather than one — deliberate (suppressing the approval-queue category would
-      drop the order out of the queue operators work from), but it does mean two pings for one order.
-      Revisit if operators complain about notification noise.
-- [ ] The credit limit is enforced on order INTAKE (approve), not on goods MOVEMENT (delivery) —
-      deliberate, since an approved order's undelivered residual is already counted in exposure the
-      moment it's approved, so delivering it adds zero net exposure. Consequence stated plainly: an
-      order approved Monday and delivered Friday still delivers even if the store's other activity blew
-      past the limit in between. A delivery-time re-check was considered and rejected — see
-      `docs/superpowers/specs/2026-08-27-credit-limit-enforcement-design.md` § 9 for the reasoning.
-- [ ] Collection submission is online-only. Van sales and field-sales orders have an offline
-      write queue; retur does not, and this matches retur. A collector in a dead zone cannot
-      submit, which is a plausible field condition worth revisiting.
-- [ ] No collector-performance reporting — how much each collector brought in, and which
-      assigned invoices have gone untouched for how long. The data supports it (submissions
-      carry collector, amount and timestamps); nothing surfaces it.
-- [ ] A collector is not told they have been assigned anything. There is no in-PWA notification
-      surface at all, and no push is sent, so discovery depends on opening the queue.
-- [ ] Verification latency directly delays credit-limit relief. A store that has paid stays
-      blocked until someone verifies. Operational today; if verification proves slow in
-      practice, the answer is a faster verification path, not netting unverified claims off
-      exposure.
-- [ ] Bulk assignment does not apply to future invoices. New invoices at an already-assigned
-      store arrive unassigned and need a re-run. If this proves to be real recurring toil, the
-      standing per-store default is the fix, and it belongs in the delivery writer with its own
-      design.
-- [ ] Assignment eligibility requires `collections:collect` AND `pwa:access` on a non-system role
-      (added post-review, since a wildcard/ADMIN role can hold `collections:collect` without ever
-      being able to reach the PWA queue that permission is meant to gate). A receivable already
-      assigned to a collector whose `pwa:access` is later revoked stays assigned in the DB, but
-      both the piutang detail page's `AssignCollectorCard` collector-picker and the piutang list's
-      collector filter combobox render that assignee as "Unassigned"/"All collectors" — the
-      combobox only recognizes options from the (now-filtered) eligible-candidate list, while the
-      surrounding read-only text (the detail card's "Current collector" row) still shows the real
-      name. Not a data-loss risk — the underlying `Receivable.collectorId` is untouched, Apply
-      stays disabled until a real change is made, and the fix (reassign to an eligible collector)
-      works normally — but it's a real, if rare, lifecycle event (someone leaves, has PWA access
-      revoked) worth a dedicated stale-assignee display state if it comes up in practice.
-- [ ] Collectors get no push for an overdue alert, only an in-app list — no `fcmToken` is ever
-      minted for a PWA-only user, so `notifyCollectorOfOverdue` writes a `NotificationQueue` row
-      that only shows up on next open of `/pwa/notifications`. A real push needs a Firebase
-      messaging service worker coexisting with the PWA's Serwist SW, which does not exist yet.
-- [ ] A collector assigned to a receivable after a threshold crossing already fired is never told
-      about that specific crossing — the alert is a one-shot event at the moment of crossing, not
-      a standing reminder. The invoice is still visible in their collection queue regardless, so
-      nothing is lost, but there is no "catch-up" notification for a newly-assigned collector.
-- [ ] `sendNotificationToUsers` is unguarded against test runs. Fixed locally for this slice inside
-      the AR notify helper (`notifyCollectorOfOverdue`'s own `VITEST` check), but the shared helper
-      itself and the pre-existing PO-overdue cron path still carry the hole — a spec that reaches
-      either of those without guarding first pushes real `NotificationQueue` rows and real phone
-      notifications via the `FIREBASE_ADMIN_*` credentials `vitest.config.ts` loads.
-- [ ] The 200-per-run announcement cap (`MAX_ANNOUNCEMENTS_PER_RUN` in `overdue-sweep.ts`) is a
-      module constant, not configuration — an operator facing a large historical backlog has no way
-      to drain it faster than a day at a time short of a code change.
-- [ ] Overdue alerts do not escalate — a 60-day invoice notifies exactly the same recipients as a
-      0-day one. Severity-weighted routing (e.g. escalate to a manager past some threshold) is a
-      plausible future refinement, not built in this slice.
-- [ ] Threshold changes are not audited — `ar.overdueThresholdDays` is an ordinary `SystemSetting`
-      upsert with no `AuditLog` entry, so there is no record of who changed the schedule or when.
-- [ ] The piutang export has no scheduled or emailed delivery — the overdue book reaches anyone
-      outside the system only when someone remembers to open the page and download it themselves.
-- [ ] `AdminNotification` rows written by the overdue sweep are never pruned, same as
-      `NotificationQueue` — growth is bounded per-crossing (roughly one row per receivable per
-      threshold) but unbounded in time, since nothing ever deletes an old row.
-- [ ] `getNotificationHref`'s `switch` has no fallback case beyond `default: return null` — currently
-      unreachable for `AR_OVERDUE` since that category always carries a `receivableId`, but the next
-      notification type added to the queue without a matching `case` silently renders as a
-      non-clickable bell entry rather than surfacing a build-time or runtime signal that a case is
-      missing.
-- [ ] `NotificationsList.tsx`'s single-item `markRead` has no rollback on a failed request, while
-      its `handleMarkAllRead` does — both were spec'd this way deliberately, not implementer bugs,
-      but the asymmetry means a failed single mark-read leaves the item showing read in the UI while
-      the server still has it unread. Worth a deliberate decision (match the two, or document why
-      they should stay different) if it ever causes a visible mismatch in practice.
-- [ ] Overdue-alert message bodies interpolate raw numbers (`sebesar ${outstandingAmount}` in
-      `overdue-sweep.ts`) instead of formatting as currency — every other collector-facing surface
-      (e.g. the PWA collections queue) runs the figure through
-      `Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" })`; this is the one path
-      that does not.
-- [ ] The piutang export's truncation toast always reads "Showing 10,000 of {total} rows", but with
-      a bucket filter active the actual visible row count can be far smaller than 10,000 even while
-      the flag correctly fires — the flag is a deliberate over-report against the pre-bucket-filter
-      total, per this slice's own documented tradeoff, so the toast's specific wording asserts a row
-      count the user did not necessarily receive.
-- [ ] An export matching zero rows downloads a header-only file and still shows the "Export started"
-      success toast, with no distinct empty-result signal.
-- [ ] Tapping an `AR_OVERDUE` PWA notification for a receivable that has since been reassigned to a
-      different collector dead-ends on a bare Next.js 404 — `/pwa/collections/[receivableId]` calls
-      `notFound()` on an ownership mismatch rather than rendering a PWA-styled "no longer assigned
-      to you" state.
-- [ ] `NotificationsList.tsx`'s relative timestamps (`formatDistanceToNow`) render in English with no
-      locale option, inconsistent with the otherwise all-Indonesian PWA surface. The backoffice
-      `NotificationIcon.tsx` has the same unlocalized usage, so this is a pre-existing pattern this
-      slice inherited rather than introduced.
-- [ ] `overdue-sweep.ts`'s per-receivable loop can abort partway through a run if
-      `prisma.notificationQueue.create` throws inside `sendNotificationToUsers` — only the FCM
-      `send` call itself is wrapped in try/catch there, not the queue-row creation. Self-healing on
-      the next scheduled run (dedup holds and receivables are processed oldest-due-first), but a
-      single bad row currently halts the rest of that run's announcements instead of logging and
-      continuing.
-- [ ] `Store.npwp` ships `NULL` for every existing store and nothing prompts anyone to fill it in,
-      so the first faktur raised at each store hits the required-NPWP block in
-      `markTaxInvoiceCreated`. The mark-created dialog's link to the store profile page is the
-      whole mitigation today — no bulk-fill flow, no store-list indicator for a missing NPWP.
-- [ ] Neither NPWP column (`Store.npwp`, `TaxInvoice.buyerNpwp`) is format-validated or normalised
-      beyond a length cap, so the same store's number can be stored with or without punctuation
-      (e.g. `01.234.567.8-901.000` vs the digits alone) in different places, and the faktur queue's
-      search will not match across the two spellings.
-- [ ] `TaxInvoice.buyerNpwp` carries no index, like `markedById`/`notaPrintedById` before it —
-      nothing queries by it today, so this is deferred rather than fixed.
-- [ ] `SENT_TO_STORE` records that a faktur was handed over but not how, when it reached the
-      store, or who received it on the store side. A real handover record (courier, signature,
-      received-at timestamp) is the Payment Settlement epic's (GitHub issue #28) territory, not
-      this slice's.
-- [ ] There is no way to correct a single field on a `CREATED` faktur — a wrong PPN figure means
-      reverting to pending (`revertTaxInvoiceToPending`) and re-entering all four fields (invoice
-      number, NPWP, taxable amount, PPN amount) from scratch. Deliberate (two honest audit rows
-      beat one silent edit), but will feel heavy if it happens often.
-- [ ] A `SENT_TO_STORE` faktur can only be undone by reverting to `PENDING`, and per Decision 4
-      that revert nulls all four value fields (invoice number, NPWP, taxable amount, PPN amount).
-      `SENT_TO_STORE` is otherwise a pure handover flag, so undoing a mis-click on it destroys the
-      whole filing: recovery means reading the four values back out of the `AuditLog` `changes`
-      blob and retyping them. Distinct from the `CREATED`-correction item above — the complaint
-      here is that the revert loses strictly more than the mistake that prompted it. A
-      `SENT_TO_STORE -> CREATED` step back would fix it, deferred until someone hits it.
-- [ ] `lib/tax-invoices/writer.test.ts` and `lib/tax-invoices/queries.test.ts` each drive the real
-      delivery writer per test case, so every run burns real `DELIVERY` doc numbers out of the
-      shared `:3308` `DocNumberConfig` row (queries.test.ts burns two per test). Non-destructive —
-      the counter only ever advances and nothing collides — but unrestored, and this slice roughly
-      doubled the burn rate by growing writer.test.ts from ~9 to ~20 cases. Only worth addressing
-      if the sequence gap ever becomes something a human reads.
-- [x] ~~`DeliveriesCard.tsx`'s faktur status badge rendered the raw missing-key string instead of a
-      translated label~~ — was scoped to `useTranslations("fieldSalesOrders")` while calling
-      `t(\`fakturPajakStatus.${key}\`)` against a sibling TOP-LEVEL `fakturPajakStatus` namespace,
-      not one nested under `fieldSalesOrders`; confirmed by running `use-intl`'s `createTranslator`
-      directly against the shipped `en.json` before the fix, which raised `MISSING_MESSAGE`. Fixed
-      with a second `useTranslations("fakturPajakStatus")` call for that lookup (PR pending, commit
-      `f273df5`).
-- [ ] `fakturPajak.status*` and the top-level `fakturPajakStatus.status*` block still hold
-      identical status label text hand-duplicated across both locale files, now correctly wired
-      but not deduplicated — `FakturPajakPageClient` and `DeliveriesCard`'s faktur badge each need
-      the same four labels but read from different `next-intl` namespaces, so the text must be kept
-      in sync by hand if either wording ever changes.
-- [ ] No COGS reversal for retur-restored stock. Approving a field retur restores
-      `InventoryValue` and posts a positive `StockAdjustment` with no journal alongside it
-      (`apps/web/lib/field-sales/retur/approve-writer.ts`), so `INVENTORY` is understated and
-      `COGS` overstated by the restored value on every field retur. Fires at approval, applies to
-      konsi and never-offset returs equally — not the retur-offset slice's trigger, but a live GL
-      hole now that a consumer of retur value exists.
-- [ ] AR journals are not GL-cutover gated. `postPaymentReceiptJournal`
-      (`apps/web/lib/finance/ar/payment-journal.ts`) credits `AR` unconditionally, so any payment —
-      cash, transfer, retur-offset, program-deduction or admin-fee, all five routing through the one
-      `debitRole` seam — against a backfilled receivable with no revenue journal drives AR negative.
-      Same shape as the settlement item already logged above. The hole got wider with the store
-      settlement approval slice, which posts one payment per retur deduction row plus up to three more
-      (trade-program, admin fee, cash) from a single approval, each with its own `PAYMENT_RECEIPT`
-      journal. The fix is one pass applying
-      `classifySaleLeg`'s counterpart-journal gate across the AR journals, covering every path
-      together.
-- [x] ~~No partial retur draw-down. A retur is consumed all-or-nothing~~ — `FieldReturn.appliedValue`
-      now exists and `applyReturnOffset` takes a `drawAmount` plus a per-event idempotency key
-      (`returoffset-<returnId>-<eventId>`), so a retur's frozen value is consumed in parts across
-      several payments and one worth more than the invoices to hand is usable for the part that
-      fits. `appliedValue` did NOT end up carrying the double-spend guarantee this item predicted
-      it would need to: it is a projection of the POSTED payment ledger, and the ceiling that makes
-      over-draw impossible lives inside `recordPayment`'s own serializable transaction
-      (`EXCEEDS_REMAINING`) — see `docs/ARCHITECTURE-NOTES.md` for why reserve-then-post was
-      rejected. PR #293.
-- [ ] No post-approval repricing for field returns, so a return that approved with
-      `valuationStatus: PENDING` has a permanently unusable value — `setLinePriceAction` refuses
-      once approved (`ALREADY_APPROVED`), so it can never become offsettable.
-- [ ] No way to cancel a standing retur credit. Belongs with the write-off/adjustment slice that
-      `ReceivableStatus.WRITTEN_OFF` is already waiting on, same act, same journal treatment.
-- [ ] Un-offset retur credits are invisible in the GL, overstating revenue by the total standing
-      credit at any moment. The two-stage treatment (recognize a customer-credit liability at retur
-      approval, consume it at offset) is the fix and needs a new posting role plus a backfill
-      decision for every already-approved, still-`AVAILABLE` retur at merge time.
-- [x] ~~A retur offset, once voided, can never be re-offset — the deterministic idempotency key
-      (`returoffset-<returnId>`) stays permanently bound to the voided payment~~ — the key is
-      per-EVENT now (`returoffset-<returnId>-<eventId>`), so a re-draw carries a new key and simply
-      posts; `PAYMENT_VOIDED` survives only for a replay of the SAME event. The two informational
-      surfaces this item flagged as overstating credit after a void — the field returns register's
-      offset badge (`listFieldReturns`) and the piutang list's `getStoreAvailableCredit` — are
-      correct now without the per-row payment lookup this item feared, because both read
-      `totalValue - appliedValue` and `voidPayment` re-projects `appliedValue` back down inside its
-      own transaction. `hasVoidedOffsetAttempt` and the `credit.voidedOffsetBody` no-action state
-      it drove are gone with it. What this item raised and this work did NOT fix stays open above:
-      retur value is still absent from the GL until it is drawn, so the "record the correction as a
-      fresh cash/transfer payment" workaround is still wrong accounting for the case where it is
-      needed — that belongs to the two-stage customer-credit-liability item. PR #293.
-- [ ] No expiry or write-off path for a retur left partially drawn forever. A retur drawn to within
-      a rupiah of its `totalValue` sits `AVAILABLE` with a residue nobody will ever allocate, and
-      nothing can close it out — the same act as the "cancel a standing retur credit" item above,
-      which is already waiting on the `ReceivableStatus.WRITTEN_OFF` slice, so the two should land
-      together rather than growing a second bespoke path.
-- [ ] `projectReturnOffset` is exported but nothing schedules a repair caller
-      (`apps/web/lib/finance/ar/retur-offset-writer.ts`). It is only ever reached from a draw or a
-      void, so a `FieldReturn` whose `appliedValue` ever drifts from its POSTED payment sum — a
-      hand-run SQL correction, a restore, a bug in some future caller — stays wrong until someone
-      happens to draw from or void against that exact retur. The projection is idempotent by
-      construction (a SET, not an increment), so a sweep over rows with a non-zero `appliedValue`
-      is safe to write whenever it is worth the cost; there is no drift detector today either, so
-      nothing would report the need.
-- [ ] `Payment.fieldReturnId` surviving a void is unpinned by any test. The link is deliberately not
-      nulled — it is history, like the payment's `PaymentAllocation` rows and its original
-      `PAYMENT_RECEIPT` journal, and the projection filters on `status: "POSTED"` so a voided row
-      stops counting without the trail being erased. Nothing in the AR suite asserts it and the
-      design spec no longer states it, so a future "tidy up the voided row" change would read as
-      harmless while quietly severing the audit trail from a payment back to the retur it drew.
-- [ ] `PaymentErrorCode.ALREADY_APPLIED` is orphaned — nothing throws it any more. The CAS flip
-      that raised it (`offsetStatus !== "AVAILABLE"` on a first attempt) went away with the
-      draw-down rewrite, but the member is still declared in `apps/web/lib/finance/ar/errors.ts`,
-      still mapped in `ERROR_CODE_MAP`, and still translated in both locale files. Harmless dead
-      weight today; the decision to make is whether a later slice reintroduces a terminal-state
-      refusal that wants the name, or whether all four surfaces should drop it together.
-- [ ] A degenerate `totalValue === 0` VALUED retur renders a live Offset button that can never
-      submit. The credit card gates on `offsetStatus === "AVAILABLE" && remainingValue !== null`,
-      both true at zero, while `applyReturnOffset` refuses any `drawAmount <= 0` with
-      `INVALID_AMOUNT` and the sheet's own `canSubmit` never turns on. Left as-is deliberately: it
-      matches the pre-draw-down behaviour exactly and a VALUED retur is priced off delivered lines,
-      so nothing suggests the state is reachable — but it wants a `remainingValue > 0` gate the
-      moment a zero-value retur turns out to be producible in prod.
-- [ ] `listAllocationCandidatesForStore`'s `CANDIDATE_PAGE_SIZE` cap can under-report a store's open
-      balance, so the offset sheet's `insufficientOutstanding` banner can refuse a draw the writer
-      would have accepted. Pre-existing and unchanged by the draw-down work — it compared the capped
-      sum against `totalValue` before and against `drawAmount` now — but the draw-down makes it
-      easier to hit, because a partial draw is exactly the case where an operator picks a few
-      invoices out of many. The banner is advisory; the authoritative check is `OVER_ALLOCATED`
-      inside `recordPayment`'s transaction, so nothing wrong posts, the operator is just told no.
-- [ ] A fully drawn retur renders `Rp 0,00` as the primary figure in the field-returns register's
-      Value column, with its original value beneath. Correct by the column's own rule (it shows
-      what is left once anything has been drawn) and such a row is `APPLIED` rather than
-      offsettable, so nothing acts on it — but "Value: Rp 0,00" reads oddly for a retur that was
-      worth something, and no browser pass has looked at it. Worth an eye during the next smoke.
-- [ ] `apps/web/lib/finance/ar/queries.test.ts`'s `returOffsetFor` test creates its first payment
-      before the `try`, so a throw while creating the second leaks the first onto the shared `:3308`
-      bed, and `afterEach`'s store cleanup then fails under emulated `Restrict`. Narrow window;
-      moving both creates inside the `try` closes it.
-- [x] **`packages/db/prisma/seed-amplop-permission.sql` must be hand-run on prod after the amplop
-      digital PR merges, or the screen is invisible to every non-admin.** No migration applies it and
-      nothing on the deploy path seeds permission rows. The failure is silent: the `/pwa/pelunasan`
-      guard redirects to `/pwa` and the home CTA never renders, with no error anywhere. An admin CANNOT
-      detect the gap, and not for the reason it looks like: `pwaAccessGuard` redirects every wildcard
-      holder to `/backoffice` BEFORE the permission check runs, so an admin never reaches this screen
-      at all and the ADMIN grant in the seed is convention-mirroring only. **Verify on a SALESMAN or
-      COLLECTOR account, never your own admin login.** The seed is idempotent and bumps
-      `permissionsVersion` on ADMIN, SALESMAN and COLLECTOR so logged-in users pick the grant up
-      without re-login — but it targets each non-system role BY NAME and silently no-ops for any that
-      is absent, COLLECTOR included, so verify the grant landed for BOTH non-system roles rather than
-      assuming it. A missed COLLECTOR grant is the quiet one: `listCollectorCandidates` only offers
-      users holding `collections:collect` + `pwa:access`, so collectors are exactly who ends up in
-      `Receivable.collectorId`, and without the grant the amplop's collector arm never fires for
-      anyone (amplop-digital).
-- [ ] Story 23-01's "sorted by route/visit plan" ordering is undelivered and blocked on an entity that
-      does not exist. There is no route, territory or visit-plan model in this codebase — `StoreVisit`
-      is a GPS check-in record and `Store` has no route column — so the amplop sorts stores by total
-      overdue descending, then by name. This slice deliberately invented no substitute (a synthesised
-      ordering off check-in history or store proximity would look like a route without being one),
-      and building a real route entity is its own feature, not a clause inside an AR epic (amplop-digital).
-- [x] Konsi stores can never appear in an amplop, and will not until sell-through invoicing exists.
-      The amplop reads `Receivable` rows and a konsi order creates none. A receivable CAN now be backed
-      by a `KonsiSellThrough` report instead of a putus delivery, and the amplop already reads one:
-      its membership `OR` has a third arm on the report's own `salesmanId`, and it takes the faktur
-      status from whichever source the row has. But nothing creates such a receivable until report
-      approval becomes invoicing (see the Consignment Lifecycle rows in `docs/EPIC-STATUS.md`), and
-      that same work has to stamp `KonsiSellThrough.salesmanId` — a report with no salesman appears in
-      no salesman's amplop, only in its assigned collector's. Worth stating because a salesman
-      carrying both putus and konsi paperwork will notice half the envelope missing and read it as a
-      bug (amplop-digital; source arm added in PR #320). **Resolved:** approving a sell-through report
-      now invoices it and stamps the report's salesman whenever it bills anything, so an invoiced konsi
-      store appears in that salesman's amplop the way a putus one does (PR #322).
-- [ ] The amplop LIST is still read-only — no writer of its own, no offline capture — but it is no
-      longer a dead end, so do not read this item as "no tap-through" any more. The settlement slice
-      added a Settle CTA on each store card through to `/pwa/pelunasan/[storeId]`, which is the acting
-      surface this item said the next slice would bring, and it is richer than the collection submit
-      the amplop would otherwise have linked into. Offline capture stays absent by design rather than
-      as debt: the amplop is a read surface with nothing to queue, and the settlement form behind the
-      CTA is deliberately online-only, a multi-attachment money document being the worst possible
-      candidate for silent offline drift (amplop-digital, feat/settlement-document).
-- [ ] `submitSettlement` and `submitCollection` do not net against each other, so one receivable can
-      carry a `PENDING` `CollectionSubmission` and a `PENDING` `StoreSettlement` at the same time, each
-      claiming its full outstanding. Each writer nets only its OWN kind inside its own transaction —
-      `submitCollection` sums `CollectionSubmission`, `submitSettlement` sums `StoreSettlementInvoice`
-      — and neither sees the other, so both pass and both are collected against. The settlement screen
-      narrows the window rather than closing it: it displays each row's `pendingSubmittedAmount` (the
-      pending collection total, from `amplop-queries.ts`) and defaults the settle amount to
-      `min(outstanding − pending, outstanding − reserved)` — the second term nets a PENDING
-      settlement's own claim on the same receivable — but a salesman can type over that default
-      and the writer accepts it.
-      Closing it properly is a `lib/finance` change — one shared "already claimed against this
-      receivable" helper that both writers call, netting both row types inside their transactions.
-      **Still open after the approval slice, and approval does not close it** — `approveSettlement`
-      re-checks the live `Receivable.outstandingAmount` at the moment it posts, so the loser is
-      refused rather than over-collecting, but that refusal lands after both salesmen took cash at
-      their respective counters, which is exactly the failure the netting exists to prevent
-      (feat/settlement-document, feat/settlement-approval).
-- [ ] Settlement evidence uploaded under a `draftId` whose form is then abandoned is orphaned in R2
-      forever: `settlement-proofs/<draftId>/…` objects with no `StoreSettlement` row referencing them,
-      and no sweeper anywhere. Deliberate — the alternative was a `DRAFT` settlement row per opened
-      form, which would also hold a claim on a retur and an invoice for a document nobody ever
-      submitted. The cleanup is a scheduled job listing the prefix and deleting keys whose `draftId`
-      matches no `StoreSettlement.idempotencyKey`; it is not built (feat/settlement-document).
-- [x] ~~The settlement document is INERT until the finance approval slice exists~~ — CLOSED by the
-      approval slice (branch `feat/settlement-approval`). `/backoffice/finance/pelunasan` (list +
-      detail), `approveSettlement` and `rejectSettlement` all exist now, so a `PENDING` settlement is
-      no longer held indefinitely: finance approves it into real payments or rejects it and releases
-      the claims. **The residue this item leaves behind is a READING rule, not a gap** — a `PENDING`
-      settlement still moves no money, an `APPROVED` one has moved all of it, and a settlement
-      stranded `PENDING` after a crash mid-approval may have real payments behind it, so nothing may
-      read `StoreSettlement` without reading its status. Nothing schedules or chases a `PENDING`
-      settlement either: it sits until a `collections:manage` holder opens the queue
-      (feat/settlement-document, feat/settlement-approval).
-- [ ] Rejecting a settlement whose approval already posted some components strands those payments on
-      a `REJECTED` document, and nothing cleans them up. Reachable because approval is a resumable
-      sequence rather than one transaction: a run that posts a component and then throws leaves the
-      document `PENDING` with a real `Payment` behind it, and rejecting from there is allowed. The
-      approval screen surfaces the case (the components card reframes to "orphaned" on a `REJECTED`
-      document and lists only the rows that actually posted), and `approveSettlement` logs loudly
-      when its own CAS loses to a concurrent reject — but the only remedy is voiding each payment by
-      hand from `/backoffice/finance/payments`. Closing it properly means either refusing a reject
-      once any component has posted, or a void-the-components path on the reject writer
-      (feat/settlement-approval).
-- [ ] Voiding ONE component payment of an APPROVED settlement silently desynchronises the document —
-      the other half of the same missing "unapprove" concept as the item above. `voidPayment` has no
-      settlement awareness: nothing refuses the void, the `StoreSettlement` stays `APPROVED`, and
-      re-running approval takes `approveSettlement`'s write-free `alreadyApproved` branch, which
-      reports the same `paymentIds` and re-posts nothing. So the document claims a settled amount the
-      ledger no longer carries, and the only way to re-close the hole is recording a payment by hand.
-      The approval screen does render the component as Voided, which is the sole signal anywhere. The
-      two halves want the same answer: a concept for taking an approved settlement back apart, rather
-      than a guard bolted onto `voidPayment` (feat/settlement-approval).
-- [ ] `approveSettlement` throws `MISSING_FIELD_RETURN_ID` while building its component list, which is
-      AHEAD of the `APPROVED` replay branch — so an already-approved settlement carrying a retur
-      deduction with a null `fieldReturnId` throws instead of replaying, and the journal-gap re-post on
-      the approval screen cannot reach it either. Only constructible via raw SQL today (the action
-      validates the field and `submitSettlement` requires it), so this is ordering hygiene rather than
-      a live defect — but the file's own comment argues the replay lookup runs "FIRST, ahead of every
-      guard below", and this construction step is not below it. Moving the status read and the replay
-      return ahead of the component build would make the comment true (feat/settlement-approval).
-- [ ] Two concurrent approvals of the same settlement collide on `Payment.idempotencyKey @unique`
-      inside `recordPayment`, and the loser sees a generic `UNEXPECTED`: `isRetryableTxError` returns
-      false for P2002, so `withRetry` rethrows it unwrapped instead of re-running the callback onto the
-      now-existing row. Benign — a second click resolves it, because the retry finds the payment and
-      takes the idempotent path — but the operator is told nothing useful in the meantime. Pre-existing
-      in `recordPayment` rather than introduced here; the new finance queue makes it plausible, since
-      two admins can open the same document. The fix is treating a P2002 on `idempotencyKey`
-      specifically as retryable, not widening `isRetryableTxError` to P2002 generally
-      (feat/settlement-approval).
-- [ ] The two settlement posting roles `TRADE_PROGRAM_EXPENSE` and `ADMIN_FEE_EXPENSE` have no
-      `JournalAccountMapping` row on production, and nothing on the deploy path creates one — the role
-      column is a plain `String`, so there is no migration and no seed involved; finance maps them in
-      Settings → Account Mapping to a `BEBAN` account. Until that happens the first approval carrying an
-      admin fee (essentially every settlement) has `resolveAccount` throw `UnmappedRoleError`, degrading
-      that payment's journal to `JOURNAL_PENDING` and needing a hand-mapping plus a retry. Tracked here
-      as a GO-LIVE step rather than debt: it is a one-time action on the day the queue is first used,
-      and `docs/EPIC-STATUS.md`'s slice-5 row now names it (feat/settlement-approval).
-- [ ] Nothing tells the salesman a settlement was APPROVED. Rejection pushes a `SETTLEMENT_REJECTED`
-      notification with a click-through to `/pwa/pelunasan/${storeId}`; approval sends nothing, on the
-      grounds that the money already changed hands at the counter and the approval is a back-office
-      formality. That is defensible but asymmetric, and combines with the item below (no PWA read
-      surface for a filed settlement) into a salesman having no way to learn the outcome of a document
-      he filed unless it was rejected (feat/settlement-approval).
-- [ ] The PWA settlement form's `varianceOver` copy ("{amount} more than expected") does not warn that
-      approval will refuse an over-tender outright with `OVER_TENDER`, which no override can clear. A
-      salesman can therefore file a document nobody can approve and only learn at rejection. Deliberately
-      not fixed in the approval slice: refusing or re-wording at submit moves a boundary on already-merged
-      filing code, and the ruling was that approval is the right place to refuse. The cheap fix is copy
-      on the salesman's screen naming the consequence, not a new guard (feat/settlement-approval).
-- [ ] `StoreSettlement.expectedAmount` and `varianceAmount` are stored columns nothing reconciles.
-      `approveSettlement` recomputes both from the live child rows through `computeSettlementTotals`
-      and never reads the columns; the queue and detail screens do the same and raise a destructive
-      alert when the two disagree. So the columns are display-only history that can silently drift
-      from the truth if any child row is ever edited. Either drop them, or recompute them on read
-      (feat/settlement-approval).
-- [ ] `DEDUCTION_TYPE_TO_PAYMENT_METHOD` in `approve-writer.ts` `satisfies` a HAND-WRITTEN
-      `"RETUR_OFFSET" | "PROGRAM" | "ADMIN_FEE"` union rather than Prisma's `SettlementDeductionType`,
-      following the barrel-free policy the rest of `lib/finance/ar-settlement/` keeps so a
-      `"use client"` importer never drags Prisma into the browser bundle. The cost is that a fourth
-      `SettlementDeductionType` member would NOT break this map at compile time — it would fall
-      through to `undefined` and die at the `ENUM` column mid-approval. Same class as every other
-      hand-written union in this directory (feat/settlement-approval).
-- [ ] Nothing seeds `settlement.varianceToleranceRupiah` and there is no settings-screen entry for it,
-      so the shipped tolerance is the parser's default of 0 — every non-zero variance demands an
-      override reason from finance. Changing it means a hand-run `SystemSetting` insert. Worth a row on
-      the Settings screen alongside `ar.overdueThresholdDays`, which has the same shape and the same
-      gap (feat/settlement-approval).
-- [ ] No `<img>` anywhere in `apps/web` has an `onError` handler except the settlement approval
-      screen's deduction evidence thumbnail. A dead or expired R2 URL therefore renders the browser's
-      broken-image glyph with no explanation on the collections queue's proof photo, the delivery POD
-      proofs, and every other image surface — "the photo will not load" and "there is no photo" read
-      identically to an operator. Fixed on the settlement screen only, because evidence is load-bearing
-      on a money screen; the rest is a repo-wide gap, not a local one (feat/settlement-approval).
-- [ ] `components/QuickActionFAB.tsx` is an undocumented layout constraint on every backoffice route:
-      `fixed bottom-6 right-6 z-50`, `h-14 w-14`, rendered unconditionally and permission-free by
-      `BackofficeShell`, so it owns a 24-80px box in the bottom-right plus ~12px of shadow reach. The
-      settlement approval action bar is the FIRST `fixed inset-x-0 bottom-0` bar in `app/backoffice`
-      and had to clear it with `pr-28`; the collision was invisible until then because nothing else had
-      ever been bottom-anchored there. The second, `KonsiPushForm`'s submit bar on the konsi push page
-      (`app/backoffice/stores/[id]/konsi-push/`), is a hand copy of the first with the same `pr-28`, so
-      there are now two copies to keep in step. Either the FAB documents its own reserved area in the
-      shell, or a shared `bottom-bar` primitive owns the clearance once (feat/settlement-approval).
-- [ ] `/backoffice/finance/collections` has no nav entry in `BackofficeShell.tsx` and is reachable only
-      by typing the URL. Noticed while adding the `/backoffice/finance/pelunasan` entry beside it: the
-      two screens are siblings, gate on the same `collections:manage`, and now one is discoverable and
-      the other is not. Fixing it needs its own `navigation` key in both locales and nothing else
-      (feat/settlement-approval).
-- [ ] Eight pre-existing flat-opener block comments (`/*` with a starred body) remain in
-      `approve-writer.ts` (5) and `reject-writer.ts` (3). Deliberately unswept: they sit on lines the UI
-      task never touched, and sweeping untouched lines inflates the branch diff for the whole-branch
-      review fleet, which is the review that most needs to stay readable. Everything written in this
-      slice uses the starred `/**` form (feat/settlement-approval).
-- [ ] A salesman still has no way to return to a settlement he filed EARLIER. `/pwa/bkm/[settlementId]`
-      shipped (feat/settlement-bkm-print) and is a real read surface for one settlement, but it is
-      reachable only from the success screen that just filed it or by knowing the id — there is no PWA
-      list, index or history surface for `StoreSettlement`, so a closed tab still loses the id and
-      yesterday's BKM cannot be reprinted from the phone. A re-open of the filing form still mints a
-      fresh `draftId` that would create a SECOND document rather than being caught as a replay (a true
-      duplicate re-file is refused by `INVOICE_OVERCLAIMED`, so the exposure is a wasted document
-      number and a confusing dead end, not double-collected money) (feat/settlement-document,
-      feat/settlement-bkm-print).
-- [x] Konsi stores cannot appear in a settlement yet, and will not until sell-through invoicing
-      exists, for exactly the reason they cannot appear in an amplop (see the konsi item above): the
-      settlement selects `Receivable` rows and a konsi order creates none. A receivable CAN now be
-      backed by a `KonsiSellThrough` report, and the settlement already reads one: its queries
-      resolve each invoice's `docNo` through `resolveReceivableSource`, the filing screen takes its
-      store card from the amplop, and `submitSettlement`'s ownership check accepts the report's own
-      `salesmanId` beside the assigned collector. But nothing creates such a receivable until report
-      approval becomes invoicing, and that same work has to stamp `KonsiSellThrough.salesmanId` — a
-      sell-through receivable reaches a salesman's settlement only once the report names a salesman;
-      until then only its assigned collector can file it (feat/settlement-document; source arm added
-      in PR #320). **Resolved:** an invoiced sell-through report now creates its receivable with the
-      report's salesman stamped, so that salesman can put it on a settlement like any putus invoice
-      (PR #322).
-- [ ] A `RETUR_OFFSET` deduction's `proofUrl`/`proofR2Key` are persisted from the caller unvalidated
-      — the writer's prefix/uniqueness/derive-from-key handling only runs for `PROGRAM`/`ADMIN_FEE`
-      rows (`if (deduction.type === "RETUR_OFFSET") continue;` skips it entirely, since a retur
-      offset auto-links its own nota and needs no separate evidence). No UI path ever sends these
-      fields on a `RETUR_OFFSET` row today, so nothing can currently satisfy an evidence requirement
-      through this hole. This item originally predicted that the BKM print route would make the hole
-      live, because a receipt rendering the full deduction breakdown would follow whatever URL sat on
-      the row. **That route has now shipped and the prediction was wrong in the good direction:**
-      `getSettlementForPrint`'s deduction select carries no proof fields at all and
-      `settlement-bkm-html.ts` contains zero occurrences of `proof`, so the BKM neither renders a URL
-      nor follows one. The settlement approval screen declined the same way — its evidence thumbnail
-      and its direct link are both gated on `deduction.type !== "RETUR_OFFSET"`, matching the writer's
-      own skip. Two consecutive consumers built after this item was logged have now both declined to
-      widen it, which is this item's own success criterion; it stays open because nothing STOPS a
-      third from widening it, not because anything is currently exposed (feat/settlement-document,
-      feat/settlement-approval, feat/settlement-bkm-print).
-- [x] The new `settlements:submit` permission (`packages/db/prisma/seed-settlements-permission.sql`)
-      must be hand-run on prod post-merge, same as every other permission seed in this repo — no
-      migration or deploy step seeds it. Until it runs, the settlement screen is silently unreachable
-      for SALESMAN and COLLECTOR: the amplop's Settle button simply does not render for them (it is
-      now gated on the same permission the next screen enforces), so there is no dead-end to notice,
-      only an absent CTA. Post-seed verification must be done on a SALESMAN or COLLECTOR account —
-      never an admin login, since `pwaAccessGuard` bounces any wildcard holder off `/pwa` entirely
-      before a permission check ever runs (feat/settlement-document).
-      **Both seeds RUN ON PROD 2026-09-06** (PR #295 / PR #297), verified by reading the rows back:
-      `collections:amplop` and `settlements:submit` each granted to ADMIN, SALESMAN and COLLECTOR, with
-      `permissionsVersion` bumped twice per role (ADMIN 1→3, SALESMAN 2→4, COLLECTOR 1→3) so live
-      sessions pick both up without re-login. Worth recording WHY this needed catching: the amplop seed
-      had never been run since its own merge, so that screen had been dark in production the whole time
-      — and because the Settle button lives on an amplop store card, seeding `settlements:submit` alone
-      would have granted a permission for a screen nobody could navigate to. A pre-flight read of the
-      live `Permission` rows is what surfaced it; running the named seed and stopping would not have.
+- [ ] AR rounding residue has no write-off path — `FieldSalesDelivery.total` is not rounded to whole rupiah (unlike `VanSale.total`), so a receivable settled in cash can retain sub-rupiah outstanding and never reach `PAID`. `ReceivableStatus.WRITTEN_OFF` exists but nothing sets it. Needs a write-off/adjustment slice with a journal behind it; do not "fix" it by declaring PAID below one rupiah, which writes money off with no GL entry.
+- [ ] No historical GL backfill for pre-existing deliveries — the AR backfill created receivables for every delivery that predates this slice, but posted no revenue or COGS journals, so Laba Rugi stays incomplete for them. Deliberate: backdating entries into possibly-reported periods is a finance decision. The retry gate blocks doing it one document at a time.
+- [ ] A date correction on a receivable with live payments is REFUSED rather than reconciled — the operator must void the payment, correct, then re-record it. Reconciling properly would mean re-dating the receipt journal too, which would be wrong (the cash moved when it moved). If this refusal proves too blunt in practice, the answer is a supervised re-date flow, not a warning.
+- [ ] `Journal` has no history table and no audit trail of its own, so the `UPDATE_DELIVERY_DATES` AuditLog row is the ONLY record that a posted GL entry was re-dated. If GL mutation ever becomes more than this one path, journals need their own audit.
+- [ ] A narrow GL-dating race exists between a date correction and a journal retry: `delivery-journal.ts`'s retry path reads `invoiceDate` through a NON-transactional client, while `updateDeliveryDatesAction` commits a date correction inside its own serializable transaction. If a correction lands in the window between that read and the journal insert — milliseconds, between commit and post — the journal posts on the STALE date while the receivable already holds the corrected one: a permanent GL-versus-subledger period disagreement, fixable only by hand. Deferred rather than closed because the window is narrow, not because it's harmless.
+- [ ] No unapplied credit / on-account balance — `recordPayment` requires the allocation total to equal the payment amount exactly, so an overpayment cannot be parked. Needs its own GL treatment.
+- [ ] `JOURNAL_PENDING` dedup can emit a duplicate row under cross-domain load — `alreadyFlagged` scans only the most recent 200 UNREAD rows, and that category is shared by the van, supplier- payment and AR journals. If 200+ other-domain failures land between a document's first failure and its retry, the original row has aged out of the window and an identical-reason failure writes a second row. Pre-existing in all three implementations, not introduced by the AR slice. A `metadata`-scoped query or a `kind` column would fix it for all three at once.
+- [ ] A thrown journal exception always dedups under the literal reason `"ERROR"`, with the message excluded from the match — so a second, differently-messaged exception on the same document and kind is silently swallowed as a duplicate. Shared with both sibling implementations (van, supplier payment).
+- [ ] `payment-writer.test.ts` and `void-writer.test.ts` seed `Receivable` rows with fake `deliveryId` strings pointing at no delivery. Safe today only because neither spec reads the receivable's source — under `relationMode = "prisma"` there is no FK, so the insert succeeds (a fake `deliveryId` also satisfies the one-source CHECK, which only asks that exactly one of `deliveryId`/`sellThroughId` is set). Since the relation went optional, a read through it returns `delivery: null` and `resolveReceivableSource` then throws `ReceivableSourceMissingError`, where it used to throw `Inconsistent query result`. The first spec that adds such a query to those files breaks them either way. `queries.test.ts` seeds real order + delivery rows for exactly this reason.
+- [ ] The payment sheet's form-vs-writer tolerance is safe only because both sides pre-round through `roundCents`. The form's mismatch check (0.005) is looser than the writer's (1e-6), but since both normalise first the exact 2dp sum either equals the amount or differs by >= 0.01, so nothing slips through today. Fragile, not wrong — if the `roundCents` normalisation is ever dropped from either side, the form becomes exactly the hole the writer's own tolerance comment warns against.
+- [ ] The piutang and payments list pages' local `formatRupiah` rounds to whole rupiah with no indication of a sub-rupiah fraction, unlike the payment sheet's `formatRupiahExact` — a receivable carrying the AR rounding residue above displays as a round number on the list. Left alone deliberately: 15+ sibling finance list pages already define their own `formatRupiah`, and this one matches house convention rather than diverging for one page.
+- [ ] The receivable detail page's `allocationEmpty` copy is effectively dead — reachable only via a race inside the page's `Promise.all` (the allocation list resolving empty while the receivable's own status concurrently reads as already-allocated) — and even then its wording misdescribes the state it would show. Low materiality; parked here rather than fixed inline.
+- [ ] The payment sheet's outstanding-receivables candidate fetch (two merged `listReceivables` calls, one per `OUTSTANDING`/`PARTIAL` status, since the query takes a single status value) is capped at each call's default `pageSize: 500` with no indication to the operator — a store with more than 500 open receivables of one status silently truncates the candidate list.
+- [ ] `apps/web/app/api/upload/payment-proof/route.ts` calls `request.formData()` before checking the uploaded file's size, so the full multipart body is buffered into memory before the 10MB cap is enforced. Identical shape in both sibling upload routes (grn-photo, visit-photo); not introduced by this slice.
+- [ ] The two "post journal" retry action families now express "still pending" in two different result shapes — `postFieldDeliveryJournalsAction` (field-sales-deliveries.ts) returns `{ ok: true, posted, stillPending }` arrays, while `postPaymentJournalAction`/ `postPaymentVoidJournalAction` return `{ ok: false, reason: "STILL_PENDING" }`. Both are correct for their own single-vs-multi-kind shape, but a future caller that wants to treat them uniformly has to know both spellings.
+- [ ] Cosmetic: one JSX comment's continuation star sits at column 7 instead of 8 in `PaymentDetailClient.tsx:222-227` — every other multi-line comment in the branch aligns correctly.
+- [ ] Credit-limit exposure is aging-unaware — a flat total, so an overdue rupiah and a current rupiah consume the limit identically. An aging-weighted limit (e.g. block on any invoice past 90 days regardless of total) is a plausible future refinement, not built in this slice.
+- [ ] No credit-limit history table — changing `Store.creditLimit` is an ordinary store edit with no audit trail of its own. The per-order `creditLimitAtCreate`/`creditLimitAtApprove` snapshots on `FieldSalesOrder` are the only record of what the limit was at a given moment; they do not answer "what was the limit on 2026-09-01" for a store with no order raised that day.
+- [ ] A flagged over-limit order emits TWO `AdminNotification` bell rows (`PENDING_ORDER_APPROVAL` + `CREDIT_LIMIT_HOLD`) rather than one — deliberate (suppressing the approval-queue category would drop the order out of the queue operators work from), but it does mean two pings for one order. Revisit if operators complain about notification noise.
+- [ ] The credit limit is enforced on order INTAKE (approve), not on goods MOVEMENT (delivery) — deliberate, since an approved order's undelivered residual is already counted in exposure the moment it's approved, so delivering it adds zero net exposure. Consequence stated plainly: an order approved Monday and delivered Friday still delivers even if the store's other activity blew past the limit in between. A delivery-time re-check was considered and rejected — see `docs/superpowers/specs/2026-08-27-credit-limit-enforcement-design.md` § 9 for the reasoning.
+- [ ] Collection submission is online-only. Van sales and field-sales orders have an offline write queue; retur does not, and this matches retur. A collector in a dead zone cannot submit, which is a plausible field condition worth revisiting.
+- [ ] No collector-performance reporting — how much each collector brought in, and which assigned invoices have gone untouched for how long. The data supports it (submissions carry collector, amount and timestamps); nothing surfaces it.
+- [ ] A collector is not told they have been assigned anything. There is no in-PWA notification surface at all, and no push is sent, so discovery depends on opening the queue.
+- [ ] Verification latency directly delays credit-limit relief. A store that has paid stays blocked until someone verifies. Operational today; if verification proves slow in practice, the answer is a faster verification path, not netting unverified claims off exposure.
+- [ ] Bulk assignment does not apply to future invoices. New invoices at an already-assigned store arrive unassigned and need a re-run. If this proves to be real recurring toil, the standing per-store default is the fix, and it belongs in the delivery writer with its own design.
+- [ ] Assignment eligibility requires `collections:collect` AND `pwa:access` on a non-system role (added post-review, since a wildcard/ADMIN role can hold `collections:collect` without ever being able to reach the PWA queue that permission is meant to gate). A receivable already assigned to a collector whose `pwa:access` is later revoked stays assigned in the DB, but both the piutang detail page's `AssignCollectorCard` collector-picker and the piutang list's collector filter combobox render that assignee as "Unassigned"/"All collectors" — the combobox only recognizes options from the (now-filtered) eligible-candidate list, while the surrounding read-only text (the detail card's "Current collector" row) still shows the real name. Not a data-loss risk — the underlying `Receivable.collectorId` is untouched, Apply stays disabled until a real change is made, and the fix (reassign to an eligible collector) works normally — but it's a real, if rare, lifecycle event (someone leaves, has PWA access revoked) worth a dedicated stale-assignee display state if it comes up in practice.
+- [ ] Collectors get no push for an overdue alert, only an in-app list — no `fcmToken` is ever minted for a PWA-only user, so `notifyCollectorOfOverdue` writes a `NotificationQueue` row that only shows up on next open of `/pwa/notifications`. A real push needs a Firebase messaging service worker coexisting with the PWA's Serwist SW, which does not exist yet.
+- [ ] A collector assigned to a receivable after a threshold crossing already fired is never told about that specific crossing — the alert is a one-shot event at the moment of crossing, not a standing reminder. The invoice is still visible in their collection queue regardless, so nothing is lost, but there is no "catch-up" notification for a newly-assigned collector.
+- [ ] `sendNotificationToUsers` is unguarded against test runs. Fixed locally for this slice inside the AR notify helper (`notifyCollectorOfOverdue`'s own `VITEST` check), but the shared helper itself and the pre-existing PO-overdue cron path still carry the hole — a spec that reaches either of those without guarding first pushes real `NotificationQueue` rows and real phone notifications via the `FIREBASE_ADMIN_*` credentials `vitest.config.ts` loads.
+- [ ] The 200-per-run announcement cap (`MAX_ANNOUNCEMENTS_PER_RUN` in `overdue-sweep.ts`) is a module constant, not configuration — an operator facing a large historical backlog has no way to drain it faster than a day at a time short of a code change.
+- [ ] Overdue alerts do not escalate — a 60-day invoice notifies exactly the same recipients as a 0-day one. Severity-weighted routing (e.g. escalate to a manager past some threshold) is a plausible future refinement, not built in this slice.
+- [ ] Threshold changes are not audited — `ar.overdueThresholdDays` is an ordinary `SystemSetting` upsert with no `AuditLog` entry, so there is no record of who changed the schedule or when.
+- [ ] The piutang export has no scheduled or emailed delivery — the overdue book reaches anyone outside the system only when someone remembers to open the page and download it themselves.
+- [ ] `AdminNotification` rows written by the overdue sweep are never pruned, same as `NotificationQueue` — growth is bounded per-crossing (roughly one row per receivable per threshold) but unbounded in time, since nothing ever deletes an old row.
+- [ ] `getNotificationHref`'s `switch` has no fallback case beyond `default: return null` — currently unreachable for `AR_OVERDUE` since that category always carries a `receivableId`, but the next notification type added to the queue without a matching `case` silently renders as a non-clickable bell entry rather than surfacing a build-time or runtime signal that a case is missing.
+- [ ] `NotificationsList.tsx`'s single-item `markRead` has no rollback on a failed request, while its `handleMarkAllRead` does — both were spec'd this way deliberately, not implementer bugs, but the asymmetry means a failed single mark-read leaves the item showing read in the UI while the server still has it unread. Worth a deliberate decision (match the two, or document why they should stay different) if it ever causes a visible mismatch in practice.
+- [ ] Overdue-alert message bodies interpolate raw numbers (`sebesar ${outstandingAmount}` in `overdue-sweep.ts`) instead of formatting as currency — every other collector-facing surface (e.g. the PWA collections queue) runs the figure through `Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" })`; this is the one path that does not.
+- [ ] The piutang export's truncation toast always reads "Showing 10,000 of {total} rows", but with a bucket filter active the actual visible row count can be far smaller than 10,000 even while the flag correctly fires — the flag is a deliberate over-report against the pre-bucket-filter total, per this slice's own documented tradeoff, so the toast's specific wording asserts a row count the user did not necessarily receive.
+- [ ] An export matching zero rows downloads a header-only file and still shows the "Export started" success toast, with no distinct empty-result signal.
+- [ ] Tapping an `AR_OVERDUE` PWA notification for a receivable that has since been reassigned to a different collector dead-ends on a bare Next.js 404 — `/pwa/collections/[receivableId]` calls `notFound()` on an ownership mismatch rather than rendering a PWA-styled "no longer assigned to you" state.
+- [ ] `NotificationsList.tsx`'s relative timestamps (`formatDistanceToNow`) render in English with no locale option, inconsistent with the otherwise all-Indonesian PWA surface. The backoffice `NotificationIcon.tsx` has the same unlocalized usage, so this is a pre-existing pattern this slice inherited rather than introduced.
+- [ ] `overdue-sweep.ts`'s per-receivable loop can abort partway through a run if `prisma.notificationQueue.create` throws inside `sendNotificationToUsers` — only the FCM `send` call itself is wrapped in try/catch there, not the queue-row creation. Self-healing on the next scheduled run (dedup holds and receivables are processed oldest-due-first), but a single bad row currently halts the rest of that run's announcements instead of logging and continuing.
+- [ ] `Store.npwp` ships `NULL` for every existing store and nothing prompts anyone to fill it in, so the first faktur raised at each store hits the required-NPWP block in `markTaxInvoiceCreated`. The mark-created dialog's link to the store profile page is the whole mitigation today — no bulk-fill flow, no store-list indicator for a missing NPWP.
+- [ ] Neither NPWP column (`Store.npwp`, `TaxInvoice.buyerNpwp`) is format-validated or normalised beyond a length cap, so the same store's number can be stored with or without punctuation (e.g. `01.234.567.8-901.000` vs the digits alone) in different places, and the faktur queue's search will not match across the two spellings.
+- [ ] `TaxInvoice.buyerNpwp` carries no index, like `markedById`/`notaPrintedById` before it — nothing queries by it today, so this is deferred rather than fixed.
+- [ ] `SENT_TO_STORE` records that a faktur was handed over but not how, when it reached the store, or who received it on the store side. A real handover record (courier, signature, received-at timestamp) is the Payment Settlement epic's (GitHub issue #28) territory, not this slice's.
+- [ ] There is no way to correct a single field on a `CREATED` faktur — a wrong PPN figure means reverting to pending (`revertTaxInvoiceToPending`) and re-entering all four fields (invoice number, NPWP, taxable amount, PPN amount) from scratch. Deliberate (two honest audit rows beat one silent edit), but will feel heavy if it happens often.
+- [ ] A `SENT_TO_STORE` faktur can only be undone by reverting to `PENDING`, and per Decision 4 that revert nulls all four value fields (invoice number, NPWP, taxable amount, PPN amount). `SENT_TO_STORE` is otherwise a pure handover flag, so undoing a mis-click on it destroys the whole filing: recovery means reading the four values back out of the `AuditLog` `changes` blob and retyping them. Distinct from the `CREATED`-correction item above — the complaint here is that the revert loses strictly more than the mistake that prompted it. A `SENT_TO_STORE -> CREATED` step back would fix it, deferred until someone hits it.
+- [ ] `lib/tax-invoices/writer.test.ts` and `lib/tax-invoices/queries.test.ts` each drive the real delivery writer per test case, so every run burns real `DELIVERY` doc numbers out of the shared `:3308` `DocNumberConfig` row (queries.test.ts burns two per test). Non-destructive — the counter only ever advances and nothing collides — but unrestored, and this slice roughly doubled the burn rate by growing writer.test.ts from ~9 to ~20 cases. Only worth addressing if the sequence gap ever becomes something a human reads.
+- [x] ~~`DeliveriesCard.tsx`'s faktur status badge rendered the raw missing-key string instead of a translated label~~ — was scoped to `useTranslations("fieldSalesOrders")` while calling `t(\`fakturPajakStatus.${key}\`)` against a sibling TOP-LEVEL `fakturPajakStatus` namespace, not one nested under `fieldSalesOrders`; confirmed by running `use-intl`'s `createTranslator` directly against the shipped `en.json` before the fix, which raised `MISSING_MESSAGE`. Fixed with a second `useTranslations("fakturPajakStatus")` call for that lookup (PR pending, commit `f273df5`).
+- [ ] `fakturPajak.status*` and the top-level `fakturPajakStatus.status*` block still hold identical status label text hand-duplicated across both locale files, now correctly wired but not deduplicated — `FakturPajakPageClient` and `DeliveriesCard`'s faktur badge each need the same four labels but read from different `next-intl` namespaces, so the text must be kept in sync by hand if either wording ever changes.
+- [ ] No COGS reversal for retur-restored stock. Approving a field retur restores `InventoryValue` and posts a positive `StockAdjustment` with no journal alongside it (`apps/web/lib/field-sales/retur/approve-writer.ts`), so `INVENTORY` is understated and `COGS` overstated by the restored value on every field retur. Fires at approval, applies to konsi and never-offset returs equally — not the retur-offset slice's trigger, but a live GL hole now that a consumer of retur value exists.
+- [ ] AR journals are not GL-cutover gated. `postPaymentReceiptJournal` (`apps/web/lib/finance/ar/payment-journal.ts`) credits `AR` unconditionally, so any payment — cash, transfer, retur-offset, program-deduction or admin-fee, all five routing through the one `debitRole` seam — against a backfilled receivable with no revenue journal drives AR negative. Same shape as the settlement item already logged above. The hole got wider with the store settlement approval slice, which posts one payment per retur deduction row plus up to three more (trade-program, admin fee, cash) from a single approval, each with its own `PAYMENT_RECEIPT` journal. The fix is one pass applying `classifySaleLeg`'s counterpart-journal gate across the AR journals, covering every path together.
+- [x] ~~No partial retur draw-down. A retur is consumed all-or-nothing~~ — `FieldReturn.appliedValue` now exists and `applyReturnOffset` takes a `drawAmount` plus a per-event idempotency key (`returoffset-<returnId>-<eventId>`), so a retur's frozen value is consumed in parts across several payments and one worth more than the invoices to hand is usable for the part that fits. `appliedValue` did NOT end up carrying the double-spend guarantee this item predicted it would need to: it is a projection of the POSTED payment ledger, and the ceiling that makes over-draw impossible lives inside `recordPayment`'s own serializable transaction (`EXCEEDS_REMAINING`) — see `docs/ARCHITECTURE-NOTES.md` for why reserve-then-post was rejected. PR #293.
+- [ ] No post-approval repricing for field returns, so a return that approved with `valuationStatus: PENDING` has a permanently unusable value — `setLinePriceAction` refuses once approved (`ALREADY_APPROVED`), so it can never become offsettable.
+- [ ] No way to cancel a standing retur credit. Belongs with the write-off/adjustment slice that `ReceivableStatus.WRITTEN_OFF` is already waiting on, same act, same journal treatment.
+- [ ] Un-offset retur credits are invisible in the GL, overstating revenue by the total standing credit at any moment. The two-stage treatment (recognize a customer-credit liability at retur approval, consume it at offset) is the fix and needs a new posting role plus a backfill decision for every already-approved, still-`AVAILABLE` retur at merge time.
+- [x] ~~A retur offset, once voided, can never be re-offset — the deterministic idempotency key (`returoffset-<returnId>`) stays permanently bound to the voided payment~~ — the key is per-EVENT now (`returoffset-<returnId>-<eventId>`), so a re-draw carries a new key and simply posts; `PAYMENT_VOIDED` survives only for a replay of the SAME event. The two informational surfaces this item flagged as overstating credit after a void — the field returns register's offset badge (`listFieldReturns`) and the piutang list's `getStoreAvailableCredit` — are correct now without the per-row payment lookup this item feared, because both read `totalValue - appliedValue` and `voidPayment` re-projects `appliedValue` back down inside its own transaction. `hasVoidedOffsetAttempt` and the `credit.voidedOffsetBody` no-action state it drove are gone with it. What this item raised and this work did NOT fix stays open above: retur value is still absent from the GL until it is drawn, so the "record the correction as a fresh cash/transfer payment" workaround is still wrong accounting for the case where it is needed — that belongs to the two-stage customer-credit-liability item. PR #293.
+- [ ] No expiry or write-off path for a retur left partially drawn forever. A retur drawn to within a rupiah of its `totalValue` sits `AVAILABLE` with a residue nobody will ever allocate, and nothing can close it out — the same act as the "cancel a standing retur credit" item above, which is already waiting on the `ReceivableStatus.WRITTEN_OFF` slice, so the two should land together rather than growing a second bespoke path.
+- [ ] `projectReturnOffset` is exported but nothing schedules a repair caller (`apps/web/lib/finance/ar/retur-offset-writer.ts`). It is only ever reached from a draw or a void, so a `FieldReturn` whose `appliedValue` ever drifts from its POSTED payment sum — a hand-run SQL correction, a restore, a bug in some future caller — stays wrong until someone happens to draw from or void against that exact retur. The projection is idempotent by construction (a SET, not an increment), so a sweep over rows with a non-zero `appliedValue` is safe to write whenever it is worth the cost; there is no drift detector today either, so nothing would report the need.
+- [ ] `Payment.fieldReturnId` surviving a void is unpinned by any test. The link is deliberately not nulled — it is history, like the payment's `PaymentAllocation` rows and its original `PAYMENT_RECEIPT` journal, and the projection filters on `status: "POSTED"` so a voided row stops counting without the trail being erased. Nothing in the AR suite asserts it and the design spec no longer states it, so a future "tidy up the voided row" change would read as harmless while quietly severing the audit trail from a payment back to the retur it drew.
+- [ ] `PaymentErrorCode.ALREADY_APPLIED` is orphaned — nothing throws it any more. The CAS flip that raised it (`offsetStatus !== "AVAILABLE"` on a first attempt) went away with the draw-down rewrite, but the member is still declared in `apps/web/lib/finance/ar/errors.ts`, still mapped in `ERROR_CODE_MAP`, and still translated in both locale files. Harmless dead weight today; the decision to make is whether a later slice reintroduces a terminal-state refusal that wants the name, or whether all four surfaces should drop it together.
+- [ ] A degenerate `totalValue === 0` VALUED retur renders a live Offset button that can never submit. The credit card gates on `offsetStatus === "AVAILABLE" && remainingValue !== null`, both true at zero, while `applyReturnOffset` refuses any `drawAmount <= 0` with `INVALID_AMOUNT` and the sheet's own `canSubmit` never turns on. Left as-is deliberately: it matches the pre-draw-down behaviour exactly and a VALUED retur is priced off delivered lines, so nothing suggests the state is reachable — but it wants a `remainingValue > 0` gate the moment a zero-value retur turns out to be producible in prod.
+- [ ] `listAllocationCandidatesForStore`'s `CANDIDATE_PAGE_SIZE` cap can under-report a store's open balance, so the offset sheet's `insufficientOutstanding` banner can refuse a draw the writer would have accepted. Pre-existing and unchanged by the draw-down work — it compared the capped sum against `totalValue` before and against `drawAmount` now — but the draw-down makes it easier to hit, because a partial draw is exactly the case where an operator picks a few invoices out of many. The banner is advisory; the authoritative check is `OVER_ALLOCATED` inside `recordPayment`'s transaction, so nothing wrong posts, the operator is just told no.
+- [ ] A fully drawn retur renders `Rp 0,00` as the primary figure in the field-returns register's Value column, with its original value beneath. Correct by the column's own rule (it shows what is left once anything has been drawn) and such a row is `APPLIED` rather than offsettable, so nothing acts on it — but "Value: Rp 0,00" reads oddly for a retur that was worth something, and no browser pass has looked at it. Worth an eye during the next smoke.
+- [ ] `apps/web/lib/finance/ar/queries.test.ts`'s `returOffsetFor` test creates its first payment before the `try`, so a throw while creating the second leaks the first onto the shared `:3308` bed, and `afterEach`'s store cleanup then fails under emulated `Restrict`. Narrow window; moving both creates inside the `try` closes it.
+- [x] **`packages/db/prisma/seed-amplop-permission.sql` must be hand-run on prod after the amplop digital PR merges, or the screen is invisible to every non-admin.** No migration applies it and nothing on the deploy path seeds permission rows. The failure is silent: the `/pwa/pelunasan` guard redirects to `/pwa` and the home CTA never renders, with no error anywhere. An admin CANNOT detect the gap, and not for the reason it looks like: `pwaAccessGuard` redirects every wildcard holder to `/backoffice` BEFORE the permission check runs, so an admin never reaches this screen at all and the ADMIN grant in the seed is convention-mirroring only. **Verify on a SALESMAN or COLLECTOR account, never your own admin login.** The seed is idempotent and bumps `permissionsVersion` on ADMIN, SALESMAN and COLLECTOR so logged-in users pick the grant up without re-login — but it targets each non-system role BY NAME and silently no-ops for any that is absent, COLLECTOR included, so verify the grant landed for BOTH non-system roles rather than assuming it. A missed COLLECTOR grant is the quiet one: `listCollectorCandidates` only offers users holding `collections:collect` + `pwa:access`, so collectors are exactly who ends up in `Receivable.collectorId`, and without the grant the amplop's collector arm never fires for anyone (amplop-digital).
+- [ ] Story 23-01's "sorted by route/visit plan" ordering is undelivered and blocked on an entity that does not exist. There is no route, territory or visit-plan model in this codebase — `StoreVisit` is a GPS check-in record and `Store` has no route column — so the amplop sorts stores by total overdue descending, then by name. This slice deliberately invented no substitute (a synthesised ordering off check-in history or store proximity would look like a route without being one), and building a real route entity is its own feature, not a clause inside an AR epic (amplop-digital).
+- [x] Konsi stores can never appear in an amplop, and will not until sell-through invoicing exists. The amplop reads `Receivable` rows and a konsi order creates none. A receivable CAN now be backed by a `KonsiSellThrough` report instead of a putus delivery, and the amplop already reads one: its membership `OR` has a third arm on the report's own `salesmanId`, and it takes the faktur status from whichever source the row has. But nothing creates such a receivable until report approval becomes invoicing (see the Consignment Lifecycle rows in `docs/EPIC-STATUS.md`), and that same work has to stamp `KonsiSellThrough.salesmanId` — a report with no salesman appears in no salesman's amplop, only in its assigned collector's. Worth stating because a salesman carrying both putus and konsi paperwork will notice half the envelope missing and read it as a bug (amplop-digital; source arm added in PR #320). **Resolved:** approving a sell-through report now invoices it and stamps the report's salesman whenever it bills anything, so an invoiced konsi store appears in that salesman's amplop the way a putus one does (PR #322).
+- [ ] The amplop LIST is still read-only — no writer of its own, no offline capture — but it is no longer a dead end, so do not read this item as "no tap-through" any more. The settlement slice added a Settle CTA on each store card through to `/pwa/pelunasan/[storeId]`, which is the acting surface this item said the next slice would bring, and it is richer than the collection submit the amplop would otherwise have linked into. Offline capture stays absent by design rather than as debt: the amplop is a read surface with nothing to queue, and the settlement form behind the CTA is deliberately online-only, a multi-attachment money document being the worst possible candidate for silent offline drift (amplop-digital, feat/settlement-document).
+- [ ] `submitSettlement` and `submitCollection` do not net against each other, so one receivable can carry a `PENDING` `CollectionSubmission` and a `PENDING` `StoreSettlement` at the same time, each claiming its full outstanding. Each writer nets only its OWN kind inside its own transaction — `submitCollection` sums `CollectionSubmission`, `submitSettlement` sums `StoreSettlementInvoice` — and neither sees the other, so both pass and both are collected against. The settlement screen narrows the window rather than closing it: it displays each row's `pendingSubmittedAmount` (the pending collection total, from `amplop-queries.ts`) and defaults the settle amount to `min(outstanding − pending, outstanding − reserved)` — the second term nets a PENDING settlement's own claim on the same receivable — but a salesman can type over that default and the writer accepts it. Closing it properly is a `lib/finance` change — one shared "already claimed against this receivable" helper that both writers call, netting both row types inside their transactions. **Still open after the approval slice, and approval does not close it** — `approveSettlement` re-checks the live `Receivable.outstandingAmount` at the moment it posts, so the loser is refused rather than over-collecting, but that refusal lands after both salesmen took cash at their respective counters, which is exactly the failure the netting exists to prevent (feat/settlement-document, feat/settlement-approval).
+- [ ] Settlement evidence uploaded under a `draftId` whose form is then abandoned is orphaned in R2 forever: `settlement-proofs/<draftId>/…` objects with no `StoreSettlement` row referencing them, and no sweeper anywhere. Deliberate — the alternative was a `DRAFT` settlement row per opened form, which would also hold a claim on a retur and an invoice for a document nobody ever submitted. The cleanup is a scheduled job listing the prefix and deleting keys whose `draftId` matches no `StoreSettlement.idempotencyKey`; it is not built (feat/settlement-document).
+- [x] ~~The settlement document is INERT until the finance approval slice exists~~ — CLOSED by the approval slice (branch `feat/settlement-approval`). `/backoffice/finance/pelunasan` (list + detail), `approveSettlement` and `rejectSettlement` all exist now, so a `PENDING` settlement is no longer held indefinitely: finance approves it into real payments or rejects it and releases the claims. **The residue this item leaves behind is a READING rule, not a gap** — a `PENDING` settlement still moves no money, an `APPROVED` one has moved all of it, and a settlement stranded `PENDING` after a crash mid-approval may have real payments behind it, so nothing may read `StoreSettlement` without reading its status. Nothing schedules or chases a `PENDING` settlement either: it sits until a `collections:manage` holder opens the queue (feat/settlement-document, feat/settlement-approval).
+- [ ] Rejecting a settlement whose approval already posted some components strands those payments on a `REJECTED` document, and nothing cleans them up. Reachable because approval is a resumable sequence rather than one transaction: a run that posts a component and then throws leaves the document `PENDING` with a real `Payment` behind it, and rejecting from there is allowed. The approval screen surfaces the case (the components card reframes to "orphaned" on a `REJECTED` document and lists only the rows that actually posted), and `approveSettlement` logs loudly when its own CAS loses to a concurrent reject — but the only remedy is voiding each payment by hand from `/backoffice/finance/payments`. Closing it properly means either refusing a reject once any component has posted, or a void-the-components path on the reject writer (feat/settlement-approval).
+- [ ] Voiding ONE component payment of an APPROVED settlement silently desynchronises the document — the other half of the same missing "unapprove" concept as the item above. `voidPayment` has no settlement awareness: nothing refuses the void, the `StoreSettlement` stays `APPROVED`, and re-running approval takes `approveSettlement`'s write-free `alreadyApproved` branch, which reports the same `paymentIds` and re-posts nothing. So the document claims a settled amount the ledger no longer carries, and the only way to re-close the hole is recording a payment by hand. The approval screen does render the component as Voided, which is the sole signal anywhere. The two halves want the same answer: a concept for taking an approved settlement back apart, rather than a guard bolted onto `voidPayment` (feat/settlement-approval).
+- [ ] `approveSettlement` throws `MISSING_FIELD_RETURN_ID` while building its component list, which is AHEAD of the `APPROVED` replay branch — so an already-approved settlement carrying a retur deduction with a null `fieldReturnId` throws instead of replaying, and the journal-gap re-post on the approval screen cannot reach it either. Only constructible via raw SQL today (the action validates the field and `submitSettlement` requires it), so this is ordering hygiene rather than a live defect — but the file's own comment argues the replay lookup runs "FIRST, ahead of every guard below", and this construction step is not below it. Moving the status read and the replay return ahead of the component build would make the comment true (feat/settlement-approval).
+- [ ] Two concurrent approvals of the same settlement collide on `Payment.idempotencyKey @unique` inside `recordPayment`, and the loser sees a generic `UNEXPECTED`: `isRetryableTxError` returns false for P2002, so `withRetry` rethrows it unwrapped instead of re-running the callback onto the now-existing row. Benign — a second click resolves it, because the retry finds the payment and takes the idempotent path — but the operator is told nothing useful in the meantime. Pre-existing in `recordPayment` rather than introduced here; the new finance queue makes it plausible, since two admins can open the same document. The fix is treating a P2002 on `idempotencyKey` specifically as retryable, not widening `isRetryableTxError` to P2002 generally (feat/settlement-approval).
+- [ ] The two settlement posting roles `TRADE_PROGRAM_EXPENSE` and `ADMIN_FEE_EXPENSE` have no `JournalAccountMapping` row on production, and nothing on the deploy path creates one — the role column is a plain `String`, so there is no migration and no seed involved; finance maps them in Settings → Account Mapping to a `BEBAN` account. Until that happens the first approval carrying an admin fee (essentially every settlement) has `resolveAccount` throw `UnmappedRoleError`, degrading that payment's journal to `JOURNAL_PENDING` and needing a hand-mapping plus a retry. Tracked here as a GO-LIVE step rather than debt: it is a one-time action on the day the queue is first used, and `docs/EPIC-STATUS.md`'s slice-5 row now names it (feat/settlement-approval).
+- [ ] Nothing tells the salesman a settlement was APPROVED. Rejection pushes a `SETTLEMENT_REJECTED` notification with a click-through to `/pwa/pelunasan/${storeId}`; approval sends nothing, on the grounds that the money already changed hands at the counter and the approval is a back-office formality. That is defensible but asymmetric, and combines with the item below (no PWA read surface for a filed settlement) into a salesman having no way to learn the outcome of a document he filed unless it was rejected (feat/settlement-approval).
+- [ ] The PWA settlement form's `varianceOver` copy ("{amount} more than expected") does not warn that approval will refuse an over-tender outright with `OVER_TENDER`, which no override can clear. A salesman can therefore file a document nobody can approve and only learn at rejection. Deliberately not fixed in the approval slice: refusing or re-wording at submit moves a boundary on already-merged filing code, and the ruling was that approval is the right place to refuse. The cheap fix is copy on the salesman's screen naming the consequence, not a new guard (feat/settlement-approval).
+- [ ] `StoreSettlement.expectedAmount` and `varianceAmount` are stored columns nothing reconciles. `approveSettlement` recomputes both from the live child rows through `computeSettlementTotals` and never reads the columns; the queue and detail screens do the same and raise a destructive alert when the two disagree. So the columns are display-only history that can silently drift from the truth if any child row is ever edited. Either drop them, or recompute them on read (feat/settlement-approval).
+- [ ] `DEDUCTION_TYPE_TO_PAYMENT_METHOD` in `approve-writer.ts` `satisfies` a HAND-WRITTEN `"RETUR_OFFSET" | "PROGRAM" | "ADMIN_FEE"` union rather than Prisma's `SettlementDeductionType`, following the barrel-free policy the rest of `lib/finance/ar-settlement/` keeps so a `"use client"` importer never drags Prisma into the browser bundle. The cost is that a fourth `SettlementDeductionType` member would NOT break this map at compile time — it would fall through to `undefined` and die at the `ENUM` column mid-approval. Same class as every other hand-written union in this directory (feat/settlement-approval).
+- [ ] Nothing seeds `settlement.varianceToleranceRupiah` and there is no settings-screen entry for it, so the shipped tolerance is the parser's default of 0 — every non-zero variance demands an override reason from finance. Changing it means a hand-run `SystemSetting` insert. Worth a row on the Settings screen alongside `ar.overdueThresholdDays`, which has the same shape and the same gap (feat/settlement-approval).
+- [ ] No `<img>` anywhere in `apps/web` has an `onError` handler except the settlement approval screen's deduction evidence thumbnail. A dead or expired R2 URL therefore renders the browser's broken-image glyph with no explanation on the collections queue's proof photo, the delivery POD proofs, and every other image surface — "the photo will not load" and "there is no photo" read identically to an operator. Fixed on the settlement screen only, because evidence is load-bearing on a money screen; the rest is a repo-wide gap, not a local one (feat/settlement-approval).
+- [ ] `components/QuickActionFAB.tsx` is an undocumented layout constraint on every backoffice route: `fixed bottom-6 right-6 z-50`, `h-14 w-14`, rendered unconditionally and permission-free by `BackofficeShell`, so it owns a 24-80px box in the bottom-right plus ~12px of shadow reach. The settlement approval action bar is the FIRST `fixed inset-x-0 bottom-0` bar in `app/backoffice` and had to clear it with `pr-28`; the collision was invisible until then because nothing else had ever been bottom-anchored there. The second, `KonsiPushForm`'s submit bar on the konsi push page (`app/backoffice/stores/[id]/konsi-push/`), is a hand copy of the first with the same `pr-28`, so there are now two copies to keep in step. Either the FAB documents its own reserved area in the shell, or a shared `bottom-bar` primitive owns the clearance once (feat/settlement-approval).
+- [ ] `/backoffice/finance/collections` has no nav entry in `BackofficeShell.tsx` and is reachable only by typing the URL. Noticed while adding the `/backoffice/finance/pelunasan` entry beside it: the two screens are siblings, gate on the same `collections:manage`, and now one is discoverable and the other is not. Fixing it needs its own `navigation` key in both locales and nothing else (feat/settlement-approval).
+- [ ] Eight pre-existing flat-opener block comments (`/*` with a starred body) remain in `approve-writer.ts` (5) and `reject-writer.ts` (3). Deliberately unswept: they sit on lines the UI task never touched, and sweeping untouched lines inflates the branch diff for the whole-branch review fleet, which is the review that most needs to stay readable. Everything written in this slice uses the starred `/**` form (feat/settlement-approval).
+- [ ] A salesman still has no way to return to a settlement he filed EARLIER. `/pwa/bkm/[settlementId]` shipped (feat/settlement-bkm-print) and is a real read surface for one settlement, but it is reachable only from the success screen that just filed it or by knowing the id — there is no PWA list, index or history surface for `StoreSettlement`, so a closed tab still loses the id and yesterday's BKM cannot be reprinted from the phone. A re-open of the filing form still mints a fresh `draftId` that would create a SECOND document rather than being caught as a replay (a true duplicate re-file is refused by `INVOICE_OVERCLAIMED`, so the exposure is a wasted document number and a confusing dead end, not double-collected money) (feat/settlement-document, feat/settlement-bkm-print).
+- [x] Konsi stores cannot appear in a settlement yet, and will not until sell-through invoicing exists, for exactly the reason they cannot appear in an amplop (see the konsi item above): the settlement selects `Receivable` rows and a konsi order creates none. A receivable CAN now be backed by a `KonsiSellThrough` report, and the settlement already reads one: its queries resolve each invoice's `docNo` through `resolveReceivableSource`, the filing screen takes its store card from the amplop, and `submitSettlement`'s ownership check accepts the report's own `salesmanId` beside the assigned collector. But nothing creates such a receivable until report approval becomes invoicing, and that same work has to stamp `KonsiSellThrough.salesmanId` — a sell-through receivable reaches a salesman's settlement only once the report names a salesman; until then only its assigned collector can file it (feat/settlement-document; source arm added in PR #320). **Resolved:** an invoiced sell-through report now creates its receivable with the report's salesman stamped, so that salesman can put it on a settlement like any putus invoice (PR #322).
+- [ ] A `RETUR_OFFSET` deduction's `proofUrl`/`proofR2Key` are persisted from the caller unvalidated — the writer's prefix/uniqueness/derive-from-key handling only runs for `PROGRAM`/`ADMIN_FEE` rows (`if (deduction.type === "RETUR_OFFSET") continue;` skips it entirely, since a retur offset auto-links its own nota and needs no separate evidence). No UI path ever sends these fields on a `RETUR_OFFSET` row today, so nothing can currently satisfy an evidence requirement through this hole. This item originally predicted that the BKM print route would make the hole live, because a receipt rendering the full deduction breakdown would follow whatever URL sat on the row. **That route has now shipped and the prediction was wrong in the good direction:** `getSettlementForPrint`'s deduction select carries no proof fields at all and `settlement-bkm-html.ts` contains zero occurrences of `proof`, so the BKM neither renders a URL nor follows one. The settlement approval screen declined the same way — its evidence thumbnail and its direct link are both gated on `deduction.type !== "RETUR_OFFSET"`, matching the writer's own skip. Two consecutive consumers built after this item was logged have now both declined to widen it, which is this item's own success criterion; it stays open because nothing STOPS a third from widening it, not because anything is currently exposed (feat/settlement-document, feat/settlement-approval, feat/settlement-bkm-print).
+- [x] The new `settlements:submit` permission (`packages/db/prisma/seed-settlements-permission.sql`) must be hand-run on prod post-merge, same as every other permission seed in this repo — no migration or deploy step seeds it. Until it runs, the settlement screen is silently unreachable for SALESMAN and COLLECTOR: the amplop's Settle button simply does not render for them (it is now gated on the same permission the next screen enforces), so there is no dead-end to notice, only an absent CTA. Post-seed verification must be done on a SALESMAN or COLLECTOR account — never an admin login, since `pwaAccessGuard` bounces any wildcard holder off `/pwa` entirely before a permission check ever runs (feat/settlement-document). **Both seeds RUN ON PROD 2026-09-06** (PR #295 / PR #297), verified by reading the rows back: `collections:amplop` and `settlements:submit` each granted to ADMIN, SALESMAN and COLLECTOR, with `permissionsVersion` bumped twice per role (ADMIN 1→3, SALESMAN 2→4, COLLECTOR 1→3) so live sessions pick both up without re-login. Worth recording WHY this needed catching: the amplop seed had never been run since its own merge, so that screen had been dark in production the whole time — and because the Settle button lives on an amplop store card, seeding `settlements:submit` alone would have granted a permission for a screen nobody could navigate to. A pre-flight read of the live `Permission` rows is what surfaced it; running the named seed and stopping would not have.
 - [ ] An orphaned `Receivable` 500s the settlement approval detail AND the printed BKM with no UI repair path. `Receivable.delivery` has no database FK (`relationMode = "prisma"`), so its `deliveryId` can dangle. It used to be a REQUIRED relation, which threw `Inconsistent query result` inside the read; since receivables gained a second source it is OPTIONAL, so the read now succeeds with `delivery: null` (and `sellThrough: null`) and `resolveReceivableSource` throws `ReceivableSourceMissingError` instead — both `getSettlementForApproval` and `getSettlementForPrint` resolve each invoice's `docNo` through it. The error changed; the exposure did not. **Pre-existing and shared — deliberately not fixed in one caller only**, since patching the print path alone would suggest the data is sound while the approval screen still crashes on the same row. The extra-query workaround this item used to propose is no longer needed, because the optional relation already returns null: the fix is to stop resolving an orphan — test for neither relation before calling the resolver, as the faktur queue does, and render the `docNo` as missing — on both surfaces together. **The exposure did not change in KIND on this branch but it widened in AUDIENCE, which is the part worth weighing when this gets prioritised**: before the BKM route, only a finance admin on the approval screen could hit that throw, in an office, with someone to ask. Now a salesman standing at a counter with the store owner watching gets a 500 instead of the receipt he just promised. `app/pwa/error.tsx` (added on this branch) turns that from an unescapable dead end into a retry-plus-way-back, which is mitigation, not a fix (feat/settlement-bkm-print).
 - [x] `apps/web/lib/tax-invoices/queries.ts` appears to carry the OPPOSITE assumption and its guard is therefore probably dead code. `TaxInvoice.delivery` is required (`deliveryId String @unique`, `FieldSalesDelivery @relation`), but the comment above the row mapper states that "a dangling row comes back with `delivery` null at runtime" and the `if (!delivery) return null` below it claims to skip orphans so one does not blank the queue page. Everything else in this repo — `docs/ARCHITECTURE-NOTES.md`'s note on `submitSettlement`'s write-time guards, and the same finding re-derived on the settlement print query — says a dangling REQUIRED relation throws instead, which would mean the queue page dies rather than skipping. Unverified against a live orphan; worth reproducing on the `:3308` bed before either fixing the code or rewriting the comment, because the two possible truths need opposite changes (feat/settlement-bkm-print). **Moot:** receivables and fakturs gaining a second source made `TaxInvoice.delivery` OPTIONAL, and an optional relation over a dangling id reads back as `null` rather than throwing, so the question no longer arises. The guard is now `if (!r.delivery && !r.sellThrough) return null` — a row carrying neither source is skipped — and the comment above it was rewritten to match. Still never reproduced against a live orphan (PR #320).
-- [ ] `apps/web/lib/print/field-sales-nota-tagihan-html.ts` renders money at WHOLE RUPIAH (`Math.round`)
-      while the figure behind it carries sen. `FieldSalesDelivery.total` is `Decimal(15,2)` and the AR
-      entry in `docs/ARCHITECTURE-NOTES.md` documents a sub-rupiah `PARTIAL` residue as a reachable
-      state, so the same two defects fixed on the BKM apply: a line column that visibly does not add up
-      on a document the store signs, and a sub-rupiah figure printed as a round one. Fixed on
-      `settlement-bkm-html.ts` (2dp, matching the settlement screens the BKM is the paper artifact of)
-      and deliberately NOT fixed here — changing a shipped document's appearance from a slice about a
-      different document is out of scope, and the nota tagihan travels in the same envelope, so the two
-      should be decided together rather than drifting one at a time. Scope is exactly ONE file, not a
-      directory sweep: with the BKM converted, three builders in `lib/print/` still hold a `Math.round`
-      rupiah formatter, and the other two — `spg-sale-nota-html.ts` and `van-sale-nota-html.ts` — are
-      CORRECT as they stand,
-      because `VanSale.total`/`SpgSale.total` are rounded to whole rupiah by `roundToWholeRupiah` in the
-      writer. Every remaining builder formats through `print-theme.ts`'s `money()` and is untouched by
-      this. So the question is per-document and the nota tagihan is the only open case
-      (feat/settlement-bkm-print).
-- [ ] Browser-back from `/pwa/bkm/[settlementId]` lands on the filing form for the same store, remounted
-      with a fresh `draftId` and a blank form — it looks like an invitation to file the settlement again.
-      Not a regression (the old primary action on the success screen also navigated away, and the same
-      remount happens by any other route back), and a true duplicate re-file is refused by
-      `INVOICE_OVERCLAIMED` because the first settlement's `PENDING` claims already net out the invoices'
-      headroom. But the BKM is now the PRIMARY button on that success screen, so the path is far more
-      likely to be walked. A read-only "already filed" state on the form for a store with a live PENDING
-      settlement would close it; so would the PWA list surface the item above wants, which the salesman
-      could land on instead (feat/settlement-bkm-print).
+- [ ] `apps/web/lib/print/field-sales-nota-tagihan-html.ts` renders money at WHOLE RUPIAH (`Math.round`) while the figure behind it carries sen. `FieldSalesDelivery.total` is `Decimal(15,2)` and the AR entry in `docs/ARCHITECTURE-NOTES.md` documents a sub-rupiah `PARTIAL` residue as a reachable state, so the same two defects fixed on the BKM apply: a line column that visibly does not add up on a document the store signs, and a sub-rupiah figure printed as a round one. Fixed on `settlement-bkm-html.ts` (2dp, matching the settlement screens the BKM is the paper artifact of) and deliberately NOT fixed here — changing a shipped document's appearance from a slice about a different document is out of scope, and the nota tagihan travels in the same envelope, so the two should be decided together rather than drifting one at a time. Scope is exactly ONE file, not a directory sweep: with the BKM converted, three builders in `lib/print/` still hold a `Math.round` rupiah formatter, and the other two — `spg-sale-nota-html.ts` and `van-sale-nota-html.ts` — are CORRECT as they stand, because `VanSale.total`/`SpgSale.total` are rounded to whole rupiah by `roundToWholeRupiah` in the writer. Every remaining builder formats through `print-theme.ts`'s `money()` and is untouched by this. So the question is per-document and the nota tagihan is the only open case (feat/settlement-bkm-print).
+- [ ] Browser-back from `/pwa/bkm/[settlementId]` lands on the filing form for the same store, remounted with a fresh `draftId` and a blank form — it looks like an invitation to file the settlement again. Not a regression (the old primary action on the success screen also navigated away, and the same remount happens by any other route back), and a true duplicate re-file is refused by `INVOICE_OVERCLAIMED` because the first settlement's `PENDING` claims already net out the invoices' headroom. But the BKM is now the PRIMARY button on that success screen, so the path is far more likely to be walked. A read-only "already filed" state on the form for a store with a live PENDING settlement would close it; so would the PWA list surface the item above wants, which the salesman could land on instead (feat/settlement-bkm-print).
 - [ ] Piutang: a `VOIDED` receivable still reads as overdue — a red row and red overdue days in the piutang list under all statuses, and red overdue days with an overdue aging badge on its detail page — and the detail page still renders `AssignCollectorCard` on it, although `assignCollector` refuses it `ALREADY_SETTLED`. Inherited rather than new: a `PAID` or `WRITTEN_OFF` receivable shows the same on both screens (PR #326).
 
 ### Inventory — Opname, Reconciliation & Stock UI
@@ -1043,38 +549,9 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
 ### Ops / infra
 - [ ] **The deploy workflow silently skipped a deploy once and failed another, both on 2026-09-02 — and nothing alerts on either.** Two distinct anomalies on the `deploy-api` job, hours apart. **(a) Run `33617613828` (PR #277, sha `3f224a8`) built and pushed an api image, then reported `Deploy api: skipped` with zero steps.** Every condition reads as satisfied: its `needs` (`changes`, `build-push-api`, `migrate`) all succeeded, and its `if` expression is byte-identical to `build-push-api`'s, which DID run — so `changes.outputs.api` was `'true'`. **Root-caused and fixed**: a GitHub Actions skip propagates transitively down the `needs` graph, and `migrate` needs `build-push-web`. On an api-only push `build-push-web` is legitimately skipped, the skip travels through `migrate` (which ran, via its own `always()`) and skips `deploy-api`, which lacked `always()`. `deploy-web` already carried exactly this fix while `deploy-api` carried a comment arguing against it. It broke the `workflow_dispatch` path too, so the documented manual-deploy escape hatch was equally dead — confirmed 2026-09-02 when a dispatch with `service=api` also reported `Deploy api: skipped` with `pull`, `migrate` and `build-push-api` all green. Both deploy jobs now also wait on the healthcheck and assert the running container's resolved image ID matches the requested tag. **(b) Run `33630252507` (PR #279) failed with `dial tcp 72.61.209.199:22: i/o timeout`** after `Pull latest master on VPS` and `Migrate database` had both SSH'd successfully minutes earlier in the same run — transient runner-side network, host was healthy (load 0.07, up 78 days). A re-run succeeded. **Why this is the worse of the two deferred items: (a) is a SILENT failure.** It is the same shape as the outbox wedge fixed in PR #276 — work that looks done, reports success overall, and quietly did nothing — and the only reason it was caught is that someone happened to read the job list. `deploy-web` also cascades: it requires `deploy-api.result` to be `success` or `skipped`, so a FAILED deploy-api blocks web silently too. Both (i) and (ii) are done. What remains open is **(b)**: two runner→VPS SSH dial timeouts on 2026-09-02 with the host reachable throughout from a laptop. No host-side cause was found (no fail2ban, `8 SYNs to LISTEN sockets dropped` cumulative over 78 days uptime, firewall rules unreadable without root). Candidates are Hostinger-side filtering or a host firewall — needs someone with root to look. A re-run cleared it both times, so it is intermittent, not blocking. Note also that no CI job runs `test` or `type-check`, so the pipeline's only correctness gate is whether the images compile.
 - [ ] Prod salesorder `47180`'s outbox rows (`salesorder_pick`, `salesorder_pack`) are still `DEAD` from the pre-fix attempts, and **the corrected picklist payload has never had a successful push** — the payload fix (PR #276) was verified only as far as "no longer a Joi rejection", and the location fix (PR #280) has not been exercised at all. Retrying those two rows from the outbox admin screen is the real end-to-end test. Expect pick to return already-in-state rather than succeeding, since Shopee shipped the order on 2026-09-01 — which means the stale-matcher item above will send it back to `DEAD` instead of `SKIPPED`. Do that retry AFTER the matcher is fixed, or the result is uninterpretable.
-- [ ] **Seven `ROUTE_PERMISSIONS` keys in `apps/web/lib/rbac.ts` are unmatchable dead code.** They are
-      written as Next.js route patterns containing a literal `[id]` segment — lines 63, 64, 68, 71, 73,
-      75 and 84 (`/backoffice/sales-orders/[id]/pick-list`, `.../packing-slip`,
-      `/backoffice/field-returns/[id]`, `/backoffice/canvassing/reconcile/[id]`,
-      `/backoffice/van-sales/[id]`, `/backoffice/spg-sales/[id]`, `/backoffice/returns/[id]`).
-      `getRequiredPermission` does an exact lookup then a `startsWith` scan over keys sorted longest-
-      first, and no real pathname ever contains the literal substring `[id]`, so neither branch can
-      ever select one. All seven are inert. Harmless TODAY only because each has a shorter parent-
-      prefix entry mapping to the identical permission (`sales_orders:view`, `field_sales_orders:view`,
-      `canvassing:manage` x2, `spg_sales:view`, `sales_returns:view`), so the gate an author reading
-      those lines expects is in fact applied — by a different line. The hazard is the pattern, not
-      these seven rows: the same shape written for a route whose parent prefix is ABSENT, or is mapped
-      to a WEAKER permission, silently grants more access than the file appears to declare. Either
-      drop the dead keys or teach the matcher to resolve `[param]` segments; a lint rule rejecting `[`
-      in a `ROUTE_PERMISSIONS` key is the cheaper half — expect it to flag seven, not two. Found while
-      writing `docs/PICK-PACK-SHIP.md` (PR #286).
-- [ ] `/api/upload/grn-photo` is authentication-only, not permission-gated. Four features share the one
-      endpoint — the GRN form, both stock-adjustment screens and vendor returns — and they do not share a
-      permission, so gating on any single one would break the other three. Single-feature upload routes DO
-      check a permission (`item-image` → `items:manage`, `payment-proof` → `payments:manage`). Tightening
-      means either an any-of check across the four features' permissions or splitting the endpoint per
-      feature. Until then an authenticated user with no inventory permissions can still write objects into
-      the bucket. Raised while adding an auth check to that route — note the route was NOT reachable
-      unauthenticated: `proxy.ts` matches everything outside a short allow-list and redirects tokenless
-      requests to `/login`. The initial read of "no `auth()` in the handler, therefore open to the
-      internet" was wrong because it stopped at the file instead of following the request path. Worth
-      remembering before filing the next one: check the edge gate before scoring a route's exposure.
-- [ ] Uploaded object keys are not namespaced by feature. `grn-photo` writes to a generic `uploads/` prefix
-      rather than something like `grn/`, so nothing about a key says which feature owns it. That is what made
-      the removed DELETE handler dangerous — `keyFromUrl` accepts any key under the bucket's public prefix,
-      so a delete could not be constrained to the caller's own uploads even in principle. Any future
-      cleanup or retention path needs per-feature prefixes first.
+- [ ] **Seven `ROUTE_PERMISSIONS` keys in `apps/web/lib/rbac.ts` are unmatchable dead code.** They are written as Next.js route patterns containing a literal `[id]` segment — lines 63, 64, 68, 71, 73, 75 and 84 (`/backoffice/sales-orders/[id]/pick-list`, `.../packing-slip`, `/backoffice/field-returns/[id]`, `/backoffice/canvassing/reconcile/[id]`, `/backoffice/van-sales/[id]`, `/backoffice/spg-sales/[id]`, `/backoffice/returns/[id]`). `getRequiredPermission` does an exact lookup then a `startsWith` scan over keys sorted longest- first, and no real pathname ever contains the literal substring `[id]`, so neither branch can ever select one. All seven are inert. Harmless TODAY only because each has a shorter parent- prefix entry mapping to the identical permission (`sales_orders:view`, `field_sales_orders:view`, `canvassing:manage` x2, `spg_sales:view`, `sales_returns:view`), so the gate an author reading those lines expects is in fact applied — by a different line. The hazard is the pattern, not these seven rows: the same shape written for a route whose parent prefix is ABSENT, or is mapped to a WEAKER permission, silently grants more access than the file appears to declare. Either drop the dead keys or teach the matcher to resolve `[param]` segments; a lint rule rejecting `[` in a `ROUTE_PERMISSIONS` key is the cheaper half — expect it to flag seven, not two. Found while writing `docs/PICK-PACK-SHIP.md` (PR #286).
+- [ ] `/api/upload/grn-photo` is authentication-only, not permission-gated. Four features share the one endpoint — the GRN form, both stock-adjustment screens and vendor returns — and they do not share a permission, so gating on any single one would break the other three. Single-feature upload routes DO check a permission (`item-image` → `items:manage`, `payment-proof` → `payments:manage`). Tightening means either an any-of check across the four features' permissions or splitting the endpoint per feature. Until then an authenticated user with no inventory permissions can still write objects into the bucket. Raised while adding an auth check to that route — note the route was NOT reachable unauthenticated: `proxy.ts` matches everything outside a short allow-list and redirects tokenless requests to `/login`. The initial read of "no `auth()` in the handler, therefore open to the internet" was wrong because it stopped at the file instead of following the request path. Worth remembering before filing the next one: check the edge gate before scoring a route's exposure.
+- [ ] Uploaded object keys are not namespaced by feature. `grn-photo` writes to a generic `uploads/` prefix rather than something like `grn/`, so nothing about a key says which feature owns it. That is what made the removed DELETE handler dangerous — `keyFromUrl` accepts any key under the bucket's public prefix, so a delete could not be constrained to the caller's own uploads even in principle. Any future cleanup or retention path needs per-feature prefixes first.
 - [ ] `packages/db/prisma/migrations/20260813120000_add_tax_invoice/migration.sql:18` points a reader at `CLAUDE.md` for text that now lives in `docs/ARCHITECTURE-NOTES.md`, and **it must not be corrected**: Prisma checksums every applied migration into `_prisma_migrations`, so editing the file — even a comment — makes `migrate deploy` fail with a checksum mismatch against prod, where this migration is already applied. A stale doc pointer is a papercut; a repo that cannot deploy is an outage. The same rule applies to EVERY already-applied migration file, so never sweep migrations for doc-pointer rot. If one ever genuinely needs correcting, the route is a new migration or a `prisma migrate resolve`, not an edit in place.
 - [x] DB backups — LIVE on prod since 2026-08-08. `scripts/backup-db.sh` installed on the VPS, cron 19:15 UTC (02:15 WIB), writing to the private `elorae-backups` R2 bucket. First run verified end-to-end: 91,471,524 bytes, decrypt-verified, upload size-confirmed, and the daily + monthly objects both exist. **Decryption with the off-site passphrase separately proven** — the password-manager copy (not the server's file) was tested against the live archive and decrypts it to a complete dump. AWS CLI is user-local at `~/.local/bin` because `awscli` is not apt-installable on this host, so the crontab MUST set `PATH` (PR #227).
 - [ ] Nothing has yet proven the CRON invocation works — every successful run so far was manual. A cron-only failure (PATH, environment, working directory) would surface only in `/home/elorae/backup.log`. Check it once, then this is genuinely closed.
