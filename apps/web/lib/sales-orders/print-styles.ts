@@ -79,6 +79,16 @@ export const PRINT_STYLES = `
   white-space: nowrap;
 }
 
+.print-root td.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}
+
+.print-root .muted {
+  font-size: 9pt;
+  color: #555;
+}
+
 .print-root .print-signature {
   margin-top: 12mm;
   font-size: 10pt;

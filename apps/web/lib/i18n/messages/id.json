@@ -2260,11 +2260,12 @@
       "orderLabel": "Pesanan:",
       "channelLabel": "Channel:",
       "dateLabel": "Tanggal:",
-      "colSku": "SKU",
+      "colSku": "SKU / Artikel",
       "colProduct": "Produk",
       "colQty": "Jml",
       "pickedBy": "Diambil oleh:",
-      "dateSigned": "Tanggal:"
+      "dateSigned": "Tanggal:",
+      "unmappedLine": "Belum dipetakan ke item Elorae — kode & nama dari Jubelio"
     },
     "packingSlip": {
       "title": "SURAT JALAN",

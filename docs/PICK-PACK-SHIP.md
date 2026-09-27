@@ -57,7 +57,7 @@ actions catch `InvalidFulfillmentTransition` and return `{ ok: false, reason }`.
 |---|---|---|
 | Fulfillment queue | `apps/web/app/backoffice/fulfillment/` | Filterable/sortable list of orders (default filter `PENDING`), row checkboxes, **batch** Finish Pick / Finish Pack. No batch Ship — shipping needs a per-order courier choice. |
 | Order detail card | `apps/web/app/backoffice/sales-orders/[id]/FulfillmentCard.tsx` | Status badge, a three-row who/when timeline, the single next-step button, courier `Select` + confirm dialog for Ship, tracking number once known. |
-| Pick list (print) | `apps/web/app/backoffice/sales-orders/[id]/pick-list/` | Printable line list with primary item images for the warehouse. |
+| Pick list (print) | `apps/web/app/backoffice/sales-orders/[id]/pick-list/` | Printable line list for the warehouse, in Elorae's own terms: each line prints the variant SKU (the item SKU for a variantless item), the Elorae item name and the variant's attributes, with the variant's image. Lines resolve through `JubelioProductMapping` by `jubelioItemId` — the same lookup the reservation path uses — falling back to `SalesOrderItem.itemId` at item level (`apps/web/lib/sales-orders/pick-list-identity.ts`). Does **not** hide an unmapped line: one with no resolvable item prints the Jubelio `item_code`/name, labelled as unmapped. The packing slip deliberately still prints the Jubelio fields — it goes in the customer's box, where the marketplace name is the one the buyer recognises. |
 | Packing slip (print) | `apps/web/app/backoffice/sales-orders/[id]/packing-slip/` | Printable slip that goes in the box. |
 
 Actions are gated on the `sales_orders:fulfill` permission (`PERMISSIONS.SALES_ORDERS_FULFILL`),
