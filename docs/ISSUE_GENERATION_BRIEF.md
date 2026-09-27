@@ -1049,6 +1049,8 @@ This data decides whether the whole module pays for itself: if most returns are 
 
 **Constraints.**
 > `TT-` = TikTok Shop (Tokopedia Shop post-merger). Jubelio surfaces it as `Shop | Tokopedia`. Classic Tokopedia is the negligible `TP-` bucket — 9 lines. Pull `SP-` from Shopee Seller Centre and `TT-` from TikTok Shop / TTS. Do **not** treat ERP `channel=TOKOPEDIA` as classic Tokopedia without checking the order prefix.
+>
+> _Since 2026-09-27:_ ERP `channel=TOKOPEDIA` holds `TP-` orders only; TikTok Shop (`TT-`) orders and returns are stored as `TIKTOK`, detected by order-number prefix.
 
 **Files Owned.** `PROPOSED — verify: apps/api/src/jubelio/returns/reason-import/`
 

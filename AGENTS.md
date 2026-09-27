@@ -282,6 +282,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Assuming a green deploy workflow means your code is running? Check the `Deploy api`/`Deploy web` jobs and the container's image tag — a deploy job can SKIP silently or fail while the overall run reads success, leaving prod on the previous image. → `docs/landmines/database-ops.md`
 - Expecting the deploy to seed RBAC rows? It migrates but NEVER seeds — permission rows are hand-run surgical SQL, post-merge. → `docs/landmines/database-ops.md`
 - Running `mariadb` / `mariadb-dump` against prod? SSL off, but the flag depends on the client — `--skip-ssl` (MariaDB) vs `--ssl-mode=DISABLED` (MySQL 8, installed here). A failure is SILENT inside `| gzip` — verify size and the `Dump completed on` trailer. `SalesOrder` aggregates need `max_statement_time`. → `docs/landmines/database-ops.md`
+- Writing migration SQL that puts `COLLATE utf8mb4_*` on a string literal? The prod `migrate` job applies SQL through the `mariadb` CLI, which connects as utf8mb3, so it dies with ERROR 1253 and blocks every deploy — use `BINARY col …` or an `_utf8mb4'…'` introducer. A local `migrate:deploy` (Prisma driver, utf8mb4) will NOT reproduce it; test through `docker exec -i elorae-dev-db mariadb`. → `docs/landmines/database-ops.md`
 
 **Jubelio integration**
 
@@ -296,7 +297,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Sending a `location_id` to any Jubelio WMS endpoint? It is **`-1`**, the literal id of the only location — not a typo; `1` does not exist and died on FK violations. Pack sends none. Do not "correct" the negative number. → `docs/landmines/jubelio.md`
 - Extending `ALREADY_IN_STATE_MARKERS` because a skip did not fire? Jubelio's body `code` is NOT a stable type (free text one day, SQLSTATE `"23505"` the next) — adding SQLSTATEs to the markers would swallow real defects. → `docs/landmines/jubelio.md`
 - Reading `SalesOrder.fulfillmentStatus`/`pickedAt`/`packedAt` as proof Jubelio agrees? It is not — the local stamp and the outbox row are written in one transaction, but a push that later skips or dies never rolls them back, and nothing reconciles the two. → `docs/landmines/jubelio.md`
-- Deciding which marketplace a Jubelio order came from (`detectChannel`, a new marketplace, a channel backfill)? Key on the order-number prefix (`TT-`/`TP-`/`SP-`, case-sensitive; binary `COLLATE` in SQL) FIRST, never `source_name` alone — TikTok Shop orders arrive as `Shop | Tokopedia`, so its last token labels every one Tokopedia. → `docs/landmines/jubelio.md`
+- Deciding which marketplace a Jubelio order came from (`detectChannel`, a new marketplace, a channel backfill)? Key on the order-number prefix (`TT-`/`TP-`/`SP-`, case-sensitive; `BINARY col LIKE` in SQL) FIRST, never `source_name` alone — TikTok Shop orders arrive as `Shop | Tokopedia`, so its last token labels every one Tokopedia. → `docs/landmines/jubelio.md`
 
 **Print documents**
 
