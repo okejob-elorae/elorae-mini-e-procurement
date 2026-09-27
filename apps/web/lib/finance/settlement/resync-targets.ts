@@ -32,7 +32,11 @@ export async function collectResyncTargets(
   });
 
   const matchedSalesOrderIds = Array.from(
-    new Set(lines.map((l) => l.matchedSalesOrderId).filter((v): v is string => v !== null)),
+    new Set(
+      lines
+        .map((l) => l.matchedSalesOrderId)
+        .filter((v): v is string => typeof v === "string" && v.length > 0),
+    ),
   );
   const matchedOrders = matchedSalesOrderIds.length
     ? await client.salesOrder.findMany({

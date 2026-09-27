@@ -4,7 +4,6 @@ vi.mock("@elorae/db", () => ({
   prisma: {
     jubelioSalesOrderResync: { groupBy: vi.fn() },
     settlement: { findUnique: vi.fn() },
-    settlementLine: { findMany: vi.fn() },
   },
 }));
 
@@ -12,14 +11,14 @@ vi.mock("@/lib/auth", () => ({
   auth: vi.fn(),
 }));
 
-vi.mock("@/lib/internal-api", () => ({
-  apiFetch: vi.fn(),
-  extractApiMessage: (raw: string | undefined, fallback: string) => raw ?? fallback,
+/* The target collection and the api call live in the helper — its own unit test covers them. */
+vi.mock("@/lib/finance/settlement/start-resync", () => ({
+  startSettlementResync: vi.fn(),
 }));
 
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
-import { apiFetch } from "@/lib/internal-api";
+import { startSettlementResync } from "@/lib/finance/settlement/start-resync";
 import {
   getResyncSummary,
   getSettlementResyncState,
@@ -141,85 +140,51 @@ describe("jubelio-salesorder-resync server actions", () => {
   });
 
   describe("triggerSettlementResyncAction", () => {
+    it("returns FORBIDDEN when there is no session", async () => {
+      (auth as any).mockResolvedValue(null);
+      const result = await triggerSettlementResyncAction("s1");
+      expect(result).toEqual({ ok: false, code: "FORBIDDEN" });
+      expect(startSettlementResync).not.toHaveBeenCalled();
+    });
+
     it("returns FORBIDDEN when the session lacks the settlements:manage permission", async () => {
       (auth as any).mockResolvedValue(NO_PERM_SESSION);
       const result = await triggerSettlementResyncAction("s1");
       expect(result).toEqual({ ok: false, code: "FORBIDDEN" });
-      expect(prisma.settlement.findUnique).not.toHaveBeenCalled();
+      expect(startSettlementResync).not.toHaveBeenCalled();
     });
 
-    it("returns NOT_FOUND when the settlement doesn't exist", async () => {
+    it("starts the resync as the session user and passes batchId and seeded through", async () => {
       (auth as any).mockResolvedValue(MANAGE_SESSION);
-      (prisma.settlement.findUnique as any).mockResolvedValue(null);
-
-      const result = await triggerSettlementResyncAction("ghost");
-
-      expect(result).toEqual({ ok: false, code: "NOT_FOUND" });
-      expect(apiFetch).not.toHaveBeenCalled();
-    });
-
-    it("returns NO_UNMATCHED_ORDERS when there are no unmatched lines", async () => {
-      (auth as any).mockResolvedValue(MANAGE_SESSION);
-      (prisma.settlement.findUnique as any).mockResolvedValue({ marketplace: "SHOPEE" });
-      (prisma.settlementLine.findMany as any).mockResolvedValue([]);
+      (startSettlementResync as any).mockResolvedValue({ ok: true, batchId: "batch-xyz", seeded: 2 });
 
       const result = await triggerSettlementResyncAction("s1");
 
-      expect(result).toEqual({ ok: false, code: "NO_UNMATCHED_ORDERS" });
-      expect(apiFetch).not.toHaveBeenCalled();
-    });
-
-    it("returns NO_UNMATCHED_ORDERS when the marketplace has no supported match key", async () => {
-      (auth as any).mockResolvedValue(MANAGE_SESSION);
-      (prisma.settlement.findUnique as any).mockResolvedValue({ marketplace: "LAZADA" });
-      (prisma.settlementLine.findMany as any).mockResolvedValue([
-        { orderNo: "LZ-111" },
-        { orderNo: "LZ-222" },
-      ]);
-
-      const result = await triggerSettlementResyncAction("s1");
-
-      expect(result).toEqual({ ok: false, code: "NO_UNMATCHED_ORDERS" });
-      expect(apiFetch).not.toHaveBeenCalled();
-    });
-
-    it("resolves unmatched Shopee orderNos to salesorderNos, dedupes, and triggers the api resync", async () => {
-      (auth as any).mockResolvedValue(MANAGE_SESSION);
-      (prisma.settlement.findUnique as any).mockResolvedValue({ marketplace: "SHOPEE" });
-      (prisma.settlementLine.findMany as any).mockResolvedValue([
-        { orderNo: "2606252NSQ63S0" },
-        { orderNo: "2606252NSQ63S0" }, // duplicate orderNo across lines — must dedup
-        { orderNo: "2607010ABC1234" },
-      ]);
-      (apiFetch as any).mockResolvedValue({
-        ok: true,
-        status: 200,
-        data: { batchId: "batch-xyz", seeded: 2 },
-      });
-
-      const result = await triggerSettlementResyncAction("s1");
-
-      expect(prisma.settlementLine.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { settlementId: "s1", matchStatus: { not: "MATCHED" } },
-        }),
-      );
-      expect(apiFetch).toHaveBeenCalledWith(
-        "POST",
-        "/jubelio/salesorders/resync",
-        expect.objectContaining({
-          userId: "u1",
-          body: { salesorderNos: ["SP-2606252NSQ63S0", "SP-2607010ABC1234"] },
-        }),
-      );
+      expect(startSettlementResync).toHaveBeenCalledWith("s1", "u1");
       expect(result).toEqual({ ok: true, batchId: "batch-xyz", seeded: 2 });
     });
 
-    it("returns API_ERROR with the extracted message when the api call fails", async () => {
+    it("maps NO_TARGETS to NO_UNMATCHED_ORDERS", async () => {
       (auth as any).mockResolvedValue(MANAGE_SESSION);
-      (prisma.settlement.findUnique as any).mockResolvedValue({ marketplace: "SHOPEE" });
-      (prisma.settlementLine.findMany as any).mockResolvedValue([{ orderNo: "111" }]);
-      (apiFetch as any).mockResolvedValue({ ok: false, status: 500, error: "boom" });
+      (startSettlementResync as any).mockResolvedValue({ ok: false, code: "NO_TARGETS" });
+
+      const result = await triggerSettlementResyncAction("s1");
+
+      expect(result).toEqual({ ok: false, code: "NO_UNMATCHED_ORDERS" });
+    });
+
+    it("passes NOT_FOUND through", async () => {
+      (auth as any).mockResolvedValue(MANAGE_SESSION);
+      (startSettlementResync as any).mockResolvedValue({ ok: false, code: "NOT_FOUND" });
+
+      const result = await triggerSettlementResyncAction("ghost");
+
+      expect(result).toEqual({ ok: false, code: "NOT_FOUND", message: undefined });
+    });
+
+    it("passes API_ERROR through with its message", async () => {
+      (auth as any).mockResolvedValue(MANAGE_SESSION);
+      (startSettlementResync as any).mockResolvedValue({ ok: false, code: "API_ERROR", message: "boom" });
 
       const result = await triggerSettlementResyncAction("s1");
 
