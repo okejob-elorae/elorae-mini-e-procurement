@@ -8,6 +8,7 @@ import { ArrowLeft, Printer, Share2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { buildSettlementBkmPrintHtml } from "@/lib/print/settlement-bkm-html";
+import { logPrintQuietly } from "@/lib/audit/log-print-quietly";
 import type { SettlementPrintDetail } from "@/lib/finance/ar-settlement/queries";
 
 /**
@@ -166,7 +167,10 @@ export function BkmView({ settlement }: { settlement: SettlementPrintDetail }) {
 
   /* Prints only the iframe's own document — the sticky bar and header never enter the dialog. */
   function handlePrint(): void {
-    iframeRef.current?.contentWindow?.print();
+    const frame = iframeRef.current?.contentWindow;
+    if (!frame) return;
+    logPrintQuietly("StoreSettlementBkm", settlement.id);
+    frame.print();
   }
 
   async function handleShare(): Promise<void> {

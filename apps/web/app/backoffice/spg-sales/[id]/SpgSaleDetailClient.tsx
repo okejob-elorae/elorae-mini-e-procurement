@@ -6,6 +6,7 @@ import { ArrowLeft, ExternalLink, MapPin, Printer } from "lucide-react";
 import type { SpgSaleDetail } from "@/lib/spg/sale-queries";
 import { roundCents } from "@elorae/db/pricing";
 import { spgSaleNotaHtml } from "@/lib/print/spg-sale-nota-html";
+import { logPrintQuietly } from "@/lib/audit/log-print-quietly";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -79,6 +80,7 @@ export function SpgSaleDetailClient({ sale }: Props) {
     const html = spgSaleNotaHtml(sale);
     const win = window.open("", "_blank", "width=360,height=640");
     if (!win) return;
+    logPrintQuietly("SpgSaleNota", sale.id);
     win.document.write(`<!DOCTYPE html><html><head><title>${sale.docNo}</title></head><body>${html}</body></html>`);
     win.document.close();
     win.focus();

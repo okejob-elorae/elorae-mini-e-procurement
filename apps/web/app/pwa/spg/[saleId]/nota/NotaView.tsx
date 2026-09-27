@@ -7,6 +7,7 @@ import { ArrowLeft, Printer, Share2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { spgSaleNotaHtml } from "@/lib/print/spg-sale-nota-html";
+import { logPrintQuietly } from "@/lib/audit/log-print-quietly";
 import type { SpgSaleDetail } from "@/lib/spg/sale-queries";
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
@@ -26,6 +27,7 @@ export function NotaView({ sale }: { sale: SpgSaleDetail }) {
   const html = useMemo(() => spgSaleNotaHtml(sale), [sale]);
 
   function handlePrint() {
+    logPrintQuietly("SpgSaleNota", sale.id);
     window.print();
   }
 
