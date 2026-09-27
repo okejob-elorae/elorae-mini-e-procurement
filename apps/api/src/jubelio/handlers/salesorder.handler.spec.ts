@@ -75,6 +75,7 @@ describe("SalesOrderWebhookHandler", () => {
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       salesOrderItem: {
+        findMany: jest.fn().mockResolvedValue([]),
         deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
         createMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
@@ -445,6 +446,59 @@ describe("SalesOrderWebhookHandler", () => {
 
     expect(prisma.salesOrderItem.deleteMany).toHaveBeenCalledWith({ where: { salesOrderId: "so1" } });
     expect(prisma.salesOrderItem.createMany.mock.calls[0][0].data).toHaveLength(1);
+  });
+
+  /*
+   * `consumeOrder` stamps `cogs` once, on the RESERVED → CONSUMED flip. A later handle of the same
+   * order (a post-ship webhook, a settlement resync) recreates every item, so the stored cost has to
+   * be carried across or the order loses it for good.
+   */
+  it("carries an existing item's cogs across the delete-and-recreate on a re-handle", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: true });
+    prisma.jubelioProductMapping.findFirst.mockResolvedValue(null);
+    prisma.salesOrderItem.findMany.mockResolvedValue([
+      { salesorderDetailId: 25193, cogs: "12000.00" },
+      { salesorderDetailId: 25194, cogs: "8000.00" },
+    ]);
+
+    await handler.handle(row(makePayload({ wms_status: "SHIPPED" })) as any);
+
+    expect(prisma.salesOrderItem.findMany).toHaveBeenCalledWith({
+      where: { salesOrderId: "so1" },
+      select: { salesorderDetailId: true, cogs: true },
+    });
+    const readOrder = prisma.salesOrderItem.findMany.mock.invocationCallOrder[0];
+    expect(readOrder).toBeLessThan(prisma.salesOrderItem.deleteMany.mock.invocationCallOrder[0]);
+    const data = prisma.salesOrderItem.createMany.mock.calls[0][0].data;
+    expect(data.find((d: any) => d.salesorderDetailId === 25193).cogs).toBe("12000.00");
+    expect(data.find((d: any) => d.salesorderDetailId === 25194).cogs).toBe("8000.00");
+  });
+
+  it("recreates a line with a new salesorder_detail_id without cogs", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: true });
+    prisma.jubelioProductMapping.findFirst.mockResolvedValue(null);
+    prisma.salesOrderItem.findMany.mockResolvedValue([{ salesorderDetailId: 25193, cogs: "12000.00" }]);
+
+    await handler.handle(row(makePayload()) as any);
+
+    const data = prisma.salesOrderItem.createMany.mock.calls[0][0].data;
+    expect(data.find((d: any) => d.salesorderDetailId === 25193).cogs).toBe("12000.00");
+    expect(data.find((d: any) => d.salesorderDetailId === 25194)).not.toHaveProperty("cogs");
+  });
+
+  it("keeps an existing item with null cogs at null", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: true });
+    prisma.jubelioProductMapping.findFirst.mockResolvedValue(null);
+    prisma.salesOrderItem.findMany.mockResolvedValue([
+      { salesorderDetailId: 25193, cogs: null },
+      { salesorderDetailId: 25194, cogs: null },
+    ]);
+
+    await handler.handle(row(makePayload()) as any);
+
+    const data = prisma.salesOrderItem.createMany.mock.calls[0][0].data;
+    expect(data).toHaveLength(2);
+    for (const d of data) expect(d).not.toHaveProperty("cogs");
   });
 
   it("logs WARN and persists OTHER channel for unknown source_name", async () => {

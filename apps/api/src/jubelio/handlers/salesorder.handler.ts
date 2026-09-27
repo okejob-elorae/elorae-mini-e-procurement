@@ -293,10 +293,27 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
       });
     }
 
+    /**
+     * `SalesOrderItem.cogs` is stamped only by `consumeOrder`, on the RESERVED → CONSUMED flip, and
+     * never again. The delete-and-recreate below would otherwise null it on every later handle of a
+     * shipped order (a post-ship webhook, a settlement resync), so each line's cost is read BEFORE
+     * the delete and carried across by `salesorderDetailId`. A detail id with no stored cost (a new
+     * line, or one never consumed) is recreated without one, exactly as before.
+     */
+    const existingItems = await tx.salesOrderItem.findMany({
+      where: { salesOrderId: order.id },
+      select: { salesorderDetailId: true, cogs: true },
+    });
+    const cogsByDetailId = new Map<number, NonNullable<(typeof existingItems)[number]["cogs"]>>();
+    for (const existing of existingItems) {
+      if (existing.cogs !== null) cogsByDetailId.set(existing.salesorderDetailId, existing.cogs);
+    }
+
     const items = Array.isArray(p.items) ? p.items : [];
     const lines = [];
     for (const line of items) {
       const mapping = await resolveItemMapping(tx, line.item_id);
+      const cogs = cogsByDetailId.get(line.salesorder_detail_id);
       lines.push({
         salesOrderId: order.id,
         salesorderDetailId: line.salesorder_detail_id,
@@ -315,6 +332,7 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
         lineTotal: dec(line.amount),
         discMarketplace: dec(line.disc_marketplace ?? line.discount_marketplace),
         weightInGram: dec(line.weight_in_gram),
+        ...(cogs !== undefined ? { cogs } : {}),
       });
     }
 
