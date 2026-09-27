@@ -194,6 +194,7 @@ export function ReturnDecisionCard({ ret, canDecide, canPostJournal }: Props) {
                 videoUrl={ret.packingVideoUrl}
                 salesOrderId={ret.salesOrder.id}
                 showFullUrl
+                recording={ret.packingVideoRecording}
               />
             </>
           ) : null}

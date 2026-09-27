@@ -70,6 +70,7 @@ export function SalesOrderDetailClient({ order, items, canFulfill, lineImages = 
         trackingNumber={order.trackingNumber}
         courierName={order.courierName}
         packingVideoUrl={order.packingVideoUrl}
+        packingVideoRecording={order.packingVideoRecording}
       />
 
       {(order.status === "SHIPPED" || order.status === "COMPLETED" || order.fulfillmentStatus === "SHIPPED") && (
@@ -124,6 +125,7 @@ export function SalesOrderDetailClient({ order, items, canFulfill, lineImages = 
                 videoUrl={order.packingVideoUrl}
                 salesOrderId={order.id}
                 showFullUrl
+                recording={order.packingVideoRecording}
               />
             </div>
           ) : null}

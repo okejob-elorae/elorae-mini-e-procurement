@@ -1,6 +1,7 @@
 import { prisma } from "@elorae/db";
 import { serializeForClient } from "@/lib/serialize-for-client";
 import type { SalesChannel, SalesReturnStatus } from "@/lib/constants/enums";
+import { PACKING_VIDEO_RECORDING_SELECT, packingVideoRecordingOf } from "@/lib/packer/clip-recording";
 
 export async function getSalesReturnById(id: string) {
   const salesReturn = await prisma.salesReturn.findUnique({
@@ -11,7 +12,7 @@ export async function getSalesReturnById(id: string) {
           id: true,
           salesorderNo: true,
           trackingNumber: true,
-          packingVideo: { select: { videoUrl: true } },
+          packingVideo: { select: PACKING_VIDEO_RECORDING_SELECT },
         },
       },
       decidedBy: { select: { name: true, email: true } },
@@ -40,6 +41,9 @@ export async function getSalesReturnById(id: string) {
     revenueJournalId,
     cogsJournalId,
     packingVideoUrl: salesReturn.salesOrder?.packingVideo?.videoUrl ?? null,
+    packingVideoRecording: salesReturn.salesOrder?.packingVideo
+      ? packingVideoRecordingOf(salesReturn.salesOrder.packingVideo)
+      : null,
   });
 }
 

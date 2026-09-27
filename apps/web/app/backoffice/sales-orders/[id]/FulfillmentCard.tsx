@@ -32,6 +32,7 @@ import {
   type FulfillmentActionResult,
 } from "@/lib/sales-orders/fulfillment-result";
 import { PackingVideoActions } from "@/components/packing-video-actions";
+import type { ClipRecording } from "@/lib/packer/clip-recording";
 
 const STATUS_TAILWIND: Record<SalesOrderFulfillmentStatus, string> = {
   PENDING: "bg-zinc-100 text-zinc-700 border-zinc-200",
@@ -54,6 +55,7 @@ type Props = {
   trackingNumber: string | null;
   courierName: string | null;
   packingVideoUrl?: string | null;
+  packingVideoRecording?: ClipRecording | null;
 };
 
 export function FulfillmentCard(props: Props) {
@@ -154,6 +156,7 @@ export function FulfillmentCard(props: Props) {
                 videoUrl={props.packingVideoUrl}
                 salesOrderId={props.orderId}
                 openLabel="Buka video"
+                recording={props.packingVideoRecording}
               />
             </div>
           ) : null}
@@ -166,6 +169,7 @@ export function FulfillmentCard(props: Props) {
             videoUrl={props.packingVideoUrl}
             salesOrderId={props.orderId}
             openLabel="Buka video"
+            recording={props.packingVideoRecording}
           />
         </div>
       ) : null}

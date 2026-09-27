@@ -2052,6 +2052,11 @@
       "avgDailySalesDesc": "Over {days} day(s) in the selected range"
     }
   },
+  "packingVideo": {
+    "recorded": "Recorded {when} WIB",
+    "rerecorded": "Re-recorded {when} WIB",
+    "recordedBy": "{recorded} · by {name}"
+  },
   "salesReturns": {
     "list": {
       "pageTitle": "Sales Returns",

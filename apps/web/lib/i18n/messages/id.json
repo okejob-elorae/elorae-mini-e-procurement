@@ -2052,6 +2052,11 @@
       "avgDailySalesDesc": "Selama {days} hari dalam rentang terpilih"
     }
   },
+  "packingVideo": {
+    "recorded": "Direkam {when} WIB",
+    "rerecorded": "Direkam ulang {when} WIB",
+    "recordedBy": "{recorded} · oleh {name}"
+  },
   "salesReturns": {
     "list": {
       "pageTitle": "Pengembalian Penjualan",

@@ -1,5 +1,10 @@
 import { prisma } from "@elorae/db";
 import type { SalesChannel, SalesOrderStatus, SalesOrderFulfillmentStatus } from "@/lib/constants/enums";
+import {
+  PACKING_VIDEO_RECORDING_SELECT,
+  packingVideoRecordingOf,
+  type ClipRecording,
+} from "@/lib/packer/clip-recording";
 
 export type SalesOrderListFilter = {
   search?: string;
@@ -71,6 +76,7 @@ export type SalesOrderDetail = {
   revenueJournalId: string | null;
   cogsJournalId: string | null;
   packingVideoUrl: string | null;
+  packingVideoRecording: ClipRecording | null;
 };
 
 export type SalesOrderItemRow = {
@@ -157,7 +163,7 @@ export async function getSalesOrderById(
     where: { id },
     include: {
       items: true,
-      packingVideo: { select: { videoUrl: true } },
+      packingVideo: { select: PACKING_VIDEO_RECORDING_SELECT },
     },
   });
   if (!row) return null;
@@ -237,6 +243,7 @@ export async function getSalesOrderById(
     revenueJournalId,
     cogsJournalId,
     packingVideoUrl: row.packingVideo?.videoUrl ?? null,
+    packingVideoRecording: row.packingVideo ? packingVideoRecordingOf(row.packingVideo) : null,
   };
 
   const items: SalesOrderItemRow[] = row.items.map((it: any) => ({
