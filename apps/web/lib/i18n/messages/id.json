@@ -4268,8 +4268,9 @@
     "uploadMarketplaceLabel": "Marketplace",
     "marketplaceOption": {
       "SHOPEE": "Shopee",
-      "TIKTOK": "TikTok Shop"
+      "TIKTOK": "TikTok Shop / Tokopedia"
     },
+    "tiktokIncludesTokopedia": "Export income TikTok sudah memuat pesanan Tokopedia — cukup unggah satu file.",
     "uploadFileLabel": "File (.xlsx)",
     "uploadButton": "Unggah",
     "uploading": "Mengunggah…",
@@ -4392,6 +4393,9 @@
       "statusDiffers": "Berbeda",
       "statusUnavailable": "Data Jubelio n/a",
       "statusCancelled": "Dibatalkan",
+      "missingEscrow": "Dibayar, belum ada data escrow",
+      "noEscrowBadge": "Belum ada data escrow",
+      "noEscrowHint": "Export sudah membayar pesanan ini, tetapi salinan pesanan Jubelio di Elorae belum punya angka escrow — Jubelio mungkin belum menerbitkannya, atau pesanan tersinkron sebelum escrow terbit. Tidak bisa dibandingkan, dan bukan kecocokan.",
       "jubelioFeesNote": "Penyesuaian Lain = biaya/penyesuaian escrow Jubelio yang tidak dirinci (mis. biaya transaksi/kampanye). Baris dijumlahkan tepat ke escrow."
     }
   },

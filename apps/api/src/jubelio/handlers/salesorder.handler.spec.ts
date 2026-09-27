@@ -354,6 +354,24 @@ describe("SalesOrderWebhookHandler", () => {
     expect(createArgs.data[1].jubelioItemCode).toBe("SKU-B");
   });
 
+  /*
+   * TikTok Shop orders arrive with source "Shop | Tokopedia"; only the order number
+   * tells them apart. Pins that the handler hands `salesorder_no` to `detectChannel`.
+   */
+  it("persists TIKTOK for a TT- order whose source_name says Tokopedia", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: true });
+    prisma.jubelioProductMapping.findFirst.mockResolvedValue(null);
+
+    await handler.handle(row(makePayload({
+      source_name: "Shop | Tokopedia",
+      salesorder_no: "TT-584771788142839379-128001",
+    })) as any);
+
+    const upsertArgs = prisma.salesOrder.upsert.mock.calls[0][0];
+    expect(upsertArgs.create.channel).toBe("TIKTOK");
+    expect(upsertArgs.update.channel).toBe("TIKTOK");
+  });
+
   it("TikTok escrow: falls back to escrow_list.settlement_amount when top-level escrow_amount is null", async () => {
     prisma.jubelioSalesOrderState.findUnique.mockResolvedValue(null);
     prisma.jubelioSalesOrderState.create.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: false });

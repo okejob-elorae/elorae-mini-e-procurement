@@ -38,7 +38,7 @@ export class SalesReturnIngestService {
         select: { id: true },
       });
 
-      const { channel } = detectChannel(detail.source_name);
+      const { channel } = detectChannel(detail.source_name, detail.salesorder_no);
       const totalQty = detail.items.reduce((s, i) => s + toNum(i.qty_in_base), 0);
       const totalValue = detail.items.reduce((s, i) => s + toNum(i.amount), 0);
 

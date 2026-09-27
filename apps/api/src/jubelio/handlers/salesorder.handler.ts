@@ -202,7 +202,7 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
     p: SalesOrderPayload,
     webhookEventId: string,
   ): Promise<void> {
-    const { channel, unknown } = detectChannel(p.source_name);
+    const { channel, unknown } = detectChannel(p.source_name, p.salesorder_no);
     if (unknown) {
       this.logger.warn(`Unknown source_name "${p.source_name ?? ""}" mapped to OTHER (salesorder ${p.salesorder_id})`);
     }
