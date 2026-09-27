@@ -1,5 +1,13 @@
 import type { Prisma, ReconDirection, ReconTrigger, StockAdjustmentSource, StockLedgerRefType } from "@elorae/db";
-import { moveMainStock, prisma } from "@elorae/db";
+import {
+  eloraeOnHandFromJubelio,
+  isValidJubelioQty,
+  jubelioEndQtyFor,
+  offlineReservedByKey,
+  offlineReservedQty,
+  prisma,
+  setMainStock,
+} from "@elorae/db";
 import { Decimal } from "decimal.js";
 import { generateDocNumber } from "@/lib/docNumber";
 import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
@@ -9,7 +17,6 @@ import {
   isCronEnabled,
   parseReconDirection,
   parseReconThreshold,
-  applyDirection,
 } from "./reconciliation";
 
 export type JubelioSnapshotRow = {
@@ -51,10 +58,11 @@ export async function hasRunningReconciliation(): Promise<boolean> {
   return running != null;
 }
 
-async function fetchJubelioSnapshot(): Promise<JubelioSnapshotRow[]> {
+async function fetchJubelioSnapshot(itemGroupIds?: number[]): Promise<JubelioSnapshotRow[]> {
+  const query = itemGroupIds?.length ? `?jubelioItemGroupIds=${itemGroupIds.join(",")}` : "";
   const res = await apiFetch<{ rows: JubelioSnapshotRow[] }>(
     "GET",
-    "/jubelio/inventory/snapshot",
+    `/jubelio/inventory/snapshot${query}`,
     { userId: "" },
   );
   if (!res.ok || !res.data?.rows) {
@@ -63,6 +71,13 @@ async function fetchJubelioSnapshot(): Promise<JubelioSnapshotRow[]> {
   return res.data.rows;
 }
 
+/**
+ * Applies a MATCH_JUBELIO correction under the verified contract: the absolute target is
+ * Jubelio's `end_qty` plus Elorae's own offline (field-sales) holds, which Jubelio cannot see
+ * (see jubelio-stock-contract.ts). `jubelioQty` is the raw Jubelio figure — the offline add-back
+ * and the row lock both happen in here, inside the caller's own transaction, so a concurrent
+ * push/webhook write cannot land between the read and the write.
+ */
 async function applyMatchJubelio(
   tx: Prisma.TransactionClient,
   params: {
@@ -70,22 +85,39 @@ async function applyMatchJubelio(
     itemId: string;
     variantSku: string;
     itemName: string;
-    newQty: number;
+    jubelioQty: number;
     userId?: string;
   },
 ): Promise<void> {
+  if (!isValidJubelioQty(params.jubelioQty)) {
+    throw new Error(`Invalid Jubelio quantity for ${params.itemName}: ${params.jubelioQty}`);
+  }
+
   const variantKey = params.variantSku;
   const inv = await findExistingInventoryValueRow(tx, params.itemId, variantKey);
   if (!inv) return;
 
-  const prevQty = new Decimal(inv.qtyOnHand.toString());
-  const newQty = new Decimal(params.newQty);
-  if (prevQty.equals(newQty)) return;
+  /*
+   * Lock the row before reading it — a plain read here could race a concurrent push/webhook
+   * write landing between this read and the setMainStock write below. Only inv.id is
+   * interpolated (parameterised by Prisma); the column/table names are static SQL text.
+   */
+  const lockedRows = await tx.$queryRaw<{ qtyOnHand: unknown; avgCost: unknown }[]>`
+    SELECT \`qtyOnHand\`, \`avgCost\` FROM \`InventoryValue\` WHERE id = ${inv.id} FOR UPDATE
+  `;
+  const locked = lockedRows[0];
+  if (!locked) return;
 
-  const prevAvgCost = new Decimal(inv.avgCost.toString());
-  const qtyChange = newQty.minus(prevQty).abs();
-  const type = newQty.gte(prevQty) ? "POSITIVE" : "NEGATIVE";
-  const adjQty = type === "POSITIVE" ? qtyChange.toNumber() : -qtyChange.toNumber();
+  const offline = await offlineReservedQty(tx, params.itemId, variantKey);
+  const prevQty = new Decimal(String(locked.qtyOnHand));
+  // eloraeOnHandFromJubelio's own addition happens in plain numbers (the contract's pure
+  // shape); everything from here on is Decimal, so the adjustment/ledger math doesn't drift.
+  const targetQty = new Decimal(eloraeOnHandFromJubelio(params.jubelioQty, offline).toString());
+  if (prevQty.equals(targetQty)) return;
+
+  const prevAvgCost = new Decimal(String(locked.avgCost));
+  const qtyChange = targetQty.minus(prevQty).abs();
+  const type = targetQty.gte(prevQty) ? "POSITIVE" : "NEGATIVE";
   const idempotencyKey = `recon:${params.runId}:${params.itemId}:${variantKey || "base"}`;
 
   const existing = await tx.stockAdjustment.findUnique({ where: { idempotencyKey } });
@@ -100,7 +132,7 @@ async function applyMatchJubelio(
       qtyChange: qtyChange.toNumber(),
       reason: `Jubelio reconciliation run ${params.runId}`,
       prevQty: prevQty.toNumber(),
-      newQty: newQty.toNumber(),
+      newQty: targetQty.toNumber(),
       prevAvgCost: prevAvgCost.toNumber(),
       newAvgCost: prevAvgCost.toNumber(),
       source: "JUBELIO_RECONCILE" satisfies StockAdjustmentSource,
@@ -109,14 +141,15 @@ async function applyMatchJubelio(
     },
   });
 
-  const newTotalValue = newQty.mul(prevAvgCost);
-  await moveMainStock(tx, {
+  const signedQtyChange = type === "POSITIVE" ? qtyChange : qtyChange.neg();
+  const newTotalValue = targetQty.mul(prevAvgCost);
+  await setMainStock(tx, {
     itemId: params.itemId,
     variantSku: variantKey,
-    qtyDelta: adjQty,
+    nextQty: targetQty.toNumber(),
     totalValue: newTotalValue.toNumber(),
     unitCost: prevAvgCost.toNumber(),
-    totalCost: adjQty * prevAvgCost.toNumber(),
+    totalCost: signedQtyChange.mul(prevAvgCost).toNumber(),
     balanceValue: newTotalValue.toNumber(),
     inventoryValueId: inv.id,
     refType: "Reconciliation" satisfies StockLedgerRefType,
@@ -197,28 +230,37 @@ export async function runReconciliation(
             id: true,
             nameId: true,
             type: true,
-            inventoryValues: { select: { variantSku: true, qtyOnHand: true } },
+            inventoryValues: {
+              select: { variantSku: true, qtyOnHand: true },
+              orderBy: { id: "asc" },
+            },
           },
         },
       },
     });
+
+    const fgMappings = mappings.filter((m) => m.item.type === "FINISHED_GOOD");
+    const offlineByKey = await offlineReservedByKey(
+      prisma,
+      fgMappings.map((m) => ({ itemId: m.itemId, variantSku: m.erpVariantSku ?? "" })),
+    );
 
     const jubelioRows = await fetchJubelioSnapshot();
     const jubelioByKey = new Map(
       jubelioRows.map((r) => [`${r.itemId}:${r.variantSku}`, r]),
     );
 
-    for (const mapping of mappings) {
-      if (mapping.item.type !== "FINISHED_GOOD") continue;
-
-      const invRows = mapping.item.inventoryValues.filter(
-        (iv) => (iv.variantSku ?? "") === mapping.erpVariantSku || mapping.erpVariantSku === "",
-      );
-      const inv =
-        invRows.find((iv) => (iv.variantSku ?? "") === mapping.erpVariantSku) ??
-        invRows[0];
+    for (const mapping of fgMappings) {
       const variantSku = mapping.erpVariantSku ?? "";
-      const eloraeQty = inv ? Number(inv.qtyOnHand) : 0;
+      // OR-tolerant match on the variantless spelling only. Dropped the old fallback to an
+      // unrelated variant row on the same item — a mapping whose variant genuinely has no
+      // InventoryValue row now compares against 0 instead of a sibling variant's quantity.
+      const invRow = mapping.item.inventoryValues.find((iv) =>
+        variantSku === "" ? (iv.variantSku ?? "") === "" : iv.variantSku === variantSku,
+      );
+      const rawQtyOnHand = invRow ? Number(invRow.qtyOnHand) : 0;
+      const offline = offlineByKey.get(`${mapping.itemId}:${variantSku}`) ?? 0;
+      const eloraeQty = jubelioEndQtyFor(rawQtyOnHand, offline);
       const snap = jubelioByKey.get(`${mapping.itemId}:${variantSku}`);
       const jubelioQty = snap?.jubelioQty ?? 0;
       const variance = eloraeQty - jubelioQty;
@@ -236,7 +278,7 @@ export async function runReconciliation(
             itemId: mapping.itemId,
             variantSku,
             itemName: mapping.item.nameId,
-            newQty: jubelioQty,
+            jubelioQty,
             userId: startedById,
           });
         });
@@ -295,6 +337,12 @@ export async function resolveReconciliationItem(data: {
   userId: string;
 }): Promise<{ success: boolean; error?: string }> {
   try {
+    // Validate the direction before any side effect — this is a "use server" export, reachable
+    // independently of whatever the UI currently offers.
+    if (data.direction !== "MATCH_JUBELIO" && data.direction !== "REASSERT_ELORAE") {
+      throw new Error(`Unknown reconciliation direction: ${data.direction}`);
+    }
+
     const result = await prisma.reconciliationResult.findUnique({
       where: { id: data.resultId },
       include: { run: true },
@@ -302,24 +350,44 @@ export async function resolveReconciliationItem(data: {
     if (!result) throw new Error("Result not found");
     if (result.action !== "FLAGGED") throw new Error("Item sudah diselesaikan");
 
-    const { newEloraeQty, needsPush } = applyDirection(
-      data.direction,
-      Number(result.eloraeQty),
-      Number(result.jubelioQty),
-    );
+    const variantSku = result.variantSku ?? "";
 
     if (data.direction === "MATCH_JUBELIO") {
+      const mapping = await prisma.jubelioProductMapping.findFirst({
+        where: { itemId: result.itemId, erpVariantSku: variantSku },
+        select: { jubelioItemGroupId: true },
+      });
+      if (!mapping) throw new Error("Jubelio mapping not found for this item");
+
+      // Re-fetch a live figure scoped to just this item-group rather than trusting the run's
+      // stored snapshot, which may already be stale by the time an operator resolves it.
+      const liveRows = await fetchJubelioSnapshot([mapping.jubelioItemGroupId]);
+      const live = liveRows.find(
+        (r) => r.itemId === result.itemId && r.variantSku === variantSku,
+      );
+      const liveJubelioQty = live?.jubelioQty ?? 0;
+
       await prisma.$transaction(async (tx) => {
+        const inv = await findExistingInventoryValueRow(tx, result.itemId, variantSku);
+        const rawQtyOnHand = inv ? Number(inv.qtyOnHand) : 0;
+        const offline = await offlineReservedQty(tx, result.itemId, variantSku);
+        const liveEloraeQty = jubelioEndQtyFor(rawQtyOnHand, offline);
+
+        if (liveEloraeQty !== Number(result.eloraeQty)) {
+          throw new Error("stock moved since this run; re-run reconciliation");
+        }
+
         await applyMatchJubelio(tx, {
           runId: result.runId,
           itemId: result.itemId,
-          variantSku: result.variantSku ?? "",
+          variantSku,
           itemName: result.itemName,
-          newQty: newEloraeQty,
+          jubelioQty: liveJubelioQty,
           userId: data.userId,
         });
       });
-    } else if (needsPush) {
+    } else {
+      // REASSERT_ELORAE: no local stock write, just push Elorae's own current figure back.
       await enqueueReconStockPush(result.itemId, data.userId);
     }
 

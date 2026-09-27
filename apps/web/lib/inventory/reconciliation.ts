@@ -34,23 +34,6 @@ export function classifyVariance(
   return _exhaustive;
 }
 
-export function applyDirection(
-  direction: ReconDirection,
-  eloraeQty: number,
-  jubelioQty: number,
-): { newEloraeQty: number; needsPush: boolean } {
-  switch (direction) {
-    case "MATCH_JUBELIO":
-      return { newEloraeQty: jubelioQty, needsPush: false };
-    case "REASSERT_ELORAE":
-      return { newEloraeQty: eloraeQty, needsPush: true };
-    default: {
-      const _never: never = direction;
-      return _never;
-    }
-  }
-}
-
 export function parseReconThreshold(value: string | undefined): number {
   const n = Number(value ?? "0");
   return Number.isFinite(n) && n >= 0 ? n : 0;

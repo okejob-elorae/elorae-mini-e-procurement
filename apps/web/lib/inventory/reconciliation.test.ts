@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyDirection,
   classifyVariance,
   isCronEnabled,
   parseReconDirection,
@@ -41,22 +40,6 @@ describe("classifyVariance", () => {
     expect(classifyVariance(-3, 5, "REASSERT_ELORAE")).toEqual({
       action: "AUTO_CORRECTED",
       needsStockWrite: false,
-      needsPush: true,
-    });
-  });
-});
-
-describe("applyDirection", () => {
-  it("sets Elorae qty to Jubelio for MATCH_JUBELIO", () => {
-    expect(applyDirection("MATCH_JUBELIO", 100, 95)).toEqual({
-      newEloraeQty: 95,
-      needsPush: false,
-    });
-  });
-
-  it("keeps Elorae qty and pushes for REASSERT_ELORAE", () => {
-    expect(applyDirection("REASSERT_ELORAE", 100, 95)).toEqual({
-      newEloraeQty: 100,
       needsPush: true,
     });
   });

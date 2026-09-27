@@ -1310,7 +1310,7 @@
     "inSync": "In sync",
     "flagged": "Flagged",
     "autoCorrected": "Auto-corrected",
-    "eloraeQty": "Elorae qty",
+    "eloraeQty": "Elorae (on-hand − field-sales holds)",
     "jubelioQty": "Jubelio qty",
     "variance": "Variance",
     "action": "Action",
