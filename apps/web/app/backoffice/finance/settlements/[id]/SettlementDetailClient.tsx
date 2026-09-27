@@ -61,11 +61,14 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
   const [isPending, startTransition] = useTransition();
   const [isPosting, startPostTransition] = useTransition();
   const [isResyncing, startResyncTransition] = useTransition();
-  // Once a batch has already been rematched (by this tab or the sweep, on a previous visit),
-  // the panel has nothing left to say — the settlement's own figures already show the outcome —
-  // so start with no batch id at all rather than reopening a panel that will never resolve again.
+  /**
+   * Once the sweep has stamped the batch (rematched, or skipped as RECONCILED), the panel has
+   * nothing left to say — the settlement's own figures already show the outcome — so start with no
+   * batch id rather than reopening a panel that will never resolve again. Managers only: both
+   * progress reads are manage-gated, so a view-only user would get a spinner that never resolves.
+   */
   const [resyncBatchId, setResyncBatchId] = useState<string | null>(
-    settlement.resyncRematchedAt === null ? settlement.resyncBatchId : null,
+    canManage && settlement.resyncRematchedAt === null ? settlement.resyncBatchId : null,
   );
   const [resyncSummary, setResyncSummary] = useState<ResyncSummary | null>(null);
   const [resyncPollError, setResyncPollError] = useState(false);
@@ -79,6 +82,8 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
 
   const matchedLines = settlement.lines.filter((l) => l.matchStatus === "MATCHED");
   const unmatchedLines = settlement.lines.filter((l) => l.matchStatus !== "MATCHED");
+  /* Approximate — the server dedupes order numbers and skips lines it has no key for. */
+  const fetchableCount = unmatchedLines.length + settlement.missingEscrowCount;
 
   const PAGE_SIZE = 25;
   const [matchedPage, setMatchedPage] = useState(1);
@@ -116,8 +121,7 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
               profitPending: String(result.profitPending),
             }),
           );
-          // Batch's purpose is served once its orders are rematched — clear the
-          // batch id client-side so the panel doesn't linger on later visits.
+          /* Closes the panel in this tab only; the sweep still stamps the batch when it finishes. */
           setResyncBatchId(null);
           setResyncSummary(null);
           setRematchStatus("pending");
@@ -175,9 +179,11 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
     };
   }, [resyncBatchId]);
 
-  // Once the resync batch itself is terminal, the sweep still has to run and stamp
-  // `resyncRematchedAt` before the settlement is actually rematched — poll for that
-  // separately, on a slower cadence, instead of leaving the user with a stuck panel.
+  /**
+   * Once the resync batch itself is terminal, the sweep still has to run and stamp
+   * `resyncRematchedAt` before the settlement is actually rematched — poll for that
+   * separately, on a slower cadence, instead of leaving the user with a stuck panel.
+   */
   useEffect(() => {
     if (!resyncBatchId || !resyncTerminal || rematchStatus !== "pending") return;
     let cancelled = false;
@@ -192,18 +198,40 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
         return;
       }
       setResyncPollError(false);
-      if (res.batchId !== resyncBatchId || res.rematchedAtIso === null) return;
+      if (res.batchId !== resyncBatchId) {
+        /**
+         * Another tab pressed Fetch and replaced the batch — follow the live one rather than
+         * waiting forever on a batch the sweep will never stamp. If the sweep has already stamped
+         * the new one too, there is nothing left to follow: close the panel and reload the figures.
+         */
+        if (timer) clearInterval(timer);
+        rematchHandledRef.current = false;
+        setRematchStatus("pending");
+        setResyncSummary(null);
+        if (res.rematchedAtIso === null) {
+          setResyncBatchId(res.batchId);
+        } else {
+          setResyncBatchId(null);
+          router.refresh();
+        }
+        return;
+      }
+      if (res.rematchedAtIso === null) return;
 
       rematchHandledRef.current = true;
       if (timer) clearInterval(timer);
-      // Branch on the status this call just read, not the settlement prop from initial
-      // load — another tab may have posted the journal (status → RECONCILED) while this
-      // one was polling, and the sweep would then have skipped without rematching.
+      /**
+       * Branch on the status this call just read, not the settlement prop from initial load —
+       * another tab may have posted the journal (status → RECONCILED) while this one was polling,
+       * and the sweep would then have skipped without rematching.
+       */
       if (res.status === "RECONCILED") {
         setRematchStatus("skippedReconciled");
       } else {
         setRematchStatus("rematched");
         toast.success(t("autoRematchedToast"));
+        setResyncBatchId(null);
+        setResyncSummary(null);
         router.refresh();
       }
     }
@@ -315,7 +343,7 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
               {isPending ? t("matchOrdersPending") : t("matchOrdersButton")}
             </Button>
 
-            {unmatchedLines.length > 0 && (
+            {fetchableCount > 0 && (
               <Button
                 size="sm"
                 variant="outline"
@@ -325,7 +353,7 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
                 <Repeat className={`h-4 w-4 mr-2 ${isResyncing ? "animate-spin" : ""}`} />
                 {isResyncing
                   ? t("resyncButtonPending")
-                  : t("resyncButton", { count: String(unmatchedLines.length) })}
+                  : t("resyncButton", { count: String(fetchableCount) })}
               </Button>
             )}
 
@@ -424,10 +452,6 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
                   <ResyncStatTile label={t("resyncStatDead")} value={resyncSummary.dead} tone="bad" />
                   <ResyncStatTile label={t("resyncStatSkipped")} value={resyncSummary.skipped} />
                 </div>
-
-                {!resyncTerminal && (
-                  <p className="text-xs text-muted-foreground">{t("resyncRunningHint")}</p>
-                )}
 
                 {resyncTerminal && (resyncSummary.dead > 0 || rematchStatus !== "skippedReconciled") && (
                   <div className="flex flex-col gap-2 border-t pt-3 sm:flex-row sm:items-center">

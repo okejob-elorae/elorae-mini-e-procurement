@@ -109,7 +109,12 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
             }),
           );
         } else if (data.resync.reason === "NO_TARGETS") {
-          toast.success(t("uploadAllMatched", { total: String(data.lineCount) }));
+          toast.success(
+            t("uploadAllMatched", {
+              matched: String(data.matched?.matched ?? 0),
+              total: String(data.lineCount),
+            }),
+          );
         } else {
           toast.warning(t("uploadAutoFetchFailed"));
         }
