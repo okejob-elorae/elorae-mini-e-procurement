@@ -215,9 +215,9 @@ export function deriveJubelioComparison(
  * the Jubelio order) has no escrow figure. Two causes look identical here: Jubelio has not
  * published escrow yet, or the order was synced before it did and has not been re-fetched since.
  * The compare cannot compute a delta, so without this flag the line showed "Jubelio data n/a" and
- * never reached `differCount`, looking reconciled. The settlement resync seeds only unmatched
- * lines, so it does not refresh these. Cancelled orders are excluded (their escrow 0 is real) and
- * so are unpaid lines (export under Rp1).
+ * never reached `differCount`, looking reconciled. Only a fetch refreshes that copy, so
+ * `collectResyncTargets` seeds these lines as well as the unmatched ones. Cancelled orders are
+ * excluded (their escrow 0 is real) and so are unpaid lines (export under Rp1).
  */
 export function isEscrowMissing(input: {
   matched: boolean;

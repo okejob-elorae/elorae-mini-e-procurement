@@ -13,8 +13,8 @@ export type RematchSweepResult = {
 /**
  * Rematches every settlement whose stamped resync batch has finished. Stamping first (a CAS on
  * `resyncRematchedAt: null`) keeps two ticks from rematching the same settlement twice. A RECONCILED
- * settlement is stamped but never rematched: `matchSettlement` would set it back to MATCHED and
- * rewrite the cost and profit figures its posted journal was built from.
+ * settlement is stamped but never rematched: `matchSettlement` would set it back to MATCHED beside
+ * its posted journal and rewrite every line's cost and profit figures.
  *
  * `settlementIds` must always be passed by a spec — omitted, this sweeps every settlement with a
  * pending batch; `[]` sweeps nothing (`!== undefined`, never a length check — see AGENTS.md's
@@ -38,8 +38,9 @@ export async function runSettlementRematchSweep(
   for (const s of pending) {
     const batchId = s.resyncBatchId as string;
     /*
-     * `total === 0` counts as still running on purpose: the api seeds rows asynchronously and
-     * could lag a moment behind the stamp.
+     * `total === 0` counts as still running on purpose. The api writes every row before it returns
+     * the batch and the stamp lands only after that, so a stamped batch has rows today; with none,
+     * "finished with nothing fetched" and "not visible yet" look the same, and this declines to guess.
      */
     const [total, inFlight] = await Promise.all([
       prisma.jubelioSalesOrderResync.count({ where: { batchId } }),
