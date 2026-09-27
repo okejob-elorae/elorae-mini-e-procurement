@@ -353,6 +353,7 @@ export function createSellThroughFixtures() {
     count,
     raiseRetur,
     settleRetur,
+    otherStore,
     storeTransfer,
     approveTransfer,
     onlyLine,

@@ -13,6 +13,7 @@ type PageProps = {
     search?: string;
     status?: string;
     orderType?: string;
+    origin?: string;
     storeId?: string;
     page?: string;
     pageSize?: string;
@@ -39,6 +40,10 @@ function parseOrderType(raw: string | undefined): "PUTUS" | "KONSI" | undefined 
   return raw === "PUTUS" || raw === "KONSI" ? raw : undefined;
 }
 
+function parseOrigin(raw: string | undefined): "FIELD" | "ADMIN" | undefined {
+  return raw === "FIELD" || raw === "ADMIN" ? raw : undefined;
+}
+
 export default async function FieldSalesOrdersPage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session) redirect("/login");
@@ -48,6 +53,7 @@ export default async function FieldSalesOrdersPage({ searchParams }: PageProps) 
     search: sp.search?.trim() || undefined,
     status: parseStatus(sp.status),
     orderType: parseOrderType(sp.orderType),
+    origin: parseOrigin(sp.origin),
     storeId: sp.storeId?.trim() || undefined,
   };
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
@@ -65,6 +71,7 @@ export default async function FieldSalesOrdersPage({ searchParams }: PageProps) 
       search={filter.search ?? ""}
       status={filter.status ?? "ALL"}
       orderType={sp.orderType === "PUTUS" || sp.orderType === "KONSI" ? sp.orderType : "ALL"}
+      origin={sp.origin === "FIELD" || sp.origin === "ADMIN" ? sp.origin : "ALL"}
       storeId={filter.storeId ?? "ALL"}
       storeOptions={storeOptions}
       page={page}

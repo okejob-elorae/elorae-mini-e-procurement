@@ -379,45 +379,7 @@ export async function approveFieldSalesOrder(input: {
         }
       }
 
-      /* Re-read: the lines created above are not in the `order.lines` snapshot taken at the top. */
-      const lines = await tx.fieldSalesOrderLine.findMany({
-        where: { orderId: order.id },
-        include: { item: { select: { sku: true, sellingPrice: true, category: { select: { name: true } } } } },
-      });
-
-      const { shortLines } = await reserveKonsiFieldSalesOrder(tx, {
-        orderNo: order.orderNo,
-        lines: lines.map((l) => ({ fieldSalesLineId: l.id, itemId: l.itemId, variantSku: l.variantSku, qty: l.qty })),
-      });
-      if (shortLines.length > 0) throw new InsufficientStockError(shortLines);
-
-      const markup = order.store.markupPercent === null ? null : Number(order.store.markupPercent);
-      const priceDiscount = order.store.priceDiscountPercent === null ? null : Number(order.store.priceDiscountPercent);
-      let total = 0;
-      for (const l of lines) {
-        const { price } = computeStorePrice({
-          sellingPrice: l.item.sellingPrice === null ? null : Number(l.item.sellingPrice),
-          termsType: "KONSI",
-          markupPercent: markup,
-          priceDiscountPercent: priceDiscount,
-        });
-        const unit = price ?? 0;
-        const lineTotal = unit * l.qty;
-        total += lineTotal;
-        await tx.fieldSalesOrderLine.update({ where: { id: l.id }, data: { unitPrice: unit, lineTotal } });
-      }
-
-      /**
-       * Approve only RESERVES konsi stock. It moves main → the store's virtual warehouse at
-       * delivery-shipment completion (`completeDeliveryShipment`), one `KonsiTransfer` per
-       * completed shipment, so a short or refused delivery never lands at the store. Never
-       * through `consumeFieldSalesOrder` (packages/db/src/reservation-writer.ts), which is an
-       * orphaned FIELD_SALES_CONSUME trap with no production caller. No SalesHistory for konsi.
-       */
-      await tx.fieldSalesOrder.update({
-        where: { id: order.id },
-        data: { status: "APPROVED", approvedAt: new Date(), approvedById: input.approvedById, subtotal: total, total },
-      });
+      await approveKonsiOrderInTx(tx, { orderId: order.id, approvedById: input.approvedById });
       return { ok: true };
     }
 
@@ -517,6 +479,66 @@ export async function approveFieldSalesOrder(input: {
       },
     });
     return { ok: true };
+  });
+}
+
+/**
+ * The KONSI half of an approval, shared by `approveFieldSalesOrder` and the admin push
+ * (`createKonsiPushOrder`): reserve every line against main stock, price each line at the
+ * store's markup (an informational value; nothing bills from it) and flip the order to APPROVED.
+ * It runs inside the caller's serializable transaction and throws `InsufficientStockError` naming
+ * every short line, so the caller's whole transaction rolls back. It moves no stock.
+ * The caller must already have verified a PENDING_APPROVAL KONSI order: this checks neither the
+ * status nor the type. A line that already has a reservation is skipped, not re-reserved, so a
+ * wrong order is not refused here — it is repriced at the konsi markup and flipped to APPROVED.
+ */
+export async function approveKonsiOrderInTx(
+  tx: Prisma.TransactionClient,
+  input: { orderId: string; approvedById: string },
+): Promise<void> {
+  const order = await tx.fieldSalesOrder.findUniqueOrThrow({
+    where: { id: input.orderId },
+    select: { id: true, orderNo: true, store: { select: { markupPercent: true, priceDiscountPercent: true } } },
+  });
+
+  /* Read the lines fresh: the caller may have created some inside this same transaction. */
+  const lines = await tx.fieldSalesOrderLine.findMany({
+    where: { orderId: order.id },
+    include: { item: { select: { sku: true, sellingPrice: true, category: { select: { name: true } } } } },
+  });
+
+  const { shortLines } = await reserveKonsiFieldSalesOrder(tx, {
+    orderNo: order.orderNo,
+    lines: lines.map((l) => ({ fieldSalesLineId: l.id, itemId: l.itemId, variantSku: l.variantSku, qty: l.qty })),
+  });
+  if (shortLines.length > 0) throw new InsufficientStockError(shortLines);
+
+  const markup = order.store.markupPercent === null ? null : Number(order.store.markupPercent);
+  const priceDiscount = order.store.priceDiscountPercent === null ? null : Number(order.store.priceDiscountPercent);
+  let total = 0;
+  for (const l of lines) {
+    const { price } = computeStorePrice({
+      sellingPrice: l.item.sellingPrice === null ? null : Number(l.item.sellingPrice),
+      termsType: "KONSI",
+      markupPercent: markup,
+      priceDiscountPercent: priceDiscount,
+    });
+    const unit = price ?? 0;
+    const lineTotal = unit * l.qty;
+    total += lineTotal;
+    await tx.fieldSalesOrderLine.update({ where: { id: l.id }, data: { unitPrice: unit, lineTotal } });
+  }
+
+  /**
+   * Approve only RESERVES konsi stock. It moves main → the store's virtual warehouse at
+   * delivery-shipment completion (`completeDeliveryShipment`), one `KonsiTransfer` per
+   * completed shipment, so a short or refused delivery never lands at the store. Never
+   * through `consumeFieldSalesOrder` (packages/db/src/reservation-writer.ts), which is an
+   * orphaned FIELD_SALES_CONSUME trap with no production caller. No SalesHistory for konsi.
+   */
+  await tx.fieldSalesOrder.update({
+    where: { id: order.id },
+    data: { status: "APPROVED", approvedAt: new Date(), approvedById: input.approvedById, subtotal: total, total },
   });
 }
 

@@ -188,6 +188,7 @@ export function FieldSalesOrderDetailClient({
         <Badge variant={STATUS_BADGE_VARIANT[order.status]}>
           {t(STATUS_LABEL_KEY[order.status])}
         </Badge>
+        {order.origin === "ADMIN" && <Badge variant="secondary">{t("originAdmin")}</Badge>}
         <Badge variant="outline">{isKonsi ? t("typeKonsi") : t("typePutus")}</Badge>
         {/**
          * Putus notas print per-delivery from DeliveriesCard; a konsi order with a real transfer

@@ -10,6 +10,8 @@ export type FieldSalesOrderStatus = "PENDING_APPROVAL" | "APPROVED" | "REJECTED"
 
 export type FieldSalesOrderType = "PUTUS" | "KONSI";
 
+export type FieldSalesOrderOrigin = "FIELD" | "ADMIN";
+
 export type FieldSalesDeliveryStatus = "PENDING" | "PARTIAL" | "DELIVERED" | "CLOSED";
 
 export type FieldSalesDeliveryLineSummary = {
@@ -41,6 +43,7 @@ export type FieldSalesOrderListItem = {
   id: string;
   orderNo: string;
   orderType: FieldSalesOrderType;
+  origin: FieldSalesOrderOrigin;
   storeName: string;
   salesmanName: string;
   status: FieldSalesOrderStatus;
@@ -101,6 +104,7 @@ export function serializeListItem(row: {
   id: string;
   orderNo: string;
   orderType: FieldSalesOrderType;
+  origin: FieldSalesOrderOrigin;
   status: FieldSalesOrderStatus;
   total: Prisma.Decimal | number;
   createdAt: Date;
@@ -112,6 +116,7 @@ export function serializeListItem(row: {
     id: row.id,
     orderNo: row.orderNo,
     orderType: row.orderType,
+    origin: row.origin,
     storeName: row.store.name,
     salesmanName: row.salesman.name ?? "—",
     status: row.status,
@@ -122,12 +127,19 @@ export function serializeListItem(row: {
 }
 
 export async function listFieldSalesOrders(
-  filter: { status?: FieldSalesOrderStatus; search?: string; orderType?: FieldSalesOrderType; storeId?: string },
+  filter: {
+    status?: FieldSalesOrderStatus;
+    search?: string;
+    orderType?: FieldSalesOrderType;
+    origin?: FieldSalesOrderOrigin;
+    storeId?: string;
+  },
   paging: { page: number; pageSize: number },
 ): Promise<{ orders: FieldSalesOrderListItem[]; totalCount: number }> {
   const where: Prisma.FieldSalesOrderWhereInput = {};
   if (filter.status) where.status = filter.status;
   if (filter.orderType) where.orderType = filter.orderType;
+  if (filter.origin) where.origin = filter.origin;
   if (filter.storeId) where.storeId = filter.storeId;
   if (filter.search && filter.search.trim()) {
     const s = filter.search.trim();
@@ -140,7 +152,7 @@ export async function listFieldSalesOrders(
       skip: (paging.page - 1) * paging.pageSize,
       take: paging.pageSize,
       select: {
-        id: true, orderNo: true, orderType: true, status: true, total: true, createdAt: true,
+        id: true, orderNo: true, orderType: true, origin: true, status: true, total: true, createdAt: true,
         creditHoldAtCreate: true,
         store: { select: { name: true } },
         salesman: { select: { name: true } },
@@ -155,7 +167,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
   const row = await prisma.fieldSalesOrder.findUnique({
     where: { id },
     select: {
-      id: true, orderNo: true, orderType: true, status: true, total: true, subtotal: true, note: true,
+      id: true, orderNo: true, orderType: true, origin: true, status: true, total: true, subtotal: true, note: true,
       creditHoldAtCreate: true,
       approvedAt: true, rejectedAt: true, rejectReason: true, createdAt: true,
       closedAt: true, closeReason: true,
@@ -446,7 +458,8 @@ export type KonsiSuggestion = {
 };
 
 /**
- * Goods never sent to this store, for the admin to add while approving a konsi order.
+ * Goods never sent to this store, for the admin to add while approving a konsi order or to send
+ * in an admin push.
  * "Never sent" is ITEM-level (matches `sentItemIds` and the writer's ALREADY_SENT check): if any
  * variant of an item was ever sent to this store, the whole item is excluded. Each surviving item
  * is then expanded into one row per variant (real InventoryValue row), because availability and
@@ -458,24 +471,20 @@ export type KonsiSuggestion = {
  * the strictly stronger, more actionable claim, so the gap heading wins and this list suppresses
  * the row rather than rendering the same SKU twice under two different urgency framings.
  */
-export async function listKonsiSuggestions(orderId: string): Promise<KonsiSuggestion[]> {
-  const order = await prisma.fieldSalesOrder.findUnique({
-    where: { id: orderId },
-    select: { storeId: true, orderType: true, lines: { select: { itemId: true } } },
-  });
-  if (!order || order.orderType !== "KONSI") return [];
-
-  const sent = await sentItemIds(order.storeId);
-  const onOrder = new Set(order.lines.map((l) => l.itemId));
-  const exclude = new Set<string>([...sent, ...onOrder]);
+export async function listStoreNeverSentSuggestions(
+  storeId: string,
+  opts?: { excludeItemIds?: string[] },
+): Promise<KonsiSuggestion[]> {
+  const sent = await sentItemIds(storeId);
+  const exclude = new Set<string>([...sent, ...(opts?.excludeItemIds ?? [])]);
 
   /**
-   * Raw store gaps, not the order-scoped `listKonsiAssortmentGaps` output: an item already on
-   * this order is excluded from THIS list anyway via the item-grain `onOrder` set above, and
-   * availability is filtered identically (and from the same InventoryValue rows) by both lists,
-   * so the two sources agree on every row that could actually collide here.
+   * Raw store gaps, not the order-scoped `listKonsiAssortmentGaps` output: an item already
+   * excluded above is excluded from THIS list anyway via `exclude`, and availability is filtered
+   * identically (and from the same InventoryValue rows) by both lists, so the two sources agree
+   * on every row that could actually collide here.
    */
-  const gapKeys = new Set((await listAssortmentGaps(order.storeId)).map((g) => `${g.itemId}::${g.variantSku}`));
+  const gapKeys = new Set((await listAssortmentGaps(storeId)).map((g) => `${g.itemId}::${g.variantSku}`));
 
   const where: Prisma.ItemWhereInput = { isActive: true, type: "FINISHED_GOOD" };
   /* Prisma's notIn with an empty array is untrustworthy to lean on — skip the filter entirely. */
@@ -542,6 +551,17 @@ export async function listKonsiSuggestions(orderId: string): Promise<KonsiSugges
   return rows.sort((a, b) => a.sku.localeCompare(b.sku) || a.variantSku.localeCompare(b.variantSku));
 }
 
+/* Scopes `listStoreNeverSentSuggestions` to one order's own store and lines. */
+export async function listKonsiSuggestions(orderId: string): Promise<KonsiSuggestion[]> {
+  const order = await prisma.fieldSalesOrder.findUnique({
+    where: { id: orderId },
+    select: { storeId: true, orderType: true, lines: { select: { itemId: true } } },
+  });
+  if (!order || order.orderType !== "KONSI") return [];
+
+  return listStoreNeverSentSuggestions(order.storeId, { excludeItemIds: order.lines.map((l) => l.itemId) });
+}
+
 export type KonsiAssortmentGapSuggestion = {
   itemId: string;
   variantSku: string;
@@ -555,45 +575,45 @@ export type KonsiAssortmentGapSuggestion = {
 };
 
 /**
- * The store's assortment gaps, restyled as stageable rows for the SAME konsi approval panel that
- * shows `listKonsiSuggestions` — a deliberately DIFFERENT signal, not a variant of it.
+ * The store's assortment gaps, restyled as stageable rows for the same two screens that show the
+ * never-sent list — the konsi approval panel and the admin push page — a deliberately DIFFERENT
+ * signal, not a variant of it.
  * `sentItemIds` drops an item the moment it appears on any non-rejected konsi order line that is
  * not fully cancelled, even if the store now holds zero, so "never sent" can never re-flag a
  * depleted item. An assortment gap catches
  * exactly that case, so this reads `listAssortmentGaps` directly and never filters through
- * `sentItemIds`. This function is the authoritative source for a gap row: `listKonsiSuggestions`
- * is the one that defers to IT, suppressing its own row for any (itemId, variantSku) this
- * function would also claim, so the two lists never render the same SKU twice.
+ * `sentItemIds`. This function is the authoritative source for a gap row:
+ * `listStoreNeverSentSuggestions` is the one that defers to IT, suppressing its own row for any
+ * (itemId, variantSku) this function would also claim, so the two lists never render the same SKU
+ * twice.
  *
- * Same two guards as `listKonsiSuggestions`, kept in sync on purpose:
- * - A missing order, or a non-KONSI order, returns `[]`.
- * - Items already staged on the order under approval are excluded — but at VARIANT grain
- *   (`itemId::variantSku`), not item grain: `FieldSalesOrderLine` is per-variant, so a gap on a
- *   different variant of an item already on the order is still a genuine gap and must still show.
+ * `excludeKeys` are VARIANT grain (`itemId::variantSku`), not item grain: `FieldSalesOrderLine`
+ * is per-variant, so a gap on a different variant of an item on the exclusion list is still a
+ * genuine gap and must still show.
  *
- * Zero/negative main-warehouse availability is dropped for the same reason `listKonsiSuggestions`
- * drops it: nothing here is stageable from THIS panel, so a dead qty stepper is wasted screen
- * space, not information the admin needs here — the store detail page's read-only gap card still
- * shows every gap regardless of main-warehouse stock.
+ * Zero/negative main-warehouse availability is dropped for the same reason
+ * `listStoreNeverSentSuggestions` drops it: nothing here is stageable from either screen, so a dead
+ * qty stepper is wasted screen space, not information the admin needs here — the store detail
+ * page's read-only gap card still shows every gap regardless of main-warehouse stock.
  */
-export async function listKonsiAssortmentGaps(orderId: string): Promise<KonsiAssortmentGapSuggestion[]> {
-  const order = await prisma.fieldSalesOrder.findUnique({
-    where: { id: orderId },
-    select: { storeId: true, orderType: true, lines: { select: { itemId: true, variantSku: true } } },
-  });
-  if (!order || order.orderType !== "KONSI") return [];
-
-  const gaps = await listAssortmentGaps(order.storeId);
+export async function listStoreGapSuggestions(
+  storeId: string,
+  opts?: { excludeKeys?: string[] },
+): Promise<KonsiAssortmentGapSuggestion[]> {
+  const gaps = await listAssortmentGaps(storeId);
   if (gaps.length === 0) return [];
 
-  const onOrder = new Set(order.lines.map((l) => `${l.itemId}::${l.variantSku}`));
-  const remaining = gaps.filter((g) => !onOrder.has(`${g.itemId}::${g.variantSku}`));
+  const excludeKeys = new Set(opts?.excludeKeys ?? []);
+  const remaining = gaps.filter((g) => !excludeKeys.has(`${g.itemId}::${g.variantSku}`));
   if (remaining.length === 0) return [];
 
   const itemIds = Array.from(new Set(remaining.map((g) => g.itemId)));
-  /* Same isActive/type filter listKonsiSuggestions applies — a deactivated or raw-material item
-   * dropped from the assortment lines table would otherwise still render here as a stageable gap
-   * and abort the approval with UNKNOWN_ITEM (that writer check filters on the same two fields). */
+  /**
+   * Same isActive/type filter `listStoreNeverSentSuggestions` applies — a deactivated or
+   * raw-material item dropped from the assortment lines table would otherwise still render here
+   * as a stageable gap and abort either caller (the order-scoped approve panel or the admin push)
+   * with UNKNOWN_ITEM, since both writers filter on the same two fields.
+   */
   const items = await prisma.item.findMany({
     where: { id: { in: itemIds }, isActive: true, type: "FINISHED_GOOD" },
     select: {
@@ -610,10 +630,11 @@ export async function listKonsiAssortmentGaps(orderId: string): Promise<KonsiAss
     if (!item) continue;
 
     /**
-     * Same null/"" collision `listKonsiSuggestions` guards against: MariaDB permits multiple
-     * NULLs on the (itemId, variantSku) unique index, so an item can carry both a `null` and an
-     * `""` InventoryValue row for the same logical variant. Keep the MINIMUM available across a
-     * collision — same fail-safe direction as the writer's own reservation lookup.
+     * Same null/"" collision `listStoreNeverSentSuggestions` guards against: MariaDB permits
+     * multiple NULLs on the (itemId, variantSku) unique index, so an item can carry both a `null`
+     * and an `""` InventoryValue row for the same logical variant. Keep the MINIMUM available
+     * across a collision — same fail-safe direction as the writer's own reservation lookup. Both
+     * the order-scoped approve panel and the admin push read this list, so either caller benefits.
      */
     let available: number | null = null;
     for (const iv of item.inventoryValues) {
@@ -636,4 +657,17 @@ export async function listKonsiAssortmentGaps(orderId: string): Promise<KonsiAss
     });
   }
   return rows.sort((a, b) => a.sku.localeCompare(b.sku) || a.variantSku.localeCompare(b.variantSku));
+}
+
+/* Scopes `listStoreGapSuggestions` to one order's own store, excluding that order's own lines. */
+export async function listKonsiAssortmentGaps(orderId: string): Promise<KonsiAssortmentGapSuggestion[]> {
+  const order = await prisma.fieldSalesOrder.findUnique({
+    where: { id: orderId },
+    select: { storeId: true, orderType: true, lines: { select: { itemId: true, variantSku: true } } },
+  });
+  if (!order || order.orderType !== "KONSI") return [];
+
+  return listStoreGapSuggestions(order.storeId, {
+    excludeKeys: order.lines.map((l) => `${l.itemId}::${l.variantSku}`),
+  });
 }

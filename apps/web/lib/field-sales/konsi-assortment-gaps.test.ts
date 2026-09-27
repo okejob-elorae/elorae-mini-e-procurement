@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { listKonsiAssortmentGaps, listKonsiSuggestions } from "./queries";
+import { listKonsiAssortmentGaps, listKonsiSuggestions, listStoreGapSuggestions } from "./queries";
 import { listAssortmentGaps } from "@/lib/stores/assortment/queries";
 import { approveFieldSalesOrder } from "./writer";
 import { closeFieldSalesOrderRemainder } from "./delivery/writer";
@@ -452,6 +452,20 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
     expect(row!.onHandQty).toBe(0);
     expect(row!.inTransitQty).toBe(6);
     expect(row!.targetQty).toBe(10);
+  });
+
+  it("the store-scoped core matches the order-scoped list", async () => {
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({
+      where: { id: orderId },
+      select: { lines: { select: { itemId: true, variantSku: true } } },
+    });
+    const excludeKeys = order.lines.map((l) => `${l.itemId}::${l.variantSku}`);
+
+    const core = await listStoreGapSuggestions(storeId, { excludeKeys });
+    const wrapper = await listKonsiAssortmentGaps(orderId);
+    /* Two empty lists would match without proving anything. */
+    expect(core.length).toBeGreaterThan(0);
+    expect(core).toEqual(wrapper);
   });
 
   it("a delivered line counts through StoreStock instead: onHandQty reads the delivered qty and inTransitQty drops to 0", async () => {
