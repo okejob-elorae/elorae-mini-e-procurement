@@ -20,7 +20,11 @@ vi.mock("@/lib/internal-api", () => ({
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { apiFetch } from "@/lib/internal-api";
-import { getResyncSummary, triggerSettlementResyncAction } from "./jubelio-salesorder-resync";
+import {
+  getResyncSummary,
+  getSettlementResyncState,
+  triggerSettlementResyncAction,
+} from "./jubelio-salesorder-resync";
 
 const MANAGE_SESSION = { user: { id: "u1", permissions: ["finance:settlements:manage"] } };
 const NO_PERM_SESSION = { user: { id: "u1", permissions: [] } };
@@ -93,6 +97,45 @@ describe("jubelio-salesorder-resync server actions", () => {
         dead: 0,
         skipped: 0,
         total: 0,
+      });
+    });
+  });
+
+  describe("getSettlementResyncState", () => {
+    it("returns FORBIDDEN when there is no session", async () => {
+      (auth as any).mockResolvedValue(null);
+      const result = await getSettlementResyncState("s1");
+      expect(result).toEqual({ ok: false, code: "FORBIDDEN" });
+      expect(prisma.settlement.findUnique).not.toHaveBeenCalled();
+    });
+
+    it("returns FORBIDDEN when the session lacks the settlements:manage permission", async () => {
+      (auth as any).mockResolvedValue(NO_PERM_SESSION);
+      const result = await getSettlementResyncState("s1");
+      expect(result).toEqual({ ok: false, code: "FORBIDDEN" });
+    });
+
+    it("returns the settlement's batchId, rematchedAtIso and live status", async () => {
+      (auth as any).mockResolvedValue(MANAGE_SESSION);
+      (prisma.settlement.findUnique as any).mockResolvedValue({
+        resyncBatchId: "batch-1",
+        resyncRematchedAt: new Date("2026-09-27T04:00:00.000Z"),
+        status: "MATCHED",
+      });
+
+      const result = await getSettlementResyncState("s1");
+
+      expect(prisma.settlement.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "s1" },
+          select: { resyncBatchId: true, resyncRematchedAt: true, status: true },
+        }),
+      );
+      expect(result).toEqual({
+        ok: true,
+        batchId: "batch-1",
+        rematchedAtIso: "2026-09-27T04:00:00.000Z",
+        status: "MATCHED",
       });
     });
   });

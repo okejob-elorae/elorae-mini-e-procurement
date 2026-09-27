@@ -64,14 +64,16 @@ export async function getResyncSummary(batchId: string): Promise<ResyncSummaryRe
 }
 
 export type SettlementResyncStateResult =
-  | { ok: true; rematchedAtIso: string | null; batchId: string | null }
+  | { ok: true; rematchedAtIso: string | null; batchId: string | null; status: string | null }
   | { ok: false; code: "FORBIDDEN" };
 
 /**
  * Read-only peek at a settlement's stamped resync batch, for the detail page's auto-rematch
  * poller: it waits for `rematchedAtIso` to go non-null after the resync batch itself goes
  * terminal, rather than polling `getResyncSummary` forever. Same permission check as
- * `getResyncSummary` — this is settlement-scoped data, not batch-scoped.
+ * `getResyncSummary` — this is settlement-scoped data, not batch-scoped. `status` is read live
+ * here (not from the page's own stale props) so the poller can tell a real auto-rematch apart
+ * from a RECONCILED-skip even if another tab posted the journal while this one was polling.
  */
 export async function getSettlementResyncState(settlementId: string): Promise<SettlementResyncStateResult> {
   const session = await auth();
@@ -81,13 +83,14 @@ export async function getSettlementResyncState(settlementId: string): Promise<Se
 
   const row = await prisma.settlement.findUnique({
     where: { id: settlementId },
-    select: { resyncBatchId: true, resyncRematchedAt: true },
+    select: { resyncBatchId: true, resyncRematchedAt: true, status: true },
   });
 
   return {
     ok: true,
     rematchedAtIso: row?.resyncRematchedAt?.toISOString() ?? null,
     batchId: row?.resyncBatchId ?? null,
+    status: row?.status ?? null,
   };
 }
 

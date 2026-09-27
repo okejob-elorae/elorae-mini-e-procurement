@@ -61,16 +61,15 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
   const [isPending, startTransition] = useTransition();
   const [isPosting, startPostTransition] = useTransition();
   const [isResyncing, startResyncTransition] = useTransition();
-  const [resyncBatchId, setResyncBatchId] = useState<string | null>(settlement.resyncBatchId);
+  // Once a batch has already been rematched (by this tab or the sweep, on a previous visit),
+  // the panel has nothing left to say — the settlement's own figures already show the outcome —
+  // so start with no batch id at all rather than reopening a panel that will never resolve again.
+  const [resyncBatchId, setResyncBatchId] = useState<string | null>(
+    settlement.resyncRematchedAt === null ? settlement.resyncBatchId : null,
+  );
   const [resyncSummary, setResyncSummary] = useState<ResyncSummary | null>(null);
   const [resyncPollError, setResyncPollError] = useState(false);
-  const [rematchStatus, setRematchStatus] = useState<RematchStatus>(
-    settlement.resyncRematchedAt === null
-      ? "pending"
-      : settlement.status === "RECONCILED"
-        ? "skippedReconciled"
-        : "rematched",
-  );
+  const [rematchStatus, setRematchStatus] = useState<RematchStatus>("pending");
   const rematchHandledRef = useRef(false);
 
   const formatDate = (iso: string) =>
@@ -197,7 +196,10 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
 
       rematchHandledRef.current = true;
       if (timer) clearInterval(timer);
-      if (settlement.status === "RECONCILED") {
+      // Branch on the status this call just read, not the settlement prop from initial
+      // load — another tab may have posted the journal (status → RECONCILED) while this
+      // one was polling, and the sweep would then have skipped without rematching.
+      if (res.status === "RECONCILED") {
         setRematchStatus("skippedReconciled");
       } else {
         setRematchStatus("rematched");
@@ -213,7 +215,7 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
       cancelled = true;
       if (timer) clearInterval(timer);
     };
-  }, [resyncBatchId, resyncTerminal, rematchStatus, settlement.id, settlement.status, router, t]);
+  }, [resyncBatchId, resyncTerminal, rematchStatus, settlement.id, router, t]);
 
   function handleResync() {
     startResyncTransition(async () => {
@@ -428,18 +430,15 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
                 )}
 
                 {resyncTerminal && (
-                  <div className="flex flex-col gap-2 border-t pt-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">{t("resyncDoneHint")}</p>
-                      {resyncSummary.dead > 0 && (
-                        <p className="text-xs text-red-700 dark:text-red-400">
-                          {t("resyncDeadHint", { count: String(resyncSummary.dead) })}
-                        </p>
-                      )}
-                    </div>
-                    <Button size="sm" disabled={isPending} onClick={handleMatch}>
+                  <div className="flex flex-col gap-2 border-t pt-3 sm:flex-row sm:items-center">
+                    {resyncSummary.dead > 0 && (
+                      <p className="text-xs text-red-700 dark:text-red-400">
+                        {t("resyncDeadHint", { count: String(resyncSummary.dead) })}
+                      </p>
+                    )}
+                    <Button size="lg" disabled={isPending} onClick={handleMatch} className="sm:ml-auto">
                       <RefreshCw className={`h-4 w-4 mr-2 ${isPending ? "animate-spin" : ""}`} />
-                      {isPending ? t("matchOrdersPending") : t("resyncRematchButton")}
+                      {isPending ? t("matchOrdersPending") : t("rematchNow")}
                     </Button>
                   </div>
                 )}
