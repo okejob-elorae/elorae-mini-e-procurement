@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { toast } from "sonner";
-import { FileSpreadsheet, Upload, AlertCircle } from "lucide-react";
+import { FileSpreadsheet, Upload, AlertCircle, Loader2 } from "lucide-react";
 import type { SettlementListRow } from "@/lib/finance/settlement/queries";
 /* Type-only: erased at compile, so the parser's xlsx dependency never reaches the client bundle. */
 import type { SettlementParseError } from "@/lib/finance/settlement/shopee-settlement-parser";
@@ -45,6 +45,8 @@ type UploadSuccessResponse = {
   checksumOk: boolean;
   checksumVariance: number;
   lineCount: number;
+  matched: { matched: number; unmatched: number } | null;
+  resync: { started: true; seeded: number } | { started: false; reason: "NO_TARGETS" | "API_ERROR" | "MATCH_FAILED" };
 };
 
 function formatRupiah(value: number): string {
@@ -98,7 +100,24 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
 
       if (res.status === 200) {
         const data = (await res.json()) as UploadSuccessResponse;
-        toast.success(t("uploadSuccess", { lineCount: String(data.lineCount) }));
+        if (data.resync.started) {
+          toast.success(
+            t("uploadAutoFetchStarted", {
+              matched: String(data.matched?.matched ?? 0),
+              total: String(data.lineCount),
+              seeded: String(data.resync.seeded),
+            }),
+          );
+        } else if (data.resync.reason === "NO_TARGETS") {
+          toast.success(
+            t("uploadAllMatched", {
+              matched: String(data.matched?.matched ?? 0),
+              total: String(data.lineCount),
+            }),
+          );
+        } else {
+          toast.warning(t("uploadAutoFetchFailed"));
+        }
         setFile(null);
         setFileInputKey((k) => k + 1);
         startTransition(() => router.push(`/backoffice/finance/settlements/${data.settlementId}`));
@@ -279,8 +298,18 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
                             </Badge>
                           )}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {row.matchedCount} / {row.lineCount}
+                        <TableCell className="text-right">
+                          <div className="inline-flex items-center justify-end gap-1.5">
+                            <span className="tabular-nums">
+                              {row.matchedCount} / {row.lineCount}
+                            </span>
+                            {row.fetchInProgress && (
+                              <Badge variant="secondary" className="text-muted-foreground">
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                {t("fetchingBadge")}
+                              </Badge>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <Badge variant={statusVariant(row.status)}>{statusLabel(row.status)}</Badge>

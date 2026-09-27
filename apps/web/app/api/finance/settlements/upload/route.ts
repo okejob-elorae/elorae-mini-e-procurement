@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { parseSettlement, isSupportedMarketplace } from "@/lib/finance/settlement/parser";
 import { persistSettlement } from "@/lib/finance/settlement/persist";
+import { matchSettlement } from "@/lib/finance/settlement/match";
+import { startSettlementResync } from "@/lib/finance/settlement/start-resync";
 
 export const dynamic = "force-dynamic";
 
@@ -66,7 +68,21 @@ export async function POST(request: NextRequest) {
       marketplace,
     });
 
-    return NextResponse.json({ settlementId, checksumOk, checksumVariance, lineCount });
+    let matched: { matched: number; unmatched: number } | null = null;
+    let resync: { started: true; seeded: number } | { started: false; reason: "NO_TARGETS" | "API_ERROR" | "MATCH_FAILED" };
+    try {
+      const m = await matchSettlement(settlementId);
+      matched = { matched: m.matched, unmatched: m.unmatched };
+      const r = await startSettlementResync(settlementId, session.user.id);
+      /* NOT_FOUND cannot occur right after persist, so it's folded into API_ERROR here. */
+      resync = r.ok ? { started: true, seeded: r.seeded } : { started: false, reason: r.code === "NO_TARGETS" ? "NO_TARGETS" : "API_ERROR" };
+    } catch (err) {
+      /* The settlement is already persisted — a match or fetch failure must not fail the upload; the page still offers Match and Resync by hand. */
+      console.error("Settlement auto-match/fetch error:", err);
+      resync = { started: false, reason: "MATCH_FAILED" };
+    }
+
+    return NextResponse.json({ settlementId, checksumOk, checksumVariance, lineCount, matched, resync });
   } catch (error) {
     console.error("Settlement upload error:", error);
     return NextResponse.json({ error: "Upload failed" }, { status: 500 });

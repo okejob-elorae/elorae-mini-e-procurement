@@ -14,6 +14,7 @@ export type SettlementListRow = {
   lineCount: number;
   matchedCount: number;
   createdAtIso: string;
+  fetchInProgress: boolean;
 };
 
 export async function listSettlements(paging: {
@@ -35,6 +36,8 @@ export async function listSettlements(paging: {
         checksumOk: true,
         checksumVariance: true,
         createdAt: true,
+        resyncBatchId: true,
+        resyncRematchedAt: true,
         _count: { select: { lines: true } },
       },
     }),
@@ -63,6 +66,7 @@ export async function listSettlements(paging: {
     lineCount: r._count.lines,
     matchedCount: matchedCountBySettlementId.get(r.id) ?? 0,
     createdAtIso: r.createdAt.toISOString(),
+    fetchInProgress: r.resyncBatchId !== null && r.resyncRematchedAt === null,
   }));
 
   return { items, totalCount };
@@ -149,7 +153,7 @@ function feeNum(v: string | undefined): number {
  * line reconciles (Matches at 0) instead of showing "n/a". Shared by
  * `deriveJubelioComparison` + `deriveJubelioFees` so both agree.
  */
-function escrowAmountOrNull(
+export function escrowAmountOrNull(
   feeBreakdown: Record<string, string> | null,
   treatZeroAsReal = false,
 ): number | null {
@@ -211,9 +215,9 @@ export function deriveJubelioComparison(
  * the Jubelio order) has no escrow figure. Two causes look identical here: Jubelio has not
  * published escrow yet, or the order was synced before it did and has not been re-fetched since.
  * The compare cannot compute a delta, so without this flag the line showed "Jubelio data n/a" and
- * never reached `differCount`, looking reconciled. The settlement resync seeds only unmatched
- * lines, so it does not refresh these. Cancelled orders are excluded (their escrow 0 is real) and
- * so are unpaid lines (export under Rp1).
+ * never reached `differCount`, looking reconciled. Only a fetch refreshes that copy, so
+ * `collectResyncTargets` seeds these lines as well as the unmatched ones. Cancelled orders are
+ * excluded (their escrow 0 is real) and so are unpaid lines (export under Rp1).
  */
 export function isEscrowMissing(input: {
   matched: boolean;
@@ -248,6 +252,8 @@ export type SettlementDetail = {
   journalId: string | null;
   differCount: number;
   missingEscrowCount: number;
+  resyncBatchId: string | null;
+  resyncRematchedAt: string | null;
 };
 
 export async function getSettlementById(id: string): Promise<SettlementDetail | null> {
@@ -265,6 +271,8 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
       totalDilepas: true,
       parsedNetTotal: true,
       createdAt: true,
+      resyncBatchId: true,
+      resyncRematchedAt: true,
       lines: {
         select: {
           id: true,
@@ -402,5 +410,7 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
     journalId: journal?.id ?? null,
     differCount,
     missingEscrowCount,
+    resyncBatchId: row.resyncBatchId,
+    resyncRematchedAt: row.resyncRematchedAt === null ? null : row.resyncRematchedAt.toISOString(),
   };
 }
