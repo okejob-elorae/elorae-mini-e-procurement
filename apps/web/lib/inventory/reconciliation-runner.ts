@@ -204,6 +204,12 @@ async function enqueueReconStockPush(itemId: string, userId: string): Promise<vo
 export async function runReconciliation(
   trigger: ReconTrigger,
   startedById?: string,
+  /**
+   * Scopes the mapping scan to these item ids — a spec's own seeded rows, never a length check:
+   * `undefined` (the default, every production caller) scans every mapping, `[]` scans none. This
+   * is the only thing scoped; the Jubelio snapshot fetch and the classification loop are unchanged.
+   */
+  opts: { itemIds?: string[] } = {},
 ): Promise<{
   runId: string;
   skipped?: boolean;
@@ -262,6 +268,7 @@ export async function runReconciliation(
     const pushEnabled = await isJubelioStockPushEnabled(prisma);
 
     const mappings = await prisma.jubelioProductMapping.findMany({
+      where: opts.itemIds !== undefined ? { itemId: { in: opts.itemIds } } : undefined,
       include: {
         item: {
           select: {

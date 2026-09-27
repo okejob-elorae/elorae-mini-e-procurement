@@ -367,9 +367,8 @@ d("runReconciliation floor gating (test bed only)", () => {
   });
 
   afterEach(async () => {
-    // Deletes every result the run created, not just our own item's — a run scans every real
-    // FINISHED_GOOD Jubelio mapping on the shared test bed, and every one of those rows belongs
-    // to the run we created, so cleaning up by runId is scoped and complete.
+    // The spec scopes the run to its own seeded item id, so every result under this runId is
+    // ours — cleaning up by runId is scoped and complete.
     for (const runId of runIds) {
       await prisma.reconciliationResult.deleteMany({ where: { runId: seededId(runId) } });
       await prisma.reconciliationRun.deleteMany({ where: { id: seededId(runId) } });
@@ -420,9 +419,13 @@ d("runReconciliation floor gating (test bed only)", () => {
       data: { rows: [{ itemId: item.id, variantSku: "", jubelioItemId, jubelioQty: 0 }] },
     });
 
-    const res = await runReconciliation("MANUAL", "u1");
+    const res = await runReconciliation("MANUAL", "u1", { itemIds: [item.id] });
     expect(res.runId).not.toBe("");
     runIds.push(res.runId);
+
+    // Scoped to our own seeded item: exactly one mapping scanned, never the whole shared bed.
+    const scannedCount = await prisma.reconciliationResult.count({ where: { runId: res.runId } });
+    expect(scannedCount).toBe(1);
 
     const result = await prisma.reconciliationResult.findFirst({
       where: { runId: res.runId, itemId: item.id },
