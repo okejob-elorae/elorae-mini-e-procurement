@@ -116,7 +116,7 @@ EPIC-11 (Marketplace Settlements) + EPIC-15 (Marketplace Adapter) decomposition 
 | **15-02** | TikTok adapter — `tiktok-settlement-parser.ts`, same `ParsedSettlement` shape; zeroes the four Shopee fee columns (TikTok itemizes nothing per line), derives period dates by scanning Date cells, normalizes `Total Biaya` with `Math.abs()` | ✅ shipped (PR #168, validated on a real 18-line TikTok income export) |
 | **15-03** | Marketplace selection on upload — `SUPPORTED_MARKETPLACES` dropdown (SHOPEE/TIKTOK) → `parseSettlement()` switch; unknown value → 400, wrong-format file → 422 parse errors (never silent corruption) | ✅ shipped |
 
-Caveat on 15's "identical normalized schema" AC: the *shape* is identical, but fee itemization is not — Shopee fills four fee columns, TikTok fills none, so a TikTok Laba Rugi shows all fees under `MARKETPLACE_FEE_OTHER`. Downstream matching/profit/reconciliation are genuinely marketplace-blind. Tokopedia (`TP-`) rows ride inside the TikTok income export and match by `ref_no` through `match-key.ts`, so no separate Tokopedia parser or dropdown entry is needed; the TikTok option is labelled "TikTok Shop / Tokopedia" (fix/tiktok-tokopedia-settlement).
+Caveat on 15's "identical normalized schema" AC: the *shape* is identical, but fee itemization is not — Shopee fills four fee columns, TikTok fills none, so a TikTok Laba Rugi shows all fees under `MARKETPLACE_FEE_OTHER`. Downstream matching/profit/reconciliation are genuinely marketplace-blind. Tokopedia (`TP-`) rows ride inside the TikTok income export and match by `ref_no` through `match-key.ts`, so no separate Tokopedia parser or dropdown entry is needed; the TikTok option is labelled "TikTok Shop / Tokopedia" (PR #333).
 
 EPIC-13 (Journal Engine) decomposition:
 

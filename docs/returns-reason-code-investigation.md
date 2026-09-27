@@ -93,7 +93,7 @@ Called when SO `internal_status === RETURNED` (webhook + sweeper):
 
 ### 3.3 Channel detection
 
-> **Superseded 2026-09-27 (branch `fix/tiktok-tokopedia-settlement`).** `detectChannel` now keys on the order-number prefix first — `TT-` → `TIKTOK`, `TP-` → `TOKOPEDIA`, `SP-` → `SHOPEE` — and applies the last-token rule below only when no known prefix is present, so a `TT-` return is now `TIKTOK`. Migration `20260927200000_backfill_marketplace_channel_from_prefix` relabels the existing rows. The tables in this document are the 2026-07-28 snapshot and are left as measured. See the channel-detection entry in `docs/landmines/jubelio.md`.
+> **Superseded 2026-09-27 (PR #333).** `detectChannel` now keys on the order-number prefix first — `TT-` → `TIKTOK`, `TP-` → `TOKOPEDIA`, `SP-` → `SHOPEE` — and applies the last-token rule below only when no known prefix is present, so a `TT-` return is now `TIKTOK`. Migration `20260927200000_backfill_marketplace_channel_from_prefix` relabels the existing rows. The tables in this document are the 2026-07-28 snapshot and are left as measured. See the channel-detection entry in `docs/landmines/jubelio.md`.
 
 `detectChannel(source_name)` takes the **last** `|`-separated token (`apps/api/src/jubelio/handlers/_shared/channel-detect.ts`):
 
