@@ -298,7 +298,11 @@
     "resetPeriod": "Periode Reset",
     "padding": "Padding",
     "save": "Simpan",
-    "loadError": "Gagal memuat konfigurasi",
+    "loadErrorTitle": "Gagal memuat penomoran dokumen",
+    "loadErrorMessage": "Terjadi kesalahan saat memuat pengaturan. Silakan coba lagi.",
+    "loadErrorRetry": "Coba lagi",
+    "refreshError": "Tersimpan, tetapi daftar gagal dimuat ulang. Muat ulang halaman untuk melihat nomor terbaru.",
+    "notConfigured": "Belum dikonfigurasi. Muat ulang halaman untuk membuatnya.",
     "lastNumber": "No. terakhir",
     "notIssued": "Belum terbit",
     "resetPeriods": { "YEARLY": "Tahunan", "MONTHLY": "Bulanan", "NEVER": "Tidak pernah" },
@@ -335,9 +339,10 @@
     "err": {
       "UNKNOWN_DOC_TYPE": "Tipe dokumen tidak dikenal.",
       "PREFIX_REQUIRED": "Prefix wajib diisi.",
-      "PREFIX_TOO_LONG": "Prefix maksimal 20 karakter.",
+      "PREFIX_TOO_LONG": "Prefix maksimal {max} karakter.",
       "INVALID_RESET_PERIOD": "Pilih periode reset.",
-      "INVALID_PADDING": "Padding harus bilangan bulat 1 sampai 8."
+      "INVALID_PADDING": "Padding harus bilangan bulat 1 sampai 8.",
+      "DUPLICATE_PREFIX": "Prefix ini sudah dipakai {docType}. Setiap tipe dokumen perlu prefix sendiri."
     }
   },
   "itemCodes": {

@@ -639,7 +639,7 @@ async function main() {
   });
   console.log("UOM + conversions OK");
 
-  // ---------- 4. DocNumberConfig (all DocTypes) ----------
+  // ---------- 4. DocNumberConfig (a subset; every other DocType is created on first use or on the first Settings → Document Numbering load) ----------
   const docConfigs: { docType: DocType; prefix: string; resetPeriod: string }[] = [
     { docType: "PO", prefix: "PO/", resetPeriod: "YEARLY" },
     { docType: "GRN", prefix: "GRN/", resetPeriod: "MONTHLY" },

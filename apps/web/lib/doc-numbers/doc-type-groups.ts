@@ -1,8 +1,10 @@
 /**
  * Import-free on purpose: the Settings → Documents page is a client component, and pulling
  * Prisma's `DocType` from `@elorae/db` would drag the barrel into the browser bundle. The union
- * is restated by hand; `doc-type-groups.test.ts` pins it to Prisma's enum at runtime, and the
- * `Record` below makes a missing member a type error.
+ * is restated by hand; `doc-type-groups.test.ts` pins it to Prisma's enum at runtime. The
+ * `Record` below only makes a union member missing from the map a type error; a Prisma member
+ * missing from the union is one because of the `Record<DocType, …>` pin that assigns this map in
+ * `app/actions/settings/doc-numbers.ts`.
  */
 export type DocTypeValue =
   | "PO"

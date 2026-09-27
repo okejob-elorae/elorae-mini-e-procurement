@@ -298,7 +298,11 @@
     "resetPeriod": "Reset Period",
     "padding": "Padding",
     "save": "Save",
-    "loadError": "Failed to load config",
+    "loadErrorTitle": "Failed to load document numbering",
+    "loadErrorMessage": "Something went wrong while loading the settings. Please try again.",
+    "loadErrorRetry": "Retry",
+    "refreshError": "Saved, but the list could not be refreshed. Reload the page to see the latest numbers.",
+    "notConfigured": "Not configured yet. Reload the page to create it.",
     "lastNumber": "Last #",
     "notIssued": "None issued",
     "resetPeriods": { "YEARLY": "Yearly", "MONTHLY": "Monthly", "NEVER": "Never" },
@@ -335,9 +339,10 @@
     "err": {
       "UNKNOWN_DOC_TYPE": "Unknown document type.",
       "PREFIX_REQUIRED": "Prefix is required.",
-      "PREFIX_TOO_LONG": "Prefix can be at most 20 characters.",
+      "PREFIX_TOO_LONG": "Prefix can be at most {max} characters.",
       "INVALID_RESET_PERIOD": "Choose a reset period.",
-      "INVALID_PADDING": "Padding must be a whole number from 1 to 8."
+      "INVALID_PADDING": "Padding must be a whole number from 1 to 8.",
+      "DUPLICATE_PREFIX": "{docType} already uses this prefix. Each document type needs its own."
     }
   },
   "itemCodes": {

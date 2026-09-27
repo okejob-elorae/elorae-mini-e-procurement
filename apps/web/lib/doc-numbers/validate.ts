@@ -4,8 +4,9 @@ export const RESET_PERIODS = ["YEARLY", "MONTHLY", "NEVER"] as const;
 export type ResetPeriod = (typeof RESET_PERIODS)[number];
 
 /**
- * `DocNumberConfig.prefix` is `VARCHAR(191)`, but the generated `docNo` appends up to
- * `YYYY/MM/NNNNNNNN` to it, so the real ceiling is the document columns, not the config column.
+ * A deliberate UX cap, well inside the real ceiling. The prefix column and the document-number
+ * columns it feeds are all `VARCHAR(191)`, and the generator appends at most 17 characters to a
+ * prefix: an auto-added `/`, `YYYY/MM/`, and up to 8 digits of padding.
  */
 export const PREFIX_MAX_LENGTH = 20;
 
@@ -42,4 +43,26 @@ export function validateDocNumberConfigInput(input: DocNumberConfigInput): DocNu
     return { ok: false, code: "INVALID_PADDING" };
   }
   return { ok: true, value: { docType: input.docType, prefix, resetPeriod: input.resetPeriod, padding: input.padding } };
+}
+
+/* A prefix as `generateDocNumber` renders it: trimmed, as the validator stores it, plus the `/` it appends when missing. */
+export function normalizePrefix(prefix: string): string {
+  const trimmed = prefix.trim();
+  return trimmed.endsWith("/") ? trimmed : `${trimmed}/`;
+}
+
+/**
+ * Returns the doc type that already renders `prefix`, or null. Compared case-insensitively
+ * because the document-number columns use a `_ci` collation, where `putus/` and `PUTUS/` are
+ * the same unique value. Some doc types write one `@unique` column (PUTUS and KONSI both write
+ * `FieldSalesOrder.orderNo`), so a shared prefix makes one type draw numbers the other issued.
+ */
+export function findPrefixConflict<T extends string>(
+  docType: string,
+  prefix: string,
+  rows: readonly { docType: T; prefix: string }[]
+): T | null {
+  const wanted = normalizePrefix(prefix).toLowerCase();
+  const clash = rows.find((row) => row.docType !== docType && normalizePrefix(row.prefix).toLowerCase() === wanted);
+  return clash ? clash.docType : null;
 }
