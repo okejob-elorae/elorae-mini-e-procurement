@@ -3,8 +3,7 @@
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { apiFetch, extractApiMessage } from "@/lib/internal-api";
-import { salesorderNoForSettlement } from "@/lib/finance/settlement/match-key";
+import { startSettlementResync } from "@/lib/finance/settlement/start-resync";
 
 export type ResyncSummary = {
   pending: number;
@@ -72,57 +71,18 @@ export type TriggerResyncResult =
       message?: string;
     };
 
-/**
- * Resolves the settlement's currently-UNMATCHED lines into Jubelio salesorderNo
- * values (via the same salesorderNoForSettlement key used by matchSettlement),
- * then triggers apps/api's POST /jubelio/salesorders/resync with that explicit
- * list. The `{settlementId, unmatchedOnly}` server-side expansion described in
- * the design doc is NOT implemented in apps/api (see
- * apps/api/src/jubelio/resync/jubelio-resync.controller.ts) — so this action
- * does the expansion here instead, server-authoritatively (never trusts a
- * client-supplied orderNo list).
- */
 export async function triggerSettlementResyncAction(settlementId: string): Promise<TriggerResyncResult> {
   const session = await auth();
   if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.SETTLEMENTS_MANAGE)) {
     return { ok: false, code: "FORBIDDEN" };
   }
 
-  const settlement = await prisma.settlement.findUnique({
-    where: { id: settlementId },
-    select: { marketplace: true },
-  });
-  if (!settlement) return { ok: false, code: "NOT_FOUND" };
-
-  const unmatchedLines = await prisma.settlementLine.findMany({
-    where: { settlementId, matchStatus: { not: "MATCHED" } },
-    select: { orderNo: true },
-  });
-
-  const salesorderNos = Array.from(
-    new Set(
-      unmatchedLines
-        .map((l) => salesorderNoForSettlement(settlement.marketplace, l.orderNo))
-        .filter((no): no is string => Boolean(no)),
-    ),
-  );
-
-  if (salesorderNos.length === 0) {
-    return { ok: false, code: "NO_UNMATCHED_ORDERS" };
+  const r = await startSettlementResync(settlementId, session.user.id);
+  if (!r.ok) {
+    return r.code === "NO_TARGETS"
+      ? { ok: false, code: "NO_UNMATCHED_ORDERS" }
+      : { ok: false, code: r.code, message: r.message };
   }
 
-  const r = await apiFetch<{ batchId: string; seeded: number }>(
-    "POST",
-    "/jubelio/salesorders/resync",
-    { userId: session.user.id, body: { salesorderNos } },
-  );
-  if (!r.ok || !r.data) {
-    return {
-      ok: false,
-      code: "API_ERROR",
-      message: extractApiMessage(r.error, `Resync trigger failed (${r.status})`),
-    };
-  }
-
-  return { ok: true, batchId: r.data.batchId, seeded: r.data.seeded };
+  return { ok: true, batchId: r.batchId, seeded: r.seeded };
 }
