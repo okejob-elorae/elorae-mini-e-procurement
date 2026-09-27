@@ -122,10 +122,17 @@ d("setLinePriceAction — concurrent approval race (test bed only)", () => {
       }) as unknown as typeof prisma.fieldReturnLine.findUnique,
     );
 
-    const res = await setLinePriceAction({ lineId, manualUnitPrice: 7000, note: "new price after race" });
-    expect(res).toEqual({ ok: false, code: "ALREADY_APPROVED" });
-
-    spy.mockRestore();
+    try {
+      const res = await setLinePriceAction({ lineId, manualUnitPrice: 7000, note: "new price after race" });
+      expect(res).toEqual({ ok: false, code: "ALREADY_APPROVED" });
+    } finally {
+      /**
+       * Pin the spy to the bound original, NOT mockRestore: a Prisma model delegate serves
+       * findUnique through its proxy rather than as an own property, so mockRestore leaves the
+       * method undefined for every later findUnique in this file.
+       */
+      spy.mockImplementation(original as unknown as typeof prisma.fieldReturnLine.findUnique);
+    }
 
     const row = await prisma.fieldReturnLine.findUniqueOrThrow({ where: { id: seededId(lineId) } });
     expect(row.priceSource).toBe("MANUAL");

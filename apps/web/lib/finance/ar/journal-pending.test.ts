@@ -59,15 +59,18 @@ d("journal-pending gating (test bed only)", () => {
    * short-circuit is a real cost, so the call count is what actually guards it.
    *
    * The spy passes through to the real implementation rather than mocking it, so it only observes.
-   * Restored in a `finally` so a failed assertion cannot leak it into the rest of the file.
+   * It is pinned back to the bound original in a `finally`, NOT mockRestore'd: a Prisma model
+   * delegate serves findMany through its proxy rather than as an own property, so mockRestore
+   * would leave the method undefined for every later read in this file.
    */
   it("returns an empty set for an empty id list without querying", async () => {
+    const original = prisma.adminNotification.findMany.bind(prisma.adminNotification);
     const spy = vi.spyOn(prisma.adminNotification, "findMany");
     try {
       expect(await findPostableArJournalDocIds("ar_payment", [])).toEqual(new Set());
       expect(spy).not.toHaveBeenCalled();
     } finally {
-      spy.mockRestore();
+      spy.mockImplementation(original as unknown as typeof prisma.adminNotification.findMany);
     }
   });
 });
