@@ -120,7 +120,11 @@ export function registerCronJobs(): void {
     { timezone: "Asia/Jakarta" },
   );
 
-  // Every minute — rematch settlements whose stamped Jubelio resync batch has finished.
+  /**
+   * Every minute — rematch settlements whose stamped Jubelio resync batch has finished. `noOverlap`
+   * skips a tick while the previous one is still matching a large settlement, so two ticks never
+   * match the same settlement at once.
+   */
   cron.schedule(
     "* * * * *",
     async () => {
@@ -139,7 +143,7 @@ export function registerCronJobs(): void {
         console.error("[cron] settlement-rematch failed:", err);
       }
     },
-    { timezone: "Asia/Jakarta" },
+    { timezone: "Asia/Jakarta", noOverlap: true },
   );
 
   console.log("[cron] jobs registered");

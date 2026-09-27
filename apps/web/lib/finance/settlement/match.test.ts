@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { matchSettlement } from "./match";
 
 // Test-bed only — never run against the shared prod DB (port 3307 tunnel / VPS host).
@@ -332,6 +332,43 @@ d("matchSettlement (test bed only)", () => {
       await prisma.salesOrderItem.deleteMany({ where: { salesOrderId: order.id } });
       await prisma.salesOrder.delete({ where: { id: order.id } });
       await prisma.settlement.delete({ where: { id: settlement.id } }); // cascades to lines
+    }
+  });
+
+  it("never sets a RECONCILED settlement back to MATCHED", async () => {
+    const admin = await prisma.user.findFirstOrThrow({ where: { email: "admin@elorae.com" } });
+
+    let settlementId = "";
+    try {
+      const settlement = await prisma.settlement.create({
+        data: {
+          marketplace: "SHOPEE",
+          seller: "elorae.official",
+          periodFrom: new Date("2026-06-01T00:00:00+07:00"),
+          periodTo: new Date("2026-06-30T00:00:00+07:00"),
+          fileName: "t-reconciled.xlsx",
+          uploadedById: admin.id,
+          status: "RECONCILED",
+          totalPendapatan: 0,
+          totalPengeluaran: 0,
+          totalDilepas: 0,
+          parsedNetTotal: 0,
+          checksumOk: true,
+          checksumVariance: 0,
+          summaryRaw: {},
+          sellerFeesRaw: [],
+          adjustmentsRaw: [],
+        },
+        select: { id: true },
+      });
+      settlementId = settlement.id;
+
+      await matchSettlement(settlementId);
+
+      const after = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
+      expect(after.status).toBe("RECONCILED");
+    } finally {
+      await prisma.settlement.deleteMany({ where: { id: seededId(settlementId) } });
     }
   });
 });

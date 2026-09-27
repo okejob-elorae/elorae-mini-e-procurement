@@ -120,7 +120,15 @@ export async function matchSettlement(
     }
   }
 
-  await client.settlement.update({ where: { id: settlementId }, data: { status: "MATCHED" } });
+  /**
+   * Guarded, never a plain `update`: a RECONCILED settlement has a posted journal, and setting it
+   * back to MATCHED would reopen it beside that journal. The line figures above are still
+   * rewritten on a reconciled settlement — that half is an open decision in `docs/FOLLOWUPS.md`.
+   */
+  await client.settlement.updateMany({
+    where: { id: settlementId, status: { not: "RECONCILED" } },
+    data: { status: "MATCHED" },
+  });
 
   return { matched, unmatched, profitPending };
 }

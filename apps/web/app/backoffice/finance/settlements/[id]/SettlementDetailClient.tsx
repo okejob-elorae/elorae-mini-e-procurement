@@ -429,17 +429,19 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
                   <p className="text-xs text-muted-foreground">{t("resyncRunningHint")}</p>
                 )}
 
-                {resyncTerminal && (
+                {resyncTerminal && (resyncSummary.dead > 0 || rematchStatus !== "skippedReconciled") && (
                   <div className="flex flex-col gap-2 border-t pt-3 sm:flex-row sm:items-center">
                     {resyncSummary.dead > 0 && (
                       <p className="text-xs text-red-700 dark:text-red-400">
                         {t("resyncDeadHint", { count: String(resyncSummary.dead) })}
                       </p>
                     )}
-                    <Button size="lg" disabled={isPending} onClick={handleMatch} className="sm:ml-auto">
-                      <RefreshCw className={`h-4 w-4 mr-2 ${isPending ? "animate-spin" : ""}`} />
-                      {isPending ? t("matchOrdersPending") : t("rematchNow")}
-                    </Button>
+                    {rematchStatus !== "skippedReconciled" && (
+                      <Button size="lg" disabled={isPending} onClick={handleMatch} className="sm:ml-auto">
+                        <RefreshCw className={`h-4 w-4 mr-2 ${isPending ? "animate-spin" : ""}`} />
+                        {isPending ? t("matchOrdersPending") : t("rematchNow")}
+                      </Button>
+                    )}
                   </div>
                 )}
               </>

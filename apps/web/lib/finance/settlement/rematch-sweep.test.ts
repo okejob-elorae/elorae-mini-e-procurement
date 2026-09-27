@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
-import { prisma, seededId } from "@elorae/db";
+import { prisma, seededId, type Prisma } from "@elorae/db";
 import { runSettlementRematchSweep } from "./rematch-sweep";
 
-// Test-bed only — never run against the shared prod DB (port 3307 tunnel / VPS host).
+/* Test-bed only — never run against the shared prod DB (port 3307 tunnel / VPS host). */
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
@@ -12,6 +12,37 @@ async function seedResyncRows(batchId: string, statuses: string[]): Promise<void
   await prisma.jubelioSalesOrderResync.createMany({
     data: statuses.map((status, i) => ({ batchId, salesorderNo: `SO-${batchId}-${i}`, status })),
   });
+}
+
+/* Creates a PARSED Shopee settlement stamped with `resyncBatchId`; `extra` overrides any field. */
+async function createSettlement(
+  uploadedById: string,
+  extra: { resyncBatchId: string } & Partial<Prisma.SettlementCreateInput>,
+): Promise<string> {
+  const settlement = await prisma.settlement.create({
+    data: {
+      marketplace: "SHOPEE",
+      seller: "elorae.official",
+      periodFrom: new Date("2026-06-01T00:00:00+07:00"),
+      periodTo: new Date("2026-06-30T00:00:00+07:00"),
+      fileName: "t.xlsx",
+      uploadedById,
+      status: "PARSED",
+      totalPendapatan: 0,
+      totalPengeluaran: 0,
+      totalDilepas: 0,
+      parsedNetTotal: 0,
+      checksumOk: true,
+      checksumVariance: 0,
+      summaryRaw: {},
+      sellerFeesRaw: [],
+      adjustmentsRaw: [],
+      resyncSeededAt: new Date(),
+      ...extra,
+    },
+    select: { id: true },
+  });
+  return settlement.id;
 }
 
 d("runSettlementRematchSweep (test bed only)", () => {
@@ -337,13 +368,13 @@ d("runSettlementRematchSweep (test bed only)", () => {
     }
   });
 
-  it("clears resyncRematchedAt back to null when matchSettlement throws (scoped to the claimed batch, so a later tick's own stamp under a replaced batch survives)", async () => {
+  it("leaves a settlement unstamped when matchSettlement throws, and the next sweep rematches and stamps it", async () => {
     const admin = await prisma.user.findFirstOrThrow({ where: { email: "admin@elorae.com" } });
     const suffix = Math.random().toString(36).slice(2, 10);
     const batchId = `rematch-throw-${suffix}`;
 
     let settlementId = "";
-    /*
+    /**
      * Force `matchSettlement`'s own read to throw for exactly this test's settlement, without
      * touching any other row `findUniqueOrThrow` serves elsewhere in the same tick. The bound
      * original is captured before spying and pinned back in `finally` — never `mockRestore` or
@@ -354,50 +385,66 @@ d("runSettlementRematchSweep (test bed only)", () => {
     const original = prisma.settlement.findUniqueOrThrow.bind(prisma.settlement);
     const spy = vi.spyOn(prisma.settlement, "findUniqueOrThrow");
     try {
-      const settlement = await prisma.settlement.create({
-        data: {
-          marketplace: "SHOPEE",
-          seller: "elorae.official",
-          periodFrom: new Date("2026-06-01T00:00:00+07:00"),
-          periodTo: new Date("2026-06-30T00:00:00+07:00"),
-          fileName: "t.xlsx",
-          uploadedById: admin.id,
-          status: "PARSED",
-          totalPendapatan: 0,
-          totalPengeluaran: 0,
-          totalDilepas: 0,
-          parsedNetTotal: 0,
-          checksumOk: true,
-          checksumVariance: 0,
-          summaryRaw: {},
-          sellerFeesRaw: [],
-          adjustmentsRaw: [],
-          resyncBatchId: batchId,
-          resyncSeededAt: new Date(),
-        },
-        select: { id: true },
-      });
-      settlementId = settlement.id;
-
+      settlementId = await createSettlement(admin.id, { resyncBatchId: batchId });
       await seedResyncRows(batchId, ["DONE"]);
 
-      /*
-       * Before throwing, simulate a concurrent later tick that already re-stamped and
-       * successfully rematched this settlement under a REPLACED batch — this is the guard the
-       * un-stamp must respect: it must only clear the stamp for the batch IT claimed under
-       * (`batchId`, captured at loop start), never a newer one a later tick already finished.
-       */
-      const laterBatchId = `${batchId}-later`;
-      const laterRematchedAt = new Date("2026-01-01T00:00:00Z");
+      spy.mockImplementation(
+        (async (args: unknown) => {
+          const where = (args as { where?: { id?: string } })?.where;
+          if (where?.id === settlementId) throw new Error("boom");
+          return original(args as Parameters<typeof original>[0]);
+        }) as unknown as typeof prisma.settlement.findUniqueOrThrow,
+      );
+
+      const first = await runSettlementRematchSweep({ settlementIds: [settlementId] });
+      expect(first).toEqual({ scanned: 1, rematched: 0, skippedReconciled: 0, stillRunning: 0 });
+
+      /* Pinned back before reading through it again — it is still wired to throw for this id. */
+      spy.mockImplementation(original as unknown as typeof prisma.settlement.findUniqueOrThrow);
+      const afterThrow = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
+      expect(afterThrow.resyncRematchedAt).toBeNull();
+      expect(afterThrow.status).toBe("PARSED");
+
+      const second = await runSettlementRematchSweep({ settlementIds: [settlementId] });
+      expect(second).toEqual({ scanned: 1, rematched: 1, skippedReconciled: 0, stillRunning: 0 });
+
+      const afterRetry = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
+      expect(afterRetry.resyncRematchedAt).not.toBeNull();
+      expect(afterRetry.status).toBe("MATCHED");
+    } finally {
+      spy.mockImplementation(original as unknown as typeof prisma.settlement.findUniqueOrThrow);
+      await prisma.jubelioSalesOrderResync.deleteMany({ where: { batchId: seededId(batchId) } });
+      await prisma.settlementLine.deleteMany({ where: { settlementId: seededId(settlementId) } });
+      await prisma.settlement.deleteMany({ where: { id: seededId(settlementId) } });
+    }
+  });
+
+  it("does not stamp or count a batch replaced after the count but before the stamp", async () => {
+    const admin = await prisma.user.findFirstOrThrow({ where: { email: "admin@elorae.com" } });
+    const suffix = Math.random().toString(36).slice(2, 10);
+    const batchId = `rematch-replaced-${suffix}`;
+    const laterBatchId = `${batchId}-later`;
+
+    let settlementId = "";
+    /**
+     * A second Resync press lands while this tick is matching: `matchSettlement`'s own read is the
+     * hook, so the replacement happens after the batch was counted and before the stamp CAS. Same
+     * bound-original hygiene as the throw case above.
+     */
+    const original = prisma.settlement.findUniqueOrThrow.bind(prisma.settlement);
+    const spy = vi.spyOn(prisma.settlement, "findUniqueOrThrow");
+    try {
+      settlementId = await createSettlement(admin.id, { resyncBatchId: batchId });
+      await seedResyncRows(batchId, ["DONE"]);
+
       spy.mockImplementation(
         (async (args: unknown) => {
           const where = (args as { where?: { id?: string } })?.where;
           if (where?.id === settlementId) {
             await prisma.settlement.update({
               where: { id: settlementId },
-              data: { resyncBatchId: laterBatchId, resyncRematchedAt: laterRematchedAt },
+              data: { resyncBatchId: laterBatchId, resyncRematchedAt: null },
             });
-            throw new Error("boom");
           }
           return original(args as Parameters<typeof original>[0]);
         }) as unknown as typeof prisma.settlement.findUniqueOrThrow,
@@ -406,18 +453,102 @@ d("runSettlementRematchSweep (test bed only)", () => {
       const result = await runSettlementRematchSweep({ settlementIds: [settlementId] });
       expect(result).toEqual({ scanned: 1, rematched: 0, skippedReconciled: 0, stillRunning: 0 });
 
-      // Pin the spy back before reading through it again — it is still wired to throw for
-      // this settlement's id, and the sweep's own recovery is the thing under test, not this read.
       spy.mockImplementation(original as unknown as typeof prisma.settlement.findUniqueOrThrow);
       const after = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
-      // The un-stamp is scoped to `batchId` (this tick's own claim) — since the row now belongs
-      // to `laterBatchId`, the guarded update must have matched zero rows and left the later
-      // tick's own stamp alone, rather than blindly clearing it back to null.
       expect(after.resyncBatchId).toBe(laterBatchId);
-      expect(after.resyncRematchedAt?.getTime()).toBe(laterRematchedAt.getTime());
-      expect(after.status).toBe("PARSED");
+      expect(after.resyncRematchedAt).toBeNull();
     } finally {
       spy.mockImplementation(original as unknown as typeof prisma.settlement.findUniqueOrThrow);
+      await prisma.jubelioSalesOrderResync.deleteMany({ where: { batchId: seededId(batchId) } });
+      await prisma.settlementLine.deleteMany({ where: { settlementId: seededId(settlementId) } });
+      await prisma.settlement.deleteMany({ where: { id: seededId(settlementId) } });
+    }
+  });
+
+  it("counts a stamped batch with no rows yet as still running", async () => {
+    const admin = await prisma.user.findFirstOrThrow({ where: { email: "admin@elorae.com" } });
+    const suffix = Math.random().toString(36).slice(2, 10);
+    const batchId = `rematch-norows-${suffix}`;
+
+    let settlementId = "";
+    try {
+      settlementId = await createSettlement(admin.id, { resyncBatchId: batchId });
+
+      const result = await runSettlementRematchSweep({ settlementIds: [settlementId] });
+      expect(result).toEqual({ scanned: 1, rematched: 0, skippedReconciled: 0, stillRunning: 1 });
+
+      const after = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
+      expect(after.resyncRematchedAt).toBeNull();
+      expect(after.status).toBe("PARSED");
+    } finally {
+      await prisma.settlement.deleteMany({ where: { id: seededId(settlementId) } });
+    }
+  });
+
+  it("re-reads the status: a settlement reconciled after the scan is stamped, not rematched", async () => {
+    const admin = await prisma.user.findFirstOrThrow({ where: { email: "admin@elorae.com" } });
+    const suffix = Math.random().toString(36).slice(2, 10);
+    const batchId = `rematch-late-reconciled-${suffix}`;
+    const orderNo = `LATE-${suffix}`;
+
+    let settlementId = "";
+    /**
+     * The journal posts while the tick is counting the batch: the count is the hook, so the flip to
+     * RECONCILED lands after the sweep's `findMany` and before its status re-read. Same
+     * bound-original hygiene as the spies above.
+     */
+    const original = prisma.jubelioSalesOrderResync.count.bind(prisma.jubelioSalesOrderResync);
+    const spy = vi.spyOn(prisma.jubelioSalesOrderResync, "count");
+    try {
+      settlementId = await createSettlement(admin.id, {
+        resyncBatchId: batchId,
+        lines: {
+          create: [
+            {
+              orderNo,
+              netIncome: 5000,
+              hargaAsliProduk: 5000,
+              totalDiskonProduk: 0,
+              biayaAdministrasi: 0,
+              biayaLayanan: 0,
+              biayaKomisiAms: 0,
+              biayaProsesPesanan: 0,
+              raw: { "No. Pesanan": orderNo },
+              matchStatus: "MATCHED",
+              matchedSalesOrderId: null,
+              cogsSnapshot: 1200,
+              profit: 3800,
+            },
+          ],
+        },
+      });
+      await seedResyncRows(batchId, ["DONE"]);
+
+      let flipped = false;
+      spy.mockImplementation(
+        (async (args: unknown) => {
+          const where = (args as { where?: { batchId?: string } })?.where;
+          if (!flipped && where?.batchId === batchId) {
+            flipped = true;
+            await prisma.settlement.update({ where: { id: settlementId }, data: { status: "RECONCILED" } });
+          }
+          return original(args as Parameters<typeof original>[0]);
+        }) as unknown as typeof prisma.jubelioSalesOrderResync.count,
+      );
+
+      const result = await runSettlementRematchSweep({ settlementIds: [settlementId] });
+      expect(result).toEqual({ scanned: 1, rematched: 0, skippedReconciled: 1, stillRunning: 0 });
+
+      spy.mockImplementation(original as unknown as typeof prisma.jubelioSalesOrderResync.count);
+      const after = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
+      expect(after.resyncRematchedAt).not.toBeNull();
+      expect(after.status).toBe("RECONCILED");
+
+      const line = await prisma.settlementLine.findFirstOrThrow({ where: { settlementId, orderNo } });
+      expect(line.matchStatus).toBe("MATCHED");
+      expect(Number(line.profit)).toBe(3800);
+    } finally {
+      spy.mockImplementation(original as unknown as typeof prisma.jubelioSalesOrderResync.count);
       await prisma.jubelioSalesOrderResync.deleteMany({ where: { batchId: seededId(batchId) } });
       await prisma.settlementLine.deleteMany({ where: { settlementId: seededId(settlementId) } });
       await prisma.settlement.deleteMany({ where: { id: seededId(settlementId) } });
