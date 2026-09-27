@@ -25,7 +25,7 @@ User-reported: "the last sales order item date is on 19 june" — noticed via th
 | Date | Event |
 |---|---|
 | 2026-06-14 | Commit `11e6f6f` (`fix(db): lazy-init prisma client via Proxy so build-time imports don't require DATABASE_URL`) ships. Bug 1 latent from this point. |
-| 2026-05-28 | Stock-writer P2002 detection code present since EPIC-01 sub-1. Bug 2 latent since then, masked by the absence of collisions until the dual-owner stock-adjustment workload landed. |
+| 2026-05-28 | Stock-writer P2002 detection code present since the inbound webhook queue + stock handler slice (PR #29). Bug 2 latent since then, masked by the absence of collisions until the dual-owner stock-adjustment workload landed. |
 | 2026-06-19 | First salesorder webhooks fail to process. Sweeper begins re-enqueuing 100 rows per 10-minute tick. Backlog starts growing faster than drain. |
 | 2026-06-25 ~10:00 | User flags missing orders. Investigation begins. |
 | 2026-06-25 ~10:30 | Pool churn identified (Bug 1). PR #60 merged. Auto-deploy applies fix to web. Print views recover. |
@@ -73,7 +73,7 @@ In production, `prismaSchemaStamp` stayed `undefined` forever. Every call after 
 ### Bug 2 — Narrow P2002 collision detection
 
 **File:** `packages/db/src/stock-writer.ts`
-**Introduced:** EPIC-01 sub-1 (2026-05-28)
+**Introduced:** inbound webhook queue + stock handler slice (PR #29, 2026-05-28)
 **Fixed:** 2026-06-25 (`2df7f18`, PR #63)
 
 `applyJubelioStockAdjustment` catches Prisma's `P2002` unique-violation error to swallow idempotent retries — a re-delivered Jubelio webhook with the same `idempotencyKey` should be a no-op, not a failure. The check inspected `err.meta.target` and matched against literal column names:

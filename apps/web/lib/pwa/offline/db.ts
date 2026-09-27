@@ -51,7 +51,7 @@ export interface PendingCompletion {
 }
 
 // Separate DB from the backoffice EloraeOfflineDB (different scope: PWA field orders).
-// A pendingPhotos table will be added here for EPIC-17-07 (visit photos).
+// Also holds store-visit photos queued for upload (pendingPhotos).
 export class PwaOfflineDB extends Dexie {
   pendingOrders!: Table<PendingOrder, string>;
   pendingPhotos!: Table<PendingPhoto, string>;

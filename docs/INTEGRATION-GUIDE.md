@@ -2,7 +2,7 @@
 
 > Read this BEFORE writing any code that touches Jubelio data, the outbox, or stock adjustments. It tells you which helpers to call, which strings are allowed, and what the boundary owners enforce.
 
-Audience: ERP module developers building EPIC-05 (returns), EPIC-07 (opname + reconcile), EPIC-08 (reservations), EPIC-19 (warehouses), and anything else that crosses into Jubelio territory.
+Audience: ERP module developers building returns, stock opname + reconciliation, reservations, warehouses, and anything else that crosses into Jubelio territory.
 
 For the why (architectural decisions, ownership rules, anti-patterns), see [BOUNDARY.md](./BOUNDARY.md). This file is the how.
 
@@ -87,9 +87,9 @@ The compile error from the router's `never` check is the safety net: you cannot 
 | Source value | When to use | Owner |
 |---|---|---|
 | `ERP` | Manual stock adjustment via ERP UI (existing flow). | web |
-| `ERP_OPNAME` | Stock opname session approval (EPIC-07-03). | web |
+| `ERP_OPNAME` | Stock opname session approval. | web |
 | `JUBELIO_WEBHOOK` | Inbound Jubelio stock-changed webhook. **Do not call from web — only `apps/api`.** | api |
-| `JUBELIO_RECONCILE` | Auto-correction from the 6h reconcile cron (EPIC-07-04). | api (cron) |
+| `JUBELIO_RECONCILE` | Auto-correction from the 6h reconcile cron. | api (cron) |
 
 If your use case doesn't fit any of these, add to the registry first (see "Adding a new source" below). Do not pick the closest match and hope for the best — the reconcile logic and audit dashboards key off the exact string.
 
@@ -208,11 +208,11 @@ The endpoint contract:
 
 ---
 
-## 4. Modifying `InventoryValue.reservedQty` (when EPIC-08 lands)
+## 4. Modifying `InventoryValue.reservedQty`
 
-> Status: schema not yet shipped. This section is the contract EPIC-08 must honor; revise after schema lands.
+> Status: shipped. `InventoryValue.reservedQty` and the `StockReservation` ledger exist, written only by the helpers in `packages/db/src/reservation-writer.ts` — BOUNDARY D6 is authoritative. The bullets below are the contract written before the schema landed and have not been revised since.
 
-When EPIC-08 introduces `InventoryValue.reservedQty`:
+For `InventoryValue.reservedQty`:
 
 - All reservation writes (reserve, release) go through a new helper `packages/db/src/inventory-reservation.ts`. Do not modify `reservedQty` directly via `prisma.inventoryValue.update`.
 - The reserve operation must be atomic and conditional:
@@ -240,9 +240,9 @@ When EPIC-08 introduces `InventoryValue.reservedQty`:
 | Look an `InventoryValue` row up on the strict `itemId_variantSku` key | A variantless row keys on `null` OR `""`; the strict key misses it, and the caller then treats a real stocked item as having none. | `findExistingInventoryValueRow`, then pass the resolved `id` to the mover as `inventoryValueId`. |
 | Write `StockAdjustment` with a free-form `source: "manual"` | Audit dashboard filters won't find it; reconcile will treat it as `ERP`. | Add to registry or use `ERP`. |
 | Skip `idempotencyKey` | Webhook replays produce duplicate adjustments. | Always set it. Format: `<source-prefix>:<external-id>:<version>` (e.g. `jbl-stock:webhook-uuid`, `opname:session-id:line-id`). |
-| Push konsi (virtual warehouse) stock to Jubelio | Marketplace oversells real stock. | Subtract virtual qty in the push formula. EPIC-19 will provide the warehouse helper. |
+| Push konsi (virtual warehouse) stock to Jubelio | Marketplace oversells real stock. | Subtract virtual qty in the push formula. The warehouse helper belongs to the Inventory Extensions work. |
 | Reuse marketplace `SalesOrder` for offline orders | Channel conflation, dual-writer hazard. | Use a separate model or a hard channel discriminator. See [BOUNDARY.md §3.2](./BOUNDARY.md). |
-| Pre-fill EPIC-24 received qty from salesman claim | Acceptance criteria explicitly forbid. Bypasses warehouse independence. | Warehouse counts blind. |
+| Pre-fill a field retur's warehouse received qty from salesman claim | Acceptance criteria explicitly forbid. Bypasses warehouse independence. | Warehouse counts blind. |
 | Sync external HTTP call from inside a Prisma TX | TX holds DB locks while external call hangs. | Enqueue outbox / use job queue. |
 
 ---
