@@ -37,8 +37,10 @@ export async function runSettlementRematchSweep(
   let stillRunning = 0;
   for (const s of pending) {
     const batchId = s.resyncBatchId as string;
-    // `total === 0` counts as still running on purpose: the api seeds rows asynchronously and
-    // could lag a moment behind the stamp.
+    /*
+     * `total === 0` counts as still running on purpose: the api seeds rows asynchronously and
+     * could lag a moment behind the stamp.
+     */
     const [total, inFlight] = await Promise.all([
       prisma.jubelioSalesOrderResync.count({ where: { batchId } }),
       prisma.jubelioSalesOrderResync.count({ where: { batchId, status: { in: [...IN_FLIGHT] } } }),
@@ -63,11 +65,16 @@ export async function runSettlementRematchSweep(
       await matchSettlement(s.id);
       rematched += 1;
     } catch (err) {
-      // One settlement's match failure must not stop the sweep, and must not leave it stranded
-      // stamped-but-unmatched forever — clear the stamp so the next tick retries it.
+      /*
+       * One settlement's match failure must not stop the sweep, and must not leave it stranded
+       * stamped-but-unmatched forever — clear the stamp so the next tick retries it. Scoped to
+       * this same `batchId`, exactly like the claim above: an unguarded un-stamp would clear a
+       * LATER tick's successful rematch of a newer batch if this call's `matchSettlement` was
+       * still in flight when that later tick claimed and finished under a replaced batch.
+       */
       console.error(`[rematch-sweep] matchSettlement failed for settlement ${s.id}:`, err);
-      await prisma.settlement.update({
-        where: { id: s.id },
+      await prisma.settlement.updateMany({
+        where: { id: s.id, resyncBatchId: batchId },
         data: { resyncRematchedAt: null },
       });
     }

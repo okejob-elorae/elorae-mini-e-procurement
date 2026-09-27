@@ -7,7 +7,7 @@ const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
-/** Seeds N `JubelioSalesOrderResync` rows under `batchId`, one per given status. */
+/* Seeds N `JubelioSalesOrderResync` rows under `batchId`, one per given status. */
 async function seedResyncRows(batchId: string, statuses: string[]): Promise<void> {
   await prisma.jubelioSalesOrderResync.createMany({
     data: statuses.map((status, i) => ({ batchId, salesorderNo: `SO-${batchId}-${i}`, status })),
@@ -337,7 +337,7 @@ d("runSettlementRematchSweep (test bed only)", () => {
     }
   });
 
-  it("clears resyncRematchedAt back to null when matchSettlement throws, so the next tick retries", async () => {
+  it("clears resyncRematchedAt back to null when matchSettlement throws (scoped to the claimed batch, so a later tick's own stamp under a replaced batch survives)", async () => {
     const admin = await prisma.user.findFirstOrThrow({ where: { email: "admin@elorae.com" } });
     const suffix = Math.random().toString(36).slice(2, 10);
     const batchId = `rematch-throw-${suffix}`;
@@ -381,10 +381,24 @@ d("runSettlementRematchSweep (test bed only)", () => {
 
       await seedResyncRows(batchId, ["DONE"]);
 
+      /*
+       * Before throwing, simulate a concurrent later tick that already re-stamped and
+       * successfully rematched this settlement under a REPLACED batch — this is the guard the
+       * un-stamp must respect: it must only clear the stamp for the batch IT claimed under
+       * (`batchId`, captured at loop start), never a newer one a later tick already finished.
+       */
+      const laterBatchId = `${batchId}-later`;
+      const laterRematchedAt = new Date("2026-01-01T00:00:00Z");
       spy.mockImplementation(
         (async (args: unknown) => {
           const where = (args as { where?: { id?: string } })?.where;
-          if (where?.id === settlementId) throw new Error("boom");
+          if (where?.id === settlementId) {
+            await prisma.settlement.update({
+              where: { id: settlementId },
+              data: { resyncBatchId: laterBatchId, resyncRematchedAt: laterRematchedAt },
+            });
+            throw new Error("boom");
+          }
           return original(args as Parameters<typeof original>[0]);
         }) as unknown as typeof prisma.settlement.findUniqueOrThrow,
       );
@@ -396,7 +410,11 @@ d("runSettlementRematchSweep (test bed only)", () => {
       // this settlement's id, and the sweep's own recovery is the thing under test, not this read.
       spy.mockImplementation(original as unknown as typeof prisma.settlement.findUniqueOrThrow);
       const after = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
-      expect(after.resyncRematchedAt).toBeNull();
+      // The un-stamp is scoped to `batchId` (this tick's own claim) — since the row now belongs
+      // to `laterBatchId`, the guarded update must have matched zero rows and left the later
+      // tick's own stamp alone, rather than blindly clearing it back to null.
+      expect(after.resyncBatchId).toBe(laterBatchId);
+      expect(after.resyncRematchedAt?.getTime()).toBe(laterRematchedAt.getTime());
       expect(after.status).toBe("PARSED");
     } finally {
       spy.mockImplementation(original as unknown as typeof prisma.settlement.findUniqueOrThrow);
