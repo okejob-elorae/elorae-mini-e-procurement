@@ -938,6 +938,7 @@
     "pushToJubelioConfirm": "Push stok item ini saat ini ke Jubelio?",
     "pushToJubelioQueued": "Masuk antrean. Push dalam ~5 detik.",
     "pushToJubelioFailed": "Push gagal. Hanya admin yang dapat push stok.",
+    "pushToJubelioUnexpectedFailed": "Push gagal. Coba lagi.",
     "pricing": {
       "section": "Harga",
       "sellingPriceLabel": "Harga Jual",
@@ -1336,7 +1337,7 @@
     "matchJubelio": "Samakan Jubelio",
     "reassertElorae": "Push ulang Elorae",
     "pushDisabledHint": "Push stok ke Jubelio dinonaktifkan sampai cutover — Jubelio adalah sumber kebenaran.",
-    "eloraeQtyHint": "Angka Elorae adalah stok dikurangi tahanan penjualan lapangan yang masih terbuka selama push stok ke Jubelio aktif, dan stok apa adanya selama push nonaktif. Run sebelum aturan ini menyimpan stok apa adanya.",
+    "eloraeQtyHint": "Angka Elorae adalah stok dikurangi tahanan penjualan lapangan yang masih terbuka, dibatasi minimum 0, selama push stok ke Jubelio aktif, dan stok mentah — yang bisa negatif — selama push nonaktif. Run sebelum aturan ini menyimpan stok apa adanya.",
     "staleReassertHint": "Arah tersimpan, Re-assert Elorae, tidak dapat berjalan selama push stok ke Jubelio dinonaktifkan. Pilih arah lain untuk menyimpan.",
     "err": {
       "INVALID_DIRECTION": "Arah rekonsiliasi tidak dikenal.",

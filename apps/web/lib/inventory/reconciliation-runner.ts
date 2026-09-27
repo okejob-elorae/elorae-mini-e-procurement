@@ -5,7 +5,6 @@ import {
   eloraeOnHandFromJubelio,
   isJubelioStockPushEnabled,
   isValidJubelioQty,
-  jubelioEndQtyFor,
   lockMainInventoryValueRow,
   prisma,
   setMainStock,
@@ -15,6 +14,7 @@ import { generateDocNumber } from "@/lib/docNumber";
 import { apiFetch } from "@/lib/internal-api";
 import {
   classifyReconRow,
+  comparableEloraeQty,
   isCronEnabled,
   parseReconDirection,
   parseReconThreshold,
@@ -128,11 +128,12 @@ async function applyMatchJubelio(
   const locked = await lockMainInventoryValueRow(tx, params.itemId, variantKey);
   if (!locked) return "NO_INVENTORY_ROW";
 
+  const pushEnabled = await isJubelioStockPushEnabled(tx);
   const offline = await effectiveOfflineReservedQty(tx, params.itemId, variantKey);
   const prevQty = new Decimal(locked.qtyOnHand);
 
   if (params.expectedEloraeQty !== undefined) {
-    const liveEloraeQty = jubelioEndQtyFor(prevQty.toNumber(), offline);
+    const liveEloraeQty = comparableEloraeQty(prevQty.toNumber(), offline, pushEnabled);
     if (!sameQty2dp(liveEloraeQty, params.expectedEloraeQty)) return "STOCK_MOVED";
   }
 
@@ -253,8 +254,10 @@ export async function runReconciliation(
   try {
     /*
      * Owner-approved cutover switch (see jubelio-stock-contract.ts). While it is off,
-     * classifyReconRow degrades REASSERT_ELORAE to FLAGGED so nothing is enqueued, and the
-     * comparison below subtracts no holds, because no push has netted them out of end_qty.
+     * classifyReconRow degrades REASSERT_ELORAE to FLAGGED so nothing is enqueued, and
+     * comparableEloraeQty below neither subtracts the holds nor floors at 0 — no push has
+     * netted the holds out of end_qty, and nothing mirrors a floor that only means something
+     * on the push path, so a negative on-hand compares raw and gets flagged.
      */
     const pushEnabled = await isJubelioStockPushEnabled(prisma);
 
@@ -295,7 +298,7 @@ export async function runReconciliation(
       );
       const rawQtyOnHand = invRow ? Number(invRow.qtyOnHand) : 0;
       const offline = offlineByKey.get(`${mapping.itemId}:${variantSku}`) ?? 0;
-      const eloraeQty = jubelioEndQtyFor(rawQtyOnHand, offline);
+      const eloraeQty = comparableEloraeQty(rawQtyOnHand, offline, pushEnabled);
       /* A variant the snapshot had no usable figure for is null, never 0 — see classifyReconRow. */
       const jubelioQty = jubelioByKey.get(`${mapping.itemId}:${variantSku}`)?.jubelioQty ?? null;
       const { classified, storedJubelioQty, variance } = classifyReconRow({

@@ -58,9 +58,10 @@ export function ItemDetailClient({
       const r = await pushItemStockToJubelio(initialData.id);
       if (r.ok) toast.success(tItems("pushToJubelioQueued"));
       else if (r.reason === "push_disabled") toast.error(tItems("pushToJubelioDisabledHint"));
-      else toast.error(tItems("pushToJubelioFailed"));
+      else if (r.reason === "not_admin") toast.error(tItems("pushToJubelioFailed"));
+      else toast.error(tItems("pushToJubelioUnexpectedFailed"));
     } catch {
-      toast.error(tItems("pushToJubelioFailed"));
+      toast.error(tItems("pushToJubelioUnexpectedFailed"));
     } finally {
       setIsPushing(false);
     }

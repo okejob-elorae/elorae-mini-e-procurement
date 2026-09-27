@@ -1,5 +1,23 @@
 import type { ReconAction, ReconDirection } from "@elorae/db";
+import { jubelioEndQtyFor } from "@elorae/db";
 import { Decimal } from "decimal.js";
+
+/**
+ * Elorae's figure to compare against Jubelio's `end_qty` (the run's comparison, and the manual
+ * resolve's moved-since check): the floored `jubelioEndQtyFor` while stock pushes are enabled,
+ * mirroring what the push actually sends; raw `qtyOnHand` while they are disabled, since nothing
+ * is pushed and so nothing floors Jubelio's figure for this to mirror — a negative on-hand stays
+ * negative and gets flagged rather than hidden by a floor that only means something on the push
+ * path. `offlineReserved` is already `0` while pushes are disabled (see `effectiveOfflineReservedQty`
+ * in `packages/db/src/jubelio-stock-contract.ts`), so this only changes whether the floor applies.
+ */
+export function comparableEloraeQty(
+  qtyOnHand: number,
+  offlineReserved: number,
+  pushEnabled: boolean,
+): number {
+  return pushEnabled ? jubelioEndQtyFor(qtyOnHand, offlineReserved) : qtyOnHand;
+}
 
 export type ReconConfigDirection = "FLAG_ONLY" | ReconDirection;
 

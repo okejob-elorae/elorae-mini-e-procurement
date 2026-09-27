@@ -938,6 +938,7 @@
     "pushToJubelioConfirm": "Push this item's current stock to Jubelio?",
     "pushToJubelioQueued": "Queued. Pushes within ~5 seconds.",
     "pushToJubelioFailed": "Push failed. Only admins can push stock.",
+    "pushToJubelioUnexpectedFailed": "Push failed. Try again.",
     "pricing": {
       "section": "Pricing",
       "sellingPriceLabel": "Selling Price (Harga Jual)",
@@ -1336,7 +1337,7 @@
     "matchJubelio": "Match Jubelio",
     "reassertElorae": "Re-push Elorae",
     "pushDisabledHint": "Pushing stock to Jubelio is disabled until cutover — Jubelio is the source of truth.",
-    "eloraeQtyHint": "Elorae's figure is on-hand minus open field-sales holds while stock pushes to Jubelio are enabled, and plain on-hand while they are disabled. Runs from before this rule stored plain on-hand.",
+    "eloraeQtyHint": "Elorae's figure is on-hand minus open field-sales holds, floored at 0, while stock pushes to Jubelio are enabled, and raw on-hand — which can be negative — while they are disabled. Runs from before this rule stored plain on-hand.",
     "staleReassertHint": "The saved direction, Re-assert Elorae, cannot run while pushing stock to Jubelio is disabled. Choose another direction to save.",
     "err": {
       "INVALID_DIRECTION": "Unknown reconciliation direction.",

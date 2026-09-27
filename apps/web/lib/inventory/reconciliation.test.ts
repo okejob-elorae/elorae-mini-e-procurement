@@ -2,11 +2,27 @@ import { describe, expect, it } from "vitest";
 import {
   classifyReconRow,
   classifyVariance,
+  comparableEloraeQty,
   isCronEnabled,
   parseReconDirection,
   parseReconThreshold,
   sameQty2dp,
 } from "./reconciliation";
+
+describe("comparableEloraeQty", () => {
+  it("floors at 0 while pushes are enabled", () => {
+    expect(comparableEloraeQty(-5, 0, true)).toBe(0);
+    expect(comparableEloraeQty(10, 3, true)).toBe(7);
+  });
+
+  it("keeps a negative on-hand negative while pushes are disabled", () => {
+    expect(comparableEloraeQty(-5, 0, false)).toBe(-5);
+  });
+
+  it("leaves a positive on-hand unchanged while pushes are disabled", () => {
+    expect(comparableEloraeQty(10, 0, false)).toBe(10);
+  });
+});
 
 describe("classifyVariance", () => {
   it("returns IN_SYNC for zero variance", () => {

@@ -18,14 +18,18 @@ type AnyClient = PrismaClient | Prisma.TransactionClient;
  * |---|---|
  * | Push (Elorae → Jubelio `end_qty`) | `end_qty = max(0, qtyOnHand − offlineReserved)` |
  * | Webhook (Jubelio `end_qty` → Elorae) | `qtyOnHand = end_qty + offlineReserved` |
- * | Reconciliation comparison | Elorae `max(0, qtyOnHand − offlineReserved)` vs Jubelio `end_qty` |
+ * | Reconciliation comparison (pushes enabled) | Elorae `max(0, qtyOnHand − offlineReserved)` vs Jubelio `end_qty` |
+ * | Reconciliation comparison (pushes disabled) | Elorae raw `qtyOnHand` (can be negative) vs Jubelio `end_qty` |
  * | MATCH_JUBELIO correction | `qtyOnHand = end_qty + offlineReserved`, absolute |
  *
  * The holds are added back (webhook, MATCH_JUBELIO) and subtracted for the comparison ONLY while
  * stock pushes are enabled (`isJubelioStockPushEnabled`). Only a push nets them out of Jubelio's
  * `end_qty`; while pushes are off, nothing has, so adding them back would overstate on-hand. Use
  * `effectiveOfflineReservedQty` / `effectiveOfflineReservedByKey` on those three paths, never the
- * raw figure. The push itself only runs while enabled, so it always nets.
+ * raw figure. The push itself only runs while enabled, so it always nets. The comparison's floor
+ * at 0 is gated the same way — it mirrors the push's own floor, so while pushes are off nothing
+ * floors Jubelio's figure for this to mirror, and the comparison uses raw `qtyOnHand` instead
+ * (`comparableEloraeQty` in `apps/web/lib/inventory/reconciliation.ts`).
  *
  * Sending `qtyOnHand − reservedQty` (which also nets out JUBELIO's own reservations)
  * double-subtracts marketplace commitments, since Jubelio nets them out again via

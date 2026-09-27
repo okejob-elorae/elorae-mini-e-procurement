@@ -6,7 +6,7 @@ vi.mock("@/lib/internal-api", () => ({
 
 import { JUBELIO_STOCK_PUSH_ENABLED_KEY, prisma, seededId } from "@elorae/db";
 import { apiFetch } from "@/lib/internal-api";
-import { resolveReconciliationItem, updateReconciliationSettings } from "./reconciliation-runner";
+import { resolveReconciliationItem, runReconciliation, updateReconciliationSettings } from "./reconciliation-runner";
 
 /*
  * Exercises resolveReconciliationItem's MATCH_JUBELIO path against the real DB, with the live
@@ -334,6 +334,107 @@ d("resolveReconciliationItem MATCH_JUBELIO (test bed only)", () => {
 
     const result = await prisma.reconciliationResult.findUnique({ where: { id: fx.resultId } });
     expect(result!.action).toBe("FLAGGED");
+  });
+});
+
+d("runReconciliation floor gating (test bed only)", () => {
+  let uomId = "";
+  const itemIds: string[] = [];
+  const runIds: string[] = [];
+
+  preserveSettings([
+    JUBELIO_STOCK_PUSH_ENABLED_KEY,
+    "RECON_AUTO_CORRECT_THRESHOLD",
+    "RECON_AUTO_CORRECT_DIRECTION",
+    "RECON_CRON_ENABLED",
+  ]);
+
+  beforeEach(async () => {
+    /* Unset before seeding, so a throw mid-hook leaves teardown scoped to what this run created. */
+    uomId = "";
+    itemIds.length = 0;
+    runIds.length = 0;
+    vi.clearAllMocks();
+
+    const uom = await prisma.uOM.create({
+      data: { code: `TEST-UOM-RECON-RUN-${Math.random().toString(36).slice(2, 8)}`, nameId: "test", nameEn: "test" },
+    });
+    uomId = uom.id;
+
+    await setSetting("RECON_AUTO_CORRECT_THRESHOLD", "0");
+    await setSetting("RECON_AUTO_CORRECT_DIRECTION", "FLAG_ONLY");
+    await setSetting("RECON_CRON_ENABLED", "true");
+  });
+
+  afterEach(async () => {
+    // Deletes every result the run created, not just our own item's — a run scans every real
+    // FINISHED_GOOD Jubelio mapping on the shared test bed, and every one of those rows belongs
+    // to the run we created, so cleaning up by runId is scoped and complete.
+    for (const runId of runIds) {
+      await prisma.reconciliationResult.deleteMany({ where: { runId: seededId(runId) } });
+      await prisma.reconciliationRun.deleteMany({ where: { id: seededId(runId) } });
+    }
+    for (const itemId of itemIds) {
+      await prisma.jubelioProductMapping.deleteMany({ where: { itemId: seededId(itemId) } });
+      await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
+      await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    }
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+  });
+
+  it("switch off, on-hand -5, Jubelio 0 -> FLAGGED, not floored to an IN_SYNC 0", async () => {
+    await setPushSwitch(false);
+
+    const token = Math.random().toString(36).slice(2, 10);
+    const item = await prisma.item.create({
+      data: {
+        sku: `TEST-RECON-RUN-${token}`,
+        nameId: "test",
+        nameEn: "test",
+        type: "FINISHED_GOOD",
+        isActive: true,
+        uomId,
+      },
+    });
+    itemIds.push(item.id);
+
+    await prisma.inventoryValue.create({
+      data: { itemId: item.id, variantSku: "", qtyOnHand: -5, avgCost: 10, totalValue: -50 },
+    });
+
+    const jubelioItemGroupId = Math.floor(Math.random() * 1_000_000) + 900_000_000;
+    const jubelioItemId = jubelioItemGroupId + 1;
+    await prisma.jubelioProductMapping.create({
+      data: {
+        itemId: item.id,
+        jubelioItemGroupId,
+        jubelioItemId,
+        jubelioItemCode: `TEST-JCODE-RUN-${token}`,
+        erpVariantSku: "",
+      },
+    });
+
+    (apiFetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { rows: [{ itemId: item.id, variantSku: "", jubelioItemId, jubelioQty: 0 }] },
+    });
+
+    const res = await runReconciliation("MANUAL", "u1");
+    expect(res.runId).not.toBe("");
+    runIds.push(res.runId);
+
+    const result = await prisma.reconciliationResult.findFirst({
+      where: { runId: res.runId, itemId: item.id },
+    });
+    expect(result).not.toBeNull();
+    expect(result!.action).toBe("FLAGGED");
+    expect(Number(result!.eloraeQty)).toBe(-5);
+    expect(Number(result!.jubelioQty)).toBe(0);
+    expect(Number(result!.variance)).toBe(-5);
+
+    const inv = await prisma.inventoryValue.findFirst({ where: { itemId: item.id } });
+    expect(Number(inv!.qtyOnHand)).toBe(-5);
   });
 });
 
