@@ -1914,7 +1914,7 @@
     "empty": "No marketplace orders yet — orders appear here as Jubelio webhooks arrive.",
     "emptyFiltered": "No orders match these filters.",
     "filter": {
-      "searchPlaceholder": "Search by order # or buyer name",
+      "searchPlaceholder": "Search by order #, buyer name or tracking #",
       "channel": "Channel",
       "status": "Status",
       "dateRange": "Date range",
@@ -1924,6 +1924,7 @@
     "table": {
       "orderNo": "Order #",
       "channel": "Channel",
+      "trackingNumber": "Tracking #",
       "buyer": "Buyer",
       "total": "Total",
       "status": "Status",

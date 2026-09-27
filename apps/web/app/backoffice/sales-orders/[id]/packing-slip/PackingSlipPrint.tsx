@@ -6,6 +6,7 @@ import { formatDateTime } from "@/lib/sales-orders/format";
 import { PRINT_STYLES, BRAND } from "@/lib/sales-orders/print-styles";
 import type { SalesOrderDetail, SalesOrderItemRow } from "@/lib/sales-orders/queries";
 import { logPrintQuietly } from "@/lib/audit/log-print-quietly";
+import { ResiBarcode } from "@/components/resi-barcode";
 
 type Props = {
   order: SalesOrderDetail;
@@ -18,6 +19,7 @@ export function PackingSlipPrint({ order, items, lineImages = {} }: Props) {
   const locale = useLocale();
   const printLogged = useRef(false);
 
+  /* Children's effects run before this one, so `ResiBarcode` has drawn its bars before `window.print()` fires. */
   useEffect(() => {
     /* The ref survives React StrictMode's double effect, so one page open logs one print. */
     if (!printLogged.current) {
@@ -61,10 +63,13 @@ export function PackingSlipPrint({ order, items, lineImages = {} }: Props) {
               </div>
             )}
             {order.trackingNumber && (
-              <div className="print-meta-row">
-                <span className="print-meta-label">{t("trackingLabel")}</span>
-                <span style={{ fontFamily: "monospace" }}>{order.trackingNumber}</span>
-              </div>
+              <>
+                <div className="print-meta-row">
+                  <span className="print-meta-label">{t("trackingLabel")}</span>
+                  <span style={{ fontFamily: "monospace" }}>{order.trackingNumber}</span>
+                </div>
+                <ResiBarcode value={order.trackingNumber} height={56} />
+              </>
             )}
           </div>
         )}

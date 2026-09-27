@@ -17,6 +17,7 @@ export type SalesOrderListRow = {
   channel: SalesChannel;
   status: SalesOrderStatus;
   customerName: string | null;
+  trackingNumber: string | null;
   grandTotal: string;
   transactionDate: Date;
 };
@@ -108,6 +109,7 @@ function buildWhere(f: SalesOrderListFilter) {
     where.OR = [
       { salesorderNo: { contains: s } },
       { customerName: { contains: s } },
+      { trackingNumber: { contains: s } },
     ];
   }
   return where;
@@ -130,6 +132,7 @@ export async function listSalesOrders(
         channel: true,
         status: true,
         customerName: true,
+        trackingNumber: true,
         grandTotal: true,
         transactionDate: true,
       },
@@ -143,6 +146,7 @@ export async function listSalesOrders(
     channel: r.channel as SalesChannel,
     status: r.status as SalesOrderStatus,
     customerName: r.customerName,
+    trackingNumber: r.trackingNumber,
     grandTotal: r.grandTotal.toString(),
     transactionDate: r.transactionDate,
   }));

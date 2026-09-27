@@ -257,6 +257,7 @@ export function SalesOrdersPageClient(props: Props) {
             <TableRow>
               <TableHead>{t("table.orderNo")}</TableHead>
               <TableHead>{t("table.channel")}</TableHead>
+              <TableHead>{t("table.trackingNumber")}</TableHead>
               <TableHead>{t("table.buyer")}</TableHead>
               <TableHead className="text-right">{t("table.total")}</TableHead>
               <TableHead>{t("table.status")}</TableHead>
@@ -266,7 +267,7 @@ export function SalesOrdersPageClient(props: Props) {
           <TableBody>
             {props.orders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                   {hasFilter ? t("emptyFiltered") : t("empty")}
                 </TableCell>
               </TableRow>
@@ -288,6 +289,12 @@ export function SalesOrdersPageClient(props: Props) {
                     >
                       {t(`channel.${CHANNEL_BADGE[o.channel].labelKey}` as never)}
                     </span>
+                  </TableCell>
+                  <TableCell
+                    className="max-w-[180px] truncate font-mono text-sm"
+                    title={o.trackingNumber || undefined}
+                  >
+                    {o.trackingNumber || <span className="font-sans text-muted-foreground">—</span>}
                   </TableCell>
                   <TableCell className="max-w-[200px] truncate">
                     {o.customerName ?? "—"}

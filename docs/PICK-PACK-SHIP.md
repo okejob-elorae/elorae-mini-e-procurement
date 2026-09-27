@@ -55,6 +55,7 @@ actions catch `InvalidFulfillmentTransition` and return `{ ok: false, reason }`.
 
 | Surface | File | What it does |
 |---|---|---|
+| Resi (tracking number) | `apps/web/app/backoffice/sales-orders/SalesOrdersPageClient.tsx`, `apps/web/components/resi-barcode.tsx` | The sales order list has a resi column and its search matches the resi as well as the order number and buyer name, so a scanned resi finds its order. The detail card's tracking block and the packing slip render the resi as a scannable CODE128 barcode beside the text. Does **not** cover an order whose resi Jubelio has not assigned yet (instant/same-day orders before courier assignment): those show a dash and no barcode. The barcode hides itself for a value JsBarcode refuses rather than rendering one that scans wrong, and the packing slip relies on child effects running before its own `window.print()` effect, so the bars are drawn before the print dialog opens. |
 | Fulfillment queue | `apps/web/app/backoffice/fulfillment/` | Filterable/sortable list of orders (default filter `PENDING`), row checkboxes, **batch** Finish Pick / Finish Pack. No batch Ship — shipping needs a per-order courier choice. |
 | Order detail card | `apps/web/app/backoffice/sales-orders/[id]/FulfillmentCard.tsx` | Status badge, a three-row who/when timeline, the single next-step button, courier `Select` + confirm dialog for Ship, tracking number once known. |
 | Pick list (print) | `apps/web/app/backoffice/sales-orders/[id]/pick-list/` | Printable line list with primary item images for the warehouse. |
