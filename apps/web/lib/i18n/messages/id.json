@@ -2171,6 +2171,12 @@
     }
   },
   "jubelioStockPush": {
+    "bulkConfirm": "Push stok semua item yang terpetakan ke Jubelio?",
+    "bulkQueued": "{count} item diantre. Push berjalan dalam beberapa menit ke depan.",
+    "bulkNotAdmin": "Hanya admin yang bisa push stok.",
+    "bulkFailed": "Gagal mengantre push stok. Periksa koneksi lalu coba lagi.",
+    "bulkButton": "Sinkronkan semua stok",
+    "bulkQueuing": "Mengantre…",
     "cardTitle": "Push stok ke Jubelio",
     "statusEnabled": "Aktif",
     "statusDisabled": "Nonaktif sampai cutover",

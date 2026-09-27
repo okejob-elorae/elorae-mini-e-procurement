@@ -271,14 +271,16 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
   };
 
   const handleBulkPush = async () => {
-    if (!confirm("Push stock for all mapped items to Jubelio?")) return;
+    if (!confirm(t("bulkConfirm"))) return;
     setBulkPushing(true);
     try {
       const r = await bulkPushAllStockToJubelio();
-      if (r.ok) toast.success(`Queued ${r.count} items. Pushes drain over the next few minutes.`);
+      if (r.ok) toast.success(t("bulkQueued", { count: r.count }));
       else if (r.reason === "push_disabled") toast.error(t("pushDisabledHint"));
-      else toast.error("Bulk push failed (admin only).");
+      else toast.error(t("bulkNotAdmin"));
       void loadOutbox();
+    } catch {
+      toast.error(t("bulkFailed"));
     } finally {
       setBulkPushing(false);
     }
@@ -420,7 +422,7 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
             disabled={bulkPushing || !pushEnabled}
             title={pushEnabled ? undefined : t("pushDisabledHint")}
           >
-            {bulkPushing ? "Queuing…" : "Sync all stock"}
+            {bulkPushing ? t("bulkQueuing") : t("bulkButton")}
           </Button>
         </CardContent>
       </Card>

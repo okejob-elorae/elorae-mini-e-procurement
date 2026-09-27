@@ -2171,6 +2171,12 @@
     }
   },
   "jubelioStockPush": {
+    "bulkConfirm": "Push stock for all mapped items to Jubelio?",
+    "bulkQueued": "Queued {count} items. Pushes drain over the next few minutes.",
+    "bulkNotAdmin": "Only admins can push stock.",
+    "bulkFailed": "Couldn't queue the stock push. Check your connection and try again.",
+    "bulkButton": "Sync all stock",
+    "bulkQueuing": "Queuing…",
     "cardTitle": "Push stock to Jubelio",
     "statusEnabled": "Enabled",
     "statusDisabled": "Disabled until cutover",
