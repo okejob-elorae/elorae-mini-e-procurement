@@ -416,6 +416,11 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
           value={String(settlement.differCount)}
           tone={settlement.differCount > 0 ? "warn" : undefined}
         />
+        <KpiTile
+          label={t("compare.missingEscrow")}
+          value={String(settlement.missingEscrowCount)}
+          tone={settlement.missingEscrowCount > 0 ? "warn" : undefined}
+        />
       </div>
 
       <Card>
@@ -608,7 +613,15 @@ function ComparisonBadge({ line, t }: { line: SettlementDetailLine; t: TFn }) {
     </Badge>
   ) : null;
   const primary =
-    line.netDelta === null ? (
+    line.escrowMissing ? (
+      <Badge
+        variant="outline"
+        className="border-amber-500/40 text-amber-700 dark:text-amber-400"
+        title={t("compare.noEscrowHint")}
+      >
+        {t("compare.noEscrowBadge")}
+      </Badge>
+    ) : line.netDelta === null ? (
       <Badge variant="secondary">{t("compare.statusUnavailable")}</Badge>
     ) : line.matches ? (
       <Badge className="bg-green-600 text-white hover:bg-green-600/90 dark:bg-green-700">
@@ -730,10 +743,22 @@ function FeeBreakdownPanel({ line, t }: { line: SettlementDetailLine; t: TFn }) 
         <div className="flex justify-between border-t pt-1 text-sm font-medium">
           <span>{t("compare.netDelta")}</span>
           <span className="tabular-nums">
-            {line.netDelta === null ? "—" : formatRupiah(line.netDelta)}
+            {line.escrowMissing ? (
+              <Badge
+                variant="outline"
+                className="border-amber-500/40 text-amber-700 dark:text-amber-400"
+                title={t("compare.noEscrowHint")}
+              >
+                {t("compare.noEscrowBadge")}
+              </Badge>
+            ) : line.netDelta === null ? (
+              "—"
+            ) : (
+              formatRupiah(line.netDelta)
+            )}
           </span>
         </div>
-        {line.netDelta === null && (
+        {line.netDelta === null && !line.escrowMissing && (
           <p className="text-xs text-muted-foreground">{t("compare.statusUnavailable")}</p>
         )}
       </div>

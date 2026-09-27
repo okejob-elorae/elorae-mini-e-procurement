@@ -89,6 +89,7 @@ export type SettlementDetailLine = {
   jubelioFees: JubelioFees | null;
   jubelioComposition: JubelioComposition | null;
   jubelioCanceled: boolean;
+  escrowMissing: boolean;
 };
 
 /**
@@ -205,6 +206,21 @@ export function deriveJubelioComparison(
   return { jubelioNet, netDelta, matches: Math.abs(netDelta) < 1 };
 }
 
+/**
+ * A matched order the export paid but Jubelio carries no escrow for. The compare cannot compute a
+ * delta, so without this flag the line reads "—" and never reaches `differCount` — it looks
+ * reconciled when Jubelio is simply missing the figure. Cancelled orders are excluded (their
+ * escrow 0 is real) and so are unpaid lines (export under Rp1).
+ */
+export function isEscrowMissing(input: {
+  matched: boolean;
+  canceled: boolean;
+  netIncome: number;
+  jubelioNet: number | null;
+}): boolean {
+  return input.matched && !input.canceled && input.jubelioNet === null && Math.abs(input.netIncome) >= 1;
+}
+
 export type SettlementDetail = {
   id: string;
   marketplace: string;
@@ -228,6 +244,7 @@ export type SettlementDetail = {
   matchRatePct: number;
   journalId: string | null;
   differCount: number;
+  missingEscrowCount: number;
 };
 
 export async function getSettlementById(id: string): Promise<SettlementDetail | null> {
@@ -316,6 +333,7 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
       ? statusByOrderId.get(l.matchedSalesOrderId) === "CANCELLED"
       : false;
     const comparison = deriveJubelioComparison(netIncome, feeBreakdown, canceled);
+    const matched = l.matchStatus === "MATCHED";
     return {
       id: l.id,
       orderNo: l.orderNo,
@@ -336,6 +354,7 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
         ? (compositionByOrderId.get(l.matchedSalesOrderId) ?? null)
         : null,
       jubelioCanceled: canceled,
+      escrowMissing: isEscrowMissing({ matched, canceled, netIncome, jubelioNet: comparison.jubelioNet }),
       ...comparison,
     };
   });
@@ -354,6 +373,7 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
   const differCount = lines.filter(
     (l) => l.matchStatus === "MATCHED" && l.netDelta !== null && !l.matches,
   ).length;
+  const missingEscrowCount = lines.filter((l) => l.escrowMissing).length;
 
   return {
     id: row.id,
@@ -378,5 +398,6 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
     matchRatePct,
     journalId: journal?.id ?? null,
     differCount,
+    missingEscrowCount,
   };
 }
