@@ -48,7 +48,7 @@ function actionBadgeVariant(action: string): "default" | "secondary" | "destruct
   }
 }
 
-export function ReconciliationListClient() {
+export function ReconciliationListClient({ initialPushEnabled }: { initialPushEnabled: boolean }) {
   const t = useTranslations("stockReconciliation");
   const { data: session } = useSession();
   const canManage = hasPermission(
@@ -61,7 +61,8 @@ export function ReconciliationListClient() {
   const [threshold, setThreshold] = useState("0");
   const [direction, setDirection] = useState("FLAG_ONLY");
   const [cronEnabled, setCronEnabled] = useState(true);
-  const [pushEnabled, setPushEnabled] = useState(true);
+  const [pushEnabled, setPushEnabled] = useState(initialPushEnabled);
+  const [savingConfig, setSavingConfig] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -103,17 +104,23 @@ export function ReconciliationListClient() {
   };
 
   const saveConfig = async () => {
+    setSavingConfig(true);
     try {
-      await updateReconciliationConfig({
+      const r = await updateReconciliationConfig({
         threshold: Number(threshold),
         direction,
         cronEnabled,
       });
-      toast.success(t("configSaved"));
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("configSaveFailed"));
+      if (r.success) toast.success(t("configSaved"));
+      else toast.error(t(`err.${r.reason}`));
+    } catch {
+      toast.error(t("configSaveFailed"));
+    } finally {
+      setSavingConfig(false);
     }
   };
+
+  const staleReassert = direction === "REASSERT_ELORAE" && !pushEnabled;
 
   return (
     <div className="space-y-6">
@@ -166,15 +173,23 @@ export function ReconciliationListClient() {
                   ))}
                 </SelectContent>
               </Select>
-              {!pushEnabled && (
+              {staleReassert ? (
+                <p className="text-xs text-destructive">{t("staleReassertHint")}</p>
+              ) : !pushEnabled ? (
                 <p className="text-xs text-muted-foreground">{t("pushDisabledHint")}</p>
-              )}
+              ) : null}
             </div>
             <div className="flex items-end gap-2 pb-1">
               <Switch checked={cronEnabled} onCheckedChange={setCronEnabled} id="cron-enabled" />
               <Label htmlFor="cron-enabled">{t("cronEnabled")}</Label>
             </div>
-            <Button className="sm:col-span-3 w-fit" variant="secondary" onClick={saveConfig}>
+            <Button
+              className="sm:col-span-3 w-fit"
+              variant="secondary"
+              onClick={() => void saveConfig()}
+              disabled={savingConfig || staleReassert}
+            >
+              {savingConfig ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               {t("saveConfig")}
             </Button>
           </CardContent>

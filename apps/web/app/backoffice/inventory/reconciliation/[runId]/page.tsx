@@ -1,3 +1,4 @@
+import { isJubelioStockPushEnabled, prisma } from "@elorae/db";
 import { ReconciliationRunDetailClient } from "./ReconciliationRunDetailClient";
 
 export const dynamic = "force-dynamic";
@@ -8,5 +9,6 @@ export default async function ReconciliationRunPage({
   params: Promise<{ runId: string }>;
 }) {
   const { runId } = await params;
-  return <ReconciliationRunDetailClient runId={runId} />;
+  const initialPushEnabled = await isJubelioStockPushEnabled(prisma);
+  return <ReconciliationRunDetailClient runId={runId} initialPushEnabled={initialPushEnabled} />;
 }

@@ -39,24 +39,47 @@ const MAX_SEARCH_LENGTH = 200;
 
 /**
  * Whether Elorae is currently allowed to push stock to Jubelio (owner-approved cutover switch —
- * see `isJubelioStockPushEnabled` in `jubelio-stock-contract.ts`). No permission gate: it is a
- * read of informational state, not a write.
+ * see `isJubelioStockPushEnabled` in `jubelio-stock-contract.ts`). Any signed-in user may read it,
+ * since the reconciliation and item pages show it to non-admins; with no session it reads `false`,
+ * failing closed like the switch itself.
  */
 export async function getJubelioStockPushEnabled(): Promise<boolean> {
+  const session = await auth();
+  if (!session?.user?.id) return false;
   return isJubelioStockPushEnabled(prisma);
 }
 
 /**
  * Owner-approved cutover switch: flips whether Elorae is allowed to push stock to Jubelio at
  * all. Same permission as this page's other manage controls (admin wildcard). Stores the exact
- * string `"true"`/`"false"` — isJubelioStockPushEnabled fails closed on anything else.
+ * string `"true"`/`"false"` — isJubelioStockPushEnabled fails closed on anything else — and only
+ * a literal `true` enables it, so a truthy non-boolean from a hand-built call cannot.
+ *
+ * The flip and its `AuditLog` row (who, before, after) commit in one transaction, so the switch
+ * never changes without a record of who changed it.
  */
 export async function setJubelioStockPushEnabled(enabled: boolean): Promise<{ ok: boolean }> {
   if (!(await isAdmin())) return { ok: false };
-  await prisma.systemSetting.upsert({
-    where: { key: JUBELIO_STOCK_PUSH_ENABLED_KEY },
-    update: { value: enabled ? "true" : "false" },
-    create: { key: JUBELIO_STOCK_PUSH_ENABLED_KEY, value: enabled ? "true" : "false" },
+  const userId = await currentUserId();
+  if (!userId) return { ok: false };
+  const after = enabled === true;
+
+  await prisma.$transaction(async (tx) => {
+    const before = await isJubelioStockPushEnabled(tx);
+    await tx.systemSetting.upsert({
+      where: { key: JUBELIO_STOCK_PUSH_ENABLED_KEY },
+      update: { value: after ? "true" : "false" },
+      create: { key: JUBELIO_STOCK_PUSH_ENABLED_KEY, value: after ? "true" : "false" },
+    });
+    await tx.auditLog.create({
+      data: {
+        userId,
+        action: "JUBELIO_STOCK_PUSH_TOGGLE",
+        entityType: "SystemSetting",
+        entityId: JUBELIO_STOCK_PUSH_ENABLED_KEY,
+        changes: { before: { enabled: before }, after: { enabled: after } },
+      },
+    });
   });
   return { ok: true };
 }

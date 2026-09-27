@@ -40,7 +40,13 @@ function actionBadgeVariant(action: string): "default" | "secondary" | "destruct
   }
 }
 
-export function ReconciliationRunDetailClient({ runId }: { runId: string }) {
+export function ReconciliationRunDetailClient({
+  runId,
+  initialPushEnabled,
+}: {
+  runId: string;
+  initialPushEnabled: boolean;
+}) {
   const t = useTranslations("stockReconciliation");
   const { data: session } = useSession();
   const canManage = hasPermission(
@@ -50,7 +56,7 @@ export function ReconciliationRunDetailClient({ runId }: { runId: string }) {
   const [run, setRun] = useState<SerializedReconciliationRunDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
-  const [pushEnabled, setPushEnabled] = useState(true);
+  const [pushEnabled, setPushEnabled] = useState(initialPushEnabled);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -75,11 +81,13 @@ export function ReconciliationRunDetailClient({ runId }: { runId: string }) {
     try {
       const r = await resolveReconciliationItem({ resultId, direction });
       if (!r.success) {
-        toast.error(r.error ?? t("resolveFailed"));
+        toast.error(t(`err.${r.reason}`));
         return;
       }
       toast.success(t("resolved"));
       await load();
+    } catch {
+      toast.error(t("resolveFailed"));
     } finally {
       setResolvingId(null);
     }
@@ -108,6 +116,7 @@ export function ReconciliationRunDetailClient({ runId }: { runId: string }) {
       <Card>
         <CardHeader>
           <CardTitle>{t("results")}</CardTitle>
+          <p className="text-xs text-muted-foreground">{t("eloraeQtyHint")}</p>
           {canManage && !pushEnabled && (
             <p className="text-xs text-muted-foreground">{t("pushDisabledHint")}</p>
           )}
@@ -157,7 +166,6 @@ export function ReconciliationRunDetailClient({ runId }: { runId: string }) {
                             size="sm"
                             variant="outline"
                             disabled={resolvingId === row.id || !pushEnabled}
-                            title={pushEnabled ? undefined : t("pushDisabledHint")}
                             onClick={() => resolve(row.id, "REASSERT_ELORAE")}
                           >
                             {t("reassertElorae")}

@@ -134,9 +134,9 @@ export async function updateReconciliationConfig(data: {
 }) {
   const user = await sessionUser();
   requirePermission(user.permissions ?? [], PERMISSIONS.INVENTORY_RECONCILIATION_MANAGE);
-  await updateReconciliationSettings(data.threshold, data.direction, data.cronEnabled);
-  revalidatePath(RECON_PATH);
-  return { success: true };
+  const result = await updateReconciliationSettings(data.threshold, data.direction, data.cronEnabled);
+  if (result.success) revalidatePath(RECON_PATH);
+  return result;
 }
 
 export async function runReconciliationCron() {

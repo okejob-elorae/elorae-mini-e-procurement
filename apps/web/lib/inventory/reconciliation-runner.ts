@@ -1,30 +1,40 @@
 import type { Prisma, ReconDirection, ReconTrigger, StockAdjustmentSource, StockLedgerRefType } from "@elorae/db";
 import {
+  effectiveOfflineReservedByKey,
+  effectiveOfflineReservedQty,
   eloraeOnHandFromJubelio,
   isJubelioStockPushEnabled,
   isValidJubelioQty,
   jubelioEndQtyFor,
-  offlineReservedByKey,
-  offlineReservedQty,
+  lockMainInventoryValueRow,
   prisma,
   setMainStock,
 } from "@elorae/db";
 import { Decimal } from "decimal.js";
 import { generateDocNumber } from "@/lib/docNumber";
-import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 import { apiFetch } from "@/lib/internal-api";
 import {
-  classifyVariance,
+  classifyReconRow,
   isCronEnabled,
   parseReconDirection,
   parseReconThreshold,
+  sameQty2dp,
+  type ReconResolveReason,
+  type ReconSettingsReason,
 } from "./reconciliation";
 
+/** `jubelioQty` is `null` when Jubelio gave no usable figure — never read it as 0. */
 export type JubelioSnapshotRow = {
   itemId: string;
   variantSku: string;
   jubelioItemId: number;
-  jubelioQty: number;
+  jubelioQty: number | null;
+};
+
+/** One variant of one item group, read live by the api from `GET /inventory/items/group/{id}`. */
+export type JubelioGroupSnapshotRow = {
+  jubelioItemId: number;
+  endQty: number | null;
 };
 
 export type ReconConfig = {
@@ -59,11 +69,10 @@ export async function hasRunningReconciliation(): Promise<boolean> {
   return running != null;
 }
 
-async function fetchJubelioSnapshot(itemGroupIds?: number[]): Promise<JubelioSnapshotRow[]> {
-  const query = itemGroupIds?.length ? `?jubelioItemGroupIds=${itemGroupIds.join(",")}` : "";
+async function fetchJubelioSnapshot(): Promise<JubelioSnapshotRow[]> {
   const res = await apiFetch<{ rows: JubelioSnapshotRow[] }>(
     "GET",
-    `/jubelio/inventory/snapshot${query}`,
+    "/jubelio/inventory/snapshot",
     { userId: "" },
   );
   if (!res.ok || !res.data?.rows) {
@@ -73,11 +82,31 @@ async function fetchJubelioSnapshot(itemGroupIds?: number[]): Promise<JubelioSna
 }
 
 /**
+ * The live figures for ONE item group. The group id goes in the PATH: a query string would fail
+ * the signed channel's check (see apiFetch). Returns `null` when the api call itself fails.
+ */
+async function fetchJubelioGroupSnapshot(groupId: number): Promise<JubelioGroupSnapshotRow[] | null> {
+  const res = await apiFetch<{ rows: JubelioGroupSnapshotRow[] }>(
+    "GET",
+    `/jubelio/inventory/snapshot/group/${groupId}`,
+    { userId: "" },
+  );
+  if (!res.ok || !res.data?.rows) return null;
+  return res.data.rows;
+}
+
+type MatchJubelioOutcome = "APPLIED" | "NOOP" | "NO_INVENTORY_ROW" | "STOCK_MOVED";
+
+/**
  * Applies a MATCH_JUBELIO correction under the verified contract: the absolute target is
- * Jubelio's `end_qty` plus Elorae's own offline (field-sales) holds, which Jubelio cannot see
- * (see jubelio-stock-contract.ts). `jubelioQty` is the raw Jubelio figure — the offline add-back
- * and the row lock both happen in here, inside the caller's own transaction, so a concurrent
- * push/webhook write cannot land between the read and the write.
+ * Jubelio's `end_qty` plus the field-sales holds Jubelio has had netted out of it
+ * (`effectiveOfflineReservedQty`: the holds while stock pushes are enabled, 0 while they are off —
+ * see jubelio-stock-contract.ts). `jubelioQty` is the raw Jubelio figure.
+ *
+ * Runs inside the caller's transaction, and the row lock is its FIRST statement, so prevQty, the
+ * holds and the optional moved-since check (`expectedEloraeQty`, the figure the run stored) all see
+ * a row no concurrent push or webhook can move until this commits. Every refusal returns before
+ * any write.
  */
 async function applyMatchJubelio(
   tx: Prisma.TransactionClient,
@@ -87,42 +116,39 @@ async function applyMatchJubelio(
     variantSku: string;
     itemName: string;
     jubelioQty: number;
+    expectedEloraeQty?: number;
     userId?: string;
   },
-): Promise<void> {
+): Promise<MatchJubelioOutcome> {
   if (!isValidJubelioQty(params.jubelioQty)) {
     throw new Error(`Invalid Jubelio quantity for ${params.itemName}: ${params.jubelioQty}`);
   }
 
   const variantKey = params.variantSku;
-  const inv = await findExistingInventoryValueRow(tx, params.itemId, variantKey);
-  if (!inv) return;
+  const locked = await lockMainInventoryValueRow(tx, params.itemId, variantKey);
+  if (!locked) return "NO_INVENTORY_ROW";
 
-  /*
-   * Lock the row before reading it — a plain read here could race a concurrent push/webhook
-   * write landing between this read and the setMainStock write below. Only inv.id is
-   * interpolated (parameterised by Prisma); the column/table names are static SQL text.
-   */
-  const lockedRows = await tx.$queryRaw<{ qtyOnHand: unknown; avgCost: unknown }[]>`
-    SELECT \`qtyOnHand\`, \`avgCost\` FROM \`InventoryValue\` WHERE id = ${inv.id} FOR UPDATE
-  `;
-  const locked = lockedRows[0];
-  if (!locked) return;
+  const offline = await effectiveOfflineReservedQty(tx, params.itemId, variantKey);
+  const prevQty = new Decimal(locked.qtyOnHand);
 
-  const offline = await offlineReservedQty(tx, params.itemId, variantKey);
-  const prevQty = new Decimal(String(locked.qtyOnHand));
+  if (params.expectedEloraeQty !== undefined) {
+    const liveEloraeQty = jubelioEndQtyFor(prevQty.toNumber(), offline);
+    if (!sameQty2dp(liveEloraeQty, params.expectedEloraeQty)) return "STOCK_MOVED";
+  }
+
   // eloraeOnHandFromJubelio's own addition happens in plain numbers (the contract's pure
   // shape); everything from here on is Decimal, so the adjustment/ledger math doesn't drift.
-  const targetQty = new Decimal(eloraeOnHandFromJubelio(params.jubelioQty, offline).toString());
-  if (prevQty.equals(targetQty)) return;
+  const targetQty = new Decimal(eloraeOnHandFromJubelio(params.jubelioQty, offline).toString())
+    .toDecimalPlaces(2);
+  if (prevQty.equals(targetQty)) return "NOOP";
 
-  const prevAvgCost = new Decimal(String(locked.avgCost));
+  const prevAvgCost = new Decimal(locked.avgCost);
   const qtyChange = targetQty.minus(prevQty).abs();
   const type = targetQty.gte(prevQty) ? "POSITIVE" : "NEGATIVE";
   const idempotencyKey = `recon:${params.runId}:${params.itemId}:${variantKey || "base"}`;
 
   const existing = await tx.stockAdjustment.findUnique({ where: { idempotencyKey } });
-  if (existing) return;
+  if (existing) return "NOOP";
 
   const adjDoc = await generateDocNumber("ADJ", tx);
   const adjustment = await tx.stockAdjustment.create({
@@ -152,12 +178,13 @@ async function applyMatchJubelio(
     unitCost: prevAvgCost.toNumber(),
     totalCost: signedQtyChange.mul(prevAvgCost).toNumber(),
     balanceValue: newTotalValue.toNumber(),
-    inventoryValueId: inv.id,
+    inventoryValueId: locked.id,
     refType: "Reconciliation" satisfies StockLedgerRefType,
     refId: adjustment.id,
     refDocNumber: adjDoc,
     createdById: params.userId ?? null,
   });
+  return "APPLIED";
 }
 
 async function enqueueReconStockPush(itemId: string, userId: string): Promise<void> {
@@ -224,9 +251,11 @@ export async function runReconciliation(
   let totalScanned = 0;
 
   try {
-    // Owner-approved cutover switch: while it's off, REASSERT_ELORAE never enqueues a push —
-    // see jubelio-stock-contract.ts. The row-level guard below matches classifyVariance's own
-    // shape so the counters and the persisted action stay consistent with what actually ran.
+    /*
+     * Owner-approved cutover switch (see jubelio-stock-contract.ts). While it is off,
+     * classifyReconRow degrades REASSERT_ELORAE to FLAGGED so nothing is enqueued, and the
+     * comparison below subtracts no holds, because no push has netted them out of end_qty.
+     */
     const pushEnabled = await isJubelioStockPushEnabled(prisma);
 
     const mappings = await prisma.jubelioProductMapping.findMany({
@@ -246,7 +275,7 @@ export async function runReconciliation(
     });
 
     const fgMappings = mappings.filter((m) => m.item.type === "FINISHED_GOOD");
-    const offlineByKey = await offlineReservedByKey(
+    const offlineByKey = await effectiveOfflineReservedByKey(
       prisma,
       fgMappings.map((m) => ({ itemId: m.itemId, variantSku: m.erpVariantSku ?? "" })),
     );
@@ -267,20 +296,22 @@ export async function runReconciliation(
       const rawQtyOnHand = invRow ? Number(invRow.qtyOnHand) : 0;
       const offline = offlineByKey.get(`${mapping.itemId}:${variantSku}`) ?? 0;
       const eloraeQty = jubelioEndQtyFor(rawQtyOnHand, offline);
-      const snap = jubelioByKey.get(`${mapping.itemId}:${variantSku}`);
-      const jubelioQty = snap?.jubelioQty ?? 0;
-      const variance = eloraeQty - jubelioQty;
-      let classified = classifyVariance(variance, config.threshold, config.direction);
-      if (classified.needsPush && config.direction === "REASSERT_ELORAE" && !pushEnabled) {
-        classified = { action: "FLAGGED", needsStockWrite: false, needsPush: false };
-      }
+      /* A variant the snapshot had no usable figure for is null, never 0 — see classifyReconRow. */
+      const jubelioQty = jubelioByKey.get(`${mapping.itemId}:${variantSku}`)?.jubelioQty ?? null;
+      const { classified, storedJubelioQty, variance } = classifyReconRow({
+        eloraeQty,
+        jubelioQty,
+        threshold: config.threshold,
+        direction: config.direction,
+        pushEnabled,
+      });
 
       totalScanned += 1;
       if (classified.action === "IN_SYNC") inSync += 1;
       else if (classified.action === "AUTO_CORRECTED") autoCorrected += 1;
       else if (classified.action === "FLAGGED") flagged += 1;
 
-      if (classified.needsStockWrite && config.direction === "MATCH_JUBELIO") {
+      if (classified.needsStockWrite && config.direction === "MATCH_JUBELIO" && jubelioQty !== null) {
         await prisma.$transaction(async (tx) => {
           await applyMatchJubelio(tx, {
             runId: run.id,
@@ -303,7 +334,7 @@ export async function runReconciliation(
           itemName: mapping.item.nameId,
           jubelioItemId: mapping.jubelioItemId,
           eloraeQty,
-          jubelioQty,
+          jubelioQty: storedJubelioQty,
           variance,
           action: classified.action,
         },
@@ -340,69 +371,69 @@ export async function runReconciliation(
   }
 }
 
+export type ResolveReconciliationResult =
+  | { success: true }
+  | { success: false; reason: ReconResolveReason };
+
 export async function resolveReconciliationItem(data: {
   resultId: string;
   direction: ReconDirection;
   userId: string;
-}): Promise<{ success: boolean; error?: string }> {
+}): Promise<ResolveReconciliationResult> {
   try {
     // Validate the direction before any side effect — this is a "use server" export, reachable
     // independently of whatever the UI currently offers.
     if (data.direction !== "MATCH_JUBELIO" && data.direction !== "REASSERT_ELORAE") {
-      throw new Error(`Unknown reconciliation direction: ${data.direction}`);
+      return { success: false, reason: "INVALID_DIRECTION" };
     }
 
     // Owner-approved cutover switch: refused before any read of the result row, let alone a
     // write — see jubelio-stock-contract.ts.
     if (data.direction === "REASSERT_ELORAE" && !(await isJubelioStockPushEnabled(prisma))) {
-      throw new Error(
-        "Pushing stock to Jubelio is disabled until cutover — Jubelio is the source of truth.",
-      );
+      return { success: false, reason: "PUSH_DISABLED" };
     }
 
     const result = await prisma.reconciliationResult.findUnique({
       where: { id: data.resultId },
       include: { run: true },
     });
-    if (!result) throw new Error("Result not found");
-    if (result.action !== "FLAGGED") throw new Error("Item sudah diselesaikan");
+    if (!result) return { success: false, reason: "NOT_FOUND" };
+    if (result.action !== "FLAGGED") return { success: false, reason: "ALREADY_RESOLVED" };
 
     const variantSku = result.variantSku ?? "";
 
     if (data.direction === "MATCH_JUBELIO") {
       const mapping = await prisma.jubelioProductMapping.findFirst({
         where: { itemId: result.itemId, erpVariantSku: variantSku },
-        select: { jubelioItemGroupId: true },
+        select: { jubelioItemGroupId: true, jubelioItemId: true },
       });
-      if (!mapping) throw new Error("Jubelio mapping not found for this item");
+      if (!mapping) return { success: false, reason: "NO_MAPPING" };
 
-      // Re-fetch a live figure scoped to just this item-group rather than trusting the run's
-      // stored snapshot, which may already be stale by the time an operator resolves it.
-      const liveRows = await fetchJubelioSnapshot([mapping.jubelioItemGroupId]);
-      const live = liveRows.find(
-        (r) => r.itemId === result.itemId && r.variantSku === variantSku,
-      );
-      const liveJubelioQty = live?.jubelioQty ?? 0;
+      /*
+       * Re-fetch a live figure for just this item group rather than trusting the run's stored
+       * snapshot, which may already be stale — and which stored 0 for a variant it had no figure
+       * for. No live figure means nothing is written.
+       */
+      const liveRows = await fetchJubelioGroupSnapshot(mapping.jubelioItemGroupId);
+      if (!liveRows) return { success: false, reason: "JUBELIO_FETCH_FAILED" };
+      const live = liveRows.find((r) => r.jubelioItemId === mapping.jubelioItemId);
+      if (!live || live.endQty === null) return { success: false, reason: "JUBELIO_QTY_MISSING" };
+      if (!isValidJubelioQty(live.endQty)) return { success: false, reason: "JUBELIO_QTY_INVALID" };
+      const liveJubelioQty = live.endQty;
 
-      await prisma.$transaction(async (tx) => {
-        const inv = await findExistingInventoryValueRow(tx, result.itemId, variantSku);
-        const rawQtyOnHand = inv ? Number(inv.qtyOnHand) : 0;
-        const offline = await offlineReservedQty(tx, result.itemId, variantSku);
-        const liveEloraeQty = jubelioEndQtyFor(rawQtyOnHand, offline);
-
-        if (liveEloraeQty !== Number(result.eloraeQty)) {
-          throw new Error("stock moved since this run; re-run reconciliation");
-        }
-
-        await applyMatchJubelio(tx, {
+      const outcome = await prisma.$transaction((tx) =>
+        applyMatchJubelio(tx, {
           runId: result.runId,
           itemId: result.itemId,
           variantSku,
           itemName: result.itemName,
           jubelioQty: liveJubelioQty,
+          expectedEloraeQty: Number(result.eloraeQty),
           userId: data.userId,
-        });
-      });
+        }),
+      );
+      if (outcome === "STOCK_MOVED") return { success: false, reason: "STOCK_MOVED" };
+      if (outcome === "NO_INVENTORY_ROW") return { success: false, reason: "NO_INVENTORY_ROW" };
     } else {
       // REASSERT_ELORAE: no local stock write, just push Elorae's own current figure back.
       await enqueueReconStockPush(result.itemId, data.userId);
@@ -420,21 +451,35 @@ export async function resolveReconciliationItem(data: {
 
     return { success: true };
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "Failed to resolve" };
+    console.error("resolveReconciliationItem failed:", err);
+    return { success: false, reason: "UNEXPECTED" };
   }
 }
 
+export type UpdateReconciliationSettingsResult =
+  | { success: true }
+  | { success: false; reason: ReconSettingsReason };
+
+/**
+ * Returns its refusal rather than throwing it: a thrown server-action error is redacted in
+ * production, so the operator would only ever see a generic failure.
+ */
 export async function updateReconciliationSettings(
   threshold: number,
   direction: string,
   cronEnabled: boolean,
-): Promise<void> {
-  // Owner-approved cutover switch: REASSERT_ELORAE can't even be saved as the configured
-  // direction while pushing is disabled — see jubelio-stock-contract.ts.
+): Promise<UpdateReconciliationSettingsResult> {
+  if (direction !== "FLAG_ONLY" && direction !== "MATCH_JUBELIO" && direction !== "REASSERT_ELORAE") {
+    return { success: false, reason: "INVALID_DIRECTION" };
+  }
+
+  /*
+   * Owner-approved cutover switch: REASSERT_ELORAE can't be saved as the direction while pushing
+   * is disabled — see jubelio-stock-contract.ts. Only that value is refused: a stale REASSERT that
+   * was saved before the switch went off never blocks saving any other direction.
+   */
   if (direction === "REASSERT_ELORAE" && !(await isJubelioStockPushEnabled(prisma))) {
-    throw new Error(
-      "Pushing stock to Jubelio is disabled until cutover — Jubelio is the source of truth.",
-    );
+    return { success: false, reason: "PUSH_DISABLED" };
   }
 
   const entries = [
@@ -449,4 +494,5 @@ export async function updateReconciliationSettings(
       create: { key: e.key, value: e.value },
     });
   }
+  return { success: true };
 }

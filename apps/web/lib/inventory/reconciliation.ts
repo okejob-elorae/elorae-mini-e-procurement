@@ -34,6 +34,74 @@ export function classifyVariance(
   return _exhaustive;
 }
 
+/**
+ * Why a manual resolve refused, or `UNEXPECTED` for anything else. Each code maps to
+ * `stockReconciliation.err.<CODE>` in both locales — there is no exhaustive `Record` over this
+ * union, so a new member needs its locale strings or the toast shows the raw key.
+ */
+export type ReconResolveReason =
+  | "INVALID_DIRECTION"
+  | "PUSH_DISABLED"
+  | "NOT_FOUND"
+  | "ALREADY_RESOLVED"
+  | "NO_MAPPING"
+  | "JUBELIO_FETCH_FAILED"
+  | "JUBELIO_QTY_MISSING"
+  | "JUBELIO_QTY_INVALID"
+  | "NO_INVENTORY_ROW"
+  | "STOCK_MOVED"
+  | "UNEXPECTED";
+
+/** Why saving the reconciliation settings refused; same `stockReconciliation.err.<CODE>` keys. */
+export type ReconSettingsReason = "PUSH_DISABLED" | "INVALID_DIRECTION";
+
+/** Two stock quantities are the same when they agree to the 2dp the `Decimal(10,2)` columns keep. */
+export function sameQty2dp(a: number, b: number): boolean {
+  return new Decimal(a).toDecimalPlaces(2).equals(new Decimal(b).toDecimalPlaces(2));
+}
+
+export type ReconRowInput = {
+  /** Elorae's comparable figure: on-hand minus the field-sales holds Jubelio has had netted. */
+  eloraeQty: number;
+  /** Jubelio's `end_qty`, or `null` when the snapshot had no usable figure for this variant. */
+  jubelioQty: number | null;
+  threshold: number;
+  direction: ReconConfigDirection;
+  pushEnabled: boolean;
+};
+
+export type ReconRowOutcome = {
+  classified: ClassifyResult;
+  /**
+   * What the non-null `jubelioQty`/`variance` columns store. A missing Jubelio figure stores 0
+   * and `variance = eloraeQty` because the columns cannot hold null; the row is always FLAGGED,
+   * so that stored 0 is never compared or written.
+   */
+  storedJubelioQty: number;
+  variance: number;
+};
+
+/**
+ * Classifies one reconciliation row. A missing Jubelio figure is FLAGGED and never corrected or
+ * compared as 0; REASSERT_ELORAE degrades to FLAGGED while stock pushes are disabled, so the
+ * counters and the stored action match what actually ran.
+ */
+export function classifyReconRow(input: ReconRowInput): ReconRowOutcome {
+  if (input.jubelioQty === null) {
+    return {
+      classified: { action: "FLAGGED", needsStockWrite: false, needsPush: false },
+      storedJubelioQty: 0,
+      variance: input.eloraeQty,
+    };
+  }
+  const variance = new Decimal(input.eloraeQty).minus(input.jubelioQty).toDecimalPlaces(2).toNumber();
+  let classified = classifyVariance(variance, input.threshold, input.direction);
+  if (classified.needsPush && !input.pushEnabled) {
+    classified = { action: "FLAGGED", needsStockWrite: false, needsPush: false };
+  }
+  return { classified, storedJubelioQty: input.jubelioQty, variance };
+}
+
 export function parseReconThreshold(value: string | undefined): number {
   const n = Number(value ?? "0");
   return Number.isFinite(n) && n >= 0 ? n : 0;

@@ -294,6 +294,8 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
       } else {
         toast.error(t("errorToast"));
       }
+    } catch {
+      toast.error(t("errorToast"));
     } finally {
       setPushTogglePending(false);
     }
