@@ -4,7 +4,7 @@ vi.mock("@/lib/internal-api", () => ({
   apiFetch: vi.fn(),
 }));
 
-import { prisma, seededId } from "@elorae/db";
+import { JUBELIO_STOCK_PUSH_ENABLED_KEY, prisma, seededId } from "@elorae/db";
 import { apiFetch } from "@/lib/internal-api";
 import { resolveReconciliationItem, updateReconciliationSettings } from "./reconciliation-runner";
 
@@ -25,12 +25,55 @@ type Fixture = {
   jubelioItemId: number;
 };
 
+/**
+ * Snapshots the named SystemSetting keys before each test and puts every one back after it, so
+ * these specs never delete or leave behind a value an operator configured on :3308 — the push
+ * switch and the RECON_* keys all drive live behaviour there.
+ */
+function preserveSettings(keys: string[]): void {
+  const originals = new Map<string, string | null>();
+
+  beforeEach(async () => {
+    originals.clear();
+    const rows = await prisma.systemSetting.findMany({ where: { key: { in: keys } } });
+    for (const key of keys) {
+      originals.set(key, rows.find((r) => r.key === key)?.value ?? null);
+    }
+  });
+
+  afterEach(async () => {
+    for (const key of keys) {
+      const original = originals.get(key) ?? null;
+      if (original === null) {
+        await prisma.systemSetting.deleteMany({ where: { key } });
+      } else {
+        await prisma.systemSetting.upsert({
+          where: { key },
+          update: { value: original },
+          create: { key, value: original },
+        });
+      }
+    }
+  });
+}
+
+async function setSetting(key: string, value: string): Promise<void> {
+  await prisma.systemSetting.upsert({ where: { key }, update: { value }, create: { key, value } });
+}
+
+async function setPushSwitch(enabled: boolean): Promise<void> {
+  await setSetting(JUBELIO_STOCK_PUSH_ENABLED_KEY, enabled ? "true" : "false");
+}
+
 d("resolveReconciliationItem MATCH_JUBELIO (test bed only)", () => {
   let uomId = "";
   const itemIds: string[] = [];
   const runIds: string[] = [];
   const resultIds: string[] = [];
-  let nextJubelioId = Math.floor(Math.random() * 1_000_000) + 1;
+  /* Well above any real Jubelio id, so a fixture mapping never collides with a synced one. */
+  let nextJubelioId = Math.floor(Math.random() * 1_000_000) + 900_000_000;
+
+  preserveSettings([JUBELIO_STOCK_PUSH_ENABLED_KEY]);
 
   beforeEach(async () => {
     /* Unset before seeding, so a throw mid-hook leaves teardown scoped to what this run created. */
@@ -127,22 +170,43 @@ d("resolveReconciliationItem MATCH_JUBELIO (test bed only)", () => {
     return { itemId: item.id, runId: run.id, resultId: result.id, jubelioItemGroupId, jubelioItemId };
   }
 
-  function mockLiveJubelioQty(fx: Fixture, jubelioQty: number): void {
+  function mockLiveJubelioQty(fx: Fixture, endQty: number | null): void {
     (apiFetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       status: 200,
-      data: {
-        rows: [{ itemId: fx.itemId, variantSku: "", jubelioItemId: fx.jubelioItemId, jubelioQty }],
-      },
+      data: { rows: [{ jubelioItemId: fx.jubelioItemId, endQty }] },
     });
   }
 
+  /* The group id travels in the PATH: a query string fails the signed channel's check. */
+  function expectGroupPathFetched(fx: Fixture): void {
+    expect(apiFetch).toHaveBeenCalledWith(
+      "GET",
+      `/jubelio/inventory/snapshot/group/${fx.jubelioItemGroupId}`,
+      expect.anything(),
+    );
+    for (const call of (apiFetch as unknown as ReturnType<typeof vi.fn>).mock.calls) {
+      expect(String(call[1])).not.toContain("?");
+    }
+  }
+
+  async function expectNothingWritten(fx: Fixture, qtyOnHand: number): Promise<void> {
+    const inv = await prisma.inventoryValue.findFirst({ where: { itemId: fx.itemId } });
+    expect(Number(inv!.qtyOnHand)).toBe(qtyOnHand);
+    expect(await prisma.stockAdjustment.count({ where: { itemId: fx.itemId } })).toBe(0);
+    expect(await prisma.stockLedgerEntry.count({ where: { itemId: fx.itemId } })).toBe(0);
+    const result = await prisma.reconciliationResult.findUnique({ where: { id: fx.resultId } });
+    expect(result!.action).toBe("FLAGGED");
+  }
+
   it("H=10, no offline holds, J=6 -> H=6, with one StockAdjustment and one ledger ADJUSTMENT", async () => {
+    await setPushSwitch(false);
     const fx = await seedFixture({ qtyOnHand: 10, eloraeQty: 10, jubelioQty: 9 });
     mockLiveJubelioQty(fx, 6);
 
     const res = await resolveReconciliationItem({ resultId: fx.resultId, direction: "MATCH_JUBELIO", userId: "u1" });
     expect(res).toEqual({ success: true });
+    expectGroupPathFetched(fx);
 
     const inv = await prisma.inventoryValue.findFirst({ where: { itemId: fx.itemId } });
     expect(Number(inv!.qtyOnHand)).toBe(6);
@@ -164,7 +228,8 @@ d("resolveReconciliationItem MATCH_JUBELIO (test bed only)", () => {
     expect(result!.action).toBe("MANUALLY_RESOLVED");
   });
 
-  it("FIELD_SALES hold 2, J=6 -> H=8", async () => {
+  it("switch on: FIELD_SALES hold 2, J=6 -> H=8 (the hold is added back)", async () => {
+    await setPushSwitch(true);
     const fx = await seedFixture({ qtyOnHand: 10, eloraeQty: 8, jubelioQty: 6 });
     await prisma.stockReservation.create({
       data: { itemId: fx.itemId, variantSku: "", qty: 2, consumedQty: 0, state: "RESERVED", source: "FIELD_SALES" },
@@ -178,49 +243,90 @@ d("resolveReconciliationItem MATCH_JUBELIO (test bed only)", () => {
     expect(Number(inv!.qtyOnHand)).toBe(8);
   });
 
-  it("refuses when the live Jubelio quantity is invalid, writing nothing", async () => {
+  it("switch off: FIELD_SALES hold 2, J=6 -> H=6 (no push has netted the hold, so none is added back)", async () => {
+    await setPushSwitch(false);
+    /* Switch off, so the run compared raw on-hand: eloraeQty = 10, not 10 − 2. */
+    const fx = await seedFixture({ qtyOnHand: 10, eloraeQty: 10, jubelioQty: 6 });
+    await prisma.stockReservation.create({
+      data: { itemId: fx.itemId, variantSku: "", qty: 2, consumedQty: 0, state: "RESERVED", source: "FIELD_SALES" },
+    });
+    mockLiveJubelioQty(fx, 6);
+
+    const res = await resolveReconciliationItem({ resultId: fx.resultId, direction: "MATCH_JUBELIO", userId: "u1" });
+    expect(res).toEqual({ success: true });
+
+    const inv = await prisma.inventoryValue.findFirst({ where: { itemId: fx.itemId } });
+    expect(Number(inv!.qtyOnHand)).toBe(6);
+  });
+
+  it("refuses JUBELIO_QTY_MISSING when the live group has no row for the variant, writing nothing", async () => {
+    await setPushSwitch(false);
+    const fx = await seedFixture({ qtyOnHand: 10, eloraeQty: 10, jubelioQty: 0 });
+    (apiFetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { rows: [{ jubelioItemId: fx.jubelioItemId + 12345, endQty: 3 }] },
+    });
+
+    const res = await resolveReconciliationItem({ resultId: fx.resultId, direction: "MATCH_JUBELIO", userId: "u1" });
+
+    expect(res).toEqual({ success: false, reason: "JUBELIO_QTY_MISSING" });
+    await expectNothingWritten(fx, 10);
+  });
+
+  it("refuses JUBELIO_QTY_MISSING when the live figure is null, writing nothing", async () => {
+    await setPushSwitch(false);
+    const fx = await seedFixture({ qtyOnHand: 10, eloraeQty: 10, jubelioQty: 0 });
+    mockLiveJubelioQty(fx, null);
+
+    const res = await resolveReconciliationItem({ resultId: fx.resultId, direction: "MATCH_JUBELIO", userId: "u1" });
+
+    expect(res).toEqual({ success: false, reason: "JUBELIO_QTY_MISSING" });
+    await expectNothingWritten(fx, 10);
+  });
+
+  it("refuses JUBELIO_FETCH_FAILED when the live read fails, writing nothing", async () => {
+    await setPushSwitch(false);
+    const fx = await seedFixture({ qtyOnHand: 10, eloraeQty: 10, jubelioQty: 6 });
+    (apiFetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: false, status: 502, error: "down" });
+
+    const res = await resolveReconciliationItem({ resultId: fx.resultId, direction: "MATCH_JUBELIO", userId: "u1" });
+
+    expect(res).toEqual({ success: false, reason: "JUBELIO_FETCH_FAILED" });
+    await expectNothingWritten(fx, 10);
+  });
+
+  it("refuses JUBELIO_QTY_INVALID when the live quantity is invalid, writing nothing", async () => {
+    await setPushSwitch(false);
     const fx = await seedFixture({ qtyOnHand: 10, eloraeQty: 10, jubelioQty: 10 });
     mockLiveJubelioQty(fx, -5);
 
     const res = await resolveReconciliationItem({ resultId: fx.resultId, direction: "MATCH_JUBELIO", userId: "u1" });
-    expect(res.success).toBe(false);
 
-    const inv = await prisma.inventoryValue.findFirst({ where: { itemId: fx.itemId } });
-    expect(Number(inv!.qtyOnHand)).toBe(10);
-
-    const adjustments = await prisma.stockAdjustment.findMany({ where: { itemId: fx.itemId } });
-    expect(adjustments).toHaveLength(0);
-
-    const result = await prisma.reconciliationResult.findUnique({ where: { id: fx.resultId } });
-    expect(result!.action).toBe("FLAGGED");
+    expect(res).toEqual({ success: false, reason: "JUBELIO_QTY_INVALID" });
+    await expectNothingWritten(fx, 10);
   });
 
-  it("refuses when Elorae's live figure has moved since the run, writing nothing", async () => {
+  it("refuses STOCK_MOVED when Elorae's live figure has moved since the run, writing nothing", async () => {
+    await setPushSwitch(false);
     // Stored eloraeQty (10) no longer matches the live on-hand (now 3) — something moved stock
     // between the run and this resolve.
     const fx = await seedFixture({ qtyOnHand: 3, eloraeQty: 10, jubelioQty: 6 });
     mockLiveJubelioQty(fx, 6);
 
     const res = await resolveReconciliationItem({ resultId: fx.resultId, direction: "MATCH_JUBELIO", userId: "u1" });
-    expect(res.success).toBe(false);
-    expect(res.error).toMatch(/re-run reconciliation/);
 
-    const inv = await prisma.inventoryValue.findFirst({ where: { itemId: fx.itemId } });
-    expect(Number(inv!.qtyOnHand)).toBe(3);
-
-    const result = await prisma.reconciliationResult.findUnique({ where: { id: fx.resultId } });
-    expect(result!.action).toBe("FLAGGED");
+    expect(res).toEqual({ success: false, reason: "STOCK_MOVED" });
+    await expectNothingWritten(fx, 3);
   });
 
-  it("refuses REASSERT_ELORAE while the Jubelio push switch is off, writing and enqueuing nothing", async () => {
-    // JUBELIO_STOCK_PUSH_ENABLED_KEY is absent in this test bed by default, so the switch reads
-    // disabled (fail-closed) — see isJubelioStockPushEnabled in jubelio-stock-contract.ts.
+  it("refuses PUSH_DISABLED for REASSERT_ELORAE while the Jubelio push switch is off, writing and enqueuing nothing", async () => {
+    await setPushSwitch(false);
     const fx = await seedFixture({ qtyOnHand: 10, eloraeQty: 10, jubelioQty: 6 });
 
     const res = await resolveReconciliationItem({ resultId: fx.resultId, direction: "REASSERT_ELORAE", userId: "u1" });
 
-    expect(res.success).toBe(false);
-    expect(res.error).toMatch(/disabled until cutover/);
+    expect(res).toEqual({ success: false, reason: "PUSH_DISABLED" });
     expect(apiFetch).not.toHaveBeenCalled();
 
     const outbox = await prisma.jubelioOutbox.findMany({ where: { entityId: fx.itemId } });
@@ -233,33 +339,42 @@ d("resolveReconciliationItem MATCH_JUBELIO (test bed only)", () => {
 
 d("updateReconciliationSettings gated by the cutover switch (test bed only)", () => {
   const directionKey = "RECON_AUTO_CORRECT_DIRECTION";
-  let originalDirection: string | null = null;
+  const thresholdKey = "RECON_AUTO_CORRECT_THRESHOLD";
+  const cronKey = "RECON_CRON_ENABLED";
 
-  beforeEach(async () => {
-    // Snapshot the real dev-bed value (this key drives the live cron) so the refusal test below
-    // can restore it exactly rather than deleting whatever an operator had configured.
-    const existing = await prisma.systemSetting.findUnique({ where: { key: directionKey } });
-    originalDirection = existing?.value ?? null;
-  });
-
-  afterEach(async () => {
-    if (originalDirection === null) {
-      await prisma.systemSetting.deleteMany({ where: { key: directionKey } });
-    } else {
-      await prisma.systemSetting.upsert({
-        where: { key: directionKey },
-        update: { value: originalDirection },
-        create: { key: directionKey, value: originalDirection },
-      });
-    }
-  });
+  /* Every key a save writes, plus the switch — all drive the live cron on the dev bed. */
+  preserveSettings([directionKey, thresholdKey, cronKey, JUBELIO_STOCK_PUSH_ENABLED_KEY]);
 
   it("refuses to save REASSERT_ELORAE as the direction while the switch is off, leaving it unchanged", async () => {
-    await expect(updateReconciliationSettings(0, "REASSERT_ELORAE", true)).rejects.toThrow(
-      /disabled until cutover/,
-    );
+    await setPushSwitch(false);
+    const before = await prisma.systemSetting.findUnique({ where: { key: directionKey } });
 
+    const res = await updateReconciliationSettings(0, "REASSERT_ELORAE", true);
+
+    expect(res).toEqual({ success: false, reason: "PUSH_DISABLED" });
     const saved = await prisma.systemSetting.findUnique({ where: { key: directionKey } });
-    expect(saved?.value ?? null).toBe(originalDirection);
+    expect(saved?.value ?? null).toBe(before?.value ?? null);
+  });
+
+  it("still saves any other direction while a stale REASSERT_ELORAE is stored and the switch is off", async () => {
+    await setPushSwitch(false);
+    await setSetting(directionKey, "REASSERT_ELORAE");
+
+    const res = await updateReconciliationSettings(3, "FLAG_ONLY", false);
+
+    expect(res).toEqual({ success: true });
+    const saved = await prisma.systemSetting.findUnique({ where: { key: directionKey } });
+    expect(saved?.value).toBe("FLAG_ONLY");
+  });
+
+  it("refuses an unknown direction without writing", async () => {
+    await setPushSwitch(false);
+    const before = await prisma.systemSetting.findUnique({ where: { key: directionKey } });
+
+    const res = await updateReconciliationSettings(0, "SOMETHING_ELSE", true);
+
+    expect(res).toEqual({ success: false, reason: "INVALID_DIRECTION" });
+    const saved = await prisma.systemSetting.findUnique({ where: { key: directionKey } });
+    expect(saved?.value ?? null).toBe(before?.value ?? null);
   });
 });
