@@ -372,7 +372,7 @@ async function main() {
     create: { fromUomId: uomRoll.id, toUomId: uomYard.id, factor: 100, isDefault: false },
   });
 
-  // DocNumberConfig (all DocTypes)
+  // DocNumberConfig (a subset; every other DocType is created on first use or on the first Settings → Document Numbering load)
   const docConfigs: { docType: DocType; prefix: string; resetPeriod: string }[] = [
     { docType: "PO", prefix: "PO/", resetPeriod: "YEARLY" },
     { docType: "GRN", prefix: "GRN/", resetPeriod: "MONTHLY" },

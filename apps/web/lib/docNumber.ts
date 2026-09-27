@@ -82,6 +82,7 @@ export async function generateDocNumber(
         WHEN resetPeriod = 'YEARLY' AND year = ${currentYear} THEN lastNumber + 1
         WHEN resetPeriod = 'YEARLY' AND year <> ${currentYear} THEN 1
         WHEN resetPeriod = 'MONTHLY' AND year = ${currentYear} AND month = ${currentMonth} THEN lastNumber + 1
+        WHEN resetPeriod = 'NEVER' THEN lastNumber + 1
         ELSE 1
       END,
       year = ${currentYear},

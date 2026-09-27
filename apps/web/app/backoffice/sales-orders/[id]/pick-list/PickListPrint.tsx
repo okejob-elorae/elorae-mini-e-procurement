@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { formatDateTime } from "@/lib/sales-orders/format";
 import { PRINT_STYLES, BRAND } from "@/lib/sales-orders/print-styles";
 import type { SalesOrderDetail, SalesOrderItemRow } from "@/lib/sales-orders/queries";
+import { logPrintQuietly } from "@/lib/audit/log-print-quietly";
 
 type Props = {
   order: SalesOrderDetail;
@@ -15,10 +16,16 @@ type Props = {
 export function PickListPrint({ order, items, lineImages = {} }: Props) {
   const t = useTranslations("salesOrdersPrint.pickList");
   const locale = useLocale();
+  const printLogged = useRef(false);
 
   useEffect(() => {
+    /* The ref survives React StrictMode's double effect, so one page open logs one print. */
+    if (!printLogged.current) {
+      printLogged.current = true;
+      logPrintQuietly("SalesOrderPickList", order.id);
+    }
     window.print();
-  }, []);
+  }, [order.id]);
 
   const liveItems = items.filter((it) => !it.isCanceledItem);
 

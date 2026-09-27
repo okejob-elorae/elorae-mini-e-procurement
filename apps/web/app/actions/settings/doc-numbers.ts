@@ -6,6 +6,12 @@ import type { DocNumberConfig, DocType } from '@elorae/db';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
 import { getActorName, notifyDocNumberAltered } from '@/app/actions/notifications';
+import {
+  findPrefixConflict,
+  validateDocNumberConfigInput,
+  type DocNumberConfigErrorCode,
+} from "@/lib/doc-numbers/validate";
+import { DOC_TYPE_GROUP, type DocTypeGroup } from "@/lib/doc-numbers/doc-type-groups";
 
 export type DocNumberConfigRow = {
   id: string;
@@ -46,13 +52,24 @@ const DEFAULT_CONFIGS: Record<
   SELLTHRU: { prefix: 'SLT/', resetPeriod: 'YEARLY', padding: 4 },
 };
 
+/* Compile-time pin: a Prisma `DocType` member missing from the settings grouping is a type error here. */
+const DOC_TYPE_GROUP_COVERS_PRISMA: Record<DocType, DocTypeGroup> = DOC_TYPE_GROUP;
+void DOC_TYPE_GROUP_COVERS_PRISMA;
+
 export async function getDocNumberConfigs(): Promise<DocNumberConfigRow[]> {
-  const configs = await prisma.docNumberConfig.findMany({
-    orderBy: { docType: 'asc' },
-  });
-  if (configs.length === 0) {
+  const session = await auth();
+  if (!session) throw new Error("Unauthorized");
+  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_DOCUMENTS_VIEW);
+
+  let configs = await prisma.docNumberConfig.findMany({ orderBy: { docType: "asc" } });
+  /**
+   * Seed every missing doc type, not just an empty table: a type that has never issued a number
+   * has no row, and the editor would otherwise show it with a blank prefix and the wrong reset
+   * period. The seeder inserts with `skipDuplicates`, so existing counters are never touched.
+   */
+  if (configs.length < Object.keys(DEFAULT_CONFIGS).length) {
     await seedDocNumberConfigs();
-    return getDocNumberConfigs();
+    configs = await prisma.docNumberConfig.findMany({ orderBy: { docType: "asc" } });
   }
   return configs.map((c: DocNumberConfig) => ({
     id: c.id,
@@ -66,60 +83,78 @@ export async function getDocNumberConfigs(): Promise<DocNumberConfigRow[]> {
   }));
 }
 
+/**
+ * One `INSERT IGNORE`, not an upsert per type: Prisma's upsert on MariaDB is find-then-create, so
+ * a `generateDocNumber` creating the same row in between would fail the page load on P2002.
+ */
 async function seedDocNumberConfigs() {
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
-  for (const [docType, def] of Object.entries(DEFAULT_CONFIGS)) {
-    await prisma.docNumberConfig.upsert({
-      where: { docType: docType as DocType },
-      create: {
-        docType: docType as DocType,
-        prefix: def.prefix,
-        resetPeriod: def.resetPeriod,
-        padding: def.padding,
-        lastNumber: 0,
-        year,
-        month,
-      },
-      update: {},
-    });
-  }
+  await prisma.docNumberConfig.createMany({
+    data: (Object.keys(DEFAULT_CONFIGS) as DocType[]).map((docType) => ({
+      docType,
+      prefix: DEFAULT_CONFIGS[docType].prefix,
+      resetPeriod: DEFAULT_CONFIGS[docType].resetPeriod,
+      padding: DEFAULT_CONFIGS[docType].padding,
+      lastNumber: 0,
+      year,
+      month,
+    })),
+    skipDuplicates: true,
+  });
 }
 
+export type UpdateDocNumberConfigResult =
+  | { ok: true }
+  | { ok: false; code: DocNumberConfigErrorCode }
+  | { ok: false; code: "DUPLICATE_PREFIX"; conflictsWith: DocType };
+
 export async function updateDocNumberConfig(
-  docType: DocType,
-  config: {
-    prefix: string;
-    resetPeriod: 'YEARLY' | 'MONTHLY' | 'NEVER';
-    padding: number;
-  }
-) {
+  docType: string,
+  config: { prefix: string; resetPeriod: string; padding: number }
+): Promise<UpdateDocNumberConfigResult> {
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
+  if (!session) throw new Error("Unauthorized");
   requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_DOCUMENTS_MANAGE);
-  
+
+  const parsed = validateDocNumberConfigInput({ docType, ...config });
+  if (!parsed.ok) return parsed;
+  const { prefix, resetPeriod, padding } = parsed.value;
+  const type = parsed.value.docType as DocType;
+
+  /**
+   * A type with no row yet is checked at its default prefix, which `generateDocNumber` creates it
+   * with on first use. Read-then-write outside a transaction: two admins saving the same prefix
+   * at the same instant can both pass, accepted for an admin-only settings screen.
+   */
+  const storedRows = await prisma.docNumberConfig.findMany({ select: { docType: true, prefix: true } });
+  const storedPrefix = new Map(storedRows.map((row) => [row.docType, row.prefix] as const));
+  const prefixRows = (Object.keys(DEFAULT_CONFIGS) as DocType[]).map((rowType) => ({
+    docType: rowType,
+    prefix: storedPrefix.get(rowType) ?? DEFAULT_CONFIGS[rowType].prefix,
+  }));
+  const conflictsWith = findPrefixConflict(type, prefix, prefixRows);
+  if (conflictsWith) return { ok: false, code: "DUPLICATE_PREFIX", conflictsWith };
+
   await prisma.docNumberConfig.upsert({
-    where: { docType },
+    where: { docType: type },
     create: {
-      docType,
-      prefix: config.prefix,
-      resetPeriod: config.resetPeriod,
-      padding: config.padding,
+      docType: type,
+      prefix,
+      resetPeriod,
+      padding,
       lastNumber: 0,
       year: new Date().getFullYear(),
       month: new Date().getMonth() + 1,
     },
-    update: {
-      prefix: config.prefix,
-      resetPeriod: config.resetPeriod,
-      padding: config.padding,
-    },
+    update: { prefix, resetPeriod, padding },
   });
 
   getActorName(session.user.id)
-    .then((triggeredByName) => notifyDocNumberAltered(docType, triggeredByName))
+    .then((triggeredByName) => notifyDocNumberAltered(type, triggeredByName))
     .catch(() => {});
 
-  revalidatePath('/backoffice/settings/documents');
+  revalidatePath("/backoffice/settings/documents");
+  return { ok: true };
 }

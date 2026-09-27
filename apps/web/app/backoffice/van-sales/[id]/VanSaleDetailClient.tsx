@@ -11,6 +11,7 @@ import type { VanSaleDetail } from "@/lib/canvassing/sale-queries";
 import { roundCents } from "@elorae/db/pricing";
 import { postVanSaleJournalAction } from "@/app/actions/van-sale";
 import { vanSaleNotaHtml } from "@/lib/print/van-sale-nota-html";
+import { logPrintQuietly } from "@/lib/audit/log-print-quietly";
 import { hasPermission } from "@/lib/rbac";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -128,6 +129,7 @@ export function VanSaleDetailClient({ sale }: Props) {
     const html = vanSaleNotaHtml(sale);
     const win = window.open("", "_blank", "width=360,height=640");
     if (!win) return;
+    logPrintQuietly("VanSaleNota", sale.id);
     win.document.write(`<!DOCTYPE html><html><head><title>${sale.docNo}</title></head><body>${html}</body></html>`);
     win.document.close();
     win.focus();

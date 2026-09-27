@@ -8,6 +8,7 @@ import { ArrowLeft, Printer, Share2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { vanSaleNotaHtml } from "@/lib/print/van-sale-nota-html";
+import { logPrintQuietly } from "@/lib/audit/log-print-quietly";
 import type { VanSaleDetail } from "@/lib/canvassing/sale-queries";
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
@@ -25,6 +26,7 @@ export function NotaView({ sale }: { sale: VanSaleDetail }) {
   const html = useMemo(() => vanSaleNotaHtml(sale), [sale]);
 
   function handlePrint() {
+    logPrintQuietly("VanSaleNota", sale.id);
     window.print();
   }
 
