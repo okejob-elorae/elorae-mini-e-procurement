@@ -49,18 +49,6 @@ export const ReturnStatus = {
 } as const;
 export type ReturnStatus = (typeof ReturnStatus)[keyof typeof ReturnStatus];
 
-export const DocType = {
-  PO: 'PO',
-  GRN: 'GRN',
-  WO: 'WO',
-  ADJ: 'ADJ',
-  RET: 'RET',
-  ISSUE: 'ISSUE',
-  RECEIPT: 'RECEIPT',
-  OPN: 'OPN',
-} as const;
-export type DocType = (typeof DocType)[keyof typeof DocType];
-
 export const SupplierStatus = {
   PENDING_APPROVAL: 'PENDING_APPROVAL',
   ACTIVE: 'ACTIVE',

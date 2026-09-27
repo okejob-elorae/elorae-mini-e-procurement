@@ -298,7 +298,47 @@
     "resetPeriod": "Periode Reset",
     "padding": "Padding",
     "save": "Simpan",
-    "loadError": "Gagal memuat konfigurasi"
+    "loadError": "Gagal memuat konfigurasi",
+    "lastNumber": "No. terakhir",
+    "notIssued": "Belum terbit",
+    "resetPeriods": { "YEARLY": "Tahunan", "MONTHLY": "Bulanan", "NEVER": "Tidak pernah" },
+    "groups": {
+      "procurement": "Pembelian & produksi",
+      "inventory": "Persediaan",
+      "fieldSales": "Penjualan lapangan & pengiriman",
+      "finance": "Keuangan"
+    },
+    "docTypes": {
+      "PO": "Purchase Order",
+      "GRN": "Penerimaan Barang",
+      "RET": "Retur Vendor",
+      "WO": "Work Order",
+      "ISSUE": "Pengeluaran Bahan",
+      "RECEIPT": "Penerimaan Barang Jadi",
+      "ADJ": "Penyesuaian Stok",
+      "OPN": "Stok Opname",
+      "STOCKTAKE": "Stocktake Toko",
+      "KONSITRF": "Transfer Konsi",
+      "STORETRF": "Transfer Antar Toko",
+      "PUTUS": "Order Putus",
+      "KONSI": "Order Konsi",
+      "DELIVERY": "Pengiriman",
+      "FIELDRET": "Retur Lapangan",
+      "VANLOAD": "Muat Van",
+      "VANSALE": "Penjualan Van",
+      "VANRECON": "Rekonsiliasi Van",
+      "SPGSALE": "Penjualan SPG",
+      "SELLTHRU": "Sell-through Konsi",
+      "PAYMENT": "Kuitansi Pembayaran",
+      "BKM": "Pelunasan (BKM)"
+    },
+    "err": {
+      "UNKNOWN_DOC_TYPE": "Tipe dokumen tidak dikenal.",
+      "PREFIX_REQUIRED": "Prefix wajib diisi.",
+      "PREFIX_TOO_LONG": "Prefix maksimal 20 karakter.",
+      "INVALID_RESET_PERIOD": "Pilih periode reset.",
+      "INVALID_PADDING": "Padding harus bilangan bulat 1 sampai 8."
+    }
   },
   "itemCodes": {
     "title": "Kode item",
@@ -762,7 +802,6 @@
     "setParentSkuBeforeVariantCode": "Pilih kategori yang punya kode atau atur SKU item terlebih dahulu sebelum membuat kode varian.",
     "setParentSkuBeforeBarcode": "Pilih kategori yang punya kode atau atur SKU item terlebih dahulu sebelum membuat barcode.",
     "fillConsumptionRuleFields": "Isi semua field aturan konsumsi",
-    "paddingMustBe1To8": "Padding harus 1–8",
     "saved": "Tersimpan",
     "failedToSave": "Gagal menyimpan",
     "failedToLoadUOMData": "Gagal memuat data UOM",

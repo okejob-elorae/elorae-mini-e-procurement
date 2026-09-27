@@ -6,6 +6,8 @@ import type { DocNumberConfig, DocType } from '@elorae/db';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
 import { getActorName, notifyDocNumberAltered } from '@/app/actions/notifications';
+import { validateDocNumberConfigInput, type DocNumberConfigErrorCode } from "@/lib/doc-numbers/validate";
+import { DOC_TYPE_GROUP, type DocTypeGroup } from "@/lib/doc-numbers/doc-type-groups";
 
 export type DocNumberConfigRow = {
   id: string;
@@ -46,13 +48,24 @@ const DEFAULT_CONFIGS: Record<
   SELLTHRU: { prefix: 'SLT/', resetPeriod: 'YEARLY', padding: 4 },
 };
 
+/* Compile-time pin: a Prisma `DocType` member missing from the settings grouping is a type error here. */
+const DOC_TYPE_GROUP_COVERS_PRISMA: Record<DocType, DocTypeGroup> = DOC_TYPE_GROUP;
+void DOC_TYPE_GROUP_COVERS_PRISMA;
+
 export async function getDocNumberConfigs(): Promise<DocNumberConfigRow[]> {
-  const configs = await prisma.docNumberConfig.findMany({
-    orderBy: { docType: 'asc' },
-  });
-  if (configs.length === 0) {
+  const session = await auth();
+  if (!session) throw new Error("Unauthorized");
+  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_DOCUMENTS_VIEW);
+
+  let configs = await prisma.docNumberConfig.findMany({ orderBy: { docType: "asc" } });
+  /**
+   * Seed every missing doc type, not just an empty table: a type that has never issued a number
+   * has no row, and the editor would otherwise show it with a blank prefix and the wrong reset
+   * period. The seeder upserts with `update: {}`, so existing counters are never touched.
+   */
+  if (configs.length < Object.keys(DEFAULT_CONFIGS).length) {
     await seedDocNumberConfigs();
-    return getDocNumberConfigs();
+    configs = await prisma.docNumberConfig.findMany({ orderBy: { docType: "asc" } });
   }
   return configs.map((c: DocNumberConfig) => ({
     id: c.id,
@@ -87,39 +100,39 @@ async function seedDocNumberConfigs() {
   }
 }
 
+export type UpdateDocNumberConfigResult = { ok: true } | { ok: false; code: DocNumberConfigErrorCode };
+
 export async function updateDocNumberConfig(
-  docType: DocType,
-  config: {
-    prefix: string;
-    resetPeriod: 'YEARLY' | 'MONTHLY' | 'NEVER';
-    padding: number;
-  }
-) {
+  docType: string,
+  config: { prefix: string; resetPeriod: string; padding: number }
+): Promise<UpdateDocNumberConfigResult> {
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
+  if (!session) throw new Error("Unauthorized");
   requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_DOCUMENTS_MANAGE);
-  
+
+  const parsed = validateDocNumberConfigInput({ docType, ...config });
+  if (!parsed.ok) return parsed;
+  const { prefix, resetPeriod, padding } = parsed.value;
+  const type = parsed.value.docType as DocType;
+
   await prisma.docNumberConfig.upsert({
-    where: { docType },
+    where: { docType: type },
     create: {
-      docType,
-      prefix: config.prefix,
-      resetPeriod: config.resetPeriod,
-      padding: config.padding,
+      docType: type,
+      prefix,
+      resetPeriod,
+      padding,
       lastNumber: 0,
       year: new Date().getFullYear(),
       month: new Date().getMonth() + 1,
     },
-    update: {
-      prefix: config.prefix,
-      resetPeriod: config.resetPeriod,
-      padding: config.padding,
-    },
+    update: { prefix, resetPeriod, padding },
   });
 
   getActorName(session.user.id)
-    .then((triggeredByName) => notifyDocNumberAltered(docType, triggeredByName))
+    .then((triggeredByName) => notifyDocNumberAltered(type, triggeredByName))
     .catch(() => {});
 
-  revalidatePath('/backoffice/settings/documents');
+  revalidatePath("/backoffice/settings/documents");
+  return { ok: true };
 }
