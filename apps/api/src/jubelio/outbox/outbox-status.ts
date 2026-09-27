@@ -26,4 +26,5 @@ export const OUTBOX_SKIP_REASONS = {
   JUBELIO_ALREADY_IN_STATE: "jubelio_already_in_state",
   NO_PUSHABLE_LINES: "no_pushable_lines",
   HANDLER_NOT_WIRED: "handler_not_wired",
+  STOCK_PUSH_DISABLED: "stock_push_disabled",
 } as const;

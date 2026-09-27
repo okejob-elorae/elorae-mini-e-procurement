@@ -42,7 +42,7 @@ EPIC-08 (Reserved Stock) decomposition:
 
 | Sub | Scope | Status |
 |----|-------|--------|
-| **A** | `StockReservation` ledger + `InventoryValue.reservedQty` aggregate + `reserveOrder`/`consumeOrder`/`releaseOrder` helpers + `FULFILLMENT_CONSUME` source + Jubelio stock push sends `available` | ✅ shipped (PR #88 merged 2026-07-02). **Post-merge deploy pending:** run `prisma/backfill-reservations.ts --apply` against prod (webhook-quiet window) to reconcile existing orders — see `docs/local-db-testbed.md`. |
+| **A** | `StockReservation` ledger + `InventoryValue.reservedQty` aggregate + `reserveOrder`/`consumeOrder`/`releaseOrder` helpers + `FULFILLMENT_CONSUME` source + Jubelio stock push sends `available` *(since corrected: Jubelio's `end_qty` is on-hand and Jubelio nets its own marketplace orders, so sending `available` subtracted them twice; the push now sends `max(0, qtyOnHand − offlineReserved)` — `docs/landmines/jubelio.md`)* | ✅ shipped (PR #88 merged 2026-07-02). **Post-merge deploy pending:** run `prisma/backfill-reservations.ts --apply` against prod (webhook-quiet window) to reconcile existing orders — see `docs/local-db-testbed.md`. |
 
 EPIC-17 (Field Sales / SFA) decomposition:
 

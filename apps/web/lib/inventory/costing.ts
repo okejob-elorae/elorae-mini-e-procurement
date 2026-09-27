@@ -49,17 +49,19 @@ const compositeKey = (itemId: string, variantSku?: string | null) => ({
  * resolved id straight back into moveMainStock as inventoryValueId, so two callers reading the
  * same null/"" bucket must land on the same row or they interleave two independent balances under
  * one ledger key. Current callers: grn.ts's declineGRNByOwner insufficient-stock guard,
- * inventory.ts, reconciliation-runner.ts, opname-snapshot.ts, opname-approve.ts,
+ * inventory.ts, opname-snapshot.ts, opname-approve.ts,
  * canvassing/writer.ts, canvassing/reconcile-writer.ts, konsi-transfer/writer.ts,
  * field-sales/retur/approve-writer.ts, field-sales/konsi-push-writer.ts, and
  * reverseMovingAverage / calculateMovingAverage / reverseInventoryValue below. The one apps/web
  * lookup NOT routed through here is field-sales/writer.ts's hasInventoryRow, an existence check
- * that pins no id.
+ * that pins no id. reconciliation-runner.ts's MATCH_JUBELIO path uses packages/db's locking copy,
+ * lockMainInventoryValueRow, instead, because it must lock the row before reading it.
  *
  * packages/db cannot import this (it sits above apps/web), so it carries its own copies — and
  * there are FOUR, not two. moveMainStock and setMainStock in stock-balance.ts, the return-accept
- * restore in sales-return-writer.ts, and applyJubelioStockAdjustment in stock-writer.ts all
- * restate this shape inline, tie-break included. Change this helper, change all four.
+ * restore in sales-return-writer.ts, and lockMainInventoryValueRow in stock-writer.ts (the raw
+ * `SELECT … FOR UPDATE` behind applyJubelioStockAdjustment and MATCH_JUBELIO) all restate this
+ * shape, tie-break included. Change this helper, change all four.
  *
  * Two further packages/db lookups are deliberately a DIFFERENT shape and must not be
  * "harmonised" onto this one: reservation-writer.ts's findFieldSalesInventory prefers an exact

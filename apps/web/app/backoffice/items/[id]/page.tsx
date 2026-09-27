@@ -1,4 +1,5 @@
 import { notFound, redirect } from 'next/navigation';
+import { isJubelioStockPushEnabled, prisma } from '@elorae/db';
 import { auth } from '@/lib/auth';
 import { getItemById } from '@/lib/items/queries';
 import { ItemType } from '@/lib/constants/enums';
@@ -72,6 +73,7 @@ export default async function ItemDetailPage({
   };
 
   const images = await getItemImages(item.id);
+  const jubelioStockPushEnabled = await isJubelioStockPushEnabled(prisma);
   const canManage = hasPermission(perms, PERMISSIONS.ITEMS_MANAGE);
   const itemVariants = (item.variants as Array<Record<string, string>> | null | undefined) ?? [];
   const variantSkus = itemVariants
@@ -86,6 +88,7 @@ export default async function ItemDetailPage({
       nameId={item.nameId}
       nameEn={item.nameEn}
       isActive={Boolean(item.isActive)}
+      jubelioStockPushEnabled={jubelioStockPushEnabled}
       gallerySlot={
         <ItemGalleryEditor
           itemId={item.id}

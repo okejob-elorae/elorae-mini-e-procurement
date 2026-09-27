@@ -53,8 +53,10 @@ export {
 export {
   applyJubelioStockAdjustment,
   InventoryValueMissingError,
+  lockMainInventoryValueRow,
   type ApplyJubelioStockAdjustmentInput,
   type ApplyJubelioStockAdjustmentResult,
+  type LockedInventoryValueRow,
 } from "./stock-writer";
 export {
   JUBELIO_OUTBOX_ENTITY_TYPES,
@@ -152,3 +154,16 @@ export {
   type SetMainStockInput,
   type SetStoreStockInput,
 } from "./stock-balance";
+export {
+  offlineReservedQty,
+  offlineReservedByKey,
+  jubelioEndQtyFor,
+  eloraeOnHandFromJubelio,
+  isValidJubelioQty,
+  parseJubelioQty,
+  JUBELIO_STOCK_PUSH_ENABLED_KEY,
+  isJubelioStockPushEnabled,
+  effectiveOfflineReservedQty,
+  effectiveOfflineReservedByKey,
+  type OfflineReservedKey,
+} from "./jubelio-stock-contract";

@@ -1,6 +1,11 @@
 "use server";
 
-import { prisma, type JubelioOutboxEntityType } from "@elorae/db";
+import {
+  isJubelioStockPushEnabled,
+  JUBELIO_STOCK_PUSH_ENABLED_KEY,
+  prisma,
+  type JubelioOutboxEntityType,
+} from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { apiFetch } from "@/lib/internal-api";
 
@@ -32,8 +37,58 @@ export type JubelioOutboxFilters = {
  */
 const MAX_SEARCH_LENGTH = 200;
 
-export async function pushItemStockToJubelio(itemId: string): Promise<{ ok: boolean; outboxId?: string }> {
+/**
+ * Whether Elorae is currently allowed to push stock to Jubelio (owner-approved cutover switch —
+ * see `isJubelioStockPushEnabled` in `jubelio-stock-contract.ts`). Any signed-in user may read it,
+ * since the reconciliation and item pages show it to non-admins; with no session it reads `false`,
+ * failing closed like the switch itself.
+ */
+export async function getJubelioStockPushEnabled(): Promise<boolean> {
+  const session = await auth();
+  if (!session?.user?.id) return false;
+  return isJubelioStockPushEnabled(prisma);
+}
+
+/**
+ * Owner-approved cutover switch: flips whether Elorae is allowed to push stock to Jubelio at
+ * all. Same permission as this page's other manage controls (admin wildcard). Stores the exact
+ * string `"true"`/`"false"` — isJubelioStockPushEnabled fails closed on anything else — and only
+ * a literal `true` enables it, so a truthy non-boolean from a hand-built call cannot.
+ *
+ * The flip and its `AuditLog` row (who, before, after) commit in one transaction, so the switch
+ * never changes without a record of who changed it.
+ */
+export async function setJubelioStockPushEnabled(enabled: boolean): Promise<{ ok: boolean }> {
   if (!(await isAdmin())) return { ok: false };
+  const userId = await currentUserId();
+  if (!userId) return { ok: false };
+  const after = enabled === true;
+
+  await prisma.$transaction(async (tx) => {
+    const before = await isJubelioStockPushEnabled(tx);
+    await tx.systemSetting.upsert({
+      where: { key: JUBELIO_STOCK_PUSH_ENABLED_KEY },
+      update: { value: after ? "true" : "false" },
+      create: { key: JUBELIO_STOCK_PUSH_ENABLED_KEY, value: after ? "true" : "false" },
+    });
+    await tx.auditLog.create({
+      data: {
+        userId,
+        action: "JUBELIO_STOCK_PUSH_TOGGLE",
+        entityType: "SystemSetting",
+        entityId: JUBELIO_STOCK_PUSH_ENABLED_KEY,
+        changes: { before: { enabled: before }, after: { enabled: after } },
+      },
+    });
+  });
+  return { ok: true };
+}
+
+export async function pushItemStockToJubelio(
+  itemId: string,
+): Promise<{ ok: boolean; outboxId?: string; reason?: "not_admin" | "push_disabled" }> {
+  if (!(await isAdmin())) return { ok: false, reason: "not_admin" };
+  if (!(await isJubelioStockPushEnabled(prisma))) return { ok: false, reason: "push_disabled" };
   const enqueuedById = await currentUserId();
   const row = await prisma.jubelioOutbox.create({
     data: { entityType: "stock_push" satisfies JubelioOutboxEntityType, entityId: itemId, payload: {}, enqueuedById },
@@ -47,8 +102,13 @@ export async function pushItemStockToJubelio(itemId: string): Promise<{ ok: bool
   return { ok: true, outboxId: row.id };
 }
 
-export async function bulkPushAllStockToJubelio(): Promise<{ ok: boolean; count: number }> {
-  if (!(await isAdmin())) return { ok: false, count: 0 };
+export async function bulkPushAllStockToJubelio(): Promise<{
+  ok: boolean;
+  count: number;
+  reason?: "not_admin" | "push_disabled";
+}> {
+  if (!(await isAdmin())) return { ok: false, count: 0, reason: "not_admin" };
+  if (!(await isJubelioStockPushEnabled(prisma))) return { ok: false, count: 0, reason: "push_disabled" };
   const enqueuedById = await currentUserId();
   const mappings = await prisma.jubelioProductMapping.findMany({
     select: { itemId: true },

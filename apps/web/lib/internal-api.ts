@@ -60,6 +60,14 @@ export async function apiFetch<T = unknown>(
   path: string,
   opts: { userId: string; body?: unknown } = { userId: "" },
 ): Promise<ApiFetchResult<T>> {
+  /*
+   * apps/api's InternalSignGuard verifies the signature against `req.path`, which excludes the
+   * query string, while this signs the whole path — so any query string 401s every time. Put the
+   * input in the path (or a POST body) instead.
+   */
+  if (path.includes("?")) {
+    throw new Error(`apiFetch: query strings break the internal signature; put the input in the path (${path})`);
+  }
   const bodyStr = opts.body === undefined ? "" : JSON.stringify(opts.body);
   const sig = signInternalRequest(method, path, opts.userId, bodyStr);
 

@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { JubelioOutbox } from "@elorae/db";
+import { isJubelioStockPushEnabled, jubelioEndQtyFor, offlineReservedByKey } from "@elorae/db";
 import { PRISMA, type PrismaService } from "../../../db/prisma.module";
 import { JubelioHttpService } from "../../http.service";
 import { OUTBOX_SKIP_REASONS } from "../outbox-status";
@@ -15,6 +16,12 @@ export class StockPushHandler implements OutboxHandler {
   ) {}
 
   async handle(row: JubelioOutbox): Promise<HandlerOutcome> {
+    // Owner-approved cutover switch: Jubelio is the stock source of truth until cutover, so a
+    // push is refused entirely rather than retried — see jubelio-stock-contract.ts.
+    if (!(await isJubelioStockPushEnabled(this.prisma))) {
+      return { kind: "skipped", reason: OUTBOX_SKIP_REASONS.STOCK_PUSH_DISABLED };
+    }
+
     const itemId = row.entityId;
 
     const mapping = await this.prisma.jubelioProductMapping.findFirst({ where: { itemId } });
@@ -27,13 +34,24 @@ export class StockPushHandler implements OutboxHandler {
       return { kind: "skipped", reason: OUTBOX_SKIP_REASONS.NO_INVENTORY };
     }
 
-    const items = inventory.map((iv) => ({
-      item_code: iv.variantSku || mapping.jubelioItemCode,
-      // Push AVAILABLE, not on-hand (BOUNDARY §D7). Clamp at 0 — Jubelio cannot
-      // hold negative stock; oversell is surfaced via AdminNotification. Virtual-
-      // warehouse subtraction not yet modeled.
-      end_qty: Math.max(0, Number(iv.qtyOnHand) - Number(iv.reservedQty)),
-    }));
+    const offlineByKey = await offlineReservedByKey(
+      this.prisma,
+      inventory.map((iv) => ({ itemId, variantSku: iv.variantSku ?? "" })),
+    );
+
+    const items = inventory.map((iv) => {
+      const variantSku = iv.variantSku ?? "";
+      const offline = offlineByKey.get(`${itemId}:${variantSku}`) ?? 0;
+      return {
+        item_code: iv.variantSku || mapping.jubelioItemCode,
+        // end_qty is ON-HAND (the verified contract — see jubelio-stock-contract.ts). Jubelio
+        // already nets out its own marketplace commitments via order_qty, so only Elorae's
+        // field-sales holds — which Jubelio cannot see — are subtracted here. Floored at 0 by
+        // jubelioEndQtyFor: Jubelio cannot hold negative stock; oversell is surfaced via
+        // AdminNotification.
+        end_qty: jubelioEndQtyFor(Number(iv.qtyOnHand), offline),
+      };
+    });
 
     await this.http.put(`/inventory/items/${mapping.jubelioItemGroupId}/stock`, { items });
 

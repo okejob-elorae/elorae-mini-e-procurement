@@ -32,6 +32,9 @@ describe("StockPushHandler", () => {
     prisma = {
       jubelioProductMapping: { findFirst: jest.fn() },
       inventoryValue: { findMany: jest.fn() },
+      // Push enabled and no offline (field-sales) holds by default; individual tests override.
+      systemSetting: { findUnique: jest.fn().mockResolvedValue({ value: "true" }) },
+      stockReservation: { groupBy: jest.fn().mockResolvedValue([]) },
     };
     http = { put: jest.fn() };
     const mod = await Test.createTestingModule({
@@ -42,6 +45,16 @@ describe("StockPushHandler", () => {
       ],
     }).compile();
     handler = mod.get(StockPushHandler);
+  });
+
+  it("returns SKIPPED stock_push_disabled when the cutover switch is off, without calling Jubelio", async () => {
+    prisma.systemSetting.findUnique.mockResolvedValue(null);
+
+    const result = await handler.handle(row() as any);
+
+    expect(result).toEqual({ kind: "skipped", reason: OUTBOX_SKIP_REASONS.STOCK_PUSH_DISABLED });
+    expect(prisma.jubelioProductMapping.findFirst).not.toHaveBeenCalled();
+    expect(http.put).not.toHaveBeenCalled();
   });
 
   it("returns SKIPPED missing_mapping when item has no Jubelio mapping", async () => {
@@ -67,16 +80,19 @@ describe("StockPushHandler", () => {
     expect(http.put).not.toHaveBeenCalled();
   });
 
-  it("PUTs current inventory to Jubelio and returns processed", async () => {
+  it("pushes end_qty = qtyOnHand when only JUBELIO reservations are open (none count as offline)", async () => {
     prisma.jubelioProductMapping.findFirst.mockResolvedValue({
       itemId: "item_1",
       jubelioItemGroupId: 42,
       jubelioItemCode: "SKU-PARENT",
     });
     prisma.inventoryValue.findMany.mockResolvedValue([
-      { variantSku: "SKU-A", qtyOnHand: 5, reservedQty: 2 },
-      { variantSku: "SKU-B", qtyOnHand: 12, reservedQty: 0 },
+      { variantSku: "SKU-A", qtyOnHand: 5 },
+      { variantSku: "SKU-B", qtyOnHand: 12 },
     ]);
+    // stockReservation.groupBy already excludes JUBELIO-sourced rows at the query level — an
+    // empty result here stands in for "only JUBELIO reservations are open".
+    prisma.stockReservation.groupBy.mockResolvedValue([]);
     http.put.mockResolvedValue({});
 
     const result = await handler.handle(row() as any);
@@ -87,20 +103,43 @@ describe("StockPushHandler", () => {
     expect(path).toBe("/inventory/items/42/stock");
     expect(body).toEqual({
       items: [
-        { item_code: "SKU-A", end_qty: 3 },
+        { item_code: "SKU-A", end_qty: 5 },
         { item_code: "SKU-B", end_qty: 12 },
       ],
     });
   });
 
-  it("clamps end_qty at 0 when reserved exceeds on-hand", async () => {
+  it("pushes qtyOnHand minus an open FIELD_SALES reservation", async () => {
     prisma.jubelioProductMapping.findFirst.mockResolvedValue({
       itemId: "item_1",
       jubelioItemGroupId: 42,
       jubelioItemCode: "SKU-PARENT",
     });
     prisma.inventoryValue.findMany.mockResolvedValue([
-      { variantSku: "SKU-A", qtyOnHand: 1, reservedQty: 4 },
+      { variantSku: "SKU-A", qtyOnHand: 10 },
+    ]);
+    prisma.stockReservation.groupBy.mockResolvedValue([
+      { itemId: "item_1", variantSku: "SKU-A", _sum: { qty: 3, consumedQty: 0 } },
+    ]);
+    http.put.mockResolvedValue({});
+
+    const result = await handler.handle(row() as any);
+
+    expect(result).toEqual({ kind: "processed" });
+    expect(http.put.mock.calls[0][1].items[0]).toEqual({ item_code: "SKU-A", end_qty: 7 });
+  });
+
+  it("clamps end_qty at 0 when offline reserved exceeds on-hand", async () => {
+    prisma.jubelioProductMapping.findFirst.mockResolvedValue({
+      itemId: "item_1",
+      jubelioItemGroupId: 42,
+      jubelioItemCode: "SKU-PARENT",
+    });
+    prisma.inventoryValue.findMany.mockResolvedValue([
+      { variantSku: "SKU-A", qtyOnHand: 1 },
+    ]);
+    prisma.stockReservation.groupBy.mockResolvedValue([
+      { itemId: "item_1", variantSku: "SKU-A", _sum: { qty: 4, consumedQty: 0 } },
     ]);
     http.put.mockResolvedValue({});
 
@@ -117,8 +156,9 @@ describe("StockPushHandler", () => {
       jubelioItemCode: "SKU-PARENT",
     });
     prisma.inventoryValue.findMany.mockResolvedValue([
-      { variantSku: "", qtyOnHand: 8, reservedQty: 0 },
+      { variantSku: "", qtyOnHand: 8 },
     ]);
+    prisma.stockReservation.groupBy.mockResolvedValue([]);
     http.put.mockResolvedValue({});
 
     const result = await handler.handle(row() as any);
@@ -134,7 +174,7 @@ describe("StockPushHandler", () => {
       jubelioItemCode: "SKU-PARENT",
     });
     prisma.inventoryValue.findMany.mockResolvedValue([
-      { variantSku: "SKU-A", qtyOnHand: 1, reservedQty: 0 },
+      { variantSku: "SKU-A", qtyOnHand: 1 },
     ]);
     http.put.mockRejectedValue(new Error("Jubelio 500"));
 
