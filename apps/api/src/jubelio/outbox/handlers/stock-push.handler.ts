@@ -31,7 +31,7 @@ export class StockPushHandler implements OutboxHandler {
       item_code: iv.variantSku || mapping.jubelioItemCode,
       // Push AVAILABLE, not on-hand (BOUNDARY §D7). Clamp at 0 — Jubelio cannot
       // hold negative stock; oversell is surfaced via AdminNotification. Virtual-
-      // warehouse subtraction (EPIC-19) not yet modeled.
+      // warehouse subtraction not yet modeled.
       end_qty: Math.max(0, Number(iv.qtyOnHand) - Number(iv.reservedQty)),
     }));
 

@@ -125,7 +125,7 @@ contract for the migrations that will introduce them.
 | `SalesHistory`                 | web                         | api (read)                  | ✅ Excel import (`channel=MARKETPLACE`) + putus **delivery** (`channel=OFFLINE`, keyed by `FieldSalesDelivery.docNo` so repeat deliveries of a variant don't collide — approval writes none since delivery became its own document); identity fields (`itemId`, `erpVariantSku`, `jubelioItemId`, `resolutionStatus`) stamped at import via `marketplace-sku-resolver` — see §3.7 |
 | `SalesHistoryImport`           | web                         | —                           | ✅ |
 | `ForecastConfig`, `ForecastResult` | web                     | —                           | ✅ `ForecastResult.itemId` for item-centric grouping |
-| `SalesReturn`                  | api ingest; web decision (planned) | —                    | 🟡 webhook stub shipped; EPIC-05 will introduce web-side Accept/Reject writer + new outbox type `salesreturn_decision_push` |
+| `SalesReturn`                  | api ingest; web decision (planned) | —                    | 🟡 webhook stub shipped; the web-side Accept/Reject writer + new outbox type `salesreturn_decision_push` belong to the sales returns work |
 | `FieldSalesOrder`, `FieldSalesOrderLine` | web           | api (read)                  | ✅ schema; web-written putus orders (ERP-originated), api never writes |
 | `FieldSalesDelivery`, `FieldSalesDeliveryLine` | web     | —                           | ✅ schema + writer — `recordFieldSalesDelivery` / `closeFieldSalesOrderRemainder` in `apps/web/lib/field-sales/delivery/writer.ts`. Putus only; api never writes. `docNo` is NOT always `DLV/`-prefixed — rows written by the backfill migration carry the order number instead. |
 | `JubelioProductMapping`        | api                         | web (read)                  | ✅ |
@@ -147,7 +147,7 @@ contract for the migrations that will introduce them.
   change should propagate outbound.
 - **api** writes `InventoryValue` and `StockAdjustment` when the Jubelio
   `stock` webhook arrives (external mutation in Jubelio).
-- **api cron** (EPIC-07-04, ⏳) writes `StockAdjustment` with
+- **api cron** (stock reconciliation, ⏳) writes `StockAdjustment` with
   `source = JUBELIO_RECONCILE` when the reconcile loop auto-corrects a small
   variance. Lives in apps/api because reading Jubelio inventory is api's
   responsibility. **Must compare against `available` (`qtyOnHand - reservedQty`),
@@ -173,8 +173,8 @@ Allowed values today: `ERP`, `ERP_OPNAME`, `ERP_RETURN_ACCEPT`,
 
 To add a new source, see [INTEGRATION-GUIDE §2](./INTEGRATION-GUIDE.md).
 
-**Reconcile-cron note (relevant to D5/D7, added with D6):** when the
-EPIC-07-04 reconcile cron is built, it must diff Jubelio-reported qty against
+**Reconcile-cron note (relevant to D5/D7, added with D6):** the stock
+reconciliation cron must diff Jubelio-reported qty against
 ERP **available** (`qtyOnHand - reservedQty`), never raw `qtyOnHand`. Comparing
 against `qtyOnHand` would treat every open reservation as a variance and fight
 the reservation model — the cron would "correct" stock that is intentionally
@@ -340,7 +340,7 @@ register in the Nest module, add a `.spec.ts`. See
 
 ### 4.2.2 `web → api` (async, long-running job) — ✅ shipped (bulk migration)
 
-For jobs that take minutes (e.g. EPIC-02-05 bulk migration), web triggers via
+For jobs that take minutes (e.g. the initial bulk data migration), web triggers via
 a server action that batch-inserts `JubelioOutbox` rows. Progress is observed
 by polling the outbox status grouped by `enqueuedById` + `createdAt` window.
 No separate job-state table required when the outbox itself models the unit
@@ -385,15 +385,15 @@ is never what fires the job in normal operation.
 
 Cross-service writes from scheduled jobs use the same `@elorae/db` helpers as
 on-demand writes. An api cron that writes a web-owned table goes through the
-helper (e.g. EPIC-07-04 reconcile writes `StockAdjustment` via the same
+helper (e.g. the stock reconciliation cron writes `StockAdjustment` via the same
 `stock-writer.ts` infrastructure, stamping `source = JUBELIO_RECONCILE`).
 
 ### 4.6 External integrations beyond Jubelio — punted
 
 Some upcoming EPICs touch external systems other than Jubelio:
 
-- EPIC-21-05: e-Faktur (DJP)
-- EPIC-23 (future): bank reconciliation APIs
+- e-Faktur (DJP)
+- Bank reconciliation APIs (future)
 
 Today these are scoped as **manual entry only** — no automation. When the
 first automated external integration lands, choose between (a) extending
@@ -483,13 +483,13 @@ Only `health.controller.ts` and `webhooks.controller.ts` opt out via
 - ❌ Pushing virtual-warehouse stock (consignment, canvasser mobile) to
   Jubelio. The push formula must exclude virtual qty:
   `pushable = mainWarehouse.onHand - reserved - virtualWarehouseQty`.
-  EPIC-19 will introduce the warehouse model; EPIC-02-03 push helper must
-  apply the filter.
-- ❌ Reusing marketplace `SalesOrder` for offline field-sales writes
-  (EPIC-17/18/22). Marketplace SO is api-owned and Jubelio-shaped; offline
+  The warehouse model belongs to the Inventory Extensions work; the stock
+  push helper must apply the filter.
+- ❌ Reusing marketplace `SalesOrder` for offline field-sales writes.
+  Marketplace SO is api-owned and Jubelio-shaped; offline
   orders use the dedicated web-owned `FieldSalesOrder`/`FieldSalesOrderLine`
   model — see D8.
-- ❌ Pre-filling EPIC-24-02 warehouse received qty from salesman claim. The
+- ❌ Pre-filling a field retur's warehouse received qty from salesman claim. The
   acceptance criterion explicitly forbids it — warehouse independence is the
   whole point.
 - ❌ Sync HTTP call to non-Jubelio external systems (DJP, payment gateway)
@@ -531,15 +531,15 @@ script uses `nest start --watch --builder swc` (SWC honours
 | D2 | Admin alert channel | **In-DB `AdminNotification` table.** Written by api on token-refresh failure, outbox-stuck, rate-limit hit, etc. Consumed by apps/web admin UI. Web may also write for ERP-detected alerts — see §3.5. |
 | D3 | Admin dashboard | **Full UI in apps/web** at `/backoffice/jubelio/admin` — queue depth, failed items, audit log, outbox status, retry buttons. api exposes JSON endpoints; apps/web renders. |
 | D4 | Local Redis | **Docker compose** (`redis:7-alpine`) declared in repo-root `docker-compose.dev.yml`. apps/api reads `REDIS_URL` env. Upstash used for staging/prod. |
-| D5 | Stock reconciliation cron home (EPIC-07) | **apps/web owns orchestration + persistence.** A secret-guarded `POST /api/cron/reconciliation` (and in-process `node-cron` every 6h on VPS) calls `runReconciliation('CRON')` in web. Config lives in `SystemSetting` (`RECON_AUTO_CORRECT_THRESHOLD`, `RECON_AUTO_CORRECT_DIRECTION`, `RECON_CRON_ENABLED`). Launch posture: `FLAG_ONLY` + threshold 0. **apps/api** exposes signed `GET /jubelio/inventory/snapshot` (InternalSignGuard); web fetches Jubelio qty via `apiFetch`. Auto-correct writes `StockAdjustment` with `source = JUBELIO_RECONCILE` + `StockMovement` `refType = RECON`. FG-only scan (items with `JubelioProductMapping`). Overlap guard skips when a `ReconciliationRun` is already `RUNNING`. |
-| D6 | Reservation modeling (EPIC-08) | **Resolved.** `StockReservation` ledger — one row per `salesorderDetailId` (unique), `state: ReserveState { RESERVED, CONSUMED, RELEASED }` — plus an aggregate `InventoryValue.reservedQty` (Decimal, default 0) kept in sync by the ledger writes. Three order-level helpers in `@elorae/db/reservation-writer.ts`: `reserveOrder` (webhook ingest — creates ledger rows + bumps `reservedQty`, raises `AdminNotification` on oversell), `consumeOrder` (ship — flips `RESERVED → CONSUMED`, deducts `InventoryValue.qtyOnHand` via a `StockAdjustment` stamped `source = FULFILLMENT_CONSUME`), `releaseOrder` (cancel — flips `RESERVED → RELEASED`, decrements `reservedQty` without touching `qtyOnHand`). Idempotency: unique `salesorderDetailId` on create, and every transition is a conditional `updateMany WHERE state = 'RESERVED'` so the Jubelio ship webhook and the ERP Ship button can both fire — whichever lands first wins, the other is a no-op. Model: **reserve-at-ingest, consume-onHand-at-ship, release-on-cancel**; `available = qtyOnHand - reservedQty`, derived at read time (not stored). Jubelio stock push (`stock-push.handler.ts`) sends `available` (`onHand - reserved`, clamped at 0), not raw `qtyOnHand`. |
-| D7 | Warehouse scope on Jubelio stock push (EPIC-19 + EPIC-02-03) | **Push only main-warehouse availability.** Formula: `pushable = mainWarehouse.onHand - reserved - virtualWarehouseQty`. Konsi, canvasser-mobile, and any future virtual warehouses are excluded. Codified before EPIC-19 implementation; push helper enforces. |
-| D8 | Offline vs marketplace `SalesOrder` (EPIC-17/18/22) | **Resolved (2026-07-04, EPIC-17 sub-4a, PR #98)** — option (b), narrower: dedicated `FieldSalesOrder`/`FieldSalesOrderLine` model (not a generic `OfflineSalesOrder`), web-owned, item-level per D15. |
-| D9 | Auto-journal trigger (EPIC-13) | **In-Prisma-TX helper, not outbox queue.** Financial debit=credit invariant cannot be eventually consistent. `withJournal()` helper in `@elorae/db` participates in source transaction. |
+| D5 | Stock reconciliation cron home | **apps/web owns orchestration + persistence.** A secret-guarded `POST /api/cron/reconciliation` (and in-process `node-cron` every 6h on VPS) calls `runReconciliation('CRON')` in web. Config lives in `SystemSetting` (`RECON_AUTO_CORRECT_THRESHOLD`, `RECON_AUTO_CORRECT_DIRECTION`, `RECON_CRON_ENABLED`). Launch posture: `FLAG_ONLY` + threshold 0. **apps/api** exposes signed `GET /jubelio/inventory/snapshot` (InternalSignGuard); web fetches Jubelio qty via `apiFetch`. Auto-correct writes `StockAdjustment` with `source = JUBELIO_RECONCILE` + `StockMovement` `refType = RECON`. FG-only scan (items with `JubelioProductMapping`). Overlap guard skips when a `ReconciliationRun` is already `RUNNING`. |
+| D6 | Reservation modeling | **Resolved.** `StockReservation` ledger — one row per `salesorderDetailId` (unique), `state: ReserveState { RESERVED, CONSUMED, RELEASED }` — plus an aggregate `InventoryValue.reservedQty` (Decimal, default 0) kept in sync by the ledger writes. Three order-level helpers in `@elorae/db/reservation-writer.ts`: `reserveOrder` (webhook ingest — creates ledger rows + bumps `reservedQty`, raises `AdminNotification` on oversell), `consumeOrder` (ship — flips `RESERVED → CONSUMED`, deducts `InventoryValue.qtyOnHand` via a `StockAdjustment` stamped `source = FULFILLMENT_CONSUME`), `releaseOrder` (cancel — flips `RESERVED → RELEASED`, decrements `reservedQty` without touching `qtyOnHand`). Idempotency: unique `salesorderDetailId` on create, and every transition is a conditional `updateMany WHERE state = 'RESERVED'` so the Jubelio ship webhook and the ERP Ship button can both fire — whichever lands first wins, the other is a no-op. Model: **reserve-at-ingest, consume-onHand-at-ship, release-on-cancel**; `available = qtyOnHand - reservedQty`, derived at read time (not stored). Jubelio stock push (`stock-push.handler.ts`) sends `available` (`onHand - reserved`, clamped at 0), not raw `qtyOnHand`. |
+| D7 | Warehouse scope on Jubelio stock push | **Push only main-warehouse availability.** Formula: `pushable = mainWarehouse.onHand - reserved - virtualWarehouseQty`. Konsi, canvasser-mobile, and any future virtual warehouses are excluded. Codified ahead of the warehouse model; push helper enforces. |
+| D8 | Offline vs marketplace `SalesOrder` | **Resolved (2026-07-04, Taking Order (Putus) backend, PR #98)** — option (b), narrower: dedicated `FieldSalesOrder`/`FieldSalesOrderLine` model (not a generic `OfflineSalesOrder`), web-owned, item-level per D15. |
+| D9 | Auto-journal trigger | **In-Prisma-TX helper, not outbox queue.** Financial debit=credit invariant cannot be eventually consistent. `withJournal()` helper in `@elorae/db` participates in source transaction. |
 | D10 | External integrations beyond Jubelio | **Punted.** No automation today (e-Faktur, bank reconciliation are manual). First concrete automated integration EPIC reopens this decision. |
 | D11 | Role/permission model | **Open.** Six new roles incoming (SALESMAN, SPG, CANVASSER, COLLECTOR, FINANCE, ADMIN_PAJAK). Migration path: keep `Role` enum for now; revisit when count exceeds ~10 or dynamic role grants become a requirement. |
-| D12 | Bulk migration job control (EPIC-02-05) | **Outbox-as-job-state.** No separate job table. Progress = `groupBy(status) WHERE enqueuedById=… AND createdAt > windowStart`. Cancel = delete PENDING rows for that batch. (Shipped via PR #41.) |
+| D12 | Bulk migration job control | **Outbox-as-job-state.** No separate job table. Progress = `groupBy(status) WHERE enqueuedById=… AND createdAt > windowStart`. Cancel = delete PENDING rows for that batch. (Shipped via PR #41.) |
 | D13 | `JubelioOutbox.entityType` registry | **Single source: `packages/db/src/jubelio-outbox.ts`.** Web `satisfies` typed insert + api router `never`-exhaustive switch. Typos = compile error. (Shipped this PR.) |
 | D14 | `StockAdjustment.source` registry | **Single source: `packages/db/src/stock-adjustment-source.ts`.** Same pattern as D13. (Shipped this PR.) |
-| D15 | Putus/konsi order granularity (EPIC-17-03) | **SUPERSEDED (2026-07-17, PR #144) — field-sales putus/konsi is now PER-VARIANT.** ~~Originally item-level (order lines `variantSku = ""`, variantless `InventoryValue` row).~~ Reversed after confirming per-variant stock already exists on prod: `InventoryValue` is keyed `(itemId, variantSku)` and Jubelio-ingested variant items are stored **entirely per-variant** (real `variantSku` rows, no pooled row) — so the item-level PWA sell path (which sent `variantSku ""`) actually found no row for variant items → unsellable/oversell. Now: PWA catalog exposes per-variant availability (`CatalogItem.variants[]`); a variant sheet picks variants; order lines carry the **real** `variantSku`; reserve/consume/release (already per-line `variantSku`) hit the exact per-variant row → per-variant `StockReservation`/`reservedQty`. **Min-qty aggregates per item** (variants collectively meet the min); **promos aggregate per item then pro-rate** across variant lines (shared `applyItemAggregatedPromos` used by writer + preview so the quote == recorded order). **Simple items (no `Item.variants`) stay item-level** — `variants: []`, inline stepper, cart line `variantSku ""` (the null/"" bucket + tolerant lookup preserved). No schema migration (schema was already per-variant). **Canvassing (van load/sale/reconcile) is ALSO per-variant — Track B, PR #146 (2026-07-23):** `VanStock` + van docs keyed `(userId, itemId, variantSku)`; the backoffice load form picks per-variant (one item block → its in-stock variants, 0-available hidden), the PWA van sell screen groups by item + opens a variant sheet, and sale/reconcile stamp the variant label into `productName`. No schema migration (van tables already had `variantSku`). Van stock has no reservation dimension, so this is purely a key change; simple items stay item-level (`VanStock` keyed `""`). Caveat: a variant item restocked via ERP GRN/production writes a `null` pooled row the per-variant sale won't see (only matters if variant items are ERP-received; Jubelio feeds them per-variant). |
+| D15 | Putus/konsi order granularity | **SUPERSEDED (2026-07-17, PR #144) — field-sales putus/konsi is now PER-VARIANT.** ~~Originally item-level (order lines `variantSku = ""`, variantless `InventoryValue` row).~~ Reversed after confirming per-variant stock already exists on prod: `InventoryValue` is keyed `(itemId, variantSku)` and Jubelio-ingested variant items are stored **entirely per-variant** (real `variantSku` rows, no pooled row) — so the item-level PWA sell path (which sent `variantSku ""`) actually found no row for variant items → unsellable/oversell. Now: PWA catalog exposes per-variant availability (`CatalogItem.variants[]`); a variant sheet picks variants; order lines carry the **real** `variantSku`; reserve/consume/release (already per-line `variantSku`) hit the exact per-variant row → per-variant `StockReservation`/`reservedQty`. **Min-qty aggregates per item** (variants collectively meet the min); **promos aggregate per item then pro-rate** across variant lines (shared `applyItemAggregatedPromos` used by writer + preview so the quote == recorded order). **Simple items (no `Item.variants`) stay item-level** — `variants: []`, inline stepper, cart line `variantSku ""` (the null/"" bucket + tolerant lookup preserved). No schema migration (schema was already per-variant). **Canvassing (van load/sale/reconcile) is ALSO per-variant — Track B, PR #146 (2026-07-23):** `VanStock` + van docs keyed `(userId, itemId, variantSku)`; the backoffice load form picks per-variant (one item block → its in-stock variants, 0-available hidden), the PWA van sell screen groups by item + opens a variant sheet, and sale/reconcile stamp the variant label into `productName`. No schema migration (van tables already had `variantSku`). Van stock has no reservation dimension, so this is purely a key change; simple items stay item-level (`VanStock` keyed `""`). Caveat: a variant item restocked via ERP GRN/production writes a `null` pooled row the per-variant sale won't see (only matters if variant items are ERP-received; Jubelio feeds them per-variant). |
 | D16 | Cross-service auth bridge (§4.1, §5) | **Resolved (shipped 2026-05-28, commit `188752f`) — pivoted from the original plan.** Original plan was NextAuth-JWT forwarding (web signs a `Bearer <jwt>` with shared `NEXTAUTH_SECRET`, api verifies). Shipped instead as an **HMAC-signed internal channel**: `apps/web/lib/internal-api.ts` (`signInternalRequest`) computes `HMAC-SHA256(method+path+userId+rawBody)` keyed by `INTERNAL_API_SECRET`, sent as `x-internal-sign`/`x-user-id` headers; api's `InternalSignGuard` (`apps/api/src/auth/internal-sign.guard.ts`) verifies with `timingSafeEqual` and is registered globally via `APP_GUARD` in `apps/api/src/auth/auth.module.ts`. Only `health.controller.ts` and `webhooks.controller.ts` opt out via `@Public()`. Simpler than JWT forwarding — no shared session-secret coupling, no token expiry to juggle for service-to-service calls. |
