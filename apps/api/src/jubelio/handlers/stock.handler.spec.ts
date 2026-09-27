@@ -51,15 +51,12 @@ describe("StockWebhookHandler", () => {
   let handler: StockWebhookHandler;
   let prisma: {
     jubelioProductMapping: { findMany: jest.Mock };
-    stockReservation: { groupBy: jest.Mock };
   };
   let http: { get: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
       jubelioProductMapping: { findMany: jest.fn() },
-      // No open offline (field-sales) holds by default; individual tests override.
-      stockReservation: { groupBy: jest.fn().mockResolvedValue([]) },
     };
     http = { get: jest.fn() };
     const mod = await Test.createTestingModule({
@@ -127,7 +124,7 @@ describe("StockWebhookHandler", () => {
     expect(applyJubelioStockAdjustment).toHaveBeenCalledWith(prisma, {
       itemId: "item_1",
       variantSku: "ERP-A-RED",
-      newQty: 7,
+      jubelioEndQty: 7,
       idempotencyKey: "evt_1:1974",
       externalRef: "115/SKU-A-RED",
       reason: "Jubelio stock webhook evt_1 item_id=1974",
@@ -135,7 +132,7 @@ describe("StockWebhookHandler", () => {
     expect(applyJubelioStockAdjustment).toHaveBeenCalledWith(prisma, {
       itemId: "item_1",
       variantSku: "ERP-A-BLU",
-      newQty: 3,
+      jubelioEndQty: 3,
       idempotencyKey: "evt_1:2125",
       externalRef: "115/SKU-A-BLU",
       reason: "Jubelio stock webhook evt_1 item_id=2125",
@@ -161,21 +158,23 @@ describe("StockWebhookHandler", () => {
 
     expect(applyJubelioStockAdjustment).toHaveBeenCalledTimes(1);
     expect(applyJubelioStockAdjustment).toHaveBeenCalledWith(prisma, expect.objectContaining({
-      variantSku: "ERP-A-RED", newQty: 7,
+      variantSku: "ERP-A-RED", jubelioEndQty: 7,
     }));
     expect(result).toEqual({ kind: "processed" });
   });
 
-  it("adds Elorae's open field-sales hold back onto Jubelio's end_qty", async () => {
+  /*
+   * The field-sales add-back happens inside the writer, after it locks the row and only while
+   * stock pushes are enabled (pinned by the writer's own DB spec in packages/db). The handler must
+   * hand over Jubelio's figure untouched, never pre-adjusted.
+   */
+  it("hands the writer Jubelio's raw end_qty, parsing a numeric string", async () => {
     http.get.mockResolvedValue({
       item_group_id: 115,
-      product_skus: [{ item_id: 1974, item_code: "SKU-A-RED", end_qty: 50 }],
+      product_skus: [{ item_id: 1974, item_code: "SKU-A-RED", end_qty: "50" }],
     });
     prisma.jubelioProductMapping.findMany.mockResolvedValue([
       { itemId: "item_1", erpVariantSku: "ERP-A-RED", jubelioItemId: 1974, jubelioItemCode: "SKU-A-RED" },
-    ]);
-    prisma.stockReservation.groupBy.mockResolvedValue([
-      { itemId: "item_1", variantSku: "ERP-A-RED", _sum: { qty: 4, consumedQty: 0 } },
     ]);
     (applyJubelioStockAdjustment as jest.Mock).mockResolvedValue({ adjustmentId: "adj", skipped: false });
 
@@ -183,8 +182,28 @@ describe("StockWebhookHandler", () => {
 
     expect(applyJubelioStockAdjustment).toHaveBeenCalledWith(prisma, expect.objectContaining({
       variantSku: "ERP-A-RED",
-      newQty: 54,
+      jubelioEndQty: 50,
     }));
+    expect(result).toEqual({ kind: "processed" });
+  });
+
+  /* Number(null) and Number("") are both 0 — a coerce-then-validate handler would write a zero. */
+  it("skips a variant whose end_qty is null or the empty string, instead of writing 0", async () => {
+    http.get.mockResolvedValue({
+      item_group_id: 115,
+      product_skus: [
+        { item_id: 1974, item_code: "SKU-A-RED", end_qty: null },
+        { item_id: 2125, item_code: "SKU-A-BLU", end_qty: "" },
+      ],
+    });
+    prisma.jubelioProductMapping.findMany.mockResolvedValue([
+      { itemId: "item_1", erpVariantSku: "ERP-A-RED", jubelioItemId: 1974, jubelioItemCode: "SKU-A-RED" },
+      { itemId: "item_1", erpVariantSku: "ERP-A-BLU", jubelioItemId: 2125, jubelioItemCode: "SKU-A-BLU" },
+    ]);
+
+    const result = await handler.handle(row(NEW_SHAPE) as never);
+
+    expect(applyJubelioStockAdjustment).not.toHaveBeenCalled();
     expect(result).toEqual({ kind: "processed" });
   });
 

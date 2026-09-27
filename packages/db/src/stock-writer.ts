@@ -1,4 +1,9 @@
 import { AdjustmentType, Prisma, type PrismaClient } from "../generated/prisma/client";
+import {
+  effectiveOfflineReservedQty,
+  eloraeOnHandFromJubelio,
+  isValidJubelioQty,
+} from "./jubelio-stock-contract";
 import { setMainStock } from "./stock-balance";
 import type { StockAdjustmentSource } from "./stock-adjustment-source";
 import type { StockLedgerRefType } from "./stock-ledger-ref";
@@ -15,10 +20,13 @@ export type ApplyJubelioStockAdjustmentInput = {
    */
   variantSku: string;
   /**
-   * The ABSOLUTE target `qtyOnHand`, already carrying the contract's offline add-back (see
-   * `eloraeOnHandFromJubelio` in `jubelio-stock-contract.ts`) — never a delta to increment by.
+   * Jubelio's RAW `end_qty` for this variant, already validated by `parseJubelioQty`. The writer
+   * turns it into the absolute target on-hand itself, inside its transaction and after locking the
+   * row: `end_qty` plus the field-sales holds Jubelio has had netted out
+   * (`effectiveOfflineReservedQty` — the holds while stock pushes are enabled, `0` while they are
+   * off). Never a delta to increment by, and never pre-adjusted by the caller.
    */
-  newQty: number;
+  jubelioEndQty: number;
   idempotencyKey: string;
   externalRef: string;
   reason: string;
@@ -36,25 +44,74 @@ export class InventoryValueMissingError extends Error {
   }
 }
 
+export type LockedInventoryValueRow = { id: string; qtyOnHand: string; avgCost: string };
+
+/**
+ * Locks the main `InventoryValue` row for one item/variant with `SELECT … FOR UPDATE` and returns
+ * it, or `null` when there is none. Call it as the FIRST statement of the transaction whose later
+ * reads and writes depend on that row, so no concurrent writer can move it in between.
+ *
+ * Same OR-tolerant shape as `findExistingInventoryValueRow` in apps/web, tie-break included: a
+ * variantless lookup matches both the `null` and the `""` spelling and takes the lowest id. Only
+ * the values are interpolated (parameterised by Prisma); the identifiers are static SQL text.
+ * Decimals come back as strings so callers can do exact arithmetic on them.
+ */
+export async function lockMainInventoryValueRow(
+  tx: Prisma.TransactionClient,
+  itemId: string,
+  variantSku: string | null | undefined,
+): Promise<LockedInventoryValueRow | null> {
+  const variantFilter = variantSku
+    ? Prisma.sql`\`variantSku\` = ${variantSku}`
+    : Prisma.sql`(\`variantSku\` IS NULL OR \`variantSku\` = '')`;
+  const rows = await tx.$queryRaw<{ id: string; qtyOnHand: unknown; avgCost: unknown }[]>`
+    SELECT \`id\`, \`qtyOnHand\`, \`avgCost\` FROM \`InventoryValue\`
+    WHERE \`itemId\` = ${itemId} AND ${variantFilter}
+    ORDER BY \`id\` ASC
+    LIMIT 1
+    FOR UPDATE
+  `;
+  const row = rows[0];
+  if (!row) return null;
+  return { id: row.id, qtyOnHand: String(row.qtyOnHand), avgCost: String(row.avgCost) };
+}
+
 export async function applyJubelioStockAdjustment(
   client: AnyClient,
   input: ApplyJubelioStockAdjustmentInput,
 ): Promise<ApplyJubelioStockAdjustmentResult> {
+  if (!isValidJubelioQty(input.jubelioEndQty)) {
+    throw new Error(
+      `applyJubelioStockAdjustment: invalid Jubelio end_qty ${input.jubelioEndQty} for item ${input.itemId}`,
+    );
+  }
+
   const hasTransactionFn = typeof (client as PrismaClient).$transaction === "function";
   const run = async (tx: Prisma.TransactionClient): Promise<ApplyJubelioStockAdjustmentResult> => {
-    const inv = input.variantSku
-      ? await tx.inventoryValue.findFirst({
-          where: { itemId: input.itemId, variantSku: input.variantSku },
-        })
-      : await tx.inventoryValue.findFirst({
-          where: { itemId: input.itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
-          orderBy: { id: "asc" },
-        });
+    /*
+     * The lock is the transaction's first statement: prevQty, the offline holds and the switch are
+     * all read after it, and setMainStock's own pre-read (which the ledger delta comes from) sees
+     * the same locked value, so the StockAdjustment row and the ledger entry cannot disagree.
+     */
+    const inv = await lockMainInventoryValueRow(tx, input.itemId, input.variantSku);
     if (!inv) throw new InventoryValueMissingError(input.itemId, input.variantSku);
+
+    /*
+     * A redelivered event is a no-op. The row lock above serialises two deliveries for the same
+     * variant, so this read settles it; the P2002 catch below stays as the backstop.
+     */
+    const replay = await tx.stockAdjustment.findUnique({
+      where: { idempotencyKey: input.idempotencyKey },
+      select: { id: true },
+    });
+    if (replay) return { adjustmentId: null, skipped: true };
+
+    const offline = await effectiveOfflineReservedQty(tx, input.itemId, input.variantSku);
+    const newQty = eloraeOnHandFromJubelio(input.jubelioEndQty, offline);
 
     const prevQty = Number(inv.qtyOnHand);
     const avgCost = Number(inv.avgCost);
-    const delta = input.newQty - prevQty;
+    const delta = newQty - prevQty;
     const adjType: AdjustmentType = delta >= 0 ? AdjustmentType.POSITIVE : AdjustmentType.NEGATIVE;
 
     try {
@@ -66,7 +123,7 @@ export async function applyJubelioStockAdjustment(
           qtyChange: delta,
           reason: input.reason,
           prevQty,
-          newQty: input.newQty,
+          newQty,
           prevAvgCost: avgCost,
           newAvgCost: avgCost,
           source: "JUBELIO_WEBHOOK" satisfies StockAdjustmentSource,
@@ -77,20 +134,17 @@ export async function applyJubelioStockAdjustment(
       });
 
       /*
-       * An absolute set, not a delta increment: input.newQty is already the resolved target
-       * on-hand, so writing it via moveMainStock's `qtyDelta: delta` would silently drift if a
-       * concurrent push or another webhook wrote to this same row between the read above and
-       * this write — the increment would land on whatever qtyOnHand became, not on the prevQty
-       * this delta was computed against. setMainStock writes the literal value instead, so the
-       * final on-hand is always input.newQty regardless of what raced in between.
+       * An absolute set, never a delta increment: newQty is the target on-hand, so setMainStock
+       * writes that literal value on the row locked above. A zero delta writes no ledger entry
+       * (setMainStock short-circuits) even though the StockAdjustment row above is still created.
        */
       await setMainStock(tx, {
         itemId: input.itemId,
         variantSku: input.variantSku,
-        nextQty: input.newQty,
-        totalValue: input.newQty * avgCost,
+        nextQty: newQty,
+        totalValue: newQty * avgCost,
         totalCost: delta * avgCost,
-        balanceValue: input.newQty * avgCost,
+        balanceValue: newQty * avgCost,
         inventoryValueId: inv.id,
         refType: "JubelioStockAdjustment" satisfies StockLedgerRefType,
         refId: created.id,
@@ -103,15 +157,13 @@ export async function applyJubelioStockAdjustment(
         err instanceof Prisma.PrismaClientKnownRequestError &&
         err.code === "P2002"
       ) {
-        const target = err.meta?.target;
-        const targets = Array.isArray(target) ? target : typeof target === "string" ? [target] : [];
-        // MySQL/mariadb returns the INDEX NAME (e.g. "StockAdjustment_docNumber_key") in meta.target,
-        // not the column name. Match either form.
-        const isIdempotencyCollision = targets.some((t) => {
-          const s = String(t);
-          return /(^|_)(idempotencyKey|docNumber)(_|$)/.test(s) || s === "idempotencyKey" || s === "docNumber";
-        });
-        if (isIdempotencyCollision) {
+        /*
+         * The mariadb adapter reports the constraint as the INDEX NAME
+         * ("StockAdjustment_docNumber_key") rather than the column, and where it lands in `meta`
+         * varies (not always `meta.target`), so search the message and the whole meta blob.
+         */
+        const haystack = `${err.message} ${JSON.stringify(err.meta ?? {})}`;
+        if (/idempotencyKey|docNumber/.test(haystack)) {
           return { adjustmentId: null, skipped: true };
         }
       }

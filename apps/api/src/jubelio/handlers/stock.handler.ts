@@ -1,10 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import {
-  applyJubelioStockAdjustment,
-  eloraeOnHandFromJubelio,
-  isValidJubelioQty,
-  offlineReservedByKey,
-} from "@elorae/db";
+import { applyJubelioStockAdjustment, parseJubelioQty } from "@elorae/db";
 import type { JubelioWebhookEvent } from "@elorae/db";
 import { PRISMA, type PrismaService } from "../../db/prisma.module";
 import { JubelioHttpService } from "../http.service";
@@ -25,7 +20,7 @@ type StockWebhookPayload = {
 type GroupDetailSku = {
   item_id: number;
   item_code?: string;
-  end_qty?: number | string;
+  end_qty?: number | string | null;
 };
 
 type GroupDetailResponse = {
@@ -66,10 +61,11 @@ export class StockWebhookHandler implements WebhookEventHandler {
 
     const detail = await this.http.get<GroupDetailResponse>(`/inventory/items/group/${groupId}`);
     const productSkus = Array.isArray(detail?.product_skus) ? detail.product_skus : [];
-    const endQtyByItemId = new Map<number, number>();
+    /* Kept RAW: parseJubelioQty validates before coercing, so null and "" never become 0. */
+    const rawEndQtyByItemId = new Map<number, unknown>();
     for (const sku of productSkus) {
       if (typeof sku?.item_id === "number" && sku.end_qty !== undefined) {
-        endQtyByItemId.set(sku.item_id, Number(sku.end_qty));
+        rawEndQtyByItemId.set(sku.item_id, sku.end_qty);
       }
     }
 
@@ -80,35 +76,31 @@ export class StockWebhookHandler implements WebhookEventHandler {
       return { kind: "skipped", reason: `${SKIP_REASONS.ORPHAN_GROUP}:${groupId}` };
     }
 
-    const offlineByKey = await offlineReservedByKey(
-      this.prisma,
-      mappings.map((m) => ({ itemId: m.itemId, variantSku: m.erpVariantSku })),
-    );
-
     for (const m of mappings) {
-      const endQty = endQtyByItemId.get(m.jubelioItemId);
-      if (endQty === undefined) {
+      if (!rawEndQtyByItemId.has(m.jubelioItemId)) {
         this.logger.warn(
           `stock webhook ${row.id}: item_id ${m.jubelioItemId} in payload but missing from group ${groupId} detail — skipping this sku`,
         );
         continue;
       }
-      if (!isValidJubelioQty(endQty)) {
+      const rawEndQty = rawEndQtyByItemId.get(m.jubelioItemId);
+      const endQty = parseJubelioQty(rawEndQty);
+      if (endQty === null) {
         this.logger.warn(
-          `stock webhook ${row.id}: item_id ${m.jubelioItemId} end_qty ${endQty} is not a valid Jubelio quantity — skipping this sku`,
+          `stock webhook ${row.id}: item_id ${m.jubelioItemId} end_qty ${JSON.stringify(rawEndQty)} is not a valid Jubelio quantity — skipping this sku`,
         );
         continue;
       }
 
-      // Elorae's on-hand is Jubelio's end_qty plus Elorae's own field-sales holds, which
-      // Jubelio cannot see — see jubelio-stock-contract.ts. Never write end_qty as-is.
-      const offline = offlineByKey.get(`${m.itemId}:${m.erpVariantSku}`) ?? 0;
-      const newQty = eloraeOnHandFromJubelio(endQty, offline);
-
+      /*
+       * The RAW end_qty goes to the writer, which adds the field-sales holds back itself inside
+       * its transaction, after locking the row, and only while stock pushes are enabled — see
+       * effectiveOfflineReservedQty in jubelio-stock-contract.ts. Never pre-adjust it here.
+       */
       await applyJubelioStockAdjustment(this.prisma, {
         itemId: m.itemId,
         variantSku: m.erpVariantSku,
-        newQty,
+        jubelioEndQty: endQty,
         idempotencyKey: `${row.id}:${m.jubelioItemId}`,
         externalRef: `${groupId}/${m.jubelioItemCode}`,
         reason: `Jubelio stock webhook ${row.id} item_id=${m.jubelioItemId}`,
