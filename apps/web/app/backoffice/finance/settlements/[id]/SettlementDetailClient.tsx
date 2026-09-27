@@ -401,7 +401,7 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
         </Card>
       )}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {/* Reconciling trio: matchedNetIncome - totalCogs === totalProfit exactly. */}
         <KpiTile label={t("kpiNetIncomeMatched")} value={formatRupiah(settlement.matchedNetIncome)} />
         <KpiTile label={t("kpiCogs")} value={formatRupiah(settlement.totalCogs)} />
@@ -416,11 +416,14 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
           value={String(settlement.differCount)}
           tone={settlement.differCount > 0 ? "warn" : undefined}
         />
-        <KpiTile
-          label={t("compare.missingEscrow")}
-          value={String(settlement.missingEscrowCount)}
-          tone={settlement.missingEscrowCount > 0 ? "warn" : undefined}
-        />
+        {/* Last tile — spans both phone columns so a 9th tile in a 2/3-col grid never orphans alone. */}
+        <div className="col-span-2 sm:col-span-1">
+          <KpiTile
+            label={t("compare.missingEscrow")}
+            value={String(settlement.missingEscrowCount)}
+            tone={settlement.missingEscrowCount > 0 ? "warn" : undefined}
+          />
+        </div>
       </div>
 
       <Card>
@@ -758,8 +761,10 @@ function FeeBreakdownPanel({ line, t }: { line: SettlementDetailLine; t: TFn }) 
             )}
           </span>
         </div>
-        {line.netDelta === null && !line.escrowMissing && (
-          <p className="text-xs text-muted-foreground">{t("compare.statusUnavailable")}</p>
+        {line.netDelta === null && (
+          <p className="text-xs text-muted-foreground">
+            {line.escrowMissing ? t("compare.noEscrowHint") : t("compare.statusUnavailable")}
+          </p>
         )}
       </div>
     </div>
