@@ -4393,9 +4393,9 @@
       "statusDiffers": "Berbeda",
       "statusUnavailable": "Data Jubelio n/a",
       "statusCancelled": "Dibatalkan",
-      "missingEscrow": "Dibayar, tanpa escrow Jubelio",
-      "noEscrowBadge": "Tidak ada escrow di Jubelio",
-      "noEscrowHint": "Export sudah membayar pesanan ini tetapi Jubelio tidak punya angka escrow-nya, jadi tidak bisa dibandingkan. Bukan kecocokan.",
+      "missingEscrow": "Dibayar, belum ada data escrow",
+      "noEscrowBadge": "Belum ada data escrow",
+      "noEscrowHint": "Export sudah membayar pesanan ini, tetapi salinan pesanan Jubelio di Elorae belum punya angka escrow — Jubelio mungkin belum menerbitkannya, atau pesanan tersinkron sebelum escrow terbit. Tidak bisa dibandingkan, dan bukan kecocokan.",
       "jubelioFeesNote": "Penyesuaian Lain = biaya/penyesuaian escrow Jubelio yang tidak dirinci (mis. biaya transaksi/kampanye). Baris dijumlahkan tepat ke escrow."
     }
   },
