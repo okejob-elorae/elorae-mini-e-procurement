@@ -103,3 +103,24 @@ export function eloraeOnHandFromJubelio(endQty: number, offlineReserved: number)
 export function isValidJubelioQty(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v) && v >= 0;
 }
+
+/** `SystemSetting` key gating every push of Elorae stock to Jubelio. See `isJubelioStockPushEnabled`. */
+export const JUBELIO_STOCK_PUSH_ENABLED_KEY = "JUBELIO_STOCK_PUSH_ENABLED";
+
+/**
+ * Whether Elorae is allowed to push stock to Jubelio at all, owner-approved cutover switch.
+ *
+ * Jubelio is the stock source of truth until cutover: prod Elorae is live but not in regular
+ * use, so pushing Elorae's (currently unreliable — see the module doc above) figures over
+ * Jubelio's would overwrite the side everyone actually trusts. Fails CLOSED — true only when the
+ * stored value is exactly `"true"`; an absent row, a malformed value, or anything else (`"1"`,
+ * `"TRUE"`, `"yes"`) all mean disabled. The webhook path (Jubelio → Elorae) is unaffected by this
+ * switch and keeps applying regardless.
+ */
+export async function isJubelioStockPushEnabled(client: AnyClient): Promise<boolean> {
+  const row = await client.systemSetting.findUnique({
+    where: { key: JUBELIO_STOCK_PUSH_ENABLED_KEY },
+    select: { value: true },
+  });
+  return row?.value === "true";
+}

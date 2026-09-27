@@ -20,6 +20,7 @@ import {
   resolveReconciliationItem,
   type SerializedReconciliationRunDetail,
 } from "@/app/actions/stock-reconciliation";
+import { getJubelioStockPushEnabled } from "@/app/actions/jubelio-outbox";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { useSession } from "next-auth/react";
 
@@ -49,11 +50,17 @@ export function ReconciliationRunDetailClient({ runId }: { runId: string }) {
   const [run, setRun] = useState<SerializedReconciliationRunDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const [pushEnabled, setPushEnabled] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setRun(await getReconciliationRunById(runId));
+      const [runDetail, jubelioPushEnabled] = await Promise.all([
+        getReconciliationRunById(runId),
+        getJubelioStockPushEnabled(),
+      ]);
+      setRun(runDetail);
+      setPushEnabled(jubelioPushEnabled);
     } finally {
       setLoading(false);
     }
@@ -101,6 +108,9 @@ export function ReconciliationRunDetailClient({ runId }: { runId: string }) {
       <Card>
         <CardHeader>
           <CardTitle>{t("results")}</CardTitle>
+          {canManage && !pushEnabled && (
+            <p className="text-xs text-muted-foreground">{t("pushDisabledHint")}</p>
+          )}
         </CardHeader>
         <CardContent>
           <Table>
@@ -146,7 +156,8 @@ export function ReconciliationRunDetailClient({ runId }: { runId: string }) {
                           <Button
                             size="sm"
                             variant="outline"
-                            disabled={resolvingId === row.id}
+                            disabled={resolvingId === row.id || !pushEnabled}
+                            title={pushEnabled ? undefined : t("pushDisabledHint")}
                             onClick={() => resolve(row.id, "REASSERT_ELORAE")}
                           >
                             {t("reassertElorae")}

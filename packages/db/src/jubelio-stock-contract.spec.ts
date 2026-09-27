@@ -6,6 +6,8 @@ import {
   jubelioEndQtyFor,
   eloraeOnHandFromJubelio,
   isValidJubelioQty,
+  isJubelioStockPushEnabled,
+  JUBELIO_STOCK_PUSH_ENABLED_KEY,
 } from "./jubelio-stock-contract";
 import { seededId } from "./spec-teardown";
 
@@ -150,5 +152,33 @@ d("offlineReservedQty / offlineReservedByKey (test bed only)", () => {
   it("returns an empty map for an empty key list without querying", async () => {
     const map = await offlineReservedByKey(prisma, []);
     expect(map.size).toBe(0);
+  });
+});
+
+d("isJubelioStockPushEnabled (test bed only)", () => {
+  const key = JUBELIO_STOCK_PUSH_ENABLED_KEY;
+
+  /* This key is not used by any other feature yet, so owning it exclusively is safe. */
+  afterEach(async () => {
+    await prisma.systemSetting.deleteMany({ where: { key } });
+  });
+
+  it("is true only when the stored value is exactly \"true\"", async () => {
+    await prisma.systemSetting.create({ data: { key, value: "true" } });
+    expect(await isJubelioStockPushEnabled(prisma)).toBe(true);
+  });
+
+  it("fails closed on a malformed value", async () => {
+    await prisma.systemSetting.create({ data: { key, value: "TRUE" } });
+    expect(await isJubelioStockPushEnabled(prisma)).toBe(false);
+  });
+
+  it("fails closed on the explicit disabled value", async () => {
+    await prisma.systemSetting.create({ data: { key, value: "false" } });
+    expect(await isJubelioStockPushEnabled(prisma)).toBe(false);
+  });
+
+  it("fails closed when the setting row is absent", async () => {
+    expect(await isJubelioStockPushEnabled(prisma)).toBe(false);
   });
 });

@@ -32,7 +32,8 @@ describe("StockPushHandler", () => {
     prisma = {
       jubelioProductMapping: { findFirst: jest.fn() },
       inventoryValue: { findMany: jest.fn() },
-      // No offline (field-sales) holds by default; individual tests override.
+      // Push enabled and no offline (field-sales) holds by default; individual tests override.
+      systemSetting: { findUnique: jest.fn().mockResolvedValue({ value: "true" }) },
       stockReservation: { groupBy: jest.fn().mockResolvedValue([]) },
     };
     http = { put: jest.fn() };
@@ -44,6 +45,16 @@ describe("StockPushHandler", () => {
       ],
     }).compile();
     handler = mod.get(StockPushHandler);
+  });
+
+  it("returns SKIPPED stock_push_disabled when the cutover switch is off, without calling Jubelio", async () => {
+    prisma.systemSetting.findUnique.mockResolvedValue(null);
+
+    const result = await handler.handle(row() as any);
+
+    expect(result).toEqual({ kind: "skipped", reason: OUTBOX_SKIP_REASONS.STOCK_PUSH_DISABLED });
+    expect(prisma.jubelioProductMapping.findFirst).not.toHaveBeenCalled();
+    expect(http.put).not.toHaveBeenCalled();
   });
 
   it("returns SKIPPED missing_mapping when item has no Jubelio mapping", async () => {

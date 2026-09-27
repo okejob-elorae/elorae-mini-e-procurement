@@ -933,6 +933,8 @@
     "noBOM": "This item has no BOM.",
     "variantLabel": "Variant {index}:",
     "variantBarcode": "Barcode",
+    "pushToJubelio": "Push stock to Jubelio",
+    "pushToJubelioDisabledHint": "Pushing stock to Jubelio is disabled until cutover — Jubelio is the source of truth.",
     "pricing": {
       "section": "Pricing",
       "sellingPriceLabel": "Selling Price (Harga Jual)",
@@ -1330,6 +1332,7 @@
     "resolveFailed": "Failed to resolve item",
     "matchJubelio": "Match Jubelio",
     "reassertElorae": "Re-push Elorae",
+    "pushDisabledHint": "Pushing stock to Jubelio is disabled until cutover — Jubelio is the source of truth.",
     "actions": {
       "IN_SYNC": "In sync",
       "AUTO_CORRECTED": "Auto-corrected",
@@ -2147,6 +2150,25 @@
       "errFORBIDDEN": "You don't have journal-posting permission.",
       "errUnexpected": "Something went wrong posting the journal."
     }
+  },
+  "jubelioStockPush": {
+    "cardTitle": "Push stock to Jubelio",
+    "statusEnabled": "Enabled",
+    "statusDisabled": "Disabled until cutover",
+    "description": "Owner-approved cutover switch. Jubelio is the stock source of truth until this is turned on — enabling it lets Elorae's stock overwrite Jubelio's on-hand figures on every push.",
+    "enableButton": "Enable pushing",
+    "disableButton": "Disable pushing",
+    "confirmEnableTitle": "Enable stock pushes to Jubelio?",
+    "confirmEnableBody": "Elorae's stock will start overwriting Jubelio's on-hand figures on every push. Only do this after cutover.",
+    "confirmEnableAction": "Enable",
+    "confirmDisableTitle": "Disable stock pushes to Jubelio?",
+    "confirmDisableBody": "Jubelio becomes the stock source of truth again — every push is refused until this is re-enabled.",
+    "confirmDisableAction": "Disable",
+    "cancel": "Cancel",
+    "enabledToast": "Stock pushes to Jubelio enabled.",
+    "disabledToast": "Stock pushes to Jubelio disabled.",
+    "errorToast": "Failed to update the switch. Try again.",
+    "pushDisabledHint": "Pushing stock to Jubelio is disabled until cutover — Jubelio is the source of truth."
   },
   "jubelioCouriers": {
     "pageTitle": "Jubelio Couriers",

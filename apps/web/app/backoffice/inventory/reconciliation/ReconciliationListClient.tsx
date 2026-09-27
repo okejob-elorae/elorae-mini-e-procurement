@@ -33,6 +33,7 @@ import {
   updateReconciliationConfig,
   type SerializedReconciliationRun,
 } from "@/app/actions/stock-reconciliation";
+import { getJubelioStockPushEnabled } from "@/app/actions/jubelio-outbox";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { useSession } from "next-auth/react";
 
@@ -60,18 +61,21 @@ export function ReconciliationListClient() {
   const [threshold, setThreshold] = useState("0");
   const [direction, setDirection] = useState("FLAG_ONLY");
   const [cronEnabled, setCronEnabled] = useState(true);
+  const [pushEnabled, setPushEnabled] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [runRows, config] = await Promise.all([
+      const [runRows, config, jubelioPushEnabled] = await Promise.all([
         getReconciliationRuns(),
         getReconciliationConfig(),
+        getJubelioStockPushEnabled(),
       ]);
       setRuns(runRows);
       setThreshold(String(config.threshold));
       setDirection(config.direction);
       setCronEnabled(config.cronEnabled);
+      setPushEnabled(jubelioPushEnabled);
     } finally {
       setLoading(false);
     }
@@ -156,12 +160,15 @@ export function ReconciliationListClient() {
                 </SelectTrigger>
                 <SelectContent>
                   {(["FLAG_ONLY", "MATCH_JUBELIO", "REASSERT_ELORAE"] as const).map((d) => (
-                    <SelectItem key={d} value={d}>
+                    <SelectItem key={d} value={d} disabled={d === "REASSERT_ELORAE" && !pushEnabled}>
                       {t(`directions.${d}`)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {!pushEnabled && (
+                <p className="text-xs text-muted-foreground">{t("pushDisabledHint")}</p>
+              )}
             </div>
             <div className="flex items-end gap-2 pb-1">
               <Switch checked={cronEnabled} onCheckedChange={setCronEnabled} id="cron-enabled" />

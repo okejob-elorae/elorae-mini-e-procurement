@@ -24,6 +24,7 @@ type ItemDetailClientProps = {
   nameEn: string;
   isActive: boolean;
   gallerySlot?: React.ReactNode;
+  jubelioStockPushEnabled: boolean;
 };
 
 const itemTypeKeys: Record<ItemType, 'fabric' | 'accessories' | 'finishedGood'> = {
@@ -39,6 +40,7 @@ export function ItemDetailClient({
   nameEn,
   isActive,
   gallerySlot,
+  jubelioStockPushEnabled,
 }: ItemDetailClientProps) {
   const router = useRouter();
   const { data: session } = useSession();
@@ -52,6 +54,7 @@ export function ItemDetailClient({
     if (!confirm("Push this item's current stock to Jubelio?")) return;
     const r = await pushItemStockToJubelio(initialData.id);
     if (r.ok) toast.success("Queued. Pushes within ~5 seconds.");
+    else if (r.reason === "push_disabled") toast.error(tItems("pushToJubelioDisabledHint"));
     else toast.error("Push failed (admin only).");
   };
 
@@ -97,8 +100,14 @@ export function ItemDetailClient({
         </div>
         <div className="flex items-center gap-2">
           {isAdmin && (
-            <Button variant="outline" size="sm" onClick={() => void handlePushStock()}>
-              Push stock to Jubelio
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!jubelioStockPushEnabled}
+              title={jubelioStockPushEnabled ? undefined : tItems('pushToJubelioDisabledHint')}
+              onClick={() => void handlePushStock()}
+            >
+              {tItems('pushToJubelio')}
             </Button>
           )}
           <Badge variant={isActive ? 'default' : 'secondary'}>{itemTypeLabel}</Badge>

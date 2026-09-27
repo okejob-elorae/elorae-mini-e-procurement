@@ -933,6 +933,8 @@
     "noBOM": "Item ini tidak memiliki BOM.",
     "variantLabel": "Varian {index}:",
     "variantBarcode": "Barcode",
+    "pushToJubelio": "Push stok ke Jubelio",
+    "pushToJubelioDisabledHint": "Push stok ke Jubelio dinonaktifkan sampai cutover — Jubelio adalah sumber kebenaran.",
     "pricing": {
       "section": "Harga",
       "sellingPriceLabel": "Harga Jual",
@@ -1330,6 +1332,7 @@
     "resolveFailed": "Gagal menyelesaikan item",
     "matchJubelio": "Samakan Jubelio",
     "reassertElorae": "Push ulang Elorae",
+    "pushDisabledHint": "Push stok ke Jubelio dinonaktifkan sampai cutover — Jubelio adalah sumber kebenaran.",
     "actions": {
       "IN_SYNC": "Sinkron",
       "AUTO_CORRECTED": "Auto-koreksi",
@@ -2147,6 +2150,25 @@
       "errFORBIDDEN": "Anda tidak punya akses posting jurnal.",
       "errUnexpected": "Terjadi kesalahan saat memposting jurnal."
     }
+  },
+  "jubelioStockPush": {
+    "cardTitle": "Push stok ke Jubelio",
+    "statusEnabled": "Aktif",
+    "statusDisabled": "Nonaktif sampai cutover",
+    "description": "Saklar cutover yang disetujui owner. Jubelio adalah sumber kebenaran stok sampai ini diaktifkan — mengaktifkannya membuat stok Elorae menimpa angka stok Jubelio pada setiap push.",
+    "enableButton": "Aktifkan push",
+    "disableButton": "Nonaktifkan push",
+    "confirmEnableTitle": "Aktifkan push stok ke Jubelio?",
+    "confirmEnableBody": "Stok Elorae akan mulai menimpa angka stok Jubelio pada setiap push. Lakukan ini hanya setelah cutover.",
+    "confirmEnableAction": "Aktifkan",
+    "confirmDisableTitle": "Nonaktifkan push stok ke Jubelio?",
+    "confirmDisableBody": "Jubelio kembali menjadi sumber kebenaran stok — setiap push ditolak sampai diaktifkan kembali.",
+    "confirmDisableAction": "Nonaktifkan",
+    "cancel": "Batal",
+    "enabledToast": "Push stok ke Jubelio diaktifkan.",
+    "disabledToast": "Push stok ke Jubelio dinonaktifkan.",
+    "errorToast": "Gagal mengubah saklar. Coba lagi.",
+    "pushDisabledHint": "Push stok ke Jubelio dinonaktifkan sampai cutover — Jubelio adalah sumber kebenaran."
   },
   "jubelioCouriers": {
     "pageTitle": "Kurir Jubelio",

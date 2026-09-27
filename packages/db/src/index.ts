@@ -158,5 +158,7 @@ export {
   jubelioEndQtyFor,
   eloraeOnHandFromJubelio,
   isValidJubelioQty,
+  JUBELIO_STOCK_PUSH_ENABLED_KEY,
+  isJubelioStockPushEnabled,
   type OfflineReservedKey,
 } from "./jubelio-stock-contract";

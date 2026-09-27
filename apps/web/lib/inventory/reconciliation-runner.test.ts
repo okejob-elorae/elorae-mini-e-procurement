@@ -6,7 +6,7 @@ vi.mock("@/lib/internal-api", () => ({
 
 import { prisma, seededId } from "@elorae/db";
 import { apiFetch } from "@/lib/internal-api";
-import { resolveReconciliationItem } from "./reconciliation-runner";
+import { resolveReconciliationItem, updateReconciliationSettings } from "./reconciliation-runner";
 
 /*
  * Exercises resolveReconciliationItem's MATCH_JUBELIO path against the real DB, with the live
@@ -210,5 +210,56 @@ d("resolveReconciliationItem MATCH_JUBELIO (test bed only)", () => {
 
     const result = await prisma.reconciliationResult.findUnique({ where: { id: fx.resultId } });
     expect(result!.action).toBe("FLAGGED");
+  });
+
+  it("refuses REASSERT_ELORAE while the Jubelio push switch is off, writing and enqueuing nothing", async () => {
+    // JUBELIO_STOCK_PUSH_ENABLED_KEY is absent in this test bed by default, so the switch reads
+    // disabled (fail-closed) — see isJubelioStockPushEnabled in jubelio-stock-contract.ts.
+    const fx = await seedFixture({ qtyOnHand: 10, eloraeQty: 10, jubelioQty: 6 });
+
+    const res = await resolveReconciliationItem({ resultId: fx.resultId, direction: "REASSERT_ELORAE", userId: "u1" });
+
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/disabled until cutover/);
+    expect(apiFetch).not.toHaveBeenCalled();
+
+    const outbox = await prisma.jubelioOutbox.findMany({ where: { entityId: fx.itemId } });
+    expect(outbox).toHaveLength(0);
+
+    const result = await prisma.reconciliationResult.findUnique({ where: { id: fx.resultId } });
+    expect(result!.action).toBe("FLAGGED");
+  });
+});
+
+d("updateReconciliationSettings gated by the cutover switch (test bed only)", () => {
+  const directionKey = "RECON_AUTO_CORRECT_DIRECTION";
+  let originalDirection: string | null = null;
+
+  beforeEach(async () => {
+    // Snapshot the real dev-bed value (this key drives the live cron) so the refusal test below
+    // can restore it exactly rather than deleting whatever an operator had configured.
+    const existing = await prisma.systemSetting.findUnique({ where: { key: directionKey } });
+    originalDirection = existing?.value ?? null;
+  });
+
+  afterEach(async () => {
+    if (originalDirection === null) {
+      await prisma.systemSetting.deleteMany({ where: { key: directionKey } });
+    } else {
+      await prisma.systemSetting.upsert({
+        where: { key: directionKey },
+        update: { value: originalDirection },
+        create: { key: directionKey, value: originalDirection },
+      });
+    }
+  });
+
+  it("refuses to save REASSERT_ELORAE as the direction while the switch is off, leaving it unchanged", async () => {
+    await expect(updateReconciliationSettings(0, "REASSERT_ELORAE", true)).rejects.toThrow(
+      /disabled until cutover/,
+    );
+
+    const saved = await prisma.systemSetting.findUnique({ where: { key: directionKey } });
+    expect(saved?.value ?? null).toBe(originalDirection);
   });
 });

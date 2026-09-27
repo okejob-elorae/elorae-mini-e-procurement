@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { JubelioOutbox } from "@elorae/db";
-import { jubelioEndQtyFor, offlineReservedByKey } from "@elorae/db";
+import { isJubelioStockPushEnabled, jubelioEndQtyFor, offlineReservedByKey } from "@elorae/db";
 import { PRISMA, type PrismaService } from "../../../db/prisma.module";
 import { JubelioHttpService } from "../../http.service";
 import { OUTBOX_SKIP_REASONS } from "../outbox-status";
@@ -16,6 +16,12 @@ export class StockPushHandler implements OutboxHandler {
   ) {}
 
   async handle(row: JubelioOutbox): Promise<HandlerOutcome> {
+    // Owner-approved cutover switch: Jubelio is the stock source of truth until cutover, so a
+    // push is refused entirely rather than retried — see jubelio-stock-contract.ts.
+    if (!(await isJubelioStockPushEnabled(this.prisma))) {
+      return { kind: "skipped", reason: OUTBOX_SKIP_REASONS.STOCK_PUSH_DISABLED };
+    }
+
     const itemId = row.entityId;
 
     const mapping = await this.prisma.jubelioProductMapping.findFirst({ where: { itemId } });

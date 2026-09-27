@@ -1,6 +1,7 @@
 import type { Prisma, ReconDirection, ReconTrigger, StockAdjustmentSource, StockLedgerRefType } from "@elorae/db";
 import {
   eloraeOnHandFromJubelio,
+  isJubelioStockPushEnabled,
   isValidJubelioQty,
   jubelioEndQtyFor,
   offlineReservedByKey,
@@ -223,6 +224,11 @@ export async function runReconciliation(
   let totalScanned = 0;
 
   try {
+    // Owner-approved cutover switch: while it's off, REASSERT_ELORAE never enqueues a push —
+    // see jubelio-stock-contract.ts. The row-level guard below matches classifyVariance's own
+    // shape so the counters and the persisted action stay consistent with what actually ran.
+    const pushEnabled = await isJubelioStockPushEnabled(prisma);
+
     const mappings = await prisma.jubelioProductMapping.findMany({
       include: {
         item: {
@@ -264,7 +270,10 @@ export async function runReconciliation(
       const snap = jubelioByKey.get(`${mapping.itemId}:${variantSku}`);
       const jubelioQty = snap?.jubelioQty ?? 0;
       const variance = eloraeQty - jubelioQty;
-      const classified = classifyVariance(variance, config.threshold, config.direction);
+      let classified = classifyVariance(variance, config.threshold, config.direction);
+      if (classified.needsPush && config.direction === "REASSERT_ELORAE" && !pushEnabled) {
+        classified = { action: "FLAGGED", needsStockWrite: false, needsPush: false };
+      }
 
       totalScanned += 1;
       if (classified.action === "IN_SYNC") inSync += 1;
@@ -343,6 +352,14 @@ export async function resolveReconciliationItem(data: {
       throw new Error(`Unknown reconciliation direction: ${data.direction}`);
     }
 
+    // Owner-approved cutover switch: refused before any read of the result row, let alone a
+    // write — see jubelio-stock-contract.ts.
+    if (data.direction === "REASSERT_ELORAE" && !(await isJubelioStockPushEnabled(prisma))) {
+      throw new Error(
+        "Pushing stock to Jubelio is disabled until cutover — Jubelio is the source of truth.",
+      );
+    }
+
     const result = await prisma.reconciliationResult.findUnique({
       where: { id: data.resultId },
       include: { run: true },
@@ -412,6 +429,14 @@ export async function updateReconciliationSettings(
   direction: string,
   cronEnabled: boolean,
 ): Promise<void> {
+  // Owner-approved cutover switch: REASSERT_ELORAE can't even be saved as the configured
+  // direction while pushing is disabled — see jubelio-stock-contract.ts.
+  if (direction === "REASSERT_ELORAE" && !(await isJubelioStockPushEnabled(prisma))) {
+    throw new Error(
+      "Pushing stock to Jubelio is disabled until cutover — Jubelio is the source of truth.",
+    );
+  }
+
   const entries = [
     { key: "RECON_AUTO_CORRECT_THRESHOLD", value: String(threshold) },
     { key: "RECON_AUTO_CORRECT_DIRECTION", value: direction },
