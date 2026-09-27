@@ -127,6 +127,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Building a query filter arm out of an optional array (`arr.length > 0`)? That guard turns "selected NOTHING" into "no filter". `undefined` is the only spelling of "no filter"; `[]` is a selection → `in: []`. Build each condition once and share it by reference; collapse "all ticked" to `undefined` only if it truly selects every row. → `docs/landmines/stock.md`
 - Asking "how much of this item exists"? THREE tables can answer; `getStockAcrossLocations` is the ONLY place allowed to fold them — never hand-roll that union, and never add an `available` field to it (available stays main-only `qtyOnHand - reservedQty`). → `docs/landmines/stock.md`
 - Adding a `DocType` enum member? THREE maps — both `DEFAULT_CONFIGS` and `DOC_TYPE_GROUP` plus its hand-written union (a miss breaks only the deploy's Docker build) — a label in BOTH locales, AND two `ALTER TABLE … MODIFY docType ENUM(...)`, or `generateDocNumber` dies with data truncation. → `docs/landmines/stock.md`
+- Editing `generateDocNumber`'s reset `CASE`, adding a reset period, or loosening doc-number prefix validation? A period with no `WHEN` arm pins its counter at 1; two doc types sharing a prefix (normalised, case-insensitive) re-draw each other's numbers on a shared `@unique` column and wedge forever — keep `DUPLICATE_PREFIX` comparing every type. The MONTHLY↔YEARLY flip-flop collision is accepted. → `docs/landmines/stock.md`
 
 **Konsi sell-through report**
 
@@ -302,7 +303,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Building a new printable document and reaching for `PrintLayout` + `print.css`? Wrong family — that is the analytical REPORT pattern. A transaction document is a pure `lib/print/<doc>-html.ts` builder over `print-theme.ts` with a locale-agnostic `labels` object, whatever the scope text says. → `docs/landmines/print-documents.md`
 - Auto-sizing an iframe to its own content? Measure `contentDocument.body`, NEVER `documentElement`, whose `scrollHeight` is floored at the viewport so the frame can only grow. Poll `readyState` (capped) rather than trusting a one-shot `srcDoc` `load`. → `docs/landmines/print-documents.md`
 - "Harmonising" the BKM's money formatting onto the whole-rupiah `idr` its neighbours use? Don't — `settlement-bkm-html.ts` renders 2dp on purpose because every figure behind it carries sen; rounding breaks a page the store signs. Change all of a document's money or none. → `docs/landmines/print-documents.md`
-- Adding a backoffice print trigger? Call `lib/print/print-html-in-iframe.ts`, do not hand-roll one — the two copies it replaced had already drifted silently, and more hand-rolled copies remain. → `docs/landmines/print-documents.md`
+- Adding a backoffice print trigger? Call `lib/print/print-html-in-iframe.ts`, do not hand-roll one — the two copies it replaced had already drifted silently, and more hand-rolled copies remain. Audit it with `logPrintQuietly`, never an `await` before `window.open`. → `docs/landmines/print-documents.md`
 
 **PWA**
 
