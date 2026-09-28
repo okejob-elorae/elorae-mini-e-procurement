@@ -804,6 +804,7 @@
     "pleaseSelectItemTypeFirst": "Please select item type first",
     "failedToGenerateSKU": "Failed to generate SKU",
     "provideNameAndAttributeValues": "Please provide a name and at least one value for each attribute",
+    "includeAtLeastOneVariant": "Include at least one variant combination, or remove the attributes.",
     "setParentSkuBeforeVariantCode": "Select a category with a code or set the item SKU before generating variant codes.",
     "setParentSkuBeforeBarcode": "Select a category with a code or set the item SKU before generating barcodes.",
     "fillConsumptionRuleFields": "Please fill all consumption rule fields",

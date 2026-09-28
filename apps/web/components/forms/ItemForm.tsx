@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TagsInput } from '@/components/ui/tags-input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Plus, Trash2, Loader2, Wand2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
@@ -33,6 +34,12 @@ import {
   buildVariantBarcode,
   type VariantBarcodeFormatConfig,
 } from '@/lib/items/variant-barcode';
+import {
+  cartesianCombinations,
+  comboKey,
+  findSavedVariant,
+  initialExcludedKeys,
+} from '@/lib/items/variant-grid';
 
 type ItemFormData = z.infer<typeof itemSchema>;
 type ConsumptionRuleData = z.infer<typeof consumptionRuleSchema>;
@@ -298,22 +305,42 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     setAttributes(updated);
   };
 
-  const variantCombinations = useMemo(() => {
-    if (attributes.length === 0) return [];
-    return attributes.reduce<Array<Record<string, string>>>((acc, attr) => {
-      if (!attr.key || attr.values.length === 0) return acc;
-      if (acc.length === 0) {
-        return attr.values.map((value) => ({ [attr.key]: value }));
+  const variantCombinations = useMemo(() => cartesianCombinations(attributes), [attributes]);
+
+  /**
+   * Ordered attribute keys, shared by `comboKey` calls below. Adding or
+   * removing a whole attribute changes this list, so every combination's key
+   * changes with it and `excludedKeys` stops matching anything — every row
+   * comes back included. Acceptable: only a value edit (not an attribute
+   * add/remove) is expected to preserve exclusions.
+   */
+  const attributeKeys = useMemo(
+    () => attributes.map((attr) => attr.key).filter((key) => key.trim().length > 0),
+    [attributes]
+  );
+
+  const [excludedKeys, setExcludedKeys] = useState<Set<string>>(() => {
+    const initialKeys = initialAttributes.map((attr) => attr.key).filter((key) => key.trim().length > 0);
+    return initialExcludedKeys(cartesianCombinations(initialAttributes), normalizedVariants, initialKeys);
+  });
+
+  const includedCount = useMemo(
+    () => variantCombinations.filter((combo) => !excludedKeys.has(comboKey(combo, attributeKeys))).length,
+    [variantCombinations, excludedKeys, attributeKeys]
+  );
+
+  const toggleCombinationIncluded = (combo: Record<string, string>) => {
+    const key = comboKey(combo, attributeKeys);
+    setExcludedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
       }
-      const next: Array<Record<string, string>> = [];
-      acc.forEach((combo) => {
-        attr.values.forEach((value) => {
-          next.push({ ...combo, [attr.key]: value });
-        });
-      });
       return next;
-    }, []);
-  }, [attributes]);
+    });
+  };
 
   const parentSku = (initialData?.sku ?? sku) || '';
   const variantSkuBasePrefix = categoryCodePrefix || parentSku.trim();
@@ -325,8 +352,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     }
     const combo = variantCombinations[idx];
     if (!combo) return;
-    const keys = attributes.map((a) => a.key).filter((k) => k.trim());
-    const code = buildVariantSkuCode(variantSkuBasePrefix, combo, keys);
+    const code = buildVariantSkuCode(variantSkuBasePrefix, combo, attributeKeys);
     setVariantSkus((prev) => {
       const next = [...prev];
       while (next.length <= idx) next.push('');
@@ -343,12 +369,11 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     }
     const combo = variantCombinations[idx];
     if (!combo) return;
-    const keys = attributes.map((a) => a.key).filter((k) => k.trim());
     const code = buildVariantBarcode(barcodeFormatConfig, {
       parentSku: parentSku.trim(),
       categoryCode: categoryCodePrefix,
       combo,
-      orderedAttributeKeys: keys,
+      orderedAttributeKeys: attributeKeys,
     });
     setVariantBarcodes((prev) => {
       const next = [...prev];
@@ -364,19 +389,22 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       return;
     }
     if (!barcodeFormatConfig) return;
-    const keys = attributes.map((a) => a.key).filter((k) => k.trim());
-    setVariantSkus(
-      variantCombinations.map((combo) => buildVariantSkuCode(variantSkuBasePrefix, combo, keys))
+    setVariantSkus((prev) =>
+      variantCombinations.map((combo, i) => {
+        if (excludedKeys.has(comboKey(combo, attributeKeys))) return prev[i] ?? '';
+        return buildVariantSkuCode(variantSkuBasePrefix, combo, attributeKeys);
+      })
     );
-    setVariantBarcodes(
-      variantCombinations.map((combo) =>
-        buildVariantBarcode(barcodeFormatConfig, {
+    setVariantBarcodes((prev) =>
+      variantCombinations.map((combo, i) => {
+        if (excludedKeys.has(comboKey(combo, attributeKeys))) return prev[i] ?? '';
+        return buildVariantBarcode(barcodeFormatConfig, {
           parentSku: parentSku.trim(),
           categoryCode: categoryCodePrefix,
           combo,
-          orderedAttributeKeys: keys,
-        })
-      )
+          orderedAttributeKeys: attributeKeys,
+        });
+      })
     );
   };
 
@@ -397,12 +425,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       if (!normalizedVariants.length) return trimmed;
       return trimmed.map((current, idx) => {
         const combo = variantCombinations[idx];
-        const match = normalizedVariants.find((v) => {
-          const { sku, barcode, ...rest } = v;
-          void sku;
-          void barcode;
-          return Object.keys(combo).every((k) => rest[k] === combo[k]);
-        });
+        const match = findSavedVariant(combo, normalizedVariants);
         return match?.sku?.trim() ?? current;
       });
     });
@@ -413,12 +436,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       if (!normalizedVariants.length) return trimmed;
       return trimmed.map((current, idx) => {
         const combo = variantCombinations[idx];
-        const match = normalizedVariants.find((v) => {
-          const { sku, barcode, ...rest } = v;
-          void sku;
-          void barcode;
-          return Object.keys(combo).every((k) => rest[k] === combo[k]);
-        });
+        const match = findSavedVariant(combo, normalizedVariants);
         return match?.barcode?.trim() ?? current;
       });
     });
@@ -442,6 +460,11 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       }
     }
 
+    if (variantCombinations.length > 0 && includedCount === 0) {
+      toast.error(tToasts('includeAtLeastOneVariant'));
+      return;
+    }
+
     const variantSkuPrefixes = [
       categoryCodePrefix,
       parentSku.trim(),
@@ -449,25 +472,28 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
 
     const variants =
       variantCombinations.length > 0
-        ? variantCombinations.map((combo, i) => {
-            let variantSku = variantSkus[i]?.trim() || '';
-            const variantBarcode = variantBarcodes[i]?.trim() || '';
-            const autoBase = variantSkuBasePrefix;
-            if (variantSku && autoBase) {
-              const hasValidPrefix = variantSkuPrefixes.some((p) => variantSku.startsWith(p));
-              if (!hasValidPrefix) {
-                const bare =
-                  slugVariantAttributeValue(variantSku) ||
-                  variantSku.replace(/\s+/g, '-').toUpperCase();
-                variantSku = `${autoBase}-${bare}`;
+        ? variantCombinations
+            .map((combo, i) => {
+              if (excludedKeys.has(comboKey(combo, attributeKeys))) return null;
+              let variantSku = variantSkus[i]?.trim() || '';
+              const variantBarcode = variantBarcodes[i]?.trim() || '';
+              const autoBase = variantSkuBasePrefix;
+              if (variantSku && autoBase) {
+                const hasValidPrefix = variantSkuPrefixes.some((p) => variantSku.startsWith(p));
+                if (!hasValidPrefix) {
+                  const bare =
+                    slugVariantAttributeValue(variantSku) ||
+                    variantSku.replace(/\s+/g, '-').toUpperCase();
+                  variantSku = `${autoBase}-${bare}`;
+                }
               }
-            }
-            return {
-              ...combo,
-              ...(variantSku ? { sku: variantSku } : {}),
-              ...(variantBarcode ? { barcode: variantBarcode } : {}),
-            };
-          })
+              return {
+                ...combo,
+                ...(variantSku ? { sku: variantSku } : {}),
+                ...(variantBarcode ? { barcode: variantBarcode } : {}),
+              };
+            })
+            .filter((variant): variant is Record<string, string> => variant !== null)
         : undefined;
 
     // Validate consumption rules if type is FINISHED_GOOD
@@ -867,9 +893,13 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                   Generate all
                 </Button>
               </div>
+              <p className="text-sm text-muted-foreground">
+                {includedCount} of {variantCombinations.length} combinations included
+              </p>
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-14">Include</TableHead>
                     {attributes.map((attr) => (
                       <TableHead key={attr.key}>{attr.key}</TableHead>
                     ))}
@@ -878,71 +908,93 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {variantCombinations.map((combo, idx) => (
-                    <TableRow key={idx}>
-                      {attributes.map((attr) => (
-                        <TableCell key={attr.key}>{combo[attr.key] ?? '—'}</TableCell>
-                      ))}
-                      <TableCell>
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                          <Input
-                            className="min-w-0 flex-1 font-mono text-sm"
-                            value={variantSkus[idx] ?? ''}
-                            onChange={(e) => {
-                              const next = [...variantSkus];
-                              while (next.length <= idx) next.push('');
-                              next[idx] = e.target.value;
-                              setVariantSkus(next);
-                            }}
-                            placeholder={variantSkuBasePrefix ? `${variantSkuBasePrefix}-…` : 'e.g. OUTERWEAR-RED'}
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="shrink-0"
-                            onClick={() => applyVariantSkuCodeAt(idx)}
-                            disabled={!variantSkuBasePrefix}
-                            title={
-                              variantSkuBasePrefix
-                                ? `Build ${variantSkuBasePrefix}-{values}`
-                                : 'Select a category with code or set item SKU'
-                            }
-                          >
-                            <Wand2 className="mr-1.5 h-3.5 w-3.5" />
-                            Generate code
-                          </Button>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                          <Input
-                            className="min-w-0 flex-1 font-mono text-sm"
-                            value={variantBarcodes[idx] ?? ''}
-                            onChange={(e) => {
-                              const next = [...variantBarcodes];
-                              while (next.length <= idx) next.push('');
-                              next[idx] = e.target.value;
-                              setVariantBarcodes(next);
-                            }}
-                            placeholder="e.g. 0224000016T03"
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="shrink-0"
-                            onClick={() => applyVariantBarcodeAt(idx)}
-                            disabled={!barcodeFormatConfig}
-                            title="Build barcode from global format template"
-                          >
-                            <Wand2 className="mr-1.5 h-3.5 w-3.5" />
-                            Generate code
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {variantCombinations.map((combo, idx) => {
+                    const rowKey = comboKey(combo, attributeKeys);
+                    const excluded = excludedKeys.has(rowKey);
+                    const savedMatch = findSavedVariant(combo, normalizedVariants);
+                    const showSavedVariantWarning = excluded && Boolean(savedMatch);
+                    return (
+                      <TableRow key={idx} className={excluded ? 'opacity-60' : undefined}>
+                        <TableCell>
+                          <label className="flex h-10 min-h-10 w-10 cursor-pointer items-center justify-center">
+                            <Checkbox
+                              checked={!excluded}
+                              onCheckedChange={() => toggleCombinationIncluded(combo)}
+                              aria-label={excluded ? 'Include this combination' : 'Exclude this combination'}
+                            />
+                          </label>
+                          {showSavedVariantWarning && (
+                            <p className="mt-1 max-w-40 text-xs text-amber-600">
+                              Saved variant — excluding removes it from the catalog; its stock stays under this SKU.
+                            </p>
+                          )}
+                        </TableCell>
+                        {attributes.map((attr) => (
+                          <TableCell key={attr.key}>{combo[attr.key] ?? '—'}</TableCell>
+                        ))}
+                        <TableCell>
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                            <Input
+                              className="min-w-0 flex-1 font-mono text-sm"
+                              value={variantSkus[idx] ?? ''}
+                              disabled={excluded}
+                              onChange={(e) => {
+                                const next = [...variantSkus];
+                                while (next.length <= idx) next.push('');
+                                next[idx] = e.target.value;
+                                setVariantSkus(next);
+                              }}
+                              placeholder={variantSkuBasePrefix ? `${variantSkuBasePrefix}-…` : 'e.g. OUTERWEAR-RED'}
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="shrink-0"
+                              onClick={() => applyVariantSkuCodeAt(idx)}
+                              disabled={excluded || !variantSkuBasePrefix}
+                              title={
+                                variantSkuBasePrefix
+                                  ? `Build ${variantSkuBasePrefix}-{values}`
+                                  : 'Select a category with code or set item SKU'
+                              }
+                            >
+                              <Wand2 className="mr-1.5 h-3.5 w-3.5" />
+                              Generate code
+                            </Button>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                            <Input
+                              className="min-w-0 flex-1 font-mono text-sm"
+                              value={variantBarcodes[idx] ?? ''}
+                              disabled={excluded}
+                              onChange={(e) => {
+                                const next = [...variantBarcodes];
+                                while (next.length <= idx) next.push('');
+                                next[idx] = e.target.value;
+                                setVariantBarcodes(next);
+                              }}
+                              placeholder="e.g. 0224000016T03"
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="shrink-0"
+                              onClick={() => applyVariantBarcodeAt(idx)}
+                              disabled={excluded || !barcodeFormatConfig}
+                              title="Build barcode from global format template"
+                            >
+                              <Wand2 className="mr-1.5 h-3.5 w-3.5" />
+                              Generate code
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
