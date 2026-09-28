@@ -86,8 +86,10 @@ describe("findSavedVariant", () => {
   });
 
   it("ignores sku/barcode even when the combo itself carries them", () => {
-    /* Without the reserved-key skip, comparing combo.sku against a
-     * differently-spelled saved sku would fail this match. */
+    /**
+     * Without the reserved-key skip, comparing combo.sku against a
+     * differently-spelled saved sku would fail this match.
+     */
     const match = findSavedVariant(
       { Color: "Biru", Size: "M", sku: "combo-side-sku" },
       [{ Color: "Biru", Size: "M", sku: "saved-side-sku", barcode: "999" }]
@@ -193,13 +195,12 @@ describe("overlaySavedSpelling", () => {
 });
 
 describe("carryRowValues", () => {
-  const attributeKeys = ["Warna", "Ukuran"];
-
   it("keeps every row's value on its own combination when a value is added", () => {
-    const prevCombos = [{ Ukuran: "M" }, { Ukuran: "L" }];
+    const keys = ["Ukuran"];
+    const prevCombos = cartesianCombinations([{ key: "Ukuran", values: ["M", "L"] }]);
     const prevValues = ["SKU-M", "SKU-L"];
-    const nextCombos = [{ Ukuran: "M" }, { Ukuran: "L" }, { Ukuran: "XL" }];
-    expect(carryRowValues(prevCombos, prevValues, nextCombos, ["Ukuran"])).toEqual([
+    const nextCombos = cartesianCombinations([{ key: "Ukuran", values: ["M", "L", "XL"] }]);
+    expect(carryRowValues(prevCombos, prevValues, keys, nextCombos, keys)).toEqual([
       "SKU-M",
       "SKU-L",
       "",
@@ -207,34 +208,132 @@ describe("carryRowValues", () => {
   });
 
   it("drops a combination's value when that value is removed", () => {
-    const prevCombos = [{ Ukuran: "M" }, { Ukuran: "L" }];
+    const keys = ["Ukuran"];
+    const prevCombos = cartesianCombinations([{ key: "Ukuran", values: ["M", "L"] }]);
     const prevValues = ["SKU-M", "SKU-L"];
-    const nextCombos = [{ Ukuran: "M" }];
-    expect(carryRowValues(prevCombos, prevValues, nextCombos, ["Ukuran"])).toEqual(["SKU-M"]);
+    const nextCombos = cartesianCombinations([{ key: "Ukuran", values: ["M"] }]);
+    expect(carryRowValues(prevCombos, prevValues, keys, nextCombos, keys)).toEqual(["SKU-M"]);
   });
 
-  it("keeps an excluded row's own SKU when rows shift position", () => {
-    const prevCombos = [
-      { Warna: "Merah", Ukuran: "M" },
-      { Warna: "Merah", Ukuran: "L" },
-      { Warna: "Biru", Ukuran: "M" },
-      { Warna: "Biru", Ukuran: "L" },
-    ];
+  it("carries values by combination identity when rows shift position", () => {
+    const keys = ["Warna", "Ukuran"];
+    const prevCombos = cartesianCombinations([
+      { key: "Warna", values: ["Merah", "Biru"] },
+      { key: "Ukuran", values: ["M", "L"] },
+    ]);
     const prevValues = ["A", "B", "C", "D"];
-    const nextCombos = [
-      { Warna: "Merah", Ukuran: "M" },
-      { Warna: "Merah", Ukuran: "L" },
-      { Warna: "Merah", Ukuran: "XL" },
-      { Warna: "Biru", Ukuran: "M" },
-      { Warna: "Biru", Ukuran: "L" },
-      { Warna: "Biru", Ukuran: "XL" },
-    ];
-    expect(carryRowValues(prevCombos, prevValues, nextCombos, attributeKeys)).toEqual([
+    const nextCombos = cartesianCombinations([
+      { key: "Warna", values: ["Merah", "Biru"] },
+      { key: "Ukuran", values: ["M", "L", "XL"] },
+    ]);
+    expect(carryRowValues(prevCombos, prevValues, keys, nextCombos, keys)).toEqual([
       "A",
       "B",
       "",
       "C",
       "D",
+      "",
+    ]);
+  });
+
+  it("carries every SKU when an added attribute has a single value", () => {
+    const prevKeys = ["Warna", "Ukuran"];
+    const prevCombos = cartesianCombinations([
+      { key: "Warna", values: ["Merah", "Biru"] },
+      { key: "Ukuran", values: ["M", "L"] },
+    ]);
+    const prevValues = ["A", "B", "C", "D"];
+    const nextKeys = ["Warna", "Ukuran", "Bahan"];
+    const nextCombos = cartesianCombinations([
+      { key: "Warna", values: ["Merah", "Biru"] },
+      { key: "Ukuran", values: ["M", "L"] },
+      { key: "Bahan", values: ["Katun"] },
+    ]);
+    expect(carryRowValues(prevCombos, prevValues, prevKeys, nextCombos, nextKeys)).toEqual([
+      "A",
+      "B",
+      "C",
+      "D",
+    ]);
+  });
+
+  it("blanks every row when an added attribute has two values, never duplicating a SKU", () => {
+    const prevKeys = ["Warna", "Ukuran"];
+    const prevCombos = cartesianCombinations([
+      { key: "Warna", values: ["Merah", "Biru"] },
+      { key: "Ukuran", values: ["M", "L"] },
+    ]);
+    const prevValues = ["A", "B", "C", "D"];
+    const nextKeys = ["Warna", "Ukuran", "Bahan"];
+    const nextCombos = cartesianCombinations([
+      { key: "Warna", values: ["Merah", "Biru"] },
+      { key: "Ukuran", values: ["M", "L"] },
+      { key: "Bahan", values: ["Katun", "Sutra"] },
+    ]);
+    expect(carryRowValues(prevCombos, prevValues, prevKeys, nextCombos, nextKeys)).toEqual([
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+    ]);
+  });
+
+  it("carries every SKU by position when an attribute key is renamed", () => {
+    const prevKeys = ["Warna", "Ukuran"];
+    const prevCombos = cartesianCombinations([
+      { key: "Warna", values: ["Merah", "Biru"] },
+      { key: "Ukuran", values: ["M", "L"] },
+    ]);
+    const prevValues = ["A", "B", "C", "D"];
+    const nextKeys = ["Warna", "Size"];
+    const nextCombos = cartesianCombinations([
+      { key: "Warna", values: ["Merah", "Biru"] },
+      { key: "Size", values: ["M", "L"] },
+    ]);
+    expect(carryRowValues(prevCombos, prevValues, prevKeys, nextCombos, nextKeys)).toEqual([
+      "A",
+      "B",
+      "C",
+      "D",
+    ]);
+  });
+
+  it("carries every SKU when removing an attribute whose value was constant", () => {
+    const prevKeys = ["Warna", "Ukuran", "Bahan"];
+    const prevCombos = cartesianCombinations([
+      { key: "Warna", values: ["Merah", "Biru"] },
+      { key: "Ukuran", values: ["M", "L"] },
+      { key: "Bahan", values: ["Katun"] },
+    ]);
+    const prevValues = ["A", "B", "C", "D"];
+    const nextKeys = ["Warna", "Ukuran"];
+    const nextCombos = cartesianCombinations([
+      { key: "Warna", values: ["Merah", "Biru"] },
+      { key: "Ukuran", values: ["M", "L"] },
+    ]);
+    expect(carryRowValues(prevCombos, prevValues, prevKeys, nextCombos, nextKeys)).toEqual([
+      "A",
+      "B",
+      "C",
+      "D",
+    ]);
+  });
+
+  it("blanks every row when removing an attribute collapses two rows into one", () => {
+    const prevKeys = ["Warna", "Ukuran"];
+    const prevCombos = cartesianCombinations([
+      { key: "Warna", values: ["Merah", "Biru"] },
+      { key: "Ukuran", values: ["M", "L"] },
+    ]);
+    const prevValues = ["A", "B", "C", "D"];
+    const nextKeys = ["Warna"];
+    const nextCombos = cartesianCombinations([{ key: "Warna", values: ["Merah", "Biru"] }]);
+    expect(carryRowValues(prevCombos, prevValues, prevKeys, nextCombos, nextKeys)).toEqual([
+      "",
       "",
     ]);
   });

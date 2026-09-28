@@ -131,23 +131,71 @@ export function initialExcludedKeys(
 }
 
 /**
+ * Groups indices by their `comboKey` projection under `keys`, for the
+ * one-to-one check in the attribute-count-changed branch of
+ * `carryRowValues` below.
+ */
+function groupIndicesByProjection(
+  combos: Array<Record<string, string>>,
+  keys: string[]
+): Map<string, number[]> {
+  const groups = new Map<string, number[]>();
+  combos.forEach((combo, i) => {
+    const key = comboKey(combo, keys);
+    const indices = groups.get(key);
+    if (indices) indices.push(i);
+    else groups.set(key, [i]);
+  });
+  return groups;
+}
+
+/**
  * Carries row values (SKU or barcode) from a previous set of combinations to
- * a next one, by combination IDENTITY (`comboKey`) rather than row index —
- * so a value added or removed elsewhere in an attribute's value list, which
- * shifts every later row's position, does not hand one combination's saved
- * code to a different one. A combination absent from `nextCombos` simply
- * drops its carried value; one with no match in `prevCombos` gets `""`.
+ * a next one, by combination IDENTITY rather than row index — so a value
+ * added, removed, or renamed elsewhere in the attribute list, which shifts
+ * or relabels every later row, does not hand one combination's saved code to
+ * a different one.
+ *
+ * `prevKeys`/`nextKeys` are the attribute key lists each side's combinations
+ * were built with:
+ * - Same attribute COUNT (an identical key list, or a rename — `comboKey`
+ *   never embeds key names, only the values it looks up by them, so this
+ *   also carries a plain rename correctly): match positionally, by each
+ *   side's own `comboKey`.
+ * - Attribute added or removed (count differs): project both sides onto the
+ *   shared key NAMES only, and carry a value only when that projection is
+ *   one-to-one on BOTH sides (exactly one prev combo and exactly one next
+ *   combo share it) — otherwise the row is blank. This is deliberately
+ *   conservative: it never hands the same SKU to two rows.
  */
 export function carryRowValues(
   prevCombos: Array<Record<string, string>>,
   prevValues: string[],
+  prevKeys: string[],
   nextCombos: Array<Record<string, string>>,
-  attributeKeys: string[]
+  nextKeys: string[]
 ): string[] {
-  const byKey = new Map<string, string>();
-  prevCombos.forEach((combo, i) => {
-    const value = prevValues[i];
-    if (value) byKey.set(comboKey(combo, attributeKeys), value);
+  if (prevKeys.length === nextKeys.length) {
+    const byKey = new Map<string, string>();
+    prevCombos.forEach((combo, i) => {
+      const value = prevValues[i];
+      if (value) byKey.set(comboKey(combo, prevKeys), value);
+    });
+    return nextCombos.map((combo) => byKey.get(comboKey(combo, nextKeys)) ?? "");
+  }
+
+  const sharedKeys = nextKeys.filter((key) => prevKeys.includes(key));
+  if (sharedKeys.length === 0) return nextCombos.map(() => "");
+
+  const prevGroups = groupIndicesByProjection(prevCombos, sharedKeys);
+  const nextGroups = groupIndicesByProjection(nextCombos, sharedKeys);
+
+  return nextCombos.map((combo) => {
+    const projection = comboKey(combo, sharedKeys);
+    const prevIndices = prevGroups.get(projection);
+    const nextIndices = nextGroups.get(projection);
+    if (!prevIndices || prevIndices.length !== 1) return "";
+    if (!nextIndices || nextIndices.length !== 1) return "";
+    return prevValues[prevIndices[0]] ?? "";
   });
-  return nextCombos.map((combo) => byKey.get(comboKey(combo, attributeKeys)) ?? "");
 }

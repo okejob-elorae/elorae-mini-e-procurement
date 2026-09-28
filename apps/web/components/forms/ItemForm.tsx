@@ -87,6 +87,24 @@ function slugVariantAttributeValue(value: string): string {
  * Pattern: `{base}-{v1}-…-{vn}` with n = number of attribute columns (e.g. OUTERWEAR-RED-S).
  * Base is the item category code when the category has one; otherwise the parent item SKU (server accepts both prefixes).
  */
+/**
+ * De-duplicates attribute values case-insensitively (trim + lowercase),
+ * keeping the FIRST spelling typed — `TagsInput` itself only dedupes
+ * case-sensitively, so "merah" typed next to "Merah" would otherwise sit in
+ * the list as two values sharing one `comboKey`, unable to be toggled apart.
+ */
+function dedupeAttributeValues(values: string[]): string[] {
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  values.forEach((value) => {
+    const normalized = value.trim().toLowerCase();
+    if (seen.has(normalized)) return;
+    seen.add(normalized);
+    deduped.push(value);
+  });
+  return deduped;
+}
+
 /** Parse number inputs; blank or invalid → 0 (avoids NaN from valueAsNumber). */
 function parseNumberFieldDefaultZero(value: unknown): number {
   if (value === '' || value === null || value === undefined) return 0;
@@ -405,36 +423,51 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   );
 
   /**
-   * Combinations as of the previous run of the effect below, so a value
-   * added or removed from an attribute — which shifts every later row's
-   * index — can carry SKU/barcode by combination IDENTITY instead of by
-   * position. Never read for anything else.
+   * Combinations AND the attribute key list they were built with, as of the
+   * previous run of the effect below — `carryRowValues` needs both sides'
+   * own key list to carry correctly across a rename or an attribute
+   * added/removed, not just the current one. Never read for anything else.
    */
-  const prevCombosRef = useRef<Array<Record<string, string>>>([]);
+  const prevGridRef = useRef<{ combos: Array<Record<string, string>>; keys: string[] }>({
+    combos: [],
+    keys: [],
+  });
 
   useEffect(() => {
-    const prevCombos = prevCombosRef.current;
+    const prevGrid = prevGridRef.current;
     if (variantCombinations.length === 0) {
       setVariantSkus([]);
       setVariantBarcodes([]);
-      prevCombosRef.current = [];
+      prevGridRef.current = { combos: [], keys: [] };
       return;
     }
     setVariantSkus((prev) => {
-      const carried = carryRowValues(prevCombos, prev, variantCombinations, attributeKeys);
+      const carried = carryRowValues(
+        prevGrid.combos,
+        prev,
+        prevGrid.keys,
+        variantCombinations,
+        attributeKeys
+      );
       return variantCombinations.map((combo, idx) => {
         const match = findSavedVariant(combo, normalizedVariants);
         return match?.sku?.trim() || carried[idx];
       });
     });
     setVariantBarcodes((prev) => {
-      const carried = carryRowValues(prevCombos, prev, variantCombinations, attributeKeys);
+      const carried = carryRowValues(
+        prevGrid.combos,
+        prev,
+        prevGrid.keys,
+        variantCombinations,
+        attributeKeys
+      );
       return variantCombinations.map((combo, idx) => {
         const match = findSavedVariant(combo, normalizedVariants);
         return match?.barcode?.trim() || carried[idx];
       });
     });
-    prevCombosRef.current = variantCombinations;
+    prevGridRef.current = { combos: variantCombinations, keys: attributeKeys };
   }, [variantCombinationsKey, variantCombinations, normalizedVariants, attributeKeys]);
 
   const onFormSubmit = async (data: ItemFormData) => {
@@ -838,7 +871,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                     value={attr.values}
                     onChange={(values) => {
                       const updated = [...attributes];
-                      updated[index] = { ...updated[index], values };
+                      updated[index] = { ...updated[index], values: dedupeAttributeValues(values) };
                       setAttributes(updated);
                     }}
                     placeholder="Red, Blue, Green"
