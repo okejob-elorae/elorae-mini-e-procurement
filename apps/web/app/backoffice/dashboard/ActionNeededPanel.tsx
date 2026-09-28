@@ -30,7 +30,10 @@ export function ActionNeededPanel({ items }: { items: ActionItem[] }) {
   if (visible.length === 0) {
     return (
       <Card className="border-emerald-600/25 bg-emerald-500/[0.06]">
-        <CardContent className="flex items-center gap-3 py-4">
+        {/* `py-0`: kartu sudah memberi padding atas-bawah sesuai kepadatan
+            tema (--ui-card-pad). `py-4` di sini dulu menumpuk di atasnya —
+            sampai 44 px kosong di atas judul panel. */}
+        <CardContent className="flex items-center gap-3 py-0">
           <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
           <div>
             <p className="text-sm font-medium">{t('emptyTitle')}</p>
@@ -53,7 +56,7 @@ export function ActionNeededPanel({ items }: { items: ActionItem[] }) {
           : 'border-amber-600/30 bg-amber-500/[0.05]',
       )}
     >
-      <CardContent className="space-y-3 py-4">
+      <CardContent className="space-y-3 py-0">
         <div className="flex items-start gap-3">
           {hasOverdue ? (
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />

@@ -743,10 +743,13 @@ export function DashboardPageClient({
                         </span>
                       </div>
                     ))}
+                    {/* Warna teks biasa dengan garis bawah warna tema, bukan
+                        `text-primary`: tema lime di atas krem hanya 1,5:1 —
+                        tautannya tak terbaca di mode terang. */}
                     {hasPermission(session.user.permissions ?? [], PERMISSIONS.AUDIT_TRAIL_VIEW) ? (
                       <Link
                         href="/backoffice/audit-trail"
-                        className="mt-3 inline-flex text-sm font-medium text-primary hover:underline"
+                        className="mt-3 inline-flex text-sm font-medium text-foreground underline decoration-primary decoration-2 underline-offset-4 hover:decoration-foreground"
                       >
                         {tDashboard('seeAllActivity')}
                       </Link>
