@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useForm, Controller, type Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createItemSchema, itemSchema, consumptionRuleSchema } from '@/lib/validations';
@@ -35,10 +35,13 @@ import {
   type VariantBarcodeFormatConfig,
 } from '@/lib/items/variant-barcode';
 import {
+  attributesFromSavedVariants,
   cartesianCombinations,
+  carryRowValues,
   comboKey,
   findSavedVariant,
   initialExcludedKeys,
+  overlaySavedSpelling,
 } from '@/lib/items/variant-grid';
 
 type ItemFormData = z.infer<typeof itemSchema>;
@@ -170,22 +173,10 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     return [];
   }, [initialData?.variants]);
 
-  const initialAttributes = useMemo(() => {
-    if (normalizedVariants.length === 0) return [];
-    const map = new Map<string, Set<string>>();
-    normalizedVariants.forEach((variant) => {
-      Object.entries(variant).forEach(([key, value]) => {
-        // Exclude reserved keys — not variant attributes
-        if (key === 'sku' || key === 'barcode') return;
-        if (!map.has(key)) map.set(key, new Set());
-        map.get(key)!.add(value);
-      });
-    });
-    return Array.from(map.entries()).map(([key, values]) => ({
-      key,
-      values: Array.from(values),
-    }));
-  }, [normalizedVariants]);
+  const initialAttributes = useMemo(
+    () => attributesFromSavedVariants(normalizedVariants),
+    [normalizedVariants]
+  );
   const [attributes, setAttributes] = useState<Array<{ key: string; values: string[] }>>(
     initialAttributes
   );
@@ -412,35 +403,39 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     () => variantCombinations.map((c) => JSON.stringify(c)).join('|'),
     [variantCombinations]
   );
+
+  /**
+   * Combinations as of the previous run of the effect below, so a value
+   * added or removed from an attribute — which shifts every later row's
+   * index — can carry SKU/barcode by combination IDENTITY instead of by
+   * position. Never read for anything else.
+   */
+  const prevCombosRef = useRef<Array<Record<string, string>>>([]);
+
   useEffect(() => {
+    const prevCombos = prevCombosRef.current;
     if (variantCombinations.length === 0) {
       setVariantSkus([]);
       setVariantBarcodes([]);
+      prevCombosRef.current = [];
       return;
     }
     setVariantSkus((prev) => {
-      const next = [...prev];
-      while (next.length < variantCombinations.length) next.push('');
-      const trimmed = next.slice(0, variantCombinations.length);
-      if (!normalizedVariants.length) return trimmed;
-      return trimmed.map((current, idx) => {
-        const combo = variantCombinations[idx];
+      const carried = carryRowValues(prevCombos, prev, variantCombinations, attributeKeys);
+      return variantCombinations.map((combo, idx) => {
         const match = findSavedVariant(combo, normalizedVariants);
-        return match?.sku?.trim() ?? current;
+        return match?.sku?.trim() || carried[idx];
       });
     });
     setVariantBarcodes((prev) => {
-      const next = [...prev];
-      while (next.length < variantCombinations.length) next.push('');
-      const trimmed = next.slice(0, variantCombinations.length);
-      if (!normalizedVariants.length) return trimmed;
-      return trimmed.map((current, idx) => {
-        const combo = variantCombinations[idx];
+      const carried = carryRowValues(prevCombos, prev, variantCombinations, attributeKeys);
+      return variantCombinations.map((combo, idx) => {
         const match = findSavedVariant(combo, normalizedVariants);
-        return match?.barcode?.trim() ?? current;
+        return match?.barcode?.trim() || carried[idx];
       });
     });
-  }, [variantCombinationsKey, variantCombinations, normalizedVariants]);
+    prevCombosRef.current = variantCombinations;
+  }, [variantCombinationsKey, variantCombinations, normalizedVariants, attributeKeys]);
 
   const onFormSubmit = async (data: ItemFormData) => {
     const dataWithSku: ItemFormData = {
@@ -472,28 +467,29 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
 
     const variants =
       variantCombinations.length > 0
-        ? variantCombinations
-            .map((combo, i) => {
-              if (excludedKeys.has(comboKey(combo, attributeKeys))) return null;
-              let variantSku = variantSkus[i]?.trim() || '';
-              const variantBarcode = variantBarcodes[i]?.trim() || '';
-              const autoBase = variantSkuBasePrefix;
-              if (variantSku && autoBase) {
-                const hasValidPrefix = variantSkuPrefixes.some((p) => variantSku.startsWith(p));
-                if (!hasValidPrefix) {
-                  const bare =
-                    slugVariantAttributeValue(variantSku) ||
-                    variantSku.replace(/\s+/g, '-').toUpperCase();
-                  variantSku = `${autoBase}-${bare}`;
-                }
+        ? variantCombinations.flatMap((rawCombo, i) => {
+            if (excludedKeys.has(comboKey(rawCombo, attributeKeys))) return [];
+            const combo = overlaySavedSpelling(rawCombo, normalizedVariants);
+            let variantSku = variantSkus[i]?.trim() || '';
+            const variantBarcode = variantBarcodes[i]?.trim() || '';
+            const autoBase = variantSkuBasePrefix;
+            if (variantSku && autoBase) {
+              const hasValidPrefix = variantSkuPrefixes.some((p) => variantSku.startsWith(p));
+              if (!hasValidPrefix) {
+                const bare =
+                  slugVariantAttributeValue(variantSku) ||
+                  variantSku.replace(/\s+/g, '-').toUpperCase();
+                variantSku = `${autoBase}-${bare}`;
               }
-              return {
+            }
+            return [
+              {
                 ...combo,
                 ...(variantSku ? { sku: variantSku } : {}),
                 ...(variantBarcode ? { barcode: variantBarcode } : {}),
-              };
-            })
-            .filter((variant): variant is Record<string, string> => variant !== null)
+              },
+            ];
+          })
         : undefined;
 
     // Validate consumption rules if type is FINISHED_GOOD
@@ -913,26 +909,33 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                     const excluded = excludedKeys.has(rowKey);
                     const savedMatch = findSavedVariant(combo, normalizedVariants);
                     const showSavedVariantWarning = excluded && Boolean(savedMatch);
+                    const comboLabel = attributes
+                      .map((attr) => combo[attr.key] ?? '')
+                      .filter((value) => value.length > 0)
+                      .join(' / ');
+                    const mutedCellClassName = excluded ? 'opacity-60' : undefined;
                     return (
-                      <TableRow key={idx} className={excluded ? 'opacity-60' : undefined}>
+                      <TableRow key={idx}>
                         <TableCell>
                           <label className="flex h-10 min-h-10 w-10 cursor-pointer items-center justify-center">
                             <Checkbox
                               checked={!excluded}
                               onCheckedChange={() => toggleCombinationIncluded(combo)}
-                              aria-label={excluded ? 'Include this combination' : 'Exclude this combination'}
+                              aria-label={`Include ${comboLabel}`}
                             />
                           </label>
                           {showSavedVariantWarning && (
-                            <p className="mt-1 max-w-40 text-xs text-amber-600">
+                            <p className="mt-1 max-w-40 text-xs text-amber-700 dark:text-amber-400">
                               Saved variant — excluding removes it from the catalog; its stock stays under this SKU.
                             </p>
                           )}
                         </TableCell>
                         {attributes.map((attr) => (
-                          <TableCell key={attr.key}>{combo[attr.key] ?? '—'}</TableCell>
+                          <TableCell key={attr.key} className={mutedCellClassName}>
+                            {combo[attr.key] ?? '—'}
+                          </TableCell>
                         ))}
-                        <TableCell>
+                        <TableCell className={mutedCellClassName}>
                           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                             <Input
                               className="min-w-0 flex-1 font-mono text-sm"
@@ -964,7 +967,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                             </Button>
                           </div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className={mutedCellClassName}>
                           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                             <Input
                               className="min-w-0 flex-1 font-mono text-sm"

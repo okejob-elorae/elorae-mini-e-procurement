@@ -29,6 +29,33 @@ export function cartesianCombinations(
 }
 
 /**
+ * Rebuilds the attribute set from a saved item's free-text variant JSON:
+ * one attribute per non-reserved key, in first-seen order, with values
+ * de-duplicated case-insensitively (trim + lowercase) and keeping the FIRST
+ * spelling seen for each distinct value — so "Merah" and "merah" across two
+ * saved variants collapse to one value instead of producing two combinations
+ * that both match the same saved row.
+ */
+export function attributesFromSavedVariants(
+  savedVariants: Array<Record<string, string>>
+): AttributeDef[] {
+  const attributeValues = new Map<string, Map<string, string>>();
+  savedVariants.forEach((variant) => {
+    Object.entries(variant).forEach(([key, value]) => {
+      if (RESERVED_VARIANT_KEYS.has(key)) return;
+      if (!attributeValues.has(key)) attributeValues.set(key, new Map());
+      const values = attributeValues.get(key)!;
+      const normalized = value.trim().toLowerCase();
+      if (!values.has(normalized)) values.set(normalized, value);
+    });
+  });
+  return Array.from(attributeValues.entries()).map(([key, values]) => ({
+    key,
+    values: Array.from(values.values()),
+  }));
+}
+
+/**
  * Stable identity for a combination, keyed by its attribute VALUES
  * (normalized: trimmed, lowercased) in attribute order, not by row index —
  * so exclusions survive rows moving when values are added or removed.
@@ -44,8 +71,9 @@ export function comboKey(
 
 /**
  * Finds the saved variant (free-text JSON) matching a combination: every key
- * in `combo` must match, trimmed and case-insensitive. `sku`/`barcode` on the
- * saved variant are ignored — they are not attribute values.
+ * in `combo` must match, trimmed and case-insensitive. `sku`/`barcode` are
+ * skipped even when `combo` itself carries them — they are not attribute
+ * values and must never gate the match.
  */
 export function findSavedVariant(
   combo: Record<string, string>,
@@ -59,6 +87,27 @@ export function findSavedVariant(
       return got === wanted;
     })
   );
+}
+
+/**
+ * The attribute values to submit for a combination: when it matches a saved
+ * variant, use THAT variant's own spelling for every key `combo` carries, so
+ * an already-saved value (e.g. "merah") round-trips unchanged instead of
+ * being replaced by whatever spelling the de-duplicated attribute list
+ * happened to keep. Falls back to the combo's own values when there is no
+ * saved match (a genuinely new combination).
+ */
+export function overlaySavedSpelling(
+  combo: Record<string, string>,
+  savedVariants: Array<Record<string, string>>
+): Record<string, string> {
+  const match = findSavedVariant(combo, savedVariants);
+  if (!match) return combo;
+  const resolved: Record<string, string> = {};
+  Object.keys(combo).forEach((key) => {
+    resolved[key] = match[key] ?? combo[key];
+  });
+  return resolved;
 }
 
 /**
@@ -79,4 +128,26 @@ export function initialExcludedKeys(
     }
   });
   return excluded;
+}
+
+/**
+ * Carries row values (SKU or barcode) from a previous set of combinations to
+ * a next one, by combination IDENTITY (`comboKey`) rather than row index —
+ * so a value added or removed elsewhere in an attribute's value list, which
+ * shifts every later row's position, does not hand one combination's saved
+ * code to a different one. A combination absent from `nextCombos` simply
+ * drops its carried value; one with no match in `prevCombos` gets `""`.
+ */
+export function carryRowValues(
+  prevCombos: Array<Record<string, string>>,
+  prevValues: string[],
+  nextCombos: Array<Record<string, string>>,
+  attributeKeys: string[]
+): string[] {
+  const byKey = new Map<string, string>();
+  prevCombos.forEach((combo, i) => {
+    const value = prevValues[i];
+    if (value) byKey.set(comboKey(combo, attributeKeys), value);
+  });
+  return nextCombos.map((combo) => byKey.get(comboKey(combo, attributeKeys)) ?? "");
 }
