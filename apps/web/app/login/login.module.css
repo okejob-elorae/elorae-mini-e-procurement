@@ -1,0 +1,87 @@
+/*
+ * Gerak khusus halaman masuk. Di modul, bukan di globals.css: `next dev` tidak
+ * selalu mengompilasi ulang globals.css saat berubah (lihat CLAUDE.md, Ops),
+ * dan tidak ada halaman lain yang memakainya.
+ */
+
+/* Formulir bergetar singkat saat masuk ditolak — seperti kolom sandi di iPhone. */
+@keyframes goyang {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-7px);
+  }
+  40% {
+    transform: translateX(6px);
+  }
+  60% {
+    transform: translateX(-4px);
+  }
+  80% {
+    transform: translateX(2px);
+  }
+}
+
+.goyang {
+  animation: goyang 360ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+/*
+ * Tirai masuk. Panel tinta melebar dari posisinya sekarang sampai menutup
+ * layar, lalu halaman berpindah — rasanya melangkah masuk, bukan dimuat ulang.
+ * Posisi awal datang dari variabel yang diisi halaman saat berhasil masuk.
+ */
+@keyframes tirai {
+  from {
+    clip-path: inset(var(--t, 0) var(--r, 50%) var(--b, 0) var(--l, 0));
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.tirai {
+  animation: tirai 480ms cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+
+@keyframes wordmarkMasuk {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+    letter-spacing: 0.3em;
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    letter-spacing: 0.16em;
+  }
+}
+
+.wordmarkMasuk {
+  animation: wordmarkMasuk 520ms 120ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/*
+ * Isian otomatis browser. Chrome mewarnai latar kolom biru pucat dan Safari
+ * kuning; di kolom bergaris bawah di atas krem itu terbaca sebagai kotak asing.
+ * Bayangan inset menutupinya dengan warna krem, dan transisi panjang menunda
+ * warna bawaan browser selamanya.
+ */
+.kolom input:-webkit-autofill,
+.kolom input:-webkit-autofill:hover,
+.kolom input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #12120f;
+  box-shadow: 0 0 0 1000px #f2f1e8 inset;
+  transition: background-color 9999s ease-out 0s;
+  caret-color: #12120f;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goyang,
+  .tirai,
+  .wordmarkMasuk {
+    animation: none;
+  }
+}

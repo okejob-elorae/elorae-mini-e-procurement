@@ -4,6 +4,8 @@ import Credentials from 'next-auth/providers/credentials';
 import bcrypt from 'bcryptjs';
 import { prisma } from '@elorae/db';
 import { Role } from '@elorae/db';
+import { ServerUnavailableSignin, TooManyAttemptsSignin } from '@/lib/auth/login-errors';
+import { loginThrottle, throttleKey } from '@/lib/auth/login-throttle';
 
 export const {
   handlers: { GET, POST },
@@ -33,30 +35,47 @@ export const {
           return null;
         }
 
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email as string },
-          include: {
-            roleDefinition: {
-              include: {
-                permissions: {
-                  include: {
-                    permission: true,
+        const key = throttleKey(credentials.email as string);
+        if (loginThrottle.retryAfterMs(key) > 0) {
+          throw new TooManyAttemptsSignin();
+        }
+
+        // A database that cannot be reached must not read as a wrong password:
+        // the form would tell the user to retype a password that was right.
+        let user;
+        try {
+          user = await prisma.user.findUnique({
+            where: { email: credentials.email as string },
+            include: {
+              roleDefinition: {
+                include: {
+                  permissions: {
+                    include: {
+                      permission: true,
+                    },
                   },
                 },
               },
             },
-          },
-        });
+          });
+        } catch (err) {
+          console.error('[auth] user lookup failed during sign-in', err);
+          throw new ServerUnavailableSignin();
+        }
 
         if (!user || !user.passwordHash) {
+          loginThrottle.recordFailure(key);
           return null;
         }
 
         const isValid = await bcrypt.compare(credentials.password as string, user.passwordHash);
 
         if (!isValid) {
+          loginThrottle.recordFailure(key);
           return null;
         }
+
+        loginThrottle.reset(key);
 
         // Get permissions from role
         let permissions: string[] = [];

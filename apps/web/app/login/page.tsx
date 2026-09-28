@@ -1,14 +1,17 @@
 'use client';
 
-import { useLayoutEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import dynamic from 'next/dynamic';
 import { signIn } from 'next-auth/react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
 import { useTranslations } from 'next-intl';
-import { ArrowRight, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { AlertCircle, ArrowRight, Check, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { tulisanDiAtas, warnaMerekDiGelap } from '@/lib/theme/warna-merek';
+import { greetingKey, loginMessageKey, type LoginMessageKey } from '@/lib/auth/login-message';
+import gaya from './login.module.css';
 
 /**
  * Pintu depan.
@@ -27,14 +30,23 @@ import { tulisanDiAtas, warnaMerekDiGelap } from '@/lib/theme/warna-merek';
  * Warnanya dinaikkan terangnya kalau perlu — lihat `warnaMerekDiGelap`. Warna
  * tema bebas, dan sebagian besar warna yang masuk akal untuk tombol tidak
  * terbaca sebagai tulisan besar di atas panel hampir hitam.
+ *
+ * Pola yang diambil dari halaman masuk yang dikenal baik (Linear, Vercel,
+ * Stripe, Supabase, Apple — dilihat September 2026): satu tombol utama, label
+ * yang benar-benar tersambung ke kolomnya, "Lupa kata sandi?" di sebelah label
+ * sandi, pesan gagal yang menyebut penyebab sebenarnya, formulir yang bergetar
+ * saat ditolak, dan satu momen merek di belakang — di sini kain yang bergerak.
  */
 
 /* Diambil dari fotografi mereka sendiri: hitam hangat studio, krem, dan aksen
    lime yang memang sudah dipakai di aplikasinya. */
 const INK = '#12120F';
-const PANEL = '#1B1B15';
 const BONE = '#F2F1E8';
 const SMOKE = '#8E8E82';
+/* Teks sekunder di atas krem. #8A8A7C yang dulu dipakai hanya ~3,3:1, dan
+   #6F6F63 berhenti di 4,49:1 — keduanya di bawah batas WCAG AA 4,5:1 untuk teks
+   kecil. Yang ini ~5:1. */
+const SEKUNDER = '#66665A';
 
 /**
  * Dipakai sebelum tema pengguna terbaca, dan kalau tidak ada tema tersimpan.
@@ -43,6 +55,14 @@ const SMOKE = '#8E8E82';
  * kedipan pertama pun sudah terasa merek ini dan bukan halaman yang belum jadi.
  */
 const LIME_BAWAAN = '#C8F04A';
+
+/** Email terakhir, disimpan hanya di peramban ini dan hanya kalau diminta. */
+const KUNCI_EMAIL = 'elorae.login.email';
+
+const VERSI = process.env.NEXT_PUBLIC_APP_VERSION;
+
+/* Dimuat setelah formulir tampil: kain adalah hiasan, formulir yang utama. */
+const KainBergerak = dynamic(() => import('@/components/login/KainBergerak'), { ssr: false });
 
 /**
  * Staggered entrance: wordmark first, then its line, then the form — the eye
@@ -61,32 +81,24 @@ const LINGKUP = [
   'Buku Besar',
 ];
 
+type Tahap = 'siap' | 'memeriksa' | 'berhasil';
+
 export default function LoginPage() {
   const t = useTranslations('auth');
   const tValidation = useTranslations('validation');
-  const [error, setError] = useState<string>('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [galat, setGalat] = useState<LoginMessageKey | null>(null);
+  const [tahap, setTahap] = useState<Tahap>('siap');
   const [showPassword, setShowPassword] = useState(false);
+  const [capsLock, setCapsLock] = useState(false);
+  const [lupaTerbuka, setLupaTerbuka] = useState(false);
+  const [ingat, setIngat] = useState(false);
+  const [emailTersimpan, setEmailTersimpan] = useState<string | null>(null);
+  const [tirai, setTirai] = useState<CSSProperties | null>(null);
   const [merek, setMerek] = useState(LIME_BAWAAN);
-
-  /*
-   * Warna tema dipasang ke `--primary` oleh skrip tema sebelum React jalan, jadi
-   * ia sudah ada saat ini dibaca.
-   *
-   * `useLayoutEffect`, bukan `useEffect`: ia berjalan SEBELUM peramban melukis,
-   * jadi tidak ada satu bingkai pun yang menampakkan warna bawaan lalu berganti.
-   * Kedipan warna di layar pertama yang dilihat orang tiap pagi terlihat seperti
-   * aplikasi yang rusak.
-   */
-  useLayoutEffect(() => {
-    const nilai = getComputedStyle(document.documentElement)
-      .getPropertyValue('--primary')
-      .trim();
-    if (nilai) setMerek(nilai);
-  }, []);
-
-  const merekDiGelap = warnaMerekDiGelap(merek);
-  const tulisanTombol = tulisanDiAtas(merek, INK, BONE);
+  /* Naik tiap kali masuk ditolak; efek di bawah memutar getarannya ulang. */
+  const [getaran, setGetaran] = useState(0);
+  const [bergetar, setBergetar] = useState(false);
+  const panelRef = useRef<HTMLElement>(null);
 
   const loginSchema = z.object({
     email: z.string().email(tValidation('email')),
@@ -97,26 +109,140 @@ export default function LoginPage() {
   const {
     register,
     handleSubmit,
+    setValue,
+    setFocus,
     formState: { errors },
   } = useForm<LoginForm>({ resolver: zodResolver(loginSchema) });
 
+  /*
+   * Warna tema dipasang ke `--primary` oleh skrip tema sebelum React jalan, jadi
+   * ia sudah ada saat ini dibaca.
+   *
+   * `useLayoutEffect`, bukan `useEffect`: ia berjalan SEBELUM peramban melukis,
+   * jadi tidak ada satu bingkai pun yang menampakkan warna bawaan lalu berganti.
+   * Kedipan warna di layar pertama yang dilihat orang tiap pagi terlihat seperti
+   * aplikasi yang rusak.
+   *
+   * Email yang diingat diisi di sini juga, lalu fokus langsung ke kata sandi:
+   * orang yang kembali cukup mengetik sandinya.
+   */
+  useLayoutEffect(() => {
+    const nilai = getComputedStyle(document.documentElement)
+      .getPropertyValue('--primary')
+      .trim();
+    if (nilai) setMerek(nilai);
+
+    let tersimpan: string | null = null;
+    try {
+      tersimpan = window.localStorage.getItem(KUNCI_EMAIL);
+    } catch {
+      /* penyimpanan diblokir — cukup mulai kosong */
+    }
+    if (tersimpan) {
+      setEmailTersimpan(tersimpan);
+      setIngat(true);
+      setValue('email', tersimpan);
+      setFocus('password');
+    } else {
+      setFocus('email');
+    }
+  }, [setFocus, setValue]);
+
+  const merekDiGelap = warnaMerekDiGelap(merek);
+  const tulisanTombol = tulisanDiAtas(merek, INK, BONE);
+
+
+  function simpanEmail(email: string) {
+    try {
+      if (ingat) window.localStorage.setItem(KUNCI_EMAIL, email);
+      else window.localStorage.removeItem(KUNCI_EMAIL);
+    } catch {
+      /* diabaikan — hanya kenyamanan */
+    }
+  }
+
+  function gantiAkun() {
+    try {
+      window.localStorage.removeItem(KUNCI_EMAIL);
+    } catch {
+      /* diabaikan */
+    }
+    setEmailTersimpan(null);
+    setIngat(false);
+    setValue('email', '');
+    setFocus('email');
+  }
+
+  function masuk() {
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const panel = panelRef.current?.getBoundingClientRect();
+    if (reduce || !panel) {
+      window.location.href = '/login/redirect';
+      return;
+    }
+    // Tirai berangkat dari kotak panel tinta yang sekarang, lalu menutup layar.
+    setTirai({
+      '--t': `${panel.top}px`,
+      '--l': `${panel.left}px`,
+      '--r': `${window.innerWidth - panel.right}px`,
+      '--b': `${window.innerHeight - panel.bottom}px`,
+      background: INK,
+    } as CSSProperties);
+    window.setTimeout(() => {
+      window.location.href = '/login/redirect';
+    }, 620);
+  }
+
+  // Getaran dipasang di bingkai berikutnya, jadi ia berjalan setelah pesan
+  // galatnya tampil. `onAnimationEnd` melepasnya lagi, sehingga penolakan
+  // berikutnya bisa bergetar dari awal.
+  //
+  // Fokusnya dipindah di sini juga, bukan di `onSubmit`: saat itu kolomnya masih
+  // nonaktif (sedang memeriksa), dan kolom nonaktif menolak fokus.
+  useEffect(() => {
+    if (getaran === 0 || !galat) return;
+    setFocus(galat === 'invalidCredentials' ? 'password' : 'email');
+    const id = requestAnimationFrame(() => setBergetar(true));
+    return () => cancelAnimationFrame(id);
+  }, [getaran, galat, setFocus]);
+
+  // Berhasil masuk: biarkan centangnya terlihat sebentar, lalu tirai.
+  useEffect(() => {
+    if (tahap !== 'berhasil') return;
+    const id = window.setTimeout(masuk, 280);
+    return () => window.clearTimeout(id);
+  }, [tahap]);
+
   const onSubmit = async (data: LoginForm) => {
-    setIsLoading(true);
-    setError('');
+    setTahap('memeriksa');
+    setGalat(null);
     try {
       const result = await signIn('credentials', {
         email: data.email,
         password: data.password,
         redirect: false,
       });
-      if (result?.error) setError(t('invalidCredentials'));
-      else window.location.href = '/login/redirect';
+      const kunci = loginMessageKey(result);
+      if (kunci) {
+        setGalat(kunci);
+        setTahap('siap');
+        setGetaran((n) => n + 1);
+        return;
+      }
+      simpanEmail(data.email);
+      setTahap('berhasil');
     } catch {
-      setError(t('errorOccurred'));
-    } finally {
-      setIsLoading(false);
+      // `signIn` hanya melempar kalau permintaannya sendiri gagal — jaringan
+      // putus atau server mati — bukan karena kata sandinya salah.
+      setGalat('serverUnavailable');
+      setTahap('siap');
+      setGetaran((n) => n + 1);
     }
   };
+
+  const sibuk = tahap !== 'siap';
+  const kolomSandi = register('password');
+  const sapaan = t(`greeting.${greetingKey()}`);
 
   return (
     <div
@@ -127,14 +253,17 @@ export default function LoginPage() {
           Di layar sempit ia menyusut jadi bilah tipis di atas, bukan hilang:
           nama mereknya justru yang paling perlu tetap terlihat. */}
       <section
+        ref={panelRef}
         className="relative flex flex-col justify-between overflow-hidden p-8 lg:p-14"
         style={{ background: INK, color: BONE }}
       >
+        <KainBergerak ink={INK} tint={merekDiGelap} />
+
         {/* Kisi tipis di latar — mengingatkan pada kisi feed Instagram yang
             disusun di dalam, tanpa menjadi gambar yang menuntut perhatian. */}
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 opacity-[0.07]"
+          className="pointer-events-none absolute inset-0 opacity-[0.05]"
           style={{
             backgroundImage: `linear-gradient(${merekDiGelap} 1px, transparent 1px), linear-gradient(90deg, ${merekDiGelap} 1px, transparent 1px)`,
             backgroundSize: '96px 96px',
@@ -154,7 +283,6 @@ export default function LoginPage() {
           {/*
             Wordmark: huruf besar berjarak lebar — idiom merek fesyen, dan
             menggantikan ikon pabrik yang tidak menyebut apa pun tentang Elorae.
-            Aksen é-nya dibiarkan lime supaya ia jadi tanda mereknya.
 
             Ukurannya `clamp` supaya ia besar tanpa pernah membungkus baris:
             pada 1440 ia jatuh di 112px dan huruf-hurufnya mengisi 68% lebar
@@ -198,7 +326,7 @@ export default function LoginPage() {
               <span
                 key={i}
                 className="rounded-full border px-3.5 py-1.5 text-xs font-medium"
-                style={{ borderColor: '#37372E', color: SMOKE }}
+                style={{ borderColor: '#37372E', color: SMOKE, background: INK }}
               >
                 {x}
               </span>
@@ -208,78 +336,165 @@ export default function LoginPage() {
       </section>
 
       {/* ── Formulir ─────────────────────────────────────────────────────── */}
-      <section className="flex flex-col justify-center px-6 py-14 lg:px-14">
+      {/* `colorScheme: light`: panel ini selalu krem, tapi aplikasi bertema gelap
+          membuat kotak centang bawaan peramban ikut gelap di atas krem. */}
+      <section className="flex flex-col justify-center px-6 py-14 lg:px-14" style={{ colorScheme: 'light' }}>
         <div className="anim-rise mx-auto w-full max-w-sm" style={tunda(240)}>
-          <h2 className="text-3xl font-bold tracking-tight">{t('welcomeTitle')}</h2>
-          <p className="mt-2 text-sm" style={{ color: '#6F6F63' }}>
-            {t('welcomeBody')}
-          </p>
+          {/* Getaran dipasang di pembungkus DALAM: animasi masuk `anim-rise` di
+              luar dan getaran di dalam tidak saling menimpa properti `animation`. */}
+          <div className={cn(bergetar && gaya.goyang)} onAnimationEnd={() => setBergetar(false)}>
+          {/* Sapaan menurut jam WIB. Dihitung saat render di server maupun di
+              peramban — jamnya sama, jadi hasilnya sama; di menit pergantian
+              yang jarang terjadi, peringatan hidrasi diredam. */}
+          <h2 className="text-3xl font-bold tracking-tight" suppressHydrationWarning>
+            {sapaan}
+          </h2>
+          {emailTersimpan ? (
+            <p className="mt-2 text-sm" style={{ color: SEKUNDER }}>
+              {t('signingInAs', { email: emailTersimpan })}{' '}
+              <button
+                type="button"
+                onClick={gantiAkun}
+                className="font-medium underline underline-offset-2 hover:no-underline"
+                style={{ color: INK }}
+              >
+                {t('switchAccount')}
+              </button>
+            </p>
+          ) : (
+            <p className="mt-2 text-sm" style={{ color: SEKUNDER }}>
+              {t('welcomeBody')}
+            </p>
+          )}
 
-          <form onSubmit={handleSubmit(onSubmit)} className="mt-9 space-y-7">
-            {error && (
+          <form onSubmit={handleSubmit(onSubmit)} className="mt-9 space-y-7" noValidate>
+            {galat && (
               <p
+                id="login-galat"
                 role="alert"
-                className="rounded-lg px-3.5 py-2.5 text-sm"
+                className="flex items-start gap-2 rounded-lg px-3.5 py-2.5 text-sm"
                 style={{ background: '#FBE3E1', color: '#8C1D18' }}
               >
-                {error}
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                {t(galat)}
               </p>
             )}
 
             {/* Input bergaris bawah, bukan berkotak. Lebih dekat ke lembar
                 editorial daripada ke panel admin — dan pada dua kolom saja,
                 kotak justru menambah bising tanpa menambah kejelasan. */}
-            <Kolom label={t('email')} galat={errors.email?.message}>
+            <Kolom id="email" label={t('email')} galat={errors.email?.message}>
               <input
                 id="email"
                 type="email"
-                autoComplete="email"
+                autoComplete="username"
+                inputMode="email"
                 placeholder={t('emailPlaceholder')}
-                disabled={isLoading}
+                disabled={sibuk}
+                aria-invalid={Boolean(errors.email) || galat === 'invalidCredentials'}
+                aria-describedby={galat ? 'login-galat' : errors.email ? 'email-galat' : undefined}
                 {...register('email')}
-                className="w-full bg-transparent pb-2 text-[15px] outline-none placeholder:text-[#8A8A7C] disabled:opacity-60"
+                className="w-full bg-transparent pb-2 text-[15px] outline-none placeholder:text-[#66665A] disabled:opacity-60"
               />
             </Kolom>
 
-            <Kolom label={t('password')} galat={errors.password?.message}>
+            <Kolom
+              id="password"
+              label={t('password')}
+              galat={errors.password?.message}
+              aksi={
+                <button
+                  type="button"
+                  onClick={() => setLupaTerbuka((b) => !b)}
+                  aria-expanded={lupaTerbuka}
+                  aria-controls="lupa-sandi"
+                  className="text-[11px] font-medium underline-offset-2 hover:underline"
+                  style={{ color: SEKUNDER }}
+                >
+                  {t('forgotPassword')}
+                </button>
+              }
+              bantuan={
+                <>
+                  {capsLock && (
+                    <p className="mt-1.5 text-xs font-medium" style={{ color: '#8A5A00' }} aria-live="polite">
+                      {t('capsLockOn')}
+                    </p>
+                  )}
+                  {lupaTerbuka && (
+                    <p id="lupa-sandi" className="mt-1.5 text-xs leading-relaxed" style={{ color: SEKUNDER }}>
+                      {t('forgotPasswordHint')}
+                    </p>
+                  )}
+                </>
+              }
+            >
               <div className="flex items-center gap-2">
                 <input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
                   autoComplete="current-password"
                   placeholder={t('passwordPlaceholder')}
-                  disabled={isLoading}
-                  {...register('password')}
-                  className="w-full bg-transparent pb-2 text-[15px] outline-none placeholder:text-[#8A8A7C] disabled:opacity-60"
+                  disabled={sibuk}
+                  aria-invalid={Boolean(errors.password) || galat === 'invalidCredentials'}
+                  aria-describedby={galat ? 'login-galat' : errors.password ? 'password-galat' : undefined}
+                  {...kolomSandi}
+                  onKeyDown={(e) => setCapsLock(e.getModifierState('CapsLock'))}
+                  onKeyUp={(e) => setCapsLock(e.getModifierState('CapsLock'))}
+                  onBlur={(e) => {
+                    setCapsLock(false);
+                    void kolomSandi.onBlur(e);
+                  }}
+                  className="w-full bg-transparent pb-2 text-[15px] outline-none placeholder:text-[#66665A] disabled:opacity-60"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((p) => !p)}
-                  disabled={isLoading}
+                  disabled={sibuk}
                   aria-label={showPassword ? t('hidePassword') : t('showPassword')}
+                  aria-pressed={showPassword}
                   className="mb-2 shrink-0 rounded-md p-1 transition-colors hover:bg-black/5"
-                  style={{ color: SMOKE }}
+                  style={{ color: SEKUNDER }}
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
             </Kolom>
 
+            <label className="flex cursor-pointer select-none items-center gap-2.5 text-sm" style={{ color: SEKUNDER }}>
+              <input
+                type="checkbox"
+                checked={ingat}
+                onChange={(e) => setIngat(e.target.checked)}
+                disabled={sibuk}
+                className="h-4 w-4 rounded accent-[#12120F]"
+              />
+              {t('rememberEmail')}
+            </label>
+
+            {/* Tombol yang berubah bentuk: panah → pemutar → centang. Satu tempat
+                untuk semua keadaan, jadi mata tidak perlu mencari kabarnya. */}
             <button
               type="submit"
-              disabled={isLoading}
-              className="group flex h-12 w-full items-center justify-center gap-2 rounded-full text-[15px] font-semibold transition-transform active:scale-[0.985] disabled:opacity-70"
+              disabled={sibuk}
+              aria-live="polite"
+              className="group flex h-12 w-full items-center justify-center gap-2 rounded-full text-[15px] font-semibold transition-[transform,opacity] duration-150 active:scale-[0.985] disabled:cursor-default"
               style={{ background: merek, color: tulisanTombol }}
             >
-              {isLoading ? (
+              {tahap === 'memeriksa' ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                   {t('signingIn')}
+                </>
+              ) : tahap === 'berhasil' ? (
+                <>
+                  <Check className="h-4 w-4" aria-hidden />
+                  {t('signedIn')}
                 </>
               ) : (
                 <>
                   {t('signIn')}
-                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
                 </>
               )}
             </button>
@@ -290,13 +505,29 @@ export default function LoginPage() {
               kebetulan berisi sesuatu. */}
           <div
             className="mt-14 flex items-center justify-between border-t pt-5 text-[11px]"
-            style={{ borderColor: '#DEDDCF', color: '#8A8A7C' }}
+            style={{ borderColor: '#DEDDCF', color: SEKUNDER }}
           >
             <span className="font-medium uppercase tracking-[0.16em]">Elorae</span>
-            <span className="tabular-nums">v1.0.0</span>
+            {VERSI ? <span className="tabular-nums">{t('version', { version: VERSI })}</span> : null}
+          </div>
           </div>
         </div>
       </section>
+
+      {tirai ? (
+        <div
+          className={cn('fixed inset-0 z-50 flex items-center justify-center', gaya.tirai)}
+          style={tirai}
+          aria-hidden
+        >
+          <span
+            className={cn('text-3xl font-extrabold', gaya.wordmarkMasuk)}
+            style={{ color: merekDiGelap }}
+          >
+            ELORAÉ
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -304,27 +535,41 @@ export default function LoginPage() {
 /**
  * Satu kolom isian bergaris bawah.
  *
+ * Labelnya TERSAMBUNG ke kolomnya lewat `htmlFor`. Dulu tidak: pembaca layar
+ * mengumumkan kolom tanpa nama, dan mengeklik tulisan "Email" tidak memindahkan
+ * kursor ke kolomnya.
+ *
  * Garisnya menebal saat difokus lewat `focus-within`, jadi keyboard dan tetikus
  * mendapat penanda yang sama — kolom tanpa kotak mudah kehilangan penanda fokus,
  * dan itu membuatnya tidak bisa dipakai tanpa melihat.
  */
 function Kolom({
+  id,
   label,
   galat,
+  aksi,
+  bantuan,
   children,
 }: {
+  id: string;
   label: string;
   galat?: string;
+  aksi?: React.ReactNode;
+  bantuan?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <div>
-      <label
-        className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em]"
-        style={{ color: '#6F6F63' }}
-      >
-        {label}
-      </label>
+    <div className={gaya.kolom}>
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <label
+          htmlFor={id}
+          className="block text-[11px] font-semibold uppercase tracking-[0.16em]"
+          style={{ color: SEKUNDER }}
+        >
+          {label}
+        </label>
+        {aksi}
+      </div>
       <div
         className={cn(
           'border-b transition-colors focus-within:border-b-2',
@@ -333,7 +578,12 @@ function Kolom({
       >
         {children}
       </div>
-      {galat && <p className="mt-1.5 text-xs text-[#B3261E]">{galat}</p>}
+      {galat && (
+        <p id={`${id}-galat`} className="mt-1.5 text-xs text-[#B3261E]">
+          {galat}
+        </p>
+      )}
+      {bantuan}
     </div>
   );
 }

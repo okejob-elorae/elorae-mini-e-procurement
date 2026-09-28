@@ -1,13 +1,19 @@
 import type { NextConfig } from 'next';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import withPWA from 'next-pwa';
 import withSerwistInit from "@serwist/next";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const appVersion: string = JSON.parse(readFileSync(path.join(here, 'package.json'), 'utf8')).version;
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // The login footer shows this instead of a hardcoded "v1.0.0" that never moved.
+  env: {
+    NEXT_PUBLIC_APP_VERSION: appVersion,
+  },
   typescript: {
     ignoreBuildErrors: false,
   },

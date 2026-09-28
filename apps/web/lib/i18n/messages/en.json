@@ -12,7 +12,7 @@
     "confirmPin": "Confirm PIN",
     "enterPin": "Enter your PIN",
     "pinRequired": "PIN is required for this action",
-    "invalidCredentials": "Invalid email or password",
+    "invalidCredentials": "Wrong email or password.",
     "invalidPin": "Invalid PIN",
     "sessionExpired": "Your session has expired",
     "role": "Role",
@@ -24,7 +24,7 @@
       "USER": "User"
     },
     "signIn": "Sign In",
-    "signingIn": "Signing in...",
+    "signingIn": "Checking…",
     "showPassword": "Show password",
     "hidePassword": "Hide password",
     "emailPlaceholder": "name@company.com",
@@ -33,7 +33,23 @@
     "brandEyebrow": "Internal workspace",
     "brandLine": "From the shop rail to the Instagram grid — one place for everything the team runs.",
     "welcomeTitle": "Sign in",
-    "welcomeBody": "Use your work account."
+    "welcomeBody": "Use your work account.",
+    "greeting": {
+      "morning": "Good morning",
+      "midday": "Good afternoon",
+      "afternoon": "Good afternoon",
+      "evening": "Good evening"
+    },
+    "serverUnavailable": "We can’t reach the server. Try again in a moment.",
+    "tooManyAttempts": "Too many attempts. Wait a minute, then try again.",
+    "capsLockOn": "Caps Lock is on.",
+    "forgotPassword": "Forgot password?",
+    "forgotPasswordHint": "Passwords are reset by an admin. Ask your Elorae admin for a new one.",
+    "rememberEmail": "Remember my email on this device",
+    "signingInAs": "Signing in as {email}.",
+    "switchAccount": "Use another account",
+    "signedIn": "Signed in",
+    "version": "Version {version}"
   },
   "navigation": {
     "dashboard": "Dashboard",

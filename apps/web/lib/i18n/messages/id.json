@@ -12,7 +12,7 @@
     "confirmPin": "Konfirmasi PIN",
     "enterPin": "Masukkan PIN Anda",
     "pinRequired": "PIN diperlukan untuk tindakan ini",
-    "invalidCredentials": "Email atau kata sandi tidak valid",
+    "invalidCredentials": "Email atau kata sandi salah.",
     "invalidPin": "PIN tidak valid",
     "sessionExpired": "Sesi Anda telah berakhir",
     "role": "Peran",
@@ -24,7 +24,7 @@
       "USER": "Pengguna"
     },
     "signIn": "Masuk",
-    "signingIn": "Masuk...",
+    "signingIn": "Memeriksa…",
     "showPassword": "Tampilkan kata sandi",
     "hidePassword": "Sembunyikan kata sandi",
     "emailPlaceholder": "nama@perusahaan.com",
@@ -33,7 +33,23 @@
     "brandEyebrow": "Ruang kerja internal",
     "brandLine": "Dari rak toko sampai kisi Instagram — satu tempat untuk semua yang dikerjakan tim.",
     "welcomeTitle": "Masuk",
-    "welcomeBody": "Pakai akun kantor Anda."
+    "welcomeBody": "Pakai akun kantor Anda.",
+    "greeting": {
+      "morning": "Selamat pagi",
+      "midday": "Selamat siang",
+      "afternoon": "Selamat sore",
+      "evening": "Selamat malam"
+    },
+    "serverUnavailable": "Server tidak bisa dihubungi. Coba lagi sebentar lagi.",
+    "tooManyAttempts": "Terlalu banyak percobaan. Tunggu satu menit, lalu coba lagi.",
+    "capsLockOn": "Caps Lock menyala.",
+    "forgotPassword": "Lupa kata sandi?",
+    "forgotPasswordHint": "Kata sandi diatur ulang oleh admin. Hubungi admin Elorae untuk mendapat kata sandi baru.",
+    "rememberEmail": "Ingat email saya di perangkat ini",
+    "signingInAs": "Masuk sebagai {email}.",
+    "switchAccount": "Ganti akun",
+    "signedIn": "Berhasil masuk",
+    "version": "Versi {version}"
   },
   "navigation": {
     "dashboard": "Beranda",
