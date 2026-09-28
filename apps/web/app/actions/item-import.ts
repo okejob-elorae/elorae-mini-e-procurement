@@ -94,8 +94,8 @@ async function notifyItemsImported(userId: string, itemCount: number, variantCou
   const actor = await getActorName(userId);
   await sendNotificationToUsers(users, {
     type: "ITEM_CREATED",
-    title: "Produk diimpor",
-    body: `${itemCount} produk (${variantCount} varian) diimpor oleh ${actor}`,
+    title: "Products imported",
+    body: `${itemCount} products (${variantCount} variants) imported by ${actor}`,
     data: {},
   });
 }
