@@ -944,6 +944,7 @@
     "createInJubelioQueued": "Queued for Jubelio.",
     "createInJubelioAlready": "This product already exists in, or is already queued for, Jubelio.",
     "createInJubelioFailed": "Could not queue it for Jubelio. Try again.",
+    "createInJubelioNeedsCategory": "Map the item's category to a Jubelio category first.",
     "pricing": {
       "section": "Pricing",
       "sellingPriceLabel": "Selling Price (Harga Jual)",

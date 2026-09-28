@@ -76,9 +76,9 @@ export default async function ItemDetailPage({
   const images = await getItemImages(item.id);
   const jubelioStockPushEnabled = await isJubelioStockPushEnabled(prisma);
   const canManage = hasPermission(perms, PERMISSIONS.ITEMS_MANAGE);
-  const canCreateInJubelio =
-    hasPermission(perms, PERMISSIONS.ITEMS_EDIT) &&
-    (await jubelioCreateEligibility(item.id)) === 'eligible';
+  const jubelioCreateState = hasPermission(perms, PERMISSIONS.ITEMS_EDIT)
+    ? await jubelioCreateEligibility(item.id)
+    : null;
   const itemVariants = (item.variants as Array<Record<string, string>> | null | undefined) ?? [];
   const variantSkus = itemVariants
     .map((v) => v["sku"])
@@ -93,7 +93,7 @@ export default async function ItemDetailPage({
       nameEn={item.nameEn}
       isActive={Boolean(item.isActive)}
       jubelioStockPushEnabled={jubelioStockPushEnabled}
-      canCreateInJubelio={canCreateInJubelio}
+      jubelioCreateState={jubelioCreateState}
       gallerySlot={
         <ItemGalleryEditor
           itemId={item.id}

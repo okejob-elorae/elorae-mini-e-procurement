@@ -944,6 +944,7 @@
     "createInJubelioQueued": "Masuk antrean Jubelio.",
     "createInJubelioAlready": "Produk ini sudah ada atau sudah dalam antrean Jubelio.",
     "createInJubelioFailed": "Gagal memasukkan ke antrean Jubelio. Coba lagi.",
+    "createInJubelioNeedsCategory": "Petakan kategori item ke kategori Jubelio dulu.",
     "pricing": {
       "section": "Harga",
       "sellingPriceLabel": "Harga Jual",

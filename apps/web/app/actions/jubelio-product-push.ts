@@ -103,7 +103,7 @@ export async function enqueueProductPushOnImageChange(itemId: string): Promise<v
   void fireDirectEnqueue(row.id, userId ?? "");
 }
 
-/** The item page's "Buat di Jubelio" button — for ERP finished goods that never reached Jubelio (e.g. imported with the Jubelio box unticked). */
+/* The item page's "Buat di Jubelio" button — for ERP finished goods that never reached Jubelio (e.g. imported with the Jubelio box unticked). */
 export async function createItemInJubelio(
   itemId: string,
 ): Promise<{ ok: true } | { ok: false; reason: "forbidden" | Exclude<JubelioCreateEligibility, "eligible"> }> {
@@ -111,6 +111,7 @@ export async function createItemInJubelio(
   if (!session?.user || !hasPermission(session.user.permissions, PERMISSIONS.ITEMS_EDIT)) {
     return { ok: false, reason: "forbidden" };
   }
+  if (typeof itemId !== "string") return { ok: false, reason: "not_found" };
   const eligibility = await jubelioCreateEligibility(itemId);
   if (eligibility !== "eligible") return { ok: false, reason: eligibility };
   await enqueueProductPushOnCreate(itemId);
