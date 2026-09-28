@@ -61,6 +61,16 @@ describe("previewItemImport", () => {
 });
 
 describe("commitItemImport", () => {
+  it("refuses without a session or without items:create, reading and writing nothing", async () => {
+    vi.mocked(auth).mockResolvedValueOnce(null as never);
+    expect(await commitItemImport(rows, { pushToJubelio: true })).toEqual({ status: "forbidden" });
+    vi.mocked(auth).mockResolvedValueOnce({ user: { id: "u1", permissions: ["items:view", "items:edit"] } } as never);
+    expect(await commitItemImport(rows, { pushToJubelio: true })).toEqual({ status: "forbidden" });
+    expect(loadItemImportLookups).not.toHaveBeenCalled();
+    expect(createItemsFromImport).not.toHaveBeenCalled();
+    expect(enqueueProductPushOnCreate).not.toHaveBeenCalled();
+  });
+
   it("creates the items and queues nothing for Jubelio unless asked", async () => {
     const r = await commitItemImport(rows, { pushToJubelio: false });
     expect(r).toMatchObject({ status: "created", jubelioRequested: false, jubelioFailed: 0 });
