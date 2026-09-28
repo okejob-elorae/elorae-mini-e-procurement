@@ -9,8 +9,8 @@ import gaya from "./layar-masuk.module.css";
 
 /**
  * Paruh kedua animasi masuk, di halaman pertama sesudah halaman masuk:
- * wordmark menembus kamera, lalu lelucon harian sebagai Instagram Story, lalu
- * swipe-up ke aplikasi.
+ * wordmark terus mendekat lalu lewat, lelucon harian muncul dari buram, lalu
+ * layar memudar dari gelap ke aplikasi.
  *
  * Dipasang di tata letak akar, jadi berlaku ke mana pun pengguna dikirim —
  * backoffice, PWA sales, atau layar gudang. Markupnya SELALU ada di HTML
@@ -25,8 +25,8 @@ import gaya from "./layar-masuk.module.css";
 
 /** Wordmark bertahan sejenak di bingkai pertama sebelum menembus kamera. */
 const TAHAN_MS = 350;
-/** Sepanjang animasi `swipe` di CSS. */
-const BUKA_MS = 700;
+/** Sepanjang animasi `buka` di CSS: 350 ms jeda + 900 ms memudar. */
+const BUKA_MS = 1300;
 /** Tekanan lebih lama dari ini adalah "tahan untuk jeda", bukan ketukan. */
 const KETUK_MAKS_MS = 250;
 
@@ -131,8 +131,8 @@ export function TiraiLanjutan() {
     };
   }, [keadaan]);
 
-  // Swipe-up. Klik yang menutup cerita tidak boleh tembus ke aplikasi yang
-  // sedang terbuka di bawahnya — misalnya mengenai menu di sidebar.
+  // Memudar ke aplikasi. Klik yang menutup cerita tidak boleh tembus ke
+  // aplikasi yang sedang terbuka di bawahnya — misalnya mengenai menu sidebar.
   useEffect(() => {
     if (keadaan !== "buka") return;
     hapusMasuk();

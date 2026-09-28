@@ -446,22 +446,20 @@ export function waktuBacaMs(teks: string): number {
   return Math.min(6500, Math.max(2200, 1200 + teks.length * 55));
 }
 
-/** Kartu cerita muncul sebelum kata pertama; lihat `layar-masuk.module.css`. */
-export const CERITA_MASUK_MS = 560;
-/** Jeda antar-kata saat pembuka muncul kata demi kata. */
-export const JEDA_KATA_MS = 65;
+/**
+ * Sampai pembuka benar-benar terbaca: logo lewat, lalu kalimatnya ditarik
+ * fokusnya dari buram (`.pembuka` di `layar-masuk.module.css`: jeda 700 ms,
+ * 1100 ms dengan perlambatan — tajam sekitar 1200 ms).
+ */
+export const CERITA_MASUK_MS = 1200;
 
 /**
  * Lama dua "halaman" cerita: pembuka, lalu punchline.
  *
- * Pembuka baru mulai terbaca setelah kartunya muncul dan kata terakhirnya
- * mendarat, jadi keduanya ditambahkan di depan waktu bacanya. Punchline diberi
- * napas tambahan untuk tertawa — dan untuk reaksi yang melayang.
+ * Pembuka baru mulai terbaca setelah ia tajam, jadi waktu munculnya
+ * ditambahkan di depan waktu bacanya. Punchline diberi napas tambahan — waktu
+ * untuk tertawa sebelum layarnya pergi.
  */
 export function durasiCerita(teks: { pembuka: string; punchline: string }): [number, number] {
-  const kata = teks.pembuka.trim().split(/\s+/).length;
-  return [
-    CERITA_MASUK_MS + kata * JEDA_KATA_MS + waktuBacaMs(teks.pembuka),
-    waktuBacaMs(teks.punchline) + 1200,
-  ];
+  return [CERITA_MASUK_MS + waktuBacaMs(teks.pembuka), waktuBacaMs(teks.punchline) + 900];
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CERITA_MASUK_MS, durasiCerita, JEDA_KATA_MS, LELUCON, leluconHariIni, waktuBacaMs } from "./lelucon";
+import { CERITA_MASUK_MS, durasiCerita, LELUCON, leluconHariIni, waktuBacaMs } from "./lelucon";
 
 describe("leluconHariIni", () => {
   it("stays the same for the whole WIB calendar day", () => {
@@ -58,9 +58,9 @@ describe("waktuBacaMs", () => {
 });
 
 describe("durasiCerita", () => {
-  it("waits for the last word to land before the reading time starts", () => {
+  it("waits for the opener to come into focus before the reading time starts", () => {
     const [pembuka] = durasiCerita({ pembuka: "Hidup ini singkat.", punchline: "x" });
-    expect(pembuka).toBe(CERITA_MASUK_MS + 3 * JEDA_KATA_MS + waktuBacaMs("Hidup ini singkat."));
+    expect(pembuka).toBe(CERITA_MASUK_MS + waktuBacaMs("Hidup ini singkat."));
   });
 
   it("gives the punchline more than its bare reading time", () => {
