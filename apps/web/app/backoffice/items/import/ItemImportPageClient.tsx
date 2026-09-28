@@ -4,10 +4,11 @@ import { useRef, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { ArrowLeft, CheckCircle2, Download, FileSpreadsheet, Loader2, Upload } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Download, FileSpreadsheet, Loader2, RotateCw, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/lib/utils";
 import { commitItemImport, previewItemImport } from "@/app/actions/item-import";
 import {
   ITEM_IMPORT_MAX_BYTES,
@@ -15,6 +16,7 @@ import {
   importError,
   type ItemImportCommitResult,
   type ItemImportError,
+  type ItemImportPreviewResult,
   type ItemImportRow,
   type ItemImportValidatedResult,
 } from "@/lib/items/import/types";
@@ -26,6 +28,7 @@ type Phase =
   | { kind: "idle" }
   | { kind: "reading"; fileName: string }
   | { kind: "fileError"; fileName: string; errors: ItemImportError[] }
+  | { kind: "checkFailed"; fileName: string; rows: ItemImportRow[]; parseErrors: ItemImportError[] }
   | { kind: "preview"; fileName: string; rows: ItemImportRow[]; result: ItemImportValidatedResult }
   | { kind: "committing"; fileName: string; rows: ItemImportRow[]; result: ItemImportValidatedResult }
   | { kind: "done"; result: CreatedResult };
@@ -35,7 +38,7 @@ const MAX_MB = ITEM_IMPORT_MAX_BYTES / (1024 * 1024);
 /**
  * Jubelio skips any item with no Kategori (or one not mapped to a Jubelio category). Counts
  * artikels, grouped case-insensitively, whose FIRST row in the file has a blank Kategori — this
- * mirrors how the parser folds variant rows into one product without touching validate.ts.
+ * mirrors how the validator folds variant rows into one product, without importing validate.ts.
  */
 function countJubelioNoCategoryArtikels(rows: ItemImportRow[]): number {
   const seen = new Map<string, boolean>();
@@ -50,6 +53,26 @@ function countJubelioNoCategoryArtikels(rows: ItemImportRow[]): number {
     if (noCategory) count += 1;
   }
   return count;
+}
+
+/**
+ * Row-level parse errors (a date-formatted cell) are not a file failure: the rows still go through
+ * the server check, and these errors are put in front of its result so commit stays blocked.
+ */
+function withParseErrors(
+  result: ItemImportValidatedResult,
+  parseErrors: ItemImportError[],
+): ItemImportValidatedResult {
+  if (parseErrors.length === 0) return result;
+  const errorRows = new Set(parseErrors.map((e) => e.row));
+  return {
+    ...result,
+    errors: [...parseErrors, ...result.errors],
+    preview: result.preview.map((item) => {
+      if (!item.rows.some((row) => errorRows.has(row))) return item;
+      return { ...item, hasErrors: true };
+    }),
+  };
 }
 
 export function ItemImportPageClient() {
@@ -78,7 +101,7 @@ export function ItemImportPageClient() {
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      toast.error(t("commitFailed"));
+      toast.error(t("templateFailed"));
     } finally {
       setDownloading(false);
     }
@@ -86,6 +109,7 @@ export function ItemImportPageClient() {
 
   async function handleFile(file: File) {
     setCommitError(false);
+    setPushToJubelio(false);
     const fileName = file.name;
     if (!fileName.toLowerCase().endsWith(".xlsx")) {
       setPhase({ kind: "fileError", fileName, errors: [importError("NOT_XLSX")] });
@@ -96,23 +120,38 @@ export function ItemImportPageClient() {
       return;
     }
     setPhase({ kind: "reading", fileName });
+    let parsed: { rows: ItemImportRow[]; errors: ItemImportError[] };
     try {
       const { parseItemImportWorkbook } = await import("@/lib/items/import/workbook");
-      const parsed = parseItemImportWorkbook(await file.arrayBuffer());
-      if (parsed.errors.length > 0) {
-        setPhase({ kind: "fileError", fileName, errors: parsed.errors });
-        return;
-      }
-      const result = await previewItemImport(parsed.rows);
-      if (result.status === "forbidden") {
-        toast.error(t("forbidden"));
-        setPhase({ kind: "idle" });
-        return;
-      }
-      setPhase({ kind: "preview", fileName, rows: parsed.rows, result });
+      parsed = parseItemImportWorkbook(await file.arrayBuffer());
     } catch {
       setPhase({ kind: "fileError", fileName, errors: [importError("UNREADABLE_FILE")] });
+      return;
     }
+    /* A file-level failure returns no rows; row-level errors come back beside the rows. */
+    if (parsed.rows.length === 0) {
+      setPhase({ kind: "fileError", fileName, errors: parsed.errors });
+      return;
+    }
+    await checkRows(fileName, parsed.rows, parsed.errors);
+  }
+
+  /* A failure here is the server's, not the file's, so the parsed rows are kept for a retry. */
+  async function checkRows(fileName: string, rows: ItemImportRow[], parseErrors: ItemImportError[]) {
+    setPhase({ kind: "reading", fileName });
+    let result: ItemImportPreviewResult;
+    try {
+      result = await previewItemImport(rows);
+    } catch {
+      setPhase({ kind: "checkFailed", fileName, rows, parseErrors });
+      return;
+    }
+    if (result.status === "forbidden") {
+      toast.error(t("forbidden"));
+      setPhase({ kind: "idle" });
+      return;
+    }
+    setPhase({ kind: "preview", fileName, rows, result: withParseErrors(result, parseErrors) });
   }
 
   async function commit() {
@@ -125,6 +164,7 @@ export function ItemImportPageClient() {
       if (r.status === "created") {
         setPhase({ kind: "done", result: r });
       } else if (r.status === "invalid") {
+        toast.error(t("errorsTitle", { count: r.errors.length }));
         setPhase({ kind: "preview", fileName, rows, result: r });
       } else if (r.status === "forbidden") {
         toast.error(t("forbidden"));
@@ -172,7 +212,9 @@ export function ItemImportPageClient() {
                     href={`/backoffice/items/${item.id}`}
                     className="flex min-h-10 items-center gap-3 px-3 py-2 hover:bg-muted/50"
                   >
-                    <span className="font-mono text-sm">{item.sku}</span>
+                    <span className="max-w-[45%] shrink-0 truncate font-mono text-sm" title={item.sku}>
+                      {item.sku}
+                    </span>
                     <span className="min-w-0 truncate text-sm">{item.nameId}</span>
                   </Link>
                 </li>
@@ -191,7 +233,7 @@ export function ItemImportPageClient() {
   const jubelioNoCategoryCount = rows ? countJubelioNoCategoryArtikels(rows) : 0;
 
   return (
-    <div className={`space-y-6 ${validated ? "pb-40 lg:pb-6" : ""}`}>
+    <div className={cn("space-y-6", validated && "pb-56 lg:pb-6")}>
       <PageHeader />
 
       <Card>
@@ -224,7 +266,10 @@ export function ItemImportPageClient() {
               const file = e.dataTransfer.files[0];
               if (file && !busy) void handleFile(file);
             }}
-            className={`flex flex-col items-center gap-3 rounded-lg border-2 border-dashed px-4 py-8 text-center transition-colors ${dragging ? "border-primary bg-primary/5" : "border-muted-foreground/25"}`}
+            className={cn(
+              "flex flex-col items-center gap-3 rounded-lg border-2 border-dashed px-4 py-8 text-center transition-colors",
+              dragging ? "border-primary bg-primary/5" : "border-muted-foreground/25",
+            )}
           >
             {phase.kind === "reading" ? (
               <>
@@ -267,6 +312,21 @@ export function ItemImportPageClient() {
                   <li key={`${e.code}-${i}`}>{errorMessage(e)}</li>
                 ))}
               </ul>
+            </div>
+          ) : null}
+
+          {phase.kind === "checkFailed" ? (
+            <div className="flex flex-col gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-destructive">{t("checkFailed")}</p>
+              <Button
+                size="lg"
+                variant="outline"
+                className="shrink-0"
+                onClick={() => void checkRows(phase.fileName, phase.rows, phase.parseErrors)}
+              >
+                <RotateCw className="mr-2 h-4 w-4" />
+                {t("retry")}
+              </Button>
             </div>
           ) : null}
         </CardContent>

@@ -19,6 +19,10 @@ const nextConfig: NextConfig = {
   // truncates multipart → "Failed to parse body as FormData".
   experimental: {
     proxyClientMaxBodySize: "100mb",
+    /* The Master Produk import sends up to 1,000 parsed rows to its server actions as JSON. */
+    serverActions: {
+      bodySizeLimit: "3mb",
+    },
   },
   async redirects() {
     return [

@@ -51,6 +51,10 @@ const ERROR_KEY: Record<ItemImportErrorCode, `err.${ItemImportErrorCode}`> = {
 
 const COLUMN_HEADER = new Map<ItemImportColumnKey, string>(ITEM_IMPORT_COLUMNS.map((c) => [c.key, c.header]));
 
+function hasRewrittenSku(item: ItemImportPreviewItem): boolean {
+  return item.variants.some((v) => v.typedSku !== null && v.finalSku !== null && v.typedSku !== v.finalSku);
+}
+
 export function useImportErrorMessage(): (e: ItemImportError) => string {
   const t = useTranslations("itemImport");
   return (e) => {
@@ -99,12 +103,19 @@ export function ImportPreviewList({ items }: { items: ItemImportPreviewItem[] })
       <CardContent className="space-y-3">
         {items.map((item) => (
           <details key={item.artikel} className="rounded-md border">
-            <summary className="flex min-h-10 cursor-pointer items-center gap-2 px-3 py-2">
-              <span className="font-mono text-sm font-medium">{item.artikel}</span>
+            <summary className="flex min-h-10 cursor-pointer flex-wrap items-center gap-2 px-3 py-2">
+              <span className="max-w-[45%] shrink-0 truncate font-mono text-sm font-medium" title={item.artikel}>
+                {item.artikel}
+              </span>
               <span className="min-w-0 flex-1 truncate text-sm" title={item.nameId}>{item.nameId}</span>
               <Badge variant="secondary">
                 {item.variantless ? t("variantless") : t("variantCount", { count: item.variants.length })}
               </Badge>
+              {hasRewrittenSku(item) ? (
+                <Badge variant="outline" className="border-amber-300 text-amber-800 dark:border-amber-800 dark:text-amber-300">
+                  {t("skuRewritten")}
+                </Badge>
+              ) : null}
               {item.hasErrors ? (
                 <Badge variant="destructive" className="gap-1">
                   <AlertTriangle className="h-3 w-3" />

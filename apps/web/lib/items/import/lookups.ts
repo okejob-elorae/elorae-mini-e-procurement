@@ -3,9 +3,8 @@ import { parseItemVariants } from "@/lib/items/variants";
 import type { ItemImportLookups } from "./validate";
 
 /**
- * One read of everything the validator compares against. The catalog is small (about a thousand
- * variants), so every item's variants JSON is flattened in memory — variant SKUs and barcodes live
- * inside that JSON and cannot be looked up in SQL.
+ * One read of everything the validator compares against. Every item's variants JSON is flattened
+ * in memory — variant SKUs and barcodes live inside that JSON and cannot be looked up in SQL.
  */
 export async function loadItemImportLookups(): Promise<ItemImportLookups> {
   const [uoms, categories, items] = await Promise.all([

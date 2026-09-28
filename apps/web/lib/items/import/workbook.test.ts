@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as XLSX from "xlsx";
 import { buildItemImportTemplate, parseItemImportWorkbook } from "./workbook";
-import { ITEM_IMPORT_MAX_ROWS } from "./types";
+import { ITEM_IMPORT_MAX_LENGTH, ITEM_IMPORT_MAX_ROWS } from "./types";
 
 function workbookFrom(aoa: unknown[][], sheetName = "Produk"): ArrayBuffer {
   const wb = XLSX.utils.book_new();
@@ -39,6 +39,33 @@ describe("parseItemImportWorkbook", () => {
       ]),
     );
     expect(rows[0]).toMatchObject({ ukuran: "42", barcode: "8990001234567", hargaJual: 350000 });
+  });
+
+  it("clips an over-long text cell to one character past the cap, so TOO_LONG still fires", () => {
+    const { rows } = parseItemImportWorkbook(
+      workbookFrom([
+        HEADERS,
+        ["A-1", "N".repeat(500), "", "", "PCS", "", "", "", "", "", ""],
+      ]),
+    );
+    expect(rows[0].nama).toHaveLength(ITEM_IMPORT_MAX_LENGTH + 1);
+  });
+
+  it("reports a date-formatted text cell as DATE_CELL on its row and column, still returning the rows", () => {
+    const { rows, errors } = parseItemImportWorkbook(
+      workbookFrom([
+        HEADERS,
+        ["KID-01", "Kaos Anak", "", "", "PCS", 50000, "Merah", new Date(2026, 2, 4), "", "", ""],
+      ]),
+    );
+    expect(rows).toHaveLength(1);
+    expect(errors.map((e) => [e.code, e.row, e.column])).toEqual([["DATE_CELL", 2, "ukuran"]]);
+  });
+
+  it("ships a template whose example artikel lists the whole Warna x Ukuran grid", () => {
+    const { rows } = parseItemImportWorkbook(buildItemImportTemplate());
+    const pairs = rows.filter((r) => r.artikel === "KMJ-001").map((r) => `${r.warna}/${r.ukuran}`);
+    expect(pairs.sort()).toEqual(["Biru/L", "Biru/M", "Merah/L", "Merah/M"]);
   });
 
   it("skips blank rows but keeps the sheet's own row numbers", () => {

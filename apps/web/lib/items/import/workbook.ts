@@ -2,6 +2,7 @@ import * as XLSX from "xlsx";
 import {
   ITEM_IMPORT_COLUMNS,
   ITEM_IMPORT_GUIDE_SHEET,
+  ITEM_IMPORT_MAX_LENGTH,
   ITEM_IMPORT_MAX_ROWS,
   ITEM_IMPORT_SHEET,
   importError,
@@ -26,23 +27,42 @@ function cellText(value: unknown): string {
   return String(value).trim();
 }
 
+/* One character past the cap is enough for the validator's TOO_LONG to fire, and keeps the payload bounded. */
+function textCell(value: unknown): string {
+  return cellText(value).slice(0, ITEM_IMPORT_MAX_LENGTH + 1);
+}
+
 function priceCell(value: unknown): string | number | null {
   if (typeof value === "number") return value;
-  const text = cellText(value);
+  const text = textCell(value);
   return text === "" ? null : text;
 }
+
+/**
+ * Excel turns text like a kids' size `3-4` typed into a General cell into a date, which the raw
+ * value then carries as a serial such as `46085`. Such a cell is refused rather than imported as
+ * that number; Harga Jual is the one numeric column and is never checked.
+ */
+function isDateCell(cell: XLSX.CellObject | undefined): boolean {
+  if (!cell) return false;
+  if (cell.t === "d") return true;
+  return cell.t === "n" && typeof cell.z === "string" && Boolean(XLSX.SSF.is_date(cell.z));
+}
+
+const TEXT_COLUMNS = ITEM_IMPORT_COLUMNS.filter((c) => c.key !== "hargaJual").map((c) => c.key);
 
 export function parseItemImportWorkbook(data: ArrayBuffer): { rows: ItemImportRow[]; errors: ItemImportError[] } {
   let workbook: XLSX.WorkBook;
   try {
-    workbook = XLSX.read(data, { type: "array" });
+    workbook = XLSX.read(data, { type: "array", cellNF: true });
   } catch {
     return { rows: [], errors: [importError("UNREADABLE_FILE")] };
   }
   const sheet = workbook.Sheets[ITEM_IMPORT_SHEET];
   if (!sheet) return { rows: [], errors: [importError("MISSING_SHEET", { detail: ITEM_IMPORT_SHEET })] };
 
-  const firstRow = sheet["!ref"] ? XLSX.utils.decode_range(sheet["!ref"]).s.r + 1 : 1;
+  const range = sheet["!ref"] ? XLSX.utils.decode_range(sheet["!ref"]) : { s: { r: 0, c: 0 } };
+  const firstRow = range.s.r + 1;
   const grid = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: true, defval: "", blankrows: true });
   if (grid.length === 0) return { rows: [], errors: [importError("EMPTY_FILE")] };
 
@@ -63,22 +83,29 @@ export function parseItemImportWorkbook(data: ArrayBuffer): { rows: ItemImportRo
   };
 
   const rows: ItemImportRow[] = [];
+  const rowErrors: ItemImportError[] = [];
   for (let i = 1; i < grid.length; i++) {
     const cells = grid[i];
     if (cells.every((c) => cellText(c) === "")) continue;
+    for (const key of TEXT_COLUMNS) {
+      const col = indexByKey.get(key);
+      if (col === undefined) continue;
+      const cell = sheet[XLSX.utils.encode_cell({ r: range.s.r + i, c: range.s.c + col })] as XLSX.CellObject | undefined;
+      if (isDateCell(cell)) rowErrors.push(importError("DATE_CELL", { row: firstRow + i, column: key }));
+    }
     rows.push({
       row: firstRow + i,
-      artikel: cellText(read(cells, "artikel")),
-      nama: cellText(read(cells, "nama")),
-      namaEn: cellText(read(cells, "namaEn")),
-      kategori: cellText(read(cells, "kategori")),
-      satuan: cellText(read(cells, "satuan")),
+      artikel: textCell(read(cells, "artikel")),
+      nama: textCell(read(cells, "nama")),
+      namaEn: textCell(read(cells, "namaEn")),
+      kategori: textCell(read(cells, "kategori")),
+      satuan: textCell(read(cells, "satuan")),
       hargaJual: priceCell(read(cells, "hargaJual")),
-      warna: cellText(read(cells, "warna")),
-      ukuran: cellText(read(cells, "ukuran")),
-      skuVarian: cellText(read(cells, "skuVarian")),
-      barcode: cellText(read(cells, "barcode")),
-      deskripsi: cellText(read(cells, "deskripsi")),
+      warna: textCell(read(cells, "warna")),
+      ukuran: textCell(read(cells, "ukuran")),
+      skuVarian: textCell(read(cells, "skuVarian")),
+      barcode: textCell(read(cells, "barcode")),
+      deskripsi: textCell(read(cells, "deskripsi")),
     });
   }
 
@@ -86,13 +113,15 @@ export function parseItemImportWorkbook(data: ArrayBuffer): { rows: ItemImportRo
   if (rows.length > ITEM_IMPORT_MAX_ROWS) {
     return { rows: [], errors: [importError("TOO_MANY_ROWS", { detail: String(ITEM_IMPORT_MAX_ROWS) })] };
   }
-  return { rows, errors: [] };
+  /* Row-level errors travel WITH the rows: the page merges them into the preview's errors, so commit stays blocked. */
+  return { rows, errors: rowErrors };
 }
 
 const TEMPLATE_EXAMPLE: unknown[][] = [
   ["KMJ-001", "Kemeja Batik Parang", "Parang Batik Shirt", "", "PCS", 250000, "Merah", "M", "", "", ""],
   ["KMJ-001", "Kemeja Batik Parang", "Parang Batik Shirt", "", "PCS", 250000, "Merah", "L", "", "", ""],
   ["KMJ-001", "Kemeja Batik Parang", "Parang Batik Shirt", "", "PCS", 250000, "Biru", "M", "", "", ""],
+  ["KMJ-001", "Kemeja Batik Parang", "Parang Batik Shirt", "", "PCS", 250000, "Biru", "L", "", "", ""],
   ["SYL-001", "Syal Tenun", "", "", "PCS", 90000, "", "", "", "", ""],
 ];
 
@@ -105,12 +134,14 @@ const TEMPLATE_GUIDE: string[][] = [
   ["Satuan", "Ya", "Kode satuan yang sudah ada, misalnya PCS."],
   ["Harga Jual", "Tidak", "Angka saja, tanpa titik atau koma, misalnya 250000."],
   ["Warna", "Tidak", "Atribut varian."],
-  ["Ukuran", "Tidak", "Atribut varian."],
-  ["SKU Varian", "Tidak", "Kosong = dibuat otomatis dari Artikel, Warna dan Ukuran (misalnya KMJ-001-MERAH-M)."],
+  ["Ukuran", "Tidak", "Atribut varian. Format sel sebagai Teks agar ukuran seperti 3-4 tidak berubah menjadi tanggal."],
+  ["SKU Varian", "Tidak", "Kosong = dibuat otomatis dari Artikel, Warna dan Ukuran (misalnya KMJ-001-MERAH-M). Jika diisi, harus diawali Artikel atau kode Kategori; jika tidak, SKU akan diubah."],
   ["Barcode", "Tidak", "Barcode varian. Format sel sebagai Teks agar angka panjang tidak berubah."],
   ["Deskripsi", "Tidak", "Harus sama di semua baris satu Artikel."],
   ["", "", ""],
   ["Produk tanpa varian", "", "Isi satu baris saja dan kosongkan Warna, Ukuran dan SKU Varian."],
+  ["Varian lengkap", "", "Setiap baris varian harus punya Warna atau Ukuran, dan kolom yang dipakai harus terisi di semua baris satu Artikel. Artikel yang memakai Warna dan Ukuran harus mencantumkan setiap kombinasi Warna × Ukuran."],
+  ["Sel Teks", "", "Format kolom Ukuran dan Barcode sebagai Teks sebelum mengisi, agar Excel tidak mengubah 3-4 menjadi tanggal atau memotong angka panjang."],
   ["Semua atau tidak sama sekali", "", "Jika ada satu error, tidak ada produk yang dibuat. Perbaiki file lalu upload ulang."],
 ];
 
