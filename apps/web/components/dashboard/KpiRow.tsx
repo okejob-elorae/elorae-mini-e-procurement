@@ -72,8 +72,14 @@ export function KpiRow({ judul, kpi }: { judul: string; kpi: Kpi[] }) {
               >
                 {k.nilai}
               </p>
+              {/* Dua baris, bukan dipotong. Konteks yang terpotong ("stok
+                  terjual melebihi yang…") membuat angkanya tidak menyatakan
+                  apa-apa. Ubin dalam satu baris kisi tetap sama tinggi —
+                  kisinya meregangkan semuanya ke yang tertinggi. */}
               {k.konteks && (
-                <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{k.konteks}</p>
+                <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
+                  {k.konteks}
+                </p>
               )}
             </>
           );

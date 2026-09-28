@@ -886,7 +886,7 @@
     "vizEmpty": "No data yet.",
     "kpiSales": "Sales & receivables",
     "kpiProduction": "Production & purchasing",
-    "kpiStock": "Stock & marketplace",
+    "kpiStock": "Stock",
     "kpiRealisedCtx": "{count} transactions",
     "kpiReceivable": "Receivables outstanding",
     "kpiReceivableCtx": "{count} open invoices",
@@ -923,7 +923,7 @@
       "downloadStarted": "Download started.",
       "exportFailed": "Export failed. Try again."
     },
-    "kpiMore": "Marketplace, suppliers & stock value",
+    "kpiMore": "Marketplace & suppliers",
     "kpiMarketplaceToday": "Marketplace sales today",
     "kpiSuppliers": "Active suppliers",
     "kpiSuppliersCtx": "{count} goods receipts this week",
@@ -975,7 +975,9 @@
     "snapshotTitle": "Inventory snapshot",
     "snapshotDesc": "Current inventory value by type, value distribution, low stock alerts.",
     "itemsCount": "{count} items",
-    "lowStockLine": "{sku} – {name}: qty {qty} (reorder: {reorder})"
+    "lowStockLine": "{sku} – {name}: qty {qty} (reorder: {reorder})",
+    "activityTimes": "{count}×",
+    "seeAllActivity": "See everything in the audit trail →"
   },
   "production": {
     "targetCutting": "Target cutting",

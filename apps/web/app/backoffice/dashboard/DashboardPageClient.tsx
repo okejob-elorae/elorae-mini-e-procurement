@@ -55,6 +55,8 @@ import type {
 import { formatIDR } from '@/lib/sales-orders/format';
 import type { MarketplaceKpi } from '@/lib/sales-orders/queries';
 import type { ActionItem } from '@/lib/dashboard/action-items';
+import { kelompokkanAktivitas } from '@/lib/dashboard/aktivitas';
+import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { ActionNeededPanel } from './ActionNeededPanel';
 import {
   getProcurementReport,
@@ -501,6 +503,15 @@ export function DashboardPageClient({
           ]}
         />
 
+        {/*
+          Baris ketiga dan keempat dulu berjudul "Stok & marketplace" dan
+          "Marketplace, pemasok & nilai stok" — dua judul yang tumpang tindih,
+          dengan nilai stok terbelah di keduanya dan pemasok terselip di
+          antaranya. Sekarang satu baris untuk STOK (berapa nilainya, apa yang
+          menipis) dan satu untuk ARUS KELUAR-MASUK (marketplace dan pemasok).
+          Kartu "COGS" lama tidak pernah COGS: itu nilai stok dibelah per jenis
+          barang — karena itu tempatnya di baris stok.
+        */}
         <KpiRow
           judul={tDashboard('kpiStock')}
           kpi={[
@@ -511,54 +522,6 @@ export function DashboardPageClient({
                 count: formatNumber(s.items.activeCount),
               }),
               href: '/backoffice/inventory',
-            },
-            {
-              label: tDashboard('oversoldTitle'),
-              nilai: formatNumber(oversoldInventory.length),
-              konteks: tDashboard('kpiOversoldCtx'),
-              href: '/backoffice/inventory?tab=stock&oversold=1',
-              nada: oversoldInventory.length > 0 ? 'buruk' : 'netral',
-            },
-            {
-              label: tDashboard('kpiLowStock'),
-              nilai: formatNumber(s.items.lowStockCount),
-              konteks: tDashboard('kpiLowStockCtx'),
-              href: '/backoffice/inventory',
-              nada: s.items.lowStockCount > 0 ? 'perhatian' : 'netral',
-            },
-            {
-              label: tDashboard('kpiUnshipped'),
-              nilai: formatNumber(marketplaceKpi.pendingFulfillmentCount),
-              konteks: tDashboard('kpiUnshippedCtx'),
-              href: '/backoffice/fulfillment',
-              nada: marketplaceKpi.pendingFulfillmentCount > 0 ? 'perhatian' : 'netral',
-            },
-          ]}
-        />
-
-        {/*
-          The fourth row holds only what the three above do not: today's
-          marketplace takings, suppliers, and the raw-vs-finished split of the
-          stock value. It replaces three blocks that sat below — a Marketplace
-          pair, a five-card grid and two "COGS" cards — which repeated Nilai
-          Inventori, Stok Kelebihan Pesan, PO waiting and WO running a second
-          time in a different style. (The "COGS" pair was never COGS: it is
-          the inventory value split by item type.)
-        */}
-        <KpiRow
-          judul={tDashboard('kpiMore')}
-          kpi={[
-            {
-              label: tDashboard('kpiMarketplaceToday'),
-              nilai: formatIDR(marketplaceKpi.todaySalesTotal),
-              konteks: tDashboard('todaySalesCount', { count: marketplaceKpi.todaySalesCount }),
-              href: '/backoffice/sales-orders',
-            },
-            {
-              label: tDashboard('kpiSuppliers'),
-              nilai: formatNumber(s.suppliers.activeCount),
-              konteks: tDashboard('kpiSuppliersCtx', { count: formatNumber(s.grnsThisWeek) }),
-              href: '/backoffice/suppliers',
             },
             ...(cogsRawVsFinished
               ? [
@@ -580,6 +543,45 @@ export function DashboardPageClient({
                   },
                 ]
               : []),
+            {
+              label: tDashboard('kpiLowStock'),
+              nilai: formatNumber(s.items.lowStockCount),
+              konteks: tDashboard('kpiLowStockCtx'),
+              href: '/backoffice/inventory',
+              nada: s.items.lowStockCount > 0 ? 'perhatian' : 'netral',
+            },
+          ]}
+        />
+
+        <KpiRow
+          judul={tDashboard('kpiMore')}
+          kpi={[
+            {
+              label: tDashboard('kpiMarketplaceToday'),
+              nilai: formatIDR(marketplaceKpi.todaySalesTotal),
+              konteks: tDashboard('todaySalesCount', { count: marketplaceKpi.todaySalesCount }),
+              href: '/backoffice/sales-orders',
+            },
+            {
+              label: tDashboard('kpiUnshipped'),
+              nilai: formatNumber(marketplaceKpi.pendingFulfillmentCount),
+              konteks: tDashboard('kpiUnshippedCtx'),
+              href: '/backoffice/fulfillment',
+              nada: marketplaceKpi.pendingFulfillmentCount > 0 ? 'perhatian' : 'netral',
+            },
+            {
+              label: tDashboard('oversoldTitle'),
+              nilai: formatNumber(oversoldInventory.length),
+              konteks: tDashboard('kpiOversoldCtx'),
+              href: '/backoffice/inventory?tab=stock&oversold=1',
+              nada: oversoldInventory.length > 0 ? 'buruk' : 'netral',
+            },
+            {
+              label: tDashboard('kpiSuppliers'),
+              nilai: formatNumber(s.suppliers.activeCount),
+              konteks: tDashboard('kpiSuppliersCtx', { count: formatNumber(s.grnsThisWeek) }),
+              href: '/backoffice/suppliers',
+            },
           ]}
         />
       </div>
@@ -711,30 +713,46 @@ export function DashboardPageClient({
                 <CardDescription>{tDashboard('latestActionsInSystem')}</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {s.recentActivity.length === 0 ? (
-                    <p className="text-sm text-muted-foreground py-4">{tDashboard('noRecentActivity')}</p>
-                  ) : (
-                    s.recentActivity.map((item) => (
+                {/* Deret tindakan yang sama dilipat jadi satu baris dengan
+                    jumlahnya — lihat `lib/dashboard/aktivitas.ts`. Sebelumnya
+                    satu tindakan bisa mengisi sepuluh baris berturut-turut. */}
+                {s.recentActivity.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-4">{tDashboard('noRecentActivity')}</p>
+                ) : (
+                  <div>
+                    {kelompokkanAktivitas(s.recentActivity, 6).map((item) => (
                       <div
                         key={item.id}
-                        className="flex items-center justify-between py-2 border-b last:border-0"
+                        className="flex items-center justify-between gap-3 border-b py-3 last:border-0"
                       >
-                        <div>
-                          <p className="text-sm font-medium">
+                        <div className="min-w-0">
+                          <p className="flex items-center gap-2 text-sm font-medium">
                             {auditActionLabel(tAuditActions, item.action, item.entityType)}
+                            {item.jumlah > 1 ? (
+                              <Badge variant="secondary" className="px-1.5 py-0 text-[11px] tabular-nums">
+                                {tDashboard('activityTimes', { count: item.jumlah })}
+                              </Badge>
+                            ) : null}
                           </p>
                           <p className="text-xs text-muted-foreground">
                             {tDashboard('byUser', { name: item.userName ?? tDashboard('system') })}
                           </p>
                         </div>
-                        <span className="text-xs text-muted-foreground shrink-0 ml-2">
+                        <span className="text-xs text-muted-foreground shrink-0">
                           {formatRelative(item.createdAt, locale)}
                         </span>
                       </div>
-                    ))
-                  )}
-                </div>
+                    ))}
+                    {hasPermission(session.user.permissions ?? [], PERMISSIONS.AUDIT_TRAIL_VIEW) ? (
+                      <Link
+                        href="/backoffice/audit-trail"
+                        className="mt-3 inline-flex text-sm font-medium text-primary hover:underline"
+                      >
+                        {tDashboard('seeAllActivity')}
+                      </Link>
+                    ) : null}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>

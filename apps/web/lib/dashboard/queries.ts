@@ -103,8 +103,10 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     prisma.stockMovement.count({
       where: { createdAt: { gte: todayStart } },
     }),
+    // Lebih dari yang ditampilkan: beranda melipat deret tindakan yang sama,
+    // dan sepuluh baris yang isinya satu tindakan hanya menyisakan satu baris.
     prisma.auditLog.findMany({
-      take: 10,
+      take: 40,
       orderBy: { createdAt: 'desc' },
       include: {
         user: { select: { name: true } },

@@ -886,7 +886,7 @@
     "vizEmpty": "Belum ada data.",
     "kpiSales": "Penjualan & piutang",
     "kpiProduction": "Produksi & pembelian",
-    "kpiStock": "Stok & marketplace",
+    "kpiStock": "Stok",
     "kpiRealisedCtx": "{count} transaksi",
     "kpiReceivable": "Piutang beredar",
     "kpiReceivableCtx": "{count} faktur terbuka",
@@ -923,7 +923,7 @@
       "downloadStarted": "Unduhan dimulai.",
       "exportFailed": "Ekspor gagal. Coba lagi."
     },
-    "kpiMore": "Marketplace, pemasok & nilai stok",
+    "kpiMore": "Marketplace & pemasok",
     "kpiMarketplaceToday": "Penjualan marketplace hari ini",
     "kpiSuppliers": "Pemasok aktif",
     "kpiSuppliersCtx": "{count} penerimaan barang minggu ini",
@@ -975,7 +975,9 @@
     "snapshotTitle": "Posisi stok",
     "snapshotDesc": "Nilai stok saat ini per jenis, sebaran nilai, dan peringatan stok menipis.",
     "itemsCount": "{count} barang",
-    "lowStockLine": "{sku} – {name}: stok {qty} (batas pesan ulang {reorder})"
+    "lowStockLine": "{sku} – {name}: stok {qty} (batas pesan ulang {reorder})",
+    "activityTimes": "{count}×",
+    "seeAllActivity": "Lihat semua di Jejak Audit →"
   },
   "production": {
     "targetCutting": "Target cutting",
