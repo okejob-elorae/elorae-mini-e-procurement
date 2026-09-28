@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   type AttributeDef,
+  type GridRows,
+  type GridState,
+  EMPTY_GRID_ROWS,
   attributesFromSavedVariants,
   cartesianCombinations,
   carryRowValues,
@@ -9,7 +12,11 @@ import {
   findSavedVariant,
   initialExcludedKeys,
   isGridComplete,
+  isSameGrid,
+  mapRowValues,
   overlaySavedSpelling,
+  resolveGridRows,
+  setRowValueAt,
 } from "./variant-grid";
 
 describe("cartesianCombinations", () => {
@@ -406,79 +413,265 @@ describe("carryRowValues", () => {
   });
 });
 
-/**
- * Simulates the SAME last-complete-grid snapshot rule `ItemForm` runs on
- * every combinations change: carry from the last COMPLETE grid (never the
- * merely-previous one), then advance the snapshot only when this grid is
- * also complete. No saved-variant matching here — these sequences are about
- * the carrying algorithm alone, not `findSavedVariant`.
- */
-type GridSnapshot = {
-  combos: Array<Record<string, string>>;
-  keys: string[];
-  skus: string[];
-};
-
-function advanceGrid(
-  snapshot: GridSnapshot,
-  attributes: AttributeDef[]
-): { skus: string[]; snapshot: GridSnapshot } {
-  const combos = cartesianCombinations(attributes);
-  const keys = contributingAttributes(attributes).map((attr) => attr.key);
-  const skus =
-    combos.length === 0
-      ? []
-      : carryRowValues(snapshot.combos, snapshot.skus, snapshot.keys, combos, keys);
-  const nextSnapshot = isGridComplete(attributes) ? { combos, keys, skus } : snapshot;
-  return { skus, snapshot: nextSnapshot };
-}
-
-describe("carrying across a live-typing sequence", () => {
-  it("carries all four SKUs through a name-first attribute add (name, then value)", () => {
-    const baseAttributes: AttributeDef[] = [
-      { key: "Warna", values: ["Merah", "Biru"] },
-      { key: "Ukuran", values: ["M", "L"] },
-    ];
-    let snapshot: GridSnapshot = {
-      combos: cartesianCombinations(baseAttributes),
-      keys: contributingAttributes(baseAttributes).map((attr) => attr.key),
-      skus: ["A", "B", "C", "D"],
-    };
-
-    let result = advanceGrid(snapshot, [...baseAttributes, { key: "", values: [] }]);
-    snapshot = result.snapshot;
-    expect(result.skus).toEqual(["A", "B", "C", "D"]);
-
-    result = advanceGrid(snapshot, [...baseAttributes, { key: "Bahan", values: [] }]);
-    snapshot = result.snapshot;
-    expect(result.skus).toEqual(["A", "B", "C", "D"]);
-
-    result = advanceGrid(snapshot, [...baseAttributes, { key: "Bahan", values: ["Katun"] }]);
-    expect(result.skus).toEqual(["A", "B", "C", "D"]);
+describe("isSameGrid", () => {
+  const rows = (keys: string[], attributes: AttributeDef[]): GridRows => ({
+    combos: cartesianCombinations(attributes),
+    keys,
+    skus: [],
+    barcodes: [],
   });
 
-  it("blanks while a rename passes through an empty key, then restores every SKU", () => {
-    const baseAttributes: AttributeDef[] = [
+  it("is true for the same keys and the same combinations", () => {
+    const attributes = [
       { key: "Warna", values: ["Merah", "Biru"] },
-      { key: "Ukuran", values: ["M", "L"] },
+      { key: "Ukuran", values: ["M"] },
     ];
-    let snapshot: GridSnapshot = {
-      combos: cartesianCombinations(baseAttributes),
-      keys: contributingAttributes(baseAttributes).map((attr) => attr.key),
-      skus: ["A", "B", "C", "D"],
-    };
+    const a = rows(["Warna", "Ukuran"], attributes);
+    const b = rows(["Warna", "Ukuran"], attributes);
+    expect(isSameGrid(a, b)).toBe(true);
+  });
 
-    let result = advanceGrid(snapshot, [
-      { key: "Warna", values: ["Merah", "Biru"] },
-      { key: "", values: ["M", "L"] },
-    ]);
-    snapshot = result.snapshot;
-    expect(result.skus).toEqual(["", ""]);
+  it("is false when a key is renamed", () => {
+    expect(
+      isSameGrid(
+        rows(["Warna", "Ukuran"], [
+          { key: "Warna", values: ["Merah"] },
+          { key: "Ukuran", values: ["M"] },
+        ]),
+        rows(["Warna", "Size"], [
+          { key: "Warna", values: ["Merah"] },
+          { key: "Size", values: ["M"] },
+        ])
+      )
+    ).toBe(false);
+  });
 
-    result = advanceGrid(snapshot, [
-      { key: "Warna", values: ["Merah", "Biru"] },
-      { key: "Size", values: ["M", "L"] },
+  it("is false when the combinations differ", () => {
+    expect(
+      isSameGrid(
+        rows(["Warna"], [{ key: "Warna", values: ["Merah", "Biru"] }]),
+        rows(["Warna"], [{ key: "Warna", values: ["Merah", "Hijau"] }])
+      )
+    ).toBe(false);
+  });
+});
+
+/**
+ * The two ways `ItemForm` calls `resolveGridRows`: its lazy mount
+ * initializer (`mount`) and `commitAttributes` on every attribute edit
+ * (`commit`). These wrappers only pass arguments through. Code edits call
+ * `setRowValueAt` / `mapRowValues` directly, as the form's SKU and barcode
+ * handlers do.
+ */
+function mount(attributes: AttributeDef[], savedVariants: Array<Record<string, string>>): GridState {
+  return resolveGridRows({
+    attributes,
+    savedVariants,
+    rows: EMPTY_GRID_ROWS,
+    snapshot: EMPTY_GRID_ROWS,
+  });
+}
+
+function commit(
+  state: GridState,
+  attributes: AttributeDef[],
+  savedVariants: Array<Record<string, string>>
+): GridState {
+  return resolveGridRows({
+    attributes,
+    savedVariants,
+    rows: state.rows,
+    snapshot: state.snapshot,
+  });
+}
+
+const SAVED = [
+  { Warna: "Merah", Ukuran: "M", sku: "A", barcode: "1" },
+  { Warna: "Merah", Ukuran: "L", sku: "B", barcode: "2" },
+  { Warna: "Biru", Ukuran: "M", sku: "C", barcode: "3" },
+  { Warna: "Biru", Ukuran: "L", sku: "D", barcode: "4" },
+];
+
+const WARNA: AttributeDef = { key: "Warna", values: ["Merah", "Biru"] };
+
+describe("resolveGridRows", () => {
+  it("resolves an item with no attributes to no rows", () => {
+    expect(mount([], []).rows).toEqual(EMPTY_GRID_ROWS);
+  });
+
+  it("prefills every saved code on mount and snapshots the complete grid", () => {
+    const state = mount(attributesFromSavedVariants(SAVED), SAVED);
+    expect(state.rows.skus).toEqual(["A", "B", "C", "D"]);
+    expect(state.rows.barcodes).toEqual(["1", "2", "3", "4"]);
+    expect(state.snapshot).toBe(state.rows);
+  });
+
+  it("carries all four saved SKUs through a name-first attribute add (Bahan, then Katun)", () => {
+    const ukuran: AttributeDef = { key: "Ukuran", values: ["M", "L"] };
+    let state = mount(attributesFromSavedVariants(SAVED), SAVED);
+
+    state = commit(state, [WARNA, ukuran, { key: "", values: [] }], SAVED);
+    expect(state.rows.skus).toEqual(["A", "B", "C", "D"]);
+
+    state = commit(state, [WARNA, ukuran, { key: "Bahan", values: [] }], SAVED);
+    expect(state.rows.skus).toEqual(["A", "B", "C", "D"]);
+
+    state = commit(state, [WARNA, ukuran, { key: "Bahan", values: ["Katun"] }], SAVED);
+    expect(state.rows.keys).toEqual(["Warna", "Ukuran", "Bahan"]);
+    expect(state.rows.skus).toEqual(["A", "B", "C", "D"]);
+    expect(state.rows.barcodes).toEqual(["1", "2", "3", "4"]);
+  });
+
+  it("restores all four SKUs after a backspace-rename Ukuran → '' → 'Size'", () => {
+    let state = mount(attributesFromSavedVariants(SAVED), SAVED);
+    const renameTo = (key: string) =>
+      commit(state, [WARNA, { key, values: ["M", "L"] }], SAVED);
+
+    ["Ukura", "Ukur", "Uku", "Uk", "U"].forEach((key) => {
+      state = renameTo(key);
+      expect(state.rows.skus).toEqual(["A", "B", "C", "D"]);
+    });
+
+    /**
+     * With the name empty only Warna contributes, so the form shows two rows,
+     * each prefilled from the FIRST saved variant of that colour — a
+     * partial saved match, not a carry.
+     */
+    state = renameTo("");
+    expect(state.rows.combos).toEqual([{ Warna: "Merah" }, { Warna: "Biru" }]);
+    expect(state.rows.skus).toEqual(["A", "C"]);
+
+    ["S", "Si", "Siz", "Size"].forEach((key) => {
+      state = renameTo(key);
+      expect(state.rows.skus).toEqual(["A", "B", "C", "D"]);
+    });
+    expect(state.rows.barcodes).toEqual(["1", "2", "3", "4"]);
+  });
+
+  it("blanks while a rename collides with another attribute's name, then restores once unique", () => {
+    let state = mount(attributesFromSavedVariants(SAVED), SAVED);
+    const renameTo = (key: string) =>
+      commit(state, [WARNA, { key, values: ["M", "L"] }], SAVED);
+
+    ["W", "Wa", "War", "Warn"].forEach((key) => {
+      state = renameTo(key);
+      expect(state.rows.skus).toEqual(["A", "B", "C", "D"]);
+    });
+
+    state = renameTo("Warna");
+    expect(state.rows.skus).toEqual(["", "", "", ""]);
+
+    state = renameTo("Warna2");
+    expect(state.rows.skus).toEqual(["A", "B", "C", "D"]);
+  });
+
+  it("restores typed codes after the last value is removed and added back under the same name", () => {
+    let state = mount([WARNA, { key: "Ukuran", values: ["M"] }], []);
+    state = setRowValueAt(state, "skus", 0, "X");
+    state = setRowValueAt(state, "skus", 1, "Y");
+
+    state = commit(state, [WARNA, { key: "Ukuran", values: [] }], []);
+    expect(state.rows.combos).toEqual([{ Warna: "Merah" }, { Warna: "Biru" }]);
+    expect(state.rows.skus).toEqual(["X", "Y"]);
+
+    state = commit(state, [WARNA, { key: "Ukuran", values: ["M"] }], []);
+    expect(state.rows.combos).toEqual([
+      { Warna: "Merah", Ukuran: "M" },
+      { Warna: "Biru", Ukuran: "M" },
     ]);
-    expect(result.skus).toEqual(["A", "B", "C", "D"]);
+    expect(state.rows.skus).toEqual(["X", "Y"]);
+  });
+
+  it("keeps codes typed while a name-only attribute row exists once its value is added", () => {
+    const ukuran: AttributeDef = { key: "Ukuran", values: ["M", "L"] };
+    let state = mount([WARNA, ukuran], []);
+    state = commit(state, [WARNA, ukuran, { key: "", values: [] }], []);
+    state = commit(state, [WARNA, ukuran, { key: "Bahan", values: [] }], []);
+
+    ["S1", "S2", "S3", "S4"].forEach((sku, i) => {
+      state = setRowValueAt(state, "skus", i, sku);
+    });
+    state = setRowValueAt(state, "barcodes", 2, "BC3");
+
+    state = commit(state, [WARNA, ukuran, { key: "Bahan", values: ["Katun"] }], []);
+    expect(state.rows.skus).toEqual(["S1", "S2", "S3", "S4"]);
+    expect(state.rows.barcodes).toEqual(["", "", "BC3", ""]);
+  });
+
+  it("keeps codes generated while a name-only attribute row exists once that row is deleted", () => {
+    const ukuran: AttributeDef = { key: "Ukuran", values: ["M", "L"] };
+    let state = mount([WARNA, ukuran], []);
+    state = commit(state, [WARNA, ukuran, { key: "Bahan", values: [] }], []);
+
+    state = mapRowValues(state, "skus", (combo) => `GEN-${combo.Warna}-${combo.Ukuran}`);
+
+    state = commit(state, [WARNA, ukuran], []);
+    expect(state.rows.skus).toEqual(["GEN-Merah-M", "GEN-Merah-L", "GEN-Biru-M", "GEN-Biru-L"]);
+  });
+
+  it("round-trips twin saved spellings, including after a value is added", () => {
+    const twins = [
+      { Warna: "Merah", Ukuran: "M", sku: "A" },
+      { Warna: "merah", Ukuran: "L", sku: "B" },
+      { Warna: "Biru", Ukuran: "M", sku: "C" },
+      { Warna: "Biru", Ukuran: "L", sku: "D" },
+    ];
+    let state = mount(attributesFromSavedVariants(twins), twins);
+    expect(state.rows.skus).toEqual(["A", "B", "C", "D"]);
+    expect(state.rows.combos.map((combo) => overlaySavedSpelling(combo, twins))).toEqual([
+      { Warna: "Merah", Ukuran: "M" },
+      { Warna: "merah", Ukuran: "L" },
+      { Warna: "Biru", Ukuran: "M" },
+      { Warna: "Biru", Ukuran: "L" },
+    ]);
+
+    state = commit(state, [WARNA, { key: "Ukuran", values: ["M", "L", "XL"] }], twins);
+    expect(state.rows.skus).toEqual(["A", "B", "", "C", "D", ""]);
+    expect(state.rows.combos.map((combo) => overlaySavedSpelling(combo, twins))).toEqual([
+      { Warna: "Merah", Ukuran: "M" },
+      { Warna: "merah", Ukuran: "L" },
+      { Warna: "Merah", Ukuran: "XL" },
+      { Warna: "Biru", Ukuran: "M" },
+      { Warna: "Biru", Ukuran: "L" },
+      { Warna: "Biru", Ukuran: "XL" },
+    ]);
+  });
+
+  it("keeps each SKU and exclusion on its own combination when a saved 2×2 unticks Biru/M and adds XL", () => {
+    let state = mount(attributesFromSavedVariants(SAVED), SAVED);
+    expect(state.rows.combos[2]).toEqual({ Warna: "Biru", Ukuran: "M" });
+    const excluded = new Set([comboKey(state.rows.combos[2], state.rows.keys)]);
+
+    state = commit(state, [WARNA, { key: "Ukuran", values: ["M", "L", "XL"] }], SAVED);
+    const current = state.rows;
+    expect(
+      current.combos.map((combo, i) => ({
+        combo,
+        sku: current.skus[i],
+        excluded: excluded.has(comboKey(combo, current.keys)),
+      }))
+    ).toEqual([
+      { combo: { Warna: "Merah", Ukuran: "M" }, sku: "A", excluded: false },
+      { combo: { Warna: "Merah", Ukuran: "L" }, sku: "B", excluded: false },
+      { combo: { Warna: "Merah", Ukuran: "XL" }, sku: "", excluded: false },
+      { combo: { Warna: "Biru", Ukuran: "M" }, sku: "C", excluded: true },
+      { combo: { Warna: "Biru", Ukuran: "L" }, sku: "D", excluded: false },
+      { combo: { Warna: "Biru", Ukuran: "XL" }, sku: "", excluded: false },
+    ]);
+  });
+});
+
+describe("mapRowValues / setRowValueAt", () => {
+  it("rewrites one column against the state's own combinations and leaves the snapshot", () => {
+    const state = mount([WARNA], []);
+    const next = mapRowValues(state, "barcodes", (combo, _value, i) => `${combo.Warna}-${i}`);
+    expect(next.rows.barcodes).toEqual(["Merah-0", "Biru-1"]);
+    expect(next.rows.skus).toEqual(["", ""]);
+    expect(next.snapshot).toBe(state.snapshot);
+  });
+
+  it("ignores an index outside the current rows", () => {
+    const state = mount([WARNA], []);
+    expect(setRowValueAt(state, "skus", 5, "X").rows.skus).toEqual(["", ""]);
   });
 });

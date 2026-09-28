@@ -232,3 +232,107 @@ export function carryRowValues(
     return prevValues[prevIndices[0]] ?? "";
   });
 }
+
+/**
+ * The variant table's rows: the combinations, the attribute keys they were
+ * built with, and each row's SKU and barcode, index-aligned to `combos`.
+ * Held as ONE value so a code can never be paired with a combination from a
+ * different layout.
+ */
+export type GridRows = {
+  combos: Array<Record<string, string>>;
+  keys: string[];
+  skus: string[];
+  barcodes: string[];
+};
+
+/**
+ * `rows` is what the table shows now. `snapshot` is the last COMPLETE grid
+ * (`isGridComplete`) with its values, plus any codes edited while the table
+ * still showed that same grid, which `resolveGridRows` folds in. Which of
+ * the two a structural change carries from is decided in `resolveGridRows`.
+ */
+export type GridState = { rows: GridRows; snapshot: GridRows };
+
+export const EMPTY_GRID_ROWS: GridRows = { combos: [], keys: [], skus: [], barcodes: [] };
+
+export type RowValueField = "skus" | "barcodes";
+
+/**
+ * True when two row sets describe the same grid: identical attribute keys in
+ * the same order, and the same `comboKey` sequence row by row.
+ */
+export function isSameGrid(a: GridRows, b: GridRows): boolean {
+  if (a.keys.length !== b.keys.length) return false;
+  if (a.keys.some((key, i) => key !== b.keys[i])) return false;
+  if (a.combos.length !== b.combos.length) return false;
+  return a.combos.every((combo, i) => comboKey(combo, a.keys) === comboKey(b.combos[i], b.keys));
+}
+
+/**
+ * Recomputes the table rows for a new attribute list.
+ *
+ * The carry source is the snapshot, EXCEPT when the current rows still show
+ * the snapshot's own grid (`isSameGrid`): then the current rows are the
+ * source and also become the snapshot, so codes typed or generated since the
+ * snapshot was taken are kept — including while an extra name-only attribute
+ * row makes the grid incomplete without changing its combinations. When the
+ * current rows show a different, transient grid (mid-rename, a cleared name,
+ * a colliding name), the snapshot is used untouched, so that transient
+ * layout never becomes a carry source.
+ *
+ * Each row resolves as: the matching saved variant's code (`findSavedVariant`)
+ * → the carried code (`carryRowValues`) → "". The new rows become the
+ * snapshot only when the new attribute list is complete.
+ */
+export function resolveGridRows(input: {
+  attributes: AttributeDef[];
+  savedVariants: Array<Record<string, string>>;
+  rows: GridRows;
+  snapshot: GridRows;
+}): GridState {
+  const { attributes, savedVariants, rows, snapshot } = input;
+  const source = isSameGrid(rows, snapshot) ? rows : snapshot;
+  const combos = cartesianCombinations(attributes);
+  const keys = contributingAttributes(attributes).map((attr) => attr.key);
+  const carriedSkus = carryRowValues(source.combos, source.skus, source.keys, combos, keys);
+  const carriedBarcodes = carryRowValues(source.combos, source.barcodes, source.keys, combos, keys);
+  const skus: string[] = [];
+  const barcodes: string[] = [];
+  combos.forEach((combo, i) => {
+    const match = findSavedVariant(combo, savedVariants);
+    skus.push(match?.sku?.trim() || carriedSkus[i]);
+    barcodes.push(match?.barcode?.trim() || carriedBarcodes[i]);
+  });
+  const nextRows: GridRows = { combos, keys, skus, barcodes };
+  return { rows: nextRows, snapshot: isGridComplete(attributes) ? nextRows : source };
+}
+
+/**
+ * Rewrites one value column (SKU or barcode) of the current rows, each row
+ * computed against the SAME state's combination, so a code can only land on
+ * the combination it was built for. The snapshot is left as is:
+ * `resolveGridRows` adopts these edits at the next attribute change whenever
+ * the rows still show the snapshot's grid.
+ */
+export function mapRowValues(
+  state: GridState,
+  field: RowValueField,
+  fn: (combo: Record<string, string>, value: string, index: number) => string
+): GridState {
+  const current = state.rows[field];
+  const next = state.rows.combos.map((combo, i) => fn(combo, current[i] ?? "", i));
+  const rows: GridRows =
+    field === "skus" ? { ...state.rows, skus: next } : { ...state.rows, barcodes: next };
+  return { rows, snapshot: state.snapshot };
+}
+
+/** Sets one row's SKU or barcode — the single-cell case of `mapRowValues`. */
+export function setRowValueAt(
+  state: GridState,
+  field: RowValueField,
+  index: number,
+  value: string
+): GridState {
+  return mapRowValues(state, field, (_combo, current, i) => (i === index ? value : current));
+}
