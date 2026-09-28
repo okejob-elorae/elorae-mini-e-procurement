@@ -50,6 +50,11 @@ const REPO_ROOT = join(__dirname, "..", "..", "..", "..");
  * import-legacy-master.ts provisions an InventoryValue row at qtyOnHand: 0 alongside a new Item.
  * A create at zero moves nothing, same as opname-snapshot.ts and items/mutations.ts above.
  *
+ * items/import/writer.ts is the Master Produk bulk import. It provisions one InventoryValue row at
+ * qtyOnHand: 0 per new Item inside the import's single transaction — the same create the
+ * single-item form does in items/mutations.ts. A create at zero moves nothing; the file must never
+ * gain a quantity move.
+ *
  * konsi-sell-through/test-fixtures.ts creates a main InventoryValue row holding real stock with no
  * ledger entry — it is the shared spec fixture behind the sell-through writer and query specs, so
  * it is not named *.test.ts and the filter below cannot see that it is test-only. It provisions
@@ -63,6 +68,7 @@ const ALLOWED = [
   "packages/db/src/reservation-writer.ts",
   "apps/web/lib/inventory/opname-snapshot.ts",
   "apps/web/lib/items/mutations.ts",
+  "apps/web/lib/items/import/writer.ts",
   "apps/web/lib/field-sales/konsi-transfer/writer.ts",
   "apps/web/lib/reconciliation/umkm-opening-stock.ts",
   "apps/api/src/jubelio/catalog/catalog-sync.service.ts",

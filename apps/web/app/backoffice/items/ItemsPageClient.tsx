@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -122,6 +123,7 @@ export function ItemsPageClient({
   const tNav = useTranslations('navigation');
   const tItems = useTranslations('items');
   const tPlaceholders = useTranslations('placeholders');
+  const tImport = useTranslations('itemImport');
   const itemTypeLabels: Record<ItemType, string> = {
     FABRIC: tItems('fabric'),
     ACCESSORIES: tItems('accessories'),
@@ -193,12 +195,20 @@ export function ItemsPageClient({
           <h1 className="text-2xl font-bold tracking-tight">{tNav('navItemsAll')}</h1>
           <p className="text-muted-foreground">{tItems('subtitle')}</p>
         </div>
-        <Link href="/backoffice/items/new">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            New Item
-          </Button>
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/backoffice/items/import">
+            <Button variant="outline">
+              <FileSpreadsheet className="mr-2 h-4 w-4" />
+              {tImport('openImport')}
+            </Button>
+          </Link>
+          <Link href="/backoffice/items/new">
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              New Item
+            </Button>
+          </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
