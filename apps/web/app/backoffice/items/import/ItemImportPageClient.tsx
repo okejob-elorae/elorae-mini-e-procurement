@@ -60,6 +60,7 @@ export function ItemImportPageClient() {
   const [pushToJubelio, setPushToJubelio] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [commitError, setCommitError] = useState(false);
 
   const busy = phase.kind === "reading" || phase.kind === "committing";
 
@@ -84,6 +85,7 @@ export function ItemImportPageClient() {
   }
 
   async function handleFile(file: File) {
+    setCommitError(false);
     const fileName = file.name;
     if (!fileName.toLowerCase().endsWith(".xlsx")) {
       setPhase({ kind: "fileError", fileName, errors: [importError("NOT_XLSX")] });
@@ -116,6 +118,7 @@ export function ItemImportPageClient() {
   async function commit() {
     if (phase.kind !== "preview") return;
     const { fileName, rows, result } = phase;
+    setCommitError(false);
     setPhase({ kind: "committing", fileName, rows, result });
     try {
       const r = await commitItemImport(rows, { pushToJubelio });
@@ -128,10 +131,12 @@ export function ItemImportPageClient() {
         setPhase({ kind: "preview", fileName, rows, result });
       } else {
         toast.error(t("commitFailed"));
+        setCommitError(true);
         setPhase({ kind: "preview", fileName, rows, result });
       }
     } catch {
       toast.error(t("commitFailed"));
+      setCommitError(true);
       setPhase({ kind: "preview", fileName, rows, result });
     }
   }
@@ -139,6 +144,7 @@ export function ItemImportPageClient() {
   function reset() {
     setPhase({ kind: "idle" });
     setPushToJubelio(false);
+    setCommitError(false);
     if (fileInput.current) fileInput.current.value = "";
   }
 
@@ -172,7 +178,7 @@ export function ItemImportPageClient() {
                 </li>
               ))}
             </ul>
-            <Button onClick={reset}>{t("importAnother")}</Button>
+            <Button size="lg" onClick={reset}>{t("importAnother")}</Button>
           </CardContent>
         </Card>
       </div>
@@ -185,7 +191,7 @@ export function ItemImportPageClient() {
   const jubelioNoCategoryCount = rows ? countJubelioNoCategoryArtikels(rows) : 0;
 
   return (
-    <div className="space-y-6 pb-28">
+    <div className={`space-y-6 ${validated ? "pb-40 lg:pb-6" : ""}`}>
       <PageHeader />
 
       <Card>
@@ -194,7 +200,7 @@ export function ItemImportPageClient() {
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">{t("step1Body")}</p>
-          <Button variant="outline" onClick={() => void downloadTemplate()} disabled={downloading}>
+          <Button size="lg" variant="outline" onClick={() => void downloadTemplate()} disabled={downloading}>
             {downloading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
             {t("downloadTemplate")}
           </Button>
@@ -234,7 +240,7 @@ export function ItemImportPageClient() {
                 <p className="text-xs text-muted-foreground">
                   {t("limits", { rows: ITEM_IMPORT_MAX_ROWS, mb: MAX_MB })}
                 </p>
-                <Button variant="secondary" onClick={() => fileInput.current?.click()} disabled={busy}>
+                <Button size="lg" variant="secondary" onClick={() => fileInput.current?.click()} disabled={busy}>
                   <Upload className="mr-2 h-4 w-4" />
                   {phase.kind === "idle" ? t("chooseFile") : t("chooseAnother")}
                 </Button>
@@ -247,6 +253,7 @@ export function ItemImportPageClient() {
               className="hidden"
               onChange={(e) => {
                 const file = e.target.files?.[0];
+                e.currentTarget.value = "";
                 if (file) void handleFile(file);
               }}
             />
@@ -270,6 +277,11 @@ export function ItemImportPageClient() {
           <p className="text-sm font-medium">
             {t("summary", { artikel: validated.artikelCount, variants: validated.variantCount })}
           </p>
+          {commitError ? (
+            <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+              {t("commitFailed")}
+            </div>
+          ) : null}
           {errorCount > 0 ? (
             <Card className="border-destructive/40">
               <CardHeader>
