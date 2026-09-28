@@ -1,7 +1,7 @@
 {
   "name": "Elorae ERP",
   "short_name": "Elorae",
-  "description": "Procurement & Production Management System for Textile/Garment Manufacturing",
+  "description": "Ruang kerja internal Elorae — katalog dan stok, pesanan, produksi, piutang, konsinyasi, dan keuangan.",
   "start_url": "/dashboard",
   "display": "standalone",
   "background_color": "#ffffff",

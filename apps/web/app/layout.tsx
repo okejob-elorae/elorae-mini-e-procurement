@@ -141,14 +141,21 @@ const SEMUA_FONT = [
   .map((f) => f.variable)
   .join(' ');
 
+/*
+ * Nama di tab peramban. Dulu "Elorae ERP - Procurement & Production Management"
+ * — sisa dari saat aplikasinya hanya pengadaan; sekarang ia juga penjualan,
+ * piutang, konsinyasi, keuangan, dan kreatif. Halaman yang punya judul sendiri
+ * tampil sebagai "<judul> · Elorae".
+ */
 export const metadata: Metadata = {
-  title: 'Elorae ERP - Procurement & Production Management',
-  description: 'Enterprise Resource Planning for Textile/Garment Manufacturing',
+  title: { default: 'Elorae', template: '%s · Elorae' },
+  description:
+    'Ruang kerja internal Elorae — katalog dan stok, pesanan, produksi, piutang, konsinyasi, dan keuangan.',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Elorae ERP',
+    title: 'Elorae',
   },
 };
 
