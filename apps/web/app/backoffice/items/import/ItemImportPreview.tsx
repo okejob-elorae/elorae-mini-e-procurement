@@ -13,7 +13,10 @@ import {
   type ItemImportPreviewItem,
 } from "@/lib/items/import/types";
 
-/* Exhaustive on purpose: a new error code without copy is a compile error here, not a raw key on screen. */
+/**
+ * Exhaustive on purpose: a new error code without an entry here is a compile error. It does NOT
+ * prove the locale files carry that key (the lookup is cast `as never`), so add the copy to both.
+ */
 const ERROR_KEY: Record<ItemImportErrorCode, `err.${ItemImportErrorCode}`> = {
   NOT_XLSX: "err.NOT_XLSX",
   FILE_TOO_LARGE: "err.FILE_TOO_LARGE",
@@ -28,12 +31,18 @@ const ERROR_KEY: Record<ItemImportErrorCode, `err.${ItemImportErrorCode}`> = {
   NEGATIVE_NUMBER: "err.NEGATIVE_NUMBER",
   UNKNOWN_UOM: "err.UNKNOWN_UOM",
   UNKNOWN_CATEGORY: "err.UNKNOWN_CATEGORY",
+  AMBIGUOUS_CATEGORY: "err.AMBIGUOUS_CATEGORY",
   TOO_LONG: "err.TOO_LONG",
+  DATE_CELL: "err.DATE_CELL",
   VARIANTLESS_BARCODE: "err.VARIANTLESS_BARCODE",
   INCONSISTENT_ARTIKEL: "err.INCONSISTENT_ARTIKEL",
   MIXED_VARIANTLESS: "err.MIXED_VARIANTLESS",
   DUPLICATE_VARIANT: "err.DUPLICATE_VARIANT",
+  VARIANT_NEEDS_ATTRIBUTE: "err.VARIANT_NEEDS_ATTRIBUTE",
+  INCONSISTENT_ATTRIBUTES: "err.INCONSISTENT_ATTRIBUTES",
+  INCOMPLETE_VARIANT_GRID: "err.INCOMPLETE_VARIANT_GRID",
   ARTIKEL_EXISTS: "err.ARTIKEL_EXISTS",
+  SKU_NAMESPACE_TAKEN: "err.SKU_NAMESPACE_TAKEN",
   VARIANT_SKU_TAKEN: "err.VARIANT_SKU_TAKEN",
   BARCODE_TAKEN: "err.BARCODE_TAKEN",
   DUPLICATE_IN_FILE: "err.DUPLICATE_IN_FILE",

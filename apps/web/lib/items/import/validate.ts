@@ -16,7 +16,7 @@ import {
 export type ItemImportLookups = {
   uoms: Array<{ id: string; code: string }>;
   categories: Array<{ id: string; code: string | null; name: string }>;
-  /** All three hold `trim().toLowerCase()` values: the database compares these case-insensitively. */
+  /* All three hold `trim().toLowerCase()` values: `Item.sku`'s unique index folds case, and variant SKUs and barcodes are compared by the app's own case-folding rule. */
   existingItemSkus: Set<string>;
   existingVariantSkus: Set<string>;
   existingBarcodes: Set<string>;
@@ -30,7 +30,7 @@ type ParsedPrice = { ok: true; value: number | null } | { ok: false; code: "INVA
 function parsePrice(raw: string | number | null): ParsedPrice {
   if (raw === null) return { ok: true, value: null };
   if (typeof raw === "number") {
-    if (!Number.isFinite(raw) || raw > MAX_ITEM_PRICE) return { ok: false, code: "INVALID_NUMBER" };
+    if (!Number.isFinite(raw) || !Number.isInteger(raw) || raw > MAX_ITEM_PRICE) return { ok: false, code: "INVALID_NUMBER" };
     if (raw < 0) return { ok: false, code: "NEGATIVE_NUMBER" };
     return { ok: true, value: raw };
   }
@@ -43,7 +43,7 @@ function parsePrice(raw: string | number | null): ParsedPrice {
 
 const isVariantRow = (r: ItemImportRow): boolean => r.warna !== "" || r.ukuran !== "" || r.skuVarian !== "";
 
-/*
+/**
  * Deliberately narrower than ItemImportColumnKey[]: with that broader type, `r[column]` also
  * covers hargaJual (string | number | null), and `.length` on a possibly-numeric value is a
  * tsc error. These five columns are the only ones that are always plain strings.
@@ -142,12 +142,15 @@ export function validateItemImport(
       if (category) {
         categoryId = category.id;
         categoryCode = category.code;
+      } else if (byName.length > 1) {
+        push("AMBIGUOUS_CATEGORY", first, "kategori");
       } else {
         push("UNKNOWN_CATEGORY", first, "kategori");
       }
     }
 
     if (lookups.existingItemSkus.has(norm(artikel))) push("ARTIKEL_EXISTS", first, "artikel");
+    if (lookups.existingVariantSkus.has(norm(artikel))) push("SKU_NAMESPACE_TAKEN", first, "artikel", artikel);
 
     const variantRows = groupRows.filter(isVariantRow);
     const variantlessRows = groupRows.filter((r) => !isVariantRow(r));
@@ -158,38 +161,79 @@ export function validateItemImport(
       for (const r of variantlessRows) if (r.barcode !== "") push("VARIANTLESS_BARCODE", r, "barcode");
     }
 
-    const seenPairs = new Set<string>();
-    let hasDuplicatePair = false;
+    /**
+     * The item form rebuilds an item's variants as the full Warna x Ukuran product of its value
+     * sets and drops any variant outside it, so the import only creates shapes that form can load
+     * and save back unchanged: every variant row names an attribute, each attribute is filled on
+     * all rows or none, no pair repeats, and a two-attribute artikel lists the whole grid.
+     */
     for (const r of variantRows) {
+      if (r.warna === "" && r.ukuran === "") push("VARIANT_NEEDS_ATTRIBUTE", r, "warna");
+    }
+    const attributed = variantRows.filter((r) => r.warna !== "" || r.ukuran !== "");
+    const pattern = attributed[0];
+    let attributesConsistent = true;
+    for (const r of attributed.slice(1)) {
+      if ((r.warna !== "") !== (pattern.warna !== "")) {
+        push("INCONSISTENT_ATTRIBUTES", r, "warna", String(pattern.row));
+        attributesConsistent = false;
+      }
+      if ((r.ukuran !== "") !== (pattern.ukuran !== "")) {
+        push("INCONSISTENT_ATTRIBUTES", r, "ukuran", String(pattern.row));
+        attributesConsistent = false;
+      }
+    }
+
+    const seenPairs = new Set<string>();
+    const duplicatePairRows = new Set<number>();
+    for (const r of attributed) {
       const pair = `${norm(r.warna)}|${norm(r.ukuran)}`;
-      if (r.skuVarian === "" && seenPairs.has(pair)) {
+      if (seenPairs.has(pair)) {
         push("DUPLICATE_VARIANT", r);
-        hasDuplicatePair = true;
+        duplicatePairRows.add(r.row);
       }
       seenPairs.add(pair);
     }
 
-    const records = variantRows.map((r) => ({
-      ...(r.warna !== "" ? { Warna: r.warna } : {}),
-      ...(r.ukuran !== "" ? { Ukuran: r.ukuran } : {}),
-      sku: r.skuVarian,
-      ...(r.barcode !== "" ? { barcode: r.barcode } : {}),
-    }));
-    let normalized: Array<Record<string, string>> | null = null;
-    if (!hasDuplicatePair && variantRows.length > 0) {
-      try {
-        normalized = validateAndNormalizeVariants(artikel, records, { categoryCode, generateFrom: "parent" });
-      } catch (e) {
-        push("DUPLICATE_IN_FILE", variantRows[0], "skuVarian", e instanceof Error ? e.message : null);
+    if (attributesConsistent && pattern && pattern.warna !== "" && pattern.ukuran !== "") {
+      const warnas = new Map<string, string>();
+      const ukurans = new Map<string, string>();
+      for (const r of attributed) {
+        if (!warnas.has(norm(r.warna))) warnas.set(norm(r.warna), r.warna);
+        if (!ukurans.has(norm(r.ukuran))) ukurans.set(norm(r.ukuran), r.ukuran);
       }
+      const missing: string[] = [];
+      for (const [warnaKey, warna] of warnas) {
+        for (const [ukuranKey, ukuran] of ukurans) {
+          if (!seenPairs.has(`${warnaKey}|${ukuranKey}`)) missing.push(`${warna}/${ukuran}`);
+        }
+      }
+      if (missing.length > 0) push("INCOMPLETE_VARIANT_GRID", first, null, missing.join(", "));
     }
 
-    const previewVariants: ItemImportPreviewVariant[] = variantRows.map((r, i) => {
-      const finalSku = normalized ? normalized[i].sku : null;
-      if (finalSku !== null) {
+    /**
+     * Normalised one record at a time so every refusal lands on its own row with a SKU as its
+     * detail. A row repeating an earlier pair is skipped: it is already refused, and its SKU would
+     * only report the same problem twice. The file-wide map below also holds this artikel's own
+     * earlier SKUs, so two rows of one artikel typing the same SKU are caught on the later row.
+     */
+    const normalized: Array<Record<string, string>> = [];
+    const previewVariants: ItemImportPreviewVariant[] = variantRows.map((r) => {
+      let finalSku: string | null = null;
+      if (!duplicatePairRows.has(r.row)) {
+        const record = {
+          ...(r.warna !== "" ? { Warna: r.warna } : {}),
+          ...(r.ukuran !== "" ? { Ukuran: r.ukuran } : {}),
+          sku: r.skuVarian,
+          ...(r.barcode !== "" ? { barcode: r.barcode } : {}),
+        };
+        const variant = validateAndNormalizeVariants(artikel, [record], { categoryCode, generateFrom: "parent" })[0];
+        normalized.push(variant);
+        finalSku = variant.sku;
         const key = norm(finalSku);
         if (finalSku.length > ITEM_IMPORT_MAX_LENGTH) push("TOO_LONG", r, "skuVarian", String(ITEM_IMPORT_MAX_LENGTH));
         if (lookups.existingVariantSkus.has(key)) push("VARIANT_SKU_TAKEN", r, "skuVarian", finalSku);
+        if (lookups.existingItemSkus.has(key)) push("SKU_NAMESPACE_TAKEN", r, "skuVarian", finalSku);
         if (fileVariantSkus.has(key) || (artikelKeys.has(key) && key !== norm(artikel))) {
           push("DUPLICATE_IN_FILE", r, "skuVarian", finalSku);
         }
@@ -232,7 +276,7 @@ export function validateItemImport(
         categoryId,
         sellingPrice: price.ok ? price.value : null,
         description: first.deskripsi === "" ? null : first.deskripsi,
-        variants: normalized ?? [],
+        variants: normalized,
       });
     }
   }
@@ -249,7 +293,7 @@ export function validateItemImport(
 
 const STRING_FIELDS = ["artikel", "nama", "namaEn", "kategori", "satuan", "warna", "ukuran", "skuVarian", "barcode", "deskripsi"] as const;
 
-/** Every `"use server"` export is independently callable, so the rows a client sends are re-shaped here, never trusted. */
+/* Every `"use server"` export is independently callable, so the rows a client sends are re-shaped here, never trusted. */
 export function parseItemImportPayload(raw: unknown): ItemImportRow[] | null {
   if (!Array.isArray(raw)) return null;
   const out: ItemImportRow[] = [];

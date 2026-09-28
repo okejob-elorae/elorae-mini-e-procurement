@@ -20,7 +20,7 @@ export const ITEM_IMPORT_COLUMNS = [
 
 export type ItemImportColumnKey = (typeof ITEM_IMPORT_COLUMNS)[number]["key"];
 
-/** One sheet row after parsing; `row` is the sheet's own row number (header = 1). */
+/* One sheet row after parsing; `row` is the sheet's own row number (header = 1). */
 export type ItemImportRow = {
   row: number;
   artikel: string;
@@ -50,12 +50,18 @@ export const ITEM_IMPORT_ERROR_CODES = [
   "NEGATIVE_NUMBER",
   "UNKNOWN_UOM",
   "UNKNOWN_CATEGORY",
+  "AMBIGUOUS_CATEGORY",
   "TOO_LONG",
+  "DATE_CELL",
   "VARIANTLESS_BARCODE",
   "INCONSISTENT_ARTIKEL",
   "MIXED_VARIANTLESS",
   "DUPLICATE_VARIANT",
+  "VARIANT_NEEDS_ATTRIBUTE",
+  "INCONSISTENT_ATTRIBUTES",
+  "INCOMPLETE_VARIANT_GRID",
   "ARTIKEL_EXISTS",
+  "SKU_NAMESPACE_TAKEN",
   "VARIANT_SKU_TAKEN",
   "BARCODE_TAKEN",
   "DUPLICATE_IN_FILE",
@@ -90,9 +96,9 @@ export type ItemImportPreviewVariant = {
   warna: string;
   ukuran: string;
   barcode: string | null;
-  /** What the sheet typed in SKU Varian, or null when blank. */
+  /* What the sheet typed in SKU Varian, or null when blank. */
   typedSku: string | null;
-  /** The SKU that will be stored; null when normalisation could not run for this artikel. */
+  /* The SKU that will be stored; null for a row repeating an earlier Warna + Ukuran, which is not normalised. */
   finalSku: string | null;
 };
 

@@ -108,9 +108,24 @@ describe("validateItemImport — refusals", () => {
     expect(codes(validateItemImport([row({ hargaJual: "-5" })], lookups()))).toEqual(["NEGATIVE_NUMBER"]);
   });
 
+  it("rejects a numeric price cell with a fraction", () => {
+    expect(codes(validateItemImport([row({ hargaJual: 1234.567 })], lookups()))).toEqual(["INVALID_NUMBER"]);
+  });
+
   it("rejects an unknown Satuan or Kategori", () => {
     expect(codes(validateItemImport([row({ satuan: "BOX" })], lookups()))).toEqual(["UNKNOWN_UOM"]);
     expect(codes(validateItemImport([row({ kategori: "Celana" })], lookups()))).toEqual(["UNKNOWN_CATEGORY"]);
+  });
+
+  it("refuses a Kategori name shared by two categories instead of calling it unknown", () => {
+    const twoAksesoris = lookups({
+      categories: [
+        { id: "cat-a", code: null, name: "Aksesoris" },
+        { id: "cat-b", code: "AKB", name: "aksesoris" },
+      ],
+    });
+    const r = validateItemImport([row({ kategori: "Aksesoris" })], twoAksesoris);
+    expect(r.errors.map((e) => [e.code, e.column])).toEqual([["AMBIGUOUS_CATEGORY", "kategori"]]);
   });
 
   it("rejects item-level cells that differ between rows of one artikel", () => {
@@ -138,9 +153,74 @@ describe("validateItemImport — refusals", () => {
     expect(codes(r)).toEqual(["DUPLICATE_VARIANT"]);
   });
 
+  it("rejects a repeated Warna + Ukuran even when both rows type a SKU Varian, on the later row only", () => {
+    const a = row({ warna: "Merah", ukuran: "M", skuVarian: "KMJ-01-A" });
+    const b = row({ warna: "Merah", ukuran: "M", skuVarian: "KMJ-01-B" });
+    const r = validateItemImport([a, b], lookups());
+    expect(r.errors.map((e) => [e.code, e.row])).toEqual([["DUPLICATE_VARIANT", b.row]]);
+  });
+
+  it("rejects a variant row that names neither Warna nor Ukuran", () => {
+    const r = validateItemImport([row({ skuVarian: "KMJ-01-X" })], lookups());
+    expect(r.errors.map((e) => [e.code, e.column])).toEqual([["VARIANT_NEEDS_ATTRIBUTE", "warna"]]);
+  });
+
+  it("rejects an attribute filled on some variant rows of an artikel but not others", () => {
+    const a = row({ warna: "Merah", ukuran: "M" });
+    const b = row({ warna: "Biru", ukuran: "" });
+    const r = validateItemImport([a, b], lookups());
+    expect(r.errors.map((e) => [e.code, e.row, e.column, e.detail])).toEqual([
+      ["INCONSISTENT_ATTRIBUTES", b.row, "ukuran", String(a.row)],
+    ]);
+  });
+
+  it("rejects a two-attribute artikel that leaves out a Warna x Ukuran combination, once on its first row", () => {
+    const a = row({ warna: "Merah", ukuran: "M" });
+    const r = validateItemImport([a, row({ warna: "Merah", ukuran: "L" }), row({ warna: "Biru", ukuran: "M" })], lookups());
+    expect(r.errors.map((e) => [e.code, e.row, e.detail])).toEqual([["INCOMPLETE_VARIANT_GRID", a.row, "Biru/L"]]);
+    expect(r.plan).toBeNull();
+  });
+
+  it("accepts a full grid typed with mixed casing", () => {
+    const r = validateItemImport(
+      [
+        row({ warna: "Merah", ukuran: "M" }),
+        row({ warna: "merah", ukuran: "L" }),
+        row({ warna: "Biru", ukuran: "m" }),
+        row({ warna: "BIRU", ukuran: "l" }),
+      ],
+      lookups(),
+    );
+    expect(r.errors).toEqual([]);
+    expect(r.plan?.items[0].variants).toHaveLength(4);
+  });
+
+  it("rejects two rows of one artikel typing the same SKU Varian, on the later row with the SKU as detail", () => {
+    const b = row({ warna: "Biru", skuVarian: "KMJ-01-X" });
+    const r = validateItemImport([row({ warna: "Merah", skuVarian: "KMJ-01-X" }), b], lookups());
+    expect(r.errors.map((e) => [e.code, e.row, e.detail])).toEqual([["DUPLICATE_IN_FILE", b.row, "KMJ-01-X"]]);
+  });
+
   it("rejects an artikel that already exists, case-insensitively", () => {
     const r = validateItemImport([row({})], lookups({ existingItemSkus: new Set(["kmj-01"]) }));
     expect(codes(r)).toEqual(["ARTIKEL_EXISTS"]);
+  });
+
+  it("rejects an artikel equal to an existing variant SKU, and a variant SKU equal to an existing artikel", () => {
+    const artikelClash = validateItemImport(
+      [row({ artikel: "KMJ-01-MERAH" })],
+      lookups({ existingVariantSkus: new Set(["kmj-01-merah"]) }),
+    );
+    expect(artikelClash.errors.map((e) => [e.code, e.column, e.detail])).toEqual([
+      ["SKU_NAMESPACE_TAKEN", "artikel", "KMJ-01-MERAH"],
+    ]);
+    const variantClash = validateItemImport(
+      [row({ warna: "Merah" })],
+      lookups({ existingItemSkus: new Set(["kmj-01-merah"]) }),
+    );
+    expect(variantClash.errors.map((e) => [e.code, e.column, e.detail])).toEqual([
+      ["SKU_NAMESPACE_TAKEN", "skuVarian", "KMJ-01-MERAH"],
+    ]);
   });
 
   it("rejects a final variant SKU or barcode already used by another item", () => {
