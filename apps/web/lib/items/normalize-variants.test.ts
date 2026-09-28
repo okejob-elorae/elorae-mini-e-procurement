@@ -35,7 +35,7 @@ describe("validateAndNormalizeVariants", () => {
 
   it("refuses duplicate variant SKUs and barcodes case-insensitively", () => {
     expect(() =>
-      validateAndNormalizeVariants("A", [{ sku: "A-1" }, { sku: "a-1" }], {}),
+      validateAndNormalizeVariants("A", [{ sku: "A-X" }, { sku: "A-x" }], {}),
     ).toThrow("Duplicate variant SKU");
     expect(() =>
       validateAndNormalizeVariants("A", [{ sku: "A-1", barcode: "X1" }, { sku: "A-2", barcode: "x1" }], {}),
