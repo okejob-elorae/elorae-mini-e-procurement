@@ -5,16 +5,28 @@ const COMBO_KEY_SEPARATOR = "\u0000";
 const RESERVED_VARIANT_KEYS = new Set(["sku", "barcode"]);
 
 /**
+ * The attributes `cartesianCombinations` actually uses: a trimmed, non-empty
+ * key AND at least one value. This is the ONE shared rule for "does this
+ * attribute row contribute to the grid" — `cartesianCombinations` and the
+ * caller's own attribute-key list must always agree on it, or a row with a
+ * name typed but no value yet (or vice versa) desyncs the combos built from
+ * the grid from the key list used to identify them.
+ */
+export function contributingAttributes(attributes: AttributeDef[]): AttributeDef[] {
+  return attributes.filter((attr) => attr.key.trim() !== "" && attr.values.length > 0);
+}
+
+/**
  * Full cartesian product of the given attributes' value sets, skipping any
- * attribute with an empty key or no values. Order matches attribute order,
- * then value order within each attribute.
+ * non-contributing attribute (see `contributingAttributes`). Order matches
+ * attribute order, then value order within each attribute.
  */
 export function cartesianCombinations(
   attributes: AttributeDef[]
 ): Array<Record<string, string>> {
-  if (attributes.length === 0) return [];
-  return attributes.reduce<Array<Record<string, string>>>((acc, attr) => {
-    if (!attr.key || attr.values.length === 0) return acc;
+  const contributing = contributingAttributes(attributes);
+  if (contributing.length === 0) return [];
+  return contributing.reduce<Array<Record<string, string>>>((acc, attr) => {
     if (acc.length === 0) {
       return attr.values.map((value) => ({ [attr.key]: value }));
     }
@@ -26,6 +38,27 @@ export function cartesianCombinations(
     });
     return next;
   }, []);
+}
+
+/**
+ * A grid is COMPLETE when every row is either fully empty (no key, no
+ * values — a freshly added row awaiting input) or fully filled (a trimmed
+ * key AND at least one value), and every contributing key name is unique
+ * case-insensitively. A row typed key-first-then-value, or mid-rename, or
+ * momentarily colliding with another attribute's name, is INCOMPLETE — the
+ * combos it would build are transient and unsafe to snapshot for carrying.
+ */
+export function isGridComplete(attributes: AttributeDef[]): boolean {
+  const rowsValid = attributes.every((attr) => {
+    const keyEmpty = attr.key.trim() === "";
+    const valuesEmpty = attr.values.length === 0;
+    return (keyEmpty && valuesEmpty) || (!keyEmpty && !valuesEmpty);
+  });
+  if (!rowsValid) return false;
+  const normalizedKeys = contributingAttributes(attributes).map((attr) =>
+    attr.key.trim().toLowerCase()
+  );
+  return new Set(normalizedKeys).size === normalizedKeys.length;
 }
 
 /**

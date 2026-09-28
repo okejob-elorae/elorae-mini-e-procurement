@@ -39,8 +39,10 @@ import {
   cartesianCombinations,
   carryRowValues,
   comboKey,
+  contributingAttributes,
   findSavedVariant,
   initialExcludedKeys,
+  isGridComplete,
   overlaySavedSpelling,
 } from '@/lib/items/variant-grid';
 
@@ -84,10 +86,6 @@ function slugVariantAttributeValue(value: string): string {
 }
 
 /**
- * Pattern: `{base}-{v1}-…-{vn}` with n = number of attribute columns (e.g. OUTERWEAR-RED-S).
- * Base is the item category code when the category has one; otherwise the parent item SKU (server accepts both prefixes).
- */
-/**
  * De-duplicates attribute values case-insensitively (trim + lowercase),
  * keeping the FIRST spelling typed — `TagsInput` itself only dedupes
  * case-sensitively, so "merah" typed next to "Merah" would otherwise sit in
@@ -112,6 +110,10 @@ function parseNumberFieldDefaultZero(value: unknown): number {
   return Number.isNaN(n) ? 0 : n;
 }
 
+/**
+ * Pattern: `{base}-{v1}-…-{vn}` with n = number of attribute columns (e.g. OUTERWEAR-RED-S).
+ * Base is the item category code when the category has one; otherwise the parent item SKU (server accepts both prefixes).
+ */
 function buildVariantSkuCode(
   basePrefix: string,
   combo: Record<string, string>,
@@ -317,16 +319,23 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   const variantCombinations = useMemo(() => cartesianCombinations(attributes), [attributes]);
 
   /**
-   * Ordered attribute keys, shared by `comboKey` calls below. Adding or
-   * removing a whole attribute changes this list, so every combination's key
-   * changes with it and `excludedKeys` stops matching anything — every row
-   * comes back included. Acceptable: only a value edit (not an attribute
-   * add/remove) is expected to preserve exclusions.
+   * Ordered attribute keys, shared by `comboKey` calls below. MUST use the
+   * same "contributes to the grid" rule as `cartesianCombinations` (a
+   * trimmed key AND at least one value) — filtering on the key alone let a
+   * row with a name typed but no value yet appear in this list while
+   * `variantCombinations` still didn't include it, desyncing the two and
+   * blanking every carried SKU/barcode the moment a value finally landed.
+   * Adding or removing a whole attribute changes this list, so every
+   * combination's key changes with it and `excludedKeys` stops matching
+   * anything — every row comes back included. Acceptable: only a value edit
+   * (not an attribute add/remove) is expected to preserve exclusions.
    */
   const attributeKeys = useMemo(
-    () => attributes.map((attr) => attr.key).filter((key) => key.trim().length > 0),
+    () => contributingAttributes(attributes).map((attr) => attr.key),
     [attributes]
   );
+
+  const gridComplete = useMemo(() => isGridComplete(attributes), [attributes]);
 
   const [excludedKeys, setExcludedKeys] = useState<Set<string>>(() => {
     const initialKeys = initialAttributes.map((attr) => attr.key).filter((key) => key.trim().length > 0);
@@ -423,52 +432,82 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   );
 
   /**
-   * Combinations AND the attribute key list they were built with, as of the
-   * previous run of the effect below — `carryRowValues` needs both sides'
-   * own key list to carry correctly across a rename or an attribute
-   * added/removed, not just the current one. Never read for anything else.
+   * The grid's combinations, attribute key list, and SKU/barcode arrays as
+   * of the last COMPLETE grid (`isGridComplete`) — never merely the
+   * previous render. A row typed name-first (key before any value), mid
+   * rename, or momentarily colliding with another attribute's name is a
+   * transient, structurally broken state: `variantCombinations` and
+   * `attributeKeys` can desync for it, or collapse/duplicate rows outright.
+   * Carrying from — or persisting — a transient state would blank or
+   * misassign a saved code, so both effects below only ever read/write it
+   * while `gridComplete` holds.
    */
-  const prevGridRef = useRef<{ combos: Array<Record<string, string>>; keys: string[] }>({
-    combos: [],
-    keys: [],
-  });
+  const gridSnapshotRef = useRef<{
+    combos: Array<Record<string, string>>;
+    keys: string[];
+    skus: string[];
+    barcodes: string[];
+  }>({ combos: [], keys: [], skus: [], barcodes: [] });
 
   useEffect(() => {
-    const prevGrid = prevGridRef.current;
+    const snapshot = gridSnapshotRef.current;
     if (variantCombinations.length === 0) {
       setVariantSkus([]);
       setVariantBarcodes([]);
-      prevGridRef.current = { combos: [], keys: [] };
+      if (gridComplete) {
+        gridSnapshotRef.current = { combos: [], keys: attributeKeys, skus: [], barcodes: [] };
+      }
       return;
     }
-    setVariantSkus((prev) => {
-      const carried = carryRowValues(
-        prevGrid.combos,
-        prev,
-        prevGrid.keys,
-        variantCombinations,
-        attributeKeys
-      );
-      return variantCombinations.map((combo, idx) => {
-        const match = findSavedVariant(combo, normalizedVariants);
-        return match?.sku?.trim() || carried[idx];
-      });
+    const carriedSkus = carryRowValues(
+      snapshot.combos,
+      snapshot.skus,
+      snapshot.keys,
+      variantCombinations,
+      attributeKeys
+    );
+    const carriedBarcodes = carryRowValues(
+      snapshot.combos,
+      snapshot.barcodes,
+      snapshot.keys,
+      variantCombinations,
+      attributeKeys
+    );
+    const nextSkus = variantCombinations.map((combo, idx) => {
+      const match = findSavedVariant(combo, normalizedVariants);
+      return match?.sku?.trim() || carriedSkus[idx];
     });
-    setVariantBarcodes((prev) => {
-      const carried = carryRowValues(
-        prevGrid.combos,
-        prev,
-        prevGrid.keys,
-        variantCombinations,
-        attributeKeys
-      );
-      return variantCombinations.map((combo, idx) => {
-        const match = findSavedVariant(combo, normalizedVariants);
-        return match?.barcode?.trim() || carried[idx];
-      });
+    const nextBarcodes = variantCombinations.map((combo, idx) => {
+      const match = findSavedVariant(combo, normalizedVariants);
+      return match?.barcode?.trim() || carriedBarcodes[idx];
     });
-    prevGridRef.current = { combos: variantCombinations, keys: attributeKeys };
-  }, [variantCombinationsKey, variantCombinations, normalizedVariants, attributeKeys]);
+    setVariantSkus(nextSkus);
+    setVariantBarcodes(nextBarcodes);
+    if (gridComplete) {
+      gridSnapshotRef.current = {
+        combos: variantCombinations,
+        keys: attributeKeys,
+        skus: nextSkus,
+        barcodes: nextBarcodes,
+      };
+    }
+  }, [variantCombinationsKey, variantCombinations, normalizedVariants, attributeKeys, gridComplete]);
+
+  /**
+   * Keeps the snapshot's SKU/barcode arrays live when the user hand-edits a
+   * row directly — the effect above only runs when the grid's SHAPE
+   * changes, so a typed edit needs its own sync, gated on completeness for
+   * the same reason.
+   */
+  useEffect(() => {
+    if (!gridComplete) return;
+    gridSnapshotRef.current = {
+      combos: variantCombinations,
+      keys: attributeKeys,
+      skus: variantSkus,
+      barcodes: variantBarcodes,
+    };
+  }, [variantSkus, variantBarcodes, gridComplete, variantCombinations, attributeKeys]);
 
   const onFormSubmit = async (data: ItemFormData) => {
     const dataWithSku: ItemFormData = {
@@ -870,8 +909,12 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                   <TagsInput
                     value={attr.values}
                     onChange={(values) => {
+                      const deduped = dedupeAttributeValues(values);
+                      if (deduped.length < values.length) {
+                        toast.info(tToasts('duplicateAttributeValue'));
+                      }
                       const updated = [...attributes];
-                      updated[index] = { ...updated[index], values: dedupeAttributeValues(values) };
+                      updated[index] = { ...updated[index], values: deduped };
                       setAttributes(updated);
                     }}
                     placeholder="Red, Blue, Green"
