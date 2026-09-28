@@ -5,9 +5,11 @@
  * animasi aplikasi: layar memudar ke hitam, sebutir film tipis, satu kartu
  * judul yang "ditarik fokusnya" dari buram ke tajam sambil jarak hurufnya
  * merapat, lalu kartu kedua berisi sapaan, lalu gambar memudar dari hitam.
- * Hitam, putih tulang, satu huruf. Tidak ada warna merek di sini dengan
- * sengaja — kartu judul yang baik tidak berteriak, dan netral dipakai siapa
- * pun di tim.
+ *
+ * Judulnya adalah WORDMARK ELORAÉ yang sama dengan panel halaman masuk —
+ * huruf, ketebalan, jarak huruf, dan warna tema pengguna — di atas tinta panel
+ * yang sama. Kartu judul film memakai logo studionya sendiri, bukan tulisan
+ * yang mirip-mirip; yang sinematik adalah geraknya, bukan hurufnya.
  *
  * Tahap (lihat LayarMasuk.tsx):
  *   datang  halaman masuk — memudar ke hitam, kartu judul muncul.
@@ -18,7 +20,8 @@
  */
 
 .layar {
-  --hitam: #0b0b0a;
+  /* Tinta panel halaman masuk (`INK` di app/login/page.tsx). */
+  --hitam: #12120f;
   --tulang: #f2f1e8;
   --lembut: cubic-bezier(0.22, 1, 0.36, 1);
   position: fixed;
@@ -86,14 +89,22 @@
   text-align: center;
 }
 
-/* Jarak huruf menambah ruang SESUDAH huruf terakhir; `text-indent` yang sama
-   menambahkannya di depan, jadi judulnya benar-benar di tengah. */
+/* Wordmark SEPERTI YANG TAMPIL di panel halaman masuk: extrabold,
+   `leading-[0.92]`, warna tema lewat `--masuk-merek` (lime Elorae kalau tidak
+   ada), dan jarak huruf -0.015em. Yang terakhir bukan salah ketik: `<h1>` di
+   panel itu menulis `tracking-[0.12em]`, tapi aturan global
+   `h1, h2, h3 { letter-spacing: -0.015em }` di globals.css tidak berlapis dan
+   mengalahkan kelas Tailwind — jadi logo yang dikenal pemiliknya adalah yang
+   rapat. Kalau aturan global itu berubah, angka ini ikut diubah.
+   `text-indent` yang sama mengimbangi ruang sesudah huruf terakhir, supaya
+   wordmark-nya benar-benar di tengah. */
 .judul {
-  font-size: clamp(1.35rem, 2.5vw, 2.1rem);
-  font-weight: 600;
-  line-height: 1;
-  letter-spacing: 0.5em;
-  text-indent: 0.5em;
+  font-size: clamp(2.5rem, 6.5vw, 5.25rem);
+  font-weight: 800;
+  line-height: 0.92;
+  letter-spacing: -0.015em;
+  text-indent: -0.015em;
+  color: var(--masuk-merek, #c8f04a);
 }
 
 .sapa {
@@ -135,15 +146,15 @@
   from {
     opacity: 0;
     filter: blur(10px);
-    letter-spacing: 0.75em;
-    text-indent: 0.75em;
+    letter-spacing: 0.2em;
+    text-indent: 0.2em;
     transform: scale(1.04);
   }
   to {
     opacity: 1;
     filter: blur(0);
-    letter-spacing: 0.5em;
-    text-indent: 0.5em;
+    letter-spacing: -0.015em;
+    text-indent: -0.015em;
     transform: none;
   }
 }

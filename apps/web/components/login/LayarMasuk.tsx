@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 import gaya from "./layar-masuk.module.css";
 
@@ -21,15 +22,21 @@ type Props = {
   sapaan?: string | null;
   /** Kartu sapaan sudah (atau sedang) tampil — kartu judul tidak kembali. */
   sapaTampil?: boolean;
+  /**
+   * Warna wordmark. Di halaman masuk diisi langsung; di halaman tujuan datang
+   * dari `--masuk-merek` yang dipasang skrip `<head>` di `<html>`.
+   */
+  warna?: string;
   className?: string;
 };
 
-export function LayarMasuk({ tahap, sapaan, sapaTampil, className }: Props) {
+export function LayarMasuk({ tahap, sapaan, sapaTampil, warna, className }: Props) {
   return (
     <div
       className={cn(gaya.layar, className)}
       data-tahap={tahap}
       data-sapa={sapaTampil ? "" : undefined}
+      style={warna ? ({ "--masuk-merek": warna } as CSSProperties) : undefined}
       aria-hidden
     >
       <div className={gaya.butir} />

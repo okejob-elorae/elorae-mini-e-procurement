@@ -198,7 +198,7 @@ export default function LoginPage() {
       sesiRef.current ?? Promise.resolve(null),
       new Promise<null>((r) => window.setTimeout(() => r(null), 250)),
     ]);
-    simpanMasuk({ nama });
+    simpanMasuk({ nama, warna: merekDiGelap });
     window.location.href = '/login/redirect';
   }
 
@@ -562,7 +562,7 @@ export default function LoginPage() {
         </div>
       </section>
 
-      {tirai ? <LayarMasuk tahap="datang" /> : null}
+      {tirai ? <LayarMasuk tahap="datang" warna={merekDiGelap} /> : null}
     </div>
   );
 }

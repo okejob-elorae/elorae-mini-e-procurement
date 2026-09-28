@@ -29,7 +29,22 @@ export const UMUR_MASUK_MS = 30_000;
 export type DataMasuk = {
   /** Nama depan untuk sapaan, kalau sesinya sempat terbaca. */
   nama: string | null;
+  /**
+   * Warna wordmark persis seperti di panel halaman masuk — warna tema pengguna
+   * yang sudah dinaikkan terangnya untuk latar tinta (`warnaMerekDiGelap`).
+   * Ikut diserahkan karena halaman tujuan harus melukisnya SEBELUM JavaScript
+   * sempat menghitung ulang.
+   */
+  warna: string | null;
 };
+
+/**
+ * Warna CSS yang boleh lewat: hex, `rgb(...)`, `oklch(...)`, nama warna.
+ * `warnaMerekDiGelap` mengembalikan nilai tema apa adanya kalau bukan hex,
+ * jadi hex saja tidak cukup. Tanpa titik koma, kutip, atau kurung kurawal —
+ * nilainya masuk ke `style.setProperty` dan tidak boleh bisa menutup deklarasi.
+ */
+const WARNA = /^[#a-zA-Z0-9(),.%\s/-]{3,64}$/;
 
 export function simpanMasuk(data: DataMasuk): void {
   try {
@@ -70,7 +85,8 @@ export function uraiMasuk(mentah: string | null, sekarang: number): DataMasuk | 
   const o = d as Record<string, unknown>;
   if (typeof o.t !== "number" || sekarang - o.t > UMUR_MASUK_MS || sekarang < o.t) return null;
   const nama = typeof o.nama === "string" && o.nama.trim() ? o.nama.trim().slice(0, 40) : null;
-  return { nama };
+  const warna = typeof o.warna === "string" && WARNA.test(o.warna) ? o.warna : null;
+  return { nama, warna };
 }
 
 /** Nama depan saja: "Timotius Maxmillian Widodo" → "Timotius". */
@@ -80,10 +96,10 @@ export function namaDepan(nama: string | null | undefined): string | null {
 }
 
 /**
- * Skrip `<head>`: pasang `data-masuk` sebelum halaman dilukis. Sengaja tidak
- * menghapus entrinya — komponen tirai masih perlu namanya, dan ia yang
- * menghapus sesudah tirai terbuka.
+ * Skrip `<head>`: pasang `data-masuk` dan warna wordmark sebelum halaman
+ * dilukis. Sengaja tidak menghapus entrinya — komponen tirai masih perlu
+ * namanya, dan ia yang menghapus sesudah tirai terbuka.
  */
 export function getMasukInitScript(): string {
-  return `(function(){try{var r=sessionStorage.getItem(${JSON.stringify(KUNCI_MASUK)});if(!r)return;var d=JSON.parse(r);if(!d||typeof d.t!=="number"||Date.now()-d.t>${UMUR_MASUK_MS}||Date.now()<d.t||matchMedia("(prefers-reduced-motion: reduce)").matches){sessionStorage.removeItem(${JSON.stringify(KUNCI_MASUK)});return;}document.documentElement.setAttribute(${JSON.stringify(ATRIBUT_MASUK)},"");}catch(e){}})();`;
+  return `(function(){try{var r=sessionStorage.getItem(${JSON.stringify(KUNCI_MASUK)});if(!r)return;var d=JSON.parse(r);if(!d||typeof d.t!=="number"||Date.now()-d.t>${UMUR_MASUK_MS}||Date.now()<d.t||matchMedia("(prefers-reduced-motion: reduce)").matches){sessionStorage.removeItem(${JSON.stringify(KUNCI_MASUK)});return;}var h=document.documentElement;h.setAttribute(${JSON.stringify(ATRIBUT_MASUK)},"");if(typeof d.warna==="string"&&${WARNA.toString()}.test(d.warna)&&CSS.supports("color",d.warna))h.style.setProperty("--masuk-merek",d.warna);}catch(e){}})();`;
 }
