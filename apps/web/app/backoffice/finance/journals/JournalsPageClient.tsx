@@ -105,6 +105,7 @@ export function JournalsPageClient({ items, totalCount, page, pageSize, canManag
             <label className="text-xs text-muted-foreground mb-1 block">{t("filter.search")}</label>
             <Input
               placeholder={t("filter.searchPlaceholder")}
+              aria-label={t("filter.searchPlaceholder")}
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
             />
@@ -125,16 +126,18 @@ export function JournalsPageClient({ items, totalCount, page, pageSize, canManag
             </Select>
           </div>
           <div className="w-full sm:w-auto sm:flex-[1_1_160px]">
-            <label className="text-xs text-muted-foreground mb-1 block">{t("filter.dateFrom")}</label>
+            <label htmlFor="tanggal-dari" className="text-xs text-muted-foreground mb-1 block">{t("filter.dateFrom")}</label>
             <Input
+              id="tanggal-dari"
               type="date"
               value={filters.from}
               onChange={(e) => pushParam("from", e.target.value || undefined)}
             />
           </div>
           <div className="w-full sm:w-auto sm:flex-[1_1_160px]">
-            <label className="text-xs text-muted-foreground mb-1 block">{t("filter.dateTo")}</label>
+            <label htmlFor="tanggal-sampai" className="text-xs text-muted-foreground mb-1 block">{t("filter.dateTo")}</label>
             <Input
+              id="tanggal-sampai"
               type="date"
               value={filters.to}
               onChange={(e) => pushParam("to", e.target.value || undefined)}

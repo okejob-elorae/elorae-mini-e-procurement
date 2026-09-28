@@ -4597,8 +4597,8 @@
       "searchPlaceholder": "Search journal description…",
       "source": "Source",
       "all": "All",
-      "dateFrom": "From Date",
-      "dateTo": "To Date",
+      "dateFrom": "From date",
+      "dateTo": "To date",
       "reset": "Reset"
     },
     "listTitle": "Journal List",
@@ -4658,8 +4658,8 @@
       "colDebit": "Debit",
       "colCredit": "Credit",
       "colRunningBalance": "Running Balance",
-      "dateFrom": "From Date",
-      "dateTo": "To Date",
+      "dateFrom": "From date",
+      "dateTo": "To date",
       "reset": "Reset",
       "empty": "No activity in this date range."
     },

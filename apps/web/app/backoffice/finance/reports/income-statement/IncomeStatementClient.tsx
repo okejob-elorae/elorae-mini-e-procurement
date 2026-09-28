@@ -57,16 +57,18 @@ export function IncomeStatementClient({ report, filters }: Props) {
       <Card className="p-4">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <div>
-            <label className="text-xs text-muted-foreground mb-1 block">{t("filter.dateFrom")}</label>
+            <label htmlFor="tanggal-dari" className="text-xs text-muted-foreground mb-1 block">{t("filter.dateFrom")}</label>
             <Input
+              id="tanggal-dari"
               type="date"
               value={filters.from}
               onChange={(e) => pushParam("from", e.target.value || undefined)}
             />
           </div>
           <div>
-            <label className="text-xs text-muted-foreground mb-1 block">{t("filter.dateTo")}</label>
+            <label htmlFor="tanggal-sampai" className="text-xs text-muted-foreground mb-1 block">{t("filter.dateTo")}</label>
             <Input
+              id="tanggal-sampai"
               type="date"
               value={filters.to}
               onChange={(e) => pushParam("to", e.target.value || undefined)}

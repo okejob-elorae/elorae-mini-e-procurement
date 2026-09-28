@@ -4597,8 +4597,8 @@
       "searchPlaceholder": "Cari deskripsi jurnal…",
       "source": "Sumber",
       "all": "Semua",
-      "dateFrom": "Dari Tanggal",
-      "dateTo": "Sampai Tanggal",
+      "dateFrom": "Dari tanggal",
+      "dateTo": "Sampai tanggal",
       "reset": "Reset"
     },
     "listTitle": "Daftar Jurnal",
@@ -4658,8 +4658,8 @@
       "colDebit": "Debit",
       "colCredit": "Kredit",
       "colRunningBalance": "Saldo Berjalan",
-      "dateFrom": "Dari Tanggal",
-      "dateTo": "Sampai Tanggal",
+      "dateFrom": "Dari tanggal",
+      "dateTo": "Sampai tanggal",
       "reset": "Reset",
       "empty": "Tidak ada mutasi pada rentang tanggal ini."
     },

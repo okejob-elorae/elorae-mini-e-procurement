@@ -67,8 +67,9 @@ export function BalanceSheetClient({ report, openingWarningDate, filters }: Prop
       <Card className="p-4">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <div>
-            <label className="text-xs text-muted-foreground mb-1 block">{t("filter.asOf")}</label>
+            <label htmlFor="tanggal-per" className="text-xs text-muted-foreground mb-1 block">{t("filter.asOf")}</label>
             <Input
+              id="tanggal-per"
               type="date"
               value={filters.asOf}
               onChange={(e) => pushParam("asOf", e.target.value || undefined)}
