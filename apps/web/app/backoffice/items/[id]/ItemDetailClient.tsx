@@ -142,18 +142,18 @@ export function ItemDetailClient({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {showCreateInJubelio && (
-            <div className='flex flex-col items-end gap-1'>
+            <div className="flex flex-col items-end gap-1">
               <Button
-                variant='outline'
-                size='sm'
+                variant="outline"
+                size="sm"
                 disabled={isCreatingInJubelio || jubelioCreateState === 'category_unmapped'}
                 onClick={() => void handleCreateInJubelio()}
               >
-                {isCreatingInJubelio ? <Loader2 className='mr-1.5 h-3.5 w-3.5 animate-spin' /> : null}
+                {isCreatingInJubelio ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
                 {tItems('createInJubelio')}
               </Button>
               {jubelioCreateState === 'category_unmapped' && (
-                <p className='max-w-xs text-right text-xs text-muted-foreground'>
+                <p className="max-w-xs text-right text-xs text-muted-foreground">
                   {tItems('createInJubelioNeedsCategory')}
                 </p>
               )}
