@@ -939,6 +939,11 @@
     "pushToJubelioQueued": "Masuk antrean. Push dalam ~5 detik.",
     "pushToJubelioFailed": "Push gagal. Hanya admin yang dapat push stok.",
     "pushToJubelioUnexpectedFailed": "Push gagal. Coba lagi.",
+    "createInJubelio": "Buat di Jubelio",
+    "createInJubelioConfirm": "Buat produk ini di katalog Jubelio?",
+    "createInJubelioQueued": "Masuk antrean Jubelio.",
+    "createInJubelioAlready": "Produk ini sudah ada atau sudah dalam antrean Jubelio.",
+    "createInJubelioFailed": "Gagal memasukkan ke antrean Jubelio. Coba lagi.",
     "pricing": {
       "section": "Harga",
       "sellingPriceLabel": "Harga Jual",

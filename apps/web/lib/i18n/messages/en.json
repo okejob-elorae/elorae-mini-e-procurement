@@ -939,6 +939,11 @@
     "pushToJubelioQueued": "Queued. Pushes within ~5 seconds.",
     "pushToJubelioFailed": "Push failed. Only admins can push stock.",
     "pushToJubelioUnexpectedFailed": "Push failed. Try again.",
+    "createInJubelio": "Create in Jubelio",
+    "createInJubelioConfirm": "Create this product in the Jubelio catalog?",
+    "createInJubelioQueued": "Queued for Jubelio.",
+    "createInJubelioAlready": "This product already exists in, or is already queued for, Jubelio.",
+    "createInJubelioFailed": "Could not queue it for Jubelio. Try again.",
     "pricing": {
       "section": "Pricing",
       "sellingPriceLabel": "Selling Price (Harga Jual)",

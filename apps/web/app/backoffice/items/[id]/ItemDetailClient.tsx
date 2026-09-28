@@ -7,6 +7,7 @@ import { useSession } from 'next-auth/react';
 import { ItemForm } from '@/components/forms/ItemForm';
 import { updateItem, saveConsumptionRules } from '@/app/actions/items';
 import { pushItemStockToJubelio } from '@/app/actions/jubelio-outbox';
+import { createItemInJubelio } from '@/app/actions/jubelio-product-push';
 import type { ItemFormData } from '@/lib/items/mutations';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -25,6 +26,7 @@ type ItemDetailClientProps = {
   isActive: boolean;
   gallerySlot?: React.ReactNode;
   jubelioStockPushEnabled: boolean;
+  canCreateInJubelio: boolean;
 };
 
 const itemTypeKeys: Record<ItemType, 'fabric' | 'accessories' | 'finishedGood'> = {
@@ -41,12 +43,15 @@ export function ItemDetailClient({
   isActive,
   gallerySlot,
   jubelioStockPushEnabled,
+  canCreateInJubelio,
 }: ItemDetailClientProps) {
   const router = useRouter();
   const { data: session } = useSession();
   const tItems = useTranslations('items');
   const [isSaving, setIsSaving] = useState(false);
   const [isPushing, setIsPushing] = useState(false);
+  const [isCreatingInJubelio, setIsCreatingInJubelio] = useState(false);
+  const [jubelioCreated, setJubelioCreated] = useState(false);
   const itemTypeLabel = tItems(itemTypeKeys[itemType]);
   const isAdmin = session?.user?.permissions?.includes("*") ?? false;
 
@@ -64,6 +69,28 @@ export function ItemDetailClient({
       toast.error(tItems("pushToJubelioUnexpectedFailed"));
     } finally {
       setIsPushing(false);
+    }
+  };
+
+  const handleCreateInJubelio = async () => {
+    if (!initialData?.id) return;
+    if (!confirm(tItems('createInJubelioConfirm'))) return;
+    setIsCreatingInJubelio(true);
+    try {
+      const r = await createItemInJubelio(initialData.id);
+      if (r.ok) {
+        setJubelioCreated(true);
+        toast.success(tItems('createInJubelioQueued'));
+      } else if (r.reason === 'already_queued' || r.reason === 'already_mapped') {
+        setJubelioCreated(true);
+        toast.info(tItems('createInJubelioAlready'));
+      } else {
+        toast.error(tItems('createInJubelioFailed'));
+      }
+    } catch {
+      toast.error(tItems('createInJubelioFailed'));
+    } finally {
+      setIsCreatingInJubelio(false);
     }
   };
 
@@ -108,6 +135,17 @@ export function ItemDetailClient({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {canCreateInJubelio && !jubelioCreated && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isCreatingInJubelio}
+              onClick={() => void handleCreateInJubelio()}
+            >
+              {isCreatingInJubelio ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+              {tItems('createInJubelio')}
+            </Button>
+          )}
           {isAdmin && (
             <div className="flex flex-col items-end gap-1">
               <Button
