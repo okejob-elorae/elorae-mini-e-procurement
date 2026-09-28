@@ -2,7 +2,7 @@
 
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import dynamic from 'next/dynamic';
-import { getSession, signIn } from 'next-auth/react';
+import { signIn } from 'next-auth/react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
@@ -11,7 +11,7 @@ import { AlertCircle, ArrowRight, Check, Eye, EyeOff, Loader2 } from 'lucide-rea
 import { cn } from '@/lib/utils';
 import { tulisanDiAtas, warnaMerekDiGelap } from '@/lib/theme/warna-merek';
 import { greetingKey, loginMessageKey, type LoginMessageKey } from '@/lib/auth/login-message';
-import { namaDepan, simpanMasuk } from '@/lib/login/masuk';
+import { simpanMasuk } from '@/lib/login/masuk';
 import { LayarMasuk } from '@/components/login/LayarMasuk';
 import gaya from './login.module.css';
 
@@ -86,13 +86,13 @@ const LINGKUP = [
 type Tahap = 'siap' | 'memeriksa' | 'berhasil';
 
 /**
- * Urutan kartu judul di halaman ini (lihat `layar-masuk.module.css`): memudar
- * ke hitam 0–700 ms, judul ditarik fokusnya 850–2250 ms. Pindah halaman
- * sesudah judulnya tajam, supaya bingkai yang ditahan peramban selama halaman
- * berikutnya dimuat adalah bingkai yang sudah tenang — persis sama dengan
+ * Urutan tirai masuk di halaman ini (lihat `layar-masuk.module.css`): tombol
+ * meledak 0–750 ms, wordmark mendekat dan membal 420–1470 ms. Pindah halaman
+ * sesudah ia mendarat, supaya bingkai yang ditahan peramban selama halaman
+ * berikutnya dimuat adalah bingkai yang sudah diam — persis sama dengan
  * bingkai pertama halaman tujuan.
  */
-const PINDAH_MS = 2300;
+const PINDAH_MS = 1550;
 
 export default function LoginPage() {
   const t = useTranslations('auth');
@@ -104,13 +104,13 @@ export default function LoginPage() {
   const [lupaTerbuka, setLupaTerbuka] = useState(false);
   const [ingat, setIngat] = useState(false);
   const [emailTersimpan, setEmailTersimpan] = useState<string | null>(null);
-  const [tirai, setTirai] = useState(false);
+  /* Titik tengah tombol Masuk saat tirai berangkat — pusat ledakannya. */
+  const [tirai, setTirai] = useState<{ x: number; y: number } | null>(null);
   const [merek, setMerek] = useState(LIME_BAWAAN);
   /* Naik tiap kali masuk ditolak; efek di bawah memutar getarannya ulang. */
   const [getaran, setGetaran] = useState(0);
   const [bergetar, setBergetar] = useState(false);
-  /* Nama pengguna, diminta sejak masuk diterima — dipakai sapaan di halaman berikut. */
-  const sesiRef = useRef<Promise<string | null> | null>(null);
+  const tombolRef = useRef<HTMLButtonElement>(null);
   /* Pindah halaman hanya sekali, entah karena waktunya tiba atau karena dilewati. */
   const pergiRef = useRef(false);
 
@@ -187,18 +187,11 @@ export default function LoginPage() {
     setFocus('email');
   }
 
-  /**
-   * Serahkan ke halaman berikutnya. Namanya ditunggu sebentar saja: sesi yang
-   * lambat terbaca berarti sapaan tanpa nama, bukan pintu yang tertahan.
-   */
-  async function pergi() {
+  /** Serahkan ke halaman berikutnya — sekali saja. */
+  function pergi() {
     if (pergiRef.current) return;
     pergiRef.current = true;
-    const nama = await Promise.race([
-      sesiRef.current ?? Promise.resolve(null),
-      new Promise<null>((r) => window.setTimeout(() => r(null), 250)),
-    ]);
-    simpanMasuk({ nama, warna: merekDiGelap });
+    simpanMasuk({ warna: merekDiGelap });
     window.location.href = '/login/redirect';
   }
 
@@ -207,7 +200,12 @@ export default function LoginPage() {
       window.location.href = '/login/redirect';
       return;
     }
-    setTirai(true);
+    const r = tombolRef.current?.getBoundingClientRect();
+    setTirai(
+      r
+        ? { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+        : { x: window.innerWidth / 2, y: window.innerHeight / 2 },
+    );
   }
 
   // Getaran dipasang di bingkai berikutnya, jadi ia berjalan setelah pesan
@@ -223,20 +221,17 @@ export default function LoginPage() {
     return () => cancelAnimationFrame(id);
   }, [getaran, galat, setFocus]);
 
-  // Berhasil masuk: biarkan centangnya terlihat sebentar, lalu kartu judul.
+  // Berhasil masuk: biarkan centangnya terlihat sebentar, lalu tirai.
   const berangkat = useEffectEvent(masuk);
   useEffect(() => {
     if (tahap !== 'berhasil') return;
-    sesiRef.current = getSession()
-      .then((s) => namaDepan(s?.user?.name))
-      .catch(() => null);
     const id = window.setTimeout(berangkat, 280);
     return () => window.clearTimeout(id);
   }, [tahap]);
 
-  // Kartu judul berjalan sampai tajam lalu pindah halaman — atau lebih cepat,
-  // kalau pengguna mengeklik atau menekan tombol apa pun.
-  const lanjutkan = useEffectEvent(() => void pergi());
+  // Tirai berjalan sampai wordmark mendarat lalu pindah halaman — atau lebih
+  // cepat, kalau pengguna mengeklik atau menekan tombol apa pun.
+  const lanjutkan = useEffectEvent(pergi);
   useEffect(() => {
     if (!tirai) return;
     const id = window.setTimeout(lanjutkan, PINDAH_MS);
@@ -255,7 +250,7 @@ export default function LoginPage() {
     const pulih = (e: PageTransitionEvent) => {
       if (!e.persisted) return;
       pergiRef.current = false;
-      setTirai(false);
+      setTirai(null);
       setTahap('siap');
     };
     window.addEventListener('pageshow', pulih);
@@ -523,6 +518,7 @@ export default function LoginPage() {
             {/* Tombol yang berubah bentuk: panah → pemutar → centang. Satu tempat
                 untuk semua keadaan, jadi mata tidak perlu mencari kabarnya. */}
             <button
+              ref={tombolRef}
               type="submit"
               disabled={sibuk}
               aria-live="polite"
@@ -562,7 +558,7 @@ export default function LoginPage() {
         </div>
       </section>
 
-      {tirai ? <LayarMasuk tahap="datang" warna={merekDiGelap} /> : null}
+      {tirai ? <LayarMasuk tahap="datang" warna={merekDiGelap} asal={tirai} /> : null}
     </div>
   );
 }

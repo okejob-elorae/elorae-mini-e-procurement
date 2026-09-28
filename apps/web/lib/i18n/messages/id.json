@@ -50,7 +50,8 @@
     "switchAccount": "Ganti akun",
     "signedIn": "Berhasil masuk",
     "version": "Versi {version}",
-    "enterGreeting": "{greeting}, {name}"
+    "storyLabel": "lelucon hari ini",
+    "storyHint": "Ketuk untuk lanjut · tahan untuk jeda · Esc untuk tutup"
   },
   "navigation": {
     "dashboard": "Beranda",

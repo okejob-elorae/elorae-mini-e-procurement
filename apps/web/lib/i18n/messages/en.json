@@ -50,7 +50,8 @@
     "switchAccount": "Use another account",
     "signedIn": "Signed in",
     "version": "Version {version}",
-    "enterGreeting": "{greeting}, {name}"
+    "storyLabel": "today's joke",
+    "storyHint": "Tap to continue · hold to pause · Esc to close"
   },
   "navigation": {
     "dashboard": "Dashboard",

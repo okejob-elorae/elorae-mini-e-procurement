@@ -1,38 +1,41 @@
 /*
- * Layar masuk — kartu judul film.
+ * Layar masuk — pop.
  *
- * Arahannya pembuka film yang tenang (rujukan pemilik: A24, Netflix), bukan
- * animasi aplikasi: layar memudar ke hitam, sebutir film tipis, satu kartu
- * judul yang "ditarik fokusnya" dari buram ke tajam sambil jarak hurufnya
- * merapat, lalu kartu kedua berisi sapaan, lalu gambar memudar dari hitam.
+ * Arahannya dari pemilik: bukan elegan, tapi bahasa layar yang dipakai tim
+ * sehari-hari di ponselnya. Tiga idiom yang semua orang kenal:
+ *   - logo yang mendekat dari kejauhan (pembuka Netflix), tapi membal;
+ *   - Instagram Story: bilah progres, ketuk untuk lanjut, tahan untuk jeda;
+ *   - caption TikTok kata demi kata, stiker, reaksi 💀, dan swipe-up keluar.
  *
- * Judulnya adalah WORDMARK ELORAÉ yang sama dengan panel halaman masuk —
- * huruf, ketebalan, jarak huruf, dan warna tema pengguna — di atas tinta panel
- * yang sama. Kartu judul film memakai logo studionya sendiri, bukan tulisan
- * yang mirip-mirip; yang sinematik adalah geraknya, bukan hurufnya.
+ * Wordmark-nya tetap wordmark panel halaman masuk — huruf, ketebalan, jarak
+ * huruf, dan warna tema pengguna. Yang pop adalah geraknya, bukan logonya.
  *
  * Tahap (lihat LayarMasuk.tsx):
- *   datang  halaman masuk — memudar ke hitam, kartu judul muncul.
+ *   datang  halaman masuk — tombol Masuk "meledak" jadi lingkaran lime lalu
+ *           tinta, wordmark mendekat membal dan glitch sekejap saat mendarat.
  *   tahan   halaman tujuan, bingkai pertama — IDENTIK dengan bingkai terakhir
  *           `datang`, jadi pergantian dokumennya tidak terlihat.
- *   sapa    kartu judul larut menjadi kartu sapaan.
- *   buka    kartu memudar, lalu seluruh layar memudar dari hitam ke aplikasi.
+ *   cerita  wordmark menembus kamera, lalu lelucon harian sebagai story.
+ *   buka    seluruh layar di-swipe ke atas, aplikasinya di bawah.
  */
 
 .layar {
   /* Tinta panel halaman masuk (`INK` di app/login/page.tsx). */
-  --hitam: #12120f;
+  --tinta: #12120f;
   --tulang: #f2f1e8;
-  --lembut: cubic-bezier(0.22, 1, 0.36, 1);
+  --asap: #8e8e82;
+  --merek: var(--masuk-merek, #c8f04a);
+  --pegas: cubic-bezier(0.34, 1.56, 0.64, 1);
   position: fixed;
   inset: 0;
   z-index: 200;
   display: grid;
   place-items: center;
   overflow: hidden;
-  background: var(--hitam);
+  background: var(--tinta);
   color: var(--tulang);
   user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Tirai lanjutan di halaman tujuan: ada di HTML server, tapi hanya tampil kalau
@@ -45,179 +48,390 @@
   display: grid;
 }
 
-/* ── Butir film ─────────────────────────────────────────────────────────
-   Derau abu-abu yang melompat beberapa kali per detik, seperti butir
-   seluloid. Lapisannya lebih besar dari layar supaya lompatannya tidak
-   memperlihatkan tepi. */
-.butir {
+/* Tahan jari di layar = jeda, seperti Story. Semua gerak ikut berhenti. */
+.layar[data-jeda] *,
+.layar[data-jeda] *::before {
+  animation-play-state: paused !important;
+}
+
+/* ── datang: tombol meledak ─────────────────────────────────────────────
+   Dua lingkaran dari titik tengah tombol Masuk — lime dulu, tinta menyusul —
+   jadi yang terlihat adalah cincin warna merek yang meletus keluar. */
+.layar[data-tahap="datang"] {
+  background: transparent;
+}
+
+.ledakan {
   position: absolute;
-  inset: -50%;
-  pointer-events: none;
-  opacity: 0.075;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  animation: butir 0.9s steps(1, end) infinite;
+  inset: 0;
+  clip-path: circle(0 at var(--x, 50%) var(--y, 50%));
 }
 
-@keyframes butir {
-  0% {
-    transform: translate(0, 0);
-  }
-  17% {
-    transform: translate(-3%, 2%);
-  }
-  33% {
-    transform: translate(2%, -4%);
-  }
-  50% {
-    transform: translate(-4%, -1%);
-  }
-  67% {
-    transform: translate(3%, 3%);
-  }
-  83% {
-    transform: translate(-1%, 4%);
+.ledakan[data-lapis="1"] {
+  background: var(--merek);
+  animation: meledak 520ms cubic-bezier(0.7, 0, 0.2, 1) both;
+}
+
+.ledakan[data-lapis="2"] {
+  background: var(--tinta);
+  animation: meledak 560ms cubic-bezier(0.7, 0, 0.2, 1) 190ms both;
+}
+
+@keyframes meledak {
+  to {
+    clip-path: circle(150vmax at var(--x, 50%) var(--y, 50%));
   }
 }
 
-/* ── Kartu ──────────────────────────────────────────────────────────────
-   Keduanya menempati sel grid yang sama, jadi satu larut tepat di tempat yang
-   lain. */
-.kartu {
+/* ── Wordmark ─────────────────────────────────────────────────────────
+   Wordmark panel halaman masuk SEPERTI YANG TAMPIL: extrabold, leading 0.92,
+   warna tema, jarak huruf -0.015em. Angka terakhir itu dari aturan global
+   `h1, h2, h3 { letter-spacing: -0.015em }` di globals.css, yang mengalahkan
+   `tracking-[0.12em]` di <h1> panel — logo yang dikenal pemiliknya yang rapat. */
+.judul {
+  position: relative;
   grid-area: 1 / 1;
   margin: 0;
-  padding: 0 1.5rem;
-  text-align: center;
-}
-
-/* Wordmark SEPERTI YANG TAMPIL di panel halaman masuk: extrabold,
-   `leading-[0.92]`, warna tema lewat `--masuk-merek` (lime Elorae kalau tidak
-   ada), dan jarak huruf -0.015em. Yang terakhir bukan salah ketik: `<h1>` di
-   panel itu menulis `tracking-[0.12em]`, tapi aturan global
-   `h1, h2, h3 { letter-spacing: -0.015em }` di globals.css tidak berlapis dan
-   mengalahkan kelas Tailwind — jadi logo yang dikenal pemiliknya adalah yang
-   rapat. Kalau aturan global itu berubah, angka ini ikut diubah.
-   `text-indent` yang sama mengimbangi ruang sesudah huruf terakhir, supaya
-   wordmark-nya benar-benar di tengah. */
-.judul {
-  font-size: clamp(2.5rem, 6.5vw, 5.25rem);
+  font-size: clamp(2.5rem, 7vw, 5.5rem);
   font-weight: 800;
   line-height: 0.92;
   letter-spacing: -0.015em;
-  text-indent: -0.015em;
-  color: var(--masuk-merek, #c8f04a);
+  color: var(--merek);
 }
 
-.sapa {
-  font-size: clamp(1rem, 1.6vw, 1.3rem);
-  font-weight: 400;
-  letter-spacing: 0.03em;
-  opacity: 0;
-}
-
-.layar[data-sapa] .judul {
-  opacity: 0;
-}
-
-.layar[data-sapa] .sapa {
-  opacity: 1;
-}
-
-/* ── datang ─────────────────────────────────────────────────────────── */
-
-.layar[data-tahap="datang"] {
-  animation: keHitam 700ms cubic-bezier(0.4, 0, 0.2, 1) both;
-}
-
-@keyframes keHitam {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
+/* Kecil di kejauhan, lalu mendekat dan membal — tiap segmen kunci memakai
+   ease-in-out, jadi lewat-lalu-balik-nya terasa seperti pegas. */
 .layar[data-tahap="datang"] .judul {
-  animation: tarikFokus 1400ms var(--lembut) 850ms both;
+  animation:
+    mendekat 1050ms ease-in-out 420ms both,
+    glitch 380ms steps(1, end) 900ms;
 }
 
-/* Tarik fokus: dari buram dan renggang ke tajam dan rapat, sedikit mundur. */
-@keyframes tarikFokus {
-  from {
+@keyframes mendekat {
+  0% {
     opacity: 0;
-    filter: blur(10px);
-    letter-spacing: 0.2em;
-    text-indent: 0.2em;
-    transform: scale(1.04);
+    transform: scale(0.1);
   }
-  to {
+  25% {
     opacity: 1;
-    filter: blur(0);
-    letter-spacing: -0.015em;
-    text-indent: -0.015em;
-    transform: none;
   }
-}
-
-/* ── sapa ───────────────────────────────────────────────────────────── */
-
-.layar[data-tahap="sapa"] .judul {
-  animation: larut 500ms ease-in both;
-}
-
-@keyframes larut {
-  from {
-    opacity: 1;
-    filter: blur(0);
+  55% {
+    transform: scale(1.14);
   }
-  to {
-    opacity: 0;
-    filter: blur(6px);
+  72% {
+    transform: scale(0.94);
   }
-}
-
-.layar[data-tahap="sapa"] .sapa {
-  animation: fokusHalus 950ms var(--lembut) 380ms both;
-}
-
-@keyframes fokusHalus {
-  from {
-    opacity: 0;
-    filter: blur(8px);
+  87% {
     transform: scale(1.03);
   }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Pecah warna sekejap saat mendarat. Tanpa fill-mode, sengaja: di luar
+   380 ms-nya tidak boleh ada bayangan sama sekali. */
+@keyframes glitch {
+  0% {
+    text-shadow: -5px 0 #ff3ea5, 5px 0 #3ec5ff;
+  }
+  25% {
+    text-shadow: 4px 0 #ff3ea5, -4px 0 #3ec5ff;
+  }
+  50% {
+    text-shadow: -2px 1px #ff3ea5, 2px -1px #3ec5ff;
+  }
+  75% {
+    text-shadow: 1px 0 #ff3ea5, -1px 0 #3ec5ff;
+  }
+  100% {
+    text-shadow: none;
+  }
+}
+
+/* Menembus kamera, lalu tetap hilang — `data-lewat` menjaga ia tidak kembali
+   saat animasinya dilepas di tahap berikutnya. */
+.layar[data-lewat] .judul {
+  opacity: 0;
+}
+
+.layar[data-tahap="cerita"] .judul {
+  animation: menembus 600ms cubic-bezier(0.7, 0, 0.84, 0) both;
+}
+
+@keyframes menembus {
+  from {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(9);
+    filter: blur(8px);
+  }
+}
+
+/* ── Story ────────────────────────────────────────────────────────────
+   Kartu 9:16 di tengah layar lebar, selayar penuh di ponsel. */
+.cerita {
+  position: relative;
+  grid-area: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  width: min(100% - 32px, 430px);
+  height: min(100% - 48px, 760px);
+  padding: 14px 18px 20px;
+  border-radius: 22px;
+  background: #1b1b17;
+  box-shadow: 0 30px 80px rgb(0 0 0 / 0.5);
+  overflow: hidden;
+  animation: ceritaMuncul 520ms var(--pegas) 260ms both;
+}
+
+@media (max-width: 640px) {
+  .cerita {
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+    padding-top: max(14px, env(safe-area-inset-top));
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+  }
+}
+
+@keyframes ceritaMuncul {
+  from {
+    opacity: 0;
+    transform: translateY(40px) scale(0.9);
+  }
   to {
     opacity: 1;
-    filter: blur(0);
     transform: none;
   }
 }
 
-/* ── buka ─────────────────────────────────────────────────────────────
-   Kartu yang sedang tampil memudar (yang tersembunyi tetap tersembunyi —
-   kunci `to` saja membiarkan nilai awalnya diambil dari keadaan sekarang),
-   lalu seluruh layar memudar dari hitam. */
-.layar[data-tahap="buka"] {
-  pointer-events: none;
-  animation: dariHitam 1000ms cubic-bezier(0.4, 0, 0.2, 1) 350ms both;
+.progres {
+  display: flex;
+  gap: 4px;
 }
 
-@keyframes dariHitam {
+.segmen {
+  flex: 1;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: rgb(242 241 232 / 0.25);
+}
+
+.segmen > i {
+  display: block;
+  height: 100%;
+  background: var(--tulang);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+.segmen[data-status="penuh"] > i {
+  transform: scaleX(1);
+}
+
+.segmen[data-status="jalan"] > i {
+  animation: isi var(--durasi) linear both;
+}
+
+@keyframes isi {
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.kepala {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+/* Cincin story di sekeliling avatar. */
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--merek);
+  color: var(--tinta);
+  font-size: 15px;
+  font-weight: 800;
+  box-shadow: 0 0 0 2px #1b1b17, 0 0 0 4px var(--merek);
+}
+
+.akun {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.keterangan {
+  font-size: 13px;
+  color: var(--asap);
+}
+
+.tutup {
+  margin-left: auto;
+  padding: 4px 6px;
+  font-size: 22px;
+  line-height: 1;
+  opacity: 0.85;
+  cursor: pointer;
+}
+
+.isi {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: 26px;
+  padding: 8px 4px;
+}
+
+.pembuka {
+  margin: 0;
+  font-size: clamp(1.55rem, 5.2vw, 2.15rem);
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+}
+
+/* Caption TikTok: kata demi kata, meletup dari bawah. Jedanya dari
+   `JEDA_KATA_MS` dan kartu muncul dari `CERITA_MASUK_MS` di lib/login/lelucon.ts. */
+.kata {
+  display: inline-block;
+  white-space: pre;
+  animation: kata 460ms var(--pegas) both;
+  animation-delay: calc(560ms + var(--i) * 65ms);
+}
+
+@keyframes kata {
   from {
+    opacity: 0;
+    transform: translateY(0.5em) scale(0.5) rotate(-6deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Punchline sebagai stiker: warna merek, bayangan keras, sedikit miring. */
+.stiker {
+  position: relative;
+  align-self: flex-start;
+  margin: 0;
+  padding: 0.7em 0.85em;
+  border-radius: 14px;
+  background: var(--merek);
+  color: var(--tinta);
+  font-size: clamp(1.1rem, 3.8vw, 1.45rem);
+  font-weight: 800;
+  line-height: 1.22;
+  box-shadow: 5px 5px 0 var(--tulang);
+  transform: rotate(-2deg);
+  animation: tempel 560ms var(--pegas) both;
+}
+
+@keyframes tempel {
+  from {
+    opacity: 0;
+    transform: scale(1.7) rotate(10deg);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(-2deg);
+  }
+}
+
+.tengkorak {
+  position: absolute;
+  top: -20px;
+  right: -14px;
+  font-size: 32px;
+  transform: rotate(14deg);
+  animation: letup 480ms var(--pegas) 520ms both;
+}
+
+@keyframes letup {
+  from {
+    opacity: 0;
+    transform: scale(0) rotate(-30deg);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(14deg);
+  }
+}
+
+/* Reaksi yang melayang naik, seperti di siaran langsung. */
+.reaksi {
+  position: absolute;
+  right: 24px;
+  bottom: 64px;
+  width: 64px;
+  pointer-events: none;
+}
+
+.reaksi > span {
+  position: absolute;
+  bottom: 0;
+  left: var(--x);
+  font-size: 26px;
+  opacity: 0;
+  animation: melayang 2300ms ease-out both;
+  animation-delay: calc(760ms + var(--i) * 240ms);
+}
+
+@keyframes melayang {
+  0% {
+    opacity: 0;
+    transform: translateY(0) scale(0.4);
+  }
+  15% {
+    opacity: 1;
+    transform: translateY(-24px) scale(1.15);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--geser), -240px) scale(0.9) rotate(var(--putar));
+  }
+}
+
+.petunjuk {
+  font-size: 12px;
+  text-align: center;
+  color: var(--asap);
+  animation: tampak 400ms ease-out 1500ms both;
+}
+
+@keyframes tampak {
+  from {
+    opacity: 0;
+  }
+  to {
     opacity: 1;
   }
-  to {
-    opacity: 0;
-  }
 }
 
-.layar[data-tahap="buka"] .kartu {
-  animation: pudar 450ms ease-in both;
+/* ── buka: swipe-up ─────────────────────────────────────────────────── */
+
+.layar[data-tahap="buka"] {
+  pointer-events: none;
+  animation: swipe 650ms cubic-bezier(0.7, 0, 0.2, 1) both;
 }
 
-@keyframes pudar {
+@keyframes swipe {
   to {
-    opacity: 0;
+    transform: translateY(-100%);
   }
 }
 
