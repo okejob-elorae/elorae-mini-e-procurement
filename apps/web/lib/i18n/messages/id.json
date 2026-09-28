@@ -1020,7 +1020,7 @@
     "skuRewritten": "SKU diubah",
     "generated": "otomatis",
     "jubelioLabel": "Buat juga produk ini di Jubelio",
-    "jubelioHint": "Jika tidak dicentang, produk hanya dibuat di Elorae dan bisa dibuat di Jubelio nanti dari halaman item. Catatan: mengedit produk ini nanti akan membuatnya di Jubelio.",
+    "jubelioHint": "Jika tidak dicentang, produk hanya dibuat di Elorae dan bisa dibuat di Jubelio nanti dari halaman item.",
     "jubelioNoCategory": "{count} artikel tanpa Kategori tidak akan dibuat di Jubelio. Kategori juga harus sudah dipetakan ke kategori Jubelio.",
     "commit": "Buat {count} produk",
     "committing": "Membuat produk…",

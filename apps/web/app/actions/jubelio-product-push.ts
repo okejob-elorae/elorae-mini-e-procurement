@@ -55,13 +55,18 @@ export async function enqueueProductPushOnUpdate(
 
   const item = await prisma.item.findUnique({
     where: { id: itemId },
-    select: { id: true, type: true, source: true },
+    select: { id: true, type: true },
   });
   if (!item) return;
   if (item.type !== "FINISHED_GOOD") return;
 
+  /**
+   * Only an item Jubelio already knows is pushed on edit. Creating a product in Jubelio is a
+   * deliberate act — the create-time push, a ticked import, or the item page's "Create in
+   * Jubelio" button — never a side effect of editing a field or an image.
+   */
   const hasMapping = (await prisma.jubelioProductMapping.count({ where: { itemId } })) > 0;
-  if (!hasMapping && item.source !== "ERP") return;
+  if (!hasMapping) return;
 
   const userId = await currentUserId();
   const row = await prisma.jubelioOutbox.create({
@@ -77,18 +82,23 @@ export async function enqueueProductPushOnUpdate(
 }
 
 // Image-only edits don't flow through PushableSnapshot diff (image change isn't
-// in the field set). Same gating as Update otherwise — FINISHED_GOOD + mapping
-// or ERP-source. Caller decides whether anything actually changed (counts > 0).
+// in the field set). Same gating as Update otherwise — FINISHED_GOOD with an
+// existing Jubelio mapping. Caller decides whether anything actually changed (counts > 0).
 export async function enqueueProductPushOnImageChange(itemId: string): Promise<void> {
   const item = await prisma.item.findUnique({
     where: { id: itemId },
-    select: { id: true, type: true, source: true },
+    select: { id: true, type: true },
   });
   if (!item) return;
   if (item.type !== "FINISHED_GOOD") return;
 
+  /**
+   * Only an item Jubelio already knows is pushed on edit. Creating a product in Jubelio is a
+   * deliberate act — the create-time push, a ticked import, or the item page's "Create in
+   * Jubelio" button — never a side effect of editing a field or an image.
+   */
   const hasMapping = (await prisma.jubelioProductMapping.count({ where: { itemId } })) > 0;
-  if (!hasMapping && item.source !== "ERP") return;
+  if (!hasMapping) return;
 
   const userId = await currentUserId();
   const row = await prisma.jubelioOutbox.create({

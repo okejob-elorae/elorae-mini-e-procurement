@@ -1020,7 +1020,7 @@
     "skuRewritten": "SKU changed",
     "generated": "generated",
     "jubelioLabel": "Also create these products in Jubelio",
-    "jubelioHint": "If unticked, products are created in Elorae only and can be created in Jubelio later from each item's page. Note: editing one of these products later creates it in Jubelio.",
+    "jubelioHint": "If unticked, products are created in Elorae only and can be created in Jubelio later from each item's page.",
     "jubelioNoCategory": "{count, plural, one {# artikel} other {# artikel}} without a Kategori will not be created in Jubelio. The Kategori must also be mapped to a Jubelio category.",
     "commit": "Create {count, plural, one {# product} other {# products}}",
     "committing": "Creating products…",
