@@ -49,7 +49,8 @@
     "signingInAs": "Signing in as {email}.",
     "switchAccount": "Use another account",
     "signedIn": "Signed in",
-    "version": "Version {version}"
+    "version": "Version {version}",
+    "enterGreeting": "{greeting}, {name}"
   },
   "navigation": {
     "dashboard": "Dashboard",

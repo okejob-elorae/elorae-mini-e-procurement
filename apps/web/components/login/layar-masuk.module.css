@@ -1,0 +1,222 @@
+/*
+ * Layar masuk — kartu judul film.
+ *
+ * Arahannya pembuka film yang tenang (rujukan pemilik: A24, Netflix), bukan
+ * animasi aplikasi: layar memudar ke hitam, sebutir film tipis, satu kartu
+ * judul yang "ditarik fokusnya" dari buram ke tajam sambil jarak hurufnya
+ * merapat, lalu kartu kedua berisi sapaan, lalu gambar memudar dari hitam.
+ * Hitam, putih tulang, satu huruf. Tidak ada warna merek di sini dengan
+ * sengaja — kartu judul yang baik tidak berteriak, dan netral dipakai siapa
+ * pun di tim.
+ *
+ * Tahap (lihat LayarMasuk.tsx):
+ *   datang  halaman masuk — memudar ke hitam, kartu judul muncul.
+ *   tahan   halaman tujuan, bingkai pertama — IDENTIK dengan bingkai terakhir
+ *           `datang`, jadi pergantian dokumennya tidak terlihat.
+ *   sapa    kartu judul larut menjadi kartu sapaan.
+ *   buka    kartu memudar, lalu seluruh layar memudar dari hitam ke aplikasi.
+ */
+
+.layar {
+  --hitam: #0b0b0a;
+  --tulang: #f2f1e8;
+  --lembut: cubic-bezier(0.22, 1, 0.36, 1);
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--hitam);
+  color: var(--tulang);
+  user-select: none;
+}
+
+/* Tirai lanjutan di halaman tujuan: ada di HTML server, tapi hanya tampil kalau
+   skrip <head> menemukan serah terima dari halaman masuk. */
+.lanjutan {
+  display: none;
+}
+
+:global(html[data-masuk]) .lanjutan {
+  display: grid;
+}
+
+/* ── Butir film ─────────────────────────────────────────────────────────
+   Derau abu-abu yang melompat beberapa kali per detik, seperti butir
+   seluloid. Lapisannya lebih besar dari layar supaya lompatannya tidak
+   memperlihatkan tepi. */
+.butir {
+  position: absolute;
+  inset: -50%;
+  pointer-events: none;
+  opacity: 0.075;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation: butir 0.9s steps(1, end) infinite;
+}
+
+@keyframes butir {
+  0% {
+    transform: translate(0, 0);
+  }
+  17% {
+    transform: translate(-3%, 2%);
+  }
+  33% {
+    transform: translate(2%, -4%);
+  }
+  50% {
+    transform: translate(-4%, -1%);
+  }
+  67% {
+    transform: translate(3%, 3%);
+  }
+  83% {
+    transform: translate(-1%, 4%);
+  }
+}
+
+/* ── Kartu ──────────────────────────────────────────────────────────────
+   Keduanya menempati sel grid yang sama, jadi satu larut tepat di tempat yang
+   lain. */
+.kartu {
+  grid-area: 1 / 1;
+  margin: 0;
+  padding: 0 1.5rem;
+  text-align: center;
+}
+
+/* Jarak huruf menambah ruang SESUDAH huruf terakhir; `text-indent` yang sama
+   menambahkannya di depan, jadi judulnya benar-benar di tengah. */
+.judul {
+  font-size: clamp(1.35rem, 2.5vw, 2.1rem);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.5em;
+  text-indent: 0.5em;
+}
+
+.sapa {
+  font-size: clamp(1rem, 1.6vw, 1.3rem);
+  font-weight: 400;
+  letter-spacing: 0.03em;
+  opacity: 0;
+}
+
+.layar[data-sapa] .judul {
+  opacity: 0;
+}
+
+.layar[data-sapa] .sapa {
+  opacity: 1;
+}
+
+/* ── datang ─────────────────────────────────────────────────────────── */
+
+.layar[data-tahap="datang"] {
+  animation: keHitam 700ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+@keyframes keHitam {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.layar[data-tahap="datang"] .judul {
+  animation: tarikFokus 1400ms var(--lembut) 850ms both;
+}
+
+/* Tarik fokus: dari buram dan renggang ke tajam dan rapat, sedikit mundur. */
+@keyframes tarikFokus {
+  from {
+    opacity: 0;
+    filter: blur(10px);
+    letter-spacing: 0.75em;
+    text-indent: 0.75em;
+    transform: scale(1.04);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    letter-spacing: 0.5em;
+    text-indent: 0.5em;
+    transform: none;
+  }
+}
+
+/* ── sapa ───────────────────────────────────────────────────────────── */
+
+.layar[data-tahap="sapa"] .judul {
+  animation: larut 500ms ease-in both;
+}
+
+@keyframes larut {
+  from {
+    opacity: 1;
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    filter: blur(6px);
+  }
+}
+
+.layar[data-tahap="sapa"] .sapa {
+  animation: fokusHalus 950ms var(--lembut) 380ms both;
+}
+
+@keyframes fokusHalus {
+  from {
+    opacity: 0;
+    filter: blur(8px);
+    transform: scale(1.03);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: none;
+  }
+}
+
+/* ── buka ─────────────────────────────────────────────────────────────
+   Kartu yang sedang tampil memudar (yang tersembunyi tetap tersembunyi —
+   kunci `to` saja membiarkan nilai awalnya diambil dari keadaan sekarang),
+   lalu seluruh layar memudar dari hitam. */
+.layar[data-tahap="buka"] {
+  pointer-events: none;
+  animation: dariHitam 1000ms cubic-bezier(0.4, 0, 0.2, 1) 350ms both;
+}
+
+@keyframes dariHitam {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.layar[data-tahap="buka"] .kartu {
+  animation: pudar 450ms ease-in both;
+}
+
+@keyframes pudar {
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lanjutan {
+    display: none !important;
+  }
+
+  .layar,
+  .layar * {
+    animation: none !important;
+  }
+}

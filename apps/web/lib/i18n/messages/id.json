@@ -49,7 +49,8 @@
     "signingInAs": "Masuk sebagai {email}.",
     "switchAccount": "Ganti akun",
     "signedIn": "Berhasil masuk",
-    "version": "Versi {version}"
+    "version": "Versi {version}",
+    "enterGreeting": "{greeting}, {name}"
   },
   "navigation": {
     "dashboard": "Beranda",

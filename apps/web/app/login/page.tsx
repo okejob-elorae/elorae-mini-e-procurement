@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import dynamic from 'next/dynamic';
-import { signIn } from 'next-auth/react';
+import { getSession, signIn } from 'next-auth/react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
@@ -11,6 +11,8 @@ import { AlertCircle, ArrowRight, Check, Eye, EyeOff, Loader2 } from 'lucide-rea
 import { cn } from '@/lib/utils';
 import { tulisanDiAtas, warnaMerekDiGelap } from '@/lib/theme/warna-merek';
 import { greetingKey, loginMessageKey, type LoginMessageKey } from '@/lib/auth/login-message';
+import { namaDepan, simpanMasuk } from '@/lib/login/masuk';
+import { LayarMasuk } from '@/components/login/LayarMasuk';
 import gaya from './login.module.css';
 
 /**
@@ -83,6 +85,15 @@ const LINGKUP = [
 
 type Tahap = 'siap' | 'memeriksa' | 'berhasil';
 
+/**
+ * Urutan kartu judul di halaman ini (lihat `layar-masuk.module.css`): memudar
+ * ke hitam 0–700 ms, judul ditarik fokusnya 850–2250 ms. Pindah halaman
+ * sesudah judulnya tajam, supaya bingkai yang ditahan peramban selama halaman
+ * berikutnya dimuat adalah bingkai yang sudah tenang — persis sama dengan
+ * bingkai pertama halaman tujuan.
+ */
+const PINDAH_MS = 2300;
+
 export default function LoginPage() {
   const t = useTranslations('auth');
   const tValidation = useTranslations('validation');
@@ -93,12 +104,15 @@ export default function LoginPage() {
   const [lupaTerbuka, setLupaTerbuka] = useState(false);
   const [ingat, setIngat] = useState(false);
   const [emailTersimpan, setEmailTersimpan] = useState<string | null>(null);
-  const [tirai, setTirai] = useState<CSSProperties | null>(null);
+  const [tirai, setTirai] = useState(false);
   const [merek, setMerek] = useState(LIME_BAWAAN);
   /* Naik tiap kali masuk ditolak; efek di bawah memutar getarannya ulang. */
   const [getaran, setGetaran] = useState(0);
   const [bergetar, setBergetar] = useState(false);
-  const panelRef = useRef<HTMLElement>(null);
+  /* Nama pengguna, diminta sejak masuk diterima — dipakai sapaan di halaman berikut. */
+  const sesiRef = useRef<Promise<string | null> | null>(null);
+  /* Pindah halaman hanya sekali, entah karena waktunya tiba atau karena dilewati. */
+  const pergiRef = useRef(false);
 
   const loginSchema = z.object({
     email: z.string().email(tValidation('email')),
@@ -173,24 +187,27 @@ export default function LoginPage() {
     setFocus('email');
   }
 
+  /**
+   * Serahkan ke halaman berikutnya. Namanya ditunggu sebentar saja: sesi yang
+   * lambat terbaca berarti sapaan tanpa nama, bukan pintu yang tertahan.
+   */
+  async function pergi() {
+    if (pergiRef.current) return;
+    pergiRef.current = true;
+    const nama = await Promise.race([
+      sesiRef.current ?? Promise.resolve(null),
+      new Promise<null>((r) => window.setTimeout(() => r(null), 250)),
+    ]);
+    simpanMasuk({ nama });
+    window.location.href = '/login/redirect';
+  }
+
   function masuk() {
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const panel = panelRef.current?.getBoundingClientRect();
-    if (reduce || !panel) {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       window.location.href = '/login/redirect';
       return;
     }
-    // Tirai berangkat dari kotak panel tinta yang sekarang, lalu menutup layar.
-    setTirai({
-      '--t': `${panel.top}px`,
-      '--l': `${panel.left}px`,
-      '--r': `${window.innerWidth - panel.right}px`,
-      '--b': `${window.innerHeight - panel.bottom}px`,
-      background: INK,
-    } as CSSProperties);
-    window.setTimeout(() => {
-      window.location.href = '/login/redirect';
-    }, 620);
+    setTirai(true);
   }
 
   // Getaran dipasang di bingkai berikutnya, jadi ia berjalan setelah pesan
@@ -206,12 +223,44 @@ export default function LoginPage() {
     return () => cancelAnimationFrame(id);
   }, [getaran, galat, setFocus]);
 
-  // Berhasil masuk: biarkan centangnya terlihat sebentar, lalu tirai.
+  // Berhasil masuk: biarkan centangnya terlihat sebentar, lalu kartu judul.
+  const berangkat = useEffectEvent(masuk);
   useEffect(() => {
     if (tahap !== 'berhasil') return;
-    const id = window.setTimeout(masuk, 280);
+    sesiRef.current = getSession()
+      .then((s) => namaDepan(s?.user?.name))
+      .catch(() => null);
+    const id = window.setTimeout(berangkat, 280);
     return () => window.clearTimeout(id);
   }, [tahap]);
+
+  // Kartu judul berjalan sampai tajam lalu pindah halaman — atau lebih cepat,
+  // kalau pengguna mengeklik atau menekan tombol apa pun.
+  const lanjutkan = useEffectEvent(() => void pergi());
+  useEffect(() => {
+    if (!tirai) return;
+    const id = window.setTimeout(lanjutkan, PINDAH_MS);
+    window.addEventListener('keydown', lanjutkan);
+    window.addEventListener('pointerdown', lanjutkan);
+    return () => {
+      window.clearTimeout(id);
+      window.removeEventListener('keydown', lanjutkan);
+      window.removeEventListener('pointerdown', lanjutkan);
+    };
+  }, [tirai]);
+
+  // Tombol Kembali dari halaman berikutnya bisa memulihkan halaman ini utuh
+  // dari bfcache — lengkap dengan tirai yang menutup layar. Kembalikan pintunya.
+  useEffect(() => {
+    const pulih = (e: PageTransitionEvent) => {
+      if (!e.persisted) return;
+      pergiRef.current = false;
+      setTirai(false);
+      setTahap('siap');
+    };
+    window.addEventListener('pageshow', pulih);
+    return () => window.removeEventListener('pageshow', pulih);
+  }, []);
 
   const onSubmit = async (data: LoginForm) => {
     setTahap('memeriksa');
@@ -253,7 +302,6 @@ export default function LoginPage() {
           Di layar sempit ia menyusut jadi bilah tipis di atas, bukan hilang:
           nama mereknya justru yang paling perlu tetap terlihat. */}
       <section
-        ref={panelRef}
         className="relative flex flex-col justify-between overflow-hidden p-8 lg:p-14"
         style={{ background: INK, color: BONE }}
       >
@@ -514,20 +562,7 @@ export default function LoginPage() {
         </div>
       </section>
 
-      {tirai ? (
-        <div
-          className={cn('fixed inset-0 z-50 flex items-center justify-center', gaya.tirai)}
-          style={tirai}
-          aria-hidden
-        >
-          <span
-            className={cn('text-3xl font-extrabold', gaya.wordmarkMasuk)}
-            style={{ color: merekDiGelap }}
-          >
-            ELORAÉ
-          </span>
-        </div>
-      ) : null}
+      {tirai ? <LayarMasuk tahap="datang" /> : null}
     </div>
   );
 }

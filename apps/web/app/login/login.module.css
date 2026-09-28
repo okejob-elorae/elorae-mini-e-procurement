@@ -28,40 +28,8 @@
   animation: goyang 360ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
 }
 
-/*
- * Tirai masuk. Panel tinta melebar dari posisinya sekarang sampai menutup
- * layar, lalu halaman berpindah — rasanya melangkah masuk, bukan dimuat ulang.
- * Posisi awal datang dari variabel yang diisi halaman saat berhasil masuk.
- */
-@keyframes tirai {
-  from {
-    clip-path: inset(var(--t, 0) var(--r, 50%) var(--b, 0) var(--l, 0));
-  }
-  to {
-    clip-path: inset(0 0 0 0);
-  }
-}
-
-.tirai {
-  animation: tirai 480ms cubic-bezier(0.65, 0, 0.35, 1) both;
-}
-
-@keyframes wordmarkMasuk {
-  from {
-    opacity: 0;
-    transform: scale(0.94);
-    letter-spacing: 0.3em;
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-    letter-spacing: 0.16em;
-  }
-}
-
-.wordmarkMasuk {
-  animation: wordmarkMasuk 520ms 120ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
+/* Tirai masuk ada di components/login/layar-masuk.module.css — ia juga
+   dipakai halaman tujuan. */
 
 /*
  * Isian otomatis browser. Chrome mewarnai latar kolom biru pucat dan Safari
@@ -79,9 +47,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .goyang,
-  .tirai,
-  .wordmarkMasuk {
+  .goyang {
     animation: none;
   }
 }

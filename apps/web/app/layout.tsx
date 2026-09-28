@@ -29,6 +29,8 @@ import { LocaleProvider } from '@/components/providers/LocaleProvider';
 import { ThemeColorProvider } from '@/components/providers/ThemeColorProvider';
 import { GlobalLoadingBar } from '@/components/GlobalLoadingBar';
 import { getThemeInitScript } from '@/lib/theme/theme-init-script';
+import { getMasukInitScript } from '@/lib/login/masuk';
+import { TiraiLanjutan } from '@/components/login/TiraiLanjutan';
 import './globals.css';
 
 /*
@@ -175,6 +177,12 @@ export default function RootLayout({
           id="elorae-theme-init"
           dangerouslySetInnerHTML={{ __html: getThemeInitScript() }}
         />
+        {/* Paruh kedua animasi masuk — harus terpasang sebelum <body> diurai,
+            supaya bingkai pertama halaman tujuan sudah bertirai. */}
+        <script
+          id="elorae-masuk-init"
+          dangerouslySetInnerHTML={{ __html: getMasukInitScript() }}
+        />
       </head>
       <body className="font-sans antialiased" suppressHydrationWarning>
         <ThemeProvider
@@ -186,7 +194,12 @@ export default function RootLayout({
           <GlobalLoadingBar />
           <SessionProvider>
             <ThemeColorProvider>
-              <LocaleProvider>{children}</LocaleProvider>
+              {/* Tirai SEBELUM halaman: di HTML yang dialirkan ia terurai lebih
+                  dulu, jadi dasbornya tidak sempat terlukis di bawah tirai. */}
+              <LocaleProvider>
+                <TiraiLanjutan />
+                {children}
+              </LocaleProvider>
             </ThemeColorProvider>
           </SessionProvider>
           <Toaster position="top-center" richColors />
