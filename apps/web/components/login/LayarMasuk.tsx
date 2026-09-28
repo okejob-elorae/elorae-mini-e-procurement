@@ -23,7 +23,10 @@ export type IsiCerita = {
   /** Lama tiap langkah, untuk bilah progres. */
   durasi: [number, number];
   label: string;
+  /** Petunjuk untuk layar sentuh: "Ketuk untuk lanjut · …". */
   petunjuk: string;
+  /** Label tombol keyboard untuk layar dengan penunjuk. */
+  tombol: { spasi: string; lanjut: string; tahan: string; tutup: string };
 };
 
 type Props = {
@@ -83,30 +86,32 @@ export function LayarMasuk({ tahap, warna, asal, lewat, jeda, cerita, className 
   );
 }
 
-function Cerita({ pembuka, punchline, langkah, durasi, label, petunjuk }: IsiCerita) {
+function Cerita({ pembuka, punchline, langkah, durasi, label, petunjuk, tombol }: IsiCerita) {
   const kata = pembuka.trim().split(/\s+/);
   return (
     <div className={gaya.cerita}>
-      <div className={gaya.progres}>
-        {durasi.map((ms, i) => (
-          <span
-            key={i}
-            className={gaya.segmen}
-            data-status={i < langkah ? "penuh" : i === langkah ? "jalan" : "kosong"}
-            style={{ "--durasi": `${ms}ms` } as CSSProperties}
-          >
-            <i />
-          </span>
-        ))}
-      </div>
+      <div className={gaya.atas}>
+        <div className={gaya.progres}>
+          {durasi.map((ms, i) => (
+            <span
+              key={i}
+              className={gaya.segmen}
+              data-status={i < langkah ? "penuh" : i === langkah ? "jalan" : "kosong"}
+              style={{ "--durasi": `${ms}ms` } as CSSProperties}
+            >
+              <i />
+            </span>
+          ))}
+        </div>
 
-      <div className={gaya.kepala}>
-        <span className={gaya.avatar}>E</span>
-        <span className={gaya.akun}>elorae</span>
-        <span className={gaya.keterangan}>{label}</span>
-        <span className={gaya.tutup} data-tutup>
-          ✕
-        </span>
+        <div className={gaya.kepala}>
+          <span className={gaya.avatar}>E</span>
+          <span className={gaya.akun}>elorae</span>
+          <span className={gaya.keterangan}>{label}</span>
+          <span className={gaya.tutup} data-tutup>
+            ✕
+          </span>
+        </div>
       </div>
 
       <div className={gaya.isi}>
@@ -139,7 +144,20 @@ function Cerita({ pembuka, punchline, langkah, durasi, label, petunjuk }: IsiCer
         </div>
       ) : null}
 
-      <p className={gaya.petunjuk}>{petunjuk}</p>
+      <div>
+        <p className={cn(gaya.petunjuk, gaya.hanyaPenunjuk)}>
+          <span>
+            <kbd>{tombol.spasi}</kbd>
+            {tombol.lanjut}
+          </span>
+          <span>{tombol.tahan}</span>
+          <span>
+            <kbd>Esc</kbd>
+            {tombol.tutup}
+          </span>
+        </p>
+        <p className={cn(gaya.petunjuk, gaya.hanyaSentuh)}>{petunjuk}</p>
+      </div>
     </div>
   );
 }

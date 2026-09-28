@@ -174,36 +174,26 @@
 }
 
 /* ── Story ────────────────────────────────────────────────────────────
-   Kartu 9:16 di tengah layar lebar, selayar penuh di ponsel. */
+   Selayar penuh, bukan kartu ponsel: di desktop kartu 9:16 hanya mengisi
+   sepertiga layar dan tulisannya terlalu kecil untuk dibaca dari kursi.
+   Idiom Story-nya tetap — bilah progres, akun, ✕ — tapi panggungnya lebar dan
+   hurufnya besar. */
 .cerita {
-  position: relative;
-  grid-area: 1 / 1;
-  display: flex;
-  flex-direction: column;
-  width: min(100% - 32px, 430px);
-  height: min(100% - 48px, 760px);
-  padding: 14px 18px 20px;
-  border-radius: 22px;
-  background: #1b1b17;
-  box-shadow: 0 30px 80px rgb(0 0 0 / 0.5);
-  overflow: hidden;
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 16px;
+  padding: clamp(16px, 3vw, 40px) clamp(20px, 5vw, 72px) clamp(20px, 3vw, 36px);
+  padding-top: max(clamp(16px, 3vw, 40px), env(safe-area-inset-top));
+  padding-bottom: max(clamp(20px, 3vw, 36px), env(safe-area-inset-bottom));
   animation: ceritaMuncul 520ms var(--pegas) 260ms both;
-}
-
-@media (max-width: 640px) {
-  .cerita {
-    width: 100%;
-    height: 100%;
-    border-radius: 0;
-    padding-top: max(14px, env(safe-area-inset-top));
-    padding-bottom: max(20px, env(safe-area-inset-bottom));
-  }
 }
 
 @keyframes ceritaMuncul {
   from {
     opacity: 0;
-    transform: translateY(40px) scale(0.9);
+    transform: translateY(28px) scale(0.97);
   }
   to {
     opacity: 1;
@@ -211,17 +201,23 @@
   }
 }
 
+.atas {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
 .progres {
   display: flex;
-  gap: 4px;
+  gap: 6px;
 }
 
 .segmen {
   flex: 1;
-  height: 3px;
+  height: 4px;
   overflow: hidden;
-  border-radius: 3px;
-  background: rgb(242 241 232 / 0.25);
+  border-radius: 4px;
+  background: rgb(242 241 232 / 0.2);
 }
 
 .segmen > i {
@@ -249,59 +245,64 @@
 .kepala {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 12px;
+  gap: 12px;
 }
 
 /* Cincin story di sekeliling avatar. */
 .avatar {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   flex-shrink: 0;
   border-radius: 50%;
   background: var(--merek);
   color: var(--tinta);
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 800;
-  box-shadow: 0 0 0 2px #1b1b17, 0 0 0 4px var(--merek);
+  box-shadow: 0 0 0 2px var(--tinta), 0 0 0 4px var(--merek);
 }
 
 .akun {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
 }
 
 .keterangan {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--asap);
 }
 
 .tutup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin-left: auto;
-  padding: 4px 6px;
-  font-size: 22px;
+  padding: 6px 8px;
+  font-size: 24px;
   line-height: 1;
-  opacity: 0.85;
   cursor: pointer;
 }
 
+/* Panggung: satu kolom lebar di tengah, pembuka besar lalu stiker punchline
+   yang sedikit menjorok ke kanan — dua kalimat terbaca sebagai adu jawab. */
 .isi {
   display: flex;
-  flex: 1;
   flex-direction: column;
   justify-content: center;
-  gap: 26px;
-  padding: 8px 4px;
+  gap: clamp(22px, 3.5vw, 44px);
+  width: min(100%, 64rem);
+  margin: 0 auto;
 }
 
 .pembuka {
   margin: 0;
-  font-size: clamp(1.55rem, 5.2vw, 2.15rem);
+  max-width: 20ch;
+  font-size: clamp(2rem, 5.2vw, 4.75rem);
   font-weight: 800;
-  line-height: 1.12;
-  letter-spacing: -0.02em;
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
 }
 
 /* Caption TikTok: kata demi kata, meletup dari bawah. Jedanya dari
@@ -328,35 +329,38 @@
 .stiker {
   position: relative;
   align-self: flex-start;
-  margin: 0;
-  padding: 0.7em 0.85em;
-  border-radius: 14px;
+  max-width: 34ch;
+  margin: 0 0 0 clamp(0px, 7vw, 6rem);
+  padding: 0.7em 0.95em;
+  border-radius: 18px;
   background: var(--merek);
   color: var(--tinta);
-  font-size: clamp(1.1rem, 3.8vw, 1.45rem);
+  font-size: clamp(1.2rem, 2.5vw, 2.1rem);
   font-weight: 800;
-  line-height: 1.22;
-  box-shadow: 5px 5px 0 var(--tulang);
-  transform: rotate(-2deg);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  text-wrap: pretty;
+  box-shadow: 6px 6px 0 var(--tulang);
+  transform: rotate(-1.5deg);
   animation: tempel 560ms var(--pegas) both;
 }
 
 @keyframes tempel {
   from {
     opacity: 0;
-    transform: scale(1.7) rotate(10deg);
+    transform: scale(1.6) rotate(8deg);
   }
   to {
     opacity: 1;
-    transform: rotate(-2deg);
+    transform: rotate(-1.5deg);
   }
 }
 
 .tengkorak {
   position: absolute;
-  top: -20px;
-  right: -14px;
-  font-size: 32px;
+  top: -0.9em;
+  right: -0.5em;
+  font-size: clamp(28px, 3vw, 44px);
   transform: rotate(14deg);
   animation: letup 480ms var(--pegas) 520ms both;
 }
@@ -372,12 +376,12 @@
   }
 }
 
-/* Reaksi yang melayang naik, seperti di siaran langsung. */
+/* Reaksi yang melayang naik dari pojok kanan bawah, seperti siaran langsung. */
 .reaksi {
   position: absolute;
-  right: 24px;
-  bottom: 64px;
-  width: 64px;
+  right: clamp(24px, 6vw, 96px);
+  bottom: clamp(72px, 12vh, 140px);
+  width: 72px;
   pointer-events: none;
 }
 
@@ -385,7 +389,7 @@
   position: absolute;
   bottom: 0;
   left: var(--x);
-  font-size: 26px;
+  font-size: clamp(26px, 2.6vw, 38px);
   opacity: 0;
   animation: melayang 2300ms ease-out both;
   animation-delay: calc(760ms + var(--i) * 240ms);
@@ -402,15 +406,49 @@
   }
   100% {
     opacity: 0;
-    transform: translate(var(--geser), -240px) scale(0.9) rotate(var(--putar));
+    transform: translate(var(--geser), -260px) scale(0.9) rotate(var(--putar));
   }
 }
 
+/* Petunjuk: tombol keyboard di layar yang punya penunjuk, "ketuk" di layar
+   sentuh — orang di depan laptop tidak mengetuk apa pun. */
 .petunjuk {
-  font-size: 12px;
-  text-align: center;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 18px;
+  font-size: 13px;
   color: var(--asap);
   animation: tampak 400ms ease-out 1500ms both;
+}
+
+.petunjuk kbd {
+  display: inline-block;
+  min-width: 1.9em;
+  margin-right: 6px;
+  padding: 2px 7px;
+  border: 1px solid rgb(242 241 232 / 0.25);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--tulang);
+}
+
+.hanyaSentuh {
+  display: none;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .hanyaSentuh {
+    display: flex;
+  }
+
+  .hanyaPenunjuk {
+    display: none;
+  }
 }
 
 @keyframes tampak {

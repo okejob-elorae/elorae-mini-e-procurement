@@ -168,6 +168,12 @@ export function TiraiLanjutan() {
               durasi,
               label: t("storyLabel"),
               petunjuk: t("storyHint"),
+              tombol: {
+                spasi: t("storyKeySpace"),
+                lanjut: t("storyKeyNext"),
+                tahan: t("storyKeyHold"),
+                tutup: t("storyKeyClose"),
+              },
             }
           : null
       }

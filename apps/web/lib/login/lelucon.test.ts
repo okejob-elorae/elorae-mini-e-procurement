@@ -26,6 +26,14 @@ describe("leluconHariIni", () => {
     expect(terlihat.size).toBe(LELUCON.length);
   });
 
+  it("holds a hundred jokes, none of them repeated", () => {
+    expect(LELUCON).toHaveLength(100);
+    for (const bahasa of ["id", "en"] as const) {
+      expect(new Set(LELUCON.map((l) => l[bahasa].pembuka)).size).toBe(100);
+      expect(new Set(LELUCON.map((l) => l[bahasa].punchline)).size).toBe(100);
+    }
+  });
+
   it("every joke is complete in both languages", () => {
     for (const l of LELUCON) {
       for (const bahasa of [l.id, l.en]) {

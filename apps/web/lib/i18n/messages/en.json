@@ -30,8 +30,6 @@
     "emailPlaceholder": "name@company.com",
     "passwordPlaceholder": "••••••••",
     "errorOccurred": "An error occurred. Please try again.",
-    "brandEyebrow": "Internal workspace",
-    "brandLine": "From the shop rail to the Instagram grid — one place for everything the team runs.",
     "welcomeTitle": "Sign in",
     "welcomeBody": "Use your work account.",
     "greeting": {
@@ -52,7 +50,10 @@
     "version": "Version {version}",
     "storyLabel": "today's joke",
     "storyHint": "Tap to continue · hold to pause · Esc to close",
-    "jokeBadge": "TODAY'S JOKE INSIDE ✦ SIGN IN FIRST ✦ "
+    "storyKeySpace": "Space",
+    "storyKeyNext": "next",
+    "storyKeyHold": "hold click to pause",
+    "storyKeyClose": "close"
   },
   "navigation": {
     "dashboard": "Dashboard",
