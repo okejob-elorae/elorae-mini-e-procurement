@@ -49,7 +49,7 @@ export function aggregateInventoryValues(
   };
 }
 
-function buildItemsWhere(filters?: ListItemsFilters): Prisma.ItemWhereInput {
+export function buildItemsWhere(filters?: ListItemsFilters): Prisma.ItemWhereInput {
   const where: Prisma.ItemWhereInput = {};
 
   if (filters?.type) {
