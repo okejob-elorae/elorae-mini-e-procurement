@@ -15,7 +15,7 @@ import {
 
 /**
  * Exhaustive on purpose: a new error code without an entry here is a compile error. It does NOT
- * prove the locale files carry that key (the lookup is cast `as never`), so add the copy to both.
+ * prove the locale files carry that key (apps/web has no typed next-intl messages), so add the copy to both.
  */
 const ERROR_KEY: Record<ItemImportErrorCode, `err.${ItemImportErrorCode}`> = {
   NOT_XLSX: "err.NOT_XLSX",
@@ -59,7 +59,7 @@ export function useImportErrorMessage(): (e: ItemImportError) => string {
   const t = useTranslations("itemImport");
   return (e) => {
     const detail = e.code === "DUPLICATE_IN_FILE" ? (e.detail ? ` (${e.detail})` : "") : e.detail ?? "";
-    return t(ERROR_KEY[e.code] as never, { detail });
+    return t(ERROR_KEY[e.code], { detail });
   };
 }
 
