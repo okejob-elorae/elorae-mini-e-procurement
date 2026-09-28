@@ -40,6 +40,10 @@ import type { ItemTypeMasterRow } from '@/app/actions/item-type-master';
 import { ItemType } from '@/lib/constants/enums';
 import { Pagination } from '@/components/ui/pagination';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import type { ItemVariantListRow } from '@/lib/items/variant-rows';
+import { ItemVariantsTable } from './ItemVariantsTable';
+
+export type ItemsListView = 'variant' | 'product';
 
 export type ItemsListRow = {
   id: string;
@@ -95,6 +99,8 @@ type ItemsPageClientProps = {
   page: number;
   pageSize: number;
   primaryImages?: Record<string, string>;
+  view: ItemsListView;
+  variantRows: ItemVariantListRow[];
 };
 
 export function ItemsPageClient({
@@ -107,6 +113,8 @@ export function ItemsPageClient({
   page,
   pageSize,
   primaryImages = {},
+  view,
+  variantRows,
 }: ItemsPageClientProps) {
   const locale = useLocale();
   const router = useRouter();
@@ -136,18 +144,20 @@ export function ItemsPageClient({
   }, [initialSearch]);
 
   const pushParams = useCallback(
-    (updates: { search?: string; page?: number; type?: ItemType | 'raw' | '' }) => {
+    (updates: { search?: string; page?: number; type?: ItemType | 'raw' | ''; view?: ItemsListView }) => {
       const params = new URLSearchParams();
       const search = updates.search ?? initialSearch;
       const nextPage = updates.page ?? page;
       const nextType = updates.type !== undefined ? updates.type : typeFilter;
+      const nextView = updates.view ?? view;
+      if (nextView === 'product') params.set('view', 'product');
       if (nextType) params.set('type', nextType);
       if (search.trim()) params.set('search', search.trim());
       if (nextPage > 1) params.set('page', String(nextPage));
       const qs = params.toString();
       router.push(qs ? `${pathname}?${qs}` : pathname);
     },
-    [initialSearch, page, pathname, router, typeFilter]
+    [initialSearch, page, pathname, router, typeFilter, view]
   );
 
   const handleTabChange = (value: string) => {
@@ -267,244 +277,286 @@ export function ItemsPageClient({
         </TabsList>
       </Tabs>
 
-      <div className="flex flex-col sm:flex-row gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder={tPlaceholders('searchBySkuOrName')}
+            placeholder={
+              view === 'variant' ? tItems('searchVariantPlaceholder') : tPlaceholders('searchBySkuOrName')
+            }
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             className="pl-9"
           />
         </div>
+        <div
+          role="group"
+          aria-label={tItems('viewToggleLabel')}
+          className="inline-flex self-start rounded-md border p-1 gap-1 sm:self-auto"
+        >
+          <Button
+            type="button"
+            size="sm"
+            variant={view === 'variant' ? 'default' : 'ghost'}
+            aria-pressed={view === 'variant'}
+            className="h-9"
+            onClick={() => pushParams({ view: 'variant', page: 1 })}
+          >
+            {tItems('viewByVariant')}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={view === 'product' ? 'default' : 'ghost'}
+            aria-pressed={view === 'product'}
+            className="h-9"
+            onClick={() => pushParams({ view: 'product', page: 1 })}
+          >
+            {tItems('viewByProduct')}
+          </Button>
+        </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Package className="h-5 w-5" />
-            Item List
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {items.length === 0 ? (
-            <div className="text-center py-12">
-              <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">No items found</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-10"></TableHead>
-                    <TableHead className="w-12"></TableHead>
-                    <TableHead>SKU</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>UOM</TableHead>
-                    <TableHead className="text-right">Stock</TableHead>
-                    <TableHead className="text-right">Available</TableHead>
-                    <TableHead className="text-right">Avg Cost</TableHead>
-                    <TableHead className="text-right">Value</TableHead>
-                    <TableHead className="text-right">Harga Jual</TableHead>
-                    <TableHead className="w-12"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((item) => (
-                    <Fragment key={item.id}>
-                      <TableRow>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() =>
-                              setExpandedId(expandedId === item.id ? null : item.id)
-                            }
-                            aria-label="Toggle details"
-                          >
-                            {expandedId === item.id ? (
-                              <ChevronDown className="h-4 w-4" />
-                            ) : (
-                              <ChevronRight className="h-4 w-4" />
-                            )}
-                          </Button>
-                        </TableCell>
-                        <TableCell>
-                          {primaryImages[`${item.id}|`] ? (
-                            <img
-                              src={primaryImages[`${item.id}|`]}
-                              alt=""
-                              className="w-10 h-10 rounded object-cover"
-                              loading="lazy"
-                            />
-                          ) : (
-                            <div className="w-10 h-10 rounded bg-muted" />
-                          )}
-                        </TableCell>
-                        <TableCell className="font-medium">{item.sku}</TableCell>
-                        <TableCell>
-                          <p className="font-medium">
-                            {locale === 'en' ? item.nameEn : item.nameId}
-                          </p>
-                        </TableCell>
-                        <TableCell>
-                          <Badge className={itemTypeColors[item.type]}>
-                            {itemTypeLabels[item.type]}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{item.uom.code}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            {isLowStock(item) && (
-                              <AlertTriangle className="h-4 w-4 text-amber-500 dark:text-amber-400" />
-                            )}
-                            <span>
-                              {Number(item.inventoryValue?.qtyOnHand || 0).toLocaleString()}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <span
-                            className={
-                              (item.inventoryValue?.available ?? 0) < 0
-                                ? 'font-medium text-red-600 dark:text-red-400'
-                                : undefined
-                            }
-                          >
-                            {Number(item.inventoryValue?.available ?? 0).toLocaleString()}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          Rp {Number(item.inventoryValue?.avgCost || 0).toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          Rp {Number(item.inventoryValue?.totalValue || 0).toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {item.type === 'FINISHED_GOOD' && item.sellingPrice != null
-                            ? `Rp ${Number(item.sellingPrice).toLocaleString()}`
-                            : '—'}
-                        </TableCell>
-                        <TableCell>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem asChild>
-                                <Link href={`/backoffice/items/${item.id}`}>
-                                  <Edit className="mr-2 h-4 w-4" />
-                                  Edit
-                                </Link>
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                className="text-destructive"
-                                onClick={() => handleDelete(item.id)}
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                      {expandedId === item.id && (
+      {view === 'variant' ? (
+        <ItemVariantsTable
+          rows={variantRows}
+          totalCount={totalCount}
+          page={page}
+          pageSize={pageSize}
+          images={primaryImages}
+          hasFilter={initialSearch.trim() !== '' || typeFilter !== ''}
+          typeLabels={itemTypeLabels}
+          typeColors={itemTypeColors}
+          onPageChange={(p) => pushParams({ page: p })}
+        />
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5" />
+              Item List
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {items.length === 0 ? (
+              <div className="text-center py-12">
+                <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">No items found</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-10"></TableHead>
+                      <TableHead className="w-12"></TableHead>
+                      <TableHead>SKU</TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>UOM</TableHead>
+                      <TableHead className="text-right">Stock</TableHead>
+                      <TableHead className="text-right">Available</TableHead>
+                      <TableHead className="text-right">Avg Cost</TableHead>
+                      <TableHead className="text-right">Value</TableHead>
+                      <TableHead className="text-right">Harga Jual</TableHead>
+                      <TableHead className="w-12"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map((item) => (
+                      <Fragment key={item.id}>
                         <TableRow>
-                          <TableCell colSpan={12}>
-                            <div className="grid gap-3 sm:grid-cols-2">
-                              <div className="space-y-1">
-                                <p className="text-sm font-semibold">Variants</p>
-                                {item.variants && item.variants.length > 0 ? (
-                                  <div className="space-y-1 text-sm">
-                                    {item.variants.map((variant, idx) => (
-                                      <div
-                                        key={idx}
-                                        className="flex flex-wrap gap-2 items-center"
-                                      >
-                                        <span className="text-muted-foreground">
-                                          {tItems('variantLabel', { index: idx + 1 })}
-                                        </span>
-                                        {variant.sku && (
-                                          <span className="px-2 py-1 rounded bg-primary/10 text-foreground ring-1 ring-inset ring-primary/20 text-xs font-medium">
-                                            {variant.sku}
-                                          </span>
-                                        )}
-                                        {Object.entries(variant)
-                                          .filter(
-                                            ([k, v]) =>
-                                              k !== 'sku' &&
-                                              k !== 'barcode' &&
-                                              v != null &&
-                                              String(v).trim() !== ''
-                                          )
-                                          .map(([k, v]) => (
-                                            <span
-                                              key={k}
-                                              className="px-2 py-1 rounded bg-muted text-muted-foreground text-xs"
-                                            >
-                                              {k}: {v}
-                                            </span>
-                                          ))}
-                                        {variant.barcode?.trim() && (
-                                          <span className="px-2 py-1 rounded bg-muted text-muted-foreground text-xs font-mono">
-                                            {tItems('variantBarcode')}: {variant.barcode.trim()}
-                                          </span>
-                                        )}
-                                      </div>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <p className="text-sm text-muted-foreground">
-                                    {tItems('noVariants')}
-                                  </p>
-                                )}
-                              </div>
-                              <div className="space-y-1">
-                                <p className="text-sm font-semibold">BOM</p>
-                                {item.fgConsumptions && item.fgConsumptions.length > 0 ? (
-                                  <div className="space-y-1 text-sm">
-                                    {item.fgConsumptions.map((rule, idx) => (
-                                      <div key={idx} className="flex flex-wrap gap-2">
-                                        <span className="px-2 py-1 rounded bg-muted text-muted-foreground text-xs">
-                                          {rule.material?.sku || '-'} {rule.material?.nameId || ''}
-                                        </span>
-                                        <span className="text-muted-foreground">
-                                          Qty: {rule.qtyRequired}
-                                        </span>
-                                        <span className="text-muted-foreground">
-                                          Waste: {rule.wastePercent}%
-                                        </span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <p className="text-sm text-muted-foreground">{tItems('noBOM')}</p>
-                                )}
-                              </div>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() =>
+                                setExpandedId(expandedId === item.id ? null : item.id)
+                              }
+                              aria-label="Toggle details"
+                            >
+                              {expandedId === item.id ? (
+                                <ChevronDown className="h-4 w-4" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </TableCell>
+                          <TableCell>
+                            {primaryImages[`${item.id}|`] ? (
+                              <img
+                                src={primaryImages[`${item.id}|`]}
+                                alt=""
+                                className="w-10 h-10 rounded object-cover"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded bg-muted" />
+                            )}
+                          </TableCell>
+                          <TableCell className="font-medium">{item.sku}</TableCell>
+                          <TableCell>
+                            <p className="font-medium">
+                              {locale === 'en' ? item.nameEn : item.nameId}
+                            </p>
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={itemTypeColors[item.type]}>
+                              {itemTypeLabels[item.type]}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{item.uom.code}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              {isLowStock(item) && (
+                                <AlertTriangle className="h-4 w-4 text-amber-500 dark:text-amber-400" />
+                              )}
+                              <span>
+                                {Number(item.inventoryValue?.qtyOnHand || 0).toLocaleString()}
+                              </span>
                             </div>
                           </TableCell>
+                          <TableCell className="text-right">
+                            <span
+                              className={
+                                (item.inventoryValue?.available ?? 0) < 0
+                                  ? 'font-medium text-red-600 dark:text-red-400'
+                                  : undefined
+                              }
+                            >
+                              {Number(item.inventoryValue?.available ?? 0).toLocaleString()}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            Rp {Number(item.inventoryValue?.avgCost || 0).toLocaleString()}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            Rp {Number(item.inventoryValue?.totalValue || 0).toLocaleString()}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {item.type === 'FINISHED_GOOD' && item.sellingPrice != null
+                              ? `Rp ${Number(item.sellingPrice).toLocaleString()}`
+                              : '—'}
+                          </TableCell>
+                          <TableCell>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem asChild>
+                                  <Link href={`/backoffice/items/${item.id}`}>
+                                    <Edit className="mr-2 h-4 w-4" />
+                                    Edit
+                                  </Link>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="text-destructive"
+                                  onClick={() => handleDelete(item.id)}
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
                         </TableRow>
-                      )}
-                    </Fragment>
-                  ))}
-                </TableBody>
-              </Table>
+                        {expandedId === item.id && (
+                          <TableRow>
+                            <TableCell colSpan={12}>
+                              <div className="grid gap-3 sm:grid-cols-2">
+                                <div className="space-y-1">
+                                  <p className="text-sm font-semibold">Variants</p>
+                                  {item.variants && item.variants.length > 0 ? (
+                                    <div className="space-y-1 text-sm">
+                                      {item.variants.map((variant, idx) => (
+                                        <div
+                                          key={idx}
+                                          className="flex flex-wrap gap-2 items-center"
+                                        >
+                                          <span className="text-muted-foreground">
+                                            {tItems('variantLabel', { index: idx + 1 })}
+                                          </span>
+                                          {variant.sku && (
+                                            <span className="px-2 py-1 rounded bg-primary/10 text-foreground ring-1 ring-inset ring-primary/20 text-xs font-medium">
+                                              {variant.sku}
+                                            </span>
+                                          )}
+                                          {Object.entries(variant)
+                                            .filter(
+                                              ([k, v]) =>
+                                                k !== 'sku' &&
+                                                k !== 'barcode' &&
+                                                v != null &&
+                                                String(v).trim() !== ''
+                                            )
+                                            .map(([k, v]) => (
+                                              <span
+                                                key={k}
+                                                className="px-2 py-1 rounded bg-muted text-muted-foreground text-xs"
+                                              >
+                                                {k}: {v}
+                                              </span>
+                                            ))}
+                                          {variant.barcode?.trim() && (
+                                            <span className="px-2 py-1 rounded bg-muted text-muted-foreground text-xs font-mono">
+                                              {tItems('variantBarcode')}: {variant.barcode.trim()}
+                                            </span>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <p className="text-sm text-muted-foreground">
+                                      {tItems('noVariants')}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="space-y-1">
+                                  <p className="text-sm font-semibold">BOM</p>
+                                  {item.fgConsumptions && item.fgConsumptions.length > 0 ? (
+                                    <div className="space-y-1 text-sm">
+                                      {item.fgConsumptions.map((rule, idx) => (
+                                        <div key={idx} className="flex flex-wrap gap-2">
+                                          <span className="px-2 py-1 rounded bg-muted text-muted-foreground text-xs">
+                                            {rule.material?.sku || '-'} {rule.material?.nameId || ''}
+                                          </span>
+                                          <span className="text-muted-foreground">
+                                            Qty: {rule.qtyRequired}
+                                          </span>
+                                          <span className="text-muted-foreground">
+                                            Waste: {rule.wastePercent}%
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <p className="text-sm text-muted-foreground">{tItems('noBOM')}</p>
+                                  )}
+                                </div>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </Fragment>
+                    ))}
+                  </TableBody>
+                </Table>
 
-              <Pagination
-                page={page}
-                totalPages={Math.max(1, Math.ceil(totalCount / pageSize) || 1)}
-                onPageChange={(p) => pushParams({ page: p })}
-                totalCount={totalCount}
-                pageSize={pageSize}
-              />
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                <Pagination
+                  page={page}
+                  totalPages={Math.max(1, Math.ceil(totalCount / pageSize) || 1)}
+                  onPageChange={(p) => pushParams({ page: p })}
+                  totalCount={totalCount}
+                  pageSize={pageSize}
+                />
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

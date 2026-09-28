@@ -312,6 +312,10 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - "Harmonising" the BKM's money formatting onto the whole-rupiah `idr` its neighbours use? Don't — `settlement-bkm-html.ts` renders 2dp on purpose because every figure behind it carries sen; rounding breaks a page the store signs. Change all of a document's money or none. → `docs/landmines/print-documents.md`
 - Adding a backoffice print trigger? Call `lib/print/print-html-in-iframe.ts`, do not hand-roll one — the two copies it replaced had already drifted silently, and more hand-rolled copies remain. Audit it with `logPrintQuietly`, never an `await` before `window.open`. → `docs/landmines/print-documents.md`
 
+**Pick-pack-ship**
+
+- Showing a `PackingVideo`'s time or recorder, or sorting/filtering by it? A re-record overwrites in place — `recordedAt` stays on the FIRST take and `replacedAt` is stamped, so the playing clip is `replacedAt ?? recordedAt`. Display through `currentClipRecording`; a query sort/filter uses `replacedAt ?? recordedAt` in SQL; raw `recordedAt` only when you mean the first take. → `docs/landmines/pick-pack-ship.md`
+
 **PWA**
 
 - Editing `apps/web/proxy.ts`? It IS the Next 16 middleware (renamed from `middleware.ts`), runs on every request, and gates `/pwa/*` — it is NOT dead code. → `docs/landmines/pwa.md`

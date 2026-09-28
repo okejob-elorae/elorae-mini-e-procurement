@@ -5,7 +5,8 @@ import { listItems, getItemCounts } from '@/lib/items/queries';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 import { ItemType } from '@elorae/db';
 import { getPrimaryImagesBatch } from '@/lib/items/images/queries';
-import { ItemsPageClient } from './ItemsPageClient';
+import { listItemVariantRows } from '@/lib/items/variant-rows';
+import { ItemsPageClient, type ItemsListView } from './ItemsPageClient';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +15,7 @@ type PageProps = {
     search?: string;
     type?: string;
     page?: string;
+    view?: string;
   }>;
 };
 
@@ -36,15 +38,41 @@ export default async function ItemsPage({ searchParams }: PageProps) {
   const search = sp.search?.trim() ?? '';
   const typeFilter = parseTypeFilter(sp.type);
   const page = Math.max(1, parseInt(sp.page ?? '1', 10) || 1);
+  const view: ItemsListView = sp.view === 'product' ? 'product' : 'variant';
+  const filters = { search: search || undefined, type: typeFilter };
+
+  if (view === 'variant') {
+    const [variantResult, counts, itemTypeMasters] = await Promise.all([
+      listItemVariantRows(filters, { page, pageSize: DEFAULT_PAGE_SIZE }),
+      getItemCounts(),
+      getItemTypeMasters(),
+    ]);
+    const variantImageMap = await getPrimaryImagesBatch(
+      variantResult.rows.map((row) => ({
+        itemId: row.itemId,
+        variantSku: row.variantSku === '' ? null : row.variantSku,
+      })),
+    );
+
+    return (
+      <ItemsPageClient
+        items={[]}
+        totalCount={variantResult.totalCount}
+        counts={counts}
+        itemTypeMasters={itemTypeMasters}
+        search={search}
+        typeFilter={typeFilter ?? ''}
+        page={page}
+        pageSize={DEFAULT_PAGE_SIZE}
+        primaryImages={Object.fromEntries(variantImageMap)}
+        view={view}
+        variantRows={variantResult.rows}
+      />
+    );
+  }
 
   const [listResult, counts, itemTypeMasters] = await Promise.all([
-    listItems(
-      {
-        search: search || undefined,
-        type: typeFilter,
-      },
-      { page, pageSize: DEFAULT_PAGE_SIZE }
-    ),
+    listItems(filters, { page, pageSize: DEFAULT_PAGE_SIZE }),
     getItemCounts(),
     getItemTypeMasters(),
   ]);
@@ -68,6 +96,8 @@ export default async function ItemsPage({ searchParams }: PageProps) {
       page={page}
       pageSize={DEFAULT_PAGE_SIZE}
       primaryImages={primaryImages}
+      view={view}
+      variantRows={[]}
     />
   );
 }
