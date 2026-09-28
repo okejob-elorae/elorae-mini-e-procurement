@@ -92,13 +92,13 @@ const LINGKUP = [
 type Tahap = 'siap' | 'memeriksa' | 'berhasil';
 
 /**
- * Urutan tirai masuk di halaman ini (lihat `layar-masuk.module.css`): memudar
- * ke tinta 0–700 ms, wordmark mendekat dari kejauhan 650–2450 ms. Pindah
- * halaman sesudah ia diam, supaya bingkai yang ditahan peramban selama halaman
- * berikutnya dimuat adalah bingkai yang sudah tenang — persis sama dengan
+ * Urutan tirai masuk di halaman ini (lihat `layar-masuk.module.css`): tombol
+ * meledak 0–750 ms, wordmark mendekat dan membal 420–1470 ms. Pindah halaman
+ * sesudah ia mendarat, supaya bingkai yang ditahan peramban selama halaman
+ * berikutnya dimuat adalah bingkai yang sudah diam — persis sama dengan
  * bingkai pertama halaman tujuan.
  */
-const PINDAH_MS = 2500;
+const PINDAH_MS = 1550;
 
 export default function LoginPage() {
   const t = useTranslations('auth');
@@ -110,11 +110,13 @@ export default function LoginPage() {
   const [lupaTerbuka, setLupaTerbuka] = useState(false);
   const [ingat, setIngat] = useState(false);
   const [emailTersimpan, setEmailTersimpan] = useState<string | null>(null);
-  const [tirai, setTirai] = useState(false);
+  /* Titik tengah tombol Masuk saat tirai berangkat — pusat ledakannya. */
+  const [tirai, setTirai] = useState<{ x: number; y: number } | null>(null);
   const [merek, setMerek] = useState(LIME_BAWAAN);
   /* Naik tiap kali masuk ditolak; efek di bawah memutar getarannya ulang. */
   const [getaran, setGetaran] = useState(0);
   const [bergetar, setBergetar] = useState(false);
+  const tombolRef = useRef<HTMLButtonElement>(null);
   /* Pindah halaman hanya sekali, entah karena waktunya tiba atau karena dilewati. */
   const pergiRef = useRef(false);
 
@@ -204,7 +206,12 @@ export default function LoginPage() {
       window.location.href = '/login/redirect';
       return;
     }
-    setTirai(true);
+    const r = tombolRef.current?.getBoundingClientRect();
+    setTirai(
+      r
+        ? { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+        : { x: window.innerWidth / 2, y: window.innerHeight / 2 },
+    );
   }
 
   // Getaran dipasang di bingkai berikutnya, jadi ia berjalan setelah pesan
@@ -249,7 +256,7 @@ export default function LoginPage() {
     const pulih = (e: PageTransitionEvent) => {
       if (!e.persisted) return;
       pergiRef.current = false;
-      setTirai(false);
+      setTirai(null);
       setTahap('siap');
     };
     window.addEventListener('pageshow', pulih);
@@ -492,6 +499,7 @@ export default function LoginPage() {
             {/* Tombol yang berubah bentuk: panah → pemutar → centang. Satu tempat
                 untuk semua keadaan, jadi mata tidak perlu mencari kabarnya. */}
             <button
+              ref={tombolRef}
               type="submit"
               disabled={sibuk}
               aria-live="polite"
@@ -531,7 +539,7 @@ export default function LoginPage() {
         </div>
       </section>
 
-      {tirai ? <LayarMasuk tahap="datang" warna={merekDiGelap} /> : null}
+      {tirai ? <LayarMasuk tahap="datang" warna={merekDiGelap} asal={tirai} /> : null}
     </div>
   );
 }
