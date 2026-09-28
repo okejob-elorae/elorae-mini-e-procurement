@@ -51,7 +51,8 @@
     "signedIn": "Berhasil masuk",
     "version": "Versi {version}",
     "storyLabel": "lelucon hari ini",
-    "storyHint": "Ketuk untuk lanjut · tahan untuk jeda · Esc untuk tutup"
+    "storyHint": "Ketuk untuk lanjut · tahan untuk jeda · Esc untuk tutup",
+    "jokeBadge": "ADA LELUCON HARI INI ✦ MASUK DULU ✦ "
   },
   "navigation": {
     "dashboard": "Beranda",

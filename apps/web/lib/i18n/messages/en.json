@@ -51,7 +51,8 @@
     "signedIn": "Signed in",
     "version": "Version {version}",
     "storyLabel": "today's joke",
-    "storyHint": "Tap to continue · hold to pause · Esc to close"
+    "storyHint": "Tap to continue · hold to pause · Esc to close",
+    "jokeBadge": "TODAY'S JOKE INSIDE ✦ SIGN IN FIRST ✦ "
   },
   "navigation": {
     "dashboard": "Dashboard",

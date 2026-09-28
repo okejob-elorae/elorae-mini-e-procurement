@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
-import dynamic from 'next/dynamic';
 import { signIn } from 'next-auth/react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
@@ -37,7 +36,12 @@ import gaya from './login.module.css';
  * Stripe, Supabase, Apple — dilihat September 2026): satu tombol utama, label
  * yang benar-benar tersambung ke kolomnya, "Lupa kata sandi?" di sebelah label
  * sandi, pesan gagal yang menyebut penyebab sebenarnya, formulir yang bergetar
- * saat ditolak, dan satu momen merek di belakang — di sini kain yang bergerak.
+ * saat ditolak, dan satu momen merek di belakang.
+ *
+ * GERAKNYA POP, bukan elegan — permintaan pemilik, selaras dengan tirai masuk
+ * (`components/login/layar-masuk.module.css`): wordmark yang mendekat dan
+ * membal, stiker bundar yang berputar, dan pita "tape" yang saling silang.
+ * Logonya sendiri tidak diubah: huruf, ketebalan, dan warna tema pengguna.
  */
 
 /* Diambil dari fotografi mereka sendiri: hitam hangat studio, krem, dan aksen
@@ -62,9 +66,6 @@ const LIME_BAWAAN = '#C8F04A';
 const KUNCI_EMAIL = 'elorae.login.email';
 
 const VERSI = process.env.NEXT_PUBLIC_APP_VERSION;
-
-/* Dimuat setelah formulir tampil: kain adalah hiasan, formulir yang utama. */
-const KainBergerak = dynamic(() => import('@/components/login/KainBergerak'), { ssr: false });
 
 /**
  * Staggered entrance: wordmark first, then its line, then the form — the eye
@@ -110,6 +111,8 @@ export default function LoginPage() {
   /* Naik tiap kali masuk ditolak; efek di bawah memutar getarannya ulang. */
   const [getaran, setGetaran] = useState(0);
   const [bergetar, setBergetar] = useState(false);
+  /* Wordmark disentuh kursor atau diketuk: pecah warna sekali lagi. */
+  const [glitch, setGlitch] = useState(false);
   const tombolRef = useRef<HTMLButtonElement>(null);
   /* Pindah halaman hanya sekali, entah karena waktunya tiba atau karena dilewati. */
   const pergiRef = useRef(false);
@@ -300,18 +303,35 @@ export default function LoginPage() {
         className="relative flex flex-col justify-between overflow-hidden p-8 lg:p-14"
         style={{ background: INK, color: BONE }}
       >
-        <KainBergerak ink={INK} tint={merekDiGelap} />
-
         {/* Kisi tipis di latar — mengingatkan pada kisi feed Instagram yang
             disusun di dalam, tanpa menjadi gambar yang menuntut perhatian. */}
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 opacity-[0.05]"
+          className="pointer-events-none absolute inset-0 opacity-[0.06]"
           style={{
             backgroundImage: `linear-gradient(${merekDiGelap} 1px, transparent 1px), linear-gradient(90deg, ${merekDiGelap} 1px, transparent 1px)`,
             backgroundSize: '96px 96px',
           }}
         />
+
+        {/* Stiker bundar yang berputar: iklan kecil untuk lelucon harian yang
+            menunggu sesudah masuk. Tulisannya dipaksa pas satu keliling
+            (`textLength`), jadi panjang teks di bahasa apa pun tetap menutup
+            lingkarannya. */}
+        <div aria-hidden className={cn(gaya.lencana, 'right-6 top-6 h-20 w-20 lg:right-12 lg:top-12 lg:h-32 lg:w-32')}>
+          <svg viewBox="0 0 120 120">
+            <defs>
+              <path id="lencana-lingkar" d="M60,60 m-45,0 a45,45 0 1,1 90,0 a45,45 0 1,1 -90,0" />
+            </defs>
+            <circle cx="60" cy="60" r="59" fill={merekDiGelap} />
+            <text fill={INK} fontSize="10" fontWeight="800" letterSpacing="1">
+              <textPath href="#lencana-lingkar" textLength="280" lengthAdjust="spacing">
+                {t('jokeBadge')}
+              </textPath>
+            </text>
+          </svg>
+          <span className="relative text-2xl lg:text-4xl">💀</span>
+        </div>
 
         <div className="anim-rise relative" style={tunda(0)}>
           <p
@@ -324,21 +344,29 @@ export default function LoginPage() {
 
         <div className="relative py-10 lg:py-0">
           {/*
-            Wordmark: huruf besar berjarak lebar — idiom merek fesyen, dan
-            menggantikan ikon pabrik yang tidak menyebut apa pun tentang Elorae.
+            Wordmark: huruf besar — idiom merek fesyen, dan menggantikan ikon
+            pabrik yang tidak menyebut apa pun tentang Elorae. Ukurannya `clamp`
+            supaya ia besar tanpa pernah membungkus baris.
 
-            Ukurannya `clamp` supaya ia besar tanpa pernah membungkus baris:
-            pada 1440 ia jatuh di 112px dan huruf-hurufnya mengisi 68% lebar
-            panel — cukup untuk berkuasa, masih jauh dari tepi.
+            Jarak hurufnya yang tampil -0.015em, bukan 0.12em yang tertulis:
+            aturan global `h1` di globals.css mengalahkan kelas Tailwind, dan
+            itulah logo yang dikenal pemiliknya. Tirai masuk meniru yang tampil.
           */}
           {/* SATU warna utuh. Sempat É-nya dibedakan sebagai aksen — dan itu
               memecah wordmark jadi dua benda: sebuah kata, lalu sebuah huruf
               yang tampak salah warna. */}
           <h1
-            className="anim-rise select-none text-[clamp(2.75rem,8vw,7rem)] font-extrabold leading-[0.92] tracking-[0.12em]"
-            style={{ color: merekDiGelap, ...tunda(80) }}
+            className={cn(
+              'select-none text-[clamp(2.75rem,8vw,7rem)] font-extrabold leading-[0.92] tracking-[0.12em]',
+              gaya.wordmark,
+            )}
+            style={{ color: merekDiGelap }}
+            onPointerEnter={() => setGlitch(true)}
+            onPointerDown={() => setGlitch(true)}
           >
-            ELORAÉ
+            <span className={cn(glitch && gaya.glitchUlang)} onAnimationEnd={() => setGlitch(false)}>
+              ELORAÉ
+            </span>
           </h1>
           <p
             className="anim-rise mt-5 max-w-sm text-base leading-relaxed lg:text-lg"
@@ -348,33 +376,24 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* Teks berjalan berisi modul yang benar-benar ada di dalam — bukan
-            kalimat pemasaran. Ia sekaligus memberi tahu ini aplikasi apa. */}
-        {/* Tepinya dilembutkan dengan mask, bukan dipotong keras: potongan tajam
-            terbaca sebagai teks yang terpangkas, bukan teks yang terus berjalan. */}
+        {/* Dua pita yang saling silang, menembus tepi panel. */}
         <div
-          className="relative overflow-hidden"
           aria-hidden
-          style={{
-            maskImage: 'linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent)',
-            WebkitMaskImage:
-              'linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent)',
-          }}
+          className="relative -mx-8 h-24 lg:-mx-14 lg:h-28"
+          style={{ '--merek': merekDiGelap } as CSSProperties}
         >
-          {/* `pr-3` equals the gap: the list is doubled and slides by exactly
-              50 %, and without it that half-width is one gap short of a full
-              cycle — the chips visibly jumped 6 px back every 26 seconds. */}
-          <div className="marquee flex w-max gap-3 whitespace-nowrap pr-3">
-            {[...LINGKUP, ...LINGKUP].map((x, i) => (
-              <span
-                key={i}
-                className="rounded-full border px-3.5 py-1.5 text-xs font-medium"
-                style={{ borderColor: '#37372E', color: SMOKE, background: INK }}
-              >
-                {x}
-              </span>
-            ))}
-          </div>
+          {(['belakang', 'depan'] as const).map((lapis) => (
+            <div key={lapis} className={gaya.pita} data-lapis={lapis}>
+              <div className={gaya.jalan}>
+                {[...LINGKUP, ...LINGKUP].map((x, i) => (
+                  <span key={i} className="flex items-center">
+                    <span className="px-4">{x}</span>
+                    <span>✦</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       </section>
 
