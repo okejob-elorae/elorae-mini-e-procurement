@@ -4,6 +4,11 @@ import { prisma, type JubelioOutboxEntityType } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { apiFetch } from "@/lib/internal-api";
 import { hasPushableChange, type PushableSnapshot } from "@/lib/items/jubelio-push-diff";
+import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import {
+  jubelioCreateEligibility,
+  type JubelioCreateEligibility,
+} from "@/lib/items/jubelio-create-eligibility";
 
 async function currentUserId(): Promise<string | null> {
   const session = await auth();
@@ -16,7 +21,10 @@ async function fireDirectEnqueue(rowId: string, userId: string): Promise<void> {
   });
 }
 
-export async function enqueueProductPushOnCreate(itemId: string): Promise<void> {
+export async function enqueueProductPushOnCreate(
+  itemId: string,
+  opts?: { directEnqueue?: boolean },
+): Promise<void> {
   const item = await prisma.item.findUnique({
     where: { id: itemId },
     select: { id: true, type: true, source: true },
@@ -35,7 +43,7 @@ export async function enqueueProductPushOnCreate(itemId: string): Promise<void> 
     },
     select: { id: true },
   });
-  void fireDirectEnqueue(row.id, userId ?? "");
+  if (opts?.directEnqueue !== false) void fireDirectEnqueue(row.id, userId ?? "");
 }
 
 export async function enqueueProductPushOnUpdate(
@@ -93,4 +101,18 @@ export async function enqueueProductPushOnImageChange(itemId: string): Promise<v
     select: { id: true },
   });
   void fireDirectEnqueue(row.id, userId ?? "");
+}
+
+/** The item page's "Buat di Jubelio" button — for ERP finished goods that never reached Jubelio (e.g. imported with the Jubelio box unticked). */
+export async function createItemInJubelio(
+  itemId: string,
+): Promise<{ ok: true } | { ok: false; reason: "forbidden" | Exclude<JubelioCreateEligibility, "eligible"> }> {
+  const session = await auth();
+  if (!session?.user || !hasPermission(session.user.permissions, PERMISSIONS.ITEMS_EDIT)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  const eligibility = await jubelioCreateEligibility(itemId);
+  if (eligibility !== "eligible") return { ok: false, reason: eligibility };
+  await enqueueProductPushOnCreate(itemId);
+  return { ok: true };
 }
