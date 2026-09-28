@@ -5,15 +5,17 @@ import { useTranslations, useLocale } from "next-intl";
 import { formatDateTime } from "@/lib/sales-orders/format";
 import { PRINT_STYLES, BRAND } from "@/lib/sales-orders/print-styles";
 import type { SalesOrderDetail, SalesOrderItemRow } from "@/lib/sales-orders/queries";
+import type { PickListLineIdentity } from "@/lib/sales-orders/pick-list-identity";
 import { logPrintQuietly } from "@/lib/audit/log-print-quietly";
 
 type Props = {
   order: SalesOrderDetail;
   items: SalesOrderItemRow[];
+  lineIdentities: Record<string, PickListLineIdentity>;
   lineImages?: Record<string, string>;
 };
 
-export function PickListPrint({ order, items, lineImages = {} }: Props) {
+export function PickListPrint({ order, items, lineIdentities, lineImages = {} }: Props) {
   const t = useTranslations("salesOrdersPrint.pickList");
   const locale = useLocale();
   const printLogged = useRef(false);
@@ -64,8 +66,9 @@ export function PickListPrint({ order, items, lineImages = {} }: Props) {
           </thead>
           <tbody>
             {liveItems.map((it) => {
-              const imgKey = it.itemId ? `${it.itemId}|` : null;
-              const imgUrl = imgKey ? lineImages[imgKey] : undefined;
+              const identity = lineIdentities[it.id];
+              const imgUrl = identity ? lineImages[`${identity.itemId}|${identity.variantSku ?? ""}`] : undefined;
+              const name = identity ? (locale === "en" ? identity.nameEn : identity.nameId) : it.productName;
               return (
                 <tr key={it.id}>
                   <td>
@@ -80,8 +83,12 @@ export function PickListPrint({ order, items, lineImages = {} }: Props) {
                       <div style={{ width: "40px", height: "40px", background: "#e5e7eb", borderRadius: "2px" }} />
                     )}
                   </td>
-                  <td>{it.jubelioItemCode}</td>
-                  <td>{it.productName}</td>
+                  <td className="mono">{identity ? identity.code : it.jubelioItemCode}</td>
+                  <td>
+                    <div>{name}</div>
+                    {identity?.variantDetail ? <div className="muted">{identity.variantDetail}</div> : null}
+                    {identity ? null : <div className="muted">{t("unmappedLine")}</div>}
+                  </td>
                   <td className="num">{it.qty}</td>
                 </tr>
               );

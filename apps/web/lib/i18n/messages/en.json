@@ -2265,11 +2265,12 @@
       "orderLabel": "Order:",
       "channelLabel": "Channel:",
       "dateLabel": "Date:",
-      "colSku": "SKU",
+      "colSku": "SKU / Article",
       "colProduct": "Product",
       "colQty": "Qty",
       "pickedBy": "Picked by:",
-      "dateSigned": "Date:"
+      "dateSigned": "Date:",
+      "unmappedLine": "Not mapped to an Elorae item — code & name from Jubelio"
     },
     "packingSlip": {
       "title": "PACKING SLIP",
