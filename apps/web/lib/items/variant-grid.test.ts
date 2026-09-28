@@ -582,6 +582,20 @@ describe("resolveGridRows", () => {
     expect(state.rows.skus).toEqual(["X", "Y"]);
   });
 
+  it("keeps codes typed into a transient layout when the next change leaves that layout as is", () => {
+    let state = mount([WARNA, { key: "Ukuran", values: ["M"] }], []);
+
+    state = commit(state, [WARNA, { key: "Ukuran", values: [] }], []);
+    expect(state.rows.combos).toEqual([{ Warna: "Merah" }, { Warna: "Biru" }]);
+    state = setRowValueAt(state, "skus", 0, "X");
+    state = setRowValueAt(state, "skus", 1, "Y");
+
+    state = commit(state, [WARNA], []);
+    expect(state.rows.combos).toEqual([{ Warna: "Merah" }, { Warna: "Biru" }]);
+    expect(state.rows.skus).toEqual(["X", "Y"]);
+    expect(state.snapshot).toBe(state.rows);
+  });
+
   it("keeps codes typed while a name-only attribute row exists once its value is added", () => {
     const ukuran: AttributeDef = { key: "Ukuran", values: ["M", "L"] };
     let state = mount([WARNA, ukuran], []);

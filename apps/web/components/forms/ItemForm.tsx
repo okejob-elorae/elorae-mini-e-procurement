@@ -378,7 +378,8 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   );
 
   const includedCount = useMemo(
-    () => gridRows.combos.filter((combo) => !excludedKeys.has(comboKey(combo, gridRows.keys))).length,
+    () =>
+      gridRows.combos.filter((combo) => !excludedKeys.has(comboKey(combo, gridRows.keys))).length,
     [gridRows, excludedKeys]
   );
 

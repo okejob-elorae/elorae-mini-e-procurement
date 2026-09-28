@@ -262,28 +262,34 @@ export type RowValueField = "skus" | "barcodes";
  * True when two row sets describe the same grid: identical attribute keys in
  * the same order, and the same `comboKey` sequence row by row.
  */
-export function isSameGrid(a: GridRows, b: GridRows): boolean {
+export function isSameGrid(
+  a: Pick<GridRows, "combos" | "keys">,
+  b: Pick<GridRows, "combos" | "keys">
+): boolean {
   if (a.keys.length !== b.keys.length) return false;
   if (a.keys.some((key, i) => key !== b.keys[i])) return false;
   if (a.combos.length !== b.combos.length) return false;
-  return a.combos.every((combo, i) => comboKey(combo, a.keys) === comboKey(b.combos[i], b.keys));
+  return a.combos.every(
+    (combo, i) => comboKey(combo, a.keys) === comboKey(b.combos[i], b.keys)
+  );
 }
 
 /**
  * Recomputes the table rows for a new attribute list.
  *
- * The carry source is the snapshot, EXCEPT when the current rows still show
- * the snapshot's own grid (`isSameGrid`): then the current rows are the
- * source and also become the snapshot, so codes typed or generated since the
- * snapshot was taken are kept — including while an extra name-only attribute
- * row makes the grid incomplete without changing its combinations. When the
- * current rows show a different, transient grid (mid-rename, a cleared name,
- * a colliding name), the snapshot is used untouched, so that transient
- * layout never becomes a carry source.
+ * Carry source: the current rows when they still show the snapshot's own
+ * grid, or when the new attribute list leaves the grid on screen unchanged
+ * (both via `isSameGrid`) — so codes typed or generated since the snapshot
+ * was taken are kept, whether an extra name-only attribute row made the grid
+ * incomplete, or the rows show a transient layout (a cleared name or value
+ * list) that the change keeps as is. Otherwise the snapshot, so a transient
+ * layout never carries into a DIFFERENT grid.
  *
  * Each row resolves as: the matching saved variant's code (`findSavedVariant`)
  * → the carried code (`carryRowValues`) → "". The new rows become the
- * snapshot only when the new attribute list is complete.
+ * snapshot when the new attribute list is complete; otherwise the snapshot
+ * adopts the current rows only when they still show its own grid, so a
+ * transient layout never becomes the snapshot.
  */
 export function resolveGridRows(input: {
   attributes: AttributeDef[];
@@ -292,9 +298,10 @@ export function resolveGridRows(input: {
   snapshot: GridRows;
 }): GridState {
   const { attributes, savedVariants, rows, snapshot } = input;
-  const source = isSameGrid(rows, snapshot) ? rows : snapshot;
   const combos = cartesianCombinations(attributes);
   const keys = contributingAttributes(attributes).map((attr) => attr.key);
+  const rowsShowSnapshot = isSameGrid(rows, snapshot);
+  const source = rowsShowSnapshot || isSameGrid(rows, { combos, keys }) ? rows : snapshot;
   const carriedSkus = carryRowValues(source.combos, source.skus, source.keys, combos, keys);
   const carriedBarcodes = carryRowValues(source.combos, source.barcodes, source.keys, combos, keys);
   const skus: string[] = [];
@@ -305,7 +312,8 @@ export function resolveGridRows(input: {
     barcodes.push(match?.barcode?.trim() || carriedBarcodes[i]);
   });
   const nextRows: GridRows = { combos, keys, skus, barcodes };
-  return { rows: nextRows, snapshot: isGridComplete(attributes) ? nextRows : source };
+  const nextSnapshot = rowsShowSnapshot ? rows : snapshot;
+  return { rows: nextRows, snapshot: isGridComplete(attributes) ? nextRows : nextSnapshot };
 }
 
 /**
