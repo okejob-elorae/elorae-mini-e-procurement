@@ -1914,7 +1914,7 @@
     "empty": "Belum ada pesanan marketplace — pesanan akan muncul di sini setelah webhook Jubelio diterima.",
     "emptyFiltered": "Tidak ada pesanan yang cocok dengan filter ini.",
     "filter": {
-      "searchPlaceholder": "Cari berdasarkan nomor pesanan atau nama pembeli",
+      "searchPlaceholder": "Cari berdasarkan nomor pesanan, nama pembeli, atau no. resi",
       "channel": "Channel",
       "status": "Status",
       "dateRange": "Rentang tanggal",
@@ -1924,6 +1924,7 @@
     "table": {
       "orderNo": "No. Pesanan",
       "channel": "Channel",
+      "trackingNumber": "No. Resi",
       "buyer": "Pembeli",
       "total": "Total",
       "status": "Status",

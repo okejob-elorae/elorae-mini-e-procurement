@@ -104,6 +104,7 @@ describe("listSalesOrders", () => {
     expect(args.where.OR).toEqual([
       { salesorderNo: { contains: "Alice" } },
       { customerName: { contains: "Alice" } },
+      { trackingNumber: { contains: "Alice" } },
     ]);
   });
 
@@ -148,6 +149,38 @@ describe("listSalesOrders", () => {
 
     expect(r.orders[0].grandTotal).toBe("97000");
     expect(r.orders[0].transactionDate).toBeInstanceOf(Date);
+  });
+
+  it("carries the resi through to the list row, null while Jubelio has not assigned one", async () => {
+    (prisma.salesOrder.findMany as any).mockResolvedValue([
+      {
+        id: "so1",
+        salesorderNo: "SP-001",
+        channel: "SHOPEE",
+        status: "PROCESSING",
+        customerName: "Alice",
+        trackingNumber: "SPXID012345678",
+        grandTotal: { toString: () => "50000" },
+        transactionDate: new Date("2026-06-11T10:00:00.000Z"),
+      },
+      {
+        id: "so2",
+        salesorderNo: "SP-002",
+        channel: "SHOPEE",
+        status: "NEW",
+        customerName: "Bob",
+        trackingNumber: null,
+        grandTotal: { toString: () => "60000" },
+        transactionDate: new Date("2026-06-11T11:00:00.000Z"),
+      },
+    ]);
+    (prisma.salesOrder.count as any).mockResolvedValue(2);
+
+    const r = await listSalesOrders({}, { page: 1, pageSize: 10 });
+
+    const args = (prisma.salesOrder.findMany as any).mock.calls[0][0];
+    expect(args.select.trackingNumber).toBe(true);
+    expect(r.orders.map((o) => o.trackingNumber)).toEqual(["SPXID012345678", null]);
   });
 });
 

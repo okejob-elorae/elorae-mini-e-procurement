@@ -7,6 +7,7 @@ import Link from "next/link";
 import { Printer } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { ResiBarcode } from "@/components/resi-barcode";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertDialog,
@@ -149,6 +150,7 @@ export function FulfillmentCard(props: Props) {
               {props.trackingNumber}
             </span>
           </div>
+          <ResiBarcode value={props.trackingNumber} className="rounded-md bg-white p-2" />
           {props.packingVideoUrl ? (
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span className="text-muted-foreground">Video packing:</span>
