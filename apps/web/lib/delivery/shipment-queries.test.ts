@@ -162,6 +162,7 @@ describe("shipment-queries", () => {
     expect(shipments[1].lines).toHaveLength(1);
     expect(shipments[1].lines[0].productName).toBe("Query Item");
   });
+
   describe("getDeliveryShipmentDetail", () => {
     it("returns null for an unknown id", async () => {
       expect(await getDeliveryShipmentDetail("does-not-exist")).toBeNull();
@@ -203,6 +204,14 @@ describe("shipment-queries", () => {
       });
       const detail = await getDeliveryShipmentDetail(shipmentId);
       expect(detail?.goodsPhoto).toEqual({ url: null, unavailable: true });
+
+      await prisma.deliveryShipment.update({
+        where: { id: shipmentId },
+        data: { proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg` },
+      });
+      const bound = await getDeliveryShipmentDetail(shipmentId);
+      expect(bound?.goodsPhoto.url).toMatch(new RegExp(`delivery-pod-proofs/${shipmentId}/goods\\.jpg$`));
+      expect(bound?.goodsPhoto.unavailable).toBe(false);
     });
 
     it("yields no URL and flags unavailable for a malformed or foreign key", async () => {

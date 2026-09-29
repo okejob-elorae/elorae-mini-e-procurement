@@ -172,12 +172,14 @@ export function ShipmentDetailClient({ shipment }: Props) {
           <CardContent className="space-y-6">
             <div className="grid gap-4 sm:grid-cols-2">
               <ShipmentPhotoPanel
+                key={shipment.goodsPhoto.url ?? "goods-none"}
                 title={td("goodsPhoto")}
                 url={shipment.goodsPhoto.url}
                 unavailable={shipment.goodsPhoto.unavailable}
                 emptyText={goodsEmpty}
               />
               <ShipmentPhotoPanel
+                key={shipment.notaPhoto.url ?? "nota-none"}
                 title={td("notaPhoto")}
                 url={shipment.notaPhoto.url}
                 unavailable={shipment.notaPhoto.unavailable}
