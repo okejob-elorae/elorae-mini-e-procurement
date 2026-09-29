@@ -6,16 +6,26 @@ import { snapshotMappings, restoreMappings, type MappingSnapshot } from "@/lib/f
 import { createSellThrough, resolveSellThroughLine } from "@/lib/konsi-sell-through/writer";
 import { createSellThroughFixtures } from "@/lib/konsi-sell-through/test-fixtures";
 
-const { mockAuth, mockFanOut, mockLogPrint } = vi.hoisted(() => ({
+const { mockAuth, mockFanOut, mockLogPrint, postOverride } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   mockFanOut: vi.fn(),
   mockLogPrint: vi.fn(),
+  postOverride: { current: null as (() => Promise<never>) | null },
 }));
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 /* Stubbed so neither the order-create nor the journal/nota fan-out can queue push notifications on the shared dev DB. */
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: mockFanOut }));
 vi.mock("./audit", () => ({ logPrint: mockLogPrint }));
+/* Passes through to the real poster unless a case sets `postOverride`, which is how a throw escapes the safe wrapper's own catch. */
+vi.mock("@/lib/finance/ar/post-ar-journal-safely", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/finance/ar/post-ar-journal-safely")>();
+  return {
+    ...actual,
+    postArJournalSafely: (...args: Parameters<typeof actual.postArJournalSafely>) =>
+      postOverride.current ? postOverride.current() : actual.postArJournalSafely(...args),
+  };
+});
 
 import {
   approveSellThroughAction,
@@ -81,6 +91,7 @@ d("konsi sell-through actions (test bed only)", () => {
     mockFanOut.mockReset();
     mockLogPrint.mockReset();
     mockLogPrint.mockResolvedValue(undefined);
+    postOverride.current = null;
   });
 
   afterEach(async () => {
@@ -146,6 +157,26 @@ d("konsi sell-through actions (test bed only)", () => {
     expect(result).toEqual({ ok: true });
     expect(await journalTypesFor(id)).toEqual(["KONSI_SELLTHRU_COGS", "KONSI_SELLTHRU_REVENUE"]);
     await expect(retrySellThroughJournalsAction(id)).resolves.toEqual({ ok: false, reason: "NOT_RETRYABLE" });
+  }, SLOW);
+
+  it("a failure after the approval committed still reports success, and the retry offers the journals it left", async () => {
+    const id = await billingDraft();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    postOverride.current = () => Promise.reject(new Error("simulated post failure"));
+    try {
+      await expect(
+        approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId }),
+      ).resolves.toEqual({ ok: true });
+      expect(errorSpy).toHaveBeenCalledWith("[konsi-sell-through] post-approve steps failed", expect.any(Error));
+    } finally {
+      postOverride.current = null;
+      errorSpy.mockRestore();
+    }
+
+    expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("APPROVED");
+    expect(await journalTypesFor(id)).toEqual([]);
+    await expect(retrySellThroughJournalsAction(id)).resolves.toMatchObject({ ok: true, stillPending: [] });
+    expect(await journalTypesFor(id)).toEqual(["KONSI_SELLTHRU_COGS", "KONSI_SELLTHRU_REVENUE"]);
   }, SLOW);
 
   it("a BASELINE approval posts no journal", async () => {

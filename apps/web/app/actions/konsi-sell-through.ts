@@ -161,6 +161,17 @@ async function postSellThroughJournals(id: string, userId: string, kinds: readon
   return { posted, stillPending };
 }
 
+/**
+ * Approves a report, then posts the journals an invoiced approval owes. Each post goes through
+ * `postArJournalSafely`: a failure degrades to a JOURNAL_PENDING flag and a journal still missing,
+ * which the report page offers to retry, never an undone approval.
+ *
+ * Once the writer has returned, the approval is committed and this action reports `{ ok: true }`
+ * whatever happens next. The post-commit steps run in their own try/catch, which only logs: a
+ * throw there must not tell the operator a committed approval failed, and a journal it left
+ * unposted still reads as owed through `sellThroughJournalGaps` and the report page's retry. The
+ * revalidation runs in its `finally`, so the page refreshes either way.
+ */
 export async function approveSellThroughAction(input: unknown): Promise<SellThroughActionResult> {
   const g = await guard();
   if ("ok" in g) return g;
@@ -169,16 +180,23 @@ export async function approveSellThroughAction(input: unknown): Promise<SellThro
 
   const doc = await prisma.konsiSellThrough.findUnique({ where: { id: req.id }, select: { closingStocktakeId: true } });
 
+  let result: Awaited<ReturnType<typeof approveSellThrough>>;
   try {
-    const result = await approveSellThrough({ ...req, approvedById: g.userId });
-    if (result.invoiced) await postSellThroughJournals(req.id, g.userId, SELL_THROUGH_JOURNAL_KINDS);
-    if (doc) revalidateSellThrough(req.id, doc.closingStocktakeId);
-    revalidatePath("/backoffice/finance/piutang");
-    revalidatePath("/backoffice/finance/faktur-pajak");
-    return { ok: true };
+    result = await approveSellThrough({ ...req, approvedById: g.userId });
   } catch (e) {
     return toResult(e);
   }
+
+  try {
+    if (result.invoiced) await postSellThroughJournals(req.id, g.userId, SELL_THROUGH_JOURNAL_KINDS);
+  } catch (e) {
+    console.error("[konsi-sell-through] post-approve steps failed", e);
+  } finally {
+    if (doc) revalidateSellThrough(req.id, doc.closingStocktakeId);
+    revalidatePath("/backoffice/finance/piutang");
+    revalidatePath("/backoffice/finance/faktur-pajak");
+  }
+  return { ok: true };
 }
 
 export type RetrySellThroughJournalsResult =
