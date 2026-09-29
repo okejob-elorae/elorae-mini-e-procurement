@@ -29,7 +29,9 @@ export type AcceptReturnItemResult =
         | "unmapped_sku"
         | "return_locked"
         | "no_inventory_row"
-        | "order_not_settled";
+        | "order_not_settled"
+        | "no_governing_row"
+        | "stock_not_traceable";
     };
 
 export type RejectReturnItemInput = {
@@ -93,6 +95,9 @@ export async function acceptReturnItem(
    *               the reservation's own row while it is still mapped, else the one other item the
    *               variant is mapped on (the row it moved to when its old item was superseded). With
    *               neither, refuse — never a silent no-stock accept, since the sale's COGS is booked.
+   * A line that names its order line but has NO reservation came from a line never reserved (unmapped
+   * when the order arrived, or older than reservations), so nothing says whether its stock left:
+   * refuse rather than restore onto the ingest-resolved item, which could add stock that never left.
    */
   const reservation = item.salesOrderDetailId === null
     ? null
@@ -100,6 +105,9 @@ export async function acceptReturnItem(
         where: { salesorderDetailId: item.salesOrderDetailId },
         select: { itemId: true, variantSku: true, state: true, qty: true },
       });
+  if (item.salesOrderDetailId !== null && !reservation) {
+    return { applied: false, skipped: "stock_not_traceable" };
+  }
   if (reservation?.state === "RESERVED") return { applied: false, skipped: "order_not_settled" };
   if (reservation && reservation.state !== "CONSUMED") {
     return acceptWithoutStock(tx, input, "NOT_CONSUMED");
@@ -109,7 +117,7 @@ export async function acceptReturnItem(
   let qty = toNum(item.qty);
   if (reservation) {
     const target = await resolveRestoreItem(tx, reservation.itemId, reservation.variantSku);
-    if (target === null) return { applied: false, skipped: "no_inventory_row" };
+    if (target === null) return { applied: false, skipped: "no_governing_row" };
     stockItemId = target;
     stockVariantSku = reservation.variantSku;
     qty = Math.min(qty, toNum(reservation.qty));

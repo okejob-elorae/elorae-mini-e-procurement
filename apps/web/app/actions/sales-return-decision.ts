@@ -58,6 +58,8 @@ export type DecisionActionResult =
         | "return_locked"
         | "no_inventory_row"
         | "order_not_settled"
+        | "no_governing_row"
+        | "stock_not_traceable"
         | "items_still_pending"
         | "no_items"
         | "already_submitted"

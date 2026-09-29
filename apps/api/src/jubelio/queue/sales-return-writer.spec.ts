@@ -30,6 +30,7 @@ describe("sales-return-writer", () => {
         itemId: "i1",
         variantSku: null,
         qty: "2.00",
+        salesOrderDetailId: null,
         decision: "PENDING",
         salesReturn: { pushOutboxRowId: null },
       });
@@ -166,7 +167,7 @@ describe("sales-return-writer", () => {
     it.each([
       ["no other item maps the variant", []],
       ["more than one other item maps it", [{ itemId: "a" }, { itemId: "b" }]],
-    ])("refuses no_inventory_row for an unmapped consumed row when %s, writing nothing", async (_label, moved) => {
+    ])("refuses no_governing_row for an unmapped consumed row when %s, writing nothing", async (_label, moved) => {
       const tx = createTx();
       tx.salesReturnItem.findUnique.mockResolvedValue(pendingLine());
       tx.stockReservation.findUnique.mockResolvedValue({ itemId: "old-item", variantSku: "V-M", state: "CONSUMED", qty: "2" });
@@ -175,7 +176,7 @@ describe("sales-return-writer", () => {
 
       const result = await acceptReturnItem(tx, { returnItemId: "ri1", reason: "Came back", changedById: "u1" });
 
-      expect(result).toEqual({ applied: false, skipped: "no_inventory_row" });
+      expect(result).toEqual({ applied: false, skipped: "no_governing_row" });
       expect(tx.salesReturnItem.update).not.toHaveBeenCalled();
       expect(tx.stockAdjustment.create).not.toHaveBeenCalled();
     });
@@ -196,14 +197,26 @@ describe("sales-return-writer", () => {
       }));
     });
 
-    it("keeps the item-based path when the line has no reservation: an unresolved item is still unmapped_sku", async () => {
+    it("refuses stock_not_traceable when the line names an order line that was never reserved", async () => {
       const tx = createTx();
-      tx.salesReturnItem.findUnique.mockResolvedValue(pendingLine());
+      tx.salesReturnItem.findUnique.mockResolvedValue(pendingLine({ itemId: "i1", variantSku: "V-M" }));
       tx.stockReservation.findUnique.mockResolvedValue(null);
 
       const result = await acceptReturnItem(tx, { returnItemId: "ri1", reason: "Came back", changedById: "u1" });
 
+      expect(result).toEqual({ applied: false, skipped: "stock_not_traceable" });
+      expect(tx.inventoryValue.findFirst).not.toHaveBeenCalled();
+      expect(tx.salesReturnItem.update).not.toHaveBeenCalled();
+    });
+
+    it("keeps the item-based path for a line that names no order line: an unresolved item is still unmapped_sku", async () => {
+      const tx = createTx();
+      tx.salesReturnItem.findUnique.mockResolvedValue(pendingLine({ salesOrderDetailId: null }));
+
+      const result = await acceptReturnItem(tx, { returnItemId: "ri1", reason: "Came back", changedById: "u1" });
+
       expect(result).toEqual({ applied: false, skipped: "unmapped_sku" });
+      expect(tx.stockReservation.findUnique).not.toHaveBeenCalled();
       expect(tx.salesReturnItem.update).not.toHaveBeenCalled();
     });
 
@@ -250,6 +263,7 @@ describe("sales-return-writer", () => {
       const tx = createTx();
       tx.salesReturnItem.findUnique.mockResolvedValue({
         id: "ri1",
+        salesOrderDetailId: null,
         decision: "PENDING",
         itemId: null,
         salesReturn: { pushOutboxRowId: null },
@@ -263,6 +277,7 @@ describe("sales-return-writer", () => {
       const tx = createTx();
       tx.salesReturnItem.findUnique.mockResolvedValue({
         id: "ri1",
+        salesOrderDetailId: null,
         decision: "PENDING",
         itemId: "i1",
         variantSku: null,
@@ -281,6 +296,7 @@ describe("sales-return-writer", () => {
       const tx = createTx();
       tx.salesReturnItem.findUnique.mockResolvedValue({
         id: "ri1",
+        salesOrderDetailId: null,
         decision: "PENDING",
         salesReturn: { pushOutboxRowId: null },
       });

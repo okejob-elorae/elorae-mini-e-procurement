@@ -275,6 +275,8 @@ export function ReturnDecisionCard({ ret, canDecide, canPostJournal, canViewSale
           <TableBody>
             {ret.items.map((item) => {
               const pending = item.decision === "PENDING";
+              /* An accept that recorded no stock adjustment: the line never left ERP stock. */
+              const acceptedWithoutStock = item.decision === "ACCEPTED" && item.stockAdjustmentId === null;
               return (
                 <TableRow key={item.id}>
                   <TableCell>{item.productName}</TableCell>
@@ -294,7 +296,7 @@ export function ReturnDecisionCard({ ret, canDecide, canPostJournal, canViewSale
                     >
                       {t(`itemDecision.${item.decision}` as never)}
                     </span>
-                    {item.decision === "ACCEPTED" && item.stockAdjustmentId === null && (
+                    {acceptedWithoutStock && (
                       <p className="mt-1 text-xs text-muted-foreground">{t("noStockChange")}</p>
                     )}
                   </TableCell>
