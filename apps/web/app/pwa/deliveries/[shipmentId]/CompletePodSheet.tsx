@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
@@ -55,11 +55,16 @@ export function CompletePodSheet({
   const [notaProofFile, setNotaProofFile] = useState<File | null>(null);
   const [signedByName, setSignedByName] = useState("");
   const [gps, setGps] = useState<GpsState>({ status: "idle" });
+  const gpsStatusRef = useRef<GpsState["status"]>("idle");
   const [qtyInputs, setQtyInputs] = useState<Record<string, string>>(
     () => Object.fromEntries(lines.map((l) => [l.id, String(l.plannedQty)])),
   );
   const [success, setSuccess] = useState(false);
   const [queued, setQueued] = useState(false);
+
+  useEffect(() => {
+    gpsStatusRef.current = gps.status;
+  }, [gps.status]);
 
   useEffect(() => {
     requestLocation();
@@ -74,8 +79,10 @@ export function CompletePodSheet({
       (status) => {
         if (cancelled) return;
         permStatus = status;
+        /* Read through the ref: this handler outlives the render it closed over, and re-requesting over a good or in-flight fix would drop it back to locating mid-form. */
         status.onchange = () => {
-          if (status.state === "granted") requestLocation();
+          const current = gpsStatusRef.current;
+          if (status.state === "granted" && current !== "ready" && current !== "locating") requestLocation();
         };
       },
       () => undefined,
@@ -281,9 +288,9 @@ export function CompletePodSheet({
           </p>
         )}
         {gps.status === "denied" && (
-          <Alert variant="destructive" className="space-y-2">
+          <Alert variant="destructive">
             <AlertDescription>{t("permissionDenied")}</AlertDescription>
-            <Button type="button" variant="outline" size="sm" className="h-10 w-full" onClick={requestLocation}>
+            <Button type="button" variant="outline" size="sm" className="col-start-2 mt-2 h-10 w-full" onClick={requestLocation}>
               {t("locationRetry")}
             </Button>
           </Alert>

@@ -103,9 +103,9 @@ export function CheckInButton({ storeId, autoCloseStoreName }: Props) {
 
   if (perm === "denied") {
     return (
-      <Alert variant="destructive" className="space-y-2">
+      <Alert variant="destructive">
         <AlertDescription>{t("permissionDenied")}</AlertDescription>
-        <Button type="button" variant="outline" size="sm" className="h-10 w-full" onClick={onRetryPermission} disabled={busy}>
+        <Button type="button" variant="outline" size="sm" className="col-start-2 mt-2 h-10 w-full" onClick={onRetryPermission} disabled={busy}>
           {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {t("coordsRetry")}
         </Button>
