@@ -305,7 +305,11 @@
     "notConfigured": "Belum dikonfigurasi. Muat ulang halaman untuk membuatnya.",
     "lastNumber": "No. terakhir",
     "notIssued": "Belum terbit",
-    "resetPeriods": { "YEARLY": "Tahunan", "MONTHLY": "Bulanan", "NEVER": "Tidak pernah" },
+    "resetPeriods": {
+      "YEARLY": "Tahunan",
+      "MONTHLY": "Bulanan",
+      "NEVER": "Tidak pernah"
+    },
     "groups": {
       "procurement": "Pembelian & produksi",
       "inventory": "Persediaan",
@@ -3097,6 +3101,25 @@
         "delete": "Hapus",
         "homeChipCount": "{count, plural, =0 {Tidak ada pengiriman} other {# pengiriman menunggu sinkronisasi}}"
       }
+    },
+    "logout": {
+      "title": "Ada data belum terkirim di perangkat ini",
+      "description": "Data ini belum sampai ke server. Kirim atau selesaikan dulu sebelum keluar, kalau tidak akan terwarisi pengguna berikutnya.",
+      "queue": {
+        "orders": "Pesanan",
+        "completions": "Penyelesaian pengiriman",
+        "photos": "Foto kunjungan"
+      },
+      "itemCount": "{count} menunggu",
+      "review": "Lihat",
+      "syncNow": "Kirim sekarang",
+      "syncing": "Mengirim…",
+      "cancel": "Batal",
+      "offlineHint": "Anda sedang offline. Sambungkan internet untuk mengirim data ini.",
+      "allSynced": "Semua sudah terkirim. Anda bisa keluar sekarang.",
+      "syncFailed": "Gagal mengirim. Silakan coba lagi.",
+      "clearFailed": "Data offline gagal dibersihkan, jadi Anda belum keluar.",
+      "retry": "Coba Lagi"
     }
   },
   "fieldSalesOrders": {

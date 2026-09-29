@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { CalendarClock, ClipboardList, Clock, ExternalLink, LogOut, MapPin, ShoppingCart, Store as StoreIcon } from "lucide-react";
+import { CalendarClock, ClipboardList, Clock, ExternalLink, MapPin, ShoppingCart, Store as StoreIcon } from "lucide-react";
 import { CheckInButton } from "./stores/[id]/CheckInButton";
 import { CheckOutButton } from "./stores/[id]/CheckOutButton";
+import { LogoutButton } from "./LogoutButton";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -40,7 +41,6 @@ type Props = {
   autoCloseStoreName: string | null;
   /** Set only while the store has an open monthly count that is still owed: its due date, and whether it has passed. */
   countDue: { overdue: boolean; dueAtIso: string } | null;
-  onLogout: () => Promise<void>;
 };
 
 /**
@@ -48,7 +48,7 @@ type Props = {
  * no roaming store list: always the same store, check-in/out at it, and a
  * "Catat Penjualan" CTA gated on being checked in there.
  */
-export function SpgHomeShell({ userName, store, activeVisit, autoCloseStoreName, countDue, onLogout }: Props) {
+export function SpgHomeShell({ userName, store, activeVisit, autoCloseStoreName, countDue }: Props) {
   const t = useTranslations("storeStocktakes.spg");
   const isKonsi = store.termsType === "KONSI";
   const mapsUrl =
@@ -83,11 +83,7 @@ export function SpgHomeShell({ userName, store, activeVisit, autoCloseStoreName,
           <p className="text-xs text-muted-foreground">Selamat datang</p>
           <p className="text-lg font-semibold">{userName}</p>
         </div>
-        <form action={onLogout}>
-          <Button type="submit" variant="ghost" size="icon" aria-label="Keluar">
-            <LogOut className="h-5 w-5" />
-          </Button>
-        </form>
+        <LogoutButton />
       </header>
 
       <Card className={activeVisit ? "border-primary/40 bg-primary/5" : undefined}>

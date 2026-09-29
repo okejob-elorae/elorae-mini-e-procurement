@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { ArrowRight, Bell, ChevronRight, Clock, LogOut, Mail, MapPin, Loader2, ShoppingBag, Sparkles, Store, CloudUpload, Truck, Wallet } from "lucide-react";
+import { ArrowRight, Bell, ChevronRight, Clock, Mail, MapPin, Loader2, ShoppingBag, Sparkles, Store, CloudUpload, Truck, Wallet } from "lucide-react";
 import { rankStoresByDistance, formatDistance, type StoreWithCoords } from "@/lib/pwa/nearest-stores";
 import { listPendingOrders } from "@/lib/pwa/offline/queue";
 import { listPendingCompletions } from "@/lib/pwa/offline/completion-queue";
 import { setupOrderSync } from "@/lib/pwa/offline/sync";
 import { CheckOutButton } from "./stores/[id]/CheckOutButton";
+import { LogoutButton } from "./LogoutButton";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -29,7 +30,6 @@ type Props = {
   canCollect: boolean;
   canCompletePod: boolean;
   canViewAmplop: boolean;
-  onLogout: () => Promise<void>;
 };
 
 export function HomeShell({
@@ -40,10 +40,8 @@ export function HomeShell({
   canCollect,
   canCompletePod,
   canViewAmplop,
-  onLogout,
 }: Props) {
   const t = useTranslations("pwa.nearest");
-  const tAuth = useTranslations("auth");
   const tOffline = useTranslations("pwa.offline");
   const tVanSale = useTranslations("vanSale");
   const tSmartRequest = useTranslations("pwa.smartRequest");
@@ -145,11 +143,7 @@ export function HomeShell({
             )}
           </Link>
         </Button>
-        <form action={onLogout}>
-          <Button type="submit" variant="ghost" size="icon" aria-label={tAuth("logout")}>
-            <LogOut className="h-5 w-5" />
-          </Button>
-        </form>
+        <LogoutButton />
       </div>
     </header>
   );
