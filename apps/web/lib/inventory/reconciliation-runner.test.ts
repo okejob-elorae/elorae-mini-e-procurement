@@ -120,7 +120,10 @@ d("resolveReconciliationItem MATCH_JUBELIO (test bed only)", () => {
     /* Shares an item group with another fixture when set; a fresh group otherwise. */
     jubelioItemGroupId?: number;
     action?: "FLAGGED" | "MANUALLY_RESOLVED";
+    /* A real variant SKU; variantless ("") when omitted. */
+    variantSku?: string;
   }): Promise<Fixture> {
+    const variantSku = opts.variantSku ?? "";
     const token = Math.random().toString(36).slice(2, 10);
     const item = await prisma.item.create({
       data: {
@@ -137,7 +140,7 @@ d("resolveReconciliationItem MATCH_JUBELIO (test bed only)", () => {
     await prisma.inventoryValue.create({
       data: {
         itemId: item.id,
-        variantSku: "",
+        variantSku,
         qtyOnHand: opts.qtyOnHand,
         avgCost: 10,
         totalValue: opts.qtyOnHand * 10,
@@ -152,7 +155,7 @@ d("resolveReconciliationItem MATCH_JUBELIO (test bed only)", () => {
         jubelioItemGroupId,
         jubelioItemId,
         jubelioItemCode: `TEST-JCODE-${token}`,
-        erpVariantSku: "",
+        erpVariantSku: variantSku,
       },
     });
 
@@ -165,7 +168,7 @@ d("resolveReconciliationItem MATCH_JUBELIO (test bed only)", () => {
       data: {
         runId: run.id,
         itemId: item.id,
-        variantSku: null,
+        variantSku: variantSku || null,
         itemName: "Test Item",
         jubelioItemId,
         eloraeQty: opts.eloraeQty,
@@ -235,6 +238,50 @@ d("resolveReconciliationItem MATCH_JUBELIO (test bed only)", () => {
 
     const result = await prisma.reconciliationResult.findUnique({ where: { id: fx.resultId } });
     expect(result!.action).toBe("MANUALLY_RESOLVED");
+  });
+
+  it("matches a row with a real variant SKU, locking that variant's row and leaving its sibling untouched", async () => {
+    await setPushSwitch(false);
+    /*
+     * The prod shape: a negative variant row next to a sibling variant of the same item. The sibling
+     * takes the LOWER id, so a lock that dropped its variant filter would pick the sibling instead.
+     */
+    const fx = await seedFixture({ qtyOnHand: -3, eloraeQty: -3, jubelioQty: 4, variantSku: "TEST-VAR-M" });
+    const target = await prisma.inventoryValue.findFirst({ where: { itemId: fx.itemId, variantSku: "TEST-VAR-M" } });
+    await prisma.inventoryValue.delete({ where: { id: target!.id } });
+    await prisma.inventoryValue.create({
+      data: { itemId: fx.itemId, variantSku: "TEST-VAR-L", qtyOnHand: 5, avgCost: 10, totalValue: 50 },
+    });
+    await prisma.inventoryValue.create({
+      data: { itemId: fx.itemId, variantSku: "TEST-VAR-M", qtyOnHand: -3, avgCost: 10, totalValue: -30 },
+    });
+    mockLiveJubelioQty(fx, 4);
+
+    const res = await resolveReconciliationItem({ resultId: fx.resultId, direction: "MATCH_JUBELIO", userId: "u1" });
+
+    expect(res).toEqual({ success: true });
+    const matched = await prisma.inventoryValue.findFirst({ where: { itemId: fx.itemId, variantSku: "TEST-VAR-M" } });
+    const sibling = await prisma.inventoryValue.findFirst({ where: { itemId: fx.itemId, variantSku: "TEST-VAR-L" } });
+    expect(Number(matched!.qtyOnHand)).toBe(4);
+    expect(Number(sibling!.qtyOnHand)).toBe(5);
+    const ledger = await prisma.stockLedgerEntry.findMany({ where: { itemId: fx.itemId, refType: "Reconciliation" } });
+    expect(ledger).toHaveLength(1);
+    expect(ledger[0].variantSku).toBe("TEST-VAR-M");
+  });
+
+  it("refuses NO_INVENTORY_ROW for a variant with no stock row, without touching another variant's row", async () => {
+    await setPushSwitch(false);
+    const fx = await seedFixture({ qtyOnHand: 5, eloraeQty: 5, jubelioQty: 2, variantSku: "TEST-VAR-L" });
+    /* The result names a variant the item holds no InventoryValue row for. */
+    await prisma.reconciliationResult.update({ where: { id: fx.resultId }, data: { variantSku: "TEST-VAR-XL" } });
+    await prisma.jubelioProductMapping.updateMany({ where: { itemId: seededId(fx.itemId) }, data: { erpVariantSku: "TEST-VAR-XL" } });
+    mockLiveJubelioQty(fx, 2);
+
+    const res = await resolveReconciliationItem({ resultId: fx.resultId, direction: "MATCH_JUBELIO", userId: "u1" });
+
+    expect(res).toEqual({ success: false, reason: "NO_INVENTORY_ROW" });
+    const other = await prisma.inventoryValue.findFirst({ where: { itemId: fx.itemId, variantSku: "TEST-VAR-L" } });
+    expect(Number(other!.qtyOnHand)).toBe(5);
   });
 
   it("switch on: FIELD_SALES hold 2, J=6 -> H=8 (the hold is added back)", async () => {
