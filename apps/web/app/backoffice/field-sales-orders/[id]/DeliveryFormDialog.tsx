@@ -83,10 +83,12 @@ export function DeliveryFormDialog({ orderId, lines, paymentTempo, open, onOpenC
   const [invoiceDate, setInvoiceDate] = useState("");
   const [dueDate, setDueDate] = useState("");
   /**
-   * One key per dialog session, minted on open and rotated on a successful submit. It stays stable
-   * across a retry after a short-stock or network failure, so re-pressing Kirim replays the same
-   * delivery server-side instead of moving stock a second time. Empty until the open effect runs,
-   * which is why submit is gated on it.
+   * One key per dialog session, minted on open and rotated on a successful submit or a
+   * REPLAY_MISMATCH refusal — both end the session with the key bound to a recorded delivery. It
+   * stays stable across a retry after a short-stock or network failure, so re-pressing Kirim with
+   * the same values replays the same delivery server-side instead of moving stock a second time; a
+   * retry whose dates or quantities changed is refused with REPLAY_MISMATCH, not replayed. Empty
+   * until the open effect runs, which is why submit is gated on it.
    */
   const [idempotencyKey, setIdempotencyKey] = useState("");
 
@@ -169,8 +171,9 @@ export function DeliveryFormDialog({ orderId, lines, paymentTempo, open, onOpenC
       /**
        * The delivery already exists (stock moved, receivable raised) with the recorded values, so
        * this dialog has nothing left to do: close it and refresh so the Deliveries card shows the
-       * recorded delivery, where Edit nota dates corrects the dates. The key is rotated like a
-       * success, since this session's key is now bound to a delivery the form no longer describes.
+       * recorded delivery, where Edit nota dates corrects the dates; any remaining quantity goes
+       * out as a new delivery. The key is rotated like a success, since this session's key is now
+       * bound to a delivery the form no longer describes — never to push the changed values through.
        */
       const replay = result.replay;
       toast.message(

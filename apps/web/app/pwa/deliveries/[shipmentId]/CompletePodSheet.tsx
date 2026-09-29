@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { ShipmentActionReason } from "@/app/actions/delivery-shipments";
-import type { SerializedReplay } from "@/lib/field-sales/replay-detail";
+import { recordedQtyByShipmentLine, type SerializedReplay } from "@/lib/field-sales/replay-detail";
 
 type Line = { id: string; orderLineId: string; productName: string; plannedQty: number };
 
@@ -199,11 +199,12 @@ export function CompletePodSheet({
         if (result.reason === "REPLAY_MISMATCH" && replay) {
           /**
            * The delivery is already recorded, so one more Submit with ITS quantities completes the
-           * shipment consistently. A shipment line missing from the record delivered 0.
+           * shipment consistently. Filled per shipment line, so an order line two shipment lines
+           * share is not asked for twice.
            */
-          const recordedQty = new Map(replay.lines.map((l) => [l.orderLineId, l.qty]));
+          const recordedQty = recordedQtyByShipmentLine(lines, replay);
           setQtyInputs(
-            Object.fromEntries(lines.map((l) => [l.id, String(recordedQty.get(l.orderLineId) ?? 0)])),
+            Object.fromEntries(lines.map((l) => [l.id, String(recordedQty.get(l.id) ?? 0)])),
           );
         }
       } catch (e) {
@@ -274,7 +275,7 @@ export function CompletePodSheet({
   }
 
   const replay = failure?.replay;
-  const recordedQty = new Map((replay?.lines ?? []).map((l) => [l.orderLineId, l.qty]));
+  const recordedQty = replay ? recordedQtyByShipmentLine(lines, replay) : new Map<string, number>();
 
   return (
     <div className="flex flex-col gap-3 p-4">
@@ -391,7 +392,7 @@ export function CompletePodSheet({
                     <li key={line.id} className="truncate">
                       {t("replayLine", {
                         product: line.productName,
-                        qty: recordedQty.get(line.orderLineId) ?? 0,
+                        qty: recordedQty.get(line.id) ?? 0,
                       })}
                     </li>
                   ))}

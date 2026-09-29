@@ -84,6 +84,12 @@ export function PendingCompletionsClient() {
         <ul className="space-y-2">
           {items.map((item) => {
             const busy = busyId === item.shipmentId;
+            /**
+             * Its own copy and no Retry: the shared REPLAY_MISMATCH text points at recorded values
+             * the completion form shows, and none are shown here, while Retry resends this exact
+             * queued payload, which is refused the same way every time.
+             */
+            const replayRefused = item.syncState === "failed" && item.error === "REPLAY_MISMATCH";
             return (
               <li key={item.shipmentId}>
                 <Card>
@@ -104,11 +110,13 @@ export function PendingCompletionsClient() {
                     </div>
 
                     {item.syncState === "failed" && item.error && (
-                      <p className="text-xs text-destructive">{tErr(`err.${item.error}` as any)}</p>
+                      <p className="text-xs text-destructive">
+                        {replayRefused ? t("errReplayMismatch") : tErr(`err.${item.error}` as any)}
+                      </p>
                     )}
 
                     <div className="flex items-center gap-2">
-                      {item.syncState === "failed" && (
+                      {item.syncState === "failed" && !replayRefused && (
                         <Button
                           type="button"
                           variant="secondary"

@@ -1,19 +1,79 @@
-import { consumeFieldSalesOrderPartial, releaseFieldSalesOrder, PartialConsumeError } from "@elorae/db";
+import {
+  consumeFieldSalesOrderPartial,
+  releaseFieldSalesOrder,
+  PartialConsumeError,
+  type Prisma,
+  type PrismaClient,
+} from "@elorae/db";
 import { buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
-import { DeliveryError } from "../errors";
+import { DeliveryError, type DeliveryErrorCode, type DeliveryReplayDetail } from "../errors";
 import { outstandingQty, nextDeliveryStatus, allocateDeliveryDiscounts } from "./plan";
+
+/**
+ * Every `PartialConsumeError` code mapped by construction: a code added to that union without an
+ * entry here is a type error, never a silent fallback onto some unrelated delivery code.
+ * `OVER_CONSUME` is not a quantity error — see the consume call below.
+ */
+const PARTIAL_CONSUME_CODE: Record<PartialConsumeError["code"], DeliveryErrorCode> = {
+  INSUFFICIENT_STOCK: "INSUFFICIENT_STOCK",
+  OVER_CONSUME: "RESERVATION_MISMATCH",
+};
+
+/**
+ * The delivery already recorded under `idempotencyKey`, as the `REPLAY_MISMATCH` detail carries
+ * it: lines summed per `orderLineId`. Shared by `recordFieldSalesDelivery`'s replay compare and by
+ * `completeDeliveryShipment`'s all-zero retry, which never reaches that compare, so both refuse
+ * with the same recorded values.
+ */
+export async function findRecordedDelivery(
+  client: PrismaClient | Prisma.TransactionClient,
+  idempotencyKey: string,
+  orderId: string,
+): Promise<DeliveryReplayDetail | null> {
+  const existing = await client.fieldSalesDelivery.findUnique({
+    where: { idempotencyKey },
+    select: {
+      id: true,
+      orderId: true,
+      docNo: true,
+      invoiceDate: true,
+      dueDate: true,
+      lines: { select: { orderLineId: true, qty: true } },
+    },
+  });
+  if (!existing) return null;
+  /* A key is only a replay of THIS order's delivery; another order's must never hand back its values or post its journals. */
+  if (existing.orderId !== orderId) throw new DeliveryError("INVALID_STATE");
+  const recorded = new Map<string, number>();
+  for (const l of existing.lines) recorded.set(l.orderLineId, (recorded.get(l.orderLineId) ?? 0) + l.qty);
+  return {
+    deliveryId: existing.id,
+    docNo: existing.docNo,
+    invoiceDate: existing.invoiceDate,
+    dueDate: existing.dueDate,
+    lines: Array.from(recorded, ([orderLineId, qty]) => ({ orderLineId, qty })),
+  };
+}
 
 /**
  * `idempotencyKey` is kept across a failed submit on purpose, so a genuine retry — including one
  * after a lost success response — cannot ship twice. A matching key therefore returns the
- * recorded delivery, but only when the retry asks for the SAME thing: same invoice/due dates
- * (exact instants) and same per-`orderLineId` quantity totals. A retry that differs is REFUSED
- * with `REPLAY_MISMATCH` carrying the recorded values, because returning the original would
- * report success while silently discarding the operator's correction. The key is never rotated
- * to get around this: after a lost-response success a fresh key would ship the order twice.
- * Checked before any write, so the refusal leaves nothing behind.
+ * recorded delivery, but only when the retry asks for the SAME thing: same per-`orderLineId`
+ * quantity totals and, under the default `replayCompare`, the same invoice/due dates (exact
+ * instants). A retry that differs is REFUSED with `REPLAY_MISMATCH` carrying the recorded values,
+ * because returning the original would report success while silently discarding the operator's
+ * correction. The key is never rotated to get around this: after a lost-response success a fresh
+ * key would ship the order twice. Checked before any write, so the refusal leaves nothing behind.
+ *
+ * `replayCompare: "linesOnly"` is for `completeDeliveryShipment`, whose `shipment-<id>` key is
+ * replayed with dates the caller does not own: a `SALESMAN_CARRY` completion always sends the
+ * frozen shipment row's dates, so once Edit nota dates corrected the recorded delivery in the crash
+ * window, a dates compare would refuse every retry forever. There the recorded delivery's dates
+ * are the accounting truth, corrected only through Edit nota dates, and the quantities are what
+ * desync the shipment from it. A hand-entered delivery keeps the strict default: its operator
+ * typed the dates, so a changed date is a correction the replay must not swallow.
  */
 export async function recordFieldSalesDelivery(input: {
   orderId: string;
@@ -23,6 +83,7 @@ export async function recordFieldSalesDelivery(input: {
   invoiceDate: Date;
   dueDate: Date;
   idempotencyKey?: string;
+  replayCompare?: "datesAndLines" | "linesOnly";
   deliveredAt?: Date;
 }): Promise<{ deliveryId: string; docNo: string }> {
   if (input.lines.length === 0) throw new DeliveryError("NO_LINES");
@@ -33,37 +94,20 @@ export async function recordFieldSalesDelivery(input: {
 
   return runSerializable(async (tx) => {
     if (input.idempotencyKey) {
-      const existing = await tx.fieldSalesDelivery.findUnique({
-        where: { idempotencyKey: input.idempotencyKey },
-        select: {
-          id: true,
-          docNo: true,
-          invoiceDate: true,
-          dueDate: true,
-          lines: { select: { orderLineId: true, qty: true } },
-        },
-      });
-      if (existing) {
-        const recorded = new Map<string, number>();
-        for (const l of existing.lines) recorded.set(l.orderLineId, (recorded.get(l.orderLineId) ?? 0) + l.qty);
+      const recorded = await findRecordedDelivery(tx, input.idempotencyKey, input.orderId);
+      if (recorded) {
+        const recordedQty = new Map(recorded.lines.map((l) => [l.orderLineId, l.qty]));
         const asked = new Map<string, number>();
         for (const l of input.lines) asked.set(l.orderLineId, (asked.get(l.orderLineId) ?? 0) + l.qty);
         const sameLines =
-          Array.from(recorded.keys()).every((id) => asked.get(id) === recorded.get(id)) &&
-          Array.from(asked.keys()).every((id) => recorded.get(id) === asked.get(id));
+          Array.from(recordedQty.keys()).every((id) => asked.get(id) === recordedQty.get(id)) &&
+          Array.from(asked.keys()).every((id) => recordedQty.get(id) === asked.get(id));
         const sameDates =
-          existing.invoiceDate.getTime() === input.invoiceDate.getTime() &&
-          existing.dueDate.getTime() === input.dueDate.getTime();
-        if (!sameLines || !sameDates) {
-          throw new DeliveryError("REPLAY_MISMATCH", [], {
-            deliveryId: existing.id,
-            docNo: existing.docNo,
-            invoiceDate: existing.invoiceDate,
-            dueDate: existing.dueDate,
-            lines: Array.from(recorded, ([orderLineId, qty]) => ({ orderLineId, qty })),
-          });
-        }
-        return { deliveryId: existing.id, docNo: existing.docNo };
+          input.replayCompare === "linesOnly" ||
+          (recorded.invoiceDate.getTime() === input.invoiceDate.getTime() &&
+            recorded.dueDate.getTime() === input.dueDate.getTime());
+        if (!sameLines || !sameDates) throw new DeliveryError("REPLAY_MISMATCH", [], recorded);
+        return { deliveryId: recorded.deliveryId, docNo: recorded.docNo };
       }
     }
 
@@ -187,11 +231,14 @@ export async function recordFieldSalesDelivery(input: {
     });
 
     /**
-     * `OVER_CONSUME` is not a quantity error: the reservation is already consumed beyond what the
-     * deliveries record. It is reachable from the delivery-rollout deploy race — an order the OLD
-     * image approved after the backfill migration ran was consumed with no backfilled delivery.
-     * It surfaces as `RESERVATION_MISMATCH`; the remedy is the per-order hand-run of that
-     * migration's statements (`20260809130000_backfill_field_sales_deliveries`), not a retry.
+     * `OVER_CONSUME` is not a quantity error — the quantities were checked against the order lines
+     * above. It means a line's `StockReservation` is missing, no longer `RESERVED` (released, or
+     * already consumed), or would be over-consumed, i.e. the reservation disagrees with the
+     * deliveries recorded against it. The most likely cause is the delivery-rollout deploy race: an
+     * order the OLD image approved after the backfill migration ran was consumed with no backfilled
+     * delivery. It surfaces as `RESERVATION_MISMATCH`; the remedy is an admin repair of the order
+     * (for the deploy race, the per-order hand-run of that migration's statements,
+     * `20260809130000_backfill_field_sales_deliveries`), never a retry.
      *
      * Consume AFTER the delivery row exists so the audit adjustment can key on the real delivery
      * id. Everything here is one serializable transaction, so a short-stock throw rolls the
@@ -212,11 +259,7 @@ export async function recordFieldSalesDelivery(input: {
     } catch (e) {
       if (e instanceof PartialConsumeError) {
         throw new DeliveryError(
-          e.code === "INSUFFICIENT_STOCK"
-            ? "INSUFFICIENT_STOCK"
-            : e.code === "OVER_CONSUME"
-              ? "RESERVATION_MISMATCH"
-              : "OVER_DELIVER",
+          PARTIAL_CONSUME_CODE[e.code],
           e.shortLines.map((s) => ({ orderLineId: s.fieldSalesLineId, requested: s.requested, onHand: s.onHand })),
         );
       }

@@ -30,6 +30,22 @@ function mapError(error: unknown): { ok: false; reason: ShipmentActionReason; re
   return { ok: false, reason: "UNEXPECTED" };
 }
 
+/**
+ * Same body as `postDeliveryJournals` in `@/app/actions/delivery-shipments`: both of a PUTUS
+ * delivery's journals through `postArJournalSafely`, shared by the success path and the
+ * `REPLAY_MISMATCH` refusal. Duplicated rather than imported because exporting it from either
+ * `"use server"` module would publish it as a network-callable action that posts journals for any
+ * delivery id. Keep the two in sync by hand.
+ */
+async function postDeliveryJournals(deliveryId: string, postedById: string): Promise<void> {
+  await postArJournalSafely("field_delivery_revenue", deliveryId, () =>
+    postFieldDeliveryRevenueJournal(deliveryId, postedById),
+  );
+  await postArJournalSafely("field_delivery_cogs", deliveryId, () =>
+    postFieldDeliveryCogsJournal(deliveryId, postedById),
+  );
+}
+
 export async function listMyDeliveriesAction(): Promise<
   Array<{
     id: string;
@@ -92,17 +108,19 @@ export async function completePodAction(input: {
      * completed through the PWA would create a `FieldSalesDelivery` + `Receivable` with no GL
      * entry and no repair path.
      */
-    if (result.deliveryId) {
-      await postArJournalSafely("field_delivery_revenue", result.deliveryId, () =>
-        postFieldDeliveryRevenueJournal(result.deliveryId, session.user.id),
-      );
-      await postArJournalSafely("field_delivery_cogs", result.deliveryId, () =>
-        postFieldDeliveryCogsJournal(result.deliveryId, session.user.id),
-      );
-    }
+    if (result.deliveryId) await postDeliveryJournals(result.deliveryId, session.user.id);
 
     return { ok: true };
   } catch (error) {
+    if (error instanceof DeliveryError && error.code === "REPLAY_MISMATCH" && error.replay) {
+      /**
+       * Same reasoning as `completeShipmentAction`: the refused replay's delivery is real and its
+       * journals may never have posted, so they post here before the refusal goes back. It
+       * matters most on this path — the offline queue classifies REPLAY_MISMATCH as terminal and
+       * never resubmits.
+       */
+      await postDeliveryJournals(error.replay.deliveryId, session.user.id);
+    }
     return mapError(error);
   }
 }

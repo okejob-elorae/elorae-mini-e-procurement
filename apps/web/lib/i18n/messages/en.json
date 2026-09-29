@@ -763,8 +763,8 @@
       "KONSI_NOT_RESERVED": "This consignment order has no reserved stock left for this shipment. Ask an admin to check the order and cancel this shipment.",
       "NO_INVENTORY_ROW": "A product on this shipment has no main-warehouse stock record, so nothing can move to the store. Ask an admin to check the product's stock.",
       "SHIPMENT_IN_FLIGHT": "This order still has a shipment packed or in transit. Complete or cancel that shipment first.",
-      "REPLAY_MISMATCH": "This delivery was already recorded with different dates or quantities. Review the recorded values shown and submit again to complete it.",
-      "RESERVATION_MISMATCH": "Stock for this order was already consumed without a matching delivery record. An admin must repair the order before it can be delivered.",
+      "REPLAY_MISMATCH": "This delivery was already recorded with different quantities. Review the recorded quantities shown and submit again to complete it.",
+      "RESERVATION_MISMATCH": "This order's stock reservation no longer matches its deliveries: it is missing, released, already used up, or smaller than this delivery. This most likely comes from a system update that ran while the order was being approved. An admin must repair the order before it can be delivered.",
       "INVALID_FILE_TYPE": "That file type isn't supported. Use JPEG, PNG, or WEBP.",
       "FILE_TOO_LARGE": "That photo is too large (max 10MB). Try a smaller photo."
     }
@@ -3148,6 +3148,7 @@
         "stateFailed": "Failed",
         "syncedToast": "{count} deliveries synced",
         "errGeneric": "Something went wrong. Please try again.",
+        "errReplayMismatch": "This delivery was already recorded with different quantities, so this saved copy will be refused every time. Delete it and complete the delivery again from its page, which will show the recorded quantities to confirm.",
         "retry": "Retry",
         "delete": "Delete",
         "homeChipCount": "{count, plural, =0 {No deliveries} one {# delivery waiting to sync} other {# deliveries waiting to sync}}"
@@ -3295,8 +3296,8 @@
         "NOT_RETRYABLE": "This delivery's journals were never flagged as failed, so there is nothing to retry.",
         "RECEIVABLE_HAS_PAYMENTS": "This invoice already has a payment applied, so its dates can't be corrected. Void the payment first, then try again.",
         "SHIPMENT_IN_FLIGHT": "This order still has a shipment packed or in transit. Complete or cancel that shipment before closing the remainder.",
-        "REPLAY_MISMATCH": "This delivery was already recorded with different dates or quantities. It now appears in the Deliveries card; correct the dates there with Edit nota dates.",
-        "RESERVATION_MISMATCH": "Stock for this order was already consumed without a matching delivery record. An admin must repair the order before it can be delivered."
+        "REPLAY_MISMATCH": "This delivery was already recorded with different dates or quantities, and it now appears in the Deliveries card. To change its dates, use Edit nota dates there; to deliver any remaining quantity, record it as a new delivery.",
+        "RESERVATION_MISMATCH": "This order's stock reservation no longer matches its deliveries: it is missing, released, already used up, or smaller than this delivery. This most likely comes from a system update that ran while the order was being approved. An admin must repair the order before it can be delivered."
       }
     },
     "print": {

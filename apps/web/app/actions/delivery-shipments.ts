@@ -21,11 +21,15 @@ import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "@
 /**
  * `DeliveryErrorCode` is in here because a putus completion calls straight through to
  * `recordFieldSalesDelivery`, which throws `DeliveryError` — a DIFFERENT class from
- * `DeliveryShipmentError` — for OVER_DELIVER, INSUFFICIENT_STOCK, INVALID_DATES and NO_LINES, and
- * the konsi completion maps a main-stock floor refusal onto the same `DeliveryError`
+ * `DeliveryShipmentError` — for OVER_DELIVER, INSUFFICIENT_STOCK, INVALID_DATES, NO_LINES,
+ * REPLAY_MISMATCH (a retry whose quantities differ from the delivery already recorded under the
+ * shipment's key; `completeDeliveryShipment` raises it itself for an all-zero retry) and
+ * RESERVATION_MISMATCH (the line's reservation disagrees with its recorded deliveries), and the
+ * konsi completion maps a main-stock floor refusal onto the same `DeliveryError`
  * INSUFFICIENT_STOCK. Those are reachable through ordinary operator sequences (two shipments
- * claiming one order line, a stock-out between packing and delivery), not rare edge cases. The two
- * unions overlap on NOT_FOUND / INVALID_STATE / NO_LINES, which is fine — a union dedupes.
+ * claiming one order line, a stock-out between packing and delivery, a retry after a lost
+ * response), not rare edge cases. The two unions overlap on NOT_FOUND / INVALID_STATE / NO_LINES,
+ * which is fine — a union dedupes.
  */
 export type ShipmentActionReason =
   | "FORBIDDEN"
@@ -60,6 +64,23 @@ function mapError(error: unknown): { ok: false; reason: ShipmentActionReason; re
   }
   console.error("[delivery-shipments] unexpected failure", error);
   return { ok: false, reason: "UNEXPECTED" };
+}
+
+/**
+ * Both of a PUTUS delivery's journals, through `postArJournalSafely` — never a builder called bare.
+ * The success path and the `REPLAY_MISMATCH` refusal share it, so the two cannot drift apart.
+ * Posting is idempotent on the source document, so a delivery whose journals already posted
+ * re-posts nothing. Never exported: from a `"use server"` module that would publish it as a
+ * network-callable action posting journals for any delivery id, which is also why
+ * `app/pwa/deliveries/actions.ts` holds its own copy — keep the two in sync by hand.
+ */
+async function postDeliveryJournals(deliveryId: string, postedById: string): Promise<void> {
+  await postArJournalSafely("field_delivery_revenue", deliveryId, () =>
+    postFieldDeliveryRevenueJournal(deliveryId, postedById),
+  );
+  await postArJournalSafely("field_delivery_cogs", deliveryId, () =>
+    postFieldDeliveryCogsJournal(deliveryId, postedById),
+  );
 }
 
 /**
@@ -222,18 +243,21 @@ export async function completeShipmentAction(input: {
      * delivery document or journal — guard on it being non-empty or these post against a delivery
      * that doesn't exist.
      */
-    if (result.deliveryId) {
-      await postArJournalSafely("field_delivery_revenue", result.deliveryId, () =>
-        postFieldDeliveryRevenueJournal(result.deliveryId, session.user.id),
-      );
-      await postArJournalSafely("field_delivery_cogs", result.deliveryId, () =>
-        postFieldDeliveryCogsJournal(result.deliveryId, session.user.id),
-      );
-    }
+    if (result.deliveryId) await postDeliveryJournals(result.deliveryId, session.user.id);
 
     revalidatePath("/backoffice/deliveries");
     return { ok: true };
   } catch (error) {
+    if (error instanceof DeliveryError && error.code === "REPLAY_MISMATCH" && error.replay) {
+      /**
+       * The refused replay's delivery is REAL — recorded under this shipment's key, stock moved,
+       * receivable raised — and a crash before the posts above means its journals never posted.
+       * The shipment stays IN_TRANSIT, so only a resubmit with the recorded quantities would reach
+       * that success path, and nothing guarantees one ever comes. Posted here, before the refusal
+       * goes back; `replay.deliveryId` is never "" (a konsi completion records no delivery).
+       */
+      await postDeliveryJournals(error.replay.deliveryId, session.user.id);
+    }
     return mapError(error);
   }
 }

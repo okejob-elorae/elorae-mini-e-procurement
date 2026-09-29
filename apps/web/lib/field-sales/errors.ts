@@ -58,17 +58,23 @@ export type DeliveryErrorCode =
    */
   | "SHIPMENT_IN_FLIGHT"
   /**
-   * A retry reused an idempotency key whose delivery was already recorded, but with different
-   * invoice/due dates or quantities. The recorded delivery is left exactly as it was and the
-   * recorded values ride on `DeliveryError.replay`. The operator refreshes to see the recorded
-   * delivery, resubmits with its quantities, and corrects the dates afterwards through the
-   * delivery date-correction action.
+   * A retry reused an idempotency key whose delivery was already recorded, but asked for something
+   * different: different quantities, or — for a hand-entered delivery only — different invoice/due
+   * dates (a shipment's `shipment-<id>` key compares quantities only, and an all-zero shipment
+   * retry against a recorded delivery is always a mismatch). The recorded delivery is left exactly
+   * as it was and the recorded values ride on `DeliveryError.replay`. The operator resubmits with
+   * the recorded quantities, or delivers any remaining quantity as a new delivery, and corrects the
+   * dates through the delivery date-correction action.
    */
   | "REPLAY_MISMATCH"
   /**
-   * The order's stock reservation is already consumed beyond what its deliveries record, so this
-   * delivery cannot draw it down. Not an operator quantity error: an admin has to repair the
-   * order (the per-order hand-run of the delivery backfill migration) before it can be delivered.
+   * The line's stock reservation cannot take this delivery: it is missing, no longer `RESERVED`
+   * (released, or already consumed), or would be over-consumed — the reservation disagrees with
+   * the deliveries recorded against the order. Not an operator quantity error, and a retry cannot
+   * clear it. The most likely cause is the delivery-rollout deploy race (an order the old image
+   * approved after the delivery backfill migration ran, consumed with no backfilled delivery); the
+   * remedy is an admin repair of the order — for that race, the per-order hand-run of the backfill
+   * migration's statements — before it can be delivered.
    */
   | "RESERVATION_MISMATCH";
 

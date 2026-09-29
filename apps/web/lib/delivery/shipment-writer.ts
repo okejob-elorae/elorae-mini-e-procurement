@@ -1,7 +1,7 @@
 import { prisma, InventoryValueMissingError, MainStockNegativeError } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
-import { recordFieldSalesDelivery } from "@/lib/field-sales/delivery/writer";
+import { recordFieldSalesDelivery, findRecordedDelivery } from "@/lib/field-sales/delivery/writer";
 import { evaluateCheckinRadius, resolveEffectiveRadius, parseRadiusSetting } from "@/lib/pwa/checkin-radius";
 import { issueKonsiTransfer } from "@/lib/field-sales/konsi-transfer/writer";
 import { DeliveryError, KonsiTransferReservationMismatchError } from "@/lib/field-sales/errors";
@@ -206,8 +206,9 @@ export async function completeDeliveryShipment(input: {
   /**
    * Idempotent replay guard — closes a real bug, not offline-specific: the classic
    * "response lost after the server committed" failure mode. `recordFieldSalesDelivery`
-   * is ALREADY idempotent by `idempotencyKey` below; this status check firing first is what
-   * made that safety net unreachable on a retry. Scoped to the SAME actor only — a
+   * below already returns the recorded delivery for a `shipment-<id>` key replayed with the same
+   * quantities (and refuses different ones with REPLAY_MISMATCH); this status check firing first
+   * is what made that safety net unreachable on a retry. Scoped to the SAME actor only — a
    * different actor hitting an already-completed shipment is a real anomaly, not a benign
    * retry, and still refuses below. Deliberately runs BEFORE the NO_LINES/MISSING_PROOF/
    * INVALID_QTY input checks below: a replay must short-circuit before any of those ever
@@ -578,12 +579,18 @@ export async function completeDeliveryShipment(input: {
       const shipmentLine = lineById.get(line.shipmentLineId)!;
       return { orderLineId: shipmentLine.orderLineId, qty: line.deliveredQty };
     });
+  const idempotencyKey = `shipment-${input.shipmentId}`;
   if (deliveredLines.length > 0) {
     /**
      * Outside the transaction below on purpose. A crash between the two leaves the delivery
      * recorded and the shipment IN_TRANSIT; a retry with different quantities is refused HERE
      * (REPLAY_MISMATCH) before anything is stamped, so the shipment is untouched and can be
      * resubmitted with the recorded quantities.
+     *
+     * `linesOnly`: the dates are not compared on this key. A SALESMAN_CARRY retry always sends the
+     * frozen shipment row's dates, so a delivery whose dates Edit nota dates corrected in the crash
+     * window would otherwise refuse every retry forever; the recorded delivery's dates are the
+     * accounting truth here, and only the quantities can desync the shipment from it.
      */
     const delivery = await recordFieldSalesDelivery({
       orderId: shipment.orderId,
@@ -591,13 +598,25 @@ export async function completeDeliveryShipment(input: {
       lines: deliveredLines,
       invoiceDate: effectiveInvoiceDate,
       dueDate: effectiveDueDate,
-      idempotencyKey: `shipment-${input.shipmentId}`,
+      idempotencyKey,
+      replayCompare: "linesOnly",
       deliveredAt: effectiveDeliveredAt,
     });
     deliveryId = delivery.deliveryId;
   }
 
   await runSerializable(async (tx) => {
+    /**
+     * An all-zero completion skips `recordFieldSalesDelivery`, and with it the replay compare. If a
+     * delivery is already recorded under this shipment's key — the crash window above, retried
+     * with every quantity at 0 — stamping the shipment now would leave it delivering nothing, with
+     * no `deliveryId`, while the recorded delivery's stock and receivable stand and its journals
+     * never post. Refused as the same REPLAY_MISMATCH instead, before the CAS writes anything.
+     */
+    if (!deliveryId) {
+      const recorded = await findRecordedDelivery(tx, idempotencyKey, shipment.orderId);
+      if (recorded) throw new DeliveryError("REPLAY_MISMATCH", [], recorded);
+    }
     const result = await tx.deliveryShipment.updateMany({
       where: { id: input.shipmentId, status: "IN_TRANSIT" },
       data: { ...completionData, ...(deliveryId ? { deliveryId } : {}) },
