@@ -180,6 +180,63 @@ describe("SalesOrderWebhookHandler", () => {
     expect(r).toEqual({ kind: "processed" });
   });
 
+  it("cancel reported only by internal_status CANCELED (is_canceled=false) when already reserved -> releaseOrder called", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({
+      id: "st1", salesorderId: 23043, stockApplied: true,
+    });
+
+    const r = await handler.handle(row(makePayload({
+      is_canceled: false, internal_status: "CANCELED", channel_status: "CANCELLED", wms_status: "CANCELED",
+    })) as any);
+
+    expect(releaseMock).toHaveBeenCalledTimes(1);
+    expect(releaseMock).toHaveBeenCalledWith(prisma, { salesorderId: 23043 });
+    expect(reserveMock).not.toHaveBeenCalled();
+    expect(consumeMock).not.toHaveBeenCalled();
+    expect(prisma.jubelioSalesOrderState.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ stockApplied: false, lastIsCanceled: true }),
+    }));
+    expect(r).toEqual({ kind: "processed" });
+  });
+
+  it("first webhook cancelled only by internal_status CANCELED (is_canceled=false) -> no reserve", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue(null);
+    prisma.jubelioSalesOrderState.create.mockResolvedValue({
+      id: "st1", salesorderId: 23043, stockApplied: false,
+    });
+
+    const r = await handler.handle(row(makePayload({
+      is_canceled: false, internal_status: "CANCELED", channel_status: "CANCELLED",
+    })) as any);
+
+    expect(reserveMock).not.toHaveBeenCalled();
+    expect(releaseMock).not.toHaveBeenCalled();
+    expect(consumeMock).not.toHaveBeenCalled();
+    expect(prisma.jubelioSalesOrderState.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ lastIsCanceled: true }),
+    }));
+    expect(prisma.salesOrder.upsert.mock.calls[0][0].create.status).toBe("CANCELLED");
+    expect(r).toEqual({ kind: "processed" });
+  });
+
+  it("redelivered internal_status CANCELED after the backlog release (stockApplied=false) -> no re-reserve", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({
+      id: "st1", salesorderId: 23043, stockApplied: false,
+    });
+
+    const r = await handler.handle(row(makePayload({
+      is_canceled: false, internal_status: "CANCELED", channel_status: "CANCELLED",
+    })) as any);
+
+    expect(reserveMock).not.toHaveBeenCalled();
+    expect(releaseMock).not.toHaveBeenCalled();
+    expect(consumeMock).not.toHaveBeenCalled();
+    expect(prisma.jubelioSalesOrderState.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ lastIsCanceled: true }),
+    }));
+    expect(r).toEqual({ kind: "processed" });
+  });
+
   it("un-cancel after release -> re-reserve, state.stockApplied=true again", async () => {
     prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({
       id: "st1", salesorderId: 23043, stockApplied: false,

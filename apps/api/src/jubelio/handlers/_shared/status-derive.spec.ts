@@ -1,4 +1,4 @@
-import { deriveStatus } from "./status-derive";
+import { deriveStatus, isCanceledOrder } from "./status-derive";
 
 describe("deriveStatus", () => {
   it("CANCELLED when is_canceled true", () => {
@@ -63,5 +63,19 @@ describe("deriveStatus", () => {
 
   it("COMPLETED overrides SHIPPED when both signaled", () => {
     expect(deriveStatus({ wms_status: "SHIPPED", marked_as_complete: true })).toBe("COMPLETED");
+  });
+});
+
+describe("isCanceledOrder", () => {
+  it("true when is_canceled true", () => {
+    expect(isCanceledOrder({ is_canceled: true })).toBe(true);
+  });
+
+  it("true when internal_status CANCELED even though is_canceled is false", () => {
+    expect(isCanceledOrder({ is_canceled: false, internal_status: "CANCELED" })).toBe(true);
+  });
+
+  it("false for an active order", () => {
+    expect(isCanceledOrder({ is_canceled: false, internal_status: "PROCESSING" })).toBe(false);
   });
 });

@@ -8,7 +8,7 @@ import type { HandlerOutcome, WebhookEventHandler } from "./handler.types";
 import type { SalesOrderLine, SalesOrderPayload } from "./salesorder.payload";
 import { resolveItemMapping } from "./_shared/mapping-lookup";
 import { detectChannel } from "./_shared/channel-detect";
-import { deriveStatus } from "./_shared/status-derive";
+import { deriveStatus, isCanceledOrder } from "./_shared/status-derive";
 import { SalesReturnIngestService } from "../returns/sales-return-ingest.service";
 import type { JubelioSalesOrderDetail } from "../jubelio-http.client";
 
@@ -120,14 +120,14 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
           salesorderId: p.salesorder_id,
           stockApplied: false,
           lastStatus: p.channel_status ?? null,
-          lastIsCanceled: !!p.is_canceled,
+          lastIsCanceled: isCanceledOrder(p),
           lastWebhookEventId: row.id,
         },
       });
     });
 
     const items = Array.isArray(p.items) ? p.items : [];
-    const isCancel = !!p.is_canceled;
+    const isCancel = isCanceledOrder(p);
     const shipped = reportsShipped(p);
 
     if (shipped) {
