@@ -6,6 +6,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { enqueueProductPushOnImageChange } from "@/app/actions/jubelio-product-push";
 import { deleteFromR2, keyFromUrl } from "@/lib/r2";
+import { isR2KeyInFolder, isSafeR2KeySegment } from "@/lib/r2-key";
 import {
   validateGalleryCount,
   validateNewUploadUrl,
@@ -33,14 +34,22 @@ async function requireManage(): Promise<{ ok: true } | ReplaceImagesActionResult
 /**
  * The R2 bucket also holds audited evidence (delivery proofs, settlement and collection
  * photos, packing videos). An item image row must never be able to point at, or delete, any
- * of it, so a URL is only accepted when it resolves to a plain key under the item-image prefix.
- * Rejects any `..` or empty segment so the prefix cannot be escaped.
+ * of it, so a key is only accepted in the EXACT shape the upload route produces,
+ * `items/<folder>/<file>.<ext>`, via `isR2KeyInFolder`. A prefix match plus a literal `..`
+ * check is not enough: `%2e%2e` and `\` survive it as raw text, and a WHATWG URL parser (the
+ * browser rendering the gallery, the api's fetch pushing the image to Jubelio) resolves them
+ * to another object.
  */
-function isItemImageKey(key: string | null, allowedPrefixes: string[]): key is string {
+function isItemImageKey(key: string | null, folders: string[]): key is string {
+  return folders.some((folder) => isR2KeyInFolder(key, folder));
+}
+
+/** Cleanup accepts any single item folder, since rows written before the submit check may sit under another id. */
+function isAnyItemImageKey(key: string | null): key is string {
   if (typeof key !== "string") return false;
-  const segments = key.split("/");
-  if (segments.some((seg) => seg === "" || seg === "." || seg === "..")) return false;
-  return allowedPrefixes.some((prefix) => key.startsWith(prefix));
+  const folder = key.slice(0, key.lastIndexOf("/"));
+  const [root, id, ...rest] = folder.split("/");
+  return root === "items" && rest.length === 0 && isSafeR2KeySegment(id) && isR2KeyInFolder(key, folder);
 }
 
 function groupCount(rows: ItemImageSubmission[], variantSku: string | null): number {
@@ -72,7 +81,7 @@ export async function replaceItemImagesAction(
     if (!s.id) {
       /* The upload route files new images under the item's own id, or `_pending` as a fallback. */
       const key = keyFromUrl(s.url);
-      if (!isItemImageKey(key, [`items/${itemId}/`, "items/_pending/"])) {
+      if (!isItemImageKey(key, [`items/${itemId}`, "items/_pending"])) {
         return {
           ok: false,
           code: "image_url_untrusted",
@@ -143,7 +152,7 @@ export async function replaceItemImagesAction(
   for (const d of diff.deletes) {
     if (d.source === "ERP_UPLOAD") {
       const key = keyFromUrl(d.url);
-      if (!isItemImageKey(key, ["items/"])) {
+      if (!isAnyItemImageKey(key)) {
         console.warn(`Skipped R2 delete for non-item-image URL ${d.url}`);
         continue;
       }

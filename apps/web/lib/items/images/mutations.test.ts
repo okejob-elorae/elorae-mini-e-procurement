@@ -34,7 +34,9 @@ const session = (perms: string[]) => ({ user: { id: "u1", permissions: perms } }
 
 beforeEach(() => {
   vi.resetAllMocks();
+  /* resetAllMocks also wipes the factory's implementations, so re-seed the ones every test relies on. */
   (keyFromUrl as any).mockReturnValue("items/i1/x.jpg");
+  (prisma.$transaction as any).mockImplementation(async (fn: any) => fn(prisma));
 });
 
 describe("replaceItemImagesAction", () => {
@@ -154,6 +156,9 @@ describe("replaceItemImagesAction", () => {
       ["a traversal segment", "items/../delivery-pod-proofs/s1/goods.jpg"],
       ["an empty segment", "items//x.jpg"],
       ["another item's folder", "items/other/x.jpg"],
+      ["percent-encoded traversal", "items/i1/%2e%2e/%2e%2e/delivery-pod-proofs/s1/goods.jpg"],
+      ["backslash traversal", "items/i1\\..\\..\\delivery-pod-proofs\\s1\\goods.jpg"],
+      ["a nested folder", "items/i1/sub/x.jpg"],
     ])("refuses a new submission resolving to %s", async (_label, key) => {
       const r = await submitNew(key);
       expect(r).toMatchObject({ ok: false, code: "image_url_untrusted" });
@@ -196,6 +201,11 @@ describe("replaceItemImagesAction", () => {
       const r = await cleanup("delivery-pod-proofs/s1/goods.jpg");
       expect(r).toMatchObject({ ok: true, counts: { deleted: 1 } });
       expect(prisma.itemImage.deleteMany).toHaveBeenCalled();
+      expect(deleteFromR2).not.toHaveBeenCalled();
+    });
+
+    it("skips R2 for a stored URL that only looks like it is under items/", async () => {
+      await cleanup("items/i1/%2e%2e/%2e%2e/delivery-pod-proofs/s1/goods.jpg");
       expect(deleteFromR2).not.toHaveBeenCalled();
     });
 
