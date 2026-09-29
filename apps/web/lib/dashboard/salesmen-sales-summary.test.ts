@@ -208,8 +208,14 @@ d("getSalesmenSalesSummary (test bed only)", () => {
 
     const summary = await getSalesmenSalesSummary();
     const rowA = summary.rows.find((r) => r.salesmanId === salesmanAId);
-    expect(summary.totals.awaitingDelivery.amount).toBeGreaterThanOrEqual(rowA!.awaitingDelivery.amount);
-    expect(summary.totals.awaitingDelivery.count).toBeGreaterThanOrEqual(rowA!.awaitingDelivery.count);
+    expect(rowA!.awaitingDelivery).toEqual({ count: 1, amount: 900 });
+    /* Exact within one call even on the shared bed: totals are the fold of the rows returned beside them. */
+    const rowSum = summary.rows.reduce(
+      (acc, r) => ({ count: acc.count + r.awaitingDelivery.count, amount: acc.amount + r.awaitingDelivery.amount }),
+      { count: 0, amount: 0 },
+    );
+    expect(summary.totals.awaitingDelivery.count).toBe(rowSum.count);
+    expect(summary.totals.awaitingDelivery.amount).toBeCloseTo(rowSum.amount, 6);
   });
 
   it("returns no row for a salesman with no eligible orders/van sales", async () => {

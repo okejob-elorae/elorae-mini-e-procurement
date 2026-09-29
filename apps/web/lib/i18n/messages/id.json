@@ -608,11 +608,11 @@
     "fieldSales": {
       "title": "Penjualan Field Sales",
       "realisedTitle": "Total Realised",
-      "realisedSub": "{count} transaksi (pengiriman putus + van sale)",
+      "realisedSub": "{count, number} transaksi (pengiriman putus + van sale)",
       "awaitingDeliveryTitle": "Menunggu Pengiriman",
-      "awaitingDeliverySub": "{count} order putus disetujui, belum terkirim penuh",
+      "awaitingDeliverySub": "{count, number} order putus disetujui, belum terkirim penuh",
       "awaitingApprovalTitle": "Menunggu Approval",
-      "awaitingApprovalSub": "{count} putus menunggu approval",
+      "awaitingApprovalSub": "{count, number} putus menunggu approval",
       "perSalesmanTitle": "Penjualan per Salesman",
       "perSalesmanDesc": "Realised = putus yang sudah dikirim + van sale (all-time). Menunggu pengiriman = putus yang sudah disetujui tetapi belum terkirim penuh, dinilai sebesar sisa yang belum dikirim. Menunggu approval = putus menunggu approval. Konsi tidak dihitung.",
       "empty": "Belum ada data penjualan salesman.",
@@ -620,8 +620,8 @@
       "colRealised": "Realised",
       "colAwaitingDelivery": "Menunggu pengiriman",
       "colAwaitingApproval": "Menunggu approval",
-      "transactions": "{count} transaksi",
-      "orders": "{count} order"
+      "transactions": "{count, number} transaksi",
+      "orders": "{count, number} order"
     }
   },
   "deliveryShipments": {

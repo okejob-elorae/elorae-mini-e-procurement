@@ -18,8 +18,9 @@ describe("undeliveredResidual", () => {
     expect(undeliveredResidual(500, [400, 300])).toBe(0);
   });
 
-  it("sums decimal-ish totals without drifting into a phantom residual", () => {
-    expect(undeliveredResidual(0.3, [0.1, 0.2])).toBeCloseTo(0, 10);
+  /* No rounding happens here: the floor absorbs NEGATIVE float drift, while positive drift (e.g. 0.8 − [0.1, 0.7]) survives as ~1e-16, which formatIdr renders as 0. */
+  it("floors negative float drift to zero and sums decimal totals within float precision", () => {
+    expect(undeliveredResidual(0.3, [0.1, 0.2])).toBe(0);
     expect(undeliveredResidual(100.5, [50.25, 25.125])).toBeCloseTo(25.125, 10);
   });
 
