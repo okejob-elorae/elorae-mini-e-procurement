@@ -55,22 +55,34 @@ export type LockedInventoryValueRow = { id: string; qtyOnHand: string; avgCost: 
  * variantless lookup matches both the `null` and the `""` spelling and takes the lowest id. Only
  * the values are interpolated (parameterised by Prisma); the identifiers are static SQL text.
  * Decimals come back as strings so callers can do exact arithmetic on them.
+ *
+ * Each branch is one complete query with only scalar values, never a nested `Prisma.sql`
+ * fragment. apps/web's build bundles the Prisma runtime into several server chunks that share one
+ * client through `globalThis`, so the client in use can come from a different chunk's runtime than
+ * the code building a fragment. Such a fragment is not recognised as SQL, is bound as a plain value,
+ * and the `WHERE` silently matches nothing — which is how every reconciliation Match on a variant
+ * row came back `NO_INVENTORY_ROW` on prod.
  */
 export async function lockMainInventoryValueRow(
   tx: Prisma.TransactionClient,
   itemId: string,
   variantSku: string | null | undefined,
 ): Promise<LockedInventoryValueRow | null> {
-  const variantFilter = variantSku
-    ? Prisma.sql`\`variantSku\` = ${variantSku}`
-    : Prisma.sql`(\`variantSku\` IS NULL OR \`variantSku\` = '')`;
-  const rows = await tx.$queryRaw<{ id: string; qtyOnHand: unknown; avgCost: unknown }[]>`
-    SELECT \`id\`, \`qtyOnHand\`, \`avgCost\` FROM \`InventoryValue\`
-    WHERE \`itemId\` = ${itemId} AND ${variantFilter}
-    ORDER BY \`id\` ASC
-    LIMIT 1
-    FOR UPDATE
-  `;
+  const rows = variantSku
+    ? await tx.$queryRaw<{ id: string; qtyOnHand: unknown; avgCost: unknown }[]>`
+        SELECT \`id\`, \`qtyOnHand\`, \`avgCost\` FROM \`InventoryValue\`
+        WHERE \`itemId\` = ${itemId} AND \`variantSku\` = ${variantSku}
+        ORDER BY \`id\` ASC
+        LIMIT 1
+        FOR UPDATE
+      `
+    : await tx.$queryRaw<{ id: string; qtyOnHand: unknown; avgCost: unknown }[]>`
+        SELECT \`id\`, \`qtyOnHand\`, \`avgCost\` FROM \`InventoryValue\`
+        WHERE \`itemId\` = ${itemId} AND (\`variantSku\` IS NULL OR \`variantSku\` = '')
+        ORDER BY \`id\` ASC
+        LIMIT 1
+        FOR UPDATE
+      `;
   const row = rows[0];
   if (!row) return null;
   return { id: row.id, qtyOnHand: String(row.qtyOnHand), avgCost: String(row.avgCost) };

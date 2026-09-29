@@ -354,10 +354,10 @@ d("applyJubelioStockAdjustment (test bed only)", () => {
     return `${sku}-${keySeq}`;
   }
 
-  async function apply(jubelioEndQty: number, idempotencyKey: string) {
+  async function apply(jubelioEndQty: number, idempotencyKey: string, variantSku = "") {
     return applyJubelioStockAdjustment(prisma, {
       itemId,
-      variantSku: "",
+      variantSku,
       jubelioEndQty,
       idempotencyKey,
       externalRef: "spec",
@@ -369,6 +369,20 @@ d("applyJubelioStockAdjustment (test bed only)", () => {
     const row = await prisma.inventoryValue.findFirst({ where: { itemId } });
     return Number(row!.qtyOnHand);
   }
+
+  it("applies to the named variant's row only, leaving a sibling variant of the same item untouched", async () => {
+    await setPushSwitch("false");
+    await seedStock({ qtyOnHand: -3, variantSku: "SPEC-VAR-M" });
+    await seedStock({ qtyOnHand: 5, variantSku: "SPEC-VAR-L" });
+
+    const res = await apply(4, nextKey(), "SPEC-VAR-M");
+
+    expect(res.skipped).toBe(false);
+    const m = await prisma.inventoryValue.findFirst({ where: { itemId, variantSku: "SPEC-VAR-M" } });
+    const l = await prisma.inventoryValue.findFirst({ where: { itemId, variantSku: "SPEC-VAR-L" } });
+    expect(Number(m!.qtyOnHand)).toBe(4);
+    expect(Number(l!.qtyOnHand)).toBe(5);
+  });
 
   it("switch off: applies end_qty as-is, even with a FIELD_SALES hold, with one StockAdjustment and one ledger row", async () => {
     await setPushSwitch("false");
