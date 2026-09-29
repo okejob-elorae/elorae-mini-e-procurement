@@ -1072,7 +1072,6 @@
       "DUPLICATE_VARIANT": "Warna dan Ukuran yang sama sudah ada di Artikel ini.",
       "VARIANT_NEEDS_ATTRIBUTE": "Baris varian harus punya Warna atau Ukuran.",
       "INCONSISTENT_ATTRIBUTES": "Kolom ini harus diisi di semua baris varian Artikel ini atau dikosongkan di semuanya, seperti baris {detail}.",
-      "INCOMPLETE_VARIANT_GRID": "Setiap kombinasi Warna × Ukuran harus ada. Belum ada: {detail}.",
       "ARTIKEL_EXISTS": "Artikel ini sudah ada di Master Produk.",
       "SKU_NAMESPACE_TAKEN": "SKU {detail} sudah dipakai sebagai SKU produk atau varian lain.",
       "VARIANT_SKU_TAKEN": "SKU varian {detail} sudah dipakai produk lain.",

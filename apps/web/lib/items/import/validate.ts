@@ -165,22 +165,20 @@ export function validateItemImport(
      * The item form rebuilds an item's variants as the full Warna x Ukuran product of its value
      * sets and drops any variant outside it, so the import only creates shapes that form can load
      * and save back unchanged: every variant row names an attribute, each attribute is filled on
-     * all rows or none, no pair repeats, and a two-attribute artikel lists the whole grid.
+     * all rows or none, and no pair repeats. A sparse grid (not every Warna x Ukuran combination
+     * present) is valid — the form keeps gaps via its own per-combination Include checkbox.
      */
     for (const r of variantRows) {
       if (r.warna === "" && r.ukuran === "") push("VARIANT_NEEDS_ATTRIBUTE", r, "warna");
     }
     const attributed = variantRows.filter((r) => r.warna !== "" || r.ukuran !== "");
     const pattern = attributed[0];
-    let attributesConsistent = true;
     for (const r of attributed.slice(1)) {
       if ((r.warna !== "") !== (pattern.warna !== "")) {
         push("INCONSISTENT_ATTRIBUTES", r, "warna", String(pattern.row));
-        attributesConsistent = false;
       }
       if ((r.ukuran !== "") !== (pattern.ukuran !== "")) {
         push("INCONSISTENT_ATTRIBUTES", r, "ukuran", String(pattern.row));
-        attributesConsistent = false;
       }
     }
 
@@ -193,22 +191,6 @@ export function validateItemImport(
         duplicatePairRows.add(r.row);
       }
       seenPairs.add(pair);
-    }
-
-    if (attributesConsistent && pattern && pattern.warna !== "" && pattern.ukuran !== "") {
-      const warnas = new Map<string, string>();
-      const ukurans = new Map<string, string>();
-      for (const r of attributed) {
-        if (!warnas.has(norm(r.warna))) warnas.set(norm(r.warna), r.warna);
-        if (!ukurans.has(norm(r.ukuran))) ukurans.set(norm(r.ukuran), r.ukuran);
-      }
-      const missing: string[] = [];
-      for (const [warnaKey, warna] of warnas) {
-        for (const [ukuranKey, ukuran] of ukurans) {
-          if (!seenPairs.has(`${warnaKey}|${ukuranKey}`)) missing.push(`${warna}/${ukuran}`);
-        }
-      }
-      if (missing.length > 0) push("INCOMPLETE_VARIANT_GRID", first, null, missing.join(", "));
     }
 
     /**

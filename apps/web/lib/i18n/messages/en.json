@@ -1072,7 +1072,6 @@
       "DUPLICATE_VARIANT": "This Warna and Ukuran already appear in this Artikel.",
       "VARIANT_NEEDS_ATTRIBUTE": "A variant row needs a Warna or an Ukuran.",
       "INCONSISTENT_ATTRIBUTES": "Fill this column on every variant row of this Artikel or on none, like row {detail}.",
-      "INCOMPLETE_VARIANT_GRID": "Every Warna × Ukuran combination must be listed. Missing: {detail}.",
       "ARTIKEL_EXISTS": "This Artikel already exists in Master Produk.",
       "SKU_NAMESPACE_TAKEN": "SKU {detail} is already used as another product or variant SKU.",
       "VARIANT_SKU_TAKEN": "Variant SKU {detail} is already used by another product.",

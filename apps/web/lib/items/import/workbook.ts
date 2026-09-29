@@ -140,7 +140,7 @@ const TEMPLATE_GUIDE: string[][] = [
   ["Deskripsi", "Tidak", "Harus sama di semua baris satu Artikel."],
   ["", "", ""],
   ["Produk tanpa varian", "", "Isi satu baris saja dan kosongkan Warna, Ukuran dan SKU Varian."],
-  ["Varian lengkap", "", "Setiap baris varian harus punya Warna atau Ukuran, dan kolom yang dipakai harus terisi di semua baris satu Artikel. Artikel yang memakai Warna dan Ukuran harus mencantumkan setiap kombinasi Warna × Ukuran."],
+  ["Atribut varian konsisten", "", "Setiap baris varian harus punya Warna atau Ukuran, dan kolom yang dipakai harus terisi di semua baris satu Artikel."],
   ["Sel Teks", "", "Format kolom Ukuran dan Barcode sebagai Teks sebelum mengisi, agar Excel tidak mengubah 3-4 menjadi tanggal atau memotong angka panjang."],
   ["Semua atau tidak sama sekali", "", "Jika ada satu error, tidak ada produk yang dibuat. Perbaiki file lalu upload ulang."],
 ];
