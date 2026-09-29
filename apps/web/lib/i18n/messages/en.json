@@ -604,7 +604,25 @@
     "noOverduePOs": "No overdue purchase orders",
     "noWorkOrdersInRange": "No work orders in range",
     "somethingWentWrong": "Something went wrong.",
-    "loading": "Loading..."
+    "loading": "Loading...",
+    "fieldSales": {
+      "title": "Field Sales",
+      "realisedTitle": "Total Realised",
+      "realisedSub": "{count, plural, one {# transaction} other {# transactions}} (putus deliveries + van sales)",
+      "awaitingDeliveryTitle": "Awaiting Delivery",
+      "awaitingDeliverySub": "{count, plural, one {# approved putus order} other {# approved putus orders}} not yet fully delivered",
+      "awaitingApprovalTitle": "Awaiting Approval",
+      "awaitingApprovalSub": "{count, plural, one {# putus order} other {# putus orders}} awaiting approval",
+      "perSalesmanTitle": "Sales by Salesman",
+      "perSalesmanDesc": "Realised = delivered putus + van sales (all-time). Awaiting delivery = approved putus not yet fully delivered, valued at the undelivered remainder. Awaiting approval = putus pending approval. Konsi is not counted.",
+      "empty": "No salesman sales data yet.",
+      "colSalesman": "Salesman",
+      "colRealised": "Realised",
+      "colAwaitingDelivery": "Awaiting delivery",
+      "colAwaitingApproval": "Awaiting approval",
+      "transactions": "{count, plural, one {# transaction} other {# transactions}}",
+      "orders": "{count, plural, one {# order} other {# orders}}"
+    }
   },
   "deliveryShipments": {
     "title": "Deliveries",

@@ -1,4 +1,5 @@
 import { type Prisma } from "@elorae/db";
+import { undeliveredResidual } from "@/lib/field-sales/delivery/undelivered-residual";
 
 export type CreditExposure = {
   receivableOutstanding: number;
@@ -38,9 +39,10 @@ export async function computeStoreCreditExposure(
   });
   let undeliveredOrderResidual = 0;
   for (const order of approvedOrders) {
-    const delivered = order.deliveries.reduce((sum, d) => sum + Number(d.total), 0);
-    const residual = Number(order.total) - delivered;
-    undeliveredOrderResidual += Math.max(0, residual);
+    undeliveredOrderResidual += undeliveredResidual(
+      Number(order.total),
+      order.deliveries.map((d) => Number(d.total)),
+    );
   }
 
   return {

@@ -1,4 +1,5 @@
 import { prisma } from '@elorae/db';
+import { undeliveredResidual } from "@/lib/field-sales/delivery/undelivered-residual";
 
 function getWeekStart(d: Date): Date {
   const date = new Date(d);
@@ -478,6 +479,7 @@ export type SalesmanSalesRow = {
   salesmanId: string;
   salesmanName: string;
   realised: SalesmenSalesBucket;
+  awaitingDelivery: SalesmenSalesBucket;
   outstanding: SalesmenSalesBucket;
 };
 
@@ -485,6 +487,7 @@ export type SalesmenSalesSummary = {
   rows: SalesmanSalesRow[];
   totals: {
     realised: SalesmenSalesBucket;
+    awaitingDelivery: SalesmenSalesBucket;
     outstanding: SalesmenSalesBucket;
   };
 };
@@ -500,19 +503,21 @@ type RealisedDeliveryRow = {
 };
 
 /**
- * All-time per-salesman realised vs outstanding sales.
- * Realised = sum of FieldSalesDelivery.total on PUTUS orders + all VanSale.total.
- * Outstanding = PENDING_APPROVAL PUTUS FieldSalesOrder.total.
- * KONSI excluded from every bucket; REJECTED never counts.
+ * All-time per-salesman sales in three buckets. KONSI is excluded from every bucket; REJECTED
+ * never counts.
+ * - realised = sum of FieldSalesDelivery.total on PUTUS orders + all VanSale.total.
+ * - awaitingDelivery = APPROVED PUTUS orders whose deliveryStatus is PENDING or PARTIAL, valued at
+ *   the undelivered residual (see undeliveredResidual), with the count being orders.
+ * - outstanding = PENDING_APPROVAL PUTUS FieldSalesOrder.total, i.e. awaiting approval.
  *
  * Realised counts DELIVERIES, not approved orders. Approval stopped moving stock once delivery
  * became its own document, and nothing recomputes FieldSalesOrder.total when only part of an order
  * ships or a remainder is closed — so an approved order's total permanently overstates what the
- * store actually received. Known gap this leaves: an approved order still awaiting its first
- * delivery lands in NEITHER bucket, because outstanding still means "awaiting approval" only.
+ * store actually received. That is why awaitingDelivery uses the residual, not the order total.
+ * A fully delivered or closed order sits in no awaiting bucket; what shipped is in realised.
  */
 export async function getSalesmenSalesSummary(): Promise<SalesmenSalesSummary> {
-  const [realisedDeliveries, realisedVan, outstandingPutus] = await Promise.all([
+  const [realisedDeliveries, realisedVan, outstandingPutus, awaitingDeliveryPutus] = await Promise.all([
     prisma.$queryRaw<RealisedDeliveryRow[]>`
       SELECT o.salesmanId AS salesmanId,
              COUNT(*) AS deliveryCount,
@@ -533,16 +538,28 @@ export async function getSalesmenSalesSummary(): Promise<SalesmenSalesSummary> {
       _count: true,
       _sum: { total: true },
     }),
+    prisma.fieldSalesOrder.findMany({
+      where: { orderType: "PUTUS", status: "APPROVED", deliveryStatus: { in: ["PENDING", "PARTIAL"] } },
+      select: { salesmanId: true, total: true, deliveries: { select: { total: true } } },
+    }),
   ]);
 
   const bySalesman = new Map<
     string,
-    { realised: SalesmenSalesBucket; outstanding: SalesmenSalesBucket }
+    {
+      realised: SalesmenSalesBucket;
+      awaitingDelivery: SalesmenSalesBucket;
+      outstanding: SalesmenSalesBucket;
+    }
   >();
   const ensure = (id: string) => {
     let rec = bySalesman.get(id);
     if (!rec) {
-      rec = { realised: { count: 0, amount: 0 }, outstanding: { count: 0, amount: 0 } };
+      rec = {
+        realised: { count: 0, amount: 0 },
+        awaitingDelivery: { count: 0, amount: 0 },
+        outstanding: { count: 0, amount: 0 },
+      };
       bySalesman.set(id, rec);
     }
     return rec;
@@ -563,6 +580,14 @@ export async function getSalesmenSalesSummary(): Promise<SalesmenSalesSummary> {
     rec.outstanding.count += Number(r._count ?? 0);
     rec.outstanding.amount += Number(r._sum.total ?? 0);
   }
+  for (const o of awaitingDeliveryPutus) {
+    const rec = ensure(o.salesmanId);
+    rec.awaitingDelivery.count += 1;
+    rec.awaitingDelivery.amount += undeliveredResidual(
+      Number(o.total),
+      o.deliveries.map((d) => Number(d.total)),
+    );
+  }
 
   const salesmanIds = Array.from(bySalesman.keys());
   const users =
@@ -580,6 +605,7 @@ export async function getSalesmenSalesSummary(): Promise<SalesmenSalesSummary> {
       salesmanId: id,
       salesmanName: nameById.get(id) ?? '—',
       realised: rec.realised,
+      awaitingDelivery: rec.awaitingDelivery,
       outstanding: rec.outstanding,
     };
   });
@@ -589,11 +615,17 @@ export async function getSalesmenSalesSummary(): Promise<SalesmenSalesSummary> {
     (acc, r) => {
       acc.realised.count += r.realised.count;
       acc.realised.amount += r.realised.amount;
+      acc.awaitingDelivery.count += r.awaitingDelivery.count;
+      acc.awaitingDelivery.amount += r.awaitingDelivery.amount;
       acc.outstanding.count += r.outstanding.count;
       acc.outstanding.amount += r.outstanding.amount;
       return acc;
     },
-    { realised: { count: 0, amount: 0 }, outstanding: { count: 0, amount: 0 } }
+    {
+      realised: { count: 0, amount: 0 },
+      awaitingDelivery: { count: 0, amount: 0 },
+      outstanding: { count: 0, amount: 0 },
+    }
   );
 
   return { rows, totals };

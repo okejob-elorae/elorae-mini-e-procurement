@@ -37,6 +37,7 @@ import {
   Users,
   TrendingUp,
   Clock,
+  Truck,
   Loader2,
   AlertTriangle,
   Wallet,
@@ -664,13 +665,13 @@ export function DashboardPageClient({
         </div>
       )}
 
-      {/* Salesmen sales: realised vs outstanding */}
+      {/* Salesmen sales: realised, awaiting delivery, awaiting approval */}
       <div className="space-y-2">
-        <h2 className="text-lg font-semibold">Penjualan Field Sales</h2>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <h2 className="text-lg font-semibold">{tDashboard("fieldSales.title")}</h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Realised</CardTitle>
+              <CardTitle className="text-sm font-medium">{tDashboard("fieldSales.realisedTitle")}</CardTitle>
               <TrendingUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
             </CardHeader>
             <CardContent>
@@ -678,13 +679,27 @@ export function DashboardPageClient({
                 {formatIdr(salesmenSales.totals.realised.amount)}
               </div>
               <p className="text-xs text-muted-foreground">
-                {formatNumber(salesmenSales.totals.realised.count)} transaksi (pengiriman putus + van sale)
+                {tDashboard("fieldSales.realisedSub", { count: salesmenSales.totals.realised.count })}
               </p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Outstanding</CardTitle>
+              <CardTitle className="text-sm font-medium">{tDashboard("fieldSales.awaitingDeliveryTitle")}</CardTitle>
+              <Truck className="h-4 w-4 text-sky-600 dark:text-sky-400" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-xl font-bold text-sky-600 dark:text-sky-400">
+                {formatIdr(salesmenSales.totals.awaitingDelivery.amount)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {tDashboard("fieldSales.awaitingDeliverySub", { count: salesmenSales.totals.awaitingDelivery.count })}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">{tDashboard("fieldSales.awaitingApprovalTitle")}</CardTitle>
               <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
             </CardHeader>
             <CardContent>
@@ -692,7 +707,7 @@ export function DashboardPageClient({
                 {formatIdr(salesmenSales.totals.outstanding.amount)}
               </div>
               <p className="text-xs text-muted-foreground">
-                {formatNumber(salesmenSales.totals.outstanding.count)} putus menunggu approval
+                {tDashboard("fieldSales.awaitingApprovalSub", { count: salesmenSales.totals.outstanding.count })}
               </p>
             </CardContent>
           </Card>
@@ -701,23 +716,21 @@ export function DashboardPageClient({
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="h-5 w-5" />
-              Realised vs Outstanding per Salesman
+              {tDashboard("fieldSales.perSalesmanTitle")}
             </CardTitle>
-            <CardDescription>
-              Realised = putus yang sudah dikirim + van sale (all-time). Outstanding = putus menunggu approval. Konsi
-              tidak dihitung.
-            </CardDescription>
+            <CardDescription>{tDashboard("fieldSales.perSalesmanDesc")}</CardDescription>
           </CardHeader>
           <CardContent>
             {salesmenSales.rows.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4">Belum ada data penjualan salesman.</p>
+              <p className="text-sm text-muted-foreground py-4">{tDashboard("fieldSales.empty")}</p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Salesman</TableHead>
-                    <TableHead className="text-right">Realised</TableHead>
-                    <TableHead className="text-right">Outstanding</TableHead>
+                    <TableHead>{tDashboard("fieldSales.colSalesman")}</TableHead>
+                    <TableHead className="text-right">{tDashboard("fieldSales.colRealised")}</TableHead>
+                    <TableHead className="text-right">{tDashboard("fieldSales.colAwaitingDelivery")}</TableHead>
+                    <TableHead className="text-right">{tDashboard("fieldSales.colAwaitingApproval")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -729,7 +742,15 @@ export function DashboardPageClient({
                           {formatIdr(row.realised.amount)}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          {formatNumber(row.realised.count)} transaksi
+                          {tDashboard("fieldSales.transactions", { count: row.realised.count })}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        <div className="font-medium text-sky-600 dark:text-sky-400">
+                          {formatIdr(row.awaitingDelivery.amount)}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {tDashboard("fieldSales.orders", { count: row.awaitingDelivery.count })}
                         </div>
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
@@ -737,7 +758,7 @@ export function DashboardPageClient({
                           {formatIdr(row.outstanding.amount)}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          {formatNumber(row.outstanding.count)} menunggu
+                          {tDashboard("fieldSales.orders", { count: row.outstanding.count })}
                         </div>
                       </TableCell>
                     </TableRow>
