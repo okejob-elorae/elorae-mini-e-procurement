@@ -1,6 +1,7 @@
 import { redirect, notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { getSalesOrderById } from "@/lib/sales-orders/queries";
+import { summarizeReturns, type LineReturnSummary } from "@/lib/sales-orders/returns-summary";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { getPrimaryImagesBatch } from "@/lib/items/images/queries";
 import { SalesOrderDetailClient } from "./SalesOrderDetailClient";
@@ -23,6 +24,10 @@ export default async function SalesOrderDetailPage({ params }: PageProps) {
     session.user.permissions ?? [],
     PERMISSIONS.SALES_ORDERS_FULFILL,
   );
+  const canViewReturns = hasPermission(
+    session.user.permissions ?? [],
+    PERMISSIONS.SALES_RETURNS_VIEW,
+  );
 
   const linePairs = data.items
     .filter((it) => it.itemId !== null)
@@ -30,12 +35,28 @@ export default async function SalesOrderDetailPage({ params }: PageProps) {
   const imageMap = await getPrimaryImagesBatch(linePairs);
   const lineImages: Record<string, string> = Object.fromEntries(imageMap);
 
+  const { byLine, unmatchedQty } = summarizeReturns(data.returns);
+  const returnLineSummaries: Record<string, LineReturnSummary> = Object.fromEntries(
+    Array.from(byLine.entries()).map(([lineId, summary]) => [String(lineId), summary]),
+  );
+  const returns = data.returns.map((ret) => ({
+    id: ret.id,
+    jubelioReturnNo: ret.jubelioReturnNo,
+    jubelioReturnId: ret.jubelioReturnId,
+    status: ret.status,
+    receivedAt: ret.receivedAt,
+  }));
+
   return (
     <SalesOrderDetailClient
       order={data.order}
       items={data.items}
       canFulfill={canFulfill}
       lineImages={lineImages}
+      returns={returns}
+      returnLineSummaries={returnLineSummaries}
+      unmatchedReturnQty={unmatchedQty}
+      canViewReturns={canViewReturns}
     />
   );
 }

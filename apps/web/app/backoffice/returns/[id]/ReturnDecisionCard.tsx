@@ -45,6 +45,7 @@ type Props = {
   ret: SalesReturnDetail;
   canDecide: boolean;
   canPostJournal: boolean;
+  canViewSalesOrders: boolean;
 };
 
 function fmtCurrency(v: unknown, locale: string): string {
@@ -64,7 +65,7 @@ function fmtDateTime(d: Date | string | null | undefined, locale: string): strin
   }).format(new Date(d));
 }
 
-export function ReturnDecisionCard({ ret, canDecide, canPostJournal }: Props) {
+export function ReturnDecisionCard({ ret, canDecide, canPostJournal, canViewSalesOrders }: Props) {
   const t = useTranslations("salesReturns.decision");
   const tj = useTranslations("salesReturns");
   const locale = useLocale();
@@ -182,7 +183,16 @@ export function ReturnDecisionCard({ ret, canDecide, canPostJournal }: Props) {
           <span className="text-muted-foreground">{t("channel")}</span>
           <span>{ret.channel}</span>
           <span className="text-muted-foreground">{t("orderNo")}</span>
-          <span className="font-mono">{ret.channelOrderNo ?? "—"}</span>
+          {canViewSalesOrders && ret.salesOrder?.id ? (
+            <Link
+              href={`/backoffice/sales-orders/${ret.salesOrder.id}`}
+              className="font-mono hover:underline"
+            >
+              {ret.channelOrderNo ?? "—"}
+            </Link>
+          ) : (
+            <span className="font-mono">{ret.channelOrderNo ?? "—"}</span>
+          )}
           <span className="text-muted-foreground">{t("buyer")}</span>
           <span>{ret.buyerName ?? "—"}</span>
           <span className="text-muted-foreground">{t("receivedAt")}</span>
