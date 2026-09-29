@@ -11,13 +11,19 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { FulfillmentCard } from "./FulfillmentCard";
+import { ReturnsCard, type SalesOrderReturnSummaryRow } from "./ReturnsCard";
 import { PackingVideoActions } from "@/components/packing-video-actions";
+import type { LineReturnSummary } from "@/lib/sales-orders/returns-summary";
 
 type Props = {
   order: SalesOrderDetail;
   items: SalesOrderItemRow[];
   canFulfill: boolean;
   lineImages?: Record<string, string>;
+  returns?: SalesOrderReturnSummaryRow[];
+  returnLineSummaries?: Record<string, LineReturnSummary>;
+  unmatchedReturnQty?: number;
+  canViewReturns?: boolean;
 };
 
 const KNOWN_FEE_KEYS = new Set([
@@ -33,9 +39,19 @@ const KNOWN_FEE_KEYS = new Set([
   "total_amount_mp",
 ]);
 
-export function SalesOrderDetailClient({ order, items, canFulfill, lineImages = {} }: Props) {
+export function SalesOrderDetailClient({
+  order,
+  items,
+  canFulfill,
+  lineImages = {},
+  returns = [],
+  returnLineSummaries = {},
+  unmatchedReturnQty = 0,
+  canViewReturns = false,
+}: Props) {
   const t = useTranslations("salesOrders");
   const locale = useLocale();
+  const hasReturns = returns.length > 0;
 
   const feeEntries = order.feeBreakdown
     ? Object.entries(order.feeBreakdown).filter(([, v]) => v && v !== "0")
@@ -74,6 +90,12 @@ export function SalesOrderDetailClient({ order, items, canFulfill, lineImages = 
         courierName={order.courierName}
         packingVideoUrl={order.packingVideoUrl}
         packingVideoRecording={order.packingVideoRecording}
+      />
+
+      <ReturnsCard
+        returns={returns}
+        unmatchedQty={unmatchedReturnQty}
+        canViewReturns={canViewReturns}
       />
 
       {(order.status === "SHIPPED" || order.status === "COMPLETED" || order.fulfillmentStatus === "SHIPPED") && (
@@ -147,12 +169,14 @@ export function SalesOrderDetailClient({ order, items, canFulfill, lineImages = 
               <TableHead className="text-right">{t("detail.lineCol.unitPrice")}</TableHead>
               <TableHead className="text-right">{t("detail.lineCol.discount")}</TableHead>
               <TableHead className="text-right">{t("detail.lineCol.lineTotal")}</TableHead>
+              {hasReturns && <TableHead className="text-right">{t("detail.lineCol.returns")}</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {items.map((it) => {
               const imgKey = it.itemId ? `${it.itemId}|` : null;
               const imgUrl = imgKey ? lineImages[imgKey] : undefined;
+              const returnSummary = returnLineSummaries[String(it.salesorderDetailId)];
               return (
                 <TableRow key={it.id}>
                   <TableCell>
@@ -177,6 +201,31 @@ export function SalesOrderDetailClient({ order, items, canFulfill, lineImages = 
                   <TableCell className="text-right">{formatIDR(it.unitPrice)}</TableCell>
                   <TableCell className="text-right">{formatIDR(it.discAmount)}</TableCell>
                   <TableCell className="text-right">{formatIDR(it.lineTotal)}</TableCell>
+                  {hasReturns && (
+                    <TableCell className="text-right">
+                      {returnSummary && returnSummary.returnedQty > 0 ? (
+                        <div>
+                          <div>{returnSummary.returnedQty}</div>
+                          {(returnSummary.acceptedReturnQty > 0 || returnSummary.rejectedReturnQty > 0) && (
+                            <div className="text-xs text-muted-foreground">
+                              {[
+                                returnSummary.acceptedReturnQty > 0
+                                  ? t("detail.returns.accepted", { n: returnSummary.acceptedReturnQty })
+                                  : null,
+                                returnSummary.rejectedReturnQty > 0
+                                  ? t("detail.returns.rejected", { n: returnSummary.rejectedReturnQty })
+                                  : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        "—"
+                      )}
+                    </TableCell>
+                  )}
                 </TableRow>
               );
             })}

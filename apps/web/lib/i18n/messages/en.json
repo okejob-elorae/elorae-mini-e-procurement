@@ -2034,7 +2034,8 @@
         "lineItems": "Line items",
         "totals": "Totals",
         "rawStatus": "Status (raw)",
-        "feeBreakdown": "Fee breakdown"
+        "feeBreakdown": "Fee breakdown",
+        "returns": "Returns"
       },
       "field": {
         "customerName": "Name",
@@ -2064,7 +2065,14 @@
         "qty": "Qty",
         "unitPrice": "Unit price",
         "discount": "Discount",
-        "lineTotal": "Line total"
+        "lineTotal": "Line total",
+        "returns": "Returned"
+      },
+      "returns": {
+        "viewLink": "View return",
+        "accepted": "accepted {n}",
+        "rejected": "rejected {n}",
+        "unmatchedNote": "{qty} returned item(s) could not be matched to any order line."
       }
     },
     "channel": {

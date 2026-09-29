@@ -2034,7 +2034,8 @@
         "lineItems": "Item Pesanan",
         "totals": "Total",
         "rawStatus": "Status (mentah)",
-        "feeBreakdown": "Rincian Biaya"
+        "feeBreakdown": "Rincian Biaya",
+        "returns": "Retur"
       },
       "field": {
         "customerName": "Nama",
@@ -2064,7 +2065,14 @@
         "qty": "Jml",
         "unitPrice": "Harga satuan",
         "discount": "Diskon",
-        "lineTotal": "Total baris"
+        "lineTotal": "Total baris",
+        "returns": "Retur"
+      },
+      "returns": {
+        "viewLink": "Lihat retur",
+        "accepted": "diterima {n}",
+        "rejected": "ditolak {n}",
+        "unmatchedNote": "{qty} item retur tidak dapat dicocokkan dengan baris pesanan manapun."
       }
     },
     "channel": {

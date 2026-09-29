@@ -22,10 +22,16 @@ export default async function ReturnDetailPage({
 
   const canDecide = hasPermission(session.user.permissions ?? [], PERMISSIONS.SALES_RETURNS_DECIDE);
   const canPostJournal = hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE);
+  const canViewSalesOrders = hasPermission(session.user.permissions ?? [], PERMISSIONS.SALES_ORDERS_VIEW);
 
   return (
     <div className="p-6 space-y-6 max-w-5xl">
-      <ReturnDecisionCard ret={ret} canDecide={canDecide} canPostJournal={canPostJournal} />
+      <ReturnDecisionCard
+        ret={ret}
+        canDecide={canDecide}
+        canPostJournal={canPostJournal}
+        canViewSalesOrders={canViewSalesOrders}
+      />
     </div>
   );
 }
