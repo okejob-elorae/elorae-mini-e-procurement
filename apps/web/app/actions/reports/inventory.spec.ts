@@ -11,7 +11,7 @@ vi.mock("@elorae/db", () => ({
   prisma: { inventoryValue: { findMany: mockFindMany } },
 }));
 
-import { getInventoryValueSnapshot } from "./inventory";
+import { getCOGSRawVsFinished, getInventoryValueSnapshot } from "./inventory";
 
 describe("getInventoryValueSnapshot gate", () => {
   beforeEach(() => {
@@ -34,6 +34,31 @@ describe("getInventoryValueSnapshot gate", () => {
   it.each([["inventory:view"], ["dashboard:view"], ["*"]])("lets a caller holding %s through", async (perm) => {
     mockAuth.mockResolvedValue({ user: { id: "u1", permissions: [perm] } });
     await getInventoryValueSnapshot();
+    expect(mockFindMany).toHaveBeenCalled();
+  });
+});
+
+describe("getCOGSRawVsFinished gate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFindMany.mockResolvedValue([]);
+  });
+
+  it("rejects an unauthenticated caller and runs no query", async () => {
+    mockAuth.mockResolvedValue(null);
+    await expect(getCOGSRawVsFinished()).rejects.toThrow("Forbidden");
+    expect(mockFindMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects a caller with neither inventory:view nor dashboard:view", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["stores:view"] } });
+    await expect(getCOGSRawVsFinished()).rejects.toThrow("Forbidden");
+    expect(mockFindMany).not.toHaveBeenCalled();
+  });
+
+  it.each([["inventory:view"], ["dashboard:view"], ["*"]])("lets a caller holding %s through", async (perm) => {
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: [perm] } });
+    await getCOGSRawVsFinished();
     expect(mockFindMany).toHaveBeenCalled();
   });
 });

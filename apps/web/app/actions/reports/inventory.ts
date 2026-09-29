@@ -135,6 +135,11 @@ export async function getCOGSRawVsFinished(): Promise<{
   rawCount: number;
   finishedCount: number;
 }> {
+  const session = await auth();
+  requireAnyPermission(session?.user?.permissions ?? [], [
+    PERMISSIONS.INVENTORY_VIEW,
+    PERMISSIONS.DASHBOARD_VIEW,
+  ]);
   const rows = await prisma.inventoryValue.findMany({
     where: { qtyOnHand: { gt: 0 } },
     include: {
