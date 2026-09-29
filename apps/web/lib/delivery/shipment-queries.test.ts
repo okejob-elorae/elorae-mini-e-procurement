@@ -79,7 +79,7 @@ describe("shipment-queries", () => {
     expect(detail).toBeNull();
   });
 
-  it("lists only IN_TRANSIT shipments carried by the given user", async () => {
+  it("does not list an EXPEDITION shipment for its carriedById, even when IN_TRANSIT", async () => {
     await updateShipmentTracking({
       shipmentId,
       carriedById: userId,
@@ -92,11 +92,44 @@ describe("shipment-queries", () => {
     await shipDeliveryShipment({ shipmentId, shippedById: userId });
 
     const mine = await listMyDeliveries(userId);
-    expect(mine.some((m) => m.id === shipmentId)).toBe(true);
+    expect(mine.some((m) => m.id === shipmentId)).toBe(false);
+  });
 
-    const someoneElsesId = "does-not-exist-as-a-carrier";
-    const notMine = await listMyDeliveries(someoneElsesId);
-    expect(notMine.some((m) => m.id === shipmentId)).toBe(false);
+  it("lists only IN_TRANSIT SALESMAN_CARRY shipments, each to its own carrier", async () => {
+    /* An existing seeded user, so there is nothing extra to tear down. */
+    const otherUser = await prisma.user.findFirst({ where: { id: { not: userId } } });
+    expect(otherUser).not.toBeNull();
+    const otherUserId = otherUser!.id;
+
+    const carryFor = async (carrierId: string, qty: number) => {
+      const line = await prisma.fieldSalesOrderLine.create({
+        data: { orderId, itemId, productName: "Query Item Carry", qty, unitPrice: 10000, lineTotal: qty * 10000 },
+      });
+      const created = await createDeliveryShipment({
+        orderId,
+        method: "SALESMAN_CARRY",
+        lines: [{ orderLineId: line.id, qty }],
+        packedById: userId,
+      });
+      await updateShipmentTracking({
+        shipmentId: created.shipmentId,
+        carriedById: carrierId,
+        invoiceDate: new Date("2026-09-10T00:00:00.000Z"),
+        dueDate: new Date("2026-09-20T00:00:00.000Z"),
+      });
+      await shipDeliveryShipment({ shipmentId: created.shipmentId, shippedById: userId });
+      return created.shipmentId;
+    };
+    const mineId = await carryFor(userId, 3);
+    const theirsId = await carryFor(otherUserId, 2);
+
+    const mine = await listMyDeliveries(userId);
+    expect(mine.some((m) => m.id === mineId)).toBe(true);
+    expect(mine.some((m) => m.id === theirsId)).toBe(false);
+
+    const theirs = await listMyDeliveries(otherUserId);
+    expect(theirs.some((m) => m.id === theirsId)).toBe(true);
+    expect(theirs.some((m) => m.id === mineId)).toBe(false);
   });
 
   it("returns orderType on getDeliveryShipment", async () => {

@@ -190,7 +190,7 @@ export async function listMyDeliveries(carriedById: string): Promise<Array<{
   plannedTotalQty: number;
 }>> {
   const rows = await prisma.deliveryShipment.findMany({
-    where: { carriedById, status: "IN_TRANSIT" },
+    where: { carriedById, status: "IN_TRANSIT", method: "SALESMAN_CARRY" },
     include: { order: { include: { store: { select: { name: true } } } }, lines: true },
     orderBy: { shippedAt: "asc" },
   });
