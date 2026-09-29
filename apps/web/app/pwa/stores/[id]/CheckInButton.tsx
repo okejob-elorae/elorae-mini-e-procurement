@@ -17,13 +17,18 @@ type Props = {
 export function CheckInButton({ storeId, autoCloseStoreName }: Props) {
   const t = useTranslations("pwa.checkIn");
   const [perm, setPerm] = useState<PermState>("unknown");
+  const [unsupported, setUnsupported] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fetchingLocation, setFetchingLocation] = useState(false);
   const [pending, startTransition] = useTransition();
   const busy = fetchingLocation || pending;
 
   useEffect(() => {
-    if (typeof navigator === "undefined" || !navigator.permissions) {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setUnsupported(true);
+      return;
+    }
+    if (!navigator.permissions) {
       setPerm("prompt");
       return;
     }
@@ -37,11 +42,16 @@ export function CheckInButton({ storeId, autoCloseStoreName }: Props) {
   }, []);
 
   function onTap() {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setUnsupported(true);
+      return;
+    }
     setError(null);
     setFetchingLocation(true);
     navigator.geolocation.getCurrentPosition(
       pos => {
         setFetchingLocation(false);
+        setPerm("granted");
         startTransition(async () => {
           const result = await checkIn({ storeId, lat: pos.coords.latitude, lng: pos.coords.longitude });
           if (result && !result.ok) {
@@ -51,11 +61,43 @@ export function CheckInButton({ storeId, autoCloseStoreName }: Props) {
           }
         });
       },
-      () => {
+      err => {
         setFetchingLocation(false);
+        if (err.code === err.PERMISSION_DENIED) {
+          setPerm("denied");
+          return;
+        }
         setError(t("coordsError"));
       },
       { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
+    );
+  }
+
+  /* Probe only: a successful fix lifts the denied state and hands the user back the check-in button — it never submits a check-in, which may auto-close another visit. */
+  function onRetryPermission() {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setUnsupported(true);
+      return;
+    }
+    setFetchingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      () => {
+        setFetchingLocation(false);
+        setPerm("granted");
+      },
+      err => {
+        setFetchingLocation(false);
+        if (err.code !== err.PERMISSION_DENIED) setPerm("granted");
+      },
+      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 60_000 },
+    );
+  }
+
+  if (unsupported) {
+    return (
+      <Alert variant="destructive">
+        <AlertDescription>{t("locationUnsupported")}</AlertDescription>
+      </Alert>
     );
   }
 
@@ -63,6 +105,10 @@ export function CheckInButton({ storeId, autoCloseStoreName }: Props) {
     return (
       <Alert variant="destructive">
         <AlertDescription>{t("permissionDenied")}</AlertDescription>
+        <Button type="button" variant="outline" size="sm" className="col-start-2 mt-2 h-10 w-full" onClick={onRetryPermission} disabled={busy}>
+          {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {t("coordsRetry")}
+        </Button>
       </Alert>
     );
   }

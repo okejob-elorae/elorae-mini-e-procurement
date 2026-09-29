@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
@@ -32,6 +32,7 @@ type GpsState =
   | { status: "locating" }
   | { status: "ready"; lat: number; lng: number }
   | { status: "denied" }
+  | { status: "unsupported" }
   | { status: "error" };
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -54,6 +55,7 @@ export function CompletePodSheet({
   const [notaProofFile, setNotaProofFile] = useState<File | null>(null);
   const [signedByName, setSignedByName] = useState("");
   const [gps, setGps] = useState<GpsState>({ status: "idle" });
+  const gpsStatusRef = useRef<GpsState["status"]>("idle");
   const [qtyInputs, setQtyInputs] = useState<Record<string, string>>(
     () => Object.fromEntries(lines.map((l) => [l.id, String(l.plannedQty)])),
   );
@@ -61,11 +63,42 @@ export function CompletePodSheet({
   const [queued, setQueued] = useState(false);
 
   useEffect(() => {
+    gpsStatusRef.current = gps.status;
+  }, [gps.status]);
+
+  useEffect(() => {
     requestLocation();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- request once on mount
   }, []);
 
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.permissions) return;
+    let permStatus: PermissionStatus | null = null;
+    let cancelled = false;
+    navigator.permissions.query({ name: "geolocation" as PermissionName }).then(
+      (status) => {
+        if (cancelled) return;
+        permStatus = status;
+        /* Read through the ref: this handler outlives the render it closed over, and re-requesting over a good or in-flight fix would drop it back to locating mid-form. */
+        status.onchange = () => {
+          const current = gpsStatusRef.current;
+          if (status.state === "granted" && current !== "ready" && current !== "locating") requestLocation();
+        };
+      },
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+      if (permStatus) permStatus.onchange = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- subscribe once on mount
+  }, []);
+
   function requestLocation(): void {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setGps({ status: "unsupported" });
+      return;
+    }
     setGps({ status: "locating" });
     navigator.geolocation.getCurrentPosition(
       (pos) => setGps({ status: "ready", lat: pos.coords.latitude, lng: pos.coords.longitude }),
@@ -257,6 +290,14 @@ export function CompletePodSheet({
         {gps.status === "denied" && (
           <Alert variant="destructive">
             <AlertDescription>{t("permissionDenied")}</AlertDescription>
+            <Button type="button" variant="outline" size="sm" className="col-start-2 mt-2 h-10 w-full" onClick={requestLocation}>
+              {t("locationRetry")}
+            </Button>
+          </Alert>
+        )}
+        {gps.status === "unsupported" && (
+          <Alert variant="destructive">
+            <AlertDescription>{t("locationUnsupported")}</AlertDescription>
           </Alert>
         )}
         {gps.status === "error" && (
