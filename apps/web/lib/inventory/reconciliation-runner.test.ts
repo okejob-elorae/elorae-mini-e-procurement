@@ -6,10 +6,16 @@ vi.mock("@/lib/internal-api", () => ({
 
 import { JUBELIO_STOCK_PUSH_ENABLED_KEY, prisma, seededId } from "@elorae/db";
 import { apiFetch } from "@/lib/internal-api";
-import { resolveReconciliationItem, runReconciliation, updateReconciliationSettings } from "./reconciliation-runner";
+import {
+  RECON_BULK_BATCH_MAX,
+  resolveReconciliationItem,
+  resolveReconciliationItems,
+  runReconciliation,
+  updateReconciliationSettings,
+} from "./reconciliation-runner";
 
 /*
- * Exercises resolveReconciliationItem's MATCH_JUBELIO path against the real DB, with the live
+ * Exercises the MATCH_JUBELIO path of resolveReconciliationItem and resolveReconciliationItems against the real DB, with the live
  * Jubelio re-fetch (apiFetch) mocked per test. Never run against the shared prod DB (port 3307
  * tunnel / VPS host).
  */
@@ -111,6 +117,9 @@ d("resolveReconciliationItem MATCH_JUBELIO (test bed only)", () => {
     qtyOnHand: number;
     eloraeQty: number;
     jubelioQty: number;
+    /* Shares an item group with another fixture when set; a fresh group otherwise. */
+    jubelioItemGroupId?: number;
+    action?: "FLAGGED" | "MANUALLY_RESOLVED";
   }): Promise<Fixture> {
     const token = Math.random().toString(36).slice(2, 10);
     const item = await prisma.item.create({
@@ -135,7 +144,7 @@ d("resolveReconciliationItem MATCH_JUBELIO (test bed only)", () => {
       },
     });
 
-    const jubelioItemGroupId = nextJubelioId++;
+    const jubelioItemGroupId = opts.jubelioItemGroupId ?? nextJubelioId++;
     const jubelioItemId = nextJubelioId++;
     await prisma.jubelioProductMapping.create({
       data: {
@@ -162,7 +171,7 @@ d("resolveReconciliationItem MATCH_JUBELIO (test bed only)", () => {
         eloraeQty: opts.eloraeQty,
         jubelioQty: opts.jubelioQty,
         variance: opts.eloraeQty - opts.jubelioQty,
-        action: "FLAGGED",
+        action: opts.action ?? "FLAGGED",
       },
     });
     resultIds.push(result.id);
@@ -334,6 +343,206 @@ d("resolveReconciliationItem MATCH_JUBELIO (test bed only)", () => {
 
     const result = await prisma.reconciliationResult.findUnique({ where: { id: fx.resultId } });
     expect(result!.action).toBe("FLAGGED");
+  });
+
+  describe("resolveReconciliationItems (bulk MATCH_JUBELIO)", () => {
+    /**
+     * Serves each item group's live figures by path, so one batch can mix groups. A group mapped to
+     * an Error makes apiFetch itself reject for it.
+     */
+    function mockLiveGroups(groups: Map<number, Array<{ jubelioItemId: number; endQty: number | null }> | Error>): void {
+      (apiFetch as unknown as ReturnType<typeof vi.fn>).mockImplementation(async (_method: string, path: string) => {
+        const groupId = Number(String(path).split("/").pop());
+        const rows = groups.get(groupId);
+        if (rows instanceof Error) throw rows;
+        return { ok: true, status: 200, data: { rows: rows ?? [] } };
+      });
+    }
+
+    function groupFetchCount(groupId: number): number {
+      return (apiFetch as unknown as ReturnType<typeof vi.fn>).mock.calls
+        .filter((call) => call[1] === `/jubelio/inventory/snapshot/group/${groupId}`).length;
+    }
+
+    it("resolves each row on its own: a moved row is refused and left FLAGGED, and the row after it still applies", async () => {
+      await setPushSwitch(false);
+      const moved = await seedFixture({ qtyOnHand: 3, eloraeQty: 10, jubelioQty: 6 });
+      const ok = await seedFixture({ qtyOnHand: 10, eloraeQty: 10, jubelioQty: 6 });
+      mockLiveGroups(new Map([
+        [ok.jubelioItemGroupId, [{ jubelioItemId: ok.jubelioItemId, endQty: 6 }]],
+        [moved.jubelioItemGroupId, [{ jubelioItemId: moved.jubelioItemId, endQty: 6 }]],
+      ]));
+
+      const res = await resolveReconciliationItems({ resultIds: [moved.resultId, ok.resultId], userId: "u1" });
+
+      expect(res).toEqual({
+        success: true,
+        rows: [
+          { resultId: moved.resultId, success: false, reason: "STOCK_MOVED" },
+          { resultId: ok.resultId, success: true },
+        ],
+      });
+      const inv = await prisma.inventoryValue.findFirst({ where: { itemId: ok.itemId } });
+      expect(Number(inv!.qtyOnHand)).toBe(6);
+      const okResult = await prisma.reconciliationResult.findUnique({ where: { id: ok.resultId } });
+      expect(okResult!.action).toBe("MANUALLY_RESOLVED");
+      expect(okResult!.resolutionDirection).toBe("MATCH_JUBELIO");
+      await expectNothingWritten(moved, 3);
+    });
+
+    it("fetches a shared item group live once for every row of it in the batch", async () => {
+      await setPushSwitch(false);
+      const a = await seedFixture({ qtyOnHand: 10, eloraeQty: 10, jubelioQty: 4 });
+      const b = await seedFixture({ qtyOnHand: 7, eloraeQty: 7, jubelioQty: 2, jubelioItemGroupId: a.jubelioItemGroupId });
+      mockLiveGroups(new Map([
+        [a.jubelioItemGroupId, [
+          { jubelioItemId: a.jubelioItemId, endQty: 4 },
+          { jubelioItemId: b.jubelioItemId, endQty: 2 },
+        ]],
+      ]));
+
+      const res = await resolveReconciliationItems({ resultIds: [a.resultId, b.resultId], userId: "u1" });
+
+      expect(res).toEqual({
+        success: true,
+        rows: [
+          { resultId: a.resultId, success: true },
+          { resultId: b.resultId, success: true },
+        ],
+      });
+      expect(groupFetchCount(a.jubelioItemGroupId)).toBe(1);
+      const invA = await prisma.inventoryValue.findFirst({ where: { itemId: a.itemId } });
+      const invB = await prisma.inventoryValue.findFirst({ where: { itemId: b.itemId } });
+      expect(Number(invA!.qtyOnHand)).toBe(4);
+      expect(Number(invB!.qtyOnHand)).toBe(2);
+    });
+
+    it("never reuses a live group figure across calls: each call fetches it again", async () => {
+      await setPushSwitch(false);
+      const a = await seedFixture({ qtyOnHand: 10, eloraeQty: 10, jubelioQty: 4 });
+      const b = await seedFixture({ qtyOnHand: 7, eloraeQty: 7, jubelioQty: 2, jubelioItemGroupId: a.jubelioItemGroupId });
+      mockLiveGroups(new Map([
+        [a.jubelioItemGroupId, [
+          { jubelioItemId: a.jubelioItemId, endQty: 4 },
+          { jubelioItemId: b.jubelioItemId, endQty: 2 },
+        ]],
+      ]));
+
+      await resolveReconciliationItems({ resultIds: [a.resultId], userId: "u1" });
+      await resolveReconciliationItems({ resultIds: [b.resultId], userId: "u1" });
+
+      expect(groupFetchCount(a.jubelioItemGroupId)).toBe(2);
+    });
+
+    it("keeps going after a row throws, reporting it UNEXPECTED and writing nothing for it", async () => {
+      await setPushSwitch(false);
+      const broken = await seedFixture({ qtyOnHand: 10, eloraeQty: 10, jubelioQty: 6 });
+      const ok = await seedFixture({ qtyOnHand: 5, eloraeQty: 5, jubelioQty: 1 });
+      mockLiveGroups(new Map<number, Array<{ jubelioItemId: number; endQty: number | null }> | Error>([
+        [broken.jubelioItemGroupId, new Error("socket hang up")],
+        [ok.jubelioItemGroupId, [{ jubelioItemId: ok.jubelioItemId, endQty: 1 }]],
+      ]));
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      try {
+        const res = await resolveReconciliationItems({ resultIds: [broken.resultId, ok.resultId], userId: "u1" });
+
+        expect(res).toEqual({
+          success: true,
+          rows: [
+            { resultId: broken.resultId, success: false, reason: "UNEXPECTED" },
+            { resultId: ok.resultId, success: true },
+          ],
+        });
+      } finally {
+        consoleSpy.mockRestore();
+      }
+      await expectNothingWritten(broken, 10);
+      const inv = await prisma.inventoryValue.findFirst({ where: { itemId: ok.itemId } });
+      expect(Number(inv!.qtyOnHand)).toBe(1);
+    });
+
+    it("refuses a row that is no longer FLAGGED without fetching or writing", async () => {
+      await setPushSwitch(false);
+      const done = await seedFixture({ qtyOnHand: 10, eloraeQty: 10, jubelioQty: 6, action: "MANUALLY_RESOLVED" });
+      mockLiveGroups(new Map([[done.jubelioItemGroupId, [{ jubelioItemId: done.jubelioItemId, endQty: 6 }]]]));
+
+      const res = await resolveReconciliationItems({ resultIds: [done.resultId], userId: "u1" });
+
+      expect(res).toEqual({
+        success: true,
+        rows: [{ resultId: done.resultId, success: false, reason: "ALREADY_RESOLVED" }],
+      });
+      expect(apiFetch).not.toHaveBeenCalled();
+      const inv = await prisma.inventoryValue.findFirst({ where: { itemId: done.itemId } });
+      expect(Number(inv!.qtyOnHand)).toBe(10);
+    });
+
+    it("refuses ALREADY_RESOLVED and rolls the stock write back when the row is resolved elsewhere mid-resolve", async () => {
+      await setPushSwitch(false);
+      const fx = await seedFixture({ qtyOnHand: 10, eloraeQty: 10, jubelioQty: 6 });
+      /* Another resolve marks the row between this call's FLAGGED read and its transaction. */
+      (apiFetch as unknown as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+        await prisma.reconciliationResult.update({
+          where: { id: fx.resultId },
+          data: { action: "MANUALLY_RESOLVED", resolutionDirection: "REASSERT_ELORAE" },
+        });
+        return { ok: true, status: 200, data: { rows: [{ jubelioItemId: fx.jubelioItemId, endQty: 6 }] } };
+      });
+
+      const res = await resolveReconciliationItems({ resultIds: [fx.resultId], userId: "u1" });
+
+      expect(res).toEqual({
+        success: true,
+        rows: [{ resultId: fx.resultId, success: false, reason: "ALREADY_RESOLVED" }],
+      });
+      const inv = await prisma.inventoryValue.findFirst({ where: { itemId: fx.itemId } });
+      expect(Number(inv!.qtyOnHand)).toBe(10);
+      expect(await prisma.stockAdjustment.count({ where: { itemId: fx.itemId } })).toBe(0);
+      expect(await prisma.stockLedgerEntry.count({ where: { itemId: fx.itemId } })).toBe(0);
+      const result = await prisma.reconciliationResult.findUnique({ where: { id: fx.resultId } });
+      expect(result!.resolutionDirection).toBe("REASSERT_ELORAE");
+    });
+
+    it("resolves a repeated id once", async () => {
+      await setPushSwitch(false);
+      const fx = await seedFixture({ qtyOnHand: 10, eloraeQty: 10, jubelioQty: 6 });
+      mockLiveGroups(new Map([[fx.jubelioItemGroupId, [{ jubelioItemId: fx.jubelioItemId, endQty: 6 }]]]));
+
+      const res = await resolveReconciliationItems({ resultIds: [fx.resultId, fx.resultId], userId: "u1" });
+
+      expect(res).toEqual({ success: true, rows: [{ resultId: fx.resultId, success: true }] });
+      expect(await prisma.stockAdjustment.count({ where: { itemId: fx.itemId } })).toBe(1);
+    });
+
+    it("counts the cap after removing repeats, so a full batch with one repeat is accepted", async () => {
+      const ids = Array.from({ length: RECON_BULK_BATCH_MAX }, (_, i) => `missing-${i}`);
+
+      const res = await resolveReconciliationItems({ resultIds: [...ids, ids[0]], userId: "u1" });
+
+      expect(res.success).toBe(true);
+      if (!res.success) return;
+      expect(res.rows).toHaveLength(RECON_BULK_BATCH_MAX);
+      expect(res.rows.every((row) => !row.success && row.reason === "NOT_FOUND")).toBe(true);
+    });
+
+    it("refuses a batch over the cap before any read or write", async () => {
+      const ids = Array.from({ length: RECON_BULK_BATCH_MAX + 1 }, (_, i) => `missing-${i}`);
+
+      const res = await resolveReconciliationItems({ resultIds: ids, userId: "u1" });
+
+      expect(res).toEqual({ success: false, reason: "BATCH_TOO_LARGE" });
+      expect(apiFetch).not.toHaveBeenCalled();
+    });
+
+    it("refuses an empty or malformed batch", async () => {
+      expect(await resolveReconciliationItems({ resultIds: [], userId: "u1" }))
+        .toEqual({ success: false, reason: "INVALID_BATCH" });
+      expect(await resolveReconciliationItems({ resultIds: "abc" as unknown as string[], userId: "u1" }))
+        .toEqual({ success: false, reason: "INVALID_BATCH" });
+      expect(await resolveReconciliationItems({ resultIds: [42 as unknown as string], userId: "u1" }))
+        .toEqual({ success: false, reason: "INVALID_BATCH" });
+    });
   });
 });
 

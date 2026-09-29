@@ -19,9 +19,13 @@ import {
   parseReconDirection,
   parseReconThreshold,
   sameQty2dp,
+  type ReconBulkResolveReason,
   type ReconResolveReason,
   type ReconSettingsReason,
 } from "./reconciliation";
+import { RECON_BULK_BATCH_MAX } from "./reconciliation-selection";
+
+export { RECON_BULK_BATCH_MAX };
 
 /** `jubelioQty` is `null` when Jubelio gave no usable figure — never read it as 0. */
 export type JubelioSnapshotRow = {
@@ -385,6 +389,119 @@ export type ResolveReconciliationResult =
   | { success: true }
   | { success: false; reason: ReconResolveReason };
 
+/**
+ * Live item-group figures fetched during one resolve call, keyed by group id, so a bulk batch reads
+ * each group from Jubelio once however many of its rows the batch holds. Scoped to a single call,
+ * never shared across calls: the figure must be read just before the writes that depend on it.
+ */
+type GroupSnapshotCache = Map<number, Promise<JubelioGroupSnapshotRow[] | null>>;
+
+function liveGroupSnapshot(cache: GroupSnapshotCache, groupId: number): Promise<JubelioGroupSnapshotRow[] | null> {
+  let pending = cache.get(groupId);
+  if (!pending) {
+    pending = fetchJubelioGroupSnapshot(groupId);
+    cache.set(groupId, pending);
+  }
+  return pending;
+}
+
+/** Thrown inside the MATCH_JUBELIO transaction to roll its stock write back: the row stopped being FLAGGED. */
+class ResultNoLongerFlaggedError extends Error {}
+
+/**
+ * Resolves one FLAGGED result in an already-validated direction. The single-row and bulk exports
+ * both go through this, so the FLAGGED check, the live re-fetch and the moved-since guard exist
+ * once. Throws are left to the caller, which turns them into `UNEXPECTED`.
+ */
+async function resolveOneResult(
+  resultId: string,
+  direction: ReconDirection,
+  userId: string,
+  groups: GroupSnapshotCache,
+): Promise<ResolveReconciliationResult> {
+  const result = await prisma.reconciliationResult.findUnique({
+    where: { id: resultId },
+    include: { run: true },
+  });
+  if (!result) return { success: false, reason: "NOT_FOUND" };
+  if (result.action !== "FLAGGED") return { success: false, reason: "ALREADY_RESOLVED" };
+
+  const variantSku = result.variantSku ?? "";
+
+  if (direction === "MATCH_JUBELIO") {
+    const mapping = await prisma.jubelioProductMapping.findFirst({
+      where: { itemId: result.itemId, erpVariantSku: variantSku },
+      select: { jubelioItemGroupId: true, jubelioItemId: true },
+    });
+    if (!mapping) return { success: false, reason: "NO_MAPPING" };
+
+    /*
+     * Re-fetch a live figure for just this item group rather than trusting the run's stored
+     * snapshot, which may already be stale — and which stored 0 for a variant it had no figure
+     * for. No live figure means nothing is written.
+     */
+    const liveRows = await liveGroupSnapshot(groups, mapping.jubelioItemGroupId);
+    if (!liveRows) return { success: false, reason: "JUBELIO_FETCH_FAILED" };
+    const live = liveRows.find((r) => r.jubelioItemId === mapping.jubelioItemId);
+    if (!live || live.endQty === null) return { success: false, reason: "JUBELIO_QTY_MISSING" };
+    if (!isValidJubelioQty(live.endQty)) return { success: false, reason: "JUBELIO_QTY_INVALID" };
+    const liveJubelioQty = live.endQty;
+
+    /*
+     * The result is marked resolved in the SAME transaction as the stock write, conditional on it
+     * still being FLAGGED: a failure on the mark rolls the write back rather than leaving stock
+     * moved under a row that still says FLAGGED, and a concurrent resolve that got there first
+     * rolls this one back as ALREADY_RESOLVED.
+     */
+    let outcome: MatchJubelioOutcome;
+    try {
+      outcome = await prisma.$transaction(async (tx) => {
+        const applied = await applyMatchJubelio(tx, {
+          runId: result.runId,
+          itemId: result.itemId,
+          variantSku,
+          itemName: result.itemName,
+          jubelioQty: liveJubelioQty,
+          expectedEloraeQty: Number(result.eloraeQty),
+          userId,
+        });
+        if (applied === "STOCK_MOVED" || applied === "NO_INVENTORY_ROW") return applied;
+        const marked = await tx.reconciliationResult.updateMany({
+          where: { id: resultId, action: "FLAGGED" },
+          data: {
+            action: "MANUALLY_RESOLVED",
+            resolvedAt: new Date(),
+            resolvedById: userId,
+            resolutionDirection: direction,
+          },
+        });
+        if (marked.count === 0) throw new ResultNoLongerFlaggedError();
+        return applied;
+      });
+    } catch (err) {
+      if (err instanceof ResultNoLongerFlaggedError) return { success: false, reason: "ALREADY_RESOLVED" };
+      throw err;
+    }
+    if (outcome === "STOCK_MOVED") return { success: false, reason: "STOCK_MOVED" };
+    if (outcome === "NO_INVENTORY_ROW") return { success: false, reason: "NO_INVENTORY_ROW" };
+    return { success: true };
+  }
+
+  /* REASSERT_ELORAE: no local stock write, just push Elorae's own current figure back. */
+  await enqueueReconStockPush(result.itemId, userId);
+  await prisma.reconciliationResult.update({
+    where: { id: resultId },
+    data: {
+      action: "MANUALLY_RESOLVED",
+      resolvedAt: new Date(),
+      resolvedById: userId,
+      resolutionDirection: direction,
+    },
+  });
+
+  return { success: true };
+}
+
 export async function resolveReconciliationItem(data: {
   resultId: string;
   direction: ReconDirection;
@@ -403,67 +520,50 @@ export async function resolveReconciliationItem(data: {
       return { success: false, reason: "PUSH_DISABLED" };
     }
 
-    const result = await prisma.reconciliationResult.findUnique({
-      where: { id: data.resultId },
-      include: { run: true },
-    });
-    if (!result) return { success: false, reason: "NOT_FOUND" };
-    if (result.action !== "FLAGGED") return { success: false, reason: "ALREADY_RESOLVED" };
-
-    const variantSku = result.variantSku ?? "";
-
-    if (data.direction === "MATCH_JUBELIO") {
-      const mapping = await prisma.jubelioProductMapping.findFirst({
-        where: { itemId: result.itemId, erpVariantSku: variantSku },
-        select: { jubelioItemGroupId: true, jubelioItemId: true },
-      });
-      if (!mapping) return { success: false, reason: "NO_MAPPING" };
-
-      /*
-       * Re-fetch a live figure for just this item group rather than trusting the run's stored
-       * snapshot, which may already be stale — and which stored 0 for a variant it had no figure
-       * for. No live figure means nothing is written.
-       */
-      const liveRows = await fetchJubelioGroupSnapshot(mapping.jubelioItemGroupId);
-      if (!liveRows) return { success: false, reason: "JUBELIO_FETCH_FAILED" };
-      const live = liveRows.find((r) => r.jubelioItemId === mapping.jubelioItemId);
-      if (!live || live.endQty === null) return { success: false, reason: "JUBELIO_QTY_MISSING" };
-      if (!isValidJubelioQty(live.endQty)) return { success: false, reason: "JUBELIO_QTY_INVALID" };
-      const liveJubelioQty = live.endQty;
-
-      const outcome = await prisma.$transaction((tx) =>
-        applyMatchJubelio(tx, {
-          runId: result.runId,
-          itemId: result.itemId,
-          variantSku,
-          itemName: result.itemName,
-          jubelioQty: liveJubelioQty,
-          expectedEloraeQty: Number(result.eloraeQty),
-          userId: data.userId,
-        }),
-      );
-      if (outcome === "STOCK_MOVED") return { success: false, reason: "STOCK_MOVED" };
-      if (outcome === "NO_INVENTORY_ROW") return { success: false, reason: "NO_INVENTORY_ROW" };
-    } else {
-      // REASSERT_ELORAE: no local stock write, just push Elorae's own current figure back.
-      await enqueueReconStockPush(result.itemId, data.userId);
-    }
-
-    await prisma.reconciliationResult.update({
-      where: { id: data.resultId },
-      data: {
-        action: "MANUALLY_RESOLVED",
-        resolvedAt: new Date(),
-        resolvedById: data.userId,
-        resolutionDirection: data.direction,
-      },
-    });
-
-    return { success: true };
+    return await resolveOneResult(data.resultId, data.direction, data.userId, new Map());
   } catch (err) {
     console.error("resolveReconciliationItem failed:", err);
     return { success: false, reason: "UNEXPECTED" };
   }
+}
+
+export type ResolveReconciliationBatchRow =
+  | { resultId: string; success: true }
+  | { resultId: string; success: false; reason: ReconResolveReason };
+
+export type ResolveReconciliationItemsResult =
+  | { success: true; rows: ResolveReconciliationBatchRow[] }
+  | { success: false; reason: ReconBulkResolveReason };
+
+/**
+ * MATCH_JUBELIO for up to `RECON_BULK_BATCH_MAX` results, one after another, each in its own
+ * transaction with its own outcome: a refusal or a throw on one row never stops the rest, and a
+ * repeated id is resolved once. REASSERT_ELORAE has no bulk form. The batch shape is validated
+ * before any read, since this is reachable from a "use server" export whatever the UI sends.
+ */
+export async function resolveReconciliationItems(data: {
+  resultIds: string[];
+  userId: string;
+}): Promise<ResolveReconciliationItemsResult> {
+  const ids: unknown = data.resultIds;
+  if (!Array.isArray(ids) || ids.length === 0 || !ids.every((id) => typeof id === "string" && id !== "")) {
+    return { success: false, reason: "INVALID_BATCH" };
+  }
+  const uniqueIds = [...new Set(ids as string[])];
+  if (uniqueIds.length > RECON_BULK_BATCH_MAX) return { success: false, reason: "BATCH_TOO_LARGE" };
+
+  const groups: GroupSnapshotCache = new Map();
+  const rows: ResolveReconciliationBatchRow[] = [];
+  for (const resultId of uniqueIds) {
+    try {
+      const outcome = await resolveOneResult(resultId, "MATCH_JUBELIO", data.userId, groups);
+      rows.push(outcome.success ? { resultId, success: true } : { resultId, success: false, reason: outcome.reason });
+    } catch (err) {
+      console.error(`resolveReconciliationItems failed for result ${resultId}:`, err);
+      rows.push({ resultId, success: false, reason: "UNEXPECTED" });
+    }
+  }
+  return { success: true, rows };
 }
 
 export type UpdateReconciliationSettingsResult =

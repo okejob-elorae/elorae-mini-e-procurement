@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -23,6 +24,7 @@ import {
 import { getJubelioStockPushEnabled } from "@/app/actions/jubelio-outbox";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { useSession } from "next-auth/react";
+import { ReconciliationBulkMatch } from "./ReconciliationBulkMatch";
 
 type ReconActionKey = "IN_SYNC" | "AUTO_CORRECTED" | "FLAGGED" | "MANUALLY_RESOLVED";
 
@@ -57,9 +59,12 @@ export function ReconciliationRunDetailClient({
   const [loading, setLoading] = useState(true);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [pushEnabled, setPushEnabled] = useState(initialPushEnabled);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkRunning, setBulkRunning] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  /* `silent` refreshes in place, keeping the table (and the bulk summary under it) mounted. */
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     try {
       const [runDetail, jubelioPushEnabled] = await Promise.all([
         getReconciliationRunById(runId),
@@ -76,6 +81,23 @@ export function ReconciliationRunDetailClient({
     void load();
   }, [load]);
 
+  const flaggedIds = useMemo(
+    () => (run?.results ?? []).filter((row) => row.action === "FLAGGED").map((row) => row.id),
+    [run],
+  );
+  /* Only FLAGGED rows are resolvable, so a selection that outlived a resolve narrows to what is left. */
+  const effectiveSelectedIds = useMemo(() => {
+    const selected = new Set(selectedIds);
+    return flaggedIds.filter((id) => selected.has(id));
+  }, [flaggedIds, selectedIds]);
+  const selectedSet = useMemo(() => new Set(effectiveSelectedIds), [effectiveSelectedIds]);
+  const allFlaggedSelected = flaggedIds.length > 0 && effectiveSelectedIds.length === flaggedIds.length;
+  const headerChecked = allFlaggedSelected ? true : effectiveSelectedIds.length > 0 ? "indeterminate" : false;
+
+  const toggleRow = (id: string, checked: boolean) => {
+    setSelectedIds((prev) => (checked ? [...new Set([...prev, id])] : prev.filter((x) => x !== id)));
+  };
+
   const resolve = async (resultId: string, direction: "MATCH_JUBELIO" | "REASSERT_ELORAE") => {
     setResolvingId(resultId);
     try {
@@ -85,7 +107,7 @@ export function ReconciliationRunDetailClient({
         return;
       }
       toast.success(t("resolved"));
-      await load();
+      await load({ silent: true });
     } catch {
       toast.error(t("resolveFailed"));
     } finally {
@@ -122,9 +144,30 @@ export function ReconciliationRunDetailClient({
           )}
         </CardHeader>
         <CardContent>
+          {canManage && (
+            <ReconciliationBulkMatch
+              rows={run.results}
+              selectedIds={effectiveSelectedIds}
+              onSelectionChange={setSelectedIds}
+              running={bulkRunning}
+              blocked={resolvingId !== null}
+              onRunningChange={setBulkRunning}
+              onFinished={() => load({ silent: true })}
+            />
+          )}
           <Table>
             <TableHeader>
               <TableRow>
+                {canManage && (
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={headerChecked}
+                      disabled={bulkRunning || flaggedIds.length === 0}
+                      onCheckedChange={(checked) => setSelectedIds(checked === true ? flaggedIds : [])}
+                      aria-label={t("bulk.selectAllAria")}
+                    />
+                  </TableHead>
+                )}
                 <TableHead>{t("item")}</TableHead>
                 <TableHead>{t("eloraeQty")}</TableHead>
                 <TableHead>{t("jubelioQty")}</TableHead>
@@ -134,51 +177,67 @@ export function ReconciliationRunDetailClient({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {run.results.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell>
-                    <div>{row.itemName}</div>
-                    {row.variantSku ? (
-                      <div className="text-xs text-muted-foreground">{row.variantSku}</div>
-                    ) : null}
-                  </TableCell>
-                  <TableCell>{row.eloraeQty}</TableCell>
-                  <TableCell>{row.jubelioQty}</TableCell>
-                  <TableCell>{row.variance > 0 ? `+${row.variance}` : row.variance}</TableCell>
-                  <TableCell>
-                    <Badge variant={actionBadgeVariant(row.action)}>
-                      {t(`actions.${row.action as ReconActionKey}`)}
-                    </Badge>
-                  </TableCell>
-                  {canManage && (
-                    <TableCell className="space-x-2">
-                      {row.action === "FLAGGED" && (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            disabled={resolvingId === row.id}
-                            onClick={() => resolve(row.id, "MATCH_JUBELIO")}
-                          >
-                            {t("matchJubelio")}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={resolvingId === row.id || !pushEnabled}
-                            onClick={() => resolve(row.id, "REASSERT_ELORAE")}
-                          >
-                            {t("reassertElorae")}
-                          </Button>
-                        </>
-                      )}
+              {run.results.map((row) => {
+                /* Variants of one item share its name, so the variant keeps each checkbox label distinct. */
+                const rowLabel = row.variantSku ? `${row.itemName} ${row.variantSku}` : row.itemName;
+                return (
+                  <TableRow key={row.id}>
+                    {canManage && (
+                      <TableCell>
+                        {row.action === "FLAGGED" && (
+                          <Checkbox
+                            checked={selectedSet.has(row.id)}
+                            disabled={bulkRunning}
+                            onCheckedChange={(checked) => toggleRow(row.id, checked === true)}
+                            aria-label={t("bulk.selectRowAria", { item: rowLabel })}
+                          />
+                        )}
+                      </TableCell>
+                    )}
+                    <TableCell>
+                      <div>{row.itemName}</div>
+                      {row.variantSku ? (
+                        <div className="text-xs text-muted-foreground">{row.variantSku}</div>
+                      ) : null}
                     </TableCell>
-                  )}
-                </TableRow>
-              ))}
+                    <TableCell>{row.eloraeQty}</TableCell>
+                    <TableCell>{row.jubelioQty}</TableCell>
+                    <TableCell>{row.variance > 0 ? `+${row.variance}` : row.variance}</TableCell>
+                    <TableCell>
+                      <Badge variant={actionBadgeVariant(row.action)}>
+                        {t(`actions.${row.action as ReconActionKey}`)}
+                      </Badge>
+                    </TableCell>
+                    {canManage && (
+                      <TableCell className="space-x-2">
+                        {row.action === "FLAGGED" && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={bulkRunning || resolvingId === row.id}
+                              onClick={() => resolve(row.id, "MATCH_JUBELIO")}
+                            >
+                              {t("matchJubelio")}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={bulkRunning || resolvingId === row.id || !pushEnabled}
+                              onClick={() => resolve(row.id, "REASSERT_ELORAE")}
+                            >
+                              {t("reassertElorae")}
+                            </Button>
+                          </>
+                        )}
+                      </TableCell>
+                    )}
+                  </TableRow>
+                );
+              })}
               {run.results.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={canManage ? 6 : 5} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={canManage ? 7 : 5} className="py-8 text-center text-muted-foreground">
                     —
                   </TableCell>
                 </TableRow>
