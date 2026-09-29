@@ -92,6 +92,13 @@ export {
   type SubmitReturnDecisionResult,
 } from "./sales-return-writer";
 export {
+  findSupersededItems,
+  retireSupersededItem,
+  type SupersededCandidate,
+  type SupersededRefusal,
+  type RetireSupersededResult,
+} from "./superseded-items";
+export {
   upsertJubelioImage,
   pruneJubelioOrphans,
   bindJubelioId,

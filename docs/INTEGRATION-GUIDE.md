@@ -90,6 +90,7 @@ The compile error from the router's `never` check is the safety net: you cannot 
 | `ERP_OPNAME` | Stock opname session approval. | web |
 | `JUBELIO_WEBHOOK` | Inbound Jubelio stock-changed webhook, applying `end_qty + offlineReserved` as on-hand, the holds added only while stock pushes are enabled (§4.2). **Do not call from web — only `apps/api`.** | api |
 | `JUBELIO_RECONCILE` | A `MATCH_JUBELIO` correction from stock reconciliation — the 6h cron or a manual resolve on `/backoffice/inventory/reconciliation`. | web (`reconciliation-runner.ts`; api only serves the snapshot read) |
+| `SUPERSEDED_ITEM_RETIRE` | Zeroing a superseded catalog item's stock rows — an unmapped item whose every variant is mapped on another item (`retireSupersededItem`, run from `scripts/retire-superseded-items.mjs`). | db helper, run as an ops script |
 
 If your use case doesn't fit any of these, add to the registry first (see "Adding a new source" below). Do not pick the closest match and hope for the best — the reconcile logic and audit dashboards key off the exact string.
 

@@ -17,6 +17,7 @@ export const STOCK_ADJUSTMENT_SOURCES = [
   "JUBELIO_RECONCILE",
   "VAN_LOAD",
   "VAN_RETURN",
+  "SUPERSEDED_ITEM_RETIRE",
 ] as const;
 
 export type StockAdjustmentSource = (typeof STOCK_ADJUSTMENT_SOURCES)[number];
