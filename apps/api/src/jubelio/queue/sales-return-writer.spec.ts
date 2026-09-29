@@ -6,9 +6,16 @@ describe("sales-return-writer", () => {
       salesReturnItem: { findUnique: jest.fn(), update: jest.fn() },
       salesReturn: { findUnique: jest.fn(), update: jest.fn() },
       stockAdjustment: { create: jest.fn() },
-      inventoryValue: { findFirst: jest.fn(), update: jest.fn() },
+      inventoryValue: {
+        findFirst: jest.fn(),
+        update: jest.fn(),
+        /* moveMainStock's pinned path: a guarded updateMany, a re-read, then the ledger append. */
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUniqueOrThrow: jest.fn().mockResolvedValue({ qtyOnHand: "12.00" }),
+      },
+      stockLedgerEntry: { create: jest.fn() },
       stockReservation: { findUnique: jest.fn() },
-      jubelioProductMapping: { findFirst: jest.fn() },
+      jubelioProductMapping: { findFirst: jest.fn(), findMany: jest.fn() },
       jubelioOutbox: { create: jest.fn() },
       ...overrides,
     };
@@ -79,37 +86,44 @@ describe("sales-return-writer", () => {
       };
     }
 
-    it.each(["RELEASED", "RESERVED"])(
-      "accepts with no stock change when the line's reservation is %s, even with no resolved item",
-      async (state) => {
-        const tx = createTx();
-        tx.salesReturnItem.findUnique.mockResolvedValue(pendingLine());
-        tx.stockReservation.findUnique.mockResolvedValue({ itemId: "i1", variantSku: "V-M", state });
-        tx.salesReturnItem.update.mockResolvedValue({});
+    it("accepts with no stock change when the line's reservation was released, even with no resolved item", async () => {
+      const tx = createTx();
+      tx.salesReturnItem.findUnique.mockResolvedValue(pendingLine());
+      tx.stockReservation.findUnique.mockResolvedValue({ itemId: "i1", variantSku: "V-M", state: "RELEASED", qty: "2" });
+      tx.salesReturnItem.update.mockResolvedValue({});
 
-        const result = await acceptReturnItem(tx, { returnItemId: "ri1", reason: "Came back", changedById: "u1" });
+      const result = await acceptReturnItem(tx, { returnItemId: "ri1", reason: "Came back", changedById: "u1" });
 
-        expect(result).toEqual({ applied: true, stockAdjustmentId: null, noStockReason: "NOT_CONSUMED" });
-        expect(tx.stockReservation.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { salesorderDetailId: 555 } }));
-        expect(tx.stockAdjustment.create).not.toHaveBeenCalled();
-        expect(tx.inventoryValue.findFirst).not.toHaveBeenCalled();
-        expect(tx.salesReturnItem.update).toHaveBeenCalledWith(expect.objectContaining({
-          where: { id: "ri1" },
-          data: expect.objectContaining({ decision: "ACCEPTED", decidedById: "u1", itemReason: "Came back" }),
-        }));
-        expect(tx.salesReturnItem.update.mock.calls[0][0].data.stockAdjustmentId).toBeUndefined();
-      },
-    );
+      expect(result).toEqual({ applied: true, stockAdjustmentId: null, noStockReason: "NOT_CONSUMED" });
+      expect(tx.stockReservation.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { salesorderDetailId: 555 } }));
+      expect(tx.stockAdjustment.create).not.toHaveBeenCalled();
+      expect(tx.inventoryValue.findFirst).not.toHaveBeenCalled();
+      const data = tx.salesReturnItem.update.mock.calls[0][0].data;
+      expect(data).toEqual(expect.objectContaining({ decision: "ACCEPTED", decidedById: "u1" }));
+      expect(data.stockAdjustmentId).toBeUndefined();
+      expect(data.itemReason).toBeUndefined();
+    });
+
+    it("refuses order_not_settled while the line's reservation is still RESERVED, writing nothing", async () => {
+      const tx = createTx();
+      tx.salesReturnItem.findUnique.mockResolvedValue(pendingLine());
+      tx.stockReservation.findUnique.mockResolvedValue({ itemId: "i1", variantSku: "V-M", state: "RESERVED", qty: "2" });
+
+      const result = await acceptReturnItem(tx, { returnItemId: "ri1", reason: "Came back", changedById: "u1" });
+
+      expect(result).toEqual({ applied: false, skipped: "order_not_settled" });
+      expect(tx.salesReturnItem.update).not.toHaveBeenCalled();
+      expect(tx.stockAdjustment.create).not.toHaveBeenCalled();
+    });
 
     it("restores a CONSUMED line onto the reservation's own item and variant, not the line's", async () => {
       const tx = createTx();
       tx.salesReturnItem.findUnique.mockResolvedValue(pendingLine({ itemId: "stale-item", variantSku: "V-M" }));
-      tx.stockReservation.findUnique.mockResolvedValue({ itemId: "i1", variantSku: "V-M", state: "CONSUMED" });
+      tx.stockReservation.findUnique.mockResolvedValue({ itemId: "i1", variantSku: "V-M", state: "CONSUMED", qty: "2" });
       tx.jubelioProductMapping.findFirst.mockResolvedValue({ id: "m1" });
       tx.inventoryValue.findFirst.mockResolvedValue({ id: "iv1", qtyOnHand: "10.00", avgCost: "100.00" });
       tx.stockAdjustment.create.mockResolvedValue({ id: "sa1" });
       tx.salesReturnItem.update.mockResolvedValue({});
-      tx.inventoryValue.update.mockResolvedValue({});
 
       const result = await acceptReturnItem(tx, { returnItemId: "ri1", reason: "Came back", changedById: "u1" });
 
@@ -125,21 +139,64 @@ describe("sales-return-writer", () => {
       }));
     });
 
-    it("accepts a CONSUMED line with no stock change when its reserved item and variant are no longer mapped", async () => {
+    it("restores a CONSUMED line whose reserved row is no longer mapped onto the one item the variant moved to", async () => {
       const tx = createTx();
       tx.salesReturnItem.findUnique.mockResolvedValue(pendingLine());
-      tx.stockReservation.findUnique.mockResolvedValue({ itemId: "old-item", variantSku: "V-M", state: "CONSUMED" });
+      tx.stockReservation.findUnique.mockResolvedValue({ itemId: "old-item", variantSku: "V-M", state: "CONSUMED", qty: "2" });
       tx.jubelioProductMapping.findFirst.mockResolvedValue(null);
+      tx.jubelioProductMapping.findMany.mockResolvedValue([{ itemId: "twin" }]);
+      tx.inventoryValue.findFirst.mockResolvedValue({ id: "iv-twin", qtyOnHand: "5.00", avgCost: "80.00" });
+      tx.stockAdjustment.create.mockResolvedValue({ id: "sa2" });
       tx.salesReturnItem.update.mockResolvedValue({});
 
       const result = await acceptReturnItem(tx, { returnItemId: "ri1", reason: "Came back", changedById: "u1" });
 
-      expect(result).toEqual({ applied: true, stockAdjustmentId: null, noStockReason: "SUPERSEDED" });
-      expect(tx.stockAdjustment.create).not.toHaveBeenCalled();
-      expect(tx.inventoryValue.findFirst).not.toHaveBeenCalled();
+      expect(result).toEqual({ applied: true, stockAdjustmentId: "sa2" });
+      expect(tx.jubelioProductMapping.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { erpVariantSku: "V-M", itemId: { not: "old-item" } },
+      }));
+      expect(tx.inventoryValue.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+        where: { itemId: "twin", variantSku: "V-M" },
+      }));
+      expect(tx.stockAdjustment.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ itemId: "twin", qtyChange: 2 }),
+      }));
     });
 
-    it("falls back to today's behaviour when the line has no reservation: an unresolved item is still unmapped_sku", async () => {
+    it.each([
+      ["no other item maps the variant", []],
+      ["more than one other item maps it", [{ itemId: "a" }, { itemId: "b" }]],
+    ])("refuses no_inventory_row for an unmapped consumed row when %s, writing nothing", async (_label, moved) => {
+      const tx = createTx();
+      tx.salesReturnItem.findUnique.mockResolvedValue(pendingLine());
+      tx.stockReservation.findUnique.mockResolvedValue({ itemId: "old-item", variantSku: "V-M", state: "CONSUMED", qty: "2" });
+      tx.jubelioProductMapping.findFirst.mockResolvedValue(null);
+      tx.jubelioProductMapping.findMany.mockResolvedValue(moved);
+
+      const result = await acceptReturnItem(tx, { returnItemId: "ri1", reason: "Came back", changedById: "u1" });
+
+      expect(result).toEqual({ applied: false, skipped: "no_inventory_row" });
+      expect(tx.salesReturnItem.update).not.toHaveBeenCalled();
+      expect(tx.stockAdjustment.create).not.toHaveBeenCalled();
+    });
+
+    it("caps the restore at the reserved qty when the return line claims more", async () => {
+      const tx = createTx();
+      tx.salesReturnItem.findUnique.mockResolvedValue(pendingLine({ qty: "5.00" }));
+      tx.stockReservation.findUnique.mockResolvedValue({ itemId: "i1", variantSku: "V-M", state: "CONSUMED", qty: "2" });
+      tx.jubelioProductMapping.findFirst.mockResolvedValue({ id: "m1" });
+      tx.inventoryValue.findFirst.mockResolvedValue({ id: "iv1", qtyOnHand: "10.00", avgCost: "100.00" });
+      tx.stockAdjustment.create.mockResolvedValue({ id: "sa3" });
+      tx.salesReturnItem.update.mockResolvedValue({});
+
+      await acceptReturnItem(tx, { returnItemId: "ri1", reason: "Came back", changedById: "u1" });
+
+      expect(tx.stockAdjustment.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ qtyChange: 2, newQty: 12 }),
+      }));
+    });
+
+    it("keeps the item-based path when the line has no reservation: an unresolved item is still unmapped_sku", async () => {
       const tx = createTx();
       tx.salesReturnItem.findUnique.mockResolvedValue(pendingLine());
       tx.stockReservation.findUnique.mockResolvedValue(null);

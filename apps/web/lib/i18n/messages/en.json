@@ -2272,12 +2272,11 @@
         "cancel": "Cancel",
         "confirm": "Submit"
       },
-      "noStockChange": "No stock change",
+      "noStockChange": "No stock change — this line never left ERP stock",
       "toast": {
         "accepted": "Item accepted",
         "acceptedNoStock": {
-          "NOT_CONSUMED": "Item accepted — no stock change: this line never left ERP stock.",
-          "SUPERSEDED": "Item accepted — no stock change: this variant's stock is kept on the item it is now linked to."
+          "NOT_CONSUMED": "Item accepted — no stock change: this line never left ERP stock."
         },
         "rejected": "Item rejected",
         "submitted": "Decision submitted"
@@ -2289,6 +2288,7 @@
         "unmapped_sku": "SKU is not mapped to a catalog item.",
         "return_locked": "This return has already been submitted.",
         "no_inventory_row": "No inventory row found for this SKU.",
+        "order_not_settled": "This order's stock is not settled yet — its reservation is still open. Decide the return once the order is shipped or cancelled.",
         "items_still_pending": "Some items are still pending decision.",
         "no_items": "This return has no items.",
         "already_submitted": "This return was already submitted.",

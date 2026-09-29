@@ -57,6 +57,7 @@ export type DecisionActionResult =
         | "unmapped_sku"
         | "return_locked"
         | "no_inventory_row"
+        | "order_not_settled"
         | "items_still_pending"
         | "no_items"
         | "already_submitted"

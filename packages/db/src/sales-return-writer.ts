@@ -13,20 +13,23 @@ export type AcceptReturnItemInput = {
 };
 
 /**
- * Why an accept recorded the decision without moving stock:
- *   NOT_CONSUMED — the order's reservation for this line was never consumed, so the goods never
- *     left ERP stock and adding them back would count them twice;
- *   SUPERSEDED — the line was consumed from an item/variant that is no longer mapped to Jubelio
- *     (a superseded duplicate), so the variant's stock is governed on the item it moved to.
+ * Why an accept recorded the decision without moving stock. NOT_CONSUMED — the order's reservation
+ * for this line was released, never consumed, so the goods never left ERP stock and adding them
+ * back would count them twice; no COGS was booked for them either, so none needs reversing.
  */
-export type AcceptNoStockReason = "NOT_CONSUMED" | "SUPERSEDED";
+export type AcceptNoStockReason = "NOT_CONSUMED";
 
 export type AcceptReturnItemResult =
   | { applied: true; stockAdjustmentId: string }
   | { applied: true; stockAdjustmentId: null; noStockReason: AcceptNoStockReason }
   | {
       applied: false;
-      skipped: "already_decided" | "unmapped_sku" | "return_locked" | "no_inventory_row";
+      skipped:
+        | "already_decided"
+        | "unmapped_sku"
+        | "return_locked"
+        | "no_inventory_row"
+        | "order_not_settled";
     };
 
 export type RejectReturnItemInput = {
@@ -81,30 +84,35 @@ export async function acceptReturnItem(
 
   /*
    * The order's own reservation decides the stock side, when the line names its order line: it
-   * says whether the goods ever left ERP stock, and if they did, exactly which row they came off.
-   * That row, not the line's own `itemId` — resolved by variant SKU alone at ingest, and able to
-   * land on a superseded duplicate — is where they go back. A line with no reservation keeps the
-   * item-based path below unchanged.
+   * says whether the goods ever left ERP stock, and if they did, which row they came off. A line
+   * with no reservation keeps the item-based path below unchanged.
+   *   RELEASED  — never consumed: accept with no stock change.
+   *   RESERVED  — the order's stock is not settled; a later consume would take off goods that came
+   *               back, so refuse until the order resolves.
+   *   CONSUMED  — restore, capped at the reserved qty, onto the row that governs the variant now:
+   *               the reservation's own row while it is still mapped, else the one other item the
+   *               variant is mapped on (the row it moved to when its old item was superseded). With
+   *               neither, refuse — never a silent no-stock accept, since the sale's COGS is booked.
    */
-  const reservation = item.salesOrderDetailId == null
+  const reservation = item.salesOrderDetailId === null
     ? null
     : await tx.stockReservation.findUnique({
-      where: { salesorderDetailId: item.salesOrderDetailId },
-      select: { itemId: true, variantSku: true, state: true },
-    });
+        where: { salesorderDetailId: item.salesOrderDetailId },
+        select: { itemId: true, variantSku: true, state: true, qty: true },
+      });
+  if (reservation?.state === "RESERVED") return { applied: false, skipped: "order_not_settled" };
   if (reservation && reservation.state !== "CONSUMED") {
     return acceptWithoutStock(tx, input, "NOT_CONSUMED");
   }
   let stockItemId = item.itemId;
   let stockVariantSku = item.variantSku;
+  let qty = toNum(item.qty);
   if (reservation) {
-    const mapped = await tx.jubelioProductMapping.findFirst({
-      where: { itemId: reservation.itemId, erpVariantSku: reservation.variantSku },
-      select: { id: true },
-    });
-    if (!mapped) return acceptWithoutStock(tx, input, "SUPERSEDED");
-    stockItemId = reservation.itemId;
+    const target = await resolveRestoreItem(tx, reservation.itemId, reservation.variantSku);
+    if (target === null) return { applied: false, skipped: "no_inventory_row" };
+    stockItemId = target;
     stockVariantSku = reservation.variantSku;
+    qty = Math.min(qty, toNum(reservation.qty));
   }
   if (!stockItemId) {
     return { applied: false, skipped: "unmapped_sku" };
@@ -134,7 +142,6 @@ export async function acceptReturnItem(
       });
   if (!inv) return { applied: false, skipped: "no_inventory_row" };
 
-  const qty = toNum(item.qty);
   const prevQty = toNum(inv.qtyOnHand);
   const avgCost = toNum(inv.avgCost);
   const newQty = prevQty + qty;
@@ -184,7 +191,35 @@ export async function acceptReturnItem(
   return { applied: true, stockAdjustmentId: adj.id };
 }
 
-/** Records an accept that moves no stock; the operator's reason is kept on the line, as a reject's is. */
+/**
+ * The item whose row a consumed line's stock goes back to: the reserved item while its variant is
+ * still mapped there, else the single other item the variant is mapped on. `null` when neither
+ * exists or the variant is mapped on more than one other item. A variantless reservation has no
+ * SKU to follow, so it resolves only to its own item.
+ */
+async function resolveRestoreItem(
+  tx: Prisma.TransactionClient,
+  itemId: string,
+  variantSku: string,
+): Promise<string | null> {
+  const own = await tx.jubelioProductMapping.findFirst({
+    where: { itemId, erpVariantSku: variantSku },
+    select: { id: true },
+  });
+  if (own) return itemId;
+  if (variantSku === "") return null;
+  const moved = await tx.jubelioProductMapping.findMany({
+    where: { erpVariantSku: variantSku, itemId: { not: itemId } },
+    select: { itemId: true },
+  });
+  const itemIds = [...new Set(moved.map((m) => m.itemId))];
+  return itemIds.length === 1 ? itemIds[0] : null;
+}
+
+/**
+ * Records an accept that moves no stock. `ACCEPTED` with no `stockAdjustmentId` is what marks it:
+ * the line's `itemReason` is left alone, since the return ingest rewrites it on every re-ingest.
+ */
 async function acceptWithoutStock(
   tx: Prisma.TransactionClient,
   input: AcceptReturnItemInput,
@@ -196,7 +231,6 @@ async function acceptWithoutStock(
       decision: "ACCEPTED",
       decidedAt: new Date(),
       decidedById: input.changedById,
-      itemReason: input.reason,
     },
   });
   return { applied: true, stockAdjustmentId: null, noStockReason };
