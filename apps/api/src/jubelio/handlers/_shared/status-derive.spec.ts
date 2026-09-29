@@ -1,4 +1,4 @@
-import { deriveStatus, isCanceledOrder } from "./status-derive";
+import { deriveStatus, isCanceledOrder, isReturnedOrder } from "./status-derive";
 
 describe("deriveStatus", () => {
   it("CANCELLED when is_canceled true", () => {
@@ -77,5 +77,19 @@ describe("isCanceledOrder", () => {
 
   it("false for an active order", () => {
     expect(isCanceledOrder({ is_canceled: false, internal_status: "PROCESSING" })).toBe(false);
+  });
+});
+
+describe("isReturnedOrder", () => {
+  it("true when internal_status RETURNED", () => {
+    expect(isReturnedOrder({ internal_status: "RETURNED" })).toBe(true);
+  });
+
+  it("true when wms_status RETURNED", () => {
+    expect(isReturnedOrder({ wms_status: "RETURNED" })).toBe(true);
+  });
+
+  it("false for a shipped or open order", () => {
+    expect(isReturnedOrder({ internal_status: "PROCESSING", wms_status: "SHIPPED" })).toBe(false);
   });
 });

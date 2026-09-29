@@ -237,6 +237,55 @@ describe("SalesOrderWebhookHandler", () => {
     expect(r).toEqual({ kind: "processed" });
   });
 
+  it("returned (internal_status RETURNED, never shipped) when reserved -> releaseOrder called, lastIsCanceled stays false", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({
+      id: "st1", salesorderId: 23043, stockApplied: true,
+    });
+
+    const r = await handler.handle(row(makePayload({
+      is_canceled: false, internal_status: "RETURNED", channel_status: "TO_RETURN", wms_status: "RETURNED",
+    })) as any);
+
+    expect(releaseMock).toHaveBeenCalledTimes(1);
+    expect(releaseMock).toHaveBeenCalledWith(prisma, { salesorderId: 23043 });
+    expect(reserveMock).not.toHaveBeenCalled();
+    expect(consumeMock).not.toHaveBeenCalled();
+    expect(prisma.jubelioSalesOrderState.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ stockApplied: false, reversedAt: expect.any(Date), lastIsCanceled: false }),
+    }));
+    expect(r).toEqual({ kind: "processed" });
+  });
+
+  it("first webhook already returned -> no reserve", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue(null);
+    prisma.jubelioSalesOrderState.create.mockResolvedValue({
+      id: "st1", salesorderId: 23043, stockApplied: false,
+    });
+
+    const r = await handler.handle(row(makePayload({
+      is_canceled: false, internal_status: "RETURNED", channel_status: "ORDER_RETURN",
+    })) as any);
+
+    expect(reserveMock).not.toHaveBeenCalled();
+    expect(releaseMock).not.toHaveBeenCalled();
+    expect(consumeMock).not.toHaveBeenCalled();
+    expect(r).toEqual({ kind: "processed" });
+  });
+
+  it("returned with a shipped signal -> consume still wins, nothing released", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({
+      id: "st1", salesorderId: 23043, stockApplied: true,
+    });
+
+    const r = await handler.handle(row(makePayload({
+      is_canceled: false, internal_status: "RETURNED", wms_status: "RETURNED", is_shipped: true,
+    })) as any);
+
+    expect(consumeMock).toHaveBeenCalledTimes(1);
+    expect(releaseMock).not.toHaveBeenCalled();
+    expect(r).toEqual({ kind: "processed" });
+  });
+
   it("un-cancel after release -> re-reserve, state.stockApplied=true again", async () => {
     prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({
       id: "st1", salesorderId: 23043, stockApplied: false,

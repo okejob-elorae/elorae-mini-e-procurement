@@ -20,7 +20,7 @@ export type SalesReturnIngestResult = {
  * stores the `salesorder_id` of the returned order.
  *
  * Called from:
- *   - SalesOrderWebhookHandler when payload has internal_status === "RETURNED"
+ *   - SalesOrderWebhookHandler when `isReturnedOrder(payload)` (internal or wms status RETURNED)
  *   - SalesReturnWebhookHandler (thin ping handler that fetches the SO detail first)
  *   - ReturnsSweeperService backstop
  *

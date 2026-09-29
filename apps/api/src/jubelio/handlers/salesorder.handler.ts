@@ -8,7 +8,7 @@ import type { HandlerOutcome, WebhookEventHandler } from "./handler.types";
 import type { SalesOrderLine, SalesOrderPayload } from "./salesorder.payload";
 import { resolveItemMapping } from "./_shared/mapping-lookup";
 import { detectChannel } from "./_shared/channel-detect";
-import { deriveStatus, isCanceledOrder } from "./_shared/status-derive";
+import { deriveStatus, isCanceledOrder, isReturnedOrder } from "./_shared/status-derive";
 import { SalesReturnIngestService } from "../returns/sales-return-ingest.service";
 import type { JubelioSalesOrderDetail } from "../jubelio-http.client";
 
@@ -128,6 +128,12 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
 
     const items = Array.isArray(p.items) ? p.items : [];
     const isCancel = isCanceledOrder(p);
+    /*
+     * Cancelled and returned orders are both finished: whatever they still hold RESERVED is
+     * released, and the reserve branch skips them. The shipped branch below runs first, so a
+     * finished order Jubelio also reports shipped is reserved if needed and consumed instead.
+     */
+    const isFinished = isCancel || isReturnedOrder(p);
     const shipped = reportsShipped(p);
 
     if (shipped) {
@@ -152,7 +158,7 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
           lastIsCanceled: isCancel,
         },
       });
-    } else if (isCancel && state.stockApplied) {
+    } else if (isFinished && state.stockApplied) {
       await releaseOrder(this.prisma, { salesorderId: p.salesorder_id });
       await this.prisma.jubelioSalesOrderState.update({
         where: { id: state.id },
@@ -161,10 +167,10 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
           reversedAt: new Date(),
           lastWebhookEventId: row.id,
           lastStatus: p.channel_status ?? null,
-          lastIsCanceled: true,
+          lastIsCanceled: isCancel,
         },
       });
-    } else if (!isCancel && !state.stockApplied) {
+    } else if (!isFinished && !state.stockApplied) {
       const { lines, unmapped } = await this.buildReservationLines(items);
       await reserveOrder(this.prisma, { salesorderId: p.salesorder_id, salesorderNo: p.salesorder_no ?? "", lines });
       if (unmapped.length > 0) {
@@ -195,7 +201,7 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
     // table. Returns ARE salesorders in Jubelio's data model (no separate
     // entity), so the salesorder webhook is the authoritative entry point for
     // creating the SalesReturn row. Idempotent — upsert keyed on salesorder_id.
-    if (p.internal_status === "RETURNED" || p.wms_status === "RETURNED") {
+    if (isReturnedOrder(p)) {
       try {
         await this.salesReturnIngest.upsertFromApiDetail(p as unknown as JubelioSalesOrderDetail);
       } catch (err) {
