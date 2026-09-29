@@ -619,4 +619,55 @@ describe("SalesOrderWebhookHandler", () => {
     expect(upsertArgs.update.channelOrderNo).toBeNull();
     expect(r).toEqual({ kind: "processed" });
   });
+
+  it("keeps a stored resi/courier when the payload carries null tracking_number/courier", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({
+      id: "st1", salesorderId: 23043, stockApplied: true,
+    });
+    prisma.jubelioProductMapping.findFirst.mockResolvedValue(null);
+
+    await handler.handle(row(makePayload({ tracking_number: null, courier: null })) as any);
+
+    const upsertArgs = prisma.salesOrder.upsert.mock.calls[0][0];
+    expect(upsertArgs.update).not.toHaveProperty("trackingNumber");
+    expect(upsertArgs.update).not.toHaveProperty("courier");
+  });
+
+  it("keeps a stored resi/courier when the payload carries blank-after-trim tracking_number/courier", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({
+      id: "st1", salesorderId: 23043, stockApplied: true,
+    });
+    prisma.jubelioProductMapping.findFirst.mockResolvedValue(null);
+
+    await handler.handle(row(makePayload({ tracking_number: "  ", courier: "  " })) as any);
+
+    const upsertArgs = prisma.salesOrder.upsert.mock.calls[0][0];
+    expect(upsertArgs.update).not.toHaveProperty("trackingNumber");
+    expect(upsertArgs.update).not.toHaveProperty("courier");
+  });
+
+  it("replaces a stored resi/courier when the payload carries a different non-empty value", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({
+      id: "st1", salesorderId: 23043, stockApplied: true,
+    });
+    prisma.jubelioProductMapping.findFirst.mockResolvedValue(null);
+
+    await handler.handle(row(makePayload({ tracking_number: "JNE123456", courier: "JNE" })) as any);
+
+    const upsertArgs = prisma.salesOrder.upsert.mock.calls[0][0];
+    expect(upsertArgs.update.trackingNumber).toBe("JNE123456");
+    expect(upsertArgs.update.courier).toBe("JNE");
+  });
+
+  it("writes null resi/courier on a brand-new order with no resi", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue(null);
+    prisma.jubelioSalesOrderState.create.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: false });
+    prisma.jubelioProductMapping.findFirst.mockResolvedValue(null);
+
+    await handler.handle(row(makePayload()) as any);
+
+    const upsertArgs = prisma.salesOrder.upsert.mock.calls[0][0];
+    expect(upsertArgs.create.trackingNumber).toBeNull();
+    expect(upsertArgs.create.courier).toBeNull();
+  });
 });

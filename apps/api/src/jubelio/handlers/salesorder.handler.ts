@@ -19,6 +19,17 @@ function dec(v: string | number | null | undefined): string {
   return String(v);
 }
 
+/**
+ * Blank-after-trim (null, undefined, "", or whitespace-only) collapses to `null` —
+ * treated as "no value carried in this payload", not a real overwrite. Used for
+ * `tracking_number`/`courier` so a stale or resi-less webhook processed after a
+ * newer one cannot wipe a stored resi; a non-empty value always passes through.
+ */
+function nonBlank(v: string | null | undefined): string | null {
+  if (v === null || v === undefined) return null;
+  return v.trim() === "" ? null : v;
+}
+
 function parseDate(v: string | null | undefined): Date | null {
   if (!v) return null;
   const d = new Date(v);
@@ -256,10 +267,18 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
       completedDate: parseDate(p.completed_date),
       cancelDate: parseDate(p.internal_cancel_date),
       lastModifiedJubelio: parseDate(p.last_modified),
-      trackingNumber: p.tracking_number ?? null,
-      courier: p.courier ?? null,
       lastWebhookEventId: webhookEventId,
     };
+
+    /**
+     * Webhooks are processed concurrently and out of order; a payload with no resi (or a blank
+     * one) must never wipe an already-stored trackingNumber/courier. On create there is nothing
+     * stored yet, so blank -> null as before. On update, a blank value is simply omitted from the
+     * write so the stored value survives; a non-empty value always replaces it (a re-booked AWB
+     * wins).
+     */
+    const trackingNumberValue = nonBlank(p.tracking_number);
+    const courierValue = nonBlank(p.courier);
 
     const jubelioReportsShipped = reportsShipped(p);
 
@@ -274,8 +293,18 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
 
     const order = await tx.salesOrder.upsert({
       where: { salesorderId: p.salesorder_id },
-      create: { salesorderId: p.salesorder_id, ...baseFields, ...createShippedPatch },
-      update: baseFields,
+      create: {
+        salesorderId: p.salesorder_id,
+        ...baseFields,
+        trackingNumber: trackingNumberValue,
+        courier: courierValue,
+        ...createShippedPatch,
+      },
+      update: {
+        ...baseFields,
+        ...(trackingNumberValue !== null ? { trackingNumber: trackingNumberValue } : {}),
+        ...(courierValue !== null ? { courier: courierValue } : {}),
+      },
     });
 
     // Forward-only fulfillmentStatus sync: when Jubelio reports the order shipped
