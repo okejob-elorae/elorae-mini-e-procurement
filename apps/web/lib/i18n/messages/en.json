@@ -2109,6 +2109,8 @@
       "timelinePacked": "Packed",
       "timelineShipped": "Shipped",
       "tracking": "Tracking",
+      "resiPending": "No resi yet. It appears once the marketplace generates it — usually 1–2 minutes after the order is processed.",
+      "checkResi": "Check resi",
       "byUser": "by {name}",
       "cancelledLocked": "Cancelled — fulfillment locked.",
       "action": {
@@ -2374,6 +2376,7 @@
       "shipToLabel": "Ship to:",
       "courierLabel": "Courier:",
       "trackingLabel": "Tracking:",
+      "resiPending": "not available yet — reprint once it appears",
       "colSku": "SKU",
       "colProduct": "Product",
       "colQty": "Qty",

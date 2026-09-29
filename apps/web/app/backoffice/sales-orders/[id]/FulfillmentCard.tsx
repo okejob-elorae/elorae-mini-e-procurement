@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { toast } from "sonner";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Printer } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,8 +20,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import type { SalesOrderFulfillmentStatus } from "@/lib/constants/enums";
+import type { SalesChannel, SalesOrderFulfillmentStatus, SalesOrderStatus } from "@/lib/constants/enums";
 import { formatDateTime } from "@/lib/sales-orders/format";
+import { isAwaitingResi } from "@/lib/sales-orders/resi-pending";
 import {
   finishPickAction,
   finishPackAction,
@@ -44,6 +46,9 @@ const STATUS_TAILWIND: Record<SalesOrderFulfillmentStatus, string> = {
 
 type Props = {
   orderId: string;
+  channel: SalesChannel;
+  status: SalesOrderStatus;
+  isCanceled: boolean;
   fulfillmentStatus: SalesOrderFulfillmentStatus;
   isLocked: boolean;
   canFulfill: boolean;
@@ -62,7 +67,9 @@ type Props = {
 export function FulfillmentCard(props: Props) {
   const t = useTranslations("salesOrders.fulfillment");
   const locale = useLocale();
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [isCheckingResi, startCheckResiTransition] = useTransition();
 
   const [couriers, setCouriers] = useState<CourierOption[]>([]);
   const [couriersLoaded, setCouriersLoaded] = useState(false);
@@ -90,6 +97,12 @@ export function FulfillmentCard(props: Props) {
     });
   }
 
+  function handleCheckResi(): void {
+    startCheckResiTransition(() => {
+      router.refresh();
+    });
+  }
+
   async function ensureCouriersLoaded(): Promise<void> {
     if (couriersLoaded) return;
     try {
@@ -105,6 +118,13 @@ export function FulfillmentCard(props: Props) {
     selectedCourier !== null
       ? couriers.find((c) => c.id === selectedCourier)?.name ?? ""
       : "";
+
+  const awaitingResi = isAwaitingResi({
+    channel: props.channel,
+    status: props.status,
+    isCanceled: props.isCanceled,
+    trackingNumber: props.trackingNumber,
+  });
 
   return (
     <Card className="p-4 space-y-3">
@@ -141,7 +161,7 @@ export function FulfillmentCard(props: Props) {
         />
       </div>
 
-      {props.trackingNumber && (
+      {props.trackingNumber ? (
         <div className="text-sm pt-2 border-t space-y-1">
           <div>
             <span className="text-muted-foreground">{t("tracking")}: </span>
@@ -163,7 +183,23 @@ export function FulfillmentCard(props: Props) {
             </div>
           ) : null}
         </div>
-      )}
+      ) : awaitingResi ? (
+        <div className="text-sm pt-2 border-t space-y-2">
+          <div>
+            <span className="text-muted-foreground">{t("tracking")}: </span>
+            <span className="text-muted-foreground italic">{t("resiPending")}</span>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-10"
+            disabled={isCheckingResi}
+            onClick={handleCheckResi}
+          >
+            {t("checkResi")}
+          </Button>
+        </div>
+      ) : null}
       {!props.trackingNumber && props.packingVideoUrl ? (
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm pt-2 border-t">
           <span className="text-muted-foreground">Video packing:</span>
