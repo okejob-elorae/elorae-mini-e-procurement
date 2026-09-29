@@ -14,9 +14,11 @@ See `docs/BOUNDARY.md` for the general contract.
 `salesorder` webhook and upserts a `SalesOrder` + its `SalesOrderItem` lines. In the same pass it
 moves the stock ledger:
 
-- Not cancelled, stock not yet applied → `reserveOrder` creates `StockReservation` rows in state
-  `RESERVED` and increments `InventoryValue.reservedQty`. `qtyOnHand` is untouched.
-- Cancelled after having been applied → `releaseOrder` reverses the reservation.
+- Neither cancelled nor returned, stock not yet applied → `reserveOrder` creates `StockReservation`
+  rows in state `RESERVED` and increments `InventoryValue.reservedQty`. `qtyOnHand` is untouched.
+- Cancelled or returned after having been applied, and not reported shipped → `releaseOrder`
+  reverses whatever is still `RESERVED`. "Cancelled" and "returned" are `isCanceledOrder` and
+  `isReturnedOrder` in `_shared/status-derive.ts`; `is_canceled` alone misses most cancels.
 - Jubelio already reports the order shipped (`reportsShipped`: `wms_status === "SHIPPED"`,
   `is_shipped`, `marked_as_complete`, or a `completed_date`) → reserve first if needed, then
   `consumeOrder` immediately — stock is off `qtyOnHand` before an operator ever sees the order,
