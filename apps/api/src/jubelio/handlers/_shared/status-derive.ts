@@ -11,8 +11,17 @@ export type RawStatusInput = {
 
 const PROCESSING_WMS = new Set(["PROCESSING", "PICKED", "PACKED", "READY_TO_PACK"]);
 
+/**
+ * The one definition of "Jubelio cancelled this order". Jubelio often reports a cancel through
+ * `internal_status: "CANCELED"` alone and leaves `is_canceled` false, so reading the flag by itself
+ * misses those cancels. Both the derived `status` and the reservation release key on this.
+ */
+export function isCanceledOrder(p: Pick<RawStatusInput, "is_canceled" | "internal_status">): boolean {
+  return p.is_canceled === true || p.internal_status === "CANCELED";
+}
+
 export function deriveStatus(p: RawStatusInput): SalesOrderStatus {
-  if (p.is_canceled === true || p.internal_status === "CANCELED") return "CANCELLED";
+  if (isCanceledOrder(p)) return "CANCELLED";
   // Returned takes precedence over completed/shipped: returns happen AFTER ship.
   if (p.internal_status === "RETURNED" || p.wms_status === "RETURNED") return "RETURNED";
   if (p.marked_as_complete === true || p.internal_status === "COMPLETED" || p.completed_date) {
