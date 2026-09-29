@@ -2272,8 +2272,12 @@
         "cancel": "Batal",
         "confirm": "Ajukan"
       },
+      "noStockChange": "Stok tidak berubah — baris ini tidak pernah keluar dari stok ERP",
       "toast": {
         "accepted": "Item diterima",
+        "acceptedNoStock": {
+          "NOT_CONSUMED": "Item diterima — stok tidak berubah: baris ini tidak pernah keluar dari stok ERP."
+        },
         "rejected": "Item ditolak",
         "submitted": "Keputusan diajukan"
       },
@@ -2284,6 +2288,9 @@
         "unmapped_sku": "SKU tidak terhubung ke item katalog.",
         "return_locked": "Pengembalian ini sudah diajukan.",
         "no_inventory_row": "Tidak ada baris inventaris untuk SKU ini.",
+        "order_not_settled": "Stok pesanan ini belum selesai — reservasinya masih terbuka. Putuskan retur setelah pesanan dikirim atau dibatalkan.",
+        "no_governing_row": "Varian ini tidak lagi terhubung ke Jubelio di item-nya, dan tidak ada satu item lain yang membawanya — tidak ada tempat untuk mengembalikan stok. Periksa tautan Jubelio item tersebut dulu.",
+        "stock_not_traceable": "Baris pesanan untuk baris ini tidak pernah direservasi, jadi tidak ada catatan apakah stoknya keluar. Putuskan secara manual setelah memeriksa stok.",
         "items_still_pending": "Beberapa item masih menunggu keputusan.",
         "no_items": "Pengembalian ini tidak punya item.",
         "already_submitted": "Pengembalian ini sudah diajukan.",

@@ -2272,8 +2272,12 @@
         "cancel": "Cancel",
         "confirm": "Submit"
       },
+      "noStockChange": "No stock change — this line never left ERP stock",
       "toast": {
         "accepted": "Item accepted",
+        "acceptedNoStock": {
+          "NOT_CONSUMED": "Item accepted — no stock change: this line never left ERP stock."
+        },
         "rejected": "Item rejected",
         "submitted": "Decision submitted"
       },
@@ -2284,6 +2288,9 @@
         "unmapped_sku": "SKU is not mapped to a catalog item.",
         "return_locked": "This return has already been submitted.",
         "no_inventory_row": "No inventory row found for this SKU.",
+        "order_not_settled": "This order's stock is not settled yet — its reservation is still open. Decide the return once the order is shipped or cancelled.",
+        "no_governing_row": "This variant is no longer linked to Jubelio on its item, and no single other item carries it — nothing to restore the stock onto. Check the item's Jubelio link first.",
+        "stock_not_traceable": "This line's order line was never reserved, so there is no record of whether its stock left. Decide it by hand after checking the stock.",
         "items_still_pending": "Some items are still pending decision.",
         "no_items": "This return has no items.",
         "already_submitted": "This return was already submitted.",

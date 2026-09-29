@@ -12,11 +12,26 @@ export type AcceptReturnItemInput = {
   changedById: string;
 };
 
+/**
+ * Why an accept recorded the decision without moving stock. NOT_CONSUMED — the order's reservation
+ * for this line was released, never consumed, so the goods never left ERP stock and adding them
+ * back would count them twice; no COGS was booked for them either, so none needs reversing.
+ */
+export type AcceptNoStockReason = "NOT_CONSUMED";
+
 export type AcceptReturnItemResult =
   | { applied: true; stockAdjustmentId: string }
+  | { applied: true; stockAdjustmentId: null; noStockReason: AcceptNoStockReason }
   | {
       applied: false;
-      skipped: "already_decided" | "unmapped_sku" | "return_locked" | "no_inventory_row";
+      skipped:
+        | "already_decided"
+        | "unmapped_sku"
+        | "return_locked"
+        | "no_inventory_row"
+        | "order_not_settled"
+        | "no_governing_row"
+        | "stock_not_traceable";
     };
 
 export type RejectReturnItemInput = {
@@ -68,7 +83,46 @@ export async function acceptReturnItem(
   if (item.decision !== "PENDING") {
     return { applied: false, skipped: "already_decided" };
   }
-  if (!item.itemId) {
+
+  /*
+   * The order's own reservation decides the stock side, when the line names its order line: it
+   * says whether the goods ever left ERP stock, and if they did, which row they came off. A line
+   * with no reservation keeps the item-based path below unchanged.
+   *   RELEASED  — never consumed: accept with no stock change.
+   *   RESERVED  — the order's stock is not settled; a later consume would take off goods that came
+   *               back, so refuse until the order resolves.
+   *   CONSUMED  — restore, capped at the reserved qty, onto the row that governs the variant now:
+   *               the reservation's own row while it is still mapped, else the one other item the
+   *               variant is mapped on (the row it moved to when its old item was superseded). With
+   *               neither, refuse — never a silent no-stock accept, since the sale's COGS is booked.
+   * A line that names its order line but has NO reservation came from a line never reserved (unmapped
+   * when the order arrived, or older than reservations), so nothing says whether its stock left:
+   * refuse rather than restore onto the ingest-resolved item, which could add stock that never left.
+   */
+  const reservation = item.salesOrderDetailId === null
+    ? null
+    : await tx.stockReservation.findUnique({
+        where: { salesorderDetailId: item.salesOrderDetailId },
+        select: { itemId: true, variantSku: true, state: true, qty: true },
+      });
+  if (item.salesOrderDetailId !== null && !reservation) {
+    return { applied: false, skipped: "stock_not_traceable" };
+  }
+  if (reservation?.state === "RESERVED") return { applied: false, skipped: "order_not_settled" };
+  if (reservation && reservation.state !== "CONSUMED") {
+    return acceptWithoutStock(tx, input, "NOT_CONSUMED");
+  }
+  let stockItemId = item.itemId;
+  let stockVariantSku = item.variantSku;
+  let qty = toNum(item.qty);
+  if (reservation) {
+    const target = await resolveRestoreItem(tx, reservation.itemId, reservation.variantSku);
+    if (target === null) return { applied: false, skipped: "no_governing_row" };
+    stockItemId = target;
+    stockVariantSku = reservation.variantSku;
+    qty = Math.min(qty, toNum(reservation.qty));
+  }
+  if (!stockItemId) {
     return { applied: false, skipped: "unmapped_sku" };
   }
 
@@ -84,19 +138,18 @@ export async function acceptReturnItem(
    * sitting right there, silently declining to restore it.
    */
   const invSelect = { id: true, qtyOnHand: true, avgCost: true } as const;
-  const inv = item.variantSku
+  const inv = stockVariantSku
     ? await tx.inventoryValue.findFirst({
-        where: { itemId: item.itemId, variantSku: item.variantSku },
+        where: { itemId: stockItemId, variantSku: stockVariantSku },
         select: invSelect,
       })
     : await tx.inventoryValue.findFirst({
-        where: { itemId: item.itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
+        where: { itemId: stockItemId, OR: [{ variantSku: null }, { variantSku: "" }] },
         orderBy: { id: "asc" },
         select: invSelect,
       });
   if (!inv) return { applied: false, skipped: "no_inventory_row" };
 
-  const qty = toNum(item.qty);
   const prevQty = toNum(inv.qtyOnHand);
   const avgCost = toNum(inv.avgCost);
   const newQty = prevQty + qty;
@@ -104,7 +157,7 @@ export async function acceptReturnItem(
   const adj = await tx.stockAdjustment.create({
     data: {
       docNumber: `RET-${item.id}`,
-      itemId: item.itemId,
+      itemId: stockItemId,
       type: "POSITIVE",
       qtyChange: qty,
       reason: input.reason,
@@ -120,8 +173,8 @@ export async function acceptReturnItem(
   });
 
   await moveMainStock(tx, {
-    itemId: item.itemId,
-    variantSku: item.variantSku,
+    itemId: stockItemId,
+    variantSku: stockVariantSku,
     qtyDelta: qty,
     totalValue: newQty * avgCost,
     totalCost: qty * avgCost,
@@ -144,6 +197,51 @@ export async function acceptReturnItem(
   });
 
   return { applied: true, stockAdjustmentId: adj.id };
+}
+
+/**
+ * The item whose row a consumed line's stock goes back to: the reserved item while its variant is
+ * still mapped there, else the single other item the variant is mapped on. `null` when neither
+ * exists or the variant is mapped on more than one other item. A variantless reservation has no
+ * SKU to follow, so it resolves only to its own item.
+ */
+async function resolveRestoreItem(
+  tx: Prisma.TransactionClient,
+  itemId: string,
+  variantSku: string,
+): Promise<string | null> {
+  const own = await tx.jubelioProductMapping.findFirst({
+    where: { itemId, erpVariantSku: variantSku },
+    select: { id: true },
+  });
+  if (own) return itemId;
+  if (variantSku === "") return null;
+  const moved = await tx.jubelioProductMapping.findMany({
+    where: { erpVariantSku: variantSku, itemId: { not: itemId } },
+    select: { itemId: true },
+  });
+  const itemIds = [...new Set(moved.map((m) => m.itemId))];
+  return itemIds.length === 1 ? itemIds[0] : null;
+}
+
+/**
+ * Records an accept that moves no stock. `ACCEPTED` with no `stockAdjustmentId` is what marks it:
+ * the line's `itemReason` is left alone, since the return ingest rewrites it on every re-ingest.
+ */
+async function acceptWithoutStock(
+  tx: Prisma.TransactionClient,
+  input: AcceptReturnItemInput,
+  noStockReason: AcceptNoStockReason,
+): Promise<AcceptReturnItemResult> {
+  await tx.salesReturnItem.update({
+    where: { id: input.returnItemId },
+    data: {
+      decision: "ACCEPTED",
+      decidedAt: new Date(),
+      decidedById: input.changedById,
+    },
+  });
+  return { applied: true, stockAdjustmentId: null, noStockReason };
 }
 
 export async function rejectReturnItem(
