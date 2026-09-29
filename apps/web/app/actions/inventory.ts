@@ -24,6 +24,11 @@ const adjustmentSchema = z.object({
 
 export type AdjustmentFormData = z.infer<typeof adjustmentSchema>;
 
+async function requireInventoryView(): Promise<void> {
+  const session = await auth();
+  requirePermission(session?.user?.permissions ?? [], PERMISSIONS.INVENTORY_VIEW);
+}
+
 export async function createStockAdjustment(
   data: AdjustmentFormData,
   userPin: string,
@@ -208,6 +213,7 @@ export async function getGRNs(filters?: {
   fromDate?: Date;
   toDate?: Date;
 }) {
+  await requireInventoryView();
   const where: any = {};
   
   if (filters?.supplierId) {
@@ -264,6 +270,7 @@ export async function getStockAdjustments(
   itemId?: string,
   opts?: { page: number; pageSize: number }
 ) {
+  await requireInventoryView();
   const where: any = {};
 
   if (itemId) {
@@ -316,6 +323,7 @@ export async function getStockAdjustments(
 }
 
 export async function getStockAdjustmentById(id: string) {
+  await requireInventoryView();
   const row = await prisma.stockAdjustment.findUnique({
     where: { id },
     include: {
@@ -390,6 +398,7 @@ export async function getRejectedGoodsRecap(filters?: {
   page?: number;
   pageSize?: number;
 }): Promise<{ items: RejectedGoodsRecapRow[]; totalCount: number }> {
+  await requireInventoryView();
   const where: Record<string, unknown> = {};
   if (filters?.itemId) where.itemId = filters.itemId;
   if (filters?.woId) where.woId = filters.woId;
