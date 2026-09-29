@@ -174,11 +174,17 @@ describe("validateItemImport — refusals", () => {
     ]);
   });
 
-  it("rejects a two-attribute artikel that leaves out a Warna x Ukuran combination, once on its first row", () => {
-    const a = row({ warna: "Merah", ukuran: "M" });
-    const r = validateItemImport([a, row({ warna: "Merah", ukuran: "L" }), row({ warna: "Biru", ukuran: "M" })], lookups());
-    expect(r.errors.map((e) => [e.code, e.row, e.detail])).toEqual([["INCOMPLETE_VARIANT_GRID", a.row, "Biru/L"]]);
-    expect(r.plan).toBeNull();
+  it("accepts a two-attribute artikel that leaves out a Warna x Ukuran combination", () => {
+    const r = validateItemImport(
+      [row({ warna: "Merah", ukuran: "M" }), row({ warna: "Merah", ukuran: "L" }), row({ warna: "Biru", ukuran: "M" })],
+      lookups(),
+    );
+    expect(r.errors).toEqual([]);
+    expect(r.plan?.items[0].variants).toEqual([
+      { Warna: "Merah", Ukuran: "M", sku: "KMJ-01-MERAH-M" },
+      { Warna: "Merah", Ukuran: "L", sku: "KMJ-01-MERAH-L" },
+      { Warna: "Biru", Ukuran: "M", sku: "KMJ-01-BIRU-M" },
+    ]);
   });
 
   it("accepts a full grid typed with mixed casing", () => {
