@@ -1,5 +1,16 @@
 import { prisma } from "@elorae/db";
+import type { Prisma } from "@elorae/db";
 import { pickBestTrackingMatch } from "@/lib/packer/barcode";
+
+/**
+ * `isCanceled` mirrors Jubelio's raw `is_canceled` flag only, and Jubelio often reports a cancel
+ * through `internal_status: "CANCELED"` alone, so the flag by itself lets a cancelled order into the
+ * packer. The derived `status` catches both.
+ */
+const NOT_CANCELLED: Prisma.SalesOrderWhereInput = {
+  isCanceled: false,
+  status: { not: "CANCELLED" },
+};
 
 export type PackingVideoListItem = {
   id: string;
@@ -98,7 +109,7 @@ export type PackerPoolOrder = {
 export async function listPackerPoolOrders(take = 200): Promise<PackerPoolOrder[]> {
   const rows = await prisma.salesOrder.findMany({
     where: {
-      isCanceled: false,
+      ...NOT_CANCELLED,
       packingVideo: null,
       AND: [
         { trackingNumber: { not: null } },
@@ -142,7 +153,7 @@ export async function findSalesOrderByTrackingNumber(
 
   const rows = await prisma.salesOrder.findMany({
     where: {
-      isCanceled: false,
+      ...NOT_CANCELLED,
       AND: [
         { trackingNumber: { not: null } },
         { NOT: { trackingNumber: "" } },
@@ -175,7 +186,7 @@ export async function listOrdersWithoutPackingVideo(
   const rows = await prisma.salesOrder.findMany({
     where: {
       packingVideo: null,
-      isCanceled: false,
+      ...NOT_CANCELLED,
     },
     orderBy: { transactionDate: "desc" },
     take,
@@ -220,7 +231,7 @@ export type PackerOrderDetail = PackerOrderOption & {
 /** Temporary: attach packing videos to any available sales order (demo: 1 row). */
 export async function getFallbackSalesOrderId(): Promise<string | null> {
   const row = await prisma.salesOrder.findFirst({
-    where: { isCanceled: false },
+    where: NOT_CANCELLED,
     orderBy: { transactionDate: "desc" },
     select: { id: true },
   });
