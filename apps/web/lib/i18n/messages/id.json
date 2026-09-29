@@ -3057,6 +3057,12 @@
       "notaPhotoUploaded": "Dipilih: {name}",
       "signedByLabel": "Ditandatangani oleh",
       "signedByPlaceholder": "Nama penerima",
+      "notCompletableTitle": "Pengiriman ini tidak dapat diselesaikan di sini.",
+      "notCompletableStatus": "Status pengiriman ini sudah tidak memungkinkan untuk diselesaikan.",
+      "notCompletableNotShipped": "Pengiriman ini belum dikirim. Pengiriman akan muncul di daftar Anda setelah keluar dari gudang.",
+      "notCompletableExpedition": "Ini adalah pengiriman ekspedisi yang diselesaikan oleh kantor, bukan oleh salesman.",
+      "notCompletableCurrentStatus": "Status saat ini: {status}",
+      "notCompletableBack": "Kembali ke Pengiriman Saya",
       "pending": {
         "title": "Pengiriman Tertunda",
         "back": "Kembali",

@@ -5,7 +5,9 @@ import { pwaAccessGuard } from "@/lib/pwa/guard";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { getShipmentAction } from "@/app/actions/delivery-shipments";
 import { resolveEffectiveRadius, parseRadiusSetting } from "@/lib/pwa/checkin-radius";
+import { podCompletionBlock } from "@/lib/delivery/pod-completion-guard";
 import { CompletePodSheet } from "./CompletePodSheet";
+import { NotCompletableNotice } from "./NotCompletableNotice";
 
 export const dynamic = "force-dynamic";
 
@@ -27,10 +29,23 @@ export default async function CompletePodPage({ params }: PageProps) {
    * delivery, and only refuse at submit time after the photo and GPS were already captured.
    * `completeDeliveryShipment`'s `NOT_CARRIER` guard is the real enforcement; this is the
    * fail-fast half. `notFound()` rather than a message, matching the `!shipment` line above: a
-   * shipment that is not yours should not be distinguishable from one that does not exist. Also
-   * catches an EXPEDITION shipment reached through this route, whose `carriedById` is null.
+   * shipment that is not yours should not be distinguishable from one that does not exist. This
+   * covers an EXPEDITION shipment reached through this route only when its `carriedById` is null;
+   * one that names this salesman falls to the method check below.
    */
-  if (shipment.carriedById !== session.user.id) notFound();
+  const block = podCompletionBlock(shipment, session.user.id);
+  if (block === "NOT_FOUND") notFound();
+  /* Same fail-fast reason for a shipment that is yours but cannot be completed here — the writer still refuses it. */
+  if (block === "NOT_COMPLETABLE") {
+    return (
+      <NotCompletableNotice
+        storeName={shipment.storeName}
+        docNo={shipment.docNo}
+        status={shipment.status}
+        method={shipment.method}
+      />
+    );
+  }
 
   const globalRadiusRow = await prisma.systemSetting.findUnique({ where: { key: "checkin.radiusMeters" } });
   const effectiveRadiusMeters = resolveEffectiveRadius(

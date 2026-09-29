@@ -3057,6 +3057,12 @@
       "notaPhotoUploaded": "Selected: {name}",
       "signedByLabel": "Signed by",
       "signedByPlaceholder": "Receiver's name",
+      "notCompletableTitle": "This delivery cannot be completed here.",
+      "notCompletableStatus": "Its status no longer allows completion.",
+      "notCompletableNotShipped": "This shipment has not been shipped yet. It appears in your queue once it leaves the warehouse.",
+      "notCompletableExpedition": "This is an expedition shipment, completed by the office rather than the salesman.",
+      "notCompletableCurrentStatus": "Current status: {status}",
+      "notCompletableBack": "Back to My Deliveries",
       "pending": {
         "title": "Pending Deliveries",
         "back": "Back",
