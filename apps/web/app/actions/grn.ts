@@ -860,7 +860,7 @@ export async function getGrnJournalState(grnId: string): Promise<{
   return {
     receiptJournalId: receipt?.id ?? null,
     reversalJournalId: reversal?.id ?? null,
-    hasPostableReceiptJournal: hasValue && receipt == null,
+    hasPostableReceiptJournal: hasValue && !declined && receipt == null,
     hasPostableReversalJournal: hasValue && declined && reversal == null,
   };
 }
@@ -873,8 +873,8 @@ export async function postGrnReceiptJournalAction(
     return { ok: false, code: "FORBIDDEN" };
   }
 
-  const grn = await prisma.gRN.findUnique({ where: { id: grnId }, select: { id: true } });
-  if (!grn) return { ok: false, code: "BAD_STATE" };
+  const grn = await prisma.gRN.findUnique({ where: { id: grnId }, select: { id: true, ownerDeclinedAt: true } });
+  if (!grn || grn.ownerDeclinedAt != null) return { ok: false, code: "BAD_STATE" };
 
   const r = await postGrnJournal(grnId, session.user.id);
   revalidatePath("/backoffice/inventory");
