@@ -149,7 +149,7 @@ describe("comboKey", () => {
 });
 
 describe("findSavedVariant", () => {
-  const savedVariants = [
+  const savedVariants: Array<Record<string, string>> = [
     { Color: " Merah ", Size: "M", sku: "SKU-1", barcode: "111" },
     { Color: "Biru", Size: "M", sku: "SKU-2" },
   ];
@@ -192,7 +192,7 @@ describe("initialExcludedKeys", () => {
       { key: "Color", values: ["Merah", "Biru"] },
       { key: "Size", values: ["M", "L"] },
     ]);
-    const savedVariants = [
+    const savedVariants: Array<Record<string, string>> = [
       { Color: "Merah", Size: "M" },
       { Color: "Merah", Size: "L" },
       { Color: "Biru", Size: "M" },
@@ -206,7 +206,7 @@ describe("initialExcludedKeys", () => {
       { key: "Color", values: ["Merah", "Biru"] },
       { key: "Size", values: ["M", "L"] },
     ]);
-    const savedVariants = [
+    const savedVariants: Array<Record<string, string>> = [
       { Color: "Merah", Size: "M" },
       { Color: "Merah", Size: "L" },
       { Color: "Biru", Size: "M" },
@@ -218,7 +218,7 @@ describe("initialExcludedKeys", () => {
 
 describe("attributesFromSavedVariants", () => {
   it("de-duplicates a value spelled two ways, keeping the first spelling", () => {
-    const saved = [
+    const saved: Array<Record<string, string>> = [
       { Warna: "Merah", Ukuran: "M", sku: "A" },
       { Warna: "merah", Ukuran: "L", sku: "B" },
       { Warna: "Biru", Ukuran: "M", sku: "C" },
@@ -231,7 +231,7 @@ describe("attributesFromSavedVariants", () => {
   });
 
   it("tolerates a saved variant missing an attribute key", () => {
-    const saved = [{ Warna: "Merah" }, { Warna: "Biru", Ukuran: "M" }];
+    const saved: Array<Record<string, string>> = [{ Warna: "Merah" }, { Warna: "Biru", Ukuran: "M" }];
     expect(attributesFromSavedVariants(saved)).toEqual([
       { key: "Warna", values: ["Merah", "Biru"] },
       { key: "Ukuran", values: ["M"] },
@@ -239,14 +239,14 @@ describe("attributesFromSavedVariants", () => {
   });
 
   it("excludes sku/barcode from the attribute set", () => {
-    const saved = [{ Warna: "Merah", sku: "A", barcode: "111" }];
+    const saved: Array<Record<string, string>> = [{ Warna: "Merah", sku: "A", barcode: "111" }];
     expect(attributesFromSavedVariants(saved)).toEqual([{ key: "Warna", values: ["Merah"] }]);
   });
 });
 
 describe("overlaySavedSpelling", () => {
   it("round-trips a twin-spelling saved grid to exactly the saved values", () => {
-    const saved = [
+    const saved: Array<Record<string, string>> = [
       { Warna: "Merah", Ukuran: "M", sku: "A" },
       { Warna: "merah", Ukuran: "L", sku: "B" },
       { Warna: "Biru", Ukuran: "M", sku: "C" },
