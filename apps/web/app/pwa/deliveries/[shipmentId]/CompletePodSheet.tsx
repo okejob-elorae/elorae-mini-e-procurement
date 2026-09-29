@@ -13,9 +13,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import type { ShipmentActionReason } from "@/app/actions/delivery-shipments";
+import type { SerializedReplay } from "@/lib/field-sales/replay-detail";
 
-type Line = { id: string; productName: string; plannedQty: number };
+type Line = { id: string; orderLineId: string; productName: string; plannedQty: number };
+
+/** The refusal the inline Alert explains; `replay` rides along only on `REPLAY_MISMATCH`. */
+type Failure = { reason: ShipmentActionReason; replay?: SerializedReplay };
 
 type Props = {
   shipmentId: string;
@@ -62,6 +67,7 @@ export function CompletePodSheet({
   );
   const [success, setSuccess] = useState(false);
   const [queued, setQueued] = useState(false);
+  const [failure, setFailure] = useState<Failure | null>(null);
 
   useEffect(() => {
     gpsStatusRef.current = gps.status;
@@ -155,6 +161,7 @@ export function CompletePodSheet({
       toast.error(tErr(notaCheck.reasonKey as any));
       return;
     }
+    setFailure(null);
     const capturedGps = gps;
     const capturedProofFile = proofFile;
     const capturedNotaFile = notaProofFile;
@@ -187,6 +194,18 @@ export function CompletePodSheet({
           return;
         }
         toast.error(tErr(`err.${result.reason}` as any));
+        const replay = result.replay;
+        setFailure({ reason: result.reason, replay });
+        if (result.reason === "REPLAY_MISMATCH" && replay) {
+          /**
+           * The delivery is already recorded, so one more Submit with ITS quantities completes the
+           * shipment consistently. A shipment line missing from the record delivered 0.
+           */
+          const recordedQty = new Map(replay.lines.map((l) => [l.orderLineId, l.qty]));
+          setQtyInputs(
+            Object.fromEntries(lines.map((l) => [l.id, String(recordedQty.get(l.orderLineId) ?? 0)])),
+          );
+        }
       } catch (e) {
         if (e instanceof PodUploadRefusedError) {
           toast.error(tErr(`err.${e.reason}` as any));
@@ -253,6 +272,9 @@ export function CompletePodSheet({
       </div>
     );
   }
+
+  const replay = failure?.replay;
+  const recordedQty = new Map((replay?.lines ?? []).map((l) => [l.orderLineId, l.qty]));
 
   return (
     <div className="flex flex-col gap-3 p-4">
@@ -355,6 +377,31 @@ export function CompletePodSheet({
           onChange={(e) => setSignedByName(e.target.value)}
         />
       </div>
+
+      {failure && (failure.reason === "REPLAY_MISMATCH" || failure.reason === "RESERVATION_MISMATCH") && (
+        <Alert variant="destructive">
+          {replay && <AlertTitle>{t("replayTitle", { docNo: replay.docNo })}</AlertTitle>}
+          <AlertDescription>
+            <p>{tErr(`err.${failure.reason}` as any)}</p>
+            {replay && (
+              <>
+                <p className="font-medium">{t("replayLinesLabel")}</p>
+                <ul className="w-full space-y-0.5">
+                  {lines.map((line) => (
+                    <li key={line.id} className="truncate">
+                      {t("replayLine", {
+                        product: line.productName,
+                        qty: recordedQty.get(line.orderLineId) ?? 0,
+                      })}
+                    </li>
+                  ))}
+                </ul>
+                <p>{t("replayHint")}</p>
+              </>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="space-y-2">
         {lines.map((line) => (

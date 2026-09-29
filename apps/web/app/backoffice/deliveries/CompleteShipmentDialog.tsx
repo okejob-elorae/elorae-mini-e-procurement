@@ -8,6 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Dialog,
   DialogContent,
@@ -18,7 +19,12 @@ import {
 } from "@/components/ui/dialog";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { parseDateOnlyInput } from "@/app/backoffice/field-sales-orders/[id]/DeliveryFormDialog";
-import { getShipmentAction, completeShipmentAction } from "@/app/actions/delivery-shipments";
+import {
+  getShipmentAction,
+  completeShipmentAction,
+  type ShipmentActionReason,
+} from "@/app/actions/delivery-shipments";
+import type { SerializedReplay } from "@/lib/field-sales/replay-detail";
 
 type Props = {
   shipmentId: string;
@@ -27,7 +33,10 @@ type Props = {
   onDone: () => void;
 };
 
-type Line = { id: string; productName: string; plannedQty: number };
+type Line = { id: string; orderLineId: string; productName: string; plannedQty: number };
+
+/** The refusal the inline Alert explains; `replay` rides along only on `REPLAY_MISMATCH`. */
+type Failure = { reason: ShipmentActionReason; replay?: SerializedReplay };
 
 /**
  * `loading` and `error` never show the form: with no lines loaded, an empty form reads as "this
@@ -50,10 +59,12 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
   const [loadAttempt, setLoadAttempt] = useState(0);
   const detailLoaded = loadState.status === "loaded";
   const [uploading, setUploading] = useState(false);
+  const [failure, setFailure] = useState<Failure | null>(null);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     if (!open) return;
+    setFailure(null);
     setInvoiceDate(formatDateOnlyJakarta(new Date()));
     /**
      * Deliberately EMPTY, not today. Pre-filling the due date with the invoice date books every
@@ -74,7 +85,12 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
           setLoadState({ status: "error", reason: "notFound" });
           return;
         }
-        const nextLines = detail.lines.map((l) => ({ id: l.id, productName: l.productName, plannedQty: l.plannedQty }));
+        const nextLines = detail.lines.map((l) => ({
+          id: l.id,
+          orderLineId: l.orderLineId,
+          productName: l.productName,
+          plannedQty: l.plannedQty,
+        }));
         setLines(nextLines);
         setQtyInputs(Object.fromEntries(nextLines.map((l) => [l.id, String(l.plannedQty)])));
         setIsKonsi(detail.orderType === "KONSI");
@@ -128,6 +144,7 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
   function handleSubmit(): void {
     /* Submit is disabled until `canSubmit`; the hints beside each control say what is missing. */
     if (!canSubmit) return;
+    setFailure(null);
     const payloadLines = lines.map((line) => ({
       shipmentLineId: line.id,
       deliveredQty: Number(qtyInputs[line.id] ?? "0"),
@@ -149,6 +166,20 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
         });
         if (!result.ok) {
           toast.error(t(`err.${result.reason}` as any));
+          const replay = result.replay;
+          setFailure({ reason: result.reason, replay });
+          if (result.reason === "REPLAY_MISMATCH" && replay) {
+            /**
+             * The delivery is already recorded, so one more Submit with ITS values completes the
+             * shipment consistently. A shipment line missing from the record delivered 0.
+             */
+            const recordedQty = new Map(replay.lines.map((l) => [l.orderLineId, l.qty]));
+            setQtyInputs(
+              Object.fromEntries(lines.map((l) => [l.id, String(recordedQty.get(l.orderLineId) ?? 0)])),
+            );
+            setInvoiceDate(replay.invoiceDate);
+            setDueDate(replay.dueDate);
+          }
           return;
         }
         toast.success(t("complete"));
@@ -159,6 +190,9 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
       }
     });
   }
+
+  const replay = failure?.replay;
+  const recordedQty = new Map((replay?.lines ?? []).map((l) => [l.orderLineId, l.qty]));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -199,6 +233,31 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
         )}
         {detailLoaded && (
           <div className="space-y-4">
+            {failure && (failure.reason === "REPLAY_MISMATCH" || failure.reason === "RESERVATION_MISMATCH") && (
+              <Alert variant="destructive">
+                {replay && <AlertTitle>{t("replayTitle", { docNo: replay.docNo })}</AlertTitle>}
+                <AlertDescription>
+                  <p>{t(`err.${failure.reason}` as any)}</p>
+                  {replay && (
+                    <>
+                      <p className="font-medium">{t("replayLinesLabel")}</p>
+                      <ul className="w-full space-y-0.5">
+                        {lines.map((line) => (
+                          <li key={line.id} className="truncate">
+                            {t("replayLine", {
+                              product: line.productName,
+                              qty: recordedQty.get(line.orderLineId) ?? 0,
+                            })}
+                          </li>
+                        ))}
+                      </ul>
+                      <p>{t("replayDates", { invoiceDate: replay.invoiceDate, dueDate: replay.dueDate })}</p>
+                      <p>{t("replayHint")}</p>
+                    </>
+                  )}
+                </AlertDescription>
+              </Alert>
+            )}
             <div>
               <Label htmlFor="proofPhoto">{t("proofPhoto")}</Label>
               <Input

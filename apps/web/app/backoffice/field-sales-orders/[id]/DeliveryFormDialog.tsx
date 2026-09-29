@@ -165,6 +165,25 @@ export function DeliveryFormDialog({ orderId, lines, paymentTempo, open, onOpenC
       router.refresh();
     }
     toast.error(t(deliveryErrorKey(result.reason)));
+    if (result.reason === "REPLAY_MISMATCH" && result.replay) {
+      /**
+       * The delivery already exists (stock moved, receivable raised) with the recorded values, so
+       * this dialog has nothing left to do: close it and refresh so the Deliveries card shows the
+       * recorded delivery, where Edit nota dates corrects the dates. The key is rotated like a
+       * success, since this session's key is now bound to a delivery the form no longer describes.
+       */
+      const replay = result.replay;
+      toast.message(
+        t("delivery.replayRecorded", {
+          docNo: replay.docNo,
+          invoiceDate: replay.invoiceDate,
+          dueDate: replay.dueDate,
+        }),
+      );
+      setIdempotencyKey(crypto.randomUUID());
+      onOpenChange(false);
+      router.refresh();
+    }
   }
 
   function submit(): void {
