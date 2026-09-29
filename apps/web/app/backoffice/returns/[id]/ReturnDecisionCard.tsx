@@ -89,6 +89,11 @@ export function ReturnDecisionCard({ ret, canDecide, canPostJournal, canViewSale
   function onAccept(itemId: string): void {
     startTransition(async () => {
       const r = await acceptReturnItemAction(itemId, t("defaultAcceptReason"));
+      if (r.ok && r.noStockReason) {
+        toast.success(t(`toast.acceptedNoStock.${r.noStockReason}`));
+        router.refresh();
+        return;
+      }
       handle(r, "toast.accepted");
     });
   }
@@ -289,6 +294,9 @@ export function ReturnDecisionCard({ ret, canDecide, canPostJournal, canViewSale
                     >
                       {t(`itemDecision.${item.decision}` as never)}
                     </span>
+                    {item.decision === "ACCEPTED" && item.stockAdjustmentId === null && (
+                      <p className="mt-1 text-xs text-muted-foreground">{t("noStockChange")}</p>
+                    )}
                   </TableCell>
                   {canDecide && !locked && (
                     <TableCell>

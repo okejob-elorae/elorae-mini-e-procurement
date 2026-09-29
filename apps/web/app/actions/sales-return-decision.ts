@@ -6,6 +6,7 @@ import {
   acceptReturnItem,
   rejectReturnItem,
   submitReturnDecision,
+  type AcceptNoStockReason,
 } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
@@ -45,7 +46,8 @@ function returnJournalRemedy(code: string): string {
 }
 
 export type DecisionActionResult =
-  | { ok: true }
+  /* `noStockReason` is set when an accept recorded the decision without moving stock. */
+  | { ok: true; noStockReason?: AcceptNoStockReason }
   | {
       ok: false;
       reason:
@@ -109,8 +111,9 @@ export async function acceptReturnItemAction(
         reason,
         changedById: authResult.userId,
       });
-      if (r.applied) return { ok: true } as const;
-      return { ok: false, reason: r.skipped } as const;
+      if (!r.applied) return { ok: false, reason: r.skipped } as const;
+      if (r.stockAdjustmentId === null) return { ok: true, noStockReason: r.noStockReason } as const;
+      return { ok: true } as const;
     }),
   );
 }

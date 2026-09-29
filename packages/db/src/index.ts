@@ -84,6 +84,7 @@ export {
   acceptReturnItem,
   rejectReturnItem,
   submitReturnDecision,
+  type AcceptNoStockReason,
   type AcceptReturnItemInput,
   type AcceptReturnItemResult,
   type RejectReturnItemInput,

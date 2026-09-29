@@ -12,8 +12,18 @@ export type AcceptReturnItemInput = {
   changedById: string;
 };
 
+/**
+ * Why an accept recorded the decision without moving stock:
+ *   NOT_CONSUMED — the order's reservation for this line was never consumed, so the goods never
+ *     left ERP stock and adding them back would count them twice;
+ *   SUPERSEDED — the line was consumed from an item/variant that is no longer mapped to Jubelio
+ *     (a superseded duplicate), so the variant's stock is governed on the item it moved to.
+ */
+export type AcceptNoStockReason = "NOT_CONSUMED" | "SUPERSEDED";
+
 export type AcceptReturnItemResult =
   | { applied: true; stockAdjustmentId: string }
+  | { applied: true; stockAdjustmentId: null; noStockReason: AcceptNoStockReason }
   | {
       applied: false;
       skipped: "already_decided" | "unmapped_sku" | "return_locked" | "no_inventory_row";
@@ -68,7 +78,35 @@ export async function acceptReturnItem(
   if (item.decision !== "PENDING") {
     return { applied: false, skipped: "already_decided" };
   }
-  if (!item.itemId) {
+
+  /*
+   * The order's own reservation decides the stock side, when the line names its order line: it
+   * says whether the goods ever left ERP stock, and if they did, exactly which row they came off.
+   * That row, not the line's own `itemId` — resolved by variant SKU alone at ingest, and able to
+   * land on a superseded duplicate — is where they go back. A line with no reservation keeps the
+   * item-based path below unchanged.
+   */
+  const reservation = item.salesOrderDetailId == null
+    ? null
+    : await tx.stockReservation.findUnique({
+      where: { salesorderDetailId: item.salesOrderDetailId },
+      select: { itemId: true, variantSku: true, state: true },
+    });
+  if (reservation && reservation.state !== "CONSUMED") {
+    return acceptWithoutStock(tx, input, "NOT_CONSUMED");
+  }
+  let stockItemId = item.itemId;
+  let stockVariantSku = item.variantSku;
+  if (reservation) {
+    const mapped = await tx.jubelioProductMapping.findFirst({
+      where: { itemId: reservation.itemId, erpVariantSku: reservation.variantSku },
+      select: { id: true },
+    });
+    if (!mapped) return acceptWithoutStock(tx, input, "SUPERSEDED");
+    stockItemId = reservation.itemId;
+    stockVariantSku = reservation.variantSku;
+  }
+  if (!stockItemId) {
     return { applied: false, skipped: "unmapped_sku" };
   }
 
@@ -84,13 +122,13 @@ export async function acceptReturnItem(
    * sitting right there, silently declining to restore it.
    */
   const invSelect = { id: true, qtyOnHand: true, avgCost: true } as const;
-  const inv = item.variantSku
+  const inv = stockVariantSku
     ? await tx.inventoryValue.findFirst({
-        where: { itemId: item.itemId, variantSku: item.variantSku },
+        where: { itemId: stockItemId, variantSku: stockVariantSku },
         select: invSelect,
       })
     : await tx.inventoryValue.findFirst({
-        where: { itemId: item.itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
+        where: { itemId: stockItemId, OR: [{ variantSku: null }, { variantSku: "" }] },
         orderBy: { id: "asc" },
         select: invSelect,
       });
@@ -104,7 +142,7 @@ export async function acceptReturnItem(
   const adj = await tx.stockAdjustment.create({
     data: {
       docNumber: `RET-${item.id}`,
-      itemId: item.itemId,
+      itemId: stockItemId,
       type: "POSITIVE",
       qtyChange: qty,
       reason: input.reason,
@@ -120,8 +158,8 @@ export async function acceptReturnItem(
   });
 
   await moveMainStock(tx, {
-    itemId: item.itemId,
-    variantSku: item.variantSku,
+    itemId: stockItemId,
+    variantSku: stockVariantSku,
     qtyDelta: qty,
     totalValue: newQty * avgCost,
     totalCost: qty * avgCost,
@@ -144,6 +182,24 @@ export async function acceptReturnItem(
   });
 
   return { applied: true, stockAdjustmentId: adj.id };
+}
+
+/** Records an accept that moves no stock; the operator's reason is kept on the line, as a reject's is. */
+async function acceptWithoutStock(
+  tx: Prisma.TransactionClient,
+  input: AcceptReturnItemInput,
+  noStockReason: AcceptNoStockReason,
+): Promise<AcceptReturnItemResult> {
+  await tx.salesReturnItem.update({
+    where: { id: input.returnItemId },
+    data: {
+      decision: "ACCEPTED",
+      decidedAt: new Date(),
+      decidedById: input.changedById,
+      itemReason: input.reason,
+    },
+  });
+  return { applied: true, stockAdjustmentId: null, noStockReason };
 }
 
 export async function rejectReturnItem(

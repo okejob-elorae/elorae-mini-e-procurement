@@ -2272,8 +2272,13 @@
         "cancel": "Batal",
         "confirm": "Ajukan"
       },
+      "noStockChange": "Stok tidak berubah",
       "toast": {
         "accepted": "Item diterima",
+        "acceptedNoStock": {
+          "NOT_CONSUMED": "Item diterima — stok tidak berubah: baris ini tidak pernah keluar dari stok ERP.",
+          "SUPERSEDED": "Item diterima — stok tidak berubah: stok varian ini dicatat di item yang kini terhubung."
+        },
         "rejected": "Item ditolak",
         "submitted": "Keputusan diajukan"
       },

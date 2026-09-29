@@ -2272,8 +2272,13 @@
         "cancel": "Cancel",
         "confirm": "Submit"
       },
+      "noStockChange": "No stock change",
       "toast": {
         "accepted": "Item accepted",
+        "acceptedNoStock": {
+          "NOT_CONSUMED": "Item accepted — no stock change: this line never left ERP stock.",
+          "SUPERSEDED": "Item accepted — no stock change: this variant's stock is kept on the item it is now linked to."
+        },
         "rejected": "Item rejected",
         "submitted": "Decision submitted"
       },
