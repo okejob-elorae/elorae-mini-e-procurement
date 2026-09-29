@@ -70,6 +70,9 @@ export type ReconResolveReason =
   | "STOCK_MOVED"
   | "UNEXPECTED";
 
+/** Why a bulk resolve refused the whole batch before reading any row; same `stockReconciliation.err.<CODE>` keys. */
+export type ReconBulkResolveReason = "INVALID_BATCH" | "BATCH_TOO_LARGE";
+
 /** Why saving the reconciliation settings refused; same `stockReconciliation.err.<CODE>` keys. */
 export type ReconSettingsReason = "PUSH_DISABLED" | "INVALID_DIRECTION";
 

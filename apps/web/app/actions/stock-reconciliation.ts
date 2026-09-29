@@ -7,6 +7,7 @@ import { requirePermission, PERMISSIONS } from "@/lib/rbac";
 import {
   loadReconciliationConfig,
   resolveReconciliationItem as resolveItem,
+  resolveReconciliationItems as resolveItems,
   runReconciliation as runEngine,
   updateReconciliationSettings,
 } from "@/lib/inventory/reconciliation-runner";
@@ -84,6 +85,15 @@ export async function resolveReconciliationItem(data: {
     direction: data.direction,
     userId: user.id,
   });
+  revalidatePath(RECON_PATH);
+  return result;
+}
+
+/** Bulk MATCH_JUBELIO; the caller sends at most `RECON_BULK_BATCH_MAX` ids per call. */
+export async function resolveReconciliationItems(data: { resultIds: string[] }) {
+  const user = await sessionUser();
+  requirePermission(user.permissions ?? [], PERMISSIONS.INVENTORY_RECONCILIATION_MANAGE);
+  const result = await resolveItems({ resultIds: data.resultIds, userId: user.id });
   revalidatePath(RECON_PATH);
   return result;
 }

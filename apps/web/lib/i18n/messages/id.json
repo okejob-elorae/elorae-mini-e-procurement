@@ -1446,7 +1446,32 @@
       "JUBELIO_QTY_INVALID": "Jubelio mengembalikan qty yang tidak valid untuk varian ini. Tidak ada yang ditulis.",
       "NO_INVENTORY_ROW": "Varian ini tidak punya baris stok Elorae untuk dikoreksi. Tidak ada yang ditulis.",
       "STOCK_MOVED": "Stok berubah sejak run ini. Tidak ada yang ditulis; jalankan ulang rekonsiliasi.",
-      "UNEXPECTED": "Terjadi kesalahan. Tidak ada yang ditulis; coba lagi."
+      "UNEXPECTED": "Terjadi kesalahan. Tidak ada yang ditulis; coba lagi.",
+      "INVALID_BATCH": "Pilihan tidak dapat dikirim. Tidak ada yang ditulis; muat ulang run dan coba lagi.",
+      "BATCH_TOO_LARGE": "Terlalu banyak baris dalam satu permintaan. Tidak ada yang ditulis; coba lagi."
+    },
+    "bulk": {
+      "selectLabel": "Pilih",
+      "allFlagged": "Semua diflag ({count})",
+      "eloraeNegative": "Elorae negatif ({count})",
+      "jubelioHigher": "Jubelio lebih tinggi ({count})",
+      "clear": "Hapus pilihan",
+      "matchSelected": "Samakan Jubelio untuk {count} terpilih",
+      "selectAllAria": "Pilih semua baris yang diflag",
+      "selectRowAria": "Pilih {item}",
+      "confirmTitle": "Samakan {count} baris dengan Jubelio?",
+      "confirmDescription": "Stok Elorae tiap baris terpilih ditimpa dengan angka terkini Jubelio, yang dibaca ulang tepat sebelum ditulis. Baris yang stoknya berubah sejak run ini, atau yang tidak punya angka di Jubelio, dilewati dan tetap diflag. Tidak ada yang di-push ke Jubelio.",
+      "confirmAction": "Samakan {count} baris",
+      "progress": "Menyamakan {done} dari {total}… biarkan halaman ini terbuka.",
+      "stop": "Berhenti",
+      "stopping": "Berhenti setelah batch ini…",
+      "summaryMatched": "{count} baris disamakan dengan Jubelio.",
+      "summaryRefused": "{count} baris tidak disamakan — {reason}",
+      "summaryNotSent": "Dihentikan — {count} baris terpilih tidak dikirim.",
+      "summaryKeptSelected": "Baris yang tidak disamakan tetap terpilih, jadi bisa dicoba lagi.",
+      "dismiss": "Tutup",
+      "toastAllMatched": "{count} baris disamakan dengan Jubelio",
+      "toastPartial": "{matched} disamakan, {notMatched} tidak disamakan"
     },
     "actions": {
       "IN_SYNC": "Sinkron",
