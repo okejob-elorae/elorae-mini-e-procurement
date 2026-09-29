@@ -2467,7 +2467,7 @@
         "customRadius": "Radius khusus"
       },
       "locationEmpty": {
-        "missing": "Semua toko sudah punya koordinat.",
+        "missing": "Semua toko aktif sudah punya koordinat.",
         "defaultRadius": "Tidak ada toko yang memakai radius default.",
         "customRadius": "Tidak ada toko dengan radius khusus."
       },

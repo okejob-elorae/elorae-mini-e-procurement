@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
@@ -67,11 +67,23 @@ export function StoreListClient({
   const sp = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const [searchInput, setSearchInput] = useState(search);
+  /**
+   * Set by Reset so the search debounce below does not fire for the cleared input: that timer
+   * closes over the pre-reset `sp`, so letting it run would push the old location and inactive
+   * filters straight back after Reset navigated to the bare list.
+   */
+  const skipSearchDebounce = useRef(false);
+  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    if (skipSearchDebounce.current) {
+      skipSearchDebounce.current = false;
+      return;
+    }
     const handle = setTimeout(() => {
       if (searchInput !== search) pushParam("search", searchInput);
     }, 300);
+    searchDebounce.current = handle;
     return () => clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput]);
@@ -85,6 +97,8 @@ export function StoreListClient({
   }
 
   function resetFilters() {
+    if (searchDebounce.current) clearTimeout(searchDebounce.current);
+    if (searchInput !== "") skipSearchDebounce.current = true;
     setSearchInput("");
     startTransition(() => router.push("/backoffice/stores"));
   }
