@@ -101,6 +101,7 @@ EPIC-07 (Stock Opname & Reconciliation) decomposition:
 | **3** | Opname UI (list, create, scope-branched count, drift modal) | ✅ shipped (2026-06-28) |
 | **4** | Reconciliation engine + API inventory snapshot | ✅ shipped (2026-06-28) |
 | **5** | Cron route + jobs.ts 6h schedule + reconciliation admin UI + docs | ✅ shipped (2026-06-28) |
+| **6** | Bulk Match Jubelio on the run page — row selection with quick-selects, sequential batches of 25 with progress and Stop, per-row outcomes; the result mark moved into the stock transaction | ✅ shipped (PR #376, 2026-09-29) |
 
 Launch posture: reconciliation `FLAG_ONLY` + threshold 0; auto-correct directions implemented but dormant until config flip.
 
