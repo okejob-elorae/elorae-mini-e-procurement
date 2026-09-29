@@ -20,8 +20,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import type { SalesOrderFulfillmentStatus } from "@/lib/constants/enums";
+import type { SalesChannel, SalesOrderFulfillmentStatus, SalesOrderStatus } from "@/lib/constants/enums";
 import { formatDateTime } from "@/lib/sales-orders/format";
+import { isAwaitingResi } from "@/lib/sales-orders/resi-pending";
 import {
   finishPickAction,
   finishPackAction,
@@ -45,6 +46,9 @@ const STATUS_TAILWIND: Record<SalesOrderFulfillmentStatus, string> = {
 
 type Props = {
   orderId: string;
+  channel: SalesChannel;
+  status: SalesOrderStatus;
+  isCanceled: boolean;
   fulfillmentStatus: SalesOrderFulfillmentStatus;
   isLocked: boolean;
   canFulfill: boolean;
@@ -115,6 +119,13 @@ export function FulfillmentCard(props: Props) {
       ? couriers.find((c) => c.id === selectedCourier)?.name ?? ""
       : "";
 
+  const awaitingResi = isAwaitingResi({
+    channel: props.channel,
+    status: props.status,
+    isCanceled: props.isCanceled,
+    trackingNumber: props.trackingNumber,
+  });
+
   return (
     <Card className="p-4 space-y-3">
       <div className="flex items-center justify-between">
@@ -172,7 +183,7 @@ export function FulfillmentCard(props: Props) {
             </div>
           ) : null}
         </div>
-      ) : !props.isLocked ? (
+      ) : awaitingResi ? (
         <div className="text-sm pt-2 border-t space-y-2">
           <div>
             <span className="text-muted-foreground">{t("tracking")}: </span>

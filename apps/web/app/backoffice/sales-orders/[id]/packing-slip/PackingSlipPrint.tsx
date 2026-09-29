@@ -7,6 +7,7 @@ import { PRINT_STYLES, BRAND } from "@/lib/sales-orders/print-styles";
 import type { SalesOrderDetail, SalesOrderItemRow } from "@/lib/sales-orders/queries";
 import { logPrintQuietly } from "@/lib/audit/log-print-quietly";
 import { ResiBarcode } from "@/components/resi-barcode";
+import { isAwaitingResi } from "@/lib/sales-orders/resi-pending";
 
 type Props = {
   order: SalesOrderDetail;
@@ -31,6 +32,7 @@ export function PackingSlipPrint({ order, items, lineImages = {} }: Props) {
 
   const liveItems = items.filter((it) => !it.isCanceledItem);
   const shippingAddressLines = buildShippingLines(order);
+  const awaitingResi = isAwaitingResi(order);
 
   return (
     <>
@@ -54,27 +56,30 @@ export function PackingSlipPrint({ order, items, lineImages = {} }: Props) {
           </div>
         </div>
 
-        <div className="print-meta">
-          {order.courierName && (
-            <div className="print-meta-row">
-              <span className="print-meta-label">{t("courierLabel")}</span>
-              <span>{order.courierName}</span>
-            </div>
-          )}
-          {order.trackingNumber ? (
-            <>
+        {(order.courierName || order.trackingNumber || awaitingResi) && (
+          <div className="print-meta">
+            {order.courierName && (
+              <div className="print-meta-row">
+                <span className="print-meta-label">{t("courierLabel")}</span>
+                <span>{order.courierName}</span>
+              </div>
+            )}
+            {order.trackingNumber ? (
+              <>
+                <div className="print-meta-row">
+                  <span className="print-meta-label">{t("trackingLabel")}</span>
+                  <span style={{ fontFamily: "monospace" }}>{order.trackingNumber}</span>
+                </div>
+                <ResiBarcode value={order.trackingNumber} height={56} />
+              </>
+            ) : awaitingResi ? (
               <div className="print-meta-row">
                 <span className="print-meta-label">{t("trackingLabel")}</span>
-                <span style={{ fontFamily: "monospace" }}>{order.trackingNumber}</span>
+                <span>{t("resiPending")}</span>
               </div>
-              <ResiBarcode value={order.trackingNumber} height={56} />
-            </>
-          ) : (
-            <div className="print-meta-row">
-              <span>{t("resiPending")}</span>
-            </div>
-          )}
-        </div>
+            ) : null}
+          </div>
+        )}
 
         <div className="print-divider" />
 

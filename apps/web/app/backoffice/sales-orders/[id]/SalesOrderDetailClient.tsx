@@ -58,6 +58,9 @@ export function SalesOrderDetailClient({ order, items, canFulfill, lineImages = 
 
       <FulfillmentCard
         orderId={order.id}
+        channel={order.channel}
+        status={order.status}
+        isCanceled={order.isCanceled}
         fulfillmentStatus={order.fulfillmentStatus}
         isLocked={order.isCanceled || order.status === "CANCELLED" || order.status === "RETURNED"}
         canFulfill={canFulfill}
