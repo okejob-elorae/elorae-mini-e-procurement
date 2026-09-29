@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { uploadToR2, isConfigured } from "@/lib/r2";
+import { buildR2Key, isSafeR2KeySegment } from "@/lib/r2-key";
 
 export const dynamic = "force-dynamic";
 
@@ -22,12 +23,14 @@ export async function POST(req: NextRequest) {
   const clientId = form.get("clientId") as string | null;
 
   if (!file || !receivableId || !clientId) return NextResponse.json({ error: "file, receivableId, clientId required" }, { status: 400 });
+  if (!isSafeR2KeySegment(receivableId)) return NextResponse.json({ error: "invalid receivableId" }, { status: 400 });
+  if (!isSafeR2KeySegment(clientId)) return NextResponse.json({ error: "invalid clientId" }, { status: 400 });
   if (!ALLOWED_TYPES.has(file.type)) return NextResponse.json({ error: `type ${file.type} not allowed` }, { status: 400 });
   if (file.size > MAX_FILE_SIZE) return NextResponse.json({ error: "file exceeds 10MB" }, { status: 400 });
 
   try {
     const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
-    const key = `collection-proofs/${receivableId}/${clientId}.${ext}`;
+    const key = buildR2Key("collection-proofs", [receivableId, clientId], ext);
     const buffer = Buffer.from(await file.arrayBuffer());
     const url = await uploadToR2(key, buffer, file.type);
     return NextResponse.json({ url, key });

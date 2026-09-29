@@ -3,6 +3,7 @@ import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { uploadToR2, deleteFromR2, isConfigured } from "@/lib/r2";
+import { buildR2Key } from "@/lib/r2-key";
 
 export const dynamic = "force-dynamic";
 
@@ -61,7 +62,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
-    const key = `settlement-proofs/${draftId}/${slot}.${ext}`;
+    const key = buildR2Key("settlement-proofs", [draftId, slot], ext);
     const buffer = Buffer.from(await file.arrayBuffer());
     const url = await uploadToR2(key, buffer, file.type);
 

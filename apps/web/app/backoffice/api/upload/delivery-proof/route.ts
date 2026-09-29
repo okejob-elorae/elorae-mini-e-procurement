@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { uploadToR2, isConfigured } from "@/lib/r2";
+import { buildR2Key, isSafeR2KeySegment } from "@/lib/r2-key";
 
 export const dynamic = "force-dynamic";
 
@@ -23,12 +24,13 @@ export async function POST(req: NextRequest) {
   if (!(file instanceof File) || typeof shipmentId !== "string" || !shipmentId) {
     return NextResponse.json({ error: "INVALID_REQUEST" }, { status: 400 });
   }
+  if (!isSafeR2KeySegment(shipmentId)) return NextResponse.json({ error: "INVALID_REQUEST" }, { status: 400 });
   if (!ALLOWED_TYPES.has(file.type)) return NextResponse.json({ error: `type ${file.type} not allowed` }, { status: 400 });
   if (file.size > MAX_FILE_SIZE) return NextResponse.json({ error: "file exceeds 10MB" }, { status: 400 });
 
   try {
     const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
-    const key = `delivery-proofs/${shipmentId}/${Date.now()}.${ext}`;
+    const key = buildR2Key("delivery-proofs", [shipmentId, String(Date.now())], ext);
     const buffer = Buffer.from(await file.arrayBuffer());
     const url = await uploadToR2(key, buffer, file.type);
     return NextResponse.json({ url, key });
