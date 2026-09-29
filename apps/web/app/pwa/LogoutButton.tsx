@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import {
   clearOfflineState,
   countUnsynced,
+  discardFailedPhotos,
   firstPendingPhotoStoreId,
   logoutBlockReason,
   type UnsyncedCounts,
@@ -35,20 +36,28 @@ export function LogoutButton() {
   const [counts, setCounts] = useState<UnsyncedCounts | null>(null);
   const [photoStoreId, setPhotoStoreId] = useState<string | null>(null);
   const [offline, setOffline] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
+
+  const showDialog = async () => {
+    const current = await countUnsynced();
+    setCounts(current);
+    setPhotoStoreId(current.photos > 0 ? await firstPendingPhotoStoreId() : null);
+    setOffline(!navigator.onLine);
+    setConfirmDiscard(false);
+    setOpen(true);
+  };
 
   const doLogout = async () => {
     setBusy(true);
     try {
-      const current = await countUnsynced();
-      if (logoutBlockReason(current) !== null) {
-        setCounts(current);
-        setPhotoStoreId(current.photos > 0 ? await firstPendingPhotoStoreId() : null);
-        setOffline(!navigator.onLine);
-        setOpen(true);
+      const result = await clearOfflineState();
+      if (result === "blocked") {
+        await showDialog();
+        toast.error(t("queueChanged"));
         setBusy(false);
         return;
       }
-      await clearOfflineState();
     } catch {
       setBusy(false);
       toast.error(t("clearFailed"), {
@@ -57,6 +66,19 @@ export function LogoutButton() {
       return;
     }
     await logout();
+  };
+
+  const discard = async () => {
+    setDiscarding(true);
+    try {
+      await discardFailedPhotos();
+      await showDialog();
+      toast.success(t("discarded"));
+    } catch {
+      toast.error(t("discardError"));
+    } finally {
+      setDiscarding(false);
+    }
   };
 
   const syncNow = async () => {
@@ -73,6 +95,7 @@ export function LogoutButton() {
       setCounts(next);
       setPhotoStoreId(next.photos > 0 ? await firstPendingPhotoStoreId() : null);
       setOffline(!navigator.onLine);
+      setConfirmDiscard(false);
       if (logoutBlockReason(next) === null) {
         setOpen(false);
         toast.success(t("allSynced"));
@@ -81,6 +104,9 @@ export function LogoutButton() {
       setSyncing(false);
     }
   };
+
+  const failedPhotos = counts?.failedPhotos ?? 0;
+  const busyDialog = syncing || discarding;
 
   const rows = [
     { key: "orders", count: counts?.orders ?? 0, href: "/pwa/orders/pending" },
@@ -100,7 +126,7 @@ export function LogoutButton() {
       >
         {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <LogOut className="h-5 w-5" />}
       </Button>
-      <Dialog open={open} onOpenChange={(next) => !syncing && setOpen(next)}>
+      <Dialog open={open} onOpenChange={(next) => !busyDialog && setOpen(next)}>
         <DialogContent className="max-w-[calc(100%-2rem)] sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{t("title")}</DialogTitle>
@@ -119,12 +145,59 @@ export function LogoutButton() {
               </li>
             ))}
           </ul>
+          {failedPhotos > 0 && (
+            <div className="space-y-2 rounded-md border border-destructive/40 p-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{t("failedPhotosTitle")}</p>
+                <p className="text-xs text-muted-foreground">
+                  {t("itemCount", { count: failedPhotos })}
+                </p>
+              </div>
+              {confirmDiscard ? (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">{t("discardConfirmTitle")}</p>
+                  <p className="text-xs text-muted-foreground">{t("discardConfirmBody")}</p>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      className="min-h-10 w-full sm:w-auto"
+                      disabled={discarding}
+                      onClick={() => void discard()}
+                    >
+                      {discarding && <Loader2 className="h-4 w-4 animate-spin" />}
+                      {discarding ? t("discarding") : t("discardConfirm")}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="min-h-10 w-full sm:w-auto"
+                      disabled={discarding}
+                      onClick={() => setConfirmDiscard(false)}
+                    >
+                      {t("cancel")}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-10 w-full border-destructive/50 text-destructive hover:text-destructive"
+                  disabled={busyDialog}
+                  onClick={() => setConfirmDiscard(true)}
+                >
+                  {t("discardAction", { count: failedPhotos })}
+                </Button>
+              )}
+            </div>
+          )}
           {offline && <p className="text-sm text-muted-foreground">{t("offlineHint")}</p>}
           <DialogFooter className="flex-col gap-2 sm:flex-row">
             <Button
               type="button"
               className="min-h-10 w-full sm:w-auto"
-              disabled={offline || syncing}
+              disabled={offline || busyDialog}
               onClick={() => void syncNow()}
             >
               {syncing && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -134,7 +207,7 @@ export function LogoutButton() {
               type="button"
               variant="outline"
               className="min-h-10 w-full sm:w-auto"
-              disabled={syncing}
+              disabled={busyDialog}
               onClick={() => setOpen(false)}
             >
               {t("cancel")}

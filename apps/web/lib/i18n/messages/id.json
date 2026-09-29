@@ -305,11 +305,7 @@
     "notConfigured": "Belum dikonfigurasi. Muat ulang halaman untuk membuatnya.",
     "lastNumber": "No. terakhir",
     "notIssued": "Belum terbit",
-    "resetPeriods": {
-      "YEARLY": "Tahunan",
-      "MONTHLY": "Bulanan",
-      "NEVER": "Tidak pernah"
-    },
+    "resetPeriods": { "YEARLY": "Tahunan", "MONTHLY": "Bulanan", "NEVER": "Tidak pernah" },
     "groups": {
       "procurement": "Pembelian & produksi",
       "inventory": "Persediaan",
@@ -3119,7 +3115,24 @@
       "allSynced": "Semua sudah terkirim. Anda bisa keluar sekarang.",
       "syncFailed": "Gagal mengirim. Silakan coba lagi.",
       "clearFailed": "Data offline gagal dibersihkan, jadi Anda belum keluar.",
-      "retry": "Coba Lagi"
+      "retry": "Coba Lagi",
+      "failedPhotosTitle": "Foto gagal terunggah",
+      "discardAction": "Buang {count} foto gagal",
+      "discardConfirmTitle": "Buang foto yang gagal?",
+      "discardConfirmBody": "Foto ini tidak bisa diunggah dan akan hilang permanen. Tindakan ini tidak bisa dibatalkan.",
+      "discardConfirm": "Buang",
+      "discarding": "Membuang…",
+      "discarded": "Foto yang gagal sudah dibuang.",
+      "discardError": "Foto gagal dibuang. Silakan coba lagi.",
+      "queueChanged": "Ada data baru yang belum terkirim, jadi Anda belum keluar."
+    },
+    "visitPhoto": {
+      "delete": "Hapus foto",
+      "deleteTitle": "Hapus foto ini?",
+      "deleteBody": "Foto ini gagal diunggah. Jika dihapus, foto hilang permanen dari perangkat ini.",
+      "deleteConfirm": "Hapus",
+      "deleteCancel": "Batal",
+      "deleteFailed": "Foto gagal dihapus. Silakan coba lagi."
     }
   },
   "fieldSalesOrders": {

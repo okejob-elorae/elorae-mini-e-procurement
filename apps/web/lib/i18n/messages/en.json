@@ -305,11 +305,7 @@
     "notConfigured": "Not configured yet. Reload the page to create it.",
     "lastNumber": "Last #",
     "notIssued": "None issued",
-    "resetPeriods": {
-      "YEARLY": "Yearly",
-      "MONTHLY": "Monthly",
-      "NEVER": "Never"
-    },
+    "resetPeriods": { "YEARLY": "Yearly", "MONTHLY": "Monthly", "NEVER": "Never" },
     "groups": {
       "procurement": "Procurement & production",
       "inventory": "Inventory",
@@ -3119,7 +3115,24 @@
       "allSynced": "Everything synced. You can log out now.",
       "syncFailed": "Sync failed. Please try again.",
       "clearFailed": "Couldn't clear offline data, so you were not logged out.",
-      "retry": "Retry"
+      "retry": "Retry",
+      "failedPhotosTitle": "Failed photo uploads",
+      "discardAction": "Discard {count, plural, one {# failed photo} other {# failed photos}}",
+      "discardConfirmTitle": "Discard failed photos?",
+      "discardConfirmBody": "These photos could not be uploaded and will be permanently lost. This can't be undone.",
+      "discardConfirm": "Discard",
+      "discarding": "Discarding…",
+      "discarded": "Failed photos discarded.",
+      "discardError": "Couldn't discard the photos. Please try again.",
+      "queueChanged": "New unsynced items appeared, so you were not logged out."
+    },
+    "visitPhoto": {
+      "delete": "Delete photo",
+      "deleteTitle": "Delete this photo?",
+      "deleteBody": "This photo could not be uploaded. Deleting it removes it from this device for good.",
+      "deleteConfirm": "Delete",
+      "deleteCancel": "Cancel",
+      "deleteFailed": "Couldn't delete the photo. Please try again."
     }
   },
   "fieldSalesOrders": {

@@ -3,13 +3,25 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { Camera, Check, Loader2, RefreshCw, RotateCcw, X } from "lucide-react";
+import { useTranslations } from "next-intl";
+import { Camera, Check, Loader2, RefreshCw, RotateCcw, Trash2, X } from "lucide-react";
+import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { compressImage } from "@/lib/pwa/photo/compress";
-import { enqueuePhoto, listPendingPhotosForVisit, retryPendingPhoto, newLocalId } from "@/lib/pwa/offline/photo-queue";
+import { enqueuePhoto, deletePendingPhoto, listPendingPhotosForVisit, retryPendingPhoto, newLocalId } from "@/lib/pwa/offline/photo-queue";
 import { flushPendingPhotos } from "@/lib/pwa/offline/photo-sync";
 import type { PendingPhoto } from "@/lib/pwa/offline/db";
 
@@ -31,7 +43,9 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
   const streamRef = useRef<MediaStream | null>(null);
   const openingCamRef = useRef(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
   const router = useRouter();
+  const t = useTranslations("pwa.visitPhoto");
 
   const total = synced.length + pending.length;
   const atCap = total >= MAX_PER_VISIT;
@@ -137,6 +151,18 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
     }
   }
 
+  async function confirmDelete() {
+    if (!deleteId) return;
+    try {
+      await deletePendingPhoto(deleteId);
+      await refresh();
+    } catch {
+      toast.error(t("deleteFailed"));
+    } finally {
+      setDeleteId(null);
+    }
+  }
+
   const overlay = mode !== "idle" && typeof document !== "undefined"
     ? createPortal(
         <div className="fixed inset-0 z-[100] flex flex-col bg-black">
@@ -233,12 +259,35 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
                   aria-label="Coba lagi"
                 ><RefreshCw className="h-3 w-3 text-white" /></button>
               )}
+              {p.syncState === "failed" && (
+                <button
+                  type="button"
+                  onClick={() => setDeleteId(p.localId)}
+                  className="absolute left-0 top-0 bg-black/60 p-0.5"
+                  aria-label={t("delete")}
+                ><Trash2 className="h-3 w-3 text-white" /></button>
+              )}
             </div>
           ))}
         </div>
       )}
 
       {overlay}
+
+      <AlertDialog open={deleteId !== null} onOpenChange={(next) => !next && setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("deleteTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("deleteBody")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("deleteCancel")}</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => void confirmDelete()}>
+              {t("deleteConfirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
