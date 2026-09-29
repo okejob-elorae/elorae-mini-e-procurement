@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
+import Link from "next/link";
 import { Truck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import { Pagination } from "@/components/ui/pagination";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { listShipmentsAction } from "@/app/actions/delivery-shipments";
+import { SHIPMENT_STATUS_BADGE, SHIPMENT_STATUS_LABEL_KEY } from "@/lib/delivery/shipment-status-display";
 import { ShipmentTrackingDialog } from "./ShipmentTrackingDialog";
 import { CompleteShipmentDialog } from "./CompleteShipmentDialog";
 
@@ -51,25 +53,6 @@ type Filters = {
 };
 
 const EMPTY_FILTERS: Filters = { status: "", method: "", storeId: "", dateFrom: "", dateTo: "" };
-
-const STATUS_BADGE: Record<string, string> = {
-  PACKED: "bg-slate-100 text-slate-700",
-  IN_TRANSIT: "bg-blue-100 text-blue-700",
-  DELIVERED: "bg-green-100 text-green-700",
-  PARTIALLY_DELIVERED: "bg-amber-100 text-amber-700",
-  CANCELLED: "bg-red-100 text-red-700",
-};
-
-const STATUS_LABEL_KEY: Record<
-  string,
-  "statusPacked" | "statusInTransit" | "statusDelivered" | "statusPartiallyDelivered" | "statusCancelled"
-> = {
-  PACKED: "statusPacked",
-  IN_TRANSIT: "statusInTransit",
-  DELIVERED: "statusDelivered",
-  PARTIALLY_DELIVERED: "statusPartiallyDelivered",
-  CANCELLED: "statusCancelled",
-};
 
 export function DeliveriesPageClient({
   initialItems,
@@ -225,7 +208,14 @@ export function DeliveriesPageClient({
                   <TableBody>
                     {items.map((item) => (
                       <TableRow key={item.id}>
-                        <TableCell className="font-medium">{item.docNo}</TableCell>
+                        <TableCell className="font-medium">
+                          <Link
+                            href={`/backoffice/deliveries/${item.id}`}
+                            className="hover:underline"
+                          >
+                            {item.docNo}
+                          </Link>
+                        </TableCell>
                         <TableCell>{item.orderNo}</TableCell>
                         <TableCell className="max-w-[160px] truncate">{item.storeName}</TableCell>
                         <TableCell>
@@ -235,8 +225,8 @@ export function DeliveriesPageClient({
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge className={STATUS_BADGE[item.status] ?? ""}>
-                            {t(STATUS_LABEL_KEY[item.status] ?? "statusPacked")}
+                          <Badge className={SHIPMENT_STATUS_BADGE[item.status] ?? ""}>
+                            {t(SHIPMENT_STATUS_LABEL_KEY[item.status] ?? "statusPacked")}
                           </Badge>
                         </TableCell>
                         <TableCell>{item.resiNumber ?? "-"}</TableCell>

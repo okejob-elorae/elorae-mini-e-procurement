@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
@@ -274,7 +275,18 @@ export function KonsiShipmentsCard({
                 const delivered = totalDelivered(shipment);
                 return (
                   <TableRow key={shipment.id}>
-                    <TableCell className="font-mono whitespace-nowrap">{shipment.docNo}</TableCell>
+                    <TableCell className="font-mono whitespace-nowrap">
+                      {canShipShipment ? (
+                        <Link
+                          href={`/backoffice/deliveries/${shipment.id}`}
+                          className="hover:underline"
+                        >
+                          {shipment.docNo}
+                        </Link>
+                      ) : (
+                        shipment.docNo
+                      )}
+                    </TableCell>
                     <TableCell>
                       {shipment.method === "EXPEDITION"
                         ? tShipments("methodExpedition")

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { listDeliveryShipments, getDeliveryShipment, listMyDeliveries, listShipmentsForOrder } from "./shipment-queries";
+import { listDeliveryShipments, getDeliveryShipment, getDeliveryShipmentDetail, listMyDeliveries, listShipmentsForOrder } from "./shipment-queries";
 import { createDeliveryShipment, updateShipmentTracking, shipDeliveryShipment } from "./shipment-writer";
 
 describe("shipment-queries", () => {
@@ -161,5 +161,96 @@ describe("shipment-queries", () => {
     expect(shipments[0].lines[0].productName).toBe("Query Item 2");
     expect(shipments[1].lines).toHaveLength(1);
     expect(shipments[1].lines[0].productName).toBe("Query Item");
+  });
+  describe("getDeliveryShipmentDetail", () => {
+    it("returns null for an unknown id", async () => {
+      expect(await getDeliveryShipmentDetail("does-not-exist")).toBeNull();
+    });
+
+    it("derives photo URLs from the R2 keys, never from the stored URL columns", async () => {
+      await prisma.deliveryShipment.update({
+        where: { id: shipmentId },
+        data: {
+          status: "DELIVERED",
+          proofPhotoR2Key: `delivery-proofs/${shipmentId}/1700000000.jpg`,
+          proofPhotoUrl: "https://evil.example/goods.jpg",
+          signatureR2Key: `delivery-pod-proofs/${shipmentId}/nota.jpg`,
+          signatureUrl: "https://evil.example/nota.jpg",
+          signedByName: "Bu Receiver",
+          gpsLat: "-6.2000000",
+          gpsLng: "106.8000000",
+          gpsDistanceMeters: 42,
+        },
+      });
+      const detail = await getDeliveryShipmentDetail(shipmentId);
+      expect(detail?.goodsPhoto.url).toMatch(new RegExp(`delivery-proofs/${shipmentId}/1700000000\\.jpg$`));
+      expect(detail?.goodsPhoto.unavailable).toBe(false);
+      expect(detail?.notaPhoto.url).toMatch(new RegExp(`delivery-pod-proofs/${shipmentId}/nota\\.jpg$`));
+      expect(JSON.stringify(detail)).not.toContain("evil.example");
+      expect(detail?.signedByName).toBe("Bu Receiver");
+      expect(detail?.gpsLat).toBeCloseTo(-6.2);
+      expect(detail?.gpsLng).toBeCloseTo(106.8);
+      expect(detail?.gpsDistanceMeters).toBe(42);
+    });
+
+    it("binds a SALESMAN_CARRY goods photo to the pod folder", async () => {
+      await prisma.deliveryShipment.update({
+        where: { id: shipmentId },
+        data: {
+          method: "SALESMAN_CARRY",
+          proofPhotoR2Key: `delivery-proofs/${shipmentId}/1700000000.jpg`,
+        },
+      });
+      const detail = await getDeliveryShipmentDetail(shipmentId);
+      expect(detail?.goodsPhoto).toEqual({ url: null, unavailable: true });
+    });
+
+    it("yields no URL and flags unavailable for a malformed or foreign key", async () => {
+      await prisma.deliveryShipment.update({
+        where: { id: shipmentId },
+        data: {
+          proofPhotoR2Key: `delivery-proofs/${shipmentId}/../other/x.jpg`,
+          signatureR2Key: "delivery-pod-proofs/another-shipment/nota.jpg",
+          signatureUrl: "https://evil.example/nota.jpg",
+        },
+      });
+      const detail = await getDeliveryShipmentDetail(shipmentId);
+      expect(detail?.goodsPhoto).toEqual({ url: null, unavailable: true });
+      expect(detail?.notaPhoto).toEqual({ url: null, unavailable: true });
+    });
+
+    it("flags a legacy stored URL with no key, and reports no photo when neither exists", async () => {
+      const bare = await getDeliveryShipmentDetail(shipmentId);
+      expect(bare?.goodsPhoto).toEqual({ url: null, unavailable: false });
+      await prisma.deliveryShipment.update({
+        where: { id: shipmentId },
+        data: { proofPhotoUrl: "https://legacy.example/goods.jpg" },
+      });
+      const legacy = await getDeliveryShipmentDetail(shipmentId);
+      expect(legacy?.goodsPhoto).toEqual({ url: null, unavailable: true });
+    });
+
+    it("resolves actor names and renders a missing user as null", async () => {
+      const salesman = await prisma.user.findUnique({ where: { id: userId } });
+      await prisma.deliveryShipment.update({
+        where: { id: shipmentId },
+        data: { shippedById: "dangling-user-id", carriedById: userId },
+      });
+      const detail = await getDeliveryShipmentDetail(shipmentId);
+      expect(detail?.packedByName).toBe(salesman!.name || salesman!.email);
+      expect(detail?.carriedByName).toBe(salesman!.name || salesman!.email);
+      expect(detail?.shippedByName).toBeNull();
+      expect(detail?.deliveredByName).toBeNull();
+    });
+
+    it("returns store, order and line facts", async () => {
+      const detail = await getDeliveryShipmentDetail(shipmentId);
+      expect(detail?.storeName).toBe("Query Store");
+      expect(detail?.orderId).toBe(orderId);
+      expect(detail?.accountingDocNo).toBeNull();
+      expect(detail?.konsiTransferDocNo).toBeNull();
+      expect(detail?.lines).toHaveLength(1);
+      expect(detail?.lines[0]).toMatchObject({ productName: "Query Item", plannedQty: 4, deliveredQty: null });
+    });
   });
 });
