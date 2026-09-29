@@ -25,11 +25,10 @@ export type KonsiCountSweepResult = {
 };
 
 /**
- * Wraps the SPG-facing push, because `sendNotificationToUsers` carries no VITEST guard of its own,
- * unlike `fanOutAdminNotification`. The guard is the first statement: without it a spec would write
- * real `NotificationQueue` rows on the shared bed and could push to real phones through the
- * `FIREBASE_ADMIN_*` credentials `vitest.config.ts` loads. Same shape as the overdue sweep's
- * collector push.
+ * Wraps the SPG-facing push. `sendNotificationToUsers` carries its own `VITEST` guard now, like
+ * `fanOutAdminNotification`; this one, first statement, is defence in depth — it keeps a spec from
+ * writing real `NotificationQueue` rows on the shared bed, or pushing to real phones through the
+ * `FIREBASE_ADMIN_*` credentials `vitest.config.ts` loads, even if the helper's guard were removed.
  */
 async function notifySpgsOfCount(
   users: NotificationUser[],

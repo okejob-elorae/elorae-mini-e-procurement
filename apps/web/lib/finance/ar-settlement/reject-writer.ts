@@ -71,11 +71,10 @@ export type RejectSettlementInput = {
 export type RejectSettlementResult = { ok: true };
 
 /**
- * Guarded exactly like `notifyCollectorOfOverdue` in `lib/finance/ar/overdue-sweep.ts` —
- * `sendNotificationToUsers` carries no VITEST guard of its own, and this writer's specs share
- * the `:3308` dev bed with real data and the real `FIREBASE_ADMIN_*` credentials
- * `vitest.config.ts` loads from `apps/web/.env`. Without this a test run would write a real
- * `NotificationQueue` row and attempt a real FCM push.
+ * The `VITEST` guard here is defence in depth: `sendNotificationToUsers` carries its own now, like
+ * `fanOutAdminNotification`. This writer's specs share the `:3308` dev bed with real data and the
+ * real `FIREBASE_ADMIN_*` credentials `vitest.config.ts` loads from `apps/web/.env`, so a test run
+ * that got past both guards would write a real `NotificationQueue` row and attempt a real FCM push.
  */
 async function notifySalesmanOfRejection(
   salesman: { id: string; fcmToken: string | null },
