@@ -2,6 +2,7 @@ import { pwaDb } from "./db";
 import { deletePendingCompletion } from "./completion-queue";
 import { classifyCompletionResult, type CompletionSyncDecision } from "./completion-classify";
 import { completePodAction, reportStuckDeliveryCompletionAction } from "@/app/pwa/deliveries/actions";
+import { PodUploadRefusedError, throwIfPodUploadRefused } from "./pod-upload-refusal";
 
 const MAX_RETRY_ATTEMPTS = 20;
 
@@ -41,8 +42,13 @@ export async function flushPendingCompletions(): Promise<{ synced: number; faile
         });
         decision = classifyCompletionResult(result);
         if (!result.ok) reason = result.reason;
-      } catch {
-        decision = "retry";
+      } catch (e) {
+        if (e instanceof PodUploadRefusedError) {
+          decision = classifyCompletionResult({ ok: false, reason: e.reason });
+          reason = e.reason;
+        } else {
+          decision = "retry";
+        }
       }
       if (decision === "evict") {
         await deletePendingCompletion(c.shipmentId);
@@ -87,6 +93,7 @@ async function uploadPhotoBlob(shipmentId: string, blob: Blob, kind: "goods" | "
   formData.append("shipmentId", shipmentId);
   formData.append("clientId", kind);
   const res = await fetch("/pwa/api/upload/delivery-pod-proof", { method: "POST", body: formData });
+  throwIfPodUploadRefused(res);
   if (!res.ok) throw new Error(`upload failed: ${kind}`);
   return res.json();
 }

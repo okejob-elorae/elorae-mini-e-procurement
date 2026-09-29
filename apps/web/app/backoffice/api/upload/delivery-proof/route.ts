@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { uploadToR2, isConfigured } from "@/lib/r2";
@@ -27,6 +28,14 @@ export async function POST(req: NextRequest) {
   if (!isSafeR2KeySegment(shipmentId)) return NextResponse.json({ error: "INVALID_REQUEST" }, { status: 400 });
   if (!ALLOWED_TYPES.has(file.type)) return NextResponse.json({ error: `type ${file.type} not allowed` }, { status: 400 });
   if (file.size > MAX_FILE_SIZE) return NextResponse.json({ error: "file exceeds 10MB" }, { status: 400 });
+
+  /**
+   * Existence only — no status or method gate. Keys here are `Date.now()`-unique, so a retry
+   * never overwrites anything, and refusing on status would break the backoffice lost-response
+   * retry (the upload is re-sent after the completion already committed).
+   */
+  const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId }, select: { id: true } });
+  if (!shipment) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
 
   try {
     const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";

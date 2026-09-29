@@ -539,13 +539,81 @@ describe("completeDeliveryShipment", () => {
     ).rejects.toMatchObject({ code: "MISSING_PROOF" });
   });
 
+  it("refuses an EXPEDITION completion whose goods key uses the SALESMAN_CARRY prefix", async () => {
+    await seedInTransitShipment(4);
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
+        invoiceDate: new Date(),
+        dueDate: new Date(Date.now() + 7 * 86400000),
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "MISSING_PROOF" });
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment?.status).toBe("IN_TRANSIT");
+  });
+
+  it("refuses an EXPEDITION completion whose goods key sits under another shipment's prefix", async () => {
+    await seedInTransitShipment(4);
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: "delivery-proofs/some-other-shipment/goods.jpg",
+        invoiceDate: new Date(),
+        dueDate: new Date(Date.now() + 7 * 86400000),
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "MISSING_PROOF" });
+  });
+
+  it("refuses a SALESMAN_CARRY completion whose goods key sits under another shipment's prefix", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: "delivery-pod-proofs/some-other-shipment/goods.jpg",
+        gps: { lat: -6.2, lng: 106.8 },
+        signatureUrl: "https://r2.example/nota.jpg",
+        signatureR2Key: `delivery-pod-proofs/${shipmentId}/nota.jpg`,
+        signedByName: "Budi Santoso",
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "MISSING_PROOF" });
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment?.status).toBe("IN_TRANSIT");
+  });
+
+  it("refuses a SALESMAN_CARRY completion whose goods key uses the EXPEDITION prefix", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: `delivery-proofs/${shipmentId}/goods.jpg`,
+        gps: { lat: -6.2, lng: 106.8 },
+        signatureUrl: "https://r2.example/nota.jpg",
+        signatureR2Key: `delivery-pod-proofs/${shipmentId}/nota.jpg`,
+        signedByName: "Budi Santoso",
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "MISSING_PROOF" });
+  });
+
   it("completes fully delivered lines as DELIVERED and calls recordFieldSalesDelivery", async () => {
     await seedInTransitShipment(4);
     const result = await completeDeliveryShipment({
       shipmentId,
       deliveredById: userId,
       proofPhotoUrl: "https://r2.example/proof.jpg",
-      proofPhotoR2Key: "delivery-proofs/x.jpg",
+      proofPhotoR2Key: `delivery-proofs/${shipmentId}/goods.jpg`,
       invoiceDate: new Date(),
       dueDate: new Date(Date.now() + 7 * 86400000),
       lines: [{ shipmentLineId, deliveredQty: 4 }],
@@ -566,7 +634,7 @@ describe("completeDeliveryShipment", () => {
       shipmentId,
       deliveredById: userId,
       proofPhotoUrl: "https://r2.example/proof.jpg",
-      proofPhotoR2Key: "delivery-proofs/x.jpg",
+      proofPhotoR2Key: `delivery-proofs/${shipmentId}/goods.jpg`,
       invoiceDate: new Date(),
       dueDate: new Date(Date.now() + 7 * 86400000),
       lines: [{ shipmentLineId, deliveredQty: 3 }],
@@ -588,7 +656,7 @@ describe("completeDeliveryShipment", () => {
         shipmentId,
         deliveredById: userId,
         proofPhotoUrl: "https://r2.example/proof.jpg",
-        proofPhotoR2Key: "delivery-proofs/x.jpg",
+        proofPhotoR2Key: `delivery-proofs/${shipmentId}/goods.jpg`,
         invoiceDate: new Date(),
         dueDate: new Date(Date.now() + 7 * 86400000),
         lines: [{ shipmentLineId, deliveredQty: 999 }],
@@ -608,7 +676,7 @@ describe("completeDeliveryShipment", () => {
       shipmentId,
       deliveredById: userId,
       proofPhotoUrl: "https://r2.example/proof.jpg",
-      proofPhotoR2Key: "delivery-proofs/x.jpg",
+      proofPhotoR2Key: `delivery-proofs/${shipmentId}/goods.jpg`,
       invoiceDate: new Date(),
       dueDate: new Date(Date.now() + 7 * 86400000),
       lines: [{ shipmentLineId, deliveredQty: 4 }],
@@ -624,7 +692,7 @@ describe("completeDeliveryShipment", () => {
         shipmentId,
         deliveredById: otherUserId,
         proofPhotoUrl: "https://r2.example/proof.jpg",
-        proofPhotoR2Key: "delivery-proofs/x.jpg",
+        proofPhotoR2Key: `delivery-proofs/${shipmentId}/goods.jpg`,
         invoiceDate: new Date(),
         dueDate: new Date(Date.now() + 7 * 86400000),
         lines: [{ shipmentLineId, deliveredQty: 4 }],
@@ -676,7 +744,7 @@ describe("completeDeliveryShipment", () => {
         shipmentId,
         deliveredById: userId,
         proofPhotoUrl: "https://r2.example/proof.jpg",
-        proofPhotoR2Key: "delivery-proofs/k.jpg",
+        proofPhotoR2Key: `delivery-proofs/${shipmentId}/goods.jpg`,
         lines: [{ shipmentLineId, deliveredQty: 4 }],
       }),
     ).rejects.toMatchObject({ code: "KONSI_NOT_RESERVED" });
@@ -707,7 +775,7 @@ describe("completeDeliveryShipment", () => {
         shipmentId,
         deliveredById: otherUserId,
         proofPhotoUrl: "https://r2.example/proof.jpg",
-        proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+        proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
         gps: { lat: -6.2, lng: 106.8 },
         lines: [{ shipmentLineId, deliveredQty: 4 }],
       }),
@@ -729,7 +797,7 @@ describe("completeDeliveryShipment", () => {
         shipmentId,
         deliveredById: userId,
         proofPhotoUrl: "https://r2.example/proof.jpg",
-        proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+        proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
         lines: [{ shipmentLineId, deliveredQty: 4 }],
       }),
     ).rejects.toMatchObject({ code: "MISSING_GPS" });
@@ -755,7 +823,7 @@ describe("completeDeliveryShipment", () => {
           shipmentId,
           deliveredById: userId,
           proofPhotoUrl: "https://r2.example/proof.jpg",
-          proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+          proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
           gps,
           lines: [{ shipmentLineId, deliveredQty: 4 }],
         }),
@@ -774,7 +842,7 @@ describe("completeDeliveryShipment", () => {
         shipmentId,
         deliveredById: userId,
         proofPhotoUrl: "https://r2.example/proof.jpg",
-        proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+        proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
         gps: { lat: -6.2, lng: 106.8 },
         lines: [{ shipmentLineId, deliveredQty: 4 }],
       }),
@@ -788,7 +856,7 @@ describe("completeDeliveryShipment", () => {
         shipmentId,
         deliveredById: userId,
         proofPhotoUrl: "https://r2.example/proof.jpg",
-        proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+        proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
         gps: { lat: -6.3, lng: 106.8 }, /* ~11km away, well outside a 100m radius */
         lines: [{ shipmentLineId, deliveredQty: 4 }],
       }),
@@ -801,7 +869,7 @@ describe("completeDeliveryShipment", () => {
       shipmentId,
       deliveredById: userId,
       proofPhotoUrl: "https://r2.example/proof.jpg",
-      proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+      proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
       gps: { lat: -6.2, lng: 106.8 }, /* exact match, 0m */
       signatureUrl: "https://r2.example/nota.jpg",
       signatureR2Key: `delivery-pod-proofs/${shipmentId}/nota-x.jpg`,
@@ -826,7 +894,7 @@ describe("completeDeliveryShipment", () => {
         shipmentId,
         deliveredById: userId,
         proofPhotoUrl: "https://r2.example/proof.jpg",
-        proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+        proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
         gps: { lat: -6.2, lng: 106.8 },
         signedByName: "Budi Santoso",
         lines: [{ shipmentLineId, deliveredQty: 4 }],
@@ -843,7 +911,7 @@ describe("completeDeliveryShipment", () => {
         shipmentId,
         deliveredById: userId,
         proofPhotoUrl: "https://r2.example/proof.jpg",
-        proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+        proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
         gps: { lat: -6.2, lng: 106.8 },
         signatureUrl: "https://r2.example/nota.jpg",
         signatureR2Key: "   ",
@@ -894,7 +962,7 @@ describe("completeDeliveryShipment", () => {
         shipmentId,
         deliveredById: userId,
         proofPhotoUrl: "https://r2.example/proof.jpg",
-        proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+        proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
         gps: { lat: -6.2, lng: 106.8 },
         signatureUrl: "https://r2.example/nota.jpg",
         signatureR2Key: `delivery-pod-proofs/${shipmentId}/nota-x.jpg`,
@@ -911,7 +979,7 @@ describe("completeDeliveryShipment", () => {
         shipmentId,
         deliveredById: userId,
         proofPhotoUrl: "https://r2.example/proof.jpg",
-        proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+        proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
         gps: { lat: -6.2, lng: 106.8 },
         signatureUrl: "https://r2.example/nota.jpg",
         signatureR2Key: `delivery-pod-proofs/${shipmentId}/nota-x.jpg`,
@@ -928,7 +996,7 @@ describe("completeDeliveryShipment", () => {
         shipmentId,
         deliveredById: userId,
         proofPhotoUrl: "https://r2.example/proof.jpg",
-        proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+        proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
         gps: { lat: -6.2, lng: 106.8 },
         signatureUrl: "https://r2.example/nota.jpg",
         signatureR2Key: `delivery-pod-proofs/${shipmentId}/nota-x.jpg`,
@@ -944,7 +1012,7 @@ describe("completeDeliveryShipment", () => {
       shipmentId,
       deliveredById: userId,
       proofPhotoUrl: "https://r2.example/proof.jpg",
-      proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+      proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
       gps: { lat: -6.2, lng: 106.8 },
       signatureUrl: "https://r2.example/nota.jpg",
       signatureR2Key: `delivery-pod-proofs/${shipmentId}/nota-x.jpg`,
@@ -970,7 +1038,7 @@ describe("completeDeliveryShipment", () => {
         shipmentId,
         deliveredById: userId,
         proofPhotoUrl: "https://r2.example/proof.jpg",
-        proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+        proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
         gps: { lat: -6.2, lng: 106.8 },
         lines: [{ shipmentLineId, deliveredQty: 4 }],
       }),
@@ -986,7 +1054,7 @@ describe("completeDeliveryShipment", () => {
         shipmentId,
         deliveredById: userId,
         proofPhotoUrl: "https://r2.example/proof.jpg",
-        proofPhotoR2Key: "delivery-proofs/x.jpg",
+        proofPhotoR2Key: `delivery-proofs/${shipmentId}/goods.jpg`,
         lines: [{ shipmentLineId, deliveredQty: 4 }],
         /* invoiceDate/dueDate deliberately omitted */
       }),
@@ -1015,6 +1083,30 @@ describe("completeDeliveryShipment", () => {
       proofPhotoUrl: "",
       proofPhotoR2Key: "",
       lines: [],
+    });
+    expect(second).toEqual({ ok: true, deliveryId: first.deliveryId });
+  });
+
+  it("returns ok on a same-actor replay even when the replayed payload carries an unbound goods key", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    const first = await completeDeliveryShipment({
+      shipmentId,
+      deliveredById: userId,
+      proofPhotoUrl: "https://r2.example/proof.jpg",
+      proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
+      gps: { lat: -6.2, lng: 106.8 },
+      signatureUrl: "https://r2.example/nota.jpg",
+      signatureR2Key: `delivery-pod-proofs/${shipmentId}/nota.jpg`,
+      signedByName: "Budi Santoso",
+      lines: [{ shipmentLineId, deliveredQty: 4 }],
+    });
+    deliveryId = first.deliveryId;
+    const second = await completeDeliveryShipment({
+      shipmentId,
+      deliveredById: userId,
+      proofPhotoUrl: "https://r2.example/stale.jpg",
+      proofPhotoR2Key: "delivery-pod-proofs/some-other-shipment/goods.jpg",
+      lines: [{ shipmentLineId, deliveredQty: 4 }],
     });
     expect(second).toEqual({ ok: true, deliveryId: first.deliveryId });
   });
@@ -1305,7 +1397,7 @@ describe("cancelDeliveryShipment", () => {
       shipmentId,
       deliveredById: userId,
       proofPhotoUrl: "https://r2.example/proof.jpg",
-      proofPhotoR2Key: "delivery-proofs/d.jpg",
+      proofPhotoR2Key: `delivery-proofs/${shipmentId}/goods.jpg`,
       invoiceDate: new Date(),
       dueDate: new Date(Date.now() + 7 * 86400000),
       lines: [{ shipmentLineId: shipment!.lines[0].id, deliveredQty: 4 }],

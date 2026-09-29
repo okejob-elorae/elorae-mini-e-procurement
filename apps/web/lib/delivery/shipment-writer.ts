@@ -224,6 +224,25 @@ export async function completeDeliveryShipment(input: {
   if (input.lines.length === 0) throw new DeliveryShipmentError("NO_LINES");
   const proofPhotoUrl = input.proofPhotoUrl?.trim();
   if (!proofPhotoUrl) throw new DeliveryShipmentError("MISSING_PROOF");
+  /**
+   * The goods-photo key bind, sibling of the nota-key binds in the SALESMAN_CARRY branch below —
+   * read the two together. Non-empty `proofPhotoUrl` alone proved nothing about WHERE the photo
+   * lives, so a raw caller could record any key (another shipment's evidence, an arbitrary string)
+   * as this delivery's proof. The expected prefix follows `method`, because the two methods upload
+   * through different routes: the salesman-carry PWA route writes
+   * `delivery-pod-proofs/<shipmentId>/goods.<ext>`, the backoffice route writes
+   * `delivery-proofs/<shipmentId>/<timestamp>.<ext>`. Sits after the shipment fetch and the
+   * same-actor replay guard on purpose — a replay short-circuits before this ever runs, so a
+   * retried payload carrying no or stale keys still returns ok. Like the nota check, it verifies
+   * the key's shape only; nothing here queries R2 for the object.
+   */
+  const goodsKeyPrefix =
+    shipment.method === "SALESMAN_CARRY"
+      ? `delivery-pod-proofs/${input.shipmentId}/`
+      : `delivery-proofs/${input.shipmentId}/`;
+  if (!input.proofPhotoR2Key?.startsWith(goodsKeyPrefix)) {
+    throw new DeliveryShipmentError("MISSING_PROOF");
+  }
   for (const line of input.lines) {
     if (!Number.isInteger(line.deliveredQty) || line.deliveredQty < 0) {
       throw new DeliveryShipmentError("INVALID_QTY");
@@ -362,7 +381,8 @@ export async function completeDeliveryShipment(input: {
      * (nothing here queries R2 to confirm the object exists — the upload route already wrote it,
      * this only checks the key's shape is consistent with having come from it). Same lesson as
      * NOT_CARRIER above: every "use server" export is independently callable, so the UI only
-     * ever sending real uploaded keys is not a guarantee.
+     * ever sending real uploaded keys is not a guarantee. The goods key gets the same
+     * shipment-scoped bind (`MISSING_PROOF`) above, before the method branch.
      */
     if (signatureR2Key === input.proofPhotoR2Key) {
       throw new DeliveryShipmentError("MISSING_NOTA_PHOTO");
