@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { ArrowLeft, CheckCircle2, Loader2, MapPin, Truck } from "lucide-react";
 import { completePodAction } from "../actions";
 import { enqueueCompletion } from "@/lib/pwa/offline/completion-queue";
+import { PodUploadRefusedError, throwIfPodUploadRefused } from "@/lib/pwa/offline/pod-upload-refusal";
 import { evaluateCheckinRadius } from "@/lib/pwa/checkin-radius";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -113,6 +114,7 @@ export function CompletePodSheet({
     formData.append("shipmentId", shipmentId);
     formData.append("clientId", kind);
     const res = await fetch("/pwa/api/upload/delivery-pod-proof", { method: "POST", body: formData });
+    throwIfPodUploadRefused(res);
     if (!res.ok) throw new Error(`upload failed: ${kind}`);
     return res.json();
   }
@@ -185,7 +187,11 @@ export function CompletePodSheet({
           return;
         }
         toast.error(tErr(`err.${result.reason}` as any));
-      } catch {
+      } catch (e) {
+        if (e instanceof PodUploadRefusedError) {
+          toast.error(tErr(`err.${e.reason}` as any));
+          return;
+        }
         await queueOffline(capturedProofFile, capturedNotaFile);
       }
     });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { pwaAccessGuard } from "@/lib/pwa/guard";
 import { uploadToR2, isConfigured } from "@/lib/r2";
+import { buildR2Key, isSafeR2KeySegment } from "@/lib/r2-key";
 import { prisma } from "@elorae/db";
 import { attachVisitPhoto, VisitOwnershipError } from "@/lib/field-sales/visit-photo-writer";
 
@@ -24,6 +25,8 @@ export async function POST(req: NextRequest) {
   const capturedAtRaw = form.get("capturedAt") as string | null;
 
   if (!file || !visitId || !clientId) return NextResponse.json({ error: "file, visitId, clientId required" }, { status: 400 });
+  if (!isSafeR2KeySegment(visitId)) return NextResponse.json({ error: "invalid visitId" }, { status: 400 });
+  if (!isSafeR2KeySegment(clientId)) return NextResponse.json({ error: "invalid clientId" }, { status: 400 });
   if (!ALLOWED_TYPES.has(file.type)) return NextResponse.json({ error: `type ${file.type} not allowed` }, { status: 400 });
   if (file.size > MAX_FILE_SIZE) return NextResponse.json({ error: "file exceeds 10MB" }, { status: 400 });
 
@@ -38,7 +41,7 @@ export async function POST(req: NextRequest) {
     if (!owned) return NextResponse.json({ error: "visit not found" }, { status: 404 });
 
     const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
-    const key = `visit-photos/${visitId}/${clientId}.${ext}`;
+    const key = buildR2Key("visit-photos", [visitId, clientId], ext);
     const buffer = Buffer.from(await file.arrayBuffer());
     const url = await uploadToR2(key, buffer, file.type);
     const photo = await prisma.$transaction((tx) =>

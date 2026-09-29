@@ -6,7 +6,9 @@ import { evaluateCheckinRadius, resolveEffectiveRadius, parseRadiusSetting } fro
 import { issueKonsiTransfer } from "@/lib/field-sales/konsi-transfer/writer";
 import { DeliveryError, KonsiTransferReservationMismatchError } from "@/lib/field-sales/errors";
 import { nextDeliveryStatus } from "@/lib/field-sales/delivery/plan";
+import { isR2KeyInFolder } from "@/lib/r2-key";
 import { DeliveryShipmentError } from "./errors";
+import { isSameActorReplay } from "./pod-completion-guard";
 
 export async function createDeliveryShipment(input: {
   orderId: string;
@@ -212,10 +214,7 @@ export async function completeDeliveryShipment(input: {
    * run, not merely happen to still satisfy them — an offline-queued retry may legitimately
    * carry no photos/lines the second time around.
    */
-  if (
-    (shipment.status === "DELIVERED" || shipment.status === "PARTIALLY_DELIVERED") &&
-    shipment.deliveredById === input.deliveredById
-  ) {
+  if (isSameActorReplay(shipment, input.deliveredById)) {
     return { ok: true, deliveryId: shipment.deliveryId ?? "" };
   }
   if (shipment.status !== "IN_TRANSIT") throw new DeliveryShipmentError("INVALID_STATE");
@@ -224,6 +223,28 @@ export async function completeDeliveryShipment(input: {
   if (input.lines.length === 0) throw new DeliveryShipmentError("NO_LINES");
   const proofPhotoUrl = input.proofPhotoUrl?.trim();
   if (!proofPhotoUrl) throw new DeliveryShipmentError("MISSING_PROOF");
+  /**
+   * The goods-photo key bind, sibling of the nota-key binds in the SALESMAN_CARRY branch below —
+   * read the two together. Non-empty `proofPhotoUrl` alone proved nothing about WHERE the photo
+   * lives, so a raw caller could record any key (another shipment's evidence, an arbitrary string)
+   * as this delivery's proof. The expected folder follows `method`, because the two methods upload
+   * through different routes: the salesman-carry PWA route writes
+   * `delivery-pod-proofs/<shipmentId>/goods.<ext>`, the backoffice route writes
+   * `delivery-proofs/<shipmentId>/<timestamp>.<ext>`. The bind is the exact shape
+   * `<folder>/<segment>.<ext>` (`isR2KeyInFolder`), not a prefix match: a prefix also admits
+   * `<folder>/x/../y.jpg`, which normalises to another object. The shape forbids whitespace, so
+   * the untrimmed goods key cannot be padded past the distinctness check against the nota key. Sits after the shipment fetch and the
+   * same-actor replay guard on purpose — a replay short-circuits before this ever runs, so a
+   * retried payload carrying no or stale keys still returns ok. Like the nota check, it verifies
+   * the key's shape only; nothing here queries R2 for the object.
+   */
+  const goodsKeyFolder =
+    shipment.method === "SALESMAN_CARRY"
+      ? `delivery-pod-proofs/${input.shipmentId}`
+      : `delivery-proofs/${input.shipmentId}`;
+  if (!isR2KeyInFolder(input.proofPhotoR2Key, goodsKeyFolder)) {
+    throw new DeliveryShipmentError("MISSING_PROOF");
+  }
   for (const line of input.lines) {
     if (!Number.isInteger(line.deliveredQty) || line.deliveredQty < 0) {
       throw new DeliveryShipmentError("INVALID_QTY");
@@ -362,12 +383,13 @@ export async function completeDeliveryShipment(input: {
      * (nothing here queries R2 to confirm the object exists — the upload route already wrote it,
      * this only checks the key's shape is consistent with having come from it). Same lesson as
      * NOT_CARRIER above: every "use server" export is independently callable, so the UI only
-     * ever sending real uploaded keys is not a guarantee.
+     * ever sending real uploaded keys is not a guarantee. The goods key gets the same
+     * shipment-scoped bind (`MISSING_PROOF`) above, before the method branch.
      */
     if (signatureR2Key === input.proofPhotoR2Key) {
       throw new DeliveryShipmentError("MISSING_NOTA_PHOTO");
     }
-    if (!signatureR2Key.startsWith(`delivery-pod-proofs/${input.shipmentId}/`)) {
+    if (!isR2KeyInFolder(signatureR2Key, `delivery-pod-proofs/${input.shipmentId}`)) {
       throw new DeliveryShipmentError("MISSING_NOTA_PHOTO");
     }
     if (!signedByName || signedByName.length > 120) {

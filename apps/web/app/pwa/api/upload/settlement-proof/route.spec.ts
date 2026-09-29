@@ -83,6 +83,17 @@ describe("POST /pwa/api/upload/settlement-proof", () => {
     expect(mockUpload).toHaveBeenCalledTimes(1);
   });
 
+  it.each([`program-${"9".repeat(57)}`, "program-1234", "program-", "../adminfee", "adminfee/x"])(
+    "refuses slot %j with 400 before any database or R2 call",
+    async (slot) => {
+      const res = await POST(formRequest({ slot }) as never);
+
+      expect(res.status).toBe(400);
+      expect(mockFindUnique).not.toHaveBeenCalled();
+      expect(mockUpload).not.toHaveBeenCalled();
+    },
+  );
+
   it("returns 401 without a session, before checking the draft", async () => {
     mockAuth.mockResolvedValue(null);
 

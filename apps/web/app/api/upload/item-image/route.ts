@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { uploadToR2, isConfigured } from "@/lib/r2";
+import { buildR2Key, isSafeR2KeyExt } from "@/lib/r2-key";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { validateMime, validateSize } from "@/lib/items/images/validators";
@@ -51,8 +52,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: sizeCheck.code, message: sizeCheck.message }, { status: 400 });
     }
 
-    const ext = (file.name.split(".").pop() ?? "bin").toLowerCase().replace(/[^a-z0-9]/g, "");
-    const key = `items/${itemId}/${randomUUID()}.${ext}`;
+    const rawExt = (file.name.split(".").pop() ?? "bin").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const ext = isSafeR2KeyExt(rawExt) ? rawExt : "bin";
+    const key = buildR2Key("items", [itemId, randomUUID()], ext);
     const buffer = Buffer.from(await file.arrayBuffer());
     const url = await uploadToR2(key, buffer, file.type);
     urls.push(url);

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { uploadToR2, isConfigured } from "@/lib/r2";
+import { buildR2Key, isSafeR2KeySegment } from "@/lib/r2-key";
 import { prisma } from "@elorae/db";
 import { getFallbackSalesOrderId, findSalesOrderByTrackingNumber } from "@/lib/packer/queries";
 import {
@@ -97,7 +98,10 @@ export async function POST(req: NextRequest) {
       : file.type.includes("quicktime")
         ? "mov"
         : "webm";
-  const key = `packing-videos/${salesOrderId}/${Date.now()}.${ext}`;
+  if (!isSafeR2KeySegment(salesOrderId)) {
+    return NextResponse.json({ error: "invalid salesOrderId" }, { status: 400 });
+  }
+  const key = buildR2Key("packing-videos", [salesOrderId, String(Date.now())], ext);
 
   try {
     const buffer = Buffer.from(await file.arrayBuffer());

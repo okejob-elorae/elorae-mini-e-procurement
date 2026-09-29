@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { podCompletionBlock } from "./pod-completion-guard";
+import { isSameActorReplay, podCompletionBlock } from "./pod-completion-guard";
 
 const ME = "user-me";
 
@@ -41,5 +41,27 @@ describe("podCompletionBlock", () => {
     expect(
       podCompletionBlock({ carriedById: ME, status: "IN_TRANSIT", method: "SALESMAN_CARRY" }, ME),
     ).toBeNull();
+  });
+});
+
+describe("isSameActorReplay", () => {
+  it("is true for a DELIVERED shipment completed by the same actor", () => {
+    expect(isSameActorReplay({ status: "DELIVERED", deliveredById: ME }, ME)).toBe(true);
+  });
+
+  it("is true for a PARTIALLY_DELIVERED shipment completed by the same actor", () => {
+    expect(isSameActorReplay({ status: "PARTIALLY_DELIVERED", deliveredById: ME }, ME)).toBe(true);
+  });
+
+  it("is false when a different actor completed it", () => {
+    expect(isSameActorReplay({ status: "DELIVERED", deliveredById: "other" }, ME)).toBe(false);
+  });
+
+  it.each(["IN_TRANSIT", "PACKED", "CANCELLED"])("is false for a %s shipment", (status) => {
+    expect(isSameActorReplay({ status, deliveredById: ME }, ME)).toBe(false);
+  });
+
+  it("is false when nobody has completed it", () => {
+    expect(isSameActorReplay({ status: "DELIVERED", deliveredById: null }, ME)).toBe(false);
   });
 });

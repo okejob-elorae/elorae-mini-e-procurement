@@ -10,3 +10,19 @@ export function podCompletionBlock(
   }
   return null;
 }
+
+/**
+ * The ONE definition of a same-actor replay of an already-completed delivery, shared by
+ * `completeDeliveryShipment`'s replay guard and the POD upload route's replay branch.
+ * Changing it changes both, which is the point: a route that hands back stored keys for a
+ * shipment the writer would then refuse turns a lost-response replay into a terminal failure.
+ */
+export function isSameActorReplay(
+  shipment: { status: string; deliveredById: string | null },
+  actorId: string,
+): boolean {
+  return (
+    (shipment.status === "DELIVERED" || shipment.status === "PARTIALLY_DELIVERED") &&
+    shipment.deliveredById === actorId
+  );
+}

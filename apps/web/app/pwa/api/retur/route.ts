@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { pwaAccessGuard } from "@/lib/pwa/guard";
 import { uploadToR2, isConfigured } from "@/lib/r2";
+import { buildR2Key, isSafeR2KeySegment } from "@/lib/r2-key";
 import { createFieldReturn } from "@/lib/field-sales/retur/writer";
 import { FieldReturnError } from "@/lib/field-sales/retur/errors";
 import { FIELD_RETURN_REASONS, type FieldReturnLineInput } from "@/lib/field-sales/retur/types";
@@ -62,6 +63,7 @@ export async function POST(req: NextRequest) {
   }
   if (file.size > MAX_FILE_SIZE) return NextResponse.json({ error: "file exceeds 10MB" }, { status: 400 });
   if (storeId.trim() === "") return NextResponse.json({ error: "storeId required" }, { status: 400 });
+  if (!isSafeR2KeySegment(storeId)) return NextResponse.json({ error: "invalid storeId" }, { status: 400 });
   if (transport !== "SELF_CARRY" && transport !== "EXPEDITION") {
     return NextResponse.json({ error: "transport invalid" }, { status: 400 });
   }
@@ -84,7 +86,7 @@ export async function POST(req: NextRequest) {
   }
 
   const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
-  const r2Key = `field-returns/${storeId}/${crypto.randomUUID()}.${ext}`;
+  const r2Key = buildR2Key("field-returns", [storeId, crypto.randomUUID()], ext);
 
   let url: string;
   try {
