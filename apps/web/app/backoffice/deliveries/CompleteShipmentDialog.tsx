@@ -3,6 +3,8 @@
 import { useEffect, useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
+import { AlertCircle, Loader2 } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,6 +29,13 @@ type Props = {
 
 type Line = { id: string; productName: string; plannedQty: number };
 
+/**
+ * `loading` and `error` never show the form: with no lines loaded, an empty form reads as "this
+ * shipment has no lines". `notFound` is the action's `null` (no permission, or the row is gone)
+ * and is not retryable.
+ */
+type LoadState = { status: "loading" } | { status: "loaded" } | { status: "error"; reason: "failed" | "notFound" };
+
 export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone }: Props) {
   const t = useTranslations("deliveryShipments");
   const [lines, setLines] = useState<Line[]>([]);
@@ -36,8 +45,10 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
   const [invoiceDate, setInvoiceDate] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [isKonsi, setIsKonsi] = useState(false);
-  /* Gates the konsi-or-putus block: until the detail arrives, `isKonsi` is a default, not a fact. */
-  const [detailLoaded, setDetailLoaded] = useState(false);
+  /* Gates the whole form, and with it the konsi-or-putus block: until the detail arrives, `isKonsi` is a default, not a fact. */
+  const [loadState, setLoadState] = useState<LoadState>({ status: "loading" });
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const detailLoaded = loadState.status === "loaded";
   const [uploading, setUploading] = useState(false);
   const [isPending, startTransition] = useTransition();
 
@@ -53,16 +64,29 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
     setDueDate("");
     setProofPhotoUrl("");
     setProofPhotoR2Key("");
-    setDetailLoaded(false);
-    getShipmentAction(shipmentId).then((detail) => {
-      if (!detail) return;
-      const nextLines = detail.lines.map((l) => ({ id: l.id, productName: l.productName, plannedQty: l.plannedQty }));
-      setLines(nextLines);
-      setQtyInputs(Object.fromEntries(nextLines.map((l) => [l.id, String(l.plannedQty)])));
-      setIsKonsi(detail.orderType === "KONSI");
-      setDetailLoaded(true);
-    });
-  }, [open, shipmentId]);
+    setLoadState({ status: "loading" });
+    /* Dropped on cleanup so a slow response for a previous shipment cannot overwrite this one. */
+    let cancelled = false;
+    getShipmentAction(shipmentId)
+      .then((detail) => {
+        if (cancelled) return;
+        if (!detail) {
+          setLoadState({ status: "error", reason: "notFound" });
+          return;
+        }
+        const nextLines = detail.lines.map((l) => ({ id: l.id, productName: l.productName, plannedQty: l.plannedQty }));
+        setLines(nextLines);
+        setQtyInputs(Object.fromEntries(nextLines.map((l) => [l.id, String(l.plannedQty)])));
+        setIsKonsi(detail.orderType === "KONSI");
+        setLoadState({ status: "loaded" });
+      })
+      .catch(() => {
+        if (!cancelled) setLoadState({ status: "error", reason: "failed" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, shipmentId, loadAttempt]);
 
   async function handleUpload(file: File): Promise<void> {
     setUploading(true);
@@ -99,7 +123,7 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
   const datesValid =
     parsedInvoice !== null && parsedDue !== null && parsedDue.getTime() >= parsedInvoice.getTime();
   const canSubmit =
-    !isPending && !uploading && !!proofPhotoUrl && lines.length > 0 && (isKonsi || datesValid);
+    detailLoaded && !isPending && !uploading && !!proofPhotoUrl && lines.length > 0 && (isKonsi || datesValid);
 
   function handleSubmit(): void {
     /* Submit is disabled until `canSubmit`; the hints beside each control say what is missing. */
@@ -143,80 +167,112 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
           <DialogTitle>{t("completeTitle")}</DialogTitle>
           <DialogDescription>{t("completeDescription")}</DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
-          <div>
-            <Label htmlFor="proofPhoto">{t("proofPhoto")}</Label>
-            <Input
-              id="proofPhoto"
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              disabled={uploading}
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) void handleUpload(file);
-              }}
-            />
-            {uploading && <p className="mt-1 text-xs text-muted-foreground">{t("uploading")}</p>}
-            {!proofPhotoUrl && !uploading && (
-              <p className="mt-1 text-xs text-muted-foreground">{t("proofPhotoRequired")}</p>
-            )}
-            {proofPhotoUrl && !uploading && (
-              <img src={proofPhotoUrl} alt="" className="mt-2 h-24 w-24 rounded object-cover" />
-            )}
+        {loadState.status === "loading" && (
+          <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            {t("loadingDetail")}
           </div>
-          {detailLoaded && isKonsi && (
-            <p className="text-sm text-muted-foreground">{t("konsiCompleteNote")}</p>
-          )}
-          {detailLoaded && !isKonsi && (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <Label htmlFor="invoiceDate">{t("invoiceDate")}</Label>
-                <Input
-                  id="invoiceDate"
-                  type="date"
-                  className="h-10"
-                  value={invoiceDate}
-                  disabled={isPending}
-                  onChange={(e) => setInvoiceDate(e.target.value)}
-                />
-                {parsedInvoice === null && (
-                  <p className="text-xs text-muted-foreground">{t("invoiceDateRequired")}</p>
-                )}
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="dueDate">{t("dueDate")}</Label>
-                <Input
-                  id="dueDate"
-                  type="date"
-                  className="h-10"
-                  value={dueDate}
-                  min={invoiceDate || undefined}
-                  disabled={isPending}
-                  onChange={(e) => setDueDate(e.target.value)}
-                />
-                {parsedDue === null && <p className="text-xs text-muted-foreground">{t("dueDateRequired")}</p>}
-                {parsedDue !== null && parsedInvoice !== null && !datesValid && (
-                  <p className="text-xs text-destructive">{t("dueDateBeforeInvoice")}</p>
-                )}
-              </div>
+        )}
+        {loadState.status === "error" && (
+          <Alert variant="destructive">
+            <AlertCircle />
+            <AlertTitle>
+              {loadState.reason === "notFound" ? t("loadNotFoundTitle") : t("loadFailedTitle")}
+            </AlertTitle>
+            <AlertDescription>
+              <p>
+                {loadState.reason === "notFound" ? t("loadNotFoundDescription") : t("loadFailedDescription")}
+              </p>
+              {loadState.reason === "failed" && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-2 h-10"
+                  onClick={() => setLoadAttempt((n) => n + 1)}
+                >
+                  {t("loadRetry")}
+                </Button>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
+        {detailLoaded && (
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="proofPhoto">{t("proofPhoto")}</Label>
+              <Input
+                id="proofPhoto"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                disabled={uploading}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void handleUpload(file);
+                }}
+              />
+              {uploading && <p className="mt-1 text-xs text-muted-foreground">{t("uploading")}</p>}
+              {!proofPhotoUrl && !uploading && (
+                <p className="mt-1 text-xs text-muted-foreground">{t("proofPhotoRequired")}</p>
+              )}
+              {proofPhotoUrl && !uploading && (
+                <img src={proofPhotoUrl} alt="" className="mt-2 h-24 w-24 rounded object-cover" />
+              )}
             </div>
-          )}
-          <div className="space-y-2">
-            {lines.map((line) => (
-              <div key={line.id} className="flex items-center justify-between gap-2">
-                <span className="truncate text-sm">{line.productName}</span>
-                <Input
-                  type="number"
-                  min={0}
-                  max={line.plannedQty}
-                  className="w-24"
-                  value={qtyInputs[line.id] ?? ""}
-                  onChange={(e) => setQtyInputs((prev) => ({ ...prev, [line.id]: e.target.value }))}
-                />
+            {isKonsi && (
+              <p className="text-sm text-muted-foreground">{t("konsiCompleteNote")}</p>
+            )}
+            {!isKonsi && (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <Label htmlFor="invoiceDate">{t("invoiceDate")}</Label>
+                  <Input
+                    id="invoiceDate"
+                    type="date"
+                    className="h-10"
+                    value={invoiceDate}
+                    disabled={isPending}
+                    onChange={(e) => setInvoiceDate(e.target.value)}
+                  />
+                  {parsedInvoice === null && (
+                    <p className="text-xs text-muted-foreground">{t("invoiceDateRequired")}</p>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="dueDate">{t("dueDate")}</Label>
+                  <Input
+                    id="dueDate"
+                    type="date"
+                    className="h-10"
+                    value={dueDate}
+                    min={invoiceDate || undefined}
+                    disabled={isPending}
+                    onChange={(e) => setDueDate(e.target.value)}
+                  />
+                  {parsedDue === null && <p className="text-xs text-muted-foreground">{t("dueDateRequired")}</p>}
+                  {parsedDue !== null && parsedInvoice !== null && !datesValid && (
+                    <p className="text-xs text-destructive">{t("dueDateBeforeInvoice")}</p>
+                  )}
+                </div>
               </div>
-            ))}
+            )}
+            <div className="space-y-2">
+              {lines.map((line) => (
+                <div key={line.id} className="flex items-center justify-between gap-2">
+                  <span className="truncate text-sm">{line.productName}</span>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={line.plannedQty}
+                    className="w-24"
+                    value={qtyInputs[line.id] ?? ""}
+                    onChange={(e) => setQtyInputs((prev) => ({ ...prev, [line.id]: e.target.value }))}
+                  />
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
         <DialogFooter>
           <Button className="h-10" onClick={handleSubmit} disabled={!canSubmit}>
             {t("submit")}

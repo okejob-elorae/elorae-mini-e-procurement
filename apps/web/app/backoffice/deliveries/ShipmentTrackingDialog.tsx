@@ -3,6 +3,8 @@
 import { useEffect, useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
+import { AlertCircle, Loader2 } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,6 +33,13 @@ type Props = {
   carriers: { id: string; name: string }[];
 };
 
+/**
+ * `loading` and `error` never show the editable form: an empty or default-filled form is
+ * indistinguishable from a real shipment that simply has no data. `notFound` is the action's
+ * `null` (no permission, or the row is gone) and is not retryable.
+ */
+type LoadState = { status: "loading" } | { status: "loaded" } | { status: "error"; reason: "failed" | "notFound" };
+
 export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone, carriers }: Props) {
   const t = useTranslations("deliveryShipments");
   const [carrierName, setCarrierName] = useState("");
@@ -40,24 +49,40 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
   const [invoiceDate, setInvoiceDate] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [isKonsi, setIsKonsi] = useState(false);
-  /* Gates the putus date block: until the detail arrives, `isKonsi` is a default, not a fact. */
-  const [detailLoaded, setDetailLoaded] = useState(false);
+  /* Gates the whole form, and with it the putus date block: until the detail arrives, `isKonsi` is a default, not a fact. */
+  const [loadState, setLoadState] = useState<LoadState>({ status: "loading" });
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const detailLoaded = loadState.status === "loaded";
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     if (!open) return;
-    setDetailLoaded(false);
-    getShipmentAction(shipmentId).then((detail) => {
-      setCarrierName(detail?.carrierName ?? "");
-      setResiNumber(detail?.resiNumber ?? "");
-      setMethod(detail?.method ?? "");
-      setCarriedById(detail?.carriedById ?? "");
-      setInvoiceDate(detail?.invoiceDate ? formatDateOnlyJakarta(detail.invoiceDate) : "");
-      setDueDate(detail?.dueDate ? formatDateOnlyJakarta(detail.dueDate) : "");
-      setIsKonsi(detail?.orderType === "KONSI");
-      setDetailLoaded(true);
-    });
-  }, [open, shipmentId]);
+    /* Dropped on cleanup so a slow response for a previous shipment cannot overwrite this one. */
+    let cancelled = false;
+    setLoadState({ status: "loading" });
+    getShipmentAction(shipmentId)
+      .then((detail) => {
+        if (cancelled) return;
+        if (!detail) {
+          setLoadState({ status: "error", reason: "notFound" });
+          return;
+        }
+        setCarrierName(detail.carrierName ?? "");
+        setResiNumber(detail.resiNumber ?? "");
+        setMethod(detail.method ?? "");
+        setCarriedById(detail.carriedById ?? "");
+        setInvoiceDate(detail.invoiceDate ? formatDateOnlyJakarta(detail.invoiceDate) : "");
+        setDueDate(detail.dueDate ? formatDateOnlyJakarta(detail.dueDate) : "");
+        setIsKonsi(detail.orderType === "KONSI");
+        setLoadState({ status: "loaded" });
+      })
+      .catch(() => {
+        if (!cancelled) setLoadState({ status: "error", reason: "failed" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, shipmentId, loadAttempt]);
 
   /**
    * Every action call below is wrapped. A rejection inside `startTransition` is otherwise
@@ -165,55 +190,87 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
           <DialogTitle>{t("editTrackingTitle")}</DialogTitle>
           <DialogDescription>{t("editTrackingDescription")}</DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
-          <div>
-            <Label htmlFor="carrierName">{t("carrierNameLabel")}</Label>
-            <Input id="carrierName" value={carrierName} onChange={(e) => setCarrierName(e.target.value)} />
+        {loadState.status === "loading" && (
+          <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            {t("loadingDetail")}
           </div>
-          <div>
-            <Label htmlFor="resiNumber">{t("resiNumberLabel")}</Label>
-            <Input id="resiNumber" value={resiNumber} onChange={(e) => setResiNumber(e.target.value)} />
-          </div>
-          {method === "SALESMAN_CARRY" && (
-            <>
-              <div>
-                <Label htmlFor="carriedBy">{t("carriedByLabel")}</Label>
-                <SearchableCombobox
-                  id="carriedBy"
-                  options={carriers.map((c) => ({ value: c.id, label: c.name }))}
-                  value={carriedById}
-                  onValueChange={setCarriedById}
-                  placeholder={t("carriedByPlaceholder")}
-                />
-              </div>
-              {detailLoaded && !isKonsi && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label htmlFor="invoiceDate">{t("invoiceDateLabel")}</Label>
-                    <Input
-                      id="invoiceDate"
-                      type="date"
-                      value={invoiceDate}
-                      onChange={(e) => setInvoiceDate(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="dueDate2">{t("dueDateLabel2")}</Label>
-                    <Input id="dueDate2" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-                  </div>
-                </div>
+        )}
+        {loadState.status === "error" && (
+          <Alert variant="destructive">
+            <AlertCircle />
+            <AlertTitle>
+              {loadState.reason === "notFound" ? t("loadNotFoundTitle") : t("loadFailedTitle")}
+            </AlertTitle>
+            <AlertDescription>
+              <p>
+                {loadState.reason === "notFound" ? t("loadNotFoundDescription") : t("loadFailedDescription")}
+              </p>
+              {loadState.reason === "failed" && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-2 h-10"
+                  onClick={() => setLoadAttempt((n) => n + 1)}
+                >
+                  {t("loadRetry")}
+                </Button>
               )}
-            </>
-          )}
-        </div>
+            </AlertDescription>
+          </Alert>
+        )}
+        {detailLoaded && (
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="carrierName">{t("carrierNameLabel")}</Label>
+              <Input id="carrierName" value={carrierName} onChange={(e) => setCarrierName(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="resiNumber">{t("resiNumberLabel")}</Label>
+              <Input id="resiNumber" value={resiNumber} onChange={(e) => setResiNumber(e.target.value)} />
+            </div>
+            {method === "SALESMAN_CARRY" && (
+              <>
+                <div>
+                  <Label htmlFor="carriedBy">{t("carriedByLabel")}</Label>
+                  <SearchableCombobox
+                    id="carriedBy"
+                    options={carriers.map((c) => ({ value: c.id, label: c.name }))}
+                    value={carriedById}
+                    onValueChange={setCarriedById}
+                    placeholder={t("carriedByPlaceholder")}
+                  />
+                </div>
+                {!isKonsi && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label htmlFor="invoiceDate">{t("invoiceDateLabel")}</Label>
+                      <Input
+                        id="invoiceDate"
+                        type="date"
+                        value={invoiceDate}
+                        onChange={(e) => setInvoiceDate(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="dueDate2">{t("dueDateLabel2")}</Label>
+                      <Input id="dueDate2" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
         <DialogFooter className="flex-wrap gap-2">
-          <Button variant="destructive" onClick={handleCancel} disabled={isPending}>
+          <Button variant="destructive" onClick={handleCancel} disabled={isPending || !detailLoaded}>
             {t("cancel")}
           </Button>
-          <Button variant="outline" onClick={handleSave} disabled={isPending}>
+          <Button variant="outline" onClick={handleSave} disabled={isPending || !detailLoaded}>
             {t("save")}
           </Button>
-          <Button onClick={handleShip} disabled={isPending}>
+          <Button onClick={handleShip} disabled={isPending || !detailLoaded}>
             {t("ship")}
           </Button>
         </DialogFooter>
