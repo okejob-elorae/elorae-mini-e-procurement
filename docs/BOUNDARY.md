@@ -365,7 +365,7 @@ It is never populated from `SalesOrder` or Jubelio webhooks.
 
 The writer helper enforces the state machine (PENDING → PICKED → PACKED → SHIPPED, no skip, no reverse) and enqueues a `JubelioOutbox` row per transition in the same transaction. Web bare-prisma writes to any fulfillment column are a contract violation.
 
-**api forward-sync exception (added 2026-06-14):** `SalesOrderWebhookHandler.upsertSalesOrder` MAY advance `fulfillmentStatus → SHIPPED` and stamp `shippedAt` when the inbound Jubelio salesorder webhook reports the order shipped (any of `wms_status === "SHIPPED"`, `is_shipped === true`, `marked_as_complete === true`, or `completed_date` present). The advancement is:
+**api forward-sync exception (added 2026-06-14):** `SalesOrderWebhookHandler.upsertSalesOrder` MAY advance `fulfillmentStatus → SHIPPED` and stamp `shippedAt` when the inbound Jubelio salesorder webhook reports the order shipped (`isShippedOrder` — any of `wms_status === "SHIPPED"`, `is_shipped === true` or `internal_status === "SHIPPED"` — or `marked_as_complete === true`, or `completed_date` present). The advancement is:
 
 - **Forward-only.** Guarded by `where: { fulfillmentStatus: { not: "SHIPPED" } }` — never overwrites an existing SHIPPED audit set by the writer helper (preserves `shippedById` + original `shippedAt`).
 - **No `shippedById` write.** When advanced via webhook, `shippedById` stays null (no user clicked Ship). UI distinguishes "Shipped at … by NAME" vs "Shipped at …" accordingly.

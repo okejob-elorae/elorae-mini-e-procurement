@@ -8,7 +8,7 @@ import type { HandlerOutcome, WebhookEventHandler } from "./handler.types";
 import type { SalesOrderLine, SalesOrderPayload } from "./salesorder.payload";
 import { resolveItemMapping } from "./_shared/mapping-lookup";
 import { detectChannel } from "./_shared/channel-detect";
-import { deriveStatus, isCanceledOrder, isReturnedOrder } from "./_shared/status-derive";
+import { deriveStatus, isCanceledOrder, isReturnedOrder, isShippedOrder } from "./_shared/status-derive";
 import { SalesReturnIngestService } from "../returns/sales-return-ingest.service";
 import type { JubelioSalesOrderDetail } from "../jubelio-http.client";
 
@@ -59,12 +59,7 @@ function buildShippingAddress(p: SalesOrderPayload): Record<string, string> | un
 // which collapses ship + delivery into SHIPPED vs COMPLETED. Anything that
 // implies the package left the warehouse counts.
 function reportsShipped(p: SalesOrderPayload): boolean {
-  return (
-    p.wms_status === "SHIPPED" ||
-    p.is_shipped === true ||
-    p.marked_as_complete === true ||
-    !!p.completed_date
-  );
+  return isShippedOrder(p) || p.marked_as_complete === true || !!p.completed_date;
 }
 
 function buildFeeBreakdown(p: SalesOrderPayload): Record<string, string> | undefined {

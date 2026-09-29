@@ -1,4 +1,4 @@
-import { deriveStatus, isCanceledOrder, isReturnedOrder } from "./status-derive";
+import { deriveStatus, isCanceledOrder, isReturnedOrder, isShippedOrder } from "./status-derive";
 
 describe("deriveStatus", () => {
   it("CANCELLED when is_canceled true", () => {
@@ -33,6 +33,14 @@ describe("deriveStatus", () => {
     expect(deriveStatus({ is_shipped: true })).toBe("SHIPPED");
   });
 
+  it("SHIPPED when internal_status SHIPPED (wms_status READY_TO_SHIP)", () => {
+    expect(deriveStatus({ internal_status: "SHIPPED", wms_status: "READY_TO_SHIP" })).toBe("SHIPPED");
+  });
+
+  it("COMPLETED overrides internal_status SHIPPED when completed_date set", () => {
+    expect(deriveStatus({ internal_status: "SHIPPED", completed_date: "2026-09-20T00:00:00Z" })).toBe("COMPLETED");
+  });
+
   it("PROCESSING for wms_status PROCESSING", () => {
     expect(deriveStatus({ wms_status: "PROCESSING" })).toBe("PROCESSING");
   });
@@ -47,6 +55,10 @@ describe("deriveStatus", () => {
 
   it("PROCESSING for wms_status READY_TO_PACK", () => {
     expect(deriveStatus({ wms_status: "READY_TO_PACK" })).toBe("PROCESSING");
+  });
+
+  it("PROCESSING for wms_status READY_TO_SHIP", () => {
+    expect(deriveStatus({ wms_status: "READY_TO_SHIP" })).toBe("PROCESSING");
   });
 
   it("PROCESSING for internal_status PROCESSING", () => {
@@ -91,5 +103,23 @@ describe("isReturnedOrder", () => {
 
   it("false for a shipped or open order", () => {
     expect(isReturnedOrder({ internal_status: "PROCESSING", wms_status: "SHIPPED" })).toBe(false);
+  });
+});
+
+describe("isShippedOrder", () => {
+  it("true when wms_status SHIPPED", () => {
+    expect(isShippedOrder({ wms_status: "SHIPPED" })).toBe(true);
+  });
+
+  it("true when is_shipped true", () => {
+    expect(isShippedOrder({ is_shipped: true })).toBe(true);
+  });
+
+  it("true when internal_status SHIPPED even though wms_status is READY_TO_SHIP", () => {
+    expect(isShippedOrder({ internal_status: "SHIPPED", wms_status: "READY_TO_SHIP" })).toBe(true);
+  });
+
+  it("false for an order still being processed", () => {
+    expect(isShippedOrder({ internal_status: "PROCESSING", wms_status: "READY_TO_SHIP" })).toBe(false);
   });
 });

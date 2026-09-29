@@ -347,6 +347,61 @@ describe("SalesOrderWebhookHandler", () => {
     expect(r).toEqual({ kind: "processed" });
   });
 
+  /**
+   * Jubelio now reports a shipped order almost only through `internal_status: "SHIPPED"`, with
+   * `wms_status` left at READY_TO_SHIP; `wms_status: "SHIPPED"` has all but stopped arriving. The
+   * internal status alone must consume, or the order stays RESERVED until it completes days later.
+   */
+  it("internal_status SHIPPED with wms_status READY_TO_SHIP while already reserved -> consumeOrder called", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({
+      id: "st1", salesorderId: 23043, stockApplied: true,
+    });
+
+    const r = await handler.handle(row(makePayload({
+      internal_status: "SHIPPED", wms_status: "READY_TO_SHIP", channel_status: "SHIPPED",
+    })) as any);
+
+    expect(consumeMock).toHaveBeenCalledTimes(1);
+    expect(consumeMock).toHaveBeenCalledWith(prisma, { salesorderId: 23043, salesorderNo: "SO-23043" });
+    expect(reserveMock).not.toHaveBeenCalled();
+    expect(releaseMock).not.toHaveBeenCalled();
+    expect(prisma.salesOrder.upsert.mock.calls[0][0].update.status).toBe("SHIPPED");
+    expect(prisma.salesOrder.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "so1", fulfillmentStatus: { not: "SHIPPED" } },
+      data: expect.objectContaining({ fulfillmentStatus: "SHIPPED" }),
+    }));
+    expect(r).toEqual({ kind: "processed" });
+  });
+
+  it("first webhook already internal_status SHIPPED -> reserveOrder then consumeOrder", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue(null);
+    prisma.jubelioSalesOrderState.create.mockResolvedValue({
+      id: "st1", salesorderId: 23043, stockApplied: false,
+    });
+    prisma.jubelioProductMapping.findFirst.mockResolvedValue(null);
+
+    await handler.handle(row(makePayload({
+      internal_status: "SHIPPED", wms_status: "READY_TO_SHIP",
+    })) as any);
+
+    expect(reserveMock).toHaveBeenCalledTimes(1);
+    expect(consumeMock).toHaveBeenCalledTimes(1);
+    expect(reserveMock.mock.invocationCallOrder[0]).toBeLessThan(consumeMock.mock.invocationCallOrder[0]);
+    expect(prisma.salesOrder.upsert.mock.calls[0][0].create.fulfillmentStatus).toBe("SHIPPED");
+  });
+
+  it("wms_status READY_TO_SHIP alone -> PROCESSING, not shipped, nothing consumed", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({
+      id: "st1", salesorderId: 23043, stockApplied: true,
+    });
+
+    await handler.handle(row(makePayload({ internal_status: null, wms_status: "READY_TO_SHIP" })) as any);
+
+    expect(consumeMock).not.toHaveBeenCalled();
+    expect(prisma.salesOrder.updateMany).not.toHaveBeenCalled();
+    expect(prisma.salesOrder.upsert.mock.calls[0][0].update.status).toBe("PROCESSING");
+  });
+
   it("unmapped item_id on reserve -> AdminNotification fired, mapped lines still included", async () => {
     prisma.jubelioSalesOrderState.findUnique.mockResolvedValue(null);
     prisma.jubelioSalesOrderState.create.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: false });

@@ -19,8 +19,9 @@ moves the stock ledger:
 - Cancelled or returned after having been applied, and not reported shipped → `releaseOrder`
   reverses whatever is still `RESERVED`. "Cancelled" and "returned" are `isCanceledOrder` and
   `isReturnedOrder` in `_shared/status-derive.ts`; `is_canceled` alone misses most cancels.
-- Jubelio already reports the order shipped (`reportsShipped`: `wms_status === "SHIPPED"`,
-  `is_shipped`, `marked_as_complete`, or a `completed_date`) → reserve first if needed, then
+- Jubelio already reports the order shipped (`reportsShipped`: `isShippedOrder` — `wms_status ===
+  "SHIPPED"`, `is_shipped` or `internal_status === "SHIPPED"` — or `marked_as_complete`, or a
+  `completed_date`) → reserve first if needed, then
   `consumeOrder` immediately — stock is off `qtyOnHand` before an operator ever sees the order,
   and `fulfillmentStatus` is seeded or advanced to `SHIPPED` (§4 for the ledger writes, §6 for the
   status sync).
@@ -132,6 +133,11 @@ auto-ship it. The inbound salesorder handler covers that with a **forward-only**
   Idempotent on webhook re-delivery.
 
 `shippedAt` falls back through `completed_date` → `last_modified` → now.
+
+Since Jubelio's `internal_status: "SHIPPED"` counts as shipped (`isShippedOrder`), the sync fires at Jubelio's
+ship, not at completion. An order packed in Elorae but not yet shipped there is advanced to `SHIPPED` by
+that webhook, after which Elorae's Ship refuses it (`expected PACKED`) and sends no `salesorder_ship`
+push — Jubelio has already shipped it.
 
 Note what this sync does **not** do: it never walks an order back, and it never fills in
 `pickedAt`/`packedAt` for an order that skipped those steps in Elorae. An order can legitimately

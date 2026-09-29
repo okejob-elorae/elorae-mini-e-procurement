@@ -9,7 +9,7 @@ export type RawStatusInput = {
   is_shipped?: boolean | null;
 };
 
-const PROCESSING_WMS = new Set(["PROCESSING", "PICKED", "PACKED", "READY_TO_PACK"]);
+const PROCESSING_WMS = new Set(["PROCESSING", "PICKED", "PACKED", "READY_TO_PACK", "READY_TO_SHIP"]);
 
 /**
  * The one definition of "Jubelio cancelled this order". Jubelio often reports a cancel through
@@ -32,6 +32,20 @@ export function isReturnedOrder(p: Pick<RawStatusInput, "internal_status" | "wms
   return p.internal_status === "RETURNED" || p.wms_status === "RETURNED";
 }
 
+/**
+ * The one definition of "Jubelio reports this order has left the warehouse", short of completion.
+ * Jubelio now signals a ship almost only through `internal_status: "SHIPPED"`, usually with
+ * `wms_status` still at READY_TO_SHIP; `wms_status: "SHIPPED"` has all but stopped arriving, so
+ * keying on it alone leaves a shipped order RESERVED until it completes days later. The derived
+ * `status` keys on this, and the salesorder handler's consume and fulfillment sync key on it
+ * together with the completion signals.
+ */
+export function isShippedOrder(
+  p: Pick<RawStatusInput, "internal_status" | "wms_status" | "is_shipped">,
+): boolean {
+  return p.wms_status === "SHIPPED" || p.is_shipped === true || p.internal_status === "SHIPPED";
+}
+
 export function deriveStatus(p: RawStatusInput): SalesOrderStatus {
   if (isCanceledOrder(p)) return "CANCELLED";
   // Returned takes precedence over completed/shipped: returns happen AFTER ship.
@@ -39,7 +53,7 @@ export function deriveStatus(p: RawStatusInput): SalesOrderStatus {
   if (p.marked_as_complete === true || p.internal_status === "COMPLETED" || p.completed_date) {
     return "COMPLETED";
   }
-  if (p.wms_status === "SHIPPED" || p.is_shipped === true) return "SHIPPED";
+  if (isShippedOrder(p)) return "SHIPPED";
   if ((p.wms_status && PROCESSING_WMS.has(p.wms_status)) || p.internal_status === "PROCESSING") {
     return "PROCESSING";
   }
