@@ -860,8 +860,14 @@ export async function getGrnJournalState(grnId: string): Promise<{
   return {
     receiptJournalId: receipt?.id ?? null,
     reversalJournalId: reversal?.id ?? null,
-    hasPostableReceiptJournal: hasValue && !declined && receipt == null,
-    hasPostableReversalJournal: hasValue && declined && reversal == null,
+    /*
+     * A declined receipt with no receipt journal booked nothing, so it gets
+     * neither journal. The one exception is a declined receipt already carrying
+     * a stray reversal with no receipt behind it: posting the receipt there nets
+     * that reversal off.
+     */
+    hasPostableReceiptJournal: hasValue && receipt == null && (!declined || reversal != null),
+    hasPostableReversalJournal: hasValue && declined && receipt != null && reversal == null,
   };
 }
 
@@ -874,7 +880,15 @@ export async function postGrnReceiptJournalAction(
   }
 
   const grn = await prisma.gRN.findUnique({ where: { id: grnId }, select: { id: true, ownerDeclinedAt: true } });
-  if (!grn || grn.ownerDeclinedAt != null) return { ok: false, code: "BAD_STATE" };
+  if (!grn) return { ok: false, code: "BAD_STATE" };
+  /* Same rule as `getGrnJournalState`: a declined receipt is postable only to net off a stray reversal. */
+  if (grn.ownerDeclinedAt != null) {
+    const reversal = await prisma.journal.findUnique({
+      where: { sourceType_sourceId: { sourceType: "GRN_REVERSAL", sourceId: grnId } },
+      select: { id: true },
+    });
+    if (!reversal) return { ok: false, code: "BAD_STATE" };
+  }
 
   const r = await postGrnJournal(grnId, session.user.id);
   revalidatePath("/backoffice/inventory");

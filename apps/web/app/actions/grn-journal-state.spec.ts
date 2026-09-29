@@ -38,14 +38,26 @@ vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
 import { getGrnJournalState, postGrnReceiptJournalAction } from "./grn";
 
-describe("GRN receipt journal on a declined GRN (unit — prisma and writers mocked)", () => {
+/* Answers the two `journal.findUnique` reads by source type: which journals exist for the GRN. */
+function journalsExist(existing: { receipt?: boolean; reversal?: boolean }) {
+  mockJournalFind.mockImplementation(
+    async (args: { where: { sourceType_sourceId: { sourceType: string } } }) => {
+      const type = args.where.sourceType_sourceId.sourceType;
+      if (type === "GRN") return existing.receipt ? { id: "j-receipt" } : null;
+      if (type === "GRN_REVERSAL") return existing.reversal ? { id: "j-reversal" } : null;
+      return null;
+    },
+  );
+}
+
+describe("GRN journals on a declined GRN (unit — prisma and writers mocked)", () => {
   beforeEach(() => {
     mockAuth.mockReset();
     mockHasPermission.mockReset();
     mockPostGrnJournal.mockReset();
     mockJournalFind.mockReset();
     mockGrnFind.mockReset();
-    mockJournalFind.mockResolvedValue(null);
+    journalsExist({});
   });
 
   it("offers the receipt journal on a live valued GRN with no journal", async () => {
@@ -55,20 +67,47 @@ describe("GRN receipt journal on a declined GRN (unit — prisma and writers moc
     expect(state.hasPostableReversalJournal).toBe(false);
   });
 
-  it("does not offer the receipt journal on an owner-declined GRN", async () => {
+  it("offers neither journal on a declined GRN that never got a receipt journal", async () => {
     mockGrnFind.mockResolvedValue({ totalAmount: 500, ownerDeclinedAt: new Date() });
+    const state = await getGrnJournalState("g1");
+    expect(state.hasPostableReceiptJournal).toBe(false);
+    expect(state.hasPostableReversalJournal).toBe(false);
+  });
+
+  it("offers the reversal, not the receipt, on a declined GRN whose receipt journal exists", async () => {
+    mockGrnFind.mockResolvedValue({ totalAmount: 500, ownerDeclinedAt: new Date() });
+    journalsExist({ receipt: true });
     const state = await getGrnJournalState("g1");
     expect(state.hasPostableReceiptJournal).toBe(false);
     expect(state.hasPostableReversalJournal).toBe(true);
   });
 
-  it("postGrnReceiptJournalAction refuses a declined GRN without posting", async () => {
+  it("offers the receipt, not the reversal, on a declined GRN carrying a stray reversal with no receipt", async () => {
+    mockGrnFind.mockResolvedValue({ totalAmount: 500, ownerDeclinedAt: new Date() });
+    journalsExist({ reversal: true });
+    const state = await getGrnJournalState("g1");
+    expect(state.hasPostableReceiptJournal).toBe(true);
+    expect(state.hasPostableReversalJournal).toBe(false);
+  });
+
+  it("postGrnReceiptJournalAction refuses a declined GRN with no stray reversal, without posting", async () => {
     mockAuth.mockResolvedValue({ user: { id: "u1", permissions: [] } });
     mockHasPermission.mockReturnValue(true);
     mockGrnFind.mockResolvedValue({ id: "g1", ownerDeclinedAt: new Date() });
     const result = await postGrnReceiptJournalAction("g1");
     expect(result).toEqual({ ok: false, code: "BAD_STATE" });
     expect(mockPostGrnJournal).not.toHaveBeenCalled();
+  });
+
+  it("postGrnReceiptJournalAction posts on a declined GRN carrying a stray reversal, netting it off", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: [] } });
+    mockHasPermission.mockReturnValue(true);
+    mockGrnFind.mockResolvedValue({ id: "g1", ownerDeclinedAt: new Date() });
+    journalsExist({ reversal: true });
+    mockPostGrnJournal.mockResolvedValue({ ok: true, journalId: "j1", created: true });
+    const result = await postGrnReceiptJournalAction("g1");
+    expect(result).toMatchObject({ ok: true });
+    expect(mockPostGrnJournal).toHaveBeenCalledWith("g1", "u1");
   });
 
   it("postGrnReceiptJournalAction still posts for a live GRN", async () => {

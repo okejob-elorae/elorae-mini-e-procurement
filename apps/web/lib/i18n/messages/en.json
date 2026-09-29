@@ -4735,7 +4735,7 @@
       "labaBersih": "Net Profit",
       "sectionEmpty": "No accounts with a balance in this section yet.",
       "coverageTitle": "Data coverage",
-      "coverageBody": "This report covers only transactions that produce journals: marketplace sales, returns, settlements, goods receipts (GRN), finished-goods receipts, stock opname adjustments, van sales, field sales (putus deliveries and invoiced konsi sell-through reports, once their journals post), and manual journals. Supplier payments only post a balance-sheet journal (accounts payable and bank), so they do not affect profit and loss. NOT yet included: SPG sales, which post no journal."
+      "coverageBody": "This report covers only transactions that produce journals: marketplace sales, marketplace sales returns, settlements, goods receipts (GRN), finished-goods receipts, stock opname adjustments, van sales, field sales (putus deliveries and invoiced konsi sell-through reports, once their journals post), and manual journals. Supplier payments only post a balance-sheet journal (accounts payable and bank), so they do not affect profit and loss. NOT yet included: SPG sales, which post no journal; and field returns (goods returned by a store), which post no journal at approval — their revenue reverses only when the credit is offset against an invoice, and the cost of goods sold and inventory for the returned goods are never journaled."
     },
     "balanceSheet": {
       "pageTitle": "Balance Sheet",

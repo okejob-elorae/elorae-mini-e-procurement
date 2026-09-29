@@ -34,6 +34,17 @@ export async function postGrnReversalJournal(
 ): Promise<GenerateAutoJournalResult> {
   const grn = await grnValue(grnId, client);
   if (!grn || Math.abs(grn.value) < 0.01) return { ok: false, code: "NOTHING_TO_POST" };
+  /*
+   * A reversal nets off the receipt journal, so it is posted only against one
+   * that exists. A receipt whose journal failed at create (best-effort) and was
+   * declined before a retry booked nothing, and a reversal there would credit
+   * inventory and debit payables for goods that never reached the ledger.
+   */
+  const receipt = await client.journal.findUnique({
+    where: { sourceType_sourceId: { sourceType: "GRN", sourceId: grnId } },
+    select: { id: true },
+  });
+  if (!receipt) return { ok: false, code: "NOTHING_TO_POST" };
   const lines = [
     { role: "AP" as const, debit: grn.value, credit: 0 },
     { role: "INVENTORY" as const, debit: 0, credit: grn.value },
