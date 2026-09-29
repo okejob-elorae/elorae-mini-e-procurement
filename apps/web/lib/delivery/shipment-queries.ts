@@ -197,7 +197,7 @@ export type DeliveryShipmentDetail = {
  * is rebuilt from it. A stored URL with no key at all is a legacy row: reported as unavailable
  * instead of silently trusted or silently dropped.
  */
-function deriveProofPhoto(
+export function deriveProofPhoto(
   key: string | null,
   storedUrl: string | null,
   folder: string,
