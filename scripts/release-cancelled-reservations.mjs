@@ -1,6 +1,6 @@
 /**
- * One-off recovery script. Run AFTER the handler fix for the chosen scope is deployed, so no new
- * order joins the backlog while this drains it.
+ * Recovery script, run once per scope, AFTER the handler fix for that scope is deployed so no new
+ * order joins the backlog while it drains. The file name predates the returned scope.
  *
  * Releases the Jubelio stock reservations still held by finished orders the salesorder handler
  * never released:
@@ -8,7 +8,8 @@
  *     alone; the handler used to release only on `is_canceled === true`.
  *   SCOPE=returned — orders Jubelio reports returned (`internal_status` or `wms_status`
  *     `"RETURNED"`); the handler used to treat them as neither shipped nor cancelled, so nothing
- *     released them.
+ *     released them. Orders carrying a mirrored ship or completion signal are left out, as the
+ *     handler consumes those instead; the dry run reports how many that excludes.
  * Both kept `InventoryValue.reservedQty` inflated. Each order goes through `releaseOrder`, the
  * same writer and the same state update as the handler's release branch, and moves no on-hand
  * stock: until cutover Jubelio's figure governs on-hand, so a finished order's reservation is
@@ -19,6 +20,7 @@
  *   docker compose -f docker-compose.prod.yml cp scripts/release-cancelled-reservations.mjs api:/app/apps/api/release.mjs
  *   docker compose -f docker-compose.prod.yml exec -e DRY_RUN=1 -e SCOPE=returned api node /app/apps/api/release.mjs
  *   docker compose -f docker-compose.prod.yml exec -e SCOPE=returned api node /app/apps/api/release.mjs
+ * Omit SCOPE (or pass SCOPE=cancelled) for the cancelled scope.
  *
  * The first line reports reservation rows and their quantity; the last reports orders.
  *
@@ -47,12 +49,23 @@ const SCOPES = {
     lastIsCanceled: true,
   },
   returned: {
-    where: { OR: [{ internalStatus: "RETURNED" }, { wmsStatus: "RETURNED" }] },
+    where: {
+      OR: [{ internalStatus: "RETURNED" }, { wmsStatus: "RETURNED" }],
+      markedAsComplete: false,
+      completedDate: null,
+      NOT: { fulfillmentStatus: "SHIPPED" },
+    },
     lastIsCanceled: false,
+    /* The returned orders the ship-signal terms above leave out, counted in the dry run. */
+    excluded: {
+      OR: [{ internalStatus: "RETURNED" }, { wmsStatus: "RETURNED" }],
+      NOT: { markedAsComplete: false, completedDate: null, NOT: { fulfillmentStatus: "SHIPPED" } },
+    },
   },
 };
 const SCOPE_NAME = process.env.SCOPE ?? "cancelled";
-const SCOPE = SCOPES[SCOPE_NAME];
+/* Own keys only: an inherited name like "constructor" would otherwise pass with no filter at all. */
+const SCOPE = Object.hasOwn(SCOPES, SCOPE_NAME) ? SCOPES[SCOPE_NAME] : undefined;
 if (!SCOPE) {
   console.error(`Unknown SCOPE "${SCOPE_NAME}"; expected one of: ${Object.keys(SCOPES).join(", ")}`);
   process.exit(1);
@@ -95,6 +108,15 @@ async function main() {
   });
   console.log(`RESERVED reservations on ${SCOPE_NAME} orders: ${heldQty._count._all} (qty ${heldQty._sum.qty ?? 0})`);
   console.log(`SCOPE=${SCOPE_NAME}  DRY_RUN=${DRY_RUN ? "yes" : "no"}  BATCH=${BATCH}`);
+  if (SCOPE.excluded) {
+    const excludedOrders = await prisma.salesOrder.findMany({ where: SCOPE.excluded, select: { salesorderId: true } });
+    const excludedHeld = excludedOrders.length === 0
+      ? 0
+      : await prisma.stockReservation.count({
+        where: { source: "JUBELIO", state: "RESERVED", salesorderId: { in: excludedOrders.map((o) => o.salesorderId) } },
+      });
+    console.log(`Left out for carrying a ship or completion signal: ${excludedHeld} RESERVED reservations`);
+  }
 
   if (heldQty._count._all === 0) {
     console.log("Nothing to do.");

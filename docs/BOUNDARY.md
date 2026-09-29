@@ -269,7 +269,8 @@ history and the prod damage (cause unproven) are in `docs/landmines/jubelio.md`.
   used before cutover.
 - **`StockReservation` ledger writes** (resolved 2026-07-02, D6): api's
   `SalesOrderWebhookHandler` calls `reserveOrder` on ingest, `consumeOrder`
-  on the ship webhook and `releaseOrder` on cancel; web's Ship button calls
+  on the ship webhook and `releaseOrder` on cancel or on a return that was never
+  consumed; web's Ship button calls
   `consumeOrder` through the fulfillment writer. A future web-side cancel action
   can call `releaseOrder` safely (idempotent). These helpers, with the
   field-sales ones listed above, live in `@elorae/db/reservation-writer.ts` and

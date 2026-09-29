@@ -130,8 +130,8 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
     const isCancel = isCanceledOrder(p);
     /*
      * Cancelled and returned orders are both finished: whatever they still hold RESERVED is
-     * released, and neither is ever reserved. A returned order that did ship reaches the consume
-     * branch below first, so only a reservation that was never consumed is released.
+     * released, and the reserve branch skips them. The shipped branch below runs first, so a
+     * finished order Jubelio also reports shipped is reserved if needed and consumed instead.
      */
     const isFinished = isCancel || isReturnedOrder(p);
     const shipped = reportsShipped(p);
