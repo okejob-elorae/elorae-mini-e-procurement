@@ -59,12 +59,13 @@ export type DeliveryErrorCode =
   | "SHIPMENT_IN_FLIGHT"
   /**
    * A retry reused an idempotency key whose delivery was already recorded, but asked for something
-   * different: different quantities, or — for a hand-entered delivery only — different invoice/due
-   * dates (a shipment's `shipment-<id>` key compares quantities only, and an all-zero shipment
-   * retry against a recorded delivery is always a mismatch). The recorded delivery is left exactly
-   * as it was and the recorded values ride on `DeliveryError.replay`. The operator resubmits with
-   * the recorded quantities, or delivers any remaining quantity as a new delivery, and corrects the
-   * dates through the delivery date-correction action.
+   * different: different quantities, or different invoice/due dates — dates are compared for a
+   * hand-entered delivery and an `EXPEDITION` shipment, but not for a `SALESMAN_CARRY` shipment,
+   * whose `shipment-<id>` key compares quantities only; an all-zero shipment retry against a
+   * recorded delivery is always a mismatch. The recorded delivery is left exactly as it was and
+   * the recorded values ride on `DeliveryError.replay`. The operator resubmits with the recorded
+   * values, or delivers any remaining quantity as a new delivery, and corrects the dates through
+   * the delivery date-correction action.
    */
   | "REPLAY_MISMATCH"
   /**

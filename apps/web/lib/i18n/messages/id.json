@@ -763,7 +763,7 @@
       "KONSI_NOT_RESERVED": "Pesanan konsinyasi ini tidak punya stok tercadang untuk pengiriman ini. Minta admin memeriksa pesanan dan membatalkan pengiriman ini.",
       "NO_INVENTORY_ROW": "Ada produk di pengiriman ini yang tidak punya catatan stok gudang utama, jadi tidak ada yang bisa dipindahkan ke toko. Minta admin memeriksa stok produk tersebut.",
       "SHIPMENT_IN_FLIGHT": "Pesanan ini masih punya pengiriman yang sudah dikemas atau sedang dikirim. Selesaikan atau batalkan pengiriman itu terlebih dahulu.",
-      "REPLAY_MISMATCH": "Pengiriman ini sudah tercatat dengan jumlah yang berbeda. Periksa jumlah tercatat yang ditampilkan lalu kirim ulang untuk menyelesaikannya.",
+      "REPLAY_MISMATCH": "Pengiriman ini sudah tercatat dengan tanggal atau jumlah yang berbeda. Periksa nilai tercatat yang ditampilkan lalu kirim ulang untuk menyelesaikannya.",
       "RESERVATION_MISMATCH": "Cadangan stok order ini tidak lagi sesuai dengan pengirimannya: hilang, sudah dilepas, sudah terpakai, atau lebih kecil dari pengiriman ini. Kemungkinan besar ini akibat pembaruan sistem yang berjalan saat order disetujui. Admin harus memperbaiki order ini sebelum bisa dikirim.",
       "INVALID_FILE_TYPE": "Jenis file tidak didukung. Gunakan JPEG, PNG, atau WEBP.",
       "FILE_TOO_LARGE": "Foto terlalu besar (maks 10MB). Coba foto yang lebih kecil."
@@ -3117,6 +3117,7 @@
       "locationUnsupported": "Perangkat atau browser ini tidak dapat membagikan lokasi, sehingga pengiriman tidak dapat diselesaikan di sini. Buka aplikasi di browser yang didukung seperti Chrome atau Safari.",
       "qtyLabel": "Qty terkirim",
       "plannedLabel": "Rencana",
+      "replayMismatch": "Pengiriman ini sudah tercatat dengan jumlah yang berbeda. Periksa jumlah tercatat yang ditampilkan lalu kirim ulang untuk menyelesaikannya.",
       "replayTitle": "{docNo} sudah tercatat",
       "replayLinesLabel": "Jumlah tercatat",
       "replayLine": "{product}: {qty}",
@@ -3148,7 +3149,8 @@
         "stateFailed": "Gagal",
         "syncedToast": "{count} pengiriman tersinkron",
         "errGeneric": "Terjadi kesalahan. Coba lagi.",
-        "errReplayMismatch": "Pengiriman ini sudah tercatat dengan jumlah yang berbeda, jadi salinan tersimpan ini akan selalu ditolak. Hapus, lalu selesaikan lagi pengiriman dari halamannya, yang akan menampilkan jumlah tercatat untuk dikonfirmasi.",
+        "errReplayMismatch": "Pengiriman ini sudah tercatat dengan jumlah yang berbeda, jadi salinan tersimpan ini akan selalu ditolak. Hapus, lalu selesaikan lagi pengiriman dari halamannya. Jika jumlah Anda masih berbeda, halaman itu menampilkan jumlah tercatat setelah Anda mengirim.",
+        "openDelivery": "Buka pengiriman",
         "retry": "Coba Lagi",
         "delete": "Hapus",
         "homeChipCount": "{count, plural, =0 {Tidak ada pengiriman} other {# pengiriman menunggu sinkronisasi}}"

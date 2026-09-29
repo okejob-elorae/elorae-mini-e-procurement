@@ -22,8 +22,9 @@ import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "@
  * `DeliveryErrorCode` is in here because a putus completion calls straight through to
  * `recordFieldSalesDelivery`, which throws `DeliveryError` — a DIFFERENT class from
  * `DeliveryShipmentError` — for OVER_DELIVER, INSUFFICIENT_STOCK, INVALID_DATES, NO_LINES,
- * REPLAY_MISMATCH (a retry whose quantities differ from the delivery already recorded under the
- * shipment's key; `completeDeliveryShipment` raises it itself for an all-zero retry) and
+ * REPLAY_MISMATCH (a retry whose quantities — or, on an EXPEDITION shipment, dates — differ from
+ * the delivery already recorded under the shipment's key; `completeDeliveryShipment` raises it
+ * itself for an all-zero retry) and
  * RESERVATION_MISMATCH (the line's reservation disagrees with its recorded deliveries), and the
  * konsi completion maps a main-stock floor refusal onto the same `DeliveryError`
  * INSUFFICIENT_STOCK. Those are reachable through ordinary operator sequences (two shipments

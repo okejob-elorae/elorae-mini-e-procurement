@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { ArrowLeft, Loader2, RotateCw, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Loader2, RotateCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { listPendingCompletions, deletePendingCompletion, retryPendingCompletion } from "@/lib/pwa/offline/completion-queue";
 import { setupOrderSync } from "@/lib/pwa/offline/sync";
@@ -85,9 +85,10 @@ export function PendingCompletionsClient() {
           {items.map((item) => {
             const busy = busyId === item.shipmentId;
             /**
-             * Its own copy and no Retry: the shared REPLAY_MISMATCH text points at recorded values
-             * the completion form shows, and none are shown here, while Retry resends this exact
-             * queued payload, which is refused the same way every time.
+             * Its own copy and a link to the delivery's page instead of Retry: the shared
+             * REPLAY_MISMATCH text points at recorded values the completion form shows, and none are
+             * shown here, while Retry resends this exact queued payload, which is refused the same
+             * way every time.
              */
             const replayRefused = item.syncState === "failed" && item.error === "REPLAY_MISMATCH";
             return (
@@ -116,6 +117,14 @@ export function PendingCompletionsClient() {
                     )}
 
                     <div className="flex items-center gap-2">
+                      {replayRefused && (
+                        <Button asChild variant="secondary" size="sm" className="h-10 flex-1">
+                          <Link href={`/pwa/deliveries/${item.shipmentId}`}>
+                            <ArrowRight className="h-4 w-4" />
+                            {t("openDelivery")}
+                          </Link>
+                        </Button>
+                      )}
                       {item.syncState === "failed" && !replayRefused && (
                         <Button
                           type="button"
@@ -123,7 +132,7 @@ export function PendingCompletionsClient() {
                           size="sm"
                           disabled={busy}
                           onClick={() => handleRetry(item.shipmentId)}
-                          className="flex-1"
+                          className="h-10 flex-1"
                         >
                           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
                           {t("retry")}
@@ -135,7 +144,7 @@ export function PendingCompletionsClient() {
                         size="sm"
                         disabled={busy}
                         onClick={() => handleDelete(item.shipmentId)}
-                        className="flex-1 text-destructive hover:text-destructive"
+                        className="h-10 flex-1 text-destructive hover:text-destructive"
                       >
                         <Trash2 className="h-4 w-4" />
                         {t("delete")}

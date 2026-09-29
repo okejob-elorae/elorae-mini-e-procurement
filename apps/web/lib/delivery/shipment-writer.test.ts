@@ -824,6 +824,58 @@ describe("completeDeliveryShipment", () => {
     expect(deliveries).toBe(1);
   });
 
+  it("refuses an expedition retry with the same quantities but different dates, then completes with the recorded dates", async () => {
+    await seedInTransitShipment(4);
+    const invoiceDate = new Date("2026-01-01T00:00:00.000+07:00");
+    const dueDate = new Date("2026-01-08T00:00:00.000+07:00");
+    /* The crash window: the caller typed these dates, the delivery committed, the shipment stayed IN_TRANSIT. */
+    const recorded = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineId, qty: 4 }],
+      invoiceDate,
+      dueDate,
+      idempotencyKey: `shipment-${shipmentId}`,
+    });
+    deliveryId = recorded.deliveryId;
+
+    const complete = (dates: { invoiceDate: Date; dueDate: Date }) =>
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: `delivery-proofs/${shipmentId}/goods.jpg`,
+        ...dates,
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      });
+
+    /* The dialog reopened with fresh defaults and the operator re-typed the dates. */
+    const err = await complete({
+      invoiceDate: new Date("2026-01-02T00:00:00.000+07:00"),
+      dueDate: new Date("2026-01-16T00:00:00.000+07:00"),
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(DeliveryError);
+    expect(err.code).toBe("REPLAY_MISMATCH");
+    expect(err.replay.deliveryId).toBe(recorded.deliveryId);
+    expect(err.replay.invoiceDate.getTime()).toBe(invoiceDate.getTime());
+    expect(err.replay.dueDate.getTime()).toBe(dueDate.getTime());
+    expect(err.replay.lines).toEqual([{ orderLineId: lineId, qty: 4 }]);
+
+    const untouched = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: shipmentId }, include: { lines: true } });
+    expect(untouched.status).toBe("IN_TRANSIT");
+    expect(untouched.deliveryId).toBeNull();
+    expect(untouched.lines[0].deliveredQty).toBeNull();
+
+    const result = await complete({ invoiceDate, dueDate });
+    expect(result.deliveryId).toBe(recorded.deliveryId);
+    const done = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: shipmentId }, include: { lines: true } });
+    expect(done.status).toBe("DELIVERED");
+    expect(done.deliveryId).toBe(recorded.deliveryId);
+    expect(done.lines[0].deliveredQty).toBe(4);
+    const deliveries = await prisma.fieldSalesDelivery.count({ where: { orderId: seededId(orderId) } });
+    expect(deliveries).toBe(1);
+  });
+
   it("refuses a deliveredQty above plannedQty", async () => {
     await seedInTransitShipment(4);
     await expect(

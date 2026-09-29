@@ -67,13 +67,15 @@ export async function findRecordedDelivery(
  * correction. The key is never rotated to get around this: after a lost-response success a fresh
  * key would ship the order twice. Checked before any write, so the refusal leaves nothing behind.
  *
- * `replayCompare: "linesOnly"` is for `completeDeliveryShipment`, whose `shipment-<id>` key is
- * replayed with dates the caller does not own: a `SALESMAN_CARRY` completion always sends the
- * frozen shipment row's dates, so once Edit nota dates corrected the recorded delivery in the crash
- * window, a dates compare would refuse every retry forever. There the recorded delivery's dates
- * are the accounting truth, corrected only through Edit nota dates, and the quantities are what
- * desync the shipment from it. A hand-entered delivery keeps the strict default: its operator
- * typed the dates, so a changed date is a correction the replay must not swallow.
+ * `replayCompare: "linesOnly"` is for `completeDeliveryShipment` on a `SALESMAN_CARRY` shipment
+ * only, whose `shipment-<id>` key is replayed with dates the caller does not own: that completion
+ * always sends the frozen shipment row's dates, so once Edit nota dates corrected the recorded
+ * delivery in the crash window, a dates compare would refuse every retry forever. There the
+ * recorded delivery's dates are the accounting truth, corrected only through Edit nota dates, and
+ * the quantities are what desync the shipment from it. Every caller that owns its dates keeps the
+ * strict default — a hand-entered delivery, and an `EXPEDITION` shipment completion, whose operator
+ * types the dates into the completion dialog — because a changed date there is a correction the
+ * replay must not swallow.
  */
 export async function recordFieldSalesDelivery(input: {
   orderId: string;

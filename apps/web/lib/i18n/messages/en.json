@@ -763,7 +763,7 @@
       "KONSI_NOT_RESERVED": "This consignment order has no reserved stock left for this shipment. Ask an admin to check the order and cancel this shipment.",
       "NO_INVENTORY_ROW": "A product on this shipment has no main-warehouse stock record, so nothing can move to the store. Ask an admin to check the product's stock.",
       "SHIPMENT_IN_FLIGHT": "This order still has a shipment packed or in transit. Complete or cancel that shipment first.",
-      "REPLAY_MISMATCH": "This delivery was already recorded with different quantities. Review the recorded quantities shown and submit again to complete it.",
+      "REPLAY_MISMATCH": "This delivery was already recorded with different dates or quantities. Review the recorded values shown and submit again to complete it.",
       "RESERVATION_MISMATCH": "This order's stock reservation no longer matches its deliveries: it is missing, released, already used up, or smaller than this delivery. This most likely comes from a system update that ran while the order was being approved. An admin must repair the order before it can be delivered.",
       "INVALID_FILE_TYPE": "That file type isn't supported. Use JPEG, PNG, or WEBP.",
       "FILE_TOO_LARGE": "That photo is too large (max 10MB). Try a smaller photo."
@@ -3117,6 +3117,7 @@
       "locationUnsupported": "This device or browser cannot share location, so the delivery cannot be completed here. Open the app in a supported browser such as Chrome or Safari.",
       "qtyLabel": "Delivered qty",
       "plannedLabel": "Planned",
+      "replayMismatch": "This delivery was already recorded with different quantities. Review the recorded quantities shown and submit again to complete it.",
       "replayTitle": "{docNo} was already recorded",
       "replayLinesLabel": "Recorded quantities",
       "replayLine": "{product}: {qty}",
@@ -3148,7 +3149,8 @@
         "stateFailed": "Failed",
         "syncedToast": "{count} deliveries synced",
         "errGeneric": "Something went wrong. Please try again.",
-        "errReplayMismatch": "This delivery was already recorded with different quantities, so this saved copy will be refused every time. Delete it and complete the delivery again from its page, which will show the recorded quantities to confirm.",
+        "errReplayMismatch": "This delivery was already recorded with different quantities, so this saved copy will be refused every time. Delete it and complete the delivery again from its page. If your quantities still differ, that page shows the recorded ones after you submit.",
+        "openDelivery": "Open delivery",
         "retry": "Retry",
         "delete": "Delete",
         "homeChipCount": "{count, plural, =0 {No deliveries} one {# delivery waiting to sync} other {# deliveries waiting to sync}}"
