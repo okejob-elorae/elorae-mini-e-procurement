@@ -233,6 +233,8 @@ history and the prod damage (cause unproven) are in `docs/landmines/jubelio.md`.
   - the fabric-aggregate re-derive inside opname (`syncFabricAggregateQty`);
   - the UMKM opening-stock script (`applyUmkmManifest`, run from
     `apps/web/scripts/reconcile-umkm-opening-stock.ts`);
+  - the superseded-item retirement (`retireSupersededItem`, run from
+    `scripts/retire-superseded-items.mjs`) — nothing to push, since a retired item is unmapped;
   - putus delivery (`consumeFieldSalesOrderPartial`) and the konsi transfer at
     shipment completion (`issueKonsiTransfer`) — both decrement on-hand AND the
     matching field-sales hold by the same qty, so they leave the pushed figure
@@ -289,7 +291,7 @@ filters and reconcile-cron logic key off the exact values.
 
 Allowed values today: `ERP`, `ERP_OPNAME`, `ERP_RETURN_ACCEPT`,
 `FULFILLMENT_CONSUME`, `FIELD_SALES_CONSUME`, `JUBELIO_WEBHOOK`,
-`JUBELIO_RECONCILE`, `VAN_LOAD`, `VAN_RETURN`. Two live writers do NOT follow
+`JUBELIO_RECONCILE`, `VAN_LOAD`, `VAN_RETURN`, `SUPERSEDED_ITEM_RETIRE`. Two live writers do NOT follow
 the rule yet: `issueKonsiTransfer` writes `KONSI_TRANSFER` and
 `approveFieldReturn` writes `FIELD_RETURN`, neither in the registry nor
 checked with `satisfies` — logged in `docs/FOLLOWUPS.md`.

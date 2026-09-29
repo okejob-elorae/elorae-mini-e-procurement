@@ -4,25 +4,27 @@
  * links. Their stock rows are governed by nothing (Jubelio's webhook sets only the new item), so
  * each qualifying item has every non-zero stock row set to 0 through `setMainStock` — one
  * `StockAdjustment` and one ledger entry per row — and is marked inactive. Items that do not
- * qualify (a variant with no mapped twin, a variantless row, an open reservation, store or van
- * stock) are listed with the reason and left untouched. See `findSupersededItems` and
+ * qualify (not catalog-ingested, a variant with no mapped twin holding its own row, a variantless
+ * row, an open reservation or held `reservedQty`, store or van stock, a pending return line) are
+ * listed with the reason and left untouched. See `findSupersededItems` and
  * `retireSupersededItem` in `packages/db/src/superseded-items.ts`.
  *
  * Usage on VPS — copied under /app/apps/api, not /tmp, because Node resolves `@elorae/db` by walking
  * up from the script's own location and it only resolves from inside the api package:
  *   docker compose -f docker-compose.prod.yml cp scripts/retire-superseded-items.mjs api:/app/apps/api/retire.mjs
- *   docker compose -f docker-compose.prod.yml exec -e DRY_RUN=1 api node /app/apps/api/retire.mjs
  *   docker compose -f docker-compose.prod.yml exec api node /app/apps/api/retire.mjs
+ *   docker compose -f docker-compose.prod.yml exec -e CONFIRM=1 -e EXPECT_SKUS=<the dry run's list> api node /app/apps/api/retire.mjs
  *
- * Safe to run multiple times: a row already at zero is skipped, so a replay writes nothing.
- *
- * Tunables:
- *   DRY_RUN=1       list what would be retired and what is excluded, write nothing
+ * Dry by default: without CONFIRM=1 it only lists. A write run also needs EXPECT_SKUS, the
+ * comma-separated SKU list the dry run printed; it refuses to write when the qualified set differs,
+ * so it can never retire an item nobody reviewed. A row already at zero is skipped, so a replay
+ * writes nothing.
  */
 
 import { findSupersededItems, prisma, retireSupersededItem } from "@elorae/db";
 
-const DRY_RUN = process.env.DRY_RUN === "1";
+const CONFIRM = process.env.CONFIRM === "1";
+const EXPECT_SKUS = (process.env.EXPECT_SKUS ?? "").split(",").map((s) => s.trim()).filter(Boolean).sort();
 
 async function main() {
   const candidates = await findSupersededItems(prisma);
@@ -32,16 +34,23 @@ async function main() {
   const sum = (list, pick) => list.reduce((total, c) => total + pick(c), 0);
   console.log(`Superseded candidates: ${candidates.length}  qualified: ${qualified.length}  excluded: ${excluded.length}`);
   console.log(`Qualified stock rows: ${sum(qualified, (c) => c.rows)}  non-zero: ${sum(qualified, (c) => c.nonZeroRows)}  on-hand: ${sum(qualified, (c) => c.onHand)}`);
-  console.log(`DRY_RUN=${DRY_RUN ? "yes" : "no"}`);
+  console.log(`CONFIRM=${CONFIRM ? "yes" : "no (dry run)"}`);
   for (const c of qualified) {
-    console.log(`  retire ${c.sku}  rows=${c.rows} non-zero=${c.nonZeroRows} on-hand=${c.onHand}  twins=${c.twinSkus.join(",")}`);
+    console.log(`  retire ${c.sku}  source=${c.source} rows=${c.rows} non-zero=${c.nonZeroRows} on-hand=${c.onHand}  twins=${c.twinSkus.join(",")}`);
   }
   for (const c of excluded) {
-    console.log(`  EXCLUDED ${c.sku}  reason=${c.reason}  rows=${c.rows} on-hand=${c.onHand}  twins=${c.twinSkus.join(",")}`);
+    console.log(`  EXCLUDED ${c.sku}  reason=${c.reason} source=${c.source} rows=${c.rows} on-hand=${c.onHand}  twins=${c.twinSkus.join(",")}`);
   }
+  const qualifiedSkus = qualified.map((c) => c.sku).sort();
+  console.log(`EXPECT_SKUS=${qualifiedSkus.join(",")}`);
 
-  if (DRY_RUN) {
-    console.log("Dry run — no writes performed.");
+  if (!CONFIRM) {
+    console.log("Dry run — no writes performed. Re-run with CONFIRM=1 and the EXPECT_SKUS line above to write.");
+    return;
+  }
+  if (qualifiedSkus.join(",") !== EXPECT_SKUS.join(",")) {
+    console.error("Refusing to write: the qualified set differs from EXPECT_SKUS. Re-run the dry run and review it.");
+    process.exitCode = 1;
     return;
   }
 
@@ -66,6 +75,7 @@ async function main() {
     }
   }
   console.log(`Items retired: ${retired}  rows zeroed: ${rowsZeroed}  refused: ${refused}  failed: ${failed}`);
+  if (failed > 0) process.exitCode = 1;
 }
 
 main()
