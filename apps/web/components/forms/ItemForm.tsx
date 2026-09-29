@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TagsInput } from '@/components/ui/tags-input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Plus, Trash2, Loader2, Wand2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
@@ -33,6 +34,21 @@ import {
   buildVariantBarcode,
   type VariantBarcodeFormatConfig,
 } from '@/lib/items/variant-barcode';
+import {
+  type AttributeDef,
+  type GridState,
+  EMPTY_GRID_ROWS,
+  attributesFromSavedVariants,
+  cartesianCombinations,
+  comboKey,
+  contributingAttributes,
+  findSavedVariant,
+  initialExcludedKeys,
+  mapRowValues,
+  overlaySavedSpelling,
+  resolveGridRows,
+  setRowValueAt,
+} from '@/lib/items/variant-grid';
 
 type ItemFormData = z.infer<typeof itemSchema>;
 type ConsumptionRuleData = z.infer<typeof consumptionRuleSchema>;
@@ -74,9 +90,23 @@ function slugVariantAttributeValue(value: string): string {
 }
 
 /**
- * Pattern: `{base}-{v1}-…-{vn}` with n = number of attribute columns (e.g. OUTERWEAR-RED-S).
- * Base is the item category code when the category has one; otherwise the parent item SKU (server accepts both prefixes).
+ * De-duplicates attribute values case-insensitively (trim + lowercase),
+ * keeping the FIRST spelling typed — `TagsInput` itself only dedupes
+ * case-sensitively, so "merah" typed next to "Merah" would otherwise sit in
+ * the list as two values sharing one `comboKey`, unable to be toggled apart.
  */
+function dedupeAttributeValues(values: string[]): string[] {
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  values.forEach((value) => {
+    const normalized = value.trim().toLowerCase();
+    if (seen.has(normalized)) return;
+    seen.add(normalized);
+    deduped.push(value);
+  });
+  return deduped;
+}
+
 /** Parse number inputs; blank or invalid → 0 (avoids NaN from valueAsNumber). */
 function parseNumberFieldDefaultZero(value: unknown): number {
   if (value === '' || value === null || value === undefined) return 0;
@@ -84,6 +114,10 @@ function parseNumberFieldDefaultZero(value: unknown): number {
   return Number.isNaN(n) ? 0 : n;
 }
 
+/**
+ * Pattern: `{base}-{v1}-…-{vn}` with n = number of attribute columns (e.g. OUTERWEAR-RED-S).
+ * Base is the item category code when the category has one; otherwise the parent item SKU (server accepts both prefixes).
+ */
 function buildVariantSkuCode(
   basePrefix: string,
   combo: Record<string, string>,
@@ -163,27 +197,29 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     return [];
   }, [initialData?.variants]);
 
-  const initialAttributes = useMemo(() => {
-    if (normalizedVariants.length === 0) return [];
-    const map = new Map<string, Set<string>>();
-    normalizedVariants.forEach((variant) => {
-      Object.entries(variant).forEach(([key, value]) => {
-        // Exclude reserved keys — not variant attributes
-        if (key === 'sku' || key === 'barcode') return;
-        if (!map.has(key)) map.set(key, new Set());
-        map.get(key)!.add(value);
-      });
-    });
-    return Array.from(map.entries()).map(([key, values]) => ({
-      key,
-      values: Array.from(values),
-    }));
-  }, [normalizedVariants]);
-  const [attributes, setAttributes] = useState<Array<{ key: string; values: string[] }>>(
-    initialAttributes
+  const initialAttributes = useMemo(
+    () => attributesFromSavedVariants(normalizedVariants),
+    [normalizedVariants]
   );
-  const [variantSkus, setVariantSkus] = useState<string[]>([]);
-  const [variantBarcodes, setVariantBarcodes] = useState<string[]>([]);
+  const [attributes, setAttributes] = useState<AttributeDef[]>(initialAttributes);
+
+  /**
+   * The variant table (`grid.rows`) and the last complete grid it carries
+   * codes from (`grid.snapshot`), in ONE state value, so a code can never
+   * sit next to a combination from a different layout. Only two paths write
+   * it, both through pure helpers in `variant-grid.ts`: `commitAttributes`
+   * (`resolveGridRows`, in the same event that changes the attributes) and
+   * the SKU/barcode handlers (`setRowValueAt` / `mapRowValues`).
+   */
+  const [grid, setGrid] = useState<GridState>(() =>
+    resolveGridRows({
+      attributes: initialAttributes,
+      savedVariants: normalizedVariants,
+      rows: EMPTY_GRID_ROWS,
+      snapshot: EMPTY_GRID_ROWS,
+    })
+  );
+  const gridRows = grid.rows;
   const [barcodeFormatConfig, setBarcodeFormatConfig] = useState<VariantBarcodeFormatConfig | null>(
     null
   );
@@ -284,55 +320,102 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       return next as ConsumptionRuleData;
     });
 
+  /**
+   * Every attribute change goes through here, so the table rows are
+   * re-resolved in the same event and commit as the attributes themselves —
+   * no effect, and no render where the rows lag the attributes.
+   */
+  const commitAttributes = (next: AttributeDef[]) => {
+    setAttributes(next);
+    setGrid((prev) =>
+      resolveGridRows({
+        attributes: next,
+        savedVariants: normalizedVariants,
+        rows: prev.rows,
+        snapshot: prev.snapshot,
+      })
+    );
+  };
+
   const addAttribute = () => {
-    setAttributes([...attributes, { key: '', values: [] }]);
+    commitAttributes([...attributes, { key: '', values: [] }]);
   };
 
   const removeAttribute = (index: number) => {
-    setAttributes(attributes.filter((_, i) => i !== index));
+    commitAttributes(attributes.filter((_, i) => i !== index));
   };
 
   const updateAttributeKey = (index: number, key: string) => {
     const updated = [...attributes];
     updated[index] = { ...updated[index], key };
-    setAttributes(updated);
+    commitAttributes(updated);
   };
 
-  const variantCombinations = useMemo(() => {
-    if (attributes.length === 0) return [];
-    return attributes.reduce<Array<Record<string, string>>>((acc, attr) => {
-      if (!attr.key || attr.values.length === 0) return acc;
-      if (acc.length === 0) {
-        return attr.values.map((value) => ({ [attr.key]: value }));
+  const updateAttributeValues = (index: number, values: string[]) => {
+    const deduped = dedupeAttributeValues(values);
+    if (deduped.length < values.length) {
+      toast.info(tToasts('duplicateAttributeValue'));
+    }
+    const updated = [...attributes];
+    updated[index] = { ...updated[index], values: deduped };
+    commitAttributes(updated);
+  };
+
+  /**
+   * Exclusions are keyed by `comboKey` under `gridRows.keys`, not by row
+   * index. Adding or removing a whole attribute changes that key list, so
+   * every combination's key changes with it and `excludedKeys` stops
+   * matching anything — every row comes back included. Acceptable: only a
+   * value edit (not an attribute add/remove) is expected to preserve
+   * exclusions.
+   */
+  const [excludedKeys, setExcludedKeys] = useState<Set<string>>(() =>
+    initialExcludedKeys(
+      cartesianCombinations(initialAttributes),
+      normalizedVariants,
+      contributingAttributes(initialAttributes).map((attr) => attr.key)
+    )
+  );
+
+  const includedCount = useMemo(
+    () =>
+      gridRows.combos.filter((combo) => !excludedKeys.has(comboKey(combo, gridRows.keys))).length,
+    [gridRows, excludedKeys]
+  );
+
+  const toggleCombinationIncluded = (rowKey: string) => {
+    setExcludedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(rowKey)) {
+        next.delete(rowKey);
+      } else {
+        next.add(rowKey);
       }
-      const next: Array<Record<string, string>> = [];
-      acc.forEach((combo) => {
-        attr.values.forEach((value) => {
-          next.push({ ...combo, [attr.key]: value });
-        });
-      });
       return next;
-    }, []);
-  }, [attributes]);
+    });
+  };
 
   const parentSku = (initialData?.sku ?? sku) || '';
   const variantSkuBasePrefix = categoryCodePrefix || parentSku.trim();
+
+  const setVariantSkuAt = (idx: number, value: string) => {
+    setGrid((prev) => setRowValueAt(prev, 'skus', idx, value));
+  };
+
+  const setVariantBarcodeAt = (idx: number, value: string) => {
+    setGrid((prev) => setRowValueAt(prev, 'barcodes', idx, value));
+  };
 
   const applyVariantSkuCodeAt = (idx: number) => {
     if (!variantSkuBasePrefix) {
       toast.error(tToasts('setParentSkuBeforeVariantCode'));
       return;
     }
-    const combo = variantCombinations[idx];
-    if (!combo) return;
-    const keys = attributes.map((a) => a.key).filter((k) => k.trim());
-    const code = buildVariantSkuCode(variantSkuBasePrefix, combo, keys);
-    setVariantSkus((prev) => {
-      const next = [...prev];
-      while (next.length <= idx) next.push('');
-      next[idx] = code;
-      return next;
-    });
+    setGrid((prev) =>
+      mapRowValues(prev, 'skus', (combo, current, i) =>
+        i === idx ? buildVariantSkuCode(variantSkuBasePrefix, combo, prev.rows.keys) : current
+      )
+    );
   };
 
   const applyVariantBarcodeAt = (idx: number) => {
@@ -341,21 +424,19 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       toast.error(tToasts('setParentSkuBeforeBarcode'));
       return;
     }
-    const combo = variantCombinations[idx];
-    if (!combo) return;
-    const keys = attributes.map((a) => a.key).filter((k) => k.trim());
-    const code = buildVariantBarcode(barcodeFormatConfig, {
-      parentSku: parentSku.trim(),
-      categoryCode: categoryCodePrefix,
-      combo,
-      orderedAttributeKeys: keys,
-    });
-    setVariantBarcodes((prev) => {
-      const next = [...prev];
-      while (next.length <= idx) next.push('');
-      next[idx] = code;
-      return next;
-    });
+    const formatConfig = barcodeFormatConfig;
+    setGrid((prev) =>
+      mapRowValues(prev, 'barcodes', (combo, current, i) =>
+        i === idx
+          ? buildVariantBarcode(formatConfig, {
+              parentSku: parentSku.trim(),
+              categoryCode: categoryCodePrefix,
+              combo,
+              orderedAttributeKeys: prev.rows.keys,
+            })
+          : current
+      )
+    );
   };
 
   const applyAllVariantCodes = () => {
@@ -364,65 +445,26 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       return;
     }
     if (!barcodeFormatConfig) return;
-    const keys = attributes.map((a) => a.key).filter((k) => k.trim());
-    setVariantSkus(
-      variantCombinations.map((combo) => buildVariantSkuCode(variantSkuBasePrefix, combo, keys))
-    );
-    setVariantBarcodes(
-      variantCombinations.map((combo) =>
-        buildVariantBarcode(barcodeFormatConfig, {
-          parentSku: parentSku.trim(),
-          categoryCode: categoryCodePrefix,
-          combo,
-          orderedAttributeKeys: keys,
-        })
-      )
-    );
+    const formatConfig = barcodeFormatConfig;
+    setGrid((prev) => {
+      const keys = prev.rows.keys;
+      const withSkus = mapRowValues(prev, 'skus', (combo, current) =>
+        excludedKeys.has(comboKey(combo, keys))
+          ? current
+          : buildVariantSkuCode(variantSkuBasePrefix, combo, keys)
+      );
+      return mapRowValues(withSkus, 'barcodes', (combo, current) =>
+        excludedKeys.has(comboKey(combo, keys))
+          ? current
+          : buildVariantBarcode(formatConfig, {
+              parentSku: parentSku.trim(),
+              categoryCode: categoryCodePrefix,
+              combo,
+              orderedAttributeKeys: keys,
+            })
+      );
+    });
   };
-
-  const variantCombinationsKey = useMemo(
-    () => variantCombinations.map((c) => JSON.stringify(c)).join('|'),
-    [variantCombinations]
-  );
-  useEffect(() => {
-    if (variantCombinations.length === 0) {
-      setVariantSkus([]);
-      setVariantBarcodes([]);
-      return;
-    }
-    setVariantSkus((prev) => {
-      const next = [...prev];
-      while (next.length < variantCombinations.length) next.push('');
-      const trimmed = next.slice(0, variantCombinations.length);
-      if (!normalizedVariants.length) return trimmed;
-      return trimmed.map((current, idx) => {
-        const combo = variantCombinations[idx];
-        const match = normalizedVariants.find((v) => {
-          const { sku, barcode, ...rest } = v;
-          void sku;
-          void barcode;
-          return Object.keys(combo).every((k) => rest[k] === combo[k]);
-        });
-        return match?.sku?.trim() ?? current;
-      });
-    });
-    setVariantBarcodes((prev) => {
-      const next = [...prev];
-      while (next.length < variantCombinations.length) next.push('');
-      const trimmed = next.slice(0, variantCombinations.length);
-      if (!normalizedVariants.length) return trimmed;
-      return trimmed.map((current, idx) => {
-        const combo = variantCombinations[idx];
-        const match = normalizedVariants.find((v) => {
-          const { sku, barcode, ...rest } = v;
-          void sku;
-          void barcode;
-          return Object.keys(combo).every((k) => rest[k] === combo[k]);
-        });
-        return match?.barcode?.trim() ?? current;
-      });
-    });
-  }, [variantCombinationsKey, variantCombinations, normalizedVariants]);
 
   const onFormSubmit = async (data: ItemFormData) => {
     const dataWithSku: ItemFormData = {
@@ -442,16 +484,23 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       }
     }
 
+    if (gridRows.combos.length > 0 && includedCount === 0) {
+      toast.error(tToasts('includeAtLeastOneVariant'));
+      return;
+    }
+
     const variantSkuPrefixes = [
       categoryCodePrefix,
       parentSku.trim(),
     ].filter((p, i, arr) => p && arr.indexOf(p) === i);
 
     const variants =
-      variantCombinations.length > 0
-        ? variantCombinations.map((combo, i) => {
-            let variantSku = variantSkus[i]?.trim() || '';
-            const variantBarcode = variantBarcodes[i]?.trim() || '';
+      gridRows.combos.length > 0
+        ? gridRows.combos.flatMap((rawCombo, i) => {
+            if (excludedKeys.has(comboKey(rawCombo, gridRows.keys))) return [];
+            const combo = overlaySavedSpelling(rawCombo, normalizedVariants);
+            let variantSku = gridRows.skus[i]?.trim() || '';
+            const variantBarcode = gridRows.barcodes[i]?.trim() || '';
             const autoBase = variantSkuBasePrefix;
             if (variantSku && autoBase) {
               const hasValidPrefix = variantSkuPrefixes.some((p) => variantSku.startsWith(p));
@@ -462,11 +511,13 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                 variantSku = `${autoBase}-${bare}`;
               }
             }
-            return {
-              ...combo,
-              ...(variantSku ? { sku: variantSku } : {}),
-              ...(variantBarcode ? { barcode: variantBarcode } : {}),
-            };
+            return [
+              {
+                ...combo,
+                ...(variantSku ? { sku: variantSku } : {}),
+                ...(variantBarcode ? { barcode: variantBarcode } : {}),
+              },
+            ];
           })
         : undefined;
 
@@ -814,11 +865,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                 <div className="flex gap-2">
                   <TagsInput
                     value={attr.values}
-                    onChange={(values) => {
-                      const updated = [...attributes];
-                      updated[index] = { ...updated[index], values };
-                      setAttributes(updated);
-                    }}
+                    onChange={(values) => updateAttributeValues(index, values)}
                     placeholder="Red, Blue, Green"
                     separator={[',', '\n']}
                   />
@@ -835,7 +882,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
             </div>
           ))}
 
-          {variantCombinations.length > 0 && (
+          {gridRows.combos.length > 0 && (
             <div className="space-y-2 pt-2 border-t">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <p className="text-sm text-muted-foreground">
@@ -867,9 +914,13 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                   Generate all
                 </Button>
               </div>
+              <p className="text-sm text-muted-foreground">
+                {includedCount} of {gridRows.combos.length} combinations included
+              </p>
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-14">Include</TableHead>
                     {attributes.map((attr) => (
                       <TableHead key={attr.key}>{attr.key}</TableHead>
                     ))}
@@ -878,71 +929,90 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {variantCombinations.map((combo, idx) => (
-                    <TableRow key={idx}>
-                      {attributes.map((attr) => (
-                        <TableCell key={attr.key}>{combo[attr.key] ?? '—'}</TableCell>
-                      ))}
-                      <TableCell>
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                          <Input
-                            className="min-w-0 flex-1 font-mono text-sm"
-                            value={variantSkus[idx] ?? ''}
-                            onChange={(e) => {
-                              const next = [...variantSkus];
-                              while (next.length <= idx) next.push('');
-                              next[idx] = e.target.value;
-                              setVariantSkus(next);
-                            }}
-                            placeholder={variantSkuBasePrefix ? `${variantSkuBasePrefix}-…` : 'e.g. OUTERWEAR-RED'}
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="shrink-0"
-                            onClick={() => applyVariantSkuCodeAt(idx)}
-                            disabled={!variantSkuBasePrefix}
-                            title={
-                              variantSkuBasePrefix
-                                ? `Build ${variantSkuBasePrefix}-{values}`
-                                : 'Select a category with code or set item SKU'
-                            }
-                          >
-                            <Wand2 className="mr-1.5 h-3.5 w-3.5" />
-                            Generate code
-                          </Button>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                          <Input
-                            className="min-w-0 flex-1 font-mono text-sm"
-                            value={variantBarcodes[idx] ?? ''}
-                            onChange={(e) => {
-                              const next = [...variantBarcodes];
-                              while (next.length <= idx) next.push('');
-                              next[idx] = e.target.value;
-                              setVariantBarcodes(next);
-                            }}
-                            placeholder="e.g. 0224000016T03"
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="shrink-0"
-                            onClick={() => applyVariantBarcodeAt(idx)}
-                            disabled={!barcodeFormatConfig}
-                            title="Build barcode from global format template"
-                          >
-                            <Wand2 className="mr-1.5 h-3.5 w-3.5" />
-                            Generate code
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {gridRows.combos.map((combo, idx) => {
+                    const rowKey = comboKey(combo, gridRows.keys);
+                    const excluded = excludedKeys.has(rowKey);
+                    const savedMatch = findSavedVariant(combo, normalizedVariants);
+                    const showSavedVariantWarning = excluded && Boolean(savedMatch);
+                    const comboLabel = attributes
+                      .map((attr) => combo[attr.key] ?? '')
+                      .filter((value) => value.length > 0)
+                      .join(' / ');
+                    const mutedCellClassName = excluded ? 'opacity-60' : undefined;
+                    return (
+                      <TableRow key={idx}>
+                        <TableCell>
+                          <label className="flex h-10 min-h-10 w-10 cursor-pointer items-center justify-center">
+                            <Checkbox
+                              checked={!excluded}
+                              onCheckedChange={() => toggleCombinationIncluded(rowKey)}
+                              aria-label={`Include ${comboLabel}`}
+                            />
+                          </label>
+                          {showSavedVariantWarning && (
+                            <p className="mt-1 max-w-40 text-xs text-amber-700 dark:text-amber-400">
+                              Saved variant — excluding removes it from the catalog; its stock stays under this SKU.
+                            </p>
+                          )}
+                        </TableCell>
+                        {attributes.map((attr) => (
+                          <TableCell key={attr.key} className={mutedCellClassName}>
+                            {combo[attr.key] ?? '—'}
+                          </TableCell>
+                        ))}
+                        <TableCell className={mutedCellClassName}>
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                            <Input
+                              className="min-w-0 flex-1 font-mono text-sm"
+                              value={gridRows.skus[idx] ?? ''}
+                              disabled={excluded}
+                              onChange={(e) => setVariantSkuAt(idx, e.target.value)}
+                              placeholder={variantSkuBasePrefix ? `${variantSkuBasePrefix}-…` : 'e.g. OUTERWEAR-RED'}
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="shrink-0"
+                              onClick={() => applyVariantSkuCodeAt(idx)}
+                              disabled={excluded || !variantSkuBasePrefix}
+                              title={
+                                variantSkuBasePrefix
+                                  ? `Build ${variantSkuBasePrefix}-{values}`
+                                  : 'Select a category with code or set item SKU'
+                              }
+                            >
+                              <Wand2 className="mr-1.5 h-3.5 w-3.5" />
+                              Generate code
+                            </Button>
+                          </div>
+                        </TableCell>
+                        <TableCell className={mutedCellClassName}>
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                            <Input
+                              className="min-w-0 flex-1 font-mono text-sm"
+                              value={gridRows.barcodes[idx] ?? ''}
+                              disabled={excluded}
+                              onChange={(e) => setVariantBarcodeAt(idx, e.target.value)}
+                              placeholder="e.g. 0224000016T03"
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="shrink-0"
+                              onClick={() => applyVariantBarcodeAt(idx)}
+                              disabled={excluded || !barcodeFormatConfig}
+                              title="Build barcode from global format template"
+                            >
+                              <Wand2 className="mr-1.5 h-3.5 w-3.5" />
+                              Generate code
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
