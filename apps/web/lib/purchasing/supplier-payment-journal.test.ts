@@ -725,6 +725,81 @@ d("supplier payment journal (test bed only)", () => {
     }
   });
 
+  /**
+   * Seeds the stranded state the old unconditional decline tail left behind: a
+   * live receipt A journaled at 1,000, and a declined receipt B at 500 carrying
+   * a `GRN_REVERSAL` with no `GRN` receipt journal behind it. The reversal
+   * writer now refuses without a receipt, so B's pair is posted normally and
+   * its receipt journal deleted, which is exactly the ledger the old tail left.
+   */
+  async function seedStrandedReversalPo(): Promise<{ poId: string; grnAId: string; grnBId: string }> {
+    const po = await prisma.purchaseOrder.create({
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
+      select: { id: true },
+    });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
+    const grnA = await prisma.gRN.create({
+      data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 1_000, items: [] },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grnA.id);
+    const grnB = await prisma.gRN.create({
+      data: {
+        docNumber: nextDocNumber("GRN"),
+        poId: po.id,
+        supplierId,
+        receivedBy: userId,
+        totalAmount: 500,
+        items: [],
+        ownerDeclinedAt: new Date("2026-04-20T00:00:00.000Z"),
+      },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grnB.id);
+
+    expect(await postGrnJournal(grnA.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+    expect(await postGrnJournal(grnB.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+    expect(await postGrnReversalJournal(grnB.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+    await deleteJournalFor("GRN", grnB.id);
+
+    return { poId: po.id, grnAId: grnA.id, grnBId: grnB.id };
+  }
+
+  it("a declined GRN carrying a stray reversal with no receipt journal returns GRN_JOURNALS_INCOMPLETE and posts nothing", async () => {
+    const { poId } = await seedStrandedReversalPo();
+
+    /*
+     * Without the refusal the stray reversal's DR AP 500 nets against A's CR AP
+     * 1,000 and the payment posts 500 against 1,000 owed — then the repair posts
+     * B's receipt, CR AP 500, on a PO already marked paid with nothing flagging it.
+     */
+    const r = await postSupplierPaymentJournal(poId, userId, new Date("2026-04-21T00:00:00.000Z"), prisma);
+    expect(r).toEqual({ ok: false, code: "GRN_JOURNALS_INCOMPLETE" });
+
+    const journal = await prisma.journal.findUnique({
+      where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: `${poId}#1` } },
+    });
+    expect(journal).toBeNull();
+  });
+
+  it("once the stranded declined GRN's receipt journal is posted, payment clears the live receipts only", async () => {
+    const { poId, grnBId } = await seedStrandedReversalPo();
+
+    /* The repair: B's receipt nets its stray reversal off, leaving A's 1,000. */
+    expect(await postGrnJournal(grnBId, userId, prisma)).toMatchObject({ ok: true, created: true });
+
+    const r = await postSupplierPaymentJournal(poId, userId, new Date("2026-04-22T00:00:00.000Z"), prisma);
+    expect(r).toMatchObject({ ok: true, created: true });
+
+    const journal = await prisma.journal.findUniqueOrThrow({
+      where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: `${poId}#1` } },
+      include: { lines: true },
+    });
+    expect(amountsFor(journal.lines, accountIds.AP)).toEqual({ debit: 1_000, credit: 0 });
+    expect(amountsFor(journal.lines, accountIds.BANK)).toEqual({ debit: 0, credit: 1_000 });
+  });
+
   it("a sub-cent GRN with no journal of its own does not block payment", async () => {
     const po = await prisma.purchaseOrder.create({
       data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
