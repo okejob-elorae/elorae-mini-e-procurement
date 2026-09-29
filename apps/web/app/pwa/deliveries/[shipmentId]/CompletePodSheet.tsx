@@ -32,6 +32,7 @@ type GpsState =
   | { status: "locating" }
   | { status: "ready"; lat: number; lng: number }
   | { status: "denied" }
+  | { status: "unsupported" }
   | { status: "error" };
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -65,7 +66,32 @@ export function CompletePodSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- request once on mount
   }, []);
 
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.permissions) return;
+    let permStatus: PermissionStatus | null = null;
+    let cancelled = false;
+    navigator.permissions.query({ name: "geolocation" as PermissionName }).then(
+      (status) => {
+        if (cancelled) return;
+        permStatus = status;
+        status.onchange = () => {
+          if (status.state === "granted") requestLocation();
+        };
+      },
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+      if (permStatus) permStatus.onchange = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- subscribe once on mount
+  }, []);
+
   function requestLocation(): void {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setGps({ status: "unsupported" });
+      return;
+    }
     setGps({ status: "locating" });
     navigator.geolocation.getCurrentPosition(
       (pos) => setGps({ status: "ready", lat: pos.coords.latitude, lng: pos.coords.longitude }),
@@ -255,8 +281,16 @@ export function CompletePodSheet({
           </p>
         )}
         {gps.status === "denied" && (
-          <Alert variant="destructive">
+          <Alert variant="destructive" className="space-y-2">
             <AlertDescription>{t("permissionDenied")}</AlertDescription>
+            <Button type="button" variant="outline" size="sm" className="h-10 w-full" onClick={requestLocation}>
+              {t("locationRetry")}
+            </Button>
+          </Alert>
+        )}
+        {gps.status === "unsupported" && (
+          <Alert variant="destructive">
+            <AlertDescription>{t("locationUnsupported")}</AlertDescription>
           </Alert>
         )}
         {gps.status === "error" && (
