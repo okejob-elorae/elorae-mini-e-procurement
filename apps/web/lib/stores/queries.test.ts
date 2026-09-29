@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import {
+  buildStoreLocationWhere,
   createStore,
+  listStores,
+  parseStoreLocationFilter,
   updateStore,
   StoreHasConsignmentStockError,
   InvalidPriceDiscountPercentError,
@@ -10,6 +13,7 @@ import {
   SellThroughMethodRequiresKonsiError,
   StoreHasDraftSellThroughError,
   type StoreFields,
+  type StoreLocationFilter,
 } from "./queries";
 import { closeFieldSalesOrderRemainder } from "@/lib/field-sales/delivery/writer";
 
@@ -557,5 +561,94 @@ d("store markup guard (test bed only)", () => {
     );
     const row = await prisma.store.findUniqueOrThrow({ where: { id: seededId(created.id) }, select: { markupPercent: true } });
     expect(Number(row.markupPercent)).toBe(20);
+  });
+});
+
+describe("store location filter where builder", () => {
+  it("treats undefined as no filter and never an empty where", () => {
+    expect(buildStoreLocationWhere(undefined)).toBeUndefined();
+  });
+
+  it("parses only the known values", () => {
+    expect(parseStoreLocationFilter("missing")).toBe("missing");
+    expect(parseStoreLocationFilter("defaultRadius")).toBe("defaultRadius");
+    expect(parseStoreLocationFilter("customRadius")).toBe("customRadius");
+    expect(parseStoreLocationFilter("")).toBeUndefined();
+    expect(parseStoreLocationFilter("bogus")).toBeUndefined();
+    expect(parseStoreLocationFilter(undefined)).toBeUndefined();
+  });
+});
+
+d("listStores location filter (test bed only)", () => {
+  const token = Math.random().toString(36).slice(2, 10);
+  const createdIds: string[] = [];
+
+  const fields = (suffix: string, over: Partial<StoreFields>): StoreFields => ({
+    code: `TEST-LOC-${suffix}-${token}`,
+    name: `Location ${suffix}`,
+    address: "Test address",
+    phone: null,
+    contactName: null,
+    termsType: "PUTUS",
+    paymentTempo: 0,
+    markupPercent: null,
+    priceDiscountPercent: null,
+    creditLimit: null,
+    npwp: null,
+    lat: null,
+    lng: null,
+    checkinRadiusMeters: null,
+    sellThroughMethod: null,
+    ...over,
+  });
+
+  let noCoordsId = "";
+  let halfCoordsId = "";
+  let defaultRadiusId = "";
+  let customRadiusId = "";
+
+  beforeEach(async () => {
+    createdIds.length = 0;
+    const seed = async (suffix: string, over: Partial<StoreFields>) => {
+      const created = await createStore(fields(suffix, over));
+      createdIds.push(created.id);
+      return created.id;
+    };
+    noCoordsId = await seed("NONE", {});
+    halfCoordsId = await seed("HALF", { lat: -6.2, lng: null });
+    defaultRadiusId = await seed("DEF", { lat: -6.2, lng: 106.8 });
+    customRadiusId = await seed("CUS", { lat: -6.2, lng: 106.8, checkinRadiusMeters: 250 });
+  });
+
+  afterEach(async () => {
+    for (const id of createdIds) await prisma.store.delete({ where: { id: seededId(id) } });
+  });
+
+  async function idsFor(location: StoreLocationFilter | undefined) {
+    const { items } = await listStores({ search: token, location });
+    return items.map((s) => s.id).sort();
+  }
+
+  it("returns all four seeded stores with no location filter", async () => {
+    expect(await idsFor(undefined)).toEqual(
+      [noCoordsId, halfCoordsId, defaultRadiusId, customRadiusId].sort(),
+    );
+  });
+
+  it("missing returns stores lacking lat or lng", async () => {
+    expect(await idsFor("missing")).toEqual([noCoordsId, halfCoordsId].sort());
+  });
+
+  it("defaultRadius returns geocoded stores with no override", async () => {
+    expect(await idsFor("defaultRadius")).toEqual([defaultRadiusId]);
+  });
+
+  it("customRadius returns stores with an override", async () => {
+    expect(await idsFor("customRadius")).toEqual([customRadiusId]);
+  });
+
+  it("combines with search instead of overwriting it", async () => {
+    const { items } = await listStores({ search: `NONE-${token}`, location: "missing" });
+    expect(items.map((s) => s.id)).toEqual([noCoordsId]);
   });
 });
