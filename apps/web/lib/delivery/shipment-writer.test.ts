@@ -590,6 +590,38 @@ describe("completeDeliveryShipment", () => {
     expect(shipment?.status).toBe("IN_TRANSIT");
   });
 
+  it("refuses a SALESMAN_CARRY completion whose goods key climbs out of the shipment folder", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/x/../goods.jpg`,
+        gps: { lat: -6.2, lng: 106.8 },
+        signatureUrl: "https://r2.example/nota.jpg",
+        signatureR2Key: `delivery-pod-proofs/${shipmentId}/nota.jpg`,
+        signedByName: "Budi Santoso",
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "MISSING_PROOF" });
+  });
+
+  it("refuses an EXPEDITION completion whose goods key nests a subfolder under the shipment", async () => {
+    await seedInTransitShipment(4);
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: `delivery-proofs/${shipmentId}/sub/1.jpg`,
+        invoiceDate: new Date(),
+        dueDate: new Date(Date.now() + 7 * 86400000),
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "MISSING_PROOF" });
+  });
+
   it("refuses a SALESMAN_CARRY completion whose goods key uses the EXPEDITION prefix", async () => {
     await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
     await expect(
@@ -955,6 +987,23 @@ describe("completeDeliveryShipment", () => {
     ).rejects.toMatchObject({ code: "MISSING_NOTA_PHOTO" });
   });
 
+  it("refuses SALESMAN_CARRY completion when the nota photo key climbs out of the shipment folder", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
+        gps: { lat: -6.2, lng: 106.8 },
+        signatureUrl: "https://r2.example/nota.jpg",
+        signatureR2Key: `delivery-pod-proofs/${shipmentId}/x/../nota.jpg`,
+        signedByName: "Budi Santoso",
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "MISSING_NOTA_PHOTO" });
+  });
+
   it("refuses SALESMAN_CARRY completion with no signed-by name", async () => {
     await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
     await expect(
@@ -1136,6 +1185,47 @@ describe("completeDeliveryShipment", () => {
         proofPhotoUrl: "https://r2.example/proof2.jpg",
         proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods2.jpg`,
         lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_STATE" });
+  });
+
+  it("returns ok on a same-actor replay of a PARTIALLY_DELIVERED shipment, and refuses a different actor", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    const first = await completeDeliveryShipment({
+      shipmentId,
+      deliveredById: userId,
+      proofPhotoUrl: "https://r2.example/proof.jpg",
+      proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
+      gps: { lat: -6.2, lng: 106.8 },
+      signatureUrl: "https://r2.example/nota.jpg",
+      signatureR2Key: `delivery-pod-proofs/${shipmentId}/nota.jpg`,
+      signedByName: "Budi Santoso",
+      lines: [{ shipmentLineId, deliveredQty: 3 }],
+    });
+    deliveryId = first.deliveryId;
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment?.status).toBe("PARTIALLY_DELIVERED");
+
+    const replay = await completeDeliveryShipment({
+      shipmentId,
+      deliveredById: userId,
+      proofPhotoUrl: "",
+      proofPhotoR2Key: "",
+      lines: [],
+    });
+    expect(replay).toEqual({ ok: true, deliveryId: first.deliveryId });
+
+    const otherUser = await prisma.user.create({
+      data: { email: `other-${Date.now()}@example.com`, name: "Other", passwordHash: "x", roleId: (await prisma.roleDefinition.findFirst({ where: { name: "SALESMAN" } }))!.id },
+    });
+    otherUserId = otherUser.id;
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: otherUserId,
+        proofPhotoUrl: "https://r2.example/proof2.jpg",
+        proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods2.jpg`,
+        lines: [{ shipmentLineId, deliveredQty: 3 }],
       }),
     ).rejects.toMatchObject({ code: "INVALID_STATE" });
   });

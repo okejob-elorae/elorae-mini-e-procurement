@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
 import { auth } from '@/lib/auth';
 import { uploadToR2, isConfigured } from '@/lib/r2';
+import { buildR2Key, isSafeR2KeyExt } from '@/lib/r2-key';
 export const dynamic = 'force-dynamic';
 
 
@@ -16,6 +17,23 @@ const ALLOWED_TYPES = new Set([
 
 function sanitiseFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 100);
+}
+
+/**
+ * The key's file segment must pass the builder's `[A-Za-z0-9_-]{1,64}` rule, so the stem is
+ * narrowed to that alphabet (`.` from `sanitiseFilename` becomes `_`) and cut to fit beside the
+ * 36-char uuid and the joining `-`. An empty stem drops the suffix entirely.
+ */
+const STEM_MAX_LENGTH = 27;
+
+function buildFileSegment(uuid: string, filename: string, ext: string): string {
+  const withoutExt = filename.toLowerCase().endsWith(`.${ext.toLowerCase()}`)
+    ? filename.slice(0, -(ext.length + 1))
+    : filename;
+  const stem = sanitiseFilename(withoutExt)
+    .replace(/[^A-Za-z0-9_-]/g, '_')
+    .slice(0, STEM_MAX_LENGTH);
+  return stem ? `${uuid}-${stem}` : uuid;
 }
 
 /**
@@ -82,8 +100,9 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const ext = file.name.split('.').pop() || 'bin';
-      const key = `uploads/${randomUUID()}-${sanitiseFilename(file.name.replace(`.${ext}`, ''))}.${ext}`;
+      const rawExt = (file.name.split('.').pop() ?? 'bin').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const ext = isSafeR2KeyExt(rawExt) ? rawExt : 'bin';
+      const key = buildR2Key('uploads', [buildFileSegment(randomUUID(), file.name, rawExt)], ext);
       const buffer = Buffer.from(await file.arrayBuffer());
 
       const url = await uploadToR2(key, buffer, file.type);

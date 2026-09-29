@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { uploadToR2, isConfigured } from "@/lib/r2";
 import { buildR2Key, isSafeR2KeySegment } from "@/lib/r2-key";
+import { isSameActorReplay } from "@/lib/delivery/pod-completion-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,8 @@ const PROOF_KINDS = new Set(["goods", "nota"]);
  *
  * By status:
  * - IN_TRANSIT: writes to R2 and returns `{ url, key }`.
- * - DELIVERED / PARTIALLY_DELIVERED by the SAME actor: a lost-response REPLAY. The client (and the
+ * - DELIVERED / PARTIALLY_DELIVERED by the SAME actor (`isSameActorReplay`, the predicate shared with
+ *   `completeDeliveryShipment`'s replay guard): a lost-response REPLAY. The client (and the
  *   offline queue) re-uploads both photos before calling the completion action, and
  *   `completeDeliveryShipment` deliberately returns ok for a same-actor replay. Refusing here
  *   would turn an already-successful completion into 20 retries and a false stuck-delivery admin
@@ -78,10 +80,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
   }
 
-  if (
-    (shipment.status === "DELIVERED" || shipment.status === "PARTIALLY_DELIVERED") &&
-    shipment.deliveredById === session.user.id
-  ) {
+  if (isSameActorReplay(shipment, session.user.id)) {
     const stored =
       clientId === "goods"
         ? { url: shipment.proofPhotoUrl, key: shipment.proofPhotoR2Key }

@@ -6,7 +6,9 @@ export type R2KeyPrefix =
   | "delivery-proofs"
   | "packing-videos"
   | "field-returns"
-  | "items";
+  | "items"
+  | "payments"
+  | "uploads";
 
 const SEGMENT_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const EXT_PATTERN = /^[a-z0-9]{2,5}$/;
@@ -44,4 +46,20 @@ export function buildR2Key(prefix: R2KeyPrefix, segments: string[], ext: string)
   }
   if (!isSafeR2KeyExt(ext)) throw new InvalidR2KeyError("ext", ext);
   return `${prefix}/${segments.join("/")}.${ext}`;
+}
+
+/**
+ * True only for `${folder}/<segment>.<ext>`: exactly one file segment under the folder, each
+ * half passing the same patterns `buildR2Key` enforces. A bare `startsWith(folder + "/")` also
+ * accepts `<folder>/x/../y.jpg` or `<folder>/../<other>/y.jpg`, which URL normalisation resolves
+ * to a different object, so two distinct strings can name one object and a "bound" key can point
+ * at another record's evidence. The pattern forbids `/`, `.` inside the segment and whitespace,
+ * so none of that is expressible. Shape only; nothing here checks the object exists.
+ */
+export function isR2KeyInFolder(key: unknown, folder: string): key is string {
+  if (typeof key !== "string" || !key.startsWith(`${folder}/`)) return false;
+  const file = key.slice(folder.length + 1);
+  const dot = file.lastIndexOf(".");
+  if (dot === -1) return false;
+  return isSafeR2KeySegment(file.slice(0, dot)) && isSafeR2KeyExt(file.slice(dot + 1));
 }

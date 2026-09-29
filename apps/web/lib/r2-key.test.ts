@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildR2Key, InvalidR2KeyError, isSafeR2KeySegment } from "./r2-key";
+import { buildR2Key, InvalidR2KeyError, isR2KeyInFolder, isSafeR2KeySegment } from "./r2-key";
 
 describe("buildR2Key", () => {
   it("builds keys for every realistic fragment shape", () => {
@@ -74,5 +74,39 @@ describe("isSafeR2KeySegment", () => {
     expect(isSafeR2KeySegment({})).toBe(false);
     expect(isSafeR2KeySegment("a/b")).toBe(false);
     expect(isSafeR2KeySegment("")).toBe(false);
+  });
+});
+
+describe("isR2KeyInFolder", () => {
+  it("accepts exactly one file segment with an extension under the folder", () => {
+    expect(isR2KeyInFolder("delivery-pod-proofs/abc/goods.jpg", "delivery-pod-proofs/abc")).toBe(true);
+    expect(isR2KeyInFolder("delivery-proofs/abc/1727600000000.webp", "delivery-proofs/abc")).toBe(true);
+  });
+
+  it.each([
+    ["delivery-pod-proofs/abc/x/../goods.jpg"],
+    ["delivery-pod-proofs/abc/../def/goods.jpg"],
+    ["delivery-pod-proofs/abc/sub/goods.jpg"],
+    ["delivery-pod-proofs/abc/goods"],
+    ["delivery-pod-proofs/abc/.jpg"],
+    ["delivery-pod-proofs/abc/goods.JPG"],
+    ["delivery-pod-proofs/abc/a.b.jpg"],
+    [" delivery-pod-proofs/abc/goods.jpg"],
+    ["delivery-pod-proofs/abc/goods.jpg "],
+    ["delivery-pod-proofs/abc/goods.jpg\n"],
+    ["delivery-proofs/abc/goods.jpg"],
+    ["delivery-pod-proofs/abcd/goods.jpg"],
+    ["delivery-pod-proofs/abc/"],
+    ["delivery-pod-proofs/abc"],
+    [""],
+  ])("rejects %j", (bad) => {
+    expect(isR2KeyInFolder(bad, "delivery-pod-proofs/abc")).toBe(false);
+  });
+
+  it("rejects non-strings", () => {
+    expect(isR2KeyInFolder(null, "delivery-pod-proofs/abc")).toBe(false);
+    expect(isR2KeyInFolder(undefined, "delivery-pod-proofs/abc")).toBe(false);
+    expect(isR2KeyInFolder(42, "delivery-pod-proofs/abc")).toBe(false);
+    expect(isR2KeyInFolder({}, "delivery-pod-proofs/abc")).toBe(false);
   });
 });

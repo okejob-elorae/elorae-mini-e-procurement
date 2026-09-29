@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
-const SLOT_PATTERN = /^(program-\d+|adminfee)$/;
+const SLOT_PATTERN = /^(program-\d{1,3}|adminfee)$/;
 const DRAFT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function POST(req: NextRequest) {
@@ -31,7 +31,9 @@ export async function POST(req: NextRequest) {
   /**
    * `slot` is interpolated directly into the object key below. Reject anything
    * that does not match the deduction-slot shape so a caller cannot escape its
-   * own prefix (path traversal) or collide with another deduction's evidence.
+   * own prefix (path traversal) or collide with another deduction's evidence. The index is
+   * capped at three digits so the slot always fits the key builder's 64-char segment rule; an
+   * unbounded `\d+` would pass this check and then throw inside the try as a 500.
    */
   if (!SLOT_PATTERN.test(slot)) return NextResponse.json({ error: "invalid slot" }, { status: 400 });
   /**

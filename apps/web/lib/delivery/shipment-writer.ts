@@ -6,7 +6,9 @@ import { evaluateCheckinRadius, resolveEffectiveRadius, parseRadiusSetting } fro
 import { issueKonsiTransfer } from "@/lib/field-sales/konsi-transfer/writer";
 import { DeliveryError, KonsiTransferReservationMismatchError } from "@/lib/field-sales/errors";
 import { nextDeliveryStatus } from "@/lib/field-sales/delivery/plan";
+import { isR2KeyInFolder } from "@/lib/r2-key";
 import { DeliveryShipmentError } from "./errors";
+import { isSameActorReplay } from "./pod-completion-guard";
 
 export async function createDeliveryShipment(input: {
   orderId: string;
@@ -212,10 +214,7 @@ export async function completeDeliveryShipment(input: {
    * run, not merely happen to still satisfy them — an offline-queued retry may legitimately
    * carry no photos/lines the second time around.
    */
-  if (
-    (shipment.status === "DELIVERED" || shipment.status === "PARTIALLY_DELIVERED") &&
-    shipment.deliveredById === input.deliveredById
-  ) {
+  if (isSameActorReplay(shipment, input.deliveredById)) {
     return { ok: true, deliveryId: shipment.deliveryId ?? "" };
   }
   if (shipment.status !== "IN_TRANSIT") throw new DeliveryShipmentError("INVALID_STATE");
@@ -228,19 +227,22 @@ export async function completeDeliveryShipment(input: {
    * The goods-photo key bind, sibling of the nota-key binds in the SALESMAN_CARRY branch below —
    * read the two together. Non-empty `proofPhotoUrl` alone proved nothing about WHERE the photo
    * lives, so a raw caller could record any key (another shipment's evidence, an arbitrary string)
-   * as this delivery's proof. The expected prefix follows `method`, because the two methods upload
+   * as this delivery's proof. The expected folder follows `method`, because the two methods upload
    * through different routes: the salesman-carry PWA route writes
    * `delivery-pod-proofs/<shipmentId>/goods.<ext>`, the backoffice route writes
-   * `delivery-proofs/<shipmentId>/<timestamp>.<ext>`. Sits after the shipment fetch and the
+   * `delivery-proofs/<shipmentId>/<timestamp>.<ext>`. The bind is the exact shape
+   * `<folder>/<segment>.<ext>` (`isR2KeyInFolder`), not a prefix match: a prefix also admits
+   * `<folder>/x/../y.jpg`, which normalises to another object. The shape forbids whitespace, so
+   * the untrimmed goods key cannot be padded past the distinctness check against the nota key. Sits after the shipment fetch and the
    * same-actor replay guard on purpose — a replay short-circuits before this ever runs, so a
    * retried payload carrying no or stale keys still returns ok. Like the nota check, it verifies
    * the key's shape only; nothing here queries R2 for the object.
    */
-  const goodsKeyPrefix =
+  const goodsKeyFolder =
     shipment.method === "SALESMAN_CARRY"
-      ? `delivery-pod-proofs/${input.shipmentId}/`
-      : `delivery-proofs/${input.shipmentId}/`;
-  if (!input.proofPhotoR2Key?.startsWith(goodsKeyPrefix)) {
+      ? `delivery-pod-proofs/${input.shipmentId}`
+      : `delivery-proofs/${input.shipmentId}`;
+  if (!isR2KeyInFolder(input.proofPhotoR2Key, goodsKeyFolder)) {
     throw new DeliveryShipmentError("MISSING_PROOF");
   }
   for (const line of input.lines) {
@@ -387,7 +389,7 @@ export async function completeDeliveryShipment(input: {
     if (signatureR2Key === input.proofPhotoR2Key) {
       throw new DeliveryShipmentError("MISSING_NOTA_PHOTO");
     }
-    if (!signatureR2Key.startsWith(`delivery-pod-proofs/${input.shipmentId}/`)) {
+    if (!isR2KeyInFolder(signatureR2Key, `delivery-pod-proofs/${input.shipmentId}`)) {
       throw new DeliveryShipmentError("MISSING_NOTA_PHOTO");
     }
     if (!signedByName || signedByName.length > 120) {
