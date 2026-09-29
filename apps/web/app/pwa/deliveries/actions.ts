@@ -7,6 +7,7 @@ import { completeDeliveryShipment } from "@/lib/delivery/shipment-writer";
 import { listMyDeliveries } from "@/lib/delivery/shipment-queries";
 import { DeliveryShipmentError } from "@/lib/delivery/errors";
 import { DeliveryError } from "@/lib/field-sales/errors";
+import { serializeReplay, type SerializedReplay } from "@/lib/field-sales/replay-detail";
 import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
 import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "@/lib/finance/ar/delivery-journal";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
@@ -18,9 +19,13 @@ import { getShipmentAction, type ShipmentActionResult, type ShipmentActionReason
  * which may only export async functions, so it is not exported. Keep both in sync by hand if
  * either `DeliveryShipmentError` or `DeliveryError` gains a new code.
  */
-function mapError(error: unknown): { ok: false; reason: ShipmentActionReason } {
+function mapError(error: unknown): { ok: false; reason: ShipmentActionReason; replay?: SerializedReplay } {
   if (error instanceof DeliveryShipmentError) return { ok: false, reason: error.code };
-  if (error instanceof DeliveryError) return { ok: false, reason: error.code };
+  if (error instanceof DeliveryError) {
+    return error.replay
+      ? { ok: false, reason: error.code, replay: serializeReplay(error.replay) }
+      : { ok: false, reason: error.code };
+  }
   console.error("[pwa/deliveries] unexpected failure", error);
   return { ok: false, reason: "UNEXPECTED" };
 }

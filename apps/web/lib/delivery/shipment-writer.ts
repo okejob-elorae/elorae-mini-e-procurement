@@ -579,6 +579,12 @@ export async function completeDeliveryShipment(input: {
       return { orderLineId: shipmentLine.orderLineId, qty: line.deliveredQty };
     });
   if (deliveredLines.length > 0) {
+    /**
+     * Outside the transaction below on purpose. A crash between the two leaves the delivery
+     * recorded and the shipment IN_TRANSIT; a retry with different quantities is refused HERE
+     * (REPLAY_MISMATCH) before anything is stamped, so the shipment is untouched and can be
+     * resubmitted with the recorded quantities.
+     */
     const delivery = await recordFieldSalesDelivery({
       orderId: shipment.orderId,
       deliveredById: input.deliveredById,

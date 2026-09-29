@@ -5,6 +5,16 @@ import { runSerializable } from "@/lib/db/tx-retry";
 import { DeliveryError } from "../errors";
 import { outstandingQty, nextDeliveryStatus, allocateDeliveryDiscounts } from "./plan";
 
+/**
+ * `idempotencyKey` is kept across a failed submit on purpose, so a genuine retry — including one
+ * after a lost success response — cannot ship twice. A matching key therefore returns the
+ * recorded delivery, but only when the retry asks for the SAME thing: same invoice/due dates
+ * (exact instants) and same per-`orderLineId` quantity totals. A retry that differs is REFUSED
+ * with `REPLAY_MISMATCH` carrying the recorded values, because returning the original would
+ * report success while silently discarding the operator's correction. The key is never rotated
+ * to get around this: after a lost-response success a fresh key would ship the order twice.
+ * Checked before any write, so the refusal leaves nothing behind.
+ */
 export async function recordFieldSalesDelivery(input: {
   orderId: string;
   deliveredById: string;
@@ -25,9 +35,36 @@ export async function recordFieldSalesDelivery(input: {
     if (input.idempotencyKey) {
       const existing = await tx.fieldSalesDelivery.findUnique({
         where: { idempotencyKey: input.idempotencyKey },
-        select: { id: true, docNo: true },
+        select: {
+          id: true,
+          docNo: true,
+          invoiceDate: true,
+          dueDate: true,
+          lines: { select: { orderLineId: true, qty: true } },
+        },
       });
-      if (existing) return { deliveryId: existing.id, docNo: existing.docNo };
+      if (existing) {
+        const recorded = new Map<string, number>();
+        for (const l of existing.lines) recorded.set(l.orderLineId, (recorded.get(l.orderLineId) ?? 0) + l.qty);
+        const asked = new Map<string, number>();
+        for (const l of input.lines) asked.set(l.orderLineId, (asked.get(l.orderLineId) ?? 0) + l.qty);
+        const sameLines =
+          Array.from(recorded.keys()).every((id) => asked.get(id) === recorded.get(id)) &&
+          Array.from(asked.keys()).every((id) => recorded.get(id) === asked.get(id));
+        const sameDates =
+          existing.invoiceDate.getTime() === input.invoiceDate.getTime() &&
+          existing.dueDate.getTime() === input.dueDate.getTime();
+        if (!sameLines || !sameDates) {
+          throw new DeliveryError("REPLAY_MISMATCH", [], {
+            deliveryId: existing.id,
+            docNo: existing.docNo,
+            invoiceDate: existing.invoiceDate,
+            dueDate: existing.dueDate,
+            lines: Array.from(recorded, ([orderLineId, qty]) => ({ orderLineId, qty })),
+          });
+        }
+        return { deliveryId: existing.id, docNo: existing.docNo };
+      }
     }
 
     const order = await tx.fieldSalesOrder.findUnique({
@@ -150,6 +187,12 @@ export async function recordFieldSalesDelivery(input: {
     });
 
     /**
+     * `OVER_CONSUME` is not a quantity error: the reservation is already consumed beyond what the
+     * deliveries record. It is reachable from the delivery-rollout deploy race — an order the OLD
+     * image approved after the backfill migration ran was consumed with no backfilled delivery.
+     * It surfaces as `RESERVATION_MISMATCH`; the remedy is the per-order hand-run of that
+     * migration's statements (`20260809130000_backfill_field_sales_deliveries`), not a retry.
+     *
      * Consume AFTER the delivery row exists so the audit adjustment can key on the real delivery
      * id. Everything here is one serializable transaction, so a short-stock throw rolls the
      * delivery back with it.
@@ -169,7 +212,11 @@ export async function recordFieldSalesDelivery(input: {
     } catch (e) {
       if (e instanceof PartialConsumeError) {
         throw new DeliveryError(
-          e.code === "INSUFFICIENT_STOCK" ? "INSUFFICIENT_STOCK" : "OVER_DELIVER",
+          e.code === "INSUFFICIENT_STOCK"
+            ? "INSUFFICIENT_STOCK"
+            : e.code === "OVER_CONSUME"
+              ? "RESERVATION_MISMATCH"
+              : "OVER_DELIVER",
           e.shortLines.map((s) => ({ orderLineId: s.fieldSalesLineId, requested: s.requested, onHand: s.onHand })),
         );
       }

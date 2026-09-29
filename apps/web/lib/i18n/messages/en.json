@@ -758,6 +758,8 @@
       "KONSI_NOT_RESERVED": "This consignment order has no reserved stock left for this shipment. Ask an admin to check the order and cancel this shipment.",
       "NO_INVENTORY_ROW": "A product on this shipment has no main-warehouse stock record, so nothing can move to the store. Ask an admin to check the product's stock.",
       "SHIPMENT_IN_FLIGHT": "This order still has a shipment packed or in transit. Complete or cancel that shipment first.",
+      "REPLAY_MISMATCH": "This delivery was already recorded with different dates or quantities. Reload to see the recorded delivery and resubmit with its quantities.",
+      "RESERVATION_MISMATCH": "Stock for this order was already consumed without a matching delivery record. An admin must repair the order before it can be delivered.",
       "INVALID_FILE_TYPE": "That file type isn't supported. Use JPEG, PNG, or WEBP.",
       "FILE_TOO_LARGE": "That photo is too large (max 10MB). Try a smaller photo."
     }
@@ -3282,7 +3284,9 @@
         "CONFLICT": "Someone else just changed this nota's dates. Reload the page and try again.",
         "NOT_RETRYABLE": "This delivery's journals were never flagged as failed, so there is nothing to retry.",
         "RECEIVABLE_HAS_PAYMENTS": "This invoice already has a payment applied, so its dates can't be corrected. Void the payment first, then try again.",
-        "SHIPMENT_IN_FLIGHT": "This order still has a shipment packed or in transit. Complete or cancel that shipment before closing the remainder."
+        "SHIPMENT_IN_FLIGHT": "This order still has a shipment packed or in transit. Complete or cancel that shipment before closing the remainder.",
+        "REPLAY_MISMATCH": "This delivery was already recorded with different dates or quantities. Close this dialog and reopen it to see the recorded delivery; correct the dates afterwards with Edit nota dates.",
+        "RESERVATION_MISMATCH": "Stock for this order was already consumed without a matching delivery record. An admin must repair the order before it can be delivered."
       }
     },
     "print": {

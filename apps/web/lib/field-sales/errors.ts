@@ -56,12 +56,35 @@ export type DeliveryErrorCode =
    * against nothing — KONSI_NOT_RESERVED for konsi, OVER_DELIVER for putus — with its goods
    * already on the truck. Complete or cancel the shipment first.
    */
-  | "SHIPMENT_IN_FLIGHT";
+  | "SHIPMENT_IN_FLIGHT"
+  /**
+   * A retry reused an idempotency key whose delivery was already recorded, but with different
+   * invoice/due dates or quantities. The recorded delivery is left exactly as it was and the
+   * recorded values ride on `DeliveryError.replay`. The operator refreshes to see the recorded
+   * delivery, resubmits with its quantities, and corrects the dates afterwards through the
+   * delivery date-correction action.
+   */
+  | "REPLAY_MISMATCH"
+  /**
+   * The order's stock reservation is already consumed beyond what its deliveries record, so this
+   * delivery cannot draw it down. Not an operator quantity error: an admin has to repair the
+   * order (the per-order hand-run of the delivery backfill migration) before it can be delivered.
+   */
+  | "RESERVATION_MISMATCH";
+
+export type DeliveryReplayDetail = {
+  deliveryId: string;
+  docNo: string;
+  invoiceDate: Date;
+  dueDate: Date;
+  lines: Array<{ orderLineId: string; qty: number }>;
+};
 
 export class DeliveryError extends Error {
   constructor(
     readonly code: DeliveryErrorCode,
     readonly shortLines: Array<{ orderLineId: string; requested: number; onHand: number }> = [],
+    readonly replay?: DeliveryReplayDetail,
   ) {
     super(`Delivery rejected: ${code}`);
     this.name = "DeliveryError";

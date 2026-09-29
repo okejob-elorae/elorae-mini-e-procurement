@@ -6,6 +6,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { recordFieldSalesDelivery, closeFieldSalesOrderRemainder } from "@/lib/field-sales/delivery/writer";
 import { DeliveryError } from "@/lib/field-sales/errors";
+import { serializeReplay, type SerializedReplay } from "@/lib/field-sales/replay-detail";
 import { formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
@@ -30,8 +31,11 @@ export type DeliveryActionResult =
         | "INSUFFICIENT_STOCK"
         | "NOT_RETRYABLE"
         | "RECEIVABLE_HAS_PAYMENTS"
-        | "SHIPMENT_IN_FLIGHT";
+        | "SHIPMENT_IN_FLIGHT"
+        | "REPLAY_MISMATCH"
+        | "RESERVATION_MISMATCH";
       shortLines?: Array<{ orderLineId: string; requested: number; onHand: number }>;
+      replay?: SerializedReplay;
     };
 
 /**
@@ -112,7 +116,14 @@ export async function recordDeliveryAction(input: {
       idempotencyKey,
     });
   } catch (e) {
-    if (e instanceof DeliveryError) return { ok: false, reason: e.code, shortLines: e.shortLines };
+    if (e instanceof DeliveryError) {
+      return {
+        ok: false,
+        reason: e.code,
+        shortLines: e.shortLines,
+        replay: e.replay ? serializeReplay(e.replay) : undefined,
+      };
+    }
     throw e;
   }
 

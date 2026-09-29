@@ -758,6 +758,8 @@
       "KONSI_NOT_RESERVED": "Pesanan konsinyasi ini tidak punya stok tercadang untuk pengiriman ini. Minta admin memeriksa pesanan dan membatalkan pengiriman ini.",
       "NO_INVENTORY_ROW": "Ada produk di pengiriman ini yang tidak punya catatan stok gudang utama, jadi tidak ada yang bisa dipindahkan ke toko. Minta admin memeriksa stok produk tersebut.",
       "SHIPMENT_IN_FLIGHT": "Pesanan ini masih punya pengiriman yang sudah dikemas atau sedang dikirim. Selesaikan atau batalkan pengiriman itu terlebih dahulu.",
+      "REPLAY_MISMATCH": "Pengiriman ini sudah tercatat dengan tanggal atau jumlah yang berbeda. Muat ulang untuk melihat pengiriman yang tercatat lalu kirim ulang dengan jumlahnya.",
+      "RESERVATION_MISMATCH": "Stok order ini sudah terpakai tanpa catatan pengiriman yang sesuai. Admin harus memperbaiki order ini sebelum bisa dikirim.",
       "INVALID_FILE_TYPE": "Jenis file tidak didukung. Gunakan JPEG, PNG, atau WEBP.",
       "FILE_TOO_LARGE": "Foto terlalu besar (maks 10MB). Coba foto yang lebih kecil."
     }
@@ -3282,7 +3284,9 @@
         "CONFLICT": "Tanggal nota ini baru saja diubah orang lain. Muat ulang halaman dan coba lagi.",
         "NOT_RETRYABLE": "Jurnal pengiriman ini belum pernah ditandai gagal, jadi tidak ada yang perlu dicoba ulang.",
         "RECEIVABLE_HAS_PAYMENTS": "Nota ini sudah memiliki pembayaran yang diterapkan, jadi tanggalnya tidak bisa dikoreksi. Batalkan (void) pembayarannya dahulu, lalu coba lagi.",
-        "SHIPMENT_IN_FLIGHT": "Pesanan ini masih punya pengiriman yang sudah dikemas atau sedang dikirim. Selesaikan atau batalkan pengiriman itu sebelum menutup sisa pesanan."
+        "SHIPMENT_IN_FLIGHT": "Pesanan ini masih punya pengiriman yang sudah dikemas atau sedang dikirim. Selesaikan atau batalkan pengiriman itu sebelum menutup sisa pesanan.",
+        "REPLAY_MISMATCH": "Pengiriman ini sudah tercatat dengan tanggal atau jumlah yang berbeda. Tutup dialog ini lalu buka lagi untuk melihat pengiriman yang tercatat; koreksi tanggal setelahnya lewat Ubah tanggal nota.",
+        "RESERVATION_MISMATCH": "Stok order ini sudah terpakai tanpa catatan pengiriman yang sesuai. Admin harus memperbaiki order ini sebelum bisa dikirim."
       }
     },
     "print": {

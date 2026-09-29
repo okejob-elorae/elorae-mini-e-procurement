@@ -13,6 +13,7 @@ import {
 import { listDeliveryShipments, getDeliveryShipment } from "@/lib/delivery/shipment-queries";
 import { DeliveryShipmentError, type DeliveryShipmentErrorCode } from "@/lib/delivery/errors";
 import { DeliveryError, type DeliveryErrorCode } from "@/lib/field-sales/errors";
+import { serializeReplay, type SerializedReplay } from "@/lib/field-sales/replay-detail";
 import { formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
 import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
 import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "@/lib/finance/ar/delivery-journal";
@@ -33,7 +34,9 @@ export type ShipmentActionReason =
   | DeliveryShipmentErrorCode
   | DeliveryErrorCode;
 
-export type ShipmentActionResult = { ok: true } | { ok: false; reason: ShipmentActionReason };
+export type ShipmentActionResult =
+  | { ok: true }
+  | { ok: false; reason: ShipmentActionReason; replay?: SerializedReplay };
 
 /**
  * Every failure leaves as a mapped `reason` the dialogs can render. Rethrowing anything — which
@@ -48,9 +51,13 @@ export type ShipmentActionResult = { ok: true } | { ok: false; reason: ShipmentA
  * reimplements this exact body (importing `DeliveryShipmentError`/`DeliveryError` directly)
  * rather than importing it — keep the two in sync by hand if either error class gains a case.
  */
-function mapError(error: unknown): { ok: false; reason: ShipmentActionReason } {
+function mapError(error: unknown): { ok: false; reason: ShipmentActionReason; replay?: SerializedReplay } {
   if (error instanceof DeliveryShipmentError) return { ok: false, reason: error.code };
-  if (error instanceof DeliveryError) return { ok: false, reason: error.code };
+  if (error instanceof DeliveryError) {
+    return error.replay
+      ? { ok: false, reason: error.code, replay: serializeReplay(error.replay) }
+      : { ok: false, reason: error.code };
+  }
   console.error("[delivery-shipments] unexpected failure", error);
   return { ok: false, reason: "UNEXPECTED" };
 }
