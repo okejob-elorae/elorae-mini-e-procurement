@@ -54,25 +54,27 @@ export function PackingSlipPrint({ order, items, lineImages = {} }: Props) {
           </div>
         </div>
 
-        {(order.courierName || order.trackingNumber) && (
-          <div className="print-meta">
-            {order.courierName && (
+        <div className="print-meta">
+          {order.courierName && (
+            <div className="print-meta-row">
+              <span className="print-meta-label">{t("courierLabel")}</span>
+              <span>{order.courierName}</span>
+            </div>
+          )}
+          {order.trackingNumber ? (
+            <>
               <div className="print-meta-row">
-                <span className="print-meta-label">{t("courierLabel")}</span>
-                <span>{order.courierName}</span>
+                <span className="print-meta-label">{t("trackingLabel")}</span>
+                <span style={{ fontFamily: "monospace" }}>{order.trackingNumber}</span>
               </div>
-            )}
-            {order.trackingNumber && (
-              <>
-                <div className="print-meta-row">
-                  <span className="print-meta-label">{t("trackingLabel")}</span>
-                  <span style={{ fontFamily: "monospace" }}>{order.trackingNumber}</span>
-                </div>
-                <ResiBarcode value={order.trackingNumber} height={56} />
-              </>
-            )}
-          </div>
-        )}
+              <ResiBarcode value={order.trackingNumber} height={56} />
+            </>
+          ) : (
+            <div className="print-meta-row">
+              <span>{t("resiPending")}</span>
+            </div>
+          )}
+        </div>
 
         <div className="print-divider" />
 

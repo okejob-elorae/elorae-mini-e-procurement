@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { toast } from "sonner";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Printer } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -62,7 +63,9 @@ type Props = {
 export function FulfillmentCard(props: Props) {
   const t = useTranslations("salesOrders.fulfillment");
   const locale = useLocale();
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [isCheckingResi, startCheckResiTransition] = useTransition();
 
   const [couriers, setCouriers] = useState<CourierOption[]>([]);
   const [couriersLoaded, setCouriersLoaded] = useState(false);
@@ -87,6 +90,12 @@ export function FulfillmentCard(props: Props) {
       } catch {
         toast.error(t("toast.networkError"));
       }
+    });
+  }
+
+  function handleCheckResi(): void {
+    startCheckResiTransition(() => {
+      router.refresh();
     });
   }
 
@@ -141,7 +150,7 @@ export function FulfillmentCard(props: Props) {
         />
       </div>
 
-      {props.trackingNumber && (
+      {props.trackingNumber ? (
         <div className="text-sm pt-2 border-t space-y-1">
           <div>
             <span className="text-muted-foreground">{t("tracking")}: </span>
@@ -163,7 +172,23 @@ export function FulfillmentCard(props: Props) {
             </div>
           ) : null}
         </div>
-      )}
+      ) : !props.isLocked ? (
+        <div className="text-sm pt-2 border-t space-y-2">
+          <div>
+            <span className="text-muted-foreground">{t("tracking")}: </span>
+            <span className="text-muted-foreground italic">{t("resiPending")}</span>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-10"
+            disabled={isCheckingResi}
+            onClick={handleCheckResi}
+          >
+            {t("checkResi")}
+          </Button>
+        </div>
+      ) : null}
       {!props.trackingNumber && props.packingVideoUrl ? (
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm pt-2 border-t">
           <span className="text-muted-foreground">Video packing:</span>

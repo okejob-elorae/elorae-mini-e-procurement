@@ -2109,6 +2109,8 @@
       "timelinePacked": "Dikemas",
       "timelineShipped": "Dikirim",
       "tracking": "No. Resi",
+      "resiPending": "Resi belum tersedia — Jubelio masih membuat resi dari marketplace.",
+      "checkResi": "Cek resi",
       "byUser": "oleh {name}",
       "cancelledLocked": "Dibatalkan — pemenuhan dikunci.",
       "action": {
@@ -2374,6 +2376,7 @@
       "shipToLabel": "Kirim ke:",
       "courierLabel": "Kurir:",
       "trackingLabel": "No. Resi:",
+      "resiPending": "No. Resi: belum tersedia — cetak ulang setelah resi muncul",
       "colSku": "SKU",
       "colProduct": "Produk",
       "colQty": "Jml",
