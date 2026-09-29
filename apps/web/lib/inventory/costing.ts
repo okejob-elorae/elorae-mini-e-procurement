@@ -10,6 +10,8 @@ import {
   type StockStatus,
 } from '@/lib/inventory/stock-status';
 import { buildVariantStockChips } from '@/lib/inventory/variant-stock-label';
+import { auth } from '@/lib/auth';
+import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 
 export interface CostCalculationResult {
   previousQty: Decimal;
@@ -401,6 +403,8 @@ export type GetInventorySnapshotOpts = {
 
 // Get inventory snapshot (one row per item, aggregated from variant-level rows)
 export async function getInventorySnapshot(opts?: GetInventorySnapshotOpts) {
+  const session = await auth();
+  requirePermission(session?.user?.permissions ?? [], PERMISSIONS.INVENTORY_VIEW);
   const toNum = (v: unknown) => (v == null ? null : Number(v));
 
   const values = await prisma.inventoryValue.findMany({

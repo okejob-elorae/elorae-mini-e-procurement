@@ -208,47 +208,6 @@ export async function createStockAdjustment(
 }
 
 
-export async function getGRNs(filters?: {
-  supplierId?: string;
-  fromDate?: Date;
-  toDate?: Date;
-}) {
-  await requireInventoryView();
-  const where: any = {};
-  
-  if (filters?.supplierId) {
-    where.supplierId = filters.supplierId;
-  }
-  
-  if (filters?.fromDate || filters?.toDate) {
-    where.grnDate = {};
-    if (filters.fromDate) {
-      where.grnDate.gte = filters.fromDate;
-    }
-    if (filters.toDate) {
-      where.grnDate.lte = filters.toDate;
-    }
-  }
-  
-  return await prisma.gRN.findMany({
-    where,
-    include: {
-      supplier: {
-        select: {
-          name: true,
-          code: true
-        }
-      },
-      po: {
-        select: {
-          docNumber: true
-        }
-      }
-    },
-    orderBy: { grnDate: 'desc' }
-  });
-}
-
 const toNum = (v: unknown): number | null => (v == null ? null : Number(v));
 
 function serializeItemForClient(item: {

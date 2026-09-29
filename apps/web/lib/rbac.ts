@@ -44,6 +44,19 @@ export function requirePermission(permissions: string[], code: string): void {
 }
 
 /**
+ * Like requirePermission, but passes when the caller holds ANY of the given codes.
+ * For shared reads that several pages under different permissions call.
+ * @throws {Error} with status 403 if none of the codes is held
+ */
+export function requireAnyPermission(permissions: string[], codes: string[]): void {
+  if (!codes.some((code) => hasPermission(permissions, code))) {
+    const error = new Error('Forbidden: Insufficient permissions');
+    (error as any).status = 403;
+    throw error;
+  }
+}
+
+/**
  * Route-to-permission mapping for proxy (auth/redirect layer)
  * Maps URL paths to required permission codes
  */

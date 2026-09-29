@@ -79,5 +79,10 @@ describe("stock-card actions inventory:view gate", () => {
       mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["inventory:view"] } });
       await expect(call()).resolves.toBeDefined();
     });
+
+    it("lets an admin wildcard caller through to the query", async () => {
+      mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
+      await expect(call()).resolves.toBeDefined();
+    });
   });
 });
