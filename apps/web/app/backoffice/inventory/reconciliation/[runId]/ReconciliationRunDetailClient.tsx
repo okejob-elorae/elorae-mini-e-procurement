@@ -107,7 +107,7 @@ export function ReconciliationRunDetailClient({
         return;
       }
       toast.success(t("resolved"));
-      await load();
+      await load({ silent: true });
     } catch {
       toast.error(t("resolveFailed"));
     } finally {
@@ -150,6 +150,7 @@ export function ReconciliationRunDetailClient({
               selectedIds={effectiveSelectedIds}
               onSelectionChange={setSelectedIds}
               running={bulkRunning}
+              blocked={resolvingId !== null}
               onRunningChange={setBulkRunning}
               onFinished={() => load({ silent: true })}
             />
@@ -176,60 +177,64 @@ export function ReconciliationRunDetailClient({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {run.results.map((row) => (
-                <TableRow key={row.id}>
-                  {canManage && (
+              {run.results.map((row) => {
+                /* Variants of one item share its name, so the variant keeps each checkbox label distinct. */
+                const rowLabel = row.variantSku ? `${row.itemName} ${row.variantSku}` : row.itemName;
+                return (
+                  <TableRow key={row.id}>
+                    {canManage && (
+                      <TableCell>
+                        {row.action === "FLAGGED" && (
+                          <Checkbox
+                            checked={selectedSet.has(row.id)}
+                            disabled={bulkRunning}
+                            onCheckedChange={(checked) => toggleRow(row.id, checked === true)}
+                            aria-label={t("bulk.selectRowAria", { item: rowLabel })}
+                          />
+                        )}
+                      </TableCell>
+                    )}
                     <TableCell>
-                      {row.action === "FLAGGED" && (
-                        <Checkbox
-                          checked={selectedSet.has(row.id)}
-                          disabled={bulkRunning}
-                          onCheckedChange={(checked) => toggleRow(row.id, checked === true)}
-                          aria-label={t("bulk.selectRowAria", { item: row.itemName })}
-                        />
-                      )}
+                      <div>{row.itemName}</div>
+                      {row.variantSku ? (
+                        <div className="text-xs text-muted-foreground">{row.variantSku}</div>
+                      ) : null}
                     </TableCell>
-                  )}
-                  <TableCell>
-                    <div>{row.itemName}</div>
-                    {row.variantSku ? (
-                      <div className="text-xs text-muted-foreground">{row.variantSku}</div>
-                    ) : null}
-                  </TableCell>
-                  <TableCell>{row.eloraeQty}</TableCell>
-                  <TableCell>{row.jubelioQty}</TableCell>
-                  <TableCell>{row.variance > 0 ? `+${row.variance}` : row.variance}</TableCell>
-                  <TableCell>
-                    <Badge variant={actionBadgeVariant(row.action)}>
-                      {t(`actions.${row.action as ReconActionKey}`)}
-                    </Badge>
-                  </TableCell>
-                  {canManage && (
-                    <TableCell className="space-x-2">
-                      {row.action === "FLAGGED" && (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            disabled={bulkRunning || resolvingId === row.id}
-                            onClick={() => resolve(row.id, "MATCH_JUBELIO")}
-                          >
-                            {t("matchJubelio")}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={bulkRunning || resolvingId === row.id || !pushEnabled}
-                            onClick={() => resolve(row.id, "REASSERT_ELORAE")}
-                          >
-                            {t("reassertElorae")}
-                          </Button>
-                        </>
-                      )}
+                    <TableCell>{row.eloraeQty}</TableCell>
+                    <TableCell>{row.jubelioQty}</TableCell>
+                    <TableCell>{row.variance > 0 ? `+${row.variance}` : row.variance}</TableCell>
+                    <TableCell>
+                      <Badge variant={actionBadgeVariant(row.action)}>
+                        {t(`actions.${row.action as ReconActionKey}`)}
+                      </Badge>
                     </TableCell>
-                  )}
-                </TableRow>
-              ))}
+                    {canManage && (
+                      <TableCell className="space-x-2">
+                        {row.action === "FLAGGED" && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={bulkRunning || resolvingId === row.id}
+                              onClick={() => resolve(row.id, "MATCH_JUBELIO")}
+                            >
+                              {t("matchJubelio")}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={bulkRunning || resolvingId === row.id || !pushEnabled}
+                              onClick={() => resolve(row.id, "REASSERT_ELORAE")}
+                            >
+                              {t("reassertElorae")}
+                            </Button>
+                          </>
+                        )}
+                      </TableCell>
+                    )}
+                  </TableRow>
+                );
+              })}
               {run.results.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={canManage ? 7 : 5} className="py-8 text-center text-muted-foreground">

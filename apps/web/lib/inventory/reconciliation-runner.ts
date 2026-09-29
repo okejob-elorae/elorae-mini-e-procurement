@@ -405,6 +405,9 @@ function liveGroupSnapshot(cache: GroupSnapshotCache, groupId: number): Promise<
   return pending;
 }
 
+/** Thrown inside the MATCH_JUBELIO transaction to roll its stock write back: the row stopped being FLAGGED. */
+class ResultNoLongerFlaggedError extends Error {}
+
 /**
  * Resolves one FLAGGED result in an already-validated direction. The single-row and bulk exports
  * both go through this, so the FLAGGED check, the live re-fetch and the moved-since guard exist
@@ -444,24 +447,48 @@ async function resolveOneResult(
     if (!isValidJubelioQty(live.endQty)) return { success: false, reason: "JUBELIO_QTY_INVALID" };
     const liveJubelioQty = live.endQty;
 
-    const outcome = await prisma.$transaction((tx) =>
-      applyMatchJubelio(tx, {
-        runId: result.runId,
-        itemId: result.itemId,
-        variantSku,
-        itemName: result.itemName,
-        jubelioQty: liveJubelioQty,
-        expectedEloraeQty: Number(result.eloraeQty),
-        userId,
-      }),
-    );
+    /*
+     * The result is marked resolved in the SAME transaction as the stock write, conditional on it
+     * still being FLAGGED: a failure on the mark rolls the write back rather than leaving stock
+     * moved under a row that still says FLAGGED, and a concurrent resolve that got there first
+     * rolls this one back as ALREADY_RESOLVED.
+     */
+    let outcome: MatchJubelioOutcome;
+    try {
+      outcome = await prisma.$transaction(async (tx) => {
+        const applied = await applyMatchJubelio(tx, {
+          runId: result.runId,
+          itemId: result.itemId,
+          variantSku,
+          itemName: result.itemName,
+          jubelioQty: liveJubelioQty,
+          expectedEloraeQty: Number(result.eloraeQty),
+          userId,
+        });
+        if (applied === "STOCK_MOVED" || applied === "NO_INVENTORY_ROW") return applied;
+        const marked = await tx.reconciliationResult.updateMany({
+          where: { id: resultId, action: "FLAGGED" },
+          data: {
+            action: "MANUALLY_RESOLVED",
+            resolvedAt: new Date(),
+            resolvedById: userId,
+            resolutionDirection: direction,
+          },
+        });
+        if (marked.count === 0) throw new ResultNoLongerFlaggedError();
+        return applied;
+      });
+    } catch (err) {
+      if (err instanceof ResultNoLongerFlaggedError) return { success: false, reason: "ALREADY_RESOLVED" };
+      throw err;
+    }
     if (outcome === "STOCK_MOVED") return { success: false, reason: "STOCK_MOVED" };
     if (outcome === "NO_INVENTORY_ROW") return { success: false, reason: "NO_INVENTORY_ROW" };
-  } else {
-    // REASSERT_ELORAE: no local stock write, just push Elorae's own current figure back.
-    await enqueueReconStockPush(result.itemId, userId);
+    return { success: true };
   }
 
+  /* REASSERT_ELORAE: no local stock write, just push Elorae's own current figure back. */
+  await enqueueReconStockPush(result.itemId, userId);
   await prisma.reconciliationResult.update({
     where: { id: resultId },
     data: {

@@ -1448,10 +1448,12 @@
       "STOCK_MOVED": "Stok berubah sejak run ini. Tidak ada yang ditulis; jalankan ulang rekonsiliasi.",
       "UNEXPECTED": "Terjadi kesalahan. Tidak ada yang ditulis; coba lagi.",
       "INVALID_BATCH": "Pilihan tidak dapat dikirim. Tidak ada yang ditulis; muat ulang run dan coba lagi.",
-      "BATCH_TOO_LARGE": "Terlalu banyak baris dalam satu permintaan. Tidak ada yang ditulis; coba lagi."
+      "BATCH_TOO_LARGE": "Terlalu banyak baris dalam satu permintaan. Tidak ada yang ditulis; coba lagi.",
+      "REQUEST_FAILED": "Permintaan gagal sebelum menjawab, jadi sebagian baris ini mungkin sudah disamakan. Tabel menunjukkan keadaan terkini."
     },
     "bulk": {
       "selectLabel": "Pilih",
+      "nothingFlagged": "Tidak ada lagi yang perlu disamakan di run ini.",
       "allFlagged": "Semua diflag ({count})",
       "eloraeNegative": "Elorae negatif ({count})",
       "jubelioHigher": "Jubelio lebih tinggi ({count})",
@@ -1468,7 +1470,8 @@
       "summaryMatched": "{count} baris disamakan dengan Jubelio.",
       "summaryRefused": "{count} baris tidak disamakan — {reason}",
       "summaryNotSent": "Dihentikan — {count} baris terpilih tidak dikirim.",
-      "summaryKeptSelected": "Baris yang tidak disamakan tetap terpilih, jadi bisa dicoba lagi.",
+      "summaryKeptSelected": "Baris yang masih diflag tetap terpilih, jadi bisa dicoba lagi.",
+      "reloadFailed": "Gagal memuat ulang run. Muat ulang halaman untuk melihat keadaan terbaru.",
       "dismiss": "Tutup",
       "toastAllMatched": "{count} baris disamakan dengan Jubelio",
       "toastPartial": "{matched} disamakan, {notMatched} tidak disamakan"

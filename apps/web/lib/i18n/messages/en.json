@@ -1448,10 +1448,12 @@
       "STOCK_MOVED": "Stock moved since this run. Nothing was written; re-run reconciliation.",
       "UNEXPECTED": "Something went wrong. Nothing was written; try again.",
       "INVALID_BATCH": "The selection could not be sent. Nothing was written; reload the run and try again.",
-      "BATCH_TOO_LARGE": "Too many rows in one request. Nothing was written; try again."
+      "BATCH_TOO_LARGE": "Too many rows in one request. Nothing was written; try again.",
+      "REQUEST_FAILED": "The request failed before it answered, so some of these rows may already be matched. The table shows the current state."
     },
     "bulk": {
       "selectLabel": "Select",
+      "nothingFlagged": "Nothing left to match in this run.",
       "allFlagged": "All flagged ({count})",
       "eloraeNegative": "Elorae negative ({count})",
       "jubelioHigher": "Jubelio higher ({count})",
@@ -1468,7 +1470,8 @@
       "summaryMatched": "{count, plural, one {# row matched to Jubelio.} other {# rows matched to Jubelio.}}",
       "summaryRefused": "{count, plural, one {# row not matched} other {# rows not matched}} — {reason}",
       "summaryNotSent": "{count, plural, one {Stopped — # selected row was not sent.} other {Stopped — # selected rows were not sent.}}",
-      "summaryKeptSelected": "Rows that were not matched stay selected, so you can retry them.",
+      "summaryKeptSelected": "Rows that are still flagged stay selected, so you can retry them.",
+      "reloadFailed": "Could not reload the run. Refresh the page to see the latest state.",
       "dismiss": "Dismiss",
       "toastAllMatched": "{count, plural, one {# row matched to Jubelio} other {# rows matched to Jubelio}}",
       "toastPartial": "{matched} matched, {notMatched} not matched"

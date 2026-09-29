@@ -15,7 +15,7 @@ import {
 } from "./reconciliation-runner";
 
 /*
- * Exercises resolveReconciliationItem's MATCH_JUBELIO path against the real DB, with the live
+ * Exercises the MATCH_JUBELIO path of resolveReconciliationItem and resolveReconciliationItems against the real DB, with the live
  * Jubelio re-fetch (apiFetch) mocked per test. Never run against the shared prod DB (port 3307
  * tunnel / VPS host).
  */
@@ -364,22 +364,22 @@ d("resolveReconciliationItem MATCH_JUBELIO (test bed only)", () => {
         .filter((call) => call[1] === `/jubelio/inventory/snapshot/group/${groupId}`).length;
     }
 
-    it("resolves each row on its own: one applies while a moved one is refused and left FLAGGED", async () => {
+    it("resolves each row on its own: a moved row is refused and left FLAGGED, and the row after it still applies", async () => {
       await setPushSwitch(false);
-      const ok = await seedFixture({ qtyOnHand: 10, eloraeQty: 10, jubelioQty: 6 });
       const moved = await seedFixture({ qtyOnHand: 3, eloraeQty: 10, jubelioQty: 6 });
+      const ok = await seedFixture({ qtyOnHand: 10, eloraeQty: 10, jubelioQty: 6 });
       mockLiveGroups(new Map([
         [ok.jubelioItemGroupId, [{ jubelioItemId: ok.jubelioItemId, endQty: 6 }]],
         [moved.jubelioItemGroupId, [{ jubelioItemId: moved.jubelioItemId, endQty: 6 }]],
       ]));
 
-      const res = await resolveReconciliationItems({ resultIds: [ok.resultId, moved.resultId], userId: "u1" });
+      const res = await resolveReconciliationItems({ resultIds: [moved.resultId, ok.resultId], userId: "u1" });
 
       expect(res).toEqual({
         success: true,
         rows: [
-          { resultId: ok.resultId, success: true },
           { resultId: moved.resultId, success: false, reason: "STOCK_MOVED" },
+          { resultId: ok.resultId, success: true },
         ],
       });
       const inv = await prisma.inventoryValue.findFirst({ where: { itemId: ok.itemId } });
@@ -415,6 +415,23 @@ d("resolveReconciliationItem MATCH_JUBELIO (test bed only)", () => {
       const invB = await prisma.inventoryValue.findFirst({ where: { itemId: b.itemId } });
       expect(Number(invA!.qtyOnHand)).toBe(4);
       expect(Number(invB!.qtyOnHand)).toBe(2);
+    });
+
+    it("never reuses a live group figure across calls: each call fetches it again", async () => {
+      await setPushSwitch(false);
+      const a = await seedFixture({ qtyOnHand: 10, eloraeQty: 10, jubelioQty: 4 });
+      const b = await seedFixture({ qtyOnHand: 7, eloraeQty: 7, jubelioQty: 2, jubelioItemGroupId: a.jubelioItemGroupId });
+      mockLiveGroups(new Map([
+        [a.jubelioItemGroupId, [
+          { jubelioItemId: a.jubelioItemId, endQty: 4 },
+          { jubelioItemId: b.jubelioItemId, endQty: 2 },
+        ]],
+      ]));
+
+      await resolveReconciliationItems({ resultIds: [a.resultId], userId: "u1" });
+      await resolveReconciliationItems({ resultIds: [b.resultId], userId: "u1" });
+
+      expect(groupFetchCount(a.jubelioItemGroupId)).toBe(2);
     });
 
     it("keeps going after a row throws, reporting it UNEXPECTED and writing nothing for it", async () => {
@@ -461,6 +478,32 @@ d("resolveReconciliationItem MATCH_JUBELIO (test bed only)", () => {
       expect(Number(inv!.qtyOnHand)).toBe(10);
     });
 
+    it("refuses ALREADY_RESOLVED and rolls the stock write back when the row is resolved elsewhere mid-resolve", async () => {
+      await setPushSwitch(false);
+      const fx = await seedFixture({ qtyOnHand: 10, eloraeQty: 10, jubelioQty: 6 });
+      /* Another resolve marks the row between this call's FLAGGED read and its transaction. */
+      (apiFetch as unknown as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+        await prisma.reconciliationResult.update({
+          where: { id: fx.resultId },
+          data: { action: "MANUALLY_RESOLVED", resolutionDirection: "REASSERT_ELORAE" },
+        });
+        return { ok: true, status: 200, data: { rows: [{ jubelioItemId: fx.jubelioItemId, endQty: 6 }] } };
+      });
+
+      const res = await resolveReconciliationItems({ resultIds: [fx.resultId], userId: "u1" });
+
+      expect(res).toEqual({
+        success: true,
+        rows: [{ resultId: fx.resultId, success: false, reason: "ALREADY_RESOLVED" }],
+      });
+      const inv = await prisma.inventoryValue.findFirst({ where: { itemId: fx.itemId } });
+      expect(Number(inv!.qtyOnHand)).toBe(10);
+      expect(await prisma.stockAdjustment.count({ where: { itemId: fx.itemId } })).toBe(0);
+      expect(await prisma.stockLedgerEntry.count({ where: { itemId: fx.itemId } })).toBe(0);
+      const result = await prisma.reconciliationResult.findUnique({ where: { id: fx.resultId } });
+      expect(result!.resolutionDirection).toBe("REASSERT_ELORAE");
+    });
+
     it("resolves a repeated id once", async () => {
       await setPushSwitch(false);
       const fx = await seedFixture({ qtyOnHand: 10, eloraeQty: 10, jubelioQty: 6 });
@@ -470,6 +513,17 @@ d("resolveReconciliationItem MATCH_JUBELIO (test bed only)", () => {
 
       expect(res).toEqual({ success: true, rows: [{ resultId: fx.resultId, success: true }] });
       expect(await prisma.stockAdjustment.count({ where: { itemId: fx.itemId } })).toBe(1);
+    });
+
+    it("counts the cap after removing repeats, so a full batch with one repeat is accepted", async () => {
+      const ids = Array.from({ length: RECON_BULK_BATCH_MAX }, (_, i) => `missing-${i}`);
+
+      const res = await resolveReconciliationItems({ resultIds: [...ids, ids[0]], userId: "u1" });
+
+      expect(res.success).toBe(true);
+      if (!res.success) return;
+      expect(res.rows).toHaveLength(RECON_BULK_BATCH_MAX);
+      expect(res.rows.every((row) => !row.success && row.reason === "NOT_FOUND")).toBe(true);
     });
 
     it("refuses a batch over the cap before any read or write", async () => {
