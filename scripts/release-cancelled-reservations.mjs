@@ -8,10 +8,13 @@
  * `InventoryValue.reservedQty` stayed inflated by them. Each order goes through `releaseOrder`, the
  * same writer and the same state update as the handler's cancel branch, and moves no on-hand stock.
  *
- * Usage on VPS:
- *   docker compose -f docker-compose.prod.yml cp scripts/release-cancelled-reservations.mjs api:/tmp/release.mjs
- *   docker compose -f docker-compose.prod.yml exec -e DRY_RUN=1 api node /tmp/release.mjs
- *   docker compose -f docker-compose.prod.yml exec api node /tmp/release.mjs
+ * Usage on VPS — copied under /app/apps/api, not /tmp, because Node resolves `@elorae/db` by walking
+ * up from the script's own location and it only resolves from inside the api package:
+ *   docker compose -f docker-compose.prod.yml cp scripts/release-cancelled-reservations.mjs api:/app/apps/api/release.mjs
+ *   docker compose -f docker-compose.prod.yml exec -e DRY_RUN=1 api node /app/apps/api/release.mjs
+ *   docker compose -f docker-compose.prod.yml exec api node /app/apps/api/release.mjs
+ *
+ * The first line reports reservation rows and their quantity; the last reports orders.
  *
  * Safe to run multiple times: `releaseOrder` flips each reservation RESERVED -> RELEASED with a
  * guarded update, so a reservation already released by this script or by a live webhook is skipped.
