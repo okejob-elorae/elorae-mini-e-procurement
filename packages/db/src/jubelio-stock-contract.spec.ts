@@ -372,8 +372,9 @@ d("applyJubelioStockAdjustment (test bed only)", () => {
 
   it("applies to the named variant's row only, leaving a sibling variant of the same item untouched", async () => {
     await setPushSwitch("false");
-    await seedStock({ qtyOnHand: -3, variantSku: "SPEC-VAR-M" });
+    /* The sibling first, so it takes the lower id: a lock that dropped its variant filter would pick it. */
     await seedStock({ qtyOnHand: 5, variantSku: "SPEC-VAR-L" });
+    await seedStock({ qtyOnHand: -3, variantSku: "SPEC-VAR-M" });
 
     const res = await apply(4, nextKey(), "SPEC-VAR-M");
 

@@ -242,10 +242,18 @@ d("resolveReconciliationItem MATCH_JUBELIO (test bed only)", () => {
 
   it("matches a row with a real variant SKU, locking that variant's row and leaving its sibling untouched", async () => {
     await setPushSwitch(false);
-    /* The prod shape: a negative variant row next to a sibling variant of the same item. */
+    /*
+     * The prod shape: a negative variant row next to a sibling variant of the same item. The sibling
+     * takes the LOWER id, so a lock that dropped its variant filter would pick the sibling instead.
+     */
     const fx = await seedFixture({ qtyOnHand: -3, eloraeQty: -3, jubelioQty: 4, variantSku: "TEST-VAR-M" });
+    const target = await prisma.inventoryValue.findFirst({ where: { itemId: fx.itemId, variantSku: "TEST-VAR-M" } });
+    await prisma.inventoryValue.delete({ where: { id: target!.id } });
     await prisma.inventoryValue.create({
       data: { itemId: fx.itemId, variantSku: "TEST-VAR-L", qtyOnHand: 5, avgCost: 10, totalValue: 50 },
+    });
+    await prisma.inventoryValue.create({
+      data: { itemId: fx.itemId, variantSku: "TEST-VAR-M", qtyOnHand: -3, avgCost: 10, totalValue: -30 },
     });
     mockLiveJubelioQty(fx, 4);
 

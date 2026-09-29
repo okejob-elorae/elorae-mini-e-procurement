@@ -56,12 +56,13 @@ export type LockedInventoryValueRow = { id: string; qtyOnHand: string; avgCost: 
  * the values are interpolated (parameterised by Prisma); the identifiers are static SQL text.
  * Decimals come back as strings so callers can do exact arithmetic on them.
  *
- * Each branch is one complete query with only scalar values, never a nested `Prisma.sql`
- * fragment. apps/web's build bundles the Prisma runtime into several server chunks that share one
- * client through `globalThis`, so the client in use can come from a different chunk's runtime than
- * the code building a fragment. Such a fragment is not recognised as SQL, is bound as a plain value,
- * and the `WHERE` silently matches nothing — which is how every reconciliation Match on a variant
- * row came back `NO_INVENTORY_ROW` on prod.
+ * Each branch is one complete query with only scalar values: never interpolate a `Prisma.sql`
+ * fragment into the client's own tagged `$queryRaw`. apps/web's build bundles the Prisma runtime
+ * into several server chunks that share one client through `globalThis`, and the client resolves a
+ * nested fragment with `instanceof` against its own runtime's `Sql` class. A fragment built by
+ * another chunk's copy fails that check, is bound as a plain string value, and the `WHERE`
+ * silently matches nothing — which is why no reconciliation Match through this lock ever wrote on
+ * prod until this was fixed; every one refused `NO_INVENTORY_ROW`.
  */
 export async function lockMainInventoryValueRow(
   tx: Prisma.TransactionClient,
