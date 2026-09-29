@@ -1,11 +1,5 @@
 import { prisma } from "@elorae/db";
-import type {
-  SalesChannel,
-  SalesOrderStatus,
-  SalesOrderFulfillmentStatus,
-  SalesReturnStatus,
-  SalesReturnItemDecision,
-} from "@/lib/constants/enums";
+import type { SalesChannel, SalesOrderStatus, SalesOrderFulfillmentStatus } from "@/lib/constants/enums";
 import {
   PACKING_VIDEO_RECORDING_SELECT,
   packingVideoRecordingOf,
@@ -106,22 +100,6 @@ export type SalesOrderItemRow = {
   weightInGram: string;
 };
 
-export type SalesOrderReturnItemRow = {
-  salesOrderDetailId: number | null;
-  qty: string;
-  decision: SalesReturnItemDecision;
-};
-
-export type SalesOrderReturnRow = {
-  id: string;
-  jubelioReturnNo: string | null;
-  jubelioReturnId: number;
-  status: SalesReturnStatus;
-  receivedAt: Date;
-  decidedAt: Date | null;
-  items: SalesOrderReturnItemRow[];
-};
-
 function buildWhere(f: SalesOrderListFilter) {
   const where: Record<string, unknown> = {};
   if (f.channel) where.channel = f.channel;
@@ -184,34 +162,12 @@ export async function listSalesOrders(
 
 export async function getSalesOrderById(
   id: string,
-): Promise<{
-  order: SalesOrderDetail;
-  items: SalesOrderItemRow[];
-  returns: SalesOrderReturnRow[];
-} | null> {
+): Promise<{ order: SalesOrderDetail; items: SalesOrderItemRow[] } | null> {
   const row = await prisma.salesOrder.findUnique({
     where: { id },
     include: {
       items: true,
       packingVideo: { select: PACKING_VIDEO_RECORDING_SELECT },
-      salesReturns: {
-        orderBy: { receivedAt: "desc" },
-        select: {
-          id: true,
-          jubelioReturnNo: true,
-          jubelioReturnId: true,
-          status: true,
-          receivedAt: true,
-          decidedAt: true,
-          items: {
-            select: {
-              salesOrderDetailId: true,
-              qty: true,
-              decision: true,
-            },
-          },
-        },
-      },
     },
   });
   if (!row) return null;
@@ -314,21 +270,7 @@ export async function getSalesOrderById(
     weightInGram: it.weightInGram.toString(),
   }));
 
-  const returns: SalesOrderReturnRow[] = row.salesReturns.map((ret: any) => ({
-    id: ret.id,
-    jubelioReturnNo: ret.jubelioReturnNo,
-    jubelioReturnId: ret.jubelioReturnId,
-    status: ret.status as SalesReturnStatus,
-    receivedAt: ret.receivedAt,
-    decidedAt: ret.decidedAt,
-    items: ret.items.map((it: any) => ({
-      salesOrderDetailId: it.salesOrderDetailId,
-      qty: it.qty.toString(),
-      decision: it.decision as SalesReturnItemDecision,
-    })),
-  }));
-
-  return { order, items, returns };
+  return { order, items };
 }
 
 export type MarketplaceKpi = {
