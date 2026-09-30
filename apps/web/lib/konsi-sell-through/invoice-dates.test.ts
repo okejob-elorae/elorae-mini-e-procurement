@@ -19,6 +19,10 @@ describe("isInvoiceDateAllowed", () => {
     expect(isInvoiceDateAllowed(wib("2026-09-29T00:00:00.000"), wib("2026-09-30T15:00:00.000"), now)).toBe(false);
   });
 
+  it("refuses an invalid Date instead of throwing", () => {
+    expect(isInvoiceDateAllowed(new Date("invalid"), wib("2026-09-30T15:00:00.000"), now)).toBe(false);
+  });
+
   it("compares WIB calendar days, not UTC ones", () => {
     /* Both are 1 Oct in WIB; in UTC the invoice date is 30 Sep 17:00 and the period end 1 Oct 01:00, so a UTC-day comparison refuses it. */
     expect(isInvoiceDateAllowed(wib("2026-10-01T00:00:00.000"), wib("2026-10-01T08:00:00.000"), now)).toBe(true);

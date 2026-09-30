@@ -8,6 +8,7 @@ const DAY_MS = 86_400_000;
  * closing count finished later that day than the midnight the picker sends.
  */
 export function isInvoiceDateAllowed(invoiceDate: Date, periodEnd: Date, now: Date): boolean {
+  if (!Number.isFinite(invoiceDate.getTime())) return false;
   const day = formatDateOnlyJakarta(invoiceDate);
   return day >= formatDateOnlyJakarta(periodEnd) && day <= formatDateOnlyJakarta(now);
 }

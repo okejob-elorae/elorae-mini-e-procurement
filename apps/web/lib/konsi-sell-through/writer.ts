@@ -376,7 +376,7 @@ export type ApproveSellThroughInput =
 
 /**
  * Freezes a DRAFT report — and approving IS invoicing. INVOICE mode prices every line at the
- * store's price, stamps the invoice date, the due date, the total and the salesman, and creates
+ * item's catalog selling price (the store keeps its markup), stamps the invoice date, the due date, the total and the salesman, and creates
  * the receivable and faktur when the total is above zero. BASELINE mode is for a store's first
  * report only: it freezes the figures with a reason and bills nothing, for a period already
  * invoiced by hand outside the ERP. Journals are posted by the action after commit, not here.
