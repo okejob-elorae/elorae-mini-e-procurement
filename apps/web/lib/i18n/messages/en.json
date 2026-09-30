@@ -3155,6 +3155,42 @@
         "delete": "Delete",
         "homeChipCount": "{count, plural, =0 {No deliveries} one {# delivery waiting to sync} other {# deliveries waiting to sync}}"
       }
+    },
+    "logout": {
+      "title": "Unsynced items on this device",
+      "description": "These items haven't reached the server yet. Sync or resolve them before logging out, or the next person to log in would inherit them.",
+      "queue": {
+        "orders": "Orders",
+        "completions": "Delivery completions",
+        "photos": "Visit photos"
+      },
+      "itemCount": "{count} waiting",
+      "review": "Review",
+      "syncNow": "Sync now",
+      "syncing": "Syncing…",
+      "cancel": "Cancel",
+      "offlineHint": "You're offline. Reconnect to sync these items.",
+      "allSynced": "Everything synced. You can log out now.",
+      "syncFailed": "Sync failed. Please try again.",
+      "clearFailed": "Couldn't clear offline data, so you were not logged out.",
+      "retry": "Retry",
+      "failedPhotosTitle": "Failed photo uploads",
+      "discardAction": "Discard {count, plural, one {# failed photo} other {# failed photos}}",
+      "discardConfirmTitle": "Discard failed photos?",
+      "discardConfirmBody": "These photos could not be uploaded and will be permanently lost. This can't be undone.",
+      "discardConfirm": "Discard",
+      "discarding": "Discarding…",
+      "discarded": "Failed photos discarded.",
+      "discardError": "Couldn't discard the photos. Please try again.",
+      "queueChanged": "New unsynced items appeared, so you were not logged out."
+    },
+    "visitPhoto": {
+      "delete": "Delete photo",
+      "deleteTitle": "Delete this photo?",
+      "deleteBody": "This photo could not be uploaded. Deleting it removes it from this device for good.",
+      "deleteConfirm": "Delete",
+      "deleteCancel": "Cancel",
+      "deleteFailed": "Couldn't delete the photo. Please try again."
     }
   },
   "fieldSalesOrders": {

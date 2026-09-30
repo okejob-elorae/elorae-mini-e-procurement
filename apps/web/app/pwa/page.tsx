@@ -5,10 +5,8 @@ import { getActiveVisit, getStore, listActiveStoresForPwa, listRecentVisitsForUs
 import { getStoreCountState, readCountSchedule } from "@/lib/konsi-count-schedule/queries";
 import { HomeShell } from "./HomeShell";
 import { SpgHomeShell } from "./SpgHomeShell";
-import { logout } from "./actions";
-import { Button } from "@/components/ui/button";
+import { LogoutButton } from "./LogoutButton";
 import { Card, CardContent } from "@/components/ui/card";
-import { LogOut } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -52,11 +50,7 @@ export default async function PwaHome() {
               <p className="text-xs text-muted-foreground">Selamat datang</p>
               <p className="text-lg font-semibold">{userName}</p>
             </div>
-            <form action={logout}>
-              <Button type="submit" variant="ghost" size="icon" aria-label="Keluar">
-                <LogOut className="h-5 w-5" />
-              </Button>
-            </form>
+            <LogoutButton />
           </header>
           <Card>
             <CardContent className="p-6 text-center text-sm text-destructive">
@@ -107,7 +101,6 @@ export default async function PwaHome() {
         }
         autoCloseStoreName={activeAtOtherStoreName}
         countDue={countDue}
-        onLogout={logout}
       />
     );
   }
@@ -141,7 +134,6 @@ export default async function PwaHome() {
       canCollect={canCollect}
       canCompletePod={canCompletePod}
       canViewAmplop={canViewAmplop}
-      onLogout={logout}
     />
   );
 }
