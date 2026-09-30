@@ -37,12 +37,13 @@ export function registerCronJobs(): void {
       try {
         const r = await runOverdueSweep();
         console.log(
-          "[cron] piutang-overdue done — scanned=%d announced=%d deferred=%d collectorNotified=%d unassigned=%d",
+          "[cron] piutang-overdue done — scanned=%d announced=%d deferred=%d collectorNotified=%d unassigned=%d failed=%d",
           r.scanned,
           r.announced,
           r.deferred,
           r.collectorNotified,
           r.unassigned,
+          r.failed,
         );
       } catch (err) {
         console.error("[cron] piutang-overdue failed:", err);

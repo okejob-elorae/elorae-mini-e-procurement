@@ -83,9 +83,10 @@ export async function commitItemImport(rawRows: unknown, options: unknown): Prom
 }
 
 /**
- * One summary notification instead of one per item. `sendNotificationToUsers` carries no VITEST
- * guard, so this caller guards itself. `ITEM_CREATED` without an `itemId` already routes to the
- * items list in `getNotificationHref`.
+ * One summary notification instead of one per item. `sendNotificationToUsers` carries its own
+ * `VITEST` guard; this one is defence in depth, and also skips the recipient and actor reads a
+ * test run has no use for. `ITEM_CREATED` without an `itemId` already routes to the items list in
+ * `getNotificationHref`.
  */
 async function notifyItemsImported(userId: string, itemCount: number, variantCount: number): Promise<void> {
   if (process.env.VITEST) return;

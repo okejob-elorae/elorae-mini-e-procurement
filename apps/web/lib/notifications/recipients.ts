@@ -70,11 +70,30 @@ export type NotificationPayload = {
  *
  * `title` and `body` are capped to their `VARCHAR(191)` columns here, before the queue insert
  * and the push, so no caller can lose a notification to an overlong value.
+ *
+ * A `NotificationQueue` insert failure is NOT caught: only the FCM send and its `sent` stamp are.
+ * A caller that must not mark something delivered unless the recipient was told — the overdue
+ * sweep's dedup marker — relies on that throw reaching it.
  */
 export async function sendNotificationToUsers(
   users: NotificationUser[],
   payload: NotificationPayload
 ): Promise<void> {
+  /**
+   * Never deliver from a test run — the same guard, in the same first-statement position, as
+   * `fanOutAdminNotification`. Closed here rather than in each caller, because a spec reaching a
+   * caller that forgot its own guard would otherwise write permanent `NotificationQueue` rows on the
+   * shared `:3308` bed, where they are never pruned and land in real dev users' bells, and
+   * `vitest.config.ts` loads `apps/web/.env`, whose `FIREBASE_ADMIN_*` credentials can push to real
+   * phones. Several callers still guard themselves first; that is defence in depth, not a need.
+   *
+   * `VITEST` is set by the vitest runner itself, in the test process only; nothing in the Docker
+   * images, compose files or deploy workflow sets it, so production delivery is unaffected. The
+   * helper's own spec clears it per-case with `vi.stubEnv("VITEST", "")`, with `@elorae/db` and
+   * `@/lib/firebase/admin` mocked, to exercise the real path — the only sanctioned way past it.
+   */
+  if (process.env.VITEST) return;
+
   const { type, data } = payload;
   const title = capNotificationText(payload.title);
   const body = capNotificationText(payload.body);

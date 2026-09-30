@@ -1,7 +1,19 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
+
+/**
+ * A pass-through spy on the real helper, so every case still runs it, `VITEST` guard included. The
+ * failure case replaces it for one receivable. Stubbed at the module, never on a Prisma delegate.
+ */
+vi.mock("@/lib/notifications/recipients", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/notifications/recipients")>();
+  return { ...actual, sendNotificationToUsers: vi.fn(actual.sendNotificationToUsers) };
+});
+import { sendNotificationToUsers } from "@/lib/notifications/recipients";
 import { runOverdueSweep } from "./overdue-sweep";
 import { OVERDUE_THRESHOLD_SETTING_KEY } from "./overdue-thresholds";
+
+const actualRecipients = await vi.importActual<typeof import("@/lib/notifications/recipients")>("@/lib/notifications/recipients");
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -32,6 +44,8 @@ d("runOverdueSweep (test bed only)", () => {
   let orderId = "";
   let deliveryId = "";
   let receivableId = "";
+  let extraDeliveryId = "";
+  let extraReceivableId = "";
   /**
    * `ar.overdueThresholdDays` is a SHARED singleton row on the `:3308` bed, and the settings page
    * this slice ships writes it in real dev use. Snapshot before any test touches it, restore after
@@ -43,6 +57,9 @@ d("runOverdueSweep (test bed only)", () => {
   beforeEach(async () => {
     token = Math.random().toString(36).slice(2, 10);
     storeId = ""; adminId = ""; collectorId = ""; orderId = ""; deliveryId = ""; receivableId = "";
+    extraDeliveryId = ""; extraReceivableId = "";
+    vi.mocked(sendNotificationToUsers).mockReset();
+    vi.mocked(sendNotificationToUsers).mockImplementation(actualRecipients.sendNotificationToUsers);
 
     const existingSetting = await prisma.systemSetting.findUnique({
       where: { key: OVERDUE_THRESHOLD_SETTING_KEY },
@@ -65,10 +82,10 @@ d("runOverdueSweep (test bed only)", () => {
   });
 
   afterEach(async () => {
-    const notifs = await notificationsFor(receivableId);
+    const notifs = [...(await notificationsFor(receivableId)), ...(await notificationsFor(extraReceivableId))];
     if (notifs.length > 0) await prisma.adminNotification.deleteMany({ where: { id: { in: notifs.map((n) => n.id) } } });
-    await prisma.receivable.deleteMany({ where: { id: seededId(receivableId) } });
-    await prisma.fieldSalesDelivery.deleteMany({ where: { id: seededId(deliveryId) } });
+    await prisma.receivable.deleteMany({ where: { id: { in: [seededId(receivableId), seededId(extraReceivableId)] } } });
+    await prisma.fieldSalesDelivery.deleteMany({ where: { id: { in: [seededId(deliveryId), seededId(extraDeliveryId)] } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
     await prisma.user.deleteMany({ where: { id: { in: [seededId(adminId), seededId(collectorId)] } } });
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
@@ -172,15 +189,50 @@ d("runOverdueSweep (test bed only)", () => {
   });
 
   /**
-   * Regression guard for `notifyCollectorOfOverdue`'s `if (process.env.VITEST) return;`. Every
-   * other assertion in this file passes identically with or without that line — `collectorNotified`
-   * counts intent, not delivery — so removing it would write permanent orphaned `NotificationQueue`
-   * rows on the shared bed with no test turning red. This one turns red.
+   * Regression guard for `sendNotificationToUsers`' own `if (process.env.VITEST) return;`, reached
+   * end to end: the sweep's collector push calls the real helper (the spy passes through), so the
+   * zero below is the helper's guard at work, not a skipped call. Every other assertion in this
+   * file passes identically with or without that line — `collectorNotified` counts intent, not
+   * delivery — so removing it would write permanent orphaned `NotificationQueue` rows on the shared
+   * bed with no test turning red. This one turns red.
    */
   it("does not write a real NotificationQueue row for the collector under VITEST", async () => {
     const result = await runOverdueSweep({ receivableIds: [receivableId] });
     expect(result.collectorNotified).toBe(1);
+    expect(vi.mocked(sendNotificationToUsers)).toHaveBeenCalledTimes(1);
     const queueRows = await prisma.notificationQueue.count({ where: { userId: collectorId } });
     expect(queueRows).toBe(0);
+  });
+
+  it("a receivable whose collector notify throws is logged and left unannounced, and the run carries on", async () => {
+    /* Due earlier than the fixture's receivable, so oldest-due-first processes it FIRST: a loop that halted on it would never reach the other one. */
+    const extraDelivery = await prisma.fieldSalesDelivery.create({ data: { docNo: `TEST-OSW-DLV2-${token}`, orderId, deliveredAt: new Date(), deliveredById: adminId, invoiceDate: new Date(), dueDate: daysAgoWib(50), subtotal: 1000, total: 1000 } });
+    extraDeliveryId = extraDelivery.id;
+    const extraReceivable = await prisma.receivable.create({ data: { deliveryId: extraDeliveryId, storeId, invoiceDate: new Date(), dueDate: daysAgoWib(50), originalAmount: 1000, outstandingAmount: 1000, collectorId } });
+    extraReceivableId = extraReceivable.id;
+    const scope = [extraReceivableId, receivableId];
+
+    vi.mocked(sendNotificationToUsers).mockImplementation(async (users, payload) => {
+      if (payload.data.receivableId === extraReceivableId) throw new Error("NotificationQueue insert failed");
+      return actualRecipients.sendNotificationToUsers(users, payload);
+    });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const first = await runOverdueSweep({ receivableIds: scope });
+      expect(vi.mocked(sendNotificationToUsers).mock.calls.map(([, payload]) => payload.data.receivableId)).toEqual(scope);
+      expect(first).toMatchObject({ scanned: 2, announced: 1, collectorNotified: 1, failed: 1 });
+      expect(await notificationsFor(extraReceivableId)).toHaveLength(0);
+      expect(await notificationsFor(receivableId)).toHaveLength(1);
+      expect(errorSpy).toHaveBeenCalled();
+    } finally {
+      vi.mocked(sendNotificationToUsers).mockImplementation(actualRecipients.sendNotificationToUsers);
+      errorSpy.mockRestore();
+    }
+
+    /* No marker was written for the failed crossing, so the next run retries it — and only it. */
+    const second = await runOverdueSweep({ receivableIds: scope });
+    expect(second).toMatchObject({ scanned: 2, announced: 1, collectorNotified: 1, failed: 0 });
+    expect(await notificationsFor(extraReceivableId)).toHaveLength(1);
+    expect(await notificationsFor(receivableId)).toHaveLength(1);
   });
 });
