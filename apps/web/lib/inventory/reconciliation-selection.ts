@@ -20,7 +20,8 @@ export type ReconQuickSelect = "ALL_FLAGGED" | "ELORAE_NEGATIVE" | "JUBELIO_HIGH
 /**
  * The FLAGGED rows a quick-select rule picks, in the run's own order. Only FLAGGED rows are
  * resolvable. A row the snapshot had no Jubelio figure for has a null variance, so JUBELIO_HIGHER
- * never picks it; ALL_FLAGGED and ELORAE_NEGATIVE still do. Resolving such a row re-reads the live
+ * never picks it; rows from runs before the nullable-figures migration still store
+ * `variance = eloraeQty` and are picked when Elorae is negative. ALL_FLAGGED and ELORAE_NEGATIVE pick either. Resolving such a row re-reads the live
  * figure: refused `JUBELIO_QTY_MISSING` if Jubelio still has none, matched to it if it now has one.
  */
 export function idsForQuickSelect(rows: readonly ReconSelectableRow[], rule: ReconQuickSelect): string[] {

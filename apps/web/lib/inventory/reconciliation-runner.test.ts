@@ -593,7 +593,7 @@ d("resolveReconciliationItem MATCH_JUBELIO (test bed only)", () => {
   });
 });
 
-d("runReconciliation floor gating (test bed only)", () => {
+d("runReconciliation run behaviour (test bed only)", () => {
   let uomId = "";
   const itemIds: string[] = [];
   const runIds: string[] = [];
@@ -630,6 +630,8 @@ d("runReconciliation floor gating (test bed only)", () => {
       await prisma.reconciliationRun.deleteMany({ where: { id: seededId(runId) } });
     }
     for (const itemId of itemIds) {
+      await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+      await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
       await prisma.jubelioProductMapping.deleteMany({ where: { itemId: seededId(itemId) } });
       await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
       await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
@@ -696,7 +698,8 @@ d("runReconciliation floor gating (test bed only)", () => {
     expect(Number(inv!.qtyOnHand)).toBe(-5);
   });
 
-  async function seedMapped(qtyOnHand: number): Promise<{ itemId: string; jubelioItemId: number }> {
+  /* `qtyOnHand: null` seeds the mapping with no InventoryValue row at all. */
+  async function seedMapped(qtyOnHand: number | null): Promise<{ itemId: string; jubelioItemId: number }> {
     const token = Math.random().toString(36).slice(2, 10);
     const item = await prisma.item.create({
       data: {
@@ -709,9 +712,11 @@ d("runReconciliation floor gating (test bed only)", () => {
       },
     });
     itemIds.push(item.id);
-    await prisma.inventoryValue.create({
-      data: { itemId: item.id, variantSku: "", qtyOnHand, avgCost: 10, totalValue: qtyOnHand * 10 },
-    });
+    if (qtyOnHand !== null) {
+      await prisma.inventoryValue.create({
+        data: { itemId: item.id, variantSku: "", qtyOnHand, avgCost: 10, totalValue: qtyOnHand * 10 },
+      });
+    }
     const jubelioItemGroupId = Math.floor(Math.random() * 1_000_000) + 900_000_000;
     const jubelioItemId = jubelioItemGroupId + 1;
     await prisma.jubelioProductMapping.create({
@@ -748,6 +753,58 @@ d("runReconciliation floor gating (test bed only)", () => {
     expect(result!.jubelioQty).toBeNull();
     expect(result!.variance).toBeNull();
     expect(result!.errorMessage).toBeNull();
+  });
+
+  it("MATCH_JUBELIO inside the threshold sets stock to the Jubelio figure and counts AUTO_CORRECTED", async () => {
+    await setPushSwitch(false);
+    await setSetting("RECON_AUTO_CORRECT_THRESHOLD", "1000");
+    await setSetting("RECON_AUTO_CORRECT_DIRECTION", "MATCH_JUBELIO");
+    const a = await seedMapped(5);
+    mockSnapshot([{ itemId: a.itemId, jubelioItemId: a.jubelioItemId, jubelioQty: 7 }]);
+
+    const res = await runReconciliation("MANUAL", "u1", { itemIds: [a.itemId] });
+    runIds.push(res.runId);
+
+    const result = await prisma.reconciliationResult.findFirst({ where: { runId: res.runId, itemId: a.itemId } });
+    expect(result!.action).toBe("AUTO_CORRECTED");
+    expect(result!.errorMessage).toBeNull();
+    expect(Number(result!.eloraeQty)).toBe(5);
+    expect(Number(result!.jubelioQty)).toBe(7);
+
+    const inv = await prisma.inventoryValue.findFirst({ where: { itemId: a.itemId } });
+    expect(Number(inv!.qtyOnHand)).toBe(7);
+    expect(await prisma.stockAdjustment.count({ where: { itemId: a.itemId } })).toBe(1);
+    expect(await prisma.stockLedgerEntry.count({ where: { itemId: a.itemId } })).toBe(1);
+
+    const run = await prisma.reconciliationRun.findUnique({ where: { id: res.runId } });
+    expect(res.autoCorrected).toBe(1);
+    expect(res.flagged).toBe(0);
+    expect(run!.autoCorrected).toBe(1);
+    expect(run!.flagged).toBe(0);
+  });
+
+  it("MATCH_JUBELIO for a mapping with no inventory row is stored FLAGGED and writes no stock", async () => {
+    await setPushSwitch(false);
+    await setSetting("RECON_AUTO_CORRECT_THRESHOLD", "1000");
+    await setSetting("RECON_AUTO_CORRECT_DIRECTION", "MATCH_JUBELIO");
+    const a = await seedMapped(null);
+    mockSnapshot([{ itemId: a.itemId, jubelioItemId: a.jubelioItemId, jubelioQty: 3 }]);
+
+    const res = await runReconciliation("MANUAL", "u1", { itemIds: [a.itemId] });
+    runIds.push(res.runId);
+
+    const result = await prisma.reconciliationResult.findFirst({ where: { runId: res.runId, itemId: a.itemId } });
+    expect(result!.action).toBe("FLAGGED");
+    expect(result!.errorMessage).toBeNull();
+    expect(await prisma.inventoryValue.count({ where: { itemId: a.itemId } })).toBe(0);
+    expect(await prisma.stockAdjustment.count({ where: { itemId: a.itemId } })).toBe(0);
+    expect(await prisma.stockLedgerEntry.count({ where: { itemId: a.itemId } })).toBe(0);
+
+    const run = await prisma.reconciliationRun.findUnique({ where: { id: res.runId } });
+    expect(res.autoCorrected).toBe(0);
+    expect(res.flagged).toBe(1);
+    expect(run!.autoCorrected).toBe(0);
+    expect(run!.flagged).toBe(1);
   });
 
   it("one item that throws is FLAGGED with its error and does not fail the run", async () => {
