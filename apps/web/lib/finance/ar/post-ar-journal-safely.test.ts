@@ -106,6 +106,7 @@ d("postArJournalSafely (test bed only)", () => {
     }));
     expect(outcome).toEqual({ ok: false, code: "UNMAPPED_ROLE", role: "AR" });
   });
+
   const flaggedMetadata = async () => {
     const rows = await prisma.adminNotification.findMany({
       where: { category: "JOURNAL_PENDING" },
