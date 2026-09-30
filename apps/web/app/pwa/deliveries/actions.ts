@@ -11,7 +11,7 @@ import { serializeReplay, type SerializedReplay } from "@/lib/field-sales/replay
 import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
 import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "@/lib/finance/ar/delivery-journal";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
-import { getShipmentAction, type ShipmentActionResult, type ShipmentActionReason } from "@/app/actions/delivery-shipments";
+import type { ShipmentActionResult, ShipmentActionReason } from "@/app/actions/delivery-shipments";
 
 /**
  * Identical body to `mapError` in `@/app/actions/delivery-shipments` — reimplemented here
@@ -125,12 +125,29 @@ export async function completePodAction(input: {
   }
 }
 
+const STUCK_REASON_PATTERN = /^[A-Z_]{1,64}$/;
+
+/**
+ * Called by the unattended offline queue, so it takes no permission: a revoked `deliveries:pod`
+ * is exactly one of the failures it must still report. The binding is to the shipment instead —
+ * only its assigned carrier may raise the alert, and a shipment that is missing, not
+ * SALESMAN_CARRY or someone else's resolves silently (the queue then stops re-reporting it).
+ * The reason is an error code from the queue; anything else is recorded as `UNKNOWN` rather than
+ * copied into an admin-facing message.
+ */
 export async function reportStuckDeliveryCompletionAction(
   shipmentId: string,
   reason: string,
 ): Promise<void> {
   const session = await auth();
   if (!session?.user?.id) return;
+  if (typeof shipmentId !== "string" || !shipmentId) return;
+  const shipment = await prisma.deliveryShipment.findUnique({
+    where: { id: shipmentId },
+    select: { docNo: true, method: true, carriedById: true },
+  });
+  if (!shipment || shipment.method !== "SALESMAN_CARRY" || shipment.carriedById !== session.user.id) return;
+  const code = typeof reason === "string" && STUCK_REASON_PATTERN.test(reason) ? reason : "UNKNOWN";
   const recent = await prisma.adminNotification.findMany({
     where: { category: "DELIVERY_COMPLETION_STUCK", readAt: null },
     orderBy: { createdAt: "desc" },
@@ -139,17 +156,16 @@ export async function reportStuckDeliveryCompletionAction(
   });
   const alreadyFlagged = recent.some((n) => {
     const m = n.metadata as { shipmentId?: string; reason?: string } | null;
-    return m?.shipmentId === shipmentId && m?.reason === reason;
+    return m?.shipmentId === shipmentId && m?.reason === code;
   });
   if (alreadyFlagged) return;
-  const shipment = await getShipmentAction(shipmentId);
   const notification = await prisma.adminNotification.create({
     data: {
       category: "DELIVERY_COMPLETION_STUCK",
       severity: "WARNING",
       title: "Salesman-carry delivery completion failed to sync",
-      message: `Shipment ${shipment?.docNo ?? shipmentId} could not be completed: ${reason}. Evidence (photos, GPS, receiver name) has been captured — check the offline queue on the salesman's device or contact them directly.`,
-      metadata: { shipmentId, reason, docNo: shipment?.docNo ?? null },
+      message: `Shipment ${shipment.docNo} could not be completed: ${code}. Evidence (photos, GPS, receiver name) has been captured — check the offline queue on the salesman's device or contact them directly.`,
+      metadata: { shipmentId, reason: code, docNo: shipment.docNo },
     },
   });
   await fanOutAdminNotification(notification).catch(() => {});

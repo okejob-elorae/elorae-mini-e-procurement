@@ -7,6 +7,7 @@ import { Loader2, LogOut } from "lucide-react";
 import { toast } from "sonner";
 import {
   clearOfflineState,
+  countTotal,
   countUnsynced,
   discardFailedPhotos,
   firstPendingPhotoStoreId,
@@ -50,11 +51,13 @@ export function LogoutButton() {
 
   const doLogout = async () => {
     setBusy(true);
+    /* "New items appeared" is only true when this device was last seen with an empty queue. */
+    const expectedClear = counts !== null && countTotal(counts) === 0;
     try {
       const result = await clearOfflineState();
       if (result === "blocked") {
         await showDialog();
-        toast.error(t("queueChanged"));
+        if (expectedClear) toast.error(t("queueChanged"));
         setBusy(false);
         return;
       }

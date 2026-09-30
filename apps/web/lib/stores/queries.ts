@@ -215,7 +215,10 @@ export function parseStoreLocationFilter(raw: string | undefined): StoreLocation
   return STORE_LOCATION_FILTERS.find((v) => v === raw);
 }
 
-/* undefined is the only spelling of "no filter". */
+/*
+ * undefined is the only spelling of "no filter". The three buckets partition the stores: a store
+ * with no coordinates has no radius gate at all, so it is "missing" whatever its override says.
+ */
 export function buildStoreLocationWhere(
   location: StoreLocationFilter | undefined,
 ): Prisma.StoreWhereInput | undefined {
@@ -225,7 +228,7 @@ export function buildStoreLocationWhere(
     case "defaultRadius":
       return { lat: { not: null }, lng: { not: null }, checkinRadiusMeters: null };
     case "customRadius":
-      return { checkinRadiusMeters: { not: null } };
+      return { lat: { not: null }, lng: { not: null }, checkinRadiusMeters: { not: null } };
     default:
       return undefined;
   }

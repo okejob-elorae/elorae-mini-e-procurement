@@ -606,6 +606,7 @@ d("listStores location filter (test bed only)", () => {
   let halfCoordsId = "";
   let defaultRadiusId = "";
   let customRadiusId = "";
+  let customNoCoordsId = "";
 
   beforeEach(async () => {
     createdIds.length = 0;
@@ -618,6 +619,7 @@ d("listStores location filter (test bed only)", () => {
     halfCoordsId = await seed("HALF", { lat: -6.2, lng: null });
     defaultRadiusId = await seed("DEF", { lat: -6.2, lng: 106.8 });
     customRadiusId = await seed("CUS", { lat: -6.2, lng: 106.8, checkinRadiusMeters: 250 });
+    customNoCoordsId = await seed("CNC", { checkinRadiusMeters: 50 });
   });
 
   afterEach(async () => {
@@ -629,21 +631,21 @@ d("listStores location filter (test bed only)", () => {
     return items.map((s) => s.id).sort();
   }
 
-  it("returns all four seeded stores with no location filter", async () => {
+  it("returns all five seeded stores with no location filter", async () => {
     expect(await idsFor(undefined)).toEqual(
-      [noCoordsId, halfCoordsId, defaultRadiusId, customRadiusId].sort(),
+      [noCoordsId, halfCoordsId, defaultRadiusId, customRadiusId, customNoCoordsId].sort(),
     );
   });
 
-  it("missing returns stores lacking lat or lng", async () => {
-    expect(await idsFor("missing")).toEqual([noCoordsId, halfCoordsId].sort());
+  it("missing returns stores lacking lat or lng, overridden radius or not", async () => {
+    expect(await idsFor("missing")).toEqual([noCoordsId, halfCoordsId, customNoCoordsId].sort());
   });
 
   it("defaultRadius returns geocoded stores with no override", async () => {
     expect(await idsFor("defaultRadius")).toEqual([defaultRadiusId]);
   });
 
-  it("customRadius returns stores with an override", async () => {
+  it("customRadius returns geocoded stores with an override, never an ungeocoded one", async () => {
     expect(await idsFor("customRadius")).toEqual([customRadiusId]);
   });
 
