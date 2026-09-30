@@ -51,6 +51,21 @@ async function alreadyFlagged(kind: string, docId: string): Promise<boolean> {
   });
 }
 
+/**
+ * Lets the bell item open the canvasser a load journal failure belongs to. Its own try/catch
+ * because the `JOURNAL_PENDING` row gates the retry button: a failed lookup must cost the link,
+ * never the row.
+ */
+async function lookupCanvasserId(kind: "load" | "sale" | "reconcile", docId: string): Promise<string | undefined> {
+  if (kind !== "load") return undefined;
+  try {
+    const load = await prisma.vanLoad.findUnique({ where: { id: docId }, select: { canvasserId: true } });
+    return load?.canvasserId;
+  } catch {
+    return undefined;
+  }
+}
+
 async function notify(
   kind: "load" | "sale" | "reconcile",
   docId: string,
@@ -61,13 +76,14 @@ async function notify(
   let vanJournalNotification: AdminNotification | null = null;
   try {
     if (await alreadyFlagged(kind, docId)) return;
+    const canvasserId = await lookupCanvasserId(kind, docId);
     vanJournalNotification = await prisma.adminNotification.create({
       data: {
         category: "JOURNAL_PENDING",
         severity: "WARNING",
         title: `Van ${kind} journal not posted`,
         message: `Van ${kind} journal could not be posted (${reason}${role ? `: ${role}` : ""}${detail ? `: ${detail}` : ""}). Map the account, then ${RETRY_HINT[kind]}.`,
-        metadata: { docId, kind: `van_${kind}`, reason, role },
+        metadata: { docId, kind: `van_${kind}`, reason, role, ...(canvasserId ? { canvasserId } : {}) },
       },
     });
   } catch (e) {

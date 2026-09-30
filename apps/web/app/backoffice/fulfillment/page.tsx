@@ -8,7 +8,7 @@ import {
   type SalesChannel,
   type SalesOrderFulfillmentStatus,
 } from "@/lib/constants/enums";
-import { parseDateOnly } from "@/lib/date-only";
+import { parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
 import {
   listFulfillmentQueue,
   type QueueSortField,
@@ -74,17 +74,6 @@ function parsePageSize(raw: string | undefined): number {
   return ALLOWED_PAGE_SIZES.includes(n) ? n : DEFAULT_PAGE_SIZE;
 }
 
-function parseDateFrom(raw: string | undefined): Date | undefined {
-  return raw ? parseDateOnly(raw) : undefined;
-}
-
-function parseDateTo(raw: string | undefined): Date | undefined {
-  const d = raw ? parseDateOnly(raw) : undefined;
-  if (!d) return undefined;
-  d.setHours(23, 59, 59, 999);
-  return d;
-}
-
 export default async function FulfillmentQueuePage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session) redirect("/login");
@@ -101,8 +90,8 @@ export default async function FulfillmentQueuePage({ searchParams }: PageProps) 
     fulfillmentStatus,
     channel,
     search: sp.search?.trim() || undefined,
-    dateFrom: parseDateFrom(sp.dateFrom),
-    dateTo: parseDateTo(sp.dateTo),
+    dateFrom: parseDateOnly(sp.dateFrom ?? ""),
+    dateTo: parseDateOnlyEnd(sp.dateTo ?? ""),
     sortField,
     sortDir,
     page,

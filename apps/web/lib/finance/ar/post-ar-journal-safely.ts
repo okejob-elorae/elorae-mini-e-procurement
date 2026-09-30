@@ -103,6 +103,21 @@ async function alreadyFlagged(kind: ArJournalKind, docId: string, reason: string
   });
 }
 
+/**
+ * Lets the bell item open the receivable a delivery journal failure belongs to. Its own try/catch
+ * because the `JOURNAL_PENDING` row gates the retry button: a failed lookup must cost the link,
+ * never the row.
+ */
+async function lookupReceivableId(kind: ArJournalKind, docId: string): Promise<string | undefined> {
+  if (kind !== "field_delivery_revenue" && kind !== "field_delivery_cogs") return undefined;
+  try {
+    const receivable = await prisma.receivable.findUnique({ where: { deliveryId: docId }, select: { id: true } });
+    return receivable?.id;
+  } catch {
+    return undefined;
+  }
+}
+
 async function notify(
   kind: ArJournalKind,
   docId: string,
@@ -113,6 +128,7 @@ async function notify(
   let arJournalNotification: AdminNotification | null = null;
   try {
     if (await alreadyFlagged(kind, docId, reason)) return;
+    const receivableId = await lookupReceivableId(kind, docId);
     arJournalNotification = await prisma.adminNotification.create({
       data: {
         category: "JOURNAL_PENDING",
@@ -121,7 +137,7 @@ async function notify(
         message:
           `${TITLE[kind]} (${reason}${role ? `: ${role}` : ""}${detail ? `: ${detail}` : ""}). ` +
           `Map the account, then ${RETRY_HINT[kind]}.`,
-        metadata: { docId, kind, reason, role },
+        metadata: { docId, kind, reason, role, ...(receivableId ? { receivableId } : {}) },
       },
     });
   } catch (e) {

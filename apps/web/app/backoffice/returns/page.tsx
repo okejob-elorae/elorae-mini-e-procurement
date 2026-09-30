@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { SALES_CHANNEL_VALUES, SALES_RETURN_STATUS_VALUES } from "@/lib/constants/enums";
 import type { SalesChannel, SalesReturnStatus } from "@/lib/constants/enums";
-import { parseDateOnly } from "@/lib/date-only";
+import { parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
 import { listSalesReturns, getSalesReturnsKpi } from "@/lib/sales-returns/queries";
 import { SalesReturnsPageClient } from "./SalesReturnsPageClient";
 
@@ -42,18 +42,6 @@ function parseStatus(raw: string | undefined): SalesReturnStatus | undefined {
     : undefined;
 }
 
-function parseDateFrom(raw: string | undefined): Date | undefined {
-  return raw ? parseDateOnly(raw) : undefined;
-}
-
-function parseDateTo(raw: string | undefined): Date | undefined {
-  const d = raw ? parseDateOnly(raw) : undefined;
-  if (!d) return undefined;
-  // Inclusive end-of-day in local time so the chosen day's returns are not excluded.
-  d.setHours(23, 59, 59, 999);
-  return d;
-}
-
 export default async function SalesReturnsPage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session) redirect("/login");
@@ -63,8 +51,8 @@ export default async function SalesReturnsPage({ searchParams }: PageProps) {
     search: sp.search?.trim() || undefined,
     channel: parseChannel(sp.channel),
     status: parseStatus(sp.status),
-    receivedFrom: parseDateFrom(sp.dateFrom),
-    receivedTo: parseDateTo(sp.dateTo),
+    receivedFrom: parseDateOnly(sp.dateFrom ?? ""),
+    receivedTo: parseDateOnlyEnd(sp.dateTo ?? ""),
   };
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const pageSize = parsePageSize(sp.pageSize);

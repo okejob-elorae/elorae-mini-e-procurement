@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/table';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
-import { formatDateOnly, parseDateOnly } from '@/lib/date-only';
+import { formatDateOnly, parseDateOnly, parseDateOnlyEnd } from '@/lib/date-only';
 import {
   Select,
   SelectContent,
@@ -90,8 +90,10 @@ export default function NotaRegisterPage() {
     try {
       const filters: { vendorId?: string; dateFrom?: Date; dateTo?: Date; issueType?: 'FABRIC' | 'ACCESSORIES' } = {};
       if (vendorId) filters.vendorId = vendorId;
-      if (dateFrom) filters.dateFrom = new Date(dateFrom);
-      if (dateTo) filters.dateTo = new Date(dateTo);
+      const parsedFrom = parseDateOnly(dateFrom);
+      const parsedTo = parseDateOnlyEnd(dateTo);
+      if (parsedFrom) filters.dateFrom = parsedFrom;
+      if (parsedTo) filters.dateTo = parsedTo;
       if (issueType) filters.issueType = issueType;
       const result = await getMaterialIssuesForCMTRegister(filters, { page, pageSize });
       if (result != null && typeof result === 'object' && 'items' in result && 'totalCount' in result) {
