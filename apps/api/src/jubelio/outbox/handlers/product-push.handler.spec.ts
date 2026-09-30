@@ -256,6 +256,26 @@ describe("ProductPushHandler", () => {
     });
   });
 
+  it("REMOVES a variant: DELETE runs before the mapping delete, and a failed mapping delete fails the row", async () => {
+    prisma.item.findUnique.mockResolvedValue({ ...baseItem, variants: [{ sku: "SKU-1-RED" }] });
+    prisma.jubelioProductMapping.findMany.mockResolvedValue([
+      { id: "m1", erpVariantSku: "SKU-1-RED", jubelioItemId: 11, jubelioItemGroupId: 7 },
+      { id: "m2", erpVariantSku: "SKU-1-BLU", jubelioItemId: 12, jubelioItemGroupId: 7 },
+    ]);
+    prisma.jubelioPushDefaults.findFirst.mockResolvedValue(baseDefaults);
+    prisma.jubelioCategoryMapping.findFirst.mockResolvedValue({ jubelioCategoryId: 454 });
+    http.post.mockResolvedValue({ status: "ok", id: 7, item_ids: [11] });
+    const callOrder: string[] = [];
+    http.delete.mockImplementation(async () => { callOrder.push("http.delete"); return { status: "ok" }; });
+    prisma.jubelioProductMapping.deleteMany.mockImplementation(async () => {
+      callOrder.push("deleteMany");
+      throw new Error("connection lost");
+    });
+
+    await expect(handler.handle(row() as any)).rejects.toThrow("connection lost");
+    expect(callOrder).toEqual(["http.delete", "deleteMany"]);
+  });
+
   it("calls ensureUploaded BEFORE catalog POST", async () => {
     prisma.item.findUnique.mockResolvedValue(baseItem);
     prisma.jubelioProductMapping.findMany.mockResolvedValue([]);

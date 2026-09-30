@@ -135,6 +135,13 @@ export class ProductPushHandler implements OutboxHandler {
       hasVariants ? variantsArr!.map((v) => v.sku) : [""],
     );
     const removed = mappings.filter((m) => !desiredSkuSet.has(m.erpVariantSku));
+    /**
+     * Jubelio first, then the mappings, and deliberately not in one transaction: the HTTP call has no
+     * timeout, so a transaction around it could expire after Jubelio had already deleted. A mapping
+     * delete that fails here fails the row, and its retry recomputes `removed` from the surviving
+     * mappings and sends the DELETE again, which Jubelio answers 200 for ids already gone (measured
+     * on prod, 2026-09-30), so the retry converges instead of wedging.
+     */
     if (removed.length > 0) {
       await this.http.delete("/inventory/items/item-variant/", {
         body: JSON.stringify({ ids: removed.map((m) => m.jubelioItemId) }),
