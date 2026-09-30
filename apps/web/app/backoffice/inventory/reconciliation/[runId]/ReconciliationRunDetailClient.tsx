@@ -42,6 +42,24 @@ function actionBadgeVariant(action: string): "default" | "secondary" | "destruct
   }
 }
 
+function runStatusBadgeVariant(status: string): "default" | "secondary" | "destructive" | "outline" {
+  switch (status) {
+    case "COMPLETED":
+      return "default";
+    case "FAILED":
+      return "destructive";
+    default:
+      return "secondary";
+  }
+}
+
+/* A row that failed during the run and was not resolved since; the header count and the row marker share it so they agree. */
+function isUnresolvedFailure<T extends { action: string; errorMessage: string | null }>(
+  row: T,
+): row is T & { errorMessage: string } {
+  return row.errorMessage !== null && row.action !== "MANUALLY_RESOLVED";
+}
+
 export function ReconciliationRunDetailClient({
   runId,
   initialPushEnabled,
@@ -123,12 +141,27 @@ export function ReconciliationRunDetailClient({
     return <p className="text-muted-foreground py-8">{t("notFound")}</p>;
   }
 
+  const failedRowCount = run.results.filter(isUnresolvedFailure).length;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">{t("runTitle", { id: runId.slice(0, 8) })}</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-bold">{t("runTitle", { id: runId.slice(0, 8) })}</h1>
+            <Badge variant={runStatusBadgeVariant(run.status)}>
+              {t(`runStatuses.${run.status as "RUNNING" | "COMPLETED" | "FAILED"}`)}
+            </Badge>
+          </div>
           <p className="text-muted-foreground">{new Date(run.startedAt).toLocaleString()}</p>
+          {run.status === "COMPLETED" && failedRowCount > 0 ? (
+            <p className="text-sm text-destructive">
+              {t("rowsFailedSummary", { failed: failedRowCount, total: run.totalScanned })}
+            </p>
+          ) : null}
+          {run.status === "FAILED" && run.errorMessage ? (
+            <p className="text-sm text-destructive">{run.errorMessage}</p>
+          ) : null}
         </div>
         <Link href="/backoffice/inventory/reconciliation">
           <Button variant="outline">{t("back")}</Button>
@@ -199,10 +232,32 @@ export function ReconciliationRunDetailClient({
                       {row.variantSku ? (
                         <div className="text-xs text-muted-foreground">{row.variantSku}</div>
                       ) : null}
+                      {isUnresolvedFailure(row) ? (
+                        <div
+                          className="max-w-xs truncate text-xs text-destructive"
+                          title={row.errorMessage}
+                        >
+                          {t("rowFailed", { message: row.errorMessage })}
+                        </div>
+                      ) : null}
                     </TableCell>
                     <TableCell>{row.eloraeQty}</TableCell>
-                    <TableCell>{row.jubelioQty}</TableCell>
-                    <TableCell>{row.variance > 0 ? `+${row.variance}` : row.variance}</TableCell>
+                    <TableCell>
+                      {row.jubelioQty === null ? (
+                        <span className="text-muted-foreground">{t("noJubelioFigure")}</span>
+                      ) : (
+                        row.jubelioQty
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {row.variance === null ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : row.variance > 0 ? (
+                        `+${row.variance}`
+                      ) : (
+                        row.variance
+                      )}
+                    </TableCell>
                     <TableCell>
                       <Badge variant={actionBadgeVariant(row.action)}>
                         {t(`actions.${row.action as ReconActionKey}`)}

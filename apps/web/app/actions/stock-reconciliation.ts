@@ -22,8 +22,9 @@ export type SerializedReconciliationResult = {
   itemName: string;
   jubelioItemId: number | null;
   eloraeQty: number;
-  jubelioQty: number;
-  variance: number;
+  jubelioQty: number | null;
+  variance: number | null;
+  errorMessage: string | null;
   action: string;
   resolvedAt: string | null;
   resolvedById: string | null;

@@ -1,4 +1,4 @@
-import type { Prisma, ReconDirection, ReconTrigger, StockAdjustmentSource, StockLedgerRefType } from "@elorae/db";
+import type { Prisma, ReconAction, ReconDirection, ReconTrigger, StockAdjustmentSource, StockLedgerRefType } from "@elorae/db";
 import {
   effectiveOfflineReservedByKey,
   effectiveOfflineReservedQty,
@@ -97,6 +97,18 @@ async function fetchJubelioGroupSnapshot(groupId: number): Promise<JubelioGroupS
   );
   if (!res.ok || !res.data?.rows) return null;
   return res.data.rows;
+}
+
+/** `DECIMAL(10,2)` holds at most eight integer digits. */
+const DECIMAL_10_2_MAX = 99999999.99;
+
+const ERROR_MESSAGE_MAX = 2000;
+
+/* The message unchanged when it fits, else its first `ERROR_MESSAGE_MAX - 1` code points plus an ellipsis. */
+function capErrorMessage(text: string): string {
+  const chars = Array.from(text);
+  if (chars.length <= ERROR_MESSAGE_MAX) return text;
+  return `${chars.slice(0, ERROR_MESSAGE_MAX - 1).join("")}…`;
 }
 
 type MatchJubelioOutcome = "APPLIED" | "NOOP" | "NO_INVENTORY_ROW" | "STOCK_MOVED";
@@ -299,49 +311,38 @@ export async function runReconciliation(
       jubelioRows.map((r) => [`${r.itemId}:${r.variantSku}`, r]),
     );
 
+    let failedCount = 0;
+
     for (const mapping of fgMappings) {
       const variantSku = mapping.erpVariantSku ?? "";
-      // OR-tolerant match on the variantless spelling only. Dropped the old fallback to an
-      // unrelated variant row on the same item — a mapping whose variant genuinely has no
-      // InventoryValue row now compares against 0 instead of a sibling variant's quantity.
-      const invRow = mapping.item.inventoryValues.find((iv) =>
-        variantSku === "" ? (iv.variantSku ?? "") === "" : iv.variantSku === variantSku,
-      );
-      const rawQtyOnHand = invRow ? Number(invRow.qtyOnHand) : 0;
-      const offline = offlineByKey.get(`${mapping.itemId}:${variantSku}`) ?? 0;
-      const eloraeQty = comparableEloraeQty(rawQtyOnHand, offline, pushEnabled);
-      /* A variant the snapshot had no usable figure for is null, never 0 — see classifyReconRow. */
-      const jubelioQty = jubelioByKey.get(`${mapping.itemId}:${variantSku}`)?.jubelioQty ?? null;
-      const { classified, storedJubelioQty, variance } = classifyReconRow({
-        eloraeQty,
-        jubelioQty,
-        threshold: config.threshold,
-        direction: config.direction,
-        pushEnabled,
-      });
-
-      totalScanned += 1;
-      if (classified.action === "IN_SYNC") inSync += 1;
-      else if (classified.action === "AUTO_CORRECTED") autoCorrected += 1;
-      else if (classified.action === "FLAGGED") flagged += 1;
-
-      if (classified.needsStockWrite && config.direction === "MATCH_JUBELIO" && jubelioQty !== null) {
-        await prisma.$transaction(async (tx) => {
-          await applyMatchJubelio(tx, {
-            runId: run.id,
-            itemId: mapping.itemId,
-            variantSku,
-            itemName: mapping.item.nameId,
-            jubelioQty,
-            userId: startedById,
-          });
+      let eloraeQty = 0;
+      let storedJubelioQty: number | null = null;
+      let variance: number | null = null;
+      let pushEnqueued = false;
+      let pushAction: ReconAction = "FLAGGED";
+      try {
+        // OR-tolerant match on the variantless spelling only. Dropped the old fallback to an
+        // unrelated variant row on the same item — a mapping whose variant genuinely has no
+        // InventoryValue row now compares against 0 instead of a sibling variant's quantity.
+        const invRow = mapping.item.inventoryValues.find((iv) =>
+          variantSku === "" ? (iv.variantSku ?? "") === "" : iv.variantSku === variantSku,
+        );
+        const rawQtyOnHand = invRow ? Number(invRow.qtyOnHand) : 0;
+        const offline = offlineByKey.get(`${mapping.itemId}:${variantSku}`) ?? 0;
+        eloraeQty = comparableEloraeQty(rawQtyOnHand, offline, pushEnabled);
+        /* A variant the snapshot had no usable figure for is null, never 0 — see classifyReconRow. */
+        const jubelioQty = jubelioByKey.get(`${mapping.itemId}:${variantSku}`)?.jubelioQty ?? null;
+        const { classified, ...figures } = classifyReconRow({
+          eloraeQty,
+          jubelioQty,
+          threshold: config.threshold,
+          direction: config.direction,
+          pushEnabled,
         });
-      } else if (classified.needsPush && config.direction === "REASSERT_ELORAE") {
-        await enqueueReconStockPush(mapping.itemId, startedById ?? "");
-      }
+        storedJubelioQty = figures.storedJubelioQty;
+        variance = figures.variance;
 
-      await prisma.reconciliationResult.create({
-        data: {
+        const resultData = {
           runId: run.id,
           itemId: mapping.itemId,
           variantSku: variantSku || null,
@@ -350,9 +351,84 @@ export async function runReconciliation(
           eloraeQty,
           jubelioQty: storedJubelioQty,
           variance,
-          action: classified.action,
-        },
-      });
+        };
+        let storedAction: ReconAction = classified.action;
+
+        if (classified.needsStockWrite && config.direction === "MATCH_JUBELIO" && jubelioQty !== null) {
+          /*
+           * The result row is written inside the correction transaction, so a throw rolls back
+           * both and the catch's FLAGGED row is always true. A refused correction (no inventory
+           * row) wrote nothing, so it is stored FLAGGED, not AUTO_CORRECTED.
+           */
+          storedAction = await prisma.$transaction(async (tx) => {
+            const outcome = await applyMatchJubelio(tx, {
+              runId: run.id,
+              itemId: mapping.itemId,
+              variantSku,
+              itemName: mapping.item.nameId,
+              jubelioQty,
+              userId: startedById,
+            });
+            const action: ReconAction =
+              outcome === "APPLIED" || outcome === "NOOP" ? classified.action : "FLAGGED";
+            await tx.reconciliationResult.create({ data: { ...resultData, action } });
+            return action;
+          });
+        } else {
+          if (classified.needsPush && config.direction === "REASSERT_ELORAE") {
+            await enqueueReconStockPush(mapping.itemId, startedById ?? "");
+            /* The push is out and cannot be recalled: a later throw must not store this row FLAGGED. */
+            pushEnqueued = true;
+            pushAction = classified.action;
+          }
+          await prisma.reconciliationResult.create({ data: { ...resultData, action: classified.action } });
+        }
+
+        /* Counted only once the row is stored, so the counters equal the stored actions. */
+        totalScanned += 1;
+        if (storedAction === "IN_SYNC") inSync += 1;
+        else if (storedAction === "AUTO_CORRECTED") autoCorrected += 1;
+        else if (storedAction === "FLAGGED") flagged += 1;
+      } catch (err) {
+        console.error(`[reconciliation] item ${mapping.itemId} variant "${variantSku}" failed`, err);
+        const fallbackAction: ReconAction = pushEnqueued ? pushAction : "FLAGGED";
+        const notes = [err instanceof Error ? err.message : String(err)];
+        const fits = (n: number | null): boolean => n !== null && Number.isFinite(n) && Math.abs(n) <= DECIMAL_10_2_MAX;
+        let fallbackEloraeQty = eloraeQty;
+        let fallbackJubelioQty = storedJubelioQty;
+        let fallbackVariance = variance;
+        if (!fits(eloraeQty)) {
+          fallbackEloraeQty = 0;
+          notes.push(`elorae figure ${eloraeQty} does not fit the column and is stored as 0`);
+        }
+        if (storedJubelioQty !== null && !fits(storedJubelioQty)) {
+          fallbackJubelioQty = null;
+          notes.push(`jubelio figure ${storedJubelioQty} does not fit the column`);
+        }
+        if (variance !== null && !fits(variance)) {
+          fallbackVariance = null;
+          notes.push(`variance ${variance} does not fit the column`);
+        }
+        /* A throw from the fallback means the database itself is failing; the run-level catch marks the run FAILED. */
+        await prisma.reconciliationResult.create({
+          data: {
+            runId: run.id,
+            itemId: mapping.itemId,
+            variantSku: variantSku || null,
+            itemName: mapping.item.nameId,
+            jubelioItemId: mapping.jubelioItemId,
+            eloraeQty: fallbackEloraeQty,
+            jubelioQty: fallbackJubelioQty,
+            variance: fallbackVariance,
+            action: fallbackAction,
+            errorMessage: capErrorMessage(notes.join("; ")),
+          },
+        });
+        totalScanned += 1;
+        if (fallbackAction === "AUTO_CORRECTED") autoCorrected += 1;
+        else flagged += 1;
+        failedCount += 1;
+      }
     }
 
     await prisma.reconciliationRun.update({
@@ -364,6 +440,10 @@ export async function runReconciliation(
         inSync,
         autoCorrected,
         flagged,
+        errorMessage:
+          failedCount > 0
+            ? `${failedCount} of ${totalScanned} items failed to reconcile; see the flagged rows`
+            : null,
       },
     });
 
@@ -437,8 +517,8 @@ async function resolveOneResult(
 
     /*
      * Re-fetch a live figure for just this item group rather than trusting the run's stored
-     * snapshot, which may already be stale — and which stored 0 for a variant it had no figure
-     * for. No live figure means nothing is written.
+     * snapshot, which may already be stale — and which holds no figure for a variant the
+     * snapshot lacked. No live figure means nothing is written.
      */
     const liveRows = await liveGroupSnapshot(groups, mapping.jubelioItemGroupId);
     if (!liveRows) return { success: false, reason: "JUBELIO_FETCH_FAILED" };

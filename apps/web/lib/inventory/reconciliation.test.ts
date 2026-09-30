@@ -73,6 +73,8 @@ describe("classifyReconRow", () => {
       pushEnabled: true,
     });
     expect(out.classified).toEqual({ action: "FLAGGED", needsStockWrite: false, needsPush: false });
+    expect(out.storedJubelioQty).toBeNull();
+    expect(out.variance).toBeNull();
   });
 
   it("never reads a missing figure as an in-sync 0 when Elorae is also 0", () => {

@@ -1619,8 +1619,9 @@ model ReconciliationResult {
   itemName            String
   jubelioItemId       Int?
   eloraeQty           Decimal           @db.Decimal(10,2)
-  jubelioQty          Decimal           @db.Decimal(10,2)
-  variance            Decimal           @db.Decimal(10,2)
+  jubelioQty          Decimal?          @db.Decimal(10,2)
+  variance            Decimal?          @db.Decimal(10,2)
+  errorMessage        String?           @db.Text
   action              ReconAction
   resolvedAt          DateTime?
   resolvedById        String?
