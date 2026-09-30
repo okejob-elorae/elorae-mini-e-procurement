@@ -13,9 +13,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import type { ShipmentActionReason } from "@/app/actions/delivery-shipments";
+import { recordedQtyByShipmentLine, type SerializedReplay } from "@/lib/field-sales/replay-detail";
 
-type Line = { id: string; productName: string; plannedQty: number };
+type Line = { id: string; orderLineId: string; productName: string; plannedQty: number };
+
+/** The refusal the inline Alert explains; `replay` rides along only on `REPLAY_MISMATCH`. */
+type Failure = { reason: ShipmentActionReason; replay?: SerializedReplay };
 
 type Props = {
   shipmentId: string;
@@ -51,6 +56,13 @@ export function CompletePodSheet({
 }: Props) {
   const t = useTranslations("pwa.deliveries");
   const tErr = useTranslations("deliveryShipments");
+  /**
+   * The shared REPLAY_MISMATCH copy says "dates or quantities" for the backoffice expedition
+   * dialog, whose completion compares both. A salesman-carry completion compares quantities only,
+   * so this sheet names only those.
+   */
+  const refusalMessage = (reason: ShipmentActionReason): string =>
+    reason === "REPLAY_MISMATCH" ? t("replayMismatch") : tErr(`err.${reason}` as any);
   const [isPending, startTransition] = useTransition();
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [notaProofFile, setNotaProofFile] = useState<File | null>(null);
@@ -62,6 +74,7 @@ export function CompletePodSheet({
   );
   const [success, setSuccess] = useState(false);
   const [queued, setQueued] = useState(false);
+  const [failure, setFailure] = useState<Failure | null>(null);
 
   useEffect(() => {
     gpsStatusRef.current = gps.status;
@@ -155,6 +168,7 @@ export function CompletePodSheet({
       toast.error(tErr(notaCheck.reasonKey as any));
       return;
     }
+    setFailure(null);
     const capturedGps = gps;
     const capturedProofFile = proofFile;
     const capturedNotaFile = notaProofFile;
@@ -186,7 +200,20 @@ export function CompletePodSheet({
           setSuccess(true);
           return;
         }
-        toast.error(tErr(`err.${result.reason}` as any));
+        toast.error(refusalMessage(result.reason));
+        const replay = result.replay;
+        setFailure({ reason: result.reason, replay });
+        if (result.reason === "REPLAY_MISMATCH" && replay) {
+          /**
+           * The delivery is already recorded, so one more Submit with ITS quantities completes the
+           * shipment consistently. Filled per shipment line, so an order line two shipment lines
+           * share is not asked for twice.
+           */
+          const recordedQty = recordedQtyByShipmentLine(lines, replay);
+          setQtyInputs(
+            Object.fromEntries(lines.map((l) => [l.id, String(recordedQty.get(l.id) ?? 0)])),
+          );
+        }
       } catch (e) {
         if (e instanceof PodUploadRefusedError) {
           toast.error(tErr(`err.${e.reason}` as any));
@@ -253,6 +280,9 @@ export function CompletePodSheet({
       </div>
     );
   }
+
+  const replay = failure?.replay;
+  const recordedQty = replay ? recordedQtyByShipmentLine(lines, replay) : new Map<string, number>();
 
   return (
     <div className="flex flex-col gap-3 p-4">
@@ -355,6 +385,31 @@ export function CompletePodSheet({
           onChange={(e) => setSignedByName(e.target.value)}
         />
       </div>
+
+      {failure && (failure.reason === "REPLAY_MISMATCH" || failure.reason === "RESERVATION_MISMATCH") && (
+        <Alert variant="destructive">
+          {replay && <AlertTitle>{t("replayTitle", { docNo: replay.docNo })}</AlertTitle>}
+          <AlertDescription>
+            <p>{refusalMessage(failure.reason)}</p>
+            {replay && (
+              <>
+                <p className="font-medium">{t("replayLinesLabel")}</p>
+                <ul className="w-full space-y-0.5">
+                  {lines.map((line) => (
+                    <li key={line.id} className="truncate">
+                      {t("replayLine", {
+                        product: line.productName,
+                        qty: recordedQty.get(line.id) ?? 0,
+                      })}
+                    </li>
+                  ))}
+                </ul>
+                <p>{t("replayHint")}</p>
+              </>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="space-y-2">
         {lines.map((line) => (

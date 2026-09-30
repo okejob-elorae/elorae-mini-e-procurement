@@ -6,6 +6,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { recordFieldSalesDelivery, closeFieldSalesOrderRemainder } from "@/lib/field-sales/delivery/writer";
 import { DeliveryError } from "@/lib/field-sales/errors";
+import { serializeReplay, type SerializedReplay } from "@/lib/field-sales/replay-detail";
 import { formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
@@ -30,8 +31,11 @@ export type DeliveryActionResult =
         | "INSUFFICIENT_STOCK"
         | "NOT_RETRYABLE"
         | "RECEIVABLE_HAS_PAYMENTS"
-        | "SHIPMENT_IN_FLIGHT";
+        | "SHIPMENT_IN_FLIGHT"
+        | "REPLAY_MISMATCH"
+        | "RESERVATION_MISMATCH";
       shortLines?: Array<{ orderLineId: string; requested: number; onHand: number }>;
+      replay?: SerializedReplay;
     };
 
 /**
@@ -66,6 +70,22 @@ async function guard(): Promise<{ userId: string } | { ok: false; reason: "FORBI
     return { ok: false, reason: "FORBIDDEN" };
   }
   return { userId: session.user.id };
+}
+
+/**
+ * Both of a delivery's journals, through `postArJournalSafely` — never a builder called bare. The
+ * success path and the `REPLAY_MISMATCH` refusal share it, so the two cannot drift apart. Posting
+ * is idempotent on the source document, so a delivery whose journals already posted re-posts
+ * nothing. Never exported: from a `"use server"` module that would publish it as a network-callable
+ * action posting journals for any delivery id.
+ */
+async function postDeliveryJournals(deliveryId: string, postedById: string): Promise<void> {
+  await postArJournalSafely("field_delivery_revenue", deliveryId, () =>
+    postFieldDeliveryRevenueJournal(deliveryId, postedById),
+  );
+  await postArJournalSafely("field_delivery_cogs", deliveryId, () =>
+    postFieldDeliveryCogsJournal(deliveryId, postedById),
+  );
 }
 
 /**
@@ -112,7 +132,25 @@ export async function recordDeliveryAction(input: {
       idempotencyKey,
     });
   } catch (e) {
-    if (e instanceof DeliveryError) return { ok: false, reason: e.code, shortLines: e.shortLines };
+    if (e instanceof DeliveryError) {
+      if (e.code === "REPLAY_MISMATCH" && e.replay) {
+        /**
+         * The refused replay's delivery is REAL — its stock moved and its receivable stands — and
+         * its journals may never have posted: a crash after the writer committed and before the
+         * posts below leaves exactly that, and the operator's edited resubmit lands here. The
+         * dialog then rotates its key, so no later call would ever reach the success path for this
+         * delivery, and with no JOURNAL_PENDING flag the retry control never appears either. So
+         * the recorded delivery's journals post here, before the refusal goes back.
+         */
+        await postDeliveryJournals(e.replay.deliveryId, g.userId);
+      }
+      return {
+        ok: false,
+        reason: e.code,
+        shortLines: e.shortLines,
+        replay: e.replay ? serializeReplay(e.replay) : undefined,
+      };
+    }
     throw e;
   }
 
@@ -122,12 +160,7 @@ export async function recordDeliveryAction(input: {
    * inside would only stretch an already long serializable window — it holds the delivery, the
    * stock consume, the order-line updates and the SalesHistory rows — for no correctness gain.
    */
-  await postArJournalSafely("field_delivery_revenue", res.deliveryId, () =>
-    postFieldDeliveryRevenueJournal(res.deliveryId, g.userId),
-  );
-  await postArJournalSafely("field_delivery_cogs", res.deliveryId, () =>
-    postFieldDeliveryCogsJournal(res.deliveryId, g.userId),
-  );
+  await postDeliveryJournals(res.deliveryId, g.userId);
 
   revalidatePath("/backoffice/field-sales-orders");
   revalidatePath(`/backoffice/field-sales-orders/${orderId}`);

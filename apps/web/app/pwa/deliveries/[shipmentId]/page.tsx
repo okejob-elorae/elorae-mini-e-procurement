@@ -64,6 +64,7 @@ export default async function CompletePodPage({ params }: PageProps) {
       isKonsi={shipment.orderType === "KONSI"}
       lines={shipment.lines.map((l) => ({
         id: l.id,
+        orderLineId: l.orderLineId,
         productName: l.productName,
         plannedQty: l.plannedQty,
       }))}

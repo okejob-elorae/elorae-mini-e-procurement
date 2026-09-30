@@ -293,6 +293,132 @@ d("recordFieldSalesDelivery (test bed only)", () => {
     expect(Number(inv.qtyOnHand)).toBe(8);
   });
 
+  describe("a replayed idempotencyKey", () => {
+    const recordFirst = (): Promise<{ deliveryId: string; docNo: string }> =>
+      recordFieldSalesDelivery({
+        orderId,
+        deliveredById: userId,
+        lines: [{ orderLineId: lineAId, qty: 2 }],
+        invoiceDate: defaultInvoiceDate,
+        dueDate: defaultDueDate,
+        idempotencyKey: `dlv-replay-${token}`,
+      });
+
+    const replay = (over: {
+      invoiceDate?: Date;
+      dueDate?: Date;
+      lines?: Array<{ orderLineId: string; qty: number }>;
+      replayCompare?: "datesAndLines" | "linesOnly";
+    }) =>
+      recordFieldSalesDelivery({
+        orderId,
+        deliveredById: userId,
+        lines: over.lines ?? [{ orderLineId: lineAId, qty: 2 }],
+        invoiceDate: over.invoiceDate ?? defaultInvoiceDate,
+        dueDate: over.dueDate ?? defaultDueDate,
+        idempotencyKey: `dlv-replay-${token}`,
+        replayCompare: over.replayCompare,
+      });
+
+    it("returns the recorded delivery when nothing differs", async () => {
+      const first = await recordFirst();
+      await expect(replay({})).resolves.toEqual(first);
+    });
+
+    it("refuses a different invoice date and reports the recorded dates and lines", async () => {
+      const first = await recordFirst();
+      const err = await replay({
+        invoiceDate: new Date("2026-01-02T00:00:00.000+07:00"),
+      }).catch((e) => e);
+      expect(err).toBeInstanceOf(DeliveryError);
+      expect(err.code).toBe("REPLAY_MISMATCH");
+      expect(err.replay.deliveryId).toBe(first.deliveryId);
+      expect(err.replay.docNo).toBe(first.docNo);
+      expect(err.replay.invoiceDate.getTime()).toBe(defaultInvoiceDate.getTime());
+      expect(err.replay.dueDate.getTime()).toBe(defaultDueDate.getTime());
+      expect(err.replay.lines).toEqual([{ orderLineId: lineAId, qty: 2 }]);
+    });
+
+    it("refuses a different due date", async () => {
+      await recordFirst();
+      const err = await replay({ dueDate: new Date("2026-01-09T00:00:00.000+07:00") }).catch((e) => e);
+      expect(err).toBeInstanceOf(DeliveryError);
+      expect(err.code).toBe("REPLAY_MISMATCH");
+      expect(err.replay.dueDate.getTime()).toBe(defaultDueDate.getTime());
+    });
+
+    it("refuses a different quantity, and a line the recorded delivery lacks", async () => {
+      await recordFirst();
+      const changed = await replay({ lines: [{ orderLineId: lineAId, qty: 3 }] }).catch((e) => e);
+      expect(changed.code).toBe("REPLAY_MISMATCH");
+      expect(changed.replay.lines).toEqual([{ orderLineId: lineAId, qty: 2 }]);
+      const extra = await replay({
+        lines: [{ orderLineId: lineAId, qty: 2 }, { orderLineId: lineBId, qty: 1 }],
+      }).catch((e) => e);
+      expect(extra.code).toBe("REPLAY_MISMATCH");
+    });
+
+    it("treats a repeated orderLineId summing to the recorded quantity as identical", async () => {
+      const first = await recordFirst();
+      await expect(
+        replay({ lines: [{ orderLineId: lineAId, qty: 1 }, { orderLineId: lineAId, qty: 1 }] }),
+      ).resolves.toEqual(first);
+    });
+
+    it("writes nothing when it refuses", async () => {
+      await recordFirst();
+      const err = await replay({ lines: [{ orderLineId: lineAId, qty: 3 }] }).catch((e) => e);
+      expect(err).toBeInstanceOf(DeliveryError);
+      expect(err.code).toBe("REPLAY_MISMATCH");
+      const all = await prisma.fieldSalesDelivery.findMany({ where: { orderId: seededId(orderId) } });
+      expect(all).toHaveLength(1);
+      const receivables = await prisma.receivable.count({ where: { delivery: { orderId: seededId(orderId) } } });
+      expect(receivables).toBe(1);
+      const taxInvoices = await prisma.taxInvoice.count({ where: { delivery: { orderId: seededId(orderId) } } });
+      expect(taxInvoices).toBe(1);
+      const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: invId } });
+      expect(Number(inv.qtyOnHand)).toBe(8);
+    });
+
+    it("ignores the dates under replayCompare linesOnly and returns the recorded delivery", async () => {
+      const first = await recordFirst();
+      await expect(
+        replay({
+          invoiceDate: new Date("2026-01-02T00:00:00.000+07:00"),
+          dueDate: new Date("2026-01-09T00:00:00.000+07:00"),
+          replayCompare: "linesOnly",
+        }),
+      ).resolves.toEqual(first);
+      const recorded = await prisma.fieldSalesDelivery.findUniqueOrThrow({ where: { id: first.deliveryId } });
+      expect(recorded.invoiceDate.getTime()).toBe(defaultInvoiceDate.getTime());
+    });
+
+    it("still refuses a different quantity under replayCompare linesOnly", async () => {
+      await recordFirst();
+      const err = await replay({ lines: [{ orderLineId: lineAId, qty: 3 }], replayCompare: "linesOnly" }).catch((e) => e);
+      expect(err).toBeInstanceOf(DeliveryError);
+      expect(err.code).toBe("REPLAY_MISMATCH");
+    });
+  });
+
+  it("reports a reservation already consumed without a delivery as RESERVATION_MISMATCH, not OVER_DELIVER", async () => {
+    await prisma.stockReservation.update({
+      where: { fieldSalesLineId: lineAId },
+      data: { state: "CONSUMED", consumedQty: 5 },
+    });
+    const err = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineAId, qty: 2 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(DeliveryError);
+    expect(err.code).toBe("RESERVATION_MISMATCH");
+    const all = await prisma.fieldSalesDelivery.findMany({ where: { orderId: seededId(orderId) } });
+    expect(all).toHaveLength(0);
+  });
+
   it("refuses to deliver an order that is not APPROVED", async () => {
     await prisma.fieldSalesOrder.update({ where: { id: orderId }, data: { status: "PENDING_APPROVAL" } });
     const err = await recordFieldSalesDelivery({

@@ -10,6 +10,7 @@ const {
   mockLogAudit,
   notaDeliveryLookup,
   adminNotificationCreateMock,
+  journalPostStub,
 } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   staleSnapshot: { value: null as { invoiceDate: Date; dueDate: Date } | null },
@@ -23,11 +24,25 @@ const {
    * new `postFieldDeliveryJournalsAction` tests, which need `adminNotification.findMany` to read the
    * real JOURNAL_PENDING rows they seed — `adminNotification` must reach the real client. */
   adminNotificationCreateMock: { active: false },
+  /* Records every `postArJournalSafely` call; `active` also stubs the post out so a test can assert
+   * WHICH delivery was posted without depending on the shared bed's account mappings. */
+  journalPostStub: { active: false, calls: [] as Array<{ kind: string; docId: string }> },
 }));
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: mockFanOut }));
 vi.mock("./audit", () => ({ logPrint: mockLogAudit }));
+vi.mock("@/lib/finance/ar/post-ar-journal-safely", async (importActual) => {
+  const actual = await importActual<typeof import("@/lib/finance/ar/post-ar-journal-safely")>();
+  return {
+    ...actual,
+    postArJournalSafely: (...args: Parameters<typeof actual.postArJournalSafely>) => {
+      journalPostStub.calls.push({ kind: args[0], docId: args[1] });
+      if (journalPostStub.active) return Promise.resolve({ ok: false as const, code: "NOTHING_TO_POST" as const });
+      return actual.postArJournalSafely(...args);
+    },
+  };
+});
 
 /**
  * `TaxInvoice` and `AdminNotification` on `recordNotaTagihanPrinted`'s path need mocking, not the
@@ -124,7 +139,12 @@ vi.mock("@/lib/db/tx-retry", async (importActual) => {
   };
 });
 
-import { recordNotaTagihanPrinted, updateDeliveryDatesAction, postFieldDeliveryJournalsAction } from "./field-sales-deliveries";
+import {
+  recordNotaTagihanPrinted,
+  recordDeliveryAction,
+  updateDeliveryDatesAction,
+  postFieldDeliveryJournalsAction,
+} from "./field-sales-deliveries";
 
 /* Writes to real rows — never run against the shared prod DB (port 3307 tunnel / VPS host). */
 const url = process.env.DATABASE_URL ?? "";
@@ -215,6 +235,8 @@ d("updateDeliveryDatesAction (test bed only)", () => {
      * `notaDeliveryLookup.impl` is reset.
      */
     staleSnapshot.value = null;
+    journalPostStub.active = false;
+    journalPostStub.calls.length = 0;
 
     if (journalPendingNotificationId !== "") {
       await prisma.adminNotification.delete({ where: { id: journalPendingNotificationId } }).catch(() => undefined);
@@ -539,6 +561,27 @@ d("updateDeliveryDatesAction (test bed only)", () => {
     const result = await postFieldDeliveryJournalsAction(deliveryId);
 
     expect(result).toEqual({ ok: true, posted: [], stillPending: ["field_delivery_cogs"] });
+  });
+
+  it("posts the recorded delivery's journals when it refuses a replay with changed dates", async () => {
+    /* The crash window: the delivery committed under this key, its journals never posted. */
+    const idempotencyKey = `dlv-replay-${token}`;
+    await prisma.fieldSalesDelivery.update({ where: { id: deliveryId }, data: { idempotencyKey } });
+    journalPostStub.active = true;
+
+    const result = await recordDeliveryAction({
+      orderId,
+      lines: [{ orderLineId: lineId, qty: 1 }],
+      invoiceDate: "2026-04-02",
+      dueDate: "2026-05-01",
+      idempotencyKey,
+    });
+
+    expect(result).toMatchObject({ ok: false, reason: "REPLAY_MISMATCH", replay: { deliveryId, docNo } });
+    expect(journalPostStub.calls).toEqual([
+      { kind: "field_delivery_revenue", docId: deliveryId },
+      { kind: "field_delivery_cogs", docId: deliveryId },
+    ]);
   });
 });
 

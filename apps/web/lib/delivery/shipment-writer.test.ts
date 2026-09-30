@@ -8,6 +8,8 @@ import {
   cancelDeliveryShipment,
 } from "./shipment-writer";
 import { DeliveryShipmentError } from "./errors";
+import { DeliveryError } from "@/lib/field-sales/errors";
+import { recordFieldSalesDelivery } from "@/lib/field-sales/delivery/writer";
 
 describe("createDeliveryShipment", () => {
   let storeId = "";
@@ -679,6 +681,199 @@ describe("completeDeliveryShipment", () => {
 
     const orderLine = await prisma.fieldSalesOrderLine.findUnique({ where: { id: lineId } });
     expect(orderLine?.deliveredQty).toBe(3);
+  });
+
+  it("refuses a retry with different quantities after the delivery was recorded but the shipment never flipped", async () => {
+    await seedInTransitShipment(4);
+    const invoiceDate = new Date("2026-01-01T00:00:00.000+07:00");
+    const dueDate = new Date("2026-01-08T00:00:00.000+07:00");
+    /* The crash window: the delivery commits under the shipment's key, the shipment stays IN_TRANSIT. */
+    const recorded = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineId, qty: 3 }],
+      invoiceDate,
+      dueDate,
+      idempotencyKey: `shipment-${shipmentId}`,
+    });
+    deliveryId = recorded.deliveryId;
+
+    const complete = (deliveredQty: number) =>
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: `delivery-proofs/${shipmentId}/goods.jpg`,
+        invoiceDate,
+        dueDate,
+        lines: [{ shipmentLineId, deliveredQty }],
+      });
+
+    const err = await complete(4).catch((e) => e);
+    expect(err).toBeInstanceOf(DeliveryError);
+    expect(err.code).toBe("REPLAY_MISMATCH");
+    expect(err.replay.deliveryId).toBe(recorded.deliveryId);
+    expect(err.replay.lines).toEqual([{ orderLineId: lineId, qty: 3 }]);
+
+    const untouched = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: shipmentId }, include: { lines: true } });
+    expect(untouched.status).toBe("IN_TRANSIT");
+    expect(untouched.deliveryId).toBeNull();
+    expect(untouched.lines[0].deliveredQty).toBeNull();
+
+    const result = await complete(3);
+    expect(result.deliveryId).toBe(recorded.deliveryId);
+    const done = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: shipmentId }, include: { lines: true } });
+    expect(done.status).toBe("PARTIALLY_DELIVERED");
+    expect(done.deliveryId).toBe(recorded.deliveryId);
+    expect(done.lines[0].deliveredQty).toBe(3);
+  });
+
+  it("refuses an all-zero retry after the delivery was recorded but the shipment never flipped", async () => {
+    await seedInTransitShipment(4);
+    const invoiceDate = new Date("2026-01-01T00:00:00.000+07:00");
+    const dueDate = new Date("2026-01-08T00:00:00.000+07:00");
+    /* The crash window again; an all-zero retry never reaches `recordFieldSalesDelivery`'s compare. */
+    const recorded = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineId, qty: 3 }],
+      invoiceDate,
+      dueDate,
+      idempotencyKey: `shipment-${shipmentId}`,
+    });
+    deliveryId = recorded.deliveryId;
+
+    const err = await completeDeliveryShipment({
+      shipmentId,
+      deliveredById: userId,
+      proofPhotoUrl: "https://r2.example/proof.jpg",
+      proofPhotoR2Key: `delivery-proofs/${shipmentId}/goods.jpg`,
+      invoiceDate,
+      dueDate,
+      lines: [{ shipmentLineId, deliveredQty: 0 }],
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(DeliveryError);
+    expect(err.code).toBe("REPLAY_MISMATCH");
+    expect(err.replay.deliveryId).toBe(recorded.deliveryId);
+    expect(err.replay.docNo).toBe(recorded.docNo);
+    expect(err.replay.lines).toEqual([{ orderLineId: lineId, qty: 3 }]);
+
+    const untouched = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: shipmentId }, include: { lines: true } });
+    expect(untouched.status).toBe("IN_TRANSIT");
+    expect(untouched.deliveryId).toBeNull();
+    expect(untouched.lines[0].deliveredQty).toBeNull();
+  });
+
+  it("still completes an all-zero PUTUS shipment with no recorded delivery, recording none", async () => {
+    await seedInTransitShipment(4);
+    const result = await completeDeliveryShipment({
+      shipmentId,
+      deliveredById: userId,
+      proofPhotoUrl: "https://r2.example/proof.jpg",
+      proofPhotoR2Key: `delivery-proofs/${shipmentId}/goods.jpg`,
+      invoiceDate: new Date(),
+      dueDate: new Date(Date.now() + 7 * 86400000),
+      lines: [{ shipmentLineId, deliveredQty: 0 }],
+    });
+    expect(result.deliveryId).toBe("");
+    const shipment = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: shipmentId }, include: { lines: true } });
+    expect(shipment.status).toBe("PARTIALLY_DELIVERED");
+    expect(shipment.deliveryId).toBeNull();
+    expect(shipment.lines[0].deliveredQty).toBe(0);
+    const deliveries = await prisma.fieldSalesDelivery.count({ where: { orderId: seededId(orderId) } });
+    expect(deliveries).toBe(0);
+  });
+
+  it("returns the recorded delivery on a salesman-carry retry whose nota dates were corrected in the crash window", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    /* Recorded under the shipment's key with the shipment row's dates, then the shipment never flipped. */
+    const recorded = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineId, qty: 4 }],
+      invoiceDate: new Date("2026-09-10T00:00:00.000Z"),
+      dueDate: new Date("2026-09-20T00:00:00.000Z"),
+      idempotencyKey: `shipment-${shipmentId}`,
+    });
+    deliveryId = recorded.deliveryId;
+    /* What Edit nota dates leaves behind: the delivery no longer carries the frozen shipment row's dates. */
+    const correctedInvoiceDate = new Date("2026-09-11T00:00:00.000Z");
+    await prisma.fieldSalesDelivery.update({
+      where: { id: recorded.deliveryId },
+      data: { invoiceDate: correctedInvoiceDate, dueDate: new Date("2026-09-21T00:00:00.000Z") },
+    });
+
+    const result = await completeDeliveryShipment({
+      shipmentId,
+      deliveredById: userId,
+      proofPhotoUrl: "https://r2.example/proof.jpg",
+      proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
+      gps: { lat: -6.2, lng: 106.8 },
+      signatureUrl: "https://r2.example/nota.jpg",
+      signatureR2Key: `delivery-pod-proofs/${shipmentId}/nota-x.jpg`,
+      signedByName: "Budi Santoso",
+      lines: [{ shipmentLineId, deliveredQty: 4 }],
+    });
+    expect(result.deliveryId).toBe(recorded.deliveryId);
+    const shipment = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: shipmentId } });
+    expect(shipment.status).toBe("DELIVERED");
+    expect(shipment.deliveryId).toBe(recorded.deliveryId);
+    const delivery = await prisma.fieldSalesDelivery.findUniqueOrThrow({ where: { id: recorded.deliveryId } });
+    expect(delivery.invoiceDate.getTime()).toBe(correctedInvoiceDate.getTime());
+    const deliveries = await prisma.fieldSalesDelivery.count({ where: { orderId: seededId(orderId) } });
+    expect(deliveries).toBe(1);
+  });
+
+  it("refuses an expedition retry with the same quantities but different dates, then completes with the recorded dates", async () => {
+    await seedInTransitShipment(4);
+    const invoiceDate = new Date("2026-01-01T00:00:00.000+07:00");
+    const dueDate = new Date("2026-01-08T00:00:00.000+07:00");
+    /* The crash window: the caller typed these dates, the delivery committed, the shipment stayed IN_TRANSIT. */
+    const recorded = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineId, qty: 4 }],
+      invoiceDate,
+      dueDate,
+      idempotencyKey: `shipment-${shipmentId}`,
+    });
+    deliveryId = recorded.deliveryId;
+
+    const complete = (dates: { invoiceDate: Date; dueDate: Date }) =>
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: `delivery-proofs/${shipmentId}/goods.jpg`,
+        ...dates,
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      });
+
+    /* The dialog reopened with fresh defaults and the operator re-typed the dates. */
+    const err = await complete({
+      invoiceDate: new Date("2026-01-02T00:00:00.000+07:00"),
+      dueDate: new Date("2026-01-16T00:00:00.000+07:00"),
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(DeliveryError);
+    expect(err.code).toBe("REPLAY_MISMATCH");
+    expect(err.replay.deliveryId).toBe(recorded.deliveryId);
+    expect(err.replay.invoiceDate.getTime()).toBe(invoiceDate.getTime());
+    expect(err.replay.dueDate.getTime()).toBe(dueDate.getTime());
+    expect(err.replay.lines).toEqual([{ orderLineId: lineId, qty: 4 }]);
+
+    const untouched = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: shipmentId }, include: { lines: true } });
+    expect(untouched.status).toBe("IN_TRANSIT");
+    expect(untouched.deliveryId).toBeNull();
+    expect(untouched.lines[0].deliveredQty).toBeNull();
+
+    const result = await complete({ invoiceDate, dueDate });
+    expect(result.deliveryId).toBe(recorded.deliveryId);
+    const done = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: shipmentId }, include: { lines: true } });
+    expect(done.status).toBe("DELIVERED");
+    expect(done.deliveryId).toBe(recorded.deliveryId);
+    expect(done.lines[0].deliveredQty).toBe(4);
+    const deliveries = await prisma.fieldSalesDelivery.count({ where: { orderId: seededId(orderId) } });
+    expect(deliveries).toBe(1);
   });
 
   it("refuses a deliveredQty above plannedQty", async () => {
@@ -1421,7 +1616,7 @@ describe("cancelDeliveryShipment", () => {
      * `consumeFieldSalesOrderPartial`. That consume needs a RESERVED `StockReservation` keyed on
      * `fieldSalesLineId` plus an `InventoryValue` row keyed on (itemId, variantSku) — inserting
      * the order directly creates neither, only the real approve-time reservation flow does. With
-     * them missing the completion throws OVER_CONSUME → OVER_DELIVER on a bare `await`, so the
+     * them missing the completion throws OVER_CONSUME → RESERVATION_MISMATCH on a bare `await`, so the
      * cancel assertion the test exists for is never reached. Identical seed to
      * `seedInTransitShipment` in the completeDeliveryShipment describe above.
      */

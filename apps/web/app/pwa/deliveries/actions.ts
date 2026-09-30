@@ -7,6 +7,7 @@ import { completeDeliveryShipment } from "@/lib/delivery/shipment-writer";
 import { listMyDeliveries } from "@/lib/delivery/shipment-queries";
 import { DeliveryShipmentError } from "@/lib/delivery/errors";
 import { DeliveryError } from "@/lib/field-sales/errors";
+import { serializeReplay, type SerializedReplay } from "@/lib/field-sales/replay-detail";
 import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
 import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "@/lib/finance/ar/delivery-journal";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
@@ -18,11 +19,31 @@ import { getShipmentAction, type ShipmentActionResult, type ShipmentActionReason
  * which may only export async functions, so it is not exported. Keep both in sync by hand if
  * either `DeliveryShipmentError` or `DeliveryError` gains a new code.
  */
-function mapError(error: unknown): { ok: false; reason: ShipmentActionReason } {
+function mapError(error: unknown): { ok: false; reason: ShipmentActionReason; replay?: SerializedReplay } {
   if (error instanceof DeliveryShipmentError) return { ok: false, reason: error.code };
-  if (error instanceof DeliveryError) return { ok: false, reason: error.code };
+  if (error instanceof DeliveryError) {
+    return error.replay
+      ? { ok: false, reason: error.code, replay: serializeReplay(error.replay) }
+      : { ok: false, reason: error.code };
+  }
   console.error("[pwa/deliveries] unexpected failure", error);
   return { ok: false, reason: "UNEXPECTED" };
+}
+
+/**
+ * Same body as `postDeliveryJournals` in `@/app/actions/delivery-shipments`: both of a PUTUS
+ * delivery's journals through `postArJournalSafely`, shared by the success path and the
+ * `REPLAY_MISMATCH` refusal. Duplicated rather than imported because exporting it from either
+ * `"use server"` module would publish it as a network-callable action that posts journals for any
+ * delivery id. Keep the two in sync by hand.
+ */
+async function postDeliveryJournals(deliveryId: string, postedById: string): Promise<void> {
+  await postArJournalSafely("field_delivery_revenue", deliveryId, () =>
+    postFieldDeliveryRevenueJournal(deliveryId, postedById),
+  );
+  await postArJournalSafely("field_delivery_cogs", deliveryId, () =>
+    postFieldDeliveryCogsJournal(deliveryId, postedById),
+  );
 }
 
 export async function listMyDeliveriesAction(): Promise<
@@ -87,17 +108,19 @@ export async function completePodAction(input: {
      * completed through the PWA would create a `FieldSalesDelivery` + `Receivable` with no GL
      * entry and no repair path.
      */
-    if (result.deliveryId) {
-      await postArJournalSafely("field_delivery_revenue", result.deliveryId, () =>
-        postFieldDeliveryRevenueJournal(result.deliveryId, session.user.id),
-      );
-      await postArJournalSafely("field_delivery_cogs", result.deliveryId, () =>
-        postFieldDeliveryCogsJournal(result.deliveryId, session.user.id),
-      );
-    }
+    if (result.deliveryId) await postDeliveryJournals(result.deliveryId, session.user.id);
 
     return { ok: true };
   } catch (error) {
+    if (error instanceof DeliveryError && error.code === "REPLAY_MISMATCH" && error.replay) {
+      /**
+       * Same reasoning as `completeShipmentAction`: the refused replay's delivery is real and its
+       * journals may never have posted, so they post here before the refusal goes back. It
+       * matters most on this path — the offline queue classifies REPLAY_MISMATCH as terminal and
+       * never resubmits.
+       */
+      await postDeliveryJournals(error.replay.deliveryId, session.user.id);
+    }
     return mapError(error);
   }
 }
