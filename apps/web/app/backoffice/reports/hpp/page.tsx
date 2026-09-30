@@ -37,7 +37,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
-import { formatDateOnly, parseDateOnly } from "@/lib/date-only";
+import { formatDateOnly, parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
 import { getHPPList, type HPPBreakdown } from "@/app/actions/hpp";
 import { updateWOHppAdjustments } from "@/app/actions/production";
 import { getItemsByType } from "@/app/actions/items";
@@ -76,10 +76,8 @@ export default function HPPPage() {
 
   const loadData = useCallback(() => {
     setIsLoading(true);
-    const dateFrom = filterDateFrom ? new Date(filterDateFrom + "T00:00:00") : undefined;
-    const dateTo = filterDateTo
-      ? new Date(filterDateTo + "T23:59:59.999")
-      : undefined;
+    const dateFrom = parseDateOnly(filterDateFrom);
+    const dateTo = parseDateOnlyEnd(filterDateTo);
     getHPPList({
       finishedGoodId: filterFg || undefined,
       dateFrom,
@@ -183,10 +181,8 @@ export default function HPPPage() {
         hppAdditionalCost: additional,
       });
       toast.success("HPP adjustments saved");
-      const dateFrom = filterDateFrom ? new Date(filterDateFrom + "T00:00:00") : undefined;
-      const dateTo = filterDateTo
-        ? new Date(filterDateTo + "T23:59:59.999")
-        : undefined;
+      const dateFrom = parseDateOnly(filterDateFrom);
+      const dateTo = parseDateOnlyEnd(filterDateTo);
       const updated = await getHPPList({
         finishedGoodId: filterFg || undefined,
         dateFrom,

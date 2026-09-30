@@ -28,7 +28,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
-import { formatDateOnly, parseDateOnly } from '@/lib/date-only';
+import { formatDateOnly, parseDateOnly, parseDateOnlyEnd } from '@/lib/date-only';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
@@ -104,8 +104,8 @@ export default function SupplierPaymentsPage() {
   const fetchPOs = async () => {
     setIsLoading(true);
     try {
-      const from = dateFrom ? new Date(dateFrom + 'T00:00:00') : undefined;
-      const to = dateTo ? new Date(dateTo + 'T23:59:59') : undefined;
+      const from = parseDateOnly(dateFrom);
+      const to = parseDateOnlyEnd(dateTo);
       const result = await getPOs(
         {
           statusIn: ['SUBMITTED', 'PARTIAL', 'CLOSED', 'OVER'],

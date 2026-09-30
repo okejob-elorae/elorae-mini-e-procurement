@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
-import { formatDateOnly, parseDateOnly } from '@/lib/date-only';
+import { formatDateOnly, parseDateOnly, parseDateOnlyEnd } from '@/lib/date-only';
 import {
   Select,
   SelectContent,
@@ -124,8 +124,8 @@ export default function StockCardPage() {
     }
     setIsLoading(true);
     try {
-      const from = startOfDay(new Date(dateFrom));
-      const to = endOfDay(new Date(dateTo));
+      const from = parseDateOnly(dateFrom) ?? new Date(NaN);
+      const to = parseDateOnlyEnd(dateTo) ?? new Date(NaN);
       const result = await getStockCard(itemId, { from, to }, variantSku || undefined);
       setData(result);
       setLoadedOnce(true);
@@ -140,8 +140,8 @@ export default function StockCardPage() {
   const loadStockCardByType = useCallback(async () => {
     setIsLoading(true);
     try {
-      const from = startOfDay(new Date(dateFrom));
-      const to = endOfDay(new Date(dateTo));
+      const from = parseDateOnly(dateFrom) ?? new Date(NaN);
+      const to = parseDateOnlyEnd(dateTo) ?? new Date(NaN);
       const result = await getStockCardByType(typeFilter, { from, to });
       setDataByType(result);
       setLoadedOnce(true);
@@ -160,8 +160,8 @@ export default function StockCardPage() {
     }
     setIsLoading(true);
     try {
-      const from = startOfDay(new Date(dateFrom));
-      const to = endOfDay(new Date(dateTo));
+      const from = parseDateOnly(dateFrom) ?? new Date(NaN);
+      const to = parseDateOnlyEnd(dateTo) ?? new Date(NaN);
       const result = await getStockCardByCategory(categoryId, { from, to });
       setDataByCategory(result);
       setLoadedOnce(true);
