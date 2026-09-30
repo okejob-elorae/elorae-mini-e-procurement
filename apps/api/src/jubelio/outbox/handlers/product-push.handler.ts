@@ -139,8 +139,9 @@ export class ProductPushHandler implements OutboxHandler {
      * Jubelio first, then the mappings, and deliberately not in one transaction: the HTTP call has no
      * timeout, so a transaction around it could expire after Jubelio had already deleted. A mapping
      * delete that fails here fails the row, and its retry recomputes `removed` from the surviving
-     * mappings and sends the DELETE again, which Jubelio answers 200 for ids already gone (measured
-     * on prod, 2026-09-30), so the retry converges instead of wedging.
+     * mappings and sends the DELETE again. Jubelio answered 200 to a DELETE of an id that does not
+     * exist (probed on prod 2026-09-30 with one that never existed), and the retry's catalog POST no
+     * longer names a removed variant (see `buildJubelioImages`), so the retry converges.
      */
     if (removed.length > 0) {
       await this.http.delete("/inventory/items/item-variant/", {
@@ -154,30 +155,35 @@ export class ProductPushHandler implements OutboxHandler {
 
     /**
      * `variation_images` can only name variants Jubelio has already given an item id, so a first push
-     * sends none for a newly created variant that has its own images. Now that its mapping exists,
-     * push once more so those images land now rather than on some later edit. A throw here fails the
-     * row, and its retry repeats the whole push, which by then carries the images.
+     * sends none for a variant it created (sent as `item_id: 0`) that has its own images. Now that its
+     * mapping exists, push once more so those images land now rather than on some later edit. A throw
+     * here fails the row, and its retry repeats the whole push, which by then carries the images. The
+     * follow-up only edits: if a variant would still go out unmapped it is skipped, never re-created.
      */
-    const newCodes = new Set(
-      body.product_skus.filter((s) => !existingCodes.has(s.item_code)).map((s) => s.item_code),
+    const createdCodes = new Set(
+      body.product_skus.filter((s) => s.item_id === 0).map((s) => s.item_code),
     );
-    const newVariantHasImages =
+    const createdVariantHasImages =
       hasVariants &&
       refreshedImages.some(
-        (i) => i.variantSku !== null && i.jubelioImageKey !== null && newCodes.has(i.variantSku),
+        (i) => i.variantSku !== null && i.jubelioImageKey !== null && createdCodes.has(i.variantSku),
       );
-    if (newVariantHasImages) {
+    let imagesRePushed = false;
+    if (createdVariantHasImages) {
       const finalMappings = (await this.prisma.jubelioProductMapping.findMany({
         where: { itemId: item.id },
       })) as MappingSlice[];
-      await this.http.post<CatalogPostResponse>(
-        "/inventory/catalog/",
-        buildCreateProductRequest({ ...pushInput, mappings: finalMappings }),
-      );
+      const followUp = buildCreateProductRequest({ ...pushInput, mappings: finalMappings });
+      if (followUp.product_skus.some((s) => s.item_id === 0)) {
+        this.logger.warn(`Item ${item.id}: a variant is still unmapped after the push; skipping the variant-image re-push`);
+      } else {
+        await this.http.post<CatalogPostResponse>("/inventory/catalog/", followUp);
+        imagesRePushed = true;
+      }
     }
 
     this.logger.log(
-      `Pushed item ${item.id} (group=${response.id}, +${newCount} mappings, -${removed.length}${newVariantHasImages ? ", variant images re-pushed" : ""})`,
+      `Pushed item ${item.id} (group=${response.id}, +${newCount} mappings, -${removed.length}${imagesRePushed ? ", variant images re-pushed" : ""})`,
     );
     return { kind: "processed" };
   }

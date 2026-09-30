@@ -338,6 +338,15 @@ describe("ProductPushHandler", () => {
       ]);
     });
 
+    it("skips the re-push rather than create again when a variant is still unmapped", async () => {
+      prisma.jubelioProductMapping.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      prisma.itemImage.findMany.mockResolvedValue([redImage]);
+
+      await handler.handle(row() as any);
+
+      expect(http.post).toHaveBeenCalledTimes(1);
+    });
+
     it("pushes once when no newly mapped variant has an uploaded image", async () => {
       prisma.jubelioProductMapping.findMany.mockResolvedValue([]);
       prisma.itemImage.findMany.mockResolvedValue([{ ...redImage, variantSku: null }]);
