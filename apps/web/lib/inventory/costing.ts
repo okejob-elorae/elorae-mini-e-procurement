@@ -39,7 +39,8 @@ export type StockRef = {
  * resolved id straight back into moveMainStock as inventoryValueId, so two callers reading the
  * same null/"" bucket must land on the same row or they interleave two independent balances under
  * one ledger key. Current callers: grn.ts's declineGRNByOwner insufficient-stock guard,
- * inventory.ts, opname-snapshot.ts, opname-approve.ts,
+ * inventory.ts (getInventoryValue), vendor-returns.ts (vendor return valuation, create and
+ * update), opname-snapshot.ts, opname-approve.ts,
  * canvassing/writer.ts, canvassing/reconcile-writer.ts, konsi-transfer/writer.ts,
  * field-sales/retur/approve-writer.ts, field-sales/konsi-push-writer.ts, and
  * reverseMovingAverage / calculateMovingAverage / reverseInventoryValue below. The one apps/web
@@ -54,7 +55,7 @@ export type StockRef = {
  * shape, tie-break included. Change this helper, change all four.
  *
  * Two further packages/db lookups are deliberately a DIFFERENT shape and must not be
- * "harmonised" onto this one: reservation-writer.ts's findFieldSalesInventory prefers an exact
+ * "harmonised" onto this one: reservation-writer.ts's findReservationInventory prefers an exact
  * "" row and only falls back to null, because a bare OR can decrement the sibling row and orphan
  * reservedQty on an item carrying both spellings; and item-price-writer.ts reads avgCost only,
  * item-level with no variant input at all, so it pins no row and needs no tie-break.

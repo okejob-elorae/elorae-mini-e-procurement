@@ -319,7 +319,7 @@ export async function approveFieldSalesOrder(input: {
         });
         const byId = new Map(items.map((i) => [i.id, i]));
         // Same OR-tolerant (itemId, variantSku) lookup reserveKonsiFieldSalesOrder's own
-        // findFieldSalesInventory uses — a variantless row is stored keyed null, not "".
+        // findReservationInventory uses — a variantless row is stored keyed null, not "".
         const hasInventoryRow = async (itemId: string, variantSku: string) => {
           const inv =
             variantSku === ""

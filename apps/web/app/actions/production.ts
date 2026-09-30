@@ -936,11 +936,11 @@ export async function getAdditionalMaterialsPreview(woId: string, additionalQty:
   for (const rule of accessoryRules) {
     const qtyRequired = Number(rule.qtyRequired);
     const qtyNeeded = Math.ceil(qtyRequired * additionalQty);
-    const inv = await prisma.inventoryValue.findUnique({
-      where: { itemId_variantSku: { itemId: rule.materialId, variantSku: '' } },
-      select: { qtyOnHand: true },
+    const stock = await prisma.inventoryValue.aggregate({
+      where: { itemId: rule.materialId },
+      _sum: { qtyOnHand: true },
     });
-    const qtyOnHand = inv ? Number(inv.qtyOnHand) : 0;
+    const qtyOnHand = Number(stock._sum.qtyOnHand ?? 0);
     lines.push({
       itemId: rule.materialId,
       itemName: rule.material.nameId,
@@ -993,11 +993,11 @@ export async function issueAdditionalMaterials(
   for (const rule of accessoryRules) {
     const qtyRequired = Number(rule.qtyRequired);
     const qtyNeeded = Math.ceil(qtyRequired * additionalQty);
-    const inv = await prisma.inventoryValue.findUnique({
-      where: { itemId_variantSku: { itemId: rule.materialId, variantSku: '' } },
-      select: { qtyOnHand: true },
+    const stock = await prisma.inventoryValue.aggregate({
+      where: { itemId: rule.materialId },
+      _sum: { qtyOnHand: true },
     });
-    const qtyOnHand = inv ? Number(inv.qtyOnHand) : 0;
+    const qtyOnHand = Number(stock._sum.qtyOnHand ?? 0);
     if (qtyOnHand < qtyNeeded) {
       throw new Error(
         `Insufficient stock for ${rule.material.nameId}: need ${qtyNeeded}, have ${qtyOnHand}`
