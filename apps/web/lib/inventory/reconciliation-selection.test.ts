@@ -32,6 +32,13 @@ describe("idsForQuickSelect", () => {
     expect(idsForQuickSelect(rows, "JUBELIO_HIGHER")).toEqual(["neg-jubelio-higher", "pos-jubelio-higher"]);
   });
 
+  it("JUBELIO_HIGHER skips a FLAGGED row with no Jubelio figure, while the other rules keep it", () => {
+    const noFigure: ReconSelectableRow = { id: "no-figure", action: "FLAGGED", eloraeQty: -2, variance: null };
+    expect(idsForQuickSelect([noFigure], "JUBELIO_HIGHER")).toEqual([]);
+    expect(idsForQuickSelect([noFigure], "ALL_FLAGGED")).toEqual(["no-figure"]);
+    expect(idsForQuickSelect([noFigure], "ELORAE_NEGATIVE")).toEqual(["no-figure"]);
+  });
+
   it("returns nothing for a run with no FLAGGED rows", () => {
     expect(idsForQuickSelect([rows[3], rows[4]], "ALL_FLAGGED")).toEqual([]);
   });

@@ -93,13 +93,9 @@ export type ReconRowInput = {
 
 export type ReconRowOutcome = {
   classified: ClassifyResult;
-  /**
-   * What the non-null `jubelioQty`/`variance` columns store. A missing Jubelio figure stores 0
-   * and `variance = eloraeQty` because the columns cannot hold null; the row is always FLAGGED,
-   * so that stored 0 is never compared or written.
-   */
-  storedJubelioQty: number;
-  variance: number;
+  /** What the nullable `jubelioQty`/`variance` columns store: both `null` when Jubelio had no figure. */
+  storedJubelioQty: number | null;
+  variance: number | null;
 };
 
 /**
@@ -111,8 +107,8 @@ export function classifyReconRow(input: ReconRowInput): ReconRowOutcome {
   if (input.jubelioQty === null) {
     return {
       classified: { action: "FLAGGED", needsStockWrite: false, needsPush: false },
-      storedJubelioQty: 0,
-      variance: input.eloraeQty,
+      storedJubelioQty: null,
+      variance: null,
     };
   }
   const variance = new Decimal(input.eloraeQty).minus(input.jubelioQty).toDecimalPlaces(2).toNumber();

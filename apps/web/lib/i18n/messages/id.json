@@ -1485,6 +1485,8 @@
     "eloraeQty": "Elorae (basis Jubelio)",
     "jubelioQty": "Qty Jubelio",
     "variance": "Selisih",
+    "noJubelioFigure": "Tidak ada angka Jubelio",
+    "rowFailed": "Gagal: {message}",
     "action": "Aksi",
     "item": "Item",
     "results": "Hasil",

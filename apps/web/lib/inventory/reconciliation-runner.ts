@@ -299,60 +299,91 @@ export async function runReconciliation(
       jubelioRows.map((r) => [`${r.itemId}:${r.variantSku}`, r]),
     );
 
+    let failedCount = 0;
+
     for (const mapping of fgMappings) {
       const variantSku = mapping.erpVariantSku ?? "";
-      // OR-tolerant match on the variantless spelling only. Dropped the old fallback to an
-      // unrelated variant row on the same item — a mapping whose variant genuinely has no
-      // InventoryValue row now compares against 0 instead of a sibling variant's quantity.
-      const invRow = mapping.item.inventoryValues.find((iv) =>
-        variantSku === "" ? (iv.variantSku ?? "") === "" : iv.variantSku === variantSku,
-      );
-      const rawQtyOnHand = invRow ? Number(invRow.qtyOnHand) : 0;
-      const offline = offlineByKey.get(`${mapping.itemId}:${variantSku}`) ?? 0;
-      const eloraeQty = comparableEloraeQty(rawQtyOnHand, offline, pushEnabled);
-      /* A variant the snapshot had no usable figure for is null, never 0 — see classifyReconRow. */
-      const jubelioQty = jubelioByKey.get(`${mapping.itemId}:${variantSku}`)?.jubelioQty ?? null;
-      const { classified, storedJubelioQty, variance } = classifyReconRow({
-        eloraeQty,
-        jubelioQty,
-        threshold: config.threshold,
-        direction: config.direction,
-        pushEnabled,
-      });
+      let eloraeQty = 0;
+      let storedJubelioQty: number | null = null;
+      let variance: number | null = null;
+      try {
+        // OR-tolerant match on the variantless spelling only. Dropped the old fallback to an
+        // unrelated variant row on the same item — a mapping whose variant genuinely has no
+        // InventoryValue row now compares against 0 instead of a sibling variant's quantity.
+        const invRow = mapping.item.inventoryValues.find((iv) =>
+          variantSku === "" ? (iv.variantSku ?? "") === "" : iv.variantSku === variantSku,
+        );
+        const rawQtyOnHand = invRow ? Number(invRow.qtyOnHand) : 0;
+        const offline = offlineByKey.get(`${mapping.itemId}:${variantSku}`) ?? 0;
+        eloraeQty = comparableEloraeQty(rawQtyOnHand, offline, pushEnabled);
+        /* A variant the snapshot had no usable figure for is null, never 0 — see classifyReconRow. */
+        const jubelioQty = jubelioByKey.get(`${mapping.itemId}:${variantSku}`)?.jubelioQty ?? null;
+        const { classified, ...figures } = classifyReconRow({
+          eloraeQty,
+          jubelioQty,
+          threshold: config.threshold,
+          direction: config.direction,
+          pushEnabled,
+        });
+        storedJubelioQty = figures.storedJubelioQty;
+        variance = figures.variance;
 
-      totalScanned += 1;
-      if (classified.action === "IN_SYNC") inSync += 1;
-      else if (classified.action === "AUTO_CORRECTED") autoCorrected += 1;
-      else if (classified.action === "FLAGGED") flagged += 1;
+        /* The MATCH_JUBELIO correction is its own transaction, so a throw here has already rolled back. */
+        if (classified.needsStockWrite && config.direction === "MATCH_JUBELIO" && jubelioQty !== null) {
+          await prisma.$transaction(async (tx) => {
+            await applyMatchJubelio(tx, {
+              runId: run.id,
+              itemId: mapping.itemId,
+              variantSku,
+              itemName: mapping.item.nameId,
+              jubelioQty,
+              userId: startedById,
+            });
+          });
+        } else if (classified.needsPush && config.direction === "REASSERT_ELORAE") {
+          await enqueueReconStockPush(mapping.itemId, startedById ?? "");
+        }
 
-      if (classified.needsStockWrite && config.direction === "MATCH_JUBELIO" && jubelioQty !== null) {
-        await prisma.$transaction(async (tx) => {
-          await applyMatchJubelio(tx, {
+        await prisma.reconciliationResult.create({
+          data: {
             runId: run.id,
             itemId: mapping.itemId,
-            variantSku,
+            variantSku: variantSku || null,
             itemName: mapping.item.nameId,
-            jubelioQty,
-            userId: startedById,
-          });
+            jubelioItemId: mapping.jubelioItemId,
+            eloraeQty,
+            jubelioQty: storedJubelioQty,
+            variance,
+            action: classified.action,
+          },
         });
-      } else if (classified.needsPush && config.direction === "REASSERT_ELORAE") {
-        await enqueueReconStockPush(mapping.itemId, startedById ?? "");
-      }
 
-      await prisma.reconciliationResult.create({
-        data: {
-          runId: run.id,
-          itemId: mapping.itemId,
-          variantSku: variantSku || null,
-          itemName: mapping.item.nameId,
-          jubelioItemId: mapping.jubelioItemId,
-          eloraeQty,
-          jubelioQty: storedJubelioQty,
-          variance,
-          action: classified.action,
-        },
-      });
+        /* Counted only once the row is stored, so the counters equal the stored actions. */
+        totalScanned += 1;
+        if (classified.action === "IN_SYNC") inSync += 1;
+        else if (classified.action === "AUTO_CORRECTED") autoCorrected += 1;
+        else if (classified.action === "FLAGGED") flagged += 1;
+      } catch (err) {
+        console.error(`[reconciliation] item ${mapping.itemId} variant "${variantSku}" failed`, err);
+        /* A throw here means the fallback write itself failed: the database is failing, not one item. */
+        await prisma.reconciliationResult.create({
+          data: {
+            runId: run.id,
+            itemId: mapping.itemId,
+            variantSku: variantSku || null,
+            itemName: mapping.item.nameId,
+            jubelioItemId: mapping.jubelioItemId,
+            eloraeQty,
+            jubelioQty: storedJubelioQty,
+            variance,
+            action: "FLAGGED",
+            errorMessage: err instanceof Error ? err.message : String(err),
+          },
+        });
+        totalScanned += 1;
+        flagged += 1;
+        failedCount += 1;
+      }
     }
 
     await prisma.reconciliationRun.update({
@@ -364,6 +395,10 @@ export async function runReconciliation(
         inSync,
         autoCorrected,
         flagged,
+        errorMessage:
+          failedCount > 0
+            ? `${failedCount} of ${totalScanned} items failed to reconcile; see the flagged rows`
+            : null,
       },
     });
 
@@ -437,8 +472,8 @@ async function resolveOneResult(
 
     /*
      * Re-fetch a live figure for just this item group rather than trusting the run's stored
-     * snapshot, which may already be stale — and which stored 0 for a variant it had no figure
-     * for. No live figure means nothing is written.
+     * snapshot, which may already be stale — and which holds no figure for a variant the
+     * snapshot lacked. No live figure means nothing is written.
      */
     const liveRows = await liveGroupSnapshot(groups, mapping.jubelioItemGroupId);
     if (!liveRows) return { success: false, reason: "JUBELIO_FETCH_FAILED" };

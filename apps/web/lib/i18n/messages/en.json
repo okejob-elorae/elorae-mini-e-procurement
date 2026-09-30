@@ -1485,6 +1485,8 @@
     "eloraeQty": "Elorae (Jubelio basis)",
     "jubelioQty": "Jubelio qty",
     "variance": "Variance",
+    "noJubelioFigure": "No Jubelio figure",
+    "rowFailed": "Failed: {message}",
     "action": "Action",
     "item": "Item",
     "results": "Results",
