@@ -12,14 +12,24 @@ afterEach(() => {
 });
 
 describe("apiFetch timeout", () => {
-  it("passes an AbortSignal to fetch", async () => {
+  it("passes an AbortSignal to fetch when timeoutMs is given", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await apiFetch("POST", "/jubelio/outbox/enqueue/1", { userId: "u1" });
+    await apiFetch("POST", "/jubelio/outbox/enqueue/1", { userId: "u1", timeoutMs: 15_000 });
 
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("passes no signal to fetch when timeoutMs is omitted", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await apiFetch("POST", "/jubelio/catalog/sync", { userId: "u1" });
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(init.signal).toBeUndefined();
   });
 
   it("resolves a synthetic 504 when fetch rejects with a TimeoutError", async () => {

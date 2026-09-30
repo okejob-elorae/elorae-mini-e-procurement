@@ -108,6 +108,21 @@ describe("POST /api/finance/settlements/upload dedupe", () => {
     expect(await res.json()).toEqual({ error: "DUPLICATE_FILE", settlementId: "winner-1" });
   });
 
+  it("returns 409 with the winner's id when the loser's transaction expires waiting on the winner (P2028)", async () => {
+    mockFindFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "winner-1" });
+    mockPersist.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("Transaction already closed", {
+        code: "P2028",
+        clientVersion: "test",
+      }),
+    );
+
+    const res = await POST(buildRequest());
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "DUPLICATE_FILE", settlementId: "winner-1" });
+  });
+
   it("does not turn any other persist error into a 409", async () => {
     mockFindFirst.mockResolvedValue(null);
     mockPersist.mockRejectedValue(new Error("db down"));

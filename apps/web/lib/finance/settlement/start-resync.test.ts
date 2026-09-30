@@ -69,6 +69,7 @@ describe("startSettlementResync", () => {
     expect(apiFetch).toHaveBeenCalledWith("POST", "/jubelio/salesorders/resync", {
       userId: "u1",
       body: { salesorderNos: ["SP-111", "SP-222"] },
+      timeoutMs: 15_000,
     });
     expect(prisma.settlement.update).toHaveBeenCalledTimes(1);
     expect(prisma.settlement.update).toHaveBeenCalledWith({

@@ -55,8 +55,6 @@ export type ApiFetchResult<T> = {
   error?: string;
 };
 
-const DEFAULT_TIMEOUT_MS = 15_000;
-
 export async function apiFetch<T = unknown>(
   method: string,
   path: string,
@@ -79,7 +77,12 @@ export async function apiFetch<T = unknown>(
   };
   if (bodyStr) headers["Content-Type"] = "application/json";
 
-  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  /**
+   * The timeout is opt-in on purpose: some callers (the catalog sync, the reconciliation snapshot)
+   * run synchronously far longer than a short limit, and a timed-out caller would report failure
+   * while the api keeps writing. With no `timeoutMs` no signal is passed.
+   */
+  const { timeoutMs } = opts;
   let res: Response;
   let text: string;
   try {
@@ -87,13 +90,13 @@ export async function apiFetch<T = unknown>(
       method: method.toUpperCase(),
       headers,
       body: bodyStr || undefined,
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: timeoutMs === undefined ? undefined : AbortSignal.timeout(timeoutMs),
     });
-    /* The same signal also aborts a stalled body read, so it stays inside the try. */
+    /* The signal, when there is one, also aborts a stalled body read, so this stays inside the try. */
     text = await res.text();
   } catch (err) {
     if (err instanceof DOMException && err.name === "TimeoutError") {
-      /* 504 is synthetic: no complete response was received, so this is not a status the api sent. */
+      /* 504 is synthetic: no complete response was received, so it is not a status the api sent. */
       return {
         ok: false,
         status: 504,

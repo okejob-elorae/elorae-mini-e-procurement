@@ -24,6 +24,8 @@ export async function startSettlementResync(
   const r = await apiFetch<{ batchId: string; seeded: number }>("POST", "/jubelio/salesorders/resync", {
     userId,
     body: { salesorderNos },
+    /* The seed only inserts rows; the work runs in a background queue. */
+    timeoutMs: 15_000,
   });
   if (!r.ok || !r.data) {
     return {

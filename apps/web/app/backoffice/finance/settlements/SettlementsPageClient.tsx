@@ -210,7 +210,10 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
                   type="file"
                   accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                   disabled={uploading}
-                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  onChange={(e) => {
+                    setFile(e.target.files?.[0] ?? null);
+                    setDuplicateSettlementId(null);
+                  }}
                 />
               </div>
               <Button onClick={handleUpload} disabled={!file || uploading} className="sm:w-auto">
