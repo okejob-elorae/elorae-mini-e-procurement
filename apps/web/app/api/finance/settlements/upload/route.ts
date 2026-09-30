@@ -83,10 +83,11 @@ export async function POST(request: NextRequest) {
         fileSha256,
       });
     } catch (err) {
-      /*
+      /**
        * Two identical uploads racing: the loser trips the (marketplace, fileSha256) unique (P2002), or
        * expires waiting on the winner's uncommitted key inside the interactive transaction (P2028).
-       * Either way it points at the winner.
+       * A committed row with this hash means it is a duplicate; with none, the error was this upload's
+       * own (a P2028 on a slow insert), and it rethrows.
        */
       if (err instanceof Prisma.PrismaClientKnownRequestError && (err.code === "P2002" || err.code === "P2028")) {
         const winner = await prisma.settlement.findFirst({
