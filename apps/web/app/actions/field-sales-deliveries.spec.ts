@@ -290,6 +290,32 @@ d("updateDeliveryDatesAction (test bed only)", () => {
     expect(await prisma.auditLog.count({ where: { entityId: seededId(deliveryId) } })).toBe(0);
   });
 
+  it("refuses a reason longer than the audit column instead of dying at insert", async () => {
+    const result = await updateDeliveryDatesAction({
+      deliveryId,
+      invoiceDate: "2026-04-10",
+      dueDate: "2026-04-20",
+      reason: "x".repeat(192),
+    });
+
+    expect(result).toEqual({ ok: false, reason: "INVALID_REQUEST" });
+    expect(await currentDates()).toMatchObject({ dueDate: DUE.toISOString() });
+    expect(await prisma.auditLog.count({ where: { entityId: seededId(deliveryId) } })).toBe(0);
+  });
+
+  it("accepts a reason of exactly 191 characters", async () => {
+    const result = await updateDeliveryDatesAction({
+      deliveryId,
+      invoiceDate: "2026-04-10",
+      dueDate: "2026-04-20",
+      reason: "y".repeat(191),
+    });
+
+    expect(result).toEqual({ ok: true });
+    const logs = await prisma.auditLog.findMany({ where: { entityId: seededId(deliveryId) } });
+    expect(logs[0].reason).toHaveLength(191);
+  });
+
   it("rejects a due date earlier than the invoice date", async () => {
     const result = await updateDeliveryDatesAction({
       deliveryId,

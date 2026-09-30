@@ -1,4 +1,4 @@
-import { reserveFieldSalesOrder, releaseFieldSalesOrder, reserveKonsiFieldSalesOrder, type OversellAlert, type AdminNotification, type Prisma } from "@elorae/db";
+import { prisma, reserveFieldSalesOrder, releaseFieldSalesOrder, reserveKonsiFieldSalesOrder, type OversellAlert, type AdminNotification, type Prisma } from "@elorae/db";
 import { effectiveMinQty, validateMinQtyLines } from "@elorae/db/field-sales";
 import { computeStorePrice } from "@elorae/db/pricing";
 import { applyItemAggregatedPromos } from "./promo-apply";
@@ -6,10 +6,13 @@ import { fetchActivePromosForStore } from "@/lib/promos/queries";
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import { sendNotificationToUsers } from "@/lib/notifications/recipients";
 import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
 import { NoActiveVisitError, MinQtyViolationError, InvalidOrderTransitionError, InsufficientStockError, InvalidAddedLineError, CreditLimitExceededError } from "./errors";
 import { sentItemIds } from "./queries";
 import { openKonsiQtyByKey } from "./konsi-open-qty";
+
+const AUDIT_REASON_MAX_LENGTH = 191;
 
 type CreateLine = {
   itemId: string;
@@ -441,7 +444,8 @@ export async function approveFieldSalesOrder(input: {
             action: "CREDIT_LIMIT_OVERRIDE",
             entityType: "FieldSalesOrder",
             entityId: order.id,
-            reason,
+            /* `AuditLog.reason` is VARCHAR(191); the full reason is kept on `creditOverrideReason` (`@db.Text`). */
+            reason: Array.from(reason).slice(0, AUDIT_REASON_MAX_LENGTH).join(""),
             metadata: { exposure, creditLimit, orderTotal: total },
           },
         });
@@ -542,11 +546,16 @@ export async function approveKonsiOrderInTx(
   });
 }
 
+/** The salesman's rejection notice. The notification helper caps it to its `VARCHAR(191)` column; the full reason stays on the order. */
+export function buildOrderRejectionBody(orderNo: string, reason: string | undefined): string {
+  return reason ? `Order ${orderNo} ditolak: ${reason}` : `Order ${orderNo} ditolak`;
+}
+
 export async function rejectFieldSalesOrder(input: { orderId: string; rejectedById: string; reason?: string }): Promise<{ ok: true }> {
-  return runSerializable(async (tx) => {
+  const rejected = await runSerializable(async (tx) => {
     const order = await tx.fieldSalesOrder.findUnique({ where: { id: input.orderId }, include: { lines: { select: { id: true } } } });
     if (!order) throw new InvalidOrderTransitionError("MISSING", "REJECTED");
-    if (order.status === "REJECTED") return { ok: true };
+    if (order.status === "REJECTED") return null;
     if (order.status !== "PENDING_APPROVAL") throw new InvalidOrderTransitionError(order.status, "REJECTED");
 
     await releaseFieldSalesOrder(tx, { fieldSalesLineIds: order.lines.map((l) => l.id) });
@@ -554,6 +563,28 @@ export async function rejectFieldSalesOrder(input: { orderId: string; rejectedBy
       where: { id: order.id },
       data: { status: "REJECTED", rejectedAt: new Date(), rejectedById: input.rejectedById, rejectReason: input.reason },
     });
-    return { ok: true };
+    return { orderId: order.id, orderNo: order.orderNo, storeId: order.storeId, salesmanId: order.salesmanId };
   });
+
+  /*
+   * After the commit and best-effort: the rejection already stands, so a failed push must never
+   * surface as a failed reject. An idempotent replay of an already-rejected order returns null
+   * above and notifies nobody a second time.
+   */
+  if (rejected) {
+    try {
+      const salesman = await prisma.user.findUnique({ where: { id: rejected.salesmanId }, select: { id: true, fcmToken: true } });
+      if (salesman) {
+        await sendNotificationToUsers([salesman], {
+          type: "FIELD_SALES_ORDER_REJECTED",
+          title: `Order ${rejected.orderNo} ditolak`,
+          body: buildOrderRejectionBody(rejected.orderNo, input.reason),
+          data: { orderId: rejected.orderId, orderNo: rejected.orderNo, storeId: rejected.storeId },
+        });
+      }
+    } catch (err) {
+      console.error(`[field-sales] rejection notice failed for ${rejected.orderNo}`, err);
+    }
+  }
+  return { ok: true };
 }

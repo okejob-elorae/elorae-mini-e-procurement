@@ -15,6 +15,8 @@ import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "@
 import { isArJournalRetryable } from "@/lib/finance/ar/journal-pending";
 import { logPrint } from "./audit";
 
+const AUDIT_REASON_MAX_LENGTH = 191;
+
 export type DeliveryActionResult =
   | { ok: true }
   | {
@@ -201,7 +203,8 @@ export async function updateDeliveryDatesAction(input: {
     return { ok: false, reason: "INVALID_REQUEST" };
   }
   const reason = input.reason.trim();
-  if (reason === "") {
+  /* The audit row is the only record of this reason and `AuditLog.reason` is VARCHAR(191), so refuse rather than truncate. */
+  if (reason === "" || Array.from(reason).length > AUDIT_REASON_MAX_LENGTH) {
     return { ok: false, reason: "INVALID_REQUEST" };
   }
 
@@ -397,7 +400,7 @@ export async function postFieldDeliveryJournalsAction(deliveryId: string): Promi
 export async function closeRemainderAction(orderId: string, reason: string): Promise<DeliveryActionResult> {
   const g = await guard();
   if ("ok" in g) return g;
-  if (reason.trim() === "") return { ok: false, reason: "INVALID_STATE" };
+  if (typeof reason !== "string" || reason.trim() === "") return { ok: false, reason: "INVALID_STATE" };
   try {
     await closeFieldSalesOrderRemainder({ orderId, closedById: g.userId, reason: reason.trim() });
   } catch (e) {

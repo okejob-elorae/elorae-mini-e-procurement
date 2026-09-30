@@ -4,6 +4,8 @@ import { createFieldSalesOrder, approveFieldSalesOrder, rejectFieldSalesOrder } 
 import { NoActiveVisitError, MinQtyViolationError, InsufficientStockError, CreditLimitExceededError } from "./errors";
 
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
+const { mockSendNotification } = vi.hoisted(() => ({ mockSendNotification: vi.fn() }));
+vi.mock("@/lib/notifications/recipients", () => ({ sendNotificationToUsers: mockSendNotification }));
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -163,6 +165,34 @@ d("field-sales lifecycle writers (test bed only)", () => {
     expect(order!.status).toBe("REJECTED");
   });
 
+  it("reject tells the salesman why, once — a replay of the rejection notifies nobody again", async () => {
+    const { orderId, orderNo } = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [line()] });
+    mockSendNotification.mockClear();
+    await rejectFieldSalesOrder({ orderId, rejectedById: salesmanId, reason: "stok habis" });
+    await rejectFieldSalesOrder({ orderId, rejectedById: salesmanId, reason: "stok habis" });
+    expect(mockSendNotification).toHaveBeenCalledTimes(1);
+    const [users, payload] = mockSendNotification.mock.calls[0];
+    expect(users).toEqual([expect.objectContaining({ id: salesmanId })]);
+    expect(payload).toMatchObject({
+      type: "FIELD_SALES_ORDER_REJECTED",
+      body: `Order ${orderNo} ditolak: stok habis`,
+      data: { orderId, orderNo, storeId },
+    });
+  });
+
+  it("a failed rejection notice does not fail the rejection", async () => {
+    const { orderId } = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [line()] });
+    mockSendNotification.mockRejectedValueOnce(new Error("queue down"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await expect(rejectFieldSalesOrder({ orderId, rejectedById: salesmanId, reason: "no" })).resolves.toEqual({ ok: true });
+    } finally {
+      errSpy.mockRestore();
+    }
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId } });
+    expect(order!.status).toBe("REJECTED");
+  });
+
   it("putus create applies an active line promo → discountAmount persisted, total is net", async () => {
     await prisma.item.update({ where: { id: itemId }, data: { minOrderQty: 1, sellingPrice: 100 } });
     const promo = await prisma.promo.create({
@@ -286,6 +316,18 @@ d("field-sales lifecycle writers (test bed only)", () => {
     expect(Number(order!.creditLimitAtApprove)).toBe(100_000);
     const auditLog = await prisma.auditLog.findFirst({ where: { action: "CREDIT_LIMIT_OVERRIDE", entityId: orderId } });
     expect(auditLog).not.toBeNull();
+  });
+
+  it("keeps a long override reason whole on the order and caps only its audit copy at the column", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 100_000 } });
+    const { orderId } = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [{ ...line(), qty: 6, unitPrice: 100_000 }] });
+    const reason = "r".repeat(250);
+    await approveFieldSalesOrder({ orderId, approvedById: salesmanId, creditOverrideReason: reason });
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId } });
+    expect(order!.status).toBe("APPROVED");
+    expect(order!.creditOverrideReason).toBe(reason);
+    const auditLog = await prisma.auditLog.findFirst({ where: { action: "CREDIT_LIMIT_OVERRIDE", entityId: orderId } });
+    expect(auditLog!.reason).toBe("r".repeat(191));
   });
 
   it("an order flagged over-limit at create but back within limit by approve time needs no override reason", async () => {

@@ -25,7 +25,7 @@ vi.mock("@/lib/field-sales/writer", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
 import { InsufficientStockError, InvalidAddedLineError } from "@/lib/field-sales/errors";
-import { approveFieldSalesOrderAction } from "./field-sales-orders";
+import { approveFieldSalesOrderAction, rejectFieldSalesOrderAction } from "./field-sales-orders";
 
 describe("approveFieldSalesOrderAction (unit — writer mocked)", () => {
   beforeEach(() => {
@@ -167,5 +167,31 @@ describe("approveFieldSalesOrderAction (unit — writer mocked)", () => {
     const result = await approveFieldSalesOrderAction("order-1", undefined, undefined, "toko sudah janji bayar");
     expect(result).toEqual({ ok: false, reason: "FORBIDDEN" });
     expect(mockApprove).not.toHaveBeenCalled();
+  });
+});
+
+describe("rejectFieldSalesOrderAction (unit — writer mocked)", () => {
+  beforeEach(() => {
+    mockAuth.mockReset();
+    mockHasPermission.mockReset();
+    mockReject.mockReset();
+    mockAuth.mockResolvedValue({ user: { id: "user-1", permissions: ["field_sales_orders:approve"] } });
+    mockHasPermission.mockReturnValue(true);
+  });
+
+  it("refuses a blank reason without calling the writer", async () => {
+    expect(await rejectFieldSalesOrderAction("o1", "   ")).toEqual({ ok: false, reason: "REASON_REQUIRED" });
+    expect(mockReject).not.toHaveBeenCalled();
+  });
+
+  it("refuses a non-string reason instead of throwing on it", async () => {
+    expect(await rejectFieldSalesOrderAction("o1", undefined as unknown as string)).toEqual({ ok: false, reason: "REASON_REQUIRED" });
+    expect(mockReject).not.toHaveBeenCalled();
+  });
+
+  it("passes the trimmed reason to the writer", async () => {
+    mockReject.mockResolvedValue({ ok: true });
+    expect(await rejectFieldSalesOrderAction("o1", "  stok habis  ")).toEqual({ ok: true });
+    expect(mockReject).toHaveBeenCalledWith({ orderId: "o1", rejectedById: "user-1", reason: "stok habis" });
   });
 });

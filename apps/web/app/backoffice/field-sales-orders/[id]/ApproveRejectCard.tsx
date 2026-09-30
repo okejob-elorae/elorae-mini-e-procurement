@@ -189,6 +189,8 @@ export function ApproveRejectCard({
         default:
           toast.error(t("konsiSuggestions.errInvalidAddedLineGeneric"));
       }
+    } else if (r.reason === "REASON_REQUIRED") {
+      toast.error(t("errRejectReasonRequired"));
     } else if (r.reason === "INVALID_FINAL_PRICE") {
       toast.error(t("errInvalidFinalPrice"));
     } else if (r.reason === "CREDIT_LIMIT_EXCEEDED") {

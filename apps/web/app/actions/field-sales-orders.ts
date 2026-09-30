@@ -27,7 +27,8 @@ export type ActionResult =
         | "INSUFFICIENT_STOCK"
         | "INVALID_FINAL_PRICE"
         | "INVALID_ADDED_LINE"
-        | "CREDIT_LIMIT_EXCEEDED";
+        | "CREDIT_LIMIT_EXCEEDED"
+        | "REASON_REQUIRED";
       /* Only ever present on INSUFFICIENT_STOCK. Optional because rejectFieldSalesOrderAction shares this type. */
       shortLines?: ShortLine[];
       /* Only ever present on INVALID_ADDED_LINE. */
@@ -194,8 +195,10 @@ export async function createKonsiPushOrderAction(input: unknown): Promise<KonsiP
 export async function rejectFieldSalesOrderAction(orderId: string, reason: string): Promise<ActionResult> {
   const g = await guard();
   if ("ok" in g) return g;
+  /* The salesman is told why; the dialog withholding Reject on a blank reason is not a guarantee. */
+  if (typeof reason !== "string" || reason.trim() === "") return { ok: false, reason: "REASON_REQUIRED" };
   try {
-    await rejectFieldSalesOrder({ orderId, rejectedById: g.userId, reason: reason.trim() || undefined });
+    await rejectFieldSalesOrder({ orderId, rejectedById: g.userId, reason: reason.trim() });
   } catch (e) {
     if (e instanceof InvalidOrderTransitionError) {
       return { ok: false, reason: e.from === "MISSING" ? "NOT_FOUND" : "INVALID_TRANSITION" };

@@ -122,6 +122,13 @@ export function getNotificationHref(
       }
       return '/pwa/pelunasan';
     }
+    case "FIELD_SALES_ORDER_REJECTED": {
+      const storeId = data.storeId;
+      if (typeof storeId === "string" && storeId !== "") {
+        return `/pwa/stores/${storeId}`;
+      }
+      return "/pwa/stores";
+    }
     case "KONSI_COUNT_DUE":
     case "KONSI_COUNT_OVERDUE": {
       if (context === "pwa") return "/pwa/spg/stocktake";

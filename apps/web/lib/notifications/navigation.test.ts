@@ -1,6 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { getNotificationHref } from "./navigation";
 
+describe("getNotificationHref — field sales order rejection", () => {
+  it("opens the store the rejected order was for, in the PWA", () => {
+    expect(getNotificationHref("FIELD_SALES_ORDER_REJECTED", { orderId: "o1", storeId: "s1" }, "pwa")).toBe("/pwa/stores/s1");
+    expect(getNotificationHref("FIELD_SALES_ORDER_REJECTED", {}, "pwa")).toBe("/pwa/stores");
+  });
+});
+
 describe("getNotificationHref — konsi count schedule and report categories", () => {
   it("opens the stocktake a count notification names, in the backoffice", () => {
     expect(getNotificationHref("KONSI_COUNT_DUE", { storeId: "s1", stocktakeId: "st1" })).toBe("/backoffice/store-stocktakes/st1");

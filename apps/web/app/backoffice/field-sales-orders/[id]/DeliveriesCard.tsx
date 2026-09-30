@@ -617,6 +617,7 @@ export function DeliveriesCard({
               onChange={(e) => setEditReason(e.target.value)}
               disabled={isPending}
               rows={3}
+              maxLength={191}
             />
           </div>
           <DialogFooter>
