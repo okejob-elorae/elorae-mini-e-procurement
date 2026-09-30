@@ -53,6 +53,13 @@ function runStatusBadgeVariant(status: string): "default" | "secondary" | "destr
   }
 }
 
+/* A row that failed during the run and was not resolved since; the header count and the row marker share it so they agree. */
+function isUnresolvedFailure<T extends { action: string; errorMessage: string | null }>(
+  row: T,
+): row is T & { errorMessage: string } {
+  return row.errorMessage !== null && row.action !== "MANUALLY_RESOLVED";
+}
+
 export function ReconciliationRunDetailClient({
   runId,
   initialPushEnabled,
@@ -134,7 +141,7 @@ export function ReconciliationRunDetailClient({
     return <p className="text-muted-foreground py-8">{t("notFound")}</p>;
   }
 
-  const failedRowCount = run.results.filter((r) => r.errorMessage !== null).length;
+  const failedRowCount = run.results.filter(isUnresolvedFailure).length;
 
   return (
     <div className="space-y-6">
@@ -225,7 +232,7 @@ export function ReconciliationRunDetailClient({
                       {row.variantSku ? (
                         <div className="text-xs text-muted-foreground">{row.variantSku}</div>
                       ) : null}
-                      {row.action === "FLAGGED" && row.errorMessage ? (
+                      {isUnresolvedFailure(row) ? (
                         <div
                           className="max-w-xs truncate text-xs text-destructive"
                           title={row.errorMessage}
