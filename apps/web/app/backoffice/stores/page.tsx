@@ -1,9 +1,11 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { prisma } from "@elorae/db";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
-import { listStores } from "@/lib/stores/queries";
+import { listStores, parseStoreLocationFilter } from "@/lib/stores/queries";
 import { listPendingStoreChangeStoreIds } from "@/lib/store-changes/queries";
+import { parseRadiusSetting, resolveEffectiveRadius } from "@/lib/pwa/checkin-radius";
 import { StoreListClient } from "./StoreListClient";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +14,7 @@ type PageProps = {
   searchParams: Promise<{
     search?: string;
     showInactive?: string;
+    location?: string;
     page?: string;
     pageSize?: string;
   }>;
@@ -35,11 +38,26 @@ export default async function StoresPage({ searchParams }: PageProps) {
   const showInactive = sp.showInactive === "1";
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const pageSize = parsePageSize(sp.pageSize);
+  const location = parseStoreLocationFilter(sp.location);
 
-  const { items, totalCount } = await listStores(
-    { activeOnly: !showInactive, search: search || undefined },
-    { page, pageSize },
-  );
+  const [{ items, totalCount }, globalRadiusRow] = await Promise.all([
+    listStores(
+      { activeOnly: !showInactive, search: search || undefined, location },
+      { page, pageSize },
+    ),
+    prisma.systemSetting.findUnique({ where: { key: "checkin.radiusMeters" } }),
+  ]);
+  const globalRadius = parseRadiusSetting(globalRadiusRow?.value);
+  const radiusByStoreId: Record<string, { meters: number; custom: boolean } | null> = {};
+  for (const s of items) {
+    radiusByStoreId[s.id] =
+      s.lat === null || s.lng === null
+        ? null
+        : {
+            meters: resolveEffectiveRadius(s.checkinRadiusMeters, globalRadius),
+            custom: s.checkinRadiusMeters !== null,
+          };
+  }
 
   const pendingSet = await listPendingStoreChangeStoreIds(items.map((s) => s.id));
 
@@ -49,6 +67,8 @@ export default async function StoresPage({ searchParams }: PageProps) {
       totalCount={totalCount}
       search={search}
       showInactive={showInactive}
+      location={location ?? ""}
+      radiusByStoreId={radiusByStoreId}
       page={page}
       pageSize={pageSize}
       pendingStoreIds={Array.from(pendingSet)}

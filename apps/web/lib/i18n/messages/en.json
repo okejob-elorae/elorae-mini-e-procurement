@@ -2509,6 +2509,19 @@
       "cardTitle": "Store list",
       "searchPlaceholder": "Search by name or code",
       "showInactive": "Show inactive",
+      "reset": "Reset",
+      "locationFilter": {
+        "label": "Location",
+        "all": "All locations",
+        "missing": "Missing coordinates",
+        "defaultRadius": "Using default radius",
+        "customRadius": "Custom radius"
+      },
+      "locationEmpty": {
+        "missing": "All active stores have coordinates.",
+        "defaultRadius": "No stores are using the default radius.",
+        "customRadius": "No stores have a custom radius."
+      },
       "table": {
         "code": "Code",
         "name": "Name",
@@ -2518,7 +2531,12 @@
         "discount": "Discount %",
         "address": "Address",
         "status": "Status",
-        "active": "Active"
+        "active": "Active",
+        "location": "Location",
+        "noCoordinates": "No coordinates",
+        "radiusMeters": "{meters} m",
+        "radiusDefault": "default",
+        "radiusCustom": "custom"
       }
     },
     "form": {

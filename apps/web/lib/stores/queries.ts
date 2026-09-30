@@ -208,8 +208,31 @@ function serializeStore(s: {
   };
 }
 
+export const STORE_LOCATION_FILTERS = ["missing", "defaultRadius", "customRadius"] as const;
+export type StoreLocationFilter = (typeof STORE_LOCATION_FILTERS)[number];
+
+export function parseStoreLocationFilter(raw: string | undefined): StoreLocationFilter | undefined {
+  return STORE_LOCATION_FILTERS.find((v) => v === raw);
+}
+
+/* undefined is the only spelling of "no filter". */
+export function buildStoreLocationWhere(
+  location: StoreLocationFilter | undefined,
+): Prisma.StoreWhereInput | undefined {
+  switch (location) {
+    case "missing":
+      return { OR: [{ lat: null }, { lng: null }] };
+    case "defaultRadius":
+      return { lat: { not: null }, lng: { not: null }, checkinRadiusMeters: null };
+    case "customRadius":
+      return { checkinRadiusMeters: { not: null } };
+    default:
+      return undefined;
+  }
+}
+
 export async function listStores(
-  opts: { activeOnly?: boolean; search?: string } = {},
+  opts: { activeOnly?: boolean; search?: string; location?: StoreLocationFilter } = {},
   paging?: { page: number; pageSize: number },
 ): Promise<{ items: StoreListItem[]; totalCount: number }> {
   const where: Prisma.StoreWhereInput = {};
@@ -220,6 +243,8 @@ export async function listStores(
       { code: { contains: opts.search.trim() } },
     ];
   }
+  const locationWhere = buildStoreLocationWhere(opts.location);
+  if (locationWhere) where.AND = [locationWhere];
   const [rows, totalCount] = await Promise.all([
     prisma.store.findMany({
       where,

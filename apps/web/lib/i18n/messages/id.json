@@ -2509,6 +2509,19 @@
       "cardTitle": "Daftar toko",
       "searchPlaceholder": "Cari berdasarkan nama atau kode",
       "showInactive": "Tampilkan nonaktif",
+      "reset": "Reset",
+      "locationFilter": {
+        "label": "Lokasi",
+        "all": "Semua lokasi",
+        "missing": "Tanpa koordinat",
+        "defaultRadius": "Memakai radius default",
+        "customRadius": "Radius khusus"
+      },
+      "locationEmpty": {
+        "missing": "Semua toko aktif sudah punya koordinat.",
+        "defaultRadius": "Tidak ada toko yang memakai radius default.",
+        "customRadius": "Tidak ada toko dengan radius khusus."
+      },
       "table": {
         "code": "Kode",
         "name": "Nama",
@@ -2518,7 +2531,12 @@
         "discount": "Diskon %",
         "address": "Alamat",
         "status": "Status",
-        "active": "Aktif"
+        "active": "Aktif",
+        "location": "Lokasi",
+        "noCoordinates": "Tanpa koordinat",
+        "radiusMeters": "{meters} m",
+        "radiusDefault": "default",
+        "radiusCustom": "khusus"
       }
     },
     "form": {

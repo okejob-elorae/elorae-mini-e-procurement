@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Plus, Search, Store } from "lucide-react";
+import { Loader2, Plus, Search, Store } from "lucide-react";
 import type { StoreListItem } from "@/lib/stores/queries";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -25,6 +25,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Pager } from "@/components/Pager";
 
 type Props = {
@@ -32,6 +39,8 @@ type Props = {
   totalCount: number;
   search: string;
   showInactive: boolean;
+  location: string;
+  radiusByStoreId: Record<string, { meters: number; custom: boolean } | null>;
   page: number;
   pageSize: number;
   pendingStoreIds: string[];
@@ -42,6 +51,8 @@ export function StoreListClient({
   totalCount,
   search,
   showInactive,
+  location,
+  radiusByStoreId,
   page,
   pageSize,
   pendingStoreIds,
@@ -54,13 +65,25 @@ export function StoreListClient({
   const pendingSet = new Set(pendingStoreIds);
   const router = useRouter();
   const sp = useSearchParams();
-  const [, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition();
   const [searchInput, setSearchInput] = useState(search);
+  /**
+   * Set by Reset so the search debounce below does not fire for the cleared input: that timer
+   * closes over the pre-reset `sp`, so letting it run would push the old location and inactive
+   * filters straight back after Reset navigated to the bare list.
+   */
+  const skipSearchDebounce = useRef(false);
+  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    if (skipSearchDebounce.current) {
+      skipSearchDebounce.current = false;
+      return;
+    }
     const handle = setTimeout(() => {
       if (searchInput !== search) pushParam("search", searchInput);
     }, 300);
+    searchDebounce.current = handle;
     return () => clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput]);
@@ -72,6 +95,20 @@ export function StoreListClient({
     params.delete("page");
     startTransition(() => router.push(`/backoffice/stores?${params.toString()}`));
   }
+
+  function resetFilters() {
+    if (searchDebounce.current) clearTimeout(searchDebounce.current);
+    if (searchInput !== "") skipSearchDebounce.current = true;
+    setSearchInput("");
+    startTransition(() => router.push("/backoffice/stores"));
+  }
+
+  const hasFilters = Boolean(search || showInactive || location);
+  const emptyMessage = !hasFilters
+    ? tList("empty")
+    : location && !search && !showInactive
+      ? tList(`locationEmpty.${location}`)
+      : tList("noSearchResults");
 
   function toggleShowInactive(next: boolean) {
     const params = new URLSearchParams(sp.toString());
@@ -106,6 +143,20 @@ export function StoreListClient({
             className="pl-9"
           />
         </div>
+        <Select
+          value={location || "__all__"}
+          onValueChange={(v) => pushParam("location", v === "__all__" ? undefined : v)}
+        >
+          <SelectTrigger className="w-full sm:w-[220px]" aria-label={tList("locationFilter.label")}>
+            <SelectValue placeholder={tList("locationFilter.all")} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">{tList("locationFilter.all")}</SelectItem>
+            <SelectItem value="missing">{tList("locationFilter.missing")}</SelectItem>
+            <SelectItem value="defaultRadius">{tList("locationFilter.defaultRadius")}</SelectItem>
+            <SelectItem value="customRadius">{tList("locationFilter.customRadius")}</SelectItem>
+          </SelectContent>
+        </Select>
         <div className="flex items-center gap-2">
           <Checkbox
             id="show-inactive"
@@ -116,6 +167,11 @@ export function StoreListClient({
             {tList("showInactive")}
           </Label>
         </div>
+        {hasFilters && (
+          <Button variant="outline" onClick={resetFilters} disabled={isPending}>
+            {tList("reset")}
+          </Button>
+        )}
       </div>
 
       <Card>
@@ -123,17 +179,18 @@ export function StoreListClient({
           <CardTitle className="flex items-center gap-2">
             <Store className="h-5 w-5" />
             {tList("cardTitle")}
+            {isPending && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
             <span className="text-sm font-normal text-muted-foreground ml-2">
               ({tList("count", { count: totalCount })})
             </span>
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className={isPending ? "opacity-60 transition-opacity" : "transition-opacity"}>
           {stores.length === 0 ? (
             <div className="text-center py-12">
               <Store className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <p className="text-muted-foreground">
-                {search || showInactive ? tList("noSearchResults") : tList("empty")}
+                {emptyMessage}
               </p>
             </div>
           ) : (
@@ -147,6 +204,7 @@ export function StoreListClient({
                     <TableHead className="text-right">{tTable("tempo")}</TableHead>
                     <TableHead className="text-right">{tTable("markup")}</TableHead>
                     <TableHead className="text-right">{tTable("discount")}</TableHead>
+                    <TableHead>{tTable("location")}</TableHead>
                     <TableHead>{tTable("address")}</TableHead>
                     <TableHead>{tTable("status")}</TableHead>
                   </TableRow>
@@ -163,7 +221,13 @@ export function StoreListClient({
                       <TableCell className="font-mono text-xs">{s.code}</TableCell>
                       <TableCell className="font-medium">
                         <span className="inline-flex items-center gap-2">
-                          {s.name}
+                          <Link
+                            href={`/backoffice/stores/${s.id}`}
+                            className="hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {s.name}
+                          </Link>
                           {pendingSet.has(s.id) && (
                             <Badge variant="secondary" className="border-amber-500/40 text-amber-700">
                               {tChange("listBadge")}
@@ -179,6 +243,20 @@ export function StoreListClient({
                       <TableCell className="text-right tabular-nums">{s.paymentTempo}d</TableCell>
                       <TableCell className="text-right tabular-nums">{s.markupPercent ?? "—"}</TableCell>
                       <TableCell className="text-right tabular-nums">{s.priceDiscountPercent ?? "—"}</TableCell>
+                      <TableCell>
+                        {radiusByStoreId[s.id] ? (
+                          <span className="inline-flex items-center gap-1.5 whitespace-nowrap tabular-nums">
+                            {tTable("radiusMeters", { meters: radiusByStoreId[s.id]!.meters })}
+                            <span className="text-xs text-muted-foreground">
+                              {radiusByStoreId[s.id]!.custom
+                                ? tTable("radiusCustom")
+                                : tTable("radiusDefault")}
+                            </span>
+                          </span>
+                        ) : (
+                          <Badge variant="destructive">{tTable("noCoordinates")}</Badge>
+                        )}
+                      </TableCell>
                       <TableCell className="truncate max-w-[220px] text-muted-foreground" title={s.address}>
                         {s.address}
                       </TableCell>
