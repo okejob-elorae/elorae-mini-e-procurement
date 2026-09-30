@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/table';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
-import { formatDateOnly, parseDateOnly } from '@/lib/date-only';
+import { formatDateOnly, parseDateOnly, parseDateOnlyEnd } from '@/lib/date-only';
 import {
   Select,
   SelectContent,
@@ -46,7 +46,6 @@ import { buildMaterialIssuePrintHtml } from '@/lib/print/material-issue-html';
 import { logPrint } from '@/app/actions/audit';
 import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
-import { parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
 
 type RegisterRow = {
   id: string;
