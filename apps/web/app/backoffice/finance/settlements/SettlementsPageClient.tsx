@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { toast } from "sonner";
@@ -65,6 +66,7 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
   const [uploading, setUploading] = useState(false);
   const [uploadErrors, setUploadErrors] = useState<SettlementParseError[] | null>(null);
   const [uploadErrorMessage, setUploadErrorMessage] = useState<string | null>(null);
+  const [duplicateSettlementId, setDuplicateSettlementId] = useState<string | null>(null);
 
   const formatDate = (iso: string) =>
     new Intl.DateTimeFormat(locale, { day: "2-digit", month: "short", year: "numeric" }).format(
@@ -89,6 +91,7 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
     setUploading(true);
     setUploadErrors(null);
     setUploadErrorMessage(null);
+    setDuplicateSettlementId(null);
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -121,6 +124,15 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
         setFile(null);
         setFileInputKey((k) => k + 1);
         startTransition(() => router.push(`/backoffice/finance/settlements/${data.settlementId}`));
+        return;
+      }
+
+      if (res.status === 409) {
+        const data = (await res.json().catch(() => ({}))) as { settlementId?: string };
+        if (data.settlementId) setDuplicateSettlementId(data.settlementId);
+        else setUploadErrorMessage(t("uploadDuplicate"));
+        setFile(null);
+        setFileInputKey((k) => k + 1);
         return;
       }
 
@@ -218,6 +230,21 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
               <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
                 <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
                 <span>{uploadErrorMessage}</span>
+              </div>
+            )}
+
+            {duplicateSettlementId && (
+              <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                <span>
+                  {t("uploadDuplicate")}{" "}
+                  <Link
+                    href={`/backoffice/finance/settlements/${duplicateSettlementId}`}
+                    className="font-medium underline underline-offset-2"
+                  >
+                    {t("uploadDuplicateOpen")}
+                  </Link>
+                </span>
               </div>
             )}
 

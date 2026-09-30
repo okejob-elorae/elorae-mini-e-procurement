@@ -4621,6 +4621,8 @@
     "uploadErrorAtSheet": "Sheet {sheet}",
     "uploadGenericError": "Unggah gagal. Silakan coba lagi.",
     "uploadFailed": "Unggah gagal. Silakan coba lagi atau hubungi dukungan jika masalah berlanjut.",
+    "uploadDuplicate": "File ini sudah pernah diunggah untuk marketplace ini.",
+    "uploadDuplicateOpen": "Buka settlement yang sudah ada",
     "colPeriod": "Periode",
     "colMarketplace": "Marketplace",
     "colSeller": "Seller",

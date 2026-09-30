@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { createHash, randomUUID } from "node:crypto";
 import { prisma } from "@elorae/db";
 import { persistSettlement } from "./persist";
 import type { ParsedSettlement } from "./shopee-settlement-parser";
@@ -85,6 +86,26 @@ d("persistSettlement (test bed only)", () => {
     try {
       expect(res.checksumOk).toBe(false);
       expect(res.checksumVariance).toBe(1000);
+    } finally {
+      await prisma.settlement.delete({ where: { id: res.settlementId } });
+    }
+  });
+
+  it("stores the file hash on the created row", async () => {
+    const admin = await prisma.user.findFirstOrThrow({ where: { email: "admin@elorae.com" } });
+    const fileSha256 = createHash("sha256").update(randomUUID()).digest("hex");
+
+    const res = await persistSettlement({
+      parsed: buildParsed(60000),
+      fileName: "t.xlsx",
+      uploadedById: admin.id,
+      marketplace: "SHOPEE",
+      fileSha256,
+    });
+
+    try {
+      const s = await prisma.settlement.findUnique({ where: { id: res.settlementId } });
+      expect(s!.fileSha256).toBe(fileSha256);
     } finally {
       await prisma.settlement.delete({ where: { id: res.settlementId } });
     }

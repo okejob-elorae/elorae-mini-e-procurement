@@ -9,7 +9,7 @@ export type PersistResult = {
 };
 
 export async function persistSettlement(
-  input: { parsed: ParsedSettlement; fileName: string; uploadedById: string; marketplace: string },
+  input: { parsed: ParsedSettlement; fileName: string; uploadedById: string; marketplace: string; fileSha256?: string },
   client: Prisma.TransactionClient | typeof prisma = prisma,
 ): Promise<PersistResult> {
   const p = input.parsed;
@@ -25,6 +25,7 @@ export async function persistSettlement(
         periodTo: new Date(`${p.periodTo}T00:00:00+07:00`),
         fileName: input.fileName,
         uploadedById: input.uploadedById,
+        fileSha256: input.fileSha256,
         status: "PARSED",
         totalPendapatan: p.summary.totalPendapatan,
         totalPengeluaran: p.summary.totalPengeluaran,
