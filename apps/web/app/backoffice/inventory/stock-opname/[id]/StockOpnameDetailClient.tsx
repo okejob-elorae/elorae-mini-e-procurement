@@ -158,6 +158,9 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
         case "FORBIDDEN":
           toast.error(t("journal.err.FORBIDDEN"));
           break;
+        case "ERROR":
+          toast.error(t("journal.err.ERROR"));
+          break;
         default:
           toast.error(t("journal.err.BAD_STATE"));
       }

@@ -1381,7 +1381,8 @@
         "UNBALANCED": "Journal is not balanced (debit ≠ credit).",
         "NOTHING_TO_POST": "No value change to journal.",
         "BAD_STATE": "Opname must be Approved to post a journal.",
-        "FORBIDDEN": "You don't have permission to post journals."
+        "FORBIDDEN": "You don't have permission to post journals.",
+        "ERROR": "The journal could not be posted because of an unexpected error. Check this opname's counts and costs, then try again."
       }
     },
     "scopes": {
