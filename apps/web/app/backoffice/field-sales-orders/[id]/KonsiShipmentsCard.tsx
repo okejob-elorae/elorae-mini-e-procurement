@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
@@ -37,6 +38,7 @@ import {
 import { formatDateTime } from "@/lib/sales-orders/format";
 import type { FieldSalesDeliveryStatus, FieldSalesOrderStatus } from "@/lib/field-sales/queries";
 import type { OrderShipmentSummary } from "@/lib/delivery/shipment-queries";
+import { SHIPMENT_STATUS_BADGE, SHIPMENT_STATUS_LABEL_KEY } from "@/lib/delivery/shipment-status-display";
 import { closeRemainderAction } from "@/app/actions/field-sales-deliveries";
 import { logPrint } from "@/app/actions/audit";
 import { buildSuratKeluarPrintHtml } from "@/lib/print/konsi-surat-keluar-html";
@@ -62,6 +64,7 @@ type Props = {
   hasLegacyTransfer: boolean;
   canDeliver: boolean;
   canShipShipment: boolean;
+  canViewShipments: boolean;
 };
 
 const DELIVERY_BADGE_VARIANT: Record<FieldSalesDeliveryStatus, "secondary" | "default" | "outline"> = {
@@ -77,25 +80,6 @@ const DELIVERY_BADGE_CLASS: Record<FieldSalesDeliveryStatus, string> = {
   PARTIAL: "border-amber-500/40 text-amber-700",
   DELIVERED: "",
   CLOSED: "text-muted-foreground",
-};
-
-const SHIPMENT_STATUS_BADGE: Record<OrderShipmentSummary["status"], string> = {
-  PACKED: "bg-slate-100 text-slate-700",
-  IN_TRANSIT: "bg-blue-100 text-blue-700",
-  DELIVERED: "bg-green-100 text-green-700",
-  PARTIALLY_DELIVERED: "bg-amber-100 text-amber-700",
-  CANCELLED: "bg-red-100 text-red-700",
-};
-
-const STATUS_LABEL_KEY: Record<
-  OrderShipmentSummary["status"],
-  "statusPacked" | "statusInTransit" | "statusDelivered" | "statusPartiallyDelivered" | "statusCancelled"
-> = {
-  PACKED: "statusPacked",
-  IN_TRANSIT: "statusInTransit",
-  DELIVERED: "statusDelivered",
-  PARTIALLY_DELIVERED: "statusPartiallyDelivered",
-  CANCELLED: "statusCancelled",
 };
 
 /**
@@ -135,6 +119,7 @@ export function KonsiShipmentsCard({
   hasLegacyTransfer,
   canDeliver,
   canShipShipment,
+  canViewShipments,
 }: Props) {
   const t = useTranslations("fieldSalesOrders");
   const tCommon = useTranslations("common");
@@ -166,7 +151,7 @@ export function KonsiShipmentsCard({
       storeName,
       salesmanName,
       approvedAt: shipment.packedAt,
-      status: tShipments(STATUS_LABEL_KEY[shipment.status]),
+      status: tShipments(SHIPMENT_STATUS_LABEL_KEY[shipment.status]),
       lines: shipment.lines.map((line) => ({
         productName: line.productName,
         variantSku: line.variantSku,
@@ -274,7 +259,18 @@ export function KonsiShipmentsCard({
                 const delivered = totalDelivered(shipment);
                 return (
                   <TableRow key={shipment.id}>
-                    <TableCell className="font-mono whitespace-nowrap">{shipment.docNo}</TableCell>
+                    <TableCell className="font-mono whitespace-nowrap">
+                      {canViewShipments ? (
+                        <Link
+                          href={`/backoffice/deliveries/${shipment.id}`}
+                          className="hover:underline"
+                        >
+                          {shipment.docNo}
+                        </Link>
+                      ) : (
+                        shipment.docNo
+                      )}
+                    </TableCell>
                     <TableCell>
                       {shipment.method === "EXPEDITION"
                         ? tShipments("methodExpedition")
@@ -282,7 +278,7 @@ export function KonsiShipmentsCard({
                     </TableCell>
                     <TableCell>
                       <Badge className={SHIPMENT_STATUS_BADGE[shipment.status]}>
-                        {tShipments(STATUS_LABEL_KEY[shipment.status])}
+                        {tShipments(SHIPMENT_STATUS_LABEL_KEY[shipment.status])}
                       </Badge>
                     </TableCell>
                     <TableCell className="whitespace-nowrap">

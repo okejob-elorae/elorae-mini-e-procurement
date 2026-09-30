@@ -38,6 +38,7 @@ type Props = {
   canApprove: boolean;
   canDeliver: boolean;
   canShipShipment: boolean;
+  canViewShipments: boolean;
   konsiSuggestions: KonsiSuggestion[];
   konsiAssortmentGaps: KonsiAssortmentGapSuggestion[];
   creditCheck: { exposure: number; limit: number; overLimit: boolean } | null;
@@ -69,6 +70,7 @@ export function FieldSalesOrderDetailClient({
   canApprove,
   canDeliver,
   canShipShipment,
+  canViewShipments,
   konsiSuggestions,
   konsiAssortmentGaps,
   creditCheck,
@@ -243,6 +245,7 @@ export function FieldSalesOrderDetailClient({
           hasLegacyTransfer={legacyKonsiTransfer !== null}
           canDeliver={canDeliver}
           canShipShipment={canShipShipment}
+          canViewShipments={canViewShipments}
         />
       ) : (
         <DeliveriesCard
