@@ -93,6 +93,7 @@ d("GRN auto-journal (test bed only)", () => {
   });
 
   it("reversal posts DR Hutang 500 / CR Persediaan 500", async () => {
+    expect(await postGrnJournal(grnId, userId, prisma)).toMatchObject({ ok: true, created: true });
     const r = await postGrnReversalJournal(grnId, userId, prisma);
     expect(r).toMatchObject({ ok: true, created: true });
     const j = await prisma.journal.findUnique({
@@ -103,6 +104,15 @@ d("GRN auto-journal (test bed only)", () => {
     const ap = j!.lines.find((l) => l.chartAccountId === apId);
     expect(Number(ap!.debit)).toBe(500);
     expect(Number(inv!.credit)).toBe(500);
+  });
+
+  it("reversal with no receipt journal → NOTHING_TO_POST, posts nothing", async () => {
+    const r = await postGrnReversalJournal(grnId, userId, prisma);
+    expect(r).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+    const j = await prisma.journal.findUnique({
+      where: { sourceType_sourceId: { sourceType: "GRN_REVERSAL", sourceId: grnId } },
+    });
+    expect(j).toBeNull();
   });
 
   it("zero totalAmount → NOTHING_TO_POST", async () => {

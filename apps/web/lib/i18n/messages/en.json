@@ -4615,6 +4615,7 @@
       "UNBALANCED": "Settlement totals don't balance. The leftover fee already goes to the \"Marketplace Fee — Other\" account automatically, so this means the excel summary itself does not satisfy Released + Expenses = Income. Check the Summary sheet of the settlement file.",
       "NOT_FOUND": "Settlement not found.",
       "FORBIDDEN": "You don't have permission to post this journal.",
+      "NOTHING_TO_POST": "Nothing to post: every total on this settlement is zero, so there is no journal to book.",
       "ALREADY_RECONCILED_DIFF": "This settlement is already reconciled with a different journal.",
       "NON_POSTABLE_ACCOUNT": "One of the mapped accounts cannot be posted to — it is inactive or has child accounts. Map that role to an active account with no children under Finance → Account Mapping."
     },
@@ -4795,7 +4796,7 @@
       "labaBersih": "Net Profit",
       "sectionEmpty": "No accounts with a balance in this section yet.",
       "coverageTitle": "Data coverage",
-      "coverageBody": "This report covers only transactions that produce journals: marketplace sales, returns, settlements, goods receipts (GRN), finished-goods receipts, stock opname adjustments, and manual journals. NOT yet included: field sales (putus), van sales, SPG sales, and supplier payments."
+      "coverageBody": "This report covers only transactions that produce journals: marketplace sales, marketplace sales returns, settlements, goods receipts (GRN), finished-goods receipts, stock opname adjustments, van sales, field sales (putus deliveries and invoiced konsi sell-through reports, once their journals post), and manual journals. Supplier payments only post a balance-sheet journal (accounts payable and bank), so they do not affect profit and loss. NOT yet included: SPG sales, which post no journal; and field returns (goods returned by a store), which post no journal at approval — their revenue reverses only when the credit is offset against an invoice, and the cost of goods sold and inventory for the returned goods are never journaled."
     },
     "balanceSheet": {
       "pageTitle": "Balance Sheet",

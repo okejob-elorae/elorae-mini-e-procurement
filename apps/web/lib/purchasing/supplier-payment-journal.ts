@@ -33,7 +33,8 @@ type AnyClient = PrismaClient | Prisma.TransactionClient;
  * whoever later retries the missing GRN journal pushes payables back off zero on
  * a PO already shown as paid. Distinct from the mismatch code because the remedy
  * is different: post the missing GRN journal, not fix a mapping. An
- * owner-declined receipt is not "still owed" and so never reaches this code —
+ * owner-declined receipt is not "still owed" and so never reaches this code,
+ * unless it carries a stray `GRN_REVERSAL` with no receipt journal behind it —
  * see the exemption on the check itself.
  *
  * `GRN_REVERSAL_MISSING`: an owner-declined receipt still carries its GRN
@@ -196,6 +197,16 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
    * it requires the receipt journal to exist, because a declined receipt that
    * WAS journaled genuinely still needs its reversal on the ledger.
    *
+   * The exemption does NOT hold for a declined receipt carrying a
+   * `GRN_REVERSAL` with no receipt journal behind it, the state the old
+   * unconditional decline tail left. Something WAS booked there: the stray
+   * reversal's DR AP line reaches `apLines` below and understates the payable by
+   * the declined amount, so paying now under-pays, and the repair — posting that
+   * receipt, which `getGrnJournalState` offers for exactly this state — then
+   * credits payables back on a PO already marked paid. That is this code's own
+   * fault and remedy (post the missing receipt journal from its GRN row), so it
+   * refuses here rather than under a code of its own.
+   *
    * A receipt still awaiting the owner's decision never reaches this check —
    * `GRN_APPROVAL_PENDING` above refuses first, deliberately, so nobody is sent
    * to post a journal for a receipt that may be declined.
@@ -212,8 +223,12 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
    * operator auditing a mapping that may be perfectly fine.
    */
   const journaledGrnIds = new Set(journals.filter((j) => j.sourceType === "GRN").map((j) => j.sourceId));
+  const reversedGrnIds = new Set(journals.filter((j) => j.sourceType === "GRN_REVERSAL").map((j) => j.sourceId));
   const anyReceiptUnjournaled = grns.some(
-    (g) => g.ownerDeclinedAt === null && Math.abs(Number(g.totalAmount)) >= 0.01 && !journaledGrnIds.has(g.id),
+    (g) =>
+      (g.ownerDeclinedAt === null || reversedGrnIds.has(g.id)) &&
+      Math.abs(Number(g.totalAmount)) >= 0.01 &&
+      !journaledGrnIds.has(g.id),
   );
   if (anyReceiptUnjournaled) return { ok: false, code: "GRN_JOURNALS_INCOMPLETE" };
 
@@ -228,11 +243,12 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
    *
    * Neither the completeness check nor `GRN_APPROVAL_PENDING` can be the answer
    * for the same receipt as this one: the completeness check fires only for a
-   * receipt still owed, the pending check only for a receipt with no decision
-   * stamped either way, and this one only for a declined receipt whose journal
-   * exists. A declined receipt with no journal at all is none of the three —
-   * nothing was booked for it and nothing needs reversing, so it is simply not
-   * this PO's problem. Per receipt that makes the order between this check and
+   * receipt with no receipt journal (still owed, or declined with a stray
+   * reversal), the pending check only for a receipt with no decision stamped
+   * either way, and this one only for a declined receipt whose journal exists.
+   * A declined receipt with no journal at all is none of the three — nothing
+   * was booked for it and nothing needs reversing, so it is simply not this
+   * PO's problem. Per receipt that makes the order between this check and
    * the two above immaterial to behaviour; across receipts it is not, which is
    * why the pending check goes first — see its own note.
    *
@@ -240,7 +256,6 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
    * differs: the reversal is retried from the declined GRN's own reversal
    * button, not the receipt-journal one.
    */
-  const reversedGrnIds = new Set(journals.filter((j) => j.sourceType === "GRN_REVERSAL").map((j) => j.sourceId));
   const anyDeclinedUnreversed = grns.some(
     (g) => g.ownerDeclinedAt != null && journaledGrnIds.has(g.id) && !reversedGrnIds.has(g.id),
   );

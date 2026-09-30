@@ -17,7 +17,8 @@ export type PostSettlementJournalResult =
         | "UNMAPPED_ROLE"
         | "UNBALANCED"
         | "ALREADY_RECONCILED_DIFF"
-        | "NON_POSTABLE_ACCOUNT";
+        | "NON_POSTABLE_ACCOUNT"
+        | "NOTHING_TO_POST";
       role?: string;
     };
 
@@ -109,6 +110,11 @@ export async function postSettlementJournal(
     throw e;
   }
 
+  /*
+   * A journal line must carry exactly one of debit/credit greater than zero, so
+   * a zero total (a fully refunded period) is omitted, the same way
+   * `splitMarketplaceFees` drops a zero fee category.
+   */
   const lines = [
     { chartAccountId: bank, debit: Number(s.totalDilepas), credit: 0 },
     ...feeSplit.map((split) => ({
@@ -119,7 +125,11 @@ export async function postSettlementJournal(
       memo: split.role,
     })),
     { chartAccountId: ar, debit: 0, credit: Number(s.totalPendapatan) },
-  ];
+  ].filter((l) => l.debit !== 0 || l.credit !== 0);
+
+  if (lines.length === 0) return { ok: false, code: "NOTHING_TO_POST" };
+  /* One surviving line can never balance, and `postJournal` would throw TOO_FEW_LINES. */
+  if (lines.length < 2) return { ok: false, code: "UNBALANCED" };
 
   const run = async (tx: Prisma.TransactionClient) => {
     const res = await postJournal(tx, {

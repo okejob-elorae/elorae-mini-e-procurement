@@ -511,4 +511,50 @@ d("postSettlementJournal (test bed only)", () => {
       await teardownSettlementJournal(feeSplitSettlementId);
     }
   });
+
+  it("omits the bank line instead of throwing BAD_LINE when totalDilepas is exactly zero", async () => {
+    /* A fully refunded period: nothing released, expenses equal income. */
+    await prisma.settlement.update({
+      where: { id: settlementId },
+      data: { totalPendapatan: 500, totalPengeluaran: 500, totalDilepas: 0, parsedNetTotal: 0 },
+    });
+    const r = await postSettlementJournal(settlementId, adminId, prisma);
+    expect(r).toMatchObject({ ok: true, created: true });
+
+    const j = await prisma.journal.findUniqueOrThrow({
+      where: { sourceType_sourceId: { sourceType: "SETTLEMENT", sourceId: settlementId } },
+      include: { lines: true },
+    });
+    expect(j.lines).toHaveLength(2);
+    expect(j.lines.some((l) => l.chartAccountId === bankId)).toBe(false);
+    expect(j.lines.reduce((sum, l) => sum + Number(l.debit) - Number(l.credit), 0)).toBe(0);
+  });
+
+  it("returns UNBALANCED instead of throwing BAD_LINE when totalPendapatan is exactly zero", async () => {
+    await prisma.settlement.update({
+      where: { id: settlementId },
+      data: { totalPendapatan: 0, totalPengeluaran: 0, totalDilepas: 500, parsedNetTotal: 500 },
+    });
+    const r = await postSettlementJournal(settlementId, adminId, prisma);
+    expect(r).toMatchObject({ ok: false, code: "UNBALANCED" });
+
+    const s = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
+    expect(s.status).toBe("MATCHED");
+  });
+
+  it("returns NOTHING_TO_POST and leaves the settlement untouched when every total is zero", async () => {
+    await prisma.settlement.update({
+      where: { id: settlementId },
+      data: { totalPendapatan: 0, totalPengeluaran: 0, totalDilepas: 0, parsedNetTotal: 0 },
+    });
+    const r = await postSettlementJournal(settlementId, adminId, prisma);
+    expect(r).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+
+    const journal = await prisma.journal.findUnique({
+      where: { sourceType_sourceId: { sourceType: "SETTLEMENT", sourceId: settlementId } },
+    });
+    expect(journal).toBeNull();
+    const s = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
+    expect(s.status).toBe("MATCHED");
+  });
 });

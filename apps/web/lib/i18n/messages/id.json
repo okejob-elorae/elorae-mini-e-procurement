@@ -4615,6 +4615,7 @@
       "UNBALANCED": "Total settlement tidak balance. Sisa biaya sudah otomatis masuk ke akun \"Biaya Marketplace — Lainnya\", jadi pesan ini berarti ringkasan excel-nya sendiri tidak memenuhi Dilepas + Pengeluaran = Pendapatan. Periksa tab Ringkasan pada file settlement.",
       "NOT_FOUND": "Settlement tidak ditemukan.",
       "FORBIDDEN": "Anda tidak memiliki izin untuk memposting jurnal ini.",
+      "NOTHING_TO_POST": "Tidak ada yang diposting: semua total settlement ini nol, sehingga tidak ada jurnal yang perlu dibuat.",
       "ALREADY_RECONCILED_DIFF": "Settlement ini sudah terekonsiliasi dengan jurnal yang berbeda.",
       "NON_POSTABLE_ACCOUNT": "Salah satu akun yang dipetakan tidak dapat diposting — akunnya tidak aktif atau sudah punya akun turunan. Petakan peran tersebut ke akun aktif tanpa turunan di Finance → Pemetaan Akun."
     },
@@ -4795,7 +4796,7 @@
       "labaBersih": "Laba Bersih",
       "sectionEmpty": "Belum ada akun bersaldo pada bagian ini.",
       "coverageTitle": "Cakupan data",
-      "coverageBody": "Laporan ini hanya mencakup transaksi yang sudah menghasilkan jurnal: penjualan marketplace, retur, settlement, penerimaan barang (GRN), hasil produksi, penyesuaian stock opname, dan jurnal manual. BELUM termasuk: penjualan lapangan (putus), penjualan kanvas, penjualan SPG, dan pembayaran ke pemasok."
+      "coverageBody": "Laporan ini hanya mencakup transaksi yang sudah menghasilkan jurnal: penjualan marketplace, retur penjualan marketplace, settlement, penerimaan barang (GRN), hasil produksi, penyesuaian stock opname, penjualan kanvas, penjualan lapangan (pengiriman putus dan laporan sell-through konsi yang sudah ditagihkan, setelah jurnalnya diposting), dan jurnal manual. Pembayaran ke pemasok hanya menghasilkan jurnal neraca (utang usaha dan bank) sehingga tidak memengaruhi laba rugi. BELUM termasuk: penjualan SPG, yang tidak menghasilkan jurnal; dan retur lapangan (barang yang dikembalikan toko), yang tidak menghasilkan jurnal saat disetujui — pendapatannya baru berkurang ketika kreditnya dipotongkan ke tagihan, sedangkan HPP dan persediaan untuk barang yang kembali tidak pernah dijurnal."
     },
     "balanceSheet": {
       "pageTitle": "Neraca",

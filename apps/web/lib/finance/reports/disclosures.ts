@@ -18,7 +18,7 @@ export const TRIAL_BALANCE_UNBALANCED_NOTE =
 export const INCOME_STATEMENT_COVERAGE_TITLE = "Cakupan data";
 
 export const INCOME_STATEMENT_COVERAGE_BODY =
-  "Laporan ini hanya mencakup transaksi yang sudah menghasilkan jurnal: penjualan marketplace, retur, settlement, penerimaan barang (GRN), hasil produksi, penyesuaian stock opname, dan jurnal manual. BELUM termasuk: penjualan lapangan (putus), penjualan kanvas, penjualan SPG, dan pembayaran ke pemasok.";
+  "Laporan ini hanya mencakup transaksi yang sudah menghasilkan jurnal: penjualan marketplace, retur penjualan marketplace, settlement, penerimaan barang (GRN), hasil produksi, penyesuaian stock opname, penjualan kanvas, penjualan lapangan (pengiriman putus dan laporan sell-through konsi yang sudah ditagihkan, setelah jurnalnya diposting), dan jurnal manual. Pembayaran ke pemasok hanya menghasilkan jurnal neraca (utang usaha dan bank) sehingga tidak memengaruhi laba rugi. BELUM termasuk: penjualan SPG, yang tidak menghasilkan jurnal; dan retur lapangan (barang yang dikembalikan toko), yang tidak menghasilkan jurnal saat disetujui — pendapatannya baru berkurang ketika kreditnya dipotongkan ke tagihan, sedangkan HPP dan persediaan untuk barang yang kembali tidak pernah dijurnal.";
 
 export const BALANCE_SHEET_OPENING_TITLE = "Saldo awal belum dicatat";
 
@@ -39,7 +39,7 @@ export function formatOpeningDate(iso: string): string {
 export const CASH_FLOW_COVERAGE_TITLE = "Cakupan data";
 
 export const CASH_FLOW_COVERAGE_BODY =
-  "Laporan ini disusun dari jurnal buku besar dengan metode tidak langsung. Cakupannya sama dengan Laba Rugi: BELUM termasuk penjualan lapangan (putus/konsi) dan penjualan SPG.";
+  "Laporan ini disusun dari jurnal buku besar dengan metode tidak langsung, sehingga mencakup setiap jurnal yang diposting pada periode ini — termasuk penjualan lapangan, baik pengiriman putus maupun laporan sell-through konsi yang sudah ditagihkan, setelah jurnalnya diposting. Penjualan SPG tidak menghasilkan jurnal dan BELUM termasuk.";
 
 /**
  * Shown in place of the statement when no account is classified KAS. Without a

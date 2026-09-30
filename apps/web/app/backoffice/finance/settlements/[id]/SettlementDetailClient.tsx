@@ -298,6 +298,9 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
             case "NON_POSTABLE_ACCOUNT":
               toast.error(t("journalErr.NON_POSTABLE_ACCOUNT"));
               break;
+            case "NOTHING_TO_POST":
+              toast.error(t("journalErr.NOTHING_TO_POST"));
+              break;
             case "ALREADY_RECONCILED_DIFF":
               toast.error(t("journalErr.ALREADY_RECONCILED_DIFF"));
               break;

@@ -66,8 +66,9 @@ const RETRY_HINT: Record<SupplierPaymentDirection, string> = {
  * anything received (an advance) or receipts exist that could never book a
  * payable at all — each one sub-cent or owner-declined. A receipt whose booked
  * payable is wrong or not final yet is NOT one of these cases: one still owed
- * with no journal returns `GRN_JOURNALS_INCOMPLETE`, a declined one left
- * un-reversed returns `GRN_REVERSAL_MISSING`, and one still awaiting the owner's
+ * with no journal, or a declined one carrying a stray reversal with no receipt
+ * journal, returns `GRN_JOURNALS_INCOMPLETE`, a declined one left un-reversed
+ * returns `GRN_REVERSAL_MISSING`, and one still awaiting the owner's
  * approve-or-decline returns `GRN_APPROVAL_PENDING`, each carrying its own
  * remedy.
  *
