@@ -2,6 +2,21 @@
 
 import { prisma } from '@elorae/db';
 import { ItemType } from '@elorae/db';
+import { auth } from "@/lib/auth";
+import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+
+/**
+ * Every "use server" export is independently callable regardless of what the page gated
+ * on, so each export re-checks inventory:view itself. Throws FORBIDDEN like the movement
+ * card action does.
+ */
+async function assertInventoryView(): Promise<void> {
+  const session = await auth();
+  const permissions = session?.user?.permissions ?? [];
+  if (!hasPermission(permissions, PERMISSIONS.INVENTORY_VIEW)) {
+    throw new Error("FORBIDDEN");
+  }
+}
 
 const toNum = (v: unknown): number | null => (v == null ? null : Number(v));
 
@@ -59,6 +74,7 @@ export async function getStockCard(
   dateRange: { from: Date; to: Date },
   variantSku?: string
 ) {
+  await assertInventoryView();
   const ledgerWhere: Record<string, unknown> = {
     itemId,
     /* The ledger also holds STORE and VAN rows - this card is main-warehouse only, and
@@ -137,6 +153,7 @@ export async function getStockCard(
 
 /** Returns variant SKU options for an item (from item.variants, the stock ledger, and stock movement history - the two movement sources are unioned, not swapped, because each covers a gap the other has). Use to populate variant combobox when item is selected, before Load. */
 export async function getItemVariantOptions(itemId: string): Promise<string[]> {
+  await assertInventoryView();
   const [item, ledgerVariants, movementVariants] = await Promise.all([
     prisma.item.findUnique({
       where: { id: itemId },
@@ -187,6 +204,7 @@ export async function getItemVariantOptions(itemId: string): Promise<string[]> {
 
 /** One row per item (aggregated from variant-level InventoryValue rows). */
 export async function getCurrentStockSummary() {
+  await assertInventoryView();
   const rows = await prisma.inventoryValue.findMany({
     include: {
       item: {
@@ -250,6 +268,7 @@ export async function getStockCardByType(
   type: 'raw' | 'finished',
   dateRange: { from: Date; to: Date }
 ): Promise<{ items: StockCardByTypeItem[]; type: 'raw' | 'finished' }> {
+  await assertInventoryView();
   const itemTypes: ItemType[] =
     type === 'raw' ? [ItemType.FABRIC, ItemType.ACCESSORIES] : [ItemType.FINISHED_GOOD];
   const items = await prisma.item.findMany({
@@ -343,6 +362,7 @@ export async function getStockCardByCategory(
   categoryId: string,
   dateRange: { from: Date; to: Date }
 ): Promise<{ items: StockCardByTypeItem[]; category: { id: string; name: string; code: string | null } }> {
+  await assertInventoryView();
   const category = await prisma.itemCategory.findUnique({
     where: { id: categoryId },
     select: { id: true, name: true, code: true },

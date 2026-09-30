@@ -10,7 +10,7 @@ import { getActorName, notifyGRNCreated, notifyMaterialArrivedForPo } from '@/ap
 import { logAudit } from '@/lib/audit';
 import { assertLinesVariantSkusMatchItemDefinitions } from '@/lib/items/validate-variant-lines';
 import { auth } from '@/lib/auth';
-import { requirePermission, hasPermission, PERMISSIONS } from '@/lib/rbac';
+import { requirePermission, requireAnyPermission, hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { postGrnJournal, postGrnReversalJournal } from "@/lib/inventory/grn-journal";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { computeActualLeadDays } from '@/lib/leadtime/calculations';
@@ -406,6 +406,11 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
   return result;
 }
 
+async function requireGrnRead(extra: string[] = []): Promise<void> {
+  const session = await auth();
+  requireAnyPermission(session?.user?.permissions ?? [], [PERMISSIONS.INVENTORY_VIEW, ...extra]);
+}
+
 export async function getGRNs(
   filters?: {
     supplierId?: string;
@@ -415,6 +420,7 @@ export async function getGRNs(
   },
   opts?: { page: number; pageSize: number }
 ) {
+  await requireGrnRead([PERMISSIONS.VENDOR_RETURNS_VIEW]);
   const where: Record<string, unknown> = {};
   if (filters?.supplierId) where.supplierId = filters.supplierId;
   if (filters?.poId) where.poId = filters.poId;
@@ -459,6 +465,7 @@ export async function getGRNs(
 }
 
 export async function getGRNById(id: string) {
+  await requireGrnRead();
   const grn = await prisma.gRN.findUnique({
     where: { id },
     include: {
@@ -477,6 +484,7 @@ export async function getGRNById(id: string) {
 
 /** Fetch fabric rolls for a GRN (for collapsible row). Returns plain objects (no Decimal). */
 export async function getRollsByGrnId(grnId: string) {
+  await requireGrnRead();
   const rolls = await prisma.fabricRoll.findMany({
     where: { grnId },
     include: {
@@ -503,6 +511,7 @@ export async function getFabricRollFilterOptions(): Promise<{
   grnOptions: Array<{ value: string; label: string }>;
   itemOptions: Array<{ value: string; label: string }>;
 }> {
+  await requireGrnRead();
   const [grnIdsRaw, itemIds] = await Promise.all([
     prisma.fabricRoll.findMany({ select: { grnId: true }, distinct: ['grnId'] }),
     prisma.fabricRoll.findMany({ select: { itemId: true }, distinct: ['itemId'] }),
@@ -526,6 +535,7 @@ export async function getFabricRolls(opts?: {
   itemId?: string;
   search?: string;
 }) {
+  await requireGrnRead();
   const toNum = (v: unknown) => (v == null ? null : Number(v));
   const where: Record<string, unknown> = {};
   if (opts?.grnId) where.grnId = opts.grnId;
@@ -844,6 +854,7 @@ export async function getGrnJournalState(grnId: string): Promise<{
   hasPostableReceiptJournal: boolean;
   hasPostableReversalJournal: boolean;
 }> {
+  await requireGrnRead();
   const [receipt, reversal, grn] = await Promise.all([
     prisma.journal.findUnique({
       where: { sourceType_sourceId: { sourceType: "GRN", sourceId: grnId } },

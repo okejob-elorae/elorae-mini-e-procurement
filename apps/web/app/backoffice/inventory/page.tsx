@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
+import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import {
   getInventorySnapshot,
   getGRNs,
@@ -72,6 +73,8 @@ export default async function InventoryPage({
 }) {
   const session = await auth();
   if (!session) redirect('/login');
+  const perms = session.user.permissions ?? [];
+  if (!hasPermission(perms, PERMISSIONS.INVENTORY_VIEW)) redirect("/backoffice");
 
   const sp = await searchParams;
   const statusFilter = sp.oversold === "1" ? ("NEGATIF" as const) : undefined;

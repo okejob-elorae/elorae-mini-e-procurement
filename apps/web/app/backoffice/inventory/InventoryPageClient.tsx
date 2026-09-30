@@ -41,7 +41,6 @@ import {
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { toast } from 'sonner';
 import { useSession } from 'next-auth/react';
-import { getInventorySnapshot } from '@/lib/inventory/costing';
 import {
   getGRNs,
   getRollsByGrnId,
@@ -54,7 +53,7 @@ import {
   postGrnReversalJournalAction,
 } from '@/app/actions/grn';
 import { hasPermission } from "@/lib/rbac";
-import { getStockAdjustments } from '@/app/actions/inventory';
+import { getInventorySnapshot, getStockAdjustments } from '@/app/actions/inventory';
 import { getInventoryValueSnapshot } from '@/app/actions/reports/inventory';
 import { buildInventoryReportPrintHtml } from '@/lib/print/inventory-report-html';
 import { Pagination } from '@/components/ui/pagination';

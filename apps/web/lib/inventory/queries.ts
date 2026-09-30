@@ -1,6 +1,5 @@
-export { getInventorySnapshot } from '@/lib/inventory/costing';
 export { getGRNs } from '@/app/actions/grn';
-export { getStockAdjustments } from '@/app/actions/inventory';
+export { getInventorySnapshot, getStockAdjustments } from '@/app/actions/inventory';
 export { getCurrentStockSummary } from '@/app/actions/stock-card';
 export {
   getInventoryValueSnapshot,

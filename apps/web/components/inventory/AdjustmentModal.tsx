@@ -19,9 +19,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { PinAuthModal } from '@/components/security/PinAuthModal';
-import { createStockAdjustment } from '@/app/actions/inventory';
+import { createStockAdjustment, getInventoryValue } from '@/app/actions/inventory';
 import { getCurrentStockSummary, getItemVariantOptions } from '@/app/actions/stock-card';
-import { getInventoryValue } from '@/lib/inventory/costing';
 import { getItemUomAndConversions } from '@/app/actions/uom';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';

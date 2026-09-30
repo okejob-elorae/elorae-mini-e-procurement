@@ -4,8 +4,15 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { Decimal } from 'decimal.js';
 import { moveMainStock, prisma } from '@elorae/db';
-import type { StockLedgerRefType } from '@elorae/db';
+import type { Prisma, StockLedgerRefType } from '@elorae/db';
 import { findExistingInventoryValueRow } from '@/lib/inventory/costing';
+import {
+  filterAndSortStockItems,
+  summarizeStockHealth,
+  type StockSort,
+  type StockStatus,
+} from "@/lib/inventory/stock-status";
+import { buildVariantStockChips } from "@/lib/inventory/variant-stock-label";
 import { variantDetailForSku } from '@/lib/items/variants';
 import { verifyPinForAction } from '@/app/actions/security/pin-auth';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
@@ -23,6 +30,11 @@ const adjustmentSchema = z.object({
 });
 
 export type AdjustmentFormData = z.infer<typeof adjustmentSchema>;
+
+async function requireInventoryView(): Promise<void> {
+  const session = await auth();
+  requirePermission(session?.user?.permissions ?? [], PERMISSIONS.INVENTORY_VIEW);
+}
 
 export async function createStockAdjustment(
   data: AdjustmentFormData,
@@ -203,46 +215,6 @@ export async function createStockAdjustment(
 }
 
 
-export async function getGRNs(filters?: {
-  supplierId?: string;
-  fromDate?: Date;
-  toDate?: Date;
-}) {
-  const where: any = {};
-  
-  if (filters?.supplierId) {
-    where.supplierId = filters.supplierId;
-  }
-  
-  if (filters?.fromDate || filters?.toDate) {
-    where.grnDate = {};
-    if (filters.fromDate) {
-      where.grnDate.gte = filters.fromDate;
-    }
-    if (filters.toDate) {
-      where.grnDate.lte = filters.toDate;
-    }
-  }
-  
-  return await prisma.gRN.findMany({
-    where,
-    include: {
-      supplier: {
-        select: {
-          name: true,
-          code: true
-        }
-      },
-      po: {
-        select: {
-          docNumber: true
-        }
-      }
-    },
-    orderBy: { grnDate: 'desc' }
-  });
-}
-
 const toNum = (v: unknown): number | null => (v == null ? null : Number(v));
 
 function serializeItemForClient(item: {
@@ -264,6 +236,7 @@ export async function getStockAdjustments(
   itemId?: string,
   opts?: { page: number; pageSize: number }
 ) {
+  await requireInventoryView();
   const where: any = {};
 
   if (itemId) {
@@ -316,6 +289,7 @@ export async function getStockAdjustments(
 }
 
 export async function getStockAdjustmentById(id: string) {
+  await requireInventoryView();
   const row = await prisma.stockAdjustment.findUnique({
     where: { id },
     include: {
@@ -364,6 +338,223 @@ export async function getItemAvgCosts(
   return out;
 }
 
+/* Prisma compound unique keys don't accept null; use "" for non-variant items. */
+const normalizeVariantSku = (variantSku?: string | null) => variantSku ?? "";
+
+const compositeKey = (itemId: string, variantSku?: string | null) => ({
+  itemId_variantSku: { itemId, variantSku: normalizeVariantSku(variantSku) },
+});
+
+/** Get current inventory value for an item (or item+variant). Serialized for client. */
+export async function getInventoryValue(itemId: string, variantSku?: string | null) {
+  await requireInventoryView();
+  const v = await prisma.inventoryValue.findUnique({
+    where: compositeKey(itemId, variantSku),
+    include: {
+      item: {
+        select: {
+          sku: true,
+          nameId: true,
+          nameEn: true,
+          uom: {
+            select: {
+              code: true,
+              nameId: true,
+            },
+          },
+        },
+      },
+    },
+  });
+  if (!v) return null;
+  return {
+    ...v,
+    qtyOnHand: Number(v.qtyOnHand),
+    avgCost: Number(v.avgCost),
+    totalValue: Number(v.totalValue),
+  };
+}
+
+const inventorySnapshotInclude = {
+  item: {
+    select: {
+      sku: true,
+      nameId: true,
+      nameEn: true,
+      type: true,
+      reorderPoint: true,
+      variants: true,
+      uom: {
+        select: {
+          code: true,
+          nameId: true,
+        },
+      },
+    },
+  },
+};
+
+const inventorySnapshotOrderBy = {
+  item: {
+    sku: "asc" as const,
+  },
+};
+
+type InventorySnapshotRow = Prisma.InventoryValueGetPayload<{
+  include: typeof inventorySnapshotInclude;
+}>;
+
+type VariantChipAccum = {
+  variantSku: string;
+  qtyOnHand: number;
+  reservedQty: number;
+};
+
+/**
+ * Aggregate InventoryValue rows by itemId (one row per item; sum qty/reserved/value, weighted avg
+ * cost). Preserves factual per-variant chips from non-empty variantSku rows.
+ */
+function aggregateSnapshotByItemId(values: InventorySnapshotRow[]) {
+  const byItem = new Map<
+    string,
+    {
+      qtyOnHand: number;
+      reservedQty: number;
+      totalValue: number;
+      item: InventorySnapshotRow["item"];
+      variantRows: VariantChipAccum[];
+    }
+  >();
+  for (const v of values) {
+    const qty = toNum(v.qtyOnHand) ?? 0;
+    const reserved = toNum(v.reservedQty) ?? 0;
+    const val = toNum(v.totalValue) ?? 0;
+    const existing = byItem.get(v.itemId);
+    if (existing) {
+      existing.qtyOnHand += qty;
+      existing.reservedQty += reserved;
+      existing.totalValue += val;
+      existing.variantRows.push({
+        variantSku: v.variantSku ?? "",
+        qtyOnHand: qty,
+        reservedQty: reserved,
+      });
+    } else {
+      byItem.set(v.itemId, {
+        qtyOnHand: qty,
+        reservedQty: reserved,
+        totalValue: val,
+        item: v.item,
+        variantRows: [
+          {
+            variantSku: v.variantSku ?? "",
+            qtyOnHand: qty,
+            reservedQty: reserved,
+          },
+        ],
+      });
+    }
+  }
+  const rows = Array.from(byItem.entries()).map(([itemId, agg]) => {
+    const reorderPoint =
+      agg.item.reorderPoint != null ? toNum(agg.item.reorderPoint) : null;
+    const { variants: itemVariantsJson, ...itemRest } = agg.item;
+    const variants = buildVariantStockChips(agg.variantRows, itemVariantsJson);
+    return {
+      itemId,
+      sku: agg.item.sku ?? "",
+      qtyOnHand: agg.qtyOnHand,
+      reservedQty: agg.reservedQty,
+      available: agg.qtyOnHand - agg.reservedQty,
+      totalValue: agg.totalValue,
+      avgCost: agg.qtyOnHand > 0 ? agg.totalValue / agg.qtyOnHand : 0,
+      reorderPoint,
+      variants,
+      item: {
+        ...itemRest,
+        reorderPoint,
+      },
+    };
+  });
+  return rows;
+}
+
+export type GetInventorySnapshotOpts = {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  status?: StockStatus;
+  sort?: StockSort;
+};
+
+/** Get inventory snapshot (one row per item, aggregated from variant-level rows). */
+export async function getInventorySnapshot(opts?: GetInventorySnapshotOpts) {
+  await requireInventoryView();
+
+  const values = await prisma.inventoryValue.findMany({
+    include: inventorySnapshotInclude,
+    orderBy: inventorySnapshotOrderBy,
+  });
+
+  const allItems = aggregateSnapshotByItemId(values);
+  /* Portfolio summary (value / count / health) is always over the full set. */
+  const totalValue = allItems.reduce((sum, v) => sum + v.totalValue, 0);
+  const health = summarizeStockHealth(
+    allItems.map((v) => ({
+      available: v.available,
+      reorderPoint: v.item.reorderPoint,
+    })),
+  );
+  /* lowStockItems kept for callers; maps to menipis (excludes habis/negatif). */
+  const lowStockItems = health.menipisCount;
+
+  /**
+   * Search filters the list (server-side, across all rows — not just the current page).
+   * Also matches against per-variant SKUs (e.g. "27000101P-BLK-XL") so a variant-code
+   * search surfaces the article it belongs to.
+   */
+  const q = opts?.search?.trim().toLowerCase();
+  const searched = q
+    ? allItems.filter(
+        (v) =>
+          v.item.sku.toLowerCase().includes(q) ||
+          v.item.nameId.toLowerCase().includes(q) ||
+          v.variants.some((variant) => variant.variantSku.toLowerCase().includes(q)),
+      )
+    : allItems;
+
+  const matched = filterAndSortStockItems(searched, {
+    status: opts?.status,
+    sort: opts?.sort ?? "stock_desc",
+  });
+
+  const portfolio = {
+    totalValue,
+    totalItems: allItems.length,
+    lowStockItems,
+    totalAvailable: health.totalAvailable,
+    menipisCount: health.menipisCount,
+    habisCount: health.habisCount,
+    negatifCount: health.negatifCount,
+  };
+
+  if (opts?.page != null && opts?.pageSize != null && opts.pageSize > 0) {
+    const start = (opts.page - 1) * opts.pageSize;
+    const items = matched.slice(start, start + opts.pageSize);
+    return {
+      items,
+      totalCount: matched.length,
+      ...portfolio,
+    };
+  }
+
+  return {
+    items: matched,
+    totalCount: matched.length,
+    ...portfolio,
+  };
+}
+
 export type RejectedGoodsRecapRow = {
   id: string;
   itemId: string;
@@ -390,6 +581,7 @@ export async function getRejectedGoodsRecap(filters?: {
   page?: number;
   pageSize?: number;
 }): Promise<{ items: RejectedGoodsRecapRow[]; totalCount: number }> {
+  await requireInventoryView();
   const where: Record<string, unknown> = {};
   if (filters?.itemId) where.itemId = filters.itemId;
   if (filters?.woId) where.woId = filters.woId;

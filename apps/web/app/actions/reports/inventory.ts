@@ -3,6 +3,8 @@
 import { prisma } from '@elorae/db';
 import { ItemType } from '@elorae/db';
 import * as XLSX from 'xlsx';
+import { auth } from '@/lib/auth';
+import { requireAnyPermission, PERMISSIONS } from '@/lib/rbac';
 
 export type InventorySnapshotDetail = {
   itemId: string;
@@ -34,6 +36,11 @@ export type InventorySnapshotResult = {
 export async function getInventoryValueSnapshot(
   _asOfDate?: Date
 ): Promise<InventorySnapshotResult> {
+  const session = await auth();
+  requireAnyPermission(session?.user?.permissions ?? [], [
+    PERMISSIONS.INVENTORY_VIEW,
+    PERMISSIONS.DASHBOARD_VIEW,
+  ]);
   const asOfDate = _asOfDate ? new Date(_asOfDate) : new Date();
   asOfDate.setHours(0, 0, 0, 0);
 
@@ -128,6 +135,11 @@ export async function getCOGSRawVsFinished(): Promise<{
   rawCount: number;
   finishedCount: number;
 }> {
+  const session = await auth();
+  requireAnyPermission(session?.user?.permissions ?? [], [
+    PERMISSIONS.INVENTORY_VIEW,
+    PERMISSIONS.DASHBOARD_VIEW,
+  ]);
   const rows = await prisma.inventoryValue.findMany({
     where: { qtyOnHand: { gt: 0 } },
     include: {
