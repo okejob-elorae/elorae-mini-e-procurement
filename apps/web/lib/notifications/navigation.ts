@@ -150,7 +150,69 @@ export function getNotificationHref(
       }
       return "/backoffice/store-stocktakes";
     }
+    case "PENDING_ORDER_APPROVAL": {
+      const orderId = data.orderId;
+      if (typeof orderId === "string" && orderId !== "") {
+        return `/backoffice/field-sales-orders/${orderId}`;
+      }
+      return "/backoffice/field-sales-orders";
+    }
+    case "STORE_CHANGE_REQUEST": {
+      const storeId = data.storeId;
+      if (typeof storeId === "string" && storeId !== "") {
+        return `/backoffice/stores/${storeId}`;
+      }
+      return "/backoffice/stores";
+    }
+    case "JOURNAL_PENDING":
+      return getJournalPendingHref(data);
     default:
       return null;
   }
+}
+
+/**
+ * The sales sweep and the sales-return writer both use kind "revenue"/"cogs", so those are told
+ * apart by which id key is present, never by kind alone.
+ */
+function getJournalPendingHref(data: Record<string, unknown>): string {
+  const fallback = "/backoffice/finance/journals";
+  const str = (key: string): string | null => {
+    const value = data[key];
+    return typeof value === "string" && value !== "" ? value : null;
+  };
+  const kind = str("kind");
+  const docId = str("docId");
+  const orderId = str("orderId");
+  const salesReturnId = str("salesReturnId");
+  const opnameId = str("opnameId");
+  const woId = str("woId");
+  const grnId = str("grnId");
+
+  if (salesReturnId && (kind === "revenue" || kind === "cogs")) {
+    return `/backoffice/returns/${salesReturnId}`;
+  }
+  if (orderId && (kind === "revenue" || kind === "cogs")) {
+    return `/backoffice/sales-orders/${orderId}`;
+  }
+  if (opnameId) return `/backoffice/inventory/stock-opname/${opnameId}`;
+  if (kind === "fg_receipt" && woId) return `/backoffice/work-orders/${woId}`;
+  if ((kind === "receipt" || kind === "reversal") && grnId) return "/backoffice/inventory?tab=grn";
+  if (kind === "van_load") {
+    const canvasserId = str("canvasserId");
+    return canvasserId ? `/backoffice/canvassing/${canvasserId}` : "/backoffice/canvassing";
+  }
+  if (kind === "field_delivery_revenue" || kind === "field_delivery_cogs") {
+    const receivableId = str("receivableId");
+    return receivableId ? `/backoffice/finance/piutang/${receivableId}` : "/backoffice/finance/piutang";
+  }
+  if (!kind || !docId) return fallback;
+  if (kind === "supplier_payment" || kind === "supplier_payment_reversal") {
+    return `/backoffice/purchase-orders/${docId}`;
+  }
+  if (kind === "ar_payment" || kind === "ar_payment_void") return `/backoffice/finance/payments/${docId}`;
+  if (kind.startsWith("konsi_sell_through_")) return `/backoffice/konsi-sell-through/${docId}`;
+  if (kind === "van_sale") return `/backoffice/van-sales/${docId}`;
+  if (kind === "van_reconcile") return `/backoffice/canvassing/reconcile/${docId}`;
+  return fallback;
 }

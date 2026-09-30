@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { postArJournalSafely } from "./post-ar-journal-safely";
 
@@ -105,5 +105,53 @@ d("postArJournalSafely (test bed only)", () => {
       role: "AR",
     }));
     expect(outcome).toEqual({ ok: false, code: "UNMAPPED_ROLE", role: "AR" });
+  });
+  const flaggedMetadata = async () => {
+    const rows = await prisma.adminNotification.findMany({
+      where: { category: "JOURNAL_PENDING" },
+      select: { metadata: true },
+    });
+    return rows
+      .map((r) => r.metadata as Record<string, unknown> | null)
+      .filter((m) => m?.docId === docId);
+  };
+
+  it("writes a field delivery row without receivableId when the delivery has no receivable", async () => {
+    await postArJournalSafely("field_delivery_revenue", docId, async () => ({ ok: false, code: "UNBALANCED" }));
+    const [meta] = await flaggedMetadata();
+    expect(meta).toBeDefined();
+    expect(meta).not.toHaveProperty("receivableId");
+  });
+
+  it("records the receivableId a field delivery lookup finds", async () => {
+    const receivableId = `test-rcv-${token}`;
+    const original = prisma.receivable.findUnique.bind(prisma.receivable);
+    const spy = vi.spyOn(prisma.receivable, "findUnique").mockImplementation(
+      (async () => ({ id: receivableId })) as unknown as typeof prisma.receivable.findUnique,
+    );
+    try {
+      await postArJournalSafely("field_delivery_revenue", docId, async () => ({ ok: false, code: "UNBALANCED" }));
+    } finally {
+      spy.mockImplementation(original as unknown as typeof prisma.receivable.findUnique);
+    }
+    const [meta] = await flaggedMetadata();
+    expect(meta).toMatchObject({ docId, kind: "field_delivery_revenue", receivableId });
+  });
+
+  it("still writes the row when the receivable lookup fails", async () => {
+    const original = prisma.receivable.findUnique.bind(prisma.receivable);
+    const spy = vi.spyOn(prisma.receivable, "findUnique").mockImplementation(
+      (async () => {
+        throw new Error("lookup down");
+      }) as unknown as typeof prisma.receivable.findUnique,
+    );
+    try {
+      await postArJournalSafely("field_delivery_cogs", docId, async () => ({ ok: false, code: "UNBALANCED" }));
+    } finally {
+      spy.mockImplementation(original as unknown as typeof prisma.receivable.findUnique);
+    }
+    const [meta] = await flaggedMetadata();
+    expect(meta).toMatchObject({ docId, kind: "field_delivery_cogs", reason: "UNBALANCED" });
+    expect(meta).not.toHaveProperty("receivableId");
   });
 });
