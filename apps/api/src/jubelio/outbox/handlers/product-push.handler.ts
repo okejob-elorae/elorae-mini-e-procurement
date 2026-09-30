@@ -140,8 +140,9 @@ export class ProductPushHandler implements OutboxHandler {
      * timeout, so a transaction around it could expire after Jubelio had already deleted. A mapping
      * delete that fails here fails the row, and its retry recomputes `removed` from the surviving
      * mappings and sends the DELETE again. Jubelio answered 200 to a DELETE of an id that does not
-     * exist (probed on prod 2026-09-30 with one that never existed), and the retry's catalog POST no
-     * longer names a removed variant (see `buildJubelioImages`), so the retry converges.
+     * exist (probed on prod 2026-09-30 with one that never existed; an id Jubelio already deleted is
+     * assumed to answer the same), and the retry's catalog POST does not name a removed variant (see
+     * `buildJubelioImages`), so the retry converges.
      */
     if (removed.length > 0) {
       await this.http.delete("/inventory/items/item-variant/", {
