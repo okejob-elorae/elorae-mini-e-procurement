@@ -4262,6 +4262,7 @@
       "NO_LINES": "Tambahkan minimal satu barang untuk ditransfer.",
       "BAD_QTY": "Setiap baris membutuhkan jumlah lebih dari nol.",
       "ITEM_NOT_FOUND": "Salah satu barang pada dokumen ini sudah tidak ada.",
+      "BAD_VARIANT": "{detail} bukan varian yang distok untuk barang ini, dan toko asal tidak memilikinya. Muat ulang lalu pilih barangnya lagi.",
       "STORE_NOT_FOUND": "Toko itu sudah tidak ada. Muat ulang dan pilih yang lain.",
       "MOVED_AT_IN_FUTURE": "Waktu barang dipindahkan tidak boleh di masa mendatang.",
       "COUNTED_SINCE_MOVE": "Perhitungan stok {detail} menghitung barang pada transfer ini setelah barang dipindahkan, sehingga perpindahan ini sudah tercatat di perhitungan tersebut sebagai kekurangan di satu toko dan kelebihan di toko lainnya. Menyetujui akan mencatatnya dua kali. Batalkan transfer ini, lalu buat transfer baru untuk barang yang tidak termasuk dalam perhitungan tersebut — atau dengan waktu pemindahan yang sebenarnya, jika barang ternyata dipindahkan setelah perhitungan itu.",

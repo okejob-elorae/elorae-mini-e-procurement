@@ -306,8 +306,11 @@ d("konsi sell-through writer (test bed only)", () => {
     const stocktakeId = await count(6);
     /*
      * A closing count is a full count, so "a key it never counted" is one the store held no row for:
-     * here the item's OTHER variant. The count cannot have seen that move.
+     * here the item's OTHER variant. The count cannot have seen that move. The item lists no such
+     * variant, so the source needs a (zero) row under it — added after the count — or
+     * `createStoreTransfer` refuses the key as `BAD_VARIANT`.
      */
+    await prisma.storeStock.create({ data: { storeId: state.storeId, itemId: state.itemId, variantSku: "OTHER", qty: 0, avgCost: 0 } });
     await fx.storeTransfer({ direction: "OUT", qty: 1, variantSku: "OTHER", movedAt: new Date((await countMomentOf(stocktakeId)).getTime() - 60_000) });
     await expect(createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId })).resolves.toMatchObject({ id: expect.any(String) });
   }, SLOW);

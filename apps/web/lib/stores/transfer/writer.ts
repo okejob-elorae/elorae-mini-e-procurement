@@ -3,6 +3,7 @@ import type { StockLedgerRefType } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { weightedAvgCost } from "@/lib/inventory/weighted-avg-cost";
+import { isStockableVariantKey } from "@/lib/items/variants";
 import { StoreTransferError } from "./errors";
 import { isMovedAtInFuture } from "./moved-at";
 
@@ -62,7 +63,7 @@ export async function createStoreTransfer(input: {
     if (storeCount !== storeIds.length) throw new StoreTransferError("STORE_NOT_FOUND");
 
     const itemIds = Array.from(new Set(input.lines.map((l) => l.itemId)));
-    const items = await tx.item.findMany({ where: { id: { in: itemIds } }, select: { id: true, nameId: true } });
+    const items = await tx.item.findMany({ where: { id: { in: itemIds } }, select: { id: true, sku: true, nameId: true, variants: true } });
     const byId = new Map(items.map((i) => [i.id, i]));
     for (const l of input.lines) {
       if (!byId.has(l.itemId)) throw new StoreTransferError("ITEM_NOT_FOUND");
@@ -97,6 +98,14 @@ export async function createStoreTransfer(input: {
         where: { storeId_itemId_variantSku: { storeId: input.fromStoreId, itemId: l.itemId, variantSku: l.variantSku } },
         select: { avgCost: true },
       });
+      /*
+       * Approval would otherwise create a destination `StoreStock` row under a key no stock can
+       * exist at (a variant the item lacks, `""` on a variant item). A key the source already holds
+       * stays transferable even when the item no longer lists it, so legacy stock is never stranded.
+       */
+      if (!sourceStock && !isStockableVariantKey(item.variants, l.variantSku)) {
+        throw new StoreTransferError("BAD_VARIANT", `${item.sku}${l.variantSku ? ` / ${l.variantSku}` : ""}`);
+      }
       lineData.push({
         transferId: transfer.id,
         itemId: l.itemId,

@@ -5,6 +5,7 @@ export type StoreTransferErrorCode =
   | "NO_LINES"
   | "BAD_QTY"
   | "ITEM_NOT_FOUND"
+  | "BAD_VARIANT"
   | "STORE_NOT_FOUND"
   | "MOVED_AT_IN_FUTURE"
   | "COUNTED_SINCE_MOVE";

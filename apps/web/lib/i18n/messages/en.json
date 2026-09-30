@@ -4262,6 +4262,7 @@
       "NO_LINES": "Add at least one item to transfer.",
       "BAD_QTY": "Every line needs a quantity greater than zero.",
       "ITEM_NOT_FOUND": "One of the items on this document no longer exists.",
+      "BAD_VARIANT": "{detail} is not a variant this item stocks, and the source store holds none of it. Reload and pick the item again.",
       "STORE_NOT_FOUND": "That store no longer exists. Refresh and pick another.",
       "MOVED_AT_IN_FUTURE": "The time the goods moved cannot be in the future.",
       "COUNTED_SINCE_MOVE": "Stocktake {detail} counted items on this transfer after the goods moved, so the move already stands in that count as a shortfall at one store and a surplus at the other. Approving would record it twice. Cancel this transfer, then raise a new one for any items that count did not include — or with the real move time, if the goods actually moved after that count.",

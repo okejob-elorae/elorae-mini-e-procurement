@@ -155,6 +155,29 @@ d("store transfer writer (test bed only)", () => {
       await expect(newTransfer(new Date(Date.now() + 10 * 60_000))).rejects.toMatchObject({ code: "MOVED_AT_IN_FUTURE" });
       expect(await prisma.storeTransfer.count({ where: { fromStoreId: seededId(storeAId) } })).toBe(0);
     });
+
+    it("refuses BAD_VARIANT for a key the item does not stock and the source does not hold, and creates nothing", async () => {
+      await prisma.item.update({ where: { id: seededId(otherItemId) }, data: { variants: [{ sku: "V-M", size: "M" }] } });
+      const attempt = (line: { itemId: string; variantSku: string }) =>
+        createStoreTransfer({ fromStoreId: storeAId, toStoreId: storeBId, movedAt: pastMove(), createdById: userId, lines: [{ ...line, qty: 1 }] });
+
+      await expect(attempt({ itemId: otherItemId, variantSku: "V-XXL" })).rejects.toMatchObject({ code: "BAD_VARIANT" });
+      await expect(attempt({ itemId: otherItemId, variantSku: "" })).rejects.toMatchObject({ code: "BAD_VARIANT" });
+      await expect(attempt({ itemId, variantSku: "V-M" })).rejects.toMatchObject({ code: "BAD_VARIANT" });
+      expect(await prisma.storeTransfer.count({ where: { fromStoreId: seededId(storeAId) } })).toBe(0);
+
+      await expect(attempt({ itemId: otherItemId, variantSku: "V-M" })).resolves.toMatchObject({ transferId: expect.any(String) });
+    });
+
+    it("accepts a key the item no longer lists when the source still holds stock under it", async () => {
+      await prisma.storeStock.create({ data: { storeId: storeAId, itemId, variantSku: "LEGACY", qty: 2, avgCost: 5000 } });
+      await expect(
+        createStoreTransfer({
+          fromStoreId: storeAId, toStoreId: storeBId, movedAt: pastMove(), createdById: userId,
+          lines: [{ itemId, variantSku: "LEGACY", qty: 2 }],
+        }),
+      ).resolves.toMatchObject({ transferId: expect.any(String) });
+    });
   });
 
   describe("approveStoreTransfer", () => {

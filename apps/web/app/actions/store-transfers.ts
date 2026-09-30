@@ -67,7 +67,7 @@ function toResult(e: unknown): StoreTransferActionResult {
  * Creates a PENDING transfer. `stores:manage` — the same permission that gates opening a store
  * stocktake — because this, like that document, moves consignment stock on a store's behalf
  * rather than reading it. The writer's own `SAME_STORE`/`NO_LINES`/`BAD_QTY`/`MOVED_AT_IN_FUTURE`/
- * `ITEM_NOT_FOUND` guards still run regardless of what this input check catches, since this action
+ * `ITEM_NOT_FOUND`/`BAD_VARIANT` guards still run regardless of what this input check catches, since this action
  * is callable independently of whatever the form ever sends. A move time that does not round-trip
  * through WIB (`parseMovedAtInput`) is `INVALID_REQUEST`, never a domain code.
  */
