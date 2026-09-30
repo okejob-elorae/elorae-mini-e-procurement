@@ -73,7 +73,7 @@ export class ProductPushHandler implements OutboxHandler {
         })
       : images;
 
-    const body = buildCreateProductRequest({
+    const pushInput = {
       item: {
         id: item.id,
         sku: item.sku,
@@ -100,9 +100,9 @@ export class ProductPushHandler implements OutboxHandler {
         buyPrice: Number(defaults.buyPrice),
       },
       categoryJubelioId: categoryMap.jubelioCategoryId,
-      mappings,
       images: refreshedImages,
-    });
+    };
+    const body = buildCreateProductRequest({ ...pushInput, mappings });
 
     const response = await this.http.post<CatalogPostResponse>("/inventory/catalog/", body);
 
@@ -145,8 +145,32 @@ export class ProductPushHandler implements OutboxHandler {
       });
     }
 
+    /**
+     * `variation_images` can only name variants Jubelio has already given an item id, so a first push
+     * sends none for a newly created variant that has its own images. Now that its mapping exists,
+     * push once more so those images land now rather than on some later edit. A throw here fails the
+     * row, and its retry repeats the whole push, which by then carries the images.
+     */
+    const newCodes = new Set(
+      body.product_skus.filter((s) => !existingCodes.has(s.item_code)).map((s) => s.item_code),
+    );
+    const newVariantHasImages =
+      hasVariants &&
+      refreshedImages.some(
+        (i) => i.variantSku !== null && i.jubelioImageKey !== null && newCodes.has(i.variantSku),
+      );
+    if (newVariantHasImages) {
+      const finalMappings = (await this.prisma.jubelioProductMapping.findMany({
+        where: { itemId: item.id },
+      })) as MappingSlice[];
+      await this.http.post<CatalogPostResponse>(
+        "/inventory/catalog/",
+        buildCreateProductRequest({ ...pushInput, mappings: finalMappings }),
+      );
+    }
+
     this.logger.log(
-      `Pushed item ${item.id} (group=${response.id}, +${newCount} mappings, -${removed.length})`,
+      `Pushed item ${item.id} (group=${response.id}, +${newCount} mappings, -${removed.length}${newVariantHasImages ? ", variant images re-pushed" : ""})`,
     );
     return { kind: "processed" };
   }
