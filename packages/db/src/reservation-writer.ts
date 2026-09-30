@@ -22,16 +22,20 @@ function hasTx(client: AnyClient): client is PrismaClient {
   return typeof (client as PrismaClient).$transaction === "function";
 }
 
-async function findFieldSalesInventory(tx: Prisma.TransactionClient, itemId: string, variantSku: string) {
-  // Variantless rows may key on null OR "". Prefer the caller's exact spelling when both
-  // exist — a bare OR findFirst can decrement the sibling row and orphan reservedQty
-  // (dual-key fork on FG items that also have a Jubelio "" row).
+/**
+ * Serves EVERY reserve/consume/release in this file, Jubelio and field sales alike. A reserve and
+ * its later consume/release must resolve the same row, which is why one helper serves all of them.
+ * Variantless rows may key on null OR "": prefers the exact "" row, then null. A bare OR
+ * findFirst can pick the sibling and orphan reservedQty. NULLs are distinct under the unique
+ * index, so two null rows can exist; the id tie-break keeps both halves on one row.
+ */
+async function findReservationInventory(tx: Prisma.TransactionClient, itemId: string, variantSku: string) {
   if (variantSku !== "") {
     return tx.inventoryValue.findFirst({ where: { itemId, variantSku } });
   }
   const exactEmpty = await tx.inventoryValue.findFirst({ where: { itemId, variantSku: "" } });
   if (exactEmpty) return exactEmpty;
-  return tx.inventoryValue.findFirst({ where: { itemId, variantSku: null } });
+  return tx.inventoryValue.findFirst({ where: { itemId, variantSku: null }, orderBy: { id: "asc" } });
 }
 
 export async function reserveOrder(client: AnyClient, input: ReserveOrderInput): Promise<ReserveOrderResult> {
@@ -60,13 +64,11 @@ export async function reserveOrder(client: AnyClient, input: ReserveOrderInput):
         },
       });
 
-      const inv = await tx.inventoryValue.findUnique({
-        where: { itemId_variantSku: { itemId: line.itemId, variantSku: line.variantSku } },
-      });
+      const inv = await findReservationInventory(tx, line.itemId, line.variantSku);
       if (!inv) throw new InventoryValueMissingError(line.itemId, line.variantSku);
       /* No ledger entry: a reservation moves no stock. Only qtyOnHand movements are ledger events. */
       const updated = await tx.inventoryValue.update({
-        where: { itemId_variantSku: { itemId: line.itemId, variantSku: line.variantSku } },
+        where: { id: inv.id },
         data: { reservedQty: { increment: line.qty }, lastUpdated: new Date() },
         select: { qtyOnHand: true, reservedQty: true },
       });
@@ -113,13 +115,11 @@ export async function consumeOrder(
       if (upd.count === 0) continue; // lost the race — another trigger consumed it
 
       const qty = Number(row.qty);
-      const inv = await tx.inventoryValue.findUnique({
-        where: { itemId_variantSku: { itemId: row.itemId, variantSku: row.variantSku } },
-      });
+      const inv = await findReservationInventory(tx, row.itemId, row.variantSku);
       if (!inv) throw new InventoryValueMissingError(row.itemId, row.variantSku);
       const avgCost = Number(inv.avgCost);
       const updated = await tx.inventoryValue.update({
-        where: { itemId_variantSku: { itemId: row.itemId, variantSku: row.variantSku } },
+        where: { id: inv.id },
         data: {
           qtyOnHand: { decrement: qty },
           reservedQty: { decrement: qty },
@@ -209,13 +209,11 @@ export async function releaseOrder(
       });
       if (upd.count === 0) continue;
 
-      const inv = await tx.inventoryValue.findUnique({
-        where: { itemId_variantSku: { itemId: row.itemId, variantSku: row.variantSku } },
-      });
+      const inv = await findReservationInventory(tx, row.itemId, row.variantSku);
       if (!inv) throw new InventoryValueMissingError(row.itemId, row.variantSku);
       /* No ledger entry: releasing a reservation moves no stock. Only qtyOnHand movements are ledger events. */
       await tx.inventoryValue.update({
-        where: { itemId_variantSku: { itemId: row.itemId, variantSku: row.variantSku } },
+        where: { id: inv.id },
         data: { reservedQty: { decrement: Number(row.qty) }, lastUpdated: new Date() },
       });
       released += 1;
@@ -255,7 +253,7 @@ export async function reserveFieldSalesOrder(
           state: "RESERVED",
         },
       });
-      const inv = await findFieldSalesInventory(tx, line.itemId, line.variantSku);
+      const inv = await findReservationInventory(tx, line.itemId, line.variantSku);
       if (!inv) throw new InventoryValueMissingError(line.itemId, line.variantSku);
       /* No ledger entry: a reservation moves no stock. Only qtyOnHand movements are ledger events. */
       const updated = await tx.inventoryValue.update({
@@ -334,7 +332,7 @@ export async function consumeFieldSalesOrderPartial(
       const res = await tx.stockReservation.findUniqueOrThrow({ where: { fieldSalesLineId: line.fieldSalesLineId } });
       const fullyConsumed = Number(res.consumedQty) >= Number(res.qty);
 
-      const inv = await findFieldSalesInventory(tx, line.itemId, line.variantSku);
+      const inv = await findReservationInventory(tx, line.itemId, line.variantSku);
       if (!inv) throw new InventoryValueMissingError(line.itemId, line.variantSku);
       prepared.push({
         line,
@@ -449,7 +447,7 @@ export async function consumeFieldSalesOrder(
       });
       if (upd.count === 0) continue;
       const qty = Number(row.qty);
-      const inv = await findFieldSalesInventory(tx, row.itemId, row.variantSku);
+      const inv = await findReservationInventory(tx, row.itemId, row.variantSku);
       if (!inv) throw new InventoryValueMissingError(row.itemId, row.variantSku);
       const avgCost = Number(inv.avgCost);
       const updated = await tx.inventoryValue.update({
@@ -531,7 +529,7 @@ export async function releaseFieldSalesOrder(
         data: { state: "RELEASED", resolvedAt: new Date() },
       });
       if (upd.count === 0) continue;
-      const inv = await findFieldSalesInventory(tx, row.itemId, row.variantSku);
+      const inv = await findReservationInventory(tx, row.itemId, row.variantSku);
       if (!inv) throw new InventoryValueMissingError(row.itemId, row.variantSku);
       const stillHeld = Number(row.qty) - Number(row.consumedQty);
       if (stillHeld > 0) {
@@ -566,7 +564,7 @@ export async function reserveKonsiFieldSalesOrder(
         skipped += 1;
         continue;
       }
-      const inv = await findFieldSalesInventory(tx, line.itemId, line.variantSku);
+      const inv = await findReservationInventory(tx, line.itemId, line.variantSku);
       if (!inv) throw new InventoryValueMissingError(line.itemId, line.variantSku);
       // Atomic guard: only increment if available (qtyOnHand - reservedQty) still covers qty.
       // Prevents the check-then-write race under concurrent approvals.
