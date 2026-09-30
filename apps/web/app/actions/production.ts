@@ -9,7 +9,7 @@ import { apiFetch } from "@/lib/internal-api";
 import { generateDocNumber } from '@/lib/docNumber';
 import { generateMaterialPlan } from '@/lib/production/planning';
 import { reconcileWorkOrder } from '@/lib/production/reconciliation';
-import { calculateMovingAverage } from '@/lib/inventory/costing';
+import { calculateMovingAverage, findExistingInventoryValueRow } from '@/lib/inventory/costing';
 import { getActorName, notifyWOCreated, notifyWOStatusUpdated, notifyWOMaterialsIssued, notifyWOCompleted } from '@/app/actions/notifications';
 import { getPpnRatePercent } from '@/app/actions/settings/ppn';
 import { auth } from '@/lib/auth';
@@ -936,10 +936,7 @@ export async function getAdditionalMaterialsPreview(woId: string, additionalQty:
   for (const rule of accessoryRules) {
     const qtyRequired = Number(rule.qtyRequired);
     const qtyNeeded = Math.ceil(qtyRequired * additionalQty);
-    const inv = await prisma.inventoryValue.findUnique({
-      where: { itemId_variantSku: { itemId: rule.materialId, variantSku: '' } },
-      select: { qtyOnHand: true },
-    });
+    const inv = await findExistingInventoryValueRow(prisma, rule.materialId, null);
     const qtyOnHand = inv ? Number(inv.qtyOnHand) : 0;
     lines.push({
       itemId: rule.materialId,
@@ -993,10 +990,7 @@ export async function issueAdditionalMaterials(
   for (const rule of accessoryRules) {
     const qtyRequired = Number(rule.qtyRequired);
     const qtyNeeded = Math.ceil(qtyRequired * additionalQty);
-    const inv = await prisma.inventoryValue.findUnique({
-      where: { itemId_variantSku: { itemId: rule.materialId, variantSku: '' } },
-      select: { qtyOnHand: true },
-    });
+    const inv = await findExistingInventoryValueRow(prisma, rule.materialId, null);
     const qtyOnHand = inv ? Number(inv.qtyOnHand) : 0;
     if (qtyOnHand < qtyNeeded) {
       throw new Error(

@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { prisma } from '@elorae/db';
 import type { StockLedgerRefType } from '@elorae/db';
 import { generateDocNumber } from '@/lib/docNumber';
-import { reverseInventoryValue } from '@/lib/inventory/costing';
+import { findExistingInventoryValueRow, reverseInventoryValue } from '@/lib/inventory/costing';
 import { getActorName, notifyVendorReturnCreated, notifyVendorReturnStatusUpdated } from '@/app/actions/notifications';
 import { getEffectiveHPPForItem } from '@/app/actions/hpp';
 import { auth } from '@/lib/auth';
@@ -192,10 +192,7 @@ export async function createVendorReturn(
           const avgCost = hpp?.avgCostPerUnit ?? 0;
           costValue = avgCost * line.qty;
         } else {
-          const variantKey = (line.variantSku ?? '') as string;
-          const inventory = await tx.inventoryValue.findUnique({
-            where: { itemId_variantSku: { itemId: line.itemId, variantSku: variantKey } }
-          });
+          const inventory = await findExistingInventoryValueRow(tx, line.itemId, line.variantSku);
           const avgCost = inventory
             ? new Decimal(inventory.avgCost.toString())
             : new Decimal(0);
@@ -306,10 +303,7 @@ export async function updateVendorReturn(
           const avgCost = hpp?.avgCostPerUnit ?? 0;
           costValue = avgCost * line.qty;
         } else {
-          const variantKey = (line.variantSku ?? '') as string;
-          const inventory = await tx.inventoryValue.findUnique({
-            where: { itemId_variantSku: { itemId: line.itemId, variantSku: variantKey } }
-          });
+          const inventory = await findExistingInventoryValueRow(tx, line.itemId, line.variantSku);
           const avgCost = inventory
             ? new Decimal(inventory.avgCost.toString())
             : new Decimal(0);

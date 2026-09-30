@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockAuth, mockFindMany, mockFindUnique } = vi.hoisted(() => ({
+const { mockAuth, mockFindMany, mockFindUnique, mockFindRow } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
+  mockFindRow: vi.fn(),
   mockFindMany: vi.fn(),
   mockFindUnique: vi.fn(),
 }));
@@ -12,7 +13,7 @@ vi.mock("@elorae/db", () => ({
   prisma: { inventoryValue: { findMany: mockFindMany, findUnique: mockFindUnique } },
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-vi.mock("@/lib/inventory/costing", () => ({ findExistingInventoryValueRow: vi.fn() }));
+vi.mock("@/lib/inventory/costing", () => ({ findExistingInventoryValueRow: mockFindRow }));
 vi.mock("@/app/actions/security/pin-auth", () => ({ verifyPinForAction: vi.fn() }));
 vi.mock("@/app/actions/notifications", () => ({
   getActorName: vi.fn(),
@@ -29,6 +30,7 @@ const reads: Array<[string, () => Promise<unknown>]> = [
 function assertNoQueryRan() {
   expect(mockFindMany).not.toHaveBeenCalled();
   expect(mockFindUnique).not.toHaveBeenCalled();
+  expect(mockFindRow).not.toHaveBeenCalled();
 }
 
 describe("inventory:view gate on the inventory landing and adjustment reads", () => {
@@ -36,6 +38,7 @@ describe("inventory:view gate on the inventory landing and adjustment reads", ()
     vi.clearAllMocks();
     mockFindMany.mockResolvedValue([]);
     mockFindUnique.mockResolvedValue(null);
+    mockFindRow.mockResolvedValue({ id: "iv1" });
   });
 
   it.each(reads)("%s rejects an unauthenticated caller and runs no query", async (_name, call) => {
@@ -60,5 +63,34 @@ describe("inventory:view gate on the inventory landing and adjustment reads", ()
     mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
     await call();
     expect(mockFindMany.mock.calls.length + mockFindUnique.mock.calls.length).toBe(1);
+  });
+});
+
+describe("getInventoryValue row resolution", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["inventory:view"] } });
+  });
+
+  it("resolves the row through the null-tolerant helper, then reads it by id", async () => {
+    mockFindRow.mockResolvedValue({ id: "iv1" });
+    mockFindUnique.mockResolvedValue({
+      id: "iv1",
+      qtyOnHand: "5",
+      avgCost: "2",
+      totalValue: "10",
+    });
+    const result = await getInventoryValue("i1", null);
+    expect(mockFindRow).toHaveBeenCalledTimes(1);
+    expect(mockFindRow.mock.calls[0].slice(1)).toEqual(["i1", null]);
+    expect(mockFindUnique).toHaveBeenCalledTimes(1);
+    expect(mockFindUnique.mock.calls[0][0].where).toEqual({ id: "iv1" });
+    expect(result).toMatchObject({ qtyOnHand: 5, avgCost: 2, totalValue: 10 });
+  });
+
+  it("returns null and runs no second query when the helper finds no row", async () => {
+    mockFindRow.mockResolvedValue(null);
+    await expect(getInventoryValue("i1", null)).resolves.toBeNull();
+    expect(mockFindUnique).not.toHaveBeenCalled();
   });
 });

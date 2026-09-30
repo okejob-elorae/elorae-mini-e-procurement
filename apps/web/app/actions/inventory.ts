@@ -338,18 +338,13 @@ export async function getItemAvgCosts(
   return out;
 }
 
-/* Prisma compound unique keys don't accept null; use "" for non-variant items. */
-const normalizeVariantSku = (variantSku?: string | null) => variantSku ?? "";
-
-const compositeKey = (itemId: string, variantSku?: string | null) => ({
-  itemId_variantSku: { itemId, variantSku: normalizeVariantSku(variantSku) },
-});
-
 /** Get current inventory value for an item (or item+variant). Serialized for client. */
 export async function getInventoryValue(itemId: string, variantSku?: string | null) {
   await requireInventoryView();
+  const row = await findExistingInventoryValueRow(prisma, itemId, variantSku);
+  if (!row) return null;
   const v = await prisma.inventoryValue.findUnique({
-    where: compositeKey(itemId, variantSku),
+    where: { id: row.id },
     include: {
       item: {
         select: {
