@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { prisma, Prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { parseSettlement, isSupportedMarketplace } from "@/lib/finance/settlement/parser";
@@ -56,17 +58,49 @@ export async function POST(request: NextRequest) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
+    const fileSha256 = createHash("sha256").update(buffer).digest("hex");
+
+    const duplicate = await prisma.settlement.findFirst({
+      where: { marketplace, fileSha256 },
+      select: { id: true },
+    });
+    if (duplicate) {
+      return NextResponse.json({ error: "DUPLICATE_FILE", settlementId: duplicate.id }, { status: 409 });
+    }
+
     const parsed = parseSettlement(marketplace, buffer);
     if (!parsed.ok) {
       return NextResponse.json({ errors: parsed.errors }, { status: 422 });
     }
 
-    const { settlementId, checksumOk, checksumVariance, lineCount } = await persistSettlement({
-      parsed: parsed.data,
-      fileName: file.name,
-      uploadedById: session.user.id,
-      marketplace,
-    });
+    let persisted: Awaited<ReturnType<typeof persistSettlement>>;
+    try {
+      persisted = await persistSettlement({
+        parsed: parsed.data,
+        fileName: file.name,
+        uploadedById: session.user.id,
+        marketplace,
+        fileSha256,
+      });
+    } catch (err) {
+      /**
+       * Two identical uploads racing: the loser trips the (marketplace, fileSha256) unique (P2002), or
+       * expires waiting on the winner's uncommitted key inside the interactive transaction (P2028).
+       * A committed row with this hash means it is a duplicate; with none, the error was this upload's
+       * own (a P2028 on a slow insert), and it rethrows.
+       */
+      if (err instanceof Prisma.PrismaClientKnownRequestError && (err.code === "P2002" || err.code === "P2028")) {
+        const winner = await prisma.settlement.findFirst({
+          where: { marketplace, fileSha256 },
+          select: { id: true },
+        });
+        if (winner) {
+          return NextResponse.json({ error: "DUPLICATE_FILE", settlementId: winner.id }, { status: 409 });
+        }
+      }
+      throw err;
+    }
+    const { settlementId, checksumOk, checksumVariance, lineCount } = persisted;
 
     let matched: { matched: number; unmatched: number } | null = null;
     let resync: { started: true; seeded: number } | { started: false; reason: "NO_TARGETS" | "API_ERROR" | "MATCH_FAILED" };

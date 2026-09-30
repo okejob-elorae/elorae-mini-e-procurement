@@ -3054,8 +3054,10 @@ model Settlement {
   resyncBatchId     String?
   resyncSeededAt    DateTime?
   resyncRematchedAt DateTime?
+  fileSha256        String?          @db.Char(64)
   lines             SettlementLine[]
 
+  @@unique([marketplace, fileSha256])
   @@index([marketplace, periodFrom])
   @@index([resyncRematchedAt])
 }

@@ -4623,6 +4623,8 @@
     "uploadErrorAtSheet": "Sheet {sheet}",
     "uploadGenericError": "Upload failed. Please try again.",
     "uploadFailed": "Upload failed. Please try again or contact support if the problem persists.",
+    "uploadDuplicate": "This file was already uploaded for this marketplace.",
+    "uploadDuplicateOpen": "Open the existing settlement",
     "colPeriod": "Period",
     "colMarketplace": "Marketplace",
     "colSeller": "Seller",

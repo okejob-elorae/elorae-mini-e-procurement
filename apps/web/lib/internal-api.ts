@@ -58,7 +58,7 @@ export type ApiFetchResult<T> = {
 export async function apiFetch<T = unknown>(
   method: string,
   path: string,
-  opts: { userId: string; body?: unknown } = { userId: "" },
+  opts: { userId: string; body?: unknown; timeoutMs?: number } = { userId: "" },
 ): Promise<ApiFetchResult<T>> {
   /*
    * apps/api's InternalSignGuard verifies the signature against `req.path`, which excludes the
@@ -77,13 +77,35 @@ export async function apiFetch<T = unknown>(
   };
   if (bodyStr) headers["Content-Type"] = "application/json";
 
-  const res = await fetch(`${getBase()}${path}`, {
-    method: method.toUpperCase(),
-    headers,
-    body: bodyStr || undefined,
-  });
+  /**
+   * The timeout is opt-in on purpose: some callers (the catalog sync, the reconciliation snapshot)
+   * run synchronously far longer than a short limit, and a timed-out caller would report failure
+   * while the api keeps writing. With no `timeoutMs` no signal is passed.
+   */
+  const { timeoutMs } = opts;
+  let res: Response;
+  let text: string;
+  try {
+    res = await fetch(`${getBase()}${path}`, {
+      method: method.toUpperCase(),
+      headers,
+      body: bodyStr || undefined,
+      signal: timeoutMs === undefined ? undefined : AbortSignal.timeout(timeoutMs),
+    });
+    /* The signal, when there is one, also aborts a stalled body read, so this stays inside the try. */
+    text = await res.text();
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "TimeoutError") {
+      /* 504 is synthetic: no complete response was received, so it is not a status the api sent. */
+      return {
+        ok: false,
+        status: 504,
+        error: `apiFetch: ${method.toUpperCase()} ${path} timed out after ${timeoutMs}ms`,
+      };
+    }
+    throw err;
+  }
 
-  const text = await res.text();
   const data = text ? safeJson<T>(text) : undefined;
   if (!res.ok) {
     return { ok: false, status: res.status, error: typeof data === "string" ? data : text };
