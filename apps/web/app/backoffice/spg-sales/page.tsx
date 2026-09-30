@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { listSpgSales, listSpgSalesmen } from "@/lib/spg/sale-queries";
+import { parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
 import { SpgSalesListClient } from "./SpgSalesListClient";
 
 export const dynamic = "force-dynamic";
@@ -24,12 +25,6 @@ function parsePageSize(raw: string | undefined): number {
   return ALLOWED_PAGE_SIZES.includes(n) ? n : DEFAULT_PAGE_SIZE;
 }
 
-function parseDate(raw: string | undefined, endOfDay: boolean): Date | undefined {
-  if (!raw) return undefined;
-  const d = new Date(`${raw}T${endOfDay ? "23:59:59.999" : "00:00:00"}`);
-  return Number.isNaN(d.getTime()) ? undefined : d;
-}
-
 export default async function SpgSalesPage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session) redirect("/login");
@@ -38,8 +33,8 @@ export default async function SpgSalesPage({ searchParams }: PageProps) {
 
   const sp = await searchParams;
   const salesmanId = sp.salesmanId?.trim() || undefined;
-  const from = parseDate(sp.from, false);
-  const to = parseDate(sp.to, true);
+  const from = parseDateOnly(sp.from ?? "");
+  const to = parseDateOnlyEnd(sp.to ?? "");
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const pageSize = parsePageSize(sp.pageSize);
 

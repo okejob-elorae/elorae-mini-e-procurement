@@ -46,6 +46,7 @@ import { buildMaterialIssuePrintHtml } from '@/lib/print/material-issue-html';
 import { logPrint } from '@/app/actions/audit';
 import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
+import { parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
 
 type RegisterRow = {
   id: string;
@@ -90,8 +91,10 @@ export default function NotaRegisterPage() {
     try {
       const filters: { vendorId?: string; dateFrom?: Date; dateTo?: Date; issueType?: 'FABRIC' | 'ACCESSORIES' } = {};
       if (vendorId) filters.vendorId = vendorId;
-      if (dateFrom) filters.dateFrom = new Date(dateFrom);
-      if (dateTo) filters.dateTo = new Date(dateTo);
+      const parsedFrom = parseDateOnly(dateFrom);
+      const parsedTo = parseDateOnlyEnd(dateTo);
+      if (parsedFrom) filters.dateFrom = parsedFrom;
+      if (parsedTo) filters.dateTo = parsedTo;
       if (issueType) filters.issueType = issueType;
       const result = await getMaterialIssuesForCMTRegister(filters, { page, pageSize });
       if (result != null && typeof result === 'object' && 'items' in result && 'totalCount' in result) {
