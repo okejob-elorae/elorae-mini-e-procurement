@@ -1381,7 +1381,8 @@
         "UNBALANCED": "Jurnal tidak balance (debit ≠ kredit).",
         "NOTHING_TO_POST": "Tidak ada perubahan nilai untuk dijurnal.",
         "BAD_STATE": "Opname harus berstatus Disetujui untuk posting jurnal.",
-        "FORBIDDEN": "Anda tidak punya izin untuk posting jurnal."
+        "FORBIDDEN": "Anda tidak punya izin untuk posting jurnal.",
+        "ERROR": "Jurnal gagal diposting karena kesalahan tak terduga. Periksa jumlah hitung dan nilai biaya opname ini, lalu coba lagi."
       }
     },
     "scopes": {

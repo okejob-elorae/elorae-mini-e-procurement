@@ -29,6 +29,7 @@ import { postOpnameJournal, probeOpnameNetDelta } from "@/lib/inventory/opname-j
 import { serializeForClient } from "@/lib/serialize-for-client";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import { capNotificationText } from "@/lib/notifications/text";
 
 const OPNAME_PATH = "/backoffice/inventory/stock-opname";
 
@@ -298,23 +299,48 @@ export async function approveOpname(
       changes: { after: { adjustmentCount } },
     });
 
-    // Auto-journal (best-effort — never block the approved opname on GL config).
+    /**
+     * Auto-journal is best-effort: GL trouble never fails an opname that has already committed.
+     * Both ways the post can fail raise JOURNAL_PENDING — a refusal it returns, and an error it
+     * throws (opnameNetDelta refuses a null totalCost rather than posting a short amount) — so a
+     * missing journal always reaches finance instead of vanishing.
+     */
+    let journalFailure: { reason: string; role: string | null; message: string } | null = null;
     try {
       const jr = await postOpnameJournal(opnameId, user.id);
       if (!jr.ok && jr.code !== "NOTHING_TO_POST") {
+        journalFailure = {
+          reason: jr.code,
+          role: jr.role ?? null,
+          message: jr.code === "UNMAPPED_ROLE"
+            ? `Posting role ${jr.role} is unmapped — map it in Account Mapping, then Post journal on the opname.`
+            : `Opname adjustment journal could not post (${jr.code}). Post it manually from the opname detail.`,
+        };
+      }
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "unknown error";
+      console.error(`[approveOpname] auto-post journal threw for opname ${opnameId}:`, err);
+      journalFailure = {
+        reason: "ERROR",
+        role: null,
+        message: `Opname adjustment journal could not post: ${detail}. Post it manually from the opname detail.`,
+      };
+    }
+    if (journalFailure) {
+      try {
         const opnameJournalPendingNotification = await prisma.adminNotification.create({
           data: {
             category: "JOURNAL_PENDING", severity: "WARNING",
-            title: `Opname ${opname.docNumber}: journal not posted`,
-            message: jr.code === "UNMAPPED_ROLE"
-              ? `Posting role ${jr.role} is unmapped — map it in Account Mapping, then Post journal on the opname.`
-              : `Opname adjustment journal could not post (${jr.code}). Post it manually from the opname detail.`,
-            metadata: { opnameId, reason: jr.code, role: jr.role ?? null },
+            title: capNotificationText(`Opname ${opname.docNumber}: journal not posted`),
+            message: journalFailure.message,
+            metadata: { opnameId, reason: journalFailure.reason, role: journalFailure.role },
           },
         });
         void fanOutAdminNotification(opnameJournalPendingNotification);
+      } catch (err) {
+        console.error(`[approveOpname] could not record JOURNAL_PENDING for opname ${opnameId}:`, err);
       }
-    } catch { /* never let journaling fail the approve */ }
+    }
 
     revalidatePath(OPNAME_PATH);
     revalidatePath(`${OPNAME_PATH}/${opnameId}`);
@@ -327,7 +353,7 @@ export async function approveOpname(
 
 export async function postOpnameJournalAction(
   opnameId: string,
-): Promise<GenerateAutoJournalResult | { ok: false; code: "FORBIDDEN" | "BAD_STATE" }> {
+): Promise<GenerateAutoJournalResult | { ok: false; code: "FORBIDDEN" | "BAD_STATE" | "ERROR" }> {
   const session = await auth();
   if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE)) {
     return { ok: false, code: "FORBIDDEN" };
@@ -338,7 +364,14 @@ export async function postOpnameJournalAction(
     return { ok: false, code: "BAD_STATE" };
   }
 
-  const r = await postOpnameJournal(opnameId, session.user.id);
+  /* The writer throws on an uncomputable delta; the detail page hides the button then, but other callers get no such guard. */
+  let r: GenerateAutoJournalResult;
+  try {
+    r = await postOpnameJournal(opnameId, session.user.id);
+  } catch (err) {
+    console.error(`[postOpnameJournalAction] post journal threw for opname ${opnameId}:`, err);
+    return { ok: false, code: "ERROR" };
+  }
   revalidatePath(`${OPNAME_PATH}/${opnameId}`);
   return r;
 }
