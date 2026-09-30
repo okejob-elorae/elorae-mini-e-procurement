@@ -2,14 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   mockAuth,
-  mockFindFirst,
+  mockAggregate,
   mockFindUnique,
   mockWoFindUnique,
   mockRulesFindMany,
   mockTransaction,
 } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
-  mockFindFirst: vi.fn(),
+  mockAggregate: vi.fn(),
   mockFindUnique: vi.fn(),
   mockWoFindUnique: vi.fn(),
   mockRulesFindMany: vi.fn(),
@@ -23,7 +23,7 @@ vi.mock("@elorae/db", () => ({
   prisma: {
     workOrder: { findUnique: mockWoFindUnique },
     consumptionRule: { findMany: mockRulesFindMany },
-    inventoryValue: { findFirst: mockFindFirst, findUnique: mockFindUnique },
+    inventoryValue: { aggregate: mockAggregate, findUnique: mockFindUnique },
     $transaction: mockTransaction,
   },
 }));
@@ -52,7 +52,7 @@ import { getAdditionalMaterialsPreview, issueAdditionalMaterials } from "./produ
 
 const STOP = "STOP_AT_ISSUE_TRANSACTION";
 
-describe("additional materials on a null-spelled variantless accessory row", () => {
+describe("additional materials on an accessory whose stock is split across variantless rows", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
@@ -69,27 +69,32 @@ describe("additional materials on a null-spelled variantless accessory row", () 
       },
     ]);
     mockFindUnique.mockResolvedValue(null);
-    mockFindFirst.mockImplementation(async ({ where }: { where: { OR?: unknown[] } }) => {
-      const tolerant = JSON.stringify(where.OR) === JSON.stringify([{ variantSku: null }, { variantSku: "" }]);
-      return tolerant ? { id: "iv1", qtyOnHand: "50" } : null;
-    });
+    mockAggregate.mockImplementation(async ({ where }: { where: { itemId: string } }) => ({
+      _sum: { qtyOnHand: where.itemId === "m1" ? "50" : null },
+    }));
     mockTransaction.mockRejectedValue(new Error(STOP));
   });
 
-  it("preview reports the null row's on-hand qty as sufficient", async () => {
+  it("preview sums a null row and a blank row into the item's total on-hand", async () => {
+    mockAggregate.mockResolvedValue({ _sum: { qtyOnHand: "50" } });
     const { lines } = await getAdditionalMaterialsPreview("wo1", 10);
+    expect(mockAggregate).toHaveBeenCalledWith({
+      where: { itemId: "m1" },
+      _sum: { qtyOnHand: true },
+    });
     expect(lines).toEqual([
       expect.objectContaining({ itemId: "m1", qtyNeeded: 20, qtyOnHand: 50, sufficient: true }),
     ]);
   });
 
-  it("issue passes the stock pre-check and reaches issueMaterials' transaction", async () => {
+  it("issue passes the pre-check on a null row (0) plus a blank row (50) and reaches the transaction", async () => {
+    mockAggregate.mockResolvedValue({ _sum: { qtyOnHand: "50" } });
     await expect(issueAdditionalMaterials("wo1", 10, "u1")).rejects.toThrow(STOP);
     expect(mockTransaction).toHaveBeenCalledTimes(1);
   });
 
-  it("issue still refuses when the row's on-hand is short", async () => {
-    mockFindFirst.mockResolvedValue({ id: "iv1", qtyOnHand: "5" });
+  it("issue still refuses when the total on-hand is short", async () => {
+    mockAggregate.mockResolvedValue({ _sum: { qtyOnHand: "5" } });
     await expect(issueAdditionalMaterials("wo1", 10, "u1")).rejects.toThrow(
       "Insufficient stock for Button: need 20, have 5"
     );

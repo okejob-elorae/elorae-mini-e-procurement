@@ -22,10 +22,17 @@ vi.mock("@/app/actions/notifications", () => ({
 
 import { getInventorySnapshot, getInventoryValue } from "./inventory";
 
-const reads: Array<[string, () => Promise<unknown>]> = [
-  ["getInventorySnapshot", () => getInventorySnapshot()],
-  ["getInventoryValue", () => getInventoryValue("i1", null)],
+/* Each read's own pass-through footprint: [findMany, findRow, findUnique] call counts. */
+const reads: Array<[string, () => Promise<unknown>, [number, number, number]]> = [
+  ["getInventorySnapshot", () => getInventorySnapshot(), [1, 0, 0]],
+  ["getInventoryValue", () => getInventoryValue("i1", null), [0, 1, 1]],
 ];
+
+function assertQueriesRan([many, row, unique]: [number, number, number]) {
+  expect(mockFindMany).toHaveBeenCalledTimes(many);
+  expect(mockFindRow).toHaveBeenCalledTimes(row);
+  expect(mockFindUnique).toHaveBeenCalledTimes(unique);
+}
 
 function assertNoQueryRan() {
   expect(mockFindMany).not.toHaveBeenCalled();
@@ -53,16 +60,16 @@ describe("inventory:view gate on the inventory landing and adjustment reads", ()
     assertNoQueryRan();
   });
 
-  it.each(reads)("%s lets a caller with inventory:view through", async (_name, call) => {
+  it.each(reads)("%s lets a caller with inventory:view through", async (_name, call, footprint) => {
     mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["inventory:view"] } });
     await call();
-    expect(mockFindMany.mock.calls.length + mockFindUnique.mock.calls.length).toBe(1);
+    assertQueriesRan(footprint);
   });
 
-  it.each(reads)("%s lets an admin wildcard caller through", async (_name, call) => {
+  it.each(reads)("%s lets an admin wildcard caller through", async (_name, call, footprint) => {
     mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
     await call();
-    expect(mockFindMany.mock.calls.length + mockFindUnique.mock.calls.length).toBe(1);
+    assertQueriesRan(footprint);
   });
 });
 

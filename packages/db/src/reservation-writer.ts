@@ -25,6 +25,8 @@ function hasTx(client: AnyClient): client is PrismaClient {
 /**
  * Serves EVERY reserve/consume/release in this file, Jubelio and field sales alike. A reserve and
  * its later consume/release must resolve the same row, which is why one helper serves all of them.
+ * The consume re-runs this lookup, so that holds only while no variantless row is created for the
+ * item in between.
  * Variantless rows may key on null OR "": prefers the exact "" row, then null. A bare OR
  * findFirst can pick the sibling and orphan reservedQty. NULLs are distinct under the unique
  * index, so two null rows can exist; the id tie-break keeps both halves on one row.

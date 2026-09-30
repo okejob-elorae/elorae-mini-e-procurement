@@ -39,7 +39,8 @@ export type StockRef = {
  * resolved id straight back into moveMainStock as inventoryValueId, so two callers reading the
  * same null/"" bucket must land on the same row or they interleave two independent balances under
  * one ledger key. Current callers: grn.ts's declineGRNByOwner insufficient-stock guard,
- * inventory.ts, opname-snapshot.ts, opname-approve.ts,
+ * inventory.ts (getInventoryValue), vendor-returns.ts (vendor return valuation, create and
+ * update), opname-snapshot.ts, opname-approve.ts,
  * canvassing/writer.ts, canvassing/reconcile-writer.ts, konsi-transfer/writer.ts,
  * field-sales/retur/approve-writer.ts, field-sales/konsi-push-writer.ts, and
  * reverseMovingAverage / calculateMovingAverage / reverseInventoryValue below. The one apps/web

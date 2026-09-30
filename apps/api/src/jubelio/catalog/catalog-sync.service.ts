@@ -24,6 +24,37 @@ const CATALOG_PERSIST_TX_OPTIONS = { maxWait: 10_000, timeout: 60_000 };
 
 const CONCURRENCY = 8;
 
+// Fix 4: createMany skipDuplicates — eliminates per-variant findUnique/findMany round trips
+export async function ensureInventoryRows(
+  tx: Prisma.TransactionClient,
+  itemId: string,
+  draft: CatalogItemDraft,
+): Promise<void> {
+  const zeroRow = { qtyOnHand: 0, avgCost: 0, totalValue: 0 };
+
+  if (draft.variantless) {
+    /* A "" row beside a null one splits reservations across the two rows. */
+    const existing = await tx.inventoryValue.findFirst({
+      where: { itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
+      select: { id: true },
+    });
+    if (existing) return;
+
+    await tx.inventoryValue.createMany({
+      data: [{ itemId, variantSku: "", ...zeroRow }],
+      skipDuplicates: true,
+    });
+    return;
+  }
+
+  if (draft.variants.length === 0) return;
+
+  await tx.inventoryValue.createMany({
+    data: draft.variants.map((v) => ({ itemId, variantSku: v.sku, ...zeroRow })),
+    skipDuplicates: true,
+  });
+}
+
 async function mapWithConcurrency<T, R>(
   items: T[],
   concurrency: number,
@@ -161,30 +192,6 @@ export class JubelioCatalogSyncService {
     return { merged: Array.from(mergedMap.values()), orphaned };
   }
 
-  // Fix 4: createMany skipDuplicates — eliminates per-variant findUnique/findMany round trips
-  private async ensureInventoryRows(
-    tx: Prisma.TransactionClient,
-    itemId: string,
-    draft: CatalogItemDraft,
-  ): Promise<void> {
-    const zeroRow = { qtyOnHand: 0, avgCost: 0, totalValue: 0 };
-
-    if (draft.variantless) {
-      await tx.inventoryValue.createMany({
-        data: [{ itemId, variantSku: "", ...zeroRow }],
-        skipDuplicates: true,
-      });
-      return;
-    }
-
-    if (draft.variants.length === 0) return;
-
-    await tx.inventoryValue.createMany({
-      data: draft.variants.map((v) => ({ itemId, variantSku: v.sku, ...zeroRow })),
-      skipDuplicates: true,
-    });
-  }
-
   // Fix 3: parallel upserts within the same transaction
   private async upsertMappings(
     tx: Prisma.TransactionClient,
@@ -253,7 +260,7 @@ export class JubelioCatalogSyncService {
             overReceiveThreshold: null,
             sellingPrice,
           });
-          await this.ensureInventoryRows(tx, item.id, draft);
+          await ensureInventoryRows(tx, item.id, draft);
           await this.upsertMappings(tx, item.id, draft);
           createdItemId = item.id;
         },
@@ -280,7 +287,7 @@ export class JubelioCatalogSyncService {
           variants: draft.variantless ? [] : (merged as Prisma.InputJsonValue),
           sellingPrice,
         });
-        await this.ensureInventoryRows(tx, existing.id, draft);
+        await ensureInventoryRows(tx, existing.id, draft);
         await this.upsertMappings(tx, existing.id, draft);
       },
       CATALOG_PERSIST_TX_OPTIONS,

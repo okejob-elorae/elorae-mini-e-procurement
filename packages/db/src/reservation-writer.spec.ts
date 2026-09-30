@@ -119,10 +119,13 @@ d("Jubelio reservation on variantless rows spelled null (test bed only)", () => 
   let itemId = "";
   let uomId = "";
   const sku = `TEST-JNULL-${Math.random().toString(36).slice(2, 10)}`;
-  /* Random ids: a re-run within the same second must not collide on the unique detail id. */
-  const salesorderId = Math.floor(Math.random() * 2_000_000_000);
-  const detailA = salesorderId + 1;
-  const detailB = salesorderId + 2;
+  /**
+   * Random NEGATIVE ids: Jubelio ids are positive, so consumeOrder/releaseOrder, which select every
+   * RESERVED reservation for the order id and stamp cogs by detail id, can never reach a real dev-bed order.
+   */
+  const salesorderId = -(Math.floor(Math.random() * 1_000_000_000) + 1);
+  const detailA = salesorderId - 1;
+  const detailB = salesorderId - 2;
 
   beforeEach(async () => {
     /* Unset before seeding, so a throw mid-hook leaves teardown scoped to what this run actually created. */
@@ -172,7 +175,7 @@ d("Jubelio reservation on variantless rows spelled null (test bed only)", () => 
     expect(ledger).toHaveLength(1);
     expect(Number(ledger[0].qty)).toBe(-6);
 
-    const salesorderId2 = salesorderId + 10;
+    const salesorderId2 = salesorderId - 10;
     await reserveOrder(prisma, {
       salesorderId: salesorderId2,
       salesorderNo: "TEST-JNULL-2",
@@ -214,5 +217,37 @@ d("Jubelio reservation on variantless rows spelled null (test bed only)", () => 
     expect(Number(empty!.reservedQty)).toBe(0);
     expect(Number(nullRow!.qtyOnHand)).toBe(1000);
     expect(Number(nullRow!.reservedQty)).toBe(12);
+  });
+
+  it("with two null rows and no empty-string row, reserve and consume both land on the lower-id row", async () => {
+    const first = await prisma.inventoryValue.create({
+      data: { itemId, variantSku: null, qtyOnHand: 100, reservedQty: 0, avgCost: 1000, totalValue: 100000 },
+    });
+    const second = await prisma.inventoryValue.create({
+      data: { itemId, variantSku: null, qtyOnHand: 200, reservedQty: 0, avgCost: 1000, totalValue: 200000 },
+    });
+    const lowerId = first.id < second.id ? first.id : second.id;
+    const higherId = lowerId === first.id ? second.id : first.id;
+    const lowerQty = lowerId === first.id ? 100 : 200;
+    const higherQty = lowerId === first.id ? 200 : 100;
+
+    await reserveOrder(prisma, {
+      salesorderId,
+      salesorderNo: "TEST-JNULL-TWO",
+      lines: [{ salesorderDetailId: detailA, itemId, variantSku: "", qty: 6 }],
+    });
+    let lower = await prisma.inventoryValue.findUnique({ where: { id: lowerId } });
+    let higher = await prisma.inventoryValue.findUnique({ where: { id: higherId } });
+    expect(Number(lower!.reservedQty)).toBe(6);
+    expect(Number(higher!.reservedQty)).toBe(0);
+
+    const consumeRes = await consumeOrder(prisma, { salesorderId, salesorderNo: "TEST-JNULL-TWO" });
+    expect(consumeRes.consumed).toBe(1);
+    lower = await prisma.inventoryValue.findUnique({ where: { id: lowerId } });
+    higher = await prisma.inventoryValue.findUnique({ where: { id: higherId } });
+    expect(Number(lower!.qtyOnHand)).toBe(lowerQty - 6);
+    expect(Number(lower!.reservedQty)).toBe(0);
+    expect(Number(higher!.qtyOnHand)).toBe(higherQty);
+    expect(Number(higher!.reservedQty)).toBe(0);
   });
 });
