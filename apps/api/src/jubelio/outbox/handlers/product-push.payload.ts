@@ -122,7 +122,11 @@ function fileNameFromUrl(url: string, fallback: string): string {
 
 type JubelioImage = { url: string; thumbnail: string; file_name: string; sequence_number: number };
 
-function buildJubelioImages(images: ItemImageSlice[], mappings: MappingSlice[]): {
+function buildJubelioImages(
+  images: ItemImageSlice[],
+  mappings: MappingSlice[],
+  desiredVariantSkus: ReadonlySet<string>,
+): {
   images: JubelioImage[];
   variation_images: Array<{ item_id: number; images: JubelioImage[] }>;
 } {
@@ -142,8 +146,15 @@ function buildJubelioImages(images: ItemImageSlice[], mappings: MappingSlice[]):
     .map(toJubelio)
     .filter((x): x is JubelioImage => x !== null);
 
+  /**
+   * Only variants the item still has. A mapping for a variant being removed survives until the handler
+   * deletes it, and naming its Jubelio item id here would make every retry of a half-finished removal
+   * post a dead id before it could reach the DELETE.
+   */
   const itemIdBySku = new Map<string, number>(
-    mappings.map((m) => [m.erpVariantSku, m.jubelioItemId]),
+    mappings
+      .filter((m) => desiredVariantSkus.has(m.erpVariantSku))
+      .map((m) => [m.erpVariantSku, m.jubelioItemId]),
   );
   const byItemId = new Map<number, ItemImageSlice[]>();
   for (const i of images) {
@@ -187,13 +198,17 @@ export function buildCreateProductRequest(opts: {
   const sellPrice = item.sellingPrice ?? 0;
   const mappingBySku = new Map(mappings.map((m) => [m.erpVariantSku, m]));
 
-  const imageResult = buildJubelioImages(opts.images ?? [], mappings);
-  const hasVariantImages = (opts.images ?? []).some((i) => i.variantSku !== null);
-
   const hasVariants = item.variants !== null && item.variants.length > 0;
   const desiredVariants: Array<{ sku: string; barcode?: string | null }> = hasVariants
     ? item.variants!.map((v) => ({ sku: v.sku, barcode: v.barcode }))
     : [{ sku: item.sku }];
+
+  const imageResult = buildJubelioImages(
+    opts.images ?? [],
+    mappings,
+    new Set(hasVariants ? desiredVariants.map((v) => v.sku) : []),
+  );
+  const hasVariantImages = (opts.images ?? []).some((i) => i.variantSku !== null);
 
   const product_skus: ProductSkuEntry[] = desiredVariants.map((v) => {
     const mappingKey = hasVariants ? v.sku : "";

@@ -239,6 +239,24 @@ describe("buildCreateProductRequest — images", () => {
     });
   });
 
+  it("a mapping for a variant the item no longer has is left out of variation_images", () => {
+    const body = buildCreateProductRequest({
+      item: item({ variants: [{ sku: "SKU-1-RED" }] }),
+      defaults,
+      categoryJubelioId: 454,
+      mappings: [
+        { id: "m1", jubelioItemGroupId: 100, jubelioItemId: 1001, jubelioItemCode: "SKU-1-RED", erpVariantSku: "SKU-1-RED" },
+        { id: "m2", jubelioItemGroupId: 100, jubelioItemId: 1002, jubelioItemCode: "SKU-1-BLU", erpVariantSku: "SKU-1-BLU" },
+      ],
+      images: [
+        imageSlice({ id: "img_1", variantSku: "SKU-1-RED", url: "https://cdn.example.com/red.jpg", sortOrder: 0 }),
+        imageSlice({ id: "img_2", variantSku: "SKU-1-BLU", url: "https://cdn.example.com/blu.jpg", sortOrder: 0 }),
+      ],
+    });
+    expect(body.item_group_id).toBe(100);
+    expect(body.variation_images.map((v: any) => v.item_id)).toEqual([1001]);
+  });
+
   it("mixed images → product-level always populated; variant skipped until mapping exists", () => {
     const body = buildCreateProductRequest({
       item: item({ variants: [{ sku: "SKU-1-RED" }] }),

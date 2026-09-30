@@ -256,6 +256,26 @@ describe("ProductPushHandler", () => {
     });
   });
 
+  it("REMOVES a variant: DELETE runs before the mapping delete, and a failed mapping delete fails the row", async () => {
+    prisma.item.findUnique.mockResolvedValue({ ...baseItem, variants: [{ sku: "SKU-1-RED" }] });
+    prisma.jubelioProductMapping.findMany.mockResolvedValue([
+      { id: "m1", erpVariantSku: "SKU-1-RED", jubelioItemId: 11, jubelioItemGroupId: 7 },
+      { id: "m2", erpVariantSku: "SKU-1-BLU", jubelioItemId: 12, jubelioItemGroupId: 7 },
+    ]);
+    prisma.jubelioPushDefaults.findFirst.mockResolvedValue(baseDefaults);
+    prisma.jubelioCategoryMapping.findFirst.mockResolvedValue({ jubelioCategoryId: 454 });
+    http.post.mockResolvedValue({ status: "ok", id: 7, item_ids: [11] });
+    const callOrder: string[] = [];
+    http.delete.mockImplementation(async () => { callOrder.push("http.delete"); return { status: "ok" }; });
+    prisma.jubelioProductMapping.deleteMany.mockImplementation(async () => {
+      callOrder.push("deleteMany");
+      throw new Error("connection lost");
+    });
+
+    await expect(handler.handle(row() as any)).rejects.toThrow("connection lost");
+    expect(callOrder).toEqual(["http.delete", "deleteMany"]);
+  });
+
   it("calls ensureUploaded BEFORE catalog POST", async () => {
     prisma.item.findUnique.mockResolvedValue(baseItem);
     prisma.jubelioProductMapping.findMany.mockResolvedValue([]);
@@ -281,5 +301,71 @@ describe("ProductPushHandler", () => {
 
     await expect(handler.handle(row() as any)).rejects.toThrow("upload failed");
     expect(http.post).not.toHaveBeenCalled();
+  });
+
+  describe("variant images on a variant's first push", () => {
+    const redImage = {
+      id: "img_red",
+      variantSku: "SKU-1-RED",
+      url: "https://cdn.example/red.jpg",
+      sortOrder: 0,
+      jubelioImageId: null,
+      jubelioImageKey: "https://jubelio.example/red.jpg",
+      jubelioImageThumbnail: "https://jubelio.example/red-thumb.jpg",
+    };
+    const newMappings = [
+      { id: "m_red", itemId: "item_1", jubelioItemGroupId: 7, jubelioItemId: 11, jubelioItemCode: "SKU-1-RED", erpVariantSku: "SKU-1-RED" },
+      { id: "m_blu", itemId: "item_1", jubelioItemGroupId: 7, jubelioItemId: 12, jubelioItemCode: "SKU-1-BLU", erpVariantSku: "SKU-1-BLU" },
+    ];
+
+    beforeEach(() => {
+      prisma.item.findUnique.mockResolvedValue({ ...baseItem, variants: [{ sku: "SKU-1-RED" }, { sku: "SKU-1-BLU" }] });
+      prisma.jubelioPushDefaults.findFirst.mockResolvedValue(baseDefaults);
+      prisma.jubelioCategoryMapping.findFirst.mockResolvedValue({ jubelioCategoryId: 454 });
+      http.post.mockResolvedValue({ status: "ok", id: 7, item_ids: [11, 12] });
+    });
+
+    it("pushes again once the new mappings exist, so the new variant's images are sent", async () => {
+      prisma.jubelioProductMapping.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce(newMappings);
+      prisma.itemImage.findMany.mockResolvedValue([redImage]);
+
+      await handler.handle(row() as any);
+
+      expect(http.post).toHaveBeenCalledTimes(2);
+      expect(http.post.mock.calls[0][1].variation_images).toEqual([]);
+      expect(http.post.mock.calls[1][1].variation_images).toEqual([
+        { item_id: 11, images: [expect.objectContaining({ url: "https://jubelio.example/red.jpg" })] },
+      ]);
+    });
+
+    it("skips the re-push rather than create again when a variant is still unmapped", async () => {
+      prisma.jubelioProductMapping.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      prisma.itemImage.findMany.mockResolvedValue([redImage]);
+
+      await handler.handle(row() as any);
+
+      expect(http.post).toHaveBeenCalledTimes(1);
+    });
+
+    it("pushes once when no newly mapped variant has an uploaded image", async () => {
+      prisma.jubelioProductMapping.findMany.mockResolvedValue([]);
+      prisma.itemImage.findMany.mockResolvedValue([{ ...redImage, variantSku: null }]);
+
+      await handler.handle(row() as any);
+
+      expect(http.post).toHaveBeenCalledTimes(1);
+    });
+
+    it("pushes once when the variant was already mapped", async () => {
+      prisma.jubelioProductMapping.findMany.mockResolvedValue(newMappings);
+      prisma.itemImage.findMany.mockResolvedValue([redImage]);
+
+      await handler.handle(row() as any);
+
+      expect(http.post).toHaveBeenCalledTimes(1);
+      expect(http.post.mock.calls[0][1].variation_images).toEqual([
+        { item_id: 11, images: [expect.objectContaining({ url: "https://jubelio.example/red.jpg" })] },
+      ]);
+    });
   });
 });

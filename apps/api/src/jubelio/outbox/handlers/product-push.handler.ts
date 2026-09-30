@@ -73,7 +73,7 @@ export class ProductPushHandler implements OutboxHandler {
         })
       : images;
 
-    const body = buildCreateProductRequest({
+    const pushInput = {
       item: {
         id: item.id,
         sku: item.sku,
@@ -100,9 +100,9 @@ export class ProductPushHandler implements OutboxHandler {
         buyPrice: Number(defaults.buyPrice),
       },
       categoryJubelioId: categoryMap.jubelioCategoryId,
-      mappings,
       images: refreshedImages,
-    });
+    };
+    const body = buildCreateProductRequest({ ...pushInput, mappings });
 
     const response = await this.http.post<CatalogPostResponse>("/inventory/catalog/", body);
 
@@ -135,6 +135,15 @@ export class ProductPushHandler implements OutboxHandler {
       hasVariants ? variantsArr!.map((v) => v.sku) : [""],
     );
     const removed = mappings.filter((m) => !desiredSkuSet.has(m.erpVariantSku));
+    /**
+     * Jubelio first, then the mappings, and deliberately not in one transaction: the HTTP call has no
+     * timeout, so a transaction around it could expire after Jubelio had already deleted. A mapping
+     * delete that fails here fails the row, and its retry recomputes `removed` from the surviving
+     * mappings and sends the DELETE again. Jubelio answered 200 to a DELETE of an id that does not
+     * exist (probed on prod 2026-09-30 with one that never existed; an id Jubelio already deleted is
+     * assumed to answer the same), and the retry's catalog POST does not name a removed variant (see
+     * `buildJubelioImages`), so the retry converges.
+     */
     if (removed.length > 0) {
       await this.http.delete("/inventory/items/item-variant/", {
         body: JSON.stringify({ ids: removed.map((m) => m.jubelioItemId) }),
@@ -145,8 +154,37 @@ export class ProductPushHandler implements OutboxHandler {
       });
     }
 
+    /**
+     * `variation_images` can only name variants Jubelio has already given an item id, so a first push
+     * sends none for a variant it created (sent as `item_id: 0`) that has its own images. Now that its
+     * mapping exists, push once more so those images land now rather than on some later edit. A throw
+     * here fails the row, and its retry repeats the whole push, which by then carries the images. The
+     * follow-up only edits: if a variant would still go out unmapped it is skipped, never re-created.
+     */
+    const createdCodes = new Set(
+      body.product_skus.filter((s) => s.item_id === 0).map((s) => s.item_code),
+    );
+    const createdVariantHasImages =
+      hasVariants &&
+      refreshedImages.some(
+        (i) => i.variantSku !== null && i.jubelioImageKey !== null && createdCodes.has(i.variantSku),
+      );
+    let imagesRePushed = false;
+    if (createdVariantHasImages) {
+      const finalMappings = (await this.prisma.jubelioProductMapping.findMany({
+        where: { itemId: item.id },
+      })) as MappingSlice[];
+      const followUp = buildCreateProductRequest({ ...pushInput, mappings: finalMappings });
+      if (followUp.product_skus.some((s) => s.item_id === 0)) {
+        this.logger.warn(`Item ${item.id}: a variant is still unmapped after the push; skipping the variant-image re-push`);
+      } else {
+        await this.http.post<CatalogPostResponse>("/inventory/catalog/", followUp);
+        imagesRePushed = true;
+      }
+    }
+
     this.logger.log(
-      `Pushed item ${item.id} (group=${response.id}, +${newCount} mappings, -${removed.length})`,
+      `Pushed item ${item.id} (group=${response.id}, +${newCount} mappings, -${removed.length}${imagesRePushed ? ", variant images re-pushed" : ""})`,
     );
     return { kind: "processed" };
   }
