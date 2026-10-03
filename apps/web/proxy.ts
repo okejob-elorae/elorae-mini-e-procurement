@@ -19,7 +19,11 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith('/workbox') ||
     pathname === '/pwa/sw.js' ||
     pathname.startsWith('/pwa/swe-worker') ||
-    pathname.startsWith('/icons')
+    pathname.startsWith('/icons') ||
+    // Aset pihak ketiga yang disajikan sendiri (mis. mesin WASM pemindai barcode).
+    pathname.startsWith('/vendor/') ||
+    // Portal pesan mandiri toko: tanpa masuk; token tautannya diperiksa ulang di setiap halaman dan aksi.
+    pathname.startsWith('/toko/')
   ) {
     return NextResponse.next();
   }
@@ -32,9 +36,13 @@ export async function proxy(request: NextRequest) {
       secret,
       secureCookie: process.env.NODE_ENV === 'production',
     });
-    // If already logged in, redirect to backoffice
+    // Already signed in: let the post-login redirect pick the area (and honour
+    // a safe callbackUrl), instead of sending phone users to /backoffice.
     if (token) {
-      return NextResponse.redirect(new URL('/backoffice', request.url));
+      const tujuan = new URL('/login/redirect', request.url);
+      const kembali = request.nextUrl.searchParams.get('callbackUrl');
+      if (kembali) tujuan.searchParams.set('callbackUrl', kembali);
+      return NextResponse.redirect(tujuan);
     }
     return NextResponse.next();
   }
@@ -50,6 +58,10 @@ export async function proxy(request: NextRequest) {
   // Require authentication for protected routes
   if (!token) {
     const loginUrl = new URL('/login', request.url);
+    // Remember the page so sign-in can return to it (validated after login).
+    if (request.method === 'GET') {
+      loginUrl.searchParams.set('callbackUrl', `${pathname}${request.nextUrl.search}`);
+    }
     return NextResponse.redirect(loginUrl);
   }
 

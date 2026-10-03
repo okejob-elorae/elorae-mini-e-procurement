@@ -5,6 +5,8 @@ export async function listSupplierTypes(opts?: {
   activeOnly?: boolean;
   page?: number;
   pageSize?: number;
+  /** Ikut hitung pemasok per jenis — layar kelola memakainya untuk tahu jenis mana yang boleh dihapus. */
+  withUsage?: boolean;
 }) {
   const where: Prisma.SupplierTypeWhereInput = opts?.activeOnly ? { isActive: true } : {};
   const pageSize = opts?.pageSize ?? 0;
@@ -17,6 +19,7 @@ export async function listSupplierTypes(opts?: {
         skip: (page - 1) * pageSize,
         take: pageSize,
         orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }],
+        ...(opts?.withUsage ? { include: { _count: { select: { suppliers: true } } } } : {}),
       }),
       prisma.supplierType.count({ where }),
     ]);

@@ -5,7 +5,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { AlertTriangle, ArrowLeft, BadgeCheck, ImageOff, Link2, Printer } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, BadgeCheck, ImageOff, Landmark, Link2, MessageCircle, MessageSquareWarning, Printer, RotateCcw } from 'lucide-react';
+import { RiwayatDokumen } from '@/components/receivables/RiwayatDokumen';
+import type { BarisRiwayat } from '@/lib/receivables/koreksi';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -43,6 +45,29 @@ import {
   verifikasiKlaimAction,
 } from '@/app/actions/receivables';
 import type { RincianKlaim } from '@/lib/receivables/claim-queries';
+import type { StatusGiro } from '@/lib/receivables/giro';
+import { TombolGiro } from '../giro/TombolGiro';
+
+/** Rincian bilyet giro sebuah BKM; tanggal sudah diformat di server. */
+export type GiroKlaim = {
+  nomor: string;
+  bank: string;
+  terbit: string;
+  efektif: string;
+  status: StatusGiro;
+  cairPada: string | null;
+  /** Masa berlaku 70 hari sudah habis sementara giro masih menunggu. */
+  kedaluwarsa: boolean;
+};
+
+const NADA_GIRO: Record<StatusGiro, StatusTone> = {
+  MENUNGGU: 'waiting',
+  CAIR: 'settled',
+  DITOLAK: 'attention',
+};
+
+/** Cara bayar yang punya label bukti sendiri; yang lain dibaca sebagai transfer. */
+const CARA_DIKENAL = ['transfer', 'tunai', 'giro'];
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 const tanggal = (iso: string) =>
@@ -62,13 +87,39 @@ const NADA: Record<RincianKlaim['status'], StatusTone> = {
 
 export function RincianKlaimClient({
   data,
+  giro,
   bolehMemutuskan,
+  bolehMembuat = false,
+  konfirmasiToko = null,
+  digantiOleh = null,
+  menggantikan = null,
+  koreksi = null,
+  riwayat = [],
 }: {
   data: RincianKlaim;
+  /** `null` kalau klaim ini bukan giro. */
+  giro: GiroKlaim | null;
   bolehMemutuskan: boolean;
+  /** Boleh membuat BKM dari kantor — untuk "Buat ulang" dari BKM yang ditolak/dibatalkan. */
+  bolehMembuat?: boolean;
+  /** BKM pengganti, kalau BKM yang ditolak/dibatalkan ini sudah dibuat ulang. */
+  digantiOleh?: { id: string; nomor: string } | null;
+  /** BKM yang digantikan BKM ini. */
+  menggantikan?: { id: string; nomor: string } | null;
+  /** Permintaan koreksi dari sales yang belum ditangani. */
+  koreksi?: { pada: string; alasan: string } | null;
+  riwayat?: BarisRiwayat[];
+  /** Tautan WhatsApp konfirmasi ke toko; hanya ada sesudah klaim terverifikasi. */
+  konfirmasiToko?: { url: string; adaNomor: boolean } | null;
 }) {
   const t = useTranslations('payments');
+  const tPesan = useTranslations('pesanToko');
   const td = dinamis(t);
+  const tGiro = dinamis(useTranslations('giro'));
+  const cara = CARA_DIKENAL.includes(data.method) ? data.method : 'transfer';
+  // Giro yang menunggu diputuskan lewat bilyetnya (cair / ditolak bank), bukan
+  // lewat tombol verifikasi mutasi — penulisnya pun menolak jalan biasa.
+  const giroMenunggu = data.status === 'DIKIRIM' && giro?.status === 'MENUNGGU';
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [tolakTerbuka, setTolakTerbuka] = useState(false);
@@ -122,12 +173,35 @@ export function RincianKlaimClient({
                 {t('print')}
               </a>
             </Button>
+            {konfirmasiToko && (
+              /* Hanya MEMBUKA WhatsApp dengan pesan terisi — admin sendiri yang menekan kirim. */
+              <Button
+                variant="outline"
+                asChild
+                title={konfirmasiToko.adaNomor ? tPesan('konfirmasiPetunjuk') : tPesan('tanpaNomor')}
+              >
+                <a href={konfirmasiToko.url} target="_blank" rel="noopener noreferrer">
+                  <MessageCircle className="mr-1.5 h-4 w-4" />
+                  {tPesan('kirimKonfirmasi')}
+                </a>
+              </Button>
+            )}
             {/*
               Membatalkan tersedia di keadaan APA PUN, termasuk yang sudah
               terverifikasi. Klaim yang salah catat tidak berhenti salah hanya
               karena sudah sempat disahkan — dan sebelum ini satu-satunya jalan
               keluar adalah "menolak", yang artinya lain sama sekali.
             */}
+            {/* Salah toko atau salah faktur tidak dibetulkan di tempat: BKM baru
+                dibuat dari salinan ini (tanggal, cara bayar, giro, foto ikut). */}
+            {(data.status === 'DIBATALKAN' || data.status === 'DITOLAK') && bolehMembuat && !digantiOleh && (
+              <Button variant="outline" asChild>
+                <Link href={`/backoffice/pelunasan/baru?salin=${data.id}`}>
+                  <RotateCcw className="mr-1.5 h-4 w-4" />
+                  {t('remake')}
+                </Link>
+              </Button>
+            )}
             {data.status !== 'DIBATALKAN' && bolehMemutuskan && (
               <Button
                 variant="ghost"
@@ -140,7 +214,7 @@ export function RincianKlaimClient({
                 {t('void')}
               </Button>
             )}
-            {data.status === 'DIKIRIM' && bolehMemutuskan && (
+            {data.status === 'DIKIRIM' && bolehMemutuskan && !giroMenunggu && (
               <>
               <Button disabled={pending} onClick={() => putuskan('TERVERIFIKASI')}>
                 <BadgeCheck className="mr-1.5 h-4 w-4" />
@@ -162,11 +236,78 @@ export function RincianKlaimClient({
         }
       />
 
+      {/* Sales tidak bisa lagi mengubah BKM yang sudah diproses — permintaannya
+          tampil di dokumennya sendiri, bukan hanya di lonceng. */}
+      {koreksi && (
+        <p className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+          <MessageSquareWarning className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <span>
+            <span className="block font-medium">{t('correctionRequested', { date: koreksi.pada })}</span>
+            <span className="block">{koreksi.alasan}</span>
+          </span>
+        </p>
+      )}
+      {(menggantikan || digantiOleh) && (
+        <p className="text-sm">
+          {menggantikan && (
+            <span className="block">
+              {t('replaces')}{' '}
+              <Link href={`/backoffice/pelunasan/${menggantikan.id}`} className="font-medium underline underline-offset-4">
+                {menggantikan.nomor}
+              </Link>
+            </span>
+          )}
+          {digantiOleh && (
+            <span className="block">
+              {t('replacedBy')}{' '}
+              <Link href={`/backoffice/pelunasan/${digantiOleh.id}`} className="font-medium underline underline-offset-4">
+                {digantiOleh.nomor}
+              </Link>
+            </span>
+          )}
+        </p>
+      )}
+
       {adaMenggantung && (
         <Card className="border-destructive/40 bg-destructive/[0.05]">
           <CardContent className="flex items-start gap-3 py-4 text-sm leading-relaxed">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
             <span>{t('danglingWarning')}</span>
+          </CardContent>
+        </Card>
+      )}
+
+      {giro && (
+        <Card className={cn(giro.kedaluwarsa && 'border-destructive/40')}>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+              <Landmark className="h-4 w-4" />
+              {tGiro('cardTitle')}
+              <StatusPill tone={giro.kedaluwarsa ? 'attention' : NADA_GIRO[giro.status]}>
+                {tGiro(`status_${giro.status}`)}
+              </StatusPill>
+            </CardTitle>
+            {giroMenunggu && <p className="text-sm text-muted-foreground">{tGiro('cardHint')}</p>}
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <dl className="grid gap-3 text-sm sm:grid-cols-4">
+              <Isian label={tGiro('fieldNo')} nilai={giro.nomor} />
+              <Isian label={tGiro('fieldBank')} nilai={giro.bank} />
+              <Isian label={tGiro('fieldIssued')} nilai={giro.terbit} />
+              <Isian label={tGiro('fieldEffective')} nilai={giro.efektif} />
+            </dl>
+            {giro.kedaluwarsa && (
+              <p className="flex items-start gap-2 text-sm text-destructive">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                {tGiro('expired')}
+              </p>
+            )}
+            {giro.status === 'CAIR' && giro.cairPada && (
+              <p className="text-sm text-muted-foreground">{tGiro('clearedOn', { date: giro.cairPada })}</p>
+            )}
+            {giroMenunggu && bolehMemutuskan && (
+              <TombolGiro claimId={data.id} giroNo={giro.nomor} nilai={rupiah(data.nilaiDiterima)} />
+            )}
           </CardContent>
         </Card>
       )}
@@ -178,7 +319,11 @@ export function RincianKlaimClient({
           <p className="text-sm text-muted-foreground">{t('proofHint')}</p>
         </CardHeader>
         <CardContent className="grid gap-4 lg:grid-cols-2">
-          <Bukti label={t('transferPhoto')} url={data.fotoTransfer} kosong={t('noPhotoTransfer')} />
+          <Bukti
+            label={td(`photo_${cara}`)}
+            url={data.fotoTransfer}
+            kosong={td(`noPhoto_${cara}`)}
+          />
           <Bukti label={t('breakdownPhoto')} url={data.fotoRincian} kosong={t('noPhotoBreakdown')} />
         </CardContent>
       </Card>
@@ -300,7 +445,9 @@ export function RincianKlaimClient({
           </div>
 
           {data.status === 'DIKIRIM' && (
-            <p className="text-xs text-muted-foreground">{t('claimNotSettled')}</p>
+            <p className="text-xs text-muted-foreground">
+              {giroMenunggu ? t('claimNotSettledGiro') : t('claimNotSettled')}
+            </p>
           )}
           {data.status === 'TERVERIFIKASI' && data.nilaiTertahan > 0 && (
             <p className="text-sm text-destructive">
@@ -309,7 +456,7 @@ export function RincianKlaimClient({
           )}
           {data.status !== 'DIKIRIM' && data.verifikatorNama && (
             <p className="text-xs text-muted-foreground">
-              {t('decidedBy', {
+              {t(data.ditarikSales ? 'withdrawnBySales' : 'decidedBy', {
                 name: data.verifikatorNama,
                 date: data.verifikasiPada ? tanggal(data.verifikasiPada) : '—',
               })}
@@ -320,6 +467,8 @@ export function RincianKlaimClient({
           )}
         </CardContent>
       </Card>
+
+      <RiwayatDokumen baris={riwayat} />
 
       <Dialog open={batalTerbuka} onOpenChange={setBatalTerbuka}>
         <DialogContent>
@@ -472,6 +621,15 @@ function Bukti({ label, url, kosong }: { label: string; url: string | null; koso
           {kosong}
         </div>
       )}
+    </div>
+  );
+}
+
+function Isian({ label, nilai }: { label: string; nilai: string }) {
+  return (
+    <div className="space-y-0.5">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="font-medium">{nilai}</dd>
     </div>
   );
 }

@@ -20,6 +20,8 @@ export type RincianKlaim = {
   fotoRincian: string | null;
   status: StatusKlaim;
   verifikatorNama: string | null;
+  /** Dibatalkan oleh pelapornya sendiri dari HP (bukan oleh keuangan). */
+  ditarikSales: boolean;
   verifikasiPada: string | null;
   catatanVerifikasi: string | null;
   dibuatOleh: string | null;
@@ -61,6 +63,8 @@ export async function rincianKlaim(id: string): Promise<RincianKlaim | null> {
       verifiedAt: true,
       verifyNote: true,
       storeId: true,
+      salesmanId: true,
+      verifiedById: true,
       store: { select: { name: true } },
       salesman: { select: { name: true } },
       verifiedBy: { select: { name: true } },
@@ -112,6 +116,7 @@ export async function rincianKlaim(id: string): Promise<RincianKlaim | null> {
     fotoRincian: k.breakdownPhotoUrl,
     status: k.status as RincianKlaim['status'],
     verifikatorNama: k.verifiedBy?.name ?? null,
+    ditarikSales: k.status === 'DIBATALKAN' && k.verifiedById !== null && k.verifiedById === k.salesmanId,
     verifikasiPada: k.verifiedAt?.toISOString() ?? null,
     catatanVerifikasi: k.verifyNote,
     dibuatOleh: k.createdBy?.name ?? null,
@@ -167,10 +172,17 @@ export type BahanKlaimBaru = {
  * sering belum menghitung apa pun saat itu — menyaring yang belum dihitung akan
  * menghilangkan justru kasus yang paling sering terjadi.
  */
-export async function bahanKlaimBaru(): Promise<BahanKlaimBaru> {
+export async function bahanKlaimBaru(opsi?: {
+  /**
+   * Layar HP: hanya piutang yang ditagih sales ini (pemegang toko sekarang,
+   * atau penjualnya selama toko belum punya pemegang). Layar kantor tidak
+   * mengisinya dan melihat semuanya.
+   */
+  penagihId?: string;
+}): Promise<BahanKlaimBaru> {
   const [semua, retur, jenis] = await Promise.all([
     // BKM hanya melunasi faktur yang masih terbuka.
-    daftarPiutang({ hanyaTerbuka: true }),
+    daftarPiutang({ hanyaTerbuka: true, penagihId: opsi?.penagihId }),
     prisma.storeReturn.findMany({
       where: { status: { not: 'BATAL' } },
       orderBy: { claimDate: 'desc' },
@@ -206,5 +218,72 @@ export async function bahanKlaimBaru(): Promise<BahanKlaimBaru> {
     piutangPerToko,
     returPerToko,
     jenisPotongan: jenis,
+  };
+}
+
+/** Isi awal formulir BKM yang menyalin laporan lama — lihat `bahanSalinKlaim`. */
+export type AwalKlaim = {
+  /** BKM yang disalin — dikirim sebagai `menggantikanId` supaya keduanya tertaut. */
+  dariId: string;
+  dariDocNo: string;
+  tglTransfer: string;
+  cara: 'transfer' | 'tunai' | 'giro';
+  giro: { nomor: string; bank: string; terbit: string; efektif: string } | null;
+  fotoTransfer: { url: string; nama: string } | null;
+  fotoRincian: { url: string; nama: string } | null;
+};
+
+const tanggalWibTeks = (d: Date | null | undefined) =>
+  d ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(d) : '';
+
+/**
+ * Bahan "Laporkan ulang": BKM yang ditolak atau dibatalkan, disalin ke formulir
+ * baru. Yang ikut hanya yang tidak bergantung pada toko — tanggal, cara bayar,
+ * rincian giro, foto. Toko, faktur, dan potongan dipilih ulang: justru itu yang
+ * biasanya salah.
+ *
+ * `salesmanId` (layar HP): hanya laporan miliknya sendiri. Laporan yang masih
+ * hidup tidak bisa disalin — menyalinnya berarti melaporkan uang yang sama dua kali.
+ */
+export async function bahanSalinKlaim(id: string, opsi?: { salesmanId?: string }): Promise<AwalKlaim | null> {
+  const k = await prisma.paymentClaim.findUnique({
+    where: { id },
+    select: {
+      docNo: true,
+      salesmanId: true,
+      status: true,
+      method: true,
+      claimedTransferAt: true,
+      giroNo: true,
+      giroBank: true,
+      giroIssueDate: true,
+      giroEffectiveDate: true,
+      transferPhotoUrl: true,
+      breakdownPhotoUrl: true,
+    },
+  });
+  if (!k) return null;
+  if (opsi?.salesmanId && k.salesmanId !== opsi.salesmanId) return null;
+  if (k.status !== 'DITOLAK' && k.status !== 'DIBATALKAN') return null;
+  // Sudah punya pengganti: menyalinnya lagi berarti melaporkan uang yang sama dua kali.
+  if (await prisma.paymentClaim.findUnique({ where: { replacesClaimId: id }, select: { id: true } })) return null;
+  const cara = k.method === 'tunai' || k.method === 'giro' ? k.method : 'transfer';
+  const foto = (url: string | null, nama: string) => (url ? { url, nama } : null);
+  return {
+    dariId: id,
+    dariDocNo: k.docNo,
+    tglTransfer: tanggalWibTeks(k.claimedTransferAt),
+    cara,
+    giro:
+      cara === 'giro'
+        ? {
+            nomor: k.giroNo ?? '',
+            bank: k.giroBank ?? '',
+            terbit: tanggalWibTeks(k.giroIssueDate),
+            efektif: tanggalWibTeks(k.giroEffectiveDate),
+          }
+        : null,
+    fotoTransfer: foto(k.transferPhotoUrl, `${k.docNo}-bukti.jpg`),
+    fotoRincian: foto(k.breakdownPhotoUrl, `${k.docNo}-rincian.jpg`),
   };
 }

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { FileSpreadsheet, PenLine, Receipt } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -48,17 +49,36 @@ export function PiutangClient({
   toko,
   katalog,
   bolehMengelola,
+  saringAwal = null,
 }: {
   baris: BarisPiutang[];
   ringkasan: RingkasanPiutang;
   toko: { id: string; name: string }[];
   katalog: PilihanBarang[];
   bolehMengelola: boolean;
+  /** Dari `?keadaan=` — supaya tautan beranda mendarat di daftar yang tersaring. */
+  saringAwal?: KeadaanPiutang | null;
 }) {
   const t = useTranslations('receivables');
+  const tTugas = useTranslations('tugasTagih');
   const locale = useLocale();
   const tanggal = (iso: string) => formatDisplayDate(iso, locale);
-  const [saring, setSaring] = useState<KeadaanPiutang | null>(null);
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [saring, setSaringState] = useState<KeadaanPiutang | null>(saringAwal);
+  // Saringan ditulis balik ke URL (replace): tautannya bisa dibagikan, dan
+  // "Kembali" tidak berjalan mundur melewati setiap pilihan.
+  const setSaring = (k: KeadaanPiutang | null) => {
+    setSaringState(k);
+    const params = new URLSearchParams(searchParams.toString());
+    if (k) params.set('keadaan', k);
+    else params.delete('keadaan');
+    const qs = params.toString();
+    // `history.replaceState`, bukan `router.replace`: Next menyelaraskannya
+    // dengan useSearchParams tanpa memuat ulang halaman server — saringan ini
+    // bekerja di klien, jadi perjalanan ke server hanya membuang waktu.
+    window.history.replaceState(null, '', qs ? `${pathname}?${qs}` : pathname);
+  };
   const [manualTerbuka, setManualTerbuka] = useState(false);
 
   const label = (k: KeadaanPiutang) =>
@@ -131,7 +151,9 @@ export function PiutangClient({
 
       {baris.length > 0 && (
         <div className="anim-stagger flex flex-wrap gap-2">
-          {URUT.filter((k) => ringkasan.perKeadaan[k].jumlah > 0).map((k) => {
+          {/* Saringan aktif tetap tampil walau kosong — tanpa itu tautan
+              `?keadaan=` ke keadaan yang sudah habis tidak bisa dilepas. */}
+          {URUT.filter((k) => ringkasan.perKeadaan[k].jumlah > 0 || k === saring).map((k) => {
             const aktif = saring === k;
             const d = ringkasan.perKeadaan[k];
             return (
@@ -200,6 +222,16 @@ export function PiutangClient({
                           <span className="block text-xs text-muted-foreground">
                             {b.salesmanName}
                           </span>
+                        )}
+                        {/* Tugaskan faktur toko ini ke orang lapangan — formulirnya
+                            membuka toko yang sama, fakturnya dipilih di sana. */}
+                        {bolehMengelola && b.keadaan !== 'lunas' && (
+                          <Link
+                            href={`/backoffice/tugas-tagih/baru?toko=${encodeURIComponent(b.storeId)}`}
+                            className="block text-xs text-primary underline-offset-2 hover:underline"
+                          >
+                            {tTugas('buatUntukToko')}
+                          </Link>
                         )}
                       </TableCell>
                       <TableCell className="whitespace-nowrap">{tanggal(b.dueDate)}</TableCell>

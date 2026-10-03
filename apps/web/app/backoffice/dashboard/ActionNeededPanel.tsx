@@ -1,24 +1,25 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useSession } from 'next-auth/react';
-import { useTranslations } from 'next-intl';
-import { AlertTriangle, ArrowRight, CheckCircle2, Clock } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
-import { hasPermission } from '@/lib/rbac';
-import { cn } from '@/lib/utils';
-import type { ActionItem } from '@/lib/dashboard/action-items';
+import Link from "next/link";
+import { useSession } from "next-auth/react";
+import { useTranslations } from "next-intl";
+import { AlertTriangle, ArrowRight, CheckCircle2, Clock } from "lucide-react";
+import { hasPermission } from "@/lib/rbac";
+import { cn } from "@/lib/utils";
+import { formatRupiah } from "@/lib/format/rupiah";
+import { totalActionDocuments, type ActionItem } from "@/lib/dashboard/action-items-shared";
 
 /**
- * "What is waiting for me", above the KPI cards that answer "how are we doing".
+ * "What is waiting for me" — OPEN at the top of Beranda, not folded into a
+ * button. Folded, the list was one click away from everyone and read by no one.
  *
- * Rows are links, not a single "open the queue" button: the whole point is that
- * each row goes straight to the screen where that specific work is done, so the
- * operator never has to translate a number into a destination.
+ * Rows are links, not a single "open the queue" button: each row goes straight
+ * to the filtered list where that specific work is done, so the operator never
+ * has to translate a number into a destination.
  */
 export function ActionNeededPanel({ items }: { items: ActionItem[] }) {
   const { data: session } = useSession();
-  const t = useTranslations('dashboardActions');
+  const t = useTranslations("dashboardActions");
   const permissions = session?.user?.permissions ?? [];
 
   // A row nobody can act on is noise — and worse, it points at a page that
@@ -27,79 +28,75 @@ export function ActionNeededPanel({ items }: { items: ActionItem[] }) {
     (item) => !item.permission || hasPermission(permissions, item.permission),
   );
 
+  // Nothing to do: one calm line, not an empty box asking to be read.
   if (visible.length === 0) {
     return (
-      <Card className="border-emerald-600/25 bg-emerald-500/[0.06]">
-        {/* `py-0`: kartu sudah memberi padding atas-bawah sesuai kepadatan
-            tema (--ui-card-pad). `py-4` di sini dulu menumpuk di atasnya —
-            sampai 44 px kosong di atas judul panel. */}
-        <CardContent className="flex items-center gap-3 py-0">
-          <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-          <div>
-            <p className="text-sm font-medium">{t('emptyTitle')}</p>
-            <p className="text-sm text-muted-foreground">{t('emptyBody')}</p>
-          </div>
-        </CardContent>
-      </Card>
+      <p className="flex items-center gap-2 px-1 text-sm text-muted-foreground">
+        <CheckCircle2 aria-hidden className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+        {t("allClear")}
+      </p>
     );
   }
 
-  const total = visible.reduce((sum, item) => sum + item.count, 0);
-  const hasOverdue = visible.some((item) => item.tone === 'overdue');
+  // Documents, not rows — a PO both overdue and still submitted counts once.
+  const total = totalActionDocuments(visible);
+  const hasOverdue = visible.some((item) => item.tone === "overdue");
 
   return (
-    <Card
-      className={cn(
-        'overflow-hidden',
-        hasOverdue
-          ? 'border-destructive/35 bg-destructive/[0.04]'
-          : 'border-amber-600/30 bg-amber-500/[0.05]',
-      )}
-    >
-      <CardContent className="space-y-3 py-0">
-        <div className="flex items-start gap-3">
-          {hasOverdue ? (
-            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
-          ) : (
-            <Clock className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+    <section className="beranda-kartu" aria-labelledby="perlu-tindakan-judul">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+        <h2
+          id="perlu-tindakan-judul"
+          className={cn(
+            "flex items-center gap-1.5 text-sm font-semibold",
+            hasOverdue ? "text-destructive" : "text-amber-700 dark:text-amber-300",
           )}
-          <div className="min-w-0">
-            <h2
-              className={cn(
-                'text-base font-semibold',
-                hasOverdue ? 'text-destructive' : 'text-amber-700 dark:text-amber-300',
-              )}
+        >
+          {hasOverdue ? (
+            <AlertTriangle aria-hidden className="h-4 w-4" />
+          ) : (
+            <Clock aria-hidden className="h-4 w-4" />
+          )}
+          {t("title", { count: total })}
+        </h2>
+        <p className="text-xs text-muted-foreground">{t("subtitle")}</p>
+      </div>
+      <ul className="-mx-1.5 mt-2 grid gap-x-6 md:grid-cols-2">
+        {visible.map((item) => (
+          <li key={item.key}>
+            <Link
+              href={item.href}
+              className="group flex items-center gap-3 rounded-md px-1.5 py-1.5 text-sm transition-colors hover:bg-background/60 focus-visible:bg-background/60 focus-visible:outline-none"
             >
-              {t('title', { count: total })}
-            </h2>
-            <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
-          </div>
-        </div>
-
-        <ul className="divide-y divide-border/60 rounded-lg border border-border/60 bg-card">
-          {visible.map((item) => (
-            <li key={item.key}>
-              <Link
-                href={item.href}
-                className="group flex items-center gap-3 px-3 py-2.5 text-sm transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none"
-              >
-                <span className="min-w-0 flex-1 truncate">{t(item.labelKey as never)}</span>
-                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
-                <span
-                  className={cn(
-                    'shrink-0 text-sm font-semibold tabular-nums',
-                    item.tone === 'overdue'
-                      ? 'text-destructive'
-                      : 'text-amber-700 dark:text-amber-300',
-                  )}
-                >
-                  {item.count}
+              <span
+                aria-hidden
+                className={cn(
+                  "h-1.5 w-1.5 shrink-0 rounded-full",
+                  item.tone === "overdue" ? "bg-destructive" : "bg-amber-500",
+                )}
+              />
+              <span className="min-w-0 flex-1 leading-snug">{t(item.labelKey as never)}</span>
+              {item.amount != null && item.amount > 0 ? (
+                <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground">
+                  {formatRupiah(item.amount)}
                 </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </CardContent>
-    </Card>
+              ) : null}
+              <span
+                className={cn(
+                  "w-8 shrink-0 text-right font-semibold tabular-nums",
+                  item.tone === "overdue" ? "text-destructive" : "text-amber-700 dark:text-amber-300",
+                )}
+              >
+                {item.count}
+              </span>
+              <ArrowRight
+                aria-hidden
+                className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+              />
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

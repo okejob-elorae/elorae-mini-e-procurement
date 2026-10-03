@@ -57,6 +57,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { GridFeed } from './GridFeed';
 import type { BarisKonten, RingkasanKreatif } from '@/lib/creative/queries';
+import { TanggalInput } from '@/components/ui/tanggal-input';
 
 const PLATFORM = ['INSTAGRAM', 'TIKTOK', 'YOUTUBE', 'LAINNYA'] as const;
 const FORMAT = ['FEED', 'REELS', 'STORY', 'VIDEO', 'LIVE', 'CAROUSEL'] as const;
@@ -586,9 +587,8 @@ export function KontenClient({
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="jadwal">{t('colSchedule')}</Label>
-                <Input
+                <TanggalInput
                   id="jadwal"
-                  type="date"
                   value={draf.scheduledAt}
                   onChange={(e) => setDraf((d) => ({ ...d, scheduledAt: e.target.value }))}
                 />

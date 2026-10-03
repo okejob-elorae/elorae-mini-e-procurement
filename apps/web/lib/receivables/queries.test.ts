@@ -21,8 +21,10 @@ let tokoPutusId = '';
 let tokoKonsiId = '';
 let piutangPutusId = '';
 let piutangKonsiId = '';
+let tugasIds: string[] = [];
 
 beforeEach(async () => {
+  tugasIds = [];
   tokoPutusId = '';
   tokoKonsiId = '';
   piutangPutusId = '';
@@ -80,6 +82,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  await prisma.collectionTask.deleteMany({ where: { id: { in: tugasIds.map(seededId) } } });
   await prisma.receivable.deleteMany({
     where: { id: { in: [piutangPutusId, piutangKonsiId].filter(Boolean).map(seededId) } },
   });
@@ -150,5 +153,86 @@ describe('daftarPiutang — lingkup', () => {
     // kolom ini saat sisanya berubah.
     const terbuka = await daftarPiutang({ hanyaTerbuka: true });
     expect(terbuka.some((b) => b.invoiceNo === `${tag}/PUTUS`)).toBe(true);
+  });
+});
+
+describe('daftarPiutang — penagih (pemegang toko sekarang)', () => {
+  /*
+   * Keputusan pemilik: toko yang dirotasi, piutang lamanya ditagih sales yang
+   * SEKARANG memegang toko — sales baru membantu menagih faktur sales lama.
+   * Kolom `salesmanId` faktur tidak berubah; ia tetap mencatat penjualnya.
+   */
+  it('pemegang toko sekarang menagih faktur yang dijual sales lama', async () => {
+    await prisma.receivable.update({ where: { id: seededId(piutangPutusId) }, data: { salesmanId: `${tag}-lama` } });
+    await prisma.store.update({ where: { id: seededId(tokoPutusId) }, data: { salesmanId: `${tag}-baru` } });
+
+    const baru = await daftarPiutang({ penagihId: `${tag}-baru` });
+    expect(baru.some((b) => b.invoiceNo === `${tag}/PUTUS`)).toBe(true);
+
+    const lama = await daftarPiutang({ penagihId: `${tag}-lama` });
+    expect(lama.some((b) => b.invoiceNo === `${tag}/PUTUS`)).toBe(false);
+  });
+
+  it('penjual asli menagih selama toko belum punya pemegang', async () => {
+    await prisma.receivable.update({ where: { id: seededId(piutangPutusId) }, data: { salesmanId: `${tag}-lama` } });
+
+    const lama = await daftarPiutang({ penagihId: `${tag}-lama` });
+    expect(lama.some((b) => b.invoiceNo === `${tag}/PUTUS`)).toBe(true);
+
+    const orangLain = await daftarPiutang({ penagihId: `${tag}-baru` });
+    expect(orangLain.some((b) => b.invoiceNo === `${tag}/PUTUS`)).toBe(false);
+  });
+  /*
+   * Kantor bisa menugaskan penagihan ke orang yang BUKAN pemegang toko. Tanpa
+   * ini ia melihat tugasnya tetapi tidak bisa membuka fakturnya, jadi tidak bisa
+   * melaporkan pembayarannya — tugas yang tidak mungkin diselesaikan.
+   */
+  async function buatTugas(assigneeId: string, status: string) {
+    const t = await prisma.collectionTask.create({
+      data: {
+        assigneeId,
+        storeId: seededId(tokoPutusId),
+        receivableIds: [seededId(piutangPutusId)],
+        status,
+        createdById: `${tag}-kantor`,
+      },
+    });
+    tugasIds.push(t.id);
+  }
+
+  it('orang yang ditugasi tugas tagih TERBUKA ikut menagih faktur di tugas itu', async () => {
+    await prisma.store.update({ where: { id: seededId(tokoPutusId) }, data: { salesmanId: `${tag}-pemegang` } });
+    await buatTugas(`${tag}-penugasan`, 'TERBUKA');
+
+    const ditugasi = await daftarPiutang({ penagihId: `${tag}-penugasan` });
+    expect(ditugasi.map((b) => b.invoiceNo)).toEqual([`${tag}/PUTUS`]);
+
+    // Pemegang toko tetap menagihnya juga — penugasan menambah, tidak memindahkan.
+    const pemegang = await daftarPiutang({ penagihId: `${tag}-pemegang` });
+    expect(pemegang.some((b) => b.invoiceNo === `${tag}/PUTUS`)).toBe(true);
+  });
+
+  it('tugas yang sudah selesai atau dibatalkan tidak lagi membuka fakturnya', async () => {
+    await prisma.store.update({ where: { id: seededId(tokoPutusId) }, data: { salesmanId: `${tag}-pemegang` } });
+    await buatTugas(`${tag}-penugasan`, 'SELESAI');
+    await buatTugas(`${tag}-penugasan`, 'DIBATALKAN');
+
+    const ditugasi = await daftarPiutang({ penagihId: `${tag}-penugasan` });
+    expect(ditugasi.some((b) => b.invoiceNo === `${tag}/PUTUS`)).toBe(false);
+  });
+
+  it('tugas tagih tidak pernah membuka faktur toko konsinyasi', async () => {
+    const t = await prisma.collectionTask.create({
+      data: {
+        assigneeId: `${tag}-penugasan`,
+        storeId: seededId(tokoKonsiId),
+        receivableIds: [seededId(piutangKonsiId)],
+        status: 'TERBUKA',
+        createdById: `${tag}-kantor`,
+      },
+    });
+    tugasIds.push(t.id);
+    const ditugasi = await daftarPiutang({ penagihId: `${tag}-penugasan` });
+    expect(ditugasi).toEqual([]);
   });
 });

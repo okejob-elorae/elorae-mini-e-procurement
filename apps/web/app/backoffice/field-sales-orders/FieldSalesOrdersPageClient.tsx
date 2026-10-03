@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { useTranslations, useLocale } from "next-intl";
@@ -26,6 +27,9 @@ import {
 } from "@/components/ui/table";
 import { Pager } from "@/components/Pager";
 import { formatDisplayDateTime } from "@/lib/date-only";
+import { formatRupiah } from "@/lib/format/rupiah";
+import { LencanaJarakJauh } from "@/app/pwa/orders/[id]/LencanaJarakJauh";
+import { LencanaInden } from "./LencanaInden";
 
 type StatusFilter = FieldSalesOrderStatus | "ALL";
 
@@ -36,9 +40,13 @@ type Props = {
   status: StatusFilter;
   orderType: "ALL" | "PUTUS" | "KONSI";
   storeId: string;
+  /** Saringan pre-order. */
+  inden?: "ALL" | "INDEN" | "BIASA";
   storeOptions: { id: string; name: string }[];
   page: number;
   pageSize: number;
+  /** Pesanan menunggu persetujuan yang kreditnya ditahan saat dibuat. */
+  kreditDitahanIds?: string[];
 };
 
 const STATUS_BADGE_VARIANT: Record<FieldSalesOrderStatus, "secondary" | "default" | "destructive"> = {
@@ -53,22 +61,18 @@ const STATUS_LABEL_KEY: Record<FieldSalesOrderStatus, "statusPending" | "statusA
   REJECTED: "statusRejected",
 };
 
-function formatRupiah(value: number): string {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
 
 export function FieldSalesOrdersPageClient(props: Props) {
   const router = useRouter();
   const sp = useSearchParams();
   const t = useTranslations("fieldSalesOrders");
+  const tInden = useTranslations("fieldSalesOrders.inden");
   const locale = useLocale();
+  const inden = props.inden ?? "ALL";
   const [, startTransition] = useTransition();
 
   const [searchInput, setSearchInput] = useState(props.search);
+  const kreditDitahan = new Set(props.kreditDitahanIds ?? []);
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -101,7 +105,7 @@ export function FieldSalesOrdersPageClient(props: Props) {
   }
 
   const hasFilter =
-    !!props.search || props.status !== "ALL" || props.orderType !== "ALL" || props.storeId !== "ALL";
+    !!props.search || props.status !== "ALL" || props.orderType !== "ALL" || props.storeId !== "ALL" || inden !== "ALL";
 
   return (
     <div className="space-y-4">
@@ -144,6 +148,19 @@ export function FieldSalesOrdersPageClient(props: Props) {
                 <SelectItem value="ALL">{t("typeAll")}</SelectItem>
                 <SelectItem value="PUTUS">{t("typePutus")}</SelectItem>
                 <SelectItem value="KONSI">{t("typeKonsi")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="w-full sm:w-36">
+            <label className="text-xs text-muted-foreground mb-1 block">{tInden("saringan")}</label>
+            <Select value={inden} onValueChange={(v) => pushParam("inden", v === "ALL" ? undefined : v)}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={tInden("saringan")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">{tInden("saringanSemua")}</SelectItem>
+                <SelectItem value="INDEN">{tInden("saringanInden")}</SelectItem>
+                <SelectItem value="BIASA">{tInden("saringanBiasa")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -226,9 +243,31 @@ export function FieldSalesOrdersPageClient(props: Props) {
                   </TableCell>
                   <TableCell className="whitespace-nowrap">{formatDisplayDateTime(o.createdAt, locale)}</TableCell>
                   <TableCell>
-                    <Badge variant={STATUS_BADGE_VARIANT[o.status]}>
-                      {t(STATUS_LABEL_KEY[o.status])}
-                    </Badge>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {/* Dibatalkan salesman sendiri: abu-abu, bukan merah "Ditolak" — kantor tidak memutuskan apa pun. */}
+                      {o.dibatalkan ? (
+                        <Badge variant="outline" className="bg-muted text-muted-foreground">
+                          {t("batal.lencana")}
+                        </Badge>
+                      ) : (
+                        <Badge variant={STATUS_BADGE_VARIANT[o.status]}>
+                          {t(STATUS_LABEL_KEY[o.status])}
+                        </Badge>
+                      )}
+                      {kreditDitahan.has(o.id) && (
+                        <Badge variant="outline" className="border-destructive/50 text-destructive">
+                          {t("kredit.lencanaDaftar")}
+                        </Badge>
+                      )}
+                      <LencanaJarakJauh saluran={o.remoteChannel} />
+                      <LencanaInden preorder={o.preorder} />
+                    </div>
+                    {o.menggantikan || o.digantiDengan ? (
+                      <div className="mt-1 flex flex-col gap-0.5 text-xs text-muted-foreground">
+                        {o.menggantikan ? <TautanPasangan label={t("batal.menggantikan")} o={o.menggantikan} /> : null}
+                        {o.digantiDengan ? <TautanPasangan label={t("batal.digantiDengan")} o={o.digantiDengan} /> : null}
+                      </div>
+                    ) : null}
                   </TableCell>
                 </TableRow>
               ))
@@ -258,5 +297,21 @@ export function FieldSalesOrdersPageClient(props: Props) {
         }}
       />
     </div>
+  );
+}
+
+/** Tautan ke pesanan pasangannya; menghentikan klik baris (barisnya sendiri membuka detail pesanan ini). */
+function TautanPasangan({ label, o }: { label: string; o: { id: string; orderNo: string } }) {
+  return (
+    <span>
+      {label}{" "}
+      <Link
+        href={`/backoffice/field-sales-orders/${o.id}`}
+        className="font-mono text-foreground underline underline-offset-2"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {o.orderNo}
+      </Link>
+    </span>
   );
 }

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { BadgeCheck, Plus, Wallet } from 'lucide-react';
+import { BadgeCheck, Landmark, Plus, Wallet } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -31,6 +31,9 @@ import {
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { verifikasiKlaimAction } from '@/app/actions/receivables';
+import { dinamis } from '@/lib/i18n/dinamis';
+import type { StatusGiro } from '@/lib/receivables/giro';
+import { TombolGiro } from './giro/TombolGiro';
 
 export type BarisKlaim = {
   id: string;
@@ -45,6 +48,8 @@ export type BarisKlaim = {
   status: string;
   verifyNote: string | null;
   nilaiTertahan: number;
+  /** Rincian bilyet kalau dibayar dengan giro. Tanggal sudah diformat di server. */
+  giro: { nomor: string; efektif: string; status: StatusGiro; kedaluwarsa: boolean } | null;
 };
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
@@ -64,14 +69,18 @@ const NADA: Record<string, StatusTone> = {
 
 export function PelunasanClient({
   baris,
+  giroMenunggu,
   bolehMemutuskan,
   bolehMengelola,
 }: {
   baris: BarisKlaim[];
+  /** Giro yang klaimnya masih menunggu cair — angka pada tautan Daftar giro. */
+  giroMenunggu: number;
   bolehMemutuskan: boolean;
   bolehMengelola: boolean;
 }) {
   const t = useTranslations('payments');
+  const tGiro = dinamis(useTranslations('giro'));
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [tolakId, setTolakId] = useState<string | null>(null);
@@ -100,14 +109,22 @@ export function PelunasanClient({
         description={t('pageDescription')}
         meta={t('summary', { count: baris.length, pending: menunggu })}
         actions={
-          bolehMengelola ? (
-            <Button asChild>
-              <Link href="/backoffice/pelunasan/baru">
-                <Plus className="mr-1.5 h-4 w-4" />
-                {t('newClaim')}
+          <span className="inline-flex flex-wrap gap-2">
+            <Button variant="outline" asChild>
+              <Link href="/backoffice/pelunasan/giro">
+                <Landmark className="mr-1.5 h-4 w-4" />
+                {t('giroListLink', { count: giroMenunggu })}
               </Link>
             </Button>
-          ) : undefined
+            {bolehMengelola && (
+              <Button asChild>
+                <Link href="/backoffice/pelunasan/baru">
+                  <Plus className="mr-1.5 h-4 w-4" />
+                  {t('newClaim')}
+                </Link>
+              </Button>
+            )}
+          </span>
         }
       />
 
@@ -179,9 +196,31 @@ export function PelunasanClient({
                         >
                           {t(`status${b.status}` as never)}
                         </StatusPill>
+                        {b.giro && (
+                          <span
+                            className={cn(
+                              'mt-1 block text-xs',
+                              b.giro.kedaluwarsa ? 'text-destructive' : 'text-muted-foreground',
+                            )}
+                          >
+                            {t('giroLine', { no: b.giro.nomor, date: b.giro.efektif })}
+                            {' · '}
+                            {tGiro(`status_${b.giro.status}`)}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell className="sticky right-0 bg-card text-right">
-                        {b.status === 'DIKIRIM' && bolehMemutuskan && (
+                        {/* Giro yang menunggu tidak diverifikasi ke mutasi biasa:
+                            yang diputuskan adalah bilyetnya — cair atau ditolak. */}
+                        {b.status === 'DIKIRIM' && bolehMemutuskan && b.giro?.status === 'MENUNGGU' && (
+                          <TombolGiro
+                            claimId={b.id}
+                            giroNo={b.giro.nomor}
+                            nilai={rupiah(b.receivedAmount)}
+                            susun
+                          />
+                        )}
+                        {b.status === 'DIKIRIM' && bolehMemutuskan && b.giro?.status !== 'MENUNGGU' && (
                           // Stacked like kontrabon: side by side, the two
                           // buttons pushed the table past its card at 1280 px.
                           <span className="inline-flex flex-col items-end gap-1">

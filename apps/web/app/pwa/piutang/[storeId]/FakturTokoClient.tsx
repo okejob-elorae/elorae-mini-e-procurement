@@ -2,14 +2,16 @@
 
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { ArrowLeft } from 'lucide-react';
+import { CalendarCheck } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { dinamis } from '@/lib/i18n/dinamis';
 import type { BarisPiutang } from '@/lib/receivables/queries';
 import type { KeadaanPiutang } from '@/lib/receivables/rules';
 
+import { TautanKembali } from "@/app/pwa/TautanKembali";
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 const tanggal = (iso?: string) =>
   iso
@@ -22,20 +24,39 @@ const tanggal = (iso?: string) =>
     : '—';
 
 const NADA: Record<KeadaanPiutang, string> = {
-  lewat: 'bg-destructive/10 text-destructive',
+  lewat: 'bg-destructive/10 text-red-800 dark:text-red-300',
   tertahan: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
-  klaim: 'bg-primary/10 text-primary',
+  klaim: 'bg-primary/15 text-foreground',
   tt: 'bg-muted text-muted-foreground',
-  belum: 'bg-primary/10 text-primary',
+  belum: 'bg-primary/15 text-foreground',
   lunas: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
 };
 
+/** Kontrabon berjalan di toko ini; tanggal dan uang sudah diformat di server. */
+export type JanjiTampil = {
+  id: string;
+  docNo: string;
+  tanggalJanji: string;
+  nilai: string;
+  jumlahFaktur: number;
+  receivedBy: string | null;
+  dariLapangan: boolean;
+  dikonfirmasi: boolean;
+};
+
 export function FakturTokoClient({
+  storeId,
   storeName,
   baris,
+  bisaJanji,
+  janji,
 }: {
+  storeId: string;
   storeName: string;
   baris: BarisPiutang[];
+  /** Ada faktur yang masih bisa dijanjikan (bersisa, belum dikontrabon). */
+  bisaJanji: boolean;
+  janji: JanjiTampil[];
 }) {
   const t = useTranslations('pwaPiutang');
   const td = dinamis(t);
@@ -44,22 +65,70 @@ export function FakturTokoClient({
   return (
     <div className="space-y-4 p-4">
       <Button variant="ghost" size="sm" asChild className="-ml-2">
-        <Link href="/pwa/piutang">
-          <ArrowLeft className="mr-1.5 h-4 w-4" />
-          {t('back')}
-        </Link>
+        <TautanKembali cadangan="/pwa/piutang" />
       </Button>
 
       <header className="space-y-1">
         <h1 className="text-xl font-bold leading-tight">{storeName}</h1>
         <p className="text-sm text-muted-foreground">
-          {t('summaryStore', { count: baris.length, value: rupiah(sisa) })}
+          {/* Hitungan = faktur yang masih bersisa, sama dengan daftar Tagihan.
+              Faktur yang sudah lunas tetap terdaftar di bawah. */}
+          {t('summaryStore', { count: baris.filter((b) => b.outstanding > 0).length || baris.length, value: rupiah(sisa) })}
         </p>
       </header>
 
+      {/* Janji bayar / tukar faktur dicatat di depan toko, saat lembarnya
+          ditandatangani — bukan menunggu kantor menyusun kontrabon. */}
+      {bisaJanji && (
+        <Button asChild className="w-full">
+          <Link href={`/pwa/piutang/${storeId}/janji`}>
+            <CalendarCheck className="mr-1.5 h-4 w-4" />
+            {t('addPromise')}
+          </Link>
+        </Button>
+      )}
+
+      {janji.length > 0 && (
+        <section className="beranda-kartu beranda-kartu-daftar" aria-labelledby="janji-berjalan-judul">
+          <div className="px-4 pb-3 pt-4">
+            <h2 id="janji-berjalan-judul" className="beranda-judul">
+              {t('promisesTitle')}
+            </h2>
+          </div>
+          <ul className="divide-y border-t">
+            {janji.map((j) => (
+              <li key={j.id} className="flex min-h-14 items-start justify-between gap-3 px-4 py-3">
+                <span className="min-w-0">
+                  <span className="block font-semibold">{j.docNo}</span>
+                  <span className="block text-xs text-muted-foreground">
+                    {t('promiseLine', { date: j.tanggalJanji, count: j.jumlahFaktur })}
+                    {j.receivedBy && ` · ${t('promiseReceivedBy', { name: j.receivedBy })}`}
+                  </span>
+                </span>
+                <span className="flex shrink-0 flex-col items-end gap-1">
+                  <span className="font-semibold tabular-nums">{j.nilai}</span>
+                  {j.dariLapangan && (
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        j.dikonfirmasi
+                          ? 'text-muted-foreground'
+                          : 'border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300',
+                      )}
+                    >
+                      {j.dikonfirmasi ? t('promiseConfirmed') : t('promiseUnconfirmed')}
+                    </Badge>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <div className="anim-stagger space-y-3">
         {baris.map((b) => (
-          <Card key={b.id}>
+          <Card key={b.id} className="py-0">
             <CardContent className="space-y-2 py-4">
               <div className="flex items-start justify-between gap-3">
                 <span className="min-w-0">

@@ -42,6 +42,7 @@ import {
   type QueueSortDir,
   type QueueSortField,
 } from "@/app/actions/fulfillment-queue";
+import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
 
 const ROUTE = "/backoffice/fulfillment";
 
@@ -245,26 +246,16 @@ export function FulfillmentQueueClient(props: Props) {
             />
           </div>
           <div className="w-full sm:w-auto">
-            <label className="text-xs text-muted-foreground mb-1 block">
+            <label htmlFor="rentang-tanggal" className="text-xs text-muted-foreground mb-1 block">
               {t("filter.dateRange")}
             </label>
-            <div className="flex items-center gap-2">
-              <Input
-                type="date"
-                aria-label={t("filter.dateFrom")}
-                className="flex-1 sm:w-40 sm:flex-none"
-                value={props.dateFrom}
-                onChange={(e) => pushParam("dateFrom", e.target.value || undefined)}
-              />
-              <span className="text-muted-foreground" aria-hidden>–</span>
-              <Input
-                type="date"
-                aria-label={t("filter.dateTo")}
-                className="flex-1 sm:w-40 sm:flex-none"
-                value={props.dateTo}
-                onChange={(e) => pushParam("dateTo", e.target.value || undefined)}
-              />
-            </div>
+            <RentangTanggalInput
+              id="rentang-tanggal"
+              className="sm:w-64"
+              dari={props.dateFrom}
+              sampai={props.dateTo}
+              onChange={({ dari, sampai }) => pushParams({ dateFrom: dari || undefined, dateTo: sampai || undefined, page: undefined })}
+            />
           </div>
           <Button variant="outline" onClick={reset} className="shrink-0">
             {t("filter.reset")}

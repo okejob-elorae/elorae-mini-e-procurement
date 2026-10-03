@@ -1,4 +1,5 @@
 import { daftarPiutang, ringkasPiutang } from '@/lib/receivables/queries';
+import { umurPiutang, type KelompokUmur } from './tren';
 
 /**
  * Angka piutang untuk beranda.
@@ -24,6 +25,8 @@ export type RingkasPiutangBeranda = {
   lewatJumlah: number;
   /** Ditahan karena retur belum dihitung gudang. */
   tertahanNilai: number;
+  /** Umur dari tanggal jatuh tempo, untuk grafik beranda. */
+  umur: KelompokUmur[];
 };
 
 export async function ringkasPiutangBeranda(): Promise<RingkasPiutangBeranda> {
@@ -35,5 +38,6 @@ export async function ringkasPiutangBeranda(): Promise<RingkasPiutangBeranda> {
     lewatNilai: r.perKeadaan.lewat.nilai,
     lewatJumlah: r.perKeadaan.lewat.jumlah,
     tertahanNilai: r.perKeadaan.tertahan.nilai,
+    umur: umurPiutang(baris, new Date()),
   };
 }

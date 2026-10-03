@@ -1,28 +1,10 @@
 import { prisma } from "@elorae/db";
 import { PERMISSIONS } from "@/lib/rbac";
+import type { ActionItem } from "./action-items-shared";
 
-/**
- * One row of the "needs your attention" panel on Beranda.
- *
- * The dashboard below this panel answers "how are we doing"; this panel answers
- * "what is waiting for me". Those are different questions, and only the second
- * one decays into a problem when nobody looks — an approval nobody grants blocks
- * a salesman, a failed journal silently leaves the GL wrong.
- *
- * `labelKey` is a key under the `dashboardActions` i18n namespace, not a string:
- * this panel is the first thing an operator reads every morning, so it must
- * follow the locale like everything else around it.
- */
-export type ActionItem = {
-  key: string;
-  labelKey: string;
-  count: number;
-  href: string;
-  /** Permission needed to ACT on it. Null = anyone who can open the dashboard. */
-  permission: string | null;
-  /** `overdue` already cost someone time; `waiting` is merely queued. */
-  tone: "overdue" | "waiting";
-};
+// Client components import the row type and the total from the shared module;
+// this one pulls Prisma and must stay server-only.
+export { totalActionDocuments, type ActionItem } from "./action-items-shared";
 
 export type ActionItemCounts = {
   fieldSalesPendingApproval: number;
@@ -63,11 +45,37 @@ export async function getActionItemCounts(): Promise<ActionItemCounts> {
   };
 }
 
+/**
+ * Payment claims (BKM) a salesperson reported that finance has not yet matched
+ * against the bank statement — status `DIKIRIM`. Same definition as the
+ * receivables dashboard (`muatDasbor`: count of DIKIRIM claims, Σ
+ * `receivedAmount`), as a single aggregate: that helper also loads every
+ * receivable, return and photo, which this panel has no use for.
+ *
+ * Dashboard-only on purpose — not part of `getActionItemCounts`, which also
+ * feeds the sidebar badges on every navigation.
+ */
+export async function getClaimsAwaitingVerification(): Promise<{ count: number; amount: number }> {
+  const agg = await prisma.paymentClaim.aggregate({
+    where: { status: "DIKIRIM" },
+    _count: { _all: true },
+    _sum: { receivedAmount: true },
+  });
+  return { count: agg._count._all, amount: Number(agg._sum.receivedAmount ?? 0) };
+}
+
 export type BuildActionItemsInput = ActionItemCounts & {
   overduePOs: number;
-  submittedPOs: number;
+  /** DRAFT POs: written by purchasing, waiting for an approver to send them to the supplier. */
+  draftPOs: number;
   oversoldSkus: number;
   unshippedOrders: number;
+  /** Rupiah value of the overdue POs, when the caller has it. */
+  overduePOsAmount?: number;
+  /** Invoices past the promised payment date (receivables state `lewat`). */
+  overduePromises?: { count: number; amount: number };
+  /** BKM claims waiting for finance to verify. */
+  claimsAwaitingVerification?: { count: number; amount: number };
 };
 
 /**
@@ -84,6 +92,16 @@ export function buildActionItems(input: BuildActionItemsInput): ActionItem[] {
       href: "/backoffice/purchase-orders?status=overdue",
       permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
       tone: "overdue",
+      amount: input.overduePOsAmount,
+    },
+    {
+      key: "overduePromises",
+      labelKey: "overduePromises",
+      count: input.overduePromises?.count ?? 0,
+      href: "/backoffice/piutang?keadaan=lewat",
+      permission: PERMISSIONS.RECEIVABLES_VIEW,
+      tone: "overdue",
+      amount: input.overduePromises?.amount,
     },
     {
       key: "oversold",
@@ -110,6 +128,17 @@ export function buildActionItems(input: BuildActionItemsInput): ActionItem[] {
       tone: "waiting",
     },
     {
+      key: "claimsAwaitingVerification",
+      labelKey: "claimsAwaitingVerification",
+      count: input.claimsAwaitingVerification?.count ?? 0,
+      href: "/backoffice/pelunasan",
+      // Verifying a claim is finance's call (`journals:manage`, see
+      // `lib/receivables/izin.ts`) — a row nobody here can act on is noise.
+      permission: PERMISSIONS.JOURNALS_MANAGE,
+      tone: "waiting",
+      amount: input.claimsAwaitingVerification?.amount,
+    },
+    {
       key: "unshippedOrders",
       labelKey: "unshippedOrders",
       count: input.unshippedOrders,
@@ -121,7 +150,7 @@ export function buildActionItems(input: BuildActionItemsInput): ActionItem[] {
       key: "salesReturnPending",
       labelKey: "salesReturnPending",
       count: input.salesReturnPending,
-      href: "/backoffice/returns",
+      href: "/backoffice/returns?status=PENDING",
       permission: PERMISSIONS.SALES_RETURNS_VIEW,
       tone: "waiting",
     },
@@ -129,15 +158,17 @@ export function buildActionItems(input: BuildActionItemsInput): ActionItem[] {
       key: "taxInvoicePending",
       labelKey: "taxInvoicePending",
       count: input.taxInvoicePending,
-      href: "/backoffice/finance/faktur-pajak",
+      href: "/backoffice/finance/faktur-pajak?status=PENDING",
       permission: PERMISSIONS.TAX_INVOICES_VIEW,
       tone: "waiting",
     },
     {
-      key: "submittedPOs",
-      labelKey: "submittedPOs",
-      count: input.submittedPOs,
-      href: "/backoffice/purchase-orders?status=SUBMITTED",
+      // SUBMITTED means approved and sent to the supplier (only an approver can
+      // submit — `changePOStatus`); what waits for approval is a DRAFT.
+      key: "draftPOs",
+      labelKey: "draftPOs",
+      count: input.draftPOs,
+      href: "/backoffice/purchase-orders?status=DRAFT",
       permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
       tone: "waiting",
     },

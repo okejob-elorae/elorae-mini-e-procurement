@@ -1,22 +1,23 @@
 import { prisma, Prisma, sqlId } from '@elorae/db';
+import { nilaiBersihSpg, rentangTren, saluranMarketplace, susunTren, type BarisSaluran, type TitikTren } from './tren';
+import { awalMingguIniWib, batasHariIniWib } from './hari-wib';
+import { overduePOWhere } from '@/lib/purchase-orders/overdue';
+import {
+  bacaRencana,
+  hitungKekuranganBahan,
+  STATUS_WO_BUTUH_BAHAN,
+  type KekuranganBahan,
+  type KekuranganVendor,
+  type KekuranganWo,
+  type WoUntukBahan,
+} from './kekurangan-bahan';
 
-function getWeekStart(d: Date): Date {
-  const date = new Date(d);
-  const day = date.getDay();
-  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
-  date.setDate(diff);
-  date.setHours(0, 0, 0, 0);
-  return date;
-}
-
-function getTodayStart(d: Date): Date {
-  const date = new Date(d);
-  date.setHours(0, 0, 0, 0);
-  return date;
-}
 
 export type DashboardStats = {
   po: {
+    /** Waiting for approval (DRAFT). */
+    draft: number;
+    /** Approved and sent to the supplier (SUBMITTED). */
     submitted: number;
     inProduction: number;
     thisWeek: number;
@@ -39,21 +40,17 @@ export type DashboardStats = {
   };
   grnsThisWeek: number;
   movementsToday: number;
-  recentActivity: Array<{
-    id: string;
-    action: string;
-    entityType: string;
-    userName: string | null;
-    createdAt: Date;
-  }>;
 };
 
 export async function getDashboardStats(): Promise<DashboardStats> {
   const now = new Date();
-  const todayStart = getTodayStart(now);
-  const weekStart = getWeekStart(now);
+  // Hari dan minggu WIB — produksi berjalan di UTC, dan `setHours(0)` di sana
+  // memotong hari jam 07.00 WIB.
+  const todayStart = batasHariIniWib(now).awal;
+  const weekStart = awalMingguIniWib(now);
 
   const [
+    poDraft,
     poSubmitted,
     poPartial,
     poThisWeek,
@@ -67,19 +64,14 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     suppliersActive,
     grnsThisWeek,
     movementsToday,
-    auditLogs,
   ] = await Promise.all([
+    prisma.purchaseOrder.count({ where: { status: 'DRAFT' } }),
     prisma.purchaseOrder.count({ where: { status: 'SUBMITTED' } }),
     prisma.purchaseOrder.count({ where: { status: 'PARTIAL' } }),
     prisma.purchaseOrder.count({
       where: { createdAt: { gte: weekStart } },
     }),
-    prisma.purchaseOrder.count({
-      where: {
-        etaDate: { lt: now },
-        status: { notIn: ['CLOSED', 'OVER', 'CANCELLED'] },
-      },
-    }),
+    prisma.purchaseOrder.count({ where: overduePOWhere(now) }),
     prisma.purchaseOrder.aggregate({ _sum: { grandTotal: true } }),
     prisma.item.count({ where: { isActive: true } }),
     prisma.inventoryValue.findMany({
@@ -103,15 +95,8 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     prisma.stockMovement.count({
       where: { createdAt: { gte: todayStart } },
     }),
-    // Lebih dari yang ditampilkan: beranda melipat deret tindakan yang sama,
-    // dan sepuluh baris yang isinya satu tindakan hanya menyisakan satu baris.
-    prisma.auditLog.findMany({
-      take: 40,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        user: { select: { name: true } },
-      },
-    }),
+    // Umpan "Aktivitas terkini" sudah tidak di beranda (ada halaman jejak
+    // audit), jadi log audit tidak lagi dibaca di sini.
   ]);
 
   const inventoryByItem = new Map<string, { qtyOnHand: number; reorderPoint: number | null }>();
@@ -128,16 +113,9 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     (a) => a.reorderPoint != null && a.qtyOnHand <= a.reorderPoint
   ).length;
 
-  const recentActivity = auditLogs.map((log) => ({
-    id: log.id,
-    action: log.action,
-    entityType: log.entityType,
-    userName: log.user?.name ?? null,
-    createdAt: log.createdAt,
-  }));
-
   return {
     po: {
+      draft: poDraft,
       submitted: poSubmitted,
       inProduction: poPartial,
       thisWeek: poThisWeek,
@@ -160,106 +138,28 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     },
     grnsThisWeek,
     movementsToday,
-    recentActivity,
   };
 }
 
-export type RawMaterialShortageVendorWo = {
-  woId: string;
-  docNumber: string;
-  plannedQty: number;
-};
+export type RawMaterialShortageVendorWo = KekuranganWo;
 
-/** Vendors (CMT / WO vendor) that need this material for active production WOs. */
-export type RawMaterialShortageVendor = {
-  vendorId: string;
-  vendorName: string;
-  vendorCode: string | null;
-  workOrders: RawMaterialShortageVendorWo[];
-};
+/** Vendors (CMT / WO vendor) whose work orders still need this material. */
+export type RawMaterialShortageVendor = KekuranganVendor;
 
-export type RawMaterialShortageRow = {
-  itemId: string;
+export type RawMaterialShortageRow = KekuranganBahan & {
   itemName: string;
   uomCode: string;
-  totalPlanned: number;
-  qtyOnHand: number;
-  deficit: number;
-  vendors: RawMaterialShortageVendor[];
 };
 
-type PlanRow = { itemId?: string; plannedQty?: number };
-
-function parseConsumptionPlan(raw: unknown): PlanRow[] {
-  if (Array.isArray(raw)) return raw as PlanRow[];
-  if (typeof raw === 'string') {
-    try {
-      const p = JSON.parse(raw) as unknown;
-      return Array.isArray(p) ? (p as PlanRow[]) : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-}
-
-function groupVendorsForItem(
-  rows: Array<{
-    vendorId: string;
-    vendorName: string;
-    vendorCode: string | null;
-    woId: string;
-    woDocNumber: string;
-    plannedQty: number;
-  }>
-): RawMaterialShortageVendor[] {
-  const byVendor = new Map<
-    string,
-    {
-      vendorId: string;
-      vendorName: string;
-      vendorCode: string | null;
-      woById: Map<string, { woId: string; docNumber: string; plannedQty: number }>;
-    }
-  >();
-  for (const r of rows) {
-    let v = byVendor.get(r.vendorId);
-    if (!v) {
-      v = {
-        vendorId: r.vendorId,
-        vendorName: r.vendorName,
-        vendorCode: r.vendorCode,
-        woById: new Map(),
-      };
-      byVendor.set(r.vendorId, v);
-    }
-    const existing = v.woById.get(r.woId);
-    if (existing) {
-      existing.plannedQty += r.plannedQty;
-    } else {
-      v.woById.set(r.woId, {
-        woId: r.woId,
-        docNumber: r.woDocNumber,
-        plannedQty: r.plannedQty,
-      });
-    }
-  }
-  return Array.from(byVendor.values())
-    .map((v) => ({
-      vendorId: v.vendorId,
-      vendorName: v.vendorName,
-      vendorCode: v.vendorCode,
-      workOrders: Array.from(v.woById.values()).sort((a, b) =>
-        a.docNumber.localeCompare(b.docNumber, undefined, { numeric: true })
-      ),
-    }))
-    .sort((a, b) => a.vendorName.localeCompare(b.vendorName, undefined, { sensitivity: 'base' }));
-}
-
-/** Accumulated raw material shortages across active production work orders (in production + partial). */
+/**
+ * Bahan baku yang masih harus dikeluarkan ke perintah kerja tetapi stok
+ * tersedianya tidak cukup. Aturannya di `hitungKekuranganBahan` — lihat di sana
+ * kenapa aturan lama (rencana penuh vs stok di tangan, hanya WO yang sedang
+ * diproduksi) terbalik.
+ */
 export async function getRawMaterialShortage(): Promise<RawMaterialShortageRow[]> {
   const wos = await prisma.workOrder.findMany({
-    where: { status: { in: ['IN_PRODUCTION', 'PARTIAL'] } },
+    where: { status: { in: [...STATUS_WO_BUTUH_BAHAN] } },
     select: {
       id: true,
       docNumber: true,
@@ -269,85 +169,42 @@ export async function getRawMaterialShortage(): Promise<RawMaterialShortageRow[]
     },
   });
 
-  const plannedByItem = new Map<string, number>();
-  const itemIds = new Set<string>();
-  const contributionsByItem = new Map<
-    string,
-    Array<{
-      vendorId: string;
-      vendorName: string;
-      vendorCode: string | null;
-      woId: string;
-      woDocNumber: string;
-      plannedQty: number;
-    }>
-  >();
-
-  for (const wo of wos) {
-    const plan = parseConsumptionPlan(wo.consumptionPlan);
-    const vendorName = wo.vendor.name;
-    const vendorCode = wo.vendor.code ?? null;
-    for (const row of plan) {
-      if (!row?.itemId) continue;
-      const qty = Number(row.plannedQty) || 0;
-      if (qty <= 0) continue;
-      itemIds.add(row.itemId);
-      plannedByItem.set(row.itemId, (plannedByItem.get(row.itemId) ?? 0) + qty);
-      const list = contributionsByItem.get(row.itemId) ?? [];
-      list.push({
-        vendorId: wo.vendorId,
-        vendorName,
-        vendorCode,
-        woId: wo.id,
-        woDocNumber: wo.docNumber,
-        plannedQty: qty,
-      });
-      contributionsByItem.set(row.itemId, list);
-    }
-  }
-
-  if (itemIds.size === 0) return [];
-
-  const items = await prisma.item.findMany({
-    where: { id: { in: Array.from(itemIds) } },
-    select: { id: true, nameId: true, uomId: true },
-  });
-  const itemById = new Map(items.map((i) => [i.id, i]));
-  const uomIds = [...new Set(items.map((i) => i.uomId))];
-  const uoms = await prisma.uOM.findMany({
-    where: { id: { in: uomIds } },
-    select: { id: true, code: true },
-  });
-  const uomById = new Map(uoms.map((u) => [u.id, u]));
+  const untukBahan: WoUntukBahan[] = wos.map((wo) => ({
+    woId: wo.id,
+    docNumber: wo.docNumber,
+    vendorId: wo.vendorId,
+    vendorName: wo.vendor.name,
+    vendorCode: wo.vendor.code ?? null,
+    rencana: bacaRencana(wo.consumptionPlan),
+  }));
+  const itemIds = Array.from(
+    new Set(untukBahan.flatMap((wo) => wo.rencana.map((r) => r.itemId).filter((id): id is string => !!id))),
+  );
+  if (itemIds.length === 0) return [];
 
   const inventoryRows = await prisma.inventoryValue.findMany({
-    where: { itemId: { in: Array.from(itemIds) } },
-    select: { itemId: true, qtyOnHand: true },
+    where: { itemId: { in: itemIds } },
+    select: { itemId: true, qtyOnHand: true, reservedQty: true },
   });
-  const onHandByItem = new Map<string, number>();
+  const tersedia = new Map<string, number>();
   for (const r of inventoryRows) {
-    onHandByItem.set(r.itemId, (onHandByItem.get(r.itemId) ?? 0) + Number(r.qtyOnHand));
+    tersedia.set(r.itemId, (tersedia.get(r.itemId) ?? 0) + Number(r.qtyOnHand) - Number(r.reservedQty));
   }
 
-  const result: RawMaterialShortageRow[] = [];
-  for (const itemId of itemIds) {
-    const totalPlanned = plannedByItem.get(itemId) ?? 0;
-    const qtyOnHand = onHandByItem.get(itemId) ?? 0;
-    const deficit = Math.max(0, totalPlanned - qtyOnHand);
-    if (deficit <= 0) continue;
-    const item = itemById.get(itemId);
-    const uom = item ? uomById.get(item.uomId) : null;
-    result.push({
-      itemId,
-      itemName: item?.nameId ?? itemId,
-      uomCode: uom?.code ?? '',
-      totalPlanned,
-      qtyOnHand,
-      deficit,
-      vendors: groupVendorsForItem(contributionsByItem.get(itemId) ?? []),
-    });
-  }
-  return result.sort((a, b) => b.deficit - a.deficit);
+  const kurang = hitungKekuranganBahan(untukBahan, tersedia);
+  if (kurang.length === 0) return [];
+
+  const items = await prisma.item.findMany({
+    where: { id: { in: kurang.map((k) => k.itemId) } },
+    select: { id: true, nameId: true, uom: { select: { code: true } } },
+  });
+  const itemById = new Map(items.map((i) => [i.id, i]));
+
+  return kurang.map((k) => ({
+    ...k,
+    itemName: itemById.get(k.itemId)?.nameId ?? k.itemId,
+    uomCode: itemById.get(k.itemId)?.uom?.code ?? "",
+  }));
 }
 
 export type WorkOrderStatusCount = {
@@ -600,4 +457,78 @@ export async function countOversoldInventory(): Promise<number> {
     select: { qtyOnHand: true, reservedQty: true },
   });
   return rows.filter((r) => Number(r.qtyOnHand) - Number(r.reservedQty) < 0).length;
+}
+
+/**
+ * Penjualan per hari untuk grafik tren beranda, 180 hari terakhir — cukup
+ * untuk membandingkan 90 hari dengan 90 hari sebelumnya.
+ *
+ * Definisinya SAMA dengan kartu-kartu beranda, supaya grafik dan angkanya
+ * tidak berselisih: marketplace = SalesOrder per `transactionDate` tanpa yang
+ * batal/retur (seperti `getMarketplaceKpi`); lapangan = pengiriman pesanan
+ * PUTUS per `deliveredAt` + penjualan van per `createdAt` + penjualan SPG per
+ * `createdAt`, bersih dari barang yang dikembalikan pembeli. Transfer
+ * konsinyasi BUKAN penjualan dan tidak dihitung. Setiap baris membawa
+ * salurannya (Shopee/TikTok/Tokopedia/lain, putus/van/SPG) supaya grafik bisa
+ * dilihat per saluran tanpa kueri kedua.
+ *
+ * Dijumlah di JavaScript, bukan GROUP BY tanggal di SQL: pemotongan tanggal
+ * per zona waktu ditulis berbeda di MariaDB (produksi) dan PostgreSQL (lokal),
+ * dan satu baris (tanggal, nilai) per pesanan tetap ringan untuk beberapa ribu
+ * pesanan. Kalau volumenya tumbuh jauh, pindahkan ke agregasi harian.
+ */
+export async function getTrenPenjualan(hariIni: Date = new Date()): Promise<TitikTren[]> {
+  const HARI = 180;
+  const baris = await ambilPenjualan(new Date(hariIni.getTime() - (HARI + 1) * 86_400_000));
+  return susunTren(baris, hariIni, HARI);
+}
+
+/**
+ * Tren untuk rentang pilihan pengguna, DITAMBAH periode sama panjang tepat
+ * sebelumnya — supaya pembandingnya dihitung dengan cara yang sama seperti
+ * 7/30/90 hari. `null` untuk rentang yang tidak sah (lihat `rentangTren`).
+ */
+export async function getTrenPenjualanRentang(mulai: string, akhir: string): Promise<TitikTren[] | null> {
+  const r = rentangTren(mulai, akhir);
+  if (!r) return null;
+  const baris = await ambilPenjualan(
+    new Date(`${r.mulaiPembanding}T00:00:00+07:00`),
+    new Date(`${akhir}T23:59:59.999+07:00`),
+  );
+  return susunTren(baris, new Date(`${akhir}T12:00:00+07:00`), r.panjang * 2);
+}
+
+async function ambilPenjualan(dari: Date, sampai?: Date): Promise<BarisSaluran[]> {
+  const waktu = sampai ? { gte: dari, lte: sampai } : { gte: dari };
+  const [pesanan, kiriman, van, spg] = await Promise.all([
+    prisma.salesOrder.findMany({
+      where: { transactionDate: waktu, status: { notIn: ['CANCELLED', 'RETURNED'] } },
+      select: { transactionDate: true, grandTotal: true, channel: true },
+    }),
+    prisma.fieldSalesDelivery.findMany({
+      where: { deliveredAt: waktu, order: { orderType: 'PUTUS' } },
+      select: { deliveredAt: true, total: true },
+    }),
+    prisma.vanSale.findMany({
+      where: { createdAt: waktu },
+      select: { createdAt: true, total: true },
+    }),
+    // SPG ikut "lapangan": judul grafiknya "marketplace dan lapangan", dan nota
+    // SPG adalah penjualan lapangan yang sudah terjadi. Sebelumnya ia tidak
+    // tergambar sama sekali.
+    prisma.spgSale.findMany({
+      where: { createdAt: waktu },
+      select: { createdAt: true, total: true, lines: { select: { unitPrice: true, returnedQty: true, qty: true, lineTotal: true } } },
+    }),
+  ]);
+  return [
+    ...pesanan.map((p) => ({
+      tanggal: p.transactionDate,
+      nilai: Number(p.grandTotal),
+      saluran: saluranMarketplace(p.channel),
+    })),
+    ...kiriman.map((k) => ({ tanggal: k.deliveredAt, nilai: Number(k.total), saluran: 'putus' as const })),
+    ...van.map((v) => ({ tanggal: v.createdAt, nilai: Number(v.total), saluran: 'van' as const })),
+    ...spg.map((n) => ({ tanggal: n.createdAt, nilai: nilaiBersihSpg(n.total, n.lines), saluran: 'spg' as const })),
+  ];
 }

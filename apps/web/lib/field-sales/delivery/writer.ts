@@ -3,6 +3,7 @@ import { buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { DeliveryError } from "../errors";
+import { IndenBelumRilisError } from "../inden";
 import { outstandingQty, nextDeliveryStatus, allocateDeliveryDiscounts } from "./plan";
 
 export async function recordFieldSalesDelivery(input: {
@@ -38,6 +39,18 @@ export async function recordFieldSalesDelivery(input: {
     });
     if (!order) throw new DeliveryError("NOT_FOUND");
     if (order.status !== "APPROVED" || order.orderType !== "PUTUS") throw new DeliveryError("INVALID_STATE");
+
+    /*
+     * Pre-order: stoknya baru dicadangkan saat jendela dirilis (barang datang).
+     * Sebelum itu tidak ada reservasi untuk dikonsumsi — tanpa penjaga ini
+     * pengiriman jatuh ke OVER_DELIVER, pesan yang keliru dan tidak menunjukkan
+     * jalan keluarnya. Jendela yang hilang dianggap belum dirilis (tidak ada
+     * yang pernah mencadangkan pesanan itu).
+     */
+    if (order.preorderWindowId) {
+      const jendela = await tx.preorderWindow.findUnique({ where: { id: order.preorderWindowId }, select: { releasedAt: true } });
+      if (!jendela?.releasedAt) throw new IndenBelumRilisError(order.id);
+    }
 
     const lineById = new Map(order.lines.map((l) => [l.id, l]));
     const requested = new Map<string, number>();

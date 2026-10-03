@@ -14,12 +14,17 @@ import {
   Package,
   Pencil,
   Phone,
+  ShieldAlert,
   ShoppingBag,
   Store,
+  Target,
   User as UserIcon,
 } from "lucide-react";
 import type { StoreListItem } from "@/lib/stores/queries";
 import type { StoreSentItemRow } from "@/lib/field-sales/queries";
+import type { DetailKunjungan } from "@/lib/stores/visit-queries";
+import type { TandaCheckin } from "@/lib/salesman/checkin-janggal";
+import { ringkasHasil, type KodeRingkasan } from "@/lib/salesman/hasil-kunjungan";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -39,6 +44,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StoreChangeReviewCard } from "./StoreChangeReviewCard";
+import { StokTokoCard, type GerakanStokTampil } from "./StokTokoCard";
+import { TautanPortalCard } from "./TautanPortalCard";
+import { CatatanTokoCard } from "./CatatanTokoCard";
+import type { CatatanTampil } from "@/lib/stores/catatan-queries";
+import type { BarisStok } from "@/lib/spg/queries";
+import { formatRupiah } from "@/lib/format/rupiah";
 
 let lastMapsOpenAt = 0;
 
@@ -82,14 +93,24 @@ type Visit = {
   checkinOutOfRadius: boolean;
   checkinDistanceMeters: number | null;
   photos: Array<{ id: string; url: string; caption: string | null; capturedAtIso: string }>;
+  /**
+   * Hasil kunjungan + tanda check-in (`detailKunjunganToko`). Opsional: tanpa
+   * ini kolom hasil menampilkan "—" dan ringkasan hasil tidak ditampilkan.
+   */
+  hasil?: DetailKunjungan | null;
 };
 
 type Props = {
   store: StoreListItem;
   canEdit: boolean;
+  catatan: CatatanTampil[];
   visits: Visit[];
   orders: OrderRow[];
   sentItems: StoreSentItemRow[];
+  /** Buku stok toko dari gerakan SPG; waktu gerakan sudah diformat di server. */
+  stokToko: { stok: BarisStok[]; gerakan: GerakanStokTampil[] };
+  /** Area dan sales pemegang, sudah dalam bentuk label. */
+  pembagian: { area: string | null; pemegang: string | null };
   pendingChange: {
     requestId: string;
     requestedByLabel: string;
@@ -98,13 +119,6 @@ type Props = {
   } | null;
 };
 
-function formatRupiah(value: number): string {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
 
 const ORDER_STATUS_LABEL: Record<"PENDING_APPROVAL" | "APPROVED", "statusPending" | "statusApproved"> = {
   PENDING_APPROVAL: "statusPending",
@@ -148,6 +162,45 @@ function groupSentItemsByArticle(
   return groups;
 }
 
+const VARIAN_HASIL: Record<KodeRingkasan, "default" | "secondary" | "outline"> = {
+  TRANSAKSI: "default",
+  TRANSAKSI_TERTUNDA: "secondary",
+  TOKO_TUTUP: "outline",
+  PEMILIK_TIDAK_ADA: "outline",
+  STOK_MASIH_BANYAK: "outline",
+  HARGA: "outline",
+  PESAING: "outline",
+  MASALAH_BAYAR: "outline",
+  PESAN_LEWAT_WA: "outline",
+  KUNJUNGAN_RUTIN: "outline",
+  LAINNYA: "outline",
+  KOSONG: "outline",
+};
+
+/** Satu kalimat per tanda check-in janggal, untuk dibaca admin tanpa tooltip. */
+function kalimatTanda(
+  tanda: TandaCheckin,
+  t: ReturnType<typeof useTranslations>,
+  formatDateTime: (iso: string) => string,
+): string {
+  switch (tanda.kode) {
+    case "AKURASI_BURUK":
+      return t("AKURASI_BURUK", { akurasi: tanda.akurasiMeter, batas: tanda.batasMeter });
+    case "AKURASI_TIDAK_ADA":
+      return t("AKURASI_TIDAK_ADA");
+    case "LOMPATAN_MUSTAHIL": {
+      const jarak = Math.round(tanda.jarakMeter / 100) / 10;
+      return tanda.kecepatanKmj === null
+        ? t("LOMPATAN_SEKETIKA", { jarak })
+        : t("LOMPATAN_MUSTAHIL", { jarak, menit: tanda.menit, kecepatan: tanda.kecepatanKmj });
+    }
+    case "KOORDINAT_KEMBAR":
+      return tanda.namaToko
+        ? t("KOORDINAT_KEMBAR", { toko: tanda.namaToko, waktu: formatDateTime(tanda.waktu) })
+        : t("KOORDINAT_KEMBAR_TANPA_NAMA", { waktu: formatDateTime(tanda.waktu) });
+  }
+}
+
 function DetailField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1">
@@ -157,7 +210,7 @@ function DetailField({ label, children }: { label: string; children: React.React
   );
 }
 
-export function StoreDetailView({ store, canEdit, visits, orders, sentItems, pendingChange }: Props) {
+export function StoreDetailView({ store, canEdit, catatan, visits, orders, sentItems, stokToko, pembagian, pendingChange }: Props) {
   const t = useTranslations("stores");
   const tBadge = useTranslations("stores.badge");
   const tDetail = useTranslations("stores.detail");
@@ -166,6 +219,8 @@ export function StoreDetailView({ store, canEdit, visits, orders, sentItems, pen
   const tOrders = useTranslations("stores.orders");
   const tSentItems = useTranslations("stores.sentItems");
   const tFso = useTranslations("fieldSalesOrders");
+  const tHasil = useTranslations("pwa.hasilKunjungan");
+  const tTanda = useTranslations("stores.detail.tanda");
   const locale = useLocale();
   const formatDateTime = (iso: string) => formatDisplayDateTime(iso, locale);
   const router = useRouter();
@@ -179,6 +234,10 @@ export function StoreDetailView({ store, canEdit, visits, orders, sentItems, pen
   const totalVisits = visits.length;
   const lastVisit = visits[0];
   const sentItemGroups = groupSentItemsByArticle(sentItems);
+  const adaDetailHasil = visits.some((v) => v.hasil !== undefined);
+  const ringkasan = ringkasHasil(
+    visits.map((v) => ({ outcome: v.hasil?.outcome ?? null, selesai: v.checkoutAtIso !== null, spg: v.hasil?.spg ?? false })),
+  );
 
   return (
     <div className="space-y-6">
@@ -205,12 +264,22 @@ export function StoreDetailView({ store, canEdit, visits, orders, sentItems, pen
           <p className="text-sm text-muted-foreground font-mono">{store.code}</p>
         </div>
         {canEdit && (
-          <Button asChild>
-            <Link href={`/backoffice/stores/${store.id}/edit`}>
-              <Pencil className="h-4 w-4" />
-              {tDetail("editButton")}
-            </Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {store.termsType === "KONSI" || stokToko.stok.length > 0 ? (
+              <Button asChild variant="outline">
+                <Link href={`/backoffice/stores/${store.id}/target-stok`}>
+                  <Target className="h-4 w-4" />
+                  {tDetail("targetStokButton")}
+                </Link>
+              </Button>
+            ) : null}
+            <Button asChild>
+              <Link href={`/backoffice/stores/${store.id}/edit`}>
+                <Pencil className="h-4 w-4" />
+                {tDetail("editButton")}
+              </Link>
+            </Button>
+          </div>
         )}
       </div>
 
@@ -233,6 +302,22 @@ export function StoreDetailView({ store, canEdit, visits, orders, sentItems, pen
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
+          <section className="space-y-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              {tForm("sections.assignment")}
+            </h3>
+            <dl className="grid gap-4 sm:grid-cols-2">
+              <DetailField label={tForm("area")}>{pembagian.area ?? "—"}</DetailField>
+              <DetailField label={tForm("salesman")}>
+                {pembagian.pemegang ?? (
+                  <span className="text-amber-700 dark:text-amber-400">{tTable("noSales")}</span>
+                )}
+              </DetailField>
+            </dl>
+          </section>
+
+          <Separator />
+
           <section className="space-y-3">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               {tForm("sections.contact")}
@@ -340,6 +425,12 @@ export function StoreDetailView({ store, canEdit, visits, orders, sentItems, pen
         </CardContent>
       </Card>
 
+      <CatatanTokoCard storeId={store.id} catatan={catatan} />
+
+      <StokTokoCard stok={stokToko.stok} gerakan={stokToko.gerakan} />
+
+      <TautanPortalCard storeId={store.id} namaToko={store.name} teleponToko={store.phone} bolehKelola={canEdit} />
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -355,74 +446,134 @@ export function StoreDetailView({ store, canEdit, visits, orders, sentItems, pen
               <p className="text-sm text-muted-foreground">{tDetail("noVisits")}</p>
             </div>
           ) : (
-            <div className="overflow-auto max-h-96 rounded-md border">
-              <Table>
-                <TableHeader className="sticky top-0 z-10 bg-background">
-                  <TableRow>
-                    <TableHead>{tDetail("visitTable.checkin")}</TableHead>
-                    <TableHead>{tDetail("visitTable.checkout")}</TableHead>
-                    <TableHead>{tDetail("visitTable.duration")}</TableHead>
-                    <TableHead>{tDetail("visitTable.user")}</TableHead>
-                    <TableHead>{tDetail("visitTable.coords")}</TableHead>
-                    <TableHead>{tDetail("visitTable.photos")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {visits.map((v) => (
-                    <TableRow key={v.id}>
-                      <TableCell className="whitespace-nowrap">{formatDateTime(v.checkinAtIso)}</TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {v.checkoutAtIso ? (
-                          formatDateTime(v.checkoutAtIso)
-                        ) : (
-                          <Badge variant="secondary">{tDetail("stillOpen")}</Badge>
-                        )}
-                        {v.autoClosed && (
-                          <Badge variant="outline" className="ml-2">
-                            {tDetail("autoClosed")}
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="tabular-nums text-muted-foreground">
-                        {formatDuration(v.checkinAtIso, v.checkoutAtIso, tDetail)}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{v.userLabel}</TableCell>
-                      <TableCell>
-                        <a
-                          href={`https://www.google.com/maps?q=${v.checkinLat},${v.checkinLng}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-muted-foreground hover:underline inline-flex items-center gap-1"
-                        >
-                          <MapPin className="h-3 w-3" />
-                          {v.checkinLat.toFixed(4)}, {v.checkinLng.toFixed(4)}
-                        </a>
-                        {v.checkinOutOfRadius && (
-                          <Badge variant="outline" className="ml-2 border-amber-500/40 text-amber-700">
-                            {tDetail("visitTable.outOfRadius")}
-                            {v.checkinDistanceMeters !== null ? ` · ${v.checkinDistanceMeters} m` : ""}
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {v.photos.length > 0 ? (
-                          <Button
-                            variant="outline"
-                            className="gap-1.5"
-                            onClick={() =>
-                              setGallery({ label: formatDateTime(v.checkinAtIso), photos: v.photos })
-                            }
-                          >
-                            <Images className="h-4 w-4" /> {tDetail("photoCount", { count: v.photos.length })}
-                          </Button>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
+            <div className="space-y-4">
+              {adaDetailHasil && (
+                <div className="space-y-2 rounded-md border bg-muted/30 p-3">
+                  <p className="text-sm">
+                    {ringkasan.total > 0
+                      ? tDetail("hasilRingkas.isi", { transaksi: ringkasan.transaksi, total: ringkasan.total })
+                      : tDetail("hasilRingkas.kosong")}
+                  </p>
+                  {ringkasan.perKode.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {ringkasan.perKode.map((k) => (
+                        <Badge key={k.kode} variant={VARIAN_HASIL[k.kode]} className="gap-1.5">
+                          {tHasil(`kode.${k.kode}`)}
+                          <span className="tabular-nums opacity-80">{k.jumlah}</span>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground">{tDetail("hasilRingkas.cakupan", { n: totalVisits })}</p>
+                </div>
+              )}
+              <div className="overflow-auto max-h-96 rounded-md border">
+                <Table>
+                  <TableHeader className="sticky top-0 z-10 bg-background">
+                    <TableRow>
+                      <TableHead>{tDetail("visitTable.checkin")}</TableHead>
+                      <TableHead>{tDetail("visitTable.checkout")}</TableHead>
+                      <TableHead>{tDetail("visitTable.duration")}</TableHead>
+                      <TableHead>{tDetail("visitTable.user")}</TableHead>
+                      <TableHead>{tDetail("visitTable.outcome")}</TableHead>
+                      <TableHead>{tDetail("visitTable.coords")}</TableHead>
+                      <TableHead>{tDetail("visitTable.photos")}</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {visits.map((v) => (
+                      <TableRow key={v.id}>
+                        <TableCell className="whitespace-nowrap">{formatDateTime(v.checkinAtIso)}</TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {v.checkoutAtIso ? (
+                            formatDateTime(v.checkoutAtIso)
+                          ) : (
+                            <Badge variant="secondary">{tDetail("stillOpen")}</Badge>
+                          )}
+                          {v.autoClosed && (
+                            <Badge variant="outline" className="ml-2">
+                              {tDetail("autoClosed")}
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="tabular-nums text-muted-foreground">
+                          {formatDuration(v.checkinAtIso, v.checkoutAtIso, tDetail)}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">{v.userLabel}</TableCell>
+                        <TableCell className="min-w-40 max-w-64 whitespace-normal">
+                          {v.hasil?.spg ? (
+                            <span className="text-xs text-muted-foreground">{tDetail("hasilAbsensiSpg")}</span>
+                          ) : v.hasil?.outcome ? (
+                            <div className="space-y-1">
+                              <Badge variant={VARIAN_HASIL[v.hasil.outcome]}>{tHasil(`kode.${v.hasil.outcome}`)}</Badge>
+                              {v.hasil.outcomeNote && (
+                                <p className="text-xs text-muted-foreground break-words">{v.hasil.outcomeNote}</p>
+                              )}
+                            </div>
+                          ) : v.hasil && v.checkoutAtIso ? (
+                            <span className="text-xs text-muted-foreground">{tHasil("kode.KOSONG")}</span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="min-w-48 whitespace-normal">
+                          <a
+                            href={`https://www.google.com/maps?q=${v.checkinLat},${v.checkinLng}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-muted-foreground hover:underline inline-flex items-center gap-1"
+                          >
+                            <MapPin className="h-3 w-3" />
+                            {v.checkinLat.toFixed(4)}, {v.checkinLng.toFixed(4)}
+                          </a>
+                          {v.checkinOutOfRadius && (
+                            <Badge variant="outline" className="ml-2 border-amber-500/40 text-amber-700">
+                              {tDetail("visitTable.outOfRadius")}
+                              {v.checkinDistanceMeters !== null ? ` · ${v.checkinDistanceMeters} m` : ""}
+                            </Badge>
+                          )}
+                          {v.hasil?.akurasiMeter != null && (
+                            <p className="text-xs text-muted-foreground tabular-nums">
+                              {tDetail("akurasi", { meter: v.hasil.akurasiMeter })}
+                            </p>
+                          )}
+                          {v.hasil && v.hasil.tanda.length > 0 && (
+                            <div className="mt-1 space-y-1">
+                              <Badge variant="outline" className="gap-1 border-red-500/40 text-red-700 dark:text-red-400">
+                                <ShieldAlert className="h-3 w-3" />
+                                {tDetail("mencurigakan")}
+                              </Badge>
+                              <ul className="space-y-0.5 text-xs text-red-700 dark:text-red-400">
+                                {v.hasil.tanda.map((tanda, i) => (
+                                  <li key={`${tanda.kode}-${i}`}>{kalimatTanda(tanda, tTanda, formatDateTime)}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {v.photos.length > 0 ? (
+                            <Button
+                              variant="outline"
+                              className="gap-1.5"
+                              onClick={() =>
+                                setGallery({ label: formatDateTime(v.checkinAtIso), photos: v.photos })
+                              }
+                            >
+                              <Images className="h-4 w-4" /> {tDetail("photoCount", { count: v.photos.length })}
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              {adaDetailHasil && visits.some((v) => (v.hasil?.tanda.length ?? 0) > 0) && (
+                <p className="text-xs text-muted-foreground">{tDetail("tandaCatatan")}</p>
+              )}
             </div>
           )}
         </CardContent>

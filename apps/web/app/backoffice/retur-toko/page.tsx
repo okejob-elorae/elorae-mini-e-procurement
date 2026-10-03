@@ -8,6 +8,7 @@ import {
   ringkasKerjaRetur,
   tokoUntukRetur,
 } from "@/lib/receivables/return-queries";
+import { prisma } from "@elorae/db";
 import { ReturTokoClient } from "./ReturTokoClient";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,11 @@ export default async function ReturTokoPage() {
     katalogBarang(),
   ]);
   const izin = session.user.permissions ?? [];
+  // Nota yang dilaporkan SPG — diberi tanda "dari SPG" di daftar.
+  const idNrt = baris.filter((b) => b.jenis === "NRT").map((b) => b.id);
+  const dariSpg = idNrt.length
+    ? (await prisma.storeReturn.findMany({ where: { id: { in: idNrt }, reportedBySpg: true }, select: { id: true } })).map((n) => n.id)
+    : [];
 
   return (
     <ReturTokoClient
@@ -40,6 +46,7 @@ export default async function ReturTokoPage() {
       }))}
       bolehMengelola={hasPermission(izin, PERMISSIONS.RECEIVABLES_MANAGE)}
       bolehMenghitung={hasPermission(izin, PERMISSIONS.INVENTORY_OPNAME_COUNT)}
+      dariSpg={dariSpg}
     />
   );
 }

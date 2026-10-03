@@ -28,7 +28,7 @@ import {
 import { Pager } from "@/components/Pager";
 import { formatDisplayDate } from "@/lib/date-only";
 
-type PromoTypeFilter = "ALL" | "PERCENT" | "FIXED" | "TIERED";
+type PromoTypeFilter = "ALL" | "PERCENT" | "FIXED" | "TIERED" | "BONUS";
 type ActiveFilter = "ALL" | "true" | "false";
 
 const TYPE_KEY = { PERCENT: "typePercent", FIXED: "typeFixed", TIERED: "typeTiered" } as const;
@@ -48,6 +48,7 @@ export function PromosPageClient(props: Props) {
   const router = useRouter();
   const sp = useSearchParams();
   const t = useTranslations("promos");
+  const tBonus = useTranslations("promoBonus");
   const locale = useLocale();
   const [, startTransition] = useTransition();
 
@@ -121,6 +122,7 @@ export function PromosPageClient(props: Props) {
                 <SelectItem value="PERCENT">{t("typePercent")}</SelectItem>
                 <SelectItem value="FIXED">{t("typeFixed")}</SelectItem>
                 <SelectItem value="TIERED">{t("typeTiered")}</SelectItem>
+                <SelectItem value="BONUS">{tBonus("jenis")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -180,7 +182,7 @@ export function PromosPageClient(props: Props) {
                   <TableCell className="max-w-[240px] truncate">{p.name}</TableCell>
                   <TableCell>
                     <Badge variant="outline">
-                      {t(TYPE_KEY[p.type as keyof typeof TYPE_KEY] ?? "typePercent")}
+                      {p.type === "BONUS" ? tBonus("jenis") : t(TYPE_KEY[p.type as keyof typeof TYPE_KEY] ?? "typePercent")}
                     </Badge>
                   </TableCell>
                   <TableCell>{t(LEVEL_KEY[p.level as keyof typeof LEVEL_KEY] ?? "levelLine")}</TableCell>

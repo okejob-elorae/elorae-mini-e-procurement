@@ -18,6 +18,11 @@ export default async function EditPromoPage({ params }: PageProps) {
   const { id } = await params;
   const promo = await getPromoById(id);
   if (!promo) notFound();
+  // Kolom promo bonus tidak ikut `getPromoById`; dibaca di sini untuk formulir ubah.
+  const bonus = await prisma.promo.findUnique({
+    where: { id },
+    select: { bonusBuyQty: true, bonusFreeQty: true, bonusItemId: true },
+  });
 
   // Union with active options so an already-assigned item/store that's since
   // gone inactive still shows (and doesn't silently drop on save).
@@ -26,7 +31,7 @@ export default async function EditPromoPage({ params }: PageProps) {
       where: {
         OR: [
           { isActive: true, type: "FINISHED_GOOD" },
-          { id: { in: promo.itemIds } },
+          { id: { in: bonus?.bonusItemId ? [...promo.itemIds, bonus.bonusItemId] : promo.itemIds } },
         ],
       },
       select: { id: true, sku: true, nameId: true, isActive: true },
@@ -50,6 +55,7 @@ export default async function EditPromoPage({ params }: PageProps) {
       itemOptions={items}
       storeOptions={stores}
       defaults={promo}
+      defaultsBonus={bonus}
     />
   );
 }

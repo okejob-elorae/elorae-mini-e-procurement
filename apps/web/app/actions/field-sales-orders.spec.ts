@@ -25,6 +25,7 @@ vi.mock("@/lib/field-sales/writer", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
 import { InsufficientStockError, InvalidAddedLineError } from "@/lib/field-sales/errors";
+import { KreditBelumDiperiksaError } from "@/lib/field-sales/kredit-pesanan";
 import { approveFieldSalesOrderAction } from "./field-sales-orders";
 
 describe("approveFieldSalesOrderAction (unit — writer mocked)", () => {
@@ -127,6 +128,24 @@ describe("approveFieldSalesOrderAction (unit — writer mocked)", () => {
     expect(mockApprove).toHaveBeenCalledWith(
       expect.objectContaining({ orderId: "o1", addedLines: [{ itemId: "i1", variantSku: "XL", qty: 2 }] }),
     );
+  });
+
+  it("maps KreditBelumDiperiksaError onto KREDIT_BELUM_DIPERIKSA", async () => {
+    mockHasPermission.mockReturnValue(true);
+    mockApprove.mockRejectedValue(new KreditBelumDiperiksaError("o1"));
+    const res = await approveFieldSalesOrderAction("o1");
+    expect(res).toEqual({ ok: false, reason: "KREDIT_BELUM_DIPERIKSA" });
+  });
+
+  it("forwards kreditDiperiksa only when it is exactly true", async () => {
+    mockHasPermission.mockReturnValue(true);
+    mockApprove.mockResolvedValue({ ok: true });
+    await approveFieldSalesOrderAction("o1", undefined, undefined, { kreditDiperiksa: true });
+    expect(mockApprove).toHaveBeenLastCalledWith(expect.objectContaining({ orderId: "o1", kreditDiperiksa: true }));
+    await approveFieldSalesOrderAction("o1", undefined, undefined, { kreditDiperiksa: "ya" as never });
+    expect(mockApprove).toHaveBeenLastCalledWith(expect.objectContaining({ orderId: "o1", kreditDiperiksa: false }));
+    await approveFieldSalesOrderAction("o1");
+    expect(mockApprove).toHaveBeenLastCalledWith(expect.objectContaining({ orderId: "o1", kreditDiperiksa: false }));
   });
 
   it("succeeds with no addedLines at all (backward compatible)", async () => {

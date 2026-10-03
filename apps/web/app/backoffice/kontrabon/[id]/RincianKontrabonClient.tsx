@@ -24,6 +24,7 @@ import { formatDisplayDate } from '@/lib/date-only';
 import { dinamis } from '@/lib/i18n/dinamis';
 import { pasangFotoKontrabonAction } from '@/app/actions/collections';
 import type { RincianKontrabon } from '@/lib/receivables/collection-queries';
+import { LencanaAsal, TombolKonfirmasi } from '../KonfirmasiLapangan';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 
@@ -89,6 +90,7 @@ export function RincianKontrabonClient({
         meta={
           <span className="inline-flex flex-wrap items-center gap-2">
             <StatusPill tone={NADA[b.status]}>{td(`status${b.status}`)}</StatusPill>
+            <LencanaAsal dariLapangan={b.dariLapangan} dikonfirmasi={b.dikonfirmasi} />
             <span className={cn('text-sm', terlambat ? 'text-destructive' : 'text-muted-foreground')}>
               {t('promisedOn', { date: tanggal(b.promisedDate) })}
               {b.sisaHari !== null &&
@@ -100,7 +102,25 @@ export function RincianKontrabonClient({
             </span>
           </span>
         }
+        actions={
+          b.status === 'BERJALAN' && !b.dikonfirmasi && bolehMengelola ? (
+            <TombolKonfirmasi collectionNoteId={b.id} docNo={b.docNo} size="default" />
+          ) : undefined
+        }
       />
+
+      {b.dariLapangan && (
+        <Card className={cn(!b.dikonfirmasi && 'border-amber-500/40 bg-amber-500/[0.04]')}>
+          <CardContent className="py-4 text-sm leading-relaxed">
+            {data.konfirmasi
+              ? t('confirmedBy', {
+                  name: data.konfirmasi.oleh ?? '—',
+                  date: tanggal(data.konfirmasi.pada),
+                })
+              : t('fieldUnconfirmedExplain')}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">

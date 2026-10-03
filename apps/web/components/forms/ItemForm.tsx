@@ -33,8 +33,16 @@ import {
   buildVariantBarcode,
   type VariantBarcodeFormatConfig,
 } from '@/lib/items/variant-barcode';
+import Link from "next/link";
+import { pilihanTabelUkuranAction } from "@/app/actions/size-charts";
+import { BATAS_INFO_PRODUK } from "@/lib/items/info-produk";
+import type { PilihanTabelUkuran } from "@/lib/items/size-chart-queries";
 
 type ItemFormData = z.infer<typeof itemSchema>;
+/** Info produk untuk pembeli (barang jadi): bahan, cara rawat, tabel ukuran (null = ikut bawaan kategori). */
+type InfoProdukIsian = { material?: string | null; careInstructions?: string | null; sizeChartId?: string | null };
+/** Nilai pilihan "ikut bawaan kategori" di pemilih tabel ukuran. */
+const IKUT_KATEGORI = "__kategori__";
 type ConsumptionRuleData = z.infer<typeof consumptionRuleSchema>;
 
 type ConsumptionRuleRow = ConsumptionRuleData & { qtyInput?: string };
@@ -114,6 +122,9 @@ interface ItemFormProps {
     sellingPrice?: number;
     targetMarginPercent?: number;
     additionalCost?: number;
+    material?: string | null;
+    careInstructions?: string | null;
+    sizeChartId?: string | null;
     consumptionRules?: Array<{
       materialId: string;
       material: {
@@ -127,13 +138,14 @@ interface ItemFormProps {
       notes?: string;
     }>;
   };
-  onSubmit: (data: ItemFormData, consumptionRules?: ConsumptionRuleData[]) => Promise<void>;
+  onSubmit: (data: ItemFormData & InfoProdukIsian, consumptionRules?: ConsumptionRuleData[]) => Promise<void>;
   isLoading?: boolean;
 }
 
 export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormProps) {
   const tValidation = useTranslations('validation');
   const tToasts = useTranslations('toasts');
+  const tInfo = useTranslations("itemProductInfo");
   const itemSchemaT = useMemo(() => createItemSchema((k) => tValidation(k)), [tValidation]);
   const [uoms, setUOMs] = useState<UOM[]>([]);
   const [materials, setMaterials] = useState<Item[]>([]);
@@ -188,6 +200,10 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     null
   );
   const [itemTypeMasters, setItemTypeMasters] = useState<Awaited<ReturnType<typeof getItemTypeMasters>>>([]);
+  const [material, setMaterial] = useState(initialData?.material ?? "");
+  const [careInstructions, setCareInstructions] = useState(initialData?.careInstructions ?? "");
+  const [sizeChartId, setSizeChartId] = useState(initialData?.sizeChartId ?? "");
+  const [pilihanTabel, setPilihanTabel] = useState<PilihanTabelUkuran[]>([]);
 
   const {
     register,
@@ -230,6 +246,11 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     getItemCategories(true).then((rows) => setItemCategories(rows as ItemCategoryOption[])).catch(() => {});
     getVariantBarcodeFormatConfig()
       .then(setBarcodeFormatConfig)
+      .catch(() => {});
+    pilihanTabelUkuranAction(initialData?.sizeChartId ?? null)
+      .then((h) => {
+        if (h.ok) setPilihanTabel(h.data);
+      })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount only
   }, []);
@@ -314,6 +335,11 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       return next;
     }, []);
   }, [attributes]);
+
+  const tabelBawaan = useMemo(() => {
+    const kat = (watchedCategoryId ?? "").trim();
+    return kat ? (pilihanTabel.find((p) => p.isActive && p.categoryId === kat) ?? null) : null;
+  }, [watchedCategoryId, pilihanTabel]);
 
   const parentSku = (initialData?.sku ?? sku) || '';
   const variantSkuBasePrefix = categoryCodePrefix || parentSku.trim();
@@ -481,8 +507,14 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       }
     }
 
+    // Info produk hanya untuk barang jadi; jenis lain tidak menyentuh kolomnya.
+    const infoProduk: InfoProdukIsian =
+      itemType === ItemType.FINISHED_GOOD
+        ? { material: material.trim() || null, careInstructions: careInstructions.trim() || null, sizeChartId: sizeChartId || null }
+        : {};
+
     await onSubmit(
-      { ...dataWithSku, variants },
+      { ...dataWithSku, variants, ...infoProduk },
       itemType === ItemType.FINISHED_GOOD ? stripConsumptionRuleRows(consumptionRules) : undefined
     );
   };
@@ -778,6 +810,70 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
           )}
         </CardContent>
       </Card>
+
+      {/* Info produk untuk pembeli — dibaca SPG di HP (Info produk). */}
+      {itemType === ItemType.FINISHED_GOOD && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{tInfo("title")}</CardTitle>
+            <p className="text-sm text-muted-foreground">{tInfo("description")}</p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="material">{tInfo("material")}</Label>
+              <Input
+                id="material"
+                value={material}
+                onChange={(e) => setMaterial(e.target.value)}
+                placeholder={tInfo("materialPlaceholder")}
+                maxLength={BATAS_INFO_PRODUK.material}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="careInstructions">{tInfo("care")}</Label>
+              <Textarea
+                id="careInstructions"
+                value={careInstructions}
+                onChange={(e) => setCareInstructions(e.target.value)}
+                placeholder={tInfo("carePlaceholder")}
+                maxLength={BATAS_INFO_PRODUK.careInstructions}
+                rows={3}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="sizeChartId">{tInfo("sizeChart")}</Label>
+              <SearchableCombobox
+                id="sizeChartId"
+                options={[
+                  {
+                    value: IKUT_KATEGORI,
+                    label: tabelBawaan
+                      ? tInfo("followCategoryNamed", { name: tabelBawaan.name })
+                      : tInfo("followCategory"),
+                  },
+                  ...pilihanTabel.map((p) => ({
+                    value: p.id,
+                    label: p.isActive ? p.name : tInfo("inactiveChart", { name: p.name }),
+                  })),
+                ]}
+                value={sizeChartId || IKUT_KATEGORI}
+                onValueChange={(v) => setSizeChartId(v === IKUT_KATEGORI ? "" : v)}
+                placeholder={tInfo("followCategory")}
+              />
+              <p className="text-xs text-muted-foreground">
+                {sizeChartId
+                  ? tInfo("ownChartHelp")
+                  : tabelBawaan
+                    ? tInfo("categoryChartHelp", { name: tabelBawaan.name })
+                    : tInfo("noCategoryChartHelp")}{" "}
+                <Link href="/backoffice/items/size-charts" className="font-medium text-primary underline-offset-4 hover:underline">
+                  {tInfo("manageLink")}
+                </Link>
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Variants */}
       <Card>

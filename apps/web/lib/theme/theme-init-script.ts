@@ -66,7 +66,8 @@ var tcx=null;var primaryRaw=null;var paletteRaw=null;
 try{tcx=localStorage.getItem(TK);primaryRaw=localStorage.getItem(PK);paletteRaw=localStorage.getItem(PLK);}catch(e){}
 var palette=null;
 if(paletteRaw){try{palette=JSON.parse(paletteRaw);}catch(e){}}
-if(!tcx||tcx===''||tcx==='null'){
+var pHex=normHex(primaryRaw);
+if(!pHex||pHex===normHex(DEF_P)||!palette){
 applyPalette(dark?DARK_DEF:LIGHT_DEF);
 var defP=normHex(DEF_P)||DEF_P;
 applyPrimary(defP);
@@ -74,8 +75,7 @@ applyPrimary(defP);
 var tokens=palette&&(dark?palette.dark:palette.light);
 if(tokens)applyPalette(tokens);
 else applyPalette(dark?DARK_DEF:LIGHT_DEF);
-var primary=normHex(primaryRaw)||DEF_P;
-applyPrimary(primary);
+applyPrimary(pHex);
 }
 }catch(e){}})();`;
 }

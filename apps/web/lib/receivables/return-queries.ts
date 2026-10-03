@@ -461,10 +461,22 @@ export async function kandidatPenanggung(): Promise<{ id: string; name: string }
   return rows.map((u) => ({ id: u.id, name: u.name ?? u.email }));
 }
 
-/** Toko aktif, untuk memilih saat mencatat nota retur. */
-export async function tokoUntukRetur(): Promise<{ id: string; name: string }[]> {
+/**
+ * Toko aktif, untuk memilih saat mencatat nota retur. `hanyaMilik` (layar HP
+ * saat kunci "hanya toko sendiri" menyala) menyempitkannya ke toko yang
+ * dipegang sales itu.
+ */
+export async function tokoUntukRetur(opsi?: {
+  hanyaMilik?: string;
+  /** SPG: hanya toko tetapnya sendiri. */
+  hanyaToko?: string;
+}): Promise<{ id: string; name: string }[]> {
   return prisma.store.findMany({
-    where: { isActive: true },
+    where: {
+      isActive: true,
+      ...(opsi?.hanyaMilik ? { salesmanId: opsi.hanyaMilik } : {}),
+      ...(opsi?.hanyaToko ? { id: opsi.hanyaToko } : {}),
+    },
     orderBy: { name: 'asc' },
     select: { id: true, name: true },
   });
@@ -591,4 +603,52 @@ export async function isiArsip(storeId: string | null): Promise<IsiArsip[]> {
     langkah: b.langkah,
     menggantung: menggantung(b.langkah),
   }));
+}
+
+/** Isi awal formulir nota retur yang menyalin nota batal — lihat `bahanSalinRetur`. */
+export type AwalRetur = {
+  /** Nota batal yang disalin — dikirim sebagai `menggantikanId`. */
+  dariId: string;
+  dariNoNrt: string;
+  noNrt: string;
+  tanggal: string;
+  caraKirim: 'SALES' | 'TOKO' | 'EKSPEDISI';
+  nilai: number;
+  foto: { url: string; nama: string } | null;
+};
+
+/**
+ * Bahan "Laporkan ulang" untuk nota retur yang dibatalkan: nomor, tanggal,
+ * cara kirim, nilai, dan foto ikut; toko dipilih ulang (biasanya itu yang
+ * salah). Catatannya tidak ikut — sesudah dibatalkan ia membawa alasan
+ * pembatalan, bukan keterangan nota.
+ *
+ * Nomor yang sudah diberi akhiran "(batal)" dikembalikan ke nomor toko aslinya.
+ * `salesmanId` (layar HP): hanya nota miliknya sendiri.
+ */
+export async function bahanSalinRetur(id: string, opsi?: { salesmanId?: string }): Promise<AwalRetur | null> {
+  const n = await prisma.storeReturn.findUnique({
+    where: { id },
+    select: {
+      noNrt: true,
+      salesmanId: true,
+      status: true,
+      claimDate: true,
+      deliveryMethod: true,
+      claimedAmount: true,
+      photoUrl: true,
+    },
+  });
+  if (!n || n.status !== 'BATAL') return null;
+  if (opsi?.salesmanId && n.salesmanId !== opsi.salesmanId) return null;
+  if (await prisma.storeReturn.findUnique({ where: { replacesReturnId: id }, select: { id: true } })) return null;
+  return {
+    dariId: id,
+    dariNoNrt: n.noNrt,
+    noNrt: n.noNrt.replace(/ \(batal(?: \d+)?\)$/, ''),
+    tanggal: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(n.claimDate),
+    caraKirim: n.deliveryMethod,
+    nilai: Number(n.claimedAmount),
+    foto: n.photoUrl ? { url: n.photoUrl, nama: `${n.noNrt}.jpg` } : null,
+  };
 }

@@ -4,17 +4,21 @@ import { auth } from "@/lib/auth";
 import {
   getDashboardStats,
   getRawMaterialShortage,
-  getWorkOrderCountByStatus,
   getCOGSRawVsFinished,
-  getSuppliersForReportFilter,
   getOversoldInventory,
   getSalesmenSalesSummary,
+  getTrenPenjualan,
 } from "@/lib/dashboard/queries";
 import { getOverduePOs } from "@/lib/purchase-orders/queries";
 import { getMarketplaceKpi } from "@/lib/sales-orders/queries";
 import { ringkasPiutangBeranda } from "@/lib/dashboard/piutang-ringkas";
-import { serializeDashboardStats, toIso } from "@/lib/dashboard/serialize";
-import { buildActionItems, getActionItemCounts } from "@/lib/dashboard/action-items";
+import { serializeDashboardStats } from "@/lib/dashboard/serialize";
+import {
+  buildActionItems,
+  getActionItemCounts,
+  getClaimsAwaitingVerification,
+} from "@/lib/dashboard/action-items";
+import { batasHariIniWib } from "@/lib/dashboard/hari-wib";
 import { DashboardPageClient } from "./DashboardPageClient";
 
 export const dynamic = "force-dynamic";
@@ -26,39 +30,43 @@ export default async function DashboardPage() {
   const [
     stats,
     overduePOs,
-    suppliers,
     cogsRawVsFinished,
     rawMaterialShortage,
-    woStatusCounts,
     marketplaceKpi,
     oversoldInventory,
     salesmenSales,
     actionCounts,
     piutang,
+    trenPenjualan,
+    klaimMenunggu,
   ] = await Promise.all([
     getDashboardStats(),
     getOverduePOs(),
-    getSuppliersForReportFilter(),
     getCOGSRawVsFinished(),
     getRawMaterialShortage(),
-    getWorkOrderCountByStatus(),
     getMarketplaceKpi(),
     getOversoldInventory(),
     getSalesmenSalesSummary(),
     getActionItemCounts(),
     ringkasPiutangBeranda(),
+    getTrenPenjualan(),
+    getClaimsAwaitingVerification(),
   ]);
 
   /*
-   * Folded from data the page already loaded rather than re-counted, so the
-   * panel costs five extra COUNTs, not nine.
+   * Folded from data the page already loaded rather than re-counted. The
+   * overdue-promise row reuses the receivables summary above, so it states the
+   * same number as the "Lewat janji bayar" line and the receivables page.
    */
   const actionItems = buildActionItems({
     ...actionCounts,
     overduePOs: overduePOs.length,
-    submittedPOs: stats.po.submitted,
+    overduePOsAmount: overduePOs.reduce((s, po) => s + po.grandTotal, 0),
+    draftPOs: stats.po.draft,
     oversoldSkus: oversoldInventory.length,
     unshippedOrders: marketplaceKpi.pendingFulfillmentCount,
+    overduePromises: { count: piutang.lewatJumlah, amount: piutang.lewatNilai },
+    claimsAwaitingVerification: klaimMenunggu,
   });
 
   return (
@@ -66,18 +74,16 @@ export default async function DashboardPage() {
       <DashboardPageClient
         actionItems={actionItems}
         initialStats={serializeDashboardStats(stats)}
-        initialOverduePOs={overduePOs.map((po) => ({
-          ...po,
-          etaDate: toIso(po.etaDate),
-        }))}
-        initialSuppliers={suppliers}
+        overduePOCount={overduePOs.length}
         initialCogsRawVsFinished={cogsRawVsFinished}
-        initialRawMaterialShortage={rawMaterialShortage}
-        initialWoStatusCounts={woStatusCounts}
+        shortageCount={rawMaterialShortage.length}
         marketplaceKpi={marketplaceKpi}
-        initialOversoldInventory={oversoldInventory}
+        oversoldCount={oversoldInventory.length}
         initialSalesmenSales={salesmenSales}
         piutang={piutang}
+        trenPenjualan={trenPenjualan}
+        hariIniWib={batasHariIniWib().tanggal}
+        dimuatPada={new Date().toISOString()}
       />
     </Suspense>
   );

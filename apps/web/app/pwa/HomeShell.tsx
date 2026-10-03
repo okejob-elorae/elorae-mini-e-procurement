@@ -1,21 +1,72 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useTranslations } from "next-intl";
-import { ArrowRight, ChevronRight, Clock, LogOut, MapPin, Loader2, ShoppingBag, Sparkles, Store, CloudUpload, Truck } from "lucide-react";
-import { rankStoresByDistance, formatDistance, type StoreWithCoords } from "@/lib/pwa/nearest-stores";
-import { listPendingOrders } from "@/lib/pwa/offline/queue";
-import { setupOrderSync } from "@/lib/pwa/offline/sync";
-import { CheckOutButton } from "./stores/[id]/CheckOutButton";
+import { useLocale, useTranslations } from "next-intl";
+import { CalendarRange, ClipboardCheck, Clock, CloudUpload, MapPin, ShoppingBag, Store, TrendingDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { greetingKey } from "@/lib/auth/login-message";
+import { hitungBelumTerkirim } from "@/lib/pwa/offline/hitung";
+import { setupOrderSync } from "@/lib/pwa/offline/sync";
+import type { Kemajuan, TitikSalesman } from "@/lib/salesman/dasbor";
+import type { PesananSaya as DataPesanan, TokoTagih } from "@/lib/salesman/queries";
+import { hitungTugasRencana, type TokoMenurun } from "@/lib/salesman/toko-menurun";
+import { susunRencanaPerKelas } from "@/lib/stores/kelas-toko";
+import { TombolKabar } from "@/app/pwa/kabar/TombolKabar";
+import { KartuInsentifBeranda, type DataInsentifBeranda } from "@/app/pwa/insentif/KartuInsentifBeranda";
+import { KartuBulanIni } from "./beranda/KartuBulanIni";
+import { PerluDitagih } from "./beranda/PerluDitagih";
+import { PesananSaya } from "./beranda/PesananSaya";
+import { RencanaKunjungan, type JadwalBerandaJson, type TokoRencanaJson } from "./beranda/RencanaKunjungan";
+import { KartuPengumuman } from "./beranda/KartuPengumuman";
+import type { DataKartuPengumuman } from "@/lib/pengumuman/queries";
+import { TugasHariIni, type Tugas } from "./beranda/TugasHariIni";
+import { KartuAbsen } from "./beranda/KartuAbsen";
+import type { DataKartuAbsen } from "@/lib/salesman/absensi";
+import { CheckOutButton } from "./stores/[id]/CheckOutButton";
+import { KunjunganBeranda } from "./beranda/KunjunganBeranda";
+
+/**
+ * Beranda salesman: rencana kerja hari ini, bukan sekadar pintu ke daftar toko.
+ *
+ * Menjawab tiga pertanyaan setiap pagi — ke mana saya hari ini (rencana
+ * kunjungan), uang siapa yang harus saya tagih (perlu ditagih), dan sejauh apa
+ * saya dari target (bulan ini). Kartu, judul, dan angkanya memakai komponen
+ * beranda backoffice yang sama, supaya dua aplikasi ini terasa satu produk.
+ * Semua angka milik salesman yang sedang login saja.
+ */
 
 type PermState = "prompt" | "granted" | "denied" | "unknown";
 
+export type DataBerandaSalesman = {
+  bulanIni: { putus: number; konsi: number; van: number; total: number };
+  kemajuan: Kemajuan | null;
+  tren: TitikSalesman[];
+  pesanan: DataPesanan;
+  rencana: TokoRencanaJson[];
+  tagih: TokoTagih[];
+  /** Toko saya yang mulai jarang pesan, paling terlambat dulu. */
+  menurun: TokoMenurun[];
+  batas: { hari: number; diatur: boolean };
+  /** Perkiraan komisi bulan ini; null = komisi dimatikan kantor (kartunya tidak tampil). */
+  insentif: DataInsentifBeranda | null;
+  /** Kartu absen hari ini; null = absensi dimatikan kantor dan hari ini belum tercatat. */
+  absen: DataKartuAbsen | null;
+  /** Tugas tagih dari kantor yang masih perlu ditagih; `terlambat` = lewat tenggat. */
+  tugasTagih: { perluDitagih: number; terlambat: number };
+  /** Kantor mengatur target per kategori/barang bulan ini. */
+  adaTargetRinci: boolean;
+  /** Toko yang dijadwalkan kantor untuk hari ini — paling atas di "Rencana kunjungan". */
+  jadwal: JadwalBerandaJson[];
+  /** Pengumuman kantor yang perlu dilihat; null = tidak ada. */
+  pengumuman: DataKartuPengumuman | null;
+  /** storeId → catatan toko tersemat (dipendekkan), untuk baris rencana kunjungan. */
+  catatanTersemat: Record<string, string>;
+};
+
 type Props = {
   userName: string;
+  dimuatPada: string;
   activeVisit: {
     id: string;
     storeId: string;
@@ -23,28 +74,29 @@ type Props = {
     storeTermsType: "PUTUS" | "KONSI";
     checkinAt: string;
   } | null;
-  stores: StoreWithCoords[];
-  recentStores: Array<{ storeId: string; storeName: string }>;
-  onLogout: () => Promise<void>;
+  data: DataBerandaSalesman;
 };
 
-export function HomeShell({ userName, activeVisit, stores, recentStores, onLogout }: Props) {
+export function HomeShell({ userName, dimuatPada, activeVisit, data }: Props) {
   const t = useTranslations("pwa.nearest");
+  const tBeranda = useTranslations("pwa.beranda");
   const tAuth = useTranslations("auth");
-  const tOffline = useTranslations("pwa.offline");
-  const tVanSale = useTranslations("vanSale");
-  const tSmartRequest = useTranslations("pwa.smartRequest");
+  const tKunjungan = useTranslations("pwa.kunjunganBerjalan");
+  const locale = useLocale();
   const [perm, setPerm] = useState<PermState>("unknown");
   const [origin, setOrigin] = useState<{ lat: number; lng: number } | null>(null);
-  const [fetchingOrigin, setFetchingOrigin] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    // Semua antrean — pesanan, foto kunjungan, pelunasan, retur — bukan pesanan saja.
     const refresh = () => {
-      listPendingOrders().then(orders => {
-        if (!cancelled) setPendingCount(orders.length);
-      });
+      hitungBelumTerkirim().then(
+        n => {
+          if (!cancelled) setPendingCount(n);
+        },
+        () => undefined,
+      );
     };
     refresh();
     const cleanup = setupOrderSync(refresh);
@@ -69,11 +121,10 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, onLogou
   }, []);
 
   useEffect(() => {
-    if (perm !== "granted") { setOrigin(null); setFetchingOrigin(false); return; }
-    setFetchingOrigin(true);
+    if (perm !== "granted") { setOrigin(null); return; }
     navigator.geolocation.getCurrentPosition(
-      pos => { setOrigin({ lat: pos.coords.latitude, lng: pos.coords.longitude }); setFetchingOrigin(false); },
-      () => { setOrigin(null); setFetchingOrigin(false); },
+      pos => setOrigin({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => setOrigin(null),
       { enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 },
     );
   }, [perm]);
@@ -86,196 +137,134 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, onLogou
     );
   }
 
-  const header = (
-    <header className="flex items-center justify-between pb-2">
-      <div>
-        <p className="text-xs text-muted-foreground">{t("greeting")}</p>
-        <p className="text-lg font-semibold">{userName}</p>
-      </div>
-      <form action={onLogout}>
-        <Button type="submit" variant="ghost" size="icon" aria-label={tAuth("logout")}>
-          <LogOut className="h-5 w-5" />
-        </Button>
-      </form>
-    </header>
+  // Setiap toko dihitung sekali, di baris paling mendesaknya: yang bertagihan
+  // sudah di baris "lewat janji bayar", yang menurun di barisnya sendiri, sisanya
+  // "perlu dikunjungi". Susunannya sama dengan kartu rencana kunjungan.
+  // Toko yang dijadwalkan kantor dihitung di baris "jadwal", bukan lagi di "rencana" — tidak dobel.
+  const terjadwal = useMemo(() => new Set(data.jadwal.map((j) => j.storeId)), [data.jadwal]);
+  const jumlahRencana = useMemo(
+    () =>
+      hitungTugasRencana(
+        susunRencanaPerKelas(
+          data.rencana.map(x => ({ ...x, kunjunganTerakhir: x.kunjunganTerakhir ? new Date(x.kunjunganTerakhir) : null })),
+          data.menurun,
+          { batasHari: data.batas.hari, hariIni: new Date(dimuatPada) },
+        ).filter((b) => !terjadwal.has(b.storeId)),
+      ),
+    [data.rencana, data.menurun, data.batas.hari, dimuatPada, terjadwal],
   );
 
-  const vanSaleCta = (
-    <Button asChild variant="outline" className="w-full">
-      <Link href="/pwa/van">
-        <Truck className="h-4 w-4" />
-        {tVanSale("homeCta")}
-      </Link>
-    </Button>
-  );
+  const tTugas = useTranslations("pwa.tugas");
+  const tTugasTagih = useTranslations("pwa.tugasTagih");
+  const tugas: Tugas[] = [
+    {
+      kunci: "tugasTagih",
+      jumlah: data.tugasTagih.perluDitagih,
+      href: "/pwa/piutang",
+      label: tTugasTagih("berandaBaris"),
+      ikon: ClipboardCheck,
+      mendesak: data.tugasTagih.terlambat > 0,
+    },
+    // Toko lewat janji bayar TIDAK jadi baris di sini: kartu "Perlu ditagih" di
+    // bawah rencana kunjungan menampilkan toko yang sama, lengkap dengan tombol
+    // telepon. Dulu toko yang sama tampil tiga kali di beranda.
+    {
+      kunci: "jadwal",
+      jumlah: data.jadwal.filter((j) => !j.dikunjungi).length,
+      href: "/pwa/jadwal",
+      label: tTugas("jadwal"),
+      ikon: CalendarRange,
+    },
+    { kunci: "menurun", jumlah: jumlahRencana.menurun, href: "#rencana", label: tTugas("menurun"), ikon: TrendingDown },
+    { kunci: "rencana", jumlah: jumlahRencana.kunjungan, href: "#rencana", label: tTugas("rencana"), ikon: MapPin },
+    { kunci: "sinkron", jumlah: pendingCount, href: "/pwa/orders/pending", label: tTugas("belumSinkron"), ikon: CloudUpload },
+  ];
 
-  const pendingChip = pendingCount > 0 ? (
-    <Link
-      href="/pwa/orders/pending"
-      className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400 transition-colors hover:bg-amber-500/20"
-    >
-      <CloudUpload className="h-4 w-4 shrink-0" />
-      <span className="flex-1">{tOffline("pendingCount", { count: pendingCount })}</span>
-      <ChevronRight className="h-4 w-4 shrink-0" />
-    </Link>
-  ) : null;
+  const tanggal = new Intl.DateTimeFormat(locale === "en" ? "en-GB" : "id-ID", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: "Asia/Jakarta",
+  }).format(new Date(dimuatPada));
 
-  if (activeVisit) {
-    return (
-      <div className="p-4 space-y-4">
-        {header}
-        {pendingChip}
-        <Card className="border-primary/40 bg-primary/5">
-          <CardContent className="p-4 space-y-3">
-            <div className="flex items-center gap-2">
-              <Badge variant="default" className="uppercase tracking-wide">
-                {t("activeBadge")}
-              </Badge>
+  return (
+    <div className="viz space-y-4 p-4 pb-6">
+      <header className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold tracking-tight" suppressHydrationWarning>
+            {tAuth(`greeting.${greetingKey()}`)}, {userName}
+          </h1>
+          <p className="text-sm text-muted-foreground">{tanggal}</p>
+        </div>
+        {/* Hanya lonceng. Tema dan Keluar ada di Lainnya: keduanya jarang dipakai,
+            dan tombol keluar di sebelah lonceng mudah tersentuh tanpa sengaja. */}
+        <div className="-mr-2 flex shrink-0 items-center">
+          <TombolKabar />
+        </div>
+      </header>
+
+      {/* Omzet bulan ini paling atas: angka yang dicari sales setiap membuka aplikasi. */}
+      <KartuBulanIni bulanIni={data.bulanIni} kemajuan={data.kemajuan} tren={data.tren} adaTargetRinci={data.adaTargetRinci} />
+      {data.absen ? <KartuAbsen data={data.absen} /> : null}
+
+      {/* Kunjungan berjalan — dari server, atau check-in yang dicatat tanpa sinyal di HP. */}
+      <KunjunganBeranda
+        checkinServerMs={activeVisit ? Date.parse(activeVisit.checkinAt) : null}
+        kartuServer={activeVisit ? (
+          <section className="beranda-kartu" style={{ borderColor: "var(--primary)", borderWidth: 2 }}>
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="beranda-judul">{tBeranda("activeVisit")}</h2>
               <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                <Clock className="h-3 w-3" />
+                <Clock className="h-3 w-3" aria-hidden />
                 {new Date(activeVisit.checkinAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" })}
               </span>
             </div>
-            <div className="flex items-start gap-2">
-              <MapPin className="mt-0.5 h-5 w-5 text-primary shrink-0" />
-              <div>
-                <p className="text-lg font-semibold leading-tight">{activeVisit.storeName}</p>
-                <p className="text-xs text-muted-foreground">{t("activeStoreLabel")}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <div className="flex gap-2">
-          <Button asChild className="min-w-0 flex-1 overflow-hidden">
-            <Link href={`/pwa/stores/${activeVisit.storeId}/catalog`}>
-              <ShoppingBag className="h-4 w-4" />
-              <span className="truncate">Katalog Produk</span>
+            <Link href={`/pwa/stores/${activeVisit.storeId}`} className="mt-2 flex items-start gap-2">
+              <MapPin className="mt-0.5 h-5 w-5 shrink-0" aria-hidden />
+              <span>
+                <span className="block text-lg font-semibold leading-tight">{activeVisit.storeName}</span>
+                <span className="block text-xs text-muted-foreground">{t("activeStoreLabel")}</span>
+              </span>
             </Link>
-          </Button>
-          {activeVisit.storeTermsType === "PUTUS" && (
-            <Button asChild variant="outline" className="min-w-0 flex-1 overflow-hidden">
-              <Link href={`/pwa/stores/${activeVisit.storeId}/smart-request`}>
-                <Sparkles className="h-4 w-4" />
-                <span className="truncate">{tSmartRequest("cta")}</span>
-              </Link>
-            </Button>
-          )}
-        </div>
-        {vanSaleCta}
-        <CheckOutButton visitId={activeVisit.id} />
-      </div>
-    );
-  }
-
-  const ranked = origin ? rankStoresByDistance(stores, origin).filter(r => r.distanceMeters !== null).slice(0, 3) : [];
-
-  return (
-    <div className="p-4 space-y-5">
-      {header}
-      {pendingChip}
-      {vanSaleCta}
-
-      <Card>
-        <CardContent className="p-4 flex items-start gap-3">
-          <div className="rounded-full bg-muted p-2">
-            <MapPin className="h-5 w-5 text-muted-foreground" />
-          </div>
-          <div className="flex-1">
-            <p className="font-medium">{t("noActive")}</p>
-            <p className="text-xs text-muted-foreground">{t("noActiveHint")}</p>
-          </div>
-        </CardContent>
-      </Card>
-
-      {perm === "granted" && fetchingOrigin && (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          <span>{t("loading")}</span>
-        </div>
-      )}
-
-      {perm === "granted" && !fetchingOrigin && ranked.length > 0 && (
-        <section className="space-y-2">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">{t("title")}</h2>
-            <Link
-              href="/pwa/stores"
-              className="inline-flex items-center gap-1 rounded-full border bg-card px-3 py-1 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
-            >
-              {t("seeAll")} <ArrowRight className="h-3 w-3" />
-            </Link>
-          </div>
-          <ul className="space-y-2">
-            {ranked.map(r => (
-              <li key={r.store.id}>
-                <Link
-                  href={`/pwa/stores/${r.store.id}`}
-                  className="flex items-center gap-3 rounded-lg border bg-card p-3 transition-colors hover:bg-accent hover:text-accent-foreground"
-                >
-                  <div className="rounded-full bg-primary p-2">
-                    <Store className="h-4 w-4 text-primary-foreground" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="truncate font-medium">{r.store.name}</p>
-                  </div>
-                  <Badge variant="secondary" className="shrink-0">{formatDistance(r.distanceMeters!)}</Badge>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <Button asChild>
+                <Link href={`/pwa/stores/${activeVisit.storeId}/catalog`}>
+                  <ShoppingBag className="h-4 w-4" />
+                  {tKunjungan("buatPesanan")}
                 </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {perm === "granted" && !fetchingOrigin && ranked.length === 0 && (
-        <p className="text-sm text-muted-foreground">{t("noStoresWithCoords")}</p>
-      )}
-
-      {perm === "prompt" && (
-        <Card className="border-dashed">
-          <CardContent className="p-4 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-sm">
-              <MapPin className="h-4 w-4 text-muted-foreground" />
-              <span>{t("enableChip")}</span>
+              </Button>
+              <Button asChild variant="outline">
+                <Link href={`/pwa/stores/${activeVisit.storeId}`}>
+                  <Store className="h-4 w-4" />
+                  {tKunjungan("halamanToko")}
+                </Link>
+              </Button>
             </div>
-            <Button type="button" variant="secondary" size="sm" onClick={requestPermission}>
-              {t("enableCta")}
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+            <div className="mt-2">
+              <CheckOutButton visitId={activeVisit.id} />
+            </div>
+          </section>
+        ) : null}
+      />
 
-      {perm === "denied" && (
-        <p className="text-xs text-muted-foreground">{t("enableHint")}</p>
-      )}
-
-      {(perm === "denied" || perm === "prompt") && (
-        <Button asChild variant="outline" className="w-full">
-          <Link href="/pwa/stores">
-            {t("browse")}
-            <ArrowRight className="ml-1 h-4 w-4" />
-          </Link>
-        </Button>
-      )}
-
-      {recentStores.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">{t("recent")}</h2>
-          <ul className="flex flex-wrap gap-2">
-            {recentStores.map(r => (
-              <li key={r.storeId}>
-                <Link
-                  href={`/pwa/stores/${r.storeId}`}
-                  className="inline-flex items-center gap-1 rounded-full border bg-card px-3 py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
-                >
-                  <Store className="h-3 w-3 text-muted-foreground" />
-                  {r.storeName}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      {/* Urutan kerja lapangan: pesan kantor, yang harus dikerjakan, dan ke mana
+          pergi lebih dulu; angka bulanan sesudahnya. */}
+      <KartuPengumuman data={data.pengumuman} />
+      <TugasHariIni judul={(n) => tTugas("title", { count: n })} tugas={tugas} />
+      <RencanaKunjungan
+        toko={data.rencana}
+        menurun={data.menurun}
+        batas={data.batas}
+        hariIni={dimuatPada}
+        posisi={origin}
+        izinLokasi={perm}
+        mintaLokasi={requestPermission}
+        jadwal={data.jadwal}
+        catatanTersemat={data.catatanTersemat}
+      />
+      <PerluDitagih toko={data.tagih} namaSales={userName} />
+      {data.insentif ? <KartuInsentifBeranda data={data.insentif} /> : null}
+      <PesananSaya data={data.pesanan} />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { itemHasSkuVariants } from "./variants";
+import { itemHasSkuVariants, parseItemVariants } from "./variants";
 
 describe("itemHasSkuVariants", () => {
   it("is true when a variant row has a sku", () => {
@@ -15,5 +15,16 @@ describe("itemHasSkuVariants", () => {
 
   it("does not treat plan-year { variantSku } rows as Item.variants JSON", () => {
     expect(itemHasSkuVariants([{ variantSku: "FG-SHIRT-RED-M", label: "RED · M" }])).toBe(false);
+  });
+});
+
+describe("parseItemVariants — data lama", () => {
+  it("reads variants stored as JSON text", () => {
+    expect(parseItemVariants('[{"sku":"A-M","size":"M"}]')).toEqual([{ sku: "A-M", size: "M" }]);
+    expect(parseItemVariants("bukan json")).toEqual([]);
+  });
+
+  it("normalises upper-case SKU and Barcode keys without touching other keys", () => {
+    expect(parseItemVariants([{ SKU: "A-L", Barcode: "123", Size: "L" }])).toEqual([{ sku: "A-L", barcode: "123", Size: "L" }]);
   });
 });

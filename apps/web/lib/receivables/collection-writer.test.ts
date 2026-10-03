@@ -12,25 +12,47 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 type Piutang = {
   id: string;
   storeId: string;
+  /** Penjual faktur. */
+  salesmanId: string | null;
+  /** Pemegang toko sekarang. */
+  store: { salesmanId: string | null };
   collectionLinks: { collectionNote: { status: string } }[];
+};
+
+type Nota = {
+  id: string;
+  docNo?: string;
+  status: string;
+  note: string | null;
+  source?: string;
+  confirmedAt?: Date | null;
+  salesmanId?: string;
+  storeId?: string;
 };
 
 const state = {
   piutang: [] as Piutang[],
   sisa: new Map<string, number>(),
   dibuat: [] as Record<string, unknown>[],
-  nota: null as { id: string; status: string; note: string | null } | null,
+  nota: null as Nota | null,
   notaUpdates: [] as Record<string, unknown>[],
   jejak: [] as Record<string, unknown>[],
+  /** Kontrabon yang sudah tercatat dengan kunci kiriman tertentu. */
+  notaBerkunci: null as { id: string; docNo: string; salesmanId: string; amount: number } | null,
+  /** Berapa baris yang "menang" saat konfirmasi bertanding-lalu-tukar. */
+  konfirmasiMenang: 1,
 };
 
 const tx = {
   receivable: { findMany: vi.fn(async () => state.piutang) },
   collectionNote: {
     findFirst: vi.fn(async () => null),
-    findUnique: vi.fn(async () =>
-      state.nota ? { ...state.nota, receivableLinks: state.piutang.map((p) => ({ receivableId: p.id })) } : null,
-    ),
+    findUnique: vi.fn(async (args: { where: { id?: string; idempotencyKey?: string } }) => {
+      if (args.where.idempotencyKey !== undefined) return state.notaBerkunci;
+      return state.nota
+        ? { ...state.nota, receivableLinks: state.piutang.map((p) => ({ receivableId: p.id })) }
+        : null;
+    }),
     create: vi.fn(async (args: { data: Record<string, unknown> }) => {
       state.dibuat.push(args.data);
       return { id: 'tt1', docNo: args.data.docNo as string };
@@ -38,6 +60,10 @@ const tx = {
     update: vi.fn(async (args: { data: Record<string, unknown> }) => {
       state.notaUpdates.push(args.data);
       return {};
+    }),
+    updateMany: vi.fn(async (args: { data: Record<string, unknown> }) => {
+      if (state.konfirmasiMenang > 0) state.notaUpdates.push(args.data);
+      return { count: state.konfirmasiMenang };
     }),
   },
   auditLog: {
@@ -65,13 +91,14 @@ vi.mock('@elorae/db', () => ({
   },
 }));
 
-const { buatKontrabon, tutupKontrabon } = await import('./collection-writer');
+const { buatKontrabon, konfirmasiKontrabon, tutupKontrabon } = await import('./collection-writer');
 
 const SERAH = new Date('2026-08-26T00:00:00+07:00');
 const JANJI = new Date('2026-09-09T00:00:00+07:00');
+const dasarKantor = { salesmanId: 'admin', handoverDate: SERAH, promisedDate: JANJI };
 
-function bebas(id: string, storeId = 'toko1'): Piutang {
-  return { id, storeId, collectionLinks: [] };
+function bebas(id: string, storeId = 'toko1', pemegang: string | null = 'u1'): Piutang {
+  return { id, storeId, salesmanId: 'penjual-lama', store: { salesmanId: pemegang }, collectionLinks: [] };
 }
 
 beforeEach(() => {
@@ -84,6 +111,8 @@ beforeEach(() => {
   state.nota = { id: 'tt1', status: 'BERJALAN', note: null };
   state.notaUpdates = [];
   state.jejak = [];
+  state.notaBerkunci = null;
+  state.konfirmasiMenang = 1;
 });
 
 describe('buatKontrabon', () => {
@@ -199,5 +228,136 @@ describe('tutupKontrabon', () => {
       catatan: 'faktur ditarik kembali',
     });
     expect(state.notaUpdates[0].note).toBe('catatan awal\nfaktur ditarik kembali');
+  });
+});
+
+describe('buatKontrabon — janji bayar dari lapangan', () => {
+  const lapangan = {
+    receivableIds: ['r1', 'r2'],
+    salesmanId: 'u1',
+    handoverDate: SERAH,
+    promisedDate: JANJI,
+    receivedBy: 'Bu Ani',
+    photoUrl: '/api/foto/tt',
+    source: 'FIELD' as const,
+    penagihId: 'u1',
+    idempotencyKey: 'kunci-1',
+  };
+
+  it('menuntut foto lembar yang ditandatangani toko', async () => {
+    // Tanpa foto, kantor tidak punya apa pun untuk dikonfirmasi — padahal
+    // janjinya sudah menggeser keadaan faktur sejak dicatat.
+    const h = await buatKontrabon({ ...lapangan, photoUrl: '  ' });
+    expect(h).toEqual({ ok: false, alasan: 'FOTO_WAJIB' });
+    expect(state.dibuat).toHaveLength(0);
+  });
+
+  it('menuntut nama orang toko yang menerima', async () => {
+    const h = await buatKontrabon({ ...lapangan, receivedBy: '' });
+    expect(h).toEqual({ ok: false, alasan: 'PENERIMA_WAJIB' });
+  });
+
+  it('kontrabon kantor tetap boleh tanpa foto dan penerima', async () => {
+    // Urutan kantor: tanda terima dibuat dulu, kertasnya ditandatangani di
+    // toko, fotonya menyusul. Aturan lapangan tidak boleh merembes ke sini.
+    const h = await buatKontrabon({ ...dasarKantor, receivableIds: ['r1', 'r2'] });
+    expect(h.ok).toBe(true);
+    expect(state.dibuat[0].source).toBe('OFFICE');
+  });
+
+  it('menolak faktur yang tidak ia tagih', async () => {
+    // Tokonya sudah dirotasi ke sales lain. Layar HP menyaringnya, tapi kiriman
+    // dari antrean bisa tiba sesudah rotasi — penulis yang menjaga.
+    state.piutang = [bebas('r1'), bebas('r2', 'toko1', 'u2')];
+    const h = await buatKontrabon(lapangan);
+    expect(h).toEqual({ ok: false, alasan: 'BUKAN_PENAGIH' });
+    expect(state.dibuat).toHaveLength(0);
+  });
+
+  it('penjual asli menagih selama toko belum punya pemegang', async () => {
+    state.piutang = [
+      { ...bebas('r1', 'toko1', null), salesmanId: 'u1' },
+      { ...bebas('r2', 'toko1', null), salesmanId: 'u1' },
+    ];
+    const h = await buatKontrabon(lapangan);
+    expect(h.ok).toBe(true);
+  });
+
+  it('menandai asal lapangan dan menyimpan kunci kirimannya', async () => {
+    const h = await buatKontrabon(lapangan);
+    expect(h).toMatchObject({ ok: true, nilai: 5_000_000 });
+    expect(state.dibuat[0]).toMatchObject({ source: 'FIELD', idempotencyKey: 'kunci-1', receivedBy: 'Bu Ani' });
+    // Tidak ada stempel konfirmasi saat dibuat — itu pekerjaan kantor.
+    expect(state.dibuat[0].confirmedAt).toBeUndefined();
+    expect(state.jejak[0].metadata).toMatchObject({ sumber: 'FIELD' });
+  });
+
+  it('kiriman ulang mengembalikan kontrabon yang sama, SEBELUM memeriksa faktur', async () => {
+    // Kiriman pertama sudah mengunci fakturnya. Memeriksanya lagi akan
+    // menjawab "sudah di kontrabon" dan sales mengira laporannya hilang.
+    state.notaBerkunci = { id: 'tt9', docNo: 'TT/2026/0009', salesmanId: 'u1', amount: 5_000_000 };
+    state.piutang = [{ ...bebas('r1'), collectionLinks: [{ collectionNote: { status: 'BERJALAN' } }] }];
+    const h = await buatKontrabon(lapangan);
+    expect(h).toEqual({ ok: true, id: 'tt9', docNo: 'TT/2026/0009', nilai: 5_000_000 });
+    expect(state.dibuat).toHaveLength(0);
+  });
+
+  it('kunci milik sales lain tidak menyerahkan kontrabon orang itu', async () => {
+    state.notaBerkunci = { id: 'tt9', docNo: 'TT/2026/0009', salesmanId: 'u2', amount: 1 };
+    const h = await buatKontrabon(lapangan);
+    expect(h).toEqual({ ok: false, alasan: 'KUNCI_DIPAKAI' });
+  });
+});
+
+describe('konfirmasiKontrabon', () => {
+  const lapangan: Nota = {
+    id: 'tt1',
+    docNo: 'TT/2026/0001',
+    status: 'BERJALAN',
+    note: null,
+    source: 'FIELD',
+    confirmedAt: null,
+    salesmanId: 'u1',
+    storeId: 'toko1',
+  };
+
+  it('mengonfirmasi janji lapangan dan mencatat siapa yang mengonfirmasi', async () => {
+    state.nota = { ...lapangan };
+    const h = await konfirmasiKontrabon({ collectionNoteId: 'tt1', olehUserId: 'admin' });
+    expect(h).toEqual({ ok: true, docNo: 'TT/2026/0001', salesmanId: 'u1', storeId: 'toko1' });
+    expect(state.notaUpdates[0]).toMatchObject({ confirmedById: 'admin' });
+    expect(state.notaUpdates[0].confirmedAt).toBeInstanceOf(Date);
+    expect(state.jejak[0]).toMatchObject({
+      action: 'COLLECTION_NOTE_CONFIRMED',
+      entityId: 'tt1',
+      userId: 'admin',
+    });
+  });
+
+  it('menolak kontrabon kantor — tidak ada yang perlu dikonfirmasi', async () => {
+    state.nota = { ...lapangan, source: 'OFFICE' };
+    const h = await konfirmasiKontrabon({ collectionNoteId: 'tt1', olehUserId: 'admin' });
+    expect(h).toEqual({ ok: false, alasan: 'BUKAN_DARI_LAPANGAN' });
+    expect(state.jejak).toHaveLength(0);
+  });
+
+  it('menolak konfirmasi kedua', async () => {
+    state.nota = { ...lapangan, confirmedAt: new Date() };
+    const h = await konfirmasiKontrabon({ collectionNoteId: 'tt1', olehUserId: 'admin' });
+    expect(h).toEqual({ ok: false, alasan: 'SUDAH_DIKONFIRMASI' });
+  });
+
+  it('yang kalah balapan dengan admin lain tidak menulis jejak', async () => {
+    state.nota = { ...lapangan };
+    state.konfirmasiMenang = 0;
+    const h = await konfirmasiKontrabon({ collectionNoteId: 'tt1', olehUserId: 'admin' });
+    expect(h).toEqual({ ok: false, alasan: 'SUDAH_DIKONFIRMASI' });
+    expect(state.jejak).toHaveLength(0);
+  });
+
+  it('menolak kontrabon yang sudah ditutup', async () => {
+    state.nota = { ...lapangan, status: 'BATAL' };
+    const h = await konfirmasiKontrabon({ collectionNoteId: 'tt1', olehUserId: 'admin' });
+    expect(h).toEqual({ ok: false, alasan: 'SUDAH_DITUTUP' });
   });
 });

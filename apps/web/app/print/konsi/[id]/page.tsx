@@ -43,6 +43,9 @@ export default function CetakSiklusPage({ params }: { params: Promise<{ id: stri
 
   const b = data.baris;
   const totalKomisi = data.komisi.reduce((s, k) => s + k.total, 0);
+  // Kolom potongan barang hilang hanya dicetak kalau ada yang dipotong.
+  const totalPotonganHilang = data.komisi.reduce((s, k) => s + k.potonganHilang, 0);
+  const adaPotonganHilang = totalPotonganHilang > 0;
 
   return (
     <LembarCetak
@@ -91,6 +94,35 @@ export default function CetakSiklusPage({ params }: { params: Promise<{ id: stri
             </td>
             <td className="px-2 py-1.5 text-right tabular-nums">{rupiah(b.nilaiTerjual)}</td>
           </tr>
+          {/* Penyesuaian yang dibekukan saat mengunci: potongan promo konter yang
+              ditanggung Elorae mengurangi tagihan, beban barang hilang yang
+              ditetapkan ke toko menambahnya. Tanpa keduanya lembar tetap seperti dulu. */}
+          {data.tagihan.beku && (data.tagihan.promoElorae !== 0 || (data.tagihan.bebanHilang ?? 0) !== 0) ? (
+            <>
+              {data.tagihan.promoElorae !== 0 ? (
+                <tr className="border-b border-neutral-300">
+                  <td className="px-2 py-1.5" colSpan={3}>
+                    Potongan promo konter ditanggung Elorae
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">−{rupiah(data.tagihan.promoElorae)}</td>
+                </tr>
+              ) : null}
+              {(data.tagihan.bebanHilang ?? 0) !== 0 ? (
+                <tr className="border-b border-neutral-300">
+                  <td className="px-2 py-1.5" colSpan={3}>
+                    Beban barang hilang ditanggung toko
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{rupiah(data.tagihan.bebanHilang ?? 0)}</td>
+                </tr>
+              ) : null}
+              <tr className="border-t border-black font-bold">
+                <td className="px-2 py-1.5" colSpan={3}>
+                  Total tagihan ke toko
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{rupiah(data.tagihan.total ?? b.nilaiTerjual)}</td>
+              </tr>
+            </>
+          ) : null}
         </TabelCetak>
       )}
 
@@ -105,6 +137,12 @@ export default function CetakSiklusPage({ params }: { params: Promise<{ id: stri
               { teks: 'Gaji pokok', kanan: true },
               { teks: 'Komisi', kanan: true },
               { teks: 'Total', kanan: true },
+              ...(adaPotonganHilang
+                ? [
+                    { teks: 'Potongan barang hilang', kanan: true },
+                    { teks: 'Dibayarkan', kanan: true },
+                  ]
+                : []),
               { teks: 'Dibayar' },
             ]}
           >
@@ -116,6 +154,16 @@ export default function CetakSiklusPage({ params }: { params: Promise<{ id: stri
                 <td className="px-2 py-1.5 text-right font-semibold tabular-nums">
                   {rupiah(k.total)}
                 </td>
+                {adaPotonganHilang && (
+                  <>
+                    <td className="px-2 py-1.5 text-right tabular-nums">
+                      {k.potonganHilang > 0 ? `−${rupiah(k.potonganHilang)}` : '—'}
+                    </td>
+                    <td className="px-2 py-1.5 text-right font-semibold tabular-nums">
+                      {rupiah(Math.max(0, k.total - k.potonganHilang))}
+                    </td>
+                  </>
+                )}
                 <td className="px-2 py-1.5">{tanggal(k.dibayarPada)}</td>
               </tr>
             ))}
@@ -124,6 +172,14 @@ export default function CetakSiklusPage({ params }: { params: Promise<{ id: stri
                 Total
               </td>
               <td className="px-2 py-1.5 text-right tabular-nums">{rupiah(totalKomisi)}</td>
+              {adaPotonganHilang && (
+                <>
+                  <td className="px-2 py-1.5 text-right tabular-nums">−{rupiah(totalPotonganHilang)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">
+                    {rupiah(Math.max(0, totalKomisi - totalPotonganHilang))}
+                  </td>
+                </>
+              )}
               <td />
             </tr>
           </TabelCetak>

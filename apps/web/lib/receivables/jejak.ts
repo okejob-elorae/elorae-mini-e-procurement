@@ -31,12 +31,28 @@ export const JEJAK = {
   KONTRABON_SELESAI: 'COLLECTION_NOTE_FINISHED',
   KONTRABON_DIBATALKAN: 'COLLECTION_NOTE_CANCELLED',
   KONTRABON_FOTO: 'COLLECTION_NOTE_PHOTO_ATTACHED',
+  KONTRABON_DIKONFIRMASI: 'COLLECTION_NOTE_CONFIRMED',
 
   RETUR_DICATAT: 'STORE_RETURN_CREATED',
   RETUR_DIHITUNG: 'STORE_RETURN_COUNTED',
   RETUR_DIJODOHKAN: 'STORE_RETURN_MATCHED',
   RETUR_DILEPAS: 'STORE_RETURN_UNMATCHED',
   RETUR_DIBATALKAN: 'STORE_RETURN_CANCELLED',
+  /** Nota retur (dan hitungan gudangnya) dipindah ke toko lain — sales salah memilih toko. */
+  RETUR_DIPINDAH_TOKO: 'STORE_RETURN_MOVED_STORE',
+  /** Nota batal diberi akhiran "(batal)" supaya nomor toko bisa dipakai nota penggantinya. */
+  RETUR_NOMOR_DILEPAS: 'STORE_RETURN_NUMBER_RELEASED',
+  /** BKM lama digantikan BKM baru (laporkan ulang / buat ulang). Ditulis di BKM LAMA. */
+  KLAIM_DIGANTI: 'RECEIVABLE_CLAIM_REPLACED',
+  /** Nota retur lama digantikan nota baru. Ditulis di nota LAMA. */
+  RETUR_DIGANTI: 'STORE_RETURN_REPLACED',
+  /** Sales meminta kantor membetulkan laporan yang sudah diproses (terverifikasi / dihitung gudang). */
+  KOREKSI_DIMINTA: 'CORRECTION_REQUESTED',
+  /**
+   * Pembeli mengembalikan barang ke counter SPG (`SpgSaleReturn`). Uangnya
+   * dikembalikan kasir toko — yang dicatat di sini hanya barang dan jumlahnya.
+   */
+  RETUR_PEMBELI_DICATAT: "SPG_SALE_RETURN_RECORDED",
   BEBAN_DIPUTUSKAN: 'RETURN_CHARGE_ASSIGNED',
   BEBAN_LUNAS: 'RETURN_CHARGE_SETTLED',
 
@@ -54,6 +70,11 @@ export const JEJAK = {
 
   JENIS_POTONGAN_DIBUAT: 'DEDUCTION_TYPE_CREATED',
   JENIS_POTONGAN_DIUBAH: 'DEDUCTION_TYPE_UPDATED',
+
+  TUGAS_TAGIH_DIBUAT: 'COLLECTION_TASK_CREATED',
+  TUGAS_TAGIH_SELESAI: 'COLLECTION_TASK_DONE',
+  TUGAS_TAGIH_SELESAI_OTOMATIS: 'COLLECTION_TASK_AUTO_DONE',
+  TUGAS_TAGIH_DIBATALKAN: 'COLLECTION_TASK_CANCELLED',
 
   /*
    * Creative marketing. Ikut di sini, bukan di daftarnya sendiri, karena

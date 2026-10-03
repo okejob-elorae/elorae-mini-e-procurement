@@ -1,5 +1,6 @@
 import { prisma, type Prisma } from '@elorae/db';
 import { generateSKU } from '@/lib/sku-generator';
+import { bacaInfoProduk, periksaInfoProduk, type InfoProdukBarang } from "./info-produk";
 
 export type ItemFormData = {
   sku?: string;
@@ -15,7 +16,7 @@ export type ItemFormData = {
   sellingPrice?: number;
   targetMarginPercent?: number;
   additionalCost?: number;
-};
+} & InfoProdukBarang;
 
 export type SerializedItem = {
   id: string;
@@ -59,6 +60,15 @@ function validateItemPayload(p: ReturnType<typeof normalizeItemPayload>): assert
   if (p.additionalCost != null && (Number.isNaN(p.additionalCost) || p.additionalCost < 0)) {
     throw new Error('additionalCost: Must be 0 or greater');
   }
+  const infoProduk = periksaInfoProduk(p);
+  if (infoProduk) throw new Error(infoProduk);
+}
+
+/** Tabel ukuran yang dipilih harus ada (kosong = ikut bawaan kategori). */
+async function pastikanTabelUkuran(client: Prisma.TransactionClient | typeof prisma, sizeChartId: string | null | undefined) {
+  if (!sizeChartId) return;
+  const ada = await client.sizeChart.findUnique({ where: { id: sizeChartId }, select: { id: true } });
+  if (!ada) throw new Error("sizeChartId: Tabel ukuran tidak ditemukan");
 }
 
 function slugVariantAttributeValue(value: string): string {
@@ -206,6 +216,7 @@ export function normalizeItemPayload(data: unknown): ItemFormData {
     targetMarginPercent: targetMarginPercentNum,
     additionalCost: additionalCostNum,
     sku: raw.sku != null ? String(raw.sku) : undefined,
+    ...bacaInfoProduk(raw),
   };
 }
 
@@ -266,6 +277,7 @@ export async function createItem(data: ItemFormData) {
 
   const categoryCode = await resolveCategoryCode(rest.categoryId ?? null);
   const normalizedVariants = validateAndNormalizeVariants(finalSku, rest.variants, { categoryCode });
+  await pastikanTabelUkuran(prisma, rest.sizeChartId);
 
   const item = await prisma.$transaction(async (tx) => {
     const newItem = await tx.item.create({
@@ -331,6 +343,7 @@ export async function updateItem(
   const normalizedVariants = validateAndNormalizeVariants(existing.sku, rest.variants, {
     categoryCode,
   });
+  await pastikanTabelUkuran(client, rest.sizeChartId);
 
   const item = await client.item.update({
     where: { id },

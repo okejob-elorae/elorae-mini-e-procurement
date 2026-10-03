@@ -20,7 +20,20 @@ export type BarisKontrabon = {
   status: 'BERJALAN' | 'SELESAI' | 'BATAL';
   /** Positif = masih ada waktu, negatif = sudah lewat janji. Null kalau tertutup. */
   sisaHari: number | null;
+  /** Janji bayar yang dicatat salesman di lapangan, bukan disusun kantor. */
+  dariLapangan: boolean;
+  /**
+   * Kantor sudah mencocokkan foto lembarnya. Kontrabon kantor selalu `true` —
+   * yang menyusunnya kantor sendiri, tidak ada yang perlu dikonfirmasi.
+   */
+  dikonfirmasi: boolean;
 };
+
+/** Asal dan keadaan konfirmasi, dari kolom mentah. Satu tempat, dipakai daftar dan rincian. */
+function asal(r: { source: string; confirmedAt: Date | null }) {
+  const dariLapangan = r.source === 'FIELD';
+  return { dariLapangan, dikonfirmasi: !dariLapangan || r.confirmedAt !== null };
+}
 
 /**
  * Daftar kontrabon beserta sisa yang masih menggantung di tiap tanda terima.
@@ -44,6 +57,8 @@ export async function daftarKontrabon(opts?: {
       receivedBy: true,
       amount: true,
       status: true,
+      source: true,
+      confirmedAt: true,
       store: { select: { name: true } },
       salesman: { select: { name: true } },
       receivableLinks: { select: { receivableId: true } },
@@ -81,6 +96,7 @@ export async function daftarKontrabon(opts?: {
     jumlahFaktur: r.receivableLinks.length,
     status: r.status as BarisKontrabon['status'],
     sisaHari: r.status === 'BERJALAN' ? selisihHari(hariIni, r.promisedDate) : null,
+    ...asal(r),
   }));
 }
 
@@ -134,6 +150,8 @@ export type RincianKontrabon = {
   baris: BarisKontrabon;
   fotoUrl: string | null;
   catatan: string | null;
+  /** Siapa dan kapan mengonfirmasi janji lapangan ini; `null` kalau belum (atau kontrabon kantor). */
+  konfirmasi: { oleh: string | null; pada: string } | null;
   faktur: {
     id: string;
     invoiceNo: string;
@@ -164,6 +182,9 @@ export async function rincianKontrabon(id: string): Promise<RincianKontrabon | n
       status: true,
       photoUrl: true,
       note: true,
+      source: true,
+      confirmedAt: true,
+      confirmedById: true,
       store: { select: { name: true } },
       salesman: { select: { name: true } },
       receivableLinks: {
@@ -182,6 +203,10 @@ export async function rincianKontrabon(id: string): Promise<RincianKontrabon | n
   });
   const perPiutang = new Map(semua.map((p) => [p.id, p]));
   const hariIni = new Date();
+  // `confirmedById` tidak punya relasi di skema; namanya dibaca terpisah.
+  const pengonfirmasi = r.confirmedById
+    ? await prisma.user.findUnique({ where: { id: r.confirmedById }, select: { name: true } })
+    : null;
 
   const faktur = r.receivableLinks.map((l) => {
     const p = perPiutang.get(l.receivable.id);
@@ -208,9 +233,13 @@ export async function rincianKontrabon(id: string): Promise<RincianKontrabon | n
       jumlahFaktur: r.receivableLinks.length,
       status: r.status as BarisKontrabon['status'],
       sisaHari: r.status === 'BERJALAN' ? selisihHari(hariIni, r.promisedDate) : null,
+      ...asal(r),
     },
     fotoUrl: r.photoUrl,
     catatan: r.note,
+    konfirmasi: r.confirmedAt
+      ? { oleh: pengonfirmasi?.name ?? null, pada: r.confirmedAt.toISOString() }
+      : null,
     faktur,
     klaim: r.claims.map((k) => ({
       id: k.id,

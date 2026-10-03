@@ -9,7 +9,6 @@ import type { getCashFlowReport } from "@/app/actions/finance-reports";
 import type { CashFlowComparisonLine } from "@/lib/finance/reports/cash-flow-compare";
 import type { CashFlowLine } from "@/lib/finance/reports/cash-flow";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -22,6 +21,7 @@ import {
 import { ReportExportButtons } from "../ReportExportButtons";
 import { exportCashFlowExcel } from "@/app/actions/finance-reports";
 import { formatDisplayDate, parseDateOnly } from "@/lib/date-only";
+import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
 
 type Report = Awaited<ReturnType<typeof getCashFlowReport>>;
 
@@ -54,6 +54,7 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
   const router = useRouter();
   const sp = useSearchParams();
   const t = useTranslations("financeReports");
+  const tt = useTranslations("tanggalInput");
   const locale = useLocale();
   const [isPending, startTransition] = useTransition();
 
@@ -68,10 +69,12 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
    */
   const canExport = report.hasCashAccount;
 
-  function pushParam(key: string, value: string | undefined) {
+  function pushParams(updates: Record<string, string | undefined>) {
     const params = new URLSearchParams(sp.toString());
-    if (!value) params.delete(key);
-    else params.set(key, value);
+    for (const [key, value] of Object.entries(updates)) {
+      if (!value) params.delete(key);
+      else params.set(key, value);
+    }
     startTransition(() =>
       router.push(`/backoffice/finance/reports/cash-flow?${params.toString()}`),
     );
@@ -175,25 +178,12 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
       <Card className="p-4">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <div>
-            <label htmlFor="tanggal-dari" className="text-xs text-muted-foreground mb-1 block">
-              {t("filter.dateFrom")}
-            </label>
-            <Input
-              id="tanggal-dari"
-              type="date"
-              value={filters.from}
-              onChange={(e) => pushParam("from", e.target.value || undefined)}
-            />
-          </div>
-          <div>
-            <label htmlFor="tanggal-sampai" className="text-xs text-muted-foreground mb-1 block">
-              {t("filter.dateTo")}
-            </label>
-            <Input
-              id="tanggal-sampai"
-              type="date"
-              value={filters.to}
-              onChange={(e) => pushParam("to", e.target.value || undefined)}
+            <label htmlFor="periode" className="text-xs text-muted-foreground mb-1 block">{tt("periode")}</label>
+            <RentangTanggalInput
+              id="periode"
+              dari={filters.from}
+              sampai={filters.to}
+              onChange={({ dari, sampai }) => pushParams({ from: dari || undefined, to: sampai || undefined })}
             />
           </div>
           <div className="flex items-end">

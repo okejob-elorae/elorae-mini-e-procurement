@@ -23,18 +23,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { formatRupiah } from "@/lib/format/rupiah";
 
 type Props = {
   sale: VanSaleDetail;
 };
 
-function formatRupiah(value: number): string {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
 
 function Field({ label, value }: { label: string; value: string | null }) {
   if (!value) return null;

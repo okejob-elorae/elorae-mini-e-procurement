@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { listSpgSales, listSpgSalesmen } from "@/lib/spg/sale-queries";
-import { SpgSalesListClient } from "./SpgSalesListClient";
+import { SpgSalesListClient, type BarisDaftarNotaSpg } from "./SpgSalesListClient";
 
 export const dynamic = "force-dynamic";
 
@@ -48,9 +49,23 @@ export default async function SpgSalesPage({ searchParams }: PageProps) {
     listSpgSalesmen(),
   ]);
 
+  // Potongan dan tanda "tanpa sinyal" untuk baris halaman ini saja (satu kueri
+  // per halaman, bukan per baris). `listSpgSales` dipakai bersama layar lain,
+  // jadi kolom tambahannya dibaca di sini.
+  const tambahan = await prisma.spgSale.findMany({
+    where: { id: { in: items.map((s) => s.id) } },
+    select: { id: true, discountTotal: true, capturedOffline: true },
+  });
+  const perId = new Map(tambahan.map((x) => [x.id, x]));
+  const sales: BarisDaftarNotaSpg[] = items.map((s) => ({
+    ...s,
+    discountTotal: Number(perId.get(s.id)?.discountTotal ?? 0),
+    capturedOffline: perId.get(s.id)?.capturedOffline ?? false,
+  }));
+
   return (
     <SpgSalesListClient
-      sales={items}
+      sales={sales}
       totalCount={totalCount}
       salesmen={salesmen}
       salesmanId={salesmanId ?? ""}

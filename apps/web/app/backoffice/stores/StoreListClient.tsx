@@ -4,8 +4,12 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Plus, Search, Store } from "lucide-react";
+import { ArrowLeftRight, Inbox, Layers, MapPinned, Plus, Search, Store } from "lucide-react";
 import type { StoreListItem } from "@/lib/stores/queries";
+import type { AreaToko } from "@/lib/stores/areas";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { KelolaAreaDialog } from "./KelolaAreaDialog";
+import { PindahTokoDialog } from "./PindahTokoDialog";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -35,7 +39,22 @@ type Props = {
   page: number;
   pageSize: number;
   pendingStoreIds: string[];
+  areas: AreaToko[];
+  salesmen: { id: string; nama: string }[];
+  /** id pemegang → nama, termasuk pemegang yang perannya sudah bukan sales. */
+  namaPemegang: Record<string, string>;
+  areaFilter: string;
+  /** id sales, "TANPA" (belum punya pemegang), atau "" (semua). */
+  salesFilter: string;
+  bolehKelola: boolean;
+  /** Saringan kelas toko: "A" | "B" | "C" | "TANPA" | "" (semua). Opsional agar pemanggil lama tetap jalan. */
+  kelasFilter?: string;
+  /** Usulan toko baru dari lapangan yang menunggu diputuskan. Opsional agar pemanggil lama tetap jalan. */
+  usulanMenunggu?: number;
 };
+
+// Radix Select tidak menerima nilai kosong.
+const SEMUA = "__SEMUA__";
 
 export function StoreListClient({
   stores,
@@ -45,17 +64,30 @@ export function StoreListClient({
   page,
   pageSize,
   pendingStoreIds,
+  areas,
+  salesmen,
+  namaPemegang,
+  areaFilter,
+  salesFilter,
+  bolehKelola,
+  kelasFilter = "",
+  usulanMenunggu = 0,
 }: Props) {
   const t = useTranslations("stores");
   const tList = useTranslations("stores.list");
   const tTable = useTranslations("stores.list.table");
   const tBadge = useTranslations("stores.badge");
   const tChange = useTranslations("stores.storeChanges");
+  const tUsulan = useTranslations("storeProposals");
+  const tKelas = useTranslations("kelasToko.daftar");
   const pendingSet = new Set(pendingStoreIds);
   const router = useRouter();
   const sp = useSearchParams();
   const [, startTransition] = useTransition();
   const [searchInput, setSearchInput] = useState(search);
+  const [bukaArea, setBukaArea] = useState(false);
+  const [bukaPindah, setBukaPindah] = useState(false);
+  const kodeArea = new Map(areas.map((a) => [a.id, a.code]));
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -88,12 +120,44 @@ export function StoreListClient({
           <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
           <p className="text-muted-foreground">{tList("subtitle")}</p>
         </div>
-        <Button asChild>
-          <Link href="/backoffice/stores/new">
-            <Plus className="mr-2 h-4 w-4" />
-            {t("new")}
-          </Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {/* Calon toko dari lapangan menunggu di sini; lencananya menghitung yang belum diputuskan. */}
+          <Button variant="outline" asChild>
+            <Link href="/backoffice/stores/usulan">
+              <Inbox className="h-4 w-4" />
+              {tUsulan("headerLink")}
+              {usulanMenunggu > 0 ? (
+                <Badge variant="secondary" className="border-amber-500/40 text-amber-700 dark:text-amber-400">
+                  {tUsulan("pendingBadge", { count: usulanMenunggu })}
+                </Badge>
+              ) : null}
+            </Link>
+          </Button>
+          {bolehKelola ? (
+            <>
+              <Button variant="outline" onClick={() => setBukaArea(true)}>
+                <MapPinned className="h-4 w-4" />
+                {tList("manageAreas")}
+              </Button>
+              <Button variant="outline" onClick={() => setBukaPindah(true)}>
+                <ArrowLeftRight className="h-4 w-4" />
+                {tList("moveStores")}
+              </Button>
+            </>
+          ) : null}
+          <Button asChild variant="outline">
+            <Link href="/backoffice/stores/kelas">
+              <Layers className="h-4 w-4" />
+              {tKelas("tombol")}
+            </Link>
+          </Button>
+          <Button asChild>
+            <Link href="/backoffice/stores/new">
+              <Plus className="mr-2 h-4 w-4" />
+              {t("new")}
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-4 sm:items-center">
@@ -106,6 +170,47 @@ export function StoreListClient({
             className="pl-9"
           />
         </div>
+        <Select value={areaFilter || SEMUA} onValueChange={(v) => pushParam("area", v === SEMUA ? undefined : v)}>
+          <SelectTrigger className="w-full sm:w-44" aria-label={tList("filterArea")}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={SEMUA}>{tList("allAreas")}</SelectItem>
+            {areas.map((a) => (
+              <SelectItem key={a.id} value={a.id}>
+                {a.code} — {a.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={salesFilter || SEMUA} onValueChange={(v) => pushParam("sales", v === SEMUA ? undefined : v)}>
+          <SelectTrigger className="w-full sm:w-52" aria-label={tList("filterSales")}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={SEMUA}>{tList("allSales")}</SelectItem>
+            <SelectItem value="TANPA">{tList("noSales")}</SelectItem>
+            {salesmen.map((s) => (
+              <SelectItem key={s.id} value={s.id}>
+                {s.nama}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={kelasFilter || SEMUA} onValueChange={(v) => pushParam("kelas", v === SEMUA ? undefined : v)}>
+          <SelectTrigger className="w-full sm:w-40" aria-label={tKelas("saring")}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={SEMUA}>{tKelas("semua")}</SelectItem>
+            {(["A", "B", "C"] as const).map((k) => (
+              <SelectItem key={k} value={k}>
+                {tKelas("kelas", { kelas: k })}
+              </SelectItem>
+            ))}
+            <SelectItem value="TANPA">{tKelas("tanpa")}</SelectItem>
+          </SelectContent>
+        </Select>
         <div className="flex items-center gap-2">
           <Checkbox
             id="show-inactive"
@@ -134,7 +239,7 @@ export function StoreListClient({
             <div className="text-center py-12">
               <Store className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <p className="text-muted-foreground">
-                {search || showInactive ? tList("noSearchResults") : tList("empty")}
+                {search || showInactive || areaFilter || salesFilter || kelasFilter ? tList("noSearchResults") : tList("empty")}
               </p>
             </div>
           ) : (
@@ -144,10 +249,13 @@ export function StoreListClient({
                   <TableRow>
                     <TableHead>{tTable("code")}</TableHead>
                     <TableHead>{tTable("name")}</TableHead>
+                    <TableHead>{tTable("area")}</TableHead>
+                    <TableHead>{tKelas("kolom")}</TableHead>
+                    <TableHead>{tTable("salesman")}</TableHead>
                     <TableHead>{tTable("terms")}</TableHead>
                     <TableHead className="text-right">{tTable("tempo")}</TableHead>
-                    <TableHead className="text-right">{tTable("margin")}</TableHead>
-                    <TableHead>{tTable("address")}</TableHead>
+                    <TableHead className="hidden text-right 2xl:table-cell">{tTable("margin")}</TableHead>
+                    <TableHead className="hidden 2xl:table-cell">{tTable("address")}</TableHead>
                     <TableHead>{tTable("status")}</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -171,14 +279,33 @@ export function StoreListClient({
                           )}
                         </span>
                       </TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {s.groupId ? kodeArea.get(s.groupId) ?? "—" : <span className="text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell>
+                        {s.storeClass ? (
+                          <Badge variant="outline" className="font-mono">
+                            {s.storeClass}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {s.salesmanId ? (
+                          namaPemegang[s.salesmanId] ?? tTable("unknownSales")
+                        ) : (
+                          <span className="text-amber-700 dark:text-amber-400">{tTable("noSales")}</span>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <Badge variant={s.termsType === "PUTUS" ? "outline" : "secondary"}>
                           {s.termsType === "PUTUS" ? tBadge("putus") : tBadge("konsi")}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{tTable("tempoDays", { days: s.paymentTempo })}</TableCell>
-                      <TableCell className="text-right tabular-nums">{s.marginPercent ?? "—"}</TableCell>
-                      <TableCell className="truncate max-w-[220px] text-muted-foreground" title={s.address}>
+                      <TableCell className="hidden text-right tabular-nums 2xl:table-cell">{s.marginPercent ?? "—"}</TableCell>
+                      <TableCell className="hidden truncate max-w-[220px] text-muted-foreground 2xl:table-cell" title={s.address}>
                         {s.address}
                       </TableCell>
                       <TableCell>
@@ -194,6 +321,24 @@ export function StoreListClient({
           )}
         </CardContent>
       </Card>
+
+      {bolehKelola ? (
+        <>
+          <KelolaAreaDialog open={bukaArea} onOpenChange={setBukaArea} areas={areas} />
+          {/* Dipasang ulang setiap dibuka, supaya pilihannya mulai dari saringan
+              daftar yang sedang aktif, bukan dari pilihan rotasi sebelumnya. */}
+          {bukaPindah ? (
+            <PindahTokoDialog
+              open
+              onOpenChange={setBukaPindah}
+              areas={areas.filter((a) => a.isActive)}
+              salesmen={salesmen}
+              awalArea={areaFilter || undefined}
+              awalDari={salesFilter || undefined}
+            />
+          ) : null}
+        </>
+      ) : null}
 
       <Pager
         page={page}

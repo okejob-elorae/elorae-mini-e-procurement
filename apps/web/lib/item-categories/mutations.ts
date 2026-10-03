@@ -36,10 +36,22 @@ export async function updateItemCategoryRecord(
   });
 }
 
+/** Penolakan yang bisa dijelaskan ke layar lewat `code` (pesan aksi server disamarkan di produksi). */
+export class ItemCategoryError extends Error {
+  constructor(
+    readonly code: "IN_USE",
+    message: string,
+    readonly count = 0,
+  ) {
+    super(message);
+    this.name = "ItemCategoryError";
+  }
+}
+
 export async function deleteItemCategoryRecord(id: string) {
   const itemCount = await prisma.item.count({ where: { categoryId: id } });
   if (itemCount > 0) {
-    throw new Error('Cannot delete category with assigned items');
+    throw new ItemCategoryError("IN_USE", "Cannot delete category with assigned items", itemCount);
   }
   await prisma.itemCategory.delete({ where: { id } });
 }

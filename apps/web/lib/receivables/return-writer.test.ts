@@ -14,6 +14,9 @@ type Nri = Record<string, unknown> | null;
 
 const state = {
   nrt: null as Nrt,
+  /** Nota retur yang sudah tercatat dengan kunci kiriman tertentu. */
+  nrtBerkunci: null as { id: string; noNrt: string; salesmanId: string | null } | null,
+  kalahBalapan: 0,
   nri: null as Nri,
   nrtDibuat: [] as Record<string, unknown>[],
   nriDibuat: [] as Record<string, unknown>[],
@@ -32,12 +35,44 @@ const state = {
   stokUpdates: [] as Record<string, unknown>[],
   penyesuaian: [] as Record<string, unknown>[],
   jejak: [] as Record<string, unknown>[],
+  /** Variasi `inventoryValue.findFirst` terakhir — untuk memeriksa pencarian varian. */
+  cariStok: [] as Record<string, unknown>[],
+  bukuAda: true,
+  opnameTerakhir: null as { countedAt: Date } | null,
+  saldoToko: [] as { itemId: string; variantSku: string; _sum: { qty: number } }[],
+  bukuNota: [] as { storeId: string; itemId: string; variantSku: string; _sum: { qty: number } }[],
+  gerakBuku: [] as Record<string, unknown>[],
+  toko: null as { termsType: 'PUTUS' | 'KONSI'; marginPercent: number | null } | null,
+  barang: [] as { id: string; nameId: string; sellingPrice: number | null; variants: unknown }[],
+  /** Nomor TRK terakhir yang sudah ada di basis data. */
+  trkTerakhir: null as { noNrt: string } | null,
+  /** Gerakan gudang barang rusak yang ditulis hitungan gudang. */
+  gudangRusak: [] as Record<string, unknown>[],
+  /** Baris retur pembeli (konter SPG) yang ditunjuk baris NRT. */
+  returPembeli: [] as { id: string; itemId: string; variantSku: string; qty: number; condition: string; saleReturn: { storeId: string } }[],
+  /** Yang sudah dikirim balik per baris retur pembeli (nota tidak batal). */
+  returPembeliTerpakai: [] as { spgSaleReturnLineId: string; _sum: { qty: number } }[],
 };
 
 const tx = {
   storeReturn: {
-    findUnique: vi.fn(async () => state.nrt),
+    // Tidak ada nota BATAL bernomor sama di tiruan ini — pelepasan nomor diuji
+    // terhadap basis data sungguhan di koreksi.test.ts.
+    findFirst: vi.fn(async (a?: { where?: { noNrt?: unknown } }) =>
+      typeof a?.where?.noNrt === 'object' ? state.trkTerakhir : null,
+    ),
+    findUnique: vi.fn(async (a?: { where?: { idempotencyKey?: string } }) =>
+      a?.where?.idempotencyKey !== undefined ? state.nrtBerkunci : state.nrt,
+    ),
     create: vi.fn(async (a: { data: Record<string, unknown> }) => {
+      if (state.kalahBalapan > 0) {
+        state.kalahBalapan -= 1;
+        state.nrtBerkunci = { id: 'nrt-kembar', noNrt: a.data.noNrt as string, salesmanId: 'u1' };
+        const { Prisma } = await import('@elorae/db');
+        const err = new Prisma.PrismaClientKnownRequestError('unik', { code: 'P2002', clientVersion: 'x' });
+        Object.assign(err, { meta: { target: 'StoreReturn_idempotencyKey_key' } });
+        throw err;
+      }
       state.nrtDibuat.push(a.data);
       return { id: 'nrt1', noNrt: a.data.noNrt as string };
     }),
@@ -51,7 +86,15 @@ const tx = {
     findUnique: vi.fn(async () => state.nri),
     create: vi.fn(async (a: { data: Record<string, unknown> }) => {
       state.nriDibuat.push(a.data);
-      return { id: 'nri1', noNri: a.data.noNri as string };
+      const baris = ((a.data.items as { create?: Record<string, unknown>[] } | undefined)?.create ?? []).map((b, i) => ({
+        id: `nrib${i + 1}`,
+        itemId: (b.itemId as string | null) ?? null,
+        variantSku: (b.variantSku as string | undefined) ?? '',
+        itemName: b.itemName as string,
+        qty: b.qty as number,
+        condition: (b.condition as string | undefined) ?? 'LAYAK',
+      }));
+      return { id: 'nri1', noNri: a.data.noNri as string, items: baris };
     }),
     update: vi.fn(async (a: { data: Record<string, unknown> }) => {
       state.nriUpdates.push(a.data);
@@ -83,7 +126,10 @@ const tx = {
   paymentClaimDeduction: { findMany: vi.fn(async () => state.potongan) },
   paymentClaimReceivable: { findMany: vi.fn(async () => state.links) },
   inventoryValue: {
-    findFirst: vi.fn(async () => state.stok),
+    findFirst: vi.fn(async (a: { where: Record<string, unknown> }) => {
+      state.cariStok.push(a.where);
+      return state.stok;
+    }),
     create: vi.fn(async (a: { data: Record<string, unknown> }) => {
       state.stokDibuat.push(a.data);
       return {};
@@ -98,6 +144,33 @@ const tx = {
       state.penyesuaian.push(a.data);
       return {};
     }),
+  },
+  // Buku stok toko — hanya disentuh oleh NRT dari SPG dan pembatalannya.
+  storeStockMovement: {
+    findFirst: vi.fn(async () => (state.bukuAda ? { id: 'g0' } : null)),
+    groupBy: vi.fn(async (a: { by: string[] }) => (a.by.includes('storeId') ? state.bukuNota : state.saldoToko)),
+    createMany: vi.fn(async (a: { data: Record<string, unknown>[] }) => {
+      state.gerakBuku.push(...a.data);
+      return { count: a.data.length };
+    }),
+  },
+  storeOpname: { findFirst: vi.fn(async () => state.opnameTerakhir) },
+  damagedStockMovement: {
+    findMany: vi.fn(async () => []),
+    createMany: vi.fn(async (a: { data: Record<string, unknown>[] }) => {
+      state.gudangRusak.push(...a.data);
+      return { count: a.data.length };
+    }),
+  },
+  spgSaleReturnLine: {
+    findMany: vi.fn(async (a: { where: { id: { in: string[] } } }) => state.returPembeli.filter((r) => a.where.id.in.includes(r.id))),
+  },
+  storeReturnItem: { groupBy: vi.fn(async () => state.returPembeliTerpakai) },
+  store: { findUnique: vi.fn(async () => state.toko) },
+  item: {
+    findMany: vi.fn(async (a: { where: { id: { in: string[] } } }) =>
+      state.barang.filter((b) => a.where.id.in.includes(b.id)),
+    ),
   },
 };
 
@@ -132,6 +205,7 @@ const {
   putuskanBeban,
   tandaiBebanLunas,
   batalkanRetur,
+  nilaiDariRincian,
 } = await import('./return-writer');
 
 const HARI_INI = new Date('2026-08-26T00:00:00+07:00');
@@ -148,6 +222,8 @@ beforeEach(() => {
     items: [{ itemName: 'Cat Tembok', qty: 3 }],
   };
   state.nri = { id: 'nri1', storeReturnId: null, storeId: null, physicalAmount: 800_000 };
+  state.nrtBerkunci = null;
+  state.kalahBalapan = 0;
   state.nrtDibuat = [];
   state.nriDibuat = [];
   state.nrtUpdates = [];
@@ -165,6 +241,21 @@ beforeEach(() => {
   state.stokUpdates = [];
   state.penyesuaian = [];
   state.jejak = [];
+  state.cariStok = [];
+  state.bukuAda = true;
+  state.opnameTerakhir = null;
+  state.saldoToko = [];
+  state.bukuNota = [];
+  state.gerakBuku = [];
+  state.toko = { termsType: 'KONSI', marginPercent: 20 };
+  state.barang = [
+    { id: 'brg1', nameId: 'Kemeja', sellingPrice: 80_000, variants: [{ sku: 'KMJ-M', size: 'M' }] },
+    { id: 'brg2', nameId: 'Blus', sellingPrice: null, variants: [] },
+  ];
+  state.trkTerakhir = null;
+  state.gudangRusak = [];
+  state.returPembeli = [];
+  state.returPembeliTerpakai = [];
 });
 
 const NRT_DASAR = {
@@ -217,6 +308,34 @@ describe('catatReturToko — nomornya milik toko', () => {
       ok: false,
       alasan: 'NILAI_TIDAK_VALID',
     });
+  });
+});
+
+describe('catatReturToko — kiriman dari antrean offline HP', () => {
+  const KIRIMAN = { ...NRT_DASAR, salesmanId: 'u1', claimedAmount: 870_000, idempotencyKey: 'hp-9' };
+
+  it('menyimpan kunci kirimannya pada nota baru', async () => {
+    await catatReturToko(KIRIMAN);
+    expect(state.nrtDibuat[0].idempotencyKey).toBe('hp-9');
+  });
+
+  it('mengembalikan nota yang sudah ada untuk kunci yang sama', async () => {
+    // Tanpa ini kiriman ulang ditolak "nomor sudah dipakai" — oleh notanya
+    // sendiri — dan sales mengira laporannya gagal.
+    state.nrtBerkunci = { id: 'nrt0', noNrt: 'NRT-4402', salesmanId: 'u1' };
+    expect(await catatReturToko(KIRIMAN)).toEqual({ ok: true, id: 'nrt0', noNrt: 'NRT-4402' });
+    expect(state.nrtDibuat).toHaveLength(0);
+    expect(state.jejak).toHaveLength(0);
+  });
+
+  it('tidak menyerahkan nota milik sales lain', async () => {
+    state.nrtBerkunci = { id: 'nrtX', noNrt: 'NRT-1', salesmanId: 'u9' };
+    expect(await catatReturToko(KIRIMAN)).toEqual({ ok: false, alasan: 'KUNCI_DIPAKAI' });
+  });
+
+  it('kiriman kembar yang tiba bersamaan menghasilkan satu nota, bukan "nomor sudah dipakai"', async () => {
+    state.kalahBalapan = 1;
+    expect(await catatReturToko(KIRIMAN)).toEqual({ ok: true, id: 'nrt-kembar', noNrt: 'NRT-4402' });
   });
 });
 
@@ -473,5 +592,338 @@ describe('batalkanRetur', () => {
     expect(h).toEqual({ ok: true, piutangDihitungUlang: 2 });
     expect(state.nrtUpdates[0].status).toBe('BATAL');
     expect(state.dihitungUlang).toEqual(['r1', 'r2']);
+  });
+});
+
+describe('nilaiDariRincian — rincian tanpa harga tidak menghapus nilai yang diketik', () => {
+  it('memakai angka yang diketik kalau SEMUA harga baris nol', () => {
+    expect(nilaiDariRincian([{ qty: 3, price: 0 }, { qty: 1, price: 0 }], 450_000)).toBe(450_000);
+  });
+
+  it('memakai jumlah rincian kalau ada satu saja harga', () => {
+    expect(nilaiDariRincian([{ qty: 3, price: 0 }, { qty: 1, price: 10_000 }], 450_000)).toBe(10_000);
+  });
+
+  it('memakai angka yang diketik kalau rinciannya kosong', () => {
+    expect(nilaiDariRincian([], 70_000)).toBe(70_000);
+  });
+});
+
+describe('catatHitunganGudang — per baris, per varian, per kondisi', () => {
+  const DASAR = {
+    warehouseUserId: 'g1',
+    receivedAt: HARI_INI,
+    deliveryMethod: 'SALES' as const,
+  };
+
+  it('nilai fisik yang diketik MENANG kalau semua harga baris nol', async () => {
+    // NRT SPG toko putus: barisnya hanya qty. Tanpa aturan ini fisiknya
+    // terbaca nol dan seluruh klaim berubah jadi selisih.
+    await catatHitunganGudang({
+      ...DASAR,
+      storeReturnId: 'nrt1',
+      physicalAmount: 640_000,
+      items: [{ itemId: 'brg1', itemName: 'Kemeja', qty: 2, price: 0 }],
+    });
+    expect(Number((state.nriDibuat[0].physicalAmount as { value: number }).value)).toBe(640_000);
+  });
+
+  it('mencari stok varian PERSIS kalau variantSku diisi', async () => {
+    await catatHitunganGudang({
+      ...DASAR,
+      storeReturnId: 'nrt1',
+      items: [{ itemId: 'brg1', variantSku: 'KMJ-M', itemName: 'Kemeja', qty: 1, price: 0 }],
+    });
+    expect(state.cariStok[0]).toEqual({ itemId: 'brg1', variantSku: 'KMJ-M' });
+  });
+
+  it('mencari dengan toleran (null atau "") kalau variantSku kosong', async () => {
+    await catatHitunganGudang({
+      ...DASAR,
+      storeReturnId: 'nrt1',
+      items: [{ itemId: 'brg2', itemName: 'Blus', qty: 1, price: 0 }],
+    });
+    expect(state.cariStok[0]).toEqual({ itemId: 'brg2', OR: [{ variantSku: null }, { variantSku: '' }] });
+  });
+
+  it('membuat baris stok varian baru dengan variantSku-nya, bukan baris pukul-rata', async () => {
+    state.stok = null;
+    await catatHitunganGudang({
+      ...DASAR,
+      storeReturnId: 'nrt1',
+      items: [{ itemId: 'brg1', variantSku: 'KMJ-M', itemName: 'Kemeja', qty: 2, price: 0 }],
+    });
+    expect(state.stokDibuat[0]).toMatchObject({ itemId: 'brg1', variantSku: 'KMJ-M', qtyOnHand: 2 });
+  });
+
+  it('TIDAK memasukkan baris RUSAK atau EXPIRED ke stok jual, tapi tetap mencatatnya', async () => {
+    const h = await catatHitunganGudang({
+      ...DASAR,
+      storeReturnId: 'nrt1',
+      physicalAmount: 1,
+      items: [
+        { itemId: 'brg1', variantSku: 'KMJ-M', itemName: 'Kemeja', qty: 2, price: 0, condition: 'LAYAK' },
+        { itemId: 'brg1', variantSku: 'KMJ-M', itemName: 'Kemeja', qty: 1, price: 0, condition: 'RUSAK' },
+        { itemId: 'brg2', itemName: 'Blus', qty: 1, price: 0, condition: 'EXPIRED' },
+      ],
+    });
+    expect(h).toMatchObject({ ok: true, barisStok: 1 });
+    expect(state.penyesuaian).toHaveLength(1);
+    expect(state.penyesuaian[0].qtyChange).toBe(2);
+    const dibuat = (state.nriDibuat[0].items as { create: { condition?: string; qty: number }[] }).create;
+    expect(dibuat.map((d) => d.condition)).toEqual(['LAYAK', 'RUSAK', 'EXPIRED']);
+  });
+
+  it('menyalin qty klaim per barang + varian, bukan per nama', async () => {
+    // Dua varian satu barang bernama sama; dipetakan per nama, keduanya
+    // mendapat qty klaim varian yang terakhir.
+    state.nrt = {
+      ...state.nrt,
+      items: [
+        { itemId: 'brg1', variantSku: 'KMJ-M', itemName: 'Kemeja', qty: 3 },
+        { itemId: 'brg1', variantSku: 'KMJ-L', itemName: 'Kemeja', qty: 5 },
+      ],
+    };
+    await catatHitunganGudang({
+      ...DASAR,
+      storeReturnId: 'nrt1',
+      physicalAmount: 0,
+      items: [
+        { itemId: 'brg1', variantSku: 'KMJ-L', itemName: 'Kemeja', qty: 4, price: 0 },
+        { itemId: 'brg1', variantSku: 'KMJ-M', itemName: 'Kemeja', qty: 3, price: 0 },
+      ],
+    });
+    const dibuat = (state.nriDibuat[0].items as { create: { variantSku?: string; qtyClaim: number }[] }).create;
+    expect(dibuat).toEqual([
+      expect.objectContaining({ variantSku: 'KMJ-L', qtyClaim: 5 }),
+      expect.objectContaining({ variantSku: 'KMJ-M', qtyClaim: 3 }),
+    ]);
+  });
+});
+
+describe('catatReturToko — NRT dari SPG', () => {
+  const SPG = {
+    ...NRT_DASAR,
+    noNrt: '',
+    salesmanId: 'spg1',
+    olehUserId: 'spg1',
+    reportedBySpg: true,
+    barisSpg: [{ itemId: 'brg1', variantSku: 'KMJ-M', qty: 2, condition: 'LAYAK' as const }],
+  };
+
+  it('menolak NRT SPG tanpa baris barang', async () => {
+    expect(await catatReturToko({ ...SPG, barisSpg: [] })).toEqual({ ok: false, alasan: 'BARIS_WAJIB' });
+    expect(state.nrtDibuat).toHaveLength(0);
+  });
+
+  it('KONSI tanpa nomor: sistem memberi nomor TRK bulan WIB', async () => {
+    state.trkTerakhir = { noNrt: 'TRK/26/08/0007 (batal)' };
+    const h = await catatReturToko(SPG);
+    expect(h).toEqual({ ok: true, id: 'nrt1', noNrt: 'TRK/26/08/0008' });
+    expect(state.nrtDibuat[0]).toMatchObject({ noNrt: 'TRK/26/08/0008', reportedBySpg: true });
+  });
+
+  it('KONSI: nilai klaim dihitung server dari harga konsinyasi, bukan dari HP', async () => {
+    // 80.000 / (1 − 20%) = 100.000 per potong.
+    await catatReturToko({ ...SPG, claimedAmount: 1 });
+    expect(Number((state.nrtDibuat[0].claimedAmount as { value: number }).value)).toBe(200_000);
+    const baris = (state.nrtDibuat[0].items as { create: Record<string, unknown>[] }).create;
+    expect(baris[0]).toMatchObject({ itemId: 'brg1', variantSku: 'KMJ-M', qty: 2, condition: 'LAYAK', itemName: 'Kemeja — size: M' });
+  });
+
+  it('KONSI: barang tanpa harga jual tetap bisa dikembalikan (bernilai nol)', async () => {
+    const h = await catatReturToko({ ...SPG, barisSpg: [{ itemId: 'brg2', qty: 1 }] });
+    expect(h).toMatchObject({ ok: true });
+    expect(Number((state.nrtDibuat[0].claimedAmount as { value: number }).value)).toBe(0);
+  });
+
+  it('menolak barang yang tidak ada di master', async () => {
+    expect(await catatReturToko({ ...SPG, barisSpg: [{ itemId: 'hantu', qty: 1 }] })).toEqual({
+      ok: false,
+      alasan: 'BARANG_TIDAK_DITEMUKAN',
+    });
+  });
+
+  it('PUTUS: nomor nota toko wajib', async () => {
+    state.toko = { termsType: 'PUTUS', marginPercent: null };
+    expect(await catatReturToko({ ...SPG, claimedAmount: 150_000, photoUrl: '/api/foto/1' })).toEqual({
+      ok: false,
+      alasan: 'NOMOR_WAJIB',
+    });
+  });
+
+  it('PUTUS: foto nota toko wajib', async () => {
+    state.toko = { termsType: 'PUTUS', marginPercent: null };
+    expect(await catatReturToko({ ...SPG, noNrt: 'RT-9', claimedAmount: 150_000 })).toEqual({
+      ok: false,
+      alasan: 'FOTO_WAJIB',
+    });
+  });
+
+  it('PUTUS: nilainya total nota toko yang diketik; barisnya hanya qty', async () => {
+    state.toko = { termsType: 'PUTUS', marginPercent: null };
+    const h = await catatReturToko({ ...SPG, noNrt: 'RT-9', claimedAmount: 150_000, photoUrl: '/api/foto/1' });
+    expect(h).toEqual({ ok: true, id: 'nrt1', noNrt: 'RT-9' });
+    expect(Number((state.nrtDibuat[0].claimedAmount as { value: number }).value)).toBe(150_000);
+    const baris = (state.nrtDibuat[0].items as { create: { price: { value: number } }[] }).create;
+    expect(baris[0].price.value).toBe(0);
+  });
+
+  it('menulis RETUR_KELUAR −qty ke buku toko di transaksi yang sama', async () => {
+    await catatReturToko(SPG);
+    expect(state.gerakBuku).toEqual([
+      expect.objectContaining({ storeId: 't1', itemId: 'brg1', variantSku: 'KMJ-M', qty: -2, kind: 'RETUR_KELUAR', refType: 'StoreReturn', refId: 'nrt1' }),
+    ]);
+  });
+
+  it('melewati buku toko yang belum dimulai', async () => {
+    state.bukuAda = false;
+    await catatReturToko(SPG);
+    expect(state.gerakBuku).toHaveLength(0);
+    expect((state.jejak[0].metadata as Record<string, unknown>).bukuToko).toBe('BELUM_ADA_BUKU');
+  });
+
+  it('melewati retur bertanggal pada HARI sebelum opname terakhir (opname sudah menghitungnya)', async () => {
+    state.opnameTerakhir = { countedAt: new Date(HARI_INI.getTime() + 26 * 3_600_000) };
+    await catatReturToko(SPG);
+    expect(state.gerakBuku).toHaveLength(0);
+    expect((state.jejak[0].metadata as Record<string, unknown>).bukuToko).toBe('SEBELUM_OPNAME');
+  });
+
+  it('retur di HARI yang sama dengan opname tetap keluar dari buku (tanggal nota tanpa jam, opname berjam)', async () => {
+    // Tanggal nota tengah malam; opname sore harinya. Barangnya ikut terhitung
+    // di opname itu, jadi laporan retur sesudahnya harus mengurangi buku.
+    state.opnameTerakhir = { countedAt: new Date(HARI_INI.getTime() + 19 * 3_600_000) };
+    await catatReturToko(SPG);
+    expect(state.gerakBuku).toEqual([expect.objectContaining({ qty: -2, kind: 'RETUR_KELUAR' })]);
+  });
+
+  it('tidak menolak qty di atas saldo buku, tapi mencatatnya di jejak', async () => {
+    state.saldoToko = [{ itemId: 'brg1', variantSku: 'KMJ-M', _sum: { qty: 1 } }];
+    expect(await catatReturToko(SPG)).toMatchObject({ ok: true });
+    expect((state.jejak[0].metadata as Record<string, unknown>).melebihiSaldo).toEqual([
+      { itemId: 'brg1', variantSku: 'KMJ-M', qty: 2, saldo: 1 },
+    ]);
+  });
+
+  it('NRT salesman (bukan SPG) tidak menyentuh buku toko', async () => {
+    await catatReturToko({ ...NRT_DASAR, claimedAmount: 870_000 });
+    expect(state.gerakBuku).toHaveLength(0);
+    expect(state.nrtDibuat[0].reportedBySpg).toBeUndefined();
+  });
+});
+
+describe('batalkanRetur — membalik buku toko', () => {
+  it('menulis pembalik +qty untuk RETUR_KELUAR yang masih bersisa, tanpa menghapus', async () => {
+    state.bukuNota = [{ storeId: 't1', itemId: 'brg1', variantSku: 'KMJ-M', _sum: { qty: -2 } }];
+    await batalkanRetur({ storeReturnId: 'nrt1', alasan: 'salah barang', olehUserId: 'u1' });
+    expect(state.gerakBuku).toEqual([
+      expect.objectContaining({ storeId: 't1', itemId: 'brg1', variantSku: 'KMJ-M', qty: 2, kind: 'RETUR_KELUAR', refId: 'nrt1' }),
+    ]);
+  });
+
+  it('tidak menulis pembalik kedua kalau sudah dibalik', async () => {
+    state.bukuNota = [{ storeId: 't1', itemId: 'brg1', variantSku: 'KMJ-M', _sum: { qty: 0 } }];
+    await batalkanRetur({ storeReturnId: 'nrt1', alasan: 'salah barang', olehUserId: 'u1' });
+    expect(state.gerakBuku).toHaveLength(0);
+  });
+});
+
+describe('catatHitunganGudang — gudang barang rusak', () => {
+  const DASAR = { warehouseUserId: 'g1', receivedAt: HARI_INI, deliveryMethod: 'SALES' as const, storeReturnId: 'nrt1', physicalAmount: 1 };
+
+  it('baris RUSAK/EXPIRED ber-barang katalog masuk gudang barang rusak, satu gerakan per baris NRI', async () => {
+    const h = await catatHitunganGudang({
+      ...DASAR,
+      items: [
+        { itemId: 'brg1', variantSku: 'KMJ-M', itemName: 'Kemeja M', qty: 2, price: 0, condition: 'LAYAK' },
+        { itemId: 'brg1', variantSku: 'KMJ-M', itemName: 'Kemeja M', qty: 1, price: 0, condition: 'RUSAK' },
+        { itemId: 'brg2', itemName: 'Blus', qty: 3, price: 0, condition: 'EXPIRED' },
+        // Diketik namanya saja: tidak punya tempat di buku barang.
+        { itemName: 'Barang tanpa kode', qty: 1, price: 0, condition: 'RUSAK' },
+      ],
+    });
+    expect(h).toMatchObject({ ok: true, barisStok: 1, barisGudangRusak: 2 });
+    expect(state.gudangRusak).toEqual([
+      expect.objectContaining({ itemId: 'brg1', variantSku: 'KMJ-M', qty: 1, kind: 'MASUK_RETUR', refType: 'WarehouseReturnItem', refId: 'nrib2', createdById: 'g1' }),
+      expect.objectContaining({ itemId: 'brg2', variantSku: '', qty: 3, kind: 'MASUK_RETUR', refType: 'WarehouseReturnItem', refId: 'nrib3' }),
+    ]);
+    // Stok JUAL tetap hanya yang LAYAK.
+    expect(state.penyesuaian).toHaveLength(1);
+    expect((state.jejak[0].metadata as Record<string, unknown>).barisGudangRusak).toBe(2);
+  });
+
+  it('hitungan tanpa barang rusak tidak menulis apa pun ke gudang barang rusak', async () => {
+    const h = await catatHitunganGudang({
+      ...DASAR,
+      items: [{ itemId: 'brg1', variantSku: 'KMJ-M', itemName: 'Kemeja M', qty: 2, price: 0, condition: 'LAYAK' }],
+    });
+    expect(h).toMatchObject({ ok: true, barisGudangRusak: 0 });
+    expect(state.gudangRusak).toHaveLength(0);
+    expect((state.jejak[0].metadata as Record<string, unknown>).barisGudangRusak).toBeUndefined();
+  });
+});
+
+describe('catatReturToko — barang rusak dari pembeli (retur konter SPG)', () => {
+  const SPG = {
+    ...NRT_DASAR,
+    noNrt: '',
+    salesmanId: 'spg1',
+    olehUserId: 'spg1',
+    reportedBySpg: true,
+    barisSpg: [{ itemId: 'brg1', variantSku: 'KMJ-M', qty: 2, condition: 'RUSAK' as const, spgSaleReturnLineId: 'rpl1' }],
+  };
+  beforeEach(() => {
+    state.returPembeli = [{ id: 'rpl1', itemId: 'brg1', variantSku: 'KMJ-M', qty: 3, condition: 'RUSAK', saleReturn: { storeId: 't1' } }];
+  });
+
+  it('menyimpan penunjuknya dan TIDAK menulis RETUR_KELUAR (barangnya tidak pernah kembali ke rak)', async () => {
+    const h = await catatReturToko(SPG);
+    expect(h).toMatchObject({ ok: true });
+    const baris = (state.nrtDibuat[0].items as { create: Record<string, unknown>[] }).create;
+    expect(baris[0]).toMatchObject({ itemId: 'brg1', variantSku: 'KMJ-M', qty: 2, condition: 'RUSAK', spgSaleReturnLineId: 'rpl1' });
+    expect(state.gerakBuku).toHaveLength(0);
+    expect((state.jejak[0].metadata as Record<string, unknown>).barisTanpaBuku).toBe(1);
+  });
+
+  it('baris biasa di nota yang sama tetap keluar dari buku', async () => {
+    await catatReturToko({ ...SPG, barisSpg: [...SPG.barisSpg, { itemId: 'brg1', variantSku: 'KMJ-M', qty: 1, condition: 'LAYAK' as const }] });
+    expect(state.gerakBuku).toEqual([expect.objectContaining({ itemId: 'brg1', qty: -1, kind: 'RETUR_KELUAR' })]);
+  });
+
+  it('menolak retur pembeli toko lain', async () => {
+    state.returPembeli[0].saleReturn.storeId = 't-lain';
+    expect(await catatReturToko(SPG)).toEqual({ ok: false, alasan: 'RETUR_PEMBELI_TIDAK_SAH' });
+    expect(state.nrtDibuat).toHaveLength(0);
+  });
+
+  it('menolak retur pembeli yang LAYAK, atau baris NRT-nya LAYAK', async () => {
+    state.returPembeli[0].condition = 'LAYAK';
+    expect(await catatReturToko(SPG)).toEqual({ ok: false, alasan: 'RETUR_PEMBELI_TIDAK_SAH' });
+    state.returPembeli[0].condition = 'RUSAK';
+    expect(await catatReturToko({ ...SPG, barisSpg: [{ ...SPG.barisSpg[0], condition: 'LAYAK' as const }] })).toEqual({
+      ok: false,
+      alasan: 'RETUR_PEMBELI_TIDAK_SAH',
+    });
+  });
+
+  it('menolak barang atau varian yang berbeda, dan penunjuk yang tidak ada', async () => {
+    state.returPembeli[0].variantSku = 'KMJ-L';
+    expect(await catatReturToko(SPG)).toEqual({ ok: false, alasan: 'RETUR_PEMBELI_TIDAK_SAH' });
+    state.returPembeli = [];
+    expect(await catatReturToko(SPG)).toEqual({ ok: false, alasan: 'RETUR_PEMBELI_TIDAK_SAH' });
+  });
+
+  it('menolak baris yang sekaligus menunjuk baris tanda terima', async () => {
+    expect(await catatReturToko({ ...SPG, barisSpg: [{ ...SPG.barisSpg[0], storeReceiptLineId: 'srl1' }] })).toEqual({
+      ok: false,
+      alasan: 'RETUR_PEMBELI_TIDAK_SAH',
+    });
+  });
+
+  it('menolak jumlah di atas qty rusak dikurangi yang sudah dikirim di nota yang tidak batal', async () => {
+    state.returPembeliTerpakai = [{ spgSaleReturnLineId: 'rpl1', _sum: { qty: 2 } }];
+    expect(await catatReturToko(SPG)).toEqual({ ok: false, alasan: 'RETUR_PEMBELI_MELEBIHI' });
+    expect(await catatReturToko({ ...SPG, barisSpg: [{ ...SPG.barisSpg[0], qty: 1 }] })).toMatchObject({ ok: true });
   });
 });

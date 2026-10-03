@@ -1,7 +1,9 @@
 import { redirect, notFound } from "next/navigation";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { getFieldSalesOrderById, listKonsiSuggestions, type KonsiSuggestion } from "@/lib/field-sales/queries";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { muatPanelKredit, type PanelKredit } from "@/lib/field-sales/kredit-panel";
 import { FieldSalesOrderDetailClient } from "./FieldSalesOrderDetailClient";
 
 export const dynamic = "force-dynamic";
@@ -44,12 +46,33 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
     }
   }
 
+  /*
+   * Panel kredit (PUTUS saja): catatan saat pesanan dibuat + tagihan toko sekarang.
+   * Sama seperti saran konsinyasi: gagal memuatnya tidak boleh menjatuhkan halaman,
+   * tapi pesanan yang DITAHAN tetap butuh centang di kartu persetujuan — jadi
+   * status ditahan dibaca terpisah dan ikut dikirim walau panelnya gagal.
+   */
+  let kredit: PanelKredit | null = null;
+  if (order.orderType === "PUTUS") {
+    try {
+      kredit = await muatPanelKredit(id);
+    } catch (e) {
+      console.error("[field-sales-orders] muatPanelKredit failed", { orderId: id, error: e });
+    }
+  }
+  const kreditDitahan =
+    kredit?.ditahan ??
+    (order.orderType === "PUTUS" &&
+      (await prisma.fieldSalesOrder.findUnique({ where: { id }, select: { kreditDitahan: true } }))?.kreditDitahan === true);
+
   return (
     <FieldSalesOrderDetailClient
       order={order}
       canApprove={canApprove}
       canDeliver={canDeliver}
       konsiSuggestions={konsiSuggestions}
+      kredit={kredit}
+      kreditDitahan={kreditDitahan}
     />
   );
 }

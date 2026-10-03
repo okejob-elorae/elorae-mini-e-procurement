@@ -3,6 +3,7 @@ import { aggregateInventoryValues } from "@/lib/items/queries";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { outstandingQty } from "./delivery/plan";
 import type { PlanHistory } from "./smart-request/plan";
+import { lencanaIndenById, type LencanaInden } from "./inden-queries";
 
 export type FieldSalesOrderStatus = "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
 
@@ -31,6 +32,10 @@ export type FieldSalesDeliverySummary = {
   discountAmount: number;
   total: number;
   deliveredByName: string;
+  /** Bukti terima digital; null = belum diterima toko. */
+  receivedByName: string | null;
+  receivedAt: Date | null;
+  podPhotoUrl: string | null;
   lines: FieldSalesDeliveryLineSummary[];
 };
 
@@ -43,10 +48,32 @@ export type FieldSalesOrderListItem = {
   status: FieldSalesOrderStatus;
   total: number;
   createdAt: Date;
+  /** Pesanan jarak jauh (WA/TELEPON/LAINNYA); null/absen = diambil saat kunjungan. */
+  remoteChannel?: string | null;
+  /**
+   * Pre-order (inden): jendelanya, null = pesanan stok siap. Absen = kueri tidak
+   * membacanya. `name` null bila jendelanya sudah tidak ada (tanpa foreign key).
+   */
+  preorder?: (Omit<LencanaInden, "name"> & { name: string | null }) | null;
+  /**
+   * Dibatalkan salesman sendiri (status tetap REJECTED, `cancelledById` terisi) —
+   * bukan ditolak kantor. Absen = kueri tidak membacanya.
+   */
+  dibatalkan?: boolean;
+  /** Pesanan ini menggantikan pesanan lama (salesman mengubah pesanannya). Absen = tidak dibaca. */
+  menggantikan?: TautanPesanan | null;
+  /** Pesanan ini sudah diganti pesanan baru. Absen = tidak dibaca. */
+  digantiDengan?: TautanPesanan | null;
 };
+
+/** Nomor + id pesanan lain, untuk tautan "Menggantikan …" / "Diganti dengan …". */
+export type TautanPesanan = { id: string; orderNo: string };
 
 export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
   note: string | null;
+  /** Diisi saat salesman membatalkan (atau mengganti) pesanannya sendiri. */
+  cancelledAt: Date | null;
+  cancelledByName: string | null;
   subtotal: number;
   approvedAt: Date | null;
   rejectedAt: Date | null;
@@ -77,6 +104,9 @@ export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
     requestedUnitPrice: number | null;
     appealReason: string | null;
     addedById: string | null;
+    /** Baris gratis promo bonus (harga 0). */
+    isBonus: boolean;
+    bonusPromoName: string | null;
   }>;
 };
 
@@ -91,6 +121,8 @@ export function serializeListItem(row: {
   createdAt: Date;
   store: { name: string };
   salesman: { name: string | null };
+  remoteChannel?: string | null;
+  cancelledById?: string | null;
 }): FieldSalesOrderListItem {
   return {
     id: row.id,
@@ -101,17 +133,72 @@ export function serializeListItem(row: {
     status: row.status,
     total: toNum(row.total),
     createdAt: row.createdAt,
+    // Hanya diteruskan bila kuerinya memilih kolom itu (absen ≠ null).
+    ...(row.remoteChannel !== undefined ? { remoteChannel: row.remoteChannel } : {}),
+    ...(row.cancelledById !== undefined ? { dibatalkan: row.status === "REJECTED" && !!row.cancelledById } : {}),
   };
 }
 
+/**
+ * Tautan ganti untuk sekumpulan pesanan, dua kueri paling banyak (bukan per
+ * baris): pesanan lama yang DIGANTIKAN (lewat `replacesOrderId` baris itu) dan
+ * pesanan baru yang MENGGANTI (baris lain yang `replacesOrderId`-nya menunjuk
+ * ke sini — hanya dicari untuk pesanan yang dibatalkan, karena pesanan yang
+ * diganti selalu dibatalkan di transaksi yang sama).
+ */
+export async function petaGanti(
+  rows: ReadonlyArray<{ id: string; replacesOrderId: string | null; cancelledById: string | null }>,
+): Promise<{ menggantikan: Map<string, TautanPesanan>; digantiDengan: Map<string, TautanPesanan> }> {
+  const idLama = Array.from(new Set(rows.map((r) => r.replacesOrderId).filter((x): x is string => !!x)));
+  const idBatal = rows.filter((r) => !!r.cancelledById).map((r) => r.id);
+  const [lama, baru] = await Promise.all([
+    idLama.length > 0
+      ? prisma.fieldSalesOrder.findMany({ where: { id: { in: idLama } }, select: { id: true, orderNo: true } })
+      : Promise.resolve([] as TautanPesanan[]),
+    idBatal.length > 0
+      ? prisma.fieldSalesOrder.findMany({
+          where: { replacesOrderId: { in: idBatal } },
+          select: { id: true, orderNo: true, replacesOrderId: true },
+        })
+      : Promise.resolve([] as Array<TautanPesanan & { replacesOrderId: string | null }>),
+  ]);
+  const lamaById = new Map(lama.map((o) => [o.id, { id: o.id, orderNo: o.orderNo }]));
+  const menggantikan = new Map<string, TautanPesanan>();
+  for (const r of rows) {
+    const t = r.replacesOrderId ? lamaById.get(r.replacesOrderId) : undefined;
+    if (t) menggantikan.set(r.id, t);
+  }
+  const digantiDengan = new Map<string, TautanPesanan>();
+  for (const o of baru) if (o.replacesOrderId) digantiDengan.set(o.replacesOrderId, { id: o.id, orderNo: o.orderNo });
+  return { menggantikan, digantiDengan };
+}
+
+/** Lencana pre-order satu pesanan, dari peta `lencanaIndenById`. */
+function lencanaPesanan(
+  preorderWindowId: string | null,
+  peta: Map<string, LencanaInden>,
+): FieldSalesOrderListItem["preorder"] {
+  if (!preorderWindowId) return null;
+  return peta.get(preorderWindowId) ?? { id: preorderWindowId, name: null, dirilis: false };
+}
+
 export async function listFieldSalesOrders(
-  filter: { status?: FieldSalesOrderStatus; search?: string; orderType?: FieldSalesOrderType; storeId?: string },
+  filter: {
+    status?: FieldSalesOrderStatus;
+    search?: string;
+    orderType?: FieldSalesOrderType;
+    storeId?: string;
+    /** INDEN = hanya pesanan pre-order; BIASA = hanya pesanan stok siap. */
+    inden?: "INDEN" | "BIASA";
+  },
   paging: { page: number; pageSize: number },
 ): Promise<{ orders: FieldSalesOrderListItem[]; totalCount: number }> {
   const where: Prisma.FieldSalesOrderWhereInput = {};
   if (filter.status) where.status = filter.status;
   if (filter.orderType) where.orderType = filter.orderType;
   if (filter.storeId) where.storeId = filter.storeId;
+  if (filter.inden === "INDEN") where.preorderWindowId = { not: null };
+  else if (filter.inden === "BIASA") where.preorderWindowId = null;
   if (filter.search && filter.search.trim()) {
     const s = filter.search.trim();
     where.OR = [{ orderNo: { contains: s, mode: 'insensitive' as const } }, { store: { name: { contains: s, mode: 'insensitive' as const } } }];
@@ -123,14 +210,24 @@ export async function listFieldSalesOrders(
       skip: (paging.page - 1) * paging.pageSize,
       take: paging.pageSize,
       select: {
-        id: true, orderNo: true, orderType: true, status: true, total: true, createdAt: true,
+        id: true, orderNo: true, orderType: true, status: true, total: true, createdAt: true, remoteChannel: true,
+        preorderWindowId: true, cancelledById: true, replacesOrderId: true,
         store: { select: { name: true } },
         salesman: { select: { name: true } },
       },
     }),
     prisma.fieldSalesOrder.count({ where }),
   ]);
-  return { orders: rows.map(serializeListItem), totalCount };
+  const [jendela, ganti] = await Promise.all([lencanaIndenById(rows.map((r) => r.preorderWindowId)), petaGanti(rows)]);
+  return {
+    orders: rows.map((r) => ({
+      ...serializeListItem(r),
+      preorder: lencanaPesanan(r.preorderWindowId, jendela),
+      menggantikan: ganti.menggantikan.get(r.id) ?? null,
+      digantiDengan: ganti.digantiDengan.get(r.id) ?? null,
+    })),
+    totalCount,
+  };
 }
 
 export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrderDetail | null> {
@@ -140,14 +237,15 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
       id: true, orderNo: true, orderType: true, status: true, total: true, subtotal: true, note: true,
       approvedAt: true, rejectedAt: true, rejectReason: true, createdAt: true,
       closedAt: true, closeReason: true,
-      orderDiscountAmount: true, appliedOrderPromoId: true, deliveryStatus: true,
+      orderDiscountAmount: true, appliedOrderPromoId: true, deliveryStatus: true, remoteChannel: true,
+      preorderWindowId: true, cancelledById: true, cancelledAt: true, replacesOrderId: true,
       store: { select: { name: true, marginPercent: true, paymentTempo: true } },
       salesman: { select: { name: true } },
       lines: {
         select: {
           id: true, itemId: true, productName: true, variantSku: true, qty: true, unitPrice: true, lineTotal: true,
           discountAmount: true, appliedPromoId: true, requestedUnitPrice: true, appealReason: true,
-          deliveredQty: true, cancelledQty: true, addedById: true,
+          deliveredQty: true, cancelledQty: true, addedById: true, isBonus: true, bonusPromoId: true,
           item: { select: { variants: true } },
         },
       },
@@ -156,6 +254,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
         select: {
           id: true, docNo: true, deliveredAt: true, invoiceDate: true, dueDate: true,
           subtotal: true, discountAmount: true, total: true,
+          receivedByName: true, receivedAt: true, podPhotoUrl: true,
           deliveredBy: { select: { name: true } },
           lines: {
             select: {
@@ -191,15 +290,29 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
   }
 
   const promoIds = Array.from(
-    new Set([row.appliedOrderPromoId, ...row.lines.map((l) => l.appliedPromoId)].filter((v): v is string => v !== null)),
+    new Set(
+      [row.appliedOrderPromoId, ...row.lines.map((l) => l.appliedPromoId), ...row.lines.map((l) => l.bonusPromoId)].filter(
+        (v): v is string => v !== null,
+      ),
+    ),
   );
   const promos = promoIds.length > 0
     ? await prisma.promo.findMany({ where: { id: { in: promoIds } }, select: { id: true, name: true } })
     : [];
   const promoNameById = new Map(promos.map((p) => [p.id, p.name]));
+  const [jendela, ganti, pembatal] = await Promise.all([
+    lencanaIndenById([row.preorderWindowId]),
+    petaGanti([row]),
+    row.cancelledById ? prisma.user.findUnique({ where: { id: row.cancelledById }, select: { name: true, email: true } }) : null,
+  ]);
 
   return {
     ...serializeListItem(row),
+    preorder: lencanaPesanan(row.preorderWindowId, jendela),
+    menggantikan: ganti.menggantikan.get(row.id) ?? null,
+    digantiDengan: ganti.digantiDengan.get(row.id) ?? null,
+    cancelledAt: row.cancelledAt,
+    cancelledByName: row.cancelledById ? (pembatal?.name ?? pembatal?.email ?? "—") : null,
     note: row.note,
     subtotal: toNum(row.subtotal),
     approvedAt: row.approvedAt,
@@ -222,6 +335,9 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
       discountAmount: toNum(d.discountAmount),
       total: toNum(d.total),
       deliveredByName: d.deliveredBy.name ?? "—",
+      receivedByName: d.receivedByName,
+      receivedAt: d.receivedAt,
+      podPhotoUrl: d.podPhotoUrl,
       lines: d.lines.map((dl) => ({
         id: dl.id,
         orderLineId: dl.orderLineId,
@@ -247,10 +363,13 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
         outstanding: outstandingQty({ qty: l.qty, deliveredQty: l.deliveredQty, cancelledQty: l.cancelledQty }),
         discountAmount,
         appliedPromoName: l.appliedPromoId ? promoNameById.get(l.appliedPromoId) ?? null : null,
-        belowCost: row.orderType === "PUTUS" && qty > 0 && netUnit < avgCost,
+        // Barang bonus memang gratis — bukan "di bawah modal" karena promo potongan.
+        belowCost: row.orderType === "PUTUS" && !l.isBonus && qty > 0 && netUnit < avgCost,
         requestedUnitPrice: l.requestedUnitPrice === null ? null : toNum(l.requestedUnitPrice),
         appealReason: l.appealReason,
         addedById: l.addedById,
+        isBonus: l.isBonus,
+        bonusPromoName: l.bonusPromoId ? promoNameById.get(l.bonusPromoId) ?? null : null,
       };
     }),
   };
@@ -362,8 +481,9 @@ export async function sentItemIds(
 }
 
 export async function getSmartRequestHistory(storeId: string, candidateItemIds: string[]): Promise<PlanHistory> {
+  // Baris bonus bukan pilihan toko — tidak dihitung sebagai "pernah dipesan".
   const orderedRows = await prisma.fieldSalesOrderLine.findMany({
-    where: { order: { storeId, status: { not: "REJECTED" } } },
+    where: { isBonus: false, order: { storeId, status: { not: "REJECTED" } } },
     select: { itemId: true },
     distinct: ["itemId"],
   });
@@ -372,7 +492,7 @@ export async function getSmartRequestHistory(storeId: string, candidateItemIds: 
 
   const grouped = await prisma.fieldSalesOrderLine.groupBy({
     by: ["itemId"],
-    where: { order: { storeId, status: "APPROVED" } },
+    where: { isBonus: false, order: { storeId, status: "APPROVED" } },
     _sum: { qty: true },
   });
   const qtyByItem = new Map<string, number>(grouped.map((g) => [g.itemId, g._sum.qty ?? 0]));

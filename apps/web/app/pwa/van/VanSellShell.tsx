@@ -1,11 +1,11 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { KeteranganKirim } from "../KeteranganKirim";
 import { toast } from "sonner";
-import { ArrowLeft, ChevronRight, Loader2, Minus, Plus } from "lucide-react";
+import { ChevronRight, Loader2, Minus, Plus } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import { recordVanSaleAction } from "@/app/actions/van-sale";
 import { VanVariantSheet, type VanStockRow, type VanGroup } from "./VanVariantSheet";
 
+import { TautanKembali } from "@/app/pwa/TautanKembali";
 type StoreOption = { id: string; name: string };
 type ShortLine = { itemId: string; variantSku: string | null; requested: number; available: number };
 
@@ -120,6 +121,13 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
   }
 
   const canSubmit = cartLines.length > 0 && total > 0 && paid >= total && !pending;
+  const kurang = pending
+    ? null
+    : cartLines.length === 0
+      ? t("kurangBarang")
+      : paid === 0
+        ? t("kurangUang")
+        : null;
 
   function onSubmit() {
     setShortLines([]);
@@ -166,13 +174,10 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
   }
 
   return (
-    <div className="flex flex-col gap-3 p-4">
+    <div className="flex min-h-dvh flex-col gap-3 p-4">
       <header className="-ml-2">
         <Button asChild variant="ghost" size="sm">
-          <Link href="/pwa">
-            <ArrowLeft className="h-4 w-4" />
-            {t("back")}
-          </Link>
+          <TautanKembali cadangan="/pwa" />
         </Button>
       </header>
 
@@ -197,7 +202,7 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
         </Alert>
       )}
 
-      <Card className="space-y-3 p-3">
+      <Card className="gap-3 p-3">
         <p className="text-sm font-medium">{t("buyerSectionTitle")}</p>
         <div className="flex gap-2">
           <Button
@@ -237,7 +242,7 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
             />
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-2">
             <div className="space-y-1.5">
               <Label htmlFor="van-buyer-name" className="text-xs">
                 {t("buyerNameLabel")}
@@ -368,7 +373,7 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
       {cartLines.length > 0 && <div aria-hidden style={{ height: 232 }} />}
 
       {cartLines.length > 0 && (
-        <div className="sticky bottom-0 -mx-4 -mb-4 space-y-2 border-t bg-background px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        <div className="sticky bottom-0 -mx-4 -mb-4 mt-auto space-y-2 border-t bg-background px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">{t("totalLabel")}</span>
             <span className="font-semibold tabular-nums">{rupiah(total)}</span>
@@ -403,6 +408,7 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
               t("submit")
             )}
           </Button>
+          <KeteranganKirim teks={kurang} />
         </div>
       )}
 

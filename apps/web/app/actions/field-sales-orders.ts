@@ -11,6 +11,7 @@ import {
   type InvalidAddedLineCode,
   type ShortLine,
 } from "@/lib/field-sales/errors";
+import { KreditBelumDiperiksaError } from "@/lib/field-sales/kredit-pesanan";
 
 export type ActionResult =
   | { ok: true }
@@ -22,7 +23,9 @@ export type ActionResult =
         | "INVALID_TRANSITION"
         | "INSUFFICIENT_STOCK"
         | "INVALID_FINAL_PRICE"
-        | "INVALID_ADDED_LINE";
+        | "INVALID_ADDED_LINE"
+        /* Pesanan yang kreditnya ditahan saat dibuat butuh pernyataan "sudah memeriksa tagihan". */
+        | "KREDIT_BELUM_DIPERIKSA";
       /* Only ever present on INSUFFICIENT_STOCK. Optional because rejectFieldSalesOrderAction shares this type. */
       shortLines?: ShortLine[];
       /* Only ever present on INVALID_ADDED_LINE. */
@@ -72,14 +75,20 @@ export async function approveFieldSalesOrderAction(
   orderId: string,
   finalPrices?: Array<{ lineId: string; finalUnitPrice: number }>,
   addedLines?: Array<{ itemId: string; variantSku: string; qty: number }>,
+  opsi?: { kreditDiperiksa?: boolean },
 ): Promise<ActionResult> {
   const g = await guard();
   if ("ok" in g) return g;
   if (!isValidFinalPrices(finalPrices)) return { ok: false, reason: "INVALID_FINAL_PRICE" };
   if (!isValidAddedLines(addedLines)) return { ok: false, reason: "INVALID_ADDED_LINE" };
+  // Hanya `true` yang dihitung sebagai pernyataan; nilai lain dari klien dianggap belum memeriksa.
+  const kreditDiperiksa = opsi?.kreditDiperiksa === true;
   try {
-    await approveFieldSalesOrder({ orderId, approvedById: g.userId, finalPrices, addedLines });
+    await approveFieldSalesOrder({ orderId, approvedById: g.userId, finalPrices, addedLines, kreditDiperiksa });
   } catch (e) {
+    if (e instanceof KreditBelumDiperiksaError) {
+      return { ok: false, reason: "KREDIT_BELUM_DIPERIKSA" };
+    }
     if (e instanceof InsufficientStockError) {
       return { ok: false, reason: "INSUFFICIENT_STOCK", shortLines: e.shortLines };
     }

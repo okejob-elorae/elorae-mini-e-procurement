@@ -7,7 +7,6 @@ import { useTranslations, useLocale } from "next-intl";
 import { ArrowLeft, ScrollText } from "lucide-react";
 import type { AccountLedger } from "@/lib/finance/journals/queries";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -19,6 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDisplayDate } from "@/lib/date-only";
+import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
 
 type Props = {
   accountId: string;
@@ -32,6 +32,7 @@ function formatRupiah(value: number): string {
 
 export function AccountLedgerClient({ accountId, ledger, filters }: Props) {
   const t = useTranslations("financeJournals");
+  const tt = useTranslations("tanggalInput");
   const tCoa = useTranslations("finance.coa");
   const locale = useLocale();
   const router = useRouter();
@@ -42,10 +43,12 @@ export function AccountLedgerClient({ accountId, ledger, filters }: Props) {
 
   const formatDate = (iso: string) => formatDisplayDate(iso, locale);
 
-  function pushParam(key: string, value: string | undefined) {
+  function pushParams(updates: Record<string, string | undefined>) {
     const params = new URLSearchParams(sp.toString());
-    if (!value) params.delete(key);
-    else params.set(key, value);
+    for (const [key, value] of Object.entries(updates)) {
+      if (!value) params.delete(key);
+      else params.set(key, value);
+    }
     startTransition(() => router.push(`${basePath}?${params.toString()}`));
   }
 
@@ -87,21 +90,12 @@ export function AccountLedgerClient({ accountId, ledger, filters }: Props) {
       <Card className="p-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
-            <label htmlFor="tanggal-dari" className="text-xs text-muted-foreground mb-1 block">{t("ledger.dateFrom")}</label>
-            <Input
-              id="tanggal-dari"
-              type="date"
-              value={filters.from}
-              onChange={(e) => pushParam("from", e.target.value || undefined)}
-            />
-          </div>
-          <div>
-            <label htmlFor="tanggal-sampai" className="text-xs text-muted-foreground mb-1 block">{t("ledger.dateTo")}</label>
-            <Input
-              id="tanggal-sampai"
-              type="date"
-              value={filters.to}
-              onChange={(e) => pushParam("to", e.target.value || undefined)}
+            <label htmlFor="periode" className="text-xs text-muted-foreground mb-1 block">{tt("periode")}</label>
+            <RentangTanggalInput
+              id="periode"
+              dari={filters.from}
+              sampai={filters.to}
+              onChange={({ dari, sampai }) => pushParams({ from: dari || undefined, to: sampai || undefined })}
             />
           </div>
           <div className="flex items-end">

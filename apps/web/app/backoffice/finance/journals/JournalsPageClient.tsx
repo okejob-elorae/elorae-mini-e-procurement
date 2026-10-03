@@ -28,6 +28,7 @@ import {
 import { Pagination } from "@/components/ui/pagination";
 import { formatDisplayDate } from "@/lib/date-only";
 import { journalSourceLabel } from "./journal-source-label";
+import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
 
 type Props = {
   items: JournalListRow[];
@@ -46,6 +47,7 @@ export function JournalsPageClient({ items, totalCount, page, pageSize, canManag
   const router = useRouter();
   const sp = useSearchParams();
   const t = useTranslations("financeJournals");
+  const tt = useTranslations("tanggalInput");
   const locale = useLocale();
   const [, startTransition] = useTransition();
 
@@ -53,7 +55,7 @@ export function JournalsPageClient({ items, totalCount, page, pageSize, canManag
 
   useEffect(() => {
     const handle = setTimeout(() => {
-      if (searchInput !== filters.q) pushParam("q", searchInput);
+      if (searchInput !== filters.q) pushParams({ q: searchInput });
     }, 300);
     return () => clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -61,10 +63,12 @@ export function JournalsPageClient({ items, totalCount, page, pageSize, canManag
 
   const formatDate = (iso: string) => formatDisplayDate(iso, locale);
 
-  function pushParam(key: string, value: string | undefined) {
+  function pushParams(updates: Record<string, string | undefined>) {
     const params = new URLSearchParams(sp.toString());
-    if (!value) params.delete(key);
-    else params.set(key, value);
+    for (const [key, value] of Object.entries(updates)) {
+      if (!value) params.delete(key);
+      else params.set(key, value);
+    }
     params.delete("page");
     startTransition(() => router.push(`/backoffice/finance/journals?${params.toString()}`));
   }
@@ -114,7 +118,7 @@ export function JournalsPageClient({ items, totalCount, page, pageSize, canManag
             <label className="text-xs text-muted-foreground mb-1 block">{t("filter.source")}</label>
             <Select
               value={filters.source || "ALL"}
-              onValueChange={(v) => pushParam("source", v === "ALL" ? undefined : v)}
+              onValueChange={(v) => pushParams({ source: v === "ALL" ? undefined : v })}
             >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder={t("filter.source")} />
@@ -125,22 +129,13 @@ export function JournalsPageClient({ items, totalCount, page, pageSize, canManag
               </SelectContent>
             </Select>
           </div>
-          <div className="w-full sm:w-auto sm:flex-[1_1_160px]">
-            <label htmlFor="tanggal-dari" className="text-xs text-muted-foreground mb-1 block">{t("filter.dateFrom")}</label>
-            <Input
-              id="tanggal-dari"
-              type="date"
-              value={filters.from}
-              onChange={(e) => pushParam("from", e.target.value || undefined)}
-            />
-          </div>
-          <div className="w-full sm:w-auto sm:flex-[1_1_160px]">
-            <label htmlFor="tanggal-sampai" className="text-xs text-muted-foreground mb-1 block">{t("filter.dateTo")}</label>
-            <Input
-              id="tanggal-sampai"
-              type="date"
-              value={filters.to}
-              onChange={(e) => pushParam("to", e.target.value || undefined)}
+          <div className="w-full sm:w-auto sm:flex-[1_1_240px]">
+            <label htmlFor="periode" className="text-xs text-muted-foreground mb-1 block">{tt("periode")}</label>
+            <RentangTanggalInput
+              id="periode"
+              dari={filters.from}
+              sampai={filters.to}
+              onChange={({ dari, sampai }) => pushParams({ from: dari || undefined, to: sampai || undefined })}
             />
           </div>
           <Button variant="outline" onClick={reset}>

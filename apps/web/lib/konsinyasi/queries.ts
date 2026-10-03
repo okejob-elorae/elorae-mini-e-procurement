@@ -7,6 +7,10 @@ import {
   type BarisBanding,
   type TahapSiklus,
 } from './aturan';
+import { pencocokanSiklus, penandaTerjualSiklus, type PencocokanSiklus } from "./pencocokan-queries";
+import type { PenandaCocok } from "./pencocokan";
+import { promoEloraeSiklus } from "./promo-elorae-queries";
+import { totalTagihanKonsi } from "./promo-elorae";
 
 const angka = (v: unknown): number => Number(v ?? 0);
 
@@ -24,6 +28,12 @@ export type BarisSiklus = {
   tenggatSpg: string | null;
   /** Tenggat gaji SPG sudah lewat dan masih ada yang belum dibayar. */
   gajiTerlambat: boolean;
+  /**
+   * Buku stok toko vs laporan SPG vs laporan toko (bagian terjual saja), untuk
+   * siklus yang belum dikunci. null = sudah dikunci, atau belum ada dua sumber
+   * yang bisa dibandingkan.
+   */
+  penandaCocok: PenandaCocok | null;
 };
 
 function bahan(c: {
@@ -73,6 +83,7 @@ export async function daftarSiklus(): Promise<BarisSiklus[]> {
 
   const sekarang = new Date();
   const URUT: TahapSiklus[] = ['laporan', 'cocok', 'bayar_spg', 'nota', 'pajak', 'selesai'];
+  const penanda = await penandaTerjualSiklus(rows.filter((c) => c.lockedAt === null));
 
   return rows
     .map((c) => {
@@ -98,6 +109,7 @@ export async function daftarSiklus(): Promise<BarisSiklus[]> {
           c.spgDueDate !== null &&
           c.spgDueDate < sekarang &&
           c.commissions.some((k) => k.paidAt === null),
+        penandaCocok: penanda.get(c.id) ?? null,
       };
     })
     .sort(
@@ -122,6 +134,12 @@ export type RincianSiklus = {
     gajiPokok: number;
     komisi: number;
     total: number;
+    /**
+     * Beban barang hilang yang SUDAH dipotong saat siklus dikunci (berbeda dari
+     * beban selisih retur di bawah, yang hanya diingatkan). Yang dibayarkan =
+     * `total − potonganHilang`.
+     */
+    potonganHilang: number;
     dibayarPada: string | null;
     /**
      * Beban selisih retur yang masih ditanggung orang ini.
@@ -136,6 +154,28 @@ export type RincianSiklus = {
   }[];
   titipan: { itemName: string; dikirim: number; terjual: number; sisa: number }[];
   pengiriman: { id: string; noKirim: string; tanggal: string; nilai: number; jumlahBaris: number }[];
+  /** Buku stok toko vs laporan laku konsinyasi, per barang. */
+  pencocokan: PencocokanSiklus;
+  tagihan: TagihanSiklus;
+};
+
+/**
+ * Ringkasan tagihan ke toko: laku resmi − potongan promo ditanggung Elorae +
+ * beban barang hilang ke toko. Sebelum dikunci hanya potongan promo yang ada
+ * (dihitung langsung dari nota); sesudahnya ketiganya dibekukan di siklus.
+ */
+export type TagihanSiklus = {
+  beku: boolean;
+  /** Σ angka resmi. null selama belum dikunci. */
+  lakuResmi: number | null;
+  /** Dibekukan saat dikunci; sebelum itu dihitung langsung. */
+  promoElorae: number;
+  /** Dihitung dari nota SPG sekarang — pembanding untuk angka yang dibekukan. */
+  promoEloraeSekarang: number;
+  /** Ditetapkan saat mengunci. null selama belum dikunci. */
+  bebanHilang: number | null;
+  /** null selama belum dikunci. */
+  total: number | null;
 };
 
 /** Satu siklus, kedua laporannya, angka resminya, komisinya, dan stok titipannya. */
@@ -152,6 +192,8 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
       noNota: true,
       noFakturPajak: true,
       lockedAt: true,
+      promoBorneByElorae: true,
+      lossChargedToStore: true,
       store: { select: { name: true } },
       lockedBy: { select: { name: true } },
       reports: {
@@ -177,6 +219,7 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
           baseSalary: true,
           commission: true,
           total: true,
+          deduction: true,
           paidAt: true,
           spgUser: { select: { name: true } },
         },
@@ -221,6 +264,37 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
     bebanPerOrang.set(b.bearerUserId, (bebanPerOrang.get(b.bearerUserId) ?? 0) + angka(b.amount));
   }
 
+  const [mutasi, pencocokan, promoSekarang, penanda] = await Promise.all([
+    mutasiTitipan(c.storeId),
+    pencocokanSiklus(c.id),
+    promoEloraeSiklus(prisma, { storeId: c.storeId, periodYear: c.periodYear, periodMonth: c.periodMonth }),
+    c.lockedAt ? Promise.resolve(new Map<string, PenandaCocok | null>()) : penandaTerjualSiklus([c]),
+  ]);
+  if (!pencocokan) return null;
+  const terkunci = c.lockedAt !== null;
+  const lakuResmi = c.sold.reduce((s, x) => s + angka(x.amount), 0);
+  const tagihan: TagihanSiklus = terkunci
+    ? {
+        beku: true,
+        lakuResmi,
+        promoElorae: angka(c.promoBorneByElorae),
+        promoEloraeSekarang: promoSekarang.total,
+        bebanHilang: angka(c.lossChargedToStore),
+        total: totalTagihanKonsi({
+          lakuResmi,
+          promoElorae: angka(c.promoBorneByElorae),
+          bebanHilang: angka(c.lossChargedToStore),
+        }),
+      }
+    : {
+        beku: false,
+        lakuResmi: null,
+        promoElorae: promoSekarang.total,
+        promoEloraeSekarang: promoSekarang.total,
+        bebanHilang: null,
+        total: null,
+      };
+
   const spg = c.reports.find((r) => r.source === 'SPG')?.items ?? null;
   const toko = c.reports.find((r) => r.source === 'TOKO')?.items ?? null;
   const tahap = tahapSiklus(bahan({ ...c, commissions: c.commissions }));
@@ -242,8 +316,9 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
         c.spgDueDate !== null &&
         c.spgDueDate < new Date() &&
         c.commissions.some((k) => k.paidAt === null),
+      penandaCocok: penanda.get(c.id) ?? null,
     },
-    terkunci: c.lockedAt !== null,
+    terkunci,
     dikunciOleh: c.lockedBy?.name ?? null,
     dikunciPada: c.lockedAt?.toISOString() ?? null,
     laporanSpg: spg,
@@ -263,11 +338,12 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
       gajiPokok: angka(k.baseSalary),
       komisi: angka(k.commission),
       total: angka(k.total),
+      potonganHilang: angka(k.deduction),
       dibayarPada: k.paidAt?.toISOString() ?? null,
       bebanTerbuka: bebanPerOrang.get(k.spgUserId) ?? 0,
     })),
     titipan: stokTitipan(
-      kirim.flatMap((k) => k.items.map((i) => ({ itemName: i.itemName, qty: i.qty }))),
+      [...kirim.flatMap((k) => k.items.map((i) => ({ itemName: i.itemName, qty: i.qty }))), ...mutasi],
       c.sold.map((s) => ({ itemName: s.itemName, qty: s.qty })),
     ),
     pengiriman: kirim.map((k) => ({
@@ -277,7 +353,46 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
       nilai: k.items.reduce((s, i) => s + angka(i.amount), 0),
       jumlahBaris: k.items.length,
     })),
+    pencocokan,
+    tagihan,
   };
+}
+
+/**
+ * Mutasi antar toko sebagai baris "dikirim" stok titipan, BERTANDA: barang yang
+ * diterima toko ini dari toko lain (jumlah diterima, termasuk barang yang
+ * kembali dari mutasi yang dibatalkan) menambah; barang yang dikirim toko ini
+ * ke toko lain mengurangi; selisih yang diputuskan KEMBALI menambah lagi di toko
+ * asal. Nama barang = nama master (`Item.nameId`) — nama yang sama dengan bahan
+ * laporan SPG, supaya barisnya bertemu dengan barang yang sama.
+ */
+async function mutasiTitipan(storeId: string): Promise<{ itemName: string; qty: number }[]> {
+  const [masuk, keluar, kembali] = await Promise.all([
+    prisma.storeReceiptLine.findMany({
+      where: { itemId: { not: null }, qtyReceived: { gt: 0 }, receipt: { storeId, sourceType: { in: ['MUTASI', 'MUTASI_KEMBALI'] } } },
+      select: { itemId: true, qtyReceived: true },
+    }),
+    prisma.storeTransferLine.findMany({
+      where: { transfer: { fromStoreId: storeId, shippedAt: { not: null }, status: { in: ['DIKIRIM', 'DITERIMA', 'DIKEMBALIKAN'] } } },
+      select: { itemId: true, qty: true },
+    }),
+    prisma.storeStockMovement.findMany({
+      where: { storeId, kind: 'MUTASI_MASUK', refType: 'StoreTransfer' },
+      select: { itemId: true, qty: true },
+    }),
+  ]);
+  const baris = [
+    ...masuk.map((l) => ({ itemId: l.itemId as string, qty: l.qtyReceived })),
+    ...keluar.map((l) => ({ itemId: l.itemId, qty: -l.qty })),
+    ...kembali.map((l) => ({ itemId: l.itemId, qty: l.qty })),
+  ];
+  if (baris.length === 0) return [];
+  const items = await prisma.item.findMany({
+    where: { id: { in: [...new Set(baris.map((b) => b.itemId))] } },
+    select: { id: true, nameId: true },
+  });
+  const nama = new Map(items.map((i) => [i.id, i.nameId]));
+  return baris.map((b) => ({ itemName: nama.get(b.itemId) ?? b.itemId, qty: b.qty }));
 }
 
 /** Toko konsinyasi, untuk membuka siklus atau mengirim titipan. */

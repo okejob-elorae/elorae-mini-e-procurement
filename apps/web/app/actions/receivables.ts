@@ -1,10 +1,16 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { prisma } from '@elorae/db';
 import { auth } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/rbac';
-import { bolehMelapor } from '@/lib/receivables/izin';
+import { bolehMelapor, bolehMemverifikasi } from '@/lib/receivables/izin';
 import { batalkanKlaim, putuskanKlaim, tautkanUlangPotongan } from '@/lib/receivables/writer';
+import { batalkanKlaimSendiri, mintaKoreksi, type AlasanKoreksi } from '@/lib/receivables/koreksi';
+import { fanOutAdminNotification } from '@/lib/notifications/admin-fanout';
+import { tanggalWib as tanggalGiro } from '@/lib/receivables/giro';
+import { JENIS_KABAR, kabariPengguna } from '@/lib/notifications/kabar-pengguna';
+import { formatIDR } from '@/lib/sales-orders/format';
 import {
   buatKlaimPembayaran,
   type AlasanGagalKlaim,
@@ -12,9 +18,110 @@ import {
   type BarisPotongan,
 } from '@/lib/receivables/claim-writer';
 
+/**
+ * Kabar ke sales yang melaporkan BKM bahwa laporannya sudah diputuskan keuangan.
+ *
+ * Tanpa ini, sales baru tahu klaimnya ditolak saat toko ditagih ulang — terlambat untuk
+ * membetulkan apa pun. Dipanggil SESUDAH transaksinya selesai dan tidak pernah melempar:
+ * keputusan uang sudah tersimpan, dan kabar yang gagal tidak boleh membuatnya tampak gagal.
+ * Penerimanya `salesmanId` — pelapor yang sama yang daftar "BKM saya" di HP-nya pakai.
+ */
+async function kabarKeputusanKlaim(
+  paymentClaimId: string,
+  keputusan: 'TERVERIFIKASI' | 'DITOLAK' | 'DIBATALKAN',
+  catatan: string | null | undefined,
+  pelakuId: string,
+): Promise<void> {
+  try {
+    const klaim = await prisma.paymentClaim.findUnique({
+      where: { id: paymentClaimId },
+      select: { docNo: true, salesmanId: true, receivedAmount: true, store: { select: { name: true } } },
+    });
+    if (!klaim || klaim.salesmanId === pelakuId) return;
+    const alasan = catatan?.trim() ? ` Alasan: ${catatan.trim()}` : '';
+    const kabar =
+      keputusan === 'TERVERIFIKASI'
+        ? {
+            jenis: JENIS_KABAR.PELUNASAN_TERVERIFIKASI,
+            judul: `Pelunasan ${klaim.docNo} terverifikasi`,
+            isi: `${klaim.store.name} · ${formatIDR(klaim.receivedAmount.toString())} sudah diakui.`,
+          }
+        : keputusan === 'DITOLAK'
+          ? {
+              jenis: JENIS_KABAR.PELUNASAN_DITOLAK,
+              judul: `Pelunasan ${klaim.docNo} ditolak`,
+              isi: `${klaim.store.name} · ${formatIDR(klaim.receivedAmount.toString())}.${alasan}`,
+            }
+          : {
+              jenis: JENIS_KABAR.PELUNASAN_DIBATALKAN,
+              judul: `Pelunasan ${klaim.docNo} dibatalkan`,
+              isi: `${klaim.store.name} · ${formatIDR(klaim.receivedAmount.toString())}.${alasan}`,
+            };
+    await kabariPengguna(klaim.salesmanId, { ...kabar, data: { claimId: paymentClaimId } });
+  } catch (err) {
+    console.error('[kabar] keputusan klaim gagal', paymentClaimId, err);
+  }
+}
+
+/**
+ * Kabar ke sales pelapor BKM giro: bilyetnya cair (piutang berkurang) atau
+ * ditolak bank (tagih ulang). Jenisnya sendiri, bukan PELUNASAN_*: yang ia
+ * tunggu adalah bilyet di tangan toko, dan kalimatnya harus menyebut nomor giro
+ * itu. Sama seperti kabar klaim: sesudah transaksi, tidak pernah melempar.
+ */
+async function kabarGiro(
+  paymentClaimId: string,
+  hasil: 'CAIR' | 'DITOLAK',
+  catatan: string | null | undefined,
+  pelakuId: string,
+): Promise<void> {
+  try {
+    const klaim = await prisma.paymentClaim.findUnique({
+      where: { id: paymentClaimId },
+      select: {
+        docNo: true,
+        salesmanId: true,
+        receivedAmount: true,
+        giroNo: true,
+        store: { select: { name: true } },
+      },
+    });
+    if (!klaim || klaim.salesmanId === pelakuId) return;
+    const nilai = formatIDR(klaim.receivedAmount.toString());
+    const giro = klaim.giroNo ?? klaim.docNo;
+    const kabar =
+      hasil === 'CAIR'
+        ? {
+            jenis: JENIS_KABAR.GIRO_CAIR,
+            judul: `Giro ${giro} cair`,
+            isi: `${klaim.store.name} · ${nilai}. ${klaim.docNo} terverifikasi, piutangnya sudah berkurang.`,
+          }
+        : {
+            jenis: JENIS_KABAR.GIRO_DITOLAK,
+            judul: `Giro ${giro} ditolak bank`,
+            isi:
+              `${klaim.store.name} · ${nilai}. Piutangnya tetap terbuka — tagih ulang toko.` +
+              (catatan?.trim() ? ` Alasan: ${catatan.trim()}` : ''),
+          };
+    await kabariPengguna(klaim.salesmanId, { ...kabar, data: { claimId: paymentClaimId } });
+  } catch (err) {
+    console.error('[kabar] giro gagal', paymentClaimId, err);
+  }
+}
+
 export type HasilAksiKlaim =
   | { ok: true }
-  | { ok: false; kode: 'TANPA_AKSES' | 'TIDAK_DITEMUKAN' | 'SUDAH_DIPUTUSKAN' | 'ALASAN_WAJIB' | 'GAGAL' };
+  | {
+      ok: false;
+      kode:
+        | 'TANPA_AKSES'
+        | 'TIDAK_DITEMUKAN'
+        | 'SUDAH_DIPUTUSKAN'
+        | 'ALASAN_WAJIB'
+        | 'GIRO_BELUM_CAIR'
+        | 'BUKAN_GIRO_MENUNGGU'
+        | 'GAGAL';
+    };
 
 /**
  * Verifikasi klaim pembayaran — pintu tempat piutang berkurang.
@@ -45,10 +152,53 @@ export async function verifikasiKlaimAction(
     });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
     revalidatePath('/backoffice/pelunasan');
+    revalidatePath('/backoffice/pelunasan/giro');
     revalidatePath('/backoffice/piutang');
+    void kabarKeputusanKlaim(paymentClaimId, keputusan, catatan, session.user.id);
     return { ok: true };
   } catch (err) {
     console.error('verifikasiKlaim gagal:', err);
+    return { ok: false, kode: 'GAGAL' };
+  }
+}
+
+/**
+ * Hasil kliring bilyet giro: cair, atau ditolak bank.
+ *
+ * Cair = giro berubah jadi uang, dan klaimnya diverifikasi DALAM transaksi yang
+ * sama lewat pintu verifikasi biasa — di situlah piutang berkurang. Ditolak =
+ * klaimnya ditolak dengan alasan dari bank, piutangnya tetap terbuka.
+ *
+ * Izinnya sama dengan verifikasi klaim: menyatakan giro cair sama dengan
+ * menyatakan uangnya ada di rekening.
+ */
+export async function putuskanGiroAction(
+  paymentClaimId: string,
+  hasil: 'CAIR' | 'DITOLAK',
+  catatan?: string,
+): Promise<HasilAksiKlaim> {
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false, kode: 'TANPA_AKSES' };
+  if (!bolehMemverifikasi(session.user.permissions)) return { ok: false, kode: 'TANPA_AKSES' };
+
+  try {
+    const keputusan = await putuskanKlaim({
+      paymentClaimId,
+      keputusan: hasil === 'CAIR' ? 'TERVERIFIKASI' : 'DITOLAK',
+      olehUserId: session.user.id,
+      catatan,
+      giro: hasil,
+    });
+    if (!keputusan.ok) return { ok: false, kode: keputusan.alasan };
+    revalidatePath('/backoffice/pelunasan');
+    revalidatePath('/backoffice/pelunasan/giro');
+    revalidatePath(`/backoffice/pelunasan/${paymentClaimId}`);
+    revalidatePath('/backoffice/piutang');
+    revalidatePath('/pwa/bkm');
+    void kabarGiro(paymentClaimId, hasil, catatan, session.user.id);
+    return { ok: true };
+  } catch (err) {
+    console.error('putuskanGiro gagal:', err);
     return { ok: false, kode: 'GAGAL' };
   }
 }
@@ -84,6 +234,12 @@ export async function buatKlaimAction(input: {
   potongan?: BarisPotongan[];
   transferPhotoUrl?: string | null;
   breakdownPhotoUrl?: string | null;
+  /** Dari antrean offline HP: kiriman ulang dengan kunci sama tidak mencatat dua kali. */
+  idempotencyKey?: string | null;
+  /** Rincian bilyet, wajib kalau cara bayarnya giro. Tanggal "YYYY-MM-DD" (WIB). */
+  giro?: { nomor: string; bank: string; tanggalTerbit: string; tanggalEfektif: string } | null;
+  /** BKM ditolak/dibatalkan yang digantikan laporan ini ("Laporkan ulang" / "Buat ulang"). */
+  menggantikanId?: string | null;
 }): Promise<HasilKlaimBaru> {
   const session = await auth();
   if (!session?.user?.id) return { ok: false, kode: 'TANPA_AKSES' };
@@ -98,10 +254,25 @@ export async function buatKlaimAction(input: {
       claimedTransferAt: tanggal,
       salesmanId: session.user.id,
       createdById: session.user.id,
+      // Tanggal yang tidak terbaca menjadi null dan ditolak penulis sebagai
+      // "tanggal giro wajib" — satu aturan, di satu tempat.
+      giro: input.giro
+        ? {
+            nomor: input.giro.nomor,
+            bank: input.giro.bank,
+            tanggalTerbit: tanggalGiro(input.giro.tanggalTerbit),
+            tanggalEfektif: tanggalGiro(input.giro.tanggalEfektif),
+          }
+        : null,
+      // Ditentukan server dari hak akses, SESUDAH isian dari HP: kantor boleh
+      // mengganti BKM siapa pun, sales hanya miliknya sendiri.
+      lintasPelapor: hasPermission(session.user.permissions ?? [], PERMISSIONS.RECEIVABLES_MANAGE),
     });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
     revalidatePath('/backoffice/pelunasan');
+    revalidatePath('/backoffice/pelunasan/giro');
     revalidatePath('/backoffice/piutang');
+    revalidatePath('/pwa/bkm');
     return { ok: true, docNo: hasil.docNo };
   } catch (err) {
     console.error('buatKlaim gagal:', err);
@@ -123,8 +294,8 @@ export type HasilKoreksiAksi = { ok: true } | { ok: false; kode: KodeKoreksi };
  * Batalkan BKM yang salah catat.
  *
  * Dibatasi ke `journals:manage` sama seperti verifikasi: membatalkan mengubah
- * sisa piutang, jadi ia keputusan keuangan — bukan pembetulan ketikan yang
- * boleh dilakukan pelapornya sendiri.
+ * sisa piutang, jadi ia keputusan keuangan. Satu-satunya jalan pelapor sendiri
+ * adalah `tarikKlaimSendiriAction`, dan hanya selama BKM-nya belum diputuskan.
  */
 export async function batalkanKlaimAction(
   paymentClaimId: string,
@@ -140,8 +311,10 @@ export async function batalkanKlaimAction(
     const hasil = await batalkanKlaim({ paymentClaimId, alasan, olehUserId: session.user.id });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
     revalidatePath('/backoffice/pelunasan');
+    revalidatePath('/backoffice/pelunasan/giro');
     revalidatePath(`/backoffice/pelunasan/${paymentClaimId}`);
     revalidatePath('/backoffice/piutang');
+    void kabarKeputusanKlaim(paymentClaimId, 'DIBATALKAN', alasan, session.user.id);
     return { ok: true };
   } catch (err) {
     console.error('batalkanKlaim gagal:', err);
@@ -174,6 +347,55 @@ export async function tautkanUlangPotonganAction(
     return { ok: true };
   } catch (err) {
     console.error('tautkanUlangPotongan gagal:', err);
+    return { ok: false, kode: 'GAGAL' };
+  }
+}
+
+export type HasilTarikKlaim = { ok: true } | { ok: false; kode: 'TANPA_AKSES' | 'GAGAL' | AlasanKoreksi };
+
+/**
+ * Sales menarik BKM-nya sendiri dari HP — salah pilih toko, salah faktur.
+ *
+ * Hanya selama keuangan belum memutuskan (`batalkanKlaimSendiri`). Barisnya
+ * tidak dihapus dan keuangan diberi tahu: penarikan tidak pernah diam-diam.
+ */
+export async function tarikKlaimSendiriAction(paymentClaimId: string, alasan: string): Promise<HasilTarikKlaim> {
+  const session = await auth();
+  if (!session?.user?.id || !bolehMelapor(session.user.permissions)) return { ok: false, kode: 'TANPA_AKSES' };
+  try {
+    const hasil = await batalkanKlaimSendiri({ paymentClaimId, salesmanId: session.user.id, alasan });
+    if (!hasil.ok) return { ok: false, kode: hasil.alasan as AlasanKoreksi };
+    void fanOutAdminNotification(hasil.notifikasi);
+    revalidatePath('/pwa/bkm');
+    revalidatePath('/backoffice/pelunasan');
+    revalidatePath(`/backoffice/pelunasan/${paymentClaimId}`);
+    revalidatePath('/backoffice/piutang');
+    return { ok: true };
+  } catch (err) {
+    console.error('tarikKlaimSendiri gagal:', err);
+    return { ok: false, kode: 'GAGAL' };
+  }
+}
+
+export type HasilMintaKoreksiAksi = { ok: true } | { ok: false; kode: 'TANPA_AKSES' | 'GAGAL' | AlasanKoreksi };
+
+/**
+ * Sales meminta kantor membetulkan laporannya yang SUDAH diproses — BKM
+ * terverifikasi, atau nota retur yang sudah dihitung gudang. Tercatat di jejak
+ * dokumennya dan kantor diberi tahu; keputusannya tetap di kantor.
+ */
+export async function mintaKoreksiAction(jenis: 'bkm' | 'retur', id: string, alasan: string): Promise<HasilMintaKoreksiAksi> {
+  const session = await auth();
+  if (!session?.user?.id || !bolehMelapor(session.user.permissions)) return { ok: false, kode: 'TANPA_AKSES' };
+  try {
+    const hasil = await mintaKoreksi({ jenis, id, salesmanId: session.user.id, alasan });
+    if (!hasil.ok) return { ok: false, kode: hasil.alasan as AlasanKoreksi };
+    void fanOutAdminNotification(hasil.notifikasi);
+    revalidatePath(jenis === 'bkm' ? '/pwa/bkm' : '/pwa/retur');
+    revalidatePath(jenis === 'bkm' ? `/backoffice/pelunasan/${id}` : `/backoffice/retur-toko/${id}`);
+    return { ok: true };
+  } catch (err) {
+    console.error('mintaKoreksi gagal:', err);
     return { ok: false, kode: 'GAGAL' };
   }
 }

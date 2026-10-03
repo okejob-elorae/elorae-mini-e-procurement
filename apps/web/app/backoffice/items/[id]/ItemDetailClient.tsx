@@ -11,11 +11,12 @@ import type { ItemFormData } from '@/lib/items/mutations';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Barcode } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 import { ItemType } from '@/lib/constants/enums';
 import { PriceHistoryTable } from './PriceHistoryTable';
+import { alamatLabel } from "@/lib/items/label";
 
 type ItemDetailClientProps = {
   initialData: Parameters<typeof ItemForm>[0]['initialData'];
@@ -43,6 +44,7 @@ export function ItemDetailClient({
   const router = useRouter();
   const { data: session } = useSession();
   const tItems = useTranslations('items');
+  const tLabel = useTranslations("labelBarcode");
   const [isSaving, setIsSaving] = useState(false);
   const itemTypeLabel = tItems(itemTypeKeys[itemType]);
   const isAdmin = session?.user?.permissions?.includes("*") ?? false;
@@ -101,6 +103,14 @@ export function ItemDetailClient({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {itemType === ItemType.FINISHED_GOOD && initialData?.id ? (
+            <Button variant="outline" size="sm" asChild>
+              <Link href={alamatLabel({ itemId: initialData.id })}>
+                <Barcode className="h-4 w-4" />
+                {tLabel("tombolHalamanBarang")}
+              </Link>
+            </Button>
+          ) : null}
           {isAdmin && (
             <Button variant="outline" size="sm" onClick={() => void handlePushStock()}>
               {tItems('detail.pushStock')}

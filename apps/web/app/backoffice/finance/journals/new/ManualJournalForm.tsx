@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
+import { TanggalInput } from "@/components/ui/tanggal-input";
 
 type AccountOption = { id: string; code: string; name: string; type: AccountType };
 
@@ -142,9 +143,8 @@ export function ManualJournalForm({ accounts }: Props) {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="journal-date">{t("form.date")}</Label>
-                <Input
+                <TanggalInput
                   id="journal-date"
-                  type="date"
                   required
                   disabled={pending}
                   value={date}

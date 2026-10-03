@@ -17,6 +17,10 @@ const state = {
   dibuat: [] as Record<string, unknown>[],
   dihitungUlang: [] as string[],
   jejak: [] as Record<string, unknown>[],
+  /** BKM yang sudah tercatat dengan kunci kiriman tertentu. */
+  klaimBerkunci: null as { id: string; docNo: string; salesmanId: string } | null,
+  /** Berapa kali `create` harus kalah balapan kunci sebelum boleh berhasil. */
+  kalahBalapan: 0,
 };
 
 /**
@@ -50,7 +54,17 @@ const tx = {
   },
   paymentClaim: {
     findFirst: vi.fn(async () => null),
+    findUnique: vi.fn(async () => state.klaimBerkunci),
     create: vi.fn(async (a: { data: Record<string, unknown> }) => {
+      if (state.kalahBalapan > 0) {
+        // Kiriman kembar yang tiba bersamaan: yang lain menang lebih dulu.
+        state.kalahBalapan -= 1;
+        state.klaimBerkunci = { id: 'bkm-kembar', docNo: 'BKM/2026/0009', salesmanId: 'u1' };
+        const { Prisma } = await import('@elorae/db');
+        const err = new Prisma.PrismaClientKnownRequestError('unik', { code: 'P2002', clientVersion: 'x' });
+        Object.assign(err, { meta: { target: 'PaymentClaim_idempotencyKey_key' } });
+        throw err;
+      }
       state.dibuat.push(a.data);
       return { id: 'bkm1', docNo: a.data.docNo as string };
     }),
@@ -102,6 +116,8 @@ beforeEach(() => {
   state.dibuat = [];
   state.dihitungUlang = [];
   state.jejak = [];
+  state.klaimBerkunci = null;
+  state.kalahBalapan = 0;
   state.tokoPkp = false;
   state.jenis = [
     { id: 'pph23', method: 'NOMINAL', noteRequired: false, pkpOnly: true },
@@ -268,5 +284,117 @@ describe('aturan jenis potongan yang menempel pada toko', () => {
     state.tokoPkp = false;
     const hasil = await buatKlaimPembayaran(potonganPph('biasa'));
     expect(hasil.ok).toBe(true);
+  });
+});
+
+describe('kiriman dari antrean offline HP', () => {
+  /*
+   * Antrean mengirim ulang sampai servernya menjawab. Kalau BKM sebenarnya
+   * sudah tersimpan tapi jawabannya hilang di jalan, kiriman berikutnya
+   * TIDAK boleh mencatatnya dua kali — dua BKM untuk satu transfer.
+   */
+  const KIRIMAN = { ...DASAR, idempotencyKey: 'hp-1', pelunasan: [{ receivableId: 'r1', nilai: 1_000_000 }] };
+
+  it('menyimpan kunci kirimannya pada BKM baru', async () => {
+    const hasil = await buatKlaimPembayaran(KIRIMAN);
+    expect(hasil.ok).toBe(true);
+    expect(state.dibuat[0].idempotencyKey).toBe('hp-1');
+  });
+
+  it('mengembalikan BKM yang sudah ada untuk kunci yang sama, tanpa membuat baru', async () => {
+    state.klaimBerkunci = { id: 'bkm0', docNo: 'BKM/2026/0007', salesmanId: 'u1' };
+    expect(await buatKlaimPembayaran(KIRIMAN)).toEqual({ ok: true, id: 'bkm0', docNo: 'BKM/2026/0007' });
+    expect(state.dibuat).toHaveLength(0);
+    expect(state.jejak).toHaveLength(0);
+  });
+
+  it('mengenali kiriman ulang SEBELUM memeriksa sisa — fakturnya mungkin sudah lunas sejak itu', async () => {
+    // Kalau pemeriksaan sisa didahulukan, kiriman ulang BKM yang sudah
+    // diverifikasi akan ditolak "sudah lunas" dan sales mengira laporannya hilang.
+    state.klaimBerkunci = { id: 'bkm0', docNo: 'BKM/2026/0007', salesmanId: 'u1' };
+    state.sisa.set('r1', 0);
+    expect(await buatKlaimPembayaran(KIRIMAN)).toEqual({ ok: true, id: 'bkm0', docNo: 'BKM/2026/0007' });
+  });
+
+  it('tidak menyerahkan BKM milik sales lain yang kebetulan berkunci sama', async () => {
+    state.klaimBerkunci = { id: 'bkmX', docNo: 'BKM/2026/0001', salesmanId: 'u9' };
+    expect(await buatKlaimPembayaran(KIRIMAN)).toEqual({ ok: false, alasan: 'KUNCI_DIPAKAI' });
+    expect(state.dibuat).toHaveLength(0);
+  });
+
+  it('dua kiriman kembar yang tiba bersamaan menghasilkan satu BKM', async () => {
+    state.kalahBalapan = 1;
+    expect(await buatKlaimPembayaran(KIRIMAN)).toEqual({ ok: true, id: 'bkm-kembar', docNo: 'BKM/2026/0009' });
+    expect(state.dibuat).toHaveLength(0);
+  });
+
+  it('BKM dari kantor tanpa kunci tetap seperti biasa', async () => {
+    const hasil = await buatKlaimPembayaran({ ...DASAR, pelunasan: [{ receivableId: 'r1', nilai: 1_000_000 }] });
+    expect(hasil.ok).toBe(true);
+    expect(state.dibuat[0].idempotencyKey ?? null).toBeNull();
+  });
+});
+
+describe('pelunasan dengan giro', () => {
+  const TERBIT = new Date('2026-09-01T00:00:00+07:00');
+  const EFEKTIF = new Date('2026-09-20T00:00:00+07:00');
+  const GIRO = {
+    ...DASAR,
+    method: 'giro',
+    transferPhotoUrl: '/api/foto/bilyet',
+    pelunasan: [{ receivableId: 'r1', nilai: 1_000_000 }],
+    giro: { nomor: 'BG 001122', bank: 'BCA', tanggalTerbit: TERBIT, tanggalEfektif: EFEKTIF },
+  };
+
+  it('menyimpan rincian bilyet dan menandainya MENUNGGU', async () => {
+    // Giro dicatat sebagai janji bank yang belum cair — klaimnya pun DIKIRIM.
+    const h = await buatKlaimPembayaran(GIRO);
+    expect(h.ok).toBe(true);
+    expect(state.dibuat[0]).toMatchObject({
+      method: 'giro',
+      status: 'DIKIRIM',
+      giroNo: 'BG 001122',
+      giroBank: 'BCA',
+      giroIssueDate: TERBIT,
+      giroEffectiveDate: EFEKTIF,
+      giroStatus: 'MENUNGGU',
+    });
+  });
+
+  it('menolak giro tanpa nomor, bank, atau tanggal SEBELUM menyentuh basis data', async () => {
+    expect(await buatKlaimPembayaran({ ...GIRO, giro: { ...GIRO.giro, nomor: '' } })).toEqual({
+      ok: false,
+      alasan: 'GIRO_NOMOR_WAJIB',
+    });
+    expect(await buatKlaimPembayaran({ ...GIRO, giro: null })).toEqual({
+      ok: false,
+      alasan: 'GIRO_NOMOR_WAJIB',
+    });
+    expect(state.dibuat).toHaveLength(0);
+    expect(state.dihitungUlang).toHaveLength(0);
+  });
+
+  it('menolak tanggal efektif di luar masa berlaku 70 hari', async () => {
+    const h = await buatKlaimPembayaran({
+      ...GIRO,
+      giro: { ...GIRO.giro, tanggalEfektif: new Date('2026-11-11T00:00:00+07:00') },
+    });
+    expect(h).toEqual({ ok: false, alasan: 'GIRO_LEWAT_MASA_BERLAKU' });
+  });
+
+  it('tetap menuntut foto (bilyet giro)', async () => {
+    expect(await buatKlaimPembayaran({ ...GIRO, transferPhotoUrl: null })).toEqual({
+      ok: false,
+      alasan: 'FOTO_WAJIB',
+    });
+  });
+
+  it('mengabaikan isian giro pada cara bayar lain', async () => {
+    // Formulir bisa mengirim sisa isian giro yang sempat diketik sebelum cara
+    // bayarnya diganti. Transfer tidak boleh ikut tertahan menunggu "cair".
+    const h = await buatKlaimPembayaran({ ...GIRO, method: 'transfer' });
+    expect(h.ok).toBe(true);
+    expect(state.dibuat[0].giroStatus ?? null).toBeNull();
+    expect(state.dibuat[0].giroNo ?? null).toBeNull();
   });
 });

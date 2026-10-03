@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import type { TokoLapangan } from '@/lib/receivables/pwa-queries';
 import type { KeadaanPiutang } from '@/lib/receivables/rules';
 import { dinamis } from '@/lib/i18n/dinamis';
+import { TugasTagihKantor, type TugasTagihHp } from './TugasTagihKantor';
 
 /** Nominal disingkat: layar HP tidak muat "Rp 13.300.000" berulang kali. */
 const singkat = (n: number) =>
@@ -33,15 +34,22 @@ const tanggal = (iso?: string) =>
  * berdiri di depan toko — yang harus menonjol adalah kalimatnya sendiri.
  */
 const NADA: Record<KeadaanPiutang, string> = {
-  lewat: 'bg-destructive/10 text-destructive',
+  lewat: 'bg-destructive/10 text-red-800 dark:text-red-300',
   tertahan: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
-  klaim: 'bg-primary/10 text-primary',
+  klaim: 'bg-primary/15 text-foreground',
   tt: 'bg-muted text-muted-foreground',
-  belum: 'bg-primary/10 text-primary',
+  belum: 'bg-primary/15 text-foreground',
   lunas: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
 };
 
-export function PiutangLapanganClient({ toko }: { toko: TokoLapangan[] }) {
+export function PiutangLapanganClient({
+  toko,
+  tugas = [],
+}: {
+  toko: TokoLapangan[];
+  /** Tugas tagih dari kantor — tampil paling atas, di atas daftar toko. */
+  tugas?: TugasTagihHp[];
+}) {
   const t = useTranslations('pwaPiutang');
   const td = dinamis(t);
   const belumBeres = toko.filter((s) => s.sisa > 0);
@@ -56,8 +64,10 @@ export function PiutangLapanganClient({ toko }: { toko: TokoLapangan[] }) {
         </p>
       </header>
 
+      <TugasTagihKantor tugas={tugas} />
+
       {toko.length === 0 ? (
-        <Card>
+        <Card className="py-0">
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
             {t('empty')}
           </CardContent>
@@ -66,7 +76,7 @@ export function PiutangLapanganClient({ toko }: { toko: TokoLapangan[] }) {
         <div className="anim-stagger space-y-3">
           {toko.map((s) => (
             <Link key={s.storeId} href={`/pwa/piutang/${s.storeId}`} className="block">
-              <Card className="transition-colors active:bg-muted/50">
+              <Card className="transition-colors active:bg-muted/50 py-0">
                 <CardContent className="space-y-3 py-4">
                   <div className="flex items-start gap-3">
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">

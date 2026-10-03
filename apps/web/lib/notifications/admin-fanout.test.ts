@@ -75,6 +75,17 @@ describe("fanOutAdminNotification", () => {
     expect(mockGetUsers).toHaveBeenCalledWith("tax_invoices:manage");
   });
 
+  it("tells whoever may verify payment claims about giros falling due", async () => {
+    // Only a claim verifier can mark a giro cleared or bounced; pinging anyone
+    // else about it is noise.
+    await fanOutAdminNotification({ ...BASE, category: "GIRO_JATUH_TEMPO" });
+    expect(mockGetUsers).toHaveBeenCalledWith("journals:manage");
+    expect(mockSend).toHaveBeenCalledWith(
+      [{ id: "u1", fcmToken: null }],
+      expect.objectContaining({ type: "GIRO_JATUH_TEMPO" }),
+    );
+  });
+
   it("sends the category as the type and carries the source id in data", async () => {
     await fanOutAdminNotification({
       ...BASE,

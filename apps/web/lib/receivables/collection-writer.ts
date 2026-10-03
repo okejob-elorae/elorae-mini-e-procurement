@@ -1,5 +1,7 @@
 import { Prisma } from '@elorae/db';
 import { runSerializable } from '@/lib/db/tx-retry';
+import { penagihPiutang } from '@/lib/stores/penanggung-jawab';
+import { bentrokKunciKiriman } from './idempoten';
 import { denganNomorUnik } from './nomor';
 import { hitungUlangPiutang } from './writer';
 import { catatJejak, JEJAK } from './jejak';
@@ -45,7 +47,28 @@ export type AlasanGagalKontrabon =
   | 'SUDAH_LUNAS'
   | 'SUDAH_DI_KONTRABON'
   | 'JANJI_SEBELUM_SERAH'
-  | 'NOMOR_BENTROK';
+  | 'NOMOR_BENTROK'
+  | 'BUKAN_PENAGIH'
+  | 'FOTO_WAJIB'
+  | 'PENERIMA_WAJIB'
+  | 'KUNCI_DIPAKAI';
+
+/**
+ * Asal kontrabon. `OFFICE` = disusun admin di kantor. `FIELD` = janji bayar /
+ * tukar faktur yang dicatat salesman di depan toko — langsung berlaku untuk
+ * penagihan (ia yang membuat "lewat janji" bisa terdeteksi), tapi berstatus
+ * "belum dikonfirmasi" sampai kantor mencocokkan foto tanda terimanya.
+ */
+export type SumberKontrabon = 'OFFICE' | 'FIELD';
+
+/**
+ * Nama jejak untuk konfirmasi kantor atas kontrabon lapangan.
+ *
+ * Tempat yang benar adalah `JEJAK.KONTRABON_DIKONFIRMASI` di `jejak.ts`. Berkas
+ * itu di luar lingkup perubahan ini, jadi namanya ditulis di SATU tempat ini
+ * saja — dan harus diganti ke sana begitu entrinya ada, supaya daftar nama
+ * jejak tetap satu.
+ */
 
 export type HasilKontrabon =
   | { ok: true; id: string; docNo: string; nilai: number }
@@ -66,6 +89,17 @@ export async function buatKontrabon(input: {
   receivedBy?: string | null;
   photoUrl?: string | null;
   note?: string | null;
+  /** Bawaan `OFFICE`. */
+  source?: SumberKontrabon;
+  /**
+   * Kalau diisi, SETIAP faktur harus ditagih orang ini menurut aturan penagih
+   * (pemegang toko sekarang, atau penjualnya selama toko belum punya pemegang).
+   * Laporan lapangan selalu mengisinya: layar HP sudah menyaring, tapi layar
+   * bukan penjaga — kiriman dari antrean bisa tiba setelah tokonya dirotasi.
+   */
+  penagihId?: string | null;
+  /** Kunci kiriman dari antrean offline HP. Kontrabon kantor tidak membawanya. */
+  idempotencyKey?: string | null;
 }): Promise<HasilKontrabon> {
   if (input.receivableIds.length === 0) return { ok: false, alasan: 'TANPA_PIUTANG' };
   // Janji bayar sebelum tanggal serah tidak punya arti apa pun di lapangan, dan
@@ -74,16 +108,49 @@ export async function buatKontrabon(input: {
     return { ok: false, alasan: 'JANJI_SEBELUM_SERAH' };
   }
 
-  const ids = [...new Set(input.receivableIds)];
+  const sumber: SumberKontrabon = input.source ?? 'OFFICE';
+  if (sumber === 'FIELD') {
+    /*
+     * Janji dari lapangan hanya bisa dikonfirmasi kantor lewat lembar yang
+     * ditandatangani toko. Tanpa foto dan nama penandatangan, "toko janji bayar
+     * tanggal 15" adalah kalimat yang tidak bisa dibuktikan maupun dibantah —
+     * padahal ia langsung menggeser keadaan fakturnya.
+     */
+    if (!input.photoUrl?.trim()) return { ok: false, alasan: 'FOTO_WAJIB' };
+    if (!input.receivedBy?.trim()) return { ok: false, alasan: 'PENERIMA_WAJIB' };
+  }
 
-  try {
-    return await denganNomorUnik(() =>
+  const ids = [...new Set(input.receivableIds)];
+  const kunci = input.idempotencyKey?.trim() || null;
+
+  const simpan = () =>
+    denganNomorUnik(() =>
       runSerializable(async (tx) => {
+        /*
+         * Kiriman ulang dikenali PALING DULU, sebelum faktur diperiksa: kiriman
+         * pertama sudah mengunci fakturnya, jadi memeriksanya lagi menjawab
+         * "sudah di kontrabon" — dan sales mengira laporannya hilang. Kunci
+         * milik orang lain tidak pernah menyerahkan kontrabon orang itu.
+         */
+        if (kunci) {
+          const ada = await tx.collectionNote.findUnique({
+            where: { idempotencyKey: kunci },
+            select: { id: true, docNo: true, salesmanId: true, amount: true },
+          });
+          if (ada) {
+            return ada.salesmanId === input.salesmanId
+              ? { ok: true as const, id: ada.id, docNo: ada.docNo, nilai: Number(ada.amount) }
+              : { ok: false as const, alasan: 'KUNCI_DIPAKAI' as const };
+          }
+        }
+
         const piutang = await tx.receivable.findMany({
           where: { id: { in: ids } },
           select: {
             id: true,
             storeId: true,
+            salesmanId: true,
+            store: { select: { salesmanId: true } },
             collectionLinks: {
               select: { collectionNote: { select: { status: true } } },
             },
@@ -91,6 +158,20 @@ export async function buatKontrabon(input: {
         });
         if (piutang.length !== ids.length) {
           return { ok: false as const, alasan: 'PIUTANG_TIDAK_DITEMUKAN' as const };
+        }
+
+        const penagih = input.penagihId;
+        if (
+          penagih &&
+          piutang.some(
+            (p) =>
+              penagihPiutang({
+                penanggungJawabId: p.store?.salesmanId ?? null,
+                penjualId: p.salesmanId ?? '',
+              }) !== penagih,
+          )
+        ) {
+          return { ok: false as const, alasan: 'BUKAN_PENAGIH' as const };
         }
 
         // Satu kontrabon diserahkan ke satu toko — mencampur toko akan membuat
@@ -132,6 +213,8 @@ export async function buatKontrabon(input: {
             note: input.note?.trim() || null,
             amount: new Prisma.Decimal(nilai),
             status: 'BERJALAN',
+            source: sumber,
+            idempotencyKey: kunci,
             receivableLinks: {
               create: ids.map((id) => ({
                 receivableId: id,
@@ -150,12 +233,26 @@ export async function buatKontrabon(input: {
           // Membuat kontrabon mengunci fakturnya dari kontrabon lain sampai
           // ditutup. Siapa yang menguncinya harus bisa ditanyakan.
           changes: { after: { docNo: nota.docNo, amount: nilai, storeId: piutang[0].storeId } },
-          metadata: { jumlahFaktur: ids.length, promisedDate: input.promisedDate.toISOString() },
+          metadata: {
+            jumlahFaktur: ids.length,
+            promisedDate: input.promisedDate.toISOString(),
+            sumber,
+          },
         });
 
         return { ok: true as const, id: nota.id, docNo: nota.docNo, nilai };
       }),
     );
+
+  try {
+    try {
+      return await simpan();
+    } catch (err) {
+      // Kiriman kembarnya menang lebih dulu. Percobaan ini membaca kuncinya
+      // yang kini sudah tercatat dan mengembalikan kontrabon yang sama.
+      if (!bentrokKunciKiriman(err)) throw err;
+      return await simpan();
+    }
   } catch (err) {
     // Sisa terakhir setelah `denganNomorUnik` kalah tiga kali berturut-turut.
     // Tiga kekalahan beruntun bukan lagi tabrakan kebetulan, jadi kabarnya
@@ -275,5 +372,78 @@ export async function pasangFotoKontrabon(input: {
     });
 
     return { ok: true as const };
+  });
+}
+
+export type HasilKonfirmasiKontrabon =
+  | { ok: true; docNo: string; salesmanId: string; storeId: string }
+  | {
+      ok: false;
+      alasan: 'TIDAK_DITEMUKAN' | 'BUKAN_DARI_LAPANGAN' | 'SUDAH_DIKONFIRMASI' | 'SUDAH_DITUTUP';
+    };
+
+/**
+ * Kantor mengonfirmasi janji bayar yang dicatat salesman di lapangan.
+ *
+ * Konfirmasi TIDAK mengubah apa pun tentang uang atau penagihan: kontrabon
+ * lapangan sudah berlaku sejak dicatat, karena janji yang terlewat harus
+ * terdeteksi walau kantor belum sempat melihatnya. Yang dinyatakan konfirmasi
+ * hanyalah bahwa seseorang di kantor sudah mencocokkan foto lembar yang
+ * ditandatangani toko dengan faktur yang disebut — sehingga "janji" itu bukan
+ * lagi kata sales seorang.
+ *
+ * Kontrabon kantor tidak bisa dikonfirmasi: ia disusun kantor sendiri, dan
+ * mengonfirmasinya akan membuat penyaring "belum dikonfirmasi" tidak berarti.
+ */
+export async function konfirmasiKontrabon(input: {
+  collectionNoteId: string;
+  olehUserId: string;
+}): Promise<HasilKonfirmasiKontrabon> {
+  return runSerializable(async (tx) => {
+    const nota = await tx.collectionNote.findUnique({
+      where: { id: input.collectionNoteId },
+      select: {
+        id: true,
+        docNo: true,
+        status: true,
+        source: true,
+        confirmedAt: true,
+        salesmanId: true,
+        storeId: true,
+      },
+    });
+    if (!nota) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
+    if (nota.source !== 'FIELD') return { ok: false as const, alasan: 'BUKAN_DARI_LAPANGAN' as const };
+    if (nota.confirmedAt) return { ok: false as const, alasan: 'SUDAH_DIKONFIRMASI' as const };
+    // Yang sudah ditutup tidak lagi menunggu apa-apa dari kantor.
+    if (nota.status !== 'BERJALAN') return { ok: false as const, alasan: 'SUDAH_DITUTUP' as const };
+
+    const sekarang = new Date();
+    // Bertanding-lalu-tukar: dua admin yang menekan bersamaan tidak menulis dua
+    // stempel dan dua jejak — yang kalah membaca nol baris dan ditolak.
+    const hasil = await tx.collectionNote.updateMany({
+      where: { id: nota.id, confirmedAt: null },
+      data: { confirmedAt: sekarang, confirmedById: input.olehUserId },
+    });
+    if (hasil.count !== 1) return { ok: false as const, alasan: 'SUDAH_DIKONFIRMASI' as const };
+
+    await catatJejak(tx, {
+      userId: input.olehUserId,
+      action: JEJAK.KONTRABON_DIKONFIRMASI,
+      entityType: 'CollectionNote',
+      entityId: nota.id,
+      changes: {
+        before: { confirmedAt: null, confirmedById: null },
+        after: { confirmedAt: sekarang.toISOString(), confirmedById: input.olehUserId },
+      },
+      metadata: { docNo: nota.docNo, salesmanId: nota.salesmanId },
+    });
+
+    return {
+      ok: true as const,
+      docNo: nota.docNo,
+      salesmanId: nota.salesmanId,
+      storeId: nota.storeId,
+    };
   });
 }

@@ -45,6 +45,7 @@ import type { BarisSiklus } from '@/lib/konsinyasi/queries';
 import type { TahapSiklus } from '@/lib/konsinyasi/aturan';
 import { bukaSiklusAction, kirimTitipanAction } from '@/app/actions/konsinyasi';
 import { NADA_TAHAP, URUT_TAHAP } from './tahap';
+import { TanggalInput } from '@/components/ui/tanggal-input';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 const tanggal = (iso: string | null) =>
@@ -174,6 +175,8 @@ export function KonsinyasiClient({
                     <TableHead>{t('colCycle')}</TableHead>
                     <TableHead>{t('colStore')}</TableHead>
                     <TableHead className="text-right">{t('colSold')}</TableHead>
+                    {/* Buku stok toko vs laporan, hanya siklus yang belum dikunci. */}
+                    <TableHead title={t("matchHint")}>{t("colMatch")}</TableHead>
                     {/* Tiga nomor berdampingan — inilah yang dulu tersimpan di
                         kepala tiga orang berbeda. */}
                     <TableHead>{t('colNota')}</TableHead>
@@ -196,6 +199,15 @@ export function KonsinyasiClient({
                       <TableCell>{b.storeName}</TableCell>
                       <TableCell className="text-right tabular-nums">
                         {b.nilaiTerjual > 0 ? rupiah(b.nilaiTerjual) : '—'}
+                      </TableCell>
+                      <TableCell>
+                        {b.penandaCocok === null ? (
+                          <span className="text-muted-foreground">—</span>
+                        ) : b.penandaCocok.berselisih === 0 ? (
+                          <StatusPill tone="settled">{t("matchOk")}</StatusPill>
+                        ) : (
+                          <StatusPill tone="attention">{t("matchDiff", { count: b.penandaCocok.berselisih })}</StatusPill>
+                        )}
                       </TableCell>
                       <TableCell className="font-mono text-xs">{b.noNota ?? '—'}</TableCell>
                       <TableCell className="font-mono text-xs">{b.noFakturPajak ?? '—'}</TableCell>
@@ -260,7 +272,7 @@ export function KonsinyasiClient({
             </div>
             <div className="space-y-2">
               <Label htmlFor="k-tenggat">{t('spgDue')}</Label>
-              <Input id="k-tenggat" type="date" value={tenggat} onChange={(e) => setTenggat(e.target.value)} />
+              <TanggalInput id="k-tenggat" value={tenggat} onChange={(e) => setTenggat(e.target.value)} />
               <p className="text-xs text-muted-foreground">{t('spgDueHint')}</p>
             </div>
           </div>
@@ -315,7 +327,7 @@ export function KonsinyasiClient({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="kk-tgl">{t('shipDate')}</Label>
-                <Input id="kk-tgl" type="date" value={tglKirim} onChange={(e) => setTglKirim(e.target.value)} />
+                <TanggalInput id="kk-tgl" value={tglKirim} onChange={(e) => setTglKirim(e.target.value)} />
               </div>
             </div>
 

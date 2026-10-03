@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { TautanDashboard } from "./TautanDashboard";
 import { bolehMenghitung } from "@/lib/receivables/izin";
 
 /**
@@ -19,5 +20,12 @@ export default async function LayoutGudangRetur({ children }: { children: React.
   if (!session?.user?.id) redirect("/login?callbackUrl=/gudang-retur");
   if (!bolehMenghitung(session.user.permissions)) redirect("/backoffice");
 
-  return <div className="min-h-dvh bg-background">{children}</div>;
+  return (
+    <div className="min-h-dvh bg-background">
+      <div className="px-4 pt-3">
+        <TautanDashboard />
+      </div>
+      {children}
+    </div>
+  );
 }

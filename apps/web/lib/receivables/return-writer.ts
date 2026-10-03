@@ -1,9 +1,15 @@
 import { Prisma } from '@elorae/db';
 import { runSerializable } from '@/lib/db/tx-retry';
+import { hariIniWib } from "@/lib/tanggal-isian";
+import { bentrokKunciKiriman } from './idempoten';
 import { denganNomorUnik } from './nomor';
 import { generateDocNumber } from '@/lib/docNumber';
 import { hitungUlangPiutang } from './writer';
 import { catatJejak, JEJAK } from './jejak';
+import { bentrokPengganti, catatDiganti, periksaReturLama, type AlasanPengganti } from './pengganti';
+import { computeStorePrice } from "@elorae/db/pricing";
+import { variantDetailForSku } from "@/lib/items/variants";
+import { masukkanGudangRusakDariNri } from "@/lib/spg/gudang-rusak-writer";
 
 /**
  * Penulis retur toko — dua dokumen, dua tangan.
@@ -29,12 +35,82 @@ type Klien = Prisma.TransactionClient;
 const angka = (v: unknown): number => Number(v ?? 0);
 const D = (n: number) => new Prisma.Decimal(n);
 
+export type KondisiBarang = "LAYAK" | "RUSAK" | "EXPIRED";
+
 export type BarisBarang = {
   itemId?: string | null;
   itemName: string;
   qty: number;
   price: number;
+  /** Varian barang katalog. Kosong = barang tanpa varian (atau baris yang hanya diketik namanya). */
+  variantSku?: string | null;
+  /** Kondisi fisik. Hanya `LAYAK` yang kembali jadi stok jual di gudang. */
+  condition?: KondisiBarang;
 };
+
+/**
+ * Baris retur dari HP SPG: barang + varian + qty + kondisi, TANPA harga dan
+ * tanpa nama — keduanya disusun server dari master barang, supaya harga
+ * konsinyasi tidak pernah berasal dari (atau kembali ke) HP.
+ */
+export type BarisReturSpg = {
+  itemId: string;
+  variantSku?: string | null;
+  qty: number;
+  condition?: KondisiBarang;
+  /**
+   * Barang yang tiba RUSAK di kiriman ke toko dan diputuskan gudang
+   * `KEMBALI_GUDANG` (`lib/spg/rusak.ts`): baris tanda terima yang dikirim
+   * balik. Barang itu tidak pernah masuk buku stok toko, jadi barisnya TIDAK
+   * menulis `RETUR_KELUAR` (dan pembatalannya pun tidak membalik apa pun).
+   */
+  storeReceiptLineId?: string | null;
+  /**
+   * Barang yang dikembalikan pembeli di konter dalam keadaan RUSAK/EXPIRED
+   * (`SpgSaleReturnLine`) dan dikirim balik ke gudang barang rusak. Barang itu
+   * tidak pernah kembali ke rak (retur pembeli rusak tidak menulis buku), jadi
+   * barisnya juga TIDAK menulis `RETUR_KELUAR`.
+   */
+  spgSaleReturnLineId?: string | null;
+};
+
+/** Baris yang sudah disusun server; penunjuk baris tanda terima hanya dari jalur SPG. */
+type BarisTersusun = BarisBarang & { storeReceiptLineId?: string | null; spgSaleReturnLineId?: string | null };
+
+/**
+ * Baris retur yang TIDAK menyentuh buku stok toko: barang yang tidak pernah
+ * masuk (atau sudah keluar dari) buku toko —
+ * - `storeReceiptLineId`: barang rusak kiriman yang dikirim balik ke gudang
+ *   (`lib/spg/rusak.ts`); ia ditahan di luar buku sejak diterima;
+ * - `spgSaleReturnLineId`: barang rusak yang dikembalikan pembeli di konter.
+ * Baris seperti itu tidak menulis `RETUR_KELUAR`, jadi pembatalannya pun tidak
+ * membalik apa pun (`balikkanBukuRetur` hanya membalik baris yang ada).
+ */
+export function barisTanpaBukuToko(item: { storeReceiptLineId?: string | null; spgSaleReturnLineId?: string | null }): boolean {
+  return Boolean(item.storeReceiptLineId || item.spgSaleReturnLineId);
+}
+
+const KONDISI: readonly KondisiBarang[] = ["LAYAK", "RUSAK", "EXPIRED"];
+const kondisiSah = (k: unknown): KondisiBarang => (KONDISI.includes(k as KondisiBarang) ? (k as KondisiBarang) : "LAYAK");
+
+/** Kunci baris per barang + varian; baris yang hanya diketik namanya memakai namanya. */
+function kunciBarang(b: { itemId?: string | null; variantSku?: string | null; itemName: string }): string {
+  return b.itemId ? `${b.itemId}::${b.variantSku?.trim() ?? ""}` : `nama::${b.itemName.trim()}`;
+}
+
+/**
+ * Nilai dari rincian, atau angka yang diketik.
+ *
+ * Rincian yang berharga menang atas angka yang diketik di sampingnya — dua
+ * kebenaran untuk satu nota tidak boleh ada. TAPI rincian yang seluruh harganya
+ * nol (NRT SPG toko putus: barisnya hanya qty, nilainya total nota toko; atau
+ * hitungan gudang yang nilainya diketik) tidak membawa nilai sama sekali, jadi
+ * angka yang diketik yang berlaku. Tanpa ini nilainya terbaca nol.
+ */
+export function nilaiDariRincian(items: { qty: number; price: number }[], diketik: number | undefined): number {
+  if (items.length === 0 || items.every((b) => !(b.price > 0))) return diketik ?? 0;
+  return items.reduce((s, b) => s + b.qty * b.price, 0);
+}
 
 export type AlasanGagalRetur =
   | 'TIDAK_DITEMUKAN'
@@ -52,7 +128,29 @@ export type AlasanGagalRetur =
   | 'BELUM_DIPUTUSKAN'
   | 'SUDAH_LUNAS'
   | 'ALASAN_WAJIB'
-  | 'NOMOR_BENTROK';
+  | 'NOMOR_BENTROK'
+  | 'KUNCI_DIPAKAI'
+  /** NRT dari SPG wajib membawa baris barang. */
+  | "BARIS_WAJIB"
+  | "BARANG_TIDAK_DITEMUKAN"
+  | "TOKO_TIDAK_DITEMUKAN"
+  /** NRT SPG toko putus: foto nota toko wajib. */
+  | "FOTO_WAJIB"
+  /**
+   * Baris yang menunjuk barang rusak kiriman tidak sah: bukan milik toko ini,
+   * belum/tidak diputuskan KEMBALI_GUDANG, barangnya lain, atau kondisinya LAYAK.
+   */
+  | "RUSAK_TIDAK_SAH"
+  /** Jumlah yang dikirim balik melebihi sisa barang rusak yang belum dikembalikan. */
+  | "RUSAK_MELEBIHI"
+  /**
+   * Baris yang menunjuk retur pembeli tidak sah: bukan retur pembeli toko ini,
+   * kondisinya LAYAK (di retur pembeli atau di baris nota), barangnya lain,
+   * atau sekaligus menunjuk baris tanda terima.
+   */
+  | "RETUR_PEMBELI_TIDAK_SAH"
+  /** Jumlah yang dikirim balik melebihi barang rusak dari pembeli yang belum dikirim. */
+  | "RETUR_PEMBELI_MELEBIHI";
 
 type Gagal = { ok: false; alasan: AlasanGagalRetur };
 type Berhasil = { ok: true; piutangDihitungUlang: number };
@@ -108,11 +206,15 @@ async function hitungUlangTersentuh(tx: Klien, storeReturnId: string | null): Pr
  * Harga rata-ratanya TIDAK digeser: barang kembali dicatat sebesar biaya
  * bukunya sendiri. Retur bukan pembelian, jadi ia tidak membawa harga baru
  * yang boleh mengubah rata-rata.
+ *
+ * Per varian: varian yang disebut dicari persis. Baris RUSAK/EXPIRED dilewati —
+ * tercatat di hitungan gudang, tapi bukan stok jual: barang itu masuk gudang
+ * barang rusak (`masukkanGudangRusakDariNri`, keputusan pemilik 2026-10-03).
  */
 async function masukkanKeStok(
   tx: Klien,
   input: {
-    items: { itemId?: string | null; itemName: string; qty: number }[];
+    items: BarisBarang[];
     noNri: string;
     olehUserId: string;
   },
@@ -121,11 +223,19 @@ async function masukkanKeStok(
 
   for (const b of input.items) {
     if (!b.itemId || !(b.qty > 0)) continue;
+    // Barang rusak atau kedaluwarsa tetap tercatat di hitungan gudang, tapi
+    // tidak kembali jadi stok JUAL — ia tidak bisa dijual lagi.
+    if (b.condition && b.condition !== "LAYAK") continue;
 
-    // Baris tanpa varian memakai `variantSku: null` di sebagian data dan `""`
-    // di sebagian lain. Pencarian yang toleran mencegah baris hantu kedua.
+    const varian = b.variantSku?.trim() ?? "";
+    // Varian yang disebut dicari PERSIS: barang kembali ke varian asalnya, bukan
+    // ke baris pukul-rata. Baris tanpa varian memakai `variantSku: null` di
+    // sebagian data dan `""` di sebagian lain — pencarian yang toleran mencegah
+    // baris hantu kedua.
     const stok = await tx.inventoryValue.findFirst({
-      where: { itemId: b.itemId, OR: [{ variantSku: null }, { variantSku: '' }] },
+      where: varian
+        ? { itemId: b.itemId, variantSku: varian }
+        : { itemId: b.itemId, OR: [{ variantSku: null }, { variantSku: '' }] },
       select: { id: true, qtyOnHand: true, avgCost: true },
     });
 
@@ -146,7 +256,7 @@ async function masukkanKeStok(
       await tx.inventoryValue.create({
         data: {
           itemId: b.itemId,
-          variantSku: '',
+          variantSku: varian,
           qtyOnHand: qtyBaru,
           reservedQty: 0,
           avgCost: hargaRata,
@@ -161,7 +271,7 @@ async function masukkanKeStok(
         itemId: b.itemId,
         type: 'POSITIVE',
         qtyChange: b.qty,
-        reason: `Retur toko ${input.noNri} — ${b.itemName}`,
+        reason: `Retur toko ${input.noNri} — ${b.itemName}${varian ? ` (${varian})` : ""}`,
         prevQty: qtyLama,
         newQty: qtyBaru,
         prevAvgCost: hargaRata,
@@ -233,11 +343,352 @@ async function selaraskanSetelahHitung(tx: Klien, storeReturnId: string): Promis
 }
 
 /**
+ * Lepaskan nomor toko dari nota BATAL yang memegangnya, kalau ada.
+ *
+ * Nomor nota milik toko dan unik per toko — nota yang dibatalkan tetap
+ * memegangnya. Padahal alasan paling umum membatalkan adalah salah ketik lalu
+ * mencatat ulang nota yang SAMA, atau salah toko lalu memindahkannya ke toko
+ * yang pernah punya nota batal bernomor itu. Nota batal diberi akhiran
+ * "(batal)" — tetap ada, tetap terbaca — dan nomor aslinya hidup di jejaknya.
+ *
+ * Nota yang masih hidup tidak pernah disentuh: itu bentrok sungguhan.
+ * Mengembalikan pencatat jejak, dipanggil SESUDAH nota pengganti punya id.
+ */
+export async function lepaskanNomorBatal(
+  tx: Prisma.TransactionClient,
+  storeId: string,
+  noNrt: string,
+): Promise<((penggantiId: string, olehUserId: string) => Promise<void>) | null> {
+  const batal = await tx.storeReturn.findFirst({
+    where: { storeId, noNrt, status: 'BATAL' },
+    select: { id: true },
+  });
+  if (!batal) return null;
+  const sudah = await tx.storeReturn.count({
+    where: { storeId, noNrt: { startsWith: `${noNrt} (batal` } },
+  });
+  const nomorBatal = sudah === 0 ? `${noNrt} (batal)` : `${noNrt} (batal ${sudah + 1})`;
+  await tx.storeReturn.update({ where: { id: batal.id }, data: { noNrt: nomorBatal } });
+  return (penggantiId, olehUserId) =>
+    catatJejak(tx, {
+      userId: olehUserId,
+      action: JEJAK.RETUR_NOMOR_DILEPAS,
+      entityType: 'StoreReturn',
+      entityId: batal.id,
+      changes: { before: { noNrt }, after: { noNrt: nomorBatal } },
+      metadata: { digantikanOleh: penggantiId },
+    });
+}
+
+/** Kalender Jakarta: tahun dua digit dan bulan, untuk awalan nomor. */
+function tahunBulanWib(saat: Date): { yy: string; mm: string } {
+  const [y, m] = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta", year: "numeric", month: "2-digit" })
+    .format(saat)
+    .split("-");
+  return { yy: y.slice(-2), mm: m };
+}
+
+/**
+ * Nomor nota retur buatan sistem: `TRK/26/10/0001`, direset tiap bulan (WIB).
+ *
+ * Hanya untuk toko KONSI yang tidak menerbitkan nota returnya sendiri — barang
+ * itu milik kita, dan SPG yang mengembalikannya tidak punya nomor toko untuk
+ * diketik. Toko PUTUS selalu memakai nomor tokonya.
+ *
+ * Nota yang dibatalkan memegang akhiran "(batal)", jadi urutannya dibaca dengan
+ * `parseInt` (yang berhenti di spasi), bukan `Number`.
+ */
+async function nomorTrk(tx: Klien, saat: Date): Promise<string> {
+  const { yy, mm } = tahunBulanWib(saat);
+  const depan = `TRK/${yy}/${mm}/`;
+  const terakhir = await tx.storeReturn.findFirst({
+    where: { noNrt: { startsWith: depan } },
+    orderBy: { noNrt: "desc" },
+    select: { noNrt: true },
+  });
+  const urutan = terakhir ? (parseInt(terakhir.noNrt.slice(depan.length), 10) || 0) + 1 : 1;
+  return `${depan}${String(urutan).padStart(4, "0")}`;
+}
+
+/** Galat unik pada nomor nota (bukan pada kunci kiriman atau penunjuk pengganti). */
+function bentrokNomorNota(err: unknown): boolean {
+  if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== "P2002") return false;
+  return !bentrokKunciKiriman(err) && !bentrokPengganti(err);
+}
+
+type BarisSpgRapi = BarisReturSpg & {
+  variantSku: string;
+  condition: KondisiBarang;
+  storeReceiptLineId: string | null;
+  spgSaleReturnLineId: string | null;
+};
+
+/**
+ * Gabungkan baris SPG yang sama (barang + varian + kondisi + baris tanda terima
+ * rusak / retur pembeli yang ditunjuk); buang yang tidak sah. Baris barang
+ * rusak kiriman atau rusak dari pembeli tidak pernah digabung dengan baris
+ * biasa — yang satu menulis buku, yang lain tidak.
+ */
+function rapikanBarisSpg(baris: BarisReturSpg[]): BarisSpgRapi[] {
+  const peta = new Map<string, BarisSpgRapi>();
+  for (const b of baris) {
+    if (!b.itemId?.trim() || !Number.isInteger(b.qty) || b.qty <= 0) continue;
+    const variantSku = b.variantSku?.trim() ?? "";
+    const condition = kondisiSah(b.condition);
+    const storeReceiptLineId = b.storeReceiptLineId?.trim() || null;
+    const spgSaleReturnLineId = b.spgSaleReturnLineId?.trim() || null;
+    const k = `${b.itemId}::${variantSku}::${condition}::${storeReceiptLineId ?? ""}::${spgSaleReturnLineId ?? ""}`;
+    const ada = peta.get(k);
+    if (ada) ada.qty += b.qty;
+    else peta.set(k, { itemId: b.itemId.trim(), variantSku, qty: b.qty, condition, storeReceiptLineId, spgSaleReturnLineId });
+  }
+  return [...peta.values()];
+}
+
+/**
+ * Baris NRT SPG yang mengirim balik barang rusak kiriman: setiap baris tanda
+ * terima yang ditunjuk harus milik toko ini, diputuskan `KEMBALI_GUDANG`,
+ * barang + varian yang sama, kondisi bukan LAYAK, dan jumlahnya tidak melebihi
+ * `qtyDamaged` dikurangi yang sudah ada di nota retur lain yang TIDAK batal.
+ * Dibaca di dalam transaksi serializable pemanggil — dua nota bersamaan untuk
+ * baris yang sama tidak bisa sama-sama lolos.
+ */
+async function periksaBarisRusakKiriman(
+  tx: Klien,
+  storeId: string,
+  items: BarisTersusun[],
+): Promise<"RUSAK_TIDAK_SAH" | "RUSAK_MELEBIHI" | null> {
+  const perBaris = new Map<string, number>();
+  for (const b of items) {
+    if (!b.storeReceiptLineId) continue;
+    if (b.condition === "LAYAK") return "RUSAK_TIDAK_SAH";
+    perBaris.set(b.storeReceiptLineId, (perBaris.get(b.storeReceiptLineId) ?? 0) + b.qty);
+  }
+  if (perBaris.size === 0) return null;
+  const ids = [...perBaris.keys()];
+  const [baris, sudah] = await Promise.all([
+    tx.storeReceiptLine.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, itemId: true, variantSku: true, qtyDamaged: true, damageStatus: true, receipt: { select: { storeId: true } } },
+    }),
+    tx.storeReturnItem.groupBy({
+      by: ["storeReceiptLineId"],
+      where: { storeReceiptLineId: { in: ids }, storeReturn: { status: { not: "BATAL" } } },
+      _sum: { qty: true },
+    }),
+  ]);
+  const perId = new Map(baris.map((l) => [l.id, l]));
+  const terpakai = new Map(sudah.map((g) => [g.storeReceiptLineId as string, g._sum.qty ?? 0]));
+  for (const b of items) {
+    if (!b.storeReceiptLineId) continue;
+    const l = perId.get(b.storeReceiptLineId);
+    if (!l || l.receipt.storeId !== storeId || l.damageStatus !== "KEMBALI_GUDANG") return "RUSAK_TIDAK_SAH";
+    if (l.itemId !== b.itemId || l.variantSku !== (b.variantSku?.trim() ?? "")) return "RUSAK_TIDAK_SAH";
+  }
+  for (const [id, qty] of perBaris) {
+    const l = perId.get(id)!;
+    if (qty > l.qtyDamaged - (terpakai.get(id) ?? 0)) return "RUSAK_MELEBIHI";
+  }
+  return null;
+}
+
+/**
+ * Baris NRT SPG yang mengirim balik barang rusak dari pembeli: setiap baris
+ * retur pembeli yang ditunjuk harus milik retur pembeli DI TOKO INI, berkondisi
+ * RUSAK/EXPIRED, barang + varian yang sama, baris NRT-nya bukan LAYAK, dan
+ * jumlahnya tidak melebihi qty rusaknya dikurangi yang sudah ada di nota retur
+ * lain yang TIDAK batal. Baris yang sekaligus menunjuk baris tanda terima
+ * ditolak — satu barang hanya punya satu asal. Dibaca di dalam transaksi
+ * serializable pemanggil (pola `periksaBarisRusakKiriman`).
+ */
+async function periksaBarisReturPembeli(
+  tx: Klien,
+  storeId: string,
+  items: BarisTersusun[],
+): Promise<"RETUR_PEMBELI_TIDAK_SAH" | "RETUR_PEMBELI_MELEBIHI" | null> {
+  const perBaris = new Map<string, number>();
+  for (const b of items) {
+    if (!b.spgSaleReturnLineId) continue;
+    if (b.condition === "LAYAK" || b.storeReceiptLineId) return "RETUR_PEMBELI_TIDAK_SAH";
+    perBaris.set(b.spgSaleReturnLineId, (perBaris.get(b.spgSaleReturnLineId) ?? 0) + b.qty);
+  }
+  if (perBaris.size === 0) return null;
+  const ids = [...perBaris.keys()];
+  const [baris, sudah] = await Promise.all([
+    tx.spgSaleReturnLine.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, itemId: true, variantSku: true, qty: true, condition: true, saleReturn: { select: { storeId: true } } },
+    }),
+    tx.storeReturnItem.groupBy({
+      by: ["spgSaleReturnLineId"],
+      where: { spgSaleReturnLineId: { in: ids }, storeReturn: { status: { not: "BATAL" } } },
+      _sum: { qty: true },
+    }),
+  ]);
+  const perId = new Map(baris.map((l) => [l.id, l]));
+  const terpakai = new Map(sudah.map((g) => [g.spgSaleReturnLineId as string, g._sum.qty ?? 0]));
+  for (const b of items) {
+    if (!b.spgSaleReturnLineId) continue;
+    const l = perId.get(b.spgSaleReturnLineId);
+    if (!l || l.saleReturn.storeId !== storeId || l.condition === "LAYAK") return "RETUR_PEMBELI_TIDAK_SAH";
+    if (l.itemId !== b.itemId || l.variantSku !== (b.variantSku?.trim() ?? "")) return "RETUR_PEMBELI_TIDAK_SAH";
+  }
+  for (const [id, qty] of perBaris) {
+    const l = perId.get(id)!;
+    if (qty > l.qty - (terpakai.get(id) ?? 0)) return "RETUR_PEMBELI_MELEBIHI";
+  }
+  return null;
+}
+
+/**
+ * Susun baris NRT SPG dari master barang, di dalam transaksi.
+ *
+ * KONSI: harga = harga konsinyasi toko (`computeStorePrice` KONSI, gross-up yang
+ * sama dengan dokumen konsinyasi lain) — nilai klaimnya dihitung server, tidak
+ * pernah diketik dan tidak pernah tampil di HP. PUTUS: harga 0 — barisnya hanya
+ * qty, nilainya total nota toko yang diketik (`nilaiDariRincian`).
+ */
+async function susunBarisSpg(
+  tx: Klien,
+  baris: ReturnType<typeof rapikanBarisSpg>,
+  toko: { termsType: "PUTUS" | "KONSI"; marginPercent: unknown },
+): Promise<BarisTersusun[] | null> {
+  const ids = [...new Set(baris.map((b) => b.itemId))];
+  const barang = await tx.item.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, nameId: true, sellingPrice: true, variants: true },
+  });
+  if (barang.length !== ids.length) return null;
+  const perId = new Map(barang.map((b) => [b.id, b]));
+  const margin = toko.marginPercent === null || toko.marginPercent === undefined ? null : angka(toko.marginPercent);
+
+  return baris.map((b) => {
+    const item = perId.get(b.itemId)!;
+    const label = variantDetailForSku(item.variants, b.variantSku || null);
+    let price = 0;
+    if (toko.termsType === "KONSI") {
+      const jual = item.sellingPrice === null ? null : angka(item.sellingPrice);
+      const harga = computeStorePrice({ sellingPrice: jual, termsType: "KONSI", marginPercent: margin }).price;
+      price = harga === null ? 0 : Math.round(harga * 100) / 100;
+    }
+    return {
+      itemId: b.itemId,
+      variantSku: b.variantSku,
+      itemName: label ? `${item.nameId} — ${label}` : item.nameId,
+      qty: b.qty,
+      price,
+      condition: b.condition,
+      ...(b.storeReceiptLineId ? { storeReceiptLineId: b.storeReceiptLineId } : {}),
+      ...(b.spgSaleReturnLineId ? { spgSaleReturnLineId: b.spgSaleReturnLineId } : {}),
+    };
+  });
+}
+
+/**
+ * Tulis barang retur KELUAR dari buku stok toko (`RETUR_KELUAR`, −qty per baris).
+ *
+ * Dilewati — bukan ditolak — bila buku toko belum dimulai (toko tanpa satu
+ * gerakan pun: saldo awalnya baru lahir dari opname pertama), atau bila tanggal
+ * retur jatuh pada HARI (WIB) sebelum opname terakhir (hitungan opname itu sudah memuat
+ * kepergian barangnya; mengurangi lagi menghitungnya dua kali). Saldo boleh
+ * negatif; opname yang membereskan. Barang yang rusak tetap keluar dari rak.
+ */
+async function tulisBukuReturKeluar(
+  tx: Klien,
+  input: { storeId: string; storeReturnId: string; claimDate: Date; olehUserId: string; items: BarisBarang[] },
+): Promise<{ buku: "DITULIS" | "BELUM_ADA_BUKU" | "SEBELUM_OPNAME"; melebihiSaldo: { itemId: string; variantSku: string; qty: number; saldo: number }[] }> {
+  const ada = await tx.storeStockMovement.findFirst({ where: { storeId: input.storeId }, select: { id: true } });
+  if (!ada) return { buku: "BELUM_ADA_BUKU", melebihiSaldo: [] };
+  const opname = await tx.storeOpname.findFirst({
+    where: { storeId: input.storeId },
+    orderBy: { countedAt: "desc" },
+    select: { countedAt: true },
+  });
+  // Dibandingkan per HARI WIB: tanggal nota tidak berjam (tengah malam), opname
+  // berjam. Retur di hari yang sama dengan opname tetap keluar dari buku —
+  // barangnya masih di rak saat dihitung.
+  if (opname && hariIniWib(input.claimDate) < hariIniWib(opname.countedAt)) {
+    return { buku: "SEBELUM_OPNAME", melebihiSaldo: [] };
+  }
+
+  const baris = input.items.filter((b): b is BarisBarang & { itemId: string } => Boolean(b.itemId) && b.qty > 0);
+  // Saldo dibaca DI DALAM transaksi — yang melebihi saldo tidak ditolak (barangnya
+  // memang kembali), tapi dicatat di jejak supaya kantor bisa menanyakannya.
+  const grup = await tx.storeStockMovement.groupBy({
+    by: ["itemId", "variantSku"],
+    where: { storeId: input.storeId, itemId: { in: [...new Set(baris.map((b) => b.itemId))] } },
+    _sum: { qty: true },
+  });
+  const saldo = new Map(grup.map((g) => [`${g.itemId}::${g.variantSku}`, g._sum.qty ?? 0]));
+  const perVarian = new Map<string, { itemId: string; variantSku: string; qty: number }>();
+  for (const b of baris) {
+    const v = b.variantSku?.trim() ?? "";
+    const k = `${b.itemId}::${v}`;
+    const x = perVarian.get(k);
+    if (x) x.qty += b.qty;
+    else perVarian.set(k, { itemId: b.itemId, variantSku: v, qty: b.qty });
+  }
+  const melebihiSaldo = [...perVarian.entries()]
+    .filter(([k, b]) => b.qty > (saldo.get(k) ?? 0))
+    .map(([k, b]) => ({ ...b, saldo: saldo.get(k) ?? 0 }));
+
+  await tx.storeStockMovement.createMany({
+    data: baris.map((b) => ({
+      storeId: input.storeId,
+      itemId: b.itemId,
+      variantSku: b.variantSku?.trim() ?? "",
+      qty: -b.qty,
+      kind: "RETUR_KELUAR" as const,
+      refType: "StoreReturn",
+      refId: input.storeReturnId,
+      createdById: input.olehUserId,
+    })),
+  });
+  return { buku: "DITULIS", melebihiSaldo };
+}
+
+/**
+ * Batalkan gerakan buku toko sebuah nota retur: tulis pembalik +qty untuk
+ * setiap `RETUR_KELUAR` yang masih bersisa. Baris lama TIDAK PERNAH dihapus —
+ * buku hanya bertambah, dan pembaliknya yang membawa ceritanya.
+ *
+ * Idempoten: dijumlah dulu per toko + barang + varian, jadi memanggilnya dua
+ * kali tidak menulis pembalik kedua. Mengembalikan jumlah baris pembalik.
+ */
+export async function balikkanBukuRetur(tx: Klien, storeReturnId: string, olehUserId: string): Promise<number> {
+  const grup = await tx.storeStockMovement.groupBy({
+    by: ["storeId", "itemId", "variantSku"],
+    where: { refType: "StoreReturn", refId: storeReturnId, kind: "RETUR_KELUAR" },
+    _sum: { qty: true },
+  });
+  const pembalik = grup
+    .filter((g) => (g._sum.qty ?? 0) < 0)
+    .map((g) => ({
+      storeId: g.storeId,
+      itemId: g.itemId,
+      variantSku: g.variantSku,
+      qty: -(g._sum.qty ?? 0),
+      kind: "RETUR_KELUAR" as const,
+      refType: "StoreReturn",
+      refId: storeReturnId,
+      createdById: olehUserId,
+    }));
+  if (pembalik.length) await tx.storeStockMovement.createMany({ data: pembalik });
+  return pembalik.length;
+}
+
+/**
  * Catat klaim retur dari toko (NRT).
  *
  * Nomornya diketik, bukan dihasilkan: ia nomor milik toko. Unik per toko, bukan
  * global — dua toko boleh memakai nomor yang sama, dan memaksa unik global akan
- * menolak nota yang sah.
+ * menolak nota yang sah. Satu pengecualian: NRT SPG di toko KONSI boleh tanpa
+ * nomor, dan sistem memberinya `TRK/YY/MM/NNNN`.
+ *
+ * NRT dari SPG (`reportedBySpg`) membawa baris barang dari HP (`barisSpg`) —
+ * barang, varian, qty, kondisi — dan menulis `RETUR_KELUAR` ke buku stok toko di
+ * transaksi yang sama (`tulisBukuReturKeluar`). Piutang tidak tersentuh di sini:
+ * retur baru diakui sebesar hitungan fisik gudang.
  */
 export async function catatReturToko(input: {
   noNrt: string;
@@ -251,21 +702,102 @@ export async function catatReturToko(input: {
   items?: BarisBarang[];
   photoUrl?: string | null;
   note?: string | null;
-}): Promise<{ ok: true; id: string; noNrt: string } | Gagal> {
-  const nomor = input.noNrt?.trim();
-  if (!nomor) return { ok: false, alasan: 'NOMOR_WAJIB' };
+  /** Kunci kiriman dari antrean offline HP. Catatan dari kantor tidak membawanya. */
+  idempotencyKey?: string | null;
+  /** Nota BATAL yang digantikan nota ini ("Laporkan ulang"). Hanya boleh punya satu pengganti. */
+  menggantikanId?: string | null;
+  /** Kantor boleh mengganti nota sales siapa pun; sales hanya miliknya sendiri. */
+  lintasPelapor?: boolean;
+  /** Dilaporkan SPG dari toko tetapnya. Ditetapkan aksi server, tidak pernah dari HP. */
+  reportedBySpg?: boolean;
+  /** Baris barang dari HP SPG. Hanya dibaca bila `reportedBySpg`. */
+  barisSpg?: BarisReturSpg[];
+}): Promise<{ ok: true; id: string; noNrt: string } | Gagal | { ok: false; alasan: AlasanPengganti }> {
+  const dariSpg = input.reportedBySpg === true;
+  const nomorDiketik = input.noNrt?.trim() ?? "";
+  // Nota SPG di toko KONSI boleh tanpa nomor — baru diketahui di dalam transaksi.
+  if (!nomorDiketik && !dariSpg) return { ok: false, alasan: 'NOMOR_WAJIB' };
 
-  const items = (input.items ?? []).filter((b) => b.itemName.trim() && b.qty > 0);
-  // Kalau rinciannya ada, totalnya DIHITUNG dari rincian — bukan diketik di
+  const barisSpg = dariSpg ? rapikanBarisSpg(input.barisSpg ?? []) : [];
+  if (dariSpg && barisSpg.length === 0) return { ok: false, alasan: "BARIS_WAJIB" };
+
+  const itemsBiasa = dariSpg ? [] : (input.items ?? []).filter((b) => b.itemName.trim() && b.qty > 0);
+  // Kalau rinciannya berharga, totalnya DIHITUNG dari rincian — bukan diketik di
   // samping rincian yang tidak menjumlah ke sana.
-  const total = items.length > 0
-    ? items.reduce((s, b) => s + b.qty * b.price, 0)
-    : (input.claimedAmount ?? 0);
-  if (!(total > 0)) return { ok: false, alasan: 'NILAI_TIDAK_VALID' };
+  if (!dariSpg && !(nilaiDariRincian(itemsBiasa, input.claimedAmount) > 0)) {
+    return { ok: false, alasan: 'NILAI_TIDAK_VALID' };
+  }
 
-  try {
-    return await denganNomorUnik(() =>
+  const kunci = input.idempotencyKey?.trim() || null;
+  let nomorDibuat = false;
+
+  const simpan = () =>
+    denganNomorUnik(() =>
       runSerializable(async (tx) => {
+        nomorDibuat = false;
+        /*
+         * Kiriman ulang dari HP dikenali lebih dulu. Tanpa ini ia ditolak
+         * "nomor sudah dipakai" — oleh notanya sendiri — dan sales mengira
+         * laporannya gagal. Kunci milik sales lain tidak menyerahkan notanya.
+         */
+        if (kunci) {
+          const ada = await tx.storeReturn.findUnique({
+            where: { idempotencyKey: kunci },
+            select: { id: true, noNrt: true, salesmanId: true },
+          });
+          if (ada) {
+            return ada.salesmanId === (input.salesmanId ?? null)
+              ? { ok: true as const, id: ada.id, noNrt: ada.noNrt }
+              : { ok: false as const, alasan: 'KUNCI_DIPAKAI' as const };
+          }
+        }
+
+        let nomor = nomorDiketik;
+        let items: BarisTersusun[] = itemsBiasa;
+        let total = nilaiDariRincian(itemsBiasa, input.claimedAmount);
+
+        if (dariSpg) {
+          const toko = await tx.store.findUnique({
+            where: { id: input.storeId },
+            select: { termsType: true, marginPercent: true },
+          });
+          if (!toko) return { ok: false as const, alasan: "TOKO_TIDAK_DITEMUKAN" as const };
+          const susun = await susunBarisSpg(tx, barisSpg, toko);
+          if (!susun) return { ok: false as const, alasan: "BARANG_TIDAK_DITEMUKAN" as const };
+          // Retur pembeli dulu: ia juga menolak baris yang menunjuk DUA asal.
+          const pembeli = await periksaBarisReturPembeli(tx, input.storeId, susun);
+          if (pembeli) return { ok: false as const, alasan: pembeli };
+          const rusak = await periksaBarisRusakKiriman(tx, input.storeId, susun);
+          if (rusak) return { ok: false as const, alasan: rusak };
+          items = susun;
+          if (toko.termsType === "PUTUS") {
+            // Barang toko putus milik toko: yang berlaku nota TOKO — nomornya,
+            // fotonya, dan totalnya. Barisnya hanya qty.
+            if (!nomor) return { ok: false as const, alasan: 'NOMOR_WAJIB' as const };
+            if (!input.photoUrl?.trim()) return { ok: false as const, alasan: "FOTO_WAJIB" as const };
+            total = nilaiDariRincian(items, input.claimedAmount);
+            if (!(total > 0)) return { ok: false as const, alasan: 'NILAI_TIDAK_VALID' as const };
+          } else {
+            // Barang konsinyasi milik kita: nilainya dihitung server. Barang
+            // tanpa harga jual bernilai nol — barangnya tetap harus bisa kembali.
+            total = items.reduce((s, b) => s + b.qty * b.price, 0);
+            if (!nomor) {
+              nomor = await nomorTrk(tx, input.claimDate);
+              nomorDibuat = true;
+            }
+          }
+        }
+
+        const lama = input.menggantikanId
+          ? await periksaReturLama(tx, {
+              lamaId: input.menggantikanId,
+              salesmanId: input.salesmanId ?? null,
+              lintasPelapor: input.lintasPelapor,
+            })
+          : null;
+        if (lama && !lama.ok) return { ok: false as const, alasan: lama.alasan };
+
+        const catatLepas = nomorDibuat ? null : await lepaskanNomorBatal(tx, input.storeId, nomor);
         const nota = await tx.storeReturn.create({
           data: {
             noNrt: nomor,
@@ -276,6 +808,9 @@ export async function catatReturToko(input: {
             claimedAmount: D(total),
             photoUrl: input.photoUrl?.trim() || null,
             note: input.note?.trim() || null,
+            idempotencyKey: kunci,
+            replacesReturnId: lama ? input.menggantikanId : null,
+            ...(dariSpg ? { reportedBySpg: true } : {}),
             status: 'MENUNGGU',
             items: {
               create: items.map((b) => ({
@@ -284,11 +819,29 @@ export async function catatReturToko(input: {
                 qty: b.qty,
                 price: D(b.price),
                 amount: D(b.qty * b.price),
+                ...(b.variantSku?.trim() ? { variantSku: b.variantSku.trim() } : {}),
+                ...(b.condition ? { condition: b.condition } : {}),
+                ...(dariSpg && b.storeReceiptLineId ? { storeReceiptLineId: b.storeReceiptLineId } : {}),
+                ...(dariSpg && b.spgSaleReturnLineId ? { spgSaleReturnLineId: b.spgSaleReturnLineId } : {}),
               })),
             },
           },
           select: { id: true, noNrt: true },
         });
+
+        // Barang yang tidak pernah ada di buku toko (rusak kiriman / rusak dari pembeli) tidak keluar dari buku.
+        const itemsBuku = items.filter((b) => !barisTanpaBukuToko(b));
+        const barisTanpaBuku = items.length - itemsBuku.length;
+        const buku =
+          dariSpg && itemsBuku.length > 0
+            ? await tulisBukuReturKeluar(tx, {
+                storeId: input.storeId,
+                storeReturnId: nota.id,
+                claimDate: input.claimDate,
+                olehUserId: input.olehUserId,
+                items: itemsBuku,
+              })
+            : null;
 
         await catatJejak(tx, {
           userId: input.olehUserId,
@@ -296,13 +849,48 @@ export async function catatReturToko(input: {
           entityType: 'StoreReturn',
           entityId: nota.id,
           changes: { after: { noNrt: nota.noNrt, claimedAmount: total, storeId: input.storeId } },
-          metadata: { deliveryMethod: input.deliveryMethod, jumlahBaris: items.length },
+          metadata: {
+            deliveryMethod: input.deliveryMethod,
+            jumlahBaris: items.length,
+            ...(dariSpg
+              ? {
+                  olehSpg: true,
+                  nomorDibuatSistem: nomorDibuat,
+                  bukuToko: buku?.buku ?? null,
+                  ...(buku && buku.melebihiSaldo.length > 0 ? { melebihiSaldo: buku.melebihiSaldo } : {}),
+                  ...(barisTanpaBuku > 0 ? { barisTanpaBuku } : {}),
+                }
+              : {}),
+          },
         });
+        if (catatLepas) await catatLepas(nota.id, input.olehUserId);
+        if (lama && input.menggantikanId) {
+          await catatDiganti(tx, {
+            jenis: 'retur',
+            lamaId: input.menggantikanId,
+            baruId: nota.id,
+            nomorBaru: nota.noNrt,
+            olehUserId: input.olehUserId,
+          });
+        }
 
         return { ok: true as const, id: nota.id, noNrt: nota.noNrt };
       }),
     );
+
+  try {
+    // Kiriman kembarnya menang lebih dulu → percobaan berikutnya menemukan notanya.
+    // Nomor buatan sistem yang keburu diambil nota lain → ambil nomor berikutnya.
+    for (let percobaan = 0; ; percobaan++) {
+      try {
+        return await simpan();
+      } catch (err) {
+        const ulangi = bentrokKunciKiriman(err) || (nomorDibuat && bentrokNomorNota(err));
+        if (!ulangi || percobaan >= 2) throw err;
+      }
+    }
   } catch (err) {
+    if (bentrokPengganti(err)) return { ok: false, alasan: 'SUDAH_DIGANTI' };
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       return { ok: false, alasan: 'NOMOR_SUDAH_DIPAKAI' };
     }
@@ -331,15 +919,16 @@ export async function catatHitunganGudang(input: {
   items?: BarisBarang[];
   note?: string | null;
 }): Promise<
-  | { ok: true; id: string; noNri: string; barisStok: number; piutangDihitungUlang: number }
+  | { ok: true; id: string; noNri: string; barisStok: number; barisGudangRusak: number; piutangDihitungUlang: number }
   | Gagal
 > {
-  const items = (input.items ?? []).filter((b) => b.itemName.trim() && b.qty >= 0);
+  const items = (input.items ?? [])
+    .filter((b) => b.itemName.trim() && b.qty >= 0)
+    .map((b) => ({ ...b, condition: b.condition ? kondisiSah(b.condition) : undefined }));
   // Nol sah — artinya tidak ada barang yang sampai. Itu berbeda dari belum
-  // dihitung, dan menolaknya akan memaksa gudang berbohong.
-  const total = items.length > 0
-    ? items.reduce((s, b) => s + b.qty * b.price, 0)
-    : (input.physicalAmount ?? 0);
+  // dihitung, dan menolaknya akan memaksa gudang berbohong. Rincian tanpa
+  // harga (NRT SPG toko putus) membawa nilainya di angka yang diketik.
+  const total = nilaiDariRincian(items, input.physicalAmount);
   if (!(total >= 0)) return { ok: false, alasan: 'NILAI_TIDAK_VALID' };
 
   try {
@@ -358,7 +947,7 @@ export async function catatHitunganGudang(input: {
               status: true,
               claimedAmount: true,
               warehouseReturn: { select: { id: true } },
-              items: { select: { itemName: true, qty: true } },
+              items: { select: { itemId: true, variantSku: true, itemName: true, qty: true } },
             },
           });
           if (!nrt) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
@@ -368,7 +957,13 @@ export async function catatHitunganGudang(input: {
           if (nrt.warehouseReturn) return { ok: false as const, alasan: 'SUDAH_DIHITUNG' as const };
           storeId = nrt.storeId;
           klaim = angka(nrt.claimedAmount);
-          qtyKlaimPerBarang = new Map(nrt.items.map((i) => [i.itemName, i.qty]));
+          // Per barang + varian (baris tanpa barang katalog: per nama). Satu barang
+          // bisa muncul dua kali di nota — layak dan rusak — jadi dijumlahkan.
+          qtyKlaimPerBarang = new Map();
+          for (const i of nrt.items) {
+            const k = kunciBarang(i);
+            qtyKlaimPerBarang.set(k, (qtyKlaimPerBarang.get(k) ?? 0) + i.qty);
+          }
         }
 
         const nri = await tx.warehouseReturn.create({
@@ -385,25 +980,43 @@ export async function catatHitunganGudang(input: {
             status: 'FINAL',
             finalisedAt: new Date(),
             items: {
-              create: items.map((b) => ({
-                itemId: b.itemId ?? null,
-                itemName: b.itemName.trim(),
-                // Qty klaim disalin dari NRT per nama barang supaya selisihnya
-                // terbaca per baris, bukan cuma sebagai total.
-                qtyClaim: qtyKlaimPerBarang.get(b.itemName.trim()) ?? 0,
-                qty: b.qty,
-                price: D(b.price),
-                amount: D(b.qty * b.price),
-              })),
+              create: items.map((b, i) => {
+                // Qty klaim disalin dari NRT per barang + varian supaya selisihnya
+                // terbaca per baris, bukan cuma sebagai total. Baris kedua untuk
+                // barang yang sama (mis. sebagian rusak) tidak menyalinnya lagi.
+                const k = kunciBarang(b);
+                const pertama = items.findIndex((x) => kunciBarang(x) === k) === i;
+                return {
+                  itemId: b.itemId ?? null,
+                  itemName: b.itemName.trim(),
+                  qtyClaim: pertama ? (qtyKlaimPerBarang.get(k) ?? 0) : 0,
+                  qty: b.qty,
+                  price: D(b.price),
+                  amount: D(b.qty * b.price),
+                  ...(b.variantSku?.trim() ? { variantSku: b.variantSku.trim() } : {}),
+                  ...(b.condition ? { condition: b.condition } : {}),
+                };
+              }),
             },
           },
-          select: { id: true, noNri: true },
+          select: {
+            id: true,
+            noNri: true,
+            items: { select: { id: true, itemId: true, variantSku: true, itemName: true, qty: true, condition: true } },
+          },
         });
 
         const barisStok = await masukkanKeStok(tx, {
           items,
           noNri: nri.noNri,
           olehUserId: input.warehouseUserId,
+        });
+        // Barang RUSAK/EXPIRED tidak masuk stok jual, tapi masuk GUDANG BARANG
+        // RUSAK (satu gerakan per baris NRI) — kantor yang memutuskan nasibnya.
+        const barisGudangRusak = await masukkanGudangRusakDariNri(tx, {
+          noNri: nri.noNri,
+          olehUserId: input.warehouseUserId,
+          baris: nri.items,
         });
 
         await catatJejak(tx, {
@@ -414,7 +1027,11 @@ export async function catatHitunganGudang(input: {
           // Hitungan ini hanya bisa dicatat sekali dan menentukan berapa yang
           // ditahan dari piutang. Angkanya harus bisa ditelusuri ke orangnya.
           changes: { after: { noNri: nri.noNri, physicalAmount: total, claimedAmount: klaim } },
-          metadata: { storeReturnId: input.storeReturnId ?? null, barisStok },
+          metadata: {
+            storeReturnId: input.storeReturnId ?? null,
+            barisStok,
+            ...(barisGudangRusak > 0 ? { barisGudangRusak } : {}),
+          },
         });
 
         if (input.storeReturnId) await selaraskanSetelahHitung(tx, input.storeReturnId);
@@ -424,6 +1041,7 @@ export async function catatHitunganGudang(input: {
           id: nri.id,
           noNri: nri.noNri,
           barisStok,
+          barisGudangRusak,
           piutangDihitungUlang: await hitungUlangTersentuh(tx, input.storeReturnId ?? null),
         };
       }),
@@ -522,7 +1140,12 @@ export async function lepasPasangan(input: {
       where: { id: nri.id },
       data: { storeReturnId: null, claimedAmount: D(0) },
     });
-    await tx.storeReturn.update({ where: { id: storeReturnId }, data: { status: 'MENUNGGU' } });
+    // Nota yang sudah BATAL tetap batal: melepas pasangan tidak boleh
+    // menghidupkan kembali nota yang sudah diputuskan salah.
+    const nrtLama = await tx.storeReturn.findUnique({ where: { id: storeReturnId }, select: { status: true } });
+    if (nrtLama && nrtLama.status !== 'BATAL') {
+      await tx.storeReturn.update({ where: { id: storeReturnId }, data: { status: 'MENUNGGU' } });
+    }
 
     // Pembalikan. Tanpa jejak, sebuah pasangan bisa dilepas dan dijodohkan ulang
     // ke nota lain tanpa ada yang bisa menunjukkan bahwa itu pernah terjadi.
@@ -657,10 +1280,14 @@ export async function batalkanRetur(input: {
   return runSerializable(async (tx) => {
     const nota = await tx.storeReturn.findUnique({
       where: { id: input.storeReturnId },
-      select: { id: true, noNrt: true, status: true, note: true },
+      select: { id: true, noNrt: true, status: true, note: true, warehouseReturn: { select: { id: true } } },
     });
     if (!nota) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
     if (nota.status === 'BATAL') return { ok: false as const, alasan: 'SUDAH_DIBATALKAN' as const };
+    // Barangnya sudah dihitung dan stoknya sudah bertambah. Membatalkan notanya
+    // meninggalkan hitungan itu menempel ke nota batal tanpa jalan keluar —
+    // lepas pasangannya dulu, atau pindahkan ke toko yang benar.
+    if (nota.warehouseReturn) return { ok: false as const, alasan: 'SUDAH_DIHITUNG' as const };
 
     const diputuskan = await tx.returnCharge.count({
       where: { storeReturnId: nota.id, status: { not: 'TERBUKA' } },
@@ -672,6 +1299,9 @@ export async function batalkanRetur(input: {
       where: { id: nota.id },
       data: { status: 'BATAL', note: [nota.note, input.alasan.trim()].filter(Boolean).join('\n') },
     });
+    // Barang yang dilaporkan SPG keluar dari rak tidak jadi keluar: buku toko
+    // dibalik di transaksi yang sama (tanpa menghapus baris lamanya).
+    const barisBukuDibalik = await balikkanBukuRetur(tx, nota.id, input.olehUserId);
 
     await catatJejak(tx, {
       userId: input.olehUserId,
@@ -681,7 +1311,7 @@ export async function batalkanRetur(input: {
       // Membatalkan TIDAK menghapus potongan yang menunjuknya — ia berubah jadi
       // tertahan penuh. Alasannya harus tercatat, karena angka piutang naik.
       changes: { before: { status: nota.status }, after: { status: 'BATAL' } },
-      metadata: { noNrt: nota.noNrt },
+      metadata: { noNrt: nota.noNrt, ...(barisBukuDibalik > 0 ? { barisBukuDibalik } : {}) },
       reason: input.alasan,
     });
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { cn } from '@/lib/utils';
 
 /**
  * Komposisi perintah kerja sebagai SATU batang.
@@ -10,12 +11,19 @@ import { useTranslations } from 'next-intl';
  * tentang proporsi, dan proporsi dibaca dari satu batang utuh — bukan dari
  * enam baris tabel yang harus dijumlah sendiri di kepala.
  *
- * Warnanya diberikan menurut URUTAN TETAP, tidak diputar. Slot ketiga selalu
- * IN_PRODUCTION, apa pun yang tersaring — warna yang berpindah pemilik saat
- * daftar berubah membuat orang salah baca grafik yang kemarin ia hafal.
+ * Warna terkunci ke STATUS lewat `kelas` (lihat `warna-status-wo.ts`), sama
+ * dengan lencana status di bawah batang. Palet menurut urutan hanya cadangan
+ * untuk pemanggil yang tidak memberi `kelas` — dan urutan itu urutan baris yang
+ * TERISI, jadi warnanya bisa berpindah pemilik begitu satu status kosong.
  */
 
-export type BarisPipeline = { status: string; count: number; label: string };
+export type BarisPipeline = {
+  status: string;
+  count: number;
+  label: string;
+  /** Kelas warna ruas (mis. `bg-blue-600`) — dipakai supaya batang sewarna lencana statusnya. */
+  kelas?: string;
+};
 
 const WARNA = ['var(--viz-1)', 'var(--viz-2)', 'var(--viz-3)', 'var(--viz-4)', 'var(--viz-6)', 'var(--viz-5)'];
 
@@ -40,8 +48,8 @@ export function PipelineBar({ baris }: { baris: BarisPipeline[] }) {
           return (
             <div
               key={b.status}
-              className="relative flex items-center justify-center first:rounded-l-lg last:rounded-r-lg"
-              style={{ width: `${persen}%`, background: WARNA[i % WARNA.length] }}
+              className={cn('relative flex items-center justify-center first:rounded-l-lg last:rounded-r-lg', b.kelas)}
+              style={{ width: `${persen}%`, background: b.kelas ? undefined : WARNA[i % WARNA.length] }}
               title={`${b.label}: ${b.count}`}
             >
               {/* Angka ditulis langsung di ruas yang cukup lebar. Menulisnya di
@@ -62,8 +70,8 @@ export function PipelineBar({ baris }: { baris: BarisPipeline[] }) {
           <span key={b.status} className="flex items-center gap-1.5 text-xs">
             <span
               aria-hidden
-              className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
-              style={{ background: WARNA[i % WARNA.length] }}
+              className={cn('h-2.5 w-2.5 shrink-0 rounded-[3px]', b.kelas)}
+              style={{ background: b.kelas ? undefined : WARNA[i % WARNA.length] }}
             />
             <span className="text-muted-foreground">{b.label}</span>
             <span className="font-medium tabular-nums">{b.count}</span>

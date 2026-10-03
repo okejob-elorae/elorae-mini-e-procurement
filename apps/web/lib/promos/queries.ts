@@ -45,7 +45,9 @@ export async function listPromos(
   paging: { page: number; pageSize: number },
 ): Promise<{ promos: PromoListItem[]; totalCount: number }> {
   const where: Prisma.PromoWhereInput = {};
-  if (filter.type === "PERCENT" || filter.type === "FIXED" || filter.type === "TIERED") where.type = filter.type;
+  if (filter.type === "PERCENT" || filter.type === "FIXED" || filter.type === "TIERED" || filter.type === "BONUS") {
+    where.type = filter.type;
+  }
   if (typeof filter.active === "boolean") where.isActive = filter.active;
   if (filter.search && filter.search.trim()) where.name = { contains: filter.search.trim(), mode: 'insensitive' as const };
   const [rows, totalCount] = await Promise.all([

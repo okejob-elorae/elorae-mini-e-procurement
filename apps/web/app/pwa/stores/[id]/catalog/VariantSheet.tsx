@@ -31,6 +31,7 @@ const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
 export function VariantSheet({
   item,
   isKonsi,
+  inden = false,
   hasActiveVisit,
   cart,
   setQty,
@@ -39,6 +40,8 @@ export function VariantSheet({
 }: {
   item: CatalogItem | null;
   isKonsi: boolean;
+  /** Pre-order: varian belum ada di gudang — "akan datang", tanpa batas stok. */
+  inden?: boolean;
   hasActiveVisit: boolean;
   cart: Map<string, CartLine>;
   setQty: (item: CatalogItem, variantSku: string, variantLabel: string | null, qty: number) => void;
@@ -46,7 +49,13 @@ export function VariantSheet({
   onOpenChange: (open: boolean) => void;
 }) {
   const t = useTranslations("pwa.catalog");
+  const tKredit = useTranslations("pwa.kredit");
+  const tInden = useTranslations("pwa.inden");
   const [q, setQ] = useState("");
+  // Minimum pesan dihitung per barang: semua varian di keranjang dijumlah.
+  let dipilih = 0;
+  if (item) for (const l of cart.values()) if (l.itemId === item.itemId) dipilih += l.qty;
+  const tampilkanMinimum = !!item && !isKonsi && item.minOrderQty > 1;
 
   const filtered = useMemo(() => {
     if (!item) return [];
@@ -71,6 +80,15 @@ export function VariantSheet({
             <SheetHeader className="border-b pb-3">
               <SheetTitle>{t("variantSheetTitle")}</SheetTitle>
               <SheetDescription>{item.nameId}</SheetDescription>
+              {tampilkanMinimum && (
+                <p
+                  className={
+                    dipilih > 0 && dipilih < item.minOrderQty ? "text-xs text-destructive" : "text-xs text-muted-foreground"
+                  }
+                >
+                  {tKredit("minPesanLembar", { min: item.minOrderQty, jumlah: dipilih })}
+                </p>
+              )}
             </SheetHeader>
 
             <div className="px-4 pt-3">
@@ -94,9 +112,15 @@ export function VariantSheet({
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium">{v.variantLabel}</p>
                           <div className="mt-1 flex items-center gap-1.5">
-                            <Badge variant={v.available > 0 ? "secondary" : "destructive"}>
-                              {v.available > 0 ? t("variantAvailable", { available: v.available }) : t("variantOutOfStock")}
-                            </Badge>
+                            {inden ? (
+                              <Badge variant="outline" className="border-amber-500/40 text-amber-800 dark:text-amber-300">
+                                {tInden("varianAkanDatang")}
+                              </Badge>
+                            ) : (
+                              <Badge variant={v.available > 0 ? "secondary" : "destructive"}>
+                                {v.available > 0 ? t("variantAvailable", { available: v.available }) : t("variantOutOfStock")}
+                              </Badge>
+                            )}
                             {!isKonsi && item.price != null && (
                               <span className="text-xs text-muted-foreground tabular-nums">{rupiah(item.price)}</span>
                             )}

@@ -3,6 +3,11 @@ import { runCheckOverdue } from "./check-overdue";
 import { runReconciliationCron } from "@/app/actions/stock-reconciliation";
 import { postPendingSalesJournals, GL_CUTOVER_SETTING_KEY } from "@/lib/finance/sales/sweep";
 import { sapuFotoYatim } from "@/lib/foto/pembersih";
+import { ingatkanGiroJatuhTempo } from "@/lib/receivables/giro-queries";
+import { kirimRingkasanHarian } from "@/lib/salesman/ringkasan-harian";
+import { kirimPengumumanTerjadwal } from "@/lib/pengumuman/writer";
+import { ingatkanMutasiMacet, kabarkanKirimanMenunggu } from "@/lib/spg/mutasi-pengingat";
+import { ingatkanTutupHari } from "@/lib/spg/tutup-hari-pengingat";
 
 let registered = false;
 
@@ -88,6 +93,115 @@ export function registerCronJobs(): void {
         }
       } catch (err) {
         console.error("[cron] sapu-foto gagal:", err);
+      }
+    },
+    { timezone: "Asia/Jakarta" },
+  );
+
+  /*
+   * Setiap hari 07:00 WIB — pengingat giro jatuh tempo.
+   *
+   * Pagi, sebelum jam setor bank: giro yang efektif hari ini baru jadi uang
+   * kalau disetorkan hari ini, dan yang sudah lewat tanggalnya makin dekat ke
+   * akhir masa berlaku 70 hari. Satu catatan per hari, ke pemegang izin
+   * verifikasi klaim; fungsinya sendiri menolak menulis dua kali sehari.
+   */
+  cron.schedule(
+    "0 7 * * *",
+    async () => {
+      try {
+        const r = await ingatkanGiroJatuhTempo();
+        if (r.dibuat) console.log(`[cron] giro-jatuh-tempo: ${r.jumlah} giro diingatkan`);
+      } catch (err) {
+        console.error("[cron] giro-jatuh-tempo gagal:", err);
+      }
+    },
+    { timezone: "Asia/Jakarta" },
+  );
+
+  /*
+   * Setiap hari 18:30 WIB — ringkasan kerja tim lapangan hari ini.
+   *
+   * Satu kabar ke setiap sales yang hari ini bekerja (kunjungan, pesanan,
+   * pelunasan) dan satu catatan ke penyetuju pesanan lapangan. Hari tanpa
+   * kegiatan (Minggu, libur) tidak menulis apa pun, dan fungsinya menolak
+   * menulis dua kali untuk tanggal yang sama — aman bila server dinyalakan ulang.
+   */
+  cron.schedule(
+    "30 18 * * *",
+    async () => {
+      try {
+        const r = await kirimRingkasanHarian(new Date());
+        console.log(`[cron] ringkasan-harian ${r.tanggal}: ${r.status}`);
+      } catch (err) {
+        console.error("[cron] ringkasan-harian gagal:", err);
+      }
+    },
+    { timezone: "Asia/Jakarta" },
+  );
+
+  /*
+   * Tiap 5 menit — kabarkan pengumuman terjadwal yang waktunya sudah tiba.
+   * Sekali per pengumuman (dicatat sebagai jejak ANNOUNCEMENT_SENT); yang terbit
+   * lebih dari 3 hari lalu dilewati, jadi menyalakan cron ini belakangan tidak
+   * mendorong pengumuman lama sekaligus.
+   */
+  cron.schedule(
+    "*/5 * * * *",
+    async () => {
+      try {
+        const r = await kirimPengumumanTerjadwal(new Date());
+        if (r.pengumuman > 0) console.log(`[cron] pengumuman terjadwal: ${r.pengumuman} dikabarkan ke ${r.orang} orang`);
+      } catch (err) {
+        console.error("[cron] pengumuman terjadwal gagal:", err);
+      }
+    },
+    { timezone: "Asia/Jakarta" },
+  );
+
+  /*
+   * Setiap hari 08:00 WIB — barang yang menunggu di toko SPG.
+   *
+   * Pagi, saat counter buka: mutasi antar toko yang sudah dikirim lebih dari
+   * `hariPengingat` hari tanpa diterima diingatkan ke kantor (sekali per
+   * mutasi) dan ke SPG toko tujuan; kiriman apa pun yang menunggu lebih dari
+   * sehari dikabarkan ke SPG tokonya, sekali per toko per hari. Kedua fungsi
+   * menulis penandanya sendiri, jadi aman bila server dinyalakan ulang.
+   */
+  cron.schedule(
+    "0 8 * * *",
+    async () => {
+      try {
+        const macet = await ingatkanMutasiMacet();
+        if (macet.dikabarkan > 0) console.log(`[cron] mutasi-macet: ${macet.dikabarkan} mutasi diingatkan`);
+      } catch (err) {
+        console.error("[cron] mutasi-macet gagal:", err);
+      }
+      try {
+        const r = await kabarkanKirimanMenunggu();
+        if (r.toko > 0) console.log(`[cron] kiriman-menunggu: ${r.toko} toko, ${r.orang} SPG dikabari`);
+      } catch (err) {
+        console.error("[cron] kiriman-menunggu gagal:", err);
+      }
+    },
+    { timezone: "Asia/Jakarta" },
+  );
+
+  /*
+   * Setiap hari 21:30 WIB — laporan tutup hari SPG yang belum dikirim.
+   *
+   * Toko SPG yang hari ini sudah punya nota tapi belum punya laporan tutup
+   * hari: SPG-nya yang check-in hari ini dikabari, sekali per toko per hari
+   * (penandanya jejak di toko itu), jadi aman bila server dinyalakan ulang.
+   */
+  cron.schedule(
+    "30 21 * * *",
+    async () => {
+      try {
+        const r = await ingatkanTutupHari();
+        if (r.toko > 0) console.log(`[cron] tutup-hari: ${r.toko} toko, ${r.orang} SPG diingatkan`);
+      } catch (err) {
+        console.error("[cron] tutup-hari gagal:", err);
       }
     },
     { timezone: "Asia/Jakarta" },

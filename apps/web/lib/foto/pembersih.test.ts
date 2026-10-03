@@ -10,38 +10,39 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = {
   foto: [] as { id: string; sizeBytes: number; createdAt: Date }[],
-  klaim: [] as { transferPhotoUrl: string | null; breakdownPhotoUrl: string | null }[],
-  kontrabon: [] as { photoUrl: string | null }[],
-  retur: [] as { photoUrl: string | null }[],
+  /** Baris per model Prisma — model yang tidak diisi tes mengembalikan kosong. */
+  baris: {} as Record<string, Record<string, unknown>[]>,
   dihapus: [] as string[],
   saringUmur: null as Date | null,
 };
 
-const prisma = {
-  foto: {
-    findMany: vi.fn(async (args: { where?: { createdAt?: { lt?: Date } }; take?: number }) => {
-      const batas = args?.where?.createdAt?.lt;
-      state.saringUmur = batas ?? null;
-      const cocok = batas ? state.foto.filter((f) => f.createdAt < batas) : state.foto;
-      return cocok.slice(0, args?.take ?? cocok.length);
-    }),
-    deleteMany: vi.fn(async (args: { where: { id: { in: string[] } } }) => {
-      state.dihapus.push(...args.where.id.in);
-      return { count: args.where.id.in.length };
-    }),
-    aggregate: vi.fn(async () => ({
-      _count: { _all: state.foto.length },
-      _sum: { sizeBytes: state.foto.reduce((s, f) => s + f.sizeBytes, 0) },
-    })),
-  },
-  paymentClaim: { findMany: vi.fn(async () => state.klaim) },
-  collectionNote: { findMany: vi.fn(async () => state.kontrabon) },
-  storeReturn: { findMany: vi.fn(async () => state.retur) },
+const fotoDelegasi = {
+  findMany: vi.fn(async (args: { where?: { createdAt?: { lt?: Date } }; take?: number }) => {
+    const batas = args?.where?.createdAt?.lt;
+    state.saringUmur = batas ?? null;
+    const cocok = batas ? state.foto.filter((f) => f.createdAt < batas) : state.foto;
+    return cocok.slice(0, args?.take ?? cocok.length);
+  }),
+  deleteMany: vi.fn(async (args: { where: { id: { in: string[] } } }) => {
+    state.dihapus.push(...args.where.id.in);
+    return { count: args.where.id.in.length };
+  }),
+  aggregate: vi.fn(async () => ({
+    _count: { _all: state.foto.length },
+    _sum: { sizeBytes: state.foto.reduce((s, f) => s + f.sizeBytes, 0) },
+  })),
 };
+
+const prisma = new Proxy({} as Record<string, unknown>, {
+  get(_, model: string) {
+    if (model === 'foto') return fotoDelegasi;
+    return { findMany: vi.fn(async () => state.baris[model] ?? []) };
+  },
+});
 
 vi.mock('@elorae/db', () => ({ prisma }));
 
-const { sapuFotoYatim, pemakaianFoto, JAM_MASA_TENGGANG } = await import('./pembersih');
+const { sapuFotoYatim, pemakaianFoto, JAM_MASA_TENGGANG, KOLOM_FOTO, urlFotoDalam } = await import('./pembersih');
 
 const lama = (jamLalu: number) => new Date(Date.now() - jamLalu * 60 * 60 * 1000);
 
@@ -51,9 +52,7 @@ beforeEach(() => {
     { id: 'yatim', sizeBytes: 2_000, createdAt: lama(48) },
     { id: 'barusaja', sizeBytes: 4_000, createdAt: lama(1) },
   ];
-  state.klaim = [{ transferPhotoUrl: '/api/foto/dipakai', breakdownPhotoUrl: null }];
-  state.kontrabon = [];
-  state.retur = [];
+  state.baris = { paymentClaim: [{ transferPhotoUrl: '/api/foto/dipakai', breakdownPhotoUrl: null }] };
   state.dihapus = [];
   state.saringUmur = null;
   // Hitungan panggilan menumpuk antar tes kalau tidak dibersihkan, dan tes yang
@@ -91,20 +90,26 @@ describe('sapuFotoYatim', () => {
     expect(r.byteDibebaskan).toBe(2_000);
   });
 
-  it('membaca keempat kolom penunjuk, bukan hanya bukti transfer', async () => {
+  it('membaca SETIAP kolom foto yang terdaftar — bukan hanya bukti transfer', async () => {
     // Satu kolom yang terlewat berarti foto yang masih dipakai ikut tersapu.
-    state.foto = [
-      { id: 'a', sizeBytes: 1, createdAt: lama(48) },
-      { id: 'b', sizeBytes: 1, createdAt: lama(48) },
-      { id: 'c', sizeBytes: 1, createdAt: lama(48) },
-      { id: 'd', sizeBytes: 1, createdAt: lama(48) },
-    ];
-    state.klaim = [{ transferPhotoUrl: '/api/foto/a', breakdownPhotoUrl: '/api/foto/b' }];
-    state.kontrabon = [{ photoUrl: '/api/foto/c' }];
-    state.retur = [{ photoUrl: '/api/foto/d' }];
+    // Sampai 2026-10-03 bukti terima, struk biaya, swafoto, dll. tersapu semua.
+    state.foto = KOLOM_FOTO.map((k, i) => ({ id: `f${i}`, sizeBytes: 1, createdAt: lama(48) }));
+    state.baris = Object.fromEntries(
+      KOLOM_FOTO.map((k, i) => [
+        k.model,
+        [{ [k.kolom[0]]: k.json ? [`/api/foto/f${i}`] : `/api/foto/f${i}` }],
+      ]),
+    );
     const r = await sapuFotoYatim({ kering: false });
-    expect(r.id).toHaveLength(0);
+    expect(r.id).toEqual([]);
     expect(state.dihapus).toHaveLength(0);
+  });
+
+  it('mengenali beberapa URL di satu kolom teks atau JSON', () => {
+    expect(urlFotoDalam('["/api/foto/a","/api/foto/b-1"]')).toEqual(['/api/foto/a', '/api/foto/b-1']);
+    expect(urlFotoDalam([{ url: '/api/foto/c' }])).toEqual(['/api/foto/c']);
+    expect(urlFotoDalam(null)).toEqual([]);
+    expect(urlFotoDalam('https://r2.example/x.jpg')).toEqual([]);
   });
 
   it('tidak memanggil deleteMany sama sekali kalau tidak ada yatim', async () => {
@@ -112,7 +117,7 @@ describe('sapuFotoYatim', () => {
     // kosong yang bocor jadi `undefined` akan menghapus seluruh tabel.
     state.foto = [{ id: 'dipakai', sizeBytes: 1, createdAt: lama(48) }];
     await sapuFotoYatim({ kering: false });
-    expect(prisma.foto.deleteMany).not.toHaveBeenCalled();
+    expect(fotoDelegasi.deleteMany).not.toHaveBeenCalled();
   });
 });
 

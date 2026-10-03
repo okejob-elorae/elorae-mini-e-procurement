@@ -7,14 +7,61 @@ import { listPantoneColors, type ListPantoneFilters } from '@/lib/production-col
 import { PERMISSIONS, requirePermission } from '@/lib/rbac';
 import { DEFAULT_THEME_PRIMARY_COLOR } from '@/lib/theme/theme-presets';
 import { FONT_BAWAAN, fontDikenal } from '@/lib/theme/fonts';
+import {
+  bacaWarnaPerusahaan,
+  KUNCI_WARNA_PERUSAHAAN,
+  tentukanWarnaTema,
+  type WarnaEfektif,
+  type WarnaTersimpan,
+} from '@/lib/theme/warna-efektif';
 
 const HEX_COLOR_PATTERN = /^#?[0-9a-fA-F]{6}$/;
 
 export type UserThemePreference = {
+  /** Warna PRIBADI orang ini — yang disunting di layar pengaturan. */
   pantoneTcx: string | null;
   primaryHex: string;
   pantoneName?: string | null;
+  /** Warna yang benar-benar dipakai: pribadi → perusahaan → bawaan. */
+  efektif: WarnaEfektif;
+  perusahaan: WarnaTersimpan | null;
 };
+
+const PILIH_WARNA_USER = {
+  themePantoneTcx: true,
+  themePrimaryHex: true,
+  themePantone: { select: { name: true } },
+} as const;
+
+async function bacaPerusahaan(): Promise<WarnaTersimpan | null> {
+  const row = await prisma.systemSetting.findUnique({
+    where: { key: KUNCI_WARNA_PERUSAHAAN },
+    select: { value: true },
+  });
+  return bacaWarnaPerusahaan(row?.value);
+}
+
+async function bentukPreferensi(
+  user: { themePantoneTcx: string | null; themePrimaryHex: string; themePantone: { name: string } | null } | null,
+  namaCadangan?: string | null,
+): Promise<UserThemePreference> {
+  const perusahaan = await bacaPerusahaan();
+  const primaryHex = user?.themePrimaryHex ?? DEFAULT_THEME_PRIMARY_COLOR;
+  const pantoneName = user?.themePantone?.name ?? namaCadangan ?? null;
+  return {
+    pantoneTcx: user?.themePantoneTcx ?? null,
+    primaryHex,
+    pantoneName,
+    efektif: tentukanWarnaTema({ hex: primaryHex, tcx: user?.themePantoneTcx, name: pantoneName }, perusahaan),
+    perusahaan,
+  };
+}
+
+/** Semua halaman yang menampilkan pemilih warna. */
+function segarkanHalamanTema() {
+  revalidatePath('/backoffice/settings');
+  revalidatePath('/pwa/tampilan');
+}
 
 export type PantoneThemeSwatch = {
   tcx: string;
@@ -38,18 +85,9 @@ export async function getUserThemePreference(): Promise<UserThemePreference> {
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: {
-      themePantoneTcx: true,
-      themePrimaryHex: true,
-      themePantone: { select: { name: true } },
-    },
+    select: PILIH_WARNA_USER,
   });
-
-  return {
-    pantoneTcx: user?.themePantoneTcx ?? null,
-    primaryHex: user?.themePrimaryHex ?? DEFAULT_THEME_PRIMARY_COLOR,
-    pantoneName: user?.themePantone?.name ?? null,
-  };
+  return bentukPreferensi(user);
 }
 
 export async function listPantoneColorsForTheme(
@@ -58,7 +96,8 @@ export async function listPantoneColorsForTheme(
 ): Promise<{ colors: PantoneThemeSwatch[]; totalPages: number }> {
   const session = await auth();
   if (!session?.user?.id) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_VIEW);
+  // Cukup login: buku Pantone adalah data rujukan, dan salesman kini memilih
+  // warnanya sendiri dari aplikasi HP.
 
   const filters: ListPantoneFilters = { search: search.trim() || undefined };
   const { colors, totalCount } = await listPantoneColors(filters, { page, pageSize: 48 });
@@ -80,7 +119,9 @@ export async function setUserThemePreference(
 ): Promise<UserThemePreference> {
   const session = await auth();
   if (!session?.user?.id) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_MANAGE);
+  // Cukup login. Aksi ini hanya menulis baris milik orang itu sendiri dan
+  // masukannya divalidasi; dulu dikunci izin keamanan, sehingga praktis hanya
+  // admin yang bisa punya warna sendiri.
 
   if ('reset' in preference) {
     const updated = await prisma.user.update({
@@ -89,20 +130,10 @@ export async function setUserThemePreference(
         themePantoneTcx: null,
         themePrimaryHex: DEFAULT_THEME_PRIMARY_COLOR,
       },
-      select: {
-        themePantoneTcx: true,
-        themePrimaryHex: true,
-        themePantone: { select: { name: true } },
-      },
+      select: PILIH_WARNA_USER,
     });
-
-    revalidatePath('/backoffice/settings');
-
-    return {
-      pantoneTcx: updated.themePantoneTcx,
-      primaryHex: updated.themePrimaryHex,
-      pantoneName: updated.themePantone?.name ?? null,
-    };
+    segarkanHalamanTema();
+    return bentukPreferensi(updated);
   }
 
   /*
@@ -116,18 +147,10 @@ export async function setUserThemePreference(
     const updated = await prisma.user.update({
       where: { id: session.user.id },
       data: { themePantoneTcx: null, themePrimaryHex: primaryHex },
-      select: {
-        themePantoneTcx: true,
-        themePrimaryHex: true,
-        themePantone: { select: { name: true } },
-      },
+      select: PILIH_WARNA_USER,
     });
-    revalidatePath('/backoffice/settings');
-    return {
-      pantoneTcx: updated.themePantoneTcx,
-      primaryHex: updated.themePrimaryHex,
-      pantoneName: null,
-    };
+    segarkanHalamanTema();
+    return bentukPreferensi(updated);
   }
 
   const tcx = preference.tcx.trim();
@@ -152,20 +175,50 @@ export async function setUserThemePreference(
       themePantoneTcx: pantone.tcx,
       themePrimaryHex: primaryHex,
     },
-    select: {
-      themePantoneTcx: true,
-      themePrimaryHex: true,
-      themePantone: { select: { name: true } },
-    },
+    select: PILIH_WARNA_USER,
   });
+  segarkanHalamanTema();
+  return bentukPreferensi(updated, pantone.name);
+}
 
-  revalidatePath('/backoffice/settings');
+/**
+ * Warna perusahaan: bawaan untuk setiap orang yang belum memilih warnanya
+ * sendiri — terutama aplikasi HP salesman dan SPG. Dijaga izin yang sama dengan
+ * kartu tema selama ini, jadi tidak ada izin baru yang perlu di-seed.
+ */
+export async function setCompanyThemeColor(
+  pilihan: { tcx: string } | { hex: string; name?: string | null } | { reset: true },
+): Promise<{ perusahaan: WarnaTersimpan | null }> {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error('Unauthorized');
+  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_MANAGE);
 
-  return {
-    pantoneTcx: updated.themePantoneTcx,
-    primaryHex: updated.themePrimaryHex,
-    pantoneName: updated.themePantone?.name ?? pantone.name,
-  };
+  if ('reset' in pilihan) {
+    await prisma.systemSetting.deleteMany({ where: { key: KUNCI_WARNA_PERUSAHAAN } });
+    segarkanHalamanTema();
+    return { perusahaan: null };
+  }
+
+  let warna: WarnaTersimpan;
+  if ('tcx' in pilihan) {
+    const pantone = await prisma.pantoneColor.findUnique({
+      where: { tcx: pilihan.tcx.trim() },
+      select: { tcx: true, hex: true, name: true },
+    });
+    if (!pantone) throw new Error('Pantone color not found.');
+    warna = { hex: normalizeHexColor(pantone.hex), tcx: pantone.tcx, name: pantone.name };
+  } else {
+    warna = { hex: normalizeHexColor(pilihan.hex), tcx: null, name: pilihan.name ?? null };
+  }
+
+  const value = JSON.stringify(warna);
+  await prisma.systemSetting.upsert({
+    where: { key: KUNCI_WARNA_PERUSAHAAN },
+    create: { key: KUNCI_WARNA_PERUSAHAAN, value },
+    update: { value },
+  });
+  segarkanHalamanTema();
+  return { perusahaan: warna };
 }
 
 /**

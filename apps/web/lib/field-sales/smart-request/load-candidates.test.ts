@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { loadSmartRequestCandidates } from "./load-candidates";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -46,8 +46,8 @@ d("loadSmartRequestCandidates (test bed only)", () => {
   afterEach(async () => {
     await prisma.inventoryValue.deleteMany({ where: { itemId: { in: [itemAId, itemBId, inactiveItemId] } } });
     await prisma.item.deleteMany({ where: { id: { in: [itemAId, itemBId, inactiveItemId] } } });
-    await prisma.itemCategory.deleteMany({ where: { id: categoryId } });
-    await prisma.uOM.deleteMany({ where: { id: uomId } });
+    await prisma.itemCategory.deleteMany({ where: { id: seededId(categoryId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
 
   it("returns active FG items keyed by category, with trimmed variants and available = qtyOnHand - reservedQty", async () => {

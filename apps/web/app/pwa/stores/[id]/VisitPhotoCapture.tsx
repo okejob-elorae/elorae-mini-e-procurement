@@ -9,8 +9,9 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { compressImage } from "@/lib/pwa/photo/compress";
-import { enqueuePhoto, listPendingPhotosForVisit, retryPendingPhoto, newLocalId } from "@/lib/pwa/offline/photo-queue";
+import { enqueuePhoto, listPendingPhotosForKunjungan, retryPendingPhoto, newLocalId } from "@/lib/pwa/offline/photo-queue";
 import { flushPendingPhotos } from "@/lib/pwa/offline/photo-sync";
+import { catatFotoTerkirim } from "@/lib/pwa/offline/foto-kunjungan";
 import type { PendingPhoto } from "@/lib/pwa/offline/db";
 
 const MAX_PER_VISIT = 20;
@@ -19,7 +20,22 @@ type SyncedPhoto = { id: string; url: string; caption: string | null; capturedAt
 type Mode = "idle" | "live" | "preview";
 type Captured = { blob: Blob; url: string };
 
-export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: string; storeId: string; synced: SyncedPhoto[] }) {
+/**
+ * Foto kunjungan. `visitId` = kunjungan server; untuk kunjungan yang check-in-nya
+ * masih di HP (dicatat tanpa sinyal) `visitId` null dan `visitClientId` = id
+ * check-in HP — fotonya diantrekan dan baru naik sesudah check-in itu sampai.
+ */
+export function VisitPhotoCapture({
+  visitId,
+  visitClientId = null,
+  storeId,
+  synced,
+}: {
+  visitId: string | null;
+  visitClientId?: string | null;
+  storeId: string;
+  synced: SyncedPhoto[];
+}) {
   const [pending, setPending] = useState<PendingPhoto[]>([]);
   const [busy, setBusy] = useState(false);
   const [caption, setCaption] = useState("");
@@ -35,8 +51,13 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
   const total = synced.length + pending.length;
   const atCap = total >= MAX_PER_VISIT;
 
-  const refresh = () => listPendingPhotosForVisit(visitId).then(setPending);
-  useEffect(() => { void refresh(); }, [visitId]);
+  const refresh = () => listPendingPhotosForKunjungan({ visitId, visitClientId }).then(setPending);
+  useEffect(() => { void refresh(); }, [visitId, visitClientId]);
+  // Jumlah foto yang sudah di server diingat HP: check-out tanpa sinyal menjaga
+  // aturan "wajib foto" dengan angka ini ditambah foto yang masih di antrean.
+  useEffect(() => {
+    if (visitId) catatFotoTerkirim(visitId, synced.length);
+  }, [visitId, synced.length]);
 
   // Object URLs for pending thumbnails — revoked on change/unmount.
   useEffect(() => {
@@ -118,7 +139,14 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
     setBusy(true);
     try {
       const compressed = await compressImage(captured.blob);
-      await enqueuePhoto({ localId: newLocalId(), visitId, storeId, blob: compressed, caption: caption.trim() || undefined });
+      await enqueuePhoto({
+        localId: newLocalId(),
+        visitId: visitId ?? "",
+        visitClientId: visitId ? null : visitClientId,
+        storeId,
+        blob: compressed,
+        caption: caption.trim() || undefined,
+      });
       await refresh();
       void flushPendingPhotos().then((r) => { void refresh(); if (r.synced > 0) router.refresh(); });
       closeOverlay();

@@ -5,7 +5,7 @@ import {
   buildActionItems,
   getActionItemCounts,
 } from "@/lib/dashboard/action-items";
-import { getOverduePOCount, getSubmittedPOCount } from "@/lib/purchase-orders/queries";
+import { getDraftPOCount, getOverduePOCount } from "@/lib/purchase-orders/queries";
 import { countOversoldInventory } from "@/lib/dashboard/queries";
 import { getMarketplaceKpi } from "@/lib/sales-orders/queries";
 import { bagiLencana } from "@/lib/nav/lencana";
@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
  */
 const NAV_GROUP_BY_ITEM: Record<string, string> = {
   overduePOs: "/backoffice/production/planning",
-  submittedPOs: "/backoffice/production/planning",
+  draftPOs: "/backoffice/production/planning",
   oversold: "/backoffice/inventory",
   journalPending: "#",
   taxInvoicePending: "#",
@@ -46,11 +46,11 @@ export async function GET() {
   const permissions = session.user.permissions ?? [];
 
   try {
-    const [counts, overduePOs, submittedPOs, oversoldSkus, marketplaceKpi] =
+    const [counts, overduePOs, draftPOs, oversoldSkus, marketplaceKpi] =
       await Promise.all([
         getActionItemCounts(),
         getOverduePOCount(),
-        getSubmittedPOCount(),
+        getDraftPOCount(),
         countOversoldInventory(),
         getMarketplaceKpi(),
       ]);
@@ -58,7 +58,7 @@ export async function GET() {
     const items = buildActionItems({
       ...counts,
       overduePOs,
-      submittedPOs,
+      draftPOs,
       oversoldSkus,
       unshippedOrders: marketplaceKpi.pendingFulfillmentCount,
     });

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { ArrowLeft, Lock, LockOpen, Plus, Printer, X } from 'lucide-react';
+import { ArrowLeft, Loader2, Lock, LockOpen, Plus, Printer, Sparkles, X } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,6 +34,7 @@ import { dinamis } from '@/lib/i18n/dinamis';
 import type { RincianSiklus } from '@/lib/konsinyasi/queries';
 import type { PilihanBarang } from '../../retur-toko/BarisBarangEditor';
 import {
+  bahanLaporanSpgAction,
   bayarKomisiAction,
   bukaKunciAction,
   catatLaporanAction,
@@ -41,6 +42,8 @@ import {
   kunciAngkaAction,
 } from '@/app/actions/konsinyasi';
 import { NADA_TAHAP } from '../tahap';
+import { TagihanKonsiCard } from "./TagihanKonsiCard";
+import { PencocokanBukuCard } from "./PencocokanBukuCard";
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 const tanggal = (iso: string | null) =>
@@ -74,7 +77,10 @@ export function RincianSiklusClient({
   const [pending, startTransition] = useTransition();
 
   const [laporanTerbuka, setLaporanTerbuka] = useState<'SPG' | 'TOKO' | null>(null);
-  const [barisLaporan, setBarisLaporan] = useState<{ itemName: string; qty: number }[]>([]);
+  // `itemId` hanya ada pada baris yang diisi dari penjualan SPG — baris ketikan
+  // tetap nama saja, seperti sebelumnya.
+  const [barisLaporan, setBarisLaporan] = useState<{ itemId?: string | null; itemName: string; qty: number }[]>([]);
+  const [mengisi, mulaiMengisi] = useTransition();
 
   const [kunciTerbuka, setKunciTerbuka] = useState(false);
   const [resmi, setResmi] = useState<BarisResmi[]>([]);
@@ -118,6 +124,29 @@ export function RincianSiklusClient({
         router.refresh();
       } else {
         toast.error(td(`err${hasil.kode}`));
+      }
+    });
+  };
+
+  /* Laporan SPG diisi dari nota penjualan SPG toko ini di bulan siklus, supaya
+     admin memeriksa alih-alih mengetik ulang. Isian yang ada DIGANTI, tapi
+     belum tersimpan: menutup dialog tanpa menyimpan membatalkannya. */
+  const isiDariPenjualanSpg = () => {
+    mulaiMengisi(async () => {
+      try {
+        const hasil = await bahanLaporanSpgAction(b.id);
+        if (!hasil.ok) {
+          toast.error(td(`err${hasil.kode}`));
+          return;
+        }
+        if (hasil.items.length === 0) {
+          toast.info(t("spgFill.empty"));
+          return;
+        }
+        setBarisLaporan(hasil.items.map((i) => ({ itemId: i.itemId, itemName: i.itemName, qty: i.qty })));
+        toast.success(t("spgFill.done", { count: hasil.items.length }));
+      } catch {
+        toast.error(td("errGAGAL"));
       }
     });
   };
@@ -210,6 +239,8 @@ export function RincianSiklusClient({
         </CardContent>
       </Card>
 
+      <TagihanKonsiCard tagihan={data.tagihan} />
+
       {/* Dua laporan disandingkan per barang. */}
       <Card>
         <CardHeader className="pb-3">
@@ -288,6 +319,8 @@ export function RincianSiklusClient({
           )}
         </CardContent>
       </Card>
+
+      <PencocokanBukuCard data={data.pencocokan} />
 
       {data.terkunci && (
         <Card>
@@ -369,6 +402,14 @@ export function RincianSiklusClient({
                     <TableCell className="text-right tabular-nums">{rupiah(k.komisi)}</TableCell>
                     <TableCell className="text-right font-semibold tabular-nums">
                       {rupiah(k.total)}
+                      {k.potonganHilang > 0 && (
+                        <span className="mt-0.5 block text-xs font-normal text-amber-700 dark:text-amber-400">
+                          {t('lossDeducted', {
+                            value: rupiah(k.potonganHilang),
+                            paid: rupiah(Math.max(0, k.total - k.potonganHilang)),
+                          })}
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
                       {k.dibayarPada ? (
@@ -447,6 +488,22 @@ export function RincianSiklusClient({
             </DialogTitle>
             <DialogDescription>{t('reportBody')}</DialogDescription>
           </DialogHeader>
+          {laporanTerbuka === 'SPG' && bolehMengelola && !data.terkunci ? (
+            <div className="flex flex-col gap-2 rounded-md border border-dashed p-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-muted-foreground">{t("spgFill.hint")}</p>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="shrink-0"
+                disabled={mengisi || pending}
+                onClick={isiDariPenjualanSpg}
+              >
+                {mengisi ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}
+                {t("spgFill.button")}
+              </Button>
+            </div>
+          ) : null}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label>{t('reportItems')}</Label>
@@ -466,8 +523,10 @@ export function RincianSiklusClient({
                   value={r.itemName}
                   placeholder={t('itemName')}
                   onChange={(e) =>
+                    // Nama diubah tangan = bukan lagi barang master yang sama;
+                    // tautan barangnya dilepas daripada menunjuk barang yang salah.
                     setBarisLaporan((l) =>
-                      l.map((x, n) => (n === i ? { ...x, itemName: e.target.value } : x)),
+                      l.map((x, n) => (n === i ? { ...x, itemId: null, itemName: e.target.value } : x)),
                     )
                   }
                 />
@@ -496,7 +555,7 @@ export function RincianSiklusClient({
           </div>
           <DialogFooter>
             <Button
-              disabled={pending || barisLaporan.length === 0 || !barisLaporan.every((r) => r.itemName.trim())}
+              disabled={pending || mengisi || barisLaporan.length === 0 || !barisLaporan.every((r) => r.itemName.trim())}
               onClick={() =>
                 laporanTerbuka &&
                 jalankan(
@@ -606,6 +665,14 @@ export function RincianSiklusClient({
               </div>
               <p className="text-sm">{t('officialTotal', { value: rupiah(totalResmi) })}</p>
             </div>
+            {data.tagihan.promoElorae !== 0 && (
+              <p className="text-xs text-muted-foreground">
+                {t("tagihan.lockPreview", {
+                  promo: rupiah(data.tagihan.promoElorae),
+                  total: rupiah(totalResmi - data.tagihan.promoElorae),
+                })}
+              </p>
+            )}
             <p className="text-xs text-muted-foreground">{t('commissionFromMaster')}</p>
           </div>
           <DialogFooter>

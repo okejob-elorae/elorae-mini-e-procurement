@@ -4,6 +4,7 @@ import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { listFieldSalesOrders } from "@/lib/field-sales/queries";
 import type { FieldSalesOrderStatus } from "@/lib/field-sales/queries";
 import { listStoreOptions } from "@/lib/stores/queries";
+import { idPesananKreditDitahan } from "@/lib/field-sales/kredit-panel";
 import { FieldSalesOrdersPageClient } from "./FieldSalesOrdersPageClient";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +15,7 @@ type PageProps = {
     status?: string;
     orderType?: string;
     storeId?: string;
+    inden?: string;
     page?: string;
     pageSize?: string;
   }>;
@@ -39,6 +41,11 @@ function parseOrderType(raw: string | undefined): "PUTUS" | "KONSI" | undefined 
   return raw === "PUTUS" || raw === "KONSI" ? raw : undefined;
 }
 
+/** Saringan pre-order: INDEN = hanya pre-order, BIASA = hanya stok siap, absen = semua. */
+function parseInden(raw: string | undefined): "INDEN" | "BIASA" | undefined {
+  return raw === "INDEN" || raw === "BIASA" ? raw : undefined;
+}
+
 export default async function FieldSalesOrdersPage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session) redirect("/login");
@@ -49,6 +56,7 @@ export default async function FieldSalesOrdersPage({ searchParams }: PageProps) 
     status: parseStatus(sp.status),
     orderType: parseOrderType(sp.orderType),
     storeId: sp.storeId?.trim() || undefined,
+    inden: parseInden(sp.inden),
   };
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const pageSize = parsePageSize(sp.pageSize);
@@ -57,6 +65,8 @@ export default async function FieldSalesOrdersPage({ searchParams }: PageProps) 
     listFieldSalesOrders(filter, { page, pageSize }),
     listStoreOptions(),
   ]);
+  // Lencana "Kredit ditahan" — hanya untuk baris di halaman ini, satu kueri.
+  const kreditDitahanIds = await idPesananKreditDitahan(orders.map((o) => o.id));
 
   return (
     <FieldSalesOrdersPageClient
@@ -66,9 +76,11 @@ export default async function FieldSalesOrdersPage({ searchParams }: PageProps) 
       status={filter.status ?? "ALL"}
       orderType={sp.orderType === "PUTUS" || sp.orderType === "KONSI" ? sp.orderType : "ALL"}
       storeId={filter.storeId ?? "ALL"}
+      inden={filter.inden ?? "ALL"}
       storeOptions={storeOptions}
       page={page}
       pageSize={pageSize}
+      kreditDitahanIds={kreditDitahanIds}
     />
   );
 }

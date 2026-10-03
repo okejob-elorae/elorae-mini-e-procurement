@@ -547,7 +547,7 @@ export default function UOMPage() {
             <AlertDialogAction
               onClick={() => void onConfirmDeleteConversion()}
               disabled={isDeletingConversion}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              variant="destructive"
             >
               {isDeletingConversion ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

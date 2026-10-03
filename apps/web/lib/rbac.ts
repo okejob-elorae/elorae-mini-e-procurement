@@ -59,6 +59,7 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/inventory': 'inventory:view',
   '/backoffice/inventory/stock-opname': 'inventory_opname:view',
   '/backoffice/inventory/reconciliation': 'inventory_reconciliation:view',
+  '/backoffice/gudang-rusak': 'inventory:view',
   '/backoffice/sales-orders': 'sales_orders:view',
   '/backoffice/sales-orders/[id]/pick-list': 'sales_orders:view',
   '/backoffice/sales-orders/[id]/packing-slip': 'sales_orders:view',
@@ -71,6 +72,40 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/van-sales/[id]': 'canvassing:manage',
   '/backoffice/spg-sales': 'spg_sales:view',
   '/backoffice/spg-sales/[id]': 'spg_sales:view',
+  '/backoffice/spg-requests': 'spg_sales:view',
+  '/backoffice/spg-lost-sales': 'spg_sales:view',
+  '/backoffice/spg-transfers': 'spg_sales:view',
+  '/backoffice/spg-transfers/[id]': 'spg_sales:view',
+  '/backoffice/spg-tutup-hari': 'spg_sales:view',
+  '/backoffice/spg-pelanggan': 'spg_sales:view',
+  '/backoffice/jadwal-spg': 'spg_sales:view',
+  '/backoffice/komisi-spg': 'spg_sales:view',
+  '/backoffice/promo-konter': 'promos:view',
+  '/backoffice/items/size-charts': 'items:view',
+  '/backoffice/settings/spg': 'spg_sales:view',
+  '/backoffice/kinerja-spg': 'spg_sales:view',
+  // `/backoffice/barang-hilang` sengaja TIDAK dipetakan: terbuka untuk pengawas
+  // SPG (`spg_sales:view`) ATAU keuangan yang menetapkan beban
+  // (`receivables:manage`); halamannya memagari dirinya sendiri.
+  '/backoffice/items/labels': 'items:view',
+  // `/backoffice/spg-kiriman-rusak` sengaja TIDAK dipetakan: terbuka untuk
+  // pengawas SPG (`spg_sales:view`) ATAU gudang yang memutuskan (`inventory:manage`).
+  '/backoffice/inden': 'field_sales_orders:view',
+  '/backoffice/sales-lapangan': 'field_sales_orders:view',
+  '/backoffice/absensi': 'field_sales_orders:view',
+  '/backoffice/target-sales': 'field_sales_orders:view',
+  '/backoffice/izin': 'field_sales_orders:view',
+  '/backoffice/pengumuman': 'field_sales_orders:view',
+  '/backoffice/jadwal-kunjungan': 'field_sales_orders:view',
+  '/backoffice/laporan/komisi-salesman': 'field_sales_orders:approve',
+  // Laporan operasional yang dulu tab beranda: izin yang sama dengan beranda.
+  // Pencocokan awalan memilih rute terpanjang, jadi komisi di atas tetap
+  // memakai izinnya sendiri.
+  '/backoffice/laporan': 'dashboard:view',
+  // `/backoffice/biaya-perjalanan` dan `/backoffice/tukar-barang` sengaja TIDAK
+  // dipetakan: masing-masing terbuka untuk dua kelompok (sales ATAU keuangan;
+  // sales ATAU gudang), dan peta ini hanya bisa satu izin. Halamannya memagari
+  // dirinya sendiri (`bolehMelihatBiaya`, `bolehMelihatTukar`).
   '/backoffice/work-orders': 'work_orders:view',
   '/backoffice/work-orders/nota-register': 'nota_register:view',
   '/backoffice/forecast': 'forecast:view',
@@ -89,6 +124,7 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/settings/uom': 'settings_uom:view',
   '/backoffice/settings/security': 'settings_security:view',
   '/backoffice/settings/rbac': 'settings_rbac:view',
+  '/backoffice/settings/users': 'settings_security:manage',
   '/backoffice/jubelio/admin': 'jubelio_admin:view',
   '/backoffice/jubelio/settings': 'settings_security:view',
   '/backoffice/jubelio/categories': 'settings_security:view',
@@ -102,7 +138,9 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/api/items': 'items:view',
   '/api/uoms': 'settings_uom:view',
   '/api/production/colors': 'production_colors:view',
-  '/api/notifications': 'dashboard:view', // All authenticated users can view their notifications
+  // `/api/notifications*` sengaja TIDAK dipetakan: setiap handler-nya memeriksa sesi dan hanya
+  // menyentuh baris milik `session.user.id`. Memetakannya ke `dashboard:view` dulu membuat salesman
+  // dan SPG (yang tidak punya izin itu) mendapat 403 untuk lonceng, tandai-dibaca, dan daftar push.
 };
 
 /**

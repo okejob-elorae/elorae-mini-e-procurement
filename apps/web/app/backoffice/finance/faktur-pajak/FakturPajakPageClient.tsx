@@ -38,6 +38,7 @@ import {
   revertToPendingAction,
   type TaxInvoiceActionResult,
 } from "@/app/actions/tax-invoices";
+import { formatRupiah } from "@/lib/format/rupiah";
 
 type StatusFilter = TaxInvoiceStatusFilter | "ALL";
 
@@ -71,13 +72,6 @@ const STATUS_LABEL_KEY: Record<TaxInvoiceStatusFilter, "statusPending" | "status
   NOT_REQUIRED: "statusNotRequired",
 };
 
-function formatRupiah(value: number): string {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
 
 export function FakturPajakPageClient(props: Props) {
   const router = useRouter();

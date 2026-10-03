@@ -1,5 +1,6 @@
 import { prisma } from '@elorae/db';
 import { getETAStatus } from '@/lib/eta-alerts';
+import { overduePOWhere } from '@/lib/purchase-orders/overdue';
 import type { POStatus } from '@elorae/db';
 import { serializePODetail, serializePOListRow } from '@/lib/purchase-orders/serialize';
 import {
@@ -105,8 +106,8 @@ function buildPOsWhere(filters?: ListPOsFilters) {
     where.paidAt = null;
   }
   if (filters?.overdue) {
-    where.etaDate = { lt: new Date() };
-    where.status = { notIn: ['CLOSED', 'OVER', 'CANCELLED'] };
+    // Satu definisi dengan beranda dan lencana menu — lihat `overduePOWhere`.
+    Object.assign(where, overduePOWhere());
   }
 
   return where;
@@ -244,13 +245,8 @@ export async function getPOById(id: string) {
 }
 
 export async function getOverduePOs() {
-  const today = new Date();
-
   const pos = await prisma.purchaseOrder.findMany({
-    where: {
-      etaDate: { lt: today },
-      status: { notIn: ['CLOSED', 'OVER', 'CANCELLED'] },
-    },
+    where: overduePOWhere(),
     include: {
       supplier: {
         select: {
@@ -305,14 +301,10 @@ export async function getOverduePOs() {
  * seluruh lencana.
  */
 export async function getOverduePOCount(): Promise<number> {
-  return prisma.purchaseOrder.count({
-    where: {
-      etaDate: { lt: new Date() },
-      status: { notIn: ['DRAFT', 'CLOSED', 'OVER', 'CANCELLED'] },
-    },
-  });
+  return prisma.purchaseOrder.count({ where: overduePOWhere() });
 }
 
-export async function getSubmittedPOCount(): Promise<number> {
-  return prisma.purchaseOrder.count({ where: { status: 'SUBMITTED' } });
+/** POs waiting for approval: DRAFT (an approver submitting one sends it to the supplier). */
+export async function getDraftPOCount(): Promise<number> {
+  return prisma.purchaseOrder.count({ where: { status: 'DRAFT' } });
 }

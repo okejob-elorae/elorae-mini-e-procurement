@@ -5,7 +5,11 @@ import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { getUserThemePreference, setUserThemePreference } from '@/app/actions/settings/theme';
+import {
+  getUserThemePreference,
+  setCompanyThemeColor,
+  setUserThemePreference,
+} from '@/app/actions/settings/theme';
 import {
   PantoneThemePickerDialog,
   type PantoneThemeSelection,
@@ -14,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import {
+  Building2,
   FileDigit,
   Layers,
   Loader2,
@@ -22,7 +27,10 @@ import {
   Ruler,
   Shield,
   Users,
+  UserPlus,
   Tags,
+  Target,
+  Store,
 } from 'lucide-react';
 import { generatePaletteFromSeed } from '@/lib/theme/generate-palette-from-seed';
 import { UIThemePicker } from '@/components/settings/UIThemePicker';
@@ -40,6 +48,9 @@ import {
 } from '@/lib/theme/theme-color';
 import { readThemeFromLocalStorage, saveThemeToLocalStorage } from '@/lib/theme/theme-storage';
 import { DEFAULT_THEME_PRIMARY_COLOR } from '@/lib/theme/theme-presets';
+import { tentukanWarnaTema, type WarnaEfektif, type WarnaTersimpan } from '@/lib/theme/warna-efektif';
+import { pasangWarnaEfektif } from '@/lib/theme/pasang-warna';
+import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 
 type ThemeDraft = {
   pantoneTcx: string | null;
@@ -60,6 +71,10 @@ export default function SettingsPage() {
   });
   const [draft, setDraft] = useState<ThemeDraft>(saved);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Satu dialog Pantone untuk dua keperluan: warna saya, atau warna perusahaan.
+  const [modePemilih, setModePemilih] = useState<'pribadi' | 'perusahaan'>('pribadi');
+  const [perusahaan, setPerusahaan] = useState<WarnaTersimpan | null>(null);
+  const [simpanPerusahaan, setSimpanPerusahaan] = useState(false);
   const [isThemeLoading, setIsThemeLoading] = useState(true);
   const [isThemeSaving, setIsThemeSaving] = useState(false);
 
@@ -69,12 +84,19 @@ export default function SettingsPage() {
     { titleKey: 'itemCodes.title' as const, descriptionKey: 'itemCodes.description' as const, href: '/backoffice/settings/item-codes', icon: FileDigit },
     { titleKey: 'tax.title' as const, descriptionKey: 'tax.description' as const, href: '/backoffice/settings/tax', icon: Percent },
     { titleKey: 'uom.title' as const, descriptionKey: 'uom.description' as const, href: '/backoffice/settings/uom', icon: Ruler },
+    { titleKey: 'users.title' as const, descriptionKey: 'users.description' as const, href: '/backoffice/settings/users', icon: UserPlus },
     { titleKey: 'rbac.title' as const, descriptionKey: 'rbac.description' as const, href: '/backoffice/settings/rbac', icon: Users },
     { titleKey: 'packRatio.title' as const, descriptionKey: 'packRatio.description' as const, href: '/backoffice/settings/pack-ratio', icon: Layers },
     { titleKey: 'jenisPotongan.title' as const, descriptionKey: 'jenisPotongan.description' as const, href: '/backoffice/settings/jenis-potongan', icon: Tags },
+    { titleKey: 'salesman.title' as const, descriptionKey: 'salesman.description' as const, href: '/backoffice/settings/salesman', icon: Target },
+    { titleKey: 'spg.title' as const, descriptionKey: 'spg.description' as const, href: '/backoffice/settings/spg', icon: Store },
   ];
 
   const userId = session?.user?.id ?? null;
+  const bolehAturPerusahaan = hasPermission(
+    session?.user?.permissions ?? [],
+    PERMISSIONS.SETTINGS_SECURITY_MANAGE,
+  );
 
   const previewPalette = useMemo(() => {
     if (draft.pantoneTcx === null) return null;
@@ -102,12 +124,31 @@ export default function SettingsPage() {
      * Pantone identity, and treating that as the default silently threw the
      * choice away.
      */
-    if (isDefaultSeed(next.primaryHex)) {
-      applyDefaultTheme();
-      return;
+    pasangEfektif(tentukanWarnaTema({ hex: next.primaryHex, tcx: next.pantoneTcx }, perusahaan), false);
+  };
+
+  /**
+   * Pasang warna efektif (pribadi → perusahaan → bawaan) di layar, dan simpan ke
+   * perangkat supaya muat berikutnya langsung berwarna benar tanpa berkedip.
+   */
+  const pasangEfektif = (efektif: WarnaEfektif, simpan = true) =>
+    pasangWarnaEfektif(efektif, userId, simpan);
+
+  const aturPerusahaan = async (pilihan: Parameters<typeof setCompanyThemeColor>[0]) => {
+    setSimpanPerusahaan(true);
+    try {
+      const { perusahaan: baru } = await setCompanyThemeColor(pilihan);
+      setPerusahaan(baru);
+      // Admin yang belum punya warna sendiri langsung melihat warna barunya.
+      if (isDefaultSeed(saved.primaryHex)) {
+        pasangEfektif(tentukanWarnaTema({ hex: saved.primaryHex }, baru));
+      }
+      toast.success(tToasts('saved'));
+    } catch {
+      toast.error(tToasts('failedToSave'));
+    } finally {
+      setSimpanPerusahaan(false);
     }
-    const palette = generatePaletteFromSeed(next.primaryHex);
-    applyThemeFromPantoneSeed(next.primaryHex, palette);
   };
 
   const [fontTersimpan, setFontTersimpan] = useState<string | null>(null);
@@ -161,19 +202,8 @@ export default function SettingsPage() {
         };
         setSaved(next);
         setDraft(next);
-        applyDraftToDocument(next);
-        const palette = isDefaultSeed(primaryHex)
-          ? undefined
-          : generatePaletteFromSeed(primaryHex);
-        saveThemeToLocalStorage(
-          {
-            primary: primaryHex,
-            pantoneTcx: next.pantoneTcx,
-            seedHex: primaryHex,
-            palette,
-          },
-          userId
-        );
+        setPerusahaan(preference.perusahaan);
+        pasangEfektif(preference.efektif);
       })
       .catch(() => {
         toast.error(tTheme('loadError'));
@@ -244,24 +274,18 @@ export default function SettingsPage() {
     if (!userId) return;
     setIsThemeSaving(true);
 
-    applyDefaultTheme();
+    // Tanpa warna pribadi yang berlaku warna perusahaan, kalau ada.
+    pasangEfektif(tentukanWarnaTema({ hex: DEFAULT_THEME_PRIMARY_COLOR }, perusahaan));
     const fallback: ThemeDraft = {
       pantoneTcx: null,
       pantoneName: null,
       primaryHex: DEFAULT_THEME_PRIMARY_COLOR,
     };
     setDraft(fallback);
-    saveThemeToLocalStorage(
-      {
-        primary: DEFAULT_THEME_PRIMARY_COLOR,
-        pantoneTcx: null,
-        seedHex: DEFAULT_THEME_PRIMARY_COLOR,
-      },
-      userId
-    );
 
     try {
       const result = await setUserThemePreference({ reset: true });
+      pasangEfektif(result.efektif);
       const savedState: ThemeDraft = {
         pantoneTcx: result.pantoneTcx,
         pantoneName: null,
@@ -312,18 +336,23 @@ export default function SettingsPage() {
             <div
               className="h-24 w-24 shrink-0 rounded-lg border shadow-sm"
               style={{
-                backgroundColor:
-                  draft.pantoneTcx !== null ? draft.primaryHex : DEFAULT_THEME_PRIMARY_COLOR,
+                backgroundColor: isDefaultSeed(draft.primaryHex)
+                  ? perusahaan?.hex ?? DEFAULT_THEME_PRIMARY_COLOR
+                  : draft.primaryHex,
               }}
               aria-hidden
             />
             <div className="space-y-1 min-w-0">
-              {draft.pantoneTcx ? (
+              {!isDefaultSeed(draft.primaryHex) ? (
                 <>
                   <p className="font-medium">{draft.pantoneName ?? '—'}</p>
-                  <p className="font-mono text-sm text-muted-foreground">{draft.pantoneTcx}</p>
+                  {draft.pantoneTcx ? (
+                    <p className="font-mono text-sm text-muted-foreground">{draft.pantoneTcx}</p>
+                  ) : null}
                   <p className="font-mono text-sm text-muted-foreground">{draft.primaryHex}</p>
                 </>
+              ) : perusahaan ? (
+                <p className="text-muted-foreground">{tTheme('followsCompany')}</p>
               ) : (
                 <p className="text-muted-foreground">{tTheme('defaultLabel')}</p>
               )}
@@ -371,7 +400,10 @@ export default function SettingsPage() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setPickerOpen(true)}
+                onClick={() => {
+                  setModePemilih('pribadi');
+                  setPickerOpen(true);
+                }}
                 disabled={isThemeLoading || isThemeSaving}
               >
                 {tTheme('choosePantone')}
@@ -430,16 +462,83 @@ export default function SettingsPage() {
               onClick={handleThemeReset}
               disabled={isThemeLoading || isThemeSaving}
             >
-              {tTheme('resetDefault')}
+              {perusahaan ? tTheme('useCompany') : tTheme('resetDefault')}
             </Button>
           </div>
         </CardContent>
       </Card>
 
+      {bolehAturPerusahaan ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Building2 className="h-5 w-5" />
+              {tTheme('companyTitle')}
+            </CardTitle>
+            <CardDescription>{tTheme('companyDescription')}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center gap-4">
+              <div
+                className="h-14 w-14 shrink-0 rounded-lg border"
+                style={{ backgroundColor: perusahaan?.hex ?? DEFAULT_THEME_PRIMARY_COLOR }}
+                aria-hidden
+              />
+              <div className="min-w-0 space-y-0.5">
+                {perusahaan ? (
+                  <>
+                    <p className="font-medium">{perusahaan.name ?? perusahaan.hex}</p>
+                    <p className="font-mono text-sm text-muted-foreground">
+                      {[perusahaan.tcx, perusahaan.hex].filter(Boolean).join(' · ')}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-muted-foreground">{tTheme('companyNone')}</p>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                disabled={simpanPerusahaan || isThemeLoading || isDefaultSeed(saved.primaryHex)}
+                onClick={() =>
+                  void aturPerusahaan(
+                    saved.pantoneTcx
+                      ? { tcx: saved.pantoneTcx }
+                      : { hex: saved.primaryHex, name: saved.pantoneName },
+                  )
+                }
+              >
+                {tTheme('companyUseMine')}
+              </Button>
+              <Button
+                variant="outline"
+                disabled={simpanPerusahaan}
+                onClick={() => {
+                  setModePemilih('perusahaan');
+                  setPickerOpen(true);
+                }}
+              >
+                {tTheme('choosePantone')}
+              </Button>
+              {perusahaan ? (
+                <Button variant="ghost" disabled={simpanPerusahaan} onClick={() => void aturPerusahaan({ reset: true })}>
+                  {tTheme('companyClear')}
+                </Button>
+              ) : null}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
       <PantoneThemePickerDialog
         open={pickerOpen}
         onOpenChange={setPickerOpen}
-        onSelect={handlePantoneSelect}
+        onSelect={
+          modePemilih === 'perusahaan'
+            ? (pilihan) => void aturPerusahaan({ tcx: pilihan.tcx })
+            : handlePantoneSelect
+        }
       />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

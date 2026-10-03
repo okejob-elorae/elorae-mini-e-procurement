@@ -1,8 +1,11 @@
 import { Prisma } from '@elorae/db';
+import { bentrokPengganti, catatDiganti, periksaKlaimLama, type AlasanPengganti } from './pengganti';
 import { runSerializable } from '@/lib/db/tx-retry';
+import { bentrokKunciKiriman } from './idempoten';
 import { denganNomorUnik } from './nomor';
 import { hitungUlangPiutang } from './writer';
 import { catatJejak, JEJAK } from './jejak';
+import { periksaGiro, STATUS_GIRO, type AlasanGiro, type GiroSah } from './giro';
 
 /**
  * Penulis klaim pembayaran (BKM).
@@ -43,7 +46,18 @@ export type AlasanGagalKlaim =
   | 'JENIS_BUTUH_RETUR'
   | 'JENIS_BUTUH_CATATAN'
   | 'JENIS_HANYA_PKP'
-  | 'NOMOR_BENTROK';
+  | 'NOMOR_BENTROK'
+  | 'KUNCI_DIPAKAI'
+  | AlasanPengganti
+  | AlasanGiro;
+
+/** Isian bilyet giro dari formulir, sebelum diperiksa. */
+export type IsianGiro = {
+  nomor: string;
+  bank: string;
+  tanggalTerbit: Date | null;
+  tanggalEfektif: Date | null;
+};
 
 /** Nomor BKM berikutnya dalam tahun berjalan. */
 async function nomorBerikutnya(tx: Klien, tahun: number): Promise<string> {
@@ -76,6 +90,17 @@ export async function buatKlaimPembayaran(input: {
   transferPhotoUrl?: string | null;
   breakdownPhotoUrl?: string | null;
   collectionNoteId?: string | null;
+  /** Kunci kiriman dari antrean offline HP. Laporan dari kantor tidak membawanya. */
+  idempotencyKey?: string | null;
+  /** Wajib kalau `method` giro; diabaikan untuk cara bayar lain. */
+  giro?: IsianGiro | null;
+  /**
+   * BKM yang digantikan laporan ini ("Laporkan ulang" / "Buat ulang"). Harus
+   * sudah ditolak atau dibatalkan, dan belum pernah punya pengganti.
+   */
+  menggantikanId?: string | null;
+  /** Kantor boleh mengganti BKM sales siapa pun; sales hanya miliknya sendiri. */
+  lintasPelapor?: boolean;
 }): Promise<{ ok: true; id: string; docNo: string } | { ok: false; alasan: AlasanGagalKlaim }> {
   const pelunasan = input.pelunasan.filter((p) => p.nilai > 0);
   if (pelunasan.length === 0) return { ok: false, alasan: 'TANPA_PIUTANG' };
@@ -86,21 +111,69 @@ export async function buatKlaimPembayaran(input: {
   }
 
   /*
-   * Foto bukti transfer wajib. Inilah satu-satunya yang dipegang admin keuangan
-   * saat mencocokkan dengan mutasi rekening; tanpanya BKM hanya klaim lisan
-   * yang tidak bisa diverifikasi maupun dibantah.
+   * Foto bukti wajib — bukti transfer, kuitansi tunai yang ditandatangani toko,
+   * atau bilyet giro, menurut cara bayarnya. Inilah satu-satunya yang dipegang
+   * admin keuangan saat mencocokkan; tanpanya BKM hanya klaim lisan yang tidak
+   * bisa diverifikasi maupun dibantah.
    */
   const fotoTransfer = input.transferPhotoUrl?.trim();
   if (!fotoTransfer) return { ok: false, alasan: 'FOTO_WAJIB' };
+
+  /*
+   * Giro diperiksa di sini, sebelum transaksi, dengan fungsi yang SAMA dengan
+   * formulirnya. Isian giro pada cara bayar lain dibuang: formulir bisa membawa
+   * sisa ketikan sebelum cara bayarnya diganti, dan transfer yang ikut
+   * berstatus "menunggu cair" tidak akan pernah bisa diverifikasi.
+   */
+  let giro: GiroSah | null = null;
+  if (input.method === 'giro') {
+    const periksa = periksaGiro({
+      nomor: input.giro?.nomor,
+      bank: input.giro?.bank,
+      tanggalTerbit: input.giro?.tanggalTerbit,
+      tanggalEfektif: input.giro?.tanggalEfektif,
+    });
+    if (!periksa.ok) return { ok: false, alasan: periksa.alasan };
+    giro = periksa.giro;
+  }
 
   const nilaiFaktur = pelunasan.reduce((s, p) => s + p.nilai, 0);
   const totalPotongan = potongan.reduce((s, p) => s + p.nilai, 0);
   // Potongan yang melebihi nilai faktur berarti toko mengirim uang negatif.
   if (totalPotongan > nilaiFaktur) return { ok: false, alasan: 'POTONGAN_MELEBIHI' };
 
-  try {
-    return await denganNomorUnik(() =>
+  const kunci = input.idempotencyKey?.trim() || null;
+
+  const simpan = () =>
+    denganNomorUnik(() =>
       runSerializable(async (tx) => {
+        /*
+         * Kiriman ulang dikenali PALING DULU, sebelum sisa piutang diperiksa:
+         * fakturnya mungkin sudah diverifikasi lunas sejak kiriman pertama, dan
+         * menolaknya "sudah lunas" membuat sales mengira laporannya hilang.
+         * Kunci milik sales lain tidak pernah menyerahkan BKM orang itu.
+         */
+        if (kunci) {
+          const ada = await tx.paymentClaim.findUnique({
+            where: { idempotencyKey: kunci },
+            select: { id: true, docNo: true, salesmanId: true },
+          });
+          if (ada) {
+            return ada.salesmanId === input.salesmanId
+              ? { ok: true as const, id: ada.id, docNo: ada.docNo }
+              : { ok: false as const, alasan: 'KUNCI_DIPAKAI' as const };
+          }
+        }
+
+        const lama = input.menggantikanId
+          ? await periksaKlaimLama(tx, {
+              lamaId: input.menggantikanId,
+              salesmanId: input.salesmanId,
+              lintasPelapor: input.lintasPelapor,
+            })
+          : null;
+        if (lama && !lama.ok) return { ok: false as const, alasan: lama.alasan };
+
         const ids = pelunasan.map((p) => p.receivableId);
         const toko = await tx.store.findUnique({
           where: { id: input.storeId },
@@ -197,7 +270,20 @@ export async function buatKlaimPembayaran(input: {
             receivedAmount: D(nilaiFaktur - totalPotongan),
             transferPhotoUrl: fotoTransfer,
             breakdownPhotoUrl: input.breakdownPhotoUrl?.trim() || null,
+            idempotencyKey: kunci,
+            replacesClaimId: lama ? input.menggantikanId : null,
             status: 'DIKIRIM',
+            // Giro BELUM uang: klaimnya DIKIRIM seperti yang lain, dan status
+            // giro MENUNGGU menahan verifikasinya sampai bilyetnya cair.
+            ...(giro
+              ? {
+                  giroNo: giro.nomor,
+                  giroBank: giro.bank,
+                  giroIssueDate: giro.tanggalTerbit,
+                  giroEffectiveDate: giro.tanggalEfektif,
+                  giroStatus: STATUS_GIRO.MENUNGGU,
+                }
+              : {}),
             receivableLinks: {
               create: pelunasan.map((p) => ({
                 receivableId: p.receivableId,
@@ -243,16 +329,46 @@ export async function buatKlaimPembayaran(input: {
           metadata: {
             storeId: input.storeId,
             jumlahFaktur: pelunasan.length,
+            ...(lama?.ok ? { menggantikan: input.menggantikanId, menggantikanDocNo: lama.nomor } : {}),
             // Potongan yang tertaut nota retur dicatat terpisah: itulah yang
             // menentukan berapa nanti ditahan, dan tautannya bisa diubah.
             potonganRetur: potongan.filter((p) => p.storeReturnId).length,
+            ...(giro
+              ? {
+                  giroNo: giro.nomor,
+                  giroBank: giro.bank,
+                  giroEffectiveDate: giro.tanggalEfektif.toISOString(),
+                }
+              : {}),
           },
         });
+
+        if (lama && input.menggantikanId) {
+          await catatDiganti(tx, {
+            jenis: 'bkm',
+            lamaId: input.menggantikanId,
+            baruId: klaim.id,
+            nomorBaru: klaim.docNo,
+            olehUserId: input.createdById,
+          });
+        }
 
         return { ok: true as const, id: klaim.id, docNo: klaim.docNo };
       }),
     );
+
+  try {
+    try {
+      return await simpan();
+    } catch (err) {
+      // Kiriman kembarnya menang lebih dulu. Percobaan ini membaca kuncinya
+      // yang kini sudah tercatat dan mengembalikan BKM yang sama.
+      if (!bentrokKunciKiriman(err)) throw err;
+      return await simpan();
+    }
   } catch (err) {
+    // Dua pengganti untuk BKM lama yang sama tiba bersamaan: yang kalah ditolak.
+    if (bentrokPengganti(err)) return { ok: false, alasan: 'SUDAH_DIGANTI' };
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       return { ok: false, alasan: 'NOMOR_BENTROK' };
     }

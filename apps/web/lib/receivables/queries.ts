@@ -50,7 +50,17 @@ const angka = (v: unknown): number => Number(v ?? 0);
  * cache untuk penyaringan cepat, bukan sebagai kebenaran.
  */
 export type LingkupPiutang = {
+  /** Penjual faktur (`Receivable.salesmanId`). Untuk layar kantor. */
   salesmanId?: string;
+  /**
+   * Yang MENAGIH: pemegang toko sekarang (`Store.salesmanId`), atau penjual
+   * aslinya selama toko belum punya pemegang. Keputusan pemilik — toko yang
+   * dirotasi, sales baru membantu menagih faktur sales lama. Layar sales
+   * memakai ini, bukan `salesmanId`. Aturannya (murni, dites):
+   * `penagihPiutang` di `lib/stores/penanggung-jawab.ts`. DITAMBAH faktur di tugas
+   * tagih TERBUKA yang ditugaskan kantor ke orang ini (`fakturTugasTagihTerbuka`).
+   */
+  penagihId?: string;
   /** Hanya piutang tertentu — dipakai layar yang menampilkan satu dokumen. */
   receivableIds?: string[];
   storeId?: string;
@@ -67,7 +77,29 @@ export type LingkupPiutang = {
   hanyaTerbuka?: boolean;
 };
 
+/**
+ * Faktur di tugas tagih TERBUKA yang ditugaskan kantor ke orang ini.
+ *
+ * Kantor boleh menugaskan penagihan ke orang yang bukan pemegang toko. Tanpa
+ * ini ia melihat tugasnya tetapi tidak bisa membuka fakturnya — tidak bisa
+ * melapor BKM, jadi tugasnya tidak mungkin diselesaikan. Penugasan MENAMBAH
+ * penagih, tidak memindahkan: pemegang toko tetap menagih faktur yang sama.
+ */
+async function fakturTugasTagihTerbuka(userId: string): Promise<string[]> {
+  const tugas = await prisma.collectionTask.findMany({
+    where: { assigneeId: userId, status: 'TERBUKA' },
+    select: { receivableIds: true },
+  });
+  const ids = new Set<string>();
+  for (const t of tugas) {
+    if (!Array.isArray(t.receivableIds)) continue;
+    for (const id of t.receivableIds) if (typeof id === 'string' && id) ids.add(id);
+  }
+  return [...ids];
+}
+
 export async function daftarPiutang(opts?: LingkupPiutang): Promise<BarisPiutang[]> {
+  const fakturTugas = opts?.penagihId ? await fakturTugasTagihTerbuka(opts.penagihId) : [];
   const rows = await prisma.receivable.findMany({
     /*
      * Toko konsinyasi TIDAK PERNAH muncul di sini. Barang di toko konsi masih
@@ -82,6 +114,15 @@ export async function daftarPiutang(opts?: LingkupPiutang): Promise<BarisPiutang
     where: {
       store: { termsType: { not: 'KONSI' } },
       ...(opts?.salesmanId ? { salesmanId: opts.salesmanId } : {}),
+      ...(opts?.penagihId
+        ? {
+            OR: [
+              { store: { salesmanId: opts.penagihId } },
+              { salesmanId: opts.penagihId, store: { salesmanId: null } },
+              ...(fakturTugas.length > 0 ? [{ id: { in: fakturTugas } }] : []),
+            ],
+          }
+        : {}),
       ...(opts?.receivableIds ? { id: { in: opts.receivableIds } } : {}),
       ...(opts?.storeId ? { storeId: opts.storeId } : {}),
       ...(opts?.hanyaTerbuka ? { outstanding: { gt: 0 } } : {}),

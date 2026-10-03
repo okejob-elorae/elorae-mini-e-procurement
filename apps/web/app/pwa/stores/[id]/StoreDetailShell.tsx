@@ -3,13 +3,10 @@
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import {
-  ArrowLeft,
   Clock,
-  ExternalLink,
   MapPin,
   Phone,
   ShoppingBag,
-  Sparkles,
   User as UserIcon,
 } from "lucide-react";
 import { CheckInButton } from "./CheckInButton";
@@ -21,7 +18,13 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { SaranPesanan, type SaranPesananProps } from "./SaranPesanan";
+import { TombolPesananJarakJauh } from "./TombolPesananJarakJauh";
+import { AksiKunjungan } from "./AksiKunjungan";
+import { RingkasanToko, type RingkasanTokoView } from "./RingkasanToko";
+import { formatRupiah } from "@/lib/format/rupiah";
 
+import { TautanKembali } from "@/app/pwa/TautanKembali";
 type StoreProps = {
   id: string;
   code: string;
@@ -42,12 +45,15 @@ type ActiveProps = {
   storeName: string;
   checkinOutOfRadius: boolean;
   checkinDistanceMeters: number | null;
+  /** Jam check-in (WIB), diformat di server. */
+  sejakLabel: string;
 } | null;
 
 type HistoryRow = {
   id: string;
-  checkinAtIso: string;
-  checkoutAtIso: string | null;
+  /** Sudah diformat di server (hindari hydration error Safari). */
+  checkinLabel: string;
+  checkoutLabel: string | null;
   checkinLat: number;
   checkinLng: number;
   autoClosed: boolean;
@@ -68,42 +74,51 @@ type OrderRow = {
   orderType: "PUTUS" | "KONSI";
   status: "PENDING_APPROVAL" | "APPROVED";
   total: number | null;
-  createdAtIso: string;
+  /** Sudah diformat di server. */
+  createdLabel: string;
 };
 
 type Props = {
+  saran: SaranPesananProps;
+  /** null untuk SPG — kartu ringkasan hanya untuk salesman keliling. */
+  ringkasan: RingkasanTokoView | null;
   store: StoreProps;
   active: ActiveProps;
   activePhotos: SyncedPhoto[];
   history: HistoryRow[];
   pending: PendingProps;
   orders: OrderRow[];
+  /** Kartu "Stok di toko ini" (toko konsinyasi) — dirakit di page.tsx, null kalau tidak berlaku. */
+  /** Aturan pemilik mengizinkan pesanan lewat WA/telepon untuk toko ini (dinilai di server). */
+  bolehJarakJauh?: boolean;
+  /** Tombol tautan portal toko — hanya untuk pemegang toko (dinilai di server). */
+  portalToko?: React.ReactNode;
+  /** Tombol pre-order (inden) — hanya ada selama jendela pre-order buka (dinilai di server). */
+  preorder?: React.ReactNode;
+  /** Kartu "Catatan toko" — dirakit di page.tsx; null bila tidak boleh dilihat. */
+  catatanToko?: React.ReactNode;
+  stokDiToko?: React.ReactNode;
+  /** Kartu "Yang perlu ditawarkan" (salesman keliling) — dirakit di page.tsx, null untuk SPG. */
+  saranTawar?: React.ReactNode;
+  /**
+   * SPG di toko tetapnya (dinilai di server dari `ambilTokoTetap`). SPG tidak
+   * mengambil pesanan lapangan dan tidak menagih: ubin pesanan, saran pesanan,
+   * katalog pesanan, dan riwayat pesanan disembunyikan; pekerjaan display
+   * (daftar periksa, panduan, harga pesaing), foto, dan catatan toko tetap.
+   */
+  spg?: boolean;
 };
-
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString([], {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function formatRupiah(value: number): string {
-  return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value);
-}
 
 const ORDER_STATUS_LABEL: Record<"PENDING_APPROVAL" | "APPROVED", "statusPending" | "statusApproved"> = {
   PENDING_APPROVAL: "statusPending",
   APPROVED: "statusApproved",
 };
 
-export function StoreDetailShell({ store, active, activePhotos, history, pending, orders }: Props) {
+export function StoreDetailShell({ store, active, activePhotos, history, pending, orders, saran, ringkasan, bolehJarakJauh, portalToko, preorder, catatanToko, stokDiToko, saranTawar, spg = false }: Props) {
   const t = useTranslations("pwa.checkIn");
   const tBadge = useTranslations("stores.badge");
-  const tList = useTranslations("pwa.stores");
   const tFso = useTranslations("fieldSalesOrders");
-  const tSmartRequest = useTranslations("pwa.smartRequest");
+  const tKunjungan = useTranslations("pwa.kunjunganBerjalan");
 
   const activeAtThisStore = active && active.storeId === store.id;
   const activeAtOtherStore = active && active.storeId !== store.id;
@@ -115,10 +130,7 @@ export function StoreDetailShell({ store, active, activePhotos, history, pending
     <div className="p-4 space-y-4">
       <header className="-ml-2">
         <Button asChild variant="ghost" size="sm">
-          <Link href="/pwa/stores">
-            <ArrowLeft className="h-4 w-4" />
-            {tList("title")}
-          </Link>
+          <TautanKembali cadangan={spg ? "/pwa/spg/lainnya" : "/pwa/stores"} />
         </Button>
       </header>
 
@@ -133,56 +145,15 @@ export function StoreDetailShell({ store, active, activePhotos, history, pending
         </div>
       </div>
 
-      <Card>
-        <CardContent className="p-4 space-y-3 text-sm">
-          <div className="flex items-start gap-2">
-            <MapPin className="mt-0.5 h-4 w-4 text-muted-foreground shrink-0" />
-            <span className="flex-1">{store.address}</span>
-          </div>
-          {store.phone && (
-            <div className="flex items-center gap-2">
-              <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
-              <a href={`tel:${store.phone}`} className="hover:underline">{store.phone}</a>
-            </div>
-          )}
-          {store.contactName && (
-            <div className="flex items-center gap-2">
-              <UserIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-              <span>{store.contactName}</span>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {mapsUrl && (
-        <Button asChild variant="outline" className="w-full">
-          <a href={mapsUrl} target="_blank" rel="noopener noreferrer">
-            <MapPin className="h-4 w-4" />
-            {t("openInMaps")}
-            <ExternalLink className="ml-auto h-3 w-3" />
-          </a>
-        </Button>
-      )}
-
-      <div className="flex gap-2">
-        <Button asChild variant="outline" className="min-w-0 flex-1 overflow-hidden">
-          <Link href={`/pwa/stores/${store.id}/catalog`}>
-            <ShoppingBag className="h-4 w-4" />
-            <span className="truncate">Katalog Produk</span>
-          </Link>
-        </Button>
-        {store.termsType === "PUTUS" && (
-          <Button asChild variant="outline" className="min-w-0 flex-1 overflow-hidden">
-            <Link href={`/pwa/stores/${store.id}/smart-request`}>
-              <Sparkles className="h-4 w-4" />
-              <span className="truncate">{tSmartRequest("cta")}</span>
-            </Link>
-          </Button>
-        )}
-      </div>
-
       {activeAtThisStore ? (
-        <>
+        /* Kunjungan berjalan PALING ATAS: saat berdiri di toko, yang dicari
+           adalah tombolnya, bukan riwayat. Check-out sengaja di AKHIR blok ini —
+           sesudah foto dan ubah data — bukan di tengah halaman. */
+        <section className="beranda-kartu space-y-3" style={{ borderColor: "var(--primary)", borderWidth: 2 }}>
+          <div className="flex items-baseline justify-between gap-2">
+            <h2 className="beranda-judul">{tKunjungan("judul")}</h2>
+            <span className="text-sm text-muted-foreground">{tKunjungan("sejak", { jam: active.sejakLabel })}</span>
+          </div>
           {active.checkinOutOfRadius && (
             <Alert className="border-amber-500/50 text-amber-700 [&>svg]:text-amber-600">
               <AlertDescription className="text-amber-700">
@@ -190,7 +161,37 @@ export function StoreDetailShell({ store, active, activePhotos, history, pending
               </AlertDescription>
             </Alert>
           )}
-          <CheckOutButton visitId={active.id} />
+          <AksiKunjungan storeId={store.id} termsType={store.termsType} preorder={preorder} spg={spg} />
+        </section>
+      ) : (
+        <div className="space-y-2">
+          <CheckInButton
+            storeId={store.id}
+            storeName={store.name}
+            fotoKunjungan
+            autoCloseStoreName={activeAtOtherStore ? active.storeName : null}
+          />
+          {bolehJarakJauh ? <TombolPesananJarakJauh storeId={store.id} /> : null}
+          {portalToko}
+        </div>
+      )}
+
+      {/* Yang perlu diketahui sebelum atau selama di toko — tagihan, yang biasa
+          dibeli, kapan terakhir dipesan dan didatangi. */}
+      {ringkasan ? <RingkasanToko r={ringkasan} /> : null}
+
+      {/* Catatan toko tepat di bawah ringkasan: "pemilik hanya ada sore hari"
+          perlu terbaca sebelum masuk, bukan sesudah menggulir ke bawah. */}
+      {catatanToko}
+
+      {spg ? null : <SaranPesanan storeId={store.id} saran={saran} bolehPesan={!!activeAtThisStore} />}
+
+      {stokDiToko}
+
+      {saranTawar}
+
+      {activeAtThisStore ? (
+        <>
           <VisitPhotoCapture visitId={active.id} storeId={store.id} synced={activePhotos} />
           {pending ? (
             <StoreChangePendingCard pending={pending} />
@@ -208,13 +209,53 @@ export function StoreDetailShell({ store, active, activePhotos, history, pending
               visitId={active.id}
             />
           )}
+          <CheckOutButton visitId={active.id} />
         </>
-      ) : (
-        <CheckInButton
-          storeId={store.id}
-          autoCloseStoreName={activeAtOtherStore ? active.storeName : null}
-        />
-      )}
+      ) : null}
+
+      {/* Kontak + peta + katalog dalam satu kartu. `py-0 gap-0`: kartu dasar
+          sudah memberi padding atas-bawah, isinya memberi lagi — dulu dobel. */}
+      <Card className="gap-0 py-0">
+        <CardContent className="space-y-1 p-4 text-sm">
+          <div className="flex items-start gap-2 py-1">
+            <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="flex-1">{store.address}</span>
+          </div>
+          {store.phone && (
+            <div className="flex items-center gap-2">
+              <Phone className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <a href={`tel:${store.phone}`} className="inline-flex min-h-11 items-center hover:underline">{store.phone}</a>
+            </div>
+          )}
+          {store.contactName && (
+            <div className="flex items-center gap-2 py-1">
+              <UserIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span>{store.contactName}</span>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-2 pt-2">
+            {mapsUrl ? (
+              <Button asChild variant="outline" className={activeAtThisStore || spg ? "col-span-2 w-full" : "w-full"}>
+                <a href={mapsUrl} target="_blank" rel="noopener noreferrer">
+                  <MapPin className="h-4 w-4" />
+                  {tKunjungan("peta")}
+                </a>
+              </Button>
+            ) : null}
+            {/* Katalog tetap bisa dilihat tanpa check-in (hanya baca) — untuk
+                menjawab pertanyaan toko lewat telepon. Selama kunjungan, tombol
+                "Buat pesanan" di atas yang dipakai. */}
+            {!activeAtThisStore && !spg ? (
+              <Button asChild variant="outline" className={mapsUrl ? "w-full" : "col-span-2 w-full"}>
+                <Link href={`/pwa/stores/${store.id}/catalog`}>
+                  <ShoppingBag className="h-4 w-4" />
+                  {tKunjungan("lihatKatalog")}
+                </Link>
+              </Button>
+            ) : null}
+          </div>
+        </CardContent>
+      </Card>
 
       <section className="pt-2 space-y-2">
         <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground uppercase tracking-wide">
@@ -222,22 +263,22 @@ export function StoreDetailShell({ store, active, activePhotos, history, pending
           {t("history")}
         </h2>
         {history.length === 0 ? (
-          <Card>
+          <Card className="gap-0 py-0">
             <CardContent className="p-6 text-center text-sm text-muted-foreground">
               {t("historyEmpty")}
             </CardContent>
           </Card>
         ) : (
-          <Card>
+          <Card className="gap-0 overflow-hidden py-0">
             <CardContent className="p-0 divide-y">
               {history.map(v => (
                 <div
                   key={v.id}
                   className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-sm"
                 >
-                  <span className="font-medium">{formatDateTime(v.checkinAtIso)}</span>
+                  <span className="font-medium">{v.checkinLabel}</span>
                   <span className="text-xs text-muted-foreground">
-                    → {v.checkoutAtIso ? formatDateTime(v.checkoutAtIso) : t("stillOpen")}
+                    → {v.checkoutLabel ?? t("stillOpen")}
                   </span>
                   {v.autoClosed && (
                     <Badge variant="secondary">{t("autoClosedBadge")}</Badge>
@@ -259,37 +300,39 @@ export function StoreDetailShell({ store, active, activePhotos, history, pending
         )}
       </section>
 
-      <section className="pt-2 space-y-2">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-          <ShoppingBag className="h-4 w-4" />
-          {t("ordersTitle")}
-        </h2>
-        {orders.length === 0 ? (
-          <Card>
-            <CardContent className="p-6 text-center text-sm text-muted-foreground">
-              {t("ordersEmpty")}
-            </CardContent>
-          </Card>
-        ) : (
-          <Card>
-            <CardContent className="p-0 divide-y">
-              {orders.map(o => (
-                <div key={o.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-sm">
-                  <span className="font-mono text-xs">{o.orderNo}</span>
-                  <Badge variant={o.orderType === "PUTUS" ? "outline" : "secondary"}>
-                    {o.orderType === "KONSI" ? tFso("typeKonsi") : tFso("typePutus")}
-                  </Badge>
-                  <Badge variant="outline">{tFso(ORDER_STATUS_LABEL[o.status])}</Badge>
-                  <span className="text-xs text-muted-foreground">{formatDateTime(o.createdAtIso)}</span>
-                  {o.total !== null && (
-                    <span className="ml-auto tabular-nums font-medium">{formatRupiah(o.total)}</span>
-                  )}
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        )}
-      </section>
+      {spg ? null : (
+        <section className="pt-2 space-y-2">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+            <ShoppingBag className="h-4 w-4" />
+            {t("ordersTitle")}
+          </h2>
+          {orders.length === 0 ? (
+            <Card className="gap-0 py-0">
+              <CardContent className="p-6 text-center text-sm text-muted-foreground">
+                {t("ordersEmpty")}
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="gap-0 overflow-hidden py-0">
+              <CardContent className="p-0 divide-y">
+                {orders.map(o => (
+                  <div key={o.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-sm">
+                    <span className="font-mono text-xs">{o.orderNo}</span>
+                    <Badge variant={o.orderType === "PUTUS" ? "outline" : "secondary"}>
+                      {o.orderType === "KONSI" ? tFso("typeKonsi") : tFso("typePutus")}
+                    </Badge>
+                    <Badge variant="outline">{tFso(ORDER_STATUS_LABEL[o.status])}</Badge>
+                    <span className="text-xs text-muted-foreground">{o.createdLabel}</span>
+                    {o.total !== null && (
+                      <span className="ml-auto tabular-nums font-medium">{formatRupiah(o.total)}</span>
+                    )}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+        </section>
+      )}
     </div>
   );
 }

@@ -4,6 +4,8 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { returTertahan } from "@/lib/receivables/rules";
 import { PILIH_POTONGAN, potonganRetur } from "@/lib/receivables/deductions";
+import { giroKedaluwarsa, STATUS_GIRO, type StatusGiro } from "@/lib/receivables/giro";
+import { formatDisplayDate } from "@/lib/date-only";
 import { PelunasanClient, type BarisKlaim } from "./PelunasanClient";
 
 export const dynamic = "force-dynamic";
@@ -23,12 +25,18 @@ export default async function PelunasanPage() {
       receivedAmount: true,
       status: true,
       verifyNote: true,
+      method: true,
+      giroNo: true,
+      giroIssueDate: true,
+      giroEffectiveDate: true,
+      giroStatus: true,
       store: { select: { name: true } },
       salesman: { select: { name: true } },
       deductions: { select: PILIH_POTONGAN },
     },
   });
 
+  const sekarang = new Date();
   const baris: BarisKlaim[] = rows.map((r) => ({
     id: r.id,
     docNo: r.docNo,
@@ -49,11 +57,26 @@ export default async function PelunasanPage() {
      * dari yang disebut halaman piutang untuk faktur yang sama.
      */
     nilaiTertahan: returTertahan(potonganRetur(r.deductions)),
+    // Giro dibawa dengan statusnya sendiri: klaim giro yang menunggu tidak boleh
+    // diverifikasi lewat tombol biasa, jadi barisnya menawarkan "cair/ditolak".
+    giro: r.giroStatus
+      ? {
+          nomor: r.giroNo ?? "—",
+          efektif: formatDisplayDate(r.giroEffectiveDate),
+          status: r.giroStatus as StatusGiro,
+          kedaluwarsa:
+            r.giroStatus === STATUS_GIRO.MENUNGGU && r.giroIssueDate !== null
+              ? giroKedaluwarsa(r.giroIssueDate, sekarang)
+              : false,
+        }
+      : null,
   }));
+  const giroMenunggu = baris.filter((b) => b.status === "DIKIRIM" && b.giro?.status === "MENUNGGU").length;
 
   return (
     <PelunasanClient
       baris={baris}
+      giroMenunggu={giroMenunggu}
       bolehMemutuskan={hasPermission(
         session.user.permissions ?? [],
         PERMISSIONS.JOURNALS_MANAGE,

@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,6 +27,7 @@ import {
   type ActionResult,
 } from "@/app/actions/field-sales-orders";
 import type { StagedAddition } from "./KonsiSuggestionsCard";
+import { formatRupiah } from "@/lib/format/rupiah";
 
 export type AppealedLine = {
   id: string;
@@ -57,15 +59,10 @@ type Props = {
   orderLines: LineRef[];
   stagedAdditions: StagedAddition[];
   onStagedAdditionsChange: (staged: StagedAddition[]) => void;
+  /** Kredit ditahan saat pesanan dibuat: persetujuan butuh pernyataan sudah memeriksa tagihan. */
+  kreditDitahan?: boolean;
 };
 
-function formatRupiah(value: number): string {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
 
 function lineDisplayName(ref: Pick<LineRef, "productName" | "variantLabel">): string {
   return ref.variantLabel ? `${ref.productName} (${ref.variantLabel})` : ref.productName;
@@ -80,6 +77,7 @@ export function ApproveRejectCard({
   orderLines,
   stagedAdditions,
   onStagedAdditionsChange,
+  kreditDitahan = false,
 }: Props) {
   const t = useTranslations("fieldSalesOrders");
   const tCommon = useTranslations("common");
@@ -88,6 +86,7 @@ export function ApproveRejectCard({
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [finalPriceInputs, setFinalPriceInputs] = useState<Record<string, string>>({});
+  const [kreditDiperiksa, setKreditDiperiksa] = useState(false);
 
   if (!canApprove || status !== "PENDING_APPROVAL") return null;
 
@@ -97,6 +96,8 @@ export function ApproveRejectCard({
     setFinalPriceInputs(
       Object.fromEntries(appealedLines.map((l) => [l.id, String(l.requestedUnitPrice)])),
     );
+    // Centangnya per keputusan: membuka dialog lagi berarti menyatakan lagi.
+    setKreditDiperiksa(false);
     setApproveDialogOpen(true);
   }
 
@@ -177,6 +178,8 @@ export function ApproveRejectCard({
       }
     } else if (r.reason === "INVALID_FINAL_PRICE") {
       toast.error(t("errInvalidFinalPrice"));
+    } else if (r.reason === "KREDIT_BELUM_DIPERIKSA") {
+      toast.error(t("kredit.errBelumDiperiksa"));
     } else {
       toast.error(t("errNotFound"));
     }
@@ -184,6 +187,7 @@ export function ApproveRejectCard({
 
   function callApprove(): void {
     if (!finalPricesValid) return;
+    if (kreditDitahan && !kreditDiperiksa) return;
     const finalPrices = hasAppeals
       ? appealedLines.map((l) => ({ lineId: l.id, finalUnitPrice: Number(finalPriceInputs[l.id]) }))
       : undefined;
@@ -193,7 +197,9 @@ export function ApproveRejectCard({
         : undefined;
     startTransition(async () => {
       try {
-        const r = await approveFieldSalesOrderAction(orderId, finalPrices, addedLines);
+        const r = await approveFieldSalesOrderAction(orderId, finalPrices, addedLines, {
+          kreditDiperiksa: kreditDitahan ? kreditDiperiksa : undefined,
+        });
         handleResult(r, t("approved"));
       } catch {
         toast.error(t("errGeneric"));
@@ -290,6 +296,24 @@ export function ApproveRejectCard({
             </div>
           )}
 
+          {kreditDitahan && (
+            <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 p-3">
+              <p className="text-xs text-destructive">{t("kredit.dialogPenjelasan")}</p>
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="kredit-diperiksa"
+                  checked={kreditDiperiksa}
+                  disabled={isPending}
+                  onCheckedChange={(v) => setKreditDiperiksa(v === true)}
+                  className="mt-0.5"
+                />
+                <Label htmlFor="kredit-diperiksa" className="text-sm font-normal leading-snug">
+                  {t("kredit.centang")}
+                </Label>
+              </div>
+            </div>
+          )}
+
           {stagedAdditions.length > 0 && (
             <p className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3 text-xs text-emerald-700">
               {t("konsiSuggestions.approveSummary", { count: stagedAdditions.length })}
@@ -298,7 +322,10 @@ export function ApproveRejectCard({
 
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isPending}>{tCommon("cancel")}</AlertDialogCancel>
-            <AlertDialogAction disabled={isPending || (hasAppeals && !finalPricesValid)} onClick={callApprove}>
+            <AlertDialogAction
+              disabled={isPending || (hasAppeals && !finalPricesValid) || (kreditDitahan && !kreditDiperiksa)}
+              onClick={callApprove}
+            >
               {t("approve")}
             </AlertDialogAction>
           </AlertDialogFooter>

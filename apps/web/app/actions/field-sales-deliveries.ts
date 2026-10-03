@@ -6,9 +6,12 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { recordFieldSalesDelivery, closeFieldSalesOrderRemainder } from "@/lib/field-sales/delivery/writer";
 import { DeliveryError } from "@/lib/field-sales/errors";
+import { IndenBelumRilisError } from "@/lib/field-sales/inden";
 import { formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import { JENIS_KABAR, kabariPengguna } from "@/lib/notifications/kabar-pengguna";
+import { formatIDR } from "@/lib/sales-orders/format";
 import { logPrint } from "./audit";
 
 export type DeliveryActionResult =
@@ -24,7 +27,9 @@ export type DeliveryActionResult =
         | "CONFLICT"
         | "NO_LINES"
         | "OVER_DELIVER"
-        | "INSUFFICIENT_STOCK";
+        | "INSUFFICIENT_STOCK"
+        /** Pesanan pre-order yang jendelanya belum dirilis: stoknya belum dicadangkan. */
+        | "INDEN_BELUM_RILIS";
       shortLines?: Array<{ orderLineId: string; requested: number; onHand: number }>;
     };
 
@@ -52,6 +57,73 @@ function parseCalendarDay(value: unknown): Date | null {
   const parsed = parseDateOnly(trimmed);
   if (!parsed) return null;
   return formatDateOnlyJakarta(parsed) === trimmed ? parsed : null;
+}
+
+/**
+ * Kabar ke salesman pemilik pesanan bahwa sebagian/seluruh pesanannya sudah dikirim.
+ *
+ * Dipanggil SESUDAH transaksi pengiriman selesai dan tidak pernah melempar: pengiriman sudah
+ * tercatat, dan kabar yang gagal tidak boleh membuatnya tampak gagal. Kiriman ulang dengan kunci
+ * idempoten yang sama (respons pertama hilang di jalan) tidak dikabarkan dua kali — pemanggil
+ * yang tahu itu ulangan tidak memanggil ini sama sekali.
+ */
+async function kabarPesananDikirim(deliveryId: string, pelakuId: string): Promise<void> {
+  try {
+    const kiriman = await prisma.fieldSalesDelivery.findUnique({
+      where: { id: deliveryId },
+      select: {
+        docNo: true,
+        total: true,
+        order: {
+          select: { id: true, orderNo: true, salesmanId: true, deliveryStatus: true, store: { select: { name: true } } },
+        },
+      },
+    });
+    if (!kiriman || kiriman.order.salesmanId === pelakuId) return;
+    const { order } = kiriman;
+    const lengkap = order.deliveryStatus === "DELIVERED";
+    await kabariPengguna(order.salesmanId, {
+      jenis: JENIS_KABAR.PESANAN_DIKIRIM,
+      judul: lengkap ? `Pesanan ${order.orderNo} sudah dikirim` : `Pesanan ${order.orderNo} dikirim sebagian`,
+      isi: `${order.store.name} · nota ${kiriman.docNo} · ${formatIDR(kiriman.total.toString())}`,
+      data: { orderId: order.id, deliveryId },
+    });
+  } catch (err) {
+    console.error("[kabar] pesanan dikirim gagal", deliveryId, err);
+  }
+}
+
+/** Kabar bahwa sisa pesanan ditutup (tidak akan dikirim), dengan alasannya. Tidak pernah melempar. */
+async function kabarPesananDitutup(orderId: string, alasan: string, pelakuId: string): Promise<void> {
+  try {
+    const order = await prisma.fieldSalesOrder.findUnique({
+      where: { id: orderId },
+      select: { orderNo: true, salesmanId: true, store: { select: { name: true } } },
+    });
+    if (!order || order.salesmanId === pelakuId) return;
+    await kabariPengguna(order.salesmanId, {
+      jenis: JENIS_KABAR.PESANAN_DITUTUP,
+      judul: `Sisa pesanan ${order.orderNo} ditutup`,
+      isi: `${order.store.name} · sisa barang tidak dikirim. Alasan: ${alasan}`,
+      data: { orderId },
+    });
+  } catch (err) {
+    console.error("[kabar] pesanan ditutup gagal", orderId, err);
+  }
+}
+
+/**
+ * Apakah kunci idempoten ini sudah pernah menghasilkan pengiriman. Dibaca SEBELUM penulis berjalan:
+ * sesudahnya, kiriman baru dan kiriman ulang tampak sama persis. Kalau pembacaan ini sendiri gagal,
+ * anggap bukan ulangan — kabar ganda lebih ringan daripada kabar yang hilang.
+ */
+async function sudahTercatat(idempotencyKey: string): Promise<boolean> {
+  try {
+    const ada = await prisma.fieldSalesDelivery.findUnique({ where: { idempotencyKey }, select: { id: true } });
+    return ada !== null;
+  } catch {
+    return false;
+  }
 }
 
 async function guard(): Promise<{ userId: string } | { ok: false; reason: "FORBIDDEN" }> {
@@ -94,8 +166,10 @@ export async function recordDeliveryAction(input: {
   if (parsedDueDate.getTime() < parsedInvoiceDate.getTime()) {
     return { ok: false, reason: "INVALID_DATES" };
   }
+  const ulangan = await sudahTercatat(idempotencyKey);
+  let deliveryId: string;
   try {
-    await recordFieldSalesDelivery({
+    ({ deliveryId } = await recordFieldSalesDelivery({
       orderId,
       deliveredById: g.userId,
       lines,
@@ -103,13 +177,15 @@ export async function recordDeliveryAction(input: {
       invoiceDate: parsedInvoiceDate,
       dueDate: parsedDueDate,
       idempotencyKey,
-    });
+    }));
   } catch (e) {
     if (e instanceof DeliveryError) return { ok: false, reason: e.code, shortLines: e.shortLines };
+    if (e instanceof IndenBelumRilisError) return { ok: false, reason: "INDEN_BELUM_RILIS" };
     throw e;
   }
   revalidatePath("/backoffice/field-sales-orders");
   revalidatePath(`/backoffice/field-sales-orders/${orderId}`);
+  if (!ulangan) void kabarPesananDikirim(deliveryId, g.userId);
   return { ok: true };
 }
 
@@ -225,6 +301,7 @@ export async function closeRemainderAction(orderId: string, reason: string): Pro
   }
   revalidatePath("/backoffice/field-sales-orders");
   revalidatePath(`/backoffice/field-sales-orders/${orderId}`);
+  void kabarPesananDitutup(orderId, reason.trim(), g.userId);
   return { ok: true };
 }
 

@@ -6,13 +6,13 @@ import { useTranslations, useLocale } from "next-intl";
 import { AlertTriangle, CheckCircle2, Info, Landmark } from "lucide-react";
 import type { BalanceSheet } from "@/lib/finance/reports/balance-sheet";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { ReportSection } from "../ReportSection";
 import { ReportExportButtons } from "../ReportExportButtons";
 import { exportBalanceSheetExcel } from "@/app/actions/finance-reports";
 import { formatDisplayDate } from "@/lib/date-only";
+import { TanggalInput } from "@/components/ui/tanggal-input";
 
 type Props = {
   report: BalanceSheet;
@@ -68,9 +68,8 @@ export function BalanceSheetClient({ report, openingWarningDate, filters }: Prop
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <div>
             <label htmlFor="tanggal-per" className="text-xs text-muted-foreground mb-1 block">{t("filter.asOf")}</label>
-            <Input
+            <TanggalInput
               id="tanggal-per"
-              type="date"
               value={filters.asOf}
               onChange={(e) => pushParam("asOf", e.target.value || undefined)}
             />

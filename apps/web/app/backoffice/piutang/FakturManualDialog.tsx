@@ -26,6 +26,7 @@ import {
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { buatFakturManualAction } from '@/app/actions/receivable-import';
 import type { BarisFaktur } from '@/lib/receivables/manual-writer';
+import { TanggalInput } from '@/components/ui/tanggal-input';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 
@@ -132,18 +133,16 @@ export function FakturManualDialog({
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="fm-tgl">{t('invoiceDate')}</Label>
-              <Input
+              <TanggalInput
                 id="fm-tgl"
-                type="date"
                 value={tglFaktur}
                 onChange={(e) => setTglFaktur(e.target.value)}
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="fm-tempo">{t('dueDate')}</Label>
-              <Input
+              <TanggalInput
                 id="fm-tempo"
-                type="date"
                 value={tempo}
                 onChange={(e) => setTempo(e.target.value)}
               />

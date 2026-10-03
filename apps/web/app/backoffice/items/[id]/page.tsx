@@ -39,6 +39,9 @@ export default async function ItemDetailPage({
     targetMarginPercent:
       item.targetMarginPercent != null ? Number(item.targetMarginPercent) : undefined,
     additionalCost: item.additionalCost != null ? Number(item.additionalCost) : undefined,
+    material: item.material ?? null,
+    careInstructions: item.careInstructions ?? null,
+    sizeChartId: item.sizeChartId ?? null,
     consumptionRules: (
       item.fgConsumptions as Array<{
         materialId: string;

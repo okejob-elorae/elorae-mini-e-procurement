@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useLocale, useTranslations } from 'next-intl';
 import { 
@@ -54,6 +55,7 @@ import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 import { cn } from '@/lib/utils';
 import { formatDisplayDate } from '@/lib/date-only';
+import { parsePOStatusFilter, type POStatusFilter } from '@/lib/purchase-orders/overdue';
 
 export interface PurchaseOrder {
   id: string;
@@ -129,10 +131,12 @@ export function PurchaseOrdersPageClient({
   initialPOs,
   initialTotalCount,
   initialPage = 1,
+  initialStatus = '',
 }: {
   initialPOs?: PurchaseOrder[];
   initialTotalCount?: number;
   initialPage?: number;
+  initialStatus?: POStatusFilter;
 } = {}) {
   const { data: session } = useSession();
   const tToasts = useTranslations('toasts');
@@ -144,7 +148,22 @@ export function PurchaseOrdersPageClient({
   const [pos, setPOs] = useState<PurchaseOrder[]>(initialPOs ?? []);
   const [isLoading, setIsLoading] = useState(!initialPOs);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<POStatus | ''>('');
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [statusFilter, setStatusFilterState] = useState<POStatusFilter>(initialStatus);
+  // Saringan ditulis balik ke URL (replace, bukan push): tautannya bisa dibagikan
+  // dan "Kembali" tidak berjalan mundur melewati setiap pilihan saringan.
+  const setStatusFilter = (next: POStatusFilter) => {
+    setStatusFilterState(next);
+    const params = new URLSearchParams(searchParams.toString());
+    if (next) params.set('status', next);
+    else params.delete('status');
+    const qs = params.toString();
+    // `history.replaceState`, bukan `router.replace`: Next menyelaraskannya
+    // dengan useSearchParams tanpa memuat ulang halaman server — saringan ini
+    // bekerja di klien, jadi perjalanan ke server hanya membuang waktu.
+    window.history.replaceState(null, '', qs ? `${pathname}?${qs}` : pathname);
+  };
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [cancelTargetId, setCancelTargetId] = useState<string | null>(null);
   const [page, setPage] = useState(initialPage);
@@ -155,7 +174,9 @@ export function PurchaseOrdersPageClient({
     setIsLoading(true);
     try {
       const result = await getPOs(
-        { status: statusFilter || undefined },
+        statusFilter === 'overdue'
+          ? { overdue: true }
+          : { status: statusFilter || undefined },
         { page, pageSize }
       );
       if (result != null && typeof result === 'object' && 'items' in result && 'totalCount' in result) {
@@ -281,13 +302,14 @@ export function PurchaseOrdersPageClient({
         </div>
         <Select
           value={statusFilter || '__all__'}
-          onValueChange={(v) => setStatusFilter(v === '__all__' ? '' : (v as POStatus))}
+          onValueChange={(v) => setStatusFilter(v === '__all__' ? '' : parsePOStatusFilter(v))}
         >
           <SelectTrigger className="w-[180px]">
             <SelectValue placeholder={tPO('allStatus')} />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="__all__">{tPO('allStatus')}</SelectItem>
+            <SelectItem value="overdue">{tPO('filterOverdue')}</SelectItem>
             {(Object.keys(statusLabels) as POStatus[]).map((status) => (
               <SelectItem key={status} value={status}>
                 {tStatus(getStatusMeta('purchaseOrder', status).labelKey as never)}

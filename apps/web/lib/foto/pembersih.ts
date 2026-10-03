@@ -38,41 +38,93 @@ export type HasilSapu = {
 };
 
 /**
+ * SETIAP kolom yang bisa menyimpan URL `/api/foto/<id>`. Foto yang tidak
+ * ditunjuk kolom mana pun di sini dianggap yatim dan DIHAPUS — jadi kolom foto
+ * baru WAJIB ditambahkan ke daftar ini. `pembersih-skema.test.ts` membaca skema
+ * Prisma dan gagal kalau ada kolom bernama foto/photo/image/selfie/… yang
+ * tidak terdaftar di sini maupun di `KOLOM_BUKAN_FOTO_DB`.
+ *
+ * Sampai 2026-10-03 daftar ini hanya berisi BKM, kontrabon, dan nota retur:
+ * foto bukti terima, struk biaya, swafoto absen, usulan toko, harga pesaing,
+ * izin, panduan display, dan konten kreatif semuanya tersapu jam 03.10 begitu
+ * berumur enam jam.
+ *
+ * `json: true` = kolom JSON (bisa berisi beberapa URL); kolom teks pun dibaca
+ * dengan mencari SEMUA `/api/foto/<id>` di dalamnya, karena beberapa kolom teks
+ * menyimpan daftar URL (mis. `GRN.photoUrls`).
+ */
+export const KOLOM_FOTO: readonly { model: string; kolom: readonly string[]; json?: boolean }[] = [
+  { model: "paymentClaim", kolom: ["transferPhotoUrl", "breakdownPhotoUrl"] },
+  { model: "collectionNote", kolom: ["photoUrl"] },
+  { model: "storeReturn", kolom: ["photoUrl"] },
+  { model: "fieldSalesDelivery", kolom: ["podPhotoUrl"] },
+  { model: "gRN", kolom: ["photoUrls"] },
+  { model: "materialIssue", kolom: ["ackPhotoUrl"] },
+  { model: "fGReceipt", kolom: ["qcPhotos"] },
+  { model: "contentPlan", kolom: ["imageUrl"] },
+  { model: "storeReceiptLine", kolom: ["damagePhotoUrl"] },
+  { model: "storeProposal", kolom: ["photoUrl"] },
+  { model: "expenseClaim", kolom: ["photoUrl"] },
+  { model: "attendance", kolom: ["selfieUrl"] },
+  { model: "competitorPrice", kolom: ["photoUrl"] },
+  { model: "displayGuide", kolom: ["imageUrl"] },
+  { model: "leaveRequest", kolom: ["photoUrl"] },
+  { model: "itemImage", kolom: ["url"] },
+  { model: "user", kolom: ["image"] },
+  { model: "spgDailyClose", kolom: ["photoUrls"], json: true },
+];
+
+/**
+ * Kolom yang NAMANYA mirip foto tapi tidak pernah menyimpan `/api/foto/…`,
+ * beserta alasannya — supaya tes skema tidak menuntutnya masuk daftar.
+ */
+export const KOLOM_BUKAN_FOTO_DB: Readonly<Record<string, string>> = {
+  "JubelioWebhookEvent.signature": "tanda tangan HMAC webhook, bukan gambar",
+  "JubelioPushDefaults.useSingleImageSet": "saklar boolean",
+  "ItemImage.jubelioImageId": "id gambar di Jubelio",
+  "ItemImage.jubelioImageKey": "kunci gambar di Jubelio",
+  "ItemImage.jubelioImageThumbnail": "URL thumbnail Jubelio",
+  "Item.images": "relasi ke ItemImage (kolom url-nya terdaftar)",
+  "StoreVisit.photos": "relasi ke VisitPhoto — foto kunjungan di R2, bukan tabel Foto",
+  "User.fotoDiunggah": "relasi ke Foto itu sendiri",
+};
+
+const POLA_URL_FOTO = /\/api\/foto\/([A-Za-z0-9_-]+)/g;
+
+/** Semua `/api/foto/<id>` di dalam sebuah nilai kolom (teks atau JSON). */
+export function urlFotoDalam(nilai: unknown): string[] {
+  if (nilai === null || nilai === undefined) return [];
+  const teks = typeof nilai === "string" ? nilai : JSON.stringify(nilai);
+  return [...teks.matchAll(POLA_URL_FOTO)].map((m) => `/api/foto/${m[1]}`);
+}
+
+type Delegasi = { findMany: (args: unknown) => Promise<Record<string, unknown>[]> };
+
+/**
  * Kumpulkan setiap URL foto yang sedang dipakai sebuah dokumen.
  *
  * Dibaca sebagai teks URL, bukan id, karena itulah yang benar-benar tersimpan
- * di kolom-kolomnya. Menebak bentuk id dari URL akan meleset begitu bentuk
- * URL-nya berubah; mencocokkan teks utuh tidak.
- *
- * Empat kolom, dan daftar ini harus ikut bertambah setiap kali ada kolom foto
- * baru. Yang terlewat berarti foto yang masih dipakai ikut tersapu — maka
- * penyapuannya sengaja mengumpulkan yang TERPAKAI, bukan menebak yang yatim.
+ * di kolom-kolomnya. Penyapuannya sengaja mengumpulkan yang TERPAKAI, bukan
+ * menebak yang yatim — kolom yang terlewat berarti foto yang masih dipakai ikut
+ * tersapu, maka daftarnya dijaga tes skema.
  */
 async function urlTerpakai(): Promise<Set<string>> {
   const dipakai = new Set<string>();
-
-  const [klaim, kontrabon, retur] = await Promise.all([
-    prisma.paymentClaim.findMany({
-      where: { OR: [{ transferPhotoUrl: { not: null } }, { breakdownPhotoUrl: { not: null } }] },
-      select: { transferPhotoUrl: true, breakdownPhotoUrl: true },
+  const hasil = await Promise.all(
+    KOLOM_FOTO.map(({ model, kolom, json }) => {
+      const delegasi = (prisma as unknown as Record<string, Delegasi>)[model];
+      const select = Object.fromEntries(kolom.map((k) => [k, true]));
+      // Kolom JSON tidak bisa disaring `not: null` dengan cara yang sama di
+      // semua dialek; tabelnya kecil, jadi dibaca utuh.
+      const where = json ? undefined : { OR: kolom.map((k) => ({ [k]: { not: null } })) };
+      return delegasi.findMany({ where, select });
     }),
-    prisma.collectionNote.findMany({
-      where: { photoUrl: { not: null } },
-      select: { photoUrl: true },
-    }),
-    prisma.storeReturn.findMany({
-      where: { photoUrl: { not: null } },
-      select: { photoUrl: true },
-    }),
-  ]);
-
-  for (const k of klaim) {
-    if (k.transferPhotoUrl) dipakai.add(k.transferPhotoUrl);
-    if (k.breakdownPhotoUrl) dipakai.add(k.breakdownPhotoUrl);
+  );
+  for (const baris of hasil) {
+    for (const b of baris) {
+      for (const nilai of Object.values(b)) for (const url of urlFotoDalam(nilai)) dipakai.add(url);
+    }
   }
-  for (const k of kontrabon) if (k.photoUrl) dipakai.add(k.photoUrl);
-  for (const r of retur) if (r.photoUrl) dipakai.add(r.photoUrl);
-
   return dipakai;
 }
 

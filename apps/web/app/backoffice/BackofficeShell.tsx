@@ -7,9 +7,9 @@ import Link from 'next/link';
 import {
   Megaphone,
   LayoutDashboard,
-  Building2,
+  Database,
   Package,
-  FileText,
+  ReceiptText,
   Settings,
   Menu,
   ChevronDown,
@@ -19,13 +19,15 @@ import {
   Moon,
   Monitor,
   Check,
-  CalendarDays,
-  Activity,
-  Store,
-  Wallet,
+  Factory,
+  Plug,
+  ShoppingCart,
+  BookOpenText,
   BarChart2,
   FolderArchive,
   Handshake,
+  MapPinned,
+  Store,
   Search,
   Star,
   X,
@@ -96,7 +98,9 @@ function useNavCounts(): { grup: Record<string, number>; halaman: Record<string,
 function NavCountBadge({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
-    <span className="ml-auto shrink-0 rounded-full bg-destructive px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white tabular-nums">
+    // Merah tetap, bukan `bg-destructive`: di mode gelap token itu merah muda
+    // terang, dan angka putih di atasnya hanya 2,9:1.
+    <span className="ml-auto shrink-0 rounded-full bg-red-600 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white tabular-nums">
       {count > 99 ? '99+' : count}
     </span>
   );
@@ -105,16 +109,29 @@ function NavCountBadge({ count }: { count: number }) {
 interface NavChild {
   labelKey: string;
   href: string;
-  permission?: string;
+  /**
+   * Izin untuk melihat entri ini. Daftar = SALAH SATU cukup — untuk halaman yang
+   * dibuka dua kelompok orang (mis. tukar barang: sales menyetujui, gudang
+   * menyelesaikan), supaya entri ini tidak hilang bagi kelompok kedua.
+   */
+  permission?: string | readonly string[];
+}
+
+/** Entri anak terlihat: tanpa izin, atau memegang salah satu izinnya. */
+function bolehAnak(permissions: string[], izin: NavChild['permission']): boolean {
+  if (!izin) return true;
+  return typeof izin === 'string' ? hasPermission(permissions, izin) : izin.some((p) => hasPermission(permissions, p));
 }
 
 interface NavItem {
   labelKey: string;
   href: string;
-  /** Kept for callers outside the sidebar; the sidebar itself renders `emoji`. */
+  /**
+   * Ikon garis menu. Menggantikan emoji: emoji warna-warni tidak seragam satu
+   * sama lain, digambar berbeda di Windows dan Mac, dan menjadi satu-satunya
+   * warna yang tidak ikut tema di menu samping.
+   */
   icon: React.ElementType;
-  /** Sidebar glyph. Emoji reads faster than a line icon in a scanned list. */
-  emoji: string;
   permission: string; // Permission code required to view this nav item
   /**
    * Judul pemisah di atas entri ini. Ditulis pada entri PERTAMA tiap bagian;
@@ -147,7 +164,6 @@ const navItems: NavItem[] = [
   {
     labelKey: 'dashboard',
     href: '/backoffice/dashboard',
-    emoji: '📊',
     icon: LayoutDashboard,
     permission: PERMISSIONS.DASHBOARD_VIEW,
   },
@@ -157,15 +173,17 @@ const navItems: NavItem[] = [
     section: 'secOperations',
     labelKey: 'navGroupMasterData',
     href: '/backoffice/suppliers',
-    emoji: '🗂️',
-    icon: Building2,
+    icon: Database,
     permission: PERMISSIONS.SUPPLIERS_VIEW,
     children: [
       { labelKey: 'masterSuppliers', href: '/backoffice/suppliers', permission: PERMISSIONS.SUPPLIERS_VIEW },
       { labelKey: 'supplierType', href: '/backoffice/suppliers/types', permission: PERMISSIONS.SUPPLIER_TYPES_VIEW },
       { labelKey: 'masterStores', href: '/backoffice/stores', permission: PERMISSIONS.STORES_VIEW },
+      { labelKey: 'storeProposals', href: '/backoffice/stores/usulan', permission: PERMISSIONS.STORES_VIEW },
       { labelKey: 'navItemsAll', href: '/backoffice/items', permission: PERMISSIONS.ITEMS_VIEW },
       { labelKey: 'navItemsCategory', href: '/backoffice/items/categories', permission: PERMISSIONS.ITEMS_VIEW },
+      { labelKey: 'navSizeChart', href: '/backoffice/items/size-charts', permission: PERMISSIONS.ITEMS_VIEW },
+      { labelKey: 'navLabelBarcode', href: '/backoffice/items/labels', permission: PERMISSIONS.ITEMS_VIEW },
       { labelKey: 'leadTime', href: '/backoffice/lead-time', permission: PERMISSIONS.LEAD_TIME_VIEW },
     ],
   },
@@ -173,39 +191,112 @@ const navItems: NavItem[] = [
     section: 'secOperations',
     labelKey: 'inventory',
     href: '/backoffice/inventory',
-    emoji: '📦',
     icon: Package,
     permission: PERMISSIONS.INVENTORY_VIEW,
     children: [
       { labelKey: 'inventory', href: '/backoffice/inventory', permission: PERMISSIONS.INVENTORY_VIEW },
       { labelKey: 'navStockOpname', href: '/backoffice/inventory/stock-opname', permission: PERMISSIONS.INVENTORY_OPNAME_VIEW },
+      // Layar gudang menghitung barang retur dari toko — di luar /backoffice
+      // (lihat CLAUDE.md "Layar gudang ada di /gudang-retur"); sebelumnya tidak
+      // ada satu tautan pun ke sana.
+      { labelKey: 'navHitungRetur', href: '/gudang-retur', permission: PERMISSIONS.INVENTORY_OPNAME_COUNT },
       { labelKey: 'navStockReconciliation', href: '/backoffice/inventory/reconciliation', permission: PERMISSIONS.INVENTORY_RECONCILIATION_VIEW },
+      // Barang RUSAK/EXPIRED yang kembali lewat nota retur toko; memutuskan = `inventory:manage`.
+      { labelKey: 'navGudangRusak', href: '/backoffice/gudang-rusak', permission: PERMISSIONS.INVENTORY_VIEW },
     ],
   },
   {
     section: 'secOperations',
     labelKey: 'sales',
     href: '/backoffice/sales-orders',
-    emoji: '🛒',
-    icon: Store,
+    icon: ShoppingCart,
     permission: PERMISSIONS.SALES_ORDERS_VIEW,
     children: [
       { labelKey: 'navSalesOrders', href: '/backoffice/sales-orders', permission: PERMISSIONS.SALES_ORDERS_VIEW },
       { labelKey: 'navFulfillment', href: '/backoffice/fulfillment', permission: PERMISSIONS.SALES_ORDERS_VIEW },
       { labelKey: 'navSalesReturns', href: '/backoffice/returns', permission: PERMISSIONS.SALES_ORDERS_VIEW },
       { labelKey: 'navFieldSalesOrders', href: '/backoffice/field-sales-orders', permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
+      { labelKey: 'navInden', href: '/backoffice/inden', permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
       { labelKey: 'navCanvassing', href: '/backoffice/canvassing', permission: PERMISSIONS.CANVASSING_MANAGE },
       { labelKey: 'navVanSales', href: '/backoffice/van-sales', permission: PERMISSIONS.CANVASSING_MANAGE },
-      { labelKey: 'navSpgSales', href: '/backoffice/spg-sales', permission: PERMISSIONS.SPG_SALES_VIEW },
       { labelKey: 'promos', href: '/backoffice/promos', permission: PERMISSIONS.PROMOS_VIEW },
+    ],
+  },
+  // Pekerjaan MENGAWASI tim lapangan (kehadiran, biaya, ringkasan, komisi) —
+  // dipisah dari Penjualan, yang berisi DOKUMEN penjualan. Penjualan sudah
+  // sepuluh anak; menambah enam lagi di sana membuatnya tidak terbaca.
+  {
+    section: 'secOperations',
+    labelKey: 'navGroupFieldTeam',
+    href: '/backoffice/sales-lapangan',
+    icon: MapPinned,
+    permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW,
+    children: [
+      { labelKey: 'navSalesLapangan', href: '/backoffice/sales-lapangan', permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
+      { labelKey: 'navJadwalKunjungan', href: '/backoffice/jadwal-kunjungan', permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
+      { labelKey: 'navPengumuman', href: '/backoffice/pengumuman', permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
+      { labelKey: 'navAbsensi', href: '/backoffice/absensi', permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
+      { labelKey: 'navIzinCuti', href: '/backoffice/izin', permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
+      { labelKey: 'navTargetSales', href: '/backoffice/target-sales', permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
+      // Juga untuk keuangan (`journals:manage`) yang membayar biayanya — sama dengan `bolehMelihatBiaya`.
+      {
+        labelKey: 'navBiayaPerjalanan',
+        href: '/backoffice/biaya-perjalanan',
+        permission: [PERMISSIONS.FIELD_SALES_ORDERS_VIEW, PERMISSIONS.JOURNALS_MANAGE],
+      },
+      // Sales menyetujui, gudang (`inventory:manage`) menyelesaikan — sama dengan `bolehMelihatTukar`.
+      {
+        labelKey: 'navTukarBarang',
+        href: '/backoffice/tukar-barang',
+        permission: [PERMISSIONS.FIELD_SALES_ORDERS_VIEW, PERMISSIONS.FIELD_SALES_ORDERS_APPROVE, PERMISSIONS.INVENTORY_MANAGE],
+      },
+      { labelKey: 'navKomisiSalesman', href: '/backoffice/laporan/komisi-salesman', permission: PERMISSIONS.FIELD_SALES_ORDERS_APPROVE },
+      { labelKey: 'navChecklistToko', href: '/backoffice/checklist-toko', permission: PERMISSIONS.STORES_VIEW },
+      { labelKey: 'navLaporanEksekusi', href: '/backoffice/checklist-toko/laporan', permission: PERMISSIONS.STORES_VIEW },
+      { labelKey: 'navPanduanDisplay', href: '/backoffice/panduan-display', permission: PERMISSIONS.STORES_VIEW },
+      { labelKey: 'navHargaPesaing', href: '/backoffice/harga-pesaing', permission: PERMISSIONS.STORES_VIEW },
+    ],
+  },
+  // Semua pekerjaan SPG di satu tempat: nota konter, promo konter, tutup hari,
+  // pelanggan, jadwal, komisi, kiriman, dan barang rusak.
+  {
+    section: 'secOperations',
+    labelKey: 'navGroupSpg',
+    href: '/backoffice/spg-sales',
+    icon: Store,
+    // Grup tetap tampil untuk gudang lewat anak "Barang rusak dari kiriman".
+    permission: PERMISSIONS.SPG_SALES_VIEW,
+    children: [
+      { labelKey: 'navSpgSales', href: '/backoffice/spg-sales', permission: PERMISSIONS.SPG_SALES_VIEW },
+      { labelKey: 'navKinerjaSpg', href: '/backoffice/kinerja-spg', permission: PERMISSIONS.SPG_SALES_VIEW },
+      { labelKey: 'navSpgTutupHari', href: '/backoffice/spg-tutup-hari', permission: PERMISSIONS.SPG_SALES_VIEW },
+      { labelKey: 'navPromoKonter', href: '/backoffice/promo-konter', permission: PERMISSIONS.PROMOS_VIEW },
+      { labelKey: 'navSpgPelanggan', href: '/backoffice/spg-pelanggan', permission: PERMISSIONS.SPG_SALES_VIEW },
+      { labelKey: 'navJadwalSpg', href: '/backoffice/jadwal-spg', permission: PERMISSIONS.SPG_SALES_VIEW },
+      { labelKey: 'navKomisiSpg', href: '/backoffice/komisi-spg', permission: PERMISSIONS.SPG_SALES_VIEW },
+      { labelKey: 'navSpgRequests', href: '/backoffice/spg-requests', permission: PERMISSIONS.SPG_SALES_VIEW },
+      { labelKey: 'navSpgLostSales', href: '/backoffice/spg-lost-sales', permission: PERMISSIONS.SPG_SALES_VIEW },
+      // Mutasi antar toko oleh SPG — barang KONSI berpindah rak, bukan dokumen penjualan.
+      { labelKey: 'navSpgTransfers', href: '/backoffice/spg-transfers', permission: PERMISSIONS.SPG_SALES_VIEW },
+      // Pengawas SPG melihat, gudang (`inventory:manage`) yang memutuskan.
+      {
+        labelKey: 'navSpgKirimanRusak',
+        href: '/backoffice/spg-kiriman-rusak',
+        permission: [PERMISSIONS.SPG_SALES_VIEW, PERMISSIONS.INVENTORY_MANAGE],
+      },
+      // Pengawas SPG melihat; yang menetapkan penanggung = receivables:manage.
+      {
+        labelKey: 'navBarangHilang',
+        href: '/backoffice/barang-hilang',
+        permission: [PERMISSIONS.SPG_SALES_VIEW, PERMISSIONS.RECEIVABLES_MANAGE],
+      },
     ],
   },
   {
     section: 'secOperations',
     labelKey: 'production',
     href: '/backoffice/production/planning',
-    emoji: '🏭',
-    icon: CalendarDays,
+    icon: Factory,
     permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW,
     children: [
       { labelKey: 'navForecast', href: '/backoffice/forecast', permission: PERMISSIONS.FORECAST_VIEW },
@@ -228,14 +319,14 @@ const navItems: NavItem[] = [
     section: 'secReceivables',
     labelKey: 'navGroupReceivables',
     href: '/backoffice/pelunasan-dasbor',
-    emoji: '🧾',
-    icon: FileText,
+    icon: ReceiptText,
     permission: PERMISSIONS.RECEIVABLES_VIEW,
     children: [
       { labelKey: 'dasborPelunasan', href: '/backoffice/pelunasan-dasbor', permission: PERMISSIONS.RECEIVABLES_VIEW },
       { labelKey: 'receivables', href: '/backoffice/piutang', permission: PERMISSIONS.RECEIVABLES_VIEW },
       { labelKey: 'collections', href: '/backoffice/kontrabon', permission: PERMISSIONS.RECEIVABLES_VIEW },
       { labelKey: 'payments', href: '/backoffice/pelunasan', permission: PERMISSIONS.RECEIVABLES_VIEW },
+      { labelKey: 'tugasTagih', href: '/backoffice/tugas-tagih', permission: PERMISSIONS.RECEIVABLES_VIEW },
       { labelKey: 'storeReturns', href: '/backoffice/retur-toko', permission: PERMISSIONS.RECEIVABLES_VIEW },
       { labelKey: 'bebanSelisih', href: '/backoffice/beban-selisih', permission: PERMISSIONS.RECEIVABLES_VIEW },
       { labelKey: 'arsipRetur', href: '/backoffice/arsip-retur', permission: PERMISSIONS.RECEIVABLES_VIEW },
@@ -245,7 +336,6 @@ const navItems: NavItem[] = [
     section: 'secReceivables',
     labelKey: 'konsinyasi',
     href: '/backoffice/konsinyasi',
-    emoji: '🤝',
     icon: Handshake,
     permission: PERMISSIONS.CONSIGNMENT_VIEW,
   },
@@ -259,7 +349,6 @@ const navItems: NavItem[] = [
     section: 'secCreative',
     labelKey: 'navGroupCreative',
     href: '/backoffice/kreatif/konten',
-    emoji: '🎬',
     icon: Megaphone,
     permission: PERMISSIONS.CREATIVE_VIEW,
     children: [
@@ -276,8 +365,7 @@ const navItems: NavItem[] = [
     section: 'secFinance',
     labelKey: 'navGroupLedger',
     href: '/backoffice/finance/journals',
-    emoji: '📒',
-    icon: Wallet,
+    icon: BookOpenText,
     permission: PERMISSIONS.JOURNALS_VIEW,
     children: [
       { labelKey: 'navFinanceJournals', href: '/backoffice/finance/journals', permission: PERMISSIONS.JOURNALS_VIEW },
@@ -292,10 +380,12 @@ const navItems: NavItem[] = [
     section: 'secFinance',
     labelKey: 'navGroupReports',
     href: '/backoffice/finance/reports/trial-balance',
-    emoji: '📈',
     icon: BarChart2,
     permission: PERMISSIONS.FINANCE_REPORTS_VIEW,
     children: [
+      // Laporan operasional yang dulu jadi tab di bawah beranda — izinnya sama
+      // dengan beranda, jadi siapa pun yang dulu melihat tabnya tetap melihatnya.
+      { labelKey: 'navOperationalReports', href: '/backoffice/laporan', permission: PERMISSIONS.DASHBOARD_VIEW },
       { labelKey: 'navFinanceTrialBalance', href: '/backoffice/finance/reports/trial-balance', permission: PERMISSIONS.FINANCE_REPORTS_VIEW },
       { labelKey: 'navFinanceIncomeStatement', href: '/backoffice/finance/reports/income-statement', permission: PERMISSIONS.FINANCE_REPORTS_VIEW },
       { labelKey: 'navFinanceBalanceSheet', href: '/backoffice/finance/reports/balance-sheet', permission: PERMISSIONS.FINANCE_REPORTS_VIEW },
@@ -309,8 +399,7 @@ const navItems: NavItem[] = [
     section: 'secSystem',
     labelKey: 'jubelio',
     href: '/backoffice/jubelio/admin',
-    emoji: '🔌',
-    icon: Activity,
+    icon: Plug,
     permission: PERMISSIONS.JUBELIO_ADMIN_VIEW,
     children: [
       { labelKey: 'navJubelioAdmin', href: '/backoffice/jubelio/admin', permission: PERMISSIONS.JUBELIO_ADMIN_VIEW },
@@ -324,7 +413,6 @@ const navItems: NavItem[] = [
     section: 'secSystem',
     labelKey: 'navGroupArchive',
     href: '/backoffice/archive',
-    emoji: '🗄️',
     icon: FolderArchive,
     permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
     children: [
@@ -336,7 +424,6 @@ const navItems: NavItem[] = [
     section: 'secSystem',
     labelKey: 'settings',
     href: '/backoffice/settings',
-    emoji: '⚙️',
     icon: Settings,
     permission: PERMISSIONS.SETTINGS_SECURITY_VIEW,
   },
@@ -473,12 +560,12 @@ function Sidebar({
       navItems.filter((item) => {
         if (item.children?.length) {
           const anakTerlihat = item.children.filter(
-            (child) => !child.permission || hasPermission(permissions, child.permission),
+            (child) => bolehAnak(permissions, child.permission),
           );
           if (anakTerlihat.length === 0) return false;
           if (hasPermission(permissions, item.permission)) return true;
           return anakTerlihat.some(
-            (child) => child.permission && hasPermission(permissions, child.permission),
+            (child) => child.permission !== undefined && bolehAnak(permissions, child.permission),
           );
         }
         return hasPermission(permissions, item.permission);
@@ -496,7 +583,7 @@ function Sidebar({
         href: item.href,
         label: tNav(item.labelKey as never),
         anak: (item.children ?? [])
-          .filter((c) => !c.permission || hasPermission(permissions, c.permission))
+          .filter((c) => bolehAnak(permissions, c.permission))
           .map((c) => ({ href: c.href, label: tNav(c.labelKey as never) })),
       })),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- tNav stabil per locale
@@ -524,17 +611,17 @@ function Sidebar({
    */
   const barisFavorit = useMemo(() => {
     if (favorit.length === 0 || sedangMencari) return [];
-    const semua: { href: string; label: string; emoji: string }[] = [];
+    const semua: { href: string; label: string; icon: React.ElementType }[] = [];
     for (const item of terizinkan) {
-      semua.push({ href: item.href, label: tNav(item.labelKey as never), emoji: item.emoji });
+      semua.push({ href: item.href, label: tNav(item.labelKey as never), icon: item.icon });
       for (const c of item.children ?? []) {
-        if (c.permission && !hasPermission(permissions, c.permission)) continue;
-        semua.push({ href: c.href, label: tNav(c.labelKey as never), emoji: item.emoji });
+        if (!bolehAnak(permissions, c.permission)) continue;
+        semua.push({ href: c.href, label: tNav(c.labelKey as never), icon: item.icon });
       }
     }
     return favorit
       .map((h) => semua.find((x) => x.href === h))
-      .filter((x): x is { href: string; label: string; emoji: string } => Boolean(x));
+      .filter((x): x is { href: string; label: string; icon: React.ElementType } => Boolean(x));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- tNav stabil per locale
   }, [favorit, terizinkan, permissions, sedangMencari]);
 
@@ -593,7 +680,7 @@ function Sidebar({
             dan tiap kali harus membuka grupnya lagi. */}
         {barisFavorit.length > 0 && (
           <div className="mb-3 space-y-0.5">
-            <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-primary-foreground/45">
+            <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-primary-foreground/65">
               {tNav('favorit')}
             </p>
             {barisFavorit.map((f) => (
@@ -608,9 +695,7 @@ function Sidebar({
                       : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground',
                   )}
                 >
-                  <span aria-hidden className="w-5 shrink-0 text-center text-base leading-none">
-                    {f.emoji}
-                  </span>
+                  <f.icon aria-hidden className="h-[18px] w-5 shrink-0" strokeWidth={1.75} />
                   <span className="flex-1 truncate text-left">{f.label}</span>
                 </Link>
                 <button
@@ -651,7 +736,7 @@ function Sidebar({
           const bagian = judulBagian ? (
             <p
               key={`sec-${judulBagian}`}
-              className="px-3 pt-4 pb-1 text-[11px] font-semibold uppercase tracking-wider text-primary-foreground/45"
+              className="px-3 pt-4 pb-1 text-[11px] font-semibold uppercase tracking-wider text-primary-foreground/65"
             >
               {tNav(judulBagian as never)}
             </p>
@@ -674,9 +759,7 @@ function Sidebar({
                       : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground'
                   )}
                 >
-                  <span aria-hidden className="w-5 shrink-0 text-center text-base leading-none">
-                    {item.emoji}
-                  </span>
+                  <item.icon aria-hidden className="h-[18px] w-5 shrink-0" strokeWidth={1.75} />
                   <span className="flex-1 text-left">{tNav(item.labelKey as any)}</span>
                   <NavCountBadge count={navCounts.grup[item.href] ?? 0} />
                   <ChevronRight className="h-4 w-4 shrink-0 transition-transform duration-200" />
@@ -694,7 +777,7 @@ function Sidebar({
                         ? item.children!.filter((c) => lolosAnak?.some((a) => a.href === c.href))
                         : item.children!.filter(
                             (child) =>
-                              !child.permission || hasPermission(permissions, child.permission),
+                              bolehAnak(permissions, child.permission),
                           );
                       return visibleChildren.map((child) => {
                         // Prefer the longest matching child href so nested routes
@@ -771,9 +854,7 @@ function Sidebar({
                   : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground'
               )}
             >
-              <span aria-hidden className="w-5 shrink-0 text-center text-base leading-none">
-                {item.emoji}
-              </span>
+              <item.icon aria-hidden className="h-[18px] w-5 shrink-0" strokeWidth={1.75} />
               <span className="flex-1 text-left">{tNav(item.labelKey as any)}</span>
               <NavCountBadge count={navCounts.grup[item.href] ?? 0} />
             </Link>

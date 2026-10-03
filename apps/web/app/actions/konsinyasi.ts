@@ -16,6 +16,7 @@ import {
   type BarisLaporan,
   type BarisResmi,
 } from '@/lib/konsinyasi/writer';
+import { bahanLaporanSpg, type BarisBahan } from '@/lib/konsinyasi/laporan-spg';
 
 export type KodeAksiKonsi = 'TANPA_AKSES' | 'TANGGAL_TIDAK_VALID' | AlasanGagalKonsi | 'GAGAL';
 export type HasilAksiKonsi = { ok: true } | { ok: false; kode: KodeAksiKonsi };
@@ -190,4 +191,19 @@ export async function catatNomorDokumenAction(
     console.error('catatNomorDokumen gagal:', err);
     return { ok: false, kode: 'GAGAL' };
   }
+}
+
+/**
+ * Isi formulir laporan SPG dari catatan penjualan harian SPG di toko itu, bulan
+ * siklus itu. Hanya membaca — admin memeriksa lalu menyimpan lewat
+ * `catatLaporanAction` seperti biasa.
+ */
+export async function bahanLaporanSpgAction(
+  cycleId: string,
+): Promise<{ ok: true; items: BarisBahan[] } | { ok: false; kode: 'TANPA_AKSES' | 'TIDAK_DITEMUKAN' }> {
+  const userId = await butuh();
+  if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
+  const items = await bahanLaporanSpg(cycleId);
+  if (!items) return { ok: false, kode: 'TIDAK_DITEMUKAN' };
+  return { ok: true, items };
 }

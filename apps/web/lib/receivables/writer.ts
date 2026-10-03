@@ -1,7 +1,9 @@
 import { prisma, Prisma } from '@elorae/db';
+import { runSerializable } from '@/lib/db/tx-retry';
 import { hitungSisaPiutang, type StatusKlaim } from './rules';
 import { PILIH_POTONGAN, potonganRetur } from './deductions';
 import { catatJejak, JEJAK } from './jejak';
+import { giroMenahanVerifikasi, STATUS_GIRO } from './giro';
 
 /**
  * Penulis piutang — satu-satunya tempat kolom `outstanding` boleh berubah.
@@ -106,7 +108,7 @@ export async function batalkanKlaim(input: {
 }): Promise<HasilKoreksi> {
   if (!input.alasan?.trim()) return { ok: false, alasan: 'ALASAN_WAJIB' };
 
-  return prisma.$transaction(async (tx) => {
+  return runSerializable(async (tx) => {
     const klaim = await tx.paymentClaim.findUnique({
       where: { id: input.paymentClaimId },
       select: { id: true, docNo: true, status: true, verifyNote: true },
@@ -220,7 +222,15 @@ export async function tautkanUlangPotongan(input: {
 
 export type HasilVerifikasi =
   | { ok: true; sisaBaru: number[] }
-  | { ok: false; alasan: 'TIDAK_DITEMUKAN' | 'SUDAH_DIPUTUSKAN' | 'ALASAN_WAJIB' };
+  | {
+      ok: false;
+      alasan:
+        | 'TIDAK_DITEMUKAN'
+        | 'SUDAH_DIPUTUSKAN'
+        | 'ALASAN_WAJIB'
+        | 'GIRO_BELUM_CAIR'
+        | 'BUKAN_GIRO_MENUNGGU';
+    };
 
 /**
  * Verifikasi atau tolak sebuah klaim pembayaran.
@@ -229,36 +239,76 @@ export type HasilVerifikasi =
  * berjalan dalam satu transaksi: kalau perhitungan ulang gagal, status klaim
  * ikut batal — supaya tidak pernah ada klaim yang tercatat terverifikasi
  * sementara piutangnya masih penuh.
+ *
+ * Giro lewat pintu yang SAMA, tidak di sebelahnya. Klaim giro yang masih
+ * menunggu tidak bisa diverifikasi biasa: bilyetnya ada, uangnya belum —
+ * Aturan 1 berlaku lagi. Yang membukanya hanya `giro: 'CAIR'`, yang menyetel
+ * status giro dan memverifikasi klaim dalam transaksi ini juga, sehingga tidak
+ * pernah ada giro yang tercatat cair sementara piutangnya masih penuh.
  */
 export async function putuskanKlaim(input: {
   paymentClaimId: string;
   keputusan: 'TERVERIFIKASI' | 'DITOLAK';
   olehUserId: string;
   catatan?: string | null;
+  /**
+   * Hasil kliring bilyet giro. `CAIR` hanya bersama `TERVERIFIKASI`,
+   * `DITOLAK` hanya bersama `DITOLAK`.
+   */
+  giro?: 'CAIR' | 'DITOLAK';
 }): Promise<HasilVerifikasi> {
+  if (
+    (input.giro === 'CAIR' && input.keputusan !== 'TERVERIFIKASI') ||
+    (input.giro === 'DITOLAK' && input.keputusan !== 'DITOLAK')
+  ) {
+    // Kesalahan pemanggil, bukan masukan pengguna — tidak ada tombol yang bisa
+    // menyusun pasangan ini.
+    throw new Error(`putuskanKlaim: giro ${input.giro} tidak cocok dengan ${input.keputusan}`);
+  }
   // Menolak tanpa alasan membuat sales tidak tahu harus membetulkan apa, dan
   // itu persis kebocoran informasi yang program ini dibuat untuk menutup.
   if (input.keputusan === 'DITOLAK' && !input.catatan?.trim()) {
     return { ok: false, alasan: 'ALASAN_WAJIB' };
   }
 
-  return prisma.$transaction(async (tx) => {
+  return runSerializable(async (tx) => {
     const klaim = await tx.paymentClaim.findUnique({
       where: { id: input.paymentClaimId },
-      select: { id: true, docNo: true, status: true, verifyNote: true },
+      select: { id: true, docNo: true, status: true, verifyNote: true, giroStatus: true },
     });
     if (!klaim) return { ok: false, alasan: 'TIDAK_DITEMUKAN' as const };
     if (klaim.status !== 'DIKIRIM') return { ok: false, alasan: 'SUDAH_DIPUTUSKAN' as const };
 
-    await tx.paymentClaim.update({
-      where: { id: klaim.id },
+    if (input.giro) {
+      if (klaim.giroStatus !== STATUS_GIRO.MENUNGGU) {
+        return { ok: false, alasan: 'BUKAN_GIRO_MENUNGGU' as const };
+      }
+    } else if (input.keputusan === 'TERVERIFIKASI' && giroMenahanVerifikasi(klaim.giroStatus)) {
+      return { ok: false, alasan: 'GIRO_BELUM_CAIR' as const };
+    }
+
+    const sekarang = new Date();
+    // Compare-and-swap pada status: sales bisa menarik BKM-nya sendiri tepat saat
+    // ini (`batalkanKlaimSendiri`). `updateMany` Prisma memilih id dulu lalu
+    // memperbarui menurut id saja — syarat status TIDAK diperiksa ulang saat
+    // menulis — jadi penjaga ini hanya utuh karena transaksinya serializable:
+    // basis data sendiri yang menolak salah satu dari dua penulis bersamaan.
+    const ubah = await tx.paymentClaim.updateMany({
+      where: { id: klaim.id, status: 'DIKIRIM' },
       data: {
         status: input.keputusan,
         verifiedById: input.olehUserId,
-        verifiedAt: new Date(),
+        verifiedAt: sekarang,
         verifyNote: input.catatan?.trim() || null,
+        ...(input.giro
+          ? {
+              giroStatus: input.giro,
+              ...(input.giro === 'CAIR' ? { giroSettledAt: sekarang } : {}),
+            }
+          : {}),
       },
     });
+    if (ubah.count === 0) return { ok: false, alasan: 'SUDAH_DIPUTUSKAN' as const };
 
     const links = await tx.paymentClaimReceivable.findMany({
       where: { paymentClaimId: klaim.id },
@@ -281,10 +331,24 @@ export async function putuskanKlaim(input: {
       entityType: 'PaymentClaim',
       entityId: klaim.id,
       changes: {
-        before: { status: klaim.status, verifyNote: klaim.verifyNote },
-        after: { status: input.keputusan, verifyNote: input.catatan?.trim() || null },
+        before: {
+          status: klaim.status,
+          verifyNote: klaim.verifyNote,
+          ...(input.giro ? { giroStatus: klaim.giroStatus } : {}),
+        },
+        after: {
+          status: input.keputusan,
+          verifyNote: input.catatan?.trim() || null,
+          ...(input.giro ? { giroStatus: input.giro } : {}),
+        },
       },
-      metadata: { docNo: klaim.docNo, piutangDihitungUlang: links.length },
+      // `giro` membedakan keputusan kliring dari keputusan atas mutasi rekening
+      // biasa — keduanya keputusan klaim yang sama, lewat pintu yang sama.
+      metadata: {
+        docNo: klaim.docNo,
+        piutangDihitungUlang: links.length,
+        ...(input.giro ? { giro: input.giro } : {}),
+      },
       reason: input.catatan,
     });
 

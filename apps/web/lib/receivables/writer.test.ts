@@ -24,6 +24,10 @@ const tx = {
       state.updates.push(args);
       return {};
     }),
+    updateMany: vi.fn(async (args: { where: unknown; data: Record<string, unknown> }) => {
+      state.updates.push(args);
+      return { count: 1 };
+    }),
   },
   paymentClaimReceivable: { findMany: vi.fn(async () => state.links) },
   auditLog: {
@@ -41,6 +45,9 @@ const tx = {
   },
 };
 
+vi.mock('@/lib/db/tx-retry', () => ({
+  runSerializable: (fn: (c: unknown) => Promise<unknown>) => fn(tx),
+}));
 vi.mock('@elorae/db', () => ({
   prisma: {
     $transaction: async (fn: (client: unknown) => Promise<unknown>) => fn(tx),

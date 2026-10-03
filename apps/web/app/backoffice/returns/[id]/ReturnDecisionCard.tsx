@@ -41,6 +41,7 @@ import {
 } from "@/lib/sales-returns/format";
 import { CHANNEL_BADGE } from "@/lib/sales-orders/badges";
 import { formatDisplayDateTime } from "@/lib/date-only";
+import { formatRupiah } from "@/lib/format/rupiah";
 
 type Props = {
   ret: SalesReturnDetail;
@@ -48,13 +49,10 @@ type Props = {
   canPostJournal: boolean;
 };
 
-function fmtCurrency(v: unknown, locale: string): string {
-  const n = v == null ? 0 : Number(v);
-  return new Intl.NumberFormat(locale === "id" ? "id-ID" : "en-US", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(n);
+// Rupiah ditulis dengan gaya Indonesia di kedua bahasa, sama seperti layar
+// lain — dan tanpa Intl, supaya server dan browser menulis teks yang sama.
+function fmtCurrency(v: unknown): string {
+  return formatRupiah(v as number | string | null | undefined);
 }
 
 export function ReturnDecisionCard({ ret, canDecide, canPostJournal }: Props) {
@@ -257,10 +255,10 @@ export function ReturnDecisionCard({ ret, canDecide, canPostJournal }: Props) {
                   </TableCell>
                   <TableCell className="text-right">{Number(item.qty)}</TableCell>
                   <TableCell className="text-right">
-                    {fmtCurrency(item.unitPrice, locale)}
+                    {fmtCurrency(item.unitPrice)}
                   </TableCell>
                   <TableCell className="text-right">
-                    {fmtCurrency(item.subtotal, locale)}
+                    {fmtCurrency(item.subtotal)}
                   </TableCell>
                   <TableCell>
                     <span

@@ -799,18 +799,16 @@ html.backoffice-shell [data-slot="card-content"]:has(> table) {
 }
 
 /*
- * Nada ubin KPI beranda.
+ * Nada kartu beranda (dipakai `.beranda-kartu` di bawah).
  *
  * Sebelumnya kartu putih di atas krem dengan garis abu tipis — dan warna tema
  * hanya hidup di menu samping, tidak pernah masuk ke area kerja. Hasilnya
  * hambar: dua belas ubin yang semuanya terlihat sama dan tidak satu pun terasa
  * milik merek ini.
  *
- * Tiga hal sekaligus, karena satu saja tidak cukup terlihat: permukaan yang
+ * Dua hal sekaligus, karena satu saja tidak cukup terlihat: permukaan yang
  * bernada tema TIPIS (9% — cukup terasa, tidak sampai mengganggu keterbacaan
- * angkanya), garis yang ikut bernada, dan HALO di luar garis dalam warna tema.
- * Halonya yang paling menjawab: ia mengangkat ubin dari kertas tanpa menambah
- * garis baru.
+ * angkanya) dan garis yang ikut bernada.
  *
  * Semuanya `color-mix` dari `--primary`, jadi ikut tema apa pun. `oklab` supaya
  * rona bertahan saat dicampur — di sRGB lime yang digelapkan mendarat jadi
@@ -819,8 +817,6 @@ html.backoffice-shell [data-slot="card-content"]:has(> table) {
 :root {
   --kpi-surface: color-mix(in oklab, var(--primary) 9%, var(--card));
   --kpi-ring: color-mix(in oklab, var(--primary) 44%, var(--border));
-  --kpi-glow: color-mix(in oklab, var(--primary) 82%, transparent);
-  --kpi-accent: color-mix(in oklab, var(--primary) 66%, black);
 }
 
 /*
@@ -830,8 +826,176 @@ html.backoffice-shell [data-slot="card-content"]:has(> table) {
 .dark {
   --kpi-surface: color-mix(in oklab, var(--primary) 6%, var(--card));
   --kpi-ring: color-mix(in oklab, var(--primary) 28%, var(--border));
-  --kpi-glow: color-mix(in oklab, var(--primary) 55%, transparent);
-  --kpi-accent: color-mix(in oklab, var(--primary) 70%, white);
+}
+
+/* ==========================================================================
+   Beranda: kartu, judul, warna grafik
+   --------------------------------------------------------------------------
+   DI SINI, bukan di CSS module. Stylesheet module untuk komponen klien tidak
+   ikut dikirim di HTML server — di mode dev ia baru dipasang JavaScript
+   setelah halaman hidup. Ketika hidrasi gagal (Safari menulis "Rp0", server
+   "Rp 0"), React membangun ulang halaman dan stylesheet susulan itu hilang:
+   kartu tampil tanpa latar, judul tanpa gaya, grafik tanpa warna. Yang ada di
+   globals.css selalu terkirim bersama halaman.
+   ========================================================================== */
+
+/* Palet grafik — TIDAK mengikuti warna tema, dengan sengaja: palet kategoris
+   butuh beberapa rona yang bisa dibedakan, termasuk oleh mata buta warna.
+   Nilainya sudah divalidasi; mode gelap dilangkahkan ulang dari rona yang sama. */
+.viz {
+  --viz-surface: #fcfcfb;
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-4: #eda100;
+  --viz-5: #e87ba4;
+  --viz-6: #008300;
+}
+
+.dark .viz {
+  --viz-surface: #1a1a19;
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-4: #c98500;
+  --viz-5: #d55181;
+  --viz-6: #008300;
+}
+
+/* SATU bentuk kartu untuk beranda backoffice dan aplikasi HP. Kartu shadcn di
+   dalam `.beranda-halaman` ditarik ke bentuk yang sama lewat pemilih di bawah,
+   jadi kartu laporan yang ditambahkan nanti otomatis ikut. */
+.beranda-kartu,
+html.backoffice-shell .beranda-halaman [data-slot='card'] {
+  background: var(--kpi-surface);
+  border: 1px solid var(--kpi-ring);
+  border-radius: 0.75rem;
+  box-shadow: none;
+}
+
+.beranda-kartu {
+  padding: 1rem;
+}
+
+html.backoffice-shell .beranda-halaman [data-slot='card'] {
+  gap: 0.75rem;
+  padding-block: 1rem;
+}
+
+html.backoffice-shell .beranda-halaman [data-slot='card-header'],
+html.backoffice-shell .beranda-halaman [data-slot='card-content'],
+html.backoffice-shell .beranda-halaman [data-slot='card-footer'] {
+  padding-inline: 1rem;
+}
+
+/* Kartu di dalam kartu (ringkasan posisi stok) tidak menumpuk nadanya. */
+html.backoffice-shell .beranda-halaman [data-slot='card'] [data-slot='card'] {
+  background: var(--card);
+}
+
+/* Satu gaya judul kartu: label kecil berhuruf besar, seperti judul bagian menu. */
+.beranda-judul,
+.beranda-halaman [data-slot='card-title'] {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.beranda-halaman [data-slot='card-description'] {
+  font-size: 12px;
+}
+
+/* Tab laporan: yang terpilih berwarna tema, sama seperti pilihan 7/30/90 hari. */
+.beranda-halaman [data-slot='tabs-trigger'][data-state='active'] {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+/* Kartu utama: SATU kartu penuh warna tema per layar. Isinya memakai warna
+   tulisan-di-atas-tema, bukan warna data, supaya terbaca di tema apa pun. */
+.beranda-kartu-utama {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.beranda-kartu-utama .beranda-judul {
+  color: color-mix(in oklab, var(--primary-foreground) 72%, transparent);
+}
+
+/* Batang komposisi tumbuh dari kiri ke proporsinya, sekali saat muncul. */
+.beranda-tumbuh {
+  animation: beranda-tumbuh 900ms cubic-bezier(0.22, 1, 0.36, 1) 150ms both;
+}
+
+@keyframes beranda-tumbuh {
+  from {
+    clip-path: inset(0 100% 0 0 round 999px);
+  }
+  to {
+    clip-path: inset(0 0 0 0 round 999px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .beranda-tumbuh {
+    animation: none;
+  }
+}
+
+/* Kartu berisi daftar baris yang menempel ke tepinya (menu Lainnya, tombol
+   Keluar): barisnya yang membawa jarak sendiri, bukan kartunya. */
+.beranda-kartu.beranda-kartu-daftar {
+  padding: 0;
+  overflow: hidden;
+}
+
+/*
+ * PWA lapangan: sasaran sentuh minimal 44 px.
+ *
+ * Komponen bawaan (tombol 32–36 px, kolom isian 36 px) dirancang untuk tetikus
+ * di laptop. Di lapangan salesman mengetuk dengan satu jempol sambil berdiri,
+ * sering memakai sarung tangan motor — 44 px adalah batas Apple dan WCAG.
+ *
+ * `min-height`, bukan `height`: utilitas tinggi Tailwind tetap berlaku di
+ * backoffice dan sebagai ukuran dasar; aturan ini hanya menaikkan batas
+ * bawahnya. Cakupannya `body:has(.pwa-app)`, bukan `.pwa-app`, supaya dialog
+ * dan menu tarik-turun — yang dirender di luar pohon lewat portal — ikut kena.
+ * Pengecualian tunggal: `data-rapat` pada elemen yang tata letaknya memang
+ * butuh lebih kecil.
+ */
+body:has(.pwa-app)
+  :is(
+    [data-slot='button'],
+    [data-slot='input'],
+    [data-slot='select-trigger'],
+    [data-slot='textarea'],
+    [data-slot='select-item'],
+    [data-slot='dropdown-menu-item']
+  ) {
+  min-height: 44px;
+}
+
+body:has(.pwa-app) [data-slot='button']:is([data-size='icon'], [data-size='icon-sm'], [data-size='icon-xs']) {
+  min-width: 44px;
+}
+
+body:has(.pwa-app) [data-slot][data-rapat] {
+  min-height: 0;
+  min-width: 0;
+}
+
+/*
+ * Kalender di aplikasi HP: sel selebar sasaran sentuh 44 px. Tanpa ini tombol
+ * tanggal membesar oleh aturan di atas sementara kotaknya tetap dihitung 32 px,
+ * dan baris-barisnya meluber keluar kalender (terpotong di lembar bawah HP).
+ * 7 × 44 px + bantalan masih muat di layar 360 px.
+ */
+body:has(.pwa-app) [data-slot='calendar'] {
+  --cell-size: 2.75rem;
 }
 
 /*

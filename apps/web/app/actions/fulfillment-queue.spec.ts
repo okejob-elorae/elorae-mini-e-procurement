@@ -90,8 +90,8 @@ describe("listFulfillmentQueue", () => {
       lte: new Date("2026-06-30T23:59:59Z"),
     });
     expect(args.where.OR).toEqual([
-      { salesorderNo: { contains: "Alice" } },
-      { customerName: { contains: "Alice" } },
+      { salesorderNo: { contains: "Alice", mode: "insensitive" } },
+      { customerName: { contains: "Alice", mode: "insensitive" } },
     ]);
   });
 

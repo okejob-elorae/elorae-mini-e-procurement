@@ -1,4 +1,5 @@
 import { prisma } from "@elorae/db";
+import { batasHariIniWib } from "@/lib/dashboard/hari-wib";
 import type { SalesChannel, SalesOrderStatus, SalesOrderFulfillmentStatus } from "@/lib/constants/enums";
 
 export type SalesOrderListFilter = {
@@ -273,17 +274,6 @@ export type SalesOrdersListKpi = {
   dayCount: number;
 };
 
-function startOfToday(): Date {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function endOfToday(): Date {
-  const d = new Date();
-  d.setHours(23, 59, 59, 999);
-  return d;
-}
 
 /** Inclusive calendar-day span in Asia/Jakarta between two instants. */
 export function inclusiveWibDayCount(from: Date, to: Date): number {
@@ -301,13 +291,16 @@ export function inclusiveWibDayCount(from: Date, to: Date): number {
 }
 
 export async function getMarketplaceKpi(): Promise<MarketplaceKpi> {
+  // Hari WIB, bukan tengah malam zona proses: produksi berjalan di UTC, dan
+  // `setHours(0)` di sana memotong hari jam 07.00 WIB.
+  const hariIni = batasHariIniWib();
   const [pendingCount, todayAgg] = await Promise.all([
     prisma.salesOrder.count({
       where: { status: { in: ["NEW", "PROCESSING"] } },
     }),
     prisma.salesOrder.aggregate({
       where: {
-        transactionDate: { gte: startOfToday(), lte: endOfToday() },
+        transactionDate: { gte: hariIni.awal, lte: hariIni.akhir },
         status: { notIn: ["CANCELLED", "RETURNED"] },
       },
       _count: { _all: true },

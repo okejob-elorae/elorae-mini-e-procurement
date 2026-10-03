@@ -1,6 +1,8 @@
 import { defaultCache } from "@serwist/next/worker";
 import type { PrecacheEntry, SerwistGlobalConfig } from "serwist";
 import { ExpirationPlugin, NetworkFirst, Serwist, StaleWhileRevalidate } from "serwist";
+// Jalur relatif, bukan alias `@/`: service worker dibangun penyusun anak Serwist.
+import { tautanKabar } from "../../lib/notifications/tautan-kabar";
 
 declare global {
   interface WorkerGlobalScope extends SerwistGlobalConfig {
@@ -60,6 +62,54 @@ const serwist = new Serwist({
     },
     ...defaultCache,
   ],
+});
+
+/*
+ * Pemberitahuan di HP (FCM). Firebase SDK TIDAK dipasang di service worker ini
+ * (tidak ada `firebase-messaging-sw.js`), jadi pesannya ditampilkan sendiri.
+ * FCM mengirim `{ notification: { title, body }, data: { type, ...id } }`.
+ * Setiap push WAJIB menampilkan pemberitahuan — iPhone mencabut langganan
+ * aplikasi yang menerima push tanpa menampilkan apa pun.
+ */
+type PesanPush = { notification?: { title?: string; body?: string }; data?: Record<string, string> };
+
+self.addEventListener("push", (event) => {
+  let pesan: PesanPush = {};
+  try {
+    pesan = (event.data?.json() as PesanPush) ?? {};
+  } catch {
+    pesan = {};
+  }
+  const data = pesan.data ?? {};
+  const judul = pesan.notification?.title || data.title || "Elorae";
+  const isi = pesan.notification?.body || data.body || "";
+  event.waitUntil(
+    self.registration.showNotification(judul, {
+      body: isi,
+      icon: "/pwa/icon-192.png",
+      badge: "/pwa/icon-192.png",
+      data,
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const data = (event.notification.data ?? {}) as Record<string, string>;
+  const tujuan = (data.type ? tautanKabar(data.type, data) : null) ?? "/pwa/kabar";
+  event.waitUntil(
+    (async () => {
+      const jendela = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const j of jendela) {
+        if (new URL(j.url).pathname.startsWith("/pwa")) {
+          await j.navigate(tujuan).catch(() => null);
+          await j.focus().catch(() => null);
+          return;
+        }
+      }
+      await self.clients.openWindow(tujuan);
+    })(),
+  );
 });
 
 serwist.addEventListeners();

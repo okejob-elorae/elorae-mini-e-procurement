@@ -2,13 +2,19 @@
 
 import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Camera, Loader2, X } from 'lucide-react';
+import { Camera, CloudOff, Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
+import { perkecil } from '@/lib/foto/perkecil';
 import { unggahFoto } from '@/lib/foto/unggah';
 
-export type NilaiFoto = { url: string; nama: string } | null;
+/**
+ * `berkas` terisi = foto BELUM naik: dipilih saat tanpa sinyal dan disimpan di
+ * HP. `url`-nya saat itu hanya pratinjau lokal (blob:) — pemanggil wajib
+ * mengunggah berkasnya dulu, atau memasukkannya ke antrean offline.
+ */
+export type NilaiFoto = { url: string; nama: string; berkas?: Blob } | null;
 
 /**
  * Pemilih + pengunggah satu foto.
@@ -23,6 +29,7 @@ export function UnggahFoto({
   onChange,
   wajib = false,
   disabled = false,
+  simpanDiHp = false,
 }: {
   label: string;
   petunjuk?: string;
@@ -30,18 +37,38 @@ export function UnggahFoto({
   onChange: (nilai: NilaiFoto) => void;
   wajib?: boolean;
   disabled?: boolean;
+  /**
+   * PWA lapangan: kalau tidak ada sinyal, simpan fotonya di HP alih-alih gagal.
+   * Formulir kantor tidak memakainya — di sana galat unggah harus terlihat.
+   */
+  simpanDiHp?: boolean;
 }) {
   const t = useTranslations('foto');
   const input = useRef<HTMLInputElement>(null);
   const [mengunggah, setMengunggah] = useState(false);
   const [galat, setGalat] = useState<string | null>(null);
 
+  const simpanLokal = async (file: File) => {
+    const kecil = await perkecil(file);
+    onChange({ url: URL.createObjectURL(kecil), nama: file.name, berkas: kecil });
+  };
+
   const pilih = async (file: File) => {
     setGalat(null);
     setMengunggah(true);
     try {
+      if (simpanDiHp && typeof navigator !== 'undefined' && !navigator.onLine) {
+        await simpanLokal(file);
+        return;
+      }
       onChange({ url: await unggahFoto(file), nama: file.name });
     } catch (err) {
+      // `TypeError` dari fetch = sinyal putus di tengah jalan, bukan fotonya
+      // yang ditolak. Di lapangan itu disimpan di HP, bukan dilaporkan gagal.
+      if (simpanDiHp && err instanceof TypeError) {
+        await simpanLokal(file);
+        return;
+      }
       setGalat(t(`err${err instanceof Error ? err.message : 'GAGAL'}` as never));
     } finally {
       setMengunggah(false);
@@ -67,10 +94,19 @@ export function UnggahFoto({
             className="absolute right-2 top-2"
             aria-label={t('remove')}
             disabled={disabled}
-            onClick={() => onChange(null)}
+            onClick={() => {
+              if (nilai.berkas) URL.revokeObjectURL(nilai.url);
+              onChange(null);
+            }}
           >
             <X className="h-4 w-4" />
           </Button>
+          {nilai.berkas ? (
+            <p className="flex items-center gap-1.5 border-t bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+              <CloudOff className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              {t('savedOnPhone')}
+            </p>
+          ) : null}
         </div>
       ) : (
         <button

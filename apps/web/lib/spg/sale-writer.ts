@@ -1,14 +1,44 @@
-import { prisma, Prisma } from "@elorae/db";
+import { Prisma } from "@elorae/db";
 import { computeStorePrice } from "@elorae/db/pricing";
 import { buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { variantDetailForSku } from "@/lib/items/variants";
+import { nomorWhatsApp } from "@/lib/salesman/dasbor";
+import { bacaDiskonManual, KUNCI_DISKON_MANUAL } from "./pengaturan";
+import { hitungPromoKonter, type DiskonManual } from "./promo-konter";
+import { promoKonterUntukToko } from "./promo-konter-queries";
+import { ENTITAS_TITIP, JEJAK_TITIP, STATUS_TITIP_TERBUKA } from "./titip";
 
 export type SpgSaleLineInput = { itemId: string; variantSku: string | null; qty: number };
+
+/**
+ * Pembeli pada nota: pelanggan toko yang sudah ada (`id`), atau yang baru
+ * dicatat di konter (nama + HP). Pelanggan baru WAJIB sudah setuju dihubungi
+ * lewat WhatsApp — nomornya hanya disimpan kalau `setuju` benar.
+ */
+export type PembeliNota = { id: string } | { nama: string; hp: string; setuju: boolean };
+
+export type DiskonManualNota = DiskonManual & { alasan?: string | null };
+
+export type KodeGagalJualSpg =
+  | "EMPTY"
+  | "STORE_NOT_FOUND"
+  | "NO_PRICE"
+  | "INSUFFICIENT_PAYMENT"
+  | "DISKON_MANUAL_NONAKTIF"
+  | "DISKON_MANUAL_LEWAT_BATAS"
+  | "DISKON_MANUAL_TIDAK_VALID"
+  | "ALASAN_DISKON_WAJIB"
+  | "PELANGGAN_TIDAK_VALID"
+  | "WAKTU_TIDAK_VALID";
+
 export type RecordSpgSaleResult =
-  | { ok: true; spgSaleId: string; docNo: string; changeGiven: number }
-  | { ok: false; code: "EMPTY" | "STORE_NOT_FOUND" | "NO_PRICE" | "INSUFFICIENT_PAYMENT" };
+  | { ok: true; spgSaleId: string; docNo: string; changeGiven: number; total: number }
+  | { ok: false; code: KodeGagalJualSpg };
+
+/** Penjualan tanpa sinyal yang lebih tua dari ini ditolak, bukan dicatat diam-diam. */
+export const BATAS_UMUR_LURING_HARI = 14;
 
 function mergeLines(lines: SpgSaleLineInput[]): SpgSaleLineInput[] {
   const map = new Map<string, SpgSaleLineInput>();
@@ -23,15 +53,22 @@ function mergeLines(lines: SpgSaleLineInput[]): SpgSaleLineInput[] {
 }
 
 /**
- * Record an SPG in-store sale — terminal POS, no approval, mirroring recordVanSale
- * (apps/web/lib/canvassing/sale-writer.ts) minus the stock dimension.
- *
- * Record-only: the buyer is the SPG's assigned store, goods are already at the
- * store, and no consignment/store stock ledger exists yet. This writer touches
- * NO VanStock, NO InventoryValue, NO StockAdjustment — only SpgSale/SpgSaleLine
- * + SalesHistory. Stock reconciliation is deferred (like konsi today).
+ * Waktu jual nota. Penjualan di konter = sekarang. Penjualan dari antrean HP
+ * (tanpa sinyal) membawa waktu jualnya sendiri, supaya nota, laporan tutup hari,
+ * target, dan komisi jatuh di hari barang benar-benar terjual — bukan hari
+ * sinyalnya kembali. Jam HP yang maju dijepit ke sekarang.
  */
-export async function recordSpgSale(input: {
+export function tentukanWaktuJual(waktuJual: Date | null | undefined, sekarang: Date): Date | null {
+  if (!waktuJual) return sekarang;
+  const t = waktuJual.getTime();
+  if (!Number.isFinite(t)) return null;
+  // Jam HP yang maju tidak membuat nota "dari masa depan".
+  if (t > sekarang.getTime()) return sekarang;
+  if (t < sekarang.getTime() - BATAS_UMUR_LURING_HARI * 86_400_000) return null;
+  return waktuJual;
+}
+
+export type InputJualSpg = {
   salesmanId: string;
   storeId: string;
   createdById?: string;
@@ -41,102 +78,277 @@ export async function recordSpgSale(input: {
   saleLng?: number | null;
   note?: string;
   idempotencyKey?: string;
-}): Promise<RecordSpgSaleResult> {
+  pembeli?: PembeliNota | null;
+  diskonManual?: DiskonManualNota | null;
+  /** Hanya untuk penjualan dari antrean HP; diabaikan kalau `luring` tidak benar. */
+  waktuJual?: Date | null;
+  luring?: boolean;
+  visitId?: string | null;
+  sekarang?: Date;
+};
+
+/**
+ * Catat penjualan SPG di konter — POS terminal, tanpa persetujuan, seperti
+ * recordVanSale (apps/web/lib/canvassing/sale-writer.ts).
+ *
+ * Barangnya sudah DI toko, jadi stok gudang tidak pernah disentuh: tanpa
+ * VanStock, InventoryValue, atau StockAdjustment. Yang bergerak adalah buku
+ * stok toko — satu `StoreStockMovement` JUAL (−qty) per baris, di transaksi
+ * yang sama, sehingga nota yang dikirim ulang (kunci idempotensi) tidak
+ * memotong dua kali. Saldo toko boleh negatif; penjualan tidak pernah ditolak
+ * karenanya (barangnya sungguh terjual), opname toko yang meluruskan.
+ *
+ * Harga, promo konter, dan diskon manual dihitung DI SINI dari data server
+ * (`hitungPromoKonter`); layar hanya menampilkan pratinjau dengan aturan yang
+ * sama. `unitPrice` = harga sebelum potongan; `lineTotal` dan `total` = bersih.
+ *
+ * Penjualan dari antrean HP (`luring`) dicatat pada waktu jualnya. Barang yang
+ * sudah dihitung di opname toko SESUDAH waktu itu tidak mendapat baris buku
+ * JUAL — opname sudah melihat raknya tanpa barang tersebut, jadi memotongnya
+ * lagi berarti memotong dua kali (semangat yang sama dengan nota retur SPG yang
+ * tertinggal di belakang opname, tapi per barang dan per detik).
+ */
+export async function recordSpgSale(input: InputJualSpg): Promise<RecordSpgSaleResult> {
+  // Tolakan yang tidak butuh basis data dijawab tanpa membuka transaksi.
+  if (mergeLines(input.lines).length === 0) return { ok: false, code: "EMPTY" };
+  // `sekarang` ditetapkan SEKALI di luar transaksi: percobaan ulang memakai jam yang sama.
+  const sekarang = input.sekarang ?? new Date();
+  if (!tentukanWaktuJual(input.luring ? input.waktuJual : null, sekarang)) return { ok: false, code: "WAKTU_TIDAK_VALID" };
+  return runSerializable((tx) => recordSpgSaleTx(tx, { ...input, sekarang }));
+}
+
+/**
+ * Badan transaksi `recordSpgSale` — satu aturan harga, promo, pelanggan, dan
+ * buku stok untuk setiap nota SPG. Pemanggil WAJIB menjalankannya di dalam
+ * `runSerializable`; kait sesudah transaksi tetap urusan pemanggil.
+ */
+export async function recordSpgSaleTx(tx: Prisma.TransactionClient, input: InputJualSpg): Promise<RecordSpgSaleResult> {
   const merged = mergeLines(input.lines);
   if (merged.length === 0) return { ok: false, code: "EMPTY" };
+  const sekarang = input.sekarang ?? new Date();
+  const waktu = tentukanWaktuJual(input.luring ? input.waktuJual : null, sekarang);
+  if (!waktu) return { ok: false, code: "WAKTU_TIDAK_VALID" };
 
-  return runSerializable(async (tx) => {
-    if (input.idempotencyKey) {
-      const existing = await tx.spgSale.findUnique({
-        where: { idempotencyKey: input.idempotencyKey },
-        select: { id: true, docNo: true, changeGiven: true },
-      });
-      if (existing) return { ok: true, spgSaleId: existing.id, docNo: existing.docNo, changeGiven: Number(existing.changeGiven) };
-    }
+  const manual = input.diskonManual && input.diskonManual.nilai > 0 ? input.diskonManual : null;
+  const alasanManual = manual?.alasan?.trim() || null;
 
-    const store = await tx.store.findUnique({ where: { id: input.storeId }, select: { marginPercent: true } });
-    if (!store) return { ok: false, code: "STORE_NOT_FOUND" };
-    const marginPercent = store.marginPercent === null ? null : Number(store.marginPercent);
-
-    // Load item price + meta for each line
-    // (SPG sales are always retail/PUTUS to the end customer, regardless of the
-    // store's own consignment terms with Elorae — a KONSI store's own margin
-    // never applies to what an SPG charges a walk-in shopper.)
-    const itemIds = Array.from(new Set(merged.map((l) => l.itemId)));
-    const items = await tx.item.findMany({
-      where: { id: { in: itemIds } },
-      select: { id: true, sku: true, nameId: true, sellingPrice: true, variants: true, category: { select: { name: true } } },
+  if (input.idempotencyKey) {
+    const existing = await tx.spgSale.findUnique({
+      where: { idempotencyKey: input.idempotencyKey },
+      select: { id: true, docNo: true, changeGiven: true, total: true },
     });
-    const itemById = new Map(items.map((i) => [i.id, i]));
-
-    type Priced = { line: SpgSaleLineInput; item: typeof items[number]; unitPrice: number };
-    const priced: Priced[] = [];
-
-    for (const l of merged) {
-      const item = itemById.get(l.itemId);
-      if (!item) return { ok: false, code: "NO_PRICE" };
-      const sp = item.sellingPrice === null ? null : Number(item.sellingPrice);
-      const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", marginPercent });
-      if (price === null) return { ok: false, code: "NO_PRICE" };
-      priced.push({ line: l, item, unitPrice: price });
+    if (existing) {
+      return { ok: true, spgSaleId: existing.id, docNo: existing.docNo, changeGiven: Number(existing.changeGiven), total: Number(existing.total) };
     }
+  }
 
-    const displayName = (p: Priced) => {
-      const label = variantDetailForSku(p.item.variants, p.line.variantSku);
-      return label ? `${p.item.nameId} — ${label}` : p.item.nameId;
-    };
+  const store = await tx.store.findUnique({ where: { id: input.storeId }, select: { marginPercent: true } });
+  if (!store) return { ok: false, code: "STORE_NOT_FOUND" };
+  const marginPercent = store.marginPercent === null ? null : Number(store.marginPercent);
 
-    const total = priced.reduce((s, p) => s + p.line.qty * p.unitPrice, 0);
-    const cashReceived = input.cashReceived ?? total;
-    if (cashReceived < total) return { ok: false, code: "INSUFFICIENT_PAYMENT" };
-    const changeGiven = cashReceived - total;
+  // Harga + data barang per baris. Penjualan SPG selalu harga eceran/PUTUS ke
+  // pembeli akhir, apa pun syarat toko dengan Elorae — margin konsinyasi toko
+  // tidak pernah berlaku untuk harga yang SPG kenakan ke pembeli.
+  const itemIds = Array.from(new Set(merged.map((l) => l.itemId)));
+  const items = await tx.item.findMany({
+    where: { id: { in: itemIds } },
+    select: { id: true, sku: true, nameId: true, sellingPrice: true, variants: true, categoryId: true, category: { select: { name: true } } },
+  });
+  const itemById = new Map(items.map((i) => [i.id, i]));
 
-    const docNo = await generateDocNumber("SPGSALE", tx);
-    const sale = await tx.spgSale.create({
-      data: {
-        docNo,
-        salesmanId: input.salesmanId,
-        storeId: input.storeId,
-        createdById: input.createdById ?? input.salesmanId,
-        saleLat: input.saleLat == null ? null : new Prisma.Decimal(input.saleLat),
-        saleLng: input.saleLng == null ? null : new Prisma.Decimal(input.saleLng),
-        subtotal: total,
-        total,
-        cashReceived,
-        changeGiven,
-        note: input.note,
-        idempotencyKey: input.idempotencyKey ?? null,
-        lines: {
-          create: priced.map((p) => ({
+  type Priced = { line: SpgSaleLineInput; item: (typeof items)[number]; unitPrice: number; key: string };
+  const priced: Priced[] = [];
+  for (const l of merged) {
+    const item = itemById.get(l.itemId);
+    if (!item) return { ok: false, code: "NO_PRICE" };
+    const sp = item.sellingPrice === null ? null : Number(item.sellingPrice);
+    const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", marginPercent });
+    if (price === null) return { ok: false, code: "NO_PRICE" };
+    priced.push({ line: l, item, unitPrice: price, key: `${l.itemId}::${l.variantSku ?? ""}` });
+  }
+
+  // Promo konter + diskon manual — aturan murni yang sama dengan pratinjau HP.
+  const [promos, setelanManual] = await Promise.all([
+    promoKonterUntukToko(input.storeId, waktu, tx),
+    tx.systemSetting.findUnique({ where: { key: KUNCI_DISKON_MANUAL }, select: { value: true } }),
+  ]);
+  const aturanManual = bacaDiskonManual(setelanManual?.value);
+  if (manual && aturanManual.alasanWajib && !alasanManual) return { ok: false, code: "ALASAN_DISKON_WAJIB" };
+  const promo = hitungPromoKonter({
+    baris: priced.map((p) => ({ key: p.key, itemId: p.item.id, categoryId: p.item.categoryId, qty: p.line.qty, unitPrice: p.unitPrice })),
+    promos,
+    storeId: input.storeId,
+    waktu,
+    diskonManual: manual ? { jenis: manual.jenis, nilai: manual.nilai } : null,
+    aturanManual,
+  });
+  if (!promo.ok) return { ok: false, code: promo.code };
+  const hasilBaris = new Map(promo.baris.map((b) => [b.key, b]));
+
+  // Pembeli: pelanggan toko ini saja; pelanggan baru dicatat sekali per nomor.
+  let customerId: string | null = null;
+  if (input.pembeli) {
+    if ("id" in input.pembeli) {
+      const ada = await tx.storeCustomer.findFirst({ where: { id: input.pembeli.id, storeId: input.storeId }, select: { id: true } });
+      if (!ada) return { ok: false, code: "PELANGGAN_TIDAK_VALID" };
+      customerId = ada.id;
+    } else {
+      const nama = input.pembeli.nama.trim();
+      const hp = nomorWhatsApp(input.pembeli.hp);
+      if (!nama || nama.length > 100 || !hp || !input.pembeli.setuju) return { ok: false, code: "PELANGGAN_TIDAK_VALID" };
+      const ada = await tx.storeCustomer.findUnique({ where: { storeId_phone: { storeId: input.storeId, phone: hp } }, select: { id: true } });
+      customerId =
+        ada?.id ??
+        (
+          await tx.storeCustomer.create({
+            data: { storeId: input.storeId, name: nama, phone: hp, consentAt: sekarang, createdById: input.createdById ?? input.salesmanId },
+            select: { id: true },
+          })
+        ).id;
+    }
+  }
+
+  const displayName = (p: Priced) => {
+    const label = variantDetailForSku(p.item.variants, p.line.variantSku);
+    return label ? `${p.item.nameId} — ${label}` : p.item.nameId;
+  };
+
+  const total = promo.total;
+  const cashReceived = input.cashReceived ?? total;
+  if (cashReceived < total) return { ok: false, code: "INSUFFICIENT_PAYMENT" };
+  const changeGiven = cashReceived - total;
+
+  const docNo = await generateDocNumber("SPGSALE", tx);
+  const sale = await tx.spgSale.create({
+    data: {
+      docNo,
+      salesmanId: input.salesmanId,
+      storeId: input.storeId,
+      createdById: input.createdById ?? input.salesmanId,
+      saleLat: input.saleLat == null ? null : new Prisma.Decimal(input.saleLat),
+      saleLng: input.saleLng == null ? null : new Prisma.Decimal(input.saleLng),
+      subtotal: promo.subtotal,
+      total,
+      discountTotal: promo.potonganTotal,
+      orderPromoId: promo.promoNota?.id ?? null,
+      orderPromoName: promo.promoNota?.name ?? null,
+      orderDiscount: promo.promoNota?.potongan ?? 0,
+      manualDiscount: promo.diskonManual,
+      manualDiscountReason: promo.diskonManual > 0 ? alasanManual : null,
+      customerId,
+      visitId: input.visitId ?? null,
+      capturedOffline: Boolean(input.luring),
+      syncedAt: input.luring ? sekarang : null,
+      cashReceived,
+      changeGiven,
+      note: input.note,
+      idempotencyKey: input.idempotencyKey ?? null,
+      createdAt: waktu,
+      lines: {
+        create: priced.map((p) => {
+          const h = hasilBaris.get(p.key);
+          return {
             itemId: p.line.itemId,
             variantSku: p.line.variantSku ?? "",
             productName: displayName(p),
             qty: p.line.qty,
             unitPrice: p.unitPrice,
-            lineTotal: p.line.qty * p.unitPrice,
-          })),
-        },
+            lineTotal: h ? h.bersih : p.line.qty * p.unitPrice,
+            discount: h ? h.potongan : 0,
+            storeDiscount: h ? h.potonganToko : 0,
+            counterPromoId: h?.promoId ?? null,
+            promoName: h?.promoName ?? null,
+          };
+        }),
       },
-      select: { id: true },
-    });
+    },
+    select: { id: true },
+  });
 
-    const now = new Date();
-    const rows = buildOfflineSalesHistoryRows({
-      orderNo: docNo,
-      orderTotal: total,
-      lines: priced.map((p) => ({
+  const rows = buildOfflineSalesHistoryRows({
+    orderNo: docNo,
+    orderTotal: total,
+    lines: priced.map((p) => ({
+      itemId: p.line.itemId,
+      variantSku: p.line.variantSku ?? "",
+      parentSku: p.item.sku,
+      productName: displayName(p),
+      qty: p.line.qty,
+      unitPrice: p.unitPrice,
+      lineTotal: hasilBaris.get(p.key)?.bersih ?? p.line.qty * p.unitPrice,
+      productCategory: p.item.category?.name ?? null,
+    })),
+  }).map((r) => ({
+    ...r,
+    // Harga satuan sesudah potongan = nilai bersih baris ÷ jumlah, supaya
+    // laporan penjualan membaca harga yang sungguh dibayar pembeli.
+    unitPriceAfterDiscount: r.quantity > 0 ? Math.round((r.lineTotal / r.quantity) * 100) / 100 : r.unitPrice,
+    orderDate: waktu,
+    completedDate: waktu,
+  }));
+  await tx.salesHistory.createMany({ data: rows });
+
+  // Barang yang sudah dihitung di opname SESUDAH waktu jual tidak dipotong lagi:
+  // opname itu sudah melihat raknya tanpa barang ini. Per barang, karena
+  // opname toko boleh hanya menghitung sebagian barang.
+  let sudahDihitung = new Set<string>();
+  if (input.luring) {
+    const terhitung = await tx.storeOpnameLine.findMany({
+      where: { opname: { storeId: input.storeId, countedAt: { gt: waktu } }, itemId: { in: itemIds } },
+      select: { itemId: true, variantSku: true },
+    });
+    sudahDihitung = new Set(terhitung.map((l) => `${l.itemId}::${l.variantSku}`));
+  }
+  const bukuBaris = priced.filter((p) => !sudahDihitung.has(p.key));
+  if (bukuBaris.length > 0) {
+    await tx.storeStockMovement.createMany({
+      data: bukuBaris.map((p) => ({
+        storeId: input.storeId,
         itemId: p.line.itemId,
         variantSku: p.line.variantSku ?? "",
-        parentSku: p.item.sku,
-        productName: displayName(p),
-        qty: p.line.qty,
-        unitPrice: p.unitPrice,
-        lineTotal: p.line.qty * p.unitPrice,
-        productCategory: p.item.category?.name ?? null,
+        qty: -p.line.qty,
+        kind: "JUAL" as const,
+        refType: "SpgSale",
+        refId: sale.id,
+        createdById: input.createdById ?? input.salesmanId,
+        createdAt: waktu,
       })),
-    }).map((r) => ({ ...r, orderDate: now, completedDate: now }));
-    await tx.salesHistory.createMany({ data: rows });
+    });
+  }
 
-    return { ok: true, spgSaleId: sale.id, docNo, changeGiven };
-  });
+  if (customerId) {
+    // Titip pesan pembeli ini yang barangnya ikut terjual di nota ini selesai
+    // sendiri — termasuk permintaan "ukuran mana pun" (variantSku "") untuk
+    // barang itu. Setiap penutupan meninggalkan jejaknya.
+    const terbuka = await tx.customerRequest.findMany({
+      where: {
+        storeId: input.storeId,
+        customerId,
+        status: { in: [...STATUS_TITIP_TERBUKA] },
+        itemId: { in: itemIds },
+      },
+      select: { id: true, itemId: true, variantSku: true, status: true },
+    });
+    const terjual = new Set(priced.map((p) => `${p.line.itemId}::${p.line.variantSku ?? ""}`));
+    const kena = terbuka.filter((r) => r.itemId && (r.variantSku === "" || terjual.has(`${r.itemId}::${r.variantSku}`)));
+    if (kena.length > 0) {
+      const olehId = input.createdById ?? input.salesmanId;
+      await tx.customerRequest.updateMany({
+        where: { id: { in: kena.map((r) => r.id) }, status: { in: [...STATUS_TITIP_TERBUKA] } },
+        data: { status: "SELESAI", closedAt: sekarang, closedById: olehId, spgSaleId: sale.id },
+      });
+      await tx.auditLog.createMany({
+        data: kena.map((r) => ({
+          userId: olehId,
+          action: JEJAK_TITIP.SELESAI,
+          entityType: ENTITAS_TITIP,
+          entityId: r.id,
+          changes: { before: { status: r.status }, after: { status: "SELESAI", spgSaleId: sale.id } },
+          metadata: { otomatis: true, docNo },
+        })),
+      });
+    }
+  }
+
+  return { ok: true, spgSaleId: sale.id, docNo, changeGiven, total };
 }

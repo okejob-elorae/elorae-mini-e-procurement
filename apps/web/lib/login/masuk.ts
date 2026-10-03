@@ -1,10 +1,10 @@
 /**
  * Serah terima animasi masuk dari halaman masuk ke halaman pertama sesudahnya.
  *
- * Animasinya melintasi dua dokumen: halaman masuk menutup layar dan memunculkan
- * wordmark, lalu berpindah halaman sungguhan (`window.location`), dan halaman
- * tujuan melanjutkannya dengan lelucon harian sebelum membuka aplikasi. Di
- * antara keduanya tidak ada state React yang bertahan — hanya satu entri
+ * Animasinya melintasi dua dokumen: halaman masuk memudar ke tinta dengan
+ * wordmark di tengah, lalu berpindah halaman sungguhan (`window.location`), dan
+ * halaman tujuan memudarkan tinta itu keluar begitu ia hidup. Di antara
+ * keduanya tidak ada state React yang bertahan — hanya satu entri
  * `sessionStorage` ini.
  *
  * Bingkai pertama halaman tujuan HARUS sudah bertirai, atau dasbornya berkedip
@@ -17,6 +17,13 @@ export const KUNCI_MASUK = "elorae.masuk";
 
 /** Atribut di `<html>` yang membuat tirai lanjutan tampil sejak bingkai pertama. */
 export const ATRIBUT_MASUK = "data-masuk";
+
+/**
+ * Dikirim saat tirai lanjutan mulai terbuka. Angka beranda yang dirender di
+ * balik tirai menunggu ini untuk mulai naik — supaya geraknya terlihat, bukan
+ * habis di belakang tirai.
+ */
+export const PERISTIWA_TIRAI_BUKA = "elorae:masuk-buka";
 
 /**
  * Batas umur serah terima. Di produksi halaman tujuan tiba dalam satu detik;

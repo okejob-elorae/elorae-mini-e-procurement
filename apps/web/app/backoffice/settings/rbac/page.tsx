@@ -399,7 +399,7 @@ export default function RBACSettingsPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{tUi('cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmDelete} className="bg-destructive text-destructive-foreground">
+            <AlertDialogAction onClick={handleConfirmDelete} variant="destructive">
               {t('delete')}
             </AlertDialogAction>
           </AlertDialogFooter>

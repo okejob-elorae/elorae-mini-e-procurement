@@ -20,6 +20,7 @@ const tx = {
   paymentClaim: {
     findUnique: vi.fn(async () => state.klaim),
     update: vi.fn(async () => ({})),
+    updateMany: vi.fn(async () => ({ count: 1 })),
   },
   paymentClaimReceivable: { findMany: vi.fn(async () => state.links) },
   receivable: {
@@ -34,6 +35,9 @@ const tx = {
   },
 };
 
+vi.mock('@/lib/db/tx-retry', () => ({
+  runSerializable: (fn: (c: unknown) => Promise<unknown>) => fn(tx),
+}));
 vi.mock('@elorae/db', () => ({
   prisma: {
     $transaction: async (fn: (client: unknown) => Promise<unknown>) => fn(tx),

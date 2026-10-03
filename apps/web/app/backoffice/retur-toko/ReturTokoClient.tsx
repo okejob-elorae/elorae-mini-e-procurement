@@ -1,12 +1,15 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Camera, Link2, PackageOpen, Plus, Scale } from 'lucide-react';
+import { ArrowRightLeft, Camera, Link2, PackageOpen, Plus, Scale } from 'lucide-react';
+import { SearchableCombobox } from '@/components/ui/searchable-combobox';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from "@/components/ui/badge";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -42,6 +45,7 @@ import {
   catatHitunganGudangAction,
   catatReturTokoAction,
   jodohkanReturAction,
+  pindahkanNriAction,
 } from '@/app/actions/store-returns';
 import type {
   BarisKerjaRetur,
@@ -54,6 +58,7 @@ import { UnggahFoto, type NilaiFoto } from '@/components/foto/UnggahFoto';
 import { BarisBarangEditor, type PilihanBarang } from './BarisBarangEditor';
 import { BacaNota } from '@/components/ocr/BacaNota';
 import { formatDisplayDate } from '@/lib/date-only';
+import { TanggalInput } from '@/components/ui/tanggal-input';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 
@@ -80,6 +85,7 @@ export function ReturTokoClient({
   calonPasangan,
   bolehMengelola,
   bolehMenghitung,
+  dariSpg = [],
 }: {
   baris: BarisKerjaRetur[];
   ringkasan: RingkasanKerjaRetur;
@@ -88,8 +94,11 @@ export function ReturTokoClient({
   calonPasangan: CalonPasangan[];
   bolehMengelola: boolean;
   bolehMenghitung: boolean;
+  /** Id nota retur yang dilaporkan SPG. */
+  dariSpg?: string[];
 }) {
   const t = useTranslations('storeReturns');
+  const notaSpg = useMemo(() => new Set(dariSpg), [dariSpg]);
   const locale = useLocale();
   const tanggal = (iso: string) => formatDisplayDate(iso, locale);
   const router = useRouter();
@@ -114,6 +123,12 @@ export function ReturTokoClient({
   const [kirimFisik, setKirimFisik] = useState<(typeof KIRIM)[number]>('EKSPEDISI');
 
   const [jodohBaris, setJodohBaris] = useState<BarisKerjaRetur | null>(null);
+  // Hitungan gudang yatim yang dicatat ke toko yang salah (atau tanpa toko).
+  const [pindahBaris, setPindahBaris] = useState<BarisKerjaRetur | null>(null);
+  const [tokoPindahId, setTokoPindahId] = useState('');
+  const [alasanPindah, setAlasanPindah] = useState('');
+  const [siklusTerkunci, setSiklusTerkunci] = useState<string[] | null>(null);
+  const [setujuSiklus, setSetujuSiklus] = useState(false);
   const [pasanganId, setPasanganId] = useState('');
 
   const label = (k: LangkahRetur) => t(`step${k.charAt(0).toUpperCase()}${k.slice(1)}` as never);
@@ -276,6 +291,11 @@ export function ReturTokoClient({
                     >
                       <TableCell className="align-top whitespace-normal min-w-[9rem] max-w-[11rem]">
                         <span className="font-medium">{b.nomor}</span>
+                        {b.jenis === "NRT" && notaSpg.has(b.id) && (
+                          <Badge variant="secondary" className="ml-1.5 align-middle">
+                            {t("fromSpg" as never)}
+                          </Badge>
+                        )}
                         {b.nomorPasangan && (
                           <span className="block text-xs text-muted-foreground">
                             ↔ {b.nomorPasangan}
@@ -381,6 +401,23 @@ export function ReturTokoClient({
                               {t('pair')}
                             </Button>
                           )}
+                          {b.jenis === 'GUDANG_YATIM' && bolehMengelola && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={pending}
+                              onClick={() => {
+                                setPindahBaris(b);
+                                setTokoPindahId('');
+                                setAlasanPindah('');
+                                setSiklusTerkunci(null);
+                                setSetujuSiklus(false);
+                              }}
+                            >
+                              <ArrowRightLeft className="mr-1.5 h-3.5 w-3.5" />
+                              {b.storeId ? t('moveStoreShort') : t('setStore')}
+                            </Button>
+                          )}
                           {b.jenis === 'NRT' && (
                             <Button size="sm" variant="outline" asChild>
                               <Link href={`/backoffice/retur-toko/${b.id}`}>{t('open')}</Link>
@@ -433,9 +470,8 @@ export function ReturTokoClient({
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="nrt-tanggal">{t('claimDate')}</Label>
-                <Input
+                <TanggalInput
                   id="nrt-tanggal"
-                  type="date"
                   value={claimDate}
                   onChange={(e) => setClaimDate(e.target.value)}
                 />
@@ -643,6 +679,82 @@ export function ReturTokoClient({
               }
             >
               {t('saveCount')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pindahkan / tetapkan toko hitungan gudang yatim */}
+      <Dialog open={pindahBaris !== null} onOpenChange={(o) => !o && !pending && setPindahBaris(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{pindahBaris && t('moveTitle', { doc: pindahBaris.nomor })}</DialogTitle>
+            <DialogDescription>{t('moveCountBody')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="nri-toko-tujuan">{t('moveTarget')}</Label>
+              <SearchableCombobox
+                id="nri-toko-tujuan"
+                options={toko.filter((x) => x.id !== pindahBaris?.storeId).map((x) => ({ value: x.id, label: x.name }))}
+                value={tokoPindahId}
+                onValueChange={setTokoPindahId}
+                placeholder={t('moveTargetPlaceholder')}
+                searchPlaceholder={t('moveTargetSearch')}
+                emptyMessage={t('moveTargetEmpty')}
+                triggerClassName="w-full"
+                disabled={pending}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="nri-alasan-pindah">{t('moveReason')}</Label>
+              <Textarea
+                id="nri-alasan-pindah"
+                value={alasanPindah}
+                onChange={(e) => setAlasanPindah(e.target.value)}
+                placeholder={t('moveCountReasonPlaceholder')}
+                rows={3}
+                disabled={pending}
+              />
+            </div>
+            {siklusTerkunci && (
+              <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+                <p>{t('lockedCycleBody', { cycles: siklusTerkunci.join(', ') })}</p>
+                <label className="flex items-start gap-2">
+                  <Checkbox checked={setujuSiklus} onCheckedChange={(v) => setSetujuSiklus(v === true)} />
+                  <span>{t('lockedCycleConfirm')}</span>
+                </label>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              disabled={
+                pending ||
+                tokoPindahId === '' ||
+                alasanPindah.trim().length === 0 ||
+                (siklusTerkunci !== null && !setujuSiklus)
+              }
+              onClick={() =>
+                pindahBaris &&
+                startTransition(async () => {
+                  const hasil = await pindahkanNriAction(pindahBaris.id, tokoPindahId, alasanPindah, setujuSiklus);
+                  if (hasil.ok) {
+                    toast.success(t('okMovedCount'));
+                    setPindahBaris(null);
+                    router.refresh();
+                    return;
+                  }
+                  if (hasil.kode === 'SIKLUS_TERKUNCI' && 'noKonsi' in hasil) {
+                    setSiklusTerkunci(hasil.noKonsi);
+                    return;
+                  }
+                  toast.error(t(`err${hasil.kode}` as never));
+                })
+              }
+            >
+              <ArrowRightLeft className="mr-1.5 h-4 w-4" />
+              {t('moveConfirm')}
             </Button>
           </DialogFooter>
         </DialogContent>

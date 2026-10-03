@@ -6,7 +6,6 @@ import { useLocale, useTranslations } from "next-intl";
 import { Receipt, X } from "lucide-react";
 import type { VanSaleListRow } from "@/lib/canvassing/sale-queries";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import {
@@ -25,6 +24,8 @@ import {
 } from "@/components/ui/table";
 import { Pager } from "@/components/Pager";
 import { formatDisplayDateTime } from "@/lib/date-only";
+import { formatRupiah } from "@/lib/format/rupiah";
+import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
 
 type Props = {
   sales: VanSaleListRow[];
@@ -39,13 +40,6 @@ type Props = {
 
 const ALL_SALESMEN = "__all__";
 
-function formatRupiah(value: number): string {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
 
 export function VanSalesListClient({
   sales,
@@ -58,6 +52,7 @@ export function VanSalesListClient({
   pageSize,
 }: Props) {
   const t = useTranslations("vanSale.backoffice.list");
+  const tt = useTranslations("tanggalInput");
   const tTable = useTranslations("vanSale.backoffice.list.table");
   const locale = useLocale();
   const router = useRouter();
@@ -99,28 +94,15 @@ export function VanSalesListClient({
             triggerClassName="h-9 w-full"
           />
         </div>
-        <div className="space-y-2 w-full sm:w-40">
-          <Label htmlFor="van-sale-from" className="text-muted-foreground">
-            {t("filters.fromLabel")}
+        <div className="space-y-2 w-full sm:w-64">
+          <Label htmlFor="van-sale-periode" className="text-muted-foreground">
+            {tt("periode")}
           </Label>
-          <Input
-            id="van-sale-from"
-            type="date"
-            value={from}
-            onChange={(e) => pushParams({ from: e.target.value || undefined })}
-            className="h-9"
-          />
-        </div>
-        <div className="space-y-2 w-full sm:w-40">
-          <Label htmlFor="van-sale-to" className="text-muted-foreground">
-            {t("filters.toLabel")}
-          </Label>
-          <Input
-            id="van-sale-to"
-            type="date"
-            value={to}
-            onChange={(e) => pushParams({ to: e.target.value || undefined })}
-            className="h-9"
+          <RentangTanggalInput
+            id="van-sale-periode"
+            dari={from}
+            sampai={to}
+            onChange={({ dari, sampai }) => pushParams({ from: dari || undefined, to: sampai || undefined })}
           />
         </div>
         {hasFilters && (

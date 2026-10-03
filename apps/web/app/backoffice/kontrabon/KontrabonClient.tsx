@@ -35,6 +35,8 @@ import { cn } from '@/lib/utils';
 import { formatDisplayDate } from '@/lib/date-only';
 import { buatKontrabonAction, tutupKontrabonAction } from '@/app/actions/collections';
 import type { BarisKontrabon, TokoSiapKontrabon } from '@/lib/receivables/collection-queries';
+import { LencanaAsal, TombolKonfirmasi } from './KonfirmasiLapangan';
+import { TanggalInput } from '@/components/ui/tanggal-input';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 
@@ -74,9 +76,16 @@ export function KontrabonClient({
   const [catatan, setCatatan] = useState('');
   const [tutupId, setTutupId] = useState<string | null>(null);
   const [alasanBatal, setAlasanBatal] = useState('');
+  // "Belum dikonfirmasi" = janji lapangan yang masih berjalan dan belum
+  // dicocokkan kantor. Yang sudah ditutup tidak menunggu siapa pun lagi.
+  const [saring, setSaring] = useState<'semua' | 'belum'>('semua');
 
   const lewat = baris.filter((b) => b.status === 'BERJALAN' && (b.sisaHari ?? 0) < 0).length;
   const berjalan = baris.filter((b) => b.status === 'BERJALAN').length;
+  const perluKonfirmasi = (b: BarisKontrabon) => b.status === 'BERJALAN' && !b.dikonfirmasi;
+  const belumDikonfirmasi = baris.filter(perluKonfirmasi).length;
+  const tampil = saring === 'belum' ? baris.filter(perluKonfirmasi) : baris;
+  const tutupDariLapangan = baris.find((b) => b.id === tutupId)?.dariLapangan ?? false;
 
   const toko = kandidat.find((k) => k.storeId === tokoDipilih) ?? null;
   const nilaiTerpilih = useMemo(
@@ -162,10 +171,37 @@ export function KontrabonClient({
         }
       />
 
+      <div className="flex flex-wrap gap-2" role="group" aria-label={t('filterLabel')}>
+        <Button
+          size="sm"
+          variant={saring === 'semua' ? 'default' : 'outline'}
+          aria-pressed={saring === 'semua'}
+          onClick={() => setSaring('semua')}
+        >
+          {t('filterAll')}
+        </Button>
+        <Button
+          size="sm"
+          variant={saring === 'belum' ? 'default' : 'outline'}
+          aria-pressed={saring === 'belum'}
+          onClick={() => setSaring('belum')}
+        >
+          {t('filterUnconfirmed', { count: belumDikonfirmasi })}
+        </Button>
+      </div>
+
       <Card>
-        <CardContent className={baris.length === 0 ? 'p-0' : 'px-0'}>
-          {baris.length === 0 ? (
-            <EmptyState icon={ClipboardList} title={t('emptyTitle')} description={t('emptyBody')} />
+        <CardContent className={tampil.length === 0 ? 'p-0' : 'px-0'}>
+          {tampil.length === 0 ? (
+            saring === 'belum' ? (
+              <EmptyState
+                icon={ClipboardList}
+                title={t('emptyUnconfirmedTitle')}
+                description={t('emptyUnconfirmedBody')}
+              />
+            ) : (
+              <EmptyState icon={ClipboardList} title={t('emptyTitle')} description={t('emptyBody')} />
+            )
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -182,7 +218,7 @@ export function KontrabonClient({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {baris.map((b) => {
+                  {tampil.map((b) => {
                     const terlambat = b.status === 'BERJALAN' && (b.sisaHari ?? 0) < 0;
                     return (
                       <TableRow
@@ -198,6 +234,11 @@ export function KontrabonClient({
                         >
                           {b.docNo}
                         </Link>
+                        <LencanaAsal
+                          dariLapangan={b.dariLapangan}
+                          dikonfirmasi={b.dikonfirmasi}
+                          className="mt-1 flex whitespace-normal text-left"
+                        />
                       </TableCell>
                         <TableCell className="whitespace-normal min-w-[160px] max-w-[240px]">
                           {b.storeName}
@@ -246,6 +287,9 @@ export function KontrabonClient({
                             // this sticky column ~225 px and pushed the table past
                             // its card at 1280 px.
                             <span className="inline-flex flex-col items-end gap-1">
+                              {!b.dikonfirmasi && (
+                                <TombolKonfirmasi collectionNoteId={b.id} docNo={b.docNo} />
+                              )}
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -347,18 +391,16 @@ export function KontrabonClient({
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="tt-serah">{t('handoverDate')}</Label>
-                <Input
+                <TanggalInput
                   id="tt-serah"
-                  type="date"
                   value={serah}
                   onChange={(e) => setSerah(e.target.value)}
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="tt-janji">{t('promisedDate')}</Label>
-                <Input
+                <TanggalInput
                   id="tt-janji"
-                  type="date"
                   value={janji}
                   onChange={(e) => setJanji(e.target.value)}
                 />
@@ -398,7 +440,10 @@ export function KontrabonClient({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t('cancelTitle')}</DialogTitle>
-            <DialogDescription>{t('cancelBody')}</DialogDescription>
+            <DialogDescription>
+              {t('cancelBody')}
+              {tutupDariLapangan && ` ${t('cancelFieldHint')}`}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
             <Label htmlFor="tt-alasan">{t('cancelReason')}</Label>

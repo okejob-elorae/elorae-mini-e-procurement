@@ -4,10 +4,9 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { MoreHorizontal, Pencil, Printer, Receipt, Truck } from "lucide-react";
+import { Eye, FileCheck2, MoreHorizontal, PackageCheck, Pencil, Printer, Receipt, Truck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,12 +59,21 @@ import {
 import { logPrint } from "@/app/actions/audit";
 import { buildNotaGudangPrintHtml } from "@/lib/print/field-sales-nota-gudang-html";
 import { buildNotaTagihanPrintHtml } from "@/lib/print/field-sales-nota-tagihan-html";
+import { buildBuktiTerimaPrintHtml } from "@/lib/print/bukti-terima-html";
+import {
+  DialogBuktiTerimaKantor,
+  LightboxBuktiTerima,
+  SelBuktiTerima,
+  cetakDenganGambar,
+  type SasaranKantor,
+} from "./BuktiTerimaKantor";
 import {
   DeliveryFormDialog,
   deliveryErrorKey,
   parseDateOnlyInput,
   type DeliverableLine,
 } from "./DeliveryFormDialog";
+import { TanggalInput } from "@/components/ui/tanggal-input";
 
 type Props = {
   orderId: string;
@@ -79,6 +87,17 @@ type Props = {
   lines: DeliverableLine[];
   paymentTempo: number;
   canDeliver: boolean;
+  /**
+   * Mencatat/mengoreksi bukti terima: izin kirim ATAU setujui. Tidak diisi =
+   * sama dengan `canDeliver` (penulis tetap memeriksa izinnya sendiri).
+   */
+  canRecordReceipt?: boolean;
+  /**
+   * Pre-order yang jendelanya belum dirilis: stoknya belum disiapkan, jadi
+   * pengiriman belum bisa dicatat (penulis menolak dengan `INDEN_BELUM_RILIS`).
+   * Menutup sisa tetap boleh — toko yang membatalkan pre-order-nya.
+   */
+  indenBelumRilis?: boolean;
 };
 
 const DELIVERY_BADGE_VARIANT: Record<FieldSalesDeliveryStatus, "secondary" | "default" | "outline"> = {
@@ -141,9 +160,15 @@ export function DeliveriesCard({
   lines,
   paymentTempo,
   canDeliver,
+  canRecordReceipt = canDeliver,
+  indenBelumRilis = false,
 }: Props) {
   const t = useTranslations("fieldSalesOrders");
   const tCommon = useTranslations("common");
+  const tBukti = useTranslations("buktiTerima.kantor");
+  const tCetak = useTranslations("buktiTerima.cetak");
+  const [sasaranBukti, setSasaranBukti] = useState<SasaranKantor | null>(null);
+  const [lihatBukti, setLihatBukti] = useState<FieldSalesDeliverySummary | null>(null);
   const locale = useLocale();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -216,6 +241,51 @@ export function DeliveriesCard({
       },
     });
     printHtml(html, t("print.notaGudang"));
+  }
+
+  /**
+   * Tanda terima: lembar kosong untuk ditandatangani toko selama belum ada bukti, salinan bukti
+   * yang tercatat (nama, jam WIB, gambar) sesudahnya. Dicetak lewat `cetakDenganGambar`, yang
+   * menunggu gambar buktinya termuat — `printHtml` di atas mencetak sebelum foto sempat tiba.
+   */
+  async function handlePrintTandaTerima(delivery: FieldSalesDeliverySummary): Promise<void> {
+    await logPrint("FieldSalesTandaTerima", delivery.id);
+    const html = buildBuktiTerimaPrintHtml({
+      docNo: delivery.docNo,
+      orderNo,
+      storeName,
+      salesmanName,
+      deliveredAt: delivery.deliveredAt,
+      receivedByName: delivery.receivedByName,
+      receivedAt: delivery.receivedAt,
+      podPhotoUrl: delivery.podPhotoUrl,
+      lines: delivery.lines.map((line) => ({
+        productName: line.productName,
+        variantSku: line.variantSku,
+        variantLabel: lineVariantLabel(line.orderLineId),
+        qty: line.qty,
+      })),
+      labels: {
+        title: tCetak("judul"),
+        doc: tCetak("nota"),
+        orderRef: tCetak("pesanan"),
+        store: tCetak("toko"),
+        salesman: tCetak("sales"),
+        deliveredAt: tCetak("tanggalKirim"),
+        receivedBy: tCetak("diterimaOleh"),
+        receivedAt: tCetak("waktuDiterima"),
+        evidence: tCetak("bukti"),
+        no: tCetak("no"),
+        product: tCetak("produk"),
+        qty: tCetak("qty"),
+        totalQty: tCetak("totalQty"),
+        statement: tCetak("pernyataan"),
+        notYetReceived: tCetak("belum"),
+        signature: tCetak("tandaTangan"),
+        issuedBy: tCetak("diterbitkan"),
+      },
+    });
+    cetakDenganGambar(html, tCetak("judulJendela"));
   }
 
   function openTagihanDialog(deliveryId: string): void {
@@ -355,7 +425,8 @@ export function DeliveriesCard({
           <CardAction className={ACTION_SLOT_CLASS}>
             <Button
               className="h-10"
-              disabled={isPending || !hasOutstanding}
+              disabled={isPending || !hasOutstanding || indenBelumRilis}
+              title={indenBelumRilis ? t("delivery.err.INDEN_BELUM_RILIS") : undefined}
               onClick={() => setFormOpen(true)}
             >
               <Truck className="h-4 w-4" />
@@ -389,6 +460,7 @@ export function DeliveriesCard({
                 <TableHead className="text-right">{t("delivery.value")}</TableHead>
                 <TableHead>{t("delivery.deliveredBy")}</TableHead>
                 <TableHead>{t("delivery.dueDate")}</TableHead>
+                <TableHead>{tBukti("kolom")}</TableHead>
                 <TableHead className="w-12" />
               </TableRow>
             </TableHeader>
@@ -406,6 +478,9 @@ export function DeliveriesCard({
                   <TableCell className="max-w-40 truncate">{delivery.deliveredByName}</TableCell>
                   <TableCell className="whitespace-nowrap">
                     {formatDisplayDate(delivery.dueDate, locale)}
+                  </TableCell>
+                  <TableCell className="whitespace-normal">
+                    <SelBuktiTerima kiriman={delivery} onLihat={() => setLihatBukti(delivery)} />
                   </TableCell>
                   <TableCell className="w-12 text-right">
                     <DropdownMenu>
@@ -434,6 +509,26 @@ export function DeliveriesCard({
                             {t("delivery.editDates")}
                           </DropdownMenuItem>
                         )}
+                        <DropdownMenuItem onClick={() => void handlePrintTandaTerima(delivery)}>
+                          <FileCheck2 className="mr-2 h-4 w-4" />
+                          {tBukti("cetak")}
+                        </DropdownMenuItem>
+                        {delivery.podPhotoUrl && (
+                          <DropdownMenuItem onClick={() => setLihatBukti(delivery)}>
+                            <Eye className="mr-2 h-4 w-4" />
+                            {tBukti("lihat")}
+                          </DropdownMenuItem>
+                        )}
+                        {canRecordReceipt && (
+                          <DropdownMenuItem
+                            onClick={() =>
+                              setSasaranBukti({ kiriman: delivery, mode: delivery.receivedAt ? "KOREKSI" : "CATAT" })
+                            }
+                          >
+                            <PackageCheck className="mr-2 h-4 w-4" />
+                            {delivery.receivedAt ? tBukti("koreksi") : tBukti("catat")}
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -443,6 +538,9 @@ export function DeliveriesCard({
           </Table>
         )}
       </CardContent>
+
+      <DialogBuktiTerimaKantor sasaran={sasaranBukti} onTutup={() => setSasaranBukti(null)} />
+      <LightboxBuktiTerima kiriman={lihatBukti} onTutup={() => setLihatBukti(null)} />
 
       <DeliveryFormDialog
         orderId={orderId}
@@ -535,9 +633,8 @@ export function DeliveriesCard({
               <Label htmlFor="edit-invoice-date" className="text-xs text-muted-foreground">
                 {t("delivery.invoiceDate")}
               </Label>
-              <Input
+              <TanggalInput
                 id="edit-invoice-date"
-                type="date"
                 className="h-10"
                 value={editInvoiceDate}
                 disabled={isPending}
@@ -551,9 +648,8 @@ export function DeliveriesCard({
               <Label htmlFor="edit-due-date" className="text-xs text-muted-foreground">
                 {t("delivery.dueDate")}
               </Label>
-              <Input
+              <TanggalInput
                 id="edit-due-date"
-                type="date"
                 className="h-10"
                 value={editDueDate}
                 min={editInvoiceDate || undefined}

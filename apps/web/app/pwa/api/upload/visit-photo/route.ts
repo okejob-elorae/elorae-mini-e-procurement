@@ -18,12 +18,17 @@ export async function POST(req: NextRequest) {
 
   const form = await req.formData();
   const file = form.get("file") as File | null;
-  const visitId = form.get("visitId") as string | null;
+  const visitIdForm = ((form.get("visitId") as string | null) || "").trim() || null;
+  // Foto dari kunjungan yang check-in-nya dicatat TANPA sinyal: HP belum tahu id
+  // kunjungannya, hanya id check-in buatannya sendiri (`StoreVisit.clientId`).
+  const visitClientId = ((form.get("visitClientId") as string | null) || "").trim() || null;
   const clientId = form.get("clientId") as string | null;
   const caption = ((form.get("caption") as string | null) || "").trim() || undefined;
   const capturedAtRaw = form.get("capturedAt") as string | null;
 
-  if (!file || !visitId || !clientId) return NextResponse.json({ error: "file, visitId, clientId required" }, { status: 400 });
+  if (!file || (!visitIdForm && !visitClientId) || !clientId) {
+    return NextResponse.json({ error: "file, visitId or visitClientId, clientId required" }, { status: 400 });
+  }
   if (!ALLOWED_TYPES.has(file.type)) return NextResponse.json({ error: `type ${file.type} not allowed` }, { status: 400 });
   if (file.size > MAX_FILE_SIZE) return NextResponse.json({ error: "file exceeds 10MB" }, { status: 400 });
 
@@ -31,11 +36,15 @@ export async function POST(req: NextRequest) {
   const capturedAt = Number.isFinite(capturedAtMs) ? new Date(capturedAtMs) : new Date();
 
   try {
-    const already = await prisma.visitPhoto.findUnique({ where: { clientId }, select: { id: true, url: true } });
+    const already = await prisma.visitPhoto.findUnique({ where: { clientId }, select: { id: true, url: true, visitId: true } });
     if (already) return NextResponse.json(already);
 
-    const owned = await prisma.storeVisit.findFirst({ where: { id: visitId, userId: session.user.id }, select: { id: true } });
+    const owned = await prisma.storeVisit.findFirst({
+      where: visitIdForm ? { id: visitIdForm, userId: session.user.id } : { clientId: visitClientId, userId: session.user.id },
+      select: { id: true },
+    });
     if (!owned) return NextResponse.json({ error: "visit not found" }, { status: 404 });
+    const visitId = owned.id;
 
     const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
     const key = `visit-photos/${visitId}/${clientId}.${ext}`;
@@ -43,7 +52,9 @@ export async function POST(req: NextRequest) {
     const url = await uploadToR2(key, buffer, file.type);
     const photo = await prisma.$transaction((tx) =>
       attachVisitPhoto(tx, { visitId, salesmanId: session.user.id, clientId, url, r2Key: key, caption, capturedAt }));
-    return NextResponse.json(photo);
+    // `visitId` ikut dikembalikan: HP mencatat foto ini pada kunjungan server-nya
+    // (aturan "wajib foto" saat check-out tanpa sinyal).
+    return NextResponse.json({ ...photo, visitId });
   } catch (e) {
     if (e instanceof VisitOwnershipError) return NextResponse.json({ error: "visit not found" }, { status: 404 });
     console.error("visit-photo upload error:", e);
