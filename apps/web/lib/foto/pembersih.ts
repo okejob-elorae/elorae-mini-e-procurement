@@ -53,7 +53,11 @@ export type HasilSapu = {
  * dengan mencari SEMUA `/api/foto/<id>` di dalamnya, karena beberapa kolom teks
  * menyimpan daftar URL (mis. `GRN.photoUrls`).
  */
-export const KOLOM_FOTO: readonly { model: string; kolom: readonly string[]; json?: boolean }[] = [
+/**
+ * `wajib`: kolom yang di skema WAJIB terisi (bukan `?`). Prisma menolak
+ * saringan `not: null` pada kolom wajib, jadi tabelnya dibaca tanpa saringan.
+ */
+export const KOLOM_FOTO: readonly { model: string; kolom: readonly string[]; json?: boolean; wajib?: boolean }[] = [
   { model: "paymentClaim", kolom: ["transferPhotoUrl", "breakdownPhotoUrl"] },
   { model: "collectionNote", kolom: ["photoUrl"] },
   { model: "storeReturn", kolom: ["photoUrl"] },
@@ -69,7 +73,7 @@ export const KOLOM_FOTO: readonly { model: string; kolom: readonly string[]; jso
   { model: "competitorPrice", kolom: ["photoUrl"] },
   { model: "displayGuide", kolom: ["imageUrl"] },
   { model: "leaveRequest", kolom: ["photoUrl"] },
-  { model: "itemImage", kolom: ["url"] },
+  { model: "itemImage", kolom: ["url"], wajib: true },
   { model: "user", kolom: ["image"] },
   { model: "spgDailyClose", kolom: ["photoUrls"], json: true },
 ];
@@ -111,12 +115,12 @@ type Delegasi = { findMany: (args: unknown) => Promise<Record<string, unknown>[]
 async function urlTerpakai(): Promise<Set<string>> {
   const dipakai = new Set<string>();
   const hasil = await Promise.all(
-    KOLOM_FOTO.map(({ model, kolom, json }) => {
+    KOLOM_FOTO.map(({ model, kolom, json, wajib }) => {
       const delegasi = (prisma as unknown as Record<string, Delegasi>)[model];
       const select = Object.fromEntries(kolom.map((k) => [k, true]));
       // Kolom JSON tidak bisa disaring `not: null` dengan cara yang sama di
       // semua dialek; tabelnya kecil, jadi dibaca utuh.
-      const where = json ? undefined : { OR: kolom.map((k) => ({ [k]: { not: null } })) };
+      const where = json || wajib ? undefined : { OR: kolom.map((k) => ({ [k]: { not: null } })) };
       return delegasi.findMany({ where, select });
     }),
   );

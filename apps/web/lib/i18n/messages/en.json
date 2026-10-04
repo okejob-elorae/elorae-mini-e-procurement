@@ -650,7 +650,9 @@
         "TOKO_TIDAK_DITEMUKAN": "The store does not exist or is inactive.",
         "EMAIL_DIPAKAI": "This email is already used by another account.",
         "TIDAK_DITEMUKAN": "User not found. Reload the page.",
-        "PERAN_SENDIRI": "You cannot change the role of your own account."
+        "PERAN_SENDIRI": "You cannot change the role of your own account.",
+        "AKUN_SISTEM": "Only a system administrator can change a system administrator account.",
+        "PERAN_SISTEM": "Only a system administrator can grant a full-access role."
       }
     },
     "spg": {
@@ -827,7 +829,8 @@
       "STOCK_ADJUSTMENT": "Stock adjustment",
       "VOID_DOCUMENT": "Void document",
       "EDIT_POSTED_PO": "Edit posted PO",
-      "DELETE_SUPPLIER": "Delete supplier"
+      "DELETE_SUPPLIER": "Delete supplier",
+      "SETUP_PIN": "Change PIN"
     },
     "authRequired": "Authentication required",
     "enterPinForAction": "Enter your PIN for {action}",
@@ -859,7 +862,9 @@
     "currentPinIncorrect": "Current PIN is incorrect",
     "pinSaved": "PIN saved successfully",
     "adminOnlyReset": "Only admin can reset PIN",
-    "userPinReset": "User PIN has been reset"
+    "userPinReset": "User PIN has been reset",
+    "ownPinReset": "To change your own PIN, use the PIN form above (your current PIN is required).",
+    "systemAccountPinReset": "Only a system administrator can reset a system administrator's PIN."
   },
   "uom": {
     "pageTitle": "Unit of Measure (UOM)",
@@ -8415,7 +8420,8 @@
     "errPENGGANTI_TIDAK_DITEMUKAN": "The payment report to replace was not found.",
     "errPENGGANTI_MASIH_BERLAKU": "The old payment report is still active. Withdraw or cancel it before reporting again.",
     "errPENGGANTI_BUKAN_MILIK": "The old payment report is not yours.",
-    "errSUDAH_DIGANTI": "The old payment report already has a replacement — the same money cannot be reported twice."
+    "errSUDAH_DIGANTI": "The old payment report already has a replacement — the same money cannot be reported twice.",
+    "errTOKO_TIDAK_DIIZINKAN": "These invoices are not yours to collect — the store is held by another salesperson. Ask the office to assign the collection to you."
   },
   "collections": {
     "pageTitle": "Collection notes",

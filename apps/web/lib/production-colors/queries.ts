@@ -1,5 +1,6 @@
 import { Prisma } from '@elorae/db';
-import { prisma, usePostgres } from '@elorae/db';
+import { prisma, usePostgres as pakaiPostgres } from '@elorae/db';
+import { cariTeks } from "@/lib/db/cari-teks";
 import type { FilterTags } from "@elorae/db/pantone";
 import { DEFAULT_FILTER_OPTIONS, FILTER_DIMENSIONS } from "@elorae/db/pantone";
 import { COLOR_PAGE_SIZE } from '@/lib/production-colors/constants';
@@ -47,7 +48,7 @@ function buildTagWhere(filters: ListPantoneFilters): Prisma.PantoneColorWhereInp
        */
       OR: values.map((v) => ({
         filterTags: {
-          path: usePostgres() ? [dim] : `$.${dim}`,
+          path: pakaiPostgres() ? [dim] : `$.${dim}`,
           array_contains: v,
         },
       })),
@@ -74,7 +75,7 @@ function buildTagWhere(filters: ListPantoneFilters): Prisma.PantoneColorWhereInp
  * rather than silently getting a worse one.
  */
 function buildBookOrder(): Prisma.PantoneColorOrderByWithRelationInput[] {
-  if (!usePostgres()) {
+  if (!pakaiPostgres()) {
     return [{ groupName: 'asc' }, { name: 'asc' }];
   }
   const asc = { sort: 'asc', nulls: 'last' } as const;
@@ -89,19 +90,14 @@ function buildBookOrder(): Prisma.PantoneColorOrderByWithRelationInput[] {
 }
 
 /**
- * `mode: 'insensitive'` ADALAH KHUSUS POSTGRESQL di Prisma, dan itu disengaja.
+ * Pencarian memakai `cariTeks` (lib/db/cari-teks.ts), bukan `contains` polos.
  *
- * Tanpanya `contains` menjadi `LIKE`, yang di PostgreSQL peka huruf besar-kecil
- * — mengetik "lime" tidak menemukan satu pun dari 23 warna bernama "Lime …".
- * Kode ini ditulis untuk MariaDB, yang collation bawaannya abai huruf, jadi
- * cacatnya tidak pernah terlihat di sana dan lolos type-check di sini.
- *
- * KONSEKUENSINYA: schema MariaDB di repo ini tidak memiliki `mode` pada tipe
- * filternya. Siapa pun yang membangkitkan klien dari `schema.prisma` akan
- * mendapat galat tipe di 39 tempat sekaligus. Itu bukan kelalaian — itu harga
- * yang dipilih supaya pencarian benar-benar bekerja di dialek yang dipakai
- * cabang ini. Kalau MariaDB dihidupkan lagi, jalan keluarnya satu pembungkus
- * bersama yang bercabang per dialek, bukan mencabut `mode` satu per satu.
+ * Tanpa opsi abai-huruf, `contains` menjadi `LIKE`, yang di PostgreSQL peka
+ * huruf besar-kecil — mengetik "lime" tidak menemukan satu pun dari 23 warna
+ * bernama "Lime …". Opsi itu hanya ada di klien Prisma PostgreSQL; MariaDB
+ * (produksi) tidak mengenalnya tetapi collation bawaannya sudah abai huruf.
+ * `cariTeks` bercabang per dialek saat jalan, jadi kode yang sama benar di
+ * keduanya dan lolos type-check terhadap klien mana pun.
  */
 export async function listPantoneColors(
   filters: ListPantoneFilters,
@@ -117,9 +113,9 @@ export async function listPantoneColors(
         ? [
             {
               OR: [
-                { name: { contains: search, mode: 'insensitive' as const } },
-                { tcx: { contains: search, mode: 'insensitive' as const } },
-                { hex: { contains: search.replace('#', ''), mode: 'insensitive' as const } },
+                { name: cariTeks(search) },
+                { tcx: cariTeks(search) },
+                { hex: cariTeks(search.replace('#', '')) },
               ],
             },
           ]
@@ -188,8 +184,8 @@ export async function listFavoriteColors(
         ? [
             {
               OR: [
-                { name: { contains: search, mode: 'insensitive' as const } },
-                { tcx: { contains: search, mode: 'insensitive' as const } },
+                { name: cariTeks(search) },
+                { tcx: cariTeks(search) },
               ],
             },
           ]

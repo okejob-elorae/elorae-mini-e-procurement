@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@elorae/db";
+import { cariTeks } from "@/lib/db/cari-teks";
 import { auth } from "@/lib/auth";
 import { parseItemVariants } from "@/lib/items/variants";
 import { labelVarian } from "@/lib/konsinyasi/stok-di-toko";
@@ -56,7 +57,7 @@ export async function cariBarangHilangAction(query: string): Promise<{ ok: true;
     where: {
       isActive: true,
       type: "FINISHED_GOOD",
-      OR: [{ sku: { contains: q, mode: "insensitive" } }, { nameId: { contains: q, mode: "insensitive" } }],
+      OR: [{ sku: cariTeks(q) }, { nameId: cariTeks(q) }],
     },
     orderBy: { nameId: "asc" },
     take: 20,

@@ -44,7 +44,10 @@ export default async function PenggunaPage() {
         id: r.id,
         nama: r.name,
         sistem: r.isSystem,
-        spg: perannyaSpg(r.permissions.map((p) => p.permission.code)),
+        spg: perannyaSpg(
+          r.permissions.map((p) => p.permission.code),
+          r.isSystem,
+        ),
       }))}
       toko={stores}
     />

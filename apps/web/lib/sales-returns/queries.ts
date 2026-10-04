@@ -1,4 +1,5 @@
 import { prisma } from "@elorae/db";
+import { cariTeks } from "@/lib/db/cari-teks";
 import { serializeForClient } from "@/lib/serialize-for-client";
 import type { SalesChannel, SalesReturnStatus } from "@/lib/constants/enums";
 
@@ -81,9 +82,9 @@ export async function listSalesReturns(
   if (filter.search && filter.search.trim()) {
     const q = filter.search.trim();
     where.OR = [
-      { jubelioReturnNo: { contains: q, mode: 'insensitive' as const } },
-      { channelOrderNo: { contains: q, mode: 'insensitive' as const } },
-      { buyerName: { contains: q, mode: 'insensitive' as const } },
+      { jubelioReturnNo: cariTeks(q) },
+      { channelOrderNo: cariTeks(q) },
+      { buyerName: cariTeks(q) },
     ];
   }
   if (filter.receivedFrom || filter.receivedTo) {

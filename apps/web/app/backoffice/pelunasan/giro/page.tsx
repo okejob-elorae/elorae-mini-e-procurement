@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { bolehMembacaArsip, bolehMemverifikasi } from "@/lib/receivables/izin";
+import { bolehMembacaPelunasan, bolehMemverifikasi } from "@/lib/receivables/izin";
 import { giroBaruDiputuskan, giroMenunggu, type BarisGiro } from "@/lib/receivables/giro-queries";
 import { ringkasGiro, URUTAN_KELOMPOK_GIRO } from "@/lib/receivables/giro";
 import { formatDisplayDate } from "@/lib/date-only";
@@ -38,7 +38,8 @@ export default async function DaftarGiroPage() {
   const session = await auth();
   if (!session) redirect("/login");
   const izin = session.user.permissions;
-  if (!bolehMembacaArsip(izin) && !bolehMemverifikasi(izin)) redirect("/backoffice");
+  // Satu predikat dengan daftar BKM: yang boleh membuka daftarnya boleh membuka giro.
+  if (!bolehMembacaPelunasan(izin)) redirect("/backoffice");
 
   const sekarang = new Date();
   const [menunggu, baruSaja] = await Promise.all([

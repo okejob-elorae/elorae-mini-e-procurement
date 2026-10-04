@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { perannyaSpg, rapikanEmail, validasiPengguna } from "./validasi";
+import { perannyaSpg, rapikanEmail, tolakAkunSistem, validasiPengguna } from "./validasi";
 
 const DASAR = { nama: "Rina", email: "rina@toko.com", sandi: "rahasia123", ulangSandi: "rahasia123", butuhToko: false, tokoId: null };
 
@@ -40,5 +40,32 @@ describe("perannyaSpg", () => {
   it("treats a role that can record SPG sales as an SPG role, whatever its name", () => {
     expect(perannyaSpg(["pwa:access", "spg_sales:record"])).toBe(true);
     expect(perannyaSpg(["pwa:access", "field_sales_orders:create"])).toBe(false);
+  });
+
+  it("never treats a system role as SPG, even when it is linked to spg_sales:record", () => {
+    // ADMIN membawa tautan ke semua izin; toko tetap akan membuatnya dianggap SPG di HP.
+    expect(perannyaSpg(["pwa:access", "spg_sales:record"], true)).toBe(false);
+    expect(perannyaSpg(["pwa:access", "spg_sales:record"], false)).toBe(true);
+  });
+});
+
+describe("tolakAkunSistem", () => {
+  const biasa = { pelakuSistem: false, targetSistem: false, peranSistem: false };
+
+  it("lets a non-system admin manage ordinary accounts", () => {
+    expect(tolakAkunSistem(biasa)).toBeNull();
+  });
+
+  it("refuses a non-system admin touching a system account, whatever the new role", () => {
+    expect(tolakAkunSistem({ ...biasa, targetSistem: true })).toBe("AKUN_SISTEM");
+    expect(tolakAkunSistem({ ...biasa, targetSistem: true, peranSistem: true })).toBe("AKUN_SISTEM");
+  });
+
+  it("refuses a non-system admin giving out a system role", () => {
+    expect(tolakAkunSistem({ ...biasa, peranSistem: true })).toBe("PERAN_SISTEM");
+  });
+
+  it("lets a system admin do all of it", () => {
+    expect(tolakAkunSistem({ pelakuSistem: true, targetSistem: true, peranSistem: true })).toBeNull();
   });
 });

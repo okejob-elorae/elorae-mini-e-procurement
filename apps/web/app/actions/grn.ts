@@ -3,6 +3,7 @@
 import { Decimal } from 'decimal.js';
 import { z } from 'zod';
 import { prisma } from '@elorae/db';
+import { cariTeks } from "@/lib/db/cari-teks";
 import { calculateMovingAverage, reverseMovingAverage } from '@/lib/inventory/costing';
 import { revalidatePath } from 'next/cache';
 import { getActorName, notifyGRNCreated, notifyMaterialArrivedForPo } from '@/app/actions/notifications';
@@ -14,6 +15,7 @@ import { postGrnJournal, postGrnReversalJournal } from "@/lib/inventory/grn-jour
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { computeActualLeadDays } from '@/lib/leadtime/calculations';
 import { fanOutAdminNotification } from '@/lib/notifications/admin-fanout';
+import { runSerializable } from "@/lib/db/tx-retry";
 
 const grnItemSchema = z.object({
   itemId: z.string().min(1),
@@ -70,10 +72,16 @@ function parseGrnStoredLines(raw: unknown): StoredGrnLine[] {
   return arr as StoredGrnLine[];
 }
 
-export async function createGRN(data: z.infer<typeof grnSchema>, userId: string) {
+/**
+ * `_userId` dipertahankan supaya pemanggil lama tidak berubah, tetapi TIDAK
+ * dipakai: penerima GRN selalu pengguna sesi.
+ */
+export async function createGRN(data: z.infer<typeof grnSchema>, _userId?: string) {
+  void _userId;
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
+  if (!session?.user?.id) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.INVENTORY_MANAGE);
+  const userId = session.user.id;
 
   const validated = grnSchema.parse(data);
   await assertLinesVariantSkusMatchItemDefinitions(prisma.item, validated.items);
@@ -377,6 +385,31 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
   return result;
 }
 
+/** Penjaga baca: sesi + salah satu izin (melempar seperti `requirePermission`). */
+async function wajibSalahSatuIzin(...codes: string[]) {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error("Unauthorized");
+  const perms = session.user.permissions ?? [];
+  if (!codes.some((c) => hasPermission(perms, c))) requirePermission(perms, codes[0]);
+}
+
+/** Kolom pemasok yang aman dikirim ke browser — tanpa `bankAccountEnc`. */
+const PEMASOK_AMAN = {
+  id: true,
+  code: true,
+  name: true,
+  typeId: true,
+  address: true,
+  phone: true,
+  email: true,
+  isActive: true,
+  status: true,
+} as const;
+
+/**
+ * Daftar GRN: halaman inventori (`inventory:view`) dan formulir retur pemasok
+ * (`vendor_returns:view`).
+ */
 export async function getGRNs(
   filters?: {
     supplierId?: string;
@@ -386,6 +419,7 @@ export async function getGRNs(
   },
   opts?: { page: number; pageSize: number }
 ) {
+  await wajibSalahSatuIzin(PERMISSIONS.INVENTORY_VIEW, PERMISSIONS.VENDOR_RETURNS_VIEW);
   const where: Record<string, unknown> = {};
   if (filters?.supplierId) where.supplierId = filters.supplierId;
   if (filters?.poId) where.poId = filters.poId;
@@ -396,7 +430,7 @@ export async function getGRNs(
   }
 
   const include = {
-    supplier: true,
+    supplier: { select: PEMASOK_AMAN },
     po: { select: { docNumber: true } },
   };
 
@@ -430,12 +464,13 @@ export async function getGRNs(
 }
 
 export async function getGRNById(id: string) {
+  await wajibSalahSatuIzin(PERMISSIONS.INVENTORY_VIEW, PERMISSIONS.VENDOR_RETURNS_VIEW);
   const grn = await prisma.gRN.findUnique({
     where: { id },
     include: {
-      supplier: true,
+      supplier: { select: PEMASOK_AMAN },
       po: {
-        include: { supplier: true },
+        include: { supplier: { select: PEMASOK_AMAN } },
       },
     },
   });
@@ -446,8 +481,20 @@ export async function getGRNById(id: string) {
   };
 }
 
+/**
+ * Penjaga aksi baca rol kain: butuh sesi dan `inventory:view` (tab rol kain
+ * ada di halaman inventori). Melempar seperti `requirePermission`, jadi bentuk
+ * kembalian tidak berubah.
+ */
+async function wajibBolehLihatRolKain() {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error("Unauthorized");
+  requirePermission(session.user.permissions ?? [], PERMISSIONS.INVENTORY_VIEW);
+}
+
 /** Fetch fabric rolls for a GRN (for collapsible row). Returns plain objects (no Decimal). */
 export async function getRollsByGrnId(grnId: string) {
+  await wajibBolehLihatRolKain();
   const rolls = await prisma.fabricRoll.findMany({
     where: { grnId },
     include: {
@@ -474,6 +521,7 @@ export async function getFabricRollFilterOptions(): Promise<{
   grnOptions: Array<{ value: string; label: string }>;
   itemOptions: Array<{ value: string; label: string }>;
 }> {
+  await wajibBolehLihatRolKain();
   const [grnIdsRaw, itemIds] = await Promise.all([
     prisma.fabricRoll.findMany({ select: { grnId: true }, distinct: ['grnId'] }),
     prisma.fabricRoll.findMany({ select: { itemId: true }, distinct: ['itemId'] }),
@@ -497,6 +545,7 @@ export async function getFabricRolls(opts?: {
   itemId?: string;
   search?: string;
 }) {
+  await wajibBolehLihatRolKain();
   const toNum = (v: unknown) => (v == null ? null : Number(v));
   const where: Record<string, unknown> = {};
   if (opts?.grnId) where.grnId = opts.grnId;
@@ -504,11 +553,11 @@ export async function getFabricRolls(opts?: {
   const search = opts?.search?.trim();
   if (search && search.length > 0) {
     where.OR = [
-      { rollCode: { contains: search, mode: 'insensitive' as const } },
-      { rollRef: { contains: search, mode: 'insensitive' as const } },
-      { item: { sku: { contains: search, mode: 'insensitive' as const } } },
-      { item: { nameId: { contains: search, mode: 'insensitive' as const } } },
-      { grn: { docNumber: { contains: search, mode: 'insensitive' as const } } },
+      { rollCode: cariTeks(search) },
+      { rollRef: cariTeks(search) },
+      { item: { sku: cariTeks(search) } },
+      { item: { nameId: cariTeks(search) } },
+      { grn: { docNumber: cariTeks(search) } },
     ];
   }
 
@@ -566,92 +615,113 @@ export async function getFabricRolls(opts?: {
   }));
 }
 
-export async function approveGRNByOwner(id: string, userId: string) {
+/**
+ * Pemilik = admin sistem: izin wildcard `*` yang diberikan `lib/auth.ts` untuk
+ * `RoleDefinition.isSystem`. Tidak ada izin "pemilik" tersendiri, dan kolom lama
+ * `User.role` tidak dipakai lagi. Pengguna SELALU dari sesi — dulu id yang
+ * dikirim klien yang diperiksa, jadi siapa pun dengan `inventory:manage` cukup
+ * mengirim id admin.
+ */
+async function wajibPemilik(tindakan: 'approve' | 'decline'): Promise<string> {
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.INVENTORY_MANAGE);
-
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { role: true },
-  });
-  if (!user || user.role !== 'ADMIN') {
-    throw new Error('Only owner/admin can approve over-receive GRN');
+  if (!session?.user?.id) throw new Error('Unauthorized');
+  const perms = session.user.permissions ?? [];
+  requirePermission(perms, PERMISSIONS.INVENTORY_MANAGE);
+  if (!perms.includes('*')) {
+    throw new Error(`Only owner/admin can ${tindakan} over-receive GRN`);
   }
-  const grn = await prisma.gRN.update({
-    where: { id },
-    data: {
-      requiresOwnerApproval: false,
-      ownerApprovedAt: new Date(),
-      ownerApprovedById: userId,
-    },
-  });
+  return session.user.id;
+}
 
-  // Recompute PO status now that GRN is approved (deferred transition to CLOSED/OVER)
-  if (grn.poId) {
-    const poItems = await prisma.pOItem.findMany({
-      where: { poId: grn.poId },
-    });
-    const allFullyReceived = poItems.every((poItem) =>
-      new Decimal(poItem.receivedQty.toString()).gte(poItem.qty.toString())
-    );
-    const anyOverReceived = poItems.some((poItem) =>
-      new Decimal(poItem.receivedQty.toString()).gt(poItem.qty.toString())
-    );
-    const anyReceived = poItems.some((poItem) =>
-      new Decimal(poItem.receivedQty.toString()).gt(0)
-    );
-    let newStatus: 'SUBMITTED' | 'PARTIAL' | 'CLOSED' | 'OVER' = 'SUBMITTED';
-    if (allFullyReceived) newStatus = anyOverReceived ? 'OVER' : 'CLOSED';
-    else if (anyReceived) newStatus = 'PARTIAL';
+type GrnPoStatus = 'SUBMITTED' | 'PARTIAL' | 'CLOSED' | 'OVER';
 
-    await prisma.purchaseOrder.update({
-      where: { id: grn.poId },
-      data: { status: newStatus },
-    });
-    await prisma.pOStatusHistory.create({
+function statusPoDariBaris(poItems: Array<{ qty: unknown; receivedQty: unknown }>): GrnPoStatus {
+  const allFullyReceived = poItems.every((poItem) =>
+    new Decimal(String(poItem.receivedQty)).gte(String(poItem.qty))
+  );
+  const anyOverReceived = poItems.some((poItem) =>
+    new Decimal(String(poItem.receivedQty)).gt(String(poItem.qty))
+  );
+  const anyReceived = poItems.some((poItem) => new Decimal(String(poItem.receivedQty)).gt(0));
+  if (allFullyReceived) return anyOverReceived ? 'OVER' : 'CLOSED';
+  if (anyReceived) return 'PARTIAL';
+  return 'SUBMITTED';
+}
+
+/**
+ * Pemilik menyetujui GRN terima-lebih. `_userId` diabaikan (lihat `wajibPemilik`).
+ * Penjaga keadaan + pembaruan + status PO berjalan dalam satu transaksi
+ * serializable: GRN yang sudah disetujui/ditolak tidak bisa disetujui lagi, dan
+ * setuju-vs-tolak serentak hanya menghasilkan satu pemenang.
+ */
+export async function approveGRNByOwner(id: string, _userId?: string) {
+  void _userId;
+  const userId = await wajibPemilik('approve');
+
+  const grn = await runSerializable(async (tx) => {
+    const cur = await tx.gRN.findUnique({ where: { id } });
+    if (!cur) throw new Error('GRN not found');
+    if (cur.ownerDeclinedAt != null) throw new Error('This GRN was already declined');
+    if (cur.ownerApprovedAt != null) throw new Error('This GRN was already approved');
+    if (!cur.requiresOwnerApproval) throw new Error('This GRN is not awaiting owner approval');
+
+    const updated = await tx.gRN.update({
+      where: { id },
       data: {
-        poId: grn.poId,
-        status: newStatus,
-        changedById: userId,
-        notes: `GRN owner-approved: ${grn.docNumber}`,
+        requiresOwnerApproval: false,
+        ownerApprovedAt: new Date(),
+        ownerApprovedById: userId,
       },
     });
-    revalidatePath(`/backoffice/purchase-orders/${grn.poId}`);
-  }
 
+    // Recompute PO status now that GRN is approved (deferred transition to CLOSED/OVER)
+    if (updated.poId) {
+      const poItems = await tx.pOItem.findMany({ where: { poId: updated.poId } });
+      const newStatus = statusPoDariBaris(poItems);
+      await tx.purchaseOrder.update({
+        where: { id: updated.poId },
+        data: { status: newStatus },
+      });
+      await tx.pOStatusHistory.create({
+        data: {
+          poId: updated.poId,
+          status: newStatus,
+          changedById: userId,
+          notes: `GRN owner-approved: ${updated.docNumber}`,
+        },
+      });
+    }
+    return updated;
+  });
+
+  if (grn.poId) revalidatePath(`/backoffice/purchase-orders/${grn.poId}`);
   revalidatePath('/backoffice/inventory');
-  return grn;
+  return { ...grn, totalAmount: Number(grn.totalAmount) };
 }
 
 /**
  * Owner declines an over-receive GRN: reverse inventory and PO received qty, remove fabric rolls, record decline.
  * Fails if fabric rolls from this GRN were partially consumed or on-hand qty is insufficient.
  */
-export async function declineGRNByOwner(id: string, userId: string) {
-  const session = await auth();
-  if (!session) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.INVENTORY_MANAGE);
-
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { role: true },
-  });
-  if (!user || user.role !== 'ADMIN') {
-    throw new Error('Only owner/admin can decline over-receive GRN');
-  }
+export async function declineGRNByOwner(id: string, _userId?: string) {
+  void _userId;
+  const userId = await wajibPemilik('decline');
 
   let poIdForRevalidate: string | null = null;
 
-  await prisma.$transaction(async (tx) => {
+  // Serializable + diulang: dua tolak serentak dulu sama-sama lolos penjaga dan
+  // membalik stok dua kali. Sekarang yang kalah diulang, melihat GRN sudah
+  // ditolak, lalu berhenti sebelum menyentuh stok.
+  await runSerializable(async (tx) => {
+    poIdForRevalidate = null;
     const grn = await tx.gRN.findUnique({ where: { id } });
     if (!grn) throw new Error('GRN not found');
     poIdForRevalidate = grn.poId ?? null;
-    if (!grn.requiresOwnerApproval || grn.ownerApprovedAt != null) {
-      throw new Error('This GRN is not awaiting owner approval');
-    }
     if (grn.ownerDeclinedAt != null) {
       throw new Error('This GRN was already declined');
+    }
+    if (!grn.requiresOwnerApproval || grn.ownerApprovedAt != null) {
+      throw new Error('This GRN is not awaiting owner approval');
     }
 
     const lines = parseGrnStoredLines(grn.items);
@@ -755,18 +825,7 @@ export async function declineGRNByOwner(id: string, userId: string) {
       }
 
       const poItems = await tx.pOItem.findMany({ where: { poId: grn.poId } });
-      const allFullyReceived = poItems.every((poItem) =>
-        new Decimal(poItem.receivedQty.toString()).gte(poItem.qty.toString())
-      );
-      const anyOverReceived = poItems.some((poItem) =>
-        new Decimal(poItem.receivedQty.toString()).gt(poItem.qty.toString())
-      );
-      const anyReceived = poItems.some((poItem) =>
-        new Decimal(poItem.receivedQty.toString()).gt(0)
-      );
-      let newStatus: 'SUBMITTED' | 'PARTIAL' | 'CLOSED' | 'OVER' = 'SUBMITTED';
-      if (allFullyReceived) newStatus = anyOverReceived ? 'OVER' : 'CLOSED';
-      else if (anyReceived) newStatus = 'PARTIAL';
+      const newStatus = statusPoDariBaris(poItems);
 
       await tx.purchaseOrder.update({
         where: { id: grn.poId },
@@ -834,6 +893,7 @@ export async function getGrnJournalState(grnId: string): Promise<{
   hasPostableReceiptJournal: boolean;
   hasPostableReversalJournal: boolean;
 }> {
+  await wajibSalahSatuIzin(PERMISSIONS.INVENTORY_VIEW);
   const [receipt, reversal, grn] = await Promise.all([
     prisma.journal.findUnique({
       where: { sourceType_sourceId: { sourceType: "GRN", sourceId: grnId } },

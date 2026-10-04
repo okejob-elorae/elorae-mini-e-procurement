@@ -7,9 +7,28 @@ import { prisma } from '@elorae/db';
 import { variantDetailForSku } from '@/lib/items/variants';
 import { itemDecimalsToNumbers } from '@/lib/items/queries';
 import { verifyPinForAction } from '@/app/actions/security/pin-auth';
-import { requirePermission, PERMISSIONS } from '@/lib/rbac';
+import { requirePermission, hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
 import { getActorName, notifyStockAdjustmentCreated } from '@/app/actions/notifications';
+import { generateDocNumber } from "@/lib/docNumber";
+import { runSerializable } from "@/lib/db/tx-retry";
+
+/**
+ * Penjaga aksi baca inventori: butuh sesi dan `inventory:view` — atau salah
+ * satu izin lain yang disebut pemanggil. Melempar seperti `requirePermission`
+ * (pola file ini), jadi bentuk kembalian aksi baca tidak berubah; halamannya
+ * sudah digerbangi proxy, sehingga pengguna sah tidak pernah tertolak di sini.
+ */
+async function wajibBolehLihatInventori(...izinLain: string[]) {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error("Unauthorized");
+  const izin = session.user.permissions ?? [];
+  if (izinLain.some((kode) => hasPermission(izin, kode))) return;
+  requirePermission(izin, PERMISSIONS.INVENTORY_VIEW);
+}
+
+// Id pengguna mentah tidak dikirim ke klien; nama ada di relasi approvedBy/createdBy.
+const tanpaIdPengguna = { approvedById: true, createdById: true } as const;
 
 const adjustmentSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),
@@ -49,7 +68,10 @@ export async function createStockAdjustment(
   }
   const effectiveUserId = pinResult.userId ?? session.user.id;
 
-  const adjustmentResult = await prisma.$transaction(async (tx) => {
+  // Serializable + ulang: qty dibaca lalu ditulis sebagai angka mutlak, jadi dua
+  // penyesuaian paralel (atau penulis stok lain) tanpa ini saling menimpa. Dulu
+  // tabrakan nomor ADJ kebetulan menggagalkan yang kedua; kini nomornya berbeda.
+  const adjustmentResult = await runSerializable(async (tx) => {
 
     // Keep variantSku consistent with inventory costing helpers:
     // compound keys use '' for non-variant items (no nulls).
@@ -114,21 +136,10 @@ export async function createStockAdjustment(
       throw new Error('Adjustment would result in negative stock');
     }
 
-    // Generate next ADJ doc number from max existing in same period (avoid unique constraint)
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const prefix = `ADJ/${year}/${month}/`;
-    const existing = await tx.stockAdjustment.findMany({
-      where: { docNumber: { startsWith: prefix } },
-      select: { docNumber: true },
-      orderBy: { docNumber: 'desc' },
-      take: 1,
-    });
-    const nextNum = existing.length
-      ? (parseInt(existing[0].docNumber.slice(prefix.length), 10) || 0) + 1
-      : 1;
-    const docNumber = `${prefix}${String(nextNum).padStart(4, '0')}`;
+    // Penghitung bersama ADJ (sama dengan muat van, opname, NRI, tukar…). Dulu
+    // "nomor terbesar + 1" sendiri: penghitung lalu membagikan nomor yang sudah
+    // dipakai di sini dan penulis lain gagal unik sampai bulan berganti.
+    const docNumber = await generateDocNumber("ADJ", tx);
     
     // Create adjustment document
     const adjustment = await tx.stockAdjustment.create({
@@ -203,9 +214,9 @@ export async function createStockAdjustment(
       },
     });
 
-    revalidatePath('/backoffice/inventory');
     return adjustment;
   });
+  revalidatePath("/backoffice/inventory");
 
   getActorName(effectiveUserId)
     .then((triggeredByName) =>
@@ -221,6 +232,7 @@ export async function getGRNs(filters?: {
   fromDate?: Date;
   toDate?: Date;
 }) {
+  await wajibBolehLihatInventori();
   const where: any = {};
   
   if (filters?.supplierId) {
@@ -275,6 +287,7 @@ export async function getStockAdjustments(
   itemId?: string,
   opts?: { page: number; pageSize: number }
 ) {
+  await wajibBolehLihatInventori();
   const where: any = {};
 
   if (itemId) {
@@ -294,6 +307,7 @@ export async function getStockAdjustments(
         skip: (opts.page - 1) * opts.pageSize,
         take: opts.pageSize,
         include,
+        omit: tanpaIdPengguna,
         orderBy: { createdAt: 'desc' },
       }),
       prisma.stockAdjustment.count({ where }),
@@ -313,6 +327,7 @@ export async function getStockAdjustments(
   const rows = await prisma.stockAdjustment.findMany({
     where,
     include,
+    omit: tanpaIdPengguna,
     orderBy: { createdAt: 'desc' },
   });
   return rows.map((r) => ({
@@ -327,6 +342,7 @@ export async function getStockAdjustments(
 }
 
 export async function getStockAdjustmentById(id: string) {
+  await wajibBolehLihatInventori();
   const row = await prisma.stockAdjustment.findUnique({
     where: { id },
     include: {
@@ -334,6 +350,7 @@ export async function getStockAdjustmentById(id: string) {
       approvedBy: { select: { name: true } },
       createdBy: { select: { name: true, email: true } },
     },
+    omit: tanpaIdPengguna,
   });
   if (!row) return null;
   return {
@@ -351,6 +368,8 @@ export async function getStockAdjustmentById(id: string) {
 export async function getItemAvgCosts(
   itemIds: string[]
 ): Promise<Record<string, number>> {
+  // Halaman keluarkan bahan WO (`work_orders:view`) juga memakai rata-rata HPP ini.
+  await wajibBolehLihatInventori(PERMISSIONS.WORK_ORDERS_VIEW);
   if (itemIds.length === 0) return {};
   const rows = await prisma.inventoryValue.findMany({
     where: { itemId: { in: itemIds } },
@@ -401,6 +420,7 @@ export async function getRejectedGoodsRecap(filters?: {
   page?: number;
   pageSize?: number;
 }): Promise<{ items: RejectedGoodsRecapRow[]; totalCount: number }> {
+  await wajibBolehLihatInventori();
   const where: Record<string, unknown> = {};
   if (filters?.itemId) where.itemId = filters.itemId;
   if (filters?.woId) where.woId = filters.woId;
@@ -451,6 +471,7 @@ export async function getRejectedGoodsRecap(filters?: {
 
 // Get inventory statistics
 export async function getInventoryStats() {
+  await wajibBolehLihatInventori();
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 

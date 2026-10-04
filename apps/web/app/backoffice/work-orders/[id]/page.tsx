@@ -56,6 +56,7 @@ import {
   postFgReceiptJournalAction,
 } from '@/app/actions/production';
 import { buildMaterialIssuePrintHtml } from '@/lib/print/material-issue-html';
+import { buildNotaKainHtml } from "./nota-kain-html";
 import { logPrint } from '@/app/actions/audit';
 import { WOStatus } from '@/lib/constants/enums';
 import { ChainPositionStrip } from '@/components/lead-time/chain-position-strip';
@@ -531,22 +532,17 @@ export default function WorkOrderDetailPage() {
               onClick={() => {
                 const win = window.open('', '_blank', 'width=800,height=600');
                 if (!win) return;
-                win.document.write(`
-                  <html><head><title>Nota Kain per Roll - ${wo.docNumber}</title></head><body>
-                  <h2>Nota Kain per Roll</h2>
-                  <p><strong>WO:</strong> ${wo.docNumber}</p>
-                  <p><strong>Vendor:</strong> ${(wo.vendor as any)?.name ?? ''}</p>
-                  <p><strong>FG:</strong> ${(wo.finishedGood as any)?.nameId ?? ''}</p>
-                  <table border="1" cellpadding="8" style="border-collapse:collapse;width:100%">
-                  <tr><th>Roll / Ref</th><th>Qty</th><th>Notes</th></tr>
-                  ${rollBreakdown.map((r) => `<tr><td>${r.rollRef ?? ''}</td><td>${Number(r.qty ?? 0)}</td><td>${r.notes ?? ''}</td></tr>`).join('')}
-                  </table>
-                  <p style="margin-top:16px"><strong>Materials (consumption plan):</strong></p>
-                  <table border="1" cellpadding="8" style="border-collapse:collapse;width:100%">
-                  <tr><th>Material</th><th>${tWO('estimatedConsumptionPerPcs')}</th><th>UOM</th></tr>
-                  ${consumptionPlan.map((p: any) => `<tr><td>${p.itemName ?? p.itemId}</td><td>${Number(p.plannedQty ?? 0)}</td><td>${p.uomCode ?? ''}</td></tr>`).join('')}
-                  </table>
-                  </body></html>`);
+                // Semua nilai di-escape di pembangunnya — catatan rol diketik bebas.
+                win.document.write(
+                  buildNotaKainHtml({
+                    docNumber: String(wo.docNumber ?? ""),
+                    vendorName: (wo.vendor as { name?: string | null } | null)?.name,
+                    fgName: (wo.finishedGood as { nameId?: string | null } | null)?.nameId,
+                    labelKonsumsi: tWO("estimatedConsumptionPerPcs"),
+                    rolls: rollBreakdown,
+                    materials: consumptionPlan,
+                  }),
+                );
                 win.document.close();
                 win.focus();
                 setTimeout(() => { win.print(); win.close(); }, 250);

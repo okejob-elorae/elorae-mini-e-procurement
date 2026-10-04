@@ -1,4 +1,5 @@
 import { prisma } from "@elorae/db";
+import { cariTeks } from "@/lib/db/cari-teks";
 import { computeStorePrice } from "@elorae/db/pricing";
 import { getPrimaryImagesBatch } from "@/lib/items/images/queries";
 import { parseItemVariants, variantDetailForSku, variantSelectOptions } from "@/lib/items/variants";
@@ -54,7 +55,7 @@ export type BarisDaftarInden = {
 export async function daftarJendelaInden(opsi: { keadaan?: KeadaanInden; cari?: string } = {}): Promise<BarisDaftarInden[]> {
   const cari = opsi.cari?.trim();
   const jendela = await prisma.preorderWindow.findMany({
-    where: cari ? { name: { contains: cari, mode: "insensitive" } } : {},
+    where: cari ? { name: cariTeks(cari) } : {},
     orderBy: [{ opensAt: "desc" }, { createdAt: "desc" }],
   });
   if (jendela.length === 0) return [];

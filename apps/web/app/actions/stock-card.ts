@@ -3,6 +3,20 @@
 import { prisma } from '@elorae/db';
 import { ItemType } from '@elorae/db';
 import { itemDecimalsToNumbers } from '@/lib/items/queries';
+import { auth } from "@/lib/auth";
+import { requirePermission, PERMISSIONS } from "@/lib/rbac";
+
+/**
+ * Penjaga aksi baca kartu stok: butuh sesi dan `inventory:view`. Melempar
+ * (seperti `requirePermission`) supaya bentuk kembalian tidak berubah; semua
+ * halaman pemakainya ada di bawah /backoffice/inventory yang sudah digerbangi
+ * izin yang sama oleh proxy.
+ */
+async function wajibBolehLihatInventori() {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error("Unauthorized");
+  requirePermission(session.user.permissions ?? [], PERMISSIONS.INVENTORY_VIEW);
+}
 
 
 /** Serialized item shape returned to client (no Decimal) */
@@ -57,6 +71,7 @@ export async function getStockCard(
   dateRange: { from: Date; to: Date },
   variantSku?: string
 ) {
+  await wajibBolehLihatInventori();
   const movementWhere: Record<string, unknown> = {
     itemId,
   };
@@ -129,6 +144,7 @@ export async function getStockCard(
 
 /** Returns variant SKU options for an item (from item.variants and from stock movement history). Use to populate variant combobox when item is selected, before Load. */
 export async function getItemVariantOptions(itemId: string): Promise<string[]> {
+  await wajibBolehLihatInventori();
   const [item, movementVariants] = await Promise.all([
     prisma.item.findUnique({
       where: { id: itemId },
@@ -156,6 +172,7 @@ export async function getItemVariantOptions(itemId: string): Promise<string[]> {
 
 /** One row per item (aggregated from variant-level InventoryValue rows). */
 export async function getCurrentStockSummary() {
+  await wajibBolehLihatInventori();
   const rows = await prisma.inventoryValue.findMany({
     include: {
       item: {
@@ -218,6 +235,7 @@ export async function getStockCardByType(
   type: 'raw' | 'finished',
   dateRange: { from: Date; to: Date }
 ): Promise<{ items: StockCardByTypeItem[]; type: 'raw' | 'finished' }> {
+  await wajibBolehLihatInventori();
   const itemTypes: ItemType[] =
     type === 'raw' ? [ItemType.FABRIC, ItemType.ACCESSORIES] : [ItemType.FINISHED_GOOD];
   const items = await prisma.item.findMany({
@@ -307,6 +325,7 @@ export async function getStockCardByCategory(
   categoryId: string,
   dateRange: { from: Date; to: Date }
 ): Promise<{ items: StockCardByTypeItem[]; category: { id: string; name: string; code: string | null } }> {
+  await wajibBolehLihatInventori();
   const category = await prisma.itemCategory.findUnique({
     where: { id: categoryId },
     select: { id: true, name: true, code: true },

@@ -21,8 +21,31 @@ export function rapikanEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-export function perannyaSpg(kodeIzin: string[]): boolean {
-  return kodeIzin.includes("spg_sales:record");
+/**
+ * Peran sistem (izin penuh) tidak pernah dianggap peran SPG, walau ADMIN
+ * membawa tautan ke semua izin termasuk `spg_sales:record`: toko tetap akan
+ * membuat admin itu diperlakukan sebagai SPG di HP.
+ */
+export function perannyaSpg(kodeIzin: string[], sistem = false): boolean {
+  return !sistem && kodeIzin.includes("spg_sales:record");
+}
+
+export type KodeAkunSistem = "AKUN_SISTEM" | "PERAN_SISTEM";
+
+/**
+ * Akun dan peran sistem hanya boleh disentuh admin sistem. Tanpa ini pemegang
+ * `settings_security:manage` biasa bisa mengangkat dirinya atau orang lain
+ * menjadi admin penuh, atau mengganti sandi admin lalu masuk sebagai dia.
+ */
+export function tolakAkunSistem(input: {
+  pelakuSistem: boolean;
+  targetSistem: boolean;
+  peranSistem: boolean;
+}): KodeAkunSistem | null {
+  if (input.pelakuSistem) return null;
+  if (input.targetSistem) return "AKUN_SISTEM";
+  if (input.peranSistem) return "PERAN_SISTEM";
+  return null;
 }
 
 export function validasiPengguna(input: {

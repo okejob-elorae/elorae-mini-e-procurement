@@ -15,6 +15,11 @@ type ArchiveData = { folders: ArchiveFolder[]; totalDocs: number; totalPending: 
  * and someone hunting a document does not always remember which family it
  * belonged to. Keeping them adjacent means one wrong guess costs a tab click,
  * not a trip back through the menu.
+ *
+ * `retur`/`workOrder` are `null` for a reader who may not open them (a
+ * receivables reader sees only the store notes): the tab is left out rather
+ * than shown empty, because an empty folder reads as "nothing here", not as
+ * "not yours to see".
  */
 export function ArchiveTabs({
   nota,
@@ -22,8 +27,8 @@ export function ArchiveTabs({
   workOrder,
 }: {
   nota: ArchiveData;
-  retur: ArchiveData;
-  workOrder: ArchiveData;
+  retur: ArchiveData | null;
+  workOrder: ArchiveData | null;
 }) {
   const t = useTranslations('archive');
 
@@ -43,8 +48,8 @@ export function ArchiveTabs({
       <Tabs defaultValue="nota" className="space-y-4">
       <TabsList>
         <TabsTrigger value="nota">{t('tabNotaToko')}</TabsTrigger>
-        <TabsTrigger value="retur">{t('tabReturPemasok')}</TabsTrigger>
-        <TabsTrigger value="wo">{t('tabWorkOrder')}</TabsTrigger>
+        {retur && <TabsTrigger value="retur">{t('tabReturPemasok')}</TabsTrigger>}
+        {workOrder && <TabsTrigger value="wo">{t('tabWorkOrder')}</TabsTrigger>}
       </TabsList>
 
       <TabsContent value="nota">
@@ -58,27 +63,31 @@ export function ArchiveTabs({
         />
       </TabsContent>
 
-      <TabsContent value="retur">
-        <DocumentArchive
-          folders={retur.folders}
-          groupTitle={t('allVendors')}
-          summary={t('returSummary', { docs: retur.totalDocs, pending: retur.totalPending })}
-          searchPlaceholder={t('searchVendor')}
-          emptyLabel={t('empty')}
-          hint={hint(t('hintRetur'), '/backoffice/vendor-returns')}
-        />
-      </TabsContent>
+      {retur && (
+        <TabsContent value="retur">
+          <DocumentArchive
+            folders={retur.folders}
+            groupTitle={t('allVendors')}
+            summary={t('returSummary', { docs: retur.totalDocs, pending: retur.totalPending })}
+            searchPlaceholder={t('searchVendor')}
+            emptyLabel={t('empty')}
+            hint={hint(t('hintRetur'), '/backoffice/vendor-returns')}
+          />
+        </TabsContent>
+      )}
 
-      <TabsContent value="wo">
-        <DocumentArchive
-          folders={workOrder.folders}
-          groupTitle={t('allVendors')}
-          summary={t('woSummary', { docs: workOrder.totalDocs, pending: workOrder.totalPending })}
-          searchPlaceholder={t('searchVendor')}
-          emptyLabel={t('empty')}
-          hint={hint(t('hintWo'), '/backoffice/work-orders')}
-        />
-      </TabsContent>
+      {workOrder && (
+        <TabsContent value="wo">
+          <DocumentArchive
+            folders={workOrder.folders}
+            groupTitle={t('allVendors')}
+            summary={t('woSummary', { docs: workOrder.totalDocs, pending: workOrder.totalPending })}
+            searchPlaceholder={t('searchVendor')}
+            emptyLabel={t('empty')}
+            hint={hint(t('hintWo'), '/backoffice/work-orders')}
+          />
+        </TabsContent>
+      )}
       </Tabs>
     </div>
   );

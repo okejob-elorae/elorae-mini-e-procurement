@@ -1,4 +1,5 @@
 import { prisma, Prisma } from "@elorae/db";
+import { cariTeks } from "@/lib/db/cari-teks";
 import type { PromoInput } from "@elorae/db/promo";
 
 const toNum = (v: Prisma.Decimal | number | null): number | null => (v === null ? null : Number(v));
@@ -49,7 +50,7 @@ export async function listPromos(
     where.type = filter.type;
   }
   if (typeof filter.active === "boolean") where.isActive = filter.active;
-  if (filter.search && filter.search.trim()) where.name = { contains: filter.search.trim(), mode: 'insensitive' as const };
+  if (filter.search && filter.search.trim()) where.name = cariTeks(filter.search.trim());
   const [rows, totalCount] = await Promise.all([
     prisma.promo.findMany({ where, orderBy: { createdAt: "desc" }, skip: (paging.page - 1) * paging.pageSize, take: paging.pageSize,
       select: { id: true, name: true, type: true, level: true, isActive: true, startsAt: true, endsAt: true } }),

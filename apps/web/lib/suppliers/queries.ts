@@ -1,4 +1,5 @@
 import { prisma } from '@elorae/db';
+import { cariTeks } from "@/lib/db/cari-teks";
 import type { Prisma, SupplierStatus } from '@elorae/db';
 
 export type ListSuppliersFilters = {
@@ -20,7 +21,7 @@ function buildWhere(filters?: ListSuppliersFilters): Prisma.SupplierWhereInput {
   if (filters?.status) where.status = filters.status;
   if (filters?.approvedOnly) where.status = 'ACTIVE';
   if (filters?.search) {
-    where.OR = [{ name: { contains: filters.search, mode: 'insensitive' as const } }, { code: { contains: filters.search, mode: 'insensitive' as const } }];
+    where.OR = [{ name: cariTeks(filters.search) }, { code: cariTeks(filters.search) }];
   }
   return where;
 }

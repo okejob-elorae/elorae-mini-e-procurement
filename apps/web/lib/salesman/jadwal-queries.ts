@@ -1,4 +1,5 @@
 import { prisma } from "@elorae/db";
+import { cariTeks } from "@/lib/db/cari-teks";
 import { izinDisetujuiRentang } from "./izin-queries";
 import { kunciHariWib } from "@/lib/dashboard/tren";
 import {
@@ -210,9 +211,9 @@ export async function cariTokoUntukJadwal(input: {
     ? [
         {
           OR: [
-            { name: { contains: q, mode: "insensitive" as const } },
-            { code: { contains: q, mode: "insensitive" as const } },
-            { address: { contains: q, mode: "insensitive" as const } },
+            { name: cariTeks(q) },
+            { code: cariTeks(q) },
+            { address: cariTeks(q) },
           ],
         },
       ]

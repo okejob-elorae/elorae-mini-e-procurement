@@ -3,6 +3,23 @@
 import { prisma } from '@elorae/db';
 import { ItemType } from '@elorae/db';
 import { getPpnRatePercent } from '@/app/actions/settings/ppn';
+import { auth } from "@/lib/auth";
+import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+
+/**
+ * Pagar setiap ekspor berkas ini — semuanya titik akhir yang bisa dipanggil
+ * siapa pun yang sudah masuk, dan isinya biaya produksi per barang. Cukup SALAH
+ * SATU izin; melempar seperti `requirePermission` supaya bentuk kembalian untuk
+ * yang sah tidak berubah. Dipasang sebelum satu kueri pun berjalan.
+ */
+async function wajibBolehBacaHpp(izin: readonly string[]): Promise<void> {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error("Unauthorized");
+  const punya = session.user.permissions ?? [];
+  if (!izin.some((kode) => hasPermission(punya, kode))) {
+    throw Object.assign(new Error("Forbidden: Insufficient permissions"), { status: 403 });
+  }
+}
 
 export type HPPCostLine = {
   category: 'FABRIC' | 'ACCESSORIES' | 'SERVICE';
@@ -58,6 +75,12 @@ type MaterialIssueItem = {
 
 /** Calculate HPP for a single work order: 3 cost layers (fabric, accessories, service) + PPN tracking. */
 export async function calculateHPP(woId: string): Promise<HPPBreakdown> {
+  await wajibBolehBacaHpp([PERMISSIONS.REPORTS_HPP_VIEW]);
+  return hitungHPP(woId);
+}
+
+/** Inti `calculateHPP` tanpa pagar — `getHPPList` sudah memagari sekali untuk seluruh daftar. */
+async function hitungHPP(woId: string): Promise<HPPBreakdown> {
   const ppnRate = await getPpnRatePercent();
 
   const wo = await prisma.workOrder.findUnique({
@@ -209,6 +232,7 @@ export type HPPListFilters = {
 
 /** List WO-centric HPP breakdowns with optional filters. */
 export async function getHPPList(filters?: HPPListFilters): Promise<HPPBreakdown[]> {
+  await wajibBolehBacaHpp([PERMISSIONS.REPORTS_HPP_VIEW]);
   const where: Record<string, unknown> = {};
   if (filters?.finishedGoodId) where.finishedGoodId = filters.finishedGoodId;
   if (filters?.vendorId) where.vendorId = filters.vendorId;
@@ -227,7 +251,7 @@ export async function getHPPList(filters?: HPPListFilters): Promise<HPPBreakdown
   const results: HPPBreakdown[] = [];
   for (const wo of wos) {
     try {
-      results.push(await calculateHPP(wo.id));
+      results.push(await hitungHPP(wo.id));
     } catch {
       // skip WOs that fail (e.g. no data)
     }
@@ -237,6 +261,7 @@ export async function getHPPList(filters?: HPPListFilters): Promise<HPPBreakdown
 
 /** Legacy: list finished goods with HPP-related data from FG receipts (kept for backward compatibility). */
 export async function getHPPListLegacy(): Promise<HPPRow[]> {
+  await wajibBolehBacaHpp([PERMISSIONS.REPORTS_HPP_VIEW]);
   const [items, receipts] = await Promise.all([
     prisma.item.findMany({
       where: { type: ItemType.FINISHED_GOOD, isActive: true },
@@ -292,6 +317,12 @@ export async function getEffectiveHPPForItem(finishedGoodId: string): Promise<{
   materialCost: number | null;
   lastReceiptAt: Date | null;
 } | null> {
+  // Penulis retur pemasok menilai barang jadi reject dengan HPP ini.
+  await wajibBolehBacaHpp([
+    PERMISSIONS.REPORTS_HPP_VIEW,
+    PERMISSIONS.VENDOR_RETURNS_CREATE,
+    PERMISSIONS.VENDOR_RETURNS_MANAGE,
+  ]);
   const last = await prisma.fGReceipt.findFirst({
     where: { wo: { finishedGoodId } },
     orderBy: { receivedAt: 'desc' },

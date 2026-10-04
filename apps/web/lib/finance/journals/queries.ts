@@ -1,4 +1,5 @@
 import { prisma, Prisma } from "@elorae/db";
+import { cariTeks } from "@/lib/db/cari-teks";
 import type { AccountType } from "@/lib/constants/enums";
 import { signedDelta } from "./normal-side";
 
@@ -37,7 +38,7 @@ export async function listJournals(
       : {}),
     ...(filter.sourceType ? { sourceType: filter.sourceType } : {}),
     ...(filter.manualOnly ? { isManual: true } : {}),
-    ...(filter.search ? { description: { contains: filter.search, mode: 'insensitive' as const } } : {}),
+    ...(filter.search ? { description: cariTeks(filter.search) } : {}),
   };
 
   const [rows, totalCount] = await Promise.all([

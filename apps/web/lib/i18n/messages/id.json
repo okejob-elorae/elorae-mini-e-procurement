@@ -650,7 +650,9 @@
         "TOKO_TIDAK_DITEMUKAN": "Toko tidak ditemukan atau sudah nonaktif.",
         "EMAIL_DIPAKAI": "Email ini sudah dipakai akun lain.",
         "TIDAK_DITEMUKAN": "Pengguna tidak ditemukan. Muat ulang halaman.",
-        "PERAN_SENDIRI": "Anda tidak bisa mengganti peran akun Anda sendiri."
+        "PERAN_SENDIRI": "Anda tidak bisa mengganti peran akun Anda sendiri.",
+        "AKUN_SISTEM": "Akun admin sistem hanya bisa diubah oleh admin sistem.",
+        "PERAN_SISTEM": "Hanya admin sistem yang bisa memberi peran dengan akses penuh."
       }
     },
     "spg": {
@@ -827,7 +829,8 @@
       "STOCK_ADJUSTMENT": "Penyesuaian stok",
       "VOID_DOCUMENT": "Pembatalan dokumen",
       "EDIT_POSTED_PO": "Ubah PO terposting",
-      "DELETE_SUPPLIER": "Hapus pemasok"
+      "DELETE_SUPPLIER": "Hapus pemasok",
+      "SETUP_PIN": "Ganti PIN"
     },
     "authRequired": "Autentikasi Diperlukan",
     "enterPinForAction": "Masukkan PIN Anda untuk {action}",
@@ -859,7 +862,9 @@
     "currentPinIncorrect": "PIN saat ini salah",
     "pinSaved": "PIN berhasil disimpan",
     "adminOnlyReset": "Hanya admin yang dapat mereset PIN",
-    "userPinReset": "PIN pengguna telah direset"
+    "userPinReset": "PIN pengguna telah direset",
+    "ownPinReset": "Untuk mengganti PIN Anda sendiri, pakai formulir PIN di atas (perlu PIN lama).",
+    "systemAccountPinReset": "PIN akun admin sistem hanya bisa direset oleh admin sistem."
   },
   "uom": {
     "pageTitle": "Satuan (UOM)",
@@ -8415,7 +8420,8 @@
     "errPENGGANTI_TIDAK_DITEMUKAN": "BKM yang mau diganti tidak ditemukan.",
     "errPENGGANTI_MASIH_BERLAKU": "BKM lama masih berlaku. Tarik atau batalkan dulu sebelum melaporkan ulang.",
     "errPENGGANTI_BUKAN_MILIK": "BKM lama bukan laporan Anda.",
-    "errSUDAH_DIGANTI": "BKM lama sudah punya pengganti — uang yang sama tidak bisa dilaporkan dua kali."
+    "errSUDAH_DIGANTI": "BKM lama sudah punya pengganti — uang yang sama tidak bisa dilaporkan dua kali.",
+    "errTOKO_TIDAK_DIIZINKAN": "Faktur ini bukan tagihan Anda — tokonya dipegang sales lain. Minta kantor menugaskan penagihannya kepada Anda."
   },
   "collections": {
     "pageTitle": "Kontrabon / Tanda Terima",

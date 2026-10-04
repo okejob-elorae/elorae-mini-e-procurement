@@ -11,6 +11,9 @@ import { fanOutAdminNotification } from '@/lib/notifications/admin-fanout';
 import { tanggalWib as tanggalGiro } from '@/lib/receivables/giro';
 import { JENIS_KABAR, kabariPengguna } from '@/lib/notifications/kabar-pengguna';
 import { formatIDR } from '@/lib/sales-orders/format';
+import { ambilTokoTetap } from '@/lib/pwa/peran';
+import { tokoTerkunci } from '@/lib/salesman/queries';
+import { daftarPiutang } from '@/lib/receivables/queries';
 import {
   buatKlaimPembayaran,
   type AlasanGagalKlaim,
@@ -206,6 +209,7 @@ export async function putuskanGiroAction(
 export type KodeAksiKlaimBaru =
   | 'TANPA_AKSES'
   | 'TANGGAL_TIDAK_VALID'
+  | 'TOKO_TIDAK_DIIZINKAN'
   | AlasanGagalKlaim
   | 'GAGAL';
 
@@ -219,12 +223,59 @@ function tanggalWib(teks: string): Date | null {
 }
 
 /**
+ * Bolehkah pelapor lapangan (bukan kantor) melaporkan BKM ini.
+ *
+ * - SPG TIDAK menagih — ia mencatat jualan di toko tetapnya, uangnya diterima
+ *   kasir toko. `TANPA_AKSES`.
+ * - Selama kunci "hanya toko sendiri" menyala: setiap faktur yang dilunasi harus
+ *   ia tagih menurut aturan daftar tagihan HP-nya (`daftarPiutang({ penagihId })`:
+ *   toko yang ia pegang, faktur yang ia jual selama tokonya belum berpemegang,
+ *   dan faktur di tugas tagih terbuka miliknya). Aturan itu dipakai ULANG, bukan
+ *   disalin: menolak faktur yang tampil di layarnya membuat laporannya mustahil,
+ *   dan menerima yang tidak tampil membuka toko orang lain.
+ *   `TOKO_TIDAK_DIIZINKAN`.
+ * - Kunci mati: seperti sebelumnya.
+ *
+ * Kiriman ulang BKM miliknya sendiri yang SUDAH tercatat (kunci kiriman sama)
+ * dilewatkan ke penulis, yang mengembalikannya: jawaban pertama bisa hilang di
+ * jalan lalu kuncinya dinyalakan sebelum HP mengirim ulang, dan menolaknya
+ * sekarang membuat HP menandai gagal laporan yang sudah ada di kantor.
+ */
+async function pelaporBolehMelaporkan(
+  userId: string,
+  input: { pelunasan: BarisPelunasan[]; idempotencyKey?: string | null },
+): Promise<{ ok: true } | { ok: false; kode: 'TANPA_AKSES' | 'TOKO_TIDAK_DIIZINKAN' }> {
+  const kunci = input.idempotencyKey?.trim();
+  if (kunci) {
+    const ada = await prisma.paymentClaim.findUnique({
+      where: { idempotencyKey: kunci },
+      select: { salesmanId: true },
+    });
+    if (ada?.salesmanId === userId) return { ok: true };
+  }
+
+  if (await ambilTokoTetap(userId)) return { ok: false, kode: 'TANPA_AKSES' };
+  if (!(await tokoTerkunci())) return { ok: true };
+
+  // Hanya baris yang melunasi sesuatu — baris bernilai nol dibuang penulisnya.
+  const ids = [...new Set(input.pelunasan.filter((p) => p.nilai > 0).map((p) => p.receivableId))];
+  if (ids.length === 0) return { ok: true }; // penulis menolaknya sebagai TANPA_PIUTANG
+  const ditagih = new Set((await daftarPiutang({ penagihId: userId, receivableIds: ids })).map((p) => p.id));
+  return ids.every((id) => ditagih.has(id)) ? { ok: true } : { ok: false, kode: 'TOKO_TIDAK_DIIZINKAN' };
+}
+
+/**
  * Catat klaim pembayaran (BKM).
  *
  * Boleh dilakukan sales lapangan, bukan hanya admin kantor: sales yang
  * menyaksikan transfernya. Yang TIDAK boleh ia lakukan adalah memverifikasinya
  * — itu jalur lain dengan izin lain. Kalau pelapor bisa mengesahkan laporannya
  * sendiri, seluruh Aturan 1 runtuh.
+ *
+ * Faktur MANA yang boleh ia laporkan ditetapkan server (`pelaporBolehMelaporkan`),
+ * bukan isian HP; antrean luring memanggil aksi yang sama, dan kedua penolakannya
+ * final di sana (`nasibLaporan` → `terminal`). Kantor (`receivables:manage`)
+ * tidak melewati pemeriksaan itu.
  */
 export async function buatKlaimAction(input: {
   storeId: string;
@@ -249,6 +300,12 @@ export async function buatKlaimAction(input: {
   if (!tanggal) return { ok: false, kode: 'TANGGAL_TIDAK_VALID' };
 
   try {
+    const kantor = hasPermission(session.user.permissions ?? [], PERMISSIONS.RECEIVABLES_MANAGE);
+    if (!kantor) {
+      const boleh = await pelaporBolehMelaporkan(session.user.id, input);
+      if (!boleh.ok) return { ok: false, kode: boleh.kode };
+    }
+
     const hasil = await buatKlaimPembayaran({
       ...input,
       claimedTransferAt: tanggal,
@@ -266,7 +323,7 @@ export async function buatKlaimAction(input: {
         : null,
       // Ditentukan server dari hak akses, SESUDAH isian dari HP: kantor boleh
       // mengganti BKM siapa pun, sales hanya miliknya sendiri.
-      lintasPelapor: hasPermission(session.user.permissions ?? [], PERMISSIONS.RECEIVABLES_MANAGE),
+      lintasPelapor: kantor,
     });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
     revalidatePath('/backoffice/pelunasan');

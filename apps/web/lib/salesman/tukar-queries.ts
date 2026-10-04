@@ -1,4 +1,5 @@
 import { prisma } from "@elorae/db";
+import { cariTeks } from "@/lib/db/cari-teks";
 import { computeStorePrice } from "@elorae/db/pricing";
 import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-only";
 import { getPrimaryImagesBatch } from "@/lib/items/images/queries";
@@ -251,15 +252,15 @@ export async function daftarTukarKantor(saring: {
     ...(cari
       ? {
           OR: [
-            { docNo: { contains: cari, mode: "insensitive" as const } },
+            { docNo: cariTeks(cari) },
             {
               storeId: {
                 in: (
                   await prisma.store.findMany({
                     where: {
                       OR: [
-                        { name: { contains: cari, mode: "insensitive" as const } },
-                        { code: { contains: cari, mode: "insensitive" as const } },
+                        { name: cariTeks(cari) },
+                        { code: cariTeks(cari) },
                       ],
                     },
                     select: { id: true },

@@ -1,4 +1,5 @@
 import { prisma, type Prisma } from "@elorae/db";
+import { cariTeks } from "@/lib/db/cari-teks";
 import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-only";
 import { ambilTokoTetap } from "@/lib/pwa/peran";
 import {
@@ -80,7 +81,7 @@ export async function daftarPengumumanKantor(opsi: {
   const sekarang = opsi.sekarang ?? new Date();
   const where: Prisma.AnnouncementWhereInput = {
     ...(opsi.keadaan ? whereKeadaan(opsi.keadaan, sekarang) : {}),
-    ...(opsi.cari ? { title: { contains: opsi.cari, mode: "insensitive" as const } } : {}),
+    ...(opsi.cari ? { title: cariTeks(opsi.cari) } : {}),
   };
   const rows = await prisma.announcement.findMany({
     where,

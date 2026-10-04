@@ -5,8 +5,16 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { Prisma, prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
+import { runSerializable } from "@/lib/db/tx-retry";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { perannyaSpg, rapikanEmail, validasiPengguna, type KodeValidasi } from "@/lib/users/validasi";
+import {
+  perannyaSpg,
+  rapikanEmail,
+  tolakAkunSistem,
+  validasiPengguna,
+  type KodeAkunSistem,
+  type KodeValidasi,
+} from "@/lib/users/validasi";
 
 /**
  * Tambah dan ubah akun pengguna (sales, SPG, admin, …) dari Pengaturan.
@@ -14,10 +22,15 @@ import { perannyaSpg, rapikanEmail, validasiPengguna, type KodeValidasi } from "
  * Dijaga `settings_security:manage` — izin yang sama dengan mengganti peran
  * pengguna. Sandi hanya pernah disimpan sebagai hash bcrypt dan tidak pernah
  * dikembalikan ke layar. Setiap perubahan menulis jejak audit TANPA sandi.
+ *
+ * Akun dan peran sistem (izin penuh) hanya boleh disentuh admin sistem —
+ * dibaca dari peran pelaku di basis data, bukan dari '*' di JWT, supaya admin
+ * yang sudah diturunkan perannya tidak tetap berkuasa sampai sesinya habis.
  */
 
 export type KodeSimpanPengguna =
   | KodeValidasi
+  | KodeAkunSistem
   | "FORBIDDEN"
   | "VALIDATION"
   | "PERAN_TIDAK_DITEMUKAN"
@@ -48,12 +61,37 @@ export async function simpanPenggunaAction(input: unknown): Promise<HasilSimpanP
   const d = parsed.data;
   const baru = d.id === null;
 
-  const peran = await prisma.roleDefinition.findUnique({
-    where: { id: d.roleId },
-    select: { id: true, name: true, permissions: { select: { permission: { select: { code: true } } } } },
-  });
+  const [peran, pelaku, lama] = await Promise.all([
+    prisma.roleDefinition.findUnique({
+      where: { id: d.roleId },
+      select: { id: true, name: true, isSystem: true, permissions: { select: { permission: { select: { code: true } } } } },
+    }),
+    prisma.user.findUnique({ where: { id: session.user.id }, select: { roleDefinition: { select: { isSystem: true } } } }),
+    baru
+      ? null
+      : prisma.user.findUnique({
+          where: { id: d.id as string },
+          select: { name: true, email: true, roleId: true, assignedStoreId: true, roleDefinition: { select: { isSystem: true } } },
+        }),
+  ]);
   if (!peran) return { ok: false, codes: ["PERAN_TIDAK_DITEMUKAN"] };
-  const butuhToko = perannyaSpg(peran.permissions.map((p) => p.permission.code));
+  if (!baru && !lama) return { ok: false, codes: ["TIDAK_DITEMUKAN"] };
+
+  const pelakuSistem = pelaku?.roleDefinition?.isSystem === true;
+  const tolak = tolakAkunSistem({
+    pelakuSistem,
+    targetSistem: lama?.roleDefinition?.isSystem === true,
+    peranSistem: peran.isSystem,
+  });
+  if (tolak) return { ok: false, codes: [tolak] };
+
+  // Admin yang mengganti perannya sendiri bisa terkunci keluar dari halaman ini.
+  if (!baru && d.id === session.user.id && lama?.roleId !== peran.id) return { ok: false, codes: ["PERAN_SENDIRI"] };
+
+  const butuhToko = perannyaSpg(
+    peran.permissions.map((p) => p.permission.code),
+    peran.isSystem,
+  );
 
   const galat = validasiPengguna({ baru, nama: d.nama, email: d.email, sandi: d.sandi, ulangSandi: d.ulangSandi, butuhToko, tokoId: d.tokoId });
   if (galat.length) return { ok: false, codes: galat };
@@ -92,15 +130,21 @@ export async function simpanPenggunaAction(input: unknown): Promise<HasilSimpanP
     }
 
     const id = d.id as string;
-    const lama = await prisma.user.findUnique({
-      where: { id },
-      select: { name: true, email: true, roleId: true, assignedStoreId: true },
-    });
-    if (!lama) return { ok: false, codes: ["TIDAK_DITEMUKAN"] };
-    // Admin yang mengganti perannya sendiri bisa terkunci keluar dari halaman ini.
-    if (id === session.user.id && lama.roleId !== peran.id) return { ok: false, codes: ["PERAN_SENDIRI"] };
-
-    await prisma.$transaction(async (tx) => {
+    // Peran target dibaca ulang DI DALAM transaksi serializable: akun yang baru
+    // saja diangkat menjadi admin oleh orang lain tidak boleh tertimpa oleh
+    // pemeriksaan yang dibaca sebelum pengangkatan itu.
+    const hasil = await runSerializable(async (tx): Promise<KodeSimpanPengguna | null> => {
+      const sebelum = await tx.user.findUnique({
+        where: { id },
+        select: { name: true, email: true, roleId: true, assignedStoreId: true, roleDefinition: { select: { isSystem: true } } },
+      });
+      if (!sebelum) return "TIDAK_DITEMUKAN";
+      const tolakKini = tolakAkunSistem({
+        pelakuSistem,
+        targetSistem: sebelum.roleDefinition?.isSystem === true,
+        peranSistem: peran.isSystem,
+      });
+      if (tolakKini) return tolakKini;
       await tx.user.update({
         where: { id },
         data: { name: nama, email, roleId: peran.id, assignedStoreId: tokoId, ...(passwordHash ? { passwordHash } : {}) },
@@ -112,13 +156,15 @@ export async function simpanPenggunaAction(input: unknown): Promise<HasilSimpanP
           entityType: "User",
           entityId: id,
           changes: {
-            before: { name: lama.name, email: lama.email, roleId: lama.roleId, assignedStoreId: lama.assignedStoreId },
+            before: { name: sebelum.name, email: sebelum.email, roleId: sebelum.roleId, assignedStoreId: sebelum.assignedStoreId },
             after: { name: nama, email, roleId: peran.id, assignedStoreId: tokoId },
           },
           metadata: { sandiDiganti: sandiBaru },
         },
       });
+      return null;
     });
+    if (hasil) return { ok: false, codes: [hasil] };
     revalidatePath("/backoffice/settings/users");
     return { ok: true, id };
   } catch (err) {

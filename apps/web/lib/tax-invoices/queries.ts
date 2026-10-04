@@ -1,4 +1,5 @@
 import { prisma, Prisma } from "@elorae/db";
+import { cariTeks } from "@/lib/db/cari-teks";
 
 export type TaxInvoiceRow = {
   id: string;
@@ -30,8 +31,8 @@ export async function listTaxInvoices(params: {
   const q = params.q?.trim();
   if (q) {
     baseWhere.OR = [
-      { invoiceNo: { contains: q, mode: 'insensitive' as const } },
-      { delivery: { OR: [{ docNo: { contains: q, mode: 'insensitive' as const } }, { order: { store: { name: { contains: q, mode: 'insensitive' as const } } } }] } },
+      { invoiceNo: cariTeks(q) },
+      { delivery: { OR: [{ docNo: cariTeks(q) }, { order: { store: { name: cariTeks(q) } } }] } },
     ];
   }
   const where: Prisma.TaxInvoiceWhereInput = params.status ? { ...baseWhere, status: params.status } : baseWhere;

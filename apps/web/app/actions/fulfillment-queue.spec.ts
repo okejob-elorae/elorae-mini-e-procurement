@@ -27,6 +27,7 @@ import {
   InvalidFulfillmentTransition,
 } from "@elorae/db/sales-order-fulfillment-writer";
 import { auth } from "@/lib/auth";
+import { cariTeks } from "@/lib/db/cari-teks";
 import { revalidatePath } from "next/cache";
 import {
   listFulfillmentQueue,
@@ -90,9 +91,35 @@ describe("listFulfillmentQueue", () => {
       lte: new Date("2026-06-30T23:59:59Z"),
     });
     expect(args.where.OR).toEqual([
-      { salesorderNo: { contains: "Alice", mode: "insensitive" } },
-      { customerName: { contains: "Alice", mode: "insensitive" } },
+      { salesorderNo: cariTeks("Alice") },
+      { customerName: cariTeks("Alice") },
     ]);
+  });
+
+  // Pencarian harus abai huruf di kedua dialek: di PostgreSQL lewat opsi Prisma,
+  // di MariaDB lewat collation *_ci — dan klien MariaDB menolak opsi itu.
+  it.each([
+    ["postgresql://u:p@127.0.0.1:55432/elorae", true],
+    ["mysql://u:p@127.0.0.1:3306/elorae", false],
+  ])("search filter mengikuti dialek DATABASE_URL (%s)", async (url, pakaiMode) => {
+    vi.stubEnv("DATABASE_URL", url);
+    try {
+      (auth as any).mockResolvedValue(sessionWithFulfill);
+      (prisma.salesOrder.findMany as any).mockResolvedValue([]);
+      (prisma.salesOrder.count as any).mockResolvedValue(0);
+
+      await listFulfillmentQueue({ search: "  Alice ", page: 1, pageSize: 10 });
+
+      const or = (prisma.salesOrder.findMany as any).mock.calls[0][0].where.OR;
+      expect(or).toHaveLength(2);
+      for (const syarat of or) {
+        const filter = Object.values(syarat)[0] as Record<string, unknown>;
+        expect(filter.contains).toBe("Alice");
+        expect("mode" in filter).toBe(pakaiMode);
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("translates sort field + dir to orderBy", async () => {

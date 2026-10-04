@@ -322,20 +322,50 @@ export async function cancelPO(id: string, userId: string, reason?: string, pin?
   revalidatePath('/backoffice/purchase-orders');
 }
 
+/**
+ * Siapa yang sah membaca PO, menurut halaman pemanggilnya: halaman PO
+ * (`purchase_orders:view`), pembayaran pemasok (`supplier_payments:view`),
+ * formulir GRN (`inventory:manage`), dan formulir WO baru/ubah
+ * (`work_orders:create` / `work_orders:manage`).
+ */
+const IZIN_BACA_PO = [
+  PERMISSIONS.PURCHASE_ORDERS_VIEW,
+  PERMISSIONS.SUPPLIER_PAYMENTS_VIEW,
+  PERMISSIONS.INVENTORY_MANAGE,
+  PERMISSIONS.WORK_ORDERS_CREATE,
+  PERMISSIONS.WORK_ORDERS_MANAGE,
+];
+
+/** Penjaga baca: sesi + salah satu izin (melempar seperti `requirePermission`). */
+async function wajibSalahSatuIzin(codes: string[]) {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error('Unauthorized');
+  const perms = session.user.permissions ?? [];
+  if (!codes.some((c) => hasPermission(perms, c))) requirePermission(perms, codes[0]);
+}
+
 export async function getPOs(
   filters?: Parameters<typeof listPOs>[0],
   opts?: Parameters<typeof listPOs>[1],
   extras?: Parameters<typeof listPOs>[2]
 ) {
+  await wajibSalahSatuIzin(IZIN_BACA_PO);
   return listPOs(filters, opts, extras);
 }
 
 export async function getPOById(id: string) {
-  return getPOByIdQuery(id);
+  await wajibSalahSatuIzin(IZIN_BACA_PO);
+  const po = await getPOByIdQuery(id);
+  if (!po) return null;
+  // Rekening pemasok terenkripsi tidak pernah dikirim ke browser.
+  const { bankAccountEnc: _rekening, ...supplier } = po.supplier;
+  void _rekening;
+  return { ...po, supplier };
 }
 
 // Get PO statistics for dashboard
 export async function getPOStats() {
+  await wajibSalahSatuIzin([PERMISSIONS.PURCHASE_ORDERS_VIEW]);
   const [
     totalPOs,
     draftPOs,

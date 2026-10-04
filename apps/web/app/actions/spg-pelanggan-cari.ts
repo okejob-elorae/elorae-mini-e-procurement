@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@elorae/db";
+import { cariTeks } from "@/lib/db/cari-teks";
 import { auth } from "@/lib/auth";
 import { ambilTokoTetap } from "@/lib/pwa/peran";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
@@ -27,7 +28,7 @@ export async function cariPelangganSpgAction(
   // "0812…" dan "812…" dicari sebagai "62812…", bentuk yang disimpan.
   const hp = angka.startsWith("0") ? `62${angka.slice(1)}` : angka.startsWith("8") ? `62${angka}` : angka;
   const atau = [
-    ...(teks ? [{ name: { contains: teks, mode: "insensitive" as const } }] : []),
+    ...(teks ? [{ name: cariTeks(teks) }] : []),
     ...(hp.length >= 4 ? [{ phone: { contains: hp } }] : []),
   ];
   const hasil = await prisma.storeCustomer.findMany({

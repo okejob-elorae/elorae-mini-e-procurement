@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@elorae/db";
+import { cariTeks } from "@/lib/db/cari-teks";
 import {
   markOrderPicked,
   markOrderPacked,
@@ -76,15 +77,20 @@ function buildWhere(opts: ListFulfillmentQueueOpts): Record<string, unknown> {
   if (opts.search && opts.search.trim().length > 0) {
     const s = opts.search.trim();
     where.OR = [
-      { salesorderNo: { contains: s, mode: 'insensitive' as const } },
-      { customerName: { contains: s, mode: 'insensitive' as const } },
+      { salesorderNo: cariTeks(s) },
+      { customerName: cariTeks(s) },
     ];
   }
   return where;
 }
 
 export async function listFulfillmentQueue(opts: ListFulfillmentQueueOpts): Promise<QueuePage> {
-  await requireSession();
+  const { permissions } = await requireSession();
+  // Nama pembeli marketplace — hanya untuk yang boleh membuka halaman antrean
+  // (sama dengan ROUTE_PERMISSIONS `/backoffice/fulfillment`), sebelum kueri.
+  if (!hasPermission(permissions, PERMISSIONS.SALES_ORDERS_VIEW)) {
+    throw Object.assign(new Error("Forbidden: Insufficient permissions"), { status: 403 });
+  }
 
   const where = buildWhere(opts);
   const sortField: QueueSortField = opts.sortField ?? "transactionDate";

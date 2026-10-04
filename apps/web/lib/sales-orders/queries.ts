@@ -1,4 +1,5 @@
 import { prisma } from "@elorae/db";
+import { cariTeks } from "@/lib/db/cari-teks";
 import { batasHariIniWib } from "@/lib/dashboard/hari-wib";
 import type { SalesChannel, SalesOrderStatus, SalesOrderFulfillmentStatus } from "@/lib/constants/enums";
 
@@ -106,8 +107,8 @@ function buildWhere(f: SalesOrderListFilter) {
   if (f.search && f.search.trim().length > 0) {
     const s = f.search.trim();
     where.OR = [
-      { salesorderNo: { contains: s, mode: 'insensitive' as const } },
-      { customerName: { contains: s, mode: 'insensitive' as const } },
+      { salesorderNo: cariTeks(s) },
+      { customerName: cariTeks(s) },
     ];
   }
   return where;

@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { getStore, listVisitsForStore, getActiveVisit, listVisitPhotos } from "@/lib/stores/queries";
 import { getPendingStoreChangeRequest } from "@/lib/store-changes/queries";
@@ -32,12 +32,17 @@ export default async function PwaStoreDetail({ params }: { params: Promise<{ id:
   const session = await auth();
   if (!session?.user?.id) throw new Error("Unauthorized");
   const { id } = await params;
+
+  // SPG hanya punya satu toko tetap. Toko lain — lewat tautan lama atau alamat
+  // yang diketik — dikembalikan ke beranda SEBELUM baris toko itu dibaca:
+  // halaman ini membawa margin, tempo, riwayat kunjungan, dan pesanan toko.
+  const [terkunci, tokoTetap] = await Promise.all([tokoTerkunci(), ambilTokoTetap(session.user.id)]);
+  if (tokoTetap && tokoTetap !== id) redirect("/pwa");
+
   const store = await getStore(id);
   if (!store) notFound();
 
-  // Kunci "hanya toko sendiri" berlaku untuk salesman. SPG punya aturannya
-  // sendiri (satu toko tetap) yang sudah dijaga saat check-in.
-  const [terkunci, tokoTetap] = await Promise.all([tokoTerkunci(), ambilTokoTetap(session.user.id)]);
+  // Kunci "hanya toko sendiri" berlaku untuk salesman; SPG sudah dijaga di atas.
   if (!tokoTetap && !bolehPegangToko({ terkunci, penanggungJawabId: store.salesmanId, userId: session.user.id })) {
     return <BukanTokoSaya nama={store.name} />;
   }
@@ -168,7 +173,9 @@ export default async function PwaStoreDetail({ params }: { params: Promise<{ id:
           contactName: store.contactName,
           termsType: store.termsType,
           paymentTempo: store.paymentTempo,
-          marginPercent: store.marginPercent,
+          // Margin konsinyasi tidak ditampilkan di layar mana pun, dan SPG tidak
+          // memerlukannya — jangan dikirim ke HP-nya.
+          marginPercent: tokoTetap ? null : store.marginPercent,
           lat: store.lat,
           lng: store.lng,
         }}

@@ -1,4 +1,5 @@
 import { prisma } from '@elorae/db';
+import { cariTeks } from "@/lib/db/cari-teks";
 import { ItemType, Prisma } from '@elorae/db';
 import { itemHasSkuVariants } from '@/lib/items/variants';
 
@@ -69,9 +70,9 @@ function buildItemsWhere(filters?: ListItemsFilters): Prisma.ItemWhereInput {
 
   if (filters?.search) {
     where.OR = [
-      { sku: { contains: filters.search, mode: 'insensitive' as const } },
-      { nameId: { contains: filters.search, mode: 'insensitive' as const } },
-      { nameEn: { contains: filters.search, mode: 'insensitive' as const } },
+      { sku: cariTeks(filters.search) },
+      { nameId: cariTeks(filters.search) },
+      { nameEn: cariTeks(filters.search) },
     ];
   }
 
@@ -347,9 +348,9 @@ export async function listItemsForSync(filters?: {
   if (filters?.isActive !== undefined) where.isActive = filters.isActive;
   if (filters?.search) {
     where.OR = [
-      { sku: { contains: filters.search, mode: 'insensitive' as const } },
-      { nameId: { contains: filters.search, mode: 'insensitive' as const } },
-      { nameEn: { contains: filters.search, mode: 'insensitive' as const } },
+      { sku: cariTeks(filters.search) },
+      { nameId: cariTeks(filters.search) },
+      { nameEn: cariTeks(filters.search) },
     ];
   }
 

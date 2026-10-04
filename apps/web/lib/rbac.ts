@@ -132,6 +132,16 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/jubelio/couriers': 'settings_security:view',
   '/backoffice/finance/coa': 'coa:view',
   '/backoffice/finance/faktur-pajak': 'tax_invoices:view',
+  // Modul piutang sengaja TIDAK dipetakan — `/backoffice/piutang`, `pelunasan`
+  // (termasuk `giro` dan `baru`), `pelunasan-dasbor`, `retur-toko`, `kontrabon`,
+  // `beban-selisih`, `tugas-tagih`, `arsip-retur`, `konsinyasi`, dan cetakannya
+  // di `/print/{bkm,retur,faktur,konsi}`. Pembaca sahnya lintas tugas (keuangan
+  // membuka BKM yang ia verifikasi, gudang membuka nota retur yang ia hitung),
+  // sedangkan peta ini hanya bisa satu izin — dan awalan `/backoffice/pelunasan`
+  // ikut mencocokkan `/backoffice/pelunasan-dasbor`. Setiap halaman (dan aksi
+  // cetaknya) memagari dirinya sendiri lewat `lib/receivables/izin.ts`.
+  // `/backoffice/archive` juga tidak: pembelian ATAU pembaca piutang (hanya
+  // folder "Nota toko"); halamannya memagari dirinya sendiri.
   // API routes
   '/api/suppliers': 'suppliers:view',
   '/api/supplier-types': 'supplier_types:view',

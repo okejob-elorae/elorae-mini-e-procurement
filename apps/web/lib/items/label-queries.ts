@@ -1,4 +1,5 @@
 import { prisma } from "@elorae/db";
+import { cariTeks, samaTeks } from "@/lib/db/cari-teks";
 import { computeStorePrice } from "@elorae/db/pricing";
 import { bacaVarian } from "@/lib/salesman/analisa-toko";
 import { barisVarianProduk } from "@/lib/spg/produk";
@@ -46,10 +47,10 @@ export async function cariBarangLabel(q: string, batas = 20): Promise<HasilCariL
       type: "FINISHED_GOOD",
       isActive: true,
       OR: [
-        { nameId: { contains: kata, mode: "insensitive" } },
-        { nameEn: { contains: kata, mode: "insensitive" } },
-        { sku: { contains: kata, mode: "insensitive" } },
-        ...kandidatSkuInduk(kata).map((sku) => ({ sku: { equals: sku, mode: "insensitive" as const } })),
+        { nameId: cariTeks(kata) },
+        { nameEn: cariTeks(kata) },
+        { sku: cariTeks(kata) },
+        ...kandidatSkuInduk(kata).map((sku) => ({ sku: samaTeks(sku) })),
       ],
     },
     orderBy: { nameId: "asc" },

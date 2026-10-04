@@ -12,6 +12,7 @@ import {
   getUsersForAdmin,
 } from '@/app/actions/security/pin-auth';
 import { changePassword } from '@/app/actions/security/change-password';
+import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -68,9 +69,9 @@ export default function SecuritySettingsPage() {
       return;
     }
     if (!session?.user?.id) return;
-    getPinAttempts(session.user.id).then(setAttempts);
-    getLastSensitiveAccess(session.user.id).then(setLastAccess);
-    getUsersForAdmin(session.user.id).then(setUsers);
+    getPinAttempts().then(setAttempts);
+    getLastSensitiveAccess().then(setLastAccess);
+    getUsersForAdmin().then(setUsers);
   }, [status, session?.user?.id, router]);
 
   const handleSetPin = async () => {
@@ -85,14 +86,14 @@ export default function SecuritySettingsPage() {
     }
     setSaving(true);
     try {
-      const result = await setupPin(session.user.id, newPin, currentPin || undefined);
+      const result = await setupPin(newPin, currentPin || undefined);
       if (result.success) {
         toast.success(result.messageKey ? t(result.messageKey) : result.message);
         setCurrentPin('');
         setNewPin('');
         setConfirmPin('');
-        getPinAttempts(session.user.id).then(setAttempts);
-        getLastSensitiveAccess(session.user.id).then(setLastAccess);
+        getPinAttempts().then(setAttempts);
+        getLastSensitiveAccess().then(setLastAccess);
       } else {
         toast.error(result.messageKey ? t(result.messageKey) : result.message);
       }
@@ -115,7 +116,7 @@ export default function SecuritySettingsPage() {
     }
     setSavingPassword(true);
     try {
-      const result = await changePassword(session.user.id, currentPassword, newPassword);
+      const result = await changePassword(currentPassword, newPassword);
       if (result.success) {
         toast.success(t('passwordUpdated'));
         setCurrentPassword('');
@@ -136,7 +137,7 @@ export default function SecuritySettingsPage() {
     if (!session?.user?.id || !resetTargetId) return;
     setResetting(true);
     try {
-      const result = await adminForcePinReset(session.user.id, resetTargetId);
+      const result = await adminForcePinReset(resetTargetId);
       if (result.success) {
         toast.success(result.messageKey ? t(result.messageKey) : result.message);
         setResetTargetId('');
@@ -150,7 +151,8 @@ export default function SecuritySettingsPage() {
     }
   };
 
-  const isAdmin = session?.user?.role === 'ADMIN';
+  // Sama dengan penjaga di server: izin, bukan kolom peran lama.
+  const isAdmin = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.SETTINGS_SECURITY_MANAGE);
 
   if (status === 'loading') {
     return (

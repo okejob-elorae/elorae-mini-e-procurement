@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { bolehMengelola } from "@/lib/receivables/izin";
+import { bolehMembacaPiutang, bolehMengelola } from "@/lib/receivables/izin";
 import { rincianKontrabon } from "@/lib/receivables/collection-queries";
 import { RincianKontrabonClient } from "./RincianKontrabonClient";
 
@@ -13,6 +13,8 @@ export default async function RincianKontrabonPage({
 }) {
   const session = await auth();
   if (!session) redirect("/login");
+  // Rute modul piutang tidak dipetakan di ROUTE_PERMISSIONS — halaman memagari dirinya sendiri.
+  if (!bolehMembacaPiutang(session.user.permissions)) redirect("/backoffice");
 
   const { id } = await params;
   const data = await rincianKontrabon(id);

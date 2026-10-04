@@ -1,4 +1,5 @@
 import { prisma } from "@elorae/db";
+import { cariTeks } from "@/lib/db/cari-teks";
 import { nilaiBersihSpg } from "@/lib/dashboard/tren";
 import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-only";
 import { nomorWhatsApp } from "@/lib/salesman/dasbor";
@@ -34,7 +35,7 @@ export async function daftarPelangganHp(storeId: string, opsi: { q?: string | nu
   const teks = (opsi.q ?? "").trim().slice(0, 60);
   const hp = hpUntukCari(teks);
   const atau = [
-    ...(teks ? [{ name: { contains: teks, mode: "insensitive" as const } }] : []),
+    ...(teks ? [{ name: cariTeks(teks) }] : []),
     ...(hp.length >= 4 ? [{ phone: { contains: hp } }] : []),
   ];
   const where = { storeId, ...(atau.length ? { OR: atau } : {}) };

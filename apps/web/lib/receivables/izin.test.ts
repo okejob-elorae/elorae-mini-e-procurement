@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   bolehMelapor,
   bolehMembacaArsip,
+  bolehMembacaPelunasan,
+  bolehMembacaPiutang,
+  bolehMembacaRetur,
   bolehMembukaKonsi,
   bolehMemverifikasi,
   bolehMengelola,
@@ -24,6 +27,10 @@ const GUDANG = ['inventory_opname:count'];
 const PIUTANG = ['receivables:manage'];
 const KONSI_SAJA = ['consignment:view', 'consignment:manage'];
 const ADMIN = ['*'];
+const PIUTANG_LIHAT = ['receivables:view'];
+const SPG = ['pwa:access', 'spg_sales:record'];
+const PRODUKSI = ['dashboard:view', 'work_orders:view', 'inventory_opname:view'];
+const PEMBELIAN = ['dashboard:view', 'purchase_orders:view'];
 
 describe('pemisahan tugas', () => {
   it('sales boleh melapor tapi TIDAK boleh mengesahkan laporannya sendiri', () => {
@@ -68,6 +75,48 @@ describe('arsip nota retur', () => {
   });
 });
 
+describe('membaca halaman modul piutang', () => {
+  /*
+   * Halaman piutang, BKM, retur, kontrabon, dan cetakannya dulu hanya menuntut
+   * sudah masuk. Rutenya tidak dipetakan di ROUTE_PERMISSIONS dan layout
+   * backoffice tidak menjaga, jadi salesman, SPG, dan orang produksi membuka
+   * piutang SELURUH toko lewat alamat yang diketik.
+   */
+  const LUAR = [[], SALES, SPG, PRODUKSI, PEMBELIAN, KONSI_SAJA];
+
+  it('piutang, kontrabon, beban selisih, dasbor: hanya orang piutang', () => {
+    expect(bolehMembacaPiutang(PIUTANG_LIHAT)).toBe(true);
+    // Yang mengelola tentu boleh membaca yang ia kelola.
+    expect(bolehMembacaPiutang(PIUTANG)).toBe(true);
+    for (const izin of [...LUAR, GUDANG, KEUANGAN]) expect(bolehMembacaPiutang(izin)).toBe(false);
+  });
+
+  it('BKM: orang piutang, ATAU keuangan yang memverifikasinya', () => {
+    // Keuangan dikabari klaim baru dan permintaan koreksi BKM — tautannya
+    // menuju rincian BKM, jadi pintunya harus terbuka untuk keuangan.
+    expect(bolehMembacaPelunasan(KEUANGAN)).toBe(true);
+    expect(bolehMembacaPelunasan(PIUTANG_LIHAT)).toBe(true);
+    expect(bolehMembacaPelunasan(PIUTANG)).toBe(true);
+    for (const izin of [...LUAR, GUDANG]) expect(bolehMembacaPelunasan(izin)).toBe(false);
+  });
+
+  it('nota retur toko: orang piutang, gudang yang menghitung, keuangan yang memverifikasi', () => {
+    // Rincian BKM menautkan potongan returnya ke nota retur — keuangan yang
+    // memverifikasi perlu membuka nota yang menahan nilainya.
+    expect(bolehMembacaRetur(GUDANG)).toBe(true);
+    expect(bolehMembacaRetur(KEUANGAN)).toBe(true);
+    expect(bolehMembacaRetur(PIUTANG_LIHAT)).toBe(true);
+    for (const izin of LUAR) expect(bolehMembacaRetur(izin)).toBe(false);
+  });
+
+  it('pelapor lapangan tidak membaca kantor: melapor bukan membaca seluruh toko', () => {
+    expect(bolehMelapor(SALES)).toBe(true);
+    expect(bolehMembacaPiutang(SALES)).toBe(false);
+    expect(bolehMembacaPelunasan(SALES)).toBe(false);
+    expect(bolehMembacaRetur(SALES)).toBe(false);
+  });
+});
+
 describe('konsinyasi', () => {
   it('menguji SATU izin, sama persis dengan yang diuji menu sampingnya', () => {
     /*
@@ -98,6 +147,9 @@ describe('admin', () => {
       bolehMenghitung,
       bolehMengelola,
       bolehMembacaArsip,
+      bolehMembacaPiutang,
+      bolehMembacaPelunasan,
+      bolehMembacaRetur,
       bolehMembukaKonsi,
       bolehMengelolaKonsi,
     ]) {
@@ -107,7 +159,14 @@ describe('admin', () => {
 
   it('menolak daftar izin yang tidak ada sama sekali', () => {
     // `undefined` harus dibaca sebagai tidak berhak, bukan sebagai lewati saja.
-    for (const f of [bolehMemverifikasi, bolehMembacaArsip, bolehMembukaKonsi]) {
+    for (const f of [
+      bolehMemverifikasi,
+      bolehMembacaArsip,
+      bolehMembukaKonsi,
+      bolehMembacaPiutang,
+      bolehMembacaPelunasan,
+      bolehMembacaRetur,
+    ]) {
       expect(f(undefined)).toBe(false);
     }
   });

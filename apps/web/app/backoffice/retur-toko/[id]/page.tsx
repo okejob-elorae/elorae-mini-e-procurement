@@ -6,6 +6,7 @@ import { RincianReturClient, type RincianBarangRetur } from "./RincianReturClien
 import { prisma } from "@elorae/db";
 import { formatDisplayDate } from "@/lib/date-only";
 import { koreksiTertunda, penggantiUntuk, riwayatDokumen } from "@/lib/receivables/koreksi";
+import { bolehMembacaRetur } from "@/lib/receivables/izin";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,8 @@ export default async function RincianReturPage({
 }) {
   const session = await auth();
   if (!session) redirect("/login");
+  // Rute modul piutang tidak dipetakan di ROUTE_PERMISSIONS — halaman memagari dirinya sendiri.
+  if (!bolehMembacaRetur(session.user.permissions)) redirect("/backoffice");
 
   const { id } = await params;
   const kelola = hasPermission(session.user.permissions ?? [], PERMISSIONS.RECEIVABLES_MANAGE);

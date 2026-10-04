@@ -29,6 +29,29 @@ import { fanOutAdminNotification } from '@/lib/notifications/admin-fanout';
 // Prisma uses CUID, not UUID - accept non-empty string for IDs
 const idStr = z.string().min(1);
 
+/** Siapa pun yang membuat/mengelola perintah kerja juga boleh membacanya. */
+const IZIN_BACA_WO = [
+  PERMISSIONS.WORK_ORDERS_VIEW,
+  PERMISSIONS.WORK_ORDERS_CREATE,
+  PERMISSIONS.WORK_ORDERS_MANAGE,
+];
+
+/**
+ * Pagar aksi BACA di berkas ini. Setiap ekspor `"use server"` adalah titik akhir
+ * yang bisa dipanggil siapa pun yang sudah masuk — tanpa pagar ini akun
+ * salesman/SPG bisa membaca perintah kerja, biaya bahan, dan nota CMT. Cukup
+ * SALAH SATU izin; melempar seperti `requirePermission` supaya bentuk kembalian
+ * untuk yang sah tidak berubah. Dipasang sebelum satu kueri pun berjalan.
+ */
+async function wajibBolehBaca(izin: readonly string[]): Promise<void> {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error("Unauthorized");
+  const punya = session.user.permissions ?? [];
+  if (!izin.some((kode) => hasPermission(punya, kode))) {
+    throw Object.assign(new Error("Forbidden: Insufficient permissions"), { status: 403 });
+  }
+}
+
 /** Parse consumptionPlan from DB (Json = string or object) to array for client. */
 function parseConsumptionPlan(raw: unknown): unknown[] {
   if (Array.isArray(raw)) return raw;
@@ -905,6 +928,7 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
 
 /** Preview: accessory items and qty needed for additional pcs + stock availability. Used by Issue Additional Materials UI. */
 export async function getAdditionalMaterialsPreview(woId: string, additionalQty: number) {
+  await wajibBolehBaca(IZIN_BACA_WO);
   const wo = await prisma.workOrder.findUnique({
     where: { id: woId },
     select: { status: true, finishedGoodId: true },
@@ -1396,10 +1420,13 @@ export async function getWorkOrders(
   filters?: ListWorkOrdersFilters,
   opts?: ListWorkOrdersOpts
 ) {
+  // Halaman retur pemasok memuat daftar WO untuk pilihannya.
+  await wajibBolehBaca([...IZIN_BACA_WO, PERMISSIONS.VENDOR_RETURNS_VIEW]);
   return listWorkOrdersLib(filters, opts);
 }
 
 export async function getWorkOrderById(id: string) {
+  await wajibBolehBaca(IZIN_BACA_WO);
   const raw = await prisma.workOrder.findUnique({
     where: { id },
     include: {
@@ -1456,6 +1483,7 @@ export async function getWorkOrderRollAllocationStatus(woId: string): Promise<Ar
   remainingLength: number | null;
   used: number | null;
 }>> {
+  await wajibBolehBaca(IZIN_BACA_WO);
   const wo = await prisma.workOrder.findUnique({
     where: { id: woId },
     select: { consumptionMaterialId: true, rollBreakdown: true },
@@ -1504,6 +1532,7 @@ export async function computePlannedQtyFromConsumption(
   consumptionPerPiece: number;
   uomCode: string;
 }> {
+  await wajibBolehBaca(IZIN_BACA_WO);
   const rule = await prisma.consumptionRule.findUnique({
     where: {
       finishedGoodId_materialId: { finishedGoodId, materialId },
@@ -1536,6 +1565,7 @@ export async function getMaterialPlan(
   finishedGoodId: string,
   plannedQty: number
 ) {
+  await wajibBolehBaca(IZIN_BACA_WO);
   const plan = await generateMaterialPlan(
     finishedGoodId,
     new Decimal(plannedQty)
@@ -1555,6 +1585,7 @@ export async function getMaterialPlan(
 
 /** List available fabric rolls for an item (for dropdown). */
 export async function getAvailableFabricRolls(itemId: string) {
+  await wajibBolehBaca(IZIN_BACA_WO);
   const rolls = await prisma.fabricRoll.findMany({
     where: {
       itemId,
@@ -1775,6 +1806,7 @@ function bestFitRollAllocation(
 
 /** Suggest allocation using whole rolls only. Two-phase: DB filter to ~50 candidates, then branch-and-bound for minimum waste. */
 export async function suggestFabricRollAllocation(itemId: string, requiredQty: number): Promise<RollAllocationResult> {
+  await wajibBolehBaca(IZIN_BACA_WO);
   const { candidates, bestSingle } = await filterRollCandidates(itemId, requiredQty);
 
   if (candidates.length === 0) {
@@ -1807,6 +1839,7 @@ export async function suggestFabricRollAllocation(itemId: string, requiredQty: n
 
 /** Get reconciliation data for a WO (serialized for client). */
 export async function getReconciliation(woId: string) {
+  await wajibBolehBaca(IZIN_BACA_WO);
   const { lines, summary } = await reconcileWorkOrder(woId);
   return {
     lines: lines.map((l) => ({
@@ -1844,6 +1877,8 @@ export async function getMaterialIssuesForCMTRegister(
   },
   opts?: { page: number; pageSize: number }
 ) {
+  // Register nota CMT punya izinnya sendiri.
+  await wajibBolehBaca([...IZIN_BACA_WO, PERMISSIONS.NOTA_REGISTER_VIEW]);
   const where: any = {};
   if (filters?.vendorId) {
     where.wo = { vendorId: filters.vendorId };
@@ -1911,6 +1946,7 @@ export async function getMaterialIssuesForCMTRegister(
 
 /** Get a single material issue with full details for print (Nota ke CMT). */
 export async function getMaterialIssueForPrint(issueId: string) {
+  await wajibBolehBaca([...IZIN_BACA_WO, PERMISSIONS.NOTA_REGISTER_VIEW]);
   const issue = await prisma.materialIssue.findUnique({
     where: { id: issueId },
     include: {
@@ -1966,6 +2002,7 @@ export async function getMaterialIssueForPrint(issueId: string) {
 
 // Get production statistics
 export async function getProductionStats() {
+  await wajibBolehBaca(IZIN_BACA_WO);
   const [
     totalWOs,
     draftWOs,

@@ -9,6 +9,7 @@ import {
   tokoUntukRetur,
 } from "@/lib/receivables/return-queries";
 import { prisma } from "@elorae/db";
+import { bolehMembacaRetur } from "@/lib/receivables/izin";
 import { ReturTokoClient } from "./ReturTokoClient";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +17,9 @@ export const dynamic = "force-dynamic";
 export default async function ReturTokoPage() {
   const session = await auth();
   if (!session) redirect("/login");
+  // Rute modul piutang tidak dipetakan di ROUTE_PERMISSIONS — halaman memagari dirinya sendiri.
+  // Gudang yang menghitung dan keuangan yang memverifikasi ikut membaca.
+  if (!bolehMembacaRetur(session.user.permissions)) redirect("/backoffice");
 
   const [baris, toko, calonPasangan, katalog] = await Promise.all([
     daftarKerjaRetur(),

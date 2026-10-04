@@ -49,4 +49,21 @@ describe("daftar kolom foto penyapu", () => {
       for (const kolom of k.kolom) expect(blok, `${model}.${kolom}`).toMatch(new RegExp(`\\n\\s+${kolom}\\s`));
     }
   });
+
+  // Prisma menolak `not: null` pada kolom wajib — penyapu lalu melempar dan
+  // dasbor pelunasan (pemakaianFoto) ikut gagal. Itu terjadi 2026-10-04 dengan
+  // ItemImage.url; `wajib` di daftar harus sama dengan skemanya.
+  it("menandai `wajib` tepat pada kolom yang di skema tidak boleh kosong", () => {
+    const skema = readFileSync(SKEMA, "utf8");
+    for (const k of KOLOM_FOTO) {
+      if (k.json) continue;
+      const model = `${k.model[0].toUpperCase()}${k.model.slice(1)}`;
+      const blok = new RegExp(`model ${model} \\{([\\s\\S]*?)\\n\\}`).exec(skema)?.[1] ?? "";
+      for (const kolom of k.kolom) {
+        const tipe = new RegExp(`\\n\\s+${kolom}\\s+(\\S+)`).exec(blok)?.[1] ?? "";
+        const bolehKosong = tipe.endsWith("?");
+        expect(Boolean(k.wajib), `${model}.${kolom} (${tipe})`).toBe(!bolehKosong);
+      }
+    }
+  });
 });

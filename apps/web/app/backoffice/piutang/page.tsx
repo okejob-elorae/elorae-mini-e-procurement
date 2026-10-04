@@ -4,6 +4,7 @@ import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { daftarPiutang, ringkasPiutang } from "@/lib/receivables/queries";
 import { katalogBarang, tokoUntukRetur } from "@/lib/receivables/return-queries";
 import type { KeadaanPiutang } from "@/lib/receivables/rules";
+import { bolehMembacaPiutang } from "@/lib/receivables/izin";
 import { PiutangClient } from "./PiutangClient";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +27,8 @@ export default async function PiutangPage({
 }) {
   const session = await auth();
   if (!session) redirect("/login");
+  // Rute modul piutang tidak dipetakan di ROUTE_PERMISSIONS — halaman memagari dirinya sendiri.
+  if (!bolehMembacaPiutang(session.user.permissions)) redirect("/backoffice");
   const saringAwal = bacaKeadaan((await searchParams).keadaan);
 
   const bolehMengelola = hasPermission(

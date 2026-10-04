@@ -5,7 +5,7 @@ import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { rincianKlaim } from "@/lib/receivables/claim-queries";
 import { giroKedaluwarsa, STATUS_GIRO, type StatusGiro } from "@/lib/receivables/giro";
 import { formatDisplayDate } from "@/lib/date-only";
-import { bolehMembacaArsip } from "@/lib/receivables/izin";
+import { bolehMembacaArsip, bolehMembacaPelunasan } from "@/lib/receivables/izin";
 import { tautanPesanKlaim } from "@/lib/receivables/tugas-tagih-queries";
 import { RincianKlaimClient, type GiroKlaim } from "./RincianKlaimClient";
 import { koreksiTertunda, penggantiUntuk, riwayatDokumen } from "@/lib/receivables/koreksi";
@@ -52,6 +52,8 @@ export default async function RincianKlaimPage({
 }) {
   const session = await auth();
   if (!session) redirect("/login");
+  // Rute modul piutang tidak dipetakan di ROUTE_PERMISSIONS — halaman memagari dirinya sendiri.
+  if (!bolehMembacaPelunasan(session.user.permissions)) redirect("/backoffice");
 
   const { id } = await params;
   const [data, giro] = await Promise.all([rincianKlaim(id), giroKlaim(id)]);

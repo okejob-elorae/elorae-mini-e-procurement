@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@elorae/db";
+import { cariTeks } from "@/lib/db/cari-teks";
 import { apiFetch, extractApiMessage } from "@/lib/internal-api";
 import { auth } from "@/lib/auth";
 
@@ -62,7 +63,7 @@ export async function listJubelioCouriersPaged(opts: ListCouriersOpts = {}): Pro
 
   const where: Record<string, unknown> = {};
   if (opts.search && opts.search.trim().length > 0) {
-    where.name = { contains: opts.search.trim(), mode: 'insensitive' as const };
+    where.name = cariTeks(opts.search.trim());
   }
 
   const [rows, totalCount] = await Promise.all([

@@ -1,4 +1,5 @@
 import { prisma, Prisma } from "@elorae/db";
+import { cariTeks } from "@/lib/db/cari-teks";
 import { aggregateInventoryValues } from "@/lib/items/queries";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { outstandingQty } from "./delivery/plan";
@@ -201,7 +202,7 @@ export async function listFieldSalesOrders(
   else if (filter.inden === "BIASA") where.preorderWindowId = null;
   if (filter.search && filter.search.trim()) {
     const s = filter.search.trim();
-    where.OR = [{ orderNo: { contains: s, mode: 'insensitive' as const } }, { store: { name: { contains: s, mode: 'insensitive' as const } } }];
+    where.OR = [{ orderNo: cariTeks(s) }, { store: { name: cariTeks(s) } }];
   }
   const [rows, totalCount] = await Promise.all([
     prisma.fieldSalesOrder.findMany({

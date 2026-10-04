@@ -52,6 +52,53 @@ export function bolehMembacaArsip(izin: string[] | undefined): boolean {
   return hasPermission(izin ?? [], PERMISSIONS.RECEIVABLES_VIEW);
 }
 
+/*
+ * Membaca halaman kantor modul ini.
+ *
+ * Rute modul piutang SENGAJA tidak dipetakan di ROUTE_PERMISSIONS: peta itu
+ * hanya bisa menguji satu izin, padahal pembaca sahnya lintas tugas (keuangan
+ * membuka BKM yang ia verifikasi, gudang membuka nota retur yang ia hitung).
+ * Akibatnya proxy meloloskan rutenya, dan setiap halaman — juga aksi cetaknya —
+ * WAJIB memagari dirinya sendiri dengan salah satu fungsi di bawah, SEBELUM
+ * membaca data. Sebelum pagar ini, salesman, SPG, dan orang produksi membuka
+ * piutang seluruh toko cukup dengan mengetik alamatnya.
+ *
+ * Melapor (`bolehMelapor`) tidak termasuk: sales melaporkan apa yang ia
+ * saksikan di tokonya, bukan membaca buku piutang seluruh perusahaan.
+ */
+
+/**
+ * Piutang, kontrabon, beban selisih, dasbor pelunasan, cetak faktur.
+ *
+ * Orang piutang saja — izin yang sama dengan menu sampingnya, ditambah yang
+ * mengelola (tidak masuk akal boleh mengelola tetapi tidak boleh membaca).
+ */
+export function bolehMembacaPiutang(izin: string[] | undefined): boolean {
+  return bolehMembacaArsip(izin) || bolehMengelola(izin);
+}
+
+/**
+ * BKM: daftar, rincian, cetak.
+ *
+ * Ditambah keuangan (`journals:manage`): BKM yang menunggu verifikasi dan
+ * permintaan koreksinya dikabarkan ke keuangan, dan tautannya menuju rincian
+ * BKM. Tanpa ini yang harus memverifikasi justru tidak bisa membukanya.
+ */
+export function bolehMembacaPelunasan(izin: string[] | undefined): boolean {
+  return bolehMembacaPiutang(izin) || bolehMemverifikasi(izin);
+}
+
+/**
+ * Nota retur toko: daftar kerja, rincian, cetak.
+ *
+ * Ditambah gudang (`inventory_opname:count`) yang menghitung fisiknya, dan
+ * keuangan yang memverifikasi: potongan retur di rincian BKM menaut ke nota ini,
+ * dan nilai tertahannya hanya bisa dipahami dari sana.
+ */
+export function bolehMembacaRetur(izin: string[] | undefined): boolean {
+  return bolehMembacaPiutang(izin) || bolehMenghitung(izin) || bolehMemverifikasi(izin);
+}
+
 /**
  * Membuka siklus konsinyasi.
  *

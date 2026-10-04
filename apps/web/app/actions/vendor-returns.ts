@@ -4,18 +4,43 @@ import { revalidatePath } from 'next/cache';
 import { Decimal } from 'decimal.js';
 import { z } from 'zod';
 import { prisma } from '@elorae/db';
+import { cariTeks } from "@/lib/db/cari-teks";
 import { generateDocNumber } from '@/lib/docNumber';
 import { reverseInventoryValue } from '@/lib/inventory/costing';
 import { getActorName, notifyVendorReturnCreated, notifyVendorReturnStatusUpdated } from '@/app/actions/notifications';
 import { getEffectiveHPPForItem } from '@/app/actions/hpp';
 import { auth } from '@/lib/auth';
-import { PERMISSIONS, requirePermission } from '@/lib/rbac';
+import { hasPermission, PERMISSIONS, requirePermission } from '@/lib/rbac';
+import { runSerializable } from '@/lib/db/tx-retry';
 
 async function requireSession() {
   const session = await auth();
-  if (!session?.user) throw new Error('Unauthorized');
+  if (!session?.user?.id) throw new Error('Unauthorized');
   return session;
 }
+
+/** Penjaga baca: sesi + salah satu izin (melempar seperti `requirePermission`). */
+async function wajibSalahSatuIzin(...codes: string[]) {
+  const session = await requireSession();
+  const perms = session.user.permissions ?? [];
+  if (!codes.some((c) => hasPermission(perms, c))) {
+    requirePermission(perms, codes[0]);
+  }
+  return session;
+}
+
+/** Kolom pemasok yang aman dikirim ke browser — tanpa `bankAccountEnc`. */
+const PEMASOK_AMAN = {
+  id: true,
+  code: true,
+  name: true,
+  typeId: true,
+  address: true,
+  phone: true,
+  email: true,
+  isActive: true,
+  status: true,
+} as const;
 
 function parseGrnStoredItems(raw: unknown): Array<{ itemId?: string; qty?: unknown }> {
   if (raw == null) return [];
@@ -125,6 +150,7 @@ export type CreateVendorReturnInput = z.infer<typeof returnSchema>;
 
 // Returnable fabric rolls for a given item (open rolls with remaining length)
 export async function getReturnableFabricRolls(itemId: string) {
+  await wajibSalahSatuIzin(PERMISSIONS.VENDOR_RETURNS_VIEW, PERMISSIONS.INVENTORY_VIEW);
   const rolls = await prisma.fabricRoll.findMany({
     where: { itemId, isClosed: false, remainingLength: { gt: 0 } },
     select: { id: true, rollRef: true, remainingLength: true },
@@ -137,8 +163,8 @@ export async function getReturnableFabricRolls(itemId: string) {
   }));
 }
 
-/** Available reject qty for an item (sum of RejectedGoodsLedger rows for that itemId). */
-export async function getAvailableRejectQtyByItem(itemId: string): Promise<number> {
+/** Sum of RejectedGoodsLedger rows for an item — internal, callers guard themselves. */
+async function hitungRejectTersedia(itemId: string): Promise<number> {
   const rows = await prisma.rejectedGoodsLedger.findMany({
     where: { itemId },
     select: { qty: true },
@@ -146,18 +172,27 @@ export async function getAvailableRejectQtyByItem(itemId: string): Promise<numbe
   return rows.reduce((s, r) => s + Number(r.qty), 0);
 }
 
+/** Available reject qty for an item (sum of RejectedGoodsLedger rows for that itemId). */
+export async function getAvailableRejectQtyByItem(itemId: string): Promise<number> {
+  await wajibSalahSatuIzin(PERMISSIONS.VENDOR_RETURNS_VIEW, PERMISSIONS.INVENTORY_VIEW);
+  return hitungRejectTersedia(itemId);
+}
+
 export async function createVendorReturn(
   data: CreateVendorReturnInput,
-  userId: string
+  _userId?: string
 ) {
+  void _userId;
   const session = await requireSession();
   requirePermission(session.user.permissions, PERMISSIONS.VENDOR_RETURNS_CREATE);
+  // Pembuat selalu pengguna sesi, bukan id kiriman klien.
+  const userId = session.user.id;
 
   returnSchema.parse(data);
 
   for (const line of data.lines) {
     if (line.type === 'FG_REJECT') {
-      const available = await getAvailableRejectQtyByItem(line.itemId);
+      const available = await hitungRejectTersedia(line.itemId);
       if (line.qty > available) {
         throw new Error(
           `Reject qty for item exceeds available rejects (max ${available}). Reduce qty or check reject ledger.`
@@ -266,7 +301,7 @@ export async function updateVendorReturn(
 
   for (const line of data.lines) {
     if (line.type === 'FG_REJECT') {
-      const available = await getAvailableRejectQtyByItem(line.itemId);
+      const available = await hitungRejectTersedia(line.itemId);
       if (line.qty > available) {
         throw new Error(
           `Reject qty for item exceeds available rejects (max ${available}). Reduce qty or check reject ledger.`
@@ -289,14 +324,18 @@ export async function updateVendorReturn(
     }
   }
 
-  const existing = await prisma.vendorReturn.findUnique({
-    where: { id }
-  });
-  if (!existing || existing.status !== 'DRAFT') {
-    throw new Error('Can only edit draft returns');
-  }
+  // Penjaga DRAFT di dalam transaksi serializable yang sama dengan pembaruannya:
+  // dulu dibaca di luar, jadi baris bisa diubah sesudah `processReturn`
+  // mengeluarkan stok sesuai baris lama.
+  const updated = await runSerializable(async (tx) => {
+    const existing = await tx.vendorReturn.findUnique({
+      where: { id },
+      select: { status: true },
+    });
+    if (!existing || existing.status !== 'DRAFT') {
+      throw new Error('Can only edit draft returns');
+    }
 
-  return await prisma.$transaction(async (tx) => {
     const linesWithValue = await Promise.all(
       data.lines.map(async (line) => {
         let costValue: number;
@@ -340,7 +379,7 @@ export async function updateVendorReturn(
       new Decimal(0)
     );
 
-    const updated = await tx.vendorReturn.update({
+    return tx.vendorReturn.update({
       where: { id },
       data: {
         woId: data.woId ?? null,
@@ -354,11 +393,11 @@ export async function updateVendorReturn(
           : null
       }
     });
-
-    revalidatePath('/backoffice/vendor-returns');
-    revalidatePath(`/backoffice/vendor-returns/${id}`);
-    return updated;
   });
+
+  revalidatePath('/backoffice/vendor-returns');
+  revalidatePath(`/backoffice/vendor-returns/${id}`);
+  return updated;
 }
 
 export async function deleteVendorReturn(id: string, _userId: string) {
@@ -366,13 +405,18 @@ export async function deleteVendorReturn(id: string, _userId: string) {
   const session = await requireSession();
   requirePermission(session.user.permissions, PERMISSIONS.VENDOR_RETURNS_MANAGE);
 
-  const existing = await prisma.vendorReturn.findUnique({
-    where: { id }
+  // Penjaga DRAFT + hapus dalam satu transaksi serializable, supaya retur yang
+  // sedang diproses (stoknya sudah keluar) tidak ikut terhapus.
+  await runSerializable(async (tx) => {
+    const existing = await tx.vendorReturn.findUnique({
+      where: { id },
+      select: { status: true },
+    });
+    if (!existing || existing.status !== 'DRAFT') {
+      throw new Error('Can only delete draft returns');
+    }
+    await tx.vendorReturn.delete({ where: { id } });
   });
-  if (!existing || existing.status !== 'DRAFT') {
-    throw new Error('Can only delete draft returns');
-  }
-  await prisma.vendorReturn.delete({ where: { id } });
   revalidatePath('/backoffice/vendor-returns');
 }
 
@@ -399,8 +443,18 @@ function parseVendorReturnLines(raw: unknown): VendorReturnLineRow[] {
   return [];
 }
 
-export async function processReturn(id: string, userId: string) {
-  const result = await prisma.$transaction(async (tx) => {
+/**
+ * DRAFT → PROCESSED: stok keluar. Butuh `vendor_returns:manage`; pelaku dari
+ * sesi (`_userId` diabaikan). Penjaga DRAFT di `runSerializable` — proses ganda
+ * serentak dulu sama-sama lolos dan mengeluarkan stok dua kali.
+ */
+export async function processReturn(id: string, _userId?: string) {
+  void _userId;
+  const session = await requireSession();
+  requirePermission(session.user.permissions, PERMISSIONS.VENDOR_RETURNS_MANAGE);
+  const userId = session.user.id;
+
+  const result = await runSerializable(async (tx) => {
     const ret = await tx.vendorReturn.findUnique({
       where: { id }
     });
@@ -543,14 +597,23 @@ const completeReturnSchema = z.object({
 
 export type CompleteReturnInput = z.infer<typeof completeReturnSchema>;
 
+/**
+ * PROCESSED → COMPLETED. Butuh `vendor_returns:manage`; penutup dari sesi
+ * (`_userId` diabaikan). Penjaga PROCESSED di `runSerializable` supaya
+ * `returnedQty` rencana WO tidak bertambah dua kali.
+ */
 export async function completeReturn(
   id: string,
-  userId: string,
+  _userId: string | undefined,
   data: CompleteReturnInput
 ) {
+  void _userId;
+  const session = await requireSession();
+  requirePermission(session.user.permissions, PERMISSIONS.VENDOR_RETURNS_MANAGE);
+  const userId = session.user.id;
   completeReturnSchema.parse(data);
 
-  const completeResult = await prisma.$transaction(async (tx) => {
+  const completeResult = await runSerializable(async (tx) => {
     const ret = await tx.vendorReturn.findUnique({
       where: { id }
     });
@@ -594,13 +657,14 @@ export async function completeReturn(
       }
     });
 
-    revalidatePath('/backoffice/vendor-returns');
-    revalidatePath(`/backoffice/vendor-returns/${id}`);
-    if (ret.woId) {
-      revalidatePath(`/backoffice/work-orders/${ret.woId}`);
-    }
     return ret;
   });
+
+  revalidatePath('/backoffice/vendor-returns');
+  revalidatePath(`/backoffice/vendor-returns/${id}`);
+  if (completeResult.woId) {
+    revalidatePath(`/backoffice/work-orders/${completeResult.woId}`);
+  }
 
   getActorName(userId)
     .then((triggeredByName) =>
@@ -625,6 +689,7 @@ export async function getVendorReturns(
   },
   opts?: { page: number; pageSize: number }
 ) {
+  await wajibSalahSatuIzin(PERMISSIONS.VENDOR_RETURNS_VIEW);
   const andParts: Array<Record<string, unknown>> = [];
   if (filters?.status) andParts.push({ status: filters.status });
   if (filters?.vendorId) andParts.push({ vendorId: filters.vendorId });
@@ -633,9 +698,9 @@ export async function getVendorReturns(
   if (searchTrim) {
     andParts.push({
       OR: [
-        { docNumber: { contains: searchTrim, mode: 'insensitive' as const } },
-        { vendor: { name: { contains: searchTrim, mode: 'insensitive' as const } } },
-        { vendor: { code: { contains: searchTrim, mode: 'insensitive' as const } } }
+        { docNumber: cariTeks(searchTrim) },
+        { vendor: { name: cariTeks(searchTrim) } },
+        { vendor: { code: cariTeks(searchTrim) } }
       ]
     });
   }
@@ -684,10 +749,11 @@ export async function getVendorReturns(
 }
 
 export async function getVendorReturnById(id: string) {
+  await wajibSalahSatuIzin(PERMISSIONS.VENDOR_RETURNS_VIEW);
   const ret = await prisma.vendorReturn.findUnique({
     where: { id },
     include: {
-      vendor: true,
+      vendor: { select: PEMASOK_AMAN },
       wo: { select: { id: true, docNumber: true } },
       grn: { select: { id: true, docNumber: true } }
     }

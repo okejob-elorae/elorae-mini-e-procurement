@@ -61,7 +61,6 @@ import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
 import { CategoryBadge } from '@/components/ui/category-badge';
 import { PinAuthModal } from '@/components/security/PinAuthModal';
-import { verifyPinForAction } from '@/app/actions/security/pin-auth';
 import { toast } from 'sonner';
 import { queueOperation } from '@/lib/offline/db';
 import { isOnline } from '@/lib/offline/sync';
@@ -317,17 +316,14 @@ export default function SuppliersPage() {
   const handleDeletePinConfirm = async (pin: string) => {
     if (!session?.user?.id || !deleteTargetId) return;
 
-    const result = await verifyPinForAction(session.user.id, pin, 'DELETE_SUPPLIER');
-    if (!result.success) {
-      const msg = result.messageKey ? tSecurity(result.messageKey) : result.message;
-      toast.error(msg);
-      throw new Error(msg);
-    }
-
+    // PIN diperiksa di server oleh aksi hapus itu sendiri.
     const { deleteSupplierAction } = await import('@/app/actions/suppliers');
-    const deleteResult = await deleteSupplierAction(deleteTargetId);
+    const deleteResult = await deleteSupplierAction(deleteTargetId, pin);
     if (!deleteResult.success) {
-      const msg = t(deleteResult.messageKey);
+      const msg =
+        'securityMessageKey' in deleteResult
+          ? tSecurity(deleteResult.securityMessageKey)
+          : t(deleteResult.messageKey);
       toast.error(msg);
       throw new Error(msg);
     }

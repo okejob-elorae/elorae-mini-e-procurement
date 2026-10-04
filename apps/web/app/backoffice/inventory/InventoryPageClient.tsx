@@ -707,7 +707,8 @@ export function InventoryPageClient({
                                 <Badge variant="outline" className="border-amber-500 text-amber-700 dark:text-amber-400 w-fit">
                                   {tp('awaitingOwnerApproval')}
                                 </Badge>
-                                {session?.user?.role === 'ADMIN' && (
+                                {/* Pemilik = admin sistem (izin `*`), sama dengan penjaga server. */}
+                                {session?.user?.permissions?.includes('*') && (
                                   <>
                                     <Button
                                       type="button"

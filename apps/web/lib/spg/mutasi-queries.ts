@@ -1,4 +1,5 @@
 import { prisma } from "@elorae/db";
+import { cariTeks } from "@/lib/db/cari-teks";
 import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-only";
 import {
   bacaAturanMutasi,
@@ -277,9 +278,9 @@ export async function daftarMutasiKantor(opsi: {
     ...(cari
       ? {
           OR: [
-            { docNo: { contains: cari, mode: "insensitive" as const } },
-            { fromStore: { name: { contains: cari, mode: "insensitive" as const } } },
-            { toStore: { name: { contains: cari, mode: "insensitive" as const } } },
+            { docNo: cariTeks(cari) },
+            { fromStore: { name: cariTeks(cari) } },
+            { toStore: { name: cariTeks(cari) } },
           ],
         }
       : {}),

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@elorae/db";
+import { cariTeks } from "@/lib/db/cari-teks";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { parseItemVariants } from "@/lib/items/variants";
@@ -47,7 +48,7 @@ export async function cariBarangTargetAction(
     where: {
       isActive: true,
       type: "FINISHED_GOOD",
-      OR: [{ sku: { contains: q, mode: "insensitive" } }, { nameId: { contains: q, mode: "insensitive" } }],
+      OR: [{ sku: cariTeks(q) }, { nameId: cariTeks(q) }],
     },
     orderBy: { nameId: "asc" },
     take: 20,

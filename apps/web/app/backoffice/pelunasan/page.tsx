@@ -6,6 +6,7 @@ import { returTertahan } from "@/lib/receivables/rules";
 import { PILIH_POTONGAN, potonganRetur } from "@/lib/receivables/deductions";
 import { giroKedaluwarsa, STATUS_GIRO, type StatusGiro } from "@/lib/receivables/giro";
 import { formatDisplayDate } from "@/lib/date-only";
+import { bolehMembacaPelunasan } from "@/lib/receivables/izin";
 import { PelunasanClient, type BarisKlaim } from "./PelunasanClient";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +14,9 @@ export const dynamic = "force-dynamic";
 export default async function PelunasanPage() {
   const session = await auth();
   if (!session) redirect("/login");
+  // Rute modul piutang tidak dipetakan di ROUTE_PERMISSIONS — halaman memagari dirinya sendiri.
+  // Keuangan ikut: BKM menunggu verifikasinya ada di sini.
+  if (!bolehMembacaPelunasan(session.user.permissions)) redirect("/backoffice");
 
   const rows = await prisma.paymentClaim.findMany({
     orderBy: [{ status: "asc" }, { createdAt: "desc" }],

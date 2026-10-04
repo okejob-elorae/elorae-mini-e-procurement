@@ -112,11 +112,25 @@ export async function updateSupplierAction(
 
 export type DeleteSupplierActionResult =
   | { success: true }
-  | { success: false; messageKey: 'cannotDeleteSupplierInUse' | 'failedToDeleteSupplier' };
+  | { success: false; messageKey: 'cannotDeleteSupplierInUse' | 'failedToDeleteSupplier' }
+  /** PIN ditolak; kuncinya ada di namespace `security` (mis. `pinIncorrect`). */
+  | { success: false; securityMessageKey: string };
 
-export async function deleteSupplierAction(id: string): Promise<DeleteSupplierActionResult> {
+/**
+ * Hapus pemasok: butuh `suppliers:delete` DAN PIN pengguna sesi, keduanya
+ * diperiksa di sini. Dulu PIN hanya diperiksa browser lewat panggilan terpisah,
+ * jadi memanggil aksi ini langsung melewati PIN.
+ */
+export async function deleteSupplierAction(id: string, pin: string): Promise<DeleteSupplierActionResult> {
   const session = await requireSession();
   requirePermission(session.user.permissions, PERMISSIONS.SUPPLIERS_DELETE);
+  if (typeof pin !== "string" || pin.trim() === "") {
+    return { success: false, securityMessageKey: "pinInvalid" };
+  }
+  const pinResult = await verifyPinForAction(session.user.id, pin, "DELETE_SUPPLIER", undefined, "server-action");
+  if (!pinResult.success) {
+    return { success: false, securityMessageKey: pinResult.messageKey ?? "pinIncorrect" };
+  }
   try {
     await deleteSupplier(id);
     revalidatePath('/backoffice/suppliers');
@@ -151,6 +165,8 @@ export async function rejectSupplierAction(id: string, reason: string) {
 
 export async function decryptSupplierBankAction(id: string, pin: string) {
   const session = await requireSession();
+  // Izin dulu, baru PIN: tanpa `suppliers:view` tidak ada tebakan PIN yang dihitung.
+  requirePermission(session.user.permissions, PERMISSIONS.SUPPLIERS_VIEW);
   const pinResult = await verifyPinForAction(
     session.user.id,
     pin,

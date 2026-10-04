@@ -1,4 +1,5 @@
 import { prisma, Prisma } from "@elorae/db";
+import { cariTeks } from "@/lib/db/cari-teks";
 import { gantiPemegangToko } from "@/lib/stores/penanggung-jawab-writer";
 import {
   bacaAturanKelasToko,
@@ -145,8 +146,8 @@ export async function listStores(
   if (opts.storeClass) where.storeClass = opts.storeClass === "TANPA" ? null : opts.storeClass;
   if (opts.search && opts.search.trim()) {
     where.OR = [
-      { name: { contains: opts.search.trim(), mode: 'insensitive' as const } },
-      { code: { contains: opts.search.trim(), mode: 'insensitive' as const } },
+      { name: cariTeks(opts.search.trim()) },
+      { code: cariTeks(opts.search.trim()) },
     ];
   }
   const [rows, totalCount] = await Promise.all([

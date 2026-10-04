@@ -1,4 +1,5 @@
 import { prisma, type Prisma } from "@elorae/db";
+import { cariTeks } from "@/lib/db/cari-teks";
 import { cariKandidatDuplikat, type KandidatDuplikat, type Pembanding } from "./usulan-toko";
 
 /**
@@ -174,8 +175,8 @@ export async function daftarUsulan(opsi: {
   const saringCari: Prisma.StoreProposalWhereInput = cari
     ? {
         OR: [
-          { name: { contains: cari, mode: "insensitive" } },
-          { address: { contains: cari, mode: "insensitive" } },
+          { name: cariTeks(cari) },
+          { address: cariTeks(cari) },
         ],
       }
     : {};

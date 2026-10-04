@@ -1,4 +1,5 @@
 import { prisma } from '@elorae/db';
+import { cariTeks } from "@/lib/db/cari-teks";
 import { kontenTerlambat, tierKol, type StatusBrief, type StatusKonten, type Tier } from './aturan';
 
 /**
@@ -31,9 +32,9 @@ export async function daftarKol(opts?: { hanyaAktif?: boolean; cari?: string }):
       ...(opts?.cari?.trim()
         ? {
             OR: [
-              { name: { contains: opts.cari.trim(), mode: 'insensitive' as const } },
-              { niche: { contains: opts.cari.trim(), mode: 'insensitive' as const } },
-              { accounts: { some: { handle: { contains: opts.cari.trim(), mode: 'insensitive' as const } } } },
+              { name: cariTeks(opts.cari.trim()) },
+              { niche: cariTeks(opts.cari.trim()) },
+              { accounts: { some: { handle: cariTeks(opts.cari.trim()) } } },
             ],
           }
         : {}),

@@ -466,6 +466,19 @@ Owner asked for: offline selling, counter promos/discounts, daily closing report
 - **`isRetryableTxError`** (`lib/db/tx-retry.ts`) now also retries the Postgres adapter's `TransactionWriteConflict` / 40001 / 40P01 — before it only knew MariaDB 1213/P2034, so serializable races on local Postgres surfaced as errors instead of retries.
 - **`parseItemVariants`** (`lib/items/variants.ts`) accepts a JSON string and normalises SKU/Barcode key case — `Item.variants` arrives in both shapes.
 
+## Owner decisions from the 2026-10-04 audit (drive the fix phases)
+
+The full-system audit (salesman app, SPG app, backoffice) scored the ERP 4.5/10: very broad features, but permission holes and money/stock bugs. Fixes run in phases (1 deploy blockers + security, 2 receivables money rules, 3 stock and cost, 4 workflow leaks, 5 salesman↔SPG connections + UX). Owner decisions that later phases MUST follow:
+- **SPG till at a KONSI store records the IN-STORE price** (`computeStorePrice` KONSI gross-up, e.g. 75.000 at 25% margin → 100.000), not the PUTUS price. The SPG sale writer currently forces `termsType: "PUTUS"`.
+- **Every putus nota tagihan becomes a `Receivable` automatically** (created with the delivery), so nothing is retyped and the credit check sees it.
+- **A KONSI store is "another warehouse of mine":** goods leave main warehouse stock when they are SENT to the store and move into that store's stock; a return moves them back; sales at the store reduce the store's stock, never the main warehouse. Today konsi sends never leave the main warehouse while NRI returns add back — that double count is the bug to fix.
+
+**Phase 1 (deploy blockers + security), done 2026-10-04 — rules it introduced:**
+- **Case-insensitive search goes through `lib/db/cari-teks.ts` (`cariTeks`/`samaTeks`)**, never a literal `mode: "insensitive"`: Prisma supports `mode` only on PostgreSQL, prod is MariaDB (whose `utf8mb4_unicode_ci` collation is already case- and accent-insensitive), and the Docker build generates the MySQL client, so a literal `mode` breaks the build. `lib/db/cari-teks.penjaga.test.ts` scans all of apps/web for it.
+- **Document numbers:** `generateDocNumber` (`lib/docNumber.ts`) now skips numbers already taken in the document's table via `KOLOM_NOMOR_DOKUMEN` — a THIRD map keyed by `DocType` (Partial, so the build does not break; `docNumber.test.ts` asserts its entries). Manual stock adjustments use the generator too (they used "max + 1", which collided with every other ADJ writer for the rest of the month).
+- **PIN, password and user actions take the actor from `auth()`, never from a caller-supplied id.** Admin-only functions need `settings_security:manage`; only a system admin (`*`) may create/edit system-role users or grant a system role. `/api/sync`, GRN owner approve/decline (serializable, state-guarded), vendor-return process/complete, supplier bank decrypt/delete, UOM conversion, product push, PO/GRN read actions, dashboard actions, production read actions, inventory read actions and the fulfillment queue now check permissions. Receivables pages and their `/print` routes check `lib/receivables/izin.ts` helpers. `buatKlaimAction` refuses SPG and (with the own-store lock on) stores the reporter does not hold. SPG may open only its own store page.
+- `KOLOM_FOTO` entries for required (non-`?`) columns carry `wajib: true` — Prisma rejects `not: null` on them; the schema test enforces it.
+
 ## Follow-ups / tech debt (checklist)
 
 Canonical home for follow-ups + known debt. **New follow-ups go HERE** as `- [ ]` — not buried in PR bodies (they die on merge) or per-slice decomposition prose. When an item ships, flip it to `- [x]` and append the PR #. Feature names only (no EPIC labels — shared artifact). Cross-cutting code landmines also get a `memory/` note; this list is the actionable index.
