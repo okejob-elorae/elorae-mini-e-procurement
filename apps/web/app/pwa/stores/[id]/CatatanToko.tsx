@@ -25,7 +25,7 @@ export function CatatanToko({ storeId, catatan }: { storeId: string; catatan: Ca
           </span>
         ) : null}
       </div>
-      <PanelCatatanToko storeId={storeId} catatan={catatan} bolehTulis sisi="bottom" batasAwal={3} />
+      <PanelCatatanToko storeId={storeId} catatan={catatan} bolehTulis sisi="bottom" batasAwal={3} ringkas />
     </section>
   );
 }

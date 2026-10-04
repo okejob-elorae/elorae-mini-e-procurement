@@ -26,7 +26,7 @@ export function TombolPortalToko({
   const [buka, setBuka] = useState(false);
   return (
     <>
-      <Button type="button" variant="outline" className="w-full" onClick={() => setBuka(true)}>
+      <Button type="button" variant="outline" className="h-auto min-h-11 w-full whitespace-normal py-2" onClick={() => setBuka(true)}>
         <Link2 className="h-4 w-4" aria-hidden />
         {t("tombol")}
       </Button>

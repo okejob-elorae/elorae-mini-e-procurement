@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { ArrowLeft, ArrowRight, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, Gift, Loader2, MessageCircle, Minus, PencilLine, Plus, Sparkles, WifiOff } from "lucide-react";
+import { ArrowLeft, ArrowRight, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, Gift, Loader2, MapPin, MessageCircle, Minus, Package, PencilLine, Plus, Search, Sparkles, WifiOff } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -654,7 +654,7 @@ export function CatalogShell({
       <div>
         <h1 className="text-lg font-semibold">{storeName}</h1>
         <p className="text-sm text-muted-foreground">
-          {inden ? tInden("subjudul") : `Katalog produk · ${termsType}`}
+          {inden ? tInden("subjudul") : isKonsi ? t("subjudulKonsi") : t("subjudulPutus")}
         </p>
       </div>
 
@@ -760,21 +760,47 @@ export function CatalogShell({
 
       {view === "catalog" && !indenTolak && (
         <>
-          <Input
-            placeholder="Cari SKU atau nama"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
+          {/* Belum check-in: katalog hanya untuk dilihat. Dulu setiap kartu
+              barang menulis "Check in untuk pesan" — sekali di atas cukup. */}
+          {!bisaPesan && (
+            <div className="flex items-start gap-3 rounded-lg border bg-muted/40 px-3 py-2.5 text-sm">
+              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+              <div className="min-w-0 space-y-0.5">
+                <p className="font-medium">{t("hanyaLihatJudul")}</p>
+                <p className="text-xs text-muted-foreground">{t("hanyaLihatIsi")}</p>
+                <Link
+                  href={`/pwa/stores/${storeId}`}
+                  className="inline-flex min-h-11 items-center text-xs font-medium text-foreground underline decoration-primary decoration-2 underline-offset-4"
+                >
+                  {t("keHalamanToko")}
+                </Link>
+              </div>
+            </div>
+          )}
 
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+            <Input
+              placeholder="Cari SKU atau nama"
+              aria-label="Cari SKU atau nama"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+
+          {/* Kategori sebaris dan bisa digeser: dibungkus ke bawah, sepuluh
+              kategori mendorong daftar barang keluar layar pertama. */}
           {categories.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant={cat === null ? "default" : "outline"} onClick={() => setCat(null)}>
+            <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
+              <Button size="sm" className="shrink-0" variant={cat === null ? "default" : "outline"} onClick={() => setCat(null)}>
                 Semua
               </Button>
               {categories.map((c) => (
                 <Button
                   key={c.id}
                   size="sm"
+                  className="shrink-0"
                   variant={cat === c.id ? "default" : "outline"}
                   onClick={() => setCat(c.id)}
                 >
@@ -848,78 +874,83 @@ export function CatalogShell({
               const variantCount = variantLines.length;
               const variantUnits = variantLines.reduce((s, l) => s + l.qty, 0);
               return (
-                <Card key={it.sku} className="flex flex-row items-center gap-3 p-3">
-                  <div className="h-12 w-12 shrink-0 overflow-hidden rounded bg-muted">
-                    {it.primaryImageUrl && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={it.primaryImageUrl} alt={it.nameId} className="h-full w-full object-cover" />
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{it.nameId}</p>
-                    <p className="truncate text-xs text-muted-foreground">{it.sku}</p>
-                    {it.categoryName && <p className="truncate text-xs text-muted-foreground">{it.categoryName}</p>}
-                    {!isKonsi && it.minOrderQty > 1 && (
-                      <p className="text-xs text-muted-foreground">
-                        {it.minPesanUlang
-                          ? hasVariants
-                            ? tMin("minUlangVarian", { min: it.minOrderQty })
-                            : tMin("minUlang", { min: it.minOrderQty })
-                          : hasVariants
-                            ? tKredit("minPesanVarian", { min: it.minOrderQty })
-                            : tKredit("minPesan", { min: it.minOrderQty })}
+                <Card key={it.sku} className="gap-2 p-3">
+                  {/* Baris 1: foto, nama, harga. Baris 2: stok di kiri, tombol jumlah di
+                      kanan — dulu semuanya menumpuk di kolom kanan yang sempit. */}
+                  <div className="flex items-start gap-3">
+                    <div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-md bg-muted">
+                      {it.primaryImageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={it.primaryImageUrl} alt={it.nameId} className="h-full w-full object-cover" />
+                      ) : (
+                        <Package className="h-6 w-6 text-muted-foreground" aria-hidden />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="line-clamp-2 text-sm font-medium leading-snug">{it.nameId}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {it.sku}
+                        {it.categoryName ? ` · ${it.categoryName}` : ""}
                       </p>
+                      {!isKonsi && it.minOrderQty > 1 && (
+                        <p className="text-xs text-muted-foreground">
+                          {it.minPesanUlang
+                            ? hasVariants
+                              ? tMin("minUlangVarian", { min: it.minOrderQty })
+                              : tMin("minUlang", { min: it.minOrderQty })
+                            : hasVariants
+                              ? tKredit("minPesanVarian", { min: it.minOrderQty })
+                              : tKredit("minPesan", { min: it.minOrderQty })}
+                        </p>
+                      )}
+                    </div>
+                    {!isKonsi && (
+                      <div className="shrink-0 text-right">
+                        {/* Tanpa label harga: di toko putus labelnya selalu "Harga" — tidak menambah apa-apa. */}
+                        {it.price != null ? (
+                          <p className="text-sm font-semibold tabular-nums">{rupiah(it.price)}</p>
+                        ) : it.available > 0 ? (
+                          <p className="text-xs italic text-muted-foreground">Harga belum diset</p>
+                        ) : null}
+                      </div>
                     )}
                   </div>
-                  <div className="flex shrink-0 flex-col items-end gap-1.5">
-                    {isKonsi ? (
-                      <div className="flex items-center gap-1.5">
-                        <Badge variant={it.available > 0 ? "secondary" : "destructive"}>
-                          {it.available > 0 ? `${it.available} tersedia` : "Habis"}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                      {isKonsi ? (
+                        <>
+                          <Badge variant={it.available > 0 ? "secondary" : "destructive"}>
+                            {it.available > 0 ? `${it.available} tersedia` : "Habis"}
+                          </Badge>
+                          {it.neverSent && <Badge variant="default">Baru</Badge>}
+                        </>
+                      ) : indenPesan ? (
+                        // Pre-order: barangnya belum ada; stok bukan batas.
+                        <Badge variant="outline" className="border-amber-500/40 text-amber-800 dark:text-amber-300">
+                          {tInden("stokAkanDatang")}
                         </Badge>
-                        {it.neverSent && <Badge variant="default">Baru</Badge>}
-                      </div>
-                    ) : indenPesan ? (
-                      // Pre-order: barangnya belum ada; stok bukan batas.
-                      <Badge variant="outline" className="border-amber-500/40 text-amber-800 dark:text-amber-300">
-                        {tInden("stokAkanDatang")}
-                      </Badge>
-                    ) : (
-                      <Badge variant={it.available > 0 ? "secondary" : "destructive"}>
-                        {it.available > 0 ? tInden("stokSiap", { jumlah: it.available }) : tInden("habis")}
-                      </Badge>
-                    )}
-                    {!isKonsi && !indenPesan && jendelaPerBarang.has(it.itemId) && (
-                      <Link
-                        href={alamatKatalog(jendelaPerBarang.get(it.itemId)!.id)}
-                        // Sasaran sentuh 44 px seperti tombol PWA lain — ini satu-satunya jalan ke pre-order dari kartu barang.
-                        className="inline-flex min-h-11 items-center text-xs font-medium text-amber-800 underline underline-offset-2 dark:text-amber-300"
-                      >
-                        {it.available > 0 ? tInden("jugaBisaInden") : tInden("bisaInden")}
-                      </Link>
-                    )}
-                    {!isKonsi && (
-                      <>
-                        {it.price != null && (
-                          <>
-                            {it.priceLabel && (
-                              <span className="text-xs text-muted-foreground">{it.priceLabel}</span>
-                            )}
-                            <span className="text-sm font-semibold tabular-nums">{rupiah(it.price)}</span>
-                          </>
-                        )}
-                        {it.price == null && it.available > 0 && (
-                          <span className="text-xs italic text-muted-foreground">Harga belum diset</span>
-                        )}
-                      </>
-                    )}
+                      ) : (
+                        <Badge variant={it.available > 0 ? "secondary" : "destructive"}>
+                          {it.available > 0 ? tInden("stokSiap", { jumlah: it.available }) : tInden("habis")}
+                        </Badge>
+                      )}
+                      {!isKonsi && !indenPesan && jendelaPerBarang.has(it.itemId) && (
+                        <Link
+                          href={alamatKatalog(jendelaPerBarang.get(it.itemId)!.id)}
+                          // Sasaran sentuh 44 px seperti tombol PWA lain — ini satu-satunya jalan ke pre-order dari kartu barang.
+                          className="inline-flex min-h-11 items-center text-xs font-medium text-amber-800 underline underline-offset-2 dark:text-amber-300"
+                        >
+                          {it.available > 0 ? tInden("jugaBisaInden") : tInden("bisaInden")}
+                        </Link>
+                      )}
+                    </div>
                     {canOrder && bisaPesan && hasVariants && (
-                      <Button type="button" variant="outline" size="sm" onClick={() => setSheetItem(it)}>
+                      <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => setSheetItem(it)}>
                         {variantUnits > 0 ? t("variantBadge", { variants: variantCount, units: variantUnits }) : t("selectVariant")}
                       </Button>
                     )}
                     {canOrder && bisaPesan && !hasVariants && (
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex shrink-0 items-center gap-1.5">
                         <Button
                           type="button"
                           variant="outline"
@@ -930,7 +961,7 @@ export function CatalogShell({
                         >
                           <Minus className="h-4 w-4" />
                         </Button>
-                        <span className="w-5 text-center text-sm font-semibold tabular-nums">{qty}</span>
+                        <span className="w-6 text-center text-sm font-semibold tabular-nums">{qty}</span>
                         <Button
                           type="button"
                           variant="outline"
@@ -943,9 +974,6 @@ export function CatalogShell({
                         </Button>
                       </div>
                     )}
-                    {canOrder && !bisaPesan && (
-                      <span className="text-xs text-muted-foreground">Check in untuk pesan</span>
-                    )}
                   </div>
                 </Card>
               );
@@ -956,8 +984,7 @@ export function CatalogShell({
             <div className="flex items-center justify-center gap-3 pt-1">
               <Button
                 variant="outline"
-                size="icon"
-                className="h-8 w-8"
+                size="icon-lg"
                 disabled={page <= 1}
                 onClick={() => setPage((p) => p - 1)}
                 aria-label="Halaman sebelumnya"
@@ -969,8 +996,7 @@ export function CatalogShell({
               </span>
               <Button
                 variant="outline"
-                size="icon"
-                className="h-8 w-8"
+                size="icon-lg"
                 disabled={page >= totalPages}
                 onClick={() => setPage((p) => p + 1)}
                 aria-label="Halaman berikutnya"

@@ -6,7 +6,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { ChevronRight } from "lucide-react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip } from "recharts";
 import { AngkaNaik } from "@/components/dashboard/AngkaNaik";
-import { bandingkanPeriode } from "@/lib/dashboard/tren";
+import { bandingkanPeriode, kalimatBanding } from "@/lib/dashboard/tren";
 import { formatIDR } from "@/lib/sales-orders/format";
 import type { Kemajuan, TitikSalesman } from "@/lib/salesman/dasbor";
 
@@ -68,6 +68,9 @@ export function KartuBulanIni({
     [tren],
   );
   const banding = bandingkanPeriode(dilipat, 30);
+  // "Rp 0 · ▼ 100%" tidak menyebut dari berapa turunnya — kalimatnya dari
+  // `kalimatBanding`, sama dengan kartu tren dasbor kantor.
+  const kalimat = kalimatBanding(banding);
   const garis = dilipat.slice(-30);
   const labelTanggal = new Intl.DateTimeFormat(locale === "en" ? "en-GB" : "id-ID", {
     day: "numeric",
@@ -143,7 +146,9 @@ export function KartuBulanIni({
           <span className="opacity-80">{t("trendTitle")}</span>
           <span className="font-medium tabular-nums">
             {formatIDR(banding.sekarang)}
-            {banding.persen != null ? ` · ${banding.persen >= 0 ? "▲" : "▼"} ${Math.abs(banding.persen)}%` : ""}
+            {kalimat.jenis === "persen" && banding.sekarang > 0
+              ? ` · ${kalimat.arah === "naik" ? "▲" : kalimat.arah === "turun" ? "▼" : "="} ${kalimat.persen}%`
+              : ""}
           </span>
         </div>
         {banding.sekarang > 0 ? (
@@ -182,7 +187,11 @@ export function KartuBulanIni({
             </ResponsiveContainer>
           </div>
         ) : (
-          <p className="mt-1 text-xs opacity-80">{t("trendEmpty")}</p>
+          <p className="mt-1 text-xs opacity-80">
+            {kalimat.jenis === "persen"
+              ? t("trendEmptyDari", { amount: formatIDR(kalimat.sebelumnya) })
+              : t("trendEmpty")}
+          </p>
         )}
       </div>
 

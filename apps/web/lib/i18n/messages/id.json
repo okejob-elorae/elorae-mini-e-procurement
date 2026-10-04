@@ -4220,6 +4220,11 @@
       "promoOrderDiscount": "Diskon pesanan",
       "selectVariant": "Pilih varian",
       "variantBadge": "{variants} varian · {units} pcs",
+      "subjudulPutus": "Katalog · toko putus",
+      "subjudulKonsi": "Katalog · toko konsinyasi",
+      "hanyaLihatJudul": "Hanya untuk dilihat",
+      "hanyaLihatIsi": "Check-in di toko ini dulu untuk membuat pesanan.",
+      "keHalamanToko": "Ke halaman toko",
       "variantSheetTitle": "Pilih Varian",
       "variantDecrease": "Kurangi {label}",
       "variantIncrease": "Tambah {label}",
@@ -4413,7 +4418,7 @@
       "channelVan": "Van",
       "trendTitle": "30 hari terakhir",
       "planTitle": "Rencana kunjungan hari ini",
-      "planInterval": "Batas {days} hari",
+      "planInterval": "Ada tagihan, mulai jarang pesan, atau {days} hari belum didatangi.",
       "planEmpty": "Semua toko Anda sudah dikunjungi tepat waktu.",
       "planNoHistory": "Belum ada toko di riwayat Anda. Mulai dari daftar toko.",
       "planReasonTagih": "Tagih {amount}",
@@ -4437,9 +4442,10 @@
       "shortcutStores": "Toko",
       "catalog": "Katalog produk",
       "trendEmpty": "Belum ada penjualan dalam 30 hari terakhir.",
+      "trendEmptyDari": "Belum ada penjualan dalam 30 hari terakhir. 30 hari sebelumnya {amount}.",
       "collectEmpty": "Tidak ada toko yang lewat janji bayar.",
       "collectCall": "Telepon",
-      "planIntervalDefault": "Batas {days} hari (bawaan)",
+      "planIntervalDefault": "Ada tagihan, mulai jarang pesan, atau {days} hari belum didatangi.",
       "ordersSeeAll": "Lihat semua",
       "targetRinci": "Rincian target"
     },
@@ -4518,7 +4524,7 @@
       "grup": {
         "hariIni": "Hari ini",
         "jualan": "Jualan & toko",
-        "uang": "Uang saya",
+        "uang": "Kinerja & uang",
         "aplikasi": "Aplikasi"
       },
       "target": {
@@ -6400,6 +6406,9 @@
       "hargaPesaing": "Harga pesaing",
       "peta": "Buka peta",
       "lihatKatalog": "Lihat katalog",
+      "telepon": "Telepon",
+      "petaSingkat": "Peta",
+      "katalogSingkat": "Katalog",
       "halamanToko": "Halaman toko"
     },
     "target": {
@@ -10241,8 +10250,8 @@
       "bantuan": "Menentukan seberapa sering sales diingatkan mendatangi toko ini. Jarak per kelas diatur di Pengaturan → Salesman."
     },
     "rencana": {
-      "batasCampur": "Per kelas toko · lainnya {days} hari",
-      "batasCampurBawaan": "Per kelas toko · lainnya {days} hari (bawaan)",
+      "batasCampur": "Ada tagihan, mulai jarang pesan, atau lewat jarak kunjungan kelasnya (toko tanpa kelas: {days} hari).",
+      "batasCampurBawaan": "Ada tagihan, mulai jarang pesan, atau lewat jarak kunjungan kelasnya (toko tanpa kelas: {days} hari).",
       "lencana": "Kelas {kelas} · tiap {days} hari",
       "lencanaOtomatis": "Kelas {kelas} (otomatis) · tiap {days} hari"
     },

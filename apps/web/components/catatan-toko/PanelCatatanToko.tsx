@@ -51,6 +51,7 @@ export function PanelCatatanToko({
   bolehTulis,
   sisi,
   batasAwal = 5,
+  ringkas = false,
 }: {
   storeId: string;
   catatan: CatatanTampil[];
@@ -58,6 +59,12 @@ export function PanelCatatanToko({
   sisi: "bottom" | "right";
   /** Catatan yang tampil sebelum "Tampilkan semua". */
   batasAwal?: number;
+  /**
+   * HP: tanpa catatan, kartu hanya satu kalimat petunjuk dan tombol Tambah
+   * sebaris — keadaan kosong besar (ikon, judul, petunjuk, tombol) memakan
+   * setengah layar di halaman toko yang sudah panjang.
+   */
+  ringkas?: boolean;
 }) {
   const t = useTranslations("catatanToko");
   const td = dinamis(t);
@@ -123,7 +130,17 @@ export function PanelCatatanToko({
 
   return (
     <div className="space-y-3">
-      {catatan.length === 0 ? (
+      {catatan.length === 0 && ringkas ? (
+        <div className="flex items-center justify-between gap-3">
+          <p className="min-w-0 text-xs text-muted-foreground">{t("kosongHint")}</p>
+          {bolehTulis ? (
+            <Button variant="outline" size="sm" className="shrink-0" disabled={sibuk} onClick={() => buka("baru")}>
+              <Plus className="h-4 w-4" aria-hidden />
+              {t("tambah")}
+            </Button>
+          ) : null}
+        </div>
+      ) : catatan.length === 0 ? (
         <div className="flex flex-col items-center gap-2 py-4 text-center">
           <StickyNote className="h-7 w-7 text-muted-foreground/60" aria-hidden />
           <p className="text-sm font-medium">{t("kosong")}</p>
@@ -179,6 +196,7 @@ export function PanelCatatanToko({
         </ul>
       )}
 
+      {catatan.length === 0 && ringkas ? null : (
       <div className="flex flex-wrap items-center justify-between gap-2">
         {catatan.length > batasAwal ? (
           <Button variant="link" className="h-auto px-0" onClick={() => setSemua((s) => !s)}>
@@ -194,6 +212,7 @@ export function PanelCatatanToko({
           </Button>
         ) : null}
       </div>
+      )}
 
       <Sheet open={lembar !== null} onOpenChange={(o) => !o && !sibuk && setLembar(null)}>
         <SheetContent

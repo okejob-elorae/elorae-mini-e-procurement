@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import {
+  ChevronDown,
   Clock,
   MapPin,
+  MessageCircle,
   Phone,
   ShoppingBag,
   User as UserIcon,
@@ -18,6 +20,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { nomorTelepon, tautanWhatsApp } from "@/lib/salesman/dasbor";
 import { SaranPesanan, type SaranPesananProps } from "./SaranPesanan";
 import { TombolPesananJarakJauh } from "./TombolPesananJarakJauh";
 import { AksiKunjungan } from "./AksiKunjungan";
@@ -125,6 +128,20 @@ export function StoreDetailShell({ store, active, activePhotos, history, pending
   const mapsUrl = store.lat !== null && store.lng !== null
     ? `https://www.google.com/maps?q=${store.lat},${store.lng}`
     : null;
+  // Nomor HP mendapat WhatsApp DAN telepon; telepon rumah hanya telepon.
+  const waUrl = tautanWhatsApp(store.phone, "");
+  const telUrl = nomorTelepon(store.phone);
+  // Katalog tetap bisa dilihat tanpa check-in (hanya baca) — untuk menjawab
+  // pertanyaan toko lewat telepon. Selama kunjungan, "Buat pesanan" yang dipakai.
+  const tampilKatalog = !activeAtThisStore && !spg;
+  const aksiCepat: Array<{ kunci: string; href: string; label: string; ikon: typeof Phone; luar: boolean }> = [
+    ...(telUrl ? [{ kunci: "telepon", href: `tel:${telUrl}`, label: tKunjungan("telepon"), ikon: Phone, luar: true }] : []),
+    ...(waUrl ? [{ kunci: "wa", href: waUrl, label: "WhatsApp", ikon: MessageCircle, luar: true }] : []),
+    ...(mapsUrl ? [{ kunci: "peta", href: mapsUrl, label: tKunjungan("petaSingkat"), ikon: MapPin, luar: true }] : []),
+    ...(tampilKatalog
+      ? [{ kunci: "katalog", href: `/pwa/stores/${store.id}/catalog`, label: tKunjungan("katalogSingkat"), ikon: ShoppingBag, luar: false }]
+      : []),
+  ];
 
   return (
     <div className="p-4 space-y-4">
@@ -134,15 +151,54 @@ export function StoreDetailShell({ store, active, activePhotos, history, pending
         </Button>
       </header>
 
-      <div className="space-y-2">
-        <h1 className="text-2xl font-bold leading-tight">{store.name}</h1>
-        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-          <span>{store.code}</span>
-          <span className="opacity-60">·</span>
-          <Badge variant={store.termsType === "PUTUS" ? "outline" : "secondary"}>
-            {store.termsType === "PUTUS" ? tBadge("putus") : tBadge("konsi")}
-          </Badge>
+      {/* Kepala toko: siapa, di mana, dan cara menghubunginya — dulu kartu
+          kontak dan tombol peta ada di dasar halaman, di bawah semua kartu. */}
+      <div className="space-y-3">
+        <div className="space-y-1.5">
+          <h1 className="text-2xl font-bold leading-tight">{store.name}</h1>
+          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <span>{store.code}</span>
+            <span className="opacity-60">·</span>
+            <Badge variant={store.termsType === "PUTUS" ? "outline" : "secondary"}>
+              {store.termsType === "PUTUS" ? tBadge("putus") : tBadge("konsi")}
+            </Badge>
+          </div>
+          <p className="flex items-start gap-1.5 text-sm text-muted-foreground">
+            <MapPin className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            <span className="min-w-0">{store.address}</span>
+          </p>
+          {store.contactName ? (
+            <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <UserIcon className="h-4 w-4 shrink-0" aria-hidden />
+              <span className="min-w-0">{store.contactName}</span>
+            </p>
+          ) : null}
         </div>
+        {/* Satu baris ubin ikon (maks. empat) — tombol berlabel panjang terbungkus
+            jadi dua baris di HP 375 px. */}
+        {aksiCepat.length > 0 ? (
+          <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${aksiCepat.length}, minmax(0, 1fr))` }}>
+            {aksiCepat.map(({ kunci, href, label, ikon: Ikon, luar }) => {
+              const isi = (
+                <>
+                  <Ikon className="h-5 w-5" aria-hidden />
+                  <span className="max-w-full truncate">{label}</span>
+                </>
+              );
+              const kelas =
+                "flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg border bg-background px-1 py-2 text-xs font-medium transition-colors hover:bg-muted active:bg-muted";
+              return luar ? (
+                <a key={kunci} href={href} className={kelas} {...(kunci === "telepon" ? {} : { target: "_blank", rel: "noopener noreferrer" })}>
+                  {isi}
+                </a>
+              ) : (
+                <Link key={kunci} href={href} className={kelas}>
+                  {isi}
+                </Link>
+              );
+            })}
+          </div>
+        ) : null}
       </div>
 
       {activeAtThisStore ? (
@@ -171,8 +227,14 @@ export function StoreDetailShell({ store, active, activePhotos, history, pending
             fotoKunjungan
             autoCloseStoreName={activeAtOtherStore ? active.storeName : null}
           />
-          {bolehJarakJauh ? <TombolPesananJarakJauh storeId={store.id} /> : null}
-          {portalToko}
+          {/* Jalan lain untuk memesan, sebagai ubin di bawah check-in — dulu dua
+              tombol selebar layar yang menyaingi tombol check-in. */}
+          {bolehJarakJauh || portalToko ? (
+            <div className={bolehJarakJauh && portalToko ? "grid grid-cols-2 gap-2" : "grid gap-2"}>
+              {bolehJarakJauh ? <TombolPesananJarakJauh storeId={store.id} /> : null}
+              {portalToko}
+            </div>
+          ) : null}
         </div>
       )}
 
@@ -213,55 +275,15 @@ export function StoreDetailShell({ store, active, activePhotos, history, pending
         </>
       ) : null}
 
-      {/* Kontak + peta + katalog dalam satu kartu. `py-0 gap-0`: kartu dasar
-          sudah memberi padding atas-bawah, isinya memberi lagi — dulu dobel. */}
-      <Card className="gap-0 py-0">
-        <CardContent className="space-y-1 p-4 text-sm">
-          <div className="flex items-start gap-2 py-1">
-            <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-            <span className="flex-1">{store.address}</span>
-          </div>
-          {store.phone && (
-            <div className="flex items-center gap-2">
-              <Phone className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <a href={`tel:${store.phone}`} className="inline-flex min-h-11 items-center hover:underline">{store.phone}</a>
-            </div>
-          )}
-          {store.contactName && (
-            <div className="flex items-center gap-2 py-1">
-              <UserIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <span>{store.contactName}</span>
-            </div>
-          )}
-          <div className="grid grid-cols-2 gap-2 pt-2">
-            {mapsUrl ? (
-              <Button asChild variant="outline" className={activeAtThisStore || spg ? "col-span-2 w-full" : "w-full"}>
-                <a href={mapsUrl} target="_blank" rel="noopener noreferrer">
-                  <MapPin className="h-4 w-4" />
-                  {tKunjungan("peta")}
-                </a>
-              </Button>
-            ) : null}
-            {/* Katalog tetap bisa dilihat tanpa check-in (hanya baca) — untuk
-                menjawab pertanyaan toko lewat telepon. Selama kunjungan, tombol
-                "Buat pesanan" di atas yang dipakai. */}
-            {!activeAtThisStore && !spg ? (
-              <Button asChild variant="outline" className={mapsUrl ? "w-full" : "col-span-2 w-full"}>
-                <Link href={`/pwa/stores/${store.id}/catalog`}>
-                  <ShoppingBag className="h-4 w-4" />
-                  {tKunjungan("lihatKatalog")}
-                </Link>
-              </Button>
-            ) : null}
-          </div>
-        </CardContent>
-      </Card>
-
-      <section className="pt-2 space-y-2">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-          <Clock className="h-4 w-4" />
-          {t("history")}
-        </h2>
+      {/* Riwayat kunjungan dan pesanan dilipat: kunjungan dan pesanan TERAKHIR
+          sudah ada di ringkasan toko di atas; daftar lengkapnya jarang dibuka. */}
+      <details className="group pt-2">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground [&::-webkit-details-marker]:hidden">
+          <Clock className="h-4 w-4" aria-hidden />
+          <span className="flex-1">{t("history")} ({history.length})</span>
+          <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" aria-hidden />
+        </summary>
+        <div className="pt-1">
         {history.length === 0 ? (
           <Card className="gap-0 py-0">
             <CardContent className="p-6 text-center text-sm text-muted-foreground">
@@ -298,14 +320,17 @@ export function StoreDetailShell({ store, active, activePhotos, history, pending
             </CardContent>
           </Card>
         )}
-      </section>
+        </div>
+      </details>
 
       {spg ? null : (
-        <section className="pt-2 space-y-2">
-          <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-            <ShoppingBag className="h-4 w-4" />
-            {t("ordersTitle")}
-          </h2>
+        <details className="group">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground [&::-webkit-details-marker]:hidden">
+            <ShoppingBag className="h-4 w-4" aria-hidden />
+            <span className="flex-1">{t("ordersTitle")} ({orders.length})</span>
+            <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" aria-hidden />
+          </summary>
+          <div className="pt-1">
           {orders.length === 0 ? (
             <Card className="gap-0 py-0">
               <CardContent className="p-6 text-center text-sm text-muted-foreground">
@@ -331,7 +356,8 @@ export function StoreDetailShell({ store, active, activePhotos, history, pending
               </CardContent>
             </Card>
           )}
-        </section>
+          </div>
+        </details>
       )}
     </div>
   );

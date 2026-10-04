@@ -208,14 +208,15 @@ export function VisitPhotoCapture({
     : null;
 
   return (
-    <Card className="flex-col gap-3 p-4">
+    // Bentuk kartu sama dengan kartu lain di halaman toko (`beranda-kartu`, judul kecil kapital).
+    <Card className="beranda-kartu flex-col gap-3 p-4">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium">Foto Kunjungan</span>
+        <h2 className="beranda-judul">Foto kunjungan</h2>
         <Badge variant="secondary">{total}/{MAX_PER_VISIT}</Badge>
       </div>
 
       <Button onClick={() => void openCam()} disabled={busy || atCap}>
-        <Camera className="mr-2 h-4 w-4" /> {atCap ? "Batas foto tercapai" : "Ambil Foto"}
+        <Camera className="mr-2 h-4 w-4" /> {atCap ? "Batas foto tercapai" : "Ambil foto"}
       </Button>
 
       <input

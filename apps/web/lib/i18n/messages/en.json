@@ -4220,6 +4220,11 @@
       "promoOrderDiscount": "Order discount",
       "selectVariant": "Select variant",
       "variantBadge": "{variants} variants · {units} pcs",
+      "subjudulPutus": "Catalogue · outright store",
+      "subjudulKonsi": "Catalogue · consignment store",
+      "hanyaLihatJudul": "View only",
+      "hanyaLihatIsi": "Check in at this store first to place an order.",
+      "keHalamanToko": "Go to the store page",
       "variantSheetTitle": "Select Variant",
       "variantDecrease": "Decrease {label}",
       "variantIncrease": "Increase {label}",
@@ -4413,7 +4418,7 @@
       "channelVan": "Van",
       "trendTitle": "Last 30 days",
       "planTitle": "Today's visit plan",
-      "planInterval": "{days}-day limit",
+      "planInterval": "Unpaid bills, ordering less, or not visited for {days} days.",
       "planEmpty": "Every one of your stores has been visited on time.",
       "planNoHistory": "No stores in your history yet. Start from the store list.",
       "planReasonTagih": "Collect {amount}",
@@ -4437,9 +4442,10 @@
       "shortcutStores": "Stores",
       "catalog": "Product catalog",
       "trendEmpty": "No sales in the last 30 days.",
+      "trendEmptyDari": "No sales in the last 30 days. The 30 days before: {amount}.",
       "collectEmpty": "No store is past its promised payment date.",
       "collectCall": "Call",
-      "planIntervalDefault": "{days}-day limit (default)",
+      "planIntervalDefault": "Unpaid bills, ordering less, or not visited for {days} days.",
       "ordersSeeAll": "See all",
       "targetRinci": "Target details"
     },
@@ -4518,7 +4524,7 @@
       "grup": {
         "hariIni": "Today",
         "jualan": "Selling & stores",
-        "uang": "My money",
+        "uang": "Performance & money",
         "aplikasi": "App"
       },
       "target": {
@@ -6400,6 +6406,9 @@
       "hargaPesaing": "Competitor prices",
       "peta": "Open map",
       "lihatKatalog": "View catalogue",
+      "telepon": "Call",
+      "petaSingkat": "Map",
+      "katalogSingkat": "Catalogue",
       "halamanToko": "Store page"
     },
     "target": {
@@ -10241,8 +10250,8 @@
       "bantuan": "Sets how often salespeople are reminded to visit this store. The interval per class is set in Settings → Salesman."
     },
     "rencana": {
-      "batasCampur": "Per store class · others {days} days",
-      "batasCampurBawaan": "Per store class · others {days} days (default)",
+      "batasCampur": "Unpaid bills, ordering less, or past their class's visit gap (stores without a class: {days} days).",
+      "batasCampurBawaan": "Unpaid bills, ordering less, or past their class's visit gap (stores without a class: {days} days).",
       "lencana": "Class {kelas} · every {days} days",
       "lencanaOtomatis": "Class {kelas} (automatic) · every {days} days"
     },

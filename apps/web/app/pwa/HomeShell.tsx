@@ -203,11 +203,10 @@ export function HomeShell({ userName, dimuatPada, activeVisit, data }: Props) {
         </div>
       </header>
 
-      {/* Omzet bulan ini paling atas: angka yang dicari sales setiap membuka aplikasi. */}
-      <KartuBulanIni bulanIni={data.bulanIni} kemajuan={data.kemajuan} tren={data.tren} adaTargetRinci={data.adaTargetRinci} />
-      {data.absen ? <KartuAbsen data={data.absen} /> : null}
-
-      {/* Kunjungan berjalan — dari server, atau check-in yang dicatat tanpa sinyal di HP. */}
+      {/* Kunjungan berjalan PALING ATAS — dari server, atau check-in yang dicatat
+          tanpa sinyal di HP. Selama berdiri di toko yang dicari adalah tombol
+          pesan dan check-out, bukan omzet bulan ini. Tanpa kunjungan kartu ini
+          kosong dan omzet tetap yang pertama terlihat. */}
       <KunjunganBeranda
         checkinServerMs={activeVisit ? Date.parse(activeVisit.checkinAt) : null}
         kartuServer={activeVisit ? (
@@ -246,6 +245,10 @@ export function HomeShell({ userName, dimuatPada, activeVisit, data }: Props) {
           </section>
         ) : null}
       />
+
+      {/* Omzet bulan ini: angka yang dicari sales setiap membuka aplikasi. */}
+      <KartuBulanIni bulanIni={data.bulanIni} kemajuan={data.kemajuan} tren={data.tren} adaTargetRinci={data.adaTargetRinci} />
+      {data.absen ? <KartuAbsen data={data.absen} /> : null}
 
       {/* Urutan kerja lapangan: pesan kantor, yang harus dikerjakan, dan ke mana
           pergi lebih dulu; angka bulanan sesudahnya. */}

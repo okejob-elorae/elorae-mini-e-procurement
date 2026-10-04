@@ -26,7 +26,7 @@ export function TombolPesananJarakJauh({ storeId }: { storeId: string }) {
 
   return (
     <>
-      <Button type="button" variant="outline" className="w-full" onClick={() => setBuka(true)}>
+      <Button type="button" variant="outline" className="h-auto min-h-11 w-full whitespace-normal py-2" onClick={() => setBuka(true)}>
         <MessageCircle className="h-4 w-4" aria-hidden />
         {t("tombol")}
       </Button>

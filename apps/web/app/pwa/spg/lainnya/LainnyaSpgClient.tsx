@@ -1,11 +1,10 @@
 "use client";
 
-import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
   ArrowLeftRight,
   CalendarCheck,
-  ChevronRight,
   ClipboardList,
   Megaphone,
   PackageCheck,
@@ -28,12 +27,16 @@ import {
   Footprints,
   Scale,
 } from "lucide-react";
+import { hitungBelumTerkirim } from "@/lib/pwa/offline/hitung";
 import { TombolKeluar } from "../../TombolKeluar";
+import { KisiMenuLainnya } from "../../KisiMenuLainnya";
 
 /**
  * Tab "Lainnya" SPG: pekerjaan yang tidak setiap jam, DIKELOMPOKKAN — 25 baris
  * tanpa judul sulit dicari (2026-10-03). Urutan kelompok mengikuti hari kerja:
  * konter (pembeli & promo), stok toko, hari kerja, lalu saya.
+ *
+ * Bentuknya (kisi ikon) di `KisiMenuLainnya`, sama dengan Lainnya salesman.
  */
 type BarisLainnya = { href: string; ikon: typeof Megaphone; kunci: string };
 
@@ -98,6 +101,13 @@ export function LainnyaSpgClient({
 }) {
   const t = useTranslations("pwa.spgLainnya");
   const KELOMPOK = kelompokLainnya(tokoId);
+  const [tertahan, setTertahan] = useState(0);
+
+  // Angka di ikon "Belum terkirim": semua antrean HP — penjualan, terima, opname, retur.
+  useEffect(() => {
+    hitungBelumTerkirim().then(setTertahan, () => undefined);
+  }, []);
+
   return (
     <div className="space-y-4 p-4">
       <header>
@@ -105,31 +115,19 @@ export function LainnyaSpgClient({
         <p className="text-sm text-muted-foreground">{t("signedInAs", { name: nama, store: toko })}</p>
       </header>
 
-      {KELOMPOK.map((k) => (
-        <section key={k.kunci} className="space-y-2" aria-labelledby={`lainnya-${k.kunci}`}>
-          <h2 id={`lainnya-${k.kunci}`} className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {t(k.kunci)}
-          </h2>
-          <nav className="beranda-kartu beranda-kartu-daftar" aria-labelledby={`lainnya-${k.kunci}`}>
-            <ul className="divide-y">
-              {k.baris.map(({ href, ikon: Ikon, kunci }) => (
-                <li key={kunci}>
-                  <Link href={href} className="flex min-h-14 items-center gap-3 px-4 py-2 transition-colors hover:bg-muted/60">
-                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground">
-                      <Ikon className="h-4 w-4" aria-hidden />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block font-medium leading-tight">{t(`${kunci}.label`)}</span>
-                      <span className="block text-xs text-muted-foreground">{t(`${kunci}.hint`)}</span>
-                    </span>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </nav>
-        </section>
-      ))}
+      <KisiMenuLainnya
+        kelompok={KELOMPOK.map((k) => ({
+          kunci: k.kunci,
+          judul: t(k.kunci),
+          item: k.baris.map(({ href, ikon, kunci }) => ({
+            href,
+            ikon,
+            label: t(`${kunci}.label`),
+            hint: t(`${kunci}.hint`),
+            lencana: kunci === "antrean" ? tertahan : undefined,
+          })),
+        }))}
+      />
 
       <div className="beranda-kartu beranda-kartu-daftar">
         <TombolKeluar onLogout={onLogout} tampilan="baris" />

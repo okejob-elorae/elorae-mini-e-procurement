@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
-import { ChevronRight, ImageOff, RotateCcw, Send, ShoppingBag, Sparkles, TrendingUp } from "lucide-react";
+import { ChevronRight, ImageOff, RotateCcw, Send, Sparkles, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { HasilSaranTawar, SaranTawarBaris } from "@/lib/salesman/saran-tawar-queries";
 
@@ -109,17 +109,14 @@ export function SaranTawar({ storeId, data }: { storeId: string; data: HasilSara
         </ul>
       )}
 
-      <div className="flex gap-2 border-t p-3">
-        <Button asChild variant="outline" className="min-w-0 flex-1 overflow-hidden">
-          <Link href={katalog}>
-            <ShoppingBag className="h-4 w-4" aria-hidden />
-            <span className="truncate">{t("bukaKatalog")}</span>
-          </Link>
-        </Button>
-        <Button asChild className="min-w-0 flex-1 overflow-hidden">
+      {/* Hanya "Kirim katalog": katalognya sendiri sudah dibuka dari kepala
+          halaman (Lihat katalog) atau tombol Buat pesanan selama kunjungan, dan
+          setiap baris di atas membuka barangnya di katalog. */}
+      <div className="border-t p-3">
+        <Button asChild variant="outline" className="w-full">
           <Link href={`/pwa/stores/${storeId}/kirim-katalog`}>
             <Send className="h-4 w-4" aria-hidden />
-            <span className="truncate">{t("kirimKatalog")}</span>
+            {t("kirimKatalog")}
           </Link>
         </Button>
       </div>
