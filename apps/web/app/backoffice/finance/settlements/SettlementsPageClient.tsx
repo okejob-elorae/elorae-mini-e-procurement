@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { toast } from "sonner";
@@ -28,6 +29,7 @@ import {
 } from "@/components/ui/table";
 import { Pagination } from "@/components/ui/pagination";
 import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-only";
+import { BadgeGanda, type UnggahanPertamaTampil } from "./ganda";
 
 const UPLOAD_MARKETPLACES = ["SHOPEE", "TIKTOK"] as const;
 type UploadMarketplace = (typeof UPLOAD_MARKETPLACES)[number];
@@ -38,6 +40,14 @@ type Props = {
   page: number;
   pageSize: number;
   canManage: boolean;
+  /** id settlement → unggahan pertamanya, untuk baris yang kembar. */
+  ganda?: Record<string, UnggahanPertamaTampil>;
+};
+
+/** Jawaban 409 rute unggah: berkas yang sama sudah pernah diunggah. */
+type UploadDuplicateResponse = {
+  code: "SETTLEMENT_GANDA";
+  pertama: { id: string; fileName: string; uploadedAt: string; uploadedByName: string | null };
 };
 
 type UploadSuccessResponse = {
@@ -51,7 +61,7 @@ function formatRupiah(value: number): string {
   return `Rp ${Math.round(value).toLocaleString("id-ID")}`;
 }
 
-export function SettlementsPageClient({ items, totalCount, page, pageSize, canManage }: Props) {
+export function SettlementsPageClient({ items, totalCount, page, pageSize, canManage, ganda = {} }: Props) {
   const router = useRouter();
   const t = useTranslations("financeSettlements");
   const locale = useLocale();
@@ -64,6 +74,7 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
   const [uploading, setUploading] = useState(false);
   const [uploadErrors, setUploadErrors] = useState<SettlementParseError[] | null>(null);
   const [uploadErrorMessage, setUploadErrorMessage] = useState<string | null>(null);
+  const [duplicateOfId, setDuplicateOfId] = useState<string | null>(null);
 
   const formatDate = (iso: string) => formatDisplayDate(iso, locale);
 
@@ -81,6 +92,7 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
     setUploading(true);
     setUploadErrors(null);
     setUploadErrorMessage(null);
+    setDuplicateOfId(null);
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -96,6 +108,23 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
         setFile(null);
         setFileInputKey((k) => k + 1);
         startTransition(() => router.push(`/backoffice/finance/settlements/${data.settlementId}`));
+        return;
+      }
+
+      if (res.status === 409) {
+        const data = (await res.json().catch(() => null)) as UploadDuplicateResponse | null;
+        if (data?.code === "SETTLEMENT_GANDA") {
+          setUploadErrorMessage(
+            t("uploadDuplicate", {
+              fileName: data.pertama.fileName,
+              by: data.pertama.uploadedByName ?? t("unknownUploader"),
+              at: formatDateTime(data.pertama.uploadedAt),
+            }),
+          );
+          setDuplicateOfId(data.pertama.id);
+        } else {
+          setUploadErrorMessage(t("uploadFailed"));
+        }
         return;
       }
 
@@ -119,10 +148,15 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
   }
 
   const statusVariant = (status: string): "default" | "secondary" =>
-    status === "MATCHED" ? "default" : "secondary";
+    status === "MATCHED" || status === "RECONCILED" ? "default" : "secondary";
 
+  // RECONCILED (sudah dijurnal) dulu jatuh ke label "Terproses" — sama dengan baru diunggah.
   const statusLabel = (status: string): string =>
-    status === "MATCHED" ? t("statusMatched") : t("statusParsed");
+    status === "RECONCILED"
+      ? t("statusReconciled")
+      : status === "MATCHED"
+        ? t("statusMatched")
+        : t("statusParsed");
 
   return (
     <div className="space-y-6">
@@ -206,7 +240,19 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
             {uploadErrorMessage && (
               <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
                 <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                <span>{uploadErrorMessage}</span>
+                <div className="space-y-1">
+                  <span>{uploadErrorMessage}</span>
+                  {duplicateOfId && (
+                    <div>
+                      <Link
+                        href={`/backoffice/finance/settlements/${duplicateOfId}`}
+                        className="font-medium underline underline-offset-2"
+                      >
+                        {t("uploadDuplicateOpen")}
+                      </Link>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -291,7 +337,10 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
                           {row.matchedCount} / {row.lineCount}
                         </TableCell>
                         <TableCell>
-                          <Badge variant={statusVariant(row.status)}>{statusLabel(row.status)}</Badge>
+                          <div className="flex flex-wrap items-center gap-1">
+                            <Badge variant={statusVariant(row.status)}>{statusLabel(row.status)}</Badge>
+                            {ganda[row.id] && <BadgeGanda pertama={ganda[row.id]} />}
+                          </div>
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
                           {formatDateTime(row.createdAtIso)}

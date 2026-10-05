@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ImageGallery } from "./ImageGallery";
-import { replaceItemImagesAction } from "@/lib/items/images/mutations";
+import { replaceItemImagesAction } from "@/app/actions/item-images";
 import type { ItemImageSubmission, ItemImageDto } from "@/lib/items/images/types";
 
 type Props = {

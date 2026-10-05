@@ -79,6 +79,9 @@ vi.mock('./writer', () => ({
     state.dihitungUlang.push(id);
     return state.sisa.get(id) ?? 0;
   },
+  // Pemakaian NRT diuji terhadap basis data di `pelunasan-ganda.test.ts`;
+  // di sini setiap nota dianggap belum terpakai.
+  returYangMelebihi: async () => null,
 }));
 vi.mock('@elorae/db', () => ({
   Prisma: {

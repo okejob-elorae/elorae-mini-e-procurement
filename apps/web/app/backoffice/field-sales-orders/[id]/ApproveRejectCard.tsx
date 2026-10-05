@@ -37,6 +37,14 @@ export type AppealedLine = {
   unitPrice: number;
   requestedUnitPrice: number;
   appealReason: string | null;
+  /**
+   * Potongan promo baris yang tercatat saat pesanan dibuat (rupiah, seluruh baris). Harga final
+   * adalah harga bersih per potong, jadi promo ini GUGUR begitu harga final diberikan. Opsional:
+   * pemanggil yang belum mengirimnya hanya kehilangan peringatan per baris, penjelasan umumnya
+   * tetap tampil.
+   */
+  lineDiscount?: number;
+  promoName?: string | null;
 };
 
 /**
@@ -247,6 +255,7 @@ export function ApproveRejectCard({
           {hasAppeals && (
             <div className="space-y-3 max-h-72 overflow-y-auto rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
               <p className="text-xs font-medium text-amber-700">{t("appealSetFinalPriceHint")}</p>
+              <p className="text-xs text-amber-700">{t("appealFinalPriceNetHint")}</p>
               {appealedLines.map((line) => (
                 <div key={line.id} className="space-y-1.5 border-t border-amber-500/20 pt-2 first:border-t-0 first:pt-0">
                   <div className="flex items-center gap-2 text-sm font-medium">
@@ -269,6 +278,13 @@ export function ApproveRejectCard({
                   {line.appealReason && (
                     <p className="text-xs text-muted-foreground italic">
                       {t("appealReasonLabel")}: {line.appealReason}
+                    </p>
+                  )}
+                  {line.lineDiscount !== undefined && line.lineDiscount > 0 && (
+                    <p className="text-xs text-amber-700">
+                      {line.promoName
+                        ? t("appealPromoDropped", { promo: line.promoName, amount: formatRupiah(line.lineDiscount) })
+                        : t("appealPromoDroppedUnnamed", { amount: formatRupiah(line.lineDiscount) })}
                     </p>
                   )}
                   <div className="space-y-1">

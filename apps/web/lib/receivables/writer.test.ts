@@ -30,6 +30,8 @@ const tx = {
     }),
   },
   paymentClaimReceivable: { findMany: vi.fn(async () => state.links) },
+  // Verifikasi memeriksa ulang pemakaian nota retur; klaim di sini tanpa potongan retur.
+  paymentClaimDeduction: { findMany: vi.fn(async () => []) },
   auditLog: {
     create: vi.fn(async (a: { data: Record<string, unknown> }) => {
       state.jejak.push(a.data);

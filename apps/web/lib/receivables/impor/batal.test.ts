@@ -14,6 +14,9 @@ class Desimal {
   equals(lain: Desimal) {
     return this.n === lain.n;
   }
+  minus(lain: Desimal) {
+    return new Desimal(this.n - lain.n);
+  }
 }
 
 const state = {
@@ -36,7 +39,9 @@ const tx = {
   },
   receivable: {
     findMany: vi.fn(async (a: { where: { id: { in: string[] } } }) =>
-      state.piutang.filter((r) => a.where.id.in.includes(r.id)),
+      state.piutang
+        .filter((r) => a.where.id.in.includes(r.id))
+        .map((r) => ({ paidBeforeImport: new Desimal(0), ...r })),
     ),
     deleteMany: vi.fn(async (a: { where: { id: { in: string[] } } }) => {
       state.hapusPiutang.push(...a.where.id.in);

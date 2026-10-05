@@ -99,6 +99,8 @@ d("pre-order (inden): pesanan, rilis, kirim (test bed only)", () => {
     await prisma.salesHistory.deleteMany({ where: { itemId: { in: seededIds(items) } } });
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: { in: seededIds(items) } } });
     await prisma.taxInvoice.deleteMany({ where: { delivery: { order: { storeId: { in: seededIds(stores) } } } } });
+    // Nota = piutang: hapus piutangnya SEBELUM notanya (emulasi relasi 1:1 Prisma gagal pada deleteMany banyak nota).
+    await prisma.receivable.deleteMany({ where: { storeId: { in: seededIds(stores) } } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { order: { storeId: { in: seededIds(stores) } } } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: seededIds(items) } } });
     await prisma.stockReservation.deleteMany({ where: { itemId: { in: seededIds(items) } } });

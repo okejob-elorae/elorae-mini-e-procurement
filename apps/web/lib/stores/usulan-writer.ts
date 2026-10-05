@@ -308,12 +308,17 @@ export async function tolakUsulanToko(input: {
   if (alasan === "") return { ok: false, code: "ALASAN_WAJIB" };
   if (alasan.length > BATAS_USULAN.alasan) return { ok: false, code: "ALASAN_TERLALU_PANJANG" };
 
-  const hasil = await prisma.$transaction(async (tx) => {
+  // Serializable seperti setujui: `updateMany where status` bukan compare-and-swap
+  // di Prisma 7, jadi transaksi biasa membiarkan tolak menimpa usulan yang baru
+  // saja DISETUJUI (atau dua penolakan sama-sama tercatat). Yang kalah diulang
+  // dan membaca status barunya.
+  const hasil = await runSerializable(async (tx) => {
     const usulan = await tx.storeProposal.findUnique({
       where: { id: input.proposalId },
       select: { id: true, status: true, name: true, proposedById: true },
     });
     if (!usulan) return { ok: false as const, code: "TIDAK_DITEMUKAN" as const };
+    if (usulan.status !== "PENDING") return { ok: false as const, code: "SUDAH_DIPUTUSKAN" as const };
     const ditandai = await tx.storeProposal.updateMany({
       where: { id: usulan.id, status: "PENDING" },
       data: { status: "REJECTED", reviewedById: input.reviewerId, reviewedAt: new Date(), reviewNote: alasan },

@@ -3,9 +3,6 @@
 import { revalidatePath } from 'next/cache';
 import { Decimal } from 'decimal.js';
 import { prisma } from '@elorae/db';
-import { generateDocNumber } from '@/lib/docNumber';
-import { POStatus } from '@elorae/db';
-import { poSchema } from '@/lib/validations';
 import { verifyPinForAction } from '@/app/actions/security/pin-auth';
 import { hasPermission, requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
@@ -33,10 +30,19 @@ function poReceiptLineKey(itemId: string, variantSku?: string | null) {
   return `${itemId}\n${variantSku ?? ''}`;
 }
 
-export async function createPO(data: POFormData, userId: string) {
+/*
+ * Pelaku setiap tulisan PO (`createdById`, `changedById`, nama di notifikasi)
+ * diambil dari SESI. Argumen `_userId` di aksi-aksi di bawah dipertahankan
+ * supaya pemanggil lama tidak berubah, tetapi TIDAK dipakai: dulu nilainya
+ * ditulis apa adanya, jadi pemegang izin PO bisa mencatat persetujuan atau
+ * pembatalan atas nama orang lain di riwayat status.
+ */
+export async function createPO(data: POFormData, _userId?: string) {
+  void _userId;
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
+  if (!session?.user?.id) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_CREATE);
+  const userId = session.user.id;
 
   let po;
   try {
@@ -58,12 +64,14 @@ export async function createPO(data: POFormData, userId: string) {
 export async function updatePO(
   id: string,
   data: POFormData,
-  userId: string,
+  _userId?: string,
   pin?: string
 ) {
+  void _userId;
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
+  if (!session?.user?.id) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_EDIT);
+  const userId = session.user.id;
   
   const existing = await prisma.purchaseOrder.findUnique({
     where: { id },
@@ -91,7 +99,7 @@ export async function updatePO(
       existing.status as (typeof receivedPreservingStatuses)[number]
     );
 
-  const po = await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx) => {
     await assertLinesVariantSkusMatchItemDefinitions(tx.item, data.items);
 
     const oldItems = await tx.pOItem.findMany({
@@ -209,12 +217,14 @@ export async function updatePO(
 export async function changePOStatus(
   id: string,
   newStatus: 'SUBMITTED' | 'CANCELLED' | 'CLOSED',
-  userId: string,
+  _userId?: string,
   notes?: string,
   pin?: string
 ) {
+  void _userId;
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
+  if (!session?.user?.id) throw new Error('Unauthorized');
+  const userId = session.user.id;
   if (newStatus === 'SUBMITTED') {
     requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_APPROVE);
   } else {
@@ -273,14 +283,18 @@ export async function changePOStatus(
   return { id: po.id, status: po.status };
 }
 
-export async function submitPO(id: string, userId: string) {
-  return changePOStatus(id, 'SUBMITTED', userId, 'PO Submitted to supplier');
+export async function submitPO(id: string, _userId?: string) {
+  // Pelakunya dibaca `changePOStatus` dari sesi; argumen ini tidak diteruskan.
+  void _userId;
+  return changePOStatus(id, 'SUBMITTED', undefined, 'PO Submitted to supplier');
 }
 
-export async function cancelPO(id: string, userId: string, reason?: string, pin?: string) {
+export async function cancelPO(id: string, _userId?: string, reason?: string, pin?: string) {
+  void _userId;
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
+  if (!session?.user?.id) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_EDIT);
+  const userId = session.user.id;
 
   if (!pin) {
     throw new Error('PIN required to cancel/void a PO');

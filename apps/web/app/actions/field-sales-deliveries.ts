@@ -4,7 +4,11 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { recordFieldSalesDelivery, closeFieldSalesOrderRemainder } from "@/lib/field-sales/delivery/writer";
+import {
+  recordFieldSalesDelivery,
+  closeFieldSalesOrderRemainder,
+  type NomorPiutangDipakaiError,
+} from "@/lib/field-sales/delivery/writer";
 import { DeliveryError } from "@/lib/field-sales/errors";
 import { IndenBelumRilisError } from "@/lib/field-sales/inden";
 import { formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
@@ -29,9 +33,23 @@ export type DeliveryActionResult =
         | "OVER_DELIVER"
         | "INSUFFICIENT_STOCK"
         /** Pesanan pre-order yang jendelanya belum dirilis: stoknya belum dicadangkan. */
-        | "INDEN_BELUM_RILIS";
+        | "INDEN_BELUM_RILIS"
+        /**
+         * Nomor nota sudah dipegang piutang lain (impor/faktur manual), jadi nota tidak bisa
+         * menjadi piutang dan pengirimannya dibatalkan. `invoiceNo` menyebut nomornya.
+         */
+        | "NOMOR_PIUTANG_DIPAKAI";
       shortLines?: Array<{ orderLineId: string; requested: number; onHand: number }>;
+      invoiceNo?: string;
     };
+
+/**
+ * Dikenali dari namanya, bukan `instanceof`: tiruan modul penulis di spesifikasi aksi tidak
+ * membawa kelas galatnya, dan mengakses ekspor yang tidak ada di tiruan itu melempar.
+ */
+function nomorPiutangDipakai(e: unknown): e is NomorPiutangDipakaiError {
+  return e instanceof Error && e.name === "NomorPiutangDipakaiError";
+}
 
 /**
  * A `YYYY-MM-DD` calendar day at WIB midnight, or null for anything that is not one.
@@ -181,6 +199,7 @@ export async function recordDeliveryAction(input: {
   } catch (e) {
     if (e instanceof DeliveryError) return { ok: false, reason: e.code, shortLines: e.shortLines };
     if (e instanceof IndenBelumRilisError) return { ok: false, reason: "INDEN_BELUM_RILIS" };
+    if (nomorPiutangDipakai(e)) return { ok: false, reason: "NOMOR_PIUTANG_DIPAKAI", invoiceNo: e.invoiceNo };
     throw e;
   }
   revalidatePath("/backoffice/field-sales-orders");
@@ -258,6 +277,20 @@ export async function updateDeliveryDatesAction(input: {
     });
     if (swapped.count === 0) return { kind: "CONFLICT" };
 
+    /*
+     * Nota = piutang: tanggal faktur dan jatuh tempo piutangnya ikut dibetulkan di transaksi yang
+     * sama, kalau tidak umur piutang dan "lewat tempo" terus memakai tanggal yang sudah dikoreksi.
+     * Nilai dan sisanya tidak disentuh. Nota lama yang belum punya piutang dibiarkan — itu urusan
+     * skrip backfill, bukan koreksi tanggal. Id piutangnya dicatat di jejak yang sama.
+     */
+    const piutang = await tx.receivable.findUnique({ where: { deliveryId: before.id }, select: { id: true } });
+    if (piutang) {
+      await tx.receivable.update({
+        where: { id: piutang.id },
+        data: { invoiceDate: parsedInvoiceDate, dueDate: parsedDueDate },
+      });
+    }
+
     await tx.auditLog.create({
       data: {
         userId: g.userId,
@@ -274,6 +307,7 @@ export async function updateDeliveryDatesAction(input: {
             dueDate: parsedDueDate.toISOString(),
           },
         },
+        metadata: { receivableId: piutang?.id ?? null },
         reason,
       },
     });

@@ -40,6 +40,7 @@ import {
 import { dinamis } from '@/lib/i18n/dinamis';
 import { alihkanBebanAction, tandaiBebanLunasAction } from '@/app/actions/store-returns';
 import type { BarisBeban } from '@/lib/receivables/dashboard-queries';
+import type { FakturBebanRingkas } from '@/lib/receivables/return-queries';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 const tanggal = (iso: string | null) =>
@@ -66,10 +67,13 @@ export function BebanClient({
   baris,
   kandidat,
   bolehMengelola,
+  faktur = {},
 }: {
   baris: BarisBeban[];
   kandidat: { id: string; name: string }[];
   bolehMengelola: boolean;
+  /** Faktur beban toko per id beban. */
+  faktur?: Record<string, FakturBebanRingkas>;
 }) {
   const t = useTranslations('bebanSelisih');
   const td = dinamis(t);
@@ -190,6 +194,14 @@ export function BebanClient({
                                 {t('orphanRow')}
                               </span>
                             )}
+                            {faktur[b.id] && (
+                              <span className="block text-xs text-muted-foreground">
+                                {t('invoiceRow', {
+                                  no: faktur[b.id].invoiceNo,
+                                  sisa: rupiah(faktur[b.id].outstanding),
+                                })}
+                              </span>
+                            )}
                           </>
                         ) : (
                           <span className="text-muted-foreground">{t('notAssigned')}</span>
@@ -235,14 +247,17 @@ export function BebanClient({
                             >
                               {t('reassign')}
                             </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={pending}
-                              onClick={() => lunaskan(b.id)}
-                            >
-                              {t('markSettled')}
-                            </Button>
+                            {/* Beban toko lunas lewat BKM atas fakturnya, bukan ditandai di sini. */}
+                            {!faktur[b.id] && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={pending}
+                                onClick={() => lunaskan(b.id)}
+                              >
+                                {t('markSettled')}
+                              </Button>
+                            )}
                           </span>
                         )}
                       </TableCell>
@@ -281,6 +296,15 @@ export function BebanClient({
                 </SelectContent>
               </Select>
             </div>
+            {/* Faktur beban mengikuti keputusannya — katakan sebelum disimpan. */}
+            {alih && penanggung === 'TOKO' && !faktur[alih.id] && (
+              <p className="text-xs text-muted-foreground">{t('reassignToTokoHint', { value: rupiah(alih.nilai) })}</p>
+            )}
+            {alih && penanggung !== 'TOKO' && faktur[alih.id] && (
+              <p className="text-xs text-muted-foreground">
+                {t('reassignFromTokoHint', { no: faktur[alih.id].invoiceNo })}
+              </p>
+            )}
             {penanggung === 'SALES' && (
               <div className="space-y-2">
                 <Label htmlFor="alih-orang">{t('bearerPerson')}</Label>

@@ -135,6 +135,7 @@ export async function daftarPiutang(opts?: LingkupPiutang): Promise<BarisPiutang
       dueDate: true,
       amount: true,
       outstanding: true,
+      paidBeforeImport: true,
       source: true,
       storeId: true,
       store: { select: { name: true } },
@@ -172,7 +173,7 @@ export async function daftarPiutang(opts?: LingkupPiutang): Promise<BarisPiutang
       nilaiDilunasiPiutangIni: angka(link.settledAmount),
     }));
 
-    const sisa = hitungSisaPiutang(angka(r.amount), klaimList);
+    const sisa = hitungSisaPiutang(angka(r.amount), klaimList, angka(r.paidBeforeImport));
 
     const klaimMenunggu = r.claimLinks.find((l) => l.paymentClaim.status === 'DIKIRIM');
     const tertahan = r.claimLinks

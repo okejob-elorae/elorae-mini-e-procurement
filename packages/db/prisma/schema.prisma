@@ -2613,6 +2613,7 @@ model Receivable {
   dueDate        DateTime
   amount         Decimal   @db.Decimal(15, 2)
   outstanding    Decimal   @db.Decimal(15, 2)
+  paidBeforeImport Decimal @default(0) @db.Decimal(15, 2)
   settledAt      DateTime?
   source         ReceivableSource @default(DELIVERY)
   deliveryId     String?   @unique
@@ -2784,6 +2785,7 @@ model ConsignmentCycle {
   reports       ConsignmentReport[]
   sold          ConsignmentSold[]
   commissions   ConsignmentCommission[]
+  payments      ConsignmentPayment[]
 
   @@unique([storeId, periodYear, periodMonth])
   @@index([storeId])
@@ -2866,6 +2868,24 @@ model ConsignmentSold {
 
   @@index([cycleId])
   @@index([itemId])
+}
+
+model ConsignmentPayment {
+  id            String    @id @default(cuid())
+  cycleId       String
+  amount        Decimal   @db.Decimal(15, 2)
+  paidOn        DateTime
+  method        String    @default("transfer")
+  note          String?   @db.Text
+  recordedById  String
+  cancelledAt   DateTime?
+  cancelledById String?
+  cancelReason  String?   @db.Text
+  createdAt     DateTime  @default(now())
+
+  cycle         ConsignmentCycle @relation(fields: [cycleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([cycleId])
 }
 
 model ConsignmentCommission {

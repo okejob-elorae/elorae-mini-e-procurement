@@ -12,13 +12,14 @@ import {
 import { getOverduePOs } from "@/lib/purchase-orders/queries";
 import { getMarketplaceKpi } from "@/lib/sales-orders/queries";
 import { ringkasPiutangBeranda } from "@/lib/dashboard/piutang-ringkas";
-import { serializeDashboardStats } from "@/lib/dashboard/serialize";
 import {
   buildActionItems,
   getActionItemCounts,
   getClaimsAwaitingVerification,
 } from "@/lib/dashboard/action-items";
 import { batasHariIniWib } from "@/lib/dashboard/hari-wib";
+import { hasPermission } from "@/lib/rbac";
+import { kartuBeranda, statistikBeranda } from "./kartu-beranda";
 import { DashboardPageClient } from "./DashboardPageClient";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +27,9 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
   const session = await auth();
   if (!session) redirect("/login");
+  const izin = session.user.permissions ?? [];
+  // Kartu yang tidak boleh dilihat tidak dimuat sama sekali — lihat `kartuBeranda`.
+  const kartu = kartuBeranda(izin);
 
   const [
     stats,
@@ -42,43 +46,45 @@ export default async function DashboardPage() {
   ] = await Promise.all([
     getDashboardStats(),
     getOverduePOs(),
-    getCOGSRawVsFinished(),
+    kartu.stok ? getCOGSRawVsFinished() : null,
     getRawMaterialShortage(),
-    getMarketplaceKpi(),
-    getOversoldInventory(),
-    getSalesmenSalesSummary(),
+    kartu.penjualanMarketplace ? getMarketplaceKpi() : null,
+    kartu.stok ? getOversoldInventory() : null,
+    kartu.penjualanLapangan ? getSalesmenSalesSummary() : null,
     getActionItemCounts(),
-    ringkasPiutangBeranda(),
-    getTrenPenjualan(),
-    getClaimsAwaitingVerification(),
+    kartu.piutang ? ringkasPiutangBeranda() : null,
+    kartu.tren ? getTrenPenjualan() : null,
+    kartu.klaimMenunggu ? getClaimsAwaitingVerification() : null,
   ]);
 
   /*
    * Folded from data the page already loaded rather than re-counted. The
    * overdue-promise row reuses the receivables summary above, so it states the
    * same number as the "Lewat janji bayar" line and the receivables page.
+   * Rows whose permission the viewer lacks are dropped HERE, not only in the
+   * panel: a hidden row still ships its count and rupiah to the browser.
    */
   const actionItems = buildActionItems({
     ...actionCounts,
     overduePOs: overduePOs.length,
     overduePOsAmount: overduePOs.reduce((s, po) => s + po.grandTotal, 0),
     draftPOs: stats.po.draft,
-    oversoldSkus: oversoldInventory.length,
-    unshippedOrders: marketplaceKpi.pendingFulfillmentCount,
-    overduePromises: { count: piutang.lewatJumlah, amount: piutang.lewatNilai },
-    claimsAwaitingVerification: klaimMenunggu,
-  });
+    oversoldSkus: oversoldInventory?.length ?? 0,
+    unshippedOrders: marketplaceKpi?.pendingFulfillmentCount ?? 0,
+    overduePromises: piutang ? { count: piutang.lewatJumlah, amount: piutang.lewatNilai } : undefined,
+    claimsAwaitingVerification: klaimMenunggu ?? undefined,
+  }).filter((item) => !item.permission || hasPermission(izin, item.permission));
 
   return (
     <Suspense fallback={null}>
       <DashboardPageClient
         actionItems={actionItems}
-        initialStats={serializeDashboardStats(stats)}
+        initialStats={statistikBeranda(stats, kartu)}
         overduePOCount={overduePOs.length}
         initialCogsRawVsFinished={cogsRawVsFinished}
         shortageCount={rawMaterialShortage.length}
         marketplaceKpi={marketplaceKpi}
-        oversoldCount={oversoldInventory.length}
+        oversoldCount={oversoldInventory ? oversoldInventory.length : null}
         initialSalesmenSales={salesmenSales}
         piutang={piutang}
         trenPenjualan={trenPenjualan}

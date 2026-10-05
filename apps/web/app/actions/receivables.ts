@@ -123,6 +123,9 @@ export type HasilAksiKlaim =
         | 'ALASAN_WAJIB'
         | 'GIRO_BELUM_CAIR'
         | 'BUKAN_GIRO_MENUNGGU'
+        | 'PEMERIKSA_SAMA'
+        | 'MELEBIHI_SISA'
+        | 'RETUR_TERPAKAI'
         | 'GAGAL';
     };
 
@@ -343,6 +346,7 @@ export type KodeKoreksi =
   | 'SUDAH_DIBATALKAN'
   | 'ALASAN_WAJIB'
   | 'RETUR_BEDA_TOKO'
+  | 'RETUR_TERPAKAI'
   | 'GAGAL';
 
 export type HasilKoreksiAksi = { ok: true } | { ok: false; kode: KodeKoreksi };

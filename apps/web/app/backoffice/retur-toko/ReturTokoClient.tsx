@@ -121,6 +121,7 @@ export function ReturTokoClient({
   const [catatanHitung, setCatatanHitung] = useState('');
   const [barangFisik, setBarangFisik] = useState<BarisBarang[]>([]);
   const [kirimFisik, setKirimFisik] = useState<(typeof KIRIM)[number]>('EKSPEDISI');
+  const [tanggalTerima, setTanggalTerima] = useState(hariIniWib());
 
   const [jodohBaris, setJodohBaris] = useState<BarisKerjaRetur | null>(null);
   // Hitungan gudang yatim yang dicatat ke toko yang salah (atau tanpa toko).
@@ -185,6 +186,7 @@ export function ReturTokoClient({
                   setNilaiFisik('');
                   setCatatanHitung('');
                   setKirimFisik('EKSPEDISI');
+                  setTanggalTerima(hariIniWib());
                   setTerimaTerbuka(true);
                 }}
               >
@@ -381,6 +383,7 @@ export function ReturTokoClient({
                                 // supaya bisa disandingkan per baris.
                                 setBarangFisik([]);
                                 setKirimFisik(b.caraKirim);
+                                setTanggalTerima(hariIniWib());
                                 setTerimaTerbuka(true);
                               }}
                             >
@@ -593,12 +596,8 @@ export function ReturTokoClient({
           <DialogHeader>
             <DialogTitle>{hitungBaris ? t('countTitle') : t('receiveOrphanTitle')}</DialogTitle>
             <DialogDescription>
-              {hitungBaris
-                ? t('countBody', {
-                    doc: hitungBaris.nomor,
-                    claimed: rupiah(hitungBaris.nilaiKlaim ?? 0),
-                  })
-                : t('receiveOrphanBody')}
+              {/* Klaim toko sengaja tidak disebut: yang dihitung barangnya, bukan angka notanya. */}
+              {hitungBaris ? t('countBodyButa', { doc: hitungBaris.nomor }) : t('receiveOrphanBody')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -608,7 +607,18 @@ export function ReturTokoClient({
               qtyLabel={t('colQtyPhysical')}
               katalog={katalog}
               jelaskanStok
+              qtyMulaiKosong
             />
+            <div className="space-y-2">
+              <Label htmlFor="nri-diterima">{t('receivedAtLabel')}</Label>
+              <TanggalInput
+                id="nri-diterima"
+                value={tanggalTerima}
+                max={hariIniWib()}
+                required
+                onChange={(e) => setTanggalTerima(e.target.value)}
+              />
+            </div>
             {barangFisik.length === 0 && (
               <div className="space-y-2">
                 <Label htmlFor="nri-nilai">{t('countedAmount')}</Label>
@@ -654,16 +664,18 @@ export function ReturTokoClient({
             <Button
               disabled={
                 pending ||
+                tanggalTerima === '' ||
                 (barangFisik.length === 0
                   ? nilaiFisik === '' || !(Number(nilaiFisik) >= 0)
-                  : !barangFisik.every((b) => b.itemName.trim() && b.qty >= 0))
+                  : // Kolom jumlah kosong (NaN) belum dihitung; nol sah kalau diketik.
+                    !barangFisik.every((b) => b.itemName.trim() && Number.isInteger(b.qty) && b.qty >= 0))
               }
               onClick={() =>
                 jalankan(
                   () =>
                     catatHitunganGudangAction({
                       storeReturnId: hitungBaris?.id ?? null,
-                      receivedAt: hariIniWib(),
+                      receivedAt: tanggalTerima,
                       deliveryMethod: hitungBaris ? hitungBaris.caraKirim : kirimFisik,
                       physicalAmount: Number(nilaiFisik),
                       items: barangFisik,

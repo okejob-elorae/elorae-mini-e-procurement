@@ -52,55 +52,97 @@ export async function buatPiutangManual(input: {
   // hari fakturnya dibuat — angka yang tidak berarti apa pun bagi siapa pun.
   if (input.dueDate < input.invoiceDate) return { ok: false, alasan: 'TEMPO_SEBELUM_FAKTUR' };
 
-  return runSerializable(async (tx) => {
-    const toko = await tx.store.findUnique({
-      where: { id: input.storeId },
-      select: { id: true, termsType: true },
-    });
-    if (!toko) return { ok: false as const, alasan: 'TOKO_TIDAK_DITEMUKAN' as const };
-    // Toko konsinyasi tidak melahirkan piutang: barangnya masih milik kita.
-    if (toko.termsType === 'KONSI') return { ok: false as const, alasan: 'TOKO_KONSI' as const };
+  return runSerializable((tx) =>
+    tulisPiutangManual(tx, {
+      invoiceNo: nomor,
+      storeId: input.storeId,
+      salesmanId: input.salesmanId ?? null,
+      invoiceDate: input.invoiceDate,
+      dueDate: input.dueDate,
+      olehUserId: input.olehUserId,
+      total,
+      items,
+    }),
+  );
+}
 
-    const kembar = await tx.receivable.findFirst({
-      where: { invoiceNo: nomor },
-      select: { id: true },
-    });
-    if (kembar) return { ok: false as const, alasan: 'NOMOR_SUDAH_ADA' as const };
+/**
+ * Tulis satu faktur manual DI DALAM transaksi pemanggil.
+ *
+ * Dipisah supaya penulis lain — beban selisih retur yang ditanggung toko —
+ * bisa melahirkan faktur di transaksi yang sama dengan keputusannya: keputusan
+ * tanpa faktur, atau faktur tanpa keputusan, keduanya tidak boleh tersisa.
+ * Penjagaan toko (ada, bukan konsinyasi) dan nomor kembar tetap di sini.
+ */
+export async function tulisPiutangManual(
+  tx: Prisma.TransactionClient,
+  input: {
+    invoiceNo: string;
+    storeId: string;
+    salesmanId?: string | null;
+    invoiceDate: Date;
+    dueDate: Date;
+    olehUserId: string;
+    total: number;
+    items?: BarisFaktur[];
+    /** Catatan pada faktur; untuk beban retur, penunjuk bebannya. */
+    note?: string | null;
+    /** Tambahan metadata jejak FAKTUR_MANUAL (mis. sumber beban retur). */
+    metadataJejak?: Record<string, unknown>;
+  },
+): Promise<{ ok: true; id: string } | { ok: false; alasan: AlasanGagalFaktur }> {
+  const nomor = input.invoiceNo;
+  const items = input.items ?? [];
+  const total = input.total;
 
-    const piutang = await tx.receivable.create({
-      data: {
-        invoiceNo: nomor,
-        storeId: input.storeId,
-        salesmanId: input.salesmanId ?? null,
-        invoiceDate: input.invoiceDate,
-        dueDate: input.dueDate,
-        amount: D(total),
-        // Faktur baru belum dibayar apa pun. Sisanya tetap dihitung ulang oleh
-        // pembacanya dari klaim yang menyentuhnya, jadi kolom ini cache.
-        outstanding: D(total),
-        source: 'MANUAL',
-        items: {
-          create: items.map((b) => ({
-            itemId: b.itemId ?? null,
-            itemName: b.itemName.trim(),
-            qty: b.qty,
-            price: D(b.price),
-            amount: D(b.qty * b.price),
-          })),
-        },
-      },
-      select: { id: true },
-    });
-
-    await catatJejak(tx, {
-      userId: input.olehUserId,
-      action: JEJAK.FAKTUR_MANUAL,
-      entityType: 'Receivable',
-      entityId: piutang.id,
-      changes: { after: { invoiceNo: nomor, storeId: input.storeId, amount: total } },
-      metadata: { jumlahBaris: items.length },
-    });
-
-    return { ok: true as const, id: piutang.id };
+  const toko = await tx.store.findUnique({
+    where: { id: input.storeId },
+    select: { id: true, termsType: true },
   });
+  if (!toko) return { ok: false as const, alasan: 'TOKO_TIDAK_DITEMUKAN' as const };
+  // Toko konsinyasi tidak melahirkan piutang: barangnya masih milik kita.
+  if (toko.termsType === 'KONSI') return { ok: false as const, alasan: 'TOKO_KONSI' as const };
+
+  const kembar = await tx.receivable.findFirst({
+    where: { invoiceNo: nomor },
+    select: { id: true },
+  });
+  if (kembar) return { ok: false as const, alasan: 'NOMOR_SUDAH_ADA' as const };
+
+  const piutang = await tx.receivable.create({
+    data: {
+      invoiceNo: nomor,
+      storeId: input.storeId,
+      salesmanId: input.salesmanId ?? null,
+      invoiceDate: input.invoiceDate,
+      dueDate: input.dueDate,
+      amount: D(total),
+      // Faktur baru belum dibayar apa pun. Sisanya tetap dihitung ulang oleh
+      // pembacanya dari klaim yang menyentuhnya, jadi kolom ini cache.
+      outstanding: D(total),
+      source: 'MANUAL',
+      ...(input.note ? { note: input.note } : {}),
+      items: {
+        create: items.map((b) => ({
+          itemId: b.itemId ?? null,
+          itemName: b.itemName.trim(),
+          qty: b.qty,
+          price: D(b.price),
+          amount: D(b.qty * b.price),
+        })),
+      },
+    },
+    select: { id: true },
+  });
+
+  await catatJejak(tx, {
+    userId: input.olehUserId,
+    action: JEJAK.FAKTUR_MANUAL,
+    entityType: 'Receivable',
+    entityId: piutang.id,
+    changes: { after: { invoiceNo: nomor, storeId: input.storeId, amount: total } },
+    metadata: { jumlahBaris: items.length, ...(input.metadataJejak ?? {}) },
+  });
+
+  return { ok: true as const, id: piutang.id };
 }

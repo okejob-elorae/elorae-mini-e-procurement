@@ -1,5 +1,7 @@
 import { prisma } from '@elorae/db';
 import { giliranRetur, langkahRetur, type LangkahRetur } from './rules';
+import { AWALAN_PENANDA_BEBAN, idBebanDariCatatan } from './return-writer';
+import { bacaSisaPiutang } from './writer';
 
 const angka = (v: unknown): number => Number(v ?? 0);
 
@@ -271,9 +273,42 @@ export type RincianRetur = {
     catatan: string | null;
     diputuskanOleh: string | null;
     diputuskanPada: string | null;
+    /** Faktur yang lahir dari beban yang ditanggung TOKO; `null` kalau tidak ada. */
+    faktur: FakturBebanRingkas | null;
   } | null;
   potongan: { docNo: string; amount: number; status: string }[];
 };
+
+export type FakturBebanRingkas = { id: string; invoiceNo: string; outstanding: number };
+
+/**
+ * Faktur beban toko per id beban.
+ *
+ * Tautannya penanda di catatan faktur (skema tidak punya kolomnya), jadi semua
+ * faktur beban dibaca sekali lalu dicocokkan di JS — jumlahnya kecil, dan satu
+ * kueri lebih murah dari satu `contains` per beban.
+ *
+ * Sisanya DIHITUNG ULANG dari klaim yang menyentuhnya (`bacaSisaPiutang`), bukan
+ * dibaca dari kolom `outstanding` — kolom itu cache, bukan kebenaran.
+ */
+export async function fakturBebanToko(chargeIds: string[]): Promise<Record<string, FakturBebanRingkas>> {
+  if (chargeIds.length === 0) return {};
+  const dicari = new Set(chargeIds);
+  const rows = await prisma.receivable.findMany({
+    where: { source: 'MANUAL', note: { contains: AWALAN_PENANDA_BEBAN } },
+    select: { id: true, invoiceNo: true, note: true },
+  });
+  const cocok = rows.flatMap((r) => {
+    const id = idBebanDariCatatan(r.note);
+    return id && dicari.has(id) ? [{ chargeId: id, r }] : [];
+  });
+  const sisa = await Promise.all(cocok.map(({ r }) => bacaSisaPiutang(prisma, r.id)));
+  const hasil: Record<string, FakturBebanRingkas> = {};
+  cocok.forEach(({ chargeId, r }, i) => {
+    hasil[chargeId] = { id: r.id, invoiceNo: r.invoiceNo, outstanding: sisa[i] ?? 0 };
+  });
+  return hasil;
+}
 
 /** Satu nota retur toko, kedua sisinya, siap dibandingkan per barang. */
 export async function rincianRetur(storeReturnId: string): Promise<RincianRetur | null> {
@@ -327,6 +362,7 @@ export async function rincianRetur(storeReturnId: string): Promise<RincianRetur 
 
   const nri = r.warehouseReturn;
   const beban = r.charges[0] ?? null;
+  const faktur = beban?.bearer === 'TOKO' ? ((await fakturBebanToko([beban.id]))[beban.id] ?? null) : null;
 
   return {
     baris: dariNrt({
@@ -369,6 +405,7 @@ export async function rincianRetur(storeReturnId: string): Promise<RincianRetur 
           catatan: beban.note,
           diputuskanOleh: beban.decidedBy?.name ?? null,
           diputuskanPada: beban.decidedAt?.toISOString() ?? null,
+          faktur,
         }
       : null,
     potongan: r.deductions.map((d) => ({

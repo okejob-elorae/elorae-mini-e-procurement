@@ -2,13 +2,15 @@
 
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/lib/auth';
-import { bolehMengelolaKonsi } from '@/lib/receivables/izin';
+import { bolehMemverifikasi, bolehMengelolaKonsi } from '@/lib/receivables/izin';
 import {
+  batalkanPembayaranToko,
   bayarKomisi,
   bukaKunci,
   bukaSiklus,
   catatLaporan,
   catatNomorDokumen,
+  catatPembayaranToko,
   kirimTitipan,
   kunciAngka,
   type AlasanGagalKonsi,
@@ -206,4 +208,61 @@ export async function bahanLaporanSpgAction(
   const items = await bahanLaporanSpg(cycleId);
   if (!items) return { ok: false, kode: 'TIDAK_DITEMUKAN' };
   return { ok: true, items };
+}
+
+/**
+ * Pembayaran toko dicatat oleh keuangan (`journals:manage`), bukan oleh admin
+ * konsinyasi: yang dicatat adalah uang yang sudah terlihat di rekening, dan
+ * memverifikasi uang masuk adalah tugas yang sama dengan memverifikasi BKM.
+ */
+async function butuhKeuangan(): Promise<string | null> {
+  const session = await auth();
+  if (!session?.user?.id) return null;
+  return bolehMemverifikasi(session.user.permissions) ? session.user.id : null;
+}
+
+export async function catatPembayaranTokoAction(input: {
+  cycleId: string;
+  jumlah: number;
+  tanggal: string;
+  cara: string;
+  catatan?: string;
+}): Promise<HasilAksiKonsi> {
+  const userId = await butuhKeuangan();
+  if (!userId) return { ok: false, kode: "TANPA_AKSES" };
+
+  const tanggal = tanggalWib(input.tanggal);
+  if (!tanggal) return { ok: false, kode: "TANGGAL_TIDAK_VALID" };
+
+  try {
+    const hasil = await catatPembayaranToko({
+      cycleId: input.cycleId,
+      jumlah: Number(input.jumlah),
+      tanggal,
+      cara: input.cara,
+      catatan: input.catatan,
+      olehUserId: userId,
+    });
+    if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    segarkan();
+    return { ok: true };
+  } catch (err) {
+    console.error("catatPembayaranToko gagal:", err);
+    return { ok: false, kode: "GAGAL" };
+  }
+}
+
+export async function batalkanPembayaranTokoAction(paymentId: string, alasan: string): Promise<HasilAksiKonsi> {
+  const userId = await butuhKeuangan();
+  if (!userId) return { ok: false, kode: "TANPA_AKSES" };
+
+  try {
+    const hasil = await batalkanPembayaranToko({ paymentId, alasan, olehUserId: userId });
+    if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    segarkan();
+    return { ok: true };
+  } catch (err) {
+    console.error("batalkanPembayaranToko gagal:", err);
+    return { ok: false, kode: "GAGAL" };
+  }
 }

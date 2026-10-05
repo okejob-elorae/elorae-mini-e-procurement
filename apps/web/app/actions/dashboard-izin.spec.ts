@@ -23,7 +23,15 @@ vi.mock("@/lib/dashboard/queries", () => {
       return nilai;
     });
   return {
-    getDashboardStats: baca({ po: { draft: 0 } }),
+    getDashboardStats: baca({
+      po: { draft: 2, submitted: 5, inProduction: 1, thisWeek: 3, overdue: 1, totalValue: 245_000_000 },
+      workOrders: { inProduction: 1, completedToday: 0 },
+      items: { activeCount: 120, lowStockCount: 3 },
+      suppliers: { activeCount: 4 },
+      inventory: { totalValue: 60_500_000 },
+      grnsThisWeek: 1,
+      movementsToday: 7,
+    }),
     getRawMaterialShortage: baca([]),
     getWorkOrderCountByStatus: baca([]),
     getCOGSRawVsFinished: baca({}),
@@ -38,7 +46,6 @@ const LEMPAR: Array<[string, () => Promise<unknown>]> = [
   ["getDashboardStats", () => aksi.getDashboardStats()],
   ["getRawMaterialShortage", () => aksi.getRawMaterialShortage()],
   ["getWorkOrderCountByStatus", () => aksi.getWorkOrderCountByStatus()],
-  ["getCOGSRawVsFinished", () => aksi.getCOGSRawVsFinished()],
   ["getSuppliersForReportFilter", () => aksi.getSuppliersForReportFilter()],
 ];
 
@@ -77,6 +84,52 @@ describe("aksi beranda — pagar dashboard:view", () => {
   }
 });
 
+/*
+ * Aksi statistik mengembalikan bentuk yang sama dengan yang dikirim halaman
+ * beranda (`statistikBeranda`): nilai persediaan Rp 60.500.000 dan nilai PO
+ * Rp 245.000.000 tidak digambar di mana pun, jadi tidak keluar lewat aksi.
+ */
+describe("getDashboardStats — tanpa nilai rupiah yang tidak digambar", () => {
+  for (const izin of [["dashboard:view"], ["dashboard:view", "inventory:view"], ["*"]]) {
+    it(`${izin.join("+")}: tanpa nilai persediaan dan nilai PO`, async () => {
+      state.sesi = { user: { id: "u1", permissions: izin } };
+      const hasil = JSON.stringify(await aksi.getDashboardStats());
+      expect(hasil).not.toContain("60500000");
+      expect(hasil).not.toContain("245000000");
+      expect(hasil).not.toContain("totalValue");
+    });
+  }
+
+  it("hitungan stok menipis hanya untuk pemegang inventory:view", async () => {
+    state.sesi = { user: { id: "u1", permissions: ["dashboard:view"] } };
+    expect((await aksi.getDashboardStats()).items).toBeNull();
+    state.sesi = { user: { id: "u1", permissions: ["dashboard:view", "inventory:view"] } };
+    expect((await aksi.getDashboardStats()).items).toEqual({ lowStockCount: 3 });
+  });
+});
+
+/*
+ * Nilai persediaan mengikuti kartu stok beranda (`kartuBeranda`): orang
+ * pembelian dan produksi membuka beranda tetapi tidak membaca nilai stok.
+ */
+describe("getCOGSRawVsFinished — butuh inventory:view selain beranda", () => {
+  for (const izin of [["dashboard:view"], ["inventory:view"], ["pwa:access"]]) {
+    it(`menolak ${izin.join("+")} sebelum membaca data`, async () => {
+      state.sesi = { user: { id: "u1", permissions: izin } };
+      await expect(aksi.getCOGSRawVsFinished()).rejects.toThrow(/Forbidden/);
+      expect(state.dibaca).toBe(0);
+    });
+  }
+
+  for (const izin of [["dashboard:view", "inventory:view"], ["*"]]) {
+    it(`boleh untuk ${izin.join("+")}`, async () => {
+      state.sesi = { user: { id: "u1", permissions: izin } };
+      await expect(aksi.getCOGSRawVsFinished()).resolves.toBeDefined();
+      expect(state.dibaca).toBe(1);
+    });
+  }
+});
+
 describe("ambilTrenPenjualanRentang — kode, bukan lemparan", () => {
   it("tanpa sesi → UNAUTHENTICATED", async () => {
     await expect(aksi.ambilTrenPenjualanRentang("2026-09-01", "2026-09-07")).resolves.toEqual({
@@ -97,7 +150,23 @@ describe("ambilTrenPenjualanRentang — kode, bukan lemparan", () => {
     });
   }
 
-  for (const izin of [["dashboard:view"], ["*"]]) {
+  // Grafiknya menggabungkan marketplace dan lapangan, jadi aturannya sama dengan kartu tren beranda.
+  for (const izin of [
+    ["dashboard:view"],
+    ["dashboard:view", "sales_orders:view"],
+    ["dashboard:view", "field_sales_orders:view"],
+  ]) {
+    it(`${izin.join("+")} → FORBIDDEN (tren semua saluran butuh kedua izin penjualan)`, async () => {
+      state.sesi = { user: { id: "u1", permissions: izin } };
+      await expect(aksi.ambilTrenPenjualanRentang("2026-09-01", "2026-09-07")).resolves.toEqual({
+        ok: false,
+        code: "FORBIDDEN",
+      });
+      expect(state.dibaca).toBe(0);
+    });
+  }
+
+  for (const izin of [["dashboard:view", "sales_orders:view", "field_sales_orders:view"], ["*"]]) {
     it(`${izin.join("+")} tetap mendapat tren`, async () => {
       state.sesi = { user: { id: "u1", permissions: izin } };
       await expect(aksi.ambilTrenPenjualanRentang("2026-09-01", "2026-09-07")).resolves.toEqual({

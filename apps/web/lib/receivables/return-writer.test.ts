@@ -206,6 +206,7 @@ const {
   tandaiBebanLunas,
   batalkanRetur,
   nilaiDariRincian,
+  alihkanBeban,
 } = await import('./return-writer');
 
 const HARI_INI = new Date('2026-08-26T00:00:00+07:00');
@@ -925,5 +926,104 @@ describe('catatReturToko — barang rusak dari pembeli (retur konter SPG)', () =
     state.returPembeliTerpakai = [{ spgSaleReturnLineId: 'rpl1', _sum: { qty: 2 } }];
     expect(await catatReturToko(SPG)).toEqual({ ok: false, alasan: 'RETUR_PEMBELI_MELEBIHI' });
     expect(await catatReturToko({ ...SPG, barisSpg: [{ ...SPG.barisSpg[0], qty: 1 }] })).toMatchObject({ ok: true });
+  });
+});
+
+describe('catatHitunganGudang — hitungan dimulai kosong, dua tangan', () => {
+  const DASAR = { warehouseUserId: 'g1', receivedAt: HARI_INI, deliveryMethod: 'SALES' as const };
+
+  it('menolak baris bernama yang jumlahnya belum diisi — tidak membuangnya diam-diam', async () => {
+    const h = await catatHitunganGudang({
+      ...DASAR,
+      storeReturnId: 'nrt1',
+      items: [
+        { itemName: 'Cat Tembok', qty: 2, price: 0 },
+        { itemName: 'Kuas', qty: Number.NaN, price: 0 },
+      ],
+      physicalAmount: 500_000,
+    });
+    expect(h).toEqual({ ok: false, alasan: 'HITUNGAN_KOSONG' });
+    expect(state.nriDibuat).toHaveLength(0);
+  });
+
+  it('menolak jumlah yang bukan bilangan bulat atau negatif', async () => {
+    for (const qty of [1.5, -1, null as unknown as number]) {
+      expect(
+        await catatHitunganGudang({ ...DASAR, storeReturnId: 'nrt1', items: [{ itemName: 'Cat Tembok', qty, price: 0 }], physicalAmount: 0 }),
+      ).toEqual({ ok: false, alasan: 'HITUNGAN_KOSONG' });
+    }
+  });
+
+  it('menerima nol yang diketik pada baris', async () => {
+    const h = await catatHitunganGudang({
+      ...DASAR,
+      storeReturnId: 'nrt1',
+      items: [{ itemName: 'Cat Tembok', qty: 0, price: 0 }],
+      physicalAmount: 0,
+    });
+    expect(h).toMatchObject({ ok: true });
+  });
+
+  it('mengembalikan klaim toko SESUDAH tersimpan, untuk dibandingkan di layar', async () => {
+    const h = await catatHitunganGudang({
+      ...DASAR,
+      storeReturnId: 'nrt1',
+      items: [{ itemName: 'Cat Tembok', qty: 2, price: 0 }],
+      physicalAmount: 666_000,
+    });
+    expect(h).toMatchObject({ ok: true, klaim: { nilai: 1_000_000, qty: 3 }, fisik: { nilai: 666_000, qty: 2 } });
+  });
+
+  it('menolak bila penghitung adalah pelapor notanya', async () => {
+    state.nrt = { ...state.nrt, salesmanId: 'g1' };
+    const h = await catatHitunganGudang({ ...DASAR, storeReturnId: 'nrt1', physicalAmount: 1_000_000 });
+    expect(h).toEqual({ ok: false, alasan: 'PENGHITUNG_SAMA_PELAPOR' });
+    expect(state.nriDibuat).toHaveLength(0);
+  });
+
+  it('menomori NRI dengan bulan WIB, juga di server UTC', async () => {
+    const zona = process.env.TZ;
+    process.env.TZ = 'UTC';
+    try {
+      // 1 September 00.00 WIB = 31 Agustus 17.00 UTC.
+      const h = await catatHitunganGudang({
+        ...DASAR,
+        storeReturnId: 'nrt1',
+        receivedAt: new Date('2026-09-01T00:00:00+07:00'),
+        physicalAmount: 1_000_000,
+      });
+      expect(h).toMatchObject({ ok: true, noNri: 'NRI/26/09/0001' });
+      // Tahun berganti di WIB lebih dulu.
+      const h2 = await catatHitunganGudang({
+        ...DASAR,
+        storeReturnId: 'nrt1',
+        receivedAt: new Date('2027-01-01T00:00:00+07:00'),
+        physicalAmount: 1_000_000,
+      });
+      expect(h2).toMatchObject({ ok: true, noNri: 'NRI/27/01/0001' });
+    } finally {
+      if (zona === undefined) delete process.env.TZ;
+      else process.env.TZ = zona;
+    }
+  });
+});
+
+describe('putuskanBeban / alihkanBeban — SALES wajib orangnya di server', () => {
+  it('putuskanBeban menolak SALES tanpa orang, sebelum menulis apa pun', async () => {
+    for (const bearerUserId of [undefined, null, '  ']) {
+      expect(
+        await putuskanBeban({ chargeId: 'b1', bearer: 'SALES', bearerUserId, alasan: 'x', olehUserId: 'u1' }),
+      ).toEqual({ ok: false, alasan: 'PENANGGUNG_WAJIB' });
+    }
+    expect(state.bebanUpdates).toHaveLength(0);
+  });
+
+  it('alihkanBeban menolak SALES tanpa orang', async () => {
+    state.beban = { ...state.beban, status: 'DITETAPKAN', bearer: 'GUDANG' };
+    expect(await alihkanBeban({ chargeId: 'b1', bearer: 'SALES', alasan: 'x', olehUserId: 'u1' })).toEqual({
+      ok: false,
+      alasan: 'PENANGGUNG_WAJIB',
+    });
+    expect(state.bebanUpdates).toHaveLength(0);
   });
 });

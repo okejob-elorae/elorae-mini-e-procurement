@@ -30,6 +30,7 @@ export function BarisBarangEditor({
   qtyLabel,
   katalog,
   jelaskanStok = false,
+  qtyMulaiKosong = false,
 }: {
   rows: BarisBarang[];
   /*
@@ -43,9 +44,15 @@ export function BarisBarangEditor({
   katalog: PilihanBarang[];
   /** Sisi gudang: pilihan katalog menentukan stok bergerak atau tidak. */
   jelaskanStok?: boolean;
+  /**
+   * Sisi hitung gudang: baris baru mulai TANPA jumlah (NaN, tampil kosong) dan
+   * kolom yang dikosongkan tetap kosong — bukan diam-diam jadi nol atau satu.
+   * Nol sah, asal diketik.
+   */
+  qtyMulaiKosong?: boolean;
 }) {
   const t = useTranslations('storeReturns');
-  const total = rows.reduce((s, r) => s + (r.qty || 0) * (r.price || 0), 0);
+  const total = rows.reduce((s, r) => s + (Number.isFinite(r.qty) ? r.qty : 0) * (r.price || 0), 0);
 
   const ubah = (i: number, patch: Partial<BarisBarang>) =>
     onChange((lama) => lama.map((r, n) => (n === i ? { ...r, ...patch } : r)));
@@ -58,7 +65,7 @@ export function BarisBarangEditor({
           type="button"
           size="sm"
           variant="ghost"
-          onClick={() => onChange((lama) => [...lama, { itemName: '', qty: 1, price: 0 }])}
+          onClick={() => onChange((lama) => [...lama, { itemName: '', qty: qtyMulaiKosong ? Number.NaN : 1, price: 0 }])}
         >
           <Plus className="mr-1 h-3.5 w-3.5" />
           {t('addItem')}
@@ -110,8 +117,12 @@ export function BarisBarangEditor({
                   type="number"
                   inputMode="numeric"
                   min={0}
-                  value={r.qty}
-                  onChange={(e) => ubah(i, { qty: Number(e.target.value) })}
+                  step={1}
+                  value={Number.isFinite(r.qty) ? r.qty : ''}
+                  placeholder={qtyMulaiKosong ? '—' : undefined}
+                  onChange={(e) =>
+                    ubah(i, { qty: qtyMulaiKosong && e.target.value === '' ? Number.NaN : Number(e.target.value) })
+                  }
                 />
               </div>
               <div className="w-32 space-y-1">

@@ -6960,7 +6960,8 @@
         "INSUFFICIENT_STOCK": "Not enough stock for this delivery.",
         "INVALID_DATES": "The due date cannot be earlier than the invoice date.",
         "CONFLICT": "Someone else just changed this nota's dates. Reload the page and try again.",
-        "INDEN_BELUM_RILIS": "This pre-order cannot be delivered yet: the goods have not arrived. Release the pre-order first on the Pre-orders (Inden) page."
+        "INDEN_BELUM_RILIS": "This pre-order cannot be delivered yet: the goods have not arrived. Release the pre-order first on the Pre-orders (Inden) page.",
+        "NOMOR_PIUTANG_DIPAKAI": "Delivery not recorded: the next nota numbers are already used by other receivables (imported or entered manually), so the nota cannot become a receivable. Ask a system administrator to check the clashing receivable numbers."
       }
     },
     "print": {
@@ -7104,7 +7105,10 @@
       "alasan": "Reason: {alasan}",
       "alasanLabel": "Cancellation reason",
       "dibatalkanPada": "Cancelled at"
-    }
+    },
+    "appealFinalPriceNetHint": "The final price is the NET price per piece — that is what the store is billed. Line promos are no longer deducted from a final price.",
+    "appealPromoDropped": "This line had the {promo} promo ({amount} off). Once it gets a final price, that promo no longer applies.",
+    "appealPromoDroppedUnnamed": "This line had a {amount} promo discount. Once it gets a final price, that promo no longer applies."
   },
   "promos": {
     "pageTitle": "Promos",
@@ -7583,7 +7587,29 @@
       "jubelioFeesNote": "Other Adjustments = Jubelio escrow fees/adjustments it doesn't itemize (e.g. transaction/campaign fees). Rows sum exactly to escrow."
     },
     "chooseFile": "Choose file",
-    "noFileChosen": "No file chosen"
+    "noFileChosen": "No file chosen",
+    "uploadDuplicate": "This settlement was already uploaded as \"{fileName}\" by {by} on {at}. The second upload was refused so the money is not journaled twice.",
+    "uploadDuplicateOpen": "Open the first upload",
+    "unknownUploader": "an unknown user",
+    "duplicateBadge": "Duplicate",
+    "duplicateBadgeTitle": "Duplicate of \"{fileName}\" ({at}). Delete the one that is not journaled.",
+    "duplicateCardTitle": "Duplicate upload",
+    "duplicateCardBody": "This settlement is identical (marketplace, seller, period and amount released) to \"{fileName}\" uploaded by {by} on {at}. Journaling both debits the bank and credits receivables twice — delete the one that is not journaled.",
+    "deleteUploadButton": "Delete upload",
+    "deleteUploadTitle": "Delete this settlement upload?",
+    "deleteUploadDescription": "Only an upload that has not been journaled can be deleted. Its settlement lines and matching results are removed too; a summary stays in the audit log.",
+    "deleteUploadReason": "Reason (required)",
+    "deleteUploadConfirm": "Delete",
+    "deleteUploadPending": "Deleting…",
+    "deleteUploadSuccess": "Settlement upload deleted",
+    "deleteUploadErr": {
+      "ALASAN_WAJIB": "A reason is required.",
+      "TIDAK_DITEMUKAN": "Settlement not found — it may already have been deleted.",
+      "SUDAH_DIJURNAL": "This settlement is already journaled, so it cannot be deleted.",
+      "FORBIDDEN": "You do not have permission to manage settlements.",
+      "ERROR": "Delete failed. Please try again."
+    },
+    "postJournalDuplicateHint": "A duplicate upload cannot be journaled — delete one of them first."
   },
   "financeJournals": {
     "pageTitle": "Journals",
@@ -8069,7 +8095,9 @@
       "INVALID_STATE": "This action cannot be performed on the invoice's current status.",
       "INVALID_REQUEST": "The submitted data is invalid.",
       "CONFLICT": "The invoice status was just changed by someone else. Reload the page and try again.",
-      "ERROR": "Something went wrong. Please try again."
+      "ERROR": "Something went wrong. Please try again.",
+      "NOMOR_FAKTUR_GANDA": "This tax invoice serial number is already used on another invoice.",
+      "NOMOR_FAKTUR_FORMAT": "A tax invoice serial number must be 13–17 digits, e.g. 010.000-24.00000001 (e-Faktur) or a 17-digit Coretax number."
     }
   },
   "dashboardActions": {
@@ -8421,7 +8449,9 @@
     "errPENGGANTI_MASIH_BERLAKU": "The old payment report is still active. Withdraw or cancel it before reporting again.",
     "errPENGGANTI_BUKAN_MILIK": "The old payment report is not yours.",
     "errSUDAH_DIGANTI": "The old payment report already has a replacement — the same money cannot be reported twice.",
-    "errTOKO_TIDAK_DIIZINKAN": "These invoices are not yours to collect — the store is held by another salesperson. Ask the office to assign the collection to you."
+    "errTOKO_TIDAK_DIIZINKAN": "These invoices are not yours to collect — the store is held by another salesperson. Ask the office to assign the collection to you.",
+    "errPEMERIKSA_SAMA": "You reported or recorded this payment receipt, so you cannot decide it yourself. Ask another finance admin to review it.",
+    "errRETUR_TERPAKAI": "That return note has already been deducted in full on another payment receipt. Pick another note or reduce the deduction to the remaining amount shown."
   },
   "collections": {
     "pageTitle": "Collection notes",
@@ -8729,7 +8759,17 @@
     "colVariant": "Variant",
     "colCondition": "Condition",
     "conditionPair": "{klaim} → {fisik}",
-    "errADA_BARIS_RUSAK": "This note sends back damaged goods (from a delivery or from a shopper) that belong to its original store, so it cannot be moved. Cancel it and record it again at the right store."
+    "errADA_BARIS_RUSAK": "This note sends back damaged goods (from a delivery or from a shopper) that belong to its original store, so it cannot be moved. Cancel it and record it again at the right store.",
+    "countBodyButa": "{doc} — count the goods that actually arrived. The store's claim is deliberately not shown here.",
+    "receivedAtLabel": "Date goods received",
+    "assignTokoInvoiceHint": "The {value} shortfall becomes a new invoice BEBAN/{doc} for the store, due per the store's payment terms. The original invoice is released.",
+    "chargeInvoice": "Billed through invoice {no} · outstanding {sisa}.",
+    "errPENGHITUNG_SAMA_PELAPOR": "The counter reported this note. The count must be recorded by someone else.",
+    "errHITUNGAN_KOSONG": "Some lines have no quantity yet. Type 0 if nothing arrived.",
+    "errPENANGGUNG_WAJIB": "Choose the salesperson who bears it.",
+    "errTOKO_KONSI": "Consignment stores have no receivables, so the shortfall cannot be billed to the store. Record it as lost goods borne by the store, or choose another bearer.",
+    "errPIUTANG_BEBAN_SUDAH_DITAGIH": "This store charge invoice is already in collection (a payment claim or collection note in any status, or an open collection task), so it cannot be removed and the charge can no longer be moved away from the store.",
+    "errDITAGIH_LEWAT_PIUTANG": "A store charge is billed through its invoice. It is settled by a verified payment claim, not marked here."
   },
   "foto": {
     "pick": "Take or choose a photo",
@@ -8945,7 +8985,18 @@
     "orphanWarning": "{count} charges are assigned to a salesman without naming one. Until that is fixed they appear on nobody's screen — reassign to complete them.",
     "okReassigned": "Charge reassigned.",
     "save": "Save",
-    "errALASAN_WAJIB": "Write the reason."
+    "errALASAN_WAJIB": "Write the reason.",
+    "invoiceRow": "Invoice {no} · outstanding {sisa}",
+    "reassignToTokoHint": "A new invoice of {value} will be created for the store.",
+    "reassignFromTokoHint": "Invoice {no} will be removed — only possible while it has not been collected.",
+    "errPENANGGUNG_WAJIB": "Choose the salesperson who bears it.",
+    "errTOKO_KONSI": "Consignment stores have no receivables, so the shortfall cannot be billed to the store. Record it as lost goods borne by the store, or choose another bearer.",
+    "errPIUTANG_BEBAN_SUDAH_DITAGIH": "This store charge invoice is already in collection (a payment claim or collection note in any status, or an open collection task), so it cannot be removed and the charge can no longer be moved away from the store.",
+    "errDITAGIH_LEWAT_PIUTANG": "A store charge is billed through its invoice. It is settled by a verified payment claim, not marked here.",
+    "errTOKO_TIDAK_DITEMUKAN": "Store not found.",
+    "errTIDAK_ADA_SELISIH": "There is no shortfall to assign.",
+    "errNOMOR_BENTROK": "The invoice number clashed with one just created. Try saving again.",
+    "errNILAI_TIDAK_VALID": "That value is not valid."
   },
   "pwaPiutang": {
     "pageTitle": "Collections",
@@ -9088,7 +9139,22 @@
     "qtyDiterima": "Quantity received",
     "tidakMasukStok": "Does not go into sellable stock.",
     "nilaiPerBarisHint": "Filled in from the line counts. You may change it — the figure saved is the one written here.",
-    "kembaliDashboard": "Back to dashboard"
+    "kembaliDashboard": "Back to dashboard",
+    "countBodyButa": "{doc} · {store}. Count the goods that actually arrived. The store's claim is shown after the count is saved.",
+    "jumlahBarisSaja": "{baris} item lines",
+    "milikSendiri": "You reported this note. Ask a warehouse colleague to count it.",
+    "receivedAtLabel": "Date goods received",
+    "qtyBelumDiisi": "Fill in the quantity received on every line — type 0 if nothing arrived.",
+    "hasilTitle": "Count saved",
+    "hasilBody": "{nri} for note {doc}. The store's claim can now be seen.",
+    "hasilFisik": "Received",
+    "hasilKlaim": "Store's claim",
+    "hasilPotong": "{qty} pcs",
+    "hasilSelisih": "{value} short of the claim — the office decides who bears it.",
+    "hasilCocok": "Received equals or exceeds the claim. No shortfall.",
+    "tutup": "Close",
+    "errPENGHITUNG_SAMA_PELAPOR": "You reported this note. Someone else must count it.",
+    "errHITUNGAN_KOSONG": "Some lines have no quantity yet. Type 0 if nothing arrived."
   },
   "konsinyasi": {
     "pageTitle": "Consignment",
@@ -9109,7 +9175,7 @@
     "why_bayar_spg": "Figures are locked; the SPG commission has not been paid.",
     "why_nota": "Salary settled. The sales admin has not issued a nota.",
     "why_pajak": "The nota exists. The tax admin has not recorded the tax invoice number.",
-    "why_selesai": "Chain complete — all three numbers present.",
+    "why_selesai": "Chain complete — all three numbers present and the shop's bill is paid.",
     "turnOf": "{who}'s turn —",
     "who_spg_dan_toko": "the SPG and the shop",
     "who_admin_konsi": "the consignment admin",
@@ -9253,7 +9319,39 @@
       "promoFrozen": "Frozen when locked.",
       "promoChanged": "This month's SPG receipts changed after locking — the receipts now give an Elorae discount of {value}. The bill keeps the frozen figure; unlock to recalculate.",
       "storeShare": "The store's share of a promo reduces the store's own margin and does not change the bill.",
-      "lockPreview": "The promo discount Elorae carries ({promo}) is frozen too — bill to the store {total}, before any lost-goods charge."
+      "lockPreview": "The promo discount Elorae carries ({promo}) is frozen too — bill to the store {total}, before any lost-goods charge.",
+      "paid": "Paid by the shop",
+      "remaining": "Remaining bill",
+      "remainingShort": "{value} left",
+      "settled": "Paid in full",
+      "paymentsTitle": "Shop payments",
+      "paymentsHint": "Instalments allowed. Finance records them once the money shows in the bank; the remainder is computed from the bill frozen at lock.",
+      "financeOnly": "Payments are recorded by finance.",
+      "noPayments": "No payments yet.",
+      "recordPayment": "Record payment",
+      "recordTitle": "Record shop payment",
+      "recordBody": "Remaining bill {value}. Only record money that already shows in the bank statement.",
+      "amount": "Amount (Rp)",
+      "fillRemaining": "Fill remainder",
+      "overRemaining": "More than the remaining bill.",
+      "date": "Payment date",
+      "method": "Method",
+      "method_transfer": "Transfer",
+      "method_tunai": "Cash",
+      "method_giro": "Giro",
+      "note": "Note",
+      "notePlaceholder": "e.g. BCA 3 Oct, reference number",
+      "save": "Save",
+      "close": "Close",
+      "recordedBy": "Recorded by {name} · {date}",
+      "cancelledBy": "Cancelled by {name} · {date} — {reason}",
+      "cancelPayment": "Cancel",
+      "cancelTitle": "Cancel payment",
+      "cancelBody": "The {value} payment of {date} stops reducing the bill. The row stays on record with its reason.",
+      "cancelReason": "Reason",
+      "cancelConfirm": "Cancel payment",
+      "okRecorded": "Payment recorded.",
+      "okCancelled": "Payment cancelled."
     },
     "cocokBuku": {
       "title": "Stock book reconciliation",
@@ -9296,7 +9394,18 @@
       "colRecordedLost": "Already recorded lost",
       "recordedLostHint": "Goods already recorded lost from a stock count or a short delivery are not counted again as possibly lost."
     },
-    "lossDeducted": "Lost goods deduction {value} · paid out {paid}"
+    "lossDeducted": "Lost goods deduction {value} · paid out {paid}",
+    "stage_bayar_toko": "Awaiting shop payment",
+    "why_bayar_toko": "The nota and tax invoice exist; the shop has not paid its bill in full. Finance records each payment once the money shows in the bank account.",
+    "errADA_NOTA": "A nota number has been recorded. The nota states the amount already billed to the shop, so the figures can no longer be unlocked.",
+    "errADA_FAKTUR_PAJAK": "A tax invoice number has been recorded. It states the amount already reported to the tax office, so the figures can no longer be unlocked.",
+    "errADA_PEMBAYARAN_TOKO": "The shop has already paid part or all of this bill. Cancel any wrongly recorded payment (with a reason) before unlocking.",
+    "errMELEBIHI_SISA": "The amount is more than the remaining bill. Check again — part of it may already be recorded.",
+    "errCARA_BAYAR_TIDAK_VALID": "Unknown payment method.",
+    "errTANGGAL_DI_DEPAN": "The payment date cannot be after today.",
+    "errALASAN_WAJIB": "Enter a reason.",
+    "errSUDAH_DIBATALKAN": "This payment is already cancelled.",
+    "errPEMBAYARAN_TIDAK_DITEMUKAN": "Payment not found."
   },
   "jenisPotongan": {
     "pageTitle": "Deduction types",
@@ -10387,7 +10496,10 @@
     "fieldBank": "Bank",
     "fieldIssued": "Issue date",
     "fieldEffective": "Effective date",
-    "clearedOn": "Cleared {date}."
+    "clearedOn": "Cleared {date}.",
+    "errPEMERIKSA_SAMA": "You reported or recorded this giro payment receipt, so you cannot decide it yourself. Ask another finance admin to review it.",
+    "errMELEBIHI_SISA": "This invoice was already settled by another payment receipt that was verified first. Reject this giro or ask the salesperson to correct the amount.",
+    "errRETUR_TERPAKAI": "A return note on this giro receipt has already been deducted in full on another receipt. Reject one of the receipts first."
   },
   "storeStockTargets": {
     "title": "Store stock targets",

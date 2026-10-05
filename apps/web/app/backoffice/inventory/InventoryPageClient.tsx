@@ -42,7 +42,7 @@ import {
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { toast } from 'sonner';
 import { useSession } from 'next-auth/react';
-import { getInventorySnapshot } from '@/lib/inventory/costing';
+import { getInventorySnapshot } from '@/app/actions/nilai-persediaan';
 import {
   getGRNs,
   getRollsByGrnId,

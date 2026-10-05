@@ -1,5 +1,11 @@
-'use server';
-
+/**
+ * Pustaka biaya persediaan (rata-rata bergerak, nilai, ringkasan stok).
+ *
+ * SENGAJA tanpa "use server": dengan arahan itu setiap ekspor di sini — termasuk
+ * penulis `InventoryValue` — menjadi titik akhir yang bisa dipanggil siapa pun
+ * yang masuk. Komponen klien membaca lewat `@/app/actions/nilai-persediaan`.
+ * Dijaga `lib/tanpa-use-server.test.ts`.
+ */
 import { Decimal } from 'decimal.js';
 import { Prisma } from '@elorae/db';
 import { prisma } from '@elorae/db';

@@ -44,6 +44,18 @@ function kirimKabar(salesmanId: string, kabar: Kabar): void {
   void kabariPengguna(salesmanId, kabar);
 }
 
+/**
+ * Harga final banding yang tidak bisa menjadi harga jual: negatif atau bukan angka terhingga.
+ * Aksi persetujuan sudah menyaring bentuk ini; penulis tetap menolaknya karena penulis adalah
+ * satu-satunya yang menyimpan harga.
+ */
+export class HargaFinalTidakSahError extends Error {
+  constructor(readonly lineId: string, readonly finalUnitPrice: number) {
+    super(`Harga final tidak sah untuk baris ${lineId}: ${finalUnitPrice}`);
+    this.name = "HargaFinalTidakSahError";
+  }
+}
+
 type CreateLine = {
   itemId: string;
   variantSku: string;
@@ -585,25 +597,42 @@ export async function approveFieldSalesOrder(input: {
     }
 
     /**
-     * PUTUS: apply owner's final appeal prices (Decision A — no promo recompute) and recompute the
-     * order total. Create-time discounts are kept as-is. Stock consumption and SalesHistory happen
-     * at delivery, not here (see delivery/writer.ts).
+     * PUTUS: terapkan harga final banding dari pemilik lalu hitung ulang total pesanan. Stok dan
+     * SalesHistory baru bergerak saat pengiriman (lihat delivery/writer.ts).
+     *
+     * Harga final = harga BERSIH per potong (keputusan pemilik). Promo baris dihitung dari harga
+     * toko saat pesanan dibuat, jadi baris yang diberi harga final kehilangan potongan promonya
+     * (`discountAmount` 0, `appliedPromoId` dilepas) — kalau tidak, 100.000 promo 10% yang
+     * dibanding 80.000 tertagih 70.000. Promo tingkat PESANAN tetap "honor-at-create": nilainya
+     * dihormati apa adanya dan tidak dihitung ulang, sama seperti sebelum ada banding.
      */
     const finalPriceByLineId = new Map((input.finalPrices ?? []).map((f) => [f.lineId, f.finalUnitPrice]));
+    for (const [lineId, harga] of finalPriceByLineId) {
+      if (!Number.isFinite(harga) || harga < 0) throw new HargaFinalTidakSahError(lineId, harga);
+    }
     let ajuanDiubah = 0;
     let ajuanDiterima = 0;
     let subtotal = 0;
     const finalLines: Array<
-      Omit<(typeof order.lines)[number], "unitPrice" | "lineTotal"> & { unitPrice: number; lineTotal: number }
+      Omit<(typeof order.lines)[number], "unitPrice" | "lineTotal" | "discountAmount"> & {
+        unitPrice: number;
+        lineTotal: number;
+        discountAmount: number;
+      }
     > = [];
     for (const l of order.lines) {
       let unitPrice = Number(l.unitPrice);
       let lineTotal = Number(l.lineTotal);
+      let discountAmount = Number(l.discountAmount);
       // Only an appealed line (requestedUnitPrice set) may be repriced; ignore stray entries.
       if (l.requestedUnitPrice !== null && finalPriceByLineId.has(l.id)) {
         unitPrice = finalPriceByLineId.get(l.id)!;
         lineTotal = l.qty * unitPrice;
-        await tx.fieldSalesOrderLine.update({ where: { id: l.id }, data: { unitPrice, lineTotal } });
+        discountAmount = 0;
+        await tx.fieldSalesOrderLine.update({
+          where: { id: l.id },
+          data: { unitPrice, lineTotal, discountAmount: 0, appliedPromoId: null },
+        });
       }
       // Untuk kabar ke salesman: ajuan yang tidak diberi harga akhir jatuh ke harga
       // toko, jadi itu juga "diubah" dari sudut pandang yang mengajukan.
@@ -612,9 +641,9 @@ export async function approveFieldSalesOrder(input: {
         else ajuanDiubah += 1;
       }
       subtotal += lineTotal;
-      finalLines.push({ ...l, unitPrice, lineTotal });
+      finalLines.push({ ...l, unitPrice, lineTotal, discountAmount });
     }
-    const discountTotal = finalLines.reduce((s, l) => s + Number(l.discountAmount), 0);
+    const discountTotal = finalLines.reduce((s, l) => s + l.discountAmount, 0);
     const total = subtotal - discountTotal - Number(order.orderDiscountAmount);
 
     /*

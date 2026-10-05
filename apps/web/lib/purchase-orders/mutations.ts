@@ -25,11 +25,6 @@ export type OfflinePOCreatePayload = {
   }>;
 };
 
-function parseDate(val: Date | string | null | undefined): Date | undefined {
-  if (val == null || val === "") return undefined;
-  return val instanceof Date ? val : new Date(val);
-}
-
 /** Full PO create (backoffice) — matches createPO action transaction */
 export async function createPurchaseOrder(
   data: POFormData,
@@ -103,43 +98,4 @@ export async function createPurchaseOrder(
 
     return created;
   });
-}
-
-/** Offline sync — lead-time columns stay null (no chain load offline). */
-export async function createPurchaseOrderFromOfflinePayload(
-  payload: OfflinePOCreatePayload,
-  userId: string
-) {
-  const items = payload.items.map((item) => ({
-    itemId: item.itemId,
-    variantSku: item.variantSku?.trim() || null,
-    qty: item.qty,
-    price: item.price,
-    ppnIncluded: item.ppnIncluded ?? false,
-    uomId: item.uomId ?? "",
-    notes: item.notes ?? null,
-  }));
-
-  if (items.some((i) => !i.uomId)) {
-    const itemIds = [...new Set(items.map((i) => i.itemId))];
-    const dbItems = await prisma.item.findMany({
-      where: { id: { in: itemIds } },
-      select: { id: true, uomId: true },
-    });
-    const uomByItem = new Map(dbItems.map((r) => [r.id, r.uomId]));
-    for (const line of items) {
-      if (!line.uomId) line.uomId = uomByItem.get(line.itemId) ?? "";
-    }
-  }
-
-  const normalized: POFormData = {
-    supplierId: payload.supplierId,
-    etaDate: parseDate(payload.etaDate) ?? new Date(),
-    paymentDueDate: parseDate(payload.paymentDueDate),
-    notes: payload.notes,
-    terms: payload.terms,
-    items: items as POFormData["items"],
-  };
-
-  return createPurchaseOrder(normalized, userId, { applyLeadTime: false });
 }

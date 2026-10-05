@@ -6960,7 +6960,8 @@
         "INSUFFICIENT_STOCK": "Stok tidak cukup untuk pengiriman ini.",
         "INVALID_DATES": "Tanggal jatuh tempo tidak boleh lebih awal dari tanggal nota.",
         "CONFLICT": "Tanggal nota ini baru saja diubah orang lain. Muat ulang halaman dan coba lagi.",
-        "INDEN_BELUM_RILIS": "Pesanan pre-order ini belum bisa dikirim: barangnya belum datang. Rilis dulu pre-order-nya di halaman Pre-order (Inden)."
+        "INDEN_BELUM_RILIS": "Pesanan pre-order ini belum bisa dikirim: barangnya belum datang. Rilis dulu pre-order-nya di halaman Pre-order (Inden).",
+        "NOMOR_PIUTANG_DIPAKAI": "Pengiriman tidak dicatat: beberapa nomor nota berikutnya sudah dipakai piutang lain (impor atau faktur manual), jadi nota tidak bisa menjadi piutang. Hubungi admin sistem untuk memeriksa nomor piutang yang bentrok."
       }
     },
     "print": {
@@ -7104,7 +7105,10 @@
       "alasan": "Alasan: {alasan}",
       "alasanLabel": "Alasan dibatalkan",
       "dibatalkanPada": "Dibatalkan pada"
-    }
+    },
+    "appealFinalPriceNetHint": "Harga final adalah harga BERSIH per potong — itulah yang ditagih ke toko. Promo baris tidak dipotongkan lagi dari harga final.",
+    "appealPromoDropped": "Baris ini mendapat promo {promo} (potongan {amount}). Begitu diberi harga final, promo itu tidak berlaku lagi.",
+    "appealPromoDroppedUnnamed": "Baris ini mendapat potongan promo {amount}. Begitu diberi harga final, promo itu tidak berlaku lagi."
   },
   "promos": {
     "pageTitle": "Promo",
@@ -7583,7 +7587,29 @@
       "jubelioFeesNote": "Penyesuaian Lain = biaya/penyesuaian escrow Jubelio yang tidak dirinci (mis. biaya transaksi/kampanye). Baris dijumlahkan tepat ke escrow."
     },
     "chooseFile": "Pilih berkas",
-    "noFileChosen": "Belum ada berkas"
+    "noFileChosen": "Belum ada berkas",
+    "uploadDuplicate": "Settlement ini sudah pernah diunggah sebagai \"{fileName}\" oleh {by} pada {at}. Unggahan kedua ditolak supaya uangnya tidak dijurnal dua kali.",
+    "uploadDuplicateOpen": "Buka unggahan pertama",
+    "unknownUploader": "pengguna tak dikenal",
+    "duplicateBadge": "Kembar",
+    "duplicateBadgeTitle": "Kembar dengan \"{fileName}\" ({at}). Hapus yang belum dijurnal.",
+    "duplicateCardTitle": "Unggahan kembar",
+    "duplicateCardBody": "Settlement ini sama persis (marketplace, penjual, periode, dan uang dilepas) dengan \"{fileName}\" yang diunggah {by} pada {at}. Menjurnal keduanya mendebit bank dan mengkredit piutang dua kali — hapus salah satu yang belum dijurnal.",
+    "deleteUploadButton": "Hapus unggahan",
+    "deleteUploadTitle": "Hapus unggahan settlement ini?",
+    "deleteUploadDescription": "Hanya unggahan yang belum dijurnal yang bisa dihapus. Baris settlement dan hasil pencocokannya ikut terhapus; ringkasannya tetap tercatat di jejak audit.",
+    "deleteUploadReason": "Alasan (wajib)",
+    "deleteUploadConfirm": "Hapus",
+    "deleteUploadPending": "Menghapus…",
+    "deleteUploadSuccess": "Unggahan settlement dihapus",
+    "deleteUploadErr": {
+      "ALASAN_WAJIB": "Alasan wajib diisi.",
+      "TIDAK_DITEMUKAN": "Settlement tidak ditemukan — mungkin sudah dihapus.",
+      "SUDAH_DIJURNAL": "Settlement ini sudah dijurnal, jadi tidak bisa dihapus.",
+      "FORBIDDEN": "Anda tidak punya izin mengelola settlement.",
+      "ERROR": "Gagal menghapus. Silakan coba lagi."
+    },
+    "postJournalDuplicateHint": "Unggahan kembar tidak bisa dijurnal — hapus salah satunya dulu."
   },
   "financeJournals": {
     "pageTitle": "Jurnal",
@@ -8069,7 +8095,9 @@
       "INVALID_STATE": "Aksi ini tidak dapat dilakukan pada status faktur saat ini.",
       "INVALID_REQUEST": "Data yang dikirim tidak valid.",
       "CONFLICT": "Status faktur baru saja diubah oleh pengguna lain. Muat ulang halaman dan coba lagi.",
-      "ERROR": "Terjadi kesalahan. Silakan coba lagi."
+      "ERROR": "Terjadi kesalahan. Silakan coba lagi.",
+      "NOMOR_FAKTUR_GANDA": "Nomor seri faktur pajak ini sudah dipakai di nota lain.",
+      "NOMOR_FAKTUR_FORMAT": "Nomor seri faktur pajak harus 13–17 digit angka, misalnya 010.000-24.00000001 (e-Faktur) atau 17 digit Coretax."
     }
   },
   "dashboardActions": {
@@ -8421,7 +8449,9 @@
     "errPENGGANTI_MASIH_BERLAKU": "BKM lama masih berlaku. Tarik atau batalkan dulu sebelum melaporkan ulang.",
     "errPENGGANTI_BUKAN_MILIK": "BKM lama bukan laporan Anda.",
     "errSUDAH_DIGANTI": "BKM lama sudah punya pengganti — uang yang sama tidak bisa dilaporkan dua kali.",
-    "errTOKO_TIDAK_DIIZINKAN": "Faktur ini bukan tagihan Anda — tokonya dipegang sales lain. Minta kantor menugaskan penagihannya kepada Anda."
+    "errTOKO_TIDAK_DIIZINKAN": "Faktur ini bukan tagihan Anda — tokonya dipegang sales lain. Minta kantor menugaskan penagihannya kepada Anda.",
+    "errPEMERIKSA_SAMA": "Anda yang melaporkan atau mencatatkan BKM ini, jadi tidak bisa memutuskannya sendiri. Minta admin keuangan lain memeriksanya.",
+    "errRETUR_TERPAKAI": "Nota retur itu sudah dipotongkan di BKM lain sebesar nilainya. Pilih nota lain atau kurangi potongannya sampai sebesar sisa yang tertulis."
   },
   "collections": {
     "pageTitle": "Kontrabon / Tanda Terima",
@@ -8729,7 +8759,17 @@
     "colVariant": "Varian",
     "colCondition": "Kondisi",
     "conditionPair": "{klaim} → {fisik}",
-    "errADA_BARIS_RUSAK": "Nota ini mengirim balik barang rusak (dari kiriman atau dari pembeli) milik toko asalnya, jadi tidak bisa dipindah toko. Batalkan lalu catat ulang di toko yang benar."
+    "errADA_BARIS_RUSAK": "Nota ini mengirim balik barang rusak (dari kiriman atau dari pembeli) milik toko asalnya, jadi tidak bisa dipindah toko. Batalkan lalu catat ulang di toko yang benar.",
+    "countBodyButa": "{doc} — hitung barang yang benar-benar sampai. Klaim toko sengaja tidak ditampilkan di sini.",
+    "receivedAtLabel": "Tanggal barang diterima",
+    "assignTokoInvoiceHint": "Selisih {value} akan menjadi faktur baru BEBAN/{doc} atas nama toko, jatuh tempo menurut tempo toko. Faktur aslinya dilepas.",
+    "chargeInvoice": "Ditagih lewat faktur {no} · sisa {sisa}.",
+    "errPENGHITUNG_SAMA_PELAPOR": "Yang menghitung adalah pelapor nota ini. Hitungan harus dicatat orang lain.",
+    "errHITUNGAN_KOSONG": "Masih ada baris yang jumlahnya kosong. Ketik 0 kalau barangnya tidak ada.",
+    "errPENANGGUNG_WAJIB": "Pilih sales yang menanggungnya.",
+    "errTOKO_KONSI": "Toko konsinyasi tidak punya piutang, jadi selisihnya tidak bisa ditagihkan ke toko. Catat sebagai barang hilang dengan penanggung toko, atau pilih penanggung lain.",
+    "errPIUTANG_BEBAN_SUDAH_DITAGIH": "Faktur beban toko ini sudah masuk penagihan (BKM atau kontrabon, apa pun statusnya, atau tugas tagih yang masih terbuka), jadi tidak bisa dihapus dan bebannya tidak bisa lagi dialihkan dari toko.",
+    "errDITAGIH_LEWAT_PIUTANG": "Beban toko ditagih lewat fakturnya. Lunasnya mengikuti BKM yang terverifikasi, bukan ditandai di sini."
   },
   "foto": {
     "pick": "Ambil atau pilih foto",
@@ -8945,7 +8985,18 @@
     "orphanWarning": "{count} beban dibebankan ke sales tanpa menyebut orangnya. Selama begitu ia tidak akan pernah muncul di layar siapa pun — alihkan untuk melengkapinya.",
     "okReassigned": "Beban dialihkan.",
     "save": "Simpan",
-    "errALASAN_WAJIB": "Tulis alasannya."
+    "errALASAN_WAJIB": "Tulis alasannya.",
+    "invoiceRow": "Faktur {no} · sisa {sisa}",
+    "reassignToTokoHint": "Faktur baru sebesar {value} akan dibuat atas nama toko.",
+    "reassignFromTokoHint": "Faktur {no} akan dihapus — hanya bisa selama belum ditagih.",
+    "errPENANGGUNG_WAJIB": "Pilih sales yang menanggungnya.",
+    "errTOKO_KONSI": "Toko konsinyasi tidak punya piutang, jadi selisihnya tidak bisa ditagihkan ke toko. Catat sebagai barang hilang dengan penanggung toko, atau pilih penanggung lain.",
+    "errPIUTANG_BEBAN_SUDAH_DITAGIH": "Faktur beban toko ini sudah masuk penagihan (BKM atau kontrabon, apa pun statusnya, atau tugas tagih yang masih terbuka), jadi tidak bisa dihapus dan bebannya tidak bisa lagi dialihkan dari toko.",
+    "errDITAGIH_LEWAT_PIUTANG": "Beban toko ditagih lewat fakturnya. Lunasnya mengikuti BKM yang terverifikasi, bukan ditandai di sini.",
+    "errTOKO_TIDAK_DITEMUKAN": "Tokonya tidak ditemukan.",
+    "errTIDAK_ADA_SELISIH": "Tidak ada selisih yang perlu ditanggung.",
+    "errNOMOR_BENTROK": "Nomor faktur bentrok dengan yang baru saja dibuat. Coba simpan lagi.",
+    "errNILAI_TIDAK_VALID": "Nilainya tidak sah."
   },
   "pwaPiutang": {
     "pageTitle": "Tagihan",
@@ -9088,7 +9139,22 @@
     "qtyDiterima": "Jumlah diterima",
     "tidakMasukStok": "Tidak masuk stok jual.",
     "nilaiPerBarisHint": "Terisi dari hitungan per baris. Boleh diubah — angka yang tersimpan adalah yang tertulis di sini.",
-    "kembaliDashboard": "Kembali ke dashboard"
+    "kembaliDashboard": "Kembali ke dashboard",
+    "countBodyButa": "{doc} · {store}. Hitung barang yang benar-benar sampai. Klaim toko baru diperlihatkan sesudah hitungan disimpan.",
+    "jumlahBarisSaja": "{baris} baris barang",
+    "milikSendiri": "Anda pelapor nota ini. Minta rekan gudang yang menghitungnya.",
+    "receivedAtLabel": "Tanggal barang diterima",
+    "qtyBelumDiisi": "Isi jumlah yang sampai di setiap baris — ketik 0 kalau barangnya tidak ada.",
+    "hasilTitle": "Hitungan tersimpan",
+    "hasilBody": "{nri} untuk nota {doc}. Sekarang klaim toko boleh dilihat.",
+    "hasilFisik": "Fisik diterima",
+    "hasilKlaim": "Klaim toko",
+    "hasilPotong": "{qty} potong",
+    "hasilSelisih": "Kurang {value} dari klaim — kantor yang memutuskan siapa menanggungnya.",
+    "hasilCocok": "Fisik sama atau lebih dari klaim. Tidak ada selisih.",
+    "tutup": "Tutup",
+    "errPENGHITUNG_SAMA_PELAPOR": "Anda pelapor nota ini. Yang menghitung harus orang lain.",
+    "errHITUNGAN_KOSONG": "Masih ada baris yang jumlahnya kosong. Ketik 0 kalau barangnya tidak ada."
   },
   "konsinyasi": {
     "pageTitle": "Konsinyasi",
@@ -9109,7 +9175,7 @@
     "why_bayar_spg": "Angka sudah dikunci; komisi SPG-nya belum dibayar.",
     "why_nota": "Gaji beres. Admin penjualan belum membuat nota.",
     "why_pajak": "Nota ada. Admin pajak belum mencatat nomor faktur pajaknya.",
-    "why_selesai": "Rantai tuntas — ketiga nomornya lengkap.",
+    "why_selesai": "Rantai tuntas — ketiga nomornya lengkap dan tagihan toko sudah lunas.",
     "turnOf": "Giliran {who} —",
     "who_spg_dan_toko": "SPG dan toko",
     "who_admin_konsi": "admin konsinyasi",
@@ -9253,7 +9319,39 @@
       "promoFrozen": "Dibekukan saat dikunci.",
       "promoChanged": "Nota SPG bulan ini berubah sesudah dikunci — menurut nota sekarang potongan Elorae {value}. Tagihan tetap memakai angka yang dibekukan; buka kunci untuk menghitung ulang.",
       "storeShare": "Bagian promo yang ditanggung toko mengurangi margin toko sendiri dan tidak mengubah tagihan.",
-      "lockPreview": "Potongan promo ditanggung Elorae ({promo}) ikut dibekukan — tagihan ke toko {total}, sebelum beban barang hilang."
+      "lockPreview": "Potongan promo ditanggung Elorae ({promo}) ikut dibekukan — tagihan ke toko {total}, sebelum beban barang hilang.",
+      "paid": "Sudah dibayar toko",
+      "remaining": "Sisa tagihan",
+      "remainingShort": "Sisa {value}",
+      "settled": "Lunas",
+      "paymentsTitle": "Pembayaran toko",
+      "paymentsHint": "Boleh dicicil. Dicatat keuangan setelah uangnya terlihat di rekening; sisa dihitung dari tagihan yang dibekukan saat mengunci.",
+      "financeOnly": "Pembayaran dicatat oleh keuangan.",
+      "noPayments": "Belum ada pembayaran.",
+      "recordPayment": "Catat pembayaran",
+      "recordTitle": "Catat pembayaran toko",
+      "recordBody": "Sisa tagihan {value}. Catat hanya uang yang sudah terlihat di mutasi rekening.",
+      "amount": "Jumlah (Rp)",
+      "fillRemaining": "Isi sisa",
+      "overRemaining": "Melebihi sisa tagihan.",
+      "date": "Tanggal bayar",
+      "method": "Cara bayar",
+      "method_transfer": "Transfer",
+      "method_tunai": "Tunai",
+      "method_giro": "Giro",
+      "note": "Catatan",
+      "notePlaceholder": "mis. BCA 3 Okt, nomor referensi",
+      "save": "Simpan",
+      "close": "Tutup",
+      "recordedBy": "Dicatat {name} · {date}",
+      "cancelledBy": "Dibatalkan {name} · {date} — {reason}",
+      "cancelPayment": "Batalkan",
+      "cancelTitle": "Batalkan pembayaran",
+      "cancelBody": "Pembayaran {value} tanggal {date} berhenti mengurangi tagihan. Barisnya tetap tersimpan beserta alasannya.",
+      "cancelReason": "Alasan",
+      "cancelConfirm": "Batalkan pembayaran",
+      "okRecorded": "Pembayaran dicatat.",
+      "okCancelled": "Pembayaran dibatalkan."
     },
     "cocokBuku": {
       "title": "Pencocokan buku stok",
@@ -9296,7 +9394,18 @@
       "colRecordedLost": "Sudah dicatat hilang",
       "recordedLostHint": "Barang yang sudah dicatat hilang dari opname atau kekurangan penerimaan tidak dihitung lagi sebagai kemungkinan hilang."
     },
-    "lossDeducted": "Dipotong beban barang hilang {value} · dibayar {paid}"
+    "lossDeducted": "Dipotong beban barang hilang {value} · dibayar {paid}",
+    "stage_bayar_toko": "Menunggu pembayaran toko",
+    "why_bayar_toko": "Nota dan faktur pajak sudah ada; toko belum melunasi tagihannya. Keuangan mencatat setiap pembayaran setelah uangnya terlihat di rekening.",
+    "errADA_NOTA": "Nomor nota sudah dicatat. Nota menyatakan nilai yang sudah ditagihkan ke toko, jadi kuncinya tidak bisa dibuka lagi.",
+    "errADA_FAKTUR_PAJAK": "Nomor faktur pajak sudah dicatat. Faktur menyatakan nilai yang sudah dilaporkan ke kantor pajak, jadi kuncinya tidak bisa dibuka lagi.",
+    "errADA_PEMBAYARAN_TOKO": "Toko sudah membayar sebagian atau seluruh tagihan ini. Batalkan dulu pembayaran yang salah catat (dengan alasan) sebelum membuka kunci.",
+    "errMELEBIHI_SISA": "Jumlahnya melebihi sisa tagihan. Periksa lagi — mungkin sebagian sudah dicatat.",
+    "errCARA_BAYAR_TIDAK_VALID": "Cara bayarnya tidak dikenal.",
+    "errTANGGAL_DI_DEPAN": "Tanggal bayar tidak boleh sesudah hari ini.",
+    "errALASAN_WAJIB": "Tulis alasannya.",
+    "errSUDAH_DIBATALKAN": "Pembayaran ini sudah dibatalkan.",
+    "errPEMBAYARAN_TIDAK_DITEMUKAN": "Pembayaran tidak ditemukan."
   },
   "jenisPotongan": {
     "pageTitle": "Jenis Potongan",
@@ -10387,7 +10496,10 @@
     "fieldBank": "Bank",
     "fieldIssued": "Tanggal terbit",
     "fieldEffective": "Tanggal efektif",
-    "clearedOn": "Cair {date}."
+    "clearedOn": "Cair {date}.",
+    "errPEMERIKSA_SAMA": "Anda yang melaporkan atau mencatatkan BKM giro ini, jadi tidak bisa memutuskannya sendiri. Minta admin keuangan lain memeriksanya.",
+    "errMELEBIHI_SISA": "Faktur ini sudah dilunasi BKM lain yang terverifikasi lebih dulu. Tolak giro ini atau minta sales membetulkan nominalnya.",
+    "errRETUR_TERPAKAI": "Nota retur di BKM giro ini sudah dipotongkan di BKM lain sebesar nilainya. Tolak salah satu BKM lebih dulu."
   },
   "storeStockTargets": {
     "title": "Target stok toko",

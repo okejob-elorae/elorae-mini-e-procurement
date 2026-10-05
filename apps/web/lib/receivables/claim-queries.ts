@@ -3,6 +3,7 @@ import { returTertahan, type StatusKlaim } from './rules';
 import { PILIH_POTONGAN, potonganRetur } from './deductions';
 import { daftarPiutang, type BarisPiutang } from './queries';
 import { jenisPotonganAktif, type CaraPotongan } from './deduction-types';
+import { pemakaianRetur } from './writer';
 
 const angka = (v: unknown): number => Number(v ?? 0);
 
@@ -42,8 +43,27 @@ export type RincianKlaim = {
     tertahan: number;
   }[];
   /** Nota retur milik toko ini, untuk menautkan ulang potongan yang keliru. */
-  returToko: { id: string; noNrt: string; nilaiKlaim: number }[];
+  returToko: PilihanRetur[];
 };
+
+/**
+ * Satu nota retur yang bisa dipilih sebagai potongan. `sisa` = nilai NRT
+ * dikurangi potongan atasnya di seluruh BKM yang masih hidup — yang benar-benar
+ * masih boleh dipotongkan (penulisnya menolak yang melebihi).
+ */
+export type PilihanRetur = { id: string; noNrt: string; nilaiKlaim: number; sisa: number };
+
+/** Lengkapi daftar NRT dengan sisa yang belum dipakai BKM hidup mana pun. */
+async function denganSisa(retur: { id: string; noNrt: string; claimedAmount: unknown }[]): Promise<PilihanRetur[]> {
+  const dipakai = await pemakaianRetur(
+    prisma,
+    retur.map((r) => r.id),
+  );
+  return retur.map((r) => {
+    const nilai = angka(r.claimedAmount);
+    return { id: r.id, noNrt: r.noNrt, nilaiKlaim: nilai, sisa: Math.max(0, nilai - (dipakai.get(r.id)?.terpakai ?? 0)) };
+  });
+}
 
 /** Satu BKM, lengkap dengan kedua fotonya dan tautan potongannya ke nota retur. */
 export async function rincianKlaim(id: string): Promise<RincianKlaim | null> {
@@ -121,11 +141,7 @@ export async function rincianKlaim(id: string): Promise<RincianKlaim | null> {
     catatanVerifikasi: k.verifyNote,
     dibuatOleh: k.createdBy?.name ?? null,
     storeId: k.storeId,
-    returToko: returToko.map((r) => ({
-      id: r.id,
-      noNrt: r.noNrt,
-      nilaiKlaim: angka(r.claimedAmount),
-    })),
+    returToko: await denganSisa(returToko),
     nilaiTertahan: returTertahan(potonganRetur(k.deductions)),
     faktur: k.receivableLinks.map((l) => ({
       id: l.receivable.id,
@@ -153,7 +169,7 @@ export async function rincianKlaim(id: string): Promise<RincianKlaim | null> {
 export type BahanKlaimBaru = {
   toko: { id: string; name: string; pkp: boolean }[];
   piutangPerToko: Record<string, BarisPiutang[]>;
-  returPerToko: Record<string, { id: string; noNrt: string; nilaiKlaim: number }[]>;
+  returPerToko: Record<string, PilihanRetur[]>;
   jenisPotongan: {
     id: string;
     nama: string;
@@ -170,7 +186,9 @@ export type BahanKlaimBaru = {
  * Nota retur yang ditawarkan sengaja TIDAK disaring menurut keadaannya. Toko
  * memotong pembayarannya berdasarkan nota yang ada di tangannya, dan gudang
  * sering belum menghitung apa pun saat itu — menyaring yang belum dihitung akan
- * menghilangkan justru kasus yang paling sering terjadi.
+ * menghilangkan justru kasus yang paling sering terjadi. Yang disaring hanya
+ * nota yang SUDAH habis dipotongkan di BKM lain; sisanya tampil bersama
+ * `sisa` yang masih boleh dipotong.
  */
 export async function bahanKlaimBaru(opsi?: {
   /**
@@ -180,14 +198,9 @@ export async function bahanKlaimBaru(opsi?: {
    */
   penagihId?: string;
 }): Promise<BahanKlaimBaru> {
-  const [semua, retur, jenis] = await Promise.all([
+  const [semua, jenis] = await Promise.all([
     // BKM hanya melunasi faktur yang masih terbuka.
     daftarPiutang({ hanyaTerbuka: true, penagihId: opsi?.penagihId }),
-    prisma.storeReturn.findMany({
-      where: { status: { not: 'BATAL' } },
-      orderBy: { claimDate: 'desc' },
-      select: { id: true, noNrt: true, storeId: true, claimedAmount: true },
-    }),
     jenisPotonganAktif(),
   ]);
 
@@ -204,14 +217,26 @@ export async function bahanKlaimBaru(opsi?: {
     namaToko.set(p.storeId, p.storeName);
   }
 
-  const returPerToko: Record<string, { id: string; noNrt: string; nilaiKlaim: number }[]> = {};
-  for (const r of retur) {
-    (returPerToko[r.storeId] ??= []).push({
-      id: r.id,
-      noNrt: r.noNrt,
-      nilaiKlaim: angka(r.claimedAmount),
-    });
-  }
+  /*
+   * Nota retur HANYA untuk toko yang muncul di formulir ini — toko yang punya
+   * piutang terbuka yang boleh ditagih pengguna ini. Dulu seluruh NRT semua
+   * toko ikut terkirim ke payload HP, jadi sales bisa membaca nomor dan nilai
+   * retur toko orang lain.
+   */
+  const retur = namaToko.size
+    ? await prisma.storeReturn.findMany({
+        where: { status: { not: 'BATAL' }, storeId: { in: [...namaToko.keys()] } },
+        orderBy: { claimDate: 'desc' },
+        select: { id: true, noNrt: true, storeId: true, claimedAmount: true },
+      })
+    : [];
+  const pilihan = await denganSisa(retur);
+  const returPerToko: Record<string, PilihanRetur[]> = {};
+  retur.forEach((r, i) => {
+    // NRT yang sudah habis dipotongkan tidak ditawarkan lagi.
+    if (pilihan[i].sisa <= 0) return;
+    (returPerToko[r.storeId] ??= []).push(pilihan[i]);
+  });
 
   return {
     toko: [...namaToko.entries()].map(([id, name]) => ({ id, name, pkp: pkp.has(id) })),

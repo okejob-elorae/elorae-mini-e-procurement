@@ -23,6 +23,8 @@ const tx = {
     updateMany: vi.fn(async () => ({ count: 1 })),
   },
   paymentClaimReceivable: { findMany: vi.fn(async () => state.links) },
+  // Verifikasi memeriksa ulang pemakaian nota retur; klaim di sini tanpa potongan retur.
+  paymentClaimDeduction: { findMany: vi.fn(async () => []) },
   receivable: {
     findUnique: vi.fn(async () => state.receivable),
     update: vi.fn(async () => ({})),

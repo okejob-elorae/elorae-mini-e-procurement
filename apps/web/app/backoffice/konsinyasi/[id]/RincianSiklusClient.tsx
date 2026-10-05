@@ -66,10 +66,12 @@ export function RincianSiklusClient({
   data,
   katalog,
   bolehMengelola,
+  bolehCatatBayar,
 }: {
   data: RincianSiklus;
   katalog: PilihanBarang[];
   bolehMengelola: boolean;
+  bolehCatatBayar: boolean;
 }) {
   const t = useTranslations('konsinyasi');
   const td = dinamis(t);
@@ -239,7 +241,12 @@ export function RincianSiklusClient({
         </CardContent>
       </Card>
 
-      <TagihanKonsiCard tagihan={data.tagihan} />
+      <TagihanKonsiCard
+        cycleId={b.id}
+        tagihan={data.tagihan}
+        pelunasan={data.pelunasan}
+        bolehCatatBayar={bolehCatatBayar}
+      />
 
       {/* Dua laporan disandingkan per barang. */}
       <Card>
@@ -416,7 +423,8 @@ export function RincianSiklusClient({
                         <StatusPill tone="settled">
                           {t('paidOn', { date: tanggal(k.dibayarPada) })}
                         </StatusPill>
-                      ) : bolehMengelola ? (
+                      ) : bolehMengelola && data.terkunci ? (
+                        // Gaji baru boleh dibayar sesudah angkanya dikunci (penulis menolak BELUM_DIKUNCI).
                         <Button
                           size="sm"
                           variant="outline"

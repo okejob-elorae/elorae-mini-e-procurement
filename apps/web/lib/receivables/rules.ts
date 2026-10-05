@@ -21,6 +21,8 @@
  * ini bisa diuji tanpa menyeret Prisma.
  */
 
+import { tanggalWib } from '@/lib/dashboard/hari-wib';
+
 /**
  * `DIBATALKAN` berbeda arti dari `DITOLAK` walau keduanya diakui nol.
  * Ditolak = keuangan melihat dan uangnya tidak ada. Dibatalkan = klaimnya
@@ -91,8 +93,18 @@ export type PorsiKlaim = KlaimPembayaran & {
  * menyimpang begitu satu klaim dibatalkan atau sebuah retur berubah — dan
  * penyimpangan itu tidak akan terlihat sampai ada yang menagih ke tempat salah.
  */
-export function hitungSisaPiutang(nilaiPiutang: number, klaimList: PorsiKlaim[]): number {
-  let terbayar = 0;
+export function hitungSisaPiutang(
+  nilaiPiutang: number,
+  klaimList: PorsiKlaim[],
+  /**
+   * Bagian faktur yang sudah dibayar SEBELUM faktur ini diimpor
+   * (`Receivable.paidBeforeImport`). Faktur Rp10 jt yang di berkasnya bersisa
+   * Rp4 jt membawa 6 jt di sini; tanpa itu perhitungan ulang mengembalikannya
+   * ke Rp10 jt dan toko ditagih untuk uang yang sudah dibayar.
+   */
+  dibayarSebelumImpor = 0,
+): number {
+  let terbayar = Math.max(0, dibayarSebelumImpor);
   for (const klaim of klaimList) {
     const diakui = nilaiDiakui(klaim);
     if (diakui <= 0) continue;
@@ -101,6 +113,26 @@ export function hitungSisaPiutang(nilaiPiutang: number, klaimList: PorsiKlaim[])
     terbayar += diakui * porsi;
   }
   return Math.max(0, Math.round(nilaiPiutang - terbayar));
+}
+
+/**
+ * Status klaim yang potongannya masih MEMAKAI nota retur. Klaim yang ditolak
+ * atau dibatalkan tidak memotong apa pun, jadi notanya bebas dipakai lagi.
+ */
+export const STATUS_KLAIM_HIDUP = ['DIKIRIM', 'TERVERIFIKASI'] as const;
+
+/**
+ * Apakah potongan baru membuat sebuah nota retur terpakai melebihi nilainya.
+ *
+ * Satu NRT adalah satu janji barang. Memotongkannya penuh di dua BKM membuat
+ * toko membayar kurang dua kali untuk barang yang sama — dan karena tiap
+ * potongan diprorata terhadap nilai notanya, penahanan Aturan 2 pun ikut
+ * terbagi dan tidak pernah menutup selisihnya. Dibandingkan dalam sen supaya
+ * pecahan desimal tidak meloloskan atau menolak satu rupiah secara keliru.
+ */
+export function returTerpakaiMelebihi(nilaiNota: number, sudahDipakai: number, akanDipakai: number): boolean {
+  const sen = (n: number) => Math.round(n * 100);
+  return sen(sudahDipakai) + sen(akanDipakai) > sen(nilaiNota);
 }
 
 export type KeadaanPiutang = 'lunas' | 'klaim' | 'tertahan' | 'lewat' | 'tt' | 'belum';
@@ -127,7 +159,10 @@ export function keadaanPiutang(b: BahanKeadaan): KeadaanPiutang {
   if (b.sisa <= 0) return 'lunas';
   if (b.klaimMenunggu) return 'klaim';
   if (b.nilaiTertahan > 0) return 'tertahan';
-  if (b.kontrabon && b.kontrabon.janjiBayar < b.hariIni) return 'lewat';
+  // Dibandingkan per HARI KALENDER WIB, bukan per instan: janji disimpan tengah
+  // malam WIB, jadi `janjiBayar < hariIni` menandai faktur lewat janji sejak
+  // 00.01 di hari janjinya sendiri.
+  if (b.kontrabon && tanggalWib(b.kontrabon.janjiBayar) < tanggalWib(b.hariIni)) return 'lewat';
   if (b.kontrabon) return 'tt';
   return 'belum';
 }

@@ -162,6 +162,13 @@ export async function simpanImpor(
           dueDate: b.jatuhTempo!,
           amount: D(b.nilai!),
           outstanding: D(b.sisa!),
+          // Yang sudah dibayar sebelum impor disimpan sendiri, bukan hanya
+          // tersirat di `outstanding`: kolom itu cache dan ditimpa setiap
+          // perhitungan ulang, sedangkan yang ini ikut dikurangkan
+          // `hitungSisaPiutang` sehingga faktur tidak kembali bernilai penuh.
+          // Lewat Decimal, bukan selisih float: 1.250.000,75 − 250.000,50 tidak
+          // boleh menyisakan pecahan sen palsu.
+          paidBeforeImport: Prisma.Decimal.max(0, D(b.nilai!).minus(b.sisa!)),
           settledAt: null,
           source: 'IMPORT',
         },

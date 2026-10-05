@@ -41,6 +41,19 @@ export type KodeAksiRetur =
   | 'GAGAL';
 export type HasilAksiRetur = { ok: true } | { ok: false; kode: KodeAksiRetur };
 
+/**
+ * Hasil hitungan gudang. Klaim toko baru dikembalikan SESUDAH hitungan
+ * tersimpan — layar hitung tidak menampilkannya selama menghitung.
+ */
+export type HasilHitunganGudang =
+  | {
+      ok: true;
+      noNri: string;
+      klaim: { nilai: number; qty: number } | null;
+      fisik: { nilai: number; qty: number };
+    }
+  | { ok: false; kode: KodeAksiRetur };
+
 function segarkan() {
   revalidatePath('/backoffice/retur-toko');
   revalidatePath('/backoffice/piutang');
@@ -270,12 +283,15 @@ export async function catatHitunganGudangAction(input: {
   physicalAmount?: number;
   items?: BarisBarang[];
   note?: string;
-}): Promise<HasilAksiRetur> {
+}): Promise<HasilHitunganGudang> {
   const userId = await butuh(PERMISSIONS.INVENTORY_OPNAME_COUNT);
   if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
 
   const tanggal = tanggalWib(input.receivedAt);
   if (!tanggal) return { ok: false, kode: 'TANGGAL_TIDAK_VALID' };
+  // Tanggal terima boleh mundur (barang datang kemarin, dihitung hari ini),
+  // tapi tidak boleh di masa depan: barang yang belum sampai tidak bisa dihitung.
+  if (tanggal.getTime() > Date.now()) return { ok: false, kode: 'TANGGAL_TIDAK_VALID' };
 
   try {
     const hasil = await catatHitunganGudang({
@@ -287,7 +303,7 @@ export async function catatHitunganGudangAction(input: {
     segarkan();
     // Penerimaan yatim (tanpa NRT) belum punya pelapor; ia dikabarkan saat dijodohkan.
     if (input.storeReturnId) void kabarReturDihitung(input.storeReturnId, userId);
-    return { ok: true };
+    return { ok: true, noNri: hasil.noNri, klaim: hasil.klaim, fisik: hasil.fisik };
   } catch (err) {
     console.error('catatHitunganGudang gagal:', err);
     return { ok: false, kode: 'GAGAL' };
@@ -345,6 +361,7 @@ export async function putuskanBebanAction(
     const hasil = await putuskanBeban({ chargeId, bearer, alasan, bearerUserId, olehUserId: userId });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
     segarkan();
+    revalidatePath('/backoffice/beban-selisih');
     // Penulis hanya menyimpan orangnya untuk beban SALES; aturan yang sama di sini.
     if (bearer === 'SALES' && bearerUserId) void kabarBebanRetur(chargeId, bearerUserId, alasan, userId);
     return { ok: true };

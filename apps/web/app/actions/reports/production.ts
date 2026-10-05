@@ -3,6 +3,8 @@
 import { prisma } from '@elorae/db';
 import { Decimal } from 'decimal.js';
 import * as XLSX from 'xlsx';
+import { PERMISSIONS } from '@/lib/rbac';
+import { wajibIzinLaporan } from './penjaga';
 
 export type VendorPerformanceRow = {
   docNumber: string;
@@ -21,6 +23,7 @@ export async function getVendorPerformanceReport(
   dateFrom: Date,
   dateTo: Date
 ): Promise<VendorPerformanceRow[]> {
+  await wajibIzinLaporan(PERMISSIONS.WORK_ORDERS_VIEW);
   const wos = await prisma.workOrder.findMany({
     where: {
       vendorId,
@@ -82,6 +85,7 @@ export async function exportVendorPerformanceReport(
   dateTo: Date,
   format: 'csv' | 'excel'
 ): Promise<{ data: string; filename: string } | { base64: string; filename: string }> {
+  await wajibIzinLaporan(PERMISSIONS.WORK_ORDERS_VIEW);
   const rows = await getVendorPerformanceReport(vendorId, dateFrom, dateTo);
   const data = rows.map((r) => ({
     'Doc Number': r.docNumber,

@@ -20,10 +20,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { TanggalInput } from "@/components/ui/tanggal-input";
 import { catatHitunganGudangAction } from "@/app/actions/store-returns";
 import { dinamis } from "@/lib/i18n/dinamis";
-import type { MenungguGudang } from "@/lib/receivables/pwa-queries";
-import { nilaiHitunganAwal } from "./nilai";
+import { nilaiHitunganAwal, type NotaHitung } from "./nilai";
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
 const tanggal = (iso: string) =>
@@ -41,30 +41,43 @@ function hariIniWib(): string {
 const KONDISI = ["LAYAK", "RUSAK", "EXPIRED"] as const;
 type Kondisi = (typeof KONDISI)[number];
 type Hitung = { qty: string; kondisi: Kondisi };
+/** Hasil yang diperlihatkan sesudah hitungan tersimpan — baru di sini klaim toko tampil. */
+type HasilHitung = {
+  noNri: string;
+  noNrt: string;
+  klaim: { nilai: number; qty: number } | null;
+  fisik: { nilai: number; qty: number };
+};
 
-export function GudangClient({ baris }: { baris: MenungguGudang[] }) {
+export function GudangClient({ baris }: { baris: NotaHitung[] }) {
   const t = useTranslations("pwaGudang");
   const tk = dinamis(useTranslations("spgRetur"));
   const td = dinamis(t);
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [dipilih, setDipilih] = useState<MenungguGudang | null>(null);
+  const [dipilih, setDipilih] = useState<NotaHitung | null>(null);
   const [hitung, setHitung] = useState<Hitung[]>([]);
   // Nilai fisik: terisi dari hitungan per baris, boleh diubah. `null` = belum diubah.
   const [nilaiKetik, setNilaiKetik] = useState<string | null>(null);
   const [catatan, setCatatan] = useState("");
+  const [diterima, setDiterima] = useState(hariIniWib());
+  const [hasilHitung, setHasilHitung] = useState<HasilHitung | null>(null);
 
   const perBaris = dipilih ? dipilih.baris.length > 0 : false;
-  const qtyHitung = hitung.map((h) => Math.max(0, Math.floor(Number(h.qty)) || 0));
-  const hitungSah = hitung.every((h) => h.qty.trim() !== "" && Number.isInteger(Number(h.qty)) && Number(h.qty) >= 0);
-  const nilaiAwal = dipilih && perBaris ? nilaiHitunganAwal(dipilih.baris, qtyHitung, dipilih.nilaiKlaim) : 0;
+  // Kolom kosong = belum dihitung (NaN), bukan nol. Nol hanya kalau diketik.
+  const qtyHitung = hitung.map((h) => (h.qty.trim() === "" ? Number.NaN : Number(h.qty)));
+  const hitungSah = qtyHitung.every((q) => Number.isInteger(q) && q >= 0);
+  const nilaiAwal = dipilih && perBaris ? nilaiHitunganAwal(dipilih.baris, qtyHitung, dipilih.nilaiPerPotong) : 0;
   const nilai = nilaiKetik ?? (perBaris ? String(nilaiAwal) : "");
 
-  const buka = (b: MenungguGudang) => {
+  const buka = (b: NotaHitung) => {
     setDipilih(b);
-    setHitung(b.baris.map((x) => ({ qty: String(x.qty), kondisi: x.condition })));
+    // Mulai KOSONG. Mengisi dengan qty klaim membuat satu "Simpan" mencatat
+    // fisik = klaim tanpa ada yang menghitung.
+    setHitung(b.baris.map((x) => ({ qty: "", kondisi: x.condition })));
     setNilaiKetik(null);
     setCatatan("");
+    setDiterima(hariIniWib());
   };
 
   const simpan = () => {
@@ -76,7 +89,7 @@ export function GudangClient({ baris }: { baris: MenungguGudang[] }) {
       const pakaiHarga = nilaiKetik === null && dipilih.baris.some((x) => x.price > 0);
       const hasil = await catatHitunganGudangAction({
         storeReturnId: dipilih.id,
-        receivedAt: hariIniWib(),
+        receivedAt: diterima,
         deliveryMethod: dipilih.caraKirim as "SALES" | "TOKO" | "EKSPEDISI",
         physicalAmount: Number(nilai),
         items: perBaris
@@ -96,12 +109,14 @@ export function GudangClient({ baris }: { baris: MenungguGudang[] }) {
         return;
       }
       toast.success(t("okCounted"));
+      setHasilHitung({ noNri: hasil.noNri, noNrt: dipilih.noNrt, klaim: hasil.klaim, fisik: hasil.fisik });
       setDipilih(null);
       router.refresh();
     });
   };
 
-  const bisaSimpan = !pending && nilai !== "" && Number(nilai) >= 0 && (!perBaris || hitungSah);
+  const bisaSimpan =
+    !pending && diterima !== "" && nilai !== "" && Number(nilai) >= 0 && (!perBaris || hitungSah);
 
   return (
     <div className="space-y-4 p-4">
@@ -134,18 +149,15 @@ export function GudangClient({ baris }: { baris: MenungguGudang[] }) {
                     </span>
                     {b.baris.length > 0 && (
                       <span className="block text-xs text-muted-foreground">
-                        {t("jumlahBaris", { baris: b.baris.length, potong: b.baris.reduce((n, x) => n + x.qty, 0) })}
+                        {t("jumlahBarisSaja", { baris: b.baris.length })}
                       </span>
                     )}
                   </span>
-                  <span className="shrink-0 text-right">
-                    <span className="block text-xs text-muted-foreground">{t("claimed")}</span>
-                    <span className="block font-bold tabular-nums">{rupiah(b.nilaiKlaim)}</span>
-                  </span>
                 </div>
-                <Button className="w-full" disabled={pending} onClick={() => buka(b)}>
+                <Button className="w-full" disabled={pending || b.milikSendiri} onClick={() => buka(b)}>
                   {t("count")}
                 </Button>
+                {b.milikSendiri && <p className="text-xs text-muted-foreground">{t("milikSendiri")}</p>}
               </CardContent>
             </Card>
           ))}
@@ -157,7 +169,7 @@ export function GudangClient({ baris }: { baris: MenungguGudang[] }) {
           <DialogHeader>
             <DialogTitle>{t("countTitle")}</DialogTitle>
             <DialogDescription>
-              {dipilih && t("countBody", { doc: dipilih.noNrt, claimed: rupiah(dipilih.nilaiKlaim) })}
+              {dipilih && t("countBodyButa", { doc: dipilih.noNrt, store: dipilih.storeName })}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -166,17 +178,14 @@ export function GudangClient({ baris }: { baris: MenungguGudang[] }) {
                 <p className="text-sm text-muted-foreground">{t("perBarisHint")}</p>
                 {dipilih.baris.map((x, i) => (
                   <div key={`${x.itemId}-${x.variantSku}-${i}`} className="space-y-2 rounded-lg border p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="min-w-0 text-sm font-medium">{x.itemName}</p>
-                      <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                        {t("diklaim", { qty: x.qty })}
-                      </span>
-                    </div>
+                    <p className="min-w-0 text-sm font-medium">{x.itemName}</p>
                     <div className="flex items-center gap-2">
                       <Input
                         type="number"
                         inputMode="numeric"
                         min={0}
+                        step={1}
+                        placeholder="—"
                         className="w-20 text-center tabular-nums"
                         aria-label={t("qtyDiterima")}
                         value={hitung[i]?.qty ?? ""}
@@ -210,6 +219,16 @@ export function GudangClient({ baris }: { baris: MenungguGudang[] }) {
               </div>
             )}
             <div className="space-y-2">
+              <Label htmlFor="g-diterima">{t("receivedAtLabel")}</Label>
+              <TanggalInput
+                id="g-diterima"
+                value={diterima}
+                max={hariIniWib()}
+                required
+                onChange={(e) => setDiterima(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="g-nilai">{t("countedAmount")}</Label>
               <Input
                 id="g-nilai"
@@ -226,9 +245,59 @@ export function GudangClient({ baris }: { baris: MenungguGudang[] }) {
               <Textarea id="g-catatan" value={catatan} onChange={(e) => setCatatan(e.target.value)} rows={2} />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex-col gap-2 sm:flex-col">
             <Button disabled={!bisaSimpan} onClick={simpan}>
               {t("save")}
+            </Button>
+            {perBaris && !hitungSah && <p className="text-xs text-muted-foreground">{t("qtyBelumDiisi")}</p>}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Sesudah tersimpan: baru di sini klaim toko diperlihatkan berdampingan dengan fisiknya. */}
+      <Dialog open={hasilHitung !== null} onOpenChange={(o) => !o && setHasilHitung(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("hasilTitle")}</DialogTitle>
+            <DialogDescription>
+              {hasilHitung && t("hasilBody", { nri: hasilHitung.noNri, doc: hasilHitung.noNrt })}
+            </DialogDescription>
+          </DialogHeader>
+          {hasilHitung && (
+            <div className="space-y-3 text-sm">
+              <div className="flex items-start justify-between gap-3">
+                <span className="text-muted-foreground">{t("hasilFisik")}</span>
+                <span className="text-right tabular-nums">
+                  <span className="block font-semibold">{rupiah(hasilHitung.fisik.nilai)}</span>
+                  {hasilHitung.fisik.qty > 0 && (
+                    <span className="block text-xs text-muted-foreground">{t("hasilPotong", { qty: hasilHitung.fisik.qty })}</span>
+                  )}
+                </span>
+              </div>
+              {hasilHitung.klaim && (
+                <div className="flex items-start justify-between gap-3">
+                  <span className="text-muted-foreground">{t("hasilKlaim")}</span>
+                  <span className="text-right tabular-nums">
+                    <span className="block font-semibold">{rupiah(hasilHitung.klaim.nilai)}</span>
+                    {hasilHitung.klaim.qty > 0 && (
+                      <span className="block text-xs text-muted-foreground">{t("hasilPotong", { qty: hasilHitung.klaim.qty })}</span>
+                    )}
+                  </span>
+                </div>
+              )}
+              {hasilHitung.klaim &&
+                (hasilHitung.klaim.nilai > hasilHitung.fisik.nilai ? (
+                  <p className="font-medium text-destructive">
+                    {t("hasilSelisih", { value: rupiah(hasilHitung.klaim.nilai - hasilHitung.fisik.nilai) })}
+                  </p>
+                ) : (
+                  <p className="text-muted-foreground">{t("hasilCocok")}</p>
+                ))}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setHasilHitung(null)}>
+              {t("tutup")}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -5,6 +5,8 @@ import { prisma } from '@elorae/db';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
 import { z } from 'zod';
+import { runSerializable } from '@/lib/db/tx-retry';
+import { tolakAkunSistem, type KodeAkunSistem } from '@/lib/users/validasi';
 
 const roleSchema = z.object({
   name: z.string().min(1).max(50),
@@ -235,27 +237,67 @@ export async function deleteRole(roleId: string) {
   revalidatePath('/backoffice/settings/rbac');
 }
 
+export type AssignUserRoleResult =
+  | { ok: true }
+  | { ok: false; code: KodeAkunSistem | "PERAN_SENDIRI" | "TIDAK_DITEMUKAN" | "PERAN_TIDAK_DITEMUKAN" };
+
 /**
- * Assign a role to a user (for user management)
+ * Ganti peran seorang pengguna.
+ *
+ * Butuh `settings_security:manage`. Peran sistem (izin penuh `*`) hanya boleh
+ * DIBERI atau DICABUT oleh admin sistem — aturan yang sama dengan Pengaturan →
+ * Pengguna (`tolakAkunSistem`). Tanpa itu pemegang izin ini bisa mengangkat
+ * siapa pun, termasuk dirinya, menjadi admin penuh. Peran sendiri tidak bisa
+ * diganti di sini (admin bisa mengunci dirinya keluar).
+ *
+ * Peran pelaku, target, dan peran baru dibaca DI DALAM transaksi serializable,
+ * dari basis data (bukan dari JWT yang bisa basi): pengangkatan oleh admin
+ * sistem yang di-commit di antara baca dan tulis tidak bisa ditimpa. Setiap
+ * pergantian menulis `AuditLog` di transaksi yang sama — barisnya hanya
+ * menyimpan peran terakhir, jejaknya satu-satunya riwayat.
  */
-export async function assignUserRole(userId: string, roleId: string) {
+export async function assignUserRole(userId: string, roleId: string): Promise<AssignUserRoleResult> {
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
+  if (!session?.user?.id) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_MANAGE);
+  if (typeof userId !== 'string' || !userId) return { ok: false, code: 'TIDAK_DITEMUKAN' };
+  if (typeof roleId !== 'string' || !roleId) return { ok: false, code: 'PERAN_TIDAK_DITEMUKAN' };
+  const pelakuId = session.user.id;
 
-  // Verify user and role exist
-  const [user, role] = await Promise.all([
-    prisma.user.findUnique({ where: { id: userId } }),
-    prisma.roleDefinition.findUnique({ where: { id: roleId } }),
-  ]);
+  const hasil = await runSerializable(async (tx): Promise<AssignUserRoleResult> => {
+    const [pelaku, target, peran] = await Promise.all([
+      tx.user.findUnique({ where: { id: pelakuId }, select: { roleDefinition: { select: { isSystem: true } } } }),
+      tx.user.findUnique({
+        where: { id: userId },
+        select: { id: true, roleId: true, roleDefinition: { select: { isSystem: true } } },
+      }),
+      tx.roleDefinition.findUnique({ where: { id: roleId }, select: { id: true, isSystem: true } }),
+    ]);
+    if (!target) return { ok: false, code: 'TIDAK_DITEMUKAN' };
+    if (!peran) return { ok: false, code: 'PERAN_TIDAK_DITEMUKAN' };
+    const tolak = tolakAkunSistem({
+      pelakuSistem: pelaku?.roleDefinition?.isSystem === true,
+      targetSistem: target.roleDefinition?.isSystem === true,
+      peranSistem: peran.isSystem,
+    });
+    if (tolak) return { ok: false, code: tolak };
+    if (target.id === pelakuId) return { ok: false, code: 'PERAN_SENDIRI' };
+    if (target.roleId === peran.id) return { ok: true };
 
-  if (!user) throw new Error('User not found');
-  if (!role) throw new Error('Role not found');
-
-  await prisma.user.update({
-    where: { id: userId },
-    data: { roleId },
+    await tx.user.update({ where: { id: target.id }, data: { roleId: peran.id } });
+    await tx.auditLog.create({
+      data: {
+        userId: pelakuId,
+        action: 'USER_UPDATED',
+        entityType: 'User',
+        entityId: target.id,
+        changes: { before: { roleId: target.roleId }, after: { roleId: peran.id } },
+        metadata: { jalur: 'assignUserRole' },
+      },
+    });
+    return { ok: true };
   });
 
-  revalidatePath('/backoffice/settings/security');
+  if (hasil.ok) revalidatePath('/backoffice/settings/security');
+  return hasil;
 }

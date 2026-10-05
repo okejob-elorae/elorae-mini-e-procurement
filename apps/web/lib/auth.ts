@@ -63,15 +63,26 @@ export const {
           throw new ServerUnavailableSignin();
         }
 
+        // Percobaan ini dicatat DULU sebagai gagal, baru sandinya dicocokkan —
+        // pola `cobaPin` di app/actions/security/pin-auth.ts. Dulu gagal dicatat
+        // sesudah bcrypt, jadi tebakan serentak semuanya melihat nol gagal dan
+        // semuanya sampai ke bcrypt (terukur: 8 dari 8). Periksa-lalu-catat di
+        // bawah tidak punya `await` di antaranya, jadi atomik di satu proses:
+        // paling banyak lima per jendela yang sampai ke bcrypt. Sesudah pencarian
+        // pengguna, supaya basis data yang mati tidak dihitung sebagai salah.
+        if (loginThrottle.retryAfterMs(key) > 0) {
+          throw new TooManyAttemptsSignin();
+        }
+        loginThrottle.recordFailure(key);
+
+        // Email tak terdaftar ikut dihitung: responsnya sama dengan sandi salah.
         if (!user || !user.passwordHash) {
-          loginThrottle.recordFailure(key);
           return null;
         }
 
         const isValid = await bcrypt.compare(credentials.password as string, user.passwordHash);
 
         if (!isValid) {
-          loginThrottle.recordFailure(key);
           return null;
         }
 
@@ -158,19 +169,9 @@ export const {
   },
 });
 
-// PIN verification for sensitive actions
-export async function verifyPin(userId: string, pin: string): Promise<boolean> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { pinHash: true },
-  });
-
-  if (!user?.pinHash) {
-    return false;
-  }
-
-  return bcrypt.compare(pin, user.pinHash);
-}
+// Verifikasi PIN TIDAK ada di sini: pakai `verifyPinForAction`
+// (app/actions/security/pin-auth.ts), yang membatasi tebakan. `verifyPin` lama
+// tanpa batas dihapus — dulu dipakai API pembuka rekening pemasok.
 
 // Set PIN for user
 export async function setPin(userId: string, pin: string): Promise<void> {

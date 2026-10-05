@@ -3,7 +3,8 @@ import { bentrokPengganti, catatDiganti, periksaKlaimLama, type AlasanPengganti 
 import { runSerializable } from '@/lib/db/tx-retry';
 import { bentrokKunciKiriman } from './idempoten';
 import { denganNomorUnik } from './nomor';
-import { hitungUlangPiutang } from './writer';
+import { hitungUlangPiutang, returYangMelebihi } from './writer';
+import { tanggalWib } from '@/lib/dashboard/hari-wib';
 import { catatJejak, JEJAK } from './jejak';
 import { periksaGiro, STATUS_GIRO, type AlasanGiro, type GiroSah } from './giro';
 
@@ -42,6 +43,7 @@ export type AlasanGagalKlaim =
   | 'POTONGAN_MELEBIHI'
   | 'RETUR_TIDAK_DITEMUKAN'
   | 'RETUR_BEDA_TOKO'
+  | 'RETUR_TERPAKAI'
   | 'FOTO_WAJIB'
   | 'JENIS_BUTUH_RETUR'
   | 'JENIS_BUTUH_CATATAN'
@@ -254,11 +256,28 @@ export async function buatKlaimPembayaran(input: {
           if (retur.some((r) => r.storeId !== input.storeId)) {
             return { ok: false as const, alasan: 'RETUR_BEDA_TOKO' as const };
           }
+          /*
+           * Satu nota retur tidak boleh terpotong melebihi nilainya di seluruh
+           * BKM yang masih hidup. Dulu yang diperiksa hanya tokonya, dan nota
+           * Rp1 jt bisa dipotongkan penuh di dua BKM — toko membayar kurang
+           * dua kali untuk barang yang sama. Dibaca di transaksi serializable
+           * ini juga, jadi dua BKM yang tiba bersamaan tidak bisa sama-sama lolos.
+           */
+          if (
+            await returYangMelebihi(
+              tx,
+              potongan.map((p) => ({ storeReturnId: p.storeReturnId, nilai: p.nilai })),
+            )
+          ) {
+            return { ok: false as const, alasan: 'RETUR_TERPAKAI' as const };
+          }
         }
 
         const klaim = await tx.paymentClaim.create({
           data: {
-            docNo: await nomorBerikutnya(tx, input.claimedTransferAt.getFullYear()),
+            // Tahun WIB: tanggal transfer disimpan tengah malam WIB, dan di
+            // server UTC `getFullYear()` atas 1 Januari WIB masih tahun lalu.
+            docNo: await nomorBerikutnya(tx, Number(tanggalWib(input.claimedTransferAt).slice(0, 4))),
             storeId: input.storeId,
             salesmanId: input.salesmanId,
             createdById: input.createdById,

@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@elorae/db';
 import { auth } from '@/lib/auth';
+import { runSerializable } from "@/lib/db/tx-retry";
 import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { KUNCI_BATAS_HARI, KUNCI_TARGET, KUNCI_TOKO_TERKUNCI, tulisTargetBulan } from '@/lib/salesman/pengaturan';
 import { bacaAturanKredit, KUNCI_ATURAN_KREDIT, MODE_KREDIT, type AturanKredit, type ModeKredit } from '@/lib/salesman/kredit';
@@ -67,14 +68,18 @@ export async function simpanTargetBulan(bulan: string, isi: Record<string, numbe
   if (dikenal !== Object.keys(isi).length) return { ok: false, code: 'INVALID' };
 
   if (Object.keys(isi).length === 0) return { ok: true };
-  const sekarang = await prisma.systemSetting.findUnique({ where: { key: KUNCI_TARGET }, select: { value: true } });
-  let nilai = sekarang?.value ?? '{}';
-  for (const [userId, jumlah] of Object.entries(isi)) nilai = tulisTargetBulan(nilai, userId, bulan, jumlah);
-
-  await prisma.systemSetting.upsert({
-    where: { key: KUNCI_TARGET },
-    create: { key: KUNCI_TARGET, value: nilai },
-    update: { value: nilai },
+  // Semua target hidup di SATU baris JSON: baca-ubah-tulis harus satu transaksi
+  // serializable, atau dua admin yang menyimpan bersamaan saling menimpa
+  // (target salesman lain hilang diam-diam). Yang kalah diulang dengan JSON terbaru.
+  await runSerializable(async (tx) => {
+    const sekarang = await tx.systemSetting.findUnique({ where: { key: KUNCI_TARGET }, select: { value: true } });
+    let nilai = sekarang?.value ?? "{}";
+    for (const [userId, jumlah] of Object.entries(isi)) nilai = tulisTargetBulan(nilai, userId, bulan, jumlah);
+    await tx.systemSetting.upsert({
+      where: { key: KUNCI_TARGET },
+      create: { key: KUNCI_TARGET, value: nilai },
+      update: { value: nilai },
+    });
   });
   segarkan();
   return { ok: true };

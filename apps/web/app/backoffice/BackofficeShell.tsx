@@ -117,8 +117,8 @@ interface NavChild {
   permission?: string | readonly string[];
 }
 
-/** Entri anak terlihat: tanpa izin, atau memegang salah satu izinnya. */
-function bolehAnak(permissions: string[], izin: NavChild['permission']): boolean {
+/** Entri anak terlihat: tanpa izin, atau memegang salah satu izinnya. Diekspor untuk tes menu. */
+export function bolehAnak(permissions: string[], izin: NavChild['permission']): boolean {
   if (!izin) return true;
   return typeof izin === 'string' ? hasPermission(permissions, izin) : izin.some((p) => hasPermission(permissions, p));
 }
@@ -160,7 +160,30 @@ interface NavItem {
  * izin induk lamanya, supaya pengelompokan ulang ini tidak menggeser satu pun
  * hak akses.
  */
-const navItems: NavItem[] = [
+/*
+ * Izin anak menu Piutang & Pelunasan — SAMA dengan pagar halamannya di
+ * `lib/receivables/izin.ts` (rute modul ini tidak dipetakan di
+ * ROUTE_PERMISSIONS; tiap halaman memagari dirinya). Dulu seluruh grup hanya
+ * untuk `receivables:view`, jadi keuangan yang memverifikasi BKM, gudang yang
+ * menghitung retur, dan pemegang `receivables:manage` saja tidak pernah
+ * menemukan halaman yang boleh mereka buka. `menu-piutang.spec.ts` mencocokkan
+ * daftar ini dengan fungsi pagarnya untuk setiap gabungan izin.
+ */
+/** `bolehMembacaPiutang`: buku piutang, kontrabon, beban selisih, dasbor. */
+const IZIN_BACA_PIUTANG = [PERMISSIONS.RECEIVABLES_VIEW, PERMISSIONS.RECEIVABLES_MANAGE] as const;
+/** `bolehMembacaPelunasan`: ditambah keuangan yang memverifikasi BKM. */
+const IZIN_BACA_PELUNASAN = [...IZIN_BACA_PIUTANG, PERMISSIONS.JOURNALS_MANAGE] as const;
+/** `bolehMembacaRetur`: ditambah gudang yang menghitung dan keuangan. */
+const IZIN_BACA_RETUR = [
+  ...IZIN_BACA_PIUTANG,
+  PERMISSIONS.INVENTORY_OPNAME_COUNT,
+  PERMISSIONS.JOURNALS_MANAGE,
+] as const;
+/** `bolehMembacaArsip`: arsip nota retur dan tugas tagih — `receivables:view` saja. */
+const IZIN_BACA_ARSIP = PERMISSIONS.RECEIVABLES_VIEW;
+
+/** Diekspor untuk tes menu (`menu-piutang.spec.ts`). */
+export const navItems: NavItem[] = [
   {
     labelKey: 'dashboard',
     href: '/backoffice/dashboard',
@@ -322,14 +345,14 @@ const navItems: NavItem[] = [
     icon: ReceiptText,
     permission: PERMISSIONS.RECEIVABLES_VIEW,
     children: [
-      { labelKey: 'dasborPelunasan', href: '/backoffice/pelunasan-dasbor', permission: PERMISSIONS.RECEIVABLES_VIEW },
-      { labelKey: 'receivables', href: '/backoffice/piutang', permission: PERMISSIONS.RECEIVABLES_VIEW },
-      { labelKey: 'collections', href: '/backoffice/kontrabon', permission: PERMISSIONS.RECEIVABLES_VIEW },
-      { labelKey: 'payments', href: '/backoffice/pelunasan', permission: PERMISSIONS.RECEIVABLES_VIEW },
-      { labelKey: 'tugasTagih', href: '/backoffice/tugas-tagih', permission: PERMISSIONS.RECEIVABLES_VIEW },
-      { labelKey: 'storeReturns', href: '/backoffice/retur-toko', permission: PERMISSIONS.RECEIVABLES_VIEW },
-      { labelKey: 'bebanSelisih', href: '/backoffice/beban-selisih', permission: PERMISSIONS.RECEIVABLES_VIEW },
-      { labelKey: 'arsipRetur', href: '/backoffice/arsip-retur', permission: PERMISSIONS.RECEIVABLES_VIEW },
+      { labelKey: 'dasborPelunasan', href: '/backoffice/pelunasan-dasbor', permission: IZIN_BACA_PIUTANG },
+      { labelKey: 'receivables', href: '/backoffice/piutang', permission: IZIN_BACA_PIUTANG },
+      { labelKey: 'collections', href: '/backoffice/kontrabon', permission: IZIN_BACA_PIUTANG },
+      { labelKey: 'payments', href: '/backoffice/pelunasan', permission: IZIN_BACA_PELUNASAN },
+      { labelKey: 'tugasTagih', href: '/backoffice/tugas-tagih', permission: IZIN_BACA_ARSIP },
+      { labelKey: 'storeReturns', href: '/backoffice/retur-toko', permission: IZIN_BACA_RETUR },
+      { labelKey: 'bebanSelisih', href: '/backoffice/beban-selisih', permission: IZIN_BACA_PIUTANG },
+      { labelKey: 'arsipRetur', href: '/backoffice/arsip-retur', permission: IZIN_BACA_ARSIP },
     ],
   },
   {

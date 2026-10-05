@@ -41,10 +41,10 @@ import { cn } from '@/lib/utils';
 import { dinamis } from '@/lib/i18n/dinamis';
 import { BarisBarangEditor, type PilihanBarang } from '../retur-toko/BarisBarangEditor';
 import type { BarisBarang } from '@/lib/receivables/return-writer';
-import type { BarisSiklus } from '@/lib/konsinyasi/queries';
-import type { TahapSiklus } from '@/lib/konsinyasi/aturan';
+import type { BarisSiklus, TahapSiklusLengkap } from '@/lib/konsinyasi/queries';
 import { bukaSiklusAction, kirimTitipanAction } from '@/app/actions/konsinyasi';
 import { NADA_TAHAP, URUT_TAHAP } from './tahap';
+import { tulisRupiah } from "./[id]/jumlah-bayar";
 import { TanggalInput } from '@/components/ui/tanggal-input';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
@@ -79,7 +79,7 @@ export function KonsinyasiClient({
   const td = dinamis(t);
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [saring, setSaring] = useState<TahapSiklus | null>(null);
+  const [saring, setSaring] = useState<TahapSiklusLengkap | null>(null);
 
   const [siklusTerbuka, setSiklusTerbuka] = useState(false);
   const [storeId, setStoreId] = useState('');
@@ -94,7 +94,7 @@ export function KonsinyasiClient({
   const [barang, setBarang] = useState<BarisBarang[]>([]);
   const [catatanKirim, setCatatanKirim] = useState('');
 
-  const jumlah = (x: TahapSiklus) => baris.filter((b) => b.tahap === x).length;
+  const jumlah = (x: TahapSiklusLengkap) => baris.filter((b) => b.tahap === x).length;
   const tampil = saring ? baris.filter((b) => b.tahap === saring) : baris;
   const terlambat = baris.filter((b) => b.gajiTerlambat).length;
 
@@ -199,6 +199,11 @@ export function KonsinyasiClient({
                       <TableCell>{b.storeName}</TableCell>
                       <TableCell className="text-right tabular-nums">
                         {b.nilaiTerjual > 0 ? rupiah(b.nilaiTerjual) : '—'}
+                        {b.sisaTagihan !== null && b.sisaTagihan > 0 && (
+                          <span className="block text-xs text-amber-700 dark:text-amber-400">
+                            {t("tagihan.remainingShort", { value: tulisRupiah(b.sisaTagihan) })}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell>
                         {b.penandaCocok === null ? (

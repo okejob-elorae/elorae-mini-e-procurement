@@ -4,6 +4,8 @@ import { prisma } from '@elorae/db';
 import { getETAStatus } from '@/lib/eta-alerts';
 import { POStatus } from '@elorae/db';
 import * as XLSX from 'xlsx';
+import { PERMISSIONS } from '@/lib/rbac';
+import { wajibIzinLaporan } from './penjaga';
 
 export type ProcurementReportFilters = {
   fromDate?: Date;
@@ -15,6 +17,7 @@ export type ProcurementReportFilters = {
 const DEFAULT_STATUSES: POStatus[] = ['SUBMITTED', 'PARTIAL'];
 
 export async function getProcurementReport(filters?: ProcurementReportFilters) {
+  await wajibIzinLaporan(PERMISSIONS.PURCHASE_ORDERS_VIEW);
   const statusList = filters?.status?.length
     ? filters.status
     : DEFAULT_STATUSES;
@@ -118,6 +121,7 @@ export async function exportProcurementReport(
   filters: ProcurementReportFilters | undefined,
   format: 'csv' | 'excel'
 ): Promise<ExportResult> {
+  await wajibIzinLaporan(PERMISSIONS.PURCHASE_ORDERS_VIEW);
   const { report } = await getProcurementReport(filters);
   const rows = reportToRows(report);
 

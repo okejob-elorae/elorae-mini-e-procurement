@@ -658,7 +658,8 @@ export function KlaimBaruClient({
                           <SelectItem value="none">{t('deductionNoReturn')}</SelectItem>
                           {retur.map((r) => (
                             <SelectItem key={r.id} value={r.id}>
-                              {r.noNrt} · {rupiah(r.nilaiKlaim)}
+                              {r.noNrt} · {rupiah(r.sisa)}
+                              {r.sisa < r.nilaiKlaim && ` / ${rupiah(r.nilaiKlaim)}`}
                             </SelectItem>
                           ))}
                         </SelectContent>

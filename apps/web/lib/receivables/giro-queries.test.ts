@@ -21,6 +21,8 @@ const wib = (t: string) => new Date(`${t}T00:00:00+07:00`);
 
 let tokoId = '';
 let userId = '';
+/** Pemeriksa harus orang lain dari pelapor BKM (`PEMERIKSA_SAMA`). */
+let keuanganId = '';
 let piutangId = '';
 let klaimLewatId = '';
 let klaimHariIniId = '';
@@ -58,6 +60,7 @@ async function buatGiro(akhiran: string, efektif: string, nilai: number, status:
 beforeEach(async () => {
   tokoId = '';
   userId = '';
+  keuanganId = '';
   piutangId = '';
   klaimLewatId = '';
   klaimHariIniId = '';
@@ -67,6 +70,9 @@ beforeEach(async () => {
 
   const admin = await prisma.user.findFirstOrThrow({ where: { email: 'admin@elorae.com' } });
   userId = admin.id;
+  keuanganId = (
+    await prisma.user.findFirstOrThrow({ where: { id: { not: admin.id } }, select: { id: true } })
+  ).id;
 
   const toko = await prisma.store.create({
     data: { code: `${tag}-S`, name: `${tag} Toko`, address: 'uji', termsType: 'PUTUS', isActive: true },
@@ -138,7 +144,7 @@ describe('ingatkanGiroJatuhTempo (basis data)', () => {
 
 describe('giro cair lewat pintu verifikasi (basis data)', () => {
   it('piutang TIDAK berkurang selama giro menunggu, dan berkurang begitu cair', async () => {
-    const tolak = await putuskanKlaim({ paymentClaimId: klaimLewatId, keputusan: 'TERVERIFIKASI', olehUserId: userId });
+    const tolak = await putuskanKlaim({ paymentClaimId: klaimLewatId, keputusan: 'TERVERIFIKASI', olehUserId: keuanganId });
     expect(tolak).toEqual({ ok: false, alasan: 'GIRO_BELUM_CAIR' });
     let [p] = await daftarPiutang({ receivableIds: [piutangId] });
     expect(p.outstanding).toBe(1_000_000);
@@ -146,7 +152,7 @@ describe('giro cair lewat pintu verifikasi (basis data)', () => {
     const cair = await putuskanKlaim({
       paymentClaimId: klaimLewatId,
       keputusan: 'TERVERIFIKASI',
-      olehUserId: userId,
+      olehUserId: keuanganId,
       giro: 'CAIR',
     });
     expect(cair.ok).toBe(true);

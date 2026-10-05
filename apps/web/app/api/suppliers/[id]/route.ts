@@ -4,9 +4,22 @@ export const dynamic = 'force-dynamic';
 import { auth } from '@/lib/auth';
 import { z } from 'zod';
 import { prisma } from '@elorae/db';
-import { encryptBankAccount, decryptBankAccount } from '@/lib/encryption';
-import { logBankAccountView } from '@/lib/audit';
-import { requirePermission, PERMISSIONS } from '@/lib/rbac';
+import { encryptBankAccount } from '@/lib/encryption';
+import { hasPermission, PERMISSIONS } from '@/lib/rbac';
+import { verifyPinForAction } from '@/app/actions/security/pin-auth';
+import {
+  decryptSupplierBankAccount,
+  deleteSupplier,
+  SUPPLIER_DELETE_BLOCKED,
+} from '@/lib/suppliers/mutations';
+
+/*
+ * Izin dan PIN di sini SAMA dengan aksinya (`app/actions/suppliers.ts`):
+ * hapus = `suppliers:delete` + PIN, buka rekening = `suppliers:view` + PIN, dan
+ * PIN selalu lewat `verifyPinForAction` (pengguna sesi, batas tiga salah per
+ * 15 menit). Dulu DELETE tanpa PIN dan POST memakai `verifyPin` tanpa batas,
+ * jadi rute ini adalah jalan memutar di sekitar kedua penjaga aksinya.
+ */
 const supplierSchema = z.object({
   code: z.string().min(1).optional(),
   name: z.string().min(1).optional(),
@@ -20,9 +33,25 @@ const supplierSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
-const decryptSchema = z.object({
+const pinSchema = z.object({
   pin: z.string().min(4),
 });
+
+/** 403 bila izin kurang — DI LUAR try, supaya tidak tertelan menjadi 500. */
+function tolakTanpaIzin(permissions: string[] | undefined, kode: string): NextResponse | null {
+  if (hasPermission(permissions ?? [], kode)) return null;
+  return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+}
+
+/** PIN ditolak: kuncian → 429, selain itu 403. Kuncinya dari namespace `security`. */
+function tolakanPin(messageKey: string | undefined): NextResponse {
+  const status = messageKey === 'tooManyAttempts' ? 429 : 403;
+  return NextResponse.json({ error: messageKey ?? 'pinIncorrect' }, { status });
+}
+
+function ipDari(req: NextRequest): string {
+  return req.headers.get('x-forwarded-for') || 'unknown';
+}
 
 // GET /api/suppliers/[id] - Get supplier
 export async function GET(
@@ -35,6 +64,8 @@ export async function GET(
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    const tanpaIzin = tolakTanpaIzin(session.user.permissions, PERMISSIONS.SUPPLIERS_VIEW);
+    if (tanpaIzin) return tanpaIzin;
 
     const supplier = await prisma.supplier.findUnique({
       where: { id },
@@ -77,7 +108,8 @@ export async function PUT(
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    requirePermission(session.user.permissions, PERMISSIONS.SUPPLIERS_EDIT);
+    const tanpaIzin = tolakTanpaIzin(session.user.permissions, PERMISSIONS.SUPPLIERS_EDIT);
+    if (tanpaIzin) return tanpaIzin;
 
     const body = await req.json();
     const validated = supplierSchema.parse(body);
@@ -125,7 +157,7 @@ export async function PUT(
   }
 }
 
-// DELETE /api/suppliers/[id] - Delete supplier
+// DELETE /api/suppliers/[id] - Hapus pemasok (body: { pin })
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -136,9 +168,23 @@ export async function DELETE(
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    requirePermission(session.user.permissions, PERMISSIONS.SUPPLIERS_DELETE);
+    // Izin dulu, baru PIN: tanpa `suppliers:delete` tidak ada tebakan PIN yang dihitung.
+    const tanpaIzin = tolakTanpaIzin(session.user.permissions, PERMISSIONS.SUPPLIERS_DELETE);
+    if (tanpaIzin) return tanpaIzin;
 
-    const { deleteSupplier, SUPPLIER_DELETE_BLOCKED } = await import('@/lib/suppliers/mutations');
+    const isian = pinSchema.safeParse(await req.json().catch(() => null));
+    if (!isian.success) {
+      return NextResponse.json({ error: 'pinInvalid' }, { status: 400 });
+    }
+
+    const pinResult = await verifyPinForAction(
+      session.user.id,
+      isian.data.pin,
+      'DELETE_SUPPLIER',
+      undefined,
+      ipDari(req)
+    );
+    if (!pinResult.success) return tolakanPin(pinResult.messageKey);
 
     try {
       await deleteSupplier(id);
@@ -162,7 +208,7 @@ export async function DELETE(
   }
 }
 
-// POST /api/suppliers/[id]/decrypt - Decrypt bank account
+// POST /api/suppliers/[id] - Buka nomor rekening (body: { pin })
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -173,51 +219,40 @@ export async function POST(
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    // Izin dulu, baru PIN: tanpa `suppliers:view` tidak ada tebakan PIN yang dihitung.
+    const tanpaIzin = tolakTanpaIzin(session.user.permissions, PERMISSIONS.SUPPLIERS_VIEW);
+    if (tanpaIzin) return tanpaIzin;
 
-    const body = await req.json();
-    const { pin } = decryptSchema.parse(body);
-
-    // Verify PIN
-    const { verifyPin } = await import('@/lib/auth');
-    const isValid = await verifyPin(session.user.id, pin);
-
-    if (!isValid) {
-      return NextResponse.json(
-        { error: 'Invalid PIN' },
-        { status: 403 }
-      );
+    const isian = pinSchema.safeParse(await req.json().catch(() => null));
+    if (!isian.success) {
+      return NextResponse.json({ error: 'pinInvalid' }, { status: 400 });
     }
 
-    const supplier = await prisma.supplier.findUnique({
-      where: { id },
-    });
+    const ip = ipDari(req);
+    const pinResult = await verifyPinForAction(
+      session.user.id,
+      isian.data.pin,
+      'VIEW_BANK_ACCOUNT',
+      'User requested bank account view',
+      ip
+    );
+    if (!pinResult.success) return tolakanPin(pinResult.messageKey);
 
-    if (!supplier || !supplier.bankAccountEnc) {
-      return NextResponse.json(
-        { error: 'Bank account not found' },
-        { status: 404 }
-      );
+    let bankAccount: string;
+    try {
+      bankAccount = await decryptSupplierBankAccount(id, session.user.id, {
+        ip,
+        userAgent: req.headers.get('user-agent') || 'unknown',
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Bank account not found') {
+        return NextResponse.json({ error: 'Bank account not found' }, { status: 404 });
+      }
+      throw error;
     }
-
-    // Decrypt bank account
-    const bankAccount = decryptBankAccount(supplier.bankAccountEnc, 'DEFAULT_PIN');
-
-    // Log audit
-    const ip = req.headers.get('x-forwarded-for') || 'unknown';
-    const userAgent = req.headers.get('user-agent') || 'unknown';
-    await logBankAccountView(session.user.id, id, {
-      ip,
-      userAgent,
-    });
 
     return NextResponse.json({ bankAccount });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Validation error', details: error.issues },
-        { status: 400 }
-      );
-    }
     console.error('Failed to decrypt bank account:', error);
     return NextResponse.json(
       { error: 'Failed to decrypt bank account' },

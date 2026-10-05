@@ -1,6 +1,6 @@
 import { prisma, Prisma } from '@elorae/db';
 import { runSerializable } from '@/lib/db/tx-retry';
-import { hitungSisaPiutang, type StatusKlaim } from './rules';
+import { hitungSisaPiutang, returTerpakaiMelebihi, STATUS_KLAIM_HIDUP, type StatusKlaim } from './rules';
 import { PILIH_POTONGAN, potonganRetur } from './deductions';
 import { catatJejak, JEJAK } from './jejak';
 import { giroMenahanVerifikasi, STATUS_GIRO } from './giro';
@@ -22,16 +22,17 @@ type Klien = typeof prisma | Prisma.TransactionClient;
 const angka = (v: unknown): number => Number(v ?? 0);
 
 /**
- * Hitung ulang satu piutang dan simpan hasilnya.
+ * Sisa satu piutang dihitung dari nol, TANPA menyimpannya.
  *
- * Mengembalikan sisa yang baru supaya pemanggil bisa melaporkannya tanpa
- * membaca ulang dari database.
+ * `null` berarti piutangnya tidak ada. Dipakai penjaga yang perlu tahu sisanya
+ * sebelum memutuskan apa pun; yang menyimpan adalah `hitungUlangPiutang`.
  */
-export async function hitungUlangPiutang(client: Klien, receivableId: string): Promise<number> {
+export async function bacaSisaPiutang(client: Klien, receivableId: string): Promise<number | null> {
   const piutang = await client.receivable.findUnique({
     where: { id: receivableId },
     select: {
       amount: true,
+      paidBeforeImport: true,
       claimLinks: {
         select: {
           settledAmount: true,
@@ -46,7 +47,7 @@ export async function hitungUlangPiutang(client: Klien, receivableId: string): P
       },
     },
   });
-  if (!piutang) return 0;
+  if (!piutang) return null;
 
   const sisa = hitungSisaPiutang(
     angka(piutang.amount),
@@ -56,7 +57,20 @@ export async function hitungUlangPiutang(client: Klien, receivableId: string): P
       potonganRetur: potonganRetur(link.paymentClaim.deductions),
       nilaiDilunasiPiutangIni: angka(link.settledAmount),
     })),
+    angka(piutang.paidBeforeImport),
   );
+  return sisa;
+}
+
+/**
+ * Hitung ulang satu piutang dan simpan hasilnya.
+ *
+ * Mengembalikan sisa yang baru supaya pemanggil bisa melaporkannya tanpa
+ * membaca ulang dari database.
+ */
+export async function hitungUlangPiutang(client: Klien, receivableId: string): Promise<number> {
+  const sisa = await bacaSisaPiutang(client, receivableId);
+  if (sisa === null) return 0;
 
   await client.receivable.update({
     where: { id: receivableId },
@@ -82,11 +96,97 @@ export async function hitungUlangDariKlaim(client: Klien, paymentClaimId: string
   }
 }
 
+export type PemakaianRetur = {
+  /** Nilai yang diklaim toko di NRT. */
+  nilai: number;
+  /** Jumlah potongan atas NRT ini di seluruh BKM yang masih hidup. */
+  terpakai: number;
+};
+
+/**
+ * Berapa dari setiap nota retur yang sudah dipotongkan di BKM yang masih hidup
+ * (DIKIRIM atau TERVERIFIKASI).
+ *
+ * Penjaga "satu NRT tidak dipakai melebihi nilainya" hanya utuh kalau dibaca
+ * DI DALAM transaksi serializable yang juga menulis potongannya: dua BKM yang
+ * membaca pemakaian nol bersamaan lalu sama-sama menulis adalah persis celah
+ * yang ditutup, dan basis data sendirilah yang menolak salah satunya.
+ *
+ * `kecualiKlaimId`/`kecualiPotonganId`: potongan milik dokumen yang sedang
+ * diperiksa tidak ikut dihitung — ia ditambahkan sendiri oleh pemanggil.
+ * NRT yang tidak ada tidak muncul di peta; pemanggil menolaknya sebagai
+ * nota yang tidak ditemukan.
+ */
+export async function pemakaianRetur(
+  client: Klien,
+  returIds: string[],
+  opsi?: { kecualiKlaimId?: string; kecualiPotonganId?: string },
+): Promise<Map<string, PemakaianRetur>> {
+  const unik = [...new Set(returIds.filter(Boolean))];
+  const hasil = new Map<string, PemakaianRetur>();
+  if (unik.length === 0) return hasil;
+
+  const retur = await client.storeReturn.findMany({
+    where: { id: { in: unik } },
+    select: { id: true, claimedAmount: true },
+  });
+  for (const r of retur) hasil.set(r.id, { nilai: angka(r.claimedAmount), terpakai: 0 });
+
+  const potongan = await client.paymentClaimDeduction.findMany({
+    where: {
+      storeReturnId: { in: unik },
+      paymentClaim: { status: { in: [...STATUS_KLAIM_HIDUP] } },
+      ...(opsi?.kecualiKlaimId ? { paymentClaimId: { not: opsi.kecualiKlaimId } } : {}),
+      ...(opsi?.kecualiPotonganId ? { id: { not: opsi.kecualiPotonganId } } : {}),
+    },
+    select: { storeReturnId: true, amount: true },
+  });
+  for (const p of potongan) {
+    const u = p.storeReturnId ? hasil.get(p.storeReturnId) : undefined;
+    if (u) u.terpakai += angka(p.amount);
+  }
+  return hasil;
+}
+
+/**
+ * Nota retur pertama yang akan terpakai melebihi nilainya kalau potongan baru
+ * ini ditambahkan, atau `null` kalau semuanya muat. `baru` boleh memuat NRT
+ * yang sama lebih dari sekali — dijumlahkan.
+ */
+export async function returYangMelebihi(
+  client: Klien,
+  baru: { storeReturnId: string | null | undefined; nilai: number }[],
+  opsi?: { kecualiKlaimId?: string; kecualiPotonganId?: string },
+): Promise<string | null> {
+  const perNota = new Map<string, number>();
+  for (const b of baru) {
+    if (!b.storeReturnId) continue;
+    perNota.set(b.storeReturnId, (perNota.get(b.storeReturnId) ?? 0) + b.nilai);
+  }
+  if (perNota.size === 0) return null;
+  const dipakai = await pemakaianRetur(client, [...perNota.keys()], opsi);
+  for (const [id, nilai] of perNota) {
+    const u = dipakai.get(id);
+    // NRT yang tidak ada (penunjuk menggantung) dilewati di sini: pembuatan BKM
+    // dan penautan ulang sudah menolaknya lebih dulu sebagai "tidak ditemukan",
+    // dan pada BKM lama Aturan 2 menahannya penuh (`potonganRetur`). Menolaknya
+    // "terpakai" justru salah alamat dan mengunci transfer yang sah.
+    if (!u) continue;
+    if (returTerpakaiMelebihi(u.nilai, u.terpakai, nilai)) return id;
+  }
+  return null;
+}
+
 export type HasilKoreksi =
   | { ok: true; piutangDihitungUlang: number }
   | {
       ok: false;
-      alasan: 'TIDAK_DITEMUKAN' | 'SUDAH_DIBATALKAN' | 'ALASAN_WAJIB' | 'RETUR_BEDA_TOKO';
+      alasan:
+        | 'TIDAK_DITEMUKAN'
+        | 'SUDAH_DIBATALKAN'
+        | 'ALASAN_WAJIB'
+        | 'RETUR_BEDA_TOKO'
+        | 'RETUR_TERPAKAI';
     };
 
 /**
@@ -167,14 +267,17 @@ export async function tautkanUlangPotongan(input: {
 }): Promise<HasilKoreksi> {
   if (!input.alasan?.trim()) return { ok: false, alasan: 'ALASAN_WAJIB' };
 
-  return prisma.$transaction(async (tx) => {
+  // Serializable: penjaga pemakaian NRT di bawah membaca lalu menulis, dan
+  // hanya utuh kalau basis data menolak penulis kedua yang membaca bersamaan.
+  return runSerializable(async (tx) => {
     const potongan = await tx.paymentClaimDeduction.findUnique({
       where: { id: input.deductionId },
       select: {
         id: true,
         name: true,
+        amount: true,
         storeReturnId: true,
-        paymentClaim: { select: { id: true, docNo: true, storeId: true } },
+        paymentClaim: { select: { id: true, docNo: true, storeId: true, status: true } },
       },
     });
     if (!potongan) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
@@ -189,6 +292,19 @@ export async function tautkanUlangPotongan(input: {
       if (!retur) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
       if (retur.storeId !== potongan.paymentClaim.storeId) {
         return { ok: false as const, alasan: 'RETUR_BEDA_TOKO' as const };
+      }
+      // Menautkan ulang tidak boleh menjadi jalan memakai NRT melebihi nilainya.
+      // Potongan pada BKM yang sudah ditolak/dibatalkan tidak memakai apa pun.
+      const hidup = (STATUS_KLAIM_HIDUP as readonly string[]).includes(potongan.paymentClaim.status);
+      if (
+        hidup &&
+        (await returYangMelebihi(
+          tx,
+          [{ storeReturnId: input.storeReturnId, nilai: angka(potongan.amount) }],
+          { kecualiPotonganId: potongan.id },
+        ))
+      ) {
+        return { ok: false as const, alasan: 'RETUR_TERPAKAI' as const };
       }
     }
 
@@ -229,7 +345,10 @@ export type HasilVerifikasi =
         | 'SUDAH_DIPUTUSKAN'
         | 'ALASAN_WAJIB'
         | 'GIRO_BELUM_CAIR'
-        | 'BUKAN_GIRO_MENUNGGU';
+        | 'BUKAN_GIRO_MENUNGGU'
+        | 'PEMERIKSA_SAMA'
+        | 'MELEBIHI_SISA'
+        | 'RETUR_TERPAKAI';
     };
 
 /**
@@ -274,10 +393,28 @@ export async function putuskanKlaim(input: {
   return runSerializable(async (tx) => {
     const klaim = await tx.paymentClaim.findUnique({
       where: { id: input.paymentClaimId },
-      select: { id: true, docNo: true, status: true, verifyNote: true, giroStatus: true },
+      select: {
+        id: true,
+        docNo: true,
+        status: true,
+        verifyNote: true,
+        giroStatus: true,
+        salesmanId: true,
+        createdById: true,
+      },
     });
     if (!klaim) return { ok: false, alasan: 'TIDAK_DITEMUKAN' as const };
     if (klaim.status !== 'DIKIRIM') return { ok: false, alasan: 'SUDAH_DIPUTUSKAN' as const };
+
+    /*
+     * Pemisahan tugas: yang melaporkan atau mencatatkan BKM tidak boleh
+     * memutuskannya — berlaku juga untuk admin. Kalau pelapor bisa mengesahkan
+     * laporannya sendiri, Aturan 1 ("klaim bukan lunas") runtuh: tidak ada mata
+     * kedua yang mencocokkan klaim dengan mutasi rekening.
+     */
+    if (input.olehUserId === klaim.salesmanId || input.olehUserId === klaim.createdById) {
+      return { ok: false, alasan: 'PEMERIKSA_SAMA' as const };
+    }
 
     if (input.giro) {
       if (klaim.giroStatus !== STATUS_GIRO.MENUNGGU) {
@@ -285,6 +422,42 @@ export async function putuskanKlaim(input: {
       }
     } else if (input.keputusan === 'TERVERIFIKASI' && giroMenahanVerifikasi(klaim.giroStatus)) {
       return { ok: false, alasan: 'GIRO_BELUM_CAIR' as const };
+    }
+
+    if (input.keputusan === 'TERVERIFIKASI') {
+      /*
+       * Diperiksa ULANG saat verifikasi, di dalam transaksi serializable.
+       * Pembuatan BKM hanya membandingkan dengan sisa dari klaim yang SUDAH
+       * terverifikasi, jadi dua BKM tertunda bisa sama-sama melunasi seluruh
+       * faktur. Dulu verifikasi kedua dijepit diam-diam ke nol — keuangan
+       * mengira dua transfer tercatat, padahal satu tidak mengurangi apa pun.
+       */
+      const tautan = await tx.paymentClaimReceivable.findMany({
+        where: { paymentClaimId: klaim.id },
+        select: { receivableId: true, settledAmount: true },
+      });
+      for (const t of tautan) {
+        const sisa = await bacaSisaPiutang(tx, t.receivableId);
+        if (sisa !== null && angka(t.settledAmount) > sisa) {
+          return { ok: false, alasan: 'MELEBIHI_SISA' as const };
+        }
+      }
+
+      // Satu NRT tidak boleh terpakai melebihi nilainya di seluruh BKM hidup —
+      // menjaga juga BKM lama yang tercatat sebelum penjaga pembuatan ada.
+      const potonganNota = await tx.paymentClaimDeduction.findMany({
+        where: { paymentClaimId: klaim.id, storeReturnId: { not: null } },
+        select: { storeReturnId: true, amount: true },
+      });
+      if (
+        await returYangMelebihi(
+          tx,
+          potonganNota.map((p) => ({ storeReturnId: p.storeReturnId, nilai: angka(p.amount) })),
+          { kecualiKlaimId: klaim.id },
+        )
+      ) {
+        return { ok: false, alasan: 'RETUR_TERPAKAI' as const };
+      }
     }
 
     const sekarang = new Date();

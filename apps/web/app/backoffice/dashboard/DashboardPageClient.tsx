@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import type { SerializedDashboardStats } from '@/lib/dashboard/serialize';
+import type { StatistikBeranda } from './kartu-beranda';
 import type { SalesmenSalesSummary } from '@/lib/dashboard/queries';
 import type { MarketplaceKpi } from '@/lib/sales-orders/queries';
 import type { ActionItem } from '@/lib/dashboard/action-items-shared';
@@ -21,7 +21,7 @@ import { ActionNeededPanel } from './ActionNeededPanel';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { BatangKomposisi } from '@/components/dashboard/BatangKomposisi';
-import { KpiDaftar } from '@/components/dashboard/KpiDaftar';
+import { KpiDaftar, type BarisKpi } from '@/components/dashboard/KpiDaftar';
 import { SalamBeranda } from '@/components/dashboard/SalamBeranda';
 import { TrenPenjualan } from '@/components/dashboard/TrenPenjualan';
 import type { KelompokUmur, TitikTren } from '@/lib/dashboard/tren';
@@ -73,22 +73,27 @@ function Kelompok({
   );
 }
 
+/*
+ * Prop yang boleh `null` adalah kartu yang TIDAK dimuat server karena
+ * penggunanya tidak memegang izinnya (`kartuBeranda`). `null` berarti
+ * bagiannya tidak digambar — bukan nol, yang akan terbaca "tidak ada piutang".
+ */
 type DashboardPageClientProps = {
-  initialStats: SerializedDashboardStats;
+  initialStats: StatistikBeranda;
   overduePOCount: number;
   initialCogsRawVsFinished: {
     rawValue: number;
     finishedValue: number;
     rawCount: number;
     finishedCount: number;
-  };
+  } | null;
   shortageCount: number;
-  marketplaceKpi: MarketplaceKpi;
+  marketplaceKpi: MarketplaceKpi | null;
   actionItems: ActionItem[];
-  piutang: RingkasPiutangBeranda;
-  oversoldCount: number;
-  initialSalesmenSales: SalesmenSalesSummary;
-  trenPenjualan: TitikTren[];
+  piutang: RingkasPiutangBeranda | null;
+  oversoldCount: number | null;
+  initialSalesmenSales: SalesmenSalesSummary | null;
+  trenPenjualan: TitikTren[] | null;
   /** Tanggal WIB hari ini (YYYY-MM-DD) — untuk tautan "hari ini" ke daftar pesanan. */
   hariIniWib: string;
   /** Kapan server memuat angka-angka ini — untuk "Diperbarui … lalu". */
@@ -128,50 +133,63 @@ export function DashboardPageClient({
     return null;
   }
 
+  // Baris ringkasan penjualan: lapangan hanya bila datanya dikirim, begitu pula marketplace.
+  const barisPenjualan: BarisKpi[] = [];
+  if (salesmenSales) {
+    barisPenjualan.push({
+      // Sejak awal, bukan 30 hari — dan disebut begitu, karena ia
+      // berdiri tepat di bawah grafik 30 hari.
+      label: tDashboard('kpiRealisedAllTime'),
+      nilai: salesmenSales.totals.realised.amount,
+      format: formatIdr,
+      konteks: tDashboard('kpiRealisedCtx', { count: formatNumber(salesmenSales.totals.realised.count) }),
+      // Daftar pesanan bawaannya "menunggu persetujuan"; yang
+      // terealisasi adalah putus yang sudah disetujui.
+      href: '/backoffice/field-sales-orders?status=APPROVED&orderType=PUTUS',
+    });
+  }
+  if (marketplaceKpi) {
+    barisPenjualan.push(
+      {
+        label: tDashboard('kpiMarketplaceToday'),
+        nilai: Number(marketplaceKpi.todaySalesTotal),
+        format: formatIdr,
+        konteks: tDashboard('todaySalesCount', { count: marketplaceKpi.todaySalesCount }),
+        href: `/backoffice/sales-orders?dateFrom=${hariIniWib}&dateTo=${hariIniWib}`,
+      },
+      {
+        label: tDashboard('kpiUnshipped'),
+        nilai: marketplaceKpi.pendingFulfillmentCount,
+        format: formatNumber,
+        konteks: tDashboard('kpiUnshippedCtx'),
+        href: '/backoffice/fulfillment',
+        nada: marketplaceKpi.pendingFulfillmentCount > 0 ? 'perhatian' : 'netral',
+      },
+    );
+  }
+
   return (
     <div className="viz beranda-halaman space-y-6">
       <div className="anim-rise space-y-3">
         <SalamBeranda nama={session.user.name ?? ''} dimuatPada={dimuatPada} />
         {/* Grafik penjualan paling atas (permintaan pemilik, 2026-10-01): yang
             pertama dibaca adalah arah penjualan, lalu apa yang perlu ditindaklanjuti. */}
-        <TrenPenjualan tren={trenPenjualan} formatIdr={formatIdr} />
+        {trenPenjualan ? <TrenPenjualan tren={trenPenjualan} formatIdr={formatIdr} /> : null}
         {/* Terbuka, bukan terlipat di balik tombol. */}
         <ActionNeededPanel items={actionItems} />
       </div>
 
+      {barisPenjualan.length > 0 ? (
       <Kelompok id="beranda-penjualan" judul={tDashboard('groupSales')} delay={80}>
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-          <KpiDaftar
-            judul={tDashboard('kpiSalesSummary')}
-            baris={[
-              {
-                // Sejak awal, bukan 30 hari — dan disebut begitu, karena ia
-                // berdiri tepat di bawah grafik 30 hari.
-                label: tDashboard('kpiRealisedAllTime'),
-                nilai: salesmenSales.totals.realised.amount,
-                format: formatIdr,
-                konteks: tDashboard('kpiRealisedCtx', { count: formatNumber(salesmenSales.totals.realised.count) }),
-                // Daftar pesanan bawaannya "menunggu persetujuan"; yang
-                // terealisasi adalah putus yang sudah disetujui.
-                href: '/backoffice/field-sales-orders?status=APPROVED&orderType=PUTUS',
-              },
-              {
-                label: tDashboard('kpiMarketplaceToday'),
-                nilai: Number(marketplaceKpi.todaySalesTotal),
-                format: formatIdr,
-                konteks: tDashboard('todaySalesCount', { count: marketplaceKpi.todaySalesCount }),
-                href: `/backoffice/sales-orders?dateFrom=${hariIniWib}&dateTo=${hariIniWib}`,
-              },
-              {
-                label: tDashboard('kpiUnshipped'),
-                nilai: marketplaceKpi.pendingFulfillmentCount,
-                format: formatNumber,
-                konteks: tDashboard('kpiUnshippedCtx'),
-                href: '/backoffice/fulfillment',
-                nada: marketplaceKpi.pendingFulfillmentCount > 0 ? 'perhatian' : 'netral',
-              },
-            ]}
-          />
+        {/* Tanpa tabel per salesman, ringkasan selebar kartu produksi, bukan sepertiga layar. */}
+        <div
+          className={cn(
+            'grid gap-4',
+            salesmenSales ? 'lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]' : 'md:grid-cols-2',
+          )}
+        >
+          <KpiDaftar judul={tDashboard('kpiSalesSummary')} baris={barisPenjualan} />
+        {salesmenSales ? (
         <Card>
           <CardHeader>
             <CardTitle>
@@ -284,9 +302,12 @@ export function DashboardPageClient({
             )}
           </CardContent>
         </Card>
+        ) : null}
         </div>
       </Kelompok>
+      ) : null}
 
+      {piutang ? (
       <Kelompok id="beranda-piutang" judul={tDashboard('groupReceivables')} delay={120}>
         <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
           <BatangKomposisi
@@ -330,6 +351,7 @@ export function DashboardPageClient({
           />
         </div>
       </Kelompok>
+      ) : null}
 
       <Kelompok id="beranda-produksi" judul={tDashboard('groupProduction')} delay={160}>
         <div className="grid gap-4 md:grid-cols-2">
@@ -385,6 +407,7 @@ export function DashboardPageClient({
         </div>
       </Kelompok>
 
+      {cogsRawVsFinished && oversoldCount !== null && s.items ? (
       <Kelompok id="beranda-stok" judul={tDashboard('groupStock')} delay={200}>
         <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
           <BatangKomposisi
@@ -435,6 +458,7 @@ export function DashboardPageClient({
           />
         </div>
       </Kelompok>
+      ) : null}
 
       {/* Laporan rinci (produksi, PO terlambat, pengadaan, setoran CMT,
           inventori) dulu tab di bawah sini; sekarang halamannya sendiri.

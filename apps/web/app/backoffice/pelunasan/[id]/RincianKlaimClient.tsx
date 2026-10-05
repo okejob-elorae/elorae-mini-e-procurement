@@ -528,7 +528,8 @@ export function RincianKlaimClient({
                   <SelectItem value="none">{t('deductionNoReturn')}</SelectItem>
                   {data.returToko.map((r) => (
                     <SelectItem key={r.id} value={r.id}>
-                      {r.noNrt} · {rupiah(r.nilaiKlaim)}
+                      {r.noNrt} · {rupiah(r.sisa)}
+                      {r.sisa < r.nilaiKlaim && ` / ${rupiah(r.nilaiKlaim)}`}
                     </SelectItem>
                   ))}
                 </SelectContent>

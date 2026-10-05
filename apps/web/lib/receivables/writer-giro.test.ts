@@ -33,12 +33,16 @@ const tx = {
     }),
   },
   paymentClaimReceivable: { findMany: vi.fn(async () => [{ receivableId: 'r1' }]) },
+  // Verifikasi memeriksa ulang pemakaian nota retur; klaim di sini tanpa potongan retur.
+  paymentClaimDeduction: { findMany: vi.fn(async () => []) },
   receivable: {
-    findUnique: vi.fn(async () => {
+    findUnique: vi.fn(async () => ({ amount: 1_000_000, claimLinks: [] })),
+    // Dihitung saat sisa baru DISIMPAN. Verifikasi juga membaca sisa lebih dulu
+    // (menolak pelunasan yang melebihi sisa), dan bacaan itu bukan hitung ulang.
+    update: vi.fn(async () => {
       state.dihitungUlang += 1;
-      return { amount: 1_000_000, claimLinks: [] };
+      return {};
     }),
-    update: vi.fn(async () => ({})),
   },
   auditLog: {
     create: vi.fn(async (a: { data: Record<string, unknown> }) => {

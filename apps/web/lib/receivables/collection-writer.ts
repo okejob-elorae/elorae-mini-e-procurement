@@ -4,6 +4,7 @@ import { penagihPiutang } from '@/lib/stores/penanggung-jawab';
 import { bentrokKunciKiriman } from './idempoten';
 import { denganNomorUnik } from './nomor';
 import { hitungUlangPiutang } from './writer';
+import { tanggalWib } from '@/lib/dashboard/hari-wib';
 import { catatJejak, JEJAK } from './jejak';
 
 /**
@@ -199,7 +200,9 @@ export async function buatKontrabon(input: {
         }
 
         const nilai = [...sisaPerPiutang.values()].reduce((a, b) => a + b, 0);
-        const docNo = await nomorBerikutnya(tx, 'TT', input.handoverDate.getFullYear());
+        // Tahun WIB, bukan tahun jam server: serah terima 1 Januari WIB disimpan
+        // 31 Desember 17.00 UTC, dan `getFullYear()` di server UTC memberi tahun lalu.
+        const docNo = await nomorBerikutnya(tx, 'TT', Number(tanggalWib(input.handoverDate).slice(0, 4)));
 
         const nota = await tx.collectionNote.create({
           data: {

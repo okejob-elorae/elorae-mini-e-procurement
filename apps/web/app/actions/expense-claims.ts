@@ -27,6 +27,7 @@ import {
   type StatusBiaya,
 } from "@/lib/salesman/biaya";
 import { daftarBiayaKantor, pengaturanBiayaDb } from "@/lib/salesman/biaya-queries";
+import { runSerializable } from "@/lib/db/tx-retry";
 
 /**
  * Klaim biaya perjalanan salesman: mengajukan (HP), menyetujui/menolak
@@ -178,37 +179,43 @@ async function putuskan(
   if (typeof id !== "string" || !id) return { ok: false, kode: "TIDAK_DITEMUKAN" };
 
   try {
-    const klaim = await prisma.expenseClaim.findUnique({
-      where: { id },
-      select: { id: true, userId: true, status: true, spentAt: true, category: true, amount: true },
-    });
-    if (!klaim) return { ok: false, kode: "TIDAK_DITEMUKAN" };
-    // Tidak ada yang memutuskan uangnya sendiri.
-    if (klaim.userId === pelakuId) return { ok: false, kode: "MILIK_SENDIRI" };
+    type Klaim = { userId: string; spentAt: Date; category: string; amount: Prisma.Decimal };
+    type Putusan =
+      | { ok: true; klaim: Klaim; alasan: string | null; notifikasiBayar: AdminNotification | null }
+      | { ok: false; kode: Exclude<HasilKeputusanBiaya, { ok: true }>["kode"] };
 
-    const periksa = periksaPindahBiaya(klaim.status, ke, alasanMentah);
-    if (!periksa.ok) {
-      // Klaim yang sudah diputuskan orang lain lebih dulu: katakan itu, bukan
-      // "perpindahan tidak sah" yang membingungkan. Membayar klaim yang belum
-      // disetujui (atau ditolak) tetap TRANSISI_TIDAK_SAH — itu bukan balapan.
-      const sudah =
-        periksa.kode === "TRANSISI_TIDAK_SAH" &&
-        (ke === "DIBAYAR" ? klaim.status === "DIBAYAR" : klaim.status !== "DIAJUKAN");
-      return { ok: false, kode: sudah ? "SUDAH_DIPUTUSKAN" : periksa.kode };
-    }
+    // Baca, periksa, dan tulis di SATU transaksi serializable. `updateMany where
+    // status` saja bukan compare-and-swap di Prisma 7 (SELECT lalu UPDATE by id),
+    // jadi dua klik bersamaan dulu sama-sama "berhasil". Di sini yang kalah
+    // diulang, membaca status baru, lalu mendapat SUDAH_DIPUTUSKAN.
+    const putusan = await runSerializable(async (tx): Promise<Putusan> => {
+      const klaim = await tx.expenseClaim.findUnique({
+        where: { id },
+        select: { id: true, userId: true, status: true, spentAt: true, category: true, amount: true },
+      });
+      if (!klaim) return { ok: false, kode: "TIDAK_DITEMUKAN" };
+      // Tidak ada yang memutuskan uangnya sendiri.
+      if (klaim.userId === pelakuId) return { ok: false, kode: "MILIK_SENDIRI" };
 
-    const sekarang = new Date();
-    const data =
-      ke === "DIBAYAR"
-        ? { status: ke, paidById: pelakuId, paidAt: sekarang }
-        : { status: ke, reviewedById: pelakuId, reviewedAt: sekarang, reviewNote: periksa.alasan };
+      const periksa = periksaPindahBiaya(klaim.status, ke, alasanMentah);
+      if (!periksa.ok) {
+        // Klaim yang sudah diputuskan orang lain lebih dulu: katakan itu, bukan
+        // "perpindahan tidak sah" yang membingungkan. Membayar klaim yang belum
+        // disetujui (atau ditolak) tetap TRANSISI_TIDAK_SAH — itu bukan balapan.
+        const sudah =
+          periksa.kode === "TRANSISI_TIDAK_SAH" &&
+          (ke === "DIBAYAR" ? klaim.status === "DIBAYAR" : klaim.status !== "DIAJUKAN");
+        return { ok: false, kode: sudah ? "SUDAH_DIPUTUSKAN" : periksa.kode };
+      }
 
-    let notifikasiBayar: AdminNotification | null = null;
-    const berhasil = await prisma.$transaction(async (tx) => {
-      // Bandingkan-lalu-tukar: dua orang yang menekan bersamaan tidak bisa
-      // sama-sama "berhasil" — yang kedua mendapati statusnya sudah bergeser.
+      const sekarang = new Date();
+      const data =
+        ke === "DIBAYAR"
+          ? { status: ke, paidById: pelakuId, paidAt: sekarang }
+          : { status: ke, reviewedById: pelakuId, reviewedAt: sekarang, reviewNote: periksa.alasan };
+
       const r = await tx.expenseClaim.updateMany({ where: { id, status: klaim.status }, data });
-      if (r.count !== 1) return false;
+      if (r.count !== 1) return { ok: false, kode: "SUDAH_DIPUTUSKAN" };
       await tx.auditLog.create({
         data: {
           userId: pelakuId,
@@ -220,6 +227,8 @@ async function putuskan(
         },
       });
       // Disetujui → keuangan yang membayar perlu tahu ada yang harus dibayar.
+      // Dibuat di dalam percobaan ini, jadi percobaan yang diulang tidak membawa catatan lama.
+      let notifikasiBayar: AdminNotification | null = null;
       if (ke === "DISETUJUI") {
         notifikasiBayar = await tx.adminNotification.create({
           data: {
@@ -231,9 +240,11 @@ async function putuskan(
           },
         });
       }
-      return true;
+      return { ok: true, klaim, alasan: periksa.alasan, notifikasiBayar };
     });
-    if (!berhasil) return { ok: false, kode: "SUDAH_DIPUTUSKAN" };
+    if (!putusan.ok) return { ok: false, kode: putusan.kode };
+    const { klaim, notifikasiBayar } = putusan;
+    const periksa = { alasan: putusan.alasan };
     if (notifikasiBayar) void fanOutAdminNotification(notifikasiBayar);
 
     const ringkas = `${NAMA_KATEGORI[klaim.category as KategoriBiaya] ?? klaim.category} · ${formatIDR(

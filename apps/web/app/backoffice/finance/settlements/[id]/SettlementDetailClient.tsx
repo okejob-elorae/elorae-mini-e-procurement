@@ -38,20 +38,24 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDisplayDate } from "@/lib/date-only";
+import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-only";
+import type { UnggahanPertamaTampil } from "../ganda";
+import { HapusUnggahanSettlement } from "./HapusUnggahanSettlement";
 
 const RESYNC_POLL_INTERVAL_MS = 2000;
 
 type Props = {
   settlement: SettlementDetail;
   canManage: boolean;
+  /** Ada bila settlement ini kembar dengan unggahan yang lebih awal. */
+  ganda?: UnggahanPertamaTampil | null;
 };
 
 function formatRupiah(value: number): string {
   return `Rp ${Math.round(value).toLocaleString("id-ID")}`;
 }
 
-export function SettlementDetailClient({ settlement, canManage }: Props) {
+export function SettlementDetailClient({ settlement, canManage, ganda = null }: Props) {
   const t = useTranslations("financeSettlements");
   const locale = useLocale();
   const router = useRouter();
@@ -291,6 +295,11 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
               </Button>
             )}
 
+            {/* Hanya yang belum dijurnal yang bisa dibatalkan; server memeriksa ulang. */}
+            {!settlement.journalId && settlement.status !== "RECONCILED" && (
+              <HapusUnggahanSettlement settlementId={settlement.id} />
+            )}
+
             {settlement.journalId ? (
               <>
                 <Badge variant="default" className="gap-1">
@@ -309,20 +318,44 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={!settlement.checksumOk || isPosting}
+                  disabled={!settlement.checksumOk || isPosting || ganda !== null}
                   onClick={handlePostJournal}
                 >
                   <BookText className={`h-4 w-4 mr-2 ${isPosting ? "animate-pulse" : ""}`} />
                   {isPosting ? t("postJournalPending") : t("postJournal")}
                 </Button>
-                {!settlement.checksumOk && (
-                  <span className="text-xs text-muted-foreground">{t("postJournalChecksumHint")}</span>
+                {/* Kembaran: menjurnalnya mendebit bank & mengkredit piutang untuk kedua kali. */}
+                {ganda !== null ? (
+                  <span className="text-xs text-muted-foreground">{t("postJournalDuplicateHint")}</span>
+                ) : (
+                  !settlement.checksumOk && (
+                    <span className="text-xs text-muted-foreground">{t("postJournalChecksumHint")}</span>
+                  )
                 )}
               </div>
             )}
           </div>
         )}
       </div>
+
+      {ganda && (
+        <Card className="flex-row items-start gap-2 p-4 border-destructive/30 bg-destructive/10">
+          <AlertTriangle className="h-5 w-5 shrink-0 text-destructive" />
+          <div className="space-y-1 text-sm text-destructive">
+            <p className="font-medium">{t("duplicateCardTitle")}</p>
+            <p>
+              {t("duplicateCardBody", {
+                fileName: ganda.fileName,
+                by: ganda.uploadedByName ?? t("unknownUploader"),
+                at: formatDisplayDateTime(ganda.uploadedAtIso, locale),
+              })}
+            </p>
+            <Link href={`/backoffice/finance/settlements/${ganda.id}`} className="font-medium underline underline-offset-2">
+              {t("uploadDuplicateOpen")}
+            </Link>
+          </div>
+        </Card>
+      )}
 
       {settlement.checksumOk ? (
         <Card className="flex-row items-center gap-2 p-4 border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30">

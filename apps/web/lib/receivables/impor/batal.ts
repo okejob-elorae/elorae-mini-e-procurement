@@ -15,6 +15,14 @@ import { catatJejak, JEJAK } from '../jejak';
  * memang tercatat sejak awal.
  */
 
+/**
+ * Sisanya masih persis seperti saat diimpor: nilai faktur dikurangi bagian yang
+ * sudah dibayar sebelum impor. Yang berbeda berarti ada yang menyentuhnya.
+ */
+function sisaUtuh(r: { amount: Prisma.Decimal; outstanding: Prisma.Decimal; paidBeforeImport: Prisma.Decimal }) {
+  return r.outstanding.equals(r.amount.minus(r.paidBeforeImport));
+}
+
 type AlasanGagalBatal =
   | 'TIDAK_DITEMUKAN'
   | 'BUKAN_IMPOR'
@@ -71,7 +79,7 @@ export async function batalkanImpor(input: {
     // Yang sudah dihapus sebelumnya tidak akan terbaca lagi di sini.
     const masihAda = await tx.receivable.findMany({
       where: { id: { in: ids } },
-      select: { id: true, invoiceNo: true, amount: true, outstanding: true },
+      select: { id: true, invoiceNo: true, amount: true, outstanding: true, paidBeforeImport: true },
     });
     if (masihAda.length === 0) return { ok: false as const, alasan: 'SUDAH_DIBATALKAN' as const };
 
@@ -91,7 +99,9 @@ export async function batalkanImpor(input: {
       ...kontrabon.map((k) => k.receivableId),
       // Sisa yang tidak lagi penuh berarti ada sesuatu yang menyentuhnya,
       // walau tautannya sudah tidak terbaca.
-      ...masihAda.filter((r) => !r.outstanding.equals(r.amount)).map((r) => r.id),
+      // "Penuh" berarti sisa saat diimpor: nilai dikurangi yang sudah dibayar
+      // sebelum impor — faktur yang diimpor bersisa sebagian belum disentuh.
+      ...masihAda.filter((r) => !sisaUtuh(r)).map((r) => r.id),
     ]);
 
     if (tersentuh.size > 0) {
@@ -162,7 +172,7 @@ export async function daftarImpor(batas = 20): Promise<BatchImpor[]> {
   const hidup = semuaId.length
     ? await prisma.receivable.findMany({
         where: { id: { in: semuaId } },
-        select: { id: true, amount: true, outstanding: true },
+        select: { id: true, amount: true, outstanding: true, paidBeforeImport: true },
       })
     : [];
   const petaHidup = new Map(hidup.map((r) => [r.id, r]));
@@ -188,7 +198,7 @@ export async function daftarImpor(batas = 20): Promise<BatchImpor[]> {
     const hidupBatch = ids.filter((id) => petaHidup.has(id));
     const ada = (r.changes ?? {}) as { after?: { masuk?: number; dilewati?: number } };
     const disentuh = hidupBatch.some(
-      (id) => terpakai.has(id) || !petaHidup.get(id)!.outstanding.equals(petaHidup.get(id)!.amount),
+      (id) => terpakai.has(id) || !sisaUtuh(petaHidup.get(id)!),
     );
     return {
       auditLogId: r.id,

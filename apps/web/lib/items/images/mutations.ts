@@ -1,5 +1,7 @@
-"use server";
-
+/**
+ * Penulis galeri foto barang. SENGAJA tanpa "use server" — titik akhir kliennya
+ * `@/app/actions/item-images` (dijaga `lib/tanpa-use-server.test.ts`).
+ */
 import { revalidatePath } from "next/cache";
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";

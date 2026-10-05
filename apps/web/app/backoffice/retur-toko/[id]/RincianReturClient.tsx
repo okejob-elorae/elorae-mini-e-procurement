@@ -587,7 +587,16 @@ export function RincianReturClient({
                 {data.beban.catatan && (
                   <p className="rounded-lg bg-muted/50 p-3 text-sm">{data.beban.catatan}</p>
                 )}
-                {data.beban.status === 'DITETAPKAN' && bolehMengelola && (
+                {data.beban.faktur && (
+                  <p className="text-sm">
+                    {t('chargeInvoice', {
+                      no: data.beban.faktur.invoiceNo,
+                      sisa: rupiah(data.beban.faktur.outstanding),
+                    })}
+                  </p>
+                )}
+                {/* Beban toko lunas lewat BKM atas fakturnya — tidak ditandai lunas di sini. */}
+                {data.beban.status === 'DITETAPKAN' && bolehMengelola && !data.beban.faktur && (
                   <div className="space-y-2">
                     <Button
                       size="sm"
@@ -662,6 +671,11 @@ export function RincianReturClient({
                 })}
             </DialogDescription>
           </DialogHeader>
+          {bebanTerbuka === 'TOKO' && (
+            <p className="text-sm text-muted-foreground">
+              {t('assignTokoInvoiceHint', { doc: data.baris.nomor, value: rupiah(data.beban?.amount ?? 0) })}
+            </p>
+          )}
           {bebanTerbuka === 'SALES' && (
             <div className="space-y-2">
               <Label htmlFor="beban-orang">{t('bearerPerson')}</Label>

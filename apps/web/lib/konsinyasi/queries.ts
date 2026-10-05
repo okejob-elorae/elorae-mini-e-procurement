@@ -4,15 +4,64 @@ import {
   giliranTahap,
   stokTitipan,
   tahapSiklus,
+  type BahanTahap,
   type BarisBanding,
   type TahapSiklus,
 } from './aturan';
 import { pencocokanSiklus, penandaTerjualSiklus, type PencocokanSiklus } from "./pencocokan-queries";
 import type { PenandaCocok } from "./pencocokan";
 import { promoEloraeSiklus } from "./promo-elorae-queries";
-import { totalTagihanKonsi } from "./promo-elorae";
+import { keSen, totalTagihanKonsi } from "./promo-elorae";
 
 const angka = (v: unknown): number => Number(v ?? 0);
+
+/**
+ * Tahap siklus termasuk "menunggu pembayaran toko".
+ *
+ * Toko konsinyasi sengaja tidak pernah muncul di piutang, jadi tanpa tahap ini
+ * tagihan siklus dianggap selesai begitu faktur pajaknya tercatat — padahal
+ * uangnya belum tentu masuk. Tahap ini datang SESUDAH faktur pajak: nota dan
+ * faktur adalah dasar toko membayar.
+ */
+export type TahapSiklusLengkap = TahapSiklus | "bayar_toko";
+
+export function tahapLengkap(b: BahanTahap, tokoLunas: boolean): TahapSiklusLengkap {
+  const t = tahapSiklus(b);
+  return t === "selesai" && !tokoLunas ? "bayar_toko" : t;
+}
+
+/** Pembayaran toko dicocokkan dengan mutasi rekening — giliran keuangan. */
+export function giliranTahapLengkap(t: TahapSiklusLengkap): ReturnType<typeof giliranTahap> {
+  return t === "bayar_toko" ? "keuangan" : giliranTahap(t);
+}
+
+/**
+ * Pelunasan satu siklus. Dihitung dalam sen supaya cicilan tidak menyisakan
+ * pecahan; sisa tidak pernah negatif, dan tagihan ≤ 0 dianggap lunas (tidak ada
+ * yang perlu ditagih). `totalTagihan` null = belum dikunci, belum ada tagihan.
+ */
+export function ringkasanBayarToko(input: {
+  totalTagihan: number | null;
+  pembayaran: number[];
+}): { dibayar: number; sisa: number | null; lunas: boolean } {
+  const dibayarSen = input.pembayaran.reduce((n, x) => n + keSen(x), 0);
+  if (input.totalTagihan === null) return { dibayar: dibayarSen / 100, sisa: null, lunas: false };
+  const sisaSen = Math.max(0, keSen(input.totalTagihan) - dibayarSen);
+  return { dibayar: dibayarSen / 100, sisa: sisaSen / 100, lunas: sisaSen === 0 };
+}
+
+/** Total tagihan yang DIBEKUKAN saat mengunci: laku resmi − promo Elorae + beban hilang. */
+export function totalTagihanBeku(c: {
+  sold: { amount: unknown }[];
+  promoBorneByElorae: unknown;
+  lossChargedToStore: unknown;
+}): number {
+  return totalTagihanKonsi({
+    lakuResmi: c.sold.reduce((s, x) => s + angka(x.amount), 0),
+    promoElorae: angka(c.promoBorneByElorae),
+    bebanHilang: angka(c.lossChargedToStore),
+  });
+}
 
 export type BarisSiklus = {
   id: string;
@@ -20,9 +69,11 @@ export type BarisSiklus = {
   storeId: string;
   storeName: string;
   periode: string;
-  tahap: TahapSiklus;
+  tahap: TahapSiklusLengkap;
   giliran: ReturnType<typeof giliranTahap>;
   nilaiTerjual: number;
+  /** Sisa tagihan ke toko sesudah pembayaran. null selama belum dikunci. */
+  sisaTagihan: number | null;
   noNota: string | null;
   noFakturPajak: string | null;
   tenggatSpg: string | null;
@@ -74,20 +125,27 @@ export async function daftarSiklus(): Promise<BarisSiklus[]> {
       noNota: true,
       noFakturPajak: true,
       lockedAt: true,
+      promoBorneByElorae: true,
+      lossChargedToStore: true,
       store: { select: { name: true } },
       reports: { select: { source: true } },
       commissions: { select: { paidAt: true } },
       sold: { select: { amount: true } },
+      payments: { where: { cancelledAt: null }, select: { amount: true } },
     },
   });
 
   const sekarang = new Date();
-  const URUT: TahapSiklus[] = ['laporan', 'cocok', 'bayar_spg', 'nota', 'pajak', 'selesai'];
+  const URUT: TahapSiklusLengkap[] = ['laporan', 'cocok', 'bayar_spg', 'nota', 'pajak', 'bayar_toko', 'selesai'];
   const penanda = await penandaTerjualSiklus(rows.filter((c) => c.lockedAt === null));
 
   return rows
     .map((c) => {
-      const tahap = tahapSiklus(bahan(c));
+      const bayar = ringkasanBayarToko({
+        totalTagihan: c.lockedAt ? totalTagihanBeku(c) : null,
+        pembayaran: c.payments.map((p) => angka(p.amount)),
+      });
+      const tahap = tahapLengkap(bahan(c), bayar.lunas);
       return {
         id: c.id,
         noKonsi: c.noKonsi,
@@ -95,8 +153,9 @@ export async function daftarSiklus(): Promise<BarisSiklus[]> {
         storeName: c.store.name,
         periode: `${BULAN[c.periodMonth - 1]} ${c.periodYear}`,
         tahap,
-        giliran: giliranTahap(tahap),
+        giliran: giliranTahapLengkap(tahap),
         nilaiTerjual: c.sold.reduce((s, x) => s + angka(x.amount), 0),
+        sisaTagihan: bayar.sisa,
         noNota: c.noNota,
         noFakturPajak: c.noFakturPajak,
         tenggatSpg: c.spgDueDate?.toISOString() ?? null,
@@ -157,6 +216,7 @@ export type RincianSiklus = {
   /** Buku stok toko vs laporan laku konsinyasi, per barang. */
   pencocokan: PencocokanSiklus;
   tagihan: TagihanSiklus;
+  pelunasan: PelunasanToko;
 };
 
 /**
@@ -176,6 +236,31 @@ export type TagihanSiklus = {
   bebanHilang: number | null;
   /** null selama belum dikunci. */
   total: number | null;
+};
+
+/** Pelunasan tagihan siklus oleh toko (boleh dicicil). */
+export type PelunasanToko = {
+  /** Σ pembayaran toko yang tidak dibatalkan. */
+  dibayar: number;
+  /** Total tagihan beku − dibayar, tidak pernah negatif. null selama belum dikunci. */
+  sisa: number | null;
+  lunas: boolean;
+  /** Seluruh pembayaran, termasuk yang dibatalkan (dicoret di layar). */
+  pembayaran: PembayaranToko[];
+};
+
+export type PembayaranToko = {
+  id: string;
+  jumlah: number;
+  /** Tanggal bayar (tengah malam WIB), ISO. */
+  tanggal: string;
+  cara: string;
+  catatan: string | null;
+  dicatatOleh: string | null;
+  dicatatPada: string;
+  dibatalkanPada: string | null;
+  dibatalkanOleh: string | null;
+  alasanBatal: string | null;
 };
 
 /** Satu siklus, kedua laporannya, angka resminya, komisinya, dan stok titipannya. */
@@ -224,6 +309,21 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
           spgUser: { select: { name: true } },
         },
       },
+      payments: {
+        orderBy: [{ paidOn: 'asc' }, { createdAt: 'asc' }],
+        select: {
+          id: true,
+          amount: true,
+          paidOn: true,
+          method: true,
+          note: true,
+          recordedById: true,
+          createdAt: true,
+          cancelledAt: true,
+          cancelledById: true,
+          cancelReason: true,
+        },
+      },
     },
   });
   if (!c) return null;
@@ -264,6 +364,16 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
     bebanPerOrang.set(b.bearerUserId, (bebanPerOrang.get(b.bearerUserId) ?? 0) + angka(b.amount));
   }
 
+  // Nama pencatat/pembatal pembayaran. `ConsignmentPayment` sengaja tidak
+  // berelasi ke `User` (skema dua basis data), jadi dicari terpisah.
+  const idOrangBayar = [
+    ...new Set(c.payments.flatMap((p) => [p.recordedById, p.cancelledById]).filter((x): x is string => Boolean(x))),
+  ];
+  const orangBayar = idOrangBayar.length
+    ? await prisma.user.findMany({ where: { id: { in: idOrangBayar } }, select: { id: true, name: true } })
+    : [];
+  const namaOrang = new Map(orangBayar.map((o) => [o.id, o.name]));
+
   const [mutasi, pencocokan, promoSekarang, penanda] = await Promise.all([
     mutasiTitipan(c.storeId),
     pencocokanSiklus(c.id),
@@ -273,6 +383,23 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
   if (!pencocokan) return null;
   const terkunci = c.lockedAt !== null;
   const lakuResmi = c.sold.reduce((s, x) => s + angka(x.amount), 0);
+  const totalBeku = terkunci ? totalTagihanBeku(c) : null;
+  const bayar = ringkasanBayarToko({
+    totalTagihan: totalBeku,
+    pembayaran: c.payments.filter((p) => p.cancelledAt === null).map((p) => angka(p.amount)),
+  });
+  const pembayaran: PembayaranToko[] = c.payments.map((p) => ({
+    id: p.id,
+    jumlah: angka(p.amount),
+    tanggal: p.paidOn.toISOString(),
+    cara: p.method,
+    catatan: p.note,
+    dicatatOleh: namaOrang.get(p.recordedById) ?? null,
+    dicatatPada: p.createdAt.toISOString(),
+    dibatalkanPada: p.cancelledAt?.toISOString() ?? null,
+    dibatalkanOleh: p.cancelledById ? (namaOrang.get(p.cancelledById) ?? null) : null,
+    alasanBatal: p.cancelReason,
+  }));
   const tagihan: TagihanSiklus = terkunci
     ? {
         beku: true,
@@ -280,11 +407,7 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
         promoElorae: angka(c.promoBorneByElorae),
         promoEloraeSekarang: promoSekarang.total,
         bebanHilang: angka(c.lossChargedToStore),
-        total: totalTagihanKonsi({
-          lakuResmi,
-          promoElorae: angka(c.promoBorneByElorae),
-          bebanHilang: angka(c.lossChargedToStore),
-        }),
+        total: totalBeku,
       }
     : {
         beku: false,
@@ -297,7 +420,7 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
 
   const spg = c.reports.find((r) => r.source === 'SPG')?.items ?? null;
   const toko = c.reports.find((r) => r.source === 'TOKO')?.items ?? null;
-  const tahap = tahapSiklus(bahan({ ...c, commissions: c.commissions }));
+  const tahap = tahapLengkap(bahan({ ...c, commissions: c.commissions }), bayar.lunas);
 
   return {
     baris: {
@@ -307,8 +430,9 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
       storeName: c.store.name,
       periode: `${BULAN[c.periodMonth - 1]} ${c.periodYear}`,
       tahap,
-      giliran: giliranTahap(tahap),
+      giliran: giliranTahapLengkap(tahap),
       nilaiTerjual: c.sold.reduce((s, x) => s + angka(x.amount), 0),
+      sisaTagihan: bayar.sisa,
       noNota: c.noNota,
       noFakturPajak: c.noFakturPajak,
       tenggatSpg: c.spgDueDate?.toISOString() ?? null,
@@ -355,6 +479,7 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
     })),
     pencocokan,
     tagihan,
+    pelunasan: { dibayar: bayar.dibayar, sisa: bayar.sisa, lunas: bayar.lunas, pembayaran },
   };
 }
 
