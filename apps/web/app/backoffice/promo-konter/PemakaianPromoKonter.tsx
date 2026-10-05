@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { BarChart3, Scale } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatRupiah } from "@/lib/format/rupiah";
@@ -27,7 +27,6 @@ export function PemakaianPromoKonter({ data }: { data: LaporanPemakaian }) {
             <Scale className="h-5 w-5" />
             {t("tanggunganJudul")}
           </CardTitle>
-          <CardDescription>{t("tanggunganIsi")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <dl className="grid gap-3 sm:grid-cols-3">
@@ -54,7 +53,6 @@ export function PemakaianPromoKonter({ data }: { data: LaporanPemakaian }) {
             <BarChart3 className="h-5 w-5" />
             {t("judul")}
           </CardTitle>
-          <CardDescription>{t("catatan")}</CardDescription>
         </CardHeader>
         <CardContent className={data.baris.length === 0 ? undefined : "px-0"}>
           {data.baris.length === 0 ? (

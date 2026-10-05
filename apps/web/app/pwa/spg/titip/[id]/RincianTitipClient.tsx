@@ -27,6 +27,7 @@ import { BATAS_ALASAN_TITIP, batasSimpanDari, pesanTitipTersedia } from "@/lib/s
 import type { RincianTitipHp } from "@/lib/spg/titip-queries";
 import { cn } from "@/lib/utils";
 import { nadaKelompokTitip } from "../tampilan";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 const KODE_GALAT = new Set(["FORBIDDEN", "NO_ASSIGNED_STORE", "VALIDATION", "TIDAK_DITEMUKAN", "SUDAH_DITUTUP", "BELUM_ADA", "SUDAH_BERUBAH", "ALASAN_WAJIB", "ALASAN_TERLALU_PANJANG"]);
 
@@ -116,7 +117,10 @@ export function RincianTitipClient({ rincian }: { rincian: RincianTitipHp | null
       {kembali}
 
       <header className="space-y-1">
-        <h1 className="break-words text-2xl font-bold">{rincian.keterangan}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="min-w-0 break-words text-2xl font-bold">{rincian.keterangan}</h1>
+          <TombolBantuanHp judul={rincian.keterangan} />
+        </div>
         <span
           className={cn(
             "inline-block rounded-full px-2 py-0.5 text-xs font-medium",
@@ -203,7 +207,6 @@ export function RincianTitipClient({ rincian }: { rincian: RincianTitipHp | null
               {t("rincian.batalkan")}
             </Button>
           </div>
-          <p className="px-1 text-xs text-muted-foreground">{t("rincian.petunjukSelesai")}</p>
         </div>
       ) : null}
 

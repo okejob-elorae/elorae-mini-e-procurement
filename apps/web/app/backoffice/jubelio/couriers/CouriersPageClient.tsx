@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Pager } from "@/components/Pager";
 import { formatDisplayDateTime } from "@/lib/date-only";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import {
   syncJubelioCouriers,
   type CourierSortDir,
@@ -94,9 +95,9 @@ export function CouriersPageClient(props: Props) {
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
+        <div className="flex items-center gap-1">
           <h1 className="text-2xl font-semibold">{t("pageTitle")}</h1>
-          <p className="text-muted-foreground">{t("pageSubtitle")}</p>
+          <TombolBantuan judul={t("pageTitle")} />
         </div>
         <Button onClick={onSyncClick} disabled={isSyncing}>
           <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? "animate-spin" : ""}`} />

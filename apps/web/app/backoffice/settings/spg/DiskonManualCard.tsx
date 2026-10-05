@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { HandCoins, Loader2 } from "lucide-react";
 import { simpanDiskonManualSpg } from "@/app/actions/settings/spg-diskon";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -70,7 +70,6 @@ export function DiskonManualCard({ bolehUbah, nilai }: { bolehUbah: boolean; nil
           <HandCoins className="h-5 w-5" />
           {t("judul")}
         </CardTitle>
-        <CardDescription>{t("penjelasan")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-center justify-between gap-3 rounded-md border p-3">

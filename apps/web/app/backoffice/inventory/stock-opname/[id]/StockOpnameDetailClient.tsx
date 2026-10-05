@@ -7,6 +7,7 @@ import { formatDisplayDateTime } from "@/lib/date-only";
 import { toast } from "sonner";
 import { ArrowLeft, BookText, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -228,9 +229,9 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
             <ArrowLeft className="h-4 w-4 mr-1" />
             {t("backToList")}
           </Link>
-          <div>
+          <div className="flex items-center gap-1">
             <h1 className="text-2xl font-bold">{String(opname.docNumber)}</h1>
-            <p className="text-muted-foreground text-sm mt-1">{t("detailSubtitle")}</p>
+            <TombolBantuan judul={String(opname.docNumber)} />
           </div>
           <div className="flex flex-wrap gap-2">
             <Badge>{t(`scopes.${scope}`)}</Badge>

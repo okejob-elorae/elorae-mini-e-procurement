@@ -118,7 +118,7 @@ export function ImporClient() {
         </Link>
       </Button>
 
-      <PageHeader title={t('pageTitle')} description={t('pageDescription')} />
+      <PageHeader title={t('pageTitle')} />
 
       <Card>
         <CardContent className="py-6">
@@ -181,7 +181,6 @@ export function ImporClient() {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">{t('previewTitle')}</CardTitle>
-              <p className="text-sm text-muted-foreground">{t('previewHint')}</p>
             </CardHeader>
             <CardContent className="px-0">
               <div className="max-h-[28rem] overflow-auto">

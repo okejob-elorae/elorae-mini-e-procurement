@@ -816,7 +816,6 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
         <Card>
           <CardHeader>
             <CardTitle>{tInfo("title")}</CardTitle>
-            <p className="text-sm text-muted-foreground">{tInfo("description")}</p>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">

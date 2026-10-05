@@ -86,7 +86,7 @@ export function IzinClient({
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t("judul")} description={t("deskripsi")} meta={t("ringkasMeta", { menunggu })} />
+      <PageHeader title={t("judul")} meta={t("ringkasMeta", { menunggu })} />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
         <Select value={saring.bulan ?? SEMUA} onValueChange={(v) => pindah({ bulan: v === SEMUA ? null : v })}>

@@ -6,6 +6,7 @@ import { dinamis } from "@/lib/i18n/dinamis";
 import type { RincianRekomendasi } from "@/lib/salesman/rekomendasi-queries";
 import { cn } from "@/lib/utils";
 import { NADA_STATUS_REKOMENDASI } from "./tampilan";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 /**
  * Bagian yang sama di rincian salesman dan rincian SPG: kepala (toko, status,
@@ -16,7 +17,10 @@ export function KepalaRekomendasi({ rincian, untukSpg = false }: { rincian: Rinc
   const td = dinamis(t);
   return (
     <header className="space-y-1">
-      <h1 className="text-2xl font-bold">{untukSpg ? t("rincian.judulSpg") : rincian.toko.nama}</h1>
+      <div className="flex items-center gap-1">
+        <h1 className="min-w-0 break-words text-2xl font-bold">{untukSpg ? t("rincian.judulSpg") : rincian.toko.nama}</h1>
+        <TombolBantuanHp judul={untukSpg ? t("rincian.judulSpg") : rincian.toko.nama} />
+      </div>
       <p className="text-sm text-muted-foreground">
         {untukSpg && rincian.pembuat ? t("rincian.dari", { nama: rincian.pembuat }) : td(`jenis.${rincian.toko.jenis}`)} · {rincian.dibuat}
       </p>

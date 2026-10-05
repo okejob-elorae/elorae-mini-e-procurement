@@ -117,7 +117,6 @@ export function KomisiSalesmanClient({ bulan, pilihan, skema, baris, potonganHil
     <div className="space-y-6">
       <PageHeader
         title={t("title")}
-        description={t("description")}
         meta={skema.aktif ? t("meta", { total: formatIDR(totalKomisi), count: baris.length }) : t("inactive")}
         actions={
           <Button variant="outline" onClick={ekspor} disabled={mengekspor || baris.length === 0}>
@@ -275,8 +274,7 @@ export function KomisiSalesmanClient({ bulan, pilihan, skema, baris, potonganHil
               </Table>
             </div>
           )}
-          <p className="mt-4 text-xs text-muted-foreground">{t("footnote")}</p>
-          {adaHilang ? <p className="mt-2 text-xs text-muted-foreground">{tHilang("catatanKaki", { persen: maksPotongPersen })}</p> : null}
+          {adaHilang ? <p className="mt-4 text-xs text-muted-foreground">{tHilang("catatanKaki", { persen: maksPotongPersen })}</p> : null}
         </CardContent>
       </Card>
     </div>

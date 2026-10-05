@@ -188,7 +188,6 @@ export function WorkOrdersPageClient() {
       {/* Header */}
       <PageHeader
         title={tWO('pageTitle')}
-        description={tWO('pageDescription')}
         actions={
           <Link href="/backoffice/work-orders/new">
             <Button>

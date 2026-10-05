@@ -28,6 +28,7 @@ import { RingkasanToko, type RingkasanTokoView } from "./RingkasanToko";
 import { formatRupiah } from "@/lib/format/rupiah";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 type StoreProps = {
   id: string;
   code: string;
@@ -155,7 +156,10 @@ export function StoreDetailShell({ store, active, activePhotos, history, pending
           kontak dan tombol peta ada di dasar halaman, di bawah semua kartu. */}
       <div className="space-y-3">
         <div className="space-y-1.5">
-          <h1 className="text-2xl font-bold leading-tight">{store.name}</h1>
+          <div className="flex items-center gap-1">
+            <h1 className="min-w-0 break-words text-2xl font-bold leading-tight">{store.name}</h1>
+            <TombolBantuanHp judul={store.name} />
+          </div>
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <span>{store.code}</span>
             <span className="opacity-60">·</span>

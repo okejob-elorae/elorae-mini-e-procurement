@@ -13,6 +13,7 @@ import { KartuAbsen } from "../beranda/KartuAbsen";
 import { IzinSaya } from "./IzinSaya";
 import { KartuAbsenSpg } from "./KartuAbsenSpg";
 import { nadaJenisIzin } from "./tampilan-izin";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 export function RiwayatAbsenClient({
   kartu,
@@ -55,7 +56,10 @@ export function RiwayatAbsenClient({
   return (
     <div className="space-y-4 p-4">
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold">{t("judul")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("judul")}</h1>
+          <TombolBantuanHp judul={t("judul")} />
+        </div>
         <p className="text-sm text-muted-foreground">{aktif ? t("subjudul", { jam: jamMasukPaling }) : t("nonaktif")}</p>
       </header>
 

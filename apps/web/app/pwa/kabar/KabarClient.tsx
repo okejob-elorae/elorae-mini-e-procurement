@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import type { BarisKabar } from "./baris";
 import { KABAR_BERUBAH } from "./peristiwa";
 import { PushHp } from "./PushHp";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 const IKON: Record<string, LucideIcon> = {
   PESANAN_DISETUJUI: ShoppingBag,
@@ -98,8 +99,10 @@ export function KabarClient({ baris, batas }: { baris: BarisKabar[]; batas: numb
   return (
     <div className="space-y-4 p-4">
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
-        <p className="text-sm text-muted-foreground">{t("subtitle")}</p>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
+        </div>
       </header>
 
       <PushHp />

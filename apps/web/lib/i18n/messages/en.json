@@ -175,7 +175,8 @@
     "navKinerjaSpg": "SPG performance",
     "navBarangHilang": "Lost goods",
     "navLabelBarcode": "Barcode labels",
-    "navGudangRusak": "Damaged goods warehouse"
+    "navGudangRusak": "Damaged goods warehouse",
+    "bantuan": "Help"
   },
   "notifications": {
     "title": "Notifications",
@@ -1158,7 +1159,7 @@
     "daysOverdue": "{count} days overdue",
     "etaLine": "ETA: {date}",
     "unitsPending": "{count} units pending",
-    "procurementDesc": "Outstanding POs with ETA alerts. Default status: submitted + partial.",
+    "procurementDesc": "Outstanding POs with ETA alerts. By default it shows POs sent to the supplier and partially received; change the status in the filter.",
     "show": "Load",
     "procurementSummary": "Total outstanding: {total} · Overdue: {overdue} · Due soon: {soon}",
     "colDocNo": "Doc #",
@@ -3747,7 +3748,7 @@
       "orderNo": "Order No.",
       "buyer": "Buyer",
       "receivedAt": "Received at",
-      "lockedBanner": "Submitted at {when} by {who}. Awaiting Jubelio sync.",
+      "lockedBanner": "Submitted at {when} by {who}. The decision is recorded in Elorae only; sending it to Jubelio is not connected yet.",
       "accept": "Accept",
       "reject": "Reject",
       "submit": "Submit decision",
@@ -3775,7 +3776,7 @@
       },
       "submitConfirm": {
         "title": "Submit return decision?",
-        "body": "Once submitted, this return is locked and cannot be modified. The decision will be pushed to Jubelio.",
+        "body": "Once submitted, this return is locked and cannot be modified. The decision is recorded in Elorae only; sending it to Jubelio is not connected yet.",
         "cancel": "Cancel",
         "confirm": "Submit"
       },
@@ -4555,6 +4556,10 @@
       "rekomendasiSaya": {
         "label": "My recommendations",
         "hint": "Product recommendations you sent to stores"
+      },
+      "bantuan": {
+        "label": "Help",
+        "hint": "What each screen of the app is for"
       }
     },
     "keluar": {
@@ -4714,7 +4719,11 @@
       "grupKonter": "At the counter",
       "grupStok": "Store stock",
       "grupHariKerja": "Workday",
-      "grupSaya": "Me"
+      "grupSaya": "Me",
+      "bantuan": {
+        "label": "Help",
+        "hint": "What each screen of the app is for"
+      }
     },
     "spgGaji": {
       "title": "Pay & commission",
@@ -5598,7 +5607,9 @@
         "NO_ACTIVE_VISIT": "Your visit at this store has been closed. Check in again.",
         "GAGAL": "The order could not be sent. Please try again.",
         "JARINGAN": "Weak signal — the order may not have been sent. Press Send again; it will not be recorded twice."
-      }
+      },
+      "sumberBuku": "Source: SPG stock book",
+      "sumberTitipan": "Source: consignment count"
     },
     "hasilKunjungan": {
       "judul": "Why was there no transaction?",
@@ -5728,7 +5739,8 @@
       "kurangFaktur": "Tick the invoices being promised.",
       "kurangTanggal": "Fill in a valid promised date.",
       "kurangPenerima": "Fill in the recipient's name at the store.",
-      "kurangFoto": "Take a photo of the receipt."
+      "kurangFoto": "Take a photo of the receipt.",
+      "errFOTO_BUKAN_MILIK": "This receipt photo was uploaded by someone else. Take your own photo."
     },
     "insentif": {
       "back": "Home",
@@ -6871,7 +6883,7 @@
     "total": "Total",
     "approve": "Approve",
     "reject": "Reject",
-    "approveConfirm": "Approve this order? Stock will be consumed immediately.",
+    "approveConfirm": "Approve this order? No stock leaves the warehouse yet; goods leave when a delivery is recorded.",
     "rejectConfirm": "Reject this order? Reserved stock will be released.",
     "rejectReasonLabel": "Rejection reason (required)",
     "errForbidden": "You don't have permission to perform this action.",
@@ -7525,7 +7537,8 @@
       "NOT_FOUND": "Settlement not found.",
       "FORBIDDEN": "You don't have permission to post this journal.",
       "ALREADY_RECONCILED_DIFF": "This settlement is already reconciled with a different journal.",
-      "NON_POSTABLE_ACCOUNT": "One of the mapped accounts cannot be posted to — it is inactive or has child accounts. Map that role to an active account with no children under Finance → Account Mapping."
+      "NON_POSTABLE_ACCOUNT": "One of the mapped accounts cannot be posted to — it is inactive or has child accounts. Map that role to an active account with no children under Finance → Account Mapping.",
+      "SETTLEMENT_KEMBAR": "This settlement duplicates another upload that is already journaled or was uploaded earlier, so no journal was posted. Delete this duplicate upload."
     },
     "resyncButton": "Resync {count} Unmatched Order(s)",
     "resyncButtonPending": "Starting Resync…",
@@ -7737,7 +7750,7 @@
       "labaBersih": "Net Profit",
       "sectionEmpty": "No accounts with a balance in this section yet.",
       "coverageTitle": "Data coverage",
-      "coverageBody": "This report covers only transactions that produce journals: marketplace sales, returns, settlements, goods receipts (GRN), finished-goods receipts, stock opname adjustments, and manual journals. NOT yet included: field sales (putus), van sales, SPG sales, and supplier payments."
+      "coverageBody": "This report covers only transactions that produce journals: marketplace sales, van sales, returns, settlements, goods receipts (GRN), finished-goods receipts, stock opname adjustments, supplier payments, and manual journals. NOT yet included: field sales (putus) and SPG sales."
     },
     "balanceSheet": {
       "pageTitle": "Balance Sheet",
@@ -8098,7 +8111,8 @@
       "ERROR": "Something went wrong. Please try again.",
       "NOMOR_FAKTUR_GANDA": "This tax invoice serial number is already used on another invoice.",
       "NOMOR_FAKTUR_FORMAT": "A tax invoice serial number must be 13–17 digits, e.g. 010.000-24.00000001 (e-Faktur) or a 17-digit Coretax number."
-    }
+    },
+    "nomorFakturGandaDi": "This tax invoice serial number is already used on invoice {docNo}."
   },
   "dashboardActions": {
     "title": "{count} things need your attention",
@@ -8451,7 +8465,8 @@
     "errSUDAH_DIGANTI": "The old payment report already has a replacement — the same money cannot be reported twice.",
     "errTOKO_TIDAK_DIIZINKAN": "These invoices are not yours to collect — the store is held by another salesperson. Ask the office to assign the collection to you.",
     "errPEMERIKSA_SAMA": "You reported or recorded this payment receipt, so you cannot decide it yourself. Ask another finance admin to review it.",
-    "errRETUR_TERPAKAI": "That return note has already been deducted in full on another payment receipt. Pick another note or reduce the deduction to the remaining amount shown."
+    "errRETUR_TERPAKAI": "That return note has already been deducted in full on another payment receipt. Pick another note or reduce the deduction to the remaining amount shown.",
+    "errFOTO_BUKAN_MILIK": "This proof photo was uploaded by someone else. Take your own photo of the proof."
   },
   "collections": {
     "pageTitle": "Collection notes",
@@ -8549,7 +8564,8 @@
     "errBUKAN_PENAGIH": "Some invoices are not collected by this salesperson.",
     "errFOTO_WAJIB": "A photo of the signed receipt is required.",
     "errPENERIMA_WAJIB": "Enter the name of the person at the store who received it.",
-    "errKUNCI_DIPAKAI": "This report clashes with another salesperson report. Create a new report."
+    "errKUNCI_DIPAKAI": "This report clashes with another salesperson report. Create a new report.",
+    "errFOTO_BUKAN_MILIK": "This receipt photo was uploaded by someone else. Take your own photo."
   },
   "storeReturns": {
     "pageTitle": "Returns & matching",
@@ -8769,7 +8785,8 @@
     "errPENANGGUNG_WAJIB": "Choose the salesperson who bears it.",
     "errTOKO_KONSI": "Consignment stores have no receivables, so the shortfall cannot be billed to the store. Record it as lost goods borne by the store, or choose another bearer.",
     "errPIUTANG_BEBAN_SUDAH_DITAGIH": "This store charge invoice is already in collection (a payment claim or collection note in any status, or an open collection task), so it cannot be removed and the charge can no longer be moved away from the store.",
-    "errDITAGIH_LEWAT_PIUTANG": "A store charge is billed through its invoice. It is settled by a verified payment claim, not marked here."
+    "errDITAGIH_LEWAT_PIUTANG": "A store charge is billed through its invoice. It is settled by a verified payment claim, not marked here.",
+    "errFOTO_BUKAN_MILIK": "This return note photo was uploaded by someone else. Take your own photo of the note."
   },
   "foto": {
     "pick": "Take or choose a photo",
@@ -8780,7 +8797,8 @@
     "errTERLALU_BESAR": "That photo is too large. 6 MB maximum after resizing.",
     "errTANPA_AKSES": "Your session expired. Sign in again.",
     "errGAGAL": "Upload failed. Try again.",
-    "savedOnPhone": "Saved on the phone — uploads once there is a signal"
+    "savedOnPhone": "Saved on the phone — uploads once there is a signal",
+    "errBUKAN_MILIK": "This photo was uploaded by someone else. Take your own photo."
   },
   "arsipRetur": {
     "pageTitle": "Return note archive",
@@ -9090,7 +9108,8 @@
     "errRUSAK_TIDAK_SAH": "These damaged delivery goods cannot be sent back from this store (not yet decided by the warehouse, not this store's, or a different item).",
     "errRUSAK_MELEBIHI": "The quantity sent back exceeds the damaged pieces not yet returned.",
     "errRETUR_PEMBELI_TIDAK_SAH": "This shopper-returned damaged item cannot be sent back from this store (not this store's shopper return, a different item, or its condition is sellable).",
-    "errRETUR_PEMBELI_MELEBIHI": "The quantity sent back exceeds the shopper-returned damaged pieces not yet sent."
+    "errRETUR_PEMBELI_MELEBIHI": "The quantity sent back exceeds the shopper-returned damaged pieces not yet sent.",
+    "errFOTO_BUKAN_MILIK": "This return note photo was uploaded by someone else. Take your own photo of the note."
   },
   "pwaBeban": {
     "pageTitle": "My charges",
@@ -9831,7 +9850,9 @@
       "STOCK_LOSS_DEDUCTED": "Missing-goods charge deducted",
       "STOCK_LOSS_DEDUCTION_RELEASED": "Missing-goods deduction released",
       "STOCK_LOSS_SETTINGS_CHANGED": "Missing-goods settings changed",
-      "SPG_COUNTER_EXCHANGE_RECORDED": "Counter exchange recorded"
+      "SPG_COUNTER_EXCHANGE_RECORDED": "Counter exchange recorded",
+      "ROLE_PERMISSIONS_UPDATED": "Role permissions changed",
+      "ROLE_DELETED": "Role deleted"
     },
     "entities": {
       "ChainTemplate": "Chain template",
@@ -9913,7 +9934,8 @@
       "CustomerRequest": "Shopper item request",
       "StoreTransferSuratJalan": "Store transfer delivery note",
       "DamagedStockMovement": "Damaged goods movement",
-      "StockLoss": "Missing goods"
+      "StockLoss": "Missing goods",
+      "RoleDefinition": "Role"
     }
   },
   "jubelio": {
@@ -10945,7 +10967,8 @@
       "CUTI": "Annual leave"
     },
     "tanpaSwafoto": "No selfie",
-    "lewatCheckin": "Via store check-in"
+    "lewatCheckin": "Via store check-in",
+    "metaJamMasuk": "Clock in by {jam} at the latest"
   },
   "salesLapangan": {
     "pageTitle": "Field Sales Performance",
@@ -12082,7 +12105,7 @@
         "TIDAK_ADA": "This pre-order was not found."
       },
       "konfirmasiJudul": "Release {nama}?",
-      "konfirmasiIsi": "Stock for {disetujui} approved orders is held now; {menunggu} pending orders are held when approved. Make sure the warehouse has received the goods.",
+      "konfirmasiIsi": "Stock for {disetujui} approved orders is held now; {menunggu} pending orders are held when approved. Make sure the warehouse has received the goods. A release cannot be undone.",
       "konfirmasiMasihBuka": "This window is still open — after release salespeople can no longer order through it."
     },
     "barangJudul": "Items & orders",
@@ -13289,7 +13312,7 @@
   },
   "pwaSpgAnalisa": {
     "title": "Sales analysis",
-    "subtitle": "What sells at {store}, from the receipts you scan.",
+    "subtitle": "What sells at {store}, from the receipts of every SPG at this store.",
     "periodLabel": "Period",
     "period": {
       "7h": "7 days",
@@ -15886,5 +15909,24 @@
       "MELEBIHI_SISA": "More than can still be returned from this receipt.",
       "KUNCI_WAJIB": "The send key is missing. Delete it and record again."
     }
+  },
+  "bantuan": {
+    "tombol": "About this page",
+    "bagianHalaman": "On this page",
+    "kosongHalaman": "No explanation for this page yet.",
+    "semua": "Open all explanations (Help)",
+    "memuat": "Loading…",
+    "judulHalaman": "Help",
+    "cari": "Search explanations…",
+    "daftarIsi": "Contents",
+    "tidakCocok": "No explanation matches \"{kueri}\".",
+    "bukaHalaman": "Open page",
+    "jumlah": "{n} pages",
+    "bagian": {
+      "pwaSalesman": "Salesman phone",
+      "pwaSpg": "SPG phone",
+      "pwaBersama": "Phone — salesman and SPG"
+    },
+    "kosong": "No explanations yet."
   }
 }

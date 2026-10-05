@@ -23,6 +23,7 @@ import type { KodeRingkasan } from "@/lib/salesman/hasil-kunjungan";
 import type { StatusJadwal } from "@/lib/salesman/jadwal";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 export type DataHariIni = {
   tanggal: string;
   hariIni: boolean;
@@ -113,7 +114,10 @@ export function HariIniClient({ data }: { data: DataHariIni }) {
       </Button>
 
       <header>
-        <h1 className="text-2xl font-bold">{data.hariIni ? t("titleToday") : t("titlePast")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{data.hariIni ? t("titleToday") : t("titlePast")}</h1>
+          <TombolBantuanHp judul={data.hariIni ? t("titleToday") : t("titlePast")} />
+        </div>
         <p className="text-sm text-muted-foreground">{data.tanggalPanjang}</p>
       </header>
 
@@ -160,7 +164,6 @@ export function HariIniClient({ data }: { data: DataHariIni }) {
               <CalendarCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
               <span>
                 {t("effective", { efektif: a.efektif, kunjungan: a.kunjungan, persen: a.persenEfektif ?? 0 })}
-                <span className="block text-xs text-muted-foreground">{t("effectiveHint")}</span>
               </span>
             </li>
             {a.lapangan.mulai ? (
@@ -186,9 +189,6 @@ export function HariIniClient({ data }: { data: DataHariIni }) {
             <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
             <span>
               {t("plan", { dikunjungi: a.rencana.dikunjungi, direncanakan: a.rencana.direncanakan })}
-              <span className="block text-xs text-muted-foreground">
-                {data.hariIni ? t("planHintToday") : t("planHintPast")}
-              </span>
             </span>
           </p>
         ) : null}
@@ -197,7 +197,6 @@ export function HariIniClient({ data }: { data: DataHariIni }) {
             <CalendarRange className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
             <span>
               {t("schedule", { dikunjungi: data.jadwal.dikunjungi, direncanakan: data.jadwal.direncanakan })}
-              <span className="block text-xs text-muted-foreground">{t("scheduleHint")}</span>
             </span>
           </p>
         ) : null}
@@ -235,7 +234,6 @@ export function HariIniClient({ data }: { data: DataHariIni }) {
           <Baris
             label={t("claimsVerified", { count: a.pelunasan.terverifikasi })}
             nilai={a.pelunasan.terverifikasi > 0 ? formatIDR(a.pelunasan.nilaiTerverifikasi) : null}
-            catatan={t("claimsVerifiedHint")}
           />
           {a.van.jumlah > 0 ? <Baris label={t("vanSales", { count: a.van.jumlah })} nilai={formatIDR(a.van.nilai)} /> : null}
           {a.retur > 0 ? <Baris label={t("returns", { count: a.retur })} nilai={null} /> : null}
@@ -283,7 +281,6 @@ export function HariIniClient({ data }: { data: DataHariIni }) {
             <AlertTriangle className="h-4 w-4 text-amber-600" aria-hidden />
             {t("flagsTitle", { count: a.janggal })}
           </h2>
-          <p className="text-xs text-muted-foreground">{t("flagsHint")}</p>
           <ul className="flex flex-wrap gap-1.5">
             {data.perTanda.map((x) => (
               <li key={x.kode}>

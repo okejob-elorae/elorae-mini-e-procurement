@@ -118,7 +118,6 @@ export function HargaPesaingKantorClient({
     <div className="space-y-6">
       <PageHeader
         title={t("judul")}
-        description={t("deskripsi")}
         meta={t("ringkas", { catatan: data.baris.length, kelompok: data.ringkas.length })}
         actions={
           <Button variant="outline" onClick={ekspor} disabled={mengekspor || data.baris.length === 0}>
@@ -208,7 +207,6 @@ export function HargaPesaingKantorClient({
             <Tag className="h-4 w-4" aria-hidden />
             {t("ringkasJudul")}
           </CardTitle>
-          <CardDescription>{t("ringkasIsi")}</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           {data.ringkas.length === 0 ? (

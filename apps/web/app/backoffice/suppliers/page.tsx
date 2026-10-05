@@ -353,7 +353,6 @@ export default function SuppliersPage() {
       {/* Header */}
       <PageHeader
         title={tSupplier('pageTitle')}
-        description={tSupplier('pageDescription')}
         actions={
           <Dialog
             open={isSupplierFormOpen}

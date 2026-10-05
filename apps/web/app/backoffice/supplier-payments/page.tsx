@@ -391,7 +391,6 @@ export default function SupplierPaymentsPage() {
     <div className="space-y-6">
       <PageHeader
         title={tSupplierPayments('pageTitle')}
-        description={tSupplierPayments('pageDescription')}
       />
 
       {/* Filters */}

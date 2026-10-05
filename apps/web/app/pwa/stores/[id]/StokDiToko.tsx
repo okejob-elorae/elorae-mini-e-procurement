@@ -127,8 +127,11 @@ export function StokDiToko({ data, storeId, visitId }: { data: KartuStokDiToko; 
           <Boxes className="h-4 w-4" aria-hidden />
           {t("title")}
         </h2>
+        {/* Asal angka toko ini (status, bukan penjelasan — penjelasannya di Bantuan). */}
+        <span className="shrink-0 text-xs text-muted-foreground">
+          {data.source === "BUKU_TOKO" ? t("sumberBuku") : t("sumberTitipan")}
+        </span>
       </div>
-      <p className="mt-1 text-xs text-muted-foreground">{data.source === "BUKU_TOKO" ? t("sourceBuku") : t("sourceTitipan")}</p>
 
       {baris.length === 0 ? (
         <p className="mt-3 text-sm text-muted-foreground">{t("empty")}</p>
@@ -186,7 +189,7 @@ export function StokDiToko({ data, storeId, visitId }: { data: KartuStokDiToko; 
                     b.qty < 0 && "text-red-600 dark:text-red-400",
                   )}
                 >
-                  {b.perkiraan ? "≈" : null}
+                  {b.perkiraan ? <span title={t("approxNote")}>≈</span> : null}
                   {ribuan(b.qty)}
                 </span>
               </li>
@@ -199,7 +202,6 @@ export function StokDiToko({ data, storeId, visitId }: { data: KartuStokDiToko; 
             </Button>
           ) : null}
 
-          {data.adaPerkiraan ? <p className="mt-2 text-xs text-muted-foreground">{t("approxNote")}</p> : null}
           {ringkas.minus > 0 ? <p className="mt-1 text-xs text-muted-foreground">{t("minusNote")}</p> : null}
         </>
       )}

@@ -10,6 +10,7 @@ import { formatIDR } from "@/lib/sales-orders/format";
 import type { RincianPelangganHp } from "@/lib/spg/pelanggan-queries";
 import { cn } from "@/lib/utils";
 import { nadaKelompokTitip } from "../../titip/tampilan";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 /**
  * Satu pelanggan toko: nomor (ketuk → WhatsApp), catatan, persetujuan, titip
@@ -47,7 +48,10 @@ export function RincianPelangganClient({ rincian }: { rincian: RincianPelangganH
     <div className="space-y-4 p-4">
       {kembali}
       <header className="space-y-1">
-        <h1 className="break-words text-2xl font-bold">{rincian.nama}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="min-w-0 break-words text-2xl font-bold">{rincian.nama}</h1>
+          <TombolBantuanHp judul={rincian.nama} />
+        </div>
         <p className="text-sm text-muted-foreground tabular-nums">{rincian.hp}</p>
       </header>
 

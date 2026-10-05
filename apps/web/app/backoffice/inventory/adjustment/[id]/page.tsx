@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Loader2, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 import {
   Card,
   CardContent,
@@ -78,7 +79,10 @@ export default function StockAdjustmentDetailPage() {
               </Button>
             </Link>
             <div>
-              <h1 className="text-2xl font-bold">{adj.docNumber}</h1>
+              <div className="flex items-center gap-1">
+                <h1 className="text-2xl font-bold">{adj.docNumber}</h1>
+                <TombolBantuan judul={adj.docNumber} />
+              </div>
               <p className="text-muted-foreground">{t('stockAdjustment')}</p>
             </div>
           </div>

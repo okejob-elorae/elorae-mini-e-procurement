@@ -71,7 +71,6 @@ export function PanduanListClient({ baris, bolehKelola }: { baris: BarisPanduan[
     <div className="space-y-6">
       <PageHeader
         title={t("judul")}
-        description={t("deskripsi")}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline">

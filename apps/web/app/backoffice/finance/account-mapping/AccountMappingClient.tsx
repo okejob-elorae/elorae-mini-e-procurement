@@ -25,6 +25,7 @@ import { POSTING_ROLES, type PostingRole } from "@/lib/constants/journal-roles";
 import type { AccountMappingRow } from "@/lib/finance/journals/mapping";
 import type { AccountType } from "@/lib/constants/enums";
 import { POSTING_ROLE_ACCOUNT_TYPES } from "@/lib/finance/journals/role-account-types";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 
 type Account = { id: string; code: string; name: string; type: AccountType };
 
@@ -122,9 +123,9 @@ export function AccountMappingClient({ mappings, accounts, canManage }: Props) {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="flex items-center gap-1">
         <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
-        <p className="text-muted-foreground">{t("subtitle")}</p>
+        <TombolBantuan judul={t("title")} />
       </div>
 
       <Card>

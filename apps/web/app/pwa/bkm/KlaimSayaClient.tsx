@@ -12,6 +12,7 @@ import type { KlaimSaya } from '@/lib/receivables/pwa-queries';
 import type { TautanPesanKlaim } from '@/lib/receivables/tugas-tagih-queries';
 import { TombolTarikLaporan } from '../TombolTarikLaporan';
 import { KoreksiTerkirim } from '../KoreksiTerkirim';
+import { TombolBantuanHp } from '@/app/pwa/TombolBantuanHp';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 const tanggal = (iso: string) =>
@@ -63,7 +64,10 @@ export function KlaimSayaClient({ baris }: { baris: KlaimSayaTampil[] }) {
     <div className="space-y-4 p-4">
       <header className="flex items-start justify-between gap-3">
         <div className="space-y-1">
-          <h1 className="text-2xl font-bold">{t('pageTitle')}</h1>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-bold">{t('pageTitle')}</h1>
+            <TombolBantuanHp judul={t('pageTitle')} />
+          </div>
           <p className="text-sm text-muted-foreground">
             {t('summary', { count: baris.length, pending: menunggu })}
           </p>

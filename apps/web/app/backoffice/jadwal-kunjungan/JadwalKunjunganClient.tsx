@@ -133,7 +133,6 @@ export function JadwalKunjunganClient(props: Props) {
     <div className="space-y-6">
       <PageHeader
         title={t("judul")}
-        description={t("deskripsi")}
         actions={
           mingguBisaDiubah && props.salesmanId ? (
             <Button variant="outline" onClick={salin} disabled={menyalin}>

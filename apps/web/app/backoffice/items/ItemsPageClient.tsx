@@ -16,6 +16,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/ui/page-header';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { CategoryBadge } from '@/components/ui/category-badge';
@@ -186,18 +187,17 @@ export function ItemsPageClient({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{tNav('navItemsAll')}</h1>
-          <p className="text-muted-foreground">{tItems('subtitle')}</p>
-        </div>
-        <Link href="/backoffice/items/new">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            {tItems('newItem')}
-          </Button>
-        </Link>
-      </div>
+      <PageHeader
+        title={tNav('navItemsAll')}
+        actions={
+          <Link href="/backoffice/items/new">
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              {tItems('newItem')}
+            </Button>
+          </Link>
+        }
+      />
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         <Card>

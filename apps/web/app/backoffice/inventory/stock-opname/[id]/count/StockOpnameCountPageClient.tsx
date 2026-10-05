@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { ScanLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -236,7 +237,10 @@ export default function StockOpnameCountPageClient({ opnameId }: { opnameId: str
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">{t("count")}</h1>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-bold">{t("count")}</h1>
+            <TombolBantuan judul={t("count")} />
+          </div>
           <p className="text-muted-foreground">{String(opname.docNumber)}</p>
         </div>
         <Link href={`/backoffice/inventory/stock-opname/${opnameId}`}>

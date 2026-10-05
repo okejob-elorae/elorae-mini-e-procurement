@@ -63,7 +63,7 @@ export function PengumumanPageClient({
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t("judul")} description={t("deskripsi")} actions={buat} />
+      <PageHeader title={t("judul")} actions={buat} />
 
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
         <div className="relative max-w-sm flex-1">

@@ -186,7 +186,6 @@ export function KinerjaSpgClient({ data }: { data: DataKinerjaSpg }) {
     <div className="space-y-6">
       <PageHeader
         title={t("judul")}
-        description={t("deskripsi")}
         meta={t(data.berjalan ? "ringkasBerjalan" : "ringkas", {
           bulan: data.labelBulan,
           sampai: data.labelSampai,
@@ -281,26 +280,6 @@ export function KinerjaSpgClient({ data }: { data: DataKinerjaSpg }) {
               </Table>
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      <Card className="gap-3">
-        <CardHeader>
-          <CardTitle className="text-base">{t("keterangan.judul")}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-            <li>{t("keterangan.jadwal")}</li>
-            <li>{t("keterangan.terlambat", { menit: data.toleransiMenit })}</li>
-            <li>{t("keterangan.izin")}</li>
-            <li>{t("keterangan.nilai")}</li>
-            <li>{t("keterangan.pengunjung")}</li>
-            <li>{t("keterangan.konversi")}</li>
-            <li>{t("keterangan.target")}</li>
-            <li>{t("keterangan.tutup")}</li>
-            <li>{t("keterangan.titip")}</li>
-            <li>{t("keterangan.retur")}</li>
-          </ul>
         </CardContent>
       </Card>
     </div>

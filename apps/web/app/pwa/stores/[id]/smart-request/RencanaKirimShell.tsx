@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { teksAlasanKredit } from "../catalog/KreditBanner";
 import { bangunRencanaKirimAction, kirimRencanaKirimAction } from "./actions";
 import { FormKriteria } from "./FormKriteria";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 /**
  * Rencana kirim di HP: formulir kriteria → draf yang ditinjau → kirim.
@@ -261,7 +262,10 @@ export function RencanaKirimShell({
       </Button>
 
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold leading-tight">{t("judul")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold leading-tight">{t("judul")}</h1>
+          <TombolBantuanHp judul={t("judul")} />
+        </div>
         <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           <span>{storeName}</span>
           <Badge variant="outline">{t(konsi ? "jenisToko.KONSI" : "jenisToko.PUTUS")}</Badge>
@@ -302,23 +306,17 @@ export function RencanaKirimShell({
             {t("ubahKriteria")}
           </Button>
 
-          <div className="space-y-1">
-            <h2 className="text-lg font-semibold">{t("drafJudul")}</h2>
-            <p className="text-sm text-muted-foreground">{t("drafBantu")}</p>
-          </div>
+          <h2 className="text-lg font-semibold">{t("drafJudul")}</h2>
 
           <section className="beranda-kartu space-y-1" aria-live="polite">
             <p className="text-base font-semibold tabular-nums">
               {t("ringkasArtikel", { n: angka.format(ringkas.artikel) })} · {t("ringkasPcs", { n: angka.format(ringkas.pcs) })}
             </p>
             {konsi ? null : (
-              <>
-                <p className="flex items-baseline justify-between gap-3 pt-1">
-                  <span className="text-sm text-muted-foreground">{t("estimasi")}</span>
-                  <span className="text-lg font-semibold tabular-nums">{formatIDR(ringkas.nilai)}</span>
-                </p>
-                <p className="text-xs text-muted-foreground">{t("estimasiBantu")}</p>
-              </>
+              <p className="flex items-baseline justify-between gap-3 pt-1">
+                <span className="text-sm text-muted-foreground">{t("estimasi")}</span>
+                <span className="text-lg font-semibold tabular-nums">{formatIDR(ringkas.nilai)}</span>
+              </p>
             )}
           </section>
 

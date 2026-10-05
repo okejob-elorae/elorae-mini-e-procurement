@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -100,7 +100,7 @@ export function TargetSalesClient({ data }: { data: DataTargetSales }) {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t("judul")} description={t("deskripsi")} />
+      <PageHeader title={t("judul")} />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <div className="space-y-1.5">
@@ -215,7 +215,6 @@ function Ringkasan({
           <LayoutGrid className="h-5 w-5" aria-hidden />
           {t("ringkasanJudul", { bulan: judulBulan })}
         </CardTitle>
-        <CardDescription>{t("ringkasanIsi")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {!adaTarget ? <p className="text-sm text-muted-foreground">{t("ringkasanKosong")}</p> : null}
@@ -450,13 +449,10 @@ function EditorTarget({
   return (
     <Card>
       <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1.5">
-          <CardTitle className="flex items-center gap-2">
-            <Target className="h-5 w-5" aria-hidden />
-            {t("editorJudul", { nama: namaSales, bulan: judulBulan })}
-          </CardTitle>
-          <CardDescription>{t("editorIsi")}</CardDescription>
-        </div>
+        <CardTitle className="flex items-center gap-2">
+          <Target className="h-5 w-5" aria-hidden />
+          {t("editorJudul", { nama: namaSales, bulan: judulBulan })}
+        </CardTitle>
         {data.bolehUbah ? (
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={mintaSalin} disabled={sibuk || bulanLalu === 0} title={bulanLalu === 0 ? t("salinTidakAda") : undefined}>
@@ -604,7 +600,6 @@ function EditorTarget({
           <span>{t("jumlahBaris", { jumlah: baris.length, maks: MAKS_BARIS_TARGET })}</span>
           {berubah ? <span className="font-medium text-amber-700 dark:text-amber-400">{t("belumDisimpan")}</span> : null}
         </div>
-        <p className="text-xs text-muted-foreground">{t("catatanCapaian")}</p>
       </CardContent>
 
       <AlertDialog open={konfirmasiSalin} onOpenChange={setKonfirmasiSalin}>
@@ -648,7 +643,6 @@ function PenjualanKategori({ rinci, judulBulan }: { rinci: NonNullable<DataTarge
           <PieChart className="h-5 w-5" aria-hidden />
           {t("penjualanJudul", { bulan: judulBulan })}
         </CardTitle>
-        <CardDescription>{t("penjualanIsi")}</CardDescription>
       </CardHeader>
       <CardContent>
         {rinci.penjualanKategori.length === 0 ? (

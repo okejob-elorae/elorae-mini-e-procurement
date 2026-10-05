@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { formatIDR } from "@/lib/sales-orders/format";
 import type { PayloadGajiHp } from "@/lib/spg/komisi-hp";
 import { TautanKembali } from "@/app/pwa/TautanKembali";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 /**
  * Gaji & komisi SPG.
@@ -33,8 +34,10 @@ export function GajiSpgClient({
         <TautanKembali cadangan="/pwa/spg/lainnya" />
       </Button>
       <header>
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
-        <p className="text-sm text-muted-foreground">{t("subtitle")}</p>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
+        </div>
       </header>
 
       {perkiraan ? (
@@ -56,7 +59,6 @@ export function GajiSpgClient({
           {(bagiRata ? perkiraan.potongToko : perkiraan.potongSaya) === 0 ? (
             <p className="text-xs opacity-80">{t("estimateNoSales")}</p>
           ) : null}
-          <p className="text-xs opacity-80">{perkiraan.jenis === "KONSI" ? t("estimateNote") : t("estimateNotePutus")}</p>
         </section>
       ) : (
         <section className="beranda-kartu">

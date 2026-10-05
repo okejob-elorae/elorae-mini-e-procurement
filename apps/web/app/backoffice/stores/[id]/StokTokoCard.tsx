@@ -69,7 +69,6 @@ export function StokTokoCard({ stok, gerakan }: { stok: BarisStok[]; gerakan: Ge
             </span>
           ) : null}
         </CardTitle>
-        {!kosong ? <p className="text-sm text-muted-foreground">{t("hint")}</p> : null}
       </CardHeader>
       <CardContent>
         {kosong ? (

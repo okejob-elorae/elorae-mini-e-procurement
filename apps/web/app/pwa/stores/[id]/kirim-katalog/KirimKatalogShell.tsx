@@ -23,6 +23,7 @@ import { formatIDR } from "@/lib/sales-orders/format";
 import { buatKartu } from "./gambar-kartu";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 /** Satu produk yang boleh dikirim: ada stoknya. `harga` sudah null untuk toko konsinyasi (server). */
 export type ProdukKirim = {
   itemId: string;
@@ -231,7 +232,10 @@ export function KirimKatalogShell({
       </header>
 
       <div>
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
+        </div>
         <p className="text-sm text-muted-foreground">{t("subtitle", { toko: store.name })}</p>
         {!adaNomor ? <p className="mt-1 text-xs text-muted-foreground">{t("noPhone")}</p> : null}
       </div>

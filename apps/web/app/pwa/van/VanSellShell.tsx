@@ -17,6 +17,7 @@ import { recordVanSaleAction } from "@/app/actions/van-sale";
 import { VanVariantSheet, type VanStockRow, type VanGroup } from "./VanVariantSheet";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 type StoreOption = { id: string; name: string };
 type ShortLine = { itemId: string; variantSku: string | null; requested: number; available: number };
 
@@ -182,8 +183,10 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
       </header>
 
       <div>
-        <h1 className="text-lg font-semibold">{t("title")}</h1>
-        <p className="text-sm text-muted-foreground">{t("subtitle")}</p>
+        <div className="flex items-center gap-1">
+          <h1 className="text-lg font-semibold">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
+        </div>
       </div>
 
       {shortLines.length > 0 && (

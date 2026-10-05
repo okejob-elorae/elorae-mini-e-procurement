@@ -14,6 +14,7 @@ import { PERIODE_SPG, type BarisMinta, type PeriodeSpg } from "@/lib/spg/analisa
 import type { HasilAnalisaSpg } from "@/lib/spg/analisa-queries";
 import { alamatMinta } from "@/lib/spg/saran-minta";
 import { cn } from "@/lib/utils";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 /**
  * Analisa penjualan SPG. Periode di alamat (`?periode=`), berpindah dengan
@@ -45,7 +46,10 @@ export function AnalisaSpgClient({ data, label }: { data: HasilAnalisaSpg; label
       </Button>
 
       <header>
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
+        </div>
         <p className="text-sm text-muted-foreground">{t("subtitle", { store: data.toko.nama })}</p>
       </header>
 
@@ -268,7 +272,6 @@ export function AnalisaSpgClient({ data, label }: { data: HasilAnalisaSpg; label
           <h2 id="spg-dicari" className="beranda-judul px-1">
             {t("wantedTitle")}
           </h2>
-          <p className="px-1 text-xs text-muted-foreground">{t("wantedHint")}</p>
           {data.dicari.length === 0 ? (
             <p className="beranda-kartu text-sm text-muted-foreground">{t("wantedEmpty")}</p>
           ) : (
@@ -295,8 +298,6 @@ export function AnalisaSpgClient({ data, label }: { data: HasilAnalisaSpg; label
             <Link href="/pwa/spg/dicari">{t("wantedRecord")}</Link>
           </Button>
         </section>
-
-        <p className="px-1 text-xs text-muted-foreground">{t("netNote")}</p>
       </div>
     </div>
   );

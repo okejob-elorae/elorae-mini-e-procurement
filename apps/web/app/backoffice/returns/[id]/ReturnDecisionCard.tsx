@@ -8,6 +8,7 @@ import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -160,9 +161,12 @@ export function ReturnDecisionCard({ ret, canDecide, canPostJournal }: Props) {
       </Button>
       <Card className="p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <h1 className="text-lg font-semibold">
-            {t("title")}: {ret.jubelioReturnNo ?? `#${ret.jubelioReturnId}`}
-          </h1>
+          <div className="flex items-center gap-1">
+            <h1 className="text-lg font-semibold">
+              {t("title")}: {ret.jubelioReturnNo ?? `#${ret.jubelioReturnId}`}
+            </h1>
+            <TombolBantuan judul={t("title")} />
+          </div>
           <span
             className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${RETURN_STATUS_TAILWIND[ret.status]}`}
           >

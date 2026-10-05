@@ -4,7 +4,7 @@ import { useState, type FormEvent } from 'react';
 import { useTranslations } from 'next-intl';
 import { Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cariPantone, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
@@ -72,7 +72,6 @@ export function KartuTintaDasar({
     <Card>
       <CardHeader>
         <CardTitle>{t('inksTitle')}</CardTitle>
-        <CardDescription>{t('inksDescription')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         {tinta.length === 0 ? (

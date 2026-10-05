@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { AlertTriangle, ArrowLeft, ExternalLink, ImageOff, MapPin, Store } from "lucide-react";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -148,7 +149,10 @@ export function DetailUsulanClient({
           </Link>
         </Button>
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-bold tracking-tight">{usulan.name}</h1>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-bold tracking-tight">{usulan.name}</h1>
+            <TombolBantuan judul={usulan.name} />
+          </div>
           <Badge variant={lencanaStatus(usulan.status)}>{td(`status_${usulan.status}`)}</Badge>
         </div>
         <p className="text-muted-foreground">{t("title")}</p>
@@ -214,7 +218,6 @@ export function DetailUsulanClient({
                 {kandidat.length > 0 ? <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" /> : null}
                 {t("dupTitle")}
               </CardTitle>
-              <p className="text-xs text-muted-foreground">{t("dupBody")}</p>
             </CardHeader>
             <CardContent>
               {kandidat.length === 0 ? (
@@ -367,7 +370,6 @@ function FormulirPersetujuan({ usulan, formulir }: { usulan: Usulan; formulir: F
     <Card>
       <CardHeader>
         <CardTitle className="text-base">{t("approveTitle")}</CardTitle>
-        <p className="text-xs text-muted-foreground">{t("approveBody")}</p>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-1.5">

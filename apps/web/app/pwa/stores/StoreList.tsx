@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 type PermState = "prompt" | "granted" | "denied" | "unknown";
 type StoreItem = StoreWithCoords & {
@@ -126,7 +127,10 @@ export function StoreList({
     <div className="p-4 space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold leading-tight">{tList("title")}</h1>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-bold leading-tight">{tList("title")}</h1>
+            <TombolBantuanHp judul={tList("title")} />
+          </div>
           <p className="text-xs text-muted-foreground">
             {tList("count", { count: filtered.length })}
           </p>

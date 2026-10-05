@@ -73,7 +73,6 @@ export function BagianRusakPembeli({ rusak }: { rusak: RusakPembeliRingkas[] }) 
           </Link>
         </Button>
       ) : null}
-      <p className="px-1 text-xs text-muted-foreground">{t("hp.petunjuk")}</p>
     </section>
   );
 }

@@ -44,23 +44,20 @@ export function ActionNeededPanel({ items }: { items: ActionItem[] }) {
 
   return (
     <section className="beranda-kartu" aria-labelledby="perlu-tindakan-judul">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-        <h2
-          id="perlu-tindakan-judul"
-          className={cn(
-            "flex items-center gap-1.5 text-sm font-semibold",
-            hasOverdue ? "text-destructive" : "text-amber-700 dark:text-amber-300",
-          )}
-        >
-          {hasOverdue ? (
-            <AlertTriangle aria-hidden className="h-4 w-4" />
-          ) : (
-            <Clock aria-hidden className="h-4 w-4" />
-          )}
-          {t("title", { count: total })}
-        </h2>
-        <p className="text-xs text-muted-foreground">{t("subtitle")}</p>
-      </div>
+      <h2
+        id="perlu-tindakan-judul"
+        className={cn(
+          "flex items-center gap-1.5 text-sm font-semibold",
+          hasOverdue ? "text-destructive" : "text-amber-700 dark:text-amber-300",
+        )}
+      >
+        {hasOverdue ? (
+          <AlertTriangle aria-hidden className="h-4 w-4" />
+        ) : (
+          <Clock aria-hidden className="h-4 w-4" />
+        )}
+        {t("title", { count: total })}
+      </h2>
       <ul className="-mx-1.5 mt-2 grid gap-x-6 md:grid-cols-2">
         {visible.map((item) => (
           <li key={item.key}>

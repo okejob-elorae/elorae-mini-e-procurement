@@ -19,7 +19,6 @@ import { Label } from '@/components/ui/label';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
@@ -35,6 +34,7 @@ import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { Loader2, Shield, History, UserX, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDisplayDateTime } from '@/lib/date-only';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 
 export default function SecuritySettingsPage() {
   const locale = useLocale() as 'en' | 'id';
@@ -164,9 +164,9 @@ export default function SecuritySettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="flex items-center gap-1">
         <h1 className="text-2xl font-bold tracking-tight">{t('title')}</h1>
-        <p className="text-muted-foreground">{t('subtitle')}</p>
+        <TombolBantuan judul={t('title')} />
       </div>
 
       <Card>
@@ -175,7 +175,6 @@ export default function SecuritySettingsPage() {
             <Lock className="h-5 w-5" />
             {t('changePassword')}
           </CardTitle>
-          <CardDescription>{t('changePasswordDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-1 max-w-md">
@@ -234,7 +233,6 @@ export default function SecuritySettingsPage() {
             <Shield className="h-5 w-5" />
             {t('setPin')}
           </CardTitle>
-          <CardDescription>{t('pinCardDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-1 max-w-md">
@@ -287,7 +285,6 @@ export default function SecuritySettingsPage() {
             <History className="h-5 w-5" />
             {t('lastAccessTitle')}
           </CardTitle>
-          <CardDescription>{t('lastAccessDescription')}</CardDescription>
         </CardHeader>
         <CardContent>
           {lastAccess.length === 0 ? (
@@ -309,7 +306,6 @@ export default function SecuritySettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle>{t('attemptsTitle')}</CardTitle>
-          <CardDescription>{t('attemptsDescription')}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="border rounded-md overflow-auto max-h-[280px]">
@@ -347,7 +343,6 @@ export default function SecuritySettingsPage() {
               <UserX className="h-5 w-5" />
               {t('forceResetTitle')}
             </CardTitle>
-            <CardDescription>{t('resetPinDescription')}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2 items-end">
             <SearchableCombobox

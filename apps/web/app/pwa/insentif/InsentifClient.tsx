@@ -18,6 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 export type DataInsentif = {
   bulan: { kunci: string; href: string }[];
   bulanDipilih: string;
@@ -78,8 +79,10 @@ export function InsentifClient({ data }: { data: DataInsentif }) {
       </Button>
 
       <header>
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
-        <p className="text-sm text-muted-foreground">{t("subtitle")}</p>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
+        </div>
       </header>
 
       {/* Bulan sebagai tautan: alamatnya bisa dibuka ulang dan tombol kembali HP bekerja. */}
@@ -209,7 +212,6 @@ export function InsentifClient({ data }: { data: DataInsentif }) {
         <>
           <section className="beranda-kartu">
             <h2 className="beranda-judul">{t("collectedTitle")}</h2>
-            <p className="mt-1 text-xs text-muted-foreground">{t("collectedHint")}</p>
             <dl className="mt-3 grid grid-cols-2 gap-3">
               <div className="min-w-0">
                 <dt className="text-xs text-muted-foreground">{t("sellerShare")}</dt>
@@ -269,7 +271,6 @@ export function InsentifClient({ data }: { data: DataInsentif }) {
               </div>
             ))}
           </dl>
-          <p className="mt-2 text-xs text-muted-foreground">{t("salesHint")}</p>
         </section>
       )}
 
@@ -285,8 +286,6 @@ export function InsentifClient({ data }: { data: DataInsentif }) {
           <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
         </Link>
       </nav>
-
-      <p className="text-center text-xs text-muted-foreground">{t("footer")}</p>
     </div>
   );
 }

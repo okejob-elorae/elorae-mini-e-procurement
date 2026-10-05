@@ -32,6 +32,7 @@ import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 import { formatDisplayDateTime } from '@/lib/date-only';
 import { auditActionLabel, auditEntityLabel } from '@/lib/audit/action-label';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 
 type AuditLogRow = Awaited<ReturnType<typeof getAuditLogs>>['logs'][number];
 
@@ -142,9 +143,9 @@ export default function AuditTrailPage() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="flex items-center gap-1">
         <h1 className="text-2xl font-bold tracking-tight">{tAudit('trail.pageTitle')}</h1>
-        <p className="text-muted-foreground">{tAudit('trail.subtitle')}</p>
+        <TombolBantuan judul={tAudit('trail.pageTitle')} />
       </div>
 
       <Card className="border-muted/60 shadow-sm">

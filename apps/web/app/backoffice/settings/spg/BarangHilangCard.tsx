@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { Loader2, PackageX } from "lucide-react";
 import { simpanBarangHilangSpg } from "@/app/actions/settings/spg-barang-hilang";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -62,7 +62,6 @@ export function BarangHilangCard({ bolehUbah, nilai }: { bolehUbah: boolean; nil
           <PackageX className="h-5 w-5" aria-hidden />
           {t("judul")}
         </CardTitle>
-        <CardDescription>{t("penjelasan")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="space-y-2">

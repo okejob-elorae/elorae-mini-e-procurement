@@ -12,6 +12,7 @@ import { konfirmasiPengumumanAction, tandaiPengumumanDibacaAction } from "@/app/
 import { KABAR_BERUBAH } from "@/app/pwa/kabar/peristiwa";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 /**
  * Rincian pengumuman di HP. Membuka = membaca: ditandai SEKALI sesudah tampil
  * (tanpa sinyal gagal diam-diam — tetap tampil belum dibaca, tidak ada yang
@@ -92,7 +93,10 @@ export function RincianPengumumanHp({ data }: { data: Data }) {
               {t("disematkan")}
             </span>
           ) : null}
-          <h1 className="break-words text-xl font-bold leading-tight">{data.title}</h1>
+          <div className="flex items-center gap-1">
+            <h1 className="min-w-0 break-words text-xl font-bold leading-tight">{data.title}</h1>
+            <TombolBantuanHp judul={data.title} />
+          </div>
           <p className="text-xs text-muted-foreground tabular-nums">{t("terbitPada", { waktu: data.terbit })}</p>
         </header>
         <p className="whitespace-pre-wrap break-words text-[15px] leading-relaxed">{data.body}</p>

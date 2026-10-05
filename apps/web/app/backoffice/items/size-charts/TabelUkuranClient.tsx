@@ -75,7 +75,6 @@ export function TabelUkuranClient({
     <div className="space-y-6">
       <PageHeader
         title={t("judul")}
-        description={t("deskripsi")}
         meta={data.length > 0 ? t("ringkas", { total: data.length, aktif }) : undefined}
         actions={
           bolehUbah ? (

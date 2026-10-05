@@ -14,6 +14,7 @@ import { hasPermission } from "@/lib/rbac";
 import { formatDisplayDateTime } from "@/lib/date-only";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -110,7 +111,10 @@ export function VanSaleDetailClient({ sale }: Props) {
               {tVanSale("back")}
             </Link>
           </Button>
-          <h1 className="text-2xl font-semibold font-mono">{sale.docNo}</h1>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-semibold font-mono">{sale.docNo}</h1>
+            <TombolBantuan judul={sale.docNo} />
+          </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {sale.journalId ? (

@@ -8,6 +8,7 @@ import { usePenghitungPengunjung, type AwalPengunjung } from "@/components/spg/u
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { RiwayatPengunjungHp } from "@/lib/spg/pengunjung-queries";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 /**
  * Layar penghitung pengunjung SPG: tombol besar "+1 pengunjung", "Batalkan 1",
@@ -43,7 +44,10 @@ export function PenghitungPengunjungClient({
       </Button>
 
       <header>
-        <h1 className="text-2xl font-bold">{t("judul")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("judul")}</h1>
+          <TombolBantuanHp judul={t("judul")} />
+        </div>
         <p className="text-sm text-muted-foreground">{t("subjudul", { toko: namaToko, tanggal })}</p>
       </header>
 
@@ -67,7 +71,6 @@ export function PenghitungPengunjungClient({
       </Button>
 
       <KeteranganSinkronPengunjung status={p.status} />
-      <p className="text-xs text-muted-foreground">{t("penjelasan")}</p>
 
       {riwayat.length > 0 ? (
         <Card className="gap-0">

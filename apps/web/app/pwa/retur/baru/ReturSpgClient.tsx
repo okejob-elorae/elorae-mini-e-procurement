@@ -24,6 +24,7 @@ import { nasibUnggah } from "@/lib/pwa/offline/laporan-classify";
 import { antreRetur } from "@/lib/pwa/offline/laporan-queue";
 import { newLocalId } from "@/lib/pwa/offline/queue";
 import { BarisRusakPembeli, type BarisRusakPembeliAwal } from "./BarisRusakPembeli";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 function hariIniWib(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(new Date());
@@ -265,7 +266,10 @@ export function ReturSpgClient({
       </Button>
 
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold">{t("judul")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("judul")}</h1>
+          <TombolBantuanHp judul={t("judul")} />
+        </div>
         <p className="text-sm text-muted-foreground">{putus ? t("penjelasanPutus") : t("penjelasanKonsi")}</p>
       </header>
 
@@ -346,7 +350,6 @@ export function ReturSpgClient({
                   </div>
                 </div>
               ))}
-              <p className="text-xs text-muted-foreground">{trk("retur.penjelasan")}</p>
             </div>
           )}
 

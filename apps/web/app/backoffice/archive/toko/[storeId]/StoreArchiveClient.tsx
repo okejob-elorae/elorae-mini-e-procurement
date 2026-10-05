@@ -51,7 +51,6 @@ export function StoreArchiveClient({
         </Link>
         <PageHeader
           title={storeName}
-          description={t('storeFolderDescription')}
           meta={t('storeFolderMeta', {
             docs: rows.length,
             value: `Rp ${Math.round(totalValue).toLocaleString('id-ID')}`,

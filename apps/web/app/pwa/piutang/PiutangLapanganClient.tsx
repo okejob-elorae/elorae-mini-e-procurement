@@ -9,6 +9,7 @@ import type { TokoLapangan } from '@/lib/receivables/pwa-queries';
 import type { KeadaanPiutang } from '@/lib/receivables/rules';
 import { dinamis } from '@/lib/i18n/dinamis';
 import { TugasTagihKantor, type TugasTagihHp } from './TugasTagihKantor';
+import { TombolBantuanHp } from '@/app/pwa/TombolBantuanHp';
 
 /** Nominal disingkat: layar HP tidak muat "Rp 13.300.000" berulang kali. */
 const singkat = (n: number) =>
@@ -58,7 +59,10 @@ export function PiutangLapanganClient({
   return (
     <div className="space-y-4 p-4">
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold">{t('pageTitle')}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t('pageTitle')}</h1>
+          <TombolBantuanHp judul={t('pageTitle')} />
+        </div>
         <p className="text-sm text-muted-foreground">
           {t('summary', { count: belumBeres.length, value: rupiah(total) })}
         </p>

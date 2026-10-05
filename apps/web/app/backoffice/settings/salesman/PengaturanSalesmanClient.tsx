@@ -9,12 +9,13 @@ import { CalendarClock, ListTree, Loader2, Target } from 'lucide-react';
 import { simpanBatasHariKunjungan, simpanTargetBulan } from '@/app/actions/settings/salesman';
 import { Badge } from "@/components/ui/badge";
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { BATAS_HARI_BAWAAN } from '@/lib/salesman/pengaturan';
 import { formatIDR } from '@/lib/sales-orders/format';
 import { cn } from '@/lib/utils';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 
 type Props = {
   bolehUbah: boolean;
@@ -132,8 +133,10 @@ export function PengaturanSalesmanClient({ bolehUbah, batas, bulan, salesman, sp
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">{t('title')}</h1>
-        <p className="text-muted-foreground">{t('subtitle')}</p>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold tracking-tight">{t('title')}</h1>
+          <TombolBantuan judul={t('title')} />
+        </div>
         {!bolehUbah ? <p className="mt-2 text-sm text-amber-700 dark:text-amber-400">{t('readOnly')}</p> : null}
       </div>
 
@@ -143,7 +146,6 @@ export function PengaturanSalesmanClient({ bolehUbah, batas, bulan, salesman, sp
             <CalendarClock className="h-5 w-5" />
             {t('visitTitle')}
           </CardTitle>
-          <CardDescription>{t('visitDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -179,7 +181,6 @@ export function PengaturanSalesmanClient({ bolehUbah, batas, bulan, salesman, sp
             <Target className="h-5 w-5" />
             {t('targetTitle')}
           </CardTitle>
-          <CardDescription>{t('targetDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div role="group" aria-label={t('targetTitle')} className="inline-flex rounded-lg border p-0.5">

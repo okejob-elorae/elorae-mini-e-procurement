@@ -79,7 +79,6 @@ export function DaftarRusakClient({
     <div className="space-y-6">
       <PageHeader
         title={t("kantor.judul")}
-        description={t("kantor.deskripsi")}
         meta={t("kantor.ringkas", { baris: terbuka.length, pcs: pcsTerbuka })}
       />
 

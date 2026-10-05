@@ -31,6 +31,7 @@ import { TautanKembali } from "@/app/pwa/TautanKembali";
 import type { AwalRetur } from '@/lib/receivables/return-queries';
 import { Copy } from 'lucide-react';
 import { TanggalInput } from "@/components/ui/tanggal-input";
+import { TombolBantuanHp } from '@/app/pwa/TombolBantuanHp';
 function hariIniWib(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
 }
@@ -134,7 +135,10 @@ export function ReturBaruClient({
       </Button>
 
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold">{t('newTitle')}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t('newTitle')}</h1>
+          <TombolBantuanHp judul={t('newTitle')} />
+        </div>
         <p className="text-sm text-muted-foreground">{t('newBody')}</p>
       </header>
 

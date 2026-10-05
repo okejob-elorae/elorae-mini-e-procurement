@@ -10,6 +10,7 @@ import { dinamis } from "@/lib/i18n/dinamis";
 import type { BarisTitipHp, DaftarTitipHp } from "@/lib/spg/titip-queries";
 import { cn } from "@/lib/utils";
 import { nadaKelompokTitip } from "./tampilan";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 export type TabTitip = "datang" | "dikabari" | "menunggu";
 
@@ -42,7 +43,10 @@ export function DaftarTitipClient({ namaToko, tab, data }: { namaToko: string; t
         <TautanKembali cadangan="/pwa/spg/lainnya" />
       </Button>
       <header>
-        <h1 className="text-2xl font-bold">{t("judul")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("judul")}</h1>
+          <TombolBantuanHp judul={t("judul")} />
+        </div>
         <p className="truncate text-sm text-muted-foreground">{namaToko}</p>
       </header>
 
@@ -115,7 +119,6 @@ export function DaftarTitipClient({ namaToko, tab, data }: { namaToko: string; t
           </ul>
         </section>
       )}
-      <p className="px-1 text-xs text-muted-foreground">{td(`petunjuk.${tab}`)}</p>
     </div>
   );
 }

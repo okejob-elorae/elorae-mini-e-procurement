@@ -2,7 +2,7 @@
 
 import { useTranslations } from "next-intl";
 import { Link2 } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PanelTautanPortal } from "@/components/portal-toko/PanelTautanPortal";
 
 /**
@@ -31,7 +31,6 @@ export function TautanPortalCard({
           <Link2 className="h-5 w-5" aria-hidden />
           {t("judul")}
         </CardTitle>
-        <CardDescription>{t("subjudul")}</CardDescription>
       </CardHeader>
       <CardContent>
         <PanelTautanPortal storeId={storeId} namaToko={namaToko} teleponToko={teleponToko} />

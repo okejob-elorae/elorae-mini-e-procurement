@@ -63,8 +63,7 @@ export function RincianTutupHariClient({ rincian, labelHari }: { rincian: Rincia
 
       <PageHeader
         title={t("rincian.judul", { toko: rincian.toko.nama })}
-        description={labelHari}
-        meta={t("olehJam", { nama: k.oleh, jam: k.jam })}
+        meta={`${labelHari} · ${t("olehJam", { nama: k.oleh, jam: k.jam })}`}
       />
 
       {rincian.berubah ? (

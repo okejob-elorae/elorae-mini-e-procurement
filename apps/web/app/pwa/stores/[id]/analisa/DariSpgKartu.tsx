@@ -83,7 +83,6 @@ export function RekomendasiKartu({ storeId, periode, boleh }: { storeId: string;
         <Lightbulb className="h-3.5 w-3.5" aria-hidden />
         {t("judul")}
       </h2>
-      <p className="text-sm text-muted-foreground">{t("isi")}</p>
       {boleh ? (
         <Button asChild className="w-full">
           <Link href={`/pwa/stores/${storeId}/analisa/rekomendasi?periode=${periode}`}>{t("buat")}</Link>

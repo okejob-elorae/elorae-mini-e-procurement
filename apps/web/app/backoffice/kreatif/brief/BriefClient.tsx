@@ -137,7 +137,6 @@ export function BriefClient({
     <div className="space-y-6">
       <PageHeader
         title={t('briefTitle')}
-        description={t('briefDescription')}
         meta={t('briefMeta', { count: baris.length })}
         actions={
           bolehMengelola && kol.length > 0 ? (

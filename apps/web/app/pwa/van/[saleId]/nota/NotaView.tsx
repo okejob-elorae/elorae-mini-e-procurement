@@ -11,6 +11,7 @@ import { vanSaleNotaHtml } from "@/lib/print/van-sale-nota-html";
 import type { VanSaleDetail } from "@/lib/canvassing/sale-queries";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
 
 export function NotaView({ sale }: { sale: VanSaleDetail }) {
@@ -50,7 +51,10 @@ export function NotaView({ sale }: { sale: VanSaleDetail }) {
       </header>
 
       <div className="print:hidden">
-        <h1 className="text-lg font-semibold">{t("notaTitle")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-lg font-semibold">{t("notaTitle")}</h1>
+          <TombolBantuanHp judul={t("notaTitle")} />
+        </div>
         <p className="text-sm text-muted-foreground">{t("notaSubtitle", { docNo: sale.docNo })}</p>
       </div>
 

@@ -45,6 +45,7 @@ import {
   type PembeliKeranjang,
   type SimpananKeranjang,
 } from "./keranjang";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 /** Hasil cari ditampilkan bertahap — katalog bisa ratusan barang, HP SPG bukan laptop. */
 const PER_HALAMAN = 30;
@@ -598,7 +599,10 @@ export function SpgSaleShell({
         <Button asChild variant="ghost" size="sm" className="-ml-2">
           <TautanKembali cadangan="/pwa" />
         </Button>
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
+        </div>
         <p className="text-sm text-muted-foreground">{t("subtitle", { store: namaToko })}</p>
       </header>
 

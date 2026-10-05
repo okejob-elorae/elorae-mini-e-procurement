@@ -15,7 +15,7 @@ import {
   type PantoneThemeSelection,
 } from '@/components/settings/PantoneThemePickerDialog';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import {
   Building2,
@@ -51,6 +51,7 @@ import { DEFAULT_THEME_PRIMARY_COLOR } from '@/lib/theme/theme-presets';
 import { tentukanWarnaTema, type WarnaEfektif, type WarnaTersimpan } from '@/lib/theme/warna-efektif';
 import { pasangWarnaEfektif } from '@/lib/theme/pasang-warna';
 import { hasPermission, PERMISSIONS } from '@/lib/rbac';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 
 type ThemeDraft = {
   pantoneTcx: string | null;
@@ -79,17 +80,17 @@ export default function SettingsPage() {
   const [isThemeSaving, setIsThemeSaving] = useState(false);
 
   const items = [
-    { titleKey: 'security.title' as const, descriptionKey: 'security.description' as const, href: '/backoffice/settings/security', icon: Shield },
-    { titleKey: 'documents.title' as const, descriptionKey: 'documents.description' as const, href: '/backoffice/settings/documents', icon: FileDigit },
-    { titleKey: 'itemCodes.title' as const, descriptionKey: 'itemCodes.description' as const, href: '/backoffice/settings/item-codes', icon: FileDigit },
-    { titleKey: 'tax.title' as const, descriptionKey: 'tax.description' as const, href: '/backoffice/settings/tax', icon: Percent },
-    { titleKey: 'uom.title' as const, descriptionKey: 'uom.description' as const, href: '/backoffice/settings/uom', icon: Ruler },
-    { titleKey: 'users.title' as const, descriptionKey: 'users.description' as const, href: '/backoffice/settings/users', icon: UserPlus },
-    { titleKey: 'rbac.title' as const, descriptionKey: 'rbac.description' as const, href: '/backoffice/settings/rbac', icon: Users },
-    { titleKey: 'packRatio.title' as const, descriptionKey: 'packRatio.description' as const, href: '/backoffice/settings/pack-ratio', icon: Layers },
-    { titleKey: 'jenisPotongan.title' as const, descriptionKey: 'jenisPotongan.description' as const, href: '/backoffice/settings/jenis-potongan', icon: Tags },
-    { titleKey: 'salesman.title' as const, descriptionKey: 'salesman.description' as const, href: '/backoffice/settings/salesman', icon: Target },
-    { titleKey: 'spg.title' as const, descriptionKey: 'spg.description' as const, href: '/backoffice/settings/spg', icon: Store },
+    { titleKey: 'security.title' as const, href: '/backoffice/settings/security', icon: Shield },
+    { titleKey: 'documents.title' as const, href: '/backoffice/settings/documents', icon: FileDigit },
+    { titleKey: 'itemCodes.title' as const, href: '/backoffice/settings/item-codes', icon: FileDigit },
+    { titleKey: 'tax.title' as const, href: '/backoffice/settings/tax', icon: Percent },
+    { titleKey: 'uom.title' as const, href: '/backoffice/settings/uom', icon: Ruler },
+    { titleKey: 'users.title' as const, href: '/backoffice/settings/users', icon: UserPlus },
+    { titleKey: 'rbac.title' as const, href: '/backoffice/settings/rbac', icon: Users },
+    { titleKey: 'packRatio.title' as const, href: '/backoffice/settings/pack-ratio', icon: Layers },
+    { titleKey: 'jenisPotongan.title' as const, href: '/backoffice/settings/jenis-potongan', icon: Tags },
+    { titleKey: 'salesman.title' as const, href: '/backoffice/settings/salesman', icon: Target },
+    { titleKey: 'spg.title' as const, href: '/backoffice/settings/spg', icon: Store },
   ];
 
   const userId = session?.user?.id ?? null;
@@ -307,9 +308,9 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="flex items-center gap-1">
         <h1 className="text-2xl font-bold tracking-tight">{t('title')}</h1>
-        <p className="text-muted-foreground">{t('subtitle')}</p>
+        <TombolBantuan judul={t('title')} />
       </div>
 
       <UIThemePicker
@@ -329,7 +330,6 @@ export default function SettingsPage() {
             <Palette className="h-5 w-5" />
             {tTheme('title')}
           </CardTitle>
-          <CardDescription>{tTheme('description')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
@@ -356,7 +356,6 @@ export default function SettingsPage() {
               ) : (
                 <p className="text-muted-foreground">{tTheme('defaultLabel')}</p>
               )}
-              <p className="text-sm text-muted-foreground pt-1">{tTheme('hint')}</p>
             </div>
           </div>
 
@@ -396,7 +395,6 @@ export default function SettingsPage() {
             </TabsList>
 
             <TabsContent value="pantone" className="space-y-3 pt-3">
-              <p className="text-sm text-muted-foreground">{tDev('pantoneHint')}</p>
               <Button
                 type="button"
                 variant="outline"
@@ -411,7 +409,6 @@ export default function SettingsPage() {
             </TabsContent>
 
             <TabsContent value="popular" className="space-y-3 pt-3">
-              <p className="text-sm text-muted-foreground">{tDev('popularHint')}</p>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
                 {DEVELOPER_PALETTES.map((palette) => {
                   const active =
@@ -475,7 +472,6 @@ export default function SettingsPage() {
               <Building2 className="h-5 w-5" />
               {tTheme('companyTitle')}
             </CardTitle>
-            <CardDescription>{tTheme('companyDescription')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center gap-4">
@@ -550,7 +546,6 @@ export default function SettingsPage() {
                   <item.icon className="h-5 w-5" />
                   {t(item.titleKey)}
                 </CardTitle>
-                <CardDescription>{t(item.descriptionKey)}</CardDescription>
               </CardHeader>
             </Card>
           </Link>

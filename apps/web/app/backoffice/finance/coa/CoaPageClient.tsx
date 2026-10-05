@@ -60,6 +60,7 @@ import {
 import type { CoaTreeNode } from "@/lib/finance/coa/queries";
 import { ACCOUNT_TYPE_VALUES } from "@/lib/constants/enums";
 import type { AccountType } from "@/lib/constants/enums";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 
 type Props = {
   tree: CoaTreeNode[];
@@ -442,7 +443,10 @@ export function CoaPageClient({ tree, includeInactive, canManage, canViewLedger 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
+          <TombolBantuan judul={t("title")} />
+        </div>
         {canManage && (
           <Button onClick={() => openCreate(null)}>
             <Plus className="h-4 w-4 mr-2" />

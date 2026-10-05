@@ -106,7 +106,6 @@ export function KolClient({
     <div className="space-y-6">
       <PageHeader
         title={t('kolTitle')}
-        description={t('kolDescription')}
         meta={t('kolMeta', { count: baris.length })}
         actions={
           bolehMengelola ? (

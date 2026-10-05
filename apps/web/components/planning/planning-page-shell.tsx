@@ -69,7 +69,7 @@ export function PlanningPageShell({
 
   return (
     <div className="space-y-4">
-      <PageHeader title={t("title")} description={t("subtitle")} />
+      <PageHeader title={t("title")} />
       <Card>
         <CardContent className="space-y-3">
           {isLocked && (

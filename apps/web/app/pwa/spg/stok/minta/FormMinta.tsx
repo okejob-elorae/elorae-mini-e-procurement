@@ -23,6 +23,7 @@ import { SaranMinta } from "./SaranMinta";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
 import { KeteranganKirim } from "@/app/pwa/KeteranganKirim";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 /** Hasil pencarian yang dirender sekaligus — katalog bisa ribuan varian. */
 const BATAS_HASIL = 30;
 const QTY_MAKS = 10_000;
@@ -225,7 +226,10 @@ export function FormMinta({
       </Button>
 
       <header>
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
+        </div>
         <p className="text-sm text-muted-foreground">
           {pemegang ? tf("subtitleHolder", { store: namaToko, name: pemegang }) : t("subtitle", { store: namaToko })}
         </p>

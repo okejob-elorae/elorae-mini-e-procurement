@@ -127,7 +127,6 @@ export function PermintaanKirimanClient({
     <div className="space-y-6">
       <PageHeader
         title={t("pageTitle")}
-        description={t("pageDescription")}
         meta={!bolehUbah ? <span className="text-amber-700 dark:text-amber-400">{t("readOnly")}</span> : undefined}
       />
 

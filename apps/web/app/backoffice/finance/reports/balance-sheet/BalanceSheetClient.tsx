@@ -13,6 +13,7 @@ import { ReportExportButtons } from "../ReportExportButtons";
 import { exportBalanceSheetExcel } from "@/app/actions/finance-reports";
 import { formatDisplayDate } from "@/lib/date-only";
 import { TanggalInput } from "@/components/ui/tanggal-input";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 
 type Props = {
   report: BalanceSheet;
@@ -54,9 +55,9 @@ export function BalanceSheetClient({ report, openingWarningDate, filters }: Prop
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
+        <div className="flex items-center gap-1">
           <h1 className="text-2xl font-bold tracking-tight">{t("balanceSheet.pageTitle")}</h1>
-          <p className="text-muted-foreground">{t("balanceSheet.subtitle")}</p>
+          <TombolBantuan judul={t("balanceSheet.pageTitle")} />
         </div>
         <ReportExportButtons
           onExcel={() => exportBalanceSheetExcel({ asOf: filters.asOf })}

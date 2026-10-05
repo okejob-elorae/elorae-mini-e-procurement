@@ -13,7 +13,6 @@ import { dinamis } from "@/lib/i18n/dinamis";
 import { STATUS_PROMO_KONTER, type StatusPromoKonter } from "@/lib/spg/promo-konter-kantor";
 import type { BarisPromoKantor, DaftarPromoKantor } from "@/lib/spg/promo-konter-kantor-queries";
 import { cn } from "@/lib/utils";
-import { AturanTumpukPromo } from "./AturanTumpukPromo";
 import { formatPersen, NADA_STATUS_PROMO } from "./tampilan";
 import { TombolPromoKonter } from "./TombolPromoKonter";
 
@@ -147,8 +146,6 @@ export function DaftarPromoKonter({
           )}
         </CardContent>
       </Card>
-
-      <AturanTumpukPromo />
     </div>
   );
 }

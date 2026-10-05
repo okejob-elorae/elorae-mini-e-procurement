@@ -47,6 +47,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 function errorLabel(code: string | undefined, t: (key: string) => string): string {
   switch (code) {
@@ -281,8 +282,10 @@ export function PendingOrdersClient({ kunjungan }: { kunjungan: Record<string, N
   return (
     <div className="space-y-4 p-4">
       <header>
-        <h1 className="text-2xl font-bold leading-tight">{t("pendingTitle")}</h1>
-        <p className="text-sm text-muted-foreground">{t("pendingBody")}</p>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold leading-tight">{t("pendingTitle")}</h1>
+          <TombolBantuanHp judul={t("pendingTitle")} />
+        </div>
       </header>
 
       {orders === null && (

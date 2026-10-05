@@ -57,7 +57,6 @@ export function TombolSuratJalan({ rincian }: { rincian: Pick<RincianMutasiHp, "
           {t("bagikan")}
         </Button>
       ) : null}
-      <p className="text-xs text-muted-foreground">{t("petunjuk")}</p>
     </section>
   );
 }

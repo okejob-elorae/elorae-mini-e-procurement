@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import { TanggalInput } from "@/components/ui/tanggal-input";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 
 type AccountOption = { id: string; code: string; name: string; type: AccountType };
 
@@ -137,7 +138,10 @@ export function ManualJournalForm({ accounts }: Props) {
       <form onSubmit={onSubmit} className="space-y-4">
         <Card>
           <CardHeader>
-            <CardTitle>{t("newJournal")}</CardTitle>
+            <div className="flex items-center gap-1">
+              <CardTitle>{t("newJournal")}</CardTitle>
+              <TombolBantuan judul={t("newJournal")} />
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

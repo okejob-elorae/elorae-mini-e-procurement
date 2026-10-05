@@ -17,6 +17,7 @@ import type { DariSpg, HasilPenyerapan } from "@/lib/salesman/penyerapan-queries
 import { cn } from "@/lib/utils";
 import { DariSpgKartu, RekomendasiKartu } from "./DariSpgKartu";
 import { PenyerapanKartu } from "./PenyerapanKartu";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 /**
  * Analisa satu toko di HP. Kalimat ringkas di atas, lalu angkanya: laku vs
@@ -65,7 +66,10 @@ export function AnalisaTokoClient({
       </Button>
 
       <header>
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
+        </div>
         <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           <span>{data.toko.nama}</span>
           <Badge variant="outline">{td(`jenis.${data.toko.jenis}`)}</Badge>

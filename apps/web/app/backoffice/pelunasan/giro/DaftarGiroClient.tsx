@@ -84,7 +84,6 @@ export function DaftarGiroClient({
 
       <PageHeader
         title={t('pageTitle')}
-        description={t('pageDescription')}
         meta={t('summary', { count: totalJumlah, value: formatIDR(totalNilai) })}
       />
 

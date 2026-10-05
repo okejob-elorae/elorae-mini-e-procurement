@@ -9,7 +9,7 @@ import type { LaporanChecklist } from "@/lib/salesman/checklist-queries";
 import { dinamis } from "@/lib/i18n/dinamis";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
@@ -84,7 +84,6 @@ export function LaporanChecklistClient({
 
       <PageHeader
         title={t("judul")}
-        description={t("deskripsi")}
         meta={t("ringkas", { hasil: data.jumlahHasil, toko: new Set(data.baris.map((b) => b.storeId)).size, rata: data.rataRata ?? "—" })}
       />
 
@@ -123,7 +122,6 @@ export function LaporanChecklistClient({
             <Store className="h-4 w-4" aria-hidden />
             {t("perTokoJudul")}
           </CardTitle>
-          <CardDescription>{t("perTokoIsi")}</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           {data.baris.length === 0 ? (
@@ -200,7 +198,6 @@ export function LaporanChecklistClient({
             <AlertTriangle className="h-4 w-4" aria-hidden />
             {t("lemahJudul")}
           </CardTitle>
-          <CardDescription>{t("lemahIsi")}</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           {data.lemah.length === 0 ? (

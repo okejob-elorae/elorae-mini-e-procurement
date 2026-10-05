@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { dinamis } from "@/lib/i18n/dinamis";
 import type { BarisDaftarRekomendasi } from "@/lib/salesman/rekomendasi-queries";
 import { cn } from "@/lib/utils";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 /** Daftar rekomendasi barang dari sales untuk toko SPG ini. Tanpa harga. */
 export function RekomendasiSpgClient({ namaToko, baris, menunggu }: { namaToko: string; baris: BarisDaftarRekomendasi[]; menunggu: number }) {
@@ -22,7 +23,10 @@ export function RekomendasiSpgClient({ namaToko, baris, menunggu }: { namaToko: 
       </Button>
 
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold">{t("judul")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("judul")}</h1>
+          <TombolBantuanHp judul={t("judul")} />
+        </div>
         <p className="truncate text-sm text-muted-foreground">{namaToko}</p>
         <p className="text-sm text-muted-foreground">{menunggu > 0 ? t("menunggu", { n: menunggu }) : t("tidakMenunggu")}</p>
       </header>
@@ -62,7 +66,6 @@ export function RekomendasiSpgClient({ namaToko, baris, menunggu }: { namaToko: 
           </ul>
         </section>
       )}
-      <p className="px-1 text-xs text-muted-foreground">{t("petunjuk")}</p>
     </div>
   );
 }

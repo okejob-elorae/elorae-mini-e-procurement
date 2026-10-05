@@ -12,6 +12,7 @@ import type { BarisPiutang } from '@/lib/receivables/queries';
 import type { KeadaanPiutang } from '@/lib/receivables/rules';
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 const tanggal = (iso?: string) =>
   iso
@@ -69,7 +70,10 @@ export function FakturTokoClient({
       </Button>
 
       <header className="space-y-1">
-        <h1 className="text-xl font-bold leading-tight">{storeName}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="min-w-0 break-words text-xl font-bold leading-tight">{storeName}</h1>
+          <TombolBantuanHp judul={storeName} />
+        </div>
         <p className="text-sm text-muted-foreground">
           {/* Hitungan = faktur yang masih bersisa, sama dengan daftar Tagihan.
               Faktur yang sudah lunas tetap terdaftar di bawah. */}

@@ -75,7 +75,6 @@ export function KinerjaSalesClient({
     <div className="space-y-6">
       <PageHeader
         title={t("pageTitle")}
-        description={t("pageDescription")}
         meta={t("rangeMeta", { label: filter.label, count: baris.length })}
         actions={<TombolEkspor filter={filter} />}
       />
@@ -90,7 +89,6 @@ export function KinerjaSalesClient({
             <Users className="h-5 w-5" aria-hidden />
             {t("table.title")}
           </CardTitle>
-          <p className="text-sm text-muted-foreground">{t("table.hint")}</p>
         </CardHeader>
         <CardContent className={baris.length === 0 ? "p-0" : undefined}>
           {baris.length === 0 ? (
@@ -147,7 +145,6 @@ export function KinerjaSalesClient({
               <BarChart3 className="h-5 w-5" aria-hidden />
               {t("outcomes.title")}
             </CardTitle>
-            <p className="text-sm text-muted-foreground">{t("outcomes.hint")}</p>
           </CardHeader>
           <CardContent>
             <GrafikBatang
@@ -167,7 +164,6 @@ export function KinerjaSalesClient({
               <AlertTriangle className="h-5 w-5" aria-hidden />
               {t("flags.title")}
             </CardTitle>
-            <p className="text-sm text-muted-foreground">{t("flags.hint")}</p>
           </CardHeader>
           <CardContent>
             <GrafikBatang

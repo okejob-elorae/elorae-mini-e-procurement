@@ -15,12 +15,12 @@ import { Label } from "@/components/ui/label";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 
 // Tokens are literal template syntax and stay as typed; only the explanation
 // beside each one is translated (itemCodes.hints.*).
@@ -76,15 +76,14 @@ export default function ItemCodesSettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="flex items-center gap-1">
         <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
-        <p className="text-muted-foreground">{t("description")}</p>
+        <TombolBantuan judul={t("title")} />
       </div>
 
       <Card className="max-w-2xl">
         <CardHeader>
           <CardTitle>{t("barcodeFormatTitle")}</CardTitle>
-          <CardDescription>{t("barcodeFormatDescription")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">

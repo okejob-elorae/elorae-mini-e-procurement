@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { simpanJendelaIndenAction } from "@/app/actions/inden";
@@ -144,7 +144,6 @@ export function FormJendelaInden({
       <Card>
         <CardHeader>
           <CardTitle>{t("bagianJendela")}</CardTitle>
-          <CardDescription>{t("bagianJendelaIsi")}</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5 sm:col-span-2">
@@ -197,7 +196,6 @@ export function FormJendelaInden({
       <Card>
         <CardHeader>
           <CardTitle>{t("bagianBarang")}</CardTitle>
-          <CardDescription>{t("bagianBarangIsi")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="max-w-xl">

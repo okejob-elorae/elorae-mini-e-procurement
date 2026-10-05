@@ -239,8 +239,6 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
         )}
       </div>
 
-      <p className="text-sm text-muted-foreground">{t("note")}</p>
-
       <Card>
         <CardHeader>
           <CardTitle>{t("title")}</CardTitle>

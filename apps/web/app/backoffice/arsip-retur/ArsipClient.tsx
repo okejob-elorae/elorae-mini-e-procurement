@@ -72,7 +72,7 @@ export function ArsipClient({
 
         <PageHeader
           title={namaFolder}
-          description={t('folderBody', { count: isi.length })}
+          meta={t('folderBody', { count: isi.length })}
           actions={
             <SaklarTampilan
               tampilan={tampilan}
@@ -148,7 +148,6 @@ export function ArsipClient({
     <div className="space-y-6">
       <PageHeader
         title={t('pageTitle')}
-        description={t('pageDescription')}
         meta={t('summary', { count: total, orphan: yatim })}
         actions={
           <div className="relative">

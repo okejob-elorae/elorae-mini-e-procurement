@@ -41,6 +41,7 @@ import {
 import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-only";
 import type { UnggahanPertamaTampil } from "../ganda";
 import { HapusUnggahanSettlement } from "./HapusUnggahanSettlement";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 
 const RESYNC_POLL_INTERVAL_MS = 2000;
 
@@ -242,6 +243,9 @@ export function SettlementDetailClient({ settlement, canManage, ganda = null }: 
             case "NOT_FOUND":
               toast.error(t("journalErr.NOT_FOUND"));
               break;
+            case "SETTLEMENT_KEMBAR":
+              toast.error(t("journalErr.SETTLEMENT_KEMBAR"));
+              break;
             default:
               toast.error(t("errGeneric"));
           }
@@ -262,12 +266,15 @@ export function SettlementDetailClient({ settlement, canManage, ganda = null }: 
           </Link>
         </Button>
         <div>
-          <h1 className="text-xl font-semibold">
-            {t.has(`marketplaceOption.${settlement.marketplace}`)
-              ? t(`marketplaceOption.${settlement.marketplace}`)
-              : settlement.marketplace}{" "}
-            · {settlement.seller}
-          </h1>
+          <div className="flex items-center gap-1">
+            <h1 className="text-xl font-semibold">
+              {t.has(`marketplaceOption.${settlement.marketplace}`)
+                ? t(`marketplaceOption.${settlement.marketplace}`)
+                : settlement.marketplace}{" "}
+              · {settlement.seller}
+            </h1>
+            <TombolBantuan judul={settlement.seller} />
+          </div>
           <p className="text-sm text-muted-foreground">
             {formatDate(settlement.periodFromIso)} – {formatDate(settlement.periodToIso)}
           </p>
@@ -538,7 +545,6 @@ export function SettlementDetailClient({ settlement, canManage, ganda = null }: 
           <CardTitle>{t("unmatchedLinesTitle")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <p className="text-xs text-muted-foreground">{t("coverageNote")}</p>
           {unmatchedLines.length === 0 ? (
             <p className="text-sm text-muted-foreground py-6 text-center">{t("noUnmatchedLines")}</p>
           ) : (
@@ -726,7 +732,6 @@ function JubelioBreakdown({ line, t }: { line: SettlementDetailLine; t: TFn }) {
           <span className="tabular-nums">{formatRupiah(escrow)}</span>
         </div>
       )}
-      <p className="text-xs text-muted-foreground">{t("compare.jubelioFeesNote")}</p>
     </>
   );
 }

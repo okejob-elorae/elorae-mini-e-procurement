@@ -73,15 +73,7 @@ export function RincianHilangClient({
     },
     { label: t("rincian.dibuka"), nilai: `${r.dibuatOleh} · ${r.dibuat}` },
     { label: t("rincian.catatan"), nilai: r.catatan },
-    {
-      label: t("rincian.dasarNilai"),
-      nilai: (
-        <span className="space-y-0.5">
-          <span className="block">{td(`dasar.${r.dasarNilai}`)}</span>
-          {r.dasarNilai === "HARGA_TERIMA" ? <span className="block text-xs text-muted-foreground">{t("rincian.dasarTerimaIsi")}</span> : null}
-        </span>
-      ),
-    },
+    { label: t("rincian.dasarNilai"), nilai: td(`dasar.${r.dasarNilai}`) },
     {
       label: r.status === "DIBATALKAN" ? t("rincian.dibatalkan") : t("rincian.diputuskan"),
       nilai: r.keputusan ? `${r.keputusan.oleh} · ${r.keputusan.pada}` : null,
@@ -100,7 +92,7 @@ export function RincianHilangClient({
 
       <PageHeader
         title={judul}
-        description={t("rincian.deskripsi", { pcs: r.totalQty, nilai: formatIDR(r.total) })}
+        meta={t("rincian.deskripsi", { pcs: r.totalQty, nilai: formatIDR(r.total) })}
         actions={
           bolehKelola ? (
             <div className="flex flex-wrap gap-2">

@@ -24,6 +24,7 @@ import { BATAS_TEKS_TUKAR, statusTukarTerbuka } from "@/lib/salesman/tukar-baran
 import type { BarisTukarSaya } from "@/lib/salesman/tukar-queries";
 import { cn } from "@/lib/utils";
 import { nadaStatusTukar } from "./tampilan";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 export function TukarSayaClient({ baris }: { baris: BarisTukarSaya[] }) {
   const t = useTranslations("pwa.tukar");
@@ -57,8 +58,10 @@ export function TukarSayaClient({ baris }: { baris: BarisTukarSaya[] }) {
   return (
     <div className="space-y-4 p-4">
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold">{t("saya.judul")}</h1>
-        <p className="text-sm text-muted-foreground">{t("saya.subjudul")}</p>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("saya.judul")}</h1>
+          <TombolBantuanHp judul={t("saya.judul")} />
+        </div>
       </header>
 
       {baris.length === 0 ? (

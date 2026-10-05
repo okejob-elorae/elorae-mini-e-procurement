@@ -6,6 +6,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { Receipt, X } from "lucide-react";
 import type { VanSaleListRow } from "@/lib/canvassing/sale-queries";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
 import { Label } from "@/components/ui/label";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import {
@@ -73,10 +74,7 @@ export function VanSalesListClient({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{t("pageTitle")}</h1>
-        <p className="text-muted-foreground">{t("subtitle")}</p>
-      </div>
+      <PageHeader title={t("pageTitle")} />
 
       <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
         <div className="space-y-2 w-full sm:w-56">

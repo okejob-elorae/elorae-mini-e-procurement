@@ -35,6 +35,7 @@ import { jumlahPotongTertahan, namaPembeliTertahan } from "@/lib/pwa/offline/spg
 import { flushNotaSpgTertahan, type HasilKirimNotaSpg } from "@/lib/pwa/offline/spg-jual-sinkron";
 import { flushCheckinTertahan, flushCheckoutTertahan, flushStokTertahan } from "@/lib/pwa/offline/luring-sinkron";
 import { AntreanLuring } from "./AntreanLuring";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 /** Nama barang yang ditampilkan per nota; sisanya dihitung. */
 const TAMPIL_BARANG = 3;
@@ -176,8 +177,10 @@ export function AntreanSpgClient() {
       </Button>
 
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
-        <p className="text-sm text-muted-foreground">{tl("subjudul")}</p>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
+        </div>
       </header>
 
       {daftar === null ? (

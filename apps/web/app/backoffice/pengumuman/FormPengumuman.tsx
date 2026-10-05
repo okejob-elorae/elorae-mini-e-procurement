@@ -12,7 +12,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { dinamis } from "@/lib/i18n/dinamis";
 import { AUDIENS, BATAS_ISI, BATAS_JUDUL, type Audiens, type KolomPengumuman } from "@/lib/pengumuman/aturan";
@@ -113,10 +114,7 @@ export function FormPengumuman({ awal }: { awal: AwalFormPengumuman }) {
           {t("kembali")}
         </Link>
       </Button>
-      <div className="space-y-1">
-        <h1 className="text-2xl font-bold tracking-tight">{awal.id ? t("judulUbah") : t("judulBuat")}</h1>
-        <p className="max-w-2xl text-sm text-muted-foreground">{t("deskripsi")}</p>
-      </div>
+      <PageHeader title={awal.id ? t("judulUbah") : t("judulBuat")} />
 
       <form
         className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]"
@@ -178,7 +176,6 @@ export function FormPengumuman({ awal }: { awal: AwalFormPengumuman }) {
           <Card>
             <CardHeader>
               <CardTitle>{t("sasaranJudul")}</CardTitle>
-              <CardDescription>{t("sasaranHint")}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
               <div className="space-y-2">
@@ -205,7 +202,6 @@ export function FormPengumuman({ awal }: { awal: AwalFormPengumuman }) {
           <Card>
             <CardHeader>
               <CardTitle>{t("waktuJudul")}</CardTitle>
-              <CardDescription>{t("waktuHint")}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
               {awal.terbitTeks !== null ? (

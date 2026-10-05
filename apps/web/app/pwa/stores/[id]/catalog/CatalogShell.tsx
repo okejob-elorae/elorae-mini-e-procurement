@@ -31,6 +31,7 @@ import { kunciBaris, tambahCadanganLama } from "@/lib/field-sales/ganti-pesanan"
 import { salinanPesananWaAction, type HasilSalinanWa } from "@/app/pwa/orders/actions";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 type CatalogItem = {
   itemId: string;
   sku: string;
@@ -652,7 +653,10 @@ export function CatalogShell({
       </header>
 
       <div>
-        <h1 className="text-lg font-semibold">{storeName}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="min-w-0 break-words text-lg font-semibold">{storeName}</h1>
+          <TombolBantuanHp judul={storeName} />
+        </div>
         <p className="text-sm text-muted-foreground">
           {inden ? tInden("subjudul") : isKonsi ? t("subjudulKonsi") : t("subjudulPutus")}
         </p>
@@ -738,7 +742,6 @@ export function CatalogShell({
             <CalendarClock className="h-4 w-4 text-amber-700 dark:text-amber-400" aria-hidden />
             {tInden("entryJudul")}
           </p>
-          <p className="text-xs text-muted-foreground">{tInden("entryIsi")}</p>
           <ul className="flex flex-col gap-2">
             {indenTerbuka.map((j) => (
               <li key={j.id} className="flex items-center gap-3">

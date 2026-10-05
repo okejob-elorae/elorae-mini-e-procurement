@@ -22,6 +22,7 @@ import { ReportExportButtons } from "../ReportExportButtons";
 import { exportCashFlowExcel } from "@/app/actions/finance-reports";
 import { formatDisplayDate, parseDateOnly } from "@/lib/date-only";
 import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 
 type Report = Awaited<ReturnType<typeof getCashFlowReport>>;
 
@@ -163,9 +164,9 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
+        <div className="flex items-center gap-1">
           <h1 className="text-2xl font-bold tracking-tight">{t("cashFlow.pageTitle")}</h1>
-          <p className="text-muted-foreground">{t("cashFlow.subtitle")}</p>
+          <TombolBantuan judul={t("cashFlow.pageTitle")} />
         </div>
         {canExport && (
           <ReportExportButtons

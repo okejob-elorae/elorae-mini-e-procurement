@@ -334,8 +334,6 @@ export function KisiJadwalSpg({
           )}
         </CardContent>
       </Card>
-
-      <p className="text-sm text-muted-foreground">{t("keterangan", { menit: data.aturan.toleransiTerlambatMenit })}</p>
     </div>
   );
 }

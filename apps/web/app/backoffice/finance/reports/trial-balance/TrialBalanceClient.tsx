@@ -20,6 +20,7 @@ import {
 import { ReportExportButtons } from "../ReportExportButtons";
 import { exportTrialBalanceExcel } from "@/app/actions/finance-reports";
 import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 
 type Props = {
   report: TrialBalance;
@@ -55,9 +56,9 @@ export function TrialBalanceClient({ report, filters }: Props) {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
+        <div className="flex items-center gap-1">
           <h1 className="text-2xl font-bold tracking-tight">{t("trialBalance.pageTitle")}</h1>
-          <p className="text-muted-foreground">{t("trialBalance.subtitle")}</p>
+          <TombolBantuan judul={t("trialBalance.pageTitle")} />
         </div>
         <ReportExportButtons
           onExcel={() =>

@@ -6,6 +6,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { formatDisplayDateTime } from "@/lib/date-only";
 import { Plus, Loader2, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -55,9 +56,9 @@ export function StockOpnameListClient() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
+        <div className="flex items-center gap-1">
           <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
-          <p className="text-muted-foreground">{t("subtitle")}</p>
+          <TombolBantuan judul={t("title")} />
         </div>
         <Link href="/backoffice/inventory/stock-opname/new">
           <Button>

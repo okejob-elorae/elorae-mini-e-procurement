@@ -210,7 +210,6 @@ export function KartuAbsen({ data, tampilkanRiwayat = true }: { data: DataKartuA
               {t("masukTanpaSwafoto")}
             </Button>
           ) : null}
-          <p className="text-xs text-muted-foreground">{t("masukPetunjuk")}</p>
         </div>
       ) : null}
 

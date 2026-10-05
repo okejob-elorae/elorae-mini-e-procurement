@@ -175,7 +175,8 @@
     "navKinerjaSpg": "Kinerja SPG",
     "navBarangHilang": "Barang hilang",
     "navLabelBarcode": "Label barcode",
-    "navGudangRusak": "Gudang barang rusak"
+    "navGudangRusak": "Gudang barang rusak",
+    "bantuan": "Bantuan"
   },
   "notifications": {
     "title": "Notifikasi",
@@ -1158,7 +1159,7 @@
     "daysOverdue": "Terlambat {count} hari",
     "etaLine": "Perkiraan tiba: {date}",
     "unitsPending": "{count} unit belum diterima",
-    "procurementDesc": "PO yang belum selesai beserta peringatan tanggal tiba. Bawaannya: Menunggu persetujuan + Diterima sebagian.",
+    "procurementDesc": "PO yang belum selesai beserta peringatan tanggal tiba. Bawaannya menampilkan PO berstatus Dikirim ke pemasok dan Diterima sebagian; statusnya bisa diganti di filter.",
     "show": "Tampilkan",
     "procurementSummary": "Belum diterima: {total} · Terlambat: {overdue} · Segera tiba: {soon}",
     "colDocNo": "No. dokumen",
@@ -3747,7 +3748,7 @@
       "orderNo": "No. Pesanan",
       "buyer": "Pembeli",
       "receivedAt": "Diterima",
-      "lockedBanner": "Diajukan pada {when} oleh {who}. Menunggu sinkronisasi Jubelio.",
+      "lockedBanner": "Diajukan pada {when} oleh {who}. Keputusan hanya tercatat di Elorae; pengirimannya ke Jubelio belum tersambung.",
       "accept": "Terima",
       "reject": "Tolak",
       "submit": "Ajukan keputusan",
@@ -3775,7 +3776,7 @@
       },
       "submitConfirm": {
         "title": "Ajukan keputusan?",
-        "body": "Setelah diajukan, pengembalian ini terkunci dan tidak bisa diubah. Keputusan akan dikirim ke Jubelio.",
+        "body": "Setelah diajukan, pengembalian ini terkunci dan tidak bisa diubah. Keputusan hanya tercatat di Elorae; pengirimannya ke Jubelio belum tersambung.",
         "cancel": "Batal",
         "confirm": "Ajukan"
       },
@@ -4555,6 +4556,10 @@
       "rekomendasiSaya": {
         "label": "Rekomendasi saya",
         "hint": "Rekomendasi barang yang Anda kirim ke toko"
+      },
+      "bantuan": {
+        "label": "Bantuan",
+        "hint": "Penjelasan setiap layar aplikasi"
       }
     },
     "keluar": {
@@ -4714,7 +4719,11 @@
       "grupKonter": "Di konter",
       "grupStok": "Stok toko",
       "grupHariKerja": "Hari kerja",
-      "grupSaya": "Saya"
+      "grupSaya": "Saya",
+      "bantuan": {
+        "label": "Bantuan",
+        "hint": "Penjelasan setiap layar aplikasi"
+      }
     },
     "spgGaji": {
       "title": "Gaji & komisi",
@@ -5598,7 +5607,9 @@
         "NO_ACTIVE_VISIT": "Kunjungan Anda di toko ini sudah ditutup. Check-in lagi.",
         "GAGAL": "Pesanan gagal dikirim. Coba lagi.",
         "JARINGAN": "Sinyal lemah — pesanan belum pasti terkirim. Tekan Kirim lagi; pesanan tidak akan tercatat dua kali."
-      }
+      },
+      "sumberBuku": "Sumber: buku stok SPG",
+      "sumberTitipan": "Sumber: hitungan titipan"
     },
     "hasilKunjungan": {
       "judul": "Kenapa tidak ada transaksi?",
@@ -5728,7 +5739,8 @@
       "kurangFaktur": "Centang faktur yang dijanjikan.",
       "kurangTanggal": "Isi tanggal janji bayar yang benar.",
       "kurangPenerima": "Isi nama penerima di toko.",
-      "kurangFoto": "Ambil foto tanda terimanya."
+      "kurangFoto": "Ambil foto tanda terimanya.",
+      "errFOTO_BUKAN_MILIK": "Foto lembar tanda terima ini diunggah orang lain. Ambil foto Anda sendiri."
     },
     "insentif": {
       "back": "Beranda",
@@ -6871,7 +6883,7 @@
     "total": "Total",
     "approve": "Setujui",
     "reject": "Tolak",
-    "approveConfirm": "Setujui pesanan ini? Stok akan langsung dikonsumsi.",
+    "approveConfirm": "Setujui pesanan ini? Stok belum keluar dari gudang; barang keluar saat pengiriman dicatat.",
     "rejectConfirm": "Tolak pesanan ini? Stok yang direservasi akan dilepas.",
     "rejectReasonLabel": "Alasan penolakan (wajib diisi)",
     "errForbidden": "Anda tidak memiliki izin untuk melakukan aksi ini.",
@@ -7525,7 +7537,8 @@
       "NOT_FOUND": "Settlement tidak ditemukan.",
       "FORBIDDEN": "Anda tidak memiliki izin untuk memposting jurnal ini.",
       "ALREADY_RECONCILED_DIFF": "Settlement ini sudah terekonsiliasi dengan jurnal yang berbeda.",
-      "NON_POSTABLE_ACCOUNT": "Salah satu akun yang dipetakan tidak dapat diposting — akunnya tidak aktif atau sudah punya akun turunan. Petakan peran tersebut ke akun aktif tanpa turunan di Finance → Pemetaan Akun."
+      "NON_POSTABLE_ACCOUNT": "Salah satu akun yang dipetakan tidak dapat diposting — akunnya tidak aktif atau sudah punya akun turunan. Petakan peran tersebut ke akun aktif tanpa turunan di Finance → Pemetaan Akun.",
+      "SETTLEMENT_KEMBAR": "Settlement ini kembar dengan unggahan lain yang sudah dijurnal atau lebih dulu diunggah, jadi jurnalnya tidak dibuat. Hapus unggahan kembar ini."
     },
     "resyncButton": "Resync {count} Pesanan Belum Cocok",
     "resyncButtonPending": "Memulai Resync…",
@@ -7737,7 +7750,7 @@
       "labaBersih": "Laba Bersih",
       "sectionEmpty": "Belum ada akun bersaldo pada bagian ini.",
       "coverageTitle": "Cakupan data",
-      "coverageBody": "Laporan ini hanya mencakup transaksi yang sudah menghasilkan jurnal: penjualan marketplace, retur, settlement, penerimaan barang (GRN), hasil produksi, penyesuaian stock opname, dan jurnal manual. BELUM termasuk: penjualan lapangan (putus), penjualan kanvas, penjualan SPG, dan pembayaran ke pemasok."
+      "coverageBody": "Laporan ini hanya mencakup transaksi yang sudah menghasilkan jurnal: penjualan marketplace, penjualan kanvas, retur, settlement, penerimaan barang (GRN), hasil produksi, penyesuaian stock opname, pembayaran ke pemasok, dan jurnal manual. BELUM termasuk: penjualan lapangan (putus) dan penjualan SPG."
     },
     "balanceSheet": {
       "pageTitle": "Neraca",
@@ -8098,7 +8111,8 @@
       "ERROR": "Terjadi kesalahan. Silakan coba lagi.",
       "NOMOR_FAKTUR_GANDA": "Nomor seri faktur pajak ini sudah dipakai di nota lain.",
       "NOMOR_FAKTUR_FORMAT": "Nomor seri faktur pajak harus 13–17 digit angka, misalnya 010.000-24.00000001 (e-Faktur) atau 17 digit Coretax."
-    }
+    },
+    "nomorFakturGandaDi": "Nomor seri faktur pajak ini sudah dipakai di nota {docNo}."
   },
   "dashboardActions": {
     "title": "{count} hal perlu ditindaklanjuti",
@@ -8451,7 +8465,8 @@
     "errSUDAH_DIGANTI": "BKM lama sudah punya pengganti — uang yang sama tidak bisa dilaporkan dua kali.",
     "errTOKO_TIDAK_DIIZINKAN": "Faktur ini bukan tagihan Anda — tokonya dipegang sales lain. Minta kantor menugaskan penagihannya kepada Anda.",
     "errPEMERIKSA_SAMA": "Anda yang melaporkan atau mencatatkan BKM ini, jadi tidak bisa memutuskannya sendiri. Minta admin keuangan lain memeriksanya.",
-    "errRETUR_TERPAKAI": "Nota retur itu sudah dipotongkan di BKM lain sebesar nilainya. Pilih nota lain atau kurangi potongannya sampai sebesar sisa yang tertulis."
+    "errRETUR_TERPAKAI": "Nota retur itu sudah dipotongkan di BKM lain sebesar nilainya. Pilih nota lain atau kurangi potongannya sampai sebesar sisa yang tertulis.",
+    "errFOTO_BUKAN_MILIK": "Foto bukti ini diunggah orang lain. Ambil foto bukti Anda sendiri."
   },
   "collections": {
     "pageTitle": "Kontrabon / Tanda Terima",
@@ -8549,7 +8564,8 @@
     "errBUKAN_PENAGIH": "Ada faktur yang bukan tagihan salesman ini.",
     "errFOTO_WAJIB": "Foto lembar tanda terima wajib diisi.",
     "errPENERIMA_WAJIB": "Isi nama orang toko yang menerima.",
-    "errKUNCI_DIPAKAI": "Laporan ini bentrok dengan laporan sales lain. Buat laporan baru."
+    "errKUNCI_DIPAKAI": "Laporan ini bentrok dengan laporan sales lain. Buat laporan baru.",
+    "errFOTO_BUKAN_MILIK": "Foto lembar tanda terima ini diunggah orang lain. Ambil foto Anda sendiri."
   },
   "storeReturns": {
     "pageTitle": "Retur & Pencocokan",
@@ -8769,7 +8785,8 @@
     "errPENANGGUNG_WAJIB": "Pilih sales yang menanggungnya.",
     "errTOKO_KONSI": "Toko konsinyasi tidak punya piutang, jadi selisihnya tidak bisa ditagihkan ke toko. Catat sebagai barang hilang dengan penanggung toko, atau pilih penanggung lain.",
     "errPIUTANG_BEBAN_SUDAH_DITAGIH": "Faktur beban toko ini sudah masuk penagihan (BKM atau kontrabon, apa pun statusnya, atau tugas tagih yang masih terbuka), jadi tidak bisa dihapus dan bebannya tidak bisa lagi dialihkan dari toko.",
-    "errDITAGIH_LEWAT_PIUTANG": "Beban toko ditagih lewat fakturnya. Lunasnya mengikuti BKM yang terverifikasi, bukan ditandai di sini."
+    "errDITAGIH_LEWAT_PIUTANG": "Beban toko ditagih lewat fakturnya. Lunasnya mengikuti BKM yang terverifikasi, bukan ditandai di sini.",
+    "errFOTO_BUKAN_MILIK": "Foto nota retur ini diunggah orang lain. Ambil foto nota Anda sendiri."
   },
   "foto": {
     "pick": "Ambil atau pilih foto",
@@ -8780,7 +8797,8 @@
     "errTERLALU_BESAR": "Fotonya terlalu besar. Maksimal 6 MB setelah diperkecil.",
     "errTANPA_AKSES": "Sesi Anda habis. Masuk lagi.",
     "errGAGAL": "Gagal mengunggah. Coba lagi.",
-    "savedOnPhone": "Tersimpan di HP — diunggah saat ada sinyal"
+    "savedOnPhone": "Tersimpan di HP — diunggah saat ada sinyal",
+    "errBUKAN_MILIK": "Foto ini diunggah orang lain. Ambil foto Anda sendiri."
   },
   "arsipRetur": {
     "pageTitle": "Arsip Nota Retur",
@@ -9090,7 +9108,8 @@
     "errRUSAK_TIDAK_SAH": "Barang rusak kiriman ini tidak bisa dikirim balik dari toko ini (belum diputuskan gudang, bukan milik toko ini, atau barangnya berbeda).",
     "errRUSAK_MELEBIHI": "Jumlah yang dikirim balik melebihi sisa barang rusak yang belum dikembalikan.",
     "errRETUR_PEMBELI_TIDAK_SAH": "Barang rusak dari pembeli ini tidak bisa dikirim balik dari toko ini (bukan retur pembeli toko ini, barangnya berbeda, atau kondisinya layak).",
-    "errRETUR_PEMBELI_MELEBIHI": "Jumlah yang dikirim balik melebihi barang rusak dari pembeli yang belum dikirim."
+    "errRETUR_PEMBELI_MELEBIHI": "Jumlah yang dikirim balik melebihi barang rusak dari pembeli yang belum dikirim.",
+    "errFOTO_BUKAN_MILIK": "Foto nota retur ini diunggah orang lain. Ambil foto nota Anda sendiri."
   },
   "pwaBeban": {
     "pageTitle": "Beban saya",
@@ -9831,7 +9850,9 @@
       "STOCK_LOSS_DEDUCTED": "Beban barang hilang dipotong",
       "STOCK_LOSS_DEDUCTION_RELEASED": "Potongan barang hilang dilepas",
       "STOCK_LOSS_SETTINGS_CHANGED": "Pengaturan barang hilang diubah",
-      "SPG_COUNTER_EXCHANGE_RECORDED": "Tukar barang di konter dicatat"
+      "SPG_COUNTER_EXCHANGE_RECORDED": "Tukar barang di konter dicatat",
+      "ROLE_PERMISSIONS_UPDATED": "Izin peran diubah",
+      "ROLE_DELETED": "Peran dihapus"
     },
     "entities": {
       "ChainTemplate": "Templat rantai proses",
@@ -9913,7 +9934,8 @@
       "CustomerRequest": "Titip pesan pembeli",
       "StoreTransferSuratJalan": "Surat jalan mutasi",
       "DamagedStockMovement": "Gerakan gudang barang rusak",
-      "StockLoss": "Barang hilang"
+      "StockLoss": "Barang hilang",
+      "RoleDefinition": "Peran"
     }
   },
   "jubelio": {
@@ -10945,7 +10967,8 @@
       "CUTI": "Cuti"
     },
     "tanpaSwafoto": "Tanpa swafoto",
-    "lewatCheckin": "Lewat check-in toko"
+    "lewatCheckin": "Lewat check-in toko",
+    "metaJamMasuk": "Masuk paling lambat pukul {jam}"
   },
   "salesLapangan": {
     "pageTitle": "Kinerja Sales Lapangan",
@@ -12082,7 +12105,7 @@
         "TIDAK_ADA": "Pre-order ini tidak ditemukan."
       },
       "konfirmasiJudul": "Rilis {nama}?",
-      "konfirmasiIsi": "Stok {disetujui} pesanan yang sudah disetujui akan disiapkan sekarang; {menunggu} pesanan yang masih menunggu disiapkan saat disetujui. Pastikan barangnya sudah diterima gudang.",
+      "konfirmasiIsi": "Stok {disetujui} pesanan yang sudah disetujui akan disiapkan sekarang; {menunggu} pesanan yang masih menunggu disiapkan saat disetujui. Pastikan barangnya sudah diterima gudang. Rilis tidak bisa dibatalkan.",
       "konfirmasiMasihBuka": "Jendela ini masih buka — sesudah dirilis salesman tidak bisa lagi memesan lewat pre-order ini."
     },
     "barangJudul": "Barang & pesanan",
@@ -13289,7 +13312,7 @@
   },
   "pwaSpgAnalisa": {
     "title": "Analisa penjualan",
-    "subtitle": "Barang yang laku di {store}, dari nota yang Anda pindai.",
+    "subtitle": "Barang yang laku di {store}, dari nota semua SPG di toko ini.",
     "periodLabel": "Periode",
     "period": {
       "7h": "7 hari",
@@ -15886,5 +15909,24 @@
       "MELEBIHI_SISA": "Jumlahnya melebihi barang yang masih bisa dikembalikan dari nota ini.",
       "KUNCI_WAJIB": "Kunci kiriman hilang. Hapus lalu catat ulang."
     }
+  },
+  "bantuan": {
+    "tombol": "Penjelasan halaman ini",
+    "bagianHalaman": "Bagian di halaman ini",
+    "kosongHalaman": "Belum ada penjelasan untuk halaman ini.",
+    "semua": "Buka semua penjelasan (Bantuan)",
+    "memuat": "Memuat…",
+    "judulHalaman": "Bantuan",
+    "cari": "Cari penjelasan…",
+    "daftarIsi": "Daftar isi",
+    "tidakCocok": "Tidak ada penjelasan yang cocok dengan \"{kueri}\".",
+    "bukaHalaman": "Buka halaman",
+    "jumlah": "{n} halaman",
+    "bagian": {
+      "pwaSalesman": "HP salesman",
+      "pwaSpg": "HP SPG",
+      "pwaBersama": "HP — salesman dan SPG"
+    },
+    "kosong": "Belum ada penjelasan."
   }
 }

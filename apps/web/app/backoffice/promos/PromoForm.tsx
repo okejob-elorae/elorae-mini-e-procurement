@@ -15,6 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
 
@@ -284,7 +285,10 @@ export function PromoForm({ mode, canManage, itemOptions, storeOptions, defaults
       <form onSubmit={onSubmit}>
         <Card>
           <CardHeader>
-            <CardTitle>{mode === "create" ? t("new") : t("edit")}</CardTitle>
+            <div className="flex items-center gap-1">
+              <CardTitle>{mode === "create" ? t("new") : t("edit")}</CardTitle>
+              <TombolBantuan judul={mode === "create" ? t("new") : t("edit")} />
+            </div>
             {readOnly && <CardDescription>{t("readOnlyBanner")}</CardDescription>}
           </CardHeader>
           <CardContent className="space-y-6">
@@ -422,7 +426,6 @@ export function PromoForm({ mode, canManage, itemOptions, storeOptions, defaults
                         : tBonus("ringkasanSama", { beli: form.bonusBuyQty, gratis: form.bonusFreeQty })}
                     </p>
                   )}
-                  <p className="text-xs text-muted-foreground">{tBonus("catatanStok")}</p>
                 </div>
               )}
 

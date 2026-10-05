@@ -12,9 +12,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
-  CardTitle
+  CardTitle,
 } from '@/components/ui/card';
 import {
   Table,
@@ -44,6 +43,7 @@ import {
 import { getItemsByType } from '@/app/actions/items';
 import { getItemAvgCosts } from '@/app/actions/inventory';
 import { ItemType } from '@/lib/constants/enums';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 
 interface PlanRow {
   itemId: string;
@@ -423,7 +423,10 @@ export default function WorkOrderIssuePage() {
           </Button>
         </Link>
         <div>
-          <h1 className="text-2xl font-bold">{tWO('issueMaterials')}</h1>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-bold">{tWO('issueMaterials')}</h1>
+            <TombolBantuan judul={tWO('issueMaterials')} />
+          </div>
           <p className="text-muted-foreground">{String(wo.docNumber ?? '')}</p>
         </div>
       </div>
@@ -432,7 +435,6 @@ export default function WorkOrderIssuePage() {
         <Card>
           <CardHeader>
             <CardTitle>{tF('materialPlanTitle')}</CardTitle>
-            <CardDescription>{tWO('plannedVsIssued')}</CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
@@ -467,7 +469,6 @@ export default function WorkOrderIssuePage() {
         <Card>
           <CardHeader>
             <CardTitle>{tI('formTitle')}</CardTitle>
-            <CardDescription>{tI('formDescription')}</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">

@@ -7,6 +7,7 @@ import { z } from 'zod';
 import Link from 'next/link';
 import { Plus, Pencil, Loader2, ArrowLeft, Trash2, FolderTree } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -205,9 +206,9 @@ export default function ItemCategoriesPage() {
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
-          <div className="space-y-1">
+          <div className="flex items-center gap-1">
             <h1 className="text-2xl font-bold tracking-tight">{tCat('pageTitle')}</h1>
-            <p className="max-w-2xl text-sm text-muted-foreground">{tCat('pageDescription')}</p>
+            <TombolBantuan judul={tCat('pageTitle')} />
           </div>
         </div>
         <Button onClick={openCreate} className="shrink-0">

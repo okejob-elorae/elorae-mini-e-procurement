@@ -115,7 +115,7 @@ export function RincianSalesClient({
         </Link>
       </Button>
 
-      <PageHeader title={nama} description={t("detail.description")} meta={t("detail.rangeMeta", { label: filter.label })} />
+      <PageHeader title={nama} meta={t("detail.rangeMeta", { label: filter.label })} />
 
       <FilterRentang key={`${filter.preset}|${filter.dari}|${filter.sampai}`} alamat={alamat} filter={filter} />
 
@@ -180,7 +180,6 @@ export function RincianSalesClient({
                   })
                 : t("plan.none")}
             </p>
-            <p className="text-xs text-muted-foreground">{t("plan.hint")}</p>
           </CardHeader>
           {rencanaUrut.length > 0 ? (
             <CardContent>
@@ -256,7 +255,6 @@ export function RincianSalesClient({
             <Store className="h-5 w-5" aria-hidden />
             {t("visits.title")}
           </CardTitle>
-          <p className="text-sm text-muted-foreground">{t("visits.hint")}</p>
         </CardHeader>
         <CardContent className={kunjungan.length === 0 ? "p-0" : undefined}>
           {kunjungan.length === 0 ? (
@@ -375,7 +373,6 @@ export function RincianSalesClient({
               <BarChart3 className="h-5 w-5" aria-hidden />
               {t("outcomes.title")}
             </CardTitle>
-            <p className="text-sm text-muted-foreground">{t("outcomes.hint")}</p>
           </CardHeader>
           <CardContent>
             <GrafikBatang
@@ -395,7 +392,6 @@ export function RincianSalesClient({
               <AlertTriangle className="h-5 w-5" aria-hidden />
               {t("flags.title")}
             </CardTitle>
-            <p className="text-sm text-muted-foreground">{t("flags.hint")}</p>
           </CardHeader>
           <CardContent>
             <GrafikBatang

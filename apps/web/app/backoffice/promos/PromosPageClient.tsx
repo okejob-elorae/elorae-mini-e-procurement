@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import {
@@ -89,9 +90,9 @@ export function PromosPageClient(props: Props) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div>
+        <div className="flex items-center gap-1">
           <h1 className="text-2xl font-semibold">{t("pageTitle")}</h1>
-          <p className="text-muted-foreground">{t("subtitle")}</p>
+          <TombolBantuan judul={t("pageTitle")} />
         </div>
         <Link href="/backoffice/promos/new">
           <Button>

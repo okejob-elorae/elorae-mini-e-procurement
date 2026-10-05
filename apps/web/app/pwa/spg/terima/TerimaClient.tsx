@@ -16,6 +16,7 @@ import { kunjunganLokalSah } from "@/lib/pwa/offline/luring-kunjungan";
 import { useKunjunganLokal } from "@/lib/pwa/offline/luring-kunjungan-hook";
 import { PerluCheckIn } from "./PerluCheckIn";
 import { BagianRusakPembeli, type RusakPembeliRingkas } from "./BagianRusakPembeli";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 export type KirimanRingkas = {
   sourceType: JenisKiriman;
@@ -116,7 +117,10 @@ export function TerimaClient({
       </Button>
 
       <header>
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
+        </div>
         <p className="truncate text-sm text-muted-foreground">{namaToko}</p>
       </header>
 
@@ -194,7 +198,6 @@ export function TerimaClient({
               })}
             </ul>
           </div>
-          <p className="px-1 text-xs text-muted-foreground">{t("hint")}</p>
         </section>
       )}
 
@@ -273,7 +276,6 @@ function BagianRusak({ rusak }: { rusak: RusakRingkas[] }) {
           </Link>
         </Button>
       ) : null}
-      <p className="px-1 text-xs text-muted-foreground">{tr("hp.petunjuk")}</p>
     </section>
   );
 }

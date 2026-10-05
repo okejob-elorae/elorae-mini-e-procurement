@@ -22,6 +22,7 @@ import {
   Factory,
   Plug,
   ShoppingCart,
+  BookOpen,
   BookOpenText,
   BarChart2,
   FolderArchive,
@@ -132,7 +133,8 @@ interface NavItem {
    * warna yang tidak ikut tema di menu samping.
    */
   icon: React.ElementType;
-  permission: string; // Permission code required to view this nav item
+  /** Izin untuk melihat entri ini; kosong = semua orang yang membuka kantor (mis. Bantuan). */
+  permission?: string;
   /**
    * Judul pemisah di atas entri ini. Ditulis pada entri PERTAMA tiap bagian;
    * yang berikutnya membiarkannya kosong dan ikut bagian di atasnya.
@@ -450,6 +452,14 @@ export const navItems: NavItem[] = [
     icon: Settings,
     permission: PERMISSIONS.SETTINGS_SECURITY_VIEW,
   },
+  // Penjelasan setiap halaman (keputusan pemilik 2026-10-05: keterangan
+  // dipindah dari layar ke sini). Tanpa izin — membaca penjelasan tidak
+  // membuka data apa pun.
+  {
+    labelKey: 'bantuan',
+    href: '/backoffice/bantuan',
+    icon: BookOpen,
+  },
 ];
 
 /**
@@ -586,12 +596,12 @@ function Sidebar({
             (child) => bolehAnak(permissions, child.permission),
           );
           if (anakTerlihat.length === 0) return false;
-          if (hasPermission(permissions, item.permission)) return true;
+          if (item.permission && hasPermission(permissions, item.permission)) return true;
           return anakTerlihat.some(
             (child) => child.permission !== undefined && bolehAnak(permissions, child.permission),
           );
         }
-        return hasPermission(permissions, item.permission);
+        return bolehAnak(permissions, item.permission);
       }),
     [permissions],
   );

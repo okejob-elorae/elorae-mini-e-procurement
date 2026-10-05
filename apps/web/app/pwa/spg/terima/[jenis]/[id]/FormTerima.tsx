@@ -37,6 +37,7 @@ import { antreTerima, terimaTertahanUntuk } from "@/lib/pwa/offline/luring-antre
 import { ikatanKunjungan, kunjunganLokalSah } from "@/lib/pwa/offline/luring-kunjungan";
 import { useKunjunganLokal } from "@/lib/pwa/offline/luring-kunjungan-hook";
 import type { PendingStoreReceipt } from "@/lib/pwa/offline/db";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 type KirimanForm = {
   sourceType: JenisKiriman;
@@ -328,7 +329,10 @@ export function FormTerima({
       <div className="space-y-4 p-4">
         {kembali}
         <header>
-          <h1 className="break-all text-2xl font-bold">{kiriman.docNo}</h1>
+          <div className="flex items-center gap-1">
+            <h1 className="min-w-0 break-all text-2xl font-bold">{kiriman.docNo}</h1>
+            <TombolBantuanHp judul={kiriman.docNo} />
+          </div>
           <p className="text-sm text-muted-foreground">
             {kiriman.tanggalLabel} · {td(`source.${kiriman.sourceType}`)}
           </p>
@@ -358,7 +362,10 @@ export function FormTerima({
       {kembali}
 
       <header>
-        <h1 className="break-all text-2xl font-bold">{kiriman.docNo}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="min-w-0 break-all text-2xl font-bold">{kiriman.docNo}</h1>
+          <TombolBantuanHp judul={kiriman.docNo} />
+        </div>
         <p className="text-sm text-muted-foreground">
           {kiriman.tanggalLabel} · {td(`source.${kiriman.sourceType}`)}
         </p>

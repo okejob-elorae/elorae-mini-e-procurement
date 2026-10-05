@@ -29,6 +29,7 @@ import { newLocalId } from "@/lib/pwa/id-lokal";
 import { MAKS_ALASAN_TUKAR, type StatusTukar } from "@/lib/spg/shift";
 import type { DataJadwalSpgHp, SelRingkas, TukarHp } from "@/lib/spg/shift-queries";
 import { cn } from "@/lib/utils";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 const TIDAK = "__tidak__";
 
@@ -174,7 +175,10 @@ export function JadwalSpgHpClient({ namaToko, data }: { namaToko: string; data: 
       </Button>
 
       <header>
-        <h1 className="text-2xl font-bold">{t("hp.judul")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("hp.judul")}</h1>
+          <TombolBantuanHp judul={t("hp.judul")} />
+        </div>
         <p className="text-sm text-muted-foreground">{namaToko}</p>
       </header>
 
@@ -203,7 +207,6 @@ export function JadwalSpgHpClient({ namaToko, data }: { namaToko: string; data: 
                   {t("hp.setuju")}
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground">{t("hp.setujuCatatan")}</p>
             </div>
           ))}
         </section>

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { formatIDR } from "@/lib/sales-orders/format";
 import { PERISTIWA_ANTREAN } from "@/lib/pwa/offline/hitung";
 import { hitungNotaSpgTertahan } from "@/lib/pwa/offline/spg-jual-antrean";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 /** Teks yang sudah diformat server untuk kedua bahasa; klien hanya memilih. */
 export type TeksDwibahasa = { id: string; en: string };
@@ -64,8 +65,10 @@ export function NotaSpgClient({
   return (
     <div className="space-y-4 p-4">
       <header>
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
-        <p className="text-sm text-muted-foreground">{t("subtitle")}</p>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
+        </div>
       </header>
 
       {tertahan > 0 ? (

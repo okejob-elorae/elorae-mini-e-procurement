@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { Info, Loader2, Minus, Package, PencilLine, Plus, Search, X } from "lucide-react";
+import { Loader2, Minus, Package, PencilLine, Plus, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,6 +19,7 @@ import { dinamis } from "@/lib/i18n/dinamis";
 import { newLocalId } from "@/lib/pwa/id-lokal";
 import { cocokkanKode, kunciBaris } from "@/lib/spg/stok";
 import { BATAS_KETERANGAN_TITIP, MAKS_QTY_TITIP } from "@/lib/spg/titip";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 /** Baris katalog untuk titip pesan — TANPA harga. */
 export type BarisKatalogTitip = {
@@ -187,16 +188,12 @@ export function FormTitip({
         <TautanKembali cadangan="/pwa/spg/titip" />
       </Button>
       <header>
-        <h1 className="text-2xl font-bold">{t("form.judul")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("form.judul")}</h1>
+          <TombolBantuanHp judul={t("form.judul")} />
+        </div>
         <p className="truncate text-sm text-muted-foreground">{namaToko}</p>
       </header>
-
-      <section className="beranda-kartu flex items-start gap-3">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground">
-          <Info className="h-4 w-4" aria-hidden />
-        </span>
-        <p className="min-w-0 text-sm text-muted-foreground">{t("form.penjelasan")}</p>
-      </section>
 
       <section className="beranda-kartu space-y-3">
         <h2 className="beranda-judul">{t("form.pembeli")}</h2>

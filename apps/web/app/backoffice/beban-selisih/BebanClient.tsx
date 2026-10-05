@@ -109,7 +109,6 @@ export function BebanClient({
     <div className="space-y-6">
       <PageHeader
         title={t('pageTitle')}
-        description={t('pageDescription')}
         meta={t('summary', { count: jumlah('TERBUKA'), value: rupiah(nilaiTerbuka) })}
       />
 
@@ -268,10 +267,6 @@ export function BebanClient({
             </div>
           )}
         </CardContent>
-      </Card>
-
-      <Card className="border-primary/30 bg-primary/[0.03]">
-        <CardContent className="py-4 text-sm leading-relaxed">{t('explain')}</CardContent>
       </Card>
 
       <Dialog open={alih !== null} onOpenChange={(o) => !o && setAlih(null)}>

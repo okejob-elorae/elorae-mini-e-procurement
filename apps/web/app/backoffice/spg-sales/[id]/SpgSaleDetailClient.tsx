@@ -10,6 +10,7 @@ import { rincianNotaSpg, spgSaleNotaHtml } from "@/lib/print/spg-sale-nota-html"
 import { formatDisplayDateTime } from "@/lib/date-only";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -85,7 +86,10 @@ export function SpgSaleDetailClient({ sale, kembali }: Props) {
               {tSpgSale("back")}
             </Link>
           </Button>
-          <h1 className="text-2xl font-semibold font-mono">{sale.docNo}</h1>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-semibold font-mono">{sale.docNo}</h1>
+            <TombolBantuan judul={sale.docNo} />
+          </div>
         </div>
         <Button variant="outline" size="sm" onClick={handlePrint}>
           <Printer className="mr-2 h-4 w-4" />
@@ -188,10 +192,7 @@ export function SpgSaleDetailClient({ sale, kembali }: Props) {
 
       {kembali && adaKembali && (
         <Card className="p-4 space-y-4">
-          <div className="space-y-1">
-            <h2 className="font-semibold">{tk("judul")}</h2>
-            <p className="text-sm text-muted-foreground">{tk("penjelasan")}</p>
-          </div>
+          <h2 className="font-semibold">{tk("judul")}</h2>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>

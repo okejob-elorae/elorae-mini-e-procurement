@@ -2,7 +2,7 @@
 
 import { useTranslations } from "next-intl";
 import { StickyNote } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PanelCatatanToko } from "@/components/catatan-toko/PanelCatatanToko";
 import type { CatatanTampil } from "@/lib/stores/catatan-queries";
 
@@ -20,7 +20,6 @@ export function CatatanTokoCard({ storeId, catatan }: { storeId: string; catatan
           <StickyNote className="h-5 w-5" aria-hidden />
           {t("judul")}
         </CardTitle>
-        <CardDescription>{t("subjudulKantor")}</CardDescription>
       </CardHeader>
       <CardContent>
         <PanelCatatanToko storeId={storeId} catatan={catatan} bolehTulis sisi="right" batasAwal={5} />

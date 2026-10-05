@@ -4,19 +4,13 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
-import { ArrowLeft, Loader2, Calculator, HelpCircle, Eye } from "lucide-react";
+import { ArrowLeft, Loader2, Calculator, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -37,6 +31,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { formatDateOnly, parseDateOnly } from "@/lib/date-only";
 import { getHPPList, type HPPBreakdown } from "@/app/actions/hpp";
 import { updateWOHppAdjustments } from "@/app/actions/production";
@@ -216,30 +211,9 @@ export default function HPPPage() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
-        <div className="flex items-start gap-2">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
-            <p className="text-muted-foreground">{t("subtitle")}</p>
-          </div>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="shrink-0 rounded-full h-8 w-8"
-                aria-label={t("helpAriaLabel")}
-              >
-                <HelpCircle className="h-5 w-5 text-muted-foreground" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-[360px] sm:w-[400px] p-4" align="start">
-              <h3 className="font-semibold mb-2">{t("helpTitle")}</h3>
-              <div className="text-sm text-muted-foreground space-y-2">
-                <p>{t("helpIntro")}</p>
-                <p>{t("helpTableExplanation")}</p>
-              </div>
-            </PopoverContent>
-          </Popover>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
+          <TombolBantuan judul={t("title")} />
         </div>
       </div>
 
@@ -286,7 +260,6 @@ export default function HPPPage() {
             </Button>
           </div>
           <CardTitle className="pt-2">{t("cardTitle")}</CardTitle>
-          <CardDescription>{t("cardDescription")}</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           {isLoading ? (

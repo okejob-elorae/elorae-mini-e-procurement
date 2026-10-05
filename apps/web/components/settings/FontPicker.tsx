@@ -71,7 +71,6 @@ export function FontPicker({ terpilihAwal }: { terpilihAwal: string }) {
           <Type className="h-4 w-4" />
           {t('title')}
         </CardTitle>
-        <p className="text-sm text-muted-foreground">{t('description')}</p>
       </CardHeader>
       <CardContent className="space-y-3">
         {/* Satu baris per huruf, empat kolom. Dua puluh pilihan muat dalam lima

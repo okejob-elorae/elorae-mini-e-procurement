@@ -12,9 +12,8 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
-  CardTitle
+  CardTitle,
 } from '@/components/ui/card';
 import {
   Table,
@@ -42,6 +41,7 @@ import { EtaSuggestionHint } from '@/components/lead-time/eta-suggestion-hint';
 import { getItemsByType, getConsumptionRules, getItemById } from '@/app/actions/items';
 import { getPOs } from '@/app/actions/purchase-orders';
 import { ItemType } from '@/lib/constants/enums';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 
 interface TailorSupplier {
   id: string;
@@ -471,9 +471,9 @@ export default function NewWorkOrderPage() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
-        <div>
+        <div className="flex items-center gap-1">
           <h1 className="text-2xl font-bold tracking-tight">{tF('newTitle')}</h1>
-          <p className="text-muted-foreground">{tF('newDescription')}</p>
+          <TombolBantuan judul={tF('newTitle')} />
         </div>
       </div>
 
@@ -481,7 +481,6 @@ export default function NewWorkOrderPage() {
         <Card>
           <CardHeader>
             <CardTitle>{tF('cardTitle')}</CardTitle>
-            <CardDescription>{tF('cardDescription')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
@@ -722,7 +721,6 @@ export default function NewWorkOrderPage() {
           <Card>
             <CardHeader>
               <CardTitle>{tF('materialPlanTitle')}</CardTitle>
-              <CardDescription>{tF('materialPlanDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               {consumptionRules.length === 0 ? (

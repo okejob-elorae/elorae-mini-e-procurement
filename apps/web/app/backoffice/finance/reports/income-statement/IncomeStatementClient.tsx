@@ -12,6 +12,7 @@ import { ReportSection } from "../ReportSection";
 import { ReportExportButtons } from "../ReportExportButtons";
 import { exportIncomeStatementExcel } from "@/app/actions/finance-reports";
 import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 
 type Props = {
   report: IncomeStatement;
@@ -47,9 +48,9 @@ export function IncomeStatementClient({ report, filters }: Props) {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
+        <div className="flex items-center gap-1">
           <h1 className="text-2xl font-bold tracking-tight">{t("incomeStatement.pageTitle")}</h1>
-          <p className="text-muted-foreground">{t("incomeStatement.subtitle")}</p>
+          <TombolBantuan judul={t("incomeStatement.pageTitle")} />
         </div>
         <ReportExportButtons
           onExcel={() => exportIncomeStatementExcel({ from: filters.from, to: filters.to })}

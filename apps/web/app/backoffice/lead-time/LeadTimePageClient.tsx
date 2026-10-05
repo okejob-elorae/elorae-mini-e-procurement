@@ -3,6 +3,7 @@
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageHeader } from "@/components/ui/page-header";
 import { PustakaTab } from "@/components/lead-time/pustaka-tab";
 import { PapanTab } from "@/components/lead-time/papan-tab";
 import { SopTab } from "@/components/lead-time/sop-tab";
@@ -35,10 +36,7 @@ export function LeadTimePageClient({ initialTab, canManage }: Props) {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
-        <p className="text-sm text-muted-foreground">{t("subtitle")}</p>
-      </div>
+      <PageHeader title={t("title")} />
 
       <Tabs value={tab} onValueChange={setTab} className="space-y-4">
         <TabsList>

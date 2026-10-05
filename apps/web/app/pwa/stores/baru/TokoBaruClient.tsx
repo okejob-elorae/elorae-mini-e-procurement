@@ -18,6 +18,7 @@ import { BATAS_USULAN, validasiUsulanToko, type GalatUsulan, type JenisToko } fr
 import { ajukanTokoBaruAction, cekDuplikatUsulanAction, type KandidatDuplikatHp } from "../usulan-actions";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 type Area = { id: string; code: string; name: string };
 type Lokasi = { lat: number; lng: number; akurasi: number };
 type KeadaanLokasi = "diam" | "mencari" | "ditolak" | "gagal" | "tidakAda";
@@ -202,8 +203,10 @@ export function TokoBaruClient({ area }: { area: Area[] }) {
       </Button>
 
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold">{t("newTitle")}</h1>
-        <p className="text-sm text-muted-foreground">{t("newBody")}</p>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("newTitle")}</h1>
+          <TombolBantuanHp judul={t("newTitle")} />
+        </div>
       </header>
 
       {!online ? (

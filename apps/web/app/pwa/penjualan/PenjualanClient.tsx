@@ -15,6 +15,7 @@ import { namaBulan } from "@/lib/salesman/komisi";
 import type { BarangTeratasBaris, TokoTeratasBaris } from "@/lib/salesman/riwayat-penjualan-queries";
 import type { CapaianTarget, RingkasanBulan, TitikBulan } from "@/lib/salesman/riwayat-penjualan";
 import { cn } from "@/lib/utils";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 export type DataPenjualan = {
   daftarBulan: string[];
@@ -77,8 +78,10 @@ export function PenjualanClient({ data }: { data: DataPenjualan }) {
       </Button>
 
       <header>
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
-        <p className="text-sm text-muted-foreground">{t("subtitle")}</p>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
+        </div>
       </header>
 
       {/* Pemilih bulan: panah untuk bulan di sebelahnya, daftar untuk melompat. */}
@@ -190,7 +193,6 @@ export function PenjualanClient({ data }: { data: DataPenjualan }) {
         {/* Grafik 12 bulan; batang yang dipilih pekat, sisanya pudar. */}
         <section className="beranda-kartu">
           <h2 className="beranda-judul">{t("chartTitle")}</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">{t("chartHint")}</p>
           <div className="mt-2 h-40" aria-hidden>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
@@ -249,7 +251,6 @@ export function PenjualanClient({ data }: { data: DataPenjualan }) {
             <section className="beranda-kartu beranda-kartu-daftar" aria-labelledby="toko-teratas">
               <div className="px-4 pt-4">
                 <h2 id="toko-teratas" className="beranda-judul">{t("storesTitle")}</h2>
-                <p className="text-xs text-muted-foreground">{t("storesHint")}</p>
               </div>
               {data.toko.length === 0 ? (
                 <p className="px-4 pb-4 pt-2 text-sm text-muted-foreground">{t("storesEmpty")}</p>
@@ -283,7 +284,6 @@ export function PenjualanClient({ data }: { data: DataPenjualan }) {
             <section className="beranda-kartu beranda-kartu-daftar" aria-labelledby="barang-teratas">
               <div className="px-4 pt-4">
                 <h2 id="barang-teratas" className="beranda-judul">{t("productsTitle")}</h2>
-                <p className="text-xs text-muted-foreground">{t("productsHint")}</p>
               </div>
               {data.barang.length === 0 ? (
                 <p className="px-4 pb-4 pt-2 text-sm text-muted-foreground">{t("productsEmpty")}</p>

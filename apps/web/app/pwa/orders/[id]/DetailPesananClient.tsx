@@ -33,6 +33,7 @@ import { LencanaJarakJauh } from "./LencanaJarakJauh";
 import { BuktiTerimaPengiriman, type KirimanTampil } from "./BuktiTerimaPengiriman";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 /** Langkah linimasa dengan waktu yang sudah diformat server (dibagi per jenis, supaya `docNo`/`alasan` tetap terbaca). */
 type WaktuTeks<T> = T extends unknown ? Omit<T, "waktu"> & { waktu: string } : never;
 type LangkahTampil = WaktuTeks<LangkahLinimasa>;
@@ -120,7 +121,10 @@ export function DetailPesananClient({
 
       <header className="space-y-2">
         <p className="font-mono text-xs text-muted-foreground">{p.orderNo}</p>
-        <h1 className="text-2xl font-bold leading-tight">{p.storeName}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="min-w-0 break-words text-2xl font-bold leading-tight">{p.storeName}</h1>
+          <TombolBantuanHp judul={p.storeName} />
+        </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <Badge variant="outline" className={cn("border-transparent", p.dibatalkan ? NADA_DIBATALKAN : NADA_KEADAAN[p.keadaan])}>
             {p.dibatalkan ? tUbah("lencanaDibatalkan") : t(`keadaan.${p.keadaan}`)}

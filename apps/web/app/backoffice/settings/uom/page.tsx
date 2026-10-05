@@ -29,7 +29,6 @@ import {
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
@@ -54,6 +53,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Plus, Pencil, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 
 const uomSchema = z.object({
   code: z.string().min(1).max(10),
@@ -228,9 +228,9 @@ export default function UOMPage() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="flex items-center gap-1">
         <h1 className="text-2xl font-bold tracking-tight">{t('pageTitle')}</h1>
-        <p className="text-muted-foreground">{t('pageDescription')}</p>
+        <TombolBantuan judul={t('pageTitle')} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -240,7 +240,6 @@ export default function UOMPage() {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle>{t('unitsTitle')}</CardTitle>
-                <CardDescription>{t('unitsDescription')}</CardDescription>
               </div>
               <Dialog
                 open={isUOMDialogOpen}
@@ -380,7 +379,6 @@ export default function UOMPage() {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle>{t('conversionsTitle')}</CardTitle>
-                <CardDescription>{t('conversionsDescription')}</CardDescription>
               </div>
               <Dialog open={isConversionDialogOpen} onOpenChange={setIsConversionDialogOpen}>
                 <DialogTrigger asChild>

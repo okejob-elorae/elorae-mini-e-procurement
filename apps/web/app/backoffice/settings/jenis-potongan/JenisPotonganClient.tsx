@@ -80,7 +80,6 @@ export function JenisPotonganClient({ baris }: { baris: BarisJenisPotongan[] }) 
     <div className="space-y-6">
       <PageHeader
         title={t('pageTitle')}
-        description={t('pageDescription')}
         meta={t('summary', { count: baris.filter((b) => b.aktif).length })}
         actions={
           <Button onClick={() => setForm({ ...KOSONG })}>
@@ -167,10 +166,6 @@ export function JenisPotonganClient({ baris }: { baris: BarisJenisPotongan[] }) 
             </div>
           )}
         </CardContent>
-      </Card>
-
-      <Card className="border-primary/30 bg-primary/[0.03]">
-        <CardContent className="py-4 text-sm leading-relaxed">{t('explain')}</CardContent>
       </Card>
 
       <Dialog open={form !== null} onOpenChange={(o) => !o && setForm(null)}>

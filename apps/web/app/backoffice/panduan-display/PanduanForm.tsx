@@ -85,7 +85,6 @@ export function PanduanForm({
 
       <PageHeader
         title={awal ? awal.judul : t("baru")}
-        description={t("formDeskripsi")}
         meta={awal ? t("jumlahFotoMeta", { n: awal.jumlahFoto }) : undefined}
       />
 
@@ -192,7 +191,6 @@ export function PanduanForm({
               <Images className="h-4 w-4" aria-hidden />
               {t("fotoHasilJudul")}
             </CardTitle>
-            <CardDescription>{t("fotoHasilIsi")}</CardDescription>
           </CardHeader>
           <CardContent>
             {foto.length === 0 ? (

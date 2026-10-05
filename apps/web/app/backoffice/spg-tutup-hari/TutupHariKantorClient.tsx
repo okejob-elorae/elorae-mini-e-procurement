@@ -49,7 +49,6 @@ export function TutupHariKantorClient(props: Props) {
     <div className="space-y-6">
       <PageHeader
         title={t("judul")}
-        description={t("deskripsi")}
         meta={
           props.mode === "hari"
             ? t("ringkasHari", { tanggal: props.label, sudah: props.data.sudah, belum: props.data.belum, kejar: props.data.belumAdaNota })

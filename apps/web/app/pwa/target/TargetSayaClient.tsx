@@ -11,6 +11,7 @@ import type { LajuTarget, LingkupTarget, UkuranTarget } from "@/lib/salesman/tar
 import { cn } from "@/lib/utils";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 export type DataTargetSaya = {
   bulan: string;
   /** SPG: capaian dari nota penjualannya di toko, bersih dari retur pembeli. */
@@ -65,7 +66,10 @@ export function TargetSayaClient({ data }: { data: DataTargetSaya }) {
       </Button>
 
       <header>
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
+        </div>
         <p className="text-sm text-muted-foreground">{t("subtitle", { month: bulan })}</p>
       </header>
 
@@ -157,8 +161,6 @@ export function TargetSayaClient({ data }: { data: DataTargetSaya }) {
           })}
         </ul>
       )}
-
-      <p className="text-xs text-muted-foreground">{data.spg ? t("noteSpg") : t("note")}</p>
     </div>
   );
 }

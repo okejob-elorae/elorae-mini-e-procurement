@@ -7,8 +7,9 @@ import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { ArrowLeft, CalendarClock, Loader2, PackageCheck, Pencil, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -101,7 +102,10 @@ export function RincianIndenClient({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight">{rincian.name}</h1>
+            <div className="flex items-center gap-1">
+              <h1 className="text-2xl font-bold tracking-tight">{rincian.name}</h1>
+              <TombolBantuan judul={rincian.name} />
+            </div>
             <LencanaKeadaan keadaan={rincian.keadaan} />
           </div>
           <p className="text-sm text-muted-foreground">
@@ -139,7 +143,6 @@ export function RincianIndenClient({
               <PackageCheck className="h-5 w-5" aria-hidden />
               {t("rilis.judul")}
             </CardTitle>
-            <CardDescription>{t("rilis.isi")}</CardDescription>
           </CardHeader>
           <CardContent>
             <Button onClick={() => setKonfirmasi(true)} disabled={pending}>
@@ -156,7 +159,6 @@ export function RincianIndenClient({
             <CalendarClock className="h-5 w-5" aria-hidden />
             {t("barangJudul")}
           </CardTitle>
-          <CardDescription>{t("barangIsi")}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">

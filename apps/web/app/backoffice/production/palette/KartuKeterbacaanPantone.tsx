@@ -3,7 +3,7 @@
 import { useDeferredValue, useMemo, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -44,13 +44,11 @@ const NADA_BACA: Record<KeterbacaanSablon, StatusTone> = {
  */
 export function KartuKeterbacaanPantone({
   kainHex,
-  namaKain,
   katalogC,
   hexTinta,
   onPakai,
 }: {
   kainHex: string;
-  namaKain: string;
   katalogC: readonly WarnaPantone[];
   /** Tinta palet, untuk tombol "pakai untuk tinta". */
   hexTinta: readonly string[];
@@ -93,7 +91,6 @@ export function KartuKeterbacaanPantone({
     <Card id="keterbacaan-pantone" className="scroll-mt-20">
       <CardHeader>
         <CardTitle>{t('title')}</CardTitle>
-        <CardDescription>{t('description', { fabric: namaKain })}</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="min-w-0 space-y-3">

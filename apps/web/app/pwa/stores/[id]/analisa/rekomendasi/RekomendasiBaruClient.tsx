@@ -19,6 +19,7 @@ import { dinamis } from "@/lib/i18n/dinamis";
 import { newLocalId } from "@/lib/pwa/id-lokal";
 import { BATAS_TEKS_REKOMENDASI, QTY_MAKS_REKOMENDASI } from "@/lib/salesman/rekomendasi-aturan";
 import type { BahanFormRekomendasi, InfoKandidat, KandidatRekomendasi } from "@/lib/salesman/rekomendasi-queries";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 const URUTAN_KELOMPOK: InfoKandidat["kode"][] = ["ISI_ULANG", "ANDALAN_TOKO", "LARIS_DI_AREA", "BARU", "DI_TOKO"];
 const kunciBaris = (itemId: string, variantSku: string) => `${itemId}::${variantSku}`;
@@ -105,9 +106,11 @@ export function RekomendasiBaruClient({ bahan }: { bahan: BahanFormRekomendasi }
       {kembali}
 
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold">{t("judul")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("judul")}</h1>
+          <TombolBantuanHp judul={t("judul")} />
+        </div>
         <p className="text-sm text-muted-foreground">{bahan.toko.nama}</p>
-        <p className="text-sm text-muted-foreground">{t("penjelasan")}</p>
       </header>
 
       {bahan.kandidat.length === 0 ? (
@@ -127,7 +130,6 @@ export function RekomendasiBaruClient({ bahan }: { bahan: BahanFormRekomendasi }
               <h2 id={`kelompok-${g.kode}`} className="beranda-judul">
                 {tr(`baru.kelompok.${g.kode}`)}
               </h2>
-              <p className="text-xs text-muted-foreground">{tr(`baru.kelompokPenjelasan.${g.kode}`)}</p>
             </div>
             {g.kandidat.map((k) => (
               <KartuKandidat key={k.itemId} k={k} qty={qty} ubah={ubah} angka={angka} pending={pending} />

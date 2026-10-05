@@ -42,17 +42,23 @@ export function PushHp() {
       else if (h === "IZIN_DITOLAK") setKeadaan(Notification.permission === "denied" ? "diblokir" : "belum");
     });
 
+  // Tanpa keterangan di bawah judul, judul sejajar tengah dengan ikonnya.
+  const adaKeterangan =
+    keadaan === "tidak_didukung" || keadaan === "diblokir" || (hasil !== null && hasil !== "AKTIF" && hasil !== "IZIN_DITOLAK");
+
   return (
     <section className="beranda-kartu space-y-2">
-      <div className="flex items-start gap-3">
+      <div className={adaKeterangan ? "flex items-start gap-3" : "flex items-center gap-3"}>
         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground">
           <BellRing className="h-4 w-4" aria-hidden />
         </span>
         <div className="min-w-0 space-y-1">
           <h2 className="text-sm font-semibold">{t("title")}</h2>
-          <p className="text-sm text-muted-foreground">
-            {keadaan === "tidak_didukung" ? t("unsupported") : keadaan === "diblokir" ? t("blocked") : t("body")}
-          </p>
+          {keadaan === "tidak_didukung" || keadaan === "diblokir" ? (
+            <p className="text-sm text-muted-foreground">
+              {keadaan === "tidak_didukung" ? t("unsupported") : t("blocked")}
+            </p>
+          ) : null}
           {hasil && hasil !== "AKTIF" && hasil !== "IZIN_DITOLAK" ? (
             <p className="text-sm text-destructive">{t(`err.${hasil}`)}</p>
           ) : null}

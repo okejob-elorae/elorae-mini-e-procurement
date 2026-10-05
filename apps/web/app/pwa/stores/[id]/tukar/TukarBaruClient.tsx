@@ -29,6 +29,7 @@ import { namaBaris, tersediaUntuk } from "./barang";
 import { PilihBarangSheet } from "./PilihBarangSheet";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 type Keadaan = "SIAP" | "KONSI" | "TANPA_KUNJUNGAN";
 
 const kunciBaris = (b: { direction: ArahTukar; itemId: string; variantSku: string }) =>
@@ -52,7 +53,10 @@ export function TukarBaruClient({
       </Button>
 
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold">{t("judul")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("judul")}</h1>
+          <TombolBantuanHp judul={t("judul")} />
+        </div>
         <p className="text-sm text-muted-foreground">{t("subjudul", { toko: toko.nama })}</p>
       </header>
 
@@ -140,7 +144,7 @@ function Formulir({ toko, bahan }: { toko: { id: string; nama: string }; bahan: 
 
   const daftar = (arahBaris: ArahTukar, isi: BarisTukar[]) => (
     <section className="beranda-kartu space-y-3" aria-labelledby={`tukar-${arahBaris}`}>
-      <div className="flex items-start gap-3">
+      <div className="flex items-center gap-3">
         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground">
           {arahBaris === "MASUK" ? (
             <ArrowDownToLine className="h-4 w-4" aria-hidden />
@@ -152,7 +156,6 @@ function Formulir({ toko, bahan }: { toko: { id: string; nama: string }; bahan: 
           <h2 id={`tukar-${arahBaris}`} className="beranda-judul">
             {arahBaris === "MASUK" ? t("masukJudul") : t("keluarJudul")}
           </h2>
-          <p className="text-xs text-muted-foreground">{arahBaris === "MASUK" ? t("masukPetunjuk") : t("keluarPetunjuk")}</p>
         </div>
       </div>
 

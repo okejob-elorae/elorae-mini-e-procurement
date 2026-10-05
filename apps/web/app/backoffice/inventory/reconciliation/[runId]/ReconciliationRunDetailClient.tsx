@@ -8,6 +8,7 @@ import { formatDisplayDateTime } from "@/lib/date-only";
 import { reconciliationFailureReason } from "../failure-reason";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -96,7 +97,10 @@ export function ReconciliationRunDetailClient({ runId }: { runId: string }) {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">{t("runTitle", { id: runId.slice(0, 8) })}</h1>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-bold">{t("runTitle", { id: runId.slice(0, 8) })}</h1>
+            <TombolBantuan judul={t("runTitle", { id: runId.slice(0, 8) })} />
+          </div>
           <p className="text-muted-foreground">{formatDisplayDateTime(run.startedAt, locale)}</p>
         </div>
         <Link href="/backoffice/inventory/reconciliation">

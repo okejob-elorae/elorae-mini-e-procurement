@@ -9,6 +9,7 @@ import type { BebanSaya } from '@/lib/receivables/pwa-queries';
 import type { BebanHilangSaya } from '@/lib/spg/hilang-queries';
 import { TautanKembali } from '../TautanKembali';
 import { BebanHilangBagian } from './BebanHilangBagian';
+import { TombolBantuanHp } from '@/app/pwa/TombolBantuanHp';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 const tanggal = (iso: string | null) =>
@@ -43,7 +44,10 @@ export function BebanSayaClient({
         <TautanKembali cadangan={cadangan} />
       </Button>
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold">{t('pageTitle')}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t('pageTitle')}</h1>
+          <TombolBantuanHp judul={t('pageTitle')} />
+        </div>
       </header>
 
       {baris.length === 0 && hilang.length === 0 ? (

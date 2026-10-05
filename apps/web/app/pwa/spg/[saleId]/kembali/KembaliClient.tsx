@@ -21,6 +21,7 @@ import type { NotaUntukKembali } from "@/lib/spg/retur-pembeli";
 import { denganBatasWaktu, tanpaSinyal } from "@/lib/pwa/offline/batas-waktu";
 import { PERISTIWA_ANTREAN } from "@/lib/pwa/offline/hitung";
 import { antreReturPembeli, returPembeliTertahanUntuk } from "@/lib/pwa/offline/luring-antrean";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 const KONDISI = ["LAYAK", "RUSAK"] as const;
 type Kondisi = (typeof KONDISI)[number];
@@ -147,7 +148,10 @@ export function KembaliClient({ nota, storeId }: { nota: NotaUntukKembali; store
       </header>
 
       <div className="space-y-1">
-        <h1 className="text-2xl font-bold">{t("judul")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("judul")}</h1>
+          <TombolBantuanHp judul={t("judul")} />
+        </div>
         <p className="text-sm text-muted-foreground">
           {nota.docNo} · {formatDisplayDateTime(nota.waktu, locale)}
         </p>

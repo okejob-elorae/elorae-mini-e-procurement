@@ -11,6 +11,7 @@ import type { KeadaanPesanan, TabPesanan } from "@/lib/field-sales/pwa-queries";
 import { LencanaJarakJauh } from "./[id]/LencanaJarakJauh";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 export type BarisDaftarPesanan = {
   id: string;
   orderNo: string;
@@ -72,8 +73,10 @@ export function PesananSayaClient({
       </Button>
 
       <header>
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
-        <p className="text-sm text-muted-foreground">{t("subtitle")}</p>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
+        </div>
       </header>
 
       {/* Tab sebagai tautan, bukan keadaan klien: alamatnya bisa dibagikan dan
@@ -103,7 +106,6 @@ export function PesananSayaClient({
             );
           })}
         </ul>
-        <p className="mt-2 text-xs text-muted-foreground">{t(`hint.${tab}`)}</p>
       </nav>
 
       {baris.length === 0 ? (

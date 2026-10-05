@@ -219,7 +219,6 @@ export function LabelBarcodeClient({
     <div className="space-y-6">
       <PageHeader
         title={t("judul")}
-        description={t("deskripsi")}
         meta={t("ringkas", { label: angka.format(total), barang: barang.length })}
         actions={
           <Button variant="outline" asChild>
@@ -502,7 +501,6 @@ export function LabelBarcodeClient({
                 <Printer className="h-5 w-5" />
                 {t("opsi.judul")}
               </CardTitle>
-              <CardDescription>{t("opsi.deskripsi")}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-1.5">
@@ -663,7 +661,7 @@ export function LabelBarcodeClient({
             <Barcode className="h-5 w-5" />
             {t("pratinjau.judul")}
           </CardTitle>
-          <CardDescription>{htmlPratinjau !== html ? t("cetak.alasanMemuat") : t("pratinjau.deskripsi")}</CardDescription>
+          {htmlPratinjau !== html ? <CardDescription>{t("cetak.alasanMemuat")}</CardDescription> : null}
         </CardHeader>
         <CardContent>
           {htmlPratinjau === null ? (

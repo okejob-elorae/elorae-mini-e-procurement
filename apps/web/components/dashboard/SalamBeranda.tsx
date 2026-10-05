@@ -6,6 +6,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { greetingKey } from '@/lib/auth/login-message';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 
 /**
  * Baris pembuka beranda: salam, tanggal, dan kapan angkanya terakhir dimuat.
@@ -56,9 +57,13 @@ export function SalamBeranda({
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <h1 className="text-xl font-bold tracking-tight" suppressHydrationWarning>
-          {tAuth(`greeting.${greetingKey()}`)}, {nama}
-        </h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-xl font-bold tracking-tight" suppressHydrationWarning>
+            {tAuth(`greeting.${greetingKey()}`)}, {nama}
+          </h1>
+          {/* Penjelasan beranda dan kartu-kartunya ada di Bantuan, bukan di layar. */}
+          <TombolBantuan judul={t('title')} />
+        </div>
         <p className="text-sm text-muted-foreground" suppressHydrationWarning>
           {tanggal}
         </p>

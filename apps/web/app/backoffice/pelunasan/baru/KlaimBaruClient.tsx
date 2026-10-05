@@ -294,10 +294,7 @@ export function KlaimBaruClient({
   if (terkirim) {
     return (
       <div className="@container space-y-6">
-        <PageHeader
-          title={tPesan('terkirimJudul', { doc: terkirim.docNo })}
-          description={tPesan('tandaTerimaPetunjuk')}
-        />
+        <PageHeader title={tPesan('terkirimJudul', { doc: terkirim.docNo })} />
         <Card className="py-0">
           <CardContent className="flex flex-col gap-3 py-4 @2xl:flex-row @2xl:flex-wrap @2xl:items-center">
             {terkirim.memuat ? (
@@ -338,7 +335,7 @@ export function KlaimBaruClient({
         </Button>
       )}
 
-      <PageHeader title={t('newTitle')} description={t('newBody')} />
+      <PageHeader title={t('newTitle')} />
 
       {awal && (
         <p className="flex items-start gap-2 rounded-lg bg-primary/10 px-3 py-2 text-sm">
@@ -397,7 +394,6 @@ export function KlaimBaruClient({
         <Card>
           <CardHeader>
             <CardTitle className="text-base">{t('sectionGiro')}</CardTitle>
-            <p className="text-sm text-muted-foreground">{t('sectionGiroHint')}</p>
           </CardHeader>
           <CardContent className="grid gap-4 @2xl:grid-cols-2">
             <div className="space-y-2">
@@ -524,7 +520,6 @@ export function KlaimBaruClient({
                 {t('addDeduction')}
               </Button>
             </CardTitle>
-            <p className="text-sm text-muted-foreground">{t('sectionDeductionsHint')}</p>
           </CardHeader>
           <CardContent className="space-y-3">
             {potongan.length === 0 ? (

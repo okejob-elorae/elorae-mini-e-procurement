@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { Copy, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -123,7 +123,6 @@ export function KartuSablon({
     <Card>
       <CardHeader>
         <CardTitle>{t('printTitle')}</CardTitle>
-        <CardDescription>{t('printDescription')}</CardDescription>
         <CardAction>
           <Button type="button" variant="outline" size="sm" onClick={() => onSalin(ringkasan())}>
             <Copy className="h-3.5 w-3.5" />

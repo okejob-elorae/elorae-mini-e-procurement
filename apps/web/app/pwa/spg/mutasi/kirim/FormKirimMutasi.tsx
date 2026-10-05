@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils";
 import { cocokCari, type BarisPilihan } from "../../stok/barang-pilihan";
 import { KartuAjuanDiHp, kirimAntreanBilaBisa, useMutasiDiHp } from "../MutasiDiHp";
 import { pesanGagalMutasi } from "../tampilan";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 /** Hasil pencarian yang dirender sekaligus. */
 const BATAS_HASIL = 30;
@@ -285,7 +286,10 @@ export function FormKirimMutasi({
       {kembali}
 
       <header>
-        <h1 className="text-2xl font-bold">{t("kirim.judul")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("kirim.judul")}</h1>
+          <TombolBantuanHp judul={t("kirim.judul")} />
+        </div>
         <p className="text-sm text-muted-foreground">{t("kirim.subjudul", { toko: namaToko })}</p>
       </header>
 

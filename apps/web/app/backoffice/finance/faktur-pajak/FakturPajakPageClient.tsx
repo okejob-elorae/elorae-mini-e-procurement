@@ -39,6 +39,7 @@ import {
   type TaxInvoiceActionResult,
 } from "@/app/actions/tax-invoices";
 import { formatRupiah } from "@/lib/format/rupiah";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 
 type StatusFilter = TaxInvoiceStatusFilter | "ALL";
 
@@ -85,6 +86,8 @@ export function FakturPajakPageClient(props: Props) {
   const [searchInput, setSearchInput] = useState(props.q);
   const [dialog, setDialog] = useState<{ kind: DialogKind; row: SelectedRow } | null>(null);
   const [fieldValue, setFieldValue] = useState("");
+  // Penolakan nomor faktur pajak ditampilkan di bawah isiannya, bukan sebagai toast yang lewat.
+  const [fieldError, setFieldError] = useState<string | null>(null);
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -115,12 +118,19 @@ export function FakturPajakPageClient(props: Props) {
 
   function openDialog(kind: DialogKind, row: TaxInvoiceRow): void {
     setFieldValue("");
+    setFieldError(null);
     setDialog({ kind, row: { id: row.id, docNo: row.docNo } });
   }
 
   function closeDialog(): void {
     setDialog(null);
     setFieldValue("");
+    setFieldError(null);
+  }
+
+  function changeField(value: string): void {
+    setFieldValue(value);
+    setFieldError(null);
   }
 
   const trimmedField = fieldValue.trim();
@@ -183,6 +193,14 @@ export function FakturPajakPageClient(props: Props) {
           router.refresh();
           return;
         }
+        if (result.code === "NOMOR_FAKTUR_GANDA" || result.code === "NOMOR_FAKTUR_FORMAT") {
+          setFieldError(
+            result.code === "NOMOR_FAKTUR_GANDA" && result.dipakaiDi
+              ? t("nomorFakturGandaDi", { docNo: result.dipakaiDi })
+              : t(`actionErr.${result.code}`),
+          );
+          return;
+        }
         toast.error(t(`actionErr.${result.code}`));
       } catch {
         toast.error(t("errGeneric"));
@@ -195,9 +213,9 @@ export function FakturPajakPageClient(props: Props) {
 
   return (
     <div className="space-y-4">
-      <div>
+      <div className="flex items-center gap-1">
         <h1 className="text-2xl font-bold tracking-tight">{t("pageTitle")}</h1>
-        <p className="text-muted-foreground">{t("subtitle")}</p>
+        <TombolBantuan judul={t("pageTitle")} />
       </div>
 
       {props.loadError ? (
@@ -387,7 +405,7 @@ export function FakturPajakPageClient(props: Props) {
                   value={fieldValue}
                   disabled={isActionPending}
                   placeholder={copy.placeholder}
-                  onChange={(e) => setFieldValue(e.target.value)}
+                  onChange={(e) => changeField(e.target.value)}
                 />
               ) : (
                 <Input
@@ -396,11 +414,18 @@ export function FakturPajakPageClient(props: Props) {
                   value={fieldValue}
                   disabled={isActionPending}
                   placeholder={copy.placeholder}
-                  onChange={(e) => setFieldValue(e.target.value)}
+                  aria-invalid={fieldError !== null}
+                  aria-describedby={fieldError !== null ? "faktur-pajak-field-error" : undefined}
+                  onChange={(e) => changeField(e.target.value)}
                 />
               )}
               {trimmedField === "" && (
                 <p className="text-xs text-muted-foreground">{copy.fieldRequired}</p>
+              )}
+              {fieldError !== null && (
+                <p id="faktur-pajak-field-error" role="alert" className="text-sm text-destructive">
+                  {fieldError}
+                </p>
               )}
             </div>
 

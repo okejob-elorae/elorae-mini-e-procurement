@@ -20,6 +20,7 @@ import { BATAS_HARGA_PESAING, periksaHargaPesaing } from "@/lib/salesman/harga-p
 import type { BarisHargaPesaing } from "@/lib/salesman/checklist-queries";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 const angkaSaja = (s: string) => s.replace(/\D/g, "");
 const kelompok = new Intl.NumberFormat("id-ID");
 
@@ -143,7 +144,10 @@ export function HargaPesaingClient({
       </Button>
 
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold">{t("judul")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("judul")}</h1>
+          <TombolBantuanHp judul={t("judul")} />
+        </div>
         <p className="text-sm text-muted-foreground">{t("subjudul", { toko: toko.nama })}</p>
       </header>
 

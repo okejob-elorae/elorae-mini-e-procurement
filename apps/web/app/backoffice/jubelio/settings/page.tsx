@@ -24,6 +24,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { AlertTriangle, Loader2, RefreshCw, Cloud } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDisplayDateTime } from '@/lib/date-only';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 
 export default function JubelioSettingsPage() {
   const t = useTranslations('jubelio.settings');
@@ -175,15 +176,14 @@ export default function JubelioSettingsPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-4xl">
-      <div>
+      <div className="flex items-center gap-1">
         <h1 className="text-2xl font-bold tracking-tight">{t('title')}</h1>
-        <p className="text-muted-foreground">{t('subtitle')}</p>
+        <TombolBantuan judul={t('title')} />
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>{t('token.title')}</CardTitle>
-          <CardDescription>{t('token.description')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {isLoadingState ? (
@@ -225,7 +225,6 @@ export default function JubelioSettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle>{t('catalog.title')}</CardTitle>
-          <CardDescription>{t('catalog.description')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-2">
@@ -297,7 +296,6 @@ export default function JubelioSettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle>{t('defaults.title')}</CardTitle>
-          <CardDescription>{t('defaults.description')}</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoadingDefaults ? (

@@ -41,6 +41,7 @@ import { PERMISSIONS, hasPermission } from '@/lib/rbac';
 import type { SnapshotStep } from '@/lib/leadtime/calculations';
 import { formatDisplayDate, formatDisplayDateTime } from '@/lib/date-only';
 import { getStatusMeta } from '@/lib/ui/status-map';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 
 const statusLabels: Record<POStatus, string> = {
   DRAFT: 'Draft',
@@ -421,7 +422,10 @@ export default function PODetailPage() {
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">{po.docNumber}</h1>
+            <div className="flex items-center gap-1">
+              <h1 className="text-2xl font-bold tracking-tight">{po.docNumber}</h1>
+              <TombolBantuan judul={po.docNumber} />
+            </div>
             <p className="text-muted-foreground">{po.supplier.name}</p>
           </div>
         </div>

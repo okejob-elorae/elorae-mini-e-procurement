@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type DragEvent, type PointerE
 import { useLocale, useTranslations } from 'next-intl';
 import { ImageUp, Sparkles, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
@@ -297,7 +297,6 @@ export function AmbilDariGambar({
     <Card>
       <CardHeader>
         <CardTitle>{t('imageTitle')}</CardTitle>
-        <CardDescription>{t('imageDescription')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <input

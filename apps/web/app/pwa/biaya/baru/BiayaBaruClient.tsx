@@ -24,6 +24,7 @@ import { IkonKategori } from "../tampilan";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
 import { TanggalInput } from "@/components/ui/tanggal-input";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 const angkaSaja = (s: string) => s.replace(/\D/g, "");
 const kelompok = new Intl.NumberFormat("id-ID");
 
@@ -157,8 +158,10 @@ export function BiayaBaruClient({ bahan }: { bahan: BahanBiayaBaru }) {
       </Button>
 
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold">{t("baruJudul")}</h1>
-        <p className="text-sm text-muted-foreground">{t("baruSubjudul")}</p>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("baruJudul")}</h1>
+          <TombolBantuanHp judul={t("baruJudul")} />
+        </div>
       </header>
 
       {!pengaturan.aktif ? (

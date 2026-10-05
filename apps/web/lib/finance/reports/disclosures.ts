@@ -18,7 +18,7 @@ export const TRIAL_BALANCE_UNBALANCED_NOTE =
 export const INCOME_STATEMENT_COVERAGE_TITLE = "Cakupan data";
 
 export const INCOME_STATEMENT_COVERAGE_BODY =
-  "Laporan ini hanya mencakup transaksi yang sudah menghasilkan jurnal: penjualan marketplace, retur, settlement, penerimaan barang (GRN), hasil produksi, penyesuaian stock opname, dan jurnal manual. BELUM termasuk: penjualan lapangan (putus), penjualan kanvas, penjualan SPG, dan pembayaran ke pemasok.";
+  "Laporan ini hanya mencakup transaksi yang sudah menghasilkan jurnal: penjualan marketplace, penjualan kanvas, retur, settlement, penerimaan barang (GRN), hasil produksi, penyesuaian stock opname, pembayaran ke pemasok, dan jurnal manual. BELUM termasuk: penjualan lapangan (putus) dan penjualan SPG.";
 
 export const BALANCE_SHEET_OPENING_TITLE = "Saldo awal belum dicatat";
 

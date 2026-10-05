@@ -8,9 +8,8 @@ import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
-  CardTitle
+  CardTitle,
 } from '@/components/ui/card';
 import {
   Table,
@@ -26,6 +25,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { formatDisplayDate } from '@/lib/date-only';
 import { getWorkOrderById, getReconciliation } from '@/app/actions/production';
 import { buildReconciliationPrintHtml } from '@/lib/print/reconciliation-html';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 
 type ReconLine = {
   itemId: string;
@@ -170,7 +170,10 @@ export default function WorkOrderReconciliationPage() {
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold">{tWO('reconciliationTitle')}</h1>
+            <div className="flex items-center gap-1">
+              <h1 className="text-2xl font-bold">{tWO('reconciliationTitle')}</h1>
+              <TombolBantuan judul={tWO('reconciliationTitle')} />
+            </div>
             <p className="text-muted-foreground">{String(wo.docNumber ?? '')}</p>
             <p className="text-sm text-muted-foreground mt-1">
               {String(
@@ -219,9 +222,6 @@ export default function WorkOrderReconciliationPage() {
             <p className="text-2xl font-bold">
               {efficiencyPercent.toFixed(1)}%
             </p>
-            <p className="text-xs text-muted-foreground">
-              {tR('usedVsIssued')}
-            </p>
           </CardContent>
         </Card>
         <Card>
@@ -252,14 +252,6 @@ export default function WorkOrderReconciliationPage() {
       <Card>
         <CardHeader>
           <CardTitle>{tR('byMaterial', { selisih: t('selisih') })}</CardTitle>
-          <CardDescription>
-            {tR('byMaterialDesc', {
-              planned: t('cuttingPlanned'),
-              issued: t('issuedToCmt'),
-              setoran: t('setoran'),
-              estimate: t('selisihFromEstimate'),
-            })}
-          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">

@@ -56,7 +56,6 @@ export function DaftarMutasiClient({
     <div className="space-y-6">
       <PageHeader
         title={t("kantor.judul")}
-        description={t("kantor.deskripsi")}
         meta={t("kantor.ringkas", { total: data.total, menunggu, selisih: data.selisihTerbuka })}
       />
 

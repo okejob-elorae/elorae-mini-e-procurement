@@ -160,7 +160,7 @@ export function RincianTukarClient({
 
       <PageHeader
         title={r.docNo}
-        description={t("rincianDeskripsi", { toko: r.toko.nama, salesman: r.salesman })}
+        meta={t("rincianDeskripsi", { toko: r.toko.nama, salesman: r.salesman })}
         actions={
           <span className="inline-flex flex-wrap gap-2">
             <TombolKeputusanTukar
@@ -234,7 +234,7 @@ export function RincianTukarClient({
             ) : (
               <p className="text-sm text-destructive">{t("hargaKosong")}</p>
             )}
-            <p className="text-xs text-muted-foreground">{terbuka && r.nilai && !setara ? t("nilaiBerubah") : t("bukanRetur")}</p>
+            {terbuka && r.nilai && !setara ? <p className="text-xs text-muted-foreground">{t("nilaiBerubah")}</p> : null}
           </CardContent>
         </Card>
       </div>

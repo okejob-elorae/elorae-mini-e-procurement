@@ -12,11 +12,11 @@ import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 import { Layers, Loader2, Plus, Trash2 } from "lucide-react";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 
 type ValidationCode = "EMPTY" | "BAD_SIZE" | "DUP_SIZE" | "BAD_QTY";
 
@@ -120,9 +120,9 @@ export default function PackRatioSettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="flex items-center gap-1">
         <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
-        <p className="text-muted-foreground">{t("description")}</p>
+        <TombolBantuan judul={t("title")} />
       </div>
 
       <Card className="max-w-2xl">
@@ -131,7 +131,6 @@ export default function PackRatioSettingsPage() {
             <Layers className="h-5 w-5" />
             {t("heading")}
           </CardTitle>
-          <CardDescription>{t("subtitle")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {rows.length === 0 ? (

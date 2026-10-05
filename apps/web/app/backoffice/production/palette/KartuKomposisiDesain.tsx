@@ -90,7 +90,6 @@ export function KartuKomposisiDesain({
     <Card id="komposisi-desain" className="scroll-mt-20">
       <CardHeader>
         <CardTitle>{t('title')}</CardTitle>
-        <CardDescription>{t('description')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="flex flex-col gap-4 rounded-lg border p-3 md:flex-row md:items-start">

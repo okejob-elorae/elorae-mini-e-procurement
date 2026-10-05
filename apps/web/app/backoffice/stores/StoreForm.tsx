@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
@@ -266,7 +267,10 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
     <div className="space-y-4">
       {!hideHeader && (
         <>
-          <h1 className="text-2xl font-bold">{tRoot(mode === "create" ? "new" : "edit")}</h1>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-bold">{tRoot(mode === "create" ? "new" : "edit")}</h1>
+            <TombolBantuan judul={tRoot(mode === "create" ? "new" : "edit")} />
+          </div>
           {readOnly && <p className="text-sm text-muted-foreground">{tRoot("readOnlyBanner")}</p>}
         </>
       )}

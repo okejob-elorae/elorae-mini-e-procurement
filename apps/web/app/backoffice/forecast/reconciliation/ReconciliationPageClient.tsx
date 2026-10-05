@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { ArrowLeft } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -126,9 +127,9 @@ export function ReconciliationPageClient({
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
-        <div>
+        <div className="flex items-center gap-1">
           <h1 className="text-2xl font-bold">{t("title")}</h1>
-          <p className="text-muted-foreground">{t("subtitle")}</p>
+          <TombolBantuan judul={t("title")} />
         </div>
       </div>
 
@@ -269,9 +270,6 @@ export function ReconciliationPageClient({
                 <CardTitle>{t("unmappedTitle")}</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="mb-3 text-sm text-muted-foreground">
-                  {t("unmappedHint")}
-                </p>
                 <ul className="list-inside list-disc text-sm font-mono">
                   {report.unmappedSkus.map((sku) => (
                     <li key={sku}>{sku}</li>

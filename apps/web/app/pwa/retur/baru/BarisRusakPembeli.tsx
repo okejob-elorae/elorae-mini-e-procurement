@@ -91,7 +91,6 @@ export function BarisRusakPembeli({
           </div>
         </div>
       ))}
-      <p className="text-xs text-muted-foreground">{t("retur.penjelasan")}</p>
     </div>
   );
 }

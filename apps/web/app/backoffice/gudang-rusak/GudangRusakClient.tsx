@@ -77,7 +77,7 @@ export function GudangRusakClient({
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t("kantor.judul")} description={t("kantor.deskripsi")} meta={t("kantor.ringkas", { baris: saldo.length, pcs })} />
+      <PageHeader title={t("kantor.judul")} meta={t("kantor.ringkas", { baris: saldo.length, pcs })} />
 
       <div className="flex flex-wrap gap-2" role="tablist" aria-label={t("kantor.judul")}>
         <Button role="tab" aria-selected={tab === "saldo"} variant={tab === "saldo" ? "default" : "outline"} onClick={() => pindahTab("saldo")}>

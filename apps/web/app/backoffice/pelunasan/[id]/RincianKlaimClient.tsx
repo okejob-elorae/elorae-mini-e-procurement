@@ -156,15 +156,23 @@ export function RincianKlaimClient({
 
       <PageHeader
         title={data.docNo}
-        description={[
-          data.storeName,
-          data.salesmanName,
-          t(`method_${data.method}` as never),
-          t('claimedOn', { date: tanggal(data.claimedTransferAt) }),
-        ]
-          .filter(Boolean)
-          .join(' · ')}
-        meta={<StatusPill tone={NADA[data.status]}>{t(`status${data.status}` as never)}</StatusPill>}
+        meta={
+          <>
+            <span className="block">
+              {[
+                data.storeName,
+                data.salesmanName,
+                t(`method_${data.method}` as never),
+                t('claimedOn', { date: tanggal(data.claimedTransferAt) }),
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
+            <span className="mt-1 inline-flex">
+              <StatusPill tone={NADA[data.status]}>{t(`status${data.status}` as never)}</StatusPill>
+            </span>
+          </>
+        }
         actions={
           <span className="inline-flex flex-wrap gap-2">
             <Button variant="outline" asChild>
@@ -287,7 +295,6 @@ export function RincianKlaimClient({
                 {tGiro(`status_${giro.status}`)}
               </StatusPill>
             </CardTitle>
-            {giroMenunggu && <p className="text-sm text-muted-foreground">{tGiro('cardHint')}</p>}
           </CardHeader>
           <CardContent className="space-y-4">
             <dl className="grid gap-3 text-sm sm:grid-cols-4">
@@ -316,7 +323,6 @@ export function RincianKlaimClient({
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">{t('sectionProof')}</CardTitle>
-          <p className="text-sm text-muted-foreground">{t('proofHint')}</p>
         </CardHeader>
         <CardContent className="grid gap-4 lg:grid-cols-2">
           <Bukti

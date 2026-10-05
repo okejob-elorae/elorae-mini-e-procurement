@@ -83,8 +83,7 @@ export function RincianHasilClient({ r }: { r: RincianHasilChecklist }) {
 
       <PageHeader
         title={r.toko.nama}
-        description={t("deskripsi", { template: r.templateNama, salesman: r.salesman, kunjungan: r.kunjungan })}
-        meta={t("dikirim", { waktu: r.dikirim })}
+        meta={`${t("deskripsi", { template: r.templateNama, salesman: r.salesman, kunjungan: r.kunjungan })} · ${t("dikirim", { waktu: r.dikirim })}`}
         actions={
           r.toko.id ? (
             <Button asChild variant="outline">

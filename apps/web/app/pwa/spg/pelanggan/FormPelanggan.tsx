@@ -17,6 +17,7 @@ import { TautanKembali } from "@/app/pwa/TautanKembali";
 import { dinamis } from "@/lib/i18n/dinamis";
 import { nomorWhatsApp } from "@/lib/salesman/dasbor";
 import { BATAS_CATATAN_PELANGGAN, BATAS_NAMA_PELANGGAN, rapikanNamaPelanggan } from "@/lib/spg/pelanggan";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 const KODE_GALAT = new Set([
   "FORBIDDEN",
@@ -96,7 +97,10 @@ export function FormPelanggan({ namaToko, awal }: { namaToko: string; awal: Awal
         <TautanKembali cadangan={awal ? `/pwa/spg/pelanggan/${awal.id}` : "/pwa/spg/pelanggan"} />
       </Button>
       <header>
-        <h1 className="text-2xl font-bold">{awal ? t("form.judulUbah") : t("form.judulBaru")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{awal ? t("form.judulUbah") : t("form.judulBaru")}</h1>
+          <TombolBantuanHp judul={awal ? t("form.judulUbah") : t("form.judulBaru")} />
+        </div>
         <p className="truncate text-sm text-muted-foreground">{namaToko}</p>
       </header>
 

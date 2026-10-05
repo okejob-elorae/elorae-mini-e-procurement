@@ -28,6 +28,7 @@ import { dinamis } from "@/lib/i18n/dinamis";
 import type { RincianPermintaanMasuk } from "@/lib/spg/permintaan-salesman";
 import { cn } from "@/lib/utils";
 import { nadaStatusPermintaan } from "../tampilan";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 type Rincian = RincianPermintaanMasuk & { dibuatLabel: string; ditanganiLabel: string | null };
 
@@ -101,7 +102,10 @@ export function RincianPermintaanClient({
       </Button>
 
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold">{r.toko.nama}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="min-w-0 break-words text-2xl font-bold">{r.toko.nama}</h1>
+          <TombolBantuanHp judul={r.toko.nama} />
+        </div>
         <p className="text-sm text-muted-foreground">{t("meta", { name: r.peminta, when: r.dibuatLabel })}</p>
         <span className={cn("inline-block rounded-full px-2 py-0.5 text-xs font-medium", nadaStatusPermintaan(r.status))}>
           {td(`status.${r.status}`)}
@@ -202,7 +206,6 @@ export function RincianPermintaanClient({
               ) : null}
             </div>
           )}
-          <p className="px-1 text-xs text-muted-foreground">{t("detail.orderHint")}</p>
         </section>
       ) : null}
 

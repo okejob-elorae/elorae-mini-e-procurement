@@ -15,6 +15,7 @@ import { formatIDR } from "@/lib/sales-orders/format";
 import type { SpgSaleDetail } from "@/lib/spg/sale-queries";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 const tanpaLangganan = () => () => undefined;
 const bisaBagikanServer = () => false;
@@ -82,7 +83,10 @@ export function NotaView({ sale }: { sale: SpgSaleDetail }) {
       </header>
 
       <div className="print:hidden">
-        <h1 className="text-lg font-semibold">{t("title")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-lg font-semibold">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
+        </div>
         <p className="text-sm text-muted-foreground">{sale.docNo}</p>
       </div>
 

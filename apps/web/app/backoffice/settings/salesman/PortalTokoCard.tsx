@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Link2, Loader2 } from "lucide-react";
 import { simpanAturanPortalToko } from "@/app/actions/settings/salesman-portal-toko";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -66,7 +66,6 @@ export function PortalTokoCard({ bolehUbah, nilai }: { bolehUbah: boolean; nilai
           <Link2 className="h-5 w-5" aria-hidden />
           {t("judul")}
         </CardTitle>
-        <CardDescription>{t("penjelasan")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-start justify-between gap-4 rounded-md border p-3">
@@ -110,7 +109,6 @@ export function PortalTokoCard({ bolehUbah, nilai }: { bolehUbah: boolean; nilai
             </p>
           </div>
         </div>
-        <p className="text-xs text-muted-foreground">{t("aturanSama")}</p>
         <div className="flex justify-end">
           <Button onClick={simpan} disabled={nonaktif || !berubah || !usulan}>
             {sibuk ? <Loader2 className="h-4 w-4 animate-spin" /> : t("simpan")}

@@ -59,10 +59,7 @@ export function PencocokanBukuCard({ data }: { data: PencocokanSiklus }) {
     <Card>
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1">
-            <CardTitle className="text-base">{t("title")}</CardTitle>
-            <p className="text-sm text-muted-foreground">{t("hint")}</p>
-          </div>
+          <CardTitle className="text-base">{t("title")}</CardTitle>
           {r.cocok === null ? (
             <StatusPill tone="waiting">{t("none")}</StatusPill>
           ) : r.cocok ? (
@@ -149,7 +146,6 @@ export function PencocokanBukuCard({ data }: { data: PencocokanSiklus }) {
                   </Table>
                 </div>
               )}
-              {kolom.nota && <p className="text-xs text-muted-foreground">{t("notaHint")}</p>}
             </section>
 
             {r.adaStok && (
@@ -210,8 +206,6 @@ export function PencocokanBukuCard({ data }: { data: PencocokanSiklus }) {
                     </Table>
                   </div>
                 )}
-                <p className="text-xs text-muted-foreground">{t("stockHint")}</p>
-                {adaHilangTercatat && <p className="text-xs text-muted-foreground">{t("recordedLostHint")}</p>}
                 {data.bulanSementara.length > 0 && (
                   <p className="text-xs text-muted-foreground">
                     {t("provisional", {

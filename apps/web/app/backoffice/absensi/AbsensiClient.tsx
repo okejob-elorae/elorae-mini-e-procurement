@@ -98,7 +98,7 @@ export function AbsensiClient(props: Props) {
     <div className="space-y-6">
       <PageHeader
         title={t("judul")}
-        description={t("deskripsi", { jam: props.pengaturan.jamMasukPaling })}
+        meta={t("metaJamMasuk", { jam: props.pengaturan.jamMasukPaling })}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" asChild>

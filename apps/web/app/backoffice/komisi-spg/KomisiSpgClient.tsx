@@ -100,7 +100,6 @@ export function KomisiSpgClient({ periode, pilihan, bulanSelesai, aturan, bolehK
     <div className="space-y-6">
       <PageHeader
         title={t("judul")}
-        description={t("deskripsi")}
         meta={t("ringkas", {
           hitung: formatIDR(ringkas.totalHitung),
           resmi: formatIDR(ringkas.totalResmi),
@@ -160,7 +159,6 @@ export function KomisiSpgClient({ periode, pilihan, bulanSelesai, aturan, bolehK
             <Store className="h-5 w-5" aria-hidden />
             {t("konsi.judul")}
           </CardTitle>
-          <CardDescription>{t("konsi.isi")}</CardDescription>
         </CardHeader>
         <CardContent className={tokoKonsi.length === 0 ? undefined : "px-0"}>
           {tokoKonsi.length === 0 ? (

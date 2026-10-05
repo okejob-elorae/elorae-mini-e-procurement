@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -43,9 +44,9 @@ export default function NewStockOpnamePage() {
 
   return (
     <div className="max-w-lg space-y-6">
-      <div>
+      <div className="flex items-center gap-1">
         <h1 className="text-2xl font-bold">{t("new")}</h1>
-        <p className="text-muted-foreground">{t("subtitle")}</p>
+        <TombolBantuan judul={t("new")} />
       </div>
       <Card>
         <CardHeader>

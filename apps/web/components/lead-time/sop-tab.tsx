@@ -238,9 +238,6 @@ export function SopTab({ canManage }: Props) {
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        <p className="text-sm text-muted-foreground rounded-md border bg-muted/40 px-3 py-2">
-          {t("helper")}
-        </p>
         <Table>
           <TableHeader>
             <TableRow>

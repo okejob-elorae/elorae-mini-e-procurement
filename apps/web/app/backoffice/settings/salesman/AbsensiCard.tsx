@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { ArrowRight, CalendarCheck, Loader2 } from "lucide-react";
 import { simpanPengaturanAbsensi } from "@/app/actions/settings/salesman-biaya";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -60,7 +60,6 @@ export function AbsensiCard({ bolehUbah, pengaturan }: { bolehUbah: boolean; pen
           <CalendarCheck className="h-5 w-5" />
           {t("judul")}
         </CardTitle>
-        <CardDescription>{t("penjelasan")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="flex items-start justify-between gap-4 rounded-lg border p-4">

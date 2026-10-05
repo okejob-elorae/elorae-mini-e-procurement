@@ -133,12 +133,6 @@ export function TrenPenjualan({ tren, formatIdr }: { tren: TitikTren[]; formatId
       : filter === 'lapangan' || (SALURAN_LAPANGAN as readonly string[]).includes(filter)
         ? 'lapangan'
         : null;
-  const definisi =
-    kelompok === 'marketplace'
-      ? t('trendDefinitionMarketplace')
-      : kelompok === 'lapangan'
-        ? t('trendDefinitionField')
-        : t('trendDefinition');
 
   const pilihRentang = (r: DateRange | undefined) => {
     if (!r?.from || !r?.to) return;
@@ -209,7 +203,6 @@ export function TrenPenjualan({ tren, formatIdr }: { tren: TitikTren[]; formatId
                 ? t('trendFromZero', { days: panjang })
                 : t('trendNoBaseline', { days: panjang })}
           </p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">{definisi}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {/* Lihat terpisah: semua, satu kelompok, atau satu saluran. Saluran di

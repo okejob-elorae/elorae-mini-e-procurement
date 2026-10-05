@@ -4,7 +4,7 @@ import { useState, Fragment } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -345,7 +345,7 @@ export function LaporanPageClient({
 
   return (
     <div className="space-y-6">
-      <PageHeader title={tDashboard('reportsPageTitle')} description={tDashboard('reportsPageDesc')} />
+      <PageHeader title={tDashboard('reportsPageTitle')} />
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList className="flex flex-wrap gap-1">
           <TabsTrigger value="production">{tDashboard('productionTab')}</TabsTrigger>
@@ -362,7 +362,6 @@ export function LaporanPageClient({
                 <PackageX aria-hidden className="h-5 w-5" />
                 {tDashboard('shortageTitle')}
               </CardTitle>
-              <CardDescription>{tDashboard('shortageDesc')}</CardDescription>
             </CardHeader>
             <CardContent>
               {rawMaterialShortage.length === 0 ? (
@@ -463,7 +462,6 @@ export function LaporanPageClient({
                 <Factory aria-hidden className="h-5 w-5" />
                 {tDashboard('woByStatusTitle')}
               </CardTitle>
-              <CardDescription>{tDashboard('woByStatusDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               {/*
@@ -580,7 +578,6 @@ export function LaporanPageClient({
                 <ShoppingCart aria-hidden className="h-5 w-5" />
                 {tDashboard('procurementReport')}
               </CardTitle>
-              <p className="text-sm text-muted-foreground">{tDashboard('procurementDesc')}</p>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-wrap gap-4 items-end">
@@ -728,9 +725,6 @@ export function LaporanPageClient({
                 <Scissors aria-hidden className="h-5 w-5" />
                 {tDashboard('setoranCmtTitle')}
               </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                {tDashboard('setoranCmtDescription')}
-              </p>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-wrap gap-4 items-end">
@@ -831,7 +825,6 @@ export function LaporanPageClient({
                 <Warehouse aria-hidden className="h-5 w-5" />
                 {tDashboard('snapshotTitle')}
               </CardTitle>
-              <p className="text-sm text-muted-foreground">{tDashboard('snapshotDesc')}</p>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex gap-2 items-center">

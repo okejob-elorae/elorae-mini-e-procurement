@@ -10,6 +10,7 @@ import type { RingkasJadwal, StatusJadwal } from "@/lib/salesman/jadwal";
 import { cn } from "@/lib/utils";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 export type DataJadwal = {
   tanggal: string;
   hariIni: string;
@@ -65,8 +66,10 @@ export function JadwalClient({ data }: { data: DataJadwal }) {
       </Button>
 
       <header>
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
-        <p className="text-sm text-muted-foreground">{t("subtitle")}</p>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
+        </div>
       </header>
 
       <div className="flex items-center justify-between gap-2">

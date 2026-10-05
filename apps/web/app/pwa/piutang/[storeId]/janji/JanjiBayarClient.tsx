@@ -25,6 +25,7 @@ import { newLocalId } from "@/lib/pwa/offline/queue";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
 import { TanggalInput } from "@/components/ui/tanggal-input";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 export type FakturJanjiTampil = {
   id: string;
   invoiceNo: string;
@@ -179,13 +180,12 @@ export function JanjiBayarClient({
       </Button>
 
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold leading-tight">{t("title")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold leading-tight">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
+        </div>
         <p className="text-sm text-muted-foreground">{storeName}</p>
       </header>
-
-      <p className="rounded-lg bg-muted/50 px-3 py-2 text-sm leading-relaxed text-muted-foreground">
-        {t("body")}
-      </p>
 
       {faktur.length === 0 ? (
         <section className="beranda-kartu space-y-1">

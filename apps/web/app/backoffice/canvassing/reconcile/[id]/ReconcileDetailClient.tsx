@@ -10,6 +10,7 @@ import { ArrowLeft, BookText, ExternalLink, Printer } from "lucide-react";
 import type { VanReconcileDetail } from "@/lib/canvassing/reconcile-queries";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -145,7 +146,10 @@ export function ReconcileDetailClient({ reconcile }: Props) {
             {t("pageTitle")}
           </Link>
         </Button>
-        <h1 className="text-2xl font-semibold font-mono">{reconcile.docNo}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-semibold font-mono">{reconcile.docNo}</h1>
+          <TombolBantuan judul={reconcile.docNo} />
+        </div>
         <div className="ml-auto flex items-center gap-2 flex-wrap">
           {reconcile.journalId ? (
             <>

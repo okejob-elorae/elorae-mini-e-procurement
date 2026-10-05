@@ -240,20 +240,24 @@ export function RincianReturClient({
 
       <PageHeader
         title={b.nomor}
-        description={[
-          b.storeName,
-          t(`via${b.caraKirim}` as never),
-          b.salesmanName && t('photographedBy', { name: b.salesmanName }),
-        ]
-          .filter(Boolean)
-          .join(' · ')}
         meta={
-          <span className="inline-flex flex-wrap items-center gap-2">
-            <StatusPill tone={NADA_LANGKAH[b.langkah]}>
-              {t(`step${b.langkah.charAt(0).toUpperCase()}${b.langkah.slice(1)}` as never)}
-            </StatusPill>
-            {rincianBarang?.dariSpg && <StatusPill tone="progress">{t("fromSpg" as never)}</StatusPill>}
-          </span>
+          <>
+            <span className="block">
+              {[
+                b.storeName,
+                t(`via${b.caraKirim}` as never),
+                b.salesmanName && t('photographedBy', { name: b.salesmanName }),
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
+            <span className="mt-1 inline-flex flex-wrap items-center gap-2">
+              <StatusPill tone={NADA_LANGKAH[b.langkah]}>
+                {t(`step${b.langkah.charAt(0).toUpperCase()}${b.langkah.slice(1)}` as never)}
+              </StatusPill>
+              {rincianBarang?.dariSpg && <StatusPill tone="progress">{t("fromSpg" as never)}</StatusPill>}
+            </span>
+          </>
         }
         actions={
           <span className="inline-flex flex-wrap gap-2">
@@ -344,7 +348,6 @@ export function RincianReturClient({
               <StatusPill tone="attention">{t('short', { value: rupiah(b.selisih) })}</StatusPill>
             )}
           </CardTitle>
-          <p className="text-sm text-muted-foreground">{t('compareHint')}</p>
         </CardHeader>
         <CardContent className="grid gap-6 lg:grid-cols-2">
           {/* Sisi toko */}
@@ -417,7 +420,6 @@ export function RincianReturClient({
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">{t('perItemTitle')}</CardTitle>
-            <p className="text-sm text-muted-foreground">{t("perVariantHint" as never)}</p>
           </CardHeader>
           <CardContent className="px-0">
             <div className="overflow-x-auto">
@@ -466,7 +468,6 @@ export function RincianReturClient({
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">{t('perItemTitle')}</CardTitle>
-            <p className="text-sm text-muted-foreground">{t('perItemHint')}</p>
           </CardHeader>
           <CardContent className="px-0">
             <div className="overflow-x-auto">

@@ -80,27 +80,27 @@ export function RincianKontrabonClient({
 
       <PageHeader
         title={b.docNo}
-        description={[
-          b.storeName,
-          b.salesmanName,
-          b.receivedBy && t('receivedBy', { name: b.receivedBy }),
-        ]
-          .filter(Boolean)
-          .join(' · ')}
         meta={
-          <span className="inline-flex flex-wrap items-center gap-2">
-            <StatusPill tone={NADA[b.status]}>{td(`status${b.status}`)}</StatusPill>
-            <LencanaAsal dariLapangan={b.dariLapangan} dikonfirmasi={b.dikonfirmasi} />
-            <span className={cn('text-sm', terlambat ? 'text-destructive' : 'text-muted-foreground')}>
-              {t('promisedOn', { date: tanggal(b.promisedDate) })}
-              {b.sisaHari !== null &&
-                ` · ${
-                  terlambat
-                    ? t('lateBy', { days: Math.abs(b.sisaHari) })
-                    : t('dueIn', { days: b.sisaHari })
-                }`}
+          <>
+            <span className="block">
+              {[b.storeName, b.salesmanName, b.receivedBy && t('receivedBy', { name: b.receivedBy })]
+                .filter(Boolean)
+                .join(' · ')}
             </span>
-          </span>
+            <span className="mt-1 inline-flex flex-wrap items-center gap-2">
+              <StatusPill tone={NADA[b.status]}>{td(`status${b.status}`)}</StatusPill>
+              <LencanaAsal dariLapangan={b.dariLapangan} dikonfirmasi={b.dikonfirmasi} />
+              <span className={cn('text-sm', terlambat ? 'text-destructive' : 'text-muted-foreground')}>
+                {t('promisedOn', { date: tanggal(b.promisedDate) })}
+                {b.sisaHari !== null &&
+                  ` · ${
+                    terlambat
+                      ? t('lateBy', { days: Math.abs(b.sisaHari) })
+                      : t('dueIn', { days: b.sisaHari })
+                  }`}
+              </span>
+            </span>
+          </>
         }
         actions={
           b.status === 'BERJALAN' && !b.dikonfirmasi && bolehMengelola ? (
@@ -126,7 +126,6 @@ export function RincianKontrabonClient({
         <Card className="lg:col-span-2">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">{t('invoicesTitle')}</CardTitle>
-            <p className="text-sm text-muted-foreground">{t('invoicesHint')}</p>
           </CardHeader>
           <CardContent className="px-0">
             <Table>

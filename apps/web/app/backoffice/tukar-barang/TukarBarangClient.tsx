@@ -55,7 +55,7 @@ export function TukarBarangClient({
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t("judul")} description={t("deskripsi")} meta={t("ringkasMeta", { n: data.total, menunggu })} />
+      <PageHeader title={t("judul")} meta={t("ringkasMeta", { n: data.total, menunggu })} />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
         <form

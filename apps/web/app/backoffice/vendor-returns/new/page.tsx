@@ -12,9 +12,8 @@ import { Label } from '@/components/ui/label';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
-  CardTitle
+  CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
@@ -39,6 +38,7 @@ import { getWorkOrders } from '@/app/actions/production';
 import { getItems } from '@/app/actions/items';
 import { getGRNs } from '@/app/actions/grn';
 import type { VendorReturnLineInput } from '@/app/actions/vendor-returns';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 
 interface Supplier {
   id: string;
@@ -343,9 +343,9 @@ export default function NewVendorReturnPage() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
-        <div>
+        <div className="flex items-center gap-1">
           <h1 className="text-2xl font-bold">{t('form.newTitle')}</h1>
-          <p className="text-muted-foreground">{t('createReturnSubtitle')}</p>
+          <TombolBantuan judul={t('form.newTitle')} />
         </div>
       </div>
 
@@ -353,7 +353,6 @@ export default function NewVendorReturnPage() {
         <Card>
           <CardHeader>
             <CardTitle>{t('form.cardTitle')}</CardTitle>
-            <CardDescription>{t('form.cardDescription')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

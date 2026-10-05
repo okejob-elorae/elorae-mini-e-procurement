@@ -171,7 +171,6 @@ export function ReturTokoClient({
     <div className="space-y-6">
       <PageHeader
         title={t('pageTitle')}
-        description={t('pageDescription')}
         meta={t('summary', {
           count: ringkasan.perluDikerjakan,
           held: rupiah(ringkasan.nilaiTertahan),
@@ -204,25 +203,6 @@ export function ReturTokoClient({
         }
       />
 
-      {/* Tiga langkah alurnya, supaya orang baru tahu ia sedang di mana. */}
-      <div className="anim-stagger grid gap-3 md:grid-cols-3">
-        {[1, 2, 3].map((n) => (
-          <Card key={n} className="bg-muted/40">
-            <CardContent className="flex gap-3 py-4">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
-                {n}
-              </span>
-              <div className="min-w-0 space-y-1">
-                <p className="text-sm font-semibold">{t(`flow${n}Title` as never)}</p>
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  {t(`flow${n}Body` as never)}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
       <div className="anim-stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {KARTU.map(({ langkah, nada }) => (
           <Card key={langkah}>
@@ -231,7 +211,6 @@ export function ReturTokoClient({
               <p className={cn('text-2xl font-semibold tabular-nums', nada)}>
                 {ringkasan.perLangkah[langkah]}
               </p>
-              <p className="text-xs text-muted-foreground">{t(`effect${langkah.charAt(0).toUpperCase()}${langkah.slice(1)}` as never)}</p>
             </CardContent>
           </Card>
         ))}

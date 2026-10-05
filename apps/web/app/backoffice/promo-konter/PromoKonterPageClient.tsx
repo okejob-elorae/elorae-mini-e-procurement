@@ -69,7 +69,6 @@ export function PromoKonterPageClient({
     <div className="space-y-6">
       <PageHeader
         title={t("judul")}
-        description={t("deskripsi")}
         meta={!bolehUbah ? <span className="text-amber-700 dark:text-amber-400">{t("hanyaLihat")}</span> : undefined}
         actions={
           bolehUbah ? (

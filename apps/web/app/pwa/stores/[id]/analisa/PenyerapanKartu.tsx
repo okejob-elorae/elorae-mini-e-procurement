@@ -37,7 +37,6 @@ export function PenyerapanKartu({ data, periode }: { data: HasilPenyerapan; peri
   const [semua, setSemua] = useState(false);
   const r = data.ringkas;
   const tampil = semua ? data.artikel : data.artikel.slice(0, AWAL_TAMPIL);
-  const adaPerkiraan = data.artikel.some((a) => a.perkiraan);
 
   return (
     <section className="beranda-kartu space-y-3" aria-labelledby="serap-judul">
@@ -110,9 +109,6 @@ export function PenyerapanKartu({ data, periode }: { data: HasilPenyerapan; peri
           {data.jumlahArtikel > data.artikel.length ? (
             <p className="text-xs text-muted-foreground">{t("terpotong", { n: data.jumlahArtikel - data.artikel.length })}</p>
           ) : null}
-
-          <p className="text-xs text-muted-foreground">{t("penjelasan")}</p>
-          {adaPerkiraan ? <p className="text-xs text-muted-foreground">{t("catatanPerkiraan")}</p> : null}
         </>
       )}
     </section>
@@ -186,7 +182,7 @@ function Angka3({ x, angka, adaLaku }: { x: AngkaSerap; angka: Intl.NumberFormat
   const kira = x.perkiraan ? "≈" : "";
   return (
     <>
-      <p className="text-xs tabular-nums text-muted-foreground">
+      <p className="text-xs tabular-nums text-muted-foreground" title={x.perkiraan ? t("catatanPerkiraan") : undefined}>
         {t("barisAngka", {
           masuk: angka.format(x.masuk),
           laku: adaLaku ? `${kira}${angka.format(x.laku)}` : "—",

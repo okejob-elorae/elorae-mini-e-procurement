@@ -164,16 +164,18 @@ export function RincianSiklusClient({
 
       <PageHeader
         title={b.noKonsi}
-        description={`${b.storeName} · ${b.periode}`}
         meta={
-          <span className="inline-flex flex-wrap items-center gap-2">
-            <StatusPill tone={NADA_TAHAP[b.tahap]}>{td(`stage_${b.tahap}`)}</StatusPill>
-            {b.giliran !== 'tidak_ada' && (
-              <span className="text-sm text-muted-foreground">
-                {t('turnOf', { who: td(`who_${b.giliran}`) })}
-              </span>
-            )}
-          </span>
+          <>
+            <span className="block">{`${b.storeName} · ${b.periode}`}</span>
+            <span className="mt-1 inline-flex flex-wrap items-center gap-2">
+              <StatusPill tone={NADA_TAHAP[b.tahap]}>{td(`stage_${b.tahap}`)}</StatusPill>
+              {b.giliran !== 'tidak_ada' && (
+                <span className="text-sm text-muted-foreground">
+                  {t('turnOf', { who: td(`who_${b.giliran}`) })}
+                </span>
+              )}
+            </span>
+          </>
         }
         actions={
           <span className="inline-flex flex-wrap gap-2">
@@ -210,7 +212,6 @@ export function RincianSiklusClient({
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">{t('threeNumbers')}</CardTitle>
-          <p className="text-sm text-muted-foreground">{t('threeNumbersHint')}</p>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-3">
           <Nomor label={t('numKonsi')} nilai={b.noKonsi} milik={t('ownerUs')} />
@@ -252,7 +253,6 @@ export function RincianSiklusClient({
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">{t('compareTitle')}</CardTitle>
-          <p className="text-sm text-muted-foreground">{t('compareHint')}</p>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-2">
@@ -450,7 +450,6 @@ export function RincianSiklusClient({
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">{t('stockTitle')}</CardTitle>
-          <p className="text-sm text-muted-foreground">{t('stockHint')}</p>
         </CardHeader>
         <CardContent className={data.titipan.length === 0 ? undefined : 'px-0'}>
           {data.titipan.length === 0 ? (

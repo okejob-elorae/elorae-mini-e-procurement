@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ItemForm } from '@/components/forms/ItemForm';
+import { PageHeader } from '@/components/ui/page-header';
 import { createItem, saveConsumptionRules } from '@/app/actions/items';
 import type { ItemFormData } from '@/lib/items/mutations';
 import { toast } from 'sonner';
@@ -40,10 +41,7 @@ export function NewItemPageClient() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{tItems('newPage.title')}</h1>
-        <p className="text-muted-foreground">{tItems('newPage.description')}</p>
-      </div>
+      <PageHeader title={tItems('newPage.title')} />
       <ItemForm onSubmit={handleSubmit} isLoading={isLoading} />
     </div>
   );

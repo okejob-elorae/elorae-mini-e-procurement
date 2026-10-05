@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Loader2, PackageCheck } from "lucide-react";
 import { simpanMinimumPesanan } from "@/app/actions/settings/salesman-minimum";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { bacaAturanMinimum, MIN_PESANAN_BAWAAN, MIN_PESANAN_MAKS } from "@/lib/field-sales/minimum-pesanan";
@@ -71,7 +71,6 @@ export function MinimumPesananCard({
           <PackageCheck className="h-5 w-5" aria-hidden />
           {t("judul")}
         </CardTitle>
-        <CardDescription>{t("penjelasan")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="grid gap-4 sm:grid-cols-2">

@@ -22,6 +22,7 @@ import { tentukanWarnaTema, type WarnaEfektif } from "@/lib/theme/warna-efektif"
 import { cn } from "@/lib/utils";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 /**
  * Tampilan di aplikasi HP: warna dan mode terang/gelap milik orang ini.
  *
@@ -112,7 +113,10 @@ export function TampilanClient() {
   return (
     <div className="space-y-5 p-4 pb-10">
       <TautanKembali cadangan="/pwa" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground" />
-      <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
+      <div className="flex items-center gap-1">
+        <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
+        <TombolBantuanHp judul={t("title")} />
+      </div>
 
       {/* Warna yang sedang dipakai, dan dari mana asalnya. */}
       <Card className="py-0">

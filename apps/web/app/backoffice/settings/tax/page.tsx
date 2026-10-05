@@ -10,13 +10,13 @@ import { Input } from '@/components/ui/input';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 
 export default function TaxSettingsPage() {
   const t = useTranslations('tax');
@@ -67,15 +67,14 @@ export default function TaxSettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="flex items-center gap-1">
         <h1 className="text-2xl font-bold tracking-tight">{t('pageTitle')}</h1>
-        <p className="text-muted-foreground">{t('pageDescription')}</p>
+        <TombolBantuan judul={t('pageTitle')} />
       </div>
 
       <Card className="max-w-md">
         <CardHeader>
           <CardTitle>{t('cardTitle')}</CardTitle>
-          <CardDescription>{t('cardDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">

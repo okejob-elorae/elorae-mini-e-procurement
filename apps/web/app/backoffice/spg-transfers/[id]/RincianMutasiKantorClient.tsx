@@ -76,7 +76,7 @@ export function RincianMutasiKantorClient({
 
       <PageHeader
         title={r.docNo}
-        description={t("kantor.rincianDeskripsi", { asal: r.asal.name, tujuan: r.tujuan.name })}
+        meta={t("kantor.rincianDeskripsi", { asal: r.asal.name, tujuan: r.tujuan.name })}
         actions={
           <>
             <TombolSuratJalanKantor id={r.id} status={r.status} />

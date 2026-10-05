@@ -21,11 +21,13 @@ import {
   Truck,
   Undo2,
   BarChart3,
+  BookOpen,
   Inbox,
   Lightbulb,
 } from "lucide-react";
 import { hitungBelumTerkirim } from "@/lib/pwa/offline/hitung";
 import { TombolKeluar } from "../TombolKeluar";
+import { TombolBantuanHp } from "../TombolBantuanHp";
 import { KisiMenuLainnya } from "../KisiMenuLainnya";
 
 /**
@@ -80,6 +82,7 @@ const GRUP = [
     baris: [
       { href: "/pwa/orders/pending", ikon: CloudUpload, kunci: "unsynced" },
       { href: "/pwa/tampilan", ikon: Palette, kunci: "appearance" },
+      { href: "/pwa/bantuan", ikon: BookOpen, kunci: "bantuan" },
     ],
   },
 ] as const;
@@ -95,7 +98,10 @@ export function LainnyaClient({ nama, onLogout }: { nama: string; onLogout: () =
   return (
     <div className="space-y-4 p-4">
       <header>
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
+        </div>
         <p className="text-sm text-muted-foreground">{t("signedInAs", { name: nama })}</p>
       </header>
 

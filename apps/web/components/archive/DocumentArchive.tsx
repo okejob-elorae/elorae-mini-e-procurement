@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { FolderGlyph } from './FolderGlyph';
 import { useTranslations } from 'next-intl';
-import { Info, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -36,7 +36,10 @@ export type DocumentArchiveProps = {
   groupTitle: string;
   searchPlaceholder: string;
   emptyLabel: string;
-  /** Explains what the red dot means and links to where that work is done. */
+  /**
+   * Tautan ke tempat pekerjaan yang menggantung dikerjakan. Arti titik
+   * merahnya ada di Bantuan, bukan di layar.
+   */
   hint?: React.ReactNode;
 };
 
@@ -123,14 +126,7 @@ export function DocumentArchive({
         </CardContent>
       </Card>
 
-      {hint ? (
-        <Card className="border-primary/25 bg-primary/[0.04]">
-          <CardContent className="flex gap-2.5 py-4 text-sm text-muted-foreground">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
-            <p className="leading-relaxed">{hint}</p>
-          </CardContent>
-        </Card>
-      ) : null}
+      {hint ? <div className="text-sm">{hint}</div> : null}
     </div>
   );
 }

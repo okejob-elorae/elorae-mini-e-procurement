@@ -44,7 +44,7 @@ export function BarangDicariClient({
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t("pageTitle")} description={t("pageDescription")} />
+      <PageHeader title={t("pageTitle")} />
 
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-sm text-muted-foreground">{t("periodLabel")}</span>
@@ -69,7 +69,6 @@ export function BarangDicariClient({
             <TrendingUp className="h-5 w-5" />
             {t("summaryTitle")}
           </CardTitle>
-          <p className="text-sm text-muted-foreground">{t("summaryHint")}</p>
         </CardHeader>
         <CardContent>
           {ringkas.length === 0 ? (

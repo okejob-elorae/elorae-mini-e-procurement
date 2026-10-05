@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { ArrowDown, ArrowLeft, ArrowUp, Info, Loader2, Plus, Save, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Loader2, Plus, Save, Trash2 } from "lucide-react";
 import { simpanTemplateChecklistAction } from "@/app/actions/checklist-toko";
 import {
   BATAS_CHECKLIST,
@@ -152,16 +152,8 @@ export function TemplateEditor({
 
       <PageHeader
         title={awal ? awal.nama : salinBawaan ? t("judulSalin") : t("judulBaru")}
-        description={t("editorDeskripsi")}
         meta={awal ? t("dipakai", { n: awal.jumlahHasil }) : undefined}
       />
-
-      {awal && awal.jumlahHasil > 0 ? (
-        <p className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
-          <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-          {t("catatanUbah")}
-        </p>
-      ) : null}
 
       <Card>
         <CardHeader>

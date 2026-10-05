@@ -34,6 +34,7 @@ import { denganBatasWaktu, tanpaSinyal } from "@/lib/pwa/offline/batas-waktu";
 import { antreOpname } from "@/lib/pwa/offline/luring-antrean";
 import { ikatanKunjungan, kunjunganLokalSah } from "@/lib/pwa/offline/luring-kunjungan";
 import { useKunjunganLokal } from "@/lib/pwa/offline/luring-kunjungan-hook";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 /** Kelompok barang yang dirender di hasil pencarian — katalog bisa ribuan varian. */
 const BATAS_HASIL = 20;
@@ -385,7 +386,10 @@ export function OpnameClient({
         <TautanKembali cadangan="/pwa/spg/stok" />
       </Button>
       <header>
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
+        </div>
         <p className="truncate text-sm text-muted-foreground">{namaToko}</p>
       </header>
 
@@ -440,12 +444,6 @@ export function OpnameClient({
               </div>
             </section>
           ) : null}
-
-          <section className="beranda-kartu space-y-1 text-sm">
-            <p>{t("intro.partial")}</p>
-            <p className="text-muted-foreground">{opnamePertama ? t("intro.first") : t("intro.adjust")}</p>
-            <p className="text-xs text-muted-foreground">{t("draft.autosave")}</p>
-          </section>
 
           <section className="space-y-2" aria-labelledby="judul-tambah">
             <h2 id="judul-tambah" className="beranda-judul px-1">

@@ -47,6 +47,7 @@ import type { TokoRute } from "@/lib/salesman/rute-queries";
 import { TambahTokoSheet } from "./TambahTokoSheet";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 type Izin = "prompt" | "granted" | "denied" | "unknown";
 
 /**
@@ -324,8 +325,10 @@ export function RuteClient({
       </Button>
 
       <header>
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
-        <p className="text-sm text-muted-foreground">{t("subtitle")}</p>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
+        </div>
       </header>
 
       {toko.length === 0 ? (
@@ -552,7 +555,6 @@ export function RuteClient({
                 <section className="beranda-kartu beranda-kartu-daftar">
                   <div className="px-4 pt-3">
                     <h2 className="beranda-judul">{t("noLocationTitle", { count: hasil.tanpaKoordinat.length })}</h2>
-                    <p className="mt-1 text-xs text-muted-foreground">{t("noLocationNote")}</p>
                   </div>
                   <ul className="mt-2 divide-y border-t">
                     {hasil.tanpaKoordinat.map((x) => (
@@ -617,8 +619,6 @@ export function RuteClient({
               </ul>
             </section>
           ) : null}
-
-          <p className="text-center text-[11px] text-muted-foreground">{t("savedNote")}</p>
         </>
       )}
 

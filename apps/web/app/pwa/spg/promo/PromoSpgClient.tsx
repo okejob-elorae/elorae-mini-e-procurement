@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type { PromoHp } from "@/lib/spg/promo-konter-kantor-queries";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 /** Nama barang yang tampil sebelum "Lihat semua". */
 const NAMA_TAMPIL = 6;
@@ -28,11 +29,12 @@ export function PromoSpgClient({ namaToko, promos }: { namaToko: string; promos:
       </Button>
 
       <header className="min-w-0">
-        <h1 className="text-2xl font-bold">{t("judul")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("judul")}</h1>
+          <TombolBantuanHp judul={t("judul")} />
+        </div>
         <p className="truncate text-sm text-muted-foreground">{namaToko}</p>
       </header>
-
-      <p className="text-sm text-muted-foreground">{t("pengantar")}</p>
 
       <section className="space-y-2" aria-labelledby="promo-berlaku">
         <h2 id="promo-berlaku" className="text-base font-semibold">

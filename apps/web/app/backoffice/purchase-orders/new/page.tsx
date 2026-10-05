@@ -125,7 +125,7 @@ export default function NewPOPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={tPO('newPageTitle')} description={tPO('newPageDescription')} />
+      <PageHeader title={tPO('newPageTitle')} />
 
       <POForm
         suppliers={suppliers}

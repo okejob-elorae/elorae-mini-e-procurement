@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/table";
 import { formatDisplayDate } from "@/lib/date-only";
 import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 
 type Props = {
   accountId: string;
@@ -68,10 +69,13 @@ export function AccountLedgerClient({ accountId, ledger, filters }: Props) {
           </Link>
         </Button>
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold">
-            <span className="font-mono mr-2">{ledger.accountCode}</span>
-            {ledger.accountName}
-          </h1>
+          <div className="flex items-center gap-1">
+            <h1 className="text-xl font-semibold">
+              <span className="font-mono mr-2">{ledger.accountCode}</span>
+              {ledger.accountName}
+            </h1>
+            <TombolBantuan judul={ledger.accountName} />
+          </div>
           <p className="text-sm text-muted-foreground">{tCoa(`type.${ledger.type}` as never)}</p>
         </div>
       </div>

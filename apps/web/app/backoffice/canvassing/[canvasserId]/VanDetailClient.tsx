@@ -16,6 +16,7 @@ import { buildVanLoadPrintHtml } from "@/lib/print/van-load-html";
 import { hasPermission } from "@/lib/rbac";
 import { formatDisplayDateTime } from "@/lib/date-only";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   Card,
   CardContent,
@@ -144,10 +145,7 @@ export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, i
         </Button>
       </div>
 
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{canvasserName}</h1>
-        <p className="text-muted-foreground">{t("detailSubtitle")}</p>
-      </div>
+      <PageHeader title={canvasserName} />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-6 min-w-0">

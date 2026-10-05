@@ -119,7 +119,6 @@ export function KonsinyasiClient({
     <div className="space-y-6">
       <PageHeader
         title={t('pageTitle')}
-        description={t('pageDescription')}
         meta={t('summary', { count: baris.length, late: terlambat })}
         actions={
           bolehMengelola ? (

@@ -4,10 +4,10 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Loader2, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
@@ -58,20 +58,15 @@ export default function RejectedGoodsPage() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
-        <div>
+        <div className="flex items-center gap-1">
           <h1 className="text-2xl font-bold tracking-tight">{t('title')}</h1>
-          <p className="text-muted-foreground">
-            {t('subtitle')}
-          </p>
+          <TombolBantuan judul={t('title')} />
         </div>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>{t('cardTitle')}</CardTitle>
-          <CardDescription>
-            {t('cardDescription')}
-          </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           {isLoading ? (

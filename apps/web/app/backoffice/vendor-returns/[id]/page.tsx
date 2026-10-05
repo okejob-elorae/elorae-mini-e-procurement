@@ -12,9 +12,8 @@ import { Label } from '@/components/ui/label';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
-  CardTitle
+  CardTitle,
 } from '@/components/ui/card';
 import {
   Table,
@@ -41,6 +40,7 @@ import {
 } from '@/app/actions/vendor-returns';
 import { logPrint } from '@/app/actions/audit';
 import { buildVendorReturnPrintHtml } from '@/lib/print/vendor-return-html';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 
 export default function VendorReturnDetailPage() {
   const params = useParams();
@@ -270,7 +270,10 @@ export default function VendorReturnDetailPage() {
               </Button>
             </Link>
             <div>
-              <h1 className="text-2xl font-bold">{ret.docNumber}</h1>
+              <div className="flex items-center gap-1">
+                <h1 className="text-2xl font-bold">{ret.docNumber}</h1>
+                <TombolBantuan judul={ret.docNumber} />
+              </div>
               <p className="text-muted-foreground">
                 {vendor?.name ?? vendor?.code ?? ret.vendorId}
               </p>
@@ -353,7 +356,6 @@ export default function VendorReturnDetailPage() {
           <Card>
             <CardHeader>
               <CardTitle>{t('summaryTitle')}</CardTitle>
-              <CardDescription>{t('totalValueAndWO')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
               <div>
@@ -417,7 +419,6 @@ export default function VendorReturnDetailPage() {
           <Card>
             <CardHeader>
               <CardTitle>{t('linesTitle')}</CardTitle>
-              <CardDescription>{t('itemsReturned')}</CardDescription>
             </CardHeader>
             <CardContent>
               <Table>

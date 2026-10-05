@@ -47,6 +47,7 @@ import { StoreChangeReviewCard } from "./StoreChangeReviewCard";
 import { StokTokoCard, type GerakanStokTampil } from "./StokTokoCard";
 import { TautanPortalCard } from "./TautanPortalCard";
 import { CatatanTokoCard } from "./CatatanTokoCard";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import type { CatatanTampil } from "@/lib/stores/catatan-queries";
 import type { BarisStok } from "@/lib/spg/queries";
 import { formatRupiah } from "@/lib/format/rupiah";
@@ -253,7 +254,10 @@ export function StoreDetailView({ store, canEdit, catatan, visits, orders, sentI
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div className="flex-1 min-w-0 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight">{store.name}</h1>
+            <div className="flex items-center gap-1">
+              <h1 className="text-2xl font-bold tracking-tight">{store.name}</h1>
+              <TombolBantuan judul={store.name} />
+            </div>
             <Badge variant={store.isActive ? "default" : "outline"}>
               {store.isActive ? tTable("active") : tBadge("inactive")}
             </Badge>
@@ -571,9 +575,6 @@ export function StoreDetailView({ store, canEdit, catatan, visits, orders, sentI
                   </TableBody>
                 </Table>
               </div>
-              {adaDetailHasil && visits.some((v) => (v.hasil?.tanda.length ?? 0) > 0) && (
-                <p className="text-xs text-muted-foreground">{tDetail("tandaCatatan")}</p>
-              )}
             </div>
           )}
         </CardContent>

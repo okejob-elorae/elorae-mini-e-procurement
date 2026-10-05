@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { KeteranganKirim } from "../../KeteranganKirim";
 import { toast } from "sonner";
-import { Lightbulb, Loader2, Minus, Package, Plus, Search, SearchX, X } from "lucide-react";
+import { Loader2, Minus, Package, Plus, Search, SearchX, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,7 @@ import { dinamis } from "@/lib/i18n/dinamis";
 import { newLocalId } from "@/lib/pwa/id-lokal";
 import { cocokkanKode, kunciBaris } from "@/lib/spg/stok";
 import type { SpgCatalogRow } from "@/lib/spg/sale-queries";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 export type CatatanDicari = {
   id: string;
@@ -212,19 +213,11 @@ export function CatatDicariClient({ katalog, terakhir }: { katalog: SpgCatalogRo
         <TautanKembali cadangan="/pwa/spg/sale" />
       </Button>
       <header>
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
-        <p className="text-sm text-muted-foreground">{t("subtitle")}</p>
-      </header>
-
-      <section className="beranda-kartu flex items-start gap-3">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground">
-          <Lightbulb className="h-4 w-4" aria-hidden />
-        </span>
-        <div className="min-w-0 space-y-1">
-          <h2 className="font-semibold leading-tight">{t("whyTitle")}</h2>
-          <p className="text-sm text-muted-foreground">{t("whyBody")}</p>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
         </div>
-      </section>
+      </header>
 
       <section className="beranda-kartu space-y-4">
         <h2 className="beranda-judul">{t("formTitle")}</h2>

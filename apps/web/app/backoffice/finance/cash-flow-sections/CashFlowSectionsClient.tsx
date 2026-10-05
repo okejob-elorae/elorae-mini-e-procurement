@@ -28,6 +28,7 @@ import {
 import { CASH_FLOW_SECTIONS, type CashFlowSection } from "@/lib/finance/reports/cash-flow-classify";
 import type { AccountSectionRow } from "@/lib/finance/reports/cash-flow-queries";
 import type { AccountType } from "@/lib/constants/enums";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 
 type Props = {
   rows: AccountSectionRow[];
@@ -115,9 +116,9 @@ export function CashFlowSectionsClient({ rows, canManage }: Props) {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
+        <div className="flex items-center gap-1">
           <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
-          <p className="text-muted-foreground">{t("subtitle")}</p>
+          <TombolBantuan judul={t("title")} />
         </div>
       </div>
 

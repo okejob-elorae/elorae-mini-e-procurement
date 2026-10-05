@@ -201,7 +201,6 @@ export default function SupplierTypesPage() {
     <div className="space-y-6">
       <PageHeader
         title={tSupplierTypes('pageTitle')}
-        description={tSupplierTypes('pageDescription')}
         actions={
           <Button onClick={openCreate}>
             <Plus className="mr-2 h-4 w-4" />

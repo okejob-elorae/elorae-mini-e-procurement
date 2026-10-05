@@ -13,6 +13,7 @@ import type { PesananSaya as DataPesanan, TokoTagih } from "@/lib/salesman/queri
 import { hitungTugasRencana, type TokoMenurun } from "@/lib/salesman/toko-menurun";
 import { susunRencanaPerKelas } from "@/lib/stores/kelas-toko";
 import { TombolKabar } from "@/app/pwa/kabar/TombolKabar";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 import { KartuInsentifBeranda, type DataInsentifBeranda } from "@/app/pwa/insentif/KartuInsentifBeranda";
 import { KartuBulanIni } from "./beranda/KartuBulanIni";
 import { PerluDitagih } from "./beranda/PerluDitagih";
@@ -81,6 +82,7 @@ export function HomeShell({ userName, dimuatPada, activeVisit, data }: Props) {
   const t = useTranslations("pwa.nearest");
   const tBeranda = useTranslations("pwa.beranda");
   const tAuth = useTranslations("auth");
+  const tMenu = useTranslations("pwaMenu");
   const tKunjungan = useTranslations("pwa.kunjunganBerjalan");
   const locale = useLocale();
   const [perm, setPerm] = useState<PermState>("unknown");
@@ -196,9 +198,10 @@ export function HomeShell({ userName, dimuatPada, activeVisit, data }: Props) {
           </h1>
           <p className="text-sm text-muted-foreground">{tanggal}</p>
         </div>
-        {/* Hanya lonceng. Tema dan Keluar ada di Lainnya: keduanya jarang dipakai,
+        {/* Hanya ⓘ dan lonceng. Tema dan Keluar ada di Lainnya: keduanya jarang dipakai,
             dan tombol keluar di sebelah lonceng mudah tersentuh tanpa sengaja. */}
         <div className="-mr-2 flex shrink-0 items-center">
+          <TombolBantuanHp judul={tMenu("beranda")} />
           <TombolKabar />
         </div>
       </header>

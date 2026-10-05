@@ -111,7 +111,7 @@ export function TugasBaruClient({
         </Link>
       </Button>
 
-      <PageHeader title={t("newTitle")} description={t("newBody")} />
+      <PageHeader title={t("newTitle")} />
 
       <Card>
         <CardHeader className="pb-3">
@@ -150,7 +150,6 @@ export function TugasBaruClient({
                 </Button>
               )}
             </CardTitle>
-            <p className="text-sm text-muted-foreground">{t("sectionInvoicesHint")}</p>
           </CardHeader>
           <CardContent className="space-y-2">
             {faktur.length === 0 ? (

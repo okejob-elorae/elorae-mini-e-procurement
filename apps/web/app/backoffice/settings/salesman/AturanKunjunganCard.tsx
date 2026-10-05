@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { ClipboardCheck } from "lucide-react";
 import { simpanAturanHasilKunjungan } from "@/app/actions/settings/salesman-kunjungan";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import type { AturanHasilKunjungan } from "@/lib/salesman/aturan-kunjungan";
@@ -48,7 +48,6 @@ export function AturanKunjunganCard({ bolehUbah, aturan }: { bolehUbah: boolean;
           <ClipboardCheck className="h-5 w-5" />
           {t("judul")}
         </CardTitle>
-        <CardDescription>{t("penjelasan")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
@@ -81,7 +80,6 @@ export function AturanKunjunganCard({ bolehUbah, aturan }: { bolehUbah: boolean;
           />
         </div>
 
-        <p className="text-sm text-muted-foreground">{t("spgCatatan")}</p>
       </CardContent>
     </Card>
   );

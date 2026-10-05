@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Clock, Loader2, Plus, Trash2 } from "lucide-react";
 import { simpanAturanShiftAction } from "@/app/actions/settings/spg-shift";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { JamInput } from "@/components/ui/tanggal-input";
@@ -59,7 +59,6 @@ export function ShiftCard({ bolehUbah, nilai }: { bolehUbah: boolean; nilai: Atu
           <Clock className="h-5 w-5" aria-hidden />
           {t("judul")}
         </CardTitle>
-        <CardDescription>{t("penjelasan")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-3">

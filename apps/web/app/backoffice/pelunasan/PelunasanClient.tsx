@@ -106,7 +106,6 @@ export function PelunasanClient({
     <div className="space-y-6">
       <PageHeader
         title={t('pageTitle')}
-        description={t('pageDescription')}
         meta={t('summary', { count: baris.length, pending: menunggu })}
         actions={
           <span className="inline-flex flex-wrap gap-2">

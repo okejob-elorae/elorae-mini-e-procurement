@@ -43,6 +43,7 @@ import { AmbilFotoKunjungan, FotoKecil } from "./AmbilFotoKunjungan";
 import { kirimTandaFotoPanduan, tambahTandaFotoPanduan, tandaUntukKunjungan } from "./tanda-foto-panduan";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 type HasilOk = Extract<HasilSimpanChecklist, { ok: true }>;
 
 /*
@@ -260,7 +261,10 @@ export function ChecklistClient({
       </Button>
 
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold">{t("judul")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("judul")}</h1>
+          <TombolBantuanHp judul={t("judul")} />
+        </div>
         <p className="text-sm text-muted-foreground">{toko.nama}</p>
       </header>
 

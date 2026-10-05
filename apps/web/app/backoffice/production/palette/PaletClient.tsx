@@ -14,7 +14,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Copy, Palette, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -445,7 +445,6 @@ export function PaletClient({
     <div className="space-y-6">
       <PageHeader
         title={t('title')}
-        description={t('description')}
         meta={t('meta', { count: daftar.length })}
         actions={
           <>
@@ -657,7 +656,6 @@ export function PaletClient({
         <Card className="self-start">
           <CardHeader>
             <CardTitle>{berkain ? t('inksTitle') : t('swatchesTitle')}</CardTitle>
-            <CardDescription>{berkain ? t('inksHint') : t('swatchesHint')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <DeretWarna
@@ -742,7 +740,6 @@ export function PaletClient({
       {palet.kain && (
         <KartuKeterbacaanPantone
           kainHex={palet.kain}
-          namaKain={namaKain}
           katalogC={katalogC()}
           hexTinta={hex}
           onPakai={pakaiDariBuku}
@@ -765,7 +762,6 @@ export function PaletClient({
       <Card>
         <CardHeader>
           <CardTitle>{berkain ? t('contrastTitleFabric') : t('contrastTitle')}</CardTitle>
-          <CardDescription>{berkain ? t('contrastDescriptionFabric', { fabric: namaKain }) : t('contrastDescription')}</CardDescription>
         </CardHeader>
         <CardContent>
           <KisiKontras warna={hex} kain={palet.kain} labelWarna={labelWarna} />

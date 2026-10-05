@@ -6,6 +6,7 @@ import { ChevronRight, Megaphone, Pin } from "lucide-react";
 import type { BarisPengumumanHp } from "@/lib/pengumuman/queries";
 import { cn } from "@/lib/utils";
 import { LencanaKonfirmasi } from "./LencanaKonfirmasi";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 export function DaftarPengumumanClient({ baris }: { baris: BarisPengumumanHp[] }) {
   const t = useTranslations("pwa.pengumuman");
@@ -14,8 +15,10 @@ export function DaftarPengumumanClient({ baris }: { baris: BarisPengumumanHp[] }
   return (
     <div className="space-y-4 p-4">
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold">{t("judul")}</h1>
-        <p className="text-sm text-muted-foreground">{t("subjudul")}</p>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("judul")}</h1>
+          <TombolBantuanHp judul={t("judul")} />
+        </div>
       </header>
 
       {baris.length === 0 ? (

@@ -8,7 +8,8 @@ import { toast } from "sonner";
 import { Archive, ArchiveRestore, ArrowLeft, CheckCheck, Megaphone, Pencil, Pin, Trash2, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -82,7 +83,10 @@ export function RincianPengumumanClient({ rincian: r, canManage }: { rincian: Ri
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-2">
-          <h1 className="break-words text-2xl font-bold tracking-tight">{r.title}</h1>
+          <div className="flex items-start gap-1">
+            <h1 className="min-w-0 break-words text-2xl font-bold tracking-tight">{r.title}</h1>
+            <TombolBantuan judul={r.title} />
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <LencanaKeadaan keadaan={r.keadaan} />
             <LencanaAudiens audience={r.audience} />
@@ -167,7 +171,6 @@ export function RincianPengumumanClient({ rincian: r, canManage }: { rincian: Ri
             <Users className="h-5 w-5" aria-hidden />
             {t("laporan.judul")}
           </CardTitle>
-          <CardDescription>{t("laporan.hint")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

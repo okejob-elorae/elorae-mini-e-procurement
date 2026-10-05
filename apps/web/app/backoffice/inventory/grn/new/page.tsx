@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { GRNForm } from '@/components/grn/GRNForm';
 import { Button } from '@/components/ui/button';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 import { ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { offlineDB } from '@/lib/offline/db';
@@ -68,11 +69,9 @@ export default function NewGRNPage() {
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
-        <div>
+        <div className="flex items-center gap-1">
           <h1 className="text-2xl font-bold tracking-tight">{t('pageTitle')}</h1>
-          <p className="text-muted-foreground">
-            {t('pageSubtitle')}
-          </p>
+          <TombolBantuan judul={t('pageTitle')} />
         </div>
       </div>
 

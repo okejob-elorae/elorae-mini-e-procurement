@@ -14,7 +14,6 @@ import { Input } from '@/components/ui/input';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
@@ -36,6 +35,7 @@ import {
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { DocType } from '@/lib/constants/enums';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 
 const DOC_TYPES: DocType[] = ['PO', 'GRN', 'WO', 'ADJ', 'RET', 'ISSUE', 'RECEIPT', 'OPN'];
 
@@ -133,15 +133,14 @@ export default function DocumentNumbersSettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="flex items-center gap-1">
         <h1 className="text-2xl font-bold tracking-tight">{t('pageTitle')}</h1>
-        <p className="text-muted-foreground">{t('pageDescription')}</p>
+        <TombolBantuan judul={t('pageTitle')} />
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>{t('configTitle')}</CardTitle>
-          <CardDescription>{t('tableDescription')}</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>

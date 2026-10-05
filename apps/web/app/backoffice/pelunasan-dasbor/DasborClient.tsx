@@ -50,7 +50,6 @@ export function DasborClient({ data }: { data: Dasbor }) {
     <div className="space-y-6">
       <PageHeader
         title={t('pageTitle')}
-        description={t('pageDescription')}
         meta={t('summary', { count: data.jumlahPiutang, value: rupiah(data.totalPiutang) })}
       />
 
@@ -97,7 +96,6 @@ export function DasborClient({ data }: { data: Dasbor }) {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">{t('todoTitle')}</CardTitle>
-          <p className="text-sm text-muted-foreground">{t('todoHint')}</p>
         </CardHeader>
         <CardContent className={data.tindakan.length === 0 ? 'p-0' : 'space-y-2'}>
           {data.tindakan.length === 0 ? (

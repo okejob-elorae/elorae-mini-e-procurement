@@ -26,9 +26,11 @@ import {
   CloudOff,
   Footprints,
   Scale,
+  BookOpen,
 } from "lucide-react";
 import { hitungBelumTerkirim } from "@/lib/pwa/offline/hitung";
 import { TombolKeluar } from "../../TombolKeluar";
+import { TombolBantuanHp } from "../../TombolBantuanHp";
 import { KisiMenuLainnya } from "../../KisiMenuLainnya";
 
 /**
@@ -83,6 +85,7 @@ function kelompokLainnya(tokoId: string): { kunci: string; baris: BarisLainnya[]
         { href: "/pwa/spg/gaji", ikon: Wallet, kunci: "pay" },
         { href: "/pwa/beban", ikon: Scale, kunci: "beban" },
         { href: "/pwa/tampilan", ikon: Palette, kunci: "appearance" },
+        { href: "/pwa/bantuan", ikon: BookOpen, kunci: "bantuan" },
       ],
     },
   ];
@@ -111,7 +114,10 @@ export function LainnyaSpgClient({
   return (
     <div className="space-y-4 p-4">
       <header>
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
+        </div>
         <p className="text-sm text-muted-foreground">{t("signedInAs", { name: nama, store: toko })}</p>
       </header>
 

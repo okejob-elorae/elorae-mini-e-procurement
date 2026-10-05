@@ -57,7 +57,6 @@ export function IndenPageClient({
     <div className="space-y-6">
       <PageHeader
         title={t("judul")}
-        description={t("deskripsi")}
         actions={
           canManage ? (
             <Button asChild>

@@ -111,7 +111,6 @@ export function BiayaPerjalananClient({
     <div className="space-y-6">
       <PageHeader
         title={t("judul")}
-        description={t("deskripsi")}
         meta={t("ringkasMeta", { n: data.total.jumlah, nilai: formatIDR(data.total.nilai), menunggu })}
         actions={
           <Button variant="outline" onClick={() => void ekspor()} disabled={mengekspor}>

@@ -62,6 +62,7 @@ import { WOStatus } from '@/lib/constants/enums';
 import { ChainPositionStrip } from '@/components/lead-time/chain-position-strip';
 import type { SnapshotStep } from '@/lib/leadtime/calculations';
 import { PERMISSIONS, hasPermission } from '@/lib/rbac';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 
 
 const statusColors: Record<WOStatus, string> = {
@@ -339,9 +340,12 @@ export default function WorkOrderDetailPage() {
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">
-              {String(wo.docNumber ?? '')}
-            </h1>
+            <div className="flex items-center gap-1">
+              <h1 className="text-2xl font-bold tracking-tight">
+                {String(wo.docNumber ?? '')}
+              </h1>
+              <TombolBantuan judul={String(wo.docNumber ?? '')} />
+            </div>
             <p className="text-muted-foreground">
               {String((wo as any).vendor?.name ?? '')} · {String((wo as any).finishedGood?.nameId ?? '—')}
             </p>
@@ -474,14 +478,6 @@ export default function WorkOrderDetailPage() {
         <Card>
           <CardHeader>
             <CardTitle>{tWO('allocationPerRoll')}</CardTitle>
-            <CardDescription>
-              {tWO('notaKainPerRollDesc')}
-              {rollAllocationStatus != null && (
-                <span className="block mt-1 text-muted-foreground">
-                  {tD('rollStatusHint')}
-                </span>
-              )}
-            </CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
@@ -559,7 +555,6 @@ export default function WorkOrderDetailPage() {
         <Card>
           <CardHeader>
             <CardTitle>{tD('hppTitle')}</CardTitle>
-            <CardDescription>{tD('hppDescription')}</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-2">
@@ -638,9 +633,6 @@ export default function WorkOrderDetailPage() {
           <Card>
             <CardHeader>
               <CardTitle>{tWO('consumptionPlan')}</CardTitle>
-              <CardDescription>
-                {tD('consumptionPlanDesc', { planned: t('cuttingPlanned'), issued: t('issuedToCmt') })}
-              </CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
@@ -807,9 +799,6 @@ export default function WorkOrderDetailPage() {
                 <BarChart3 className="h-5 w-5" />
                 {tWO('reconciliation')}
               </CardTitle>
-              <CardDescription>
-                {tD('reconciliationDesc')}
-              </CardDescription>
             </CardHeader>
             <CardContent>
               <Link href={`/backoffice/work-orders/${id}/reconciliation`}>

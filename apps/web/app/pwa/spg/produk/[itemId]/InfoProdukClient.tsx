@@ -12,6 +12,7 @@ import { formatRupiah } from "@/lib/format/rupiah";
 import { dinamis } from "@/lib/i18n/dinamis";
 import { alamatMintaProduk, alamatTitipProduk, type InfoProduk, type LabelGudang } from "@/lib/spg/produk";
 import { cn } from "@/lib/utils";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 const NADA_GUDANG: Record<LabelGudang, string> = {
   ADA: "border-emerald-600/25 bg-emerald-600/10 text-emerald-700 dark:text-emerald-400",
@@ -46,7 +47,10 @@ export function InfoProdukClient({ info, namaToko, varianAwal }: { info: InfoPro
       <FotoGeser foto={info.foto} terpilih={terpilih} nama={info.nama} />
 
       <header className="min-w-0 space-y-1">
-        <h1 className="text-2xl font-bold leading-tight">{info.nama}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="min-w-0 break-words text-2xl font-bold leading-tight">{info.nama}</h1>
+          <TombolBantuanHp judul={info.nama} />
+        </div>
         <p className="text-sm text-muted-foreground">{[info.sku, info.kategori].filter(Boolean).join(" · ")}</p>
         {!info.aktif ? (
           <Badge variant="outline" className="border-amber-600/40 text-amber-700 dark:text-amber-300">
@@ -164,7 +168,6 @@ export function InfoProdukClient({ info, namaToko, varianAwal }: { info: InfoPro
           <h2 id="produk-stok" className="beranda-judul">
             {t("stockTitle")}
           </h2>
-          {info.bervarian ? <p className="text-xs text-muted-foreground">{t("stockPickHint")}</p> : null}
         </div>
         {!info.bukuDimulai ? <p className="px-1 text-xs text-muted-foreground">{t("bookNotStarted")}</p> : null}
         <ul className="beranda-kartu beranda-kartu-daftar divide-y">

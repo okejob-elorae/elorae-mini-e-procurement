@@ -11,6 +11,7 @@ import { formatPersen, namaBulan } from "@/lib/salesman/komisi";
 import { cn } from "@/lib/utils";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 export type BarisPeringkatJson = {
   peringkat: number;
   posisi: number;
@@ -92,7 +93,10 @@ export function PeringkatClient({ bulan, baris }: { bulan: string; baris: BarisP
       </Button>
 
       <header>
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
+        </div>
         <p className="text-sm text-muted-foreground">{t("subtitle", { month: namaBulan(tBulan, bulan, "panjang") })}</p>
       </header>
 
@@ -130,7 +134,6 @@ export function PeringkatClient({ bulan, baris }: { bulan: string; baris: BarisP
       {tanpaTarget.length > 0 ? (
         <section className="beranda-kartu beranda-kartu-daftar" aria-label={t("noTargetTitle")}>
           <h2 className="beranda-judul px-4 pt-4">{t("noTargetTitle")}</h2>
-          <p className="px-4 text-xs text-muted-foreground">{t("noTargetHint")}</p>
           <ul className="mt-2 divide-y">
             {tanpaTarget.map((b) => (
               <Baris key={b.posisi} b={b} label={label(b)} persen={persen} />

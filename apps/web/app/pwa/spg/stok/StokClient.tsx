@@ -10,6 +10,7 @@ import type { BarisStok } from "@/lib/spg/queries";
 import { hampirHabis } from "@/lib/spg/stok";
 import { cn } from "@/lib/utils";
 import { DaftarPermintaan, type PermintaanTampil } from "./DaftarPermintaan";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 type Saringan = "semua" | "hampir";
 
@@ -56,7 +57,10 @@ export function StokClient({
   return (
     <div className="space-y-4 p-4">
       <header className="min-w-0">
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
+        </div>
         <p className="truncate text-sm text-muted-foreground">{namaToko}</p>
       </header>
 

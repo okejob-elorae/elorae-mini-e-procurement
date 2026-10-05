@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SANDI_MIN } from "@/lib/users/validasi";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 
 type Pengguna = { id: string; nama: string; email: string; roleId: string | null; tokoId: string | null; punyaSandi: boolean };
 type Peran = { id: string; nama: string; sistem: boolean; spg: boolean };
@@ -75,9 +76,9 @@ export function PenggunaClient({
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
+        <div className="flex items-center gap-1">
           <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
-          <p className="text-muted-foreground">{t("subtitle")}</p>
+          <TombolBantuan judul={t("title")} />
         </div>
         <Button onClick={() => buka({ ...KOSONG })}>
           <UserPlus className="h-4 w-4" />

@@ -59,7 +59,6 @@ export function DaftarHilangClient({
     <div className="space-y-6">
       <PageHeader
         title={t("kantor.judul")}
-        description={t("kantor.deskripsi")}
         meta={t("kantor.ringkas", { terbuka: data.perStatus.TERBUKA, ditetapkan: data.perStatus.DITETAPKAN })}
         actions={bolehKelola ? <CatatHilangDialog toko={tokoAktif} /> : null}
       />

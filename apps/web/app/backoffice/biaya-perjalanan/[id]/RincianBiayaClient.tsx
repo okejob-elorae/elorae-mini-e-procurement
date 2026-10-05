@@ -56,7 +56,7 @@ export function RincianBiayaClient({
             {td(`kategori.${r.kategori}`)} · {formatIDR(r.nilai)}
           </span>
         }
-        description={t("rincianDeskripsi", { salesman: r.salesman, tanggal: r.tanggal })}
+        meta={t("rincianDeskripsi", { salesman: r.salesman, tanggal: r.tanggal })}
         actions={
           milikSendiri ? undefined : (
             <TombolKeputusan

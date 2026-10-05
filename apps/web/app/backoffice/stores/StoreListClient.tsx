@@ -30,6 +30,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Pager } from "@/components/Pager";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 
 type Props = {
   stores: StoreListItem[];
@@ -116,9 +117,9 @@ export function StoreListClient({
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
+        <div className="flex items-center gap-1">
           <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
-          <p className="text-muted-foreground">{tList("subtitle")}</p>
+          <TombolBantuan judul={t("title")} />
         </div>
         <div className="flex flex-wrap gap-2">
           {/* Calon toko dari lapangan menunggu di sini; lencananya menghitung yang belum diputuskan. */}

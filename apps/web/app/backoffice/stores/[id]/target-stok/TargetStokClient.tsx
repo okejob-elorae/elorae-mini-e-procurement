@@ -209,8 +209,7 @@ export function TargetStokClient({
 
       <PageHeader
         title={t("title")}
-        description={t("subtitle", { store: `${store.code} — ${store.name}` })}
-        meta={source === "BUKU_TOKO" ? t("sourceBuku") : t("sourceTitipan")}
+        meta={`${store.code} — ${store.name} · ${source === "BUKU_TOKO" ? t("sourceBuku") : t("sourceTitipan")}`}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline">
@@ -223,8 +222,6 @@ export function TargetStokClient({
           </div>
         }
       />
-
-      {store.termsType === "PUTUS" ? <p className="text-sm text-muted-foreground">{t("putusNote")}</p> : null}
 
       <Card>
         <CardHeader>

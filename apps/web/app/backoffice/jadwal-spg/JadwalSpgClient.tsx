@@ -73,7 +73,7 @@ export function JadwalSpgClient(props: PropsJadwalSpg) {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t("judul")} description={t("deskripsi")} />
+      <PageHeader title={t("judul")} />
 
       <div className="flex flex-wrap gap-2" role="tablist" aria-label={t("judul")}>
         <Button

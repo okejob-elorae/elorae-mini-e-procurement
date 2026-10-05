@@ -35,6 +35,7 @@ import { KartuPengumuman } from "./beranda/KartuPengumuman";
 import type { DataKartuPengumuman } from "@/lib/pengumuman/queries";
 import { TombolKeluar } from "./TombolKeluar";
 import { TombolKabar } from "./kabar/TombolKabar";
+import { TombolBantuanHp } from "./TombolBantuanHp";
 
 /**
  * Beranda SPG — satu toko tetap, disusun menurut hari kerjanya:
@@ -112,6 +113,7 @@ export function SpgHomeShell({
 }) {
   const t = useTranslations("pwa.spgBeranda");
   const tTampilan = useTranslations("pwa.tampilan");
+  const tMenu = useTranslations("pwaMenu");
   const { toko, kunjungan } = data;
   // Check-in yang dicatat tanpa sinyal (masih di HP) juga membuka layar jual:
   // nota di kunjungan itu ikut antrean dan terkirim sesudah check-in-nya.
@@ -140,6 +142,7 @@ export function SpgHomeShell({
           <p className="text-sm text-muted-foreground">{data.hariIniLabel}</p>
         </div>
         <div className="-mr-2 flex shrink-0 items-center">
+          <TombolBantuanHp judul={tMenu("beranda")} />
           <TombolKabar />
           <Button asChild variant="ghost" size="icon" aria-label={tTampilan("title")}>
             <Link href="/pwa/tampilan">
@@ -252,7 +255,6 @@ export function SpgHomeShell({
       {!data.stokDilacak ? (
         <section className="beranda-kartu space-y-2">
           <h2 className="beranda-judul">{t("startStockTitle")}</h2>
-          <p className="text-sm text-muted-foreground">{t("startStockBody")}</p>
           <div className="grid grid-cols-2 gap-2">
             <Button asChild variant="outline">
               <Link href="/pwa/spg/terima">{t("startStockReceive")}</Link>

@@ -81,7 +81,6 @@ export function RincianKinerjaSpgClient({ data }: { data: DataKinerjaSpgHarian }
 
       <PageHeader
         title={data.nama}
-        description={t("rincian.deskripsi")}
         meta={data.labelBulan}
         actions={
           <Select value={data.bulan} onValueChange={gantiBulan} disabled={menunggu}>
@@ -234,7 +233,6 @@ function BagianToko({
             </TableBody>
           </Table>
         </div>
-        <p className="text-xs text-muted-foreground">{t("rincian.catatanBintang")}</p>
       </CardContent>
     </Card>
   );

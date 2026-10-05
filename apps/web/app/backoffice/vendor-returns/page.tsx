@@ -179,7 +179,6 @@ export default function VendorReturnsPage() {
       {/* Header */}
       <PageHeader
         title={t('pageTitle')}
-        description={t('pageDescription')}
         actions={
           <Link href="/backoffice/vendor-returns/new">
             <Button>

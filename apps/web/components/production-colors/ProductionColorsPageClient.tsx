@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageHeader } from "@/components/ui/page-header";
 import { ColorsBrowseClient } from "@/components/production-colors/ColorsBrowseClient";
 import { BookBrowseClient } from "@/components/production-colors/BookBrowseClient";
 import { PhotoAnalyzerWorkspace } from "@/components/production-colors/PhotoAnalyzerWorkspace";
@@ -114,10 +115,7 @@ export function ProductionColorsPageClient({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{t(TITLE_KEYS[tab])}</h1>
-        <p className="text-muted-foreground text-sm">{t("subtitle")}</p>
-      </div>
+      <PageHeader title={t(TITLE_KEYS[tab])} />
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="flex h-auto flex-wrap">

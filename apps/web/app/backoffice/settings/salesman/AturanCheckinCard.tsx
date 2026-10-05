@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { ArrowRight, Loader2, MapPinned, ShieldAlert } from "lucide-react";
 import { simpanAturanCheckin } from "@/app/actions/settings/salesman-kunjungan";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -78,7 +78,6 @@ export function AturanCheckinCard({
           <MapPinned className="h-5 w-5" />
           {t("judul")}
         </CardTitle>
-        <CardDescription>{t("penjelasan")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="space-y-2">

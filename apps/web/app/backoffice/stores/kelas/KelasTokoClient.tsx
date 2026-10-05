@@ -12,7 +12,8 @@ import type { KelasToko } from "@/lib/stores/kelas-toko";
 import { formatIDR } from "@/lib/sales-orders/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -129,9 +130,9 @@ export function KelasTokoClient({
       </div>
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
+        <div className="flex items-center gap-1">
           <h1 className="text-2xl font-bold tracking-tight">{t("judul")}</h1>
-          <p className="text-muted-foreground">{t("subjudul", { days: hari })}</p>
+          <TombolBantuan judul={t("judul")} />
         </div>
         {bolehAturJarak ? (
           <Button asChild variant="outline">
@@ -146,7 +147,6 @@ export function KelasTokoClient({
       <Card>
         <CardHeader>
           <CardTitle className="text-base">{t("caraJudul")}</CardTitle>
-          <CardDescription>{t("caraIsi", { days: hari })}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <div className="grid gap-2 sm:grid-cols-3">
@@ -166,7 +166,6 @@ export function KelasTokoClient({
               </div>
             ))}
           </div>
-          <p className="text-xs text-muted-foreground">{t("konsiCatatan")}</p>
           <p className="text-xs text-muted-foreground">{otomatisAktif ? t("otomatisNyala") : t("otomatisMati")}</p>
         </CardContent>
       </Card>

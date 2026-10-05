@@ -8,6 +8,7 @@ import type { FieldSalesOrderDetail, FieldSalesOrderStatus, KonsiSuggestion } fr
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import {
   Table,
   TableBody,
@@ -17,6 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ApproveRejectCard, type AppealedLine, type LineRef } from "./ApproveRejectCard";
+import { barisBanding } from "./baris-banding";
 import { DeliveriesCard } from "./DeliveriesCard";
 import { KonsiSuggestionsCard, type StagedAddition } from "./KonsiSuggestionsCard";
 import { KreditPanel } from "./KreditPanel";
@@ -97,17 +99,8 @@ export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver, kon
     outstanding: line.outstanding,
     onHand: line.onHand,
   }));
-  const appealedLines: AppealedLine[] = order.lines
-    .filter((line) => line.requestedUnitPrice != null)
-    .map((line) => ({
-      id: line.id,
-      productName: line.productName,
-      variantLabel: line.variantLabel,
-      variantSku: line.variantSku,
-      unitPrice: line.unitPrice,
-      requestedUnitPrice: line.requestedUnitPrice as number,
-      appealReason: line.appealReason,
-    }));
+  // Membawa potongan + nama promo baris: tanpanya peringatan "promo gugur" tidak pernah tampil.
+  const appealedLines: AppealedLine[] = barisBanding(order.lines);
   /*
    * Lets ApproveRejectCard resolve a short-stock line back to a product name for the
    * INSUFFICIENT_STOCK toast — the writer's ShortLine only carries (itemId, variantSku, available).
@@ -163,7 +156,10 @@ export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver, kon
             {t("back")}
           </Link>
         </Button>
-        <h1 className="text-2xl font-semibold font-mono">{order.orderNo}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-semibold font-mono">{order.orderNo}</h1>
+          <TombolBantuan judul={order.orderNo} />
+        </div>
         {order.dibatalkan ? (
           <Badge variant="outline" className="bg-muted text-muted-foreground">
             {t("batal.lencana")}
@@ -308,7 +304,6 @@ export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver, kon
       </Card>
 
       <Card className="p-4">
-        {isKonsi && <p className="text-xs text-muted-foreground mb-2">{t("konsiTransferNote")}</p>}
         <Table>
           <TableHeader>
             <TableRow>

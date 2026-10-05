@@ -10,6 +10,7 @@ import { pushItemStockToJubelio } from '@/app/actions/jubelio-outbox';
 import type { ItemFormData } from '@/lib/items/mutations';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowLeft, Barcode } from 'lucide-react';
 import { toast } from 'sonner';
@@ -98,7 +99,10 @@ export function ItemDetailClient({
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">{nameId}</h1>
+            <div className="flex items-center gap-1">
+              <h1 className="text-2xl font-bold tracking-tight">{nameId}</h1>
+              <TombolBantuan judul={nameId} />
+            </div>
             <p className="text-muted-foreground">{nameEn}</p>
           </div>
         </div>

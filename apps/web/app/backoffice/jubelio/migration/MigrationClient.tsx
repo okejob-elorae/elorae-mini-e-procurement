@@ -34,6 +34,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ExternalLink, Loader2, UploadCloud } from "lucide-react";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import {
   enqueueBulkMigration,
   type EligibleItem,
@@ -91,17 +92,9 @@ export function MigrationClient({ initialItems, initialSummary }: Props) {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="flex items-center gap-1">
         <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
-        <p className="text-muted-foreground">
-          {t.rich("subtitle", {
-            link: (chunks) => (
-              <Link href="/backoffice/jubelio/admin" className="underline">
-                {chunks}
-              </Link>
-            ),
-          })}
-        </p>
+        <TombolBantuan judul={t("title")} />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">

@@ -34,6 +34,7 @@ import { cn } from "@/lib/utils";
 import { kirimAntreanBilaBisa, useAlasanMutasiDiHp, useMutasiDiHp } from "../MutasiDiHp";
 import { nadaStatusMutasi, pesanGagalMutasi } from "../tampilan";
 import { TombolSuratJalan } from "./TombolSuratJalan";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 /** Langganan perubahan sinyal (online/offline) untuk `useSyncExternalStore`. */
 function langgananSinyal(berubah: () => void): () => void {
@@ -187,7 +188,10 @@ export function RincianMutasiClient({
       {kembali}
 
       <header className="space-y-1">
-        <h1 className="break-all text-2xl font-bold">{rincian.docNo}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="min-w-0 break-all text-2xl font-bold">{rincian.docNo}</h1>
+          <TombolBantuanHp judul={rincian.docNo} />
+        </div>
         <p className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
           <span>{rincian.asal}</span>
           <ArrowRight className="h-3.5 w-3.5" aria-hidden />

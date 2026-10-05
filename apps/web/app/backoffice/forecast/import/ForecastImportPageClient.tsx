@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { ArrowLeft, Info, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -216,9 +217,9 @@ export function ForecastImportPageClient() {
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
-        <div>
+        <div className="flex items-center gap-1">
           <h1 className="text-2xl font-bold">{t('import.title')}</h1>
-          <p className="text-muted-foreground">{t('subtitle')}</p>
+          <TombolBantuan judul={t('import.title')} />
         </div>
       </div>
 

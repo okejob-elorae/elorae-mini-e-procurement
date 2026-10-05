@@ -301,7 +301,6 @@ export function KontenClient({
     <div className="space-y-6">
       <PageHeader
         title={t('contentTitle')}
-        description={t('contentDescription')}
         meta={t('contentMeta', {
           count: baris.length,
           scheduled: ringkas.kontenTerjadwal,
@@ -331,11 +330,7 @@ export function KontenClient({
       <div className="grid gap-3 sm:grid-cols-3">
         <Angka label={t('kpiRunningBrief')} nilai={String(ringkas.briefBerjalan)} />
         <Angka label={t('kpiFeeRecognised')} nilai={rupiah(ringkas.bebanDiakui)} />
-        <Angka
-          label={t('kpiFeeCommitted')}
-          nilai={rupiah(ringkas.feeBelumDiakui)}
-          kaki={t('kpiFeeCommittedHint')}
-        />
+        <Angka label={t('kpiFeeCommitted')} nilai={rupiah(ringkas.feeBelumDiakui)} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -632,13 +627,12 @@ export function KontenClient({
   );
 }
 
-function Angka({ label, nilai, kaki }: { label: string; nilai: string; kaki?: string }) {
+function Angka({ label, nilai }: { label: string; nilai: string }) {
   return (
     <Card>
       <CardContent className="space-y-1 py-4">
         <p className="text-sm text-muted-foreground">{label}</p>
         <p className="text-xl font-semibold tabular-nums">{nilai}</p>
-        {kaki && <p className="text-xs text-muted-foreground">{kaki}</p>}
       </CardContent>
     </Card>
   );

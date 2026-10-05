@@ -13,6 +13,7 @@ import type { MutasiHp } from "@/lib/spg/mutasi-queries";
 import { cn } from "@/lib/utils";
 import { KartuAjuanDiHp, useMutasiDiHp } from "./MutasiDiHp";
 import { nadaStatusMutasi } from "./tampilan";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 export type TabMutasi = "keluar" | "masuk" | "jalan";
 
@@ -64,7 +65,10 @@ export function MutasiClient({
       </Button>
 
       <header>
-        <h1 className="text-2xl font-bold">{t("judul")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("judul")}</h1>
+          <TombolBantuanHp judul={t("judul")} />
+        </div>
         <p className="truncate text-sm text-muted-foreground">{namaToko}</p>
       </header>
 
@@ -173,7 +177,6 @@ export function MutasiClient({
           </ul>
         </section>
       )}
-      <p className="px-1 text-xs text-muted-foreground">{t("petunjuk")}</p>
     </div>
   );
 }

@@ -32,19 +32,15 @@ export function ArchiveTabs({
 }) {
   const t = useTranslations('archive');
 
-  const hint = (body: string, href: string) => (
-    <>
-      <strong className="text-foreground">{t('hintDot')}</strong> {body}{' '}
-      <Link href={href} className="font-medium text-primary underline underline-offset-2">
-        {t('hintLink')}
-      </Link>
-      .
-    </>
+  const hint = (href: string) => (
+    <Link href={href} className="font-medium text-primary underline underline-offset-2">
+      {t('hintLink')}
+    </Link>
   );
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t('pageTitle')} description={t('pageDescription')} />
+      <PageHeader title={t('pageTitle')} />
       <Tabs defaultValue="nota" className="space-y-4">
       <TabsList>
         <TabsTrigger value="nota">{t('tabNotaToko')}</TabsTrigger>
@@ -59,7 +55,7 @@ export function ArchiveTabs({
           summary={t('notaSummary', { docs: nota.totalDocs, pending: nota.totalPending })}
           searchPlaceholder={t('searchStore')}
           emptyLabel={t('empty')}
-          hint={hint(t('hintNota'), '/backoffice/finance/faktur-pajak')}
+          hint={hint('/backoffice/finance/faktur-pajak')}
         />
       </TabsContent>
 
@@ -71,7 +67,7 @@ export function ArchiveTabs({
             summary={t('returSummary', { docs: retur.totalDocs, pending: retur.totalPending })}
             searchPlaceholder={t('searchVendor')}
             emptyLabel={t('empty')}
-            hint={hint(t('hintRetur'), '/backoffice/vendor-returns')}
+            hint={hint('/backoffice/vendor-returns')}
           />
         </TabsContent>
       )}
@@ -84,7 +80,7 @@ export function ArchiveTabs({
             summary={t('woSummary', { docs: workOrder.totalDocs, pending: workOrder.totalPending })}
             searchPlaceholder={t('searchVendor')}
             emptyLabel={t('empty')}
-            hint={hint(t('hintWo'), '/backoffice/work-orders')}
+            hint={hint('/backoffice/work-orders')}
           />
         </TabsContent>
       )}

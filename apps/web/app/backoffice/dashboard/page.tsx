@@ -73,7 +73,7 @@ export default async function DashboardPage() {
     unshippedOrders: marketplaceKpi?.pendingFulfillmentCount ?? 0,
     overduePromises: piutang ? { count: piutang.lewatJumlah, amount: piutang.lewatNilai } : undefined,
     claimsAwaitingVerification: klaimMenunggu ?? undefined,
-  }).filter((item) => !item.permission || hasPermission(izin, item.permission));
+  }, izin).filter((item) => !item.permission || hasPermission(izin, item.permission));
 
   return (
     <Suspense fallback={null}>

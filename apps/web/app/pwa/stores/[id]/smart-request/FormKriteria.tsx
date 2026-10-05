@@ -172,10 +172,6 @@ export function FormKriteria({
 
   return (
     <>
-      <p className="rounded-lg bg-muted/50 px-3 py-2 text-sm leading-relaxed text-muted-foreground">
-        {t("pengantar")} {konsi ? t("konsiCatatan") : null}
-      </p>
-
       {/* Jenis barang */}
       <section className="beranda-kartu beranda-kartu-daftar" aria-labelledby="rk-kategori">
         <div className="px-4 pb-3 pt-4">

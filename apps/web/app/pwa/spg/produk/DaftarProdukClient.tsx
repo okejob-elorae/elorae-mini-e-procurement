@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { formatRupiah } from "@/lib/format/rupiah";
 import { alamatInfoProduk, type ProdukDaftar } from "@/lib/spg/produk";
 import { cocokkanKode, type BarisKatalogKode } from "@/lib/spg/stok";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 /** Baris yang dirender sekaligus — katalog bisa ribuan barang. */
 const BATAS_TAMPIL = 30;
@@ -68,7 +69,10 @@ export function DaftarProdukClient({ namaToko, daftar }: { namaToko: string; daf
       </Button>
 
       <header className="min-w-0">
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+          <TombolBantuanHp judul={t("title")} />
+        </div>
         <p className="text-sm text-muted-foreground">{t("subtitle", { store: namaToko })}</p>
       </header>
 

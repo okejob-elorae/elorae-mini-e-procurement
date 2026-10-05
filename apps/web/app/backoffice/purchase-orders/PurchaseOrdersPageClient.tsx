@@ -278,7 +278,6 @@ export function PurchaseOrdersPageClient({
       {/* Header */}
       <PageHeader
         title={tPO('pageTitle')}
-        description={tPO('pageDescription')}
         actions={
           <Link href="/backoffice/purchase-orders/new">
             <Button>

@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/table";
 import { ChevronDown, ChevronRight, Loader2, RefreshCw } from "lucide-react";
 import { Pager } from "@/components/Pager";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 
 type CallsResult = Awaited<ReturnType<typeof getJubelioApiCalls>>;
 type CallRow = CallsResult["calls"][number];
@@ -256,10 +257,7 @@ export default function JubelioAdminPage() {
     <div className="space-y-6">
       <Card>
         <CardContent className="flex items-center justify-between gap-4 pt-6">
-          <div>
-            <p className="font-medium">{t("bulkPushTitle")}</p>
-            <p className="text-sm text-muted-foreground">{t("bulkPushBody")}</p>
-          </div>
+          <p className="font-medium">{t("bulkPushTitle")}</p>
           <Button onClick={() => void handleBulkPush()} disabled={bulkPushing}>
             {bulkPushing ? t("bulkPushQueuing") : t("bulkPushButton")}
           </Button>
@@ -267,9 +265,9 @@ export default function JubelioAdminPage() {
       </Card>
 
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+        <div className="flex items-center gap-1">
           <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
-          <p className="text-muted-foreground">{t("subtitle")}</p>
+          <TombolBantuan judul={t("title")} />
         </div>
         <Button variant="outline" size="sm" onClick={() => void load()}>
           <RefreshCw className="mr-1.5 h-3.5 w-3.5" />

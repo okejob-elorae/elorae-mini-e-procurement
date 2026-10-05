@@ -24,6 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Pager } from "@/components/Pager";
+import { PageHeader } from "@/components/ui/page-header";
 import { formatDisplayDateTime } from "@/lib/date-only";
 import { formatRupiah } from "@/lib/format/rupiah";
 import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
@@ -77,10 +78,7 @@ export function SpgSalesListClient({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{t("pageTitle")}</h1>
-        <p className="text-muted-foreground">{t("subtitle")}</p>
-      </div>
+      <PageHeader title={t("pageTitle")} />
 
       <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
         <div className="space-y-2 w-full sm:w-56">

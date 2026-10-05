@@ -27,6 +27,7 @@ import {
   type RingkasanTutupHp,
 } from "@/lib/spg/tutup-hari";
 import { cn } from "@/lib/utils";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 /** Laporan yang sudah tersimpan untuk hari ini, sebagaimana dilihat HP. */
 export type LaporanHp = {
@@ -161,7 +162,10 @@ export function TutupHariClient({
       </Button>
 
       <header>
-        <h1 className="text-2xl font-bold">{t("judul")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("judul")}</h1>
+          <TombolBantuanHp judul={t("judul")} />
+        </div>
         <p className="text-sm text-muted-foreground">
           {data.namaToko} · {labelHari}
         </p>
@@ -224,7 +228,6 @@ export function TutupHariClient({
               </div>
             ) : null}
           </dl>
-          <p className="mt-2 text-xs opacity-80">{t("sistemCatatan")}</p>
         </section>
 
         <section className="space-y-2" aria-labelledby="tutup-terlaris">

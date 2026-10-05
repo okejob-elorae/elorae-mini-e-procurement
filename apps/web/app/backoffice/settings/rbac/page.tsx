@@ -33,6 +33,7 @@ import { getRoles, getPermissions, createRole, updateRolePermissions, deleteRole
 import { toast } from 'sonner';
 import { useSession } from 'next-auth/react';
 import { hasPermission, PERMISSIONS } from '@/lib/rbac';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 
 type Role = {
   id: string;
@@ -181,9 +182,9 @@ export default function RBACSettingsPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
+        <div className="flex items-center gap-1">
           <h1 className="text-2xl font-bold tracking-tight">{t('pageTitle')}</h1>
-          <p className="text-muted-foreground">{t('pageSubtitle')}</p>
+          <TombolBantuan judul={t('pageTitle')} />
         </div>
         {canManage && (
           <Button onClick={handleCreateRole}>

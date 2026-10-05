@@ -10,6 +10,7 @@ import { formatIDR } from "@/lib/sales-orders/format";
 import { namaBulan } from "@/lib/salesman/komisi";
 import { cn } from "@/lib/utils";
 import { TautanKembali } from "@/app/pwa/TautanKembali";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 export type BarisPeringkatSpgJson = {
   peringkat: number;
@@ -49,7 +50,10 @@ export function PeringkatSpgClient({ bulan, baris }: { bulan: string; baris: Bar
       </Button>
 
       <header>
-        <h1 className="text-2xl font-bold">{tUmum("title")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{tUmum("title")}</h1>
+          <TombolBantuanHp judul={tUmum("title")} />
+        </div>
         <p className="text-sm text-muted-foreground">{t("subjudul", { month: namaBulan(tBulan, bulan, "panjang") })}</p>
       </header>
 
@@ -75,7 +79,6 @@ export function PeringkatSpgClient({ bulan, baris }: { bulan: string; baris: Bar
       ) : (
         <section className="beranda-kartu beranda-kartu-daftar" aria-label={t("daftarJudul")}>
           <h2 className="beranda-judul px-4 pt-4">{t("daftarJudul")}</h2>
-          <p className="px-4 text-xs text-muted-foreground">{t("daftarPetunjuk")}</p>
           <ul className="mt-2 divide-y">
             {baris.map((b) => (
               <li

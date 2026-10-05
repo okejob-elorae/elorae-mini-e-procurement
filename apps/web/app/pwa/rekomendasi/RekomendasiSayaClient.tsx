@@ -12,6 +12,7 @@ import { FILTER_REKOMENDASI, type FilterRekomendasi } from "@/lib/salesman/rekom
 import type { BarisDaftarRekomendasi } from "@/lib/salesman/rekomendasi-queries";
 import { cn } from "@/lib/utils";
 import { NADA_STATUS_REKOMENDASI } from "./tampilan";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 /**
  * Daftar rekomendasi milik salesman. Saringan status di alamat (`?status=`),
@@ -44,8 +45,10 @@ export function RekomendasiSayaClient({
       </Button>
 
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold">{t("saya.judul")}</h1>
-        <p className="text-sm text-muted-foreground">{t("saya.subjudul")}</p>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("saya.judul")}</h1>
+          <TombolBantuanHp judul={t("saya.judul")} />
+        </div>
       </header>
 
       <div className="flex flex-wrap gap-2" role="group" aria-label={t("saya.saring")}>
@@ -106,7 +109,6 @@ export function RekomendasiSayaClient({
           </section>
         )}
       </div>
-      <p className="px-1 text-xs text-muted-foreground">{t("saya.petunjuk")}</p>
     </div>
   );
 }

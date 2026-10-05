@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { ArrowLeft, BellRing, Store, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -50,7 +50,6 @@ export function PelangganKantorClient({
     <div className="space-y-6">
       <PageHeader
         title={t("judul")}
-        description={t("deskripsi")}
         meta={tab === "pelanggan" ? t("ringkasPelanggan", { toko: ringkas.length, n: totalPelanggan }) : t("ringkasTitip", { toko: titip.length, n: totalTerbuka })}
       />
 
@@ -74,7 +73,6 @@ export function PelangganKantorClient({
               <Users className="h-5 w-5" />
               {t("pelangganToko", { toko: perToko.toko.name })}
             </CardTitle>
-            <CardDescription>{t("samarPetunjuk")}</CardDescription>
           </CardHeader>
           <CardContent className={perToko.baris.length === 0 ? undefined : "px-0"}>
             {perToko.baris.length === 0 ? (
@@ -168,7 +166,6 @@ export function PelangganKantorClient({
               <BellRing className="h-5 w-5" />
               {t("titipJudul")}
             </CardTitle>
-            <CardDescription>{t("titipPetunjuk")}</CardDescription>
           </CardHeader>
           <CardContent className={titip.length === 0 ? undefined : "px-0"}>
             {titip.length === 0 ? (

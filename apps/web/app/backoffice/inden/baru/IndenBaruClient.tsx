@@ -18,7 +18,7 @@ export function IndenBaruClient({ pilihan }: { pilihan: PilihanBarang[] }) {
           {t("kembali")}
         </Link>
       </Button>
-      <PageHeader title={t("baruJudul")} description={t("baruDeskripsi")} />
+      <PageHeader title={t("baruJudul")} />
       <FormJendelaInden pilihan={pilihan} />
     </div>
   );

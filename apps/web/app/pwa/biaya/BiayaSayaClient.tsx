@@ -12,6 +12,7 @@ import { STATUS_BIAYA } from "@/lib/salesman/biaya";
 import type { BiayaSayaBulan } from "@/lib/salesman/biaya-queries";
 import { cn } from "@/lib/utils";
 import { IkonKategori, nadaStatus } from "./tampilan";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 export function BiayaSayaClient({
   bulan,
@@ -32,8 +33,10 @@ export function BiayaSayaClient({
     <div className="space-y-4 p-4">
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
-          <h1 className="text-2xl font-bold">{t("judul")}</h1>
-          <p className="text-sm text-muted-foreground">{t("subjudul")}</p>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-bold">{t("judul")}</h1>
+            <TombolBantuanHp judul={t("judul")} />
+          </div>
         </div>
         {aktif ? (
           <Button asChild className="shrink-0">

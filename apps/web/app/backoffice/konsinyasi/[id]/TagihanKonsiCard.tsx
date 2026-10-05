@@ -107,7 +107,6 @@ export function TagihanKonsiCard({
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-base">{t("title")}</CardTitle>
-        <p className="text-sm text-muted-foreground">{t("hint")}</p>
       </CardHeader>
       <CardContent className="space-y-3">
         <dl className="max-w-xl space-y-2 text-sm">
@@ -145,7 +144,6 @@ export function TagihanKonsiCard({
             <span>{t("promoChanged", { value: uang(tagihan.promoEloraeSekarang) })}</span>
           </p>
         )}
-        <p className="text-xs text-muted-foreground">{t("storeShare")}</p>
 
         {tagihan.beku && (
           <div className="space-y-3 border-t pt-4">

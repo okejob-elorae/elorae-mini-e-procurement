@@ -94,7 +94,6 @@ export function RincianRekomendasiSpgClient({ rincian }: { rincian: RincianRekom
       {kembali}
       <KepalaRekomendasi rincian={rincian} untukSpg />
       <CatatanJawaban rincian={rincian} />
-      {rincian.bolehJawab ? <p className="beranda-kartu text-sm text-muted-foreground">{t("penjelasan")}</p> : null}
       <DaftarBarisRekomendasi rincian={rincian} />
 
       {rincian.bolehJawab ? (

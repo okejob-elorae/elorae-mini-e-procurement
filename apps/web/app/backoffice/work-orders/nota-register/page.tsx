@@ -46,6 +46,7 @@ import { buildMaterialIssuePrintHtml } from '@/lib/print/material-issue-html';
 import { logPrint } from '@/app/actions/audit';
 import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 
 type RegisterRow = {
   id: string;
@@ -197,9 +198,9 @@ export default function NotaRegisterPage() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
-        <div>
+        <div className="flex items-center gap-1">
           <h1 className="text-2xl font-bold">{tNota('pageTitle')}</h1>
-          <p className="text-muted-foreground">{tNota('pageSubtitle')}</p>
+          <TombolBantuan judul={tNota('pageTitle')} />
         </div>
       </div>
 

@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { dinamis } from "@/lib/i18n/dinamis";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 export type BarisUsulanSaya = {
   id: string;
   name: string;
@@ -52,7 +53,10 @@ export function UsulanSayaClient({ baris }: { baris: BarisUsulanSaya[] }) {
 
       <header className="space-y-3">
         <div className="space-y-1">
-          <h1 className="text-2xl font-bold">{t("pageTitle")}</h1>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-bold">{t("pageTitle")}</h1>
+            <TombolBantuanHp judul={t("pageTitle")} />
+          </div>
           <p className="text-sm text-muted-foreground">{t("summary", { count: baris.length })}</p>
         </div>
         <Button asChild className="w-full">

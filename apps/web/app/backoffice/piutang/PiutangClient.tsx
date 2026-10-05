@@ -117,7 +117,6 @@ export function PiutangClient({
     <div className="space-y-6">
       <PageHeader
         title={t('pageTitle')}
-        description={t('pageDescription')}
         meta={t('summary', {
           count: ringkasan.jumlahPiutang,
           value: rupiah(ringkasan.total),

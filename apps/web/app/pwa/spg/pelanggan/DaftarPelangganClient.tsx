@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TautanKembali } from "@/app/pwa/TautanKembali";
 import type { BarisPelangganHp } from "@/lib/spg/pelanggan-queries";
+import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 /**
  * Daftar pelanggan toko SPG. Pencarian ditulis ke alamat dengan `replace`,
@@ -36,7 +37,10 @@ export function DaftarPelangganClient({
         <TautanKembali cadangan="/pwa/spg/lainnya" />
       </Button>
       <header>
-        <h1 className="text-2xl font-bold">{t("judul")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t("judul")}</h1>
+          <TombolBantuanHp judul={t("judul")} />
+        </div>
         <p className="truncate text-sm text-muted-foreground">{namaToko}</p>
       </header>
 
@@ -111,7 +115,6 @@ export function DaftarPelangganClient({
         </section>
       )}
       {data.total > data.baris.length ? <p className="px-1 text-xs text-muted-foreground">{t("terpotong", { tampil: data.baris.length, total: data.total })}</p> : null}
-      <p className="px-1 text-xs text-muted-foreground">{t("petunjuk")}</p>
     </div>
   );
 }

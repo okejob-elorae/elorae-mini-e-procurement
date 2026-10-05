@@ -5,5 +5,5 @@ import { PageHeader } from "@/components/ui/page-header";
 
 export function JudulPengaturanSpg() {
   const t = useTranslations("settings.spg");
-  return <PageHeader title={t("title")} description={t("subtitle")} />;
+  return <PageHeader title={t("title")} />;
 }

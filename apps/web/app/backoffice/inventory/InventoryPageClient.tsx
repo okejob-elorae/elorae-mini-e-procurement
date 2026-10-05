@@ -17,6 +17,7 @@ import {
 import { useLocale, useTranslations } from 'next-intl';
 import { formatDisplayDate } from '@/lib/date-only';
 import { Button } from '@/components/ui/button';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -456,11 +457,9 @@ export function InventoryPageClient({
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
+        <div className="flex items-center gap-1">
           <h1 className="text-2xl font-bold tracking-tight">{t("pageTitle")}</h1>
-          <p className="text-muted-foreground">
-            {t("pageSubtitle")}
-          </p>
+          <TombolBantuan judul={t("pageTitle")} />
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href="/backoffice/inventory/grn/new">

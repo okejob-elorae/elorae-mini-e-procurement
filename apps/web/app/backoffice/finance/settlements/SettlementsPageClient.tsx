@@ -30,6 +30,7 @@ import {
 import { Pagination } from "@/components/ui/pagination";
 import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-only";
 import { BadgeGanda, type UnggahanPertamaTampil } from "./ganda";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 
 const UPLOAD_MARKETPLACES = ["SHOPEE", "TIKTOK"] as const;
 type UploadMarketplace = (typeof UPLOAD_MARKETPLACES)[number];
@@ -161,9 +162,9 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
+        <div className="flex items-center gap-1">
           <h1 className="text-2xl font-bold tracking-tight">{t("pageTitle")}</h1>
-          <p className="text-muted-foreground">{t("subtitle")}</p>
+          <TombolBantuan judul={t("pageTitle")} />
         </div>
       </div>
 

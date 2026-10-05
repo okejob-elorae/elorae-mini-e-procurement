@@ -18,7 +18,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -74,7 +74,6 @@ export function PembagianTokoCard({
           <Store className="h-5 w-5" />
           {t('shareTitle')}
         </CardTitle>
-        <CardDescription>{t('shareDesc')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {ringkasan.length === 0 ? (

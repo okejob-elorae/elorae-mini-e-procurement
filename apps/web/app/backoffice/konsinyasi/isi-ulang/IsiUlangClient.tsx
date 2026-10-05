@@ -82,7 +82,6 @@ export function IsiUlangClient({
     <div className="space-y-6">
       <PageHeader
         title={t("title")}
-        description={t("subtitle")}
         meta={t("meta", { stores: perluIsi.length, pcs: ribuan(totalPcs), slow: tidakLaku.length })}
       />
 
@@ -109,7 +108,6 @@ export function IsiUlangClient({
             <PackagePlus className="h-5 w-5" />
             {t("refillTitle")}
           </CardTitle>
-          <p className="text-sm text-muted-foreground">{t("refillHint")}</p>
           {tanpaTarget > 0 ? <p className="text-sm text-muted-foreground">{t("noTargetCount", { count: tanpaTarget })}</p> : null}
         </CardHeader>
         <CardContent>
@@ -233,7 +231,6 @@ export function IsiUlangClient({
               </Table>
             </div>
           )}
-          {perluIsi.length > 1 ? <p className="mt-3 text-xs text-muted-foreground">{t("warehouseNote")}</p> : null}
         </CardContent>
       </Card>
 
@@ -243,7 +240,6 @@ export function IsiUlangClient({
             <Snail className="h-5 w-5" />
             {t("slowTitle")}
           </CardTitle>
-          <p className="text-sm text-muted-foreground">{t("slowHint")}</p>
         </CardHeader>
         <CardContent>
           {daftarTidakLaku.length === 0 ? (
@@ -301,7 +297,6 @@ export function IsiUlangClient({
               </Table>
             </div>
           )}
-          {tidakLaku.some((b) => b.perkiraan) ? <p className="mt-3 text-xs text-muted-foreground">{t("approxNote")}</p> : null}
         </CardContent>
       </Card>
     </div>

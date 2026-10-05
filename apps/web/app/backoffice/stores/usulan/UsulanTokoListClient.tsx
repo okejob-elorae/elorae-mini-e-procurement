@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Pager } from "@/components/Pager";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { dinamis } from "@/lib/i18n/dinamis";
 
 type Status = "PENDING" | "APPROVED" | "REJECTED";
@@ -87,8 +88,10 @@ export function UsulanTokoListClient({
               {t("backToStores")}
             </Link>
           </Button>
-          <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
-          <p className="text-muted-foreground">{t("subtitle")}</p>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
+            <TombolBantuan judul={t("title")} />
+          </div>
         </div>
       </div>
 

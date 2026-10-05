@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { CalendarDays, Loader2 } from "lucide-react";
 import { simpanHariKerjaSpg } from "@/app/actions/settings/salesman";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { dinamis } from "@/lib/i18n/dinamis";
@@ -58,7 +58,6 @@ export function HariKerjaSpgCard({ bolehUbah, hariKerja }: { bolehUbah: boolean;
           <CalendarDays className="h-5 w-5" />
           {t("judul")}
         </CardTitle>
-        <CardDescription>{t("penjelasan")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <fieldset className="space-y-2">

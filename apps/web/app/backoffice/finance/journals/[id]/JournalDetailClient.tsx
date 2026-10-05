@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import { formatDisplayDate } from "@/lib/date-only";
 import { journalSourceLabel } from "../journal-source-label";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 
 type Props = {
   journal: JournalDetail;
@@ -46,7 +47,10 @@ export function JournalDetailClient({ journal }: Props) {
           </Link>
         </Button>
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold truncate">{journal.description}</h1>
+          <div className="flex min-w-0 items-center gap-1">
+            <h1 className="min-w-0 text-xl font-semibold truncate">{journal.description}</h1>
+            <TombolBantuan judul={journal.description} />
+          </div>
           <p className="text-sm text-muted-foreground">{formatDate(journal.date)}</p>
         </div>
         <div className="ml-auto">

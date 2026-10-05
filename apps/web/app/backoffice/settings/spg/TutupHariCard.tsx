@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { ClipboardCheck, Loader2 } from "lucide-react";
 import { simpanAturanTutupHari } from "@/app/actions/settings/spg-tutup-hari";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import type { AturanTutupHari } from "@/lib/spg/pengaturan";
@@ -49,7 +49,6 @@ export function TutupHariCard({ bolehUbah, nilai }: { bolehUbah: boolean; nilai:
           <ClipboardCheck className="h-5 w-5" aria-hidden />
           {t("judul")}
         </CardTitle>
-        <CardDescription>{t("penjelasan")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {SAKLAR.map((k) => (

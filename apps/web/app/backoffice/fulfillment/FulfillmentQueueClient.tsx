@@ -7,6 +7,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -186,10 +187,7 @@ export function FulfillmentQueueClient(props: Props) {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold">{t("pageTitle")}</h1>
-        <p className="text-muted-foreground">{t("pageSubtitle")}</p>
-      </div>
+      <PageHeader title={t("pageTitle")} />
 
       <Card className="p-4">
         <div className="flex flex-wrap items-end gap-3">

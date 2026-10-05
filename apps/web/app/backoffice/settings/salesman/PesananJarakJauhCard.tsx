@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Loader2, MessageCircle } from "lucide-react";
 import { simpanAturanJarakJauh } from "@/app/actions/settings/salesman-jarak-jauh";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { bacaAturanJarakJauh } from "@/lib/field-sales/jarak-jauh";
@@ -52,7 +52,6 @@ export function PesananJarakJauhCard({ bolehUbah, nilai }: { bolehUbah: boolean;
           <MessageCircle className="h-5 w-5" aria-hidden />
           {t("judul")}
         </CardTitle>
-        <CardDescription>{t("penjelasan")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-start justify-between gap-4 rounded-md border p-3">
@@ -78,7 +77,6 @@ export function PesananJarakJauhCard({ bolehUbah, nilai }: { bolehUbah: boolean;
             disabled={nonaktif || !aktif}
           />
         </div>
-        <p className="text-xs text-muted-foreground">{t("aturanSama")}</p>
         <div className="flex justify-end">
           <Button onClick={simpan} disabled={nonaktif || !berubah}>
             {sibuk ? <Loader2 className="h-4 w-4 animate-spin" /> : t("simpan")}

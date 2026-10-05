@@ -10,6 +10,7 @@ import { formatDisplayDateTime } from "@/lib/date-only";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { FulfillmentCard } from "./FulfillmentCard";
 
@@ -47,7 +48,10 @@ export function SalesOrderDetailClient({ order, items, canFulfill, lineImages = 
         <Button variant="ghost" size="sm" asChild>
           <Link href="/backoffice/sales-orders"><ArrowLeft className="h-4 w-4 mr-2" />{t("detail.back")}</Link>
         </Button>
-        <h1 className="text-2xl font-semibold font-mono">{order.salesorderNo}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-semibold font-mono">{order.salesorderNo}</h1>
+          <TombolBantuan judul={order.salesorderNo} />
+        </div>
         <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${CHANNEL_BADGE[order.channel].tailwindClass}`}>
           {t(`channel.${CHANNEL_BADGE[order.channel].labelKey}` as never)}
         </span>
