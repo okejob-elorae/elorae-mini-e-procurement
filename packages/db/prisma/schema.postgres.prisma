@@ -504,6 +504,7 @@ model FieldSalesOrder {
   @@index([storeId, createdAt])
   @@index([salesmanId, createdAt])
   @@index([replacesOrderId])
+  @@index([preorderWindowId])
 }
 
 model FieldSalesOrderLine {
@@ -520,7 +521,7 @@ model FieldSalesOrderLine {
   isBonus        Boolean         @default(false)
   bonusPromoId   String?
   requestedUnitPrice Decimal?  @db.Decimal(15, 2)
-  appealReason String?
+  appealReason String?  @db.Text
   deliveredQty Int @default(0)
   cancelledQty Int @default(0)
   addedById    String?
@@ -1602,7 +1603,7 @@ model AuditLog {
   changes               Json?
   metadata              Json?
   sensitiveDataAccessed String?
-  reason                String?
+  reason                String?  @db.Text
   ipAddress             String?
   userAgent             String?
   createdAt             DateTime @default(now())
@@ -2726,6 +2727,7 @@ model PaymentClaim {
 
   @@index([storeId, status])
   @@index([status, createdAt])
+  @@index([giroStatus, giroEffectiveDate])
 }
 
 model PaymentClaimReceivable {
@@ -3476,7 +3478,7 @@ model StoreReceiptLine {
   qtySent     Int
   qtyReceived Int
   qtyDamaged         Int       @default(0)
-  damageNote         String?
+  damageNote         String?   @db.Text
   damagePhotoUrl     String?
   damageStatus       String?
   damageDecidedById  String?
@@ -3558,7 +3560,7 @@ model LostSale {
   userId      String
   itemId      String?
   variantSku  String   @default("")
-  description String
+  description String   @db.Text
   qty         Int      @default(1)
   createdAt   DateTime @default(now())
 
@@ -3948,7 +3950,7 @@ model CustomerRequest {
   customerId     String
   itemId         String?
   variantSku     String    @default("")
-  description    String
+  description    String    @db.Text
   qty            Int       @default(1)
   status         String    @default("MENUNGGU")
   holdUntil      String?
