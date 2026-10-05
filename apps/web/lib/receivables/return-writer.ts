@@ -11,6 +11,8 @@ import { bentrokPengganti, catatDiganti, periksaReturLama, type AlasanPengganti 
 import { computeStorePrice } from "@elorae/db/pricing";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { masukkanGudangRusakDariNri } from "@/lib/spg/gudang-rusak-writer";
+import { fotoBolehDipakai } from "./foto-pencatat";
+import { PERMISSIONS } from "@/lib/rbac";
 
 /**
  * Penulis retur toko — dua dokumen, dua tangan.
@@ -131,6 +133,8 @@ export type AlasanGagalRetur =
   | 'ALASAN_WAJIB'
   | 'NOMOR_BENTROK'
   | 'KUNCI_DIPAKAI'
+  /** Foto nota `/api/foto/<id>` diunggah orang lain, dan pencatat bukan pengelola piutang. */
+  | "FOTO_BUKAN_MILIK"
   /** NRT dari SPG wajib membawa baris barang. */
   | "BARIS_WAJIB"
   | "BARANG_TIDAK_DITEMUKAN"
@@ -770,6 +774,15 @@ export async function catatReturToko(input: {
           }
         }
 
+        // Foto nota harus unggahan pencatatnya sendiri, kecuali pengelola
+        // piutang — nota retur toko lain tidak boleh dilaporkan ulang di sini.
+        const fotoSah = await fotoBolehDipakai(tx, {
+          urls: [input.photoUrl],
+          userId: input.olehUserId,
+          izinKantor: [PERMISSIONS.RECEIVABLES_MANAGE],
+        });
+        if (!fotoSah) return { ok: false as const, alasan: "FOTO_BUKAN_MILIK" as const };
+
         let nomor = nomorDiketik;
         let items: BarisTersusun[] = itemsBiasa;
         let total = nilaiDariRincian(itemsBiasa, input.claimedAmount);
@@ -1112,7 +1125,7 @@ export async function jodohkanRetur(input: {
   return runSerializable(async (tx) => {
     const nri = await tx.warehouseReturn.findUnique({
       where: { id: input.warehouseReturnId },
-      select: { id: true, storeReturnId: true, storeId: true, physicalAmount: true },
+      select: { id: true, storeReturnId: true, storeId: true, physicalAmount: true, warehouseUserId: true },
     });
     if (!nri) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
     if (nri.storeReturnId) return { ok: false as const, alasan: 'BUKAN_YATIM' as const };
@@ -1122,6 +1135,7 @@ export async function jodohkanRetur(input: {
       select: {
         id: true,
         storeId: true,
+        salesmanId: true,
         status: true,
         claimedAmount: true,
         warehouseReturn: { select: { id: true } },
@@ -1134,6 +1148,11 @@ export async function jodohkanRetur(input: {
     // itu memindahkan barang satu toko ke tagihan toko lain.
     if (nri.storeId && nri.storeId !== nrt.storeId) {
       return { ok: false as const, alasan: 'BEDA_TOKO' as const };
+    }
+    // Aturan dua tangan yang sama dengan `catatHitunganGudang`: hitungan "yatim"
+    // yang dicatat pelapor nota tidak boleh menjadi hitungan notanya sendiri.
+    if (nrt.salesmanId && nrt.salesmanId === nri.warehouseUserId) {
+      return { ok: false as const, alasan: "PENGHITUNG_SAMA_PELAPOR" as const };
     }
 
     await tx.warehouseReturn.update({

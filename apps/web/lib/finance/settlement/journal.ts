@@ -1,6 +1,8 @@
 import { prisma, postJournal, JournalError, Prisma, type PrismaClient } from "@elorae/db";
+import { withRetry } from "@/lib/db/tx-retry";
 import { resolveAccount, UnmappedRoleError } from "@/lib/finance/journals/mapping";
 import { splitMarketplaceFees, type MarketplaceFeeRole } from "./fee-split";
+import { tandaiSettlementGanda } from "./persist";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
@@ -17,9 +19,24 @@ export type PostSettlementJournalResult =
         | "UNMAPPED_ROLE"
         | "UNBALANCED"
         | "ALREADY_RECONCILED_DIFF"
-        | "NON_POSTABLE_ACCOUNT";
+        | "NON_POSTABLE_ACCOUNT"
+        /* Kembar dengan unggahan lain yang sudah dijurnal atau lebih dulu diunggah. */
+        | "SETTLEMENT_KEMBAR";
       role?: string;
+      /* Hanya pada SETTLEMENT_KEMBAR: id unggahan yang berlaku. */
+      pertamaId?: string;
     };
+
+/**
+ * Penjaga server settlement kembar (marketplace, penjual, periode, dan uang
+ * dilepas sama). Jurnal berkunci id settlement, jadi kembaran yang ikut
+ * dijurnal = bank didebit dan piutang dikredit dua kali. Mengembalikan id
+ * unggahan yang berlaku bila settlement ini kembarannya.
+ */
+async function cariPertamaKembar(settlementId: string, client: AnyClient): Promise<string | null> {
+  const tanda = await tandaiSettlementGanda([settlementId], client as Prisma.TransactionClient);
+  return tanda[settlementId]?.id ?? null;
+}
 
 /**
  * Falls back to the legacy lumped `MARKETPLACE_FEE` account when a per-category
@@ -58,6 +75,10 @@ export async function postSettlementJournal(
       periodTo: true,
     },
   });
+
+  // Diperiksa paling dulu agar kembaran tidak dijawab dengan penolakan lain yang menyesatkan.
+  const pertamaAwal = await cariPertamaKembar(s.id, client);
+  if (pertamaAwal) return { ok: false, code: "SETTLEMENT_KEMBAR", pertamaId: pertamaAwal };
 
   if (!s.checksumOk) return { ok: false, code: "CHECKSUM_BLOCKED" };
 
@@ -121,7 +142,11 @@ export async function postSettlementJournal(
     { chartAccountId: ar, debit: 0, credit: Number(s.totalPendapatan) },
   ];
 
-  const run = async (tx: Prisma.TransactionClient) => {
+  const run = async (tx: Prisma.TransactionClient): Promise<PostSettlementJournalResult> => {
+    // Diperiksa ulang di dalam transaksi yang menulis jurnal: keadaan "sudah dijurnal"
+    // yang menentukan unggahan mana yang berlaku bisa berubah sejak pemeriksaan awal.
+    const pertama = await cariPertamaKembar(s.id, tx);
+    if (pertama) return { ok: false, code: "SETTLEMENT_KEMBAR", pertamaId: pertama };
     const res = await postJournal(tx, {
       source: { type: "SETTLEMENT", id: s.id },
       date: s.periodTo,
@@ -130,11 +155,15 @@ export async function postSettlementJournal(
       lines,
     });
     await tx.settlement.update({ where: { id: s.id }, data: { status: "RECONCILED" } });
-    return { ok: true as const, journalId: res.journalId, created: res.created };
+    return { ok: true, journalId: res.journalId, created: res.created };
   };
 
   try {
-    return hasTx(client) ? await client.$transaction(run) : await run(client as Prisma.TransactionClient);
+    return hasTx(client)
+      ? await withRetry(() =>
+          client.$transaction(run, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }),
+        )
+      : await run(client as Prisma.TransactionClient);
   } catch (e) {
     if (e instanceof JournalError && e.code === "UNBALANCED") return { ok: false, code: "UNBALANCED" };
     if (e instanceof JournalError && e.code === "NON_POSTABLE_ACCOUNT") {

@@ -55,6 +55,9 @@ const state = {
 };
 
 const tx = {
+  // Pemilik foto (`fotoBolehDipakai`): foto tiruan tidak ada di tabel `Foto`,
+  // jadi tidak ada yang bisa dicuci — pemeriksaannya diuji di foto-pencatat.test.ts.
+  foto: { findMany: vi.fn(async () => []) },
   storeReturn: {
     // Tidak ada nota BATAL bernomor sama di tiruan ini — pelepasan nomor diuji
     // terhadap basis data sungguhan di koreksi.test.ts.

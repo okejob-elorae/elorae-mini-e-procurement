@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { approveFieldSalesOrder, rejectFieldSalesOrder } from "@/lib/field-sales/writer";
+import { approveFieldSalesOrder, HargaFinalTidakSahError, rejectFieldSalesOrder } from "@/lib/field-sales/writer";
 import {
   InvalidOrderTransitionError,
   InsufficientStockError,
@@ -97,6 +97,11 @@ export async function approveFieldSalesOrderAction(
     }
     if (e instanceof InvalidOrderTransitionError) {
       return { ok: false, reason: e.from === "MISSING" ? "NOT_FOUND" : "INVALID_TRANSITION" };
+    }
+    // Cadangan saringan bentuk di atas: penolakan harga final dari penulis dijawab dengan kode
+    // yang dipahami kartu persetujuan, bukan galat yang di produksi tertutup digest.
+    if (e instanceof HargaFinalTidakSahError) {
+      return { ok: false, reason: "INVALID_FINAL_PRICE" };
     }
     throw e;
   }

@@ -6,7 +6,7 @@ import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
 import { z } from 'zod';
 import { runSerializable } from '@/lib/db/tx-retry';
-import { tolakAkunSistem, type KodeAkunSistem } from '@/lib/users/validasi';
+import { perannyaSpg, tolakAkunSistem, type KodeAkunSistem } from '@/lib/users/validasi';
 
 const roleSchema = z.object({
   name: z.string().min(1).max(50),
@@ -141,46 +141,56 @@ export async function createRole(
   return role;
 }
 
+/** Kode izin sebuah peran, terurut — bentuk jejak sebelum/sesudah. */
+function kodeIzin(rows: { permission: { code: string } }[]): string[] {
+  return rows.map((r) => r.permission.code).sort();
+}
+
 /**
  * Update role permissions
+ *
+ * Peran dibaca, tautannya diganti, dan `AuditLog` ditulis di SATU transaksi
+ * serializable, membawa daftar izin sebelum dan sesudah. Barisnya hanya
+ * menyimpan izin terakhir — siapa yang memberi peran lapangan akses keuangan,
+ * dan kapan, hanya bisa ditanyakan dari jejak ini.
  */
 export async function updateRolePermissions(
   roleId: string,
   permissionIds: string[]
 ) {
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
+  if (!session?.user?.id) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_RBAC_MANAGE);
+  const pelakuId = session.user.id;
+  const ids = [...new Set(permissionIds)];
 
-  // Check if role exists and is not a system role
-  const role = await prisma.roleDefinition.findUnique({
-    where: { id: roleId },
-  });
-  if (!role) {
-    throw new Error('Role not found');
-  }
-  if (role.isSystem) {
-    throw new Error('Cannot modify system role permissions');
-  }
+  await runSerializable(async (tx) => {
+    const role = await tx.roleDefinition.findUnique({
+      where: { id: roleId },
+      select: { id: true, name: true, isSystem: true, permissions: { select: { permission: { select: { code: true } } } } },
+    });
+    if (!role) {
+      throw new Error('Role not found');
+    }
+    if (role.isSystem) {
+      throw new Error('Cannot modify system role permissions');
+    }
 
-  // Validate permission IDs exist
-  const permissionCount = await prisma.permission.count({
-    where: { id: { in: permissionIds } },
-  });
-  if (permissionCount !== permissionIds.length) {
-    throw new Error('One or more permission IDs are invalid');
-  }
+    // Validate permission IDs exist
+    const baru = await tx.permission.findMany({
+      where: { id: { in: ids } },
+      select: { code: true },
+    });
+    if (baru.length !== ids.length) {
+      throw new Error('One or more permission IDs are invalid');
+    }
 
-  await prisma.$transaction(async (tx) => {
-    // Delete existing permissions
     await tx.rolePermission.deleteMany({
       where: { roleId },
     });
-
-    // Create new permissions
-    if (permissionIds.length > 0) {
+    if (ids.length > 0) {
       await tx.rolePermission.createMany({
-        data: permissionIds.map((permissionId) => ({
+        data: ids.map((permissionId) => ({
           roleId,
           permissionId,
         })),
@@ -196,6 +206,20 @@ export async function updateRolePermissions(
         },
       },
     });
+
+    await tx.auditLog.create({
+      data: {
+        userId: pelakuId,
+        action: 'ROLE_PERMISSIONS_UPDATED',
+        entityType: 'RoleDefinition',
+        entityId: roleId,
+        changes: {
+          before: { permissions: kodeIzin(role.permissions) },
+          after: { permissions: baru.map((p) => p.code).sort() },
+        },
+        metadata: { roleName: role.name },
+      },
+    });
   });
 
   revalidatePath('/backoffice/settings/rbac');
@@ -203,35 +227,59 @@ export async function updateRolePermissions(
 
 /**
  * Delete a role
+ *
+ * Penghapusan dan jejaknya (nama, keterangan, dan daftar izin peran itu) di
+ * satu transaksi: setelah barisnya hilang, jejak inilah satu-satunya tempat
+ * izin peran itu masih bisa dibaca.
  */
 export async function deleteRole(roleId: string) {
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
+  if (!session?.user?.id) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_RBAC_MANAGE);
+  const pelakuId = session.user.id;
 
-  const role = await prisma.roleDefinition.findUnique({
-    where: { id: roleId },
-    include: {
-      _count: {
-        select: {
-          users: true,
+  await runSerializable(async (tx) => {
+    const role = await tx.roleDefinition.findUnique({
+      where: { id: roleId },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        isSystem: true,
+        permissions: { select: { permission: { select: { code: true } } } },
+        _count: {
+          select: {
+            users: true,
+          },
         },
       },
-    },
-  });
+    });
 
-  if (!role) {
-    throw new Error('Role not found');
-  }
-  if (role.isSystem) {
-    throw new Error('Cannot delete system role');
-  }
-  if (role._count.users > 0) {
-    throw new Error('Cannot delete role that is assigned to users');
-  }
+    if (!role) {
+      throw new Error('Role not found');
+    }
+    if (role.isSystem) {
+      throw new Error('Cannot delete system role');
+    }
+    if (role._count.users > 0) {
+      throw new Error('Cannot delete role that is assigned to users');
+    }
 
-  await prisma.roleDefinition.delete({
-    where: { id: roleId },
+    await tx.roleDefinition.delete({
+      where: { id: roleId },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        userId: pelakuId,
+        action: 'ROLE_DELETED',
+        entityType: 'RoleDefinition',
+        entityId: roleId,
+        changes: {
+          before: { name: role.name, description: role.description, permissions: kodeIzin(role.permissions) },
+        },
+      },
+    });
   });
 
   revalidatePath('/backoffice/settings/rbac');
@@ -239,7 +287,10 @@ export async function deleteRole(roleId: string) {
 
 export type AssignUserRoleResult =
   | { ok: true }
-  | { ok: false; code: KodeAkunSistem | "PERAN_SENDIRI" | "TIDAK_DITEMUKAN" | "PERAN_TIDAK_DITEMUKAN" };
+  | {
+      ok: false;
+      code: KodeAkunSistem | "PERAN_SENDIRI" | "TIDAK_DITEMUKAN" | "PERAN_TIDAK_DITEMUKAN" | "TOKO_WAJIB";
+    };
 
 /**
  * Ganti peran seorang pengguna.
@@ -255,6 +306,11 @@ export type AssignUserRoleResult =
  * sistem yang di-commit di antara baca dan tulis tidak bisa ditimpa. Setiap
  * pergantian menulis `AuditLog` di transaksi yang sama — barisnya hanya
  * menyimpan peran terakhir, jejaknya satu-satunya riwayat.
+ *
+ * Toko tetap SPG mengikuti aturan Pengaturan → Pengguna (`perannyaSpg`):
+ * peran SPG wajib punya toko tetap yang aktif (`TOKO_WAJIB` — aksi ini tidak
+ * memilih toko, jadi tokonya ditetapkan di Pengaturan → Pengguna), dan peran
+ * lain mengosongkannya, karena aplikasi mengenali SPG dari toko tetapnya.
  */
 export async function assignUserRole(userId: string, roleId: string): Promise<AssignUserRoleResult> {
   const session = await auth();
@@ -269,9 +325,12 @@ export async function assignUserRole(userId: string, roleId: string): Promise<As
       tx.user.findUnique({ where: { id: pelakuId }, select: { roleDefinition: { select: { isSystem: true } } } }),
       tx.user.findUnique({
         where: { id: userId },
-        select: { id: true, roleId: true, roleDefinition: { select: { isSystem: true } } },
+        select: { id: true, roleId: true, assignedStoreId: true, roleDefinition: { select: { isSystem: true } } },
       }),
-      tx.roleDefinition.findUnique({ where: { id: roleId }, select: { id: true, isSystem: true } }),
+      tx.roleDefinition.findUnique({
+        where: { id: roleId },
+        select: { id: true, isSystem: true, permissions: { select: { permission: { select: { code: true } } } } },
+      }),
     ]);
     if (!target) return { ok: false, code: 'TIDAK_DITEMUKAN' };
     if (!peran) return { ok: false, code: 'PERAN_TIDAK_DITEMUKAN' };
@@ -284,14 +343,28 @@ export async function assignUserRole(userId: string, roleId: string): Promise<As
     if (target.id === pelakuId) return { ok: false, code: 'PERAN_SENDIRI' };
     if (target.roleId === peran.id) return { ok: true };
 
-    await tx.user.update({ where: { id: target.id }, data: { roleId: peran.id } });
+    let tokoBaru: string | null = null;
+    if (perannyaSpg(kodeIzin(peran.permissions), peran.isSystem)) {
+      const tokoAktif = target.assignedStoreId
+        ? await tx.store.count({ where: { id: target.assignedStoreId, isActive: true } })
+        : 0;
+      if (!tokoAktif) return { ok: false, code: 'TOKO_WAJIB' };
+      tokoBaru = target.assignedStoreId;
+    }
+    // Toko tetap hanya masuk jejak bila berubah — jejak lama berbentuk roleId saja.
+    const tokoBerubah = target.assignedStoreId !== tokoBaru;
+
+    await tx.user.update({ where: { id: target.id }, data: { roleId: peran.id, assignedStoreId: tokoBaru } });
     await tx.auditLog.create({
       data: {
         userId: pelakuId,
         action: 'USER_UPDATED',
         entityType: 'User',
         entityId: target.id,
-        changes: { before: { roleId: target.roleId }, after: { roleId: peran.id } },
+        changes: {
+          before: { roleId: target.roleId, ...(tokoBerubah ? { assignedStoreId: target.assignedStoreId } : {}) },
+          after: { roleId: peran.id, ...(tokoBerubah ? { assignedStoreId: tokoBaru } : {}) },
+        },
         metadata: { jalur: 'assignUserRole' },
       },
     });

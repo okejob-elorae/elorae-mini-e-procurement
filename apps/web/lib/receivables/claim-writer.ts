@@ -7,6 +7,8 @@ import { hitungUlangPiutang, returYangMelebihi } from './writer';
 import { tanggalWib } from '@/lib/dashboard/hari-wib';
 import { catatJejak, JEJAK } from './jejak';
 import { periksaGiro, STATUS_GIRO, type AlasanGiro, type GiroSah } from './giro';
+import { fotoBolehDipakai } from './foto-pencatat';
+import { PERMISSIONS } from '@/lib/rbac';
 
 /**
  * Penulis klaim pembayaran (BKM).
@@ -45,6 +47,8 @@ export type AlasanGagalKlaim =
   | 'RETUR_BEDA_TOKO'
   | 'RETUR_TERPAKAI'
   | 'FOTO_WAJIB'
+  /** Foto `/api/foto/<id>` diunggah orang lain, dan pencatat bukan orang kantor. */
+  | 'FOTO_BUKAN_MILIK'
   | 'JENIS_BUTUH_RETUR'
   | 'JENIS_BUTUH_CATATAN'
   | 'JENIS_HANYA_PKP'
@@ -166,6 +170,20 @@ export async function buatKlaimPembayaran(input: {
               : { ok: false as const, alasan: 'KUNCI_DIPAKAI' as const };
           }
         }
+
+        /*
+         * Foto bukti harus unggahan pencatatnya sendiri — kecuali orang kantor
+         * (pengelola piutang atau keuangan) yang menyalin foto laporan sales.
+         * Tanpa ini bukti transfer sales lain bisa dilaporkan ulang sebagai
+         * bukti sendiri. Sesudah kunci kiriman: kiriman ulang dari HP sudah
+         * tercatat dan dikembalikan apa adanya.
+         */
+        const fotoSah = await fotoBolehDipakai(tx, {
+          urls: [fotoTransfer, input.breakdownPhotoUrl],
+          userId: input.createdById,
+          izinKantor: [PERMISSIONS.RECEIVABLES_MANAGE, PERMISSIONS.JOURNALS_MANAGE],
+        });
+        if (!fotoSah) return { ok: false as const, alasan: 'FOTO_BUKAN_MILIK' as const };
 
         const lama = input.menggantikanId
           ? await periksaKlaimLama(tx, {

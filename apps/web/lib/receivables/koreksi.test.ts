@@ -172,7 +172,8 @@ async function buatNri(opsi: { storeId?: string | null; storeReturnId?: string |
       noNri: `${tag}-NRI-${urut}`,
       storeId: opsi.storeId === undefined ? tokoAId : opsi.storeId,
       storeReturnId: opsi.storeReturnId ?? null,
-      warehouseUserId: salesId,
+      // Penghitung bukan pelapor nota (`buatNrt` memakai `salesId`): aturan dua tangan.
+      warehouseUserId: lainId,
       receivedAt: new Date("2026-10-01T00:00:00+07:00"),
       physicalAmount: 250_000,
       claimedAmount: opsi.storeReturnId ? 300_000 : 0,

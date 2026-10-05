@@ -37,6 +37,9 @@ const saring = <T extends { id: string }>(sumber: () => T[]) =>
   });
 
 const tx = {
+  // Pemilik foto (`fotoBolehDipakai`): foto tiruan tidak ada di tabel `Foto`,
+  // jadi tidak ada yang bisa dicuci — pemeriksaannya diuji di foto-pencatat.test.ts.
+  foto: { findMany: vi.fn(async () => []) },
   store: { findUnique: vi.fn(async () => ({ isPkp: state.tokoPkp })) },
   deductionType: {
     findMany: vi.fn(async (args?: { where?: { id?: { in?: string[] } } }) => {

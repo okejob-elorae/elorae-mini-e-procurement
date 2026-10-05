@@ -6,6 +6,8 @@ import { denganNomorUnik } from './nomor';
 import { hitungUlangPiutang } from './writer';
 import { tanggalWib } from '@/lib/dashboard/hari-wib';
 import { catatJejak, JEJAK } from './jejak';
+import { fotoBolehDipakai } from './foto-pencatat';
+import { PERMISSIONS } from '@/lib/rbac';
 
 /**
  * Penulis kontrabon (tanda terima / TT).
@@ -17,6 +19,9 @@ import { catatJejak, JEJAK } from './jejak';
  */
 
 type Klien = Prisma.TransactionClient;
+
+/** Yang boleh memakai foto unggahan orang lain di kontrabon: pengelola piutang. */
+const IZIN_KANTOR = [PERMISSIONS.RECEIVABLES_MANAGE];
 
 /**
  * Nomor dokumen berikutnya untuk sebuah awalan, dalam tahun berjalan.
@@ -51,6 +56,8 @@ export type AlasanGagalKontrabon =
   | 'NOMOR_BENTROK'
   | 'BUKAN_PENAGIH'
   | 'FOTO_WAJIB'
+  /** Foto `/api/foto/<id>` diunggah orang lain, dan pencatat bukan pengelola piutang. */
+  | 'FOTO_BUKAN_MILIK'
   | 'PENERIMA_WAJIB'
   | 'KUNCI_DIPAKAI';
 
@@ -143,6 +150,12 @@ export async function buatKontrabon(input: {
               ? { ok: true as const, id: ada.id, docNo: ada.docNo, nilai: Number(ada.amount) }
               : { ok: false as const, alasan: 'KUNCI_DIPAKAI' as const };
           }
+        }
+
+        // Foto lembar harus unggahan pencatatnya sendiri, kecuali pengelola
+        // piutang — lihat `fotoBolehDipakai`.
+        if (!(await fotoBolehDipakai(tx, { urls: [input.photoUrl], userId: input.salesmanId, izinKantor: IZIN_KANTOR }))) {
+          return { ok: false as const, alasan: 'FOTO_BUKAN_MILIK' as const };
         }
 
         const piutang = await tx.receivable.findMany({
@@ -358,6 +371,10 @@ export async function pasangFotoKontrabon(input: {
       select: { id: true, docNo: true, photoUrl: true },
     });
     if (!nota) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
+    // Mengganti bukti dengan foto orang lain sama saja dengan pencucian foto.
+    if (!(await fotoBolehDipakai(tx, { urls: [input.photoUrl], userId: input.olehUserId, izinKantor: IZIN_KANTOR }))) {
+      return { ok: false as const, alasan: 'FOTO_BUKAN_MILIK' as const };
+    }
 
     await tx.collectionNote.update({
       where: { id: nota.id },

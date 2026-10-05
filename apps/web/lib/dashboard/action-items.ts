@@ -1,5 +1,6 @@
 import { prisma } from "@elorae/db";
-import { PERMISSIONS } from "@/lib/rbac";
+import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { bolehMembacaPiutang } from "@/lib/receivables/izin";
 import type { ActionItem } from "./action-items-shared";
 
 // Client components import the row type and the total from the shared module;
@@ -79,11 +80,36 @@ export type BuildActionItemsInput = ActionItemCounts & {
 };
 
 /**
+ * Baris yang pagarnya bukan satu izin. "Lewat janji bayar" memakai aturan yang
+ * SAMA dengan kartu piutang di sebelahnya (`bolehMembacaPiutang`: view ATAU
+ * manage) — dengan `receivables:view` saja, pemegang receivables:manage melihat
+ * angka "lewat janji" di kartu tetapi barisnya hilang dari daftar tindakan.
+ *
+ * Satu kode izin tidak bisa menyatakan "view ATAU manage", jadi baris ini
+ * selalu keluar dengan `permission: null` dan pagarnya dipegang di dua tempat:
+ * - dengan `izin`, di sini (`bolehMembacaPiutang`);
+ * - tanpa `izin`, oleh pemanggil: `overduePromises` hanya boleh diisi untuk
+ *   penonton yang lolos `bolehMembacaPiutang` — beranda mengisinya dari
+ *   ringkasan piutang yang hanya dimuat untuk kartu piutang (`kartuBeranda`).
+ *   Tanpa datanya hitungannya nol, dan baris nol dibuang.
+ */
+const CUSTOM_GATES: Readonly<Record<string, (izin: string[]) => boolean>> = {
+  overduePromises: bolehMembacaPiutang,
+};
+
+/**
  * Pure — so the ordering rule is testable without a database.
  * Zero-count rows are dropped here rather than dimmed in the UI: a list of
  * mostly-zeros trains people to stop reading it.
+ *
+ * Dengan `izin` (izin penonton), baris disaring DI SINI: baris satu-izin lewat
+ * `hasPermission`, baris berpagar khusus lewat aturannya sendiri. Tanpa `izin`
+ * baris satu-izin memegang izinnya untuk saringan `!permission ||
+ * hasPermission(…)` pemanggil, dan baris berpagar khusus bergantung pada
+ * pemanggil yang hanya mengisi datanya untuk penonton yang berhak (lihat
+ * `CUSTOM_GATES`).
  */
-export function buildActionItems(input: BuildActionItemsInput): ActionItem[] {
+export function buildActionItems(input: BuildActionItemsInput, izin?: string[]): ActionItem[] {
   const all: ActionItem[] = [
     {
       key: "overduePOs",
@@ -99,7 +125,8 @@ export function buildActionItems(input: BuildActionItemsInput): ActionItem[] {
       labelKey: "overduePromises",
       count: input.overduePromises?.count ?? 0,
       href: "/backoffice/piutang?keadaan=lewat",
-      permission: PERMISSIONS.RECEIVABLES_VIEW,
+      // Pagarnya `bolehMembacaPiutang`, bukan satu kode — lihat CUSTOM_GATES.
+      permission: null,
       tone: "overdue",
       amount: input.overduePromises?.amount,
     },
@@ -185,7 +212,15 @@ export function buildActionItems(input: BuildActionItemsInput): ActionItem[] {
   // Overdue before waiting, then by size. Stable within a tone so the list does
   // not reshuffle under someone's cursor when two rows share a count.
   const toneRank = (t: ActionItem["tone"]) => (t === "overdue" ? 0 : 1);
-  return all
+  const visible =
+    izin === undefined
+      ? all
+      : all.flatMap((item): ActionItem[] => {
+          const gate = CUSTOM_GATES[item.key];
+          if (gate) return gate(izin) ? [item] : [];
+          return !item.permission || hasPermission(izin, item.permission) ? [item] : [];
+        });
+  return visible
     .filter((item) => item.count > 0)
     .sort((a, b) => toneRank(a.tone) - toneRank(b.tone) || b.count - a.count);
 }
