@@ -256,6 +256,7 @@ export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver, kon
           stagedAdditions={stagedAdditions}
           onStagedAdditionsChange={setStagedAdditions}
           kreditDitahan={kreditDitahan}
+          preorder={order.preorder ? { dirilis: order.preorder.dirilis } : null}
         />
       )}
 

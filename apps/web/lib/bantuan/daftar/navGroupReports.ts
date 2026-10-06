@@ -8,6 +8,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "dashboard.reportsPageDesc" },
       "Tab Produksi dan PO terlambat langsung terisi saat halaman dibuka. Laporan pengadaan, setoran per CMT, dan inventori baru dimuat setelah filternya diatur dan tombol tampilkan ditekan.",
+      "Tiap tab laporan tampil sesuai izin Anda: pengadaan bagi yang boleh melihat pesanan pembelian, setoran per CMT bagi yang boleh melihat perintah kerja, dan inventori bagi yang boleh melihat inventori.",
     ],
     kartu: [
       { judul: { kunci: "dashboard.shortageTitle" }, isi: { kunci: "dashboard.shortageDesc" } },

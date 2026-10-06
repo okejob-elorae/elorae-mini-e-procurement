@@ -41,6 +41,7 @@ import {
 import { logPrint } from '@/app/actions/audit';
 import { buildVendorReturnPrintHtml } from '@/lib/print/vendor-return-html';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
+import { pesanTolakRetur, tolakReturBasi } from '../pesan-tolak-retur';
 
 export default function VendorReturnDetailPage() {
   const params = useParams();
@@ -93,11 +94,17 @@ export default function VendorReturnDetailPage() {
     if (!session?.user?.id || !ret) return;
     setIsProcessing(true);
     try {
-      await processReturn(ret.id, session.user.id);
+      // Penolakan datang sebagai kode (pesan lemparan disamarkan di produksi).
+      const hasil = await processReturn(ret.id, session.user.id);
+      if (!hasil.ok) {
+        toast.error(pesanTolakRetur(hasil, tList, tList('processFailed'), locale));
+        if (tolakReturBasi(hasil)) refresh();
+        return;
+      }
       toast.success(tList('processed'));
       refresh();
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : tList('processFailed'));
+    } catch {
+      toast.error(tList('processFailed'));
     } finally {
       setIsProcessing(false);
     }
@@ -191,10 +198,17 @@ export default function VendorReturnDetailPage() {
       const data = await res.json();
       const receiptFileUrl = data.urls?.[0];
       if (!receiptFileUrl) throw new Error(t('uploadFailed'));
-      await completeReturn(ret.id, session.user.id, {
+      const hasil = await completeReturn(ret.id, session.user.id, {
         trackingNumber: tn,
         receiptFileUrl
       });
+      if (!hasil.ok) {
+        const pesan = pesanTolakRetur(hasil, tList, t('completeFailed'), locale);
+        setCompleteError(pesan);
+        toast.error(pesan);
+        if (tolakReturBasi(hasil)) refresh();
+        return;
+      }
       toast.success(t('completedToast'));
       setCompleteOpen(false);
       setTrackingNumber('');

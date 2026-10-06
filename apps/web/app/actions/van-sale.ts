@@ -9,6 +9,7 @@ import { recordVanSale } from "@/lib/canvassing/sale-writer";
 import { postVanJournalSafely } from "@/lib/canvassing/post-van-journal-safely";
 import { postVanSaleJournal } from "@/lib/canvassing/van-journal";
 import { isJournalRetryable } from "@/lib/canvassing/journal-pending";
+import { dokumenJurnal, tandaiJurnalTertundaSelesai } from "@/lib/finance/jurnal-tertunda";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 
 export type RecordVanSaleActionResult =
@@ -76,6 +77,8 @@ export async function postVanSaleJournalAction(
   }
 
   const r = await postVanSaleJournal(vanSaleId, session.user.id);
+  // Jurnal berdiri → tanda "Jurnal gagal" selesai (Beranda). Barisnya tetap ada untuk tombol ulang.
+  if (r.ok) await tandaiJurnalTertundaSelesai([dokumenJurnal("VAN_SALE", vanSaleId)]);
   revalidatePath(`/backoffice/van-sales/${vanSaleId}`);
   return r;
 }

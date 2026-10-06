@@ -24,6 +24,8 @@ const TERMINAL = new Set([
   "PESANAN_LAMA_TIDAK_BISA_DIGANTI",
   // Check-in tanpa sinyal yang mengikat pesanan ini tidak tercatat (ditolak server, atau dihapus dari HP).
   "KUNJUNGAN_TIDAK_SAH",
+  // PUTUS: barangnya belum punya harga — kantor harus menetapkannya dulu, mengulang tidak membantu.
+  "BARANG_TANPA_HARGA",
 ]);
 
 export function classifyResult(r: SubmitResult | { thrown: true }): SyncDecision {

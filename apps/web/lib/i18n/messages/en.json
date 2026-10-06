@@ -2173,11 +2173,8 @@
       "errSelectSupplier": "Select a supplier",
       "errLines": "Add at least one item with qty and cost",
       "errVariant": "Select a variant for each line item that has variants",
-      "savedOffline": "Saved locally. Will sync when back online.",
-      "saveOfflineFailed": "Failed to save locally",
       "createdToast": "Goods receipt created",
       "createFailed": "Failed to create GRN",
-      "offlineNotice": "Offline. GRN will be saved locally and synced when back online.",
       "cardTitle": "Goods Receipt (GRN)",
       "categoryFilter": "Category (filter)",
       "allCategories": "All categories",
@@ -2217,7 +2214,27 @@
       "creating": "Creating...",
       "createButton": "Create GRN",
       "rack": "Rack {index}",
-      "rollLabel": "#{index} · {length} {uom} (click to remove)"
+      "rollLabel": "#{index} · {length} {uom} (click to remove)",
+      "butuhSinyal": "Saving a GRN needs a connection.",
+      "tanpaSinyalDrafAman": "No connection. The GRN can only be saved online; your input is kept as a draft on this device.",
+      "tanpaSinyalDrafBelum": "No connection. The GRN can only be saved online, and this input is not stored on the device yet — do not close this page.",
+      "sambunganPutus": "The connection dropped before an answer came back. Check the Goods Receipts tab before saving again; your input is still here.",
+      "draf": {
+        "pulih": "Draft restored from {time}.",
+        "buang": "Discard draft"
+      },
+      "grnLama": {
+        "judul": "GRNs on this device that were never sent: {count}",
+        "ringkas": "{count, plural, one {# item} other {# items}} · Rp {total} · {time}",
+        "pemasokTakDikenal": "Unknown supplier",
+        "muat": "Load into form",
+        "diFormulir": "In the form",
+        "muatJudul": "Replace the form contents?",
+        "muatIsi": "What you are filling in now is replaced with this GRN.",
+        "hapusJudul": "Delete this GRN from the device?",
+        "hapusIsi": "This GRN never reached the system. Once deleted, its contents are gone.",
+        "gagalHapus": "Could not delete it from the device."
+      }
     },
     "stockMoveKind": {
       "GRN": "Goods receipt (GRN)",
@@ -2612,6 +2629,17 @@
         "PIN_WAJIB": "Enter your PIN to cancel the purchase order.",
         "GAGAL": "The purchase order could not be cancelled. Try again."
       }
+    },
+    "edit": {
+      "err": {
+        "TIDAK_DITEMUKAN": "Purchase order not found. It may have been deleted.",
+        "PO_TERTUTUP": "This purchase order is closed or cancelled, so it can no longer be edited.",
+        "PIN_WAJIB": "This purchase order has been sent to the supplier. Enter your PIN to save the changes.",
+        "QTY_DI_BAWAH_DITERIMA": "{diterima} of {barang} has already been received. Keep the line with a quantity of at least {diterima}.",
+        "VARIAN_TIDAK_VALID": "The variant of {barang} does not match the item data. Select the variant again.",
+        "TANPA_AKSES": "You do not have permission to edit purchase orders.",
+        "GAGAL": "The purchase order could not be saved. Try again."
+      }
     }
   },
   "workOrdersList": {
@@ -2645,7 +2673,19 @@
     "processFailed": "Failed to process",
     "confirmDelete": "Are you sure you want to delete this return?",
     "deleted": "Return deleted",
-    "deleteFailed": "Failed to delete"
+    "deleteFailed": "Failed to delete",
+    "err": {
+      "TANPA_AKSES": "You do not have permission to manage supplier returns.",
+      "TIDAK_DITEMUKAN": "Return not found. Reload this page.",
+      "SUDAH_DIPROSES": "This return has already been processed. Reload this page.",
+      "TANPA_BARIS": "This return has no items yet. Edit the return and add its items first.",
+      "BARIS_TIDAK_VALID": "The quantity or value of {barang} on this return is invalid. Edit the return and process it again.",
+      "STOK_KURANG": "Not enough stock of {barang}: {perlu} needed, {ada} available.",
+      "BUKTI_TIDAK_LENGKAP": "Fill in the tracking number and upload the shipping receipt.",
+      "BELUM_DIPROSES": "This return has not been processed yet. Process it before completing it.",
+      "SUDAH_SELESAI": "This return has already been completed. Reload this page.",
+      "GAGAL": "The return could not be saved. Try again."
+    }
   },
   "hpp": {
     "title": "HPP (Harga Pokok Produksi)",
@@ -4333,7 +4373,9 @@
       "repeatFilled": "{count} items from the last order are in the cart",
       "repeatSkipped": "{count} items skipped because they're out of stock or no longer sold",
       "filledFromRequest": "{count} items from the SPG request added to the cart. Check, then send.",
-      "filledFromRecommendation": "{count} items from the recommendation the store accepted added to the cart. Check, then send."
+      "filledFromRecommendation": "{count} items from the recommendation the store accepted added to the cart. Check, then send.",
+      "repeatNoPrice": "No price yet, left out: {nama}{sisa, plural, =0 {} other { and # more}}",
+      "tolakTanpaHarga": "Order not sent. No price yet: {nama}{sisa, plural, =0 {} other { and # more}}. Remove from the cart, then send again."
     },
     "offline": {
       "pendingTitle": "Not sent yet",
@@ -4382,7 +4424,8 @@
       "replacesOrder": "replaces {orderNo}",
       "errKunjunganDitolak": "The check-in this order was taken under was refused by the server, so the order cannot be sent. Contact the office.",
       "errKunjunganTidakSah": "The visit this order was taken under is not yours at this store. Contact the office.",
-      "photoErrKunjunganDitolak": "The check-in this photo was taken under was refused by the server, so the photo cannot be uploaded."
+      "photoErrKunjunganDitolak": "The check-in this photo was taken under was refused by the server, so the photo cannot be uploaded.",
+      "errTanpaHarga": "Refused: some goods have no price set by the office yet. Open the catalogue, remove them, then send again."
     },
     "nearest": {
       "title": "Nearest stores",
@@ -6895,7 +6938,8 @@
       "terkirim": "Order {orderNo} sent, waiting for office approval.",
       "errNoActiveVisit": "The visit at this store has ended. Check in again to send.",
       "errMinQty": "Quantity below the minimum.",
-      "errGeneric": "Could not send the order. Try again."
+      "errGeneric": "Could not send the order. Try again.",
+      "errTanpaHarga": "Order not sent. No price yet for: {nama}. Build the plan again."
     },
     "spgAntrean": {
       "title": "Not sent yet",
@@ -7228,7 +7272,9 @@
     },
     "appealFinalPriceNetHint": "The final price is the NET price per piece — that is what the store is billed. Line promos are no longer deducted from a final price.",
     "appealPromoDropped": "This line had the {promo} promo ({amount} off). Once it gets a final price, that promo no longer applies.",
-    "appealPromoDroppedUnnamed": "This line had a {amount} promo discount. Once it gets a final price, that promo no longer applies."
+    "appealPromoDroppedUnnamed": "This line had a {amount} promo discount. Once it gets a final price, that promo no longer applies.",
+    "rejectConfirmPreorder": "Reject this pre-order? No stock has been reserved for it yet, so none is released.",
+    "rejectConfirmUnknown": "Reject this order? Any stock already reserved for it will be released."
   },
   "promos": {
     "pageTitle": "Promos",
@@ -7503,7 +7549,9 @@
       }
     },
     "kurangBarang": "Choose the items being sold.",
-    "kurangUang": "Fill in the cash received."
+    "kurangUang": "Fill in the cash received.",
+    "errTerputus": "Connection lost — the sale may not have been recorded. Tap Record Sale again; it will not be recorded twice.",
+    "keranjangDipulihkan": "Your previous cart was restored."
   },
   "spgSale": {
     "back": "Back",
@@ -8574,7 +8622,9 @@
     "errTOKO_TIDAK_DIIZINKAN": "These invoices are not yours to collect — the store is held by another salesperson. Ask the office to assign the collection to you.",
     "errPEMERIKSA_SAMA": "You reported or recorded this payment receipt, so you cannot decide it yourself. Ask another finance admin to review it.",
     "errRETUR_TERPAKAI": "That return note has already been deducted in full on another payment receipt. Pick another note or reduce the deduction to the remaining amount shown.",
-    "errFOTO_BUKAN_MILIK": "This proof photo was uploaded by someone else. Take your own photo of the proof."
+    "errFOTO_BUKAN_MILIK": "This proof photo was uploaded by someone else. Take your own photo of the proof.",
+    "errVerifikasiMELEBIHI_SISA": "Since this payment receipt was reported, its invoice has been settled by another receipt, so what is left is now less than this receipt's amount. Reject this receipt or ask the salesperson to correct the amount.",
+    "pemeriksaSamaSingkat": "Your own receipt — another finance admin decides it."
   },
   "collections": {
     "pageTitle": "Collection notes",
@@ -9990,7 +10040,12 @@
       "STOCK_LOSS_SETTINGS_CHANGED": "Missing-goods settings changed",
       "SPG_COUNTER_EXCHANGE_RECORDED": "Counter exchange recorded",
       "ROLE_PERMISSIONS_UPDATED": "Role permissions changed",
-      "ROLE_DELETED": "Role deleted"
+      "ROLE_DELETED": "Role deleted",
+      "STOCK_REQUEST_ORDER_CANCELLED": "Order from stock request cancelled — request reopened",
+      "STOCK_REQUEST_ORDER_REPLACED": "Stock request order replaced",
+      "STORE_RECOMMENDATION_ORDER_CANCELLED": "Order from recommendation cancelled — recommendation reopened",
+      "STORE_RECOMMENDATION_ORDER_REPLACED": "Recommendation order replaced",
+      "MATERIAL_ISSUED": "Materials issued to work order"
     },
     "entities": {
       "ChainTemplate": "Chain template",
@@ -10659,7 +10714,8 @@
     "clearedOn": "Cleared {date}.",
     "errPEMERIKSA_SAMA": "You reported or recorded this giro payment receipt, so you cannot decide it yourself. Ask another finance admin to review it.",
     "errMELEBIHI_SISA": "This invoice was already settled by another payment receipt that was verified first. Reject this giro or ask the salesperson to correct the amount.",
-    "errRETUR_TERPAKAI": "A return note on this giro receipt has already been deducted in full on another receipt. Reject one of the receipts first."
+    "errRETUR_TERPAKAI": "A return note on this giro receipt has already been deducted in full on another receipt. Reject one of the receipts first.",
+    "pemeriksaSamaSingkat": "Your own receipt — another finance admin decides it."
   },
   "storeStockTargets": {
     "title": "Store stock targets",
@@ -16085,12 +16141,31 @@
     "BAHAN_WO_SELESAI": "This work order has already received finished goods or is complete, so no more materials can be issued.",
     "STOK_BAHAN_KURANG": "Not enough stock of {barang} to issue. Check warehouse stock and try again.",
     "ROLL_TIDAK_CUKUP": "The selected rolls cannot cover the issued fabric qty (short {kurang}). Pick other rolls or reload this page.",
-    "WO_SUDAH_TERBIT": "This work order has already been issued. Reload this page."
+    "WO_SUDAH_TERBIT": "This work order has already been issued. Reload this page.",
+    "WO_BUKAN_DRAF": "This work order has been issued or its materials have already been issued, so it can no longer be edited.",
+    "DATA_TIDAK_VALID": "The work order form is incomplete or invalid. Check it and save again.",
+    "STOK_RENCANA_KURANG": "Not enough stock for this plan: {daftar}.",
+    "WO_BUKAN_PRODUKSI": "Additional materials can only be issued for work orders in production.",
+    "QTY_TAMBAHAN_TIDAK_VALID": "The additional quantity must be a whole number above 0.",
+    "TANPA_AKSESORI_BOM": "This finished good has no accessories in its BOM, so there are no additional materials to issue."
   },
   "grnErrors": {
     "PO_TIDAK_DITEMUKAN": "Purchase order not found.",
     "PO_DIBATALKAN": "This purchase order has been cancelled, so goods cannot be received against it.",
     "PO_BELUM_DISETUJUI": "This purchase order is still a draft and has not been approved. Approve and send it before receiving goods.",
     "PO_DITUTUP": "This purchase order has been closed, so goods can no longer be received against it."
+  },
+  "halamanGalat": {
+    "judul": "This page failed to load",
+    "pesan": "Something went wrong. Please try again in a moment.",
+    "judulLuring": "No signal",
+    "pesanLuring": "This screen needs a connection. Try again once you are back online.",
+    "cobaLagi": "Try again",
+    "keBeranda": "Back to home",
+    "kode": "If it keeps failing, report this code to an admin:",
+    "antreanAman": "{jumlah, plural, one {# item has} other {# items have}} not been sent yet and {jumlah, plural, one {is} other {are}} still saved on this phone.",
+    "lihatAntrean": "View unsent items",
+    "tidakDitemukan": "Page not found",
+    "tidakDitemukanPesan": "The address is wrong, or the data no longer exists."
   }
 }

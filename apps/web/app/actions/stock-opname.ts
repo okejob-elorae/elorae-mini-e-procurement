@@ -28,6 +28,7 @@ import { freezeFabricRollSnapshot, freezeItemSnapshot } from "@/lib/inventory/op
 import { postOpnameJournal, opnameNetDelta } from "@/lib/inventory/opname-journal";
 import { serializeForClient } from "@/lib/serialize-for-client";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
+import { dokumenJurnal, tandaiJurnalTertundaSelesai } from "@/lib/finance/jurnal-tertunda";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import {
   angkaSistemTampil,
@@ -356,6 +357,8 @@ export async function postOpnameJournalAction(
   }
 
   const r = await postOpnameJournal(opnameId, session.user.id);
+  // Jurnal berdiri → tanda "Jurnal gagal" opname ini selesai (Beranda).
+  if (r.ok) await tandaiJurnalTertundaSelesai([dokumenJurnal("OPNAME", opnameId)]);
   revalidatePath(`${OPNAME_PATH}/${opnameId}`);
   return r;
 }

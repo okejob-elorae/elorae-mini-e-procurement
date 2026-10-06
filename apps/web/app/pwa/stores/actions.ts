@@ -18,6 +18,7 @@ import {
   KUNCI_RADIUS_GLOBAL,
 } from "@/lib/salesman/aturan-kunjungan";
 import { putuskanHasilCheckout } from "@/lib/salesman/hasil-kunjungan";
+import { adaTransaksiKunjungan } from "@/lib/salesman/transaksi-kunjungan";
 import {
   HARI_KOORDINAT_KEMBAR,
   nilaiCheckinJanggal,
@@ -47,25 +48,6 @@ const checkOutSchema = z.object({
 async function bacaSetelan(key: string): Promise<string | null> {
   const baris = await prisma.systemSetting.findUnique({ where: { key }, select: { value: true } });
   return baris?.value ?? null;
-}
-
-/**
- * Apakah kunjungan ini sudah menghasilkan transaksi yang tercatat di server:
- * pesanan yang terikat kunjungannya, atau klaim bayar / retur toko / penjualan
- * kanvas / tukar faktur oleh orang ini di toko ini sejak check-in.
- */
-async function adaTransaksiKunjungan(k: { visitId: string; userId: string; storeId: string; sejak: Date }): Promise<boolean> {
-  const sejak = { gte: k.sejak };
-  const jumlah = await Promise.all([
-    prisma.fieldSalesOrder.count({ where: { visitId: k.visitId } }),
-    prisma.paymentClaim.count({
-      where: { storeId: k.storeId, createdAt: sejak, OR: [{ createdById: k.userId }, { salesmanId: k.userId }] },
-    }),
-    prisma.storeReturn.count({ where: { storeId: k.storeId, salesmanId: k.userId, createdAt: sejak } }),
-    prisma.vanSale.count({ where: { storeId: k.storeId, salesmanId: k.userId, createdAt: sejak } }),
-    prisma.collectionNote.count({ where: { storeId: k.storeId, salesmanId: k.userId, createdAt: sejak } }),
-  ]);
-  return jumlah.some((n) => n > 0);
 }
 
 export type CheckInHasil =

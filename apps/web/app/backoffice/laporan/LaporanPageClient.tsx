@@ -66,6 +66,7 @@ import {
   WO_STATUS_LABEL_KEY,
 } from '@/components/dashboard/warna-status-wo';
 import { formatRupiah as formatIdr } from '@/lib/format/rupiah';
+import { LAPORAN_TABS, tabLaporanAktif, tabLaporanTerlihat, type LaporanTab } from './tab-izin';
 
 /**
  * Laporan operasional — dipindah utuh dari tab-tab di bawah beranda
@@ -76,15 +77,6 @@ import { formatRupiah as formatIdr } from '@/lib/format/rupiah';
  * satu halaman dan beranda jadi dua kali lebih panjang dari yang dibaca orang.
  * Isi dan pemuatan datanya tidak ditulis ulang — hanya rumahnya yang pindah.
  */
-
-const LAPORAN_TABS = [
-  'production',
-  'overdue',
-  'rp1',
-  'rp2',
-  'rp3',
-] as const;
-type LaporanTab = (typeof LAPORAN_TABS)[number];
 
 function isLaporanTab(value: string | null): value is LaporanTab {
   return value != null && (LAPORAN_TABS as readonly string[]).includes(value);
@@ -136,11 +128,14 @@ export function LaporanPageClient({
   initialSuppliers,
   initialRawMaterialShortage,
   initialWoStatusCounts,
+  izin,
 }: {
   initialOverduePOs: OverduePORow[];
   initialSuppliers: { id: string; name: string; code: string }[];
   initialRawMaterialShortage: RawMaterialShortageRow[];
   initialWoStatusCounts: WorkOrderStatusCount[];
+  /** Izin penonton dari server; tanpa ini dibaca dari sesi. Menyaring tab laporan berat. */
+  izin?: string[];
 }) {
   const { data: session } = useSession();
   const router = useRouter();
@@ -152,9 +147,14 @@ export function LaporanPageClient({
   const tItems = useTranslations('items');
   const locale = useLocale();
   const tabFromUrl = searchParams.get('tab');
-  const activeTab: LaporanTab = isLaporanTab(tabFromUrl) ? tabFromUrl : 'production';
+  // Tab pengadaan, setoran CMT, dan inventori hanya untuk pemegang izin modulnya —
+  // aksinya menolak tanpa izin itu, jadi tombolnya jangan ditawarkan.
+  const izinPenonton = izin ?? session?.user?.permissions ?? [];
+  const tabTerlihat = tabLaporanTerlihat(izinPenonton);
+  const boleh = (tab: LaporanTab) => tabTerlihat.includes(tab);
+  const activeTab: LaporanTab = tabLaporanAktif(tabFromUrl, tabTerlihat);
   const setActiveTab = (value: string) => {
-    if (!isLaporanTab(value)) return;
+    if (!isLaporanTab(value) || !boleh(value)) return;
     const params = new URLSearchParams(searchParams.toString());
     if (value === 'production') params.delete('tab');
     else params.set('tab', value);
@@ -350,9 +350,9 @@ export function LaporanPageClient({
         <TabsList className="flex flex-wrap gap-1">
           <TabsTrigger value="production">{tDashboard('productionTab')}</TabsTrigger>
           <TabsTrigger value="overdue">{tDashboard('overduePOs')}</TabsTrigger>
-          <TabsTrigger value="rp1">{tDashboard('procurementRp1')}</TabsTrigger>
-          <TabsTrigger value="rp2">{tDashboard('reportsSetoranCmt')}</TabsTrigger>
-          <TabsTrigger value="rp3">{tDashboard('inventoryRp3')}</TabsTrigger>
+          {boleh('rp1') && <TabsTrigger value="rp1">{tDashboard('procurementRp1')}</TabsTrigger>}
+          {boleh('rp2') && <TabsTrigger value="rp2">{tDashboard('reportsSetoranCmt')}</TabsTrigger>}
+          {boleh('rp3') && <TabsTrigger value="rp3">{tDashboard('inventoryRp3')}</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="production" className="space-y-4">
@@ -571,6 +571,7 @@ export function LaporanPageClient({
           </Card>
         </TabsContent>
 
+        {boleh('rp1') && (
         <TabsContent value="rp1" className="space-y-4">
           <Card>
             <CardHeader>
@@ -717,7 +718,9 @@ export function LaporanPageClient({
             </CardContent>
           </Card>
         </TabsContent>
+        )}
 
+        {boleh('rp2') && (
         <TabsContent value="rp2" className="space-y-4">
           <Card>
             <CardHeader>
@@ -817,7 +820,9 @@ export function LaporanPageClient({
             </CardContent>
           </Card>
         </TabsContent>
+        )}
 
+        {boleh('rp3') && (
         <TabsContent value="rp3" className="space-y-4">
           <Card>
             <CardHeader>
@@ -971,6 +976,7 @@ export function LaporanPageClient({
             </CardContent>
           </Card>
         </TabsContent>
+        )}
       </Tabs>
     </div>
   );

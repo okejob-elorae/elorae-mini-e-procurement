@@ -52,6 +52,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
 import { getVendorReturns, processReturn, deleteVendorReturn } from '@/app/actions/vendor-returns';
+import { pesanTolakRetur, tolakReturBasi } from './pesan-tolak-retur';
 import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 import { PageHeader } from '@/components/ui/page-header';
@@ -149,11 +150,17 @@ export default function VendorReturnsPage() {
     if (!session?.user?.id) return;
     setProcessingId(id);
     try {
-      await processReturn(id, session.user.id);
+      // Penolakan datang sebagai kode (pesan lemparan disamarkan di produksi).
+      const hasil = await processReturn(id, session.user.id);
+      if (!hasil.ok) {
+        toast.error(pesanTolakRetur(hasil, t, t('processFailed'), locale));
+        if (tolakReturBasi(hasil)) fetchReturns();
+        return;
+      }
       toast.success(t('processed'));
       fetchReturns();
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : t('processFailed'));
+    } catch {
+      toast.error(t('processFailed'));
     } finally {
       setProcessingId(null);
     }

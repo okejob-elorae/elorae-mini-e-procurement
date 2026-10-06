@@ -30,7 +30,8 @@ async function wajibBolehLihatBeranda(): Promise<string[]> {
 /** Bentuk yang sama dengan yang dikirim halaman beranda — tanpa nilai rupiah yang tidak digambar. */
 export async function getDashboardStats() {
   const izin = await wajibBolehLihatBeranda();
-  return statistikBeranda(await getDashboardStatsLib(), kartuBeranda(izin));
+  const kartu = kartuBeranda(izin);
+  return statistikBeranda(await getDashboardStatsLib(kartu), kartu);
 }
 
 export async function getRawMaterialShortage() {

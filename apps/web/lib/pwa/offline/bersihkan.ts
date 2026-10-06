@@ -40,6 +40,9 @@ export async function bersihkanDataPerangkat(): Promise<void> {
 const AWALAN_SIMPANAN_SPG = [
   "elorae.spg.keranjang.",
   "elorae.spg.selisihTotal",
+  // Keranjang jual van yang hasilnya belum pasti (`AWALAN_SIMPANAN_KERANJANG_VAN`,
+  // app/pwa/van/keranjang.ts) — terikat userId, tapi tidak boleh tertinggal di tab.
+  "elorae.van.keranjang.",
   KUNCI_KUNJUNGAN_TERKIRIM,
   // Juga menutup penanda "sudah dimuat sesi ini" (`…aturanKunjungan.dimuat`,
   // sessionStorage), supaya orang berikutnya di tab yang sama memuat aturannya sendiri.

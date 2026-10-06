@@ -36,6 +36,8 @@ export type GiroTampil = {
   kedaluwarsa: boolean;
   diputuskanPada: string | null;
   catatan: string | null;
+  /** Penonton melaporkan/mencatatkan BKM giro ini — tidak boleh memutuskannya. */
+  pemeriksaSama: boolean;
 };
 
 export type KelompokTampil = {
@@ -217,7 +219,7 @@ function TabelGiro({
               </TableCell>
               {menunggu && bolehMemutuskan && (
                 <TableCell className="sticky right-0 bg-card text-right">
-                  <TombolGiro claimId={g.id} giroNo={g.giroNo} nilai={formatIDR(g.nilai)} susun />
+                  <TombolGiro claimId={g.id} giroNo={g.giroNo} nilai={formatIDR(g.nilai)} susun pemeriksaSama={g.pemeriksaSama} />
                 </TableCell>
               )}
             </TableRow>

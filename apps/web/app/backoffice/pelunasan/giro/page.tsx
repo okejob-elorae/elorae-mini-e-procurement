@@ -5,11 +5,12 @@ import { giroBaruDiputuskan, giroMenunggu, type BarisGiro } from "@/lib/receivab
 import { ringkasGiro, URUTAN_KELOMPOK_GIRO } from "@/lib/receivables/giro";
 import { formatDisplayDate } from "@/lib/date-only";
 import { DaftarGiroClient, type GiroTampil, type KelompokTampil } from "./DaftarGiroClient";
+import { pemeriksaSamaKlaim } from "../[id]/putusan-klaim";
 
 export const dynamic = "force-dynamic";
 
 /** Tanggal diformat di server — komponen klien menerima teks jadi. */
-function tampil(g: BarisGiro): GiroTampil {
+function tampil(g: BarisGiro, penontonId: string): GiroTampil {
   return {
     id: g.id,
     docNo: g.docNo,
@@ -24,6 +25,7 @@ function tampil(g: BarisGiro): GiroTampil {
     kedaluwarsa: g.kedaluwarsa,
     diputuskanPada: g.diputuskanPada ? formatDisplayDate(g.diputuskanPada) : null,
     catatan: g.catatan,
+    pemeriksaSama: pemeriksaSamaKlaim(penontonId, g),
   };
 }
 
@@ -55,11 +57,11 @@ export default async function DaftarGiroPage() {
     kelompok: k,
     jumlah: ringkas[k].jumlah,
     nilai: ringkas[k].nilai,
-    baris: menunggu.filter((g) => g.kelompok === k).map(tampil),
+    baris: menunggu.filter((g) => g.kelompok === k).map((g) => tampil(g, session.user.id)),
   }));
   // Giro tanpa tanggal efektif (dicatat sebelum kolomnya ada) tidak punya
   // kelompok. Ditaruh di "Lewat" — arah yang aman: dilihat, bukan dilupakan.
-  const tanpaTanggal = menunggu.filter((g) => g.kelompok === null).map(tampil);
+  const tanpaTanggal = menunggu.filter((g) => g.kelompok === null).map((g) => tampil(g, session.user.id));
   if (tanpaTanggal.length > 0) {
     kelompok[0].baris.push(...tanpaTanggal);
     kelompok[0].jumlah += tanpaTanggal.length;
@@ -69,7 +71,7 @@ export default async function DaftarGiroPage() {
   return (
     <DaftarGiroClient
       kelompok={kelompok}
-      baruSaja={baruSaja.map(tampil)}
+      baruSaja={baruSaja.map((g) => tampil(g, session.user.id))}
       bolehMemutuskan={bolehMemverifikasi(izin)}
     />
   );

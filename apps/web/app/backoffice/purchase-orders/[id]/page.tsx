@@ -46,6 +46,7 @@ import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 import { TutupPoDialog } from './TutupPoDialog';
 import { RingkasanUtangPo } from './RingkasanUtangPo';
 import { pesanTolakBatalPo, type TolakBatalPo } from '../pesan-batal-po';
+import { pesanTolakEditPo, type TolakEditPo } from '../pesan-edit-po';
 
 const statusLabels: Record<POStatus, string> = {
   DRAFT: 'Draft',
@@ -297,29 +298,73 @@ export default function PODetailPage() {
     }
   };
 
-  const handlePinConfirm = async (pin: string) => {
-    if (!session?.user?.id || !po) return;
-    if (pendingAction === 'cancel') return batalkanDenganPin(pin);
+  /** Teks penolakan `updatePO`: kunci `security.*` untuk PIN, `purchaseOrders.edit.err.*` selainnya. */
+  const teksTolakEdit = (hasil: TolakEditPo) => {
+    const pesan = pesanTolakEditPo(hasil, locale);
+    const teks =
+      pesan.ruang === 'security'
+        ? tSecurity.has(pesan.kunci) ? tSecurity(pesan.kunci) : tSecurity('pinInvalid')
+        : tPO.has(pesan.kunci) ? tPO(pesan.kunci, pesan.nilai) : tPO('updateFailed');
+    return { teks, ulangiPin: pesan.ulangiPin };
+  };
 
-    setIsSaving(true);
+  /** Sesudah penolakan karena PO berubah di tempat lain: tampilkan keadaan terbarunya. */
+  const muatUlangSesudahTolakEdit = async (hasil: TolakEditPo) => {
+    if (!po) return;
+    if (hasil.code === 'TIDAK_DITEMUKAN') {
+      router.push('/backoffice/purchase-orders');
+      return;
+    }
+    if (hasil.code !== 'PO_TERTUTUP' && hasil.code !== 'PIN_WAJIB') return;
+    if (hasil.code === 'PO_TERTUTUP') setIsEditMode(false);
     try {
-      if (pendingAction === 'update' && pendingUpdateData) {
-        await updatePO(po.id, pendingUpdateData, session.user.id, pin);
-        toast.success(tPO('toastUpdated'));
-        setIsEditMode(false);
-        setPendingUpdateData(null);
-      }
-      setPinModalOpen(false);
-      setPendingAction(null);
-      router.refresh();
-      const updated = await getPOById(po.id);
-      setPO(updated);
-    } catch (error: any) {
-      toast.error(error.message || tSupplierPayments('actionFailed'));
-      throw error;
+      setPO(await getPOById(po.id));
+    } catch {
+      // muat ulang gagal: data lama tetap tampil
+    }
+  };
+
+  /** Edit setelah ketik PIN. Penolakan datang sebagai kode (pesan lemparan disamarkan di produksi). */
+  const simpanEditDenganPin = async (pin: string) => {
+    if (!session?.user?.id || !po || !pendingUpdateData) return;
+    setIsSaving(true);
+    let hasil: Awaited<ReturnType<typeof updatePO>>;
+    try {
+      hasil = await updatePO(po.id, pendingUpdateData, session.user.id, pin);
+    } catch {
+      // Galat jaringan/server: tampil di jendela PIN, bukan "PIN tidak valid".
+      setIsSaving(false);
+      throw new Error(tPO('updateFailed'));
+    }
+    if (!hasil.ok) {
+      const { teks, ulangiPin } = teksTolakEdit(hasil);
+      setIsSaving(false);
+      // PIN salah/kosong: jendela PIN tetap terbuka dan menampilkan pesannya.
+      if (ulangiPin) throw new Error(teks);
+      // Selain itu jendela PIN tertutup; isian edit tetap di formulir.
+      toast.error(teks);
+      await muatUlangSesudahTolakEdit(hasil);
+      return;
+    }
+    toast.success(tPO('toastUpdated'));
+    setIsEditMode(false);
+    setPendingUpdateData(null);
+    setPinModalOpen(false);
+    setPendingAction(null);
+    router.refresh();
+    try {
+      setPO(await getPOById(po.id));
+    } catch {
+      // muat ulang gagal: data lama tetap tampil, router.refresh sudah jalan
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handlePinConfirm = async (pin: string) => {
+    if (!session?.user?.id || !po) return;
+    if (pendingAction === 'cancel') return batalkanDenganPin(pin);
+    if (pendingAction === 'update') return simpanEditDenganPin(pin);
   };
 
   const handleUpdate = async (data: Parameters<typeof POForm>[0]['onSubmit'] extends (data: infer T) => any ? T : never) => {
@@ -334,14 +379,25 @@ export default function PODetailPage() {
 
     setIsSaving(true);
     try {
-      await updatePO(po.id, data, session.user.id);
+      const hasil = await updatePO(po.id, data, session.user.id);
+      if (!hasil.ok) {
+        toast.error(teksTolakEdit(hasil).teks);
+        if (hasil.code === 'PIN_WAJIB') {
+          // PO terkirim ke pemasok di tengah edit: lanjutkan lewat PIN dengan isian yang sama.
+          setPendingUpdateData(data);
+          setPendingAction('update');
+          setPinModalOpen(true);
+        }
+        await muatUlangSesudahTolakEdit(hasil);
+        return;
+      }
       toast.success(tPO('toastUpdated'));
       setIsEditMode(false);
       router.refresh();
       const updated = await getPOById(po.id);
       setPO(updated);
-    } catch (error: any) {
-      toast.error(error.message || tPO('updateFailed'));
+    } catch {
+      toast.error(tPO('updateFailed'));
     } finally {
       setIsSaving(false);
     }

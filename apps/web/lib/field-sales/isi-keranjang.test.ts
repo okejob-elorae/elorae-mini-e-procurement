@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { prisma, seededId } from "@elorae/db";
+import { prisma, seededId, seededIds } from "@elorae/db";
 import { muatIsiKeranjang, tautkanSumberPesanan } from "./isi-keranjang";
 
 /**
@@ -20,8 +20,19 @@ d("isi keranjang dari permintaan / rekomendasi (basis data)", () => {
   let itemId = "";
   let requestId = "";
   let rekomId = "";
+  let orderIds: string[] = [];
+
+  /** Pesanan sungguhan: penautan hanya menerima pesanan yang hidup, milik salesman ini, di toko ini. */
+  const buatPesanan = async (no: string, extra: { salesmanId?: string; status?: "PENDING_APPROVAL" | "REJECTED" } = {}) => {
+    const o = await prisma.fieldSalesOrder.create({
+      data: { orderNo: `${tag}-${no}`, storeId, salesmanId: extra.salesmanId ?? pemegang, status: extra.status ?? "PENDING_APPROVAL", subtotal: 0, total: 0 },
+    });
+    orderIds.push(o.id);
+    return { orderId: o.id, orderNo: o.orderNo };
+  };
 
   beforeEach(async () => {
+    orderIds = [];
     storeId = "";
     uomId = "";
     itemId = "";
@@ -55,6 +66,7 @@ d("isi keranjang dari permintaan / rekomendasi (basis data)", () => {
   });
 
   afterEach(async () => {
+    await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: seededIds(orderIds) } } });
     if (requestId) await prisma.stockRequest.delete({ where: { id: requestId } });
     if (rekomId) await prisma.storeRecommendation.delete({ where: { id: rekomId } });
     await prisma.auditLog.deleteMany({ where: { entityId: { in: [requestId, rekomId].filter(Boolean).map(seededId) } } });
@@ -85,31 +97,40 @@ d("isi keranjang dari permintaan / rekomendasi (basis data)", () => {
   });
 
   it("links the order once, even when two submissions race", async () => {
+    const o1 = await buatPesanan("1");
+    const o2 = await buatPesanan("2");
     for (let putaran = 0; putaran < 3; putaran++) {
       await prisma.stockRequest.update({ where: { id: requestId }, data: { status: "BARU", fieldSalesOrderId: null } });
       await Promise.all([
-        tautkanSumberPesanan({ jenis: "permintaan", id: requestId }, { orderId: "o-1", orderNo: "PUTUS/1", userId: pemegang, storeId }),
+        tautkanSumberPesanan({ jenis: "permintaan", id: requestId }, { ...o1, userId: pemegang, storeId }),
         new Promise((r) => setTimeout(r, putaran * 3)).then(() =>
-          tautkanSumberPesanan({ jenis: "permintaan", id: requestId }, { orderId: "o-2", orderNo: "PUTUS/2", userId: pemegang, storeId }),
+          tautkanSumberPesanan({ jenis: "permintaan", id: requestId }, { ...o2, userId: pemegang, storeId }),
         ),
       ]);
       const r = await prisma.stockRequest.findUniqueOrThrow({ where: { id: requestId } });
       expect(r.status).toBe("DIPROSES");
-      expect(["o-1", "o-2"]).toContain(r.fieldSalesOrderId);
-      expect(r.handleNote).toBe(r.fieldSalesOrderId === "o-1" ? "Dibuatkan pesanan PUTUS/1" : "Dibuatkan pesanan PUTUS/2");
+      expect([o1.orderId, o2.orderId]).toContain(r.fieldSalesOrderId);
+      expect(r.handleNote).toBe(r.fieldSalesOrderId === o1.orderId ? `Dibuatkan pesanan ${o1.orderNo}` : `Dibuatkan pesanan ${o2.orderNo}`);
     }
     // Satu jejak per penautan yang berhasil — yang kalah balapan tidak menulis apa-apa.
     expect(await prisma.auditLog.count({ where: { entityId: seededId(requestId), action: "STOCK_REQUEST_STATUS" } })).toBe(3);
   });
 
   it("a non-holder cannot link a request; an accepted recommendation becomes SELESAI", async () => {
-    await tautkanSumberPesanan({ jenis: "permintaan", id: requestId }, { orderId: "o-x", orderNo: "X", userId: `${tag}-lain`, storeId });
+    const ox = await buatPesanan("x", { salesmanId: `${tag}-lain` });
+    await tautkanSumberPesanan({ jenis: "permintaan", id: requestId }, { ...ox, userId: `${tag}-lain`, storeId });
     expect((await prisma.stockRequest.findUniqueOrThrow({ where: { id: requestId } })).fieldSalesOrderId).toBeNull();
 
-    await tautkanSumberPesanan({ jenis: "rekomendasi", id: rekomId }, { orderId: "o-r", orderNo: "PUTUS/3", userId: pemegang, storeId });
+    // Pesanan yang sudah dibatalkan/ditolak tidak pernah menjadi tautan.
+    const mati = await buatPesanan("mati", { status: "REJECTED" });
+    await tautkanSumberPesanan({ jenis: "rekomendasi", id: rekomId }, { ...mati, userId: pemegang, storeId });
+    expect((await prisma.storeRecommendation.findUniqueOrThrow({ where: { id: rekomId } })).status).toBe("DITERIMA");
+
+    const or = await buatPesanan("r");
+    await tautkanSumberPesanan({ jenis: "rekomendasi", id: rekomId }, { ...or, userId: pemegang, storeId });
     const r = await prisma.storeRecommendation.findUniqueOrThrow({ where: { id: rekomId } });
     expect(r.status).toBe("SELESAI");
-    expect(r.fieldSalesOrderId).toBe("o-r");
+    expect(r.fieldSalesOrderId).toBe(or.orderId);
     const jejak = await prisma.auditLog.findMany({ where: { entityId: seededId(rekomId) }, select: { action: true } });
     expect(jejak.map((j) => j.action)).toEqual(["STORE_RECOMMENDATION_ORDERED"]);
   });

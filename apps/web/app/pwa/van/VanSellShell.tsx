@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { KeteranganKirim } from "../KeteranganKirim";
@@ -14,19 +14,38 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import { recordVanSaleAction } from "@/app/actions/van-sale";
+import { newLocalId } from "@/lib/pwa/id-lokal";
 import { VanVariantSheet, type VanStockRow, type VanGroup } from "./VanVariantSheet";
+import {
+  bacaSimpananKeranjangVan,
+  kirimPenjualanVan,
+  kunciBaris,
+  kunciSesudahUbah,
+  pulihkanKeranjangVan,
+  susunSimpananKeranjangVan,
+  tulisSimpananKeranjangVan,
+  type BarisKeranjangVan,
+  type Penyimpanan,
+} from "./keranjang";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
 import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 type StoreOption = { id: string; name: string };
 type ShortLine = { itemId: string; variantSku: string | null; requested: number; available: number };
 
-type CartEntry = { itemId: string; variantSku: string | null; sku: string; productName: string; unitPrice: number; qty: number; qtyOnVan: number };
+type CartEntry = BarisKeranjangVan;
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
 
-function lineKey(itemId: string, variantSku: string | null) {
-  return `${itemId}::${variantSku ?? ""}`;
+const lineKey = kunciBaris;
+
+/** sessionStorage bisa dilarang (mode privat): aksesnya sendiri pun bisa melempar. */
+function sesi(): Penyimpanan | null {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
 }
 
 // Best-effort GPS: never blocks the sale on denial/timeout/unavailability (unlike
@@ -45,7 +64,7 @@ function getPositionBestEffort(): Promise<{ lat: number; lng: number } | null> {
   });
 }
 
-export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: StoreOption[] }) {
+export function VanSellShell({ userId, stock, stores }: { userId: string; stock: VanStockRow[]; stores: StoreOption[] }) {
   const t = useTranslations("vanSale");
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -57,9 +76,14 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
   const [buyerPhone, setBuyerPhone] = useState("");
   const [amountPaid, setAmountPaid] = useState("");
   const [shortLines, setShortLines] = useState<ShortLine[]>([]);
-  // Stable across retries so a re-submit after an ambiguous failure dedups server-side;
-  // rotated only after a confirmed success.
-  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  // Satu kunci per keranjang, disimpan bersama isinya di sessionStorage
+  // (`keranjang.ts`): kirim ulang setelah sinyal putus atau muat ulang memakai
+  // kunci yang sama, jadi server mengembalikan penjualan yang sudah tercatat.
+  // Diganti hanya setelah penjualan tercatat atau keranjang dikosongkan.
+  const [idempotencyKey, setIdempotencyKey] = useState(() => newLocalId());
+  // Simpanan baru dibaca setelah mount (server merender keranjang kosong);
+  // sebelum itu tidak ada yang ditulis, supaya simpanan tidak tertimpa kosong.
+  const [dipulihkan, setDipulihkan] = useState(false);
   const [sheetGroup, setSheetGroup] = useState<VanGroup | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -68,23 +92,50 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
     setSheetOpen(true);
   }
 
+  useEffect(() => {
+    const p = pulihkanKeranjangVan(bacaSimpananKeranjangVan(sesi(), userId), stock, stores);
+    if (p) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- simpanan ada di sessionStorage, hanya terbaca di klien sesudah mount
+      setCart(p.baris);
+      setIdempotencyKey(p.idempotencyKey);
+      setBuyerMode(p.mode);
+      setStoreId(p.storeId);
+      setAmountPaid(p.uangDiterima);
+      toast.info(t("keranjangDipulihkan"), { id: "van-keranjang-dipulihkan" });
+    }
+    setDipulihkan(true);
+    // Sekali saat layar dibuka; stok baru tidak memulihkan ulang.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
+  useEffect(() => {
+    if (!dipulihkan) return;
+    tulisSimpananKeranjangVan(
+      sesi(),
+      userId,
+      susunSimpananKeranjangVan({ idempotencyKey, baris: cart.values(), mode: buyerMode, storeId, uangDiterima: amountPaid }),
+    );
+  }, [dipulihkan, userId, idempotencyKey, cart, buyerMode, storeId, amountPaid]);
+
   function setQty(row: VanStockRow, qty: number) {
+    if (pending) return;
     const key = lineKey(row.itemId, row.variantSku);
-    setCart((prev) => {
-      const next = new Map(prev);
-      if (qty <= 0) next.delete(key);
-      else
-        next.set(key, {
-          itemId: row.itemId,
-          variantSku: row.variantSku,
-          sku: row.sku,
-          productName: row.productName,
-          unitPrice: row.price ?? 0,
-          qty,
-          qtyOnVan: row.qtyOnVan,
-        });
-      return next;
-    });
+    const next = new Map(cart);
+    if (qty <= 0) next.delete(key);
+    else
+      next.set(key, {
+        itemId: row.itemId,
+        variantSku: row.variantSku,
+        sku: row.sku,
+        productName: row.productName,
+        unitPrice: row.price ?? 0,
+        qty,
+        qtyOnVan: row.qtyOnVan,
+      });
+    setCart(next);
+    // Keranjang dikosongkan = penjualan ditinggalkan: keranjang berikutnya kunci baru.
+    const kunci = kunciSesudahUbah(cart.size, next.size, idempotencyKey, newLocalId);
+    if (kunci !== idempotencyKey) setIdempotencyKey(kunci);
   }
 
   const cartLines = useMemo(() => Array.from(cart.values()), [cart]);
@@ -131,25 +182,41 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
         : null;
 
   function onSubmit() {
+    if (!canSubmit) return;
+    const simpanan = susunSimpananKeranjangVan({ idempotencyKey, baris: cartLines, mode: buyerMode, storeId, uangDiterima: amountPaid });
+    if (!simpanan) return;
+    const muatan = {
+      storeId: buyerMode === "store" ? storeId || null : null,
+      buyerName: buyerMode === "adhoc" ? buyerName.trim() || null : null,
+      buyerPhone: buyerMode === "adhoc" ? buyerPhone.trim() || null : null,
+      amountPaid: paid,
+      lines: cartLines.map((l) => ({ itemId: l.itemId, variantSku: l.variantSku, qty: l.qty })),
+    };
     setShortLines([]);
     startTransition(async () => {
       const position = await getPositionBestEffort();
-      const res = await recordVanSaleAction({
-        storeId: buyerMode === "store" ? storeId || null : null,
-        buyerName: buyerMode === "adhoc" ? buyerName.trim() || null : null,
-        buyerPhone: buyerMode === "adhoc" ? buyerPhone.trim() || null : null,
-        saleLat: position?.lat ?? null,
-        saleLng: position?.lng ?? null,
-        amountPaid: paid,
-        idempotencyKey,
-        lines: cartLines.map((l) => ({ itemId: l.itemId, variantSku: l.variantSku, qty: l.qty })),
+      const hasil = await kirimPenjualanVan({
+        penyimpanan: sesi(),
+        userId,
+        simpanan,
+        kirim: (kunci) => recordVanSaleAction({ ...muatan, saleLat: position?.lat ?? null, saleLng: position?.lng ?? null, idempotencyKey: kunci }),
       });
-      if (res.ok) {
-        setIdempotencyKey(crypto.randomUUID()); // rotate for the next sale
-        toast.success(t("successToast", { docNo: res.docNo }));
-        router.push(`/pwa/van/${res.saleId}/nota`);
+      if (hasil.jenis === "tercatat") {
+        // Keranjang selesai: simpanannya sudah dihapus; layar kosong dengan kunci baru.
+        setCart(new Map());
+        setIdempotencyKey(newLocalId());
+        setAmountPaid("");
+        toast.success(t("successToast", { docNo: hasil.docNo }));
+        // replace: Kembali dari nota tidak membuka keranjang yang sudah tercatat.
+        router.replace(`/pwa/van/${hasil.saleId}/nota`);
         return;
       }
+      if (hasil.jenis === "terputus") {
+        // Penjualan mungkin sudah tercatat: keranjang dan kuncinya tetap, kirim lagi aman.
+        toast.error(t("errTerputus"));
+        return;
+      }
+      const res = hasil.hasil;
       if (res.reason === "INSUFFICIENT_VAN_STOCK") {
         setShortLines(res.shortLines ?? []);
         toast.error(t("errInsufficientStock"));

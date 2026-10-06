@@ -1,6 +1,7 @@
 import { prisma } from "@elorae/db";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { bolehMembacaPiutang } from "@/lib/receivables/izin";
+import { hitungJurnalTertunda } from "@/lib/finance/jurnal-tertunda";
 import type { ActionItem } from "./action-items-shared";
 
 // Client components import the row type and the total from the shared module;
@@ -32,9 +33,8 @@ export async function getActionItemCounts(): Promise<ActionItemCounts> {
     prisma.storeChangeRequest.count({ where: { status: "PENDING" } }),
     prisma.taxInvoice.count({ where: { status: "PENDING" } }),
     prisma.salesReturn.count({ where: { status: "PENDING" } }),
-    prisma.adminNotification.count({
-      where: { category: "JOURNAL_PENDING", readAt: null },
-    }),
+    // Belum ditandai selesai DAN dokumennya memang belum berjurnal.
+    hitungJurnalTertunda(),
   ]);
 
   return {

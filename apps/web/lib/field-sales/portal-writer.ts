@@ -12,6 +12,7 @@ import { muatMinimumKatalog } from "./minimum-toko";
 import { MinQtyViolationError, NoActiveVisitError } from "./errors";
 import { KreditDiblokirError } from "./kredit-pesanan";
 import { JarakJauhDitolakError, SALURAN_PORTAL } from "./jarak-jauh";
+import { BarangTanpaHargaError, hargaSah } from "./harga-wajib";
 import { keadaanPesanan, type KeadaanPesanan } from "./pwa-queries";
 import { capTautanDipakai, type AksesPortal } from "./portal-toko";
 import { emberBarang, emberKetersediaan, type Ketersediaan } from "./portal-toko-aturan";
@@ -81,7 +82,8 @@ function dasarDari(c: CatalogItem): BarangDasar {
  * ke katalog salesman tidak ikut bocor ke toko tanpa ada yang memutuskannya.
  */
 export function barangPortalPutus(c: CatalogItem, min: { min: number; perBarang: Record<string, number> }): BarangPortalPutus {
-  return { ...dasarDari(c), harga: c.price, minPesan: min.perBarang[c.itemId] ?? min.min };
+  // Harga 0 = belum diset: toko melihat "harga belum ada" dan tidak bisa memesannya.
+  return { ...dasarDari(c), harga: hargaSah(c.price) ? c.price : null, minPesan: min.perBarang[c.itemId] ?? min.min };
 }
 
 export function barangPortalKonsi(c: CatalogItem): BarangPortalKonsi {
@@ -233,7 +235,8 @@ export async function periksaBarisPortal(
       tersedia = c.available;
     }
     if (tersedia <= 0 || l.qty > tersedia) kurang.push(nama);
-    if (!isKonsi && c.price == null) tanpaHarga.push(nama);
+    // Rp 0 = harga belum diset, sama dengan penulis pesanan (`BARANG_TANPA_HARGA`).
+    if (!isKonsi && !hargaSah(c.price)) tanpaHarga.push(nama);
     baris.push({ itemId: l.itemId, variantSku: l.variantSku, productName: nama, qty: l.qty, unitPrice: isKonsi ? 0 : c.price ?? 0, namaBarang: c.nameId });
   }
   if (tidakAda.length > 0) return { ok: false, masalah: { code: "BARANG_TIDAK_TERSEDIA", nama: tidakAda.filter((n) => n !== "—") } };
@@ -425,6 +428,11 @@ export async function kirimPesananPortal(akses: AksesPortal, input: unknown, sek
       };
     }
     if (e instanceof KreditDiblokirError) return { ok: false, code: "HUBUNGI_SALESMAN" };
+    // Harga diubah ke kosong/0 di antara pemeriksaan baris dan penulisan.
+    if (e instanceof BarangTanpaHargaError) {
+      const namaPer = new Map(cek.baris.map((b) => [b.itemId, b.namaBarang]));
+      return { ok: false, code: "BARIS", masalah: { code: "HARGA_BELUM_ADA", nama: e.itemIds.map((id) => namaPer.get(id) ?? "—") } };
+    }
     // Pemegang toko berganti di tengah jalan, atau keadaan lain yang tidak perlu diketahui toko.
     if (e instanceof JarakJauhDitolakError || e instanceof NoActiveVisitError) return { ok: false, code: "GAGAL" };
     // Log tanpa token: hanya id tautan dan toko.

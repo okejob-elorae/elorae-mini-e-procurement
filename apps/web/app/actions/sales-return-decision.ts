@@ -16,6 +16,7 @@ import {
   type SalesReturnGateCode,
 } from "@/lib/finance/sales/sales-return-journal";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import { dokumenJurnal, tandaiJurnalTertundaSelesai } from "@/lib/finance/jurnal-tertunda";
 import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 
 /**
@@ -234,6 +235,11 @@ export async function postSalesReturnJournalsAction(
   if (!ret || ret.decidedAt == null) return { ok: false, code: "BAD_STATE" };
   const rev = await postSalesReturnRevenueJournal(salesReturnId, session.user.id);
   const cogs = await postSalesReturnCogsJournal(salesReturnId, session.user.id);
+  // Per jenis jurnal yang berdiri → tanda "Jurnal gagal" jenis itu selesai (Beranda).
+  await tandaiJurnalTertundaSelesai([
+    ...(rev.ok ? [dokumenJurnal("SALESRETURN_REVENUE", salesReturnId)] : []),
+    ...(cogs.ok ? [dokumenJurnal("SALESRETURN_COGS", salesReturnId)] : []),
+  ]);
   revalidatePath(`/backoffice/returns/${salesReturnId}`);
   const firstErr = [rev, cogs].find((r) => !r.ok && r.code !== "NOTHING_TO_POST");
   if (firstErr && !firstErr.ok) return firstErr;

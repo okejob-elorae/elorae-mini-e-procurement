@@ -51,6 +51,8 @@ export async function flushPendingOrders(): Promise<{ synced: number; failed: nu
           preorderWindowId: o.preorderWindowId ?? null,
           // Ubah pesanan: pesanan lama bisa sudah diputuskan kantor saat antrean akhirnya terkirim (terminal).
           gantiOrderId: o.gantiOrderId ?? null,
+          // Keranjang dari permintaan SPG / rekomendasi: ditautkan server saat sampai (sekali, hanya pemegang toko).
+          sumber: o.sumber ?? null,
         });
         decision = classifyResult(res);
         if (!res.ok) reason = res.code;

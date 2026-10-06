@@ -47,6 +47,7 @@ import {
 import type { RincianKlaim } from '@/lib/receivables/claim-queries';
 import type { StatusGiro } from '@/lib/receivables/giro';
 import { TombolGiro } from '../giro/TombolGiro';
+import { kunciGalatPutusan, tombolPutusan } from './putusan-klaim';
 
 /** Rincian bilyet giro sebuah BKM; tanggal sudah diformat di server. */
 export type GiroKlaim = {
@@ -95,6 +96,7 @@ export function RincianKlaimClient({
   menggantikan = null,
   koreksi = null,
   riwayat = [],
+  pemeriksaSama = false,
 }: {
   data: RincianKlaim;
   /** `null` kalau klaim ini bukan giro. */
@@ -111,6 +113,11 @@ export function RincianKlaimClient({
   riwayat?: BarisRiwayat[];
   /** Tautan WhatsApp konfirmasi ke toko; hanya ada sesudah klaim terverifikasi. */
   konfirmasiToko?: { url: string; adaNomor: boolean } | null;
+  /**
+   * Penonton adalah pelapor atau pencatat BKM ini (`pemeriksaSamaKlaim`, dihitung
+   * di server dari sesi). Tombol putusan tetap tampil tapi mati dengan alasannya.
+   */
+  pemeriksaSama?: boolean;
 }) {
   const t = useTranslations('payments');
   const tPesan = useTranslations('pesanToko');
@@ -129,6 +136,14 @@ export function RincianKlaimClient({
   const [tautUlang, setTautUlang] = useState<{ id: string; nama: string } | null>(null);
   const [returBaru, setReturBaru] = useState<string>('none');
   const [alasanTaut, setAlasanTaut] = useState('');
+  // Jawaban PEMERIKSA_SAMA dari server juga mematikan tombol, tanpa muat ulang.
+  const [pemeriksaSamaDariServer, setPemeriksaSamaDariServer] = useState(false);
+  const tombol = tombolPutusan({
+    status: data.status,
+    bolehMemutuskan,
+    giroMenunggu,
+    pemeriksaSama: pemeriksaSama || pemeriksaSamaDariServer,
+  });
 
   const adaMenggantung = data.potongan.some((p) => p.tautanMenggantung);
 
@@ -140,7 +155,8 @@ export function RincianKlaimClient({
         setTolakTerbuka(false);
         router.refresh();
       } else {
-        toast.error(t(`err${hasil.kode}` as never));
+        if (hasil.kode === 'PEMERIKSA_SAMA') setPemeriksaSamaDariServer(true);
+        toast.error(t(kunciGalatPutusan(hasil.kode, keputusan) as never));
       }
     });
   };
@@ -222,15 +238,20 @@ export function RincianKlaimClient({
                 {t('void')}
               </Button>
             )}
-            {data.status === 'DIKIRIM' && bolehMemutuskan && !giroMenunggu && (
+            {tombol.tampil && (
               <>
-              <Button disabled={pending} onClick={() => putuskan('TERVERIFIKASI')}>
+              <Button
+                disabled={pending || tombol.alasanNonaktif !== null}
+                title={tombol.alasanNonaktif === 'PEMERIKSA_SAMA' ? t('errPEMERIKSA_SAMA') : undefined}
+                onClick={() => putuskan('TERVERIFIKASI')}
+              >
                 <BadgeCheck className="mr-1.5 h-4 w-4" />
                 {t('verify')}
               </Button>
               <Button
                 variant="outline"
-                disabled={pending}
+                disabled={pending || tombol.alasanNonaktif !== null}
+                title={tombol.alasanNonaktif === 'PEMERIKSA_SAMA' ? t('errPEMERIKSA_SAMA') : undefined}
                 onClick={() => {
                   setTolakTerbuka(true);
                   setAlasan('');
@@ -243,6 +264,12 @@ export function RincianKlaimClient({
           </span>
         }
       />
+
+      {/* Alasan tombol putusan mati — di bawah judul, bukan di kolom tombol:
+          kolom tombol tidak menyusut, jadi kalimat panjang di sana menjepit judul. */}
+      {tombol.alasanNonaktif === 'PEMERIKSA_SAMA' && (
+        <p className="text-sm text-muted-foreground">{t('errPEMERIKSA_SAMA')}</p>
+      )}
 
       {/* Sales tidak bisa lagi mengubah BKM yang sudah diproses — permintaannya
           tampil di dokumennya sendiri, bukan hanya di lonceng. */}
@@ -313,7 +340,12 @@ export function RincianKlaimClient({
               <p className="text-sm text-muted-foreground">{tGiro('clearedOn', { date: giro.cairPada })}</p>
             )}
             {giroMenunggu && bolehMemutuskan && (
-              <TombolGiro claimId={data.id} giroNo={giro.nomor} nilai={rupiah(data.nilaiDiterima)} />
+              <TombolGiro
+                claimId={data.id}
+                giroNo={giro.nomor}
+                nilai={rupiah(data.nilaiDiterima)}
+                pemeriksaSama={pemeriksaSama || pemeriksaSamaDariServer}
+              />
             )}
           </CardContent>
         </Card>

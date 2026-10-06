@@ -8,6 +8,10 @@ import { prisma, seededId } from "@elorae/db";
  * sesi + `vendor_returns:manage`, pelaku dari sesi, dan penjaga keadaan
  * (DRAFT → PROCESSED → COMPLETED) di `runSerializable` sehingga proses ganda
  * yang serentak tidak mengeluarkan stok dua kali.
+ *
+ * Penolakan DIKEMBALIKAN sebagai `{ ok:false, code }` (dulu dilempar, dan di
+ * build produksi Next menyamarkan pesan lemparan aksi server — layar hanya
+ * menampilkan galat umum).
  */
 
 const sesi = vi.hoisted(() => ({ ada: true, id: "", permissions: [] as string[] }));
@@ -208,33 +212,75 @@ d("retur pemasok: proses & selesai (test bed only)", () => {
   }
 
   describe("processReturn", () => {
-    it("menolak tanpa vendor_returns:manage; stok tidak bergerak", async () => {
+    it("tanpa vendor_returns:manage → TANPA_AKSES; stok tidak bergerak", async () => {
       sebagai(PEMBACA());
-      await expect(processReturn(returId, pengelolaId)).rejects.toThrow(/Forbidden/);
+      expect(await processReturn(returId, pengelolaId)).toEqual({ ok: false, code: "TANPA_AKSES" });
       expect((await retur()).status).toBe("DRAFT");
       expect(await stok()).toBe(STOK_AWAL);
     });
 
-    it("menolak tanpa sesi", async () => {
+    it("tanpa sesi → TANPA_AKSES", async () => {
       sesi.ada = false;
-      await expect(processReturn(returId, pengelolaId)).rejects.toThrow(/Unauthorized/);
+      expect(await processReturn(returId, pengelolaId)).toEqual({ ok: false, code: "TANPA_AKSES" });
       expect((await retur()).status).toBe("DRAFT");
     });
 
     it("vendor_returns:manage boleh; pelaku dicatat dari sesi", async () => {
       sebagai(PENGELOLA());
-      await processReturn(returId, lainId);
+      expect(await processReturn(returId, lainId)).toEqual({ ok: true, id: returId, docNumber: `RET-UJI-${token}-${urut}` });
       expect(await retur()).toMatchObject({ status: "PROCESSED", processedBy: pengelolaId });
       expect(await stok()).toBe(STOK_AWAL - QTY_RETUR);
     });
 
-    it("proses ganda serentak: tepat satu berhasil, stok keluar SEKALI", async () => {
+    it("diproses dua kali berurutan → SUDAH_DIPROSES, stok keluar 5 sekali", async () => {
+      sebagai(PENGELOLA());
+      expect((await processReturn(returId, pengelolaId)).ok).toBe(true);
+      expect(await processReturn(returId, pengelolaId)).toEqual({ ok: false, code: "SUDAH_DIPROSES" });
+      expect(await stok()).toBe(STOK_AWAL - QTY_RETUR);
+      expect(await gerakanKeluar()).toBe(1);
+    });
+
+    it("stok tinggal 3, retur 5 → STOK_KURANG menyebut barangnya; stok tetap 3, retur tetap draf", async () => {
+      sebagai(PENGELOLA());
+      await prisma.inventoryValue.update({
+        where: { itemId_variantSku: { itemId: seededId(itemId), variantSku: "" } },
+        data: { qtyOnHand: 3, totalValue: 3_000 },
+      });
+      expect(await processReturn(returId, pengelolaId)).toEqual({
+        ok: false,
+        code: "STOK_KURANG",
+        barang: "Aksesori retur",
+        perlu: QTY_RETUR,
+        ada: 3,
+      });
+      expect(await stok()).toBe(3);
+      expect((await retur()).status).toBe("DRAFT");
+      expect(await gerakanKeluar()).toBe(0);
+    });
+
+    it("barang tanpa catatan stok sama sekali → STOK_KURANG, bukan galat umum", async () => {
+      sebagai(PENGELOLA());
+      await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
+      expect(await processReturn(returId, pengelolaId)).toEqual({ ok: false, code: "STOK_KURANG", barang: "Aksesori retur", perlu: QTY_RETUR, ada: 0 });
+      expect((await retur()).status).toBe("DRAFT");
+    });
+
+    it("retur tanpa baris → TANPA_BARIS; retur yang tidak ada → TIDAK_DITEMUKAN", async () => {
+      sebagai(PENGELOLA());
+      await prisma.vendorReturn.update({ where: { id: seededId(returId) }, data: { lines: "[]" } });
+      expect(await processReturn(returId, pengelolaId)).toEqual({ ok: false, code: "TANPA_BARIS" });
+      expect(await processReturn("retur-tidak-ada", pengelolaId)).toEqual({ ok: false, code: "TIDAK_DITEMUKAN" });
+    });
+
+    it("proses ganda serentak: tepat satu { ok:true }, yang lain SUDAH_DIPROSES; stok keluar SEKALI", async () => {
       sebagai(PENGELOLA());
       const hasil = await balapan(
         () => processReturn(returId, pengelolaId),
         () => processReturn(returId, pengelolaId),
       );
-      expect(hasil.filter((h) => h.status === "fulfilled")).toHaveLength(1);
+      const nilai = hasil.map((h) => (h.status === "fulfilled" ? h.value : h.reason));
+      expect(nilai.filter((v) => (v as { ok?: boolean }).ok === true)).toHaveLength(1);
+      expect(nilai.filter((v) => (v as { ok?: boolean }).ok !== true)).toEqual([{ ok: false, code: "SUDAH_DIPROSES" }]);
       expect(await stok()).toBe(STOK_AWAL - QTY_RETUR);
       expect(await gerakanKeluar()).toBe(1);
     });
@@ -247,9 +293,10 @@ d("retur pemasok: proses & selesai (test bed only)", () => {
         () => deleteVendorReturn(returId, pengelolaId),
         () => processReturn(returId, pengelolaId),
       );
-      expect([hapus, proses].filter((h) => h.status === "fulfilled")).toHaveLength(1);
+      const prosesBerhasil = proses.status === "fulfilled" && (proses.value as { ok?: boolean }).ok === true;
+      expect([hapus.status === "fulfilled", prosesBerhasil].filter(Boolean)).toHaveLength(1);
       const sisa = await prisma.vendorReturn.findUnique({ where: { id: seededId(returId) }, select: { status: true } });
-      if (proses.status === "fulfilled") {
+      if (prosesBerhasil) {
         expect(sisa?.status).toBe("PROCESSED");
         expect(await stok()).toBe(STOK_AWAL - QTY_RETUR);
       } else {
@@ -288,25 +335,49 @@ d("retur pemasok: proses & selesai (test bed only)", () => {
       await processReturn(returId, pengelolaId);
     });
 
-    it("menolak tanpa vendor_returns:manage", async () => {
+    it("tanpa vendor_returns:manage → TANPA_AKSES", async () => {
       sebagai(PEMBACA());
-      await expect(completeReturn(returId, pengelolaId, BUKTI)).rejects.toThrow(/Forbidden/);
+      expect(await completeReturn(returId, pengelolaId, BUKTI)).toEqual({ ok: false, code: "TANPA_AKSES" });
       expect((await retur()).status).toBe("PROCESSED");
     });
 
     it("vendor_returns:manage boleh; penutup dicatat dari sesi", async () => {
       sebagai(PENGELOLA());
-      await completeReturn(returId, lainId, BUKTI);
+      expect(await completeReturn(returId, lainId, BUKTI)).toEqual({ ok: true });
       expect(await retur()).toMatchObject({ status: "COMPLETED", completedById: pengelolaId });
     });
 
-    it("selesai ganda serentak: tepat satu berhasil", async () => {
+    it("nomor resi kosong / bukti bukan URL → BUKTI_TIDAK_LENGKAP, retur tetap diproses", async () => {
+      sebagai(PENGELOLA());
+      expect(await completeReturn(returId, pengelolaId, { ...BUKTI, trackingNumber: "" })).toEqual({
+        ok: false,
+        code: "BUKTI_TIDAK_LENGKAP",
+      });
+      expect(await completeReturn(returId, pengelolaId, { ...BUKTI, receiptFileUrl: "resi.jpg" })).toEqual({
+        ok: false,
+        code: "BUKTI_TIDAK_LENGKAP",
+      });
+      expect((await retur()).status).toBe("PROCESSED");
+    });
+
+    it("diselesaikan dua kali → SUDAH_SELESAI; retur draf → BELUM_DIPROSES; tidak ada → TIDAK_DITEMUKAN", async () => {
+      sebagai(PENGELOLA());
+      expect(await completeReturn(returId, pengelolaId, BUKTI)).toEqual({ ok: true });
+      expect(await completeReturn(returId, pengelolaId, BUKTI)).toEqual({ ok: false, code: "SUDAH_SELESAI" });
+      await prisma.vendorReturn.update({ where: { id: seededId(returId) }, data: { status: "DRAFT" } });
+      expect(await completeReturn(returId, pengelolaId, BUKTI)).toEqual({ ok: false, code: "BELUM_DIPROSES" });
+      expect(await completeReturn("retur-tidak-ada", pengelolaId, BUKTI)).toEqual({ ok: false, code: "TIDAK_DITEMUKAN" });
+    });
+
+    it("selesai ganda serentak: tepat satu { ok:true }, yang lain SUDAH_SELESAI", async () => {
       sebagai(PENGELOLA());
       const hasil = await balapan(
         () => completeReturn(returId, pengelolaId, BUKTI),
         () => completeReturn(returId, pengelolaId, BUKTI),
       );
-      expect(hasil.filter((h) => h.status === "fulfilled")).toHaveLength(1);
+      const nilai = hasil.map((h) => (h.status === "fulfilled" ? h.value : h.reason));
+      expect(nilai.filter((v) => (v as { ok?: boolean }).ok === true)).toHaveLength(1);
+      expect(nilai.filter((v) => (v as { ok?: boolean }).ok !== true)).toEqual([{ ok: false, code: "SUDAH_SELESAI" }]);
     });
   });
 });

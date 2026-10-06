@@ -12,7 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cartCount, cartTotal, buildOrderLines, type CartLine } from "@/lib/field-sales/cart";
-import { susunIsiUlang } from "@/lib/salesman/ulang";
+import { ringkasNama, susunIsiUlang } from "@/lib/salesman/ulang";
+import { hargaSah } from "@/lib/field-sales/harga-wajib";
 import { enqueueOrder, newLocalId } from "@/lib/pwa/offline/queue";
 import { flushPendingOrders } from "@/lib/pwa/offline/sync";
 import { PERISTIWA_ANTREAN } from "@/lib/pwa/offline/hitung";
@@ -394,6 +395,8 @@ export function CatalogShell({
       // Ubah pesanan: pesanan lama baru dibatalkan saat antrean ini sampai di server.
       gantiOrderId: gantiUbah?.id ?? null,
       gantiOrderNo: gantiUbah?.orderNo ?? null,
+      // Permintaan SPG / rekomendasi yang mengisi keranjang: server menautkannya saat antrean sampai.
+      sumber: sumber ?? null,
     });
     window.dispatchEvent(new Event(PERISTIWA_ANTREAN));
     // Pesanan di antrean belum punya nomor — salinan WA ke toko baru bisa dari "Pesanan saya" sesudah terkirim.
@@ -503,6 +506,9 @@ export function CatalogShell({
           msg = tInden(`tolak.${res.alasan}`);
         } else if (res.code === "PESANAN_LAMA_TIDAK_BISA_DIGANTI") {
           msg = tUbah("tolakKirim", { orderNo: gantiUbah?.orderNo ?? "" });
+        } else if (res.code === "BARANG_TANPA_HARGA") {
+          const nama = res.itemIds.map((id) => cartLines.find((l) => l.itemId === id)?.nameId ?? id);
+          msg = t("tolakTanpaHarga", ringkasNama(nama));
         } else if (res.code === "UNAUTHORIZED") {
           msg = "Sesi berakhir. Masuk lagi.";
         } else {
@@ -557,6 +563,8 @@ export function CatalogShell({
         }),
       ),
     );
+    // PUTUS: barang tanpa harga tidak dimasukkan (dulu masuk sebagai Rp 0) — namanya disebut dalam satu baris.
+    if (hasil.tanpaHarga.length > 0) toast.warning(t("repeatNoPrice", ringkasNama(hasil.tanpaHarga)));
     if (gantiUbah) {
       if (hasil.baris.length > 0) toast.success(tUbah("terisi", { count: hasil.baris.length, orderNo: gantiUbah.orderNo }));
       if (hasil.dilewati > 0) toast.warning(tUbah("dilewati", { count: hasil.dilewati }));
@@ -870,7 +878,8 @@ export function CatalogShell({
             {shown.map((it) => {
               const hasVariants = it.variants.length > 0;
               const qty = cart.get(variantKey(it.itemId, ""))?.qty ?? 0;
-              const canOrder = (isKonsi || it.price != null) && it.available > 0;
+              // Rp 0 = harga belum diset: penulis menolaknya (BARANG_TANPA_HARGA), jadi tidak ditawarkan.
+              const canOrder = (isKonsi || hargaSah(it.price)) && it.available > 0;
               // For variant items, the badge summarizes what's already in the cart across
               // that item's variant lines (variantSku "" is never used once it has variants).
               const variantLines = hasVariants ? cartLines.filter((l) => l.itemId === it.itemId) : [];
@@ -910,7 +919,7 @@ export function CatalogShell({
                     {!isKonsi && (
                       <div className="shrink-0 text-right">
                         {/* Tanpa label harga: di toko putus labelnya selalu "Harga" — tidak menambah apa-apa. */}
-                        {it.price != null ? (
+                        {hargaSah(it.price) ? (
                           <p className="text-sm font-semibold tabular-nums">{rupiah(it.price)}</p>
                         ) : it.available > 0 ? (
                           <p className="text-xs italic text-muted-foreground">Harga belum diset</p>

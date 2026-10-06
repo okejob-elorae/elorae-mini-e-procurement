@@ -19,7 +19,11 @@ const { mockAuth, mockCreate, mockSusunBonus, mockFetchPromos, mockStore, mockIn
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("@/lib/pwa/peran", () => ({ ambilTokoTetap: mockTokoTetap }));
-vi.mock("@/lib/field-sales/isi-keranjang", () => ({ tautkanSumberPesanan: mockTautkan }));
+// Ubah pesanan memindahkan dokumen sumber pesanan lama (diuji di actions-sumber.spec.ts).
+vi.mock("@/lib/field-sales/isi-keranjang", () => ({
+  tautkanSumberPesanan: mockTautkan,
+  rapikanSumberPesananBatal: vi.fn(async () => ({ dibuka: 0, dipindah: 0 })),
+}));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 vi.mock("@/lib/field-sales/writer", () => ({ createFieldSalesOrder: mockCreate }));
 vi.mock("@/lib/field-sales/bonus", () => ({ susunBonusPesanan: mockSusunBonus }));

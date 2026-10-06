@@ -3,6 +3,11 @@
 
 import { Decimal } from 'decimal.js';
 import { prisma } from '@elorae/db';
+import {
+  STATUS_RETUR_STOK_KELUAR,
+  barisBahan,
+  parseVendorReturnLines,
+} from '@/lib/vendor-returns/baris-retur';
 
 export interface ReconciliationResult {
   itemId: string;
@@ -36,12 +41,17 @@ export async function reconcileWorkOrder(woId: string): Promise<{
     where: { id: woId },
     include: {
       issues: true,
-      returns: { where: { status: 'PROCESSED' } },
+      // Retur yang stoknya sudah keluar: PROCESSED dan COMPLETED (dulu hanya PROCESSED,
+      // jadi retur yang sudah dikirim ke pemasok hilang dari rekonsiliasi).
+      returns: { where: { status: { in: [...STATUS_RETUR_STOK_KELUAR] } } },
       receipts: true
     }
   });
 
   if (!wo) throw new Error('Work Order not found');
+
+  // Baris retur tersimpan sebagai TEKS JSON — dibaca sekali, hanya bahan (bukan FG_REJECT).
+  const barisKembali = wo.returns.flatMap((ret) => parseVendorReturnLines(ret.lines).filter(barisBahan));
 
   const consumptionPlanRaw = wo.consumptionPlan;
   let consumptionPlan: any[];
@@ -85,24 +95,19 @@ export async function reconcileWorkOrder(woId: string): Promise<{
         }
       }
       const items = Array.isArray(raw) ? raw : [];
-      const match = items.find(
-        (i: any) => String(i.itemId ?? i.item_id) === planItemId
-      ) as { qty?: number; quantity?: number } | undefined;
-      const qty = match?.qty ?? match?.quantity ?? 0;
-      return sum.plus(new Decimal(Number(qty) || 0));
+      // Semua baris barang ini (dulu hanya yang pertama).
+      return items
+        .filter((i: any) => String(i?.itemId ?? i?.item_id) === planItemId)
+        .reduce(
+          (s: Decimal, i: { qty?: unknown; quantity?: unknown }) =>
+            s.plus(new Decimal(Number(i.qty ?? i.quantity ?? 0) || 0)),
+          sum
+        );
     }, new Decimal(0));
 
-    const totalReturned = wo.returns.reduce((sum, ret) => {
-      const raw = ret.lines;
-      const retLines = Array.isArray(raw) ? raw : [];
-      const match = retLines.find(
-        (l: any) =>
-          String(l.itemId ?? l.item_id) === planItemId &&
-          (l.type ?? l.itemType) !== 'FG_REJECT'
-      ) as { qty?: number; quantity?: number } | undefined;
-      const qty = match?.qty ?? match?.quantity ?? 0;
-      return sum.plus(new Decimal(Number(qty) || 0));
-    }, new Decimal(0));
+    const totalReturned = barisKembali
+      .filter((l) => String(l.itemId) === planItemId)
+      .reduce((sum, l) => sum.plus(new Decimal(Number(l.qty) || 0)), new Decimal(0));
 
     const actualUsed = totalIssued.minus(totalReturned);
 
@@ -224,7 +229,9 @@ export async function getWorkOrderSummary(woId: string) {
     summary: {
       totalIssues: wo.issues.length,
       totalReceipts: wo.receipts.length,
-      totalReturns: wo.returns.filter((r) => r.status === 'PROCESSED').length,
+      totalReturns: wo.returns.filter((r) =>
+        (STATUS_RETUR_STOK_KELUAR as readonly string[]).includes(r.status)
+      ).length,
       totalMaterialCost: totalMaterialCost.toNumber(),
       totalFGValue: totalFGValue.toNumber(),
       materialVariance: totalMaterialCost.minus(totalFGValue).toNumber(),

@@ -22,10 +22,12 @@ export type DashboardStats = {
     inProduction: number;
     thisWeek: number;
     overdue: number;
-    totalValue: number;
+    /** Nilai seluruh PO. `null` bila dimuat untuk beranda (`kartu`): tidak ada kartu yang menggambarnya. */
+    totalValue: number | null;
   };
   items: {
     activeCount: number;
+    /** 0 dan TIDAK dimuat bila kartu stok tersembunyi — `statistikBeranda` membuangnya. */
     lowStockCount: number;
   };
   workOrders: {
@@ -36,13 +38,20 @@ export type DashboardStats = {
     activeCount: number;
   };
   inventory: {
-    totalValue: number;
+    /** Nilai seluruh persediaan. `null` bila dimuat untuk beranda (`kartu`): tidak ada kartu yang menggambarnya. */
+    totalValue: number | null;
   };
   grnsThisWeek: number;
   movementsToday: number;
 };
 
-export async function getDashboardStats(): Promise<DashboardStats> {
+/**
+ * `kartu` = kartu beranda yang tampil (`kartuBeranda`). Dengan itu kueri kartu
+ * yang tersembunyi dilewati: stok menipis hanya untuk kartu stok, dan dua
+ * agregat rupiah (nilai persediaan, nilai PO) tidak dijalankan sama sekali
+ * karena tidak ada kartu yang menggambarnya. Tanpa `kartu` semuanya dimuat.
+ */
+export async function getDashboardStats(kartu?: { stok: boolean }): Promise<DashboardStats> {
   const now = new Date();
   // Hari dan minggu WIB — produksi berjalan di UTC, dan `setHours(0)` di sana
   // memotong hari jam 07.00 WIB.
@@ -72,13 +81,15 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       where: { createdAt: { gte: weekStart } },
     }),
     prisma.purchaseOrder.count({ where: overduePOWhere(now) }),
-    prisma.purchaseOrder.aggregate({ _sum: { grandTotal: true } }),
+    kartu ? null : prisma.purchaseOrder.aggregate({ _sum: { grandTotal: true } }),
     prisma.item.count({ where: { isActive: true } }),
-    prisma.inventoryValue.findMany({
-      where: { item: { reorderPoint: { not: null } } },
-      include: { item: { select: { reorderPoint: true } } },
-    }),
-    prisma.inventoryValue.aggregate({ _sum: { totalValue: true } }),
+    kartu && !kartu.stok
+      ? []
+      : prisma.inventoryValue.findMany({
+          where: { item: { reorderPoint: { not: null } } },
+          include: { item: { select: { reorderPoint: true } } },
+        }),
+    kartu ? null : prisma.inventoryValue.aggregate({ _sum: { totalValue: true } }),
     prisma.workOrder.count({
       where: { status: { in: ['IN_PRODUCTION', 'PARTIAL'] } },
     }),
@@ -120,7 +131,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       inProduction: poPartial,
       thisWeek: poThisWeek,
       overdue: poOverdue,
-      totalValue: Number(poTotalValue._sum.grandTotal ?? 0),
+      totalValue: poTotalValue ? Number(poTotalValue._sum.grandTotal ?? 0) : null,
     },
     items: {
       activeCount: itemsActive,
@@ -134,7 +145,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       activeCount: suppliersActive,
     },
     inventory: {
-      totalValue: Number(inventoryTotalValue._sum.totalValue ?? 0),
+      totalValue: inventoryTotalValue ? Number(inventoryTotalValue._sum.totalValue ?? 0) : null,
     },
     grnsThisWeek,
     movementsToday,

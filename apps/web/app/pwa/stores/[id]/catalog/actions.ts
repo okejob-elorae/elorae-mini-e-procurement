@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { tautkanSumberPesanan } from "@/lib/field-sales/isi-keranjang";
+import { rapikanSumberPesananBatal, tautkanSumberPesanan } from "@/lib/field-sales/isi-keranjang";
 import { bacaSumberKeranjang } from "@/lib/field-sales/isi-keranjang-sumber";
 import { ambilTokoTetap } from "@/lib/pwa/peran";
 import { z } from "zod";
@@ -17,6 +17,7 @@ import { JarakJauhDitolakError, SALURAN_JARAK_JAUH, type SaluranJarakJauh } from
 import { susunBonusPesanan } from "@/lib/field-sales/bonus";
 import { IndenDitolakError, type AlasanIndenDitolak } from "@/lib/field-sales/inden";
 import { PesananLamaTidakBisaDigantiError } from "@/lib/field-sales/ganti-pesanan";
+import { BarangTanpaHargaError } from "@/lib/field-sales/harga-wajib";
 import { cariKunjunganAntrean } from "@/lib/pwa/kunjungan-antrean";
 
 const schema = z.object({
@@ -61,7 +62,9 @@ export type SubmitResult =
    * sudah dibatalkan atau diganti), atau bukan milik salesman ini. Tidak ada yang
    * tercatat — pesanan lama tidak tersentuh, pesanan baru tidak dibuat.
    */
-  | { ok: false; code: "PESANAN_LAMA_TIDAK_BISA_DIGANTI" };
+  | { ok: false; code: "PESANAN_LAMA_TIDAK_BISA_DIGANTI" }
+  /** PUTUS: barang yang harganya belum ditetapkan kantor (kosong/0). Pesanan TIDAK tercatat. */
+  | { ok: false; code: "BARANG_TANPA_HARGA"; itemIds: string[] };
 
 export async function submitFieldSalesOrder(input: {
   storeId: string;
@@ -121,8 +124,19 @@ export async function submitFieldSalesOrder(input: {
       replacesOrderId: parsed.data.gantiOrderId ?? null,
     });
     revalidatePath(`/pwa/stores/${parsed.data.storeId}`);
+    // Ubah pesanan: permintaan SPG / rekomendasi yang tertaut ke pesanan lama
+    // pindah ke penggantinya (juga saat datang dari antrean HP). Best-effort,
+    // tidak pernah membatalkan pesanan; aman diulang.
+    if (parsed.data.gantiOrderId) {
+      const pindah = await rapikanSumberPesananBatal(parsed.data.gantiOrderId, { salesmanId: session.user.id });
+      if (pindah.dipindah + pindah.dibuka > 0) {
+        revalidatePath("/pwa/permintaan");
+        revalidatePath("/pwa/rekomendasi");
+      }
+    }
     // Dibaca dari input mentah dan diperiksa ketat; penautannya best-effort dan
-    // tidak pernah membatalkan pesanan yang sudah tercatat.
+    // tidak pernah membatalkan pesanan yang sudah tercatat. Pesanan dari antrean
+    // HP membawa sumbernya juga, dengan aturan yang sama.
     const sumber = bacaSumberKeranjang(typeof input.sumber === "string" ? input.sumber : null);
     if (sumber) {
       await tautkanSumberPesanan(sumber, { orderId, orderNo, userId: session.user.id, storeId: parsed.data.storeId });
@@ -140,6 +154,7 @@ export async function submitFieldSalesOrder(input: {
     if (e instanceof JarakJauhDitolakError) return { ok: false, code: e.code };
     if (e instanceof IndenDitolakError) return { ok: false, code: "INDEN_DITOLAK", alasan: e.alasan };
     if (e instanceof PesananLamaTidakBisaDigantiError) return { ok: false, code: "PESANAN_LAMA_TIDAK_BISA_DIGANTI" };
+    if (e instanceof BarangTanpaHargaError) return { ok: false, code: "BARANG_TANPA_HARGA", itemIds: e.itemIds };
     throw e;
   }
 }

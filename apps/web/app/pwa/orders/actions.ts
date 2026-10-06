@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { cancelFieldSalesOrderBySalesman } from "@/lib/field-sales/writer";
+import { rapikanSumberPesananBatal } from "@/lib/field-sales/isi-keranjang";
 import { BatalPesananError, type KodeBatalPesanan } from "@/lib/field-sales/ganti-pesanan";
 import { salinanPesananSaya } from "@/lib/field-sales/pwa-queries";
 
@@ -25,6 +26,13 @@ export async function batalkanPesananSayaAction(orderId: string, alasan: string)
   if (typeof orderId !== "string" || orderId.trim() === "") return { ok: false, code: "TIDAK_DITEMUKAN" };
   try {
     const r = await cancelFieldSalesOrderBySalesman({ orderId, salesmanId: session.user.id, reason: alasan });
+    // Permintaan SPG / rekomendasi yang ditautkan ke pesanan ini dibuka lagi (atau
+    // pindah ke penggantinya). Best-effort, idempoten — juga saat pesanan sudah batal.
+    const sumber = await rapikanSumberPesananBatal(orderId, { salesmanId: session.user.id });
+    if (sumber.dipindah + sumber.dibuka > 0) {
+      revalidatePath("/pwa/permintaan");
+      revalidatePath("/pwa/rekomendasi");
+    }
     revalidatePath("/pwa/orders");
     revalidatePath(`/pwa/orders/${orderId}`);
     revalidatePath("/pwa");

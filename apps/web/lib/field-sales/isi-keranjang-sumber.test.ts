@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bacaSumberKeranjang, tulisSumberKeranjang } from "./isi-keranjang-sumber";
+import { bacaSumberKeranjang, catatanDibuatkanPesanan, tulisSumberKeranjang } from "./isi-keranjang-sumber";
 
 describe("bacaSumberKeranjang", () => {
   it("membaca permintaan dan rekomendasi, bolak-balik dengan tulisSumberKeranjang", () => {
@@ -12,5 +12,11 @@ describe("bacaSumberKeranjang", () => {
     for (const buruk of ["pesanan:abc", "permintaan:", "permintaan:a b", "permintaan:../x", "", null, undefined, "rekomendasi:" + "x".repeat(65)]) {
       expect(bacaSumberKeranjang(buruk)).toBeNull();
     }
+  });
+});
+
+describe("catatanDibuatkanPesanan", () => {
+  it("teks yang disembunyikan layar SPG (DaftarPermintaan) persis sama", () => {
+    expect(catatanDibuatkanPesanan("PUTUS/2026/10/0007")).toBe("Dibuatkan pesanan PUTUS/2026/10/0007");
   });
 });

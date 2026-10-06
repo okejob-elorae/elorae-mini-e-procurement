@@ -3,6 +3,7 @@ import { parseDateOnly, formatDateOnlyJakarta } from "@/lib/date-only";
 import { postSalesRevenueJournal, postSalesCogsJournal } from "./sales-journal";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import { dokumenJurnal, tandaiJurnalTertundaSelesai, type SumberNotifikasiJurnal } from "@/lib/finance/jurnal-tertunda";
 
 /** SystemSetting key holding the GL go-live day as a date-only `YYYY-MM-DD` string, read as WIB. */
 export const GL_CUTOVER_SETTING_KEY = "finance.glCutoverDate";
@@ -140,6 +141,8 @@ export async function postPendingSalesJournals(
   let revenue = 0;
   let cogs = 0;
   let pending = 0;
+  // Jurnal yang berdiri sesudah sapuan ini → tanda "Jurnal gagal"-nya diselesaikan sekaligus.
+  const berjurnal: SumberNotifikasiJurnal[] = [];
 
   for (const order of orders) {
     const poster = order.shippedById ?? systemPoster;
@@ -156,6 +159,7 @@ export async function postPendingSalesJournals(
         const r = await postSalesRevenueJournal(order.id, poster);
         if (r.ok) {
           if (r.created) revenue += 1;
+          berjurnal.push(dokumenJurnal("SALESORDER_REVENUE", order.id));
         } else if (r.code !== "NOTHING_TO_POST") {
           pending += 1;
           await flag(order.id, order.salesorderNo, "revenue", r);
@@ -166,6 +170,7 @@ export async function postPendingSalesJournals(
         const c = await postSalesCogsJournal(order.id, poster);
         if (c.ok) {
           if (c.created) cogs += 1;
+          berjurnal.push(dokumenJurnal("SALESORDER_COGS", order.id));
         } else if (c.code !== "NOTHING_TO_POST") {
           pending += 1;
           await flag(order.id, order.salesorderNo, "cogs", c);
@@ -175,6 +180,8 @@ export async function postPendingSalesJournals(
       console.error(`[sales-journal] order ${order.salesorderNo} failed:`, e);
     }
   }
+
+  if (berjurnal.length > 0) await tandaiJurnalTertundaSelesai(berjurnal);
 
   return { posted: revenue + cogs, revenue, cogs, pending, skipped: null };
 }

@@ -63,6 +63,7 @@ import { ChainPositionStrip } from '@/components/lead-time/chain-position-strip'
 import type { SnapshotStep } from '@/lib/leadtime/calculations';
 import { PERMISSIONS, hasPermission } from '@/lib/rbac';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
+import { newLocalId } from '@/lib/pwa/id-lokal';
 
 
 const statusColors: Record<WOStatus, string> = {
@@ -111,6 +112,8 @@ export default function WorkOrderDetailPage() {
   const [additionalPreview, setAdditionalPreview] = useState<Awaited<ReturnType<typeof getAdditionalMaterialsPreview>> | null>(null);
   const [additionalPreviewLoading, setAdditionalPreviewLoading] = useState(false);
   const [additionalSubmitLoading, setAdditionalSubmitLoading] = useState(false);
+  // Kunci idempotensi per isian qty tambahan: simpan ulang dengan qty sama tidak mengeluarkan bahan dua kali.
+  const [kunciTambahan, setKunciTambahan] = useState(() => newLocalId());
   const canPostJournal = hasPermission(session?.user?.permissions ?? [], "journals:manage");
   const [postingReceiptId, setPostingReceiptId] = useState<string | null>(null);
 
@@ -313,15 +316,27 @@ export default function WorkOrderDetailPage() {
     }
     setAdditionalSubmitLoading(true);
     try {
-      await issueAdditionalMaterials(id, qty, session.user.id);
+      // Penolakan datang sebagai kode (pesan lemparan disamarkan di produksi).
+      const hasil = await issueAdditionalMaterials(id, qty, session.user.id, kunciTambahan);
+      if (!hasil.ok) {
+        toast.error(
+          hasil.code === 'STOK_BAHAN_KURANG'
+            ? tTolak('STOK_BAHAN_KURANG', { barang: hasil.barang ?? '' })
+            : tTolak.has(hasil.code)
+              ? tTolak(hasil.code)
+              : tWO('issueFailed')
+        );
+        return;
+      }
+      setKunciTambahan(newLocalId());
       toast.success(tD('additionalIssued'));
       setAdditionalMaterialsOpen(false);
       setAdditionalQtyInput('');
       setAdditionalPreview(null);
       const updated = await getWorkOrderById(id);
       setWO(updated);
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : tWO('issueFailed'));
+    } catch {
+      toast.error(tWO('issueFailed'));
     } finally {
       setAdditionalSubmitLoading(false);
     }
@@ -887,7 +902,11 @@ export default function WorkOrderDetailPage() {
                   type="number"
                   min={1}
                   value={additionalQtyInput}
-                  onChange={(e) => setAdditionalQtyInput(e.target.value)}
+                  onChange={(e) => {
+                    setAdditionalQtyInput(e.target.value);
+                    // Qty lain = permintaan lain: kunci baru.
+                    setKunciTambahan(newLocalId());
+                  }}
                   placeholder={tD('additionalQtyPlaceholder')}
                 />
                 <Button

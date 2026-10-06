@@ -13,6 +13,7 @@ import { auth } from '@/lib/auth';
 import { requirePermission, hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { postGrnJournal, postGrnReversalJournal } from "@/lib/inventory/grn-journal";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
+import { dokumenJurnal, tandaiJurnalTertundaSelesai } from "@/lib/finance/jurnal-tertunda";
 import { computeActualLeadDays } from '@/lib/leadtime/calculations';
 import { fanOutAdminNotification } from '@/lib/notifications/admin-fanout';
 import { runSerializable } from "@/lib/db/tx-retry";
@@ -1019,6 +1020,8 @@ export async function postGrnReceiptJournalAction(
   if (!grn) return { ok: false, code: "BAD_STATE" };
 
   const r = await postGrnJournal(grnId, session.user.id);
+  // Jurnal berdiri → tanda "Jurnal gagal" dokumen ini selesai (Beranda).
+  if (r.ok) await tandaiJurnalTertundaSelesai([dokumenJurnal("GRN", grnId)]);
   revalidatePath("/backoffice/inventory");
   return r;
 }
@@ -1035,6 +1038,7 @@ export async function postGrnReversalJournalAction(
   if (!grn || grn.ownerDeclinedAt == null) return { ok: false, code: "BAD_STATE" };
 
   const r = await postGrnReversalJournal(grnId, session.user.id);
+  if (r.ok) await tandaiJurnalTertundaSelesai([dokumenJurnal("GRN_REVERSAL", grnId)]);
   revalidatePath("/backoffice/inventory");
   return r;
 }

@@ -35,6 +35,7 @@ export default async function LaporanPage() {
         initialSuppliers={suppliers}
         initialRawMaterialShortage={rawMaterialShortage}
         initialWoStatusCounts={woStatusCounts}
+        izin={session.user.permissions ?? []}
       />
     </Suspense>
   );

@@ -71,6 +71,8 @@ function errorLabel(code: string | undefined, t: (key: string) => string): strin
       return t("errKunjunganDitolak");
     case "KUNJUNGAN_TIDAK_SAH":
       return t("errKunjunganTidakSah");
+    case "BARANG_TANPA_HARGA":
+      return t("errTanpaHarga");
     default:
       return t("errGeneric");
   }

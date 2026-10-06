@@ -1,8 +1,8 @@
-import { prisma } from "@elorae/db";
+import { prisma, type Prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { JENIS_KABAR, kabariPengguna } from "@/lib/notifications/kabar-pengguna";
 import { ENTITAS_REKOMENDASI, JEJAK_REKOMENDASI } from "@/lib/salesman/rekomendasi-aturan";
-import { bacaSumberKeranjang, type SumberKeranjang } from "./isi-keranjang-sumber";
+import { bacaSumberKeranjang, catatanDibuatkanPesanan, type SumberKeranjang } from "./isi-keranjang-sumber";
 
 /**
  * Keranjang katalog yang diisi dari dokumen lain — permintaan barang SPG
@@ -16,6 +16,8 @@ import { bacaSumberKeranjang, type SumberKeranjang } from "./isi-keranjang-sumbe
  */
 
 export { bacaSumberKeranjang, type SumberKeranjang };
+// Pesanan yang dibatalkan/diganti salesman: dokumen sumbernya dibuka lagi atau ikut pindah.
+export { rapikanSumberPesananBatal, JEJAK_SUMBER_PESANAN, type HasilRapikanSumber } from "./isi-keranjang-batal";
 
 export type BarisIsi = { itemId: string; variantSku: string; qty: number };
 
@@ -40,11 +42,27 @@ export async function muatIsiKeranjang(
   return r ? r.lines.map((l) => ({ itemId: l.itemId, variantSku: l.variantSku ?? "", qty: l.qty })) : null;
 }
 
+/** Pesanan yang boleh menjadi tautan: ada, belum dibatalkan/ditolak, milik salesman ini, di toko ini. */
+async function pesananHidup(
+  tx: Prisma.TransactionClient,
+  input: { orderId: string; userId: string; storeId: string },
+): Promise<boolean> {
+  const o = await tx.fieldSalesOrder.findUnique({ where: { id: input.orderId }, select: { status: true, salesmanId: true, storeId: true } });
+  return !!o && o.status !== "REJECTED" && o.salesmanId === input.userId && o.storeId === input.storeId;
+}
+
 /**
  * Tautkan pesanan yang baru tercatat ke dokumen sumbernya. Penjaga keadaan
  * (`updateMany where status …`) di dalam `runSerializable` — Prisma 7
  * `updateMany` bukan compare-and-swap — dan jejaknya di transaksi yang sama.
  * Tidak pernah melempar.
+ *
+ * Dipanggil juga saat pesanan dari antrean HP (tanpa sinyal) sampai di server,
+ * termasuk kiriman ulang pesanan yang sudah tercatat — aturannya sama.
+ * Pesanannya harus HIDUP (bukan dibatalkan/ditolak), milik salesman ini, di
+ * toko ini — dibaca di transaksi yang sama, jadi pembatalan yang berbarengan
+ * tidak bisa meninggalkan dokumen tertaut ke pesanan mati
+ * (`rapikanSumberPesananBatal` membuka yang terlanjur tertaut).
  */
 export async function tautkanSumberPesanan(
   sumber: SumberKeranjang,
@@ -53,6 +71,7 @@ export async function tautkanSumberPesanan(
   try {
     if (sumber.jenis === "permintaan") {
       const peminta = await runSerializable(async (tx) => {
+        if (!(await pesananHidup(tx, input))) return null;
         const sebelum = await tx.stockRequest.findUnique({ where: { id: sumber.id }, select: { status: true } });
         const n = await tx.stockRequest.updateMany({
           where: { id: sumber.id, storeId: input.storeId, status: { in: ["BARU", "DIPROSES"] }, fieldSalesOrderId: null, store: { salesmanId: input.userId } },
@@ -61,7 +80,7 @@ export async function tautkanSumberPesanan(
             fieldSalesOrderId: input.orderId,
             handledById: input.userId,
             handledAt: new Date(),
-            handleNote: `Dibuatkan pesanan ${input.orderNo}`,
+            handleNote: catatanDibuatkanPesanan(input.orderNo),
           },
         });
         if (n.count !== 1) return null;
@@ -92,6 +111,7 @@ export async function tautkanSumberPesanan(
       return;
     }
     await runSerializable(async (tx) => {
+      if (!(await pesananHidup(tx, input))) return;
       const n = await tx.storeRecommendation.updateMany({
         where: { id: sumber.id, storeId: input.storeId, salesmanId: input.userId, status: "DITERIMA", fieldSalesOrderId: null },
         data: { status: "SELESAI", fieldSalesOrderId: input.orderId },

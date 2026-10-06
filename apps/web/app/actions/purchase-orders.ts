@@ -23,6 +23,7 @@ import {
   type SupplierPaymentPostFailure,
 } from '@/lib/purchasing/post-supplier-payment-journal-safely';
 import type { SupplierPaymentDirection } from '@/lib/purchasing/supplier-payment-journal-message';
+import { tandaiJurnalTertundaSelesai, type SumberNotifikasiJurnal } from '@/lib/finance/jurnal-tertunda';
 import { runSerializable } from '@/lib/db/tx-retry';
 import { hitungTotalPo } from '@/lib/purchase-orders/ppn';
 import {
@@ -71,17 +72,52 @@ export async function createPO(data: POFormData, _userId?: string) {
   return { id: po.id, docNumber: po.docNumber };
 }
 
-/** Penolakan edit PO berkode. Masih dilempar: layar edit menangkap lemparan. */
+/*
+ * Penolakan edit PO DIKEMBALIKAN sebagai `{ ok:false, code }`: di build
+ * produksi Next menyamarkan pesan lemparan aksi server, jadi layar edit PO
+ * hanya bisa menjelaskan alasannya lewat kode (`purchaseOrders.edit.err.*`).
+ * Di dalam transaksi penolakan tetap DILEMPAR (`EditPoDitolak`) supaya semua
+ * tulisan batal, lalu diterjemahkan di luar.
+ */
 export type KodeTolakEditPo = 'TIDAK_DITEMUKAN' | 'PO_TERTUTUP' | 'PIN_WAJIB';
 
-const PESAN_TOLAK_EDIT_PO: Record<KodeTolakEditPo, string> = {
-  TIDAK_DITEMUKAN: 'PO tidak ditemukan.',
-  PO_TERTUTUP: 'PO yang sudah ditutup atau dibatalkan tidak bisa diedit.',
-  PIN_WAJIB: 'Masukkan PIN untuk mengedit PO yang sudah dikirim ke pemasok.',
-};
+export type UpdatePOResult =
+  | { ok: true; id: string }
+  | { ok: false; code: KodeTolakEditPo | 'TANPA_AKSES' | 'GAGAL' }
+  /** `barang` = SKU (atau id) dari pemeriksa varian. */
+  | { ok: false; code: 'VARIAN_TIDAK_VALID'; barang: string }
+  /** Baris dengan barang sudah diterima dihapus atau qty-nya di bawah `diterima`. */
+  | { ok: false; code: 'QTY_DI_BAWAH_DITERIMA'; barang: string; diterima: number }
+  /** `kunciPesan` = kunci `security.*` dari pemeriksa PIN (mis. `pinIncorrect`). */
+  | { ok: false; code: 'PIN_DITOLAK'; kunciPesan: string };
 
-function galatTolakEditPo(code: KodeTolakEditPo): Error & { code: KodeTolakEditPo } {
-  return Object.assign(new Error(PESAN_TOLAK_EDIT_PO[code]), { code });
+type TolakEditPo = Exclude<Extract<UpdatePOResult, { ok: false }>, { code: 'TANPA_AKSES' | 'GAGAL' | 'PIN_DITOLAK' }>;
+
+class EditPoDitolak extends Error {
+  constructor(readonly hasil: TolakEditPo) {
+    super(hasil.code);
+    this.name = 'EditPoDitolak';
+  }
+}
+
+/*
+ * Pesan pasti `assertLinesVariantSkusMatchItemDefinitions` (lib/items/
+ * validate-variant-lines.ts) → SKU/id barangnya. Galat lain (mis. konflik
+ * serializable) tidak cocok dan dilempar apa adanya.
+ */
+const POLA_TOLAK_VARIAN = [
+  /^Select a valid variant for item (.+)$/,
+  /^Item (.+) has no variants; clear variant selection$/,
+  /^Item not found: (.+)$/,
+];
+
+function barangVarianDitolak(error: unknown): string | null {
+  if (!(error instanceof Error)) return null;
+  for (const pola of POLA_TOLAK_VARIAN) {
+    const m = error.message.match(pola);
+    if (m) return m[1];
+  }
+  return null;
 }
 
 /** CLOSED (lengkap atau "Tutup PO") dan CANCELLED tidak bisa diedit. */
@@ -103,52 +139,76 @@ export async function updatePO(
   data: POFormData,
   _userId?: string,
   pin?: string
-) {
+): Promise<UpdatePOResult> {
   void _userId;
   const session = await auth();
-  if (!session?.user?.id) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_EDIT);
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.PURCHASE_ORDERS_EDIT)) {
+    return { ok: false, code: 'TANPA_AKSES' };
+  }
   const userId = session.user.id;
 
-  const awal = await prisma.purchaseOrder.findUnique({
-    where: { id },
-    select: { status: true },
-  });
-  if (!awal) throw galatTolakEditPo('TIDAK_DITEMUKAN');
-  if (STATUS_TIDAK_BISA_DIEDIT.has(awal.status)) throw galatTolakEditPo('PO_TERTUTUP');
+  try {
+    const awal = await prisma.purchaseOrder.findUnique({
+      where: { id },
+      select: { status: true },
+    });
+    if (!awal) return { ok: false, code: 'TIDAK_DITEMUKAN' };
+    if (STATUS_TIDAK_BISA_DIEDIT.has(awal.status)) return { ok: false, code: 'PO_TERTUTUP' };
 
-  let pinTerverifikasi = false;
-  if (awal.status !== 'DRAFT') {
-    if (!pin) throw galatTolakEditPo('PIN_WAJIB');
-    const pinResult = await verifyPinForAction(userId, pin, 'EDIT_POSTED_PO');
-    if (!pinResult.success) {
-      throw new Error(pinResult.messageKey ?? pinResult.message);
+    let pinTerverifikasi = false;
+    if (awal.status !== 'DRAFT') {
+      if (!pin) return { ok: false, code: 'PIN_WAJIB' };
+      const pinResult = await verifyPinForAction(userId, pin, 'EDIT_POSTED_PO');
+      if (!pinResult.success) {
+        return { ok: false, code: 'PIN_DITOLAK', kunciPesan: pinResult.messageKey ?? 'pinInvalid' };
+      }
+      pinTerverifikasi = true;
     }
-    pinTerverifikasi = true;
+
+    await tulisEditPo(id, data, userId, pinTerverifikasi);
+  } catch (error) {
+    if (error instanceof EditPoDitolak) return error.hasil;
+    console.error('[updatePO]', error);
+    return { ok: false, code: 'GAGAL' };
   }
 
-  await runSerializable(async (tx) => {
+  revalidatePath('/backoffice/purchase-orders');
+  revalidatePath(`/backoffice/purchase-orders/${id}`);
+  return { ok: true, id };
+}
+
+async function tulisEditPo(id: string, data: POFormData, userId: string, pinTerverifikasi: boolean) {
+  return runSerializable(async (tx) => {
     const existing = await tx.purchaseOrder.findUnique({
       where: { id },
       select: { status: true, ppnRatePercent: true },
     });
-    if (!existing) throw galatTolakEditPo('TIDAK_DITEMUKAN');
-    if (STATUS_TIDAK_BISA_DIEDIT.has(existing.status)) throw galatTolakEditPo('PO_TERTUTUP');
+    if (!existing) throw new EditPoDitolak({ ok: false, code: 'TIDAK_DITEMUKAN' });
+    if (STATUS_TIDAK_BISA_DIEDIT.has(existing.status)) throw new EditPoDitolak({ ok: false, code: 'PO_TERTUTUP' });
     // DRAFT yang dikirim ke pemasok di tengah edit tanpa PIN: tetap butuh PIN.
-    if (existing.status !== 'DRAFT' && !pinTerverifikasi) throw galatTolakEditPo('PIN_WAJIB');
+    if (existing.status !== 'DRAFT' && !pinTerverifikasi) throw new EditPoDitolak({ ok: false, code: 'PIN_WAJIB' });
     const preserveReceived = STATUS_JAGA_DITERIMA.has(existing.status);
 
-    await assertLinesVariantSkusMatchItemDefinitions(tx.item, data.items);
+    try {
+      await assertLinesVariantSkusMatchItemDefinitions(tx.item, data.items);
+    } catch (error) {
+      const barang = barangVarianDitolak(error);
+      if (barang == null) throw error;
+      throw new EditPoDitolak({ ok: false, code: 'VARIAN_TIDAK_VALID', barang });
+    }
 
     const oldItems = await tx.pOItem.findMany({
       where: { poId: id },
-      select: { itemId: true, variantSku: true, receivedQty: true },
+      select: { itemId: true, variantSku: true, receivedQty: true, item: { select: { nameId: true, sku: true } } },
     });
     const receivedByLine = new Map<string, number>();
+    const namaByLine = new Map<string, string>();
     for (const o of oldItems) {
       const r = Number(o.receivedQty);
       const k = poReceiptLineKey(o.itemId, o.variantSku);
       receivedByLine.set(k, (receivedByLine.get(k) ?? 0) + r);
+      const nama = o.item?.nameId || o.item?.sku || o.itemId;
+      namaByLine.set(k, o.variantSku ? `${nama} (${o.variantSku})` : nama);
     }
 
     if (preserveReceived) {
@@ -159,13 +219,15 @@ export async function updatePO(
         );
         const totalNewQty = lines.reduce((s, i) => s + i.qty, 0);
         if (lines.length === 0 || totalNewQty < recv) {
-          throw new Error(
-            `Cannot edit: a line has ${recv} received — keep that line and qty ≥ ${recv}, or remove only zero-received lines.`
-          );
+          throw new EditPoDitolak({
+            ok: false,
+            code: 'QTY_DI_BAWAH_DITERIMA',
+            barang: namaByLine.get(key) ?? key,
+            diterima: recv,
+          });
         }
       }
     }
-
     // Tarif PPN yang tersimpan di PO, bukan tarif Pengaturan hari ini; PO lama
     // (tarif kosong) tetap tanpa PPN — nilainya tidak berubah karena diedit.
     const tarifPo = existing.ppnRatePercent == null ? null : Number(existing.ppnRatePercent);
@@ -248,10 +310,6 @@ export async function updatePO(
 
     return po;
   });
-
-  revalidatePath('/backoffice/purchase-orders');
-  revalidatePath(`/backoffice/purchase-orders/${id}`);
-  return { id };
 }
 
 export async function changePOStatus(
@@ -609,6 +667,8 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
   if (!actorId) throw new Error('Unauthorized');
 
   const direction: SupplierPaymentDirection = paidAt != null ? 'payment' : 'reversal';
+  // Batas tanda "Jurnal gagal" yang boleh diselesaikan toggle ini (lihat sesudah commit).
+  const mulaiToggle = new Date();
 
   /**
    * The toggle and its journal in ONE serializable transaction, so a concurrent
@@ -718,6 +778,19 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
      */
     if (outcome.failure) {
       await notifySupplierPaymentJournalFailure(direction, poId, outcome.failure);
+    } else {
+      /*
+       * Tidak ada yang tertunda lagi untuk PO ini, jadi tanda "Jurnal gagal"-nya
+       * diselesaikan (Beranda). Tandai bayar berhasil = jurnal pembayaran
+       * berdiri. Batal bayar berhasil = PO belum dibayar tanpa jurnal
+       * pembayaran tertinggal (dibalik, atau memang tidak pernah ada), jadi tanda
+       * "PO ditandai bayar tapi jurnal belum ada" juga tidak berlaku lagi. Hanya
+       * tanda yang ditulis sebelum toggle ini: toggle berikutnya yang gagal
+       * menulis tandanya sendiri dan tidak boleh ikut terhapus.
+       */
+      const selesai: SumberNotifikasiJurnal[] = [{ tipe: 'pembayaranPemasok', arah: 'payment', poId }];
+      if (direction === 'reversal') selesai.push({ tipe: 'pembayaranPemasok', arah: 'reversal', poId });
+      await tandaiJurnalTertundaSelesai(selesai, { dibuatSebelum: mulaiToggle });
     }
 
     /**
@@ -849,6 +922,7 @@ export async function postSupplierPaymentReversalJournalAction(
     return { ok: false, code: 'FORBIDDEN' };
   }
   const postedById = session.user.id;
+  const mulai = new Date();
 
   let result: PostSupplierPaymentReversalActionResult;
   try {
@@ -871,6 +945,17 @@ export async function postSupplierPaymentReversalJournalAction(
       e,
     );
     result = { ok: false, code: 'ERROR' };
+  }
+
+  // Pembalikan berdiri → PO belum dibayar tanpa jurnal tertinggal: tanda "Jurnal gagal"-nya selesai.
+  if (result.ok) {
+    await tandaiJurnalTertundaSelesai(
+      [
+        { tipe: 'pembayaranPemasok', arah: 'reversal', poId },
+        { tipe: 'pembayaranPemasok', arah: 'payment', poId },
+      ],
+      { dibuatSebelum: mulai },
+    );
   }
 
   revalidatePath('/backoffice/purchase-orders');

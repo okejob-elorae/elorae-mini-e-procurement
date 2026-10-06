@@ -178,7 +178,10 @@ export const ENTRI: EntriBantuan[] = [
     rute: "/backoffice/work-orders/[id]/issue",
     bagian: "production",
     judul: { kunci: "workOrders.issueMaterials" },
-    isi: "Mengeluarkan kain atau aksesoris dari gudang ke vendor untuk satu perintah kerja. Kain diterbitkan per roll utuh; total roll yang dialokasikan minimal sama dengan qty kain yang diterbitkan.",
+    isi: [
+      "Mengeluarkan kain atau aksesoris dari gudang ke vendor untuk satu perintah kerja. Kain diterbitkan per roll utuh; total roll yang dialokasikan minimal sama dengan qty kain yang diterbitkan.",
+      "Bila simpan gagal (mis. sambungan putus), tekan Simpan lagi tanpa mengubah isian: pengeluaran yang sudah tercatat tidak dikeluarkan dua kali.",
+    ],
     kartu: [
       { judul: { kunci: "workOrders.form.materialPlanTitle" }, isi: { kunci: "workOrders.plannedVsIssued" } },
       { judul: { kunci: "workOrders.issuePage.formTitle" }, isi: { kunci: "workOrders.issuePage.formDescription" } },
@@ -195,7 +198,10 @@ export const ENTRI: EntriBantuan[] = [
     rute: "/backoffice/work-orders/[id]/reconciliation",
     bagian: "production",
     judul: "Rekonsiliasi perintah kerja",
-    isi: "Membandingkan pemakaian material sebenarnya dengan rencananya untuk satu perintah kerja, beserta selisih biayanya. Hasilnya bisa dicetak atau disimpan sebagai PDF.",
+    isi: [
+      "Membandingkan pemakaian material sebenarnya dengan rencananya untuk satu perintah kerja, beserta selisih biayanya. Hasilnya bisa dicetak atau disimpan sebagai PDF.",
+      "Pemakaian = material yang dikeluarkan dikurangi yang diretur ke pemasok. Retur dihitung begitu diproses (stoknya keluar), termasuk yang sudah diselesaikan; retur draf belum dihitung.",
+    ],
     kartu: [
       { judul: { kunci: "workOrders.recon.efficiency" }, isi: { kunci: "workOrders.recon.usedVsIssued" } },
       {

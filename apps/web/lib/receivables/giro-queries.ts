@@ -46,6 +46,9 @@ export type BarisGiro = {
   /** Kapan keputusannya diambil: tanggal cair, atau tanggal ditolak. */
   diputuskanPada: Date | null;
   catatan: string | null;
+  /** Pelapor dan pencatat BKM — yang tidak boleh memutuskannya (PEMERIKSA_SAMA). */
+  salesmanId: string;
+  createdById: string;
 };
 
 const PILIH = {
@@ -60,6 +63,8 @@ const PILIH = {
   receivedAmount: true,
   verifiedAt: true,
   verifyNote: true,
+  salesmanId: true,
+  createdById: true,
   store: { select: { name: true } },
   salesman: { select: { name: true } },
 } satisfies Prisma.PaymentClaimSelect;
@@ -84,6 +89,8 @@ function keBaris(r: BarisDb, sekarang: Date): BarisGiro {
     kedaluwarsa: menunggu && r.giroIssueDate ? giroKedaluwarsa(r.giroIssueDate, sekarang) : false,
     diputuskanPada: status === STATUS_GIRO.CAIR ? r.giroSettledAt : menunggu ? null : r.verifiedAt,
     catatan: r.verifyNote,
+    salesmanId: r.salesmanId,
+    createdById: r.createdById,
   };
 }
 

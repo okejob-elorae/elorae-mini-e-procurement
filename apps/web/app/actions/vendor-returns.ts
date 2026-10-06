@@ -14,6 +14,7 @@ import { hasPermission, PERMISSIONS, requirePermission } from '@/lib/rbac';
 import { runSerializable } from '@/lib/db/tx-retry';
 import { catatKreditReturPo } from '@/lib/purchase-orders/kredit-retur-writer';
 import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
+import { parseVendorReturnLines } from "@/lib/vendor-returns/baris-retur";
 
 async function requireSession() {
   const session = await auth();
@@ -422,27 +423,52 @@ export async function deleteVendorReturn(id: string, _userId: string) {
   revalidatePath('/backoffice/vendor-returns');
 }
 
-type VendorReturnLineRow = {
-  type: string;
-  itemId: string;
-  variantSku?: string | null;
-  rollId?: string;
-  qty: number | string;
-  costValue: number | string;
-};
+/*
+ * Penolakan proses/selesai retur DIKEMBALIKAN sebagai `{ ok:false, code }`:
+ * di build produksi Next menyamarkan pesan galat yang dilempar aksi server,
+ * jadi layar hanya bisa menjelaskan alasannya lewat kode
+ * (`vendorReturnsList.err.<kode>` di i18n). Di dalam transaksi penolakan tetap
+ * DILEMPAR (supaya semua tulisan dibatalkan), lalu diterjemahkan di luar.
+ */
+export type KodeTolakProsesRetur =
+  | 'TANPA_AKSES'
+  | 'TIDAK_DITEMUKAN'
+  | 'SUDAH_DIPROSES'
+  | 'TANPA_BARIS'
+  | 'BARIS_TIDAK_VALID'
+  | 'STOK_KURANG'
+  | 'GAGAL';
+type RincianTolakRetur = { barang?: string; perlu?: number; ada?: number };
+export type ProsesReturResult =
+  | { ok: true; id: string; docNumber: string }
+  | ({ ok: false; code: KodeTolakProsesRetur } & RincianTolakRetur);
 
-function parseVendorReturnLines(raw: unknown): VendorReturnLineRow[] {
-  if (raw == null) return [];
-  if (typeof raw === 'string') {
-    try {
-      const p = JSON.parse(raw) as unknown;
-      return Array.isArray(p) ? (p as VendorReturnLineRow[]) : [];
-    } catch {
-      return [];
-    }
+export type KodeTolakSelesaiRetur =
+  | 'TANPA_AKSES'
+  | 'BUKTI_TIDAK_LENGKAP'
+  | 'TIDAK_DITEMUKAN'
+  | 'BELUM_DIPROSES'
+  | 'SUDAH_SELESAI'
+  | 'GAGAL';
+export type SelesaikanReturResult = { ok: true } | { ok: false; code: KodeTolakSelesaiRetur };
+
+class ReturDitolak extends Error {
+  constructor(
+    readonly code: Exclude<KodeTolakProsesRetur | KodeTolakSelesaiRetur, 'TANPA_AKSES' | 'GAGAL'>,
+    readonly rincian: RincianTolakRetur = {}
+  ) {
+    super(code);
+    this.name = 'ReturDitolak';
   }
-  if (Array.isArray(raw)) return raw as VendorReturnLineRow[];
-  return [];
+}
+
+/** Pesan pasti `reverseInventoryValue` (lib/inventory/costing.ts) untuk stok kurang / tanpa catatan stok. */
+const PESAN_STOK_KURANG = new Set(['Insufficient stock', 'No inventory record found']);
+
+/** Nama barang untuk pesan penolakan (SKU bila nama kosong, id bila barangnya hilang). */
+async function namaBarang(tx: Pick<typeof prisma, 'item'>, itemId: string): Promise<string> {
+  const item = await tx.item.findUnique({ where: { id: itemId }, select: { nameId: true, sku: true } });
+  return item?.nameId || item?.sku || itemId;
 }
 
 /**
@@ -450,46 +476,101 @@ function parseVendorReturnLines(raw: unknown): VendorReturnLineRow[] {
  * sesi (`_userId` diabaikan). Penjaga DRAFT di `runSerializable` — proses ganda
  * serentak dulu sama-sama lolos dan mengeluarkan stok dua kali.
  */
-export async function processReturn(id: string, _userId?: string) {
+export async function processReturn(id: string, _userId?: string): Promise<ProsesReturResult> {
   void _userId;
-  const session = await requireSession();
-  requirePermission(session.user.permissions, PERMISSIONS.VENDOR_RETURNS_MANAGE);
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.VENDOR_RETURNS_MANAGE)) {
+    return { ok: false, code: 'TANPA_AKSES' };
+  }
   const userId = session.user.id;
 
-  const result = await runSerializable(async (tx) => {
+  let result: Awaited<ReturnType<typeof prosesReturDalamTransaksi>>;
+  try {
+    result = await prosesReturDalamTransaksi(id, userId);
+  } catch (error) {
+    if (error instanceof ReturDitolak) {
+      return { ok: false, code: error.code as KodeTolakProsesRetur, ...error.rincian };
+    }
+    console.error('[processReturn]', error);
+    return { ok: false, code: 'GAGAL' };
+  }
+
+  // Sesudah commit: langkah sampingan tidak boleh mengubah hasil — stok sudah keluar.
+  try {
+    // Baris kain/aksesori mengurangi stok gudang. Barang tanpa pemetaan
+    // Jubelio dilewati penolong; FG_REJECT tidak menyentuh stok jual.
+    await antrekanPushStok(
+      parseVendorReturnLines(result.ret.lines)
+        .filter((l) => l.type === "FABRIC" || l.type === "ACCESSORIES")
+        .map((l) => l.itemId),
+      { sumber: "ADJUSTMENT", ref: `retur pemasok ${result.ret.docNumber}`, userId },
+    );
+  } catch (error) {
+    console.error('[processReturn] antre push stok', error);
+  }
+
+  getActorName(userId)
+    .then((triggeredByName) =>
+      notifyVendorReturnStatusUpdated(
+        id,
+        result.ret.docNumber,
+        'DRAFT',
+        'PROCESSED',
+        triggeredByName
+      )
+    )
+    .catch(() => {});
+
+  revalidatePath('/backoffice/vendor-returns');
+  revalidatePath(`/backoffice/vendor-returns/${result.ret.id}`);
+  if (result.poIdToRevalidate) {
+    revalidatePath(`/backoffice/purchase-orders/${result.poIdToRevalidate}`);
+  }
+  return { ok: true, id: result.ret.id, docNumber: result.ret.docNumber };
+}
+
+async function prosesReturDalamTransaksi(id: string, userId: string) {
+  return runSerializable(async (tx) => {
     const ret = await tx.vendorReturn.findUnique({
       where: { id }
     });
 
-    if (!ret || ret.status !== 'DRAFT') {
-      throw new Error('Return tidak valid atau sudah diproses');
-    }
+    if (!ret) throw new ReturDitolak('TIDAK_DITEMUKAN');
+    if (ret.status !== 'DRAFT') throw new ReturDitolak('SUDAH_DIPROSES');
 
     const lines = parseVendorReturnLines(ret.lines);
-    if (lines.length === 0) {
-      throw new Error('Return has no valid line items to process');
-    }
+    if (lines.length === 0) throw new ReturDitolak('TANPA_BARIS');
 
     for (const line of lines) {
       if (line.type === 'FABRIC' || line.type === 'ACCESSORIES') {
         const parsedQty = Number(line.qty);
         const parsedCostValue = Number(line.costValue);
-        if (!Number.isFinite(parsedQty) || parsedQty <= 0) {
-          throw new Error(`Invalid return qty for item ${line.itemId}`);
-        }
-        if (!Number.isFinite(parsedCostValue) || parsedCostValue < 0) {
-          throw new Error(`Invalid return cost for item ${line.itemId}`);
+        if (
+          !Number.isFinite(parsedQty) || parsedQty <= 0 ||
+          !Number.isFinite(parsedCostValue) || parsedCostValue < 0
+        ) {
+          throw new ReturDitolak('BARIS_TIDAK_VALID', { barang: await namaBarang(tx, line.itemId) });
         }
         const variantKey = line.variantSku ?? null;
         const qty = new Decimal(parsedQty);
         const unitCost = parsedQty === 0 ? new Decimal(0) : new Decimal(parsedCostValue).div(parsedQty);
-        const costResult = await reverseInventoryValue(
-          line.itemId,
-          qty,
-          unitCost,
-          tx,
-          variantKey
-        );
+        let costResult: Awaited<ReturnType<typeof reverseInventoryValue>>;
+        try {
+          costResult = await reverseInventoryValue(line.itemId, qty, unitCost, tx, variantKey);
+        } catch (error) {
+          // Hanya penolakan stok yang diterjemahkan; galat basis data (mis. konflik
+          // serializable) dilempar apa adanya supaya transaksinya diulang.
+          if (!(error instanceof Error) || !PESAN_STOK_KURANG.has(error.message)) throw error;
+          const stok = await tx.inventoryValue.findUnique({
+            where: { itemId_variantSku: { itemId: line.itemId, variantSku: variantKey ?? '' } },
+            select: { qtyOnHand: true },
+          });
+          throw new ReturDitolak('STOK_KURANG', {
+            barang: await namaBarang(tx, line.itemId),
+            perlu: parsedQty,
+            ada: stok ? Number(stok.qtyOnHand) : 0,
+          });
+        }
         const outgoingValue = qty.mul(unitCost);
         await tx.stockMovement.create({
           data: {
@@ -516,7 +597,7 @@ export async function processReturn(id: string, _userId?: string) {
       } else if (line.type === 'FG_REJECT') {
         const parsedQty = Number(line.qty);
         if (!Number.isFinite(parsedQty) || parsedQty <= 0) {
-          throw new Error(`Invalid reject return qty for item ${line.itemId}`);
+          throw new ReturDitolak('BARIS_TIDAK_VALID', { barang: await namaBarang(tx, line.itemId) });
         }
         await tx.rejectedGoodsLedger.create({
           data: {
@@ -571,34 +652,6 @@ export async function processReturn(id: string, _userId?: string) {
 
     return { ret, poIdToRevalidate };
   });
-
-  // Sesudah commit: baris kain/aksesori mengurangi stok gudang. Barang tanpa
-  // pemetaan Jubelio dilewati penolong; FG_REJECT tidak menyentuh stok jual.
-  await antrekanPushStok(
-    parseVendorReturnLines(result.ret.lines)
-      .filter((l) => l.type === "FABRIC" || l.type === "ACCESSORIES")
-      .map((l) => l.itemId),
-    { sumber: "ADJUSTMENT", ref: `retur pemasok ${result.ret.docNumber}`, userId },
-  );
-
-  getActorName(userId)
-    .then((triggeredByName) =>
-      notifyVendorReturnStatusUpdated(
-        id,
-        result.ret.docNumber,
-        'DRAFT',
-        'PROCESSED',
-        triggeredByName
-      )
-    )
-    .catch(() => {});
-
-  revalidatePath('/backoffice/vendor-returns');
-  revalidatePath(`/backoffice/vendor-returns/${result.ret.id}`);
-  if (result.poIdToRevalidate) {
-    revalidatePath(`/backoffice/purchase-orders/${result.poIdToRevalidate}`);
-  }
-  return result.ret;
 }
 
 const completeReturnSchema = z.object({
@@ -617,21 +670,57 @@ export async function completeReturn(
   id: string,
   _userId: string | undefined,
   data: CompleteReturnInput
-) {
+): Promise<SelesaikanReturResult> {
   void _userId;
-  const session = await requireSession();
-  requirePermission(session.user.permissions, PERMISSIONS.VENDOR_RETURNS_MANAGE);
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.VENDOR_RETURNS_MANAGE)) {
+    return { ok: false, code: 'TANPA_AKSES' };
+  }
   const userId = session.user.id;
-  completeReturnSchema.parse(data);
+  if (!completeReturnSchema.safeParse(data).success) return { ok: false, code: 'BUKTI_TIDAK_LENGKAP' };
 
-  const completeResult = await runSerializable(async (tx) => {
+  let completeResult: Awaited<ReturnType<typeof selesaikanReturDalamTransaksi>>;
+  try {
+    completeResult = await selesaikanReturDalamTransaksi(id, userId, data);
+  } catch (error) {
+    if (error instanceof ReturDitolak) return { ok: false, code: error.code as KodeTolakSelesaiRetur };
+    console.error('[completeReturn]', error);
+    return { ok: false, code: 'GAGAL' };
+  }
+
+  revalidatePath('/backoffice/vendor-returns');
+  revalidatePath(`/backoffice/vendor-returns/${id}`);
+  if (completeResult.woId) {
+    revalidatePath(`/backoffice/work-orders/${completeResult.woId}`);
+  }
+  if (completeResult.kreditPo.poId) {
+    revalidatePath(`/backoffice/purchase-orders/${completeResult.kreditPo.poId}`);
+    revalidatePath('/backoffice/supplier-payments');
+  }
+
+  getActorName(userId)
+    .then((triggeredByName) =>
+      notifyVendorReturnStatusUpdated(
+        id,
+        completeResult.docNumber,
+        'PROCESSED',
+        'COMPLETED',
+        triggeredByName
+      )
+    )
+    .catch(() => {});
+  return { ok: true };
+}
+
+async function selesaikanReturDalamTransaksi(id: string, userId: string, data: CompleteReturnInput) {
+  return runSerializable(async (tx) => {
     const ret = await tx.vendorReturn.findUnique({
       where: { id }
     });
 
-    if (!ret || ret.status !== 'PROCESSED') {
-      throw new Error('Return must be in PROCESSED status to complete');
-    }
+    if (!ret) throw new ReturDitolak('TIDAK_DITEMUKAN');
+    if (ret.status === 'COMPLETED') throw new ReturDitolak('SUDAH_SELESAI');
+    if (ret.status !== 'PROCESSED') throw new ReturDitolak('BELUM_DIPROSES');
 
     // Baris retur dan rencana WO tersimpan sebagai STRING JSON. Dulu diulang
     // sebagai `any[]` (per huruf), jadi `returnedQty` WO tidak pernah bertambah.
@@ -698,29 +787,6 @@ export async function completeReturn(
 
     return { ...ret, kreditPo };
   });
-
-  revalidatePath('/backoffice/vendor-returns');
-  revalidatePath(`/backoffice/vendor-returns/${id}`);
-  if (completeResult.woId) {
-    revalidatePath(`/backoffice/work-orders/${completeResult.woId}`);
-  }
-  if (completeResult.kreditPo.poId) {
-    revalidatePath(`/backoffice/purchase-orders/${completeResult.kreditPo.poId}`);
-    revalidatePath('/backoffice/supplier-payments');
-  }
-
-  getActorName(userId)
-    .then((triggeredByName) =>
-      notifyVendorReturnStatusUpdated(
-        id,
-        completeResult.docNumber,
-        'PROCESSED',
-        'COMPLETED',
-        triggeredByName
-      )
-    )
-    .catch(() => {});
-  return completeResult;
 }
 
 export async function getVendorReturns(

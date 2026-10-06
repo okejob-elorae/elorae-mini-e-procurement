@@ -34,6 +34,7 @@ import { verifikasiKlaimAction } from '@/app/actions/receivables';
 import { dinamis } from '@/lib/i18n/dinamis';
 import type { StatusGiro } from '@/lib/receivables/giro';
 import { TombolGiro } from './giro/TombolGiro';
+import { kunciGalatPutusan } from './[id]/putusan-klaim';
 
 export type BarisKlaim = {
   id: string;
@@ -47,6 +48,8 @@ export type BarisKlaim = {
   deductionCount: number;
   status: string;
   verifyNote: string | null;
+  /** Penonton yang melaporkan/mencatatkan BKM ini — tidak boleh memutuskannya. */
+  pemeriksaSama: boolean;
   nilaiTertahan: number;
   /** Rincian bilyet kalau dibayar dengan giro. Tanggal sudah diformat di server. */
   giro: { nomor: string; efektif: string; status: StatusGiro; kedaluwarsa: boolean } | null;
@@ -97,7 +100,7 @@ export function PelunasanClient({
         setAlasan('');
         router.refresh();
       } else {
-        toast.error(t(`err${hasil.kode}` as never));
+        toast.error(t(kunciGalatPutusan(hasil.kode, keputusan) as never));
       }
     });
   };
@@ -217,6 +220,7 @@ export function PelunasanClient({
                             giroNo={b.giro.nomor}
                             nilai={rupiah(b.receivedAmount)}
                             susun
+                            pemeriksaSama={b.pemeriksaSama}
                           />
                         )}
                         {b.status === 'DIKIRIM' && bolehMemutuskan && b.giro?.status !== 'MENUNGGU' && (
@@ -225,7 +229,8 @@ export function PelunasanClient({
                           <span className="inline-flex flex-col items-end gap-1">
                             <Button
                               size="sm"
-                              disabled={pending}
+                              disabled={pending || b.pemeriksaSama}
+                              title={b.pemeriksaSama ? t('errPEMERIKSA_SAMA') : undefined}
                               onClick={() => putuskan(b.id, 'TERVERIFIKASI')}
                             >
                               <BadgeCheck className="mr-1.5 h-3.5 w-3.5" />
@@ -234,7 +239,8 @@ export function PelunasanClient({
                             <Button
                               size="sm"
                               variant="outline"
-                              disabled={pending}
+                              disabled={pending || b.pemeriksaSama}
+                              title={b.pemeriksaSama ? t('errPEMERIKSA_SAMA') : undefined}
                               onClick={() => {
                                 setTolakId(b.id);
                                 setAlasan('');
@@ -242,6 +248,11 @@ export function PelunasanClient({
                             >
                               {t('reject')}
                             </Button>
+                            {b.pemeriksaSama && (
+                              <span className="max-w-[10rem] whitespace-normal text-xs text-muted-foreground">
+                                {t('pemeriksaSamaSingkat')}
+                              </span>
+                            )}
                           </span>
                         )}
                       </TableCell>

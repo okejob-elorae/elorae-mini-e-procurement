@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, Fragment } from 'react';
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore, Fragment } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,7 +21,18 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Plus, Trash2, Loader2, Barcode, X } from 'lucide-react';
 import { BarcodeScanner } from '@/components/scanners/BarcodeScanner';
 import { simpanGRN, type GRNFormData } from '@/app/actions/grn';
@@ -29,11 +40,26 @@ import { getPOs } from '@/app/actions/purchase-orders';
 import { getPOById } from '@/app/actions/purchase-orders';
 import { getItems } from '@/app/actions/items';
 import { getItemCategories } from '@/app/actions/item-categories';
-import { savePendingGRN } from '@/lib/offline/db';
-import { isOnline } from '@/lib/offline/sync';
+import { offlineDB, getPendingGRNs, removePendingGRN, type PendingGRN } from '@/lib/offline/db';
+import {
+  alasanTidakBisaSimpanGrn,
+  ambilDrafGrn,
+  barisDariDraf,
+  drafBermakna,
+  drafDariGrnLama,
+  drafDariIsian,
+  fotoDariDataUrl,
+  galatSambungan,
+  hapusDrafGrn,
+  kunciDrafLengket,
+  segarkanAngkaPo,
+  simpanDrafGrn,
+  type DrafGrn,
+} from '@/lib/offline/grn-draf';
+import { formatDisplayDateTime } from '@/lib/date-only';
 import { toast } from 'sonner';
 import { useSession } from 'next-auth/react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { FabricRollInput, FabricRackPreview } from '@/components/grn/FabricRollInput';
 import { parseItemVariants, variantSelectOptions } from '@/lib/items/variants';
 import {
@@ -93,28 +119,58 @@ interface GRNFormProps {
   onSuccess?: () => void;
 }
 
+function barisKosong(id: string): LineRow {
+  return {
+    id,
+    itemId: '',
+    itemType: '',
+    sku: '',
+    nameId: '',
+    uomId: '',
+    uomCode: '',
+    variantSku: undefined,
+    qty: 0,
+    unitCost: 0,
+    rollValues: [],
+  };
+}
+
+/** Langganan perubahan sinyal (online/offline) untuk `useSyncExternalStore`. */
+function langgananSinyal(berubah: () => void): () => void {
+  window.addEventListener('online', berubah);
+  window.addEventListener('offline', berubah);
+  return () => {
+    window.removeEventListener('online', berubah);
+    window.removeEventListener('offline', berubah);
+  };
+}
+
+function sinyalSekarang(): boolean {
+  return typeof navigator === 'undefined' || navigator.onLine;
+}
+
+/*
+ * GRN butuh sinyal: tidak ada antrean luring untuk GRN (lihat
+ * `lib/offline/grn-draf.ts`). Isian formulir disimpan sebagai draf per
+ * pengguna di perangkat, dan dihapus hanya setelah GRN tersimpan atau dibuang.
+ */
 export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
   const { data: session } = useSession();
   const t = useTranslations('inventory.grnForm');
   const tToasts = useTranslations('toasts');
   const tTolak = useTranslations('grnErrors');
+  const tUmum = useTranslations('common');
+  const locale = useLocale();
+  const daring = useSyncExternalStore(langgananSinyal, sinyalSekarang, () => true);
+  const alasanSimpan = alasanTidakBisaSimpanGrn({ daring });
+  const idSesi = session?.user?.id ?? '';
+  // Sesi bisa jadi null saat tab dibuka lagi tanpa sinyal; kunci draf tetap milik pengguna ini.
+  const [kunciDraf, setKunciDraf] = useState(idSesi);
+  const kunciSekarang = kunciDrafLengket(kunciDraf, idSesi);
+  if (kunciSekarang !== kunciDraf) setKunciDraf(kunciSekarang);
   const [poId, setPoId] = useState<string>('');
   const [supplierId, setSupplierId] = useState<string>('');
-  const [lines, setLines] = useState<LineRow[]>([
-    {
-      id: '0',
-      itemId: '',
-      itemType: '',
-      sku: '',
-      nameId: '',
-      uomId: '',
-      uomCode: '',
-      variantSku: undefined,
-      qty: 0,
-      unitCost: 0,
-      rollValues: [],
-    },
-  ]);
+  const [lines, setLines] = useState<LineRow[]>([barisKosong('0')]);
   const [categoryId, setCategoryId] = useState<string>('');
   const [notes, setNotes] = useState('');
   const [photoUrls] = useState<string[]>([]);
@@ -128,6 +184,21 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
   const [errors, setErrors] = useState<{ supplierId?: string; lines?: string }>({});
   /** Number of existing GRNs for the selected PO (when loaded from PO). */
   const [poGrnCount, setPoGrnCount] = useState(0);
+  /** GRN lama (antrean luring yang tidak pernah terkirim) yang sedang dimuat ke formulir. */
+  const [pendingLamaId, setPendingLamaId] = useState<number | null>(null);
+  // Draf dibaca dulu sebelum ada yang ditulis, supaya draf tidak tertimpa formulir kosong.
+  const [drafSiap, setDrafSiap] = useState(false);
+  const [drafGagal, setDrafGagal] = useState(false);
+  const [drafPulih, setDrafPulih] = useState<number | null>(null);
+  const [grnLama, setGrnLama] = useState<PendingGRN[]>([]);
+  const [konfirmasi, setKonfirmasi] = useState<{ jenis: 'muat' | 'hapus'; lama: PendingGRN } | null>(null);
+  /** GRN sudah tersimpan: draf tidak boleh ditulis lagi (timer tertunda / unmount). */
+  const selesaiRef = useRef(false);
+  /** Tulis/hapus draf berurutan, supaya tulisan lama tidak menghidupkan draf yang sudah dihapus. */
+  const antreanDraf = useRef<Promise<unknown>>(Promise.resolve());
+  const drafTertunda = useRef<{ draf: DrafGrn; foto: Blob[] } | null>(null);
+  /** PO dari draf: barisnya sudah ada di draf, jangan ditimpa baris PO kosong. */
+  const lewatiBarisPo = useRef<string | null>(null);
 
   const loadPOs = useCallback(async () => {
     try {
@@ -180,16 +251,32 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
 
   useEffect(() => {
     if (!poId) {
+      lewatiBarisPo.current = null;
       setPoGrnCount(0);
       return;
     }
+    const dariDraf = lewatiBarisPo.current === poId;
+    if (!dariDraf) lewatiBarisPo.current = null;
+    // PO yang sudah diganti (atau draf yang baru dimuat) tidak boleh ditimpa jawaban lama.
+    let usang = false;
     (async () => {
       try {
         const po = await getPOById(poId);
-        if (!po || !po.supplier) return;
+        if (usang || !po || !po.supplier) return;
         setSupplierId(po.supplierId);
         const grns = (po as { grns?: Array<{ id: string }> }).grns;
         setPoGrnCount(grns?.length ?? 0);
+        if (dariDraf) {
+          // Barisnya dari draf; hanya angka dipesan/sudah diterima yang diperbarui.
+          const angkaPo = (po.items || []).map((line) => ({
+            itemId: line.itemId,
+            variantSku: line.variantSku?.trim() ?? '',
+            dipesan: Number(line.qty),
+            diterima: line.receivedQty != null ? Number(line.receivedQty) : null,
+          }));
+          setLines((prev) => segarkanAngkaPo(prev, angkaPo));
+          return;
+        }
         const rows: LineRow[] = (po.items || [])
           .filter((line) => line.item != null)
           .map((line, i) => ({
@@ -209,29 +296,154 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
         }));
         if (rows.length > 0) setLines(rows);
       } catch {
-        toast.error(t('loadPoFailed'));
+        if (!dariDraf && !usang) toast.error(t('loadPoFailed'));
       }
     })();
+    return () => {
+      usang = true;
+    };
   }, [poId, t]);
+
+  const terapkanDraf = useCallback((draf: DrafGrn, foto: Blob[]) => {
+    lewatiBarisPo.current = draf.poId || null;
+    setPoId(draf.poId);
+    setSupplierId(draf.supplierId);
+    setCategoryId(draf.categoryId);
+    setNotes(draf.notes);
+    setLines(barisDariDraf(draf));
+    setPendingLamaId(draf.pendingLamaId);
+    setPhotoFiles(
+      foto.map((b, i) =>
+        b instanceof File ? b : new File([b], `foto-${i + 1}.jpg`, { type: b.type || 'image/jpeg' })
+      )
+    );
+    setErrors({});
+  }, []);
+
+  // Pulihkan draf pengguna ini + daftar GRN lama yang tidak pernah terkirim.
+  useEffect(() => {
+    if (!kunciDraf) return;
+    let batal = false;
+    (async () => {
+      const [simpanan, lama] = await Promise.all([
+        ambilDrafGrn(offlineDB.drafGRN, kunciDraf),
+        getPendingGRNs().catch(() => [] as PendingGRN[]),
+      ]);
+      if (batal) return;
+      if (simpanan) {
+        terapkanDraf(simpanan.draf, simpanan.foto);
+        setDrafPulih(simpanan.draf.disimpanPada);
+      }
+      setGrnLama(lama);
+      setDrafSiap(true);
+    })();
+    return () => {
+      batal = true;
+    };
+  }, [kunciDraf, terapkanDraf]);
+
+  const tulisDraf = useCallback(
+    (draf: DrafGrn, foto: Blob[]) => {
+      antreanDraf.current = antreanDraf.current.then(async () => {
+        if (selesaiRef.current) return;
+        const ok = await simpanDrafGrn(offlineDB.drafGRN, kunciDraf, draf, foto);
+        setDrafGagal(!ok);
+      });
+    },
+    [kunciDraf]
+  );
+
+  const siramDraf = useCallback(() => {
+    const tunda = drafTertunda.current;
+    drafTertunda.current = null;
+    if (tunda) tulisDraf(tunda.draf, tunda.foto);
+  }, [tulisDraf]);
+
+  // Setiap perubahan isian → draf (ditunda sebentar; foto bisa besar).
+  useEffect(() => {
+    if (!drafSiap) return;
+    drafTertunda.current = {
+      draf: drafDariIsian({ poId, supplierId, categoryId, notes, pendingLamaId, lines }, Date.now()),
+      foto: photoFiles,
+    };
+    const pewaktu = window.setTimeout(siramDraf, 400);
+    return () => window.clearTimeout(pewaktu);
+  }, [drafSiap, poId, supplierId, categoryId, notes, pendingLamaId, lines, photoFiles, siramDraf]);
+
+  // Tab ditutup/disembunyikan atau pindah halaman: sisa isian ditulis segera.
+  useEffect(() => {
+    const sembunyi = () => {
+      if (document.visibilityState === 'hidden') siramDraf();
+    };
+    window.addEventListener('pagehide', siramDraf);
+    document.addEventListener('visibilitychange', sembunyi);
+    return () => {
+      window.removeEventListener('pagehide', siramDraf);
+      document.removeEventListener('visibilitychange', sembunyi);
+      siramDraf();
+    };
+  }, [siramDraf]);
+
+  /** GRN tersimpan: hapus drafnya dan GRN lama asalnya (kalau ada). */
+  const selesaikanDraf = async () => {
+    selesaiRef.current = true;
+    drafTertunda.current = null;
+    const lamaId = pendingLamaId;
+    antreanDraf.current = antreanDraf.current.then(async () => {
+      await hapusDrafGrn(offlineDB.drafGRN, kunciDraf);
+      if (lamaId != null) await removePendingGRN(lamaId).catch(() => {});
+    });
+    // IndexedDB yang macet tidak boleh menahan layar setelah GRN tersimpan.
+    await Promise.race([antreanDraf.current, new Promise((r) => window.setTimeout(r, 2000))]);
+  };
+
+  const buangDraf = () => {
+    lewatiBarisPo.current = null;
+    setPoId('');
+    setSupplierId('');
+    setCategoryId('');
+    setNotes('');
+    setLines([barisKosong('0')]);
+    setPhotoFiles([]);
+    setPendingLamaId(null);
+    setPoGrnCount(0);
+    setDrafPulih(null);
+    setErrors({});
+  };
+
+  const muatGrnLama = (lama: PendingGRN) => {
+    const barang = new Map(items.map((i) => [i.id, { type: i.type, uomCode: i.uom?.code }]));
+    const foto = (lama.photoBase64 ?? [])
+      .map((url, i) => fotoDariDataUrl(url, `grn-${lama.localId ?? 0}-${i + 1}.jpg`))
+      .filter((f): f is File => f !== null);
+    // Cap waktu draf = saat GRN lama dicatat; draf berikutnya ditulis efek simpan.
+    terapkanDraf(drafDariGrnLama(lama, barang, new Date(lama.createdAt).getTime() || 0), foto);
+    setDrafPulih(null);
+  };
+
+  const jalankanKonfirmasi = async () => {
+    const k = konfirmasi;
+    setKonfirmasi(null);
+    if (!k) return;
+    if (k.jenis === 'muat') {
+      muatGrnLama(k.lama);
+      return;
+    }
+    const id = k.lama.localId;
+    if (id == null) return;
+    try {
+      await removePendingGRN(id);
+    } catch {
+      toast.error(t('grnLama.gagalHapus'));
+      return;
+    }
+    setGrnLama((d) => d.filter((g) => g.localId !== id));
+    if (pendingLamaId === id) setPendingLamaId(null);
+  };
 
   const addLine = () => {
     setErrors((e) => ({ ...e, lines: undefined }));
-    setLines((prev) => [
-      ...prev,
-      {
-        id: `line-${nextLineId}`,
-        itemId: '',
-        itemType: '',
-        sku: '',
-        nameId: '',
-        uomId: '',
-        uomCode: '',
-        variantSku: undefined,
-        qty: 0,
-        unitCost: 0,
-        rollValues: [],
-      },
-    ]);
+    setLines((prev) => [...prev, barisKosong(`line-${nextLineId}`)]);
     setNextLineId((n) => n + 1);
   };
 
@@ -356,18 +568,10 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
     setPhotoFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const fileToBase64 = (file: File): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve((reader.result as string) ?? '');
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
-    if (!session?.user?.id) {
+    if (!kunciDraf) {
       toast.error(tToasts('youMustBeLoggedIn'));
       return;
     }
@@ -390,74 +594,32 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
       }
     }
 
-    const offline = !isOnline();
-    if (offline) {
-      setIsLoading(true);
-      try {
-        const photoBase64 =
-          photoFiles.length > 0
-            ? await Promise.all(photoFiles.map(fileToBase64))
-            : undefined;
-        await savePendingGRN({
-          poId: poId || undefined,
-          supplierId,
-          items: validLines.map((l) => {
-            const lengths = l.itemType === 'FABRIC' ? parseRollValuesToLengths(l.rollValues ?? []) : [];
-            const base = {
-              itemId: l.itemId,
-              sku: l.sku,
-              name: l.nameId,
-              variantSku: l.variantSku?.trim() || undefined,
-              qty: lengths.length > 0 ? lengths.reduce((a, b) => a + b, 0) : l.qty,
-              unitCost: l.unitCost,
-              uomId: l.uomId,
-            };
-            if (l.itemType === 'FABRIC' && lengths.length > 0) {
-              return {
-                ...base,
-                rolls: lengths.map((length, idx) => ({
-                  rollRef: `${l.sku || 'ROLL'}-${idx + 1}`,
-                  length,
-                })),
-              };
-            }
-            return base;
-          }),
-          notes: notes || undefined,
-          photoBase64,
-          totalAmount: runningTotal,
-          status: 'PENDING',
-        });
-        toast.success(t('savedOffline'));
-        onSuccess?.();
-      } catch (err: unknown) {
-        toast.error(err instanceof Error ? err.message : t('saveOfflineFailed'));
-      } finally {
-        setIsLoading(false);
-      }
+    // GRN butuh sinyal; isiannya sudah tersimpan sebagai draf di perangkat.
+    if (alasanTidakBisaSimpanGrn({ daring: sinyalSekarang() }) !== null) {
+      toast.error(t('butuhSinyal'));
       return;
-    }
-
-    let urls = [...photoUrls];
-    if (photoFiles.length > 0) {
-      try {
-        const formData = new FormData();
-        photoFiles.forEach((f) => formData.append('files', f));
-        const res = await fetch('/api/upload/grn-photo', {
-          method: 'POST',
-          body: formData,
-        });
-        if (res.ok) {
-          const data = await res.json();
-          urls = [...urls, ...(data.urls || [])];
-        }
-      } catch {
-        toast.error(tToasts('photoUploadFailed'));
-      }
     }
 
     setIsLoading(true);
     try {
+      let urls = [...photoUrls];
+      if (photoFiles.length > 0) {
+        try {
+          const formData = new FormData();
+          photoFiles.forEach((f) => formData.append('files', f));
+          const res = await fetch('/api/upload/grn-photo', {
+            method: 'POST',
+            body: formData,
+          });
+          if (res.ok) {
+            const data = await res.json();
+            urls = [...urls, ...(data.urls || [])];
+          }
+        } catch {
+          toast.error(tToasts('photoUploadFailed'));
+        }
+      }
+
       const data: GRNFormData = {
         poId: poId || undefined,
         supplierId,
@@ -489,21 +651,86 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
         toast.error(tTolak.has(hasil.code) ? tTolak(hasil.code) : t('createFailed'));
         return;
       }
+      await selesaikanDraf();
       toast.success(t('createdToast'));
       onSuccess?.();
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : t('createFailed'));
+      // Sambungan putus: GRN mungkin sudah tercatat, mungkin belum — jangan menebak.
+      if (galatSambungan(err)) {
+        toast.error(t('sambunganPutus'));
+      } else {
+        toast.error(err instanceof Error ? err.message : t('createFailed'));
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
+  const isianBermakna = drafBermakna(
+    drafDariIsian({ poId, supplierId, categoryId, notes, pendingLamaId, lines }, 0),
+    photoFiles.length
+  );
+
+  const namaPemasok = (id: string) => {
+    const s = suppliers.find((x) => x.id === id);
+    return s ? `${s.code} – ${s.name}` : t('grnLama.pemasokTakDikenal');
+  };
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {!isOnline() && (
+      {!daring && (
         <Alert>
           <AlertDescription>
-            {t('offlineNotice')}
+            {drafSiap && !drafGagal ? t('tanpaSinyalDrafAman') : t('tanpaSinyalDrafBelum')}
+          </AlertDescription>
+        </Alert>
+      )}
+      {drafPulih !== null && (
+        <Alert>
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+            <span>{t('draf.pulih', { time: formatDisplayDateTime(drafPulih, locale) })}</span>
+            <Button type="button" variant="outline" size="sm" onClick={buangDraf}>
+              {t('draf.buang')}
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+      {grnLama.length > 0 && (
+        <Alert variant="destructive">
+          <AlertTitle>{t('grnLama.judul', { count: grnLama.length })}</AlertTitle>
+          <AlertDescription>
+            <ul className="w-full divide-y">
+              {grnLama.map((g) => (
+                <li key={g.localId} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                  <span className="min-w-0 text-foreground">
+                    <span className="font-medium">{namaPemasok(g.supplierId)}</span>
+                    {' · '}
+                    {t('grnLama.ringkas', {
+                      count: g.items.length,
+                      total: g.totalAmount.toLocaleString('id-ID'),
+                      time: formatDisplayDateTime(g.createdAt, locale),
+                    })}
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    {g.localId === pendingLamaId ? (
+                      <Badge variant="secondary">{t('grnLama.diFormulir')}</Badge>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => (isianBermakna ? setKonfirmasi({ jenis: 'muat', lama: g }) : muatGrnLama(g))}
+                      >
+                        {t('grnLama.muat')}
+                      </Button>
+                    )}
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setKonfirmasi({ jenis: 'hapus', lama: g })}>
+                      {tUmum('delete')}
+                    </Button>
+                  </span>
+                </li>
+              ))}
+            </ul>
           </AlertDescription>
         </Alert>
       )}
@@ -820,16 +1047,50 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
         </CardContent>
       </Card>
 
-      <Button type="submit" disabled={isLoading} className="min-h-[44px] w-full sm:w-auto">
-        {isLoading ? (
-          <>
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            {t('creating')}
-          </>
-        ) : (
-          t('createButton')
+      <div className="space-y-2">
+        <Button type="submit" disabled={isLoading || alasanSimpan !== null} className="min-h-[44px] w-full sm:w-auto">
+          {isLoading ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              {t('creating')}
+            </>
+          ) : (
+            t('createButton')
+          )}
+        </Button>
+        {alasanSimpan !== null && (
+          <p className="text-sm text-muted-foreground" role="status">
+            {t('butuhSinyal')}
+          </p>
         )}
-      </Button>
+      </div>
+
+      <AlertDialog
+        open={konfirmasi !== null}
+        onOpenChange={(buka) => {
+          if (!buka) setKonfirmasi(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {konfirmasi?.jenis === 'hapus' ? t('grnLama.hapusJudul') : t('grnLama.muatJudul')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {konfirmasi?.jenis === 'hapus' ? t('grnLama.hapusIsi') : t('grnLama.muatIsi')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{tUmum('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              variant={konfirmasi?.jenis === 'hapus' ? 'destructive' : 'default'}
+              onClick={jalankanKonfirmasi}
+            >
+              {konfirmasi?.jenis === 'hapus' ? tUmum('delete') : t('grnLama.muat')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={scanOpen} onOpenChange={setScanOpen}>
         <DialogContent className="sm:max-w-md">

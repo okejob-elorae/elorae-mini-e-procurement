@@ -32,6 +32,12 @@ export interface PendingOrder {
    */
   gantiOrderId?: string | null;
   gantiOrderNo?: string | null;
+  /**
+   * Keranjang yang diisi dari dokumen lain: `permintaan:<id>` (permintaan SPG)
+   * atau `rekomendasi:<id>`. Server menautkan pesanannya saat antrean ini
+   * sampai — aturannya sama dengan kiriman daring. Bukan indeks — tanpa naik versi.
+   */
+  sumber?: string | null;
   capturedAt: number;
   syncState: "pending" | "syncing" | "failed";
   error?: string;

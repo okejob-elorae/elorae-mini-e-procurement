@@ -15,3 +15,12 @@ export function bacaSumberKeranjang(raw: string | null | undefined): SumberKeran
 export function tulisSumberKeranjang(s: SumberKeranjang): string {
   return `${s.jenis}:${s.id}`;
 }
+
+/**
+ * Catatan otomatis pada permintaan SPG yang dibuatkan pesanan. Layar SPG
+ * menyembunyikannya kalau sama persis dengan nomor pesanannya (sudah tampil
+ * sebagai baris pesanan), jadi teksnya ditulis di satu tempat ini.
+ */
+export function catatanDibuatkanPesanan(orderNo: string): string {
+  return `Dibuatkan pesanan ${orderNo}`;
+}

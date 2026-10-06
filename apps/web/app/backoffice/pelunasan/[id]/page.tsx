@@ -8,6 +8,7 @@ import { formatDisplayDate } from "@/lib/date-only";
 import { bolehMembacaArsip, bolehMembacaPelunasan } from "@/lib/receivables/izin";
 import { tautanPesanKlaim } from "@/lib/receivables/tugas-tagih-queries";
 import { RincianKlaimClient, type GiroKlaim } from "./RincianKlaimClient";
+import { pemeriksaSamaKlaim } from "./putusan-klaim";
 import { koreksiTertunda, penggantiUntuk, riwayatDokumen } from "@/lib/receivables/koreksi";
 
 export const dynamic = "force-dynamic";
@@ -61,16 +62,15 @@ export default async function RincianKlaimPage({
 
   // Koreksi: laporan pengganti (dua arah), permintaan koreksi dari sales, dan
   // riwayat keputusan atas BKM ini.
+  const pelaku = await prisma.paymentClaim.findUnique({
+    where: { id },
+    select: { replacesClaimId: true, salesmanId: true, createdById: true },
+  });
   const [pengganti, asal, koreksi, riwayat] = await Promise.all([
     penggantiUntuk("bkm", [id]),
-    prisma.paymentClaim.findUnique({
-      where: { id },
-      select: { replacesClaimId: true },
-    }).then((k) =>
-      k?.replacesClaimId
-        ? prisma.paymentClaim.findUnique({ where: { id: k.replacesClaimId }, select: { id: true, docNo: true } })
-        : null,
-    ),
+    pelaku?.replacesClaimId
+      ? prisma.paymentClaim.findUnique({ where: { id: pelaku.replacesClaimId }, select: { id: true, docNo: true } })
+      : null,
     koreksiTertunda("bkm", [id]),
     riwayatDokumen([id]),
   ]);
@@ -101,6 +101,9 @@ export default async function RincianKlaimPage({
       menggantikan={asal ? { id: asal.id, nomor: asal.docNo } : null}
       koreksi={k ? { pada: formatDisplayDate(k.pada), alasan: k.alasan } : null}
       riwayat={riwayat}
+      // Pelapor/pencatat tidak boleh memutuskan BKM-nya sendiri: tombolnya mati
+      // dengan alasan sejak awal, bukan baru sesudah server menolak.
+      pemeriksaSama={pelaku ? pemeriksaSamaKlaim(session.user.id, pelaku) : false}
     />
   );
 }

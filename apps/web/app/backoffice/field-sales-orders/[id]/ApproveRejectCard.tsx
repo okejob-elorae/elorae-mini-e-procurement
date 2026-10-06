@@ -27,6 +27,7 @@ import {
   type ActionResult,
 } from "@/app/actions/field-sales-orders";
 import type { StagedAddition } from "./KonsiSuggestionsCard";
+import { kunciKonfirmasiTolak } from "./konfirmasi-tolak";
 import { formatRupiah } from "@/lib/format/rupiah";
 
 export type AppealedLine = {
@@ -69,6 +70,11 @@ type Props = {
   onStagedAdditionsChange: (staged: StagedAddition[]) => void;
   /** Kredit ditahan saat pesanan dibuat: persetujuan butuh pernyataan sudah memeriksa tagihan. */
   kreditDitahan?: boolean;
+  /**
+   * Jendela pre-order pesanan ini (`null` = bukan pre-order). Menentukan kalimat konfirmasi
+   * tolak: pre-order yang menunggu belum mencadangkan stok. Tidak dikirim → kalimat netral.
+   */
+  preorder?: { dirilis: boolean } | null;
 };
 
 
@@ -86,6 +92,7 @@ export function ApproveRejectCard({
   stagedAdditions,
   onStagedAdditionsChange,
   kreditDitahan = false,
+  preorder,
 }: Props) {
   const t = useTranslations("fieldSalesOrders");
   const tCommon = useTranslations("common");
@@ -359,7 +366,7 @@ export function ApproveRejectCard({
           <AlertDialogHeader>
             <AlertDialogTitle>{t("reject")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {orderType === "KONSI" ? t("rejectConfirmKonsi") : t("rejectConfirm")}
+              {t(kunciKonfirmasiTolak(orderType, preorder))}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-1">

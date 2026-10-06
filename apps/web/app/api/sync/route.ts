@@ -78,6 +78,13 @@ export async function POST(req: NextRequest) {
   }
   const { type, payload } = (operation ?? {}) as { type?: unknown; payload?: unknown };
 
+  // GRN tidak diputar ulang dari antrean: tabel GRN tidak punya kunci
+  // idempotensi, jadi kiriman ulang bisa menerima barang dua kali. Formulir GRN
+  // butuh sinyal dan menyimpan isiannya sebagai draf (`lib/offline/grn-draf.ts`).
+  if (type === "GRN_CREATE") {
+    return NextResponse.json({ error: "GRN needs a connection", code: "GRN_BUTUH_SINYAL" }, { status: 400 });
+  }
+
   if (!jenisDikenal(type)) {
     return tolak(400, "Unknown operation type");
   }

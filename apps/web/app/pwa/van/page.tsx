@@ -26,6 +26,7 @@ export default async function VanSellPage() {
 
   return (
     <VanSellShell
+      userId={session.user.id}
       stock={stock}
       stores={stores.map((s) => ({ id: s.id, name: s.name }))}
     />

@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { Decimal } from 'decimal.js';
 import { prisma, recalcItemSellingPrice } from '@elorae/db';
+import { decimalKeAngka } from '@/lib/db/decimal-ke-angka';
 import { apiFetch } from "@/lib/internal-api";
 import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 import { generateDocNumber } from '@/lib/docNumber';
@@ -17,6 +18,7 @@ import { logAudit } from '@/lib/audit';
 import { requirePermission, hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { postFgReceiptJournal } from '@/lib/production/fg-receipt-journal';
 import type { GenerateAutoJournalResult } from '@/lib/finance/journal';
+import { dokumenJurnal, tandaiJurnalTertundaSelesai } from '@/lib/finance/jurnal-tertunda';
 import {
   listWorkOrders as listWorkOrdersLib,
   type ListWorkOrdersFilters,
@@ -70,17 +72,10 @@ function parseConsumptionPlan(raw: unknown): unknown[] {
   return [];
 }
 
-/** Item row included on WO (e.g. finishedGood) — strip Decimal fields for server action → client. */
+/** Item row included on WO (e.g. finishedGood) — every Decimal field becomes a number (`decimalKeAngka`). */
 function serializeIncludedItemForClient(item: unknown): unknown {
   if (item == null || typeof item !== 'object') return item;
-  const o = item as Record<string, unknown>;
-  return {
-    ...o,
-    reorderPoint: o.reorderPoint != null ? Number(o.reorderPoint) : null,
-    overReceiveThreshold:
-      o.overReceiveThreshold != null ? Number(o.overReceiveThreshold) : null,
-    sellingPrice: o.sellingPrice != null ? Number(o.sellingPrice) : null,
-  };
+  return decimalKeAngka(item as Record<string, unknown>);
 }
 
 /** VendorReturn row on WO — totalValue and optional linked GRN.totalAmount. */
@@ -448,102 +443,153 @@ export async function createWorkOrder(
   return result;
 }
 
-/** Update a work order. Only allowed when status is DRAFT. */
-export async function updateWorkOrder(woId: string, data: WOFormData, _userId: string) {
-  const session = await auth();
-  if (!session) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_MANAGE);
+/*
+ * Ubah WO (hanya DRAFT). Penolakan DIKEMBALIKAN sebagai `{ ok:false, code }`
+ * (`productionErrors.<kode>` di i18n) — pesan lemparan aksi server disamarkan
+ * di build produksi.
+ *
+ * Penjaga DRAFT dibaca DI DALAM `runSerializable` yang sama dengan tulisannya:
+ * dulu dibaca di luar transaksi, jadi bahan yang dikeluarkan di antaranya
+ * (keluarkan bahan boleh untuk WO draf dan menjadikannya IN_PRODUCTION) hilang
+ * karena rencana ditulis ulang dengan issuedQty 0. Kini salah satunya konflik
+ * dan diulang; yang diulang melihat IN_PRODUCTION dan ditolak. issuedQty /
+ * returnedQty yang sudah tercatat di rencana juga dipertahankan per barang.
+ */
+export type KodeTolakUbahWo = 'TANPA_AKSES' | 'DATA_TIDAK_VALID' | 'WO_TIDAK_DITEMUKAN' | 'WO_BUKAN_DRAF' | 'GAGAL';
+export type UbahWorkOrderResult =
+  | { ok: true; id: string; docNumber: string }
+  | { ok: false; code: KodeTolakUbahWo }
+  /** Rencana bahan baru melebihi stok: per barang, kekurangannya (2 desimal) dan satuannya. */
+  | { ok: false; code: 'STOK_RENCANA_KURANG'; kurang: Array<{ barang: string; qty: number; satuan: string }> };
+
+class UbahWoDitolak extends Error {
+  constructor(readonly code: 'WO_TIDAK_DITEMUKAN' | 'WO_BUKAN_DRAF') {
+    super(code);
+    this.name = 'UbahWoDitolak';
+  }
+}
+
+export async function updateWorkOrder(woId: string, data: WOFormData, _userId?: string): Promise<UbahWorkOrderResult> {
   void _userId;
-  woSchema.parse(data);
-
-  const existing = await prisma.workOrder.findUnique({
-    where: { id: woId },
-    select: { id: true, status: true, docNumber: true },
-  });
-  if (!existing) throw new Error('Work order not found');
-  if (existing.status !== 'DRAFT') {
-    throw new Error('Only draft work orders can be updated');
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.WORK_ORDERS_MANAGE)) {
+    return { ok: false, code: 'TANPA_AKSES' };
   }
+  if (!woSchema.safeParse(data).success) return { ok: false, code: 'DATA_TIDAK_VALID' };
 
-  const plannedOutput = new Decimal(data.plannedQty);
-  const materialPlan = await generateMaterialPlan(
-    data.finishedGoodId,
-    plannedOutput
-  );
+  let docNumber: string;
+  try {
+    // Rencana bahan + cek stok di luar transaksi: hanya membaca BOM & stok (saran untuk WO draf).
+    const plannedOutput = new Decimal(data.plannedQty);
+    const materialPlan = await generateMaterialPlan(
+      data.finishedGoodId,
+      plannedOutput
+    );
 
-  const shortages = materialPlan.filter((m) => m.shortage.gt(0));
-  if (shortages.length > 0) {
-    const msg = shortages
-      .map(
-        (s) =>
-          `${s.itemName} (kurang ${s.shortage.toFixed(2)} ${s.uomCode})`
-      )
-      .join(', ');
-    throw new Error(`Stok tidak mencukupi: ${msg}`);
-  }
-
-  await prisma.$transaction(async (tx) => {
-    const updateData: Record<string, unknown> = {
-      vendorId: data.vendorId,
-      finishedGoodId: data.finishedGoodId,
-      consumptionMaterialId: data.consumptionMaterialId ?? null,
-      outputMode: data.outputMode,
-      plannedQty: data.plannedQty,
-      expectedConsumption: data.expectedConsumption ?? undefined,
-      targetDate: data.targetDate ?? null,
-      poId: data.poId ?? null,
-      notes: data.notes ?? null,
-      consumptionPlan: JSON.stringify(
-        materialPlan.map((m) => ({
-          itemId: m.itemId,
-          itemName: m.itemName,
-          uomId: m.uomId,
-          uomCode: m.uomCode,
-          qtyRequired: m.qtyRequired.toNumber(),
-          wastePercent: m.wastePercent.toNumber(),
-          plannedQty: m.plannedQty.toNumber(),
-          issuedQty: 0,
-          returnedQty: 0
-        }))
-      ),
-    };
-    if (data.rollBreakdown && data.rollBreakdown.length > 0) {
-      updateData.rollBreakdown = JSON.stringify(data.rollBreakdown);
-    } else {
-      updateData.rollBreakdown = null;
-    }
-    if (data.outputMode === 'SKU' && data.skuBreakdown) {
-      updateData.skuBreakdown = JSON.stringify(data.skuBreakdown);
-    } else {
-      updateData.skuBreakdown = null;
-    }
-
-    await tx.workOrder.update({
-      where: { id: woId },
-      data: updateData as any,
-    });
-
-    await tx.workOrderStep.deleteMany({ where: { woId } });
-    if (data.steps?.length) {
-      await tx.workOrderStep.createMany({
-        data: data.steps.map((step) => ({
-          woId,
-          sequence: step.sequence,
-          supplierId: step.supplierId,
-          stepName: step.stepName ?? null,
-          servicePrice: step.servicePrice,
-          servicePpnIncluded: step.servicePpnIncluded ?? false,
-          qty: null,
-          totalCost: null,
-          notes: step.notes ?? null,
+    const shortages = materialPlan.filter((m) => m.shortage.gt(0));
+    if (shortages.length > 0) {
+      // WO yang sudah bukan draf (mis. bahannya baru dikeluarkan) dijawab dengan alasan itu, bukan stok.
+      const kini = await prisma.workOrder.findUnique({ where: { id: woId }, select: { status: true } });
+      if (!kini) return { ok: false, code: 'WO_TIDAK_DITEMUKAN' };
+      if (kini.status !== 'DRAFT') return { ok: false, code: 'WO_BUKAN_DRAF' };
+      return {
+        ok: false,
+        code: 'STOK_RENCANA_KURANG',
+        kurang: shortages.map((m) => ({
+          barang: m.itemName,
+          qty: m.shortage.toDecimalPlaces(2).toNumber(),
+          satuan: m.uomCode,
         })),
-      });
+      };
     }
-  });
+
+    docNumber = await runSerializable(async (tx) => {
+      const existing = await tx.workOrder.findUnique({
+        where: { id: woId },
+        select: { status: true, docNumber: true, consumptionPlan: true },
+      });
+      if (!existing) throw new UbahWoDitolak('WO_TIDAK_DITEMUKAN');
+      if (existing.status !== 'DRAFT') throw new UbahWoDitolak('WO_BUKAN_DRAF');
+
+      // Qty keluar/kembali yang sudah tercatat per barang tidak ditimpa 0.
+      const sudahTercatat = new Map<string, { issuedQty: number; returnedQty: number }>();
+      for (const baris of parseConsumptionPlan(existing.consumptionPlan) as Array<Record<string, unknown> | null>) {
+        if (!baris || typeof baris.itemId !== 'string') continue;
+        const sebelum = sudahTercatat.get(baris.itemId) ?? { issuedQty: 0, returnedQty: 0 };
+        sudahTercatat.set(baris.itemId, {
+          issuedQty: sebelum.issuedQty + (Number(baris.issuedQty) || 0),
+          returnedQty: sebelum.returnedQty + (Number(baris.returnedQty) || 0),
+        });
+      }
+
+      const updateData: Record<string, unknown> = {
+        vendorId: data.vendorId,
+        finishedGoodId: data.finishedGoodId,
+        consumptionMaterialId: data.consumptionMaterialId ?? null,
+        outputMode: data.outputMode,
+        plannedQty: data.plannedQty,
+        expectedConsumption: data.expectedConsumption ?? undefined,
+        targetDate: data.targetDate ?? null,
+        poId: data.poId ?? null,
+        notes: data.notes ?? null,
+        consumptionPlan: JSON.stringify(
+          materialPlan.map((m) => ({
+            itemId: m.itemId,
+            itemName: m.itemName,
+            uomId: m.uomId,
+            uomCode: m.uomCode,
+            qtyRequired: m.qtyRequired.toNumber(),
+            wastePercent: m.wastePercent.toNumber(),
+            plannedQty: m.plannedQty.toNumber(),
+            issuedQty: sudahTercatat.get(m.itemId)?.issuedQty ?? 0,
+            returnedQty: sudahTercatat.get(m.itemId)?.returnedQty ?? 0
+          }))
+        ),
+      };
+      if (data.rollBreakdown && data.rollBreakdown.length > 0) {
+        updateData.rollBreakdown = JSON.stringify(data.rollBreakdown);
+      } else {
+        updateData.rollBreakdown = null;
+      }
+      if (data.outputMode === 'SKU' && data.skuBreakdown) {
+        updateData.skuBreakdown = JSON.stringify(data.skuBreakdown);
+      } else {
+        updateData.skuBreakdown = null;
+      }
+
+      await tx.workOrder.update({
+        where: { id: woId },
+        data: updateData as any,
+      });
+
+      await tx.workOrderStep.deleteMany({ where: { woId } });
+      if (data.steps?.length) {
+        await tx.workOrderStep.createMany({
+          data: data.steps.map((step) => ({
+            woId,
+            sequence: step.sequence,
+            supplierId: step.supplierId,
+            stepName: step.stepName ?? null,
+            servicePrice: step.servicePrice,
+            servicePpnIncluded: step.servicePpnIncluded ?? false,
+            qty: null,
+            totalCost: null,
+            notes: step.notes ?? null,
+          })),
+        });
+      }
+
+      return existing.docNumber;
+    });
+  } catch (error) {
+    if (error instanceof UbahWoDitolak) return { ok: false, code: error.code };
+    console.error('[updateWorkOrder]', error);
+    return { ok: false, code: 'GAGAL' };
+  }
 
   revalidatePath('/backoffice/work-orders');
   revalidatePath(`/backoffice/work-orders/${woId}`);
-  return { id: woId, docNumber: existing.docNumber };
+  return { ok: true, id: woId, docNumber };
 }
 
 export async function updateWOHppAdjustments(
@@ -704,9 +750,47 @@ const issueSchema = z.object({
   parentIssueId: idStr.optional(),
   notes: z.string().optional(),
   rollBreakdown: z.array(rollBreakdownItemSchema).optional(),
+  /** Kunci idempotensi per isian formulir (dibuat sekali di layar, dipakai ulang saat simpan diulang). */
+  idempotencyKey: z.string().trim().min(8).max(100).optional(),
 });
 
 export type IssueFormData = z.infer<typeof issueSchema>;
+
+/*
+ * Kunci idempotensi pengeluaran bahan disimpan TANPA kolom baru: satu baris
+ * `AuditLog` (`MATERIAL_ISSUED`, entitas = WO) per pengeluaran berkunci, ditulis
+ * di transaksi yang sama, metadata membawa kunci + hasilnya. Dicocokkan di JS
+ * (penyaringan jalur JSON tidak andal di semua adaptor) — jumlah barisnya
+ * sebanyak pengeluaran berkunci WO itu, kecil.
+ */
+const AKSI_KELUAR_BAHAN = 'MATERIAL_ISSUED';
+type HasilKeluarBahan = { id: string; docNumber: string; totalCost: number };
+
+async function pengeluaranDenganKunci(
+  client: Pick<typeof prisma, 'auditLog'>,
+  woId: string,
+  kunci: string
+): Promise<HasilKeluarBahan | null> {
+  const jejak = await client.auditLog.findMany({
+    where: { entityType: 'WorkOrder', entityId: woId, action: AKSI_KELUAR_BAHAN },
+    select: { metadata: true },
+  });
+  for (const j of jejak) {
+    let meta: unknown = j.metadata;
+    if (typeof meta === 'string') {
+      try {
+        meta = JSON.parse(meta);
+      } catch {
+        continue;
+      }
+    }
+    const m = meta as { kunciIdempotensi?: unknown; issueId?: unknown; docNumber?: unknown; totalCost?: unknown } | null;
+    if (m?.kunciIdempotensi === kunci && typeof m.issueId === 'string') {
+      return { id: m.issueId, docNumber: String(m.docNumber ?? ''), totalCost: Number(m.totalCost ?? 0) };
+    }
+  }
+  return null;
+}
 
 /**
  * Penolakan berkode untuk mengeluarkan bahan. `issueMaterials` MELEMPARnya
@@ -745,14 +829,25 @@ export type KeluarkanBahanResult =
  * tengahnya tertimpa IN_PRODUCTION. Kini salah satunya konflik dan diulang;
  * yang diulang melihat CANCELLED dan ditolak sebelum stok disentuh.
  */
-export async function issueMaterials(data: IssueFormData, userId: string) {
+export async function issueMaterials(data: IssueFormData, _userId?: string) {
+  void _userId;
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
+  if (!session?.user?.id) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_MANAGE);
+  // Pelaku dari sesi, bukan dari argumen kiriman pemanggil.
+  const userId = session.user.id;
 
   const validated = issueSchema.parse(data);
+  const kunci = validated.idempotencyKey ?? null;
 
-  const issueResult = await runSerializable(async (tx) => {
+  const { hasil: issueResult, ulangan } = await runSerializable(async (tx) => {
+    // Kunci PALING DULU: pengeluaran yang sudah tercatat dikembalikan apa adanya,
+    // sebelum penjaga status/stok (WO bisa sudah berubah sejak simpan pertama).
+    if (kunci) {
+      const lama = await pengeluaranDenganKunci(tx, validated.woId, kunci);
+      if (lama) return { hasil: lama, ulangan: true };
+    }
+
     const wo = await tx.workOrder.findUnique({
       where: { id: data.woId },
       select: { status: true, consumptionPlan: true, docNumber: true, poId: true, consumptionMaterialId: true, rollBreakdown: true }
@@ -997,13 +1092,27 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
       }
     });
 
-    return {
+    const hasil: HasilKeluarBahan = {
       id: issue.id,
       docNumber: issue.docNumber,
       totalCost: Number(issue.totalCost),
     };
+    if (kunci) {
+      await tx.auditLog.create({
+        data: {
+          userId,
+          action: AKSI_KELUAR_BAHAN,
+          entityType: 'WorkOrder',
+          entityId: data.woId,
+          metadata: { kunciIdempotensi: kunci, issueId: hasil.id, docNumber: hasil.docNumber, totalCost: hasil.totalCost },
+        },
+      });
+    }
+    return { hasil, ulangan: false };
   });
   revalidatePath(`/backoffice/work-orders/${data.woId}`);
+  // Ulangan: bahan tidak keluar lagi, jadi notifikasi & sinyal tidak dikirim lagi.
+  if (ulangan) return issueResult;
 
   const wo = await prisma.workOrder.findUnique({
     where: { id: data.woId },
@@ -1109,73 +1218,75 @@ export async function getAdditionalMaterialsPreview(woId: string, additionalQty:
   return { lines, totalAdditionalQty: additionalQty };
 }
 
-/** Issue only additional accessories for over-production qty. plannedQty stays unchanged. */
+/*
+ * Keluarkan aksesori tambahan untuk kelebihan produksi (plannedQty tetap).
+ * Penolakan DIKEMBALIKAN sebagai kode (`productionErrors.<kode>`); stok dicek
+ * oleh `issueMaterials` di dalam transaksinya (STOK_BAHAN_KURANG), bukan di
+ * sini dari baca yang bisa basi. Pelaku dari sesi (`_userId` diabaikan).
+ */
+export type KodeTolakBahanTambahan = 'WO_BUKAN_PRODUKSI' | 'QTY_TAMBAHAN_TIDAK_VALID' | 'TANPA_AKSESORI_BOM';
+export type BahanTambahanResult = KeluarkanBahanResult | { ok: false; code: KodeTolakBahanTambahan };
+
 export async function issueAdditionalMaterials(
   woId: string,
   additionalQty: number,
-  userId: string
-) {
+  _userId?: string,
+  idempotencyKey?: string
+): Promise<BahanTambahanResult> {
+  void _userId;
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_MANAGE);
-
-  const wo = await prisma.workOrder.findUnique({
-    where: { id: woId },
-    select: { status: true, finishedGoodId: true, docNumber: true },
-  });
-  if (!wo) throw new Error('Work Order not found');
-  if (wo.status !== 'IN_PRODUCTION') {
-    throw new Error('Issue Additional Materials is only available for work orders in production');
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.WORK_ORDERS_MANAGE)) {
+    return { ok: false, code: 'TANPA_AKSES' };
   }
-  if (!Number.isInteger(additionalQty) || additionalQty <= 0) {
-    throw new Error('Additional qty must be a positive integer');
-  }
+  const kunci = idempotencyKey?.trim() || null;
 
-  const rules = await prisma.consumptionRule.findMany({
-    where: { finishedGoodId: wo.finishedGoodId, isActive: true },
-    include: {
-      material: {
-        select: { id: true, type: true, uomId: true, nameId: true },
-      },
-    },
-  });
-  const accessoryRules = rules.filter((r) => r.material.type === 'ACCESSORIES');
-  if (accessoryRules.length === 0) {
-    throw new Error('No accessory materials in BOM for this finished good');
-  }
-
-  const items: Array<{ itemId: string; qty: number; uomId: string }> = [];
-  for (const rule of accessoryRules) {
-    const qtyRequired = Number(rule.qtyRequired);
-    const qtyNeeded = Math.ceil(qtyRequired * additionalQty);
-    const inv = await prisma.inventoryValue.findUnique({
-      where: { itemId_variantSku: { itemId: rule.materialId, variantSku: '' } },
-      select: { qtyOnHand: true },
-    });
-    const qtyOnHand = inv ? Number(inv.qtyOnHand) : 0;
-    if (qtyOnHand < qtyNeeded) {
-      throw new Error(
-        `Insufficient stock for ${rule.material.nameId}: need ${qtyNeeded}, have ${qtyOnHand}`
-      );
+  let items: Array<{ itemId: string; qty: number; uomId: string }>;
+  try {
+    // Simpan ulang dengan kunci yang sama: hasil pertama, apa pun keadaan WO sekarang.
+    if (kunci) {
+      const lama = await pengeluaranDenganKunci(prisma, woId, kunci);
+      if (lama) return { ok: true, ...lama };
     }
-    items.push({
-      itemId: rule.materialId,
-      qty: qtyNeeded,
-      uomId: rule.material.uomId,
+    if (!Number.isInteger(additionalQty) || additionalQty <= 0) {
+      return { ok: false, code: 'QTY_TAMBAHAN_TIDAK_VALID' };
+    }
+
+    const wo = await prisma.workOrder.findUnique({
+      where: { id: woId },
+      select: { status: true, finishedGoodId: true },
     });
+    if (!wo) return { ok: false, code: 'WO_TIDAK_DITEMUKAN' };
+    if (wo.status !== 'IN_PRODUCTION') return { ok: false, code: 'WO_BUKAN_PRODUKSI' };
+
+    const rules = await prisma.consumptionRule.findMany({
+      where: { finishedGoodId: wo.finishedGoodId, isActive: true },
+      include: {
+        material: {
+          select: { id: true, type: true, uomId: true },
+        },
+      },
+    });
+    const accessoryRules = rules.filter((r) => r.material.type === 'ACCESSORIES');
+    if (accessoryRules.length === 0) return { ok: false, code: 'TANPA_AKSESORI_BOM' };
+
+    items = accessoryRules.map((rule) => ({
+      itemId: rule.materialId,
+      qty: Math.ceil(Number(rule.qtyRequired) * additionalQty),
+      uomId: rule.material.uomId,
+    }));
+  } catch (error) {
+    console.error('[issueAdditionalMaterials]', error);
+    return { ok: false, code: 'GAGAL' };
   }
 
-  await issueMaterials(
-    {
-      woId,
-      items,
-      issueType: 'ACCESSORIES',
-      isPartial: true,
-      notes: `Additional accessories for +${additionalQty} pcs over-production`,
-    },
-    userId
-  );
-  revalidatePath(`/backoffice/work-orders/${woId}`);
+  return keluarkanBahan({
+    woId,
+    items,
+    issueType: 'ACCESSORIES',
+    isPartial: true,
+    notes: `Additional accessories for +${additionalQty} pcs over-production`,
+    ...(kunci ? { idempotencyKey: kunci } : {}),
+  });
 }
 
 /** Split allocation (PD6): create child issues linked to parent. Minimal stub. */
@@ -1567,6 +1678,8 @@ export async function postFgReceiptJournalAction(
   if (!receipt) return { ok: false, code: "BAD_STATE" };
 
   const r = await postFgReceiptJournal(receiptId, session.user.id);
+  // Jurnal berdiri → tanda "Jurnal gagal" penerimaan ini selesai (Beranda).
+  if (r.ok) await tandaiJurnalTertundaSelesai([dokumenJurnal('FG_RECEIPT', receiptId)]);
   revalidatePath(`/backoffice/work-orders/${receipt.woId}`);
   return r;
 }

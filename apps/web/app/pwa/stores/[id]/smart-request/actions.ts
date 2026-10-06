@@ -10,6 +10,7 @@ import { bolehPegangToko } from "@/lib/stores/penanggung-jawab";
 import { createFieldSalesOrder } from "@/lib/field-sales/writer";
 import { KreditDiblokirError } from "@/lib/field-sales/kredit-pesanan";
 import { NoActiveVisitError, MinQtyViolationError } from "@/lib/field-sales/errors";
+import { BarangTanpaHargaError } from "@/lib/field-sales/harga-wajib";
 import { getPackRatio } from "@/app/actions/settings/pack-ratio";
 import {
   HARI_BARU_MAKS,
@@ -186,6 +187,8 @@ export async function kirimRencanaKirimAction(input: unknown): Promise<HasilKiri
     if (e instanceof KreditDiblokirError) return { ok: false, code: "KREDIT_DIBLOKIR", alasan: e.alasan };
     if (e instanceof NoActiveVisitError) return { ok: false, code: "NO_ACTIVE_VISIT" };
     if (e instanceof MinQtyViolationError) return { ok: false, code: "MIN_QTY", violations: e.violations };
+    // Draf melewati barang tanpa harga; ini hanya terjadi bila harganya dikosongkan sesudah draf disusun.
+    if (e instanceof BarangTanpaHargaError) return { ok: false, code: "BARANG_TANPA_HARGA", itemIds: e.itemIds };
     throw e;
   }
 }

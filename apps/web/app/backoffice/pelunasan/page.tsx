@@ -8,6 +8,7 @@ import { giroKedaluwarsa, STATUS_GIRO, type StatusGiro } from "@/lib/receivables
 import { formatDisplayDate } from "@/lib/date-only";
 import { bolehMembacaPelunasan } from "@/lib/receivables/izin";
 import { PelunasanClient, type BarisKlaim } from "./PelunasanClient";
+import { pemeriksaSamaKlaim } from "./[id]/putusan-klaim";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,8 @@ export default async function PelunasanPage() {
       giroIssueDate: true,
       giroEffectiveDate: true,
       giroStatus: true,
+      salesmanId: true,
+      createdById: true,
       store: { select: { name: true } },
       salesman: { select: { name: true } },
       deductions: { select: PILIH_POTONGAN },
@@ -53,6 +56,9 @@ export default async function PelunasanPage() {
     deductionCount: r.deductions.length,
     status: r.status,
     verifyNote: r.verifyNote,
+    // Pelapor/pencatat tidak boleh memutuskan BKM-nya sendiri (penulis menolak
+    // dengan PEMERIKSA_SAMA); tombolnya dimatikan dengan alasan sejak awal.
+    pemeriksaSama: pemeriksaSamaKlaim(session.user.id, r),
     /*
      * Lewat penerjemah yang sama dengan halaman piutang dan halaman rinci.
      * Sebelumnya baris ini menghitung sendiri dengan asumsi "gudang belum

@@ -45,6 +45,7 @@ import { getItemsByType } from '@/app/actions/items';
 import { getItemAvgCosts } from '@/app/actions/inventory';
 import { ItemType } from '@/lib/constants/enums';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
+import { newLocalId } from '@/lib/pwa/id-lokal';
 
 interface PlanRow {
   itemId: string;
@@ -115,6 +116,8 @@ export default function WorkOrderIssuePage() {
 
   const [availableRollsReady, setAvailableRollsReady] = useState(false);
   const prefilledWoIdRef = useRef<string | null>(null);
+  // Kunci idempotensi per isian: simpan ulang sesudah galat (mis. jawaban hilang) tidak mengeluarkan bahan dua kali.
+  const [kunciIsian, setKunciIsian] = useState(() => newLocalId());
 
   useEffect(() => {
     if (!id) return;
@@ -410,11 +413,13 @@ export default function WorkOrderIssuePage() {
           ...(l.unitPrice != null && l.unitPrice > 0 ? { unitPrice: l.unitPrice } : {}),
         })),
         ...(issueType === "FABRIC" ? { rollBreakdown } : {}),
+        idempotencyKey: kunciIsian,
       });
       if (!hasil.ok) {
         toast.error(pesanTolak(hasil));
         return;
       }
+      setKunciIsian(newLocalId());
       toast.success(t('materialsIssued'));
       router.push(`/backoffice/work-orders/${id}`);
       router.refresh();

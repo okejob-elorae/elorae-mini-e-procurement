@@ -205,7 +205,7 @@ d("completeReturn memperbarui returnedQty rencana WO (test bed only)", () => {
     const sekarang = await rencanaWo();
     const baru = sekarang.map((r) => (r.itemId === kancingId ? { ...r, issuedQty: 30 } : r));
     await prisma.workOrder.update({ where: { id: seededId(woId) }, data: { consumptionPlan: JSON.stringify(baru) } });
-    await selesai;
+    expect(await selesai).toEqual({ ok: true });
     const akhir = await rencanaWo();
     expect(akhir.find((r) => r.itemId === kancingId)).toMatchObject({ issuedQty: 30, returnedQty: 3 });
     expect(akhir.find((r) => r.itemId === kainId)).toMatchObject({ issuedQty: 50, returnedQty: 1 });
@@ -220,14 +220,15 @@ d("completeReturn memperbarui returnedQty rencana WO (test bed only)", () => {
   it("diulang sesudah selesai → ditolak, returnedQty tetap 3 (sekali saja)", async () => {
     const id = await buatRetur([{ type: "ACCESSORIES", itemId: kancingId, qty: 3, costValue: 3_000 }]);
     await completeReturn(id, undefined, BUKTI);
-    await expect(completeReturn(id, undefined, BUKTI)).rejects.toThrow(/PROCESSED/);
+    expect(await completeReturn(id, undefined, BUKTI)).toEqual({ ok: false, code: "SUDAH_SELESAI" });
     expect(await dikembalikan()).toEqual({ [kancingId]: 3, [kainId]: 1 });
   });
 
   it("dua penyelesaian serentak (Promise.all) → tepat satu berhasil, returnedQty +3 sekali", async () => {
     const id = await buatRetur([{ type: "ACCESSORIES", itemId: kancingId, qty: 3, costValue: 3_000 }]);
-    const hasil = await Promise.allSettled([completeReturn(id, undefined, BUKTI), completeReturn(id, undefined, BUKTI)]);
-    expect(hasil.filter((h) => h.status === "fulfilled")).toHaveLength(1);
+    const hasil = await Promise.all([completeReturn(id, undefined, BUKTI), completeReturn(id, undefined, BUKTI)]);
+    expect(hasil.filter((h) => h.ok)).toHaveLength(1);
+    expect(hasil.filter((h) => !h.ok)).toEqual([{ ok: false, code: "SUDAH_SELESAI" }]);
     expect(await dikembalikan()).toEqual({ [kancingId]: 3, [kainId]: 1 });
   });
 

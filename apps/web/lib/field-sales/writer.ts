@@ -20,6 +20,7 @@ import { muatKreditToko } from "./kredit-toko";
 import { KreditBelumDiperiksaError, KreditDiblokirError, putuskanKreditPesanan } from "./kredit-pesanan";
 import { kabarPesananDisetujui, kabarPesananDitolak } from "./kabar-pesanan";
 import { BarangIndenBelumTercatatError, IndenDitolakError, periksaPesananInden } from "./inden";
+import { BarangTanpaHargaError, barangTanpaHarga } from "./harga-wajib";
 import { cadangkanPesananInden } from "./inden-writer";
 import {
   AKSI_PESANAN_DIBATALKAN,
@@ -227,6 +228,9 @@ export async function createFieldSalesOrder(input: {
       const itemIds = Array.from(new Set(input.lines.map((l) => l.itemId)));
       const items = await tx.item.findMany({ where: { id: { in: itemIds } }, select: { id: true, minOrderQty: true, sellingPrice: true } });
       for (const i of items) priceByItemId.set(i.id, i.sellingPrice === null ? null : Number(i.sellingPrice));
+      // Barang tanpa harga (kosong, 0, atau tidak dikenal) tidak dijual PUTUS — dulu lolos sebagai baris Rp 0.
+      const tanpaHarga = barangTanpaHarga(input.lines.map((l) => l.itemId), priceByItemId);
+      if (tanpaHarga.length > 0) throw new BarangTanpaHargaError(tanpaHarga);
       if (!input.skipMinQty) {
         // Minimum bertingkat: pesanan pertama vs pesan ulang (toko yang sudah punya
         // pesanan PUTUS disetujui). `Item.minOrderQty` tetap menimpa keduanya.

@@ -2173,11 +2173,8 @@
       "errSelectSupplier": "Pilih pemasok",
       "errLines": "Tambahkan minimal satu barang dengan qty dan harga",
       "errVariant": "Pilih varian untuk setiap baris barang yang punya varian",
-      "savedOffline": "Tersimpan di perangkat. Akan disinkronkan saat online.",
-      "saveOfflineFailed": "Gagal menyimpan di perangkat",
       "createdToast": "Penerimaan barang dibuat",
       "createFailed": "Gagal membuat GRN",
-      "offlineNotice": "Sedang offline. GRN disimpan di perangkat dan disinkronkan saat kembali online.",
       "cardTitle": "Penerimaan Barang (GRN)",
       "categoryFilter": "Kategori (saring)",
       "allCategories": "Semua kategori",
@@ -2217,7 +2214,27 @@
       "creating": "Membuat...",
       "createButton": "Buat GRN",
       "rack": "Rak {index}",
-      "rollLabel": "#{index} · {length} {uom} (klik untuk menghapus)"
+      "rollLabel": "#{index} · {length} {uom} (klik untuk menghapus)",
+      "butuhSinyal": "Butuh sinyal untuk menyimpan GRN.",
+      "tanpaSinyalDrafAman": "Tidak ada sinyal. GRN baru bisa disimpan saat online; isian Anda tersimpan sebagai draf di perangkat ini.",
+      "tanpaSinyalDrafBelum": "Tidak ada sinyal. GRN baru bisa disimpan saat online, dan isian ini belum tersimpan di perangkat — jangan tutup halaman ini.",
+      "sambunganPutus": "Sambungan terputus sebelum ada jawaban. Periksa tab Penerimaan Barang sebelum menyimpan ulang; isian Anda masih di sini.",
+      "draf": {
+        "pulih": "Draf dipulihkan dari {time}.",
+        "buang": "Buang draf"
+      },
+      "grnLama": {
+        "judul": "GRN di perangkat ini yang belum pernah terkirim: {count}",
+        "ringkas": "{count} barang · Rp {total} · {time}",
+        "pemasokTakDikenal": "Pemasok tidak dikenal",
+        "muat": "Muat ke formulir",
+        "diFormulir": "Di formulir",
+        "muatJudul": "Ganti isian formulir?",
+        "muatIsi": "Isian yang sedang diisi diganti dengan GRN ini.",
+        "hapusJudul": "Hapus GRN ini dari perangkat?",
+        "hapusIsi": "GRN ini belum pernah masuk ke sistem. Setelah dihapus, isiannya hilang.",
+        "gagalHapus": "Gagal menghapus dari perangkat."
+      }
     },
     "stockMoveKind": {
       "GRN": "Penerimaan barang (GRN)",
@@ -2612,6 +2629,17 @@
         "PIN_WAJIB": "Masukkan PIN Anda untuk membatalkan PO.",
         "GAGAL": "PO gagal dibatalkan. Coba lagi."
       }
+    },
+    "edit": {
+      "err": {
+        "TIDAK_DITEMUKAN": "PO tidak ditemukan. Mungkin sudah dihapus.",
+        "PO_TERTUTUP": "PO ini sudah ditutup atau dibatalkan, jadi tidak bisa diubah lagi.",
+        "PIN_WAJIB": "PO ini sudah dikirim ke pemasok. Masukkan PIN Anda untuk menyimpan perubahan.",
+        "QTY_DI_BAWAH_DITERIMA": "{barang} sudah diterima {diterima}. Pertahankan barisnya dengan qty paling sedikit {diterima}.",
+        "VARIAN_TIDAK_VALID": "Varian {barang} tidak cocok dengan data barang. Pilih ulang variannya.",
+        "TANPA_AKSES": "Anda tidak punya izin mengubah PO.",
+        "GAGAL": "PO gagal disimpan. Coba lagi."
+      }
     }
   },
   "workOrdersList": {
@@ -2645,7 +2673,19 @@
     "processFailed": "Gagal memproses retur",
     "confirmDelete": "Yakin ingin menghapus retur ini?",
     "deleted": "Retur dihapus",
-    "deleteFailed": "Gagal menghapus retur"
+    "deleteFailed": "Gagal menghapus retur",
+    "err": {
+      "TANPA_AKSES": "Anda tidak punya izin mengelola retur pemasok.",
+      "TIDAK_DITEMUKAN": "Retur tidak ditemukan. Muat ulang halaman ini.",
+      "SUDAH_DIPROSES": "Retur ini sudah diproses. Muat ulang halaman ini.",
+      "TANPA_BARIS": "Retur ini belum punya barang. Ubah retur dan tambahkan barangnya dulu.",
+      "BARIS_TIDAK_VALID": "Qty atau nilai {barang} di retur ini tidak valid. Ubah retur lalu proses lagi.",
+      "STOK_KURANG": "Stok {barang} tidak cukup: perlu {perlu}, tersedia {ada}.",
+      "BUKTI_TIDAK_LENGKAP": "Isi nomor resi dan unggah bukti pengiriman.",
+      "BELUM_DIPROSES": "Retur ini belum diproses. Proses retur dulu sebelum menyelesaikannya.",
+      "SUDAH_SELESAI": "Retur ini sudah diselesaikan. Muat ulang halaman ini.",
+      "GAGAL": "Retur gagal disimpan. Coba lagi."
+    }
   },
   "hpp": {
     "title": "HPP (Harga Pokok Produksi)",
@@ -4333,7 +4373,9 @@
       "repeatFilled": "{count} barang dari pesanan terakhir masuk keranjang",
       "repeatSkipped": "{count} barang dilewati karena stoknya habis atau sudah tidak dijual",
       "filledFromRequest": "{count} barang dari permintaan SPG masuk keranjang. Periksa lalu kirim.",
-      "filledFromRecommendation": "{count} barang dari rekomendasi yang diterima toko masuk keranjang. Periksa lalu kirim."
+      "filledFromRecommendation": "{count} barang dari rekomendasi yang diterima toko masuk keranjang. Periksa lalu kirim.",
+      "repeatNoPrice": "Belum ada harga, tidak dimasukkan: {nama}{sisa, plural, =0 {} other { dan # lainnya}}",
+      "tolakTanpaHarga": "Pesanan tidak terkirim. Belum ada harga: {nama}{sisa, plural, =0 {} other { dan # lainnya}}. Hapus dari keranjang, lalu kirim lagi."
     },
     "offline": {
       "pendingTitle": "Belum terkirim",
@@ -4382,7 +4424,8 @@
       "replacesOrder": "mengganti {orderNo}",
       "errKunjunganDitolak": "Check-in kunjungan saat pesanan ini dicatat ditolak server, jadi pesanannya tidak bisa dikirim. Hubungi kantor.",
       "errKunjunganTidakSah": "Kunjungan saat pesanan ini dicatat bukan milik Anda di toko ini. Hubungi kantor.",
-      "photoErrKunjunganDitolak": "Check-in kunjungan saat foto ini diambil ditolak server, jadi fotonya tidak bisa diunggah."
+      "photoErrKunjunganDitolak": "Check-in kunjungan saat foto ini diambil ditolak server, jadi fotonya tidak bisa diunggah.",
+      "errTanpaHarga": "Ditolak: ada barang yang harganya belum ditetapkan kantor. Buka katalog, hapus barang itu, lalu kirim lagi."
     },
     "nearest": {
       "title": "Toko terdekat",
@@ -6895,7 +6938,8 @@
       "terkirim": "Pesanan {orderNo} terkirim, menunggu persetujuan kantor.",
       "errNoActiveVisit": "Kunjungan di toko ini sudah selesai. Check-in lagi untuk mengirim.",
       "errMinQty": "Jumlah di bawah minimum.",
-      "errGeneric": "Gagal mengirim pesanan. Coba lagi."
+      "errGeneric": "Gagal mengirim pesanan. Coba lagi.",
+      "errTanpaHarga": "Pesanan tidak terkirim. Harga belum ada untuk: {nama}. Susun ulang rencananya."
     },
     "spgAntrean": {
       "title": "Belum terkirim",
@@ -7228,7 +7272,9 @@
     },
     "appealFinalPriceNetHint": "Harga final adalah harga BERSIH per potong — itulah yang ditagih ke toko. Promo baris tidak dipotongkan lagi dari harga final.",
     "appealPromoDropped": "Baris ini mendapat promo {promo} (potongan {amount}). Begitu diberi harga final, promo itu tidak berlaku lagi.",
-    "appealPromoDroppedUnnamed": "Baris ini mendapat potongan promo {amount}. Begitu diberi harga final, promo itu tidak berlaku lagi."
+    "appealPromoDroppedUnnamed": "Baris ini mendapat potongan promo {amount}. Begitu diberi harga final, promo itu tidak berlaku lagi.",
+    "rejectConfirmPreorder": "Tolak pesanan pre-order ini? Stoknya belum dicadangkan, jadi tidak ada stok yang dilepas.",
+    "rejectConfirmUnknown": "Tolak pesanan ini? Stok yang sudah dicadangkan untuk pesanan ini, bila ada, akan dilepas."
   },
   "promos": {
     "pageTitle": "Promo",
@@ -7503,7 +7549,9 @@
       }
     },
     "kurangBarang": "Pilih barang yang dijual.",
-    "kurangUang": "Isi uang yang diterima."
+    "kurangUang": "Isi uang yang diterima.",
+    "errTerputus": "Koneksi terputus — penjualan belum pasti tercatat. Ketuk Catat Penjualan lagi; penjualan tidak akan tercatat dua kali.",
+    "keranjangDipulihkan": "Keranjang sebelumnya dipulihkan."
   },
   "spgSale": {
     "back": "Kembali",
@@ -8574,7 +8622,9 @@
     "errTOKO_TIDAK_DIIZINKAN": "Faktur ini bukan tagihan Anda — tokonya dipegang sales lain. Minta kantor menugaskan penagihannya kepada Anda.",
     "errPEMERIKSA_SAMA": "Anda yang melaporkan atau mencatatkan BKM ini, jadi tidak bisa memutuskannya sendiri. Minta admin keuangan lain memeriksanya.",
     "errRETUR_TERPAKAI": "Nota retur itu sudah dipotongkan di BKM lain sebesar nilainya. Pilih nota lain atau kurangi potongannya sampai sebesar sisa yang tertulis.",
-    "errFOTO_BUKAN_MILIK": "Foto bukti ini diunggah orang lain. Ambil foto bukti Anda sendiri."
+    "errFOTO_BUKAN_MILIK": "Foto bukti ini diunggah orang lain. Ambil foto bukti Anda sendiri.",
+    "errVerifikasiMELEBIHI_SISA": "Sejak BKM ini dilaporkan, fakturnya sudah dilunasi BKM lain, jadi sisanya kini kurang dari nilai di BKM ini. Tolak BKM ini atau minta sales membetulkan nominalnya.",
+    "pemeriksaSamaSingkat": "BKM Anda sendiri — admin keuangan lain yang memutuskan."
   },
   "collections": {
     "pageTitle": "Kontrabon / Tanda Terima",
@@ -9990,7 +10040,12 @@
       "STOCK_LOSS_SETTINGS_CHANGED": "Pengaturan barang hilang diubah",
       "SPG_COUNTER_EXCHANGE_RECORDED": "Tukar barang di konter dicatat",
       "ROLE_PERMISSIONS_UPDATED": "Izin peran diubah",
-      "ROLE_DELETED": "Peran dihapus"
+      "ROLE_DELETED": "Peran dihapus",
+      "STOCK_REQUEST_ORDER_CANCELLED": "Pesanan dari permintaan stok dibatalkan — permintaan dibuka lagi",
+      "STOCK_REQUEST_ORDER_REPLACED": "Pesanan permintaan stok diganti",
+      "STORE_RECOMMENDATION_ORDER_CANCELLED": "Pesanan dari rekomendasi dibatalkan — rekomendasi dibuka lagi",
+      "STORE_RECOMMENDATION_ORDER_REPLACED": "Pesanan rekomendasi diganti",
+      "MATERIAL_ISSUED": "Bahan dikeluarkan ke perintah kerja"
     },
     "entities": {
       "ChainTemplate": "Templat rantai proses",
@@ -10659,7 +10714,8 @@
     "clearedOn": "Cair {date}.",
     "errPEMERIKSA_SAMA": "Anda yang melaporkan atau mencatatkan BKM giro ini, jadi tidak bisa memutuskannya sendiri. Minta admin keuangan lain memeriksanya.",
     "errMELEBIHI_SISA": "Faktur ini sudah dilunasi BKM lain yang terverifikasi lebih dulu. Tolak giro ini atau minta sales membetulkan nominalnya.",
-    "errRETUR_TERPAKAI": "Nota retur di BKM giro ini sudah dipotongkan di BKM lain sebesar nilainya. Tolak salah satu BKM lebih dulu."
+    "errRETUR_TERPAKAI": "Nota retur di BKM giro ini sudah dipotongkan di BKM lain sebesar nilainya. Tolak salah satu BKM lebih dulu.",
+    "pemeriksaSamaSingkat": "BKM Anda sendiri — admin keuangan lain yang memutuskan."
   },
   "storeStockTargets": {
     "title": "Target stok toko",
@@ -16085,12 +16141,31 @@
     "BAHAN_WO_SELESAI": "Perintah kerja ini sudah menerima barang jadi atau selesai, jadi bahan tidak bisa dikeluarkan lagi.",
     "STOK_BAHAN_KURANG": "Stok {barang} tidak cukup untuk dikeluarkan. Periksa stok gudang lalu coba lagi.",
     "ROLL_TIDAK_CUKUP": "Roll yang dipilih tidak cukup untuk qty kain yang dikeluarkan (kurang {kurang}). Pilih roll lain atau muat ulang halaman ini.",
-    "WO_SUDAH_TERBIT": "Perintah kerja ini sudah diterbitkan. Muat ulang halaman ini."
+    "WO_SUDAH_TERBIT": "Perintah kerja ini sudah diterbitkan. Muat ulang halaman ini.",
+    "WO_BUKAN_DRAF": "Perintah kerja ini sudah diterbitkan atau bahannya sudah dikeluarkan, jadi tidak bisa diubah lagi.",
+    "DATA_TIDAK_VALID": "Isian perintah kerja belum lengkap atau tidak valid. Periksa lagi lalu simpan.",
+    "STOK_RENCANA_KURANG": "Stok tidak cukup untuk rencana ini: {daftar}.",
+    "WO_BUKAN_PRODUKSI": "Bahan tambahan hanya bisa dikeluarkan untuk perintah kerja yang sedang diproduksi.",
+    "QTY_TAMBAHAN_TIDAK_VALID": "Qty tambahan harus bilangan bulat lebih dari 0.",
+    "TANPA_AKSESORI_BOM": "Barang jadi ini tidak punya aksesori di BOM, jadi tidak ada bahan tambahan yang bisa dikeluarkan."
   },
   "grnErrors": {
     "PO_TIDAK_DITEMUKAN": "PO tidak ditemukan.",
     "PO_DIBATALKAN": "PO ini sudah dibatalkan, jadi barang tidak bisa diterima ke PO ini.",
     "PO_BELUM_DISETUJUI": "PO ini masih draf dan belum disetujui. Setujui dan kirim PO dulu sebelum menerima barang.",
     "PO_DITUTUP": "PO ini sudah ditutup, jadi barang tidak bisa diterima ke PO ini lagi."
+  },
+  "halamanGalat": {
+    "judul": "Halaman ini gagal dimuat",
+    "pesan": "Terjadi kesalahan. Coba lagi sebentar lagi.",
+    "judulLuring": "Tidak ada sinyal",
+    "pesanLuring": "Layar ini butuh sinyal. Coba lagi saat sinyal kembali.",
+    "cobaLagi": "Coba lagi",
+    "keBeranda": "Kembali ke beranda",
+    "kode": "Bila masih gagal, laporkan kode ini ke admin:",
+    "antreanAman": "{jumlah} kiriman belum terkirim dan masih tersimpan di HP.",
+    "lihatAntrean": "Lihat yang belum terkirim",
+    "tidakDitemukan": "Halaman tidak ditemukan",
+    "tidakDitemukanPesan": "Alamatnya salah, atau datanya sudah tidak ada."
   }
 }

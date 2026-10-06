@@ -46,6 +46,7 @@ export function TombolGiro({
   giroNo,
   nilai,
   susun = false,
+  pemeriksaSama = false,
 }: {
   claimId: string;
   giroNo: string;
@@ -53,6 +54,11 @@ export function TombolGiro({
   nilai: string;
   /** Tumpuk tombolnya (kolom tindakan tabel yang sempit). */
   susun?: boolean;
+  /**
+   * Penonton melaporkan/mencatatkan BKM ini: penulis menolak (PEMERIKSA_SAMA),
+   * jadi tombolnya mati dengan alasan sejak awal.
+   */
+  pemeriksaSama?: boolean;
 }) {
   const t = useTranslations('giro');
   const td = dinamis(t);
@@ -80,14 +86,20 @@ export function TombolGiro({
   return (
     <>
       <span className={cn('inline-flex gap-1', susun ? 'flex-col items-end' : 'flex-wrap')}>
-        <Button size="sm" disabled={pending} onClick={() => setCairTerbuka(true)}>
+        <Button
+          size="sm"
+          disabled={pending || pemeriksaSama}
+          title={pemeriksaSama ? t('errPEMERIKSA_SAMA') : undefined}
+          onClick={() => setCairTerbuka(true)}
+        >
           <BadgeCheck className="mr-1.5 h-3.5 w-3.5" />
           {t('clear')}
         </Button>
         <Button
           size="sm"
           variant="outline"
-          disabled={pending}
+          disabled={pending || pemeriksaSama}
+          title={pemeriksaSama ? t('errPEMERIKSA_SAMA') : undefined}
           onClick={() => {
             setAlasan('');
             setTolakTerbuka(true);
@@ -95,6 +107,11 @@ export function TombolGiro({
         >
           {t('bounce')}
         </Button>
+        {pemeriksaSama && (
+          <span className="max-w-[10rem] whitespace-normal text-xs text-muted-foreground">
+            {t('pemeriksaSamaSingkat')}
+          </span>
+        )}
       </span>
 
       <AlertDialog open={cairTerbuka} onOpenChange={setCairTerbuka}>

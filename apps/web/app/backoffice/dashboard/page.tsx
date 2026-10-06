@@ -44,7 +44,7 @@ export default async function DashboardPage() {
     trenPenjualan,
     klaimMenunggu,
   ] = await Promise.all([
-    getDashboardStats(),
+    getDashboardStats(kartu),
     getOverduePOs(),
     kartu.stok ? getCOGSRawVsFinished() : null,
     getRawMaterialShortage(),

@@ -8,7 +8,8 @@ import { prisma, seededId, seededIds } from "@elorae/db";
  * `$transaction` biasa: edit yang membaca PARTIAL lalu kalah cepat dari
  * "Tutup PO" atau pembatalan menulis ulang baris dan total PO yang sudah
  * ditutup/batal. Sekarang baca status + tulis satu `runSerializable` dengan
- * penjaga status; yang kalah diulang dan melihat keadaan baru.
+ * penjaga status; yang kalah diulang dan melihat keadaan baru. Penolakan
+ * dikembalikan sebagai `{ ok:false, code }`, bukan dilempar.
  */
 
 const sesi = vi.hoisted(() => ({ id: "", izin: ["*"] as string[] }));
@@ -215,7 +216,7 @@ d("edit PO vs Tutup PO / batal / GRN (test bed only)", () => {
   it("tanpa balapan: edit PO PARTIAL (PIN) menulis qty baru, qty diterima tetap, satu riwayat edit", async () => {
     const poId = await buatPo();
     await terima(poId, 4);
-    await edit(poId);
+    expect(await edit(poId)).toEqual({ ok: true, id: poId });
     expect(await keadaan(poId)).toEqual({
       status: "PARTIAL",
       ditutupManual: false,
@@ -230,7 +231,7 @@ d("edit PO vs Tutup PO / batal / GRN (test bed only)", () => {
     const poId = await buatPo();
     await terima(poId, 4);
     expect((await tutupPurchaseOrder({ poId, userId, alasan: "uji" })).ok).toBe(true);
-    await expect(edit(poId)).rejects.toMatchObject({ code: "PO_TERTUTUP" });
+    expect(await edit(poId)).toEqual({ ok: false, code: "PO_TERTUTUP" });
     expect(await keadaan(poId)).toMatchObject({ status: "CLOSED", grandTotal: 10_000, dipesan: [10], riwayatEdit: 0 });
   });
 
@@ -243,8 +244,7 @@ d("edit PO vs Tutup PO / batal / GRN (test bed only)", () => {
       () => tutupPurchaseOrder({ poId, userId, alasan: "tutup duluan" }),
     );
     expect(tutup).toMatchObject({ status: "fulfilled", value: { ok: true, qtySisa: 6 } });
-    expect(hasilEdit.status).toBe("rejected");
-    expect((hasilEdit as PromiseRejectedResult).reason).toMatchObject({ code: "PO_TERTUTUP" });
+    expect(hasilEdit).toEqual({ status: "fulfilled", value: { ok: false, code: "PO_TERTUTUP" } });
     expect(await keadaan(poId)).toEqual({
       status: "CLOSED",
       ditutupManual: true,
@@ -265,8 +265,7 @@ d("edit PO vs Tutup PO / batal / GRN (test bed only)", () => {
       () => tutupPurchaseOrder({ poId, userId, alasan: "tutup di tengah edit" }),
     );
     expect(tutup).toMatchObject({ status: "fulfilled", value: { ok: true, qtySisa: 6 } });
-    expect(hasilEdit.status).toBe("rejected");
-    expect((hasilEdit as PromiseRejectedResult).reason).toMatchObject({ code: "PO_TERTUTUP" });
+    expect(hasilEdit).toEqual({ status: "fulfilled", value: { ok: false, code: "PO_TERTUTUP" } });
     expect(await keadaan(poId)).toMatchObject({ status: "CLOSED", grandTotal: 10_000, dipesan: [10], riwayatEdit: 0 });
   });
 
@@ -278,8 +277,7 @@ d("edit PO vs Tutup PO / batal / GRN (test bed only)", () => {
       () => batalkanPO(poId, "batal duluan", "123456"),
     );
     expect(batal).toEqual({ status: "fulfilled", value: { ok: true } });
-    expect(hasilEdit.status).toBe("rejected");
-    expect((hasilEdit as PromiseRejectedResult).reason).toMatchObject({ code: "PO_TERTUTUP" });
+    expect(hasilEdit).toEqual({ status: "fulfilled", value: { ok: false, code: "PO_TERTUTUP" } });
     expect(await keadaan(poId)).toMatchObject({ status: "CANCELLED", grandTotal: 10_000, dipesan: [10], riwayatEdit: 0 });
   });
 
@@ -287,7 +285,7 @@ d("edit PO vs Tutup PO / batal / GRN (test bed only)", () => {
     const poId = await buatPo();
     const [hasilEdit, grn] = await balapan([0, TAHAN_MS], () => edit(poId), () => terima(poId, 4));
     expect(grn.status).toBe("fulfilled");
-    expect(hasilEdit.status).toBe("fulfilled");
+    expect(hasilEdit).toEqual({ status: "fulfilled", value: { ok: true, id: poId } });
     expect(await keadaan(poId)).toEqual({
       status: "PARTIAL",
       ditutupManual: false,

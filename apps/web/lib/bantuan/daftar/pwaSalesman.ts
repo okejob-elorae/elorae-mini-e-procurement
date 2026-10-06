@@ -8,7 +8,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       "Katalog barang untuk membuat pesanan toko. Isi jumlah di kartu barang (barang bervarian lewat Pilih varian), tekan Tinjau untuk memeriksa keranjang, lalu Kirim; pesanan menunggu persetujuan kantor. Pesanan hanya bisa dibuat saat Anda check-in di toko ini, kecuali pesanan jarak jauh (WhatsApp atau telepon) bila kantor mengizinkannya.",
       "Di toko putus harga dihitung server dari harga toko, lalu promo, minimum pesan, dan batas kredit toko diterapkan. Bila toko meminta harga lain, tekan Ajukan Harga di layar tinjau dan tulis alasannya — kantor menetapkan harga akhirnya saat menyetujui. Di toko konsinyasi katalog tidak menampilkan harga; tombol Sarankan produk baru menambahkan barang tanpa varian yang belum pernah dikirim ke toko itu dan masih ada stoknya.",
-      "Keranjang bisa terisi otomatis dari pesanan terakhir, permintaan SPG, rekomendasi yang diterima toko, atau pesanan yang sedang Anda ubah — periksa dulu sebelum mengirim. Tanpa sinyal, pesanan disimpan di HP dan dikirim otomatis saat online.",
+      "Keranjang bisa terisi otomatis dari pesanan terakhir, permintaan SPG, rekomendasi yang diterima toko, atau pesanan yang sedang Anda ubah — periksa dulu sebelum mengirim. Barang yang stoknya habis atau sudah tidak dijual dilewati; di toko putus, barang yang belum punya harga juga tidak dimasukkan (namanya disebut) dan tidak bisa dipesan sampai kantor menetapkan harganya. Tanpa sinyal, pesanan disimpan di HP dan dikirim otomatis saat online.",
     ],
     kartu: [
       {
@@ -370,6 +370,7 @@ export const ENTRI: EntriBantuan[] = [
       { kunci: "vanSale.subtitle" },
       "Penjualan tunai di tempat dari stok mobil Anda, tanpa persetujuan kantor. Pembeli bisa toko terdaftar atau pembeli langsung yang nama dan teleponnya boleh dikosongkan. Harga memakai harga jual putus barang, jumlah tidak bisa melebihi stok di mobil, dan uang diterima harus menutup total.",
       "Stok mobil diisi kantor lewat muat van. Bila kantor menyalakan aturan toko sendiri, pilihan toko hanya toko yang Anda pegang. Sesudah dicatat, nota penjualan langsung terbuka untuk dicetak atau dibagikan.",
+      "Keranjang tersimpan di HP sampai penjualan tercatat, juga bila halaman dimuat ulang (nama dan telepon pembeli langsung tidak ikut disimpan). Bila sinyal putus saat mencatat, ketuk Catat Penjualan lagi: penjualan yang sudah sampai ke kantor tidak tercatat dua kali. Mengosongkan keranjang memulai penjualan baru.",
     ],
   },
   {
@@ -404,6 +405,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       "Satu permintaan barang dari SPG di toko yang Anda pegang: daftar barang dengan alasan tiap baris (misalnya sering dikirim, laku di toko lain, atau barang baru) dan catatan SPG.",
       "Selama permintaan masih Baru atau Diproses, Anda bisa membuatkan pesanan, menandainya selesai, atau menolaknya dengan alasan. SPG dikabari setiap keputusan.",
+      "Pesanan yang dibuat dari permintaan ini tertaut padanya, juga bila dikirim lewat antrean tanpa sinyal. Kalau Anda membatalkan pesanan itu, permintaannya terbuka lagi; kalau Anda mengubahnya, tautannya pindah ke pesanan pengganti.",
     ],
     kartu: [
       {

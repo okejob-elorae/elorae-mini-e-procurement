@@ -210,7 +210,10 @@ export function RencanaKirimShell({
         } else if (res.code === "NO_ACTIVE_VISIT") toast.error(t("errNoActiveVisit"));
         else if (res.code === "MIN_QTY") toast.error(t("errMinQty"));
         else if (res.code === "EMPTY") toast.error(t("kirimKosong"));
-        else if (res.code === "UNAUTHORIZED" || res.code === "TOKO_TIDAK_AKTIF" || res.code === "BUKAN_TOKO_SAYA") {
+        else if (res.code === "BARANG_TANPA_HARGA") {
+          const nama = res.itemIds.map((id) => draf.artikel.find((a) => a.itemId === id)?.nama ?? "—");
+          toast.error(t("errTanpaHarga", { nama: nama.join(", ") }));
+        } else if (res.code === "UNAUTHORIZED" || res.code === "TOKO_TIDAK_AKTIF" || res.code === "BUKAN_TOKO_SAYA") {
           toast.error(td(`galat.${res.code}`));
         } else toast.error(t("errGeneric"));
       } catch {
