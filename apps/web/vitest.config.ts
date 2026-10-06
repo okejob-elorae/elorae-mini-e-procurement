@@ -1,12 +1,12 @@
-import { defineConfig } from 'vitest/config';
-import path from 'path';
-import { config } from 'dotenv';
+import { defineConfig } from "vitest/config";
+import path from "path";
+import { config } from "dotenv";
 
-config({ path: path.resolve(__dirname, '.env') });
+config({ path: path.resolve(__dirname, ".env") });
 
 export default defineConfig({
   test: {
-    environment: 'node',
+    environment: "node",
     fileParallelism: false,
     /*
      * DB specs run against the shared MariaDB test bed and their fixtures do
@@ -22,15 +22,20 @@ export default defineConfig({
      * timeout (e.g. `beforeAll(async () => { ... }, 60_000)`).
      */
     hookTimeout: 60_000,
+    /**
+     * A spec under any of these names runs, so a misnamed file fails loudly instead of being
+     * silently skipped. The `lib/*.test.ts` / `app/*.spec.ts` split is style only.
+     */
     include: [
-      'lib/**/*.test.ts',
-      'app/**/*.spec.ts',
-      '../../scripts/legacy-master/**/*.test.ts',
+      "lib/**/*.{test,spec}.{ts,tsx}",
+      "app/**/*.{test,spec}.{ts,tsx}",
+      "components/**/*.{test,spec}.{ts,tsx}",
+      "../../scripts/legacy-master/**/*.test.ts",
     ],
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, '.'),
+      "@": path.resolve(__dirname, "."),
     },
   },
 });
