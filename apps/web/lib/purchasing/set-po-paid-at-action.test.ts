@@ -14,8 +14,10 @@ vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
    the shared dev DB. The action's own durable writes — the status history row and
    any JOURNAL_PENDING flag — stay real, because they are what these cases assert
    the refusal does NOT produce. */
-vi.mock("@/app/actions/notifications", () => ({
+vi.mock("@/lib/notifications/actor-name", () => ({
   getActorName: async () => "Test Finance User",
+}));
+vi.mock("@/app/actions/notifications", () => ({
   notifyPOCreated: async () => {},
   notifyPOStatusUpdated: async () => {},
   notifyPOPaymentToggled: async () => {},

@@ -20,8 +20,10 @@ vi.mock("@elorae/db", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 vi.mock("@/lib/inventory/costing", () => ({ findExistingInventoryValueRow: mockFindRow }));
 vi.mock("@/lib/security/pin", () => ({ verifyPin: vi.fn() }));
-vi.mock("@/app/actions/notifications", () => ({
+vi.mock("@/lib/notifications/actor-name", () => ({
   getActorName: vi.fn(),
+}));
+vi.mock("@/app/actions/notifications", () => ({
   notifyStockAdjustmentCreated: vi.fn(),
 }));
 

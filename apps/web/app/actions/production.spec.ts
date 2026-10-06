@@ -32,8 +32,10 @@ vi.mock("@/lib/internal-api", () => ({ apiFetch: vi.fn() }));
 vi.mock("@/lib/docNumber", () => ({ generateDocNumber: vi.fn() }));
 vi.mock("@/lib/production/planning", () => ({ generateMaterialPlan: vi.fn() }));
 vi.mock("@/lib/production/reconciliation", () => ({ reconcileWorkOrder: vi.fn() }));
-vi.mock("@/app/actions/notifications", () => ({
+vi.mock("@/lib/notifications/actor-name", () => ({
   getActorName: vi.fn(),
+}));
+vi.mock("@/app/actions/notifications", () => ({
   notifyWOCreated: vi.fn(),
   notifyWOStatusUpdated: vi.fn(),
   notifyWOMaterialsIssued: vi.fn(),

@@ -30,8 +30,10 @@ vi.mock("@/lib/inventory/costing", () => ({
   reverseMovingAverage: vi.fn(),
   findExistingInventoryValueRow: vi.fn(),
 }));
-vi.mock("@/app/actions/notifications", () => ({
+vi.mock("@/lib/notifications/actor-name", () => ({
   getActorName: vi.fn(),
+}));
+vi.mock("@/app/actions/notifications", () => ({
   notifyGRNCreated: vi.fn(),
   notifyMaterialArrivedForPo: vi.fn(),
 }));

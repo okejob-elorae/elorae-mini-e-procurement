@@ -4,7 +4,8 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { PERMISSIONS, requirePermission } from '@/lib/rbac';
-import { getActorName, notifySupplierCreated, notifySupplierApproved } from '@/app/actions/notifications';
+import { notifySupplierCreated, notifySupplierApproved } from '@/app/actions/notifications';
+import { getActorName } from "@/lib/notifications/actor-name";
 import { verifyPin } from '@/lib/security/pin';
 import {
   listSuppliers,

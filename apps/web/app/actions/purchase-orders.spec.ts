@@ -30,8 +30,10 @@ vi.mock("@elorae/db", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 vi.mock("@/lib/security/pin", () => ({ verifyPin: mockVerifyPin }));
 vi.mock("@/lib/docNumber", () => ({ generateDocNumber: vi.fn() }));
-vi.mock("@/app/actions/notifications", () => ({
+vi.mock("@/lib/notifications/actor-name", () => ({
   getActorName: vi.fn().mockResolvedValue("Actor"),
+}));
+vi.mock("@/app/actions/notifications", () => ({
   notifyPOCreated: vi.fn(),
   notifyPOStatusUpdated: vi.fn(),
   notifyPOPaymentToggled: vi.fn(),

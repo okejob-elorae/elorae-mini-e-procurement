@@ -2,24 +2,13 @@
 
 import { prisma } from '@elorae/db';
 import { messaging } from '@/lib/firebase/admin';
+import { getActorName } from '@/lib/notifications/actor-name';
 import { getUsersWithPermission, sendNotificationToUsers } from '@/lib/notifications/recipients';
 
 const PO_OVERDUE_TYPE = 'PO_OVERDUE';
 const WO_OVERDUE_TYPE = 'WO_OVERDUE';
 const MATERIAL_ARRIVED_TYPE = 'MATERIAL_ARRIVED';
 const ACCESSORIES_PENDING_CMT_TYPE = 'ACCESSORIES_PENDING_CMT';
-
-/**
- * Resolve display name for the actor (for "by X" in notification body).
- */
-export async function getActorName(userId: string): Promise<string> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { name: true, email: true },
-  });
-  if (!user) return 'Unknown';
-  return (user.name?.trim() || user.email) ?? 'Unknown';
-}
 
 /** Start of today in local TZ (for dedup). */
 function startOfToday(): Date {

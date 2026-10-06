@@ -9,8 +9,10 @@ const { mockAuth, mockVerifyPin, mockDeleteSupplier } = vi.hoisted(() => ({
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("@/lib/security/pin", () => ({ verifyPin: mockVerifyPin }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-vi.mock("@/app/actions/notifications", () => ({
+vi.mock("@/lib/notifications/actor-name", () => ({
   getActorName: vi.fn(),
+}));
+vi.mock("@/app/actions/notifications", () => ({
   notifySupplierCreated: vi.fn(),
   notifySupplierApproved: vi.fn(),
 }));

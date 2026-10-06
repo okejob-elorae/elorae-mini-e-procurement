@@ -17,7 +17,8 @@ import { variantDetailForSku } from '@/lib/items/variants';
 import { verifyPin } from '@/lib/security/pin';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
-import { getActorName, notifyStockAdjustmentCreated } from '@/app/actions/notifications';
+import { notifyStockAdjustmentCreated } from '@/app/actions/notifications';
+import { getActorName } from "@/lib/notifications/actor-name";
 
 const adjustmentSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),
