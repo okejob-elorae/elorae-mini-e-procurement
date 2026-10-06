@@ -48,7 +48,13 @@ vi.mock("next/cache", () => ({ revalidatePath: mockRevalidatePath }));
 vi.mock("@/lib/finance/ar/retur-offset-writer", () => ({ applyReturnOffset: mockApplyReturnOffset }));
 
 import { PaymentError } from "@/lib/finance/ar/errors";
-import { recordPaymentAction, voidPaymentAction, postPaymentJournalAction, applyReturnOffsetAction } from "./payments";
+import {
+  recordPaymentAction,
+  voidPaymentAction,
+  postPaymentJournalAction,
+  postPaymentVoidJournalAction,
+  applyReturnOffsetAction,
+} from "./payments";
 
 describe("payment action guards", () => {
   beforeEach(() => {
@@ -145,6 +151,32 @@ describe("payment action guards", () => {
     mockPostArJournalSafely.mockResolvedValue({ ok: false, code: "ERROR" });
     const res = await postPaymentJournalAction("p1");
     expect(res).toEqual({ ok: false, reason: "STILL_PENDING" });
+  });
+
+  /*
+   * The gate refusals and NOTHING_TO_POST never change on another retry, so they reach the toast
+   * as themselves; any other failure (a mapping, an ERROR) stays STILL_PENDING.
+   */
+  it.each([
+    ["RECEIVABLE_REVENUE_NOT_POSTED_YET", "RECEIVABLE_REVENUE_NOT_POSTED_YET"],
+    ["RECEIVABLE_OUTSIDE_LEDGER", "RECEIVABLE_OUTSIDE_LEDGER"],
+    ["NOTHING_TO_POST", "NOTHING_TO_POST"],
+    ["UNMAPPED_ROLE", "STILL_PENDING"],
+  ])("receipt retry outcome %s maps to reason %s", async (code, reason) => {
+    mockIsArJournalRetryable.mockResolvedValue(true);
+    mockPostArJournalSafely.mockResolvedValue({ ok: false, code });
+    const res = await postPaymentJournalAction("p1");
+    expect(res).toEqual({ ok: false, reason });
+  });
+
+  it.each([
+    ["NOTHING_TO_POST", "NOTHING_TO_POST"],
+    ["UNBALANCED", "STILL_PENDING"],
+  ])("void retry outcome %s maps to reason %s", async (code, reason) => {
+    mockIsArJournalRetryable.mockResolvedValue(true);
+    mockPostArJournalSafely.mockResolvedValue({ ok: false, code });
+    const res = await postPaymentVoidJournalAction("p1");
+    expect(res).toEqual({ ok: false, reason });
   });
 
   it("refuses to apply a retur offset without payments:manage", async () => {

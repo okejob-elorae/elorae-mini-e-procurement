@@ -5552,7 +5552,10 @@
       "PAYMENT_VOIDED": "Offset sebelumnya untuk retur ini sudah dibatalkan. Buka kembali panel offset dan coba lagi.",
       "NOT_RETRYABLE": "Jurnal pembayaran ini belum pernah ditandai gagal, jadi tidak ada yang perlu dicoba ulang.",
       "STILL_PENDING": "Jurnal masih gagal diposting. Periksa pemetaan akun, lalu coba lagi.",
-      "ERROR": "Terjadi kesalahan saat mencatat pembayaran ini. Coba lagi."
+      "ERROR": "Terjadi kesalahan saat mencatat pembayaran ini. Coba lagi.",
+      "RECEIVABLE_REVENUE_NOT_POSTED_YET": "Tagihan yang dilunasi pembayaran ini belum punya jurnal pendapatan. Posting jurnal tagihannya dari halaman piutang, lalu coba lagi.",
+      "RECEIVABLE_OUTSIDE_LEDGER": "Semua tagihan yang dilunasi pembayaran ini tercatat sebelum buku besar dimulai, sehingga tidak ada piutang yang bisa dikreditkan. Mencoba lagi tidak akan memposting jurnalnya.",
+      "NOTHING_TO_POST": "Tidak ada yang perlu diposting: penerimaan pembayaran ini tidak pernah masuk buku besar, jadi tidak ada yang perlu dibalik."
     },
     "methodProgramDeduction": "Potongan Program",
     "methodAdminFee": "Biaya Admin",

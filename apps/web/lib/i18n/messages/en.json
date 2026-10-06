@@ -5552,7 +5552,10 @@
       "PAYMENT_VOIDED": "The prior offset for this return was voided. Reopen the offset sheet and try again.",
       "NOT_RETRYABLE": "This payment's journal was never flagged as failed, so there is nothing to retry.",
       "STILL_PENDING": "The journal still failed to post. Check the account mapping, then try again.",
-      "ERROR": "Something went wrong recording this payment. Try again."
+      "ERROR": "Something went wrong recording this payment. Try again.",
+      "RECEIVABLE_REVENUE_NOT_POSTED_YET": "The invoice this payment settles has no revenue journal yet. Post the invoice's journal from its receivable page, then retry this one.",
+      "RECEIVABLE_OUTSIDE_LEDGER": "Every invoice this payment settles predates the ledger, so there is no receivable on the books to credit. Retrying won't post it.",
+      "NOTHING_TO_POST": "Nothing to post: this payment's receipt never reached the ledger, so there is nothing to reverse."
     },
     "methodProgramDeduction": "Program Deduction",
     "methodAdminFee": "Admin Fee",
