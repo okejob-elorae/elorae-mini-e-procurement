@@ -8,11 +8,14 @@ import { prisma } from "./index";
  * the contract under test is: at most one OPENING per key, carrying the SUM over that key's
  * bucket, and none at all when the bucket sums to zero.
  *
- * The upper bound is asserted as "at most one", not "exactly one", on purpose. Seeds and other
- * specs create balance rows AFTER migrate:deploy has run, and the backfill is one-shot — those
+ * The upper bound is asserted as "at most one", not "exactly one", on purpose. Specs and other
+ * fixtures create balance rows AFTER migrate:deploy has run, and the backfill is one-shot — those
  * rows legitimately have no OPENING entry and cannot be told apart from a genuinely dropped one
- * here. A duplicated key and a half-dropped bucket are both still caught: the first by the count,
- * the second because a present entry's qty must equal the full bucket sum.
+ * here. The dev seed and clone-to-local also run after migrate:deploy; they append their own
+ * OPENING entries through appendSeedOpeningBalances, one per key and only for a key holding no
+ * ledger entry yet, so they stay inside the bound. A duplicated key and a half-dropped bucket are
+ * both still caught: the first by the count, the second because a present entry's qty must equal
+ * the full bucket sum.
  */
 
 type Bucket = { sum: number };

@@ -875,7 +875,7 @@
     "provideNameAndAttributeValues": "Berikan nama dan minimal satu nilai untuk setiap atribut",
     "includeAtLeastOneVariant": "Pilih minimal satu kombinasi varian, atau hapus atributnya.",
     "duplicateAttributeValue": "Nilai itu sudah ada (beda huruf besar/kecil saja).",
-    "setParentSkuBeforeVariantCode": "Pilih kategori yang punya kode atau atur SKU item terlebih dahulu sebelum membuat kode varian.",
+    "setParentSkuBeforeVariantCode": "Atur SKU item terlebih dahulu sebelum membuat kode varian.",
     "setParentSkuBeforeBarcode": "Pilih kategori yang punya kode atau atur SKU item terlebih dahulu sebelum membuat barcode.",
     "fillConsumptionRuleFields": "Isi semua field aturan konsumsi",
     "saved": "Tersimpan",

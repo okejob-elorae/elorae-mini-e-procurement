@@ -8,9 +8,12 @@
  * Copies (FK-safe order): UOM, ItemCategory (prerequisite lookups for Item's
  * required/optional FKs) -> Item -> InventoryValue, JubelioProductMapping ->
  * SalesOrder (PII-scrubbed) -> SalesOrderItem -> JubelioSalesOrderState.
+ * Copies no ledger: each cloned InventoryValue row gets an OPENING
+ * StockLedgerEntry appended locally instead (appendSeedOpeningBalances).
  *
  * Idempotent: every table is copied via createMany({ skipDuplicates: true }),
- * batched, so re-running against an already-populated local DB is safe.
+ * batched, and the opening append skips a key that already has a ledger entry,
+ * so re-running against an already-populated local DB is safe.
  */
 import "dotenv/config";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
