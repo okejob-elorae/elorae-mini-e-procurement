@@ -2814,6 +2814,11 @@
         "noFullCount": "No approved full count yet"
       }
     },
+    "konsiPush": {
+      "cardTitle": "Send stock",
+      "button": "Send stock",
+      "description": "Send stock to this consignment store as an approved konsi order."
+    },
     "adminReturn": {
       "cardTitle": "Admin Return to Warehouse",
       "description": "Raise a pull-back of this store's stock to the main warehouse straight from the office. The nota photo and shipping details are filled in later, once the goods actually ship.",

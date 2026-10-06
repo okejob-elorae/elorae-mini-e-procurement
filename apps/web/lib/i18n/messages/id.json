@@ -2814,6 +2814,11 @@
         "noFullCount": "Belum ada perhitungan penuh yang disetujui"
       }
     },
+    "konsiPush": {
+      "cardTitle": "Kirim stok",
+      "button": "Kirim stok",
+      "description": "Kirim stok ke toko konsinyasi ini sebagai pesanan konsi yang sudah disetujui."
+    },
     "adminReturn": {
       "cardTitle": "Retur Admin ke Gudang",
       "description": "Ajukan penarikan stok toko ini ke gudang pusat langsung dari kantor. Foto nota dan info pengiriman dilengkapi nanti saat barang benar-benar dikirim.",

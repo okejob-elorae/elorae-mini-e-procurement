@@ -29,7 +29,7 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
 
   const canEdit = hasPermission(perms, PERMISSIONS.STORES_MANAGE);
   const canManageFieldReturns = hasPermission(perms, PERMISSIONS.FIELD_RETURNS_MANAGE);
-  const canPush = hasPermission(perms, PERMISSIONS.FIELD_SALES_ORDERS_APPROVE) && store.isActive;
+  const canPush = hasPermission(perms, PERMISSIONS.FIELD_SALES_ORDERS_APPROVE) && store.isActive && store.termsType === "KONSI";
   const canViewReceivables = hasPermission(perms, PERMISSIONS.RECEIVABLES_VIEW);
   const piutangAsOf = new Date();
   const piutang: StorePiutangSummary | null = canViewReceivables

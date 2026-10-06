@@ -17,6 +17,7 @@ import {
   Pencil,
   Phone,
   Receipt,
+  Send,
   ShoppingBag,
   Store,
   Undo2,
@@ -941,6 +942,23 @@ export function StoreDetailView({
 
       {assortment && (
         <StoreAssortmentCard storeId={store.id} termsType={store.termsType} lines={assortment.lines} canPush={canPush} />
+      )}
+
+      {!assortment && canPush && (
+        <Card>
+          <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Send className="h-4 w-4" />
+              {t("konsiPush.cardTitle")}
+            </CardTitle>
+            <Button asChild size="sm">
+              <Link href={`/backoffice/stores/${store.id}/konsi-push`}>{t("konsiPush.button")}</Link>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">{t("konsiPush.description")}</p>
+          </CardContent>
+        </Card>
       )}
 
       {store.termsType === "KONSI" && stockCard && (
