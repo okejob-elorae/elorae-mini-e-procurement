@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { postPendingVanJournals, vanJournalSweepFloor, VAN_JOURNAL_SWEEP_SETTLE_MS } from "./van-journal-sweep";
+import {
+  clampVanJournalSweepFloor,
+  postPendingVanJournals,
+  vanJournalSweepFloor,
+  VAN_AUTO_POST_SHIPPED_AT,
+  VAN_JOURNAL_SWEEP_SETTLE_MS,
+} from "./van-journal-sweep";
 import { postVanLoadJournal } from "./van-journal";
 import { setAccountMapping } from "../finance/journals/mapping";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../finance/journals/mapping-test-fixture";
@@ -74,6 +80,22 @@ async function pendingRowsFor(docId: string, kind: string) {
 
 /* An hour ahead of real time, so freshly seeded documents are past the settle window. */
 const settled = (): Date => new Date(Date.now() + 60 * 60 * 1000);
+
+describe("clampVanJournalSweepFloor", () => {
+  it("raises a derived floor below the auto-post ship time to that time", () => {
+    expect(clampVanJournalSweepFloor(new Date("2026-08-01T00:00:00.000Z"))).toEqual(VAN_AUTO_POST_SHIPPED_AT);
+  });
+
+  it("keeps a derived floor at or above the auto-post ship time", () => {
+    const later = new Date("2026-09-01T00:00:00.000Z");
+    expect(clampVanJournalSweepFloor(later)).toEqual(later);
+    expect(clampVanJournalSweepFloor(VAN_AUTO_POST_SHIPPED_AT)).toEqual(VAN_AUTO_POST_SHIPPED_AT);
+  });
+
+  it("keeps no floor as no floor", () => {
+    expect(clampVanJournalSweepFloor(null)).toBeNull();
+  });
+});
 
 const ROLE_TYPES: Array<[PostingRole, AccountType]> = [
   ["INVENTORY", "ASET"],
@@ -235,6 +257,19 @@ d("postPendingVanJournals (test bed only)", () => {
     return load;
   }
 
+  /* A hand-written JOURNAL_PENDING row, as a failed auto-post would have filed. */
+  async function flagLoad(loadId: string): Promise<void> {
+    await prisma.adminNotification.create({
+      data: {
+        category: "JOURNAL_PENDING",
+        severity: "WARNING",
+        title: "Van load journal not posted",
+        message: "sweep spec flagged load",
+        metadata: { docId: loadId, kind: "van_load", reason: "UNMAPPED_ROLE", role: "INVENTORY_VAN" },
+      },
+    });
+  }
+
   it("derives a floor at or below the earliest flagged van document", async () => {
     const floor = await vanJournalSweepFloor();
     expect(floor).not.toBeNull();
@@ -263,6 +298,56 @@ d("postPendingVanJournals (test bed only)", () => {
     expect(r.posted).toBe(1);
     expect(await journalFor("VAN_LOAD", n.id)).not.toBeNull();
     expect(await journalFor("VAN_LOAD", z.id)).toBeNull();
+  });
+
+  it("attempts an unflagged document even when more flagged failures than the limit precede it", async () => {
+    await prisma.journalAccountMapping.deleteMany({ where: { role: "INVENTORY_VAN" } });
+    try {
+      const flaggedIds: string[] = [];
+      for (let i = 1; i <= 3; i += 1) {
+        const load = await createLoad(1000, new Date(anchorCreatedAt.getTime() + i));
+        await flagLoad(load.id);
+        flaggedIds.push(load.id);
+      }
+      const fresh = await createLoad(1000, new Date(anchorCreatedAt.getTime() + 10));
+
+      const r = await postPendingVanJournals({ scope: { load: [...flaggedIds, fresh.id] }, limit: 2, now: settled() });
+      /* The unflagged load fails and is flagged; two of the three flagged loads are retried and fail again. */
+      expect(r).toMatchObject({ posted: 0, nothingToPost: 0, failed: 3, newlyFlagged: 1 });
+      expect(await pendingRowsFor(fresh.id, "van_load")).toHaveLength(1);
+      for (const id of flaggedIds) expect(await pendingRowsFor(id, "van_load")).toHaveLength(1);
+    } finally {
+      await setAccountMapping("INVENTORY_VAN", accountIds.INVENTORY_VAN);
+    }
+  });
+
+  it("counts a NOTHING_TO_POST reconcile apart from posts and failures", async () => {
+    docSeq += 1;
+    /**
+     * The documented half-cent residual: MariaDB rounds the -0.005 variance to
+     * -0.01 and lets it through the prefilter, while the poster rounds it to 0.
+     */
+    const recon = await prisma.vanReconcile.create({
+      data: {
+        docNo: `VANRECON-SWEEP-${token}-${docSeq}`,
+        canvasserId: userId,
+        reconciledById: userId,
+        totalReturnedQty: 0,
+        totalVarianceQty: -0.01,
+        lines: {
+          create: [
+            { itemId, variantSku: null, productName: "Test Item", expectedQty: 0, countedQty: 0, varianceQty: -0.01, unitCost: 0.5 },
+          ],
+        },
+      },
+      select: { id: true },
+    });
+    createdDocs.push({ sourceType: "VAN_RECONCILE", model: "vanReconcile", id: recon.id });
+
+    const r = await postPendingVanJournals({ scope: { reconcile: [recon.id] }, now: settled() });
+    expect(r).toMatchObject({ posted: 0, nothingToPost: 1, failed: 0, newlyFlagged: 0 });
+    expect(await journalFor("VAN_RECONCILE", recon.id)).toBeNull();
+    expect(await pendingRowsFor(recon.id, "van_reconcile")).toHaveLength(0);
   });
 
   it("flags an unflagged document once when a role is unmapped, and never again", async () => {
@@ -355,12 +440,14 @@ d("postPendingVanJournals (test bed only)", () => {
   it("reads nothing for an empty scope", async () => {
     await expect(postPendingVanJournals({ scope: {} })).resolves.toEqual({
       posted: 0,
+      nothingToPost: 0,
       failed: 0,
       newlyFlagged: 0,
       skipped: null,
     });
     await expect(postPendingVanJournals({ scope: { load: [], sale: [], reconcile: [] } })).resolves.toEqual({
       posted: 0,
+      nothingToPost: 0,
       failed: 0,
       newlyFlagged: 0,
       skipped: null,

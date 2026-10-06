@@ -138,10 +138,12 @@ export function registerCronJobs(): void {
       try {
         const r = await postPendingVanJournals();
         if (r.skipped === "NO_FLOOR") return;
+        /* A NOTHING_TO_POST residual alone stays quiet: it recurs every tick and posts nothing. */
         if (r.posted > 0 || r.failed > 0) {
           console.log(
-            "[cron] van-journal done — posted=%d failed=%d newlyFlagged=%d",
+            "[cron] van-journal done — posted=%d nothingToPost=%d failed=%d newlyFlagged=%d",
             r.posted,
+            r.nothingToPost,
             r.failed,
             r.newlyFlagged,
           );

@@ -109,7 +109,8 @@ async function notify(
      */
     console.error(
       `[postVanJournalSafely] FAILED TO NOTIFY for van ${kind} ${docId} — this document has no journal and will show ` +
-        "no retry button (JOURNAL_PENDING notification write also failed). The hourly van journal sweep will re-attempt it.",
+        "no retry button (JOURNAL_PENDING notification write also failed). The hourly van journal sweep re-attempts it " +
+        "only if it was created at or above the sweep floor.",
       e,
     );
   }

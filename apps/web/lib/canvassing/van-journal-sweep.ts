@@ -2,12 +2,18 @@ import { prisma, Prisma } from "@elorae/db";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { postVanLoadJournal, postVanSaleJournal, postVanReconcileJournal } from "./van-journal";
 import { postVanJournalSafely } from "./post-van-journal-safely";
-import { findPostableJournalDocIds, type VanJournalKind } from "./journal-pending";
+import type { VanJournalKind } from "./journal-pending";
 
 export type VanJournalSweepScope = { load?: string[]; sale?: string[]; reconcile?: string[] };
 
 export type VanJournalSweepResult = {
   posted: number;
+  /**
+   * Documents whose poster answered `NOTHING_TO_POST`: they passed the value
+   * prefilter but round to nothing (the half-cent residual on `findCandidates`).
+   * Neither a post nor a failure, and re-attempted every tick.
+   */
+  nothingToPost: number;
   failed: number;
   newlyFlagged: number;
   /**
@@ -20,6 +26,12 @@ export type VanJournalSweepResult = {
 type DocKind = "load" | "sale" | "reconcile";
 
 export const VAN_JOURNAL_SWEEP_SETTLE_MS = 15 * 60 * 1000;
+
+/**
+ * When van journal auto-posting was committed. No environment auto-posted a van
+ * document before it, so the floor never needs to sit below it.
+ */
+export const VAN_AUTO_POST_SHIPPED_AT = new Date("2026-08-05T06:41:30Z");
 
 const KINDS: DocKind[] = ["load", "sale", "reconcile"];
 
@@ -35,23 +47,38 @@ const POST: Record<DocKind, (id: string, postedById: string) => Promise<Generate
   reconcile: (id, postedById) => postVanReconcileJournal(id, postedById),
 };
 
+type FlaggedDocIds = Record<VanJournalKind, string[]>;
+
 /**
- * The earliest van document `createdAt` that auto-posting demonstrably reached:
- * the minimum of (a) the earliest van journal's date, which is its document's
+ * Every van document named by a `JOURNAL_PENDING` row, read or unread, per kind.
+ *
+ * Reads every row with no `take`: a capped window could drop the row that names
+ * the earliest document (same reasoning as `findPostableJournalDocIds`).
+ * Metadata is matched in JS because JSON-path filtering on this adapter is
+ * unreliable.
+ */
+async function readFlaggedDocIds(): Promise<FlaggedDocIds> {
+  const rows = await prisma.adminNotification.findMany({
+    where: { category: "JOURNAL_PENDING" },
+    select: { metadata: true },
+  });
+  const flagged: Record<VanJournalKind, Set<string>> = { van_load: new Set(), van_sale: new Set(), van_reconcile: new Set() };
+  for (const r of rows) {
+    const m = r.metadata as { docId?: unknown; kind?: unknown } | null;
+    const docId = m?.docId;
+    const kind = m?.kind;
+    if (typeof docId !== "string") continue;
+    if (kind === "van_load" || kind === "van_sale" || kind === "van_reconcile") flagged[kind].add(docId);
+  }
+  return { van_load: [...flagged.van_load], van_sale: [...flagged.van_sale], van_reconcile: [...flagged.van_reconcile] };
+}
+
+/**
+ * The minimum of (a) the earliest van journal's date, which is its document's
  * own `createdAt`, and (b) the earliest document named by a van-kind
  * `JOURNAL_PENDING` row. `null` when neither exists.
- *
- * Invariant: every document at or after the floor was created by code that
- * auto-posted its journal, so posting one can never be the one-sided replay
- * `journal-pending.ts` forbids. Never lower this floor or replace it with a
- * fixed date: the derivation is what makes it exact in every environment.
- *
- * Reads every `JOURNAL_PENDING` row with no `take`: a capped window could drop
- * the row that names the earliest document (same reasoning as
- * `findPostableJournalDocIds`). Metadata is matched in JS because JSON-path
- * filtering on this adapter is unreliable.
  */
-export async function vanJournalSweepFloor(): Promise<Date | null> {
+async function deriveFloor(flagged: FlaggedDocIds): Promise<Date | null> {
   const candidates: Date[] = [];
 
   const journals = await prisma.journal.aggregate({
@@ -59,19 +86,6 @@ export async function vanJournalSweepFloor(): Promise<Date | null> {
     _min: { date: true },
   });
   if (journals._min.date) candidates.push(journals._min.date);
-
-  const rows = await prisma.adminNotification.findMany({
-    where: { category: "JOURNAL_PENDING" },
-    select: { metadata: true },
-  });
-  const flagged: Record<VanJournalKind, string[]> = { van_load: [], van_sale: [], van_reconcile: [] };
-  for (const r of rows) {
-    const m = r.metadata as { docId?: unknown; kind?: unknown } | null;
-    const docId = m?.docId;
-    const kind = m?.kind;
-    if (typeof docId !== "string") continue;
-    if (kind === "van_load" || kind === "van_sale" || kind === "van_reconcile") flagged[kind].push(docId);
-  }
 
   if (flagged.van_load.length > 0) {
     const a = await prisma.vanLoad.aggregate({ where: { id: { in: flagged.van_load } }, _min: { createdAt: true } });
@@ -94,8 +108,49 @@ export async function vanJournalSweepFloor(): Promise<Date | null> {
 }
 
 /**
+ * Raises a derived floor to `VAN_AUTO_POST_SHIPPED_AT`, never lowers it, and
+ * keeps `null` as `null`. A van-sale idempotent replay across the deploy can
+ * post a journal dated before the deploy and pull the derived floor down.
+ */
+export function clampVanJournalSweepFloor(derived: Date | null): Date | null {
+  if (derived === null) return null;
+  return derived.getTime() < VAN_AUTO_POST_SHIPPED_AT.getTime() ? VAN_AUTO_POST_SHIPPED_AT : derived;
+}
+
+/**
+ * The earliest van document `createdAt` that auto-posting demonstrably reached
+ * (`deriveFloor`), raised to `VAN_AUTO_POST_SHIPPED_AT` when it derives lower.
+ * `null` when nothing derives.
+ *
+ * Invariant: every document at or after the floor was created by code that
+ * auto-posted its journal, so posting one can never be the one-sided replay
+ * `journal-pending.ts` forbids. Never lower this floor or replace the
+ * derivation with a fixed date: the derivation is what makes it exact in every
+ * environment, and the fixed date may only ever raise it.
+ */
+export async function vanJournalSweepFloor(): Promise<Date | null> {
+  return clampVanJournalSweepFloor(await deriveFloor(await readFlaggedDocIds()));
+}
+
+/** Which slice of a kind's candidates one query reads: the unflagged ones, or the flagged retries. */
+type CandidateWindow = { flagged: boolean; flaggedIds: string[] };
+
+/**
+ * The id restrictions shared by every kind's candidate query. `alias` is one of
+ * this module's own table aliases, never caller input. A flagged window must
+ * carry at least one id, since an empty `IN ()` is invalid SQL.
+ */
+function windowFilter(alias: "vl" | "vs" | "vr", scopeIds: string[] | undefined, window: CandidateWindow): Prisma.Sql {
+  const col = Prisma.raw(`${alias}.id`);
+  const scope = scopeIds !== undefined ? Prisma.sql`AND ${col} IN (${Prisma.join(scopeIds)})` : Prisma.empty;
+  if (window.flagged) return Prisma.sql`${scope} AND ${col} IN (${Prisma.join(window.flaggedIds)})`;
+  if (window.flaggedIds.length === 0) return scope;
+  return Prisma.sql`${scope} AND ${col} NOT IN (${Prisma.join(window.flaggedIds)})`;
+}
+
+/**
  * Unjournaled documents of one kind at or above the floor and created before
- * `settledBefore`, oldest first.
+ * `settledBefore`, restricted to one `CandidateWindow`, oldest first.
  *
  * The value prefilter keeps a permanently zero-value document from occupying a
  * `LIMIT` slot forever (prod's `avgCost` is 0 almost everywhere, so without it
@@ -115,11 +170,12 @@ async function findCandidates(
   kind: DocKind,
   floor: Date,
   settledBefore: Date,
-  ids: string[] | undefined,
+  scopeIds: string[] | undefined,
+  window: CandidateWindow,
   limit: number,
 ): Promise<Array<{ id: string; actorId: string }>> {
   if (kind === "load") {
-    const idFilter = ids !== undefined ? Prisma.sql`AND vl.id IN (${Prisma.join(ids)})` : Prisma.empty;
+    const idFilter = windowFilter("vl", scopeIds, window);
     return prisma.$queryRaw<Array<{ id: string; actorId: string }>>(Prisma.sql`
       SELECT vl.id, vl.loadedById AS actorId
       FROM VanLoad vl
@@ -135,7 +191,7 @@ async function findCandidates(
     `);
   }
   if (kind === "sale") {
-    const idFilter = ids !== undefined ? Prisma.sql`AND vs.id IN (${Prisma.join(ids)})` : Prisma.empty;
+    const idFilter = windowFilter("vs", scopeIds, window);
     return prisma.$queryRaw<Array<{ id: string; actorId: string }>>(Prisma.sql`
       SELECT vs.id, vs.salesmanId AS actorId
       FROM VanSale vs
@@ -150,7 +206,7 @@ async function findCandidates(
       LIMIT ${limit}
     `);
   }
-  const idFilter = ids !== undefined ? Prisma.sql`AND vr.id IN (${Prisma.join(ids)})` : Prisma.empty;
+  const idFilter = windowFilter("vr", scopeIds, window);
   return prisma.$queryRaw<Array<{ id: string; actorId: string }>>(Prisma.sql`
     SELECT vr.id, vr.reconciledById AS actorId
     FROM VanReconcile vr
@@ -169,7 +225,10 @@ async function findCandidates(
 
 /**
  * Backstop for van load/sale/reconcile journals: posts the journal of every
- * unjournaled van document above the floor, up to `limit` per kind.
+ * unjournaled van document above the floor. Each kind reads two windows of up
+ * to `limit` documents, unflagged documents first and flagged retries second, so
+ * flagged documents that fail every tick (an unmapped role, say) can never
+ * occupy the window an unflagged one needs.
  *
  * Every van document posts its journal at the moment of action through
  * `postVanJournalSafely`, and a failed post files a `JOURNAL_PENDING` row that
@@ -202,43 +261,55 @@ async function findCandidates(
 export async function postPendingVanJournals(
   opts: { scope?: VanJournalSweepScope; limit?: number; now?: Date } = {},
 ): Promise<VanJournalSweepResult> {
-  const result: VanJournalSweepResult = { posted: 0, failed: 0, newlyFlagged: 0, skipped: null };
+  const result: VanJournalSweepResult = { posted: 0, nothingToPost: 0, failed: 0, newlyFlagged: 0, skipped: null };
   const { scope } = opts;
 
   const kinds = scope === undefined ? KINDS : KINDS.filter((k) => (scope[k]?.length ?? 0) > 0);
   if (kinds.length === 0) return result;
 
-  const floor = await vanJournalSweepFloor();
+  const flagged = await readFlaggedDocIds();
+  const floor = clampVanJournalSweepFloor(await deriveFloor(flagged));
   if (!floor) return { ...result, skipped: "NO_FLOOR" };
 
   const limit = opts.limit ?? 50;
   const settledBefore = new Date((opts.now ?? new Date()).getTime() - VAN_JOURNAL_SWEEP_SETTLE_MS);
 
   for (const kind of kinds) {
-    const candidates = await findCandidates(kind, floor, settledBefore, scope === undefined ? undefined : scope[kind], limit);
-    if (candidates.length === 0) continue;
+    const flaggedIds = flagged[NOTIFICATION_KIND[kind]];
+    const scopeIds = scope === undefined ? undefined : scope[kind];
 
-    const flagged = await findPostableJournalDocIds(
-      NOTIFICATION_KIND[kind],
-      candidates.map((c) => c.id),
-    );
-
-    for (const { id, actorId } of candidates) {
+    const unflagged = await findCandidates(kind, floor, settledBefore, scopeIds, { flagged: false, flaggedIds }, limit);
+    for (const { id, actorId } of unflagged) {
       try {
-        if (!flagged.has(id)) {
-          const failure = await postVanJournalSafely(kind, id, () => POST[kind](id, actorId));
-          if (failure === null) {
-            result.posted += 1;
-          } else {
-            result.failed += 1;
-            result.newlyFlagged += 1;
-          }
+        /* The poster reports NOTHING_TO_POST as `null`, like a post; capture the result to tell them apart. */
+        const seen: { result?: GenerateAutoJournalResult } = {};
+        const failure = await postVanJournalSafely(kind, id, async () => {
+          seen.result = await POST[kind](id, actorId);
+          return seen.result;
+        });
+        if (failure !== null) {
+          result.failed += 1;
+          result.newlyFlagged += 1;
+        } else if (seen.result && !seen.result.ok && seen.result.code === "NOTHING_TO_POST") {
+          result.nothingToPost += 1;
         } else {
-          /* Already flagged: retry the post, but never file another row for it. */
-          const res = await POST[kind](id, actorId);
-          if (res.ok) result.posted += 1;
-          else result.failed += 1;
+          result.posted += 1;
         }
+      } catch (e) {
+        result.failed += 1;
+        console.error(`[van-journal-sweep] ${kind} ${id} failed:`, e);
+      }
+    }
+
+    if (flaggedIds.length === 0) continue;
+    const retries = await findCandidates(kind, floor, settledBefore, scopeIds, { flagged: true, flaggedIds }, limit);
+    for (const { id, actorId } of retries) {
+      try {
+        /* Already flagged: retry the post, but never file another row for it. */
+        const res = await POST[kind](id, actorId);
+        if (res.ok) result.posted += 1;
+        else if (res.code === "NOTHING_TO_POST") result.nothingToPost += 1;
+        else result.failed += 1;
       } catch (e) {
         result.failed += 1;
         console.error(`[van-journal-sweep] ${kind} ${id} failed:`, e);
