@@ -246,8 +246,8 @@ describe("validateItemImport — refusals", () => {
 
   it("rejects a variant SKU differing from an existing one only by an accent", () => {
     const r = validateItemImport(
-      [row({ warna: "Merah", skuVarian: "CAFÉ-M" })],
-      lookups({ existingVariantSkus: new Set([skuMatchKey("cafe-m")]) }),
+      [row({ warna: "Merah", skuVarian: "KMJ-01-MÉRAH" })],
+      lookups({ existingVariantSkus: new Set([skuMatchKey("kmj-01-merah")]) }),
     );
     expect(codes(r)).toEqual(["VARIANT_SKU_TAKEN"]);
   });

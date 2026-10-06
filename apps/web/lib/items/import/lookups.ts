@@ -19,10 +19,10 @@ export async function loadItemImportLookups(): Promise<ItemImportLookups> {
   for (const item of items) {
     existingItemSkus.add(skuMatchKey(item.sku));
     for (const v of parseItemVariants(item.variants)) {
-      const sku = (v.sku ?? "");
-      if (sku !== "") existingVariantSkus.add(skuMatchKey(sku));
-      const barcode = (v.barcode ?? "");
-      if (barcode !== "") existingBarcodes.add(skuMatchKey(barcode));
+      const sku = v.sku ?? "";
+      if (sku.trim() !== "") existingVariantSkus.add(skuMatchKey(sku));
+      const barcode = v.barcode ?? "";
+      if (barcode.trim() !== "") existingBarcodes.add(skuMatchKey(barcode));
     }
   }
   return { uoms, categories, existingItemSkus, existingVariantSkus, existingBarcodes };
