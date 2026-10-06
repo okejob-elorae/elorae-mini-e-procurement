@@ -109,8 +109,10 @@ using up the remaining attempts.
 The three rows are independent, and the retry backoff alone can reorder them, so the pack and ship
 handlers first call `assertPredecessorSettled` (`outbox/handlers/predecessor-push.ts`): pack waits
 for the latest `salesorder_pick` row, ship for the latest `salesorder_pack` row. A predecessor still
-`PENDING`/`PROCESSING` makes the dependent row retry; a `DEAD` one sends the dependent row `DEAD`
-too; `DONE`, `SKIPPED` or none lets it run.
+`PENDING`/`PROCESSING` makes the dependent row retry; `DONE`, `SKIPPED`, `DEAD` or none lets it
+run, and Jubelio validates the transition itself. `DEAD` does not hold the dependent row because a
+`DEAD` row cannot be settled: the outbox reset puts it back to `PENDING`, and a refusal that repeats
+sends it `DEAD` again, so holding on it would keep the ship out of Jubelio for good.
 
 | Step | `entityType` | Jubelio endpoint | Body shape |
 |---|---|---|---|
@@ -159,8 +161,9 @@ be `SHIPPED` with a null pick/pack timeline.
   A web cron (`runFulfillmentPushDivergenceSweep`, every 30 minutes) raises a
   `FULFILLMENT_PUSH_STUCK` admin notification when a `PICKED`/`PACKED` order's latest pick or pack
   row is `DEAD`, `SKIPPED` for a reason other than already-in-state, or still in flight after an
-  hour. It alerts only: it corrects neither side, never compares `wmsStatus`, and does not cover
-  the ship push. Read `fulfillmentStatus` as "what Elorae did", not "what Jubelio has".
+  hour, skipping a `CANCELLED` or `RETURNED` order and raising at most 20 new alerts per run
+  (oldest orders first; the rest wait for a later run). It alerts only: it corrects neither side,
+  never compares `wmsStatus`, and does not cover the ship push. Read `fulfillmentStatus` as "what Elorae did", not "what Jubelio has".
 - **Pick pushes were silently broken in production for months** (shipped PR #47, fixed PR #276 on
   2026-09-02): the handler posted a `{ids, is_completed}` body that Jubelio rejects on
   `picklist_no`, then, once the shape was fixed, died on `location_picklist_header` FK violations

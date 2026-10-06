@@ -1,4 +1,4 @@
-import { ensureInventoryRows } from "./catalog-sync.service";
+import { JubelioCatalogSyncService, ensureInventoryRows } from "./catalog-sync.service";
 import type { CatalogItemDraft } from "./catalog.types";
 
 describe("ensureInventoryRows", () => {
@@ -62,5 +62,40 @@ describe("ensureInventoryRows", () => {
       ],
       skipDuplicates: true,
     });
+  });
+});
+
+describe("JubelioCatalogSyncService.syncCatalog paging", () => {
+  let prisma: any;
+  let http: { get: jest.Mock };
+  let service: JubelioCatalogSyncService;
+
+  /* A full page of 200 groups, so the pager has to ask for the next one. */
+  function fullPage(startGroupId: number) {
+    return Array.from({ length: 200 }, (_, i) => ({
+      item_group_id: startGroupId + i,
+      item_name: `G${startGroupId + i}`,
+      variants: [],
+    }));
+  }
+
+  beforeEach(() => {
+    prisma = { jubelioCategoryMapping: { findMany: jest.fn().mockResolvedValue([]) } };
+    http = { get: jest.fn() };
+    service = new JubelioCatalogSyncService(prisma, http as any);
+  });
+
+  it("pages /inventory/items/ for a single-group sync and stops once that group has been read", async () => {
+    http.get
+      .mockResolvedValueOnce({ data: fullPage(1), totalCount: 5000 })
+      .mockResolvedValueOnce({ data: fullPage(201), totalCount: 5000 })
+      .mockResolvedValue({ data: fullPage(401), totalCount: 5000 });
+
+    const result = await service.syncCatalog({ dryRun: true, itemGroupIds: [250] });
+
+    expect(http.get).toHaveBeenCalledTimes(2);
+    expect(http.get).toHaveBeenNthCalledWith(1, "/inventory/items/", { query: { page: 1, pageSize: 200 } });
+    expect(http.get).toHaveBeenNthCalledWith(2, "/inventory/items/", { query: { page: 2, pageSize: 200 } });
+    expect(result.dryRun).toBe(true);
   });
 });

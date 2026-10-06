@@ -4705,7 +4705,7 @@
     "autoRematchPending": "Mengambil pesanan dari Jubelio. Settlement akan dicocokkan ulang otomatis setelah selesai — halaman ini boleh ditinggal.",
     "autoRematchSoon": "Pengambilan selesai — dicocokkan ulang dalam satu menit.",
     "autoRematchedToast": "Settlement dicocokkan ulang dengan pesanan yang diambil.",
-    "autoRematchSkippedReconciled": "Pengambilan selesai. Settlement ini sudah direkonsiliasi, jadi tidak dicocokkan ulang otomatis.",
+    "autoRematchSkippedReconciled": "Pengambilan selesai. Settlement ini sudah direkonsiliasi — jurnalnya sudah diposting, jadi pesanannya tidak bisa dicocokkan ulang lagi.",
     "fetchingBadge": "Mengambil…",
     "kpiDiffer": "Pesanan Berbeda",
     "compare": {

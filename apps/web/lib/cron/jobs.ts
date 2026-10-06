@@ -150,19 +150,21 @@ export function registerCronJobs(): void {
 
   /**
    * Every 30 minutes — alert admins when a PICKED/PACKED order's pick or pack push to Jubelio never
-   * landed. `noOverlap` skips a tick while the previous one is still running.
+   * landed, at most `MAX_ALERTS_PER_RUN` new alerts per tick (`deferred` counts the rest, which a
+   * later tick picks up). `noOverlap` skips a tick while the previous one is still running.
    */
   cron.schedule(
     "*/30 * * * *",
     async () => {
       try {
         const r = await runFulfillmentPushDivergenceSweep();
-        if (r.notified > 0 || r.failed > 0) {
+        if (r.notified > 0 || r.failed > 0 || r.deferred > 0) {
           console.log(
-            "[cron] fulfillment-push-divergence done — checked=%d notified=%d failed=%d",
+            "[cron] fulfillment-push-divergence done — checked=%d notified=%d failed=%d deferred=%d",
             r.checked,
             r.notified,
             r.failed,
+            r.deferred,
           );
         }
       } catch (err) {

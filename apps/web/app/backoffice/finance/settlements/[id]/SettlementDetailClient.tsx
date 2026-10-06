@@ -355,7 +355,7 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
               </Button>
             )}
 
-            {fetchableCount > 0 && (
+            {canMatch && fetchableCount > 0 && (
               <Button
                 size="sm"
                 variant="outline"

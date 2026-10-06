@@ -134,12 +134,14 @@ export async function postSettlementJournal(
 
   const run = async (tx: Prisma.TransactionClient) => {
     /**
-     * First statement, before any read: `matchSettlement` holds this same row lock for its whole
+     * First statement of the transaction: `matchSettlement` holds this same row lock for its whole
      * line rewrite, so a post waits out a running match and a match started after this waits for
      * the commit and then sees RECONCILED. The reads above stay outside it on purpose — totals and
-     * fee sums are columns a match never writes. A caller-supplied transaction client must not have
-     * read before calling: a locking read after an earlier consistent read can raise ER_CHECKREAD
-     * under `innodb_snapshot_isolation` on newer MariaDB.
+     * fee sums are columns a match never writes. With a caller-supplied transaction client there is
+     * no separate transaction: those reads run inside the caller's, before this lock, so such a
+     * caller must not depend on that snapshot, since a locking read after an earlier consistent
+     * read can raise ER_CHECKREAD under `innodb_snapshot_isolation` on newer MariaDB. No caller
+     * passes one today.
      */
     await lockSettlementRow(tx, s.id);
     const res = await postJournal(tx, {

@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { JubelioWebhookEvent, ReservationLine } from "@elorae/db";
-import { reserveOrder, releaseOrder, consumeOrder } from "@elorae/db";
+import { Prisma, reserveOrder, releaseOrder, consumeOrder } from "@elorae/db";
 import { PRISMA, type PrismaService } from "../../db/prisma.module";
 import { AdminNotificationService } from "../../admin/notification.service";
 import { SKIP_REASONS } from "../queue/webhook-status";
@@ -111,24 +111,33 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
       return { kind: "skipped", reason: SKIP_REASONS.MISSING_SALESORDER_ID };
     }
 
-    const txResult = await this.prisma.$transaction(async (tx) => {
-      const { stale } = await this.upsertSalesOrder(tx as unknown as PrismaService, p, row.id);
-      if (stale) return null;
+    /*
+     * READ COMMITTED, not the server's REPEATABLE READ default: the staleness guard's FOR UPDATE on
+     * an order not stored yet would otherwise gap-lock the index's top gap, so two concurrent NEW
+     * orders deadlock each other. Under READ COMMITTED the locking read takes no gap lock and still
+     * returns the latest committed row.
+     */
+    const txResult = await this.prisma.$transaction(
+      async (tx) => {
+        const { stale } = await this.upsertSalesOrder(tx as unknown as PrismaService, p, row.id);
+        if (stale) return null;
 
-      const existing = await tx.jubelioSalesOrderState.findUnique({
-        where: { salesorderId: p.salesorder_id },
-      });
-      if (existing) return existing;
-      return tx.jubelioSalesOrderState.create({
-        data: {
-          salesorderId: p.salesorder_id,
-          stockApplied: false,
-          lastStatus: p.channel_status ?? null,
-          lastIsCanceled: isCanceledOrder(p),
-          lastWebhookEventId: row.id,
-        },
-      });
-    });
+        const existing = await tx.jubelioSalesOrderState.findUnique({
+          where: { salesorderId: p.salesorder_id },
+        });
+        if (existing) return existing;
+        return tx.jubelioSalesOrderState.create({
+          data: {
+            salesorderId: p.salesorder_id,
+            stockApplied: false,
+            lastStatus: p.channel_status ?? null,
+            lastIsCanceled: isCanceledOrder(p),
+            lastWebhookEventId: row.id,
+          },
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+    );
 
     /*
      * A newer payload already drove this order's reserve/consume/release, so skipping the stale
@@ -233,8 +242,9 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
     webhookEventId: string,
   ): Promise<{ stale: boolean }> {
     /*
-     * Locking read: serialises two concurrent handles of one order and, under REPEATABLE READ,
-     * returns the latest COMMITTED row, so the second compares against what the first committed.
+     * Locking read: serialises two concurrent handles of one order and returns the latest
+     * COMMITTED row, so the second compares against what the first committed. The caller runs
+     * this at READ COMMITTED so that a read of an order not stored yet takes no gap lock.
      */
     const locked = await tx.$queryRaw<Array<{ lastModifiedJubelio: Date | null }>>`
       SELECT \`lastModifiedJubelio\` FROM \`SalesOrder\` WHERE \`salesorderId\` = ${p.salesorder_id} FOR UPDATE`;
@@ -295,9 +305,15 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
       createdDateJubelio: parseDate(p.created_date),
       completedDate: parseDate(p.completed_date),
       cancelDate: parseDate(p.internal_cancel_date),
-      lastModifiedJubelio: parseDate(p.last_modified),
       lastWebhookEventId: webhookEventId,
     };
+
+    /*
+     * `lastModifiedJubelio` is the staleness guard's reference, so a payload whose `last_modified`
+     * is missing or unparseable must not erase it: create stores whatever parses (null included),
+     * update omits the field when nothing parses, the same shape as the resi guard below.
+     */
+    const lastModifiedValue = parseDate(p.last_modified);
 
     /**
      * Webhooks are processed concurrently and out of order; a payload with no resi (or a blank
@@ -325,12 +341,14 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
       create: {
         salesorderId: p.salesorder_id,
         ...baseFields,
+        lastModifiedJubelio: lastModifiedValue,
         trackingNumber: trackingNumberValue,
         courier: courierValue,
         ...createShippedPatch,
       },
       update: {
         ...baseFields,
+        ...(lastModifiedValue !== null ? { lastModifiedJubelio: lastModifiedValue } : {}),
         ...(trackingNumberValue !== null ? { trackingNumber: trackingNumberValue } : {}),
         ...(courierValue !== null ? { courier: courierValue } : {}),
       },

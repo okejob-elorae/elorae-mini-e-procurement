@@ -3,7 +3,6 @@ import { SalesOrderShipHandler } from "./salesorder-ship.handler";
 import { PRISMA } from "../../../db/prisma.module";
 import { JubelioHttpService } from "../../http.service";
 import { JubelioError } from "../../jubelio.types";
-import { NonRetryableError } from "../../queue/errors";
 import { OUTBOX_SKIP_REASONS } from "../outbox-status";
 
 describe("SalesOrderShipHandler", () => {
@@ -107,9 +106,18 @@ describe("SalesOrderShipHandler", () => {
     expect(http.post).not.toHaveBeenCalled();
   });
 
-  it("goes non-retryable when the salesorder_pack push is DEAD", async () => {
+  it("proceeds to Jubelio when the salesorder_pack push is DEAD", async () => {
     prisma.jubelioOutbox.findFirst.mockResolvedValue({ id: "p1", status: "DEAD" });
-    await expect(handler.handle(baseRow() as any)).rejects.toBeInstanceOf(NonRetryableError);
-    expect(http.post).not.toHaveBeenCalled();
+    prisma.salesOrder.findUnique.mockResolvedValue({
+      id: "so1",
+      salesorderId: 23043,
+      salesorderNo: "TT-23043",
+    });
+    http.post.mockResolvedValue({ status: "ok" });
+
+    const result = await handler.handle(baseRow() as any);
+
+    expect(result).toEqual({ kind: "processed" });
+    expect(http.post).toHaveBeenCalledWith("/wms/shipments/", expect.anything());
   });
 });

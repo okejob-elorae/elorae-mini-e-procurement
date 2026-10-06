@@ -879,5 +879,40 @@ describe("SalesOrderWebhookHandler", () => {
       expect(r).toEqual({ kind: "processed" });
       expect(prisma.salesOrder.upsert).toHaveBeenCalledTimes(1);
     });
+
+    it("runs the upsert transaction at READ COMMITTED", async () => {
+      prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: true });
+
+      await handler.handle(row(makePayload({ last_modified: newer.toISOString() })) as any);
+
+      expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+        isolationLevel: "ReadCommitted",
+      });
+    });
+
+    it.each([
+      ["missing", undefined],
+      ["unparseable", "not-a-date"],
+    ])("never erases the stored lastModifiedJubelio when last_modified is %s", async (_label, value) => {
+      prisma.$queryRaw.mockResolvedValue([{ lastModifiedJubelio: newer }]);
+      prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: true });
+
+      const r = await handler.handle(row(makePayload({ last_modified: value })) as any);
+
+      expect(r).toEqual({ kind: "processed" });
+      const upsertArgs = prisma.salesOrder.upsert.mock.calls[0][0];
+      expect(upsertArgs.update).not.toHaveProperty("lastModifiedJubelio");
+      expect(upsertArgs.create.lastModifiedJubelio).toBeNull();
+    });
+
+    it("writes a parseable last_modified on both arms", async () => {
+      prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: true });
+
+      await handler.handle(row(makePayload({ last_modified: newer.toISOString() })) as any);
+
+      const upsertArgs = prisma.salesOrder.upsert.mock.calls[0][0];
+      expect(upsertArgs.update.lastModifiedJubelio).toEqual(newer);
+      expect(upsertArgs.create.lastModifiedJubelio).toEqual(newer);
+    });
   });
 });

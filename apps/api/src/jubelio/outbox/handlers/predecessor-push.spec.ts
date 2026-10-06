@@ -21,7 +21,7 @@ describe("assertPredecessorSettled", () => {
     await expect(run()).resolves.toBeUndefined();
   });
 
-  it.each(["DONE", "SKIPPED"])("returns when the predecessor is %s", async (status) => {
+  it.each(["DONE", "SKIPPED", "DEAD"])("returns when the predecessor is %s", async (status) => {
     prisma.jubelioOutbox.findFirst.mockResolvedValue({ id: "p1", status });
     await expect(run()).resolves.toBeUndefined();
   });
@@ -36,15 +36,6 @@ describe("assertPredecessorSettled", () => {
       expect(err.message).toBe("salesorder_pick push for this order has not settled yet");
     },
   );
-
-  it("throws NonRetryableError naming the row when the predecessor is DEAD", async () => {
-    prisma.jubelioOutbox.findFirst.mockResolvedValue({ id: "p1", status: "DEAD" });
-    const err = await run().catch((e) => e);
-    expect(err).toBeInstanceOf(NonRetryableError);
-    expect(err.message).toBe(
-      "salesorder_pick push for this order is DEAD (row p1); settle it before this push can run",
-    );
-  });
 
   it("bounds the lookup to rows created at or before this row, newest first", async () => {
     prisma.jubelioOutbox.findFirst.mockResolvedValue(null);

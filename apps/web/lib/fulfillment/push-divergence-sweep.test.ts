@@ -23,9 +23,31 @@ d("runFulfillmentPushDivergenceSweep (test bed only)", () => {
   let orderIds: string[] = [];
   let outboxIds: string[] = [];
 
+  type OutboxSeed = {
+    entityType: "salesorder_pick" | "salesorder_pack";
+    status: string;
+    skipReason?: string;
+    createdAt?: Date;
+  };
+
+  async function addOutbox(orderId: string, outbox: OutboxSeed) {
+    const row = await prisma.jubelioOutbox.create({
+      data: {
+        entityType: outbox.entityType,
+        entityId: orderId,
+        status: outbox.status,
+        skipReason: outbox.skipReason ?? null,
+        ...(outbox.createdAt ? { createdAt: outbox.createdAt } : {}),
+      },
+    });
+    outboxIds.push(row.id);
+    return row;
+  }
+
   async function seedOrder(
     fulfillmentStatus: "PICKED" | "PACKED",
-    outbox: { entityType: "salesorder_pick" | "salesorder_pack"; status: string; skipReason?: string; createdAt?: Date },
+    outbox: OutboxSeed,
+    orderOpts: { status?: "PROCESSING" | "CANCELLED"; createdAt?: Date } = {},
   ) {
     counter++;
     const order = await prisma.salesOrder.create({
@@ -34,7 +56,8 @@ d("runFulfillmentPushDivergenceSweep (test bed only)", () => {
         salesorderNo: `TEST-FPD-${token}-${counter}`,
         channel: "OTHER",
         sourceName: "test",
-        status: "PROCESSING",
+        status: orderOpts.status ?? "PROCESSING",
+        ...(orderOpts.createdAt ? { createdAt: orderOpts.createdAt } : {}),
         subTotal: 0,
         totalDisc: 0,
         totalTax: 0,
@@ -45,16 +68,7 @@ d("runFulfillmentPushDivergenceSweep (test bed only)", () => {
       },
     });
     orderIds.push(order.id);
-    const row = await prisma.jubelioOutbox.create({
-      data: {
-        entityType: outbox.entityType,
-        entityId: order.id,
-        status: outbox.status,
-        skipReason: outbox.skipReason ?? null,
-        ...(outbox.createdAt ? { createdAt: outbox.createdAt } : {}),
-      },
-    });
-    outboxIds.push(row.id);
+    await addOutbox(order.id, outbox);
     return order;
   }
 
@@ -75,7 +89,7 @@ d("runFulfillmentPushDivergenceSweep (test bed only)", () => {
   it("notifies for a PACKED order whose pack push is DEAD", async () => {
     const order = await seedOrder("PACKED", { entityType: "salesorder_pack", status: "DEAD" });
     const result = await runFulfillmentPushDivergenceSweep({ orderIds: [order.id] });
-    expect(result).toEqual({ checked: 1, notified: 1, failed: 0 });
+    expect(result).toEqual({ checked: 1, notified: 1, failed: 0, deferred: 0 });
     expect(await notificationsFor([order.id])).toHaveLength(1);
   });
 
@@ -118,6 +132,78 @@ d("runFulfillmentPushDivergenceSweep (test bed only)", () => {
   it("an empty orderIds scope sweeps nothing", async () => {
     await seedOrder("PACKED", { entityType: "salesorder_pack", status: "DEAD" });
     const result = await runFulfillmentPushDivergenceSweep({ orderIds: [] });
-    expect(result).toEqual({ checked: 0, notified: 0, failed: 0 });
+    expect(result).toEqual({ checked: 0, notified: 0, failed: 0, deferred: 0 });
+  });
+
+  it("does not notify for a CANCELLED order whose pick push is DEAD", async () => {
+    const order = await seedOrder("PICKED", { entityType: "salesorder_pick", status: "DEAD" }, { status: "CANCELLED" });
+    const result = await runFulfillmentPushDivergenceSweep({ orderIds: [order.id] });
+    expect(result).toEqual({ checked: 0, notified: 0, failed: 0, deferred: 0 });
+    expect(await notificationsFor([order.id])).toHaveLength(0);
+  });
+
+  it("judges only the latest row: an older DEAD pack row under a newer DONE one does not notify", async () => {
+    const now = new Date();
+    const order = await seedOrder("PACKED", {
+      entityType: "salesorder_pack",
+      status: "DEAD",
+      createdAt: new Date(now.getTime() - 2 * HOUR_MS),
+    });
+    await addOutbox(order.id, { entityType: "salesorder_pack", status: "DONE", createdAt: now });
+    const result = await runFulfillmentPushDivergenceSweep({ orderIds: [order.id], now });
+    expect(result.notified).toBe(0);
+    expect(await notificationsFor([order.id])).toHaveLength(0);
+  });
+
+  it("notifies when the pick push was SKIPPED for a reason other than already-in-state", async () => {
+    const order = await seedOrder("PICKED", {
+      entityType: "salesorder_pick",
+      status: "SKIPPED",
+      skipReason: "no_pushable_lines",
+    });
+    const result = await runFulfillmentPushDivergenceSweep({ orderIds: [order.id] });
+    expect(result.notified).toBe(1);
+    expect(await notificationsFor([order.id])).toHaveLength(1);
+  });
+
+  it("does not notify for a pick push PENDING for less than the stuck threshold", async () => {
+    const now = new Date();
+    const order = await seedOrder("PICKED", {
+      entityType: "salesorder_pick",
+      status: "PENDING",
+      createdAt: new Date(now.getTime() - 10 * 60 * 1000),
+    });
+    const result = await runFulfillmentPushDivergenceSweep({ orderIds: [order.id], now });
+    expect(result.notified).toBe(0);
+    expect(await notificationsFor([order.id])).toHaveLength(0);
+  });
+
+  it("caps new alerts per run, oldest orders first, and defers the rest", async () => {
+    const now = new Date();
+    const oldest = await seedOrder(
+      "PACKED",
+      { entityType: "salesorder_pack", status: "DEAD" },
+      { createdAt: new Date(now.getTime() - 3 * HOUR_MS) },
+    );
+    const middle = await seedOrder(
+      "PACKED",
+      { entityType: "salesorder_pack", status: "DEAD" },
+      { createdAt: new Date(now.getTime() - 2 * HOUR_MS) },
+    );
+    const newest = await seedOrder(
+      "PACKED",
+      { entityType: "salesorder_pack", status: "DEAD" },
+      { createdAt: new Date(now.getTime() - HOUR_MS) },
+    );
+    const ids = [oldest.id, middle.id, newest.id];
+
+    const first = await runFulfillmentPushDivergenceSweep({ orderIds: ids, now, maxAlerts: 2 });
+    expect(first).toEqual({ checked: 3, notified: 2, failed: 0, deferred: 1 });
+    expect(await notificationsFor([oldest.id, middle.id])).toHaveLength(2);
+    expect(await notificationsFor([newest.id])).toHaveLength(0);
+
+    const second = await runFulfillmentPushDivergenceSweep({ orderIds: ids, now, maxAlerts: 2 });
+    expect(second).toEqual({ checked: 3, notified: 1, failed: 0, deferred: 0 });
+    expect(await notificationsFor([newest.id])).toHaveLength(1);
   });
 });

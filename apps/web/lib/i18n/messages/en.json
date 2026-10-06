@@ -4705,7 +4705,7 @@
     "autoRematchPending": "Fetching orders from Jubelio. The settlement rematches itself when this finishes — you can leave this page.",
     "autoRematchSoon": "Fetch finished — rematching within a minute.",
     "autoRematchedToast": "Settlement rematched with the fetched orders.",
-    "autoRematchSkippedReconciled": "Fetch finished. This settlement is reconciled, so it was not rematched automatically.",
+    "autoRematchSkippedReconciled": "Fetch finished. This settlement is reconciled — its journal is posted, so its orders can no longer be rematched.",
     "fetchingBadge": "Fetching…",
     "kpiDiffer": "Orders Differ",
     "compare": {
