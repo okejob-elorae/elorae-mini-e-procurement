@@ -51,63 +51,58 @@ d("moveMainStock createIfMissing serialises first receipts (test bed only)", () 
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
 
-  async function expectOneRowAt8() {
+  it("sequential first receipts land on one null-spelled row", async () => {
+    await receive("t1", 5);
+    await receive("t2", 3);
     const rows = await prisma.inventoryValue.findMany({ where: { itemId } });
     expect(rows).toHaveLength(1);
     expect(Number(rows[0].qtyOnHand)).toBe(8);
     expect(rows[0].variantSku).toBeNull();
-  }
-
-  it("sequential first receipts land on one null-spelled row", async () => {
-    await receive("t1", 5);
-    await receive("t2", 3);
-    await expectOneRowAt8();
-  });
-
-  it("concurrent first receipts land on one null-spelled row", async () => {
-    await Promise.all([receive("t1", 5), receive("t2", 3)]);
-    await expectOneRowAt8();
   });
 
   /**
    * Both receipts must miss on their first lookup, or the loser simply finds the row and this pins
    * nothing. Each transaction therefore fixes its REPEATABLE READ snapshot with a plain read and
    * waits for the other to do the same before moving stock, so both lookups see no row whichever
-   * one commits first.
+   * one commits first. The loser is refused whether or not it carries cost figures: its costs
+   * assumed no row, and the row lies outside its snapshot.
    */
-  it("refuses caller-computed costs on a row only the locking re-read found", async () => {
+  async function raceFirstReceipts(withCosts: boolean) {
     let arrived = 0;
     let release: () => void = () => {};
     const bothSnapshotted = new Promise<void>((resolve) => {
       release = resolve;
     });
 
-    const receiveCosted = (refId: string, qtyDelta: number, avgCost: number) =>
-      prisma.$transaction(async (tx) => {
-        await tx.inventoryValue.findFirst({ where: { itemId } });
-        arrived += 1;
-        if (arrived === 2) release();
-        await bothSnapshotted;
-        return moveMainStock(tx, {
-          itemId,
-          variantSku: "",
-          qtyDelta,
-          avgCost,
-          totalValue: qtyDelta * avgCost,
-          totalCost: qtyDelta * avgCost,
-          balanceValue: qtyDelta * avgCost,
-          refType: "GRN",
-          refId,
-          createIfMissing: true,
-        });
-      });
-
     const receipts = [
       { refId: "c1", qty: 5, avgCost: 10 },
       { refId: "c2", qty: 3, avgCost: 20 },
     ];
     const results = await Promise.allSettled(
-      receipts.map((r) => receiveCosted(r.refId, r.qty, r.avgCost)),
+      receipts.map((r) =>
+        prisma.$transaction(async (tx) => {
+          await tx.inventoryValue.findFirst({ where: { itemId } });
+          arrived += 1;
+          if (arrived === 2) release();
+          await bothSnapshotted;
+          return moveMainStock(tx, {
+            itemId,
+            variantSku: "",
+            qtyDelta: r.qty,
+            ...(withCosts
+              ? {
+                  avgCost: r.avgCost,
+                  totalValue: r.qty * r.avgCost,
+                  totalCost: r.qty * r.avgCost,
+                  balanceValue: r.qty * r.avgCost,
+                }
+              : {}),
+            refType: "GRN",
+            refId: r.refId,
+            createIfMissing: true,
+          });
+        }),
+      ),
     );
 
     const committed = results.flatMap((r, i) => (r.status === "fulfilled" ? [receipts[i]] : []));
@@ -121,10 +116,19 @@ d("moveMainStock createIfMissing serialises first receipts (test bed only)", () 
     expect(rows).toHaveLength(1);
     expect(rows[0].variantSku).toBeNull();
     expect(Number(rows[0].qtyOnHand)).toBe(winner.qty);
-    expect(Number(rows[0].avgCost)).toBe(winner.avgCost);
-    expect(Number(rows[0].totalValue)).toBe(winner.qty * winner.avgCost);
 
     const ledger = await prisma.stockLedgerEntry.findMany({ where: { itemId } });
     expect(ledger.map((e) => e.refId)).toEqual([winner.refId]);
+    return { winner, row: rows[0] };
+  }
+
+  it("refuses a quantity-only receipt on a row only the locking re-read found", async () => {
+    await raceFirstReceipts(false);
+  });
+
+  it("refuses caller-computed costs on a row only the locking re-read found", async () => {
+    const { winner, row } = await raceFirstReceipts(true);
+    expect(Number(row.avgCost)).toBe(winner.avgCost);
+    expect(Number(row.totalValue)).toBe(winner.qty * winner.avgCost);
   });
 });

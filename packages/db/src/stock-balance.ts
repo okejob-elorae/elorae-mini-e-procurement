@@ -86,14 +86,15 @@ export class MainStockNegativeError extends Error {
 }
 
 /**
- * Thrown when a receipt that carries its own computed cost figures loses the first-receipt race.
+ * Thrown when a receipt loses the first-receipt race.
  *
  * The receipt's lookup found no main row, so its caller computed `avgCost`/`totalValue` as if
  * nothing were on hand. The locking re-read behind the Item lock then found a row: a concurrent
  * first receipt opened it and committed while this one waited. Writing those figures onto that row
  * would silently replace its moving average with one that ignores the stock already in it, so the
- * receipt is refused instead. Nothing it wrote survives the rollback, and posting it again reads
- * the row that now exists and computes against it.
+ * receipt is refused instead. The row also lies outside the receipt's own snapshot, so even a
+ * quantity-only move could not update it through Prisma's plain reads. Nothing it wrote survives
+ * the rollback, and posting it again reads the row that now exists and computes against it.
  */
 export class ConcurrentFirstReceiptError extends Error {
   readonly itemId: string;
@@ -247,12 +248,14 @@ export async function moveMainStock(tx: Tx, input: MoveMainStockInput): Promise<
     existing = await lockMainInventoryValueRow(tx, input.itemId, input.variantSku);
 
     /**
-     * A row seen only by the locking re-read was opened by a concurrent first receipt. Cost figures
-     * the caller passed were computed against the empty lookup, and the update below would SET
-     * them over that row's moving average, so they are refused. A quantity-only move carries no
-     * such figure and lands on the row as usual.
+     * A row seen only by the locking re-read was opened by a concurrent first receipt, so it is
+     * refused and the caller retries. Two reasons, either one enough. Cost figures the caller
+     * passed were computed against the empty lookup, and the update below would SET them over that
+     * row's moving average. And the row lies outside this transaction's snapshot: Prisma's
+     * `updateMany` and the read-back below are plain reads of that snapshot, so they would find no
+     * row and the move would fail anyway, as a misleading "vanished" error.
      */
-    if (existing && (input.avgCost != null || input.totalValue != null || input.balanceValue != null)) {
+    if (existing) {
       throw new ConcurrentFirstReceiptError(input.itemId, input.variantSku);
     }
   }
