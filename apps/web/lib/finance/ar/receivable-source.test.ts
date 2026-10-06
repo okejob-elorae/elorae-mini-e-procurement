@@ -3,6 +3,7 @@ import {
   ReceivableSourceMissingError,
   resolveReceivableSource,
   resolveTaxInvoiceSource,
+  tryResolveReceivableSource,
   type ReceivableSourceRow,
   type TaxInvoiceSourceRow,
 } from "./receivable-source";
@@ -132,6 +133,50 @@ describe("resolveReceivableSource", () => {
   it("throws ReceivableSourceMissingError when neither relation is set", () => {
     const row: ReceivableSourceRow = { delivery: null, sellThrough: null };
     expect(() => resolveReceivableSource(row)).toThrow(ReceivableSourceMissingError);
+  });
+});
+
+describe("tryResolveReceivableSource", () => {
+  it("returns null for an orphan carrying neither relation", () => {
+    const row: ReceivableSourceRow = { delivery: null, sellThrough: null };
+    expect(tryResolveReceivableSource(row)).toBeNull();
+  });
+
+  it("returns what resolveReceivableSource returns for a DELIVERY row", () => {
+    const row: ReceivableSourceRow = {
+      delivery: {
+        id: "delivery-1",
+        docNo: "DLV/0001",
+        deliveredAt: new Date("2026-09-01T00:00:00Z"),
+        order: {
+          id: "order-1",
+          orderNo: "FSO/0001",
+          salesmanId: "salesman-1",
+          salesman: { name: "Budi" },
+        },
+      },
+      sellThrough: null,
+    };
+
+    expect(tryResolveReceivableSource(row)).toEqual(resolveReceivableSource(row));
+  });
+
+  it("resolves a SELL_THROUGH row to kind SELL_THROUGH", () => {
+    const row: ReceivableSourceRow = {
+      delivery: null,
+      sellThrough: {
+        id: "sellthrough-1",
+        docNo: "KST/0001",
+        periodStart: null,
+        periodEnd: new Date("2026-08-31T00:00:00Z"),
+        salesmanId: null,
+        salesman: null,
+      },
+    };
+
+    const source = tryResolveReceivableSource(row);
+    expect(source?.kind).toBe("SELL_THROUGH");
+    expect(source?.docNo).toBe("KST/0001");
   });
 });
 

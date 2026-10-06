@@ -131,6 +131,16 @@ export function resolveReceivableSource(row: ReceivableSourceRow): ReceivableSou
 }
 
 /**
+ * `resolveReceivableSource` for a row that may be an orphan — `null` when neither relation
+ * resolved (a dangling id under `relationMode = "prisma"`), the resolved source otherwise.
+ * For READ surfaces that must render an orphan rather than 500; writers keep the throwing form.
+ */
+export function tryResolveReceivableSource(row: ReceivableSourceRow): ReceivableSource | null {
+  if (!row.delivery && !row.sellThrough) return null;
+  return resolveReceivableSource(row);
+}
+
+/**
  * The DELIVERY arm is field for field the `delivery` selection `lib/tax-invoices/queries.ts`'s
  * `listTaxInvoices` read before it switched to this constant, so the switch changed no output.
  * The SELL_THROUGH arm adds `id` (needed for `sellThroughId`) and `storeId` alongside the nested
