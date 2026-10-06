@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { ArrowLeft, AlertTriangle, CheckCircle2, Info, Pencil, Wallet } from "lucide-react";
+import { ArrowLeft, AlertTriangle, CheckCircle2, Info, Pencil, Wallet, XCircle } from "lucide-react";
 import type {
   FieldReturnDetail,
   FieldReturnOrigin,
@@ -17,6 +17,8 @@ import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -35,7 +37,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { approveAction, previewKonsiReturStockImpactAction } from "@/app/actions/field-returns";
+import {
+  approveAction,
+  cancelFieldReturnAction,
+  previewKonsiReturStockImpactAction,
+} from "@/app/actions/field-returns";
 import type { AllocationCandidate } from "@/lib/finance/ar/queries";
 import { ReceiveForm, fieldReturnErrorKey } from "./ReceiveForm";
 import { ResolutionControls } from "./ResolutionControls";
@@ -137,6 +143,9 @@ export function FieldReturnDetailClient({
   const [approveOpen, setApproveOpen] = useState(false);
   const [offsetSheetOpen, setOffsetSheetOpen] = useState(false);
   const [correctOpen, setCorrectOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelling, startCancelTransition] = useTransition();
   const [stockImpact, setStockImpact] = useState<
     | { status: "idle" }
     | { status: "loading" }
@@ -146,6 +155,8 @@ export function FieldReturnDetailClient({
 
   const outstanding = outstandingLineCount(r.lines);
   const showReceiveForm = canManage && r.status === "PENDING_WAREHOUSE_RECEIVING";
+  /* Nothing has moved before receipt, so that is the only state cancelFieldReturn accepts. */
+  const canCancel = canManage && r.status === "PENDING_WAREHOUSE_RECEIVING";
   /* Received but unapproved — the only window in which correctFieldReturnReceipt accepts a count. */
   const canCorrectReceipt =
     canManage && (r.status === "MISMATCH_PENDING_RESOLUTION" || r.status === "PENDING_APPROVAL");
@@ -164,10 +175,12 @@ export function FieldReturnDetailClient({
    * the resolution card itself stays visible to any authenticated viewer once the retur has
    * been received: the counts, split, variance and resolution history are the record of what
    * happened, not an action surface. ResolutionControls' own `actionable` check is what gates
-   * the resolution buttons on canManage + status (APPROVED/CANCELLED stay read-only even for a
-   * manager).
+   * the resolution buttons on canManage + status (APPROVED stays read-only even for a manager).
+   * CANCELLED is hidden with PENDING_WAREHOUSE_RECEIVING: cancelFieldReturn only accepts an
+   * unreceived retur, so there are no counts to show — the card would read every line as
+   * "matches".
    */
-  const showResolutionControls = r.status !== "PENDING_WAREHOUSE_RECEIVING";
+  const showResolutionControls = r.status !== "PENDING_WAREHOUSE_RECEIVING" && r.status !== "CANCELLED";
   const showApprove = canManage && r.status === "PENDING_APPROVAL";
   const showLinePriceControls = canManage && PRICEABLE_STATUSES.has(r.status);
   const unpricedCount = unpricedLineCount(r.lines);
@@ -219,6 +232,27 @@ export function FieldReturnDetailClient({
     });
   }
 
+  function callCancel(): void {
+    const reason = cancelReason.trim();
+    if (!reason) return;
+    startCancelTransition(async () => {
+      try {
+        const result = await cancelFieldReturnAction({ returnId: r.id, reason });
+        setCancelOpen(false);
+        if (result.ok) {
+          toast.success(tReceiving("successCancelled"));
+          setCancelReason("");
+          router.refresh();
+          return;
+        }
+        toast.error(tReceiving(fieldReturnErrorKey(result.code)));
+      } catch {
+        setCancelOpen(false);
+        toast.error(tReceiving(fieldReturnErrorKey("ERROR")));
+      }
+    });
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap justify-between">
@@ -236,6 +270,17 @@ export function FieldReturnDetailClient({
           <Badge variant={STATUS_BADGE_VARIANT[r.status]} className={STATUS_BADGE_CLASS[r.status]}>
             {t(`status.${r.status}`)}
           </Badge>
+          {canCancel && (
+            <Button
+              variant="outline"
+              className="h-10 text-destructive"
+              disabled={cancelling}
+              onClick={() => setCancelOpen(true)}
+            >
+              <XCircle className="h-4 w-4" />
+              {tReceiving("cancelOpen")}
+            </Button>
+          )}
           {showApprove && (
             /* Disabled while a correction is open: approving would freeze the counts being edited. */
             <Button className="h-10" disabled={isPending || correctOpen} onClick={openApproveDialog}>
@@ -264,6 +309,13 @@ export function FieldReturnDetailClient({
           </>
         )}
         <Field label={t("detail.note")} value={r.note} />
+        {r.cancellation && (
+          <>
+            <Field label={tReceiving("cancelledByLabel")} value={r.cancellation.byLabel} />
+            <Field label={tReceiving("cancelledAtLabel")} value={formatDateOnlyJakarta(r.cancellation.at)} />
+            <Field label={tReceiving("cancelledReasonLabel")} value={r.cancellation.reason} />
+          </>
+        )}
       </Card>
 
       {r.notaPhotoUrl && (
@@ -594,6 +646,48 @@ export function FieldReturnDetailClient({
               }}
             >
               {isPending ? tReceiving("submitting") : tReceiving("approveConfirmAction")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={cancelOpen} onOpenChange={(open) => !cancelling && setCancelOpen(open)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{tReceiving("cancelTitle", { docNo: r.docNo })}</AlertDialogTitle>
+            <AlertDialogDescription>{tReceiving("cancelDescription")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          {r.origin === "FIELD" && (
+            <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-amber-700">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+              <p className="text-xs">{tReceiving("cancelFieldGoodsNote")}</p>
+            </div>
+          )}
+          <div className="space-y-1">
+            <Label htmlFor="field-return-cancel-reason">{tReceiving("cancelReason")}</Label>
+            <Textarea
+              id="field-return-cancel-reason"
+              value={cancelReason}
+              maxLength={191}
+              rows={3}
+              disabled={cancelling}
+              onChange={(e) => setCancelReason(e.target.value)}
+            />
+            {!cancelReason.trim() && (
+              <p className="text-xs text-muted-foreground">{tReceiving("cancelReasonRequired")}</p>
+            )}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cancelling}>{tCommon("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={cancelling || !cancelReason.trim()}
+              onClick={(e) => {
+                /* Keep the dialog open so the pending label is visible; callCancel() closes it. */
+                e.preventDefault();
+                callCancel();
+              }}
+            >
+              {cancelling ? tReceiving("cancelling") : tReceiving("cancelConfirm")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

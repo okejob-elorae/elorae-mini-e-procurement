@@ -255,6 +255,11 @@ export type FieldReturnDetail = {
    * list, not the single terminal payment the pre-draw-down shape used to hand back.
    */
   offsetPayments: { id: string; docNo: string }[];
+  /**
+   * Who cancelled the retur, when and why — read from its `FIELD_RETURN_CANCEL` `AuditLog` row,
+   * since `FieldReturn` carries no cancel columns. `null` unless the status is CANCELLED.
+   */
+  cancellation: { byLabel: string; at: Date; reason: string | null } | null;
   lines: FieldReturnLineDetail[];
 };
 
@@ -354,13 +359,26 @@ export async function getFieldReturnById(
     );
   }
 
+  const cancelAudit =
+    r.status === "CANCELLED"
+      ? await prisma.auditLog.findFirst({
+          where: { entityType: "FieldReturn", entityId: r.id, action: "FIELD_RETURN_CANCEL" },
+          orderBy: { createdAt: "desc" },
+          select: { userId: true, createdAt: true, reason: true },
+        })
+      : null;
+
   /**
    * `raisedById` on `FieldReturn` and `createdById` on each `FieldReturnResolution` are bare
    * scalars with no relation, so every label is a separate batch lookup rather than an
-   * `include`. One query covers the salesman plus every resolution's author.
+   * `include`. One query covers the salesman, every resolution's author and the canceller.
    */
   const userIds = Array.from(
-    new Set([r.raisedById, ...r.lines.flatMap((l) => l.resolutions.map((res) => res.createdById))])
+    new Set([
+      r.raisedById,
+      ...r.lines.flatMap((l) => l.resolutions.map((res) => res.createdById)),
+      ...(cancelAudit ? [cancelAudit.userId] : []),
+    ])
   );
   const users = await prisma.user.findMany({
     where: { id: { in: userIds } },
@@ -389,6 +407,9 @@ export async function getFieldReturnById(
     valuationStatus: r.valuationStatus,
     offsetStatus: r.offsetStatus,
     offsetPayments: r.offsetPayments,
+    cancellation: cancelAudit
+      ? { byLabel: labelFor(cancelAudit.userId), at: cancelAudit.createdAt, reason: cancelAudit.reason }
+      : null,
     lines: r.lines.map((l) => {
       const priceCandidates = candidatesByLineId.get(l.id);
       const priceState: FieldReturnPriceState = l.priceSource

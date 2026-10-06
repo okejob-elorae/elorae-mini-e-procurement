@@ -12,6 +12,7 @@ const {
   mockCorrect,
   mockResolve,
   mockApprove,
+  mockCancel,
   mockCreateFieldReturn,
   mockRevalidatePath,
   mockFindLine,
@@ -25,6 +26,7 @@ const {
   mockCorrect: vi.fn(),
   mockResolve: vi.fn(),
   mockApprove: vi.fn(),
+  mockCancel: vi.fn(),
   mockCreateFieldReturn: vi.fn(),
   mockRevalidatePath: vi.fn(),
   mockFindLine: vi.fn(),
@@ -42,6 +44,7 @@ vi.mock("@/lib/field-sales/retur/receive-writer", () => ({ receiveFieldReturn: m
 vi.mock("@/lib/field-sales/retur/correct-receipt-writer", () => ({ correctFieldReturnReceipt: mockCorrect }));
 vi.mock("@/lib/field-sales/retur/resolve-writer", () => ({ resolveFieldReturnLine: mockResolve }));
 vi.mock("@/lib/field-sales/retur/approve-writer", () => ({ approveFieldReturn: mockApprove }));
+vi.mock("@/lib/field-sales/retur/cancel-writer", () => ({ cancelFieldReturn: mockCancel }));
 vi.mock("@/lib/field-sales/retur/writer", () => ({ createFieldReturn: mockCreateFieldReturn }));
 vi.mock("@/lib/field-sales/retur/pricing", () => ({
   listPriceCandidates: mockListPriceCandidates,
@@ -58,6 +61,7 @@ import {
   correctReceiptAction,
   resolveAction,
   approveAction,
+  cancelFieldReturnAction,
   setLinePriceAction,
   raiseAdminReturnAction,
 } from "./field-returns";
@@ -70,6 +74,7 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
     mockCorrect.mockReset();
     mockResolve.mockReset();
     mockApprove.mockReset();
+    mockCancel.mockReset();
     mockCreateFieldReturn.mockReset();
     mockRevalidatePath.mockReset();
     mockFindLine.mockReset();
@@ -544,6 +549,69 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
       expect(mockApprove).toHaveBeenCalledWith({ returnId: "r1", approvedById: "user-1" });
       expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/field-returns");
       expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/field-returns/r1");
+    });
+  });
+
+  describe("cancelFieldReturnAction", () => {
+    it("returns FORBIDDEN without field_returns:manage and never calls the writer", async () => {
+      mockHasPermission.mockReturnValue(false);
+      const res = await cancelFieldReturnAction({ returnId: "r1", reason: "batal" });
+      expect(res).toEqual({ ok: false, code: "FORBIDDEN" });
+      expect(mockCancel).not.toHaveBeenCalled();
+    });
+
+    it("checks specifically for field_returns:manage, not some other code", async () => {
+      mockHasPermission.mockImplementation((_permissions: unknown, code: string) => code === "field_returns:manage");
+      mockCancel.mockResolvedValue({ ok: true, storeId: "s1" });
+      const res = await cancelFieldReturnAction({ returnId: "r1", reason: "batal" });
+      expect(res).toEqual({ ok: true });
+      expect(mockHasPermission).toHaveBeenCalledWith(expect.anything(), "field_returns:manage");
+    });
+
+    it("returns INVALID_REQUEST for an empty returnId without calling the writer", async () => {
+      mockHasPermission.mockReturnValue(true);
+      const res = await cancelFieldReturnAction({ returnId: "", reason: "batal" });
+      expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
+      expect(mockCancel).not.toHaveBeenCalled();
+    });
+
+    it("returns INVALID_REQUEST for a non-string reason without calling the writer", async () => {
+      mockHasPermission.mockReturnValue(true);
+      const res = await cancelFieldReturnAction({ returnId: "r1", reason: null as unknown as string });
+      expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
+      expect(mockCancel).not.toHaveBeenCalled();
+    });
+
+    it("maps a writer INVALID_STATE onto its own code", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockCancel.mockRejectedValue(new FieldReturnError("INVALID_STATE"));
+      const res = await cancelFieldReturnAction({ returnId: "r1", reason: "batal" });
+      expect(res).toEqual({ ok: false, code: "INVALID_STATE" });
+    });
+
+    it("maps a writer MISSING_REASON onto INVALID_REQUEST", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockCancel.mockRejectedValue(new FieldReturnError("MISSING_REASON"));
+      const res = await cancelFieldReturnAction({ returnId: "r1", reason: " " });
+      expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
+    });
+
+    it("maps auth() itself throwing onto ERROR rather than letting it escape uncaught", async () => {
+      mockAuth.mockRejectedValue(new Error("jwt decrypt failed"));
+      const res = await cancelFieldReturnAction({ returnId: "r1", reason: "batal" });
+      expect(res).toEqual({ ok: false, code: "ERROR" });
+      expect(mockCancel).not.toHaveBeenCalled();
+    });
+
+    it("calls the writer with the current user id and revalidates the register, the detail and the store page", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockCancel.mockResolvedValue({ ok: true, storeId: "s1" });
+      const res = await cancelFieldReturnAction({ returnId: "r1", reason: "batal" });
+      expect(res).toEqual({ ok: true });
+      expect(mockCancel).toHaveBeenCalledWith({ returnId: "r1", cancelledById: "user-1", reason: "batal" });
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/field-returns");
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/field-returns/r1");
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/stores/s1");
     });
   });
 

@@ -8,6 +8,7 @@ import { receiveFieldReturn } from "@/lib/field-sales/retur/receive-writer";
 import { correctFieldReturnReceipt } from "@/lib/field-sales/retur/correct-receipt-writer";
 import { resolveFieldReturnLine } from "@/lib/field-sales/retur/resolve-writer";
 import { approveFieldReturn } from "@/lib/field-sales/retur/approve-writer";
+import { cancelFieldReturn } from "@/lib/field-sales/retur/cancel-writer";
 import { createFieldReturn } from "@/lib/field-sales/retur/writer";
 import { listPriceCandidates, resolveLinePrice } from "@/lib/field-sales/retur/pricing";
 import { round2 } from "@/lib/field-sales/retur/pricing-rules";
@@ -420,6 +421,43 @@ export async function approveAction(returnId: string): Promise<FieldReturnAction
   }
   revalidatePath("/backoffice/field-returns");
   revalidatePath(`/backoffice/field-returns/${returnId}`);
+  return { ok: true };
+}
+
+/**
+ * Cancels a retur the warehouse never received. The store detail page revalidates too — its
+ * in-transit admin retur figure (`getInTransitAdminReturnQty`) counts this one until now — which is
+ * why the writer hands back the `storeId`.
+ */
+export async function cancelFieldReturnAction(input: {
+  returnId: string;
+  reason: string;
+}): Promise<FieldReturnActionResult> {
+  let storeId = "";
+  try {
+    const g = await guard();
+    if ("ok" in g) return g;
+    if (
+      typeof input !== "object" ||
+      input === null ||
+      typeof input.returnId !== "string" ||
+      input.returnId === "" ||
+      typeof input.reason !== "string"
+    ) {
+      return { ok: false, code: "INVALID_REQUEST" };
+    }
+    const result = await cancelFieldReturn({
+      returnId: input.returnId,
+      cancelledById: g.userId,
+      reason: input.reason,
+    });
+    storeId = result.storeId;
+  } catch (e) {
+    return toResult(e);
+  }
+  revalidatePath("/backoffice/field-returns");
+  revalidatePath(`/backoffice/field-returns/${input.returnId}`);
+  revalidatePath(`/backoffice/stores/${storeId}`);
   return { ok: true };
 }
 
