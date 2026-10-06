@@ -3598,7 +3598,7 @@
       "notYetValuedBody": "The return's value will be computed automatically once this return is approved.",
       "incompleteTitle": "Valuation Incomplete",
       "incompleteBody": "{count} line(s) still need a price before this return can be fully valued.",
-      "incompleteBodyApproved": "{count} line(s) could not be priced and are permanently excluded from this return's total — values were locked at approval and cannot be changed from here.",
+      "incompleteBodyApproved": "{count} line(s) still have no price, so this return has no total yet and can't be offset until every line is priced.",
       "surplusNote": "This return has a line credited at the quantity the warehouse actually received, so its value may exceed the store's own paper nota.",
       "colCreditedQty": "Credited Qty",
       "colUnitPriceRef": "Unit Price (Reference)",
@@ -3612,7 +3612,7 @@
     },
     "credit": {
       "cardTitle": "Retur Credit",
-      "neverOffsettable": "This return's valuation was left incomplete at approval and can never be offset — values are frozen and there is no repricing path.",
+      "valuationIncomplete": "This return's valuation is incomplete — price the remaining lines to make it offsettable.",
       "availableBody": "Available to apply against this store's outstanding balance.",
       "appliedBody": "Applied to payment",
       "offsetAction": "Offset ke Piutang",
@@ -3736,12 +3736,14 @@
       "INVALID_REQUEST": "The submitted data was invalid. Reload the page and try again.",
       "ERROR": "Something went wrong. Please try again.",
       "PRICE_NOT_AVAILABLE": "The selected delivery is no longer a valid price source for this line. Reload the page and try again.",
-      "ALREADY_APPROVED": "This return has already been approved, so its price can no longer be changed.",
+      "ALREADY_APPROVED": "This return's value is final and can no longer be repriced.",
       "AUTO_PRICE_AVAILABLE": "This line has a valid automatic price from a delivery — a manual price is not allowed while that automatic price still applies."
     },
     "pricing": {
       "autoTitle": "Automatic Price",
       "autoBody": "This price will be taken automatically from delivery {docNo} ({price}).",
+      "autoBodyAfterApproval": "Delivery {docNo} prices this line at {price}. Apply it to value this line.",
+      "applyAutoPrice": "Apply This Price",
       "pickerLabel": "Choose the source delivery",
       "pickerPlaceholder": "Choose a delivery...",
       "pickerHint": "This store received this item from more than one delivery at a different price — choose one as this line's reference.",
@@ -3758,7 +3760,7 @@
       "unpriceableBody": "This item has never been delivered to this store, so there is no automatic price to use — enter a manual price with a note.",
       "successSet": "Line price saved."
     },
-    "approveConfirmValuationWarning": "{count} line(s) still have no price. They will still be approved and restored to stock, but their value will never be computed after this.",
+    "approveConfirmValuationWarning": "{count} line(s) still have no price. They will still be approved and restored to stock, and you can price them afterwards — but this return can't be offset until every line is priced.",
     "konsiStockWarning": {
       "loading": "Checking the impact on store stock…",
       "error": "Could not check the impact on store stock. You can still proceed with approval.",

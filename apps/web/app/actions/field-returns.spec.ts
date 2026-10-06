@@ -19,6 +19,7 @@ const {
   mockUpdateMany,
   mockListPriceCandidates,
   mockResolveLinePrice,
+  mockPriceApprovedReturnLine,
 } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   mockHasPermission: vi.fn(),
@@ -33,6 +34,7 @@ const {
   mockUpdateMany: vi.fn(),
   mockListPriceCandidates: vi.fn(),
   mockResolveLinePrice: vi.fn(),
+  mockPriceApprovedReturnLine: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
@@ -46,6 +48,7 @@ vi.mock("@/lib/field-sales/retur/resolve-writer", () => ({ resolveFieldReturnLin
 vi.mock("@/lib/field-sales/retur/approve-writer", () => ({ approveFieldReturn: mockApprove }));
 vi.mock("@/lib/field-sales/retur/cancel-writer", () => ({ cancelFieldReturn: mockCancel }));
 vi.mock("@/lib/field-sales/retur/writer", () => ({ createFieldReturn: mockCreateFieldReturn }));
+vi.mock("@/lib/field-sales/retur/valuation-writer", () => ({ priceApprovedReturnLine: mockPriceApprovedReturnLine }));
 vi.mock("@/lib/field-sales/retur/pricing", () => ({
   listPriceCandidates: mockListPriceCandidates,
   resolveLinePrice: mockResolveLinePrice,
@@ -81,6 +84,7 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
     mockUpdateMany.mockReset();
     mockListPriceCandidates.mockReset();
     mockResolveLinePrice.mockReset();
+    mockPriceApprovedReturnLine.mockReset();
     mockAuth.mockResolvedValue({
       user: { id: "user-1", permissions: ["field_returns:manage", "field_returns:writeoff"] },
     });
@@ -840,12 +844,57 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
       expect(mockUpdateMany).not.toHaveBeenCalled();
     });
 
-    it("refuses to reprice an already-approved retur — values are frozen at approval", async () => {
+    it("refuses to reprice an approved retur whose value is already VALUED — that value is final", async () => {
       mockHasPermission.mockReturnValue(true);
-      mockFindLine.mockResolvedValue({ id: "l1", returnDoc: { id: "r1", status: "APPROVED", storeId: "s1" } });
+      mockFindLine.mockResolvedValue({
+        id: "l1",
+        returnDoc: { id: "r1", status: "APPROVED", valuationStatus: "VALUED", storeId: "s1" },
+      });
       const res = await setLinePriceAction({ lineId: "l1", deliveryLineId: "d1" });
       expect(res).toEqual({ ok: false, code: "ALREADY_APPROVED" });
       expect(mockUpdateMany).not.toHaveBeenCalled();
+      expect(mockPriceApprovedReturnLine).not.toHaveBeenCalled();
+    });
+
+    /*
+     * An approved retur still at valuationStatus PENDING is finished through its own serializable
+     * writer, never through the pre-approval updateMany — that compare-and-swap is pinned to the
+     * open statuses and would always miss an APPROVED retur.
+     */
+    it("hands an approved retur with a PENDING valuation to the post-approval writer", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockFindLine.mockResolvedValue({
+        id: "l1",
+        itemId: "item-1",
+        variantSku: "M",
+        returnDoc: { id: "r1", status: "APPROVED", valuationStatus: "PENDING", storeId: "s1" },
+      });
+      mockPriceApprovedReturnLine.mockResolvedValue({ ok: true, valued: true });
+      const res = await setLinePriceAction({ lineId: "l1", manualUnitPrice: 500, note: "harga nota toko" });
+      expect(res).toEqual({ ok: true });
+      expect(mockPriceApprovedReturnLine).toHaveBeenCalledWith({
+        lineId: "l1",
+        manualUnitPrice: 500,
+        note: "harga nota toko",
+        userId: "user-1",
+      });
+      expect(mockUpdateMany).not.toHaveBeenCalled();
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/field-returns");
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/field-returns/r1");
+    });
+
+    it("passes the post-approval writer's refusal code straight through", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockFindLine.mockResolvedValue({
+        id: "l1",
+        itemId: "item-1",
+        variantSku: "M",
+        returnDoc: { id: "r1", status: "APPROVED", valuationStatus: "PENDING", storeId: "s1" },
+      });
+      mockPriceApprovedReturnLine.mockResolvedValue({ ok: false, code: "PRICE_NOT_AVAILABLE" });
+      const res = await setLinePriceAction({ lineId: "l1", deliveryLineId: "d-other" });
+      expect(res).toEqual({ ok: false, code: "PRICE_NOT_AVAILABLE" });
+      expect(mockRevalidatePath).not.toHaveBeenCalled();
     });
 
     /*

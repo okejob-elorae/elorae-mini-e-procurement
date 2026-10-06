@@ -9,6 +9,7 @@ import { correctFieldReturnReceipt } from "@/lib/field-sales/retur/correct-recei
 import { resolveFieldReturnLine } from "@/lib/field-sales/retur/resolve-writer";
 import { approveFieldReturn } from "@/lib/field-sales/retur/approve-writer";
 import { cancelFieldReturn } from "@/lib/field-sales/retur/cancel-writer";
+import { priceApprovedReturnLine } from "@/lib/field-sales/retur/valuation-writer";
 import { createFieldReturn } from "@/lib/field-sales/retur/writer";
 import { listPriceCandidates, resolveLinePrice } from "@/lib/field-sales/retur/pricing";
 import { round2 } from "@/lib/field-sales/retur/pricing-rules";
@@ -466,9 +467,9 @@ export async function cancelFieldReturnAction(input: {
  * Lets an admin resolve a price the auto-resolve at approval could not pick on its own —
  * either by pointing at one of this line's own genuine delivery candidates, or by recording a
  * manual price with a required note. `resolveFieldReturnLine`'s own writer only touches
- * resolutions; this one writes the pricing columns directly since there is no dedicated
- * pricing writer file, matching this file's existing shape of guard + write inside one
- * try/catch so `auth()` can never escape uncaught.
+ * resolutions; this one writes an open retur's pricing columns directly since there is no
+ * dedicated pre-approval pricing writer file, matching this file's existing shape of guard +
+ * write inside one try/catch so `auth()` can never escape uncaught.
  *
  * The delivery branch is the security-relevant one: `deliveryLineId` arrives from the client,
  * so it MUST be re-verified against `listPriceCandidates` for this exact line's store + item +
@@ -491,6 +492,12 @@ export async function cancelFieldReturnAction(input: {
  * below is the real guard: it repeats the same status condition as part of the write itself, and
  * a `count` of zero means the retur moved out from under this call, so nothing was written and
  * the caller is told `ALREADY_APPROVED` rather than a success that silently wrote nothing.
+ *
+ * An APPROVED retur whose `valuationStatus` is still PENDING (approved with a line nobody could
+ * price) is handed to `priceApprovedReturnLine`, which values the line from its stamped
+ * `creditedQty`, re-totals the header and flips it VALUED once every line has a value — under the
+ * same server-side re-verification as above. A VALUED retur is final and keeps refusing
+ * `ALREADY_APPROVED`: its value can already have been drawn on.
  */
 export async function setLinePriceAction(input: SetLinePriceInput): Promise<FieldReturnActionResult> {
   try {
@@ -504,13 +511,21 @@ export async function setLinePriceAction(input: SetLinePriceInput): Promise<Fiel
         id: true,
         itemId: true,
         variantSku: true,
-        returnDoc: { select: { id: true, status: true, storeId: true } },
+        returnDoc: { select: { id: true, status: true, valuationStatus: true, storeId: true } },
       },
     });
     if (!line) return { ok: false, code: "NOT_FOUND" };
     /* CANCELLED is not "already approved" — a wrong code sends whoever debugs this to the
        wrong place, so it keeps the existing generic wrong-state code instead. */
     if (line.returnDoc.status === "CANCELLED") return { ok: false, code: "INVALID_STATE" };
+    if (line.returnDoc.status === "APPROVED") {
+      if (line.returnDoc.valuationStatus === "VALUED") return { ok: false, code: "ALREADY_APPROVED" };
+      const priced = await priceApprovedReturnLine({ ...input, userId: g.userId });
+      if (!priced.ok) return { ok: false, code: priced.code };
+      revalidatePath("/backoffice/field-returns");
+      revalidatePath(`/backoffice/field-returns/${line.returnDoc.id}`);
+      return { ok: true };
+    }
     if (!PRICEABLE_STATUS_SET.has(line.returnDoc.status)) return { ok: false, code: "ALREADY_APPROVED" };
 
     if ("deliveryLineId" in input) {

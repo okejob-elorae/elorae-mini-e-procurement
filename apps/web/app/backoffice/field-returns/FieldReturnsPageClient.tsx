@@ -208,13 +208,11 @@ export function FieldReturnsPageClient(props: Props) {
                   <TableBody>
                     {props.rows.map((r) => {
                       /*
-                       * Two distinct markers. `valuationIncomplete` is only APPROVED + PENDING, a
-                       * genuine, permanent gap — every not-yet-approved retur reads PENDING by
-                       * default (valuationStatus is only stamped VALUED/PENDING at approval), so
-                       * flagging it pre-approval would mark every open retur "incomplete" even when
-                       * nothing is actually wrong yet. `needsPriceLineCount` is the pre-approval
-                       * counterpart: open lines an admin can still price, so it is actionable
-                       * rather than permanent.
+                       * Two distinct markers. `valuationIncomplete` is only APPROVED + PENDING, a real gap that stays
+                       * open until an admin prices the remaining lines — every not-yet-approved retur reads PENDING by
+                       * default (valuationStatus is only stamped VALUED/PENDING at approval), so flagging it
+                       * pre-approval would mark every open retur "incomplete" even when nothing is actually wrong yet.
+                       * `needsPriceLineCount` is the pre-approval counterpart: open lines an admin can still price.
                        */
                       const valuationIncomplete = r.status === "APPROVED" && r.valuationStatus === "PENDING";
                       const totalValue = r.totalValue;

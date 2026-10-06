@@ -187,9 +187,11 @@ export type FieldReturnPriceState = "AUTO" | "AMBIGUOUS" | "UNPRICEABLE" | "SET"
 
 /**
  * Shared with setLinePriceAction (app/actions/field-returns.ts), which imports this rather than
- * keeping its own copy — a retur is priceable only while still open; once APPROVED its values
- * are frozen. Kept as an array (not just a Set) because setLinePriceAction's compare-and-swap
- * needs it as a Prisma `in` filter, not only a `.has()` lookup.
+ * keeping its own copy — the statuses in which a retur is priceable through the pre-approval
+ * path. Once APPROVED, only a retur whose valuation is still PENDING can be priced, through its
+ * own post-approval writer; a VALUED one is frozen. Kept as an array (not just a Set) because
+ * setLinePriceAction's compare-and-swap needs it as a Prisma `in` filter, not only a `.has()`
+ * lookup.
  */
 export const PRICEABLE_STATUSES = ["PENDING_WAREHOUSE_RECEIVING", "MISMATCH_PENDING_RESOLUTION", "PENDING_APPROVAL"] as const;
 export const PRICEABLE_STATUS_SET: ReadonlySet<string> = new Set(PRICEABLE_STATUSES);
@@ -222,7 +224,7 @@ export type FieldReturnLineDetail = {
   priceDeliveryDocNo: string | null;
   priceNote: string | null;
   priceState: FieldReturnPriceState;
-  /** Only populated while the retur has not yet been approved — values are frozen after that. */
+  /** Only populated while the retur can still be priced: not yet approved, or approved with its valuation still PENDING. */
   priceCandidates?: PriceCandidate[];
 };
 
@@ -338,13 +340,16 @@ export async function getFieldReturnById(
   const docNoByDeliveryLineId = new Map(deliveryLines.map((dl) => [dl.id, dl.delivery.docNo]));
 
   /*
-   * Candidates are only meaningful while the retur can still be repriced by a viewer who is
-   * actually allowed to reprice it. Gated on BOTH conditions LinePriceControls itself requires
-   * (canManage + PRICEABLE_STATUS_SET), not just "not yet APPROVED" — a CANCELLED retur and a
-   * viewer with no field_returns:manage can never see the controls either, and firing one
-   * listPriceCandidates query per line for them was pure waste.
+   * Candidates are only meaningful while the retur can still be priced by a viewer who is
+   * actually allowed to price it — the same conditions setLinePriceAction accepts and the detail
+   * page renders LinePriceControls on: canManage, plus either an open status or an APPROVED retur
+   * whose valuation is still PENDING (approved with a line nobody could price). A CANCELLED or
+   * VALUED retur and a viewer with no field_returns:manage never see the controls, and firing
+   * one listPriceCandidates query per line for them would be pure waste.
    */
-  const isOpenForPricing = (opts?.canManage ?? false) && PRICEABLE_STATUS_SET.has(r.status);
+  const isOpenForPricing =
+    (opts?.canManage ?? false) &&
+    (PRICEABLE_STATUS_SET.has(r.status) || (r.status === "APPROVED" && r.valuationStatus === "PENDING"));
   const candidatesByLineId = new Map<string, PriceCandidate[]>();
   if (isOpenForPricing) {
     await Promise.all(
