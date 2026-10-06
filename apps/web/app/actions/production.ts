@@ -13,6 +13,7 @@ import { calculateMovingAverage } from '@/lib/inventory/costing';
 import { getActorName, notifyWOCreated, notifyWOStatusUpdated, notifyWOMaterialsIssued, notifyWOCompleted } from '@/app/actions/notifications';
 import { getPpnRatePercent } from '@/app/actions/settings/ppn';
 import { auth } from '@/lib/auth';
+import { assertActor } from "@/lib/auth/assert-actor";
 import { logAudit } from '@/lib/audit';
 import { requirePermission, hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { postFgReceiptJournal } from '@/lib/production/fg-receipt-journal';
@@ -277,6 +278,7 @@ export async function createWorkOrder(
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_CREATE);
+  assertActor(session.user.id, userId);
 
   woSchema.parse(data);
 
@@ -567,6 +569,7 @@ export async function issueWorkOrder(id: string, userId: string) {
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_MANAGE);
+  assertActor(session.user.id, userId);
 
   const wo = await prisma.workOrder.findUnique({
     where: { id }
@@ -631,6 +634,7 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_MANAGE);
+  assertActor(session.user.id, userId);
 
   const validated = issueSchema.parse(data);
 
@@ -963,6 +967,7 @@ export async function issueAdditionalMaterials(
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_MANAGE);
+  assertActor(session.user.id, userId);
 
   const wo = await prisma.workOrder.findUnique({
     where: { id: woId },
@@ -1076,6 +1081,7 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_MANAGE);
+  assertActor(session.user.id, userId);
 
   receiptSchema.parse(data);
 
@@ -1325,6 +1331,7 @@ export async function cancelWorkOrder(id: string, userId: string, reason?: strin
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_MANAGE);
+  assertActor(session.user.id, userId);
 
   const wo = await prisma.workOrder.findUnique({
     where: { id },

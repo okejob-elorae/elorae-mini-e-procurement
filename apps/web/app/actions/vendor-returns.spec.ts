@@ -34,7 +34,12 @@ vi.mock("@/app/actions/notifications", () => ({
   notifyVendorReturnStatusUpdated: vi.fn(),
 }));
 
-import { createVendorReturn, updateVendorReturn } from "./vendor-returns";
+import {
+  completeReturn,
+  createVendorReturn,
+  processReturn,
+  updateVendorReturn,
+} from "./vendor-returns";
 
 const input = {
   vendorId: "v1",
@@ -86,4 +91,52 @@ describe("vendor return line valuation on a null-spelled variantless inventory r
     await createVendorReturn(input, "u1");
     expect(valuedLines(mockVrCreate.mock.calls[0][0])[0].costValue).toBe(0);
   });
+});
+
+describe("vendor return actor trust", () => {
+  const FORBIDDEN = "Forbidden: actor does not match the session";
+  const completeInput = {} as never;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
+  });
+
+  it.each([
+    ["createVendorReturn", () => createVendorReturn(input, "someone-else")],
+    ["processReturn", () => processReturn("r1", "someone-else")],
+    ["completeReturn", () => completeReturn("r1", "someone-else", completeInput)],
+  ] as Array<[string, () => Promise<unknown>]>)(
+    "%s refuses a claimed id that is not the session user and writes nothing",
+    async (_name, call) => {
+      await expect(call()).rejects.toThrow(FORBIDDEN);
+      expect(mockVrCreate).not.toHaveBeenCalled();
+      expect(mockVrUpdate).not.toHaveBeenCalled();
+      expect(mockVrFindUnique).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    ["processReturn", () => processReturn("r1", "u1")],
+    ["completeReturn", () => completeReturn("r1", "u1", completeInput)],
+  ] as Array<[string, () => Promise<unknown>]>)(
+    "%s rejects an unauthenticated caller",
+    async (_name, call) => {
+      mockAuth.mockResolvedValue(null);
+      await expect(call()).rejects.toThrow("Unauthorized");
+      expect(mockVrFindUnique).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    ["processReturn", () => processReturn("r1", "u1")],
+    ["completeReturn", () => completeReturn("r1", "u1", completeInput)],
+  ] as Array<[string, () => Promise<unknown>]>)(
+    "%s rejects a caller without vendor_returns:manage",
+    async (_name, call) => {
+      mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["vendor_returns:create"] } });
+      await expect(call()).rejects.toThrow("Forbidden: Insufficient permissions");
+      expect(mockVrFindUnique).not.toHaveBeenCalled();
+    }
+  );
 });
