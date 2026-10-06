@@ -4808,7 +4808,7 @@
       "LINES_UNMATCHED": "{count, plural, =0 {This settlement has no order lines, so nothing shows which sales its income belongs to. Re-upload the settlement file, or record it with a manual journal.} other {# settlement line(s) aren't matched to a sales order yet. Fetch the missing orders from Jubelio and match again before posting.}}",
       "ORIGINAL_SALE_NOT_SHIPPED": "{count} line(s) belong to orders that aren't shipped or completed yet, and the sales journal sweep only journals shipped orders. This posts once those orders read shipped and the sweep has journaled them; if they never will (cancelled, for example), record this settlement with a manual journal instead.",
       "ORIGINAL_SALE_NOT_JOURNALED_YET": "{count} line(s) belong to sales whose revenue journal hasn't posted yet. The sales journal sweep runs every 5 minutes. Try again after it has posted them.",
-      "ORIGINAL_SALE_OUTSIDE_LEDGER": "{count} line(s) belong to sales from before the GL cutover, which this ledger never recorded, so it cannot credit their receivable. Record this settlement with a manual journal instead.",
+      "ORIGINAL_SALE_OUTSIDE_LEDGER": "{count} line(s) belong to sales this ledger never recorded revenue for — from before the GL cutover, or recorded at zero value although the marketplace still paid income on them — so it cannot credit their receivable. Record this settlement with a manual journal instead.",
       "GL_CUTOVER_NOT_CONFIGURED": "The GL cutover date isn't set, so no sales are being journaled and there is no receivable on the books for this settlement to credit. Ask finance to set the cutover first."
     },
     "resyncButton": "Fetch {count} order(s) from Jubelio",

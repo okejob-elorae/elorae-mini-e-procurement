@@ -64,7 +64,8 @@ export type SaleLeg = "SALESORDER_REVENUE" | "SALESORDER_COGS";
  * The marketplace settlement journal gate (`settlementGate` in
  * `lib/finance/settlement/journal.ts`) consumes these codes too, through
  * `classifySaleLegs`, and refines two of them for its own remedy: a zero-value
- * order does not block a settlement at all, and an unswept order the sweep will
+ * order whose settlement line also carries no amounts does not block a
+ * settlement at all, and an unswept order the sweep will
  * never admit reports `ORIGINAL_SALE_NOT_SHIPPED` there instead of
  * `ORIGINAL_SALE_NOT_JOURNALED_YET`. Neither refinement applies to returns; the
  * never-shipped blind spot on this side is logged in `docs/FOLLOWUPS.md`.

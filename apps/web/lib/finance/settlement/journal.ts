@@ -47,6 +47,37 @@ const GATE_PRIORITY: SettlementGateCode[] = [
 ];
 
 /**
+ * Marketplaces whose parser stores every money figure of a line in the line's own columns. The
+ * TikTok parser stores only `netIncome` and keeps its fees in `raw` (see its own note), so a
+ * TikTok line with zero payout can still carry fees that `totalPendapatan` includes.
+ */
+const LINE_AMOUNTS_COMPLETE: ReadonlySet<string> = new Set(["SHOPEE"]);
+
+type SettlementLineAmounts = {
+  netIncome: Prisma.Decimal;
+  hargaAsliProduk: Prisma.Decimal;
+  totalDiskonProduk: Prisma.Decimal;
+  biayaAdministrasi: Prisma.Decimal;
+  biayaLayanan: Prisma.Decimal;
+  biayaKomisiAms: Prisma.Decimal;
+  biayaProsesPesanan: Prisma.Decimal;
+};
+
+/* True only when the line provably adds nothing to the settlement's income or fees. */
+function lineAmountsAreZero(line: SettlementLineAmounts, marketplace: string): boolean {
+  if (!LINE_AMOUNTS_COMPLETE.has(marketplace)) return false;
+  return [
+    line.netIncome,
+    line.hargaAsliProduk,
+    line.totalDiskonProduk,
+    line.biayaAdministrasi,
+    line.biayaLayanan,
+    line.biayaKomisiAms,
+    line.biayaProsesPesanan,
+  ].every((amount) => Math.abs(Number(amount)) < 0.01);
+}
+
+/**
  * `null` when every line of the settlement belongs to a sales order whose
  * `SALESORDER_REVENUE` journal stands, otherwise the refusal and how many LINES
  * it covers.
@@ -68,22 +99,43 @@ const GATE_PRIORITY: SettlementGateCode[] = [
  * `ORIGINAL_SALE_OUTSIDE_LEDGER`; its remedy is a manual journal.
  *
  * Two refinements over `classifySaleLegs`, both because a settlement must never
- * wait on a journal the sweep will never post. A matched order worth nothing
- * (`grandTotal` under 0.01, the floor the revenue writer itself applies) has no
- * revenue journal to wait for and contributes nothing to the credit, so it does
- * not block, on either side of the cutover. And an order the sweep will not
- * admit (`isSweepEligibleOrder` false) is `ORIGINAL_SALE_NOT_SHIPPED` rather
- * than `ORIGINAL_SALE_NOT_JOURNALED_YET`: it posts once the order reads shipped
- * and the sweep journals it, and otherwise needs a manual journal. Neither
- * applies while the cutover is unset, since then no sale is journaled at all.
+ * wait on a journal the sweep will never post.
+ *
+ * A line whose matched order is worth nothing (`grandTotal` under 0.01, the
+ * floor the revenue writer itself applies) AND whose own amounts are all zero
+ * does not block, on either side of the cutover: no revenue journal will ever
+ * exist for it, and it adds nothing to `totalPendapatan`. Both halves are
+ * needed. The credit is built from the settlement's own income figures, not
+ * from the order, so a voucher-covered order at `grandTotal` 0 whose line the
+ * marketplace still paid income on would put that income on AR with nothing
+ * debiting it — such a line keeps `classifySaleLegs`' refusal,
+ * `ORIGINAL_SALE_OUTSIDE_LEDGER`, whose remedy is a manual journal. The line
+ * test only trusts a marketplace whose lines store their whole breakdown
+ * (`LINE_AMOUNTS_COMPLETE`); anywhere else a zero-value line refuses too.
+ *
+ * And an order the sweep will not admit (`isSweepEligibleOrder` false) is
+ * `ORIGINAL_SALE_NOT_SHIPPED` rather than `ORIGINAL_SALE_NOT_JOURNALED_YET`: it
+ * posts once the order reads shipped and the sweep journals it, and otherwise
+ * needs a manual journal. Neither refinement applies while the cutover is
+ * unset, since then no sale is journaled at all.
  */
 async function settlementGate(
   settlementId: string,
+  marketplace: string,
   tx: Prisma.TransactionClient,
 ): Promise<{ code: SettlementGateCode; count: number } | null> {
   const lines = await tx.settlementLine.findMany({
     where: { settlementId },
-    select: { matchedSalesOrderId: true },
+    select: {
+      matchedSalesOrderId: true,
+      netIncome: true,
+      hargaAsliProduk: true,
+      totalDiskonProduk: true,
+      biayaAdministrasi: true,
+      biayaLayanan: true,
+      biayaKomisiAms: true,
+      biayaProsesPesanan: true,
+    },
   });
   if (lines.length === 0) return { code: "LINES_UNMATCHED", count: 0 };
   const orderIds = lines.flatMap((l) => (l.matchedSalesOrderId == null ? [] : [l.matchedSalesOrderId]));
@@ -111,7 +163,7 @@ async function settlementGate(
     const orderId = line.matchedSalesOrderId;
     const verdict = orderId == null ? "ORIGINAL_SALE_UNLINKED" : verdicts.get(orderId);
     if (verdict === null) continue;
-    if (orderId != null && zeroValue.has(orderId)) continue;
+    if (orderId != null && zeroValue.has(orderId) && lineAmountsAreZero(line, marketplace)) continue;
     let code: SettlementGateCode;
     if (verdict === undefined || verdict === "ORIGINAL_SALE_UNLINKED") code = "LINES_UNMATCHED";
     else if (verdict === "ORIGINAL_SALE_NOT_JOURNALED_YET" && orderId != null && notShipped.has(orderId)) {
@@ -160,6 +212,7 @@ export async function postSettlementJournal(
       totalPengeluaran: true,
       totalPendapatan: true,
       seller: true,
+      marketplace: true,
       periodTo: true,
     },
   });
@@ -248,7 +301,7 @@ export async function postSettlementJournal(
      * `matchSettlement` rewrites `matchedSalesOrderId` under it.
      */
     await lockSettlementRow(tx, s.id);
-    const gate = await settlementGate(s.id, tx);
+    const gate = await settlementGate(s.id, s.marketplace, tx);
     /* Write-free so far (the lock is a read), so this return commits nothing. */
     if (gate != null) return { ok: false as const, code: gate.code, count: gate.count };
     const res = await postJournal(tx, {

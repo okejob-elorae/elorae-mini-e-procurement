@@ -749,18 +749,51 @@ d("postSettlementJournal (test bed only)", () => {
     expect(s.status).toBe("RECONCILED");
   });
 
-  it("does not block on a zero-value matched order that predates the cutover", async () => {
-    await unjournalTheOrder();
+  /* A voucher-covered order: nothing to journal on the order, so only the line's own amounts decide. */
+  async function zeroTheOrder(): Promise<void> {
     await prisma.salesOrder.update({ where: { id: orderId }, data: { subTotal: 0, grandTotal: 0 } });
+  }
+
+  async function zeroTheLines(): Promise<void> {
+    await prisma.settlementLine.updateMany({ where: { settlementId: seededId(settlementId) }, data: { netIncome: 0 } });
+  }
+
+  it("does not block on a zero-value order whose line carries nothing, before the cutover", async () => {
+    await unjournalTheOrder();
+    await zeroTheOrder();
+    await zeroTheLines();
     await setCutover(CUTOVER_AFTER_THE_SALE);
     expect(await postSettlementJournal(settlementId, adminId, prisma)).toMatchObject({ ok: true, created: true });
   });
 
-  it("does not block on a zero-value matched order above the cutover either", async () => {
+  it("does not block on a zero-value order whose line carries nothing, above the cutover", async () => {
     await unjournalTheOrder();
-    await prisma.salesOrder.update({ where: { id: orderId }, data: { subTotal: 0, grandTotal: 0 } });
+    await zeroTheOrder();
+    await zeroTheLines();
     await setCutover(CUTOVER_BEFORE_THE_SALE);
     expect(await postSettlementJournal(settlementId, adminId, prisma)).toMatchObject({ ok: true, created: true });
+  });
+
+  it("refuses ORIGINAL_SALE_OUTSIDE_LEDGER for a zero-value order whose line the marketplace still paid income on", async () => {
+    await unjournalTheOrder();
+    await zeroTheOrder();
+    await setCutover(CUTOVER_BEFORE_THE_SALE);
+    const r = await postSettlementJournal(settlementId, adminId, prisma);
+    expect(r).toEqual({ ok: false, code: "ORIGINAL_SALE_OUTSIDE_LEDGER", count: 1 });
+    expect(await settlementJournalCount()).toBe(0);
+    const s = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
+    expect(s.status).toBe("MATCHED");
+  });
+
+  it("refuses a zero-value TikTok line, whose stored columns cannot show its fees", async () => {
+    await unjournalTheOrder();
+    await zeroTheOrder();
+    await zeroTheLines();
+    await prisma.settlement.update({ where: { id: settlementId }, data: { marketplace: "TIKTOK" } });
+    await setCutover(CUTOVER_BEFORE_THE_SALE);
+    const r = await postSettlementJournal(settlementId, adminId, prisma);
+    expect(r).toEqual({ ok: false, code: "ORIGINAL_SALE_OUTSIDE_LEDGER", count: 1 });
+    expect(await settlementJournalCount()).toBe(0);
   });
 
   it("refuses ORIGINAL_SALE_NOT_SHIPPED when the matched sale is one the sweep will not journal", async () => {
