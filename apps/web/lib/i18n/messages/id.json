@@ -3824,7 +3824,12 @@
           "UNEXPECTED": "Terjadi kesalahan. Coba lagi."
         }
       },
-      "createdBySystem": "Sistem"
+      "createdBySystem": "Sistem",
+      "returInFlight": {
+        "title": "Retur dalam perjalanan saat perhitungan",
+        "body": "Retur {docNos} mengambil barang dari rak toko ini sebelum perhitungan dan belum selesai saat perhitungan dilakukan. Selisih kurang pada baris yang ditandai di bawah bisa jadi barang retur tersebut, bukan susut.",
+        "lineHint": "termasuk {qty} unit retur dalam perjalanan"
+      }
     },
     "footer": {
       "tally": "{counted}/{total} terhitung",
@@ -3886,6 +3891,7 @@
       "INVALID_REQUEST": "Data yang dikirim tidak valid. Muat ulang halaman dan coba lagi.",
       "DUPLICATE_LINE": "Barang dan varian ini sudah ada pada dokumen ini.",
       "TRANSFER_PENDING": "Transfer toko {detail} memindahkan barang yang dihitung di perhitungan ini sebelum perhitungan dilakukan, dan masih menunggu persetujuan. Setujui transfer tersebut terlebih dahulu, lalu setujui perhitungan ini. Jika transfernya keliru, batalkan lalu buat ulang dengan barang dan waktu pemindahan yang benar.",
+      "RETUR_PENDING": "Retur {detail} mengambil barang yang dihitung di perhitungan ini dari rak sebelum perhitungan dilakukan, dan belum selesai. Terima dan setujui retur tersebut terlebih dahulu (atau batalkan jika barangnya tidak pernah dikirim), lalu setujui perhitungan ini.",
       "NO_ASSIGNED_STORE": "Anda tidak ditugaskan ke toko manapun.",
       "NO_ACTIVE_VISIT": "Anda harus check-in di toko Anda terlebih dahulu.",
       "ERROR": "Terjadi kesalahan. Coba lagi."

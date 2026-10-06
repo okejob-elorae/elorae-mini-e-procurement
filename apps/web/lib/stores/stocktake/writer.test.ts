@@ -459,6 +459,8 @@ d("store stocktake writer (test bed only)", () => {
     const id = await countThroughSave({ itemId: itemMainId, expectedQty: 10, countedQty: 8, cause: "SHRINKAGE", reason: "two units on a retur" });
     /* The retur settles after the count: its store row lands now, −2 → StoreStock 8. */
     await moveAfterCount(itemMainId, -2, "FieldReturn", returnId);
+    /* The retur must be settled before the count can approve (RETUR_PENDING), so model its approval too. */
+    await prisma.fieldReturn.update({ where: { id: returnId }, data: { status: "APPROVED", approvedAt: new Date() } });
 
     await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
 
@@ -608,7 +610,7 @@ d("store stocktake writer (test bed only)", () => {
 
   it("still re-applies the store row of a retur raised after the count", async () => {
     const id = await countThroughSave({ itemId: itemMainId, expectedQty: 10, countedQty: 10 });
-    /* Raised after the count was saved, so its goods left a shelf the count had already seen full. */
+    /* Raised after the count was saved, so its goods left a shelf the count had already seen full — and, still open, it does not refuse RETUR_PENDING. */
     const returnId = await raiseRetur(2);
     await moveAfterCount(itemMainId, -2, "FieldReturn", returnId);
 
@@ -617,6 +619,81 @@ d("store stocktake writer (test bed only)", () => {
     const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId) } });
     expect(Number(ss.qty)).toBe(8);
     expect(await stocktakeLedgerRows(id, itemMainId)).toHaveLength(0);
+  });
+
+  /* RETUR_PENDING — a retur raised before the count, still open, on a counted key at a KONSI store */
+
+  /* A retur of itemMain raised a minute before the count (test-only backdating), still PENDING_WAREHOUSE_RECEIVING. */
+  const raiseReturBeforeCount = async (qty: number) => {
+    const returnId = await raiseRetur(qty);
+    const { docNo } = await prisma.fieldReturn.update({
+      where: { id: returnId },
+      data: { createdAt: new Date(Date.now() - 60_000) },
+      select: { docNo: true },
+    });
+    return { returnId, docNo };
+  };
+
+  it("refuses RETUR_PENDING while a retur raised before the count on a counted key is still open, and writes nothing", async () => {
+    const { docNo } = await raiseReturBeforeCount(3);
+    const id = await countThroughSave({ itemId: itemMainId, expectedQty: 10, countedQty: 7, cause: "SHRINKAGE", reason: "three on a retur" });
+
+    await expect(approveStoreStocktake({ stocktakeId: id, approvedById: adminId })).rejects.toMatchObject({ code: "RETUR_PENDING", detail: docNo });
+
+    const st = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } });
+    expect(st.status).toBe("PENDING_VERIFICATION");
+    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId) } });
+    expect(Number(ss.qty)).toBe(10);
+    expect(await stocktakeLedgerRows(id, itemMainId)).toHaveLength(0);
+  });
+
+  it("approves once that retur is settled, without taking its units off twice", async () => {
+    const { returnId } = await raiseReturBeforeCount(3);
+    const id = await countThroughSave({ itemId: itemMainId, expectedQty: 10, countedQty: 7, cause: "SHRINKAGE", reason: "three on a retur" });
+    await expect(approveStoreStocktake({ stocktakeId: id, approvedById: adminId })).rejects.toMatchObject({ code: "RETUR_PENDING" });
+
+    /* The retur settles: its store row lands (−3 → StoreStock 7) and it is APPROVED, test-only. */
+    await moveAfterCount(itemMainId, -3, "FieldReturn", returnId);
+    await prisma.fieldReturn.update({ where: { id: returnId }, data: { status: "APPROVED", approvedAt: new Date() } });
+
+    await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId) } });
+    expect(Number(ss.qty)).toBe(7);
+    expect(await stocktakeLedgerRows(id, itemMainId)).toHaveLength(0);
+  });
+
+  it("does not refuse RETUR_PENDING over an open retur of an item this count never counted", async () => {
+    /* The retur takes itemMain; this partial count only counted itemZero. */
+    await raiseReturBeforeCount(3);
+    const id = await countThroughSave({ itemId: itemZeroId, expectedQty: 0, countedQty: 0 });
+
+    await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+    const st = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } });
+    expect(st.status).toBe("APPROVED");
+  });
+
+  it("does not refuse RETUR_PENDING over a CANCELLED retur raised before the count", async () => {
+    const { returnId } = await raiseReturBeforeCount(3);
+    await prisma.fieldReturn.update({ where: { id: returnId }, data: { status: "CANCELLED" } });
+    const id = await countThroughSave({ itemId: itemMainId, expectedQty: 10, countedQty: 10 });
+
+    await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+    const st = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } });
+    expect(st.status).toBe("APPROVED");
+  });
+
+  it("does not refuse RETUR_PENDING at a PUTUS store, where a retur never moves StoreStock", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { termsType: "PUTUS" } });
+    await raiseReturBeforeCount(3);
+    const id = await countThroughSave({ itemId: itemMainId, expectedQty: 10, countedQty: 7, cause: "SHRINKAGE", reason: "three on a retur" });
+
+    await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId) } });
+    expect(Number(ss.qty)).toBe(7);
   });
 
   it("does not re-apply a movement recorded before the count was saved", async () => {

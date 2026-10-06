@@ -7,7 +7,8 @@ export type StoreStocktakeErrorCode =
   | "ITEM_NOT_FOUND"
   | "INVALID_REQUEST"
   | "DUPLICATE_LINE"
-  | "TRANSFER_PENDING";
+  | "TRANSFER_PENDING"
+  | "RETUR_PENDING";
 
 export class StoreStocktakeError extends Error {
   constructor(

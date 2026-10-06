@@ -3824,7 +3824,12 @@
           "UNEXPECTED": "Something went wrong. Try again."
         }
       },
-      "createdBySystem": "System"
+      "createdBySystem": "System",
+      "returInFlight": {
+        "title": "Returns in transit at the count",
+        "body": "Return {docNos} took goods off this store's shelf before the count and had not been settled when the count was taken. A shortfall on the lines marked below may be those returned units rather than shrinkage.",
+        "lineHint": "includes {qty} units on a return in transit"
+      }
     },
     "footer": {
       "tally": "{counted}/{total} counted",
@@ -3886,6 +3891,7 @@
       "INVALID_REQUEST": "The submitted data was invalid. Reload the page and try again.",
       "DUPLICATE_LINE": "That item and variant is already on this document.",
       "TRANSFER_PENDING": "Store transfer {detail} moved goods this count includes before the count was taken, and is still pending. Approve it first, then approve this count. If the transfer is wrong, cancel it and raise it again with the right items and move time.",
+      "RETUR_PENDING": "Return {detail} took goods this count includes off the shelf before the count, and has not been settled yet. Receive and approve it first (or cancel it if it was never sent), then approve this count.",
       "NO_ASSIGNED_STORE": "You are not assigned to a store.",
       "NO_ACTIVE_VISIT": "You must be checked in at your store first.",
       "ERROR": "Something went wrong. Please try again."

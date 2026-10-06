@@ -4,6 +4,7 @@ import { createSellThrough, resolveSellThroughLine, cancelSellThrough } from "./
 import { voidSellThrough } from "./void-writer";
 import { createSellThroughFixtures } from "./test-fixtures";
 import { listSellThroughs, getSellThrough, getSellThroughEligibility } from "./queries";
+import { approveStoreStocktake } from "@/lib/stores/stocktake/writer";
 
 /* Stock-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host). */
 const url = process.env.DATABASE_URL ?? "";
@@ -18,7 +19,7 @@ const SLOW = 60_000;
 
 d("konsi sell-through queries (test bed only)", () => {
   const fx = createSellThroughFixtures();
-  const { state, tick, setMethod, transferIn, spgSell, count, raiseRetur } = fx;
+  const { state, tick, setMethod, transferIn, spgSell, count, raiseRetur, settleRetur } = fx;
 
   beforeEach(fx.beforeEach);
   afterEach(fx.afterEach);
@@ -352,7 +353,16 @@ d("konsi sell-through queries (test bed only)", () => {
     const first = await raiseRetur(1);
     const second = await raiseRetur(1);
     await tick();
-    const stocktakeId = await count(4, { cause: "SHRINKAGE", reason: "two units off the shelf" });
+    const stocktakeId = await count(4, { approve: false, cause: "SHRINKAGE", reason: "two units off the shelf" });
+    /* The count cannot approve while either retur is open (RETUR_PENDING); both settle after the count, so both stay in flight at its moment. */
+    await expect(approveStoreStocktake({ stocktakeId, approvedById: state.userId })).rejects.toMatchObject({
+      code: "RETUR_PENDING",
+      detail: `${first.docNo}, ${second.docNo}`,
+    });
+    await tick();
+    await settleRetur(first.returnId);
+    await settleRetur(second.returnId);
+    await approveStoreStocktake({ stocktakeId, approvedById: state.userId });
     await expect(getSellThroughEligibility(stocktakeId)).resolves.toEqual({
       eligible: false,
       reason: "RETUR_IN_FLIGHT",

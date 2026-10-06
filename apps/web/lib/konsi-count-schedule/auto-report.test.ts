@@ -3,6 +3,7 @@ import { prisma, seededId } from "@elorae/db";
 import { createSellThroughFixtures } from "@/lib/konsi-sell-through/test-fixtures";
 import { SellThroughError } from "@/lib/konsi-sell-through/errors";
 import { autoCreateSellThroughAfterCount } from "./auto-report";
+import { approveStoreStocktake } from "@/lib/stores/stocktake/writer";
 import { KONSI_REPORT_BLOCKED, KONSI_REPORT_HELD, KONSI_REPORT_READY } from "./categories";
 
 /**
@@ -28,7 +29,7 @@ const CATEGORIES = [KONSI_REPORT_READY, KONSI_REPORT_HELD, KONSI_REPORT_BLOCKED]
 
 d("autoCreateSellThroughAfterCount (test bed only)", () => {
   const fx = createSellThroughFixtures();
-  const { state, tick, setMethod, transferIn, spgSell, count, raiseRetur } = fx;
+  const { state, tick, setMethod, transferIn, spgSell, count, raiseRetur, settleRetur } = fx;
 
   async function notificationsFor(category: string) {
     const rows = await prisma.adminNotification.findMany({ where: { category }, select: { id: true, message: true, metadata: true } });
@@ -95,9 +96,14 @@ d("autoCreateSellThroughAfterCount (test bed only)", () => {
   it("announces BLOCKED with a short pointer to the stocktake while the count stays approved, for a retur in flight", async () => {
     await setMethod("SHELF_COUNT");
     await transferIn(6);
-    const { docNo } = await raiseRetur(2);
+    const { returnId, docNo } = await raiseRetur(2);
     await tick();
-    const stocktakeId = await count(4, { cause: "SHRINKAGE", reason: "two units off the shelf" });
+    const stocktakeId = await count(4, { approve: false, cause: "SHRINKAGE", reason: "two units off the shelf" });
+    /* The count cannot approve while the retur is open (RETUR_PENDING); settled after the count, it is still in flight at the count moment. */
+    await expect(approveStoreStocktake({ stocktakeId, approvedById: state.userId })).rejects.toMatchObject({ code: "RETUR_PENDING", detail: docNo });
+    await tick();
+    await settleRetur(returnId);
+    await approveStoreStocktake({ stocktakeId, approvedById: state.userId });
 
     const outcome = await autoCreateSellThroughAfterCount(stocktakeId, state.userId);
     expect(outcome).toEqual({ kind: "BLOCKED", code: "RETUR_IN_FLIGHT", detail: docNo });

@@ -419,6 +419,11 @@ export async function saveStocktakeCounts(input: {
  * fallback `COUNTED_SINCE_MOVE` uses — so a legacy count can never approve first and strand a
  * transfer behind that guard forever.
  *
+ * A field retur raised on or before the DOCUMENT's count moment, still open, with a line on a
+ * counted item::variant at a KONSI store refuses the same way (`RETUR_PENDING`, the same moment
+ * as `TRANSFER_PENDING`): its store row has not landed yet, and once it does after this approval
+ * it would take the counted-out units off again.
+ *
  * The ledger entry `setStoreStock` writes is then the true shrinkage or surplus at the count
  * moment, whatever moved since. A counted line with no moment at all — neither its own nor the
  * document's, a count saved before either column existed — keeps the old behaviour: the bare
@@ -469,9 +474,10 @@ export async function approveStoreStocktake(input: {
     if (st.status !== "DRAFT" && st.status !== "PENDING_VERIFICATION") throw new StoreStocktakeError("INVALID_STATE");
 
     /*
-     * Computed once, up front, so every use of "now" inside this approval — the TRANSFER_PENDING
-     * fallback count moment below and the `approvedAt` stamp at the end — is the exact same
-     * instant rather than two separate `new Date()` calls that could straddle a millisecond.
+     * Computed once, up front, so every use of "now" inside this approval — the fallback count
+     * moment the TRANSFER_PENDING and RETUR_PENDING refusals below share, and the `approvedAt`
+     * stamp at the end — is the exact same instant rather than two separate `new Date()` calls that
+     * could straddle a millisecond.
      */
     const approvedAt = new Date();
 
@@ -553,8 +559,8 @@ export async function approveStoreStocktake(input: {
     const countedKeys = computed
       .filter((l) => l.counted !== null)
       .map((l) => ({ itemId: l.itemId, variantSku: l.variantSku ?? "" }));
+    const countMoment = st.countFinishedAt ?? approvedAt;
     if (countedKeys.length > 0) {
-      const countMoment = st.countFinishedAt ?? approvedAt;
       const pendingTransfers = await tx.storeTransfer.findMany({
         where: {
           status: "PENDING",
@@ -567,6 +573,43 @@ export async function approveStoreStocktake(input: {
       });
       if (pendingTransfers.length > 0) {
         throw new StoreStocktakeError("TRANSFER_PENDING", pendingTransfers.map((t) => t.docNo).join(", "));
+      }
+    }
+
+    /**
+     * A field retur of this store raised on or before the count moment (the same `countMoment` as
+     * above) that is still open — awaiting receipt, mismatch resolution or approval — and has a line
+     * on an item::variant this count COUNTED refuses `RETUR_PENDING`, naming the returs in `detail`.
+     * The retur's goods left the shelf when it was raised, so the count already saw them gone, but
+     * its store row has not landed yet: counted 7 where StoreStock holds 10, 3 of them on a retur
+     * raised before the count — approval SETs 7, and when the retur later settles its row takes 3
+     * more, leaving 4. The post-count exclusion below only skips a retur row that already exists at
+     * approval, so it cannot catch one that lands afterwards. Refusing until the retur is received
+     * and approved (or cancelled, if it was never sent) keeps that row on the excluded side.
+     *
+     * KONSI-only: both retur writers touch `StoreStock` only at a KONSI store, so at any other store
+     * there is no later row to double-count. An APPROVED retur does not refuse — its row has already
+     * landed, ahead of this SET rather than after it, and the exclusion skips it when it is
+     * post-count — and a CANCELLED one moved no stock. Returs of keys this count left uncounted or
+     * never had cannot be in the count, so they do not refuse. Both variantSku columns are
+     * non-nullable, so the keys match exactly.
+     */
+    if (countedKeys.length > 0) {
+      const store = await tx.store.findUnique({ where: { id: st.storeId }, select: { termsType: true } });
+      if (store?.termsType === "KONSI") {
+        const pendingReturs = await tx.fieldReturn.findMany({
+          where: {
+            storeId: st.storeId,
+            createdAt: { lte: countMoment },
+            status: { in: ["PENDING_WAREHOUSE_RECEIVING", "MISMATCH_PENDING_RESOLUTION", "PENDING_APPROVAL"] },
+            lines: { some: { OR: countedKeys } },
+          },
+          orderBy: { docNo: "asc" },
+          select: { docNo: true },
+        });
+        if (pendingReturs.length > 0) {
+          throw new StoreStocktakeError("RETUR_PENDING", pendingReturs.map((r) => r.docNo).join(", "));
+        }
       }
     }
 

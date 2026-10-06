@@ -18,9 +18,10 @@ import { auditReason } from "./audit-reason";
  * and the required reason live on a `FIELD_RETURN_CANCEL` `AuditLog` row written in this
  * transaction — the precedent `cancelStoreTransfer` set for the same gap, rather than a migration.
  *
- * A CANCELLED retur stops holding anything up: `RETUR_IN_FLIGHT` (sell-through creation) keys on
- * the three open statuses only, so cancelling is also the remedy for an abandoned retur blocking a
- * konsi report, and any later in-flight check must ignore CANCELLED the same way.
+ * A CANCELLED retur stops holding anything up: `RETUR_IN_FLIGHT` (sell-through creation) and
+ * `RETUR_PENDING` (store stocktake approval) both ignore CANCELLED, so cancelling is also the remedy
+ * for an abandoned retur blocking a konsi report or a store count, and any later in-flight check
+ * must ignore CANCELLED the same way.
  */
 export async function cancelFieldReturn(input: {
   returnId: string;

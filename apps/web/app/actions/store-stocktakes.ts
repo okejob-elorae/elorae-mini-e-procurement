@@ -29,6 +29,7 @@ export type StoreStocktakeActionResult =
         | "INVALID_REQUEST"
         | "DUPLICATE_LINE"
         | "TRANSFER_PENDING"
+        | "RETUR_PENDING"
         | "NO_ASSIGNED_STORE"
         | "NO_ACTIVE_VISIT"
         | "ERROR";
@@ -106,13 +107,15 @@ const ERROR_CODE_MAP: Record<StoreStocktakeErrorCode, Exclude<StoreStocktakeActi
   INVALID_REQUEST: "INVALID_REQUEST",
   DUPLICATE_LINE: "DUPLICATE_LINE",
   TRANSFER_PENDING: "TRANSFER_PENDING",
+  RETUR_PENDING: "RETUR_PENDING",
 };
 
 /**
  * A caught `StoreStocktakeError` keeps its own code via the map above; anything else (a network
  * hiccup, a programmer error, `auth()` itself throwing) becomes `ERROR` rather than leaking a
- * thrown message — production digest-masking would swallow it anyway. The transfer doc numbers a
- * `TRANSFER_PENDING` refusal names ride in `detail`.
+ * thrown message — production digest-masking would swallow it anyway. The doc numbers a
+ * `TRANSFER_PENDING` refusal (the transfers) or a `RETUR_PENDING` refusal (the returs) names ride
+ * in `detail`.
  */
 function toResult(e: unknown): StoreStocktakeActionResult {
   if (e instanceof StoreStocktakeError) {

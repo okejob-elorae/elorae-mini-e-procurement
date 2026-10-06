@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import {
+  AlertTriangle,
   ArrowLeft,
   CheckCircle2,
   ChevronDown,
@@ -292,9 +293,11 @@ export function StocktakeDetailClient({
       ? row.bookedVarianceQty
       : null;
     const needsCause = (variance !== null && variance < 0) || (booked !== null && booked < 0);
-    return { row, raw, counted: value, valid, expected: baseline, variance, booked, needsCause };
+    const returQty = row.isPending ? undefined : stocktake.returInFlight.qtyByLineId[row.key];
+    return { row, raw, counted: value, valid, expected: baseline, variance, booked, needsCause, returQty };
   });
 
+  const returDocNos = stocktake.returInFlight.docNos;
   const countedCount = computedRows.filter((c) => c.counted !== null).length;
   const netVariance = computedRows.reduce((sum, c) => sum + (c.variance ?? 0), 0);
   const hasInvalidInput = computedRows.some((c) => !c.valid);
@@ -627,6 +630,18 @@ export function StocktakeDetailClient({
         </Card>
       </Collapsible>
 
+      {returDocNos.length > 0 && (
+        <Card className="flex-row items-start gap-3 border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/30">
+          <AlertTriangle className="h-5 w-5 shrink-0 text-amber-700 dark:text-amber-400" />
+          <div className="flex-1 space-y-1">
+            <p className="text-sm font-medium text-amber-700 dark:text-amber-400">{tDetail("returInFlight.title")}</p>
+            <p className="text-sm text-amber-700/90 dark:text-amber-400/90">
+              {tDetail("returInFlight.body", { docNos: returDocNos.join(", ") })}
+            </p>
+          </div>
+        </Card>
+      )}
+
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <CardTitle className="flex items-center gap-2">
@@ -659,7 +674,7 @@ export function StocktakeDetailClient({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {computedRows.map(({ row, raw, counted, valid, expected, variance, booked, needsCause }) => (
+                {computedRows.map(({ row, raw, counted, valid, expected, variance, booked, needsCause, returQty }) => (
                   <TableRow key={row.key}>
                     <TableCell>
                       <div className="flex items-center gap-2">
@@ -692,6 +707,11 @@ export function StocktakeDetailClient({
                       {booked !== null && (
                         <p className="mt-1 max-w-[200px] text-xs text-muted-foreground">
                           {tDetail("bookedVariance", { n: signedQty(booked) })}
+                        </p>
+                      )}
+                      {returQty !== undefined && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {tDetail("returInFlight.lineHint", { qty: returQty })}
                         </p>
                       )}
                     </TableCell>
