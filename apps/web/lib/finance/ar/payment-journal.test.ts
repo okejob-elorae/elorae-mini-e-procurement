@@ -395,9 +395,19 @@ d("payment-journal (test bed only)", () => {
 
     try {
       await Promise.race([flipped, voiding]);
+      let settled = false;
       const receipt = postPaymentReceiptJournal(paymentId, userId);
-      /* Long enough for an unlocked read to have decided and posted before the void commits. */
+      receipt.then(
+        () => (settled = true),
+        () => (settled = true),
+      );
+      /*
+       * The receipt must still be waiting on the row lock when the void commits. An unlocked
+       * implementation never waits, so it settles inside this window and the assertion below names
+       * the regression directly, instead of leaving it to the journal count after the fact.
+       */
       await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(settled).toBe(false);
       releaseVoid();
       await voiding;
       expect(await receipt).toEqual({ ok: false, code: "NOTHING_TO_POST" });
