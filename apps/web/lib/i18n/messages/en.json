@@ -251,8 +251,8 @@
       "errBadQty": "Qty must be a positive whole number."
     },
     "overdueThresholds": {
-      "title": "Overdue Alert Thresholds",
-      "description": "Configure when overdue-receivable notifications are sent",
+      "title": "Receivables",
+      "description": "Overdue alert thresholds and settlement variance tolerance",
       "heading": "Overdue Notification Thresholds",
       "subtitle": "Comma-separated day list, counted from the due date, that triggers a notification",
       "fieldLabel": "Days (e.g. 0,7,30,60)",
@@ -261,6 +261,16 @@
       "loadError": "Failed to load settings",
       "errEmpty": "Enter at least one day",
       "errInvalid": "Use comma-separated non-negative whole numbers"
+    },
+    "varianceTolerance": {
+      "heading": "Settlement Variance Tolerance",
+      "subtitle": "How far a salesman's cash may differ from the expected amount before finance must give a reason",
+      "fieldLabel": "Tolerance (Rp)",
+      "fieldHint": "A settlement whose cash differs from the expected amount by at most this many rupiah approves without an override reason. 0 means every difference needs one.",
+      "save": "Save",
+      "loadError": "Failed to load settings",
+      "errEmpty": "Enter an amount (0 or more)",
+      "errInvalid": "Use a non-negative number with at most two decimals"
     },
     "theme": {
       "title": "Account theme",

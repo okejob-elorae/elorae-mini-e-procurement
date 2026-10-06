@@ -51,3 +51,18 @@ export function parseVarianceTolerance(raw: string | null | undefined): number {
 
   return value;
 }
+
+/**
+ * Validates the raw text a finance user typed for the tolerance, accepting exactly what
+ * `parseVarianceTolerance` accepts so a saved value never silently falls back to the default.
+ * Returns the trimmed text to store, not a number, because the setting is persisted as typed.
+ */
+export function validateVarianceToleranceInput(
+  raw: string,
+): { ok: true; value: string } | { ok: false; code: "EMPTY" | "INVALID" } {
+  const trimmed = raw.trim();
+  if (trimmed === "") return { ok: false, code: "EMPTY" };
+  if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) return { ok: false, code: "INVALID" };
+  if (!Number.isFinite(Number.parseFloat(trimmed))) return { ok: false, code: "INVALID" };
+  return { ok: true, value: trimmed };
+}

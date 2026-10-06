@@ -251,8 +251,8 @@
       "errBadQty": "Jumlah harus bilangan bulat positif."
     },
     "overdueThresholds": {
-      "title": "Ambang Batas Jatuh Tempo",
-      "description": "Atur kapan notifikasi piutang jatuh tempo dikirim",
+      "title": "Piutang",
+      "description": "Ambang batas notifikasi jatuh tempo dan toleransi selisih pelunasan",
       "heading": "Ambang Batas Notifikasi Piutang Jatuh Tempo",
       "subtitle": "Daftar hari (dipisah koma) sejak jatuh tempo untuk memicu notifikasi",
       "fieldLabel": "Hari (contoh: 0,7,30,60)",
@@ -261,6 +261,16 @@
       "loadError": "Gagal memuat pengaturan",
       "errEmpty": "Isi minimal satu hari",
       "errInvalid": "Gunakan angka bulat non-negatif dipisah koma"
+    },
+    "varianceTolerance": {
+      "heading": "Toleransi Selisih Pelunasan",
+      "subtitle": "Seberapa jauh uang tunai salesman boleh berbeda dari jumlah yang diharapkan sebelum finance wajib mengisi alasan",
+      "fieldLabel": "Toleransi (Rp)",
+      "fieldHint": "Pelunasan yang selisih uang tunainya dari jumlah yang diharapkan paling banyak sebesar ini (rupiah) disetujui tanpa alasan override. 0 berarti setiap selisih butuh alasan.",
+      "save": "Simpan",
+      "loadError": "Gagal memuat pengaturan",
+      "errEmpty": "Isi jumlah (0 atau lebih)",
+      "errInvalid": "Gunakan angka non-negatif dengan maksimal dua desimal"
     },
     "theme": {
       "title": "Tema akun",
