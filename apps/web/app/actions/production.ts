@@ -7,6 +7,9 @@ import { prisma, recalcItemSellingPrice, moveMainStock } from '@elorae/db';
 import type { StockLedgerRefType } from '@elorae/db';
 import { apiFetch } from "@/lib/internal-api";
 import { generateDocNumber } from '@/lib/docNumber';
+import { docNumberPeriod } from "@/lib/doc-numbers/period";
+import { maxIssuedNumber, resyncedCounter } from "@/lib/doc-numbers/recover";
+import { normalizePrefix } from "@/lib/doc-numbers/validate";
 import { generateMaterialPlan } from '@/lib/production/planning';
 import { reconcileWorkOrder } from '@/lib/production/reconciliation';
 import { calculateMovingAverage } from '@/lib/inventory/costing';
@@ -386,34 +389,31 @@ export async function createWorkOrder(
         (err as { meta?: { target?: string[] } }).meta?.target?.includes('docNumber'));
     if (!isWorkOrderUniqueViolation) throw err;
 
-    const year = new Date().getFullYear();
-    const prefix = `WO/${year}/`;
+    /**
+     * Resync the counter from the config as stored, not from assumptions about it: Settings →
+     * Document Numbering edits the prefix and the reset period, so the numbers to scan and the
+     * period they carry both follow the row. The failed `generateDocNumber` already created it.
+     * The write never lowers the counter — rewinding would re-issue a number — and is a
+     * compare-and-set, so a caller that advanced it meanwhile is not overwritten.
+     */
+    const config = await prisma.docNumberConfig.findUniqueOrThrow({ where: { docType: "WO" } });
+    const period = docNumberPeriod(new Date());
     const existing = await prisma.workOrder.findMany({
-      where: { docNumber: { startsWith: prefix } },
+      where: { docNumber: { startsWith: normalizePrefix(config.prefix) } },
       select: { docNumber: true },
     });
-    let maxNum = 0;
-    for (const row of existing) {
-      const num = parseInt(row.docNumber.slice(prefix.length), 10) || 0;
-      if (num > maxNum) maxNum = num;
-    }
-    const now = new Date();
-    await prisma.docNumberConfig.upsert({
-      where: { docType: 'WO' },
-      create: {
-        docType: 'WO',
-        prefix: 'WO/',
-        resetPeriod: 'YEARLY',
-        padding: 4,
-        lastNumber: maxNum,
-        year,
-        month: now.getMonth() + 1,
-      },
-      update: {
-        lastNumber: maxNum,
-        year,
-        month: now.getMonth() + 1,
-      },
+    const next = resyncedCounter(
+      config,
+      maxIssuedNumber(
+        existing.map((row) => row.docNumber),
+        config,
+        period,
+      ),
+      period,
+    );
+    await prisma.docNumberConfig.updateMany({
+      where: { docType: "WO", lastNumber: config.lastNumber },
+      data: next,
     });
     docNumber = await generateDocNumber('WO');
     result = await runCreateTx(docNumber);
