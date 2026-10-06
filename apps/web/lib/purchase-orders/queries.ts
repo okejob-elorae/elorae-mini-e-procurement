@@ -68,13 +68,15 @@ async function withStandingPaymentFlag(
   }));
 }
 
-function buildPOsWhere(filters?: ListPOsFilters) {
+export function buildPOsWhere(filters?: ListPOsFilters) {
   const where: Record<string, unknown> = {};
 
-  if (filters?.status) {
+  /* `status` keeps its truthiness check: the filter type is a POStatus, so only "" or undefined skip it. */
+  if (filters?.status && filters?.statusIn !== undefined) {
+    where.AND = [{ status: filters.status }, { status: { in: filters.statusIn } }];
+  } else if (filters?.status) {
     where.status = filters.status;
-  }
-  if (filters?.statusIn?.length) {
+  } else if (filters?.statusIn !== undefined) {
     where.status = { in: filters.statusIn };
   }
   if (filters?.supplierId) {
