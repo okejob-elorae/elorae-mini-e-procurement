@@ -48,6 +48,14 @@ export type LineRef = {
   variantLabel: string | null;
 };
 
+export type OverCommittedLine = {
+  id: string;
+  productName: string;
+  variantLabel: string | null;
+  onHand: number;
+  reserved: number;
+};
+
 type Props = {
   orderId: string;
   status: FieldSalesOrderStatus;
@@ -59,6 +67,7 @@ type Props = {
   onStagedAdditionsChange: (staged: StagedAddition[]) => void;
   creditCheck: { exposure: number; limit: number; overLimit: boolean } | null;
   creditHoldAtCreate: boolean;
+  overCommittedLines: OverCommittedLine[];
 };
 
 function formatRupiah(value: number): string {
@@ -84,6 +93,7 @@ export function ApproveRejectCard({
   onStagedAdditionsChange,
   creditCheck,
   creditHoldAtCreate,
+  overCommittedLines,
 }: Props) {
   const t = useTranslations("fieldSalesOrders");
   const tCommon = useTranslations("common");
@@ -349,6 +359,23 @@ export function ApproveRejectCard({
             <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700">
               {t("creditWasOverLimitNote")}
             </p>
+          )}
+
+          {orderType === "PUTUS" && overCommittedLines.length > 0 && (
+            <div className="space-y-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700">
+              <p className="font-medium">{t("approveOverCommittedTitle", { count: overCommittedLines.length })}</p>
+              <ul className="max-h-40 space-y-1 overflow-y-auto">
+                {overCommittedLines.map((line) => (
+                  <li key={line.id} className="flex min-w-0 gap-1">
+                    <span className="truncate">{lineDisplayName(line)}</span>
+                    <span className="shrink-0 tabular-nums">
+                      {t("approveOverCommittedLine", { onHand: line.onHand, reserved: line.reserved })}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-muted-foreground">{t("approveOverCommittedHint")}</p>
+            </div>
           )}
 
           <AlertDialogFooter>

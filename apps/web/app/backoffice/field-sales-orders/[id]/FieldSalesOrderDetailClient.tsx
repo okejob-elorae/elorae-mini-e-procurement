@@ -14,6 +14,7 @@ import type {
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import {
   Table,
   TableBody,
@@ -22,7 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ApproveRejectCard, type AppealedLine, type LineRef } from "./ApproveRejectCard";
+import { ApproveRejectCard, type AppealedLine, type LineRef, type OverCommittedLine } from "./ApproveRejectCard";
 import { DeliveriesCard } from "./DeliveriesCard";
 import { KonsiShipmentsCard } from "./KonsiShipmentsCard";
 import { KonsiSuggestionsCard, type StagedAddition } from "./KonsiSuggestionsCard";
@@ -98,6 +99,19 @@ export function FieldSalesOrderDetailClient({
    * honest number for the approver deciding whether it can be reserved at all.
    */
   const showAvailable = isKonsi && order.status === "PENDING_APPROVAL";
+  const overCommittedLines: OverCommittedLine[] =
+    !isKonsi && order.status === "PENDING_APPROVAL"
+      ? order.lines
+          .filter((line) => line.available < 0)
+          .map((line) => ({
+            id: line.id,
+            productName: line.productName,
+            variantLabel: line.variantLabel,
+            onHand: line.onHand,
+            reserved: line.onHand - line.available,
+          }))
+      : [];
+  const overCommittedIds = new Set(overCommittedLines.map((line) => line.id));
   const stockLabel = showAvailable ? t("colAvailable") : t("colOnHand");
   const deliverableLines: DeliverableLine[] = order.lines.map((line) => ({
     id: line.id,
@@ -229,6 +243,7 @@ export function FieldSalesOrderDetailClient({
           onStagedAdditionsChange={setStagedAdditions}
           creditCheck={creditCheck}
           creditHoldAtCreate={order.creditHoldAtCreate}
+          overCommittedLines={overCommittedLines}
         />
       )}
 
@@ -331,7 +346,9 @@ export function FieldSalesOrderDetailClient({
                   {showOutstanding && (
                     <TableCell className="text-right tabular-nums">{line.outstanding}</TableCell>
                   )}
-                  <TableCell className="text-right tabular-nums">
+                  <TableCell
+                    className={cn("text-right tabular-nums", overCommittedIds.has(line.id) && "font-medium text-amber-700")}
+                  >
                     {showAvailable ? line.available : line.onHand}
                   </TableCell>
                   {showMoney && (
