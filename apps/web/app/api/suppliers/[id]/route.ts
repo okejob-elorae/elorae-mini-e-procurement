@@ -7,6 +7,7 @@ import { prisma } from '@elorae/db';
 import { encryptBankAccount, decryptBankAccount } from '@/lib/encryption';
 import { logBankAccountView } from '@/lib/audit';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
+import { verifyPin } from '@/lib/security/pin';
 const supplierSchema = z.object({
   code: z.string().min(1).optional(),
   name: z.string().min(1).optional(),
@@ -178,12 +179,16 @@ export async function POST(
     const { pin } = decryptSchema.parse(body);
 
     // Verify PIN
-    const { verifyPin } = await import('@/lib/auth');
-    const isValid = await verifyPin(session.user.id, pin);
+    const ip = req.headers.get('x-forwarded-for') || 'unknown';
+    const userAgent = req.headers.get('user-agent') || 'unknown';
+    const pinResult = await verifyPin(session.user.id, pin, 'VIEW_BANK_ACCOUNT', {
+      ipAddress: ip,
+      fallbackEmail: session.user.email,
+    });
 
-    if (!isValid) {
+    if (!pinResult.success) {
       return NextResponse.json(
-        { error: 'Invalid PIN' },
+        { error: pinResult.messageKey ?? pinResult.message },
         { status: 403 }
       );
     }
@@ -203,8 +208,6 @@ export async function POST(
     const bankAccount = decryptBankAccount(supplier.bankAccountEnc, 'DEFAULT_PIN');
 
     // Log audit
-    const ip = req.headers.get('x-forwarded-for') || 'unknown';
-    const userAgent = req.headers.get('user-agent') || 'unknown';
     await logBankAccountView(session.user.id, id, {
       ip,
       userAgent,
