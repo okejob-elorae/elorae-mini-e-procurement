@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseItemImportPayload, validateItemImport, type ItemImportLookups } from "./validate";
+import { skuMatchKey } from "@/lib/items/sku-match-key";
 import { ITEM_IMPORT_MAX_ROWS, type ItemImportRow } from "./types";
 
 const lookups = (over: Partial<ItemImportLookups> = {}): ItemImportLookups => ({
@@ -236,6 +237,19 @@ describe("validateItemImport — refusals", () => {
     expect(
       codes(validateItemImport([row({ warna: "Merah", barcode: "X1" })], lookups({ existingBarcodes: new Set(["x1"]) }))),
     ).toEqual(["BARCODE_TAKEN"]);
+  });
+
+  it("rejects an artikel that matches an existing one via accent folding", () => {
+    const r = validateItemImport([row({ artikel: "CAFÉ01" })], lookups({ existingItemSkus: new Set([skuMatchKey("cafe01")]) }));
+    expect(codes(r)).toEqual(["ARTIKEL_EXISTS"]);
+  });
+
+  it("rejects a variant SKU differing from an existing one only by an accent", () => {
+    const r = validateItemImport(
+      [row({ warna: "Merah", skuVarian: "CAFÉ-M" })],
+      lookups({ existingVariantSkus: new Set([skuMatchKey("cafe-m")]) }),
+    );
+    expect(codes(r)).toEqual(["VARIANT_SKU_TAKEN"]);
   });
 
   it("rejects a variant SKU or barcode used twice across artikels in the file", () => {

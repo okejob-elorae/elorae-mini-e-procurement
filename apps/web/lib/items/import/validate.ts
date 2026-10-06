@@ -1,4 +1,5 @@
 import { validateAndNormalizeVariants } from "@/lib/items/normalize-variants";
+import { skuMatchKey } from "@/lib/items/sku-match-key";
 import {
   ITEM_IMPORT_MAX_LENGTH,
   ITEM_IMPORT_MAX_ROWS,
@@ -16,14 +17,14 @@ import {
 export type ItemImportLookups = {
   uoms: Array<{ id: string; code: string }>;
   categories: Array<{ id: string; code: string | null; name: string }>;
-  /* All three hold `trim().toLowerCase()` values: `Item.sku`'s unique index folds case, and variant SKUs and barcodes are compared by the app's own case-folding rule. */
+  /* All three hold `skuMatchKey` values: `Item.sku`'s unique index folds case and accents, and variant SKUs and barcodes are compared by the same rule. */
   existingItemSkus: Set<string>;
   existingVariantSkus: Set<string>;
   existingBarcodes: Set<string>;
 };
 
 const MAX_ITEM_PRICE = 999_999_999_999;
-const norm = (s: string): string => s.trim().toLowerCase();
+const norm = (s: string): string => skuMatchKey(s);
 
 type ParsedPrice = { ok: true; value: number | null } | { ok: false; code: "INVALID_NUMBER" | "NEGATIVE_NUMBER" };
 
