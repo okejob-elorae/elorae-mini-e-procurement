@@ -32,10 +32,11 @@ export type SalesJournalSweepResult = {
  * The round-trip check rejects rolled-over dates (`2026-02-31` parses to 3 March),
  * which would silently move the floor.
  *
- * Exported for the sales-return journal gate, which reads it only to REPORT
- * whether a refusal is transient (the sale is above the floor and merely
- * unswept) or permanent (below it, or no floor configured at all). That gate
- * still keys on the counterpart journal, never on this date.
+ * Exported for the counterpart-journal gates — the sales-return journal gate and,
+ * through the same `classifySaleLegs`, the marketplace settlement journal gate —
+ * which read it only to REPORT whether a refusal is transient (the sale is above
+ * the floor and merely unswept) or permanent (below it, or no floor configured at
+ * all). Both still key on the counterpart journal, never on this date.
  */
 export async function readGlCutover(): Promise<Date | null> {
   const row = await prisma.systemSetting.findUnique({
@@ -47,6 +48,22 @@ export async function readGlCutover(): Promise<Date | null> {
   const parsed = parseDateOnly(raw);
   if (!parsed) return null;
   return formatDateOnlyJakarta(parsed) === raw ? parsed : null;
+}
+
+/**
+ * The order states the sales sweep journals: `status` SHIPPED or COMPLETED, or a local
+ * `fulfillmentStatus` of SHIPPED. An order outside them gets no `SALESORDER_REVENUE` or
+ * `SALESORDER_COGS` journal however long it waits, so a gate that waits on one of those journals
+ * must ask this, never restate it. The sweep's own query interpolates these same constants.
+ */
+export const SWEEP_ELIGIBLE_ORDER_STATUSES = ["SHIPPED", "COMPLETED"] as const;
+export const SWEEP_ELIGIBLE_FULFILLMENT_STATUS = "SHIPPED";
+
+export function isSweepEligibleOrder(order: { status: string; fulfillmentStatus: string }): boolean {
+  return (
+    (SWEEP_ELIGIBLE_ORDER_STATUSES as readonly string[]).includes(order.status) ||
+    order.fulfillmentStatus === SWEEP_ELIGIBLE_FULFILLMENT_STATUS
+  );
 }
 
 async function flag(
@@ -131,7 +148,7 @@ export async function postPendingSalesJournals(
     Prisma.sql`
     SELECT so.id, so.salesorderNo, so.shippedById
     FROM SalesOrder so
-    WHERE (so.status IN ('SHIPPED','COMPLETED') OR so.fulfillmentStatus = 'SHIPPED')
+    WHERE (so.status IN (${Prisma.join([...SWEEP_ELIGIBLE_ORDER_STATUSES])}) OR so.fulfillmentStatus = ${SWEEP_ELIGIBLE_FULFILLMENT_STATUS})
       ${cutoverFilter}
       ${idFilter}
       AND NOT (

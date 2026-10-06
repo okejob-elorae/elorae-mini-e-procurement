@@ -4805,7 +4805,8 @@
       "NOTHING_TO_POST": "Nothing to post: every total on this settlement is zero, so there is no journal to book.",
       "ALREADY_RECONCILED_DIFF": "This settlement is already reconciled with a different journal.",
       "NON_POSTABLE_ACCOUNT": "One of the mapped accounts cannot be posted to — it is inactive or has child accounts. Map that role to an active account with no children under Finance → Account Mapping.",
-      "LINES_UNMATCHED": "{count} settlement line(s) aren't matched to a sales order yet. Fetch the missing orders from Jubelio and match again before posting.",
+      "LINES_UNMATCHED": "{count, plural, =0 {This settlement has no order lines, so nothing shows which sales its income belongs to. Re-upload the settlement file, or record it with a manual journal.} other {# settlement line(s) aren't matched to a sales order yet. Fetch the missing orders from Jubelio and match again before posting.}}",
+      "ORIGINAL_SALE_NOT_SHIPPED": "{count} line(s) belong to orders that aren't shipped or completed yet, and the sales journal sweep only journals shipped orders. This posts once those orders read shipped and the sweep has journaled them; if they never will (cancelled, for example), record this settlement with a manual journal instead.",
       "ORIGINAL_SALE_NOT_JOURNALED_YET": "{count} line(s) belong to sales whose revenue journal hasn't posted yet. The sales journal sweep runs every 5 minutes. Try again after it has posted them.",
       "ORIGINAL_SALE_OUTSIDE_LEDGER": "{count} line(s) belong to sales from before the GL cutover, which this ledger never recorded, so it cannot credit their receivable. Record this settlement with a manual journal instead.",
       "GL_CUTOVER_NOT_CONFIGURED": "The GL cutover date isn't set, so no sales are being journaled and there is no receivable on the books for this settlement to credit. Ask finance to set the cutover first."

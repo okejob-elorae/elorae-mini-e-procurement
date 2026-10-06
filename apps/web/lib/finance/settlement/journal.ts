@@ -3,6 +3,7 @@ import { resolveAccount, UnmappedRoleError } from "@/lib/finance/journals/mappin
 import { splitMarketplaceFees, type MarketplaceFeeRole } from "./fee-split";
 import { lockSettlementRow } from "./lock";
 import { classifySaleLegs } from "@/lib/finance/sales/sales-return-journal";
+import { isSweepEligibleOrder } from "@/lib/finance/sales/sweep";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
@@ -29,13 +30,19 @@ export type SettlementGateCode =
   | "GL_CUTOVER_NOT_CONFIGURED"
   | "ORIGINAL_SALE_OUTSIDE_LEDGER"
   | "LINES_UNMATCHED"
+  | "ORIGINAL_SALE_NOT_SHIPPED"
   | "ORIGINAL_SALE_NOT_JOURNALED_YET";
 
-/* Refusals no wait can cure come first, so the operator is never told to wait for a post that cannot come. */
+/**
+ * Refusals no wait can cure come first, so the operator is never told to wait for a post that
+ * cannot come. `ORIGINAL_SALE_NOT_SHIPPED` sits ahead of the 5-minute sweep's code because the
+ * order may never ship at all.
+ */
 const GATE_PRIORITY: SettlementGateCode[] = [
   "GL_CUTOVER_NOT_CONFIGURED",
   "ORIGINAL_SALE_OUTSIDE_LEDGER",
   "LINES_UNMATCHED",
+  "ORIGINAL_SALE_NOT_SHIPPED",
   "ORIGINAL_SALE_NOT_JOURNALED_YET",
 ];
 
@@ -54,9 +61,21 @@ const GATE_PRIORITY: SettlementGateCode[] = [
  * The gate is whole-settlement, not per order: `totalPendapatan` and the fees
  * are summary-level figures with no per-order split, so a partial post could
  * not balance. A line matched to an order that no longer exists counts as
- * unmatched, because rematching is its remedy. A settlement straddling the GL
+ * unmatched, because rematching is its remedy, and a settlement with no lines
+ * at all refuses `LINES_UNMATCHED` (count 0) rather than vouching for a
+ * `totalPendapatan` no line stands behind. A settlement straddling the GL
  * cutover (the first one per marketplace after go-live) is permanently
  * `ORIGINAL_SALE_OUTSIDE_LEDGER`; its remedy is a manual journal.
+ *
+ * Two refinements over `classifySaleLegs`, both because a settlement must never
+ * wait on a journal the sweep will never post. A matched order worth nothing
+ * (`grandTotal` under 0.01, the floor the revenue writer itself applies) has no
+ * revenue journal to wait for and contributes nothing to the credit, so it does
+ * not block, on either side of the cutover. And an order the sweep will not
+ * admit (`isSweepEligibleOrder` false) is `ORIGINAL_SALE_NOT_SHIPPED` rather
+ * than `ORIGINAL_SALE_NOT_JOURNALED_YET`: it posts once the order reads shipped
+ * and the sweep journals it, and otherwise needs a manual journal. Neither
+ * applies while the cutover is unset, since then no sale is journaled at all.
  */
 async function settlementGate(
   settlementId: string,
@@ -66,15 +85,38 @@ async function settlementGate(
     where: { settlementId },
     select: { matchedSalesOrderId: true },
   });
+  if (lines.length === 0) return { code: "LINES_UNMATCHED", count: 0 };
   const orderIds = lines.flatMap((l) => (l.matchedSalesOrderId == null ? [] : [l.matchedSalesOrderId]));
   const verdicts = await classifySaleLegs(orderIds, "SALESORDER_REVENUE", tx);
 
+  const refinable = [...verdicts.entries()]
+    .filter(([, v]) => v === "ORIGINAL_SALE_OUTSIDE_LEDGER" || v === "ORIGINAL_SALE_NOT_JOURNALED_YET")
+    .map(([id]) => id);
+  const orders =
+    refinable.length === 0
+      ? []
+      : await tx.salesOrder.findMany({
+          where: { id: { in: refinable } },
+          select: { id: true, grandTotal: true, status: true, fulfillmentStatus: true },
+        });
+  const zeroValue = new Set<string>();
+  const notShipped = new Set<string>();
+  for (const order of orders) {
+    if (Math.abs(Number(order.grandTotal)) < 0.01) zeroValue.add(order.id);
+    else if (!isSweepEligibleOrder(order)) notShipped.add(order.id);
+  }
+
   const counts = new Map<SettlementGateCode, number>();
   for (const line of lines) {
-    const verdict = line.matchedSalesOrderId == null ? "ORIGINAL_SALE_UNLINKED" : verdicts.get(line.matchedSalesOrderId);
+    const orderId = line.matchedSalesOrderId;
+    const verdict = orderId == null ? "ORIGINAL_SALE_UNLINKED" : verdicts.get(orderId);
     if (verdict === null) continue;
-    const code: SettlementGateCode =
-      verdict === undefined || verdict === "ORIGINAL_SALE_UNLINKED" ? "LINES_UNMATCHED" : verdict;
+    if (orderId != null && zeroValue.has(orderId)) continue;
+    let code: SettlementGateCode;
+    if (verdict === undefined || verdict === "ORIGINAL_SALE_UNLINKED") code = "LINES_UNMATCHED";
+    else if (verdict === "ORIGINAL_SALE_NOT_JOURNALED_YET" && orderId != null && notShipped.has(orderId)) {
+      code = "ORIGINAL_SALE_NOT_SHIPPED";
+    } else code = verdict;
     counts.set(code, (counts.get(code) ?? 0) + 1);
   }
   for (const code of GATE_PRIORITY) {

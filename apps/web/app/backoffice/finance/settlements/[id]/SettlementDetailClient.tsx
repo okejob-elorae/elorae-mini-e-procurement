@@ -320,6 +320,9 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
             case "LINES_UNMATCHED":
               toast.error(t("journalErr.LINES_UNMATCHED", { count: result.count }));
               break;
+            case "ORIGINAL_SALE_NOT_SHIPPED":
+              toast.error(t("journalErr.ORIGINAL_SALE_NOT_SHIPPED", { count: result.count }));
+              break;
             case "ORIGINAL_SALE_NOT_JOURNALED_YET":
               toast.error(t("journalErr.ORIGINAL_SALE_NOT_JOURNALED_YET", { count: result.count }));
               break;

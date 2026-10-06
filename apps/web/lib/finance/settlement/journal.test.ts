@@ -25,6 +25,8 @@ d("postSettlementJournal (test bed only)", () => {
   let mappingSnapshot: MappingSnapshot;
   /* `undefined` until this test's snapshot is taken, so a hook that died earlier restores nothing rather than a stale value. */
   let cutoverSnapshot: string | null | undefined;
+  /* Set by the only two helpers that change the cutover, so `afterEach` restores it only after a test moved it. */
+  let cutoverTouched = false;
   let orderId = "";
   let orderJournalId = "";
 
@@ -33,17 +35,30 @@ d("postSettlementJournal (test bed only)", () => {
    * `SALESORDER_REVENUE` journal stands, so each settlement here is matched to
    * one fixture sale (dated 2026-03-02) carrying a bare journal; the gate only
    * checks that the journal exists. The cutover is read only to classify a
-   * refusal, so this spec owns that setting and restores it.
+   * refusal, so only the tests that refuse on an unjournaled sale set it, and
+   * `afterEach` puts back what they found. It is never armed for the whole
+   * spec: this bed is shared, and a `next dev` running beside it would let its
+   * cron sweep journal real dev orders for as long as the cutover stays set.
    */
   const CUTOVER_BEFORE_THE_SALE = "2026-01-01";
   const CUTOVER_AFTER_THE_SALE = "2026-06-01";
 
-  const setCutover = async (value: string): Promise<void> => {
+  const writeCutover = async (value: string): Promise<void> => {
     await prisma.systemSetting.upsert({
       where: { key: GL_CUTOVER_SETTING_KEY },
       create: { key: GL_CUTOVER_SETTING_KEY, value },
       update: { value },
     });
+  };
+
+  const setCutover = async (value: string): Promise<void> => {
+    cutoverTouched = true;
+    await writeCutover(value);
+  };
+
+  const clearCutover = async (): Promise<void> => {
+    cutoverTouched = true;
+    await prisma.systemSetting.deleteMany({ where: { key: GL_CUTOVER_SETTING_KEY } });
   };
 
   async function journalTheOrder(): Promise<void> {
@@ -140,6 +155,7 @@ d("postSettlementJournal (test bed only)", () => {
     orderId = "";
     orderJournalId = "";
     cutoverSnapshot = undefined;
+    cutoverTouched = false;
     const setting = await prisma.systemSetting.findUnique({
       where: { key: GL_CUTOVER_SETTING_KEY },
       select: { value: true },
@@ -202,8 +218,6 @@ d("postSettlementJournal (test bed only)", () => {
     await setAccountMapping("MARKETPLACE_FEE_COMMISSION", feeCommissionAccountId);
     await setAccountMapping("MARKETPLACE_FEE_PROCESSING", feeProcessingAccountId);
     await setAccountMapping("MARKETPLACE_FEE_OTHER", feeOtherAccountId);
-
-    await setCutover(CUTOVER_BEFORE_THE_SALE);
 
     /* Negative Jubelio id: real `salesorderId`s on the shared bed are positive, so this cannot collide with one. */
     const order = await prisma.salesOrder.create({
@@ -269,10 +283,10 @@ d("postSettlementJournal (test bed only)", () => {
 
   afterEach(async () => {
     /* Live config first: the dev cron arms itself off the cutover, so no delete below may stand between a failure and restoring it. */
-    if (cutoverSnapshot === null) {
+    if (cutoverTouched && cutoverSnapshot === null) {
       await prisma.systemSetting.deleteMany({ where: { key: GL_CUTOVER_SETTING_KEY } });
-    } else if (cutoverSnapshot !== undefined) {
-      await setCutover(cutoverSnapshot);
+    } else if (cutoverTouched && cutoverSnapshot !== undefined) {
+      await writeCutover(cutoverSnapshot);
     }
     const journal = await prisma.journal.findUnique({
       where: { sourceType_sourceId: { sourceType: "SETTLEMENT", sourceId: settlementId } },
@@ -677,6 +691,7 @@ d("postSettlementJournal (test bed only)", () => {
 
   it("refuses ORIGINAL_SALE_NOT_JOURNALED_YET when the matched sale is inside the ledger but unswept", async () => {
     await unjournalTheOrder();
+    await setCutover(CUTOVER_BEFORE_THE_SALE);
     const r = await postSettlementJournal(settlementId, adminId, prisma);
     expect(r).toEqual({ ok: false, code: "ORIGINAL_SALE_NOT_JOURNALED_YET", count: 1 });
     expect(await settlementJournalCount()).toBe(0);
@@ -692,7 +707,7 @@ d("postSettlementJournal (test bed only)", () => {
 
   it("refuses GL_CUTOVER_NOT_CONFIGURED when no cutover is set", async () => {
     await unjournalTheOrder();
-    await prisma.systemSetting.deleteMany({ where: { key: GL_CUTOVER_SETTING_KEY } });
+    await clearCutover();
     const r = await postSettlementJournal(settlementId, adminId, prisma);
     expect(r).toEqual({ ok: false, code: "GL_CUTOVER_NOT_CONFIGURED", count: 1 });
     expect(await settlementJournalCount()).toBe(0);
@@ -722,6 +737,7 @@ d("postSettlementJournal (test bed only)", () => {
 
   it("posts on retry once the refused sale is journaled, and flips RECONCILED", async () => {
     await unjournalTheOrder();
+    await setCutover(CUTOVER_BEFORE_THE_SALE);
     expect(await postSettlementJournal(settlementId, adminId, prisma)).toMatchObject({
       ok: false,
       code: "ORIGINAL_SALE_NOT_JOURNALED_YET",
@@ -731,6 +747,48 @@ d("postSettlementJournal (test bed only)", () => {
     expect(await postSettlementJournal(settlementId, adminId, prisma)).toMatchObject({ ok: true, created: true });
     const s = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
     expect(s.status).toBe("RECONCILED");
+  });
+
+  it("does not block on a zero-value matched order that predates the cutover", async () => {
+    await unjournalTheOrder();
+    await prisma.salesOrder.update({ where: { id: orderId }, data: { subTotal: 0, grandTotal: 0 } });
+    await setCutover(CUTOVER_AFTER_THE_SALE);
+    expect(await postSettlementJournal(settlementId, adminId, prisma)).toMatchObject({ ok: true, created: true });
+  });
+
+  it("does not block on a zero-value matched order above the cutover either", async () => {
+    await unjournalTheOrder();
+    await prisma.salesOrder.update({ where: { id: orderId }, data: { subTotal: 0, grandTotal: 0 } });
+    await setCutover(CUTOVER_BEFORE_THE_SALE);
+    expect(await postSettlementJournal(settlementId, adminId, prisma)).toMatchObject({ ok: true, created: true });
+  });
+
+  it("refuses ORIGINAL_SALE_NOT_SHIPPED when the matched sale is one the sweep will not journal", async () => {
+    await unjournalTheOrder();
+    await prisma.salesOrder.update({ where: { id: orderId }, data: { status: "PROCESSING", fulfillmentStatus: "PACKED" } });
+    await setCutover(CUTOVER_BEFORE_THE_SALE);
+    const r = await postSettlementJournal(settlementId, adminId, prisma);
+    expect(r).toEqual({ ok: false, code: "ORIGINAL_SALE_NOT_SHIPPED", count: 1 });
+    expect(await settlementJournalCount()).toBe(0);
+    const s = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
+    expect(s.status).toBe("MATCHED");
+  });
+
+  it("keeps ORIGINAL_SALE_NOT_JOURNALED_YET for an order the sweep admits by its local fulfilment status alone", async () => {
+    await unjournalTheOrder();
+    await prisma.salesOrder.update({ where: { id: orderId }, data: { status: "PROCESSING", fulfillmentStatus: "SHIPPED" } });
+    await setCutover(CUTOVER_BEFORE_THE_SALE);
+    const r = await postSettlementJournal(settlementId, adminId, prisma);
+    expect(r).toEqual({ ok: false, code: "ORIGINAL_SALE_NOT_JOURNALED_YET", count: 1 });
+  });
+
+  it("refuses LINES_UNMATCHED with a count of 0 when the settlement has no lines at all", async () => {
+    await prisma.settlementLine.deleteMany({ where: { settlementId: seededId(settlementId) } });
+    const r = await postSettlementJournal(settlementId, adminId, prisma);
+    expect(r).toEqual({ ok: false, code: "LINES_UNMATCHED", count: 0 });
+    expect(await settlementJournalCount()).toBe(0);
+    const s = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
+    expect(s.status).toBe("MATCHED");
   });
 
   it("reports CHECKSUM_BLOCKED and NOTHING_TO_POST ahead of the gate", async () => {

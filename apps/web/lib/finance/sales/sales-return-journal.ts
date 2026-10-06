@@ -60,6 +60,14 @@ export type SaleLeg = "SALESORDER_REVENUE" | "SALESORDER_COGS";
  * None of these is `NOTHING_TO_POST`, which means the computed value is zero: a
  * genuine no-op needing no action. These mean there IS something to post and it
  * must not be posted here.
+ *
+ * The marketplace settlement journal gate (`settlementGate` in
+ * `lib/finance/settlement/journal.ts`) consumes these codes too, through
+ * `classifySaleLegs`, and refines two of them for its own remedy: a zero-value
+ * order does not block a settlement at all, and an unswept order the sweep will
+ * never admit reports `ORIGINAL_SALE_NOT_SHIPPED` there instead of
+ * `ORIGINAL_SALE_NOT_JOURNALED_YET`. Neither refinement applies to returns; the
+ * never-shipped blind spot on this side is logged in `docs/FOLLOWUPS.md`.
  */
 export type SalesReturnGateCode =
   | "ORIGINAL_SALE_NOT_JOURNALED_YET"
