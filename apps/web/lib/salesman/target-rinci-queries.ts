@@ -8,10 +8,12 @@ import {
   rentangBulanWib,
   susunCapaianRinci,
   TANPA_KATEGORI,
+  totalUntukHp,
   type BarisTarget,
   type CapaianRinci,
   type DokumenJual,
   type KemajuanRinci,
+  type LajuTarget,
   type LingkupTarget,
   type UkuranTarget,
 } from "./target-rinci";
@@ -40,6 +42,7 @@ const capaianKosong = (): CapaianRinci => ({
   kategori: {},
   barang: {},
   barangKonsi: {},
+  kategoriKonsi: {},
 });
 
 /** Capaian per kategori dan per barang untuk beberapa sales sekaligus, satu bulan. */
@@ -286,7 +289,7 @@ export async function acuanDikenal(
 export type BarisTargetTampil = BarisTarget & {
   nama: string;
   sku: string | null;
-  /** Nilai capaian di HP dihitung tanpa konsinyasi (target barang dalam rupiah). */
+  /** Nilai capaian di HP dihitung tanpa konsinyasi (setiap target dalam rupiah). */
   tanpaKonsi: boolean;
   aktif: boolean;
   kemajuan: KemajuanRinci;
@@ -299,7 +302,7 @@ export function rakitBarisTarget(
   nama: ReadonlyMap<string, NamaAcuan>,
   bulan: string,
   hariIni: Date,
-  /** HP salesman: target barang dalam rupiah dihitung tanpa konsinyasi (`capaianUntukHp`). */
+  /** HP salesman: setiap target dalam rupiah dihitung tanpa konsinyasi (`capaianUntukHp`). */
   opsi: { untukHp?: boolean } = {},
 ): BarisTargetTampil[] {
   return baris.map((b) => {
@@ -331,6 +334,69 @@ export async function targetSaya(salesmanId: string, bulan: string, hariIni: Dat
   const c = capaian.get(salesmanId) ?? capaianKosong();
   const nama = await namaAcuanTarget(baris);
   return { baris: rakitBarisTarget(baris, c, nama, bulan, hariIni, { untukHp: !opsi.spg }), capaian: c };
+}
+
+/** Satu target di layar Target saya HP — kunci dipilih satu per satu, tanpa capaian mentah. */
+export type BarisTargetHp = {
+  kunci: string;
+  scope: LingkupTarget;
+  nama: string;
+  sku: string | null;
+  measure: UkuranTarget;
+  /** Capaian dihitung dari putus + van saja (setiap target dalam rupiah). */
+  tanpaKonsi: boolean;
+  target: number;
+  capai: number;
+  persen: number;
+  kurang: number;
+  laju: LajuTarget;
+  perHari: number | null;
+  sisaHari: number;
+};
+
+/** Payload halaman Target saya di HP (tanpa target total, yang dirakit halamannya dari `omzet`). */
+export type TargetSayaHp = {
+  /** Omzet untuk target total: putus + van (sales) atau penjualan bersih notanya (SPG). Tanpa konsinyasi. */
+  omzet: number;
+  /** Target kategori dulu, lalu barang. */
+  baris: BarisTargetHp[];
+};
+
+/**
+ * Target saya untuk HP. Aturan mutlak pemilik: harga dan total konsinyasi
+ * tidak pernah sampai ke aplikasi salesman. `targetSaya` mengembalikan
+ * `capaian` mentah (total dan kanal memuat konsi) — itu tidak pernah keluar
+ * dari sini. Omzet target total = putus + van (`totalUntukHp`); setiap target
+ * dalam rupiah dihitung tanpa konsi (`capaianUntukHp`); target pcs tetap
+ * menghitung pcs konsinyasi. Halaman HP memanggil ini, tidak pernah
+ * `targetSaya` langsung (dijaga `penjualan-hp.penjaga.test.ts`).
+ */
+export async function targetSayaHp(
+  salesmanId: string,
+  bulan: string,
+  hariIni: Date,
+  opsi: { spg?: boolean } = {},
+): Promise<TargetSayaHp> {
+  const rinci = await targetSaya(salesmanId, bulan, hariIni, opsi);
+  const urut = [...rinci.baris].sort((a, b) => (a.scope === b.scope ? 0 : a.scope === "KATEGORI" ? -1 : 1));
+  return {
+    omzet: totalUntukHp(rinci.capaian),
+    baris: urut.map((b) => ({
+      kunci: `${b.scope}:${b.refId}`,
+      scope: b.scope,
+      nama: b.nama,
+      sku: b.sku,
+      measure: b.measure,
+      tanpaKonsi: b.tanpaKonsi,
+      target: b.kemajuan.target,
+      capai: b.kemajuan.capai,
+      persen: b.kemajuan.persen,
+      kurang: b.kemajuan.kurang,
+      laju: b.kemajuan.laju,
+      perHari: b.kemajuan.perHari,
+      sisaHari: b.kemajuan.sisaHari,
+    })),
+  };
 }
 
 export type PilihanAcuan = {

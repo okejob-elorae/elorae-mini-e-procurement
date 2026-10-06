@@ -1,9 +1,9 @@
 import { prisma } from "@elorae/db";
-import { computeStorePrice } from "@elorae/db/pricing";
 import { formatDisplayDate } from "@/lib/date-only";
 import { bacaTabelUkuran, pilihTabelUkuran, SATUAN_UKURAN, type SatuanUkuran } from "@/lib/items/size-chart";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { bacaVarian } from "@/lib/salesman/analisa-toko";
+import { hargaKasirSpg, syaratHargaToko, type SyaratHargaToko } from "./harga-kasir";
 import { promoBerlaku, ringkasPromoKonter } from "./promo-konter";
 import { promoKonterUntukToko } from "./promo-konter-queries";
 import {
@@ -25,8 +25,17 @@ import {
  * Angka gudang hanya dibaca untuk menentukan keterangan, tidak ikut dikirim.
  */
 
-const hargaEceran = (sellingPrice: unknown) =>
-  computeStorePrice({ sellingPrice: sellingPrice === null || sellingPrice === undefined ? null : Number(sellingPrice), termsType: "PUTUS", marginPercent: null }).price;
+/**
+ * Harga yang disebut ke pembeli = harga kasir toko SPG ini (`hargaKasirSpg`,
+ * sama dengan layar jual dan penulis nota): toko konsinyasi = harga di toko.
+ */
+const hargaToko = (sellingPrice: unknown, syarat: SyaratHargaToko) =>
+  hargaKasirSpg(sellingPrice === null || sellingPrice === undefined ? null : Number(sellingPrice), syarat);
+
+async function syaratToko(storeId: string): Promise<SyaratHargaToko> {
+  const toko = await prisma.store.findUnique({ where: { id: storeId }, select: { termsType: true, marginPercent: true } });
+  return toko ? syaratHargaToko(toko) : { termsType: "PUTUS", marginPercent: null };
+}
 
 /** Urutan foto: foto barang (tanpa varian) dulu, lalu per varian; urutan simpan di dalamnya. */
 function urutkanFoto<T extends { variantSku: string | null; sortOrder: number; url: string }>(foto: T[]): T[] {
@@ -44,7 +53,10 @@ function urutkanFoto<T extends { variantSku: string | null; sortOrder: number; u
  * dinonaktifkan di master bisa masih di rak dan masih ditanyakan pembeli).
  */
 export async function daftarProdukSpg(storeId: string): Promise<ProdukDaftar[]> {
-  const diBuku = await prisma.storeStockMovement.findMany({ where: { storeId }, distinct: ["itemId"], select: { itemId: true } });
+  const [diBuku, syarat] = await Promise.all([
+    prisma.storeStockMovement.findMany({ where: { storeId }, distinct: ["itemId"], select: { itemId: true } }),
+    syaratToko(storeId),
+  ]);
   const items = await prisma.item.findMany({
     where: {
       type: "FINISHED_GOOD",
@@ -65,7 +77,7 @@ export async function daftarProdukSpg(storeId: string): Promise<ProdukDaftar[]> 
     itemId: i.id,
     nama: i.nameId,
     sku: i.sku,
-    harga: hargaEceran(i.sellingPrice),
+    harga: hargaToko(i.sellingPrice, syarat),
     foto: fotoUtama.get(i.id) ?? null,
     varian: barisVarianProduk(i.variants).map((v) => ({ variantSku: v.sku, barcode: v.barcode })),
   }));
@@ -104,7 +116,7 @@ export async function infoProdukSpg(itemId: string, storeId: string, sekarang: D
   });
   const idTokoLain = tokoSpgLain.map((u) => u.assignedStoreId).filter((x): x is string => !!x && x !== storeId);
 
-  const [bukuToko, saldoToko, saldoLain, tokoLain, promo, tabel] = await Promise.all([
+  const [bukuToko, saldoToko, saldoLain, tokoLain, promo, tabel, syarat] = await Promise.all([
     prisma.storeStockMovement.findFirst({ where: { storeId }, select: { id: true } }),
     prisma.storeStockMovement.groupBy({ by: ["variantSku"], where: { storeId, itemId }, _sum: { qty: true } }),
     idTokoLain.length
@@ -128,6 +140,7 @@ export async function infoProdukSpg(itemId: string, storeId: string, sekarang: D
           },
         })
       : Promise.resolve([]),
+    syaratToko(storeId),
   ]);
   const bukuDimulai = bukuToko !== null;
 
@@ -211,7 +224,7 @@ export async function infoProdukSpg(itemId: string, storeId: string, sekarang: D
     deskripsi: item.description?.trim() || null,
     bahan: item.material?.trim() || null,
     caraRawat: item.careInstructions?.trim() || null,
-    harga: hargaEceran(item.sellingPrice),
+    harga: hargaToko(item.sellingPrice, syarat),
     foto,
     promo: promoBarang,
     tabelUkuran: tabelUkuran && tabelUkuran.kolom.length > 0 && tabelUkuran.baris.length > 0 ? tabelUkuran : null,

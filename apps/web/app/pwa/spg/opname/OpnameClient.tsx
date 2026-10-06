@@ -25,7 +25,8 @@ import { catatOpnameAction } from "@/app/actions/spg-stok";
 import { dinamis } from "@/lib/i18n/dinamis";
 import { cocokkanKode, kunciBaris } from "@/lib/spg/stok";
 import { cn } from "@/lib/utils";
-import { cocokCari, type BarisPilihan } from "../stok/barang-pilihan";
+import { umurHitungMs } from "@/lib/spg/opname-acuan";
+import { cocokCariButa, type BarisPilihanButa as BarisPilihan } from "./barang-buta";
 import { PerluCheckIn } from "../terima/PerluCheckIn";
 import { PilihVarian } from "./PilihVarian";
 import { TautanKembali } from "@/app/pwa/TautanKembali";
@@ -52,9 +53,13 @@ const KODE_GALAT = new Set([
   "BARANG_TIDAK_DITEMUKAN",
 ]);
 
-type Saringan = "semua" | "belum" | "selisih";
-/** `hitung` teks: "" = belum dihitung, BUKAN nol. Nol adalah hitungan yang sah. */
-type BarisHitung = { kunci: string; hitung: string };
+type Saringan = "semua" | "belum";
+/**
+ * `hitung` teks: "" = belum dihitung, BUKAN nol. Nol adalah hitungan yang sah.
+ * `waktu` (ms): kapan hitungan baris ini terakhir diubah — server menilai
+ * selisihnya terhadap saldo SAAT ITU, bukan saat opname disimpan.
+ */
+type BarisHitung = { kunci: string; hitung: string; waktu?: number };
 type Kelompok = { itemId: string; nama: string; varian: BarisPilihan[] };
 
 const angka = (s: string) => (s === "" ? null : Number(s));
@@ -89,9 +94,9 @@ function bacaDraf(storeId: string): Draf | null {
       window.localStorage.removeItem(kunciDraf(storeId));
       return null;
     }
-    const daftar = d.daftar.filter(
-      (b): b is BarisHitung => !!b && typeof b.kunci === "string" && typeof b.hitung === "string" && /^\d{0,6}$/.test(b.hitung),
-    );
+    const daftar = d.daftar
+      .filter((b): b is BarisHitung => !!b && typeof b.kunci === "string" && typeof b.hitung === "string" && /^\d{0,6}$/.test(b.hitung))
+      .map((b) => ({ kunci: b.kunci, hitung: b.hitung, ...(typeof b.waktu === "number" && Number.isFinite(b.waktu) ? { waktu: b.waktu } : {}) }));
     return { daftar, catatan: typeof d.catatan === "string" ? d.catatan.slice(0, 500) : "", waktu: d.waktu };
   } catch {
     return null;
@@ -217,7 +222,7 @@ export function OpnameClient({
   const hasilCari = useMemo(() => {
     const q = cari.trim();
     if (!q) return { kelompok: [] as Kelompok[], total: 0 };
-    const cocok = [...perItem.values()].filter((g) => g.varian.some((v) => cocokCari(v, q)));
+    const cocok = [...perItem.values()].filter((g) => g.varian.some((v) => cocokCariButa(v, q)));
     return { kelompok: cocok.slice(0, BATAS_HASIL), total: cocok.length };
   }, [cari, perItem]);
 
@@ -227,16 +232,16 @@ export function OpnameClient({
   const tambahSatu = (p: BarisPilihan) => {
     setDaftar((lama) => {
       const i = lama.findIndex((b) => b.kunci === p.kunci);
-      if (i < 0) return [{ kunci: p.kunci, hitung: "1" }, ...lama];
+      if (i < 0) return [{ kunci: p.kunci, hitung: "1", waktu: Date.now() }, ...lama];
       const baru = [...lama];
-      baru[i] = { ...lama[i], hitung: String(Math.min(QTY_MAKS, (angka(lama[i].hitung) ?? 0) + 1)) };
+      baru[i] = { ...lama[i], hitung: String(Math.min(QTY_MAKS, (angka(lama[i].hitung) ?? 0) + 1)), waktu: Date.now() };
       return baru;
     });
     setTerakhir(p.kunci);
   };
 
   const ubahHitung = (kunci: string, hitung: string) =>
-    setDaftar((lama) => lama.map((b) => (b.kunci === kunci ? { ...b, hitung } : b)));
+    setDaftar((lama) => lama.map((b) => (b.kunci === kunci ? { ...b, hitung, waktu: Date.now() } : b)));
   const hapus = (kunci: string) => setDaftar((lama) => lama.filter((b) => b.kunci !== kunci));
 
   const pilihKelompok = (g: Kelompok) => {
@@ -276,28 +281,16 @@ export function OpnameClient({
     toast.success(t("loadAllDone", { count: baru.length }));
   };
 
-  // Ringkasan daftar hitung.
+  // Ringkasan daftar hitung. Hitungan buta: tidak ada angka sistem di layar
+  // ini, jadi juga tidak ada "berselisih" — selisih dinilai server saat disimpan.
   const ringkas = useMemo(() => {
-    let dihitung = 0;
-    let berselisih = 0;
-    for (const b of daftar) {
-      const n = angka(b.hitung);
-      if (n === null) continue;
-      dihitung += 1;
-      if (n !== (perKunci.get(b.kunci)?.stok ?? 0)) berselisih += 1;
-    }
-    return { dihitung, belum: daftar.length - dihitung, berselisih };
-  }, [daftar, perKunci]);
+    const dihitung = daftar.filter((b) => angka(b.hitung) !== null).length;
+    return { dihitung, belum: daftar.length - dihitung };
+  }, [daftar]);
 
   const tampil = useMemo(
-    () =>
-      daftar.filter((b) => {
-        const n = angka(b.hitung);
-        if (saring === "belum") return n === null;
-        if (saring === "selisih") return n !== null && n !== (perKunci.get(b.kunci)?.stok ?? 0);
-        return true;
-      }),
-    [daftar, saring, perKunci],
+    () => (saring === "belum" ? daftar.filter((b) => angka(b.hitung) === null) : daftar),
+    [daftar, saring],
   );
 
   const kosongkanSesudahSimpan = () => {
@@ -314,11 +307,23 @@ export function OpnameClient({
   };
 
   const simpan = () => {
+    // Satu jam untuk umur hitungan DAN waktu antrean: kiriman daring yang
+    // kehabisan waktu lalu jatuh ke antrean tidak boleh menggeser waktu hitung.
+    const sekarang = Date.now();
     const baris = daftar
       .filter((b) => b.hitung !== "")
       .map((b) => {
         const p = perKunci.get(b.kunci);
-        return p ? { itemId: p.itemId, variantSku: p.variantSku, qtyCounted: Number(b.hitung), productName: labelBarang(p) } : null;
+        const umur = umurHitungMs(b.waktu, sekarang);
+        return p
+          ? {
+              itemId: p.itemId,
+              variantSku: p.variantSku,
+              qtyCounted: Number(b.hitung),
+              productName: labelBarang(p),
+              ...(umur === undefined ? {} : { umurHitungMs: umur }),
+            }
+          : null;
       })
       .filter((b): b is NonNullable<typeof b> => b !== null);
     const ikatan = ikatanKunjungan(kunjunganServer, lokal);
@@ -332,7 +337,7 @@ export function OpnameClient({
         await antreOpname({
           localId: kunci,
           storeId,
-          waktu: Date.now(),
+          waktu: sekarang,
           visitId: ik.visitId,
           visitClientId: ik.visitClientId,
           baris,
@@ -356,7 +361,12 @@ export function OpnameClient({
       try {
         res = await denganBatasWaktu(
           catatOpnameAction({
-            baris: baris.map((b) => ({ itemId: b.itemId, variantSku: b.variantSku, qtyCounted: b.qtyCounted })),
+            baris: baris.map((b) => ({
+              itemId: b.itemId,
+              variantSku: b.variantSku,
+              qtyCounted: b.qtyCounted,
+              ...(b.umurHitungMs === undefined ? {} : { umurHitungMs: b.umurHitungMs }),
+            })),
             note: catatan.trim() || undefined,
             idempotencyKey: kunci,
           }),
@@ -481,7 +491,7 @@ export function OpnameClient({
                               <span className="block truncate font-medium leading-tight">{g.nama}</span>
                               <span className="block truncate text-xs font-normal text-muted-foreground">
                                 {satu
-                                  ? [satu.varian, satu.kode, t("system", { qty: satu.stok })].filter(Boolean).join(" · ")
+                                  ? [satu.varian, satu.kode].filter(Boolean).join(" · ")
                                   : t("variantCount", { count: g.varian.length })}
                               </span>
                             </span>
@@ -516,6 +526,8 @@ export function OpnameClient({
             <h2 id="judul-hitung" className="beranda-judul px-1">
               {t("listTitle", { count: daftar.length })}
             </h2>
+            {/* Hitungan buta: stok sistem tidak ditampilkan sampai opname disimpan. */}
+            <p className="px-1 text-xs text-muted-foreground">{t("blind")}</p>
 
             {daftar.length === 0 ? (
               <p className="beranda-kartu text-sm text-muted-foreground">{t("listEmpty")}</p>
@@ -526,7 +538,6 @@ export function OpnameClient({
                     [
                       ["semua", t("filterAll", { count: daftar.length })],
                       ["belum", t("filterUncounted", { count: ringkas.belum })],
-                      ["selisih", t("filterDiff", { count: ringkas.berselisih })],
                     ] as const
                   ).map(([nilai, label]) => (
                     <Button
@@ -551,7 +562,6 @@ export function OpnameClient({
                         const p = perKunci.get(b.kunci);
                         if (!p) return null;
                         const n = angka(b.hitung);
-                        const selisih = n === null ? null : n - p.stok;
                         return (
                           <li
                             key={b.kunci}
@@ -577,23 +587,7 @@ export function OpnameClient({
                             </div>
                             <div className="flex items-center gap-2">
                               <div className="min-w-0 flex-1 text-xs">
-                                <span className="block text-muted-foreground">
-                                  {t("systemLabel")}{" "}
-                                  <span className={cn("font-medium tabular-nums", p.stok < 0 && "text-destructive")}>
-                                    {p.stok}
-                                  </span>
-                                </span>
-                                {selisih === null ? (
-                                  <span className="block text-muted-foreground">{t("uncounted")}</span>
-                                ) : selisih === 0 ? (
-                                  <span className="block text-emerald-700 dark:text-emerald-300">{t("match")}</span>
-                                ) : selisih > 0 ? (
-                                  <span className="block font-semibold text-amber-700 dark:text-amber-300">
-                                    {t("diffOver", { n: selisih })}
-                                  </span>
-                                ) : (
-                                  <span className="block font-semibold text-destructive">{t("diffUnder", { n: -selisih })}</span>
-                                )}
+                                {n === null ? <span className="block text-muted-foreground">{t("uncounted")}</span> : null}
                               </div>
                               <Button
                                 type="button"
@@ -660,8 +654,8 @@ export function OpnameClient({
             <p className="text-center text-xs text-muted-foreground" aria-live="polite">
               {ringkas.belum > 0 ? t("saveHintSkipped", { count: ringkas.belum }) : t("saveHint")}
             </p>
-            {/* Tanpa sinyal (atau check-in yang masih di HP): angka "sistem" di layar ini
-                bisa usang — selisih yang dicatat dihitung server saat terkirim. */}
+            {/* Tanpa sinyal (atau check-in yang masih di HP): selisih yang dicatat
+                dihitung server saat terkirim. */}
             {luring || lokal?.keadaan === "antre" ? (
               <p className="flex items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
                 <CloudOff className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -685,11 +679,6 @@ export function OpnameClient({
                 <AlertDialogDescription asChild>
                   <div className="space-y-2">
                     <p>{t("confirm.body", { count: ringkas.dihitung })}</p>
-                    {ringkas.berselisih > 0 ? (
-                      <p className="font-medium text-amber-700 dark:text-amber-300">
-                        {t("confirm.diff", { count: ringkas.berselisih })}
-                      </p>
-                    ) : null}
                     {ringkas.belum > 0 ? <p>{t("confirm.skipped", { count: ringkas.belum })}</p> : null}
                     <p>{opnamePertama ? t("intro.first") : t("confirm.untouched")}</p>
                   </div>

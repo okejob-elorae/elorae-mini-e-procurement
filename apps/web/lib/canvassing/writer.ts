@@ -2,6 +2,7 @@ import { prisma, Prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { weightedAvgCost } from "./cost";
+import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 
 export type LoadVanLine = { itemId: string; variantSku: string | null; qty: number };
 export type LoadVanResult =
@@ -30,7 +31,7 @@ export async function loadVan(input: {
   const merged = mergeLines(input.lines);
   if (merged.length === 0) return { ok: false, code: "EMPTY" };
 
-  return runSerializable(async (tx) => {
+  const hasil = await runSerializable(async (tx): Promise<LoadVanResult> => {
     // read current main inventory for each line
     const invByKey = new Map<string, { id: string; qtyOnHand: Prisma.Decimal; reservedQty: Prisma.Decimal; avgCost: Prisma.Decimal } | null>();
     for (const l of merged) {
@@ -118,4 +119,11 @@ export async function loadVan(input: {
 
     return { ok: true, loadId: load.id, docNo };
   });
+
+  // Sesudah commit: stok gudang utama berkurang (barang naik ke van), jadi
+  // available di Jubelio harus ikut turun. Best-effort, tidak pernah melempar.
+  if (hasil.ok) {
+    await antrekanPushStok(merged.map((l) => l.itemId), { sumber: "ADJUSTMENT", ref: `muat van ${hasil.docNo}`, userId: input.loadedById });
+  }
+  return hasil;
 }

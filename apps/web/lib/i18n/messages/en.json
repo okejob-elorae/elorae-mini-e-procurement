@@ -2045,7 +2045,14 @@
       "backToInventory": "Back to inventory",
       "newQtyLabel": "New qty:",
       "dateLabel": "Date:",
-      "approvedByLabel": "Approved by:"
+      "approvedByLabel": "Approved by:",
+      "colSource": "Source",
+      "sourceLabel": "Source:",
+      "adjSourceFilter": "Source",
+      "adjSourceManual": "Manual and opname",
+      "adjSourceAuto": "Automatic only",
+      "adjSourceAll": "All sources",
+      "adjEmpty": "No adjustments match this filter."
     },
     "adjNew": {
       "title": "Stock Adjustment",
@@ -2152,7 +2159,9 @@
       "printLoadFailed": "Failed to load for print",
       "printFrameTitle": "Print stock card",
       "printByTypeFrameTitle": "Print stock card by type",
-      "printByCategoryFrameTitle": "Print stock card by category"
+      "printByCategoryFrameTitle": "Print stock card by category",
+      "undocumentedNote": "A difference of {qty} {uom} in the opening balance is not recorded in any movement document (for example opening stock from the Jubelio catalogue or a direct correction). The closing balance still equals the recorded stock.",
+      "variantAdjNote": "{count} adjustments since the start of the period do not record a variant (for example marketplace sales or Jubelio changes), so they are not shown on a per-variant card and the balance of this variant may be off. Choose “All variants” for complete figures."
     },
     "grnForm": {
       "pageTitle": "Create Goods Receipt (GRN)",
@@ -2209,6 +2218,32 @@
       "createButton": "Create GRN",
       "rack": "Rack {index}",
       "rollLabel": "#{index} · {length} {uom} (click to remove)"
+    },
+    "stockMoveKind": {
+      "GRN": "Goods receipt (GRN)",
+      "GRN_OWNER_DECLINE": "GRN declined by owner (receipt reversed)",
+      "WO_ISSUE": "Material issued to production",
+      "WO_RECEIPT": "Production output received",
+      "FG_RECEIPT": "Finished goods received",
+      "ADJUSTMENT": "Manual stock adjustment",
+      "OPNAME": "Stock opname",
+      "RECON": "Jubelio reconciliation",
+      "VENDOR_RETURN": "Return to supplier",
+      "RETURN": "Return",
+      "ERP": "Manual adjustment",
+      "ERP_OPNAME": "Stock opname",
+      "ERP_RETURN_ACCEPT": "Marketplace return accepted",
+      "FULFILLMENT_CONSUME": "Marketplace sale shipped",
+      "FIELD_SALES_CONSUME": "Putus order delivery",
+      "JUBELIO_WEBHOOK": "Stock change from Jubelio",
+      "JUBELIO_RECONCILE": "Jubelio reconciliation",
+      "VAN_LOAD": "Canvassing van loaded",
+      "VAN_RETURN": "Van stock returned to warehouse",
+      "STORE_RETURN_RECEIVE": "Returned goods back to sellable stock",
+      "KONSI_TRANSFER": "Sent to consignment store",
+      "STORE_EXCHANGE_OUT": "Goods exchange: out to store",
+      "STORE_EXCHANGE_IN": "Goods exchange: in from store",
+      "KOL_SEEDING": "Sent to KOL (seeding)"
     }
   },
   "stockOpname": {
@@ -2314,7 +2349,14 @@
     "decreaseCount": "Decrease count",
     "increaseCount": "Increase count",
     "previousPage": "Previous page",
-    "nextPage": "Next page"
+    "nextPage": "Next page",
+    "blindNote": "System figures are hidden while counting. Once the count is submitted, the approver sees them along with the differences.",
+    "countClosed": "Counting is closed for this opname because it has been submitted for approval (or is already finished). If something was miscounted, ask an approver to cancel it and start a new opname.",
+    "blind": {
+      "counting": "Blind count: system figures and differences are hidden while counting. Once submitted, the approver sees both.",
+      "waitingApproval": "The count has been submitted. System figures and differences are shown to the approver, and to everyone once the opname is approved.",
+      "cancelled": "This opname was cancelled. Its system figures and differences are shown to approvers only."
+    }
   },
   "stockReconciliation": {
     "title": "Jubelio Reconciliation",
@@ -2332,7 +2374,7 @@
     "inSync": "In sync",
     "flagged": "Flagged",
     "autoCorrected": "Auto-corrected",
-    "eloraeQty": "Elorae qty",
+    "eloraeQty": "Elorae available",
     "jubelioQty": "Jubelio qty",
     "variance": "Variance",
     "action": "Action",
@@ -2521,7 +2563,56 @@
     "createFailed": "Failed to create PO",
     "savedLocally": "PO saved locally. It will sync when online.",
     "saveLocallyFailed": "Failed to save PO locally",
-    "filterOverdue": "Overdue POs"
+    "filterOverdue": "Overdue POs",
+    "tutup": {
+      "tombol": "Close PO",
+      "judul": "Close {docNumber}?",
+      "penjelasan": "Use this when the supplier will not deliver the remaining goods. The PO is closed as it stands, the undelivered remainder is no longer expected, and any further goods receipt (GRN) against this PO will be refused. This cannot be undone.",
+      "sisaJudul": "Goods that will not arrive",
+      "alasanLabel": "Reason for closing",
+      "alasanPlaceholder": "Example: supplier cannot deliver the rest of the order",
+      "alasanWajib": "A reason is required.",
+      "batal": "Back",
+      "konfirmasi": "Close PO",
+      "menutup": "Closing...",
+      "berhasil": "{docNumber} closed. The remaining {qty} is no longer expected.",
+      "err": {
+        "ALASAN_WAJIB": "Enter a reason for closing the PO.",
+        "TIDAK_DITEMUKAN": "PO not found.",
+        "MASIH_DRAF": "This PO is still a draft. Cancel it instead of closing it.",
+        "DIBATALKAN": "This PO has been cancelled.",
+        "SUDAH_DITUTUP": "This PO is already closed. Reload the page.",
+        "SUDAH_LENGKAP": "Every item on this PO has been received, so there is nothing to close.",
+        "BELUM_ADA_PENERIMAAN": "Nothing has been received yet. Cancel this PO instead of closing it.",
+        "GRN_MENUNGGU_PEMILIK": "An over-receipt GRN is still waiting for the owner's decision. Decide that GRN first.",
+        "TANPA_AKSES": "You do not have permission to approve POs, so you cannot close one.",
+        "GAGAL": "The PO could not be closed. Try again."
+      }
+    },
+    "ringkasan": {
+      "subtotal": "Subtotal",
+      "ppn": "VAT {tarif}%",
+      "ppnTidakDihitung": "VAT (not calculated)",
+      "totalPo": "PO total",
+      "tidakDatang": "Will not be delivered (PO closed)",
+      "retur": "Return {docNumber}",
+      "utang": "Owed to supplier",
+      "utangSingkat": "Owed: {nilai}",
+      "ditutup": "Closed before completion on {waktu} by {nama}.",
+      "alasan": "Reason: {alasan}",
+      "ppnSaatSimpan": "VAT (calculated when the PO is saved)",
+      "totalSebelumPpn": "Total before VAT"
+    },
+    "batal": {
+      "err": {
+        "TIDAK_DITEMUKAN": "Purchase order not found.",
+        "SUDAH_DIBATALKAN": "This purchase order has already been cancelled. Reload this page.",
+        "SUDAH_ADA_PENERIMAAN": "This purchase order cannot be cancelled because goods have already been received (GRN). Use Close PO if the remaining goods will not arrive.",
+        "TANPA_AKSES": "You do not have permission to cancel purchase orders.",
+        "PIN_WAJIB": "Enter your PIN to cancel the purchase order.",
+        "GAGAL": "The purchase order could not be cancelled. Try again."
+      }
+    }
   },
   "workOrdersList": {
     "noWorkOrdersFound": "No work orders found"
@@ -4453,7 +4544,11 @@
       "collectCall": "Call",
       "planIntervalDefault": "Unpaid bills, ordering less, or not visited for {days} days.",
       "ordersSeeAll": "See all",
-      "targetRinci": "Target details"
+      "targetRinci": "Target details",
+      "totalPutusVan": "Outright + van",
+      "konsiPcs": "{n} pcs",
+      "targetKonsiNote": "This percentage counts outright + van only. The office also counts consignment toward your target, but its value is not shown on the phone.",
+      "trendTitlePutusVan": "Last 30 days · outright + van"
     },
     "saran": {
       "title": "Order suggestions",
@@ -5290,7 +5385,8 @@
         "body": "{count, plural, =0 {Your unsaved stock count note was restored} one {# counted item was restored} other {# counted items were restored}} (last changed {time}). Keep counting, or start over.",
         "discard": "Start over",
         "autosave": "Counts are kept on this phone until you save — safe if the screen closes."
-      }
+      },
+      "blind": "System stock is hidden while you count. Count what is on the shelf; any difference is shown after the count is saved."
     },
     "kabar": {
       "open": "Updates",
@@ -5781,14 +5877,23 @@
       "channel_putus": "Outright",
       "channel_konsi": "Consignment",
       "channel_van": "Van",
-      "salesHint": "Same as the \"This month\" card on the home screen: outright deliveries, approved consignment, and van sales.",
+      "salesHint": "Same as the \"This month\" card on the home screen: amounts from outright deliveries and van sales. Approved consignment is shown only as a number of pcs.",
       "moreLabel": "More",
       "leaderboardLink": "Leaderboard",
       "leaderboardHint": "Your target progress against colleagues this month",
       "footer": "All figures on this page are estimates from the scheme set by the office. The commission paid is decided by the office.",
       "homeTitle": "Estimated incentive this month",
       "homeFormulaTERTAGIH": "{rate}% of collections {amount}",
-      "homeFormulaPENJUALAN": "{rate}% of sales {amount}"
+      "homeFormulaPENJUALAN": "{rate}% of sales {amount}",
+      "formulaPENJUALANPutusVan": "{rate}% of outright + van sales {amount}",
+      "homeFormulaPENJUALANPutusVan": "{rate}% of outright + van sales {amount}",
+      "konsiBelumDihitung": "Consignment not included — the office's final figure may be higher.",
+      "targetOfPutusVan": "Outright + van {omzet} of {target}",
+      "noTargetPutusVan": "Outright + van {omzet}. No target set for this month — an admin sets it.",
+      "konsiNote": "Figures on this page count outright + van. This month's consignment ({n} pcs) is counted by the office toward your target, so your final achievement, rate and commission may be higher.",
+      "konsiPcs": "{n} pcs",
+      "konsiNoteCapaian": "Figures on this page count outright + van. This month's consignment ({n} pcs) is counted by the office toward your target, so your final achievement may be higher.",
+      "konsiNotePcs": "Figures on this page count outright + van. Consignment this month: {n} pcs, not included in the amounts above."
     },
     "peringkat": {
       "back": "Home",
@@ -5809,7 +5914,10 @@
       "anonymous": "Salesperson #{n}",
       "moreLabel": "More",
       "incentiveLink": "Incentive",
-      "incentiveHint": "Estimated commission and its breakdown"
+      "incentiveHint": "Estimated commission and its breakdown",
+      "basisNote": "Achievement and sales on this board count outright deliveries and van sales. Consignment is not counted.",
+      "yourSalesPutusVan": "Your outright + van sales {amount}",
+      "konsiPcs": "Consignment this month: {n} pcs, not counted on this board."
     },
     "hariIni": {
       "back": "Home",
@@ -6454,7 +6562,7 @@
       "short": "{amount} to go",
       "paceOnTrack": "Keep up about {amount} a day.",
       "paceBehind": "Needs about {amount} a day for the next {days} days.",
-      "note": "Counted from outright deliveries, approved consignment and van sales this month — the same as the turnover on your home screen. Bonus items are not counted.",
+      "note": "Targets in rupiah count outright deliveries and van sales this month — the same as the turnover on your home screen. Targets in pcs also count approved consignment. Bonus items are not counted.",
       "pcs": "{n} pcs",
       "tanpaKonsi": "Value from outright and van sales — consignment is not counted here.",
       "noteSpg": "Counted from your sales receipts this month, minus items returned by shoppers. A return counts in the month of its receipt."
@@ -9424,7 +9532,37 @@
     "errTANGGAL_DI_DEPAN": "The payment date cannot be after today.",
     "errALASAN_WAJIB": "Enter a reason.",
     "errSUDAH_DIBATALKAN": "This payment is already cancelled.",
-    "errPEMBAYARAN_TIDAK_DITEMUKAN": "Payment not found."
+    "errPEMBAYARAN_TIDAK_DITEMUKAN": "Payment not found.",
+    "errSTOK_KURANG": "There is not enough warehouse stock for this shipment. The details are above the item list.",
+    "errVARIAN_WAJIB": "Choose a size for items that have variants.",
+    "kirimBaris": {
+      "emptyHint": "Add the items being shipped. Items with variants are shipped per size.",
+      "variant": "Size / variant",
+      "variantPlaceholder": "Choose a size",
+      "variantOption": "{label} · {qty} available",
+      "variantAuto": "Size {label} (the only stock)",
+      "noVariant": "No size",
+      "variantLoading": "Loading sizes…",
+      "variantLoadFailed": "Sizes could not be loaded.",
+      "retry": "Try again",
+      "variantHidden": "{count} sizes without stock are not shown.",
+      "noStock": "This item has no available stock in the warehouse.",
+      "qty": "Qty",
+      "available": "Available in the warehouse: {qty}",
+      "overAvailable": "More than the available warehouse stock ({qty}).",
+      "stockHint": "Catalog items leave the warehouse stock when the shipment is saved. Items typed by name only are recorded without moving stock.",
+      "shortTitle": "Not enough warehouse stock, so nothing was saved:",
+      "shortLine": "{item}{variant}: requested {requested}, available {available}",
+      "whyStore": "Choose a shop first.",
+      "whyRows": "Add at least one item.",
+      "whyName": "Row {n}: enter the item name.",
+      "whyQty": "Row {n}: enter the quantity (a whole number above zero).",
+      "whyLoading": "Row {n}: sizes are still loading.",
+      "whyLoadFailed": "Row {n}: the sizes of {item} could not be loaded. Press Try again.",
+      "whyVariant": "Row {n}: choose a size for {item}.",
+      "okShippedNo": "Shipment {noKirim} saved.",
+      "okAlreadyShipped": "This shipment is already recorded as {noKirim}. Stock was not deducted again."
+    }
   },
   "jenisPotongan": {
     "pageTitle": "Deduction types",
@@ -12863,7 +13001,12 @@
     "konsiPcs": "Includes {n} pcs on consignment",
     "valueNoKonsi": "{amount} excluding consignment",
     "rankLabel": "Rank {rank}",
-    "emptyMonth": "No sales in {month} yet."
+    "emptyMonth": "No sales in {month} yet.",
+    "totalPutusVan": "Outright + van",
+    "targetKonsiNote": "This percentage counts outright + van only. The office also counts consignment toward your target, but its value is not shown on the phone.",
+    "comparePutusVan": "Amounts are outright + van.",
+    "tooltipKonsiPcs": "Consignment {n} pcs",
+    "chartPutusVan": "Bars show outright + van amounts. Consignment is not in the bars; its pcs appear when you tap a bar."
   },
   "pwaAnalisaToko": {
     "title": "Store analysis",
@@ -15928,5 +16071,26 @@
       "pwaBersama": "Phone — salesman and SPG"
     },
     "kosong": "No explanations yet."
+  },
+  "productionErrors": {
+    "WO_TIDAK_DITEMUKAN": "Work order not found.",
+    "WO_DIBATALKAN": "This work order has been cancelled, so finished goods cannot be received into it.",
+    "WO_BELUM_TERBIT": "This work order is still a draft. Issue it before receiving finished goods.",
+    "WO_SUDAH_ADA_PENERIMAAN": "A work order that already has finished-goods receipts cannot be cancelled.",
+    "WO_SUDAH_DIBATALKAN": "This work order has already been cancelled.",
+    "WO_SUDAH_KELUAR_BAHAN": "This work order cannot be cancelled because its materials have already been issued from the warehouse. There is no material return flow yet, so complete this work order or contact an admin.",
+    "TANPA_AKSES": "You do not have permission to manage work orders.",
+    "GAGAL": "The work order could not be processed. Try again.",
+    "BAHAN_WO_DIBATALKAN": "This work order has been cancelled, so materials cannot be issued to it.",
+    "BAHAN_WO_SELESAI": "This work order has already received finished goods or is complete, so no more materials can be issued.",
+    "STOK_BAHAN_KURANG": "Not enough stock of {barang} to issue. Check warehouse stock and try again.",
+    "ROLL_TIDAK_CUKUP": "The selected rolls cannot cover the issued fabric qty (short {kurang}). Pick other rolls or reload this page.",
+    "WO_SUDAH_TERBIT": "This work order has already been issued. Reload this page."
+  },
+  "grnErrors": {
+    "PO_TIDAK_DITEMUKAN": "Purchase order not found.",
+    "PO_DIBATALKAN": "This purchase order has been cancelled, so goods cannot be received against it.",
+    "PO_BELUM_DISETUJUI": "This purchase order is still a draft and has not been approved. Approve and send it before receiving goods.",
+    "PO_DITUTUP": "This purchase order has been closed, so goods can no longer be received against it."
   }
 }

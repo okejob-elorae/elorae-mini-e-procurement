@@ -37,8 +37,9 @@ import { toast } from 'sonner';
 import {
   getAvailableFabricRolls,
   getWorkOrderById,
-  issueMaterials,
+  keluarkanBahan,
   suggestFabricRollAllocation,
+  type KeluarkanBahanResult,
 } from '@/app/actions/production';
 import { getItemsByType } from '@/app/actions/items';
 import { getItemAvgCosts } from '@/app/actions/inventory';
@@ -93,6 +94,7 @@ export default function WorkOrderIssuePage() {
   const tWO = useTranslations('workOrders');
   const tF = useTranslations('workOrders.form');
   const tI = useTranslations('workOrders.issuePage');
+  const tTolak = useTranslations('productionErrors');
   const params = useParams();
   const router = useRouter();
   const { data: session } = useSession();
@@ -358,6 +360,21 @@ export default function WorkOrderIssuePage() {
     }
   };
 
+  /** Pesan untuk penolakan berkode dari `keluarkanBahan` (pesan lemparan disamarkan di produksi). */
+  const pesanTolak = (hasil: Extract<KeluarkanBahanResult, { ok: false }>) => {
+    const angka = (n?: number) => (n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    switch (hasil.code) {
+      case 'ROLL_KURANG_DARI_KAIN':
+        return tI('rollBelowFabric', { roll: angka(hasil.roll), fabric: angka(hasil.kain) });
+      case 'STOK_BAHAN_KURANG':
+        return tTolak('STOK_BAHAN_KURANG', { barang: hasil.barang ?? '' });
+      case 'ROLL_TIDAK_CUKUP':
+        return tTolak('ROLL_TIDAK_CUKUP', { kurang: angka(hasil.kurang) });
+      default:
+        return tTolak.has(hasil.code) ? tTolak(hasil.code) : t('failedToIssue');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!session?.user?.id || !wo || lines.length === 0) return;
@@ -381,26 +398,28 @@ export default function WorkOrderIssuePage() {
     }
     setIsSubmitting(true);
     try {
-      await issueMaterials(
-        {
-          woId: String(wo.id),
-          issueType,
-          isPartial,
-          items: valid.map((l) => ({
-            itemId: l.itemId,
-            qty: l.qty,
-            uomId: l.uomId,
-            ...(l.unitPrice != null && l.unitPrice > 0 ? { unitPrice: l.unitPrice } : {}),
-          })),
-          ...(issueType === "FABRIC" ? { rollBreakdown } : {}),
-        },
-        session.user.id
-      );
+      // Pelaku dibaca dari sesi di server; penolakan dikembalikan sebagai kode.
+      const hasil = await keluarkanBahan({
+        woId: String(wo.id),
+        issueType,
+        isPartial,
+        items: valid.map((l) => ({
+          itemId: l.itemId,
+          qty: l.qty,
+          uomId: l.uomId,
+          ...(l.unitPrice != null && l.unitPrice > 0 ? { unitPrice: l.unitPrice } : {}),
+        })),
+        ...(issueType === "FABRIC" ? { rollBreakdown } : {}),
+      });
+      if (!hasil.ok) {
+        toast.error(pesanTolak(hasil));
+        return;
+      }
       toast.success(t('materialsIssued'));
       router.push(`/backoffice/work-orders/${id}`);
       router.refresh();
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : t('failedToIssue'));
+    } catch {
+      toast.error(t('failedToIssue'));
     } finally {
       setIsSubmitting(false);
     }

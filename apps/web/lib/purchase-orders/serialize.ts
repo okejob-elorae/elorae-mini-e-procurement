@@ -1,5 +1,7 @@
 import { getETAStatus } from '@/lib/eta-alerts';
 import type { POStatus } from '@elorae/db';
+import { hitungUtangPo } from './utang';
+import type { ReturUntukPo } from './kredit-retur-queries';
 
 const toNum = (v: unknown): number | null => (v == null ? null : Number(v));
 
@@ -62,6 +64,9 @@ export function serializePOListRow(po: {
   supplier: { name: string; code: string };
   items: Array<Parameters<typeof serializePOListLineItem>[0]>;
   _count: { grns: number };
+  ppnRatePercent?: unknown;
+  closedAt?: Date | null;
+  closeReason?: string | null;
 }) {
   return {
     id: po.id,
@@ -85,6 +90,9 @@ export function serializePOListRow(po: {
     items: po.items.map(serializePOListLineItem),
     _count: po._count,
     etaAlert: getETAStatus(po.etaDate, po.status),
+    ppnRatePercent: toNum(po.ppnRatePercent) ?? null,
+    closedAt: toIso(po.closedAt),
+    closeReason: po.closeReason ?? null,
   };
 }
 
@@ -119,6 +127,14 @@ type PODetailRow = {
    * for it — absent means "not flagged", never "unknown".
    */
   paymentJournalStandingWhileUnpaid?: boolean;
+  ppnRatePercent?: unknown;
+  closedAt?: Date | null;
+  closedById?: string | null;
+  closeReason?: string | null;
+  /** Nama penutup "Tutup PO", dibaca `getPOById`. */
+  closedByName?: string | null;
+  /** Retur pemasok selesai yang mengurangi utang PO ini (`returUntukPo`). */
+  returPemasok?: ReturUntukPo[];
   supplier: Record<string, unknown>;
   items: Array<{
     id: string;
@@ -185,6 +201,27 @@ export function serializePODetail(po: PODetailRow) {
     chainConfirmedSource: po.chainConfirmedSource ?? null,
     actualLeadDays: po.actualLeadDays,
     paymentJournalStandingWhileUnpaid: po.paymentJournalStandingWhileUnpaid ?? false,
+    ppnRatePercent: toNum(po.ppnRatePercent) ?? null,
+    closedAt: toIso(po.closedAt),
+    closedById: po.closedById ?? null,
+    closeReason: po.closeReason ?? null,
+    closedByName: po.closedByName ?? null,
+    returPemasok: po.returPemasok ?? [],
+    utang: hitungUtangPo(
+      {
+        status: po.status,
+        grandTotal: toNum(po.grandTotal) ?? 0,
+        ppnRatePercent: toNum(po.ppnRatePercent) ?? null,
+        closedAt: po.closedAt ?? null,
+        items: po.items.map((l) => ({
+          qty: toNum(l.qty) ?? 0,
+          receivedQty: toNum(l.receivedQty) ?? 0,
+          price: toNum(l.price) ?? 0,
+          ppnIncluded: l.ppnIncluded,
+        })),
+      },
+      (po.returPemasok ?? []).reduce((t, r) => t + r.poCreditAmount, 0),
+    ),
     supplier: po.supplier,
     items: po.items.map((line) => ({
       id: line.id,

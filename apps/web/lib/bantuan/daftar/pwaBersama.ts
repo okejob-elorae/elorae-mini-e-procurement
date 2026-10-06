@@ -18,7 +18,7 @@ export const ENTRI: EntriBantuan[] = [
       {
         judul: { kunci: "pwa.beranda.targetTitle" },
         isi: [
-          "Salesman: omzet Anda bulan ini dibanding target dari kantor, kekurangan per hari sampai akhir bulan, dan grafik 30 hari terakhir. Tautan Lihat riwayat membuka penjualan bulan-bulan sebelumnya; Rincian target muncul bila kantor mengatur target per kategori atau barang.",
+          "Salesman: omzet Anda bulan ini dibanding target dari kantor, kekurangan per hari sampai akhir bulan, dan grafik 30 hari terakhir. Omzet dalam rupiah dihitung dari pengiriman putus dan penjualan van; konsinyasi yang disetujui hanya tampil sebagai jumlah pcs. Tautan Lihat riwayat membuka penjualan bulan-bulan sebelumnya; Rincian target muncul bila kantor mengatur target per kategori atau barang.",
           "SPG: penjualan bersih Anda di toko ini bulan ini dibanding target, ditambah ringkasan nota hari ini.",
         ],
       },
@@ -47,7 +47,7 @@ export const ENTRI: EntriBantuan[] = [
       },
       {
         judul: "Rencana kunjungan hari ini (salesman)",
-        isi: "Toko Anda yang perlu didatangi: yang punya tagihan, yang mulai jarang pesan, atau yang sudah melewati jarak kunjungan kelasnya (toko tanpa kelas memakai batas hari dari kantor). Toko yang dijadwalkan kantor untuk hari ini tampil paling atas, dan catatan toko yang disematkan ikut tampil di barisnya. Nyalakan lokasi HP supaya daftarnya diurutkan dari yang terdekat.",
+        isi: "Toko Anda yang perlu didatangi: yang punya tagihan, yang mulai jarang pesan atau nilai pesanannya turun, atau yang sudah melewati jarak kunjungan kelasnya (toko tanpa kelas memakai batas hari dari kantor). Nilai pesanan 90 hari yang turun tampil dengan persen turunnya; untuk toko yang punya pesanan konsinyasi tidak tampil angka, hanya tulisan Nilai pesanan menurun. Toko yang dijadwalkan kantor untuk hari ini tampil paling atas, dan catatan toko yang disematkan ikut tampil di barisnya. Nyalakan lokasi HP supaya daftarnya diurutkan dari yang terdekat.",
       },
       {
         judul: "Perlu ditagih (salesman)",
@@ -283,7 +283,7 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "pwa.target.title" },
     isi: [
       "Target per kategori dan per barang yang ditetapkan kantor untuk bulan ini, dengan kemajuan, kekurangannya, dan laju per hari yang dibutuhkan. Target total di atas sama dengan kartu Bulan ini di beranda.",
-      "Salesman: capaian dihitung dari pengiriman putus, konsinyasi yang disetujui, dan penjualan van bulan ini — sama dengan omzet di beranda. Barang bonus tidak dihitung. Target barang dalam rupiah tidak menghitung konsinyasi.",
+      "Salesman: target dalam rupiah — target total, per kategori, dan per barang — dihitung dari pengiriman putus dan penjualan van bulan ini, sama dengan omzet di beranda; konsinyasi tidak dihitung dalam rupiah. Target dalam pcs menghitung pengiriman putus, konsinyasi yang disetujui, dan penjualan van. Barang bonus tidak dihitung.",
       "SPG: capaian dihitung dari nota penjualan Anda bulan ini, dikurangi barang yang dikembalikan pembeli; retur dihitung pada bulan notanya.",
     ],
   },
@@ -292,14 +292,14 @@ export const ENTRI: EntriBantuan[] = [
     bagian: "pwaBersama",
     judul: { kunci: "pwa.peringkat.title" },
     isi: [
-      "Posisi Anda dibanding rekan bulan ini. Salesman diurutkan menurut capaian target. SPG punya papan sendiri, diurutkan menurut penjualan bersih (nota dikurangi barang yang dikembalikan pembeli), tidak dicampur dengan salesman.",
+      "Posisi Anda dibanding rekan bulan ini. Salesman diurutkan menurut capaian target, yang dihitung dari pengiriman putus dan penjualan van; konsinyasi tidak ikut dihitung. Bila ada, jumlah pcs konsinyasi Anda sendiri tampil di kartu Posisi Anda. SPG punya papan sendiri, diurutkan menurut penjualan bersih (nota dikurangi barang yang dikembalikan pembeli), tidak dicampur dengan salesman.",
       "Omzet dan penjualan rekan tidak pernah ditampilkan. Nama rekan bisa disembunyikan bila kantor mengaturnya; nama Anda sendiri selalu terlihat.",
     ],
     kartu: [
       {
         judul: { kunci: "pwa.peringkat.noTargetTitle" },
         isi: [
-          "Salesman yang belum punya target bulan ini.",
+          "Salesman yang belum punya target bulan ini, diurutkan menurut omzet putus dan van.",
           { kunci: "pwa.peringkat.noTargetHint" },
         ],
       },

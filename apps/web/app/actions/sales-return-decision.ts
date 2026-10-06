@@ -16,6 +16,7 @@ import {
   type SalesReturnGateCode,
 } from "@/lib/finance/sales/sales-return-journal";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 
 /**
  * Remedy sentence carried by the `JOURNAL_PENDING` notification, per failure
@@ -102,7 +103,7 @@ export async function acceptReturnItemAction(
   const salesReturnId = await findReturnIdFromItem(returnItemId);
   if (!salesReturnId) return { ok: false, reason: "already_decided" };
 
-  return withLockAndRevalidate(salesReturnId, async () =>
+  const result = await withLockAndRevalidate(salesReturnId, async () =>
     prisma.$transaction(async (tx) => {
       const r = await acceptReturnItem(tx, {
         returnItemId,
@@ -113,6 +114,19 @@ export async function acceptReturnItemAction(
       return { ok: false, reason: r.skipped } as const;
     }),
   );
+
+  // Sesudah commit: barang yang kembali ke rak dikirim ke Jubelio (best-effort).
+  if (result.ok) {
+    const baris = await prisma.salesReturnItem
+      .findUnique({ where: { id: returnItemId }, select: { itemId: true } })
+      .catch(() => null);
+    await antrekanPushStok([baris?.itemId], {
+      sumber: "SALES_RETURN_ACCEPT",
+      ref: returnItemId,
+      userId: authResult.userId,
+    });
+  }
+  return result;
 }
 
 export async function rejectReturnItemAction(

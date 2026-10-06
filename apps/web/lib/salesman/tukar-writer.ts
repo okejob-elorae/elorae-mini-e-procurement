@@ -6,6 +6,7 @@ import { generateDocNumber } from "@/lib/docNumber";
 import { parseItemVariants, variantSelectOptions } from "@/lib/items/variants";
 import { bentrokKunciKiriman } from "@/lib/receivables/idempoten";
 import { denganNomorUnik } from "@/lib/receivables/nomor";
+import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 import {
   awalanNomorTukar,
   ENTITAS_TUKAR,
@@ -442,7 +443,10 @@ export async function tolakTukar(input: { exchangeId: string; olehUserId: string
  * tidak mungkin diposting dua kali.
  */
 export async function selesaikanTukar(input: { exchangeId: string; olehUserId: string }): Promise<HasilKeputusanTukar> {
-  return runSerializable(async (tx): Promise<HasilKeputusanTukar> => {
+  // Barang yang stok gudangnya bergerak di percobaan yang COMMIT (diulang dari nol tiap percobaan).
+  let barangBergerak: string[] = [];
+  const hasil = await runSerializable(async (tx): Promise<HasilKeputusanTukar> => {
+    barangBergerak = [];
     const d = await tx.storeExchange.findUnique({ where: { id: input.exchangeId }, select: PILIH_DOKUMEN });
     if (!d) return { ok: false, kode: "TIDAK_DITEMUKAN" };
     if (d.status === "SELESAI") return berhasil(d, true);
@@ -515,6 +519,7 @@ export async function selesaikanTukar(input: { exchangeId: string; olehUserId: s
           externalRef: d.docNo,
         },
       });
+      barangBergerak.push(b.itemId);
     }
 
     await tx.auditLog.create({
@@ -532,6 +537,13 @@ export async function selesaikanTukar(input: { exchangeId: string; olehUserId: s
     });
     return berhasil(d);
   });
+
+  // Sesudah commit: barang KELUAR mengurangi dan MASUK menambah stok gudang —
+  // Jubelio harus tahu. Ulangan (`ulang`) tidak menggerakkan apa pun.
+  if (hasil.ok && barangBergerak.length > 0) {
+    await antrekanPushStok(barangBergerak, { sumber: "ADJUSTMENT", ref: `tukar barang ${hasil.docNo}`, userId: input.olehUserId });
+  }
+  return hasil;
 }
 
 /**

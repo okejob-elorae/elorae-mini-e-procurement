@@ -19,6 +19,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { OpnameDetailReviewTable } from "@/components/inventory/OpnameDetailReviewTable";
+import { TabelHitunganButa } from "./TabelHitunganButa";
+import { barisButa } from "../angka-sistem";
 import {
   approveOpname,
   cancelOpname,
@@ -169,9 +171,12 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
   };
 
   const isFabric = opname?.scope === "FABRIC";
+  // Hitungan buta: muatan tanpa angka sistem selama menghitung (dan bagi yang
+  // belum boleh melihatnya) — layar memakai tabel tanpa snapshot/selisih.
+  const tampil = opname?.angkaSistemTampil === true;
 
   const lines = useMemo(() => {
-    if (!opname) return [];
+    if (!opname || !tampil) return [];
     if (isFabric && Array.isArray(opname.rolls)) {
       // serializeForClient already coerced Decimal → number at runtime; TS still
       // sees Decimal on the Prisma type, so route through `unknown` to accept.
@@ -200,9 +205,28 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
       );
     }
     return [];
-  }, [isFabric, opname]);
+  }, [isFabric, opname, tampil]);
 
-  const summary = useMemo(() => summarizeLines(lines), [lines]);
+  const linesButa = useMemo(
+    () =>
+      opname && !tampil
+        ? // serializeForClient sudah mengubah Decimal → number; tipe Prisma belum tahu.
+          barisButa(opname as unknown as Parameters<typeof barisButa>[0])
+        : [],
+    [opname, tampil],
+  );
+
+  const summary = useMemo(() => {
+    if (tampil) return summarizeLines(lines);
+    const countedLines = linesButa.filter((l) => l.counted !== null).length;
+    return {
+      totalLines: linesButa.length,
+      countedLines,
+      pendingLines: linesButa.length - countedLines,
+      varianceLines: 0,
+      matchLines: 0,
+    };
+  }, [lines, linesButa, tampil]);
 
   if (loading || !opname) {
     return <p className="text-muted-foreground py-8">{loading ? t("loading") : t("notFound")}</p>;
@@ -281,11 +305,11 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className={`grid gap-4 sm:grid-cols-2 ${tampil ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
         <StatCard label={t("statTotal")} value={summary.totalLines} />
         <StatCard label={t("statCounted")} value={summary.countedLines} />
         <StatCard label={t("statPending")} value={summary.pendingLines} />
-        <StatCard label={t("statVariance")} value={summary.varianceLines} />
+        {tampil ? <StatCard label={t("statVariance")} value={summary.varianceLines} /> : null}
       </div>
 
       <Card>
@@ -305,8 +329,19 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
               style={{ width: `${countProgress}%` }}
             />
           </div>
-          {status === "SUBMITTED" && summary.varianceLines > 0 ? (
+          {tampil && status === "SUBMITTED" && summary.varianceLines > 0 ? (
             <p className="text-sm text-amber-700">{t("varianceReviewHint")}</p>
+          ) : null}
+          {!tampil ? (
+            <p className="text-sm text-muted-foreground">
+              {t(
+                status === "CREATED" || status === "COUNTING"
+                  ? "blind.counting"
+                  : status === "CANCELLED"
+                    ? "blind.cancelled"
+                    : "blind.waitingApproval",
+              )}
+            </p>
           ) : null}
         </CardContent>
       </Card>
@@ -368,7 +403,11 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
         </CardContent>
       </Card>
 
-      <OpnameDetailReviewTable lines={lines} isFabric={isFabric} />
+      {tampil ? (
+        <OpnameDetailReviewTable lines={lines} isFabric={isFabric} />
+      ) : (
+        <TabelHitunganButa lines={linesButa} isFabric={isFabric} />
+      )}
 
       <Dialog open={driftOpen} onOpenChange={setDriftOpen}>
         <DialogContent>

@@ -4,13 +4,14 @@ import { useTranslations } from "next-intl";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import type { BarisPilihan } from "../stok/barang-pilihan";
+import type { BarisPilihanButa as BarisPilihan } from "./barang-buta";
 
 /**
  * Pilih ukuran/varian untuk barang yang dipindai lewat SKU induk atau dipilih
  * dari pencarian. Setiap ketukan = +1 pada varian itu, dan lembarnya TETAP
  * terbuka: satu artikel biasanya dihitung semua ukurannya sekaligus. Hitungan
  * tiap varian terlihat di barisnya, jadi ketukan ganda langsung ketahuan.
+ * Stok sistem TIDAK ditampilkan (hitungan buta).
  */
 export function PilihVarian({
   terbuka,
@@ -49,7 +50,7 @@ export function PilihVarian({
                   <span className="min-w-0 flex-1">
                     <span className="block font-medium leading-tight">{v.varian ?? v.kode}</span>
                     <span className="block truncate text-xs font-normal text-muted-foreground">
-                      {v.kode} · {t("system", { qty: v.stok })}
+                      {v.kode}
                     </span>
                   </span>
                   {n !== undefined && n !== "" ? (

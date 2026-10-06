@@ -1,15 +1,16 @@
-import { Prisma } from '@elorae/db';
+import { Prisma, prisma, transferKonsiStock, type KonsiTransferShortLine } from '@elorae/db';
 import { runSerializable } from '@/lib/db/tx-retry';
 import { denganNomorUnik } from '@/lib/receivables/nomor';
 import { bagiKomisi } from './aturan';
 import { catatJejak, JEJAK, type IsiJejak } from '@/lib/receivables/jejak';
-import { endOfTodayJakarta } from "@/lib/date-only";
+import { endOfTodayJakarta, formatDateOnlyJakarta } from "@/lib/date-only";
 import { keSen } from "./promo-elorae";
 import { ringkasanBayarToko, totalTagihanBeku } from "./queries";
 import { bebanHilangUntukSiklus, lepasBebanHilangSiklus } from "@/lib/spg/hilang-tagihan";
 import { REF_KOMISI_KONSI } from "@/lib/spg/hilang";
 import { lepasPotonganHilang, potongBebanHilang } from "@/lib/spg/hilang-potong";
 import { promoEloraeSiklus } from "./promo-elorae-queries";
+import { labelVarian } from "./varian-kirim";
 
 /**
  * Penulis siklus konsinyasi.
@@ -25,6 +26,11 @@ const D = (n: number) => new Prisma.Decimal(n);
 
 export type BarisKirim = {
   itemId?: string | null;
+  /**
+   * Varian barang katalog. Wajib bila barangnya punya lebih dari satu baris stok gudang
+   * (stok barang bervarian disimpan per varian); kosong untuk barang tanpa varian.
+   */
+  variantSku?: string | null;
   itemName: string;
   qty: number;
   price: number;
@@ -62,9 +68,101 @@ export type AlasanGagalKonsi =
   | "TANGGAL_DI_DEPAN"
   | "ALASAN_WAJIB"
   | "SUDAH_DIBATALKAN"
-  | "PEMBAYARAN_TIDAK_DITEMUKAN";
+  | "PEMBAYARAN_TIDAK_DITEMUKAN"
+  | "STOK_KURANG"
+  | "VARIAN_WAJIB";
 
 type Gagal = { ok: false; alasan: AlasanGagalKonsi };
+
+/**
+ * Satu barang/varian yang stok gudangnya tidak cukup untuk kiriman titipan. Baris kiriman
+ * dengan barang & varian yang sama DIJUMLAH: yang ditampilkan adalah seluruh permintaan
+ * kiriman itu atas varian tersebut, dibanding stok tersedia (stok − cadangan) sebelum dikirim.
+ */
+export type BarisKurangKirim = KonsiTransferShortLine & { itemName: string; variantLabel: string | null };
+
+/**
+ * Stok gudang tidak cukup untuk satu baris kiriman. Dilempar DI DALAM transaksi supaya kiriman
+ * yang sudah dibuat dan baris lain yang sudah terpotong ikut batal — kiriman separuh bukan kiriman.
+ */
+class StokGudangKurang extends Error {
+  constructor(readonly kurang: BarisKurangKirim[]) {
+    super('STOK_KURANG');
+    this.name = 'StokGudangKurang';
+  }
+}
+
+/** Kunci stok satu baris kiriman: barang + varian ("" = tanpa varian). */
+const kunciStok = (itemId: string, variantSku: string) => `${itemId}::${variantSku}`;
+
+/** Batas umur jejak yang diperiksa untuk kunci kiriman: kiriman ulang terjadi dalam hitungan menit. */
+const UMUR_KUNCI_KIRIM_MS = 14 * 86_400_000;
+
+/**
+ * Kiriman titipan yang sudah dicatat dengan kunci formulir ini, oleh orang yang sama.
+ *
+ * Tanpa kolom baru: kuncinya ikut di metadata jejak `KONSI_DIKIRIM` (pola yang sama dengan
+ * kunci kirim mutasi toko), dicocokkan di JS karena penyaringan jalur JSON tidak andal di
+ * semua adaptor. Dibaca di dalam `runSerializable`: dua klik bersamaan sama-sama membaca
+ * "belum ada" lalu sama-sama menulis jejak — basis data menolak salah satunya, dan percobaan
+ * ulangnya menemukan kiriman pemenang di sini.
+ *
+ * Kiriman ulang = kunci yang sama KE TOKO YANG SAMA. Formulir hanya mengganti kuncinya sesudah
+ * simpan berhasil, jadi sesudah jawaban hilang admin bisa mengganti tokonya lalu menyimpan lagi
+ * dengan kunci lama. Itu kiriman lain (barangnya ke toko lain): tanpa syarat toko, kiriman ke
+ * toko kedua tertelan sebagai "sudah tercatat" dengan nomor kiriman toko pertama, dan barang
+ * yang benar-benar berangkat ke toko kedua tidak pernah tercatat.
+ */
+async function kirimanDenganKunci(
+  db: Klien | typeof prisma,
+  kunci: string,
+  olehUserId: string,
+  storeId: string,
+): Promise<{ id: string; noKirim: string } | null> {
+  const jejak = await db.auditLog.findMany({
+    where: {
+      userId: olehUserId,
+      action: JEJAK.KONSI_DIKIRIM,
+      entityType: 'ConsignmentShipment',
+      createdAt: { gte: new Date(Date.now() - UMUR_KUNCI_KIRIM_MS) },
+    },
+    select: { entityId: true, metadata: true },
+  });
+  const ids = jejak
+    .filter((j) => (j.metadata as { kunciKirim?: unknown } | null)?.kunciKirim === kunci)
+    .map((j) => j.entityId);
+  if (ids.length === 0) return null;
+  return db.consignmentShipment.findFirst({
+    where: { id: { in: ids }, storeId },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true, noKirim: true },
+  });
+}
+
+/** Baris stok yang akan dipotong untuk satu kunci — kueri yang sama dengan `transferKonsiStock`. */
+function barisStokKirim(tx: Klien, itemId: string, variantSku: string) {
+  return variantSku === ''
+    ? tx.inventoryValue.findFirst({ where: { itemId, OR: [{ variantSku: null }, { variantSku: '' }] } })
+    : tx.inventoryValue.findFirst({ where: { itemId, variantSku } });
+}
+
+/** Label varian dari katalog barang untuk rincian kurang stok. */
+async function lengkapiKurang(
+  tx: Klien,
+  kurang: KonsiTransferShortLine[],
+  namaPerKunci: Map<string, string>,
+): Promise<BarisKurangKirim[]> {
+  const barang = await tx.item.findMany({
+    where: { id: { in: [...new Set(kurang.map((k) => k.itemId))] } },
+    select: { id: true, variants: true },
+  });
+  const varianPerBarang = new Map(barang.map((b) => [b.id, b.variants]));
+  return kurang.map((k) => ({
+    ...k,
+    itemName: namaPerKunci.get(kunciStok(k.itemId, k.variantSku)) ?? '',
+    variantLabel: labelVarian(varianPerBarang.get(k.itemId) ?? null, k.variantSku),
+  }));
+}
 
 /** `KONSI/26/07/0002` — dinomori menurut periode siklusnya, bukan hari dibuat. */
 async function nomorKonsi(tx: Klien, tahun: number, bulan: number): Promise<string> {
@@ -149,7 +247,32 @@ export async function bukaSiklus(input: {
   }
 }
 
-/** Kirim barang titipan ke toko. */
+/**
+ * Kirim barang titipan ke toko.
+ *
+ * Toko konsinyasi = gudang lain milik kita (keputusan pemilik): barang yang dikirim KELUAR dari
+ * stok gudang utama di transaksi yang sama (`KONSI_TRANSFER`, satu penyesuaian per baris, kunci
+ * idempotensi per baris kiriman) dan menjadi stok toko (titipan / buku toko). Kembali ke gudang
+ * hanya lewat retur (NRI); penjualan di toko tidak pernah menyentuh gudang utama.
+ *
+ * - `idempotencyKey` dibuat formulir SEKALI per isian dan diperiksa PALING DULU — sebelum
+ *   validasi apa pun, lalu sekali lagi di dalam transaksi. Klik ganda atau kiriman ulang
+ *   sesudah jawaban hilang mendapat kiriman yang sama (`ulang: true`): satu kiriman, satu
+ *   potongan stok. Kunci yang pernah DITOLAK boleh dipakai lagi — tidak ada yang tersimpan.
+ * - Baris yang hanya diketik namanya (tanpa `itemId`) tercatat di kiriman tapi tidak
+ *   menggerakkan stok — tidak ada baris gudang yang bisa dipotong.
+ * - Barang dengan lebih dari satu baris stok (bervarian) wajib menyebut variannya
+ *   (`VARIAN_WAJIB`); barang dengan tepat satu baris stok memakai baris itu.
+ * - Stok tersedia (stok − cadangan) kurang untuk satu barang/varian saja = seluruh kiriman
+ *   ditolak (`STOK_KURANG`) dengan rinciannya (`kurang`, baris sama dijumlah); tidak ada yang
+ *   tersimpan.
+ * - `barangBerubah`: barang yang stok gudangnya bergerak, untuk push stok Jubelio SESUDAH commit.
+ */
+export type HasilKirimTitipan =
+  | { ok: true; id: string; noKirim: string; ulang: boolean; barangBerubah: string[] }
+  | Gagal
+  | { ok: false; alasan: 'STOK_KURANG'; kurang: BarisKurangKirim[] };
+
 export async function kirimTitipan(input: {
   storeId: string;
   olehUserId: string;
@@ -157,14 +280,74 @@ export async function kirimTitipan(input: {
   shippedAt: Date;
   items: BarisKirim[];
   note?: string | null;
-}): Promise<{ ok: true; id: string; noKirim: string } | Gagal> {
+  idempotencyKey?: string | null;
+}): Promise<HasilKirimTitipan> {
+  const kunci = input.idempotencyKey?.trim() || null;
+  // Kiriman pertama sudah sah dan stoknya sudah terpotong: memvalidasi ulang kiriman ulangnya
+  // akan menolaknya dengan alasan palsu ("stok kurang") padahal barangnya sudah jalan.
+  if (kunci) {
+    const lama = await kirimanDenganKunci(prisma, kunci, input.olehUserId, input.storeId);
+    if (lama) return { ok: true, id: lama.id, noKirim: lama.noKirim, ulang: true, barangBerubah: [] };
+  }
+
   const items = input.items.filter((b) => b.itemName.trim() && b.qty > 0);
   if (items.length === 0) return { ok: false, alasan: 'TANPA_BARIS' };
 
   try {
     return await denganNomorUnik(() =>
-      runSerializable(async (tx) => {
-        const depan = `KKIRIM/${input.shippedAt.getFullYear()}/`;
+      runSerializable(async (tx): Promise<HasilKirimTitipan> => {
+        // Lagi, di dalam transaksi: percobaan ulang sesudah balapan dua klik (yang kalah diulang
+        // runSerializable / denganNomorUnik) harus mendapat kiriman pemenangnya.
+        if (kunci) {
+          const lama = await kirimanDenganKunci(tx, kunci, input.olehUserId, input.storeId);
+          if (lama) return { ok: true, id: lama.id, noKirim: lama.noKirim, ulang: true, barangBerubah: [] };
+        }
+
+        // Titipan hanya dihitung untuk toko KONSI (stok-di-toko.ts). Kiriman ke toko lain akan
+        // mengeluarkan barang dari gudang tanpa pernah tercatat di stok toko mana pun.
+        const toko = await tx.store.findUnique({ where: { id: input.storeId }, select: { termsType: true } });
+        if (!toko || toko.termsType !== 'KONSI') return { ok: false, alasan: 'TOKO_BUKAN_KONSI' };
+
+        // Varian per baris DULU, sebelum menulis apa pun: penolakan di sini tidak bergantung
+        // pada pembatalan transaksi.
+        const varian: string[] = [];
+        for (const b of items) {
+          const diminta = b.variantSku?.trim() ?? '';
+          if (!b.itemId || diminta) {
+            varian.push(diminta);
+            continue;
+          }
+          const baris = await tx.inventoryValue.findMany({ where: { itemId: b.itemId }, select: { variantSku: true } });
+          // null dan "" sama-sama baris tanpa varian (lihat findFieldSalesInventory).
+          const kunciBaris = [...new Set(baris.map((r) => r.variantSku ?? ''))];
+          if (kunciBaris.length > 1) return { ok: false, alasan: 'VARIAN_WAJIB' };
+          varian.push(kunciBaris[0] ?? '');
+        }
+
+        // Permintaan per barang/varian DIJUMLAH dan dibandingkan dengan stok tersedia sebelum
+        // menulis apa pun, supaya rincian kurangnya utuh ("M: diminta 16, tersedia 12"), bukan
+        // sisa sesudah baris pertama terpotong.
+        const minta = new Map<string, { itemId: string; variantSku: string; qty: number }>();
+        const nama = new Map<string, string>();
+        items.forEach((b, i) => {
+          if (!b.itemId) return;
+          const k = kunciStok(b.itemId, varian[i]);
+          const ada = minta.get(k);
+          if (ada) ada.qty += b.qty;
+          else minta.set(k, { itemId: b.itemId, variantSku: varian[i], qty: b.qty });
+          if (!nama.has(k)) nama.set(k, b.itemName.trim());
+        });
+        const kurang: KonsiTransferShortLine[] = [];
+        for (const m of minta.values()) {
+          const inv = await barisStokKirim(tx, m.itemId, m.variantSku);
+          const tersedia = inv ? angka(inv.qtyOnHand) - angka(inv.reservedQty) : 0;
+          if (tersedia < m.qty) kurang.push({ itemId: m.itemId, variantSku: m.variantSku, requested: m.qty, available: tersedia });
+        }
+        if (kurang.length > 0) return { ok: false, alasan: 'STOK_KURANG', kurang: await lengkapiKurang(tx, kurang, nama) };
+
+        // Tahun WIB, bukan tahun zona proses: prod berjalan UTC, dan kiriman 1 Januari (tengah
+        // malam WIB = 31 Desember UTC) akan bernomor tahun sebelumnya.
+        const depan = `KKIRIM/${formatDateOnlyJakarta(input.shippedAt).slice(0, 4)}/`;
         const terakhir = await tx.consignmentShipment.findFirst({
           where: { noKirim: { startsWith: depan } },
           orderBy: { noKirim: 'desc' },
@@ -180,8 +363,9 @@ export async function kirimTitipan(input: {
             shippedAt: input.shippedAt,
             note: input.note?.trim() || null,
             items: {
-              create: items.map((b) => ({
+              create: items.map((b, i) => ({
                 itemId: b.itemId ?? null,
+                variantSku: b.itemId && varian[i] ? varian[i] : null,
                 itemName: b.itemName.trim(),
                 qty: b.qty,
                 price: D(b.price),
@@ -189,8 +373,31 @@ export async function kirimTitipan(input: {
               })),
             },
           },
-          select: { id: true, noKirim: true },
+          select: { id: true, noKirim: true, items: { select: { id: true, itemId: true, variantSku: true, qty: true } } },
         });
+
+        const pindah = kirim.items.flatMap((i) =>
+          i.itemId
+            ? [
+                {
+                  itemId: i.itemId,
+                  variantSku: i.variantSku ?? '',
+                  qty: i.qty,
+                  idempotencyKey: `konsi-kirim-${i.id}`,
+                  docNumber: `${kirim.noKirim}-${i.id}`,
+                  reason: `Kirim titipan ${kirim.noKirim} ke toko (stok pindah ke toko)`,
+                  externalRef: `konsi-kirim:${kirim.noKirim}`,
+                  createdById: input.olehUserId,
+                },
+              ]
+            : [],
+        );
+        // Penjaga sebenarnya tetap UPDATE bersyarat di transferKonsiStock: penulis lain bisa
+        // mengambil stok di antara bacaan di atas dan pemotongan ini.
+        const hasilPindah = await transferKonsiStock(tx, { lines: pindah });
+        if (hasilPindah.shortLines.length > 0) {
+          throw new StokGudangKurang(await lengkapiKurang(tx, hasilPindah.shortLines, nama));
+        }
 
         await catatJejak(tx, {
           userId: input.olehUserId,
@@ -206,13 +413,25 @@ export async function kirimTitipan(input: {
               nilai: items.reduce((s, b) => s + b.qty * b.price, 0),
             },
           },
-          metadata: { jumlahBaris: items.length },
+          metadata: {
+            jumlahBaris: items.length,
+            barisStokGudang: hasilPindah.transferred,
+            // Kunci formulir — tanpa kolom baru; dibaca `kirimanDenganKunci`.
+            ...(kunci ? { kunciKirim: kunci } : {}),
+          },
         });
 
-        return { ok: true as const, id: kirim.id, noKirim: kirim.noKirim };
+        return {
+          ok: true,
+          id: kirim.id,
+          noKirim: kirim.noKirim,
+          ulang: false,
+          barangBerubah: [...new Set(pindah.map((p) => p.itemId))],
+        };
       }),
     );
   } catch (err) {
+    if (err instanceof StokGudangKurang) return { ok: false, alasan: 'STOK_KURANG', kurang: err.kurang };
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       return { ok: false, alasan: 'NOMOR_BENTROK' };
     }

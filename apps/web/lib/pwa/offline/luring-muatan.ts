@@ -1,6 +1,8 @@
 // Bentuk antrean "tanpa sinyal" untuk kunjungan dan pekerjaan stok SPG, dan
 // muatan kirimnya ke aksi server — murni, tanpa Dexie dan tanpa aksi server
-// (impor TIPE saja), supaya bisa dites di Node dan dipakai layar maupun penyinkron.
+// (impor TIPE saja, plus satu konstanta murni), supaya bisa dites di Node dan
+// dipakai layar maupun penyinkron.
+import { BATAS_STOK_LURING_MS } from "@/lib/pwa/waktu-luring";
 import type {
   PendingCheckin,
   PendingCheckout,
@@ -104,10 +106,33 @@ export function muatanTerima(r: TerimaBaru, urlFoto: (i: number) => string | nul
   };
 }
 
-/** Muatan `catatOpnameAction` dari antrean. Saldo sistem tidak dikirim — server yang menilainya. */
+/**
+ * Umur hitungan yang sah (bulat, ≥ 0); selain itu tidak dikirim — server menolak
+ * SELURUH opname karenanya. Dibatasi ke batas yang sama dengan server
+ * (`BATAS_UMUR_HITUNG_MS` = batas pekerjaan stok luring): server memotongnya ke
+ * batas itu juga, dan angka di atas bilangan bulat aman ditolak skema aksi.
+ */
+function umurSah(umur: number | undefined): number | undefined {
+  return typeof umur === "number" && Number.isFinite(umur) && umur >= 0 ? Math.min(BATAS_STOK_LURING_MS, Math.round(umur)) : undefined;
+}
+
+/**
+ * Muatan `catatOpnameAction` dari antrean. Saldo sistem tidak dikirim — server
+ * yang menilainya. Umur hitungan per baris IKUT: tanpanya opname tanpa sinyal
+ * dibandingkan dengan saldo saat tangkap, dan penjualan di antara saat rak
+ * dihitung dan saat disimpan menjadi selisih palsu (lihat `lib/spg/opname-acuan.ts`).
+ */
 export function muatanOpname(r: OpnameBaru) {
   return {
-    baris: r.baris.map((b) => ({ itemId: b.itemId, variantSku: b.variantSku, qtyCounted: b.qtyCounted })),
+    baris: r.baris.map((b) => {
+      const umur = umurSah(b.umurHitungMs);
+      return {
+        itemId: b.itemId,
+        variantSku: b.variantSku,
+        qtyCounted: b.qtyCounted,
+        ...(umur === undefined ? {} : { umurHitungMs: umur }),
+      };
+    }),
     ...(r.note ? { note: r.note } : {}),
     idempotencyKey: r.localId,
     luring: true as const,

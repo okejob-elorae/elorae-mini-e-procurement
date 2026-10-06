@@ -33,7 +33,14 @@ import { getItemCategories } from '@/app/actions/item-categories';
 import { logPrint } from '@/app/actions/audit';
 import { buildStockCardPrintHtml } from '@/lib/print/stock-card-html';
 import type { StockCardPrintLabels } from '@/lib/print/stock-card-html';
+import { labelJenisGerakan } from '@/lib/inventory/jenis-gerakan-stok';
 import { toast } from 'sonner';
+
+/** Sel CSV: dikutip bila memuat koma, kutip, atau baris baru. */
+function selCsv(v: string | number | null | undefined): string {
+  const s = v == null ? '' : String(v);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
 
 const stockCardPrintLabelsId: Partial<StockCardPrintLabels> = {
   title: 'Kartu Stok',
@@ -85,6 +92,9 @@ type ViewMode = 'by-item' | 'by-type' | 'by-category';
 
 export default function StockCardPage() {
   const t = useTranslations('inventory.stockCard');
+  const tKind = useTranslations('inventory.stockMoveKind');
+  // Label jenis gerakan (GRN, penjualan marketplace, muat van, …) lewat i18n.
+  const ket = (jenis: string) => labelJenisGerakan(tKind, jenis);
   const locale = useLocale();
   const [viewMode, setViewMode] = useState<ViewMode>('by-item');
   const [itemId, setItemId] = useState<string>('');
@@ -212,14 +222,14 @@ export default function StockCardPage() {
     const rows = data.movements.map((m) => [
       format(new Date(m.date), 'yyyy-MM-dd HH:mm'),
       m.docNumber,
-      m.description,
+      ket(m.jenis),
       m.in ?? '',
       m.out ?? '',
       m.balance,
       m.unitCost ?? '',
       m.balanceValue,
     ]);
-    const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const csv = [headers.join(','), ...rows.map((r) => r.map(selCsv).join(','))].join('\n');
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -236,10 +246,7 @@ export default function StockCardPage() {
     }
     try {
       await logPrint('StockCard', itemId);
-      const closingValue =
-        data.movements.length > 0
-          ? data.movements[data.movements.length - 1].balanceValue
-          : data.openingValue;
+      const closingValue = data.closingValue;
       const html = buildStockCardPrintHtml({
         kind: 'item',
         itemSku: data.item.sku ?? '-',
@@ -255,7 +262,7 @@ export default function StockCardPage() {
         movements: data.movements.map((m) => ({
           date: m.date,
           docNumber: m.docNumber,
-          description: m.description,
+          description: ket(m.jenis),
           notes: m.notes ?? null,
           variantSku: m.variantSku ?? null,
           in: m.in,
@@ -295,7 +302,7 @@ export default function StockCardPage() {
           movements: row.movements.map((m) => ({
             date: m.date,
             docNumber: m.docNumber,
-            description: m.description,
+            description: ket(m.jenis),
             notes: m.notes ?? null,
             in: m.in,
             out: m.out,
@@ -332,7 +339,7 @@ export default function StockCardPage() {
           movements: row.movements.map((m) => ({
             date: m.date,
             docNumber: m.docNumber,
-            description: m.description,
+            description: ket(m.jenis),
             notes: m.notes ?? null,
             in: m.in,
             out: m.out,
@@ -480,8 +487,27 @@ export default function StockCardPage() {
                 <p className="text-lg font-semibold">
                   {data.closingBalance.toLocaleString('id-ID')} {data.item?.uom?.code ?? ''}
                 </p>
+                <p className="text-sm text-muted-foreground">
+                  Rp {data.closingValue.toLocaleString('id-ID')}
+                </p>
               </div>
             </div>
+
+            {/* Stok yang masuk tanpa dokumen gerakan (mis. stok awal dari katalog
+                Jubelio) ditampung di saldo awal — disebut, tidak disembunyikan. */}
+            {data.tanpaDokumen != null && data.tanpaDokumen !== 0 && (
+              <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+                {t('undocumentedNote', {
+                  qty: data.tanpaDokumen.toLocaleString('id-ID'),
+                  uom: data.item?.uom?.code ?? '',
+                })}
+              </p>
+            )}
+            {data.penyesuaianTanpaVarian > 0 && (
+              <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+                {t('variantAdjNote', { count: data.penyesuaianTanpaVarian })}
+              </p>
+            )}
 
             <div className="overflow-x-auto rounded-md border">
               <Table>
@@ -503,8 +529,8 @@ export default function StockCardPage() {
                   {data.movements.map((m) => (
                     <TableRow key={m.id}>
                       <TableCell>{formatDisplayDateTime(m.date, locale)}</TableCell>
-                      <TableCell className="font-medium">{m.docNumber}</TableCell>
-                      <TableCell className="whitespace-normal min-w-[180px]">{m.description}</TableCell>
+                      <TableCell className="font-medium">{m.docNumber ?? '-'}</TableCell>
+                      <TableCell className="whitespace-normal min-w-[180px]">{ket(m.jenis)}</TableCell>
                       <TableCell className="whitespace-normal min-w-[140px]">{(m as { notes?: string | null }).notes ?? '-'}</TableCell>
                       <TableCell>{m.variantSku ?? '-'}</TableCell>
                       <TableCell className="text-right text-green-600 dark:text-green-400">
@@ -671,7 +697,7 @@ export default function StockCardPage() {
                                           <TableRow key={m.id}>
                                             <TableCell className="whitespace-nowrap">{formatDisplayDateTime(m.date, locale)}</TableCell>
                                             <TableCell className="font-medium">{m.docNumber ?? '-'}</TableCell>
-                                            <TableCell className="whitespace-normal min-w-[180px]">{m.description}</TableCell>
+                                            <TableCell className="whitespace-normal min-w-[180px]">{ket(m.jenis)}</TableCell>
                                             <TableCell className="whitespace-normal min-w-[140px]">{(m as { notes?: string | null }).notes ?? '-'}</TableCell>
                                             <TableCell className="text-right text-green-600 dark:text-green-400">
                                               {m.in != null ? m.in.toLocaleString('id-ID') : '-'}
@@ -845,7 +871,7 @@ export default function StockCardPage() {
                                           <TableRow key={m.id}>
                                             <TableCell className="whitespace-nowrap">{formatDisplayDateTime(m.date, locale)}</TableCell>
                                             <TableCell className="font-medium">{m.docNumber ?? '-'}</TableCell>
-                                            <TableCell className="whitespace-normal min-w-[180px]">{m.description}</TableCell>
+                                            <TableCell className="whitespace-normal min-w-[180px]">{ket(m.jenis)}</TableCell>
                                             <TableCell className="whitespace-normal min-w-[140px]">{(m as { notes?: string | null }).notes ?? '-'}</TableCell>
                                             <TableCell className="text-right text-green-600 dark:text-green-400">
                                               {m.in != null ? m.in.toLocaleString('id-ID') : '-'}

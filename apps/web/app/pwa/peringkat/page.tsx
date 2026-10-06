@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { pwaAccessGuard } from "@/lib/pwa/guard";
 import { ambilTokoTetap } from "@/lib/pwa/peran";
 import { bulanWib } from "@/lib/salesman/pengaturan";
-import { peringkatBulan } from "@/lib/salesman/komisi-queries";
+import { peringkatHp } from "@/lib/salesman/peringkat-hp-queries";
 import { peringkatSpgBulan } from "@/lib/salesman/peringkat-spg";
 import { PeringkatClient } from "./PeringkatClient";
 import { PeringkatSpgClient } from "./PeringkatSpgClient";
@@ -13,6 +13,9 @@ export const dynamic = "force-dynamic";
 /**
  * Papan peringkat salesman bulan ini, menurut capaian target.
  *
+ * Seluruhnya atas putus + van (`peringkatHp`): rupiah konsinyasi tidak pernah
+ * sampai ke HP, dan papan dengan angka resmi (memuat konsi) membukanya lewat
+ * capaian sendiri × target. Konsinyasi hanya sebagai pcs milik sendiri.
  * Omzet rekan tidak pernah dikirim ke HP — hanya persen capaiannya. Nama
  * rekan disembunyikan bila pemilik mengaturnya (`salesman.peringkat`); nama
  * sendiri selalu terlihat.
@@ -46,22 +49,9 @@ export default async function PeringkatPage() {
     );
   }
 
-  const { baris } = await peringkatBulan(bulan, session.user.id);
+  // Id pengguna rekan sudah tidak ikut dari `peringkatHp`: saat nama
+  // disembunyikan, "Sales #n" tidak boleh bisa ditelusuri balik.
+  const baris = await peringkatHp(bulan, session.user.id, { hariIni: sekarang });
 
-  return (
-    <PeringkatClient
-      bulan={bulan}
-      // Id pengguna rekan tidak dikirim: saat nama disembunyikan, "Sales #n"
-      // tidak boleh bisa ditelusuri balik dari data halaman.
-      baris={baris.map((b) => ({
-        peringkat: b.peringkat,
-        posisi: b.posisi,
-        nama: b.nama,
-        persen: b.persen,
-        omzet: b.omzet,
-        adaTarget: b.adaTarget,
-        diriSendiri: b.diriSendiri,
-      }))}
-    />
-  );
+  return <PeringkatClient bulan={bulan} baris={baris} />;
 }

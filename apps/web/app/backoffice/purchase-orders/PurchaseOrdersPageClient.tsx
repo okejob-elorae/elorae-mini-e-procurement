@@ -46,7 +46,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { getPOs, submitPO, cancelPO } from '@/app/actions/purchase-orders';
+import { getPOs, submitPO, batalkanPO } from '@/app/actions/purchase-orders';
+import { pesanTolakBatalPo } from './pesan-batal-po';
 import { PinAuthModal } from '@/components/security/PinAuthModal';
 import { POStatus } from '@/lib/constants/enums';
 import { ETABadge } from '@/components/ui/ETABadge';
@@ -66,6 +67,9 @@ export interface PurchaseOrder {
   paidAt?: string | null;
   totalAmount: string;
   grandTotal: string;
+  /** Utang setelah sisa yang tidak datang (PO ditutup) dan retur pemasok — dari `listPOs`. */
+  utang?: { utang: number; nilaiPo: number };
+  closedAt?: string | null;
   createdAt: string;
   supplier: {
     name: string;
@@ -115,17 +119,6 @@ const statusIcons: Record<POStatus, React.ReactNode> = {
   OVER: <AlertCircle className="h-4 w-4" />,
   CANCELLED: <XCircle className="h-4 w-4" />,
 };
-
-const SECURITY_MESSAGE_KEYS = new Set([
-  'userNotFound',
-  'pinNotSet',
-  'tooManyAttempts',
-  'pinIncorrect',
-]);
-
-function isSecurityMessageKey(value: string): boolean {
-  return SECURITY_MESSAGE_KEYS.has(value);
-}
 
 export function PurchaseOrdersPageClient({
   initialPOs,
@@ -228,25 +221,36 @@ export function PurchaseOrdersPageClient({
     setPinModalOpen(true);
   };
 
+  /*
+   * Batal lewat `batalkanPO`, yang MENGEMBALIKAN `{ ok:false, code }`: dulu lewat
+   * `cancelPO` yang melempar, dan di build produksi Next menyamarkan pesan
+   * lemparan — "sudah ada barang diterima" jadi galat umum. PIN salah/kosong
+   * dilempar ke jendela PIN supaya bisa diketik ulang di sana.
+   */
   const handlePinConfirm = async (pin: string) => {
     if (!session?.user?.id || !cancelTargetId) return;
 
+    let hasil: Awaited<ReturnType<typeof batalkanPO>>;
     try {
-      await cancelPO(cancelTargetId, session.user.id, 'PO cancelled from list', pin);
-      toast.success(tToasts('poCancelledSuccessfully'));
-      setPinModalOpen(false);
-      setCancelTargetId(null);
-      fetchPOs();
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error && isSecurityMessageKey(error.message)
-          ? tSecurity(error.message)
-          : error instanceof Error
-            ? error.message
-            : tToasts('failedToCancelPO');
-      toast.error(message);
-      throw error instanceof Error ? error : new Error(message);
+      hasil = await batalkanPO(cancelTargetId, 'PO cancelled from list', pin);
+    } catch {
+      // Galat jaringan/server: tampil di jendela PIN, bukan "PIN tidak valid".
+      throw new Error(tToasts('failedToCancelPO'));
     }
+    if (!hasil.ok) {
+      const pesan = pesanTolakBatalPo(hasil);
+      const teks =
+        pesan.ruang === 'security'
+          ? tSecurity.has(pesan.kunci) ? tSecurity(pesan.kunci) : tSecurity('pinInvalid')
+          : tPO.has(pesan.kunci) ? tPO(pesan.kunci) : tToasts('failedToCancelPO');
+      if (pesan.ulangiPin) throw new Error(teks);
+      toast.error(teks);
+    } else {
+      toast.success(tToasts('poCancelledSuccessfully'));
+    }
+    setPinModalOpen(false);
+    setCancelTargetId(null);
+    fetchPOs();
   };
 
   const getPendingQty = (po: PurchaseOrder) => {
@@ -414,6 +418,11 @@ export function PurchaseOrdersPageClient({
                       </TableCell>
                       <TableCell className="text-right whitespace-nowrap">
                         Rp {Number(po.grandTotal).toLocaleString('id-ID')}
+                        {po.utang && po.utang.utang !== po.utang.nilaiPo && (
+                          <div className="text-xs text-muted-foreground">
+                            {tPO('ringkasan.utangSingkat', { nilai: `Rp ${po.utang.utang.toLocaleString('id-ID')}` })}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>
                         {(() => {

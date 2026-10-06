@@ -57,6 +57,13 @@ import {
 } from '@/app/actions/grn';
 import { hasPermission } from "@/lib/rbac";
 import { getStockAdjustments } from '@/app/actions/inventory';
+import {
+  SARINGAN_SUMBER_BAWAAN,
+  SARINGAN_SUMBER_OTOMATIS,
+  SARINGAN_SUMBER_SEMUA,
+  SUMBER_PENYESUAIAN,
+  labelJenisGerakan,
+} from '@/lib/inventory/jenis-gerakan-stok';
 import { getInventoryValueSnapshot } from '@/app/actions/reports/inventory';
 import { buildInventoryReportPrintHtml } from '@/lib/print/inventory-report-html';
 import { Pagination } from '@/components/ui/pagination';
@@ -114,6 +121,8 @@ interface Adjustment {
   type: 'POSITIVE' | 'NEGATIVE';
   qtyChange: string;
   reason: string;
+  /** Kode sumber StockAdjustment (ERP, FULFILLMENT_CONSUME, VAN_LOAD, …); label lewat i18n. */
+  source: string;
   createdAt: string;
   evidenceUrl?: string | null;
   item: {
@@ -165,6 +174,7 @@ export function InventoryPageClient({
   const t = useTranslations("inventory");
   const tWall = useTranslations("inventory.wallboard");
   const tp = useTranslations("inventory.page");
+  const tKind = useTranslations("inventory.stockMoveKind");
   const tToasts = useTranslations("toasts");
   const locale = useLocale();
   const { data: session } = useSession();
@@ -227,6 +237,9 @@ export function InventoryPageClient({
   const [adjTotalCount, setAdjTotalCount] = useState(initialAdjTotalCount);
   const ADJ_FILTER_ALL = '__all__';
   const [adjItemFilter, setAdjItemFilter] = useState<string>('__all__');
+  // Saringan sumber + pencarian dijalankan di server; bawaan menyembunyikan sumber otomatis.
+  const [adjSumber, setAdjSumber] = useState<string>(SARINGAN_SUMBER_BAWAAN);
+  const [adjSearchDebounced, setAdjSearchDebounced] = useState('');
   const [adjustmentItemList] = useState(initialAdjustmentItemList);
   const skipInitialListFetch = useRef(true);
 
@@ -242,7 +255,12 @@ export function InventoryPageClient({
           sort: stockSort,
         }),
         getGRNs(undefined, { page: grnPage, pageSize: grnPageSize }),
-        getStockAdjustments(adjItemFilter === ADJ_FILTER_ALL ? undefined : adjItemFilter, { page: adjPage, pageSize: adjPageSize })
+        getStockAdjustments(adjItemFilter === ADJ_FILTER_ALL ? undefined : adjItemFilter, {
+          page: adjPage,
+          pageSize: adjPageSize,
+          sumber: adjSumber,
+          cari: adjSearchDebounced.trim() || undefined,
+        })
       ]);
 
       if (invData != null && typeof invData === 'object' && 'items' in invData) {
@@ -300,6 +318,8 @@ export function InventoryPageClient({
       grnPage === 1 &&
       adjPage === 1 &&
       adjItemFilter === ADJ_FILTER_ALL &&
+      adjSumber === SARINGAN_SUMBER_BAWAAN &&
+      !adjSearchDebounced &&
       stockSort === "stock_desc" &&
       !stockSearchDebounced
     ) {
@@ -309,7 +329,16 @@ export function InventoryPageClient({
     skipInitialListFetch.current = false;
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchData depends on pagination/filters above
-  }, [stockPage, grnPage, adjPage, adjItemFilter, stockSearchDebounced, stockStatus, stockSort]);
+  }, [stockPage, grnPage, adjPage, adjItemFilter, adjSumber, adjSearchDebounced, stockSearchDebounced, stockStatus, stockSort]);
+
+  // Pencarian penyesuaian dikirim ke server setelah jeda mengetik.
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setAdjSearchDebounced(adjustmentSearchQuery);
+      setAdjPage(1);
+    }, 400);
+    return () => clearTimeout(id);
+  }, [adjustmentSearchQuery]);
 
   useEffect(() => {
     if (!expandedGrnId) {
@@ -439,14 +468,14 @@ export function InventoryPageClient({
       q(grn.po?.docNumber ?? '').includes(q(grnSearchQuery))
   );
 
-  const filteredAdjustments = adjustments.filter(
-    (adj) =>
-      !adjustmentSearchQuery ||
-      q(adj.docNumber).includes(q(adjustmentSearchQuery)) ||
-      q(adj.item.sku).includes(q(adjustmentSearchQuery)) ||
-      q(adj.item.nameId).includes(q(adjustmentSearchQuery)) ||
-      q(adj.reason).includes(q(adjustmentSearchQuery))
-  );
+  // Penyesuaian sudah disaring (sumber + pencarian) dan dipaginasi di server.
+  const filteredAdjustments = adjustments;
+  const opsiSumberPenyesuaian = [
+    { value: SARINGAN_SUMBER_BAWAAN, label: tp('adjSourceManual') },
+    { value: SARINGAN_SUMBER_OTOMATIS, label: tp('adjSourceAuto') },
+    { value: SARINGAN_SUMBER_SEMUA, label: tp('adjSourceAll') },
+    ...SUMBER_PENYESUAIAN.map((kode) => ({ value: kode, label: labelJenisGerakan(tKind, kode) })),
+  ];
 
   const setStatusFilter = (status: StockStatus | null) => {
     setStockStatus(status);
@@ -1002,6 +1031,19 @@ export function InventoryPageClient({
                 triggerClassName="w-[220px]"
               />
             </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground whitespace-nowrap">{tp('adjSourceFilter')}</span>
+              <SearchableCombobox
+                options={opsiSumberPenyesuaian}
+                value={adjSumber}
+                onValueChange={(value) => {
+                  setAdjSumber(value || SARINGAN_SUMBER_BAWAAN);
+                  setAdjPage(1);
+                }}
+                placeholder={tp('adjSourceManual')}
+                triggerClassName="w-[240px]"
+              />
+            </div>
           </div>
           <Card>
             <CardContent className="p-0">
@@ -1015,6 +1057,7 @@ export function InventoryPageClient({
                       <TableHead>{tTable('item')}</TableHead>
                       <TableHead>{tTable('type')}</TableHead>
                       <TableHead className="text-right">{tTable('qty')}</TableHead>
+                      <TableHead>{tp('colSource')}</TableHead>
                       <TableHead>{tp('reason')}</TableHead>
                       {/* Pembuat disembunyikan di bawah 2xl supaya kolom Nota
                           tidak terdorong keluar layar 1280 px. */}
@@ -1058,8 +1101,12 @@ export function InventoryPageClient({
                               {adj.type === 'POSITIVE' ? tp('adjPositive') : tp('adjNegative')}
                             </Badge>
                           </TableCell>
+                          {/* Tanda qtyChange tidak seragam antar-penulis; arah sudah di lencana Jenis. */}
                           <TableCell className="text-right">
-                            {Number(adj.qtyChange).toLocaleString('id-ID')}
+                            {Math.abs(Number(adj.qtyChange)).toLocaleString('id-ID')}
+                          </TableCell>
+                          <TableCell className="whitespace-normal min-w-[140px] text-sm">
+                            {labelJenisGerakan(tKind, adj.source)}
                           </TableCell>
                           <TableCell className="whitespace-normal min-w-[200px] max-w-[320px]">{adj.reason}</TableCell>
                           <TableCell className="hidden 2xl:table-cell text-sm text-muted-foreground">
@@ -1076,7 +1123,7 @@ export function InventoryPageClient({
                         </TableRow>
                         {expandedAdjustmentId === adj.id && (
                           <TableRow>
-                            <TableCell colSpan={9}>
+                            <TableCell colSpan={10}>
                               <div className="grid gap-4 py-2 sm:grid-cols-2">
                                 <div className="space-y-1">
                                   <p className="text-sm font-semibold">{tp('reason')}</p>
@@ -1107,6 +1154,13 @@ export function InventoryPageClient({
                         )}
                       </Fragment>
                     ))}
+                    {filteredAdjustments.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
+                          {tp('adjEmpty')}
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </div>

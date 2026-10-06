@@ -13,6 +13,7 @@ import { variantDetailForSku } from "@/lib/items/variants";
 import { masukkanGudangRusakDariNri } from "@/lib/spg/gudang-rusak-writer";
 import { fotoBolehDipakai } from "./foto-pencatat";
 import { PERMISSIONS } from "@/lib/rbac";
+import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 
 /**
  * Penulis retur toko — dua dokumen, dua tangan.
@@ -240,8 +241,10 @@ async function masukkanKeStok(
     noNri: string;
     olehUserId: string;
   },
-): Promise<number> {
+): Promise<{ baris: number; barang: string[] }> {
   let jumlahBarisStok = 0;
+  // Barang yang stok jualnya bertambah — diteruskan ke Jubelio sesudah commit.
+  const barang: string[] = [];
 
   for (const b of input.items) {
     if (!b.itemId || !(b.qty > 0)) continue;
@@ -261,19 +264,24 @@ async function masukkanKeStok(
       select: { id: true, qtyOnHand: true, avgCost: true },
     });
 
-    const qtyLama = stok ? Number(stok.qtyOnHand) : 0;
+    let qtyLama = stok ? Number(stok.qtyOnHand) : 0;
     const hargaRata = stok ? Number(stok.avgCost) : 0;
-    const qtyBaru = qtyLama + b.qty;
+    let qtyBaru = qtyLama + b.qty;
 
     if (stok) {
-      await tx.inventoryValue.update({
+      // Tambah atom, bukan tulis ulang angka yang dibaca: baris stok ini juga digerakkan
+      // penulis lain (kiriman konsinyasi, pengiriman putus, webhook Jubelio) pada saat yang sama.
+      const sesudah = await tx.inventoryValue.update({
         where: { id: stok.id },
         data: {
-          qtyOnHand: qtyBaru,
-          totalValue: qtyBaru * hargaRata,
+          qtyOnHand: { increment: b.qty },
+          totalValue: { increment: b.qty * hargaRata },
           lastUpdated: new Date(),
         },
+        select: { qtyOnHand: true },
       });
+      qtyBaru = Number(sesudah.qtyOnHand);
+      qtyLama = qtyBaru - b.qty;
     } else {
       await tx.inventoryValue.create({
         data: {
@@ -303,9 +311,10 @@ async function masukkanKeStok(
       },
     });
     jumlahBarisStok += 1;
+    barang.push(b.itemId);
   }
 
-  return jumlahBarisStok;
+  return { baris: jumlahBarisStok, barang };
 }
 
 /**
@@ -982,9 +991,12 @@ export async function catatHitunganGudang(input: {
   const total = nilaiDariRincian(items, input.physicalAmount);
   if (!(total >= 0)) return { ok: false, alasan: 'NILAI_TIDAK_VALID' };
 
+  // Barang yang stok jualnya bertambah di percobaan yang COMMIT (diulang dari nol tiap percobaan).
+  let barangStok: string[] = [];
   try {
-    return await denganNomorUnik(() =>
+    const hasil = await denganNomorUnik(() =>
       runSerializable(async (tx) => {
+        barangStok = [];
         let storeId = input.storeId ?? null;
         let klaim = 0;
         let qtyKlaimPerBarang = new Map<string, number>();
@@ -1064,11 +1076,13 @@ export async function catatHitunganGudang(input: {
           },
         });
 
-        const barisStok = await masukkanKeStok(tx, {
+        const stokMasuk = await masukkanKeStok(tx, {
           items,
           noNri: nri.noNri,
           olehUserId: input.warehouseUserId,
         });
+        const barisStok = stokMasuk.baris;
+        barangStok = stokMasuk.barang;
         // Barang RUSAK/EXPIRED tidak masuk stok jual, tapi masuk GUDANG BARANG
         // RUSAK (satu gerakan per baris NRI) — kantor yang memutuskan nasibnya.
         const barisGudangRusak = await masukkanGudangRusakDariNri(tx, {
@@ -1108,6 +1122,12 @@ export async function catatHitunganGudang(input: {
         };
       }),
     );
+    // Sesudah commit: stok jual gudang bertambah, Jubelio harus tahu sebelum
+    // webhook stoknya menimpa angka ERP. Best-effort, tidak pernah melempar.
+    if (hasil.ok && barangStok.length > 0) {
+      await antrekanPushStok(barangStok, { sumber: "ADJUSTMENT", ref: `retur toko ${hasil.noNri}`, userId: input.warehouseUserId });
+    }
+    return hasil;
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       return { ok: false, alasan: 'NOMOR_BENTROK' };

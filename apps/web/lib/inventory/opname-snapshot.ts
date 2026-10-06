@@ -1,5 +1,6 @@
 import type { ItemType, OpnameScope, Prisma } from "@elorae/db";
 import { prisma } from "@elorae/db";
+import { Decimal } from "decimal.js";
 import { normalizeVariantKey } from "./opname";
 
 type Tx = Prisma.TransactionClient;
@@ -33,13 +34,22 @@ export async function freezeItemSnapshot(
     const invRows = item.inventoryValues.length
       ? item.inventoryValues
       : [{ variantSku: "", qtyOnHand: 0 }];
+    // Satu baris hitung per (barang, varian). Barang buatan ERP bisa punya dua
+    // baris stok tanpa varian (variantSku null DAN ""): keduanya dijumlah ke
+    // satu baris hitung — dua baris hitung untuk barang yang sama membuat
+    // persetujuan menulis dua kali ke baris stok yang sama.
+    const perKunci = new Map<string, Decimal>();
     for (const inv of invRows) {
+      const kunci = normalizeVariantKey(inv.variantSku);
+      perKunci.set(kunci, (perKunci.get(kunci) ?? new Decimal(0)).plus(new Decimal(String(inv.qtyOnHand))));
+    }
+    for (const [kunci, qty] of perKunci) {
       rows.push({
         opnameId,
         itemId: item.id,
-        variantSku: normalizeVariantKey(inv.variantSku) || null,
+        variantSku: kunci || null,
         itemName: item.nameId,
-        snapshotQty: Number(inv.qtyOnHand),
+        snapshotQty: qty.toNumber(),
       });
     }
   }

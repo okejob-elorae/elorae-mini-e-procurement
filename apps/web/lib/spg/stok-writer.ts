@@ -8,6 +8,7 @@ import { selisihPenerimaan } from "./mutasi-aturan";
 import { bacaAlasan, type AlasanPermintaan } from "./saran-minta";
 import { bukuDimulai, catatTerimaMutasi, periksaTerimaMutasi, tutupMutasiSaatTerima, type PenolakanTerimaMutasi } from "./mutasi-terima";
 import { kunciBaris, rencanaOpname, saldoDariGerakan } from "./stok";
+import { dilewatiKarenaLebihBaru, saldoAcuan, waktuHitungPerKunci } from "./opname-acuan";
 import { kabariTitipanTersedia } from "./titip-tersedia";
 import { catatHilangDariOpname, catatHilangDariPenerimaan } from "./hilang-sumber";
 import { KATEGORI_NOTIF_RUSAK, masukBukuSaatTerima, periksaIsianRusak } from "./rusak";
@@ -166,12 +167,37 @@ export async function terhitungSesudah(
   itemIds: string[],
   waktu: Date,
 ): Promise<Set<string>> {
-  if (itemIds.length === 0) return new Set();
+  return new Set((await waktuHitungTerakhir(tx, storeId, itemIds, waktu)).keys());
+}
+
+/**
+ * Waktu hitung terakhir per kunci barang di opname toko, hanya yang SESUDAH
+ * `sejak`. Waktu hitung baris = `StoreOpnameLine.countedAt`; baris lama (atau
+ * dari klien tanpa waktu hitung) memakai waktu opnamenya.
+ */
+export async function waktuHitungTerakhir(
+  tx: Prisma.TransactionClient,
+  storeId: string,
+  itemIds: string[],
+  sejak: Date,
+): Promise<Map<string, Date>> {
+  const hasil = new Map<string, Date>();
+  if (itemIds.length === 0) return hasil;
   const baris = await tx.storeOpnameLine.findMany({
-    where: { itemId: { in: itemIds }, opname: { storeId, countedAt: { gt: waktu } } },
-    select: { itemId: true, variantSku: true },
+    where: {
+      itemId: { in: itemIds },
+      opname: { storeId },
+      OR: [{ countedAt: { gt: sejak } }, { countedAt: null, opname: { countedAt: { gt: sejak } } }],
+    },
+    select: { itemId: true, variantSku: true, countedAt: true, opname: { select: { countedAt: true } } },
   });
-  return new Set(baris.map((b) => kunciBaris(b.itemId, b.variantSku)));
+  for (const b of baris) {
+    const t = b.countedAt ?? b.opname.countedAt;
+    const k = kunciBaris(b.itemId, b.variantSku);
+    const ada = hasil.get(k);
+    if (!ada || t.getTime() > ada.getTime()) hasil.set(k, t);
+  }
+  return hasil;
 }
 
 function terimaDalamTransaksi(
@@ -390,7 +416,12 @@ async function opnameDenganKunci(kunci: string, storeId: string): Promise<HasilC
 export async function catatOpname(input: {
   storeId: string;
   userId: string;
-  baris: { itemId: string; variantSku: string | null; qtyCounted: number }[];
+  /**
+   * `umurHitungMs` (opsional): berapa lama sebelum disimpan baris itu dihitung
+   * di HP. Selisih dibandingkan dengan saldo SAAT ITU (lihat `opname-acuan.ts`);
+   * tanpa umur berlaku saldo saat disimpan (atau saat tangkap antrean).
+   */
+  baris: { itemId: string; variantSku: string | null; qtyCounted: number; umurHitungMs?: number | null }[];
   note?: string | null;
   /**
    * Kunci kiriman dari HP, sekali per formulir. Diperiksa PALING DULU: kiriman
@@ -416,6 +447,9 @@ export async function catatOpname(input: {
   }
   if (input.baris.length === 0) return { ok: false, alasan: "TANPA_BARIS" };
   if (input.baris.some((b) => !Number.isInteger(b.qtyCounted) || b.qtyCounted < 0)) {
+    return { ok: false, alasan: "JUMLAH_TIDAK_VALID" };
+  }
+  if (input.baris.some((b) => b.umurHitungMs != null && (!Number.isFinite(b.umurHitungMs) || b.umurHitungMs < 0))) {
     return { ok: false, alasan: "JUMLAH_TIDAK_VALID" };
   }
   let waktu: Date | null = null;
@@ -450,10 +484,42 @@ export async function catatOpname(input: {
         where: { storeId: input.storeId, itemId: { in: itemIds }, ...(waktu ? { createdAt: { lte: waktu } } : {}) },
         _sum: { qty: true },
       });
-      const saldo = saldoDariGerakan(grup.map((g) => ({ itemId: g.itemId, variantSku: g.variantSku, qty: g._sum.qty ?? 0 })));
+      const saldoDasar = saldoDariGerakan(grup.map((g) => ({ itemId: g.itemId, variantSku: g.variantSku, qty: g._sum.qty ?? 0 })));
+
+      // Saldo ACUAN per baris = saldo saat barang itu dihitung (umur hitungan
+      // dari HP): gerakan yang tercatat sesudahnya belum dialami rak itu.
+      const dasar = waktu ?? input.sekarang ?? new Date();
+      const waktuHitung = waktuHitungPerKunci(input.baris, dasar);
+      let saldo = saldoDasar;
+      if (waktuHitung.size > 0) {
+        const paling = new Date(Math.min(...[...waktuHitung.values()].map((t) => t.getTime())));
+        const sesudah = await tx.storeStockMovement.findMany({
+          where: {
+            storeId: input.storeId,
+            itemId: { in: itemIds },
+            createdAt: waktu ? { gt: paling, lte: waktu } : { gt: paling },
+          },
+          select: { itemId: true, variantSku: true, qty: true, createdAt: true },
+        });
+        saldo = saldoAcuan(saldoDasar, sesudah, waktuHitung);
+      }
       const semua = rencanaOpname(input.baris, saldo);
-      const lebihBaru = waktu ? await terhitungSesudah(tx, input.storeId, itemIds, waktu) : new Set<string>();
+
+      // Barang yang sudah dihitung opname LAIN sesudah baris ini dihitung
+      // dilewati: hitungan yang lebih baru itu yang berlaku.
+      const waktuBaris = new Map<string, Date>();
+      for (const r of semua) {
+        const k = kunciBaris(r.itemId, r.variantSku);
+        const t = waktuHitung.get(k) ?? waktu;
+        if (t) waktuBaris.set(k, t);
+      }
+      let lebihBaru = new Set<string>();
+      if (waktuBaris.size > 0) {
+        const sejak = new Date(Math.min(...[...waktuBaris.values()].map((t) => t.getTime())));
+        lebihBaru = dilewatiKarenaLebihBaru(waktuBaris, await waktuHitungTerakhir(tx, input.storeId, itemIds, sejak));
+      }
       const rencana = semua.filter((r) => !lebihBaru.has(kunciBaris(r.itemId, r.variantSku)));
+      const waktuDari = (r: { itemId: string; variantSku: string }) => waktuBaris.get(kunciBaris(r.itemId, r.variantSku));
 
       const nama = (itemId: string, variantSku: string) => {
         const item = itemById.get(itemId);
@@ -475,6 +541,7 @@ export async function catatOpname(input: {
               productName: nama(r.itemId, r.variantSku),
               qtySystem: r.qtySystem,
               qtyCounted: r.qtyCounted,
+              countedAt: waktuDari(r) ?? null,
             })),
           },
         },
@@ -492,15 +559,17 @@ export async function catatOpname(input: {
           refType: "StoreOpname",
           refId: opname.id,
           createdById: input.userId,
-          ...(waktu ? { createdAt: waktu } : {}),
+          // Bertanggal saat barang dihitung: saldo per waktu sesudahnya sudah benar.
+          ...(waktuDari(r) ? { createdAt: waktuDari(r) } : {}),
         }));
       if (gerak.length) await tx.storeStockMovement.createMany({ data: gerak });
 
+      const dilewati = semua.length - rencana.length;
       return {
         ok: true as const,
         opnameId: opname.id,
         selisih: gerak.length,
-        ...(waktu ? { dilewati: semua.length - rencana.length } : {}),
+        ...(waktu || dilewati > 0 ? { dilewati } : {}),
       };
     });
   } catch (err) {

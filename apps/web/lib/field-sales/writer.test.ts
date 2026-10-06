@@ -435,7 +435,7 @@ d("approveFieldSalesOrder — konsi", () => {
     await prisma.uOM.deleteMany({ where: { id: uomId } });
   });
 
-  it("reserves (not consumes), stores gross-up, writes NO SalesHistory", async () => {
+  it("moves stock out of the main warehouse at approve, stores gross-up, writes NO SalesHistory", async () => {
     await seedItemWithStock(10, 10000);
     const { orderId } = await createFieldSalesOrder({
       storeId,
@@ -453,13 +453,13 @@ d("approveFieldSalesOrder — konsi", () => {
     expect(Number(order!.lines[0].unitPrice)).toBe(12500);
     expect(Number(order!.lines[0].lineTotal)).toBe(50000);
     expect(Number(order!.total)).toBe(50000);
-    // reserved, NOT consumed
+    // Toko konsinyasi = gudang lain: disetujui = dikirim, stok keluar dari gudang utama.
     const inv = await prisma.inventoryValue.findFirst({ where: { itemId } });
-    expect(Number(inv!.reservedQty)).toBe(4);
-    expect(Number(inv!.qtyOnHand)).toBe(10); // unchanged — no consume
+    expect(Number(inv!.reservedQty)).toBe(0);
+    expect(Number(inv!.qtyOnHand)).toBe(6); // 10 − 4
     const rsv = await prisma.stockReservation.findUnique({ where: { fieldSalesLineId: order!.lines[0].id } });
     expect(rsv!.source).toBe("FIELD_SALES_KONSI");
-    expect(rsv!.state).toBe("RESERVED");
+    expect(rsv!.state).toBe("CONSUMED");
     // NO SalesHistory written
     expect(await prisma.salesHistory.count()).toBe(before);
   });

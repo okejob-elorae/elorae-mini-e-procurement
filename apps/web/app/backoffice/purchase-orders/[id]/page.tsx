@@ -7,6 +7,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import {
   getPOById,
   changePOStatus,
+  batalkanPO,
   updatePO,
   setPOPaidAt,
   postSupplierPaymentReversalJournalAction,
@@ -42,6 +43,9 @@ import type { SnapshotStep } from '@/lib/leadtime/calculations';
 import { formatDisplayDate, formatDisplayDateTime } from '@/lib/date-only';
 import { getStatusMeta } from '@/lib/ui/status-map';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
+import { TutupPoDialog } from './TutupPoDialog';
+import { RingkasanUtangPo } from './RingkasanUtangPo';
+import { pesanTolakBatalPo, type TolakBatalPo } from '../pesan-batal-po';
 
 const statusLabels: Record<POStatus, string> = {
   DRAFT: 'Draft',
@@ -79,6 +83,8 @@ export default function PODetailPage() {
   const [isPostingReversal, setIsPostingReversal] = useState(false);
   const tSupplierPayments = useTranslations('supplierPayments');
   const tPO = useTranslations('purchaseOrders');
+  const tSecurity = useTranslations('security');
+  const tToasts = useTranslations('toasts');
   const tStatus = useTranslations('statuses');
   const locale = useLocale();
   const statusLabel = (status: string) =>
@@ -240,17 +246,64 @@ export default function PODetailPage() {
     }
   };
 
+  /** Teks penolakan `batalkanPO`: kunci `security.*` untuk PIN, `purchaseOrders.batal.err.*` selainnya. */
+  const teksTolakBatal = (hasil: TolakBatalPo) => {
+    const pesan = pesanTolakBatalPo(hasil);
+    const teks =
+      pesan.ruang === 'security'
+        ? tSecurity.has(pesan.kunci) ? tSecurity(pesan.kunci) : tSecurity('pinInvalid')
+        : tPO.has(pesan.kunci) ? tPO(pesan.kunci) : tToasts('failedToCancelPO');
+    return { teks, ulangiPin: pesan.ulangiPin };
+  };
+
+  /*
+   * Batal PO lewat `batalkanPO`, yang MENGEMBALIKAN `{ ok:false, code }`: dulu
+   * lewat `changePOStatus('CANCELLED')` yang melempar, dan di build produksi
+   * Next menyamarkan pesan lemparan — "sudah ada barang diterima" jadi galat umum.
+   * PIN salah/kosong dilempar ke jendela PIN supaya bisa diketik ulang di sana.
+   */
+  const batalkanDenganPin = async (pin: string) => {
+    if (!po) return;
+    setIsSaving(true);
+    let hasil: Awaited<ReturnType<typeof batalkanPO>>;
+    try {
+      hasil = await batalkanPO(po.id, cancelReason, pin);
+    } catch {
+      // Galat jaringan/server: tampil di jendela PIN, bukan "PIN tidak valid".
+      setIsSaving(false);
+      throw new Error(tToasts('failedToCancelPO'));
+    }
+    if (!hasil.ok) {
+      const { teks, ulangiPin } = teksTolakBatal(hasil);
+      if (ulangiPin) {
+        setIsSaving(false);
+        throw new Error(teks);
+      }
+      toast.error(teks);
+    } else {
+      toast.success(tPO('toastCancelled'));
+      setCancelReason('');
+    }
+    setCancelDialogOpen(false);
+    setPinModalOpen(false);
+    setPendingAction(null);
+    router.refresh();
+    try {
+      setPO(await getPOById(po.id));
+    } catch {
+      // muat ulang gagal: data lama tetap tampil, router.refresh sudah jalan
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handlePinConfirm = async (pin: string) => {
     if (!session?.user?.id || !po) return;
+    if (pendingAction === 'cancel') return batalkanDenganPin(pin);
 
     setIsSaving(true);
     try {
-      if (pendingAction === 'cancel') {
-        await changePOStatus(po.id, 'CANCELLED', session.user.id, cancelReason, pin);
-        toast.success(tPO('toastCancelled'));
-        setCancelDialogOpen(false);
-        setCancelReason('');
-      } else if (pendingAction === 'update' && pendingUpdateData) {
+      if (pendingAction === 'update' && pendingUpdateData) {
         await updatePO(po.id, pendingUpdateData, session.user.id, pin);
         toast.success(tPO('toastUpdated'));
         setIsEditMode(false);
@@ -317,6 +370,15 @@ export default function PODetailPage() {
     po.status === 'OVER';
   const canOpenEditForm = canEdit || canEditPosted;
   const canSubmit = po.status === 'DRAFT';
+  // "Tutup PO": hanya PO yang sudah menerima sebagian (PARTIAL) — yang belum
+  // menerima apa pun dibatalkan, bukan ditutup.
+  const canClose =
+    po.status === 'PARTIAL' &&
+    hasPermission(session?.user?.permissions ?? [], PERMISSIONS.PURCHASE_ORDERS_APPROVE);
+  const reloadPO = async () => {
+    router.refresh();
+    setPO(await getPOById(po.id));
+  };
   const canCancel =
     po.status === 'DRAFT' ||
     po.status === 'SUBMITTED' ||
@@ -501,6 +563,7 @@ export default function PODetailPage() {
 
       {isEditMode && canOpenEditForm ? (
         <POForm
+          ppnRatePercent={po.ppnRatePercent ?? null}
           initialData={{
             supplierId: po.supplierId,
             etaDate: po.etaDate ? new Date(po.etaDate) : null,
@@ -563,6 +626,11 @@ export default function PODetailPage() {
                 <div>
                   <p className="text-sm text-muted-foreground">{tPO('totalAmountLabel')}</p>
                   <p className="font-medium">Rp {Number(po.grandTotal).toLocaleString('id-ID')}</p>
+                  {po.utang && po.utang.utang !== po.utang.nilaiPo && (
+                    <p className="text-xs text-muted-foreground">
+                      {tPO('ringkasan.utangSingkat', { nilai: `Rp ${Number(po.utang.utang).toLocaleString('id-ID')}` })}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">{tPO('createdLabel')}</p>
@@ -583,6 +651,7 @@ export default function PODetailPage() {
                   <p className="font-medium">{po.terms}</p>
                 </div>
               )}
+              <RingkasanUtangPo po={po} />
               {po.status !== 'DRAFT' && po.status !== 'CANCELLED' && (
                 <div className="pt-2 space-y-2">
                   <div className="flex gap-2">
@@ -738,6 +807,22 @@ export default function PODetailPage() {
                 <CheckCircle className="h-4 w-4 mr-2" />
                 {tPO('submitPO')}
               </Button>
+            )}
+            {canClose && (
+              <TutupPoDialog
+                poId={po.id}
+                docNumber={po.docNumber}
+                disabled={isSaving}
+                sisa={po.items
+                  .filter((item: any) => Number(item.qty) > Number(item.receivedQty))
+                  .map((item: any) => ({
+                    id: item.id,
+                    nama: `${item.item?.sku ?? ''}${item.variantSku ? ` · ${item.variantSku}` : ''}`,
+                    sisa: Number(item.qty) - Number(item.receivedQty),
+                    satuan: item.item?.uom?.code ?? '',
+                  }))}
+                onSelesai={reloadPO}
+              />
             )}
             {canCancel && (
               <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>

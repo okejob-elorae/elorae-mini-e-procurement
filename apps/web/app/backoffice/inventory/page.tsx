@@ -44,6 +44,7 @@ function serializeAdjustmentRows(
     type: 'POSITIVE' | 'NEGATIVE';
     qtyChange: number | null;
     reason: string;
+    source: string;
     createdAt: Date;
     evidenceUrl?: string | null;
     item: { sku: string; nameId: string };
@@ -57,6 +58,7 @@ function serializeAdjustmentRows(
     type: adj.type,
     qtyChange: String(adj.qtyChange ?? 0),
     reason: adj.reason,
+    source: adj.source,
     createdAt: adj.createdAt.toISOString(),
     evidenceUrl: adj.evidenceUrl,
     item: adj.item,

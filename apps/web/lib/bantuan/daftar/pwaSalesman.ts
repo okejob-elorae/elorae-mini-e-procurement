@@ -487,7 +487,7 @@ export const ENTRI: EntriBantuan[] = [
       },
       {
         judul: { kunci: "pwa.insentif.salesTitle" },
-        isi: { kunci: "pwa.insentif.salesHint" },
+        isi: "Sama dengan kartu \"Bulan ini\" di beranda: rupiah dari pengiriman putus dan penjualan van. Konsinyasi yang disetujui hanya tampil sebagai jumlah pcs; angka final dari kantor bisa ikut menghitungnya.",
       },
     ],
   },

@@ -1,9 +1,10 @@
-import { Decimal } from "decimal.js";
 import { prisma } from "@elorae/db";
 import { generateDocNumber } from "@/lib/docNumber";
 import { poSchema } from "@/lib/validations";
 import { assertLinesVariantSkusMatchItemDefinitions } from "@/lib/items/validate-variant-lines";
 import { resolvePoLeadTimeFields } from "@/lib/leadtime/po-snapshot";
+import { getPpnRatePercent } from "@/app/actions/settings/ppn";
+import { bulatkanTarifPpn, hitungTotalPo } from "@/lib/purchase-orders/ppn";
 import type { z } from "zod";
 
 export type POFormData = z.infer<typeof poSchema>;
@@ -33,15 +34,15 @@ export async function createPurchaseOrder(
 ) {
   const validated = poSchema.parse(data);
   const applyLeadTime = options?.applyLeadTime !== false;
+  // Tarif dibekukan di PO: ganti tarif di Pengaturan tidak mengubah PO yang sudah ada.
+  // Dibulatkan ke presisi kolom supaya PPN yang disimpan = PPN yang dihitung ulang saat PO disunting.
+  const ppnRatePercent = bulatkanTarifPpn(await getPpnRatePercent());
 
   return prisma.$transaction(async (tx) => {
     await assertLinesVariantSkusMatchItemDefinitions(tx.item, validated.items);
 
     const docNumber = await generateDocNumber("PO", tx);
-    const totalAmount = validated.items.reduce(
-      (sum, item) => sum.plus(new Decimal(item.qty).mul(item.price)),
-      new Decimal(0)
-    );
+    const total = hitungTotalPo(validated.items, ppnRatePercent);
 
     let etaDate = validated.etaDate ?? null;
     let chainSnapshot: object | null = null;
@@ -67,8 +68,10 @@ export async function createPurchaseOrder(
         paymentDueDate: validated.paymentDueDate ?? undefined,
         notes: validated.notes,
         terms: validated.terms,
-        totalAmount: totalAmount.toNumber(),
-        grandTotal: totalAmount.toNumber(),
+        totalAmount: total.subtotal,
+        taxAmount: total.taxAmount,
+        grandTotal: total.grandTotal,
+        ppnRatePercent,
         createdById: userId,
         chainSnapshot: chainSnapshot ?? undefined,
         chainTotalDays: chainTotalDays ?? undefined,

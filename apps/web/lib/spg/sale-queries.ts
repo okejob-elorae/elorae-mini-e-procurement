@@ -1,6 +1,6 @@
 import { prisma } from "@elorae/db";
-import { computeStorePrice } from "@elorae/db/pricing";
 import { parseItemVariants, variantDetailForSku } from "@/lib/items/variants";
+import { hargaKasirSpg, syaratHargaToko, type SyaratHargaToko } from "./harga-kasir";
 
 export type SpgCatalogRow = {
   itemId: string;
@@ -18,16 +18,21 @@ export type SpgCatalogRow = {
 };
 
 /**
- * SPG catalog — active finished goods, priced PUTUS (retail), mirroring the
- * pricing recordSpgSale itself applies (store-independent: PUTUS ignores
- * marginPercent). Every variant defined on the item is offered.
+ * SPG catalog — active finished goods. Every variant defined on the item is offered.
  *
- * With `storeId`, each row carries the store's own stock balance. It is shown,
- * never used as a gate: an SPG records what physically sold, and a negative
- * balance is settled by a store opname, not by refusing the sale.
+ * With `storeId`, each row is priced at that store's counter price
+ * (`hargaKasirSpg`, the same function recordSpgSale uses): the Elorae selling
+ * price at a PUTUS store, the in-store price (grossed up by the store's margin)
+ * at a KONSI store — so the phone's preview and offline queue show exactly what
+ * the server will record. Without `storeId` (pickers that never show a price)
+ * rows carry the plain Elorae selling price.
+ *
+ * With `storeId`, each row also carries the store's own stock balance. It is
+ * shown, never used as a gate: an SPG records what physically sold, and a
+ * negative balance is settled by a store opname, not by refusing the sale.
  */
 export async function getSellableCatalogForSpg(storeId?: string): Promise<SpgCatalogRow[]> {
-  const [rows, grup] = await Promise.all([
+  const [rows, grup, toko] = await Promise.all([
     prisma.item.findMany({
       where: { isActive: true, type: "FINISHED_GOOD" },
       orderBy: { nameId: "asc" },
@@ -36,14 +41,15 @@ export async function getSellableCatalogForSpg(storeId?: string): Promise<SpgCat
     storeId
       ? prisma.storeStockMovement.groupBy({ by: ["itemId", "variantSku"], where: { storeId }, _sum: { qty: true } })
       : Promise.resolve([]),
+    storeId ? prisma.store.findUnique({ where: { id: storeId }, select: { termsType: true, marginPercent: true } }) : Promise.resolve(null),
   ]);
+  const syarat: SyaratHargaToko = toko ? syaratHargaToko(toko) : { termsType: "PUTUS", marginPercent: null };
   const saldo = new Map(grup.map((g) => [`${g.itemId}::${g.variantSku}`, g._sum.qty ?? 0]));
   const stok = (itemId: string, variantSku: string | null) => (storeId ? (saldo.get(`${itemId}::${variantSku ?? ""}`) ?? 0) : null);
 
   const out: SpgCatalogRow[] = [];
   for (const r of rows) {
-    const sp = r.sellingPrice === null ? null : Number(r.sellingPrice);
-    const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", marginPercent: null });
+    const price = hargaKasirSpg(r.sellingPrice === null ? null : Number(r.sellingPrice), syarat);
     const varian = parseItemVariants(r.variants)
       .map((v) => ({ sku: String(v.sku ?? "").trim(), barcode: String((v as { barcode?: unknown }).barcode ?? "").trim() || null }))
       .filter((v) => v.sku);

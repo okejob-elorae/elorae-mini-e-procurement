@@ -123,7 +123,7 @@ export async function muatKiriman(
       id: true,
       noKirim: true,
       shippedAt: true,
-      items: { select: { id: true, itemId: true, itemName: true, qty: true } },
+      items: { select: { id: true, itemId: true, variantSku: true, itemName: true, qty: true } },
     },
   });
   if (!k) return null;
@@ -132,7 +132,8 @@ export async function muatKiriman(
     sourceId: k.id,
     docNo: k.noKirim,
     tanggal: k.shippedAt,
-    lines: k.items.map((l) => ({ lineId: l.id, itemId: l.itemId, variantSku: "", productName: l.itemName, qty: l.qty })),
+    // Varian kiriman diteruskan ke tanda terima: stok titipan dan buku toko dihitung per ukuran.
+    lines: k.items.map((l) => ({ lineId: l.id, itemId: l.itemId, variantSku: l.variantSku ?? "", productName: l.itemName, qty: l.qty })),
   };
 }
 

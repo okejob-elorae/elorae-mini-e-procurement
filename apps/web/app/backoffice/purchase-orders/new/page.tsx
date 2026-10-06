@@ -11,6 +11,8 @@ import { toast } from 'sonner';
 import { offlineDB, savePOLocally } from '@/lib/offline/db';
 import { isOnline } from '@/lib/offline/sync';
 import { getSuppliersForSelect } from '@/app/actions/suppliers';
+import { getPpnRatePercent } from '@/app/actions/settings/ppn';
+import { bulatkanTarifPpn } from '@/lib/purchase-orders/ppn';
 
 interface Supplier {
   id: string;
@@ -26,6 +28,16 @@ export default function NewPOPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingSuppliers, setIsLoadingSuppliers] = useState(true);
+  // Tarif PPN Pengaturan → Pajak untuk pratinjau total; server tetap membaca tarifnya sendiri.
+  // `undefined` = belum diketahui (belum termuat / luring) — PPN tetap dihitung saat disimpan.
+  const [ppnRatePercent, setPpnRatePercent] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    if (!isOnline()) return;
+    getPpnRatePercent()
+      .then((tarif) => setPpnRatePercent(bulatkanTarifPpn(tarif)))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const fetchSuppliers = async () => {
@@ -129,6 +141,7 @@ export default function NewPOPage() {
 
       <POForm
         suppliers={suppliers}
+        ppnRatePercent={ppnRatePercent}
         onSubmit={handleSubmit}
         onSaveLocally={handleSaveLocally}
         isLoading={isLoading}

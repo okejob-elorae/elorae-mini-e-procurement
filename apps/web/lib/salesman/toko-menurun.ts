@@ -51,6 +51,12 @@ export type HasilMenurun = {
   nilai90: number | null;
   /** Sama, untuk 90 hari sebelumnya. */
   nilai90Sebelumnya: number | null;
+  /**
+   * `nilai90 ÷ nilai90Sebelumnya` (4 desimal) — satu-satunya jejak nilai di
+   * payload HP (`menurunUntukHp`), yang mengosongkan kedua nilai rupiahnya.
+   * Tidak diisi di server; null = tidak bisa dibandingkan.
+   */
+  rasioNilai?: number | null;
 };
 
 /** Toko yang ditandai, siap dikirim ke klien (tanpa Date — aman jadi JSON). */
@@ -145,10 +151,60 @@ export function nilaiTokoMenurun(pesanan: readonly PesananToko[], hariIni: Date)
   };
 }
 
-/** Berapa persen nilai 90 hari terakhir turun dari 90 hari sebelumnya; null bila tidak bisa dibandingkan. */
-export function persenTurun(h: Pick<HasilMenurun, "nilai90" | "nilai90Sebelumnya">): number | null {
+/** Nilai 90 hari terakhir ÷ 90 hari sebelumnya, dari rupiahnya atau dari `rasioNilai` (payload HP). */
+function rasioTurun(h: Pick<HasilMenurun, "nilai90" | "nilai90Sebelumnya" | "rasioNilai">): number | null {
+  if (typeof h.rasioNilai === "number") return h.rasioNilai;
   if (h.nilai90 === null || h.nilai90Sebelumnya === null || h.nilai90Sebelumnya <= 0) return null;
-  return Math.round((1 - h.nilai90 / h.nilai90Sebelumnya) * 100);
+  return h.nilai90 / h.nilai90Sebelumnya;
+}
+
+/** Berapa persen nilai 90 hari terakhir turun dari 90 hari sebelumnya; null bila tidak bisa dibandingkan. */
+export function persenTurun(h: Pick<HasilMenurun, "nilai90" | "nilai90Sebelumnya" | "rasioNilai">): number | null {
+  const r = rasioTurun(h);
+  return r === null ? null : Math.round((1 - r) * 100);
+}
+
+/**
+ * Toko menurun dalam bentuk yang DIKIRIM KE HP salesman: tanpa rupiah.
+ *
+ * `nilai90`/`nilai90Sebelumnya` adalah total pesanan toko itu (putus terkirim
+ * + konsi disetujui + van), jadi untuk SEMUA toko kedua nilai dikosongkan dan
+ * diganti rasionya — cukup untuk "turun X%" dan urutannya (dites).
+ *
+ * Toko yang jendela 180 harinya memuat nilai KONSI (`tokoKonsi`) tidak
+ * mendapat rasio sama sekali (aturan mutlak pemilik: total konsi tidak pernah
+ * sampai ke HP). Rasio pun membuka total konsi begitu jendelanya bercampur
+ * dengan rupiah yang salesman ketahui: 90 hari lalu konsi K, 90 hari terakhir
+ * van V (notanya ia pegang) → rasio = V ÷ K, jadi K = V ÷ rasio. Barisnya
+ * tetap ditandai, tanpa angka ("Nilai pesanan menurun").
+ *
+ * Urutan payload disusun ULANG dari kunci yang terkirim saja (nama lalu
+ * aturan urut) — urutan server dihitung dari rupiahnya, dan posisi toko konsi
+ * di antara toko lain pun akan membocorkan rasionya. Kuncinya dipilih satu
+ * per satu, bukan disalin: kolom rupiah yang kelak ditambahkan ke
+ * `TokoMenurun` tidak ikut terkirim tanpa sengaja.
+ */
+export function menurunUntukHp(
+  daftar: readonly TokoMenurun[],
+  opsi: { tokoKonsi?: ReadonlySet<string> } = {},
+): TokoMenurun[] {
+  const hp = daftar.map((m): TokoMenurun => {
+    const r = opsi.tokoKonsi?.has(m.storeId) ? null : rasioTurun(m);
+    return {
+      storeId: m.storeId,
+      nama: m.nama,
+      alasan: m.alasan,
+      hariSejakTerakhir: m.hariSejakTerakhir,
+      jarakBiasa: m.jarakBiasa,
+      nilai90: null,
+      nilai90Sebelumnya: null,
+      rasioNilai: r === null ? null : Math.round(r * 10_000) / 10_000,
+    };
+  });
+  // Urut nama dulu, lalu aturan urut (stabil): yang setara — termasuk toko
+  // tanpa rasio — berurutan menurut nama, bukan menurut rupiah server.
+  hp.sort((a, b) => a.nama.localeCompare(b.nama, "id") || (a.storeId < b.storeId ? -1 : a.storeId > b.storeId ? 1 : 0));
+  return urutkanTokoMenurun(hp);
 }
 
 // ─── Urutan ──────────────────────────────────────────────────────────────────
@@ -170,8 +226,12 @@ function bandingkanMenurun(a: HasilMenurun, b: HasilMenurun): number {
     const beda = kaliTerlambat(b) - kaliTerlambat(a);
     return beda !== 0 ? beda : b.hariSejakTerakhir - a.hariSejakTerakhir;
   }
-  const rasio = (h: HasilMenurun) => (h.nilai90 ?? 0) / Math.max(1, h.nilai90Sebelumnya ?? 1);
-  return rasio(a) - rasio(b);
+  // Payload HP hanya membawa `rasioNilai`; di server dihitung dari rupiahnya.
+  // Tanpa rasio (toko konsinyasi di HP) = di belakang yang punya angka.
+  const ra = rasioTurun(a);
+  const rb = rasioTurun(b);
+  if (ra === null || rb === null) return ra === rb ? 0 : ra === null ? 1 : -1;
+  return ra - rb;
 }
 
 export function urutkanTokoMenurun<T extends HasilMenurun>(daftar: readonly T[]): T[] {

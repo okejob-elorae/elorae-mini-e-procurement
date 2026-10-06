@@ -24,7 +24,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Plus, Trash2, Loader2, Barcode, X } from 'lucide-react';
 import { BarcodeScanner } from '@/components/scanners/BarcodeScanner';
-import { createGRN, type GRNFormData } from '@/app/actions/grn';
+import { simpanGRN, type GRNFormData } from '@/app/actions/grn';
 import { getPOs } from '@/app/actions/purchase-orders';
 import { getPOById } from '@/app/actions/purchase-orders';
 import { getItems } from '@/app/actions/items';
@@ -97,6 +97,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
   const { data: session } = useSession();
   const t = useTranslations('inventory.grnForm');
   const tToasts = useTranslations('toasts');
+  const tTolak = useTranslations('grnErrors');
   const [poId, setPoId] = useState<string>('');
   const [supplierId, setSupplierId] = useState<string>('');
   const [lines, setLines] = useState<LineRow[]>([
@@ -481,7 +482,13 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
         notes: notes || undefined,
         photoUrls: urls.length > 0 ? urls : undefined,
       };
-      await createGRN(data, session.user.id);
+      // Penolakan berkode (PO batal/draf/ditutup) dikembalikan, bukan dilempar:
+      // di build produksi pesan lemparan aksi server disamarkan.
+      const hasil = await simpanGRN(data);
+      if (!hasil.ok) {
+        toast.error(tTolak.has(hasil.code) ? tTolak(hasil.code) : t('createFailed'));
+        return;
+      }
       toast.success(t('createdToast'));
       onSuccess?.();
     } catch (err: unknown) {

@@ -34,6 +34,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useLocale, useTranslations } from 'next-intl';
 import { getPOById, getPOs, setPOPaidAt } from '@/app/actions/purchase-orders';
+import { totalUtangBelumDibayar, utangBaris } from './nilai-utang';
 import { supplierPaymentJournalErrorKey } from '@/lib/purchasing/supplier-payment-journal-message';
 import { logPrint } from '@/app/actions/audit';
 import { buildPOPrintHtml } from '@/lib/print/po-html';
@@ -84,6 +85,8 @@ interface POForPayment {
   paymentDueDate: Date | null;
   paidAt: Date | null;
   grandTotal: number;
+  /** Utang sesudah sisa yang tidak datang (Tutup PO) dan retur pemasok — dari `listPOs`. */
+  utang: number;
   supplier: { name: string; code: string };
   /**
    * Unpaid while a payment journal from an earlier mark still stands on the
@@ -109,6 +112,7 @@ export default function SupplierPaymentsPage() {
   const [togglingPoId, setTogglingPoId] = useState<string | null>(null);
   const tSupplierPayments = useTranslations('supplierPayments');
   const tTable = useTranslations('tableHeaders');
+  const tPO = useTranslations('purchaseOrders');
   const locale = useLocale();
 
   const fetchSuppliers = async () => {
@@ -149,6 +153,7 @@ export default function SupplierPaymentsPage() {
         paymentDueDate: po.paymentDueDate ? new Date(po.paymentDueDate) : null,
         paidAt: po.paidAt ? new Date(po.paidAt) : null,
         grandTotal: Number(po.grandTotal),
+        utang: utangBaris(po),
         supplier: po.supplier,
         paymentJournalStandingWhileUnpaid: Boolean(po.paymentJournalStandingWhileUnpaid),
       });
@@ -183,7 +188,8 @@ export default function SupplierPaymentsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchPOs depends on filters
   }, [supplierId, dateFrom, dateTo, paymentFilter, page, pageSize]);
 
-  const unpaidTotal = pos.filter((p) => !p.paidAt).reduce((sum, p) => sum + p.grandTotal, 0);
+  // Belum dibayar = utang (sesudah Tutup PO dan retur pemasok), bukan total PO penuh.
+  const unpaidTotal = totalUtangBelumDibayar(pos);
   const paidCount = pos.filter((p) => p.paidAt).length;
   const unpaidCount = pos.filter((p) => !p.paidAt).length;
 
@@ -528,7 +534,14 @@ export default function SupplierPaymentsPage() {
                         <p className="text-sm text-muted-foreground">{po.supplier.code}</p>
                       </div>
                     </TableCell>
-                    <TableCell>Rp {po.grandTotal.toLocaleString('id-ID')}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      Rp {po.grandTotal.toLocaleString('id-ID')}
+                      {po.utang !== po.grandTotal && (
+                        <div className="text-xs text-muted-foreground">
+                          {tPO('ringkasan.utangSingkat', { nilai: `Rp ${po.utang.toLocaleString('id-ID')}` })}
+                        </div>
+                      )}
+                    </TableCell>
                     <TableCell>
                       {po.paymentDueDate ? formatDisplayDate(po.paymentDueDate, locale) : '-'}
                     </TableCell>

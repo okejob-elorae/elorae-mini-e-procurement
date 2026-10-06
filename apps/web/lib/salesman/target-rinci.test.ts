@@ -14,6 +14,8 @@ import {
   samaIsiTarget,
   susunCapaianRinci,
   TANPA_KATEGORI,
+  tanpaKonsiDiHp,
+  totalUntukHp,
   type DokumenJual,
 } from "./target-rinci";
 
@@ -361,9 +363,46 @@ describe("capaianUntukHp — target barang dalam rupiah tanpa konsinyasi", () =>
     expect(capaianUntuk(c, t)).toBe(900);
   });
 
-  it("pcs dan kategori tidak berubah di HP — jumlah barang dan nilai gabungan kategori tidak membuka harga satuan", () => {
+  it("pcs tidak berubah di HP — jumlah barang tidak memuat harga", () => {
     expect(capaianUntukHp(c, { scope: "BARANG", refId: "i1", measure: "PCS" })).toBe(6);
-    expect(capaianUntukHp(c, { scope: "KATEGORI", refId: "katA", measure: "NILAI" })).toBe(900);
+    expect(capaianUntukHp(c, { scope: "KATEGORI", refId: "katA", measure: "PCS" })).toBe(6);
+  });
+
+  it("kategori + NILAI di HP juga putus + van saja; kantor tetap melihat semuanya", () => {
+    // Nilai gabungan kategori − putus − van kategori itu = konsi kategori itu.
+    expect(c.kategoriKonsi.katA).toEqual({ nilai: 300, pcs: 3 });
+    const t = { scope: "KATEGORI" as const, refId: "katA", measure: "NILAI" as const };
+    expect(capaianUntukHp(c, t)).toBe(600);
+    expect(capaianUntuk(c, t)).toBe(900);
+  });
+
+  it("setiap target dalam rupiah ditandai 'tanpa konsinyasi' di HP; target pcs tidak", () => {
+    expect(tanpaKonsiDiHp({ scope: "BARANG", measure: "NILAI" })).toBe(true);
+    expect(tanpaKonsiDiHp({ scope: "KATEGORI", measure: "NILAI" })).toBe(true);
+    expect(tanpaKonsiDiHp({ scope: "BARANG", measure: "PCS" })).toBe(false);
+    expect(tanpaKonsiDiHp({ scope: "KATEGORI", measure: "PCS" })).toBe(false);
+  });
+
+  it("dokumen konsi tanpa baris masuk 'tanpa kategori' — di HP nilainya juga dibuang", () => {
+    const tanpaBaris = susunCapaianRinci([...dok, { jenis: "konsi", totalSen: 77_700, baris: [] }], kategoriBarang);
+    expect(tanpaBaris.kategoriKonsi[TANPA_KATEGORI]).toEqual({ nilai: 777, pcs: 0 });
+    expect(capaianUntukHp(tanpaBaris, { scope: "KATEGORI", refId: TANPA_KATEGORI, measure: "NILAI" })).toBe(0);
+  });
+
+  it("total di HP = putus + van (+ SPG), tanpa konsinyasi", () => {
+    expect(c.total).toBe(900);
+    expect(totalUntukHp(c)).toBe(600);
+    const pecahan = susunCapaianRinci(
+      [
+        { jenis: "putus", totalSen: 1_001, baris: [] },
+        { jenis: "van", totalSen: 2_002, baris: [] },
+        { jenis: "konsi", totalSen: 4_123_700, baris: [] },
+      ],
+      kategoriBarang,
+    );
+    expect(totalUntukHp(pecahan)).toBe(30.03);
+    const spg = susunCapaianRinci([{ jenis: "spg", totalSen: 5_000_000, baris: [] }], kategoriBarang);
+    expect(totalUntukHp(spg)).toBe(50_000);
   });
 
   it("barang yang hanya terjual lewat konsinyasi bernilai 0 di HP, bukan nilai konsinya", () => {
@@ -415,6 +454,7 @@ describe("penjualan SPG (bersih dari retur pembeli)", () => {
     expect(c.kategori).toEqual({ katA: { nilai: 50_000, pcs: 1 } });
     expect(c.barang).toEqual({ i1: { nilai: 50_000, pcs: 1 } });
     expect(c.barangKonsi).toEqual({});
+    expect(c.kategoriKonsi).toEqual({});
   });
 
   it("retur seluruhnya: nota bernilai nol, tidak ada kategori yang tersisa; retur melebihi qty dibatasi", () => {

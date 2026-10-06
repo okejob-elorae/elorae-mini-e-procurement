@@ -13,9 +13,9 @@ import {
   tokoTeratas,
   type CapaianTarget,
   type JualKeToko,
-  type RingkasanBulan,
-  type TitikBulan,
 } from "./riwayat-penjualan";
+import { jumlahHp, pcsKonsiBulan, seriHp, tanpaKonsi, type RingkasanBulanHp, type TitikBulanHp } from "./penjualan-hp";
+import { pcsKonsiSalesman } from "./penjualan-hp-queries";
 import { rentangBulanWib } from "./target-rinci";
 import { capaianRinciSales } from "./target-rinci-queries";
 
@@ -25,7 +25,9 @@ import { capaianRinciSales } from "./target-rinci-queries";
  *
  * Angka bulanan (total, kanal, grafik, pembanding) memakai `penjualanSalesman`
  * SENDIRI — bukan salinannya — jadi bulan ini di halaman ini selalu sama dengan
- * kartu "Bulan ini" di beranda. Barang teratas memakai `capaianRinciSales`
+ * kartu "Bulan ini" di beranda. Halaman ini hanya untuk HP salesman, jadi
+ * rupiahnya putus + van saja dan konsinyasi hanya pcs (`penjualan-hp.ts`):
+ * total, grafik, pembanding, dan capaian target tidak pernah memuat rupiah konsi. Barang teratas memakai `capaianRinciSales`
  * (sumber yang sama, dipasak tesnya sama dengan beranda); toko teratas
  * membaca dokumen yang sama dengan aturan tanggal yang sama (`rentangBulanWib`).
  * Semuanya disaring ke satu salesman: layar HP tidak pernah menampilkan angka
@@ -40,8 +42,8 @@ export type BarangTeratasBaris = { itemId: string; nama: string; sku: string; pc
 export type RiwayatPenjualan = {
   daftarBulan: string[];
   bulan: string;
-  seri: TitikBulan[];
-  ringkas: RingkasanBulan;
+  seri: TitikBulanHp[];
+  ringkas: RingkasanBulanHp;
   target: CapaianTarget | null;
   toko: TokoTeratasBaris[];
   barang: BarangTeratasBaris[];
@@ -94,14 +96,17 @@ export async function riwayatPenjualan(salesmanId: string, bulanParam: unknown, 
   const bulanList = daftarBulan(hariIni);
   const bulan = pilihBulan(bulanParam, bulanList);
 
-  const [baris, setelanTarget, perToko, rinci] = await Promise.all([
-    penjualanSalesman(salesmanId, awalBulanWib(bulanAwalBacaan(bulanList))),
+  const [baris, pcs, setelanTarget, perToko, rinci] = await Promise.all([
+    // Baris konsi dibuang di sini: setiap rupiah di halaman ini putus + van.
+    penjualanSalesman(salesmanId, awalBulanWib(bulanAwalBacaan(bulanList))).then(tanpaKonsi),
+    pcsKonsiSalesman(salesmanId, awalBulanWib(bulanList[0])),
     prisma.systemSetting.findUnique({ where: { key: KUNCI_TARGET }, select: { value: true } }),
     jualKeTokoSebulan(salesmanId, bulan, hariIni),
     capaianRinciSales([salesmanId], bulan, hariIni),
   ]);
 
-  const ringkas = ringkasBulan(baris, bulan, hariIni);
+  const r = ringkasBulan(baris, bulan, hariIni);
+  const ringkas: RingkasanBulanHp = { ...r, jumlah: jumlahHp(r.jumlah, pcsKonsiBulan(pcs, bulan, hariIni)) };
   const capaian = rinci.get(salesmanId);
   const teratasToko = tokoTeratas(perToko);
   const teratasBarang = capaian ? barangTeratas(capaian.barang, capaian.barangKonsi) : [];
@@ -120,8 +125,9 @@ export async function riwayatPenjualan(salesmanId: string, bulanParam: unknown, 
   return {
     daftarBulan: bulanList,
     bulan,
-    seri: susunSeriBulanan(baris, bulanList, hariIni),
+    seri: seriHp(susunSeriBulanan(baris, bulanList, hariIni), pcs, hariIni),
     ringkas,
+    // Capaian atas putus + van: capaian dengan konsi × target − putus − van = konsi.
     target: capaianTarget(bacaTargetBulan(setelanTarget?.value, salesmanId, bulan), ringkas.jumlah.total),
     toko: teratasToko.map((t) => ({ ...t, nama: namaToko.get(t.storeId) ?? "—" })),
     barang: teratasBarang.map((b) => ({

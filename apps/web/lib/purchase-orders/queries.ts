@@ -7,6 +7,8 @@ import {
   hasStandingPaymentJournalWhileUnpaid,
   poIdsWithStandingPaymentJournalWhileUnpaid,
 } from '@/lib/purchasing/supplier-payment-journal';
+import { kreditReturPerPo, returUntukPo } from '@/lib/purchase-orders/kredit-retur-queries';
+import { hitungUtangPo, type RincianUtangPo } from '@/lib/purchase-orders/utang';
 
 export type ListPOsFilters = {
   status?: POStatus;
@@ -47,7 +49,37 @@ export type ListPOsExtras = {
  */
 type POListRow = ReturnType<typeof serializePOListRow> & {
   paymentJournalStandingWhileUnpaid?: boolean;
+  /** Σ kredit retur pemasok yang selesai untuk PO ini. */
+  kreditRetur?: number;
+  /** Utang ke pemasok: total − tidak akan datang (PO ditutup) − kredit retur. */
+  utang?: RincianUtangPo;
 };
+
+/**
+ * Selalu ditambahkan: satu `groupBy` untuk seluruh halaman. Tampilan saja —
+ * jurnal pembayaran pemasok tetap membaca GL, bukan angka ini.
+ */
+async function withUtang(rows: POListRow[]): Promise<POListRow[]> {
+  if (rows.length === 0) return rows;
+  const kredit = await kreditReturPerPo(rows.map((r) => r.id));
+  return rows.map((row) => {
+    const kreditRetur = kredit.get(row.id) ?? 0;
+    return {
+      ...row,
+      kreditRetur,
+      utang: hitungUtangPo(
+        {
+          status: row.status,
+          grandTotal: row.grandTotal,
+          ppnRatePercent: row.ppnRatePercent,
+          closedAt: row.closedAt,
+          items: row.items,
+        },
+        kreditRetur
+      ),
+    };
+  });
+}
 
 /**
  * Stamps the standing-payment flag onto rows when it was asked for. Scoped to the
@@ -157,7 +189,7 @@ export async function listPOs(
       prisma.purchaseOrder.count({ where }),
     ]);
     const items = await withStandingPaymentFlag(
-      pos.map((po) => serializePOListRow(po)),
+      await withUtang(pos.map((po) => serializePOListRow(po))),
       extras
     );
     return { items, totalCount };
@@ -170,7 +202,7 @@ export async function listPOs(
   });
 
   return withStandingPaymentFlag(
-    pos.map((po) => serializePOListRow(po)),
+    await withUtang(pos.map((po) => serializePOListRow(po))),
     extras
   );
 }
@@ -221,10 +253,18 @@ export async function getPOById(id: string) {
    */
   const paymentJournalStandingWhileUnpaid =
     po.paidAt == null ? await hasStandingPaymentJournalWhileUnpaid(id) : false;
+  const [returPemasok, penutup] = await Promise.all([
+    returUntukPo(id),
+    po.closedById
+      ? prisma.user.findUnique({ where: { id: po.closedById }, select: { name: true, email: true } })
+      : Promise.resolve(null),
+  ]);
 
   return serializePODetail({
     ...po,
     paymentJournalStandingWhileUnpaid,
+    returPemasok,
+    closedByName: penutup ? penutup.name || penutup.email || null : null,
     items: po.items.map((line) => ({
       ...line,
       item: line.item

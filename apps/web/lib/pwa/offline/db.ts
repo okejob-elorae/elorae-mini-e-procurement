@@ -318,7 +318,12 @@ export interface PendingStoreOpname extends IkatanKunjungan {
   storeId: string;
   /** Saat rak dihitung di HP (ms). */
   waktu: number;
-  baris: Array<{ itemId: string; variantSku: string | null; qtyCounted: number; productName: string }>;
+  /**
+   * `umurHitungMs`: berapa lama sebelum `waktu` baris itu terakhir dihitung —
+   * server membandingkan hitungan dengan saldo SAAT ITU, bukan saat tangkap.
+   * Tidak ada pada antrean dari versi aplikasi lama.
+   */
+  baris: Array<{ itemId: string; variantSku: string | null; qtyCounted: number; productName: string; umurHitungMs?: number }>;
   note: string | null;
   capturedAt: number;
   syncState: KeadaanAntre;

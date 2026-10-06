@@ -2,6 +2,7 @@ import { consumeFieldSalesOrderPartial, releaseFieldSalesOrder, PartialConsumeEr
 import { buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
+import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 import { DeliveryError } from "../errors";
 import { IndenBelumRilisError } from "../inden";
 import { outstandingQty, nextDeliveryStatus, allocateDeliveryDiscounts } from "./plan";
@@ -281,7 +282,11 @@ export async function recordFieldSalesDelivery(input: {
     throw new DeliveryError("INVALID_DATES");
   }
 
-  return runSerializable(async (tx) => {
+  // Barang yang stoknya keluar di percobaan yang COMMIT (diulang dari nol tiap percobaan;
+  // kiriman ulang dengan kunci yang sama tidak menggerakkan apa pun).
+  let barangKeluar: string[] = [];
+  const hasil = await runSerializable(async (tx) => {
+    barangKeluar = [];
     if (input.idempotencyKey) {
       const existing = await tx.fieldSalesDelivery.findUnique({
         where: { idempotencyKey: input.idempotencyKey },
@@ -456,6 +461,7 @@ export async function recordFieldSalesDelivery(input: {
         where: { id: d.ol.id },
         data: { deliveredQty: { increment: d.qty } },
       });
+      barangKeluar.push(d.ol.itemId);
     }
 
     const settled = order.lines.map((ol) => ({
@@ -495,6 +501,17 @@ export async function recordFieldSalesDelivery(input: {
 
     return { deliveryId: delivery.id, docNo: delivery.docNo };
   });
+
+  /*
+   * Sesudah commit. Selama cadangannya cukup, onHand dan reserved turun bersama
+   * sehingga available tetap — tapi pesanan yang dicadangkan kurang (oversell
+   * diperingatkan, tidak ditolak) memang menurunkan available. Push mengirim
+   * angka mutlak, jadi mengirimnya pada setiap pengiriman selalu aman.
+   */
+  if (barangKeluar.length > 0) {
+    await antrekanPushStok(barangKeluar, { sumber: "ADJUSTMENT", ref: `kirim putus ${hasil.docNo}`, userId: input.deliveredById });
+  }
+  return hasil;
 }
 
 export async function closeFieldSalesOrderRemainder(input: {
@@ -502,7 +519,10 @@ export async function closeFieldSalesOrderRemainder(input: {
   closedById: string;
   reason: string;
 }): Promise<{ ok: true }> {
-  return runSerializable(async (tx) => {
+  let barangDilepas: string[] = [];
+  let nomorPesanan = "";
+  const hasil = await runSerializable(async (tx) => {
+    barangDilepas = [];
     const order = await tx.fieldSalesOrder.findUnique({
       where: { id: input.orderId },
       include: { lines: true },
@@ -521,6 +541,8 @@ export async function closeFieldSalesOrderRemainder(input: {
     }
 
     await releaseFieldSalesOrder(tx, { fieldSalesLineIds: openLines.map((l) => l.id) });
+    barangDilepas = openLines.map((l) => l.itemId);
+    nomorPesanan = order.orderNo;
 
     const settled = order.lines.map((l) => ({
       orderLineId: l.id,
@@ -543,6 +565,10 @@ export async function closeFieldSalesOrderRemainder(input: {
       },
     });
 
-    return { ok: true };
+    return { ok: true as const };
   });
+
+  // Sesudah commit: sisa cadangan dilepas, available naik — teruskan ke Jubelio.
+  await antrekanPushStok(barangDilepas, { sumber: "ADJUSTMENT", ref: `tutup sisa pesanan putus ${nomorPesanan}`, userId: input.closedById });
+  return hasil;
 }

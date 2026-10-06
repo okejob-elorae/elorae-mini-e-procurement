@@ -5,7 +5,7 @@ import { ambilTokoTetap } from "@/lib/pwa/peran";
 import { kemajuanTarget } from "@/lib/salesman/dasbor";
 import { bulanWib } from "@/lib/salesman/pengaturan";
 import { pengaturanSalesman } from "@/lib/salesman/queries";
-import { targetSaya } from "@/lib/salesman/target-rinci-queries";
+import { targetSayaHp } from "@/lib/salesman/target-rinci-queries";
 import { TargetSayaClient, type DataTargetSaya } from "./TargetSayaClient";
 
 export const dynamic = "force-dynamic";
@@ -14,12 +14,13 @@ export const dynamic = "force-dynamic";
  * Target saya — target per kategori dan per barang yang ditetapkan kantor
  * untuk bulan ini, dengan kemajuan, "kurang berapa lagi", dan lajunya.
  *
- * Hanya milik salesman yang login. Capaiannya memakai definisi omzet yang sama
- * dengan kartu "Bulan ini" di beranda (putus terkirim + konsi disetujui + van),
- * jadi target total di atas halaman ini selalu sama angkanya dengan beranda.
- * Konsinyasi hanya ikut sebagai jumlah per kategori/barang — persis seperti
- * kartu beranda menampilkan jumlah konsinyasi; harga per barisnya tidak pernah
- * dikirim ke HP.
+ * Hanya milik salesman yang login. Aturan mutlak pemilik: harga dan total
+ * konsinyasi tidak pernah sampai ke HP. Payload-nya dari `targetSayaHp`:
+ * target total memakai omzet putus + van — angka yang sama dengan kartu
+ * "Bulan ini" di beranda — dan setiap target dalam rupiah (kategori maupun
+ * barang) dihitung tanpa konsinyasi; target pcs tetap menghitung pcs konsi.
+ * Capaian × target − putus − van akan membuka total konsi, jadi capaian yang
+ * memuat konsi tidak pernah dikirim.
  *
  * SPG (toko tetap): capaiannya dari nota penjualannya sendiri bulan ini, bersih
  * dari retur pembeli (`capaianRinciSpg`); target totalnya dari pengaturan yang
@@ -34,31 +35,16 @@ export default async function TargetSayaPage() {
   const spg = Boolean(await ambilTokoTetap(salesmanId));
   const hariIni = new Date();
   const bulan = bulanWib(hariIni);
-  const [rinci, atur] = await Promise.all([
-    targetSaya(salesmanId, bulan, hariIni, { spg }),
+  const [hp, atur] = await Promise.all([
+    targetSayaHp(salesmanId, bulan, hariIni, { spg }),
     pengaturanSalesman(salesmanId, hariIni),
   ]);
 
-  const urut = [...rinci.baris].sort((a, b) => (a.scope === b.scope ? 0 : a.scope === "KATEGORI" ? -1 : 1));
   const data: DataTargetSaya = {
     bulan,
     spg,
-    total: { omzet: rinci.capaian.total, kemajuan: kemajuanTarget(atur.target, rinci.capaian.total, hariIni) },
-    baris: urut.map((b) => ({
-      kunci: `${b.scope}:${b.refId}`,
-      scope: b.scope,
-      nama: b.nama,
-      sku: b.sku,
-      measure: b.measure,
-      tanpaKonsi: b.tanpaKonsi,
-      target: b.kemajuan.target,
-      capai: b.kemajuan.capai,
-      persen: b.kemajuan.persen,
-      kurang: b.kemajuan.kurang,
-      laju: b.kemajuan.laju,
-      perHari: b.kemajuan.perHari,
-      sisaHari: b.kemajuan.sisaHari,
-    })),
+    total: { omzet: hp.omzet, kemajuan: kemajuanTarget(atur.target, hp.omzet, hariIni) },
+    baris: hp.baris,
   };
   return <TargetSayaClient data={data} />;
 }

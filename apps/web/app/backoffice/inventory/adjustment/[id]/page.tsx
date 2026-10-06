@@ -18,6 +18,7 @@ import { logPrint } from '@/app/actions/audit';
 import { toast } from 'sonner';
 import { useLocale, useTranslations } from 'next-intl';
 import { formatDisplayDateTime } from '@/lib/date-only';
+import { labelJenisGerakan } from '@/lib/inventory/jenis-gerakan-stok';
 
 export default function StockAdjustmentDetailPage() {
   const params = useParams();
@@ -26,6 +27,7 @@ export default function StockAdjustmentDetailPage() {
   const printRef = useRef<HTMLDivElement>(null);
   const t = useTranslations('inventory');
   const tAdj = useTranslations('adjustment');
+  const tKind = useTranslations('inventory.stockMoveKind');
   const tToasts = useTranslations('toasts');
   const locale = useLocale();
   const [adj, setAdj] = useState<Awaited<ReturnType<typeof getStockAdjustmentById>>>(null);
@@ -118,9 +120,14 @@ export default function StockAdjustmentDetailPage() {
               <p>
                 <span className="text-muted-foreground">{t('qtyChangeLabel')}</span>{' '}
                 <span className="font-medium">
+                  {/* Tanda qtyChange tidak seragam antar-penulis; arah dari jenisnya. */}
                   {adj.type === 'POSITIVE' ? '+' : '-'}
-                  {adj.qtyChange}
+                  {Math.abs(Number(adj.qtyChange ?? 0)).toLocaleString('id-ID')}
                 </span>
+              </p>
+              <p>
+                <span className="text-muted-foreground">{t('page.sourceLabel')}</span>{' '}
+                {labelJenisGerakan(tKind, adj.source)}
               </p>
               <p>
                 <span className="text-muted-foreground">{t('previousQtyLabel')}</span> {adj.prevQty} →{' '}

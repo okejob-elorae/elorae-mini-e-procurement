@@ -18,6 +18,32 @@ export type JubelioSnapshotRow = {
   jubelioQty: number;
 };
 
+/** Kunci varian seperti penangan push stok: dipangkas, huruf kecil; null dan "" sama. */
+const kunciVarian = (sku: string | null | undefined) => (sku ?? "").trim().toLowerCase();
+
+type BarisStokRekon = {
+  variantSku: string | null;
+  qtyOnHand: { toString(): string };
+  reservedQty: { toString(): string };
+};
+
+/**
+ * Angka ERP yang dibandingkan dengan qty Jubelio untuk satu pemetaan: AVAILABLE
+ * (onHand − reserved), dijumlah atas baris yang dikirim push stok ke kode itu, lalu
+ * di-clamp 0 — persis yang didorong `stock-push.handler.ts` (BOUNDARY §3.1/D6). Dulu
+ * onHand mentah: setiap barang bercadangan tampak selisih sebesar `reservedQty`.
+ * Pemetaan barang sederhana ("") hanya memungut baris null/"", bukan baris varian.
+ */
+export function tersediaErpUntukPemetaan(baris: readonly BarisStokRekon[], erpVariantSku: string | null): number {
+  const kunci = kunciVarian(erpVariantSku);
+  let tersedia = new Decimal(0);
+  for (const iv of baris) {
+    if (kunciVarian(iv.variantSku) !== kunci) continue;
+    tersedia = tersedia.plus(iv.qtyOnHand.toString()).minus(iv.reservedQty.toString());
+  }
+  return Decimal.max(0, tersedia).toNumber();
+}
+
 export type ReconConfig = {
   threshold: number;
   direction: ReturnType<typeof parseReconDirection>;
@@ -62,26 +88,44 @@ async function fetchJubelioSnapshot(): Promise<JubelioSnapshotRow[]> {
   return res.data.rows;
 }
 
-async function applyMatchJubelio(
+/**
+ * MATCH_JUBELIO: samakan AVAILABLE ERP dengan qty Jubelio (yang memang available, karena
+ * ERP mendorong available). onHand baru = qty Jubelio + reserved; reserved tidak disentuh.
+ * Menulis onHand = qty Jubelio (perilaku lama) menghapus cadangan dari stok fisik.
+ *
+ * Baris dicari toleran seperti push: varian lewat kunci yang sama, barang sederhana lewat
+ * baris null ATAU "" (dulu findUnique "" melewatkan baris null diam-diam). Baris kembar
+ * dijumlah; selisihnya ditulis ke baris dengan onHand terbesar.
+ */
+export async function applyMatchJubelio(
   tx: Prisma.TransactionClient,
   params: {
     runId: string;
     itemId: string;
     variantSku: string;
     itemName: string;
-    newQty: number;
+    /** Qty Jubelio (satuan available) yang ingin disamai. */
+    tersediaJubelio: number;
     userId?: string;
   },
 ): Promise<void> {
   const variantKey = params.variantSku;
-  const inv = await tx.inventoryValue.findUnique({
-    where: { itemId_variantSku: { itemId: params.itemId, variantSku: variantKey } },
-  });
-  if (!inv) return;
+  const semua = await tx.inventoryValue.findMany({ where: { itemId: params.itemId } });
+  const baris = semua.filter((iv) => kunciVarian(iv.variantSku) === kunciVarian(variantKey));
+  if (baris.length === 0) return;
 
+  const onHandTotal = baris.reduce((s, iv) => s.plus(iv.qtyOnHand.toString()), new Decimal(0));
+  const ditahanTotal = baris.reduce((s, iv) => s.plus(iv.reservedQty.toString()), new Decimal(0));
+  // Sudah selaras bila available ERP yang di-clamp 0 (angka yang didorong push) sama dengan
+  // Jubelio. Tanpa ini oversell (onHand 1, ditahan 4) vs Jubelio 0 menambah 3 pcs fiktif:
+  // angka 0 di Jubelio hanyalah clamp push kita, bukan hitungan fisik.
+  if (Decimal.max(0, onHandTotal.minus(ditahanTotal)).equals(params.tersediaJubelio)) return;
+  const selisih = new Decimal(params.tersediaJubelio).plus(ditahanTotal).minus(onHandTotal);
+  if (selisih.isZero()) return;
+
+  const inv = baris.reduce((a, b) => (new Decimal(b.qtyOnHand.toString()).gt(a.qtyOnHand.toString()) ? b : a));
   const prevQty = new Decimal(inv.qtyOnHand.toString());
-  const newQty = new Decimal(params.newQty);
-  if (prevQty.equals(newQty)) return;
+  const newQty = prevQty.plus(selisih);
 
   const prevAvgCost = new Decimal(inv.avgCost.toString());
   const qtyChange = newQty.minus(prevQty).abs();
@@ -123,7 +167,7 @@ async function applyMatchJubelio(
   await tx.stockMovement.create({
     data: {
       itemId: params.itemId,
-      variantSku: variantKey,
+      variantSku: inv.variantSku,
       type: "ADJUSTMENT",
       refType: "RECON",
       refId: params.runId,
@@ -154,6 +198,8 @@ async function enqueueReconStockPush(itemId: string, userId: string): Promise<vo
 export async function runReconciliation(
   trigger: ReconTrigger,
   startedById?: string,
+  /** Batasi ke barang tertentu (tes di basis data bersama; jangan memindai semua pemetaan). */
+  opsi?: { itemIds?: readonly string[] },
 ): Promise<{
   runId: string;
   skipped?: boolean;
@@ -203,13 +249,14 @@ export async function runReconciliation(
 
   try {
     const mappings = await prisma.jubelioProductMapping.findMany({
+      where: opsi?.itemIds ? { itemId: { in: [...opsi.itemIds] } } : undefined,
       include: {
         item: {
           select: {
             id: true,
             nameId: true,
             type: true,
-            inventoryValues: { select: { variantSku: true, qtyOnHand: true } },
+            inventoryValues: { select: { variantSku: true, qtyOnHand: true, reservedQty: true } },
           },
         },
       },
@@ -223,14 +270,9 @@ export async function runReconciliation(
     for (const mapping of mappings) {
       if (mapping.item.type !== "FINISHED_GOOD") continue;
 
-      const invRows = mapping.item.inventoryValues.filter(
-        (iv) => (iv.variantSku ?? "") === mapping.erpVariantSku || mapping.erpVariantSku === "",
-      );
-      const inv =
-        invRows.find((iv) => (iv.variantSku ?? "") === mapping.erpVariantSku) ??
-        invRows[0];
       const variantSku = mapping.erpVariantSku ?? "";
-      const eloraeQty = inv ? Number(inv.qtyOnHand) : 0;
+      // AVAILABLE, bukan onHand: qty Jubelio adalah angka available yang kita dorong.
+      const eloraeQty = tersediaErpUntukPemetaan(mapping.item.inventoryValues, variantSku);
       const snap = jubelioByKey.get(`${mapping.itemId}:${variantSku}`);
       const jubelioQty = snap?.jubelioQty ?? 0;
       const variance = eloraeQty - jubelioQty;
@@ -248,7 +290,7 @@ export async function runReconciliation(
             itemId: mapping.itemId,
             variantSku,
             itemName: mapping.item.nameId,
-            newQty: jubelioQty,
+            tersediaJubelio: jubelioQty,
             userId: startedById,
           });
         });
@@ -327,7 +369,8 @@ export async function resolveReconciliationItem(data: {
           itemId: result.itemId,
           variantSku: result.variantSku ?? "",
           itemName: result.itemName,
-          newQty: newEloraeQty,
+          // Hasil lama pun benar di sini: targetnya qty Jubelio sebagai available.
+          tersediaJubelio: newEloraeQty,
           userId: data.userId,
         });
       });

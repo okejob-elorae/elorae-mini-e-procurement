@@ -139,7 +139,9 @@ const tx = {
     }),
     update: vi.fn(async (a: { data: Record<string, unknown> }) => {
       state.stokUpdates.push(a.data);
-      return {};
+      // Penulis menambah secara atom ({ increment }) lalu membaca hasilnya.
+      const tambah = (a.data.qtyOnHand as { increment?: number } | undefined)?.increment ?? 0;
+      return { qtyOnHand: Number((state.stok as { qtyOnHand?: unknown } | null)?.qtyOnHand ?? 0) + tambah };
     }),
   },
   stockAdjustment: {
@@ -188,6 +190,10 @@ vi.mock('./writer', () => ({
     state.dihitungUlang.push(id);
     return 0;
   },
+}));
+// Push stok ke Jubelio sesudah commit punya tesnya sendiri (return-writer-push-stok.test.ts).
+vi.mock('@/lib/jubelio/antre-push-stok', () => ({
+  antrekanPushStok: async () => ({ diantrekan: [], sudahAntre: [], tanpaPemetaan: [], barisGabungan: [], gagal: false }),
 }));
 vi.mock('@elorae/db', () => ({
   Prisma: {
@@ -405,10 +411,13 @@ describe('catatHitunganGudang', () => {
       items: [{ itemId: 'brg1', itemName: 'Cat Tembok', qty: 2, price: 780_000 }],
     });
     expect(h).toMatchObject({ ok: true, barisStok: 1 });
-    expect(state.stokUpdates[0].qtyOnHand).toBe(12);
+    // Tambah atom (10 + 2), bukan menulis ulang angka yang dibaca.
+    expect(state.stokUpdates[0].qtyOnHand).toEqual({ increment: 2 });
     expect(state.penyesuaian[0]).toMatchObject({
       type: 'POSITIVE',
       qtyChange: 2,
+      prevQty: 10,
+      newQty: 12,
       source: 'STORE_RETURN_RECEIVE',
     });
   });
@@ -423,7 +432,7 @@ describe('catatHitunganGudang', () => {
     });
     expect(state.penyesuaian[0].prevAvgCost).toBe(50_000);
     expect(state.penyesuaian[0].newAvgCost).toBe(50_000);
-    expect(state.stokUpdates[0].totalValue).toBe(12 * 50_000);
+    expect(state.stokUpdates[0].totalValue).toEqual({ increment: 2 * 50_000 });
   });
 
   it('tidak menggerakkan stok untuk baris yang hanya diketik namanya', async () => {

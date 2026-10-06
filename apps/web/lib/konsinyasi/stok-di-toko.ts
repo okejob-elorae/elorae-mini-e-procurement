@@ -332,16 +332,21 @@ export async function muatStokDiToko(storeIds: string[], sekarang = new Date()):
   if (idTitipan.length > 0) {
     const [pesanan, kiriman, terjual, retur, mutasi, rusakDihapus, hilang] = await Promise.all([
       // Pesanan konsinyasi yang disetujui = barang berpindah ke toko (transfer
-      // dicatat saat disetujui, konsinyasi tidak punya pengiriman terpisah).
+      // dicatat saat disetujui, konsinyasi tidak punya pengiriman terpisah). Di
+      // titik yang sama stok gudang utama dipotong (KONSI_TRANSFER) — toko ini
+      // gudang lain, jadi setiap potong ada di SATU tempat saja.
       prisma.fieldSalesOrderLine.findMany({
         where: { order: { storeId: { in: idTitipan }, orderType: "KONSI", status: "APPROVED" } },
         select: { itemId: true, variantSku: true, qty: true, cancelledQty: true, order: { select: { storeId: true, approvedAt: true, createdAt: true } } },
       }),
       // Kiriman modul konsinyasi. Baris yang diketik nama saja (tanpa itemId)
-      // tidak bisa dicocokkan ke barang mana pun — dilewati, sama dengan buku toko.
+      // tidak bisa dicocokkan ke barang mana pun — dilewati, sama dengan buku toko
+      // (dan sama dengan gudang: baris itu juga tidak pernah memotong stok gudang).
+      // Varian ada sejak kiriman memotong gudang per varian; kiriman lama tanpa
+      // varian tetap per barang.
       prisma.consignmentShipmentItem.findMany({
         where: { itemId: { not: null }, shipment: { storeId: { in: idTitipan } } },
-        select: { itemId: true, qty: true, shipment: { select: { storeId: true, shippedAt: true } } },
+        select: { itemId: true, variantSku: true, qty: true, shipment: { select: { storeId: true, shippedAt: true } } },
       }),
       prisma.consignmentSold.findMany({
         where: { itemId: { not: null }, cycle: { storeId: { in: idTitipan } } },
@@ -392,7 +397,7 @@ export async function muatStokDiToko(storeIds: string[], sekarang = new Date()):
               })),
             ...kiriman
               .filter((l) => l.shipment.storeId === id && l.itemId)
-              .map((l) => ({ itemId: l.itemId as string, variantSku: "", qty: l.qty, tanggal: l.shipment.shippedAt })),
+              .map((l) => ({ itemId: l.itemId as string, variantSku: l.variantSku ?? "", qty: l.qty, tanggal: l.shipment.shippedAt })),
             ...mutasi
               .filter((l) => l.receipt.storeId === id && l.itemId)
               .map((l) => ({ itemId: l.itemId as string, variantSku: l.variantSku ?? "", qty: l.qtyReceived, tanggal: l.receipt.receivedAt })),

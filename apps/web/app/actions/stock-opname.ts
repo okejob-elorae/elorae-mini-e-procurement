@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma, type OpnameScope, type OpnameStatus } from "@elorae/db";
+import { prisma, type OpnameScope, type OpnameStatus, type Prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { generateDocNumber } from "@/lib/docNumber";
@@ -29,8 +29,31 @@ import { postOpnameJournal, opnameNetDelta } from "@/lib/inventory/opname-journa
 import { serializeForClient } from "@/lib/serialize-for-client";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import {
+  angkaSistemTampil,
+  barangTanpaAngka,
+  masihMenghitung,
+  rolTanpaAngka,
+  STATUS_MENGHITUNG,
+} from "@/app/backoffice/inventory/stock-opname/angka-sistem";
+import { runSerializable } from "@/lib/db/tx-retry";
 
 const OPNAME_PATH = "/backoffice/inventory/stock-opname";
+const HITUNGAN_DITUTUP = "Opname sudah dikirim untuk persetujuan; hitungan tidak dapat diubah lagi";
+
+/**
+ * Penjaga di DALAM transaksi serializable: hitungan hanya masuk selama opname
+ * masih menghitung, dan CREATED → COUNTING ditulis di sini juga. Tanpa ini
+ * simpanan yang berlomba dengan "Kirim" bisa mendarat sesudahnya dan
+ * mengembalikan status ke COUNTING (`updateMany` bukan CAS di luar serializable).
+ */
+async function bukaUntukHitung(tx: Prisma.TransactionClient, opnameId: string) {
+  const buka = await tx.stockOpname.updateMany({
+    where: { id: opnameId, status: { in: [...STATUS_MENGHITUNG] } },
+    data: { status: "COUNTING" },
+  });
+  if (buka.count !== 1) throw new Error(HITUNGAN_DITUTUP);
+}
 
 async function sessionUser() {
   const session = await auth();
@@ -109,8 +132,12 @@ export async function updateOpnameCounts(
     if (opname.status === "APPROVED" || opname.status === "CANCELLED") {
       throw new Error("Opname tidak dapat diubah");
     }
+    // Hitungan buta: sesudah dikirim, angka sistem sudah terlihat oleh penyetuju —
+    // hitungan tidak boleh diubah lagi (batalkan dan buat opname baru).
+    if (!masihMenghitung(opname.status)) throw new Error(HITUNGAN_DITUTUP);
 
-    await prisma.$transaction(async (tx) => {
+    await runSerializable(async (tx) => {
+      await bukaUntukHitung(tx, opnameId);
       for (const c of counts) {
         const row = await tx.stockOpnameItem.findFirst({
           where: { id: c.opnameItemId, opnameId },
@@ -124,12 +151,6 @@ export async function updateOpnameCounts(
             variance,
             notes: c.notes,
           },
-        });
-      }
-      if (opname.status === "CREATED") {
-        await tx.stockOpname.update({
-          where: { id: opnameId },
-          data: { status: "COUNTING" },
         });
       }
     });
@@ -156,8 +177,10 @@ export async function updateOpnameRollCounts(
     if (opname.status === "APPROVED" || opname.status === "CANCELLED") {
       throw new Error("Opname tidak dapat diubah");
     }
+    if (!masihMenghitung(opname.status)) throw new Error(HITUNGAN_DITUTUP);
 
-    await prisma.$transaction(async (tx) => {
+    await runSerializable(async (tx) => {
+      await bukaUntukHitung(tx, opnameId);
       for (const c of counts) {
         const row = await tx.stockOpnameRoll.findFirst({
           where: { id: c.opnameRollId, opnameId },
@@ -171,12 +194,6 @@ export async function updateOpnameRollCounts(
             variance,
             notes: c.notes,
           },
-        });
-      }
-      if (opname.status === "CREATED") {
-        await tx.stockOpname.update({
-          where: { id: opnameId },
-          data: { status: "COUNTING" },
         });
       }
     });
@@ -428,8 +445,18 @@ export async function getOpnameById(opnameId: string) {
   // a no-drift opname (or one with no cost basis) has nothing to journal.
   const netDelta = j ? 0 : await opnameNetDelta(opnameId, prisma);
 
+  // Hitungan buta: selama menghitung angka sistem dan selisih TIDAK ikut muatan
+  // (bukan sekadar disembunyikan di layar); sesudahnya lihat `angkaSistemTampil`.
+  const tampil = angkaSistemTampil(
+    opname.status,
+    hasPermission(user.permissions ?? [], PERMISSIONS.INVENTORY_OPNAME_APPROVE),
+  );
+
   return serializeOpname({
     ...opname,
+    items: tampil ? opname.items : barangTanpaAngka(opname.items),
+    rolls: tampil ? opname.rolls : rolTanpaAngka(opname.rolls),
+    angkaSistemTampil: tampil,
     createdByName: userNames.get(opname.createdById) ?? null,
     submittedByName: opname.submittedById
       ? (userNames.get(opname.submittedById) ?? null)

@@ -4,7 +4,10 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { Decimal } from 'decimal.js';
 import { prisma } from '@elorae/db';
+import type { Prisma } from '@elorae/db';
 import { variantDetailForSku } from '@/lib/items/variants';
+import { cariTeks } from '@/lib/db/cari-teks';
+import { whereSaringanSumber } from '@/lib/inventory/jenis-gerakan-stok';
 import { itemDecimalsToNumbers } from '@/lib/items/queries';
 import { verifyPinForAction } from '@/app/actions/security/pin-auth';
 import { requirePermission, hasPermission, PERMISSIONS } from '@/lib/rbac';
@@ -12,6 +15,7 @@ import { auth } from '@/lib/auth';
 import { getActorName, notifyStockAdjustmentCreated } from '@/app/actions/notifications';
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
+import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 
 /**
  * Penjaga aksi baca inventori: butuh sesi dan `inventory:view` — atau salah
@@ -73,22 +77,24 @@ export async function createStockAdjustment(
   // tabrakan nomor ADJ kebetulan menggagalkan yang kedua; kini nomornya berbeda.
   const adjustmentResult = await runSerializable(async (tx) => {
 
-    // Keep variantSku consistent with inventory costing helpers:
-    // compound keys use '' for non-variant items (no nulls).
+    // Kunci gerakan stok memakai '' untuk barang tanpa varian.
     const variantKey = data.variantSku ?? '';
-    const compositeWhere = {
-      itemId_variantSku: { itemId: data.itemId, variantSku: variantKey },
-    };
 
-    // Get item (for base UOM) and current inventory for (itemId, variantSku)
+    // Get item (for base UOM) and current inventory for (itemId, variantSku).
+    // Baris tanpa varian bisa tersimpan null (barang buatan ERP) atau '' — terima
+    // keduanya, '' didahulukan bila kembar; tidak pernah membuat baris baru.
     const [item, current] = await Promise.all([
       tx.item.findUnique({
         where: { id: data.itemId },
         select: { uomId: true },
       }),
-      tx.inventoryValue.findUnique({
-        where: compositeWhere,
-      }),
+      variantKey === ''
+        ? tx.inventoryValue
+            .findMany({ where: { itemId: data.itemId, OR: [{ variantSku: null }, { variantSku: '' }] } })
+            .then((rows) => rows.find((r) => r.variantSku === '') ?? rows[0] ?? null)
+        : tx.inventoryValue.findUnique({
+            where: { itemId_variantSku: { itemId: data.itemId, variantSku: variantKey } },
+          }),
     ]);
 
     if (!item) throw new Error('Item not found');
@@ -163,7 +169,7 @@ export async function createStockAdjustment(
 
     // Update inventory (avg cost unchanged)
     await tx.inventoryValue.update({
-      where: compositeWhere,
+      where: { id: current.id },
       data: {
         qtyOnHand: newQty.toNumber(),
         totalValue: newTotalValue.toNumber(),
@@ -217,6 +223,13 @@ export async function createStockAdjustment(
     return adjustment;
   });
   revalidatePath("/backoffice/inventory");
+
+  // Sesudah commit: kirim stok baru ke Jubelio (best-effort, tidak pernah melempar).
+  await antrekanPushStok([data.itemId], {
+    sumber: 'ADJUSTMENT',
+    ref: adjustmentResult.docNumber,
+    userId: effectiveUserId,
+  });
 
   getActorName(effectiveUserId)
     .then((triggeredByName) =>
@@ -283,16 +296,37 @@ function serializeItemForClient(item: {
   };
 }
 
+/** Panjang maksimal teks cari daftar penyesuaian (lebih dari ini dipotong). */
+const CARI_PENYESUAIAN_MAKS = 100;
+
+/**
+ * Daftar penyesuaian stok. Saringan sumber dan pencarian dijalankan di SERVER,
+ * jadi `totalCount` dan halaman mengikuti saringan:
+ *  - `sumber`: "manual" (bawaan — menyembunyikan sumber otomatis seperti webhook
+ *    Jubelio dan penjualan marketplace), "semua", "otomatis", atau satu kode sumber;
+ *  - `cari`: nomor dokumen, alasan, SKU/nama barang, atau rujukan luar (abai huruf).
+ */
 export async function getStockAdjustments(
   itemId?: string,
-  opts?: { page: number; pageSize: number }
+  opts?: { page: number; pageSize: number; sumber?: string; cari?: string }
 ) {
   await wajibBolehLihatInventori();
-  const where: any = {};
-
-  if (itemId) {
-    where.itemId = itemId;
-  }
+  const cari = (opts?.cari ?? '').trim().slice(0, CARI_PENYESUAIAN_MAKS);
+  const where: Prisma.StockAdjustmentWhereInput = {
+    ...(itemId ? { itemId } : {}),
+    ...whereSaringanSumber(opts?.sumber),
+    ...(cari
+      ? {
+          OR: [
+            { docNumber: cariTeks(cari) },
+            { reason: cariTeks(cari) },
+            { externalRef: cariTeks(cari) },
+            { item: { sku: cariTeks(cari) } },
+            { item: { nameId: cariTeks(cari) } },
+          ],
+        }
+      : {}),
+  };
 
   const include = {
     item: true,

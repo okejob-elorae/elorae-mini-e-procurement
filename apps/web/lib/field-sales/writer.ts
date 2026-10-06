@@ -1,4 +1,4 @@
-import { reserveFieldSalesOrder, releaseFieldSalesOrder, reserveKonsiFieldSalesOrder, type OversellAlert, type AdminNotification } from "@elorae/db";
+import { reserveFieldSalesOrder, releaseFieldSalesOrder, transferKonsiFieldSalesOrder, type OversellAlert, type AdminNotification } from "@elorae/db";
 import { effectiveMinQty, validateMinQtyLines } from "@elorae/db/field-sales";
 import { muatMinimumToko } from "./minimum-toko";
 import { JarakJauhDitolakError, periksaJarakJauh, SALURAN_PORTAL, type SaluranPesanan } from "./jarak-jauh";
@@ -11,6 +11,7 @@ import { fetchActivePromosForStore } from "@/lib/promos/queries";
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 import { NoActiveVisitError, MinQtyViolationError, InvalidOrderTransitionError, InsufficientStockError, InvalidAddedLineError } from "./errors";
 import { sentItemIds } from "./queries";
 import { nilaiKredit } from "@/lib/salesman/kredit";
@@ -108,9 +109,12 @@ export async function createFieldSalesOrder(input: {
    */
   const kredit = await muatKreditToko(input.storeId);
   let notification: AdminNotification | undefined;
+  // Barang yang available-nya berubah (cadangan baru, cadangan pesanan lama dilepas) — push sesudah commit.
+  let barangStok: string[] = [];
   const result = await runSerializable(async (tx) => {
     /* Retry re-runs this whole callback; reset so a rolled-back attempt's row never survives into the next one. */
     notification = undefined;
+    barangStok = [];
     // Tetap PALING DULU: kiriman ulang (antrean HP, jaringan putus di tengah jalan)
     // mengembalikan pesanan yang sudah ada apa adanya — tidak dinilai ulang, jadi
     // pesanan yang sudah tercatat tidak mungkin tiba-tiba ditolak karena kredit.
@@ -127,7 +131,7 @@ export async function createFieldSalesOrder(input: {
      * persetujuan kantor yang berbarengan tidak bisa lolos bersama penggantinya —
      * salah satunya diulang dan melihat keadaan yang sudah berubah.
      */
-    let lama: { id: string; orderNo: string; lineIds: string[] } | null = null;
+    let lama: { id: string; orderNo: string; lineIds: string[]; itemIds: string[] } | null = null;
     let carried: { visitId: string | null; remoteChannel: string | null; preorderWindowId: string | null } | null = null;
     if (input.replacesOrderId) {
       const o = await tx.fieldSalesOrder.findUnique({
@@ -141,13 +145,13 @@ export async function createFieldSalesOrder(input: {
           visitId: true,
           remoteChannel: true,
           preorderWindowId: true,
-          lines: { select: { id: true } },
+          lines: { select: { id: true, itemId: true } },
         },
       });
       if (!o || o.salesmanId !== input.salesmanId || o.storeId !== input.storeId || o.status !== "PENDING_APPROVAL") {
         throw new PesananLamaTidakBisaDigantiError();
       }
-      lama = { id: o.id, orderNo: o.orderNo, lineIds: o.lines.map((l) => l.id) };
+      lama = { id: o.id, orderNo: o.orderNo, lineIds: o.lines.map((l) => l.id), itemIds: o.lines.map((l) => l.itemId) };
       carried = { visitId: o.visitId, remoteChannel: o.remoteChannel, preorderWindowId: o.preorderWindowId };
     }
     const remoteChannel = (carried ? carried.remoteChannel : (input.remoteChannel ?? null)) as SaluranPesanan | null;
@@ -256,6 +260,7 @@ export async function createFieldSalesOrder(input: {
         digantiDengan: { orderNo },
       });
       if (!batal) throw new PesananLamaTidakBisaDigantiError();
+      barangStok.push(...lama.itemIds);
     }
 
     // Konsi lines carry no salesman price; gross-up is computed later at approve.
@@ -317,6 +322,7 @@ export async function createFieldSalesOrder(input: {
           lines: order.lines.map((l) => ({ fieldSalesLineId: l.id, itemId: l.itemId, variantSku: l.variantSku, qty: l.qty })),
         });
         oversell = r.oversell;
+        barangStok.push(...order.lines.map((l) => l.itemId));
       }
 
       // Apply promos (server-authoritative, honor-at-create).
@@ -390,6 +396,7 @@ export async function createFieldSalesOrder(input: {
           lines: barisBonus.map((l) => ({ fieldSalesLineId: l.id, itemId: l.itemId, variantSku: l.variantSku, qty: l.qty })),
         });
         oversell = [...oversell, ...rb.oversell];
+        barangStok.push(...barisBonus.map((l) => l.itemId));
       }
       const kurangBonus = catatanKurangBonus(bonus);
 
@@ -447,6 +454,8 @@ export async function createFieldSalesOrder(input: {
    * seam swallows its own failures, so there is no outcome here for this function to report.
    */
   if (notification) void fanOutAdminNotification(notification);
+  // Best-effort, tidak pernah melempar: pesanan sudah tercatat.
+  await antrekanPushStok(barangStok, { sumber: "ADJUSTMENT", ref: `pesanan ${result.orderNo}`, userId: input.salesmanId });
   return result;
 }
 
@@ -459,9 +468,13 @@ export async function approveFieldSalesOrder(input: {
   kreditDiperiksa?: boolean;
 }): Promise<{ ok: true }> {
   let kabar: { salesmanId: string; isi: Kabar } | undefined;
+  // Barang yang keluar gudang (transfer konsi) atau dicadangkan (inden sesudah rilis) — push sesudah commit.
+  let barangStok: string[] = [];
+  let nomorPesanan = "";
   const hasil = await runSerializable(async (tx) => {
     /* Diulang saat deadlock — kabar dari percobaan yang batal tidak boleh ikut terkirim. */
     kabar = undefined;
+    barangStok = [];
     const order = await tx.fieldSalesOrder.findUnique({
       where: { id: input.orderId },
       include: {
@@ -496,7 +509,7 @@ export async function approveFieldSalesOrder(input: {
           select: { id: true, nameId: true },
         });
         const byId = new Map(items.map((i) => [i.id, i]));
-        // Same OR-tolerant (itemId, variantSku) lookup reserveKonsiFieldSalesOrder's own
+        // Same OR-tolerant (itemId, variantSku) lookup transferKonsiFieldSalesOrder's own
         // findFieldSalesInventory uses — a variantless row is stored keyed null, not "".
         const hasInventoryRow = async (itemId: string, variantSku: string) => {
           const inv =
@@ -523,8 +536,8 @@ export async function approveFieldSalesOrder(input: {
           if (alreadySent.has(a.itemId)) throw new InvalidAddedLineError("ALREADY_SENT", a.itemId);
           if (!byId.has(a.itemId)) throw new InvalidAddedLineError("UNKNOWN_ITEM", a.itemId);
           // A variantSku with no matching InventoryValue row would otherwise surface later as
-          // InventoryValueMissingError out of reserveKonsiFieldSalesOrder — a @elorae/db class
-          // with no `code`, which the action layer has nothing to map to a UI-facing reason.
+          // a short line (available 0) out of transferKonsiFieldSalesOrder — "stok kurang" for a
+          // product that simply has no stock row, which hides the real cause.
           // Its own code, not UNKNOWN_ITEM: the product exists and is active, so "not found or no
           // longer active" would be untrue and reloading the page would not surface the cause.
           if (!(await hasInventoryRow(a.itemId, a.variantSku))) throw new InvalidAddedLineError("NO_INVENTORY", a.itemId);
@@ -553,11 +566,23 @@ export async function approveFieldSalesOrder(input: {
         include: { item: { select: { sku: true, sellingPrice: true, category: { select: { name: true } } } } },
       });
 
-      const { shortLines } = await reserveKonsiFieldSalesOrder(tx, {
+      /*
+       * Toko konsinyasi = gudang lain milik kita (keputusan pemilik): disetujui = dikirim, jadi
+       * barang keluar dari stok gudang utama DI SINI, per baris, di transaksi ini. Tidak ada
+       * dokumen pengiriman konsinyasi terpisah. Stoknya kini dihitung di toko (buku toko /
+       * titipan) dan kembali ke gudang hanya lewat retur (NRI). Bukan penjualan: tidak ada
+       * SalesHistory. Satu baris kurang = seluruh persetujuan batal.
+       */
+      const { shortLines } = await transferKonsiFieldSalesOrder(tx, {
         orderNo: order.orderNo,
         lines: lines.map((l) => ({ fieldSalesLineId: l.id, itemId: l.itemId, variantSku: l.variantSku, qty: l.qty })),
+        createdById: input.approvedById,
       });
-      if (shortLines.length > 0) throw new InsufficientStockError(shortLines);
+      if (shortLines.length > 0) {
+        throw new InsufficientStockError(shortLines.map((s) => ({ itemId: s.itemId, variantSku: s.variantSku, available: s.available })));
+      }
+      barangStok = lines.map((l) => l.itemId);
+      nomorPesanan = order.orderNo;
 
       const margin = order.store.marginPercent === null ? null : Number(order.store.marginPercent);
       let total = 0;
@@ -659,6 +684,8 @@ export async function approveFieldSalesOrder(input: {
       if (jendela?.releasedAt) {
         try {
           await cadangkanPesananInden(tx, { orderNo: order.orderNo, lines: order.lines });
+          barangStok = order.lines.map((l) => l.itemId);
+          nomorPesanan = order.orderNo;
         } catch (e) {
           // Barang tanpa baris persediaan = stok nol yang tercatat; aksi persetujuan sudah
           // memetakan kekurangan stok ke pesan yang menyebut barangnya.
@@ -695,22 +722,28 @@ export async function approveFieldSalesOrder(input: {
     return { ok: true as const };
   });
   if (kabar) kirimKabar(kabar.salesmanId, kabar.isi);
+  await antrekanPushStok(barangStok, { sumber: "ADJUSTMENT", ref: `setujui pesanan ${nomorPesanan}`, userId: input.approvedById });
   return hasil;
 }
 
 export async function rejectFieldSalesOrder(input: { orderId: string; rejectedById: string; reason?: string }): Promise<{ ok: true }> {
   let kabar: { salesmanId: string; isi: Kabar } | undefined;
+  let barangDilepas: string[] = [];
+  let nomorPesanan = "";
   const hasil = await runSerializable(async (tx) => {
     kabar = undefined;
+    barangDilepas = [];
     const order = await tx.fieldSalesOrder.findUnique({
       where: { id: input.orderId },
-      include: { lines: { select: { id: true } }, store: { select: { name: true } } },
+      include: { lines: { select: { id: true, itemId: true } }, store: { select: { name: true } } },
     });
     if (!order) throw new InvalidOrderTransitionError("MISSING", "REJECTED");
     if (order.status === "REJECTED") return { ok: true as const };
     if (order.status !== "PENDING_APPROVAL") throw new InvalidOrderTransitionError(order.status, "REJECTED");
 
     await releaseFieldSalesOrder(tx, { fieldSalesLineIds: order.lines.map((l) => l.id) });
+    barangDilepas = order.lines.map((l) => l.itemId);
+    nomorPesanan = order.orderNo;
     await tx.fieldSalesOrder.update({
       where: { id: order.id },
       data: { status: "REJECTED", rejectedAt: new Date(), rejectedById: input.rejectedById, rejectReason: input.reason },
@@ -723,6 +756,8 @@ export async function rejectFieldSalesOrder(input: { orderId: string; rejectedBy
   });
   // Tolak ulang pesanan yang sudah ditolak tidak mengabari lagi — `kabar` hanya terisi saat status benar-benar berpindah.
   if (kabar) kirimKabar(kabar.salesmanId, kabar.isi);
+  // Cadangan putus dilepas, available naik (konsi belum memegang stok: tanpa baris cadangan, push tetap aman).
+  await antrekanPushStok(barangDilepas, { sumber: "ADJUSTMENT", ref: `tolak pesanan ${nomorPesanan}`, userId: input.rejectedById });
   return hasil;
 }
 
@@ -798,10 +833,12 @@ export async function cancelFieldSalesOrderBySalesman(input: {
 }): Promise<{ ok: true; orderNo: string; sudahDibatalkan: boolean }> {
   const alasan = periksaAlasanBatal(input.reason);
   if (!alasan.ok) throw new BatalPesananError(alasan.kode);
-  return runSerializable(async (tx) => {
+  let barangDilepas: string[] = [];
+  const hasil = await runSerializable(async (tx) => {
+    barangDilepas = [];
     const order = await tx.fieldSalesOrder.findUnique({
       where: { id: input.orderId },
-      select: { id: true, orderNo: true, status: true, salesmanId: true, cancelledById: true, lines: { select: { id: true } } },
+      select: { id: true, orderNo: true, status: true, salesmanId: true, cancelledById: true, lines: { select: { id: true, itemId: true } } },
     });
     if (!order || order.salesmanId !== input.salesmanId) throw new BatalPesananError("TIDAK_DITEMUKAN");
     if (order.status === "REJECTED" && order.cancelledById === input.salesmanId) {
@@ -816,6 +853,10 @@ export async function cancelFieldSalesOrderBySalesman(input: {
       alasan: alasan.alasan,
     });
     if (!berhasil) throw new BatalPesananError("SUDAH_DIPUTUSKAN");
+    barangDilepas = order.lines.map((l) => l.itemId);
     return { ok: true as const, orderNo: order.orderNo, sudahDibatalkan: false };
   });
+  // Sesudah commit: cadangan dilepas, available naik — teruskan ke Jubelio.
+  await antrekanPushStok(barangDilepas, { sumber: "ADJUSTMENT", ref: `batal pesanan ${hasil.orderNo}`, userId: input.salesmanId });
+  return hasil;
 }

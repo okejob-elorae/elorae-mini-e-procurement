@@ -2,6 +2,7 @@ import { Prisma } from "@elorae/db";
 import type { StockAdjustmentSource } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
+import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 import {
   ENTITAS_GERAK_RUSAK,
   JEJAK_GUDANG_RUSAK,
@@ -121,7 +122,7 @@ export async function putuskanGudangRusak(input: {
   const varian = input.variantSku?.trim() ?? "";
   const sekarang = input.sekarang ?? new Date();
 
-  return runSerializable(async (tx): Promise<HasilPutuskanGudangRusak> => {
+  const hasil = await runSerializable(async (tx): Promise<HasilPutuskanGudangRusak> => {
     const saldo = await saldoRusak(tx, itemId, varian);
     const p = periksaKeputusanRusak(input, saldo);
     if (!p.ok) return p;
@@ -179,6 +180,13 @@ export async function putuskanGudangRusak(input: {
 
     return { ok: true, gerakId: gerak.id, saldoSesudah, penyesuaianId };
   });
+
+  // PERBAIKI menambah stok jual gudang (ada penyesuaian stok) — teruskan ke
+  // Jubelio sesudah commit. JUAL_OBRAL/MUSNAHKAN tidak menyentuh stok jual.
+  if (hasil.ok && hasil.penyesuaianId) {
+    await antrekanPushStok([itemId], { sumber: "ADJUSTMENT", ref: `gudang rusak diperbaiki ${hasil.gerakId}`, userId: input.olehUserId });
+  }
+  return hasil;
 }
 
 /**

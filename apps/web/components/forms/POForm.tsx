@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useForm, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createPoSchema, poItemSchema } from '@/lib/validations';
+import { hitungTotalPo } from '@/lib/purchase-orders/ppn';
 import { getItems } from '@/app/actions/items';
 import { getCachedItems } from '@/lib/offline/db';
 import { Button } from '@/components/ui/button';
@@ -86,6 +87,14 @@ interface POFormProps {
     }>;
   };
   suppliers: Supplier[];
+  /**
+   * Tarif PPN untuk pratinjau total: PO baru = tarif Pengaturan → Pajak; PO yang
+   * diedit = tarif yang tersimpan di PO (`null` = PO lama, tanpa PPN). Server
+   * menghitung ulang dengan aturan yang sama (`hitungTotalPo`). `undefined` =
+   * tarif belum diketahui (belum termuat / luring): PPN tetap dihitung server
+   * saat PO disimpan, jadi pratinjau tidak boleh menyebutnya "tidak dihitung".
+   */
+  ppnRatePercent?: number | null;
   onSubmit: (data: POFormData) => Promise<void>;
   onSaveLocally?: (
     data: POFormData,
@@ -103,11 +112,13 @@ interface POFormProps {
 export function POForm({
   initialData,
   suppliers,
+  ppnRatePercent,
   onSubmit,
   onSaveLocally,
   isLoading = false,
 }: POFormProps) {
   const locale = useLocale();
+  const tRingkasan = useTranslations('purchaseOrders.ringkasan');
   const tToasts = useTranslations('toasts');
   const tSecurity = useTranslations('security');
   const tPlaceholders = useTranslations('placeholders');
@@ -284,9 +295,17 @@ export function POForm({
     return qty * price;
   };
 
-  const calculateGrandTotal = () => {
-    return lineItems.reduce((sum, item) => sum + calculateLineTotal(item.qty, item.price), 0);
-  };
+  // Pratinjau total dengan rumus yang sama dengan server (PPN baris "Exclude PPN").
+  const ringkasanTotal = useMemo(() => {
+    try {
+      return hitungTotalPo(
+        lineItems.map((l) => ({ qty: l.qty || 0, price: l.price || 0, ppnIncluded: l.ppnIncluded ?? true })),
+        ppnRatePercent ?? null
+      );
+    } catch {
+      return null;
+    }
+  }, [lineItems, ppnRatePercent]);
 
   const filteredItems = items.filter(
     (item) =>
@@ -674,15 +693,37 @@ export function POForm({
             </Table>
           </div>
 
-          {/* Grand Total */}
-          <div className="flex justify-end">
-            <div className="text-right space-y-1">
-              <p className="text-sm text-muted-foreground">Grand Total</p>
-              <p className="text-2xl font-bold">
-                Rp {calculateGrandTotal().toLocaleString('id-ID')}
-              </p>
+          {/* Subtotal, PPN, total */}
+          {ringkasanTotal && (
+            <div className="flex justify-end">
+              <div className="w-full max-w-xs space-y-1 text-sm">
+                <div className="flex justify-between gap-4">
+                  <span className="text-muted-foreground">{tRingkasan('subtotal')}</span>
+                  <span className="tabular-nums">Rp {ringkasanTotal.subtotal.toLocaleString('id-ID')}</span>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-muted-foreground">
+                    {ppnRatePercent === undefined
+                      ? tRingkasan('ppnSaatSimpan')
+                      : ppnRatePercent === null
+                        ? tRingkasan('ppnTidakDihitung')
+                        : tRingkasan('ppn', { tarif: ppnRatePercent.toLocaleString('id-ID') })}
+                  </span>
+                  <span className="tabular-nums">
+                    {ppnRatePercent === undefined ? '—' : `Rp ${ringkasanTotal.taxAmount.toLocaleString('id-ID')}`}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4 pt-1 border-t">
+                  <span className="font-medium">
+                    {ppnRatePercent === undefined ? tRingkasan('totalSebelumPpn') : tRingkasan('totalPo')}
+                  </span>
+                  <span className="text-2xl font-bold tabular-nums">
+                    Rp {ringkasanTotal.grandTotal.toLocaleString('id-ID')}
+                  </span>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
         </CardContent>
       </Card>
 

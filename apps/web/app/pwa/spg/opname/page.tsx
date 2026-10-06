@@ -2,12 +2,13 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { stokToko, tokoSpg } from "@/lib/spg/queries";
 import { getActiveVisit } from "@/lib/stores/queries";
+import { tanpaAngkaSistem } from "@/lib/spg/opname-acuan";
 import { pilihanBarang } from "../stok/pilihan";
 import { OpnameClient } from "./OpnameClient";
 
 export const dynamic = "force-dynamic";
 
-/** Opname toko oleh SPG: hitung barang di rak, saldo sistem disesuaikan. */
+/** Opname toko oleh SPG: hitung barang di rak (tanpa melihat angka sistem), saldo sistem disesuaikan. */
 export default async function SpgOpnamePage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
@@ -30,7 +31,8 @@ export default async function SpgOpnamePage() {
       sudahCheckIn={kunjungan !== null}
       kunjunganServer={kunjungan}
       opnamePertama={stok.length === 0}
-      pilihan={pilihan}
+      // Hitungan buta: saldo sistem tidak ikut ke layar hitung (juga tidak di muatannya).
+      pilihan={tanpaAngkaSistem(pilihan)}
     />
   );
 }

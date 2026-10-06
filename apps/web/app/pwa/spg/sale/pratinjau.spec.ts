@@ -196,4 +196,30 @@ d("pratinjau keranjang SPG = nota tercatat (test bed only)", () => {
     if (!res.ok) throw new Error(res.code);
     expect(res.total).toBe(p!.hasil.total);
   });
+
+  it("toko konsinyasi: layar menampilkan dan mencatat HARGA DI TOKO, promo dihitung dari harga itu", async () => {
+    // Margin 25%: kaos 99.900 → 133.200, topi 45.500 → 60.666,67 → 60.667 (rupiah utuh).
+    await prisma.store.update({ where: { id: storeId }, data: { termsType: "KONSI", marginPercent: 25 } });
+    await buatPromo({ name: "Kaos 10%", type: "PERSEN", value: 10, kategori: kategoriId });
+    const layar = await bukaLayarJual({ [kaosId]: 1, [topiId]: 1 });
+    expect(layar.baris.find((b) => b.row.itemId === kaosId)?.row.price).toBe(133_200);
+    expect(layar.baris.find((b) => b.row.itemId === topiId)?.row.price).toBe(60_667);
+
+    const waktu = new Date();
+    const p = pratinjauKeranjang({ ...layar, storeId, waktu, diskon: null });
+    expect(p?.galatMesin).toBeNull();
+    expect(p!.hasil.subtotal).toBe(193_867);
+
+    const res = await recordSpgSale({
+      salesmanId,
+      storeId,
+      lines: layar.baris.map((b) => ({ itemId: b.row.itemId, variantSku: null, qty: b.qty })),
+    });
+    if (!res.ok) throw new Error(res.code);
+    expect(res.total).toBe(p!.hasil.total);
+    const tercatat = await prisma.spgSale.findUniqueOrThrow({ where: { id: res.spgSaleId }, include: { lines: true } });
+    expect(Number(tercatat.subtotal)).toBe(193_867);
+    expect(Number(tercatat.lines.find((l) => l.itemId === kaosId)?.unitPrice)).toBe(133_200);
+    expect(Number(tercatat.lines.find((l) => l.itemId === topiId)?.unitPrice)).toBe(60_667);
+  });
 });

@@ -2,6 +2,7 @@ import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { weightedAvgCost } from "./cost";
+import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 
 export type ReconcileCountInput = { itemId: string; variantSku: string | null; countedQty: number };
 export type RecordVanReconcileResult =
@@ -14,7 +15,10 @@ export async function recordVanReconcile(input: {
   counts: ReconcileCountInput[];
   note?: string;
 }): Promise<RecordVanReconcileResult> {
-  return runSerializable(async (tx) => {
+  // Barang yang kembali ke gudang utama di percobaan yang COMMIT (diulang dari nol tiap percobaan).
+  let barangKembali: string[] = [];
+  const hasil = await runSerializable(async (tx): Promise<RecordVanReconcileResult> => {
+    barangKembali = [];
     const vanRows = await tx.vanStock.findMany({
       where: { userId: input.canvasserId, qty: { gt: 0 } },
       include: { item: { select: { sku: true, nameId: true, variants: true } } },
@@ -56,6 +60,7 @@ export async function recordVanReconcile(input: {
       totalVarianceQty += l.variance;
 
       if (l.counted > 0) {
+        barangKembali.push(l.itemId);
         // Return to main. Variantless main rows use variantSku: null (not ""), so use an
         // OR-tolerant lookup (same as loadVan) — calculateMovingAverage's strict ""-key lookup
         // would miss the real row and fork a phantom "" row.
@@ -123,4 +128,10 @@ export async function recordVanReconcile(input: {
 
     return { ok: true, reconcileId: rec.id, docNo, totalReturned, totalVarianceQty };
   });
+
+  // Sesudah commit: barang yang kembali dari van menambah stok gudang utama.
+  if (hasil.ok && barangKembali.length > 0) {
+    await antrekanPushStok(barangKembali, { sumber: "ADJUSTMENT", ref: `rekonsiliasi van ${hasil.docNo}`, userId: input.reconciledById });
+  }
+  return hasil;
 }

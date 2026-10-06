@@ -1,17 +1,16 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma, seededId, seededIds } from "@elorae/db";
-import { kunciHariWib } from "@/lib/dashboard/tren";
-import { jumlahkanPenjualan, susunPenjualanSalesman } from "./dasbor";
-import { penjualanSalesman } from "./queries";
+import { berandaPenjualanHp } from "./penjualan-hp-queries";
 import { riwayatPenjualan } from "./riwayat-penjualan-queries";
 
 /*
  * Halaman "Riwayat penjualan" terhadap basis data uji. Yang dipasak: total satu
  * bulan (dan tiap kanalnya) SAMA PERSIS dengan kartu "Bulan ini" di beranda
  * pada hari terakhir bulan itu — dihitung dengan fungsi beranda sendiri
- * (`penjualanSalesman` → `susunPenjualanSalesman` → `jumlahkanPenjualan`),
- * persis seperti `app/pwa/page.tsx`. Ditambah: batas bulan WIB, pembanding
- * bulan lalu / tahun lalu, toko & barang teratas tanpa nilai konsinyasi.
+ * (`berandaPenjualanHp`), persis seperti `app/pwa/page.tsx`. Keduanya untuk
+ * HP: rupiah putus + van, konsinyasi hanya pcs. Ditambah: batas bulan WIB,
+ * pembanding bulan lalu / tahun lalu, toko & barang teratas tanpa nilai
+ * konsinyasi.
  *
  * Semua baris milik pengguna buatan tes pada bulan lampau yang acak; teardown
  * hanya lewat id yang diseed.
@@ -37,12 +36,9 @@ const hariTerakhir = (bulan: string) => {
 /** Dilihat pertengahan Desember tahun itu: BULAN ada di grafik 12 bulan. */
 const NANTI = new Date(`${TAHUN}-12-15T10:00:00+07:00`);
 
-/** Omzet "Bulan ini" persis seperti `app/pwa/page.tsx` menghitungnya. */
+/** "Bulan ini" persis seperti `app/pwa/page.tsx` mengambilnya. */
 async function omzetBeranda(salesmanId: string, hariIni: Date) {
-  const sejak = new Date(Date.parse(`${kunciHariWib(hariIni)}T00:00:00+07:00`) - 60 * 86_400_000);
-  const jual = await penjualanSalesman(salesmanId, sejak);
-  const bulan = kunciHariWib(hariIni).slice(0, 7);
-  return jumlahkanPenjualan(susunPenjualanSalesman(jual, hariIni, 60).filter((x) => x.tanggal.startsWith(bulan)));
+  return (await berandaPenjualanHp(salesmanId, hariIni)).bulanIni;
 }
 
 const sen = (n: number) => Math.round(n * 100);
@@ -191,17 +187,22 @@ d("riwayat penjualan salesman (test bed only)", () => {
     const r = await riwayatPenjualan(salesId, BULAN, NANTI);
 
     expect(beranda.putus).toBeGreaterThan(0);
-    expect(beranda.konsi).toBeGreaterThan(0);
+    expect(beranda.pcsKonsi).toBeGreaterThan(0);
     expect(beranda.van).toBeGreaterThan(0);
     expect(r.bulan).toBe(BULAN);
     expect(sen(r.ringkas.jumlah.total)).toBe(sen(beranda.total));
     expect(sen(r.ringkas.jumlah.putus)).toBe(sen(beranda.putus));
-    expect(sen(r.ringkas.jumlah.konsi)).toBe(sen(beranda.konsi));
     expect(sen(r.ringkas.jumlah.van)).toBe(sen(beranda.van));
-    // Dihitung tangan: 49.500 + 40.000 + 10.000 + 7.000,50.
-    expect(sen(r.ringkas.jumlah.total)).toBe(sen(106_500.5));
+    expect(r.ringkas.jumlah.pcsKonsi).toBe(beranda.pcsKonsi);
+    // Dihitung tangan: 49.500 + 10.000 + 7.000,50 — konsi 40.000 tidak pernah dalam rupiah, hanya 4 pcs.
+    expect(sen(r.ringkas.jumlah.total)).toBe(sen(66_500.5));
+    expect(r.ringkas.jumlah.pcsKonsi).toBe(4);
     // Grafik 12 bulan memuat angka yang sama.
-    expect(sen(r.seri.find((s) => s.bulan === BULAN)!.total)).toBe(sen(106_500.5));
+    expect(sen(r.seri.find((s) => s.bulan === BULAN)!.total)).toBe(sen(66_500.5));
+    expect(r.seri.find((s) => s.bulan === BULAN)!.pcsKonsi).toBe(4);
+    // Total resmi dengan konsi (106.500,5) tidak boleh ikut: total − putus − van = konsi.
+    expect(JSON.stringify(r)).not.toContain("106500");
+    expect(JSON.stringify(r)).not.toContain("40000");
   });
 
   it("bulan berjalan = kartu beranda hari itu juga", async () => {
@@ -211,8 +212,8 @@ d("riwayat penjualan salesman (test bed only)", () => {
     expect(r.bulan).toBe(BULAN);
     expect(r.ringkas.sampaiTanggal).toBe(11);
     expect(sen(r.ringkas.jumlah.total)).toBe(sen(beranda.total));
-    // Van ke pembeli langsung tanggal 12 belum terjadi.
-    expect(sen(r.ringkas.jumlah.total)).toBe(sen(99_500));
+    // Putus 49.500 + van 10.000; van ke pembeli langsung tanggal 12 belum terjadi.
+    expect(sen(r.ringkas.jumlah.total)).toBe(sen(59_500));
   });
 
   it("pembanding: bulan lalu dan bulan yang sama tahun lalu", async () => {
@@ -220,7 +221,7 @@ d("riwayat penjualan salesman (test bed only)", () => {
     expect(r.ringkas.sampaiTanggal).toBeNull();
     expect(r.ringkas.sebulanLalu).toMatchObject({ bulan: BULAN_LALU, total: 20_000 });
     expect(r.ringkas.setahunLalu).toMatchObject({ bulan: TAHUN_LALU, total: 30_000 });
-    expect(r.ringkas.setahunLalu.persen).toBe(Math.round(((106_500.5 - 30_000) / 30_000) * 100));
+    expect(r.ringkas.setahunLalu.persen).toBe(Math.round(((66_500.5 - 30_000) / 30_000) * 100));
   });
 
   it("toko teratas menurut pcs; konsi tanpa rupiah; pembeli tanpa toko dilewati", async () => {

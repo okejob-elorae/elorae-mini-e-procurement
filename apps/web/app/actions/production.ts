@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { Decimal } from 'decimal.js';
 import { prisma, recalcItemSellingPrice } from '@elorae/db';
 import { apiFetch } from "@/lib/internal-api";
+import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 import { generateDocNumber } from '@/lib/docNumber';
 import { generateMaterialPlan } from '@/lib/production/planning';
 import { reconcileWorkOrder } from '@/lib/production/reconciliation';
@@ -25,6 +26,9 @@ import { resolveWoLeadTimeFields } from '@/lib/leadtime/wo-snapshot';
 import { computeActualLeadDays } from '@/lib/leadtime/calculations';
 import { applyChainSignal } from '@/lib/leadtime/auto-confirm';
 import { fanOutAdminNotification } from '@/lib/notifications/admin-fanout';
+import { runSerializable } from "@/lib/db/tx-retry";
+import { bagiBiayaPerBaris, hitungBiayaPenerimaanFG } from "@/lib/production/biaya-penerimaan";
+import { ProduksiDitolakError, type KodeTolakProduksi } from "@/lib/production/galat-produksi";
 
 // Prisma uses CUID, not UUID - accept non-empty string for IDs
 const idStr = z.string().min(1);
@@ -585,46 +589,101 @@ export async function updateWOHppAdjustments(
   return serializeWorkOrder(updated as any);
 }
 
-export async function issueWorkOrder(id: string, userId: string) {
+/**
+ * Kode penolakan dari galat yang dilempar — hanya bila kodenya ada di `pesan`
+ * (galat Prisma juga membawa `code`, mis. P2002, dan itu bukan penolakan).
+ */
+function kodeTolakDari<K extends string>(error: unknown, pesan: Record<K, string>): K | null {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && Object.prototype.hasOwnProperty.call(pesan, code) ? (code as K) : null;
+}
+
+/** Penolakan berkode untuk menerbitkan WO (DRAFT → ISSUED). */
+const PESAN_TOLAK_TERBIT_WO = {
+  WO_TIDAK_DITEMUKAN: 'Perintah kerja tidak ditemukan.',
+  WO_SUDAH_DIBATALKAN: 'Perintah kerja ini sudah dibatalkan, jadi tidak bisa diterbitkan.',
+  WO_SUDAH_TERBIT: 'Perintah kerja ini sudah diterbitkan.',
+} as const;
+
+function tolakTerbitWo(code: keyof typeof PESAN_TOLAK_TERBIT_WO) {
+  return Object.assign(new Error(PESAN_TOLAK_TERBIT_WO[code]), { code });
+}
+
+export type KodeTolakTerbitWo = 'TANPA_AKSES' | keyof typeof PESAN_TOLAK_TERBIT_WO | 'GAGAL';
+export type TerbitkanWorkOrderResult = { ok: true } | { ok: false; code: KodeTolakTerbitWo };
+
+/**
+ * DRAFT → ISSUED. Penjaga DRAFT dibaca DI DALAM `runSerializable` yang sama
+ * dengan penulisannya: dulu dibaca di luar transaksi, jadi "terbitkan" yang
+ * kalah cepat dari pembatalan menghidupkan WO batal menjadi ISSUED. Kini
+ * salah satunya konflik dan diulang; yang diulang melihat CANCELLED/ISSUED.
+ *
+ * Penolakan DILEMPAR ber-`code` untuk pemanggil lama yang menangkap lemparan;
+ * layar sebaiknya memakai `terbitkanWorkOrder`. Pelaku notifikasi dari sesi.
+ */
+export async function issueWorkOrder(id: string, _userId?: string) {
+  void _userId;
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_MANAGE);
+  const userId = session.user.id;
 
-  const wo = await prisma.workOrder.findUnique({
-    where: { id }
-  });
-  
-  if (!wo) throw new Error('Work Order not found');
-  if (wo.status !== 'DRAFT') throw new Error('Work Order already issued');
+  const docNumber = await runSerializable(async (tx) => {
+    const wo = await tx.workOrder.findUnique({
+      where: { id },
+      select: { status: true, docNumber: true, vendorId: true, plannedQty: true },
+    });
+    if (!wo) throw tolakTerbitWo('WO_TIDAK_DITEMUKAN');
+    if (wo.status === 'CANCELLED') throw tolakTerbitWo('WO_SUDAH_DIBATALKAN');
+    if (wo.status !== 'DRAFT') throw tolakTerbitWo('WO_SUDAH_TERBIT');
 
-  const lt = await resolveWoLeadTimeFields(
-    prisma,
-    wo.vendorId,
-    Number(wo.plannedQty)
-  );
-  
-  await prisma.workOrder.update({
-    where: { id },
-    data: {
-      status: 'ISSUED',
-      issuedAt: new Date(),
-      ...(lt.chainSnapshot
-        ? {
-            chainSnapshot: lt.chainSnapshot,
-            chainTotalDays: lt.chainTotalDays,
-          }
-        : {}),
-    }
+    const lt = await resolveWoLeadTimeFields(tx, wo.vendorId, Number(wo.plannedQty));
+
+    await tx.workOrder.update({
+      where: { id },
+      data: {
+        status: 'ISSUED',
+        issuedAt: new Date(),
+        ...(lt.chainSnapshot
+          ? {
+              chainSnapshot: lt.chainSnapshot,
+              chainTotalDays: lt.chainTotalDays,
+            }
+          : {}),
+      }
+    });
+    return wo.docNumber;
   });
 
   getActorName(userId)
     .then((triggeredByName) =>
-      notifyWOStatusUpdated(id, wo.docNumber, 'DRAFT', 'ISSUED', triggeredByName)
+      notifyWOStatusUpdated(id, docNumber, 'DRAFT', 'ISSUED', triggeredByName)
     )
     .catch(() => {});
-  
+
   revalidatePath('/backoffice/work-orders');
   revalidatePath(`/backoffice/work-orders/${id}`);
+}
+
+/**
+ * `issueWorkOrder` untuk layar: penolakan DIKEMBALIKAN sebagai
+ * `{ ok:false, code }` — di build produksi Next menyamarkan pesan lemparan
+ * aksi server, jadi layar hanya bisa menjelaskan alasannya lewat kode.
+ */
+export async function terbitkanWorkOrder(id: string): Promise<TerbitkanWorkOrderResult> {
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.WORK_ORDERS_MANAGE)) {
+    return { ok: false, code: 'TANPA_AKSES' };
+  }
+  try {
+    await issueWorkOrder(id);
+    return { ok: true };
+  } catch (error) {
+    const code = kodeTolakDari(error, PESAN_TOLAK_TERBIT_WO);
+    if (code) return { ok: false, code };
+    console.error('[terbitkanWorkOrder]', error);
+    return { ok: false, code: 'GAGAL' };
+  }
 }
 
 const issueSchema = z.object({
@@ -649,6 +708,43 @@ const issueSchema = z.object({
 
 export type IssueFormData = z.infer<typeof issueSchema>;
 
+/**
+ * Penolakan berkode untuk mengeluarkan bahan. `issueMaterials` MELEMPARnya
+ * (pemanggil lain, mis. `issueAdditionalMaterials`, menangkap lemparan);
+ * layar keluarkan bahan memakai `keluarkanBahan`, yang mengembalikannya sebagai
+ * `{ ok:false, code, ...rincian }`.
+ */
+const PESAN_TOLAK_KELUAR_BAHAN = {
+  WO_TIDAK_DITEMUKAN: 'Perintah kerja tidak ditemukan.',
+  BAHAN_WO_DIBATALKAN: 'Perintah kerja ini sudah dibatalkan, jadi bahan tidak bisa dikeluarkan.',
+  BAHAN_WO_SELESAI: 'Perintah kerja ini sudah menerima barang jadi atau selesai, jadi bahan tidak bisa dikeluarkan lagi.',
+  STOK_BAHAN_KURANG: 'Stok bahan tidak mencukupi.',
+  ROLL_KURANG_DARI_KAIN: 'Total roll kurang dari qty kain yang dikeluarkan.',
+  ROLL_TIDAK_CUKUP: 'Roll yang dipilih tidak cukup untuk qty kain yang dikeluarkan.',
+} as const;
+
+/** Rincian penolakan yang ikut ke layar (nama barang, qty roll vs kain). */
+type RincianTolakKeluarBahan = { barang?: string; roll?: number; kain?: number; kurang?: number };
+
+function tolakKeluarBahan(
+  code: keyof typeof PESAN_TOLAK_KELUAR_BAHAN,
+  rincian?: RincianTolakKeluarBahan,
+  pesan: string = PESAN_TOLAK_KELUAR_BAHAN[code],
+) {
+  return Object.assign(new Error(pesan), { code, rincian });
+}
+
+export type KodeTolakKeluarBahan = 'TANPA_AKSES' | keyof typeof PESAN_TOLAK_KELUAR_BAHAN | 'GAGAL';
+export type KeluarkanBahanResult =
+  | { ok: true; id: string; docNumber: string; totalCost: number }
+  | ({ ok: false; code: KodeTolakKeluarBahan } & RincianTolakKeluarBahan);
+
+/**
+ * Penjaga status WO, pengurangan stok bahan, dan penulisan IN_PRODUCTION satu
+ * `runSerializable`: dulu read-committed, jadi pembatalan WO yang commit di
+ * tengahnya tertimpa IN_PRODUCTION. Kini salah satunya konflik dan diulang;
+ * yang diulang melihat CANCELLED dan ditolak sebelum stok disentuh.
+ */
 export async function issueMaterials(data: IssueFormData, userId: string) {
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
@@ -656,15 +752,16 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
 
   const validated = issueSchema.parse(data);
 
-  const issueResult = await prisma.$transaction(async (tx) => {
+  const issueResult = await runSerializable(async (tx) => {
     const wo = await tx.workOrder.findUnique({
       where: { id: data.woId },
       select: { status: true, consumptionPlan: true, docNumber: true, poId: true, consumptionMaterialId: true, rollBreakdown: true }
     });
 
-    if (!wo) throw new Error('Work Order not found');
+    if (!wo) throw tolakKeluarBahan('WO_TIDAK_DITEMUKAN');
+    if (wo.status === 'CANCELLED') throw tolakKeluarBahan('BAHAN_WO_DIBATALKAN');
     if (!['DRAFT', 'ISSUED', 'IN_PRODUCTION'].includes(wo.status)) {
-      throw new Error('Work Order tidak valid atau sudah selesai');
+      throw tolakKeluarBahan('BAHAN_WO_SELESAI');
     }
 
     const docNumber = await generateDocNumber('ISSUE', tx);
@@ -709,9 +806,8 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
       }));
       const totalStock = normalized.reduce((s, r) => s + r.qtyOnHand, 0);
       if (totalStock < item.qty) {
-        throw new Error(
-          `Stok tidak mencukupi untuk ${itemRow?.nameId || item.itemId}`
-        );
+        const barang = itemRow?.nameId || item.itemId;
+        throw tolakKeluarBahan('STOK_BAHAN_KURANG', { barang }, `Stok tidak mencukupi untuk ${barang}`);
       }
       // Prefer exact match (variantKey or null) then ''/null first, then by qty desc
       const preferOrder = (r: { variantSku: string | null }) => {
@@ -806,7 +902,9 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
         .reduce((sum, item) => sum + item.qty, 0);
       const rollSum = payloadRolls.reduce((sum, row) => sum + row.qty, 0);
       if (fabricQty > 0 && rollSum + 1e-6 < fabricQty) {
-        throw new Error(
+        throw tolakKeluarBahan(
+          'ROLL_KURANG_DARI_KAIN',
+          { roll: rollSum, kain: fabricQty },
           `Total roll (${rollSum}) is less than issued fabric qty (${fabricQty})`
         );
       }
@@ -841,7 +939,9 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
           remainingToAllocate -= deduct;
         }
         if (payloadRolls != null && remainingToAllocate > 1e-6) {
-          throw new Error(
+          throw tolakKeluarBahan(
+            'ROLL_TIDAK_CUKUP',
+            { kurang: remainingToAllocate },
             `Selected rolls cannot cover issued fabric qty (short ${remainingToAllocate})`
           );
         }
@@ -897,13 +997,13 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
       }
     });
 
-    revalidatePath(`/backoffice/work-orders/${data.woId}`);
     return {
       id: issue.id,
       docNumber: issue.docNumber,
       totalCost: Number(issue.totalCost),
     };
   });
+  revalidatePath(`/backoffice/work-orders/${data.woId}`);
 
   const wo = await prisma.workOrder.findUnique({
     where: { id: data.woId },
@@ -924,6 +1024,31 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
     console.warn("[leadtime] auto-confirm after material issue failed", err);
   });
   return issueResult;
+}
+
+/**
+ * `issueMaterials` untuk layar keluarkan bahan: penolakan berkode (WO batal,
+ * stok kurang, roll kurang, …) DIKEMBALIKAN sebagai `{ ok:false, code }` beserta
+ * rinciannya — di build produksi Next menyamarkan pesan lemparan aksi server.
+ * Pelaku dari sesi. Galat lain dicatat dan menjadi `GAGAL`.
+ */
+export async function keluarkanBahan(data: IssueFormData): Promise<KeluarkanBahanResult> {
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.WORK_ORDERS_MANAGE)) {
+    return { ok: false, code: 'TANPA_AKSES' };
+  }
+  try {
+    const hasil = await issueMaterials(data, session.user.id);
+    return { ok: true, ...hasil };
+  } catch (error) {
+    const code = kodeTolakDari(error, PESAN_TOLAK_KELUAR_BAHAN);
+    if (code) {
+      const rincian = (error as { rincian?: RincianTolakKeluarBahan }).rincian;
+      return { ok: false, code, ...rincian };
+    }
+    console.error('[keluarkanBahan]', error);
+    return { ok: false, code: 'GAGAL' };
+  }
 }
 
 /** Preview: accessory items and qty needed for additional pcs + stock availability. Used by Issue Additional Materials UI. */
@@ -1102,32 +1227,58 @@ const receiptSchema = z
 
 export type ReceiptFormData = z.infer<typeof receiptSchema>;
 
-export async function receiveFG(data: ReceiptFormData, userId: string) {
+/**
+ * `_userId` dipertahankan supaya pemanggil lama tidak berubah, tetapi TIDAK
+ * dipakai: penerima selalu pengguna sesi.
+ *
+ * Penjaga status WO dan pembebanan biaya berjalan di `runSerializable`: batal
+ * yang serentak membuat salah satunya konflik dan diulang dengan keadaan baru.
+ */
+export async function receiveFG(data: ReceiptFormData, _userId: string) {
+  void _userId;
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
+  if (!session?.user?.id) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_MANAGE);
+  const userId = session.user.id;
 
   receiptSchema.parse(data);
 
-  const receiveResult = await prisma.$transaction(async (tx) => {
-    const docNumber = await generateDocNumber('RECEIPT', tx);
+  const receiveResult = await runSerializable(async (tx) => {
     const qtyAccepted = data.qtyReceived - (data.qtyRejected || 0);
-    
+
     const wo = await tx.workOrder.findUnique({
       where: { id: data.woId },
-      include: { issues: true }
+      include: {
+        issues: { select: { totalCost: true } },
+        receipts: { select: { qtyReceived: true, totalCostValue: true } },
+      },
     });
 
-    if (!wo) throw new Error('Work Order not found');
+    if (!wo) throw new ProduksiDitolakError('WO_TIDAK_DITEMUKAN');
+    if (wo.status === 'CANCELLED') throw new ProduksiDitolakError('WO_DIBATALKAN');
+    if (wo.status === 'DRAFT') throw new ProduksiDitolakError('WO_BELUM_TERBIT');
+
+    const docNumber = await generateDocNumber('RECEIPT', tx);
 
     const totalMaterialCost = wo.issues.reduce((sum, issue) => {
       return sum.plus(issue.totalCost.toString());
     }, new Decimal(0));
 
-    const avgCostPerUnit =
-      qtyAccepted > 0
-        ? totalMaterialCost.div(qtyAccepted)
-        : new Decimal(0);
+    // Penerimaan ini hanya memikul bagiannya dari biaya bahan (dulu: seluruhnya,
+    // pada SETIAP penerimaan sebagian). Penerimaan penutup memikul sisanya.
+    const pembebanan = hitungBiayaPenerimaanFG({
+      totalBiayaBahan: totalMaterialCost,
+      qtyRencana: wo.plannedQty.toString(),
+      sudahDibebankan: wo.receipts.reduce(
+        (s, r) => s.plus(r.totalCostValue?.toString() ?? 0),
+        new Decimal(0)
+      ),
+      sudahDiterima: wo.receipts.reduce((s, r) => s.plus(r.qtyReceived.toString()), new Decimal(0)),
+      qtyDiterima: data.qtyReceived,
+      qtyLolos: Math.max(qtyAccepted, 0),
+    });
+    const receiptCost = pembebanan.biaya;
+    const avgCostPerUnit = pembebanan.biayaPerUnit;
 
     const receipt = await tx.fGReceipt.create({
       data: {
@@ -1144,9 +1295,9 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
           data.skuBreakdown && data.skuBreakdown.length > 0
             ? data.skuBreakdown
             : undefined,
-        materialCost: totalMaterialCost.toNumber(),
-        avgCostPerUnit: avgCostPerUnit.toNumber(),
-        totalCostValue: totalMaterialCost.toNumber(),
+        materialCost: receiptCost.toNumber(),
+        avgCostPerUnit: avgCostPerUnit.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber(),
+        totalCostValue: receiptCost.toNumber(),
         receivedById: userId
       }
     });
@@ -1196,16 +1347,24 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
     if (qtyAccepted > 0 && wo.finishedGoodId) {
       const hasPerVariantBreakdown = data.skuBreakdown && data.skuBreakdown.length > 0;
       if (hasPerVariantBreakdown) {
-        for (const row of data.skuBreakdown!) {
+        // Biaya penerimaan dibagi per varian dalam sen (sisa terbesar): Σ kartu stok = biaya penerimaan.
+        const rows = data.skuBreakdown!;
+        const biayaBaris = bagiBiayaPerBaris(
+          receiptCost,
+          rows.map((row) => Math.max(row.qty, 0))
+        );
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i];
           if (row.qty <= 0) continue;
+          const rowCost = biayaBaris[i];
+          const rowUnitCost = rowCost.div(row.qty);
           const costResult = await calculateMovingAverage(
             wo.finishedGoodId,
             new Decimal(row.qty),
-            avgCostPerUnit,
+            rowUnitCost,
             tx,
             row.variantSku
           );
-          const rowCost = avgCostPerUnit.mul(row.qty).toNumber();
           await tx.stockMovement.create({
             data: {
               itemId: wo.finishedGoodId,
@@ -1215,8 +1374,8 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
               refDocNumber: docNumber,
               qty: row.qty,
               variantSku: row.variantSku,
-              unitCost: avgCostPerUnit.toNumber(),
-              totalCost: rowCost,
+              unitCost: rowUnitCost.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber(),
+              totalCost: rowCost.toNumber(),
               balanceQty: costResult.newQty.toNumber(),
               balanceValue: costResult.newTotalValue.toNumber(),
               notes: `FG receipt ${docNumber}`
@@ -1248,8 +1407,8 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
             refDocNumber: docNumber,
             qty: qtyAccepted,
             variantSku: fgVariantSku,
-            unitCost: avgCostPerUnit.toNumber(),
-            totalCost: totalMaterialCost.toNumber(),
+            unitCost: avgCostPerUnit.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber(),
+            totalCost: receiptCost.toNumber(),
             balanceQty: costResult.newQty.toNumber(),
             balanceValue: costResult.newTotalValue.toNumber(),
             notes: `FG receipt ${docNumber}`
@@ -1296,18 +1455,29 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
     const woCompleted = newActualQty >= Number(wo.plannedQty);
 
     let recalcOutboxRowId: string | null = null;
-    if (wo.finishedGoodId && qtyAccepted > 0) {
+    // Penerimaan tanpa biaya (semua biaya sudah dipikul penerimaan sebelumnya)
+    // bukan dasar harga: harga jual 0 + biaya tambahan jangan sampai terdorong ke Jubelio.
+    if (wo.finishedGoodId && qtyAccepted > 0 && avgCostPerUnit.gt(0)) {
       const recalc = await recalcItemSellingPrice(tx, {
         itemId: wo.finishedGoodId,
         trigger: "FG_RECEIPT",
-        newAvgCost: avgCostPerUnit.toNumber(),
+        newAvgCost: avgCostPerUnit.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber(),
         fgReceiptId: receipt.id,
         changedById: userId,
       });
       if (recalc.applied) recalcOutboxRowId = recalc.outboxRowId;
     }
 
-    return { receipt, woCompleted, recalcOutboxRowId };
+    // Barang jadi yang stoknya bertambah — untuk push stok ke Jubelio sesudah commit.
+    const fgStokBerubah = qtyAccepted > 0 ? wo.finishedGoodId : null;
+    return { receipt, woCompleted, recalcOutboxRowId, fgStokBerubah };
+  });
+
+  // Sesudah commit: kirim stok barang jadi ke Jubelio (best-effort, tidak pernah melempar).
+  await antrekanPushStok([receiveResult.fgStokBerubah], {
+    sumber: "FG_RECEIPT",
+    ref: receiveResult.receipt.docNumber,
+    userId,
   });
 
   if (receiveResult.woCompleted) {
@@ -1366,6 +1536,25 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
   };
 }
 
+export type TerimaBarangJadiResult =
+  | { ok: true; id: string; docNumber: string }
+  | { ok: false; code: KodeTolakProduksi };
+
+/**
+ * `receiveFG` untuk layar terima barang jadi: penolakan berkode (WO batal, WO
+ * draf, …) DIKEMBALIKAN, bukan dilempar — di build produksi Next menyamarkan
+ * pesan lemparan aksi server. Galat lain (izin, validasi) tetap dilempar.
+ */
+export async function terimaBarangJadi(data: ReceiptFormData): Promise<TerimaBarangJadiResult> {
+  try {
+    const r = await receiveFG(data, '');
+    return { ok: true, id: r.id, docNumber: r.docNumber };
+  } catch (error) {
+    if (error instanceof ProduksiDitolakError) return { ok: false, code: error.code };
+    throw error;
+  }
+}
+
 export async function postFgReceiptJournalAction(
   receiptId: string,
 ): Promise<GenerateAutoJournalResult | { ok: false; code: "FORBIDDEN" | "BAD_STATE" }> {
@@ -1382,38 +1571,86 @@ export async function postFgReceiptJournalAction(
   return r;
 }
 
-export async function cancelWorkOrder(id: string, userId: string, reason?: string) {
+export type KodeTolakBatalWo =
+  | 'TANPA_AKSES'
+  | 'WO_TIDAK_DITEMUKAN'
+  | 'WO_SUDAH_DIBATALKAN'
+  | 'WO_SUDAH_ADA_PENERIMAAN'
+  /** Bahan sudah keluar gudang dan belum ada alur pengembalian bahan. */
+  | 'WO_SUDAH_KELUAR_BAHAN'
+  | 'GAGAL';
+
+export type CancelWorkOrderResult = { ok: true } | { ok: false; code: KodeTolakBatalWo };
+
+/**
+ * Penolakan DIKEMBALIKAN sebagai `{ ok:false, code }` — di build produksi Next
+ * menyamarkan pesan lemparan aksi server, jadi tombol batal hanya bisa
+ * menjelaskan alasannya lewat kode.
+ *
+ * Penjaga "belum ada penerimaan" dan "belum ada bahan keluar" dibaca DI DALAM
+ * transaksi serializable yang sama dengan pembaruannya: penerimaan atau
+ * pengeluaran bahan yang commit di antara baca dan tulis membuat salah satunya
+ * konflik dan diulang dengan keadaan baru.
+ */
+export async function cancelWorkOrder(
+  id: string,
+  _userId: string,
+  reason?: string
+): Promise<CancelWorkOrderResult> {
+  void _userId;
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_MANAGE);
-
-  const wo = await prisma.workOrder.findUnique({
-    where: { id },
-    include: { issues: true, receipts: true }
-  });
-  
-  if (!wo) throw new Error('Work Order not found');
-  
-  if (wo.receipts.length > 0) {
-    throw new Error('Cannot cancel Work Order with FG receipts');
+  if (!session?.user?.id) return { ok: false, code: 'TANPA_AKSES' };
+  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.WORK_ORDERS_MANAGE)) {
+    return { ok: false, code: 'TANPA_AKSES' };
   }
-  
-  await prisma.workOrder.update({
-    where: { id },
-    data: {
-      status: 'CANCELLED',
-      canceledAt: new Date(),
-      canceledReason: reason
-    }
-  });
+  const userId = session.user.id;
 
+  type HasilTx =
+    | { ok: true; docNumber: string; status: string }
+    | { ok: false; code: KodeTolakBatalWo };
+  let hasil: HasilTx;
+  try {
+    hasil = await runSerializable(async (tx): Promise<HasilTx> => {
+      const found = await tx.workOrder.findUnique({
+        where: { id },
+        select: {
+          docNumber: true,
+          status: true,
+          receipts: { select: { id: true }, take: 1 },
+          issues: { select: { id: true }, take: 1 },
+        },
+      });
+      if (!found) return { ok: false, code: 'WO_TIDAK_DITEMUKAN' };
+      if (found.status === 'CANCELLED') return { ok: false, code: 'WO_SUDAH_DIBATALKAN' };
+      if (found.receipts.length > 0) return { ok: false, code: 'WO_SUDAH_ADA_PENERIMAAN' };
+      if (found.issues.length > 0) return { ok: false, code: 'WO_SUDAH_KELUAR_BAHAN' };
+
+      await tx.workOrder.update({
+        where: { id },
+        data: {
+          status: 'CANCELLED',
+          canceledAt: new Date(),
+          canceledReason: reason
+        }
+      });
+      return { ok: true, docNumber: found.docNumber, status: found.status };
+    });
+  } catch (error) {
+    console.error('[cancelWorkOrder]', error);
+    return { ok: false, code: 'GAGAL' };
+  }
+  if (!hasil.ok) return hasil;
+
+  const { docNumber, status: statusSebelum } = hasil;
   getActorName(userId)
     .then((triggeredByName) =>
-      notifyWOStatusUpdated(id, wo.docNumber, wo.status, 'CANCELLED', triggeredByName)
+      notifyWOStatusUpdated(id, docNumber, statusSebelum, 'CANCELLED', triggeredByName)
     )
     .catch(() => {});
-  
+
   revalidatePath('/backoffice/work-orders');
+  revalidatePath(`/backoffice/work-orders/${id}`);
+  return { ok: true };
 }
 
 export async function getWorkOrders(

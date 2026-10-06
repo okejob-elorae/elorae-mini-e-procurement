@@ -6,6 +6,7 @@ import {
   KALI_JARAK_BIASA,
   MIN_HARI_JARANG,
   MIN_HARI_PESAN,
+  menurunUntukHp,
   nilaiTokoMenurun,
   persenTurun,
   RASIO_NILAI_TURUN,
@@ -180,7 +181,7 @@ describe("persenTurun", () => {
   });
 });
 
-const menurun = (storeId: string, x: Partial<HasilMenurun> = {}): TokoMenurun => ({
+const menurun = (storeId: string, x: Partial<TokoMenurun> = {}): TokoMenurun => ({
   storeId,
   nama: storeId,
   alasan: "JARANG",
@@ -206,6 +207,96 @@ describe("urutkanTokoMenurun", () => {
     const masuk = [menurun("a", { hariSejakTerakhir: 30, jarakBiasa: 10 }), menurun("b", { hariSejakTerakhir: 60, jarakBiasa: 20 })];
     expect(urutkanTokoMenurun(masuk).map((x) => x.storeId)).toEqual(["b", "a"]);
     expect(masuk.map((x) => x.storeId)).toEqual(["a", "b"]);
+  });
+});
+
+/*
+ * Toko menurun yang dikirim ke HP salesman. Nilai 90 hari per toko adalah
+ * total pesanan toko itu — di toko konsinyasi itu total konsi, yang tidak boleh
+ * sampai ke HP (aturan mutlak pemilik). Yang dikirim hanya rasio 90 hari
+ * terakhir ÷ 90 hari sebelumnya, dan toko dengan nilai konsi tidak mendapat
+ * rasio sama sekali: rasio total yang memuat konsi membuka konsinya begitu
+ * jendela lain berisi rupiah yang salesman ketahui.
+ */
+describe("menurunUntukHp", () => {
+  const masuk: TokoMenurun[] = [
+    menurun("putus-tajam", { alasan: "NILAI_TURUN", hariSejakTerakhir: 3, nilai90: 21_150, nilai90Sebelumnya: 110_040 }),
+    menurun("jarang", { hariSejakTerakhir: 40, jarakBiasa: 20, nilai90: 41_237, nilai90Sebelumnya: 12_345 }),
+    menurun("putus-sedikit", { alasan: "NILAI_TURUN", hariSejakTerakhir: 3, nilai90: 40_000, nilai90Sebelumnya: 100_000 }),
+    menurun("tanpa-nilai", { hariSejakTerakhir: 50, jarakBiasa: 20 }),
+  ];
+  const hp = menurunUntukHp(masuk);
+  const dari = (daftar: readonly TokoMenurun[], id: string) => daftar.find((m) => m.storeId === id)!;
+
+  it("tidak membawa satu rupiah pun — hanya kunci yang dibutuhkan layar", () => {
+    const json = JSON.stringify(hp);
+    for (const angka of ["21150", "110040", "41237", "12345", "40000", "100000"]) expect(json).not.toContain(angka);
+    for (const m of hp) {
+      expect(Object.keys(m).sort()).toEqual(
+        ["alasan", "hariSejakTerakhir", "jarakBiasa", "nama", "nilai90", "nilai90Sebelumnya", "rasioNilai", "storeId"].sort(),
+      );
+      expect(m.nilai90).toBeNull();
+      expect(m.nilai90Sebelumnya).toBeNull();
+    }
+  });
+
+  it("persen turun di HP sama dengan yang dihitung dari rupiahnya (toko tanpa konsi)", () => {
+    for (const m of masuk) expect(persenTurun(dari(hp, m.storeId))).toBe(persenTurun(m));
+    expect(persenTurun(dari(hp, "putus-tajam"))).toBe(81);
+    expect(persenTurun(dari(hp, "putus-sedikit"))).toBe(60);
+    // Tanpa pembanding: tetap tanpa angka.
+    expect(dari(hp, "tanpa-nilai").rasioNilai).toBeNull();
+    expect(persenTurun(dari(hp, "tanpa-nilai"))).toBeNull();
+  });
+
+  it("urutan di HP sama dengan urutan dari rupiahnya, dan klien yang mengurutkan ulang tidak menggesernya", () => {
+    expect(hp.map((m) => m.storeId)).toEqual(urutkanTokoMenurun(masuk).map((m) => m.storeId));
+    expect(hp.map((m) => m.storeId)).toEqual(["tanpa-nilai", "jarang", "putus-tajam", "putus-sedikit"]);
+    expect(urutkanTokoMenurun(hp).map((m) => m.storeId)).toEqual(hp.map((m) => m.storeId));
+  });
+
+  it("tidak mengubah masukannya", () => {
+    expect(masuk[0].nilai90).toBe(21_150);
+    expect(masuk.map((m) => m.storeId)).toEqual(["putus-tajam", "jarang", "putus-sedikit", "tanpa-nilai"]);
+  });
+
+  describe("toko dengan nilai konsinyasi", () => {
+    // Campuran: 90 hari lalu konsi 80.000, 90 hari terakhir van 15.000 (notanya
+    // dipegang salesman). Rasio 0,1875 → 15.000 ÷ 0,1875 = 80.000 = total konsi.
+    const campur = menurun("campur", { nama: "Campur", alasan: "NILAI_TURUN", hariSejakTerakhir: 25, nilai90: 15_000, nilai90Sebelumnya: 80_000 });
+    const konsi = menurun("konsi", { nama: "Konsi", alasan: "NILAI_TURUN", hariSejakTerakhir: 25, nilai90: 21_150, nilai90Sebelumnya: 110_040 });
+    const konsiJarang = menurun("konsi-jarang", { nama: "Konsi Jarang", hariSejakTerakhir: 40, jarakBiasa: 20, nilai90: 10_000, nilai90Sebelumnya: 30_000 });
+    const putus = menurun("putus", { nama: "Putus", alasan: "NILAI_TURUN", hariSejakTerakhir: 25, nilai90: 30_000, nilai90Sebelumnya: 100_000 });
+    const tokoKonsi = new Set(["campur", "konsi", "konsi-jarang"]);
+    const hpKonsi = menurunUntukHp([konsi, putus, campur, konsiJarang], { tokoKonsi });
+
+    it("tidak mendapat rasio — persen turunnya tidak bisa dihitung di HP, alasannya tetap", () => {
+      for (const id of tokoKonsi) {
+        expect(dari(hpKonsi, id).rasioNilai).toBeNull();
+        expect(persenTurun(dari(hpKonsi, id))).toBeNull();
+      }
+      expect(dari(hpKonsi, "campur").alasan).toBe("NILAI_TURUN");
+      expect(dari(hpKonsi, "konsi-jarang").alasan).toBe("JARANG");
+      // Toko tanpa konsi tetap mendapat angkanya.
+      expect(dari(hpKonsi, "putus").rasioNilai).toBe(0.3);
+      expect(persenTurun(dari(hpKonsi, "putus"))).toBe(70);
+      const json = JSON.stringify(hpKonsi);
+      for (const angka of ["0.1875", "0.1922", "0.3333", "80000", "15000", "21150", "110040"]) expect(json).not.toContain(angka);
+    });
+
+    it("urutannya tidak bergantung pada rupiah konsi: yang tanpa rasio di belakang, menurut nama", () => {
+      // Dari rupiahnya, campur (0,1875) dan konsi (0,1922) lebih tajam dari putus (0,3).
+      expect(urutkanTokoMenurun([konsi, putus, campur, konsiJarang]).map((m) => m.storeId)).toEqual([
+        "konsi-jarang",
+        "campur",
+        "konsi",
+        "putus",
+      ]);
+      expect(hpKonsi.map((m) => m.storeId)).toEqual(["konsi-jarang", "putus", "campur", "konsi"]);
+      // Masukan dengan urutan lain menghasilkan payload yang sama persis.
+      expect(menurunUntukHp([campur, konsiJarang, putus, konsi], { tokoKonsi })).toEqual(hpKonsi);
+      expect(urutkanTokoMenurun(hpKonsi)).toEqual(hpKonsi);
+    });
   });
 });
 

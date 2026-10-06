@@ -13,7 +13,8 @@ import { dinamis } from "@/lib/i18n/dinamis";
 import { formatIDR } from "@/lib/sales-orders/format";
 import { namaBulan } from "@/lib/salesman/komisi";
 import type { BarangTeratasBaris, TokoTeratasBaris } from "@/lib/salesman/riwayat-penjualan-queries";
-import type { CapaianTarget, RingkasanBulan, TitikBulan } from "@/lib/salesman/riwayat-penjualan";
+import type { CapaianTarget } from "@/lib/salesman/riwayat-penjualan";
+import type { RingkasanBulanHp, TitikBulanHp } from "@/lib/salesman/penjualan-hp";
 import { cn } from "@/lib/utils";
 import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
@@ -21,28 +22,34 @@ export type DataPenjualan = {
   daftarBulan: string[];
   bulan: string;
   bulanIni: string;
-  seri: TitikBulan[];
-  ringkas: RingkasanBulan;
+  /** Rupiah putus + van per bulan, konsinyasi sebagai pcs — rupiah konsi tidak pernah sampai ke HP. */
+  seri: TitikBulanHp[];
+  ringkas: RingkasanBulanHp;
+  /** Capaian atas putus + van. */
   target: CapaianTarget | null;
   toko: TokoTeratasBaris[];
   barang: BarangTeratasBaris[];
 };
 
-// Nada dari warna tema, seperti kartu beranda: putus paling pekat, van paling pudar.
+// Nada dari warna tema, seperti kartu beranda: putus pekat, van pudar.
+// Hanya kanal RUPIAH; konsinyasi tampil sebagai pcs dan tidak pernah jadi batang.
 const nada = (persen: number) => `color-mix(in oklab, var(--primary) ${persen}%, transparent)`;
 const KANAL = [
   { kunci: "putus", label: "channelPutus", warna: nada(100) },
-  { kunci: "konsi", label: "channelKonsi", warna: nada(55) },
-  { kunci: "van", label: "channelVan", warna: nada(28) },
+  { kunci: "van", label: "channelVan", warna: nada(40) },
 ] as const;
 // Kanal di kartu utama (latar warna tema): warna tulisan-di-atas-tema.
 const nadaUtama = (persen: number) => `color-mix(in oklab, var(--primary-foreground) ${persen}%, transparent)`;
-const NADA_UTAMA = { putus: nadaUtama(90), konsi: nadaUtama(55), van: nadaUtama(28) } as const;
+const NADA_UTAMA = { putus: nadaUtama(90), van: nadaUtama(40) } as const;
 
 /**
  * Riwayat penjualan per bulan: total dan rinciannya, kemajuan ke target bulan
  * itu, perbandingan dengan bulan lalu dan bulan yang sama tahun lalu, grafik
  * 12 bulan, serta toko dan barang teratas.
+ *
+ * Aturan mutlak: rupiah konsinyasi tidak pernah sampai ke HP. Setiap rupiah di
+ * halaman ini (total, capaian target, pembanding, grafik) adalah putus + van;
+ * konsinyasi tampil sebagai pcs.
  *
  * Pilihan bulan disimpan di alamat (`?bulan=`) dan berpindah dengan `replace`,
  * jadi "Kembali" tidak berjalan mundur melewati setiap bulan yang dilihat.
@@ -69,7 +76,7 @@ export function PenjualanClient({ data }: { data: DataPenjualan }) {
   // kanalnya bila setahun penuh nol, seperti kartu beranda.
   const adaVan = data.seri.some((s) => s.van > 0) || j.van > 0;
   const kanal = KANAL.filter((k) => k.kunci !== "van" || adaVan);
-  const kosong = j.total === 0 && data.toko.length === 0 && data.barang.length === 0;
+  const kosong = j.total === 0 && j.pcsKonsi === 0 && data.toko.length === 0 && data.barang.length === 0;
 
   return (
     <div className="space-y-4 p-4">
@@ -123,10 +130,11 @@ export function PenjualanClient({ data }: { data: DataPenjualan }) {
         <section className="beranda-kartu beranda-kartu-utama">
           <h2 className="beranda-judul">{t("totalTitle", { month: nama(data.bulan) })}</h2>
           <p className="mt-1 text-3xl font-semibold tracking-tight tabular-nums">{formatIDR(j.total)}</p>
+          <p className="text-xs opacity-80">{t("totalPutusVan")}</p>
           {data.ringkas.sampaiTanggal !== null ? (
             <p className="text-xs opacity-80">{t("upToDay", { day: data.ringkas.sampaiTanggal })}</p>
           ) : null}
-          {j.total > 0 ? (
+          {j.total > 0 && kanal.length > 1 ? (
             <div className="mt-3 flex h-1.5 overflow-hidden rounded-full" style={{ background: nadaUtama(15) }} aria-hidden>
               {kanal
                 .filter((k) => j[k.kunci] > 0)
@@ -146,6 +154,14 @@ export function PenjualanClient({ data }: { data: DataPenjualan }) {
                 <dd className="text-sm font-semibold tabular-nums">{formatIDR(j[k.kunci])}</dd>
               </div>
             ))}
+            {/* Konsinyasi: pcs saja, tidak masuk total rupiah di atas. */}
+            <div className="flex items-baseline justify-between gap-3">
+              <dt className="flex items-center gap-1.5 text-xs opacity-80">
+                <span aria-hidden className="h-2 w-2 shrink-0 rounded-sm border" style={{ borderColor: nadaUtama(55) }} />
+                {t("channelKonsi")}
+              </dt>
+              <dd className="text-sm font-semibold tabular-nums">{pcs(j.pcsKonsi)}</dd>
+            </div>
           </dl>
         </section>
 
@@ -171,6 +187,7 @@ export function PenjualanClient({ data }: { data: DataPenjualan }) {
               <p className="mt-1.5 text-xs font-medium tabular-nums">
                 {data.target.tercapai ? t("targetReached") : t("targetShort", { amount: formatIDR(data.target.kurang) })}
               </p>
+              {j.pcsKonsi > 0 ? <p className="mt-1 text-xs text-muted-foreground">{t("targetKonsiNote")}</p> : null}
             </>
           ) : (
             <p className="mt-1 text-sm text-muted-foreground">{t("targetNone")}</p>
@@ -181,7 +198,7 @@ export function PenjualanClient({ data }: { data: DataPenjualan }) {
         <section className="beranda-kartu">
           <h2 className="beranda-judul">{t("compareTitle")}</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            {t("compareHint", { month: nama(data.bulan) })}
+            {t("compareHint", { month: nama(data.bulan) })} {t("comparePutusVan")}
             {data.ringkas.sampaiTanggal !== null ? ` ${t("sameDaysNote", { day: data.ringkas.sampaiTanggal })}` : ""}
           </p>
           <ul className="mt-1 divide-y">
@@ -213,11 +230,14 @@ export function PenjualanClient({ data }: { data: DataPenjualan }) {
                 <Tooltip
                   cursor={{ fill: nada(10) }}
                   content={({ active, payload }) => {
-                    const p = active && payload?.length ? (payload[0].payload as TitikBulan) : null;
+                    const p = active && payload?.length ? (payload[0].payload as TitikBulanHp) : null;
                     return p ? (
                       <div className="rounded-lg border bg-popover px-2.5 py-1.5 text-xs text-popover-foreground shadow-md">
                         <p className="font-medium">{nama(p.bulan)}</p>
                         <p className="tabular-nums">{formatIDR(p.total)}</p>
+                        {p.pcsKonsi > 0 ? (
+                          <p className="tabular-nums text-muted-foreground">{t("tooltipKonsiPcs", { n: angka.format(p.pcsKonsi) })}</p>
+                        ) : null}
                       </div>
                     ) : null;
                   }}
@@ -240,6 +260,7 @@ export function PenjualanClient({ data }: { data: DataPenjualan }) {
               </li>
             ))}
           </ul>
+          <p className="mt-1 text-[11px] text-muted-foreground">{t("chartPutusVan")}</p>
         </section>
 
         {kosong ? (

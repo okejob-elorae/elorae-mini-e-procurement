@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
   pembuat: [] as string[],
   aktor: [] as string[],
   pin: [] as string[],
+  jejak: [] as Array<{ userId?: string; action?: string }>,
   statusPo: "SUBMITTED" as string,
 }));
 
@@ -56,8 +57,13 @@ vi.mock("@elorae/db", async (importOriginal) => {
         id: "po-1",
         status: state.statusPo,
         docNumber: "PO/2026/00001",
+        ppnRatePercent: null,
         grns: [],
-        items: [],
+        // PO PARTIAL: sebagian sudah datang — syarat "Tutup PO".
+        items:
+          state.statusPo === "PARTIAL"
+            ? [{ itemId: "item-1", variantSku: null, qty: 12, receivedQty: 8, price: 85_000, ppnIncluded: false }]
+            : [],
       })),
       update: vi.fn(async (a: { data: { status?: string } }) => ({ id: "po-1", status: a.data.status ?? state.statusPo })),
     },
@@ -72,6 +78,13 @@ vi.mock("@elorae/db", async (importOriginal) => {
       deleteMany: vi.fn(async () => ({ count: 0 })),
     },
     item: { findMany: vi.fn(async () => []) },
+    gRN: { count: vi.fn(async () => 0) },
+    auditLog: {
+      create: vi.fn(async (a: { data: { userId?: string; action?: string } }) => {
+        state.jejak.push(a.data);
+        return a.data;
+      }),
+    },
   };
   return {
     ...asli,
@@ -99,6 +112,7 @@ beforeEach(() => {
   state.pembuat = [];
   state.aktor = [];
   state.pin = [];
+  state.jejak = [];
   state.statusPo = "SUBMITTED";
 });
 
@@ -118,10 +132,13 @@ describe("aksi PO mencatat pelaku dari sesi", () => {
     expect(state.pin).toEqual([SESI]);
   });
 
-  it("changePOStatus CLOSED: riwayat status atas nama sesi", async () => {
+  it("changePOStatus CLOSED: riwayat status dan jejak tutup atas nama sesi", async () => {
+    // CLOSED kini lewat penulis "Tutup PO" (PO kurang kirim, alasan wajib).
+    state.statusPo = "PARTIAL";
     await po.changePOStatus("po-1", "CLOSED", PALSU, "selesai");
     await tunggu();
     expect(state.riwayat.map((r) => r.changedById)).toEqual([SESI]);
+    expect(state.jejak).toEqual([expect.objectContaining({ userId: SESI, action: "PO_CLOSED_SHORT" })]);
     expect(state.aktor).toEqual([SESI]);
   });
 

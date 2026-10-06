@@ -15,10 +15,13 @@ import {
   kunciAngka,
   type AlasanGagalKonsi,
   type BarisKirim,
+  type BarisKurangKirim,
   type BarisLaporan,
   type BarisResmi,
 } from '@/lib/konsinyasi/writer';
 import { bahanLaporanSpg, type BarisBahan } from '@/lib/konsinyasi/laporan-spg';
+import { pilihanVarianKirim, type PilihanVarianKirim } from '@/lib/konsinyasi/varian-kirim';
+import { antrekanPushStok } from '@/lib/jubelio/antre-push-stok';
 
 export type KodeAksiKonsi = 'TANPA_AKSES' | 'TANGGAL_TIDAK_VALID' | AlasanGagalKonsi | 'GAGAL';
 export type HasilAksiKonsi = { ok: true } | { ok: false; kode: KodeAksiKonsi };
@@ -71,26 +74,95 @@ export async function bukaSiklusAction(input: {
   }
 }
 
+/** Hasil "Kirim titipan" untuk layar: nomor kiriman, atau rincian barang/varian yang kurang. */
+export type HasilKirimTitipanAksi =
+  | { ok: true; noKirim: string; ulang: boolean }
+  | { ok: false; kode: KodeAksiKonsi; kurang?: BarisKurangKirim[] };
+
+/** Baris dari formulir: bentuk dan angkanya diperiksa di sini, sebelum penulis. */
+function barisKirimSah(items: unknown): BarisKirim[] | null {
+  if (!Array.isArray(items)) return null;
+  const hasil: BarisKirim[] = [];
+  for (const b of items as Record<string, unknown>[]) {
+    if (!b || typeof b !== 'object') return null;
+    const { itemId, variantSku, itemName, qty, price } = b;
+    if (typeof itemName !== 'string') return null;
+    if (itemId != null && typeof itemId !== 'string') return null;
+    if (variantSku != null && typeof variantSku !== 'string') return null;
+    // Kolom qty bilangan bulat; harga tidak boleh negatif atau kosong terbaca NaN.
+    if (typeof qty !== 'number' || !Number.isInteger(qty) || qty < 0) return null;
+    if (typeof price !== 'number' || !Number.isFinite(price) || price < 0) return null;
+    hasil.push({ itemId: itemId ?? null, variantSku: variantSku ?? null, itemName, qty, price });
+  }
+  return hasil;
+}
+
 export async function kirimTitipanAction(input: {
   storeId: string;
   cycleId?: string | null;
   shippedAt: string;
   items: BarisKirim[];
   note?: string;
-}): Promise<HasilAksiKonsi> {
+  /** Dibuat formulir SEKALI per isian: klik ganda / kirim ulang = kiriman yang sama. */
+  idempotencyKey?: string;
+}): Promise<HasilKirimTitipanAksi> {
   const userId = await butuh();
   if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
 
   const tanggal = tanggalWib(input.shippedAt);
   if (!tanggal) return { ok: false, kode: 'TANGGAL_TIDAK_VALID' };
 
+  const items = barisKirimSah(input.items);
+  if (!items) return { ok: false, kode: 'NILAI_TIDAK_VALID' };
+  const kunci =
+    typeof input.idempotencyKey === 'string' && input.idempotencyKey.trim().length <= 200
+      ? input.idempotencyKey.trim() || null
+      : null;
+
+  let hasil: Awaited<ReturnType<typeof kirimTitipan>>;
   try {
-    const hasil = await kirimTitipan({ ...input, shippedAt: tanggal, olehUserId: userId });
-    if (!hasil.ok) return { ok: false, kode: hasil.alasan };
-    segarkan();
-    return { ok: true };
+    hasil = await kirimTitipan({
+      storeId: input.storeId,
+      cycleId: input.cycleId,
+      note: input.note,
+      items,
+      shippedAt: tanggal,
+      olehUserId: userId,
+      idempotencyKey: kunci,
+    });
   } catch (err) {
     console.error('kirimTitipan gagal:', err);
+    return { ok: false, kode: 'GAGAL' };
+  }
+  if (!hasil.ok) {
+    return 'kurang' in hasil ? { ok: false, kode: hasil.alasan, kurang: hasil.kurang } : { ok: false, kode: hasil.alasan };
+  }
+
+  // Stok gudang sudah berkurang dan sudah commit: kabari Jubelio supaya marketplace tidak
+  // menjual barang yang sudah di toko konsinyasi. Best-effort — kirimannya sudah sah. Kiriman
+  // ulang tidak mengantre lagi: pushnya sudah diantrekan oleh kiriman pertama.
+  if (!hasil.ulang && hasil.barangBerubah.length > 0) {
+    try {
+      await antrekanPushStok(hasil.barangBerubah, { sumber: 'ADJUSTMENT', ref: hasil.noKirim, userId });
+    } catch (err) {
+      console.error(`push stok kiriman titipan ${hasil.noKirim} tidak masuk antrean:`, err);
+    }
+  }
+  segarkan();
+  return { ok: true, noKirim: hasil.noKirim, ulang: hasil.ulang };
+}
+
+/** Varian barang untuk pemilih "Kirim titipan" — stok tersedia per varian di gudang. */
+export async function pilihanVarianKirimAction(
+  itemId: string,
+): Promise<{ ok: true; pilihan: PilihanVarianKirim } | { ok: false; kode: 'TANPA_AKSES' | 'GAGAL' }> {
+  const userId = await butuh();
+  if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
+  if (typeof itemId !== 'string' || !itemId) return { ok: false, kode: 'GAGAL' };
+  try {
+    return { ok: true, pilihan: await pilihanVarianKirim(itemId) };
+  } catch (err) {
+    console.error('pilihanVarianKirim gagal:', err);
     return { ok: false, kode: 'GAGAL' };
   }
 }

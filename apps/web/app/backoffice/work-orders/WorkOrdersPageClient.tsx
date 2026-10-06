@@ -48,7 +48,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { StatusPill } from '@/components/ui/status-pill';
 import { EmptyState } from '@/components/ui/empty-state';
 import { getStatusMeta } from '@/lib/ui/status-map';
-import { getWorkOrders, issueWorkOrder, cancelWorkOrder } from '@/app/actions/production';
+import { getWorkOrders, terbitkanWorkOrder, cancelWorkOrder } from '@/app/actions/production';
 import { WOStatus } from '@/lib/constants/enums';
 import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
@@ -116,6 +116,7 @@ export function WorkOrdersPageClient() {
   const [pageSize] = useState(DEFAULT_PAGE_SIZE);
   const [totalCount, setTotalCount] = useState(0);
   const tWO = useTranslations('workOrders');
+  const tTolak = useTranslations('productionErrors');
   const tStatus = useTranslations('statuses');
   const tTable = useTranslations('tableHeaders');
   const locale = useLocale();
@@ -153,11 +154,18 @@ export function WorkOrdersPageClient() {
 
   const handleIssue = async (id: string) => {
     try {
-      await issueWorkOrder(id, 'user-id'); // TODO: Get actual user ID
+      // Pelaku dibaca dari sesi di server; penolakan dikembalikan sebagai kode
+      // (pesan galat yang dilempar disamarkan di build produksi).
+      const hasil = await terbitkanWorkOrder(id);
+      if (!hasil.ok) {
+        toast.error(tTolak.has(hasil.code) ? tTolak(hasil.code) : tWO('issueFailed'));
+        fetchWorkOrders();
+        return;
+      }
       toast.success(tWO('toastIssued'));
       fetchWorkOrders();
-    } catch (error: any) {
-      toast.error(error.message || tWO('issueFailed'));
+    } catch {
+      toast.error(tWO('issueFailed'));
     }
   };
 
@@ -165,7 +173,13 @@ export function WorkOrdersPageClient() {
     if (!confirm(tWO('confirmCancelWO'))) return;
     
     try {
-      await cancelWorkOrder(id, 'user-id'); // TODO: Get actual user ID
+      // Pelaku dibaca dari sesi di server; penolakan dikembalikan sebagai kode.
+      const hasil = await cancelWorkOrder(id, '');
+      if (!hasil.ok) {
+        toast.error(tTolak.has(hasil.code) ? tTolak(hasil.code) : tWO('cancelFailed'));
+        fetchWorkOrders(); // tampilkan keadaan WO yang sebenarnya
+        return;
+      }
       toast.success(tWO('toastCancelled'));
       fetchWorkOrders();
     } catch (error: any) {

@@ -1,6 +1,9 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma, seededId, seededIds } from "@elorae/db";
 import { ajukanTukar, batalkanTukar, selesaikanTukar, setujuiTukar, tolakTukar } from "./tukar-writer";
+
+// Push stok ke Jubelio menendang api sesudah mengantre — ditiru, antreannya tetap nyata.
+vi.mock("@/lib/internal-api", () => ({ apiFetch: vi.fn(async () => ({ ok: true, status: 200 })) }));
 
 /*
  * Penulis tukar barang terhadap basis data uji. Semua baris milik fixture
@@ -123,6 +126,8 @@ d("tukar barang — penulis (test bed only)", () => {
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: itemIds() } } });
     await prisma.storeExchangeLine.deleteMany({ where: { exchangeId: { in: seededIds(ids) } } });
     await prisma.storeExchange.deleteMany({ where: { id: { in: seededIds(ids) } } });
+    await prisma.jubelioOutbox.deleteMany({ where: { entityType: "stock_push", entityId: { in: itemIds() } } });
+    await prisma.jubelioProductMapping.deleteMany({ where: { itemId: { in: itemIds() } } });
   });
 
   afterAll(async () => {
@@ -338,6 +343,46 @@ d("tukar barang — penulis (test bed only)", () => {
       ok: false,
       kode: "SUDAH_SELESAI",
     });
+  });
+
+  it("menyelesaikan mengantrekan SATU push stok Jubelio untuk barangnya; ulang tidak mengantre lagi", async () => {
+    const acak = () => 1_500_000_000 + Math.floor(Math.random() * 400_000_000);
+    for (const ukuran of ["M", "L"]) {
+      await prisma.jubelioProductMapping.create({
+        data: {
+          itemId: kaos,
+          jubelioItemGroupId: acak(),
+          jubelioItemId: acak(),
+          jubelioItemCode: `${tag}-KAOS-BLK-${ukuran}`,
+          erpVariantSku: `${tag}-KAOS-${ukuran}`,
+        },
+      });
+    }
+    const antrean = () =>
+      prisma.jubelioOutbox.findMany({
+        where: { entityType: "stock_push", entityId: seededId(kaos), status: "PENDING" },
+        select: { payload: true },
+      });
+
+    const r = await ajukanUkuran(1);
+    if (!r.ok) throw new Error("harus ok");
+    await setujuiTukar({ exchangeId: r.id, olehUserId: kantor });
+    // Disetujui belum menggerakkan stok — belum ada push.
+    expect(await antrean()).toHaveLength(0);
+
+    expect(await selesaikanTukar({ exchangeId: r.id, olehUserId: kantor })).toMatchObject({ ok: true, ulang: false });
+    // M 10 → 9 (keluar), L 2 → 3 (masuk): dua baris stok, satu barang → satu baris antrean.
+    const baris = await antrean();
+    expect(baris).toHaveLength(1);
+    expect(JSON.stringify(baris[0].payload)).toContain(r.docNo);
+
+    // Dianggap sudah dikirim api; ulangan tidak menggerakkan stok, jadi tidak mengantre.
+    await prisma.jubelioOutbox.updateMany({
+      where: { entityType: "stock_push", entityId: seededId(kaos), status: "PENDING" },
+      data: { status: "DONE", processedAt: new Date() },
+    });
+    expect(await selesaikanTukar({ exchangeId: r.id, olehUserId: kantor })).toMatchObject({ ok: true, ulang: true });
+    expect(await antrean()).toHaveLength(0);
   });
 
   it("stok terpakai di antara setuju dan selesai → STOK_KURANG, tidak ada yang bergerak", async () => {

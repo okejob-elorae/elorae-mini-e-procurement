@@ -194,14 +194,17 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
     expect(Number(order.total)).toBe(225000);
   });
 
-  it("reserves stock for the added line", async () => {
+  it("moves the added line's stock out of the main warehouse (konsi store = another warehouse)", async () => {
     await approveFieldSalesOrder({ orderId, approvedById: userId, addedLines: [{ itemId: neverSentItemId, variantSku: "", qty: 3 }] });
-    const res = await prisma.stockReservation.findFirst({ where: { itemId: seededId(neverSentItemId), state: "RESERVED" } });
+    const res = await prisma.stockReservation.findFirst({ where: { itemId: seededId(neverSentItemId), state: "CONSUMED" } });
     expect(res).not.toBeNull();
     expect(res!.source).toBe("FIELD_SALES_KONSI");
     expect(Number(res!.qty)).toBe(3);
     const inv = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(neverSentItemId) } });
-    expect(Number(inv.reservedQty)).toBe(3);
+    // 50 − 3 = 47 pcs; 75.000 − 3 × 1.500 = 70.500.
+    expect(Number(inv.qtyOnHand)).toBe(47);
+    expect(Number(inv.reservedQty)).toBe(0);
+    expect(Number(inv.totalValue)).toBe(70500);
   });
 
   it("hard-blocks an added line that exceeds available stock and creates no line", async () => {

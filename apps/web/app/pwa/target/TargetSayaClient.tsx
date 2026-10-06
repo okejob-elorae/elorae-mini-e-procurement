@@ -7,7 +7,9 @@ import { dinamis } from "@/lib/i18n/dinamis";
 import { formatIDR } from "@/lib/sales-orders/format";
 import type { Kemajuan } from "@/lib/salesman/dasbor";
 import { namaBulan } from "@/lib/salesman/komisi";
-import type { LajuTarget, LingkupTarget, UkuranTarget } from "@/lib/salesman/target-rinci";
+import type { LajuTarget, UkuranTarget } from "@/lib/salesman/target-rinci";
+// Hanya TIPE dari berkas kueri — Prisma tidak boleh ikut ke bundel HP.
+import type { BarisTargetHp } from "@/lib/salesman/target-rinci-queries";
 import { cn } from "@/lib/utils";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
@@ -16,24 +18,13 @@ export type DataTargetSaya = {
   bulan: string;
   /** SPG: capaian dari nota penjualannya di toko, bersih dari retur pembeli. */
   spg: boolean;
-  /** Target total bulan ini — angka yang sama dengan kartu "Bulan ini" di beranda. */
+  /**
+   * Target total bulan ini — angka yang sama dengan kartu "Bulan ini" di
+   * beranda: putus + van untuk sales (tanpa konsinyasi), nota bersih untuk SPG.
+   */
   total: { omzet: number; kemajuan: Kemajuan | null };
-  baris: {
-    kunci: string;
-    scope: LingkupTarget;
-    nama: string;
-    sku: string | null;
-    measure: UkuranTarget;
-    /** Capaian dihitung dari putus + van saja (target barang dalam rupiah). */
-    tanpaKonsi: boolean;
-    target: number;
-    capai: number;
-    persen: number;
-    kurang: number;
-    laju: LajuTarget;
-    perHari: number | null;
-    sisaHari: number;
-  }[];
+  /** Dari `targetSayaHp`: setiap target dalam rupiah dihitung tanpa konsinyasi. */
+  baris: BarisTargetHp[];
 };
 
 const NADA_LAJU: Record<LajuTarget, string> = {
@@ -90,6 +81,9 @@ export function TargetSayaClient({ data }: { data: DataTargetSaya }) {
         ) : (
           <p className="mt-1 text-sm text-muted-foreground">{t("totalNotSet", { omzet: formatIDR(data.total.omzet) })}</p>
         )}
+        {/* Sales: rupiah putus + van saja. Selalu tampil, bukan hanya saat ada
+            konsinyasi — keterangan bersyarat justru memberi tahu bahwa ada. */}
+        {!data.spg ? <p className="mt-1 text-xs text-muted-foreground">{t("tanpaKonsi")}</p> : null}
       </section>
 
       {data.baris.length === 0 ? (

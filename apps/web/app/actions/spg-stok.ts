@@ -126,7 +126,11 @@ export async function terimaKirimanAction(input: unknown): Promise<HasilSpgStok<
 const barisSchema = z.object({ itemId: z.string().min(1), variantSku: z.string().nullable() });
 
 const opnameSchema = z.object({
-  baris: z.array(barisSchema.extend({ qtyCounted: z.number().int().min(0).max(100_000) })).min(1).max(2_000),
+  // `umurHitungMs`: berapa lama sebelum disimpan baris itu dihitung — saldo acuannya saat itu.
+  baris: z
+    .array(barisSchema.extend({ qtyCounted: z.number().int().min(0).max(100_000), umurHitungMs: z.number().int().min(0).optional() }))
+    .min(1)
+    .max(2_000),
   note: z.string().max(500).optional(),
   ...kolomAntrean,
 });

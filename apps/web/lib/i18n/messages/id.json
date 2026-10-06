@@ -2045,7 +2045,14 @@
       "backToInventory": "Kembali ke inventori",
       "newQtyLabel": "Qty baru:",
       "dateLabel": "Tanggal:",
-      "approvedByLabel": "Disetujui oleh:"
+      "approvedByLabel": "Disetujui oleh:",
+      "colSource": "Sumber",
+      "sourceLabel": "Sumber:",
+      "adjSourceFilter": "Sumber",
+      "adjSourceManual": "Manual dan opname",
+      "adjSourceAuto": "Otomatis saja",
+      "adjSourceAll": "Semua sumber",
+      "adjEmpty": "Tidak ada penyesuaian yang cocok dengan saringan ini."
     },
     "adjNew": {
       "title": "Penyesuaian Stok",
@@ -2152,7 +2159,9 @@
       "printLoadFailed": "Gagal menyiapkan cetakan",
       "printFrameTitle": "Cetak kartu stok",
       "printByTypeFrameTitle": "Cetak kartu stok per jenis",
-      "printByCategoryFrameTitle": "Cetak kartu stok per kategori"
+      "printByCategoryFrameTitle": "Cetak kartu stok per kategori",
+      "undocumentedNote": "Selisih {qty} {uom} pada saldo awal tidak tercatat di dokumen gerakan mana pun (misalnya stok awal dari katalog Jubelio atau koreksi langsung). Saldo akhir tetap sama dengan stok yang tercatat.",
+      "variantAdjNote": "{count} penyesuaian sejak awal periode tidak mencatat varian (misalnya penjualan marketplace atau perubahan dari Jubelio), jadi tidak tampil di kartu per varian dan saldo varian ini bisa meleset. Pilih “Semua varian” untuk angka yang lengkap."
     },
     "grnForm": {
       "pageTitle": "Buat Penerimaan Barang (GRN)",
@@ -2209,6 +2218,32 @@
       "createButton": "Buat GRN",
       "rack": "Rak {index}",
       "rollLabel": "#{index} · {length} {uom} (klik untuk menghapus)"
+    },
+    "stockMoveKind": {
+      "GRN": "Penerimaan barang (GRN)",
+      "GRN_OWNER_DECLINE": "GRN ditolak pemilik (penerimaan dibatalkan)",
+      "WO_ISSUE": "Bahan keluar untuk produksi",
+      "WO_RECEIPT": "Hasil produksi diterima",
+      "FG_RECEIPT": "Barang jadi diterima",
+      "ADJUSTMENT": "Penyesuaian stok manual",
+      "OPNAME": "Stok opname",
+      "RECON": "Rekonsiliasi Jubelio",
+      "VENDOR_RETURN": "Retur ke pemasok",
+      "RETURN": "Retur",
+      "ERP": "Penyesuaian manual",
+      "ERP_OPNAME": "Stok opname",
+      "ERP_RETURN_ACCEPT": "Retur marketplace diterima",
+      "FULFILLMENT_CONSUME": "Penjualan marketplace dikirim",
+      "FIELD_SALES_CONSUME": "Pengiriman pesanan putus",
+      "JUBELIO_WEBHOOK": "Perubahan stok dari Jubelio",
+      "JUBELIO_RECONCILE": "Rekonsiliasi Jubelio",
+      "VAN_LOAD": "Muat van kanvas",
+      "VAN_RETURN": "Sisa van kembali ke gudang",
+      "STORE_RETURN_RECEIVE": "Barang retur masuk stok jual",
+      "KONSI_TRANSFER": "Kirim ke toko konsinyasi",
+      "STORE_EXCHANGE_OUT": "Tukar barang: keluar ke toko",
+      "STORE_EXCHANGE_IN": "Tukar barang: masuk dari toko",
+      "KOL_SEEDING": "Kirim ke KOL (seeding)"
     }
   },
   "stockOpname": {
@@ -2314,7 +2349,14 @@
     "decreaseCount": "Kurangi hitungan",
     "increaseCount": "Tambah hitungan",
     "previousPage": "Halaman sebelumnya",
-    "nextPage": "Halaman berikutnya"
+    "nextPage": "Halaman berikutnya",
+    "blindNote": "Angka sistem tidak ditampilkan selama menghitung. Setelah hitungan dikirim, angka sistem dan selisihnya tampil untuk penyetuju.",
+    "countClosed": "Hitungan opname ini sudah ditutup karena sudah dikirim untuk persetujuan (atau sudah selesai). Kalau ada yang salah hitung, minta penyetuju membatalkannya lalu buat opname baru.",
+    "blind": {
+      "counting": "Hitungan buta: angka sistem dan selisih tidak ditampilkan selama menghitung. Setelah dikirim, keduanya tampil untuk penyetuju.",
+      "waitingApproval": "Hitungan sudah dikirim. Angka sistem dan selisihnya tampil untuk penyetuju, dan untuk semua setelah opname disetujui.",
+      "cancelled": "Opname ini dibatalkan. Angka sistem dan selisihnya hanya tampil untuk penyetuju."
+    }
   },
   "stockReconciliation": {
     "title": "Rekonsiliasi Jubelio",
@@ -2332,7 +2374,7 @@
     "inSync": "Sinkron",
     "flagged": "Ditandai",
     "autoCorrected": "Auto-koreksi",
-    "eloraeQty": "Qty Elorae",
+    "eloraeQty": "Tersedia Elorae",
     "jubelioQty": "Qty Jubelio",
     "variance": "Selisih",
     "action": "Aksi",
@@ -2521,7 +2563,56 @@
     "createFailed": "Gagal membuat PO",
     "savedLocally": "PO disimpan di perangkat. Akan disinkronkan saat online.",
     "saveLocallyFailed": "Gagal menyimpan PO di perangkat",
-    "filterOverdue": "PO terlambat"
+    "filterOverdue": "PO terlambat",
+    "tutup": {
+      "tombol": "Tutup PO",
+      "judul": "Tutup {docNumber}?",
+      "penjelasan": "Gunakan ini bila pemasok tidak akan mengirim sisa barang. PO ditutup apa adanya, sisa yang belum datang tidak lagi ditunggu, dan penerimaan barang (GRN) berikutnya ke PO ini akan ditolak. Tindakan ini tidak bisa dibatalkan.",
+      "sisaJudul": "Barang yang tidak akan datang",
+      "alasanLabel": "Alasan penutupan",
+      "alasanPlaceholder": "Contoh: pemasok tidak sanggup mengirim sisa pesanan",
+      "alasanWajib": "Alasan wajib diisi.",
+      "batal": "Kembali",
+      "konfirmasi": "Tutup PO",
+      "menutup": "Menutup...",
+      "berhasil": "{docNumber} ditutup. Sisa {qty} tidak lagi ditunggu.",
+      "err": {
+        "ALASAN_WAJIB": "Tulis alasan penutupan PO.",
+        "TIDAK_DITEMUKAN": "PO tidak ditemukan.",
+        "MASIH_DRAF": "PO masih draf. Batalkan PO ini, bukan menutupnya.",
+        "DIBATALKAN": "PO sudah dibatalkan.",
+        "SUDAH_DITUTUP": "PO sudah ditutup. Muat ulang halaman ini.",
+        "SUDAH_LENGKAP": "Semua barang PO ini sudah diterima, jadi tidak ada yang perlu ditutup.",
+        "BELUM_ADA_PENERIMAAN": "Belum ada barang yang diterima. Batalkan PO ini, bukan menutupnya.",
+        "GRN_MENUNGGU_PEMILIK": "Masih ada GRN terima-lebih yang menunggu keputusan pemilik. Putuskan GRN itu dulu.",
+        "TANPA_AKSES": "Anda tidak punya izin menyetujui PO, jadi tidak bisa menutupnya.",
+        "GAGAL": "PO gagal ditutup. Coba lagi."
+      }
+    },
+    "ringkasan": {
+      "subtotal": "Subtotal",
+      "ppn": "PPN {tarif}%",
+      "ppnTidakDihitung": "PPN (tidak dihitung)",
+      "totalPo": "Total PO",
+      "tidakDatang": "Tidak akan dikirim (PO ditutup)",
+      "retur": "Retur {docNumber}",
+      "utang": "Utang ke pemasok",
+      "utangSingkat": "Utang: {nilai}",
+      "ditutup": "Ditutup sebelum lengkap pada {waktu} oleh {nama}.",
+      "alasan": "Alasan: {alasan}",
+      "ppnSaatSimpan": "PPN (dihitung saat PO disimpan)",
+      "totalSebelumPpn": "Total sebelum PPN"
+    },
+    "batal": {
+      "err": {
+        "TIDAK_DITEMUKAN": "PO tidak ditemukan.",
+        "SUDAH_DIBATALKAN": "PO ini sudah dibatalkan. Muat ulang halaman ini.",
+        "SUDAH_ADA_PENERIMAAN": "PO ini tidak bisa dibatalkan karena sudah ada barang yang diterima (GRN). Gunakan Tutup PO bila sisa barang tidak akan datang.",
+        "TANPA_AKSES": "Anda tidak punya izin membatalkan PO.",
+        "PIN_WAJIB": "Masukkan PIN Anda untuk membatalkan PO.",
+        "GAGAL": "PO gagal dibatalkan. Coba lagi."
+      }
+    }
   },
   "workOrdersList": {
     "noWorkOrdersFound": "Tidak ada work order ditemukan"
@@ -4453,7 +4544,11 @@
       "collectCall": "Telepon",
       "planIntervalDefault": "Ada tagihan, mulai jarang pesan, atau {days} hari belum didatangi.",
       "ordersSeeAll": "Lihat semua",
-      "targetRinci": "Rincian target"
+      "targetRinci": "Rincian target",
+      "totalPutusVan": "Putus + van",
+      "konsiPcs": "{n} pcs",
+      "targetKonsiNote": "Persen ini dari putus + van. Kantor juga menghitung konsinyasi ke target, tetapi nilainya tidak ditampilkan di HP.",
+      "trendTitlePutusVan": "30 hari terakhir · putus + van"
     },
     "saran": {
       "title": "Saran pesanan",
@@ -5290,7 +5385,8 @@
         "body": "{count, plural, =0 {Catatan opname yang belum disimpan dipulihkan} other {# barang yang sudah dihitung dipulihkan}} (terakhir diubah {time}). Lanjutkan menghitung, atau mulai dari awal.",
         "discard": "Mulai dari awal",
         "autosave": "Hitungan tersimpan di HP ini sampai disimpan — aman kalau layar tertutup."
-      }
+      },
+      "blind": "Stok sistem tidak ditampilkan selama menghitung. Hitung yang ada di rak; selisihnya muncul setelah opname disimpan."
     },
     "kabar": {
       "open": "Kabar",
@@ -5781,14 +5877,23 @@
       "channel_putus": "Putus",
       "channel_konsi": "Konsinyasi",
       "channel_van": "Van",
-      "salesHint": "Sama dengan kartu \"Bulan ini\" di beranda: pengiriman putus, konsinyasi yang disetujui, dan penjualan van.",
+      "salesHint": "Sama dengan kartu \"Bulan ini\" di beranda: rupiah dari pengiriman putus dan penjualan van. Konsinyasi yang disetujui hanya tampil sebagai jumlah pcs.",
       "moreLabel": "Lainnya",
       "leaderboardLink": "Peringkat",
       "leaderboardHint": "Capaian target Anda dibanding rekan bulan ini",
       "footer": "Semua angka di halaman ini perkiraan dari skema yang diatur kantor. Komisi yang dibayar ditetapkan kantor.",
       "homeTitle": "Perkiraan insentif bulan ini",
       "homeFormulaTERTAGIH": "{rate}% dari tertagih {amount}",
-      "homeFormulaPENJUALAN": "{rate}% dari omzet {amount}"
+      "homeFormulaPENJUALAN": "{rate}% dari omzet {amount}",
+      "formulaPENJUALANPutusVan": "{rate}% dari omzet putus + van {amount}",
+      "homeFormulaPENJUALANPutusVan": "{rate}% dari omzet putus + van {amount}",
+      "konsiBelumDihitung": "Belum termasuk konsinyasi — angka final dari kantor bisa lebih tinggi.",
+      "targetOfPutusVan": "Putus + van {omzet} dari {target}",
+      "noTargetPutusVan": "Putus + van {omzet}. Belum ada target bulan ini — admin yang mengaturnya.",
+      "konsiNote": "Angka di halaman ini dari putus + van. Konsinyasi bulan ini ({n} pcs) ikut dihitung kantor ke capaian target, jadi capaian, tarif, dan komisi final bisa lebih tinggi.",
+      "konsiPcs": "{n} pcs",
+      "konsiNoteCapaian": "Angka di halaman ini dari putus + van. Konsinyasi bulan ini ({n} pcs) ikut dihitung kantor ke capaian target, jadi capaian final bisa lebih tinggi.",
+      "konsiNotePcs": "Angka di halaman ini dari putus + van. Konsinyasi bulan ini: {n} pcs, tidak termasuk rupiah di atas."
     },
     "peringkat": {
       "back": "Beranda",
@@ -5809,7 +5914,10 @@
       "anonymous": "Sales #{n}",
       "moreLabel": "Lainnya",
       "incentiveLink": "Insentif",
-      "incentiveHint": "Perkiraan komisi dan rinciannya"
+      "incentiveHint": "Perkiraan komisi dan rinciannya",
+      "basisNote": "Capaian dan omzet di papan ini dihitung dari pengiriman putus dan penjualan van. Konsinyasi tidak ikut dihitung.",
+      "yourSalesPutusVan": "Omzet putus + van Anda {amount}",
+      "konsiPcs": "Konsinyasi bulan ini: {n} pcs, tidak ikut dihitung di papan ini."
     },
     "hariIni": {
       "back": "Beranda",
@@ -6454,7 +6562,7 @@
       "short": "Kurang {amount} lagi",
       "paceOnTrack": "Pertahankan sekitar {amount} per hari.",
       "paceBehind": "Perlu sekitar {amount} per hari selama {days} hari lagi.",
-      "note": "Dihitung dari pengiriman putus, konsinyasi yang disetujui, dan penjualan van bulan ini — sama dengan omzet di beranda. Barang bonus tidak dihitung.",
+      "note": "Target dalam rupiah dihitung dari pengiriman putus dan penjualan van bulan ini — sama dengan omzet di beranda. Target dalam pcs ikut menghitung konsinyasi yang disetujui. Barang bonus tidak dihitung.",
       "pcs": "{n} pcs",
       "tanpaKonsi": "Nilai dari penjualan putus dan van — konsinyasi tidak dihitung di sini.",
       "noteSpg": "Dihitung dari nota penjualan Anda bulan ini, dikurangi barang yang dikembalikan pembeli. Retur dihitung pada bulan notanya."
@@ -9424,7 +9532,37 @@
     "errTANGGAL_DI_DEPAN": "Tanggal bayar tidak boleh sesudah hari ini.",
     "errALASAN_WAJIB": "Tulis alasannya.",
     "errSUDAH_DIBATALKAN": "Pembayaran ini sudah dibatalkan.",
-    "errPEMBAYARAN_TIDAK_DITEMUKAN": "Pembayaran tidak ditemukan."
+    "errPEMBAYARAN_TIDAK_DITEMUKAN": "Pembayaran tidak ditemukan.",
+    "errSTOK_KURANG": "Stok gudang tidak cukup untuk kiriman ini. Rinciannya ada di atas daftar barang.",
+    "errVARIAN_WAJIB": "Barang bervarian harus dipilih ukurannya dulu.",
+    "kirimBaris": {
+      "emptyHint": "Tambahkan barang yang dikirim. Barang bervarian dikirim per ukuran.",
+      "variant": "Ukuran / varian",
+      "variantPlaceholder": "Pilih ukuran",
+      "variantOption": "{label} · tersedia {qty}",
+      "variantAuto": "Ukuran {label} (satu-satunya stok)",
+      "noVariant": "Tanpa ukuran",
+      "variantLoading": "Memuat ukuran…",
+      "variantLoadFailed": "Ukuran tidak bisa dimuat.",
+      "retry": "Coba lagi",
+      "variantHidden": "{count} ukuran tanpa stok tidak ditampilkan.",
+      "noStock": "Barang ini tidak punya stok tersedia di gudang.",
+      "qty": "Qty",
+      "available": "Tersedia di gudang: {qty}",
+      "overAvailable": "Melebihi stok tersedia di gudang ({qty}).",
+      "stockHint": "Barang dari katalog keluar dari stok gudang saat kiriman disimpan. Barang yang hanya diketik namanya tercatat tanpa menggerakkan stok.",
+      "shortTitle": "Stok gudang tidak cukup, jadi belum ada yang tersimpan:",
+      "shortLine": "{item}{variant}: diminta {requested}, tersedia {available}",
+      "whyStore": "Pilih toko dulu.",
+      "whyRows": "Tambahkan minimal satu barang.",
+      "whyName": "Baris {n}: isi nama barang.",
+      "whyQty": "Baris {n}: isi jumlahnya (bilangan bulat lebih dari nol).",
+      "whyLoading": "Baris {n}: ukuran masih dimuat.",
+      "whyLoadFailed": "Baris {n}: ukuran {item} tidak bisa dimuat. Tekan Coba lagi.",
+      "whyVariant": "Baris {n}: pilih ukuran untuk {item}.",
+      "okShippedNo": "Pengiriman {noKirim} tersimpan.",
+      "okAlreadyShipped": "Kiriman ini sudah tercatat sebagai {noKirim}. Stok tidak dipotong lagi."
+    }
   },
   "jenisPotongan": {
     "pageTitle": "Jenis Potongan",
@@ -12863,7 +13001,12 @@
     "konsiPcs": "Termasuk {n} pcs konsinyasi",
     "valueNoKonsi": "{amount} tanpa konsinyasi",
     "rankLabel": "Peringkat {rank}",
-    "emptyMonth": "Belum ada penjualan di {month}."
+    "emptyMonth": "Belum ada penjualan di {month}.",
+    "totalPutusVan": "Putus + van",
+    "targetKonsiNote": "Persen ini dari putus + van. Kantor juga menghitung konsinyasi ke target, tetapi nilainya tidak ditampilkan di HP.",
+    "comparePutusVan": "Angkanya rupiah putus + van.",
+    "tooltipKonsiPcs": "Konsinyasi {n} pcs",
+    "chartPutusVan": "Batang menunjukkan rupiah putus + van. Konsinyasi tidak ikut di batang; jumlah pcs-nya muncul saat batang disentuh."
   },
   "pwaAnalisaToko": {
     "title": "Analisa toko",
@@ -15928,5 +16071,26 @@
       "pwaBersama": "HP — salesman dan SPG"
     },
     "kosong": "Belum ada penjelasan."
+  },
+  "productionErrors": {
+    "WO_TIDAK_DITEMUKAN": "Perintah kerja tidak ditemukan.",
+    "WO_DIBATALKAN": "Perintah kerja ini sudah dibatalkan, jadi barang jadi tidak bisa diterima.",
+    "WO_BELUM_TERBIT": "Perintah kerja ini masih draf. Terbitkan dulu sebelum menerima barang jadi.",
+    "WO_SUDAH_ADA_PENERIMAAN": "Perintah kerja yang sudah punya penerimaan barang jadi tidak bisa dibatalkan.",
+    "WO_SUDAH_DIBATALKAN": "Perintah kerja ini sudah dibatalkan.",
+    "WO_SUDAH_KELUAR_BAHAN": "Perintah kerja ini tidak bisa dibatalkan karena bahannya sudah dikeluarkan dari gudang. Belum ada alur pengembalian bahan, jadi selesaikan perintah kerja ini atau hubungi admin.",
+    "TANPA_AKSES": "Anda tidak punya izin mengelola perintah kerja.",
+    "GAGAL": "Perintah kerja gagal diproses. Coba lagi.",
+    "BAHAN_WO_DIBATALKAN": "Perintah kerja ini sudah dibatalkan, jadi bahan tidak bisa dikeluarkan.",
+    "BAHAN_WO_SELESAI": "Perintah kerja ini sudah menerima barang jadi atau selesai, jadi bahan tidak bisa dikeluarkan lagi.",
+    "STOK_BAHAN_KURANG": "Stok {barang} tidak cukup untuk dikeluarkan. Periksa stok gudang lalu coba lagi.",
+    "ROLL_TIDAK_CUKUP": "Roll yang dipilih tidak cukup untuk qty kain yang dikeluarkan (kurang {kurang}). Pilih roll lain atau muat ulang halaman ini.",
+    "WO_SUDAH_TERBIT": "Perintah kerja ini sudah diterbitkan. Muat ulang halaman ini."
+  },
+  "grnErrors": {
+    "PO_TIDAK_DITEMUKAN": "PO tidak ditemukan.",
+    "PO_DIBATALKAN": "PO ini sudah dibatalkan, jadi barang tidak bisa diterima ke PO ini.",
+    "PO_BELUM_DISETUJUI": "PO ini masih draf dan belum disetujui. Setujui dan kirim PO dulu sebelum menerima barang.",
+    "PO_DITUTUP": "PO ini sudah ditutup, jadi barang tidak bisa diterima ke PO ini lagi."
   }
 }

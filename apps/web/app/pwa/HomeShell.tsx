@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { greetingKey } from "@/lib/auth/login-message";
 import { hitungBelumTerkirim } from "@/lib/pwa/offline/hitung";
 import { setupOrderSync } from "@/lib/pwa/offline/sync";
-import type { Kemajuan, TitikSalesman } from "@/lib/salesman/dasbor";
+import type { Kemajuan } from "@/lib/salesman/dasbor";
+import type { JumlahHp, TitikTrenHp } from "@/lib/salesman/penjualan-hp";
 import type { PesananSaya as DataPesanan, TokoTagih } from "@/lib/salesman/queries";
 import { hitungTugasRencana, type TokoMenurun } from "@/lib/salesman/toko-menurun";
 import { susunRencanaPerKelas } from "@/lib/stores/kelas-toko";
@@ -40,13 +41,18 @@ import { KunjunganBeranda } from "./beranda/KunjunganBeranda";
 type PermState = "prompt" | "granted" | "denied" | "unknown";
 
 export type DataBerandaSalesman = {
-  bulanIni: { putus: number; konsi: number; van: number; total: number };
+  /** Rupiah putus + van; konsinyasi hanya pcs — rupiah konsi tidak pernah sampai ke HP. */
+  bulanIni: JumlahHp;
+  /** Capaian target atas putus + van. */
   kemajuan: Kemajuan | null;
-  tren: TitikSalesman[];
+  tren: TitikTrenHp[];
   pesanan: DataPesanan;
   rencana: TokoRencanaJson[];
   tagih: TokoTagih[];
-  /** Toko saya yang mulai jarang pesan, paling terlambat dulu. */
+  /**
+   * Toko saya yang mulai jarang pesan, paling terlambat dulu — dari
+   * `tokoMenurunHp`: tanpa rupiah (`nilai90*` null); `rasioNilai` hanya untuk toko tanpa nilai konsinyasi.
+   */
   menurun: TokoMenurun[];
   batas: { hari: number; diatur: boolean };
   /** Perkiraan komisi bulan ini; null = komisi dimatikan kantor (kartunya tidak tampil). */

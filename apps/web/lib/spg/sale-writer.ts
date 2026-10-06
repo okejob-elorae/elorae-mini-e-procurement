@@ -1,14 +1,16 @@
 import { Prisma } from "@elorae/db";
-import { computeStorePrice } from "@elorae/db/pricing";
 import { buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { nomorWhatsApp } from "@/lib/salesman/dasbor";
 import { bacaDiskonManual, KUNCI_DISKON_MANUAL } from "./pengaturan";
+import { hargaKasirSpg, syaratHargaToko } from "./harga-kasir";
 import { hitungPromoKonter, type DiskonManual } from "./promo-konter";
 import { promoKonterUntukToko } from "./promo-konter-queries";
 import { ENTITAS_TITIP, JEJAK_TITIP, STATUS_TITIP_TERBUKA } from "./titip";
+import { kunciBaris } from "./stok";
+import { terhitungSesudah } from "./stok-writer";
 
 export type SpgSaleLineInput = { itemId: string; variantSku: string | null; qty: number };
 
@@ -101,6 +103,8 @@ export type InputJualSpg = {
  * Harga, promo konter, dan diskon manual dihitung DI SINI dari data server
  * (`hitungPromoKonter`); layar hanya menampilkan pratinjau dengan aturan yang
  * sama. `unitPrice` = harga sebelum potongan; `lineTotal` dan `total` = bersih.
+ * Harga dasarnya adalah harga di toko (`hargaKasirSpg`): di toko konsinyasi
+ * itu harga jual Elorae dinaikkan margin toko, bukan harga putus.
  *
  * Penjualan dari antrean HP (`luring`) dicatat pada waktu jualnya. Barang yang
  * sudah dihitung di opname toko SESUDAH waktu itu tidak mendapat baris buku
@@ -142,13 +146,13 @@ export async function recordSpgSaleTx(tx: Prisma.TransactionClient, input: Input
     }
   }
 
-  const store = await tx.store.findUnique({ where: { id: input.storeId }, select: { marginPercent: true } });
+  const store = await tx.store.findUnique({ where: { id: input.storeId }, select: { termsType: true, marginPercent: true } });
   if (!store) return { ok: false, code: "STORE_NOT_FOUND" };
-  const marginPercent = store.marginPercent === null ? null : Number(store.marginPercent);
+  const syarat = syaratHargaToko(store);
 
-  // Harga + data barang per baris. Penjualan SPG selalu harga eceran/PUTUS ke
-  // pembeli akhir, apa pun syarat toko dengan Elorae — margin konsinyasi toko
-  // tidak pernah berlaku untuk harga yang SPG kenakan ke pembeli.
+  // Harga + data barang per baris = harga yang dibayar pembeli DI toko ini
+  // (`hargaKasirSpg`): toko putus harga jual Elorae, toko konsinyasi harga di
+  // toko (harga jual dinaikkan margin toko). Katalog HP memakai fungsi yang sama.
   const itemIds = Array.from(new Set(merged.map((l) => l.itemId)));
   const items = await tx.item.findMany({
     where: { id: { in: itemIds } },
@@ -161,8 +165,7 @@ export async function recordSpgSaleTx(tx: Prisma.TransactionClient, input: Input
   for (const l of merged) {
     const item = itemById.get(l.itemId);
     if (!item) return { ok: false, code: "NO_PRICE" };
-    const sp = item.sellingPrice === null ? null : Number(item.sellingPrice);
-    const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", marginPercent });
+    const price = hargaKasirSpg(item.sellingPrice === null ? null : Number(item.sellingPrice), syarat);
     if (price === null) return { ok: false, code: "NO_PRICE" };
     priced.push({ line: l, item, unitPrice: price, key: `${l.itemId}::${l.variantSku ?? ""}` });
   }
@@ -288,18 +291,12 @@ export async function recordSpgSaleTx(tx: Prisma.TransactionClient, input: Input
   }));
   await tx.salesHistory.createMany({ data: rows });
 
-  // Barang yang sudah dihitung di opname SESUDAH waktu jual tidak dipotong lagi:
-  // opname itu sudah melihat raknya tanpa barang ini. Per barang, karena
-  // opname toko boleh hanya menghitung sebagian barang.
-  let sudahDihitung = new Set<string>();
-  if (input.luring) {
-    const terhitung = await tx.storeOpnameLine.findMany({
-      where: { opname: { storeId: input.storeId, countedAt: { gt: waktu } }, itemId: { in: itemIds } },
-      select: { itemId: true, variantSku: true },
-    });
-    sudahDihitung = new Set(terhitung.map((l) => `${l.itemId}::${l.variantSku}`));
-  }
-  const bukuBaris = priced.filter((p) => !sudahDihitung.has(p.key));
+  // Barang yang sudah DIHITUNG di opname SESUDAH waktu jual tidak dipotong lagi:
+  // opname itu sudah melihat raknya tanpa barang ini. Per barang dan per waktu
+  // hitung BARIS, bukan waktu opname disimpan — barang yang terjual sesudah
+  // dihitung tapi sebelum opname disimpan tetap dipotong.
+  const sudahDihitung = input.luring ? await terhitungSesudah(tx, input.storeId, itemIds, waktu) : new Set<string>();
+  const bukuBaris = priced.filter((p) => !sudahDihitung.has(kunciBaris(p.line.itemId, p.line.variantSku)));
   if (bukuBaris.length > 0) {
     await tx.storeStockMovement.createMany({
       data: bukuBaris.map((p) => ({

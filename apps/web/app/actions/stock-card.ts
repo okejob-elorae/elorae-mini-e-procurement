@@ -3,8 +3,11 @@
 import { prisma } from '@elorae/db';
 import { ItemType } from '@elorae/db';
 import { itemDecimalsToNumbers } from '@/lib/items/queries';
+import { parseItemVariants } from '@/lib/items/variants';
 import { auth } from "@/lib/auth";
 import { requirePermission, PERMISSIONS } from "@/lib/rbac";
+import { muatKartuStok, type KartuStokBarang } from "@/lib/inventory/kartu-stok-queries";
+import type { BarisKartuStok } from "@/lib/inventory/kartu-stok";
 
 /**
  * Penjaga aksi baca kartu stok: butuh sesi dan `inventory:view`. Melempar
@@ -40,112 +43,47 @@ function serializeItemForClient(
   return serialized as SerializedItemForStockCard;
 }
 
-function formatMovementDescription(refType: string): string {
-  switch (refType) {
-    case 'GRN':
-      return 'Penerimaan Barang';
-    case 'WO_ISSUE':
-      return 'Pengeluaran untuk Produksi';
-    case 'WO_RECEIPT':
-    case 'FG_RECEIPT':
-      return 'Penerimaan Hasil Produksi';
-    case 'ADJUSTMENT':
-      return 'Penyesuaian Stok';
-    case 'RETURN':
-      return 'Retur';
-    case 'VENDOR_RETURN':
-      return 'Pengembalian Vendor';
-    case 'OPNAME':
-      return 'Stock Opname';
-    case 'RECON':
-      return 'Rekonsiliasi Jubelio';
-    case 'GRN_OWNER_DECLINE':
-      return 'GRN ditolak owner (pembatalan penerimaan)';
-    default:
-      return refType;
-  }
-}
-
+/**
+ * Kartu stok satu barang. Membaca SEMUA gerakan yang menggerakkan stok gudang
+ * (StockMovement + StockAdjustment semua sumber) dan menjangkar saldo ke
+ * `InventoryValue`, jadi saldo akhir = stok yang tercatat sekarang. Label jenis
+ * gerakan (`jenis`) diterjemahkan di layar.
+ */
 export async function getStockCard(
   itemId: string,
   dateRange: { from: Date; to: Date },
   variantSku?: string
-) {
+): Promise<KartuStokBarang & { item: SerializedItemForStockCard | null }> {
   await wajibBolehLihatInventori();
-  const movementWhere: Record<string, unknown> = {
-    itemId,
-  };
-  if (variantSku) {
-    movementWhere.variantSku = variantSku;
-  }
-
-  const openingMovement = await prisma.stockMovement.findFirst({
-    where: {
-      ...movementWhere,
-      createdAt: { lt: dateRange.from },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
-
-  const openingBalance = openingMovement
-    ? Number(openingMovement.balanceQty)
-    : 0;
-  const openingValue = openingMovement
-    ? Number(openingMovement.balanceValue)
-    : 0;
-
-  const movements = await prisma.stockMovement.findMany({
-    where: {
-      ...movementWhere,
-      createdAt: {
-        gte: dateRange.from,
-        lte: dateRange.to,
-      },
-    },
-    orderBy: { createdAt: 'asc' },
-  });
-
-  const itemRow = await prisma.item.findUnique({
-    where: { id: itemId },
-    include: { uom: true },
-  });
-
-  const closingBalance =
-    movements.length > 0
-      ? Number(movements[movements.length - 1].balanceQty)
-      : openingBalance;
-
-  return {
-    item: serializeItemForClient(itemRow),
-    openingBalance,
-    openingValue,
-    movements: movements.map((m) => ({
-      id: m.id,
-      date: m.createdAt,
-      docNumber: m.refDocNumber,
-      variantSku: m.variantSku ?? null,
-      description: formatMovementDescription(m.refType),
-      type: m.type,
-      in: m.type === 'IN' ? Number(m.qty) : null,
-      out: m.type !== 'IN' ? Math.abs(Number(m.qty)) : null,
-      balance: Number(m.balanceQty),
-      unitCost: m.unitCost != null ? Number(m.unitCost) : null,
-      balanceValue: Number(m.balanceValue),
-      notes: m.notes,
-    })),
-    closingBalance,
-    variantBreakdown: await prisma.stockMovement.groupBy({
-      by: ['variantSku'],
-      where: { itemId, variantSku: { not: null } },
-      _count: { id: true },
+  const [itemRow, kartu] = await Promise.all([
+    prisma.item.findUnique({ where: { id: itemId }, include: { uom: true } }),
+    muatKartuStok({
+      itemIds: [itemId],
+      dari: dateRange.from,
+      sampai: dateRange.to,
+      variantSku: variantSku || undefined,
+      sejakAwal: true,
     }),
+  ]);
+  const hasil = kartu.get(itemId) ?? {
+    openingBalance: 0,
+    openingValue: 0,
+    closingBalance: 0,
+    closingValue: 0,
+    tanpaDokumen: null,
+    penyesuaianTanpaVarian: 0,
+    movements: [],
   };
+  return { item: serializeItemForClient(itemRow), ...hasil };
 }
 
-/** Returns variant SKU options for an item (from item.variants and from stock movement history). Use to populate variant combobox when item is selected, before Load. */
+/**
+ * Pilihan varian sebuah barang: dari master (`Item.variants`, termasuk bentuk
+ * teks JSON / kunci huruf besar), dari baris stok, dan dari riwayat gerakan.
+ */
 export async function getItemVariantOptions(itemId: string): Promise<string[]> {
   await wajibBolehLihatInventori();
-  const [item, movementVariants] = await Promise.all([
+  const [item, movementVariants, stokVariants] = await Promise.all([
     prisma.item.findUnique({
       where: { id: itemId },
       select: { variants: true },
@@ -155,18 +93,18 @@ export async function getItemVariantOptions(itemId: string): Promise<string[]> {
       where: { itemId, variantSku: { not: null } },
       _count: { id: true },
     }),
+    prisma.inventoryValue.findMany({
+      where: { itemId, variantSku: { not: null } },
+      select: { variantSku: true },
+    }),
   ]);
-  const fromItem: string[] = [];
-  if (Array.isArray(item?.variants)) {
-    for (const v of item.variants as Array<Record<string, unknown>>) {
-      const sku = v?.sku != null ? String(v.sku).trim() : '';
-      if (sku) fromItem.push(sku);
-    }
-  }
-  const fromMovements = movementVariants
+  const fromItem = parseItemVariants(item?.variants)
+    .map((v) => (v?.sku != null ? String(v.sku).trim() : ''))
+    .filter(Boolean);
+  const lain = [...movementVariants, ...stokVariants]
     .map((g) => g.variantSku)
     .filter((s): s is string => s != null && s.trim() !== '');
-  const set = new Set<string>([...fromItem, ...fromMovements]);
+  const set = new Set<string>([...fromItem, ...lain]);
   return Array.from(set).sort();
 }
 
@@ -215,20 +153,31 @@ export type StockCardByTypeItem = {
   openingValue: number;
   closingBalance: number;
   closingValue: number;
-  movements: Array<{
-    id: string;
-    date: Date;
-    docNumber: string | null;
-    description: string;
-    type: string;
-    in: number | null;
-    out: number | null;
-    balance: number;
-    unitCost: number | null;
-    balanceValue: number;
-    notes: string | null;
-  }>;
+  movements: BarisKartuStok[];
 };
+
+/** Kartu stok untuk sekumpulan barang (per jenis / per kategori), sumber gerakan sama dengan kartu per barang. */
+async function kartuStokBanyak(
+  items: Array<{ id: string; [k: string]: unknown }>,
+  dateRange: { from: Date; to: Date }
+): Promise<StockCardByTypeItem[]> {
+  const kartu = await muatKartuStok({
+    itemIds: items.map((i) => i.id),
+    dari: dateRange.from,
+    sampai: dateRange.to,
+  });
+  return items.map((item) => {
+    const k = kartu.get(item.id);
+    return {
+      item: serializeItemForClient(item as { reorderPoint?: unknown; [k: string]: unknown }),
+      openingBalance: k?.openingBalance ?? 0,
+      openingValue: k?.openingValue ?? 0,
+      closingBalance: k?.closingBalance ?? 0,
+      closingValue: k?.closingValue ?? 0,
+      movements: k?.movements ?? [],
+    };
+  });
+}
 
 /** Stock card aggregated by item type: raw (FABRIC + ACCESSORIES) or finished (FINISHED_GOOD). */
 export async function getStockCardByType(
@@ -246,78 +195,7 @@ export async function getStockCardByType(
   if (items.length === 0) {
     return { items: [], type };
   }
-  const itemIds = items.map((i) => i.id);
-
-  const openingMovements = await prisma.stockMovement.findMany({
-    where: {
-      itemId: { in: itemIds },
-      createdAt: { lt: dateRange.from },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
-  const lastBeforeByItem = new Map<string, (typeof openingMovements)[0]>();
-  for (const m of openingMovements) {
-    if (!lastBeforeByItem.has(m.itemId)) lastBeforeByItem.set(m.itemId, m);
-  }
-
-  const movementsInRange = await prisma.stockMovement.findMany({
-    where: {
-      itemId: { in: itemIds },
-      createdAt: { gte: dateRange.from, lte: dateRange.to },
-    },
-    orderBy: [{ itemId: 'asc' }, { createdAt: 'asc' }],
-  });
-
-  const byItem = new Map<
-    string,
-    { openingBalance: number; openingValue: number; movements: typeof movementsInRange }
-  >();
-  for (const item of items) {
-    const last = lastBeforeByItem.get(item.id);
-    byItem.set(item.id, {
-      openingBalance: last ? Number(last.balanceQty) : 0,
-      openingValue: last ? Number(last.balanceValue) : 0,
-      movements: [],
-    });
-  }
-  for (const m of movementsInRange) {
-    const rec = byItem.get(m.itemId);
-    if (rec) rec.movements.push(m);
-  }
-
-  const result: StockCardByTypeItem[] = items.map((item) => {
-    const rec = byItem.get(item.id)!;
-    let balance = rec.openingBalance;
-    let balanceValue = rec.openingValue;
-    const serialized: StockCardByTypeItem['movements'] = [];
-    for (const m of rec.movements) {
-      balance = Number(m.balanceQty);
-      balanceValue = Number(m.balanceValue);
-      serialized.push({
-        id: m.id,
-        date: m.createdAt,
-        docNumber: m.refDocNumber,
-        description: formatMovementDescription(m.refType),
-        type: m.type,
-        in: m.type === 'IN' ? Number(m.qty) : null,
-        out: m.type !== 'IN' ? Math.abs(Number(m.qty)) : null,
-        balance,
-        unitCost: m.unitCost != null ? Number(m.unitCost) : null,
-        balanceValue,
-        notes: m.notes,
-      });
-    }
-    return {
-      item: serializeItemForClient(item as { reorderPoint?: unknown; [k: string]: unknown }),
-      openingBalance: rec.openingBalance,
-      openingValue: rec.openingValue,
-      closingBalance: balance,
-      closingValue: balanceValue,
-      movements: serialized,
-    };
-  });
-
-  return { items: result, type };
+  return { items: await kartuStokBanyak(items, dateRange), type };
 }
 
 /** Stock card aggregated by item category. */
@@ -338,79 +216,9 @@ export async function getStockCardByCategory(
     include: { uom: true },
     orderBy: { nameId: 'asc' },
   });
+  const kategori = { id: category.id, name: category.name, code: category.code };
   if (items.length === 0) {
-    return { items: [], category: { id: category.id, name: category.name, code: category.code } };
+    return { items: [], category: kategori };
   }
-  const itemIds = items.map((i) => i.id);
-
-  const openingMovements = await prisma.stockMovement.findMany({
-    where: {
-      itemId: { in: itemIds },
-      createdAt: { lt: dateRange.from },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
-  const lastBeforeByItem = new Map<string, (typeof openingMovements)[0]>();
-  for (const m of openingMovements) {
-    if (!lastBeforeByItem.has(m.itemId)) lastBeforeByItem.set(m.itemId, m);
-  }
-
-  const movementsInRange = await prisma.stockMovement.findMany({
-    where: {
-      itemId: { in: itemIds },
-      createdAt: { gte: dateRange.from, lte: dateRange.to },
-    },
-    orderBy: [{ itemId: 'asc' }, { createdAt: 'asc' }],
-  });
-
-  const byItem = new Map<
-    string,
-    { openingBalance: number; openingValue: number; movements: typeof movementsInRange }
-  >();
-  for (const item of items) {
-    const last = lastBeforeByItem.get(item.id);
-    byItem.set(item.id, {
-      openingBalance: last ? Number(last.balanceQty) : 0,
-      openingValue: last ? Number(last.balanceValue) : 0,
-      movements: [],
-    });
-  }
-  for (const m of movementsInRange) {
-    const rec = byItem.get(m.itemId);
-    if (rec) rec.movements.push(m);
-  }
-
-  const result: StockCardByTypeItem[] = items.map((item) => {
-    const rec = byItem.get(item.id)!;
-    let balance = rec.openingBalance;
-    let balanceValue = rec.openingValue;
-    const serialized: StockCardByTypeItem['movements'] = [];
-    for (const m of rec.movements) {
-      balance = Number(m.balanceQty);
-      balanceValue = Number(m.balanceValue);
-      serialized.push({
-        id: m.id,
-        date: m.createdAt,
-        docNumber: m.refDocNumber,
-        description: formatMovementDescription(m.refType),
-        type: m.type,
-        in: m.type === 'IN' ? Number(m.qty) : null,
-        out: m.type !== 'IN' ? Math.abs(Number(m.qty)) : null,
-        balance,
-        unitCost: m.unitCost != null ? Number(m.unitCost) : null,
-        balanceValue,
-        notes: m.notes,
-      });
-    }
-    return {
-      item: serializeItemForClient(item as { reorderPoint?: unknown; [k: string]: unknown }),
-      openingBalance: rec.openingBalance,
-      openingValue: rec.openingValue,
-      closingBalance: balance,
-      closingValue: balanceValue,
-      movements: serialized,
-    };
-  });
-
-  return { items: result, category: { id: category.id, name: category.name, code: category.code } };
+  return { items: await kartuStokBanyak(items, dateRange), category: kategori };
 }

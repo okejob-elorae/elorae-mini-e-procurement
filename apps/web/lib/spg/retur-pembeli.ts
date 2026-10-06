@@ -2,6 +2,8 @@ import { Prisma, prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { kabariTitipanTersedia } from "./titip-tersedia";
 import { catatJejak, JEJAK } from "@/lib/receivables/jejak";
+import { kunciBaris } from "./stok";
+import { terhitungSesudah } from "./stok-writer";
 
 /**
  * Barang kembali dari pembeli di counter SPG (`SpgSaleReturn`).
@@ -186,15 +188,14 @@ export async function catatReturPembeliTx(tx: Prisma.TransactionClient, input: I
 
   let kembaliKeRak = rapi.baris.filter((b) => b.condition === "LAYAK");
   if (waktu && kembaliKeRak.length) {
+    // Barang yang sudah DIHITUNG opname sesudah dikembalikan sudah terlihat di
+    // rak. Per waktu hitung BARIS, bukan waktu opname disimpan: retur sesudah
+    // barang dihitung tapi sebelum opname disimpan tetap kembali ke buku.
     const itemIds = [...new Set(kembaliKeRak.map((b) => perId.get(b.saleLineId)!.itemId))];
-    const terhitung = await tx.storeOpnameLine.findMany({
-      where: { opname: { storeId: input.storeId, countedAt: { gt: waktu } }, itemId: { in: itemIds } },
-      select: { itemId: true, variantSku: true },
-    });
-    const sudah = new Set(terhitung.map((l) => `${l.itemId}::${l.variantSku}`));
+    const sudah = await terhitungSesudah(tx, input.storeId, itemIds, waktu);
     kembaliKeRak = kembaliKeRak.filter((b) => {
       const l = perId.get(b.saleLineId)!;
-      return !sudah.has(`${l.itemId}::${l.variantSku}`);
+      return !sudah.has(kunciBaris(l.itemId, l.variantSku));
     });
   }
   if (kembaliKeRak.length) {

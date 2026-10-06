@@ -17,12 +17,13 @@ import {
 } from '@/components/ui/card';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { getWorkOrderById, receiveFG } from '@/app/actions/production';
+import { getWorkOrderById, terimaBarangJadi } from '@/app/actions/production';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 
 export default function WorkOrderReceivePage() {
   const t = useTranslations('toasts');
   const tRc = useTranslations('workOrders.receive');
+  const tTolak = useTranslations('productionErrors');
   const params = useParams();
   const router = useRouter();
   const { data: session } = useSession();
@@ -103,7 +104,9 @@ export default function WorkOrderReceivePage() {
     }
     setIsSubmitting(true);
     try {
-      await receiveFG(
+      // Penolakan berkode (WO batal/draf) dikembalikan, bukan dilempar:
+      // di build produksi pesan lemparan aksi server disamarkan.
+      const hasil = await terimaBarangJadi(
         {
           woId: String(wo.id),
           qtyReceived: received,
@@ -120,9 +123,12 @@ export default function WorkOrderReceivePage() {
             needsVariantBreakdown && rejected > 0 && rejectedVariantQtys.length > 0
               ? rejectedVariantQtys
               : undefined
-        },
-        session.user.id
+        }
       );
+      if (!hasil.ok) {
+        toast.error(tTolak.has(hasil.code) ? tTolak(hasil.code) : t('failedToReceive'));
+        return;
+      }
       toast.success(t('fgReceived'));
       router.replace(`/backoffice/work-orders/${id}`);
     } catch (err: unknown) {

@@ -12,6 +12,8 @@ import { getEffectiveHPPForItem } from '@/app/actions/hpp';
 import { auth } from '@/lib/auth';
 import { hasPermission, PERMISSIONS, requirePermission } from '@/lib/rbac';
 import { runSerializable } from '@/lib/db/tx-retry';
+import { catatKreditReturPo } from '@/lib/purchase-orders/kredit-retur-writer';
+import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 
 async function requireSession() {
   const session = await auth();
@@ -570,6 +572,15 @@ export async function processReturn(id: string, _userId?: string) {
     return { ret, poIdToRevalidate };
   });
 
+  // Sesudah commit: baris kain/aksesori mengurangi stok gudang. Barang tanpa
+  // pemetaan Jubelio dilewati penolong; FG_REJECT tidak menyentuh stok jual.
+  await antrekanPushStok(
+    parseVendorReturnLines(result.ret.lines)
+      .filter((l) => l.type === "FABRIC" || l.type === "ACCESSORIES")
+      .map((l) => l.itemId),
+    { sumber: "ADJUSTMENT", ref: `retur pemasok ${result.ret.docNumber}`, userId },
+  );
+
   getActorName(userId)
     .then((triggeredByName) =>
       notifyVendorReturnStatusUpdated(
@@ -622,25 +633,49 @@ export async function completeReturn(
       throw new Error('Return must be in PROCESSED status to complete');
     }
 
-    const lines = (ret.lines as any[]) || [];
+    // Baris retur dan rencana WO tersimpan sebagai STRING JSON. Dulu diulang
+    // sebagai `any[]` (per huruf), jadi `returnedQty` WO tidak pernah bertambah.
+    // Qty dijumlah per barang dengan Decimal (bisa teks, kain bisa pecahan),
+    // lalu rencana dibaca dan ditulis SEKALI. Penjaga PROCESSED di atas, di
+    // transaksi serializable yang sama, membuat penambahan ini sekali per retur.
+    if (ret.woId) {
+      const kembaliPerBarang = new Map<string, Decimal>();
+      for (const line of parseVendorReturnLines(ret.lines)) {
+        if (line.type !== 'FABRIC' && line.type !== 'ACCESSORIES') continue;
+        const qty = Number(line.qty);
+        if (!Number.isFinite(qty) || qty <= 0) continue;
+        kembaliPerBarang.set(line.itemId, (kembaliPerBarang.get(line.itemId) ?? new Decimal(0)).plus(qty));
+      }
 
-    for (const line of lines) {
-      if ((line.type === 'FABRIC' || line.type === 'ACCESSORIES') && ret.woId) {
+      if (kembaliPerBarang.size > 0) {
         const wo = await tx.workOrder.findUnique({
           where: { id: ret.woId },
           select: { consumptionPlan: true }
         });
-
-        if (wo) {
-          const plan = (wo.consumptionPlan as any[]) || [];
-          const planItem = plan.find((p: any) => p.itemId === line.itemId);
-          if (planItem) {
-            planItem.returnedQty = (planItem.returnedQty || 0) + line.qty;
+        let plan: unknown = wo?.consumptionPlan ?? null;
+        if (typeof plan === 'string') {
+          try {
+            plan = JSON.parse(plan);
+          } catch {
+            plan = null;
           }
-          await tx.workOrder.update({
-            where: { id: ret.woId },
-            data: { consumptionPlan: JSON.stringify(plan) }
-          });
+        }
+        // Rencana yang tak terbaca dibiarkan apa adanya — jangan ditimpa "[]".
+        if (Array.isArray(plan)) {
+          const baris = plan as Array<{ itemId?: unknown; returnedQty?: unknown }>;
+          let berubah = false;
+          for (const [itemId, qty] of kembaliPerBarang) {
+            const planItem = baris.find((p) => p?.itemId === itemId);
+            if (!planItem) continue;
+            planItem.returnedQty = new Decimal(Number(planItem.returnedQty) || 0).plus(qty).toNumber();
+            berubah = true;
+          }
+          if (berubah) {
+            await tx.workOrder.update({
+              where: { id: ret.woId },
+              data: { consumptionPlan: JSON.stringify(baris) }
+            });
+          }
         }
       }
     }
@@ -657,13 +692,21 @@ export async function completeReturn(
       }
     });
 
-    return ret;
+    // Retur yang terkait GRN sebuah PO mengurangi utang PO itu (harga beli PO),
+    // di transaksi yang sama. Tanpa jurnal — GL belum dipersenjatai.
+    const kreditPo = await catatKreditReturPo(tx, { returnId: id, userId });
+
+    return { ...ret, kreditPo };
   });
 
   revalidatePath('/backoffice/vendor-returns');
   revalidatePath(`/backoffice/vendor-returns/${id}`);
   if (completeResult.woId) {
     revalidatePath(`/backoffice/work-orders/${completeResult.woId}`);
+  }
+  if (completeResult.kreditPo.poId) {
+    revalidatePath(`/backoffice/purchase-orders/${completeResult.kreditPo.poId}`);
+    revalidatePath('/backoffice/supplier-payments');
   }
 
   getActorName(userId)

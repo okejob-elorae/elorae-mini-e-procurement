@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { muatanCheckin, muatanCheckout, muatanOpname, muatanReturPembeli, muatanTerima, susunCheckin } from "./luring-muatan";
+import { BATAS_STOK_LURING_MS } from "@/lib/pwa/waktu-luring";
 
 const WAKTU = Date.parse("2026-10-03T02:15:00.000Z");
 
@@ -103,6 +104,70 @@ describe("muatanOpname / muatanReturPembeli", () => {
       waktuTangkap: "2026-10-03T02:15:00.000Z",
       visitId: "v1",
     });
+  });
+
+  it("carries each line's count age, so the server judges it against the balance when that shelf was counted", () => {
+    // Kemeja dihitung 40 menit sebelum opname masuk antrean, celana belum punya umur (klien lama).
+    const m = muatanOpname({
+      localId: "op-2",
+      storeId: "t1",
+      waktu: WAKTU,
+      visitId: null,
+      visitClientId: "vc-1",
+      baris: [
+        { itemId: "i1", variantSku: null, qtyCounted: 10, productName: "Kemeja", umurHitungMs: 40 * 60_000 },
+        { itemId: "i2", variantSku: "i2-L", qtyCounted: 3, productName: "Celana — L" },
+      ],
+      note: null,
+    });
+    expect(m.baris).toEqual([
+      { itemId: "i1", variantSku: null, qtyCounted: 10, umurHitungMs: 2_400_000 },
+      { itemId: "i2", variantSku: "i2-L", qtyCounted: 3 },
+    ]);
+    // Umur dihitung dari saat tangkap, jadi waktu tangkap tetap ikut — server memakai keduanya.
+    expect(m).toMatchObject({ waktuTangkap: "2026-10-03T02:15:00.000Z", visitClientId: "vc-1", luring: true });
+    expect(JSON.stringify(m)).not.toContain("Kemeja");
+  });
+
+  it("drops a count age the phone could not have produced instead of sending it", () => {
+    const m = muatanOpname({
+      localId: "op-3",
+      storeId: "t1",
+      waktu: WAKTU,
+      visitId: "v1",
+      visitClientId: null,
+      baris: [
+        { itemId: "i1", variantSku: null, qtyCounted: 1, productName: "A", umurHitungMs: Number.NaN },
+        { itemId: "i2", variantSku: null, qtyCounted: 1, productName: "B", umurHitungMs: -5 },
+        { itemId: "i3", variantSku: null, qtyCounted: 1, productName: "C", umurHitungMs: 1500.6 },
+      ],
+      note: null,
+    });
+    // Server menolak seluruh opname bila satu umur tidak sah — antrean tidak boleh macet karenanya.
+    expect(m.baris).toEqual([
+      { itemId: "i1", variantSku: null, qtyCounted: 1 },
+      { itemId: "i2", variantSku: null, qtyCounted: 1 },
+      { itemId: "i3", variantSku: null, qtyCounted: 1, umurHitungMs: 1501 },
+    ]);
+  });
+
+  it("caps a count age at the server's own limit instead of sending a number the action schema rejects", () => {
+    // Draf rusak / jam HP melompat: umur 1e300 ms. Skema aksi (`z.number().int()`)
+    // menolak bilangan di atas bilangan bulat aman — seluruh opname akan ditolak.
+    const m = muatanOpname({
+      localId: "op-4",
+      storeId: "t1",
+      waktu: WAKTU,
+      visitId: "v1",
+      visitClientId: null,
+      baris: [
+        { itemId: "i1", variantSku: null, qtyCounted: 1, productName: "A", umurHitungMs: 1e300 },
+        { itemId: "i2", variantSku: null, qtyCounted: 1, productName: "B", umurHitungMs: BATAS_STOK_LURING_MS + 1 },
+      ],
+      note: null,
+    });
+    expect(m.baris.map((b) => b.umurHitungMs)).toEqual([BATAS_STOK_LURING_MS, BATAS_STOK_LURING_MS]);
+    expect(m.baris.every((b) => Number.isSafeInteger(b.umurHitungMs))).toBe(true);
   });
 
   it("sends a shopper return exactly like the counter does, with the same key", () => {

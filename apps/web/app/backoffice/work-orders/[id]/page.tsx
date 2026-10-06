@@ -47,7 +47,7 @@ import { formatDisplayDate, formatDisplayDateTime } from '@/lib/date-only';
 import {
   getWorkOrderById,
   getWorkOrderRollAllocationStatus,
-  issueWorkOrder,
+  terbitkanWorkOrder,
   cancelWorkOrder,
   getMaterialIssueForPrint,
   updateWOHppAdjustments,
@@ -82,6 +82,7 @@ export default function WorkOrderDetailPage() {
   const t = useTranslations('production');
   const tToasts = useTranslations('toasts');
   const tWO = useTranslations('workOrders');
+  const tTolak = useTranslations('productionErrors');
   const tD = useTranslations('workOrders.detail');
   const tNota = useTranslations('notaRegister');
   const tTable = useTranslations('tableHeaders');
@@ -172,19 +173,31 @@ export default function WorkOrderDetailPage() {
   const handleIssue = async () => {
     if (!session?.user?.id || !wo) return;
     try {
-      await issueWorkOrder(String(wo.id), session.user.id);
+      // Penolakan (sudah dibatalkan, sudah terbit, …) dikembalikan sebagai kode.
+      const hasil = await terbitkanWorkOrder(String(wo.id));
+      if (!hasil.ok) {
+        toast.error(tTolak.has(hasil.code) ? tTolak(hasil.code) : tToasts('failedToIssue'));
+        setWO(await getWorkOrderById(id));
+        return;
+      }
       toast.success(tToasts('workOrderIssued'));
       const updated = await getWorkOrderById(id);
       setWO(updated);
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : tToasts('failedToIssue'));
+    } catch {
+      toast.error(tToasts('failedToIssue'));
     }
   };
 
   const handleCancel = async () => {
     if (!session?.user?.id || !wo || !confirm(tWO('confirmCancelWO'))) return;
     try {
-      await cancelWorkOrder(String(wo.id), session.user.id);
+      // Penolakan (bahan sudah keluar, sudah ada penerimaan, …) dikembalikan sebagai kode.
+      const hasil = await cancelWorkOrder(String(wo.id), session.user.id);
+      if (!hasil.ok) {
+        toast.error(tTolak.has(hasil.code) ? tTolak(hasil.code) : tToasts('failedToCancel'));
+        setWO(await getWorkOrderById(id)); // tampilkan keadaan WO yang sebenarnya
+        return;
+      }
       toast.success(tToasts('workOrderCancelled'));
       const updated = await getWorkOrderById(id);
       setWO(updated);

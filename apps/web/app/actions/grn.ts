@@ -16,6 +16,8 @@ import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { computeActualLeadDays } from '@/lib/leadtime/calculations';
 import { fanOutAdminNotification } from '@/lib/notifications/admin-fanout';
 import { runSerializable } from "@/lib/db/tx-retry";
+import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
+import { alasanTolakPenerimaanPo } from "@/lib/purchase-orders/penerimaan";
 
 const grnItemSchema = z.object({
   itemId: z.string().min(1),
@@ -73,8 +75,40 @@ function parseGrnStoredLines(raw: unknown): StoredGrnLine[] {
 }
 
 /**
+ * Penolakan GRN berkode. `createGRN` melemparnya (pemanggil lama + tes);
+ * formulir GRN memakai `simpanGRN`, yang mengembalikannya sebagai `{ ok:false, code }`.
+ */
+const PESAN_TOLAK_GRN = {
+  PO_TIDAK_DITEMUKAN: "PO tidak ditemukan.",
+  PO_DIBATALKAN: "PO ini sudah dibatalkan, jadi barang tidak bisa diterima ke PO ini.",
+  PO_BELUM_DISETUJUI: "PO ini masih draf dan belum disetujui. Setujui dan kirim PO dulu sebelum menerima barang.",
+  PO_DITUTUP: "PO ini sudah ditutup, jadi barang tidak bisa diterima ke PO ini lagi.",
+} as const;
+
+class GrnDitolakError extends Error {
+  readonly code: keyof typeof PESAN_TOLAK_GRN;
+
+  constructor(code: keyof typeof PESAN_TOLAK_GRN) {
+    super(PESAN_TOLAK_GRN[code]);
+    this.name = "GrnDitolakError";
+    this.code = code;
+  }
+}
+
+/**
  * `_userId` dipertahankan supaya pemanggil lama tidak berubah, tetapi TIDAK
  * dipakai: penerima GRN selalu pengguna sesi.
+ *
+ * Status PO dibaca DI DALAM transaksi serializable sebelum stok disentuh, dan
+ * baris PO selalu ditulis transaksi ini: pembatalan atau "Tutup PO" yang commit
+ * di tengah GRN membuat GRN konflik, diulang, lalu ditolak (`PO_DIBATALKAN` /
+ * `PO_DITUTUP`).
+ *
+ * CLOSED punya dua arti: lengkap lewat GRN (`closedAt` kosong, semua baris
+ * diterima penuh) atau ditutup sebelum lengkap — lewat "Tutup PO" (`closedAt`
+ * terisi) atau jalur tutup lama yang belum menulis `closedAt` (barang kurang).
+ * Hanya yang lengkap boleh menerima terima-lebih yang sah (lewat ambang /
+ * persetujuan pemilik), sama seperti PO berstatus OVER; sisanya `PO_DITUTUP`.
  */
 export async function createGRN(data: z.infer<typeof grnSchema>, _userId?: string) {
   void _userId;
@@ -86,7 +120,27 @@ export async function createGRN(data: z.infer<typeof grnSchema>, _userId?: strin
   const validated = grnSchema.parse(data);
   await assertLinesVariantSkusMatchItemDefinitions(prisma.item, validated.items);
 
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await runSerializable(async (tx) => {
+    if (validated.poId) {
+      const po = await tx.purchaseOrder.findUnique({
+        where: { id: validated.poId },
+        select: { status: true, closedAt: true, items: { select: { qty: true, receivedQty: true } } },
+      });
+      if (!po) throw new GrnDitolakError("PO_TIDAK_DITEMUKAN");
+      const tolak = alasanTolakPenerimaanPo(po.status);
+      // CLOSED tanpa `closedAt` DAN semua baris diterima penuh = lengkap lewat GRN:
+      // terima-lebih tetap boleh. CLOSED tanpa `closedAt` yang barangnya kurang =
+      // ditutup lewat jalur lama (sebelum `closedAt` ada) → tetap ditolak.
+      const lengkapNormal =
+        tolak === "PO_DITUTUP" &&
+        po.closedAt == null &&
+        po.items.every((l) => new Decimal(l.receivedQty.toString()).gte(l.qty.toString()));
+      if (tolak && !lengkapNormal) throw new GrnDitolakError(tolak);
+      // Tulis baris PO sekarang juga (terima-lebih bisa melewatkan pembaruan status):
+      // perubahan PO oleh transaksi lain sesudah pembacaan di atas jadi konflik serialisasi.
+      await tx.purchaseOrder.update({ where: { id: validated.poId }, data: { updatedAt: new Date() } });
+    }
+
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -351,6 +405,12 @@ export async function createGRN(data: z.infer<typeof grnSchema>, _userId?: strin
     changes: { after: { docNumber: result.docNumber } },
   }).catch(() => {});
 
+  // Sesudah commit: kirim stok baru ke Jubelio (best-effort, tidak pernah melempar).
+  await antrekanPushStok(
+    validated.items.map((i) => i.itemId),
+    { sumber: 'GRN', ref: result.docNumber, userId },
+  );
+
   try {
     const jr = await postGrnJournal(result.id, userId);
     if (!jr.ok && jr.code !== "NOTHING_TO_POST") {
@@ -383,6 +443,28 @@ export async function createGRN(data: z.infer<typeof grnSchema>, _userId?: strin
   }
 
   return result;
+}
+
+export type KodeTolakGrn = keyof typeof PESAN_TOLAK_GRN;
+
+export type SimpanGRNResult =
+  | { ok: true; id: string; docNumber: string }
+  | { ok: false; code: KodeTolakGrn };
+
+/**
+ * `createGRN` untuk formulir GRN: penolakan berkode DIKEMBALIKAN, bukan
+ * dilempar — di build produksi Next menyamarkan pesan lemparan aksi server,
+ * jadi layar hanya bisa menjelaskan "PO sudah dibatalkan" lewat kodenya.
+ * Galat lain (izin, validasi) tetap dilempar seperti `createGRN`.
+ */
+export async function simpanGRN(data: GRNFormData): Promise<SimpanGRNResult> {
+  try {
+    const grn = await createGRN(data);
+    return { ok: true, id: grn.id, docNumber: grn.docNumber };
+  } catch (error) {
+    if (error instanceof GrnDitolakError) return { ok: false, code: error.code };
+    throw error;
+  }
 }
 
 /** Penjaga baca: sesi + salah satu izin (melempar seperti `requirePermission`). */
@@ -708,15 +790,21 @@ export async function declineGRNByOwner(id: string, _userId?: string) {
   const userId = await wajibPemilik('decline');
 
   let poIdForRevalidate: string | null = null;
+  // Untuk push stok ke Jubelio sesudah commit; diisi ulang tiap percobaan.
+  let barangDibalik: string[] = [];
+  let nomorGrn = '';
 
   // Serializable + diulang: dua tolak serentak dulu sama-sama lolos penjaga dan
   // membalik stok dua kali. Sekarang yang kalah diulang, melihat GRN sudah
   // ditolak, lalu berhenti sebelum menyentuh stok.
   await runSerializable(async (tx) => {
     poIdForRevalidate = null;
+    barangDibalik = [];
+    nomorGrn = '';
     const grn = await tx.gRN.findUnique({ where: { id } });
     if (!grn) throw new Error('GRN not found');
     poIdForRevalidate = grn.poId ?? null;
+    nomorGrn = grn.docNumber;
     if (grn.ownerDeclinedAt != null) {
       throw new Error('This GRN was already declined');
     }
@@ -787,6 +875,7 @@ export async function declineGRNByOwner(id: string, _userId?: string) {
         },
       });
       reversedLines += 1;
+      barangDibalik.push(itemId);
     }
 
     if (reversedLines === 0) {
@@ -850,6 +939,9 @@ export async function declineGRNByOwner(id: string, _userId?: string) {
       },
     });
   });
+
+  // Sesudah commit: stok yang dibalik dikirim ke Jubelio (best-effort).
+  await antrekanPushStok(barangDibalik, { sumber: 'GRN_DECLINE', ref: nomorGrn, userId });
 
   try {
     const jr = await postGrnReversalJournal(id, userId);

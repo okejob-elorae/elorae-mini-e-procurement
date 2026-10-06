@@ -39,8 +39,11 @@ import {
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { dinamis } from '@/lib/i18n/dinamis';
-import { BarisBarangEditor, type PilihanBarang } from '../retur-toko/BarisBarangEditor';
-import type { BarisBarang } from '@/lib/receivables/return-writer';
+import type { PilihanBarang } from '../retur-toko/BarisBarangEditor';
+import type { BarisKurangKirim } from '@/lib/konsinyasi/writer';
+import { newLocalId } from '@/lib/pwa/id-lokal';
+import { BarisKirimEditor, barisKirimKosong, useVarianKirim } from './BarisKirimEditor';
+import { alasanBelumKirim, untukServer, type AlasanBelumKirim, type BarisKirimIsian } from './kirim-isian';
 import type { BarisSiklus, TahapSiklusLengkap } from '@/lib/konsinyasi/queries';
 import { bukaSiklusAction, kirimTitipanAction } from '@/app/actions/konsinyasi';
 import { NADA_TAHAP, URUT_TAHAP } from './tahap';
@@ -91,8 +94,15 @@ export function KonsinyasiClient({
   const [kirimTerbuka, setKirimTerbuka] = useState(false);
   const [tokoKirim, setTokoKirim] = useState('');
   const [tglKirim, setTglKirim] = useState(hariIniWib());
-  const [barang, setBarang] = useState<BarisBarang[]>([]);
+  const [barang, setBarang] = useState<BarisKirimIsian[]>(() => [barisKirimKosong()]);
   const [catatanKirim, setCatatanKirim] = useState('');
+  // Dibuat SEKALI per isian formulir: klik ganda atau simpan ulang sesudah jawaban hilang
+  // tercatat sebagai kiriman yang sama — satu kiriman, satu potongan stok. Diganti hanya
+  // sesudah kiriman tersimpan.
+  const [kunciKirim, setKunciKirim] = useState(() => newLocalId());
+  const [kurang, setKurang] = useState<BarisKurangKirim[]>([]);
+  const { varian, muat: muatVarian, segarkan: segarkanVarian } = useVarianKirim();
+  const belumKirim = alasanBelumKirim(tokoKirim, barang, varian);
 
   const jumlah = (x: TahapSiklusLengkap) => baris.filter((b) => b.tahap === x).length;
   const tampil = saring ? baris.filter((b) => b.tahap === saring) : baris;
@@ -111,6 +121,65 @@ export function KonsinyasiClient({
         router.refresh();
       } else {
         toast.error(td(`err${hasil.kode}`));
+      }
+    });
+  };
+
+  const tulisAlasan = (a: AlasanBelumKirim): string => {
+    switch (a.kode) {
+      case 'TOKO':
+        return t('kirimBaris.whyStore');
+      case 'BARIS':
+        return t('kirimBaris.whyRows');
+      case 'NAMA':
+        return t('kirimBaris.whyName', { n: a.baris });
+      case 'QTY':
+        return t('kirimBaris.whyQty', { n: a.baris });
+      case 'MEMUAT':
+        return t('kirimBaris.whyLoading', { n: a.baris });
+      case 'GAGAL_MUAT':
+        return t('kirimBaris.whyLoadFailed', { n: a.baris, item: a.nama });
+      case 'VARIAN':
+        return t('kirimBaris.whyVariant', { n: a.baris, item: a.nama });
+    }
+  };
+
+  const simpanKirim = () => {
+    if (pending || belumKirim) return;
+    setKurang([]);
+    startTransition(async () => {
+      try {
+        const hasil = await kirimTitipanAction({
+          storeId: tokoKirim,
+          shippedAt: tglKirim,
+          items: untukServer(barang),
+          note: catatanKirim,
+          idempotencyKey: kunciKirim,
+        });
+        if (hasil.ok) {
+          toast.success(
+            hasil.ulang
+              ? t('kirimBaris.okAlreadyShipped', { noKirim: hasil.noKirim })
+              : t('kirimBaris.okShippedNo', { noKirim: hasil.noKirim }),
+          );
+          setKirimTerbuka(false);
+          setTokoKirim('');
+          setBarang([barisKirimKosong()]);
+          setCatatanKirim('');
+          setKunciKirim(newLocalId());
+          segarkanVarian();
+          router.refresh();
+          return;
+        }
+        if (hasil.kode === 'STOK_KURANG' && hasil.kurang) {
+          setKurang(hasil.kurang);
+          // Angka tersedia di baris ikut diperbarui, supaya yang terlihat sama dengan rinciannya.
+          for (const id of new Set(hasil.kurang.map((k) => k.itemId))) void muatVarian(id, true);
+        }
+        toast.error(td(`err${hasil.kode}`));
+      } catch {
+        // Jawaban hilang di jalan: kuncinya tetap, simpan ulang mendapat kiriman yang sama.
+        toast.error(t('errGAGAL'));
       }
     });
   };
@@ -335,11 +404,14 @@ export function KonsinyasiClient({
               </div>
             </div>
 
-            <BarisBarangEditor
+            <BarisKirimEditor
               rows={barang}
               onChange={setBarang}
-              qtyLabel={t('qty')}
               katalog={katalog}
+              varian={varian}
+              muatVarian={muatVarian}
+              kurang={kurang}
+              disabled={pending}
             />
 
             <div className="space-y-2">
@@ -347,33 +419,10 @@ export function KonsinyasiClient({
               <Textarea id="kk-catatan" value={catatanKirim} onChange={(e) => setCatatanKirim(e.target.value)} rows={2} />
             </div>
           </div>
-          <DialogFooter>
-            <Button
-              disabled={
-                pending ||
-                !tokoKirim ||
-                barang.length === 0 ||
-                !barang.every((b) => b.itemName.trim() && b.qty > 0)
-              }
-              onClick={() =>
-                jalankan(
-                  () =>
-                    kirimTitipanAction({
-                      storeId: tokoKirim,
-                      shippedAt: tglKirim,
-                      items: barang,
-                      note: catatanKirim,
-                    }),
-                  t('okShipped'),
-                  () => {
-                    setKirimTerbuka(false);
-                    setTokoKirim('');
-                    setBarang([]);
-                    setCatatanKirim('');
-                  },
-                )
-              }
-            >
+          <DialogFooter className="flex-col items-stretch gap-2 sm:flex-col sm:items-end">
+            {/* Tombol yang dimatikan menyebut sebabnya: baris mana yang belum siap. */}
+            {belumKirim && <p className="text-xs text-muted-foreground sm:text-right">{tulisAlasan(belumKirim)}</p>}
+            <Button disabled={pending || belumKirim !== null} onClick={simpanKirim}>
               {t('saveShip')}
             </Button>
           </DialogFooter>

@@ -3,16 +3,21 @@ import { kunciHariWib } from "@/lib/dashboard/tren";
 import { susunRencanaPerKelas } from "@/lib/stores/kelas-toko";
 import type { AlasanMenurun } from "./toko-menurun";
 import { jadwalHariIniSales } from "./jadwal-queries";
-import { pengaturanSalesman, tokoMenurun, tokoSaya } from "./queries";
+import { pengaturanSalesman, tokoSaya } from "./queries";
+import { tokoMenurunHp } from "./toko-menurun-queries";
 
 /**
  * Bahan layar "Rute hari ini". Urutannya dihitung di HP (`rute.ts`), karena
  * titik awalnya posisi HP; server hanya menyiapkan tokonya.
  *
  * Rencana = PERSIS rencana kunjungan beranda: "toko saya" (`tokoSaya`), toko
- * yang mulai jarang pesan (`tokoMenurun`), dinilai per kelas toko
+ * yang mulai jarang pesan (`tokoMenurunHp`), dinilai per kelas toko
  * (`susunRencanaPerKelas`) dengan batas hari yang sama (`pengaturanSalesman`).
  * Aturannya tidak ditulis ulang di sini — kalau beranda berubah, rute ikut.
+ *
+ * Toko menurun SELALU versi HP: versi kantor (`tokoMenurun`) memuat total
+ * pesanan KONSI, dan urutan rencana dihitung dari rasionya — posisi toko
+ * konsi di antara toko lain membuka seberapa tajam total konsinya turun.
  *
  * Salesman boleh menambah toko sendiri; pilihannya hanya dari "toko saya",
  * jadi semua toko itu ikut dikirim (dengan tanda apakah masuk rencana).
@@ -69,7 +74,7 @@ export async function ruteHariIni(salesmanId: string, sekarang: Date): Promise<D
   const ids = [...milik, ...jadwal.map((j) => j.storeId).filter((id) => !milik.has(id))];
   const awalHari = new Date(`${tanggal}T00:00:00+07:00`);
   const [menurun, alamat, kunjungan] = await Promise.all([
-    tokoMenurun(
+    tokoMenurunHp(
       tokoRencana.map((t) => ({ storeId: t.storeId, nama: t.nama })),
       sekarang,
     ),

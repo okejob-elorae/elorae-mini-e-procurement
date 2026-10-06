@@ -36,7 +36,74 @@ const compositeKey = (itemId: string, variantSku?: string | null) => ({
   itemId_variantSku: { itemId, variantSku: normalizeVariantSku(variantSku) },
 });
 
-export async function calculateMovingAverage(
+export interface HasilRataRataMasuk {
+  qtyBaru: Decimal;
+  avgBaru: Decimal;
+  nilaiLama: Decimal;
+  nilaiMasuk: Decimal;
+  nilaiBaru: Decimal;
+}
+
+/**
+ * Rata-rata bergerak saat barang MASUK (murni, diuji dengan angka).
+ * Stok lama ≤ 0 tidak ikut ditimbang: barang minus sudah keluar dengan harga
+ * lamanya, jadi yang tersisa di gudang bernilai harga masuk. Menimbang qty
+ * negatif membuat rata-rata melambung (−5 @ 8.000 + 10 @ 9.000 → 10.000).
+ */
+export function hitungRataRataMasuk(p: {
+  qtyLama: Decimal.Value;
+  avgLama: Decimal.Value;
+  qtyMasuk: Decimal.Value;
+  hargaMasuk: Decimal.Value;
+}): HasilRataRataMasuk {
+  const qtyLama = new Decimal(p.qtyLama);
+  const avgLama = new Decimal(p.avgLama);
+  const qtyMasuk = new Decimal(p.qtyMasuk);
+  const hargaMasuk = new Decimal(p.hargaMasuk);
+  const qtyBaru = qtyLama.plus(qtyMasuk);
+  const nilaiLama = qtyLama.mul(avgLama);
+  const nilaiMasuk = qtyMasuk.mul(hargaMasuk);
+
+  if (qtyLama.gt(0) && qtyBaru.gt(0)) {
+    const nilaiBaru = nilaiLama.plus(nilaiMasuk);
+    return { qtyBaru, avgBaru: nilaiBaru.div(qtyBaru), nilaiLama, nilaiMasuk, nilaiBaru };
+  }
+  // Stok lama ≤ 0 → harga masuk; stok lama > 0 tapi qty masuk negatif sampai habis → harga lama.
+  const avgBaru = qtyLama.lte(0) ? hargaMasuk : avgLama;
+  return { qtyBaru, avgBaru, nilaiLama, nilaiMasuk, nilaiBaru: qtyBaru.mul(avgBaru) };
+}
+
+/** Baris stok tanpa varian di basis data bisa ber-`variantSku` null ATAU "" — terima keduanya. */
+async function cariBarisStok(client: any, itemId: string, variantSku?: string | null) {
+  const v = variantSku?.trim() ?? '';
+  return v === ''
+    ? client.inventoryValue.findFirst({ where: { itemId, OR: [{ variantSku: null }, { variantSku: '' }] } })
+    : client.inventoryValue.findFirst({ where: { itemId, variantSku } });
+}
+
+/*
+ * Antrean per klien (per transaksi). `createGRN` memanggil `calculateMovingAverage`
+ * lewat `Promise.all` di SATU transaksi, jadi dua baris barang yang sama saling
+ * selang di setiap `await`: barang baru → keduanya membuat baris (P2002, GRN
+ * gagal); barang lama → baris kedua membaca rata-rata sebelum baris pertama
+ * menulisnya (10 @ 1.000 + 10 @ 4.000 + 10 @ 7.000 berakhir 90.000, bukan 120.000).
+ * Antrean tidak menyeberangi transaksi: penulis dari transaksi lain dijaga kunci baris.
+ */
+const antreanKlien = new WeakMap<object, Promise<unknown>>();
+
+function berurutanPerKlien<T>(klien: object, kerja: () => Promise<T>): Promise<T> {
+  const sebelumnya = antreanKlien.get(klien) ?? Promise.resolve();
+  const hasil = sebelumnya.then(kerja);
+  antreanKlien.set(klien, hasil.catch(() => undefined));
+  return hasil;
+}
+
+/**
+ * Wajib dipanggil di dalam transaksi (`tx`): kenaikan qty dan penulisan
+ * rata-rata adalah dua pernyataan, dan hanya kunci baris transaksi yang
+ * membuat keduanya tidak diselang penulis lain.
+ */
+export function calculateMovingAverage(
   itemId: string,
   incomingQty: Decimal,
   incomingCost: Decimal,
@@ -44,60 +111,71 @@ export async function calculateMovingAverage(
   variantSku?: string | null
 ): Promise<CostCalculationResult> {
   const prismaClient = tx || prisma;
-  const where = compositeKey(itemId, variantSku);
+  return berurutanPerKlien(prismaClient, () =>
+    tulisRataRataMasuk(prismaClient, itemId, incomingQty, incomingCost, variantSku)
+  );
+}
 
-  // Get current inventory state
-  const current = await prismaClient.inventoryValue.findUnique({
-    where,
-  });
-
-  const previousQty = current?.qtyOnHand ? new Decimal(current.qtyOnHand.toString()) : new Decimal(0);
-  const previousAvgCost = current?.avgCost ? new Decimal(current.avgCost.toString()) : new Decimal(0);
-  const previousTotalValue = previousQty.mul(previousAvgCost);
-
-  // Calculate new totals
-  const newTotalQty = previousQty.plus(incomingQty);
-  const incomingTotalValue = incomingQty.mul(incomingCost);
-  const newTotalValue = previousTotalValue.plus(incomingTotalValue);
-
-  // Calculate new average cost
-  // Formula: (PreviousTotalValue + IncomingTotalValue) / (PreviousQty + IncomingQty)
-  let newAvgCost: Decimal;
-  if (newTotalQty.gt(0)) {
-    newAvgCost = newTotalValue.div(newTotalQty);
-  } else {
-    newAvgCost = new Decimal(0);
+async function tulisRataRataMasuk(
+  prismaClient: any,
+  itemId: string,
+  incomingQty: Decimal,
+  incomingCost: Decimal,
+  variantSku?: string | null
+): Promise<CostCalculationResult> {
+  // Lookup toleran null/"" — `findUnique` dengan kunci "" melewatkan baris null
+  // lalu membuat baris kembaran (stok terbelah dua).
+  let baris = await cariBarisStok(prismaClient, itemId, variantSku);
+  if (!baris) {
+    baris = await prismaClient.inventoryValue.create({
+      data: {
+        itemId,
+        variantSku: normalizeVariantSku(variantSku),
+        qtyOnHand: 0,
+        avgCost: 0,
+        totalValue: 0,
+        lastUpdated: new Date(),
+      },
+    });
   }
 
-  // Update or create inventory record
-  await prismaClient.inventoryValue.upsert({
-    where,
-    create: {
-      itemId,
-      variantSku: normalizeVariantSku(variantSku),
-      qtyOnHand: newTotalQty.toNumber(),
-      avgCost: newAvgCost.toNumber(),
-      totalValue: newTotalValue.toNumber(),
-      lastUpdated: new Date(),
-    },
-    update: {
-      qtyOnHand: newTotalQty.toNumber(),
-      avgCost: newAvgCost.toNumber(),
-      totalValue: newTotalValue.toNumber(),
-      lastUpdated: new Date(),
+  // Qty ditambah ATOM dulu: pernyataan ini mengunci baris dan mengembalikan
+  // keadaan terbaru, jadi penulis lain yang serentak tidak bisa tertimpa
+  // (dulu baca-ubah-tulis: dua penerimaan serentak 10 + 10 berakhir 10).
+  const terkunci = await prismaClient.inventoryValue.update({
+    where: { id: baris.id },
+    data: { qtyOnHand: { increment: incomingQty.toNumber() }, lastUpdated: new Date() },
+  });
+
+  const newQty = new Decimal(terkunci.qtyOnHand.toString());
+  const previousQty = newQty.minus(incomingQty);
+  const previousAvgCost = new Decimal(terkunci.avgCost.toString());
+  const r = hitungRataRataMasuk({
+    qtyLama: previousQty,
+    avgLama: previousAvgCost,
+    qtyMasuk: incomingQty,
+    hargaMasuk: incomingCost,
+  });
+
+  // Baris sudah terkunci oleh pernyataan di atas sampai transaksi selesai.
+  await prismaClient.inventoryValue.update({
+    where: { id: baris.id },
+    data: {
+      avgCost: r.avgBaru.toNumber(),
+      totalValue: r.nilaiBaru.toNumber(),
     },
   });
 
   return {
     previousQty,
     previousAvgCost,
-    previousTotalValue,
+    previousTotalValue: r.nilaiLama,
     incomingQty,
     incomingUnitCost: incomingCost,
-    incomingTotalValue,
-    newQty: newTotalQty,
-    newAvgCost,
-    newTotalValue,
+    incomingTotalValue: r.nilaiMasuk,
+    newQty,
+    newAvgCost: r.avgBaru,
+    newTotalValue: r.nilaiBaru,
   };
 }
 

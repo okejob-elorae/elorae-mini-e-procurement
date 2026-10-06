@@ -1,5 +1,6 @@
 import { reserveFieldSalesOrder, type OversellAlert, type Prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
+import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 import {
   BarangIndenBelumTercatatError,
   barisPerluDicadangkan,
@@ -233,10 +234,17 @@ export type HasilRilisJendela =
  * Serializable: persetujuan yang berjalan bersamaan membaca `releasedAt` di
  * transaksinya sendiri, jadi salah satunya diulang dan pesanan itu tidak bisa
  * lolos tanpa dicadangkan oleh keduanya.
+ *
+ * Sesudah commit: cadangan menurunkan `available`, jadi barang yang
+ * dicadangkan didorong ke Jubelio (best-effort, tidak pernah melempar).
  */
 export async function rilisJendelaInden(input: { id: string; userId: string }): Promise<HasilRilisJendela> {
+  let barangDicadangkan: string[] = [];
+  let hasil: HasilRilisJendela;
   try {
-    return await runSerializable(async (tx): Promise<HasilRilisJendela> => {
+    hasil = await runSerializable(async (tx): Promise<HasilRilisJendela> => {
+      // Diisi ulang setiap percobaan: percobaan yang diulang tidak boleh mewariskan barangnya.
+      barangDicadangkan = [];
       const now = new Date();
       const swap = await tx.preorderWindow.updateMany({ where: { id: input.id, releasedAt: null }, data: { releasedAt: now } });
       if (swap.count === 0) {
@@ -269,7 +277,10 @@ export async function rilisJendelaInden(input: { id: string; userId: string }): 
       const oversell: OversellAlert[] = [];
       for (const o of orders) {
         const r = await cadangkanPesananInden(tx, { orderNo: o.orderNo, lines: o.lines });
-        if (r.baris > 0) pesanan += 1;
+        if (r.baris > 0) {
+          pesanan += 1;
+          barangDicadangkan.push(...barisPerluDicadangkan(o.lines).map((l) => l.itemId));
+        }
         baris += r.baris;
         oversell.push(...r.oversell);
       }
@@ -291,4 +302,8 @@ export async function rilisJendelaInden(input: { id: string; userId: string }): 
     if (e instanceof BarangIndenBelumTercatatError) return { ok: false, kode: "BARANG_BELUM_TERCATAT", baris: e.baris };
     throw e;
   }
+  if (hasil.ok && !hasil.sudahDirilis && barangDicadangkan.length > 0) {
+    await antrekanPushStok([...new Set(barangDicadangkan)], { sumber: "INDEN", ref: `rilis inden ${input.id}`, userId: input.userId });
+  }
+  return hasil;
 }
