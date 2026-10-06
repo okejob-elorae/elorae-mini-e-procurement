@@ -1,5 +1,5 @@
 import { Test } from "@nestjs/testing";
-import { SalesOrderWebhookHandler } from "./salesorder.handler";
+import { SalesOrderWebhookHandler, isStalePayload } from "./salesorder.handler";
 import { SalesReturnIngestService } from "../returns/sales-return-ingest.service";
 import { PRISMA } from "../../db/prisma.module";
 import { AdminNotificationService } from "../../admin/notification.service";
@@ -79,6 +79,7 @@ describe("SalesOrderWebhookHandler", () => {
         deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
         createMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
+      $queryRaw: jest.fn().mockResolvedValue([]),
       $transaction: jest.fn(async (fn: any) => fn(prisma)),
     };
     admin = { write: jest.fn() };
@@ -830,5 +831,53 @@ describe("SalesOrderWebhookHandler", () => {
     const upsertArgs = prisma.salesOrder.upsert.mock.calls[0][0];
     expect(upsertArgs.create.trackingNumber).toBeNull();
     expect(upsertArgs.create.courier).toBeNull();
+  });
+
+  describe("staleness guard", () => {
+    const newer = new Date("2026-10-06T10:00:00.000Z");
+
+    it("isStalePayload: older is stale; equal, newer or a null side is not", () => {
+      const a = new Date("2026-10-06T09:00:00.000Z");
+      expect(isStalePayload(a, newer)).toBe(true);
+      expect(isStalePayload(newer, newer)).toBe(false);
+      expect(isStalePayload(newer, a)).toBe(false);
+      expect(isStalePayload(null, newer)).toBe(false);
+      expect(isStalePayload(a, null)).toBe(false);
+      expect(isStalePayload(null, null)).toBe(false);
+    });
+
+    it("skips a payload older than the stored order with no side effects", async () => {
+      prisma.$queryRaw.mockResolvedValue([{ lastModifiedJubelio: newer }]);
+
+      const r = await handler.handle(row(makePayload({ last_modified: "2026-10-06T09:00:00.000Z" })) as any);
+
+      expect(r).toEqual({ kind: "skipped", reason: "stale_payload" });
+      expect(prisma.salesOrder.upsert).not.toHaveBeenCalled();
+      expect(prisma.jubelioSalesOrderState.findUnique).not.toHaveBeenCalled();
+      expect(prisma.jubelioSalesOrderState.create).not.toHaveBeenCalled();
+      expect(reserveMock).not.toHaveBeenCalled();
+      expect(consumeMock).not.toHaveBeenCalled();
+      expect(releaseMock).not.toHaveBeenCalled();
+    });
+
+    it("processes a payload whose last_modified equals the stored one", async () => {
+      prisma.$queryRaw.mockResolvedValue([{ lastModifiedJubelio: newer }]);
+      prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: true });
+
+      const r = await handler.handle(row(makePayload({ last_modified: newer.toISOString() })) as any);
+
+      expect(r).toEqual({ kind: "processed" });
+      expect(prisma.salesOrder.upsert).toHaveBeenCalledTimes(1);
+    });
+
+    it("processes when no stored row exists", async () => {
+      prisma.$queryRaw.mockResolvedValue([]);
+      prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: true });
+
+      const r = await handler.handle(row(makePayload({ last_modified: "2026-10-06T09:00:00.000Z" })) as any);
+
+      expect(r).toEqual({ kind: "processed" });
+      expect(prisma.salesOrder.upsert).toHaveBeenCalledTimes(1);
+    });
   });
 });

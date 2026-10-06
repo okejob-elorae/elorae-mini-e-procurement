@@ -36,6 +36,14 @@ function parseDate(v: string | null | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/**
+ * A payload is stale only when BOTH timestamps are known and the incoming one is strictly older
+ * than the stored one. Equal or missing timestamps process as before.
+ */
+export function isStalePayload(incoming: Date | null, stored: Date | null): boolean {
+  return incoming !== null && stored !== null && incoming.getTime() < stored.getTime();
+}
+
 function buildShippingAddress(p: SalesOrderPayload): Record<string, string> | undefined {
   const fields: Record<string, string> = {};
   const map: Record<string, string | null | undefined> = {
@@ -103,8 +111,9 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
       return { kind: "skipped", reason: SKIP_REASONS.MISSING_SALESORDER_ID };
     }
 
-    const state = await this.prisma.$transaction(async (tx) => {
-      await this.upsertSalesOrder(tx as unknown as PrismaService, p, row.id);
+    const txResult = await this.prisma.$transaction(async (tx) => {
+      const { stale } = await this.upsertSalesOrder(tx as unknown as PrismaService, p, row.id);
+      if (stale) return null;
 
       const existing = await tx.jubelioSalesOrderState.findUnique({
         where: { salesorderId: p.salesorder_id },
@@ -120,6 +129,15 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
         },
       });
     });
+
+    /*
+     * A newer payload already drove this order's reserve/consume/release, so skipping the stale
+     * one's side effects loses nothing.
+     */
+    if (txResult === null) {
+      return { kind: "skipped", reason: SKIP_REASONS.STALE_PAYLOAD };
+    }
+    const state = txResult;
 
     const items = Array.isArray(p.items) ? p.items : [];
     const isCancel = isCanceledOrder(p);
@@ -213,7 +231,17 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
     tx: PrismaService,
     p: SalesOrderPayload,
     webhookEventId: string,
-  ): Promise<void> {
+  ): Promise<{ stale: boolean }> {
+    /*
+     * Locking read: serialises two concurrent handles of one order and, under REPEATABLE READ,
+     * returns the latest COMMITTED row, so the second compares against what the first committed.
+     */
+    const locked = await tx.$queryRaw<Array<{ lastModifiedJubelio: Date | null }>>`
+      SELECT \`lastModifiedJubelio\` FROM \`SalesOrder\` WHERE \`salesorderId\` = ${p.salesorder_id} FOR UPDATE`;
+    if (isStalePayload(parseDate(p.last_modified), locked[0]?.lastModifiedJubelio ?? null)) {
+      return { stale: true };
+    }
+
     const { channel, unknown } = detectChannel(p.source_name, p.salesorder_no);
     if (unknown) {
       this.logger.warn(`Unknown source_name "${p.source_name ?? ""}" mapped to OTHER (salesorder ${p.salesorder_id})`);
@@ -370,6 +398,7 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
     if (lines.length > 0) {
       await tx.salesOrderItem.createMany({ data: lines });
     }
+    return { stale: false };
   }
 
   private async buildReservationLines(
