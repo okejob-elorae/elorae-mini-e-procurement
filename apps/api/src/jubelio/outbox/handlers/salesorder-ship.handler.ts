@@ -6,6 +6,7 @@ import { JUBELIO_WMS_LOCATION_ID } from "../jubelio-outbox.config";
 import { OUTBOX_SKIP_REASONS } from "../outbox-status";
 import { isAlreadyInStateError } from "./already-in-state";
 import type { HandlerOutcome, OutboxHandler } from "./handler.types";
+import { assertPredecessorSettled } from "./predecessor-push";
 
 type ShipPayload = { salesOrderId: string; jubelioSalesorderId: number; courierId: number };
 
@@ -19,6 +20,12 @@ export class SalesOrderShipHandler implements OutboxHandler {
   ) {}
 
   async handle(row: JubelioOutbox): Promise<HandlerOutcome> {
+    await assertPredecessorSettled(this.prisma, {
+      entityId: row.entityId,
+      predecessorType: "salesorder_pack",
+      rowCreatedAt: row.createdAt,
+    });
+
     const payload = row.payload as unknown as ShipPayload;
     const order = await this.prisma.salesOrder.findUnique({ where: { id: payload.salesOrderId } });
     if (!order) {
