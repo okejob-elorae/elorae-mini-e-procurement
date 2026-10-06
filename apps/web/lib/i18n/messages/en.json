@@ -875,6 +875,7 @@
     "provideNameAndAttributeValues": "Please provide a name and at least one value for each attribute",
     "includeAtLeastOneVariant": "Include at least one variant combination, or remove the attributes.",
     "duplicateAttributeValue": "That value already exists (differs only in letter case).",
+    "duplicateAttributeName": "Attribute names must be unique (letter case is ignored): {names}.",
     "setParentSkuBeforeVariantCode": "Set the item SKU before generating variant codes.",
     "setParentSkuBeforeBarcode": "Select a category with a code or set the item SKU before generating barcodes.",
     "fillConsumptionRuleFields": "Please fill all consumption rule fields",

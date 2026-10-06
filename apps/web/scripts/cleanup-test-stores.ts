@@ -40,7 +40,7 @@ function invKey(itemId: string): string {
 }
 
 async function main() {
-  const { prisma } = await import("@elorae/db");
+  const { prisma, resolveReservedInventory } = await import("@elorae/db");
   const url = process.env.DATABASE_URL ?? "";
   console.log(`DATABASE_URL host peek: ${url.replace(/:[^:@/]+@/, ":****@").slice(0, 80)}…`);
   console.log(`mode: ${apply ? "APPLY" : "DRY-RUN"}`);
@@ -210,13 +210,8 @@ async function main() {
       async (tx) => {
         // 1) Reverse RESERVED: decrement reservedQty, delete reservation rows
         for (const r of reservations.filter((x) => x.state === "RESERVED")) {
-          const vs = r.variantSku || "";
-          const inv = await tx.inventoryValue.findFirst({
-            where: {
-              itemId: r.itemId,
-              OR: [{ variantSku: vs }, ...(vs === "" ? [{ variantSku: null }] : [])],
-            },
-          });
+          /* The row the reservation was made against, not a fresh lookup that may pick its sibling. */
+          const inv = await resolveReservedInventory(tx, r);
           if (inv) {
             await tx.inventoryValue.update({
               where: { id: inv.id },
@@ -238,14 +233,8 @@ async function main() {
         }
 
         for (const r of consumed) {
-          const vs = r.variantSku || "";
           const qty = Number(r.qty);
-          const inv = await tx.inventoryValue.findFirst({
-            where: {
-              itemId: r.itemId,
-              OR: [{ variantSku: vs }, ...(vs === "" ? [{ variantSku: null }] : [])],
-            },
-          });
+          const inv = await resolveReservedInventory(tx, r);
 
           // Delete matching FIELD_SALES_CONSUME row first (use its avgCost for totalValue restore)
           const k = invKey(r.itemId);

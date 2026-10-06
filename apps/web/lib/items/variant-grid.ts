@@ -41,12 +41,30 @@ export function cartesianCombinations(
 }
 
 /**
+ * The contributing attribute names that collide with another one under
+ * `trim().toLowerCase()`, one entry per colliding name (its first spelling,
+ * trimmed). Empty when every name is unique. Two such names build combos
+ * where one attribute's value overwrites the other's.
+ */
+export function findCollidingAttributeNames(attributes: AttributeDef[]): string[] {
+  const firstSpelling = new Map<string, string>();
+  const colliding = new Set<string>();
+  contributingAttributes(attributes).forEach((attr) => {
+    const normalized = attr.key.trim().toLowerCase();
+    if (firstSpelling.has(normalized)) colliding.add(normalized);
+    else firstSpelling.set(normalized, attr.key.trim());
+  });
+  return Array.from(colliding).map((normalized) => firstSpelling.get(normalized) ?? normalized);
+}
+
+/**
  * A grid is COMPLETE when every row is either fully empty (no key, no
  * values — a freshly added row awaiting input) or fully filled (a trimmed
  * key AND at least one value), and every contributing key name is unique
- * case-insensitively. A row typed key-first-then-value, or mid-rename, or
- * momentarily colliding with another attribute's name, is INCOMPLETE — the
- * combos it would build are transient and unsafe to snapshot for carrying.
+ * case-insensitively (`findCollidingAttributeNames`). A row typed
+ * key-first-then-value, or mid-rename, or momentarily colliding with another
+ * attribute's name, is INCOMPLETE — the combos it would build are transient
+ * and unsafe to snapshot for carrying.
  */
 export function isGridComplete(attributes: AttributeDef[]): boolean {
   const rowsValid = attributes.every((attr) => {
@@ -55,10 +73,7 @@ export function isGridComplete(attributes: AttributeDef[]): boolean {
     return (keyEmpty && valuesEmpty) || (!keyEmpty && !valuesEmpty);
   });
   if (!rowsValid) return false;
-  const normalizedKeys = contributingAttributes(attributes).map((attr) =>
-    attr.key.trim().toLowerCase()
-  );
-  return new Set(normalizedKeys).size === normalizedKeys.length;
+  return findCollidingAttributeNames(attributes).length === 0;
 }
 
 /**
@@ -103,23 +118,37 @@ export function comboKey(
 }
 
 /**
- * Finds the saved variant (free-text JSON) matching a combination: every key
- * in `combo` must match, trimmed and case-insensitive. `sku`/`barcode` are
- * skipped even when `combo` itself carries them — they are not attribute
- * values and must never gate the match.
+ * A record's attribute entries with names and values trimmed and lowercased,
+ * `sku`/`barcode` left out.
+ */
+function normalizedAttributeEntries(record: Record<string, string>): Map<string, string> {
+  const entries = new Map<string, string>();
+  Object.entries(record).forEach(([key, value]) => {
+    if (RESERVED_VARIANT_KEYS.has(key)) return;
+    entries.set(key.trim().toLowerCase(), (value ?? "").trim().toLowerCase());
+  });
+  return entries;
+}
+
+/**
+ * Finds the saved variant (free-text JSON) matching a combination: the saved
+ * variant's attribute names must be EXACTLY the combo's, and every value must
+ * match — names and values trimmed and case-insensitive. A saved variant with
+ * an attribute the combo lacks does not match, so removing an attribute never
+ * hands one saved variant's code to a combination it only partly describes.
+ * `sku`/`barcode` are skipped on both sides — they are not attribute values
+ * and must never gate the match.
  */
 export function findSavedVariant(
   combo: Record<string, string>,
   savedVariants: Array<Record<string, string>>
 ): Record<string, string> | undefined {
-  return savedVariants.find((variant) =>
-    Object.keys(combo).every((key) => {
-      if (RESERVED_VARIANT_KEYS.has(key)) return true;
-      const wanted = (combo[key] ?? "").trim().toLowerCase();
-      const got = (variant[key] ?? "").trim().toLowerCase();
-      return got === wanted;
-    })
-  );
+  const wanted = normalizedAttributeEntries(combo);
+  return savedVariants.find((variant) => {
+    const got = normalizedAttributeEntries(variant);
+    if (got.size !== wanted.size) return false;
+    return Array.from(wanted).every(([key, value]) => got.get(key) === value);
+  });
 }
 
 /**
@@ -275,6 +304,32 @@ export function isSameGrid(
 }
 
 /**
+ * True when two attribute key lists name the same attributes in the same
+ * order, trimmed and case-insensitive. `carryRowValues` then matches every
+ * row by its full `comboKey`, so each value it carries comes from the
+ * IDENTICAL combination; with different lists it carries by rename position
+ * or by projection instead.
+ */
+function isSameKeyList(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((key, i) => key.trim().toLowerCase() === b[i].trim().toLowerCase());
+}
+
+/**
+ * One row's code by precedence: a code carried from the same combination
+ * (what the user has in that exact row now), then the saved variant's code,
+ * then a code carried by a rename or projection, then "".
+ */
+function resolveRowCode(
+  carried: string,
+  carriedFromSameCombination: boolean,
+  saved: string | undefined
+): string {
+  if (carriedFromSameCombination && carried) return carried;
+  return saved?.trim() || carried;
+}
+
+/**
  * Recomputes the table rows for a new attribute list.
  *
  * Carry source: the current rows when they still show the snapshot's own
@@ -285,11 +340,13 @@ export function isSameGrid(
  * list) that the change keeps as is. Otherwise the snapshot, so a transient
  * layout never carries into a DIFFERENT grid.
  *
- * Each row resolves as: the matching saved variant's code (`findSavedVariant`)
- * → the carried code (`carryRowValues`) → "". The new rows become the
- * snapshot when the new attribute list is complete; otherwise the snapshot
- * adopts the current rows only when they still show its own grid, so a
- * transient layout never becomes the snapshot.
+ * Each row resolves as (`resolveRowCode`): the code carried from the same
+ * combination → the matching saved variant's code (`findSavedVariant`) → the
+ * code carried by a rename or projection (`carryRowValues`) → "". So a code
+ * the user typed over a saved one survives the next attribute edit. The new
+ * rows become the snapshot when the new attribute list is complete;
+ * otherwise the snapshot adopts the current rows only when they still show
+ * its own grid, so a transient layout never becomes the snapshot.
  */
 export function resolveGridRows(input: {
   attributes: AttributeDef[];
@@ -304,12 +361,13 @@ export function resolveGridRows(input: {
   const source = rowsShowSnapshot || isSameGrid(rows, { combos, keys }) ? rows : snapshot;
   const carriedSkus = carryRowValues(source.combos, source.skus, source.keys, combos, keys);
   const carriedBarcodes = carryRowValues(source.combos, source.barcodes, source.keys, combos, keys);
+  const carriedFromSameCombination = isSameKeyList(source.keys, keys);
   const skus: string[] = [];
   const barcodes: string[] = [];
   combos.forEach((combo, i) => {
     const match = findSavedVariant(combo, savedVariants);
-    skus.push(match?.sku?.trim() || carriedSkus[i]);
-    barcodes.push(match?.barcode?.trim() || carriedBarcodes[i]);
+    skus.push(resolveRowCode(carriedSkus[i], carriedFromSameCombination, match?.sku));
+    barcodes.push(resolveRowCode(carriedBarcodes[i], carriedFromSameCombination, match?.barcode));
   });
   const nextRows: GridRows = { combos, keys, skus, barcodes };
   const nextSnapshot = rowsShowSnapshot ? rows : snapshot;

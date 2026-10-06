@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { formatMovedAtInput, parseMovedAtInput } from "./moved-at";
-import { createStoreTransfer, approveStoreTransfer } from "./writer";
+import { createStoreTransfer, approveStoreTransfer, cancelStoreTransfer } from "./writer";
 
 /* Stock-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host). */
 const url = process.env.DATABASE_URL ?? "";
@@ -59,15 +59,23 @@ d("store transfer writer (test bed only)", () => {
       select: { id: true, docNo: true },
     });
 
-  /* Three units of the item from store A to store B. */
-  const newTransfer = (movedAt: Date) =>
+  /* Three units of the item from store A to store B, unless a quantity is given. */
+  const newTransfer = (movedAt: Date, qty = 3) =>
     createStoreTransfer({
       fromStoreId: storeAId,
       toStoreId: storeBId,
       movedAt,
       createdById: userId,
-      lines: [{ itemId, variantSku: "", qty: 3 }],
+      lines: [{ itemId, variantSku: "", qty }],
     });
+
+  const avgCostAt = async (storeId: string) => {
+    const row = await prisma.storeStock.findUnique({
+      where: { storeId_itemId_variantSku: { storeId, itemId, variantSku: "" } },
+      select: { avgCost: true },
+    });
+    return row ? Number(row.avgCost) : 0;
+  };
 
   const qtyAt = async (storeId: string) => {
     const row = await prisma.storeStock.findUnique({
@@ -120,6 +128,8 @@ d("store transfer writer (test bed only)", () => {
 
   afterEach(async () => {
     const transferWhere = { OR: [{ fromStoreId: { in: stores() } }, { toStoreId: { in: stores() } }] };
+    const transferIds = (await prisma.storeTransfer.findMany({ where: transferWhere, select: { id: true } })).map((t) => t.id);
+    await prisma.auditLog.deleteMany({ where: { entityType: "StoreTransfer", entityId: { in: transferIds } } });
     await prisma.storeTransferLine.deleteMany({ where: { transfer: transferWhere } });
     await prisma.storeTransfer.deleteMany({ where: transferWhere });
     await prisma.storeStocktakeLine.deleteMany({ where: { stocktake: { storeId: { in: stores() } } } });
@@ -310,6 +320,93 @@ d("store transfer writer (test bed only)", () => {
       await count(storeAId, { countFinishedAt: new Date(), approvedAt: new Date() });
       await expect(approveStoreTransfer({ transferId, approvedById: userId })).rejects.toMatchObject({ code: "INVALID_STATE" });
       expect(await qtyAt(storeAId)).toBe(7);
+    });
+  });
+
+  describe("cancelStoreTransfer", () => {
+    it("flips a PENDING transfer to CANCELLED, moves nothing and writes exactly one audit row", async () => {
+      const { transferId } = await newTransfer(pastMove());
+
+      await cancelStoreTransfer({ transferId, cancelledById: userId });
+
+      const row = await prisma.storeTransfer.findUniqueOrThrow({ where: { id: seededId(transferId) } });
+      expect(row.status).toBe("CANCELLED");
+      expect(await qtyAt(storeAId)).toBe(10);
+      expect(await qtyAt(storeBId)).toBe(0);
+      expect(await prisma.stockLedgerEntry.count({ where: { refId: seededId(transferId) } })).toBe(0);
+      const audits = await prisma.auditLog.findMany({ where: { entityType: "StoreTransfer", entityId: seededId(transferId) } });
+      expect(audits).toHaveLength(1);
+      expect(audits[0].action).toBe("STORE_TRANSFER_CANCEL");
+    });
+
+    it("refuses INVALID_STATE after approve and leaves the approved stock where it is", async () => {
+      const { transferId } = await newTransfer(pastMove());
+      await approveStoreTransfer({ transferId, approvedById: userId });
+
+      await expect(cancelStoreTransfer({ transferId, cancelledById: userId })).rejects.toMatchObject({ code: "INVALID_STATE" });
+
+      const row = await prisma.storeTransfer.findUniqueOrThrow({ where: { id: seededId(transferId) } });
+      expect(row.status).toBe("APPROVED");
+      expect(await qtyAt(storeAId)).toBe(7);
+      expect(await qtyAt(storeBId)).toBe(3);
+    });
+
+    it("makes a later approve refuse INVALID_STATE and move nothing", async () => {
+      const { transferId } = await newTransfer(pastMove());
+      await cancelStoreTransfer({ transferId, cancelledById: userId });
+
+      await expect(approveStoreTransfer({ transferId, approvedById: userId })).rejects.toMatchObject({ code: "INVALID_STATE" });
+
+      expect(await qtyAt(storeAId)).toBe(10);
+      expect(await qtyAt(storeBId)).toBe(0);
+      expect(await transferRows()).toHaveLength(0);
+    });
+  });
+
+  describe("approveStoreTransfer cost handling", () => {
+    it("conserves value: the source leg costs out exactly what the destination leg costs in", async () => {
+      const { transferId } = await newTransfer(pastMove(), 4);
+
+      await approveStoreTransfer({ transferId, approvedById: userId });
+
+      const rows = await transferRows();
+      expect(rows.map((r) => ({ locationId: r.locationId, totalCost: Number(r.totalCost) }))).toEqual([
+        { locationId: storeAId, totalCost: -20000 },
+        { locationId: storeBId, totalCost: 20000 },
+      ]);
+      expect(await avgCostAt(storeBId)).toBe(5000);
+      expect(await avgCostAt(storeAId)).toBe(5000);
+    });
+
+    it("costs both legs at the source's current average, not the line's create-time snapshot", async () => {
+      const { transferId } = await newTransfer(pastMove());
+      await prisma.storeStock.update({
+        where: { storeId_itemId_variantSku: { storeId: storeAId, itemId, variantSku: "" } },
+        data: { avgCost: 6000 },
+      });
+
+      await approveStoreTransfer({ transferId, approvedById: userId });
+
+      const rows = await transferRows();
+      expect(rows.map((r) => ({ locationId: r.locationId, unitCost: Number(r.unitCost), totalCost: Number(r.totalCost) }))).toEqual([
+        { locationId: storeAId, unitCost: 6000, totalCost: -18000 },
+        { locationId: storeBId, unitCost: 6000, totalCost: 18000 },
+      ]);
+      expect(await avgCostAt(storeBId)).toBe(6000);
+    });
+
+    it("clamps a negative destination balance out of the blend, so the incoming cost becomes the average", async () => {
+      await prisma.storeStock.update({
+        where: { storeId_itemId_variantSku: { storeId: storeAId, itemId, variantSku: "" } },
+        data: { qty: 20, avgCost: 60000 },
+      });
+      await prisma.storeStock.create({ data: { storeId: storeBId, itemId, variantSku: "", qty: -5, avgCost: 50000 } });
+      const { transferId } = await newTransfer(pastMove(), 20);
+
+      await approveStoreTransfer({ transferId, approvedById: userId });
+
+      expect(await qtyAt(storeBId)).toBe(15);
+      expect(await avgCostAt(storeBId)).toBe(60000);
     });
   });
 });

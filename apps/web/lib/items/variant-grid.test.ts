@@ -9,6 +9,7 @@ import {
   carryRowValues,
   comboKey,
   contributingAttributes,
+  findCollidingAttributeNames,
   findSavedVariant,
   initialExcludedKeys,
   isGridComplete,
@@ -128,6 +129,26 @@ describe("isGridComplete", () => {
   });
 });
 
+describe("findCollidingAttributeNames", () => {
+  it("returns one entry for two names equal under trim and lowercase", () => {
+    expect(
+      findCollidingAttributeNames([
+        { key: "Warna", values: ["Merah"] },
+        { key: "warna ", values: ["Biru"] },
+      ])
+    ).toEqual(["Warna"]);
+  });
+
+  it("returns nothing for distinct names", () => {
+    expect(
+      findCollidingAttributeNames([
+        { key: "Warna", values: ["Merah"] },
+        { key: "Ukuran", values: ["M"] },
+      ])
+    ).toEqual([]);
+  });
+});
+
 describe("comboKey", () => {
   it("normalizes case and whitespace", () => {
     const a = comboKey({ Color: "  Merah ", Size: "m" }, ["Color", "Size"]);
@@ -173,6 +194,26 @@ describe("findSavedVariant", () => {
 
   it("returns undefined when nothing matches", () => {
     expect(findSavedVariant({ Color: "Hijau", Size: "M" }, savedVariants)).toBeUndefined();
+  });
+
+  it("matches attribute names case-insensitively", () => {
+    expect(findSavedVariant({ color: "Biru", SIZE: "m" }, savedVariants)?.sku).toBe("SKU-2");
+  });
+
+  it("does not match a saved variant carrying an attribute the combination lacks", () => {
+    const saved: Array<Record<string, string>> = [
+      { Warna: "Merah", Ukuran: "M", sku: "A", barcode: "1" },
+      { Warna: "Merah", Ukuran: "L", sku: "B", barcode: "2" },
+    ];
+    expect(findSavedVariant({ Warna: "Merah" }, saved)).toBeUndefined();
+  });
+
+  it("does not match a saved variant lacking an attribute the combination carries", () => {
+    expect(
+      findSavedVariant({ Warna: "Merah", Ukuran: "M", Bahan: "Katun" }, [
+        { Warna: "Merah", Ukuran: "M", sku: "A" },
+      ])
+    ).toBeUndefined();
   });
 });
 
@@ -533,13 +574,13 @@ describe("resolveGridRows", () => {
     });
 
     /**
-     * With the name empty only Warna contributes, so the form shows two rows,
-     * each prefilled from the FIRST saved variant of that colour — a
-     * partial saved match, not a carry.
+     * With the name empty only Warna contributes, so the form shows two rows.
+     * No saved variant has Warna alone, and each colour collapses two rows
+     * into one, so neither a saved match nor a carry applies.
      */
     state = renameTo("");
     expect(state.rows.combos).toEqual([{ Warna: "Merah" }, { Warna: "Biru" }]);
-    expect(state.rows.skus).toEqual(["A", "C"]);
+    expect(state.rows.skus).toEqual(["", ""]);
 
     ["S", "Si", "Siz", "Size"].forEach((key) => {
       state = renameTo(key);
@@ -672,6 +713,62 @@ describe("resolveGridRows", () => {
       { combo: { Warna: "Biru", Ukuran: "L" }, sku: "D", excluded: false },
       { combo: { Warna: "Biru", Ukuran: "XL" }, sku: "", excluded: false },
     ]);
+  });
+});
+
+describe("resolveGridRows precedence", () => {
+  it("gives no saved code to a colour once Ukuran is removed", () => {
+    let state = mount(attributesFromSavedVariants(SAVED), SAVED);
+    state = commit(state, [WARNA], SAVED);
+    expect(state.rows.combos).toEqual([{ Warna: "Merah" }, { Warna: "Biru" }]);
+    expect(state.rows.skus).toEqual(["", ""]);
+    expect(state.rows.barcodes).toEqual(["", ""]);
+  });
+
+  it("keeps a SKU and barcode typed over a saved row when a new Ukuran value is added", () => {
+    let state = mount(attributesFromSavedVariants(SAVED), SAVED);
+    expect(state.rows.skus[0]).toBe("A");
+    state = setRowValueAt(state, "skus", 0, "TYPED-1");
+    state = setRowValueAt(state, "barcodes", 0, "TYPED-BC");
+
+    state = commit(state, [WARNA, { key: "Ukuran", values: ["M", "L", "XL"] }], SAVED);
+    expect(state.rows.combos[0]).toEqual({ Warna: "Merah", Ukuran: "M" });
+    expect(state.rows.skus).toEqual(["TYPED-1", "B", "", "C", "D", ""]);
+    expect(state.rows.barcodes).toEqual(["TYPED-BC", "2", "", "3", "4", ""]);
+  });
+
+  it("gives a renamed Warna value no other saved row's code", () => {
+    let state = mount(attributesFromSavedVariants(SAVED), SAVED);
+    state = commit(
+      state,
+      [{ key: "Warna", values: ["Hijau", "Biru"] }, { key: "Ukuran", values: ["M", "L"] }],
+      SAVED
+    );
+    expect(state.rows.combos[0]).toEqual({ Warna: "Hijau", Ukuran: "M" });
+    expect(state.rows.skus).toEqual(["", "", "C", "D"]);
+    expect(state.rows.barcodes).toEqual(["", "", "3", "4"]);
+  });
+
+  it("carries a typed SKU through a rename of the Warna attribute", () => {
+    let state = mount(attributesFromSavedVariants(SAVED), SAVED);
+    state = setRowValueAt(state, "skus", 0, "TYPED-1");
+
+    state = commit(
+      state,
+      [{ key: "Color", values: ["Merah", "Biru"] }, { key: "Ukuran", values: ["M", "L"] }],
+      SAVED
+    );
+    expect(state.rows.keys).toEqual(["Color", "Ukuran"]);
+    expect(state.rows.skus).toEqual(["TYPED-1", "B", "C", "D"]);
+  });
+
+  it("lets a saved code beat a code carried by a rename onto that saved combination", () => {
+    let state = mount(attributesFromSavedVariants(SAVED), SAVED);
+    state = commit(state, [WARNA, { key: "Size", values: ["M", "L"] }], SAVED);
+    state = setRowValueAt(state, "skus", 0, "TYPED-1");
+
+    state = commit(state, [WARNA, { key: "Ukuran", values: ["M", "L"] }], SAVED);
+    expect(state.rows.skus).toEqual(["A", "B", "C", "D"]);
   });
 });
 

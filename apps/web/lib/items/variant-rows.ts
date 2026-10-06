@@ -51,7 +51,7 @@ type CatalogVariant = { sku: string; attributes: Array<{ key: string; value: str
  * treats `ABC-01` and `abc-01` as one variant key; matching here does the same, or a catalog
  * variant shows zero while its real stock surfaces as an off-catalog row under another spelling.
  */
-function matchKey(variantSku: string | null): string {
+export function matchKey(variantSku: string | null): string {
   return (variantSku ?? "").trim().toLowerCase();
 }
 

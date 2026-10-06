@@ -216,7 +216,7 @@ export async function applyFabricAdjustments(
   docNumber: string,
 ): Promise<{ adjustmentCount: number }> {
   const rolls = await tx.stockOpnameRoll.findMany({ where: { opnameId } });
-  const itemDeltas = new Map<string, number>();
+  const itemIds = new Set<string>();
   let adjustmentCount = 0;
 
   for (const row of rolls) {
@@ -235,12 +235,16 @@ export async function applyFabricAdjustments(
       where: { id: row.fabricRollId },
       data: {
         remainingLength: countedLength,
+        /**
+         * A count never reopens a closed roll. The only path that closes one mid-opname is a vendor
+         * return, which already took the roll's length out of main stock, so reopening it would put
+         * fabric that is back at the vendor on hand again.
+         */
         isClosed: countedLength <= 0 ? true : fabricRoll.isClosed,
       },
     });
 
-    const delta = countedLength - currentLength;
-    itemDeltas.set(fabricRoll.itemId, (itemDeltas.get(fabricRoll.itemId) ?? 0) + delta);
+    itemIds.add(fabricRoll.itemId);
     adjustmentCount += 1;
 
     if (hasQtyDrift(currentLength, snapshotLength)) {
@@ -248,7 +252,7 @@ export async function applyFabricAdjustments(
     }
   }
 
-  for (const itemId of itemDeltas.keys()) {
+  for (const itemId of itemIds) {
     await syncFabricAggregateQty(tx, itemId, {
       refId: opnameId,
       refDocNumber: docNumber,

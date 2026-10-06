@@ -1,5 +1,5 @@
 import { moveMainStock, moveVanStock } from "@elorae/db";
-import type { StockLedgerRefType } from "@elorae/db";
+import type { StockAdjustmentSource, StockLedgerRefType } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { variantDetailForSku } from "@/lib/items/variants";
@@ -120,7 +120,7 @@ export async function recordVanReconcile(input: {
             prevAvgCost: prevAvg,
             newAvgCost: newAvg,
             createdById: input.reconciledById,
-            source: "VAN_RETURN",
+            source: "VAN_RETURN" satisfies StockAdjustmentSource,
           },
         });
       }

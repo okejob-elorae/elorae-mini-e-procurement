@@ -46,6 +46,7 @@ import {
   cartesianCombinations,
   comboKey,
   contributingAttributes,
+  findCollidingAttributeNames,
   findSavedVariant,
   initialExcludedKeys,
   mapRowValues,
@@ -467,6 +468,11 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       const incomplete = attributes.find((attr) => !attr.key.trim() || attr.values.length === 0);
       if (incomplete) {
         toast.error(tToasts('provideNameAndAttributeValues'));
+        return;
+      }
+      const collidingNames = findCollidingAttributeNames(attributes);
+      if (collidingNames.length > 0) {
+        toast.error(tToasts("duplicateAttributeName", { names: collidingNames.join(", ") }));
         return;
       }
     }
@@ -908,8 +914,8 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-14">Include</TableHead>
-                    {attributes.map((attr) => (
-                      <TableHead key={attr.key}>{attr.key}</TableHead>
+                    {gridRows.keys.map((attrKey, keyIndex) => (
+                      <TableHead key={`${keyIndex}-${attrKey}`}>{attrKey}</TableHead>
                     ))}
                     <TableHead className="min-w-56">Variant SKU</TableHead>
                     <TableHead className="min-w-56">Barcode</TableHead>
@@ -927,7 +933,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                       .join(' / ');
                     const mutedCellClassName = excluded ? 'opacity-60' : undefined;
                     return (
-                      <TableRow key={idx}>
+                      <TableRow key={rowKey}>
                         <TableCell>
                           <label className="flex h-10 min-h-10 w-10 cursor-pointer items-center justify-center">
                             <Checkbox
@@ -942,9 +948,9 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                             </p>
                           )}
                         </TableCell>
-                        {attributes.map((attr) => (
-                          <TableCell key={attr.key} className={mutedCellClassName}>
-                            {combo[attr.key] ?? '—'}
+                        {gridRows.keys.map((attrKey, keyIndex) => (
+                          <TableCell key={`${keyIndex}-${attrKey}`} className={mutedCellClassName}>
+                            {combo[attrKey] ?? "—"}
                           </TableCell>
                         ))}
                         <TableCell className={mutedCellClassName}>

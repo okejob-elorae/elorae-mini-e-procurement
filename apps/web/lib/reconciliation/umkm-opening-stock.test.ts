@@ -4,6 +4,7 @@ import {
   excelSerialToDate,
   parseUmkmExcelDate,
 } from "./umkm-excel-parse";
+import { buildInventoryQtyMap, readInventoryQty } from "./umkm-opening-stock";
 
 describe("parseUmkmExcelDate", () => {
   it("parses Excel serial numbers", () => {
@@ -56,5 +57,24 @@ describe("excelSerialToDate", () => {
     const d = excelSerialToDate(45548);
     expect(d.getUTCFullYear()).toBe(2024);
     expect(d.getUTCMonth()).toBe(8);
+  });
+});
+
+describe("UMKM inventory map", () => {
+  it("reads a row spelled in a different case", () => {
+    const map = buildInventoryQtyMap([{ itemId: "i1", variantSku: "abc-01", qtyOnHand: 7 }]);
+    expect(readInventoryQty(map, "i1", "ABC-01")).toBe(7);
+  });
+
+  it("sums rows that fold to one key", () => {
+    const map = buildInventoryQtyMap([
+      { itemId: "i1", variantSku: "abc-01", qtyOnHand: 7 },
+      { itemId: "i1", variantSku: "ABC-01", qtyOnHand: 3 },
+    ]);
+    expect(readInventoryQty(map, "i1", "Abc-01")).toBe(10);
+  });
+
+  it("returns 0 for a missing key", () => {
+    expect(readInventoryQty(new Map(), "i1", "X")).toBe(0);
   });
 });

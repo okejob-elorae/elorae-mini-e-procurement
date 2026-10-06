@@ -358,6 +358,28 @@ d("issueKonsiTransfer at shipment completion (test bed only)", () => {
     expect(await prisma.inventoryValue.count({ where: { itemId: seededId(variantlessItemId) } })).toBe(1);
   });
 
+  it("draws down the row approve reserved against when the item carries both variantless spellings", async () => {
+    /*
+     * The reserve prefers the exact "" row; a fresh lowest-id lookup at transfer time would pick
+     * the null row instead, moving its qtyOnHand and stranding reservedQty on the "" row.
+     */
+    const nullRow = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(variantlessItemId), variantSku: null } });
+    const emptyRow = await prisma.inventoryValue.create({
+      data: { itemId: seededId(variantlessItemId), variantSku: "", qtyOnHand: 20, reservedQty: 0, avgCost: 8000, totalValue: 160000 },
+    });
+
+    const { lineId: drawnLineId } = await transferVia(variantlessOrderId);
+
+    const rsv = await prisma.stockReservation.findUniqueOrThrow({ where: { fieldSalesLineId: seededId(drawnLineId) } });
+    expect(rsv.inventoryValueId).toBe(emptyRow.id);
+    const emptyAfter = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: emptyRow.id } });
+    const nullAfter = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: nullRow.id } });
+    expect(Number(emptyAfter.qtyOnHand)).toBe(15);
+    expect(Number(emptyAfter.reservedQty)).toBe(0);
+    expect(Number(nullAfter.qtyOnHand)).toBe(50);
+    expect(Number(nullAfter.reservedQty)).toBe(0);
+  });
+
   it("moves nothing when a line is short — the existing reserve guard still aborts", async () => {
     /*
      * Approve no longer transfers anything, so this pins the reserve half alone: the guarded

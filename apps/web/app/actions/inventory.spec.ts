@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockAuth, mockFindMany, mockFindUnique, mockFindRow } = vi.hoisted(() => ({
+const { mockAuth, mockFindMany, mockFindUnique, mockFindRow, mockAdjFindMany, mockAdjCount } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
+  mockAdjFindMany: vi.fn(),
+  mockAdjCount: vi.fn(),
   mockFindRow: vi.fn(),
   mockFindMany: vi.fn(),
   mockFindUnique: vi.fn(),
@@ -10,7 +12,10 @@ const { mockAuth, mockFindMany, mockFindUnique, mockFindRow } = vi.hoisted(() =>
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("@elorae/db", () => ({
   moveMainStock: vi.fn(),
-  prisma: { inventoryValue: { findMany: mockFindMany, findUnique: mockFindUnique } },
+  prisma: {
+    inventoryValue: { findMany: mockFindMany, findUnique: mockFindUnique },
+    stockAdjustment: { findMany: mockAdjFindMany, count: mockAdjCount },
+  },
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 vi.mock("@/lib/inventory/costing", () => ({ findExistingInventoryValueRow: mockFindRow }));
@@ -20,7 +25,7 @@ vi.mock("@/app/actions/notifications", () => ({
   notifyStockAdjustmentCreated: vi.fn(),
 }));
 
-import { getInventorySnapshot, getInventoryValue } from "./inventory";
+import { getInventorySnapshot, getInventoryValue, getStockAdjustments } from "./inventory";
 
 /* Each read's own pass-through footprint: [findMany, findRow, findUnique] call counts. */
 const reads: Array<[string, () => Promise<unknown>, [number, number, number]]> = [
@@ -99,5 +104,43 @@ describe("getInventoryValue row resolution", () => {
     mockFindRow.mockResolvedValue(null);
     await expect(getInventoryValue("i1", null)).resolves.toBeNull();
     expect(mockFindUnique).not.toHaveBeenCalled();
+  });
+});
+
+describe("getStockAdjustments search", () => {
+  const expectedOr = [
+    { docNumber: { contains: "po-12" } },
+    { item: { sku: { contains: "po-12" } } },
+    { item: { nameId: { contains: "po-12" } } },
+    { reason: { contains: "po-12" } },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["inventory:view"] } });
+    mockAdjFindMany.mockResolvedValue([]);
+    mockAdjCount.mockResolvedValue(0);
+  });
+
+  it("passes the same trimmed contains OR to findMany and count", async () => {
+    await getStockAdjustments(undefined, { page: 1, pageSize: 10, search: "  po-12 " });
+    const findWhere = mockAdjFindMany.mock.calls[0][0].where;
+    const countWhere = mockAdjCount.mock.calls[0][0].where;
+    expect(findWhere.OR).toEqual(expectedOr);
+    expect(countWhere).toBe(findWhere);
+  });
+
+  it("keeps the item filter beside the search", async () => {
+    await getStockAdjustments("i1", { page: 1, pageSize: 10, search: "po-12" });
+    const where = mockAdjFindMany.mock.calls[0][0].where;
+    expect(where.itemId).toBe("i1");
+    expect(where.OR).toEqual(expectedOr);
+  });
+
+  it("adds no OR for a blank or whitespace-only search", async () => {
+    await getStockAdjustments(undefined, { page: 1, pageSize: 10, search: "   " });
+    await getStockAdjustments(undefined, { page: 1, pageSize: 10 });
+    for (const call of mockAdjFindMany.mock.calls) expect(call[0].where.OR).toBeUndefined();
+    for (const call of mockAdjCount.mock.calls) expect(call[0].where.OR).toBeUndefined();
   });
 });
