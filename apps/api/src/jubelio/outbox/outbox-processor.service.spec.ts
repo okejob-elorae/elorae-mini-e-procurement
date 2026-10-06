@@ -29,6 +29,8 @@ describe("OutboxProcessor", () => {
       jubelioOutbox: {
         findUnique: jest.fn(),
         update: jest.fn().mockResolvedValue({}),
+        // Klaim atomik PENDING → PROCESSING (updateMany); 1 = klaim ini menang.
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };
     router = { route: jest.fn() };
@@ -65,8 +67,14 @@ describe("OutboxProcessor", () => {
 
     await processor.process({ data: { rowId: "r1" } } as any);
 
+    // PENDING → PROCESSING lewat klaim atomik (updateMany ber-syarat status), bukan update.
+    expect(prisma.jubelioOutbox.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "r1", status: { in: [OUTBOX_STATUS.PENDING] } }),
+        data: expect.objectContaining({ status: OUTBOX_STATUS.PROCESSING }),
+      }),
+    );
     const updates = prisma.jubelioOutbox.update.mock.calls;
-    expect(updates[0][0].data).toMatchObject({ status: OUTBOX_STATUS.PROCESSING });
     expect(updates[updates.length - 1][0].data).toMatchObject({ status: OUTBOX_STATUS.DONE });
     expect(updates[updates.length - 1][0].data.processedAt).toBeInstanceOf(Date);
   });

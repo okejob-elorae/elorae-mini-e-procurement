@@ -9,7 +9,8 @@ function makeTx(overrides: any = {}) {
       ...overrides.stockReservation,
     },
     inventoryValue: {
-      findUnique: jest.fn().mockResolvedValue({ qtyOnHand: "10", reservedQty: "0" }),
+      // Baris tanpa varian dicari toleran (null atau "") lewat findMany.
+      findMany: jest.fn().mockResolvedValue([{ id: "iv1", avgCost: "0", variantSku: "" }]),
       update: jest.fn().mockResolvedValue({ qtyOnHand: "10", reservedQty: "3" }),
       ...overrides.inventoryValue,
     },
@@ -31,7 +32,7 @@ describe("reserveOrder", () => {
       expect.objectContaining({ data: expect.objectContaining({ salesorderDetailId: 5, state: "RESERVED", qty: 3 }) }),
     );
     expect(tx.inventoryValue.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ reservedQty: { increment: 3 } }) }),
+      expect.objectContaining({ where: { id: "iv1" }, data: expect.objectContaining({ reservedQty: { increment: 3 } }) }),
     );
     expect(r.oversell).toHaveLength(0);
   });
@@ -52,7 +53,7 @@ describe("reserveOrder", () => {
   it("emits an oversell alert + AdminNotification when reserved exceeds onHand", async () => {
     const tx = makeTx({
       inventoryValue: {
-        findUnique: jest.fn().mockResolvedValue({ qtyOnHand: "2", reservedQty: "0" }),
+        findMany: jest.fn().mockResolvedValue([{ id: "iv1", avgCost: "0", variantSku: "" }]),
         update: jest.fn().mockResolvedValue({ qtyOnHand: "2", reservedQty: "3" }),
       },
     });
@@ -71,7 +72,7 @@ describe("reserveOrder", () => {
 
   it("throws InventoryValueMissingError when no InventoryValue row exists for the line", async () => {
     const tx = makeTx({
-      inventoryValue: { findUnique: jest.fn().mockResolvedValue(null) },
+      inventoryValue: { findMany: jest.fn().mockResolvedValue([]), update: jest.fn() },
     });
     await expect(
       reserveOrder(tx, {
@@ -93,10 +94,11 @@ describe("consumeOrder", () => {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       inventoryValue: {
-        findUnique: jest.fn().mockResolvedValue({ qtyOnHand: "10", reservedQty: "3", avgCost: "2" }),
+        findMany: jest.fn().mockResolvedValue([{ id: "iv1", avgCost: "2", variantSku: "" }]),
         update: jest.fn().mockResolvedValue({ qtyOnHand: "7" }),
       },
       stockAdjustment: { create: jest.fn().mockResolvedValue({ id: "a1" }) },
+      salesOrderItem: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
     };
     const r = await consumeOrder(tx, { salesorderId: 100, salesorderNo: "SO-100" });
     expect(r.consumed).toBe(1);
@@ -126,7 +128,7 @@ describe("consumeOrder", () => {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       inventoryValue: {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn(),
       },
       stockAdjustment: { create: jest.fn() },
@@ -166,7 +168,7 @@ describe("releaseOrder", () => {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       inventoryValue: {
-        findUnique: jest.fn().mockResolvedValue({ qtyOnHand: "10", reservedQty: "3" }),
+        findMany: jest.fn().mockResolvedValue([{ id: "iv1", avgCost: "0", variantSku: "" }]),
         update: jest.fn().mockResolvedValue({}),
       },
     };

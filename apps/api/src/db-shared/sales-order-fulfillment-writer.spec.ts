@@ -22,11 +22,13 @@ describe("sales-order-fulfillment-writer", () => {
           updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         },
         inventoryValue: {
-          findUnique: jest.fn().mockResolvedValue({ qtyOnHand: "10", reservedQty: "3", avgCost: "2" }),
+          // Baris tanpa varian dicari toleran (null atau "") lewat findMany.
+          findMany: jest.fn().mockResolvedValue([{ id: "iv1", avgCost: "2", variantSku: "" }]),
           // consumeOrder reads the atomic update's returned row (select qtyOnHand) since the C1 fix.
           update: jest.fn().mockResolvedValue({ qtyOnHand: "7" }),
         },
         stockAdjustment: { create: jest.fn().mockResolvedValue({ id: "a1" }) },
+        salesOrderItem: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
       };
       const prisma: any = { $transaction: (fn: any) => fn(inner) };
       await markOrderShipped(prisma, { orderId: "o1", userId: "u1", courierId: 7 });
