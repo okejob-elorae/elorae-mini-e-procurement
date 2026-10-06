@@ -3129,7 +3129,18 @@
       "unreadCount": "{count} belum dibaca",
       "markAllRead": "Tandai semua dibaca",
       "empty": "Belum ada notifikasi",
-      "offlineError": "Gagal terhubung — periksa koneksi internet dan coba lagi"
+      "offlineError": "Gagal terhubung — periksa koneksi internet dan coba lagi",
+      "push": {
+        "title": "Aktifkan notifikasi push",
+        "body": "Dapatkan pemberitahuan di HP ini soal retur, tagihan, dan tugas baru, walau aplikasi sedang ditutup.",
+        "enable": "Aktifkan",
+        "enabling": "Mengaktifkan…",
+        "enabled": "Notifikasi push aktif",
+        "denied": "Notifikasi diblokir. Izinkan notifikasi untuk aplikasi ini di pengaturan browser atau situs, lalu buka ulang halaman ini.",
+        "failed": "Gagal mengaktifkan notifikasi push.",
+        "retry": "Coba lagi",
+        "unsupported": "HP atau browser ini tidak mendukung notifikasi push."
+      }
     },
     "deliveries": {
       "homeCta": "Pengiriman Saya",

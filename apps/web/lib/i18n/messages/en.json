@@ -3129,7 +3129,18 @@
       "unreadCount": "{count} unread",
       "markAllRead": "Mark all read",
       "empty": "No notifications yet",
-      "offlineError": "Couldn't connect — check your connection and try again"
+      "offlineError": "Couldn't connect — check your connection and try again",
+      "push": {
+        "title": "Turn on push notifications",
+        "body": "Get alerts on this phone about returns, invoices and new tasks, even when the app is closed.",
+        "enable": "Turn on",
+        "enabling": "Turning on…",
+        "enabled": "Push notifications are on",
+        "denied": "Notifications are blocked. Allow them for this app in your browser or site settings, then reopen this page.",
+        "failed": "Couldn't turn on push notifications.",
+        "retry": "Try again",
+        "unsupported": "This phone or browser doesn't support push notifications."
+      }
     },
     "deliveries": {
       "homeCta": "My Deliveries",

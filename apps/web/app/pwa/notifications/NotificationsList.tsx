@@ -9,6 +9,7 @@ import { ArrowLeft, Bell, ChevronRight, Loader2, WifiOff } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { getNotificationHref } from "@/lib/notifications/navigation";
+import { EnablePushCard } from "./EnablePushCard";
 
 type NotificationItem = {
   id: string;
@@ -89,6 +90,8 @@ export function NotificationsList({ initialItems }: Props) {
           </Button>
         )}
       </div>
+
+      <EnablePushCard />
 
       {actionError && (
         <div className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">

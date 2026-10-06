@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { pwaAccessGuard } from "@/lib/pwa/guard";
 import { ServiceWorkerRegistrar } from "./ServiceWorkerRegistrar";
+import { PwaPushRegistrar } from "./PwaPushRegistrar";
 
 export const metadata = {
   manifest: "/manifest.webmanifest",
@@ -21,6 +22,7 @@ export default async function PwaLayout({ children }: { children: React.ReactNod
   return (
     <>
       <ServiceWorkerRegistrar />
+      <PwaPushRegistrar />
       {children}
     </>
   );
