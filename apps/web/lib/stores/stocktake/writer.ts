@@ -4,6 +4,7 @@ import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { buildStocktakeLines, previousApprovedCountedAt } from "./queries";
 import { StoreStocktakeError } from "./errors";
+import { resolveLineCountMoment } from "./count-moment";
 
 type CauseValue = "SHRINKAGE" | "UNRECORDED_SALE";
 
@@ -13,7 +14,7 @@ type AddedLineInput = {
   countedQty: number | null;
   cause?: CauseValue | null;
   reason?: string | null;
-  countFinishedAt?: Date;
+  countedAtMs?: number;
 };
 
 /**
@@ -105,8 +106,8 @@ export async function createStoreStocktake(input: {
  * Each line carries its own `countFinishedAt`, the moment its counted figure is true:
  * `approveStoreStocktake` re-applies every store movement recorded after THAT LINE's moment. It is
  * stamped only on a line whose `countedQty` this save actually changes (compared in cents), and on
- * every added line — with the caller's `countFinishedAt` for that line when given, otherwise this
- * save's instant — and cleared when the count is cleared. A line the save leaves at the same
+ * every added line — with this save's instant, or the moment the SPG sheet says that row was
+ * counted (below) — and cleared when the count is cleared. A line the save leaves at the same
  * figure keeps its stamp, so an admin correcting one line at verification never moves the count
  * moment of every other line: the backoffice resends every line whenever it saves, and re-stamping
  * them all would silently drop every sale or delivery between their physical count and that edit.
@@ -116,13 +117,23 @@ export async function createStoreStocktake(input: {
  * `TRANSFER_PENDING` refusal here, `approveStoreTransfer`'s `COUNTED_SINCE_MOVE`, the sell-through
  * in-flight checks and the konsi count schedule read. A save that changes only causes or reasons
  * leaves it alone, for the same reason as the line stamps.
+ *
+ * `clientClock` is the SPG sheet's: the device time it sent the request and the server time the
+ * action received it. With it, a changed line carrying `countedAtMs` — the device time that row's
+ * figure was last edited — is stamped at that moment moved onto the server clock and clamped
+ * (`resolveLineCountMoment`), because the sheet submits once at the end and a sale between
+ * counting a shelf and submitting would otherwise read as a surplus. Without `clientClock`, or for
+ * a line with no usable `countedAtMs`, the line gets this save's instant. The admin path never
+ * sends one: an admin's correction is true as of the save. Device times never touch the
+ * document's own stamp.
  */
 export async function saveStocktakeCounts(input: {
   stocktakeId: string;
-  lines: Array<{ lineId: string; countedQty: number | null; cause?: CauseValue | null; reason?: string | null; countFinishedAt?: Date }>;
+  lines: Array<{ lineId: string; countedQty: number | null; cause?: CauseValue | null; reason?: string | null; countedAtMs?: number }>;
   addedLines?: AddedLineInput[];
   submit: boolean;
   userId: string;
+  clientClock?: { sentAtMs: number; receivedAtMs: number };
 }): Promise<{ ok: true; status: string }> {
   return runSerializable(async (tx) => {
     /* One instant for every stamp this save writes, so the document's stamp equals its lines'. */
@@ -139,6 +150,34 @@ export async function saveStocktakeCounts(input: {
     });
     if (!st) throw new StoreStocktakeError("NOT_FOUND");
     if (st.status !== "DRAFT" && st.status !== "PENDING_VERIFICATION") throw new StoreStocktakeError("INVALID_STATE");
+
+    /*
+     * A device-reported count moment is never allowed before the store's previous approval: that
+     * approval SET the balance, so a moment before it would have this count re-apply movements the
+     * previous count already absorbed (approval also skips earlier counts' own ledger rows — see
+     * `approveStoreStocktake`). Anything the device sent that cannot be used falls back to the
+     * server instant, which is exactly what a line got before device times were sent at all.
+     */
+    const clientClock = input.clientClock;
+    let lowerBound: Date | null = null;
+    if (clientClock) {
+      const previous = await tx.storeStocktake.findFirst({
+        where: { storeId: st.storeId, status: "APPROVED" },
+        orderBy: { approvedAt: "desc" },
+        select: { approvedAt: true },
+      });
+      lowerBound = previous?.approvedAt ?? null;
+    }
+    const momentOf = (countedAtMs: number | undefined): Date => {
+      if (!clientClock || countedAtMs === undefined) return now;
+      const moment = resolveLineCountMoment({
+        countedAtMs,
+        clientSentAtMs: clientClock.sentAtMs,
+        receivedAtMs: clientClock.receivedAtMs,
+        lowerBound,
+      });
+      return moment ?? now;
+    };
 
     const expectedByLineId = new Map(st.lines.map((l) => [l.id, l.expectedQty.toNumber()]));
     const storedCountByLineId = new Map(st.lines.map((l) => [l.id, l.countedQty === null ? null : l.countedQty.toNumber()]));
@@ -237,7 +276,7 @@ export async function saveStocktakeCounts(input: {
           varianceQty: variance,
           cause: line.cause ?? null,
           reason: line.reason ?? null,
-          ...(countChanged(line) ? { countFinishedAt: line.countedQty === null ? null : (line.countFinishedAt ?? now) } : {}),
+          ...(countChanged(line) ? { countFinishedAt: line.countedQty === null ? null : momentOf(line.countedAtMs) } : {}),
         },
       });
     }
@@ -259,7 +298,7 @@ export async function saveStocktakeCounts(input: {
             cause: al.cause ?? null,
             reason: al.reason ?? null,
             isAdded: true,
-            countFinishedAt: al.countedQty === null ? null : (al.countFinishedAt ?? now),
+            countFinishedAt: al.countedQty === null ? null : momentOf(al.countedAtMs),
           },
         });
       } catch (e) {
@@ -451,6 +490,12 @@ export async function approveStoreStocktake(input: {
      * moment, so one retur or transfer can be excluded for a line counted after it and re-applied
      * for a line counted before it. Only a counted line reads these sums at all, so a row for an
      * uncounted item never reaches a target either way.
+     *
+     * Never re-applied: an earlier count's own `StoreStocktake` rows. That approval SET the
+     * balance to what its own count saw, so it is never a movement this count's shelf missed. A
+     * line moment can sit at or before such a row only when it came from the SPG sheet's device
+     * time, which `saveStocktakeCounts` clamps to the previous approval's `approvedAt` — and that
+     * approval writes its rows at or a few milliseconds after the `approvedAt` it stamps.
      */
     const postCountCentsByLineId = new Map<string, number>();
     const momentLines = computed.filter((l) => l.counted !== null && l.moment !== null);
@@ -484,6 +529,7 @@ export async function approveStoreStocktake(input: {
         let cents = 0;
         for (const r of rowsByKey.get(`${l.itemId}::${l.variantSku ?? ""}`) ?? []) {
           if (r.createdAt.getTime() <= momentMs) continue;
+          if (r.refType === "StoreStocktake") continue;
           if (r.refType === "FieldReturn" && (returRaisedAtMs.get(r.refId) ?? Infinity) <= momentMs) continue;
           if (r.refType === "StoreTransfer" && (transferMovedAtMs.get(r.refId) ?? Infinity) <= momentMs) continue;
           cents += Math.round(r.qty.toNumber() * 100);

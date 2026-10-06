@@ -696,6 +696,103 @@ d("store stocktake writer (test bed only)", () => {
     expect(await stocktakeLedgerRows(id, itemZeroId)).toHaveLength(0);
   });
 
+  describe("SPG sheet device times", () => {
+    it("re-applies a sale made after the shelf was counted but before the sheet was saved", async () => {
+      const id = await mkStocktake({ lines: [{ itemId: itemMainId, expectedQty: 10, countedQty: null }] });
+      const line = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id) }, select: { id: true } });
+      /* The shelf held 10 when counted a minute ago; one sold since, before the sheet was submitted. */
+      const countedAtMs = Date.now() - 60_000;
+      await moveAfterCount(itemMainId, -1, "SpgSale");
+
+      const sentAtMs = Date.now();
+      await saveStocktakeCounts({
+        stocktakeId: id,
+        lines: [{ lineId: line.id, countedQty: 10, countedAtMs }],
+        submit: true,
+        userId: adminId,
+        clientClock: { sentAtMs, receivedAtMs: sentAtMs },
+      });
+      const stamped = await prisma.storeStocktakeLine.findUniqueOrThrow({ where: { id: line.id } });
+      /* No skew between the device and the server here, so the moment is the device time itself. */
+      expect(stamped.countFinishedAt?.getTime()).toBe(countedAtMs);
+      /* The document keeps the save instant: every document-level guard reads it, never device time. */
+      const doc = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } });
+      expect(doc.countFinishedAt!.getTime()).toBeGreaterThanOrEqual(sentAtMs);
+
+      await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+      /* 10 − 1 = 9, the live figure: no surplus of one at the count moment. */
+      const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId) } });
+      expect(Number(ss.qty)).toBe(9);
+      expect(await stocktakeLedgerRows(id, itemMainId)).toHaveLength(0);
+    });
+
+    it("clamps a countedAtMs older than the store's previous approval to that approval", async () => {
+      const previousId = await mkStocktake({ lines: [{ itemId: itemMainId, expectedQty: 10, countedQty: 10 }] });
+      await approveStoreStocktake({ stocktakeId: previousId, approvedById: adminId });
+      const previousApprovedAt = new Date(Date.now() - 30_000);
+      await prisma.storeStocktake.update({ where: { id: previousId }, data: { approvedAt: previousApprovedAt } });
+
+      const id = await mkStocktake({ lines: [{ itemId: itemMainId, expectedQty: 10, countedQty: null }] });
+      const line = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id) }, select: { id: true } });
+      const sentAtMs = Date.now();
+      await saveStocktakeCounts({
+        stocktakeId: id,
+        lines: [{ lineId: line.id, countedQty: 10, countedAtMs: sentAtMs - 120_000 }],
+        submit: true,
+        userId: adminId,
+        clientClock: { sentAtMs, receivedAtMs: sentAtMs },
+      });
+
+      const stamped = await prisma.storeStocktakeLine.findUniqueOrThrow({ where: { id: line.id } });
+      expect(stamped.countFinishedAt?.getTime()).toBe(previousApprovedAt.getTime());
+    });
+
+    it("never re-applies an earlier count's own ledger row to a line clamped to that count's approval", async () => {
+      /* The earlier count found 6 of 10: its approval wrote a −4 StoreStocktake row, stamped just after its approvedAt. */
+      const previousId = await mkStocktake({ lines: [{ itemId: itemMainId, expectedQty: 10, countedQty: 6, cause: "SHRINKAGE", reason: "four missing" }] });
+      await approveStoreStocktake({ stocktakeId: previousId, approvedById: adminId });
+      const previousApprovedAt = new Date(Date.now() - 30_000);
+      await prisma.storeStocktake.update({ where: { id: previousId }, data: { approvedAt: previousApprovedAt } });
+      await prisma.stockLedgerEntry.updateMany({
+        where: { locationType: "STORE", locationId: seededId(storeId), refType: "StoreStocktake", refId: seededId(previousId) },
+        data: { createdAt: new Date(previousApprovedAt.getTime() + 5) },
+      });
+
+      const id = await mkStocktake({ lines: [{ itemId: itemMainId, expectedQty: 6, countedQty: null }] });
+      const line = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id) }, select: { id: true } });
+      const sentAtMs = Date.now();
+      await saveStocktakeCounts({
+        stocktakeId: id,
+        lines: [{ lineId: line.id, countedQty: 6, countedAtMs: sentAtMs - 120_000 }],
+        submit: true,
+        userId: adminId,
+        clientClock: { sentAtMs, receivedAtMs: sentAtMs },
+      });
+
+      await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+      /* 6, not 6 − 4 = 2: the earlier count's correction is not a movement this shelf missed. */
+      const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId) } });
+      expect(Number(ss.qty)).toBe(6);
+      expect(await stocktakeLedgerRows(id, itemMainId)).toHaveLength(0);
+    });
+
+    it("ignores device times on a save that sends no clientClock", async () => {
+      const id = await mkStocktake({ lines: [{ itemId: itemMainId, expectedQty: 10, countedQty: null }] });
+      const line = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id) }, select: { id: true } });
+      const before = Date.now();
+      await saveStocktakeCounts({
+        stocktakeId: id,
+        lines: [{ lineId: line.id, countedQty: 10, countedAtMs: before - 60_000 }],
+        submit: false,
+        userId: adminId,
+      });
+      const stamped = await prisma.storeStocktakeLine.findUniqueOrThrow({ where: { id: line.id } });
+      expect(stamped.countFinishedAt!.getTime()).toBeGreaterThanOrEqual(before);
+    });
+  });
+
   it("isFullCount is false when any line is left uncounted", async () => {
     const id = await mkStocktake({
       lines: [

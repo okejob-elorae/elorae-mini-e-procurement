@@ -46,6 +46,12 @@ export function SpgStocktakeShell({ storeId, storeName, lines }: { storeId: stri
   const t = useTranslations("storeStocktakes.spg");
   const [q, setQ] = useState("");
   const [counts, setCounts] = useState<Record<string, string>>({});
+  /**
+   * Device time each row's figure last changed, keyed like `counts`. Sent with the submit so the
+   * server can re-apply a sale made between counting that shelf and submitting the sheet, instead
+   * of reading it as a surplus. A row with no stamp falls back to the server's submit instant.
+   */
+  const [countedAtByKey, setCountedAtByKey] = useState<Record<string, number>>({});
   const [pendingLines, setPendingLines] = useState<PendingLine[]>([]);
   const [addItemOpen, setAddItemOpen] = useState(false);
   const [online, setOnline] = useState(true);
@@ -74,8 +80,17 @@ export function SpgStocktakeShell({ storeId, storeName, lines }: { storeId: stri
     return counts[key] ?? (storedCountedQty === null ? "" : String(storedCountedQty));
   }
 
-  function updateCount(key: string, value: string): void {
+  function updateCount(key: string, value: string, storedCountedQty: number | null): void {
+    const previous = parseCountedInput(rawFor(key, storedCountedQty)).value;
+    const next = parseCountedInput(value).value;
     setCounts((prev) => ({ ...prev, [key]: value }));
+    if (next === previous) return;
+    setCountedAtByKey((prev) => {
+      const stamps = { ...prev };
+      if (next === null) delete stamps[key];
+      else stamps[key] = Date.now();
+      return stamps;
+    });
   }
 
   function addPendingLine(item: AddableItem): void {
@@ -89,6 +104,16 @@ export function SpgStocktakeShell({ storeId, storeName, lines }: { storeId: stri
       delete next[key];
       return next;
     });
+    setCountedAtByKey((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }
+
+  function countedAtFor(key: string): { countedAtMs?: number } {
+    const at = countedAtByKey[key];
+    return at === undefined ? {} : { countedAtMs: at };
   }
 
   const computedExisting = lines.map((l) => {
@@ -131,13 +156,21 @@ export function SpgStocktakeShell({ storeId, storeName, lines }: { storeId: stri
           itemId: c.line.itemId,
           variantSku: c.line.variantSku,
           countedQty: c.counted,
+          ...countedAtFor(c.key),
         }));
         const addedLines = computedPending.map((c) => ({
           itemId: c.line.itemId,
           variantSku: c.line.variantSku,
           countedQty: c.counted,
+          ...countedAtFor(c.line.key),
         }));
-        const result = await saveCountsAction({ storeId, lines: payloadLines, addedLines, submit: true });
+        const result = await saveCountsAction({
+          storeId,
+          lines: payloadLines,
+          addedLines,
+          submit: true,
+          clientSentAtMs: Date.now(),
+        });
         if (result.ok) {
           setSubmitted(true);
           return;
@@ -252,7 +285,7 @@ export function SpgStocktakeShell({ storeId, storeName, lines }: { storeId: stri
                 className="h-10 w-24 text-right tabular-nums"
                 disabled={submitting}
                 value={c.raw}
-                onChange={(e) => updateCount(c.key, e.target.value)}
+                onChange={(e) => updateCount(c.key, e.target.value, c.line.countedQty)}
               />
               {!c.valid && <p className="text-right text-xs text-destructive">{t("countInvalid")}</p>}
             </div>
@@ -283,7 +316,7 @@ export function SpgStocktakeShell({ storeId, storeName, lines }: { storeId: stri
                   className="h-10 w-24 text-right tabular-nums"
                   disabled={submitting}
                   value={c.raw}
-                  onChange={(e) => updateCount(c.line.key, e.target.value)}
+                  onChange={(e) => updateCount(c.line.key, e.target.value, null)}
                 />
                 {!c.valid && <p className="text-right text-xs text-destructive">{t("countInvalid")}</p>}
               </div>
