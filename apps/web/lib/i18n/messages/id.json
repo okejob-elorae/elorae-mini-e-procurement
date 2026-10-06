@@ -3806,13 +3806,13 @@
     "approve": {
       "button": "Setujui",
       "confirmTitle": "Konfirmasi Persetujuan Perhitungan",
-      "confirmDescription": "Menyetujui akan menulis stok toko sesuai hasil hitung pada dokumen ini, ditambah pergerakan stok toko yang tercatat setelah hasil hitung disimpan — penjualan atau pengiriman selama perhitungan ini menunggu tetap dihitung, tidak terhapus. Retur yang diajukan dan transfer toko yang dipindahkan sebelum perhitungan tidak diterapkan ulang, karena perhitungan sudah mencakupnya. Baris yang dibiarkan kosong tidak akan disentuh — stok yang ada tetap seperti sekarang.",
+      "confirmDescription": "Menyetujui akan menulis stok toko sesuai hasil hitung pada dokumen ini, ditambah pergerakan stok toko yang tercatat setelah tiap baris dihitung — penjualan atau pengiriman selama perhitungan ini menunggu tetap dihitung, tidak terhapus. Retur yang diajukan dan transfer toko yang dipindahkan sebelum suatu baris dihitung tidak diterapkan ulang pada baris itu, karena perhitungan sudah mencakupnya. Baris yang dibiarkan kosong tidak akan disentuh — stok yang ada tetap seperti sekarang.",
       "confirmAction": "Setujui",
       "submitting": "Menyetujui…",
       "success": "Perhitungan disetujui, stok toko telah diperbarui.",
       "driftTitle": "Stok berubah sejak perhitungan ini dibuka",
       "driftLine": "{product}{variant}: seharusnya {expected}, sekarang {live}",
-      "driftNote": "Ini hanya informasi — selisih ini sendiri tidak menghalangi persetujuan. Yang ditulis adalah hasil hitung ditambah pergerakan yang terjadi setelah hasil hitung disimpan, kecuali retur yang diajukan dan transfer toko yang dipindahkan sebelum perhitungan, karena perhitungan sudah mencakupnya. Transfer toko yang masih menunggu persetujuan dan memindahkan barang yang dihitung sebelum perhitungan tetap menghalangi persetujuan sampai transfer tersebut disetujui atau dibatalkan."
+      "driftNote": "Ini hanya informasi — selisih ini sendiri tidak menghalangi persetujuan. Yang ditulis adalah hasil hitung tiap baris ditambah pergerakan yang terjadi setelah baris itu dihitung, kecuali retur yang diajukan dan transfer toko yang dipindahkan sebelum baris itu dihitung, karena perhitungan sudah mencakupnya. Transfer toko yang masih menunggu persetujuan dan memindahkan barang yang dihitung sebelum perhitungan tetap menghalangi persetujuan sampai transfer tersebut disetujui atau dibatalkan."
     },
     "cancel": {
       "button": "Batalkan Perhitungan",

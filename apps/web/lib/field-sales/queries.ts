@@ -540,8 +540,8 @@ export async function listStoreNeverSentSuggestions(
          * On a collision, keep the MINIMUM available rather than summing. The writer reserves
          * against a single row chosen by `findReservationInventory`'s findFirst, so the minimum is
          * the only figure guaranteed not to exceed what that reservation can actually satisfy.
-         * Summing (as getFieldSalesOrderById does) would offer more than the writer can honor and
-         * fail the approval; under-offering only hides a little stock. Fail-safe direction wins.
+         * Summing would offer more than the writer can honor and fail the approval; under-offering
+         * only hides a little stock. Fail-safe direction wins.
          */
         existing.available = Math.min(existing.available, available);
       } else {

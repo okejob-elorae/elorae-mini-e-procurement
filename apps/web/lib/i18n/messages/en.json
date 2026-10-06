@@ -3806,13 +3806,13 @@
     "approve": {
       "button": "Approve",
       "confirmTitle": "Confirm Stocktake Approval",
-      "confirmDescription": "Approving writes the store's stock to the counted figures on this document, plus any stock movement recorded at the store after the count was saved — a sale or delivery while this count waited is kept, not erased. Returns raised and store transfers moved before the count are not re-applied, because the count already saw them. Any line left blank is not touched — its existing stock stands as-is.",
+      "confirmDescription": "Approving writes the store's stock to the counted figures on this document, plus any stock movement recorded at the store after each line was counted — a sale or delivery while this count waited is kept, not erased. Returns raised and store transfers moved before a line was counted are not re-applied to it, because the count already saw them. Any line left blank is not touched — its existing stock stands as-is.",
       "confirmAction": "Approve",
       "submitting": "Approving…",
       "success": "Stocktake approved, store stock updated.",
       "driftTitle": "Stock has moved since this count was opened",
       "driftLine": "{product}{variant}: snapshot {expected}, now {live}",
-      "driftNote": "This is informational only — the drift itself does not block approval. It writes the counted figure plus whatever moved after the count was saved, except returns raised and store transfers moved before the count, which the count already saw. A pending store transfer that moved counted goods before the count does block approval until it is approved or cancelled."
+      "driftNote": "This is informational only — the drift itself does not block approval. It writes each counted figure plus whatever moved after that line was counted, except returns raised and store transfers moved before it was counted, which the count already saw. A pending store transfer that moved counted goods before the count does block approval until it is approved or cancelled."
     },
     "cancel": {
       "button": "Cancel Stocktake",
