@@ -4,8 +4,11 @@ export type LockedInventoryValueRow = { id: string; qtyOnHand: string; avgCost: 
 
 /**
  * Locks the main `InventoryValue` row for one item/variant with `SELECT … FOR UPDATE` and returns
- * it, or `null` when there is none. Call it as the FIRST statement of the transaction whose later
- * reads and writes depend on that row, so no concurrent writer can move it in between.
+ * it, or `null` when there is none. Call it before anything else in the transaction reads that
+ * row — normally as its first statement — so no concurrent writer can move it between the read and
+ * the write that depends on it. `moveMainStock`'s first-receipt path is the one later call: it
+ * reaches this only after its own non-locking lookup missed and it has locked the `Item` row, and
+ * it relies on this read returning the latest committed row rather than that lookup's snapshot.
  *
  * Same OR-tolerant shape as `findExistingInventoryValueRow` in apps/web, tie-break included: a
  * variantless lookup matches both the `null` and the `""` spelling and takes the lowest id. Only

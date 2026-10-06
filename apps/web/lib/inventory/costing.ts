@@ -52,9 +52,10 @@ export type StockRef = {
  *
  * packages/db cannot import this (it sits above apps/web), so it carries its own copies — and
  * there are FOUR, not two. moveMainStock and setMainStock in stock-balance.ts, the return-accept
- * restore in sales-return-writer.ts, and lockMainInventoryValueRow in stock-writer.ts (the raw
- * `SELECT … FOR UPDATE` behind applyJubelioStockAdjustment and MATCH_JUBELIO) all restate this
- * shape, tie-break included. Change this helper, change all four.
+ * restore in sales-return-writer.ts, and lockMainInventoryValueRow in stock-row-lock.ts (the raw
+ * `SELECT … FOR UPDATE` behind applyJubelioStockAdjustment, MATCH_JUBELIO, moveMainStock's
+ * first-receipt re-read and the superseded-item retirement) all restate this shape, tie-break
+ * included. Change this helper, change all four.
  *
  * Two further packages/db lookups are deliberately a DIFFERENT shape and must not be
  * "harmonised" onto this one: reservation-writer.ts's findReservationInventory prefers an exact

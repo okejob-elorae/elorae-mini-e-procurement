@@ -235,8 +235,12 @@ export async function applyFabricAdjustments(
       where: { id: row.fabricRollId },
       data: {
         remainingLength: countedLength,
-        /* The physical count is the truth: a roll another path closed mid-opname is reopened when fabric was counted on it. */
-        isClosed: countedLength <= 0,
+        /**
+         * A count never reopens a closed roll. The only path that closes one mid-opname is a vendor
+         * return, which already took the roll's length out of main stock, so reopening it would put
+         * fabric that is back at the vendor on hand again.
+         */
+        isClosed: countedLength <= 0 ? true : fabricRoll.isClosed,
       },
     });
 

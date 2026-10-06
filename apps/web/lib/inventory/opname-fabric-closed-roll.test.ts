@@ -2,12 +2,16 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { applyFabricAdjustments } from "./opname-approve";
 
-/* A roll another path closed between an opname's snapshot and its approval must be reopened when fabric was counted on it. Never run against prod. */
+/**
+ * A roll closed between an opname's snapshot and its approval stays closed whatever was counted on
+ * it: the only path that closes one is a vendor return, which already took its length out of main
+ * stock. Never run against prod.
+ */
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
-d("opname fabric recount reopens a closed roll (test bed only)", () => {
+d("opname fabric approval keeps a closed roll closed (test bed only)", () => {
   let token = "";
   let userId = "";
   let supplierTypeId = "";
@@ -106,7 +110,7 @@ d("opname fabric recount reopens a closed roll (test bed only)", () => {
       ],
     });
 
-    /* Simulate another path consuming R2 to zero after the snapshot. */
+    /* Simulate a vendor return closing R2 after the snapshot. */
     await prisma.fabricRoll.update({ where: { id: r2Id }, data: { isClosed: true, remainingLength: 0 } });
   });
 
@@ -124,7 +128,7 @@ d("opname fabric recount reopens a closed roll (test bed only)", () => {
     if (userId) await prisma.user.delete({ where: { id: userId } });
   });
 
-  it("reopens a roll closed mid-opname when fabric was counted on it, and counts it in the aggregate", async () => {
+  it("keeps a roll closed mid-opname closed and out of the aggregate, sets an open roll to its count and closes a zero count", async () => {
     const res = await prisma.$transaction((tx) =>
       applyFabricAdjustments(tx, opnameId, `OPN-FR-${token}`),
     );
@@ -135,14 +139,13 @@ d("opname fabric recount reopens a closed roll (test bed only)", () => {
     expect(r1.isClosed).toBe(false);
 
     const r2 = await prisma.fabricRoll.findUniqueOrThrow({ where: { id: r2Id } });
-    expect(Number(r2.remainingLength)).toBe(4);
-    expect(r2.isClosed).toBe(false);
+    expect(r2.isClosed).toBe(true);
 
     const r3 = await prisma.fabricRoll.findUniqueOrThrow({ where: { id: r3Id } });
     expect(Number(r3.remainingLength)).toBe(0);
     expect(r3.isClosed).toBe(true);
 
     const inv = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId } });
-    expect(Number(inv.qtyOnHand)).toBe(12);
+    expect(Number(inv.qtyOnHand)).toBe(8);
   });
 });

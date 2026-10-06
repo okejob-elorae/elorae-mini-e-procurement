@@ -147,6 +147,7 @@ export {
   type StockLocation,
 } from "./stock-ledger";
 export {
+  ConcurrentFirstReceiptError,
   ledgerTypeForDelta,
   MainStockNegativeError,
   moveMainStock,

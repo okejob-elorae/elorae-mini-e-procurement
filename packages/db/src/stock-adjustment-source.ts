@@ -5,7 +5,8 @@
  * type-level contract. Any caller writing to StockAdjustment MUST use a value
  * from here. The audit dashboard and reconcile logic key off these strings.
  *
- * See docs/INTEGRATION-GUIDE.md for which source applies to which workflow.
+ * See docs/INTEGRATION-GUIDE.md §2 for which source applies to which workflow ("Which `source`
+ * do I use?") and for the steps to add one ("Adding a new `source`").
  */
 export const STOCK_ADJUSTMENT_SOURCES = [
   "ERP",

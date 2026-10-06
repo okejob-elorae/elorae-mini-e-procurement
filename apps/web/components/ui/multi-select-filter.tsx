@@ -53,6 +53,12 @@ export interface MultiSelectFilterProps {
  * simply `options.length === selected.length`, a test each CALLER recomputes on its own
  * `selected` state, and it is that caller's job to collapse the result back to "send
  * nothing" on the wire.
+ *
+ * ARIA follows the checkable-option pattern: each option carries `aria-checked` for its tick,
+ * and the list is deliberately NOT marked `aria-multiselectable`. cmdk stamps `aria-selected`
+ * on whichever option the keyboard highlights, so under `aria-multiselectable` assistive tech
+ * would announce the highlighted row as chosen; `aria-checked` is the only state here that means
+ * "ticked". The trigger is a plain button with `aria-haspopup="listbox"` and `aria-expanded`.
  */
 export function MultiSelectFilter({
   options,
@@ -107,7 +113,7 @@ export function MultiSelectFilter({
       <PopoverContent className="w-[var(--radix-popover-trigger-width)] min-w-[10rem] p-0" align="start">
         <Command shouldFilter={false}>
           {searchable && <CommandInput placeholder="Search..." value={query} onValueChange={setQuery} />}
-          <CommandList aria-multiselectable="true">
+          <CommandList>
             <CommandEmpty>No results found.</CommandEmpty>
             {/*
              * With `shouldFilter={false}`, cmdk's own "is there anything to show" count is

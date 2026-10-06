@@ -91,8 +91,15 @@ The compile error from the router's `never` check is the safety net: you cannot 
 | `JUBELIO_WEBHOOK` | Inbound Jubelio stock-changed webhook, applying `end_qty + offlineReserved` as on-hand, the holds added only while stock pushes are enabled (§4.2). **Do not call from web — only `apps/api`.** | api |
 | `JUBELIO_RECONCILE` | A `MATCH_JUBELIO` correction from stock reconciliation — the 6h cron or a manual resolve on `/backoffice/inventory/reconciliation`. | web (`reconciliation-runner.ts`; api only serves the snapshot read) |
 | `SUPERSEDED_ITEM_RETIRE` | Zeroing a superseded catalog item's stock rows — an unmapped item whose every variant is mapped on another item (`retireSupersededItem`, run from `scripts/retire-superseded-items.mjs`). | db helper, run as an ops script |
+| `ERP_RETURN_ACCEPT` | Accepting a marketplace return line that puts stock back (`acceptReturnItem` in `packages/db/src/sales-return-writer.ts`, reached through `app/actions/sales-return-decision.ts`). | db helper, called from web |
+| `FULFILLMENT_CONSUME` | Consuming a Jubelio order's reservation when the order ships (`consumeOrder` in `packages/db/src/reservation-writer.ts`, called by `salesorder.handler.ts`). | db helper, called from api |
+| `FIELD_SALES_CONSUME` | Consuming a putus field-sales order's reservation at delivery (`consumeFieldSalesOrderPartial` / `consumeFieldSalesOrder` in `packages/db/src/reservation-writer.ts`; the partial one is called by `lib/field-sales/delivery/writer.ts`). | db helper, called from web |
+| `VAN_LOAD` | Loading main stock onto a canvasser's van (`loadVan` in `lib/canvassing/writer.ts`). | web |
+| `VAN_RETURN` | Returning counted van stock to main at van reconcile (`recordVanReconcile` in `lib/canvassing/reconcile-writer.ts`). | web |
+| `KONSI_TRANSFER` | Moving konsi stock from main to the store when a delivery shipment completes (`issueKonsiTransfer` in `lib/field-sales/konsi-transfer/writer.ts`). | web |
+| `FIELD_RETURN` | Restoring the sellable quantity of an approved field retur to main (`approveFieldReturn` in `lib/field-sales/retur/approve-writer.ts`). | web |
 
-If your use case doesn't fit any of these, add to the registry first (see "Adding a new source" below). Do not pick the closest match and hope for the best — the reconcile logic and audit dashboards key off the exact string.
+If your use case doesn't fit any of these, add to the registry first (see "Adding a new `source`" below). Do not pick the closest match and hope for the best — the reconcile logic and audit dashboards key off the exact string.
 
 ### Code (ERP-side, e.g. opname)
 
@@ -185,9 +192,11 @@ Pass Jubelio's raw `end_qty`, validated with `parseJubelioQty` before any coerci
 ### Adding a new `source`
 
 1. Append to `STOCK_ADJUSTMENT_SOURCES` in `packages/db/src/stock-adjustment-source.ts`.
-2. Run `pnpm -F @elorae/db build`.
-3. Update audit dashboard filters if the source should appear in UI.
-4. Update reconcile-cron logic if the source should be treated as authoritative or skippable (depends on whether your source represents a known divergence or an unrelated change).
+2. Write it at the call site as `"<SOURCE>" satisfies StockAdjustmentSource`, so a typo or an unregistered value is a compile error rather than a free-form string in the column.
+3. Add it to the "Allowed values today" list in `docs/BOUNDARY.md` §3.1 and give it a row in the table above, naming its writer.
+4. Run `pnpm -F @elorae/db build`.
+5. Update audit dashboard filters if the source should appear in UI.
+6. Update reconcile-cron logic if the source should be treated as authoritative or skippable (depends on whether your source represents a known divergence or an unrelated change).
 
 ---
 
