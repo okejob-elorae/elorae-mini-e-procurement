@@ -104,6 +104,10 @@ function negativeFloorFilter(qtyDelta: number): { qtyOnHand?: { gte: number } } 
  * first receipts racing past an empty lookup would each insert one. Locking the Item row makes the
  * second wait for the first to commit; its repeated lookup then finds the row. A FOR UPDATE on the
  * absent InventoryValue row would take only gap locks, which do not exclude each other.
+ *
+ * Taken only when the first lookup found no row, so the common path stays lock-free: locking Item
+ * rows on every receipt would let two multi-line receipts naming the same items in different
+ * orders deadlock.
  */
 async function lockItemRow(tx: Tx, itemId: string): Promise<void> {
   await tx.$queryRaw`SELECT \`id\` FROM \`Item\` WHERE \`id\` = ${itemId} FOR UPDATE`;
@@ -192,20 +196,24 @@ export async function moveMainStock(tx: Tx, input: MoveMainStockInput): Promise<
     return { balanceQty };
   }
 
-  if (input.createIfMissing) {
-    await lockItemRow(tx, input.itemId);
-  }
+  const findRow = () =>
+    input.variantSku
+      ? tx.inventoryValue.findFirst({
+          where: { itemId: input.itemId, variantSku: input.variantSku },
+          select: { id: true },
+        })
+      : tx.inventoryValue.findFirst({
+          where: { itemId: input.itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
+          orderBy: { id: "asc" },
+          select: { id: true },
+        });
 
-  const existing = input.variantSku
-    ? await tx.inventoryValue.findFirst({
-        where: { itemId: input.itemId, variantSku: input.variantSku },
-        select: { id: true },
-      })
-    : await tx.inventoryValue.findFirst({
-        where: { itemId: input.itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
-        orderBy: { id: "asc" },
-        select: { id: true },
-      });
+  let existing = await findRow();
+
+  if (!existing && input.createIfMissing) {
+    await lockItemRow(tx, input.itemId);
+    existing = await findRow();
+  }
 
   if (!existing) {
     if (!input.createIfMissing) {
