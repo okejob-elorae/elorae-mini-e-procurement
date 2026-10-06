@@ -15,7 +15,7 @@ export type ProcurementReportFilters = {
 const DEFAULT_STATUSES: POStatus[] = ['SUBMITTED', 'PARTIAL'];
 
 export async function getProcurementReport(filters?: ProcurementReportFilters) {
-  const statusList = filters?.status?.length
+  const statusList = filters?.status !== undefined
     ? filters.status
     : DEFAULT_STATUSES;
 

@@ -48,7 +48,15 @@ vi.mock("@/lib/leadtime/calculations", () => ({ computeActualLeadDays: vi.fn() }
 vi.mock("@/lib/leadtime/auto-confirm", () => ({ applyChainSignal: vi.fn() }));
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
 
-import { getAdditionalMaterialsPreview, issueAdditionalMaterials } from "./production";
+import {
+  cancelWorkOrder,
+  createWorkOrder,
+  getAdditionalMaterialsPreview,
+  issueAdditionalMaterials,
+  issueMaterials,
+  issueWorkOrder,
+  receiveFG,
+} from "./production";
 
 const STOP = "STOP_AT_ISSUE_TRANSACTION";
 
@@ -100,4 +108,27 @@ describe("additional materials on an accessory whose stock is split across varia
     );
     expect(mockTransaction).not.toHaveBeenCalled();
   });
+});
+
+describe("production actor trust", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
+  });
+
+  it.each([
+    ["createWorkOrder", () => createWorkOrder({} as never, "someone-else")],
+    ["issueWorkOrder", () => issueWorkOrder("wo1", "someone-else")],
+    ["issueMaterials", () => issueMaterials({} as never, "someone-else")],
+    ["issueAdditionalMaterials", () => issueAdditionalMaterials("wo1", 10, "someone-else")],
+    ["receiveFG", () => receiveFG({} as never, "someone-else")],
+    ["cancelWorkOrder", () => cancelWorkOrder("wo1", "someone-else")],
+  ] as Array<[string, () => Promise<unknown>]>)(
+    "%s refuses a claimed id that is not the session user and writes nothing",
+    async (_name, call) => {
+      await expect(call()).rejects.toThrow("Forbidden: actor does not match the session");
+      expect(mockTransaction).not.toHaveBeenCalled();
+      expect(mockWoFindUnique).not.toHaveBeenCalled();
+    }
+  );
 });

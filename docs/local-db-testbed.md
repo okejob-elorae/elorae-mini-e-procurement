@@ -66,7 +66,10 @@ Run these yourself — none of this is run automatically.
    It copies, in FK-safe order: `UOM` and `ItemCategory` (prerequisite
    lookups referenced by `Item`'s required/optional foreign keys), `Item`,
    `InventoryValue`, `JubelioProductMapping`, `SalesOrder`, `SalesOrderItem`,
-   `JubelioSalesOrderState`. It scrubs customer PII on every `SalesOrder` row
+   `JubelioSalesOrderState`. It copies no `StockLedgerEntry` rows; instead it
+   appends one `OPENING` entry per cloned `InventoryValue` ledger key
+   (`appendSeedOpeningBalances`), so the movement screens start from the cloned
+   balance rather than from zero. It scrubs customer PII on every `SalesOrder` row
    (`customerName` → `"REDACTED"`, `customerPhone`/`customerEmail`/
    `shippingAddress` → `null`) while keeping stock-relevant fields
    (`status`, `isCanceled`, `fulfillmentStatus`, `salesorderId`,

@@ -1,5 +1,6 @@
 import { prisma } from "@elorae/db";
 import { parseItemVariants } from "@/lib/items/variants";
+import { skuMatchKey } from "@/lib/items/sku-match-key";
 import type { ItemImportLookups } from "./validate";
 
 /**
@@ -16,12 +17,12 @@ export async function loadItemImportLookups(): Promise<ItemImportLookups> {
   const existingVariantSkus = new Set<string>();
   const existingBarcodes = new Set<string>();
   for (const item of items) {
-    existingItemSkus.add(item.sku.trim().toLowerCase());
+    existingItemSkus.add(skuMatchKey(item.sku));
     for (const v of parseItemVariants(item.variants)) {
-      const sku = (v.sku ?? "").trim().toLowerCase();
-      if (sku !== "") existingVariantSkus.add(sku);
-      const barcode = (v.barcode ?? "").trim().toLowerCase();
-      if (barcode !== "") existingBarcodes.add(barcode);
+      const sku = v.sku ?? "";
+      if (sku.trim() !== "") existingVariantSkus.add(skuMatchKey(sku));
+      const barcode = v.barcode ?? "";
+      if (barcode.trim() !== "") existingBarcodes.add(skuMatchKey(barcode));
     }
   }
   return { uoms, categories, existingItemSkus, existingVariantSkus, existingBarcodes };
