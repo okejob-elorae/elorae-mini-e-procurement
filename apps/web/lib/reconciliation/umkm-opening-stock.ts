@@ -1,6 +1,7 @@
 import { Decimal } from "decimal.js";
 import { moveMainStock, Role, SalesHistoryStatus, type PrismaClient } from "@elorae/db";
 import type { StockAdjustmentSource, StockLedgerRefType } from "@elorae/db";
+import { matchKey } from "@/lib/items/variant-rows";
 import {
   aggregateUmkmExcelByParent,
   parseUmkmExcelFile,
@@ -19,6 +20,30 @@ import {
   parseOtherSourcesDir,
   type OtherSourceLine,
 } from "./umkm-other-sources-parse";
+
+function inventoryQtyKey(itemId: string, variantSku: string | null): string {
+  return `${itemId}::${matchKey(variantSku)}`;
+}
+
+/**
+ * Keyed on the case-folded variant SKU because the `(itemId, variantSku)` index is
+ * case-insensitive: rows spelled `ABC-01` and `abc-01` are one key to the database, so their
+ * quantities sum here. The folded key is a MATCH key only and is never written anywhere.
+ */
+export function buildInventoryQtyMap(
+  rows: Array<{ itemId: string; variantSku: string | null; qtyOnHand: unknown }>,
+): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const row of rows) {
+    const key = inventoryQtyKey(row.itemId, row.variantSku);
+    map.set(key, (map.get(key) ?? 0) + Number(row.qtyOnHand));
+  }
+  return map;
+}
+
+export function readInventoryQty(map: Map<string, number>, itemId: string, variantSku: string): number {
+  return map.get(inventoryQtyKey(itemId, variantSku)) ?? 0;
+}
 
 export type { UmkmExcelRow, UmkmParentAggregate } from "./umkm-excel-parse";
 export {
@@ -292,11 +317,7 @@ export async function buildUmkmManifest(
         })
       : [];
 
-  const inventoryMap = new Map<string, number>();
-  for (const inv of inventoryRows) {
-    const key = `${inv.itemId}::${inv.variantSku ?? ""}`;
-    inventoryMap.set(key, Number(inv.qtyOnHand));
-  }
+  const inventoryMap = buildInventoryQtyMap(inventoryRows);
 
   const manifestRows: ManifestRow[] = [];
 
@@ -321,8 +342,7 @@ export async function buildUmkmManifest(
 
       let currentQty = 0;
       if (erpRef) {
-        const invKey = `${erpRef.itemId}::${erpVariantSku}`;
-        currentQty = inventoryMap.get(invKey) ?? 0;
+        currentQty = readInventoryQty(inventoryMap, erpRef.itemId, erpVariantSku);
       }
 
       const delta = impliedOnHand - currentQty;
