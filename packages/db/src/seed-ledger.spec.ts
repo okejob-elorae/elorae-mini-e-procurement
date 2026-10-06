@@ -86,6 +86,40 @@ d("appendSeedOpeningBalances (test bed only)", () => {
     expect(await prisma.stockLedgerEntry.count({ where: { itemId: zeroItemId } })).toBe(0);
   });
 
+  it("appends nothing when the key already holds a non-OPENING ledger entry", async () => {
+    await prisma.stockLedgerEntry.create({
+      data: {
+        locationType: "MAIN",
+        locationId: "",
+        itemId,
+        variantSku: "",
+        type: "IN",
+        qty: 12,
+        balanceQty: 12,
+        refType: "GRN",
+        refId: "spec-ref",
+        refDocNumber: "",
+      },
+    });
+    const appended = await prisma.$transaction((tx) => appendSeedOpeningBalances(tx, [rowId]));
+    expect(appended).toBe(0);
+    expect(await prisma.stockLedgerEntry.count({ where: { itemId, type: "OPENING" } })).toBe(0);
+  });
+
+  it("folds a null row and a \"\" row of one item into one OPENING entry at the summed quantity", async () => {
+    const emptyRow = await prisma.inventoryValue.create({
+      data: { itemId, variantSku: "", qtyOnHand: 8, reservedQty: 0, avgCost: 1000, totalValue: 8000 },
+    });
+    const appended = await prisma.$transaction((tx) => appendSeedOpeningBalances(tx, [rowId, emptyRow.id]));
+    expect(appended).toBe(1);
+    const entries = await prisma.stockLedgerEntry.findMany({ where: { itemId } });
+    expect(entries).toHaveLength(1);
+    expect(entries[0].type).toBe("OPENING");
+    expect(entries[0].variantSku).toBe("");
+    expect(Number(entries[0].qty)).toBe(20);
+    expect(Number(entries[0].balanceQty)).toBe(20);
+  });
+
   it("appends nothing for an empty id list, even with non-zero rows present", async () => {
     const appended = await prisma.$transaction((tx) => appendSeedOpeningBalances(tx, []));
     expect(appended).toBe(0);

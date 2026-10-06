@@ -25,7 +25,7 @@ import { getDatabaseUrl } from "../src/db-connection";
 import { loadDbEnv } from "../src/load-env";
 import { seedPantoneColors } from "./seed-pantone-colors";
 import { seedChartAccounts } from "./seed-chart-accounts";
-import { appendSeedOpeningBalances } from "./seed-ledger";
+import { appendSeedOpeningBalances, hasSeedOpening } from "./seed-ledger";
 import { moveMainStock } from "../src/stock-balance";
 
 loadDbEnv();
@@ -998,6 +998,14 @@ async function main() {
   console.log("BOM (ConsumptionRule) OK");
 
   // ---------- 8. InventoryValue (for items that will have stock) ----------
+  /*
+   * These figures are the state BEFORE the four seeded stock movements below (GRN fabric1 +50,
+   * GRN acc2 +500, ADJUSTMENT fabric2 +10, WO_ISSUE fabric1 -200): the hand-written movements
+   * carried balanceQty chains of 500 -> 550 -> 350, 800 -> 1300 and 300 -> 310 starting from
+   * exactly these quantities. So each figure is the row's opening balance, the movements are
+   * applied through the movers afterwards, and the rows those movements touch end at the
+   * moved figure rather than the opening one.
+   */
   const invData = [
     { itemId: fabric1.id, qtyOnHand: 500, avgCost: 25000, totalValue: 12_500_000 },
     { itemId: fabric2.id, qtyOnHand: 300, avgCost: 18000, totalValue: 5_400_000 },
@@ -1015,28 +1023,23 @@ async function main() {
     { itemId: fg3.id, qtyOnHand: 200, avgCost: 45000, totalValue: 9_000_000 },
     { itemId: jeansTrousers.id, qtyOnHand: 0, avgCost: 0, totalValue: 0 },
   ];
-  /*
-   * These figures are the state BEFORE the four seeded stock movements below (GRN fabric1 +50,
-   * GRN acc2 +500, ADJUSTMENT fabric2 +10, WO_ISSUE fabric1 -200): the hand-written movements
-   * carried balanceQty chains of 500 -> 550 -> 350, 800 -> 1300 and 300 -> 310 starting from
-   * exactly these quantities. So each figure is the row's opening balance, the movements are
-   * applied through the movers afterwards, and the rows those movements touch end at the
-   * moved figure rather than the opening one.
-   */
   const seededInventoryIds: string[] = [];
   for (const inv of invData) {
     const existing = await prisma.inventoryValue.findFirst({
       where: { itemId: inv.itemId, variantSku: null },
     });
     if (existing) {
-      await prisma.inventoryValue.update({
-        where: { id: existing.id },
-        data: {
-          qtyOnHand: inv.qtyOnHand,
-          avgCost: inv.avgCost,
-          totalValue: inv.totalValue,
-        },
-      });
+      /* A row the ledger already backs keeps its balance: resetting it would desync on-hand from the ledger. */
+      if (!(await hasSeedOpening(prisma, inv.itemId, null))) {
+        await prisma.inventoryValue.update({
+          where: { id: existing.id },
+          data: {
+            qtyOnHand: inv.qtyOnHand,
+            avgCost: inv.avgCost,
+            totalValue: inv.totalValue,
+          },
+        });
+      }
       seededInventoryIds.push(existing.id);
     } else {
       const created = await prisma.inventoryValue.create({
@@ -1052,15 +1055,18 @@ async function main() {
     }
   }
   // variantSku '' matches createStockAdjustment / costing (not null)
+  const poplinBacked = await hasSeedOpening(prisma, fabricCottonPoplin.id, "");
   const poplinRow = await prisma.inventoryValue.upsert({
     where: {
       itemId_variantSku: { itemId: fabricCottonPoplin.id, variantSku: "" },
     },
-    update: {
-      qtyOnHand: 200,
-      avgCost: 40000,
-      totalValue: 8_000_000,
-    },
+    update: poplinBacked
+      ? {}
+      : {
+          qtyOnHand: 200,
+          avgCost: 40000,
+          totalValue: 8_000_000,
+        },
     create: {
       itemId: fabricCottonPoplin.id,
       variantSku: "",
@@ -1699,7 +1705,9 @@ async function main() {
     });
     const payload = { qtyOnHand: inv.qtyOnHand, avgCost: inv.avgCost, totalValue: inv.totalValue };
     if (existing) {
-      await prisma.inventoryValue.update({ where: { id: existing.id }, data: payload });
+      if (!(await hasSeedOpening(prisma, inv.itemId, null))) {
+        await prisma.inventoryValue.update({ where: { id: existing.id }, data: payload });
+      }
       hppInventoryIds.push(existing.id);
     } else {
       const created = await prisma.inventoryValue.create({
