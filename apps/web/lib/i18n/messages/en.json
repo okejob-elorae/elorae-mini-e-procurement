@@ -3811,8 +3811,8 @@
       "confirmAction": "Approve",
       "submitting": "Approving…",
       "success": "Stocktake approved, store stock updated.",
-      "driftTitle": "Stock has moved since this count was opened",
-      "driftLine": "{product}{variant}: snapshot {expected}, now {live}",
+      "driftTitle": "Stock has moved since the expected figures were set",
+      "driftLine": "{product}{variant}: expected {expected}, now {live}",
       "driftNote": "This is informational only — the drift itself does not block approval. It writes each counted figure plus whatever moved after that line was counted, except returns raised and store transfers moved before it was counted, which the count already saw. A pending store transfer that moved counted goods before the count does block approval until it is approved or cancelled."
     },
     "cancel": {
