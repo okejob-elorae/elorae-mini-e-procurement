@@ -17,10 +17,12 @@ export type RematchSweepResult = {
  * next tick retries it; `matchSettlement` is idempotent, so a repeat only wastes work. The cron
  * job runs with `noOverlap`, so two ticks never race each other in one process.
  *
- * A RECONCILED settlement is stamped but never rematched: `matchSettlement` would rewrite every
- * line's cost and profit figures after the journal posted. The status is re-read AFTER the batch
- * is found finished, never taken from the `findMany` below, so a journal posted while this tick
- * was counting is still honoured.
+ * A RECONCILED settlement is stamped but never rematched: rewriting its lines' cost and profit
+ * figures after the journal posted would change what finance saw. The status is re-read AFTER the
+ * batch is found finished, never taken from the `findMany` below, so a journal posted while this
+ * tick was counting is skipped without opening a match. A journal posted after that re-read is
+ * caught by `matchSettlement` itself, which refuses a RECONCILED settlement under the row lock the
+ * journal post also takes; that refusal is stamped and counted as the same skip.
  *
  * `settlementIds` must always be passed by a spec — omitted, this sweeps every settlement with a
  * pending batch; `[]` sweeps nothing (`!== undefined`, never a length check — see AGENTS.md's
@@ -69,14 +71,18 @@ export async function runSettlementRematchSweep(
       continue;
     }
 
+    let refused = false;
     try {
-      await matchSettlement(s.id);
+      refused = (await matchSettlement(s.id)).refused === "RECONCILED";
     } catch (err) {
       /* Left unstamped on purpose: the next tick retries it. */
       console.error(`[rematch-sweep] matchSettlement failed for settlement ${s.id}:`, err);
       continue;
     }
-    if (await stampBatch(s.id, batchId)) rematched += 1;
+    if (await stampBatch(s.id, batchId)) {
+      if (refused) skippedReconciled += 1;
+      else rematched += 1;
+    }
   }
 
   return { scanned: pending.length, rematched, skippedReconciled, stillRunning };

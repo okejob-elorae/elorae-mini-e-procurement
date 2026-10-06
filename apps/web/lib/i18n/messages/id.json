@@ -4657,6 +4657,7 @@
     "matchToastSuccess": "Selesai: {matched} cocok, {unmatched} tidak cocok, {profitPending} profit tertunda",
     "matchToastForbidden": "Anda tidak memiliki izin untuk mencocokkan settlement ini.",
     "matchToastNotFound": "Settlement tidak ditemukan.",
+    "matchToastReconciled": "Settlement ini sudah direkonsiliasi — jurnalnya sudah diposting, jadi pesanannya tidak bisa dicocokkan ulang.",
     "matchedLinesTitle": "Baris Tercocokkan",
     "unmatchedLinesTitle": "Baris Belum Cocok",
     "noMatchedLines": "Belum ada baris yang cocok.",
@@ -4707,7 +4708,7 @@
     "autoRematchPending": "Mengambil pesanan dari Jubelio. Settlement akan dicocokkan ulang otomatis setelah selesai — halaman ini boleh ditinggal.",
     "autoRematchSoon": "Pengambilan selesai — dicocokkan ulang dalam satu menit.",
     "autoRematchedToast": "Settlement dicocokkan ulang dengan pesanan yang diambil.",
-    "autoRematchSkippedReconciled": "Pengambilan selesai. Settlement ini sudah direkonsiliasi, jadi tidak dicocokkan ulang otomatis.",
+    "autoRematchSkippedReconciled": "Pengambilan selesai. Settlement ini sudah direkonsiliasi — jurnalnya sudah diposting, jadi pesanannya tidak bisa dicocokkan ulang lagi.",
     "fetchingBadge": "Mengambil…",
     "kpiDiffer": "Pesanan Berbeda",
     "compare": {

@@ -5,6 +5,7 @@ import { AdminNotificationService } from "../../admin/notification.service";
 import { PRISMA } from "../../db/prisma.module";
 import { OUTBOX_STATUS } from "./outbox-status";
 import { NonRetryableError } from "../queue/errors";
+import { JubelioError } from "../jubelio.types";
 
 function rowFixture(overrides: any = {}) {
   return {
@@ -210,6 +211,63 @@ describe("OutboxProcessor", () => {
 
     expect(router.route).not.toHaveBeenCalled();
     expect(store.current().attempts).toBe(0);
+  });
+
+  describe("repeated integrity-constraint error", () => {
+    const constraintError = () =>
+      new JubelioError("An internal server error occurred", 500, {
+        statusCode: 500,
+        message: "An internal server error occurred",
+        code: "23505",
+      });
+
+    it("first attempt releases the row, records the fingerprint and rethrows without an alert", async () => {
+      const store = statefulOutboxMock();
+      prisma.jubelioOutbox = store;
+      router.route.mockRejectedValue(constraintError());
+
+      await expect(
+        processor.process({ data: { rowId: "r1" }, attemptsMade: 0 } as any),
+      ).rejects.toThrow();
+
+      expect(store.current().status).toBe(OUTBOX_STATUS.PENDING);
+      expect(store.current().lastError).toContain("[constraint 500:23505]");
+      expect(admin.write).not.toHaveBeenCalled();
+    });
+
+    it("second identical attempt settles DEAD with one alert and does not rethrow", async () => {
+      const store = statefulOutboxMock();
+      prisma.jubelioOutbox = store;
+      router.route.mockRejectedValue(constraintError());
+
+      await expect(
+        processor.process({ data: { rowId: "r1" }, attemptsMade: 0 } as any),
+      ).rejects.toThrow();
+      await expect(
+        processor.process({ data: { rowId: "r1" }, attemptsMade: 1 } as any),
+      ).resolves.toBeUndefined();
+
+      expect(store.current().status).toBe(OUTBOX_STATUS.DEAD);
+      expect(store.current().attempts).toBe(2);
+      expect(admin.write).toHaveBeenCalledTimes(1);
+    });
+
+    it("a different error on the second attempt retries normally", async () => {
+      const store = statefulOutboxMock();
+      prisma.jubelioOutbox = store;
+      router.route.mockRejectedValueOnce(constraintError());
+      router.route.mockRejectedValueOnce(new Error("timeout"));
+
+      await expect(
+        processor.process({ data: { rowId: "r1" }, attemptsMade: 0 } as any),
+      ).rejects.toThrow();
+      await expect(
+        processor.process({ data: { rowId: "r1" }, attemptsMade: 1 } as any),
+      ).rejects.toThrow(/timeout/);
+
+      expect(store.current().status).toBe(OUTBOX_STATUS.PENDING);
+      expect(admin.write).not.toHaveBeenCalled();
+    });
   });
 
   it("marks DEAD via onJobFailed when attemptsMade reaches JOB_ATTEMPTS", async () => {

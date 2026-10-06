@@ -11,7 +11,10 @@ describe("SalesOrderPackHandler", () => {
   let http: { post: jest.Mock };
 
   beforeEach(async () => {
-    prisma = { salesOrder: { findUnique: jest.fn() } };
+    prisma = {
+      salesOrder: { findUnique: jest.fn() },
+      jubelioOutbox: { findFirst: jest.fn().mockResolvedValue(null) },
+    };
     http = { post: jest.fn() };
 
     const moduleRef = await Test.createTestingModule({
@@ -32,6 +35,7 @@ describe("SalesOrderPackHandler", () => {
     payload: { salesOrderId: "so1", jubelioSalesorderId: 23043 },
     status: "PENDING",
     attempts: 0,
+    createdAt: new Date("2026-10-01T10:00:00Z"),
     ...overrides,
   });
 
@@ -72,5 +76,26 @@ describe("SalesOrderPackHandler", () => {
     prisma.salesOrder.findUnique.mockResolvedValue({ id: "so1", salesorderId: 23043 });
     http.post.mockRejectedValue(new Error("network bork"));
     await expect(handler.handle(baseRow() as any)).rejects.toThrow("network bork");
+  });
+
+  it("waits while the salesorder_pick push is PENDING, without touching Jubelio", async () => {
+    prisma.jubelioOutbox.findFirst.mockResolvedValue({ id: "p1", status: "PENDING" });
+    await expect(handler.handle(baseRow() as any)).rejects.toThrow("has not settled yet");
+    expect(prisma.salesOrder.findUnique).not.toHaveBeenCalled();
+    expect(http.post).not.toHaveBeenCalled();
+  });
+
+  it("proceeds to Jubelio when the salesorder_pick push is DEAD", async () => {
+    prisma.jubelioOutbox.findFirst.mockResolvedValue({ id: "p1", status: "DEAD" });
+    prisma.salesOrder.findUnique.mockResolvedValue({ id: "so1", salesorderId: 23043 });
+    http.post.mockResolvedValue({ status: "ok" });
+
+    const result = await handler.handle(baseRow() as any);
+
+    expect(result).toEqual({ kind: "processed" });
+    expect(http.post).toHaveBeenCalledWith(
+      expect.stringContaining("packlist/mark-as-complete"),
+      { ids: [23043] },
+    );
   });
 });

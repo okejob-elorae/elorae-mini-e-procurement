@@ -75,6 +75,7 @@ If your feature needs a push type that doesn't exist yet (e.g. `salesreturn_deci
 4. Wire it in `apps/api/src/jubelio/outbox/outbox-router.ts` — add a case branch. The exhaustiveness check (`const _exhaustive: never`) will compile-fail until you do.
 5. Register the handler in `jubelio-outbox.module.ts`.
 6. Add a `.spec.ts` for the handler. Mock the Jubelio HTTP client.
+7. If the push must land after another one for the same entity (pick → pack → ship), make the handler's first statement `assertPredecessorSettled` (`apps/api/src/jubelio/outbox/handlers/predecessor-push.ts`), before any read or HTTP call, and add the predecessor type to its `PredecessorType`. A `PENDING`/`PROCESSING` predecessor throws a plain `Error`, so your row burns a retry and waits; `DONE`, `SKIPPED`, `DEAD` or no predecessor row lets it proceed and Jubelio validates the transition. It never holds on `DEAD`, which cannot be settled. See `docs/landmines/jubelio.md`.
 
 The compile error from the router's `never` check is the safety net: you cannot ship a new outbox type without a handler.
 

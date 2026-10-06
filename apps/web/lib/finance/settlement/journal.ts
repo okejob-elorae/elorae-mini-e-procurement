@@ -1,6 +1,7 @@
 import { prisma, postJournal, JournalError, Prisma, type PrismaClient } from "@elorae/db";
 import { resolveAccount, UnmappedRoleError } from "@/lib/finance/journals/mapping";
 import { splitMarketplaceFees, type MarketplaceFeeRole } from "./fee-split";
+import { lockSettlementRow } from "./lock";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
@@ -132,6 +133,17 @@ export async function postSettlementJournal(
   if (lines.length < 2) return { ok: false, code: "UNBALANCED" };
 
   const run = async (tx: Prisma.TransactionClient) => {
+    /**
+     * First statement of the transaction: `matchSettlement` holds this same row lock for its whole
+     * line rewrite, so a post waits out a running match and a match started after this waits for
+     * the commit and then sees RECONCILED. The reads above stay outside it on purpose — totals and
+     * fee sums are columns a match never writes. With a caller-supplied transaction client there is
+     * no separate transaction: those reads run inside the caller's, before this lock, so such a
+     * caller must not depend on that snapshot, since a locking read after an earlier consistent
+     * read can raise ER_CHECKREAD under `innodb_snapshot_isolation` on newer MariaDB. No caller
+     * passes one today.
+     */
+    await lockSettlementRow(tx, s.id);
     const res = await postJournal(tx, {
       source: { type: "SETTLEMENT", id: s.id },
       date: s.periodTo,
@@ -144,7 +156,15 @@ export async function postSettlementJournal(
   };
 
   try {
-    return hasTx(client) ? await client.$transaction(run) : await run(client as Prisma.TransactionClient);
+    /*
+     * Same budget as `matchSettlement`'s transaction, so a post queued behind a long match waits
+     * instead of dying at Prisma's 5s default. `innodb_lock_wait_timeout` stays at the server
+     * default (50s, no override in this repo), so any waiter still fails with ER 1205 after 50s;
+     * the 120s budget protects the lock holder, not the waiter.
+     */
+    return hasTx(client)
+      ? await client.$transaction(run, { timeout: 120_000, maxWait: 10_000 })
+      : await run(client as Prisma.TransactionClient);
   } catch (e) {
     if (e instanceof JournalError && e.code === "UNBALANCED") return { ok: false, code: "UNBALANCED" };
     if (e instanceof JournalError && e.code === "NON_POSTABLE_ACCOUNT") {

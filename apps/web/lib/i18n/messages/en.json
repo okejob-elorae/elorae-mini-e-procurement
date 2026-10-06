@@ -4657,6 +4657,7 @@
     "matchToastSuccess": "Done: {matched} matched, {unmatched} unmatched, {profitPending} profit pending",
     "matchToastForbidden": "You don't have permission to match this settlement.",
     "matchToastNotFound": "Settlement not found.",
+    "matchToastReconciled": "This settlement is already reconciled — its journal is posted, so its orders can no longer be rematched.",
     "matchedLinesTitle": "Matched Lines",
     "unmatchedLinesTitle": "Unmatched Lines",
     "noMatchedLines": "No matched lines yet.",
@@ -4707,7 +4708,7 @@
     "autoRematchPending": "Fetching orders from Jubelio. The settlement rematches itself when this finishes — you can leave this page.",
     "autoRematchSoon": "Fetch finished — rematching within a minute.",
     "autoRematchedToast": "Settlement rematched with the fetched orders.",
-    "autoRematchSkippedReconciled": "Fetch finished. This settlement is reconciled, so it was not rematched automatically.",
+    "autoRematchSkippedReconciled": "Fetch finished. This settlement is reconciled — its journal is posted, so its orders can no longer be rematched.",
     "fetchingBadge": "Fetching…",
     "kpiDiffer": "Orders Differ",
     "compare": {

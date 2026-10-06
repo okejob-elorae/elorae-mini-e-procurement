@@ -115,6 +115,13 @@ export function getNotificationHref(
       }
       return base;
     }
+    case 'FULFILLMENT_PUSH_STUCK': {
+      const salesOrderId = data.salesOrderId;
+      if (typeof salesOrderId === 'string') {
+        return `/backoffice/sales-orders/${salesOrderId}`;
+      }
+      return '/backoffice/sales-orders';
+    }
     case 'SETTLEMENT_REJECTED': {
       const storeId = data.storeId;
       if (typeof storeId === 'string') {

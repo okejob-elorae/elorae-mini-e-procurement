@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { JubelioWebhookEvent, ReservationLine } from "@elorae/db";
-import { reserveOrder, releaseOrder, consumeOrder } from "@elorae/db";
+import { Prisma, reserveOrder, releaseOrder, consumeOrder } from "@elorae/db";
 import { PRISMA, type PrismaService } from "../../db/prisma.module";
 import { AdminNotificationService } from "../../admin/notification.service";
 import { SKIP_REASONS } from "../queue/webhook-status";
@@ -34,6 +34,14 @@ function parseDate(v: string | null | undefined): Date | null {
   if (!v) return null;
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * A payload is stale only when BOTH timestamps are known and the incoming one is strictly older
+ * than the stored one. Equal or missing timestamps process as before.
+ */
+export function isStalePayload(incoming: Date | null, stored: Date | null): boolean {
+  return incoming !== null && stored !== null && incoming.getTime() < stored.getTime();
 }
 
 function buildShippingAddress(p: SalesOrderPayload): Record<string, string> | undefined {
@@ -103,23 +111,42 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
       return { kind: "skipped", reason: SKIP_REASONS.MISSING_SALESORDER_ID };
     }
 
-    const state = await this.prisma.$transaction(async (tx) => {
-      await this.upsertSalesOrder(tx as unknown as PrismaService, p, row.id);
+    /*
+     * READ COMMITTED, not the server's REPEATABLE READ default: the staleness guard's FOR UPDATE on
+     * an order not stored yet would otherwise gap-lock the index's top gap, so two concurrent NEW
+     * orders deadlock each other. Under READ COMMITTED the locking read takes no gap lock and still
+     * returns the latest committed row.
+     */
+    const txResult = await this.prisma.$transaction(
+      async (tx) => {
+        const { stale } = await this.upsertSalesOrder(tx as unknown as PrismaService, p, row.id);
+        if (stale) return null;
 
-      const existing = await tx.jubelioSalesOrderState.findUnique({
-        where: { salesorderId: p.salesorder_id },
-      });
-      if (existing) return existing;
-      return tx.jubelioSalesOrderState.create({
-        data: {
-          salesorderId: p.salesorder_id,
-          stockApplied: false,
-          lastStatus: p.channel_status ?? null,
-          lastIsCanceled: isCanceledOrder(p),
-          lastWebhookEventId: row.id,
-        },
-      });
-    });
+        const existing = await tx.jubelioSalesOrderState.findUnique({
+          where: { salesorderId: p.salesorder_id },
+        });
+        if (existing) return existing;
+        return tx.jubelioSalesOrderState.create({
+          data: {
+            salesorderId: p.salesorder_id,
+            stockApplied: false,
+            lastStatus: p.channel_status ?? null,
+            lastIsCanceled: isCanceledOrder(p),
+            lastWebhookEventId: row.id,
+          },
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+    );
+
+    /*
+     * A newer payload already drove this order's reserve/consume/release, so skipping the stale
+     * one's side effects loses nothing.
+     */
+    if (txResult === null) {
+      return { kind: "skipped", reason: SKIP_REASONS.STALE_PAYLOAD };
+    }
+    const state = txResult;
 
     const items = Array.isArray(p.items) ? p.items : [];
     const isCancel = isCanceledOrder(p);
@@ -213,7 +240,18 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
     tx: PrismaService,
     p: SalesOrderPayload,
     webhookEventId: string,
-  ): Promise<void> {
+  ): Promise<{ stale: boolean }> {
+    /*
+     * Locking read: serialises two concurrent handles of one order and returns the latest
+     * COMMITTED row, so the second compares against what the first committed. The caller runs
+     * this at READ COMMITTED so that a read of an order not stored yet takes no gap lock.
+     */
+    const locked = await tx.$queryRaw<Array<{ lastModifiedJubelio: Date | null }>>`
+      SELECT \`lastModifiedJubelio\` FROM \`SalesOrder\` WHERE \`salesorderId\` = ${p.salesorder_id} FOR UPDATE`;
+    if (isStalePayload(parseDate(p.last_modified), locked[0]?.lastModifiedJubelio ?? null)) {
+      return { stale: true };
+    }
+
     const { channel, unknown } = detectChannel(p.source_name, p.salesorder_no);
     if (unknown) {
       this.logger.warn(`Unknown source_name "${p.source_name ?? ""}" mapped to OTHER (salesorder ${p.salesorder_id})`);
@@ -267,9 +305,15 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
       createdDateJubelio: parseDate(p.created_date),
       completedDate: parseDate(p.completed_date),
       cancelDate: parseDate(p.internal_cancel_date),
-      lastModifiedJubelio: parseDate(p.last_modified),
       lastWebhookEventId: webhookEventId,
     };
+
+    /*
+     * `lastModifiedJubelio` is the staleness guard's reference, so a payload whose `last_modified`
+     * is missing or unparseable must not erase it: create stores whatever parses (null included),
+     * update omits the field when nothing parses, the same shape as the resi guard below.
+     */
+    const lastModifiedValue = parseDate(p.last_modified);
 
     /**
      * Webhooks are processed concurrently and out of order; a payload with no resi (or a blank
@@ -297,12 +341,14 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
       create: {
         salesorderId: p.salesorder_id,
         ...baseFields,
+        lastModifiedJubelio: lastModifiedValue,
         trackingNumber: trackingNumberValue,
         courier: courierValue,
         ...createShippedPatch,
       },
       update: {
         ...baseFields,
+        ...(lastModifiedValue !== null ? { lastModifiedJubelio: lastModifiedValue } : {}),
         ...(trackingNumberValue !== null ? { trackingNumber: trackingNumberValue } : {}),
         ...(courierValue !== null ? { courier: courierValue } : {}),
       },
@@ -370,6 +416,7 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
     if (lines.length > 0) {
       await tx.salesOrderItem.createMany({ data: lines });
     }
+    return { stale: false };
   }
 
   private async buildReservationLines(

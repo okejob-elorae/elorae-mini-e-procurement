@@ -25,4 +25,5 @@ export const SKIP_REASONS = {
   MISSING_REQUIRED_FIELD: "missing_required_field",
   MISSING_ITEM_IDS: "missing_item_ids",
   UNSUPPORTED_PAYLOAD_SHAPE: "unsupported_payload_shape",
+  STALE_PAYLOAD: "stale_payload",
 } as const;

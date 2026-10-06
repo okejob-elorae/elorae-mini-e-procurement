@@ -101,7 +101,18 @@ journalable when `status IN ('SHIPPED','COMPLETED') OR fulfillmentStatus = 'SHIP
 Each transition enqueues a `JubelioOutbox` row. The poller
 (`apps/api/src/jubelio/outbox/outbox-poller.service.ts`, every 5 s, batches of 100) hands it to a
 BullMQ job; `OutboxRouter` dispatches by `entityType`; the processor marks the row `DONE`,
-`SKIPPED`, or — after 5 attempts with exponential backoff — `DEAD` plus an admin notification.
+`SKIPPED`, or — after 5 attempts with exponential backoff — `DEAD` plus an admin notification. A
+Jubelio integrity-constraint error (a class-23 SQLSTATE such as `"23505"` in the body `code`) that
+repeats identically on the next attempt goes `DEAD` at once, with one notification, instead of
+using up the remaining attempts.
+
+The three rows are independent, and the retry backoff alone can reorder them, so the pack and ship
+handlers first call `assertPredecessorSettled` (`outbox/handlers/predecessor-push.ts`): pack waits
+for the latest `salesorder_pick` row, ship for the latest `salesorder_pack` row. A predecessor still
+`PENDING`/`PROCESSING` makes the dependent row retry; `DONE`, `SKIPPED`, `DEAD` or none lets it
+run, and Jubelio validates the transition itself. `DEAD` does not hold the dependent row because a
+`DEAD` row cannot be settled: the outbox reset puts it back to `PENDING`, and a refusal that repeats
+sends it `DEAD` again, so holding on it would keep the ship out of Jubelio for good.
 
 | Step | `entityType` | Jubelio endpoint | Body shape |
 |---|---|---|---|
@@ -146,9 +157,13 @@ be `SHIPPED` with a null pick/pack timeline.
 ## 7. Known gaps
 
 - **The local stamp is not proof Jubelio agrees.** The `fulfillmentStatus` write and the outbox
-  row commit together, but a push that later goes `SKIPPED` or `DEAD` never rolls the stamp back,
-  and nothing reconciles the two directions. Read `fulfillmentStatus` as "what Elorae did", not
-  "what Jubelio has".
+  row commit together, but a push that later goes `SKIPPED` or `DEAD` never rolls the stamp back.
+  A web cron (`runFulfillmentPushDivergenceSweep`, every 30 minutes) raises a
+  `FULFILLMENT_PUSH_STUCK` admin notification when a `PICKED`/`PACKED` order's latest pick or pack
+  row is `DEAD`, `SKIPPED` for a reason other than already-in-state, or still in flight after an
+  hour, skipping a `CANCELLED` or `RETURNED` order and raising at most 20 new alerts per run
+  (oldest orders first; the rest wait for a later run). It alerts only: it corrects neither side,
+  never compares `wmsStatus`, and does not cover the ship push. Read `fulfillmentStatus` as "what Elorae did", not "what Jubelio has".
 - **Pick pushes were silently broken in production for months** (shipped PR #47, fixed PR #276 on
   2026-09-02): the handler posted a `{ids, is_completed}` body that Jubelio rejects on
   `picklist_no`, then, once the shape was fixed, died on `location_picklist_header` FK violations
