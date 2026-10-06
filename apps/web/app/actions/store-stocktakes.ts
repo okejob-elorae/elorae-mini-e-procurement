@@ -268,8 +268,9 @@ export async function createAction(input: { storeId: string; countedAt: string }
  *   matters because this branch swallows `ALREADY_OPEN` by design (it reuses an existing open
  *   document instead of refusing), and that reuse is exactly what would let an admin dodge the
  *   `ALREADY_OPEN` refusal `createAction` deliberately enforces. The one residual case — an
- *   admin who also happens to carry an `assignedStoreId` and is checked in there (e.g. an SPG
- *   promoted to admin without clearing the field) — does reach this branch, but only ever reuses
+ *   admin who also happens to carry an `assignedStoreId` and is checked in there (only
+ *   reachable via a hand-written SQL assignment, or an account whose role was set before
+ *   `assignUserRole` began clearing the field and not re-saved since) — does reach this branch, but only ever reuses
  *   that one store's own already-open `DRAFT`, which is exactly the one-open-document-per-store
  *   invariant `openKey` enforces; no corruption follows, so no extra guard was added for it.
  *

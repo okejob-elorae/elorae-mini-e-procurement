@@ -289,7 +289,7 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
           })),
         })
       : null;
-  /* DRAFT lines that bill or carry a gap at a zero unit cost: approving books no cost of goods or shrinkage for them, which the approve dialog warns about. */
+  /* DRAFT lines that bill or carry a gap at a zero unit cost: approving books no cost of goods, shrinkage or surplus for them, which the approve dialog warns about. */
   const uncostedKeys =
     doc.status === "DRAFT"
       ? doc.lines

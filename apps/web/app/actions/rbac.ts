@@ -307,7 +307,10 @@ export async function assignUserRole(userId: string, roleId: string) {
 
   await prisma.user.update({
     where: { id: userId },
-    data: { roleId },
+    data: {
+      roleId,
+      ...(role.name !== 'SPG' ? { assignedStoreId: null } : {}),
+    },
   });
 
   revalidatePath('/backoffice/profile-accounts');

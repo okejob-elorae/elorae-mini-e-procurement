@@ -176,7 +176,7 @@ export function AccountForm({ mode, userId, roles, stores, initial }: Props) {
               value={roleId || undefined}
               onValueChange={setRoleId}
             >
-              <SelectTrigger>
+              <SelectTrigger className="data-[size=default]:h-10">
                 <SelectValue placeholder={t("formRolePlaceholder")} />
               </SelectTrigger>
               <SelectContent>
@@ -200,6 +200,7 @@ export function AccountForm({ mode, userId, roles, stores, initial }: Props) {
                 placeholder={t("formStorePlaceholder")}
                 emptyMessage={t("formStoreEmpty")}
                 disabled={pending}
+                className="h-10"
               />
               <p className="text-xs text-muted-foreground">
                 {t("formStoreHint")}
