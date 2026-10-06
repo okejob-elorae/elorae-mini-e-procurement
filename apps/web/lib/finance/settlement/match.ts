@@ -1,7 +1,20 @@
 import { prisma, Prisma } from "@elorae/db";
 import { salesorderNoForSettlement } from "./match-key";
+import { lockSettlementRow } from "./lock";
 
-export type MatchResult = { matched: number; unmatched: number; profitPending: number };
+export type MatchResult = {
+  matched: number;
+  unmatched: number;
+  profitPending: number;
+  /* Set when nothing was written: no line was touched and the status is unchanged. */
+  refused?: "RECONCILED";
+};
+
+type AnyClient = Prisma.TransactionClient | typeof prisma;
+
+function hasTx(client: AnyClient): client is typeof prisma {
+  return typeof (client as typeof prisma).$transaction === "function";
+}
 
 /**
  * Which SalesOrder column a settlement's resolved key is looked up against.
@@ -13,10 +26,37 @@ function matchColumn(marketplace: string): "salesorderNo" | "channelOrderNo" {
   return marketplace === "SHOPEE" ? "salesorderNo" : "channelOrderNo";
 }
 
-export async function matchSettlement(
-  settlementId: string,
-  client: Prisma.TransactionClient | typeof prisma = prisma,
-): Promise<MatchResult> {
+/**
+ * Rewrites every line's match and profit figures from the `SalesOrder` rows and item `cogs` as
+ * they stand now — never on a `RECONCILED` settlement, which is refused with no write at all.
+ *
+ * The refusal and the line writes share one transaction that holds the settlement row
+ * `FOR UPDATE` from its first statement. `postSettlementJournal` takes the same row lock first, so
+ * a match and a journal post serialise: a match never rewrites the lines of a settlement whose
+ * journal has posted, and a journal never posts mid-match. A caller passing its own transaction
+ * client gets the lock in that transaction, held until it commits.
+ */
+export async function matchSettlement(settlementId: string, client: AnyClient = prisma): Promise<MatchResult> {
+  if (hasTx(client)) {
+    /* One `UPDATE` per line runs under the lock, so a large settlement needs well past the 5s default. */
+    return client.$transaction((tx) => matchSettlementLocked(settlementId, tx), {
+      timeout: 120_000,
+      maxWait: 10_000,
+    });
+  }
+  return matchSettlementLocked(settlementId, client);
+}
+
+async function matchSettlementLocked(settlementId: string, client: Prisma.TransactionClient): Promise<MatchResult> {
+  /*
+   * The status decision comes from the locking read itself. A missing row falls through to the
+   * `findUniqueOrThrow` below, which throws exactly as before.
+   */
+  const locked = await lockSettlementRow(client, settlementId);
+  if (locked?.status === "RECONCILED") {
+    return { matched: 0, unmatched: 0, profitPending: 0, refused: "RECONCILED" };
+  }
+
   const settlement = await client.settlement.findUniqueOrThrow({
     where: { id: settlementId },
     select: { marketplace: true },
@@ -121,9 +161,9 @@ export async function matchSettlement(
   }
 
   /**
-   * Guarded, never a plain `update`: a RECONCILED settlement has a posted journal, and setting it
-   * back to MATCHED would reopen it beside that journal. The line figures above are still
-   * rewritten on a reconciled settlement — that half is an open decision in `docs/FOLLOWUPS.md`.
+   * Still guarded, never a plain `update`: a RECONCILED settlement has a posted journal, and setting
+   * it back to MATCHED would reopen it beside that journal. The lock above already refuses one, so
+   * this guard is the backstop, not the rule.
    */
   await client.settlement.updateMany({
     where: { id: settlementId, status: { not: "RECONCILED" } },

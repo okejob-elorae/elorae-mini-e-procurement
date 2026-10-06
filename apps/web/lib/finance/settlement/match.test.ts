@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { matchSettlement } from "./match";
+import { lockSettlementRow } from "./lock";
 
 // Test-bed only — never run against the shared prod DB (port 3307 tunnel / VPS host).
 const url = process.env.DATABASE_URL ?? "";
@@ -335,40 +336,176 @@ d("matchSettlement (test bed only)", () => {
     }
   });
 
-  it("never sets a RECONCILED settlement back to MATCHED", async () => {
+  /*
+   * Seeds a Shopee settlement with one line carrying recorded figures, plus a SalesOrder that WOULD
+   * match it with a different cost — so any rewrite of the line is visible, not a no-op that happens
+   * to write the same values back.
+   */
+  async function seedSettlementWithMatchableOrder(status: string) {
     const admin = await prisma.user.findFirstOrThrow({ where: { email: "admin@elorae.com" } });
-
-    let settlementId = "";
-    try {
-      const settlement = await prisma.settlement.create({
-        data: {
-          marketplace: "SHOPEE",
-          seller: "elorae.official",
-          periodFrom: new Date("2026-06-01T00:00:00+07:00"),
-          periodTo: new Date("2026-06-30T00:00:00+07:00"),
-          fileName: "t-reconciled.xlsx",
-          uploadedById: admin.id,
-          status: "RECONCILED",
-          totalPendapatan: 0,
-          totalPengeluaran: 0,
-          totalDilepas: 0,
-          parsedNetTotal: 0,
-          checksumOk: true,
-          checksumVariance: 0,
-          summaryRaw: {},
-          sellerFeesRaw: [],
-          adjustmentsRaw: [],
+    const suffix = Math.random().toString(36).slice(2, 10);
+    const orderNo = `REC-${suffix}`;
+    /* Negative, so a fixture can never collide with a real Jubelio id on the shared bed. */
+    const salesorderId = -Math.floor(Math.random() * 1_000_000_000) - 1;
+    const settlement = await prisma.settlement.create({
+      data: {
+        marketplace: "SHOPEE",
+        seller: "elorae.official",
+        periodFrom: new Date("2026-06-01T00:00:00+07:00"),
+        periodTo: new Date("2026-06-30T00:00:00+07:00"),
+        fileName: "t-reconciled.xlsx",
+        uploadedById: admin.id,
+        status,
+        totalPendapatan: 5000,
+        totalPengeluaran: 0,
+        totalDilepas: 5000,
+        parsedNetTotal: 5000,
+        checksumOk: true,
+        checksumVariance: 0,
+        summaryRaw: {},
+        sellerFeesRaw: [],
+        adjustmentsRaw: [],
+        lines: {
+          create: [
+            {
+              orderNo,
+              netIncome: 5000,
+              hargaAsliProduk: 5000,
+              totalDiskonProduk: 0,
+              biayaAdministrasi: 0,
+              biayaLayanan: 0,
+              biayaKomisiAms: 0,
+              biayaProsesPesanan: 0,
+              raw: {},
+              matchStatus: "MATCHED",
+              matchedSalesOrderId: null,
+              cogsSnapshot: 1200,
+              profit: 3800,
+            },
+          ],
         },
-        select: { id: true },
-      });
-      settlementId = settlement.id;
+      },
+      select: { id: true },
+    });
+    const order = await prisma.salesOrder.create({
+      data: {
+        salesorderId,
+        salesorderNo: `SP-${orderNo}`,
+        channel: "SHOPEE",
+        sourceName: "test",
+        status: "COMPLETED",
+        subTotal: 5000,
+        totalDisc: 0,
+        totalTax: 0,
+        shippingCost: 0,
+        grandTotal: 5000,
+        transactionDate: new Date(),
+      },
+      select: { id: true },
+    });
+    await prisma.salesOrderItem.create({
+      data: {
+        salesOrderId: order.id,
+        salesorderDetailId: salesorderId,
+        jubelioItemId: salesorderId,
+        jubelioItemCode: "TEST-SKU-REC",
+        productName: "test reconciled product",
+        qty: 1,
+        qtyInBase: 1,
+        unitPrice: 2000,
+        pricePaid: 2000,
+        discAmount: 0,
+        taxAmount: 0,
+        lineTotal: 2000,
+        cogs: 2000,
+      },
+    });
+    return { settlementId: settlement.id, orderId: order.id };
+  }
 
-      await matchSettlement(settlementId);
+  async function lineFigures(settlementId: string) {
+    const rows = await prisma.settlementLine.findMany({
+      where: { settlementId },
+      select: { id: true, matchStatus: true, matchedSalesOrderId: true, cogsSnapshot: true, profit: true },
+      orderBy: { id: "asc" },
+    });
+    return rows.map((r) => ({
+      ...r,
+      cogsSnapshot: r.cogsSnapshot === null ? null : r.cogsSnapshot.toString(),
+      profit: r.profit === null ? null : r.profit.toString(),
+    }));
+  }
 
+  async function teardown(settlementId: string, orderId: string) {
+    await prisma.salesOrderItem.deleteMany({ where: { salesOrderId: seededId(orderId) } });
+    await prisma.salesOrder.deleteMany({ where: { id: seededId(orderId) } });
+    await prisma.settlementLine.deleteMany({ where: { settlementId: seededId(settlementId) } });
+    await prisma.settlement.deleteMany({ where: { id: seededId(settlementId) } });
+  }
+
+  it("refuses a RECONCILED settlement: no line is rewritten and the status stays RECONCILED", async () => {
+    let settlementId = "";
+    let orderId = "";
+    try {
+      ({ settlementId, orderId } = await seedSettlementWithMatchableOrder("RECONCILED"));
+      const before = await lineFigures(settlementId);
+
+      const res = await matchSettlement(settlementId);
+      expect(res).toEqual({ matched: 0, unmatched: 0, profitPending: 0, refused: "RECONCILED" });
+
+      expect(await lineFigures(settlementId)).toEqual(before);
       const after = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
       expect(after.status).toBe("RECONCILED");
     } finally {
-      await prisma.settlement.deleteMany({ where: { id: seededId(settlementId) } });
+      await teardown(settlementId, orderId);
     }
   });
+
+  it("waits on a held settlement row lock and refuses once the holder commits RECONCILED", async () => {
+    let settlementId = "";
+    let orderId = "";
+    try {
+      ({ settlementId, orderId } = await seedSettlementWithMatchableOrder("MATCHED"));
+      const before = await lineFigures(settlementId);
+
+      /*
+       * Stands in for `postSettlementJournal`: takes the same row lock first, then flips the status
+       * and commits only when released. The match starts while the lock is held, so its own locking
+       * read has to wait and then decide on the committed RECONCILED.
+       */
+      let release!: () => void;
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let signalLocked!: () => void;
+      const locked = new Promise<void>((resolve) => {
+        signalLocked = resolve;
+      });
+      const holder = prisma.$transaction(
+        async (tx) => {
+          await lockSettlementRow(tx, settlementId);
+          signalLocked();
+          await released;
+          await tx.settlement.update({ where: { id: settlementId }, data: { status: "RECONCILED" } });
+        },
+        { timeout: 30_000 },
+      );
+      await Promise.race([locked, holder]);
+
+      const matching = matchSettlement(settlementId);
+      /* Observed later; this only keeps an early rejection from surfacing as unhandled meanwhile. */
+      matching.catch(() => {});
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      release();
+      await holder;
+
+      const res = await matching;
+      expect(res.refused).toBe("RECONCILED");
+      expect(await lineFigures(settlementId)).toEqual(before);
+      const after = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
+      expect(after.status).toBe("RECONCILED");
+    } finally {
+      await teardown(settlementId, orderId);
+    }
+  }, 60_000);
 });

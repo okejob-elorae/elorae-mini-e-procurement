@@ -108,6 +108,9 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
       : settlement.status === "MATCHED"
         ? t("statusMatched")
         : t("statusParsed");
+  /* A reconciled settlement's lines are frozen with its posted journal; the server refuses a match too. */
+  const canMatch = canManage && settlement.status !== "RECONCILED";
+  const rematchOffered = canMatch && rematchStatus !== "skippedReconciled";
 
   function handleMatch() {
     startTransition(async () => {
@@ -128,6 +131,10 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
           router.refresh();
         } else if (result.reason === "FORBIDDEN") {
           toast.error(t("matchToastForbidden"));
+        } else if (result.reason === "RECONCILED") {
+          /* A stale page: the journal posted after it loaded. Refresh so the button goes away. */
+          toast.error(t("matchToastReconciled"));
+          router.refresh();
         } else {
           toast.error(t("matchToastNotFound"));
         }
@@ -341,10 +348,12 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
 
         {canManage && (
           <div className="ml-auto flex items-center gap-2">
-            <Button size="sm" disabled={isPending} onClick={handleMatch}>
-              <RefreshCw className={`h-4 w-4 mr-2 ${isPending ? "animate-spin" : ""}`} />
-              {isPending ? t("matchOrdersPending") : t("matchOrdersButton")}
-            </Button>
+            {canMatch && (
+              <Button size="sm" disabled={isPending} onClick={handleMatch}>
+                <RefreshCw className={`h-4 w-4 mr-2 ${isPending ? "animate-spin" : ""}`} />
+                {isPending ? t("matchOrdersPending") : t("matchOrdersButton")}
+              </Button>
+            )}
 
             {fetchableCount > 0 && (
               <Button
@@ -456,14 +465,14 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
                   <ResyncStatTile label={t("resyncStatSkipped")} value={resyncSummary.skipped} />
                 </div>
 
-                {resyncTerminal && (resyncSummary.dead > 0 || rematchStatus !== "skippedReconciled") && (
+                {resyncTerminal && (resyncSummary.dead > 0 || rematchOffered) && (
                   <div className="flex flex-col gap-2 border-t pt-3 sm:flex-row sm:items-center">
                     {resyncSummary.dead > 0 && (
                       <p className="text-xs text-red-700 dark:text-red-400">
                         {t("resyncDeadHint", { count: String(resyncSummary.dead) })}
                       </p>
                     )}
-                    {rematchStatus !== "skippedReconciled" && (
+                    {rematchOffered && (
                       <Button size="lg" disabled={isPending} onClick={handleMatch} className="sm:ml-auto">
                         <RefreshCw className={`h-4 w-4 mr-2 ${isPending ? "animate-spin" : ""}`} />
                         {isPending ? t("matchOrdersPending") : t("rematchNow")}

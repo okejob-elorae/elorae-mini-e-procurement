@@ -4654,6 +4654,7 @@
     "matchToastSuccess": "Selesai: {matched} cocok, {unmatched} tidak cocok, {profitPending} profit tertunda",
     "matchToastForbidden": "Anda tidak memiliki izin untuk mencocokkan settlement ini.",
     "matchToastNotFound": "Settlement tidak ditemukan.",
+    "matchToastReconciled": "Settlement ini sudah direkonsiliasi — jurnalnya sudah diposting, jadi pesanannya tidak bisa dicocokkan ulang.",
     "matchedLinesTitle": "Baris Tercocokkan",
     "unmatchedLinesTitle": "Baris Belum Cocok",
     "noMatchedLines": "Belum ada baris yang cocok.",

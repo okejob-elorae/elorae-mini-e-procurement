@@ -1,6 +1,20 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { prisma, seededId, type Prisma } from "@elorae/db";
+
+/**
+ * A pass-through spy on the real `matchSettlement`. Some cases replace one call to land a write
+ * between the sweep's status re-read and the match. The match's own reads cannot be that hook:
+ * they run on a transaction client, which a spy on a `prisma` model delegate never sees.
+ */
+vi.mock("./match", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./match")>();
+  return { ...actual, matchSettlement: vi.fn(actual.matchSettlement) };
+});
+import { matchSettlement } from "./match";
 import { runSettlementRematchSweep } from "./rematch-sweep";
+
+const actualMatch = await vi.importActual<typeof import("./match")>("./match");
+const matchSpy = vi.mocked(matchSettlement);
 
 /* Test-bed only — never run against the shared prod DB (port 3307 tunnel / VPS host). */
 const url = process.env.DATABASE_URL ?? "";
@@ -46,6 +60,12 @@ async function createSettlement(
 }
 
 d("runSettlementRematchSweep (test bed only)", () => {
+  /* Drops any unconsumed one-off replacement so it can never leak into the next case. */
+  afterEach(() => {
+    matchSpy.mockReset();
+    matchSpy.mockImplementation(actualMatch.matchSettlement);
+  });
+
   it("rematches a settlement whose batch is all-terminal (DONE + NOT_FOUND)", async () => {
     const admin = await prisma.user.findFirstOrThrow({ where: { email: "admin@elorae.com" } });
     const suffix = Math.random().toString(36).slice(2, 10);
@@ -374,33 +394,17 @@ d("runSettlementRematchSweep (test bed only)", () => {
     const batchId = `rematch-throw-${suffix}`;
 
     let settlementId = "";
-    /**
-     * Force `matchSettlement`'s own read to throw for exactly this test's settlement, without
-     * touching any other row `findUniqueOrThrow` serves elsewhere in the same tick. The bound
-     * original is captured before spying and pinned back in `finally` — never `mockRestore` or
-     * `mockReset` on a Prisma model delegate spy (AGENTS.md): the delegate serves its methods
-     * through Prisma's own proxy rather than as own properties, so restoring leaves the method
-     * undefined (or returning undefined) for every later test in this file.
-     */
-    const original = prisma.settlement.findUniqueOrThrow.bind(prisma.settlement);
-    const spy = vi.spyOn(prisma.settlement, "findUniqueOrThrow");
     try {
       settlementId = await createSettlement(admin.id, { resyncBatchId: batchId });
       await seedResyncRows(batchId, ["DONE"]);
 
-      spy.mockImplementation(
-        (async (args: unknown) => {
-          const where = (args as { where?: { id?: string } })?.where;
-          if (where?.id === settlementId) throw new Error("boom");
-          return original(args as Parameters<typeof original>[0]);
-        }) as unknown as typeof prisma.settlement.findUniqueOrThrow,
-      );
+      matchSpy.mockImplementationOnce(async () => {
+        throw new Error("boom");
+      });
 
       const first = await runSettlementRematchSweep({ settlementIds: [settlementId] });
       expect(first).toEqual({ scanned: 1, rematched: 0, skippedReconciled: 0, stillRunning: 0 });
 
-      /* Pinned back before reading through it again — it is still wired to throw for this id. */
-      spy.mockImplementation(original as unknown as typeof prisma.settlement.findUniqueOrThrow);
       const afterThrow = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
       expect(afterThrow.resyncRematchedAt).toBeNull();
       expect(afterThrow.status).toBe("PARSED");
@@ -412,7 +416,6 @@ d("runSettlementRematchSweep (test bed only)", () => {
       expect(afterRetry.resyncRematchedAt).not.toBeNull();
       expect(afterRetry.status).toBe("MATCHED");
     } finally {
-      spy.mockImplementation(original as unknown as typeof prisma.settlement.findUniqueOrThrow);
       await prisma.jubelioSalesOrderResync.deleteMany({ where: { batchId: seededId(batchId) } });
       await prisma.settlementLine.deleteMany({ where: { settlementId: seededId(settlementId) } });
       await prisma.settlement.deleteMany({ where: { id: seededId(settlementId) } });
@@ -426,39 +429,86 @@ d("runSettlementRematchSweep (test bed only)", () => {
     const laterBatchId = `${batchId}-later`;
 
     let settlementId = "";
-    /**
-     * A second Resync press lands while this tick is matching: `matchSettlement`'s own read is the
-     * hook, so the replacement happens after the batch was counted and before the stamp CAS. Same
-     * bound-original hygiene as the throw case above.
-     */
-    const original = prisma.settlement.findUniqueOrThrow.bind(prisma.settlement);
-    const spy = vi.spyOn(prisma.settlement, "findUniqueOrThrow");
     try {
       settlementId = await createSettlement(admin.id, { resyncBatchId: batchId });
       await seedResyncRows(batchId, ["DONE"]);
 
-      spy.mockImplementation(
-        (async (args: unknown) => {
-          const where = (args as { where?: { id?: string } })?.where;
-          if (where?.id === settlementId) {
-            await prisma.settlement.update({
-              where: { id: settlementId },
-              data: { resyncBatchId: laterBatchId, resyncRematchedAt: null },
-            });
-          }
-          return original(args as Parameters<typeof original>[0]);
-        }) as unknown as typeof prisma.settlement.findUniqueOrThrow,
-      );
+      /* A second Resync press lands as this tick starts matching: after the count, before the stamp CAS. */
+      matchSpy.mockImplementationOnce(async (id, client) => {
+        await prisma.settlement.update({
+          where: { id },
+          data: { resyncBatchId: laterBatchId, resyncRematchedAt: null },
+        });
+        return actualMatch.matchSettlement(id, client);
+      });
 
       const result = await runSettlementRematchSweep({ settlementIds: [settlementId] });
       expect(result).toEqual({ scanned: 1, rematched: 0, skippedReconciled: 0, stillRunning: 0 });
 
-      spy.mockImplementation(original as unknown as typeof prisma.settlement.findUniqueOrThrow);
       const after = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
       expect(after.resyncBatchId).toBe(laterBatchId);
       expect(after.resyncRematchedAt).toBeNull();
     } finally {
-      spy.mockImplementation(original as unknown as typeof prisma.settlement.findUniqueOrThrow);
+      await prisma.jubelioSalesOrderResync.deleteMany({ where: { batchId: seededId(batchId) } });
+      await prisma.settlementLine.deleteMany({ where: { settlementId: seededId(settlementId) } });
+      await prisma.settlement.deleteMany({ where: { id: seededId(settlementId) } });
+    }
+  });
+
+  it("counts a refusal as the reconciled skip: a journal posted after the status re-read is stamped, lines untouched", async () => {
+    const admin = await prisma.user.findFirstOrThrow({ where: { email: "admin@elorae.com" } });
+    const suffix = Math.random().toString(36).slice(2, 10);
+    const batchId = `rematch-refused-${suffix}`;
+    const orderNo = `REFUSED-${suffix}`;
+
+    let settlementId = "";
+    try {
+      settlementId = await createSettlement(admin.id, {
+        resyncBatchId: batchId,
+        lines: {
+          create: [
+            {
+              orderNo,
+              netIncome: 5000,
+              hargaAsliProduk: 5000,
+              totalDiskonProduk: 0,
+              biayaAdministrasi: 0,
+              biayaLayanan: 0,
+              biayaKomisiAms: 0,
+              biayaProsesPesanan: 0,
+              raw: { "No. Pesanan": orderNo },
+              matchStatus: "MATCHED",
+              matchedSalesOrderId: null,
+              cogsSnapshot: 1200,
+              profit: 3800,
+            },
+          ],
+        },
+      });
+      await seedResyncRows(batchId, ["DONE"]);
+
+      /*
+       * The journal posts after the sweep re-read PARSED and before the match takes its lock, so
+       * only `matchSettlement`'s own refusal stands between the sweep and the reconciled lines.
+       */
+      matchSpy.mockImplementationOnce(async (id, client) => {
+        await prisma.settlement.update({ where: { id }, data: { status: "RECONCILED" } });
+        return actualMatch.matchSettlement(id, client);
+      });
+
+      const result = await runSettlementRematchSweep({ settlementIds: [settlementId] });
+      expect(result).toEqual({ scanned: 1, rematched: 0, skippedReconciled: 1, stillRunning: 0 });
+
+      const after = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
+      expect(after.resyncRematchedAt).not.toBeNull();
+      expect(after.status).toBe("RECONCILED");
+
+      /* No SalesOrder carries this number, so a rewrite would have flipped the line to UNMATCHED. */
+      const line = await prisma.settlementLine.findFirstOrThrow({ where: { settlementId, orderNo } });
+      expect(line.matchStatus).toBe("MATCHED");
+      expect(Number(line.cogsSnapshot)).toBe(1200);
+      expect(Number(line.profit)).toBe(3800);
+    } finally {
       await prisma.jubelioSalesOrderResync.deleteMany({ where: { batchId: seededId(batchId) } });
       await prisma.settlementLine.deleteMany({ where: { settlementId: seededId(settlementId) } });
       await prisma.settlement.deleteMany({ where: { id: seededId(settlementId) } });
@@ -494,8 +544,11 @@ d("runSettlementRematchSweep (test bed only)", () => {
     let settlementId = "";
     /**
      * The journal posts while the tick is counting the batch: the count is the hook, so the flip to
-     * RECONCILED lands after the sweep's `findMany` and before its status re-read. Same
-     * bound-original hygiene as the spies above.
+     * RECONCILED lands after the sweep's `findMany` and before its status re-read. The bound
+     * original is captured before spying and pinned back in `finally` — never `mockRestore` or
+     * `mockReset` on a Prisma model delegate spy (AGENTS.md): the delegate serves its methods
+     * through Prisma's own proxy rather than as own properties, so restoring leaves the method
+     * undefined (or returning undefined) for every later test in this file.
      */
     const original = prisma.jubelioSalesOrderResync.count.bind(prisma.jubelioSalesOrderResync);
     const spy = vi.spyOn(prisma.jubelioSalesOrderResync, "count");

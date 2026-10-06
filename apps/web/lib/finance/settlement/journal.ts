@@ -1,6 +1,7 @@
 import { prisma, postJournal, JournalError, Prisma, type PrismaClient } from "@elorae/db";
 import { resolveAccount, UnmappedRoleError } from "@/lib/finance/journals/mapping";
 import { splitMarketplaceFees, type MarketplaceFeeRole } from "./fee-split";
+import { lockSettlementRow } from "./lock";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
@@ -132,6 +133,13 @@ export async function postSettlementJournal(
   if (lines.length < 2) return { ok: false, code: "UNBALANCED" };
 
   const run = async (tx: Prisma.TransactionClient) => {
+    /**
+     * First statement, before any read: `matchSettlement` holds this same row lock for its whole
+     * line rewrite, so a post waits out a running match and a match started after this waits for
+     * the commit and then sees RECONCILED. The reads above stay outside it on purpose — totals and
+     * fee sums are columns a match never writes.
+     */
+    await lockSettlementRow(tx, s.id);
     const res = await postJournal(tx, {
       source: { type: "SETTLEMENT", id: s.id },
       date: s.periodTo,

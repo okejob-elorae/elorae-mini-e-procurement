@@ -9,7 +9,7 @@ import { postSettlementJournal, type PostSettlementJournalResult } from "@/lib/f
 
 export type MatchSettlementActionResult =
   | { ok: true; matched: number; unmatched: number; profitPending: number }
-  | { ok: false; reason: "FORBIDDEN" | "NOT_FOUND" };
+  | { ok: false; reason: "FORBIDDEN" | "NOT_FOUND" | "RECONCILED" };
 
 export async function matchSettlementAction(settlementId: string): Promise<MatchSettlementActionResult> {
   const session = await auth();
@@ -22,7 +22,8 @@ export async function matchSettlementAction(settlementId: string): Promise<Match
 
   const result = await matchSettlement(settlementId);
   revalidatePath(`/backoffice/finance/settlements/${settlementId}`);
-  return { ok: true, ...result };
+  if (result.refused) return { ok: false, reason: result.refused };
+  return { ok: true, matched: result.matched, unmatched: result.unmatched, profitPending: result.profitPending };
 }
 
 export async function postSettlementJournalAction(
