@@ -20,7 +20,7 @@ export async function freezeItemSnapshot(
     where: {
       type: itemType,
       isActive: true,
-      ...(itemIds?.length ? { id: { in: itemIds } } : {}),
+      ...(itemIds !== undefined ? { id: { in: itemIds } } : {}),
     },
     select: {
       id: true,
@@ -62,7 +62,7 @@ export async function freezeFabricRollSnapshot(
       item: {
         type: "FABRIC",
         isActive: true,
-        ...(itemIds?.length ? { id: { in: itemIds } } : {}),
+        ...(itemIds !== undefined ? { id: { in: itemIds } } : {}),
       },
     },
     select: {
@@ -178,7 +178,7 @@ export async function getOpenFabricItemIds(itemIds?: string[]): Promise<string[]
       item: {
         type: "FABRIC",
         isActive: true,
-        ...(itemIds?.length ? { id: { in: itemIds } } : {}),
+        ...(itemIds !== undefined ? { id: { in: itemIds } } : {}),
       },
     },
     select: { itemId: true },

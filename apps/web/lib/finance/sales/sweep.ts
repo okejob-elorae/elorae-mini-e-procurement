@@ -84,6 +84,10 @@ async function flag(
 export async function postPendingSalesJournals(
   opts: { limit?: number; postedById?: string; orderIds?: string[] } = {},
 ): Promise<SalesJournalSweepResult> {
+  if (opts.orderIds !== undefined && opts.orderIds.length === 0) {
+    return { posted: 0, revenue: 0, cogs: 0, pending: 0, skipped: null };
+  }
+
   const cutover = await readGlCutover();
   if (!cutover) return { posted: 0, revenue: 0, cogs: 0, pending: 0, skipped: "NO_CUTOVER" };
 
@@ -94,9 +98,12 @@ export async function postPendingSalesJournals(
     systemPoster = admin?.id ?? null;
   }
 
-  // Optional scope (targeted re-post / test isolation) — without it the sweep is global.
+  /**
+   * Optional scope (targeted re-post / test isolation): only an ABSENT orderIds makes the sweep
+   * global; an empty one returned above.
+   */
   const idFilter =
-    opts.orderIds && opts.orderIds.length > 0
+    opts.orderIds !== undefined
       ? Prisma.sql`AND so.id IN (${Prisma.join(opts.orderIds)})`
       : Prisma.empty;
 

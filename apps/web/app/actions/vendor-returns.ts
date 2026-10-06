@@ -10,6 +10,7 @@ import { findExistingInventoryValueRow, reverseInventoryValue } from '@/lib/inve
 import { getActorName, notifyVendorReturnCreated, notifyVendorReturnStatusUpdated } from '@/app/actions/notifications';
 import { getEffectiveHPPForItem } from '@/app/actions/hpp';
 import { auth } from '@/lib/auth';
+import { assertActor } from "@/lib/auth/assert-actor";
 import { PERMISSIONS, requirePermission } from '@/lib/rbac';
 
 async function requireSession() {
@@ -153,6 +154,7 @@ export async function createVendorReturn(
 ) {
   const session = await requireSession();
   requirePermission(session.user.permissions, PERMISSIONS.VENDOR_RETURNS_CREATE);
+  assertActor(session.user.id, userId);
 
   returnSchema.parse(data);
 
@@ -395,6 +397,10 @@ function parseVendorReturnLines(raw: unknown): VendorReturnLineRow[] {
 }
 
 export async function processReturn(id: string, userId: string) {
+  const session = await requireSession();
+  requirePermission(session.user.permissions, PERMISSIONS.VENDOR_RETURNS_MANAGE);
+  assertActor(session.user.id, userId);
+
   const result = await prisma.$transaction(async (tx) => {
     const ret = await tx.vendorReturn.findUnique({
       where: { id }
@@ -527,6 +533,10 @@ export async function completeReturn(
   userId: string,
   data: CompleteReturnInput
 ) {
+  const session = await requireSession();
+  requirePermission(session.user.permissions, PERMISSIONS.VENDOR_RETURNS_MANAGE);
+  assertActor(session.user.id, userId);
+
   completeReturnSchema.parse(data);
 
   const completeResult = await prisma.$transaction(async (tx) => {

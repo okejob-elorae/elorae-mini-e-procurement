@@ -8,13 +8,17 @@
  * Copies (FK-safe order): UOM, ItemCategory (prerequisite lookups for Item's
  * required/optional FKs) -> Item -> InventoryValue, JubelioProductMapping ->
  * SalesOrder (PII-scrubbed) -> SalesOrderItem -> JubelioSalesOrderState.
+ * Copies no ledger: each cloned InventoryValue row gets an OPENING
+ * StockLedgerEntry appended locally instead (appendSeedOpeningBalances).
  *
  * Idempotent: every table is copied via createMany({ skipDuplicates: true }),
- * batched, so re-running against an already-populated local DB is safe.
+ * batched, and the opening append skips a key that already has a ledger entry,
+ * so re-running against an already-populated local DB is safe.
  */
 import "dotenv/config";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { PrismaClient } from "../generated/prisma/client";
+import { appendSeedOpeningBalances } from "./seed-ledger";
 
 const BATCH_SIZE = 500;
 
@@ -183,6 +187,36 @@ async function main() {
         skipDuplicates: true,
       }),
     );
+
+    /*
+     * The clone copies balances and no ledger, so every cloned row would sit at a ledger balance
+     * of 0. Append the OPENING entry behind each one, bounded per transaction.
+     *
+     * Batches hold WHOLE items: an item's null and "" rows fold into one opening, and a batch that
+     * carried only one of them would append a partial opening and make the next batch skip the key.
+     */
+    const idsByItem = new Map<string, string[]>();
+    for (const v of inventoryValues) {
+      const ids = idsByItem.get(v.itemId);
+      if (ids) ids.push(v.id);
+      else idsByItem.set(v.itemId, [v.id]);
+    }
+    const openingBatches: string[][] = [];
+    let currentBatch: string[] = [];
+    for (const ids of idsByItem.values()) {
+      if (currentBatch.length > 0 && currentBatch.length + ids.length > 500) {
+        openingBatches.push(currentBatch);
+        currentBatch = [];
+      }
+      currentBatch.push(...ids);
+    }
+    if (currentBatch.length > 0) openingBatches.push(currentBatch);
+
+    let openings = 0;
+    for (const ids of openingBatches) {
+      openings += await dst.$transaction((tx) => appendSeedOpeningBalances(tx, ids), { timeout: 60_000 });
+    }
+    console.log(`StockLedgerEntry: ${openings} opening entries appended`);
 
     // ---------- JubelioProductMapping ----------
     const productMappings = await src.jubelioProductMapping.findMany();

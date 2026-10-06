@@ -1,6 +1,12 @@
 import { prisma, type Prisma } from '@elorae/db';
 import { generateSKU } from '@/lib/sku-generator';
 import { validateAndNormalizeVariants } from '@/lib/items/normalize-variants';
+import { parseItemVariants } from "@/lib/items/variants";
+import {
+  findVariantSkuCollisions,
+  skusIntroducedByEdit,
+  VariantSkuTakenError,
+} from "@/lib/items/variant-sku-collisions";
 
 export type ItemFormData = {
   sku?: string;
@@ -186,9 +192,18 @@ export async function createItem(data: ItemFormData) {
   }
 
   const categoryCode = await resolveCategoryCode(rest.categoryId ?? null);
-  const normalizedVariants = validateAndNormalizeVariants(finalSku, rest.variants, { categoryCode });
+  const normalizedVariants = validateAndNormalizeVariants(finalSku, rest.variants, {
+    categoryCode,
+    generateFrom: "parent",
+  });
 
   const item = await prisma.$transaction(async (tx) => {
+    /* The parent SKU joins the check: one equal to another item's variant SKU shares its namespace. */
+    const createCollisions = await findVariantSkuCollisions(tx, {
+      skus: [finalSku, ...normalizedVariants.map((v) => v.sku)],
+    });
+    if (createCollisions.length > 0) throw new VariantSkuTakenError(createCollisions);
+
     const newItem = await tx.item.create({
       data: {
         ...rest,
@@ -251,7 +266,16 @@ export async function updateItem(
   const categoryCode = await resolveCategoryCode(effectiveCategoryId);
   const normalizedVariants = validateAndNormalizeVariants(existing.sku, rest.variants, {
     categoryCode,
+    generateFrom: "parent",
   });
+  const updateCollisions = await findVariantSkuCollisions(client, {
+    excludeItemId: id,
+    skus: skusIntroducedByEdit(
+      parseItemVariants(existing.variants).map((v) => v.sku ?? ""),
+      normalizedVariants.map((v) => v.sku),
+    ),
+  });
+  if (updateCollisions.length > 0) throw new VariantSkuTakenError(updateCollisions);
 
   const item = await client.item.update({
     where: { id },

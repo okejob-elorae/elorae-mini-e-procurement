@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { postPendingSalesJournals, GL_CUTOVER_SETTING_KEY } from "./sweep";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../journals/mapping-test-fixture";
 
@@ -113,5 +113,13 @@ d("postPendingSalesJournals (test bed only)", () => {
     const notifs = await prisma.adminNotification.count({ where: { category: "JOURNAL_PENDING", message: { contains: `SO-${token}` } } });
     expect(notifs).toBe(1);
     expect(await prisma.journal.findUnique({ where: { sourceType_sourceId: { sourceType: "SALESORDER_REVENUE", sourceId: orderId } } })).toBeNull();
+  });
+
+  it("an empty orderIds scope posts nothing instead of falling back to a global sweep", async () => {
+    const res = await postPendingSalesJournals({ limit: 100, orderIds: [] });
+    expect(res.posted).toBe(0);
+    expect(res.revenue).toBe(0);
+    expect(res.cogs).toBe(0);
+    expect(await prisma.journal.count({ where: { sourceId: seededId(orderId) } })).toBe(0);
   });
 });
