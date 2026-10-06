@@ -17,6 +17,10 @@ export type VanJournalKind = "van_load" | "van_sale" | "van_reconcile";
  * document may be retried. Matching ignores `readAt` on purpose: marking the
  * notification read is not evidence the underlying post ever succeeded.
  *
+ * The one place a missing journal IS used as a trigger is the backstop sweep
+ * (`van-journal-sweep.ts`), and only above its derived auto-post floor, where
+ * every document was created by code that already attempted the post.
+ *
  * MariaDB JSON-path filtering on this Prisma adapter is unreliable (same
  * constraint noted in `lib/finance/sales/sweep.ts` and
  * `post-van-journal-safely.ts`), so notifications are fetched by the indexed

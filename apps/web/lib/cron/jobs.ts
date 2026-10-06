@@ -2,6 +2,7 @@ import cron from "node-cron";
 import { runCheckOverdue } from "./check-overdue";
 import { runReconciliationCron } from "@/app/actions/stock-reconciliation";
 import { postPendingSalesJournals, GL_CUTOVER_SETTING_KEY } from "@/lib/finance/sales/sweep";
+import { postPendingVanJournals } from "@/lib/canvassing/van-journal-sweep";
 import { runOverdueSweep } from "@/lib/finance/ar/overdue-sweep";
 import { runKonsiCountSweep } from "@/lib/konsi-count-schedule/sweep";
 import { runSettlementRematchSweep } from "@/lib/finance/settlement/rematch-sweep";
@@ -120,6 +121,36 @@ export function registerCronJobs(): void {
       }
     },
     { timezone: "Asia/Jakarta" },
+  );
+
+  /**
+   * Hourly — post van load/sale/reconcile journals that never got one, above the
+   * auto-post floor. Backstop for a failed post whose JOURNAL_PENDING write also
+   * failed. `noOverlap` skips a tick while the previous one is still posting.
+   *
+   * `NO_FLOOR` stays quiet on purpose: it means no van document has ever been
+   * auto-posted in this environment, a healthy state, unlike the sales sweep's
+   * `NO_CUTOVER`.
+   */
+  cron.schedule(
+    "20 * * * *",
+    async () => {
+      try {
+        const r = await postPendingVanJournals();
+        if (r.skipped === "NO_FLOOR") return;
+        if (r.posted > 0 || r.failed > 0) {
+          console.log(
+            "[cron] van-journal done — posted=%d failed=%d newlyFlagged=%d",
+            r.posted,
+            r.failed,
+            r.newlyFlagged,
+          );
+        }
+      } catch (err) {
+        console.error("[cron] van-journal failed:", err);
+      }
+    },
+    { timezone: "Asia/Jakarta", noOverlap: true },
   );
 
   /**

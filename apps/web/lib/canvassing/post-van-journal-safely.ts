@@ -103,12 +103,13 @@ async function notify(
      * silently is worse than it looks here: `hasPostableJournal` gates the
      * retry button on a matching JOURNAL_PENDING notification existing, so
      * if THIS write also fails, the document ends up with no journal, no
-     * notification, and no retry button — permanently unpostable except by
-     * hand. Log loudly so it is at least discoverable.
+     * notification, and no retry button. The hourly van journal sweep
+     * (`van-journal-sweep.ts`) re-attempts it from there, but only above its
+     * auto-post floor. Log loudly so it is at least discoverable.
      */
     console.error(
       `[postVanJournalSafely] FAILED TO NOTIFY for van ${kind} ${docId} — this document has no journal and will show ` +
-        "no retry button (JOURNAL_PENDING notification write also failed). It needs a manual journal entry.",
+        "no retry button (JOURNAL_PENDING notification write also failed). The hourly van journal sweep will re-attempt it.",
       e,
     );
   }
