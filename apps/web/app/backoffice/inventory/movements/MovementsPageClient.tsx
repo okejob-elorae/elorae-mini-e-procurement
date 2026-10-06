@@ -613,41 +613,43 @@ export function MovementsPageClient() {
             return (
               <Collapsible key={group.key} defaultOpen={singleSection}>
                 <Card>
-                  <CollapsibleTrigger asChild>
-                    <CardHeader
-                      aria-label={t("toggleSection")}
-                      className="group flex min-h-10 flex-row cursor-pointer items-center justify-between gap-2 space-y-0"
-                    >
-                      <CardTitle className="flex min-w-0 items-center gap-2 text-base">
-                        <span className="truncate">{groupTitle}</span>
-                        {!group.locationResolved && (
-                          <Badge variant="outline" className="shrink-0 text-xs font-normal">
-                            {t("unresolvedLocation")}
-                          </Badge>
-                        )}
-                        {singleSectionGroup ? (
-                          firstSection.variantSku && (
-                            <Badge variant="secondary" className="truncate text-xs font-normal">
-                              {t("sectionVariantLabel", { sku: firstSection.variantSku })}
+                  <CardHeader className="space-y-0">
+                    <CollapsibleTrigger asChild>
+                      <button
+                        type="button"
+                        className="group/loc flex min-h-10 w-full cursor-pointer items-center justify-between gap-2 rounded-md text-left outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                      >
+                        <span className="flex min-w-0 items-center gap-2 text-base font-semibold leading-none">
+                          <span className="truncate">{groupTitle}</span>
+                          {!group.locationResolved && (
+                            <Badge variant="outline" className="shrink-0 text-xs font-normal">
+                              {t("unresolvedLocation")}
                             </Badge>
-                          )
-                        ) : (
-                          <Badge variant="secondary" className="shrink-0 text-xs font-normal">
-                            {t("sectionGroupVariants", { count: group.sections.length })}
-                          </Badge>
-                        )}
-                      </CardTitle>
-                      <div className="flex shrink-0 items-center gap-3">
-                        <span className="text-sm text-muted-foreground whitespace-nowrap">
-                          {t("closingBalanceLabel")}:{" "}
-                          <span className="font-medium tabular-nums text-foreground">
-                            {group.closingBalance.toLocaleString()}
-                          </span>
+                          )}
+                          {singleSectionGroup ? (
+                            firstSection.variantSku && (
+                              <Badge variant="secondary" className="truncate text-xs font-normal">
+                                {t("sectionVariantLabel", { sku: firstSection.variantSku })}
+                              </Badge>
+                            )
+                          ) : (
+                            <Badge variant="secondary" className="shrink-0 text-xs font-normal">
+                              {t("sectionGroupVariants", { count: group.sections.length })}
+                            </Badge>
+                          )}
                         </span>
-                        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
-                      </div>
-                    </CardHeader>
-                  </CollapsibleTrigger>
+                        <span className="flex shrink-0 items-center gap-3">
+                          <span className="text-sm text-muted-foreground whitespace-nowrap">
+                            {t("closingBalanceLabel")}:{" "}
+                            <span className="font-medium tabular-nums text-foreground">
+                              {group.closingBalance.toLocaleString()}
+                            </span>
+                          </span>
+                          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]/loc:rotate-180" />
+                        </span>
+                      </button>
+                    </CollapsibleTrigger>
+                  </CardHeader>
                   <CollapsibleContent>
                     <CardContent className="space-y-3">
                       {singleSectionGroup ? (
@@ -658,32 +660,33 @@ export function MovementsPageClient() {
                       ) : (
                         group.sections.map((section) => {
                           const sectionKey = `${section.locationType}:${section.locationId}:${section.variantSku}`;
+                          const sectionBadgeText = section.variantSku
+                            ? t("sectionVariantLabel", { sku: section.variantSku })
+                            : t("sectionVariantless");
 
                           return (
                             <Collapsible key={sectionKey} defaultOpen={singleSection}>
                               <div className="rounded-md border">
                                 <CollapsibleTrigger asChild>
-                                  <div
-                                    aria-label={t("toggleSection")}
-                                    className="group flex min-h-10 cursor-pointer items-center justify-between gap-2 px-4 py-2"
+                                  <button
+                                    type="button"
+                                    className="group/section flex min-h-10 w-full cursor-pointer items-center justify-between gap-2 rounded-md px-4 py-2 text-left outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                                   >
-                                    <div className="flex min-w-0 items-center gap-2">
-                                      {section.variantSku && (
-                                        <Badge variant="secondary" className="max-w-full truncate text-xs font-normal">
-                                          {t("sectionVariantLabel", { sku: section.variantSku })}
-                                        </Badge>
-                                      )}
-                                    </div>
-                                    <div className="flex shrink-0 items-center gap-3">
+                                    <span className="flex min-w-0 items-center gap-2">
+                                      <Badge variant="secondary" className="max-w-full truncate text-xs font-normal">
+                                        {sectionBadgeText}
+                                      </Badge>
+                                    </span>
+                                    <span className="flex shrink-0 items-center gap-3">
                                       <span className="text-sm text-muted-foreground whitespace-nowrap">
                                         {t("closingBalanceLabel")}:{" "}
                                         <span className="font-medium tabular-nums text-foreground">
                                           {section.closingBalance.toLocaleString()}
                                         </span>
                                       </span>
-                                      <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
-                                    </div>
-                                  </div>
+                                      <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]/section:rotate-180" />
+                                    </span>
+                                  </button>
                                 </CollapsibleTrigger>
                                 <CollapsibleContent>
                                   <div className="space-y-3 px-4 pb-4">
