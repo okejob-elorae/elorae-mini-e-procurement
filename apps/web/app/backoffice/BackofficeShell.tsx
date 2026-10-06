@@ -26,6 +26,7 @@ import {
   PanelLeftClose,
   PanelLeft,
   Users,
+  Loader2,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -717,6 +718,7 @@ export function BackofficeShell({
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
     try {
@@ -868,10 +870,20 @@ export function BackofficeShell({
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  onClick={() => void deleteFcmToken().then(() => signOut({ callbackUrl: "/login" }))}
+                  disabled={signingOut}
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    if (signingOut) return;
+                    setSigningOut(true);
+                    void deleteFcmToken().then(() => signOut({ callbackUrl: "/login" }));
+                  }}
                   data-testid="sign-out"
                 >
-                  <LogOut className="mr-2 h-4 w-4" />
+                  {signingOut ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <LogOut className="mr-2 h-4 w-4" />
+                  )}
                   Sign out
                 </DropdownMenuItem>
               </DropdownMenuContent>

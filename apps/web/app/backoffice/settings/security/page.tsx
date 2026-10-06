@@ -10,6 +10,7 @@ import {
   getLastSensitiveAccess,
 } from "@/app/actions/security/pin-auth";
 import { changePassword } from "@/app/actions/security/change-password";
+import { deleteFcmToken } from "@/components/notifications/fcm-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -121,6 +122,7 @@ export default function SecuritySettingsPage() {
         setCurrentPassword("");
         setNewPassword("");
         setConfirmPassword("");
+        await deleteFcmToken();
         await signOut({ callbackUrl: "/login" });
       } else {
         toast.error(t(result.messageKey));
