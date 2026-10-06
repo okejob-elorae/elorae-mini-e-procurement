@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ItemType, Prisma, createItemFromIngest, pruneJubelioOrphans, updateItemFromIngest, upsertJubelioImage } from "@elorae/db";
 import { PRISMA, type PrismaService } from "../../db/prisma.module";
 import { JubelioHttpService } from "../http.service";
+import { fetchItemGroups } from "../inventory/fetch-item-groups";
 import { buildCatalogDrafts, sellingPriceToDecimal } from "./map-catalog";
 import type {
   CatalogItemDraft,
@@ -10,7 +11,6 @@ import type {
   CatalogSyncResult,
   CatalogSyncSummary,
   JubelioItemGroupDetail,
-  JubelioItemsPayload,
   VariantJson,
 } from "./catalog.types";
 
@@ -90,7 +90,9 @@ export class JubelioCatalogSyncService {
     const dryRun = opts.dryRun ?? false;
 
     const categoryIdByJubelioId = await this.loadCategoryMap();
-    const payload = await this.http.get<JubelioItemsPayload>("/inventory/items/");
+    const payload = await fetchItemGroups(this.http, this.logger, {
+      stopWhenSeen: opts.itemGroupIds?.length ? new Set(opts.itemGroupIds) : undefined,
+    });
 
     const { drafts, warnings: buildWarnings } = buildCatalogDrafts(payload, {
       itemGroupIds: opts.itemGroupIds,
