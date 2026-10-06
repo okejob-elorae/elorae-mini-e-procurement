@@ -31,7 +31,6 @@ import { toast } from 'sonner';
 import {
   buildVariantSkuCode,
   slugVariantAttributeValue,
-  variantSkuBase,
 } from "@/lib/items/normalize-variants";
 import { useTranslations } from 'next-intl';
 import type { z } from 'zod';
@@ -374,7 +373,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   };
 
   const parentSku = (initialData?.sku ?? sku) || '';
-  const variantSkuBasePrefix = variantSkuBase(parentSku, categoryCodePrefix);
+  const variantSkuBasePrefix = parentSku.trim();
 
   const setVariantSkuAt = (idx: number, value: string) => {
     setGrid((prev) => setRowValueAt(prev, 'skus', idx, value));

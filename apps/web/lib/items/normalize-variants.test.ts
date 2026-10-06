@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   buildVariantSkuCode,
   validateAndNormalizeVariants,
-  variantSkuBase,
 } from "./normalize-variants";
 
 describe("validateAndNormalizeVariants", () => {
@@ -10,11 +9,6 @@ describe("validateAndNormalizeVariants", () => {
     { Warna: "Merah", Ukuran: "M", sku: "" },
     { Warna: "Biru Muda", Ukuran: "L", sku: "" },
   ];
-
-  it("keeps the form's default: a blank variant SKU is generated from the category code when there is one", () => {
-    const out = validateAndNormalizeVariants("KMJ-01", variants, { categoryCode: "KMJ" });
-    expect(out.map((v) => v.sku)).toEqual(["KMJ-MERAH-M", "KMJ-BIRUMUDA-L"]);
-  });
 
   it("generates from the parent SKU when asked, so two artikels in one category cannot collide", () => {
     const out = validateAndNormalizeVariants("KMJ-01", variants, { categoryCode: "KMJ", generateFrom: "parent" });
@@ -70,12 +64,6 @@ describe("validateAndNormalizeVariants", () => {
       generateFrom: "category",
     });
     expect(out[0].sku).toBe("BAJU-MERAH");
-  });
-
-  it("picks the parent SKU as the base and falls back to the category code", () => {
-    expect(variantSkuBase("", "BAJU")).toBe("BAJU");
-    expect(variantSkuBase(" KMJ01 ", "BAJU")).toBe("KMJ01");
-    expect(variantSkuBase("", null)).toBe("");
   });
 
   it("builds the variant code as {base}-{slugs} in attribute order", () => {

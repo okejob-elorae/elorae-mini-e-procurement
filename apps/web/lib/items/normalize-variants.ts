@@ -26,14 +26,6 @@ export function buildVariantSkuCode(
   return `${base}-${segments.join("-")}`;
 }
 
-/**
- * The prefix blank variant SKUs are generated from: the parent SKU, falling back to the category
- * code only when the parent SKU is empty.
- */
-export function variantSkuBase(parentSku: string, categoryCode?: string | null): string {
-  return parentSku.trim() || categoryCode?.trim() || "";
-}
-
 function variantSuffixFromRecord(v: Record<string, string>): string {
   const segments = Object.entries(v)
     .filter(([key]) => key !== "sku" && key !== "barcode")

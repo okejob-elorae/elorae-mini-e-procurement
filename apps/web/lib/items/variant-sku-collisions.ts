@@ -34,3 +34,12 @@ export async function findVariantSkuCollisions(
   }
   return wanted.filter((s) => taken.has(skuMatchKey(s)));
 }
+
+/**
+ * The SKUs an edit adds to an item, compared under skuMatchKey. A SKU the item already carries is
+ * not re-checked, so a legacy duplicate does not block unrelated edits.
+ */
+export function skusIntroducedByEdit(saved: string[], next: string[]): string[] {
+  const savedKeys = new Set(saved.map((s) => skuMatchKey(s)));
+  return next.filter((s) => !savedKeys.has(skuMatchKey(s)));
+}

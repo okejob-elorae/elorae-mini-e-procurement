@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { findVariantSkuCollisions } from "./variant-sku-collisions";
+import { findVariantSkuCollisions, skusIntroducedByEdit } from "./variant-sku-collisions";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -77,5 +77,26 @@ d("findVariantSkuCollisions (test bed only)", () => {
   it("returns nothing for empty or blank-only input", async () => {
     expect(await findVariantSkuCollisions(prisma, { skus: [] })).toEqual([]);
     expect(await findVariantSkuCollisions(prisma, { skus: ["", "  "] })).toEqual([]);
+  });
+
+  it("lets an item keep a legacy colliding SKU but refuses a newly introduced one", async () => {
+    const legacy = `TST-A-${token}-MERAH`;
+    await prisma.item.update({
+      where: { id: seededId(itemBId) },
+      data: { variants: [{ Warna: "Merah", sku: legacy }] },
+    });
+    const saved = [legacy];
+    const unchanged = skusIntroducedByEdit(saved, [legacy.toLowerCase()]);
+    expect(unchanged).toEqual([]);
+    expect(await findVariantSkuCollisions(prisma, { excludeItemId: itemBId, skus: unchanged })).toEqual([]);
+    const added = skusIntroducedByEdit(saved, [legacy, itemBSku.replace("TST-B", "TST-A")]);
+    expect(added).toHaveLength(1);
+    expect(await findVariantSkuCollisions(prisma, { excludeItemId: itemBId, skus: added })).toEqual(added);
+  });
+});
+
+describe("skusIntroducedByEdit", () => {
+  it("drops SKUs already saved, matching case and accents", () => {
+    expect(skusIntroducedByEdit(["A-MÉRAH"], ["a-merah", "A-NEW"])).toEqual(["A-NEW"]);
   });
 });
