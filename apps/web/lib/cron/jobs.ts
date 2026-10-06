@@ -5,6 +5,7 @@ import { postPendingSalesJournals, GL_CUTOVER_SETTING_KEY } from "@/lib/finance/
 import { runOverdueSweep } from "@/lib/finance/ar/overdue-sweep";
 import { runKonsiCountSweep } from "@/lib/konsi-count-schedule/sweep";
 import { runSettlementRematchSweep } from "@/lib/finance/settlement/rematch-sweep";
+import { runFulfillmentPushDivergenceSweep } from "@/lib/fulfillment/push-divergence-sweep";
 
 let registered = false;
 
@@ -142,6 +143,30 @@ export function registerCronJobs(): void {
         }
       } catch (err) {
         console.error("[cron] settlement-rematch failed:", err);
+      }
+    },
+    { timezone: "Asia/Jakarta", noOverlap: true },
+  );
+
+  /**
+   * Every 30 minutes — alert admins when a PICKED/PACKED order's pick or pack push to Jubelio never
+   * landed. `noOverlap` skips a tick while the previous one is still running.
+   */
+  cron.schedule(
+    "*/30 * * * *",
+    async () => {
+      try {
+        const r = await runFulfillmentPushDivergenceSweep();
+        if (r.notified > 0 || r.failed > 0) {
+          console.log(
+            "[cron] fulfillment-push-divergence done — checked=%d notified=%d failed=%d",
+            r.checked,
+            r.notified,
+            r.failed,
+          );
+        }
+      } catch (err) {
+        console.error("[cron] fulfillment-push-divergence failed:", err);
       }
     },
     { timezone: "Asia/Jakarta", noOverlap: true },
