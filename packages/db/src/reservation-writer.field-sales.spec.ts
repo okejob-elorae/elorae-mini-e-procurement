@@ -3,6 +3,7 @@ import { prisma } from "./index";
 import {
   reserveFieldSalesOrder,
   consumeFieldSalesOrder,
+  consumeFieldSalesOrderPartial,
   releaseFieldSalesOrder,
   reserveKonsiFieldSalesOrder,
 } from "./reservation-writer";
@@ -307,5 +308,146 @@ d("reserveKonsiFieldSalesOrder (test bed only)", () => {
     expect(shortRsv).toBeNull();
     const inv = await prisma.inventoryValue.findFirst({ where: { itemId } });
     expect(Number(inv!.reservedQty)).toBe(4);
+  });
+});
+
+d("field-sales reservations pinned to the row they reserved against (test bed only)", () => {
+  let itemId = "";
+  let uomId = "";
+  let nullRowId = "";
+  const sku = `TEST-FS-PIN-${Math.random().toString(36).slice(2, 10)}`;
+
+  beforeEach(async () => {
+    /* Unset before seeding, so a throw mid-hook leaves teardown scoped to what this run actually created. */
+    itemId = "";
+    uomId = "";
+    nullRowId = "";
+
+    const uom = await prisma.uOM.create({
+      data: { code: `TEST-UOM-${sku}`, nameId: "test", nameEn: "test" },
+    });
+    uomId = uom.id;
+    const item = await prisma.item.create({
+      data: { sku, nameId: "test", nameEn: "test", type: "FINISHED_GOOD", isActive: true, uomId },
+    });
+    itemId = item.id;
+    const row = await prisma.inventoryValue.create({
+      data: { itemId, variantSku: null, qtyOnHand: 10, reservedQty: 0, avgCost: 1000, totalValue: 10000 },
+    });
+    nullRowId = row.id;
+  });
+
+  afterEach(async () => {
+    await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
+    /* Every InventoryValue row of the item, both variantless spellings, including any sibling a test provisioned. */
+    await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+  });
+
+  /* The fork a provisioning path can open between reserve and consume; the lookup alone prefers it. */
+  const provisionEmptySibling = () =>
+    prisma.inventoryValue.create({
+      data: { itemId, variantSku: "", qtyOnHand: 0, reservedQty: 0, avgCost: 1000, totalValue: 0 },
+    });
+
+  it("reserveFieldSalesOrder stores the id of the row it reserved against", async () => {
+    const lineId = `line-${sku}-a`;
+    await reserveFieldSalesOrder(prisma, {
+      orderNo: "PUTUS-T-PIN-A",
+      lines: [{ fieldSalesLineId: lineId, itemId, variantSku: "", qty: 4 }],
+    });
+    const rsv = await prisma.stockReservation.findUniqueOrThrow({ where: { fieldSalesLineId: lineId } });
+    expect(rsv.inventoryValueId).toBe(nullRowId);
+  });
+
+  it("consumeFieldSalesOrder acts on the reserved row even after an empty-string sibling is provisioned", async () => {
+    const lineId = `line-${sku}-b`;
+    await reserveFieldSalesOrder(prisma, {
+      orderNo: "PUTUS-T-PIN-B",
+      lines: [{ fieldSalesLineId: lineId, itemId, variantSku: "", qty: 4 }],
+    });
+    const emptyRow = await provisionEmptySibling();
+
+    const res = await consumeFieldSalesOrder(prisma, { orderNo: "PUTUS-T-PIN-B", fieldSalesLineIds: [lineId] });
+    expect(res.consumed).toBe(1);
+
+    const nullAfter = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: nullRowId } });
+    const emptyAfter = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: emptyRow.id } });
+    expect(Number(nullAfter.qtyOnHand)).toBe(6);
+    expect(Number(nullAfter.reservedQty)).toBe(0);
+    expect(Number(emptyAfter.qtyOnHand)).toBe(0);
+    expect(Number(emptyAfter.reservedQty)).toBe(0);
+  });
+
+  it("consumeFieldSalesOrderPartial acts on the reserved row even after an empty-string sibling is provisioned", async () => {
+    const lineId = `line-${sku}-c`;
+    await reserveFieldSalesOrder(prisma, {
+      orderNo: "PUTUS-T-PIN-C",
+      lines: [{ fieldSalesLineId: lineId, itemId, variantSku: "", qty: 4 }],
+    });
+    const emptyRow = await provisionEmptySibling();
+
+    const res = await consumeFieldSalesOrderPartial(prisma, {
+      orderNo: "PUTUS-T-PIN-C",
+      deliveryId: `dlv-${sku}`,
+      lines: [{ fieldSalesLineId: lineId, itemId, variantSku: "", qty: 3 }],
+    });
+    expect(res.consumed).toBe(1);
+
+    const nullAfter = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: nullRowId } });
+    const emptyAfter = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: emptyRow.id } });
+    expect(Number(nullAfter.qtyOnHand)).toBe(7);
+    expect(Number(nullAfter.reservedQty)).toBe(1);
+    expect(Number(emptyAfter.qtyOnHand)).toBe(0);
+    expect(Number(emptyAfter.reservedQty)).toBe(0);
+  });
+
+  it("a legacy field-sales reservation with no stored row still consumes through the lookup", async () => {
+    const lineId = `line-${sku}-d`;
+    await reserveFieldSalesOrder(prisma, {
+      orderNo: "PUTUS-T-PIN-D",
+      lines: [{ fieldSalesLineId: lineId, itemId, variantSku: "", qty: 4 }],
+    });
+    await prisma.stockReservation.update({ where: { fieldSalesLineId: lineId }, data: { inventoryValueId: null } });
+
+    const res = await consumeFieldSalesOrder(prisma, { orderNo: "PUTUS-T-PIN-D", fieldSalesLineIds: [lineId] });
+    expect(res.consumed).toBe(1);
+
+    const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: nullRowId } });
+    expect(Number(inv.qtyOnHand)).toBe(6);
+    expect(Number(inv.reservedQty)).toBe(0);
+  });
+
+  it("reserveKonsiFieldSalesOrder stores the id of the row it reserved against", async () => {
+    const lineId = `konsi-line-${sku}-e`;
+    const res = await reserveKonsiFieldSalesOrder(prisma, {
+      orderNo: "KONSI-T-PIN-E",
+      lines: [{ fieldSalesLineId: lineId, itemId, variantSku: "", qty: 4 }],
+    });
+    expect(res.reserved).toBe(1);
+    const rsv = await prisma.stockReservation.findUniqueOrThrow({ where: { fieldSalesLineId: lineId } });
+    expect(rsv.inventoryValueId).toBe(nullRowId);
+  });
+
+  it("a konsi reservation releases from the reserved row even after an empty-string sibling is provisioned", async () => {
+    const lineId = `konsi-line-${sku}-f`;
+    await reserveKonsiFieldSalesOrder(prisma, {
+      orderNo: "KONSI-T-PIN-F",
+      lines: [{ fieldSalesLineId: lineId, itemId, variantSku: "", qty: 4 }],
+    });
+    const emptyRow = await provisionEmptySibling();
+
+    const res = await releaseFieldSalesOrder(prisma, { fieldSalesLineIds: [lineId] });
+    expect(res.released).toBe(1);
+
+    const nullAfter = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: nullRowId } });
+    const emptyAfter = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: emptyRow.id } });
+    expect(Number(nullAfter.qtyOnHand)).toBe(10);
+    expect(Number(nullAfter.reservedQty)).toBe(0);
+    expect(Number(emptyAfter.qtyOnHand)).toBe(0);
+    expect(Number(emptyAfter.reservedQty)).toBe(0);
   });
 });

@@ -1642,6 +1642,7 @@ model StockReservation {
   qty                Decimal       @db.Decimal(15, 4)
   consumedQty        Decimal       @default(0) @db.Decimal(15, 4)
   state              ReserveState
+  inventoryValueId   String?
   createdAt          DateTime      @default(now())
   resolvedAt         DateTime?
   @@index([salesorderId])

@@ -41,12 +41,14 @@ export type StockRef = {
  * one ledger key. Current callers: grn.ts's declineGRNByOwner insufficient-stock guard,
  * inventory.ts (getInventoryValue), vendor-returns.ts (vendor return valuation, create and
  * update), opname-snapshot.ts, opname-approve.ts,
- * canvassing/writer.ts, canvassing/reconcile-writer.ts, konsi-transfer/writer.ts,
+ * canvassing/writer.ts, canvassing/reconcile-writer.ts,
  * field-sales/retur/approve-writer.ts, field-sales/konsi-push-writer.ts, and
  * reverseMovingAverage / calculateMovingAverage / reverseInventoryValue below. The one apps/web
  * lookup NOT routed through here is field-sales/writer.ts's hasInventoryRow, an existence check
  * that pins no id. reconciliation-runner.ts's MATCH_JUBELIO path uses packages/db's locking copy,
- * lockMainInventoryValueRow, instead, because it must lock the row before reading it.
+ * lockMainInventoryValueRow, instead, because it must lock the row before reading it; and
+ * konsi-transfer/writer.ts uses packages/db's resolveReservedInventory, because it draws down a
+ * reservation and must act on the row that reservation was made against.
  *
  * packages/db cannot import this (it sits above apps/web), so it carries its own copies — and
  * there are FOUR, not two. moveMainStock and setMainStock in stock-balance.ts, the return-accept

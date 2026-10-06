@@ -23,13 +23,11 @@ function hasTx(client: AnyClient): client is PrismaClient {
 }
 
 /**
- * Serves EVERY reserve/consume/release in this file, Jubelio and field sales alike. A reserve and
- * its later consume/release must resolve the same row, which is why one helper serves all of them.
- * The consume re-runs this lookup, so that holds only while no variantless row is created for the
- * item in between.
+ * Picks the row EVERY reserve in this file lands on, Jubelio and field sales alike, and is the
+ * fallback behind resolveReservedInventory for every consume and release.
  * Variantless rows may key on null OR "": prefers the exact "" row, then null. A bare OR
  * findFirst can pick the sibling and orphan reservedQty. NULLs are distinct under the unique
- * index, so two null rows can exist; the id tie-break keeps both halves on one row.
+ * index, so two null rows can exist; the id tie-break keeps every reserve on one row.
  */
 async function findReservationInventory(tx: Prisma.TransactionClient, itemId: string, variantSku: string) {
   if (variantSku !== "") {
@@ -38,6 +36,27 @@ async function findReservationInventory(tx: Prisma.TransactionClient, itemId: st
   const exactEmpty = await tx.inventoryValue.findFirst({ where: { itemId, variantSku: "" } });
   if (exactEmpty) return exactEmpty;
   return tx.inventoryValue.findFirst({ where: { itemId, variantSku: null }, orderBy: { id: "asc" } });
+}
+
+/**
+ * The row a consume or release acts on: the one its reserve stored as `inventoryValueId`. Re-running
+ * the lookup instead would move the consume onto a variantless sibling provisioned for the item
+ * after the reserve, driving that row's qtyOnHand negative and stranding reservedQty on the real one.
+ * Falls back to findReservationInventory for a reservation made before the column existed (null)
+ * or whose pinned row no longer exists. The itemId filter is an ownership check: a pinned id that
+ * does not belong to the item is treated as missing, never written.
+ */
+export async function resolveReservedInventory(
+  tx: Prisma.TransactionClient,
+  reservation: { itemId: string; variantSku: string; inventoryValueId: string | null },
+) {
+  if (reservation.inventoryValueId) {
+    const pinned = await tx.inventoryValue.findFirst({
+      where: { id: reservation.inventoryValueId, itemId: reservation.itemId },
+    });
+    if (pinned) return pinned;
+  }
+  return findReservationInventory(tx, reservation.itemId, reservation.variantSku);
 }
 
 export async function reserveOrder(client: AnyClient, input: ReserveOrderInput): Promise<ReserveOrderResult> {
@@ -55,6 +74,9 @@ export async function reserveOrder(client: AnyClient, input: ReserveOrderInput):
         continue;
       }
 
+      const inv = await findReservationInventory(tx, line.itemId, line.variantSku);
+      if (!inv) throw new InventoryValueMissingError(line.itemId, line.variantSku);
+
       await tx.stockReservation.create({
         data: {
           salesorderId: input.salesorderId,
@@ -63,11 +85,10 @@ export async function reserveOrder(client: AnyClient, input: ReserveOrderInput):
           variantSku: line.variantSku,
           qty: line.qty,
           state: "RESERVED",
+          inventoryValueId: inv.id,
         },
       });
 
-      const inv = await findReservationInventory(tx, line.itemId, line.variantSku);
-      if (!inv) throw new InventoryValueMissingError(line.itemId, line.variantSku);
       /* No ledger entry: a reservation moves no stock. Only qtyOnHand movements are ledger events. */
       const updated = await tx.inventoryValue.update({
         where: { id: inv.id },
@@ -117,7 +138,7 @@ export async function consumeOrder(
       if (upd.count === 0) continue; // lost the race — another trigger consumed it
 
       const qty = Number(row.qty);
-      const inv = await findReservationInventory(tx, row.itemId, row.variantSku);
+      const inv = await resolveReservedInventory(tx, row);
       if (!inv) throw new InventoryValueMissingError(row.itemId, row.variantSku);
       const avgCost = Number(inv.avgCost);
       const updated = await tx.inventoryValue.update({
@@ -211,7 +232,7 @@ export async function releaseOrder(
       });
       if (upd.count === 0) continue;
 
-      const inv = await findReservationInventory(tx, row.itemId, row.variantSku);
+      const inv = await resolveReservedInventory(tx, row);
       if (!inv) throw new InventoryValueMissingError(row.itemId, row.variantSku);
       /* No ledger entry: releasing a reservation moves no stock. Only qtyOnHand movements are ledger events. */
       await tx.inventoryValue.update({
@@ -245,6 +266,8 @@ export async function reserveFieldSalesOrder(
         skipped += 1;
         continue;
       }
+      const inv = await findReservationInventory(tx, line.itemId, line.variantSku);
+      if (!inv) throw new InventoryValueMissingError(line.itemId, line.variantSku);
       await tx.stockReservation.create({
         data: {
           source: "FIELD_SALES",
@@ -253,10 +276,9 @@ export async function reserveFieldSalesOrder(
           variantSku: line.variantSku,
           qty: line.qty,
           state: "RESERVED",
+          inventoryValueId: inv.id,
         },
       });
-      const inv = await findReservationInventory(tx, line.itemId, line.variantSku);
-      if (!inv) throw new InventoryValueMissingError(line.itemId, line.variantSku);
       /* No ledger entry: a reservation moves no stock. Only qtyOnHand movements are ledger events. */
       const updated = await tx.inventoryValue.update({
         where: { id: inv.id },
@@ -334,7 +356,11 @@ export async function consumeFieldSalesOrderPartial(
       const res = await tx.stockReservation.findUniqueOrThrow({ where: { fieldSalesLineId: line.fieldSalesLineId } });
       const fullyConsumed = Number(res.consumedQty) >= Number(res.qty);
 
-      const inv = await findReservationInventory(tx, line.itemId, line.variantSku);
+      const inv = await resolveReservedInventory(tx, {
+        itemId: line.itemId,
+        variantSku: line.variantSku,
+        inventoryValueId: res.inventoryValueId,
+      });
       if (!inv) throw new InventoryValueMissingError(line.itemId, line.variantSku);
       prepared.push({
         line,
@@ -449,7 +475,7 @@ export async function consumeFieldSalesOrder(
       });
       if (upd.count === 0) continue;
       const qty = Number(row.qty);
-      const inv = await findReservationInventory(tx, row.itemId, row.variantSku);
+      const inv = await resolveReservedInventory(tx, row);
       if (!inv) throw new InventoryValueMissingError(row.itemId, row.variantSku);
       const avgCost = Number(inv.avgCost);
       const updated = await tx.inventoryValue.update({
@@ -531,7 +557,7 @@ export async function releaseFieldSalesOrder(
         data: { state: "RELEASED", resolvedAt: new Date() },
       });
       if (upd.count === 0) continue;
-      const inv = await findReservationInventory(tx, row.itemId, row.variantSku);
+      const inv = await resolveReservedInventory(tx, row);
       if (!inv) throw new InventoryValueMissingError(row.itemId, row.variantSku);
       const stillHeld = Number(row.qty) - Number(row.consumedQty);
       if (stillHeld > 0) {
@@ -588,6 +614,7 @@ export async function reserveKonsiFieldSalesOrder(
           variantSku: line.variantSku,
           qty: line.qty,
           state: "RESERVED",
+          inventoryValueId: inv.id,
         },
       });
       reserved += 1;

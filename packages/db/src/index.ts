@@ -115,6 +115,7 @@ export {
   PartialConsumeError,
   releaseFieldSalesOrder,
   reserveKonsiFieldSalesOrder,
+  resolveReservedInventory,
   type ReservationLine,
   type OversellAlert,
   type ReserveOrderInput,

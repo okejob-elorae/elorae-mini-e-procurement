@@ -1,7 +1,6 @@
-import { InventoryValueMissingError, moveMainStock, moveStoreStock, type Prisma } from "@elorae/db";
+import { InventoryValueMissingError, moveMainStock, moveStoreStock, resolveReservedInventory, type Prisma } from "@elorae/db";
 import type { StockAdjustmentSource, StockLedgerRefType } from "@elorae/db";
 import { weightedAvgCost } from "@/lib/inventory/weighted-avg-cost";
-import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 import { generateDocNumber } from "@/lib/docNumber";
 import { KonsiTransferReservationMismatchError } from "../errors";
 
@@ -25,8 +24,8 @@ export type IssueKonsiTransferLine = {
  *
  * qtyOnHand and reservedQty must decrement TOGETHER. The reservation approve created already
  * covers this line's qty, so decrementing one without the other would leave stock reserved
- * against nothing, forever. The quantity goes through moveMainStock, pinned to the row id
- * resolved below; the reservedQty decrement follows immediately after on that same id, as a plain
+ * against nothing, forever. The quantity goes through moveMainStock, pinned to the row the line's
+ * reservation was made against; the reservedQty decrement follows immediately after on that same id, as a plain
  * atomic update outside the mover — it writes no ledger entry, because a reservation resolving is
  * not a stock movement. A future edit must not separate the two writes or let anything run
  * between them.
@@ -77,16 +76,23 @@ export async function issueKonsiTransfer(
     `;
     if (reserved === 0) throw new KonsiTransferReservationMismatchError(l.id, 0);
 
-    /*
-     * findExistingInventoryValueRow is THE spelling of this lookup: OR-tolerant, because a
-     * variantless InventoryValue row keys on null OR "" and a strict ""-keyed lookup misses the
-     * real row and forks a phantom one — that has already happened once on the canvassing
-     * reconcile path. Its orderBy id asc tie-break is load-bearing rather than cosmetic: the
-     * resolved id is pinned into moveMainStock below AND into the reservedQty decrement after it,
-     * so without it two paths reading the same null/"" bucket can pin different rows and
-     * interleave two independent balances under one ledger key.
+    /**
+     * The row approve reserved against, which is where this line's reservedQty sits. It is pinned
+     * into moveMainStock below AND into the reservedQty decrement after it. Resolving it through
+     * the reservation rather than a fresh item lookup keeps the draw-down on that row even when the
+     * item carries both variantless spellings, or gained one after approve; a fresh lookup could
+     * pick the sibling, driving its qtyOnHand down and stranding reservedQty on the reserved row.
+     * A reservation made before the pin was stored falls back to the reserve's own lookup.
      */
-    const main = await findExistingInventoryValueRow(tx, l.itemId, l.variantSku);
+    const pin = await tx.stockReservation.findUniqueOrThrow({
+      where: { fieldSalesLineId: l.id },
+      select: { inventoryValueId: true },
+    });
+    const main = await resolveReservedInventory(tx, {
+      itemId: l.itemId,
+      variantSku: l.variantSku,
+      inventoryValueId: pin.inventoryValueId,
+    });
     if (!main) throw new InventoryValueMissingError(l.itemId, l.variantSku);
 
     const prevQty = main.qtyOnHand.toNumber();
