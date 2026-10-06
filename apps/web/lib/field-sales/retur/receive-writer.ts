@@ -5,14 +5,15 @@ import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { FieldReturnError } from "./errors";
 import { notifySalesmanOfMismatch, type SalesmanMismatchNoticeInput } from "./mismatch-notice";
 
-type ReceiveCount = { lineId: string; receivedQty: number; sellableQty: number; rejectedQty: number };
+export type ReceiveCount = { lineId: string; receivedQty: number; sellableQty: number; rejectedQty: number };
 
 /**
  * Shape and split validation run before the transaction — they need no read, and running
  * them inside the transaction would only hold a serializable lock for work that never
- * touches the database.
+ * touches the database. Shared with `correctFieldReturnReceipt`, which takes the same count
+ * payload and must refuse exactly what receiving refuses.
  */
-function assertCountShape(c: ReceiveCount): void {
+export function assertCountShape(c: ReceiveCount): void {
   for (const n of [c.receivedQty, c.sellableQty, c.rejectedQty]) {
     /* Zero is a valid count on every field, including all-zero — the lost-sack case. */
     if (!Number.isInteger(n) || n < 0) throw new FieldReturnError("BAD_QTY");

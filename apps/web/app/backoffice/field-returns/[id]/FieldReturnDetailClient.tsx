@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { ArrowLeft, AlertTriangle, CheckCircle2, Info, Wallet } from "lucide-react";
+import { ArrowLeft, AlertTriangle, CheckCircle2, Info, Pencil, Wallet } from "lucide-react";
 import type {
   FieldReturnDetail,
   FieldReturnOrigin,
@@ -136,6 +136,7 @@ export function FieldReturnDetailClient({
   const [previewPending, startPreviewTransition] = useTransition();
   const [approveOpen, setApproveOpen] = useState(false);
   const [offsetSheetOpen, setOffsetSheetOpen] = useState(false);
+  const [correctOpen, setCorrectOpen] = useState(false);
   const [stockImpact, setStockImpact] = useState<
     | { status: "idle" }
     | { status: "loading" }
@@ -145,6 +146,19 @@ export function FieldReturnDetailClient({
 
   const outstanding = outstandingLineCount(r.lines);
   const showReceiveForm = canManage && r.status === "PENDING_WAREHOUSE_RECEIVING";
+  /* Received but unapproved — the only window in which correctFieldReturnReceipt accepts a count. */
+  const canCorrectReceipt =
+    canManage && (r.status === "MISMATCH_PENDING_RESOLUTION" || r.status === "PENDING_APPROVAL");
+  const receivableLines = r.lines.map((l) => ({
+    id: l.id,
+    itemName: l.itemName,
+    itemSku: l.itemSku,
+    variantSku: l.variantSku,
+    qty: l.qty,
+  }));
+  const recordedCounts = Object.fromEntries(
+    r.lines.map((l) => [l.id, { receivedQty: l.receivedQty ?? 0, rejectedQty: l.rejectedQty ?? 0 }]),
+  );
   /*
    * Without canManage, the receive form and the approve button must not render at all — but
    * the resolution card itself stays visible to any authenticated viewer once the retur has
@@ -223,7 +237,8 @@ export function FieldReturnDetailClient({
             {t(`status.${r.status}`)}
           </Badge>
           {showApprove && (
-            <Button className="h-10" disabled={isPending} onClick={openApproveDialog}>
+            /* Disabled while a correction is open: approving would freeze the counts being edited. */
+            <Button className="h-10" disabled={isPending || correctOpen} onClick={openApproveDialog}>
               <CheckCircle2 className="h-4 w-4" />
               {tReceiving("approveButton")}
             </Button>
@@ -298,17 +313,25 @@ export function FieldReturnDetailClient({
         </div>
       </Card>
 
-      {showReceiveForm && (
+      {showReceiveForm && <ReceiveForm returnId={r.id} lines={receivableLines} />}
+
+      {canCorrectReceipt && correctOpen && (
         <ReceiveForm
+          mode="correct"
           returnId={r.id}
-          lines={r.lines.map((l) => ({
-            id: l.id,
-            itemName: l.itemName,
-            itemSku: l.itemSku,
-            variantSku: l.variantSku,
-            qty: l.qty,
-          }))}
+          lines={receivableLines}
+          initialCounts={recordedCounts}
+          onDone={() => setCorrectOpen(false)}
         />
+      )}
+
+      {canCorrectReceipt && !correctOpen && (
+        <div className="flex justify-end">
+          <Button variant="outline" className="h-10" onClick={() => setCorrectOpen(true)}>
+            <Pencil className="h-4 w-4" />
+            {tReceiving("correctOpen")}
+          </Button>
+        </div>
       )}
 
       {showResolutionControls && (

@@ -5,6 +5,7 @@ import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { receiveFieldReturn } from "@/lib/field-sales/retur/receive-writer";
+import { correctFieldReturnReceipt } from "@/lib/field-sales/retur/correct-receipt-writer";
 import { resolveFieldReturnLine } from "@/lib/field-sales/retur/resolve-writer";
 import { approveFieldReturn } from "@/lib/field-sales/retur/approve-writer";
 import { createFieldReturn } from "@/lib/field-sales/retur/writer";
@@ -87,6 +88,7 @@ const ERROR_CODE_MAP: Record<FieldReturnErrorCode, Exclude<FieldReturnActionResu
    */
   SALESMAN_BEARS_NOT_ALLOWED: "SALESMAN_BEARS_NOT_ALLOWED",
   UNRESOLVED_LINES: "UNRESOLVED_LINES",
+  MISSING_REASON: "INVALID_REQUEST",
 };
 
 /**
@@ -235,6 +237,36 @@ export async function receiveAction(input: {
   return { ok: true };
 }
 
+/**
+ * Same shape as `receiveAction` plus a required reason. A blank reason is the writer's
+ * `MISSING_REASON`, which lands on `INVALID_REQUEST` like every other shape refusal — the form
+ * never submits one.
+ */
+export async function correctReceiptAction(input: {
+  returnId: string;
+  counts: ReceiveCount[];
+  reason: string;
+}): Promise<FieldReturnActionResult> {
+  try {
+    const g = await guard();
+    if ("ok" in g) return g;
+    if (!isValidReceiveInput(input) || typeof input.reason !== "string") {
+      return { ok: false, code: "INVALID_REQUEST" };
+    }
+    await correctFieldReturnReceipt({
+      returnId: input.returnId,
+      correctedById: g.userId,
+      reason: input.reason,
+      counts: input.counts,
+    });
+  } catch (e) {
+    return toResult(e);
+  }
+  revalidatePath("/backoffice/field-returns");
+  revalidatePath(`/backoffice/field-returns/${input.returnId}`);
+  return { ok: true };
+}
+
 export async function resolveAction(input: {
   lineId: string;
   type: ResolutionType;
@@ -325,6 +357,7 @@ const RAISE_ADMIN_RETURN_ERROR_CODE_MAP: Record<FieldReturnErrorCode, "INVALID_R
   RESOLUTION_DIRECTION_MISMATCH: "ERROR",
   SALESMAN_BEARS_NOT_ALLOWED: "ERROR",
   UNRESOLVED_LINES: "ERROR",
+  MISSING_REASON: "ERROR",
 };
 
 /** Mirrors `toResult` above, but stays inside `RaiseAdminReturnActionResult`'s narrower type. */

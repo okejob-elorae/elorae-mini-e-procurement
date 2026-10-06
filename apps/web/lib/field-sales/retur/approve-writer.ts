@@ -314,7 +314,8 @@ export async function approveFieldReturn(input: {
          * FIELD decrements the full creditedQty here, exactly as before this feature — a FIELD
          * return's stock never leaves the store's ledger until approve.
          *
-         * ADMIN already decremented `receivedQty` at RECEIPT (receiveFieldReturn), so only the
+         * ADMIN already decremented `receivedQty` at RECEIPT (receiveFieldReturn, plus the delta of
+         * any correctFieldReturnReceipt since, so the net is always the CURRENT receivedQty), so only the
          * DELTA belongs here: creditedQty - receivedQty. That is 0 on a clean count (the common
          * case — the whole decrement already happened at receipt) and non-zero only where a
          * resolution credited a different qty than what physically arrived (a shortage borne by
