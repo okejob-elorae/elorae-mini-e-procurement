@@ -112,11 +112,30 @@ export async function updateSupplierAction(
 
 export type DeleteSupplierActionResult =
   | { success: true }
-  | { success: false; messageKey: 'cannotDeleteSupplierInUse' | 'failedToDeleteSupplier' };
+  | {
+      success: false;
+      reason?: undefined;
+      messageKey: 'cannotDeleteSupplierInUse' | 'failedToDeleteSupplier';
+    }
+  | { success: false; reason: 'PIN'; messageKey?: string; message?: string };
 
-export async function deleteSupplierAction(id: string): Promise<DeleteSupplierActionResult> {
+export async function deleteSupplierAction(
+  id: string,
+  pin: string
+): Promise<DeleteSupplierActionResult> {
   const session = await requireSession();
   requirePermission(session.user.permissions, PERMISSIONS.SUPPLIERS_DELETE);
+  const pinResult = await verifyPin(session.user.id, pin, 'DELETE_SUPPLIER', {
+    fallbackEmail: session.user.email,
+  });
+  if (!pinResult.success) {
+    return {
+      success: false,
+      reason: 'PIN',
+      messageKey: pinResult.messageKey,
+      message: pinResult.message,
+    };
+  }
   try {
     await deleteSupplier(id);
     revalidatePath('/backoffice/suppliers');
