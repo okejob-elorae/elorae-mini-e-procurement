@@ -98,9 +98,9 @@ async function notifySalesmanOfRejection(
  * resume the approval, or to void each posted component from `/backoffice/finance/payments` and
  * then reject. A `VOIDED` component does not block. A `REJECTED` document can therefore still
  * carry voided components (voided before the reject), posted ones rejected before this guard
- * existed, or posted ones from a reject that raced a still-running approval (see the guard below);
- * the finance approval screen surfaces all three (`componentsTitleOrphaned` in
- * `app/backoffice/finance/pelunasan/[id]`).
+ * existed, or posted ones from a reject that read before a running approval's first component
+ * committed (see the guard below); the finance approval screen surfaces all three
+ * (`componentsTitleOrphaned` in `app/backoffice/finance/pelunasan/[id]`).
  *
  * A second call against a settlement that is no longer `PENDING` (already `REJECTED`, or since
  * `APPROVED`) throws `NOT_PENDING`, the same shape as `rejectCollection`
@@ -140,10 +140,13 @@ export async function rejectSettlement(input: RejectSettlementInput): Promise<Re
      * writes, built through its own exports, so the guard cannot drift from the writer. Read before
      * any write, so the refusal commits nothing. Under SERIALIZABLE this read also S-locks the key
      * range, so a component insert racing it either commits first (and this refuses) or waits
-     * behind this transaction. That covers the crashed or abandoned approval, not one still
-     * running: `approveSettlement` reads the status once and posts each component in its own
-     * transaction, so a reject committing mid-run still leaves that run's later components behind
-     * a `REJECTED` document, which the approval then logs as orphaned and refuses `NOT_PENDING`.
+     * behind this transaction. That covers a crashed or abandoned approval, and a running one
+     * once its FIRST component has committed: every later reject then sees that POSTED key and
+     * refuses. One window stays open — a reject that reads before the first component commits.
+     * The first insert waits on this range lock, then posts once the reject has committed, and
+     * because `approveSettlement` reads the status once and posts each component in its own
+     * transaction the rest follow, all behind a `REJECTED` document; the approval then logs them
+     * as orphaned and refuses `NOT_PENDING`.
      */
     const keys = [
       simpleComponentKey(row.id, DEDUCTION_TYPE_TO_PAYMENT_METHOD.PROGRAM),
