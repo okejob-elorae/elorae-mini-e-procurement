@@ -1,4 +1,5 @@
 import type { Prisma } from "../generated/prisma/client";
+import { lockMainInventoryValueRow } from "./stock-row-lock";
 import { appendStockLedger, normaliseVariantKey, type StockLedgerEntryType } from "./stock-ledger";
 
 type Tx = Prisma.TransactionClient;
@@ -212,7 +213,12 @@ export async function moveMainStock(tx: Tx, input: MoveMainStockInput): Promise<
 
   if (!existing && input.createIfMissing) {
     await lockItemRow(tx, input.itemId);
-    existing = await findRow();
+    /*
+     * Must be a locking read: the transaction runs at REPEATABLE READ and the first findRow fixed
+     * its snapshot, so a plain re-read would still see no row after waiting out the other receipt.
+     * FOR UPDATE reads the latest committed version.
+     */
+    existing = await lockMainInventoryValueRow(tx, input.itemId, input.variantSku);
   }
 
   if (!existing) {
