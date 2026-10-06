@@ -116,8 +116,13 @@ export async function runFulfillmentPushDivergenceSweep(options?: {
       /* Awaited on purpose: a cron has no waiting user, and unawaited fan-outs would stampede FCM. Never copy into an interactive path. */
       await fanOutAdminNotification(notification);
     } catch (err) {
+      /*
+       * Only a failed `create` is retried next run. If the create succeeded and the fan-out threw,
+       * the row exists, so dedup suppresses any retry: the alert stays visible in the bell but is
+       * never pushed. Either way the order is counted as failed.
+       */
       failed++;
-      console.error(`[fulfillment-push-divergence] order ${order.id} failed; it stays unannounced for the next run`, err);
+      console.error(`[fulfillment-push-divergence] order ${order.id} failed`, err);
       continue;
     }
     notified++;

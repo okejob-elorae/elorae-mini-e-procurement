@@ -30,7 +30,7 @@ d("runFulfillmentPushDivergenceSweep (test bed only)", () => {
     counter++;
     const order = await prisma.salesOrder.create({
       data: {
-        salesorderId: Math.floor(Math.random() * 1_000_000_000) + counter,
+        salesorderId: -(Math.floor(Math.random() * 1_000_000_000) + counter),
         salesorderNo: `TEST-FPD-${token}-${counter}`,
         channel: "OTHER",
         sourceName: "test",
