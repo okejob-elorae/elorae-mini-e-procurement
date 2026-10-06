@@ -3480,6 +3480,8 @@
       "addLabel": "Tambah",
       "decreaseLabel": "Kurangi jumlah",
       "removeLabel": "Hapus",
+      "priceUnset": "Harga belum diset",
+      "priceUnsetNote": "Produk bertanda “Harga belum diset” tetap bisa dikirim, tetapi faktur sell-through-nya ditolak sampai harga jual diisi.",
       "empty": "Tidak ada produk yang bisa disarankan untuk toko ini.",
       "noMatch": "Tidak ada produk yang cocok dengan pencarian ini.",
       "approveSummary": "{count} produk baru akan ditambahkan ke transfer ini.",
@@ -3984,6 +3986,8 @@
     "invalidQty": "Isi angka bulat di atas 0.",
     "needSalesman": "Pilih salesman untuk melanjutkan.",
     "needLine": "Pilih minimal satu produk.",
+    "priceUnset": "Harga belum diset",
+    "priceUnsetNote": "Produk bertanda “Harga belum diset” tetap bisa dikirim, tetapi faktur sell-through-nya ditolak sampai harga jual diisi.",
     "qtyFor": "Jumlah untuk {product}",
     "err": {
       "NOT_FOUND": "Toko ini sudah tidak ada.",

@@ -26,6 +26,7 @@ export type StagedAddition = {
   sku: string;
   name: string;
   variantLabel: string | null;
+  priceUnset: boolean;
   qty: number;
 };
 
@@ -49,6 +50,7 @@ type StageableSuggestion = {
   name: string;
   variantLabel: string | null;
   available: number;
+  priceUnset: boolean;
 };
 
 type PickerCandidate = StageableSuggestion & { source: "neverSent" | "gap" };
@@ -198,7 +200,15 @@ export function KonsiSuggestionsCard({
     } else if (idx === -1) {
       next = [
         ...staged,
-        { itemId: s.itemId, variantSku: s.variantSku, sku: s.sku, name: s.name, variantLabel: s.variantLabel, qty: clamped },
+        {
+          itemId: s.itemId,
+          variantSku: s.variantSku,
+          sku: s.sku,
+          name: s.name,
+          variantLabel: s.variantLabel,
+          priceUnset: s.priceUnset,
+          qty: clamped,
+        },
       ];
     } else {
       next = staged.map((a, i) => (i === idx ? { ...a, qty: clamped } : a));
@@ -268,6 +278,9 @@ export function KonsiSuggestionsCard({
         <TableCell className="font-mono text-sm whitespace-nowrap">{s.sku}</TableCell>
         <TableCell className="max-w-56 truncate" title={s.name}>
           {s.name}
+          {s.priceUnset && (
+            <span className="ml-2 text-xs italic text-muted-foreground">{t("konsiSuggestions.priceUnset")}</span>
+          )}
         </TableCell>
         {/* The variant SKU, not just its label: `variantLabel` is null whenever the
           * inventory row has no matching entry in the item's variants JSON, and the
@@ -594,6 +607,9 @@ export function KonsiSuggestionsCard({
                     >
                       <div className="min-w-0 truncate">
                         {a.name}
+                        {a.priceUnset && (
+                          <span className="ml-2 text-xs italic text-muted-foreground">{t("konsiSuggestions.priceUnset")}</span>
+                        )}
                         {/* Variant SKU first, label only as secondary text — same reason as the
                           * candidates table: the label can be null and the SKU column can't. */}
                         <span className="ml-2 font-mono text-xs text-muted-foreground">
@@ -619,6 +635,9 @@ export function KonsiSuggestionsCard({
                     </li>
                   ))}
                 </ul>
+                {staged.some((a) => a.priceUnset) && (
+                  <p className="text-xs text-muted-foreground">{t("konsiSuggestions.priceUnsetNote")}</p>
+                )}
               </div>
             )}
           </div>

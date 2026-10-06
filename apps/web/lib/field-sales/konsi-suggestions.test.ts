@@ -274,6 +274,24 @@ d("listKonsiSuggestions (test bed only)", () => {
     }
   });
 
+  it("flags a product with no selling price as priceUnset, and a priced one not", async () => {
+    const unpricedItem = await prisma.item.create({
+      data: { sku: `TEST-KSG-NOPRICE-${token}`, nameId: "Unpriced", nameEn: "Unpriced", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: null },
+    });
+    await prisma.inventoryValue.create({
+      data: { itemId: unpricedItem.id, variantSku: "", qtyOnHand: 5, reservedQty: 0, avgCost: 1000, totalValue: 5000 },
+    });
+
+    try {
+      const rows = await listKonsiSuggestions(orderId);
+      expect(rows.find((r) => r.itemId === unpricedItem.id)?.priceUnset).toBe(true);
+      expect(rows.find((r) => r.itemId === neverSentItemId)?.priceUnset).toBe(false);
+    } finally {
+      await prisma.inventoryValue.deleteMany({ where: { itemId: unpricedItem.id } });
+      await prisma.item.delete({ where: { id: unpricedItem.id } });
+    }
+  });
+
   it("the store-scoped core returns what the order-scoped list returns for an order with no lines of that item", async () => {
     const order = await prisma.fieldSalesOrder.findUniqueOrThrow({
       where: { id: orderId },

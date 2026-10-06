@@ -42,11 +42,19 @@ type PushRow = {
   target: number | null;
   onHand: number | null;
   inTransit: number | null;
+  priceUnset: boolean;
   checked: boolean;
   qtyRaw: string;
 };
 
-type CatalogMeta = { itemId: string; variantSku: string; sku: string; name: string; variantLabel: string | null };
+type CatalogMeta = {
+  itemId: string;
+  variantSku: string;
+  sku: string;
+  name: string;
+  variantLabel: string | null;
+  priceUnset: boolean;
+};
 
 type CatalogState =
   | { status: "idle" }
@@ -83,6 +91,7 @@ function buildInitialRows(gaps: KonsiAssortmentGapSuggestion[], neverSent: Konsi
       target: g.targetQty,
       onHand: g.onHandQty,
       inTransit: g.inTransitQty,
+      priceUnset: g.priceUnset,
       checked: qty !== null,
       qtyRaw: qty === null ? "" : String(qty),
     });
@@ -99,6 +108,7 @@ function buildInitialRows(gaps: KonsiAssortmentGapSuggestion[], neverSent: Konsi
       target: null,
       onHand: null,
       inTransit: null,
+      priceUnset: s.priceUnset,
       checked: false,
       qtyRaw: "",
     });
@@ -171,18 +181,19 @@ export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFai
       const list = Array.isArray(items) ? items : [];
       const options: SearchableComboboxOption[] = [];
       const metaByKey = new Map<string, CatalogMeta>();
-      for (const item of list as unknown as Array<{ id: string; sku: string; nameId: string; variants: unknown }>) {
+      for (const item of list as unknown as Array<{ id: string; sku: string; nameId: string; variants: unknown; sellingPrice: number | null }>) {
+        const priceUnset = item.sellingPrice == null;
         const variantRows = parseItemVariants(item.variants);
         if (itemHasSkuVariants(item.variants)) {
           for (const variant of variantSelectOptions(variantRows)) {
             const key = rowKey(item.id, variant.sku);
             options.push({ value: key, label: `${item.sku} — ${item.nameId} · ${variant.label}` });
-            metaByKey.set(key, { itemId: item.id, variantSku: variant.sku, sku: item.sku, name: item.nameId, variantLabel: variant.label });
+            metaByKey.set(key, { itemId: item.id, variantSku: variant.sku, sku: item.sku, name: item.nameId, variantLabel: variant.label, priceUnset });
           }
         } else {
           const key = rowKey(item.id, "");
           options.push({ value: key, label: `${item.sku} — ${item.nameId}` });
-          metaByKey.set(key, { itemId: item.id, variantSku: "", sku: item.sku, name: item.nameId, variantLabel: null });
+          metaByKey.set(key, { itemId: item.id, variantSku: "", sku: item.sku, name: item.nameId, variantLabel: null, priceUnset });
         }
       }
       setCatalog({ status: "loaded", options, metaByKey });
@@ -215,6 +226,7 @@ export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFai
         target: null,
         onHand: null,
         inTransit: null,
+        priceUnset: meta.priceUnset,
         checked: true,
         qtyRaw: "1",
       });
@@ -278,6 +290,7 @@ export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFai
           <span className="block truncate" title={row.label}>
             {row.label}
           </span>
+          {row.priceUnset && <span className="block truncate text-xs italic text-muted-foreground">{t("priceUnset")}</span>}
         </TableCell>
         {showGapColumns && (
           <>
@@ -454,6 +467,8 @@ export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFai
           {addedRows.length > 0 && renderTable(addedRows, false)}
         </CardContent>
       </Card>
+
+      {checkedRows.some((r) => r.priceUnset) && <p className="text-xs text-muted-foreground">{t("priceUnsetNote")}</p>}
 
       {/**
         * `pr-28` (112px) clears `QuickActionFAB` (`components/QuickActionFAB.tsx`), which is

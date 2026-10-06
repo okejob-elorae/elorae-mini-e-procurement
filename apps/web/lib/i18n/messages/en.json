@@ -3480,6 +3480,8 @@
       "addLabel": "Add",
       "decreaseLabel": "Decrease quantity",
       "removeLabel": "Remove",
+      "priceUnset": "Price not set",
+      "priceUnsetNote": "Products tagged “Price not set” can still be sent, but their sell-through invoice is refused until a selling price is set.",
       "empty": "No products can be suggested for this store.",
       "noMatch": "No products match this search.",
       "approveSummary": "{count} new product(s) will be added to this transfer.",
@@ -3984,6 +3986,8 @@
     "invalidQty": "Enter a whole number above 0.",
     "needSalesman": "Choose a salesman to continue.",
     "needLine": "Select at least one product.",
+    "priceUnset": "Price not set",
+    "priceUnsetNote": "Products tagged “Price not set” can still be sent, but their sell-through invoice is refused until a selling price is set.",
     "qtyFor": "Quantity for {product}",
     "err": {
       "NOT_FOUND": "This store no longer exists.",
