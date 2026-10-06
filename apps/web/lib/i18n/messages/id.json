@@ -495,6 +495,7 @@
     "currentPasswordIncorrect": "Kata sandi saat ini salah",
     "noPasswordSet": "Akun ini tidak menggunakan kata sandi",
     "changePasswordFailed": "Gagal memperbarui kata sandi",
+    "unauthorized": "Silakan masuk kembali",
     "userNotFound": "User tidak ditemukan",
     "pinNotSet": "PIN belum diatur",
     "tooManyAttempts": "Terlalu banyak percobaan gagal. Coba lagi dalam 15 menit.",

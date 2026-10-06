@@ -6,7 +6,7 @@ import { prisma } from '@elorae/db';
 import { generateDocNumber } from '@/lib/docNumber';
 import { POStatus } from '@elorae/db';
 import { poSchema } from '@/lib/validations';
-import { verifyPinForAction } from '@/app/actions/security/pin-auth';
+import { verifyPin } from '@/lib/security/pin';
 import { hasPermission, requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
 import { z } from 'zod';
@@ -78,7 +78,7 @@ export async function updatePO(
     if (!pin) {
       throw new Error('PIN required to edit a posted PO');
     }
-    const pinResult = await verifyPinForAction(userId, pin, 'EDIT_POSTED_PO');
+    const pinResult = await verifyPin(userId, pin, 'EDIT_POSTED_PO');
     if (!pinResult.success) {
       throw new Error(pinResult.messageKey ?? pinResult.message);
     }
@@ -225,7 +225,7 @@ export async function changePOStatus(
     if (!pin) {
       throw new Error('PIN required to void/cancel a PO');
     }
-    const pinResult = await verifyPinForAction(userId, pin, 'VOID_DOCUMENT');
+    const pinResult = await verifyPin(userId, pin, 'VOID_DOCUMENT');
     if (!pinResult.success) {
       throw new Error(pinResult.messageKey ?? pinResult.message);
     }
@@ -285,7 +285,7 @@ export async function cancelPO(id: string, userId: string, reason?: string, pin?
   if (!pin) {
     throw new Error('PIN required to cancel/void a PO');
   }
-  const pinResult = await verifyPinForAction(userId, pin, 'VOID_DOCUMENT');
+  const pinResult = await verifyPin(userId, pin, 'VOID_DOCUMENT');
   if (!pinResult.success) {
     throw new Error(pinResult.messageKey ?? pinResult.message);
   }

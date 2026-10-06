@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { PERMISSIONS, requirePermission } from '@/lib/rbac';
 import { getActorName, notifySupplierCreated, notifySupplierApproved } from '@/app/actions/notifications';
-import { verifyPinForAction } from '@/app/actions/security/pin-auth';
+import { verifyPin } from '@/lib/security/pin';
 import {
   listSuppliers,
   getSupplierById,
@@ -151,13 +151,9 @@ export async function rejectSupplierAction(id: string, reason: string) {
 
 export async function decryptSupplierBankAction(id: string, pin: string) {
   const session = await requireSession();
-  const pinResult = await verifyPinForAction(
-    session.user.id,
-    pin,
-    'VIEW_BANK_ACCOUNT',
-    'User requested bank account view',
-    'server-action'
-  );
+  const pinResult = await verifyPin(session.user.id, pin, 'VIEW_BANK_ACCOUNT', {
+    ipAddress: 'server-action',
+  });
   if (!pinResult.success) {
     throw new Error(pinResult.messageKey ?? pinResult.message ?? 'Invalid PIN');
   }

@@ -14,7 +14,7 @@ import {
 } from "@/lib/inventory/stock-status";
 import { buildVariantStockChips } from "@/lib/inventory/variant-stock-label";
 import { variantDetailForSku } from '@/lib/items/variants';
-import { verifyPinForAction } from '@/app/actions/security/pin-auth';
+import { verifyPin } from '@/lib/security/pin';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
 import { getActorName, notifyStockAdjustmentCreated } from '@/app/actions/notifications';
@@ -49,14 +49,10 @@ export async function createStockAdjustment(
   adjustmentSchema.parse(data);
 
   // Use server session for PIN verification; fallback to lookup by email if session id not in DB (e.g. stale JWT)
-  const pinResult = await verifyPinForAction(
-    session.user.id,
-    userPin,
-    'STOCK_ADJUSTMENT',
-    undefined,
+  const pinResult = await verifyPin(session.user.id, userPin, 'STOCK_ADJUSTMENT', {
     ipAddress,
-    session.user.email ?? undefined
-  );
+    fallbackEmail: session.user.email ?? undefined,
+  });
   if (!pinResult.success) {
     throw new Error(pinResult.messageKey ?? pinResult.message);
   }

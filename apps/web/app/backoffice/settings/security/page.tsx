@@ -66,8 +66,8 @@ export default function SecuritySettingsPage() {
       return;
     }
     if (!session?.user?.id) return;
-    getPinAttempts(session.user.id).then(setAttempts);
-    getLastSensitiveAccess(session.user.id).then(setLastAccess);
+    getPinAttempts().then(setAttempts);
+    getLastSensitiveAccess().then(setLastAccess);
   }, [status, session?.user?.id, router]);
 
   const handleSetPin = async () => {
@@ -82,14 +82,14 @@ export default function SecuritySettingsPage() {
     }
     setSaving(true);
     try {
-      const result = await setupPin(session.user.id, newPin, currentPin || undefined);
+      const result = await setupPin(newPin, currentPin || undefined);
       if (result.success) {
         toast.success(result.messageKey ? t(result.messageKey) : result.message);
         setCurrentPin("");
         setNewPin("");
         setConfirmPin("");
-        getPinAttempts(session.user.id).then(setAttempts);
-        getLastSensitiveAccess(session.user.id).then(setLastAccess);
+        getPinAttempts().then(setAttempts);
+        getLastSensitiveAccess().then(setLastAccess);
       } else {
         toast.error(result.messageKey ? t(result.messageKey) : result.message);
       }
@@ -113,7 +113,6 @@ export default function SecuritySettingsPage() {
     setSavingPassword(true);
     try {
       const result = await changePassword(
-        session.user.id,
         currentPassword,
         newPassword,
       );

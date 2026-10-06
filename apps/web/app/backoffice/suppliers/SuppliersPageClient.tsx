@@ -311,7 +311,7 @@ export default function SuppliersPage() {
   const handleDeletePinConfirm = async (pin: string) => {
     if (!session?.user?.id || !deleteTargetId) return;
 
-    const result = await verifyPinForAction(session.user.id, pin, 'DELETE_SUPPLIER');
+    const result = await verifyPinForAction(pin, 'DELETE_SUPPLIER');
     if (!result.success) {
       const msg = result.messageKey ? tSecurity(result.messageKey) : result.message;
       toast.error(msg);

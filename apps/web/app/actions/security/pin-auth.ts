@@ -3,79 +3,35 @@
 import { prisma } from "@elorae/db";
 import bcrypt from "bcryptjs";
 import { auth } from "@/lib/auth";
+import { verifyPin, type PinAuthResult } from "@/lib/security/pin";
 import { SENSITIVE_ACTIONS } from "@/app/actions/security/pin-constants";
 
-const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
-const MAX_FAILED_ATTEMPTS = 3;
+export type { PinAuthResult };
 
-export type PinAuthResult = { success: boolean; message?: string; messageKey?: string; userId?: string };
-
+/** Verifies the signed-in user's PIN; the user id always comes from the session. */
 export async function verifyPinForAction(
-  userId: string,
   pin: string,
   action: string,
-  reason?: string,
-  ipAddress?: string,
-  /** If user not found by id (e.g. session id mismatch), try lookup by this email and use that user for PIN verification. */
-  fallbackEmail?: string | null
+  ipAddress?: string
 ): Promise<PinAuthResult> {
-  let user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { id: true, pinHash: true },
+  const session = await auth();
+  if (!session?.user?.id) return { success: false, messageKey: "unauthorized" };
+  return verifyPin(session.user.id, pin, action, {
+    ipAddress,
+    fallbackEmail: session.user.email,
   });
-  let effectiveUserId = userId;
-  if (!user && fallbackEmail?.trim()) {
-    const byEmail = await prisma.user.findUnique({
-      where: { email: fallbackEmail.trim() },
-      select: { id: true, pinHash: true },
-    });
-    if (byEmail) {
-      user = byEmail;
-      effectiveUserId = byEmail.id;
-    }
-  }
-  if (!user) {
-    return { success: false, messageKey: 'userNotFound' };
-  }
-  if (!user.pinHash) {
-    return { success: false, messageKey: 'pinNotSet' };
-  }
-
-  const since = new Date(Date.now() - RATE_LIMIT_WINDOW_MS);
-  const failedCount = await prisma.pinAttempt.count({
-    where: {
-      userId: effectiveUserId,
-      success: false,
-      createdAt: { gte: since },
-    },
-  });
-  if (failedCount >= MAX_FAILED_ATTEMPTS) {
-    return { success: false, messageKey: 'tooManyAttempts' };
-  }
-
-  const match = await bcrypt.compare(pin, user.pinHash);
-  await prisma.pinAttempt.create({
-    data: {
-      userId: effectiveUserId,
-      action,
-      success: match,
-      ipAddress: ipAddress ?? null,
-    },
-  });
-
-  if (!match) {
-    return { success: false, messageKey: 'pinIncorrect' };
-  }
-  return { success: true, messageKey: 'ok', userId: effectiveUserId };
 }
 
 const PIN_REGEX = /^\d{4,6}$/;
 
 export async function setupPin(
-  userId: string,
   newPin: string,
   currentPin?: string
 ): Promise<PinAuthResult> {
+  const session = await auth();
+  if (!session?.user?.id) return { success: false, messageKey: "unauthorized" };
+  const userId = session.user.id;
+
   if (!PIN_REGEX.test(newPin)) {
     return { success: false, messageKey: 'pinFormatError' };
   }
@@ -107,11 +63,13 @@ export async function setupPin(
 }
 
 export async function getPinAttempts(
-  userId: string,
   limit = 20
 ): Promise<
   { id: string; action: string; success: boolean; ipAddress: string | null; createdAt: Date }[]
 > {
+  const session = await auth();
+  if (!session?.user?.id) return [];
+  const userId = session.user.id;
   const attempts = await prisma.pinAttempt.findMany({
     where: { userId },
     orderBy: { createdAt: 'desc' },
@@ -122,9 +80,10 @@ export async function getPinAttempts(
 }
 
 /** Last successful PIN verification per action (for "last accessed" display). */
-export async function getLastSensitiveAccess(
-  userId: string
-): Promise<{ action: string; at: Date }[]> {
+export async function getLastSensitiveAccess(): Promise<{ action: string; at: Date }[]> {
+  const session = await auth();
+  if (!session?.user?.id) return [];
+  const userId = session.user.id;
   const attempts = await prisma.pinAttempt.findMany({
     where: { userId, success: true, action: { in: [...SENSITIVE_ACTIONS] } },
     orderBy: { createdAt: 'desc' },
