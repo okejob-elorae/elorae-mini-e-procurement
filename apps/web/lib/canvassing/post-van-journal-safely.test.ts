@@ -70,4 +70,39 @@ d("postVanJournalSafely (test bed only)", () => {
     expect(meta).toMatchObject({ docId, kind: "van_load", reason: "UNBALANCED" });
     expect(meta).not.toHaveProperty("canvasserId");
   });
+
+  it("returns the failure it flags", async () => {
+    await expect(postVanJournalSafely("reconcile", docId, failedPost)).resolves.toEqual({ reason: "UNBALANCED", role: null });
+  });
+
+  it("returns null for a posted journal", async () => {
+    const posted = async () => ({ ok: true as const, journalId: "x", created: true });
+    await expect(postVanJournalSafely("load", docId, posted)).resolves.toBeNull();
+    expect(await flaggedMetadata()).toHaveLength(0);
+  });
+
+  it("returns null for NOTHING_TO_POST and writes nothing", async () => {
+    const nothing = async () => ({ ok: false as const, code: "NOTHING_TO_POST" as const });
+    await expect(postVanJournalSafely("load", docId, nothing)).resolves.toBeNull();
+    expect(await flaggedMetadata()).toHaveLength(0);
+  });
+
+  it("carries the role on UNMAPPED_ROLE", async () => {
+    const unmapped = async () => ({ ok: false as const, code: "UNMAPPED_ROLE" as const, role: "CASH" });
+    await expect(postVanJournalSafely("sale", docId, unmapped)).resolves.toEqual({ reason: "UNMAPPED_ROLE", role: "CASH" });
+  });
+
+  it("returns ERROR for a thrown post", async () => {
+    const thrown = async (): Promise<never> => {
+      throw new Error("boom");
+    };
+    await expect(postVanJournalSafely("reconcile", docId, thrown)).resolves.toEqual({ reason: "ERROR", role: null });
+  });
+
+  /* The toast must not go quiet just because the notification row already exists. */
+  it("still returns the failure when the dedup skips the write", async () => {
+    await expect(postVanJournalSafely("reconcile", docId, failedPost)).resolves.toEqual({ reason: "UNBALANCED", role: null });
+    await expect(postVanJournalSafely("reconcile", docId, failedPost)).resolves.toEqual({ reason: "UNBALANCED", role: null });
+    expect(await flaggedMetadata()).toHaveLength(1);
+  });
 });

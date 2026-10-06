@@ -4528,6 +4528,18 @@
         "NOT_RETRYABLE": "This document never had a failed automatic posting attempt, so it can't be retried here — posting it now would create a one-sided journal entry. If it genuinely needs a journal, use a manual journal entry instead.",
         "UNEXPECTED": "Something unexpected went wrong posting the journal."
       }
+    },
+    "journalWarn": {
+      "load": {
+        "UNMAPPED_ROLE": "Van loaded ({docNo}) — the load is saved and stock has moved, but its GL journal did not post: the posting role \"{role}\" is not mapped. Ask Finance to map it in Account Mapping, then post the journal from Load History on this page.",
+        "UNBALANCED": "Van loaded ({docNo}) — the load is saved and stock has moved, but its GL journal did not post: the entry did not balance (debit ≠ credit). Ask Finance to check it, then post the journal from Load History on this page.",
+        "ERROR": "Van loaded ({docNo}) — the load is saved and stock has moved, but its GL journal did not post because of an unexpected error. Ask Finance to post the journal from Load History on this page."
+      },
+      "reconcile": {
+        "UNMAPPED_ROLE": "Reconciled ({docNo}), total variance {variance} — the reconcile is saved and stock has moved, but its GL journal did not post: the posting role \"{role}\" is not mapped. Ask Finance to map it in Account Mapping, then post the journal from the reconcile's detail page (Reconcile History).",
+        "UNBALANCED": "Reconciled ({docNo}), total variance {variance} — the reconcile is saved and stock has moved, but its GL journal did not post: the entry did not balance (debit ≠ credit). Ask Finance to check it, then post the journal from the reconcile's detail page (Reconcile History).",
+        "ERROR": "Reconciled ({docNo}), total variance {variance} — the reconcile is saved and stock has moved, but its GL journal did not post because of an unexpected error. Ask Finance to post the journal from the reconcile's detail page (Reconcile History)."
+      }
     }
   },
   "vanSale": {

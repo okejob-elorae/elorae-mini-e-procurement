@@ -4528,6 +4528,18 @@
         "NOT_RETRYABLE": "Dokumen ini belum pernah gagal diposting otomatis, jadi tidak bisa diposting ulang di sini — memposting sekarang akan menghasilkan jurnal timpang sebelah. Jika dokumen ini benar-benar perlu dijurnal, gunakan entri jurnal manual.",
         "UNEXPECTED": "Terjadi kesalahan tak terduga saat memposting jurnal."
       }
+    },
+    "journalWarn": {
+      "load": {
+        "UNMAPPED_ROLE": "Mobil dimuat ({docNo}) — muatan tersimpan dan stok sudah berpindah, tapi jurnal GL-nya belum terposting: role posting \"{role}\" belum dipetakan. Minta Finance memetakannya di Pemetaan Akun, lalu posting jurnalnya dari Riwayat Muat di halaman ini.",
+        "UNBALANCED": "Mobil dimuat ({docNo}) — muatan tersimpan dan stok sudah berpindah, tapi jurnal GL-nya belum terposting: jurnalnya tidak balance (debit ≠ kredit). Minta Finance memeriksanya, lalu posting jurnalnya dari Riwayat Muat di halaman ini.",
+        "ERROR": "Mobil dimuat ({docNo}) — muatan tersimpan dan stok sudah berpindah, tapi jurnal GL-nya belum terposting karena terjadi kesalahan tak terduga. Minta Finance memposting jurnalnya dari Riwayat Muat di halaman ini."
+      },
+      "reconcile": {
+        "UNMAPPED_ROLE": "Rekonsiliasi berhasil ({docNo}), total selisih {variance} — rekonsiliasi tersimpan dan stok sudah berpindah, tapi jurnal GL-nya belum terposting: role posting \"{role}\" belum dipetakan. Minta Finance memetakannya di Pemetaan Akun, lalu posting jurnalnya dari halaman detail rekonsiliasi (Riwayat Rekonsiliasi).",
+        "UNBALANCED": "Rekonsiliasi berhasil ({docNo}), total selisih {variance} — rekonsiliasi tersimpan dan stok sudah berpindah, tapi jurnal GL-nya belum terposting: jurnalnya tidak balance (debit ≠ kredit). Minta Finance memeriksanya, lalu posting jurnalnya dari halaman detail rekonsiliasi (Riwayat Rekonsiliasi).",
+        "ERROR": "Rekonsiliasi berhasil ({docNo}), total selisih {variance} — rekonsiliasi tersimpan dan stok sudah berpindah, tapi jurnal GL-nya belum terposting karena terjadi kesalahan tak terduga. Minta Finance memposting jurnalnya dari halaman detail rekonsiliasi (Riwayat Rekonsiliasi)."
+      }
     }
   },
   "vanSale": {

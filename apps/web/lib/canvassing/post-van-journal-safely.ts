@@ -12,23 +12,33 @@ const RETRY_HINT: Record<"load" | "sale" | "reconcile", string> = {
   reconcile: "retry from the van reconcile's detail page",
 };
 
+export type VanJournalFailure = { reason: "UNMAPPED_ROLE" | "UNBALANCED" | "ERROR"; role: string | null };
+
 /**
  * Posts a van journal without ever failing the caller. A canvassing sale is a
  * terminal point-of-sale transaction: a finance misconfiguration must not fail
  * it in front of a customer, so a problem becomes a JOURNAL_PENDING notification
  * instead of an error.
+ *
+ * Returns the failure it classified (`null` when the journal posted or there
+ * was nothing to post), so a caller can warn at the moment of action. The
+ * failure is returned even when the notification dedup skipped the write or the
+ * write itself failed; the `JOURNAL_PENDING` row stays the durable record.
  */
 export async function postVanJournalSafely(
   kind: "load" | "sale" | "reconcile",
   docId: string,
   post: () => Promise<GenerateAutoJournalResult>,
-): Promise<void> {
+): Promise<VanJournalFailure | null> {
   try {
     const res = await post();
-    if (res.ok || res.code === "NOTHING_TO_POST") return;
-    await notify(kind, docId, res.code, "role" in res ? (res.role ?? null) : null);
+    if (res.ok || res.code === "NOTHING_TO_POST") return null;
+    const failure: VanJournalFailure = { reason: res.code, role: "role" in res ? (res.role ?? null) : null };
+    await notify(kind, docId, failure.reason, failure.role);
+    return failure;
   } catch (e) {
     await notify(kind, docId, "ERROR", null, e instanceof Error ? e.message : "unknown");
+    return { reason: "ERROR", role: null };
   }
 }
 
