@@ -417,6 +417,7 @@ export async function getGRNs(
     dateFrom?: Date;
     dateTo?: Date;
     poId?: string;
+    search?: string;
   },
   opts?: { page: number; pageSize: number }
 ) {
@@ -428,6 +429,14 @@ export async function getGRNs(
     where.grnDate = {};
     if (filters.dateFrom) (where.grnDate as Record<string, Date>).gte = filters.dateFrom;
     if (filters.dateTo) (where.grnDate as Record<string, Date>).lte = filters.dateTo;
+  }
+  const search = filters?.search?.trim();
+  if (search) {
+    where.OR = [
+      { docNumber: { contains: search } },
+      { supplier: { name: { contains: search } } },
+      { po: { docNumber: { contains: search } } },
+    ];
   }
 
   const include = {

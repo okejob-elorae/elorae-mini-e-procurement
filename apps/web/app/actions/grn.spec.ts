@@ -99,6 +99,33 @@ describe("grn read actions gate", () => {
     await expect(getGRNs()).resolves.toBeDefined();
   });
 
+  describe("getGRNs search", () => {
+    const expectedOr = [
+      { docNumber: { contains: "po-12" } },
+      { supplier: { name: { contains: "po-12" } } },
+      { po: { docNumber: { contains: "po-12" } } },
+    ];
+
+    beforeEach(() => {
+      mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["inventory:view"] } });
+    });
+
+    it("passes the same trimmed contains OR to findMany and count", async () => {
+      await getGRNs({ search: "  po-12 " }, { page: 1, pageSize: 10 });
+      const findWhere = mockFindMany.mock.calls[0][0].where;
+      const countWhere = mockCount.mock.calls[0][0].where;
+      expect(findWhere.OR).toEqual(expectedOr);
+      expect(countWhere).toBe(findWhere);
+    });
+
+    it("adds no OR for a blank or whitespace-only search", async () => {
+      await getGRNs({ search: "   " }, { page: 1, pageSize: 10 });
+      await getGRNs({ search: "" }, { page: 1, pageSize: 10 });
+      for (const call of mockFindMany.mock.calls) expect(call[0].where.OR).toBeUndefined();
+      for (const call of mockCount.mock.calls) expect(call[0].where.OR).toBeUndefined();
+    });
+  });
+
   it.each(inventoryOnlyReads)("%s does not admit vendor_returns:view alone", async (_name, call) => {
     mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["vendor_returns:view"] } });
     await expect(call()).rejects.toThrow("Forbidden");
