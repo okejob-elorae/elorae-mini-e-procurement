@@ -42,10 +42,9 @@ export type StockRef = {
  * inventory.ts (getInventoryValue), vendor-returns.ts (vendor return valuation, create and
  * update), opname-snapshot.ts, opname-approve.ts,
  * canvassing/writer.ts, canvassing/reconcile-writer.ts,
- * field-sales/retur/approve-writer.ts, field-sales/konsi-push-writer.ts, and
- * reverseMovingAverage / calculateMovingAverage / reverseInventoryValue below. The one apps/web
- * lookup NOT routed through here is field-sales/writer.ts's hasInventoryRow, an existence check
- * that pins no id. reconciliation-runner.ts's MATCH_JUBELIO path uses packages/db's locking copy,
+ * field-sales/retur/approve-writer.ts, field-sales/konsi-push-writer.ts,
+ * field-sales/writer.ts (konsi approve added lines), and
+ * reverseMovingAverage / calculateMovingAverage / reverseInventoryValue below. reconciliation-runner.ts's MATCH_JUBELIO path uses packages/db's locking copy,
  * lockMainInventoryValueRow, instead, because it must lock the row before reading it; and
  * konsi-transfer/writer.ts uses packages/db's resolveReservedInventory, because it draws down a
  * reservation and must act on the row that reservation was made against.

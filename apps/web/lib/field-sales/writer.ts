@@ -12,6 +12,8 @@ import { NoActiveVisitError, MinQtyViolationError, InvalidOrderTransitionError, 
 import { checkFinalPrices } from "./final-prices";
 import { sentItemIds } from "./queries";
 import { openKonsiQtyByKey } from "./konsi-open-qty";
+import { isStockableVariantKey } from "@/lib/items/variants";
+import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 
 const AUDIT_REASON_MAX_LENGTH = 191;
 
@@ -330,18 +332,9 @@ export async function approveFieldSalesOrder(input: {
         );
         const items = await tx.item.findMany({
           where: { id: { in: added.map((a) => a.itemId) }, isActive: true, type: "FINISHED_GOOD" },
-          select: { id: true, nameId: true },
+          select: { id: true, nameId: true, variants: true },
         });
         const byId = new Map(items.map((i) => [i.id, i]));
-        // Same OR-tolerant (itemId, variantSku) lookup reserveKonsiFieldSalesOrder's own
-        // findReservationInventory uses — a variantless row is stored keyed null, not "".
-        const hasInventoryRow = async (itemId: string, variantSku: string) => {
-          const inv =
-            variantSku === ""
-              ? await tx.inventoryValue.findFirst({ where: { itemId, OR: [{ variantSku: null }, { variantSku: "" }] } })
-              : await tx.inventoryValue.findFirst({ where: { itemId, variantSku } });
-          return inv !== null;
-        };
         const seen = new Set<string>();
         // All validation runs before any write below, so a rejected payload never depends on
         // transaction rollback to leave the order untouched.
@@ -369,12 +362,22 @@ export async function approveFieldSalesOrder(input: {
           // the never-sent list should not have offered.
           if (alreadySent.has(a.itemId) && !gapKeys.has(key)) throw new InvalidAddedLineError("ALREADY_SENT", a.itemId);
           if (!byId.has(a.itemId)) throw new InvalidAddedLineError("UNKNOWN_ITEM", a.itemId);
-          // A variantSku with no matching InventoryValue row would otherwise surface later as
-          // InventoryValueMissingError out of reserveKonsiFieldSalesOrder — a @elorae/db class
-          // with no `code`, which the action layer has nothing to map to a UI-facing reason.
-          // Its own code, not UNKNOWN_ITEM: the product exists and is active, so "not found or no
-          // longer active" would be untrue and reloading the page would not surface the cause.
-          if (!(await hasInventoryRow(a.itemId, a.variantSku))) throw new InvalidAddedLineError("NO_INVENTORY", a.itemId);
+          /**
+           * A variantSku with no matching InventoryValue row would otherwise surface later as
+           * InventoryValueMissingError out of reserveKonsiFieldSalesOrder — a @elorae/db class
+           * with no `code`, which the action layer has nothing to map to a UI-facing reason.
+           * Its own code, not UNKNOWN_ITEM: the product exists and is active, so "not found or no
+           * longer active" would be untrue and reloading the page would not surface the cause.
+           *
+           * Stock is per variant for an item with SKU variants: a "" line would reserve against a
+           * pooled variantless row and land StoreStock on "", where per-variant SPG sales and the
+           * gap tests never see it. So such an item takes only its own variant SKUs, and a
+           * variantless item only "" — `isStockableVariantKey` is the one spelling of that rule,
+           * shared with the konsi push writer. The row lookup then reuses the shared OR-tolerant
+           * `findExistingInventoryValueRow`, since a variantless row is stored keyed null or "".
+           */
+          if (!isStockableVariantKey(byId.get(a.itemId)!.variants, a.variantSku ?? "")) throw new InvalidAddedLineError("NO_INVENTORY", a.itemId);
+          if (!(await findExistingInventoryValueRow(tx, a.itemId, a.variantSku))) throw new InvalidAddedLineError("NO_INVENTORY", a.itemId);
           seen.add(key);
         }
         for (const a of added) {
