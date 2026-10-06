@@ -708,17 +708,34 @@ d("listStores NPWP filter (test bed only)", () => {
 
   let nullNpwpId = "";
   let emptyNpwpId = "";
+  let spacesNpwpId = "";
+  let tabNpwpId = "";
   let filledNpwpId = "";
+
+  async function seed(suffix: string, over: Partial<StoreFields>): Promise<string> {
+    const created = await createStore(fields(suffix, over));
+    createdIds.push(created.id);
+    return created.id;
+  }
+
+  /* The writers now normalise a blank NPWP to null, so the legacy spellings are planted directly. */
+  async function seedLegacy(suffix: string, npwp: string): Promise<string> {
+    const id = await seed(suffix, { npwp: null });
+    await prisma.store.update({ where: { id: seededId(id) }, data: { npwp } });
+    return id;
+  }
 
   beforeEach(async () => {
     createdIds.length = 0;
-    const seed = async (suffix: string, over: Partial<StoreFields>) => {
-      const created = await createStore(fields(suffix, over));
-      createdIds.push(created.id);
-      return created.id;
-    };
+    nullNpwpId = "";
+    emptyNpwpId = "";
+    spacesNpwpId = "";
+    tabNpwpId = "";
+    filledNpwpId = "";
     nullNpwpId = await seed("NULL", { npwp: null });
-    emptyNpwpId = await seed("EMPTY", { npwp: "" });
+    emptyNpwpId = await seedLegacy("EMPTY", "");
+    spacesNpwpId = await seedLegacy("SPACES", "   ");
+    tabNpwpId = await seedLegacy("TAB", "\t");
     filledNpwpId = await seed("FILLED", { npwp: "01.234.567.8-901.000" });
   });
 
@@ -731,16 +748,43 @@ d("listStores NPWP filter (test bed only)", () => {
     return items.map((s) => s.id).sort();
   }
 
-  it("missing returns stores whose NPWP is null or empty", async () => {
-    expect(await idsFor({ npwp: "missing" })).toEqual([nullNpwpId, emptyNpwpId].sort());
+  it("missing returns stores whose NPWP is null, empty or spaces only, and never a filled one", async () => {
+    const missing = await idsFor({ npwp: "missing" });
+    expect(missing).toEqual(expect.arrayContaining([nullNpwpId, emptyNpwpId, spacesNpwpId]));
+    expect(missing).not.toContain(filledNpwpId);
   });
 
-  it("present returns only stores with a non-empty NPWP", async () => {
-    expect(await idsFor({ npwp: "present" })).toEqual([filledNpwpId]);
+  it("present is the exact complement of missing", async () => {
+    const all = await idsFor({});
+    const missing = await idsFor({ npwp: "missing" });
+    const present = await idsFor({ npwp: "present" });
+    expect(present).toContain(filledNpwpId);
+    expect(present.filter((id) => missing.includes(id))).toEqual([]);
+    expect([...missing, ...present].sort()).toEqual(all);
+  });
+
+  it("flags each row's npwpMissing exactly as the missing filter buckets it, whatever the collation does with a tab", async () => {
+    const missing = new Set(await idsFor({ npwp: "missing" }));
+    const { items } = await listStores({ search: token });
+    expect(items.map((s) => s.id).sort()).toEqual(
+      [nullNpwpId, emptyNpwpId, spacesNpwpId, tabNpwpId, filledNpwpId].sort(),
+    );
+    for (const s of items) expect(s.npwpMissing).toBe(missing.has(s.id));
   });
 
   it("applies the location filter and the NPWP filter together instead of one overwriting the other", async () => {
-    expect(await idsFor({ npwp: "present", location: "missing" })).toEqual([filledNpwpId]);
+    expect(await idsFor({ npwp: "present", location: "missing" })).toContain(filledNpwpId);
+    expect(await idsFor({ npwp: "missing", location: "missing" })).not.toContain(filledNpwpId);
     expect(await idsFor({ npwp: "missing", location: "defaultRadius" })).toEqual([]);
+  });
+
+  it("trims the NPWP on create and update, storing a blank one as null", async () => {
+    const id = await seed("TRIM", { npwp: "  01.234.567.8-901.000\t" });
+    let row = await prisma.store.findUniqueOrThrow({ where: { id: seededId(id) }, select: { npwp: true } });
+    expect(row.npwp).toBe("01.234.567.8-901.000");
+
+    await updateStore(id, fields("TRIM", { npwp: " \t " }));
+    row = await prisma.store.findUniqueOrThrow({ where: { id: seededId(id) }, select: { npwp: true } });
+    expect(row.npwp).toBeNull();
   });
 });

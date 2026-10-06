@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { Loader2, Plus, Search, Store } from "lucide-react";
-import type { StoreListItem } from "@/lib/stores/queries";
+import type { StoreListRow } from "@/lib/stores/queries";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -35,7 +35,7 @@ import {
 import { Pager } from "@/components/Pager";
 
 type Props = {
-  stores: StoreListItem[];
+  stores: StoreListRow[];
   totalCount: number;
   search: string;
   showInactive: boolean;
@@ -245,7 +245,7 @@ export function StoreListClient({
                           >
                             {s.name}
                           </Link>
-                          {!s.npwp?.trim() && (
+                          {s.npwpMissing && (
                             <Badge variant="outline" className="border-amber-500/40 text-amber-700">
                               {tTable("noNpwp")}
                             </Badge>
