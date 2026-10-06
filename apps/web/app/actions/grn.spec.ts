@@ -152,4 +152,17 @@ describe("grn actor trust", () => {
       expect(mockTransaction).not.toHaveBeenCalled();
     }
   );
+
+  it.each([
+    ["approveGRNByOwner", () => approveGRNByOwner("g1", "u1"), "Only owner/admin can approve over-receive GRN"],
+    ["declineGRNByOwner", () => declineGRNByOwner("g1", "u1"), "Only owner/admin can decline over-receive GRN"],
+  ] as Array<[string, () => Promise<unknown>, string]>)(
+    "%s runs the role check on the session user",
+    async (_name, call, message) => {
+      mockUserFindUnique.mockResolvedValue({ role: "WAREHOUSE" });
+      await expect(call()).rejects.toThrow(message);
+      expect(mockUserFindUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "u1" } }));
+      expect(mockTransaction).not.toHaveBeenCalled();
+    }
+  );
 });

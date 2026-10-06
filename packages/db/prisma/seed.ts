@@ -25,7 +25,7 @@ import { getDatabaseUrl } from "../src/db-connection";
 import { loadDbEnv } from "../src/load-env";
 import { seedPantoneColors } from "./seed-pantone-colors";
 import { seedChartAccounts } from "./seed-chart-accounts";
-import { appendSeedOpeningBalances, hasSeedOpening } from "./seed-ledger";
+import { appendSeedOpeningBalances, hasMainLedgerEntry } from "./seed-ledger";
 import { moveMainStock } from "../src/stock-balance";
 
 loadDbEnv();
@@ -1029,8 +1029,8 @@ async function main() {
       where: { itemId: inv.itemId, variantSku: null },
     });
     if (existing) {
-      /* A row the ledger already backs keeps its balance: resetting it would desync on-hand from the ledger. */
-      if (!(await hasSeedOpening(prisma, inv.itemId, null))) {
+      /* A row whose key holds any MAIN ledger entry keeps its balance: resetting it would desync on-hand from the ledger. */
+      if (!(await hasMainLedgerEntry(prisma, inv.itemId, null))) {
         await prisma.inventoryValue.update({
           where: { id: existing.id },
           data: {
@@ -1055,7 +1055,7 @@ async function main() {
     }
   }
   // variantSku '' matches createStockAdjustment / costing (not null)
-  const poplinBacked = await hasSeedOpening(prisma, fabricCottonPoplin.id, "");
+  const poplinBacked = await hasMainLedgerEntry(prisma, fabricCottonPoplin.id, "");
   const poplinRow = await prisma.inventoryValue.upsert({
     where: {
       itemId_variantSku: { itemId: fabricCottonPoplin.id, variantSku: "" },
@@ -1250,6 +1250,7 @@ async function main() {
         qtyDelta: 500,
         unitCost: 3400,
         totalCost: 1_700_000,
+        avgCost: 4_500_000 / 1300,
         totalValue: 4_500_000,
         balanceValue: 4_500_000,
         refType: "GRN",
@@ -1705,7 +1706,7 @@ async function main() {
     });
     const payload = { qtyOnHand: inv.qtyOnHand, avgCost: inv.avgCost, totalValue: inv.totalValue };
     if (existing) {
-      if (!(await hasSeedOpening(prisma, inv.itemId, null))) {
+      if (!(await hasMainLedgerEntry(prisma, inv.itemId, null))) {
         await prisma.inventoryValue.update({ where: { id: existing.id }, data: payload });
       }
       hppInventoryIds.push(existing.id);

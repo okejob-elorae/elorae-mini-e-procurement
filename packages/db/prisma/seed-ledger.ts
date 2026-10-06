@@ -2,10 +2,11 @@ import type { Prisma } from "../generated/prisma/client";
 import { appendStockLedger, normaliseVariantKey } from "../src/stock-ledger";
 
 /**
- * True when the MAIN ledger key already has an OPENING entry, which the seed uses to leave such a
- * row alone instead of resetting a balance the ledger has since moved.
+ * True when the MAIN ledger key already holds ANY entry. The seed leaves such a row's balance alone
+ * instead of resetting one the ledger has since moved, and appendSeedOpeningBalances skips the key,
+ * since an opening must be the first entry for its key. Both use this one predicate so they agree.
  */
-export async function hasSeedOpening(
+export async function hasMainLedgerEntry(
   client: Pick<Prisma.TransactionClient, "stockLedgerEntry">,
   itemId: string,
   variantSku: string | null | undefined,
@@ -16,7 +17,6 @@ export async function hasSeedOpening(
       locationId: "",
       itemId,
       variantSku: normaliseVariantKey(variantSku),
-      type: "OPENING",
     },
     select: { id: true },
   });
@@ -63,16 +63,7 @@ export async function appendSeedOpeningBalances(
   for (const bucket of buckets.values()) {
     if (bucket.qty === 0) continue;
 
-    const existing = await tx.stockLedgerEntry.findFirst({
-      where: {
-        locationType: "MAIN",
-        locationId: "",
-        itemId: bucket.itemId,
-        variantSku: bucket.variantKey,
-      },
-      select: { id: true },
-    });
-    if (existing) continue;
+    if (await hasMainLedgerEntry(tx, bucket.itemId, bucket.variantKey)) continue;
 
     await appendStockLedger(tx, {
       location: { type: "MAIN" },

@@ -40,6 +40,15 @@ describe("validateAndNormalizeVariants", () => {
     ).toThrow("Duplicate variant barcode");
   });
 
+  it("refuses duplicate variant SKUs and barcodes that differ only by an accent, as the collation does", () => {
+    expect(() =>
+      validateAndNormalizeVariants("X", [{ sku: "X-MERAH" }, { sku: "X-MÉRAH" }], {}),
+    ).toThrow("Duplicate variant SKU");
+    expect(() =>
+      validateAndNormalizeVariants("X", [{ sku: "X-1", barcode: "CAFE1" }, { sku: "X-2", barcode: "CAFÉ1" }], {}),
+    ).toThrow("Duplicate variant barcode");
+  });
+
   it("returns an empty list for no variants", () => {
     expect(validateAndNormalizeVariants("A", undefined)).toEqual([]);
   });

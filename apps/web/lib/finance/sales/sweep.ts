@@ -98,7 +98,10 @@ export async function postPendingSalesJournals(
     systemPoster = admin?.id ?? null;
   }
 
-  // Optional scope (targeted re-post / test isolation) — only an ABSENT orderIds makes the sweep global; an empty one returned above.
+  /**
+   * Optional scope (targeted re-post / test isolation): only an ABSENT orderIds makes the sweep
+   * global; an empty one returned above.
+   */
   const idFilter =
     opts.orderIds !== undefined
       ? Prisma.sql`AND so.id IN (${Prisma.join(opts.orderIds)})`

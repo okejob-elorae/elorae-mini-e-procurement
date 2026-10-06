@@ -191,11 +191,29 @@ async function main() {
     /*
      * The clone copies balances and no ledger, so every cloned row would sit at a ledger balance
      * of 0. Append the OPENING entry behind each one, bounded per transaction.
+     *
+     * Batches hold WHOLE items: an item's null and "" rows fold into one opening, and a batch that
+     * carried only one of them would append a partial opening and make the next batch skip the key.
      */
-    const clonedIds = inventoryValues.map((v) => v.id);
+    const idsByItem = new Map<string, string[]>();
+    for (const v of inventoryValues) {
+      const ids = idsByItem.get(v.itemId);
+      if (ids) ids.push(v.id);
+      else idsByItem.set(v.itemId, [v.id]);
+    }
+    const openingBatches: string[][] = [];
+    let currentBatch: string[] = [];
+    for (const ids of idsByItem.values()) {
+      if (currentBatch.length > 0 && currentBatch.length + ids.length > 500) {
+        openingBatches.push(currentBatch);
+        currentBatch = [];
+      }
+      currentBatch.push(...ids);
+    }
+    if (currentBatch.length > 0) openingBatches.push(currentBatch);
+
     let openings = 0;
-    for (let i = 0; i < clonedIds.length; i += 500) {
-      const ids = clonedIds.slice(i, i + 500);
+    for (const ids of openingBatches) {
       openings += await dst.$transaction((tx) => appendSeedOpeningBalances(tx, ids), { timeout: 60_000 });
     }
     console.log(`StockLedgerEntry: ${openings} opening entries appended`);

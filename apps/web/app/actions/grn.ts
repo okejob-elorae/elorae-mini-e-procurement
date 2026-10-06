@@ -614,7 +614,7 @@ export async function approveGRNByOwner(id: string, userId: string) {
   assertActor(session.user.id, userId);
 
   const user = await prisma.user.findUnique({
-    where: { id: userId },
+    where: { id: session.user.id },
     select: { role: true },
   });
   if (!user || user.role !== 'ADMIN') {
@@ -677,7 +677,7 @@ export async function declineGRNByOwner(id: string, userId: string) {
   assertActor(session.user.id, userId);
 
   const user = await prisma.user.findUnique({
-    where: { id: userId },
+    where: { id: session.user.id },
     select: { role: true },
   });
   if (!user || user.role !== 'ADMIN') {

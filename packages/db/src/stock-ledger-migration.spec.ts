@@ -22,6 +22,9 @@ import { prisma } from "./index";
  * the full bucket sum.
  */
 
+/* Each test aggregates per bucket sequentially across the whole bed, so a cloned bed outruns vitest's 5s default. */
+const SWEEP_TIMEOUT_MS = 120_000;
+
 type Bucket = { sum: number };
 
 async function movedSinceOpening(
@@ -82,7 +85,7 @@ describe("stock ledger opening backfill", () => {
       expect(Number(openings[0].qty)).toBeCloseTo(atOpening, 2);
       expect(Number(openings[0].balanceQty)).toBeCloseTo(atOpening, 2);
     }
-  });
+  }, SWEEP_TIMEOUT_MS);
 
   it("writes no main OPENING entry for a ledger key whose opening-time balance is zero", async () => {
     const balances = await prisma.inventoryValue.findMany({
@@ -110,7 +113,7 @@ describe("stock ledger opening backfill", () => {
 
       expect(openings).toBe(0);
     }
-  });
+  }, SWEEP_TIMEOUT_MS);
 
   it("gives every van ledger key at most one OPENING entry carrying the whole bucket's sum", async () => {
     const balances = await prisma.vanStock.findMany({
@@ -140,7 +143,7 @@ describe("stock ledger opening backfill", () => {
       expect(Number(openings[0].qty)).toBeCloseTo(atOpening, 2);
       expect(Number(openings[0].balanceQty)).toBeCloseTo(atOpening, 2);
     }
-  });
+  }, SWEEP_TIMEOUT_MS);
 
   it("writes no van OPENING entry for a ledger key whose opening-time balance is zero", async () => {
     const balances = await prisma.vanStock.findMany({
@@ -169,7 +172,7 @@ describe("stock ledger opening backfill", () => {
 
       expect(openings).toBe(0);
     }
-  });
+  }, SWEEP_TIMEOUT_MS);
 
   /*
    * StoreStock.variantSku is NOT NULL with a "" default and carries a unique key over
@@ -205,7 +208,7 @@ describe("stock ledger opening backfill", () => {
       expect(Number(openings[0].qty)).toBeCloseTo(atOpening, 2);
       expect(Number(openings[0].balanceQty)).toBeCloseTo(atOpening, 2);
     }
-  });
+  }, SWEEP_TIMEOUT_MS);
 
   it("writes no store OPENING entry for a zero opening-time balance", async () => {
     const candidates = await prisma.storeStock.findMany({
@@ -233,5 +236,5 @@ describe("stock ledger opening backfill", () => {
 
       expect(openings).toBe(0);
     }
-  });
+  }, SWEEP_TIMEOUT_MS);
 });

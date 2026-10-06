@@ -1,3 +1,5 @@
+import { skuMatchKey } from "@/lib/items/sku-match-key";
+
 export type VariantGenerationBase = "category" | "parent";
 
 /** Normalize attribute value for variant SKU segment (e.g. red → RED, light blue → LIGHTBLUE). */
@@ -88,14 +90,14 @@ export function validateAndNormalizeVariants(
   const seen = new Set<string>();
   const seenBarcodes = new Set<string>();
   for (const row of normalized) {
-    const key = row.sku.toLowerCase();
+    const key = skuMatchKey(row.sku);
     if (seen.has(key)) {
       throw new Error(`Duplicate variant SKU "${row.sku}"`);
     }
     seen.add(key);
     const barcode = ((row as Record<string, string>).barcode ?? "").trim();
     if (barcode) {
-      const barcodeKey = barcode.toLowerCase();
+      const barcodeKey = skuMatchKey(barcode);
       if (seenBarcodes.has(barcodeKey)) {
         throw new Error(`Duplicate variant barcode "${barcode}"`);
       }

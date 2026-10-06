@@ -198,8 +198,9 @@ export async function createItem(data: ItemFormData) {
   });
 
   const item = await prisma.$transaction(async (tx) => {
+    /* The parent SKU joins the check: one equal to another item's variant SKU shares its namespace. */
     const createCollisions = await findVariantSkuCollisions(tx, {
-      skus: normalizedVariants.map((v) => v.sku),
+      skus: [finalSku, ...normalizedVariants.map((v) => v.sku)],
     });
     if (createCollisions.length > 0) throw new VariantSkuTakenError(createCollisions);
 

@@ -108,7 +108,9 @@ export function buildPOsWhere(filters?: ListPOsFilters) {
   }
   if (filters?.overdue) {
     where.etaDate = { lt: new Date() };
-    where.status = { notIn: ['CLOSED', 'OVER', 'CANCELLED'] };
+    /* ANDed in, never assigned to `where.status`, so an explicit status or statusIn still applies. */
+    const openStatus = { status: { notIn: ["CLOSED", "OVER", "CANCELLED"] } };
+    where.AND = Array.isArray(where.AND) ? [...where.AND, openStatus] : [openStatus];
   }
 
   return where;

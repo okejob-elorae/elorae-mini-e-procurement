@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma } from "./index";
 import { seededId } from "./spec-teardown";
-import { appendSeedOpeningBalances } from "../prisma/seed-ledger";
+import { appendSeedOpeningBalances, hasMainLedgerEntry } from "../prisma/seed-ledger";
 
 // Writes ledger rows — never run against the shared prod DB (port 3307 tunnel / VPS host).
 const url = process.env.DATABASE_URL ?? "";
@@ -14,9 +14,10 @@ d("appendSeedOpeningBalances (test bed only)", () => {
   let rowId = "";
   let zeroItemId = "";
   let zeroRowId = "";
-  const tag = Math.random().toString(36).slice(2, 10);
+  let tag = "";
 
   beforeEach(async () => {
+    tag = Math.random().toString(36).slice(2, 10);
     itemId = "";
     uomId = "";
     rowId = "";
@@ -104,6 +105,27 @@ d("appendSeedOpeningBalances (test bed only)", () => {
     const appended = await prisma.$transaction((tx) => appendSeedOpeningBalances(tx, [rowId]));
     expect(appended).toBe(0);
     expect(await prisma.stockLedgerEntry.count({ where: { itemId, type: "OPENING" } })).toBe(0);
+  });
+
+  it("hasMainLedgerEntry reports any MAIN entry on the normalised key, not only an OPENING one", async () => {
+    expect(await hasMainLedgerEntry(prisma, itemId, null)).toBe(false);
+    await prisma.stockLedgerEntry.create({
+      data: {
+        locationType: "MAIN",
+        locationId: "",
+        itemId,
+        variantSku: "",
+        type: "IN",
+        qty: 12,
+        balanceQty: 12,
+        refType: "GRN",
+        refId: "spec-ref",
+        refDocNumber: "",
+      },
+    });
+    expect(await hasMainLedgerEntry(prisma, itemId, null)).toBe(true);
+    expect(await hasMainLedgerEntry(prisma, itemId, "")).toBe(true);
+    expect(await hasMainLedgerEntry(prisma, zeroItemId, null)).toBe(false);
   });
 
   it("folds a null row and a \"\" row of one item into one OPENING entry at the summed quantity", async () => {

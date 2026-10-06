@@ -345,6 +345,14 @@ export function MovementsPageClient() {
     locationTypes.length !== WAREHOUSE_TYPES.length ||
     !allRefTypesSelected;
 
+  /*
+   * A location group's closing balance sums the variant sections the fetch returned, so it is
+   * the location's total only when no date range or movement-type filter can drop a variant's
+   * rows and the query was not truncated (checked at render). Otherwise only per-section
+   * balances are shown.
+   */
+  const isGroupBalanceUnfiltered = dateFrom === "" && dateTo === "" && allRefTypesSelected;
+
   const [data, setData] = useState<ItemMovementsResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -609,6 +617,8 @@ export function MovementsPageClient() {
             const singleSection = data.sections.length === 1;
             const singleSectionGroup = group.sections.length === 1;
             const groupTitle = t(sectionTitleKey(firstSection), { name: group.locationLabel });
+            const showGroupBalance =
+              singleSectionGroup || (isGroupBalanceUnfiltered && !data.queryTruncated);
 
             return (
               <Collapsible key={group.key} defaultOpen={singleSection}>
@@ -639,12 +649,14 @@ export function MovementsPageClient() {
                           )}
                         </span>
                         <span className="flex shrink-0 items-center gap-3">
-                          <span className="text-sm text-muted-foreground whitespace-nowrap">
-                            {t("closingBalanceLabel")}:{" "}
-                            <span className="font-medium tabular-nums text-foreground">
-                              {group.closingBalance.toLocaleString()}
+                          {showGroupBalance && (
+                            <span className="text-sm text-muted-foreground whitespace-nowrap">
+                              {t("closingBalanceLabel")}:{" "}
+                              <span className="font-medium tabular-nums text-foreground">
+                                {group.closingBalance.toLocaleString()}
+                              </span>
                             </span>
-                          </span>
+                          )}
                           <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]/loc:rotate-180" />
                         </span>
                       </button>

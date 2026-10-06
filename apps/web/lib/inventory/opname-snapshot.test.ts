@@ -24,7 +24,7 @@ d("opname snapshot item filter (test bed only)", () => {
       data: { sku: `TEST-OPSNAP-ITEM-${token}`, nameId: "Snapshot item", nameEn: "Snapshot item", type: "FINISHED_GOOD", uomId, isActive: true },
     });
     itemId = item.id;
-    const user = await prisma.user.create({ data: { email: `test-opsnap-${token}@test.local`, name: "Opname", role: "ADMIN" } });
+    const user = await prisma.user.create({ data: { email: `test-opsnap-${token}@test.local`, name: "Opname", role: "WAREHOUSE" } });
     userId = user.id;
     const opname = await prisma.stockOpname.create({
       data: { docNumber: `TEST-OPSNAP-${token}`, scope: "FINISHED_GOOD", status: "CREATED", snapshotAt: new Date(), createdById: userId },

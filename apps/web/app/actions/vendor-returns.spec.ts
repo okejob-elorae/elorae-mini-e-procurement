@@ -1,20 +1,28 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockAuth, mockFindFirst, mockFindUnique, mockVrCreate, mockVrUpdate, mockVrFindUnique } =
-  vi.hoisted(() => ({
-    mockAuth: vi.fn(),
-    mockFindFirst: vi.fn(),
-    mockFindUnique: vi.fn(),
-    mockVrCreate: vi.fn(),
-    mockVrUpdate: vi.fn(),
-    mockVrFindUnique: vi.fn(),
-  }));
+const {
+  mockAuth,
+  mockFindFirst,
+  mockFindUnique,
+  mockVrCreate,
+  mockVrUpdate,
+  mockVrFindUnique,
+  mockTxVrFindUnique,
+} = vi.hoisted(() => ({
+  mockAuth: vi.fn(),
+  mockFindFirst: vi.fn(),
+  mockFindUnique: vi.fn(),
+  mockVrCreate: vi.fn(),
+  mockVrUpdate: vi.fn(),
+  mockVrFindUnique: vi.fn(),
+  mockTxVrFindUnique: vi.fn(),
+}));
 
 const tx = {
   inventoryValue: { findFirst: mockFindFirst, findUnique: mockFindUnique },
   item: { findUnique: vi.fn() },
   fabricRoll: { findUnique: vi.fn() },
-  vendorReturn: { create: mockVrCreate, update: mockVrUpdate },
+  vendorReturn: { create: mockVrCreate, update: mockVrUpdate, findUnique: mockTxVrFindUnique },
 };
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
@@ -113,6 +121,7 @@ describe("vendor return actor trust", () => {
       expect(mockVrCreate).not.toHaveBeenCalled();
       expect(mockVrUpdate).not.toHaveBeenCalled();
       expect(mockVrFindUnique).not.toHaveBeenCalled();
+      expect(mockTxVrFindUnique).not.toHaveBeenCalled();
     }
   );
 
@@ -125,6 +134,7 @@ describe("vendor return actor trust", () => {
       mockAuth.mockResolvedValue(null);
       await expect(call()).rejects.toThrow("Unauthorized");
       expect(mockVrFindUnique).not.toHaveBeenCalled();
+      expect(mockTxVrFindUnique).not.toHaveBeenCalled();
     }
   );
 
@@ -137,6 +147,23 @@ describe("vendor return actor trust", () => {
       mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["vendor_returns:create"] } });
       await expect(call()).rejects.toThrow("Forbidden: Insufficient permissions");
       expect(mockVrFindUnique).not.toHaveBeenCalled();
+      expect(mockTxVrFindUnique).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    ["processReturn", () => processReturn("r1", "u1"), "Return tidak valid atau sudah diproses"],
+    [
+      "completeReturn",
+      () => completeReturn("r1", "u1", { trackingNumber: "TRK-1", receiptFileUrl: "https://example.com/r.pdf" }),
+      "Return must be in PROCESSED status to complete",
+    ],
+  ] as Array<[string, () => Promise<unknown>, string]>)(
+    "%s reads the return inside the transaction once the caller passes (positive control)",
+    async (_name, call, message) => {
+      mockTxVrFindUnique.mockResolvedValue(null);
+      await expect(call()).rejects.toThrow(message);
+      expect(mockTxVrFindUnique).toHaveBeenCalledWith({ where: { id: "r1" } });
     }
   );
 });

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useSession } from "next-auth/react";
 import { 
   Plus, 
   Search, 
@@ -98,6 +99,7 @@ const statusIcons: Record<WOStatus, React.ReactNode> = {
 };
 
 export function WorkOrdersPageClient() {
+  const { data: session } = useSession();
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
