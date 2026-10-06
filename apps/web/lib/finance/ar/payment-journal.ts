@@ -1,11 +1,16 @@
 import { prisma, postJournal, JournalError, Prisma, type PrismaClient } from "@elorae/db";
 import { roundCents } from "@elorae/db/pricing";
 import { generateAutoJournal, type GenerateAutoJournalResult } from "@/lib/finance/journal";
+import { withRetry } from "@/lib/db/tx-retry";
 import { SELL_THROUGH_JOURNAL_SOURCE_TYPES } from "@/lib/konsi-sell-through/journal";
 import { findArJournalPendingFlags } from "./journal-pending";
 import { RECEIVABLE_SOURCE_SELECT, resolveReceivableSource, ReceivableSourceMissingError } from "./receivable-source";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
+
+function hasTx(client: AnyClient): client is PrismaClient {
+  return typeof (client as PrismaClient).$transaction === "function";
+}
 
 /**
  * Why a payment receipt credited less than the payment, or nothing at all.
@@ -121,37 +126,68 @@ async function classifyReceivables(
  * through a revenue post, so its missing journal is always late.
  *
  * A payment that already has a receipt returns it without re-gating, and a VOIDED payment with none
- * posts nothing, so a receipt can never land after its void.
+ * posts nothing, so a receipt can never land after its void. That holds only because the whole
+ * decide-and-post runs in ONE transaction that opens with `SELECT … FOR UPDATE` on the `Payment`
+ * row: `voidPayment` flips the status on that same row, so a void either commits before the lock
+ * (and is read here as VOIDED) or waits for this receipt to commit (and then mirrors it). Reading
+ * the status unlocked and posting in a second transaction let a void commit in between, find no
+ * receipt to reverse, and leave this receipt standing against a voided payment. If the two
+ * deadlock instead, the victim rolls back whole and retries: `voidPayment` through
+ * `runSerializable`, this one through `withRetry`. A caller-supplied transaction client gets no
+ * transaction or retry of its own and must not have read before calling, for the same
+ * ER_CHECKREAD reason `lockSettlementRow` gives; no caller passes one today.
  */
 export async function postPaymentReceiptJournal(
   paymentId: string,
   postedById: string,
   client: AnyClient = prisma,
 ): Promise<PostPaymentReceiptJournalResult> {
-  const payment = await client.payment.findUnique({
+  if (hasTx(client)) {
+    const root = client;
+    return withRetry(() => root.$transaction((tx) => postReceiptLocked(paymentId, postedById, tx)));
+  }
+  return postReceiptLocked(paymentId, postedById, client as Prisma.TransactionClient);
+}
+
+/**
+ * The body of `postPaymentReceiptJournal`, inside its transaction. Every `ok: false` return comes
+ * before the journal write, so returning one commits nothing; the classification's flag lookup
+ * reads `AdminNotification` on the global client, which never touches `Payment` and so cannot
+ * deadlock against the lock.
+ */
+async function postReceiptLocked(
+  paymentId: string,
+  postedById: string,
+  tx: Prisma.TransactionClient,
+): Promise<PostPaymentReceiptJournalResult> {
+  const locked = await tx.$queryRaw<{ status: string }[]>`
+    SELECT \`status\` FROM \`Payment\` WHERE \`id\` = ${paymentId} FOR UPDATE
+  `;
+  if (locked.length === 0) return { ok: false, code: "NOTHING_TO_POST" };
+
+  const existing = await tx.journal.findUnique({
+    where: { sourceType_sourceId: { sourceType: "PAYMENT_RECEIPT", sourceId: paymentId } },
+    select: { id: true },
+  });
+  if (existing) return { ok: true, journalId: existing.id, created: false };
+  if (locked[0].status === "VOIDED") return { ok: false, code: "NOTHING_TO_POST" };
+
+  const payment = await tx.payment.findUnique({
     where: { id: paymentId },
     select: {
       docNo: true,
       amount: true,
       method: true,
       paidAt: true,
-      status: true,
       allocations: { select: { receivableId: true, amount: true } },
     },
   });
   if (!payment) return { ok: false, code: "NOTHING_TO_POST" };
   if (Math.abs(Number(payment.amount)) < 0.01) return { ok: false, code: "NOTHING_TO_POST" };
 
-  const existing = await client.journal.findUnique({
-    where: { sourceType_sourceId: { sourceType: "PAYMENT_RECEIPT", sourceId: paymentId } },
-    select: { id: true },
-  });
-  if (existing) return { ok: true, journalId: existing.id, created: false };
-  if (payment.status === "VOIDED") return { ok: false, code: "NOTHING_TO_POST" };
-
   const verdicts = await classifyReceivables(
     payment.allocations.map((a) => a.receivableId),
-    client,
+    tx,
   );
   if (payment.allocations.some((a) => verdicts.get(a.receivableId) === "RECEIVABLE_REVENUE_NOT_POSTED_YET")) {
     return { ok: false, code: "RECEIVABLE_REVENUE_NOT_POSTED_YET" };
@@ -165,7 +201,7 @@ export async function postPaymentReceiptJournal(
     { role: debitRole(payment.method), debit: value, credit: 0 },
     { role: "AR" as const, debit: 0, credit: value },
   ];
-  return generateAutoJournal(client, "PAYMENT_RECEIPT", paymentId, lines, {
+  return generateAutoJournal(tx, "PAYMENT_RECEIPT", paymentId, lines, {
     date: payment.paidAt,
     description:
       excluded > 0

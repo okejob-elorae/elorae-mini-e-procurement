@@ -367,4 +367,44 @@ d("payment-journal (test bed only)", () => {
     expect(await postPaymentReceiptJournal(paymentId, userId)).toEqual({ ok: false, code: "NOTHING_TO_POST" });
     expect(await journalCountFor(paymentId)).toBe(0);
   });
+
+  /**
+   * A void that commits while the receipt is being decided. The transaction below plays the void:
+   * it locks the payment row and flips it to VOIDED, then holds its commit open while the receipt
+   * starts. A receipt that read the status without the row lock would see the committed POSTED
+   * row, post, and leave a receipt the void never reversed; the locked receipt waits for the void
+   * to commit and then reads VOIDED.
+   */
+  it("a receipt attempted while a void is committing posts nothing", async () => {
+    const inLedger = await makeReceivable(500, { revenueJournal: true });
+    paymentId = await createPayment("CASH", 500, [{ receivableId: inLedger.receivableId, amount: 500 }]);
+
+    let voidFlipped!: () => void;
+    const flipped = new Promise<void>((resolve) => (voidFlipped = resolve));
+    let releaseVoid!: () => void;
+    const released = new Promise<void>((resolve) => (releaseVoid = resolve));
+    const voiding = prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT \`id\` FROM \`Payment\` WHERE \`id\` = ${paymentId} FOR UPDATE`;
+        await tx.payment.update({ where: { id: paymentId }, data: { status: "VOIDED", voidedAt } });
+        voidFlipped();
+        await released;
+      },
+      { timeout: 20_000 },
+    );
+
+    try {
+      await Promise.race([flipped, voiding]);
+      const receipt = postPaymentReceiptJournal(paymentId, userId);
+      /* Long enough for an unlocked read to have decided and posted before the void commits. */
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      releaseVoid();
+      await voiding;
+      expect(await receipt).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+    } finally {
+      releaseVoid();
+      await voiding.catch(() => undefined);
+    }
+    expect(await journalCountFor(paymentId)).toBe(0);
+  });
 });
