@@ -40,6 +40,7 @@ import {
   type TaxInvoiceActionResult,
 } from "@/app/actions/tax-invoices";
 import { STATUS_BADGE_VARIANT, STATUS_LABEL_KEY } from "@/lib/tax-invoices/status-display";
+import { MAX_TAX_INVOICE_REASON_LENGTH } from "@/lib/tax-invoices/errors";
 import { MarkCreatedDialog } from "./MarkCreatedDialog";
 
 type StatusFilter = TaxInvoiceStatusFilter | "ALL";
@@ -473,6 +474,7 @@ export function FakturPajakPageClient(props: Props) {
                   value={fieldValue}
                   disabled={isActionPending}
                   placeholder={copy.placeholder}
+                  maxLength={MAX_TAX_INVOICE_REASON_LENGTH}
                   onChange={(e) => setFieldValue(e.target.value)}
                 />
               ) : (
@@ -482,12 +484,23 @@ export function FakturPajakPageClient(props: Props) {
                   value={fieldValue}
                   disabled={isActionPending}
                   placeholder={copy.placeholder}
+                  maxLength={MAX_TAX_INVOICE_REASON_LENGTH}
                   onChange={(e) => setFieldValue(e.target.value)}
                 />
               )}
-              {copy.fieldRequired !== null && trimmedField === "" && (
-                <p className="text-xs text-muted-foreground">{copy.fieldRequired}</p>
-              )}
+              <div className="flex items-start justify-between gap-3">
+                <p
+                  className={cn(
+                    "text-xs text-muted-foreground",
+                    (copy.fieldRequired === null || trimmedField !== "") && "invisible",
+                  )}
+                >
+                  {copy.fieldRequired}
+                </p>
+                <p className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                  {fieldValue.length}/{MAX_TAX_INVOICE_REASON_LENGTH}
+                </p>
+              </div>
             </div>
 
             <DialogFooter>

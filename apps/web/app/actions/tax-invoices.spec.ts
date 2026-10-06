@@ -243,6 +243,13 @@ describe("tax invoice actions (unit — writer mocked)", () => {
       expect(res).toEqual({ ok: false, code: "INVALID_STATE" });
     });
 
+    it("maps a writer REASON_TOO_LONG onto its own code", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockRevertTaxInvoiceToCreated.mockRejectedValue(new TaxInvoiceError("REASON_TOO_LONG"));
+      const res = await revertToCreatedAction({ taxInvoiceId: "x", reason: "x".repeat(192) });
+      expect(res).toEqual({ ok: false, code: "REASON_TOO_LONG" });
+    });
+
     it("calls the writer with the current user id and succeeds", async () => {
       mockHasPermission.mockReturnValue(true);
       mockRevertTaxInvoiceToCreated.mockResolvedValue({ ok: true });

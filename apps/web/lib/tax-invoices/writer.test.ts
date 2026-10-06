@@ -160,6 +160,37 @@ d("tax-invoice status transitions (test bed only)", () => {
       .rejects.toMatchObject({ code: "INVALID_REQUEST" });
   });
 
+  it("refuses a reason longer than AuditLog.reason holds with REASON_TOO_LONG on every reason-carrying transition, writing nothing", async () => {
+    const tooLong = "x".repeat(192);
+    await expect(markTaxInvoiceNotRequired({ taxInvoiceId, reason: tooLong, userId }))
+      .rejects.toMatchObject({ code: "REASON_TOO_LONG" });
+    await expect(revertTaxInvoiceToPending({ taxInvoiceId, reason: tooLong, userId }))
+      .rejects.toMatchObject({ code: "REASON_TOO_LONG" });
+
+    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000015", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
+    await expect(markTaxInvoiceSentToStore({ taxInvoiceId, reason: tooLong, userId }))
+      .rejects.toMatchObject({ code: "REASON_TOO_LONG" });
+    await markTaxInvoiceSentToStore({ taxInvoiceId, userId });
+    await expect(revertTaxInvoiceToCreated({ taxInvoiceId, reason: tooLong, userId }))
+      .rejects.toMatchObject({ code: "REASON_TOO_LONG" });
+
+    const row = await prisma.taxInvoice.findUniqueOrThrow({ where: { id: seededId(taxInvoiceId) } });
+    expect(row.status).toBe("SENT_TO_STORE");
+    const logs = await prisma.auditLog.findMany({
+      where: { entityType: "TaxInvoice", entityId: seededId(taxInvoiceId) },
+    });
+    expect(logs.map((l) => l.action).sort()).toEqual(["TAX_INVOICE_CREATED", "TAX_INVOICE_SENT_TO_STORE"]);
+  });
+
+  it("accepts a reason of exactly 191 characters, padding trimmed first", async () => {
+    const atLimit = "y".repeat(191);
+    await expect(markTaxInvoiceNotRequired({ taxInvoiceId, reason: `  ${atLimit}  `, userId })).resolves.toEqual({ ok: true });
+    const log = await prisma.auditLog.findFirstOrThrow({
+      where: { entityType: "TaxInvoice", entityId: seededId(taxInvoiceId), action: "TAX_INVOICE_NOT_REQUIRED" },
+    });
+    expect(log.reason).toBe(atLimit);
+  });
+
   it("CREATED -> CREATED is INVALID_STATE", async () => {
     await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000002", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
     await expect(markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000003", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId }))

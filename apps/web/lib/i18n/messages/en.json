@@ -5732,6 +5732,7 @@
       "INVALID_STATE": "This action cannot be performed on the invoice's current status.",
       "INVALID_REQUEST": "The submitted data is invalid.",
       "CONFLICT": "The invoice status was just changed by someone else. Reload the page and try again.",
+      "REASON_TOO_LONG": "The reason is too long. Keep it to 191 characters or fewer.",
       "ERROR": "Something went wrong. Please try again."
     }
   },

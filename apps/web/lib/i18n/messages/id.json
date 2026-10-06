@@ -5732,6 +5732,7 @@
       "INVALID_STATE": "Aksi ini tidak dapat dilakukan pada status faktur saat ini.",
       "INVALID_REQUEST": "Data yang dikirim tidak valid.",
       "CONFLICT": "Status faktur baru saja diubah oleh pengguna lain. Muat ulang halaman dan coba lagi.",
+      "REASON_TOO_LONG": "Alasan terlalu panjang. Maksimal 191 karakter.",
       "ERROR": "Terjadi kesalahan. Silakan coba lagi."
     }
   },

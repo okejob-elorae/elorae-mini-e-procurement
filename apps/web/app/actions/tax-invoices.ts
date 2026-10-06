@@ -14,7 +14,10 @@ import { TaxInvoiceError } from "@/lib/tax-invoices/errors";
 
 export type TaxInvoiceActionResult =
   | { ok: true }
-  | { ok: false; code: "FORBIDDEN" | "NOT_FOUND" | "INVALID_STATE" | "INVALID_REQUEST" | "CONFLICT" | "ERROR" };
+  | {
+      ok: false;
+      code: "FORBIDDEN" | "NOT_FOUND" | "INVALID_STATE" | "INVALID_REQUEST" | "CONFLICT" | "REASON_TOO_LONG" | "ERROR";
+    };
 
 async function guard(): Promise<{ userId: string } | { ok: false; code: "FORBIDDEN" }> {
   const session = await auth();
