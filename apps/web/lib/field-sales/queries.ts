@@ -1,4 +1,4 @@
-import { prisma, Prisma } from "@elorae/db";
+import { prisma, Prisma, resolveReservedInventory } from "@elorae/db";
 import { aggregateInventoryValues } from "@/lib/items/queries";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { listAssortmentGaps } from "@/lib/stores/assortment/queries";
@@ -214,27 +214,34 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
     },
   });
   if (!row) return null;
-  const itemIds = Array.from(new Set(row.lines.map((l) => l.itemId)));
-  const invs = await prisma.inventoryValue.findMany({
-    where: { itemId: { in: itemIds } },
-    select: { itemId: true, variantSku: true, qtyOnHand: true, reservedQty: true, avgCost: true },
-  });
-  // Per-variant keyed (matches per-variant order lines). Variantless rows use null → "".
-  const invKey = (itemId: string, variantSku: string | null | undefined) => `${itemId}::${variantSku ?? ""}`;
-  const availByKey = new Map<string, number>();
   /**
-   * Parallel to availByKey but holds raw qtyOnHand, not qtyOnHand - reservedQty. The delivery
-   * form caps on-hand, and this order's own reservation already sits inside reservedQty, so
-   * netting it again here would under-deliver.
+   * Each line reads the one InventoryValue row the reserve, consume and konsi transfer act on,
+   * so the form's cap and the konsi panel's short-line count agree with the writer. A variantless
+   * item can hold both a null and a "" row; summing them reports stock the writer never touches.
    */
-  const onHandByKey = new Map<string, number>();
-  const avgCostByKey = new Map<string, number>();
-  for (const iv of invs) {
-    const k = invKey(iv.itemId, iv.variantSku);
-    availByKey.set(k, (availByKey.get(k) ?? 0) + (Number(iv.qtyOnHand) - Number(iv.reservedQty)));
-    onHandByKey.set(k, (onHandByKey.get(k) ?? 0) + Number(iv.qtyOnHand));
-    if (!avgCostByKey.has(k)) avgCostByKey.set(k, Number(iv.avgCost));
+  const reservations = await prisma.stockReservation.findMany({
+    where: { fieldSalesLineId: { in: row.lines.map((l) => l.id) } },
+    select: { fieldSalesLineId: true, inventoryValueId: true },
+  });
+  const pinnedByLineId = new Map(reservations.map((r) => [r.fieldSalesLineId, r.inventoryValueId]));
+  const resolveKey = (l: { itemId: string; variantSku: string | null; id: string }) => {
+    const inventoryValueId = pinnedByLineId.get(l.id) ?? null;
+    return { itemId: l.itemId, variantSku: l.variantSku ?? "", inventoryValueId };
+  };
+  const distinctKeys = new Map<string, ReturnType<typeof resolveKey>>();
+  for (const l of row.lines) {
+    const key = resolveKey(l);
+    distinctKeys.set(`${key.itemId}::${key.variantSku}::${key.inventoryValueId ?? ""}`, key);
   }
+  const resolvedRows = new Map(
+    await Promise.all(
+      Array.from(distinctKeys, async ([k, key]) => [k, await resolveReservedInventory(prisma, key)] as const),
+    ),
+  );
+  const invForLine = (l: { itemId: string; variantSku: string | null; id: string }) => {
+    const key = resolveKey(l);
+    return resolvedRows.get(`${key.itemId}::${key.variantSku}::${key.inventoryValueId ?? ""}`) ?? null;
+  };
 
   const promoIds = Array.from(
     new Set([row.appliedOrderPromoId, ...row.lines.map((l) => l.appliedPromoId)].filter((v): v is string => v !== null)),
@@ -298,13 +305,15 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
       const qty = l.qty;
       const discountAmount = toNum(l.discountAmount);
       const netUnit = qty > 0 ? (toNum(l.lineTotal) - discountAmount) / qty : 0;
-      const avgCost = avgCostByKey.get(invKey(l.itemId, l.variantSku)) ?? 0;
+      const inv = invForLine(l);
+      const avgCost = inv ? Number(inv.avgCost) : 0;
       return {
         id: l.id, itemId: l.itemId, productName: l.productName, variantSku: l.variantSku,
         variantLabel: variantDetailForSku(l.item.variants, l.variantSku),
         qty, unitPrice: toNum(l.unitPrice), lineTotal: toNum(l.lineTotal),
-        available: availByKey.get(invKey(l.itemId, l.variantSku)) ?? 0,
-        onHand: onHandByKey.get(invKey(l.itemId, l.variantSku)) ?? 0,
+        available: inv ? Number(inv.qtyOnHand) - Number(inv.reservedQty) : 0,
+        /* Raw qtyOnHand, not netted: this order's own reservation already sits inside reservedQty, so the delivery form capping on a netted figure would under-deliver. */
+        onHand: inv ? Number(inv.qtyOnHand) : 0,
         outstanding: outstandingQty({ qty: l.qty, deliveredQty: l.deliveredQty, cancelledQty: l.cancelledQty }),
         discountAmount,
         appliedPromoName: l.appliedPromoId ? promoNameById.get(l.appliedPromoId) ?? null : null,

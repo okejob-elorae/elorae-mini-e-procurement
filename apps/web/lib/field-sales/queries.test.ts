@@ -522,3 +522,107 @@ d("putus detail with promo (test bed only)", () => {
     expect(plainDetail!.lines[0].appealReason).toBeNull();
   });
 });
+
+d("getFieldSalesOrderById stock row (test bed only)", () => {
+  const sku = `TEST-FSQ-ROW-${Math.random().toString(36).slice(2, 10)}`;
+  let uomId = "";
+  let itemId = "";
+  let storeId = "";
+  let salesmanId = "";
+  let visitId = "";
+  let emptyRowId = "";
+  let nullRowId = "";
+
+  beforeEach(async () => {
+    emptyRowId = "";
+    nullRowId = "";
+    const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
+    uomId = uom.id;
+    const item = await prisma.item.create({
+      data: { sku, nameId: "T", nameEn: "T", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 100 },
+    });
+    itemId = item.id;
+    const emptyRow = await prisma.inventoryValue.create({ data: { itemId, variantSku: "", qtyOnHand: 3, reservedQty: 0, avgCost: 10, totalValue: 30 } });
+    emptyRowId = emptyRow.id;
+    const nullRow = await prisma.inventoryValue.create({ data: { itemId, variantSku: null, qtyOnHand: 10, reservedQty: 0, avgCost: 20, totalValue: 200 } });
+    nullRowId = nullRow.id;
+    const store = await prisma.store.create({ data: { code: `S-${sku}`, name: "T", address: "T", termsType: "PUTUS", isActive: true } });
+    storeId = store.id;
+    const user = await prisma.user.findFirst({ where: { email: "salesman@elorae.com" } });
+    salesmanId = user!.id;
+    const visit = await prisma.storeVisit.create({ data: { storeId, userId: salesmanId, checkinLat: 0, checkinLng: 0 } });
+    visitId = visit.id;
+  });
+
+  afterEach(async () => {
+    await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.storeVisit.deleteMany({ where: { id: seededId(visitId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+  });
+
+  const seedOrder = (orderType: "PUTUS" | "KONSI", status: "PENDING_APPROVAL" | "APPROVED", qty: number) =>
+    prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `${orderType}/TEST/${Math.random().toString(36).slice(2, 10)}`,
+        storeId,
+        salesmanId,
+        visitId,
+        status,
+        orderType,
+        subtotal: 0,
+        total: 0,
+        lines: { create: [{ itemId, variantSku: "", productName: "T", qty, unitPrice: 0, lineTotal: 0 }] },
+      },
+      include: { lines: true },
+    });
+
+  it("reads the empty-string row an unreserved konsi line would reserve against, not the sum of both rows", async () => {
+    const order = await seedOrder("KONSI", "PENDING_APPROVAL", 5);
+    const detail = await getFieldSalesOrderById(order.id);
+    expect(detail!.lines[0].onHand).toBe(3);
+    expect(detail!.lines[0].available).toBe(3);
+  });
+
+  it("reads the row the reservation is pinned to", async () => {
+    const order = await seedOrder("PUTUS", "APPROVED", 4);
+    await prisma.stockReservation.create({
+      data: {
+        source: "FIELD_SALES",
+        fieldSalesLineId: order.lines[0].id,
+        itemId,
+        variantSku: "",
+        qty: 4,
+        state: "RESERVED",
+        inventoryValueId: nullRowId,
+      },
+    });
+    await prisma.inventoryValue.update({ where: { id: nullRowId }, data: { reservedQty: { increment: 4 } } });
+    const detail = await getFieldSalesOrderById(order.id);
+    expect(detail!.lines[0].onHand).toBe(10);
+    expect(detail!.lines[0].available).toBe(6);
+  });
+
+  it("falls back to the empty-string row when the reservation pins no row", async () => {
+    const order = await seedOrder("PUTUS", "APPROVED", 2);
+    await prisma.stockReservation.create({
+      data: {
+        source: "FIELD_SALES",
+        fieldSalesLineId: order.lines[0].id,
+        itemId,
+        variantSku: "",
+        qty: 2,
+        state: "RESERVED",
+        inventoryValueId: null,
+      },
+    });
+    const detail = await getFieldSalesOrderById(order.id);
+    expect(emptyRowId).not.toBe("");
+    expect(detail!.lines[0].onHand).toBe(3);
+    expect(detail!.lines[0].available).toBe(3);
+  });
+});
