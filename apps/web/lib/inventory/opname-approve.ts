@@ -216,7 +216,7 @@ export async function applyFabricAdjustments(
   docNumber: string,
 ): Promise<{ adjustmentCount: number }> {
   const rolls = await tx.stockOpnameRoll.findMany({ where: { opnameId } });
-  const itemDeltas = new Map<string, number>();
+  const itemIds = new Set<string>();
   let adjustmentCount = 0;
 
   for (const row of rolls) {
@@ -235,12 +235,12 @@ export async function applyFabricAdjustments(
       where: { id: row.fabricRollId },
       data: {
         remainingLength: countedLength,
-        isClosed: countedLength <= 0 ? true : fabricRoll.isClosed,
+        /* The physical count is the truth: a roll another path closed mid-opname is reopened when fabric was counted on it. */
+        isClosed: countedLength <= 0,
       },
     });
 
-    const delta = countedLength - currentLength;
-    itemDeltas.set(fabricRoll.itemId, (itemDeltas.get(fabricRoll.itemId) ?? 0) + delta);
+    itemIds.add(fabricRoll.itemId);
     adjustmentCount += 1;
 
     if (hasQtyDrift(currentLength, snapshotLength)) {
@@ -248,7 +248,7 @@ export async function applyFabricAdjustments(
     }
   }
 
-  for (const itemId of itemDeltas.keys()) {
+  for (const itemId of itemIds) {
     await syncFabricAggregateQty(tx, itemId, {
       refId: opnameId,
       refDocNumber: docNumber,
