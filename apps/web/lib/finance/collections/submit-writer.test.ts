@@ -73,6 +73,8 @@ d("submitCollection (test bed only)", () => {
       await prisma.adminNotification.deleteMany({ where: { id: { in: notifs.map((n) => n.id) } } });
     }
     await prisma.collectionSubmission.deleteMany({ where: { receivableId: seededId(receivableId) } });
+    await prisma.storeSettlementInvoice.deleteMany({ where: { receivableId: seededId(receivableId) } });
+    await prisma.storeSettlement.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.receivable.deleteMany({ where: { id: seededId(receivableId) } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { id: seededId(deliveryId) } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
@@ -156,6 +158,37 @@ d("submitCollection (test bed only)", () => {
     await prisma.receivable.update({ where: { id: receivableId }, data: { status: "VOIDED", outstandingAmount: 0 } });
     const err = await submitAndCatch(base());
     expect(err.code).toBe("ALREADY_SETTLED");
+  });
+
+  /** A PENDING settlement by the order's salesman claiming `amount` of this receivable. */
+  async function seedPendingSettlementClaim(amount: number): Promise<void> {
+    await prisma.storeSettlement.create({
+      data: {
+        docNo: `TEST-CSW-STL-${token}`,
+        storeId,
+        salesmanId: adminId,
+        expectedAmount: amount,
+        actualAmount: amount,
+        varianceAmount: 0,
+        status: "PENDING",
+        invoices: { create: [{ receivableId, amount }] },
+      },
+    });
+  }
+
+  it("rejects an over-collection netted against a PENDING settlement's claim on the same receivable", async () => {
+    await seedPendingSettlementClaim(400);
+    const err = await submitAndCatch({ ...base(), amount: 600.01 });
+    expect(err.code).toBe("OVER_COLLECTED");
+    const subs = await prisma.collectionSubmission.findMany({ where: { receivableId: seededId(receivableId) } });
+    expect(subs).toHaveLength(0);
+  });
+
+  it("accepts a submission that fits exactly beside a PENDING settlement's claim", async () => {
+    await seedPendingSettlementClaim(400);
+    await submitCollection({ ...base(), amount: 600 });
+    const subs = await prisma.collectionSubmission.findMany({ where: { receivableId: seededId(receivableId) } });
+    expect(subs).toHaveLength(1);
   });
 
   it("refuses RETUR_OFFSET even though the type system would normally block it", async () => {

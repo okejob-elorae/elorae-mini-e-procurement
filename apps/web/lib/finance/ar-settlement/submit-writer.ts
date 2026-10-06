@@ -5,6 +5,7 @@ import { urlFromKey } from "@/lib/r2";
 import { computeSettlementTotals, computeVariance, EPSILON } from "./calc";
 import { SettlementError } from "./errors";
 import { RECEIVABLE_SOURCE_SELECT, resolveReceivableSource } from "@/lib/finance/ar/receivable-source";
+import { sumPendingClaimsOnReceivable } from "@/lib/finance/ar/pending-claims";
 
 export type SettlementDeductionInputRow = {
   type: "RETUR_OFFSET" | "PROGRAM" | "ADMIN_FEE";
@@ -63,10 +64,12 @@ const MAX_AMOUNT = 999_999_999.99;
  *
  * A retur's remaining headroom is `totalValue - appliedValue - Σ(RETUR_OFFSET deduction amounts
  * on OTHER PENDING settlements for that retur)`, and an invoice's remaining headroom is
- * `outstandingAmount - Σ(invoice amounts on OTHER PENDING settlements for that receivable)` — both
- * sums computed with the TRANSACTION client, inside this same `runSerializable` call, the
- * identical shape as `submitCollection`'s over-collection guard in
- * `lib/finance/collections/submit-writer.ts`. A read taken before the transaction (or against the
+ * `outstandingAmount - Σ(invoice amounts on OTHER PENDING settlements for that receivable)
+ * - Σ(PENDING collection submissions on it)` — both sums computed with the TRANSACTION client,
+ * inside this same `runSerializable` call. The invoice side goes through
+ * `sumPendingClaimsOnReceivable`, the same helper `submitCollection`'s over-collection guard in
+ * `lib/finance/collections/submit-writer.ts` uses, so neither channel can claim money the other
+ * already holds. A read taken before the transaction (or against the
  * top-level `prisma` singleton) would let two settlements race through the same headroom, both
  * collect cash from a store, and leave the loser refused only later, at approval, after the money
  * already changed hands.
@@ -233,8 +236,8 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
      * settlement — so the guard is the real defence, not a first line of one. Same shape as
      * `submitCollection`'s `NOT_ASSIGNED_COLLECTOR` guard in
      * `lib/finance/collections/submit-writer.ts`. Finally net this submission's claim against
-     * OTHER PENDING settlements' claims on the same receivable — the invoice-side twin of the
-     * retur claim guard below.
+     * every other PENDING claim on the same receivable — OTHER PENDING settlements' invoice lines
+     * AND PENDING collection submissions — the invoice-side twin of the retur claim guard below.
      */
     const receivableIds = input.invoices.map((invoice) => invoice.receivableId);
     const receivables = await tx.receivable.findMany({
@@ -264,24 +267,26 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
       }
 
       /**
-       * Netted against PENDING settlements' `StoreSettlementInvoice` rows, computed inside this
-       * transaction via `tx` — the same reasoning as the retur guard below. Without this, two
-       * salesmen could each select the same receivable for its full outstanding amount, both pass
-       * every other guard, and both collect cash at the counter before either settlement reaches
-       * approval. Scoped to `storeId` too, not just `status` — under SERIALIZABLE every plain
-       * SELECT takes a shared-mode lock, and `@@index([status, createdAt])` leads on `status`
-       * alone, so an unscoped filter S-locks the WHOLE PENDING range across every store. Two
-       * salesmen submitting for completely unrelated stores would then lock-contend and deadlock
-       * each other under load. Adding `storeId` (already proven above) moves the optimizer onto
+       * Netted against every PENDING claim on the receivable — PENDING settlements'
+       * `StoreSettlementInvoice` rows AND collectors' PENDING `CollectionSubmission`s — computed
+       * inside this transaction via `tx`, the same reasoning as the retur guard below. Without
+       * this, two salesmen (or a salesman and the invoice's collector) could each claim the same
+       * receivable for its full outstanding amount, both pass every other guard, and both collect
+       * cash before either claim is approved or verified. `submitCollection` nets through the same
+       * helper, so the two channels refuse each other symmetrically. The settlement half is scoped
+       * to `storeId` too, not just `status` — under SERIALIZABLE every plain SELECT takes a
+       * shared-mode lock, and `@@index([status, createdAt])` leads on `status` alone, so an
+       * unscoped filter S-locks the WHOLE PENDING range across every store. Two salesmen
+       * submitting for completely unrelated stores would then lock-contend and deadlock each other
+       * under load. Adding `storeId` (already proven above) moves the optimizer onto
        * `@@index([storeId, status])` and changes no semantics — only which rows get locked.
        */
       const outstanding = roundCents(Number(receivable.outstandingAmount));
-      const otherInvoiceClaims = await tx.storeSettlementInvoice.aggregate({
-        where: { receivableId: invoice.receivableId, settlement: { status: "PENDING", storeId: input.storeId } },
-        _sum: { amount: true },
+      const claims = await sumPendingClaimsOnReceivable(tx, {
+        receivableId: invoice.receivableId,
+        storeId: input.storeId,
       });
-      const claimedByOthers = roundCents(Number(otherInvoiceClaims._sum.amount ?? 0));
-      const remaining = roundCents(outstanding - claimedByOthers);
+      const remaining = roundCents(outstanding - claims.total);
       if (roundCents(invoice.amount) - remaining > EPSILON) throw new SettlementError("INVOICE_OVERCLAIMED");
     }
 

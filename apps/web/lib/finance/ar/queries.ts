@@ -264,9 +264,11 @@ export async function getReceivable(id: string, asOf: Date = new Date()) {
 }
 
 /**
- * `Receivable.outstandingAmount` alone is not what `submitSettlement` will honor —
- * the writer additionally nets every OTHER PENDING settlement's own claim on the same receivable
- * (`StoreSettlementInvoice.amount`) before refusing with `INVOICE_OVERCLAIMED`. Without this, a
+ * `Receivable.outstandingAmount` alone is not what `submitSettlement` or `submitCollection` will
+ * honor — both writers net every PENDING settlement's claim on the same receivable
+ * (`StoreSettlementInvoice.amount`), alongside PENDING collection submissions, before refusing
+ * with `INVOICE_OVERCLAIMED`/`OVER_COLLECTED` (`sumPendingClaimsOnReceivable`). This map is the
+ * settlement half; callers read the submission half themselves. Without this, a
  * screen defaulting or validating off raw `outstandingAmount` can show headroom the writer will
  * not honor the moment a colleague already holds a pending claim on the same invoice. Every
  * requested id is present in the returned map, defaulting to 0, same convention as

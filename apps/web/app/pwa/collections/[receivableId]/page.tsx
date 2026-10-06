@@ -31,6 +31,7 @@ export default async function CollectionDetailPage({ params }: { params: Promise
       outstandingAmount={receivable.outstandingAmount}
       dueDateIso={receivable.dueDate.toISOString()}
       pendingSubmittedAmount={receivable.pendingSubmittedAmount}
+      pendingSettlementClaimAmount={receivable.pendingSettlementClaimAmount}
     />
   );
 }

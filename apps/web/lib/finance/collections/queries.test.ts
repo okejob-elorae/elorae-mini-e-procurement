@@ -76,6 +76,8 @@ d("listCollectionQueue (test bed only)", () => {
       await prisma.adminNotification.deleteMany({ where: { id: { in: allNotifIds } } });
     }
     await prisma.collectionSubmission.deleteMany({ where: { receivableId: { in: [seededId(receivableAId), seededId(receivableBId)] } } });
+    await prisma.storeSettlementInvoice.deleteMany({ where: { receivableId: { in: [seededId(receivableAId), seededId(receivableBId)] } } });
+    await prisma.storeSettlement.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.receivable.deleteMany({ where: { id: { in: [seededId(receivableAId), seededId(receivableBId)] } } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { id: { in: [seededId(deliveryAId), seededId(deliveryBId)] } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { storeId: seededId(storeId) } });
@@ -95,6 +97,25 @@ d("listCollectionQueue (test bed only)", () => {
     const rows = await listCollectionQueue(collectorId);
     const row = rows.find((r) => r.receivableId === receivableAId);
     expect(row!.pendingSubmittedAmount).toBe(300);
+  });
+
+  it("carries a PENDING settlement's claim on the receivable, on both the queue row and the detail", async () => {
+    await prisma.storeSettlement.create({
+      data: {
+        docNo: `TEST-CQ-STL-${token}`,
+        storeId,
+        salesmanId: adminId,
+        expectedAmount: 400,
+        actualAmount: 400,
+        varianceAmount: 0,
+        status: "PENDING",
+        invoices: { create: [{ receivableId: receivableAId, amount: 400 }] },
+      },
+    });
+    const rows = await listCollectionQueue(collectorId);
+    expect(rows.find((r) => r.receivableId === receivableAId)!.pendingSettlementClaimAmount).toBe(400);
+    const detail = await getReceivableForCollection(receivableAId, collectorId);
+    expect(detail!.pendingSettlementClaimAmount).toBe(400);
   });
 
   it("getReceivableForCollection returns null when the receivable is assigned to a different collector", async () => {

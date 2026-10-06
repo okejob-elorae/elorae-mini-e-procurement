@@ -224,6 +224,9 @@ d("submitSettlement (test bed only)", () => {
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
 
+    await prisma.collectionSubmission.deleteMany({
+      where: { receivableId: { in: [recA, recB, recWrongStore, recPaid, recWrittenOff, recSmall].map(seededId) } },
+    });
     await prisma.receivable.deleteMany({
       where: { id: { in: [recA, recB, recWrongStore, recPaid, recWrittenOff, recSmall].map(seededId) } },
     });
@@ -671,6 +674,32 @@ d("submitSettlement (test bed only)", () => {
       invoices: [{ receivableId: recA, amount: 900 }], actualAmount: 900,
     });
     expect(second.settlementId).toBeTruthy();
+  });
+
+  /*
+   * The cross-channel twin of the pair above: a collector's PENDING `CollectionSubmission` claims
+   * the same receivable through the other channel, and `submitSettlement` nets it too. recA's
+   * outstandingAmount is 1000 and the submission holds 400, so 600 is the exact ceiling.
+   */
+  async function seedPendingCollection(amount: number): Promise<void> {
+    await prisma.collectionSubmission.create({
+      data: { receivableId: recA, collectorId: salesmanAId, amount, method: "CASH", paidAt: new Date() },
+    });
+  }
+
+  it("nets a PENDING collection submission against the receivable's outstanding amount", async () => {
+    await seedPendingCollection(400);
+    await expect(submitSettlement({
+      ...baseInput, draftId: `inv-col1-${token}`, invoices: [{ receivableId: recA, amount: 600.01 }], actualAmount: 600.01,
+    })).rejects.toMatchObject({ code: "INVOICE_OVERCLAIMED" });
+  });
+
+  it("accepts an invoice claim that fits exactly beside a PENDING collection submission", async () => {
+    await seedPendingCollection(400);
+    const result = await submitSettlement({
+      ...baseInput, draftId: `inv-col2-${token}`, invoices: [{ receivableId: recA, amount: 600 }], actualAmount: 600,
+    });
+    expect(result.settlementId).toBeTruthy();
   });
 });
 

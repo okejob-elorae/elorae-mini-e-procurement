@@ -25,6 +25,7 @@ export default async function CollectionsQueuePage() {
         dueDateIso: r.dueDate.toISOString(),
         daysOverdue: r.daysOverdue,
         pendingSubmittedAmount: r.pendingSubmittedAmount,
+        pendingSettlementClaimAmount: r.pendingSettlementClaimAmount,
       }))}
     />
   );

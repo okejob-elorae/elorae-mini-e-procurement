@@ -2,6 +2,7 @@ import { type AdminNotification } from "@elorae/db";
 import { roundCents } from "@elorae/db/pricing";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import { sumPendingClaimsOnReceivable } from "@/lib/finance/ar/pending-claims";
 import { CollectionError } from "./errors";
 
 export type SubmitCollectionInput = {
@@ -58,20 +59,23 @@ export async function submitCollection(input: SubmitCollectionInput): Promise<{ 
     if (receivable.status === "PAID" || receivable.status === "WRITTEN_OFF" || receivable.status === "VOIDED") throw new CollectionError("ALREADY_SETTLED");
 
     /**
-     * Netted against PENDING submissions, computed inside this transaction via `tx` (not the
-     * top-level `prisma` singleton, and not read before `runSerializable` opens). Two concurrent
-     * submissions each reading a stale sum outside the transaction would both individually pass
-     * the guard and together over-collect the receivable — the bug would not surface until the
-     * second one is verified, by which point one real payment has already posted. `Serializable`
-     * isolation plus this in-transaction read is what forces the second submission to either see
-     * the first's committed row or hit a serialization conflict and retry.
+     * Netted against EVERY pending claim on this receivable — PENDING collection submissions AND
+     * PENDING settlements' invoice claims — computed inside this transaction via
+     * `tx` (not the top-level `prisma` singleton, and not read before `runSerializable` opens).
+     * Two concurrent submissions each reading a stale sum outside the transaction would both
+     * individually pass the guard and together over-collect the receivable — the bug would not
+     * surface until the second one is verified, by which point one real payment has already
+     * posted. The settlement half closes the same hole across the two channels: a salesman's
+     * pending settlement and a collector's pending submission would otherwise each claim the full
+     * balance and both collect cash. `Serializable` isolation plus this in-transaction read is
+     * what forces the second claim to either see the first's committed row or hit a serialization
+     * conflict and retry. `submitSettlement` nets through the same helper.
      */
-    const pending = await tx.collectionSubmission.findMany({
-      where: { receivableId: input.receivableId, status: "PENDING" },
-      select: { amount: true },
+    const claims = await sumPendingClaimsOnReceivable(tx, {
+      receivableId: input.receivableId,
+      storeId: receivable.storeId,
     });
-    const pendingSum = pending.reduce((s, p) => s + Number(p.amount), 0);
-    const remaining = Number(receivable.outstandingAmount) - pendingSum;
+    const remaining = roundCents(Number(receivable.outstandingAmount) - claims.total);
     if (amount - remaining > EPSILON) throw new CollectionError("OVER_COLLECTED");
 
     const submission = await tx.collectionSubmission.create({
