@@ -34,7 +34,10 @@ function matchColumn(marketplace: string): "salesorderNo" | "channelOrderNo" {
  * `FOR UPDATE` from its first statement. `postSettlementJournal` takes the same row lock first, so
  * a match and a journal post serialise: a match never rewrites the lines of a settlement whose
  * journal has posted, and a journal never posts mid-match. A caller passing its own transaction
- * client gets the lock in that transaction, held until it commits.
+ * client gets the lock in that transaction, held until it commits, and must not have read in it
+ * before calling (see `lockSettlementRow`). The lock also blocks every other `Settlement` writer
+ * — `startSettlementResync`'s update, the rematch sweep's stamp CAS — for the match's duration;
+ * they wait, bounded by the server's lock-wait timeout.
  */
 export async function matchSettlement(settlementId: string, client: AnyClient = prisma): Promise<MatchResult> {
   if (hasTx(client)) {

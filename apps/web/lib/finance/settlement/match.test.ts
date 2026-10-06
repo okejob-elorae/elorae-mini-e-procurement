@@ -339,9 +339,10 @@ d("matchSettlement (test bed only)", () => {
   /*
    * Seeds a Shopee settlement with one line carrying recorded figures, plus a SalesOrder that WOULD
    * match it with a different cost — so any rewrite of the line is visible, not a no-op that happens
-   * to write the same values back.
+   * to write the same values back. Each id lands in `ids` the moment its row exists, so a later
+   * create that throws still leaves teardown every row created before it.
    */
-  async function seedSettlementWithMatchableOrder(status: string) {
+  async function seedSettlementWithMatchableOrder(status: string, ids: { settlementId: string; orderId: string }) {
     const admin = await prisma.user.findFirstOrThrow({ where: { email: "admin@elorae.com" } });
     const suffix = Math.random().toString(36).slice(2, 10);
     const orderNo = `REC-${suffix}`;
@@ -387,6 +388,7 @@ d("matchSettlement (test bed only)", () => {
       },
       select: { id: true },
     });
+    ids.settlementId = settlement.id;
     const order = await prisma.salesOrder.create({
       data: {
         salesorderId,
@@ -403,6 +405,7 @@ d("matchSettlement (test bed only)", () => {
       },
       select: { id: true },
     });
+    ids.orderId = order.id;
     await prisma.salesOrderItem.create({
       data: {
         salesOrderId: order.id,
@@ -420,7 +423,6 @@ d("matchSettlement (test bed only)", () => {
         cogs: 2000,
       },
     });
-    return { settlementId: settlement.id, orderId: order.id };
   }
 
   async function lineFigures(settlementId: string) {
@@ -444,10 +446,10 @@ d("matchSettlement (test bed only)", () => {
   }
 
   it("refuses a RECONCILED settlement: no line is rewritten and the status stays RECONCILED", async () => {
-    let settlementId = "";
-    let orderId = "";
+    const ids = { settlementId: "", orderId: "" };
     try {
-      ({ settlementId, orderId } = await seedSettlementWithMatchableOrder("RECONCILED"));
+      await seedSettlementWithMatchableOrder("RECONCILED", ids);
+      const { settlementId } = ids;
       const before = await lineFigures(settlementId);
 
       const res = await matchSettlement(settlementId);
@@ -457,15 +459,15 @@ d("matchSettlement (test bed only)", () => {
       const after = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
       expect(after.status).toBe("RECONCILED");
     } finally {
-      await teardown(settlementId, orderId);
+      await teardown(ids.settlementId, ids.orderId);
     }
   });
 
   it("waits on a held settlement row lock and refuses once the holder commits RECONCILED", async () => {
-    let settlementId = "";
-    let orderId = "";
+    const ids = { settlementId: "", orderId: "" };
     try {
-      ({ settlementId, orderId } = await seedSettlementWithMatchableOrder("MATCHED"));
+      await seedSettlementWithMatchableOrder("MATCHED", ids);
+      const { settlementId } = ids;
       const before = await lineFigures(settlementId);
 
       /*
@@ -505,7 +507,7 @@ d("matchSettlement (test bed only)", () => {
       const after = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
       expect(after.status).toBe("RECONCILED");
     } finally {
-      await teardown(settlementId, orderId);
+      await teardown(ids.settlementId, ids.orderId);
     }
   }, 60_000);
 });
