@@ -2546,6 +2546,16 @@
         "defaultRadius": "Tidak ada toko yang memakai radius default.",
         "customRadius": "Tidak ada toko dengan radius khusus."
       },
+      "npwpFilter": {
+        "label": "NPWP",
+        "all": "Semua NPWP",
+        "missing": "NPWP kosong",
+        "present": "Sudah ada NPWP"
+      },
+      "npwpEmpty": {
+        "missing": "Semua toko aktif sudah punya NPWP.",
+        "present": "Belum ada toko yang punya NPWP."
+      },
       "table": {
         "code": "Kode",
         "name": "Nama",
@@ -2558,6 +2568,7 @@
         "active": "Aktif",
         "location": "Lokasi",
         "noCoordinates": "Tanpa koordinat",
+        "noNpwp": "Belum ada NPWP",
         "radiusMeters": "{meters} m",
         "radiusDefault": "default",
         "radiusCustom": "khusus"

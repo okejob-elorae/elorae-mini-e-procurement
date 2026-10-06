@@ -40,6 +40,7 @@ type Props = {
   search: string;
   showInactive: boolean;
   location: string;
+  npwp: string;
   radiusByStoreId: Record<string, { meters: number; custom: boolean } | null>;
   page: number;
   pageSize: number;
@@ -52,6 +53,7 @@ export function StoreListClient({
   search,
   showInactive,
   location,
+  npwp,
   radiusByStoreId,
   page,
   pageSize,
@@ -103,12 +105,14 @@ export function StoreListClient({
     startTransition(() => router.push("/backoffice/stores"));
   }
 
-  const hasFilters = Boolean(search || showInactive || location);
+  const hasFilters = Boolean(search || showInactive || location || npwp);
   const emptyMessage = !hasFilters
     ? tList("empty")
-    : location && !search && !showInactive
+    : location && !npwp && !search && !showInactive
       ? tList(`locationEmpty.${location}`)
-      : tList("noSearchResults");
+      : npwp && !location && !search && !showInactive
+        ? tList(`npwpEmpty.${npwp}`)
+        : tList("noSearchResults");
 
   function toggleShowInactive(next: boolean) {
     const params = new URLSearchParams(sp.toString());
@@ -155,6 +159,19 @@ export function StoreListClient({
             <SelectItem value="missing">{tList("locationFilter.missing")}</SelectItem>
             <SelectItem value="defaultRadius">{tList("locationFilter.defaultRadius")}</SelectItem>
             <SelectItem value="customRadius">{tList("locationFilter.customRadius")}</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          value={npwp || "__all__"}
+          onValueChange={(v) => pushParam("npwp", v === "__all__" ? undefined : v)}
+        >
+          <SelectTrigger className="w-full sm:w-[200px]" aria-label={tList("npwpFilter.label")}>
+            <SelectValue placeholder={tList("npwpFilter.all")} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">{tList("npwpFilter.all")}</SelectItem>
+            <SelectItem value="missing">{tList("npwpFilter.missing")}</SelectItem>
+            <SelectItem value="present">{tList("npwpFilter.present")}</SelectItem>
           </SelectContent>
         </Select>
         <div className="flex items-center gap-2">
@@ -228,6 +245,11 @@ export function StoreListClient({
                           >
                             {s.name}
                           </Link>
+                          {!s.npwp?.trim() && (
+                            <Badge variant="outline" className="border-amber-500/40 text-amber-700">
+                              {tTable("noNpwp")}
+                            </Badge>
+                          )}
                           {pendingSet.has(s.id) && (
                             <Badge variant="secondary" className="border-amber-500/40 text-amber-700">
                               {tChange("listBadge")}

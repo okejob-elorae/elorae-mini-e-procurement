@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { prisma } from "@elorae/db";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
-import { listStores, parseStoreLocationFilter } from "@/lib/stores/queries";
+import { listStores, parseStoreLocationFilter, parseStoreNpwpFilter } from "@/lib/stores/queries";
 import { listPendingStoreChangeStoreIds } from "@/lib/store-changes/queries";
 import { parseRadiusSetting, resolveEffectiveRadius } from "@/lib/pwa/checkin-radius";
 import { StoreListClient } from "./StoreListClient";
@@ -15,6 +15,7 @@ type PageProps = {
     search?: string;
     showInactive?: string;
     location?: string;
+    npwp?: string;
     page?: string;
     pageSize?: string;
   }>;
@@ -39,10 +40,11 @@ export default async function StoresPage({ searchParams }: PageProps) {
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const pageSize = parsePageSize(sp.pageSize);
   const location = parseStoreLocationFilter(sp.location);
+  const npwpFilter = parseStoreNpwpFilter(sp.npwp);
 
   const [{ items, totalCount }, globalRadiusRow] = await Promise.all([
     listStores(
-      { activeOnly: !showInactive, search: search || undefined, location },
+      { activeOnly: !showInactive, search: search || undefined, location, npwp: npwpFilter },
       { page, pageSize },
     ),
     prisma.systemSetting.findUnique({ where: { key: "checkin.radiusMeters" } }),
@@ -68,6 +70,7 @@ export default async function StoresPage({ searchParams }: PageProps) {
       search={search}
       showInactive={showInactive}
       location={location ?? ""}
+      npwp={npwpFilter ?? ""}
       radiusByStoreId={radiusByStoreId}
       page={page}
       pageSize={pageSize}

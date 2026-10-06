@@ -2546,6 +2546,16 @@
         "defaultRadius": "No stores are using the default radius.",
         "customRadius": "No stores have a custom radius."
       },
+      "npwpFilter": {
+        "label": "NPWP",
+        "all": "All NPWP",
+        "missing": "Missing NPWP",
+        "present": "Has NPWP"
+      },
+      "npwpEmpty": {
+        "missing": "All active stores have an NPWP.",
+        "present": "No stores have an NPWP."
+      },
       "table": {
         "code": "Code",
         "name": "Name",
@@ -2558,6 +2568,7 @@
         "active": "Active",
         "location": "Location",
         "noCoordinates": "No coordinates",
+        "noNpwp": "No NPWP",
         "radiusMeters": "{meters} m",
         "radiusDefault": "default",
         "radiusCustom": "custom"

@@ -235,8 +235,37 @@ export function buildStoreLocationWhere(
   }
 }
 
+export const STORE_NPWP_FILTERS = ["missing", "present"] as const;
+export type StoreNpwpFilter = (typeof STORE_NPWP_FILTERS)[number];
+
+export function parseStoreNpwpFilter(raw: string | undefined): StoreNpwpFilter | undefined {
+  return STORE_NPWP_FILTERS.find((v) => v === raw);
+}
+
+/*
+ * undefined is the only spelling of "no filter". A store with no NPWP is stored as either null or
+ * an empty string, so both buckets treat the two spellings as one, and the buckets partition.
+ */
+export function buildStoreNpwpWhere(
+  npwp: StoreNpwpFilter | undefined,
+): Prisma.StoreWhereInput | undefined {
+  switch (npwp) {
+    case "missing":
+      return { OR: [{ npwp: null }, { npwp: "" }] };
+    case "present":
+      return { AND: [{ npwp: { not: null } }, { npwp: { not: "" } }] };
+    default:
+      return undefined;
+  }
+}
+
 export async function listStores(
-  opts: { activeOnly?: boolean; search?: string; location?: StoreLocationFilter } = {},
+  opts: {
+    activeOnly?: boolean;
+    search?: string;
+    location?: StoreLocationFilter;
+    npwp?: StoreNpwpFilter;
+  } = {},
   paging?: { page: number; pageSize: number },
 ): Promise<{ items: StoreListItem[]; totalCount: number }> {
   const where: Prisma.StoreWhereInput = {};
@@ -247,8 +276,10 @@ export async function listStores(
       { code: { contains: opts.search.trim() } },
     ];
   }
-  const locationWhere = buildStoreLocationWhere(opts.location);
-  if (locationWhere) where.AND = [locationWhere];
+  const filters = [buildStoreLocationWhere(opts.location), buildStoreNpwpWhere(opts.npwp)].filter(
+    (f): f is Prisma.StoreWhereInput => f !== undefined,
+  );
+  if (filters.length > 0) where.AND = filters;
   const [rows, totalCount] = await Promise.all([
     prisma.store.findMany({
       where,
