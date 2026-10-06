@@ -3303,6 +3303,10 @@
     "approveOverCommittedTitle": "{count, plural, other {# baris}} punya stok yang dijanjikan melebihi stok fisik",
     "approveOverCommittedLine": "{onHand} tersedia, {reserved} dipesan",
     "approveOverCommittedHint": "Order tetap bisa disetujui. Pengiriman dibatasi stok fisik yang ada.",
+    "colDelivery": "Pengiriman",
+    "deliveryFilter": "Pengiriman",
+    "deliveryFilterAll": "Semua pengiriman",
+    "deliveryFilterOpen": "Menunggu pengiriman",
     "creditLimitExceeded": "Toko melebihi limit kredit (eksposur {exposure}, limit {limit}). Berikan alasan untuk override.",
     "delivery": {
       "title": "Pengiriman",

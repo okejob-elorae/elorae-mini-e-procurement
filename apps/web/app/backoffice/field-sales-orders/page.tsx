@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { listFieldSalesOrders } from "@/lib/field-sales/queries";
-import type { FieldSalesOrderStatus } from "@/lib/field-sales/queries";
+import type { DeliveryStatusFilter, FieldSalesOrderStatus } from "@/lib/field-sales/queries";
 import { listStoreOptions } from "@/lib/stores/queries";
 import { FieldSalesOrdersPageClient } from "./FieldSalesOrdersPageClient";
 
@@ -15,6 +15,7 @@ type PageProps = {
     orderType?: string;
     origin?: string;
     storeId?: string;
+    deliveryStatus?: string;
     page?: string;
     pageSize?: string;
   }>;
@@ -36,6 +37,12 @@ function parseStatus(raw: string | undefined): FieldSalesOrderStatus | undefined
   return "PENDING_APPROVAL";
 }
 
+const DELIVERY_STATUS_VALUES: DeliveryStatusFilter[] = ["OPEN", "PENDING", "PARTIAL", "DELIVERED", "CLOSED"];
+
+function parseDeliveryStatus(raw: string | undefined): DeliveryStatusFilter | undefined {
+  return raw && (DELIVERY_STATUS_VALUES as string[]).includes(raw) ? (raw as DeliveryStatusFilter) : undefined;
+}
+
 function parseOrderType(raw: string | undefined): "PUTUS" | "KONSI" | undefined {
   return raw === "PUTUS" || raw === "KONSI" ? raw : undefined;
 }
@@ -49,9 +56,12 @@ export default async function FieldSalesOrdersPage({ searchParams }: PageProps) 
   if (!session) redirect("/login");
 
   const sp = await searchParams;
+  const deliveryStatus = parseDeliveryStatus(sp.deliveryStatus);
   const filter = {
     search: sp.search?.trim() || undefined,
-    status: parseStatus(sp.status),
+    /* A delivery state only exists on an approved order, so the filter pins the status. */
+    status: deliveryStatus ? ("APPROVED" as const) : parseStatus(sp.status),
+    deliveryStatus,
     orderType: parseOrderType(sp.orderType),
     origin: parseOrigin(sp.origin),
     storeId: sp.storeId?.trim() || undefined,
@@ -73,6 +83,7 @@ export default async function FieldSalesOrdersPage({ searchParams }: PageProps) 
       orderType={sp.orderType === "PUTUS" || sp.orderType === "KONSI" ? sp.orderType : "ALL"}
       origin={sp.origin === "FIELD" || sp.origin === "ADMIN" ? sp.origin : "ALL"}
       storeId={filter.storeId ?? "ALL"}
+      deliveryStatus={filter.deliveryStatus ?? "ALL"}
       storeOptions={storeOptions}
       page={page}
       pageSize={pageSize}

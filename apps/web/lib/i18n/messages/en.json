@@ -3303,6 +3303,10 @@
     "approveOverCommittedTitle": "{count, plural, one {# line has} other {# lines have}} more stock promised than on hand",
     "approveOverCommittedLine": "{onHand} on hand, {reserved} reserved",
     "approveOverCommittedHint": "You can still approve. Deliveries are limited to the stock on hand.",
+    "colDelivery": "Delivery",
+    "deliveryFilter": "Delivery",
+    "deliveryFilterAll": "All deliveries",
+    "deliveryFilterOpen": "Awaiting delivery",
     "creditLimitExceeded": "Store is over its credit limit (exposure {exposure}, limit {limit}). Provide a reason to override.",
     "delivery": {
       "title": "Deliveries",

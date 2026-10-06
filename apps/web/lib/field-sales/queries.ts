@@ -13,6 +13,8 @@ export type FieldSalesOrderType = "PUTUS" | "KONSI";
 export type FieldSalesOrderOrigin = "FIELD" | "ADMIN";
 
 export type FieldSalesDeliveryStatus = "PENDING" | "PARTIAL" | "DELIVERED" | "CLOSED";
+/* OPEN = still awaiting delivery: PENDING or PARTIAL. */
+export type DeliveryStatusFilter = FieldSalesDeliveryStatus | "OPEN";
 
 export type FieldSalesDeliveryLineSummary = {
   id: string;
@@ -50,6 +52,7 @@ export type FieldSalesOrderListItem = {
   total: number;
   createdAt: Date;
   creditHoldAtCreate: boolean;
+  deliveryStatus: FieldSalesDeliveryStatus;
 };
 
 export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
@@ -65,7 +68,6 @@ export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
   paymentTempo: number;
   orderDiscountAmount: number;
   appliedOrderPromoName: string | null;
-  deliveryStatus: FieldSalesDeliveryStatus;
   deliveries: FieldSalesDeliverySummary[];
   /**
    * The approve-time transfer of a konsi order approved before stock moved at shipment
@@ -111,6 +113,7 @@ export function serializeListItem(row: {
   store: { name: string };
   salesman: { name: string | null };
   creditHoldAtCreate: boolean;
+  deliveryStatus: FieldSalesDeliveryStatus;
 }): FieldSalesOrderListItem {
   return {
     id: row.id,
@@ -123,6 +126,7 @@ export function serializeListItem(row: {
     total: toNum(row.total),
     createdAt: row.createdAt,
     creditHoldAtCreate: row.creditHoldAtCreate,
+    deliveryStatus: row.deliveryStatus,
   };
 }
 
@@ -133,6 +137,7 @@ export async function listFieldSalesOrders(
     orderType?: FieldSalesOrderType;
     origin?: FieldSalesOrderOrigin;
     storeId?: string;
+    deliveryStatus?: DeliveryStatusFilter;
   },
   paging: { page: number; pageSize: number },
 ): Promise<{ orders: FieldSalesOrderListItem[]; totalCount: number }> {
@@ -141,6 +146,11 @@ export async function listFieldSalesOrders(
   if (filter.orderType) where.orderType = filter.orderType;
   if (filter.origin) where.origin = filter.origin;
   if (filter.storeId) where.storeId = filter.storeId;
+  if (filter.deliveryStatus) {
+    /* A delivery state means nothing before approval — a rejected order sits at the column default PENDING. */
+    where.status = "APPROVED";
+    where.deliveryStatus = filter.deliveryStatus === "OPEN" ? { in: ["PENDING", "PARTIAL"] } : filter.deliveryStatus;
+  }
   if (filter.search && filter.search.trim()) {
     const s = filter.search.trim();
     where.OR = [{ orderNo: { contains: s } }, { store: { name: { contains: s } } }];
@@ -153,7 +163,7 @@ export async function listFieldSalesOrders(
       take: paging.pageSize,
       select: {
         id: true, orderNo: true, orderType: true, origin: true, status: true, total: true, createdAt: true,
-        creditHoldAtCreate: true,
+        creditHoldAtCreate: true, deliveryStatus: true,
         store: { select: { name: true } },
         salesman: { select: { name: true } },
       },
@@ -265,7 +275,6 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
     paymentTempo: row.store.paymentTempo,
     orderDiscountAmount: toNum(row.orderDiscountAmount),
     appliedOrderPromoName: row.appliedOrderPromoId ? promoNameById.get(row.appliedOrderPromoId) ?? null : null,
-    deliveryStatus: row.deliveryStatus,
     /* Only the legacy approve-time transfer is filtered in, so at most one row. */
     legacyKonsiTransfer: row.konsiTransfers[0]
       ? {
