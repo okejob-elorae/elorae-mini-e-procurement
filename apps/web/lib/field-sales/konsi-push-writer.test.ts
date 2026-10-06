@@ -97,6 +97,59 @@ d("createKonsiPushOrder (test bed only)", () => {
     expect(await prisma.fieldSalesOrder.count({ where: { idempotencyKey: key2 } })).toBe(1);
   }, SLOW);
 
+  describe("replay compare", () => {
+    const base = () => ({
+      storeId: state.storeId,
+      salesmanId: state.salesmanId,
+      pushedById: state.userId,
+    });
+
+    it("answers the same lines in a different order with the first order, and ignores a changed note", async () => {
+      const a = `TEST-KSTW-A-${state.run}`;
+      const b = `TEST-KSTW-B-${state.run}`;
+      await prisma.item.update({ where: { id: state.itemId }, data: { variants: [{ sku: a }, { sku: b }] } });
+      for (const sku of [a, b]) {
+        await prisma.inventoryValue.create({
+          data: { itemId: state.itemId, variantSku: sku, qtyOnHand: 10, reservedQty: 0, avgCost: 10000, totalValue: 100000 },
+        });
+      }
+      const key = crypto.randomUUID();
+      const first = await push({
+        idempotencyKey: key,
+        note: "first",
+        lines: [{ itemId: state.itemId, variantSku: a, qty: 1 }, { itemId: state.itemId, variantSku: b, qty: 2 }],
+      });
+      const again = await createKonsiPushOrder({
+        ...base(),
+        idempotencyKey: key,
+        note: "second",
+        lines: [{ itemId: state.itemId, variantSku: b, qty: 2 }, { itemId: state.itemId, variantSku: a, qty: 1 }],
+      });
+      expect(again).toEqual(first);
+    }, SLOW);
+
+    it("refuses a replay whose qty, lines or salesman changed, and creates no second order", async () => {
+      const key = crypto.randomUUID();
+      const first = await push({ idempotencyKey: key });
+      const refused = { code: "REPLAY_MISMATCH", detail: first.orderNo };
+
+      await expect(
+        createKonsiPushOrder({ ...base(), idempotencyKey: key, lines: [{ itemId: state.itemId, variantSku: "", qty: 4 }] }),
+      ).rejects.toMatchObject(refused);
+      await expect(
+        createKonsiPushOrder({
+          ...base(),
+          idempotencyKey: key,
+          lines: [{ itemId: state.itemId, variantSku: "", qty: 3 }, { itemId: state.itemId, variantSku: "EXTRA", qty: 1 }],
+        }),
+      ).rejects.toMatchObject(refused);
+      await expect(
+        createKonsiPushOrder({ ...base(), salesmanId: state.userId, idempotencyKey: key, lines: [{ itemId: state.itemId, variantSku: "", qty: 3 }] }),
+      ).rejects.toMatchObject(refused);
+      expect(await prisma.fieldSalesOrder.count({ where: { idempotencyKey: key } })).toBe(1);
+    }, SLOW);
+  });
+
   it("refuses KEY_CONFLICT for a key already used at another store", async () => {
     const key = crypto.randomUUID();
     await push({ idempotencyKey: key });

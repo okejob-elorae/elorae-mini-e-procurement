@@ -230,6 +230,7 @@ export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFai
         .join(", ");
       return t("err.INSUFFICIENT_STOCK", { products });
     }
+    if (result.reason === "REPLAY_MISMATCH") return t("err.REPLAY_MISMATCH", { orderNo: result.detail ?? "" });
     const key = `err.${result.reason}`;
     if (!t.has(key)) return t("err.UNEXPECTED");
     if (result.detail) {

@@ -3996,6 +3996,7 @@
       "UNKNOWN_ITEM": "{product} bukan lagi produk aktif.",
       "NO_INVENTORY": "{product} tidak dapat dikirim: tidak ada catatan stok gudang untuk varian tersebut.",
       "KEY_CONFLICT": "Pengiriman ini bentrok dengan yang lain. Muat ulang halaman dan coba lagi.",
+      "REPLAY_MISMATCH": "Percobaan sebelumnya sudah membuat pesanan {orderNo} dengan salesman atau produk yang berbeda. Buka pesanan itu untuk memeriksanya, atau muat ulang halaman ini untuk mengirim pengiriman baru.",
       "INSUFFICIENT_STOCK": "Stok gudang tidak cukup untuk: {products}.",
       "FORBIDDEN": "Anda tidak punya izin untuk mengirim stok.",
       "INVALID_REQUEST": "Ada isian yang tidak valid. Muat ulang dan coba lagi.",
