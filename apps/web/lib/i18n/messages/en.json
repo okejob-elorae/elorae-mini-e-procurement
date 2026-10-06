@@ -258,7 +258,7 @@
       "fieldLabel": "Days (e.g. 0,7,30,60)",
       "fieldHint": "Only the highest newly-crossed threshold fires per invoice, not one per threshold",
       "save": "Save",
-      "loadError": "Failed to load settings",
+      "loadError": "Failed to load the overdue thresholds",
       "errEmpty": "Enter at least one day",
       "errInvalid": "Use comma-separated non-negative whole numbers"
     },
@@ -268,7 +268,7 @@
       "fieldLabel": "Tolerance (Rp)",
       "fieldHint": "A settlement whose cash differs from the expected amount by at most this many rupiah approves without an override reason. 0 means every difference needs one.",
       "save": "Save",
-      "loadError": "Failed to load settings",
+      "loadError": "Failed to load the variance tolerance",
       "errEmpty": "Enter an amount (0 or more)",
       "errInvalid": "Use a non-negative number with at most two decimals"
     },

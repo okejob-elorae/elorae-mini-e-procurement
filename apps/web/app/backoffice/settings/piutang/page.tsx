@@ -46,14 +46,16 @@ export default function OverdueThresholdsSettingsPage() {
       router.replace("/login");
       return;
     }
-    Promise.all([getOverdueThresholds(), getVarianceTolerance()])
+    /* Settled separately so a failed card names itself and the other card still loads. */
+    Promise.allSettled([getOverdueThresholds(), getVarianceTolerance()])
       .then(([thresholds, tolerance]) => {
-        setValue(thresholds.join(","));
-        setVarianceValue(String(tolerance));
+        if (thresholds.status === "fulfilled") setValue(thresholds.value.join(","));
+        else toast.error(t("loadError"));
+        if (tolerance.status === "fulfilled") setVarianceValue(String(tolerance.value));
+        else toast.error(tVariance("loadError"));
       })
-      .catch(() => toast.error(t("loadError")))
       .finally(() => setIsLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- t from useTranslations
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- t and tVariance from useTranslations
   }, [status, router]);
 
   const handleSave = async () => {

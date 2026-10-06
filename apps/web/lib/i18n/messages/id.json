@@ -258,7 +258,7 @@
       "fieldLabel": "Hari (contoh: 0,7,30,60)",
       "fieldHint": "Hanya ambang batas tertinggi yang baru dilewati yang memicu notifikasi, bukan satu per ambang batas",
       "save": "Simpan",
-      "loadError": "Gagal memuat pengaturan",
+      "loadError": "Gagal memuat ambang batas jatuh tempo",
       "errEmpty": "Isi minimal satu hari",
       "errInvalid": "Gunakan angka bulat non-negatif dipisah koma"
     },
@@ -268,7 +268,7 @@
       "fieldLabel": "Toleransi (Rp)",
       "fieldHint": "Pelunasan yang selisih uang tunainya dari jumlah yang diharapkan paling banyak sebesar ini (rupiah) disetujui tanpa alasan override. 0 berarti setiap selisih butuh alasan.",
       "save": "Simpan",
-      "loadError": "Gagal memuat pengaturan",
+      "loadError": "Gagal memuat toleransi selisih pelunasan",
       "errEmpty": "Isi jumlah (0 atau lebih)",
       "errInvalid": "Gunakan angka non-negatif dengan maksimal dua desimal"
     },
