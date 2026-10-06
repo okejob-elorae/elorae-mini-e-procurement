@@ -18,6 +18,8 @@ export const STOCK_ADJUSTMENT_SOURCES = [
   "VAN_LOAD",
   "VAN_RETURN",
   "SUPERSEDED_ITEM_RETIRE",
+  "KONSI_TRANSFER",
+  "FIELD_RETURN",
 ] as const;
 
 export type StockAdjustmentSource = (typeof STOCK_ADJUSTMENT_SOURCES)[number];

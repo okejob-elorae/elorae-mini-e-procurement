@@ -1,6 +1,6 @@
 import { Decimal } from "decimal.js";
 import { moveMainStock, Role, SalesHistoryStatus, type PrismaClient } from "@elorae/db";
-import type { StockLedgerRefType } from "@elorae/db";
+import type { StockAdjustmentSource, StockLedgerRefType } from "@elorae/db";
 import {
   aggregateUmkmExcelByParent,
   parseUmkmExcelFile,
@@ -568,7 +568,7 @@ export async function applyUmkmManifest(
             newAvgCost: prevAvgCost.toNumber(),
             approvedById: userId,
             createdById: userId,
-            source: "ERP",
+            source: "ERP" satisfies StockAdjustmentSource,
           },
         });
 

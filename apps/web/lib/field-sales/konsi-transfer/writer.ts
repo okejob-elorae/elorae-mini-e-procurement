@@ -1,5 +1,5 @@
 import { InventoryValueMissingError, moveMainStock, moveStoreStock, type Prisma } from "@elorae/db";
-import type { StockLedgerRefType } from "@elorae/db";
+import type { StockAdjustmentSource, StockLedgerRefType } from "@elorae/db";
 import { weightedAvgCost } from "@/lib/inventory/weighted-avg-cost";
 import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 import { generateDocNumber } from "@/lib/docNumber";
@@ -133,7 +133,7 @@ export async function issueKonsiTransfer(
         prevAvgCost: avgCost,
         newAvgCost: avgCost,
         createdById: input.transferredById,
-        source: "KONSI_TRANSFER",
+        source: "KONSI_TRANSFER" satisfies StockAdjustmentSource,
       },
     });
 

@@ -291,10 +291,8 @@ filters and reconcile-cron logic key off the exact values.
 
 Allowed values today: `ERP`, `ERP_OPNAME`, `ERP_RETURN_ACCEPT`,
 `FULFILLMENT_CONSUME`, `FIELD_SALES_CONSUME`, `JUBELIO_WEBHOOK`,
-`JUBELIO_RECONCILE`, `VAN_LOAD`, `VAN_RETURN`, `SUPERSEDED_ITEM_RETIRE`. Two live writers do NOT follow
-the rule yet: `issueKonsiTransfer` writes `KONSI_TRANSFER` and
-`approveFieldReturn` writes `FIELD_RETURN`, neither in the registry nor
-checked with `satisfies` — logged in `docs/FOLLOWUPS.md`.
+`JUBELIO_RECONCILE`, `VAN_LOAD`, `VAN_RETURN`, `SUPERSEDED_ITEM_RETIRE`,
+`KONSI_TRANSFER`, `FIELD_RETURN`.
 
 To add a new source, see [INTEGRATION-GUIDE §2](./INTEGRATION-GUIDE.md).
 
