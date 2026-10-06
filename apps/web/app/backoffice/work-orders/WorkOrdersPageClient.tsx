@@ -139,8 +139,9 @@ export function WorkOrdersPageClient() {
   }, [statusFilter, page, pageSize]);
 
   const handleIssue = async (id: string) => {
+    if (!session?.user?.id) return;
     try {
-      await issueWorkOrder(id, 'user-id'); // TODO: Get actual user ID
+      await issueWorkOrder(id, session.user.id);
       toast.success('Work Order issued successfully');
       fetchWorkOrders();
     } catch (error: any) {
@@ -149,10 +150,11 @@ export function WorkOrdersPageClient() {
   };
 
   const handleCancel = async (id: string) => {
+    if (!session?.user?.id) return;
     if (!confirm('Are you sure you want to cancel this Work Order?')) return;
     
     try {
-      await cancelWorkOrder(id, 'user-id'); // TODO: Get actual user ID
+      await cancelWorkOrder(id, session.user.id);
       toast.success('Work Order cancelled successfully');
       fetchWorkOrders();
     } catch (error: any) {
