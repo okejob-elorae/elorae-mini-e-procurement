@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { pwaAccessGuard } from "@/lib/pwa/guard";
-import { listCatalogForPwa } from "@/lib/catalog/queries";
+import { listReturCatalogForPwa } from "@/lib/catalog/queries";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   const storeId = req.nextUrl.searchParams.get("storeId");
   if (!storeId) return NextResponse.json({ error: "storeId required" }, { status: 400 });
 
-  const payload = await listCatalogForPwa(storeId);
+  const payload = await listReturCatalogForPwa(storeId);
   if (!payload) return NextResponse.json({ error: "Store not found" }, { status: 404 });
 
   return NextResponse.json(payload);

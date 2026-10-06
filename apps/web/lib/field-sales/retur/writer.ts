@@ -1,6 +1,7 @@
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { FieldReturnError } from "./errors";
+import { isReturnableVariantKey } from "./variant-options";
 import { FIELD_RETURN_REASONS, type FieldReturnLineInput } from "./types";
 
 type Line = FieldReturnLineInput;
@@ -89,9 +90,32 @@ export async function createFieldReturn(input: {
     const itemIds = Array.from(new Set(input.lines.map((l) => l.itemId)));
     const foundItems = await tx.item.findMany({
       where: { id: { in: itemIds } },
-      select: { id: true },
+      select: { id: true, variants: true, inventoryValues: { select: { variantSku: true } } },
     });
     if (foundItems.length !== itemIds.length) throw new FieldReturnError("ITEM_NOT_FOUND");
+
+    const storeStockRows = await tx.storeStock.findMany({
+      where: { storeId: input.storeId, itemId: { in: itemIds } },
+      select: { itemId: true, variantSku: true },
+    });
+
+    /**
+     * Stock is per-variant, so the warehouse must know the size that came back: a line on
+     * a variant item may not name `""`. `""` is accepted only for a simple item, or when
+     * the store holds legacy pooled `""` stock for it.
+     */
+    const itemById = new Map(foundItems.map((i) => [i.id, i]));
+    for (const l of input.lines) {
+      const item = itemById.get(l.itemId);
+      if (!item) throw new FieldReturnError("ITEM_NOT_FOUND");
+      const ok = isReturnableVariantKey({
+        variants: item.variants,
+        inventorySkus: item.inventoryValues.map((v) => v.variantSku),
+        storeStockSkus: storeStockRows.filter((r) => r.itemId === l.itemId).map((r) => r.variantSku),
+        variantSku: l.variantSku,
+      });
+      if (!ok) throw new FieldReturnError("BAD_VARIANT");
+    }
 
     const docNo = await generateDocNumber("FIELDRET", tx);
     const created = await tx.fieldReturn.create({

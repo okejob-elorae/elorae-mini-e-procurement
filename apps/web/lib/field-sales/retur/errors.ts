@@ -3,6 +3,7 @@ export type FieldReturnErrorCode =
   | "BAD_QTY"
   | "BAD_LINE_SHAPE"
   | "ITEM_NOT_FOUND"
+  | "BAD_VARIANT"
   | "STORE_NOT_FOUND"
   | "VISIT_NOT_OWNED"
   | "MISSING_RESI"

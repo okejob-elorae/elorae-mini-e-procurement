@@ -337,4 +337,79 @@ d("createFieldReturn (test bed only)", () => {
     expect(row.expeditionName).toBeNull();
     expect(row.resiNo).toBeNull();
   });
+
+  describe("per-variant lines", () => {
+    let variantItemId = "";
+    let variantSkuS = "";
+    let inventoryId = "";
+    let storeStockId = "";
+
+    beforeEach(async () => {
+      variantItemId = "";
+      inventoryId = "";
+      storeStockId = "";
+      variantSkuS = `V-S-${token}`;
+      const item = await prisma.item.create({
+        data: {
+          sku: `TEST-FR-V-${token}`, nameId: "Retur variant item", nameEn: "Retur variant item",
+          type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 40000,
+          variants: [{ sku: variantSkuS, size: "S" }],
+        },
+      });
+      variantItemId = item.id;
+      const inv = await prisma.inventoryValue.create({
+        data: { itemId: variantItemId, variantSku: null, qtyOnHand: 5, avgCost: 1000, totalValue: 5000 },
+      });
+      inventoryId = inv.id;
+    });
+
+    afterEach(async () => {
+      await prisma.storeStock.deleteMany({ where: { id: seededId(storeStockId) } });
+      await prisma.inventoryValue.deleteMany({ where: { id: seededId(inventoryId) } });
+      await prisma.item.deleteMany({ where: { id: seededId(variantItemId) } });
+    });
+
+    it("refuses an empty variantSku on a variant item and creates nothing", async () => {
+      await expect(createFieldReturn({
+        storeId, raisedById: userId, transport: "SELF_CARRY",
+        notaPhotoUrl: "u", notaPhotoR2Key: "k",
+        lines: [{ itemId: variantItemId, variantSku: "", qty: 1, reason: "UNSOLD" }],
+      })).rejects.toMatchObject({ code: "BAD_VARIANT" });
+      const rows = await prisma.fieldReturn.findMany({ where: { storeId: seededId(storeId) } });
+      expect(rows).toHaveLength(0);
+    });
+
+    it("accepts the declared variant SKU", async () => {
+      const res = await createFieldReturn({
+        storeId, raisedById: userId, transport: "SELF_CARRY",
+        notaPhotoUrl: "u", notaPhotoR2Key: "k",
+        lines: [{ itemId: variantItemId, variantSku: variantSkuS, qty: 1, reason: "UNSOLD" }],
+      });
+      returnIds.push(res.returnId);
+      const lines = await prisma.fieldReturnLine.findMany({ where: { returnId: seededId(res.returnId) } });
+      expect(lines[0].variantSku).toBe(variantSkuS);
+    });
+
+    it("refuses a SKU the item does not carry", async () => {
+      await expect(createFieldReturn({
+        storeId, raisedById: userId, transport: "SELF_CARRY",
+        notaPhotoUrl: "u", notaPhotoR2Key: "k",
+        lines: [{ itemId: variantItemId, variantSku: `NOPE-${token}`, qty: 1, reason: "UNSOLD" }],
+      })).rejects.toMatchObject({ code: "BAD_VARIANT" });
+    });
+
+    it("accepts an empty variantSku on an ADMIN retur when the store holds legacy pooled stock", async () => {
+      const row = await prisma.storeStock.create({
+        data: { storeId, itemId: variantItemId, variantSku: "", qty: 2 },
+      });
+      storeStockId = row.id;
+      const res = await createFieldReturn({
+        storeId, raisedById: userId, origin: "ADMIN",
+        lines: [{ itemId: variantItemId, variantSku: "", qty: 1, reason: "UNSOLD" }],
+      });
+      returnIds.push(res.returnId);
+      const lines = await prisma.fieldReturnLine.findMany({ where: { returnId: seededId(res.returnId) } });
+      expect(lines).toHaveLength(1);
+    });
+  });
 });

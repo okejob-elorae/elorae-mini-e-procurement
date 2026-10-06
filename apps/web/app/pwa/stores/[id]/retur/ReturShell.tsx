@@ -83,6 +83,8 @@ function messageForFailure(status: number, body: unknown): string {
         return "Data baris retur tidak terbaca. Muat ulang halaman lalu isi ulang barangnya.";
       case "ITEM_NOT_FOUND":
         return "Ada barang yang tidak dikenali sistem. Muat ulang katalog lalu pilih ulang barangnya.";
+      case "BAD_VARIANT":
+        return "Pilih varian (ukuran) untuk barang yang punya varian. Muat ulang katalog lalu pilih ulang barangnya.";
       case "STORE_NOT_FOUND":
         return "Toko tidak ditemukan atau sudah nonaktif.";
       case "VISIT_NOT_OWNED":
@@ -139,7 +141,7 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
   useEffect(() => {
     let alive = true;
     setState("loading");
-    fetch(`/pwa/api/catalog?storeId=${encodeURIComponent(storeId)}&includeInactive=1`)
+    fetch(`/pwa/api/retur/catalog?storeId=${encodeURIComponent(storeId)}`)
       .then((r) => {
         if (!r.ok) throw new Error(String(r.status));
         return r.json() as Promise<Payload>;

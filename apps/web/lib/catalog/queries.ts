@@ -4,6 +4,7 @@ import { aggregateInventoryValues } from "@/lib/items/queries";
 import { getPrimaryImagesBatch } from "@/lib/items/images/queries";
 import { sentItemIds } from "@/lib/field-sales/queries";
 import { parseItemVariants, variantSelectOptions } from "@/lib/items/variants";
+import { returVariantOptions, type ReturVariantOption } from "@/lib/field-sales/retur/variant-options";
 
 export type CatalogItem = {
   itemId: string;
@@ -86,10 +87,7 @@ export function serializeCatalogItem(
   };
 }
 
-export async function listCatalogForPwa(
-  storeId: string,
-  options?: { includeInactive?: boolean },
-): Promise<CatalogPayload | null> {
+export async function listCatalogForPwa(storeId: string): Promise<CatalogPayload | null> {
   const store = await prisma.store.findUnique({
     where: { id: storeId },
     select: { id: true, isActive: true, termsType: true, markupPercent: true, priceDiscountPercent: true },
@@ -108,12 +106,8 @@ export async function listCatalogForPwa(
   const g = await prisma.systemSetting.findUnique({ where: { key: "putus.minOrderQty" } });
   const globalMin = g ? Number(g.value) : 6;
 
-  // Retur capture opts in to also list discontinued items — a discontinued item is
-  // exactly the "Tidak Laku"/"Kadaluarsa" case a store returns, and the writer imposes
-  // no active check, so hiding it here would make a real return unfileable. The sell
-  // catalog (no option passed) keeps its existing active-only behavior untouched.
   const rows = await prisma.item.findMany({
-    where: { isActive: options?.includeInactive ? undefined : true, type: "FINISHED_GOOD" },
+    where: { isActive: true, type: "FINISHED_GOOD" },
     orderBy: { nameId: "asc" },
     select: {
       id: true,
@@ -136,4 +130,70 @@ export async function listCatalogForPwa(
   );
 
   return { store: storeCtx, items };
+}
+
+export type ReturCatalogItem = {
+  itemId: string;
+  sku: string;
+  nameId: string;
+  categoryId: string | null;
+  categoryName: string | null;
+  primaryImageUrl: string | null;
+  variants: ReturVariantOption[];
+};
+
+/**
+ * The retur picker's own catalog: a price-free list that keeps discontinued items, since a
+ * discontinued item is exactly the "Tidak Laku"/"Kadaluarsa" case a store returns. The sell
+ * catalog stays active-only; order lines are refused for inactive items by the writer.
+ */
+export async function listReturCatalogForPwa(storeId: string): Promise<{ items: ReturCatalogItem[] } | null> {
+  const store = await prisma.store.findUnique({
+    where: { id: storeId },
+    select: { id: true, isActive: true },
+  });
+  if (!store || !store.isActive) return null;
+
+  const rows = await prisma.item.findMany({
+    where: { type: "FINISHED_GOOD" },
+    orderBy: { nameId: "asc" },
+    select: {
+      id: true,
+      sku: true,
+      nameId: true,
+      categoryId: true,
+      category: { select: { name: true } },
+      variants: true,
+      inventoryValues: { select: { variantSku: true } },
+    },
+  });
+
+  const storeRows = await prisma.storeStock.findMany({
+    where: { storeId: store.id },
+    select: { itemId: true, variantSku: true },
+  });
+  const storeSkusByItem = new Map<string, string[]>();
+  for (const r of storeRows) {
+    const list = storeSkusByItem.get(r.itemId);
+    if (list) list.push(r.variantSku);
+    else storeSkusByItem.set(r.itemId, [r.variantSku]);
+  }
+
+  const images = await getPrimaryImagesBatch(rows.map((r) => ({ itemId: r.id, variantSku: null })));
+
+  const items = rows.map((r) => ({
+    itemId: r.id,
+    sku: r.sku,
+    nameId: r.nameId,
+    categoryId: r.categoryId,
+    categoryName: r.category?.name ?? null,
+    primaryImageUrl: images.get(`${r.id}|`) ?? null,
+    variants: returVariantOptions({
+      variants: r.variants,
+      inventorySkus: r.inventoryValues.map((v) => v.variantSku),
+      storeStockSkus: storeSkusByItem.get(r.id) ?? [],
+    }),
+  }));
+
+  return { items };
 }
