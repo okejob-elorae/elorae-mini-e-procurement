@@ -181,7 +181,7 @@ No Vercel Cron — `apps/web` runs in-process **node-cron** (`lib/cron/jobs.ts`,
 - Daily konsi monthly count sweep at 07:00 **Asia/Jakarta** (`0 7 * * *`) — opens a DRAFT count, at most once per store and month, at every active KONSI store with a sell-through method that is due (full only if every line is counted; an approved partial count creates no report) and raises the overdue alert; its own job, an hour ahead of the AR sweep, so the count is open before the SPG's shift starts.
 - Every 6 hours, Jubelio stock reconciliation (`0 */6 * * *`).
 - Every 5 minutes, sales revenue + COGS journal posting for shipped orders (`*/5 * * * *`).
-- Hourly at :20, the van journal sweep (`20 * * * *`) — posts the GL journal of any van load, sale or reconcile left without one, but only at or above a floor derived from the earliest van document auto-posting reached, and never for a document created in the last 15 minutes.
+- Hourly at :20, the van journal sweep (`20 * * * *`) — posts the GL journal of any van load, sale or reconcile left without one, but only at or above a floor derived from the earliest van document auto-posting reached (never below the auto-post ship date), unflagged documents ahead of flagged retries, and never for a document created in the last 15 minutes.
 - Every 30 minutes, the fulfilment push divergence sweep (`*/30 * * * *`) — alerts admins (`FULFILLMENT_PUSH_STUCK`) when a PICKED/PACKED order's pick or pack push to Jubelio never landed, at most 20 new alerts per run.
 - Every minute, the marketplace settlement rematch sweep (`* * * * *`) — rematches a settlement once its stamped Jubelio resync batch has finished, and skips a reconciled one.
 
