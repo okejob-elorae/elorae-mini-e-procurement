@@ -388,8 +388,12 @@ export async function resolveSellThroughLine(input: {
   });
 }
 
+/**
+ * `expectedTotal` is the total the admin was shown. The approve action always sends it; leaving it
+ * out skips the comparison, which only internal and fixture callers do.
+ */
 export type ApproveSellThroughInput =
-  | { id: string; approvedById: string; mode: "INVOICE"; invoiceDate: Date; salesmanId: string | null }
+  | { id: string; approvedById: string; mode: "INVOICE"; invoiceDate: Date; salesmanId: string | null; expectedTotal?: number }
   | { id: string; approvedById: string; mode: "BASELINE"; reason: string };
 
 /**
@@ -412,6 +416,12 @@ export type ApproveSellThroughInput =
  * remedy is cancel and recreate, never an in-place refresh, so an approved report always shows the
  * figures the admin actually reviewed. It runs BEFORE the hold, so an admin is never sent to
  * resolve lines on a report that has to be cancelled anyway.
+ *
+ * INVOICE mode then prices every line live and refuses, in order: `UNPRICED` (a billed line whose
+ * item has no selling price), `PRICE_CHANGED` when the caller sent the previewed `expectedTotal`
+ * and the live total differs from it to the cent (detail: the live total, so a selling price edited
+ * after the page loaded never invoices a figure the admin did not see; the remedy is to reload and
+ * approve again, no cancel), `INVALID_INVOICE_DATE`, `SALESMAN_REQUIRED` and `SALESMAN_INVALID`.
  */
 export async function approveSellThrough(input: ApproveSellThroughInput): Promise<{ ok: true; invoiced: boolean }> {
   return runSerializable(async (tx) => {
@@ -516,6 +526,9 @@ export async function approveSellThrough(input: ApproveSellThroughInput): Promis
       })),
     });
     if (pricing.unpricedKeys.length > 0) throw new SellThroughError("UNPRICED", pricing.unpricedKeys.join(","));
+    if (input.expectedTotal !== undefined && Math.round(pricing.total * 100) !== Math.round(input.expectedTotal * 100)) {
+      throw new SellThroughError("PRICE_CHANGED", String(pricing.total));
+    }
     if (!isInvoiceDateAllowed(input.invoiceDate, doc.periodEnd, approvedAt)) throw new SellThroughError("INVALID_INVOICE_DATE");
     if (pricing.total > 0 && input.salesmanId === null) throw new SellThroughError("SALESMAN_REQUIRED");
     if (input.salesmanId !== null && !(await isSellThroughSalesmanCandidate(tx, input.salesmanId))) {

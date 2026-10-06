@@ -5,6 +5,7 @@ import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "@/lib/finance/journals/mapping-test-fixture";
 import { createSellThrough, resolveSellThroughLine } from "@/lib/konsi-sell-through/writer";
 import { createSellThroughFixtures } from "@/lib/konsi-sell-through/test-fixtures";
+import { getSellThrough } from "@/lib/konsi-sell-through/queries";
 
 const { mockAuth, mockFanOut, mockLogPrint, postOverride } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
@@ -136,6 +137,9 @@ d("konsi sell-through actions (test bed only)", () => {
     return id;
   }
 
+  /* The total the report page shows for a DRAFT — what the approve dialog sends as `expectedTotal`. */
+  const previewTotal = async (id: string) => (await getSellThrough(id))!.total ?? 0;
+
   const journalTypesFor = async (id: string) =>
     (await prisma.journal.findMany({ where: { sourceId: seededId(id) }, select: { sourceType: true } }))
       .map((j) => j.sourceType)
@@ -143,7 +147,7 @@ d("konsi sell-through actions (test bed only)", () => {
 
   async function approvedInvoicedReport(): Promise<string> {
     const id = await billingDraft();
-    await approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId });
+    await approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId, expectedTotal: await previewTotal(id) });
     return id;
   }
 
@@ -152,7 +156,7 @@ d("konsi sell-through actions (test bed only)", () => {
   it("an INVOICE approval posts the report's journals, after which nothing is left to retry", async () => {
     const id = await billingDraft();
 
-    const result = await approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId });
+    const result = await approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId, expectedTotal: await previewTotal(id) });
 
     expect(result).toEqual({ ok: true });
     expect(await journalTypesFor(id)).toEqual(["KONSI_SELLTHRU_COGS", "KONSI_SELLTHRU_REVENUE"]);
@@ -165,7 +169,7 @@ d("konsi sell-through actions (test bed only)", () => {
     postOverride.current = () => Promise.reject(new Error("simulated post failure"));
     try {
       await expect(
-        approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId }),
+        approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId, expectedTotal: await previewTotal(id) }),
       ).resolves.toEqual({ ok: true });
       expect(errorSpy).toHaveBeenCalledWith("[konsi-sell-through] post-approve steps failed", expect.any(Error));
     } finally {
@@ -192,12 +196,19 @@ d("konsi sell-through actions (test bed only)", () => {
 
   it("refuses malformed input with INVALID_REQUEST and leaves the report untouched", async () => {
     const id = await billingDraft();
+    const expectedTotal = await previewTotal(id);
     const payloads = [
-      { id, invoiceDate: today(), salesmanId: state.salesmanId },
-      { id, mode: "INVOICE", invoiceDate: "2026-13-01", salesmanId: state.salesmanId },
+      { id, invoiceDate: today(), salesmanId: state.salesmanId, expectedTotal },
+      { id, mode: "INVOICE", invoiceDate: "2026-13-01", salesmanId: state.salesmanId, expectedTotal },
       /* A real-looking day the calendar does not have — it parses, rolled over to 2 March, without the round-trip check. */
-      { id, mode: "INVOICE", invoiceDate: "2026-02-30", salesmanId: state.salesmanId },
-      { id, mode: "INVOICE", invoiceDate: today(), salesmanId: "" },
+      { id, mode: "INVOICE", invoiceDate: "2026-02-30", salesmanId: state.salesmanId, expectedTotal },
+      { id, mode: "INVOICE", invoiceDate: today(), salesmanId: "", expectedTotal },
+      /* The previewed total is required on every screen approve, and must be a finite, non-negative number. */
+      { id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId },
+      { id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId, expectedTotal: String(expectedTotal) },
+      { id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId, expectedTotal: -1 },
+      { id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId, expectedTotal: Number.NaN },
+      { id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId, expectedTotal: Number.POSITIVE_INFINITY },
     ];
 
     for (const payload of payloads) {
@@ -213,6 +224,53 @@ d("konsi sell-through actions (test bed only)", () => {
     expect(doc.taxInvoice).toBeNull();
   }, SLOW);
 
+  it("refuses PRICE_CHANGED, naming the live total, when the sent total differs from it, and invoices nothing", async () => {
+    const id = await billingDraft();
+    const live = await previewTotal(id);
+
+    await expect(
+      approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId, expectedTotal: live - 1000 }),
+    ).resolves.toEqual({ ok: false, reason: "PRICE_CHANGED", detail: String(live) });
+
+    const doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) }, include: { receivable: true, taxInvoice: true } });
+    expect(doc).toMatchObject({ status: "DRAFT", approvedAt: null, total: null });
+    expect(doc.receivable).toBeNull();
+    expect(doc.taxInvoice).toBeNull();
+    expect(await journalTypesFor(id)).toEqual([]);
+  }, SLOW);
+
+  it("refuses PRICE_CHANGED when a selling price moved after the preview, and approves at the refreshed total with no cancel", async () => {
+    const id = await billingDraft();
+    /* 4 billed at 40000. */
+    const previewed = await previewTotal(id);
+    expect(previewed).toBe(160000);
+
+    await prisma.item.update({ where: { id: seededId(state.itemId) }, data: { sellingPrice: 45000 } });
+
+    await expect(
+      approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId, expectedTotal: previewed }),
+    ).resolves.toEqual({ ok: false, reason: "PRICE_CHANGED", detail: "180000" });
+    expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("DRAFT");
+
+    const refreshed = await previewTotal(id);
+    expect(refreshed).toBe(180000);
+    await expect(
+      approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId, expectedTotal: refreshed }),
+    ).resolves.toEqual({ ok: true });
+    const doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) }, include: { receivable: true } });
+    expect(doc.status).toBe("APPROVED");
+    expect(Number(doc.total)).toBe(180000);
+    expect(Number(doc.receivable?.originalAmount)).toBe(180000);
+  }, SLOW);
+
+  it("a BASELINE approval needs no expected total and ignores one it is sent", async () => {
+    const id = await billingDraft();
+    await expect(
+      approveSellThroughAction({ id, mode: "BASELINE", reason: "Billed outside the ERP.", expectedTotal: 1 }),
+    ).resolves.toEqual({ ok: true });
+    expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("APPROVED");
+  }, SLOW);
+
   /* retrySellThroughJournalsAction */
 
   it("retries exactly the journal that failed once its account is mapped again", async () => {
@@ -220,7 +278,7 @@ d("konsi sell-through actions (test bed only)", () => {
     await prisma.journalAccountMapping.delete({ where: { role: "SALES_REVENUE" } });
 
     await expect(
-      approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId }),
+      approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId, expectedTotal: await previewTotal(id) }),
     ).resolves.toEqual({ ok: true });
     /* The approve still succeeded: only the revenue post degraded, and COGS posted beside it. */
     expect(await journalTypesFor(id)).toEqual(["KONSI_SELLTHRU_COGS"]);
@@ -237,7 +295,7 @@ d("konsi sell-through actions (test bed only)", () => {
 
   it("stamps the first nota print and notifies finance once; a reprint notifies nothing", async () => {
     const id = await billingDraft();
-    await approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId });
+    await approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId, expectedTotal: await previewTotal(id) });
     const notificationsFor = async () =>
       (await prisma.adminNotification.findMany({ where: { category: "TAX_INVOICE_PENDING" }, select: { metadata: true } })).filter(
         (n) => (n.metadata as { sellThroughId?: string } | null)?.sellThroughId === id,
@@ -256,7 +314,7 @@ d("konsi sell-through actions (test bed only)", () => {
 
   it("does nothing at all for a missing or empty id", async () => {
     const id = await billingDraft();
-    await approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId });
+    await approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId, expectedTotal: await previewTotal(id) });
 
     /**
      * The session carries no permission, so a regression that drops the id guard still returns at
@@ -310,7 +368,7 @@ d("konsi sell-through actions (test bed only)", () => {
     const line = await onlyLine(id);
     await resolveSellThroughLine({ lineId: line.id, resolution: "SHRINKAGE", reason: "confirmed shrinkage", userId: state.userId });
     await expect(
-      approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: null }),
+      approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: null, expectedTotal: await previewTotal(id) }),
     ).resolves.toEqual({ ok: true });
 
     await expect(getSellThroughNotaAction(id)).resolves.toEqual({ ok: false, reason: "INVALID_STATE" });
@@ -318,7 +376,7 @@ d("konsi sell-through actions (test bed only)", () => {
 
   it("puts only the lines that billed something on the nota", async () => {
     const id = await billingDraft();
-    await approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId });
+    await approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId, expectedTotal: await previewTotal(id) });
     /**
      * The fixture store carries one item, so a line that billed nothing is added straight onto the
      * frozen report — approve would refuse it as STALE, and the nota read is the only subject here.

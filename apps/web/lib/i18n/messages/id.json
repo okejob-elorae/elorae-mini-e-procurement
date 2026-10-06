@@ -4226,6 +4226,7 @@
       "REASON_REQUIRED": "Alasan wajib diisi untuk resolusi ini.",
       "REASON_TOO_LONG": "Alasan terlalu panjang — maksimal 1.000 karakter.",
       "UNPRICED": "{products} belum memiliki harga jual — atur harga jual barang, lalu muat ulang halaman ini dan setujui kembali.",
+      "PRICE_CHANGED": "Harga jual berubah sejak halaman ini dimuat — tagihan sekarang akan berjumlah {total}. Periksa angka yang sudah diperbarui, lalu setujui kembali.",
       "INVALID_INVOICE_DATE": "Tanggal tagihan harus berada di antara tanggal akhir periode dan hari ini.",
       "SALESMAN_REQUIRED": "Pilih sales yang menagih tagihan ini.",
       "SALESMAN_INVALID": "Sales tersebut sudah tidak bisa menagih. Pilih sales lain.",

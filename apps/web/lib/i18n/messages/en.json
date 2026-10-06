@@ -4226,6 +4226,7 @@
       "REASON_REQUIRED": "A reason is required for this resolution.",
       "REASON_TOO_LONG": "The reason is too long — keep it to 1,000 characters or fewer.",
       "UNPRICED": "{products} {n, plural, one {has} other {have}} no selling price — set the item's selling price, then reload this page and approve again.",
+      "PRICE_CHANGED": "A selling price changed since this page loaded — the invoice would now total {total}. Review the refreshed figures and approve again.",
       "INVALID_INVOICE_DATE": "The invoice date must fall between the period's end date and today.",
       "SALESMAN_REQUIRED": "Choose the salesperson who collects this invoice.",
       "SALESMAN_INVALID": "That salesperson can no longer collect invoices. Choose another one.",

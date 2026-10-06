@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId, type Prisma } from "@elorae/db";
-import { createSellThrough, resolveSellThroughLine, cancelSellThrough } from "./writer";
+import { createSellThrough, resolveSellThroughLine, cancelSellThrough, approveSellThrough } from "./writer";
 import { createSellThroughFixtures } from "./test-fixtures";
 import { approveStoreStocktake } from "@/lib/stores/stocktake/writer";
 
@@ -937,6 +937,25 @@ d("konsi sell-through writer (test bed only)", () => {
       await prisma.item.update({ where: { id: state.itemId }, data: { sellingPrice: null } });
       await expect(fx.approve(id)).rejects.toMatchObject({ code: "UNPRICED", detail: `${state.itemId}::` });
       expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id } })).status).toBe("DRAFT");
+    }, SLOW);
+
+    it("refuses PRICE_CHANGED, naming the live total, when the expected total is off by a cent; the matching total approves", async () => {
+      const { id } = await buildShelfCountReportBilling4();
+      const invoice = (expectedTotal: number) =>
+        approveSellThrough({ id, approvedById: state.userId, mode: "INVOICE", invoiceDate: new Date(), salesmanId: state.salesmanId, expectedTotal });
+
+      await expect(invoice(159999.99)).rejects.toMatchObject({ code: "PRICE_CHANGED", detail: "160000" });
+      expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id } })).status).toBe("DRAFT");
+      expect(await prisma.receivable.count({ where: { sellThroughId: id } })).toBe(0);
+
+      await expect(invoice(160000)).resolves.toEqual({ ok: true, invoiced: true });
+    }, SLOW);
+
+    it("an approve with no expected total skips the comparison", async () => {
+      const { id } = await buildShelfCountReportBilling4();
+      await prisma.item.update({ where: { id: state.itemId }, data: { sellingPrice: 45000 } });
+      await expect(fx.approve(id)).resolves.toEqual({ ok: true, invoiced: true });
+      expect(Number((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id } })).total)).toBe(180000);
     }, SLOW);
 
     it("a double approve creates exactly one receivable and one faktur", async () => {

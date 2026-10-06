@@ -55,8 +55,8 @@ async function guard(): Promise<{ userId: string } | { ok: false; reason: "FORBI
  * rather than keeping a second `Record<SellThroughErrorCode, …>` map that could drift out of sync
  * with `errors.ts`. `detail` travels with it whenever the writer set one, because the screens read
  * it: the docNos a refusal names (a retur or transfer in flight, a live successor, a pending
- * settlement), the refused line keys of `UNPRICED`, and `REASON_TOO_LONG`, which gets its own copy
- * instead of the generic code's.
+ * settlement), the refused line keys of `UNPRICED`, the live total of `PRICE_CHANGED`, and
+ * `REASON_TOO_LONG`, which gets its own copy instead of the generic code's.
  */
 function toResult(e: unknown): SellThroughActionFailure {
   if (e instanceof SellThroughError) return e.detail ? { ok: false, reason: e.code, detail: e.detail } : { ok: false, reason: e.code };
@@ -138,7 +138,10 @@ function parseApproveRequest(input: unknown): ApproveRequest | null {
     /* The round-trip refuses a day the calendar does not have: `2026-02-30` parses, rolled over to 2 March. */
     if (!invoiceDate || formatDateOnlyJakarta(invoiceDate) !== i.invoiceDate) return null;
     if (i.salesmanId !== null && (typeof i.salesmanId !== "string" || i.salesmanId === "")) return null;
-    return { id: i.id, mode: "INVOICE", invoiceDate, salesmanId: i.salesmanId as string | null };
+    /* Required here although the writer treats it as optional: every screen approve must be checked against the total the admin was shown. */
+    const expectedTotal = i.expectedTotal;
+    if (typeof expectedTotal !== "number" || !Number.isFinite(expectedTotal) || expectedTotal < 0) return null;
+    return { id: i.id, mode: "INVOICE", invoiceDate, salesmanId: i.salesmanId as string | null, expectedTotal };
   }
   return null;
 }

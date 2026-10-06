@@ -36,6 +36,7 @@ export function SellThroughApproveDialog({
   report,
   salesmanCandidates,
   onApproved,
+  onPriceChanged,
   describeError,
 }: {
   open: boolean;
@@ -43,6 +44,8 @@ export function SellThroughApproveDialog({
   report: SellThroughDetail;
   salesmanCandidates: Array<{ id: string; name: string }>;
   onApproved: () => void;
+  /* Called on a PRICE_CHANGED refusal so the page reloads the preview; the dialog stays open with the error and never retries on its own. */
+  onPriceChanged: () => void;
   describeError: (result: SellThroughActionFailure) => string;
 }) {
   const t = useTranslations("konsiSellThrough");
@@ -103,7 +106,14 @@ export function SellThroughApproveDialog({
     setError(null);
     const input = effectiveMode === "BASELINE"
       ? { id: report.id, mode: effectiveMode, reason: reason.trim() }
-      : { id: report.id, mode: effectiveMode, invoiceDate, salesmanId: salesmanId === "" ? null : salesmanId };
+      : {
+          id: report.id,
+          mode: effectiveMode,
+          invoiceDate,
+          salesmanId: salesmanId === "" ? null : salesmanId,
+          /* The total on screen; approve refuses PRICE_CHANGED if live pricing no longer matches it. */
+          expectedTotal: report.total ?? 0,
+        };
     startTransition(async () => {
       try {
         const result = await approveSellThroughAction(input);
@@ -113,6 +123,7 @@ export function SellThroughApproveDialog({
           return;
         }
         setError(describeError(result));
+        if (result.reason === "PRICE_CHANGED") onPriceChanged();
       } catch {
         setError(t("err.UNEXPECTED"));
       }
