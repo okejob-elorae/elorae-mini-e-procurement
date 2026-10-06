@@ -100,6 +100,16 @@ function negativeFloorFilter(qtyDelta: number): { qtyOnHand?: { gte: number } } 
 }
 
 /**
+ * A variantless row is created spelled null, and the unique index does not compare NULLs, so two
+ * first receipts racing past an empty lookup would each insert one. Locking the Item row makes the
+ * second wait for the first to commit; its repeated lookup then finds the row. A FOR UPDATE on the
+ * absent InventoryValue row would take only gap locks, which do not exclude each other.
+ */
+async function lockItemRow(tx: Tx, itemId: string): Promise<void> {
+  await tx.$queryRaw`SELECT \`id\` FROM \`Item\` WHERE \`id\` = ${itemId} FOR UPDATE`;
+}
+
+/**
  * Moves main-warehouse stock and records the movement, in one call, inside the caller's
  * transaction.
  *
@@ -182,6 +192,10 @@ export async function moveMainStock(tx: Tx, input: MoveMainStockInput): Promise<
     return { balanceQty };
   }
 
+  if (input.createIfMissing) {
+    await lockItemRow(tx, input.itemId);
+  }
+
   const existing = input.variantSku
     ? await tx.inventoryValue.findFirst({
         where: { itemId: input.itemId, variantSku: input.variantSku },
@@ -213,9 +227,8 @@ export async function moveMainStock(tx: Tx, input: MoveMainStockInput): Promise<
      * by name. Writing "" instead was tried and reverted: it buys the @@unique([itemId, variantSku])
      * index as a fork guard (MySQL enforces the constraint for "" and treats NULLs as distinct),
      * but it pays for that by minting a second spelling for the same logical row, which is the
-     * phantom-"" problem the OR-tolerant lookups exist to survive. The concurrent double-create it
-     * would have guarded is narrow — this branch only fires when NO row exists under either
-     * spelling — and is logged in docs/FOLLOWUPS.md rather than bought at that price.
+     * phantom-"" problem the OR-tolerant lookups exist to survive. The concurrent double-create is
+     * guarded instead by lockItemRow above, which serialises first receipts on the Item row.
      */
     await tx.inventoryValue.create({
       data: {
