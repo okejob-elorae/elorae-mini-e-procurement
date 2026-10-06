@@ -6,7 +6,7 @@
 -- no INSERT, UPDATE, DELETE, DDL or session changes.
 --
 -- Run (owner only), against the prod tunnel on local port 3307 or on the VPS:
---   MySQL 8 client:   mariadb --ssl-mode=DISABLED -h 127.0.0.1 -P 3307 -u <user> -p elorae < scripts/audit-field-sales-orphans.sql
+--   MySQL 8 client:   mysql --ssl-mode=DISABLED -h 127.0.0.1 -P 3307 -u <user> -p elorae < scripts/audit-field-sales-orphans.sql
 --   MariaDB client:   replace --ssl-mode=DISABLED with --skip-ssl
 -- Against the local 3308 test bed it is equally safe.
 --
@@ -31,7 +31,7 @@ WHERE child.storeId IS NOT NULL AND p.id IS NULL;
 -- 2. FieldSalesOrder.salesmanId -> User
 SELECT 'FieldSalesOrder.salesmanId' AS relation, child.id, child.salesmanId AS dangling_value
 FROM FieldSalesOrder child
-LEFT JOIN User p ON p.id = child.salesmanId
+LEFT JOIN `User` p ON p.id = child.salesmanId
 WHERE child.salesmanId IS NOT NULL AND p.id IS NULL;
 
 -- 3. FieldSalesOrder.visitId -> StoreVisit
@@ -43,25 +43,25 @@ WHERE child.visitId IS NOT NULL AND p.id IS NULL;
 -- 4. FieldSalesOrder.approvedById -> User
 SELECT 'FieldSalesOrder.approvedById' AS relation, child.id, child.approvedById AS dangling_value
 FROM FieldSalesOrder child
-LEFT JOIN User p ON p.id = child.approvedById
+LEFT JOIN `User` p ON p.id = child.approvedById
 WHERE child.approvedById IS NOT NULL AND p.id IS NULL;
 
 -- 5. FieldSalesOrder.rejectedById -> User
 SELECT 'FieldSalesOrder.rejectedById' AS relation, child.id, child.rejectedById AS dangling_value
 FROM FieldSalesOrder child
-LEFT JOIN User p ON p.id = child.rejectedById
+LEFT JOIN `User` p ON p.id = child.rejectedById
 WHERE child.rejectedById IS NOT NULL AND p.id IS NULL;
 
 -- 6. FieldSalesOrder.closedById -> User
 SELECT 'FieldSalesOrder.closedById' AS relation, child.id, child.closedById AS dangling_value
 FROM FieldSalesOrder child
-LEFT JOIN User p ON p.id = child.closedById
+LEFT JOIN `User` p ON p.id = child.closedById
 WHERE child.closedById IS NOT NULL AND p.id IS NULL;
 
 -- 7. FieldSalesOrder.creditOverrideById -> User
 SELECT 'FieldSalesOrder.creditOverrideById' AS relation, child.id, child.creditOverrideById AS dangling_value
 FROM FieldSalesOrder child
-LEFT JOIN User p ON p.id = child.creditOverrideById
+LEFT JOIN `User` p ON p.id = child.creditOverrideById
 WHERE child.creditOverrideById IS NOT NULL AND p.id IS NULL;
 
 -- 8. FieldSalesOrderLine.orderId -> FieldSalesOrder
@@ -79,7 +79,7 @@ WHERE child.itemId IS NOT NULL AND p.id IS NULL;
 -- 10. FieldSalesOrderLine.addedById -> User
 SELECT 'FieldSalesOrderLine.addedById' AS relation, child.id, child.addedById AS dangling_value
 FROM FieldSalesOrderLine child
-LEFT JOIN User p ON p.id = child.addedById
+LEFT JOIN `User` p ON p.id = child.addedById
 WHERE child.addedById IS NOT NULL AND p.id IS NULL;
 
 -- C1. CONTROL (real FK, must be zero rows): FieldSalesDelivery.orderId -> FieldSalesOrder
@@ -91,7 +91,7 @@ WHERE child.orderId IS NOT NULL AND p.id IS NULL;
 -- C2. CONTROL (real FK, must be zero rows): FieldSalesDelivery.deliveredById -> User
 SELECT 'CONTROL FieldSalesDelivery.deliveredById' AS relation, child.id, child.deliveredById AS dangling_value
 FROM FieldSalesDelivery child
-LEFT JOIN User p ON p.id = child.deliveredById
+LEFT JOIN `User` p ON p.id = child.deliveredById
 WHERE child.deliveredById IS NOT NULL AND p.id IS NULL;
 
 -- C3. CONTROL (real FK, must be zero rows): FieldSalesDeliveryLine.deliveryId -> FieldSalesDelivery
