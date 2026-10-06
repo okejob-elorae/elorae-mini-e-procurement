@@ -136,7 +136,8 @@ export function FieldSalesOrdersPageClient(props: Props) {
               onValueChange={(v) =>
                 pushParams({
                   status: v,
-                  deliveryStatus: v === "ALL" || v === "APPROVED" ? props.deliveryStatus : undefined,
+                  deliveryStatus:
+                    (v === "ALL" || v === "APPROVED") && props.deliveryStatus !== "ALL" ? props.deliveryStatus : undefined,
                 })
               }
             >

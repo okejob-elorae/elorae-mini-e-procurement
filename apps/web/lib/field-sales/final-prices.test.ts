@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { checkFinalPrices } from "./final-prices";
+import { checkFinalPrices, MAX_LINE_AMOUNT } from "./final-prices";
 
 const lines = [
-  { id: "a", requestedUnitPrice: 30000 },
-  { id: "b", requestedUnitPrice: null },
+  { id: "a", requestedUnitPrice: 30000, qty: 1 },
+  { id: "b", requestedUnitPrice: null, qty: 1 },
 ];
 
 describe("checkFinalPrices", () => {
@@ -12,7 +12,7 @@ describe("checkFinalPrices", () => {
   });
 
   it("accepts an omitted payload when no line is appealed", () => {
-    expect(checkFinalPrices([{ id: "b", requestedUnitPrice: null }], undefined)).toEqual({ ok: true });
+    expect(checkFinalPrices([{ id: "b", requestedUnitPrice: null, qty: 1 }], undefined)).toEqual({ ok: true });
   });
 
   it("refuses an omitted payload when a line is appealed", () => {
@@ -50,8 +50,22 @@ describe("checkFinalPrices", () => {
     { finalUnitPrice: -1, label: "negative" },
     { finalUnitPrice: Number.NaN, label: "NaN" },
     { finalUnitPrice: Number.POSITIVE_INFINITY, label: "Infinity" },
+    { finalUnitPrice: 10_000_000_000_000, label: "past-the-column" },
   ])("refuses a $label price", ({ finalUnitPrice }) => {
     expect(checkFinalPrices(lines, [{ lineId: "a", finalUnitPrice }])).toEqual({
+      ok: false,
+      code: "BAD_PRICE",
+      lineId: "a",
+    });
+  });
+
+  it("accepts a price at exactly the column's maximum", () => {
+    expect(checkFinalPrices(lines, [{ lineId: "a", finalUnitPrice: MAX_LINE_AMOUNT }])).toEqual({ ok: true });
+  });
+
+  it("refuses a price whose line total would overflow the column", () => {
+    const bulk = [{ id: "a", requestedUnitPrice: 30000, qty: 1000 }];
+    expect(checkFinalPrices(bulk, [{ lineId: "a", finalUnitPrice: 10_000_000_001 }])).toEqual({
       ok: false,
       code: "BAD_PRICE",
       lineId: "a",

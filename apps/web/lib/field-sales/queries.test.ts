@@ -549,6 +549,11 @@ d("getFieldSalesOrderById stock row (test bed only)", () => {
   let nullRowId = "";
 
   beforeEach(async () => {
+    uomId = "";
+    itemId = "";
+    storeId = "";
+    salesmanId = "";
+    visitId = "";
     emptyRowId = "";
     nullRowId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
@@ -651,6 +656,11 @@ d("listFieldSalesOrders delivery filter (test bed only)", () => {
   let visitId = "";
 
   beforeEach(async () => {
+    uomId = "";
+    itemId = "";
+    storeId = "";
+    salesmanId = "";
+    visitId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
     const item = await prisma.item.create({

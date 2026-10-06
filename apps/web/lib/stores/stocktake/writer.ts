@@ -471,8 +471,7 @@ export async function approveStoreStocktake(input: {
     /**
      * Every store movement recorded after each counted line's own moment, summed per line in
      * cents. One read covers every line: the ledger rows after the EARLIEST line moment, then each
-     * line keeps only its own item::variant's rows stamped strictly after its own moment. Only one
-     * stocktake per store can be open (`openKey`), so none of these rows is another count's. A line
+     * line keeps only its own item::variant's rows stamped strictly after its own moment. A line
      * with no moment re-applies nothing, which is exactly the old SET-the-counted-figure behaviour.
      *
      * Excluded per line: a retur's store row whose retur was RAISED on or before that line's
@@ -490,6 +489,13 @@ export async function approveStoreStocktake(input: {
      * moment, so one retur or transfer can be excluded for a line counted after it and re-applied
      * for a line counted before it. Only a counted line reads these sums at all, so a row for an
      * uncounted item never reaches a target either way.
+     *
+     * Excluded likewise: a konsi transfer's store row whose delivery shipment's `deliveredAt`
+     * is on or before the line's moment. An offline completion stamps `deliveredAt` from the
+     * device (up to three days back), while the transfer and its +q row are written only when the
+     * completion syncs, so a shelf counted between the two already holds the delivered units. The
+     * transfer stamps its own id as `refId`. A legacy transfer with no shipment is never excluded,
+     * and neither is one whose goods were delivered after the line's moment.
      *
      * Never re-applied: an earlier count's own `StoreStocktake` rows. That approval SET the
      * balance to what its own count saw, so it is never a movement this count's shelf missed. A
@@ -515,6 +521,14 @@ export async function approveStoreStocktake(input: {
         ? await tx.storeTransfer.findMany({ where: { id: { in: transferIds } }, select: { id: true, movedAt: true } })
         : [];
       const transferMovedAtMs = new Map(transfers.map((t) => [t.id, t.movedAt.getTime()]));
+      const konsiTransferIds = Array.from(new Set(postCount.filter((r) => r.refType === "KonsiTransfer").map((r) => r.refId)));
+      const konsiTransfers = konsiTransferIds.length > 0
+        ? await tx.konsiTransfer.findMany({ where: { id: { in: konsiTransferIds } }, select: { id: true, shipment: { select: { deliveredAt: true } } } })
+        : [];
+      const konsiDeliveredAtMs = new Map<string, number>();
+      for (const t of konsiTransfers) {
+        if (t.shipment?.deliveredAt) konsiDeliveredAtMs.set(t.id, t.shipment.deliveredAt.getTime());
+      }
 
       const rowsByKey = new Map<string, typeof postCount>();
       for (const r of postCount) {
@@ -532,6 +546,7 @@ export async function approveStoreStocktake(input: {
           if (r.refType === "StoreStocktake") continue;
           if (r.refType === "FieldReturn" && (returRaisedAtMs.get(r.refId) ?? Infinity) <= momentMs) continue;
           if (r.refType === "StoreTransfer" && (transferMovedAtMs.get(r.refId) ?? Infinity) <= momentMs) continue;
+          if (r.refType === "KonsiTransfer" && (konsiDeliveredAtMs.get(r.refId) ?? Infinity) <= momentMs) continue;
           cents += Math.round(r.qty.toNumber() * 100);
         }
         postCountCentsByLineId.set(l.id, cents);

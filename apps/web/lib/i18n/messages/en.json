@@ -1020,6 +1020,7 @@
     "deleteImpactPriceChanges": "{count, plural, one {# price change} other {# price changes}} in its history will be deleted",
     "deleteImpactSalesHistory": "{count, plural, one {# imported sales row} other {# imported sales rows}} will become unmapped",
     "deleteImpactHint": "Deactivate the item instead to keep them.",
+    "deleteImpactLoadFailed": "Couldn't check what deleting this item would remove. Close this and try again.",
     "noVariants": "This item has no variants.",
     "noBOM": "This item has no BOM.",
     "variantLabel": "Variant {index}:",

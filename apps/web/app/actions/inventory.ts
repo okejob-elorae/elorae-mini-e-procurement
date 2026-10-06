@@ -19,6 +19,7 @@ import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
 import { notifyStockAdjustmentCreated } from '@/app/actions/notifications';
 import { getActorName } from "@/lib/notifications/actor-name";
+import { docNumberPeriod } from "@/lib/doc-numbers/period";
 
 const adjustmentSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),
@@ -121,11 +122,9 @@ export async function createStockAdjustment(
       throw new Error('Adjustment would result in negative stock');
     }
 
-    // Generate next ADJ doc number from max existing in same period (avoid unique constraint)
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const prefix = `ADJ/${year}/${month}/`;
+    /* Next ADJ doc number from the max existing in the same WIB period (avoids the unique constraint). */
+    const { year, month } = docNumberPeriod(new Date());
+    const prefix = `ADJ/${year}/${String(month).padStart(2, "0")}/`;
     const existing = await tx.stockAdjustment.findMany({
       where: { docNumber: { startsWith: prefix } },
       select: { docNumber: true },

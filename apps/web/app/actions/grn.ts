@@ -17,6 +17,7 @@ import { postGrnJournal, postGrnReversalJournal } from "@/lib/inventory/grn-jour
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { computeActualLeadDays } from '@/lib/leadtime/calculations';
 import { fanOutAdminNotification } from '@/lib/notifications/admin-fanout';
+import { docNumberPeriod } from "@/lib/doc-numbers/period";
 
 const grnItemSchema = z.object({
   itemId: z.string().min(1),
@@ -83,10 +84,8 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
   await assertLinesVariantSkusMatchItemDefinitions(prisma.item, validated.items);
 
   const result = await prisma.$transaction(async (tx) => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const prefix = `GRN/${year}/${month}/`;
+    const { year, month } = docNumberPeriod(new Date());
+    const prefix = `GRN/${year}/${String(month).padStart(2, "0")}/`;
     const existing = await tx.gRN.findMany({
       where: { docNumber: { startsWith: prefix } },
       select: { docNumber: true },

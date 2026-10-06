@@ -77,7 +77,7 @@ export async function generateDocNumber(
     }
   }
 
-  // Atomic increment (or reset) in the DB so no two callers get the same number
+  /* Atomic increment (or reset) in the DB so no two callers get the same number. */
   await prismaClient.$executeRaw`
     UPDATE DocNumberConfig
     SET

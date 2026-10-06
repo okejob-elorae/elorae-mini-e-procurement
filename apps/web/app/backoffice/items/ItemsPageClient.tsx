@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, Fragment } from 'react';
+import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import { useLocale, useTranslations } from 'next-intl';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
@@ -46,8 +46,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
-import { deleteItem, getItemDeleteImpactAction } from '@/app/actions/items';
-import type { ItemDeleteImpact } from '@/lib/items/mutations';
+import { deleteItem, getItemDeleteImpactAction } from "@/app/actions/items";
+import type { ItemDeleteImpact } from "@/lib/items/mutations";
 import type { ItemTypeMasterRow } from '@/app/actions/item-type-master';
 import { ItemType } from '@/lib/constants/enums';
 import { Pagination } from '@/components/ui/pagination';
@@ -136,7 +136,7 @@ export function ItemsPageClient({
   const tItems = useTranslations('items');
   const tPlaceholders = useTranslations('placeholders');
   const tImport = useTranslations('itemImport');
-  const tCommon = useTranslations('common');
+  const tCommon = useTranslations("common");
   const itemTypeLabels: Record<ItemType, string> = {
     FABRIC: tItems('fabric'),
     ACCESSORIES: tItems('accessories'),
@@ -149,6 +149,8 @@ export function ItemsPageClient({
   const [deleteImpact, setDeleteImpact] = useState<ItemDeleteImpact | null>(null);
   const [deleteImpactFailed, setDeleteImpactFailed] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  /* The dialog's current item, re-read after an await so a late impact response for another item is dropped. */
+  const deleteTargetRef = useRef<string | null>(null);
 
   const activeTab =
     typeFilter && typeFilter !== 'raw' ? typeFilter : 'all';
@@ -190,19 +192,22 @@ export function ItemsPageClient({
   }, [searchInput, initialSearch, pushParams]);
 
   const closeDeleteDialog = () => {
+    deleteTargetRef.current = null;
     setDeleteTargetId(null);
     setDeleteImpact(null);
     setDeleteImpactFailed(false);
   };
 
   const handleDelete = async (id: string) => {
+    deleteTargetRef.current = id;
     setDeleteTargetId(id);
     setDeleteImpact(null);
     setDeleteImpactFailed(false);
     try {
-      setDeleteImpact(await getItemDeleteImpactAction(id));
+      const impact = await getItemDeleteImpactAction(id);
+      if (deleteTargetRef.current === id) setDeleteImpact(impact);
     } catch {
-      setDeleteImpactFailed(true);
+      if (deleteTargetRef.current === id) setDeleteImpactFailed(true);
     }
   };
 
@@ -216,7 +221,7 @@ export function ItemsPageClient({
         return;
       }
       closeDeleteDialog();
-      toast.success(t('itemDeletedSuccessfully'));
+      toast.success(t("itemDeletedSuccessfully"));
       router.refresh();
     } catch {
       toast.error(t("failedToDeleteItem"));
@@ -615,7 +620,7 @@ export function ItemsPageClient({
             <AlertDialogDescription asChild>
               <div className="space-y-2">
                 {deleteImpactFailed ? (
-                  <p>{t("failedToDeleteItem")}</p>
+                  <p>{tItems("deleteImpactLoadFailed")}</p>
                 ) : deleteImpact === null ? (
                   <p className="flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin" />
