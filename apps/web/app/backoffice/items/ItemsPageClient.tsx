@@ -15,7 +15,18 @@ import {
   ChevronDown,
   ChevronRight,
   FileSpreadsheet,
+  Loader2,
 } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -35,7 +46,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
-import { deleteItem } from '@/app/actions/items';
+import { deleteItem, getItemDeleteImpactAction } from '@/app/actions/items';
+import type { ItemDeleteImpact } from '@/lib/items/mutations';
 import type { ItemTypeMasterRow } from '@/app/actions/item-type-master';
 import { ItemType } from '@/lib/constants/enums';
 import { Pagination } from '@/components/ui/pagination';
@@ -124,6 +136,7 @@ export function ItemsPageClient({
   const tItems = useTranslations('items');
   const tPlaceholders = useTranslations('placeholders');
   const tImport = useTranslations('itemImport');
+  const tCommon = useTranslations('common');
   const itemTypeLabels: Record<ItemType, string> = {
     FABRIC: tItems('fabric'),
     ACCESSORIES: tItems('accessories'),
@@ -132,6 +145,10 @@ export function ItemsPageClient({
 
   const [searchInput, setSearchInput] = useState(initialSearch);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [deleteImpact, setDeleteImpact] = useState<ItemDeleteImpact | null>(null);
+  const [deleteImpactFailed, setDeleteImpactFailed] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const activeTab =
     typeFilter && typeFilter !== 'raw' ? typeFilter : 'all';
@@ -172,16 +189,45 @@ export function ItemsPageClient({
     return () => clearTimeout(timer);
   }, [searchInput, initialSearch, pushParams]);
 
-  const handleDelete = async (id: string) => {
-    if (!confirm(tItems('confirmDeleteItem'))) return;
-    const result = await deleteItem(id);
-    if (!result.success) {
-      toast.error(t(result.messageKey));
-      return;
-    }
-    toast.success(t('itemDeletedSuccessfully'));
-    router.refresh();
+  const closeDeleteDialog = () => {
+    setDeleteTargetId(null);
+    setDeleteImpact(null);
+    setDeleteImpactFailed(false);
   };
+
+  const handleDelete = async (id: string) => {
+    setDeleteTargetId(id);
+    setDeleteImpact(null);
+    setDeleteImpactFailed(false);
+    try {
+      setDeleteImpact(await getItemDeleteImpactAction(id));
+    } catch {
+      setDeleteImpactFailed(true);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTargetId) return;
+    setDeleting(true);
+    try {
+      const result = await deleteItem(deleteTargetId);
+      if (!result.success) {
+        toast.error(t(result.messageKey));
+        return;
+      }
+      closeDeleteDialog();
+      toast.success(t('itemDeletedSuccessfully'));
+      router.refresh();
+    } catch {
+      toast.error(t("failedToDeleteItem"));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const hasDeleteImpact =
+    deleteImpact !== null &&
+    (deleteImpact.images > 0 || deleteImpact.priceChanges > 0 || deleteImpact.salesHistory > 0);
 
   const isLowStock = (item: ItemsListRow) => {
     if (item.reorderPoint == null || !item.inventoryValue) return false;
@@ -557,6 +603,71 @@ export function ItemsPageClient({
           </CardContent>
         </Card>
       )}
+      <AlertDialog
+        open={deleteTargetId !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleting) closeDeleteDialog();
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{tCommon("delete")}</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                {deleteImpactFailed ? (
+                  <p>{t("failedToDeleteItem")}</p>
+                ) : deleteImpact === null ? (
+                  <p className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  </p>
+                ) : deleteImpact.blocked ? (
+                  <p>{t("cannotDeleteItemInUse")}</p>
+                ) : (
+                  <>
+                    <p>{tItems("confirmDeleteItem")}</p>
+                    {hasDeleteImpact && (
+                      <ul className="list-disc space-y-1 pl-5">
+                        {deleteImpact.images > 0 && (
+                          <li>{tItems("deleteImpactImages", { count: deleteImpact.images })}</li>
+                        )}
+                        {deleteImpact.priceChanges > 0 && (
+                          <li>
+                            {tItems("deleteImpactPriceChanges", { count: deleteImpact.priceChanges })}
+                          </li>
+                        )}
+                        {deleteImpact.salesHistory > 0 && (
+                          <li>
+                            {tItems("deleteImpactSalesHistory", { count: deleteImpact.salesHistory })}
+                          </li>
+                        )}
+                      </ul>
+                    )}
+                    {hasDeleteImpact && (
+                      <p className="text-xs text-muted-foreground">{tItems("deleteImpactHint")}</p>
+                    )}
+                  </>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>{tCommon("cancel")}</AlertDialogCancel>
+            {!deleteImpactFailed && !deleteImpact?.blocked && (
+              <AlertDialogAction
+                variant="destructive"
+                disabled={deleting || deleteImpact === null}
+                onClick={(e) => {
+                  e.preventDefault();
+                  void confirmDelete();
+                }}
+              >
+                {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {tCommon("delete")}
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

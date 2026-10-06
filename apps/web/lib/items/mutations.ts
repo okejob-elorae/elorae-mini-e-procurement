@@ -321,7 +321,12 @@ export async function updateItem(
 
 export const ITEM_DELETE_BLOCKED = "ITEM_DELETE_BLOCKED";
 
-export async function deleteItem(id: string) {
+/**
+ * Sum of every row that blocks an item delete. `ItemImage` and `ItemPriceChangeLog` cascade on
+ * purpose and are reported by `getItemDeleteImpact`, not counted here; `SalesHistory` is un-mapped
+ * by `deleteItem`, never a blocker.
+ */
+export async function countItemDeleteBlockers(id: string): Promise<number> {
   const [
     movements,
     ledgerEntryCount,
@@ -394,34 +399,54 @@ export async function deleteItem(id: string) {
     prisma.konsiSellThroughLine.count({ where: { itemId: id } }),
   ]);
 
-  const hasLinkedRecords =
-    movements > 0 ||
-    ledgerEntryCount > 0 ||
-    poItems > 0 ||
-    workOrderFinishedGoodCount > 0 ||
-    workOrderConsumptionMaterialCount > 0 ||
-    fabricRollCount > 0 ||
-    stockAdjustmentCount > 0 ||
-    rejectedGoodsCount > 0 ||
-    planAccessoryCount > 0 ||
-    salesReturnItemCount > 0 ||
-    fieldReturnLineCount > 0 ||
-    fieldSalesOrderLineCount > 0 ||
-    fieldSalesDeliveryLineCount > 0 ||
-    promoItemCount > 0 ||
-    storeStockCount > 0 ||
-    konsiTransferLineCount > 0 ||
-    storeTransferLineCount > 0 ||
-    storeStocktakeLineCount > 0 ||
-    storeAssortmentLineCount > 0 ||
-    vanStockCount > 0 ||
-    vanLoadLineCount > 0 ||
-    vanSaleLineCount > 0 ||
-    vanReconcileLineCount > 0 ||
-    spgSaleLineCount > 0 ||
-    konsiSellThroughLineCount > 0;
+  return (
+    movements +
+    ledgerEntryCount +
+    poItems +
+    workOrderFinishedGoodCount +
+    workOrderConsumptionMaterialCount +
+    fabricRollCount +
+    stockAdjustmentCount +
+    rejectedGoodsCount +
+    planAccessoryCount +
+    salesReturnItemCount +
+    fieldReturnLineCount +
+    fieldSalesOrderLineCount +
+    fieldSalesDeliveryLineCount +
+    promoItemCount +
+    storeStockCount +
+    konsiTransferLineCount +
+    storeTransferLineCount +
+    storeStocktakeLineCount +
+    storeAssortmentLineCount +
+    vanStockCount +
+    vanLoadLineCount +
+    vanSaleLineCount +
+    vanReconcileLineCount +
+    spgSaleLineCount +
+    konsiSellThroughLineCount
+  );
+}
 
-  if (hasLinkedRecords) {
+export type ItemDeleteImpact = {
+  blocked: boolean;
+  images: number;
+  priceChanges: number;
+  salesHistory: number;
+};
+
+export async function getItemDeleteImpact(id: string): Promise<ItemDeleteImpact> {
+  const [blockers, images, priceChanges, salesHistory] = await Promise.all([
+    countItemDeleteBlockers(id),
+    prisma.itemImage.count({ where: { itemId: id } }),
+    prisma.itemPriceChangeLog.count({ where: { itemId: id } }),
+    prisma.salesHistory.count({ where: { itemId: id } }),
+  ]);
+  return { blocked: blockers > 0, images, priceChanges, salesHistory };
+}
+
+export async function deleteItem(id: string) {
+  if ((await countItemDeleteBlockers(id)) > 0) {
     throw new Error(ITEM_DELETE_BLOCKED);
   }
 
@@ -434,6 +459,22 @@ export async function deleteItem(id: string) {
 
     await tx.inventoryValue.deleteMany({
       where: { itemId: id },
+    });
+
+    /**
+     * The foreign key alone would null `itemId` and leave the row claiming `MAPPED` with a stale
+     * `erpVariantSku` and `jubelioItemId`; un-mapping it puts it back in the import page's
+     * unmapped count. `ItemImage` and `ItemPriceChangeLog` cascade on purpose and are reported by
+     * `getItemDeleteImpact`, not counted as blockers.
+     */
+    await tx.salesHistory.updateMany({
+      where: { itemId: id },
+      data: {
+        itemId: null,
+        erpVariantSku: null,
+        jubelioItemId: null,
+        resolutionStatus: "UNMAPPED",
+      },
     });
 
     await tx.item.delete({
