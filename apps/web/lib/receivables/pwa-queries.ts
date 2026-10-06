@@ -234,23 +234,50 @@ export type ReturSaya = {
   dariSpg: boolean;
   /** Jumlah potong di nota (hanya nota yang membawa baris barang). */
   jumlahBarang: number;
+  /**
+   * Nota ini dicatat oleh penonton sendiri. `false` = nota SPG di toko yang ia
+   * pegang: hanya untuk dilihat — menarik, minta koreksi, dan lapor ulang
+   * tetap milik pelapornya (penulisnya pun menolak orang lain).
+   */
+  milikSaya: boolean;
+  /** Nama SPG pelapor, hanya untuk nota yang bukan milik penonton. */
+  pelapor: string | null;
 };
 
-/** Nota retur yang pernah dicatat sales ini. */
-export async function returSaya(salesmanId: string): Promise<ReturSaya[]> {
+/**
+ * Nota retur yang pernah dicatat orang ini.
+ *
+ * `termasukSpgTokoSaya` (layar salesman, bukan SPG): ikut nota yang dilaporkan
+ * SPG di toko yang ia PEGANG sekarang (`Store.salesmanId`) — barang itu akan ia
+ * bawa atau tagih potongannya, jadi ia perlu tahu. Nota sales lain di tokonya
+ * tidak ikut: yang ditambahkan hanya laporan SPG.
+ */
+export async function returSaya(
+  salesmanId: string,
+  opsi?: { termasukSpgTokoSaya?: boolean },
+): Promise<ReturSaya[]> {
   const rows = await prisma.storeReturn.findMany({
-    where: { salesmanId },
+    where: opsi?.termasukSpgTokoSaya
+      ? { OR: [{ salesmanId }, { reportedBySpg: true, store: { salesmanId } }] }
+      : { salesmanId },
     orderBy: [{ claimDate: 'desc' }],
     take: BATAS_LAPANGAN,
-    select: { id: true, reportedBySpg: true, store: { select: { termsType: true } }, items: { select: { qty: true } } },
+    select: {
+      id: true,
+      salesmanId: true,
+      reportedBySpg: true,
+      salesman: { select: { name: true, email: true } },
+      store: { select: { termsType: true } },
+      items: { select: { qty: true } },
+    },
   });
-  const milikSaya = rows.map((r) => r.id);
-  if (milikSaya.length === 0) return [];
+  const ids = rows.map((r) => r.id);
+  if (ids.length === 0) return [];
   const perId = new Map(rows.map((r) => [r.id, r]));
 
-  // Dilingkupi ke nota milik sales ini; sebelumnya seluruh daftar kerja dimuat
-  // hanya untuk menyaringnya lagi di memori.
-  const kerja = await daftarKerjaRetur({ storeReturnIds: milikSaya });
+  // Dilingkupi ke nota yang terpilih di atas; sebelumnya seluruh daftar kerja
+  // dimuat hanya untuk menyaringnya lagi di memori.
+  const kerja = await daftarKerjaRetur({ storeReturnIds: ids });
 
   return kerja
     .filter((k) => k.jenis === 'NRT')
@@ -266,6 +293,8 @@ export async function returSaya(salesmanId: string): Promise<ReturSaya[]> {
         adaFoto: k.adaFoto,
         dariSpg: r?.reportedBySpg ?? false,
         jumlahBarang: (r?.items ?? []).reduce((n, i) => n + i.qty, 0),
+        milikSaya: r?.salesmanId === salesmanId,
+        pelapor: r && r.salesmanId !== salesmanId ? (r.salesman?.name ?? r.salesman?.email ?? null) : null,
       };
     });
 }

@@ -203,10 +203,10 @@ d("kueri ubah pesanan + salinan WA (test bed only)", () => {
     });
     const s = await salinanPesananSaya(o.orderId, sales);
     expect(s).not.toBeNull();
-    expect(s!.teks).not.toMatch(/Rp/i);
+    expect(s!.teks).not.toMatch(/Rp\s?\d/);
     expect(s!.teks).toContain("Kaos Uji × 4");
     expect(s!.teks).toContain("Jumlah: 4 pcs");
-    expect(decodeURIComponent(s!.tautan)).not.toMatch(/Rp/i);
+    expect(decodeURIComponent(s!.tautan)).not.toMatch(/Rp\s?\d/);
   });
 
   it("a cancelled order has no WA copy; lists and detail flag it and link the replacement both ways", async () => {

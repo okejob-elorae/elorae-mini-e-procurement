@@ -59,6 +59,9 @@ const CATEGORY_PERMISSION: Record<string, string> = {
   // Barang hilang yang perlu diputuskan penanggungnya — yang menetapkan beban
   // adalah `receivables:manage` (pemisahan tugas di lib/receivables/izin.ts).
   STOCK_LOSS_OPEN: PERMISSIONS.RECEIVABLES_MANAGE,
+  // Permintaan stok SPG di toko tanpa salesman pemegang — tidak masuk kotak
+  // masuk HP siapa pun, jadi pengelola toko yang menanganinya.
+  SPG_STOCK_REQUEST_UNHELD: PERMISSIONS.STORES_MANAGE,
 };
 
 /**

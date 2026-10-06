@@ -22,6 +22,9 @@ import { CatatanToko } from "./CatatanToko";
 import { jendelaIndenTerbuka } from "@/lib/field-sales/inden-queries";
 import { TombolPreorder } from "./TombolPreorder";
 import { LanjutSetelahCheckIn } from "./LanjutSetelahCheckIn";
+import { kehadiranSpgToko, tampilKehadiran } from "@/lib/spg/kehadiran-toko";
+import { KehadiranSpgToko } from "./KehadiranSpgToko";
+import { LaporDariToko } from "./UbinLapor";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +51,7 @@ export default async function PwaStoreDetail({ params }: { params: Promise<{ id:
   }
 
   const sekarang = new Date();
-  const [active, history, orderRows, saran, ringkasan] = await Promise.all([
+  const [active, history, orderRows, saran, ringkasan, kehadiranSpg] = await Promise.all([
     getActiveVisit(session.user.id),
     listVisitsForStore(store.id, 20),
     // SPG tidak mengambil pesanan lapangan — riwayat pesanan toko tidak ditampilkan untuknya.
@@ -57,6 +60,14 @@ export default async function PwaStoreDetail({ params }: { params: Promise<{ id:
     // Kartu ringkasan untuk salesman keliling. SPG tidak menagih dan tidak
     // mengambil pesanan lapangan — kartunya tidak berguna baginya.
     tokoTetap ? Promise.resolve(null) : ringkasanToko(store.id, { penontonId: session.user.id, hariIni: sekarang }),
+    // Kehadiran SPG toko ini hari ini — untuk salesman. Kartu pelengkap: kalau
+    // kuerinya gagal, halaman toko tetap tampil tanpa kartu ini.
+    tokoTetap
+      ? Promise.resolve([])
+      : kehadiranSpgToko(store.id, sekarang).catch((e: unknown) => {
+          console.error("[toko] kehadiran SPG gagal dimuat", e);
+          return [];
+        }),
   ]);
   const pola = polaPesanan(saran.tanggalPesanan, sekarang);
 
@@ -208,7 +219,19 @@ export default async function PwaStoreDetail({ params }: { params: Promise<{ id:
         bolehJarakJauh={jarakJauh?.boleh === true}
         portalToko={portalToko}
         preorder={preorder}
-        catatanToko={catatanToko}
+        /*
+         * Slot tepat di bawah ringkasan toko. Selain catatan toko, salesman
+         * mendapat ubin lapor pelunasan/retur (di luar kunjungan — selama
+         * kunjungan keduanya ada di kartu Kunjungan berjalan) dan kehadiran SPG
+         * toko ini hari ini.
+         */
+        catatanToko={
+          <>
+            {!tokoTetap && !activeForStore ? <LaporDariToko storeId={store.id} termsType={store.termsType} /> : null}
+            <KehadiranSpgToko baris={tampilKehadiran(kehadiranSpg)} />
+            {catatanToko}
+          </>
+        }
         stokDiToko={stokKonsi ? <StokDiToko data={stokKonsi} storeId={store.id} visitId={activeForStore?.id ?? null} /> : null}
         saranTawar={saranTawar ? <SaranTawar storeId={store.id} data={saranTawar} /> : null}
         spg={!!tokoTetap}

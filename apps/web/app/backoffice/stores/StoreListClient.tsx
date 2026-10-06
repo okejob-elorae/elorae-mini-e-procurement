@@ -52,6 +52,10 @@ type Props = {
   kelasFilter?: string;
   /** Usulan toko baru dari lapangan yang menunggu diputuskan. Opsional agar pemanggil lama tetap jalan. */
   usulanMenunggu?: number;
+  /** `?perubahan=menunggu` — hanya toko yang perubahan datanya menunggu ditinjau. */
+  perubahanMenunggu?: boolean;
+  /** Jumlah toko yang perubahan datanya menunggu (semua toko, aktif maupun nonaktif). */
+  jumlahPerubahan?: number;
 };
 
 // Radix Select tidak menerima nilai kosong.
@@ -73,6 +77,8 @@ export function StoreListClient({
   bolehKelola,
   kelasFilter = "",
   usulanMenunggu = 0,
+  perubahanMenunggu = false,
+  jumlahPerubahan = 0,
 }: Props) {
   const t = useTranslations("stores");
   const tList = useTranslations("stores.list");
@@ -212,6 +218,17 @@ export function StoreListClient({
             <SelectItem value="TANPA">{tKelas("tanpa")}</SelectItem>
           </SelectContent>
         </Select>
+        {jumlahPerubahan > 0 || perubahanMenunggu ? (
+          <Button
+            type="button"
+            size="sm"
+            variant={perubahanMenunggu ? "default" : "outline"}
+            aria-pressed={perubahanMenunggu}
+            onClick={() => pushParam("perubahan", perubahanMenunggu ? undefined : "menunggu")}
+          >
+            {tList("filterPendingChanges", { count: jumlahPerubahan })}
+          </Button>
+        ) : null}
         <div className="flex items-center gap-2">
           <Checkbox
             id="show-inactive"
@@ -240,7 +257,9 @@ export function StoreListClient({
             <div className="text-center py-12">
               <Store className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <p className="text-muted-foreground">
-                {search || showInactive || areaFilter || salesFilter || kelasFilter ? tList("noSearchResults") : tList("empty")}
+                {search || showInactive || areaFilter || salesFilter || kelasFilter || perubahanMenunggu
+                  ? tList("noSearchResults")
+                  : tList("empty")}
               </p>
             </div>
           ) : (

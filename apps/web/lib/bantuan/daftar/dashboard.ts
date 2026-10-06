@@ -19,7 +19,11 @@ export const ENTRI: EntriBantuan[] = [
       },
       {
         judul: "Perlu ditindaklanjuti",
-        isi: "Pekerjaan yang biasanya kelewat kalau hanya melihat angka di bawahnya: PO terlambat atau menunggu persetujuan, barang terjual melebihi stok, pesanan salesman menunggu persetujuan, pesanan marketplace belum dikirim, retur menunggu keputusan, BKM menunggu verifikasi, faktur lewat janji bayar, nota tagihan tanpa nomor faktur pajak, perubahan data toko, dan jurnal yang gagal diposting. Setiap baris membuka daftar tempat pekerjaan itu diselesaikan. Titik merah berarti terlambat, kuning berarti menunggu. Baris hanya tampil untuk pekerjaan yang boleh Anda kerjakan.",
+        isi: [
+          "Pekerjaan yang biasanya kelewat kalau hanya melihat angka di bawahnya: PO terlambat atau menunggu persetujuan, barang terjual melebihi stok, pesanan salesman menunggu persetujuan, pesanan marketplace belum dikirim, retur menunggu keputusan, BKM menunggu verifikasi, faktur lewat janji bayar, nota tagihan tanpa nomor faktur pajak, perubahan data toko, dan jurnal yang gagal diposting.",
+          "Juga antrean tim lapangan dan SPG yang menunggu keputusan kantor: izin, sakit, dan cuti; biaya perjalanan yang menunggu persetujuan atau pembayaran; tukar barang yang menunggu persetujuan atau diselesaikan gudang; mutasi antar toko dan selisihnya; barang hilang yang belum ditetapkan penanggungnya; usulan toko baru; janji bayar dari lapangan yang belum dikonfirmasi; kiriman rusak dan isi gudang barang rusak; permintaan koreksi BKM dan nota retur dari sales; tukar shift SPG; dan permintaan stok SPG di toko yang belum punya salesman pemegang.",
+          "Setiap baris membuka daftar tempat pekerjaan itu diselesaikan, sudah tersaring, sehingga angkanya sama dengan jumlah baris di daftar itu. Titik merah berarti terlambat, kuning berarti menunggu. Baris hanya tampil bila Anda bisa membuka daftarnya sekaligus memutuskan isinya.",
+        ],
       },
       {
         judul: { kunci: "dashboard.kpiSalesSummary" },

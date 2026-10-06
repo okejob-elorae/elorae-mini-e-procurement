@@ -12,6 +12,7 @@ import {
   type ShortLine,
 } from "@/lib/field-sales/errors";
 import { KreditBelumDiperiksaError } from "@/lib/field-sales/kredit-pesanan";
+import { kabarkanKirimanBerangkat } from "@/lib/spg/pesanan-menuju-toko";
 
 export type ActionResult =
   | { ok: true }
@@ -107,6 +108,9 @@ export async function approveFieldSalesOrderAction(
   }
   revalidatePath("/backoffice/field-sales-orders");
   revalidatePath(`/backoffice/field-sales-orders/${orderId}`);
+  // Pesanan konsi yang disetujui langsung berangkat ke toko → SPG toko itu dikabari, sekali per
+  // pesanan. Pesanan putus tidak (barangnya berangkat saat pengiriman); penyaringnya di sana.
+  void kabarkanKirimanBerangkat({ sourceType: "KONSI_ORDER", sourceId: orderId, pelakuId: g.userId });
   return { ok: true };
 }
 

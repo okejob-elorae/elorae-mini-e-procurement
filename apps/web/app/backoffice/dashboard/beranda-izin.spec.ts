@@ -14,6 +14,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   sesi: null as { user: { id: string; name: string; permissions: string[] } } | null,
   dimuat: [] as string[],
+  izinAntrean: [] as string[][],
 }));
 
 const catat = <T,>(nama: string, nilai: T) =>
@@ -42,7 +43,6 @@ vi.mock("@/lib/dashboard/queries", () => ({
   }),
   getRawMaterialShortage: catat("kekurangan", []),
   getCOGSRawVsFinished: catat("nilaiStok", { rawValue: 12_500_000, finishedValue: 48_000_000, rawCount: 5, finishedCount: 9 }),
-  getOversoldInventory: catat("oversold", [{ itemId: "i1" }]),
   getSalesmenSalesSummary: catat("perSalesman", {
     rows: [],
     totals: { realised: { amount: 7_250_000, count: 3 }, outstanding: { amount: 0, count: 0 } },
@@ -76,9 +76,24 @@ vi.mock("@/lib/dashboard/action-items", async (importOriginal) => {
     getClaimsAwaitingVerification: catat("klaimMenunggu", { count: 2, amount: 900_000 }),
   };
 });
+vi.mock("@/lib/dashboard/antrean-kantor", async (importOriginal) => {
+  const asli = await importOriginal<typeof import("@/lib/dashboard/antrean-kantor")>();
+  return {
+    ...asli,
+    hitungBarangStokMinus: catat("oversold", 1),
+    // Satu untuk SETIAP antrean, apa pun izinnya: yang menyaring baris adalah
+    // `buildActionItems` dengan izin penonton (kueri yang disaring diuji di
+    // `lib/dashboard/antrean-kantor-kueri.test.ts`).
+    getAntreanKantor: vi.fn(async (izin: string[]) => {
+      state.izinAntrean.push(izin);
+      return Object.fromEntries(asli.KUNCI_ANTREAN.map((k) => [k, 1]));
+    }),
+  };
+});
 vi.mock("./DashboardPageClient", () => ({ DashboardPageClient: () => null }));
 
 const { default: DashboardPage } = await import("./page");
+const { KUNCI_ANTREAN } = await import("@/lib/dashboard/antrean-kantor");
 
 type PropsKlien = {
   actionItems: Array<{ key: string; permission: string | null }>;
@@ -105,6 +120,7 @@ const PRODUCTION = ["dashboard:view", "sales_orders:view", "work_orders:view"];
 beforeEach(() => {
   state.sesi = null;
   state.dimuat = [];
+  state.izinAntrean = [];
 });
 
 describe("beranda — kartu per izin, dari server", () => {
@@ -209,5 +225,24 @@ describe("beranda — kartu per izin, dari server", () => {
     }
     expect(p.actionItems.map((i) => i.key)).toContain("unshippedOrders");
     expect(p.actionItems.map((i) => i.key)).not.toContain("fieldSalesPendingApproval");
+  });
+
+  it("antrean kantor dihitung dengan izin penonton, dan barisnya disaring dengannya", async () => {
+    const p = await bukaBeranda(PRODUCTION);
+    expect(state.izinAntrean).toEqual([PRODUCTION]);
+    const antrean = new Set(KUNCI_ANTREAN as readonly string[]);
+    expect(p.actionItems.filter((i) => antrean.has(i.key))).toEqual([]);
+  });
+
+  it("gudang (inventory:manage) melihat antrean gudang saja; admin melihat semuanya", async () => {
+    const gudang = await bukaBeranda([...WAREHOUSE, "inventory:manage"]);
+    const antrean = new Set(KUNCI_ANTREAN as readonly string[]);
+    expect(gudang.actionItems.filter((i) => antrean.has(i.key)).map((i) => i.key).sort()).toEqual([
+      "damagedDeliveriesOpen",
+      "damagedWarehouseOpen",
+      "exchangesPendingCompletion",
+    ]);
+    const admin = await bukaBeranda(["*"]);
+    expect(admin.actionItems.filter((i) => antrean.has(i.key))).toHaveLength(KUNCI_ANTREAN.length);
   });
 });

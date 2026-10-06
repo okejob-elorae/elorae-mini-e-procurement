@@ -7,17 +7,31 @@ import { PILIH_POTONGAN, potonganRetur } from "@/lib/receivables/deductions";
 import { giroKedaluwarsa, STATUS_GIRO, type StatusGiro } from "@/lib/receivables/giro";
 import { formatDisplayDate } from "@/lib/date-only";
 import { bolehMembacaPelunasan } from "@/lib/receivables/izin";
-import { PelunasanClient, type BarisKlaim } from "./PelunasanClient";
+import { koreksiTertunda } from "@/lib/receivables/koreksi";
+import { PelunasanClient, type BarisKlaim, type StatusKlaim } from "./PelunasanClient";
 import { pemeriksaSamaKlaim } from "./[id]/putusan-klaim";
 
 export const dynamic = "force-dynamic";
 
-export default async function PelunasanPage() {
+const STATUS_KLAIM: readonly StatusKlaim[] = ["DIKIRIM", "TERVERIFIKASI", "DITOLAK"];
+
+/**
+ * `?status=` (DIKIRIM/TERVERIFIKASI/DITOLAK) dan `?koreksi=1` disaring di
+ * server, supaya tautan Beranda ("BKM menunggu verifikasi", "Permintaan
+ * koreksi BKM") mendarat di daftar yang angkanya sama.
+ */
+export default async function PelunasanPage(props?: {
+  searchParams: Promise<{ status?: string; koreksi?: string }>;
+}) {
   const session = await auth();
   if (!session) redirect("/login");
   // Rute modul piutang tidak dipetakan di ROUTE_PERMISSIONS — halaman memagari dirinya sendiri.
   // Keuangan ikut: BKM menunggu verifikasinya ada di sini.
   if (!bolehMembacaPelunasan(session.user.permissions)) redirect("/backoffice");
+
+  const sp = (await props?.searchParams) ?? {};
+  const saringStatus = (STATUS_KLAIM as readonly string[]).includes(sp.status ?? "") ? (sp.status as StatusKlaim) : null;
+  const saringKoreksi = sp.koreksi === "1";
 
   const rows = await prisma.paymentClaim.findMany({
     orderBy: [{ status: "asc" }, { createdAt: "desc" }],
@@ -42,9 +56,14 @@ export default async function PelunasanPage() {
       deductions: { select: PILIH_POTONGAN },
     },
   });
+  // Definisi yang sama dengan baris Beranda (`dokumenKoreksiTertunda`).
+  const koreksi = await koreksiTertunda(
+    "bkm",
+    rows.map((r) => r.id),
+  );
 
   const sekarang = new Date();
-  const baris: BarisKlaim[] = rows.map((r) => ({
+  const semua: BarisKlaim[] = rows.map((r) => ({
     id: r.id,
     docNo: r.docNo,
     storeName: r.store.name,
@@ -56,6 +75,7 @@ export default async function PelunasanPage() {
     deductionCount: r.deductions.length,
     status: r.status,
     verifyNote: r.verifyNote,
+    mintaKoreksi: koreksi.has(r.id),
     // Pelapor/pencatat tidak boleh memutuskan BKM-nya sendiri (penulis menolak
     // dengan PEMERIKSA_SAMA); tombolnya dimatikan dengan alasan sejak awal.
     pemeriksaSama: pemeriksaSamaKlaim(session.user.id, r),
@@ -81,11 +101,23 @@ export default async function PelunasanPage() {
         }
       : null,
   }));
-  const giroMenunggu = baris.filter((b) => b.status === "DIKIRIM" && b.giro?.status === "MENUNGGU").length;
+  const giroMenunggu = semua.filter((b) => b.status === "DIKIRIM" && b.giro?.status === "MENUNGGU").length;
+  const jumlah = {
+    semua: semua.length,
+    DIKIRIM: semua.filter((b) => b.status === "DIKIRIM").length,
+    TERVERIFIKASI: semua.filter((b) => b.status === "TERVERIFIKASI").length,
+    DITOLAK: semua.filter((b) => b.status === "DITOLAK").length,
+    koreksi: semua.filter((b) => b.mintaKoreksi).length,
+  };
+  const baris = semua.filter(
+    (b) => (!saringStatus || b.status === saringStatus) && (!saringKoreksi || b.mintaKoreksi),
+  );
 
   return (
     <PelunasanClient
       baris={baris}
+      saring={{ status: saringStatus, koreksi: saringKoreksi }}
+      jumlah={jumlah}
       giroMenunggu={giroMenunggu}
       bolehMemutuskan={hasPermission(
         session.user.permissions ?? [],

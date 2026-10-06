@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
+import { kunciHariWib } from "@/lib/dashboard/tren";
 import {
   bacaBulan,
   bolehMelihatBiaya,
@@ -7,10 +9,11 @@ import {
   bolehMenyetujuiBiaya,
   daftarBulanTerakhir,
   labelBulan,
+  ringkasPerStatus,
   STATUS_BIAYA,
   type StatusBiaya,
 } from "@/lib/salesman/biaya";
-import { daftarBiayaKantor } from "@/lib/salesman/biaya-queries";
+import { daftarBiayaKantor, type BarisBiayaKantor } from "@/lib/salesman/biaya-queries";
 import { daftarSalesman } from "@/lib/salesman/queries";
 import { BiayaPerjalananClient } from "./BiayaPerjalananClient";
 
@@ -19,6 +22,30 @@ export const dynamic = "force-dynamic";
 type PageProps = {
   searchParams: Promise<{ bulan?: string; status?: string; salesman?: string }>;
 };
+
+/** `?bulan=semua`: semua bulan — tautan Beranda ke klaim yang menunggu, berapa pun umurnya. */
+const SEMUA_BULAN = "semua";
+
+/**
+ * Daftar kantor lintas bulan: `daftarBiayaKantor` per bulan yang punya klaim
+ * yang cocok, lalu digabung — urutan "yang menunggu tindakan di atas" tetap.
+ */
+async function daftarBiayaSemuaBulan(saring: { status: StatusBiaya | null; salesmanId: string | null }) {
+  const tanggal = await prisma.expenseClaim.findMany({
+    where: {
+      ...(saring.status ? { status: saring.status } : {}),
+      ...(saring.salesmanId ? { userId: saring.salesmanId } : {}),
+    },
+    select: { spentAt: true },
+  });
+  const bulanAda = [...new Set(tanggal.map((r) => kunciHariWib(r.spentAt).slice(0, 7)))].sort().reverse();
+  const perBulan = await Promise.all(bulanAda.map((bulan) => daftarBiayaKantor({ bulan, ...saring })));
+  const bobot: Record<string, number> = { DIAJUKAN: 0, DISETUJUI: 1 };
+  const baris: BarisBiayaKantor[] = perBulan
+    .flatMap((d) => d.baris)
+    .sort((a, b) => (bobot[a.status] ?? 2) - (bobot[b.status] ?? 2));
+  return { baris, ...ringkasPerStatus(baris) };
+}
 
 /**
  * Biaya perjalanan salesman — kantor. Atasan menyetujui/menolak, keuangan
@@ -33,13 +60,17 @@ export default async function BiayaPerjalananPage({ searchParams }: PageProps) {
 
   const sp = await searchParams;
   const sekarang = new Date();
-  const bulan = bacaBulan(sp.bulan, sekarang);
+  const semuaBulan = sp.bulan === SEMUA_BULAN;
+  const bulan = semuaBulan ? SEMUA_BULAN : bacaBulan(sp.bulan, sekarang);
   const status = STATUS_BIAYA.includes(sp.status as StatusBiaya) ? (sp.status as StatusBiaya) : null;
   const salesmanId = sp.salesman?.trim() || null;
 
-  const [data, salesman] = await Promise.all([daftarBiayaKantor({ bulan, status, salesmanId }), daftarSalesman()]);
+  const [data, salesman] = await Promise.all([
+    semuaBulan ? daftarBiayaSemuaBulan({ status, salesmanId }) : daftarBiayaKantor({ bulan, status, salesmanId }),
+    daftarSalesman(),
+  ]);
   const pilihan = daftarBulanTerakhir(12, sekarang);
-  if (!pilihan.includes(bulan)) pilihan.push(bulan);
+  if (!semuaBulan && !pilihan.includes(bulan)) pilihan.push(bulan);
 
   return (
     <BiayaPerjalananClient

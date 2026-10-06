@@ -16,6 +16,7 @@ import { letakAlasanBuktiTerima } from "@/lib/pwa/offline/bukti-terima-classify"
 import { PERISTIWA_ANTREAN } from "@/lib/pwa/offline/hitung";
 import { cn } from "@/lib/utils";
 import { LembarBuktiTerima, type SasaranBuktiTerima } from "./LembarBuktiTerima";
+import { BarisTerimaToko, type TerimaTokoTampil } from "./TerimaToko";
 
 /** Satu pengiriman seperti yang ditampilkan HP — semua tanggal sudah diformat server (WIB). */
 export type KirimanTampil = {
@@ -28,6 +29,8 @@ export type KirimanTampil = {
   receivedByName: string | null;
   diterima: string | null;
   podPhotoUrl: string | null;
+  /** Hasil hitung SPG di toko atas pengiriman ini; null = belum dihitung (atau toko tanpa SPG). */
+  terimaToko?: TerimaTokoTampil | null;
 };
 
 /**
@@ -112,6 +115,8 @@ export function BuktiTerimaPengiriman({
                   {diterima ? tKeadaan("DITERIMA") : antre ? t("menungguSinyal") : tKeadaan("BELUM_DITERIMA")}
                 </Badge>
               </div>
+
+              {k.terimaToko ? <BarisTerimaToko r={k.terimaToko} /> : null}
 
               {diterima ? (
                 <div className="flex items-center gap-3">

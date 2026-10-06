@@ -343,7 +343,9 @@ export function DashboardPageClient({
                 nilai: piutang.tertahanNilai,
                 format: formatIdr,
                 konteks: tDashboard('kpiHeldCtx'),
-                href: '/backoffice/retur-toko',
+                // Nilainya keadaan piutang `tertahan` — daftar piutang dengan
+                // saringan yang sama, bukan daftar retur yang tak tersaring.
+                href: '/backoffice/piutang?keadaan=tertahan',
                 nada: piutang.tertahanNilai > 0 ? 'perhatian' : 'netral',
               },
             ]}

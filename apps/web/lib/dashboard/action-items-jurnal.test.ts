@@ -12,6 +12,8 @@ const { hitung, hitungMentah } = vi.hoisted(() => ({
   hitungMentah: vi.fn(async () => 7),
 }));
 vi.mock("@/lib/finance/jurnal-tertunda", () => ({ hitungJurnalTertunda: hitung }));
+// Antrean kantor (koreksi BKM/retur) tidak dihitung `getActionItemCounts`.
+vi.mock("@/lib/receivables/koreksi", () => ({ koreksiTertunda: vi.fn() }));
 vi.mock("@elorae/db", () => ({
   prisma: {
     fieldSalesOrder: { count: vi.fn(async () => 0) },

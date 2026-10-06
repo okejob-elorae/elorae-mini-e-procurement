@@ -56,7 +56,8 @@ describe("mintaKirimanAction", () => {
   });
 
   it("refuses an unknown reason before reaching the writer", async () => {
-    const r = await mintaKirimanAction({ ...ISI, baris: [{ itemId: "i1", variantSku: null, qty: 1, alasan: "DICARI_PEMBELI" }] });
+    // DICARI_PEMBELI kini alasan sah (dari layar barang dicari) — contohnya harus benar-benar asing.
+    const r = await mintaKirimanAction({ ...ISI, baris: [{ itemId: "i1", variantSku: null, qty: 1, alasan: "BUKAN_ALASAN" }] });
     expect(r).toEqual({ ok: false, code: "VALIDATION" });
     expect(state.dipanggil).toHaveLength(0);
   });

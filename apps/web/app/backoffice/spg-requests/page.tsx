@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { formatDisplayDateTime } from "@/lib/date-only";
 import { daftarPermintaanKiriman, type PermintaanKiriman, type StatusPermintaan } from "@/lib/spg/kantor-queries";
+import { idTokoTanpaPemegang } from "@/lib/dashboard/antrean-kantor";
 import { PermintaanKirimanClient, type BarisPermintaan, type SaringanPermintaan } from "./PermintaanKirimanClient";
 
 export const dynamic = "force-dynamic";
@@ -22,17 +23,22 @@ const BATAS_KUERI = 200;
 export default async function PermintaanKirimanPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; pemegang?: string }>;
 }) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
   const izin = session.user.permissions ?? [];
-  if (!hasPermission(izin, PERMISSIONS.SPG_SALES_VIEW)) redirect("/backoffice");
+  // Any-of: kantor yang dikabari permintaan toko tanpa pemegang (`stores:manage`)
+  // harus bisa membuka halaman yang ditautkan kabarnya.
+  if (!hasPermission(izin, PERMISSIONS.SPG_SALES_VIEW) && !hasPermission(izin, PERMISSIONS.STORES_MANAGE)) redirect("/backoffice");
 
   const sp = await searchParams;
   const saringan: SaringanPermintaan = SARINGAN.includes(sp.status as SaringanPermintaan)
     ? (sp.status as SaringanPermintaan)
     : "aktif";
+  // `?pemegang=tanpa`: hanya toko tanpa salesman pemegang — permintaannya tidak
+  // masuk kotak masuk HP siapa pun, jadi kantor yang menanganinya (tautan Beranda).
+  const tanpaPemegang = sp.pemegang === "tanpa";
 
   // Tab "perlu ditangani" selalu dimuat: jumlahnya ditampilkan di tab walau
   // yang dibuka tab lain, supaya antrean yang menumpuk tetap terlihat.
@@ -54,9 +60,15 @@ export default async function PermintaanKirimanPage({
     terpotong = rows.length >= BATAS_KUERI;
   }
 
+  // Toko tanpa pemegang ditandai di setiap baris (dan disaring bila diminta):
+  // permintaannya hanya sampai ke kantor, tidak ada salesman yang menanganinya.
+  const tanpa = await idTokoTanpaPemegang();
+  if (tanpaPemegang) rows = rows.filter((r) => tanpa.has(r.toko.id));
+
   const baris: BarisPermintaan[] = rows.map((r) => ({
     id: r.id,
     toko: r.toko.name,
+    tanpaPemegang: tanpa.has(r.toko.id),
     peminta: r.peminta,
     status: r.status,
     catatan: r.catatan,
@@ -71,6 +83,7 @@ export default async function PermintaanKirimanPage({
   return (
     <PermintaanKirimanClient
       saringan={saringan}
+      tanpaPemegang={tanpaPemegang}
       baris={baris}
       jumlahAktif={baru.length + diproses.length}
       terpotong={terpotong}

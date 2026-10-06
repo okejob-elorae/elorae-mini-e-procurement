@@ -4,6 +4,7 @@ import { aggregateInventoryValues } from "@/lib/items/queries";
 import { getPrimaryImagesBatch } from "@/lib/items/images/queries";
 import { sentItemIds } from "@/lib/field-sales/queries";
 import { parseItemVariants, variantSelectOptions } from "@/lib/items/variants";
+import { saldoBarangToko } from "@/lib/spg/titip-saldo";
 
 export type CatalogItem = {
   itemId: string;
@@ -17,7 +18,13 @@ export type CatalogItem = {
   priceLabel: string | null;
   neverSent: boolean;
   minOrderQty: number;
-  variants: Array<{ variantSku: string; variantLabel: string; available: number }>;
+  /**
+   * Stok di rak toko (saldo buku stok toko, pcs; boleh negatif). Hanya ada di
+   * katalog HP salesman untuk toko yang punya buku stok dan barang yang pernah
+   * bergerak di sana — tanpa itu kuncinya tidak ada sama sekali.
+   */
+  diRak?: number;
+  variants: Array<{ variantSku: string; variantLabel: string; available: number; diRak?: number }>;
 };
 
 export type CatalogPayload = {
@@ -86,7 +93,52 @@ export function serializeCatalogItem(
   };
 }
 
-export async function listCatalogForPwa(storeId: string): Promise<CatalogPayload | null> {
+export type SaldoRak = { itemId: string; variantSku: string; qty: number };
+
+/** Peta `saldoBarangToko` (`${itemId}::${variantSku}`) → baris saldo. Id barang tidak memuat "::". */
+export function saldoDariPeta(peta: ReadonlyMap<string, number>): SaldoRak[] {
+  return [...peta].map(([kunci, qty]) => {
+    const i = kunci.indexOf("::");
+    return { itemId: kunci.slice(0, i), variantSku: kunci.slice(i + 2), qty };
+  });
+}
+
+/**
+ * Menempelkan saldo buku stok toko ke katalog: `diRak` per barang = Σ semua
+ * baris bukunya (termasuk baris tanpa varian), per varian = saldo varian itu
+ * (0 bila varian itu belum pernah bergerak di toko). Barang yang tidak ada di
+ * buku tidak diberi kunci — bukan "0 di rak", karena toko tidak pernah
+ * mencatatnya. Saldo negatif dibiarkan (aturan buku: opname yang meluruskan).
+ */
+export function tempelStokRak(items: CatalogItem[], saldo: SaldoRak[]): CatalogItem[] {
+  if (saldo.length === 0) return items;
+  const perBarang = new Map<string, { total: number; varian: Map<string, number> }>();
+  for (const s of saldo) {
+    const b = perBarang.get(s.itemId) ?? { total: 0, varian: new Map<string, number>() };
+    b.total += s.qty;
+    if (s.variantSku) b.varian.set(s.variantSku, (b.varian.get(s.variantSku) ?? 0) + s.qty);
+    perBarang.set(s.itemId, b);
+  }
+  return items.map((it) => {
+    const b = perBarang.get(it.itemId);
+    if (!b) return it;
+    return {
+      ...it,
+      diRak: b.total,
+      variants: it.variants.map((v) => ({ ...v, diRak: b.varian.get(v.variantSku) ?? 0 })),
+    };
+  });
+}
+
+/**
+ * `stokRak`: hanya katalog HP salesman yang memintanya (rute `/pwa/api/catalog`).
+ * Pemakai lain — portal toko, kirim katalog WA — tidak menghitungnya, jadi
+ * kolomnya tidak pernah ada di muatan mereka.
+ */
+export async function listCatalogForPwa(
+  storeId: string,
+  opsi: { stokRak?: boolean } = {},
+): Promise<CatalogPayload | null> {
   const store = await prisma.store.findUnique({
     where: { id: storeId },
     select: { id: true, isActive: true, termsType: true, marginPercent: true },
@@ -127,5 +179,7 @@ export async function listCatalogForPwa(storeId: string): Promise<CatalogPayload
     serializeCatalogItem(r, storeCtx, images.get(key(r.id)) ?? null, storeCtx.termsType === "KONSI" ? !sentSet.has(r.id) : false, globalMin),
   );
 
-  return { store: storeCtx, items };
+  // Sekali per muatan: satu groupBy atas buku toko ini (kosong = toko tanpa buku).
+  const rak = opsi.stokRak ? await saldoBarangToko(prisma, store.id, rows.map((r) => r.id)) : new Map<string, number>();
+  return { store: storeCtx, items: tempelStokRak(items, saldoDariPeta(rak)) };
 }

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CheckCircle2, Loader2, MessageCircle, UserRound, XCircle } from "lucide-react";
+import { CheckCircle2, Loader2, MessageCircle, Truck, UserRound, XCircle } from "lucide-react";
 import { tandaiDikabariAction, tutupTitipanAction, type HasilTitipAksi } from "@/app/actions/spg-titip";
 import {
   AlertDialog,
@@ -40,7 +40,17 @@ const KODE_GALAT = new Set(["FORBIDDEN", "NO_ASSIGNED_STORE", "VALIDATION", "TID
  * menyebut tanggal simpan yang sudah tercatat — kirim ulang tidak
  * memperpanjangnya.
  */
-export function RincianTitipClient({ rincian }: { rincian: RincianTitipHp | null }) {
+export function RincianTitipClient({
+  rincian,
+  minta = null,
+}: {
+  rincian: RincianTitipHp | null;
+  /**
+   * "Minta ke salesman" untuk titip pesan yang masih menunggu barangnya;
+   * `dariKatalog` false = barang ditulis bebas, formulirnya terbuka kosong.
+   */
+  minta?: { alamat: string; dariKatalog: boolean } | null;
+}) {
   const t = useTranslations("spgTitip");
   const td = dinamis(t);
   const bahasa = useLocale() === "en" ? "en" : "id";
@@ -197,6 +207,17 @@ export function RincianTitipClient({ rincian }: { rincian: RincianTitipHp | null
             {rincian.status === "DIKABARI" ? t("rincian.kabariLagi") : t("rincian.kabari")}
           </Button>
           <KeteranganKirim teks={rincian.bolehKabari ? null : keteranganKabari} />
+          {minta ? (
+            <div className="space-y-1">
+              <Button asChild variant="outline" size="lg" className="w-full">
+                <Link href={minta.alamat}>
+                  <Truck className="h-4 w-4" aria-hidden />
+                  {t("minta.tombol")}
+                </Link>
+              </Button>
+              {!minta.dariKatalog ? <p className="px-1 text-xs text-muted-foreground">{t("minta.tanpaBarang")}</p> : null}
+            </div>
+          ) : null}
           <div className="grid grid-cols-2 gap-2">
             <Button type="button" variant="outline" className="h-auto min-h-12 whitespace-normal py-2" onClick={() => setSelesaiBuka(true)} disabled={pending}>
               <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />

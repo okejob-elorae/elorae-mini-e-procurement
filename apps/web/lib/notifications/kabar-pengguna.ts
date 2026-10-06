@@ -83,6 +83,16 @@ export const JENIS_KABAR = {
   TUTUP_HARI_PENGINGAT: "TUTUP_HARI_PENGINGAT",
   /** Kantor menetapkan bagian beban barang hilang kepada orang ini (SPG/sales) ({ lossId }). */
   BEBAN_HILANG_DITETAPKAN: "BEBAN_HILANG_DITETAPKAN",
+  /**
+   * Barang benar-benar berangkat ke toko (pengiriman putus dicatat, pesanan konsi disetujui,
+   * titipan konsinyasi dikirim) → setiap SPG toko itu ({ storeId, sourceType, sourceId }).
+   */
+  KIRIMAN_BERANGKAT: "KIRIMAN_BERANGKAT",
+  /**
+   * SPG menerima kiriman KURANG atau dengan barang RUSAK → salesman pengirimnya: salesman
+   * pesanan (putus/konsi), atau pemegang toko untuk titipan ({ orderId?, storeId, sourceType, sourceId }).
+   */
+  KIRIMAN_DITERIMA_SELISIH: "KIRIMAN_DITERIMA_SELISIH",
 } as const;
 
 export type JenisKabar = (typeof JENIS_KABAR)[keyof typeof JENIS_KABAR];

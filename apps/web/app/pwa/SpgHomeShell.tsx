@@ -7,12 +7,12 @@ import {
   Boxes,
   CalendarClock,
   ChevronRight,
+  ClipboardList,
   Clock,
   CloudOff,
   ExternalLink,
   MapPin,
   MoonStar,
-  Palette,
   PackageCheck,
   ScanLine,
   Store as StoreIcon,
@@ -38,10 +38,12 @@ import { TombolKabar } from "./kabar/TombolKabar";
 import { TombolBantuanHp } from "./TombolBantuanHp";
 
 /**
- * Beranda SPG — satu toko tetap, disusun menurut hari kerjanya:
- * absen, apa yang harus dikerjakan (kiriman datang, stok menipis), tombol
- * jual, lalu angka-angka pribadinya (bulan ini vs target, terlaris, nota hari
- * ini, gaji & komisi). Semua jam dan tanggal sudah diformat di server.
+ * Beranda SPG — satu toko tetap, disusun menurut hari kerjanya: angka bulan
+ * ini, absen, tombol JUAL tepat di bawahnya, apa yang harus dikerjakan (kiriman
+ * datang, pesanan untuk toko, stok menipis), angka-angka pribadinya (terlaris,
+ * nota hari ini, gaji & komisi), lalu check-out PALING BAWAH — jauh dari tombol
+ * Jual, supaya salah ketuk tidak pernah menutup kunjungan. Semua jam dan tanggal
+ * dari server sudah diformat di server.
  */
 
 export type DataBerandaSpg = {
@@ -59,6 +61,8 @@ export type DataBerandaSpg = {
   hampirHabis: number;
   stokDilacak: boolean;
   kirimanMenunggu: number;
+  /** Pesanan untuk toko ini yang masih diproses kantor (belum berangkat). */
+  pesananDiproses: number;
   notaHariIni: { id: string; docNo: string; jam: string; total: number; jumlahBarang: number }[];
   gaji: {
     perkiraan: { totalToko: number; bagianSaya: number } | null;
@@ -75,6 +79,9 @@ export type DataBerandaSpg = {
   pengunjung: AwalPengunjung | null;
   userId: string;
 };
+
+/** Jam check-in yang masih di HP — kunjungan lokal dibaca sesudah hidrasi, jadi aman diformat di klien. */
+const JAM_WIB = new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
 
 /** Nota/laporan yang masih di antrean HP (tanpa sinyal) — dibaca di HP, bukan di server. */
 function useBelumTerkirim(): number {
@@ -102,29 +109,42 @@ function useBelumTerkirim(): number {
 export function SpgHomeShell({
   userName,
   data,
-  onLogout,
   kembali = null,
 }: {
   userName: string;
   data: DataBerandaSpg;
-  onLogout: () => Promise<void>;
   /** Layar asal yang meminta check-in; sesudah check-in SPG dikembalikan ke sana. */
   kembali?: string | null;
 }) {
   const t = useTranslations("pwa.spgBeranda");
-  const tTampilan = useTranslations("pwa.tampilan");
   const tMenu = useTranslations("pwaMenu");
   const { toko, kunjungan } = data;
   // Check-in yang dicatat tanpa sinyal (masih di HP) juga membuka layar jual:
   // nota di kunjungan itu ikut antrean dan terkirim sesudah check-in-nya.
   const { kunjungan: kunjunganLokal } = useKunjunganLokal(toko.id, { segarkanSaatTerkirim: true });
-  const bisaJual = kunjungan !== null || kunjunganLokalSah(kunjunganLokal);
+  const lokalSah = kunjunganLokalSah(kunjunganLokal) ? kunjunganLokal : null;
+  // Check-in dari hari lain tanpa check-in baru di HP: kartu absen menyuruh check-out lalu
+  // check-in lagi, jadi tombol Jual TIDAK ditawarkan tepat di bawah check-out itu.
+  const kunjunganBasi = kunjungan?.lama === true && lokalSah === null;
+  const bisaJual = (kunjungan !== null && !kunjunganBasi) || lokalSah !== null;
+  // Satu tombol kunjungan: check-in selagi belum bisa menjual (di kartu absen),
+  // check-out sesudahnya (paling bawah). Check-in tanpa sinyal yang sah dirender
+  // `CheckInButton` sebagai kartu kunjungan di HP, lengkap dengan check-out-nya.
+  const tombolKunjungan = kunjungan ? (
+    <CheckOutButton visitId={kunjungan.id} />
+  ) : (
+    <CheckInButton storeId={toko.id} storeName={toko.name} autoCloseStoreName={data.tokoLainTerbuka} kembali={kembali} />
+  );
+  // Check-in yang tertinggal dari hari lain: kartunya menyuruh check-out dulu, jadi
+  // tombolnya tetap di kartu itu — di sini check-out memang langkah berikutnya.
+  const checkoutDiKartu = kunjungan?.lama === true;
 
   const belumTerkirim = useBelumTerkirim();
   const tugas: Tugas[] = [
     { kunci: "antrean", jumlah: belumTerkirim, href: "/pwa/spg/antrean", label: t("taskQueue"), ikon: CloudOff, mendesak: true },
     { kunci: "titip", jumlah: data.titipDatang, href: "/pwa/spg/titip", label: t("taskHoldArrived"), ikon: BellRing },
     { kunci: "terima", jumlah: data.kirimanMenunggu, href: "/pwa/spg/terima", label: t("taskReceive"), ikon: PackageCheck },
+    { kunci: "pesanan", jumlah: data.pesananDiproses, href: "/pwa/spg/terima#pesanan-toko", label: t("taskOrdersComing"), ikon: ClipboardList },
     { kunci: "tukar", jumlah: data.tukarMasuk, href: "/pwa/spg/jadwal", label: t("taskSwap"), ikon: CalendarClock },
     { kunci: "tutup", jumlah: data.tutupPerlu ? 1 : 0, href: "/pwa/spg/tutup", label: t("taskClose"), ikon: MoonStar },
     { kunci: "habis", jumlah: data.stokDilacak ? data.hampirHabis : 0, href: "/pwa/spg/stok?saring=habis", label: t("taskLowStock"), ikon: Boxes },
@@ -141,15 +161,12 @@ export function SpgHomeShell({
           </h1>
           <p className="text-sm text-muted-foreground">{data.hariIniLabel}</p>
         </div>
-        <div className="-mr-2 flex shrink-0 items-center">
+        {/* Hanya ⓘ dan lonceng, sama dengan beranda salesman. Tema dan Keluar ada di
+            Lainnya (menu bawah): empat ikon berdempet menjepit sapaan, dan tombol
+            keluar di sebelah lonceng mudah tersentuh tanpa sengaja. */}
+        <div className="-mr-2 flex shrink-0 items-center gap-1">
           <TombolBantuanHp judul={tMenu("beranda")} />
           <TombolKabar />
-          <Button asChild variant="ghost" size="icon" aria-label={tTampilan("title")}>
-            <Link href="/pwa/tampilan">
-              <Palette className="h-5 w-5" />
-            </Link>
-          </Button>
-          <TombolKeluar onLogout={onLogout} />
         </div>
       </header>
 
@@ -185,8 +202,8 @@ export function SpgHomeShell({
         </div>
       </section>
 
-      {/* Absen: masuk (check-in GPS) dan pulang, di toko tetapnya. */}
-      <section className="beranda-kartu space-y-3" style={kunjungan ? { borderColor: "var(--primary)", borderWidth: 2 } : undefined}>
+      {/* Absen masuk (check-in GPS) di toko tetapnya. Pulang (check-out) ada paling bawah. */}
+      <section className="beranda-kartu space-y-3" style={bisaJual ? { borderColor: "var(--primary)", borderWidth: 2 } : undefined}>
         <div className="flex items-start gap-3">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground">
             <StoreIcon className="h-5 w-5" aria-hidden />
@@ -216,7 +233,9 @@ export function SpgHomeShell({
           <span className="min-w-0">
             {kunjungan
               ? t(kunjungan.lama ? "checkedInEarlier" : "checkedInAt", { time: kunjungan.jamMasuk })
-              : t("notCheckedIn")}{" "}
+              : lokalSah
+                ? t("checkedInAt", { time: JAM_WIB.format(lokalSah.waktu) })
+                : t("notCheckedIn")}{" "}
             <span className="text-muted-foreground">· {t("daysThisMonth", { count: data.hariMasuk })}</span>
           </span>
         </p>
@@ -237,13 +256,21 @@ export function SpgHomeShell({
             </AlertDescription>
           </Alert>
         ) : null}
-        {!kunjungan && kembali ? <p className="text-sm text-muted-foreground">{t("checkInReturns")}</p> : null}
-        {kunjungan ? (
-          <CheckOutButton visitId={kunjungan.id} />
-        ) : (
-          <CheckInButton storeId={toko.id} storeName={toko.name} autoCloseStoreName={data.tokoLainTerbuka} kembali={kembali} />
-        )}
+        {!bisaJual && kembali ? <p className="text-sm text-muted-foreground">{t("checkInReturns")}</p> : null}
+        {!bisaJual || checkoutDiKartu ? tombolKunjungan : null}
       </section>
+
+      {/* Tombol utama hari kerja SPG, langsung di bawah absen. Tanpa check-in, alasannya disebut. */}
+      {bisaJual ? (
+        <Button asChild size="lg" className="h-14 w-full text-base">
+          <Link href="/pwa/spg/sale">
+            <ScanLine className="h-5 w-5" />
+            {t("sell")}
+          </Link>
+        </Button>
+      ) : (
+        <p className="rounded-lg bg-muted/60 px-4 py-3 text-center text-sm text-muted-foreground">{t("sellNeedsCheckin")}</p>
+      )}
 
       <KartuPengumuman data={data.pengumuman} />
 
@@ -265,18 +292,6 @@ export function SpgHomeShell({
           </div>
         </section>
       ) : null}
-
-      {/* Tombol utama hari kerja SPG. Tanpa check-in, alasannya disebut. */}
-      {bisaJual ? (
-        <Button asChild size="lg" className="h-14 w-full text-base">
-          <Link href="/pwa/spg/sale">
-            <ScanLine className="h-5 w-5" />
-            {t("sell")}
-          </Link>
-        </Button>
-      ) : (
-        <p className="rounded-lg bg-muted/60 px-4 py-3 text-center text-sm text-muted-foreground">{t("sellNeedsCheckin")}</p>
-      )}
 
       <section className="beranda-kartu">
         <h2 className="beranda-judul">{t("bestTitle")}</h2>
@@ -343,6 +358,19 @@ export function SpgHomeShell({
         </span>
         <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
       </Link>
+
+      {/* Check-out PALING BAWAH, terpisah jauh dari tombol Jual (dulu tepat di atasnya).
+          Kunjungan yang check-in-nya masih di HP membawa kartunya sendiri. */}
+      {kunjungan && !checkoutDiKartu ? (
+        <section className="beranda-kartu space-y-3" aria-labelledby="judul-selesai-kerja">
+          <h2 id="judul-selesai-kerja" className="beranda-judul">
+            {t("checkoutTitle")}
+          </h2>
+          {tombolKunjungan}
+        </section>
+      ) : !kunjungan && lokalSah ? (
+        tombolKunjungan
+      ) : null}
     </div>
   );
 }

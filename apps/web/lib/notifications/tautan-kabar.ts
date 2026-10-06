@@ -127,6 +127,12 @@ const TAUTAN: Record<JenisKabar, Pembuat> = {
   KIRIMAN_RUSAK_DIPUTUSKAN: () => "/pwa/spg/terima",
   TUTUP_HARI_PENGINGAT: () => "/pwa/spg/tutup",
   BEBAN_HILANG_DITETAPKAN: () => "/pwa/beban",
+  // Barang baru berangkat — belum bisa diterima sebelum tiba, jadi ke daftar kiriman (dan
+  // "Pesanan untuk toko ini"), bukan ke formulir terima satu kiriman.
+  KIRIMAN_BERANGKAT: () => "/pwa/spg/terima",
+  // Hasil terima kiriman ke salesman: pesanannya (putus/konsi) — di sana tampil "Diterima toko";
+  // titipan konsinyasi tidak punya pesanan, jadi ke halaman tokonya.
+  KIRIMAN_DITERIMA_SELISIH: (d) => (id(d, "orderId") ? pesanan(d) : id(d, "storeId") ? toko(d) : "/pwa/orders"),
 };
 
 /**

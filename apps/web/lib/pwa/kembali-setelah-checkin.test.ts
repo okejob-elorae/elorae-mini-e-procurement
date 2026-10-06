@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { UMUR_TITIPAN_MS, bacaTitipan, isiTitipan, kembaliAman, tautanCheckInLaluKembali } from "./kembali-setelah-checkin";
+import {
+  TUJUAN_BERANDA,
+  UMUR_TITIPAN_MS,
+  bacaTitipan,
+  isiTitipan,
+  kembaliAman,
+  tautanCheckInLaluKembali,
+  tujuanSesudahCheckIn,
+} from "./kembali-setelah-checkin";
 
 describe("kembaliAman", () => {
   it("accepts screens inside the phone app, keeping their query", () => {
@@ -68,5 +76,38 @@ describe("bacaTitipan", () => {
     expect(bacaTitipan(null, "toko-1", sekarang)).toBeNull();
     expect(bacaTitipan("{not json", "toko-1", sekarang)).toBeNull();
     expect(bacaTitipan(JSON.stringify({ storeId: "toko-1", kembali: "/pwa/spg/opname" }), "toko-1", sekarang)).toBeNull();
+  });
+});
+
+describe("tujuanSesudahCheckIn (SPG mendarat di mana sesudah check-in)", () => {
+  it("keeps the screen that asked for the check-in", () => {
+    expect(tujuanSesudahCheckIn("/pwa/spg/opname")).toBe("/pwa/spg/opname");
+    expect(tujuanSesudahCheckIn("/pwa/spg/terima/PUTUS/abc")).toBe("/pwa/spg/terima/PUTUS/abc");
+  });
+
+  it("without a screen (or with an unsafe one) lands on the SPG home, where the Sell button is", () => {
+    expect(tujuanSesudahCheckIn(null)).toBe(TUJUAN_BERANDA);
+    expect(tujuanSesudahCheckIn(undefined)).toBe(TUJUAN_BERANDA);
+    expect(tujuanSesudahCheckIn("https://evil.example")).toBe(TUJUAN_BERANDA);
+    expect(TUJUAN_BERANDA).toBe("/pwa");
+  });
+
+  it("a note left for the home page is read back as the home page, still bound to its store and age", () => {
+    const sekarang = 2_000_000_000;
+    expect(bacaTitipan(isiTitipan("toko-1", TUJUAN_BERANDA, sekarang - 1_000), "toko-1", sekarang)).toBe("/pwa");
+    expect(bacaTitipan(isiTitipan("toko-2", TUJUAN_BERANDA, sekarang - 1_000), "toko-1", sekarang)).toBeNull();
+    expect(bacaTitipan(isiTitipan("toko-1", TUJUAN_BERANDA, sekarang - UMUR_TITIPAN_MS - 1), "toko-1", sekarang)).toBeNull();
+  });
+
+  it("the home page is accepted only exactly — not a lookalike outside the phone app", () => {
+    const sekarang = 2_000_000_000;
+    for (const v of ["/pwa?x=//evil", "/pwax", "/pwa/../backoffice", "//pwa", "/PWA"]) {
+      const dibaca = bacaTitipan(isiTitipan("toko-1", v, sekarang), "toko-1", sekarang);
+      expect(dibaca === null || dibaca.startsWith("/pwa/"), v).toBe(true);
+    }
+  });
+
+  it("`?kembali=` from a URL still refuses the bare home page", () => {
+    expect(kembaliAman("/pwa")).toBeNull();
   });
 });

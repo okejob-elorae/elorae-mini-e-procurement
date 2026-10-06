@@ -36,6 +36,13 @@ import type { StatusGiro } from '@/lib/receivables/giro';
 import { TombolGiro } from './giro/TombolGiro';
 import { kunciGalatPutusan } from './[id]/putusan-klaim';
 
+export type StatusKlaim = 'DIKIRIM' | 'TERVERIFIKASI' | 'DITOLAK';
+
+/** Saringan dari alamat (`?status=`, `?koreksi=1`) — diterapkan di server. */
+export type SaringKlaim = { status: StatusKlaim | null; koreksi: boolean };
+
+export type JumlahKlaim = Record<StatusKlaim, number> & { semua: number; koreksi: number };
+
 export type BarisKlaim = {
   id: string;
   docNo: string;
@@ -48,6 +55,8 @@ export type BarisKlaim = {
   deductionCount: number;
   status: string;
   verifyNote: string | null;
+  /** Sales meminta koreksi dan kantor belum menindaklanjutinya. */
+  mintaKoreksi: boolean;
   /** Penonton yang melaporkan/mencatatkan BKM ini — tidak boleh memutuskannya. */
   pemeriksaSama: boolean;
   nilaiTertahan: number;
@@ -72,11 +81,16 @@ const NADA: Record<string, StatusTone> = {
 
 export function PelunasanClient({
   baris,
+  saring,
+  jumlah,
   giroMenunggu,
   bolehMemutuskan,
   bolehMengelola,
 }: {
   baris: BarisKlaim[];
+  saring: SaringKlaim;
+  /** Jumlah per saringan atas SEMUA BKM, bukan hanya yang sedang tampil. */
+  jumlah: JumlahKlaim;
   /** Giro yang klaimnya masih menunggu cair — angka pada tautan Daftar giro. */
   giroMenunggu: number;
   bolehMemutuskan: boolean;
@@ -89,7 +103,31 @@ export function PelunasanClient({
   const [tolakId, setTolakId] = useState<string | null>(null);
   const [alasan, setAlasan] = useState('');
 
-  const menunggu = baris.filter((b) => b.status === 'DIKIRIM').length;
+  const menunggu = jumlah.DIKIRIM;
+  const disaring = saring.status !== null || saring.koreksi;
+  // Satu saringan aktif pada satu waktu; `replace` supaya "Kembali" tidak
+  // berjalan mundur melewati setiap pilihan.
+  const pilihan: { kunci: string; label: string; n: number; href: string; aktif: boolean }[] = [
+    { kunci: 'semua', label: t('filterAll'), n: jumlah.semua, href: '/backoffice/pelunasan', aktif: !disaring },
+    ...(['DIKIRIM', 'TERVERIFIKASI', 'DITOLAK'] as const).map((s) => ({
+      kunci: s,
+      label: t(`status${s}` as never),
+      n: jumlah[s],
+      href: `/backoffice/pelunasan?status=${s}`,
+      aktif: saring.status === s && !saring.koreksi,
+    })),
+    ...(jumlah.koreksi > 0 || saring.koreksi
+      ? [
+          {
+            kunci: 'koreksi',
+            label: t('filterKoreksi'),
+            n: jumlah.koreksi,
+            href: '/backoffice/pelunasan?koreksi=1',
+            aktif: saring.koreksi,
+          },
+        ]
+      : []),
+  ];
 
   const putuskan = (id: string, keputusan: 'TERVERIFIKASI' | 'DITOLAK', catatan?: string) => {
     startTransition(async () => {
@@ -109,7 +147,7 @@ export function PelunasanClient({
     <div className="space-y-6">
       <PageHeader
         title={t('pageTitle')}
-        meta={t('summary', { count: baris.length, pending: menunggu })}
+        meta={t('summary', { count: jumlah.semua, pending: menunggu })}
         actions={
           <span className="inline-flex flex-wrap gap-2">
             <Button variant="outline" asChild>
@@ -130,10 +168,32 @@ export function PelunasanClient({
         }
       />
 
+      <div className="flex flex-wrap gap-2" role="group" aria-label={t('filterLabel')}>
+        {pilihan.map((p) => (
+          <Link
+            key={p.kunci}
+            href={p.href}
+            replace
+            aria-current={p.aktif ? 'true' : undefined}
+            className={cn(
+              'rounded-full border px-3 py-1.5 text-sm transition-colors',
+              p.aktif ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted',
+            )}
+          >
+            {p.label}
+            <span className="ml-2 tabular-nums text-muted-foreground">{p.n}</span>
+          </Link>
+        ))}
+      </div>
+
       <Card>
         <CardContent className={baris.length === 0 ? 'p-0' : 'px-0'}>
           {baris.length === 0 ? (
-            <EmptyState icon={Wallet} title={t('emptyTitle')} description={t('emptyBody')} />
+            disaring ? (
+              <EmptyState icon={Wallet} title={t('emptyFilteredTitle')} />
+            ) : (
+              <EmptyState icon={Wallet} title={t('emptyTitle')} description={t('emptyBody')} />
+            )
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -198,6 +258,11 @@ export function PelunasanClient({
                         >
                           {t(`status${b.status}` as never)}
                         </StatusPill>
+                        {b.mintaKoreksi && (
+                          <span className="mt-1 block text-xs font-medium text-amber-700 dark:text-amber-300">
+                            {t('filterKoreksi')}
+                          </span>
+                        )}
                         {b.giro && (
                           <span
                             className={cn(

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -11,31 +11,35 @@ import { useTranslations } from 'next-intl';
 import { formatDistanceToNow } from 'date-fns';
 import { getNotificationHref } from '@/lib/notifications/navigation';
 import { cn } from '@/lib/utils';
+import {
+  dariHalamanPertama,
+  tandaiSatuDibaca,
+  tandaiSemuaDibaca,
+  tempelHalaman,
+  type ItemLonceng,
+  type JawabanLonceng,
+  type KeadaanLonceng,
+} from './keadaan-lonceng';
 
 export const NOTIFICATION_RECEIVED_EVENT = 'notification-received';
 
-export interface NotificationItem {
-  id: string;
-  type: string;
-  title: string;
-  body: string;
-  data: Record<string, unknown> | null;
-  readAt: string | null;
-  createdAt: string;
-}
-
-interface NotificationsResponse {
-  items: NotificationItem[];
-  unreadCount: number;
-}
+export type NotificationItem = ItemLonceng;
 
 function NotificationInbox({
   items,
   onItemClick,
+  hasMore,
+  loadingMore,
+  loadMoreFailed,
+  onLoadMore,
   t,
 }: {
   items: NotificationItem[];
   onItemClick: (item: NotificationItem) => void;
+  hasMore: boolean;
+  loadingMore: boolean;
+  loadMoreFailed: boolean;
+  onLoadMore: () => void;
   t: (key: string) => string;
 }) {
   if (items.length === 0) {
@@ -72,6 +76,18 @@ function NotificationInbox({
           );
         })}
       </ul>
+      {hasMore && (
+        <div className="flex flex-col items-center gap-2 px-4 py-3">
+          {loadMoreFailed && (
+            <p role="alert" className="text-center text-sm text-destructive">
+              {t('notifications.loadMoreFailed')}
+            </p>
+          )}
+          <Button variant="outline" size="sm" className="w-full" onClick={onLoadMore} disabled={loadingMore}>
+            {loadingMore ? t('common.loading') : t('notifications.loadMore')}
+          </Button>
+        </div>
+      )}
     </ScrollArea>
   );
 }
@@ -80,30 +96,81 @@ export function NotificationIcon() {
   const t = useTranslations();
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [data, setData] = useState<NotificationsResponse | null>(null);
+  const [data, setData] = useState<KeadaanLonceng | null>(null);
   const [loading, setLoading] = useState(false);
   const [sendTestLoading, setSendTestLoading] = useState(false);
   const [markAllLoading, setMarkAllLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreFailed, setLoadMoreFailed] = useState(false);
+  /*
+   * `generasi` naik setiap kali halaman pertama dimuat ulang (panel dibuka,
+   * notifikasi baru masuk); hanya muatan terbaru yang boleh menulis daftar.
+   * `lanjut` ikut naik, dan juga naik saat "Tandai semua dibaca": halaman
+   * lanjutan yang sedang dimuat lalu dibuang — kursornya milik daftar lama
+   * (menempelkannya bisa melompati baris), atau barisnya terbaca sebelum
+   * penandaan dan akan tampil "belum dibaca" di samping lencana nol.
+   */
+  const generasi = useRef(0);
+  const lanjut = useRef(0);
+  /** Halaman pertama sedang dimuat (dipakai "Tandai semua dibaca"). */
+  const memuatPertama = useRef(false);
 
   const fetchNotifications = useCallback(async () => {
+    const gen = ++generasi.current;
+    lanjut.current += 1;
+    memuatPertama.current = true;
     setLoading(true);
     try {
       const res = await fetch('/api/notifications');
-      if (res.ok) {
-        const json: NotificationsResponse = await res.json();
-        setData(json);
+      if (res.ok && gen === generasi.current) {
+        const json: JawabanLonceng = await res.json();
+        // Muatan yang lebih baru bisa dimulai selama jawaban ini dibaca.
+        if (gen === generasi.current) {
+          setData(dariHalamanPertama(json));
+          setLoadMoreFailed(false);
+        }
       }
+    } catch {
+      // Tanpa sinyal: daftar lama tetap tampil.
     } finally {
-      setLoading(false);
+      if (gen === generasi.current) {
+        memuatPertama.current = false;
+        setLoading(false);
+      }
     }
   }, []);
 
+  const loadMore = async () => {
+    const cursor = data?.nextCursor;
+    if (!cursor || loadingMore) return;
+    const gen = lanjut.current;
+    setLoadingMore(true);
+    setLoadMoreFailed(false);
+    try {
+      const res = await fetch(`/api/notifications?cursor=${encodeURIComponent(cursor)}`);
+      if (gen !== lanjut.current) return;
+      if (!res.ok) {
+        setLoadMoreFailed(true);
+        return;
+      }
+      const json: JawabanLonceng = await res.json();
+      if (gen !== lanjut.current) return;
+      setData((prev) => (prev ? tempelHalaman(prev, json) : prev));
+    } catch {
+      if (gen === lanjut.current) setLoadMoreFailed(true);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mengambil dari server (sistem luar) saat terpasang
     fetchNotifications();
   }, [fetchNotifications]);
 
   useEffect(() => {
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- panel dibuka = baca ulang dari server
       fetchNotifications();
     }
   }, [open, fetchNotifications]);
@@ -118,17 +185,7 @@ export function NotificationIcon() {
     const href = getNotificationHref(item.type, item.data);
     try {
       await fetch(`/api/notifications/${item.id}/read`, { method: 'PATCH' });
-      setData((prev) =>
-        prev
-          ? {
-              ...prev,
-              items: prev.items.map((i) =>
-                i.id === item.id ? { ...i, readAt: new Date().toISOString() } : i
-              ),
-              unreadCount: Math.max(0, prev.unreadCount - 1),
-            }
-          : null
-      );
+      setData((prev) => (prev ? tandaiSatuDibaca(prev, item.id, new Date().toISOString()) : null));
     } catch {
       // ignore
     }
@@ -138,21 +195,23 @@ export function NotificationIcon() {
     }
   };
 
+  /*
+   * Endpoint-nya menandai SEMUA milik pengguna, bukan hanya yang termuat — jadi
+   * lencana boleh langsung nol, dan halaman yang dimuat sesudahnya pun terbaca.
+   */
   const handleMarkAllRead = async () => {
     setMarkAllLoading(true);
     try {
       const res = await fetch('/api/notifications/read-all', { method: 'POST' });
       if (res.ok) {
-        setData((prev) =>
-          prev
-            ? {
-                ...prev,
-                items: prev.items.map((i) => ({ ...i, readAt: new Date().toISOString() })),
-                unreadCount: 0,
-              }
-            : null
-        );
+        lanjut.current += 1;
+        setData((prev) => (prev ? tandaiSemuaDibaca(prev, new Date().toISOString()) : null));
+        // Halaman pertama yang sedang dimuat bisa terbaca server SEBELUM penandaan
+        // dan menimpa lencana nol dengan angka lama — muat ulang sesudahnya.
+        if (memuatPertama.current) void fetchNotifications();
       }
+    } catch {
+      // Gagal tersambung: tidak ada yang berubah di server, daftar dibiarkan.
     } finally {
       setMarkAllLoading(false);
     }
@@ -215,6 +274,10 @@ export function NotificationIcon() {
             <NotificationInbox
               items={data?.items ?? []}
               onItemClick={handleItemClick}
+              hasMore={Boolean(data?.nextCursor)}
+              loadingMore={loadingMore}
+              loadMoreFailed={loadMoreFailed}
+              onLoadMore={() => void loadMore()}
               t={(key) => t(key)}
             />
           )}

@@ -19,8 +19,19 @@ const HARI_MS = 86_400_000;
  *   BARANG_BARU       — barang baru yang belum pernah ada di toko ini;
  *   LAKU_DI_SINI      — dari analisa toko sendiri (hampir habis, dicari pembeli);
  *   MANUAL            — dipilih sendiri dari pencarian.
+ * Dua lagi khusus permintaan SPG (kolomnya string bebas, rekomendasi tidak memakainya):
+ *   DICARI_PEMBELI    — dari catatan "barang dicari" (`LostSale`);
+ *   TITIP_PEMBELI     — dari "titip pesan" pembeli yang menunggu barangnya (`CustomerRequest`).
  */
-export const ALASAN_PERMINTAAN = ["LAKU_DI_TOKO_LAIN", "SERING_DIKIRIM", "BARANG_BARU", "LAKU_DI_SINI", "MANUAL"] as const;
+export const ALASAN_PERMINTAAN = [
+  "LAKU_DI_TOKO_LAIN",
+  "SERING_DIKIRIM",
+  "BARANG_BARU",
+  "LAKU_DI_SINI",
+  "MANUAL",
+  "DICARI_PEMBELI",
+  "TITIP_PEMBELI",
+] as const;
 export type AlasanPermintaan = (typeof ALASAN_PERMINTAAN)[number];
 
 /** Tiga kelompok saran di formulir minta kiriman, urut tampil. */

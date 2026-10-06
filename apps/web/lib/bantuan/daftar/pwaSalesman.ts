@@ -9,6 +9,8 @@ export const ENTRI: EntriBantuan[] = [
       "Katalog barang untuk membuat pesanan toko. Isi jumlah di kartu barang (barang bervarian lewat Pilih varian), tekan Tinjau untuk memeriksa keranjang, lalu Kirim; pesanan menunggu persetujuan kantor. Pesanan hanya bisa dibuat saat Anda check-in di toko ini, kecuali pesanan jarak jauh (WhatsApp atau telepon) bila kantor mengizinkannya.",
       "Di toko putus harga dihitung server dari harga toko, lalu promo, minimum pesan, dan batas kredit toko diterapkan. Bila toko meminta harga lain, tekan Ajukan Harga di layar tinjau dan tulis alasannya — kantor menetapkan harga akhirnya saat menyetujui. Di toko konsinyasi katalog tidak menampilkan harga; tombol Sarankan produk baru menambahkan barang tanpa varian yang belum pernah dikirim ke toko itu dan masih ada stoknya.",
       "Keranjang bisa terisi otomatis dari pesanan terakhir, permintaan SPG, rekomendasi yang diterima toko, atau pesanan yang sedang Anda ubah — periksa dulu sebelum mengirim. Barang yang stoknya habis atau sudah tidak dijual dilewati; di toko putus, barang yang belum punya harga juga tidak dimasukkan (namanya disebut) dan tidak bisa dipesan sampai kantor menetapkan harganya. Tanpa sinyal, pesanan disimpan di HP dan dikirim otomatis saat online.",
+      "Jumlah bisa diketik langsung di kotak angka di antara tombol − dan +. Angka di atas stok tersedia diubah menjadi stok itu (di pre-order: batas pesanan); 0 atau kosong mengeluarkan barang dari keranjang. Di lembar varian, tombol +1 pack menambah setiap ukuran menurut rasio pack yang diatur kantor (Pengaturan → Rasio Pack), per warna bila barangnya punya beberapa warna; ukuran yang stoknya kurang diisi sebanyak stok yang ada dan disebut di bawah tombol. Tombol ini tidak muncul bila rasio pack belum diatur atau varian barangnya tidak bertanda ukuran.",
+      "Keranjang yang belum terkirim tersimpan di HP ini selama aplikasi tidak ditutup, paling lama sehari sejak terakhir diubah, jadi tidak hilang saat Anda membuka layar lain lalu kembali ke katalog toko yang sama — keranjang dipulihkan dengan stok terbaru (jumlah yang melebihi stok sekarang dikurangi). Keranjang dari permintaan SPG, rekomendasi, atau pesanan yang sedang diubah tidak disimpan. Mengirim ulang keranjang yang sama (misalnya sesudah sinyal putus) tidak pernah membuat pesanan kedua. Keranjang dihapus sesudah pesanan terkirim atau masuk antrean, dan saat Anda keluar akun.",
     ],
     kartu: [
       {
@@ -16,6 +18,13 @@ export const ENTRI: EntriBantuan[] = [
         isi: [
           { kunci: "pwa.inden.entryIsi" },
           "Bagian ini muncul di toko putus selama ada pre-order yang dibuka kantor. Katalog pre-order hanya memuat barang pre-order itu, tanpa batas stok; toko konsinyasi tidak memakai pre-order.",
+        ],
+      },
+      {
+        judul: "Di rak",
+        isi: [
+          "Di toko yang punya buku stok SPG, kartu barang dan lembar varian menampilkan Di rak: jumlah potong yang masih ada di rak toko menurut buku itu (kiriman yang diterima SPG, penjualan, retur, mutasi, dan opname). Lihat angka ini sebelum menambah barang yang masih menumpuk di toko. Angkanya hanya potong, juga di toko konsinyasi.",
+          "Angka minus berarti buku toko mencatat lebih banyak yang keluar daripada yang masuk; opname SPG berikutnya meluruskannya. Barang yang belum pernah tercatat di toko itu tidak diberi angka, dan toko tanpa buku stok tidak menampilkan apa-apa. Portal pesan toko tidak pernah menampilkannya.",
         ],
       },
     ],
@@ -216,7 +225,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "payments.newBody" },
       { kunci: "payments.claimNotSettled" },
-      "Yang bisa dipilih hanya piutang yang Anda tagih, sama dengan daftar Tagihan. Tanpa sinyal, laporan dan fotonya disimpan di HP dan terkirim sendiri begitu sinyal kembali. Sesudah terkirim, Anda bisa mengirim tanda terima ke toko lewat WhatsApp.",
+      "Yang bisa dipilih hanya piutang yang Anda tagih, sama dengan daftar Tagihan. Dibuka dari tombol Lapor pelunasan di halaman toko, toko itu langsung terpilih dan fakturnya tampil — kecuali toko itu tidak punya faktur terbuka yang Anda tagih; pilih tokonya sendiri bila belum terpilih. Tanpa sinyal, laporan dan fotonya disimpan di HP dan terkirim sendiri begitu sinyal kembali. Sesudah terkirim, Anda bisa mengirim tanda terima ke toko lewat WhatsApp.",
       { kunci: "pesanToko.tandaTerimaPetunjuk" },
     ],
     kartu: [
@@ -349,6 +358,10 @@ export const ENTRI: EntriBantuan[] = [
       {
         judul: { kunci: "buktiTerima.hp.judulBagian" },
         isi: "Hanya untuk pesanan putus. Setiap pengiriman dari gudang tampil di sini; tekan \"Konfirmasi diterima toko\" untuk mencatat nama penerima dan waktu diterima, beserta foto nota yang sudah ditandatangani atau tanda tangan penerima di layar. Tanpa sinyal, bukti disimpan di HP dan terkirim sendiri; bukti yang sudah tersimpan hanya bisa dikoreksi kantor.",
+      },
+      {
+        judul: "Hitungan SPG di toko",
+        isi: "Di toko yang punya SPG, SPG menghitung setiap kiriman saat tiba. Hasilnya tampil sebagai \"Diterima toko: N dari M pcs\" — di bawah tiap pengiriman untuk pesanan putus, atau sebagai kartu sendiri untuk pesanan konsinyasi — ditambah jumlah yang rusak bila ada; kuning berarti ada yang kurang atau rusak. Angkanya hanya dalam potong, tanpa harga. Bila kiriman diterima kurang atau ada yang rusak, Anda juga mendapat kabar di HP sekali; untuk titipan konsinyasi kabarnya ke pemegang toko dan membuka halaman toko. Kiriman yang belum dihitung SPG, atau toko tanpa SPG, tidak menampilkan apa-apa.",
       },
     ],
   },

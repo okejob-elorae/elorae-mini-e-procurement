@@ -14,12 +14,12 @@ import { mintaKirimanAction } from "@/app/actions/spg-stok";
 import { dinamis } from "@/lib/i18n/dinamis";
 import type { HasilSaranMinta } from "@/lib/spg/saran-minta-queries";
 import type { AlasanPermintaan, BarisTambahan } from "@/lib/spg/saran-minta";
-import { kunciBaris } from "@/lib/spg/stok";
 import { cn } from "@/lib/utils";
 import { cocokCari, type BarisPilihan } from "../barang-pilihan";
 import { newLocalId } from "@/lib/pwa/id-lokal";
 import { bacaDraf, hapusDraf, tulisDraf } from "./draf";
 import { SaranMinta } from "./SaranMinta";
+import { ambilTertunda, susunTambahan, type Tertunda } from "./tambahan";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
 import { KeteranganKirim } from "@/app/pwa/KeteranganKirim";
@@ -50,10 +50,11 @@ const sah = (s: string) => {
  * Formulir minta kiriman SPG. Permintaannya sampai ke kantor DAN ke salesman
  * pemegang toko (kalau ada), yang bisa langsung membuatkan pesanannya.
  *
- * Barang bisa datang dari tiga jalan: saran (laku di toko lain, sering
+ * Barang bisa datang dari empat jalan: saran (laku di toko lain, sering
  * dikirim, barang baru — membawa alasannya), tombol "Minta" di layar analisa
- * (`?tambah=`, alasan LAKU_DI_SINI), atau dipilih sendiri dari pencarian
- * (MANUAL). Daftarnya disimpan sebagai draf per toko (`draf.ts`), jadi
+ * (`?tambah=`, alasan LAKU_DI_SINI), "Minta ke salesman" di barang dicari dan
+ * titip pesan (`?tambah=`, DICARI_PEMBELI / TITIP_PEMBELI), atau dipilih
+ * sendiri dari pencarian (MANUAL). Daftarnya disimpan sebagai draf per toko (`draf.ts`), jadi
  * beberapa "Minta" dari layar analisa terkumpul di satu permintaan.
  */
 export function FormMinta({
@@ -87,6 +88,8 @@ export function FormMinta({
   const [cari, setCari] = useState("");
   const [dipilih, setDipilih] = useState<Dipilih[]>([]);
   const [catatan, setCatatan] = useState("");
+  // Barang dari tautan yang masih menunggu SPG memilih ukurannya.
+  const [tertunda, setTertunda] = useState<Tertunda[]>([]);
   // Draf dibaca setelah mount (server merender daftar kosong). Sebelum itu
   // tidak ada yang ditulis, supaya draf tidak tertimpa daftar kosong.
   const [drafSiap, setDrafSiap] = useState(false);
@@ -104,23 +107,16 @@ export function FormMinta({
       ada.add(p.kunci);
       awal.push({ barang: p, qty: b.qty, alasan: b.alasan });
     }
-    // Baris dari layar analisa. Barang bervarian tanpa ukuran (mis. "barang
-    // dicari" yang dicatat tanpa ukuran) tidak bisa diminta begitu saja:
-    // pencarian diisi SKU-nya supaya SPG memilih ukurannya sendiri.
-    let cariAwal = "";
-    for (const x of tambahAwal) {
-      const p = perKunci.get(kunciBaris(x.itemId, x.variantSku));
-      if (!p) {
-        const induk = pilihan.find((q) => q.itemId === x.itemId);
-        if (induk && !cariAwal) cariAwal = induk.sku;
-        continue;
-      }
-      if (ada.has(p.kunci)) continue;
-      ada.add(p.kunci);
-      awal.push({ barang: p, qty: String(x.qty), alasan: x.alasan });
-    }
+    // Baris dari layar analisa, barang dicari, dan titip pesan. Barang
+    // bervarian tanpa ukuran menunggu SPG memilih ukurannya (`tertunda`):
+    // pencarian diisi SKU-nya, dan jumlah serta alasannya ikut ke ukuran itu.
+    const tambahan = susunTambahan(pilihan, tambahAwal, ada);
+    awal.push(...tambahan.baris);
+    const cariAwal = tambahan.tertunda[0]?.sku ?? "";
     // eslint-disable-next-line react-hooks/set-state-in-effect -- draf ada di localStorage, hanya terbaca di klien sesudah mount
     if (awal.length > 0) setDipilih(awal);
+    if (tambahan.tertunda.length > 0) setTertunda(tambahan.tertunda);
+    if (tambahan.hilang > 0) toast.warning(tf("tidakDitemukan", { count: tambahan.hilang }));
     if (draf) {
       setCatatan(draf.catatan);
       if (draf.kunciKirim) setKunciKirim(draf.kunciKirim);
@@ -162,9 +158,12 @@ export function FormMinta({
     return { hasil: cocok.slice(0, BATAS_HASIL), cocokTotal: cocok.length };
   }, [pilihan, cari]);
 
-  const tambah = (barang: BarisPilihan, alasan: AlasanPermintaan = "MANUAL") => {
+  // Dari pencarian: barang yang menunggu ukuran membawa jumlah dan alasannya.
+  const tambah = (barang: BarisPilihan) => {
     if (sudahDipilih.has(barang.kunci)) return;
-    setDipilih((lama) => (lama.some((d) => d.barang.kunci === barang.kunci) ? lama : [...lama, { barang, qty: "1", alasan }]));
+    const { isi, sisa } = ambilTertunda(tertunda, barang);
+    if (sisa !== tertunda) setTertunda([...sisa]);
+    setDipilih((lama) => (lama.some((d) => d.barang.kunci === barang.kunci) ? lama : [...lama, { barang, ...isi }]));
   };
   const tambahBanyak = (baris: BarisPilihan[], alasan: AlasanPermintaan) =>
     setDipilih((lama) => {
@@ -243,6 +242,45 @@ export function FormMinta({
           onTambah={(baris, alasan) => tambahBanyak(baris, alasan)}
           disabled={pending}
         />
+      ) : null}
+
+      {tertunda.length > 0 ? (
+        <section className="beranda-kartu space-y-2" aria-labelledby="judul-tertunda">
+          <h2 id="judul-tertunda" className="beranda-judul">
+            {tf("pilihUkuranJudul")}
+          </h2>
+          <ul className="space-y-2">
+            {tertunda.map((x) => (
+              <li key={x.itemId} className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-auto min-h-11 flex-1 justify-start gap-3 whitespace-normal py-2 text-left"
+                  onClick={() => setCari(x.sku)}
+                  disabled={pending}
+                >
+                  <Search className="h-4 w-4 shrink-0" aria-hidden />
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-medium leading-tight">{x.nama}</span>
+                    <span className="block text-xs font-normal text-muted-foreground">
+                      {tf("pilihUkuranBaris", { alasan: tAlasan(x.alasan), qty: x.qty })}
+                    </span>
+                  </span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setTertunda((lama) => lama.filter((y) => y.itemId !== x.itemId))}
+                  disabled={pending}
+                  aria-label={tf("pilihUkuranLewati", { name: x.nama })}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
 
       <section className="space-y-2" aria-labelledby="judul-cari">

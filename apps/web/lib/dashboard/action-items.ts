@@ -3,6 +3,7 @@ import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { bolehMembacaPiutang } from "@/lib/receivables/izin";
 import { hitungJurnalTertunda } from "@/lib/finance/jurnal-tertunda";
 import type { ActionItem } from "./action-items-shared";
+import { ANTREAN_KANTOR, bolehLihatAntrean, KUNCI_ANTREAN, type AngkaAntrean } from "./antrean-kantor";
 
 // Client components import the row type and the total from the shared module;
 // this one pulls Prisma and must stay server-only.
@@ -16,12 +17,27 @@ export type ActionItemCounts = {
   journalPending: number;
 };
 
+/** Izin baris untuk setiap hitungan di `getActionItemCounts` — sumber tunggal bagi keduanya. */
+const IZIN_HITUNGAN: Readonly<Record<keyof ActionItemCounts, string>> = {
+  fieldSalesPendingApproval: PERMISSIONS.FIELD_SALES_ORDERS_VIEW,
+  storeChangesPending: PERMISSIONS.STORES_VIEW,
+  taxInvoicePending: PERMISSIONS.TAX_INVOICES_VIEW,
+  salesReturnPending: PERMISSIONS.SALES_RETURNS_VIEW,
+  journalPending: PERMISSIONS.JOURNALS_VIEW,
+};
+
 /**
  * Counts that no other dashboard query already fetches. Everything the page
  * loads anyway (overdue POs, oversold stock, submitted POs, unshipped orders)
  * is folded in by `buildActionItems` instead of being counted twice.
+ *
+ * Dengan `izin` (Beranda), hitungan baris yang tidak boleh dilihat penonton
+ * tidak dijalankan — nol, dan barisnya dibuang. Tanpa `izin` (lencana menu)
+ * semuanya dihitung dan disaring sesudahnya.
  */
-export async function getActionItemCounts(): Promise<ActionItemCounts> {
+export async function getActionItemCounts(izin?: string[]): Promise<ActionItemCounts> {
+  const hitung = (kunci: keyof ActionItemCounts, kueri: () => Promise<number>) =>
+    izin === undefined || hasPermission(izin, IZIN_HITUNGAN[kunci]) ? kueri() : Promise.resolve(0);
   const [
     fieldSalesPendingApproval,
     storeChangesPending,
@@ -29,12 +45,12 @@ export async function getActionItemCounts(): Promise<ActionItemCounts> {
     salesReturnPending,
     journalPending,
   ] = await Promise.all([
-    prisma.fieldSalesOrder.count({ where: { status: "PENDING_APPROVAL" } }),
-    prisma.storeChangeRequest.count({ where: { status: "PENDING" } }),
-    prisma.taxInvoice.count({ where: { status: "PENDING" } }),
-    prisma.salesReturn.count({ where: { status: "PENDING" } }),
+    hitung("fieldSalesPendingApproval", () => prisma.fieldSalesOrder.count({ where: { status: "PENDING_APPROVAL" } })),
+    hitung("storeChangesPending", () => prisma.storeChangeRequest.count({ where: { status: "PENDING" } })),
+    hitung("taxInvoicePending", () => prisma.taxInvoice.count({ where: { status: "PENDING" } })),
+    hitung("salesReturnPending", () => prisma.salesReturn.count({ where: { status: "PENDING" } })),
     // Belum ditandai selesai DAN dokumennya memang belum berjurnal.
-    hitungJurnalTertunda(),
+    hitung("journalPending", () => hitungJurnalTertunda()),
   ]);
 
   return {
@@ -77,6 +93,12 @@ export type BuildActionItemsInput = ActionItemCounts & {
   overduePromises?: { count: number; amount: number };
   /** BKM claims waiting for finance to verify. */
   claimsAwaitingVerification?: { count: number; amount: number };
+  /**
+   * Antrean kantor (izin, biaya, tukar, mutasi, …) dari `getAntreanKantor`.
+   * Barisnya hanya ikut bila `buildActionItems` dipanggil DENGAN izin
+   * penonton: pagarnya gabungan beberapa izin yang tidak muat di satu kode.
+   */
+  antrean?: AngkaAntrean;
 };
 
 /**
@@ -143,7 +165,7 @@ export function buildActionItems(input: BuildActionItemsInput, izin?: string[]):
       labelKey: "journalPending",
       count: input.journalPending,
       href: "/backoffice/finance/journals",
-      permission: PERMISSIONS.JOURNALS_VIEW,
+      permission: IZIN_HITUNGAN.journalPending,
       tone: "overdue",
     },
     {
@@ -151,14 +173,15 @@ export function buildActionItems(input: BuildActionItemsInput, izin?: string[]):
       labelKey: "fieldSalesPendingApproval",
       count: input.fieldSalesPendingApproval,
       href: "/backoffice/field-sales-orders?status=PENDING_APPROVAL",
-      permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW,
+      permission: IZIN_HITUNGAN.fieldSalesPendingApproval,
       tone: "waiting",
     },
     {
       key: "claimsAwaitingVerification",
       labelKey: "claimsAwaitingVerification",
       count: input.claimsAwaitingVerification?.count ?? 0,
-      href: "/backoffice/pelunasan",
+      // `?status=DIKIRIM`: daftar Pelunasan tanpa saringan memuat semua BKM.
+      href: "/backoffice/pelunasan?status=DIKIRIM",
       // Verifying a claim is finance's call (`journals:manage`, see
       // `lib/receivables/izin.ts`) — a row nobody here can act on is noise.
       permission: PERMISSIONS.JOURNALS_MANAGE,
@@ -178,7 +201,7 @@ export function buildActionItems(input: BuildActionItemsInput, izin?: string[]):
       labelKey: "salesReturnPending",
       count: input.salesReturnPending,
       href: "/backoffice/returns?status=PENDING",
-      permission: PERMISSIONS.SALES_RETURNS_VIEW,
+      permission: IZIN_HITUNGAN.salesReturnPending,
       tone: "waiting",
     },
     {
@@ -186,7 +209,7 @@ export function buildActionItems(input: BuildActionItemsInput, izin?: string[]):
       labelKey: "taxInvoicePending",
       count: input.taxInvoicePending,
       href: "/backoffice/finance/faktur-pajak?status=PENDING",
-      permission: PERMISSIONS.TAX_INVOICES_VIEW,
+      permission: IZIN_HITUNGAN.taxInvoicePending,
       tone: "waiting",
     },
     {
@@ -203,11 +226,27 @@ export function buildActionItems(input: BuildActionItemsInput, izin?: string[]):
       key: "storeChangesPending",
       labelKey: "storeChangesPending",
       count: input.storeChangesPending,
-      href: "/backoffice/stores",
-      permission: PERMISSIONS.STORES_VIEW,
+      href: "/backoffice/stores?perubahan=menunggu",
+      permission: IZIN_HITUNGAN.storeChangesPending,
       tone: "waiting",
     },
   ];
+
+  // Antrean kantor: hanya dengan izin penonton — tanpa izin, pagarnya tidak
+  // bisa diperiksa dan baris ber-`permission: null` akan lolos ke siapa saja.
+  if (izin !== undefined) {
+    for (const kunci of KUNCI_ANTREAN) {
+      if (!bolehLihatAntrean(kunci, izin)) continue;
+      all.push({
+        key: kunci,
+        labelKey: kunci,
+        count: input.antrean?.[kunci] ?? 0,
+        href: ANTREAN_KANTOR[kunci].href,
+        permission: null,
+        tone: "waiting",
+      });
+    }
+  }
 
   // Overdue before waiting, then by size. Stable within a tone so the list does
   // not reshuffle under someone's cursor when two rows share a count.
@@ -216,6 +255,9 @@ export function buildActionItems(input: BuildActionItemsInput, izin?: string[]):
     izin === undefined
       ? all
       : all.flatMap((item): ActionItem[] => {
+          // Sudah disaring `bolehLihatAntrean` di atas. Bukan `key in ANTREAN_KANTOR`:
+          // `in` ikut mencocokkan nama milik prototipe objek.
+          if ((KUNCI_ANTREAN as readonly string[]).includes(item.key)) return [item];
           const gate = CUSTOM_GATES[item.key];
           if (gate) return gate(izin) ? [item] : [];
           return !item.permission || hasPermission(izin, item.permission) ? [item] : [];

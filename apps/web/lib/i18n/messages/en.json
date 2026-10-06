@@ -176,7 +176,8 @@
     "navBarangHilang": "Lost goods",
     "navLabelBarcode": "Barcode labels",
     "navGudangRusak": "Damaged goods warehouse",
-    "bantuan": "Help"
+    "bantuan": "Help",
+    "navGroupPurchasing": "Purchasing"
   },
   "notifications": {
     "title": "Notifications",
@@ -184,7 +185,9 @@
     "sendTest": "Send test notification",
     "testTitle": "Test notification",
     "testBody": "This is a test notification from the app.",
-    "markAllRead": "Mark all as read"
+    "markAllRead": "Mark all as read",
+    "loadMore": "Load more",
+    "loadMoreFailed": "Couldn't load more notifications. Try again."
   },
   "supplier": {
     "title": "Suppliers",
@@ -4075,7 +4078,8 @@
       "filterSales": "Filter by salesperson",
       "allAreas": "All areas",
       "allSales": "All salespeople",
-      "noSales": "No salesperson"
+      "noSales": "No salesperson",
+      "filterPendingChanges": "Pending changes ({count})"
     },
     "form": {
       "code": "Code",
@@ -4375,7 +4379,18 @@
       "filledFromRequest": "{count} items from the SPG request added to the cart. Check, then send.",
       "filledFromRecommendation": "{count} items from the recommendation the store accepted added to the cart. Check, then send.",
       "repeatNoPrice": "No price yet, left out: {nama}{sisa, plural, =0 {} other { and # more}}",
-      "tolakTanpaHarga": "Order not sent. No price yet: {nama}{sisa, plural, =0 {} other { and # more}}. Remove from the cart, then send again."
+      "tolakTanpaHarga": "Order not sent. No price yet: {nama}{sisa, plural, =0 {} other { and # more}}. Remove from the cart, then send again.",
+      "keranjangDipulihkan": "Cart restored — {count, plural, one {# line} other {# lines}}",
+      "jumlahLabel": "Quantity of {label}",
+      "jumlahDijepitStok": "Only {max} available — quantity set to {max}.",
+      "jumlahDijepitInden": "Order limit is {max} pcs — quantity set to {max}.",
+      "packTambah": "+1 pack",
+      "packTambahGrup": "+1 pack {grup}",
+      "packIsi": "1 pack = {rasio}",
+      "packKurang": "Not enough stock: {daftar}.",
+      "packKurangUkuran": "{ukuran} {dapat} of {butuh}",
+      "packTidakAda": "{ukuran} not available",
+      "diRak": "On shelf: {jumlah}"
     },
     "offline": {
       "pendingTitle": "Not sent yet",
@@ -4757,7 +4772,9 @@
       "taskSwap": "Shift swap requests from colleagues",
       "taskClose": "Send today's closing report",
       "shiftToday": "Today's shift: {label} · {mulai}–{selesai}",
-      "shiftOff": "You are scheduled off today"
+      "shiftOff": "You are scheduled off today",
+      "taskOrdersComing": "Orders for this store in progress",
+      "checkoutTitle": "Done for the day"
     },
     "spgLainnya": {
       "title": "More",
@@ -5126,6 +5143,10 @@
         "hint": "This record also becomes an item request: you are notified when the goods enter store stock, then tell the shopper on WhatsApp.",
         "save": "Save & create item request",
         "saved": "Recorded. The shopper will be told when it arrives."
+      },
+      "minta": {
+        "tombol": "Ask the salesperson",
+        "tanpaBarang": "Typed freely — can't be added to a request"
       }
     },
     "spgStok": {
@@ -5220,7 +5241,11 @@
       "formMinta": {
         "subtitleHolder": "Pick the goods {store} needs. The request goes to {name} (the store's salesperson) and the office.",
         "sentHolder": "Request sent to {name} and the office.",
-        "noteLabelHolder": "Note for the salesperson and office (optional)"
+        "noteLabelHolder": "Note for the salesperson and office (optional)",
+        "pilihUkuranJudul": "Pick the size",
+        "pilihUkuranBaris": "{alasan} · {qty} pcs — tap to find its sizes",
+        "pilihUkuranLewati": "Skip {name}",
+        "tidakDitemukan": "{count, plural, one {# item from the link isn't in the catalogue and wasn't added.} other {# items from the link aren't in the catalogue and weren't added.}}"
       },
       "saran": {
         "title": "Suggested to request",
@@ -5339,7 +5364,23 @@
         "KETERANGAN_RUSAK_WAJIB": "Every line with damaged goods needs a description."
       },
       "tertahanAntre": "Received on this phone · sent when there is signal",
-      "tertahanDitolak": "Receipt on this phone was refused · see Not sent"
+      "tertahanDitolak": "Receipt on this phone was refused · see Not sent",
+      "pesanan": {
+        "judul": "Orders for this store · {count}",
+        "dipesan": "Ordered {tanggal}",
+        "ringkas": "{count} items · {pcs} pcs",
+        "ringkasSisa": "Not yet sent: {count} items · {pcs} pcs",
+        "status": {
+          "MENUNGGU_PERSETUJUAN": "Awaiting approval",
+          "DISETUJUI": "Approved, not yet sent",
+          "DIKIRIM_SEBAGIAN": "Partly sent",
+          "DALAM_PERJALANAN": "Sent, awaiting receipt"
+        },
+        "inden": "Pre-order",
+        "pcs": "{count} pcs",
+        "lihatSemua": "Show all {count} items",
+        "lebihSedikit": "Show less"
+      }
     },
     "spgOpname": {
       "title": "Store stock count",
@@ -5568,7 +5609,13 @@
         "creditNone": "No billing issues."
       },
       "rowInden": "Inden · {nama}",
-      "rowIndenTanpaNama": "Inden"
+      "rowIndenTanpaNama": "Inden",
+      "terimaToko": {
+        "judul": "SPG count at the store",
+        "baris": "Received by store: {diterima} of {dikirim} pcs",
+        "rusak": "damaged {rusak}",
+        "dihitung": "Counted by the SPG {date} WIB"
+      }
     },
     "ringkasanToko": {
       "title": "Store summary",
@@ -6577,7 +6624,9 @@
       "telepon": "Call",
       "petaSingkat": "Map",
       "katalogSingkat": "Catalogue",
-      "halamanToko": "Store page"
+      "halamanToko": "Store page",
+      "laporPelunasan": "Report payment",
+      "laporRetur": "Report return"
     },
     "target": {
       "back": "Home",
@@ -6996,6 +7045,20 @@
         "UMUM": "Rejected by the server. Try again, or contact the office.",
         "KUNJUNGAN_DITOLAK": "The check-in of the visit this receipt belongs to was rejected by the server, so the receipt cannot be recorded. Contact the office."
       }
+    },
+    "kehadiranSpg": {
+      "judul": "SPG today",
+      "diToko": "In store since {jam}",
+      "pulang": "Left at {pulang} · arrived {masuk}",
+      "izin": {
+        "IZIN": "On leave today",
+        "SAKIT": "Off sick today",
+        "CUTI": "On annual leave today"
+      },
+      "libur": "Day off per schedule",
+      "bukanHariKerja": "Not an SPG working day",
+      "belum": "Not in yet",
+      "belumJadwal": "Not in yet · shift starts {jam}"
     }
   },
   "fieldSalesOrders": {
@@ -7057,7 +7120,7 @@
     "colOnHand": "On Hand",
     "konsiTransferNote": "Consignment transfer — not a sale; stock is reserved on approval.",
     "konsiMarginUnset": "Store margin invalid or not set — gross-up uses the raw selling price.",
-    "approveConfirmKonsi": "Approve this consignment transfer? Stock will be reserved (not sold).",
+    "approveConfirmKonsi": "Approve this consignment transfer? The goods leave main warehouse stock right away and become consignment stock at the store — a transfer of goods, not a sale.",
     "rejectConfirmKonsi": "Reject this consignment transfer?",
     "promoBelowCost": "Warning: net price below cost",
     "appealBadge": "Requested",
@@ -8276,7 +8339,7 @@
     "emptyTitle": "Nothing is waiting",
     "emptyBody": "Every approval, shipment, and posting is settled for today.",
     "overduePOs": "Overdue POs — procurement",
-    "oversold": "SKUs sold beyond stock on hand — warehouse",
+    "oversold": "Items sold beyond stock on hand — warehouse",
     "journalPending": "Journals that failed to post — finance",
     "fieldSalesPendingApproval": "Salesman orders awaiting your approval",
     "unshippedOrders": "Marketplace orders not yet shipped",
@@ -8287,7 +8350,23 @@
     "overduePromises": "Invoices past the promised payment date",
     "claimsAwaitingVerification": "Payment claims (BKM) awaiting finance verification",
     "allClear": "All clear — nothing is waiting for action.",
-    "draftPOs": "POs awaiting approval"
+    "draftPOs": "POs awaiting approval",
+    "leavePending": "Leave requests awaiting a decision",
+    "expensesPendingApproval": "Travel expenses awaiting approval",
+    "expensesPendingPayment": "Approved travel expenses not yet paid",
+    "exchangesPendingApproval": "Goods exchanges awaiting approval",
+    "exchangesPendingCompletion": "Goods exchanges awaiting the warehouse",
+    "transfersPendingApproval": "Store transfers awaiting approval",
+    "transferShortfallsOpen": "Store transfer shortfalls awaiting a decision",
+    "stockLossOpen": "Lost goods awaiting a bearer decision",
+    "storeProposalsPending": "New store proposals awaiting a decision",
+    "fieldPromisesUnconfirmed": "Field payment promises not yet confirmed",
+    "damagedDeliveriesOpen": "Damaged deliveries awaiting a warehouse decision",
+    "damagedWarehouseOpen": "Damaged-goods stock awaiting a decision",
+    "claimCorrectionsPending": "Sales asked to correct a payment claim (BKM)",
+    "returnCorrectionsPending": "Sales asked to correct a store return note",
+    "shiftSwapsPending": "SPG shift swaps awaiting a decision",
+    "stockRequestsUnheld": "SPG stock requests at stores with no salesperson"
   },
   "statuses": {
     "unknown": "Unknown",
@@ -8624,7 +8703,11 @@
     "errRETUR_TERPAKAI": "That return note has already been deducted in full on another payment receipt. Pick another note or reduce the deduction to the remaining amount shown.",
     "errFOTO_BUKAN_MILIK": "This proof photo was uploaded by someone else. Take your own photo of the proof.",
     "errVerifikasiMELEBIHI_SISA": "Since this payment receipt was reported, its invoice has been settled by another receipt, so what is left is now less than this receipt's amount. Reject this receipt or ask the salesperson to correct the amount.",
-    "pemeriksaSamaSingkat": "Your own receipt — another finance admin decides it."
+    "pemeriksaSamaSingkat": "Your own receipt — another finance admin decides it.",
+    "filterLabel": "Filter payment claims",
+    "filterAll": "All",
+    "filterKoreksi": "Correction requested",
+    "emptyFilteredTitle": "No payment claims match this filter"
   },
   "collections": {
     "pageTitle": "Collection notes",
@@ -8944,7 +9027,8 @@
     "errTOKO_KONSI": "Consignment stores have no receivables, so the shortfall cannot be billed to the store. Record it as lost goods borne by the store, or choose another bearer.",
     "errPIUTANG_BEBAN_SUDAH_DITAGIH": "This store charge invoice is already in collection (a payment claim or collection note in any status, or an open collection task), so it cannot be removed and the charge can no longer be moved away from the store.",
     "errDITAGIH_LEWAT_PIUTANG": "A store charge is billed through its invoice. It is settled by a verified payment claim, not marked here.",
-    "errFOTO_BUKAN_MILIK": "This return note photo was uploaded by someone else. Take your own photo of the note."
+    "errFOTO_BUKAN_MILIK": "This return note photo was uploaded by someone else. Take your own photo of the note.",
+    "filterKoreksi": "Correction requested"
   },
   "foto": {
     "pick": "Take or choose a photo",
@@ -9267,7 +9351,9 @@
     "errRUSAK_MELEBIHI": "The quantity sent back exceeds the damaged pieces not yet returned.",
     "errRETUR_PEMBELI_TIDAK_SAH": "This shopper-returned damaged item cannot be sent back from this store (not this store's shopper return, a different item, or its condition is sellable).",
     "errRETUR_PEMBELI_MELEBIHI": "The quantity sent back exceeds the shopper-returned damaged pieces not yet sent.",
-    "errFOTO_BUKAN_MILIK": "This return note photo was uploaded by someone else. Take your own photo of the note."
+    "errFOTO_BUKAN_MILIK": "This return note photo was uploaded by someone else. Take your own photo of the note.",
+    "dariSpg": "From SPG",
+    "dariSpgOleh": "From SPG · {nama}"
   },
   "pwaBeban": {
     "pageTitle": "My charges",
@@ -10045,7 +10131,8 @@
       "STOCK_REQUEST_ORDER_REPLACED": "Stock request order replaced",
       "STORE_RECOMMENDATION_ORDER_CANCELLED": "Order from recommendation cancelled — recommendation reopened",
       "STORE_RECOMMENDATION_ORDER_REPLACED": "Recommendation order replaced",
-      "MATERIAL_ISSUED": "Materials issued to work order"
+      "MATERIAL_ISSUED": "Materials issued to work order",
+      "STORE_SHIPMENT_DEPARTED_NOTIFIED": "Store SPG told goods are on the way"
     },
     "entities": {
       "ChainTemplate": "Chain template",
@@ -10431,7 +10518,9 @@
       "STATUS_TIDAK_BOLEH": "The request status has already changed. Reload the page to see the latest.",
       "ALASAN_WAJIB": "Write the reason for the rejection.",
       "GAGAL": "Could not save. Please try again."
-    }
+    },
+    "filterUnheld": "Only stores with no salesperson",
+    "unheldBadge": "Store with no salesperson"
   },
   "spgLostSales": {
     "pageTitle": "Items customers asked for",
@@ -11072,7 +11161,9 @@
         "INVALID": "Invalid entry. Check the day limit.",
         "GAGAL": "Could not save. Try again."
       }
-    }
+    },
+    "semuaBulan": "All months",
+    "eksporPerBulan": "Pick one month to export"
   },
   "absensi": {
     "judul": "Attendance",
@@ -13507,7 +13598,9 @@
     "SERING_DIKIRIM": "Often sent",
     "BARANG_BARU": "New product",
     "LAKU_DI_SINI": "Sells at this store",
-    "MANUAL": "SPG's pick"
+    "MANUAL": "SPG's pick",
+    "DICARI_PEMBELI": "Asked for by shoppers",
+    "TITIP_PEMBELI": "Shopper waiting for it"
   },
   "pwaSpgAnalisa": {
     "title": "Sales analysis",
@@ -15249,6 +15342,12 @@
       "errTidakSah": "Enter a number between {min} and {maks}.",
       "errIzin": "You do not have permission to change this setting.",
       "errUmum": "Not saved. Try again."
+    },
+    "minta": {
+      "tombol": "Ask the salesperson",
+      "tombolSemua": "{count, plural, one {Ask the salesperson (# item)} other {Ask the salesperson (# items)}}",
+      "tanpaBarang": "These goods were typed freely, so they can't be filled in automatically — pick them yourself on the request form.",
+      "tanpaBarangSemua": "{count, plural, one {# request was typed freely and isn't filled in — pick it yourself on the form.} other {# requests were typed freely and aren't filled in — pick them yourself on the form.}}"
     }
   },
   "suratJalanMutasi": {

@@ -9,6 +9,7 @@ import { listStores } from "@/lib/stores/queries";
 import { bacaKelas } from "@/lib/stores/kelas-toko";
 import { listPendingStoreChangeStoreIds } from "@/lib/store-changes/queries";
 import { jumlahUsulanMenunggu } from "@/lib/stores/usulan-queries";
+import { idTokoPerubahanMenunggu } from "@/lib/dashboard/antrean-kantor";
 import { StoreListClient } from "./StoreListClient";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +23,8 @@ type PageProps = {
     area?: string;
     sales?: string;
     kelas?: string;
+    /** "menunggu": hanya toko yang perubahan datanya menunggu ditinjau (tautan Beranda). */
+    perubahan?: string;
   }>;
 };
 
@@ -47,21 +50,27 @@ export default async function StoresPage({ searchParams }: PageProps) {
   const sales = sp.sales?.trim() || "";
   // Saringan kelas: A/B/C, atau "TANPA" untuk toko yang belum diberi kelas.
   const kelas = sp.kelas === "TANPA" ? "TANPA" : bacaKelas(sp.kelas) ?? "";
+  const perubahan = sp.perubahan === "menunggu";
 
-  const [{ items, totalCount }, areas, salesmen] = await Promise.all([
-    listStores(
-      {
-        activeOnly: !showInactive,
-        search: search || undefined,
-        groupId: area || undefined,
-        salesmanId: sales || undefined,
-        storeClass: kelas || undefined,
-      },
-      { page, pageSize },
-    ),
-    daftarArea(),
-    daftarSalesman(),
-  ]);
+  const saring: Parameters<typeof listStores>[0] = {
+    search: search || undefined,
+    groupId: area || undefined,
+    salesmanId: sales || undefined,
+    storeClass: kelas || undefined,
+  };
+  const [idPerubahan, areas, salesmen] = await Promise.all([idTokoPerubahanMenunggu(), daftarArea(), daftarSalesman()]);
+  /*
+   * Saringan perubahan: toko aktif maupun nonaktif — angka Beranda menghitung
+   * setiap permintaan yang menunggu (paling banyak satu per toko). Hanya di
+   * saringan ini seluruh toko dibaca, lalu disaring dan dipotong per halaman.
+   */
+  const { items, totalCount } = perubahan
+    ? await (async () => {
+        const menunggu = new Set(idPerubahan);
+        const semua = (await listStores({ ...saring, activeOnly: false })).items.filter((s) => menunggu.has(s.id));
+        return { items: semua.slice((page - 1) * pageSize, page * pageSize), totalCount: semua.length };
+      })()
+    : await listStores({ ...saring, activeOnly: !showInactive }, { page, pageSize });
 
   const [pendingSet, usulanMenunggu] = await Promise.all([
     listPendingStoreChangeStoreIds(items.map((s) => s.id)),
@@ -94,6 +103,8 @@ export default async function StoresPage({ searchParams }: PageProps) {
       kelasFilter={kelas}
       bolehKelola={hasPermission(perms, PERMISSIONS.STORES_MANAGE)}
       usulanMenunggu={usulanMenunggu}
+      perubahanMenunggu={perubahan}
+      jumlahPerubahan={idPerubahan.length}
     />
   );
 }

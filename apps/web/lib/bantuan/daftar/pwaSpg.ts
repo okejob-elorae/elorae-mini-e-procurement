@@ -50,6 +50,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "pwa.spgDicari.subtitle" },
       "Tidak butuh check-in: catatan bisa dibuat kapan saja pembeli bertanya. Barang boleh dipilih dari katalog (pindai atau cari) atau cukup ditulis keterangannya. Bila pembeli ingin dikabari saat barangnya datang, centang pilihannya — catatan itu sekaligus menjadi titip pesan untuk pembeli tersebut.",
+      "Minta ke salesman di bawah catatan membuka formulir minta kiriman dengan barang, ukuran, dan jumlah yang dicatat sudah terisi, beralasan Dicari pembeli. Catatan yang barangnya ditulis bebas (tidak dari katalog) tidak bisa diisikan — pilih barangnya sendiri di formulir. Catatan yang Anda buat di toko lain tidak diberi tombol ini.",
     ],
     kartu: [
       {
@@ -123,6 +124,8 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       "Formulir untuk meminta barang dikirim ke toko Anda. Pilih barang dari daftar yang paling menipis, dari saran, atau lewat pencarian, isi jumlahnya, lalu kirim. Permintaan sampai ke salesman pemegang toko (bila ada) dan kantor; statusnya bisa diikuti di tab Stok bagian Permintaan kiriman.",
       "Tidak butuh check-in, dan permintaan tidak menggerakkan stok — barangnya baru masuk stok toko saat kirimannya Anda terima.",
+      "Dibuka dari Barang dicari atau Titip pesan, formulir ini sudah berisi barangnya dengan alasan Dicari pembeli atau Titip pesan pembeli, yang ikut terlihat oleh salesman. Barang yang dicari tanpa ukuran muncul di kartu Pilih ukurannya: ketuk untuk mencari ukurannya, dan jumlahnya ikut ke ukuran yang Anda pilih.",
+      "Toko yang belum punya salesman pemegang: permintaannya sampai ke kantor, yang langsung mendapat pemberitahuan.",
     ],
     kartu: [
       {
@@ -140,6 +143,13 @@ export const ENTRI: EntriBantuan[] = [
       {
         judul: "Menunggu diterima",
         isi: { kunci: "pwa.spgTerima.hint" },
+      },
+      {
+        judul: "Pesanan untuk toko ini",
+        isi: [
+          "Pesanan sales untuk toko Anda yang barangnya belum sampai, supaya Anda tahu apa yang akan datang: yang menunggu persetujuan kantor, yang sudah disetujui tapi belum dikirim, dan yang baru dikirim sebagian (yang tampil sisanya). Pesanan konsinyasi yang sudah disetujui tetap tampil sampai Anda menerimanya di daftar kiriman.",
+          "Hanya nomor, tanggal, status, dan jumlah potong per barang yang ditampilkan — tanpa harga. Begitu barangnya berangkat, Anda mendapat kabar dan kirimannya muncul di daftar Menunggu diterima.",
+        ],
       },
       {
         judul: "Barang rusak",
@@ -293,6 +303,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       "Pembeli yang minta dikabari saat barang yang dicarinya datang ke toko Anda, dalam tiga tab: Sudah datang, Sudah dikabari, dan Menunggu. Ketersediaan dihitung dari stok toko saat layar dibuka, dan pesan ke pembeli tidak pernah menyebut harga.",
       "Tanpa pilihan tab, layar membuka tab yang paling perlu ditindaklanjuti lebih dulu: Sudah datang, lalu Sudah dikabari, lalu Menunggu.",
+      "Di tab Menunggu, Minta ke salesman membuka satu formulir minta kiriman berisi semua barang yang masih ditunggu pembeli, dengan jumlah yang dicatat dan alasan Titip pesan pembeli. Titip pesan yang barangnya ditulis bebas tidak ikut terisi.",
     ],
     kartu: [
       {
@@ -325,6 +336,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       "Satu titip pesan: pembeli, barang, jumlah, stok toko, dan tanggal-tanggalnya. Kabari lewat WhatsApp aktif setelah barangnya ada di toko; tombol itu membuka WhatsApp dengan pesan siap kirim lalu menandai pembeli sudah dikabari, dan barang disimpankan sampai tanggal yang tertulis di pesan. Mengirim ulang pesan tidak memperpanjang masa simpan.",
       "Tandai Sudah diambil saat pembeli datang, atau Batalkan dengan alasan.",
+      "Selama barangnya belum ada, Minta ke salesman membuka formulir minta kiriman berisi barang dan jumlah ini. Barang yang ditulis bebas tidak bisa diisikan; formulirnya terbuka kosong.",
       { kunci: "spgTitip.rincian.petunjukSelesai" },
     ],
   },

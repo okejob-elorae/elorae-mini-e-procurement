@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { formatDisplayDate } from "@/lib/date-only";
 import { kirimanMenunggu } from "@/lib/spg/kiriman";
+import { pesananMenujuToko, pesananMenujuUntukHp } from "@/lib/spg/pesanan-menuju-toko";
 import { tokoSpg } from "@/lib/spg/queries";
 import { rusakUntukSpg } from "@/lib/spg/rusak-queries";
 import { rusakPembeliUntukSpg } from "@/lib/spg/gudang-rusak-queries";
@@ -17,11 +18,16 @@ export default async function SpgTerimaPage() {
   const toko = await tokoSpg(session.user.id);
   if (!toko) redirect("/pwa");
 
-  const [kiriman, aktif, rusak, rusakPembeli] = await Promise.all([
+  const [kiriman, aktif, rusak, rusakPembeli, pesanan] = await Promise.all([
     kirimanMenunggu(toko.id),
     getActiveVisit(session.user.id),
     rusakUntukSpg(toko.id),
     rusakPembeliUntukSpg(toko.id),
+    // Bagian tambahan: kalau gagal dimuat, daftar kiriman tetap tampil tanpanya.
+    pesananMenujuToko(toko.id).catch((e) => {
+      console.error("[terima] pesanan menuju toko gagal dimuat", e);
+      return [];
+    }),
   ]);
 
   return (
@@ -55,6 +61,8 @@ export default async function SpgTerimaPage() {
         sisa: r.sisa,
         notaRetur: r.notaRetur,
       }))}
+      // Pesanan sales untuk toko ini yang belum sampai — jumlah potong saja, tanpa harga.
+      pesanan={pesananMenujuUntukHp(pesanan, (d) => formatDisplayDate(d))}
       rusakPembeli={rusakPembeli.map((r) => ({
         // Barang rusak dari pembeli yang belum dikirim balik — tanpa harga.
         id: r.id,

@@ -6,6 +6,7 @@ import { ENTRI as sales } from "./sales";
 import { ENTRI as navGroupFieldTeam } from "./navGroupFieldTeam";
 import { ENTRI as navGroupSpg } from "./navGroupSpg";
 import { ENTRI as production } from "./production";
+import { ENTRI as navGroupPurchasing } from "./navGroupPurchasing";
 import { ENTRI as navGroupReceivables } from "./navGroupReceivables";
 import { ENTRI as konsinyasi } from "./konsinyasi";
 import { ENTRI as navGroupCreative } from "./navGroupCreative";
@@ -27,5 +28,5 @@ import { ENTRI as pwaBersama } from "./pwaBersama";
  * judul halamannya (`daftar.test.ts` menjaga rute, kunci i18n, dan duplikat).
  */
 export const DAFTAR_BANTUAN: readonly EntriBantuan[] = [
-  ...dashboard, ...navGroupMasterData, ...inventory, ...sales, ...navGroupFieldTeam, ...navGroupSpg, ...production, ...navGroupReceivables, ...konsinyasi, ...navGroupCreative, ...navGroupLedger, ...navGroupReports, ...jubelio, ...navGroupArchive, ...settings, ...pwaSalesman, ...pwaSpg, ...pwaBersama,
+  ...dashboard, ...navGroupMasterData, ...inventory, ...sales, ...navGroupFieldTeam, ...navGroupSpg, ...production, ...navGroupPurchasing, ...navGroupReceivables, ...konsinyasi, ...navGroupCreative, ...navGroupLedger, ...navGroupReports, ...jubelio, ...navGroupArchive, ...settings, ...pwaSalesman, ...pwaSpg, ...pwaBersama,
 ];

@@ -84,6 +84,7 @@ vi.mock("@/lib/salesman/queries", () => ({
   tokoSaya: catat("tokoSaya", { rencana: [{ storeId: "toko-lain" }] }),
 }));
 vi.mock("@/lib/salesman/saran-tawar-queries", () => ({ saranTawarToko: catat("saranTawarToko", null) }));
+vi.mock("@/lib/spg/kehadiran-toko", async (asli) => ({ ...(await asli<typeof import("@/lib/spg/kehadiran-toko")>()), kehadiranSpgToko: catat("kehadiranSpgToko", []) }));
 vi.mock("@/lib/konsinyasi/stok-di-toko", () => ({ kartuStokDiToko: catat("kartuStokDiToko", null) }));
 vi.mock("@/lib/field-sales/jarak-jauh-toko", () => ({ izinJarakJauh: catat("izinJarakJauh", { boleh: false }) }));
 vi.mock("@/lib/stores/catatan-queries", () => ({

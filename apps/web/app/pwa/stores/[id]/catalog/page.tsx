@@ -14,6 +14,8 @@ import { bacaIdInden, rentangKirim } from "@/lib/field-sales/inden";
 import { jendelaIndenTerbuka, jendelaUntukKatalog } from "@/lib/field-sales/inden-queries";
 import { bacaIdGanti } from "@/lib/field-sales/ganti-pesanan";
 import { pesananUntukDiganti } from "@/lib/field-sales/pwa-queries";
+import { getPackRatio } from "@/app/actions/settings/pack-ratio";
+import { muatUkuranPack } from "./ukuran-pack";
 import { CatalogShell, type GantiKatalog, type IndenKatalog, type IndenTerbukaKatalog, type KreditKatalog } from "./CatalogShell";
 
 export const dynamic = "force-dynamic";
@@ -152,6 +154,10 @@ export default async function PwaStoreCatalog({
   // Minimum yang berlaku di toko ini (pesanan pertama vs pesan ulang). Konsinyasi tanpa minimum.
   const minimum = store.termsType === "PUTUS" ? await muatMinimumKatalog(store.id) : null;
 
+  // "+1 pack" di lembar varian: rasio global + ukuran varian (PUTUS dan KONSI — hanya jumlah, tanpa harga).
+  const rasioPack = await getPackRatio();
+  const petaUkuran = await muatUkuranPack(rasioPack);
+
   return (
     <CatalogShell
       // Pindah antara stok siap dan pre-order memasang katalog baru: keranjang
@@ -159,6 +165,12 @@ export default async function PwaStoreCatalog({
       key={`${inden?.mode === "PESAN" ? `inden-${inden.id}` : indenId !== null ? "inden-tolak" : "stok-siap"}${ganti?.mode === "UBAH" ? `-ganti-${ganti.id}` : ""}`}
       storeId={store.id}
       storeName={store.name}
+      userId={session.user.id}
+      // Keranjang dari dokumen (`?ganti=` pesanan yang diubah, `?isi=` permintaan SPG /
+      // rekomendasi) ditentukan dokumen itu: tidak dipulihkan dan tidak menimpa simpanan.
+      simpanKeranjang={rawGanti === undefined && rawIsi === undefined}
+      rasioPack={rasioPack}
+      petaUkuran={petaUkuran}
       termsType={store.termsType}
       hasActiveVisit={hasActiveVisit}
       visitId={hasActiveVisit ? active!.id : null}

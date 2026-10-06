@@ -22,6 +22,7 @@ import {
 import { bahanLaporanSpg, type BarisBahan } from '@/lib/konsinyasi/laporan-spg';
 import { pilihanVarianKirim, type PilihanVarianKirim } from '@/lib/konsinyasi/varian-kirim';
 import { antrekanPushStok } from '@/lib/jubelio/antre-push-stok';
+import { kabarkanKirimanBerangkat } from '@/lib/spg/pesanan-menuju-toko';
 
 export type KodeAksiKonsi = 'TANPA_AKSES' | 'TANGGAL_TIDAK_VALID' | AlasanGagalKonsi | 'GAGAL';
 export type HasilAksiKonsi = { ok: true } | { ok: false; kode: KodeAksiKonsi };
@@ -148,6 +149,8 @@ export async function kirimTitipanAction(input: {
       console.error(`push stok kiriman titipan ${hasil.noKirim} tidak masuk antrean:`, err);
     }
   }
+  // Barang berangkat ke toko → SPG toko itu dikabari, sekali per kiriman (kiriman ulang tidak).
+  void kabarkanKirimanBerangkat({ sourceType: 'KONSI_SHIPMENT', sourceId: hasil.id, pelakuId: userId });
   segarkan();
   return { ok: true, noKirim: hasil.noKirim, ulang: hasil.ulang };
 }

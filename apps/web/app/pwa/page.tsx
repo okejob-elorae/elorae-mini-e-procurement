@@ -8,6 +8,7 @@ import { prisma } from "@elorae/db";
 import { shiftHariIni } from "@/lib/spg/shift-queries";
 import { daftarTitipHp } from "@/lib/spg/titip-queries";
 import { pengunjungUntukHp } from "@/lib/spg/pengunjung-queries";
+import { hitungPesananDiproses, pesananMenujuToko } from "@/lib/spg/pesanan-menuju-toko";
 import { kunciHariWib } from "@/lib/dashboard/tren";
 import { kemajuanTarget } from "@/lib/salesman/dasbor";
 import { bulanWib } from "@/lib/salesman/pengaturan";
@@ -61,7 +62,7 @@ export default async function PwaHome({ searchParams }: { searchParams: Promise<
         console.error(`[beranda] ${nama} gagal dimuat`, e);
         return cadangan;
       });
-    const [r, pengumuman, shift, titip, tukarMasuk, sudahTutup, pengunjung] = await Promise.all([
+    const [r, pengumuman, shift, titip, tukarMasuk, sudahTutup, pengunjung, pesananDiproses] = await Promise.all([
       ringkasanSpg(session.user.id, toko, sekarang),
       kartuPengumumanBeranda(session.user.id, sekarang).catch((e) => {
         console.error("[beranda] pengumuman gagal dimuat", e);
@@ -76,6 +77,8 @@ export default async function PwaHome({ searchParams }: { searchParams: Promise<
         "tutup hari",
       ),
       aman(pengunjungUntukHp(session.user.id, toko.id, hariKunci), null, "pengunjung"),
+      // Pesanan sales untuk toko ini yang masih diproses kantor — hitungan saja, rinciannya di Terima kiriman.
+      aman(pesananMenujuToko(toko.id, sekarang).then(hitungPesananDiproses), 0, "pesanan menuju toko"),
     ]);
     // Pengingat tutup hari: sesudah jam 17.00 WIB, kalau toko sudah berjualan dan belum ada laporannya.
     const jamWib = Number(new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hour12: false, timeZone: "Asia/Jakarta" }).format(sekarang));
@@ -127,6 +130,7 @@ export default async function PwaHome({ searchParams }: { searchParams: Promise<
       hampirHabis: r.hampirHabis.length,
       stokDilacak: r.stokDilacak,
       kirimanMenunggu: r.kirimanMenunggu,
+      pesananDiproses,
       notaHariIni: r.notaHariIni.map((n) => ({ id: n.id, docNo: n.docNo, jam: jam(n.waktu), total: n.total, jumlahBarang: n.jumlahBarang })),
       gaji: {
         perkiraan: r.gajiKomisi.perkiraan ? { totalToko: r.gajiKomisi.perkiraan.totalToko, bagianSaya: r.gajiKomisi.perkiraan.bagianSaya } : null,
@@ -141,7 +145,7 @@ export default async function PwaHome({ searchParams }: { searchParams: Promise<
       userId: session.user.id,
     };
 
-    return <SpgHomeShell userName={userName} data={data} onLogout={logout} kembali={kembali} />;
+    return <SpgHomeShell userName={userName} data={data} kembali={kembali} />;
   }
 
   const hariIni = new Date();

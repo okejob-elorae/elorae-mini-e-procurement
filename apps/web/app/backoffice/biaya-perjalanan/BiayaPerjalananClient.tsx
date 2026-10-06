@@ -53,6 +53,9 @@ export function labelEksporBiaya(td: TerjemahDinamis): LabelEksporBiaya {
   };
 }
 
+/** Nilai `?bulan=` untuk semua bulan — sama dengan halaman servernya. */
+const SEMUA_BULAN = "semua";
+
 export function BiayaPerjalananClient({
   bulan,
   status,
@@ -113,7 +116,13 @@ export function BiayaPerjalananClient({
         title={t("judul")}
         meta={t("ringkasMeta", { n: data.total.jumlah, nilai: formatIDR(data.total.nilai), menunggu })}
         actions={
-          <Button variant="outline" onClick={() => void ekspor()} disabled={mengekspor}>
+          <Button
+            variant="outline"
+            onClick={() => void ekspor()}
+            // Ekspor per bulan: "Semua bulan" tidak punya satu berkas.
+            disabled={mengekspor || bulan === SEMUA_BULAN}
+            title={bulan === SEMUA_BULAN ? t("eksporPerBulan") : undefined}
+          >
             {mengekspor ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
             {t("ekspor")}
           </Button>
@@ -126,6 +135,7 @@ export function BiayaPerjalananClient({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value={SEMUA_BULAN}>{t("semuaBulan")}</SelectItem>
             {pilihanBulan.map((b) => (
               <SelectItem key={b.kunci} value={b.kunci}>
                 {b.label}

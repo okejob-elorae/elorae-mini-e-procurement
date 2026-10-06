@@ -77,4 +77,10 @@ describe("tautanKabar", () => {
     expect(tautanKabar("PESANAN_DIKIRIM", ["abc"])).toBe("/pwa/orders");
     expect(tautanKabar("PERUBAHAN_TOKO_DISETUJUI", "s1")).toBe("/pwa/stores");
   });
+
+  it("kiriman yang berangkat ke toko SPG membawa ke layar terima kiriman", () => {
+    expect(JENIS_KABAR.KIRIMAN_BERANGKAT).toBe("KIRIMAN_BERANGKAT");
+    expect(tautanKabar("KIRIMAN_BERANGKAT", { storeId: "s1", sourceType: "PUTUS_DELIVERY", sourceId: "d1" })).toBe("/pwa/spg/terima");
+    expect(tautanKabar("KIRIMAN_BERANGKAT", {})).toBe("/pwa/spg/terima");
+  });
 });

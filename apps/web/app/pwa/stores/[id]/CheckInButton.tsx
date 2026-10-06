@@ -8,7 +8,7 @@ import { Loader2, MapPinOff } from "lucide-react";
 import { aturanKunjunganSaya, checkIn } from "../actions";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { buangTitipan, titipKembali } from "@/lib/pwa/kembali-setelah-checkin";
+import { buangTitipan, titipKembali, tujuanSesudahCheckIn } from "@/lib/pwa/kembali-setelah-checkin";
 import { newLocalId } from "@/lib/pwa/id-lokal";
 import { denganBatasWaktu, tanpaSinyal } from "@/lib/pwa/offline/batas-waktu";
 import { antreCheckin } from "@/lib/pwa/offline/luring-antrean";
@@ -28,7 +28,8 @@ type Props = {
   /**
    * Layar yang dituju SESUDAH check-in (SPG yang datang dari "check-in dulu").
    * `checkIn` selalu mengalihkan ke halaman toko; tujuan ini dititipkan dan
-   * halaman toko meneruskannya (`LanjutSetelahCheckIn`).
+   * halaman toko meneruskannya (`LanjutSetelahCheckIn`). Tanpa tujuan, yang
+   * dititipkan beranda SPG — tempat tombol Jual.
    */
   kembali?: string | null;
   /** Halaman toko: kunjungan yang check-in-nya masih di HP tetap bisa difoto. */
@@ -177,7 +178,11 @@ export function CheckInButton({ storeId, storeName = null, autoCloseStoreName, k
           return;
         }
         startTransition(async () => {
-          if (kembali) titipKembali(storeId, kembali);
+          // SELALU dititipkan: tanpa layar tujuan, SPG kembali ke berandanya
+          // (tombol Jual ada di sana, bukan di halaman toko). Titipan hanya
+          // dibaca halaman toko TETAP milik SPG, jadi check-in salesman tetap
+          // mendarat di halaman toko seperti biasa.
+          titipKembali(storeId, tujuanSesudahCheckIn(kembali));
           let result: Awaited<ReturnType<typeof checkIn>>;
           try {
             result = await denganBatasWaktu(

@@ -22,6 +22,7 @@ import {
   Factory,
   Plug,
   ShoppingCart,
+  ShoppingBag,
   BookOpen,
   BookOpenText,
   BarChart2,
@@ -299,7 +300,7 @@ export const navItems: NavItem[] = [
       { labelKey: 'navSpgPelanggan', href: '/backoffice/spg-pelanggan', permission: PERMISSIONS.SPG_SALES_VIEW },
       { labelKey: 'navJadwalSpg', href: '/backoffice/jadwal-spg', permission: PERMISSIONS.SPG_SALES_VIEW },
       { labelKey: 'navKomisiSpg', href: '/backoffice/komisi-spg', permission: PERMISSIONS.SPG_SALES_VIEW },
-      { labelKey: 'navSpgRequests', href: '/backoffice/spg-requests', permission: PERMISSIONS.SPG_SALES_VIEW },
+      { labelKey: 'navSpgRequests', href: '/backoffice/spg-requests', permission: [PERMISSIONS.SPG_SALES_VIEW, PERMISSIONS.STORES_MANAGE] },
       { labelKey: 'navSpgLostSales', href: '/backoffice/spg-lost-sales', permission: PERMISSIONS.SPG_SALES_VIEW },
       // Mutasi antar toko oleh SPG — barang KONSI berpindah rak, bukan dokumen penjualan.
       { labelKey: 'navSpgTransfers', href: '/backoffice/spg-transfers', permission: PERMISSIONS.SPG_SALES_VIEW },
@@ -328,10 +329,25 @@ export const navItems: NavItem[] = [
       { labelKey: 'navProductionPlanning', href: '/backoffice/production/planning', permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW },
       { labelKey: 'navProductionColors', href: '/backoffice/production/colors', permission: PERMISSIONS.PRODUCTION_COLORS_VIEW },
       { labelKey: 'navProductionPalette', href: '/backoffice/production/palette', permission: PERMISSIONS.PRODUCTION_COLORS_VIEW },
-      { labelKey: 'purchaseOrders', href: '/backoffice/purchase-orders', permission: PERMISSIONS.PURCHASE_ORDERS_VIEW },
-      { labelKey: 'supplierPayment', href: '/backoffice/supplier-payments', permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
       { labelKey: 'navWorkOrdersList', href: '/backoffice/work-orders', permission: PERMISSIONS.WORK_ORDERS_VIEW },
       { labelKey: 'registerNotaCmt', href: '/backoffice/work-orders/nota-register', permission: PERMISSIONS.NOTA_REGISTER_VIEW },
+    ],
+  },
+  /*
+   * Pembelian berdiri sendiri: PO, pembayaran ke pemasok, dan retur ke pemasok
+   * dulu terselip di Produksi, padahal dikerjakan bagian pembelian/keuangan.
+   * Izin tiap anak SAMA dengan sebelumnya. Master Pemasok tetap di Data Master;
+   * daftar GRN tetap tab di Inventori.
+   */
+  {
+    section: 'secOperations',
+    labelKey: 'navGroupPurchasing',
+    href: '/backoffice/purchase-orders',
+    icon: ShoppingBag,
+    permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
+    children: [
+      { labelKey: 'purchaseOrders', href: '/backoffice/purchase-orders', permission: PERMISSIONS.PURCHASE_ORDERS_VIEW },
+      { labelKey: 'supplierPayment', href: '/backoffice/supplier-payments', permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
       { labelKey: 'vendorReturns', href: '/backoffice/vendor-returns', permission: PERMISSIONS.VENDOR_RETURNS_VIEW },
     ],
   },

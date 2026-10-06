@@ -12,6 +12,7 @@ import { lencanaIndenById } from "./inden-queries";
 import { catatanUntukDiubah, dibatalkanSalesman, kunciBaris } from "./ganti-pesanan";
 import { pesanPesananWa } from "./pesan-pesanan-wa";
 import { tautanWhatsApp } from "@/lib/salesman/dasbor";
+import { hitungSelisihTerima, type SelisihTerima } from "@/lib/spg/selisih-terima";
 
 /**
  * "Pesanan saya" — pesanan lapangan milik SATU salesman, untuk aplikasi HP.
@@ -444,6 +445,8 @@ export type DetailPesananSaya = {
   kreditCatatan: CatatanKredit | null;
   baris: BarisDetailPesananSaya[];
   pengiriman: Array<{ id: string; docNo: string; deliveredAt: Date; pcs: number; total: number }>;
+  /** Hasil hitung SPG di toko per kiriman pesanan ini (potong saja); kosong bila belum dihitung / toko tanpa SPG. */
+  penerimaanToko: PenerimaanTokoPesanan[];
   linimasa: LangkahLinimasa[];
   /** Dibatalkan salesman sendiri (status REJECTED + `cancelledById`). */
   dibatalkan: boolean;
@@ -453,6 +456,50 @@ export type DetailPesananSaya = {
   /** Pre-order: nama jendelanya ("" bila jendelanya sudah tidak ada); null = pesanan stok siap. */
   indenNama: string | null;
 };
+
+/**
+ * Satu kiriman pesanan yang sudah dihitung dan dikonfirmasi SPG di toko:
+ * pengiriman putus, atau pesanan konsi itu sendiri. Potong saja, tanpa rupiah
+ * — juga untuk PUTUS, supaya bentuknya satu dan tidak pernah membawa harga
+ * konsinyasi.
+ */
+export type PenerimaanTokoPesanan = {
+  sourceType: "PUTUS_DELIVERY" | "KONSI_ORDER";
+  sourceId: string;
+  docNo: string;
+  diterimaPada: Date;
+} & SelisihTerima;
+
+/**
+ * Tanda terima SPG untuk pesanan ini, terlama dulu. Disaring ke toko
+ * pesanannya: tanda terima selalu dicatat di toko tujuan kiriman.
+ */
+async function penerimaanTokoPesanan(storeId: string, orderId: string, deliveryIds: string[]): Promise<PenerimaanTokoPesanan[]> {
+  const rows = await prisma.storeReceipt.findMany({
+    where: {
+      storeId,
+      OR: [
+        { sourceType: "KONSI_ORDER", sourceId: orderId },
+        ...(deliveryIds.length > 0 ? [{ sourceType: "PUTUS_DELIVERY", sourceId: { in: deliveryIds } }] : []),
+      ],
+    },
+    orderBy: { receivedAt: "asc" },
+    select: {
+      sourceType: true,
+      sourceId: true,
+      sourceDocNo: true,
+      receivedAt: true,
+      lines: { select: { qtySent: true, qtyReceived: true, qtyDamaged: true } },
+    },
+  });
+  return rows.map((r) => ({
+    sourceType: r.sourceType === "KONSI_ORDER" ? "KONSI_ORDER" : "PUTUS_DELIVERY",
+    sourceId: r.sourceId,
+    docNo: r.sourceDocNo,
+    diterimaPada: r.receivedAt,
+    ...hitungSelisihTerima(r.lines),
+  }));
+}
 
 /**
  * Detail satu pesanan, HANYA bila pemiliknya salesman ini (null untuk pesanan
@@ -522,6 +569,11 @@ export async function pesananSayaById(orderId: string, salesmanId: string): Prom
     pcs: d.lines.reduce((n, x) => n + x.qty, 0),
     total: d.total,
   }));
+  const penerimaanToko = await penerimaanTokoPesanan(
+    milik.storeId,
+    o.id,
+    o.deliveries.map((d) => d.id),
+  );
 
   return {
     id: o.id,
@@ -550,6 +602,7 @@ export async function pesananSayaById(orderId: string, salesmanId: string): Prom
     kreditCatatan: o.orderType === "PUTUS" ? bacaCatatanKredit(milik.kreditCatatan) : null,
     baris,
     pengiriman,
+    penerimaanToko,
     linimasa: susunLinimasa({ ...o, pengiriman }),
     dibatalkan: o.status === "REJECTED" && o.cancelledAt !== null,
     cancelledAt: o.cancelledAt,

@@ -41,10 +41,13 @@ const KIRIM = ['SALES', 'TOKO', 'EKSPEDISI'] as const;
 export function ReturBaruClient({
   toko,
   awal = null,
+  tokoAwal = null,
 }: {
   toko: { id: string; name: string }[];
   /** "Laporkan ulang" dari nota yang dibatalkan. Toko TIDAK ikut — biasanya itu yang salah. */
   awal?: AwalRetur | null;
+  /** Toko yang langsung terpilih (dibuka dari halaman toko); diabaikan bila tidak ada di pilihan. */
+  tokoAwal?: string | null;
 }) {
   const t = useTranslations('pwaRetur');
   const tFoto = useTranslations('foto');
@@ -56,7 +59,9 @@ export function ReturBaruClient({
   const [kunci] = useState(newLocalId);
 
   const [noNrt, setNoNrt] = useState(awal?.noNrt ?? '');
-  const [storeId, setStoreId] = useState('');
+  const [storeId, setStoreId] = useState(() =>
+    tokoAwal && toko.some((s) => s.id === tokoAwal) ? tokoAwal : '',
+  );
   const [tanggal, setTanggal] = useState(awal?.tanggal || hariIniWib());
   const [caraKirim, setCaraKirim] = useState<(typeof KIRIM)[number]>(awal?.caraKirim ?? 'SALES');
   const [nilai, setNilai] = useState(awal ? String(awal.nilai) : '');

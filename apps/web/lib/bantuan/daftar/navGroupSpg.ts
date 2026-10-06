@@ -189,6 +189,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "spgRequests.pageDescription" },
       "Bawaannya hanya permintaan yang perlu ditangani (baru dan diproses); yang sudah selesai atau ditolak dibuka lewat tabnya sendiri. Mengubah status butuh izin mengelola toko.",
+      "Penanda Toko tanpa pemegang: toko itu belum punya salesman pemegang, jadi permintaannya tidak sampai ke HP salesman mana pun dan kantor yang menanganinya. Setiap permintaan baru dari toko seperti itu membunyikan lonceng pengelola toko; saringan Hanya toko tanpa pemegang menampilkan permintaan itu saja.",
     ],
   },
   {

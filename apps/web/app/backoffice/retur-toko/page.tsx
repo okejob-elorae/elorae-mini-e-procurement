@@ -10,11 +10,16 @@ import {
 } from "@/lib/receivables/return-queries";
 import { prisma } from "@elorae/db";
 import { bolehMembacaRetur } from "@/lib/receivables/izin";
+import { koreksiTertunda } from "@/lib/receivables/koreksi";
 import { ReturTokoClient } from "./ReturTokoClient";
 
 export const dynamic = "force-dynamic";
 
-export default async function ReturTokoPage() {
+/**
+ * `?koreksi=1` (tautan Beranda "Permintaan koreksi nota retur") membuka daftar
+ * yang hanya berisi nota yang koreksinya diminta sales dan belum ditangani.
+ */
+export default async function ReturTokoPage(props?: { searchParams: Promise<{ koreksi?: string }> }) {
   const session = await auth();
   if (!session) redirect("/login");
   // Rute modul piutang tidak dipetakan di ROUTE_PERMISSIONS — halaman memagari dirinya sendiri.
@@ -33,9 +38,14 @@ export default async function ReturTokoPage() {
   const dariSpg = idNrt.length
     ? (await prisma.storeReturn.findMany({ where: { id: { in: idNrt }, reportedBySpg: true }, select: { id: true } })).map((n) => n.id)
     : [];
+  // Definisi yang sama dengan baris Beranda (`dokumenKoreksiTertunda`).
+  const koreksi = await koreksiTertunda("retur", idNrt);
+  const saringKoreksi = (await props?.searchParams)?.koreksi === "1";
 
   return (
     <ReturTokoClient
+      // Dipasang ulang saat `?koreksi=` berubah — saringan awal hanya dibaca sekali.
+      key={saringKoreksi ? "koreksi" : "kerja"}
       baris={baris}
       ringkasan={ringkasKerjaRetur(baris)}
       toko={toko}
@@ -51,6 +61,8 @@ export default async function ReturTokoPage() {
       bolehMengelola={hasPermission(izin, PERMISSIONS.RECEIVABLES_MANAGE)}
       bolehMenghitung={hasPermission(izin, PERMISSIONS.INVENTORY_OPNAME_COUNT)}
       dariSpg={dariSpg}
+      koreksiIds={[...koreksi.keys()]}
+      saringAwal={saringKoreksi ? "koreksi" : "kerja"}
     />
   );
 }

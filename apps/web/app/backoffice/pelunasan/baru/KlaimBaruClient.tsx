@@ -71,8 +71,14 @@ export function KlaimBaruClient({
   antreLuring = false,
   tombolKembali,
   awal = null,
+  tokoAwal = null,
 }: {
   bahan: BahanKlaimBaru;
+  /**
+   * HP: toko yang langsung terpilih (dibuka dari halaman toko). Diabaikan bila
+   * toko itu tidak ada di pemilih. Formulir kantor tidak mengisinya.
+   */
+  tokoAwal?: string | null;
   /**
    * "Laporkan ulang": isi dari BKM yang ditolak atau dibatalkan. Toko, faktur,
    * dan potongan TIDAK ikut — justru itu yang biasanya salah.
@@ -111,7 +117,9 @@ export function KlaimBaruClient({
   // atau kiriman ulang dari antrean, tetap satu BKM di server.
   const [kunci] = useState(newLocalId);
 
-  const [storeId, setStoreId] = useState('');
+  const [storeId, setStoreId] = useState(() =>
+    tokoAwal && bahan.toko.some((t) => t.id === tokoAwal) ? tokoAwal : '',
+  );
   const [tglTransfer, setTglTransfer] = useState(awal?.tglTransfer || hariIniWib());
   const [cara, setCara] = useState<(typeof CARA)[number]>(awal?.cara ?? 'transfer');
   const [dipilih, setDipilih] = useState<Record<string, number>>({});

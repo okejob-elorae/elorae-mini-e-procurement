@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { KeteranganKirim } from "../../KeteranganKirim";
 import { toast } from "sonner";
-import { Loader2, Minus, Package, Plus, Search, SearchX, X } from "lucide-react";
+import { Loader2, Minus, Package, Plus, Search, SearchX, Truck, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -30,6 +31,10 @@ export type CatatanDicari = {
   sku: string | null;
   /** Diformat server untuk kedua bahasa. */
   waktu: { id: string; en: string };
+  /** Formulir minta kiriman berisi barang ini; null bila diketik bebas atau dicatat di toko lain. */
+  minta: string | null;
+  /** Barangnya diketik bebas (bukan dari katalog) — tidak bisa diisikan ke permintaan. */
+  ditulisBebas: boolean;
 };
 
 type Grup = { itemId: string; sku: string; productName: string; variants: SpgCatalogRow[] };
@@ -389,18 +394,30 @@ export function CatatDicariClient({ katalog, terakhir }: { katalog: SpgCatalogRo
           <div className="beranda-kartu beranda-kartu-daftar">
             <ul className="divide-y">
               {terakhir.map((c) => (
-                <li key={c.id} className="flex min-h-14 items-center gap-3 px-4 py-2">
-                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground">
-                    <SearchX className="h-4 w-4" aria-hidden />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block break-words font-medium leading-tight">{c.keterangan}</span>
-                    <span className="block text-xs text-muted-foreground">
-                      {c.waktu[bahasa]}
-                      {c.sku ? ` · ${c.sku}` : ""}
+                <li key={c.id} className="space-y-2 px-4 py-2">
+                  <div className="flex min-h-10 items-center gap-3">
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground">
+                      <SearchX className="h-4 w-4" aria-hidden />
                     </span>
-                  </span>
-                  <span className="shrink-0 text-sm font-semibold tabular-nums">{t("recentQty", { qty: c.qty })}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block break-words font-medium leading-tight">{c.keterangan}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        {c.waktu[bahasa]}
+                        {c.sku ? ` · ${c.sku}` : ""}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-sm font-semibold tabular-nums">{t("recentQty", { qty: c.qty })}</span>
+                  </div>
+                  {c.minta ? (
+                    <Button asChild variant="outline" size="sm" className="ml-12 h-11">
+                      <Link href={c.minta}>
+                        <Truck className="h-4 w-4" aria-hidden />
+                        {t("minta.tombol")}
+                      </Link>
+                    </Button>
+                  ) : c.ditulisBebas ? (
+                    <p className="pl-12 text-xs text-muted-foreground">{t("minta.tanpaBarang")}</p>
+                  ) : null}
                 </li>
               ))}
             </ul>

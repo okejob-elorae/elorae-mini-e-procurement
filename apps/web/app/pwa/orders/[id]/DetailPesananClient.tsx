@@ -31,6 +31,7 @@ import { cn } from "@/lib/utils";
 import { NADA_KEADAAN } from "../PesananSayaClient";
 import { LencanaJarakJauh } from "./LencanaJarakJauh";
 import { BuktiTerimaPengiriman, type KirimanTampil } from "./BuktiTerimaPengiriman";
+import { KartuTerimaToko, type TerimaTokoTampil } from "./TerimaToko";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
 import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
@@ -89,10 +90,13 @@ export function DetailPesananClient({
   alamatUbah = null,
   bisaBatal = false,
   salinanWa = null,
+  terimaTokoKonsi = null,
 }: {
   pesanan: DetailPesananView;
   /** Pengiriman + bukti terimanya (PUTUS saja); tanggalnya sudah diformat server. */
   kiriman?: KirimanTampil[];
+  /** KONSI: hasil hitung SPG atas pesanan ini di toko (potong saja); null = belum dihitung. */
+  terimaTokoKonsi?: TerimaTokoTampil | null;
   /** Alamat katalog untuk mengubah pesanan (hanya selagi menunggu); null = tidak bisa diubah. */
   alamatUbah?: string | null;
   /** Pesanan masih menunggu dan milik Anda: boleh dibatalkan. */
@@ -258,6 +262,8 @@ export function DetailPesananClient({
       </section>
 
       <BuktiTerimaPengiriman orderId={p.id} storeName={p.storeName} kiriman={kiriman} />
+
+      {terimaTokoKonsi ? <KartuTerimaToko r={terimaTokoKonsi} /> : null}
 
       {p.note?.trim() ? (
         <section className="beranda-kartu">

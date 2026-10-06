@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { Camera, Plus, RotateCcw } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -73,6 +74,12 @@ export function ReturSayaClient({ baris }: { baris: ReturSayaTampil[] }) {
                 <div className="flex items-start justify-between gap-3">
                   <span className="min-w-0">
                     <span className="block font-semibold">{b.noNrt}</span>
+                    {/* Nota SPG di toko yang Anda pegang — hanya untuk dilihat. */}
+                    {!b.milikSaya && (
+                      <Badge variant="secondary" className="mt-1 max-w-full whitespace-normal text-left">
+                        {b.pelapor ? t('dariSpgOleh', { nama: b.pelapor }) : t('dariSpg')}
+                      </Badge>
+                    )}
                     <span className="block text-xs text-muted-foreground">
                       {b.storeName} · {tanggal(b.tanggal)}
                       {b.adaFoto && (
@@ -90,16 +97,18 @@ export function ReturSayaClient({ baris }: { baris: ReturSayaTampil[] }) {
                 </p>
                 {/* Belum dihitung gudang: pelapornya sendiri boleh menarik notanya
                     (salah toko, salah nomor). Sesudah dihitung, kantor yang membetulkan. */}
-                {b.langkah === 'cek' && <TombolTarikLaporan jenis="retur" id={b.id} nomor={b.noNrt} />}
+                {b.milikSaya && b.langkah === 'cek' && <TombolTarikLaporan jenis="retur" id={b.id} nomor={b.noNrt} />}
                 {/* Sudah dihitung gudang: barangnya sudah masuk — kantor yang membetulkan. */}
-                {b.langkah !== 'cek' &&
+                {b.milikSaya &&
+                  b.langkah !== 'cek' &&
                   b.langkah !== 'batal' &&
                   (b.koreksi ? (
                     <KoreksiTerkirim pada={b.koreksi.pada} alasan={b.koreksi.alasan} />
                   ) : (
                     <TombolTarikLaporan jenis="retur" id={b.id} nomor={b.noNrt} mode="koreksi" />
                   ))}
-                {b.langkah === 'batal' &&
+                {b.milikSaya &&
+                  b.langkah === 'batal' &&
                   (b.digantiOleh ? (
                     <p className="text-sm text-muted-foreground">{tTarik('digantiOleh', { nomor: b.digantiOleh })}</p>
                   ) : (

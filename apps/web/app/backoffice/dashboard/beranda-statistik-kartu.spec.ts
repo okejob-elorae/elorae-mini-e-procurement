@@ -34,7 +34,6 @@ vi.mock("@/lib/dashboard/queries", () => ({
   }),
   getRawMaterialShortage: vi.fn(async () => []),
   getCOGSRawVsFinished: vi.fn(async () => ({ rawValue: 0, finishedValue: 0, rawCount: 0, finishedCount: 0 })),
-  getOversoldInventory: vi.fn(async () => []),
   getSalesmenSalesSummary: vi.fn(async () => null),
   getTrenPenjualan: vi.fn(async () => []),
 }));
@@ -57,6 +56,11 @@ vi.mock("@/lib/dashboard/action-items", async (importOriginal) => {
     getClaimsAwaitingVerification: vi.fn(async () => ({ count: 0, amount: 0 })),
   };
 });
+vi.mock("@/lib/dashboard/antrean-kantor", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/dashboard/antrean-kantor")>()),
+  hitungBarangStokMinus: vi.fn(async () => 0),
+  getAntreanKantor: vi.fn(async () => ({})),
+}));
 vi.mock("./DashboardPageClient", () => ({ DashboardPageClient: () => null }));
 
 const { default: DashboardPage } = await import("./page");

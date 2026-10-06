@@ -72,7 +72,9 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/van-sales/[id]': 'canvassing:manage',
   '/backoffice/spg-sales': 'spg_sales:view',
   '/backoffice/spg-sales/[id]': 'spg_sales:view',
-  '/backoffice/spg-requests': 'spg_sales:view',
+  // `/backoffice/spg-requests` sengaja TIDAK dipetakan: terbuka untuk pengawas
+  // SPG (`spg_sales:view`) ATAU pengelola toko (`stores:manage`) yang dikabari
+  // permintaan dari toko tanpa pemegang; halamannya memagari dirinya sendiri.
   '/backoffice/spg-lost-sales': 'spg_sales:view',
   '/backoffice/spg-transfers': 'spg_sales:view',
   '/backoffice/spg-transfers/[id]': 'spg_sales:view',

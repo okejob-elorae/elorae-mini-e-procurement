@@ -31,6 +31,8 @@ export type SaringanPermintaan = "aktif" | StatusPermintaan | "semua";
 export type BarisPermintaan = {
   id: string;
   toko: string;
+  /** Toko belum punya salesman pemegang — permintaannya hanya sampai ke kantor. */
+  tanpaPemegang: boolean;
   peminta: string;
   status: StatusPermintaan;
   catatan: string | null;
@@ -67,12 +69,15 @@ const KODE_DIKENAL = new Set(["FORBIDDEN", "VALIDATION", "TIDAK_DITEMUKAN", "STA
 
 export function PermintaanKirimanClient({
   saringan,
+  tanpaPemegang = false,
   baris,
   jumlahAktif,
   terpotong,
   bolehUbah,
 }: {
   saringan: SaringanPermintaan;
+  /** `?pemegang=tanpa` — hanya toko yang belum punya salesman pemegang. */
+  tanpaPemegang?: boolean;
   baris: BarisPermintaan[];
   jumlahAktif: number;
   terpotong: boolean;
@@ -115,10 +120,15 @@ export function PermintaanKirimanClient({
       }
     });
 
-  const gantiTab = (v: string) =>
-    mulaiPindah(() =>
-      router.push(v === "aktif" ? "/backoffice/spg-requests" : `/backoffice/spg-requests?status=${v}`),
-    );
+  const alamat = (status: string, tanpa: boolean) => {
+    const q = new URLSearchParams();
+    if (status !== "aktif") q.set("status", status);
+    if (tanpa) q.set("pemegang", "tanpa");
+    const isi = q.toString();
+    return isi ? `/backoffice/spg-requests?${isi}` : "/backoffice/spg-requests";
+  };
+  const gantiTab = (v: string) => mulaiPindah(() => router.push(alamat(v, tanpaPemegang)));
+  const gantiPemegang = () => mulaiPindah(() => router.push(alamat(saringan, !tanpaPemegang)));
 
   const menolak = dialog?.status === "DITOLAK";
   const bolehKirimDialog = !sibuk && (!menolak || catatan.trim().length > 0);
@@ -144,6 +154,19 @@ export function PermintaanKirimanClient({
           ))}
         </TabsList>
       </Tabs>
+
+      <div>
+        <Button
+          type="button"
+          size="sm"
+          variant={tanpaPemegang ? "default" : "outline"}
+          aria-pressed={tanpaPemegang}
+          disabled={pindah}
+          onClick={gantiPemegang}
+        >
+          {t("filterUnheld")}
+        </Button>
+      </div>
 
       <Card>
         <CardHeader>
@@ -197,7 +220,14 @@ export function PermintaanKirimanClient({
                               {buka ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                             </Button>
                           </TableCell>
-                          <TableCell className="min-w-[10rem] whitespace-normal font-medium">{r.toko}</TableCell>
+                          <TableCell className="min-w-[10rem] whitespace-normal font-medium">
+                            <div>{r.toko}</div>
+                            {r.tanpaPemegang ? (
+                              <span className="mt-1 inline-block rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-300">
+                                {t("unheldBadge")}
+                              </span>
+                            ) : null}
+                          </TableCell>
                           <TableCell className="min-w-[8rem] whitespace-normal text-muted-foreground">{r.peminta}</TableCell>
                           <TableCell className="whitespace-nowrap text-muted-foreground">{r.waktu}</TableCell>
                           <TableCell className="text-right tabular-nums">

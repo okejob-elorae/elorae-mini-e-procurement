@@ -12,6 +12,8 @@ import { dilewatiKarenaLebihBaru, saldoAcuan, waktuHitungPerKunci } from "./opna
 import { kabariTitipanTersedia } from "./titip-tersedia";
 import { catatHilangDariOpname, catatHilangDariPenerimaan } from "./hilang-sumber";
 import { KATEGORI_NOTIF_RUSAK, masukBukuSaatTerima, periksaIsianRusak } from "./rusak";
+import { adaSelisih, hitungSelisihTerima, type SelisihTerima } from "./selisih-terima";
+import { kabarkanSelisihTerima } from "./kabar-selisih-terima";
 import { BATAS_STOK_LURING_MS, jepitWaktuLuring } from "@/lib/pwa/waktu-luring";
 
 /**
@@ -54,6 +56,8 @@ type SesudahTerima = {
   notifikasi: AdminNotification | null;
   notifikasiRusak: AdminNotification | null;
   kabarDiterima: { userId: string; docNo: string; transferId: string; kurang: number } | null;
+  /** Kiriman gudang (bukan mutasi) yang diterima kurang/rusak → salesman pengirimnya. */
+  kabarSelisih: { sourceType: JenisKiriman; sourceId: string; docNo: string; selisih: SelisihTerima } | null;
 };
 
 export async function terimaKiriman(input: {
@@ -104,7 +108,7 @@ export async function terimaKiriman(input: {
 
   // Diisi di dalam transaksi; percobaan ulang menyetelnya ulang supaya catatan
   // dari percobaan yang dibatalkan tidak pernah ikut disebar.
-  const sesudah: SesudahTerima = { notifikasi: null, notifikasiRusak: null, kabarDiterima: null };
+  const sesudah: SesudahTerima = { notifikasi: null, notifikasiRusak: null, kabarDiterima: null, kabarSelisih: null };
   let hasil: HasilTerimaKiriman;
   try {
     hasil = await terimaDalamTransaksi(input, sesudah, { kunci, waktuTangkap });
@@ -141,6 +145,10 @@ export async function terimaKiriman(input: {
         data: { transferId: k.transferId },
       });
     }
+    // Hanya tanda terima yang BARU dibuat panggilan ini: kiriman ulang berkunci
+    // sama kembali sebelum transaksi (atau di dalamnya) tanpa mengisi ini.
+    const s = sesudah.kabarSelisih;
+    if (s) await kabarkanSelisihTerima({ ...s, storeId: input.storeId, penerimaId: input.userId });
   }
   return hasil;
 }
@@ -212,6 +220,7 @@ function terimaDalamTransaksi(
     sesudah.notifikasi = null;
     sesudah.notifikasiRusak = null;
     sesudah.kabarDiterima = null;
+    sesudah.kabarSelisih = null;
     const mutasi = dariMutasi(input.sourceType) ? input.sourceType : null;
     // Kantor hanya menerima mutasi atas nama toko; kiriman lain milik SPG.
     if (input.kantor && !mutasi) return { ok: false, alasan: "KIRIMAN_TIDAK_DITEMUKAN" };
@@ -363,6 +372,17 @@ function terimaDalamTransaksi(
           metadata: { receiptId: receipt.id, storeId: input.storeId, pcs },
         },
       });
+    }
+
+    // Kiriman gudang yang tidak pas (kurang/rusak) dikabarkan ke salesman
+    // pengirimnya sesudah transaksi. Mutasi punya kabarnya sendiri di bawah.
+    if (!mutasi) {
+      const selisih = hitungSelisihTerima(
+        kiriman.lines.map((l) => ({ qtySent: l.qty, qtyReceived: jawab.get(l.lineId) ?? 0, qtyDamaged: rusakDari(l.lineId) })),
+      );
+      if (adaSelisih(selisih)) {
+        sesudah.kabarSelisih = { sourceType: input.sourceType, sourceId: input.sourceId, docNo: kiriman.docNo, selisih };
+      }
     }
 
     if (mutasi && periksa?.ok) {
@@ -607,9 +627,18 @@ function alasanGabungan(lama: AlasanPermintaan, baru: AlasanPermintaan): AlasanP
 }
 
 /**
+ * Kategori `AdminNotification` untuk permintaan stok SPG di toko TANPA salesman
+ * pemegang — permintaannya tidak masuk kotak masuk HP siapa pun, jadi kantor
+ * (pengelola toko, `admin-fanout.ts`) yang diberi tahu.
+ */
+export const KATEGORI_NOTIF_PERMINTAAN_TANPA_PEMEGANG = "SPG_STOCK_REQUEST_UNHELD";
+
+/**
  * SPG meminta barang. Permintaan masuk ke kantor (seperti sebelumnya) DAN
  * dikabarkan ke salesman pemegang toko (`Store.salesmanId`), yang bisa
- * langsung membuatkan pesanannya dari kotak masuk `/pwa/permintaan`.
+ * langsung membuatkan pesanannya dari kotak masuk `/pwa/permintaan`. Toko
+ * tanpa pemegang membunyikan lonceng kantor: notifikasinya ditulis dalam
+ * transaksi yang sama dengan permintaannya, lalu disebar sesudahnya.
  *
  * `alasan` per baris: salah satu `ALASAN_PERMINTAAN`; tanpa alasan = MANUAL.
  * Kabar hanya untuk permintaan yang BARU dibuat — kiriman ulang dengan kunci
@@ -650,29 +679,52 @@ export async function mintaKiriman(input: {
   const items = await namaBarang([...new Set(baris.map((b) => b.itemId))]);
   if (baris.some((b) => !items.has(b.itemId))) return { ok: false, alasan: "BARANG_TIDAK_DITEMUKAN" };
 
+  const jumlahPcs = baris.reduce((n, b) => n + b.qty, 0);
   let req: { id: string };
+  // Diisi di dalam transaksi; disetel ulang di setiap percobaan supaya
+  // notifikasi dari transaksi yang batal tidak pernah disebar.
+  const sesudah: { tanpaPemegang: boolean; notifikasi: AdminNotification | null } = { tanpaPemegang: false, notifikasi: null };
   try {
-    req = await prisma.stockRequest.create({
-      data: {
-        storeId: input.storeId,
-        requestedById: input.userId,
-        note: input.note?.trim() || null,
-        idempotencyKey: kunci,
-        lines: {
-          create: baris.map((b) => {
-            const item = items.get(b.itemId)!;
-            const label = variantDetailForSku(item.variants, b.variantSku || null);
-            return {
-              itemId: b.itemId,
-              variantSku: b.variantSku,
-              productName: label ? `${item.nameId} — ${label}` : item.nameId,
-              qty: b.qty,
-              alasan: b.alasan,
-            };
-          }),
+    req = await prisma.$transaction(async (tx) => {
+      sesudah.tanpaPemegang = false;
+      sesudah.notifikasi = null;
+      const toko = await tx.store.findUnique({ where: { id: input.storeId }, select: { name: true, salesmanId: true } });
+      const dibuat = await tx.stockRequest.create({
+        data: {
+          storeId: input.storeId,
+          requestedById: input.userId,
+          note: input.note?.trim() || null,
+          idempotencyKey: kunci,
+          lines: {
+            create: baris.map((b) => {
+              const item = items.get(b.itemId)!;
+              const label = variantDetailForSku(item.variants, b.variantSku || null);
+              return {
+                itemId: b.itemId,
+                variantSku: b.variantSku,
+                productName: label ? `${item.nameId} — ${label}` : item.nameId,
+                qty: b.qty,
+                alasan: b.alasan,
+              };
+            }),
+          },
         },
-      },
-      select: { id: true },
+        select: { id: true },
+      });
+      if (toko && !toko.salesmanId) {
+        sesudah.tanpaPemegang = true;
+        const peminta = await tx.user.findUnique({ where: { id: input.userId }, select: { name: true, email: true } });
+        sesudah.notifikasi = await tx.adminNotification.create({
+          data: {
+            category: KATEGORI_NOTIF_PERMINTAAN_TANPA_PEMEGANG,
+            severity: "INFO",
+            title: `Permintaan stok dari toko tanpa pemegang: ${toko.name}`,
+            message: `${peminta?.name ?? peminta?.email ?? "SPG"} meminta ${baris.length} barang (${jumlahPcs} potong) untuk ${toko.name}. Toko ini belum punya salesman pemegang, jadi permintaannya ditangani kantor.`,
+            metadata: { requestId: dibuat.id, storeId: input.storeId },
+          },
+        });
+      }
+      return dibuat;
     });
   } catch (err) {
     // Dua kiriman dengan kunci yang sama bersamaan: yang kalah membaca milik pemenangnya.
@@ -683,19 +735,22 @@ export async function mintaKiriman(input: {
     throw err;
   }
 
-  await kabariPemegangToko({
-    storeId: input.storeId,
-    requestId: req.id,
-    pemintaId: input.userId,
-    jumlahBarang: baris.length,
-    jumlahPcs: baris.reduce((n, b) => n + b.qty, 0),
-  });
+  if (sesudah.notifikasi) void fanOutAdminNotification(sesudah.notifikasi);
+  if (!sesudah.tanpaPemegang) {
+    await kabariPemegangToko({
+      storeId: input.storeId,
+      requestId: req.id,
+      pemintaId: input.userId,
+      jumlahBarang: baris.length,
+      jumlahPcs,
+    });
+  }
   return { ok: true, requestId: req.id };
 }
 
 /**
  * Kabar `PERMINTAAN_SPG_MASUK` ke salesman pemegang toko. Toko tanpa pemegang
- * tidak mengabari siapa pun (kantor tetap melihatnya di daftar permintaan).
+ * tidak sampai ke sini — lonceng kantornya dibunyikan `mintaKiriman`.
  * Tidak pernah melempar: permintaan sudah tersimpan, kabar yang gagal tidak
  * boleh membuat HP mengira permintaannya gagal dan mengirim ulang.
  */

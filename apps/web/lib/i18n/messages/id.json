@@ -176,7 +176,8 @@
     "navBarangHilang": "Barang hilang",
     "navLabelBarcode": "Label barcode",
     "navGudangRusak": "Gudang barang rusak",
-    "bantuan": "Bantuan"
+    "bantuan": "Bantuan",
+    "navGroupPurchasing": "Pembelian"
   },
   "notifications": {
     "title": "Notifikasi",
@@ -184,7 +185,9 @@
     "sendTest": "Kirim notifikasi uji",
     "testTitle": "Notifikasi uji",
     "testBody": "Ini adalah notifikasi uji dari aplikasi.",
-    "markAllRead": "Tandai semua dibaca"
+    "markAllRead": "Tandai semua dibaca",
+    "loadMore": "Muat lebih",
+    "loadMoreFailed": "Notifikasi berikutnya gagal dimuat. Coba lagi."
   },
   "supplier": {
     "title": "Pemasok",
@@ -4075,7 +4078,8 @@
       "filterSales": "Saring menurut sales",
       "allAreas": "Semua area",
       "allSales": "Semua sales",
-      "noSales": "Belum ada sales"
+      "noSales": "Belum ada sales",
+      "filterPendingChanges": "Perubahan menunggu ({count})"
     },
     "form": {
       "code": "Kode",
@@ -4375,7 +4379,18 @@
       "filledFromRequest": "{count} barang dari permintaan SPG masuk keranjang. Periksa lalu kirim.",
       "filledFromRecommendation": "{count} barang dari rekomendasi yang diterima toko masuk keranjang. Periksa lalu kirim.",
       "repeatNoPrice": "Belum ada harga, tidak dimasukkan: {nama}{sisa, plural, =0 {} other { dan # lainnya}}",
-      "tolakTanpaHarga": "Pesanan tidak terkirim. Belum ada harga: {nama}{sisa, plural, =0 {} other { dan # lainnya}}. Hapus dari keranjang, lalu kirim lagi."
+      "tolakTanpaHarga": "Pesanan tidak terkirim. Belum ada harga: {nama}{sisa, plural, =0 {} other { dan # lainnya}}. Hapus dari keranjang, lalu kirim lagi.",
+      "keranjangDipulihkan": "Keranjang dipulihkan — {count} baris",
+      "jumlahLabel": "Jumlah {label}",
+      "jumlahDijepitStok": "Hanya {max} tersedia — jumlah diubah menjadi {max}.",
+      "jumlahDijepitInden": "Batas pesanan {max} pcs — jumlah diubah menjadi {max}.",
+      "packTambah": "+1 pack",
+      "packTambahGrup": "+1 pack {grup}",
+      "packIsi": "1 pack = {rasio}",
+      "packKurang": "Stok kurang: {daftar}.",
+      "packKurangUkuran": "{ukuran} {dapat} dari {butuh}",
+      "packTidakAda": "{ukuran} tidak ada",
+      "diRak": "Di rak: {jumlah}"
     },
     "offline": {
       "pendingTitle": "Belum terkirim",
@@ -4757,7 +4772,9 @@
       "taskSwap": "Ajuan tukar shift dari rekan",
       "taskClose": "Kirim laporan tutup hari",
       "shiftToday": "Shift hari ini: {label} · {mulai}–{selesai}",
-      "shiftOff": "Hari ini jadwal Anda libur"
+      "shiftOff": "Hari ini jadwal Anda libur",
+      "taskOrdersComing": "Pesanan untuk toko sedang diproses",
+      "checkoutTitle": "Selesai bekerja"
     },
     "spgLainnya": {
       "title": "Lainnya",
@@ -5126,6 +5143,10 @@
         "hint": "Catatan ini juga menjadi titip pesan: Anda dikabari saat barangnya masuk stok toko, lalu mengabari pembeli lewat WhatsApp.",
         "save": "Simpan & titip pesan",
         "saved": "Tercatat. Pembeli akan dikabari saat barangnya datang."
+      },
+      "minta": {
+        "tombol": "Minta ke salesman",
+        "tanpaBarang": "Ditulis bebas — tidak bisa diisikan ke permintaan"
       }
     },
     "spgStok": {
@@ -5220,7 +5241,11 @@
       "formMinta": {
         "subtitleHolder": "Pilih barang yang perlu dikirim ke {store}. Permintaan sampai ke {name} (salesman toko) dan kantor.",
         "sentHolder": "Permintaan terkirim ke {name} dan kantor.",
-        "noteLabelHolder": "Catatan untuk salesman dan kantor (opsional)"
+        "noteLabelHolder": "Catatan untuk salesman dan kantor (opsional)",
+        "pilihUkuranJudul": "Pilih ukurannya",
+        "pilihUkuranBaris": "{alasan} · {qty} pcs — ketuk untuk mencari ukurannya",
+        "pilihUkuranLewati": "Lewati {name}",
+        "tidakDitemukan": "{count, plural, other {# barang dari tautan tidak ada di katalog dan tidak ditambahkan.}}"
       },
       "saran": {
         "title": "Saran untuk diminta",
@@ -5339,7 +5364,23 @@
         "KETERANGAN_RUSAK_WAJIB": "Setiap baris yang ada barang rusaknya wajib diberi keterangan."
       },
       "tertahanAntre": "Sudah diterima di HP · terkirim saat ada sinyal",
-      "tertahanDitolak": "Tanda terima di HP ditolak · lihat Belum terkirim"
+      "tertahanDitolak": "Tanda terima di HP ditolak · lihat Belum terkirim",
+      "pesanan": {
+        "judul": "Pesanan untuk toko ini · {count}",
+        "dipesan": "Dipesan {tanggal}",
+        "ringkas": "{count} barang · {pcs} pcs",
+        "ringkasSisa": "Belum dikirim: {count} barang · {pcs} pcs",
+        "status": {
+          "MENUNGGU_PERSETUJUAN": "Menunggu persetujuan",
+          "DISETUJUI": "Disetujui, belum dikirim",
+          "DIKIRIM_SEBAGIAN": "Dikirim sebagian",
+          "DALAM_PERJALANAN": "Sudah dikirim, menunggu diterima"
+        },
+        "inden": "Pre-order",
+        "pcs": "{count} pcs",
+        "lihatSemua": "Lihat semua {count} barang",
+        "lebihSedikit": "Tampilkan lebih sedikit"
+      }
     },
     "spgOpname": {
       "title": "Opname toko",
@@ -5568,7 +5609,13 @@
         "creditNone": "Tidak ada masalah tagihan."
       },
       "rowInden": "Inden · {nama}",
-      "rowIndenTanpaNama": "Inden"
+      "rowIndenTanpaNama": "Inden",
+      "terimaToko": {
+        "judul": "Hitungan SPG di toko",
+        "baris": "Diterima toko: {diterima} dari {dikirim} pcs",
+        "rusak": "rusak {rusak}",
+        "dihitung": "Dihitung SPG {date} WIB"
+      }
     },
     "ringkasanToko": {
       "title": "Ringkasan toko",
@@ -6577,7 +6624,9 @@
       "telepon": "Telepon",
       "petaSingkat": "Peta",
       "katalogSingkat": "Katalog",
-      "halamanToko": "Halaman toko"
+      "halamanToko": "Halaman toko",
+      "laporPelunasan": "Lapor pelunasan",
+      "laporRetur": "Lapor retur"
     },
     "target": {
       "back": "Beranda",
@@ -6996,6 +7045,20 @@
         "UMUM": "Ditolak server. Coba lagi, atau hubungi kantor.",
         "KUNJUNGAN_DITOLAK": "Check-in kunjungan saat nota ini dicatat ditolak server, jadi notanya tidak bisa dicatat. Hubungi kantor."
       }
+    },
+    "kehadiranSpg": {
+      "judul": "SPG hari ini",
+      "diToko": "Di toko sejak {jam}",
+      "pulang": "Sudah pulang {pulang} · masuk {masuk}",
+      "izin": {
+        "IZIN": "Izin hari ini",
+        "SAKIT": "Sakit hari ini",
+        "CUTI": "Cuti hari ini"
+      },
+      "libur": "Libur menurut jadwal",
+      "bukanHariKerja": "Bukan hari kerja SPG",
+      "belum": "Belum datang",
+      "belumJadwal": "Belum datang · jadwal masuk {jam}"
     }
   },
   "fieldSalesOrders": {
@@ -7057,7 +7120,7 @@
     "colOnHand": "Stok",
     "konsiTransferNote": "Transfer konsinyasi — bukan penjualan; stok direservasi saat disetujui.",
     "konsiMarginUnset": "Margin toko tidak valid atau belum diset — harga gross-up memakai harga jual apa adanya.",
-    "approveConfirmKonsi": "Setujui transfer konsinyasi ini? Stok akan direservasi (bukan dijual).",
+    "approveConfirmKonsi": "Setujui transfer konsinyasi ini? Barangnya langsung keluar dari stok gudang utama dan pindah menjadi stok titipan di toko — ini pemindahan barang, bukan penjualan.",
     "rejectConfirmKonsi": "Tolak transfer konsinyasi ini?",
     "promoBelowCost": "Peringatan: harga bersih di bawah HPP",
     "appealBadge": "Diajukan",
@@ -8276,7 +8339,7 @@
     "emptyTitle": "Tidak ada yang menunggu",
     "emptyBody": "Semua persetujuan, pengiriman, dan pencatatan sudah beres hari ini.",
     "overduePOs": "PO terlambat — tim pengadaan",
-    "oversold": "SKU terjual melebihi stok — tim gudang",
+    "oversold": "Barang terjual melebihi stok — tim gudang",
     "journalPending": "Jurnal gagal diposting — tim keuangan",
     "fieldSalesPendingApproval": "Order salesman menunggu persetujuan Anda",
     "unshippedOrders": "Pesanan marketplace belum dikirim",
@@ -8287,7 +8350,23 @@
     "overduePromises": "Faktur lewat janji bayar",
     "claimsAwaitingVerification": "BKM menunggu verifikasi tim keuangan",
     "allClear": "Semua beres — tidak ada yang menunggu tindakan.",
-    "draftPOs": "PO menunggu persetujuan"
+    "draftPOs": "PO menunggu persetujuan",
+    "leavePending": "Izin, sakit, atau cuti menunggu keputusan",
+    "expensesPendingApproval": "Biaya perjalanan menunggu persetujuan",
+    "expensesPendingPayment": "Biaya perjalanan disetujui, belum dibayar",
+    "exchangesPendingApproval": "Tukar barang menunggu persetujuan",
+    "exchangesPendingCompletion": "Tukar barang menunggu diselesaikan gudang",
+    "transfersPendingApproval": "Mutasi antar toko menunggu persetujuan",
+    "transferShortfallsOpen": "Selisih mutasi toko belum diputuskan",
+    "stockLossOpen": "Barang hilang belum ditetapkan penanggungnya",
+    "storeProposalsPending": "Usulan toko baru menunggu diputuskan",
+    "fieldPromisesUnconfirmed": "Janji bayar dari lapangan belum dikonfirmasi",
+    "damagedDeliveriesOpen": "Kiriman rusak menunggu keputusan gudang",
+    "damagedWarehouseOpen": "Barang di gudang rusak menunggu keputusan",
+    "claimCorrectionsPending": "Sales minta koreksi BKM",
+    "returnCorrectionsPending": "Sales minta koreksi nota retur",
+    "shiftSwapsPending": "Tukar shift SPG menunggu keputusan",
+    "stockRequestsUnheld": "Permintaan stok SPG di toko tanpa pemegang"
   },
   "statuses": {
     "unknown": "Tidak diketahui",
@@ -8624,7 +8703,11 @@
     "errRETUR_TERPAKAI": "Nota retur itu sudah dipotongkan di BKM lain sebesar nilainya. Pilih nota lain atau kurangi potongannya sampai sebesar sisa yang tertulis.",
     "errFOTO_BUKAN_MILIK": "Foto bukti ini diunggah orang lain. Ambil foto bukti Anda sendiri.",
     "errVerifikasiMELEBIHI_SISA": "Sejak BKM ini dilaporkan, fakturnya sudah dilunasi BKM lain, jadi sisanya kini kurang dari nilai di BKM ini. Tolak BKM ini atau minta sales membetulkan nominalnya.",
-    "pemeriksaSamaSingkat": "BKM Anda sendiri — admin keuangan lain yang memutuskan."
+    "pemeriksaSamaSingkat": "BKM Anda sendiri — admin keuangan lain yang memutuskan.",
+    "filterLabel": "Saring BKM",
+    "filterAll": "Semua",
+    "filterKoreksi": "Minta koreksi",
+    "emptyFilteredTitle": "Tidak ada BKM dengan saringan ini"
   },
   "collections": {
     "pageTitle": "Kontrabon / Tanda Terima",
@@ -8944,7 +9027,8 @@
     "errTOKO_KONSI": "Toko konsinyasi tidak punya piutang, jadi selisihnya tidak bisa ditagihkan ke toko. Catat sebagai barang hilang dengan penanggung toko, atau pilih penanggung lain.",
     "errPIUTANG_BEBAN_SUDAH_DITAGIH": "Faktur beban toko ini sudah masuk penagihan (BKM atau kontrabon, apa pun statusnya, atau tugas tagih yang masih terbuka), jadi tidak bisa dihapus dan bebannya tidak bisa lagi dialihkan dari toko.",
     "errDITAGIH_LEWAT_PIUTANG": "Beban toko ditagih lewat fakturnya. Lunasnya mengikuti BKM yang terverifikasi, bukan ditandai di sini.",
-    "errFOTO_BUKAN_MILIK": "Foto nota retur ini diunggah orang lain. Ambil foto nota Anda sendiri."
+    "errFOTO_BUKAN_MILIK": "Foto nota retur ini diunggah orang lain. Ambil foto nota Anda sendiri.",
+    "filterKoreksi": "Minta koreksi"
   },
   "foto": {
     "pick": "Ambil atau pilih foto",
@@ -9267,7 +9351,9 @@
     "errRUSAK_MELEBIHI": "Jumlah yang dikirim balik melebihi sisa barang rusak yang belum dikembalikan.",
     "errRETUR_PEMBELI_TIDAK_SAH": "Barang rusak dari pembeli ini tidak bisa dikirim balik dari toko ini (bukan retur pembeli toko ini, barangnya berbeda, atau kondisinya layak).",
     "errRETUR_PEMBELI_MELEBIHI": "Jumlah yang dikirim balik melebihi barang rusak dari pembeli yang belum dikirim.",
-    "errFOTO_BUKAN_MILIK": "Foto nota retur ini diunggah orang lain. Ambil foto nota Anda sendiri."
+    "errFOTO_BUKAN_MILIK": "Foto nota retur ini diunggah orang lain. Ambil foto nota Anda sendiri.",
+    "dariSpg": "Dari SPG",
+    "dariSpgOleh": "Dari SPG · {nama}"
   },
   "pwaBeban": {
     "pageTitle": "Beban saya",
@@ -10045,7 +10131,8 @@
       "STOCK_REQUEST_ORDER_REPLACED": "Pesanan permintaan stok diganti",
       "STORE_RECOMMENDATION_ORDER_CANCELLED": "Pesanan dari rekomendasi dibatalkan — rekomendasi dibuka lagi",
       "STORE_RECOMMENDATION_ORDER_REPLACED": "Pesanan rekomendasi diganti",
-      "MATERIAL_ISSUED": "Bahan dikeluarkan ke perintah kerja"
+      "MATERIAL_ISSUED": "Bahan dikeluarkan ke perintah kerja",
+      "STORE_SHIPMENT_DEPARTED_NOTIFIED": "SPG toko dikabari barang berangkat"
     },
     "entities": {
       "ChainTemplate": "Templat rantai proses",
@@ -10431,7 +10518,9 @@
       "STATUS_TIDAK_BOLEH": "Status permintaan sudah berubah. Muat ulang halaman untuk melihat yang terbaru.",
       "ALASAN_WAJIB": "Tulis alasan penolakannya.",
       "GAGAL": "Gagal menyimpan. Coba lagi."
-    }
+    },
+    "filterUnheld": "Hanya toko tanpa pemegang",
+    "unheldBadge": "Toko tanpa pemegang"
   },
   "spgLostSales": {
     "pageTitle": "Barang dicari pembeli",
@@ -11072,7 +11161,9 @@
         "INVALID": "Isian tidak sah. Periksa batas hari.",
         "GAGAL": "Gagal menyimpan. Coba lagi."
       }
-    }
+    },
+    "semuaBulan": "Semua bulan",
+    "eksporPerBulan": "Pilih satu bulan untuk mengekspor"
   },
   "absensi": {
     "judul": "Absensi",
@@ -13507,7 +13598,9 @@
     "SERING_DIKIRIM": "Sering dikirim",
     "BARANG_BARU": "Barang baru",
     "LAKU_DI_SINI": "Laku di toko ini",
-    "MANUAL": "Pilihan SPG"
+    "MANUAL": "Pilihan SPG",
+    "DICARI_PEMBELI": "Dicari pembeli",
+    "TITIP_PEMBELI": "Titip pesan pembeli"
   },
   "pwaSpgAnalisa": {
     "title": "Analisa penjualan",
@@ -15249,6 +15342,12 @@
       "errTidakSah": "Isi angka antara {min} dan {maks}.",
       "errIzin": "Anda tidak punya izin mengubah pengaturan ini.",
       "errUmum": "Belum tersimpan. Coba lagi."
+    },
+    "minta": {
+      "tombol": "Minta ke salesman",
+      "tombolSemua": "{count, plural, other {Minta ke salesman (# barang)}}",
+      "tanpaBarang": "Barangnya ditulis bebas, jadi tidak bisa diisikan otomatis — pilih barangnya sendiri di formulir permintaan.",
+      "tanpaBarangSemua": "{count, plural, other {# titip pesan ditulis bebas dan tidak ikut terisi — pilih barangnya sendiri di formulir.}}"
     }
   },
   "suratJalanMutasi": {

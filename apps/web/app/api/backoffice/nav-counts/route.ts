@@ -15,12 +15,12 @@ export const dynamic = "force-dynamic";
 
 /**
  * Which nav group each waiting-work item belongs to, keyed by the top-level
- * nav href in BackofficeShell. Purchasing lives under Produksi in this app's
- * information architecture, which is why overdue POs badge that group.
+ * nav href in BackofficeShell. Purchase orders have their own group
+ * (Pembelian, `/backoffice/purchase-orders`) since 2026-10-06.
  */
 const NAV_GROUP_BY_ITEM: Record<string, string> = {
-  overduePOs: "/backoffice/production/planning",
-  draftPOs: "/backoffice/production/planning",
+  overduePOs: "/backoffice/purchase-orders",
+  draftPOs: "/backoffice/purchase-orders",
   oversold: "/backoffice/inventory",
   journalPending: "#",
   taxInvoicePending: "#",

@@ -1,11 +1,12 @@
 /**
  * Maps notification type + data to navigation href for click-to-navigate.
+ *
+ * Murni, tanpa basis data: dipakai komponen klien lonceng. `data` bisa null
+ * (baris lama) atau teks JSON (kolom JSON di MariaDB) — keduanya dibaca sebagai
+ * objek, supaya jenis yang dikenal tetap membawa ke daftarnya.
  */
-export function getNotificationHref(
-  type: string,
-  data: Record<string, unknown> | null
-): string | null {
-  if (!data || typeof data !== 'object') return null;
+export function getNotificationHref(type: string, raw: unknown): string | null {
+  const data = bacaData(raw);
 
   switch (type) {
     case 'PO_OVERDUE': {
@@ -69,7 +70,8 @@ export function getNotificationHref(
       return '/backoffice/purchase-orders';
     }
     case 'GRN_CREATED':
-      return '/backoffice/inventory';
+      // Daftar GRN ada di tab-nya sendiri; tanpa `tab` halaman membuka tab stok.
+      return TAUTAN_GRN;
     case 'STOCK_ADJUSTMENT_CREATED': {
       const adjustmentId = data.adjustmentId;
       if (typeof adjustmentId === 'string') {
@@ -145,11 +147,133 @@ export function getNotificationHref(
       return '/backoffice/spg-kiriman-rusak';
     case 'SPG_SHIFT_SWAP':
       return '/backoffice/jadwal-spg?tab=tukar';
+    case 'SPG_STOCK_REQUEST_UNHELD':
+      // Saringan "toko tanpa pemegang" — daftarnya tidak punya halaman per permintaan.
+      return '/backoffice/spg-requests?pemegang=tanpa';
     case 'STOCK_LOSS_OPEN': {
       const id = typeof data?.lossId === 'string' ? data.lossId : null;
       return id ? `/backoffice/barang-hilang/${encodeURIComponent(id)}` : '/backoffice/barang-hilang';
     }
+    case 'PENDING_ORDER_APPROVAL': {
+      const id = idAman(data, 'orderId');
+      return id ? `/backoffice/field-sales-orders/${id}` : '/backoffice/field-sales-orders';
+    }
+    case 'STORE_CHANGE_REQUEST': {
+      // Kartu tinjauan perubahan ada di rincian toko, bukan halaman sendiri.
+      const id = idAman(data, 'storeId');
+      return id ? `/backoffice/stores/${id}` : '/backoffice/stores';
+    }
+    case 'JOURNAL_PENDING':
+      return tautanJurnalTertunda(data);
+
+    /*
+     * Kabar (`kabariPengguna`) yang sampai ke lonceng KANTOR: BKM/NRT yang dicatat
+     * dari kantor menjadikan pencatatnya pelapor, jadi keputusannya kembali ke
+     * orang kantor itu. Tautan HP-nya (`tautanKabar`) tidak berguna di sini.
+     * Kabar khusus HP (jadwal, SPG, ringkasan) sengaja tetap null.
+     */
+    case 'PELUNASAN_TERVERIFIKASI':
+    case 'PELUNASAN_DITOLAK':
+    case 'PELUNASAN_DIBATALKAN':
+    case 'GIRO_CAIR':
+    case 'GIRO_DITOLAK': {
+      const id = idAman(data, 'claimId');
+      return id ? `/backoffice/pelunasan/${id}` : '/backoffice/pelunasan';
+    }
+    case 'RETUR_DIHITUNG':
+    case 'RETUR_DIPINDAH_TOKO':
+    case 'RETUR_DIBATALKAN': {
+      const id = idAman(data, 'returnId');
+      return id ? `/backoffice/retur-toko/${id}` : '/backoffice/retur-toko';
+    }
+    case 'RETUR_DIBEBANKAN': {
+      // Beban tanpa nota retur (selisih lain) hanya punya daftar bebannya.
+      const id = idAman(data, 'returnId');
+      return id ? `/backoffice/retur-toko/${id}` : '/backoffice/beban-selisih';
+    }
+    case 'PESANAN_DISETUJUI':
+    case 'PESANAN_DITOLAK':
+    case 'PESANAN_DIKIRIM':
+    case 'PESANAN_DITUTUP':
+    case 'PESANAN_PORTAL': {
+      const id = idAman(data, 'orderId');
+      return id ? `/backoffice/field-sales-orders/${id}` : '/backoffice/field-sales-orders';
+    }
     default:
       return null;
   }
+}
+
+const TAUTAN_GRN = '/backoffice/inventory?tab=grn';
+const TAUTAN_BUKU_JURNAL = '/backoffice/finance/journals';
+
+function bacaData(raw: unknown): Record<string, unknown> {
+  let nilai = raw;
+  if (typeof nilai === 'string') {
+    try {
+      nilai = JSON.parse(nilai);
+    } catch {
+      return {};
+    }
+  }
+  return nilai !== null && typeof nilai === 'object' && !Array.isArray(nilai)
+    ? (nilai as Record<string, unknown>)
+    : {};
+}
+
+/** Id dari `data` siap ditempel ke alamat — hanya teks tak kosong, di-encode. */
+function idAman(data: Record<string, unknown>, kunci: string): string | null {
+  const v = data[kunci];
+  return typeof v === 'string' && v.trim() !== '' ? encodeURIComponent(v.trim()) : null;
+}
+
+/**
+ * Dokumen yang jurnalnya gagal, dari metadata penulis `JOURNAL_PENDING` (yang
+ * tiba di lonceng sudah diratakan `toFcmData`). Urutan pemeriksaannya sama
+ * dengan `sumberNotifikasiJurnal` (`lib/finance/jurnal-tertunda.ts`) — modul itu
+ * menarik Prisma jadi tidak bisa diimpor ke sini; `navigation.test.ts` menjaga
+ * keduanya tetap sepakat. Tombol "Post journal" ada di halaman yang dituju.
+ */
+function tautanJurnalTertunda(data: Record<string, unknown>): string {
+  const kind = typeof data.kind === 'string' ? data.kind : null;
+
+  const docId = idAman(data, 'docId');
+  if (docId && kind) {
+    switch (kind) {
+      case 'van_sale':
+        return `/backoffice/van-sales/${docId}`;
+      case 'van_reconcile':
+        return `/backoffice/canvassing/reconcile/${docId}`;
+      case 'van_load': {
+        // Muatan van tidak punya halaman sendiri: riwayatnya ada di halaman van
+        // kanvasernya. `canvasserId` dilengkapi GET /api/notifications.
+        const kanvaser = idAman(data, 'canvasserId');
+        return kanvaser ? `/backoffice/canvassing/${kanvaser}` : '/backoffice/canvassing';
+      }
+      case 'supplier_payment':
+      case 'supplier_payment_reversal':
+        return `/backoffice/purchase-orders/${docId}`;
+      default:
+        return TAUTAN_BUKU_JURNAL;
+    }
+  }
+
+  if (idAman(data, 'grnId')) return TAUTAN_GRN;
+
+  if (idAman(data, 'receiptId')) {
+    // Penerimaan barang jadi dicatat dan dijurnal ulang dari SPK-nya.
+    const wo = idAman(data, 'woId');
+    return wo ? `/backoffice/work-orders/${wo}` : '/backoffice/work-orders';
+  }
+
+  const opname = idAman(data, 'opnameId');
+  if (opname) return `/backoffice/inventory/stock-opname/${opname}`;
+
+  const retur = idAman(data, 'salesReturnId');
+  if (retur) return `/backoffice/returns/${retur}`;
+
+  const pesanan = idAman(data, 'orderId');
+  if (pesanan) return `/backoffice/sales-orders/${pesanan}`;
+
+  return TAUTAN_BUKU_JURNAL;
 }

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { ArrowLeft, ArrowRight, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, Gift, Loader2, MapPin, MessageCircle, Minus, Package, PencilLine, Plus, Search, Sparkles, WifiOff } from "lucide-react";
+import { ArrowLeft, ArrowRight, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, Gift, Loader2, MapPin, MessageCircle, Package, PencilLine, Search, Sparkles, WifiOff } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -30,6 +30,19 @@ import type { PenolakanJarakJauh, SaluranJarakJauh } from "@/lib/field-sales/jar
 import type { AlasanIndenDitolak } from "@/lib/field-sales/inden";
 import { kunciBaris, tambahCadanganLama } from "@/lib/field-sales/ganti-pesanan";
 import { salinanPesananWaAction, type HasilSalinanWa } from "@/app/pwa/orders/actions";
+import type { PackRatioRow } from "@elorae/db/pack-ratio";
+import {
+  bacaSimpananKatalog,
+  isiSimpananSama,
+  kunciSimpananKatalog,
+  pulihkanKeranjangKatalog,
+  susunSimpananKatalog,
+  tulisSimpananKatalog,
+  type Penyimpanan,
+  type PetaUkuranPack,
+} from "@/lib/field-sales/keranjang-katalog";
+import { QtyStepper } from "./QtyStepper";
+import { LencanaRak } from "./LencanaRak";
 
 import { TautanKembali } from "@/app/pwa/TautanKembali";
 import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
@@ -47,7 +60,9 @@ type CatalogItem = {
   minOrderQty: number;
   /** Minimum barang ini adalah minimum "pesan ulang" toko (bukan minimum barang sendiri). */
   minPesanUlang?: boolean;
-  variants: Array<{ variantSku: string; variantLabel: string; available: number }>;
+  /** Stok di rak toko (buku stok SPG, pcs, boleh negatif); tidak ada = toko/barang tanpa buku. */
+  diRak?: number;
+  variants: Array<{ variantSku: string; variantLabel: string; available: number; diRak?: number }>;
 };
 
 type Payload = { items: CatalogItem[] };
@@ -95,6 +110,15 @@ const PAGE_SIZE = 10;
 // entries; simple items (no variants) always use variantSku "".
 const variantKey = (itemId: string, variantSku: string) => `${itemId}::${variantSku}`;
 
+/** sessionStorage bisa dilarang (mode privat): aksesnya sendiri sudah bisa melempar. */
+function ambilSesi(): Penyimpanan | null {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
 export function CatalogShell({
   storeId,
   storeName,
@@ -112,9 +136,21 @@ export function CatalogShell({
   inden = null,
   indenTerbuka = [],
   ganti = null,
+  userId,
+  simpanKeranjang = true,
+  rasioPack = [],
+  petaUkuran = {},
 }: {
   storeId: string;
   storeName: string;
+  /** Pemilik keranjang tersimpan di HP (simpanan per pengguna + toko). */
+  userId: string;
+  /** false = keranjang ditentukan dokumen (`?ganti=`, `?isi=`): tidak dipulihkan, tidak disimpan. */
+  simpanKeranjang?: boolean;
+  /** Rasio pack global; kosong = tombol "+1 pack" tidak tampil. */
+  rasioPack?: PackRatioRow[];
+  /** variantSku → [ukuran, warna] untuk "+1 pack". */
+  petaUkuran?: PetaUkuranPack;
   termsType: "PUTUS" | "KONSI";
   hasActiveVisit: boolean;
   visitId: string | null;
@@ -208,6 +244,20 @@ export function CatalogShell({
   const [cartBarHeight, setCartBarHeight] = useState(0);
   const reviewBarRef = useRef<HTMLDivElement | null>(null);
   const [reviewBarHeight, setReviewBarHeight] = useState(0);
+
+  /*
+   * Keranjang tersimpan di HP (sessionStorage, per pengguna + toko + jendela
+   * pre-order), supaya tidak hilang saat salesman meninggalkan katalog. Kunci
+   * kirim dibuat SEKALI per keranjang dan ikut tersimpan: kirim ulang sesudah
+   * galat atau muat ulang memakai kunci yang sama, jadi server mengembalikan
+   * pesanan yang sudah tercatat — ketukan ganda tidak pernah jadi dua pesanan.
+   */
+  const kunciSimpanan = simpanKeranjang ? kunciSimpananKatalog(userId, storeId, indenPesan?.id ?? null) : null;
+  const kunciKirim = useRef<string | null>(null);
+  // Simpanan baru dibaca sesudah katalog siap dan keranjang boleh diisi; sebelum itu tidak ada yang ditulis.
+  const pulihSelesai = useRef(false);
+  // Keranjang yang pernah berisi lalu kosong = ditinggalkan: simpanan dihapus, keranjang berikutnya dapat kunci baru.
+  const pernahBerisi = useRef(false);
 
   function bentukBaris(
     it: CatalogItem,
@@ -361,6 +411,19 @@ export function CatalogShell({
   }, [kredit, isKonsi, cartLines.length, blokirAktif, blokirServer, totalBersih]);
   const kirimDiblokir = penilaianKredit?.tingkat === "BLOKIR";
 
+  /** Jumlah yang diketik melewati batas tombol + dan dijepit ke batas itu. Satu id: ketikan berikutnya menggantikan, tidak menumpuk. */
+  const beriTahuJepit = (max: number) =>
+    toast.warning(indenPesan ? t("jumlahDijepitInden", { max }) : t("jumlahDijepitStok", { max }), { id: "katalog-jumlah-dijepit" });
+
+  /** Pesanan tercatat atau masuk antrean: simpanan dibuang, keranjang berikutnya dapat kunci kirim baru. */
+  function lepasKeranjang() {
+    if (kunciSimpanan) tulisSimpananKatalog(ambilSesi(), kunciSimpanan, null);
+    kunciKirim.current = null;
+    pernahBerisi.current = false;
+    setCart(new Map());
+    setNote("");
+  }
+
   /**
    * Simpan ke antrean HP — dipakai saat HP offline DAN saat kiriman online tidak
    * sampai (sinyal lemah). `localId` yang sama dipakai sebagai kunci idempotensi,
@@ -403,8 +466,7 @@ export function CatalogShell({
     toast.success(gantiUbah ? tUbah("antreanGanti", { orderNo: gantiUbah.orderNo }) : "Pesanan disimpan — dikirim otomatis saat online", {
       description: tUbah("antreanWa"),
     });
-    setCart(new Map());
-    setNote("");
+    lepasKeranjang();
     // Offline: stay on the already-loaded catalog (a router.push to the dynamic
     // store page has no offline cache → Chrome dino). Salesman keeps browsing.
     setView("catalog");
@@ -412,7 +474,8 @@ export function CatalogShell({
   }
 
   function onSubmit() {
-    const localId = newLocalId();
+    // Satu kunci per keranjang (bukan per ketukan): kirim ulang = pesanan yang sama.
+    const localId = (kunciKirim.current ??= newLocalId());
     startTransition(async () => {
       try {
         if (!online) {
@@ -467,8 +530,7 @@ export function CatalogShell({
                   ? tInden("terkirim", { orderNo: res.orderNo })
                   : `Pesanan ${res.orderNo} terkirim`,
           );
-          setCart(new Map());
-          setNote("");
+          lepasKeranjang();
           // Mengubah pesanan: langsung ke detail pesanan PENGGANTI. Layar sukses di
           // sini tidak bertahan — server merender ulang katalog (pesanan lama sudah
           // dibatalkan, `?ganti=` jadi "tidak bisa diubah") dan `key` komponen ini
@@ -624,6 +686,53 @@ export function CatalogShell({
     // katalog karena keduanya berubah hanya akan mengosongkan keranjang.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId]);
+
+  // Pulihkan keranjang tersimpan sekali: sesudah katalog siap (baris dibangun dari
+  // stok SEKARANG) dan keranjang boleh diisi (check-in, juga check-in di HP).
+  useEffect(() => {
+    if (pulihSelesai.current || state !== "ready" || !bisaPesan) return;
+    pulihSelesai.current = true;
+    // Keranjang dari pesanan terakhir (`?ulang=`) menang atas simpanan lama dan menimpanya.
+    if (!kunciSimpanan || isiAwal?.length) return;
+    const sesi = ambilSesi();
+    const simpanan = bacaSimpananKatalog(sesi, kunciSimpanan, Date.now());
+    if (!simpanan) return;
+    const hasil = pulihkanKeranjangKatalog(simpanan, items, isKonsi);
+    if (hasil.baris.length > 0) {
+      kunciKirim.current = simpanan.idempotencyKey;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- simpanan ada di sessionStorage, hanya terbaca di klien sesudah katalog siap
+      setCart(new Map(hasil.baris.map((l) => [variantKey(l.itemId, l.variantSku), l])));
+      setNote(simpanan.catatan);
+      toast.success(t("keranjangDipulihkan", { count: hasil.baris.length }));
+    } else {
+      tulisSimpananKatalog(sesi, kunciSimpanan, null);
+    }
+    if (hasil.tanpaHarga.length > 0) toast.warning(t("repeatNoPrice", ringkasNama(hasil.tanpaHarga)));
+    if (hasil.dilewati > 0) toast.warning(t("repeatSkipped", { count: hasil.dilewati }));
+    // isiAwal dan t tetap selama katalog ini hidup; penjaga `pulihSelesai` membuatnya sekali jalan.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, bisaPesan, kunciSimpanan, items, isKonsi]);
+
+  // Setiap perubahan keranjang/catatan ditulis ke simpanan (dengan kunci kirimnya).
+  useEffect(() => {
+    if (!pulihSelesai.current) return;
+    if (cart.size === 0) {
+      if (!pernahBerisi.current) return;
+      pernahBerisi.current = false;
+      kunciKirim.current = null;
+      if (kunciSimpanan) tulisSimpananKatalog(ambilSesi(), kunciSimpanan, null);
+      return;
+    }
+    pernahBerisi.current = true;
+    const kunci = (kunciKirim.current ??= newLocalId());
+    if (!kunciSimpanan) return;
+    const sesi = ambilSesi();
+    const sekarang = Date.now();
+    const baru = susunSimpananKatalog({ idempotencyKey: kunci, baris: cart.values(), catatan: note, konsi: isKonsi, sekarang });
+    // Isi sama (mis. baru dipulihkan): umur simpanan tetap dihitung dari perubahan terakhir salesman.
+    if (isiSimpananSama(bacaSimpananKatalog(sesi, kunciSimpanan, sekarang), baru)) return;
+    tulisSimpananKatalog(sesi, kunciSimpanan, baru);
+  }, [cart, note, kunciSimpanan, isKonsi]);
 
   const categories = useMemo(() => {
     const map = new Map<string, string>();
@@ -946,6 +1055,8 @@ export function CatalogShell({
                           {it.available > 0 ? tInden("stokSiap", { jumlah: it.available }) : tInden("habis")}
                         </Badge>
                       )}
+                      {/* Sisa di rak toko (buku stok SPG) — hanya pcs, juga di toko konsinyasi. */}
+                      <LencanaRak jumlah={it.diRak} />
                       {!isKonsi && !indenPesan && jendelaPerBarang.has(it.itemId) && (
                         <Link
                           href={alamatKatalog(jendelaPerBarang.get(it.itemId)!.id)}
@@ -962,29 +1073,15 @@ export function CatalogShell({
                       </Button>
                     )}
                     {canOrder && bisaPesan && !hasVariants && (
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon-lg"
-                          disabled={qty <= 0}
-                          onClick={() => setQty(it, "", null, qty - 1)}
-                          aria-label={`Kurangi ${it.nameId}`}
-                        >
-                          <Minus className="h-4 w-4" />
-                        </Button>
-                        <span className="w-6 text-center text-sm font-semibold tabular-nums">{qty}</span>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon-lg"
-                          disabled={qty >= it.available}
-                          onClick={() => setQty(it, "", null, qty + 1)}
-                          aria-label={`Tambah ${it.nameId}`}
-                        >
-                          <Plus className="h-4 w-4" />
-                        </Button>
-                      </div>
+                      <QtyStepper
+                        value={qty}
+                        max={it.available}
+                        onChange={(n) => setQty(it, "", null, n)}
+                        onJepit={beriTahuJepit}
+                        labelKurang={`Kurangi ${it.nameId}`}
+                        labelTambah={`Tambah ${it.nameId}`}
+                        labelJumlah={t("jumlahLabel", { label: it.nameId })}
+                      />
                     )}
                   </div>
                 </Card>
@@ -1090,28 +1187,15 @@ export function CatalogShell({
                         )}
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-1.5">
-                        <div className="flex items-center gap-1.5">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="icon-lg"
-                            onClick={() => setQty(it, line.variantSku, line.variantLabel, line.qty - 1)}
-                            aria-label={`Kurangi ${lineLabel}`}
-                          >
-                            <Minus className="h-4 w-4" />
-                          </Button>
-                          <span className="w-5 text-center text-sm font-semibold tabular-nums">{line.qty}</span>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="icon-lg"
-                            disabled={line.qty >= line.available}
-                            onClick={() => setQty(it, line.variantSku, line.variantLabel, line.qty + 1)}
-                            aria-label={`Tambah ${lineLabel}`}
-                          >
-                            <Plus className="h-4 w-4" />
-                          </Button>
-                        </div>
+                        <QtyStepper
+                          value={line.qty}
+                          max={line.available}
+                          onChange={(n) => setQty(it, line.variantSku, line.variantLabel, n)}
+                          onJepit={beriTahuJepit}
+                          labelKurang={`Kurangi ${lineLabel}`}
+                          labelTambah={`Tambah ${lineLabel}`}
+                          labelJumlah={t("jumlahLabel", { label: lineLabel })}
+                        />
                         {!isKonsi && (
                           lineDiscount > 0 ? (
                             <div className="flex flex-col items-end gap-0.5">
@@ -1289,6 +1373,9 @@ export function CatalogShell({
         hasActiveVisit={bisaPesan}
         cart={cart}
         setQty={setQty}
+        rasioPack={rasioPack}
+        petaUkuran={petaUkuran}
+        onJepit={beriTahuJepit}
         open={sheetItem !== null}
         onOpenChange={(next) => {
           if (!next) setSheetItem(null);

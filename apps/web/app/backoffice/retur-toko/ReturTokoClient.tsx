@@ -86,6 +86,8 @@ export function ReturTokoClient({
   bolehMengelola,
   bolehMenghitung,
   dariSpg = [],
+  koreksiIds = [],
+  saringAwal = 'kerja',
 }: {
   baris: BarisKerjaRetur[];
   ringkasan: RingkasanKerjaRetur;
@@ -96,14 +98,19 @@ export function ReturTokoClient({
   bolehMenghitung: boolean;
   /** Id nota retur yang dilaporkan SPG. */
   dariSpg?: string[];
+  /** Id nota retur yang koreksinya diminta sales dan belum ditangani kantor. */
+  koreksiIds?: string[];
+  /** Dari `?koreksi=1` — tautan Beranda mendarat di daftar yang tersaring. */
+  saringAwal?: 'kerja' | 'koreksi';
 }) {
   const t = useTranslations('storeReturns');
   const notaSpg = useMemo(() => new Set(dariSpg), [dariSpg]);
+  const notaKoreksi = useMemo(() => new Set(koreksiIds), [koreksiIds]);
   const locale = useLocale();
   const tanggal = (iso: string) => formatDisplayDate(iso, locale);
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [saring, setSaring] = useState<LangkahRetur | 'kerja' | null>('kerja');
+  const [saring, setSaring] = useState<LangkahRetur | 'kerja' | 'koreksi' | null>(saringAwal);
 
   const [buatTerbuka, setBuatTerbuka] = useState(false);
   const [noNrt, setNoNrt] = useState('');
@@ -137,7 +144,9 @@ export function ReturTokoClient({
   const tampil =
     saring === 'kerja'
       ? baris.filter((b) => b.langkah !== 'beres' && b.langkah !== 'batal')
-      : saring
+      : saring === 'koreksi'
+        ? baris.filter((b) => b.jenis === 'NRT' && notaKoreksi.has(b.id))
+        : saring
         ? baris.filter((b) => b.langkah === saring)
         : baris;
 
@@ -227,6 +236,19 @@ export function ReturTokoClient({
         >
           {t('filterWork', { count: ringkasan.perluDikerjakan })}
         </button>
+        {notaKoreksi.size > 0 || saring === 'koreksi' ? (
+          <button
+            type="button"
+            onClick={() => setSaring(saring === 'koreksi' ? null : 'koreksi')}
+            className={cn(
+              'rounded-full border px-3 py-1.5 text-sm transition-colors',
+              saring === 'koreksi' ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted',
+            )}
+          >
+            {t('filterKoreksi')}
+            <span className="ml-2 tabular-nums text-muted-foreground">{notaKoreksi.size}</span>
+          </button>
+        ) : null}
         {URUT_LANGKAH.filter((k) => ringkasan.perLangkah[k] > 0).map((k) => (
           <button
             key={k}

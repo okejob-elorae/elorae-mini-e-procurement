@@ -16,6 +16,7 @@ import { runSerializable } from "@/lib/db/tx-retry";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { JENIS_KABAR, kabariPengguna } from "@/lib/notifications/kabar-pengguna";
 import { formatIDR } from "@/lib/sales-orders/format";
+import { kabarkanKirimanBerangkat } from "@/lib/spg/pesanan-menuju-toko";
 import { logPrint } from "./audit";
 
 export type DeliveryActionResult =
@@ -205,6 +206,9 @@ export async function recordDeliveryAction(input: {
   revalidatePath("/backoffice/field-sales-orders");
   revalidatePath(`/backoffice/field-sales-orders/${orderId}`);
   if (!ulangan) void kabarPesananDikirim(deliveryId, g.userId);
+  // Barang berangkat ke toko → SPG toko itu dikabari. Sekali per nota: penandanya ada di
+  // `kabarkanKirimanBerangkat`, jadi kiriman ulang (juga yang lolos `sudahTercatat`) tidak menggandakan.
+  void kabarkanKirimanBerangkat({ sourceType: "PUTUS_DELIVERY", sourceId: deliveryId, pelakuId: g.userId });
   return { ok: true };
 }
 

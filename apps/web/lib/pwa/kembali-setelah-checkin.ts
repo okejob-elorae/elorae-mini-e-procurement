@@ -10,6 +10,11 @@
  *
  * HANYA alamat di dalam aplikasi HP (`/pwa/...`) yang diterima: `kembali`
  * datang dari URL, dan URL bisa dibuat siapa saja.
+ *
+ * Tanpa layar tujuan, SPG mendarat di BERANDA-nya (`/pwa`), bukan di halaman
+ * toko: tombol Jual — pekerjaan utamanya — ada di beranda, dan halaman toko
+ * tidak punya tombol itu. Beranda hanya sah sebagai TITIPAN, tidak sebagai
+ * `?kembali=` (beranda yang meminta kembali ke dirinya sendiri tidak berarti).
  */
 
 export const KUNCI_KEMBALI = "elorae.pwa.kembaliSetelahCheckIn";
@@ -35,6 +40,19 @@ export function kembaliAman(nilai: unknown): string | null {
   return `${url.pathname}${url.search}`;
 }
 
+/** Beranda SPG — tujuan check-in yang tidak diminta layar lain. */
+export const TUJUAN_BERANDA = "/pwa";
+
+/** Tujuan yang sah untuk dititipkan: layar `/pwa/...` yang aman, atau tepat beranda. */
+function tujuanTitipanAman(nilai: unknown): string | null {
+  return nilai === TUJUAN_BERANDA ? TUJUAN_BERANDA : kembaliAman(nilai);
+}
+
+/** Ke mana SPG dibawa sesudah check-in: layar yang memintanya, atau berandanya. */
+export function tujuanSesudahCheckIn(kembali: string | null | undefined): string {
+  return kembaliAman(kembali) ?? TUJUAN_BERANDA;
+}
+
 /** Tautan ke beranda untuk check-in, membawa layar tujuan sesudahnya. */
 export function tautanCheckInLaluKembali(path: string | null | undefined): string {
   const aman = kembaliAman(path);
@@ -57,7 +75,7 @@ export function bacaTitipan(mentah: string | null, storeId: string, sekarang: nu
     if (d.storeId !== storeId || typeof d.waktu !== "number") return null;
     const umur = sekarang - d.waktu;
     if (umur < 0 || umur > UMUR_TITIPAN_MS) return null;
-    return kembaliAman(d.kembali);
+    return tujuanTitipanAman(d.kembali);
   } catch {
     return null;
   }
@@ -65,7 +83,7 @@ export function bacaTitipan(mentah: string | null, storeId: string, sekarang: nu
 
 /** Titipkan tujuan sesaat sebelum check-in. Penyimpanan bisa dilarang — diam saja. */
 export function titipKembali(storeId: string, kembali: string): void {
-  const aman = kembaliAman(kembali);
+  const aman = tujuanTitipanAman(kembali);
   if (!aman) return;
   try {
     window.sessionStorage.setItem(KUNCI_KEMBALI, isiTitipan(storeId, aman, Date.now()));

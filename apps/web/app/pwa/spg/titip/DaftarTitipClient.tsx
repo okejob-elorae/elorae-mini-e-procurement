@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { BellRing, ChevronRight, PackageCheck, Plus, Send } from "lucide-react";
+import { BellRing, ChevronRight, PackageCheck, Plus, Send, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TautanKembali } from "@/app/pwa/TautanKembali";
 import { dinamis } from "@/lib/i18n/dinamis";
@@ -18,7 +18,18 @@ export type TabTitip = "datang" | "dikabari" | "menunggu";
  * Titip pesan dalam tiga kelompok. Tab berpindah dengan `replace`, supaya
  * "Kembali" tidak berjalan mundur melewati setiap tab yang dibuka.
  */
-export function DaftarTitipClient({ namaToko, tab, data }: { namaToko: string; tab: TabTitip; data: DaftarTitipHp }) {
+export function DaftarTitipClient({
+  namaToko,
+  tab,
+  data,
+  minta,
+}: {
+  namaToko: string;
+  tab: TabTitip;
+  data: DaftarTitipHp;
+  /** Tautan "Minta ke salesman" berisi barang yang masih menunggu; null bila tidak ada yang menunggu. */
+  minta: { alamat: string; terisi: number; tanpaBarang: number } | null;
+}) {
   const t = useTranslations("spgTitip");
   const td = dinamis(t);
   const bahasa = useLocale() === "en" ? "en" : "id";
@@ -73,6 +84,20 @@ export function DaftarTitipClient({ namaToko, tab, data }: { namaToko: string; t
           </Button>
         ))}
       </div>
+
+      {tab === "menunggu" && minta ? (
+        <div className="space-y-1">
+          <Button asChild variant="outline" className="h-auto min-h-11 w-full whitespace-normal py-2">
+            <Link href={minta.alamat}>
+              <Truck className="h-4 w-4 shrink-0" aria-hidden />
+              {minta.terisi > 0 ? t("minta.tombolSemua", { count: minta.terisi }) : t("minta.tombol")}
+            </Link>
+          </Button>
+          {minta.tanpaBarang > 0 ? (
+            <p className="px-1 text-xs text-muted-foreground">{t("minta.tanpaBarangSemua", { count: minta.tanpaBarang })}</p>
+          ) : null}
+        </div>
+      ) : null}
 
       {daftar.length === 0 ? (
         <section className="beranda-kartu flex items-start gap-3">

@@ -3,10 +3,11 @@
 import { useEffect, type ReactNode } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { ArrowLeftRight, ClipboardCheck, ShoppingBag, Sparkles, Tag, type LucideIcon } from "lucide-react";
+import { ArrowLeftRight, ClipboardCheck, ShoppingBag, Sparkles, Tag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PERISTIWA_ANTREAN } from "@/lib/pwa/offline/hitung";
 import { kirimTandaFotoPanduan } from "./checklist/tanda-foto-panduan";
+import { GridUbin, useUbinLapor, type Ubin } from "./UbinLapor";
 
 /**
  * Semua yang dikerjakan salesman SELAMA kunjungan, di satu tempat dan
@@ -21,6 +22,8 @@ import { kirimTandaFotoPanduan } from "./checklist/tanda-foto-panduan";
  * - Rencana kirim (dulu "pesanan cepat") untuk toko PUTUS dan KONSI — draf
  *   konsinyasi tanpa harga, dan tetap lewat penulis pesanan biasa.
  * - Tukar barang hanya toko PUTUS — konsinyasi punya jalur kirim + retur sendiri.
+ * - Lapor pelunasan (toko PUTUS) dan lapor retur langsung untuk toko ini —
+ *   formulirnya memilih toko ini bila penonton boleh melapor untuknya.
  * - Daftar periksa dan harga pesaing untuk semua toko.
  * - SPG tidak mengambil pesanan, tidak menukar barang, tidak menagih: ia
  *   menjual dari layarnya sendiri. Untuknya hanya pekerjaan display —
@@ -53,9 +56,11 @@ export function AksiKunjungan({
   }, []);
 
   const putus = termsType === "PUTUS" && !spg;
-  const ubin: Array<{ href: string; label: string; ikon: LucideIcon }> = [
+  const lapor = useUbinLapor({ storeId, termsType, spg });
+  const ubin: Ubin[] = [
     ...(!spg ? [{ href: `/pwa/stores/${storeId}/smart-request`, label: tRencana("ubin"), ikon: Sparkles }] : []),
     ...(putus ? [{ href: `/pwa/stores/${storeId}/tukar`, label: t("tukar"), ikon: ArrowLeftRight }] : []),
+    ...lapor,
     { href: `/pwa/stores/${storeId}/checklist`, label: t("checklist"), ikon: ClipboardCheck },
     { href: `/pwa/stores/${storeId}/harga-pesaing`, label: t("hargaPesaing"), ikon: Tag },
   ];
@@ -73,20 +78,7 @@ export function AksiKunjungan({
           {preorder}
         </>
       )}
-      <div className="grid grid-cols-2 gap-2">
-        {ubin.map(({ href, label, ikon: Ikon }) => (
-          <Link
-            key={href}
-            href={href}
-            className="flex min-h-16 items-center gap-2 rounded-lg border bg-background px-3 py-2 text-sm font-medium leading-tight transition-colors hover:bg-muted active:bg-muted"
-          >
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground">
-              <Ikon className="h-4 w-4" aria-hidden />
-            </span>
-            <span className="min-w-0">{label}</span>
-          </Link>
-        ))}
-      </div>
+      <GridUbin ubin={ubin} />
     </div>
   );
 }

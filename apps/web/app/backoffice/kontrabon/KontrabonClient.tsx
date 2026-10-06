@@ -56,10 +56,13 @@ export function KontrabonClient({
   baris,
   kandidat,
   bolehMengelola,
+  saringAwal = 'semua',
 }: {
   baris: BarisKontrabon[];
   kandidat: TokoSiapKontrabon[];
   bolehMengelola: boolean;
+  /** Dari `?saring=belum` — tautan Beranda "Janji bayar lapangan belum dikonfirmasi". */
+  saringAwal?: 'semua' | 'belum';
 }) {
   const t = useTranslations('collections');
   const locale = useLocale();
@@ -78,7 +81,7 @@ export function KontrabonClient({
   const [alasanBatal, setAlasanBatal] = useState('');
   // "Belum dikonfirmasi" = janji lapangan yang masih berjalan dan belum
   // dicocokkan kantor. Yang sudah ditutup tidak menunggu siapa pun lagi.
-  const [saring, setSaring] = useState<'semua' | 'belum'>('semua');
+  const [saring, setSaring] = useState<'semua' | 'belum'>(saringAwal);
 
   const lewat = baris.filter((b) => b.status === 'BERJALAN' && (b.sisaHari ?? 0) < 0).length;
   const berjalan = baris.filter((b) => b.status === 'BERJALAN').length;

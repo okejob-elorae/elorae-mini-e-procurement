@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
 export default async function ReturBaruPage({
   searchParams,
 }: {
-  searchParams: Promise<{ salin?: string; dariRusak?: string; dariReturPembeli?: string }>;
+  searchParams: Promise<{ salin?: string; dariRusak?: string; dariReturPembeli?: string; toko?: string | string[] }>;
 }) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
@@ -27,7 +27,7 @@ export default async function ReturBaruPage({
 
   const [terkunci, tokoTetap] = await Promise.all([tokoTerkunci(), ambilTokoTetap(session.user.id)]);
   // "Laporkan ulang": hanya nota batal milik orang ini.
-  const { salin, dariRusak, dariReturPembeli } = await searchParams;
+  const { salin, dariRusak, dariReturPembeli, toko: tokoDiminta } = await searchParams;
   const awal = salin ? await bahanSalinRetur(salin, { salesmanId: session.user.id }) : null;
 
   // SPG: nota dengan baris barang dari buku stok toko tetapnya. Tokonya
@@ -111,5 +111,10 @@ export default async function ReturBaruPage({
 
   // Salesman dengan kunci "hanya toko sendiri": hanya toko yang ia pegang.
   const opsi = terkunci ? { hanyaMilik: session.user.id } : undefined;
-  return <ReturBaruClient toko={await tokoUntukRetur(opsi)} awal={awal} />;
+  const pilihan = await tokoUntukRetur(opsi);
+  // "Lapor retur" dari halaman toko (`?toko=`): toko itu terpilih hanya bila ada
+  // di pemilih toko ini — aturan yang sama. Selain itu diabaikan.
+  const tokoAwal =
+    typeof tokoDiminta === "string" && pilihan.some((t) => t.id === tokoDiminta) ? tokoDiminta : null;
+  return <ReturBaruClient toko={pilihan} awal={awal} tokoAwal={tokoAwal} />;
 }

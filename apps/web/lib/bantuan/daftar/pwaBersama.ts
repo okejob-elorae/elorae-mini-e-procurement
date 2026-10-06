@@ -8,7 +8,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       "Layar pertama setelah masuk. Salesman dan SPG melihat beranda yang berbeda: akun yang ditetapkan ke satu toko tetap (SPG) mendapat beranda tokonya, akun lain mendapat beranda salesman.",
       "Beranda salesman adalah rencana kerja hari ini: ke toko mana, toko mana yang perlu ditagih, dan seberapa jauh Anda dari target bulan ini. Semua angkanya milik Anda sendiri.",
-      "Beranda SPG disusun menurut hari kerja di toko tetap: penjualan bulan ini, check-in di toko, hal yang perlu dikerjakan, tombol Jual, lalu barang terlaris, nota hari ini, serta gaji dan komisi. Tombol Jual baru muncul setelah Anda check-in, termasuk check-in yang dicatat tanpa sinyal.",
+      "Beranda SPG disusun menurut hari kerja di toko tetap: penjualan bulan ini, check-in di toko, tombol Jual tepat di bawahnya, hal yang perlu dikerjakan, lalu barang terlaris, nota hari ini, gaji dan komisi, dan check-out paling bawah supaya tidak tertekan saat mau menjual. Tombol Jual baru muncul setelah Anda check-in hari ini, termasuk check-in yang dicatat tanpa sinyal; check-in di toko Anda langsung kembali ke beranda ini. Tema dan Keluar ada di menu Lainnya.",
     ],
     kartu: [
       {
@@ -31,7 +31,7 @@ export const ENTRI: EntriBantuan[] = [
       },
       {
         judul: "Kartu toko dan check-in (SPG)",
-        isi: "Toko tetap Anda, tombol check-in atau check-out, shift hari ini dari jadwal kantor, dan jumlah hari masuk bulan ini. Bila kantor menyalakan absensi, check-in di toko ini tercatat sebagai absen masuk dan check-out sebagai absen pulang. Check-in butuh lokasi HP; yang tercatat jauh dari titik toko ditandai.",
+        isi: "Toko tetap Anda, tombol check-in, shift hari ini dari jadwal kantor, dan jumlah hari masuk bulan ini. Check-out ada di kartu paling bawah (kecuali kunjungan yang terbuka sejak hari lain, yang ditutup dari kartu ini). Bila kantor menyalakan absensi, check-in di toko ini tercatat sebagai absen masuk dan check-out sebagai absen pulang. Check-in butuh lokasi HP; yang tercatat jauh dari titik toko ditandai.",
       },
       {
         judul: { kunci: "pwa.pengumuman.kartuJudul" },
@@ -42,7 +42,7 @@ export const ENTRI: EntriBantuan[] = [
         isi: [
           "Pekerjaan yang menunggu Anda. Hanya baris yang ada isinya yang tampil, dan kartunya hilang bila tidak ada apa-apa.",
           "Salesman: tugas tagih dari kantor, toko dari jadwal kantor yang belum didatangi, toko yang mulai jarang pesan, toko yang perlu dikunjungi, dan kiriman yang belum terkirim karena tanpa sinyal.",
-          "SPG: nota atau laporan yang belum terkirim, titip pesan yang barangnya sudah datang, kiriman yang perlu dihitung dan diterima, ajuan tukar shift dari rekan, laporan tutup hari (sesudah pukul 17.00 bila hari ini sudah ada penjualan), dan barang yang hampir habis.",
+          "SPG: nota atau laporan yang belum terkirim, titip pesan yang barangnya sudah datang, kiriman yang perlu dihitung dan diterima, pesanan untuk toko Anda yang sedang diproses kantor, ajuan tukar shift dari rekan, laporan tutup hari (sesudah pukul 17.00 bila hari ini sudah ada penjualan), dan barang yang hampir habis.",
         ],
       },
       {
@@ -98,7 +98,7 @@ export const ENTRI: EntriBantuan[] = [
     judul: "Halaman toko",
     isi: [
       "Semua tentang satu toko: alamat, kontak, tombol telepon, WhatsApp, peta, lalu check-in. Pekerjaan di toko terbuka setelah check-in, yang butuh lokasi HP; check-in tanpa sinyal dicatat di HP dan terkirim sendiri begitu ada sinyal. Check-in di toko ini menutup kunjungan yang masih terbuka di toko lain.",
-      "Salesman: setelah check-in, Buat pesanan, Rencana kirim, Tukar barang (khusus toko putus), Daftar periksa, dan Harga pesaing ada di kartu Kunjungan berjalan. Tanpa check-in katalog tetap bisa dibuka untuk dilihat saja. Tombol Pesanan jarak jauh muncul bila kantor mengizinkan pesanan lewat WhatsApp atau telepon, tombol Portal pesan toko hanya untuk pemegang toko, dan tombol pre-order hanya untuk toko putus selama ada pre-order yang dibuka.",
+      "Salesman: setelah check-in, Buat pesanan, Rencana kirim, Tukar barang (khusus toko putus), Daftar periksa, Harga pesaing, Lapor pelunasan (khusus toko putus), dan Lapor retur ada di kartu Kunjungan berjalan; tanpa check-in kedua ubin lapor tampil di bawah ringkasan toko. Formulirnya terbuka dengan toko ini terpilih bila Anda boleh melapor untuk toko ini. Tanpa check-in katalog tetap bisa dibuka untuk dilihat saja. Tombol Pesanan jarak jauh muncul bila kantor mengizinkan pesanan lewat WhatsApp atau telepon, tombol Portal pesan toko hanya untuk pemegang toko, dan tombol pre-order hanya untuk toko putus selama ada pre-order yang dibuka.",
       "SPG membuka layar ini sebagai Toko saya (menu Lainnya). SPG tidak mengambil pesanan dan tidak menagih: setelah check-in yang tersedia daftar periksa (dengan panduan display), harga pesaing, foto kunjungan, ubah data toko, dan catatan toko.",
     ],
     kartu: [
@@ -112,6 +112,10 @@ export const ENTRI: EntriBantuan[] = [
       {
         judul: { kunci: "pwa.ringkasanToko.title" },
         isi: "Untuk salesman: sisa tagihan toko, yang lewat janji bayar, faktur terbuka, barang yang sering dibeli 180 hari terakhir, serta pesanan dan kunjungan terakhir ke toko ini. Toko konsinyasi tidak punya tagihan.",
+      },
+      {
+        judul: { kunci: "pwa.kehadiranSpg.judul" },
+        isi: "Untuk salesman di toko yang punya SPG: tiap SPG toko ini hari ini — di toko sejak jam berapa, sudah pulang, izin, libur menurut jadwal, atau belum datang. Hanya dari check-in hari ini (WIB); SPG yang lupa check-out kemarin dan tidak check-in lagi tampil belum datang.",
       },
       {
         judul: { kunci: "catatanToko.judul" },
@@ -249,6 +253,7 @@ export const ENTRI: EntriBantuan[] = [
       "Nota retur toko yang Anda laporkan beserta keadaannya: menunggu gudang menghitung, menunggu keputusan kantor atas selisih, atau beres. Potongan retur baru diakui sebesar barang yang dihitung gudang, bukan sebesar klaim toko.",
       "Selama gudang belum menghitung, Anda bisa menarik nota sendiri lewat Tarik laporan, misalnya karena salah toko atau salah nomor. Sesudah dihitung, gunakan Minta koreksi — kantor yang membetulkannya. Nota yang dibatalkan bisa dilaporkan ulang dengan isian yang tersalin.",
       "Salesman membukanya dari menu Lainnya → Retur toko, SPG dari menu Lainnya → Retur ke gudang. Untuk toko konsinyasi yang tampil jumlah potongnya.",
+      "Salesman juga melihat nota retur yang dilaporkan SPG di toko yang ia pegang, bertanda Dari SPG. Nota itu hanya untuk dilihat: menarik atau meminta koreksinya dilakukan SPG atau kantor.",
     ],
   },
   {

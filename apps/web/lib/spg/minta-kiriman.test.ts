@@ -21,7 +21,7 @@ vi.mock("@/lib/notifications/kabar-pengguna", async (asli) => {
   };
 });
 
-const { mintaKiriman } = await import("./stok-writer");
+const { mintaKiriman, KATEGORI_NOTIF_PERMINTAAN_TANPA_PEMEGANG } = await import("./stok-writer");
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -69,6 +69,18 @@ d("mintaKiriman — alasan, kunci kiriman, kabar pemegang toko (test bed only)",
   });
 
   afterAll(async () => {
+    // Toko tanpa pemegang membunyikan lonceng kantor (`AdminNotification`) — dibersihkan
+    // juga, dicocokkan di JS lewat metadata.storeId (filter JSON tidak andal lintas adaptor).
+    const notif = (
+      await prisma.adminNotification.findMany({
+        where: { category: KATEGORI_NOTIF_PERMINTAAN_TANPA_PEMEGANG },
+        select: { id: true, metadata: true },
+      })
+    ).filter((n) => {
+      const m = n.metadata as { storeId?: unknown } | null;
+      return typeof m?.storeId === "string" && seededIds([tokoId, tokoTanpaId]).includes(m.storeId);
+    });
+    await prisma.adminNotification.deleteMany({ where: { id: { in: seededIds(notif.map((n) => n.id)) } } });
     await prisma.stockRequest.deleteMany({ where: { storeId: { in: seededIds([tokoId, tokoTanpaId]) } } });
     await prisma.store.deleteMany({ where: { id: { in: seededIds([tokoId, tokoTanpaId]) } } });
     await prisma.user.deleteMany({ where: { id: { in: seededIds([pemegangId, spgId]) } } });
@@ -120,7 +132,7 @@ d("mintaKiriman — alasan, kunci kiriman, kabar pemegang toko (test bed only)",
     expect(kabar.kirim).toEqual([]);
   });
 
-  it("a store without a holder still records the request, and notifies nobody", async () => {
+  it("a store without a holder still records the request, and notifies no salesperson (the office bell: minta-kiriman-tanpa-pemegang.test)", async () => {
     const hasil = await mintaKiriman({ storeId: tokoTanpaId, userId: spgId, baris: [{ itemId, variantSku: null, qty: 2 }], idempotencyKey: `mk-${token}-3` });
     expect(hasil.ok).toBe(true);
     expect(kabar.kirim).toEqual([]);

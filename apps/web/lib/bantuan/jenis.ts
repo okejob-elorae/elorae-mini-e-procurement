@@ -30,6 +30,7 @@ export const BAGIAN_KANTOR = [
   "navGroupFieldTeam",
   "navGroupSpg",
   "production",
+  "navGroupPurchasing",
   "navGroupReceivables",
   "konsinyasi",
   "navGroupCreative",

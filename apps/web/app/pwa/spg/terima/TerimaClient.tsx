@@ -16,6 +16,8 @@ import { kunjunganLokalSah } from "@/lib/pwa/offline/luring-kunjungan";
 import { useKunjunganLokal } from "@/lib/pwa/offline/luring-kunjungan-hook";
 import { PerluCheckIn } from "./PerluCheckIn";
 import { BagianRusakPembeli, type RusakPembeliRingkas } from "./BagianRusakPembeli";
+import { BagianPesananMenuju } from "./BagianPesananMenuju";
+import type { PesananMenujuHp } from "@/lib/spg/pesanan-menuju-toko";
 import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
 export type KirimanRingkas = {
@@ -94,11 +96,14 @@ export function TerimaClient({
   kiriman,
   rusak = [],
   rusakPembeli = [],
+  pesanan = [],
 }: {
   namaToko: string;
   storeId: string;
   sudahCheckIn: boolean;
   kiriman: KirimanRingkas[];
+  /** Pesanan untuk toko ini yang belum sampai (menunggu, disetujui, dikirim sebagian, di jalan) — tanpa harga. */
+  pesanan?: PesananMenujuHp[];
   rusak?: RusakRingkas[];
   /** Barang rusak dari pembeli di konter yang belum dikirim balik ke gudang barang rusak. */
   rusakPembeli?: RusakPembeliRingkas[];
@@ -201,6 +206,7 @@ export function TerimaClient({
         </section>
       )}
 
+      <BagianPesananMenuju pesanan={pesanan} />
       <BagianRusak rusak={rusak} />
       <BagianRusakPembeli rusak={rusakPembeli} />
     </div>

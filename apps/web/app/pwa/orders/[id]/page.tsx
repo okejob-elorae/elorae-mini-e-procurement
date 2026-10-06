@@ -26,6 +26,13 @@ export default async function DetailPesananSayaPage({ params }: { params: Promis
   // Salinan WA untuk toko — tidak untuk pesanan yang ditolak/dibatalkan (null).
   const salinanWa = await salinanDariDetail(d, session.user.id);
   const menunggu = d.status === "PENDING_APPROVAL";
+  // Hasil hitung SPG di toko per kiriman — potong saja, tanpa rupiah (juga untuk KONSI).
+  const terimaToko = (sourceType: "PUTUS_DELIVERY" | "KONSI_ORDER", sourceId: string) => {
+    const r = d.penerimaanToko.find((x) => x.sourceType === sourceType && x.sourceId === sourceId);
+    return r
+      ? { dikirim: r.dikirim, diterima: r.diterima, kurang: r.kurang, rusak: r.rusak, dihitung: formatDisplayDateTime(r.diterimaPada) }
+      : null;
+  };
 
   /*
    * Semua tanggal diformat DI SERVER — format tanggal di klien bisa berbeda
@@ -76,7 +83,9 @@ export default async function DetailPesananSayaPage({ params }: { params: Promis
         receivedByName: k.receivedByName,
         diterima: k.receivedAt ? formatDisplayDateTime(k.receivedAt) : null,
         podPhotoUrl: k.podPhotoUrl,
+        terimaToko: terimaToko("PUTUS_DELIVERY", k.id),
       }))}
+      terimaTokoKonsi={d.orderType === "KONSI" ? terimaToko("KONSI_ORDER", d.id) : null}
     />
   );
 }

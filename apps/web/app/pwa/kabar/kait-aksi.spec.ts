@@ -52,6 +52,8 @@ vi.mock("@/lib/notifications/kabar-pengguna", async () => {
   return { JENIS_KABAR, kabariPengguna: h.kabari };
 });
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
+// Kabar "barang sedang dikirim" ke SPG punya tesnya sendiri; di sini cukup tidak menyentuh basis data.
+vi.mock("@/lib/spg/pesanan-menuju-toko", () => ({ kabarkanKirimanBerangkat: vi.fn(async () => undefined) }));
 vi.mock("@/app/actions/audit", () => ({ logPrint: vi.fn() }));
 vi.mock("@/lib/receivables/writer", () => ({
   putuskanKlaim: h.putuskanKlaim,

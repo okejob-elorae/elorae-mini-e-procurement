@@ -5,7 +5,6 @@ import {
   getDashboardStats,
   getRawMaterialShortage,
   getCOGSRawVsFinished,
-  getOversoldInventory,
   getSalesmenSalesSummary,
   getTrenPenjualan,
 } from "@/lib/dashboard/queries";
@@ -17,6 +16,7 @@ import {
   getActionItemCounts,
   getClaimsAwaitingVerification,
 } from "@/lib/dashboard/action-items";
+import { getAntreanKantor, hitungBarangStokMinus } from "@/lib/dashboard/antrean-kantor";
 import { batasHariIniWib } from "@/lib/dashboard/hari-wib";
 import { hasPermission } from "@/lib/rbac";
 import { kartuBeranda, statistikBeranda } from "./kartu-beranda";
@@ -37,24 +37,28 @@ export default async function DashboardPage() {
     cogsRawVsFinished,
     rawMaterialShortage,
     marketplaceKpi,
-    oversoldInventory,
+    stokMinus,
     salesmenSales,
     actionCounts,
     piutang,
     trenPenjualan,
     klaimMenunggu,
+    antrean,
   ] = await Promise.all([
     getDashboardStats(kartu),
     getOverduePOs(),
     kartu.stok ? getCOGSRawVsFinished() : null,
     getRawMaterialShortage(),
     kartu.penjualanMarketplace ? getMarketplaceKpi() : null,
-    kartu.stok ? getOversoldInventory() : null,
+    // Barang yang tersedianya minus — angka yang sama dengan Inventori `?oversold=1`.
+    kartu.stok ? hitungBarangStokMinus() : null,
     kartu.penjualanLapangan ? getSalesmenSalesSummary() : null,
-    getActionItemCounts(),
+    getActionItemCounts(izin),
     kartu.piutang ? ringkasPiutangBeranda() : null,
     kartu.tren ? getTrenPenjualan() : null,
     kartu.klaimMenunggu ? getClaimsAwaitingVerification() : null,
+    // Antrean kantor: hanya baris yang boleh dilihat penonton ini yang dihitung.
+    getAntreanKantor(izin),
   ]);
 
   /*
@@ -69,10 +73,11 @@ export default async function DashboardPage() {
     overduePOs: overduePOs.length,
     overduePOsAmount: overduePOs.reduce((s, po) => s + po.grandTotal, 0),
     draftPOs: stats.po.draft,
-    oversoldSkus: oversoldInventory?.length ?? 0,
+    oversoldSkus: stokMinus ?? 0,
     unshippedOrders: marketplaceKpi?.pendingFulfillmentCount ?? 0,
     overduePromises: piutang ? { count: piutang.lewatJumlah, amount: piutang.lewatNilai } : undefined,
     claimsAwaitingVerification: klaimMenunggu ?? undefined,
+    antrean,
   }, izin).filter((item) => !item.permission || hasPermission(izin, item.permission));
 
   return (
@@ -84,7 +89,7 @@ export default async function DashboardPage() {
         initialCogsRawVsFinished={cogsRawVsFinished}
         shortageCount={rawMaterialShortage.length}
         marketplaceKpi={marketplaceKpi}
-        oversoldCount={oversoldInventory ? oversoldInventory.length : null}
+        oversoldCount={stokMinus}
         initialSalesmenSales={salesmenSales}
         piutang={piutang}
         trenPenjualan={trenPenjualan}
