@@ -822,3 +822,163 @@ d("listFieldReturns — origin + credit filters (test bed only)", () => {
     expect(rows[0].remainingValue).toBe(300);
   });
 });
+
+d("listFieldReturns — needsPriceLineCount (test bed only)", () => {
+  const token = Math.random().toString(36).slice(2, 10);
+  let uomId = "";
+  let itemId = "";
+  let userId = "";
+  let storeId = "";
+  let storeName = "";
+  let orderId = "";
+  let deliveryAId = "";
+  let deliveryBId = "";
+  let returnId = "";
+  let ambiguousLineId = "";
+
+  beforeEach(async () => {
+    uomId = "";
+    itemId = "";
+    userId = "";
+    storeId = "";
+    storeName = "";
+    orderId = "";
+    deliveryAId = "";
+    deliveryBId = "";
+    returnId = "";
+    ambiguousLineId = "";
+
+    const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-NPL-${token}`, nameId: "pcs", nameEn: "pcs" } });
+    uomId = uom.id;
+
+    const item = await prisma.item.create({
+      data: { sku: `TEST-NPL-${token}`, nameId: "Needs price item", nameEn: "Needs price item", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 40000 },
+    });
+    itemId = item.id;
+
+    const user = await prisma.user.create({ data: { email: `test-npl-${token}@example.com`, name: "Test Needs Price User" } });
+    userId = user.id;
+
+    storeName = `Test Needs Price Store ${token}`;
+    const store = await prisma.store.create({
+      data: { code: `TEST-NPL-STORE-${token}`, name: storeName, address: "Test address", termsType: "PUTUS", isActive: true },
+    });
+    storeId = store.id;
+
+    const order = await prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `PUTUS/TEST-NPL-${token}`,
+        storeId,
+        salesmanId: userId,
+        status: "APPROVED",
+        orderType: "PUTUS",
+        subtotal: 5_000_000,
+        total: 5_000_000,
+        lines: {
+          create: [
+            { itemId, variantSku: "XL", productName: "Test XL", qty: 4, unitPrice: 1_000_000, lineTotal: 4_000_000 },
+            { itemId, variantSku: "AMBIG", productName: "Test Ambig", qty: 4, unitPrice: 1_000_000, lineTotal: 4_000_000 },
+          ],
+        },
+      },
+      include: { lines: true },
+    });
+    orderId = order.id;
+    const lineXL = order.lines.find((l) => l.variantSku === "XL")!;
+    const lineAmbig = order.lines.find((l) => l.variantSku === "AMBIG")!;
+
+    /* Delivery A prices XL once and AMBIG at 1.000.000 each; delivery B re-prices AMBIG at 900.000. */
+    const deliveryA = await prisma.fieldSalesDelivery.create({
+      data: {
+        docNo: `TEST-NPL-DLV-A-${token}`,
+        orderId,
+        deliveredAt: new Date("2026-08-01T00:00:00.000Z"),
+        deliveredById: userId,
+        invoiceDate: new Date("2026-08-01T00:00:00.000Z"),
+        dueDate: new Date("2026-08-08T00:00:00.000Z"),
+        subtotal: 6_000_000,
+        total: 6_000_000,
+        lines: {
+          create: [
+            { orderLineId: lineXL.id, itemId, variantSku: "XL", productName: "Test XL", qty: 4, unitPrice: 1_000_000, lineTotal: 4_000_000 },
+            { orderLineId: lineAmbig.id, itemId, variantSku: "AMBIG", productName: "Test Ambig", qty: 2, unitPrice: 1_000_000, lineTotal: 2_000_000 },
+          ],
+        },
+      },
+    });
+    deliveryAId = deliveryA.id;
+
+    const deliveryB = await prisma.fieldSalesDelivery.create({
+      data: {
+        docNo: `TEST-NPL-DLV-B-${token}`,
+        orderId,
+        deliveredAt: new Date("2026-08-02T00:00:00.000Z"),
+        deliveredById: userId,
+        invoiceDate: new Date("2026-08-02T00:00:00.000Z"),
+        dueDate: new Date("2026-08-09T00:00:00.000Z"),
+        subtotal: 1_800_000,
+        total: 1_800_000,
+        lines: {
+          create: [
+            { orderLineId: lineAmbig.id, itemId, variantSku: "AMBIG", productName: "Test Ambig", qty: 2, unitPrice: 900_000, lineTotal: 1_800_000 },
+          ],
+        },
+      },
+    });
+    deliveryBId = deliveryB.id;
+
+    const ret = await prisma.fieldReturn.create({
+      data: {
+        docNo: `TEST-NPL-RET-${token}`,
+        storeId,
+        raisedById: userId,
+        status: "PENDING_APPROVAL",
+        transport: "SELF_CARRY",
+        notaPhotoUrl: "https://cdn.example/nota.jpg",
+        notaPhotoR2Key: "field-returns/x/nota.jpg",
+      },
+    });
+    returnId = ret.id;
+
+    await prisma.fieldReturnLine.create({ data: { returnId, itemId, variantSku: "XL", qty: 1, reason: "UNSOLD" } });
+    const ambiguousLine = await prisma.fieldReturnLine.create({
+      data: { returnId, itemId, variantSku: "AMBIG", qty: 1, reason: "UNSOLD" },
+    });
+    ambiguousLineId = ambiguousLine.id;
+  });
+
+  afterEach(async () => {
+    await prisma.fieldReturnLine.deleteMany({ where: { returnId: seededId(returnId) } });
+    await prisma.fieldReturn.deleteMany({ where: { id: seededId(returnId) } });
+    const deliveryIds = [seededId(deliveryAId), seededId(deliveryBId)];
+    await prisma.fieldSalesDeliveryLine.deleteMany({ where: { deliveryId: { in: deliveryIds } } });
+    await prisma.fieldSalesDelivery.deleteMany({ where: { id: { in: deliveryIds } } });
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: seededId(orderId) } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+    await prisma.user.deleteMany({ where: { id: seededId(userId) } });
+  });
+
+  it("counts only the unpriced line that cannot auto-resolve on an open retur", async () => {
+    const { rows } = await listFieldReturns({ q: storeName, page: 1, perPage: 50 });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].needsPriceLineCount).toBe(1);
+  });
+
+  it("drops to 0 once the ambiguous line carries a recorded price", async () => {
+    await prisma.fieldReturnLine.update({
+      where: { id: ambiguousLineId },
+      data: { priceSource: "MANUAL", unitPrice: 950_000 },
+    });
+    const { rows } = await listFieldReturns({ q: storeName, page: 1, perPage: 50 });
+    expect(rows[0].needsPriceLineCount).toBe(0);
+  });
+
+  it("is 0 for an APPROVED retur even with an unpriced ambiguous line", async () => {
+    await prisma.fieldReturn.update({ where: { id: returnId }, data: { status: "APPROVED" } });
+    const { rows } = await listFieldReturns({ q: storeName, page: 1, perPage: 50 });
+    expect(rows[0].needsPriceLineCount).toBe(0);
+  });
+});

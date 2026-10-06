@@ -208,10 +208,13 @@ export function FieldReturnsPageClient(props: Props) {
                   <TableBody>
                     {props.rows.map((r) => {
                       /*
-                       * Only APPROVED + PENDING is a genuine, permanent gap worth surfacing here —
-                       * every not-yet-approved retur reads PENDING by default (valuationStatus is
-                       * only stamped VALUED/PENDING at approval), so flagging it pre-approval would
-                       * mark every open retur "incomplete" even when nothing is actually wrong yet.
+                       * Two distinct markers. `valuationIncomplete` is only APPROVED + PENDING, a
+                       * genuine, permanent gap — every not-yet-approved retur reads PENDING by
+                       * default (valuationStatus is only stamped VALUED/PENDING at approval), so
+                       * flagging it pre-approval would mark every open retur "incomplete" even when
+                       * nothing is actually wrong yet. `needsPriceLineCount` is the pre-approval
+                       * counterpart: open lines an admin can still price, so it is actionable
+                       * rather than permanent.
                        */
                       const valuationIncomplete = r.status === "APPROVED" && r.valuationStatus === "PENDING";
                       const totalValue = r.totalValue;
@@ -251,6 +254,11 @@ export function FieldReturnsPageClient(props: Props) {
                                 <Badge variant="outline" className="border-amber-500/40 text-amber-700">
                                   {t("valuationIncomplete")}
                                 </Badge>
+                              </div>
+                            )}
+                            {r.needsPriceLineCount > 0 && (
+                              <div className="mt-1">
+                                <Badge variant="secondary">{t("needsPrice", { count: r.needsPriceLineCount })}</Badge>
                               </div>
                             )}
                           </TableCell>

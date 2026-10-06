@@ -3541,6 +3541,7 @@
     },
     "colValue": "Value",
     "valuationIncomplete": "Not Fully Valued",
+    "needsPrice": "{count} line(s) need a price",
     "originalValueHint": "of {total} original",
     "colCredit": "Credit",
     "creditFilterLabel": "Credit Status",

@@ -3541,6 +3541,7 @@
     },
     "colValue": "Nilai",
     "valuationIncomplete": "Belum Ternilai",
+    "needsPrice": "{count} baris perlu harga",
     "originalValueHint": "dari total awal {total}",
     "colCredit": "Kredit",
     "creditFilterLabel": "Status Kredit",
