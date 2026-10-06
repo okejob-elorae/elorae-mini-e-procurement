@@ -9,6 +9,7 @@ import {
   InvalidOrderTransitionError,
   InsufficientStockError,
   InvalidAddedLineError,
+  InvalidFinalPriceError,
   CreditLimitExceededError,
   KonsiPushError,
   type InvalidAddedLineCode,
@@ -111,6 +112,9 @@ export async function approveFieldSalesOrderAction(
     }
     if (e instanceof InvalidAddedLineError) {
       return { ok: false, reason: "INVALID_ADDED_LINE", addedLineCode: e.code };
+    }
+    if (e instanceof InvalidFinalPriceError) {
+      return { ok: false, reason: "INVALID_FINAL_PRICE" };
     }
     if (e instanceof InvalidOrderTransitionError) {
       return { ok: false, reason: e.from === "MISSING" ? "NOT_FOUND" : "INVALID_TRANSITION" };

@@ -171,6 +171,23 @@ d("field-sales order approve/reject actions (test bed only)", () => {
     expect(result).toEqual({ ok: false, reason: "INVALID_FINAL_PRICE" });
   });
 
+  it("approve refuses a finalPrices payload naming a line that is not on the order, order stays PENDING_APPROVAL", async () => {
+    const line = await prisma.fieldSalesOrderLine.findFirstOrThrow({ where: { orderId }, select: { id: true } });
+    await prisma.fieldSalesOrderLine.update({
+      where: { id: line.id },
+      data: { requestedUnitPrice: 30000, appealReason: "Nego harga" },
+    });
+
+    const result = await approveFieldSalesOrderAction(orderId, [
+      { lineId: "not-a-line", finalUnitPrice: 1 },
+      { lineId: line.id, finalUnitPrice: 30000 },
+    ]);
+    expect(result).toEqual({ ok: false, reason: "INVALID_FINAL_PRICE" });
+
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId } });
+    expect(order!.status).toBe("PENDING_APPROVAL");
+  });
+
   it("approve without a reason on an over-limit order returns CREDIT_LIMIT_EXCEEDED", async () => {
     await prisma.item.update({ where: { id: itemId }, data: { sellingPrice: 100_000 } });
     await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 100_000 } });

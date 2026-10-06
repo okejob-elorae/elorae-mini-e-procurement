@@ -8,7 +8,8 @@ import { runSerializable } from "@/lib/db/tx-retry";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { sendNotificationToUsers } from "@/lib/notifications/recipients";
 import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
-import { NoActiveVisitError, MinQtyViolationError, InvalidOrderTransitionError, InsufficientStockError, InvalidAddedLineError, CreditLimitExceededError } from "./errors";
+import { NoActiveVisitError, MinQtyViolationError, InvalidOrderTransitionError, InsufficientStockError, InvalidAddedLineError, InvalidFinalPriceError, CreditLimitExceededError } from "./errors";
+import { checkFinalPrices } from "./final-prices";
 import { sentItemIds } from "./queries";
 import { openKonsiQtyByKey } from "./konsi-open-qty";
 
@@ -307,6 +308,7 @@ export async function approveFieldSalesOrder(input: {
     if (order.status !== "PENDING_APPROVAL") throw new InvalidOrderTransitionError(order.status, "APPROVED");
 
     if (order.orderType === "KONSI") {
+      /* input.finalPrices is ignored here on purpose: konsi lines carry no salesman price to appeal. */
       const added = input.addedLines ?? [];
       if (added.length > 0) {
         const onOrder = new Set(order.lines.map((l) => `${l.itemId}::${l.variantSku}`));
@@ -390,6 +392,9 @@ export async function approveFieldSalesOrder(input: {
       throw new InvalidAddedLineError("NOT_KONSI", null);
     }
 
+    const priceCheck = checkFinalPrices(order.lines, input.finalPrices);
+    if (!priceCheck.ok) throw new InvalidFinalPriceError(priceCheck.code, priceCheck.lineId);
+
     /**
      * PUTUS: apply owner's final appeal prices (Decision A — no promo recompute) and recompute the
      * order total. Create-time discounts are kept as-is. Stock consumption and SalesHistory happen
@@ -402,7 +407,7 @@ export async function approveFieldSalesOrder(input: {
       let unitPrice = Number(l.unitPrice);
       let lineTotal = Number(l.lineTotal);
       let changed = false;
-      // Only an appealed line (requestedUnitPrice set) may be repriced; ignore stray entries.
+      /* checkFinalPrices already refused anything but exactly one entry per appealed line. */
       if (l.requestedUnitPrice !== null && finalPriceByLineId.has(l.id)) {
         unitPrice = finalPriceByLineId.get(l.id)!;
         lineTotal = l.qty * unitPrice;

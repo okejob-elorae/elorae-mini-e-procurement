@@ -1,3 +1,5 @@
+import type { InvalidFinalPriceCode } from "./final-prices";
+
 export class NoActiveVisitError extends Error {
   constructor(public storeId: string, public salesmanId: string) {
     super("NO_ACTIVE_VISIT");
@@ -40,6 +42,18 @@ export class InvalidAddedLineError extends Error {
   ) {
     super(code);
     this.name = "InvalidAddedLineError";
+  }
+}
+
+export type { InvalidFinalPriceCode } from "./final-prices";
+
+export class InvalidFinalPriceError extends Error {
+  constructor(
+    public code: InvalidFinalPriceCode,
+    public lineId: string | null = null,
+  ) {
+    super(code);
+    this.name = "InvalidFinalPriceError";
   }
 }
 
