@@ -485,7 +485,7 @@ d("store stocktake writer (test bed only)", () => {
   it("does not re-apply a movement recorded before the count was saved", async () => {
     await moveAfterCount(itemMainId, -3, "SpgSale");
     /* StoreStock is now 7; the counter saw 7 on the shelf, so nothing is lost and nothing moved since. */
-    const id = await countThroughSave({ itemId: itemMainId, expectedQty: 10, countedQty: 7, cause: "UNRECORDED_SALE", reason: "sold before the count" });
+    const id = await countThroughSave({ itemId: itemMainId, expectedQty: 7, countedQty: 7 });
     await prisma.stockLedgerEntry.updateMany({
       where: { locationType: "STORE", locationId: seededId(storeId), itemId: seededId(itemMainId), refType: "SpgSale" },
       data: { createdAt: new Date(Date.now() - 60_000) },
@@ -671,6 +671,9 @@ d("store stocktake writer (test bed only)", () => {
     const b = await prisma.storeStocktakeLine.findUniqueOrThrow({ where: { id: lineB.id } });
     expect(b.countFinishedAt?.toISOString()).toBe(countedAt.toISOString());
     expect(a.countFinishedAt!.getTime()).toBeGreaterThan(countedAt.getTime());
+    /* Re-baselined at B's own moment: live 8 minus the −2 sold since is the 10 its shelf held. */
+    expect(Number(b.expectedQty)).toBe(10);
+    expect(Number(b.varianceQty)).toBe(0);
 
     await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
 
@@ -796,6 +799,9 @@ d("store stocktake writer (test bed only)", () => {
       const stamped = await prisma.storeStocktakeLine.findUniqueOrThrow({ where: { id: line.id } });
       /* No skew between the device and the server here, so the moment is the device time itself. */
       expect(stamped.countFinishedAt?.getTime()).toBe(countedAtMs);
+      /* Live 9 minus the −1 sold after the shelf was counted: the 10 it held, so no surplus shows. */
+      expect(Number(stamped.expectedQty)).toBe(10);
+      expect(Number(stamped.varianceQty)).toBe(0);
       /* The document keeps the save instant: every document-level guard reads it, never device time. */
       const doc = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } });
       expect(doc.countFinishedAt!.getTime()).toBeGreaterThanOrEqual(sentAtMs);
@@ -988,6 +994,170 @@ d("store stocktake writer (test bed only)", () => {
       const updated = await prisma.storeStocktakeLine.findUniqueOrThrow({ where: { id: line.id } });
       expect(Number(updated.countedQty)).toBe(6);
       expect(Number(updated.varianceQty)).toBe(-4);
+    });
+
+    describe("re-baselining expectedQty", () => {
+      /**
+       * Opens a real document (itemMain snapshotted at 10), records a sale of two, then returns
+       * itemMain's line. The sale's row is pinned a few seconds back, test-only, so it can never
+       * share a millisecond with the save that follows and read as sold after the count.
+       */
+      const openThenSellTwo = async () => {
+        const { id } = await createStoreStocktake({ storeId, createdById: adminId, countedAt: new Date() });
+        stocktakeIds.push(id);
+        await moveAfterCount(itemMainId, -2, "SpgSale");
+        await prisma.stockLedgerEntry.updateMany({
+          where: { locationType: "STORE", locationId: seededId(storeId), itemId: seededId(itemMainId), refType: "SpgSale" },
+          data: { createdAt: new Date(Date.now() - 5000) },
+        });
+        const line = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id), itemId: seededId(itemMainId) } });
+        expect(Number(line.expectedQty)).toBe(10);
+        return { id, lineId: line.id };
+      };
+
+      it("re-baselines a line counted after a sale to live stock, so a matching count shows no variance and approval books none", async () => {
+        const { id, lineId } = await openThenSellTwo();
+
+        await saveStocktakeCounts({ stocktakeId: id, lines: [{ lineId, countedQty: 8 }], submit: true, userId: adminId });
+
+        const line = await prisma.storeStocktakeLine.findUniqueOrThrow({ where: { id: lineId } });
+        expect(Number(line.expectedQty)).toBe(8);
+        expect(Number(line.varianceQty)).toBe(0);
+
+        /* No cause and no reason: against the stale snapshot this would have been a shortfall of two. */
+        await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+        expect(await stocktakeLedgerRows(id, itemMainId)).toHaveLength(0);
+        const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId) } });
+        expect(Number(ss.qty)).toBe(8);
+      });
+
+      it("measures a real shortfall against the re-baselined figure, and approval books exactly that variance", async () => {
+        const { id, lineId } = await openThenSellTwo();
+
+        await saveStocktakeCounts({ stocktakeId: id, lines: [{ lineId, countedQty: 7, reason: "one missing" }], submit: true, userId: adminId });
+
+        const line = await prisma.storeStocktakeLine.findUniqueOrThrow({ where: { id: lineId } });
+        expect(Number(line.expectedQty)).toBe(8);
+        expect(Number(line.varianceQty)).toBe(-1);
+        await expect(approveStoreStocktake({ stocktakeId: id, approvedById: adminId })).rejects.toMatchObject({ code: "SHORTFALL_NEEDS_CAUSE" });
+
+        await saveStocktakeCounts({ stocktakeId: id, lines: [{ lineId, countedQty: 7, cause: "SHRINKAGE", reason: "one missing" }], submit: true, userId: adminId });
+        await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+        const rows = await stocktakeLedgerRows(id, itemMainId);
+        expect(rows).toHaveLength(1);
+        expect(Number(rows[0].qty)).toBe(-1);
+      });
+
+      it("re-baselines a line the save was not sent: an uncounted one to live stock, with its variance left null", async () => {
+        const id = await mkStocktake({
+          lines: [
+            { itemId: itemMainId, expectedQty: 10, countedQty: null },
+            { itemId: itemZeroId, expectedQty: 0, countedQty: null },
+          ],
+        });
+        await moveAfterCount(itemMainId, -3, "SpgSale");
+        const zero = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id), itemId: seededId(itemZeroId) } });
+
+        await saveStocktakeCounts({ stocktakeId: id, lines: [{ lineId: zero.id, countedQty: 0 }], submit: false, userId: adminId });
+
+        const main = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id), itemId: seededId(itemMainId) } });
+        expect(Number(main.expectedQty)).toBe(7);
+        expect(main.countedQty).toBeNull();
+        expect(main.varianceQty).toBeNull();
+      });
+
+      it("re-baselines a counted line the save was not sent at its own count moment, matching what approval books", async () => {
+        const id = await mkStocktake({
+          lines: [
+            { itemId: itemMainId, expectedQty: 10, countedQty: null },
+            { itemId: itemZeroId, expectedQty: 0, countedQty: null },
+          ],
+        });
+        const main = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id), itemId: seededId(itemMainId) } });
+        const zero = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id), itemId: seededId(itemZeroId) } });
+        await saveStocktakeCounts({ stocktakeId: id, lines: [{ lineId: main.id, countedQty: 9, cause: "SHRINKAGE", reason: "one missing" }], submit: false, userId: adminId });
+        await backdateCountStamps(id, 2000);
+
+        /* Two sell after itemMain's shelf was counted, then a later save counts itemZero only. */
+        await moveAfterCount(itemMainId, -2, "SpgSale");
+        await saveStocktakeCounts({ stocktakeId: id, lines: [{ lineId: zero.id, countedQty: 0 }], submit: true, userId: adminId });
+
+        /* Live 8 minus the −2 sold since its moment: the 10 its shelf held, not the live 8 (which would read as a surplus of one). */
+        const rebased = await prisma.storeStocktakeLine.findUniqueOrThrow({ where: { id: main.id } });
+        expect(Number(rebased.expectedQty)).toBe(10);
+        expect(Number(rebased.varianceQty)).toBe(-1);
+        expect(rebased.cause).toBe("SHRINKAGE");
+        expect(rebased.reason).toBe("one missing");
+
+        await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+        /* Target 9 − 2 = 7 against live 8: the ledger books −1, the variance the save showed. */
+        const rows = await stocktakeLedgerRows(id, itemMainId);
+        expect(rows).toHaveLength(1);
+        expect(Number(rows[0].qty)).toBe(Number(rebased.varianceQty));
+      });
+
+      it("skips a retur raised before the count when re-baselining, exactly as approval does", async () => {
+        const returnId = await raiseRetur(2);
+        await prisma.fieldReturn.update({ where: { id: returnId }, data: { createdAt: new Date(Date.now() - 120_000) } });
+        const id = await mkStocktake({ lines: [{ itemId: itemMainId, expectedQty: 10, countedQty: null }] });
+        const line = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id) }, select: { id: true } });
+        /* The shelf was counted a minute ago with the two already gone; the retur settles before the sheet is sent. */
+        const countedAtMs = Date.now() - 60_000;
+        await moveAfterCount(itemMainId, -2, "FieldReturn", returnId);
+
+        const sentAtMs = Date.now();
+        await saveStocktakeCounts({
+          stocktakeId: id,
+          lines: [{ lineId: line.id, countedQty: 8, countedAtMs }],
+          submit: true,
+          userId: adminId,
+          clientClock: { sentAtMs, receivedAtMs: sentAtMs },
+        });
+
+        /* Live 8, and the retur's −2 is not a movement this shelf missed: 8, not 8 + 2 = 10. */
+        const saved = await prisma.storeStocktakeLine.findUniqueOrThrow({ where: { id: line.id } });
+        expect(Number(saved.expectedQty)).toBe(8);
+        expect(Number(saved.varianceQty)).toBe(0);
+
+        await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+        expect(await stocktakeLedgerRows(id, itemMainId)).toHaveLength(0);
+      });
+
+      it("does not move expectedQty on a cause- or reason-only resave, even after further stock movement", async () => {
+        const id = await mkStocktake({ lines: [{ itemId: itemMainId, expectedQty: 10, countedQty: null }] });
+        const line = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id) }, select: { id: true } });
+        await saveStocktakeCounts({ stocktakeId: id, lines: [{ lineId: line.id, countedQty: 6 }], submit: false, userId: adminId });
+        const pinned = await backdateCountStamps(id, 60_000);
+
+        await moveAfterCount(itemMainId, -1, "SpgSale");
+        await saveStocktakeCounts({
+          stocktakeId: id,
+          lines: [{ lineId: line.id, countedQty: 6, cause: "SHRINKAGE", reason: "four missing" }],
+          submit: true,
+          userId: adminId,
+        });
+
+        const after = await prisma.storeStocktakeLine.findUniqueOrThrow({ where: { id: line.id } });
+        expect(Number(after.expectedQty)).toBe(10);
+        expect(Number(after.varianceQty)).toBe(-4);
+        expect(after.countFinishedAt?.toISOString()).toBe(pinned.toISOString());
+        const doc = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } });
+        expect(doc.countFinishedAt?.toISOString()).toBe(pinned.toISOString());
+      });
+
+      it("re-baselines a line whose key has no StoreStock row to 0", async () => {
+        /* A hand-seeded 5 the store's stock never backed: itemAdded has no StoreStock row. */
+        const id = await mkStocktake({ lines: [{ itemId: itemAddedId, expectedQty: 5, countedQty: null }] });
+        const line = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id) }, select: { id: true } });
+
+        await saveStocktakeCounts({ stocktakeId: id, lines: [{ lineId: line.id, countedQty: 3 }], submit: false, userId: adminId });
+
+        const saved = await prisma.storeStocktakeLine.findUniqueOrThrow({ where: { id: line.id } });
+        expect(Number(saved.expectedQty)).toBe(0);
+        expect(Number(saved.varianceQty)).toBe(3);
+      });
     });
 
     it("stamps countFinishedAt when a save changes a count, and leaves it alone on a reason-only resave", async () => {
