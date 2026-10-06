@@ -65,10 +65,20 @@ d("store stocktake writer (test bed only)", () => {
     return st.id;
   };
 
+  /* Moves the document's and every stamped line's `countFinishedAt` `ms` into the past, test-only. */
+  const backdateCountStamps = async (stocktakeId: string, ms: number) => {
+    const at = new Date(Date.now() - ms);
+    await prisma.storeStocktake.update({ where: { id: stocktakeId }, data: { countFinishedAt: at } });
+    await prisma.storeStocktakeLine.updateMany({ where: { stocktakeId: seededId(stocktakeId), countFinishedAt: { not: null } }, data: { countFinishedAt: at } });
+    return at;
+  };
+
   /**
-   * Counts one line through the real save path (which stamps `countFinishedAt`), then moves that
-   * stamp a second into the past — test-only — so a movement recorded right after it can never
-   * share its millisecond and fall outside the strict `createdAt > countFinishedAt` window.
+   * Counts one line through the real save path (which stamps `countFinishedAt` on the document and
+   * on the line), then moves both stamps a second into the past — test-only — so a movement
+   * recorded right after it can never share its millisecond and fall outside the strict
+   * `createdAt > countFinishedAt` window. Approval reads the line's own stamp, so backdating only
+   * the document's would leave the line at the save instant.
    */
   const countThroughSave = async (line: LineSeed, target: string = storeId) => {
     const id = await mkStocktake({ storeId: target, lines: [{ ...line, countedQty: null }] });
@@ -79,7 +89,7 @@ d("store stocktake writer (test bed only)", () => {
       submit: true,
       userId: adminId,
     });
-    await prisma.storeStocktake.update({ where: { id }, data: { countFinishedAt: new Date(Date.now() - 1000) } });
+    await backdateCountStamps(id, 1000);
     return id;
   };
 
@@ -98,8 +108,8 @@ d("store stocktake writer (test bed only)", () => {
       }),
     );
 
-  /* A FIELD retur of itemMain raised at the store — only the document; the test writes its store ledger row itself. */
-  const raiseRetur = async (qty: number) => {
+  /* A FIELD retur raised at the store (itemMain unless told otherwise) — only the document; the test writes its store ledger rows itself. */
+  const raiseRetur = async (qty: number, returItemIds: string[] = [itemMainId]) => {
     const { returnId } = await createFieldReturn({
       storeId,
       raisedById: adminId,
@@ -107,7 +117,7 @@ d("store stocktake writer (test bed only)", () => {
       transport: "SELF_CARRY",
       notaPhotoUrl: "https://r2.example/nota.jpg",
       notaPhotoR2Key: `field-return-notas/${tag}/nota.jpg`,
-      lines: [{ itemId: itemMainId, variantSku: "", qty, reason: "UNSOLD" }],
+      lines: returItemIds.map((itemId) => ({ itemId, variantSku: "", qty, reason: "UNSOLD" as const })),
     });
     return returnId;
   };
@@ -585,6 +595,107 @@ d("store stocktake writer (test bed only)", () => {
     expect(await stocktakeLedgerRows(id, itemMainId)).toHaveLength(0);
   });
 
+  it("keeps each line's own count moment when an admin edits another line", async () => {
+    const id = await mkStocktake({
+      lines: [
+        { itemId: itemZeroId, expectedQty: 0, countedQty: null },
+        { itemId: itemMainId, expectedQty: 10, countedQty: null },
+      ],
+    });
+    const lineA = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id), itemId: seededId(itemZeroId) } });
+    const lineB = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id), itemId: seededId(itemMainId) } });
+    await saveStocktakeCounts({
+      stocktakeId: id,
+      lines: [
+        { lineId: lineA.id, countedQty: 0 },
+        { lineId: lineB.id, countedQty: 10 },
+      ],
+      submit: true,
+      userId: adminId,
+    });
+    const countedAt = await backdateCountStamps(id, 2000);
+
+    /* Two of B sell after its shelf was counted. */
+    await moveAfterCount(itemMainId, -2, "SpgSale");
+
+    /* The admin corrects A only; the backoffice resends every line, B at the same figure. */
+    await saveStocktakeCounts({
+      stocktakeId: id,
+      lines: [
+        { lineId: lineA.id, countedQty: 1, reason: "one found behind the counter" },
+        { lineId: lineB.id, countedQty: 10 },
+      ],
+      submit: true,
+      userId: adminId,
+    });
+    const a = await prisma.storeStocktakeLine.findUniqueOrThrow({ where: { id: lineA.id } });
+    const b = await prisma.storeStocktakeLine.findUniqueOrThrow({ where: { id: lineB.id } });
+    expect(b.countFinishedAt?.toISOString()).toBe(countedAt.toISOString());
+    expect(a.countFinishedAt!.getTime()).toBeGreaterThan(countedAt.getTime());
+
+    await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+    /* B: counted 10 at its own moment, −2 sold since → 8. Keyed on the document's last save, the sale would be erased and B set back to 10. */
+    const ssB = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId) } });
+    expect(Number(ssB.qty)).toBe(8);
+    expect(await stocktakeLedgerRows(id, itemMainId)).toHaveLength(0);
+    const ssA = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemZeroId) } });
+    expect(Number(ssA.qty)).toBe(1);
+    const approvedB = await prisma.storeStocktakeLine.findUniqueOrThrow({ where: { id: lineB.id } });
+    expect(Number(approvedB.appliedQty)).toBe(8);
+  });
+
+  it("a line saved before the column existed falls back to the document stamp", async () => {
+    const id = await countThroughSave({ itemId: itemMainId, expectedQty: 10, countedQty: 10 });
+    await prisma.storeStocktakeLine.updateMany({ where: { stocktakeId: seededId(id) }, data: { countFinishedAt: null } });
+    await moveAfterCount(itemMainId, -2, "SpgSale");
+
+    await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId) } });
+    expect(Number(ss.qty)).toBe(8);
+    expect(await stocktakeLedgerRows(id, itemMainId)).toHaveLength(0);
+  });
+
+  it("a retur raised between two lines' moments is excluded only for the line counted after it", async () => {
+    /*
+     * itemMain's shelf (10) is counted first; then a retur takes 2 of itemMain and 2 of itemZero;
+     * then itemZero's shelf (5 − 2 = 3) is counted. The retur settles after both, landing its
+     * store rows now. All three instants are pinned test-only.
+     */
+    await prisma.storeStock.update({ where: { storeId_itemId_variantSku: { storeId, itemId: itemZeroId, variantSku: "" } }, data: { qty: 5 } });
+    const mainCountedAt = new Date(Date.now() - 60_000);
+    const returRaisedAt = new Date(Date.now() - 30_000);
+    const zeroCountedAt = new Date(Date.now() - 10_000);
+
+    const returnId = await raiseRetur(2, [itemMainId, itemZeroId]);
+    await prisma.fieldReturn.update({ where: { id: returnId }, data: { createdAt: returRaisedAt } });
+    const id = await mkStocktake({
+      status: "PENDING_VERIFICATION",
+      lines: [
+        { itemId: itemMainId, expectedQty: 10, countedQty: 10 },
+        { itemId: itemZeroId, expectedQty: 5, countedQty: 3, cause: "SHRINKAGE", reason: "two units on a retur" },
+      ],
+    });
+    await prisma.storeStocktake.update({ where: { id }, data: { countFinishedAt: zeroCountedAt } });
+    await prisma.storeStocktakeLine.updateMany({ where: { stocktakeId: seededId(id), itemId: seededId(itemMainId) }, data: { countFinishedAt: mainCountedAt } });
+    await prisma.storeStocktakeLine.updateMany({ where: { stocktakeId: seededId(id), itemId: seededId(itemZeroId) }, data: { countFinishedAt: zeroCountedAt } });
+
+    await moveAfterCount(itemMainId, -2, "FieldReturn", returnId);
+    await moveAfterCount(itemZeroId, -2, "FieldReturn", returnId);
+
+    await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+    /* itemMain was counted before the raise, so the retur's −2 is re-applied: 10 − 2 = 8, not a +2 phantom at 10. */
+    const ssMain = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId) } });
+    expect(Number(ssMain.qty)).toBe(8);
+    expect(await stocktakeLedgerRows(id, itemMainId)).toHaveLength(0);
+    /* itemZero was counted after the raise and already saw the two gone: 3, not 3 − 2 = 1. */
+    const ssZero = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemZeroId) } });
+    expect(Number(ssZero.qty)).toBe(3);
+    expect(await stocktakeLedgerRows(id, itemZeroId)).toHaveLength(0);
+  });
+
   it("isFullCount is false when any line is left uncounted", async () => {
     const id = await mkStocktake({
       lines: [
@@ -710,9 +821,10 @@ d("store stocktake writer (test bed only)", () => {
       await saveStocktakeCounts({ stocktakeId: id, lines: [{ lineId: line.id, countedQty: 6 }], submit: false, userId: adminId });
       const first = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } });
       expect(first.countFinishedAt).not.toBeNull();
+      const firstLine = await prisma.storeStocktakeLine.findUniqueOrThrow({ where: { id: line.id } });
+      expect(firstLine.countFinishedAt?.toISOString()).toBe(first.countFinishedAt!.toISOString());
 
-      const pinned = new Date(Date.now() - 60_000);
-      await prisma.storeStocktake.update({ where: { id }, data: { countFinishedAt: pinned } });
+      const pinned = await backdateCountStamps(id, 60_000);
 
       /* The backoffice resends every line when an admin only fills in a cause and reason. */
       await saveStocktakeCounts({
@@ -724,10 +836,42 @@ d("store stocktake writer (test bed only)", () => {
       const reasonOnly = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } });
       expect(reasonOnly.status).toBe("PENDING_VERIFICATION");
       expect(reasonOnly.countFinishedAt?.toISOString()).toBe(pinned.toISOString());
+      const reasonOnlyLine = await prisma.storeStocktakeLine.findUniqueOrThrow({ where: { id: line.id } });
+      expect(reasonOnlyLine.countFinishedAt?.toISOString()).toBe(pinned.toISOString());
 
       await saveStocktakeCounts({ stocktakeId: id, lines: [{ lineId: line.id, countedQty: 7, cause: "SHRINKAGE", reason: "recounted" }], submit: false, userId: adminId });
       const recounted = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } });
       expect(recounted.countFinishedAt!.getTime()).toBeGreaterThan(pinned.getTime());
+      const recountedLine = await prisma.storeStocktakeLine.findUniqueOrThrow({ where: { id: line.id } });
+      expect(recountedLine.countFinishedAt?.toISOString()).toBe(recounted.countFinishedAt!.toISOString());
+
+      /* Clearing a count clears its line stamp: an uncounted line has no count moment. */
+      await saveStocktakeCounts({ stocktakeId: id, lines: [{ lineId: line.id, countedQty: null }], submit: false, userId: adminId });
+      const cleared = await prisma.storeStocktakeLine.findUniqueOrThrow({ where: { id: line.id } });
+      expect(cleared.countFinishedAt).toBeNull();
+    });
+
+    it("a reason-only resave touches no line stamp", async () => {
+      const id = await mkStocktake({
+        lines: [
+          { itemId: itemMainId, expectedQty: 10, countedQty: null },
+          { itemId: itemZeroId, expectedQty: 0, countedQty: null },
+        ],
+      });
+      const lines = await prisma.storeStocktakeLine.findMany({ where: { stocktakeId: seededId(id) }, orderBy: { id: "asc" } });
+      await saveStocktakeCounts({ stocktakeId: id, lines: lines.map((l) => ({ lineId: l.id, countedQty: 4 })), submit: false, userId: adminId });
+      const pinned = await backdateCountStamps(id, 60_000);
+
+      await saveStocktakeCounts({
+        stocktakeId: id,
+        lines: lines.map((l) => ({ lineId: l.id, countedQty: 4, cause: "SHRINKAGE" as const, reason: "verified" })),
+        submit: true,
+        userId: adminId,
+      });
+
+      const after = await prisma.storeStocktakeLine.findMany({ where: { stocktakeId: seededId(id) }, orderBy: { id: "asc" } });
+      expect(after.map((l) => l.countFinishedAt?.toISOString())).toEqual([pinned.toISOString(), pinned.toISOString()]);
+      expect(after.every((l) => l.reason === "verified")).toBe(true);
     });
 
     it("stamps countFinishedAt when a save adds a line", async () => {
@@ -741,6 +885,8 @@ d("store stocktake writer (test bed only)", () => {
       });
       const st = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } });
       expect(st.countFinishedAt).not.toBeNull();
+      const added = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id), itemId: seededId(itemAddedId) } });
+      expect(added.countFinishedAt?.toISOString()).toBe(st.countFinishedAt!.toISOString());
     });
 
     it("moves DRAFT to PENDING_VERIFICATION when submit is true", async () => {

@@ -13,6 +13,7 @@ type AddedLineInput = {
   countedQty: number | null;
   cause?: CauseValue | null;
   reason?: string | null;
+  countFinishedAt?: Date;
 };
 
 /**
@@ -101,21 +102,32 @@ export async function createStoreStocktake(input: {
  * The reason check is NOT enforced here at save time — see the comment at the added-lines block
  * below for why — only the structural guards (`ITEM_NOT_FOUND`, `DUPLICATE_LINE`) are.
  *
- * `countFinishedAt` is stamped whenever a save changes a count figure — a line's `countedQty` or
- * any added line — and the last such save wins. It is the moment `approveStoreStocktake` treats
- * the counted figures as true, re-applying every store movement recorded after it. A save that
- * changes only causes or reasons leaves it alone: the backoffice resends every line when an admin
- * fills in a reason at verification time, and re-stamping there would silently drop every sale
- * or delivery between the physical count and that edit.
+ * Each line carries its own `countFinishedAt`, the moment its counted figure is true:
+ * `approveStoreStocktake` re-applies every store movement recorded after THAT LINE's moment. It is
+ * stamped only on a line whose `countedQty` this save actually changes (compared in cents), and on
+ * every added line — with the caller's `countFinishedAt` for that line when given, otherwise this
+ * save's instant — and cleared when the count is cleared. A line the save leaves at the same
+ * figure keeps its stamp, so an admin correcting one line at verification never moves the count
+ * moment of every other line: the backoffice resends every line whenever it saves, and re-stamping
+ * them all would silently drop every sale or delivery between their physical count and that edit.
+ *
+ * The document's own `countFinishedAt` is stamped with the same instant whenever any figure
+ * changes, and the last such save wins: it stays "when the count last changed", which is what the
+ * `TRANSFER_PENDING` refusal here, `approveStoreTransfer`'s `COUNTED_SINCE_MOVE`, the sell-through
+ * in-flight checks and the konsi count schedule read. A save that changes only causes or reasons
+ * leaves it alone, for the same reason as the line stamps.
  */
 export async function saveStocktakeCounts(input: {
   stocktakeId: string;
-  lines: Array<{ lineId: string; countedQty: number | null; cause?: CauseValue | null; reason?: string | null }>;
+  lines: Array<{ lineId: string; countedQty: number | null; cause?: CauseValue | null; reason?: string | null; countFinishedAt?: Date }>;
   addedLines?: AddedLineInput[];
   submit: boolean;
   userId: string;
 }): Promise<{ ok: true; status: string }> {
   return runSerializable(async (tx) => {
+    /* One instant for every stamp this save writes, so the document's stamp equals its lines'. */
+    const now = new Date();
+
     const st = await tx.storeStocktake.findUnique({
       where: { id: input.stocktakeId },
       select: {
@@ -210,6 +222,11 @@ export async function saveStocktakeCounts(input: {
        */
     }
 
+    /* Compared at the column's own 2dp scale, so a resend of the same figure is never a change. */
+    const toCents = (n: number | null) => (n === null ? null : Math.round(n * 100));
+    const countChanged = (line: { lineId: string; countedQty: number | null }) =>
+      toCents(line.countedQty) !== toCents(storedCountByLineId.get(line.lineId) ?? null);
+
     for (const line of input.lines) {
       const expected = expectedByLineId.get(line.lineId)!;
       const variance = line.countedQty === null ? null : line.countedQty - expected;
@@ -220,6 +237,7 @@ export async function saveStocktakeCounts(input: {
           varianceQty: variance,
           cause: line.cause ?? null,
           reason: line.reason ?? null,
+          ...(countChanged(line) ? { countFinishedAt: line.countedQty === null ? null : (line.countFinishedAt ?? now) } : {}),
         },
       });
     }
@@ -241,6 +259,7 @@ export async function saveStocktakeCounts(input: {
             cause: al.cause ?? null,
             reason: al.reason ?? null,
             isAdded: true,
+            countFinishedAt: al.countedQty === null ? null : (al.countFinishedAt ?? now),
           },
         });
       } catch (e) {
@@ -251,11 +270,7 @@ export async function saveStocktakeCounts(input: {
       }
     }
 
-    /* Compared at the column's own 2dp scale, so a resend of the same figure is never a change. */
-    const toCents = (n: number | null) => (n === null ? null : Math.round(n * 100));
-    const countsChanged =
-      normalizedAdded.length > 0 ||
-      input.lines.some((line) => toCents(line.countedQty) !== toCents(storedCountByLineId.get(line.lineId) ?? null));
+    const countsChanged = normalizedAdded.length > 0 || input.lines.some(countChanged);
 
     let status = st.status;
     if (input.submit || countsChanged) {
@@ -263,8 +278,8 @@ export async function saveStocktakeCounts(input: {
       await tx.storeStocktake.update({
         where: { id: st.id },
         data: {
-          ...(input.submit ? { status: "PENDING_VERIFICATION" as const, submittedAt: new Date(), submittedById: input.userId } : {}),
-          ...(countsChanged ? { countFinishedAt: new Date() } : {}),
+          ...(input.submit ? { status: "PENDING_VERIFICATION" as const, submittedAt: now, submittedById: input.userId } : {}),
+          ...(countsChanged ? { countFinishedAt: now } : {}),
         },
       });
     }
@@ -277,22 +292,30 @@ export async function saveStocktakeCounts(input: {
  * Approves a count. Every guard below runs before any write. The count is the truth at the moment
  * it was taken — that is the whole premise of this document — so every counted line SETs
  * `StoreStock.qty` to its counted figure PLUS every store ledger movement for that item::variant
- * recorded after `countFinishedAt`: a POS sale or a konsi delivery while the count waited for an
- * admin happened after the shelf was counted, and setting the bare counted figure would erase it.
- * A retur raised before the count, and a store-to-store transfer whose goods moved before it, are
- * excluded — the count already saw their goods gone or arrived, even though their ledger rows land
- * later (see the post-count block below). A transfer like that which is still PENDING, and moves
- * an item::variant this count counted, refuses the approval instead (`TRANSFER_PENDING`), because
- * once this count is approved the transfer can never be approved. That refusal still runs for a
- * count whose `countFinishedAt` is null — it falls back to this approval's own instant as the
- * count moment, matching the fallback `approveStoreTransfer`'s `COUNTED_SINCE_MOVE` guard already
- * uses, so a legacy count can never approve first and strand a transfer behind that guard forever.
+ * recorded after THAT LINE's count moment: a POS sale or a konsi delivery while the count waited
+ * for an admin happened after the shelf was counted, and setting the bare counted figure would
+ * erase it. A line's moment is its own `countFinishedAt` — when its figure last changed — falling
+ * back to the document's `countFinishedAt` for a line saved before the line column existed, so an
+ * admin correcting one line never moves the moment of the others. A retur raised before a line's
+ * moment, and a store-to-store transfer whose goods moved before it, are excluded for that line —
+ * the count already saw their goods gone or arrived, even though their ledger rows land later (see
+ * the post-count block below).
+ *
+ * A transfer whose goods moved on or before the DOCUMENT's count moment, which is still PENDING
+ * and moves an item::variant this count counted, refuses the approval instead
+ * (`TRANSFER_PENDING`), because once this count is approved the transfer can never be approved.
+ * That refusal deliberately keeps the document moment rather than any line's: it must agree with
+ * `approveStoreTransfer`'s `COUNTED_SINCE_MOVE`, which reads the document stamp. It still runs for
+ * a count whose `countFinishedAt` is null — falling back to this approval's own instant, the same
+ * fallback `COUNTED_SINCE_MOVE` uses — so a legacy count can never approve first and strand a
+ * transfer behind that guard forever.
+ *
  * The ledger entry `setStoreStock` writes is then the true shrinkage or surplus at the count
- * moment, whatever moved since. A stocktake whose `countFinishedAt` is null was counted before
- * that column existed, and keeps the old behaviour for re-application: the bare counted figure,
- * with the post-count exclusion below never running for it. Nothing here refuses
- * on an unbalanced count: a store may legitimately end approval still holding negative rows —
- * a post-count sale can take a line below zero too — and that is recorded and surfaced, never
+ * moment, whatever moved since. A counted line with no moment at all — neither its own nor the
+ * document's, a count saved before either column existed — keeps the old behaviour: the bare
+ * counted figure, with no re-application and so no exclusion. Nothing here refuses on an
+ * unbalanced count: a store may legitimately end approval still holding negative rows — a
+ * post-count sale can take a line below zero too — and that is recorded and surfaced, never
  * blocked.
  *
  * `varianceQty` is (re)computed here from the line's own `countedQty`/`expectedQty` rather than
@@ -314,7 +337,16 @@ export async function approveStoreStocktake(input: {
         status: true,
         countFinishedAt: true,
         lines: {
-          select: { id: true, itemId: true, variantSku: true, expectedQty: true, countedQty: true, cause: true, reason: true },
+          select: {
+            id: true,
+            itemId: true,
+            variantSku: true,
+            expectedQty: true,
+            countedQty: true,
+            cause: true,
+            reason: true,
+            countFinishedAt: true,
+          },
         },
       },
     });
@@ -332,7 +364,8 @@ export async function approveStoreStocktake(input: {
       const expected = l.expectedQty.toNumber();
       const counted = l.countedQty === null ? null : l.countedQty.toNumber();
       const variance = counted === null ? null : counted - expected;
-      return { id: l.id, itemId: l.itemId, variantSku: l.variantSku, counted, variance, cause: l.cause, reason: l.reason };
+      const moment = counted === null ? null : (l.countFinishedAt ?? st.countFinishedAt);
+      return { id: l.id, itemId: l.itemId, variantSku: l.variantSku, counted, variance, cause: l.cause, reason: l.reason, moment };
     });
 
     for (const l of computed) {
@@ -364,16 +397,17 @@ export async function approveStoreStocktake(input: {
      * PENDING: the count holds a move StoreStock has not recorded, and once this count is approved
      * the transfer is refused `COUNTED_SINCE_MOVE` forever. Refused here, naming the transfers, so
      * the admin approves or cancels them first. A transfer of keys this count left uncounted or
-     * never had cannot be in the count, so it does not refuse. The count moment is
-     * `countFinishedAt` — or, for a count saved before that column existed, `approvedAt` above
-     * (the same instant this approval stamps on the document below, not a second `new Date()`).
-     * That fallback matches the one `approveStoreTransfer`'s own `COUNTED_SINCE_MOVE` guard already
-     * uses for a null-`countFinishedAt` count (`approvedAt` there too), so the two guards agree on
-     * the same instant for the same document; without it a legacy count could approve first and
-     * strand the transfer behind `COUNTED_SINCE_MOVE` forever, unable to ever approve. This
-     * fallback governs the refusal only — the post-count exclusion below still skips entirely for
-     * a null `countFinishedAt`, unchanged. Both variantSku columns are non-nullable, so the keys
-     * match exactly.
+     * never had cannot be in the count, so it does not refuse. The count moment here is the
+     * DOCUMENT's `countFinishedAt`, never a line's own: `approveStoreTransfer`'s
+     * `COUNTED_SINCE_MOVE` reads the document stamp, and the two guards must agree on the same
+     * instant for the same document or a transfer could pass one and be stranded by the other. For
+     * a count saved before that column existed it is `approvedAt` above (the same instant this
+     * approval stamps on the document below, not a second `new Date()`), matching the fallback
+     * `COUNTED_SINCE_MOVE` uses for a null-`countFinishedAt` count; without it a legacy count could
+     * approve first and strand the transfer behind `COUNTED_SINCE_MOVE` forever, unable to ever
+     * approve. This fallback governs the refusal only — a counted line with no moment of its own
+     * or the document's still re-applies nothing below. Both variantSku columns are non-nullable,
+     * so the keys match exactly.
      */
     const countedKeys = computed
       .filter((l) => l.counted !== null)
@@ -396,46 +430,65 @@ export async function approveStoreStocktake(input: {
     }
 
     /**
-     * Every store movement recorded after the count was saved, summed per item::variant in cents.
-     * Only one stocktake per store can be open (`openKey`), so none of these rows is another
-     * count's. Null `countFinishedAt` (a count saved before the column existed) re-applies
-     * nothing, which is exactly the old SET-the-counted-figure behaviour.
+     * Every store movement recorded after each counted line's own moment, summed per line in
+     * cents. One read covers every line: the ledger rows after the EARLIEST line moment, then each
+     * line keeps only its own item::variant's rows stamped strictly after its own moment. Only one
+     * stocktake per store can be open (`openKey`), so none of these rows is another count's. A line
+     * with no moment re-applies nothing, which is exactly the old SET-the-counted-figure behaviour.
      *
-     * Excluded: a retur's store row whose retur was RAISED on or before `countFinishedAt`. A
-     * retur's ledger row lags the physical movement — the goods leave the shelf when it is raised,
-     * but its store row lands later, at approve for a FIELD retur, at receipt plus an approve-time
-     * delta for an ADMIN one — so the count already saw those units gone, and re-applying the row
-     * would take them off twice. Both retur writers stamp the FieldReturn id as the row's `refId`.
-     * A retur raised after the count still counts: its goods left after the shelf was counted.
-     * Excluded the same way: a store-to-store transfer's rows — BOTH legs, the source's −q and the
-     * destination's +q — whose transfer's `movedAt` is on or before `countFinishedAt`. Stock moves
-     * at transfer approve, which can land after the goods physically moved, so a count taken in
-     * between already saw them gone or arrived. Both legs stamp the StoreTransfer id as `refId`.
-     * A transfer whose goods moved after the count is still re-applied. The skip is per ledger
-     * row, and only a counted line reads these sums at all, so it only ever affects items this
-     * count counted — a transfer's row for an uncounted item never reaches a target either way.
+     * Excluded per line: a retur's store row whose retur was RAISED on or before that line's
+     * moment. A retur's ledger row lags the physical movement — the goods leave the shelf when it
+     * is raised, but its store row lands later, at approve for a FIELD retur, at receipt plus an
+     * approve-time delta for an ADMIN one — so a shelf counted after the raise already saw those
+     * units gone, and re-applying the row would take them off twice. Both retur writers stamp the
+     * FieldReturn id as the row's `refId`. A retur raised after the line was counted still counts:
+     * its goods left after the shelf was counted. Excluded the same way: a store-to-store
+     * transfer's rows — BOTH legs, the source's −q and the destination's +q — whose transfer's
+     * `movedAt` is on or before the line's moment. Stock moves at transfer approve, which can land
+     * after the goods physically moved, so a shelf counted in between already saw them gone or
+     * arrived. Both legs stamp the StoreTransfer id as `refId`. A transfer whose goods moved after
+     * the line was counted is still re-applied. Both exclusions are judged against each line's own
+     * moment, so one retur or transfer can be excluded for a line counted after it and re-applied
+     * for a line counted before it. Only a counted line reads these sums at all, so a row for an
+     * uncounted item never reaches a target either way.
      */
-    const postCountCentsByKey = new Map<string, number>();
-    if (st.countFinishedAt) {
+    const postCountCentsByLineId = new Map<string, number>();
+    const momentLines = computed.filter((l) => l.counted !== null && l.moment !== null);
+    if (momentLines.length > 0) {
+      const earliest = new Date(momentLines.reduce((min, l) => Math.min(min, l.moment!.getTime()), Infinity));
       const postCount = await tx.stockLedgerEntry.findMany({
-        where: { locationType: "STORE", locationId: st.storeId, createdAt: { gt: st.countFinishedAt } },
-        select: { itemId: true, variantSku: true, qty: true, refType: true, refId: true },
+        where: { locationType: "STORE", locationId: st.storeId, createdAt: { gt: earliest } },
+        select: { itemId: true, variantSku: true, qty: true, refType: true, refId: true, createdAt: true },
       });
       const returIds = Array.from(new Set(postCount.filter((r) => r.refType === "FieldReturn").map((r) => r.refId)));
-      const preCountReturs = returIds.length > 0
-        ? await tx.fieldReturn.findMany({ where: { id: { in: returIds }, createdAt: { lte: st.countFinishedAt } }, select: { id: true } })
+      const returs = returIds.length > 0
+        ? await tx.fieldReturn.findMany({ where: { id: { in: returIds } }, select: { id: true, createdAt: true } })
         : [];
-      const preCountReturIds = new Set(preCountReturs.map((r) => r.id));
+      const returRaisedAtMs = new Map(returs.map((r) => [r.id, r.createdAt.getTime()]));
       const transferIds = Array.from(new Set(postCount.filter((r) => r.refType === "StoreTransfer").map((r) => r.refId)));
-      const preCountTransfers = transferIds.length > 0
-        ? await tx.storeTransfer.findMany({ where: { id: { in: transferIds }, movedAt: { lte: st.countFinishedAt } }, select: { id: true } })
+      const transfers = transferIds.length > 0
+        ? await tx.storeTransfer.findMany({ where: { id: { in: transferIds } }, select: { id: true, movedAt: true } })
         : [];
-      const preCountTransferIds = new Set(preCountTransfers.map((t) => t.id));
+      const transferMovedAtMs = new Map(transfers.map((t) => [t.id, t.movedAt.getTime()]));
+
+      const rowsByKey = new Map<string, typeof postCount>();
       for (const r of postCount) {
-        if (r.refType === "FieldReturn" && preCountReturIds.has(r.refId)) continue;
-        if (r.refType === "StoreTransfer" && preCountTransferIds.has(r.refId)) continue;
         const key = `${r.itemId}::${r.variantSku}`;
-        postCountCentsByKey.set(key, (postCountCentsByKey.get(key) ?? 0) + Math.round(r.qty.toNumber() * 100));
+        const rows = rowsByKey.get(key);
+        if (rows) rows.push(r);
+        else rowsByKey.set(key, [r]);
+      }
+
+      for (const l of momentLines) {
+        const momentMs = l.moment!.getTime();
+        let cents = 0;
+        for (const r of rowsByKey.get(`${l.itemId}::${l.variantSku ?? ""}`) ?? []) {
+          if (r.createdAt.getTime() <= momentMs) continue;
+          if (r.refType === "FieldReturn" && (returRaisedAtMs.get(r.refId) ?? Infinity) <= momentMs) continue;
+          if (r.refType === "StoreTransfer" && (transferMovedAtMs.get(r.refId) ?? Infinity) <= momentMs) continue;
+          cents += Math.round(r.qty.toNumber() * 100);
+        }
+        postCountCentsByLineId.set(l.id, cents);
       }
     }
 
@@ -449,7 +502,7 @@ export async function approveStoreStocktake(input: {
 
       const key = { storeId_itemId_variantSku: { storeId: st.storeId, itemId: l.itemId, variantSku: l.variantSku ?? "" } };
       const live = await tx.storeStock.findUnique({ where: key, select: { qty: true } });
-      const postCountCents = postCountCentsByKey.get(`${l.itemId}::${l.variantSku ?? ""}`) ?? 0;
+      const postCountCents = postCountCentsByLineId.get(l.id) ?? 0;
       const target = (Math.round(l.counted * 100) + postCountCents) / 100;
 
       /*
