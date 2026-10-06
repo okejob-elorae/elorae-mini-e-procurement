@@ -178,8 +178,26 @@ d("konsi sell-through queries (test bed only)", () => {
     expect(detail?.lines[0]).toMatchObject({ unitPrice: 40000, lineTotal: 160000 });
     expect(detail?.total).toBe(160000);
     expect(detail?.unpricedKeys).toEqual([]);
+    expect(detail?.uncostedKeys).toEqual([]);
     /* the fixture's konsi order salesman is not a candidate */
     expect(detail?.defaultSalesmanId).toBeNull();
+  }, SLOW);
+
+  it("a DRAFT names a line that bills at unit cost 0 in uncostedKeys, and an approved report names none", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
+    /* Neither the store nor the main warehouse has an average, so the line snapshots unit cost 0. */
+    await prisma.storeStock.updateMany({ where: { storeId: seededId(state.storeId), itemId: seededId(state.itemId) }, data: { avgCost: 0 } });
+    await prisma.inventoryValue.updateMany({ where: { itemId: seededId(state.itemId) }, data: { avgCost: 0 } });
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+
+    const draft = await getSellThrough(id);
+    expect(draft?.lines[0]).toMatchObject({ unitCost: 0, billedQty: 4 });
+    expect(draft?.uncostedKeys).toEqual([`${state.itemId}::`]);
+
+    await fx.approve(id);
+    expect((await getSellThrough(id))?.uncostedKeys).toEqual([]);
   }, SLOW);
 
   it("an invoiced report returns the stored invoice, receivable and faktur ids", async () => {

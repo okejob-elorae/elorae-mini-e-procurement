@@ -16,6 +16,7 @@ import { SellThroughError } from "./errors";
 import { priceSellThroughLines } from "./pricing";
 import { isInvoiceDateAllowed, dueDateFor } from "./invoice-dates";
 import { isSellThroughSalesmanCandidate } from "./salesman-candidates";
+import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 
 /* A UX bound on a free-text reason — all three columns (resolutionReason, baselineReason, cancelReason) are TEXT. The screens cap their inputs at the same figure. */
 const REASON_MAX_LENGTH = 1000;
@@ -266,6 +267,18 @@ export async function createSellThrough(input: {
       ? await tx.storeStock.findMany({ where: { storeId, itemId: { in: itemIds } }, select: { itemId: true, variantSku: true, avgCost: true } })
       : [];
     const avgCostByKey = new Map(stock.map((s) => [lineKey(s.itemId, s.variantSku), s.avgCost]));
+    /**
+     * A key with no store row, or a store average of 0, snapshots the main warehouse average for the
+     * same item::variant instead: konsi stock reaches a store at main's average cost, so it is the
+     * closest real cost, and no screen can set a store's average, so refusing here would wedge the
+     * report. Still 0 stays 0, and the approve dialog warns about it.
+     */
+    for (const l of lines) {
+      const key = lineKey(l.itemId, l.variantSku);
+      if (Number(avgCostByKey.get(key) ?? 0) > 0) continue;
+      const main = await findExistingInventoryValueRow(tx, l.itemId, l.variantSku);
+      if (main && Number(main.avgCost) > 0) avgCostByKey.set(key, main.avgCost);
+    }
     const stocktakeNameByKey = new Map(stocktake.lines.map((l) => [lineKey(l.itemId, l.variantSku), l.productName]));
 
     const docNo = await generateDocNumber("SELLTHRU", tx);

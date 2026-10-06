@@ -4122,6 +4122,7 @@
       "salesmanRequiredHint": "Pilih siapa yang menagih tagihan ini ke toko.",
       "total": "Total ditagih",
       "unpriced": "{products} belum memiliki harga jual — atur harga jual barang, lalu muat ulang halaman ini untuk menyetujui.",
+      "uncosted": "{products} belum memiliki biaya tercatat, sehingga persetujuan ini membukukan HPP nol untuk barang tersebut.",
       "confirmAction": "Setujui & Tagihkan",
       "confirmBaselineAction": "Setujui sebagai Baseline",
       "submitting": "Menyetujui…",

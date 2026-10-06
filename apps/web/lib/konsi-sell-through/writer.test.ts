@@ -409,6 +409,51 @@ d("konsi sell-through writer (test bed only)", () => {
     expect(approved.approvedAt).not.toBeNull();
   }, SLOW);
 
+  /* create — unit cost snapshot */
+
+  /* SHELF_COUNT, 6 transferred in and 2 counted: the approved closing count a report bills 4 from. */
+  async function shelfCountStocktake() {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    return count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
+  }
+
+  const setStoreAvgCost = (avgCost: number) =>
+    prisma.storeStock.updateMany({ where: { storeId: seededId(state.storeId), itemId: seededId(state.itemId) }, data: { avgCost } });
+  const setMainAvgCost = (avgCost: number) =>
+    prisma.inventoryValue.updateMany({ where: { itemId: seededId(state.itemId) }, data: { avgCost } });
+
+  it("a line whose store average is 0 snapshots the main warehouse average instead", async () => {
+    const stocktakeId = await shelfCountStocktake();
+    await setStoreAvgCost(0);
+    await setMainAvgCost(12000);
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+    expect(Number((await onlyLine(id)).unitCost)).toBe(12000);
+  }, SLOW);
+
+  it("a line with no store stock row snapshots the main warehouse average", async () => {
+    const stocktakeId = await shelfCountStocktake();
+    await prisma.storeStock.deleteMany({ where: { storeId: seededId(state.storeId), itemId: seededId(state.itemId) } });
+    await setMainAvgCost(12000);
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+    expect(Number((await onlyLine(id)).unitCost)).toBe(12000);
+  }, SLOW);
+
+  it("a non-zero store average wins over the main warehouse average", async () => {
+    const stocktakeId = await shelfCountStocktake();
+    await setMainAvgCost(12000);
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+    expect(Number((await onlyLine(id)).unitCost)).toBe(10000);
+  }, SLOW);
+
+  it("a line stays at unit cost 0 when neither the store nor the main warehouse has an average", async () => {
+    const stocktakeId = await shelfCountStocktake();
+    await setStoreAvgCost(0);
+    await setMainAvgCost(0);
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+    expect(Number((await onlyLine(id)).unitCost)).toBe(0);
+  }, SLOW);
+
   /* SPG_POS — hold and resolution */
 
   it("SPG_POS: POS sells 3 and the count finds 2 more gone → prefilled SHRINKAGE, HELD until resolved, then approves", async () => {

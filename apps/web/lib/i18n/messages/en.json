@@ -4122,6 +4122,7 @@
       "salesmanRequiredHint": "Choose who collects this invoice from the store.",
       "total": "Billed total",
       "unpriced": "{products} {n, plural, one {has} other {have}} no selling price — set the item's selling price, then reload this page to approve.",
+      "uncosted": "{products} {n, plural, one {has} other {have}} no recorded cost, so approving books zero cost of goods for {n, plural, one {it} other {them}}.",
       "confirmAction": "Approve & Invoice",
       "confirmBaselineAction": "Approve as Baseline",
       "submitting": "Approving…",

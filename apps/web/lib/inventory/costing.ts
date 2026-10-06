@@ -43,7 +43,8 @@ export type StockRef = {
  * update), opname-snapshot.ts, opname-approve.ts,
  * canvassing/writer.ts, canvassing/reconcile-writer.ts,
  * field-sales/retur/approve-writer.ts, field-sales/konsi-push-writer.ts,
- * field-sales/writer.ts (konsi approve added lines), and
+ * field-sales/writer.ts (konsi approve added lines), konsi-sell-through/writer.ts (a line's
+ * unitCost fallback when the store row has no average), and
  * reverseMovingAverage / calculateMovingAverage / reverseInventoryValue below. reconciliation-runner.ts's MATCH_JUBELIO path uses packages/db's locking copy,
  * lockMainInventoryValueRow, instead, because it must lock the row before reading it; and
  * konsi-transfer/writer.ts uses packages/db's resolveReservedInventory, because it draws down a

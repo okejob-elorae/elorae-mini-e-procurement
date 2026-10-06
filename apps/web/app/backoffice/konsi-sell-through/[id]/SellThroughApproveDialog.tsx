@@ -71,6 +71,8 @@ export function SellThroughApproveDialog({
   const effectiveMode: ApproveMode = canChooseBaseline ? mode : "INVOICE";
   const total = report.total ?? 0;
   const hasUnpriced = report.unpricedKeys.length > 0;
+  /* A warning only: a zero-cost line still approves, so this never feeds `submitDisabled`. */
+  const hasUncosted = report.uncostedKeys.length > 0;
   const salesmanRequired = total > 0;
   const noCandidates = salesmanCandidates.length === 0;
 
@@ -249,6 +251,18 @@ export function SellThroughApproveDialog({
                   {tApprove("unpriced", {
                     products: productNamesForKeys(report.lines, report.unpricedKeys),
                     n: report.unpricedKeys.length,
+                  })}
+                </p>
+              </div>
+            )}
+
+            {hasUncosted && (
+              <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <p className="min-w-0 break-words">
+                  {tApprove("uncosted", {
+                    products: productNamesForKeys(report.lines, report.uncostedKeys),
+                    n: report.uncostedKeys.length,
                   })}
                 </p>
               </div>
