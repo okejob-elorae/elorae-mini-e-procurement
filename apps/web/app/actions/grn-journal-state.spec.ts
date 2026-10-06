@@ -27,8 +27,10 @@ vi.mock("@/lib/inventory/grn-journal", () => ({
   postGrnJournal: mockPostGrnJournal,
   postGrnReversalJournal: vi.fn(),
 }));
-vi.mock("@/app/actions/notifications", () => ({
+vi.mock("@/lib/notifications/actor-name", () => ({
   getActorName: vi.fn(),
+}));
+vi.mock("@/app/actions/notifications", () => ({
   notifyGRNCreated: vi.fn(),
   notifyMaterialArrivedForPo: vi.fn(),
 }));
@@ -58,6 +60,12 @@ describe("GRN journals on a declined GRN (unit — prisma and writers mocked)", 
     mockJournalFind.mockReset();
     mockGrnFind.mockReset();
     journalsExist({});
+    /*
+     * getGrnJournalState is gated by requireGrnRead, which checks through rbac's own internal
+     * hasPermission rather than the mocked export, so the session must hold the real permission.
+     * The postGrnReceiptJournalAction tests below set their own session.
+     */
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["inventory:view"] } });
   });
 
   it("offers the receipt journal on a live valued GRN with no journal", async () => {

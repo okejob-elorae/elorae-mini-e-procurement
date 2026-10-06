@@ -2,16 +2,20 @@
 
 import { prisma } from '@elorae/db';
 import bcrypt from 'bcryptjs';
+import { auth } from '@/lib/auth';
 
 export type ChangePasswordResult =
   | { success: true }
   | { success: false; messageKey: string };
 
 export async function changePassword(
-  userId: string,
   currentPassword: string,
   newPassword: string
 ): Promise<ChangePasswordResult> {
+  const session = await auth();
+  if (!session?.user?.id) return { success: false, messageKey: "unauthorized" };
+  const userId = session.user.id;
+
   if (!currentPassword?.trim()) {
     return { success: false, messageKey: 'currentPasswordRequired' };
   }

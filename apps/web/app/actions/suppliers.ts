@@ -4,8 +4,9 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { PERMISSIONS, requirePermission } from '@/lib/rbac';
-import { getActorName, notifySupplierCreated, notifySupplierApproved } from '@/app/actions/notifications';
-import { verifyPinForAction } from '@/app/actions/security/pin-auth';
+import { notifySupplierCreated, notifySupplierApproved } from '@/app/actions/notifications';
+import { getActorName } from "@/lib/notifications/actor-name";
+import { verifyPin } from '@/lib/security/pin';
 import {
   listSuppliers,
   getSupplierById,
@@ -112,11 +113,30 @@ export async function updateSupplierAction(
 
 export type DeleteSupplierActionResult =
   | { success: true }
-  | { success: false; messageKey: 'cannotDeleteSupplierInUse' | 'failedToDeleteSupplier' };
+  | {
+      success: false;
+      reason?: undefined;
+      messageKey: 'cannotDeleteSupplierInUse' | 'failedToDeleteSupplier';
+    }
+  | { success: false; reason: 'PIN'; messageKey?: string; message?: string };
 
-export async function deleteSupplierAction(id: string): Promise<DeleteSupplierActionResult> {
+export async function deleteSupplierAction(
+  id: string,
+  pin: string
+): Promise<DeleteSupplierActionResult> {
   const session = await requireSession();
   requirePermission(session.user.permissions, PERMISSIONS.SUPPLIERS_DELETE);
+  const pinResult = await verifyPin(session.user.id, pin, 'DELETE_SUPPLIER', {
+    fallbackEmail: session.user.email,
+  });
+  if (!pinResult.success) {
+    return {
+      success: false,
+      reason: 'PIN',
+      messageKey: pinResult.messageKey,
+      message: pinResult.message,
+    };
+  }
   try {
     await deleteSupplier(id);
     revalidatePath('/backoffice/suppliers');
@@ -151,13 +171,10 @@ export async function rejectSupplierAction(id: string, reason: string) {
 
 export async function decryptSupplierBankAction(id: string, pin: string) {
   const session = await requireSession();
-  const pinResult = await verifyPinForAction(
-    session.user.id,
-    pin,
-    'VIEW_BANK_ACCOUNT',
-    'User requested bank account view',
-    'server-action'
-  );
+  requirePermission(session.user.permissions, PERMISSIONS.SUPPLIERS_VIEW);
+  const pinResult = await verifyPin(session.user.id, pin, 'VIEW_BANK_ACCOUNT', {
+    ipAddress: 'server-action',
+  });
   if (!pinResult.success) {
     throw new Error(pinResult.messageKey ?? pinResult.message ?? 'Invalid PIN');
   }

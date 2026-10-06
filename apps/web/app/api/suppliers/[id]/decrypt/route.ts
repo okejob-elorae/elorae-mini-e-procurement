@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { prisma } from '@elorae/db';
 import { decryptBankAccount } from '@/lib/encryption';
 import { logBankAccountView } from '@/lib/audit';
-import { verifyPinForAction } from '@/app/actions/security/pin-auth';
+import { verifyPin } from '@/lib/security/pin';
 
 const bodySchema = z.object({
   pin: z.string().min(4),
@@ -28,13 +28,9 @@ export async function POST(
     const ip = req.headers.get('x-forwarded-for') || 'unknown';
     const userAgent = req.headers.get('user-agent') || 'unknown';
 
-    const pinResult = await verifyPinForAction(
-      session.user.id,
-      pin,
-      'VIEW_BANK_ACCOUNT',
-      'User requested bank account view',
-      ip
-    );
+    const pinResult = await verifyPin(session.user.id, pin, 'VIEW_BANK_ACCOUNT', {
+      ipAddress: ip,
+    });
     if (!pinResult.success) {
       return NextResponse.json(
         { error: pinResult.messageKey ?? pinResult.message },

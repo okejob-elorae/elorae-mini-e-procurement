@@ -473,7 +473,8 @@
       "STOCK_ADJUSTMENT": "Adjustment stok",
       "VOID_DOCUMENT": "Void dokumen",
       "EDIT_POSTED_PO": "Edit PO terposting",
-      "DELETE_SUPPLIER": "Hapus pemasok"
+      "DELETE_SUPPLIER": "Hapus pemasok",
+      "CHANGE_PIN": "Ubah PIN"
     },
     "authRequired": "Autentikasi Diperlukan",
     "enterPinForAction": "Masukkan PIN Anda untuk {action}",
@@ -495,6 +496,7 @@
     "currentPasswordIncorrect": "Kata sandi saat ini salah",
     "noPasswordSet": "Akun ini tidak menggunakan kata sandi",
     "changePasswordFailed": "Gagal memperbarui kata sandi",
+    "unauthorized": "Silakan masuk kembali",
     "userNotFound": "User tidak ditemukan",
     "pinNotSet": "PIN belum diatur",
     "tooManyAttempts": "Terlalu banyak percobaan gagal. Coba lagi dalam 15 menit.",

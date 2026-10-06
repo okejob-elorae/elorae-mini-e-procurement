@@ -13,7 +13,7 @@ import {
   type ItemImportValidatedResult,
 } from "@/lib/items/import/types";
 import { enqueueProductPushOnCreate } from "@/app/actions/jubelio-product-push";
-import { getActorName } from "@/app/actions/notifications";
+import { getActorName } from "@/lib/notifications/actor-name";
 import { getUsersWithPermission, sendNotificationToUsers } from "@/lib/notifications/recipients";
 
 async function sessionUserWithCreate(): Promise<{ id: string } | null> {

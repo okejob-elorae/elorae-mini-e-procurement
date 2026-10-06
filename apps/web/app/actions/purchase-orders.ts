@@ -6,11 +6,13 @@ import { prisma } from '@elorae/db';
 import { generateDocNumber } from '@/lib/docNumber';
 import { POStatus } from '@elorae/db';
 import { poSchema } from '@/lib/validations';
-import { verifyPinForAction } from '@/app/actions/security/pin-auth';
+import { verifyPin } from '@/lib/security/pin';
 import { hasPermission, requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
+import { assertActor } from "@/lib/auth/assert-actor";
 import { z } from 'zod';
-import { getActorName, notifyPOCreated, notifyPOStatusUpdated, notifyPOPaymentToggled } from '@/app/actions/notifications';
+import { notifyPOCreated, notifyPOStatusUpdated, notifyPOPaymentToggled } from '@/app/actions/notifications';
+import { getActorName } from "@/lib/notifications/actor-name";
 import { createPurchaseOrder, type POFormData } from '@/lib/purchase-orders/mutations';
 import { listPOs, getPOById as getPOByIdQuery } from '@/lib/purchase-orders/queries';
 import { assertLinesVariantSkusMatchItemDefinitions } from '@/lib/items/validate-variant-lines';
@@ -37,6 +39,7 @@ export async function createPO(data: POFormData, userId: string) {
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_CREATE);
+  assertActor(session.user.id, userId);
 
   let po;
   try {
@@ -64,7 +67,8 @@ export async function updatePO(
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_EDIT);
-  
+  assertActor(session.user.id, userId);
+
   const existing = await prisma.purchaseOrder.findUnique({
     where: { id },
     select: { status: true }
@@ -78,7 +82,7 @@ export async function updatePO(
     if (!pin) {
       throw new Error('PIN required to edit a posted PO');
     }
-    const pinResult = await verifyPinForAction(userId, pin, 'EDIT_POSTED_PO');
+    const pinResult = await verifyPin(session.user.id, pin, 'EDIT_POSTED_PO');
     if (!pinResult.success) {
       throw new Error(pinResult.messageKey ?? pinResult.message);
     }
@@ -220,12 +224,13 @@ export async function changePOStatus(
   } else {
     requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_EDIT);
   }
+  assertActor(session.user.id, userId);
 
   if (newStatus === 'CANCELLED') {
     if (!pin) {
       throw new Error('PIN required to void/cancel a PO');
     }
-    const pinResult = await verifyPinForAction(userId, pin, 'VOID_DOCUMENT');
+    const pinResult = await verifyPin(session.user.id, pin, 'VOID_DOCUMENT');
     if (!pinResult.success) {
       throw new Error(pinResult.messageKey ?? pinResult.message);
     }
@@ -281,11 +286,12 @@ export async function cancelPO(id: string, userId: string, reason?: string, pin?
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_EDIT);
+  assertActor(session.user.id, userId);
 
   if (!pin) {
     throw new Error('PIN required to cancel/void a PO');
   }
-  const pinResult = await verifyPinForAction(userId, pin, 'VOID_DOCUMENT');
+  const pinResult = await verifyPin(session.user.id, pin, 'VOID_DOCUMENT');
   if (!pinResult.success) {
     throw new Error(pinResult.messageKey ?? pinResult.message);
   }

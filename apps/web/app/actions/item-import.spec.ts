@@ -8,7 +8,7 @@ vi.mock("@/lib/items/import/writer", async () => {
   return { createItemsFromImport: vi.fn(), ItemImportSkuTakenError };
 });
 vi.mock("@/app/actions/jubelio-product-push", () => ({ enqueueProductPushOnCreate: vi.fn() }));
-vi.mock("@/app/actions/notifications", () => ({ getActorName: vi.fn().mockResolvedValue("Admin") }));
+vi.mock("@/lib/notifications/actor-name", () => ({ getActorName: vi.fn().mockResolvedValue("Admin") }));
 vi.mock("@/lib/notifications/recipients", () => ({
   getUsersWithPermission: vi.fn().mockResolvedValue([]),
   sendNotificationToUsers: vi.fn(),

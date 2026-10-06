@@ -36,8 +36,10 @@ vi.mock("@elorae/db", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 vi.mock("@/lib/docNumber", () => ({ generateDocNumber: vi.fn().mockResolvedValue("RET-1") }));
 vi.mock("@/app/actions/hpp", () => ({ getEffectiveHPPForItem: vi.fn() }));
-vi.mock("@/app/actions/notifications", () => ({
+vi.mock("@/lib/notifications/actor-name", () => ({
   getActorName: vi.fn().mockResolvedValue("actor"),
+}));
+vi.mock("@/app/actions/notifications", () => ({
   notifyVendorReturnCreated: vi.fn(),
   notifyVendorReturnStatusUpdated: vi.fn(),
 }));

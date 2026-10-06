@@ -4,7 +4,8 @@ import { z } from 'zod';
 import { PERMISSIONS, requirePermission } from '@/lib/rbac';
 import { listSuppliers } from '@/lib/suppliers/queries';
 import { createSupplier, supplierSchema } from '@/lib/suppliers/mutations';
-import { getActorName, notifySupplierCreated } from '@/app/actions/notifications';
+import { notifySupplierCreated } from '@/app/actions/notifications';
+import { getActorName } from "@/lib/notifications/actor-name";
 
 export const dynamic = 'force-dynamic';
 

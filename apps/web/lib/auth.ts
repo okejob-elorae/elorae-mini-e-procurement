@@ -249,26 +249,3 @@ export const {
     },
   },
 });
-
-// PIN verification for sensitive actions
-export async function verifyPin(userId: string, pin: string): Promise<boolean> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { pinHash: true },
-  });
-
-  if (!user?.pinHash) {
-    return false;
-  }
-
-  return bcrypt.compare(pin, user.pinHash);
-}
-
-// Set PIN for user
-export async function setPin(userId: string, pin: string): Promise<void> {
-  const pinHash = await bcrypt.hash(pin, 10);
-  await prisma.user.update({
-    where: { id: userId },
-    data: { pinHash },
-  });
-}

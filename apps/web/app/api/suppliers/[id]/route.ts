@@ -7,6 +7,7 @@ import { prisma } from '@elorae/db';
 import { encryptBankAccount, decryptBankAccount } from '@/lib/encryption';
 import { logBankAccountView } from '@/lib/audit';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
+import { verifyPin } from '@/lib/security/pin';
 const supplierSchema = z.object({
   code: z.string().min(1).optional(),
   name: z.string().min(1).optional(),
@@ -125,44 +126,7 @@ export async function PUT(
   }
 }
 
-// DELETE /api/suppliers/[id] - Delete supplier
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params;
-    const session = await auth();
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    requirePermission(session.user.permissions, PERMISSIONS.SUPPLIERS_DELETE);
-
-    const { deleteSupplier, SUPPLIER_DELETE_BLOCKED } = await import('@/lib/suppliers/mutations');
-
-    try {
-      await deleteSupplier(id);
-    } catch (error) {
-      if (error instanceof Error && error.message === SUPPLIER_DELETE_BLOCKED) {
-        return NextResponse.json(
-          { error: 'This supplier cannot be deleted because it is still linked to existing records.' },
-          { status: 400 }
-        );
-      }
-      throw error;
-    }
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error('Failed to delete supplier:', error);
-    return NextResponse.json(
-      { error: 'Failed to delete supplier' },
-      { status: 500 }
-    );
-  }
-}
-
-// POST /api/suppliers/[id]/decrypt - Decrypt bank account
+/* POST /api/suppliers/[id] - Decrypt bank account */
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -178,12 +142,16 @@ export async function POST(
     const { pin } = decryptSchema.parse(body);
 
     // Verify PIN
-    const { verifyPin } = await import('@/lib/auth');
-    const isValid = await verifyPin(session.user.id, pin);
+    const ip = req.headers.get('x-forwarded-for') || 'unknown';
+    const userAgent = req.headers.get('user-agent') || 'unknown';
+    const pinResult = await verifyPin(session.user.id, pin, 'VIEW_BANK_ACCOUNT', {
+      ipAddress: ip,
+      fallbackEmail: session.user.email,
+    });
 
-    if (!isValid) {
+    if (!pinResult.success) {
       return NextResponse.json(
-        { error: 'Invalid PIN' },
+        { error: pinResult.messageKey ?? pinResult.message },
         { status: 403 }
       );
     }
@@ -203,8 +171,6 @@ export async function POST(
     const bankAccount = decryptBankAccount(supplier.bankAccountEnc, 'DEFAULT_PIN');
 
     // Log audit
-    const ip = req.headers.get('x-forwarded-for') || 'unknown';
-    const userAgent = req.headers.get('user-agent') || 'unknown';
     await logBankAccountView(session.user.id, id, {
       ip,
       userAgent,

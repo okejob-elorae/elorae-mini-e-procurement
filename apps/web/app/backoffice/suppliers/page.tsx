@@ -58,7 +58,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { useTranslations } from 'next-intl';
 import { PinAuthModal } from '@/components/security/PinAuthModal';
-import { verifyPinForAction } from '@/app/actions/security/pin-auth';
 import { toast } from 'sonner';
 import { queueOperation } from '@/lib/offline/db';
 import { isOnline } from '@/lib/offline/sync';
@@ -311,17 +310,15 @@ export default function SuppliersPage() {
   const handleDeletePinConfirm = async (pin: string) => {
     if (!session?.user?.id || !deleteTargetId) return;
 
-    const result = await verifyPinForAction(session.user.id, pin, 'DELETE_SUPPLIER');
-    if (!result.success) {
-      const msg = result.messageKey ? tSecurity(result.messageKey) : result.message;
-      toast.error(msg);
-      throw new Error(msg);
-    }
-
     const { deleteSupplierAction } = await import('@/app/actions/suppliers');
-    const deleteResult = await deleteSupplierAction(deleteTargetId);
+    const deleteResult = await deleteSupplierAction(deleteTargetId, pin);
     if (!deleteResult.success) {
-      const msg = t(deleteResult.messageKey);
+      const msg =
+        deleteResult.reason === 'PIN'
+          ? deleteResult.messageKey
+            ? tSecurity(deleteResult.messageKey)
+            : (deleteResult.message ?? t('failedToDeleteSupplier'))
+          : t(deleteResult.messageKey);
       toast.error(msg);
       throw new Error(msg);
     }

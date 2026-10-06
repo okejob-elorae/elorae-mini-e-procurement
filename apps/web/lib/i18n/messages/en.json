@@ -473,7 +473,8 @@
       "STOCK_ADJUSTMENT": "Stock adjustment",
       "VOID_DOCUMENT": "Void document",
       "EDIT_POSTED_PO": "Edit posted PO",
-      "DELETE_SUPPLIER": "Delete supplier"
+      "DELETE_SUPPLIER": "Delete supplier",
+      "CHANGE_PIN": "Change PIN"
     },
     "authRequired": "Authentication required",
     "enterPinForAction": "Enter your PIN for {action}",
@@ -495,6 +496,7 @@
     "currentPasswordIncorrect": "Current password is incorrect",
     "noPasswordSet": "No password set for this account",
     "changePasswordFailed": "Failed to update password",
+    "unauthorized": "Please sign in again",
     "userNotFound": "User not found",
     "pinNotSet": "PIN not set",
     "tooManyAttempts": "Too many failed attempts. Try again in 15 minutes.",
