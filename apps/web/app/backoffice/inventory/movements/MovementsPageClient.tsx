@@ -37,6 +37,7 @@ import { cn } from "@/lib/utils";
 import { formatDateOnly, parseDateOnly } from "@/lib/date-only";
 import { getCurrentStockSummary, getItemVariantOptions } from "@/app/actions/stock-card";
 import { getItemMovementsAction, type ItemMovementsResult } from "@/app/actions/stock-movements";
+import { groupSectionsByLocation } from "@/lib/inventory/ledger-section-groups";
 import { ledgerRefMessageKey } from "@/lib/inventory/ledger-ref-display";
 import { WAREHOUSE_OPTION_KEY, WAREHOUSE_TYPES, type WarehouseType } from "@/lib/inventory/warehouse-option-display";
 /* Subpath import, not the main barrel: this is a "use client" file, and the barrel
@@ -67,6 +68,78 @@ type LedgerSection = ItemMovementsResult["sections"][number];
 function sectionTitleKey(section: LedgerSection): "sectionTitle.main" | "sectionTitle.store" | "sectionTitle.van" {
   if (section.locationType === "MAIN") return "sectionTitle.main";
   return section.locationType === "STORE" ? "sectionTitle.store" : "sectionTitle.van";
+}
+
+function SectionEntries({ section, sectionLimit }: { section: LedgerSection; sectionLimit: number }) {
+  const t = useTranslations("stockMovements");
+  /*
+   * The query layer does not slice — it returns every fetched entry for the
+   * section. Sections are sorted ascending for display, so the recent end is the
+   * last `sectionLimit` entries, and the notice below ships only alongside this
+   * slice so the screen never shows more rows than the cap it names.
+   */
+  const visibleEntries = section.entries.slice(-sectionLimit);
+
+  return (
+    <>
+      <div className="overflow-x-auto rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t("colDate")}</TableHead>
+              <TableHead>{t("colRefType")}</TableHead>
+              <TableHead>{t("colDocNumber")}</TableHead>
+              <TableHead className="text-right">{t("colQty")}</TableHead>
+              <TableHead className="text-right">{t("colBalance")}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {visibleEntries.map((entry) => {
+              const messageKey = ledgerRefMessageKey(entry.refType);
+              return (
+                <TableRow key={entry.id}>
+                  <TableCell className="whitespace-nowrap">
+                    {format(new Date(entry.createdAt), "dd/MM/yyyy HH:mm")}
+                  </TableCell>
+                  <TableCell className="max-w-[200px] truncate">
+                    {messageKey ? t(messageKey) : entry.refType}
+                  </TableCell>
+                  <TableCell className="max-w-[160px] truncate font-medium">
+                    {/* refDocNumber defaults to "" for the opening-balance
+                        migration rows and a few writers that omit it —
+                        render a placeholder rather than a dead cell. */}
+                    {entry.refDocNumber || (
+                      <span className="font-normal text-muted-foreground">{t("noDocument")}</span>
+                    )}
+                  </TableCell>
+                  <TableCell
+                    className={cn(
+                      "text-right tabular-nums whitespace-nowrap",
+                      entry.qty > 0 && "text-emerald-600 dark:text-emerald-400",
+                      entry.qty < 0 && "text-red-600 dark:text-red-400",
+                    )}
+                  >
+                    {entry.qty > 0
+                      ? `+${entry.qty.toLocaleString()}`
+                      : entry.qty.toLocaleString()}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums whitespace-nowrap">
+                    {entry.balanceQty.toLocaleString()}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
+      {section.truncated && (
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          {t("sectionTruncated", { limit: sectionLimit })}
+        </p>
+      )}
+    </>
+  );
 }
 
 type MultiSelectOption = { value: string; label: string };
@@ -531,102 +604,99 @@ export function MovementsPageClient() {
             </Alert>
           )}
 
-          {data.sections.map((section) => {
-            /*
-             * The query layer does not slice — it returns every fetched entry for the
-             * section. Sections are sorted ascending for display, so the recent end is the
-             * last `sectionLimit` entries, and the notice below ships only alongside this
-             * slice so the screen never shows more rows than the cap it names.
-             */
-            const visibleEntries = section.entries.slice(-data.sectionLimit);
-            const sectionKey = `${section.locationType}:${section.locationId}:${section.variantSku}`;
+          {groupSectionsByLocation(data.sections).map((group) => {
+            const firstSection = group.sections[0];
+            const singleSection = data.sections.length === 1;
+            const singleSectionGroup = group.sections.length === 1;
+            const groupTitle = t(sectionTitleKey(firstSection), { name: group.locationLabel });
 
             return (
-              <Collapsible key={sectionKey} defaultOpen={section.locationType === "MAIN"}>
+              <Collapsible key={group.key} defaultOpen={singleSection}>
                 <Card>
                   <CollapsibleTrigger asChild>
-                    <CardHeader className="flex flex-row flex-wrap cursor-pointer items-center justify-between gap-2 space-y-0">
-                      <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-                        <span>{t(sectionTitleKey(section), { name: section.locationLabel })}</span>
-                        {!section.locationResolved && (
-                          <Badge variant="outline" className="text-xs font-normal">
+                    <CardHeader
+                      aria-label={t("toggleSection")}
+                      className="group flex min-h-10 flex-row cursor-pointer items-center justify-between gap-2 space-y-0"
+                    >
+                      <CardTitle className="flex min-w-0 items-center gap-2 text-base">
+                        <span className="truncate">{groupTitle}</span>
+                        {!group.locationResolved && (
+                          <Badge variant="outline" className="shrink-0 text-xs font-normal">
                             {t("unresolvedLocation")}
                           </Badge>
                         )}
-                        {section.variantSku && (
-                          <Badge variant="secondary" className="text-xs font-normal">
-                            {t("sectionVariantLabel", { sku: section.variantSku })}
+                        {singleSectionGroup ? (
+                          firstSection.variantSku && (
+                            <Badge variant="secondary" className="truncate text-xs font-normal">
+                              {t("sectionVariantLabel", { sku: firstSection.variantSku })}
+                            </Badge>
+                          )
+                        ) : (
+                          <Badge variant="secondary" className="shrink-0 text-xs font-normal">
+                            {t("sectionGroupVariants", { count: group.sections.length })}
                           </Badge>
                         )}
                       </CardTitle>
-                      <div className="flex items-center gap-3">
+                      <div className="flex shrink-0 items-center gap-3">
                         <span className="text-sm text-muted-foreground whitespace-nowrap">
                           {t("closingBalanceLabel")}:{" "}
                           <span className="font-medium tabular-nums text-foreground">
-                            {section.closingBalance.toLocaleString()}
+                            {group.closingBalance.toLocaleString()}
                           </span>
                         </span>
-                        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
                       </div>
                     </CardHeader>
                   </CollapsibleTrigger>
                   <CollapsibleContent>
                     <CardContent className="space-y-3">
-                      <div className="overflow-x-auto rounded-md border">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>{t("colDate")}</TableHead>
-                              <TableHead>{t("colRefType")}</TableHead>
-                              <TableHead>{t("colDocNumber")}</TableHead>
-                              <TableHead className="text-right">{t("colQty")}</TableHead>
-                              <TableHead className="text-right">{t("colBalance")}</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {visibleEntries.map((entry) => {
-                              const messageKey = ledgerRefMessageKey(entry.refType);
-                              return (
-                                <TableRow key={entry.id}>
-                                  <TableCell className="whitespace-nowrap">
-                                    {format(new Date(entry.createdAt), "dd/MM/yyyy HH:mm")}
-                                  </TableCell>
-                                  <TableCell className="max-w-[200px] truncate">
-                                    {messageKey ? t(messageKey) : entry.refType}
-                                  </TableCell>
-                                  <TableCell className="max-w-[160px] truncate font-medium">
-                                    {/* refDocNumber defaults to "" for the opening-balance
-                                        migration rows and a few writers that omit it —
-                                        render a placeholder rather than a dead cell. */}
-                                    {entry.refDocNumber || (
-                                      <span className="font-normal text-muted-foreground">{t("noDocument")}</span>
-                                    )}
-                                  </TableCell>
-                                  <TableCell
-                                    className={cn(
-                                      "text-right tabular-nums whitespace-nowrap",
-                                      entry.qty > 0 && "text-emerald-600 dark:text-emerald-400",
-                                      entry.qty < 0 && "text-red-600 dark:text-red-400",
-                                    )}
+                      {singleSectionGroup ? (
+                        <SectionEntries
+                          section={firstSection}
+                          sectionLimit={data.sectionLimit}
+                        />
+                      ) : (
+                        group.sections.map((section) => {
+                          const sectionKey = `${section.locationType}:${section.locationId}:${section.variantSku}`;
+
+                          return (
+                            <Collapsible key={sectionKey} defaultOpen={singleSection}>
+                              <div className="rounded-md border">
+                                <CollapsibleTrigger asChild>
+                                  <div
+                                    aria-label={t("toggleSection")}
+                                    className="group flex min-h-10 cursor-pointer items-center justify-between gap-2 px-4 py-2"
                                   >
-                                    {entry.qty > 0
-                                      ? `+${entry.qty.toLocaleString()}`
-                                      : entry.qty.toLocaleString()}
-                                  </TableCell>
-                                  <TableCell className="text-right tabular-nums whitespace-nowrap">
-                                    {entry.balanceQty.toLocaleString()}
-                                  </TableCell>
-                                </TableRow>
-                              );
-                            })}
-                          </TableBody>
-                        </Table>
-                      </div>
-                      {section.truncated && (
-                        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                          {t("sectionTruncated", { limit: data.sectionLimit })}
-                        </p>
+                                    <div className="flex min-w-0 items-center gap-2">
+                                      {section.variantSku && (
+                                        <Badge variant="secondary" className="max-w-full truncate text-xs font-normal">
+                                          {t("sectionVariantLabel", { sku: section.variantSku })}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <div className="flex shrink-0 items-center gap-3">
+                                      <span className="text-sm text-muted-foreground whitespace-nowrap">
+                                        {t("closingBalanceLabel")}:{" "}
+                                        <span className="font-medium tabular-nums text-foreground">
+                                          {section.closingBalance.toLocaleString()}
+                                        </span>
+                                      </span>
+                                      <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+                                    </div>
+                                  </div>
+                                </CollapsibleTrigger>
+                                <CollapsibleContent>
+                                  <div className="space-y-3 px-4 pb-4">
+                                    <SectionEntries
+                                      section={section}
+                                      sectionLimit={data.sectionLimit}
+                                    />
+                                  </div>
+                                </CollapsibleContent>
+                              </div>
+                            </Collapsible>
+                          );
+                        })
                       )}
                     </CardContent>
                   </CollapsibleContent>
