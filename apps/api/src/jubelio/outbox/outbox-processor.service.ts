@@ -5,6 +5,7 @@ import { PRISMA, type PrismaService } from "../../db/prisma.module";
 import { AdminNotificationService } from "../../admin/notification.service";
 import { OutboxRouter } from "./outbox-router";
 import { NonRetryableError } from "../queue/errors";
+import { constraintFingerprint, hasFingerprint, withFingerprint } from "./constraint-fingerprint";
 import { OUTBOX_STATUS, TERMINAL_OUTBOX_STATUSES } from "./outbox-status";
 import { JUBELIO_OUTBOX_QUEUE, OUTBOX_QUEUE_DEFAULTS } from "./jubelio-outbox.config";
 
@@ -55,7 +56,8 @@ export class OutboxProcessor extends WorkerHost<Worker<JobPayload>> {
         await this.markDone(row.id);
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const fp = constraintFingerprint(err);
+      const msg = withFingerprint(err instanceof Error ? err.message : String(err), fp);
       /**
        * Release the claim so the NEXT attempt can win it. The claim above only
        * wins from PENDING, so a row left PROCESSING made every BullMQ retry lose
@@ -78,6 +80,17 @@ export class OutboxProcessor extends WorkerHost<Worker<JobPayload>> {
         },
       });
       if (err instanceof NonRetryableError) {
+        await this.markDead(row.id, msg);
+        return;
+      }
+      if (fp && hasFingerprint(row.lastError, fp)) {
+        /**
+         * Same integrity-constraint error as the previous attempt: Jubelio will
+         * keep answering it the same way, so settle now instead of burning the
+         * remaining retries. Returns like the NonRetryableError arm, so the job
+         * completes, BullMQ does not retry and onJobFailed never fires — one
+         * DEAD, one alert.
+         */
         await this.markDead(row.id, msg);
         return;
       }
