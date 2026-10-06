@@ -1,32 +1,33 @@
-import { DocType } from '@elorae/db';
-import { prisma } from '@elorae/db';
+import { DocType } from "@elorae/db";
+import { prisma } from "@elorae/db";
+import { docNumberPeriod } from "./doc-numbers/period";
 
 const DEFAULT_CONFIGS: Record<
   DocType,
-  { prefix: string; resetPeriod: 'YEARLY' | 'MONTHLY'; padding: number }
+  { prefix: string; resetPeriod: "YEARLY" | "MONTHLY"; padding: number }
 > = {
-  PO: { prefix: 'PO/', resetPeriod: 'YEARLY', padding: 4 },
-  GRN: { prefix: 'GRN/', resetPeriod: 'MONTHLY', padding: 4 },
-  WO: { prefix: 'WO/', resetPeriod: 'YEARLY', padding: 4 },
-  ADJ: { prefix: 'ADJ/', resetPeriod: 'MONTHLY', padding: 4 },
-  RET: { prefix: 'RET/', resetPeriod: 'MONTHLY', padding: 4 },
-  ISSUE: { prefix: 'ISS/', resetPeriod: 'MONTHLY', padding: 4 },
-  RECEIPT: { prefix: 'RCPT/', resetPeriod: 'MONTHLY', padding: 4 },
-  OPN: { prefix: 'OPN/', resetPeriod: 'MONTHLY', padding: 4 },
-  PUTUS: { prefix: 'PUTUS/', resetPeriod: 'YEARLY', padding: 4 },
-  KONSI: { prefix: 'KONSI/', resetPeriod: 'YEARLY', padding: 4 },
-  VANLOAD: { prefix: 'VLOAD/', resetPeriod: 'YEARLY', padding: 4 },
-  VANSALE: { prefix: 'VSALE/', resetPeriod: 'YEARLY', padding: 4 },
-  VANRECON: { prefix: 'VRCN/', resetPeriod: 'YEARLY', padding: 4 },
-  SPGSALE: { prefix: 'SPG/', resetPeriod: 'YEARLY', padding: 4 },
-  DELIVERY: { prefix: 'DLV/', resetPeriod: 'MONTHLY', padding: 4 },
-  FIELDRET: { prefix: 'FRET/', resetPeriod: 'MONTHLY', padding: 4 },
-  KONSITRF: { prefix: 'KTRF/', resetPeriod: 'YEARLY', padding: 4 },
-  STOCKTAKE: { prefix: 'STK/', resetPeriod: 'MONTHLY', padding: 4 },
-  PAYMENT: { prefix: 'KWT/', resetPeriod: 'MONTHLY', padding: 4 },
-  BKM: { prefix: 'BKM/', resetPeriod: 'YEARLY', padding: 4 },
-  STORETRF: { prefix: 'STRF/', resetPeriod: 'YEARLY', padding: 4 },
-  SELLTHRU: { prefix: 'SLT/', resetPeriod: 'YEARLY', padding: 4 },
+  PO: { prefix: "PO/", resetPeriod: "YEARLY", padding: 4 },
+  GRN: { prefix: "GRN/", resetPeriod: "MONTHLY", padding: 4 },
+  WO: { prefix: "WO/", resetPeriod: "YEARLY", padding: 4 },
+  ADJ: { prefix: "ADJ/", resetPeriod: "MONTHLY", padding: 4 },
+  RET: { prefix: "RET/", resetPeriod: "MONTHLY", padding: 4 },
+  ISSUE: { prefix: "ISS/", resetPeriod: "MONTHLY", padding: 4 },
+  RECEIPT: { prefix: "RCPT/", resetPeriod: "MONTHLY", padding: 4 },
+  OPN: { prefix: "OPN/", resetPeriod: "MONTHLY", padding: 4 },
+  PUTUS: { prefix: "PUTUS/", resetPeriod: "YEARLY", padding: 4 },
+  KONSI: { prefix: "KONSI/", resetPeriod: "YEARLY", padding: 4 },
+  VANLOAD: { prefix: "VLOAD/", resetPeriod: "YEARLY", padding: 4 },
+  VANSALE: { prefix: "VSALE/", resetPeriod: "YEARLY", padding: 4 },
+  VANRECON: { prefix: "VRCN/", resetPeriod: "YEARLY", padding: 4 },
+  SPGSALE: { prefix: "SPG/", resetPeriod: "YEARLY", padding: 4 },
+  DELIVERY: { prefix: "DLV/", resetPeriod: "MONTHLY", padding: 4 },
+  FIELDRET: { prefix: "FRET/", resetPeriod: "MONTHLY", padding: 4 },
+  KONSITRF: { prefix: "KTRF/", resetPeriod: "YEARLY", padding: 4 },
+  STOCKTAKE: { prefix: "STK/", resetPeriod: "MONTHLY", padding: 4 },
+  PAYMENT: { prefix: "KWT/", resetPeriod: "MONTHLY", padding: 4 },
+  BKM: { prefix: "BKM/", resetPeriod: "YEARLY", padding: 4 },
+  STORETRF: { prefix: "STRF/", resetPeriod: "YEARLY", padding: 4 },
+  SELLTHRU: { prefix: "SLT/", resetPeriod: "YEARLY", padding: 4 },
 };
 
 type ConfigRow = {
@@ -38,14 +39,16 @@ type ConfigRow = {
   resetPeriod: string;
 };
 
-/** Generate next doc number. Uses atomic UPDATE so concurrent callers get distinct numbers. */
+/**
+ * Generate next doc number. Uses atomic UPDATE so concurrent callers get distinct numbers.
+ * `now` exists so the WIB month boundary is testable.
+ */
 export async function generateDocNumber(
   type: DocType,
-  tx?: any
+  tx?: any,
+  now: Date = new Date()
 ): Promise<string> {
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth() + 1;
+  const { year: currentYear, month: currentMonth } = docNumberPeriod(now);
   const prismaClient = tx || prisma;
 
   let config = await prismaClient.docNumberConfig.findUnique({
@@ -99,18 +102,18 @@ export async function generateDocNumber(
   if (!row) throw new Error(`DocNumberConfig missing after update: ${type}`);
 
   const { lastNumber, prefix, padding, resetPeriod } = row;
-  const numberStr = String(lastNumber).padStart(padding || 4, '0');
-  const prefixWithSlash = prefix.endsWith('/') ? prefix : prefix + '/';
+  const numberStr = String(lastNumber).padStart(padding || 4, "0");
+  const prefixWithSlash = prefix.endsWith("/") ? prefix : `${prefix}/`;
 
-  if (resetPeriod === 'MONTHLY') {
-    return `${prefixWithSlash}${row.year}/${String(row.month).padStart(2, '0')}/${numberStr}`;
+  if (resetPeriod === "MONTHLY") {
+    return `${prefixWithSlash}${row.year}/${String(row.month).padStart(2, "0")}/${numberStr}`;
   }
   return `${prefixWithSlash}${row.year}/${numberStr}`;
 }
 
-// Generate supplier code (not using document number table)
+/* Generate supplier code (not using document number table) */
 export async function generateSupplierCode(): Promise<string> {
   const count = await prisma.supplier.count();
-  const num = String(count + 1).padStart(4, '0');
+  const num = String(count + 1).padStart(4, "0");
   return `SUP${num}`;
 }

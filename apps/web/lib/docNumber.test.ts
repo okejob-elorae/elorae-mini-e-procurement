@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@elorae/db";
 import { generateDocNumber } from "./docNumber";
+import { docNumberPeriod } from "./doc-numbers/period";
 
 /**
  * `DocNumberConfig` holds ONE shared row per doc type on the :3308 bed, used by real dev data.
@@ -15,6 +16,11 @@ type Snapshot =
       existed: true;
       row: { prefix: string; resetPeriod: string; padding: number; lastNumber: number; year: number; month: number };
     };
+
+/* Test-bed only — never run against the shared prod DB (port 3307 tunnel / VPS host). */
+const url = process.env.DATABASE_URL ?? "";
+const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
+const d = isProd ? describe.skip : describe;
 
 let snapshot: Snapshot | null = null;
 
@@ -45,8 +51,8 @@ afterEach(async () => {
   }
 });
 
-async function seedCounter(resetPeriod: string, year: number, lastNumber: number): Promise<void> {
-  const data = { prefix: "RCPT/", resetPeriod, padding: 4, lastNumber, year, month: 12 };
+async function seedCounter(resetPeriod: string, year: number, lastNumber: number, month = 12): Promise<void> {
+  const data = { prefix: "RCPT/", resetPeriod, padding: 4, lastNumber, year, month };
   await prisma.docNumberConfig.upsert({
     where: { docType: "RECEIPT" },
     create: { docType: "RECEIPT", ...data },
@@ -54,8 +60,8 @@ async function seedCounter(resetPeriod: string, year: number, lastNumber: number
   });
 }
 
-describe("generateDocNumber reset periods", () => {
-  const currentYear = new Date().getFullYear();
+d("generateDocNumber reset periods", () => {
+  const currentYear = docNumberPeriod(new Date()).year;
 
   it("keeps counting across a year boundary when the reset period is NEVER", async () => {
     await seedCounter("NEVER", currentYear - 1, 41);
@@ -68,5 +74,13 @@ describe("generateDocNumber reset periods", () => {
     await seedCounter("YEARLY", currentYear - 1, 41);
 
     expect(await generateDocNumber("RECEIPT")).toBe(`RCPT/${currentYear}/0001`);
+  });
+
+  it("numbers a document issued at 00:30 WIB on the 1st in the new month", async () => {
+    await seedCounter("MONTHLY", 2026, 7, 10);
+
+    expect(await generateDocNumber("RECEIPT", undefined, new Date("2026-10-31T17:30:00.000Z"))).toBe(
+      "RCPT/2026/11/0001"
+    );
   });
 });
