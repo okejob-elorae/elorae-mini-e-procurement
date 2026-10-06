@@ -5366,8 +5366,12 @@
     "journalGapReason": {
       "UNMAPPED_ROLE": "no account is mapped for this posting role",
       "UNBALANCED": "the entry did not balance",
-      "ERROR": "an unexpected error"
+      "ERROR": "an unexpected error",
+      "RECEIVABLE_REVENUE_NOT_POSTED_YET": "an invoice it settles has no revenue journal yet (post that invoice's journal first: a nota tagihan from its receivable page, a konsi sell-through invoice from the sell-through report's page)",
+      "RECEIVABLE_OUTSIDE_LEDGER": "every invoice it settles predates the ledger, so there is no receivable on the books to credit"
     },
+    "journalOutsideLedgerTitle": "Some payments have no ledger entry, by design",
+    "journalOutsideLedgerMessage": "{count, plural, one {# payment of this settlement only settles} other {# payments of this settlement only settle}} invoices that predate the ledger, so there is no receivable on the books to credit and no receipt journal is posted. Posting again or changing the account mapping will not change that. If the opening balance carries these receivables, record the receipt by manual journal.",
     "journalGapMappingLink": "Open Account Mapping",
     "storedDriftMessageClosed": "This settlement was filed as {storedExpected} expected, but its invoice and deduction rows compute to {expected}. The figures below are the computed ones.",
     "componentsTitlePosted": "Payments this approval posted",
@@ -5522,7 +5526,11 @@
     },
     "receiptJournalWarning": {
       "title": "Journal not posted",
-      "description": "The receipt journal for this payment failed to post automatically. Retry it, or fix the account mapping first.",
+      "description": "The receipt journal for this payment failed to post automatically. Fix what blocked it, then retry.",
+      "descriptionUnmapped": "The receipt journal for this payment failed to post automatically because a posting role has no account mapped. Fix the account mapping first, then retry.",
+      "descriptionRevenueNotPosted": "This payment's receipt journal is waiting on the revenue journal of an invoice it settles. Post that first (a nota tagihan from its receivable page, a konsi sell-through invoice from the sell-through report's page), then retry. If that revenue was booked by manual journal instead, this retry keeps refusing; book the receipt by manual journal too.",
+      "outsideLedgerTitle": "No receipt journal, by design",
+      "outsideLedgerDescription": "Every invoice this payment settles predates the ledger, so there is no receivable on the books for it to credit and no receipt journal is posted. There is nothing to retry. If the opening balance carries these receivables, record the receipt by manual journal.",
       "retryButton": "Post Journal",
       "retrying": "Posting...",
       "successToast": "Journal posted."
@@ -5554,9 +5562,9 @@
       "NOT_RETRYABLE": "This payment's journal was never flagged as failed, so there is nothing to retry.",
       "STILL_PENDING": "The journal still failed to post. Check the account mapping, then try again.",
       "ERROR": "Something went wrong recording this payment. Try again.",
-      "RECEIVABLE_REVENUE_NOT_POSTED_YET": "The invoice this payment settles has no revenue journal yet. Post the invoice's journal from its receivable page, then retry this one.",
+      "RECEIVABLE_REVENUE_NOT_POSTED_YET": "The invoice this payment settles has no revenue journal yet. Post it first (a nota tagihan from its receivable page, a konsi sell-through invoice from the sell-through report's page), then retry this one. If that revenue was booked by manual journal instead, this keeps refusing; book the receipt by manual journal too.",
       "RECEIVABLE_OUTSIDE_LEDGER": "Every invoice this payment settles predates the ledger, so there is no receivable on the books to credit. Retrying won't post it.",
-      "NOTHING_TO_POST": "Nothing to post: this payment's receipt never reached the ledger, so there is nothing to reverse."
+      "NOTHING_TO_POST": "Nothing to post: there is no journal entry for this payment to book or reverse."
     },
     "methodProgramDeduction": "Program Deduction",
     "methodAdminFee": "Admin Fee",

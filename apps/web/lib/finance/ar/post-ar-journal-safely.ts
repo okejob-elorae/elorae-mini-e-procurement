@@ -59,7 +59,7 @@ const RETRY_HINT: Record<ArJournalKind, string> = {
  */
 const GATE_REMEDY: Record<string, string> = {
   RECEIVABLE_REVENUE_NOT_POSTED_YET:
-    "The invoice's own revenue journal has not posted yet. Post it from the receivable's detail page first, then retry this payment's journal from the payment's detail page.",
+    "The invoice's own revenue journal has not posted yet. Post it first (a nota tagihan from the receivable's detail page, a konsi sell-through invoice from the sell-through report's page), then retry this payment's journal from the payment's detail page. If that revenue was booked by manual journal instead, this payment stays refused for good, because the gate looks for the invoice's own revenue journal; book the receipt by manual journal too.",
   RECEIVABLE_OUTSIDE_LEDGER:
     "Every receivable this payment settles predates the ledger (no revenue journal was ever posted for it), so there is no receivable on the books to credit. A retry will not post it; record it by manual journal if the opening balance carries that receivable.",
 };

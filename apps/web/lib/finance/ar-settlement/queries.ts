@@ -222,10 +222,17 @@ export type SettlementApprovalDetail = {
   varianceOverride: SettlementVarianceOverride | null;
   /**
    * The POSTED component payments of an APPROVED settlement that carry no `PAYMENT_RECEIPT`
-   * journal. Always empty while the document is `PENDING` or `REJECTED`. See the block that fills
-   * it for the two ways the gap opens.
+   * journal and still owe one. Always empty while the document is `PENDING` or `REJECTED`. See the
+   * block that fills it for the two ways the gap opens.
    */
   paymentsMissingJournal: string[];
+  /**
+   * The POSTED component payments with no receipt journal BY DESIGN: their latest flag is
+   * `RECEIVABLE_OUTSIDE_LEDGER`, because every invoice they settle predates the ledger. Kept apart
+   * from `paymentsMissingJournal` because neither a re-post nor an account mapping can give them
+   * a journal.
+   */
+  paymentsOutsideLedger: string[];
   /**
    * Why the last posting attempt for those payments failed, where it got far enough to say — the
    * distinct (reason, role) pairs of the `JOURNAL_PENDING` rows standing against them. EMPTY means
@@ -519,12 +526,16 @@ export async function getSettlementForApproval(
    * the JOURNAL_PENDING rows standing against these payments — empty for the crash window, and for
    * a refused post the thing the operator has to fix before the re-post button can do anything.
    *
-   * The absence of a `Journal` row is safe evidence HERE, unlike the `isArJournalRetryable` gate it
-   * deliberately does not reuse: that gate exists because a backfilled pre-existing delivery has no
-   * journal by construction, and offering a retry off its absence would post revenue against
-   * nothing. A settlement component payment has no such history — it was created by this feature,
-   * by a writer whose caller always attempts the journal — so a missing row means the attempt was
-   * lost or refused, never that it was not owed.
+   * The absence of a `Journal` row is safe evidence of an ATTEMPT here, unlike the
+   * `isArJournalRetryable` gate it deliberately does not reuse: that gate exists because a
+   * backfilled pre-existing delivery has no journal by construction, and offering a retry off its
+   * absence would post revenue against nothing. A settlement component payment has no such history
+   * — it was created by this feature, by a writer whose caller always attempts the journal — so a
+   * missing row means the attempt was lost or refused. A refusal is not always a debt, though: a
+   * payment whose every invoice predates the ledger refuses `RECEIVABLE_OUTSIDE_LEDGER` by design,
+   * because there is no receivable on the books for it to credit. Those are split out into
+   * `paymentsOutsideLedger` by their latest flag, so the alert, its re-post button and its mapping
+   * link speak only for payments a re-post could still journal.
    *
    * VOIDED components are excluded: their receipt journal is not what a retry would post.
    */
@@ -532,6 +543,7 @@ export async function getSettlementForApproval(
     .filter((component) => component.paymentId !== null && component.paymentStatus === "POSTED")
     .map((component) => component.paymentId as string);
   let paymentsMissingJournal: string[] = [];
+  let paymentsOutsideLedger: string[] = [];
   const journalGapCauses: SettlementJournalGapCause[] = [];
   if (settlement.status === "APPROVED" && postedComponentPaymentIds.length > 0) {
     const journals = await prisma.journal.findMany({
@@ -539,11 +551,16 @@ export async function getSettlementForApproval(
       select: { sourceId: true },
     });
     const journalled = new Set(journals.map((journal) => journal.sourceId));
-    paymentsMissingJournal = postedComponentPaymentIds.filter((id) => !journalled.has(id));
+    const unjournalled = postedComponentPaymentIds.filter((id) => !journalled.has(id));
 
-    const flags = await findArJournalPendingFlags("ar_payment", paymentsMissingJournal);
+    const flags = await findArJournalPendingFlags("ar_payment", unjournalled);
+    const isOutsideLedger = (id: string) => flags.get(id)?.reason === "RECEIVABLE_OUTSIDE_LEDGER";
+    paymentsOutsideLedger = unjournalled.filter(isOutsideLedger);
+    paymentsMissingJournal = unjournalled.filter((id) => !isOutsideLedger(id));
     const seen = new Set<string>();
-    for (const flag of flags.values()) {
+    for (const id of paymentsMissingJournal) {
+      const flag = flags.get(id);
+      if (flag === undefined) continue;
       /*
        * `reason` is never absent on a row this feature wrote, but the column is untyped JSON and a
        * hand-inserted row would render an empty cause. `ERROR` is the same fallback the writer's
@@ -718,6 +735,7 @@ export async function getSettlementForApproval(
     approvable: settlement.status === "PENDING" && checks.every((check) => check.status === "PASS"),
     varianceOverride,
     paymentsMissingJournal,
+    paymentsOutsideLedger,
     journalGapCauses,
   };
 }

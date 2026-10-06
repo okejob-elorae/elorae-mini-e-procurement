@@ -5366,8 +5366,12 @@
     "journalGapReason": {
       "UNMAPPED_ROLE": "belum ada akun yang dipetakan untuk peran posting ini",
       "UNBALANCED": "jurnalnya tidak balance",
-      "ERROR": "kesalahan tak terduga"
+      "ERROR": "kesalahan tak terduga",
+      "RECEIVABLE_REVENUE_NOT_POSTED_YET": "ada tagihan yang dilunasinya belum punya jurnal pendapatan (posting jurnal tagihan itu dulu: nota tagihan dari halaman piutangnya, tagihan sell-through konsi dari halaman laporan sell-through)",
+      "RECEIVABLE_OUTSIDE_LEDGER": "semua tagihan yang dilunasinya tercatat sebelum buku besar dimulai, sehingga tidak ada piutang di buku yang bisa dikreditkan"
     },
+    "journalOutsideLedgerTitle": "Sebagian pembayaran tanpa jurnal, sesuai rancangan",
+    "journalOutsideLedgerMessage": "{count} pembayaran dari pelunasan ini hanya melunasi tagihan yang tercatat sebelum buku besar dimulai, sehingga tidak ada piutang di buku yang bisa dikreditkan dan tidak ada jurnal penerimaan yang diposting. Memposting ulang atau mengubah pemetaan akun tidak akan mengubahnya. Kalau saldo awal memuat piutang tersebut, catat penerimaannya dengan jurnal manual.",
     "journalGapMappingLink": "Buka Pemetaan Akun",
     "storedDriftMessageClosed": "Pelunasan ini diajukan dengan nilai seharusnya {storedExpected}, tetapi baris faktur dan potongannya menghasilkan {expected}. Angka di bawah adalah hasil hitung ulang.",
     "componentsTitlePosted": "Pembayaran yang diposting persetujuan ini",
@@ -5522,7 +5526,11 @@
     },
     "receiptJournalWarning": {
       "title": "Jurnal belum diposting",
-      "description": "Jurnal penerimaan untuk pembayaran ini gagal diposting otomatis. Coba lagi, atau perbaiki pemetaan akun terlebih dahulu.",
+      "description": "Jurnal penerimaan untuk pembayaran ini gagal diposting otomatis. Perbaiki penyebabnya, lalu coba lagi.",
+      "descriptionUnmapped": "Jurnal penerimaan untuk pembayaran ini gagal diposting otomatis karena ada peran posting yang belum dipetakan ke akun. Perbaiki pemetaan akun terlebih dahulu, lalu coba lagi.",
+      "descriptionRevenueNotPosted": "Jurnal penerimaan pembayaran ini menunggu jurnal pendapatan dari tagihan yang dilunasinya. Posting jurnal itu dulu (nota tagihan dari halaman piutangnya, tagihan sell-through konsi dari halaman laporan sell-through), lalu coba lagi. Kalau pendapatan itu dicatat dengan jurnal manual, percobaan ini akan terus ditolak; catat penerimaannya dengan jurnal manual juga.",
+      "outsideLedgerTitle": "Tanpa jurnal penerimaan, sesuai rancangan",
+      "outsideLedgerDescription": "Semua tagihan yang dilunasi pembayaran ini tercatat sebelum buku besar dimulai, sehingga tidak ada piutang di buku yang bisa dikreditkan dan tidak ada jurnal penerimaan yang diposting. Tidak ada yang perlu dicoba ulang. Kalau saldo awal memuat piutang tersebut, catat penerimaannya dengan jurnal manual.",
       "retryButton": "Posting Jurnal",
       "retrying": "Memposting...",
       "successToast": "Jurnal berhasil diposting."
@@ -5554,9 +5562,9 @@
       "NOT_RETRYABLE": "Jurnal pembayaran ini belum pernah ditandai gagal, jadi tidak ada yang perlu dicoba ulang.",
       "STILL_PENDING": "Jurnal masih gagal diposting. Periksa pemetaan akun, lalu coba lagi.",
       "ERROR": "Terjadi kesalahan saat mencatat pembayaran ini. Coba lagi.",
-      "RECEIVABLE_REVENUE_NOT_POSTED_YET": "Tagihan yang dilunasi pembayaran ini belum punya jurnal pendapatan. Posting jurnal tagihannya dari halaman piutang, lalu coba lagi.",
+      "RECEIVABLE_REVENUE_NOT_POSTED_YET": "Tagihan yang dilunasi pembayaran ini belum punya jurnal pendapatan. Posting jurnalnya dulu (nota tagihan dari halaman piutangnya, tagihan sell-through konsi dari halaman laporan sell-through), lalu coba lagi. Kalau pendapatan itu dicatat dengan jurnal manual, ini akan terus ditolak; catat penerimaannya dengan jurnal manual juga.",
       "RECEIVABLE_OUTSIDE_LEDGER": "Semua tagihan yang dilunasi pembayaran ini tercatat sebelum buku besar dimulai, sehingga tidak ada piutang yang bisa dikreditkan. Mencoba lagi tidak akan memposting jurnalnya.",
-      "NOTHING_TO_POST": "Tidak ada yang perlu diposting: penerimaan pembayaran ini tidak pernah masuk buku besar, jadi tidak ada yang perlu dibalik."
+      "NOTHING_TO_POST": "Tidak ada yang perlu diposting: tidak ada jurnal yang perlu dibuat atau dibalik untuk pembayaran ini."
     },
     "methodProgramDeduction": "Potongan Program",
     "methodAdminFee": "Biaya Admin",

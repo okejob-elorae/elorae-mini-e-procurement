@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { AlertTriangle, ArrowLeft, ExternalLink, Loader2, Receipt, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ExternalLink, Info, Loader2, Receipt, XCircle } from "lucide-react";
 import type { getPayment } from "@/lib/finance/ar/queries";
 import { paymentMethodLabelKey } from "@/lib/finance/ar/payment-method-display";
 import {
@@ -46,6 +46,8 @@ type PaymentStatusValue = "POSTED" | "VOIDED";
 type Props = {
   payment: PaymentDetail;
   receiptJournalRetryable: boolean;
+  /* The reason on the receipt's latest `JOURNAL_PENDING` flag; `null` when none is recorded. */
+  receiptJournalFlagReason: string | null;
   voidJournalRetryable: boolean;
 };
 
@@ -90,7 +92,23 @@ function errKey(reason: PaymentActionReason): string {
   return `err.${reason}`;
 }
 
-export function PaymentDetailClient({ payment: p, receiptJournalRetryable, voidJournalRetryable }: Props) {
+/**
+ * Names the obstacle where the flag says which one it was, and stays reason-neutral otherwise: a
+ * flag can carry any code a receipt builder returns or `ERROR`, and telling every one of them to
+ * "fix the account mapping" was wrong for most.
+ */
+function receiptWarningDescriptionKey(reason: string | null): string {
+  if (reason === "UNMAPPED_ROLE") return "receiptJournalWarning.descriptionUnmapped";
+  if (reason === "RECEIVABLE_REVENUE_NOT_POSTED_YET") return "receiptJournalWarning.descriptionRevenueNotPosted";
+  return "receiptJournalWarning.description";
+}
+
+export function PaymentDetailClient({
+  payment: p,
+  receiptJournalRetryable,
+  receiptJournalFlagReason,
+  voidJournalRetryable,
+}: Props) {
   const t = useTranslations("payments");
   const tCommon = useTranslations("common");
   const router = useRouter();
@@ -103,6 +121,14 @@ export function PaymentDetailClient({ payment: p, receiptJournalRetryable, voidJ
   const status = p.status as PaymentStatusValue;
   const isVoided = status === "VOIDED";
   const reasonHasVisibleContent = HAS_VISIBLE_CONTENT.test(voidReason);
+  /**
+   * A VOIDED payment's receipt can never post (the builder refuses it), so its retry banner would
+   * only ever toast a refusal. An outside-the-ledger refusal is permanent by design: it gets a note
+   * with no retry control instead of a banner promising one.
+   */
+  const receiptOutsideLedger = receiptJournalFlagReason === "RECEIVABLE_OUTSIDE_LEDGER";
+  const showReceiptRetry = !isVoided && receiptJournalRetryable && !receiptOutsideLedger;
+  const showReceiptOutsideLedgerNote = !isVoided && receiptJournalRetryable && receiptOutsideLedger;
 
   async function handleVoid(): Promise<void> {
     setVoiding(true);
@@ -199,12 +225,20 @@ export function PaymentDetailClient({ payment: p, receiptJournalRetryable, voidJ
         </div>
       </div>
 
-      {receiptJournalRetryable && (
+      {showReceiptOutsideLedgerNote && (
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertTitle>{t("receiptJournalWarning.outsideLedgerTitle")}</AlertTitle>
+          <AlertDescription>{t("receiptJournalWarning.outsideLedgerDescription")}</AlertDescription>
+        </Alert>
+      )}
+
+      {showReceiptRetry && (
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>{t("receiptJournalWarning.title")}</AlertTitle>
           <AlertDescription className="flex flex-col gap-2">
-            <span>{t("receiptJournalWarning.description")}</span>
+            <span>{t(receiptWarningDescriptionKey(receiptJournalFlagReason))}</span>
             <Button
               type="button"
               size="sm"
