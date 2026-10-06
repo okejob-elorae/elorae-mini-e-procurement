@@ -51,6 +51,7 @@ import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { OfflineIndicator } from '@/components/offline/OfflineIndicator';
 import { QuickActionFAB } from '@/components/QuickActionFAB';
 import { FcmRegistration } from '@/components/notifications/FcmRegistration';
+import { deleteFcmToken } from "@/components/notifications/fcm-client";
 import { NotificationIcon } from '@/components/notifications/NotificationIcon';
 import { setupSyncListeners, syncReferenceData } from '@/lib/offline/sync';
 import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
@@ -866,7 +867,10 @@ export function BackofficeShell({
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => signOut({ callbackUrl: '/login' })} data-testid="sign-out">
+                <DropdownMenuItem
+                  onClick={() => void deleteFcmToken().then(() => signOut({ callbackUrl: "/login" }))}
+                  data-testid="sign-out"
+                >
                   <LogOut className="mr-2 h-4 w-4" />
                   Sign out
                 </DropdownMenuItem>

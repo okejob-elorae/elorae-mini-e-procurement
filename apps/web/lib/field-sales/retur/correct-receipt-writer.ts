@@ -44,6 +44,9 @@ export async function correctFieldReturnReceipt(input: {
   let salesmanNotice: (SalesmanMismatchNoticeInput & { raisedById: string }) | null = null;
 
   const result = await runSerializable(async (tx) => {
+    /* Retry re-runs this whole callback; reset so a rolled-back attempt's notice never fans out. */
+    notification = null;
+    salesmanNotice = null;
     const ret = await tx.fieldReturn.findUnique({
       where: { id: input.returnId },
       select: {

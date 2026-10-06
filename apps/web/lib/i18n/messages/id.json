@@ -3229,6 +3229,9 @@
       "discardError": "Foto gagal dibuang. Silakan coba lagi.",
       "queueChanged": "Ada data baru yang belum terkirim, jadi Anda belum keluar."
     },
+    "retur": {
+      "pooledVariant": "Tanpa ukuran (stok gabungan)"
+    },
     "visitPhoto": {
       "delete": "Hapus foto",
       "deleteTitle": "Hapus foto ini?",
@@ -3643,13 +3646,14 @@
     "correctWas": "sebelumnya {n}",
     "correctSubmit": "Simpan Koreksi",
     "correctConfirmTitle": "Konfirmasi Koreksi Hitungan",
-    "correctConfirmDescription": "Hitungan baru akan menggantikan yang sudah dicatat, dan alasannya disimpan di log audit. Baris yang jumlah diterimanya berubah perlu penyelesaian baru sebelum retur ini bisa disetujui.",
+    "correctConfirmDescription": "Hitungan baru akan menggantikan yang sudah dicatat, dan alasannya disimpan di log audit. Baris yang jumlah diterimanya berubah perlu penyelesaian baru sebelum retur ini bisa disetujui, kecuali sekarang sudah sesuai klaim.",
     "correctConfirmAction": "Simpan Koreksi",
     "successCorrected": "Hitungan gudang berhasil dikoreksi.",
     "cancelOpen": "Batalkan Retur",
     "cancelTitle": "Batalkan retur {docNo}?",
     "cancelDescription": "Retur ini belum diterima gudang, jadi pembatalan tidak menggerakkan stok apa pun — stok gudang maupun stok toko tidak berubah. Retur yang dibatalkan tidak bisa dibuka lagi.",
     "cancelFieldGoodsNote": "Kalau barangnya sudah diambil salesman, barang harus dikembalikan ke toko — stok toko masih menghitungnya.",
+    "cancelAdminGoodsNote": "Kalau toko sudah mengirim barangnya, barang harus dikembalikan ke toko — stok toko masih menghitungnya.",
     "cancelReason": "Alasan pembatalan",
     "cancelReasonRequired": "Alasan wajib diisi untuk membatalkan.",
     "cancelConfirm": "Batalkan Retur",

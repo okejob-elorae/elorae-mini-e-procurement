@@ -145,7 +145,8 @@ export type ReturCatalogItem = {
 /**
  * The retur picker's own catalog: a price-free list that keeps discontinued items, since a
  * discontinued item is exactly the "Tidak Laku"/"Kadaluarsa" case a store returns. The sell
- * catalog stays active-only; order lines are refused for inactive items by the writer.
+ * catalog stays active-only; order lines are refused for inactive items by the writer. Each
+ * item's variants are exactly the keys `createFieldReturn` accepts, the pooled `""` included.
  */
 export async function listReturCatalogForPwa(storeId: string): Promise<{ items: ReturCatalogItem[] } | null> {
   const store = await prisma.store.findUnique({

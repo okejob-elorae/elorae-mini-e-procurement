@@ -52,10 +52,10 @@ type ResolutionType = "SALESMAN_BEARS" | "INVESTIGATE" | "WRITE_OFF" | "ACCEPT_S
 const RESOLUTION_TYPES: ReadonlySet<string> = new Set(["SALESMAN_BEARS", "INVESTIGATE", "WRITE_OFF", "ACCEPT_SURPLUS"]);
 
 /**
- * Every `FieldReturnErrorCode` mapped explicitly, even the ones these three writers can never
- * actually throw (they belong to `createFieldReturn`, Task 1's writer) — a `Record` over the
- * whole union means a future code added to `errors.ts` fails TypeScript here instead of
- * silently falling through to `ERROR`. Shape errors map to `INVALID_REQUEST`, missing
+ * Every `FieldReturnErrorCode` mapped explicitly, even the ones the five writers mapped here
+ * (receive, correct, resolve, approve, cancel) can never actually throw (they belong to
+ * `createFieldReturn`) — a `Record` over the whole union means a future code added to
+ * `errors.ts` fails TypeScript here instead of silently falling through to `ERROR`. Shape errors map to `INVALID_REQUEST`, missing
  * documents to `NOT_FOUND`, wrong-state and split/line/variance codes keep their own name —
  * never a shape error onto a state error, or a missing document onto a wrong-state one.
  */
@@ -315,10 +315,11 @@ export async function resolveAction(input: {
  * The error side is deliberately NARROWER than `FieldReturnActionResult`'s full 21-code union,
  * not a reuse of it — `guard()` can only ever return `FORBIDDEN`, shape validation can only ever
  * return `INVALID_REQUEST`, and of everything `createFieldReturn` can throw for this call, only
- * `ITEM_NOT_FOUND`/`STORE_NOT_FOUND` (→ `NOT_FOUND`) and `MISSING_REASON_NOTE` (→
- * `INVALID_REQUEST`) are reachable: `isValidRaiseAdminReturnInput` already rules out
- * `NO_LINES`/`BAD_QTY`/`BAD_LINE_SHAPE` before the writer runs, this call never passes `visitId`
- * or `transport` so `VISIT_NOT_OWNED`/`MISSING_EXPEDITION_NAME`/`MISSING_RESI` can't fire, and
+ * `ITEM_NOT_FOUND`/`STORE_NOT_FOUND` (→ `NOT_FOUND`) and `MISSING_REASON_NOTE`/`BAD_VARIANT` (→
+ * `INVALID_REQUEST`, `BAD_VARIANT` because the variant rule binds both origins) are reachable:
+ * `isValidRaiseAdminReturnInput` already rules out `NO_LINES`/`BAD_QTY`/`BAD_LINE_SHAPE` before
+ * the writer runs, this call never passes `visitId` or `transport` so
+ * `VISIT_NOT_OWNED`/`MISSING_EXPEDITION_NAME`/`MISSING_RESI` can't fire, and
  * `origin` is always `"ADMIN"` so the `FIELD`-only `MISSING_TRANSPORT`/`MISSING_NOTA_PHOTO` rule
  * can't either. Reusing the full union here would let a code this action can never actually
  * produce reach the UI typed as valid, with nothing to catch a missing translation for it — see

@@ -3229,6 +3229,9 @@
       "discardError": "Couldn't discard the photos. Please try again.",
       "queueChanged": "New unsynced items appeared, so you were not logged out."
     },
+    "retur": {
+      "pooledVariant": "No size (pooled stock)"
+    },
     "visitPhoto": {
       "delete": "Delete photo",
       "deleteTitle": "Delete this photo?",
@@ -3643,13 +3646,14 @@
     "correctWas": "was {n}",
     "correctSubmit": "Save Correction",
     "correctConfirmTitle": "Confirm Count Correction",
-    "correctConfirmDescription": "The corrected counts replace the recorded ones, and the reason is kept in the audit log. Lines whose received quantity changed will need a new resolution before this return can be approved.",
+    "correctConfirmDescription": "The corrected counts replace the recorded ones, and the reason is kept in the audit log. A line whose received quantity changed needs a new resolution before this return can be approved, unless it now matches the claim.",
     "correctConfirmAction": "Save Correction",
     "successCorrected": "Warehouse count corrected.",
     "cancelOpen": "Cancel Return",
     "cancelTitle": "Cancel return {docNo}?",
     "cancelDescription": "This return has not been received, so cancelling it moves no stock anywhere — neither the warehouse nor the store's stock changes. A cancelled return cannot be reopened.",
     "cancelFieldGoodsNote": "If the salesman already picked these goods up, they must go back to the store — the store's stock still counts them.",
+    "cancelAdminGoodsNote": "If the store already sent these goods out, they must go back to the store — the store's stock still counts them.",
     "cancelReason": "Reason for cancelling",
     "cancelReasonRequired": "A reason is required to cancel.",
     "cancelConfirm": "Cancel Return",

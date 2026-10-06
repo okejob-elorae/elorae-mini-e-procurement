@@ -338,78 +338,127 @@ d("createFieldReturn (test bed only)", () => {
     expect(row.resiNo).toBeNull();
   });
 
-  describe("per-variant lines", () => {
+  describe("variant keys", () => {
     let variantItemId = "";
-    let variantSkuS = "";
-    let inventoryId = "";
-    let storeStockId = "";
+    let skuS = "";
+    let skuM = "";
+    let inventoryIds: string[] = [];
+    let storeStockIds: string[] = [];
+
+    const addInventory = async (variantSku: string | null) => {
+      const row = await prisma.inventoryValue.create({
+        data: { itemId: variantItemId, variantSku, qtyOnHand: 5, avgCost: 1000, totalValue: 5000 },
+      });
+      inventoryIds.push(row.id);
+    };
+    const addStoreStock = async (variantSku: string) => {
+      const row = await prisma.storeStock.create({ data: { storeId, itemId: variantItemId, variantSku, qty: 2 } });
+      storeStockIds.push(row.id);
+    };
+    const raise = (variantSku: string, origin: "FIELD" | "ADMIN" = "FIELD") =>
+      createFieldReturn(
+        origin === "FIELD"
+          ? {
+              storeId, raisedById: userId, transport: "SELF_CARRY",
+              notaPhotoUrl: "u", notaPhotoR2Key: "k",
+              lines: [{ itemId: variantItemId, variantSku, qty: 1, reason: "UNSOLD" }],
+            }
+          : {
+              storeId, raisedById: userId, origin: "ADMIN",
+              lines: [{ itemId: variantItemId, variantSku, qty: 1, reason: "UNSOLD" }],
+            },
+      );
+    const expectAccepted = async (variantSku: string, origin: "FIELD" | "ADMIN" = "FIELD") => {
+      const res = await raise(variantSku, origin);
+      returnIds.push(res.returnId);
+      const lines = await prisma.fieldReturnLine.findMany({ where: { returnId: seededId(res.returnId) } });
+      expect(lines.map((l) => l.variantSku)).toEqual([variantSku]);
+    };
+    const expectRefused = async (variantSku: string, origin: "FIELD" | "ADMIN" = "FIELD") => {
+      await expect(raise(variantSku, origin)).rejects.toMatchObject({ code: "BAD_VARIANT" });
+      const rows = await prisma.fieldReturn.findMany({ where: { storeId: seededId(storeId) } });
+      expect(rows).toHaveLength(returnIds.length);
+    };
 
     beforeEach(async () => {
       variantItemId = "";
-      inventoryId = "";
-      storeStockId = "";
-      variantSkuS = `V-S-${token}`;
+      inventoryIds = [];
+      storeStockIds = [];
+      skuS = `V-S-${token}`;
+      skuM = `V-M-${token}`;
       const item = await prisma.item.create({
         data: {
           sku: `TEST-FR-V-${token}`, nameId: "Retur variant item", nameEn: "Retur variant item",
           type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 40000,
-          variants: [{ sku: variantSkuS, size: "S" }],
+          variants: [{ sku: skuS, size: "S" }, { sku: skuM, size: "M" }],
         },
       });
       variantItemId = item.id;
-      const inv = await prisma.inventoryValue.create({
-        data: { itemId: variantItemId, variantSku: null, qtyOnHand: 5, avgCost: 1000, totalValue: 5000 },
-      });
-      inventoryId = inv.id;
     });
 
+    /**
+     * Runs BEFORE the outer afterEach, so the lines naming this item go first: deleting the
+     * item while a `FieldReturnLine` still references it trips the emulated Restrict, which
+     * aborts this hook and skips the outer teardown, leaking every fixture.
+     */
     afterEach(async () => {
-      await prisma.storeStock.deleteMany({ where: { id: seededId(storeStockId) } });
-      await prisma.inventoryValue.deleteMany({ where: { id: seededId(inventoryId) } });
+      const seededReturnIds = returnIds.map((id) => seededId(id));
+      await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: seededReturnIds } } });
+      await prisma.fieldReturn.deleteMany({ where: { id: { in: seededReturnIds } } });
+      await prisma.storeStock.deleteMany({ where: { id: { in: storeStockIds.map((id) => seededId(id)) } } });
+      await prisma.inventoryValue.deleteMany({ where: { id: { in: inventoryIds.map((id) => seededId(id)) } } });
       await prisma.item.deleteMany({ where: { id: seededId(variantItemId) } });
     });
 
-    it("refuses an empty variantSku on a variant item and creates nothing", async () => {
-      await expect(createFieldReturn({
-        storeId, raisedById: userId, transport: "SELF_CARRY",
-        notaPhotoUrl: "u", notaPhotoR2Key: "k",
-        lines: [{ itemId: variantItemId, variantSku: "", qty: 1, reason: "UNSOLD" }],
-      })).rejects.toMatchObject({ code: "BAD_VARIANT" });
-      const rows = await prisma.fieldReturn.findMany({ where: { storeId: seededId(storeId) } });
-      expect(rows).toHaveLength(0);
+    describe("on a pooled-stock item (one variantless InventoryValue row)", () => {
+      beforeEach(async () => {
+        await addInventory(null);
+      });
+
+      it("accepts the empty key from both origins", async () => {
+        await expectAccepted("");
+        await expectAccepted("", "ADMIN");
+      });
+
+      it("refuses a declared variant from both origins — it has no stock bucket of its own", async () => {
+        await expectRefused(skuS);
+        await expectRefused(skuS, "ADMIN");
+      });
+
+      it("accepts a variant that has its own InventoryValue row, and still refuses the others", async () => {
+        await addInventory(skuM);
+        await expectAccepted(skuM);
+        await expectRefused(skuS);
+      });
+
+      it("accepts a variant the store holds its own StoreStock row for", async () => {
+        await addStoreStock(skuS);
+        await expectAccepted(skuS, "ADMIN");
+        await expectRefused(skuM, "ADMIN");
+      });
     });
 
-    it("accepts the declared variant SKU", async () => {
-      const res = await createFieldReturn({
-        storeId, raisedById: userId, transport: "SELF_CARRY",
-        notaPhotoUrl: "u", notaPhotoR2Key: "k",
-        lines: [{ itemId: variantItemId, variantSku: variantSkuS, qty: 1, reason: "UNSOLD" }],
+    describe("on a per-variant item (no variantless InventoryValue row)", () => {
+      it("accepts every declared variant, stocked or not", async () => {
+        await addInventory(skuS);
+        await expectAccepted(skuS);
+        await expectAccepted(skuM, "ADMIN");
       });
-      returnIds.push(res.returnId);
-      const lines = await prisma.fieldReturnLine.findMany({ where: { returnId: seededId(res.returnId) } });
-      expect(lines[0].variantSku).toBe(variantSkuS);
-    });
 
-    it("refuses a SKU the item does not carry", async () => {
-      await expect(createFieldReturn({
-        storeId, raisedById: userId, transport: "SELF_CARRY",
-        notaPhotoUrl: "u", notaPhotoR2Key: "k",
-        lines: [{ itemId: variantItemId, variantSku: `NOPE-${token}`, qty: 1, reason: "UNSOLD" }],
-      })).rejects.toMatchObject({ code: "BAD_VARIANT" });
-    });
+      it("refuses the empty key and creates nothing", async () => {
+        await addInventory(skuS);
+        await expectRefused("");
+        await expectRefused("", "ADMIN");
+      });
 
-    it("accepts an empty variantSku on an ADMIN retur when the store holds legacy pooled stock", async () => {
-      const row = await prisma.storeStock.create({
-        data: { storeId, itemId: variantItemId, variantSku: "", qty: 2 },
+      it("accepts the empty key when the store holds a pooled StoreStock row", async () => {
+        await addStoreStock("");
+        await expectAccepted("", "ADMIN");
       });
-      storeStockId = row.id;
-      const res = await createFieldReturn({
-        storeId, raisedById: userId, origin: "ADMIN",
-        lines: [{ itemId: variantItemId, variantSku: "", qty: 1, reason: "UNSOLD" }],
+
+      it("refuses a SKU the item does not carry", async () => {
+        await expectRefused(`NOPE-${token}`);
       });
-      returnIds.push(res.returnId);
-      const lines = await prisma.fieldReturnLine.findMany({ where: { returnId: seededId(res.returnId) } });
-      expect(lines).toHaveLength(1);
     });
   });
 });

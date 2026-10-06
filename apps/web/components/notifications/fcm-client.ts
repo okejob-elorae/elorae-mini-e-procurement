@@ -19,6 +19,32 @@ export type RegisterFcmTokenOptions = {
 };
 
 const ACTIVATION_TIMEOUT_MS = 10_000;
+const DELETE_TIMEOUT_MS = 3_000;
+
+/**
+ * Whether a token reached the server during this page session. Permission alone proves
+ * nothing — the token can still have failed to register, or been deleted at a logout — so
+ * the PWA reports push as on only once this is true.
+ */
+let registeredThisSession = false;
+const registeredListeners = new Set<() => void>();
+
+export function hasRegisteredFcmToken(): boolean {
+  return registeredThisSession;
+}
+
+/** Calls `listener` the next time a token registers; returns the unsubscribe. */
+export function onFcmTokenRegistered(listener: () => void): () => void {
+  registeredListeners.add(listener);
+  return () => {
+    registeredListeners.delete(listener);
+  };
+}
+
+function markRegistered(): void {
+  registeredThisSession = true;
+  for (const listener of Array.from(registeredListeners)) listener();
+}
 
 /**
  * A registration found on a first visit may still be installing, and `PushManager.subscribe`
@@ -113,9 +139,36 @@ export async function registerFcmToken(opts: RegisterFcmTokenOptions = {}): Prom
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token }),
     });
-    return { outcome: res.ok ? "registered" : "failed", unsubscribe };
+    if (!res.ok) return { outcome: "failed", unsubscribe };
+    markRegistered();
+    return { outcome: "registered", unsubscribe };
   } catch {
     /* Permission refused inside getToken, or FCM unreachable. */
     return { outcome: "failed", unsubscribe };
+  }
+}
+
+async function deleteTokenIfInitialised(): Promise<void> {
+  const { getApp, getApps } = await import("firebase/app");
+  if (getApps().length === 0) return;
+  const { deleteToken, getMessaging, isSupported } = await import("firebase/messaging");
+  if (!(await isSupported())) return;
+  await deleteToken(getMessaging(getApp()));
+}
+
+/**
+ * Unsubscribes this device's FCM token at logout, so FCM stops delivering to it even before
+ * the server row is cleared. Best-effort: only when this page already initialised Firebase,
+ * never throws, and gives up after a few seconds so an offline phone still logs out.
+ */
+export async function deleteFcmToken(): Promise<void> {
+  registeredThisSession = false;
+  try {
+    await Promise.race([
+      deleteTokenIfInitialised(),
+      new Promise<void>((resolve) => setTimeout(resolve, DELETE_TIMEOUT_MS)),
+    ]);
+  } catch {
+    /* Nothing to undo: the server-side sign-out clears the user's token regardless. */
   }
 }

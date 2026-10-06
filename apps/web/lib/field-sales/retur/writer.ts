@@ -100,9 +100,9 @@ export async function createFieldReturn(input: {
     });
 
     /**
-     * Stock is per-variant, so the warehouse must know the size that came back: a line on
-     * a variant item may not name `""`. `""` is accepted only for a simple item, or when
-     * the store holds legacy pooled `""` stock for it.
+     * A line must name the stock bucket the units actually sit in, for both origins — the
+     * rule, and why a declared variant is refused on a pooled-stock item, is
+     * `isReturnableVariantKey`'s. The picker offers the same set through `returVariantOptions`.
      */
     const itemById = new Map(foundItems.map((i) => [i.id, i]));
     for (const l of input.lines) {

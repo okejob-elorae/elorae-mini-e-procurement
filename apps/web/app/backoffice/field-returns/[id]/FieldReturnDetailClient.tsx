@@ -657,12 +657,12 @@ export function FieldReturnDetailClient({
             <AlertDialogTitle>{tReceiving("cancelTitle", { docNo: r.docNo })}</AlertDialogTitle>
             <AlertDialogDescription>{tReceiving("cancelDescription")}</AlertDialogDescription>
           </AlertDialogHeader>
-          {r.origin === "FIELD" && (
-            <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-amber-700">
-              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-              <p className="text-xs">{tReceiving("cancelFieldGoodsNote")}</p>
-            </div>
-          )}
+          <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-amber-700">
+            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+            <p className="text-xs">
+              {tReceiving(r.origin === "FIELD" ? "cancelFieldGoodsNote" : "cancelAdminGoodsNote")}
+            </p>
+          </div>
           <div className="space-y-1">
             <Label htmlFor="field-return-cancel-reason">{tReceiving("cancelReason")}</Label>
             <Textarea

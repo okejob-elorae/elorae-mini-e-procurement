@@ -5,7 +5,7 @@ import { useTranslations } from "next-intl";
 import { Bell, BellOff, BellRing, Loader2, TriangleAlert } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { registerFcmToken } from "@/components/notifications/fcm-client";
+import { hasRegisteredFcmToken, onFcmTokenRegistered, registerFcmToken } from "@/components/notifications/fcm-client";
 
 type PushState = "checking" | "hidden" | "default" | "pending" | "enabled" | "denied" | "failed" | "unsupported";
 
@@ -15,11 +15,18 @@ const PWA_SCOPE = "/pwa/";
  * The only place the PWA asks for notification permission — from a button press, which iOS
  * requires and which keeps the prompt out of the salesman's way on load. Hidden where push can
  * never work: no Notification/Push API (an iOS tab that is not installed) or no `/pwa/` service
- * worker (dev, where Serwist builds none).
+ * worker (dev, where Serwist builds none). Reports push as on only when permission is granted AND
+ * a token reached the server this session — a granted permission whose registration failed still
+ * offers the button, which retries it.
  */
 export function EnablePushCard() {
   const t = useTranslations("pwa.notifications.push");
   const [state, setState] = useState<PushState>("checking");
+
+  useEffect(() => {
+    const unsubscribe = onFcmTokenRegistered(() => setState("enabled"));
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     const supported = "Notification" in window && "serviceWorker" in navigator && "PushManager" in window;
@@ -37,7 +44,8 @@ export function EnablePushCard() {
           return;
         }
         const permission = Notification.permission;
-        setState(permission === "granted" ? "enabled" : permission === "denied" ? "denied" : "default");
+        if (permission === "denied") setState("denied");
+        else setState(permission === "granted" && hasRegisteredFcmToken() ? "enabled" : "default");
       })
       .catch(() => {
         if (!cancelled) setState("hidden");
