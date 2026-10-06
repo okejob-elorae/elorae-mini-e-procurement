@@ -89,6 +89,7 @@ async function purge(
     | "gRN"
     | "purchaseOrder"
     | "stockMovement"
+    | "stockLedgerEntry"
     | "stockAdjustment"
     | "rejectedGoodsLedger"
     | "consumptionRule"
@@ -257,6 +258,7 @@ async function main() {
       "consumptionRule",
       counts,
     );
+    await purge("StockLedgerEntry", { itemId: { in: seedItemIds } }, "stockLedgerEntry", counts);
     await purge("InventoryValue", { itemId: { in: seedItemIds } }, "inventoryValue", counts);
     await purge(
       "JubelioProductMapping",

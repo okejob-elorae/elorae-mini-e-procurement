@@ -14,7 +14,6 @@ import {
   WOStatus,
   ReturnStatus,
   AdjustmentType,
-  MoveType,
   OutputMode,
   IssueType,
   ReceiptType,
@@ -26,6 +25,8 @@ import { getDatabaseUrl } from "../src/db-connection";
 import { loadDbEnv } from "../src/load-env";
 import { seedPantoneColors } from "./seed-pantone-colors";
 import { seedChartAccounts } from "./seed-chart-accounts";
+import { appendSeedOpeningBalances } from "./seed-ledger";
+import { moveMainStock } from "../src/stock-balance";
 
 loadDbEnv();
 
@@ -1014,6 +1015,15 @@ async function main() {
     { itemId: fg3.id, qtyOnHand: 200, avgCost: 45000, totalValue: 9_000_000 },
     { itemId: jeansTrousers.id, qtyOnHand: 0, avgCost: 0, totalValue: 0 },
   ];
+  /*
+   * These figures are the state BEFORE the four seeded stock movements below (GRN fabric1 +50,
+   * GRN acc2 +500, ADJUSTMENT fabric2 +10, WO_ISSUE fabric1 -200): the hand-written movements
+   * carried balanceQty chains of 500 -> 550 -> 350, 800 -> 1300 and 300 -> 310 starting from
+   * exactly these quantities. So each figure is the row's opening balance, the movements are
+   * applied through the movers afterwards, and the rows those movements touch end at the
+   * moved figure rather than the opening one.
+   */
+  const seededInventoryIds: string[] = [];
   for (const inv of invData) {
     const existing = await prisma.inventoryValue.findFirst({
       where: { itemId: inv.itemId, variantSku: null },
@@ -1027,8 +1037,9 @@ async function main() {
           totalValue: inv.totalValue,
         },
       });
+      seededInventoryIds.push(existing.id);
     } else {
-      await prisma.inventoryValue.create({
+      const created = await prisma.inventoryValue.create({
         data: {
           itemId: inv.itemId,
           variantSku: null,
@@ -1037,10 +1048,11 @@ async function main() {
           totalValue: inv.totalValue,
         },
       });
+      seededInventoryIds.push(created.id);
     }
   }
   // variantSku '' matches createStockAdjustment / costing (not null)
-  await prisma.inventoryValue.upsert({
+  const poplinRow = await prisma.inventoryValue.upsert({
     where: {
       itemId_variantSku: { itemId: fabricCottonPoplin.id, variantSku: "" },
     },
@@ -1057,6 +1069,8 @@ async function main() {
       totalValue: 8_000_000,
     },
   });
+  seededInventoryIds.push(poplinRow.id);
+  await prisma.$transaction((tx) => appendSeedOpeningBalances(tx, seededInventoryIds));
   console.log("InventoryValue OK");
 
   // ---------- 9. Purchase orders + POItem + POStatusHistory (only if none exist) ----------
@@ -1176,7 +1190,7 @@ async function main() {
     console.log("Purchase orders + POItem + POStatusHistory OK");
   }
 
-  // ---------- 10. GRN + StockMovement (only if no GRN yet) ----------
+  // ---------- 10. GRN + stock movements (only if no GRN yet) ----------
   const grnCount = await prisma.gRN.count();
   if (grnCount === 0) {
     const pos = await prisma.purchaseOrder.findMany({ where: { status: { in: [POStatus.PARTIAL, POStatus.CLOSED] } }, take: 2 });
@@ -1194,21 +1208,21 @@ async function main() {
         syncStatus: SyncStatus.SYNCED,
       },
     });
-    await prisma.stockMovement.create({
-      data: {
+    await prisma.$transaction((tx) =>
+      moveMainStock(tx, {
         itemId: fabric1.id,
         variantSku: null,
-        type: MoveType.IN,
+        qtyDelta: 50,
+        unitCost: 25000,
+        totalCost: 1_250_000,
+        totalValue: 13_750_000,
+        balanceValue: 13_750_000,
         refType: "GRN",
         refId: grn1.id,
         refDocNumber: grn1.docNumber,
-        qty: 50,
-        unitCost: 25000,
-        totalCost: 1_250_000,
-        balanceQty: 550,
-        balanceValue: 13_750_000,
-      },
-    });
+        createdById: warehouse.id,
+      }),
+    );
 
     const grn2 = await prisma.gRN.create({
       data: {
@@ -1223,22 +1237,22 @@ async function main() {
         syncStatus: SyncStatus.SYNCED,
       },
     });
-    await prisma.stockMovement.create({
-      data: {
+    await prisma.$transaction((tx) =>
+      moveMainStock(tx, {
         itemId: acc2.id,
         variantSku: null,
-        type: MoveType.IN,
+        qtyDelta: 500,
+        unitCost: 3400,
+        totalCost: 1_700_000,
+        totalValue: 4_500_000,
+        balanceValue: 4_500_000,
         refType: "GRN",
         refId: grn2.id,
         refDocNumber: grn2.docNumber,
-        qty: 500,
-        unitCost: 3400,
-        totalCost: 1_700_000,
-        balanceQty: 1300,
-        balanceValue: 4_500_000,
-      },
-    });
-    console.log("GRN + StockMovement OK");
+        createdById: warehouse.id,
+      }),
+    );
+    console.log("GRN + stock movements OK");
   }
 
   // ---------- 11. StockAdjustment (only if none) ----------
@@ -1259,21 +1273,21 @@ async function main() {
         createdById: warehouse.id,
       },
     });
-    await prisma.stockMovement.create({
-      data: {
+    await prisma.$transaction((tx) =>
+      moveMainStock(tx, {
         itemId: fabric2.id,
         variantSku: null,
-        type: MoveType.ADJUSTMENT,
-        refType: "ADJUSTMENT",
-        refId: adj1.id,
-        refDocNumber: adj1.docNumber,
-        qty: 10,
+        qtyDelta: 10,
         unitCost: 18000,
         totalCost: 180000,
-        balanceQty: 310,
+        totalValue: 5_580_000,
         balanceValue: 5_580_000,
-      },
-    });
+        refType: "StockAdjustment",
+        refId: adj1.id,
+        refDocNumber: adj1.docNumber,
+        createdById: warehouse.id,
+      }),
+    );
 
     await prisma.stockAdjustment.create({
       data: {
@@ -1365,21 +1379,21 @@ async function main() {
         syncStatus: SyncStatus.SYNCED,
       },
     });
-    await prisma.stockMovement.create({
-      data: {
+    await prisma.$transaction((tx) =>
+      moveMainStock(tx, {
         itemId: fabric1.id,
         variantSku: null,
-        type: MoveType.OUT,
-        refType: "WO_ISSUE",
-        refId: issue1.id,
-        refDocNumber: issue1.docNumber,
-        qty: -200,
+        qtyDelta: -200,
         unitCost: 25000,
         totalCost: 5_000_000,
-        balanceQty: 350,
+        totalValue: 8_750_000,
         balanceValue: 8_750_000,
-      },
-    });
+        refType: "MaterialIssue",
+        refId: issue1.id,
+        refDocNumber: issue1.docNumber,
+        createdById: warehouse.id,
+      }),
+    );
 
     const woPartial = await prisma.workOrder.create({
       data: {
@@ -1678,6 +1692,7 @@ async function main() {
     { itemId: itemKaret.id, qtyOnHand: 2000, avgCost: 1000, totalValue: 2_000_000 },
     { itemId: itemKantong.id, qtyOnHand: 2000, avgCost: 6250, totalValue: 12_500_000 },
   ];
+  const hppInventoryIds: string[] = [];
   for (const inv of hppInvData) {
     const existing = await prisma.inventoryValue.findFirst({
       where: { itemId: inv.itemId, variantSku: null },
@@ -1685,12 +1700,15 @@ async function main() {
     const payload = { qtyOnHand: inv.qtyOnHand, avgCost: inv.avgCost, totalValue: inv.totalValue };
     if (existing) {
       await prisma.inventoryValue.update({ where: { id: existing.id }, data: payload });
+      hppInventoryIds.push(existing.id);
     } else {
-      await prisma.inventoryValue.create({
+      const created = await prisma.inventoryValue.create({
         data: { ...payload, itemId: inv.itemId, variantSku: null },
       });
+      hppInventoryIds.push(created.id);
     }
   }
+  await prisma.$transaction((tx) => appendSeedOpeningBalances(tx, hppInventoryIds));
   const existingHppWo = await prisma.workOrder.findFirst({
     where: { docNumber: "WO/2026/HPP01" },
   });

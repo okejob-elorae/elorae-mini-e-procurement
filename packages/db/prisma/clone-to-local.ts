@@ -15,6 +15,7 @@
 import "dotenv/config";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { PrismaClient } from "../generated/prisma/client";
+import { appendSeedOpeningBalances } from "./seed-ledger";
 
 const BATCH_SIZE = 500;
 
@@ -183,6 +184,18 @@ async function main() {
         skipDuplicates: true,
       }),
     );
+
+    /*
+     * The clone copies balances and no ledger, so every cloned row would sit at a ledger balance
+     * of 0. Append the OPENING entry behind each one, bounded per transaction.
+     */
+    const clonedIds = inventoryValues.map((v) => v.id);
+    let openings = 0;
+    for (let i = 0; i < clonedIds.length; i += 500) {
+      const ids = clonedIds.slice(i, i + 500);
+      openings += await dst.$transaction((tx) => appendSeedOpeningBalances(tx, ids), { timeout: 60_000 });
+    }
+    console.log(`StockLedgerEntry: ${openings} opening entries appended`);
 
     // ---------- JubelioProductMapping ----------
     const productMappings = await src.jubelioProductMapping.findMany();
