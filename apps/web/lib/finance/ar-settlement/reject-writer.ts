@@ -1,6 +1,7 @@
 import { prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { sendNotificationToUsers } from "@/lib/notifications/recipients";
+import { DEDUCTION_TYPE_TO_PAYMENT_METHOD, returComponentKey, simpleComponentKey } from "./approve-writer";
 import { SettlementError } from "./errors";
 
 /**
@@ -92,10 +93,14 @@ async function notifySalesmanOfRejection(
  * compensating path here for a `Payment` that already exists. The usual case is that none does: a
  * settlement that never reached approval never posted a component. But `approveSettlement` is a
  * resumable sequence rather than one transaction, so a run that posts a component and then throws
- * leaves the document `PENDING` with a real `Payment` behind it, and rejecting it from there
- * strands that payment attached to a `REJECTED` document. The finance approval screen surfaces
- * exactly this case (`componentsTitleOrphaned` in `app/backoffice/finance/pelunasan/[id]`) and
- * tells an admin to void the payments by hand; nothing here does it for them.
+ * leaves the document `PENDING` with a real `Payment` behind it. Rejecting it from there is
+ * REFUSED with `COMPONENTS_POSTED` while any component payment is still `POSTED`: the remedy is to
+ * resume the approval, or to void each posted component from `/backoffice/finance/payments` and
+ * then reject. A `VOIDED` component does not block. A `REJECTED` document can therefore still
+ * carry voided components (voided before the reject), posted ones rejected before this guard
+ * existed, or posted ones from a reject that raced a still-running approval (see the guard below);
+ * the finance approval screen surfaces all three (`componentsTitleOrphaned` in
+ * `app/backoffice/finance/pelunasan/[id]`).
  *
  * A second call against a settlement that is no longer `PENDING` (already `REJECTED`, or since
  * `APPROVED`) throws `NOT_PENDING`, the same shape as `rejectCollection`
@@ -121,10 +126,35 @@ export async function rejectSettlement(input: RejectSettlementInput): Promise<Re
   const settlement = await runSerializable(async (tx) => {
     const row = await tx.storeSettlement.findUnique({
       where: { id: input.settlementId },
-      select: { id: true, docNo: true, status: true, salesmanId: true, storeId: true },
+      select: {
+        id: true, docNo: true, status: true, salesmanId: true, storeId: true,
+        deductions: { select: { id: true, type: true, fieldReturnId: true } },
+      },
     });
     if (!row) throw new SettlementError("SETTLEMENT_NOT_FOUND");
     if (row.status !== "PENDING") throw new SettlementError("NOT_PENDING");
+
+    /**
+     * Refuse while any component of a half-run approval is still POSTED — rejecting would strand
+     * real money behind a `REJECTED` document. The keys are exactly the ones `approveSettlement`
+     * writes, built through its own exports, so the guard cannot drift from the writer. Read before
+     * any write, so the refusal commits nothing. Under SERIALIZABLE this read also S-locks the key
+     * range, so a component insert racing it either commits first (and this refuses) or waits
+     * behind this transaction. That covers the crashed or abandoned approval, not one still
+     * running: `approveSettlement` reads the status once and posts each component in its own
+     * transaction, so a reject committing mid-run still leaves that run's later components behind
+     * a `REJECTED` document, which the approval then logs as orphaned and refuses `NOT_PENDING`.
+     */
+    const keys = [
+      simpleComponentKey(row.id, DEDUCTION_TYPE_TO_PAYMENT_METHOD.PROGRAM),
+      simpleComponentKey(row.id, DEDUCTION_TYPE_TO_PAYMENT_METHOD.ADMIN_FEE),
+      simpleComponentKey(row.id, "CASH"),
+      ...row.deductions
+        .filter((d) => d.type === "RETUR_OFFSET" && d.fieldReturnId !== null)
+        .map((d) => returComponentKey(d.fieldReturnId as string, d.id)),
+    ];
+    const posted = await tx.payment.count({ where: { idempotencyKey: { in: keys }, status: "POSTED" } });
+    if (posted > 0) throw new SettlementError("COMPONENTS_POSTED");
 
     /**
      * The same guard `approveSettlement` runs before its own audit write, for the same reason.

@@ -35,7 +35,7 @@ const MAX_OVERRIDE_REASON_LENGTH = 191;
  * and then dies at the MariaDB `ENUM` column with a data-truncation error at runtime, mid
  * approval, with earlier components already posted. This map is the only permitted translation.
  */
-const DEDUCTION_TYPE_TO_PAYMENT_METHOD = {
+export const DEDUCTION_TYPE_TO_PAYMENT_METHOD = {
   RETUR_OFFSET: "RETUR_OFFSET",
   PROGRAM: "PROGRAM_DEDUCTION",
   ADMIN_FEE: "ADMIN_FEE",

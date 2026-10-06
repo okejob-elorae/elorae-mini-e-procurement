@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { buildRejectionBody, rejectSettlement } from "./reject-writer";
+import { returComponentKey, simpleComponentKey } from "./approve-writer";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -120,6 +121,8 @@ d("rejectSettlement (test bed only)", () => {
     await prisma.auditLog.deleteMany({
       where: { entityType: "StoreSettlement", entityId: seededId(settlementId) },
     });
+    await prisma.payment.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.storeSettlementDeduction.deleteMany({ where: { settlementId: seededId(settlementId) } });
     await prisma.storeSettlement.deleteMany({ where: { id: seededId(settlementId) } });
     await prisma.user.deleteMany({ where: { id: { in: [seededId(salesmanId), seededId(adminId)] } } });
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
@@ -215,6 +218,65 @@ d("rejectSettlement (test bed only)", () => {
     await expect(
       rejectSettlement({ settlementId: "does-not-exist", rejectedById: adminId, reason: "reason" }),
     ).rejects.toMatchObject({ code: "SETTLEMENT_NOT_FOUND" });
+  });
+
+  /** A component payment as `approveSettlement` would have written it, keyed exactly as it keys them. */
+  async function seedComponentPayment(
+    idempotencyKey: string,
+    method: "CASH" | "RETUR_OFFSET",
+    status: "POSTED" | "VOIDED",
+  ): Promise<void> {
+    await prisma.payment.create({
+      data: {
+        docNo: `TEST-RJW-PAY-${method}-${token}`,
+        storeId,
+        paidAt: new Date(),
+        method,
+        amount: 500,
+        recordedById: adminId,
+        status,
+        idempotencyKey,
+      },
+    });
+  }
+
+  async function rejectAuditCount(): Promise<number> {
+    return prisma.auditLog.count({
+      where: { entityType: "StoreSettlement", entityId: settlementId, action: "SETTLEMENT_REJECT" },
+    });
+  }
+
+  it("refuses COMPONENTS_POSTED while a cash component of a half-run approval is POSTED", async () => {
+    await seedComponentPayment(simpleComponentKey(settlementId, "CASH"), "CASH", "POSTED");
+    await expect(
+      rejectSettlement({ settlementId, rejectedById: adminId, reason: "wrong amount" }),
+    ).rejects.toMatchObject({ code: "COMPONENTS_POSTED" });
+    const row = await prisma.storeSettlement.findUnique({ where: { id: settlementId } });
+    expect(row!.status).toBe("PENDING");
+    expect(await rejectAuditCount()).toBe(0);
+  });
+
+  it("rejects once the posted component has been voided", async () => {
+    await seedComponentPayment(simpleComponentKey(settlementId, "CASH"), "CASH", "VOIDED");
+    const result = await rejectSettlement({ settlementId, rejectedById: adminId, reason: "wrong amount" });
+    expect(result.ok).toBe(true);
+    const row = await prisma.storeSettlement.findUnique({ where: { id: settlementId } });
+    expect(row!.status).toBe("REJECTED");
+  });
+
+  it("refuses COMPONENTS_POSTED while a retur component is POSTED", async () => {
+    /* The retur row itself is not needed: the guard reads only the deduction's id and fieldReturnId. */
+    const fieldReturnId = `test-rjw-ret-${token}`;
+    const deduction = await prisma.storeSettlementDeduction.create({
+      data: { settlementId, type: "RETUR_OFFSET", amount: 500, fieldReturnId },
+    });
+    await seedComponentPayment(returComponentKey(fieldReturnId, deduction.id), "RETUR_OFFSET", "POSTED");
+    await expect(
+      rejectSettlement({ settlementId, rejectedById: adminId, reason: "wrong amount" }),
+    ).rejects.toMatchObject({ code: "COMPONENTS_POSTED" });
+    const row = await prisma.storeSettlement.findUnique({ where: { id: settlementId } });
+    expect(row!.status).toBe("PENDING");
+    expect(await rejectAuditCount()).toBe(0);
   });
 
   it("CAS refuses a settlement that is no longer PENDING", async () => {

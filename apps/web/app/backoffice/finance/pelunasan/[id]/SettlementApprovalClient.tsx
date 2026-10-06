@@ -227,11 +227,13 @@ export function SettlementApprovalClient({ settlement: s, canViewAccountMapping 
    * payment, and dropping it would make the document read as cheaper than it is while finance
    * works out why it is blocked.
    *
-   * Once REJECTED nothing was meant to post, so the card only earns its place if something did —
-   * the orphaned-payment case the writer logs, reachable when approval posts one component, throws
-   * before the next, and the still-`PENDING` document is then rejected. Its copy tells finance to
-   * void what is listed, so the list has to be the payments and nothing else: showing the unposted
-   * siblings under that heading would name rows there is nothing to void.
+   * Once REJECTED nothing was meant to post, so the card only earns its place if something did.
+   * `rejectSettlement` now refuses while any component is still POSTED, so a rejected document
+   * lists payments only in three cases: components voided before the reject, a document rejected
+   * before that guard existed, or a reject that committed while an approval was still running (the
+   * orphaned-payment case the approve writer logs). Its copy tells finance to void what is listed,
+   * so the list has to be the payments and nothing else: showing the unposted siblings under that
+   * heading would name rows there is nothing to void.
    */
   const visibleComponents = s.components.filter((component) =>
     s.status === "REJECTED"
@@ -239,6 +241,11 @@ export function SettlementApprovalClient({ settlement: s, canViewAccountMapping 
       : component.amount > 0 || component.paymentId !== null,
   );
   const showComponents = visibleComponents.length > 0;
+  /**
+   * Mirrors `rejectSettlement`'s `COMPONENTS_POSTED` refusal: a half-run approval with a posted
+   * component cannot be rejected until that payment is voided or the approval is resumed.
+   */
+  const hasPostedComponent = s.components.some((component) => component.paymentStatus === "POSTED");
 
   /**
    * `checks` is computed server-side only while the document is `PENDING` (and `approvable` spells
@@ -916,7 +923,7 @@ export function SettlementApprovalClient({ settlement: s, canViewAccountMapping 
             <Button
               variant="destructive"
               className="h-11 w-full sm:w-auto"
-              disabled={busy}
+              disabled={busy || hasPostedComponent}
               onClick={() => setRejectOpen(true)}
             >
               {rejecting && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -934,6 +941,11 @@ export function SettlementApprovalClient({ settlement: s, canViewAccountMapping 
           {!s.approvable && (
             <p className="mt-2 text-right text-xs text-muted-foreground">
               {t("approveBlockedHint")}
+            </p>
+          )}
+          {hasPostedComponent && (
+            <p className="mt-2 text-right text-xs text-muted-foreground">
+              {t("rejectBlockedPostedHint")}
             </p>
           )}
         </div>

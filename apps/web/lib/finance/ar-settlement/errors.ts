@@ -33,7 +33,8 @@ export type SettlementErrorCode =
   | "COMPONENT_EXCEEDS_HEADROOM"
   | "COMPONENT_VOIDED"
   | "OVER_TENDER"
-  | "MISSING_REASON";
+  | "MISSING_REASON"
+  | "COMPONENTS_POSTED";
 
 export class SettlementError extends Error {
   code: SettlementErrorCode;
