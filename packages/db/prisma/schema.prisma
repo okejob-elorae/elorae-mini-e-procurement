@@ -821,6 +821,10 @@ model PurchaseOrder {
   chainConfirmedAt        DateTime?
   chainConfirmedSource    String?
   actualLeadDays          Int?
+  ppnRatePercent          Decimal?        @db.Decimal(5,2)
+  closedAt                DateTime?
+  closedById              String?
+  closeReason             String?         @db.Text
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
   @@index([supplierId])
@@ -1270,6 +1274,8 @@ model VendorReturn {
   syncStatus       SyncStatus   @default(SYNCED)
   createdById      String
   createdBy        User         @relation(fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  poId             String?
+  poCreditAmount   Decimal?     @db.Decimal(15,2)
   createdAt        DateTime     @default(now())
   @@index([woId])
   @@index([vendorId])
@@ -1277,6 +1283,7 @@ model VendorReturn {
   @@index([status])
   @@index([createdById])
   @@index([completedById])
+  @@index([poId])
 }
 
 // ==========================================
@@ -2815,6 +2822,7 @@ model ConsignmentShipmentItem {
   id         String  @id @default(cuid())
   shipmentId String
   itemId     String?
+  variantSku String?
   itemName   String
   qty        Int
   price      Decimal @db.Decimal(15, 2)
@@ -3512,6 +3520,7 @@ model StoreOpnameLine {
   productName String
   qtySystem   Int
   qtyCounted  Int
+  countedAt   DateTime?
 
   opname      StoreOpname @relation(fields: [opnameId], references: [id], onDelete: Cascade)
 

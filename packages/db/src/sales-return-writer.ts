@@ -1,6 +1,7 @@
 import type { Prisma } from "../generated/prisma/client";
 import type { StockAdjustmentSource } from "./stock-adjustment-source";
 import type { JubelioOutboxEntityType } from "./jubelio-outbox";
+import { barisStokPesanan } from "./reservation-writer";
 
 export type SalesReturnStatusLiteral = "PENDING" | "ACCEPTED" | "REJECTED" | "PARTIAL";
 
@@ -44,10 +45,10 @@ function toNum(v: unknown): number {
   return typeof v === "number" ? v : Number(v);
 }
 
-// Concurrency note: callers must serialize concurrent acceptReturnItem calls
-// that resolve to the same (itemId, variantSku). Without serialization the
-// read-then-write on InventoryValue.qtyOnHand can lose updates. Sub-B server
-// actions handle this with row-level locking or per-return-id serialization.
+// Konkurensi: stok ditambah dengan increment atom di UPDATE, bukan dibaca lalu
+// ditulis sebagai angka mutlak — penulis stok lain (webhook, kirim pesanan,
+// penyesuaian) yang commit di antara keduanya dulu hilang. Keputusan ganda atas
+// baris retur yang sama tetap dijaga kunci per-retur di aksi server.
 export async function acceptReturnItem(
   tx: Prisma.TransactionClient,
   input: AcceptReturnItemInput,
@@ -67,24 +68,28 @@ export async function acceptReturnItem(
     return { applied: false, skipped: "unmapped_sku" };
   }
 
-  const inv = await tx.inventoryValue.findFirst({
-    where: {
-      itemId: item.itemId,
-      OR: [
-        { variantSku: item.variantSku ?? null },
-        ...(item.variantSku == null
-          ? [{ variantSku: "" as string | null }]
-          : []),
-      ],
-    },
-    select: { id: true, qtyOnHand: true, avgCost: true },
-  });
+  // Baris yang sama dengan tempat barang ini dijual (aturan penahanan pesanan):
+  // tanpa varian = baris null atau "" ("" didahulukan bila kembar); varian tanpa
+  // baris sendiri = baris gabungan hanya bila barang belum punya baris per-varian.
+  const inv = await barisStokPesanan(tx, item.itemId, item.variantSku ?? "");
   if (!inv) return { applied: false, skipped: "no_inventory_row" };
 
   const qty = toNum(item.qty);
-  const prevQty = toNum(inv.qtyOnHand);
   const avgCost = toNum(inv.avgCost);
-  const newQty = prevQty + qty;
+
+  // Increment atom: angka sesudahnya dibaca dari hasil UPDATE, jadi jejak
+  // penyesuaian menyebut stok yang sungguh terjadi.
+  const sesudah = await tx.inventoryValue.update({
+    where: { id: inv.id },
+    data: {
+      qtyOnHand: { increment: qty },
+      totalValue: { increment: qty * avgCost },
+      lastUpdated: new Date(),
+    },
+    select: { qtyOnHand: true },
+  });
+  const newQty = toNum(sesudah.qtyOnHand);
+  const prevQty = newQty - qty;
 
   const adj = await tx.stockAdjustment.create({
     data: {
@@ -102,15 +107,6 @@ export async function acceptReturnItem(
       externalRef: item.id,
     },
     select: { id: true },
-  });
-
-  await tx.inventoryValue.update({
-    where: { id: inv.id },
-    data: {
-      qtyOnHand: newQty,
-      totalValue: newQty * avgCost,
-      lastUpdated: new Date(),
-    },
   });
 
   await tx.salesReturnItem.update({
