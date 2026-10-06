@@ -2894,6 +2894,7 @@
       "lines": "{count} baris",
       "back": "Kembali",
       "errMinQty": "Qty di bawah minimum pemesanan.",
+      "errItemUnavailable": "Ada produk di pesanan ini yang sudah tidak dijual. Hapus pesanan lalu buat ulang tanpa produk itu.",
       "errNoVisit": "Tidak ada kunjungan aktif saat pesanan dibuat.",
       "errUnauthorized": "Sesi tidak valid. Silakan login ulang.",
       "errGeneric": "Terjadi kesalahan. Silakan coba lagi.",
@@ -3120,7 +3121,8 @@
       "errorNoActiveVisit": "Check in dulu untuk memesan.",
       "errorUnauthorized": "Sesi berakhir. Masuk lagi.",
       "errorEmpty": "Tidak ada item.",
-      "errorMinQty": "Jumlah di bawah minimum."
+      "errorMinQty": "Jumlah di bawah minimum.",
+      "errorItemUnavailable": "Ada produk di pesanan ini yang sudah tidak dijual. Hapus produknya lalu kirim ulang."
     },
     "notifications": {
       "title": "Notifikasi",

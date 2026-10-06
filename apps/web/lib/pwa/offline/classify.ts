@@ -4,7 +4,7 @@ import type { SubmitResult } from "@/app/pwa/stores/[id]/catalog/actions";
 
 export type SyncDecision = "evict" | "terminal" | "retry";
 
-const TERMINAL = new Set(["MIN_QTY", "NO_ACTIVE_VISIT", "EMPTY", "UNAUTHORIZED"]);
+const TERMINAL = new Set(["MIN_QTY", "NO_ACTIVE_VISIT", "EMPTY", "UNAUTHORIZED", "ITEM_UNAVAILABLE"]);
 
 export function classifyResult(r: SubmitResult | { thrown: true }): SyncDecision {
   if ("thrown" in r) return "retry";

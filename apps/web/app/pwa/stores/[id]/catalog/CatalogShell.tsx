@@ -248,6 +248,9 @@ export function CatalogShell({
             return `${name} (min ${v.requiredMin})`;
           });
           msg = `Jumlah di bawah minimum: ${parts.join(", ")}.`;
+        } else if (res.code === "ITEM_UNAVAILABLE") {
+          const names = res.itemIds.map((id) => cartLines.find((l) => l.itemId === id)?.nameId ?? "produk");
+          msg = `Produk sudah tidak dijual: ${names.join(", ")}. Hapus dari keranjang lalu kirim ulang.`;
         } else if (res.code === "NO_ACTIVE_VISIT") {
           msg = "Check in dulu untuk memesan.";
         } else if (res.code === "UNAUTHORIZED") {

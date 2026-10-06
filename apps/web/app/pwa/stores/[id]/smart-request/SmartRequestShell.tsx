@@ -170,6 +170,7 @@ export function SmartRequestShell({
         if (res.code === "NO_ACTIVE_VISIT") msg = t("errorNoActiveVisit");
         else if (res.code === "UNAUTHORIZED") msg = t("errorUnauthorized");
         else if (res.code === "MIN_QTY") msg = t("errorMinQty");
+        else if (res.code === "ITEM_UNAVAILABLE") msg = t("errorItemUnavailable");
         else msg = t("errorEmpty");
         toast.error(msg);
       } catch {

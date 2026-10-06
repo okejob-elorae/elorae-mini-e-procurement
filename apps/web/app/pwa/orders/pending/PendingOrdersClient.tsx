@@ -20,6 +20,8 @@ function errorLabel(code: string | undefined, t: (key: string) => string): strin
       return t("errNoVisit");
     case "UNAUTHORIZED":
       return t("errUnauthorized");
+    case "ITEM_UNAVAILABLE":
+      return t("errItemUnavailable");
     default:
       return t("errGeneric");
   }

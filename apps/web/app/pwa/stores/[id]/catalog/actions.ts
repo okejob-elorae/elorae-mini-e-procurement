@@ -6,7 +6,7 @@ import { prisma } from "@elorae/db";
 import { applyItemAggregatedPromos } from "@/lib/field-sales/promo-apply";
 import { auth } from "@/lib/auth";
 import { createFieldSalesOrder } from "@/lib/field-sales/writer";
-import { NoActiveVisitError, MinQtyViolationError } from "@/lib/field-sales/errors";
+import { NoActiveVisitError, MinQtyViolationError, ItemUnavailableError } from "@/lib/field-sales/errors";
 import { fetchActivePromosForStore } from "@/lib/promos/queries";
 
 const schema = z.object({
@@ -28,7 +28,8 @@ const schema = z.object({
 export type SubmitResult =
   | { ok: true; orderNo: string; creditHold: boolean }
   | { ok: false; code: "UNAUTHORIZED" | "EMPTY" | "NO_ACTIVE_VISIT" }
-  | { ok: false; code: "MIN_QTY"; violations: Array<{ itemId: string; requiredMin: number; actualQty: number }> };
+  | { ok: false; code: "MIN_QTY"; violations: Array<{ itemId: string; requiredMin: number; actualQty: number }> }
+  | { ok: false; code: "ITEM_UNAVAILABLE"; itemIds: string[] };
 
 export async function submitFieldSalesOrder(input: {
   storeId: string;
@@ -65,6 +66,7 @@ export async function submitFieldSalesOrder(input: {
   } catch (e) {
     if (e instanceof NoActiveVisitError) return { ok: false, code: "NO_ACTIVE_VISIT" };
     if (e instanceof MinQtyViolationError) return { ok: false, code: "MIN_QTY", violations: e.violations };
+    if (e instanceof ItemUnavailableError) return { ok: false, code: "ITEM_UNAVAILABLE", itemIds: e.itemIds };
     throw e;
   }
 }

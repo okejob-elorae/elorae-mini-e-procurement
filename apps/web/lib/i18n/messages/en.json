@@ -2894,6 +2894,7 @@
       "lines": "{count} lines",
       "back": "Back",
       "errMinQty": "Qty is below the minimum order quantity.",
+      "errItemUnavailable": "An item in this order is no longer sold. Delete the order and re-enter it without that item.",
       "errNoVisit": "No active visit when the order was created.",
       "errUnauthorized": "Session invalid. Please log in again.",
       "errGeneric": "Something went wrong. Please try again.",
@@ -3120,7 +3121,8 @@
       "errorNoActiveVisit": "Check in first to order.",
       "errorUnauthorized": "Session expired. Log in again.",
       "errorEmpty": "No items.",
-      "errorMinQty": "Quantity below the minimum."
+      "errorMinQty": "Quantity below the minimum.",
+      "errorItemUnavailable": "An item in this order is no longer sold. Remove it and send again."
     },
     "notifications": {
       "title": "Notifications",
