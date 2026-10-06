@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -9,11 +9,13 @@ import { Loader2 } from "lucide-react";
 import {
   createAccount,
   updateAccount,
+  type AssignableStoreOption,
   type RoleOption,
 } from "@/app/actions/profile-accounts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import {
   Select,
   SelectContent,
@@ -33,14 +35,18 @@ type Props = {
   mode: "create" | "edit";
   userId?: string;
   roles: RoleOption[];
+  stores: AssignableStoreOption[];
   initial: {
     name: string;
     email: string;
     roleId: string;
+    assignedStoreId: string | null;
   };
 };
 
-export function AccountForm({ mode, userId, roles, initial }: Props) {
+const NO_STORE = "__none__";
+
+export function AccountForm({ mode, userId, roles, stores, initial }: Props) {
   const t = useTranslations("profileAccounts");
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -48,7 +54,27 @@ export function AccountForm({ mode, userId, roles, initial }: Props) {
   const [email, setEmail] = useState(initial.email);
   const [password, setPassword] = useState("");
   const [roleId, setRoleId] = useState(initial.roleId);
+  const [storeId, setStoreId] = useState<string>(
+    initial.assignedStoreId ?? NO_STORE,
+  );
   const [error, setError] = useState<string | null>(null);
+
+  const isSpgRole = roles.find((r) => r.id === roleId)?.name === "SPG";
+  const assignedStoreId =
+    isSpgRole && storeId !== NO_STORE ? storeId : null;
+
+  const storeOptions = useMemo(
+    () => [
+      { value: NO_STORE, label: t("formStoreNone") },
+      ...stores
+        .filter((s) => s.isActive || s.id === initial.assignedStoreId)
+        .map((s) => ({
+          value: s.id,
+          label: `${s.code} — ${s.name}${s.isActive ? "" : ` ${t("formStoreInactiveSuffix")}`}`,
+        })),
+    ],
+    [stores, initial.assignedStoreId, t],
+  );
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -61,6 +87,7 @@ export function AccountForm({ mode, userId, roles, initial }: Props) {
           email,
           password,
           roleId,
+          assignedStoreId,
         });
         if (!result.ok) {
           setError(t(`errors.${result.code}` as "errors.forbidden"));
@@ -78,6 +105,7 @@ export function AccountForm({ mode, userId, roles, initial }: Props) {
         userId,
         name,
         roleId,
+        assignedStoreId,
       });
       if (!result.ok) {
         setError(t(`errors.${result.code}` as "errors.forbidden"));
@@ -160,6 +188,24 @@ export function AccountForm({ mode, userId, roles, initial }: Props) {
               </SelectContent>
             </Select>
           </div>
+
+          {isSpgRole && (
+            <div className="space-y-2">
+              <Label htmlFor="account-store">{t("formStore")}</Label>
+              <SearchableCombobox
+                id="account-store"
+                options={storeOptions}
+                value={storeId}
+                onValueChange={setStoreId}
+                placeholder={t("formStorePlaceholder")}
+                emptyMessage={t("formStoreEmpty")}
+                disabled={pending}
+              />
+              <p className="text-xs text-muted-foreground">
+                {t("formStoreHint")}
+              </p>
+            </div>
+          )}
 
           {error && <p className="text-sm text-destructive">{error}</p>}
 

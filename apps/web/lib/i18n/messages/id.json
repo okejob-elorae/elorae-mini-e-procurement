@@ -5897,6 +5897,12 @@
     "formPassword": "Kata sandi",
     "formRole": "Peran",
     "formRolePlaceholder": "Pilih peran",
+    "formStore": "Toko penempatan",
+    "formStorePlaceholder": "Pilih toko",
+    "formStoreEmpty": "Toko tidak ditemukan",
+    "formStoreNone": "Tanpa toko",
+    "formStoreHint": "SPG bekerja di satu toko tetap; PWA langsung terbuka di toko itu.",
+    "formStoreInactiveSuffix": "(nonaktif)",
     "createAccountTitle": "Buat akun",
     "createAccountSubtitle": "Tambah login untuk backoffice atau PWA",
     "editAccountTitle": "Edit akun",
@@ -5916,7 +5922,10 @@
       "roleNotFound": "Peran tidak ditemukan",
       "userNotFound": "Pengguna tidak ditemukan",
       "lastAdmin": "Tidak dapat menurunkan akun admin terakhir",
-      "nameRequired": "Nama wajib diisi"
+      "nameRequired": "Nama wajib diisi",
+      "storeNotFound": "Toko tidak ditemukan",
+      "storeInactive": "Toko itu nonaktif",
+      "storeOnlyForSpg": "Hanya akun SPG yang bisa punya toko penempatan"
     }
   }
 }

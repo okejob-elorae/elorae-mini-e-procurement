@@ -5897,6 +5897,12 @@
     "formPassword": "Password",
     "formRole": "Role",
     "formRolePlaceholder": "Select a role",
+    "formStore": "Assigned store",
+    "formStorePlaceholder": "Select a store",
+    "formStoreEmpty": "No stores found",
+    "formStoreNone": "No store",
+    "formStoreHint": "An SPG works at one fixed store; the PWA opens on that store.",
+    "formStoreInactiveSuffix": "(inactive)",
     "createAccountTitle": "Create account",
     "createAccountSubtitle": "Add a login for backoffice or PWA",
     "editAccountTitle": "Edit account",
@@ -5916,7 +5922,10 @@
       "roleNotFound": "Role not found",
       "userNotFound": "User not found",
       "lastAdmin": "Cannot demote the last admin account",
-      "nameRequired": "Name is required"
+      "nameRequired": "Name is required",
+      "storeNotFound": "Store not found",
+      "storeInactive": "That store is inactive",
+      "storeOnlyForSpg": "Only SPG accounts can have an assigned store"
     }
   }
 }
