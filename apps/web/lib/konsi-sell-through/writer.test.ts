@@ -977,6 +977,31 @@ d("konsi sell-through writer (test bed only)", () => {
       expect(doc.taxInvoice).toBeNull();
     }, SLOW);
 
+    it("stores a BILL_POS-resolved surplus line's unabsorbed units as surplusQty", async () => {
+      /* SPG_POS: 2 in, POS 0, counted 5 → gap −3; BILL_POS bills the 0 sold, so all 3 units are unabsorbed. */
+      await setMethod("SPG_POS");
+      await transferIn(2);
+      const stocktakeId = await count(5, { reason: "three extra units found" });
+      const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+      const line = await onlyLine(id);
+      expect(Number(line.gapQty)).toBe(-3);
+      expect(Number(line.surplusQty)).toBe(0);
+      await resolveSellThroughLine({ lineId: line.id, resolution: "BILL_POS", reason: null, userId: state.userId });
+      await fx.approve(id, { salesmanId: null });
+      expect(Number((await onlyLine(id)).surplusQty)).toBe(3);
+    }, SLOW);
+
+    it("baseline: leaves surplusQty at 0 on a surplus line", async () => {
+      /* SHELF_COUNT: 2 in, counted 5 → gap −3, billed clamped at 0 — invoiced, this would store 3. */
+      await setMethod("SHELF_COUNT");
+      await transferIn(2);
+      const stocktakeId = await count(5, { reason: "three extra units found" });
+      const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+      expect(Number((await onlyLine(id)).gapQty)).toBe(-3);
+      await fx.approveBaseline(id);
+      expect(Number((await onlyLine(id)).surplusQty)).toBe(0);
+    }, SLOW);
+
     it("baseline: refused BASELINE_NOT_FIRST on a store's second report, and the second report opens from the baseline's closing", async () => {
       const r1 = await buildFirstReportOfChain();
       await fx.approveBaseline(r1.id);

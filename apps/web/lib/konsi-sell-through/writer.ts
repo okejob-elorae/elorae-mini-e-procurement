@@ -7,6 +7,7 @@ import {
   isLineHeld,
   roundQty,
   SELL_THROUGH_RESOLUTIONS,
+  unabsorbedSurplusQty,
   type SellThroughMethodValue,
   type SellThroughResolutionValue,
 } from "./derive";
@@ -399,9 +400,11 @@ export type ApproveSellThroughInput =
 /**
  * Freezes a DRAFT report — and approving IS invoicing. INVOICE mode prices every line at the
  * item's catalog selling price (the store keeps its markup), stamps the invoice date, the due date, the total and the salesman, and creates
- * the receivable and faktur when the total is above zero. BASELINE mode is for a store's first
+ * the receivable and faktur when the total is above zero. It also stores each line's `surplusQty`
+ * (`unabsorbedSurplusQty`), which the surplus journal values. BASELINE mode is for a store's first
  * report only: it freezes the figures with a reason and bills nothing, for a period already
- * invoiced by hand outside the ERP. Journals are posted by the action after commit, not here.
+ * invoiced by hand outside the ERP, and leaves `surplusQty` at 0. Journals are posted by the
+ * action after commit, not here.
  *
  * It moves no stock. Re-checks, in order: the store is still KONSI (`NOT_KONSI`), no retur and no
  * store transfer was in flight at the closing count (`RETUR_IN_FLIGHT`, `TRANSFER_IN_FLIGHT` — a
@@ -453,6 +456,7 @@ export async function approveSellThrough(input: ApproveSellThroughInput): Promis
             lateGapQty: true,
             resolution: true,
             billedQty: true,
+            shrinkageQty: true,
             item: { select: { sellingPrice: true } },
           },
         },
@@ -551,9 +555,15 @@ export async function approveSellThrough(input: ApproveSellThroughInput): Promis
     if (flipped.count === 0) throw new SellThroughError("INVALID_STATE");
 
     for (const [i, l] of doc.lines.entries()) {
+      const surplusQty = unabsorbedSurplusQty({
+        posSoldQty: roundQty(l.posSoldQty.toNumber()),
+        gapQty: roundQty(l.gapQty.toNumber()),
+        billedQty: roundQty(l.billedQty.toNumber()),
+        shrinkageQty: roundQty(l.shrinkageQty.toNumber()),
+      });
       await tx.konsiSellThroughLine.update({
         where: { id: l.id },
-        data: { unitPrice: pricing.lines[i].unitPrice, lineTotal: pricing.lines[i].lineTotal },
+        data: { unitPrice: pricing.lines[i].unitPrice, lineTotal: pricing.lines[i].lineTotal, surplusQty },
       });
     }
 

@@ -232,3 +232,14 @@ export function applyResolution(
       return { billedQty: Math.max(roundQty(line.posSoldQty + line.gapQty), 0), shrinkageQty: 0, resolutionReason };
   }
 }
+
+/**
+ * The surplus units a line's shelf gained that neither COGS nor shrinkage relieved — a `BILL_POS`
+ * surplus, or a `REDUCE` / `SHELF_COUNT` surplus clamped at zero sold. Billed and shrunk units are
+ * what the journals take out of inventory; sold plus gap is what physically left the shelf. Where
+ * the journals take out more than left, the excess is stock the count put back on the shelf with
+ * no journal behind it, and the surplus journal books it back. Never negative.
+ */
+export function unabsorbedSurplusQty(line: { posSoldQty: number; gapQty: number; billedQty: number; shrinkageQty: number }): number {
+  return roundQty(Math.max(0, line.billedQty + line.shrinkageQty - line.posSoldQty - line.gapQty));
+}

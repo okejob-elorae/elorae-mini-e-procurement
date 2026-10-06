@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { deriveSellThroughLines, applyResolution, isLineHeld, UnknownLedgerRefTypeError, InvalidResolutionError } from "./derive";
+import {
+  deriveSellThroughLines,
+  applyResolution,
+  isLineHeld,
+  unabsorbedSurplusQty,
+  UnknownLedgerRefTypeError,
+  InvalidResolutionError,
+} from "./derive";
 
 const row = (refType: string, qty: number, itemId = "i1", variantSku = "") => ({ itemId, variantSku, qty, refType, refId: `${refType}-x` });
 
@@ -160,5 +167,48 @@ describe("deriveSellThroughLines — late movements", () => {
     });
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatchObject({ variantSku: "NET", gapQty: 0, closingQty: 0, lateGapQty: 1, hasLateMovements: true });
+  });
+});
+
+describe("unabsorbedSurplusQty", () => {
+  /* Feeds each resolution's real output back in, so the cases track applyResolution rather than restate it. */
+  const resolved = (posSoldQty: number, gapQty: number, resolution: "BILL" | "SHRINKAGE" | "BILL_POS" | "REDUCE") => {
+    const r = applyResolution({ posSoldQty, gapQty }, "SPG_POS", resolution, "reason");
+    return unabsorbedSurplusQty({ posSoldQty, gapQty, billedQty: r.billedQty, shrinkageQty: r.shrinkageQty });
+  };
+
+  it("a BILL_POS surplus is unabsorbed in full", () => {
+    expect(resolved(5, -3, "BILL_POS")).toBe(3);
+    expect(unabsorbedSurplusQty({ posSoldQty: 5, gapQty: -3, billedQty: 5, shrinkageQty: 0 })).toBe(3);
+  });
+
+  it("a REDUCE surplus is unabsorbed only past zero sold", () => {
+    expect(unabsorbedSurplusQty({ posSoldQty: 2, gapQty: -5, billedQty: 0, shrinkageQty: 0 })).toBe(3);
+    expect(resolved(2, -5, "REDUCE")).toBe(3);
+    expect(unabsorbedSurplusQty({ posSoldQty: 5, gapQty: -3, billedQty: 2, shrinkageQty: 0 })).toBe(0);
+    expect(resolved(5, -3, "REDUCE")).toBe(0);
+  });
+
+  it("a SHELF_COUNT surplus clamped at zero billed is unabsorbed", () => {
+    const [l] = deriveSellThroughLines({
+      method: "SHELF_COUNT",
+      openings: [],
+      rows: [row("KonsiTransfer", 2), row("StoreStocktake", 4)],
+      counted: [{ itemId: "i1", variantSku: "", countedQty: 6, cause: null }],
+    });
+    expect(l).toMatchObject({ posSoldQty: 0, gapQty: -4, billedQty: 0 });
+    expect(unabsorbedSurplusQty(l)).toBe(4);
+    expect(unabsorbedSurplusQty({ posSoldQty: 0, gapQty: -4, billedQty: 0, shrinkageQty: 0 })).toBe(4);
+  });
+
+  it("a shortfall, however resolved, and a zero gap leave nothing unabsorbed", () => {
+    expect(unabsorbedSurplusQty({ posSoldQty: 4, gapQty: 2, billedQty: 6, shrinkageQty: 0 })).toBe(0);
+    expect(resolved(4, 2, "BILL")).toBe(0);
+    expect(resolved(4, 2, "SHRINKAGE")).toBe(0);
+    expect(unabsorbedSurplusQty({ posSoldQty: 4, gapQty: 0, billedQty: 4, shrinkageQty: 0 })).toBe(0);
+  });
+
+  it("rounds to two decimals", () => {
+    expect(unabsorbedSurplusQty({ posSoldQty: 0.1, gapQty: -0.2, billedQty: 0.1, shrinkageQty: 0 })).toBe(0.2);
   });
 });

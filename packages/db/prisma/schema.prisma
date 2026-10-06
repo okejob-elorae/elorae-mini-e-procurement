@@ -1078,6 +1078,7 @@ model KonsiSellThroughLine {
   countedQty       Decimal?               @db.Decimal(10, 2)
   billedQty        Decimal                @db.Decimal(10, 2)
   shrinkageQty     Decimal                @default(0) @db.Decimal(10, 2)
+  surplusQty       Decimal                @default(0) @db.Decimal(10, 2)
   negativeSold     Boolean                @default(false)
   lateInQty        Decimal                @default(0) @db.Decimal(10, 2)
   lateOutQty       Decimal                @default(0) @db.Decimal(10, 2)
