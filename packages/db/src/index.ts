@@ -115,6 +115,7 @@ export {
   PartialConsumeError,
   releaseFieldSalesOrder,
   reserveKonsiFieldSalesOrder,
+  resolveReservedInventory,
   type ReservationLine,
   type OversellAlert,
   type ReserveOrderInput,
@@ -146,6 +147,7 @@ export {
   type StockLocation,
 } from "./stock-ledger";
 export {
+  ConcurrentFirstReceiptError,
   ledgerTypeForDelta,
   MainStockNegativeError,
   moveMainStock,

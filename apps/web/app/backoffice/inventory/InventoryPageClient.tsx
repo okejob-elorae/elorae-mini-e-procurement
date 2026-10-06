@@ -170,7 +170,11 @@ export function InventoryPageClient({
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [grnSearchQuery, setGrnSearchQuery] = useState('');
+  const [grnSearchDebounced, setGrnSearchDebounced] = useState("");
+  const grnSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [adjustmentSearchQuery, setAdjustmentSearchQuery] = useState('');
+  const [adjustmentSearchDebounced, setAdjustmentSearchDebounced] = useState("");
+  const adjustmentSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [expandedAdjustmentId, setExpandedAdjustmentId] = useState<string | null>(null);
   const [expandedGrnId, setExpandedGrnId] = useState<string | null>(null);
   const [grnRolls, setGrnRolls] = useState<Array<{ id: string; rollCode: string; rollRef: string; initialLength: number; remainingLength: number; isClosed: boolean; item: { sku: string; nameId: string }; uom: { code: string } }>>([]);
@@ -234,8 +238,15 @@ export function InventoryPageClient({
           status: stockStatus ?? undefined,
           sort: stockSort,
         }),
-        getGRNs(undefined, { page: grnPage, pageSize: grnPageSize }),
-        getStockAdjustments(adjItemFilter === ADJ_FILTER_ALL ? undefined : adjItemFilter, { page: adjPage, pageSize: adjPageSize })
+        getGRNs(
+          { search: grnSearchDebounced.trim() || undefined },
+          { page: grnPage, pageSize: grnPageSize },
+        ),
+        getStockAdjustments(adjItemFilter === ADJ_FILTER_ALL ? undefined : adjItemFilter, {
+          page: adjPage,
+          pageSize: adjPageSize,
+          search: adjustmentSearchDebounced.trim() || undefined,
+        }),
       ]);
 
       if (invData != null && typeof invData === 'object' && 'items' in invData) {
@@ -294,7 +305,9 @@ export function InventoryPageClient({
       adjPage === 1 &&
       adjItemFilter === ADJ_FILTER_ALL &&
       stockSort === "stock_desc" &&
-      !stockSearchDebounced
+      !stockSearchDebounced &&
+      !grnSearchDebounced &&
+      !adjustmentSearchDebounced
     ) {
       skipInitialListFetch.current = false;
       return;
@@ -302,7 +315,7 @@ export function InventoryPageClient({
     skipInitialListFetch.current = false;
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchData depends on pagination/filters above
-  }, [stockPage, grnPage, adjPage, adjItemFilter, stockSearchDebounced, stockStatus, stockSort]);
+  }, [stockPage, grnPage, adjPage, adjItemFilter, stockSearchDebounced, grnSearchDebounced, adjustmentSearchDebounced, stockStatus, stockSort]);
 
   useEffect(() => {
     if (!expandedGrnId) {
@@ -398,6 +411,30 @@ export function InventoryPageClient({
   }, [searchQuery]);
 
   useEffect(() => {
+    if (grnSearchDebounceRef.current) clearTimeout(grnSearchDebounceRef.current);
+    grnSearchDebounceRef.current = setTimeout(() => {
+      setGrnSearchDebounced(grnSearchQuery);
+      setGrnPage(1);
+      grnSearchDebounceRef.current = null;
+    }, 400);
+    return () => {
+      if (grnSearchDebounceRef.current) clearTimeout(grnSearchDebounceRef.current);
+    };
+  }, [grnSearchQuery]);
+
+  useEffect(() => {
+    if (adjustmentSearchDebounceRef.current) clearTimeout(adjustmentSearchDebounceRef.current);
+    adjustmentSearchDebounceRef.current = setTimeout(() => {
+      setAdjustmentSearchDebounced(adjustmentSearchQuery);
+      setAdjPage(1);
+      adjustmentSearchDebounceRef.current = null;
+    }, 400);
+    return () => {
+      if (adjustmentSearchDebounceRef.current) clearTimeout(adjustmentSearchDebounceRef.current);
+    };
+  }, [adjustmentSearchQuery]);
+
+  useEffect(() => {
     if (activeTab !== 'rolls') return;
     setRollsLoading(true);
     getFabricRolls({
@@ -422,24 +459,6 @@ export function InventoryPageClient({
       })
       .finally(() => setRollsLoading(false));
   }, [activeTab, rollsPage, rollsPageSize, rollsFilterGrnId, rollsFilterItemId, rollsSearchDebounced]);
-
-  const q = (s: string) => s.toLowerCase().trim();
-  const filteredGrns = grns.filter(
-    (grn) =>
-      !grnSearchQuery ||
-      q(grn.docNumber).includes(q(grnSearchQuery)) ||
-      q(grn.supplier.name).includes(q(grnSearchQuery)) ||
-      q(grn.po?.docNumber ?? '').includes(q(grnSearchQuery))
-  );
-
-  const filteredAdjustments = adjustments.filter(
-    (adj) =>
-      !adjustmentSearchQuery ||
-      q(adj.docNumber).includes(q(adjustmentSearchQuery)) ||
-      q(adj.item.sku).includes(q(adjustmentSearchQuery)) ||
-      q(adj.item.nameId).includes(q(adjustmentSearchQuery)) ||
-      q(adj.reason).includes(q(adjustmentSearchQuery))
-  );
 
   const setStatusFilter = (status: StockStatus | null) => {
     setStockStatus(status);
@@ -648,7 +667,7 @@ export function InventoryPageClient({
           </div>
           <Card>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
+              <div className={`overflow-x-auto transition-opacity ${isLoading ? "opacity-60" : ""}`}>
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -662,7 +681,14 @@ export function InventoryPageClient({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredGrns.map((grn) => (
+                    {grns.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                          {grnSearchDebounced.trim() ? "No GRNs match this search." : "No GRNs yet."}
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                    {grns.map((grn) => (
                       <Fragment key={grn.id}>
                         <TableRow>
                           <TableCell className="w-10">
@@ -1000,7 +1026,7 @@ export function InventoryPageClient({
           </div>
           <Card>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
+              <div className={`overflow-x-auto transition-opacity ${isLoading ? "opacity-60" : ""}`}>
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -1016,7 +1042,14 @@ export function InventoryPageClient({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredAdjustments.map((adj) => (
+                    {adjustments.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                          {adjustmentSearchDebounced.trim() ? "No adjustments match this search." : "No stock adjustments yet."}
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                    {adjustments.map((adj) => (
                       <Fragment key={adj.id}>
                         <TableRow>
                           <TableCell className="w-10">

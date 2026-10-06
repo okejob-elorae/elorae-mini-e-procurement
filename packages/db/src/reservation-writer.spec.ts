@@ -250,4 +250,112 @@ d("Jubelio reservation on variantless rows spelled null (test bed only)", () => 
     expect(Number(higher!.qtyOnHand)).toBe(higherQty);
     expect(Number(higher!.reservedQty)).toBe(0);
   });
+
+  it("reserveOrder stores the id of the row it reserved against on the reservation", async () => {
+    const row = await prisma.inventoryValue.create({
+      data: { itemId, variantSku: null, qtyOnHand: 10, reservedQty: 0, avgCost: 1000, totalValue: 10000 },
+    });
+
+    await reserveOrder(prisma, {
+      salesorderId,
+      salesorderNo: "TEST-JNULL-PIN",
+      lines: [{ salesorderDetailId: detailA, itemId, variantSku: "", qty: 4 }],
+    });
+
+    const rsv = await prisma.stockReservation.findUniqueOrThrow({ where: { salesorderDetailId: detailA } });
+    expect(rsv.inventoryValueId).toBe(row.id);
+  });
+
+  it("consumeOrder acts on the reserved row even after an empty-string sibling is provisioned", async () => {
+    const nullRow = await prisma.inventoryValue.create({
+      data: { itemId, variantSku: null, qtyOnHand: 10, reservedQty: 0, avgCost: 1000, totalValue: 10000 },
+    });
+    await reserveOrder(prisma, {
+      salesorderId,
+      salesorderNo: "TEST-JNULL-FORK",
+      lines: [{ salesorderDetailId: detailA, itemId, variantSku: "", qty: 4 }],
+    });
+    /* The fork a provisioning path can open between reserve and consume; the lookup alone prefers it. */
+    const emptyRow = await prisma.inventoryValue.create({
+      data: { itemId, variantSku: "", qtyOnHand: 0, reservedQty: 0, avgCost: 1000, totalValue: 0 },
+    });
+
+    const res = await consumeOrder(prisma, { salesorderId, salesorderNo: "TEST-JNULL-FORK" });
+    expect(res.consumed).toBe(1);
+
+    const nullAfter = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: nullRow.id } });
+    const emptyAfter = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: emptyRow.id } });
+    expect(Number(nullAfter.qtyOnHand)).toBe(6);
+    expect(Number(nullAfter.reservedQty)).toBe(0);
+    expect(Number(emptyAfter.qtyOnHand)).toBe(0);
+    expect(Number(emptyAfter.reservedQty)).toBe(0);
+  });
+
+  it("a legacy reservation with no stored row still consumes through the lookup", async () => {
+    await prisma.inventoryValue.create({
+      data: { itemId, variantSku: null, qtyOnHand: 10, reservedQty: 0, avgCost: 1000, totalValue: 10000 },
+    });
+    await reserveOrder(prisma, {
+      salesorderId,
+      salesorderNo: "TEST-JNULL-LEGACY",
+      lines: [{ salesorderDetailId: detailA, itemId, variantSku: "", qty: 4 }],
+    });
+    await prisma.stockReservation.update({
+      where: { salesorderDetailId: detailA },
+      data: { inventoryValueId: null },
+    });
+
+    const res = await consumeOrder(prisma, { salesorderId, salesorderNo: "TEST-JNULL-LEGACY" });
+    expect(res.consumed).toBe(1);
+
+    const inv = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId, variantSku: null } });
+    expect(Number(inv.qtyOnHand)).toBe(6);
+    expect(Number(inv.reservedQty)).toBe(0);
+  });
+
+  it("a reservation whose stored row no longer exists still consumes through the lookup", async () => {
+    await prisma.inventoryValue.create({
+      data: { itemId, variantSku: null, qtyOnHand: 10, reservedQty: 0, avgCost: 1000, totalValue: 10000 },
+    });
+    await reserveOrder(prisma, {
+      salesorderId,
+      salesorderNo: "TEST-JNULL-GONE",
+      lines: [{ salesorderDetailId: detailA, itemId, variantSku: "", qty: 4 }],
+    });
+    await prisma.stockReservation.update({
+      where: { salesorderDetailId: detailA },
+      data: { inventoryValueId: `missing-${sku}` },
+    });
+
+    const res = await consumeOrder(prisma, { salesorderId, salesorderNo: "TEST-JNULL-GONE" });
+    expect(res.consumed).toBe(1);
+
+    const inv = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId, variantSku: null } });
+    expect(Number(inv.qtyOnHand)).toBe(6);
+    expect(Number(inv.reservedQty)).toBe(0);
+  });
+
+  it("releaseOrder acts on the reserved row even after an empty-string sibling is provisioned", async () => {
+    const nullRow = await prisma.inventoryValue.create({
+      data: { itemId, variantSku: null, qtyOnHand: 10, reservedQty: 0, avgCost: 1000, totalValue: 10000 },
+    });
+    await reserveOrder(prisma, {
+      salesorderId,
+      salesorderNo: "TEST-JNULL-FORK-REL",
+      lines: [{ salesorderDetailId: detailA, itemId, variantSku: "", qty: 4 }],
+    });
+    const emptyRow = await prisma.inventoryValue.create({
+      data: { itemId, variantSku: "", qtyOnHand: 0, reservedQty: 0, avgCost: 1000, totalValue: 0 },
+    });
+
+    const res = await releaseOrder(prisma, { salesorderId });
+    expect(res.released).toBe(1);
+
+    const nullAfter = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: nullRow.id } });
+    const emptyAfter = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: emptyRow.id } });
+    expect(Number(nullAfter.qtyOnHand)).toBe(10);
+    expect(Number(nullAfter.reservedQty)).toBe(0);
+    expect(Number(emptyAfter.qtyOnHand)).toBe(0);
+    expect(Number(emptyAfter.reservedQty)).toBe(0);
+  });
 });

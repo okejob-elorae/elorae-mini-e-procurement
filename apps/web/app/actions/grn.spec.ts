@@ -1,17 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockAuth, mockFindMany, mockFindUnique, mockCount } = vi.hoisted(() => ({
-  mockAuth: vi.fn(),
-  mockFindMany: vi.fn(),
-  mockFindUnique: vi.fn(),
-  mockCount: vi.fn(),
-}));
+const { mockAuth, mockFindMany, mockFindUnique, mockCount, mockUserFindUnique, mockTransaction } =
+  vi.hoisted(() => ({
+    mockAuth: vi.fn(),
+    mockUserFindUnique: vi.fn(),
+    mockTransaction: vi.fn(),
+    mockFindMany: vi.fn(),
+    mockFindUnique: vi.fn(),
+    mockCount: vi.fn(),
+  }));
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("@elorae/db", () => {
   const model = { findMany: mockFindMany, findUnique: mockFindUnique, count: mockCount };
   return {
-    prisma: { gRN: model, fabricRoll: model, item: model, journal: model },
+    prisma: {
+      gRN: model,
+      fabricRoll: model,
+      item: model,
+      journal: model,
+      user: { findUnique: mockUserFindUnique },
+      $transaction: mockTransaction,
+    },
   };
 });
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
@@ -37,6 +47,9 @@ vi.mock("@/lib/leadtime/calculations", () => ({ computeActualLeadDays: vi.fn() }
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
 
 import {
+  approveGRNByOwner,
+  createGRN,
+  declineGRNByOwner,
   getFabricRollFilterOptions,
   getFabricRolls,
   getGRNById,
@@ -99,9 +112,84 @@ describe("grn read actions gate", () => {
     await expect(getGRNs()).resolves.toBeDefined();
   });
 
+  describe("getGRNs search", () => {
+    const expectedOr = [
+      { docNumber: { contains: "po-12" } },
+      { supplier: { name: { contains: "po-12" } } },
+      { po: { docNumber: { contains: "po-12" } } },
+    ];
+
+    beforeEach(() => {
+      mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["inventory:view"] } });
+    });
+
+    it("passes the same trimmed contains OR to findMany and count", async () => {
+      await getGRNs({ search: "  po-12 " }, { page: 1, pageSize: 10 });
+      const findWhere = mockFindMany.mock.calls[0][0].where;
+      const countWhere = mockCount.mock.calls[0][0].where;
+      expect(findWhere.OR).toEqual(expectedOr);
+      expect(countWhere).toBe(findWhere);
+    });
+
+    it("adds no OR for a blank or whitespace-only search", async () => {
+      await getGRNs({ search: "   " }, { page: 1, pageSize: 10 });
+      await getGRNs({ search: "" }, { page: 1, pageSize: 10 });
+      for (const call of mockFindMany.mock.calls) expect(call[0].where.OR).toBeUndefined();
+      for (const call of mockCount.mock.calls) expect(call[0].where.OR).toBeUndefined();
+    });
+  });
+
   it.each(inventoryOnlyReads)("%s does not admit vendor_returns:view alone", async (_name, call) => {
     mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["vendor_returns:view"] } });
     await expect(call()).rejects.toThrow("Forbidden");
     assertNoQueryRan();
   });
+});
+
+describe("grn actor trust", () => {
+  const FORBIDDEN = "Forbidden: actor does not match the session";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
+  });
+
+  it.each([
+    ["createGRN", () => createGRN({} as never, "someone-else")],
+    ["approveGRNByOwner", () => approveGRNByOwner("g1", "someone-else")],
+    ["declineGRNByOwner", () => declineGRNByOwner("g1", "someone-else")],
+  ] as Array<[string, () => Promise<unknown>]>)(
+    "%s refuses a claimed id that is not the session user and writes nothing",
+    async (_name, call) => {
+      await expect(call()).rejects.toThrow(FORBIDDEN);
+      expect(mockTransaction).not.toHaveBeenCalled();
+      expect(mockUserFindUnique).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    ["approveGRNByOwner", () => approveGRNByOwner("g1", "admin-1")],
+    ["declineGRNByOwner", () => declineGRNByOwner("g1", "admin-1")],
+  ] as Array<[string, () => Promise<unknown>]>)(
+    "%s refuses an admin's id claimed by a non-admin session before the role lookup",
+    async (_name, call) => {
+      mockUserFindUnique.mockResolvedValue({ role: "ADMIN" });
+      await expect(call()).rejects.toThrow(FORBIDDEN);
+      expect(mockUserFindUnique).not.toHaveBeenCalled();
+      expect(mockTransaction).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    ["approveGRNByOwner", () => approveGRNByOwner("g1", "u1"), "Only owner/admin can approve over-receive GRN"],
+    ["declineGRNByOwner", () => declineGRNByOwner("g1", "u1"), "Only owner/admin can decline over-receive GRN"],
+  ] as Array<[string, () => Promise<unknown>, string]>)(
+    "%s runs the role check on the session user",
+    async (_name, call, message) => {
+      mockUserFindUnique.mockResolvedValue({ role: "WAREHOUSE" });
+      await expect(call()).rejects.toThrow(message);
+      expect(mockUserFindUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "u1" } }));
+      expect(mockTransaction).not.toHaveBeenCalled();
+    }
+  );
 });

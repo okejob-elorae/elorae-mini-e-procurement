@@ -10,6 +10,7 @@ import { getActorName, notifyGRNCreated, notifyMaterialArrivedForPo } from '@/ap
 import { logAudit } from '@/lib/audit';
 import { assertLinesVariantSkusMatchItemDefinitions } from '@/lib/items/validate-variant-lines';
 import { auth } from '@/lib/auth';
+import { assertActor } from "@/lib/auth/assert-actor";
 import { requirePermission, requireAnyPermission, hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { postGrnJournal, postGrnReversalJournal } from "@/lib/inventory/grn-journal";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
@@ -75,6 +76,7 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.INVENTORY_MANAGE);
+  assertActor(session.user.id, userId);
 
   const validated = grnSchema.parse(data);
   await assertLinesVariantSkusMatchItemDefinitions(prisma.item, validated.items);
@@ -417,6 +419,7 @@ export async function getGRNs(
     dateFrom?: Date;
     dateTo?: Date;
     poId?: string;
+    search?: string;
   },
   opts?: { page: number; pageSize: number }
 ) {
@@ -428,6 +431,14 @@ export async function getGRNs(
     where.grnDate = {};
     if (filters.dateFrom) (where.grnDate as Record<string, Date>).gte = filters.dateFrom;
     if (filters.dateTo) (where.grnDate as Record<string, Date>).lte = filters.dateTo;
+  }
+  const search = filters?.search?.trim();
+  if (search) {
+    where.OR = [
+      { docNumber: { contains: search } },
+      { supplier: { name: { contains: search } } },
+      { po: { docNumber: { contains: search } } },
+    ];
   }
 
   const include = {
@@ -609,9 +620,10 @@ export async function approveGRNByOwner(id: string, userId: string) {
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.INVENTORY_MANAGE);
+  assertActor(session.user.id, userId);
 
   const user = await prisma.user.findUnique({
-    where: { id: userId },
+    where: { id: session.user.id },
     select: { role: true },
   });
   if (!user || user.role !== 'ADMIN') {
@@ -671,9 +683,10 @@ export async function declineGRNByOwner(id: string, userId: string) {
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.INVENTORY_MANAGE);
+  assertActor(session.user.id, userId);
 
   const user = await prisma.user.findUnique({
-    where: { id: userId },
+    where: { id: session.user.id },
     select: { role: true },
   });
   if (!user || user.role !== 'ADMIN') {

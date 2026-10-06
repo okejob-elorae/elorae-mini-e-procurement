@@ -1,4 +1,5 @@
 import type { Prisma } from "../generated/prisma/client";
+import { lockMainInventoryValueRow } from "./stock-row-lock";
 import { appendStockLedger, normaliseVariantKey, type StockLedgerEntryType } from "./stock-ledger";
 
 type Tx = Prisma.TransactionClient;
@@ -84,6 +85,32 @@ export class MainStockNegativeError extends Error {
   }
 }
 
+/**
+ * Thrown when a receipt loses the first-receipt race.
+ *
+ * The receipt's lookup found no main row, so its caller computed `avgCost`/`totalValue` as if
+ * nothing were on hand. The locking re-read behind the Item lock then found a row: a concurrent
+ * first receipt opened it and committed while this one waited. Writing those figures onto that row
+ * would silently replace its moving average with one that ignores the stock already in it, so the
+ * receipt is refused instead. The row also lies outside the receipt's own snapshot, so even a
+ * quantity-only move could not update it through Prisma's plain reads. Nothing it wrote survives
+ * the rollback, and posting it again reads the row that now exists and computes against it.
+ */
+export class ConcurrentFirstReceiptError extends Error {
+  readonly itemId: string;
+  readonly variantSku: string;
+
+  constructor(itemId: string, variantSku: string | null | undefined) {
+    const key = normaliseVariantKey(variantSku);
+    super(
+      `Another receipt of item ${itemId}${key ? ` variant ${key}` : ""} was posted at the same moment, so this one's cost was calculated against stock that has since changed. Nothing was saved — post it again.`,
+    );
+    this.name = "ConcurrentFirstReceiptError";
+    this.itemId = itemId;
+    this.variantSku = key;
+  }
+}
+
 /*
  * The floor lives in the UPDATE's own where clause, never in a preceding read. Every decrementing
  * caller in this repo reads the row, checks the figure, and then issues an atomic decrement — so
@@ -97,6 +124,20 @@ export class MainStockNegativeError extends Error {
  */
 function negativeFloorFilter(qtyDelta: number): { qtyOnHand?: { gte: number } } {
   return qtyDelta < 0 ? { qtyOnHand: { gte: -qtyDelta } } : {};
+}
+
+/**
+ * A variantless row is created spelled null, and the unique index does not compare NULLs, so two
+ * first receipts racing past an empty lookup would each insert one. Locking the Item row makes the
+ * second wait for the first to commit; its repeated lookup then finds the row. A FOR UPDATE on the
+ * absent InventoryValue row would take only gap locks, which do not exclude each other.
+ *
+ * Taken only when the first lookup found no row, so the common path stays lock-free: locking Item
+ * rows on every receipt would let two multi-line receipts naming the same items in different
+ * orders deadlock.
+ */
+async function lockItemRow(tx: Tx, itemId: string): Promise<void> {
+  await tx.$queryRaw`SELECT \`id\` FROM \`Item\` WHERE \`id\` = ${itemId} FOR UPDATE`;
 }
 
 /**
@@ -182,16 +223,42 @@ export async function moveMainStock(tx: Tx, input: MoveMainStockInput): Promise<
     return { balanceQty };
   }
 
-  const existing = input.variantSku
-    ? await tx.inventoryValue.findFirst({
-        where: { itemId: input.itemId, variantSku: input.variantSku },
-        select: { id: true },
-      })
-    : await tx.inventoryValue.findFirst({
-        where: { itemId: input.itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
-        orderBy: { id: "asc" },
-        select: { id: true },
-      });
+  const findRow = () =>
+    input.variantSku
+      ? tx.inventoryValue.findFirst({
+          where: { itemId: input.itemId, variantSku: input.variantSku },
+          select: { id: true },
+        })
+      : tx.inventoryValue.findFirst({
+          where: { itemId: input.itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
+          orderBy: { id: "asc" },
+          select: { id: true },
+        });
+
+  let existing = await findRow();
+
+  if (!existing && input.createIfMissing) {
+    await lockItemRow(tx, input.itemId);
+    /**
+     * Must be a locking read. In a default (REPEATABLE READ) transaction the first findRow fixed
+     * its snapshot, so a plain re-read would still see no row after waiting out the other receipt;
+     * FOR UPDATE reads the latest committed version. A SERIALIZABLE caller (runSerializable) already
+     * reads with shared locks, so there the race ends in a deadlock the retry absorbs, not a fork.
+     */
+    existing = await lockMainInventoryValueRow(tx, input.itemId, input.variantSku);
+
+    /**
+     * A row seen only by the locking re-read was opened by a concurrent first receipt, so it is
+     * refused and the caller retries. Two reasons, either one enough. Cost figures the caller
+     * passed were computed against the empty lookup, and the update below would SET them over that
+     * row's moving average. And the row lies outside this transaction's snapshot: Prisma's
+     * `updateMany` and the read-back below are plain reads of that snapshot, so they would find no
+     * row and the move would fail anyway, as a misleading "vanished" error.
+     */
+    if (existing) {
+      throw new ConcurrentFirstReceiptError(input.itemId, input.variantSku);
+    }
+  }
 
   if (!existing) {
     if (!input.createIfMissing) {
@@ -213,9 +280,8 @@ export async function moveMainStock(tx: Tx, input: MoveMainStockInput): Promise<
      * by name. Writing "" instead was tried and reverted: it buys the @@unique([itemId, variantSku])
      * index as a fork guard (MySQL enforces the constraint for "" and treats NULLs as distinct),
      * but it pays for that by minting a second spelling for the same logical row, which is the
-     * phantom-"" problem the OR-tolerant lookups exist to survive. The concurrent double-create it
-     * would have guarded is narrow — this branch only fires when NO row exists under either
-     * spelling — and is logged in docs/FOLLOWUPS.md rather than bought at that price.
+     * phantom-"" problem the OR-tolerant lookups exist to survive. The concurrent double-create is
+     * guarded instead by lockItemRow above, which serialises first receipts on the Item row.
      */
     await tx.inventoryValue.create({
       data: {

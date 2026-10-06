@@ -1,5 +1,5 @@
 import { moveMainStock, moveStoreStock } from "@elorae/db";
-import type { StockLedgerRefType } from "@elorae/db";
+import type { StockAdjustmentSource, StockLedgerRefType } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 import { generateDocNumber } from "@/lib/docNumber";
@@ -133,7 +133,7 @@ export async function approveFieldReturn(input: {
             prevAvgCost: avgCost,
             newAvgCost,
             createdById: input.approvedById,
-            source: "FIELD_RETURN",
+            source: "FIELD_RETURN" satisfies StockAdjustmentSource,
           },
         });
       }

@@ -92,8 +92,15 @@ The compile error from the router's `never` check is the safety net: you cannot 
 | `JUBELIO_WEBHOOK` | Inbound Jubelio stock-changed webhook, applying `end_qty + offlineReserved` as on-hand, the holds added only while stock pushes are enabled (§4.2). **Do not call from web — only `apps/api`.** | api |
 | `JUBELIO_RECONCILE` | A `MATCH_JUBELIO` correction from stock reconciliation — the 6h cron or a manual resolve on `/backoffice/inventory/reconciliation`. | web (`reconciliation-runner.ts`; api only serves the snapshot read) |
 | `SUPERSEDED_ITEM_RETIRE` | Zeroing a superseded catalog item's stock rows — an unmapped item whose every variant is mapped on another item (`retireSupersededItem`, run from `scripts/retire-superseded-items.mjs`). | db helper, run as an ops script |
+| `ERP_RETURN_ACCEPT` | Accepting a marketplace return line that puts stock back (`acceptReturnItem` in `packages/db/src/sales-return-writer.ts`, reached through `app/actions/sales-return-decision.ts`). | db helper, called from web |
+| `FULFILLMENT_CONSUME` | Consuming a Jubelio order's reservation when the order ships (`consumeOrder` in `packages/db/src/reservation-writer.ts`, called by `salesorder.handler.ts`). | db helper, called from api |
+| `FIELD_SALES_CONSUME` | Consuming a putus field-sales order's reservation at delivery (`consumeFieldSalesOrderPartial` / `consumeFieldSalesOrder` in `packages/db/src/reservation-writer.ts`; the partial one is called by `lib/field-sales/delivery/writer.ts`). | db helper, called from web |
+| `VAN_LOAD` | Loading main stock onto a canvasser's van (`loadVan` in `lib/canvassing/writer.ts`). | web |
+| `VAN_RETURN` | Returning counted van stock to main at van reconcile (`recordVanReconcile` in `lib/canvassing/reconcile-writer.ts`). | web |
+| `KONSI_TRANSFER` | Moving konsi stock from main to the store when a delivery shipment completes (`issueKonsiTransfer` in `lib/field-sales/konsi-transfer/writer.ts`). | web |
+| `FIELD_RETURN` | Restoring the sellable quantity of an approved field retur to main (`approveFieldReturn` in `lib/field-sales/retur/approve-writer.ts`). | web |
 
-If your use case doesn't fit any of these, add to the registry first (see "Adding a new source" below). Do not pick the closest match and hope for the best — the reconcile logic and audit dashboards key off the exact string.
+If your use case doesn't fit any of these, add to the registry first (see "Adding a new `source`" below). Do not pick the closest match and hope for the best — the reconcile logic and audit dashboards key off the exact string.
 
 ### Code (ERP-side, e.g. opname)
 
@@ -186,9 +193,11 @@ Pass Jubelio's raw `end_qty`, validated with `parseJubelioQty` before any coerci
 ### Adding a new `source`
 
 1. Append to `STOCK_ADJUSTMENT_SOURCES` in `packages/db/src/stock-adjustment-source.ts`.
-2. Run `pnpm -F @elorae/db build`.
-3. Update audit dashboard filters if the source should appear in UI.
-4. Update reconcile-cron logic if the source should be treated as authoritative or skippable (depends on whether your source represents a known divergence or an unrelated change).
+2. Write it at the call site as `"<SOURCE>" satisfies StockAdjustmentSource`, so a typo or an unregistered value is a compile error rather than a free-form string in the column.
+3. Add it to the "Allowed values today" list in `docs/BOUNDARY.md` §3.1 and give it a row in the table above, naming its writer.
+4. Run `pnpm -F @elorae/db build`.
+5. Update audit dashboard filters if the source should appear in UI.
+6. Update reconcile-cron logic if the source should be treated as authoritative or skippable (depends on whether your source represents a known divergence or an unrelated change).
 
 ---
 
@@ -229,6 +238,7 @@ The endpoint contract:
   - **Marketplace** (`source = JUBELIO`) is **reserve-at-ingest, consume-at-ship, release-on-cancel-or-return**: `reserveOrder` when the salesorder webhook ingests an order, `consumeOrder` at ship (the first webhook `reportsShipped` reads as shipped or completed — for a ship, today almost always `internal_status: "SHIPPED"` — or the ERP Ship button through `markOrderShipped`, whichever lands first; the other is a no-op), `releaseOrder` when the order is cancelled or returned without having been consumed (`isCanceledOrder` / `isReturnedOrder` in the api's status-derive).
   - **Field sales**: `reserveFieldSalesOrder` at putus order create (`FIELD_SALES`), `reserveKonsiFieldSalesOrder` at konsi approve and at the admin konsi push (`FIELD_SALES_KONSI`, both through `approveKonsiOrderInTx`), `consumeFieldSalesOrderPartial` per putus delivery, `releaseFieldSalesOrder` on reject or close-remainder.
 - **The one documented writer outside that file is `issueKonsiTransfer`** (`apps/web/lib/field-sales/konsi-transfer/writer.ts`). At konsi shipment completion it moves `qtyOnHand` through `moveMainStock`, then decrements `reservedQty` on the same pinned row and draws the line's reservation down (`consumedQty`, flipping it `CONSUMED` once exhausted). It is an exception with its own guard-test `ALLOWED` entry, not a pattern to copy, and its writes must never be separated.
+- A reservation remembers its row. Every reserve stores the `InventoryValue` row it reserved against on `StockReservation.inventoryValueId`, and every consume, release and konsi draw-down acts on that row through `resolveReservedInventory`, which falls back to the reserve's own lookup only when there is no stored row (a reservation made before the column existed) or the stored row no longer exists. A new reserve path must stamp the column; a new consume or release path must resolve through that helper, never a fresh lookup, or a variantless row provisioned after the reserve pulls the consume onto the wrong row.
 - Only the konsi reserve is guarded at write time: a raw `UPDATE … WHERE (qtyOnHand - reservedQty) >= ?`, where 0 rows affected means a short line. The marketplace and putus reserves increment unconditionally and report an oversell afterwards (the marketplace path raises an `AdminNotification`), because the order already exists by then.
 - A reservation is not a stock movement: it writes no `StockLedgerEntry`.
 

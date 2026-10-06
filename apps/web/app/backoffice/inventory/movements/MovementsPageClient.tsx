@@ -6,7 +6,6 @@ import { format } from "date-fns";
 import { AlertTriangle, ChevronDown, History, Info, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -15,16 +14,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandSeparator,
-} from "@/components/ui/command";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { MultiSelectFilter, type MultiSelectOption } from "@/components/ui/multi-select-filter";
 import {
   Table,
   TableBody,
@@ -37,6 +27,7 @@ import { cn } from "@/lib/utils";
 import { formatDateOnly, parseDateOnly } from "@/lib/date-only";
 import { getCurrentStockSummary, getItemVariantOptions } from "@/app/actions/stock-card";
 import { getItemMovementsAction, type ItemMovementsResult } from "@/app/actions/stock-movements";
+import { groupSectionsByLocation } from "@/lib/inventory/ledger-section-groups";
 import { ledgerRefMessageKey } from "@/lib/inventory/ledger-ref-display";
 import { WAREHOUSE_OPTION_KEY, WAREHOUSE_TYPES, type WarehouseType } from "@/lib/inventory/warehouse-option-display";
 /* Subpath import, not the main barrel: this is a "use client" file, and the barrel
@@ -69,143 +60,75 @@ function sectionTitleKey(section: LedgerSection): "sectionTitle.main" | "section
   return section.locationType === "STORE" ? "sectionTitle.store" : "sectionTitle.van";
 }
 
-type MultiSelectOption = { value: string; label: string };
-
-/**
- * Multi-select filter, built on the same Popover + Command shell as the single-select
- * combobox above (`SearchableCombobox`) rather than a new control idiom — the only real
- * differences are that a selection toggles membership instead of replacing it, and the
- * popover stays open across clicks so several boxes can be ticked in one pass.
- *
- * `selected` is guarded to NEVER become an empty array, and that guard is now a UX choice
- * rather than a correctness one — keep both halves, they defend different things. The query
- * layer used to read an empty `locationTypes`/`refTypes` array as "no filter, match
- * everything", so an operator who unticked every box was handed the entire unfiltered set;
- * it now fails closed, sending `in: []`, which matches nothing. So a slipped empty array is
- * no longer a silent inversion. This control still refuses the toggle that would produce
- * one, because an empty result screen with every box unticked is a worse thing to hand an
- * operator than simply declining the last uncheck: unchecking the last remaining box is a
- * no-op. Do NOT drop this refusal on the grounds that the query layer is safe now, and do
- * NOT relax the query layer on the grounds that this control cannot produce an empty.
- * Nothing is reported upward here — there is no such callback. "Everything ticked" is
- * simply `options.length === selected.length`, a test each CALLER (see the two call
- * sites below) recomputes independently on its own `selected` state, and it is that
- * caller's job to collapse the result back to "send nothing" on the wire.
- */
-function MultiSelectFilter({
-  options,
-  selected,
-  onChange,
-  allLabel,
-  selectedCountLabel,
-  placeholder,
-  searchable = false,
-  triggerClassName,
-}: {
-  options: MultiSelectOption[];
-  selected: string[];
-  onChange: (next: string[]) => void;
-  allLabel: string;
-  selectedCountLabel: (count: number) => string;
-  placeholder: string;
-  searchable?: boolean;
-  triggerClassName?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-
-  const allSelected = selected.length === options.length;
-  const label = allSelected
-    ? allLabel
-    : selected.length === 1
-      ? options.find((opt) => opt.value === selected[0])?.label ?? selected[0]
-      : selectedCountLabel(selected.length);
-
-  const filtered = searchable
-    ? options.filter((opt) => opt.label.toLowerCase().includes(query.trim().toLowerCase()))
-    : options;
-
-  function toggle(value: string) {
-    const next = selected.includes(value)
-      ? selected.filter((v) => v !== value)
-      : [...selected, value];
-    if (next.length === 0) return; /* the empty-selection trap — see doc comment above */
-    onChange(next);
-  }
+function SectionEntries({ section, sectionLimit }: { section: LedgerSection; sectionLimit: number }) {
+  const t = useTranslations("stockMovements");
+  /*
+   * The query layer does not slice — it returns every fetched entry for the
+   * section. Sections are sorted ascending for display, so the recent end is the
+   * last `sectionLimit` entries, and the notice below ships only alongside this
+   * slice so the screen never shows more rows than the cap it names.
+   */
+  const visibleEntries = section.entries.slice(-sectionLimit);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          className={cn(
-            "border-input flex h-9 w-full items-center justify-between gap-2 rounded-md border bg-transparent px-3 py-2 text-sm font-normal shadow-xs transition-[color,box-shadow] outline-none hover:bg-transparent focus-visible:ring-[3px] focus-visible:ring-ring/50",
-            triggerClassName,
-          )}
-        >
-          <span className="truncate">{label || placeholder}</span>
-          <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[var(--radix-popover-trigger-width)] min-w-[10rem] p-0" align="start">
-        <Command shouldFilter={false}>
-          {searchable && <CommandInput placeholder="Search..." value={query} onValueChange={setQuery} />}
-          <CommandList>
-            <CommandEmpty>No results found.</CommandEmpty>
-            {/*
-             * With `shouldFilter={false}`, cmdk's own "is there anything to show" count is
-             * the number of mounted Item components, not our hand-filtered array — so
-             * CommandEmpty only renders when NOTHING below is mounted either. The "All" row
-             * used to be unconditional, which kept that count above zero even when a search
-             * matched no option, leaving a lone "All" as the only clickable thing on screen
-             * with no explanation for why it was alone. Gating both groups on the same
-             * `filtered.length > 0` is what lets CommandEmpty actually fire.
-             */}
-            {filtered.length > 0 && (
-              <>
-                <CommandGroup>
-                  <CommandItem
-                    value={allLabel}
-                    /* disabled, not just a no-op handler: this is the same prop
-                       SearchableCombobox already uses for an inert row, so it gets that
-                       row's "data-[disabled=true]:opacity-50" treatment for free — the
-                       row reads as deliberately inert rather than stuck, and cmdk itself
-                       refuses the click, so selecting an already-complete set never fires
-                       onChange (no pointless refetch of up to 2000 rows for a no-op). */
-                    disabled={allSelected}
-                    onSelect={() => onChange(options.map((opt) => opt.value))}
-                    className="min-h-[40px] font-medium"
+    <>
+      <div className="overflow-x-auto rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t("colDate")}</TableHead>
+              <TableHead>{t("colRefType")}</TableHead>
+              <TableHead>{t("colDocNumber")}</TableHead>
+              <TableHead className="text-right">{t("colQty")}</TableHead>
+              <TableHead className="text-right">{t("colBalance")}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {visibleEntries.map((entry) => {
+              const messageKey = ledgerRefMessageKey(entry.refType);
+              return (
+                <TableRow key={entry.id}>
+                  <TableCell className="whitespace-nowrap">
+                    {format(new Date(entry.createdAt), "dd/MM/yyyy HH:mm")}
+                  </TableCell>
+                  <TableCell className="max-w-[200px] truncate">
+                    {messageKey ? t(messageKey) : entry.refType}
+                  </TableCell>
+                  <TableCell className="max-w-[160px] truncate font-medium">
+                    {/* refDocNumber defaults to "" for the opening-balance
+                        migration rows and a few writers that omit it —
+                        render a placeholder rather than a dead cell. */}
+                    {entry.refDocNumber || (
+                      <span className="font-normal text-muted-foreground">{t("noDocument")}</span>
+                    )}
+                  </TableCell>
+                  <TableCell
+                    className={cn(
+                      "text-right tabular-nums whitespace-nowrap",
+                      entry.qty > 0 && "text-emerald-600 dark:text-emerald-400",
+                      entry.qty < 0 && "text-red-600 dark:text-red-400",
+                    )}
                   >
-                    <Checkbox checked={allSelected} tabIndex={-1} className="pointer-events-none mr-2" />
-                    <span className="truncate">{allLabel}</span>
-                  </CommandItem>
-                </CommandGroup>
-                <CommandSeparator />
-                <CommandGroup>
-                  {filtered.map((opt) => {
-                    const checked = selected.includes(opt.value);
-                    return (
-                      <CommandItem
-                        key={opt.value}
-                        value={opt.label}
-                        onSelect={() => toggle(opt.value)}
-                        className="min-h-[40px]"
-                      >
-                        <Checkbox checked={checked} tabIndex={-1} className="pointer-events-none mr-2" />
-                        <span className="truncate">{opt.label}</span>
-                      </CommandItem>
-                    );
-                  })}
-                </CommandGroup>
-              </>
-            )}
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+                    {entry.qty > 0
+                      ? `+${entry.qty.toLocaleString()}`
+                      : entry.qty.toLocaleString()}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums whitespace-nowrap">
+                    {entry.balanceQty.toLocaleString()}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
+      {section.truncated && (
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          {t("sectionTruncated", { limit: sectionLimit })}
+        </p>
+      )}
+    </>
   );
 }
 
@@ -271,6 +194,14 @@ export function MovementsPageClient() {
     variantSku !== "" ||
     locationTypes.length !== WAREHOUSE_TYPES.length ||
     !allRefTypesSelected;
+
+  /*
+   * A location group's closing balance sums the variant sections the fetch returned, so it is
+   * the location's total only when no date range or movement-type filter can drop a variant's
+   * rows and the query was not truncated (checked at render). Otherwise only per-section
+   * balances are shown.
+   */
+  const isGroupBalanceUnfiltered = dateFrom === "" && dateTo === "" && allRefTypesSelected;
 
   const [data, setData] = useState<ItemMovementsResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -531,102 +462,106 @@ export function MovementsPageClient() {
             </Alert>
           )}
 
-          {data.sections.map((section) => {
-            /*
-             * The query layer does not slice — it returns every fetched entry for the
-             * section. Sections are sorted ascending for display, so the recent end is the
-             * last `sectionLimit` entries, and the notice below ships only alongside this
-             * slice so the screen never shows more rows than the cap it names.
-             */
-            const visibleEntries = section.entries.slice(-data.sectionLimit);
-            const sectionKey = `${section.locationType}:${section.locationId}:${section.variantSku}`;
+          {groupSectionsByLocation(data.sections).map((group) => {
+            const firstSection = group.sections[0];
+            const singleSection = data.sections.length === 1;
+            const singleSectionGroup = group.sections.length === 1;
+            const groupTitle = t(sectionTitleKey(firstSection), { name: group.locationLabel });
+            const showGroupBalance =
+              singleSectionGroup || (isGroupBalanceUnfiltered && !data.queryTruncated);
 
             return (
-              <Collapsible key={sectionKey} defaultOpen={section.locationType === "MAIN"}>
+              <Collapsible key={group.key} defaultOpen={singleSection}>
                 <Card>
-                  <CollapsibleTrigger asChild>
-                    <CardHeader className="flex flex-row flex-wrap cursor-pointer items-center justify-between gap-2 space-y-0">
-                      <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-                        <span>{t(sectionTitleKey(section), { name: section.locationLabel })}</span>
-                        {!section.locationResolved && (
-                          <Badge variant="outline" className="text-xs font-normal">
-                            {t("unresolvedLocation")}
-                          </Badge>
-                        )}
-                        {section.variantSku && (
-                          <Badge variant="secondary" className="text-xs font-normal">
-                            {t("sectionVariantLabel", { sku: section.variantSku })}
-                          </Badge>
-                        )}
-                      </CardTitle>
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm text-muted-foreground whitespace-nowrap">
-                          {t("closingBalanceLabel")}:{" "}
-                          <span className="font-medium tabular-nums text-foreground">
-                            {section.closingBalance.toLocaleString()}
-                          </span>
+                  <CardHeader className="space-y-0">
+                    <CollapsibleTrigger asChild>
+                      <button
+                        type="button"
+                        className="group/loc flex min-h-10 w-full cursor-pointer items-center justify-between gap-2 rounded-md text-left outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                      >
+                        <span className="flex min-w-0 items-center gap-2 text-base font-semibold leading-none">
+                          <span className="truncate">{groupTitle}</span>
+                          {!group.locationResolved && (
+                            <Badge variant="outline" className="shrink-0 text-xs font-normal">
+                              {t("unresolvedLocation")}
+                            </Badge>
+                          )}
+                          {singleSectionGroup ? (
+                            firstSection.variantSku && (
+                              <Badge variant="secondary" className="truncate text-xs font-normal">
+                                {t("sectionVariantLabel", { sku: firstSection.variantSku })}
+                              </Badge>
+                            )
+                          ) : (
+                            <Badge variant="secondary" className="shrink-0 text-xs font-normal">
+                              {t("sectionGroupVariants", { count: group.sections.length })}
+                            </Badge>
+                          )}
                         </span>
-                        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      </div>
-                    </CardHeader>
-                  </CollapsibleTrigger>
+                        <span className="flex shrink-0 items-center gap-3">
+                          {showGroupBalance && (
+                            <span className="text-sm text-muted-foreground whitespace-nowrap">
+                              {t("closingBalanceLabel")}:{" "}
+                              <span className="font-medium tabular-nums text-foreground">
+                                {group.closingBalance.toLocaleString()}
+                              </span>
+                            </span>
+                          )}
+                          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]/loc:rotate-180" />
+                        </span>
+                      </button>
+                    </CollapsibleTrigger>
+                  </CardHeader>
                   <CollapsibleContent>
                     <CardContent className="space-y-3">
-                      <div className="overflow-x-auto rounded-md border">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>{t("colDate")}</TableHead>
-                              <TableHead>{t("colRefType")}</TableHead>
-                              <TableHead>{t("colDocNumber")}</TableHead>
-                              <TableHead className="text-right">{t("colQty")}</TableHead>
-                              <TableHead className="text-right">{t("colBalance")}</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {visibleEntries.map((entry) => {
-                              const messageKey = ledgerRefMessageKey(entry.refType);
-                              return (
-                                <TableRow key={entry.id}>
-                                  <TableCell className="whitespace-nowrap">
-                                    {format(new Date(entry.createdAt), "dd/MM/yyyy HH:mm")}
-                                  </TableCell>
-                                  <TableCell className="max-w-[200px] truncate">
-                                    {messageKey ? t(messageKey) : entry.refType}
-                                  </TableCell>
-                                  <TableCell className="max-w-[160px] truncate font-medium">
-                                    {/* refDocNumber defaults to "" for the opening-balance
-                                        migration rows and a few writers that omit it —
-                                        render a placeholder rather than a dead cell. */}
-                                    {entry.refDocNumber || (
-                                      <span className="font-normal text-muted-foreground">{t("noDocument")}</span>
-                                    )}
-                                  </TableCell>
-                                  <TableCell
-                                    className={cn(
-                                      "text-right tabular-nums whitespace-nowrap",
-                                      entry.qty > 0 && "text-emerald-600 dark:text-emerald-400",
-                                      entry.qty < 0 && "text-red-600 dark:text-red-400",
-                                    )}
+                      {singleSectionGroup ? (
+                        <SectionEntries
+                          section={firstSection}
+                          sectionLimit={data.sectionLimit}
+                        />
+                      ) : (
+                        group.sections.map((section) => {
+                          const sectionKey = `${section.locationType}:${section.locationId}:${section.variantSku}`;
+                          const sectionBadgeText = section.variantSku
+                            ? t("sectionVariantLabel", { sku: section.variantSku })
+                            : t("sectionVariantless");
+
+                          return (
+                            <Collapsible key={sectionKey} defaultOpen={singleSection}>
+                              <div className="rounded-md border">
+                                <CollapsibleTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className="group/section flex min-h-10 w-full cursor-pointer items-center justify-between gap-2 rounded-md px-4 py-2 text-left outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                                   >
-                                    {entry.qty > 0
-                                      ? `+${entry.qty.toLocaleString()}`
-                                      : entry.qty.toLocaleString()}
-                                  </TableCell>
-                                  <TableCell className="text-right tabular-nums whitespace-nowrap">
-                                    {entry.balanceQty.toLocaleString()}
-                                  </TableCell>
-                                </TableRow>
-                              );
-                            })}
-                          </TableBody>
-                        </Table>
-                      </div>
-                      {section.truncated && (
-                        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                          {t("sectionTruncated", { limit: data.sectionLimit })}
-                        </p>
+                                    <span className="flex min-w-0 items-center gap-2">
+                                      <Badge variant="secondary" className="max-w-full truncate text-xs font-normal">
+                                        {sectionBadgeText}
+                                      </Badge>
+                                    </span>
+                                    <span className="flex shrink-0 items-center gap-3">
+                                      <span className="text-sm text-muted-foreground whitespace-nowrap">
+                                        {t("closingBalanceLabel")}:{" "}
+                                        <span className="font-medium tabular-nums text-foreground">
+                                          {section.closingBalance.toLocaleString()}
+                                        </span>
+                                      </span>
+                                      <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]/section:rotate-180" />
+                                    </span>
+                                  </button>
+                                </CollapsibleTrigger>
+                                <CollapsibleContent>
+                                  <div className="space-y-3 px-4 pb-4">
+                                    <SectionEntries
+                                      section={section}
+                                      sectionLimit={data.sectionLimit}
+                                    />
+                                  </div>
+                                </CollapsibleContent>
+                              </div>
+                            </Collapsible>
+                          );
+                        })
                       )}
                     </CardContent>
                   </CollapsibleContent>

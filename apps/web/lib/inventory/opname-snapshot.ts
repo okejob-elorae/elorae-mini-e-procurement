@@ -20,7 +20,7 @@ export async function freezeItemSnapshot(
     where: {
       type: itemType,
       isActive: true,
-      ...(itemIds?.length ? { id: { in: itemIds } } : {}),
+      ...(itemIds !== undefined ? { id: { in: itemIds } } : {}),
     },
     select: {
       id: true,
@@ -62,7 +62,7 @@ export async function freezeFabricRollSnapshot(
       item: {
         type: "FABRIC",
         isActive: true,
-        ...(itemIds?.length ? { id: { in: itemIds } } : {}),
+        ...(itemIds !== undefined ? { id: { in: itemIds } } : {}),
       },
     },
     select: {
@@ -111,9 +111,7 @@ export async function syncFabricAggregateQty(
     // Unlike most other set-mover calls, this one DOES carry totalCost/balanceValue:
     // opnameNetDelta sums every OPNAME ledger row for the journal, treating a null totalCost as a
     // hard error — null means "this predates the value columns", not "this item is uncosted".
-    // `delta` mirrors the same qty change applyFabricAdjustments (opname-approve.ts) accumulates
-    // per item as `netDelta` (its own prevQty is `total - netDelta`, the identical identity used
-    // here in reverse).
+    // `delta` is the aggregate's change against the balance row read just above.
     //
     // No avgCost-guard here: null and 0 mean different things in this column. Null means "we
     // don't know what this was worth" (true of every pre-migration row, since the moving average
@@ -178,7 +176,7 @@ export async function getOpenFabricItemIds(itemIds?: string[]): Promise<string[]
       item: {
         type: "FABRIC",
         isActive: true,
-        ...(itemIds?.length ? { id: { in: itemIds } } : {}),
+        ...(itemIds !== undefined ? { id: { in: itemIds } } : {}),
       },
     },
     select: { itemId: true },

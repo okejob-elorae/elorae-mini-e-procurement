@@ -234,13 +234,22 @@ function serializeItemForClient(item: {
 
 export async function getStockAdjustments(
   itemId?: string,
-  opts?: { page: number; pageSize: number }
+  opts?: { page: number; pageSize: number; search?: string }
 ) {
   await requireInventoryView();
   const where: any = {};
 
   if (itemId) {
     where.itemId = itemId;
+  }
+  const search = opts?.search?.trim();
+  if (search) {
+    where.OR = [
+      { docNumber: { contains: search } },
+      { item: { sku: { contains: search } } },
+      { item: { nameId: { contains: search } } },
+      { reason: { contains: search } },
+    ];
   }
 
   const include = {

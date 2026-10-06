@@ -28,6 +28,10 @@ import { TagsInput } from '@/components/ui/tags-input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Plus, Trash2, Loader2, Wand2 } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  buildVariantSkuCode,
+  slugVariantAttributeValue,
+} from "@/lib/items/normalize-variants";
 import { useTranslations } from 'next-intl';
 import type { z } from 'zod';
 import {
@@ -42,6 +46,7 @@ import {
   cartesianCombinations,
   comboKey,
   contributingAttributes,
+  findCollidingAttributeNames,
   findSavedVariant,
   initialExcludedKeys,
   mapRowValues,
@@ -80,15 +85,6 @@ interface ItemCategoryOption {
   isActive: boolean;
 }
 
-/** Normalize attribute value for variant SKU segment (e.g. red → RED, light blue → LIGHTBLUE). */
-function slugVariantAttributeValue(value: string): string {
-  return value
-    .trim()
-    .replace(/\s+/g, '')
-    .replace(/[^a-zA-Z0-9]/g, '')
-    .toUpperCase();
-}
-
 /**
  * De-duplicates attribute values case-insensitively (trim + lowercase),
  * keeping the FIRST spelling typed — `TagsInput` itself only dedupes
@@ -112,24 +108,6 @@ function parseNumberFieldDefaultZero(value: unknown): number {
   if (value === '' || value === null || value === undefined) return 0;
   const n = typeof value === 'number' ? value : Number(value);
   return Number.isNaN(n) ? 0 : n;
-}
-
-/**
- * Pattern: `{base}-{v1}-…-{vn}` with n = number of attribute columns (e.g. OUTERWEAR-RED-S).
- * Base is the item category code when the category has one; otherwise the parent item SKU (server accepts both prefixes).
- */
-function buildVariantSkuCode(
-  basePrefix: string,
-  combo: Record<string, string>,
-  orderedAttributeKeys: string[]
-): string {
-  const base = basePrefix.trim();
-  const segments = orderedAttributeKeys
-    .map((key) => slugVariantAttributeValue(combo[key] ?? ''))
-    .filter((s) => s.length > 0);
-  if (!base) return segments.join('-');
-  if (segments.length === 0) return base;
-  return `${base}-${segments.join('-')}`;
 }
 
 interface ItemFormProps {
@@ -396,7 +374,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   };
 
   const parentSku = (initialData?.sku ?? sku) || '';
-  const variantSkuBasePrefix = categoryCodePrefix || parentSku.trim();
+  const variantSkuBasePrefix = parentSku.trim();
 
   const setVariantSkuAt = (idx: number, value: string) => {
     setGrid((prev) => setRowValueAt(prev, 'skus', idx, value));
@@ -439,22 +417,32 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     );
   };
 
+  const canGenerateVariantBarcodes =
+    Boolean(barcodeFormatConfig) && Boolean(categoryCodePrefix || parentSku.trim());
+
+  /**
+   * Fills only BLANK cells: a SKU or barcode a row already holds may be a saved variant's key with
+   * stock under it, so bulk generation never rewrites one (the per-row button is the explicit
+   * overwrite). The SKU pass needs the parent SKU; the barcode pass runs on its own requirement.
+   */
   const applyAllVariantCodes = () => {
     if (!variantSkuBasePrefix) {
       toast.error(tToasts('setParentSkuBeforeVariantCode'));
-      return;
     }
-    if (!barcodeFormatConfig) return;
-    const formatConfig = barcodeFormatConfig;
+    const formatConfig = canGenerateVariantBarcodes ? barcodeFormatConfig : null;
+    if (!variantSkuBasePrefix && !formatConfig) return;
     setGrid((prev) => {
       const keys = prev.rows.keys;
-      const withSkus = mapRowValues(prev, 'skus', (combo, current) =>
-        excludedKeys.has(comboKey(combo, keys))
-          ? current
-          : buildVariantSkuCode(variantSkuBasePrefix, combo, keys)
-      );
+      const withSkus = variantSkuBasePrefix
+        ? mapRowValues(prev, 'skus', (combo, current) =>
+            excludedKeys.has(comboKey(combo, keys)) || current.trim()
+              ? current
+              : buildVariantSkuCode(variantSkuBasePrefix, combo, keys)
+          )
+        : prev;
+      if (!formatConfig) return withSkus;
       return mapRowValues(withSkus, 'barcodes', (combo, current) =>
-        excludedKeys.has(comboKey(combo, keys))
+        excludedKeys.has(comboKey(combo, keys)) || current.trim()
           ? current
           : buildVariantBarcode(formatConfig, {
               parentSku: parentSku.trim(),
@@ -480,6 +468,11 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       const incomplete = attributes.find((attr) => !attr.key.trim() || attr.values.length === 0);
       if (incomplete) {
         toast.error(tToasts('provideNameAndAttributeValues'));
+        return;
+      }
+      const collidingNames = findCollidingAttributeNames(attributes);
+      if (collidingNames.length > 0) {
+        toast.error(tToasts("duplicateAttributeName", { names: collidingNames.join(", ") }));
         return;
       }
     }
@@ -886,9 +879,9 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
             <div className="space-y-2 pt-2 border-t">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <p className="text-sm text-muted-foreground">
-                  Variant SKU must start with the category code
-                  {categoryCodePrefix ? ` (${categoryCodePrefix})` : ' (when the category has one)'} or the parent item SKU
-                  {parentSku ? ` (${parentSku})` : ''}. Leave empty to save and the server will auto-fill using the same
+                  Variant SKU must start with the parent item SKU
+                  {parentSku ? ` (${parentSku})` : ''} or the category code
+                  {categoryCodePrefix ? ` (${categoryCodePrefix})` : ' (when the category has one)'}. Leave empty to save and the server will auto-fill using the same
                   base. Use <span className="font-medium text-foreground">Generate code</span> for{' '}
                   <code className="rounded bg-muted px-1 py-0.5 text-xs">{`{base}-{attr1}-…-{attrN}`}</code>
                   {variantSkuBasePrefix ? (
@@ -897,7 +890,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                       (e.g. {variantSkuBasePrefix}-RED-S).
                     </>
                   ) : (
-                    <> (pick a category with a code or set the item SKU first).</>
+                    <> (set the item SKU first).</>
                   )}
                   {' '}Barcodes follow the format in{' '}
                   <span className="font-medium text-foreground">Settings → Item codes</span>.
@@ -908,7 +901,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                   size="sm"
                   className="shrink-0"
                   onClick={applyAllVariantCodes}
-                  disabled={!variantSkuBasePrefix || !barcodeFormatConfig}
+                  disabled={!variantSkuBasePrefix && !canGenerateVariantBarcodes}
                 >
                   <Wand2 className="mr-1.5 h-3.5 w-3.5" />
                   Generate all
@@ -921,8 +914,8 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-14">Include</TableHead>
-                    {attributes.map((attr) => (
-                      <TableHead key={attr.key}>{attr.key}</TableHead>
+                    {gridRows.keys.map((attrKey, keyIndex) => (
+                      <TableHead key={`${keyIndex}-${attrKey}`}>{attrKey}</TableHead>
                     ))}
                     <TableHead className="min-w-56">Variant SKU</TableHead>
                     <TableHead className="min-w-56">Barcode</TableHead>
@@ -940,7 +933,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                       .join(' / ');
                     const mutedCellClassName = excluded ? 'opacity-60' : undefined;
                     return (
-                      <TableRow key={idx}>
+                      <TableRow key={rowKey}>
                         <TableCell>
                           <label className="flex h-10 min-h-10 w-10 cursor-pointer items-center justify-center">
                             <Checkbox
@@ -955,9 +948,9 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                             </p>
                           )}
                         </TableCell>
-                        {attributes.map((attr) => (
-                          <TableCell key={attr.key} className={mutedCellClassName}>
-                            {combo[attr.key] ?? '—'}
+                        {gridRows.keys.map((attrKey, keyIndex) => (
+                          <TableCell key={`${keyIndex}-${attrKey}`} className={mutedCellClassName}>
+                            {combo[attrKey] ?? "—"}
                           </TableCell>
                         ))}
                         <TableCell className={mutedCellClassName}>
@@ -979,7 +972,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                               title={
                                 variantSkuBasePrefix
                                   ? `Build ${variantSkuBasePrefix}-{values}`
-                                  : 'Select a category with code or set item SKU'
+                                  : 'Set the item SKU first'
                               }
                             >
                               <Wand2 className="mr-1.5 h-3.5 w-3.5" />

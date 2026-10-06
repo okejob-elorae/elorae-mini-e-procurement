@@ -412,3 +412,49 @@ d("getStoreStockCard", () => {
     expect(m!.href).toBeNull();
   });
 });
+
+d("getStoreStockCard — same-item variants", () => {
+  const token = Math.random().toString(36).slice(2, 10);
+  let uomId = "";
+  let storeId = "";
+  let itemCId = "";
+
+  beforeEach(async () => {
+    uomId = "";
+    storeId = "";
+    itemCId = "";
+
+    const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-SSV-${token}`, nameId: "pcs", nameEn: "pcs" } });
+    uomId = uom.id;
+
+    const store = await prisma.store.create({
+      data: { code: `TEST-SSV-STORE-${token}`, name: "Test Variant Store", address: "Test address", termsType: "KONSI", markupPercent: 20, isActive: true },
+    });
+    storeId = store.id;
+
+    const itemC = await prisma.item.create({
+      data: { sku: `TEST-SSV-C-${token}`, nameId: "Item C", nameEn: "Item C", type: "FINISHED_GOOD", uomId, isActive: true },
+    });
+    itemCId = itemC.id;
+
+    await prisma.inventoryValue.create({ data: { itemId: itemCId, variantSku: "C-RED", qtyOnHand: 11, reservedQty: 0, avgCost: 1000, totalValue: 11000 } });
+    await prisma.inventoryValue.create({ data: { itemId: itemCId, variantSku: "C-BLUE", qtyOnHand: 22, reservedQty: 0, avgCost: 1000, totalValue: 22000 } });
+    await prisma.storeStock.create({ data: { storeId, itemId: itemCId, variantSku: "C-RED", qty: 2, avgCost: 1000 } });
+    await prisma.storeStock.create({ data: { storeId, itemId: itemCId, variantSku: "C-BLUE", qty: 5, avgCost: 1000 } });
+  });
+
+  afterEach(async () => {
+    await prisma.storeStock.deleteMany({ where: { itemId: seededId(itemCId) } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemCId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemCId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+  });
+
+  it("joins each variant of one item to its own main figure", async () => {
+    const card = await getStoreStockCard(storeId);
+    expect(card.rows).toHaveLength(2);
+    expect(card.rows.find((r) => r.variantSku === "C-RED")!.mainQty).toBe(11);
+    expect(card.rows.find((r) => r.variantSku === "C-BLUE")!.mainQty).toBe(22);
+  });
+});
