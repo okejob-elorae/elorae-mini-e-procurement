@@ -21,12 +21,7 @@ vi.mock("@elorae/db", () => ({
 vi.mock("bcryptjs", () => ({ default: { compare: mockCompare, hash: mockHash } }));
 vi.mock("@/lib/security/pin", () => ({ verifyPin: mockVerifyPin }));
 
-import {
-  getLastSensitiveAccess,
-  getPinAttempts,
-  setupPin,
-  verifyPinForAction,
-} from "./pin-auth";
+import { getLastSensitiveAccess, getPinAttempts, setupPin } from "./pin-auth";
 
 describe("pin-auth self-service actions", () => {
   beforeEach(() => {
@@ -50,6 +45,43 @@ describe("pin-auth self-service actions", () => {
       expect(r).toEqual({ success: false, messageKey: "unauthorized" });
       expect(mockUserFind).not.toHaveBeenCalled();
       expect(mockUserUpdate).not.toHaveBeenCalled();
+    });
+
+    it("refuses a change without the current PIN when one is set", async () => {
+      mockUserFind.mockResolvedValue({ pinHash: "oldhash" });
+      const r = await setupPin("5678");
+      expect(r).toEqual({ success: false, messageKey: "enterCurrentPin" });
+      expect(mockVerifyPin).not.toHaveBeenCalled();
+      expect(mockUserUpdate).not.toHaveBeenCalled();
+    });
+
+    it("checks the current PIN through verifyPin and keeps the PIN on a wrong one", async () => {
+      mockUserFind.mockResolvedValue({ pinHash: "oldhash" });
+      mockVerifyPin.mockResolvedValue({ success: false, messageKey: "pinIncorrect" });
+      const r = await setupPin("5678", "0000");
+      expect(r).toEqual({ success: false, messageKey: "currentPinIncorrect" });
+      expect(mockVerifyPin).toHaveBeenCalledWith("u1", "0000", "CHANGE_PIN", {
+        fallbackEmail: "u1@x.test",
+      });
+      expect(mockCompare).not.toHaveBeenCalled();
+      expect(mockUserUpdate).not.toHaveBeenCalled();
+    });
+
+    it("passes a lockout through and keeps the PIN", async () => {
+      mockUserFind.mockResolvedValue({ pinHash: "oldhash" });
+      mockVerifyPin.mockResolvedValue({ success: false, messageKey: "tooManyAttempts" });
+      const r = await setupPin("5678", "1234");
+      expect(r).toEqual({ success: false, messageKey: "tooManyAttempts" });
+      expect(mockUserUpdate).not.toHaveBeenCalled();
+    });
+
+    it("replaces the PIN once the current PIN verifies", async () => {
+      mockUserFind.mockResolvedValue({ pinHash: "oldhash" });
+      mockVerifyPin.mockResolvedValue({ success: true, messageKey: "ok", userId: "u1" });
+      mockHash.mockResolvedValue("newhash");
+      const r = await setupPin("5678", "1234");
+      expect(r).toEqual({ success: true, messageKey: "pinSaved" });
+      expect(mockUserUpdate).toHaveBeenCalledWith({ where: { id: "u1" }, data: { pinHash: "newhash" } });
     });
   });
 
@@ -82,25 +114,6 @@ describe("pin-auth self-service actions", () => {
       mockAuth.mockResolvedValue(null);
       expect(await getLastSensitiveAccess()).toEqual([]);
       expect(mockAttemptFindMany).not.toHaveBeenCalled();
-    });
-  });
-
-  describe("verifyPinForAction", () => {
-    it("verifies the session user with ip and fallback email", async () => {
-      mockVerifyPin.mockResolvedValue({ success: true, messageKey: "ok", userId: "u1" });
-      const r = await verifyPinForAction("1234", "DELETE_SUPPLIER", "9.9.9.9");
-      expect(mockVerifyPin).toHaveBeenCalledWith("u1", "1234", "DELETE_SUPPLIER", {
-        ipAddress: "9.9.9.9",
-        fallbackEmail: "u1@x.test",
-      });
-      expect(r.success).toBe(true);
-    });
-
-    it("returns unauthorized without a session", async () => {
-      mockAuth.mockResolvedValue(null);
-      const r = await verifyPinForAction("1234", "A");
-      expect(r).toEqual({ success: false, messageKey: "unauthorized" });
-      expect(mockVerifyPin).not.toHaveBeenCalled();
     });
   });
 });

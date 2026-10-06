@@ -8,20 +8,6 @@ import { SENSITIVE_ACTIONS } from "@/app/actions/security/pin-constants";
 
 export type { PinAuthResult };
 
-/** Verifies the signed-in user's PIN; the user id always comes from the session. */
-export async function verifyPinForAction(
-  pin: string,
-  action: string,
-  ipAddress?: string
-): Promise<PinAuthResult> {
-  const session = await auth();
-  if (!session?.user?.id) return { success: false, messageKey: "unauthorized" };
-  return verifyPin(session.user.id, pin, action, {
-    ipAddress,
-    fallbackEmail: session.user.email,
-  });
-}
-
 const PIN_REGEX = /^\d{4,6}$/;
 
 export async function setupPin(
@@ -48,9 +34,15 @@ export async function setupPin(
     if (!currentPin) {
       return { success: false, messageKey: 'enterCurrentPin' };
     }
-    const match = await bcrypt.compare(currentPin, user.pinHash);
-    if (!match) {
-      return { success: false, messageKey: 'currentPinIncorrect' };
+    /* Through verifyPin, so a wrong current PIN spends the same attempt window as every other PIN gate. */
+    const check = await verifyPin(userId, currentPin, "CHANGE_PIN", {
+      fallbackEmail: session.user.email,
+    });
+    if (!check.success) {
+      if (check.messageKey === "pinIncorrect") {
+        return { success: false, messageKey: "currentPinIncorrect" };
+      }
+      return check;
     }
   }
 

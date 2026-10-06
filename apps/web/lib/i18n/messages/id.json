@@ -473,7 +473,8 @@
       "STOCK_ADJUSTMENT": "Adjustment stok",
       "VOID_DOCUMENT": "Void dokumen",
       "EDIT_POSTED_PO": "Edit PO terposting",
-      "DELETE_SUPPLIER": "Hapus pemasok"
+      "DELETE_SUPPLIER": "Hapus pemasok",
+      "CHANGE_PIN": "Ubah PIN"
     },
     "authRequired": "Autentikasi Diperlukan",
     "enterPinForAction": "Masukkan PIN Anda untuk {action}",

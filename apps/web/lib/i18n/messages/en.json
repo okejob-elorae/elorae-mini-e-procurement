@@ -473,7 +473,8 @@
       "STOCK_ADJUSTMENT": "Stock adjustment",
       "VOID_DOCUMENT": "Void document",
       "EDIT_POSTED_PO": "Edit posted PO",
-      "DELETE_SUPPLIER": "Delete supplier"
+      "DELETE_SUPPLIER": "Delete supplier",
+      "CHANGE_PIN": "Change PIN"
     },
     "authRequired": "Authentication required",
     "enterPinForAction": "Enter your PIN for {action}",

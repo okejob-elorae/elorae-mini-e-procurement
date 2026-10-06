@@ -171,6 +171,7 @@ export async function rejectSupplierAction(id: string, reason: string) {
 
 export async function decryptSupplierBankAction(id: string, pin: string) {
   const session = await requireSession();
+  requirePermission(session.user.permissions, PERMISSIONS.SUPPLIERS_VIEW);
   const pinResult = await verifyPin(session.user.id, pin, 'VIEW_BANK_ACCOUNT', {
     ipAddress: 'server-action',
   });

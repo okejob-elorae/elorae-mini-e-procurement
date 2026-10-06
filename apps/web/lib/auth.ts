@@ -249,12 +249,3 @@ export const {
     },
   },
 });
-
-// Set PIN for user
-export async function setPin(userId: string, pin: string): Promise<void> {
-  const pinHash = await bcrypt.hash(pin, 10);
-  await prisma.user.update({
-    where: { id: userId },
-    data: { pinHash },
-  });
-}

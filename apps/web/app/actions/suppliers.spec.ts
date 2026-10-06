@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockAuth, mockVerifyPin, mockDeleteSupplier } = vi.hoisted(() => ({
+const { mockAuth, mockVerifyPin, mockDeleteSupplier, mockDecryptBank } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   mockVerifyPin: vi.fn(),
   mockDeleteSupplier: vi.fn(),
+  mockDecryptBank: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
@@ -26,13 +27,13 @@ vi.mock("@/lib/suppliers/mutations", () => ({
   deleteSupplier: mockDeleteSupplier,
   approveSupplier: vi.fn(),
   rejectSupplier: vi.fn(),
-  decryptSupplierBankAccount: vi.fn(),
+  decryptSupplierBankAccount: mockDecryptBank,
   supplierSchema: {},
   supplierUpdateSchema: {},
   SUPPLIER_DELETE_BLOCKED: "SUPPLIER_DELETE_BLOCKED",
 }));
 
-import { deleteSupplierAction } from "./suppliers";
+import { decryptSupplierBankAction, deleteSupplierAction } from "./suppliers";
 
 describe("deleteSupplierAction", () => {
   beforeEach(() => {
@@ -72,5 +73,29 @@ describe("deleteSupplierAction", () => {
     const result = await deleteSupplierAction("s1", "123456");
     expect(result).toEqual({ success: true });
     expect(mockDeleteSupplier).toHaveBeenCalledWith("s1");
+  });
+});
+
+describe("decryptSupplierBankAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("refuses without the view permission before verifying the PIN", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: [] } });
+    await expect(decryptSupplierBankAction("s1", "123456")).rejects.toThrow("Forbidden");
+    expect(mockVerifyPin).not.toHaveBeenCalled();
+    expect(mockDecryptBank).not.toHaveBeenCalled();
+  });
+
+  it("decrypts with the view permission and the right PIN", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["suppliers:view"] } });
+    mockVerifyPin.mockResolvedValue({ success: true, userId: "u1" });
+    mockDecryptBank.mockResolvedValue("1234567890");
+    const result = await decryptSupplierBankAction("s1", "123456");
+    expect(result).toEqual({ bankAccount: "1234567890" });
+    expect(mockVerifyPin).toHaveBeenCalledWith("u1", "123456", "VIEW_BANK_ACCOUNT", {
+      ipAddress: "server-action",
+    });
   });
 });

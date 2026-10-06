@@ -126,44 +126,7 @@ export async function PUT(
   }
 }
 
-// DELETE /api/suppliers/[id] - Delete supplier
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params;
-    const session = await auth();
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    requirePermission(session.user.permissions, PERMISSIONS.SUPPLIERS_DELETE);
-
-    const { deleteSupplier, SUPPLIER_DELETE_BLOCKED } = await import('@/lib/suppliers/mutations');
-
-    try {
-      await deleteSupplier(id);
-    } catch (error) {
-      if (error instanceof Error && error.message === SUPPLIER_DELETE_BLOCKED) {
-        return NextResponse.json(
-          { error: 'This supplier cannot be deleted because it is still linked to existing records.' },
-          { status: 400 }
-        );
-      }
-      throw error;
-    }
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error('Failed to delete supplier:', error);
-    return NextResponse.json(
-      { error: 'Failed to delete supplier' },
-      { status: 500 }
-    );
-  }
-}
-
-// POST /api/suppliers/[id]/decrypt - Decrypt bank account
+/* POST /api/suppliers/[id] - Decrypt bank account */
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
