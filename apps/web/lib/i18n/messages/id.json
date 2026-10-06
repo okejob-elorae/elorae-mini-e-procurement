@@ -5347,7 +5347,7 @@
     "componentsTitlePosted": "Pembayaran yang diposting persetujuan ini",
     "componentsHintPosted": "Setiap komponen diposting sebagai pembayaran tersendiri. Buka salah satunya untuk melihat alokasi atau membatalkannya.",
     "componentsTitleOrphaned": "Pembayaran yang tertinggal dari pelunasan ini",
-    "componentsHintOrphaned": "Pelunasan ini ditolak, tetapi pembayaran berikut terlanjur diposting. Tidak ada dokumen yang menaunginya — batalkan atau laporkan ke finance.",
+    "componentsHintOrphaned": "Pelunasan ini ditolak setelah sebagian pembayarannya terlanjur diposting. Baris yang masih berstatus Tercatat tidak dinaungi dokumen yang disetujui — batalkan atau laporkan ke finance. Baris yang Dibatalkan tidak perlu ditindaklanjuti.",
     "componentUnlinked": "Retur belum tertaut",
     "subjectInvoiceId": "faktur {id}",
     "subjectReturId": "retur {id}",

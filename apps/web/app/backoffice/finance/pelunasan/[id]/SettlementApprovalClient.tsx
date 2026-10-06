@@ -231,9 +231,9 @@ export function SettlementApprovalClient({ settlement: s, canViewAccountMapping 
    * `rejectSettlement` now refuses while any component is still POSTED, so a rejected document
    * lists payments only in three cases: components voided before the reject, a document rejected
    * before that guard existed, or a reject that committed while an approval was still running (the
-   * orphaned-payment case the approve writer logs). Its copy tells finance to void what is listed,
-   * so the list has to be the payments and nothing else: showing the unposted siblings under that
-   * heading would name rows there is nothing to void.
+   * orphaned-payment case the approve writer logs). Its copy tells finance to void any listed row
+   * still Posted, so the list has to be the payments and nothing else: showing the unposted
+   * siblings under that heading would name rows there is nothing to void.
    */
   const visibleComponents = s.components.filter((component) =>
     s.status === "REJECTED"
