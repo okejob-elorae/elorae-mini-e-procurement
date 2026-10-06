@@ -4804,7 +4804,11 @@
       "FORBIDDEN": "Anda tidak memiliki izin untuk memposting jurnal ini.",
       "NOTHING_TO_POST": "Tidak ada yang diposting: semua total settlement ini nol, sehingga tidak ada jurnal yang perlu dibuat.",
       "ALREADY_RECONCILED_DIFF": "Settlement ini sudah terekonsiliasi dengan jurnal yang berbeda.",
-      "NON_POSTABLE_ACCOUNT": "Salah satu akun yang dipetakan tidak dapat diposting — akunnya tidak aktif atau sudah punya akun turunan. Petakan peran tersebut ke akun aktif tanpa turunan di Finance → Pemetaan Akun."
+      "NON_POSTABLE_ACCOUNT": "Salah satu akun yang dipetakan tidak dapat diposting — akunnya tidak aktif atau sudah punya akun turunan. Petakan peran tersebut ke akun aktif tanpa turunan di Finance → Pemetaan Akun.",
+      "LINES_UNMATCHED": "{count} baris settlement belum tercocokkan dengan pesanan. Ambil pesanan yang belum ada dari Jubelio lalu cocokkan ulang sebelum memposting.",
+      "ORIGINAL_SALE_NOT_JOURNALED_YET": "{count} baris berasal dari penjualan yang jurnal pendapatannya belum terposting. Sweep jurnal penjualan berjalan tiap 5 menit. Coba lagi setelah jurnalnya terposting.",
+      "ORIGINAL_SALE_OUTSIDE_LEDGER": "{count} baris berasal dari penjualan sebelum tanggal cutover buku besar, yang tidak pernah dicatat di buku besar ini, sehingga piutangnya tidak bisa dikreditkan. Catat settlement ini dengan jurnal manual.",
+      "GL_CUTOVER_NOT_CONFIGURED": "Tanggal cutover buku besar belum diatur, sehingga belum ada penjualan yang dijurnal dan tidak ada piutang yang bisa dikreditkan oleh settlement ini. Minta tim finance mengatur tanggal cutover terlebih dahulu."
     },
     "resyncButton": "Ambil {count} pesanan dari Jubelio",
     "resyncButtonPending": "Memulai pengambilan…",

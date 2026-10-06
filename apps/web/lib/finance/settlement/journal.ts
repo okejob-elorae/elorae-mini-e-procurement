@@ -2,6 +2,7 @@ import { prisma, postJournal, JournalError, Prisma, type PrismaClient } from "@e
 import { resolveAccount, UnmappedRoleError } from "@/lib/finance/journals/mapping";
 import { splitMarketplaceFees, type MarketplaceFeeRole } from "./fee-split";
 import { lockSettlementRow } from "./lock";
+import { classifySaleLegs } from "@/lib/finance/sales/sales-return-journal";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
@@ -21,7 +22,67 @@ export type PostSettlementJournalResult =
         | "NON_POSTABLE_ACCOUNT"
         | "NOTHING_TO_POST";
       role?: string;
-    };
+    }
+  | { ok: false; code: SettlementGateCode; count: number };
+
+export type SettlementGateCode =
+  | "GL_CUTOVER_NOT_CONFIGURED"
+  | "ORIGINAL_SALE_OUTSIDE_LEDGER"
+  | "LINES_UNMATCHED"
+  | "ORIGINAL_SALE_NOT_JOURNALED_YET";
+
+/* Refusals no wait can cure come first, so the operator is never told to wait for a post that cannot come. */
+const GATE_PRIORITY: SettlementGateCode[] = [
+  "GL_CUTOVER_NOT_CONFIGURED",
+  "ORIGINAL_SALE_OUTSIDE_LEDGER",
+  "LINES_UNMATCHED",
+  "ORIGINAL_SALE_NOT_JOURNALED_YET",
+];
+
+/**
+ * `null` when every line of the settlement belongs to a sales order whose
+ * `SALESORDER_REVENUE` journal stands, otherwise the refusal and how many LINES
+ * it covers.
+ *
+ * The journal below credits AR with `totalPendapatan`, and the only journals on
+ * this ledger that debit AR for a marketplace sale are the sales sweep's
+ * `SALESORDER_REVENUE` ones. Crediting AR for a sale that never debited it
+ * drives Piutang negative, so the settlement may post only against sales this
+ * ledger recognized — the same counterpart gate `classifySaleLeg` applies to
+ * marketplace returns.
+ *
+ * The gate is whole-settlement, not per order: `totalPendapatan` and the fees
+ * are summary-level figures with no per-order split, so a partial post could
+ * not balance. A line matched to an order that no longer exists counts as
+ * unmatched, because rematching is its remedy. A settlement straddling the GL
+ * cutover (the first one per marketplace after go-live) is permanently
+ * `ORIGINAL_SALE_OUTSIDE_LEDGER`; its remedy is a manual journal.
+ */
+async function settlementGate(
+  settlementId: string,
+  tx: Prisma.TransactionClient,
+): Promise<{ code: SettlementGateCode; count: number } | null> {
+  const lines = await tx.settlementLine.findMany({
+    where: { settlementId },
+    select: { matchedSalesOrderId: true },
+  });
+  const orderIds = lines.flatMap((l) => (l.matchedSalesOrderId == null ? [] : [l.matchedSalesOrderId]));
+  const verdicts = await classifySaleLegs(orderIds, "SALESORDER_REVENUE", tx);
+
+  const counts = new Map<SettlementGateCode, number>();
+  for (const line of lines) {
+    const verdict = line.matchedSalesOrderId == null ? "ORIGINAL_SALE_UNLINKED" : verdicts.get(line.matchedSalesOrderId);
+    if (verdict === null) continue;
+    const code: SettlementGateCode =
+      verdict === undefined || verdict === "ORIGINAL_SALE_UNLINKED" ? "LINES_UNMATCHED" : verdict;
+    counts.set(code, (counts.get(code) ?? 0) + 1);
+  }
+  for (const code of GATE_PRIORITY) {
+    const count = counts.get(code) ?? 0;
+    if (count > 0) return { code, count };
+  }
+  return null;
+}
 
 /**
  * Falls back to the legacy lumped `MARKETPLACE_FEE` account when a per-category
@@ -141,9 +202,13 @@ export async function postSettlementJournal(
      * no separate transaction: those reads run inside the caller's, before this lock, so such a
      * caller must not depend on that snapshot, since a locking read after an earlier consistent
      * read can raise ER_CHECKREAD under `innodb_snapshot_isolation` on newer MariaDB. No caller
-     * passes one today.
+     * passes one today. The revenue-journal gate reads the lines only after this lock, because
+     * `matchSettlement` rewrites `matchedSalesOrderId` under it.
      */
     await lockSettlementRow(tx, s.id);
+    const gate = await settlementGate(s.id, tx);
+    /* Write-free so far (the lock is a read), so this return commits nothing. */
+    if (gate != null) return { ok: false as const, code: gate.code, count: gate.count };
     const res = await postJournal(tx, {
       source: { type: "SETTLEMENT", id: s.id },
       date: s.periodTo,
