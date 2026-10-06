@@ -19,6 +19,8 @@ export type VanJournalSweepResult = {
 
 type DocKind = "load" | "sale" | "reconcile";
 
+export const VAN_JOURNAL_SWEEP_SETTLE_MS = 15 * 60 * 1000;
+
 const KINDS: DocKind[] = ["load", "sale", "reconcile"];
 
 const NOTIFICATION_KIND: Record<DocKind, VanJournalKind> = {
@@ -92,7 +94,8 @@ export async function vanJournalSweepFloor(): Promise<Date | null> {
 }
 
 /**
- * Unjournaled documents of one kind at or above the floor, oldest first.
+ * Unjournaled documents of one kind at or above the floor and created before
+ * `settledBefore`, oldest first.
  *
  * The value prefilter keeps a permanently zero-value document from occupying a
  * `LIMIT` slot forever (prod's `avgCost` is 0 almost everywhere, so without it
@@ -111,6 +114,7 @@ export async function vanJournalSweepFloor(): Promise<Date | null> {
 async function findCandidates(
   kind: DocKind,
   floor: Date,
+  settledBefore: Date,
   ids: string[] | undefined,
   limit: number,
 ): Promise<Array<{ id: string; actorId: string }>> {
@@ -121,6 +125,7 @@ async function findCandidates(
       FROM VanLoad vl
       JOIN VanLoadLine l ON l.vanLoadId = vl.id
       WHERE vl.createdAt >= ${floor}
+        AND vl.createdAt < ${settledBefore}
         ${idFilter}
         AND NOT EXISTS (SELECT 1 FROM Journal j WHERE j.sourceType = 'VAN_LOAD' AND j.sourceId = vl.id)
       GROUP BY vl.id, vl.loadedById, vl.createdAt
@@ -136,6 +141,7 @@ async function findCandidates(
       FROM VanSale vs
       LEFT JOIN VanSaleLine l ON l.vanSaleId = vs.id
       WHERE vs.createdAt >= ${floor}
+        AND vs.createdAt < ${settledBefore}
         ${idFilter}
         AND NOT EXISTS (SELECT 1 FROM Journal j WHERE j.sourceType = 'VAN_SALE' AND j.sourceId = vs.id)
       GROUP BY vs.id, vs.salesmanId, vs.total, vs.createdAt
@@ -150,6 +156,7 @@ async function findCandidates(
     FROM VanReconcile vr
     JOIN VanReconcileLine l ON l.vanReconcileId = vr.id
     WHERE vr.createdAt >= ${floor}
+      AND vr.createdAt < ${settledBefore}
       ${idFilter}
       AND NOT EXISTS (SELECT 1 FROM Journal j WHERE j.sourceType = 'VAN_RECONCILE' AND j.sourceId = vr.id)
     GROUP BY vr.id, vr.reconciledById, vr.createdAt
@@ -182,13 +189,18 @@ async function findCandidates(
  * Not gated on `finance.glCutoverDate`, consistent with every other van journal:
  * `van-journal.ts` never reads it.
  *
+ * Only documents older than `VAN_JOURNAL_SWEEP_SETTLE_MS` are considered, so the
+ * sweep never races the creating action's own journal post: a document picked up
+ * between its creation commit and that post would lose on the journal's unique
+ * constraint and file a false `JOURNAL_PENDING` row.
+ *
  * `scope` absent makes the sweep global (the cron). `scope` present restricts it
  * to the listed ids: a kind whose array is absent or empty sweeps nothing, and an
  * all-empty scope returns before any read. Specs must always pass a scope, since
  * the test bed holds real documents.
  */
 export async function postPendingVanJournals(
-  opts: { scope?: VanJournalSweepScope; limit?: number } = {},
+  opts: { scope?: VanJournalSweepScope; limit?: number; now?: Date } = {},
 ): Promise<VanJournalSweepResult> {
   const result: VanJournalSweepResult = { posted: 0, failed: 0, newlyFlagged: 0, skipped: null };
   const { scope } = opts;
@@ -200,9 +212,10 @@ export async function postPendingVanJournals(
   if (!floor) return { ...result, skipped: "NO_FLOOR" };
 
   const limit = opts.limit ?? 50;
+  const settledBefore = new Date((opts.now ?? new Date()).getTime() - VAN_JOURNAL_SWEEP_SETTLE_MS);
 
   for (const kind of kinds) {
-    const candidates = await findCandidates(kind, floor, scope === undefined ? undefined : scope[kind], limit);
+    const candidates = await findCandidates(kind, floor, settledBefore, scope === undefined ? undefined : scope[kind], limit);
     if (candidates.length === 0) continue;
 
     const flagged = await findPostableJournalDocIds(

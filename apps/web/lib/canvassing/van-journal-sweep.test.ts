@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { postPendingVanJournals, vanJournalSweepFloor } from "./van-journal-sweep";
+import { postPendingVanJournals, vanJournalSweepFloor, VAN_JOURNAL_SWEEP_SETTLE_MS } from "./van-journal-sweep";
 import { postVanLoadJournal } from "./van-journal";
 import { setAccountMapping } from "../finance/journals/mapping";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../finance/journals/mapping-test-fixture";
@@ -71,6 +71,9 @@ async function pendingRowsFor(docId: string, kind: string) {
     return m?.docId === docId && m?.kind === kind;
   });
 }
+
+/* An hour ahead of real time, so freshly seeded documents are past the settle window. */
+const settled = (): Date => new Date(Date.now() + 60 * 60 * 1000);
 
 const ROLE_TYPES: Array<[PostingRole, AccountType]> = [
   ["INVENTORY", "ASET"],
@@ -240,7 +243,7 @@ d("postPendingVanJournals (test bed only)", () => {
 
   it("journals an unflagged, non-zero load above the floor", async () => {
     const b = await createLoad(1000);
-    const r = await postPendingVanJournals({ scope: { load: [b.id] } });
+    const r = await postPendingVanJournals({ scope: { load: [b.id] }, now: settled() });
     expect(r).toMatchObject({ posted: 1, failed: 0, newlyFlagged: 0, skipped: null });
     expect(await journalFor("VAN_LOAD", b.id)).not.toBeNull();
     expect(await pendingRowsFor(b.id, "van_load")).toHaveLength(0);
@@ -248,7 +251,7 @@ d("postPendingVanJournals (test bed only)", () => {
 
   it("never sweeps a load dated below the floor", async () => {
     const c = await createLoad(1000, new Date("2000-01-01T00:00:00.000Z"));
-    const r = await postPendingVanJournals({ scope: { load: [c.id] } });
+    const r = await postPendingVanJournals({ scope: { load: [c.id] }, now: settled() });
     expect(r.posted).toBe(0);
     expect(await journalFor("VAN_LOAD", c.id)).toBeNull();
   });
@@ -256,7 +259,7 @@ d("postPendingVanJournals (test bed only)", () => {
   it("does not let a zero-value load occupy the window", async () => {
     const z = await createLoad(0, new Date(anchorCreatedAt.getTime() + 1));
     const n = await createLoad(1000, new Date(anchorCreatedAt.getTime() + 2));
-    const r = await postPendingVanJournals({ scope: { load: [z.id, n.id] }, limit: 1 });
+    const r = await postPendingVanJournals({ scope: { load: [z.id, n.id] }, limit: 1, now: settled() });
     expect(r.posted).toBe(1);
     expect(await journalFor("VAN_LOAD", n.id)).not.toBeNull();
     expect(await journalFor("VAN_LOAD", z.id)).toBeNull();
@@ -283,7 +286,7 @@ d("postPendingVanJournals (test bed only)", () => {
       });
       createdDocs.push({ sourceType: "VAN_RECONCILE", model: "vanReconcile", id: recon.id });
 
-      const first = await postPendingVanJournals({ scope: { reconcile: [recon.id] } });
+      const first = await postPendingVanJournals({ scope: { reconcile: [recon.id] }, now: settled() });
       expect(first).toMatchObject({ posted: 0, failed: 1, newlyFlagged: 1 });
       const rows = await pendingRowsFor(recon.id, "van_reconcile");
       expect(rows).toHaveLength(1);
@@ -291,7 +294,7 @@ d("postPendingVanJournals (test bed only)", () => {
       /* A read row is invisible to the unread dedup; the sweep must still see it. */
       await prisma.adminNotification.update({ where: { id: rows[0].id }, data: { readAt: new Date() } });
 
-      const second = await postPendingVanJournals({ scope: { reconcile: [recon.id] } });
+      const second = await postPendingVanJournals({ scope: { reconcile: [recon.id] }, now: settled() });
       expect(second).toMatchObject({ posted: 0, failed: 1, newlyFlagged: 0 });
       expect(await pendingRowsFor(recon.id, "van_reconcile")).toHaveLength(1);
       expect(await journalFor("VAN_RECONCILE", recon.id)).toBeNull();
@@ -303,7 +306,7 @@ d("postPendingVanJournals (test bed only)", () => {
   it("does not select an already-journaled document", async () => {
     const b = await createLoad(1000);
     await expect(postVanLoadJournal(b.id, userId)).resolves.toMatchObject({ ok: true, created: true });
-    const r = await postPendingVanJournals({ scope: { load: [b.id] } });
+    const r = await postPendingVanJournals({ scope: { load: [b.id] }, now: settled() });
     expect(r.posted).toBe(0);
     expect(await prisma.journal.count({ where: { sourceType: "VAN_LOAD", sourceId: b.id } })).toBe(1);
   });
@@ -328,9 +331,25 @@ d("postPendingVanJournals (test bed only)", () => {
     });
     createdDocs.push({ sourceType: "VAN_SALE", model: "vanSale", id: sale.id });
 
-    const r = await postPendingVanJournals({ scope: { sale: [sale.id] } });
+    const r = await postPendingVanJournals({ scope: { sale: [sale.id] }, now: settled() });
     expect(r.posted).toBe(1);
     expect(await journalFor("VAN_SALE", sale.id)).not.toBeNull();
+  });
+
+  it("leaves a just-created document alone until it has settled", async () => {
+    const b = await createLoad(1000);
+    const early = await postPendingVanJournals({ scope: { load: [b.id] } });
+    expect(early.posted).toBe(0);
+    expect(early.failed).toBe(0);
+    expect(await journalFor("VAN_LOAD", b.id)).toBeNull();
+    expect(await pendingRowsFor(b.id, "van_load")).toHaveLength(0);
+
+    const late = await postPendingVanJournals({
+      scope: { load: [b.id] },
+      now: new Date(Date.now() + VAN_JOURNAL_SWEEP_SETTLE_MS + 60 * 60 * 1000),
+    });
+    expect(late.posted).toBe(1);
+    expect(await journalFor("VAN_LOAD", b.id)).not.toBeNull();
   });
 
   it("reads nothing for an empty scope", async () => {
