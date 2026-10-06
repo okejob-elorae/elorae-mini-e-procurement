@@ -3736,7 +3736,7 @@
       "INVALID_REQUEST": "Data yang dikirim tidak valid. Muat ulang halaman dan coba lagi.",
       "ERROR": "Terjadi kesalahan. Coba lagi.",
       "PRICE_NOT_AVAILABLE": "Pengiriman yang dipilih bukan lagi sumber harga yang valid untuk baris ini. Muat ulang halaman dan coba lagi.",
-      "ALREADY_APPROVED": "Nilai retur ini sudah final dan harganya tidak bisa diubah lagi.",
+      "ALREADY_APPROVED": "Retur ini sudah disetujui atau dinilai sementara itu. Muat ulang halaman untuk melihat baris mana yang masih bisa diberi harga.",
       "AUTO_PRICE_AVAILABLE": "Baris ini punya harga otomatis yang valid dari pengiriman — harga manual tidak diizinkan selama harga otomatis itu masih berlaku."
     },
     "pricing": {

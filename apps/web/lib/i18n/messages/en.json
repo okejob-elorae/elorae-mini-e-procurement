@@ -3736,7 +3736,7 @@
       "INVALID_REQUEST": "The submitted data was invalid. Reload the page and try again.",
       "ERROR": "Something went wrong. Please try again.",
       "PRICE_NOT_AVAILABLE": "The selected delivery is no longer a valid price source for this line. Reload the page and try again.",
-      "ALREADY_APPROVED": "This return's value is final and can no longer be repriced.",
+      "ALREADY_APPROVED": "This return was approved or valued in the meantime. Reload the page to see which lines can still be priced.",
       "AUTO_PRICE_AVAILABLE": "This line has a valid automatic price from a delivery — a manual price is not allowed while that automatic price still applies."
     },
     "pricing": {

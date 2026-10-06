@@ -22,6 +22,12 @@ const VALUATION_CONFLICT = "FIELD_RETURN_VALUATION_CONFLICT";
  * retur cannot be drawn (`applyReturnOffset` refuses `NOT_VALUED`) and posts no GL until a draw,
  * so valuing it late moves no money that has already moved.
  *
+ * Only a line that is still unpriced can be priced here: a line that already carries a
+ * `lineValue` — priced before approval, or by an earlier call — is refused `ALREADY_APPROVED`,
+ * so a PENDING retur's valued lines are as final as a VALUED retur's. The screen renders such a
+ * line as final too, but every `"use server"` export is independently callable, so the writer
+ * is the enforcement.
+ *
  * One serializable transaction: every refusal returns before the first write; after a write the
  * only way out is a throw, so a refused header never leaves a priced line behind. The header
  * compare-and-swap on `status: APPROVED, valuationStatus: PENDING, appliedValue: 0` is the guard
@@ -67,6 +73,8 @@ export async function priceApprovedReturnLine(input: PriceApprovedLineInput): Pr
       if (ret.valuationStatus === "VALUED" || ret.appliedValue.toNumber() !== 0) {
         return { ok: false, code: "ALREADY_APPROVED" };
       }
+      /* A line that already holds a value is final even while its siblings are still unpriced. */
+      if (line.lineValue !== null) return { ok: false, code: "ALREADY_APPROVED" };
       const creditedQty = line.creditedQty;
       if (creditedQty === null) return { ok: false, code: "INVALID_STATE" };
 

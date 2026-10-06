@@ -496,8 +496,9 @@ export async function cancelFieldReturnAction(input: {
  * An APPROVED retur whose `valuationStatus` is still PENDING (approved with a line nobody could
  * price) is handed to `priceApprovedReturnLine`, which values the line from its stamped
  * `creditedQty`, re-totals the header and flips it VALUED once every line has a value — under the
- * same server-side re-verification as above. A VALUED retur is final and keeps refusing
- * `ALREADY_APPROVED`: its value can already have been drawn on.
+ * same server-side re-verification as above. Only a line still without a value can be priced
+ * there — one that already holds a `lineValue` is refused `ALREADY_APPROVED`. A VALUED retur is
+ * final and keeps refusing `ALREADY_APPROVED`: its value can already have been drawn on.
  */
 export async function setLinePriceAction(input: SetLinePriceInput): Promise<FieldReturnActionResult> {
   try {

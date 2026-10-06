@@ -169,6 +169,28 @@ d("priceApprovedReturnLine (test bed only)", () => {
     expect(await auditCount()).toBe(1);
   });
 
+  it("refuses repricing a line that already holds a value on a PENDING retur, while an unpriced sibling stays priceable", async () => {
+    const refused = await priceApprovedReturnLine({ lineId: lineAId, manualUnitPrice: 9000, note: "reprice", userId });
+    expect(refused).toEqual({ ok: false, code: "ALREADY_APPROVED" });
+
+    const a = await prisma.fieldReturnLine.findUniqueOrThrow({ where: { id: seededId(lineAId) } });
+    expect(a.lineValue?.toNumber()).toBe(2000);
+    expect(a.unitPrice?.toNumber()).toBe(1000);
+    expect(a.priceNote).toBe("priced before approval");
+    const before = await prisma.fieldReturn.findUniqueOrThrow({ where: { id: seededId(returnId) } });
+    expect(before.valuationStatus).toBe("PENDING");
+    expect(before.totalValue).toBeNull();
+    expect(await auditCount()).toBe(0);
+
+    const priced = await priceApprovedReturnLine({ lineId: lineBId, manualUnitPrice: 500, note: "still priceable", userId });
+    expect(priced).toEqual({ ok: true, valued: true });
+
+    const after = await prisma.fieldReturn.findUniqueOrThrow({ where: { id: seededId(returnId) } });
+    expect(after.valuationStatus).toBe("VALUED");
+    expect(after.totalValue?.toNumber()).toBe(3500);
+    expect(await auditCount()).toBe(1);
+  });
+
   it("prices one of two unpriced lines and leaves the header PENDING with a null total, never a partial sum", async () => {
     await prisma.fieldReturnLine.update({
       where: { id: seededId(lineAId) },
