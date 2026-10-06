@@ -269,19 +269,19 @@ export function SettlementApprovalClient({ settlement: s, canViewAccountMapping 
   };
 
   /**
-   * Names one journal-gap cause in the operator's own words. Both halves fall back to the raw code
-   * rather than an "unknown reason" placeholder: a `JOURNAL_PENDING` row carries whatever the
-   * builder returned, and a posting role added later has its `financeAccountMapping.role.*` copy
-   * added in the same slice — until then the bare `TRADE_PROGRAM_EXPENSE` is still the string
-   * finance searches for on the account-mapping screen, which is more use than "unknown".
-   */
-  /**
    * The mapping link only for a cause a mapping can cure. A payment waiting on its invoice's
    * revenue journal is cured on that invoice's page, never in Account Mapping, so a gap whose
    * every cause is that one gets no link; outside-the-ledger payments never reach this list.
    */
   const mappingCanHelp = s.journalGapCauses.some((cause) => cause.reason !== "RECEIVABLE_REVENUE_NOT_POSTED_YET");
 
+  /**
+   * Names one journal-gap cause in the operator's own words. Both halves fall back to the raw code
+   * rather than an "unknown reason" placeholder: a `JOURNAL_PENDING` row carries whatever the
+   * builder returned, and a posting role added later has its `financeAccountMapping.role.*` copy
+   * added in the same slice — until then the bare `TRADE_PROGRAM_EXPENSE` is still the string
+   * finance searches for on the account-mapping screen, which is more use than "unknown".
+   */
   const causeLabel = (cause: SettlementJournalGapCause): string => {
     const reasonKey = `journalGapReason.${cause.reason}`;
     const reason = t.has(reasonKey) ? t(reasonKey) : cause.reason;
