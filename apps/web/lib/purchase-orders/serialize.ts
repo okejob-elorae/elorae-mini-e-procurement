@@ -122,10 +122,11 @@ type PODetailRow = {
   /**
    * Set by `getPOById` from `paymentJournalPendingWhilePaid`, not by a column:
    * the PO reads paid, no payment journal stands at its current generation, and
-   * a recorded payment-journal failure names why. Optional for the same reason as
-   * the flag above — absent means "nothing pending", never "unknown".
+   * a payment-journal failure is on record. `reason` is that failure's code, or
+   * `null` when the record predates the current paid mark. Optional for the same
+   * reason as the flag above — absent means "nothing pending", never "unknown".
    */
-  paymentJournalPending?: { reason: string; role: string | null } | null;
+  paymentJournalPending?: { reason: string | null; role: string | null } | null;
   supplier: Record<string, unknown>;
   items: Array<{
     id: string;

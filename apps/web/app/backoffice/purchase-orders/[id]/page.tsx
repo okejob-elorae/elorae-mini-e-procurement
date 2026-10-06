@@ -12,10 +12,7 @@ import {
   postSupplierPaymentReversalJournalAction,
   retrySupplierPaymentJournalAction,
 } from '@/app/actions/purchase-orders';
-import {
-  supplierPaymentJournalErrorKey,
-  type SupplierPaymentDirection,
-} from "@/lib/purchasing/supplier-payment-journal-message";
+import { useSupplierPaymentJournalFailureMessage } from "@/hooks/use-supplier-payment-journal-failure-message";
 import { POForm } from '@/components/forms/POForm';
 import { ETABadge } from '@/components/ui/ETABadge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -80,24 +77,7 @@ export default function PODetailPage() {
   const [isPostingReversal, setIsPostingReversal] = useState(false);
   const [isRetryingPayment, setIsRetryingPayment] = useState(false);
   const tSupplierPayments = useTranslations('supplierPayments');
-
-  /**
-   * The one place a supplier-payment journal failure code becomes a sentence, so
-   * the toggle's toast, the "payment journal not posted" banner and its retry
-   * toast cannot drift apart. `UNMAPPED_ROLE` is the only message that
-   * interpolates a value, so it is resolved from its literal key to keep
-   * next-intl's parameter typing intact; passing values alongside the computed
-   * key would widen the whole call to `never` and drop that check. Any code the
-   * key mapper does not know falls back to the direction's generic sentence.
-   */
-  const journalFailureMessage = (
-    code: string,
-    role: string | null,
-    direction: SupplierPaymentDirection
-  ): string =>
-    code === "UNMAPPED_ROLE"
-      ? tSupplierPayments("journal.err.UNMAPPED_ROLE", { role: role ?? "" })
-      : tSupplierPayments(supplierPaymentJournalErrorKey(code, direction) as never);
+  const journalFailureMessage = useSupplierPaymentJournalFailureMessage();
 
   /**
    * The toggle always commits, so the outcome — not the absence of a throw —
@@ -511,7 +491,9 @@ export default function PODetailPage() {
               {tSupplierPayments("pendingPayment.title")}
             </p>
             <p className="text-sm text-amber-700/90 dark:text-amber-400/90">
-              {journalFailureMessage(po.paymentJournalPending.reason, po.paymentJournalPending.role, "payment")}
+              {po.paymentJournalPending.reason === null
+                ? tSupplierPayments("pendingPayment.reasonUnknown")
+                : journalFailureMessage(po.paymentJournalPending.reason, po.paymentJournalPending.role, "payment")}
             </p>
             {canPostJournal ? (
               <Button

@@ -12,9 +12,11 @@ export type SupplierPaymentDirection = "payment" | "reversal";
  * Maps a failure code `setPOPaidAt` hands back to the `supplierPayments`
  * namespace key that tells the operator what happened and what to do next.
  *
- * Shared by both toggle call sites — the PO detail page and the supplier-payments
- * register — because they surface the SAME server outcome and must not drift into
- * describing it differently.
+ * The UI reaches it only through `useSupplierPaymentJournalFailureMessage`,
+ * which every surface of a failed post goes through: both toggle call sites (the
+ * PO detail page and the supplier-payments register), the PO page's "payment
+ * journal not posted" banner and its retry. They surface the SAME server outcome
+ * and must not drift into describing it differently.
  *
  * Every code is whitelisted rather than interpolated straight into a key: an
  * unrecognised one (a future code, or the synthetic `ERROR` the safe-post wrapper
@@ -45,11 +47,11 @@ export const SUPPLIER_PAYMENT_JOURNAL_ERROR_CODES = [
  * `postJournal`'s balance check, `GENERIC` as the catch-all for a thrown post and
  * for any unrecognised code), and the two directions need to say opposite things:
  *
- * - the remedy differs. A failed payment leaves the PO marked paid, so the UI
- *   offers Unmark and the fix is unmark-then-re-mark. A failed reversal leaves it
- *   unpaid, where "Mark paid" is the only toggle on offer and cannot post the
- *   missing reversal — that direction has to point at the standing-payment
- *   warning's own control.
+ * - the remedy differs. A failed payment leaves the PO marked paid with the
+ *   "payment journal not posted" banner, so the fix is that banner's "Post
+ *   payment journal". A failed reversal leaves it unpaid, where "Mark paid" is
+ *   the only toggle on offer and cannot post the missing reversal — that
+ *   direction has to point at the standing-payment warning's own control.
  * - the ledger claim differs. A failed payment wrote nothing. A failed reversal
  *   leaves the earlier payment journal standing — payables cleared, bank credited
  *   — for a PO that now reads unpaid, so telling the operator payables and bank

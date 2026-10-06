@@ -18,6 +18,7 @@ import { listPOs, getPOById as getPOByIdQuery } from '@/lib/purchase-orders/quer
 import { assertLinesVariantSkusMatchItemDefinitions } from '@/lib/items/validate-variant-lines';
 import { resolvePoLeadTimeFields } from '@/lib/leadtime/po-snapshot';
 import {
+  hasCurrentPaymentJournal,
   hasStandingPaymentJournalWhileUnpaid,
   postSupplierPaymentJournal,
   postSupplierPaymentReversalJournal,
@@ -25,8 +26,8 @@ import {
 import type { GenerateAutoJournalResult } from '@/lib/finance/journal';
 import {
   attemptSupplierPaymentJournal,
+  latestPaymentJournalFailure,
   notifySupplierPaymentJournalFailure,
-  paymentJournalPendingWhilePaid,
   type SupplierPaymentPostFailure,
 } from '@/lib/purchasing/post-supplier-payment-journal-safely';
 import type { SupplierPaymentDirection } from '@/lib/purchasing/supplier-payment-journal-message';
@@ -730,7 +731,7 @@ export type RetrySupplierPaymentJournalResult =
 /**
  * Posts the payment journal a mark never posted, for a PO that reads paid with
  * no payment journal at its current generation and a recorded failed attempt
- * (`paymentJournalPendingWhilePaid`).
+ * (the same gate as the banner's `paymentJournalPendingWhilePaid`).
  *
  * The second deliberate exception to "the toggle IS the retry", alongside
  * `postSupplierPaymentReversalJournalAction`. The toggle can re-run this post, but
@@ -738,15 +739,21 @@ export type RetrySupplierPaymentJournalResult =
  * the re-mark; this posts in place, dated the PO's RECORDED `paidAt` rather than
  * now, so the payment lands in the period the money actually left.
  *
- * The state check is server-side and re-read inside the transaction. It is not
- * redundant with the banner: every `"use server"` export is an independently
- * callable endpoint, and the gate is the recorded failure, never "paid without a
- * journal" — a legitimate advance payment that never attempted a post must not be
- * postable from here.
+ * The state check is server-side. It is not redundant with the banner: every
+ * `"use server"` export is an independently callable endpoint, and the gate is
+ * the recorded failure, never "paid without a journal". That keeps out a PO paid
+ * before this retry existed and one whose failure notification never wrote, and
+ * nothing else: an advance payment, or a PO whose receipts are each sub-cent or
+ * owner-declined, recorded `NOTHING_TO_POST` when it was marked, so it passes the
+ * gate, and the post here returns `NOTHING_TO_POST` again. It can never post a
+ * payment journal for such a PO.
  *
- * Check and post run in ONE serializable transaction for the same reason the
- * reversal control does: a concurrent unmark committing between the two would
- * otherwise leave a payment journal standing for a PO that reads unpaid.
+ * The recorded failure is read BEFORE the transaction (`latestPaymentJournalFailure`
+ * says why; the rows are append-only). `paidAt` and the current-generation
+ * journal are re-read inside it, and check and post run in ONE serializable
+ * transaction for the same reason the reversal control does: a concurrent unmark
+ * committing between the two would otherwise leave a payment journal standing
+ * for a PO that reads unpaid.
  *
  * A failure is written as a `JOURNAL_PENDING` row after the transaction commits.
  * The notifier dedups by `(poId, kind, reason)`, so a repeat of the same failure
@@ -765,13 +772,15 @@ export async function retrySupplierPaymentJournalAction(poId: string): Promise<R
     | { kind: "POSTED" }
     | { kind: "FAILED"; failure: SupplierPaymentPostFailure };
 
+  if ((await latestPaymentJournalFailure(poId)) == null) return { ok: false, code: "BAD_STATE" };
+
   let outcome: Outcome;
   try {
     outcome = await runSerializable<Outcome>(async (tx) => {
       const po = await tx.purchaseOrder.findUnique({ where: { id: poId }, select: { paidAt: true } });
       const paidAt = po?.paidAt ?? null;
       if (paidAt == null) return { kind: "BAD_STATE" };
-      if (!(await paymentJournalPendingWhilePaid(poId, tx))) return { kind: "BAD_STATE" };
+      if (await hasCurrentPaymentJournal(poId, tx)) return { kind: "BAD_STATE" };
 
       const failure = await attemptSupplierPaymentJournal("payment", () =>
         postSupplierPaymentJournal(poId, actorId, paidAt, tx)

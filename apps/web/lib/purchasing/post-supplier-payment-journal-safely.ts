@@ -1,4 +1,4 @@
-import { prisma, type AdminNotification, type Prisma, type PrismaClient } from "@elorae/db";
+import { prisma, type AdminNotification } from "@elorae/db";
 import { isRetryableTxError } from "@/lib/db/tx-retry";
 import { hasCurrentPaymentJournal } from "./supplier-payment-journal";
 import type { PostSupplierPaymentResult, PostSupplierPaymentReversalResult } from "./supplier-payment-journal";
@@ -20,12 +20,13 @@ const NOTIFICATION_KIND: Record<SupplierPaymentDirection, string> = {
 /**
  * How an operator re-runs a failed post, which differs by direction.
  *
- * A failed PAYMENT left the PO marked paid, so the paid toggle can re-run it —
- * unmark, then mark paid again, and the same post is attempted afresh. The PO
- * detail page also renders this failure as a durable banner after reload, with a
- * "Post payment journal" retry for `journals:manage` holders
- * (`retrySupplierPaymentJournalAction`), which posts at the PO's recorded paid
- * date without the unmark.
+ * A failed PAYMENT left the PO marked paid, and the PO detail page renders the
+ * failure as a durable banner with a "Post payment journal" retry for
+ * `journals:manage` holders (`retrySupplierPaymentJournalAction`), which posts at
+ * the PO's recorded paid date. That is the remedy named here, not the toggle:
+ * unmarking and re-marking would also re-run the post, but it rewrites `paidAt`
+ * to the moment of the re-mark. The toggle stays the remedy only where the banner
+ * cannot show (`TOGGLE_RETRY`).
  *
  * A failed REVERSAL cannot be retried that way, which is why it points at a
  * dedicated control instead. It left the PO unpaid with its payment journal
@@ -37,9 +38,17 @@ const NOTIFICATION_KIND: Record<SupplierPaymentDirection, string> = {
  * standing-payment warning on the PO detail page, posts it directly.
  */
 const RETRY_HINT: Record<SupplierPaymentDirection, string> = {
-  payment: "unmark payment on the PO and mark it paid again",
+  payment: 'use "Post payment journal" on the PO\'s page (needs journals:manage)',
   reversal: 'open the PO and use the standing-payment warning\'s "Post reversal journal" action',
 };
+
+/**
+ * Re-running a failed payment through the paid toggle. Named only where the
+ * banner's retry is unavailable: when the `JOURNAL_PENDING` row itself failed to
+ * write (the banner keys on it), and for `PAYMENT_SUPERSEDED`, whose stale
+ * journal stands at the current generation and so never lights the banner.
+ */
+const TOGGLE_RETRY = "unmark payment on the PO and mark it paid again";
 
 /**
  * Runs the journal post and classifies the outcome, returning `null` when there
@@ -111,35 +120,38 @@ export async function notifySupplierPaymentJournalFailure(
   await notify(direction, poId, failure.reason, failure.role, failure.detail);
 }
 
-/** The failure a `JOURNAL_PENDING` row recorded for a PO's payment post. */
-export type PaymentJournalPending = { reason: string; role: string | null };
+/**
+ * The failure a `JOURNAL_PENDING` row recorded for a PO's payment post. `reason`
+ * is `null` when the newest recorded failure predates the PO's current `paidAt`:
+ * a failure is on record, but the latest attempt's reason is not (its own row
+ * was deduped, or its write failed).
+ */
+export type PaymentJournalPending = { reason: string | null; role: string | null };
+
+/** The newest `supplier_payment` `JOURNAL_PENDING` row for one PO. */
+export type PaymentJournalFailureRow = { reason: string; role: string | null; createdAt: Date };
 
 /**
- * The newest recorded payment-journal failure for a PO that reads paid while no
- * `SUPPLIER_PAYMENT` journal stands at its current generation, else `null`.
+ * The newest `supplier_payment` `JOURNAL_PENDING` row recorded for a PO, read or
+ * unread, else `null`.
  *
- * This is the durable rendering of the payment-direction alert: the bell is
- * best-effort, the `AdminNotification` row is not. It is keyed on a real failed
- * attempt, never on "paid without a journal", so a legitimate advance payment
- * that never attempted a post cannot light it.
+ * Always reads through `prisma`, never a transaction client. Under SERIALIZABLE
+ * this unfiltered read would take shared locks over the whole `JOURNAL_PENDING`
+ * range and block every other writer of that category, the van sale's notify at
+ * the counter among them, until the transaction commits. Reading it outside is
+ * safe because the rows are append-only: one seen here is still there when a
+ * caller's transaction runs.
  *
- * Reads every `JOURNAL_PENDING` row with no `take` and no `readAt` filter:
- * nothing sets `readAt` as evidence of a fix, and a capped window would hide an
- * older failure behind newer rows for other documents. Metadata is matched in JS
- * because JSON-path filtering on this adapter is unreliable.
+ * Reads every row with no `take` and no `readAt` filter: nothing sets `readAt` as
+ * evidence of a fix, and a capped window would hide an older failure behind newer
+ * rows for other documents. Metadata is matched in JS because JSON-path filtering
+ * on this adapter is unreliable.
  */
-export async function paymentJournalPendingWhilePaid(
-  poId: string,
-  client: PrismaClient | Prisma.TransactionClient = prisma,
-): Promise<PaymentJournalPending | null> {
-  const po = await client.purchaseOrder.findUnique({ where: { id: poId }, select: { paidAt: true } });
-  if (po?.paidAt == null) return null;
-  if (await hasCurrentPaymentJournal(poId, client)) return null;
-
-  const rows = await client.adminNotification.findMany({
+export async function latestPaymentJournalFailure(poId: string): Promise<PaymentJournalFailureRow | null> {
+  const rows = await prisma.adminNotification.findMany({
     where: { category: "JOURNAL_PENDING" },
     orderBy: { createdAt: "desc" },
-    select: { metadata: true },
+    select: { metadata: true, createdAt: true },
   });
   for (const r of rows) {
     const m = r.metadata as { docId?: unknown; kind?: unknown; reason?: unknown; role?: unknown } | null;
@@ -147,9 +159,41 @@ export async function paymentJournalPendingWhilePaid(
     return {
       reason: typeof m.reason === "string" ? m.reason : "ERROR",
       role: typeof m.role === "string" ? m.role : null,
+      createdAt: r.createdAt,
     };
   }
   return null;
+}
+
+/**
+ * The newest recorded payment-journal failure for a PO that reads paid while no
+ * `SUPPLIER_PAYMENT` journal stands at its current generation, else `null`.
+ *
+ * This is the durable rendering of the payment-direction alert: the bell is
+ * best-effort, the `AdminNotification` row is not. It is keyed on a real failed
+ * attempt, never on "paid without a journal", so a PO paid before this alert
+ * existed, or one whose failure notification itself failed to write, cannot
+ * light it. Every other paid PO without a journal can: an advance payment, or a
+ * PO whose receipts are each sub-cent or owner-declined, attempts the post on
+ * the mark, gets `NOTHING_TO_POST`, and `attemptSupplierPaymentJournal` files
+ * that as a failure. Its retry comes back `NOTHING_TO_POST` again; it can never
+ * post a payment journal for such a PO.
+ *
+ * The row's reason is shown only when the row is at least as new as the current
+ * `paidAt`. An older row describes an earlier mark, so its reason may not be why
+ * the current one has no journal; `reason` is then `null` and the banner says the
+ * latest attempt's reason is not on record.
+ */
+export async function paymentJournalPendingWhilePaid(poId: string): Promise<PaymentJournalPending | null> {
+  const po = await prisma.purchaseOrder.findUnique({ where: { id: poId }, select: { paidAt: true } });
+  if (!po || po.paidAt == null) return null;
+  const paidAt = po.paidAt;
+  if (await hasCurrentPaymentJournal(poId)) return null;
+
+  const row = await latestPaymentJournalFailure(poId);
+  if (!row) return null;
+  if (row.createdAt.getTime() < paidAt.getTime()) return { reason: null, role: null };
+  return { reason: row.reason, role: row.role };
 }
 
 function titleFor(direction: SupplierPaymentDirection, reason: string): string {
@@ -279,7 +323,7 @@ function messageFor(
       "different amount than this PO now owes, so no new journal was posted. Payables and bank are NOT untouched " +
       "here — they still hold that earlier payment, which no longer clears this PO's payable. This happens when an " +
       "unmark's reversal journal failed to post and the payable changed afterwards (another receipt was journaled, " +
-      `for instance). To fix, ${retry} — and confirm the reversal journal actually posted this time before treating ` +
+      `for instance). To fix, ${TOGGLE_RETRY} — and confirm the reversal journal actually posted this time before treating ` +
       "the PO as paid. If that unmark's reversal fails too, the PO detail page raises a standing-payment warning with " +
       "a control that posts the reversal directly."
     );
@@ -371,7 +415,8 @@ async function notify(
      */
     console.error(
       `[notifySupplierPaymentJournalFailure] FAILED TO NOTIFY for supplier ${direction} on PO ${poId} — the journal did ` +
-        `not post and the JOURNAL_PENDING notification write also failed (${reason}). To recover: ${RETRY_HINT[direction]}.`,
+        `not post and the JOURNAL_PENDING notification write also failed (${reason}). To recover: ` +
+        `${direction === "payment" ? TOGGLE_RETRY : RETRY_HINT[direction]}.`,
       e,
     );
   }

@@ -173,6 +173,18 @@ d("paymentJournalPendingWhilePaid (test bed only)", () => {
     await expect(paymentJournalPendingWhilePaid(poId)).resolves.toEqual({ reason: "GRN_APPROVAL_PENDING", role: null });
   });
 
+  it("withholds the reason of a row older than the current paid mark, but still reports the failure", async () => {
+    const poId = await seedPo(PAID);
+    await writeRow(poId, "supplier_payment", "UNMAPPED_ROLE", "AP", { createdAt: new Date(PAID.getTime() - 60_000) });
+    await expect(paymentJournalPendingWhilePaid(poId)).resolves.toEqual({ reason: null, role: null });
+  });
+
+  it("shows the reason of a row written at the current paid mark", async () => {
+    const poId = await seedPo(PAID);
+    await writeRow(poId, "supplier_payment", "UNMAPPED_ROLE", "AP", { createdAt: PAID });
+    await expect(paymentJournalPendingWhilePaid(poId)).resolves.toEqual({ reason: "UNMAPPED_ROLE", role: "AP" });
+  });
+
   it("still returns a row that has been read", async () => {
     const poId = await seedPo(PAID);
     await writeRow(poId, "supplier_payment", "UNBALANCED", null, { readAt: new Date() });
