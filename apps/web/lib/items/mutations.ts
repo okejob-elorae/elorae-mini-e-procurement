@@ -1,6 +1,7 @@
 import { prisma, type Prisma } from '@elorae/db';
 import { generateSKU } from '@/lib/sku-generator';
 import { validateAndNormalizeVariants } from '@/lib/items/normalize-variants';
+import { findVariantSkuCollisions, VariantSkuTakenError } from "@/lib/items/variant-sku-collisions";
 
 export type ItemFormData = {
   sku?: string;
@@ -186,7 +187,14 @@ export async function createItem(data: ItemFormData) {
   }
 
   const categoryCode = await resolveCategoryCode(rest.categoryId ?? null);
-  const normalizedVariants = validateAndNormalizeVariants(finalSku, rest.variants, { categoryCode });
+  const normalizedVariants = validateAndNormalizeVariants(finalSku, rest.variants, {
+    categoryCode,
+    generateFrom: "parent",
+  });
+  const createCollisions = await findVariantSkuCollisions(prisma, {
+    skus: normalizedVariants.map((v) => v.sku),
+  });
+  if (createCollisions.length > 0) throw new VariantSkuTakenError(createCollisions);
 
   const item = await prisma.$transaction(async (tx) => {
     const newItem = await tx.item.create({
@@ -251,7 +259,13 @@ export async function updateItem(
   const categoryCode = await resolveCategoryCode(effectiveCategoryId);
   const normalizedVariants = validateAndNormalizeVariants(existing.sku, rest.variants, {
     categoryCode,
+    generateFrom: "parent",
   });
+  const updateCollisions = await findVariantSkuCollisions(client, {
+    excludeItemId: id,
+    skus: normalizedVariants.map((v) => v.sku),
+  });
+  if (updateCollisions.length > 0) throw new VariantSkuTakenError(updateCollisions);
 
   const item = await client.item.update({
     where: { id },

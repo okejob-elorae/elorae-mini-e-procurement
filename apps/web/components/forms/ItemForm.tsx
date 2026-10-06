@@ -28,6 +28,11 @@ import { TagsInput } from '@/components/ui/tags-input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Plus, Trash2, Loader2, Wand2 } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  buildVariantSkuCode,
+  slugVariantAttributeValue,
+  variantSkuBase,
+} from "@/lib/items/normalize-variants";
 import { useTranslations } from 'next-intl';
 import type { z } from 'zod';
 import {
@@ -80,15 +85,6 @@ interface ItemCategoryOption {
   isActive: boolean;
 }
 
-/** Normalize attribute value for variant SKU segment (e.g. red → RED, light blue → LIGHTBLUE). */
-function slugVariantAttributeValue(value: string): string {
-  return value
-    .trim()
-    .replace(/\s+/g, '')
-    .replace(/[^a-zA-Z0-9]/g, '')
-    .toUpperCase();
-}
-
 /**
  * De-duplicates attribute values case-insensitively (trim + lowercase),
  * keeping the FIRST spelling typed — `TagsInput` itself only dedupes
@@ -112,24 +108,6 @@ function parseNumberFieldDefaultZero(value: unknown): number {
   if (value === '' || value === null || value === undefined) return 0;
   const n = typeof value === 'number' ? value : Number(value);
   return Number.isNaN(n) ? 0 : n;
-}
-
-/**
- * Pattern: `{base}-{v1}-…-{vn}` with n = number of attribute columns (e.g. OUTERWEAR-RED-S).
- * Base is the item category code when the category has one; otherwise the parent item SKU (server accepts both prefixes).
- */
-function buildVariantSkuCode(
-  basePrefix: string,
-  combo: Record<string, string>,
-  orderedAttributeKeys: string[]
-): string {
-  const base = basePrefix.trim();
-  const segments = orderedAttributeKeys
-    .map((key) => slugVariantAttributeValue(combo[key] ?? ''))
-    .filter((s) => s.length > 0);
-  if (!base) return segments.join('-');
-  if (segments.length === 0) return base;
-  return `${base}-${segments.join('-')}`;
 }
 
 interface ItemFormProps {
@@ -396,7 +374,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   };
 
   const parentSku = (initialData?.sku ?? sku) || '';
-  const variantSkuBasePrefix = categoryCodePrefix || parentSku.trim();
+  const variantSkuBasePrefix = variantSkuBase(parentSku, categoryCodePrefix);
 
   const setVariantSkuAt = (idx: number, value: string) => {
     setGrid((prev) => setRowValueAt(prev, 'skus', idx, value));
@@ -886,9 +864,9 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
             <div className="space-y-2 pt-2 border-t">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <p className="text-sm text-muted-foreground">
-                  Variant SKU must start with the category code
-                  {categoryCodePrefix ? ` (${categoryCodePrefix})` : ' (when the category has one)'} or the parent item SKU
-                  {parentSku ? ` (${parentSku})` : ''}. Leave empty to save and the server will auto-fill using the same
+                  Variant SKU must start with the parent item SKU
+                  {parentSku ? ` (${parentSku})` : ''} or the category code
+                  {categoryCodePrefix ? ` (${categoryCodePrefix})` : ' (when the category has one)'}. Leave empty to save and the server will auto-fill using the same
                   base. Use <span className="font-medium text-foreground">Generate code</span> for{' '}
                   <code className="rounded bg-muted px-1 py-0.5 text-xs">{`{base}-{attr1}-…-{attrN}`}</code>
                   {variantSkuBasePrefix ? (
@@ -897,7 +875,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                       (e.g. {variantSkuBasePrefix}-RED-S).
                     </>
                   ) : (
-                    <> (pick a category with a code or set the item SKU first).</>
+                    <> (set the item SKU first).</>
                   )}
                   {' '}Barcodes follow the format in{' '}
                   <span className="font-medium text-foreground">Settings → Item codes</span>.

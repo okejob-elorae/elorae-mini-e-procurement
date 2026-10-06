@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { validateAndNormalizeVariants } from "./normalize-variants";
+import {
+  buildVariantSkuCode,
+  validateAndNormalizeVariants,
+  variantSkuBase,
+} from "./normalize-variants";
 
 describe("validateAndNormalizeVariants", () => {
   const variants = [
@@ -44,5 +48,41 @@ describe("validateAndNormalizeVariants", () => {
 
   it("returns an empty list for no variants", () => {
     expect(validateAndNormalizeVariants("A", undefined)).toEqual([]);
+  });
+
+  it("generates a blank SKU from the parent SKU by default, not the category code", () => {
+    const out = validateAndNormalizeVariants("KMJ01", [{ Warna: "Merah", sku: "" }], {
+      categoryCode: "BAJU",
+    });
+    expect(out[0].sku).toBe("KMJ01-MERAH");
+  });
+
+  it("keeps a typed category-prefixed SKU unchanged under the parent default", () => {
+    const out = validateAndNormalizeVariants("KMJ01", [{ Warna: "Merah", sku: "BAJU-MERAH-M" }], {
+      categoryCode: "BAJU",
+    });
+    expect(out[0].sku).toBe("BAJU-MERAH-M");
+  });
+
+  it("still generates from the category code when asked", () => {
+    const out = validateAndNormalizeVariants("KMJ01", [{ Warna: "Merah", sku: "" }], {
+      categoryCode: "BAJU",
+      generateFrom: "category",
+    });
+    expect(out[0].sku).toBe("BAJU-MERAH");
+  });
+
+  it("picks the parent SKU as the base and falls back to the category code", () => {
+    expect(variantSkuBase("", "BAJU")).toBe("BAJU");
+    expect(variantSkuBase(" KMJ01 ", "BAJU")).toBe("KMJ01");
+    expect(variantSkuBase("", null)).toBe("");
+  });
+
+  it("builds the variant code as {base}-{slugs} in attribute order", () => {
+    expect(
+      buildVariantSkuCode(" KMJ01 ", { Warna: "light blue", Ukuran: "M" }, ["Warna", "Ukuran"]),
+    ).toBe("KMJ01-LIGHTBLUE-M");
+    expect(buildVariantSkuCode("KMJ01", {}, ["Warna"])).toBe("KMJ01");
+    expect(buildVariantSkuCode("", { Warna: "Red" }, ["Warna"])).toBe("RED");
   });
 });

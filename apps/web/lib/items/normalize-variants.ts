@@ -1,11 +1,37 @@
 export type VariantGenerationBase = "category" | "parent";
 
-function slugVariantAttributeValue(value: string): string {
+/** Normalize attribute value for variant SKU segment (e.g. red → RED, light blue → LIGHTBLUE). */
+export function slugVariantAttributeValue(value: string): string {
   return value
     .trim()
     .replace(/\s+/g, "")
     .replace(/[^a-zA-Z0-9]/g, "")
     .toUpperCase();
+}
+
+/**
+ * Pattern: `{base}-{v1}-…-{vn}` with n = number of attribute columns (e.g. KMJ01-RED-S).
+ */
+export function buildVariantSkuCode(
+  basePrefix: string,
+  combo: Record<string, string>,
+  orderedAttributeKeys: string[],
+): string {
+  const base = basePrefix.trim();
+  const segments = orderedAttributeKeys
+    .map((key) => slugVariantAttributeValue(combo[key] ?? ""))
+    .filter((s) => s.length > 0);
+  if (!base) return segments.join("-");
+  if (segments.length === 0) return base;
+  return `${base}-${segments.join("-")}`;
+}
+
+/**
+ * The prefix blank variant SKUs are generated from: the parent SKU, falling back to the category
+ * code only when the parent SKU is empty.
+ */
+export function variantSkuBase(parentSku: string, categoryCode?: string | null): string {
+  return parentSku.trim() || categoryCode?.trim() || "";
 }
 
 function variantSuffixFromRecord(v: Record<string, string>): string {
@@ -21,10 +47,10 @@ function variantSuffixFromRecord(v: Record<string, string>): string {
 /**
  * Normalises a variant list the way the single-item form stores it. A typed SKU must start with
  * the parent SKU or the category code, and one that does not is REWRITTEN onto the generation
- * base; a blank SKU is generated as `<base>-<attribute slugs>`. The base is the category code by
- * default (the form's long-standing behaviour); `generateFrom: "parent"` uses the parent SKU,
- * which the bulk import needs because two artikels in one category otherwise generate the same
- * SKU for the same Warna/Ukuran.
+ * base; a blank SKU is generated as `<base>-<attribute slugs>`. The base is the parent SKU by
+ * default, for the form and the bulk import alike, because two artikels in one category otherwise
+ * generate the same SKU for the same Warna/Ukuran; `generateFrom: "category"` keeps the legacy
+ * category-code base. A typed SKU with either prefix is never renamed, whichever base is chosen.
  */
 export function validateAndNormalizeVariants(
   parentSku: string,
@@ -34,7 +60,7 @@ export function validateAndNormalizeVariants(
   if (!variants?.length) return [];
   const prefix = parentSku.trim();
   const cat = opts?.categoryCode?.trim() || "";
-  const autoBase = opts?.generateFrom === "parent" ? prefix || cat : cat || prefix;
+  const autoBase = opts?.generateFrom === "category" ? cat || prefix : prefix || cat;
   const validPrefixes: string[] = [];
   if (prefix) validPrefixes.push(prefix);
   if (cat && !validPrefixes.includes(cat)) validPrefixes.push(cat);
