@@ -7,6 +7,7 @@ import {
   markTaxInvoiceCreated,
   markTaxInvoiceNotRequired,
   markTaxInvoiceSentToStore,
+  revertTaxInvoiceToCreated,
   revertTaxInvoiceToPending,
 } from "@/lib/tax-invoices/writer";
 import { TaxInvoiceError } from "@/lib/tax-invoices/errors";
@@ -106,6 +107,24 @@ export async function markSentToStoreAction(input: {
   }
   try {
     await markTaxInvoiceSentToStore({ taxInvoiceId: input.taxInvoiceId, reason: input.reason, userId: g.userId });
+  } catch (e) {
+    return toResult(e);
+  }
+  revalidatePath("/backoffice/finance/faktur-pajak");
+  return { ok: true };
+}
+
+export async function revertToCreatedAction(input: {
+  taxInvoiceId: string;
+  reason: string;
+}): Promise<TaxInvoiceActionResult> {
+  const g = await guard();
+  if ("ok" in g) return g;
+  if (typeof input?.taxInvoiceId !== "string" || input.taxInvoiceId === "" || typeof input?.reason !== "string") {
+    return { ok: false, code: "INVALID_REQUEST" };
+  }
+  try {
+    await revertTaxInvoiceToCreated({ taxInvoiceId: input.taxInvoiceId, reason: input.reason, userId: g.userId });
   } catch (e) {
     return toResult(e);
   }

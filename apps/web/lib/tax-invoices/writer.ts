@@ -191,6 +191,29 @@ export async function markTaxInvoiceSentToStore(input: {
   });
 }
 
+/**
+ * Undoes a mis-clicked "Sent to store" without destroying the filing: SENT_TO_STORE -> CREATED.
+ * `data` is `{ reason }` ONLY, the same rule as `markTaxInvoiceSentToStore`, so `invoiceNo`,
+ * `buyerNpwp`, both amounts and `markedAt`/`markedById` survive. The reason is required, like
+ * every other revert.
+ */
+export async function revertTaxInvoiceToCreated(input: {
+  taxInvoiceId: string;
+  reason: string;
+  userId: string;
+}): Promise<{ ok: true }> {
+  const reason = input.reason.trim();
+  if (reason === "") throw new TaxInvoiceError("INVALID_REQUEST");
+  return transition({
+    taxInvoiceId: input.taxInvoiceId,
+    userId: input.userId,
+    from: ["SENT_TO_STORE"],
+    to: "CREATED",
+    data: { reason },
+    action: "TAX_INVOICE_SENT_REVERTED",
+  });
+}
+
 export async function revertTaxInvoiceToPending(input: {
   taxInvoiceId: string;
   reason: string;
