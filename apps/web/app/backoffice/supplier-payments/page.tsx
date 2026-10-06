@@ -174,8 +174,9 @@ export default function SupplierPaymentsPage() {
    * earlier payment for a different amount, and on the reversal half because they
    * still hold the payment this unmark failed to undo. Reporting "Marked as paid"
    * for any of those is positive confirmation of something that did not happen,
-   * and the only other trace is an `AdminNotification` row nothing in the UI
-   * renders yet. Which case it is, and the remedy, come from the message the code
+   * and the only other trace is an `AdminNotification` row this register does
+   * not render — the PO detail page renders it, as a banner with a retry for a
+   * failed payment. Which case it is, and the remedy, come from the message the code
    * AND the direction resolve to — the same failure means opposite things on the
    * two halves of the toggle.
    *

@@ -10,8 +10,12 @@ import {
   updatePO,
   setPOPaidAt,
   postSupplierPaymentReversalJournalAction,
+  retrySupplierPaymentJournalAction,
 } from '@/app/actions/purchase-orders';
-import { supplierPaymentJournalErrorKey } from '@/lib/purchasing/supplier-payment-journal-message';
+import {
+  supplierPaymentJournalErrorKey,
+  type SupplierPaymentDirection,
+} from "@/lib/purchasing/supplier-payment-journal-message";
 import { POForm } from '@/components/forms/POForm';
 import { ETABadge } from '@/components/ui/ETABadge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -74,7 +78,26 @@ export default function PODetailPage() {
   const [pendingUpdateData, setPendingUpdateData] = useState<any>(null);
   const [isTogglingPaid, setIsTogglingPaid] = useState(false);
   const [isPostingReversal, setIsPostingReversal] = useState(false);
+  const [isRetryingPayment, setIsRetryingPayment] = useState(false);
   const tSupplierPayments = useTranslations('supplierPayments');
+
+  /**
+   * The one place a supplier-payment journal failure code becomes a sentence, so
+   * the toggle's toast, the "payment journal not posted" banner and its retry
+   * toast cannot drift apart. `UNMAPPED_ROLE` is the only message that
+   * interpolates a value, so it is resolved from its literal key to keep
+   * next-intl's parameter typing intact; passing values alongside the computed
+   * key would widen the whole call to `never` and drop that check. Any code the
+   * key mapper does not know falls back to the direction's generic sentence.
+   */
+  const journalFailureMessage = (
+    code: string,
+    role: string | null,
+    direction: SupplierPaymentDirection
+  ): string =>
+    code === "UNMAPPED_ROLE"
+      ? tSupplierPayments("journal.err.UNMAPPED_ROLE", { role: role ?? "" })
+      : tSupplierPayments(supplierPaymentJournalErrorKey(code, direction) as never);
 
   /**
    * The toggle always commits, so the outcome — not the absence of a throw —
@@ -83,11 +106,12 @@ export default function PODetailPage() {
    * were left untouched, for `PAYMENT_SUPERSEDED` because they still hold an
    * earlier payment for a different amount, and on the reversal half because they
    * still hold the payment this unmark failed to undo. Reporting "Marked as paid"
-   * for any of those is positive confirmation of something that did not happen,
-   * and the only other trace is an `AdminNotification` row nothing in the UI
-   * renders yet. Which case it is, and the remedy, come from the message the code
-   * AND the direction resolve to — the same failure means opposite things on the
-   * two halves of the toggle.
+   * for any of those is positive confirmation of something that did not happen.
+   * The other trace is the `AdminNotification` row, which this page renders as
+   * the "payment journal not posted" banner after reload for a payment failure.
+   * Which case it is, and the remedy, come from the message the code AND the
+   * direction resolve to — the same failure means opposite things on the two
+   * halves of the toggle.
    *
    * `refusal` is checked FIRST because it also carries `changed: false`, and the
    * no-op message would be wrong for it twice over: nothing was written, but the
@@ -118,19 +142,7 @@ export default function PODetailPage() {
         );
       } else if (result.journalFailure) {
         const failure = result.journalFailure;
-        /*
-         * `UNMAPPED_ROLE` is the only one of these messages that interpolates a
-         * value, so it is resolved from its literal key to keep next-intl's
-         * parameter typing intact. Passing values alongside the computed key
-         * would widen the whole call to `never` and drop that check.
-         */
-        const warning =
-          failure.code === 'UNMAPPED_ROLE'
-            ? tSupplierPayments('journal.err.UNMAPPED_ROLE', { role: failure.role ?? '' })
-            : tSupplierPayments(
-                supplierPaymentJournalErrorKey(failure.code, failure.direction) as never
-              );
-        toast.warning(warning, { duration: 12000 });
+        toast.warning(journalFailureMessage(failure.code, failure.role, failure.direction), { duration: 12000 });
       } else {
         toast.success(next != null ? 'Marked as paid' : 'Marked as unpaid');
       }
@@ -176,6 +188,37 @@ export default function PODetailPage() {
       toast.error(e.message || 'Failed');
     } finally {
       setIsPostingReversal(false);
+    }
+  };
+
+  /**
+   * Posts the payment journal a mark left missing, from the "payment journal not
+   * posted" banner. Mirrors `handlePostMissingReversal`: every non-ok outcome is
+   * named, and a journal that still cannot post is told in the same sentence the
+   * banner and the toggle use for that code.
+   */
+  const handleRetryPaymentJournal = async () => {
+    if (!po) return;
+    setIsRetryingPayment(true);
+    try {
+      const result = await retrySupplierPaymentJournalAction(po.id);
+      if (result.ok) {
+        toast.success(tSupplierPayments("pendingPayment.posted"));
+      } else if (result.code === "FORBIDDEN") {
+        toast.error(tSupplierPayments("pendingPayment.errForbidden"));
+      } else if (result.code === "BAD_STATE") {
+        toast.info(tSupplierPayments("pendingPayment.errBadState"), { duration: 10000 });
+      } else if (result.code === "JOURNAL_FAILED") {
+        toast.warning(journalFailureMessage(result.failure.code, result.failure.role, "payment"), {
+          duration: 12000,
+        });
+      }
+      const updated = await getPOById(po.id);
+      setPO(updated);
+    } catch (e: any) {
+      toast.error(e.message || "Failed");
+    } finally {
+      setIsRetryingPayment(false);
     }
   };
 
@@ -454,6 +497,35 @@ export default function PODetailPage() {
             ) : (
               <p className="text-xs text-amber-700/80 dark:text-amber-400/80">
                 {tSupplierPayments('standingPayment.needsPermission')}
+              </p>
+            )}
+          </div>
+        </Card>
+      )}
+
+      {po.paymentJournalPending && (
+        <Card className="flex-row items-start gap-3 border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/30">
+          <AlertTriangle className="h-5 w-5 shrink-0 text-amber-700 dark:text-amber-400" />
+          <div className="flex-1 space-y-2">
+            <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+              {tSupplierPayments("pendingPayment.title")}
+            </p>
+            <p className="text-sm text-amber-700/90 dark:text-amber-400/90">
+              {journalFailureMessage(po.paymentJournalPending.reason, po.paymentJournalPending.role, "payment")}
+            </p>
+            {canPostJournal ? (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isRetryingPayment}
+                onClick={handleRetryPaymentJournal}
+              >
+                {isRetryingPayment && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {tSupplierPayments("pendingPayment.action")}
+              </Button>
+            ) : (
+              <p className="text-xs text-amber-700/80 dark:text-amber-400/80">
+                {tSupplierPayments("pendingPayment.needsPermission")}
               </p>
             )}
           </div>

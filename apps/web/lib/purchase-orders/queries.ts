@@ -6,6 +6,7 @@ import {
   hasStandingPaymentJournalWhileUnpaid,
   poIdsWithStandingPaymentJournalWhileUnpaid,
 } from '@/lib/purchasing/supplier-payment-journal';
+import { paymentJournalPendingWhilePaid } from "@/lib/purchasing/post-supplier-payment-journal-safely";
 
 export type ListPOsFilters = {
   status?: POStatus;
@@ -224,10 +225,13 @@ export async function getPOById(id: string) {
    */
   const paymentJournalStandingWhileUnpaid =
     po.paidAt == null ? await hasStandingPaymentJournalWhileUnpaid(id) : false;
+  /* The mirror image, for a paid PO: only asked when `paidAt` is set, for the same reason. */
+  const paymentJournalPending = po.paidAt != null ? await paymentJournalPendingWhilePaid(id) : null;
 
   return serializePODetail({
     ...po,
     paymentJournalStandingWhileUnpaid,
+    paymentJournalPending,
     items: po.items.map((line) => ({
       ...line,
       item: line.item

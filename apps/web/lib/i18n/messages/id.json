@@ -1608,6 +1608,14 @@
       "errBadState": "PO ini sudah tidak dalam kondisi tersebut — jurnal pembaliknya sudah diposting atau PO-nya sudah ditandai lunas lagi. Halaman sudah dimuat ulang.",
       "errFailed": "Jurnal pembalik gagal diposting ({code}). Periksa pemetaan akun dan jurnal PO ini di Finance, lalu coba lagi."
     },
+    "pendingPayment": {
+      "title": "PO ini sudah ditandai lunas, tapi jurnal pembayarannya belum diposting",
+      "action": "Posting jurnal pembayaran",
+      "needsPermission": "Butuh izin journals:manage untuk memposting jurnal ini. Minta pengguna Finance melakukannya dari halaman PO ini — atau batalkan tanda lunas dan tandai lunas lagi setelah penyebab di atas diperbaiki.",
+      "posted": "Jurnal pembayaran diposting. Utang dan bank sekarang sudah mencerminkan pembayaran ini.",
+      "errForbidden": "Anda tidak punya izin journals:manage untuk memposting jurnal pembayaran ini.",
+      "errBadState": "PO ini sudah tidak dalam kondisi tersebut — jurnal pembayarannya sudah diposting atau tanda lunas PO-nya sudah dibatalkan. Halaman sudah dimuat ulang."
+    },
     "journal": {
       "err": {
         "GRN_APPROVAL_PENDING": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Ada penerimaan barang yang masih menunggu keputusan owner. Minta owner menyetujui atau menolak penerimaan itu dulu, lalu batalkan tanda lunas dan tandai lunas lagi.",

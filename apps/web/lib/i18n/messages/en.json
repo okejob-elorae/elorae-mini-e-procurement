@@ -1608,6 +1608,14 @@
       "errBadState": "This PO is no longer in that state — either the reversal has been posted or the PO was marked paid again. The page has been reloaded.",
       "errFailed": "The reversal journal could not be posted ({code}). Check the account mapping and this PO's journals in Finance, then try again."
     },
+    "pendingPayment": {
+      "title": "This PO is marked paid, but its payment journal did not post",
+      "action": "Post payment journal",
+      "needsPermission": "Posting this journal needs the journals:manage permission. Ask a Finance user to do it from this PO's page — or unmark payment and mark it paid again once the cause above is fixed.",
+      "posted": "Payment journal posted. Payables and bank now reflect this payment.",
+      "errForbidden": "You do not have the journals:manage permission needed to post this payment journal.",
+      "errBadState": "This PO is no longer in that state — the payment journal has been posted or the PO was unmarked. The page has been reloaded."
+    },
     "journal": {
       "err": {
         "GRN_APPROVAL_PENDING": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. One of this PO's receipts is still awaiting the owner's decision. Have the owner approve or decline it first, then unmark payment and mark it paid again.",

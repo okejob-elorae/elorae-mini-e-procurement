@@ -1,5 +1,6 @@
-import { prisma, type AdminNotification } from "@elorae/db";
+import { prisma, type AdminNotification, type Prisma, type PrismaClient } from "@elorae/db";
 import { isRetryableTxError } from "@/lib/db/tx-retry";
+import { hasCurrentPaymentJournal } from "./supplier-payment-journal";
 import type { PostSupplierPaymentResult, PostSupplierPaymentReversalResult } from "./supplier-payment-journal";
 import type { SupplierPaymentDirection } from "./supplier-payment-journal-message";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
@@ -19,9 +20,12 @@ const NOTIFICATION_KIND: Record<SupplierPaymentDirection, string> = {
 /**
  * How an operator re-runs a failed post, which differs by direction.
  *
- * A failed PAYMENT needs no retry button: it left the PO marked paid, so the
- * paid toggle IS the retry — unmark, then mark paid again, and the same post is
- * attempted afresh.
+ * A failed PAYMENT left the PO marked paid, so the paid toggle can re-run it —
+ * unmark, then mark paid again, and the same post is attempted afresh. The PO
+ * detail page also renders this failure as a durable banner after reload, with a
+ * "Post payment journal" retry for `journals:manage` holders
+ * (`retrySupplierPaymentJournalAction`), which posts at the PO's recorded paid
+ * date without the unmark.
  *
  * A failed REVERSAL cannot be retried that way, which is why it points at a
  * dedicated control instead. It left the PO unpaid with its payment journal
@@ -105,6 +109,47 @@ export async function notifySupplierPaymentJournalFailure(
   failure: SupplierPaymentPostFailure,
 ): Promise<void> {
   await notify(direction, poId, failure.reason, failure.role, failure.detail);
+}
+
+/** The failure a `JOURNAL_PENDING` row recorded for a PO's payment post. */
+export type PaymentJournalPending = { reason: string; role: string | null };
+
+/**
+ * The newest recorded payment-journal failure for a PO that reads paid while no
+ * `SUPPLIER_PAYMENT` journal stands at its current generation, else `null`.
+ *
+ * This is the durable rendering of the payment-direction alert: the bell is
+ * best-effort, the `AdminNotification` row is not. It is keyed on a real failed
+ * attempt, never on "paid without a journal", so a legitimate advance payment
+ * that never attempted a post cannot light it.
+ *
+ * Reads every `JOURNAL_PENDING` row with no `take` and no `readAt` filter:
+ * nothing sets `readAt` as evidence of a fix, and a capped window would hide an
+ * older failure behind newer rows for other documents. Metadata is matched in JS
+ * because JSON-path filtering on this adapter is unreliable.
+ */
+export async function paymentJournalPendingWhilePaid(
+  poId: string,
+  client: PrismaClient | Prisma.TransactionClient = prisma,
+): Promise<PaymentJournalPending | null> {
+  const po = await client.purchaseOrder.findUnique({ where: { id: poId }, select: { paidAt: true } });
+  if (po?.paidAt == null) return null;
+  if (await hasCurrentPaymentJournal(poId, client)) return null;
+
+  const rows = await client.adminNotification.findMany({
+    where: { category: "JOURNAL_PENDING" },
+    orderBy: { createdAt: "desc" },
+    select: { metadata: true },
+  });
+  for (const r of rows) {
+    const m = r.metadata as { docId?: unknown; kind?: unknown; reason?: unknown; role?: unknown } | null;
+    if (!m || m.docId !== poId || m.kind !== NOTIFICATION_KIND.payment) continue;
+    return {
+      reason: typeof m.reason === "string" ? m.reason : "ERROR",
+      role: typeof m.role === "string" ? m.role : null,
+    };
+  }
+  return null;
 }
 
 function titleFor(direction: SupplierPaymentDirection, reason: string): string {
@@ -319,9 +364,10 @@ async function notify(
     /*
      * Best-effort: a notification failure must never fail the paid toggle,
      * which has already committed. But swallowing it silently is total
-     * invisibility — nothing in the UI renders `AdminNotification`, and this
-     * row is the only trace that a post was attempted and failed, so log
-     * loudly to keep it discoverable in the server log at least.
+     * invisibility — this row is the only trace that a post was attempted and
+     * failed, and it is what the PO detail page's "payment journal not posted"
+     * banner and its retry key on, so without it neither appears. Log loudly to
+     * keep it discoverable in the server log at least.
      */
     console.error(
       `[notifySupplierPaymentJournalFailure] FAILED TO NOTIFY for supplier ${direction} on PO ${poId} — the journal did ` +

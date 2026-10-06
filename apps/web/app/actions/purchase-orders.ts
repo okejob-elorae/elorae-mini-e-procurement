@@ -26,6 +26,7 @@ import type { GenerateAutoJournalResult } from '@/lib/finance/journal';
 import {
   attemptSupplierPaymentJournal,
   notifySupplierPaymentJournalFailure,
+  paymentJournalPendingWhilePaid,
   type SupplierPaymentPostFailure,
 } from '@/lib/purchasing/post-supplier-payment-journal-safely';
 import type { SupplierPaymentDirection } from '@/lib/purchasing/supplier-payment-journal-message';
@@ -471,9 +472,11 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
    * not poison the surrounding transaction. The exception is a deadlock or
    * serialization abort, which MariaDB has already rolled back — that one
    * rethrows so `runSerializable` retries the toggle and the post together.
-   * A failed PAYMENT needs no retry button because the toggle IS the retry; a
-   * failed REVERSAL is the one case the toggle cannot re-reach, and it has its
-   * own control (`postSupplierPaymentReversalJournalAction`).
+   * A failed PAYMENT can be re-run by the toggle (unmark, then mark again), and
+   * the PO detail page also renders it as a banner with its own retry
+   * (`retrySupplierPaymentJournalAction`); a failed REVERSAL is the one case the
+   * toggle cannot re-reach, and it has its own control
+   * (`postSupplierPaymentReversalJournalAction`).
    */
   const outcome = await runSerializable<{
     changed: boolean;
@@ -717,4 +720,86 @@ export async function postSupplierPaymentReversalJournalAction(
   revalidatePath('/backoffice/supplier-payments');
 
   return result;
+}
+
+export type RetrySupplierPaymentJournalResult =
+  | { ok: true }
+  | { ok: false; code: "FORBIDDEN" | "BAD_STATE" }
+  | { ok: false; code: "JOURNAL_FAILED"; failure: { code: string; role: string | null } };
+
+/**
+ * Posts the payment journal a mark never posted, for a PO that reads paid with
+ * no payment journal at its current generation and a recorded failed attempt
+ * (`paymentJournalPendingWhilePaid`).
+ *
+ * The second deliberate exception to "the toggle IS the retry", alongside
+ * `postSupplierPaymentReversalJournalAction`. The toggle can re-run this post, but
+ * only through an unmark and a re-mark, which rewrites `paidAt` to the moment of
+ * the re-mark; this posts in place, dated the PO's RECORDED `paidAt` rather than
+ * now, so the payment lands in the period the money actually left.
+ *
+ * The state check is server-side and re-read inside the transaction. It is not
+ * redundant with the banner: every `"use server"` export is an independently
+ * callable endpoint, and the gate is the recorded failure, never "paid without a
+ * journal" — a legitimate advance payment that never attempted a post must not be
+ * postable from here.
+ *
+ * Check and post run in ONE serializable transaction for the same reason the
+ * reversal control does: a concurrent unmark committing between the two would
+ * otherwise leave a payment journal standing for a PO that reads unpaid.
+ *
+ * A failure is written as a `JOURNAL_PENDING` row after the transaction commits.
+ * The notifier dedups by `(poId, kind, reason)`, so a repeat of the same failure
+ * writes nothing and a new reason writes one row, which the banner then shows.
+ * Only the code and role cross to the client; the raw `detail` stays server-side.
+ */
+export async function retrySupplierPaymentJournalAction(poId: string): Promise<RetrySupplierPaymentJournalResult> {
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE)) {
+    return { ok: false, code: "FORBIDDEN" };
+  }
+  const actorId = session.user.id;
+
+  type Outcome =
+    | { kind: "BAD_STATE" }
+    | { kind: "POSTED" }
+    | { kind: "FAILED"; failure: SupplierPaymentPostFailure };
+
+  let outcome: Outcome;
+  try {
+    outcome = await runSerializable<Outcome>(async (tx) => {
+      const po = await tx.purchaseOrder.findUnique({ where: { id: poId }, select: { paidAt: true } });
+      const paidAt = po?.paidAt ?? null;
+      if (paidAt == null) return { kind: "BAD_STATE" };
+      if (!(await paymentJournalPendingWhilePaid(poId, tx))) return { kind: "BAD_STATE" };
+
+      const failure = await attemptSupplierPaymentJournal("payment", () =>
+        postSupplierPaymentJournal(poId, actorId, paidAt, tx)
+      );
+      return failure ? { kind: "FAILED", failure } : { kind: "POSTED" };
+    });
+  } catch (e) {
+    console.error(
+      `[retrySupplierPaymentJournalAction] FAILED TO POST the missing supplier payment journal for PO ${poId} — ` +
+        "the PO still reads paid with no payment journal.",
+      e
+    );
+    outcome = { kind: "FAILED", failure: { reason: "ERROR", role: null } };
+  }
+
+  if (outcome.kind === "FAILED") {
+    await notifySupplierPaymentJournalFailure("payment", poId, outcome.failure);
+  }
+
+  revalidatePath("/backoffice/purchase-orders");
+  revalidatePath(`/backoffice/purchase-orders/${poId}`);
+  revalidatePath("/backoffice/supplier-payments");
+
+  if (outcome.kind === "POSTED") return { ok: true };
+  if (outcome.kind === "BAD_STATE") return { ok: false, code: "BAD_STATE" };
+  return {
+    ok: false,
+    code: "JOURNAL_FAILED",
+    failure: { code: outcome.failure.reason, role: outcome.failure.role },
+  };
 }

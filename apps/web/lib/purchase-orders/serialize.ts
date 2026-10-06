@@ -119,6 +119,13 @@ type PODetailRow = {
    * for it — absent means "not flagged", never "unknown".
    */
   paymentJournalStandingWhileUnpaid?: boolean;
+  /**
+   * Set by `getPOById` from `paymentJournalPendingWhilePaid`, not by a column:
+   * the PO reads paid, no payment journal stands at its current generation, and
+   * a recorded payment-journal failure names why. Optional for the same reason as
+   * the flag above — absent means "nothing pending", never "unknown".
+   */
+  paymentJournalPending?: { reason: string; role: string | null } | null;
   supplier: Record<string, unknown>;
   items: Array<{
     id: string;
@@ -185,6 +192,7 @@ export function serializePODetail(po: PODetailRow) {
     chainConfirmedSource: po.chainConfirmedSource ?? null,
     actualLeadDays: po.actualLeadDays,
     paymentJournalStandingWhileUnpaid: po.paymentJournalStandingWhileUnpaid ?? false,
+    paymentJournalPending: po.paymentJournalPending ?? null,
     supplier: po.supplier,
     items: po.items.map((line) => ({
       id: line.id,
