@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { canViewFieldReturns } from "@/lib/field-sales/retur/access";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { listFieldReturns, type FieldReturnOrigin } from "@/lib/field-sales/retur/queries";
 import { FieldReturnsPageClient } from "./FieldReturnsPageClient";
@@ -36,6 +37,7 @@ function parseCreditFilter(raw: string | undefined): "AVAILABLE" | "APPLIED" | u
 export default async function FieldReturnsPage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session) redirect("/login");
+  if (!canViewFieldReturns(session.user.permissions ?? [])) redirect("/backoffice");
 
   const sp = await searchParams;
   const q = sp.q?.trim() || undefined;

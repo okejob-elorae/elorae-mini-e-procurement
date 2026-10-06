@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { canViewFieldReturns } from "@/lib/field-sales/retur/access";
 import { getFieldReturnById } from "@/lib/field-sales/retur/queries";
 import { listAllocationCandidatesForStore, type AllocationCandidate } from "@/lib/finance/ar/queries";
 import { suggestOffsetAllocations } from "@/lib/finance/ar/retur-offset-queries";
@@ -15,6 +16,7 @@ type PageProps = {
 export default async function FieldReturnDetailPage({ params }: PageProps) {
   const session = await auth();
   if (!session) redirect("/login");
+  if (!canViewFieldReturns(session.user.permissions ?? [])) redirect("/backoffice");
 
   const { id } = await params;
 

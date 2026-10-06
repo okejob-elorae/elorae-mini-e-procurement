@@ -200,7 +200,7 @@ const navItems: NavItem[] = [
       {
         labelKey: 'navFieldReturns',
         href: '/backoffice/field-returns',
-        permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW,
+        anyPermissions: [PERMISSIONS.FIELD_SALES_ORDERS_VIEW, PERMISSIONS.FIELD_RETURNS_MANAGE],
       },
       {
         labelKey: 'navDeliveries',
