@@ -8,6 +8,19 @@ describe("getNotificationHref — field sales order rejection", () => {
   });
 });
 
+describe("getNotificationHref — field retur count mismatch", () => {
+  it("opens the store in the PWA, for the salesman who raised the retur", () => {
+    expect(getNotificationHref("FIELD_RETURN_MISMATCH", { storeId: "s1", returnId: "r1" }, "pwa")).toBe("/pwa/stores/s1");
+    expect(getNotificationHref("FIELD_RETURN_MISMATCH", { returnId: "r1" }, "pwa")).toBe("/pwa/notifications");
+    expect(getNotificationHref("FIELD_RETURN_MISMATCH", { storeId: "", returnId: "r1" }, "pwa")).toBe("/pwa/notifications");
+  });
+
+  it("keeps opening the retur in the backoffice", () => {
+    expect(getNotificationHref("FIELD_RETURN_MISMATCH", { storeId: "s1", returnId: "r1" })).toBe("/backoffice/field-returns/r1");
+    expect(getNotificationHref("FIELD_RETURN_MISMATCH", { storeId: "s1" }, "backoffice")).toBe("/backoffice/field-returns");
+  });
+});
+
 describe("getNotificationHref — konsi count schedule and report categories", () => {
   it("opens the stocktake a count notification names, in the backoffice", () => {
     expect(getNotificationHref("KONSI_COUNT_DUE", { storeId: "s1", stocktakeId: "st1" })).toBe("/backoffice/store-stocktakes/st1");

@@ -3,6 +3,7 @@ import type { StockLedgerRefType } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { FieldReturnError } from "./errors";
+import { notifySalesmanOfMismatch, type SalesmanMismatchNoticeInput } from "./mismatch-notice";
 
 type ReceiveCount = { lineId: string; receivedQty: number; sellableQty: number; rejectedQty: number };
 
@@ -27,6 +28,7 @@ export async function receiveFieldReturn(input: {
   for (const c of input.counts) assertCountShape(c);
 
   let notification: AdminNotification | null = null;
+  let salesmanNotice: (SalesmanMismatchNoticeInput & { raisedById: string }) | null = null;
 
   const result = await runSerializable(async (tx) => {
     const ret = await tx.fieldReturn.findUnique({
@@ -37,6 +39,7 @@ export async function receiveFieldReturn(input: {
         storeId: true,
         status: true,
         origin: true,
+        raisedById: true,
         store: { select: { termsType: true } },
         lines: { select: { id: true, qty: true, itemId: true, variantSku: true } },
       },
@@ -112,17 +115,34 @@ export async function receiveFieldReturn(input: {
           metadata: { returnId: ret.id, docNo: ret.docNo, storeId: ret.storeId, mismatchedLineCount },
         },
       });
+      /* An ADMIN-origin retur was raised from the backoffice, so no salesman is waiting on it. */
+      if (ret.origin === "FIELD") {
+        salesmanNotice = {
+          raisedById: ret.raisedById,
+          returnId: ret.id,
+          docNo: ret.docNo,
+          storeId: ret.storeId,
+          mismatchedLineCount,
+        };
+      }
     }
 
     return { ok: true as const, status };
   });
 
   /**
-   * Outside the transaction on purpose — `fanOutAdminNotification` performs FCM network calls
-   * and must never run inside one — and not awaited, because the warehouse operator who just
-   * submitted the count should not wait on a bell ping for the document that already committed.
-   * The seam swallows its own failures, so there is no outcome here for this function to report.
+   * Both notices run outside the transaction on purpose — each performs FCM network calls and
+   * must never run inside one — and neither is awaited, because the warehouse operator who just
+   * submitted the count should not wait on a ping for the document that already committed.
+   * `fanOutAdminNotification` swallows its own failures; the salesman notice does not (its
+   * `NotificationQueue` insert throws by design), so its rejection is caught and logged here —
+   * there is no outcome for this function to report either way.
    */
   if (notification) void fanOutAdminNotification(notification);
+  if (salesmanNotice) {
+    void notifySalesmanOfMismatch(salesmanNotice).catch((err) =>
+      console.error("[field-retur] salesman mismatch notice failed", err),
+    );
+  }
   return result;
 }
