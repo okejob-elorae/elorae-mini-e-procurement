@@ -165,7 +165,7 @@ type Props = {
   store: StoreListItem;
   canEdit: boolean;
   canManageFieldReturns: boolean;
-  /** `field_sales_orders:approve` together with the store being active — the writer's own gates. */
+  /** `field_sales_orders:approve` on an active KONSI store — the writer's own gates. */
   canPush: boolean;
   visits: Visit[];
   orders: OrderRow[];
