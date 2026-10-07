@@ -907,6 +907,7 @@ model GRN {
   ownerDeclinedBy User?    @relation("GRNOwnerDeclined", fields: [ownerDeclinedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   syncStatus    SyncStatus @default(SYNCED)
   localId       String?
+  idempotencyKey String?  @unique
   createdAt     DateTime  @default(now())
   fabricRolls   FabricRoll[]
   vendorReturns VendorReturn[]
@@ -1198,6 +1199,7 @@ model MaterialIssue {
   ackPhotoUrl   String?
   syncStatus    SyncStatus @default(SYNCED)
   notes         String?   @db.Text
+  idempotencyKey String?  @unique
   @@index([woId])
   @@index([issuedById])
   @@index([issuedAt])
@@ -2891,6 +2893,7 @@ model ConsignmentPayment {
   cancelledAt   DateTime?
   cancelledById String?
   cancelReason  String?   @db.Text
+  idempotencyKey String?  @unique
   createdAt     DateTime  @default(now())
 
   cycle         ConsignmentCycle @relation(fields: [cycleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
@@ -2928,12 +2931,14 @@ model Foto {
   sizeBytes    Int
   caption      String?
   uploadedById String?
+  sha256       String?
   createdAt    DateTime @default(now())
 
   uploadedBy   User? @relation("FotoUploader", fields: [uploadedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([uploadedById])
   @@index([createdAt])
+  @@index([sha256])
 }
 
 enum ReturnDeliveryMethod {
