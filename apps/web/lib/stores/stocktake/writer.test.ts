@@ -943,6 +943,8 @@ d("store stocktake writer (test bed only)", () => {
 
     await moveAfterCount(itemMainId, -2, "FieldReturn", returnId);
     await moveAfterCount(itemZeroId, -2, "FieldReturn", returnId);
+    /* The retur must be settled before the count can approve (RETUR_PENDING), so model its approval too. */
+    await prisma.fieldReturn.update({ where: { id: returnId }, data: { status: "APPROVED", approvedAt: new Date() } });
 
     await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
 
