@@ -283,10 +283,12 @@ d("postSettlementJournal (test bed only)", () => {
 
   afterEach(async () => {
     /* Live config first: the dev cron arms itself off the cutover, so no delete below may stand between a failure and restoring it. */
-    if (cutoverTouched && cutoverSnapshot === null) {
-      await prisma.systemSetting.deleteMany({ where: { key: GL_CUTOVER_SETTING_KEY } });
-    } else if (cutoverTouched && cutoverSnapshot !== undefined) {
-      await writeCutover(cutoverSnapshot);
+    if (cutoverTouched) {
+      if (cutoverSnapshot === null) {
+        await prisma.systemSetting.deleteMany({ where: { key: GL_CUTOVER_SETTING_KEY } });
+      } else if (cutoverSnapshot !== undefined) {
+        await writeCutover(cutoverSnapshot);
+      }
     }
     const journal = await prisma.journal.findUnique({
       where: { sourceType_sourceId: { sourceType: "SETTLEMENT", sourceId: settlementId } },
