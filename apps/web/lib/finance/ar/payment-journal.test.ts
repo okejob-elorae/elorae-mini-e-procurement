@@ -68,8 +68,8 @@ d("payment-journal (test bed only)", () => {
     /* Live config first, so no bookkeeping delete below can stand between a failure and restoring it. */
     if (mappingSnapshot) await restoreMappings(mappingSnapshot);
     const journalSourceIds = [...paymentIds, ...deliveryIds, ...sellThroughIds].map(seededId);
-    await prisma.journalLine.deleteMany({ where: { journal: { sourceId: { in: journalSourceIds } } } });
-    await prisma.journal.deleteMany({ where: { sourceId: { in: journalSourceIds } } });
+    await prisma.journalLine.deleteMany({ where: { journal: { sourceId: { in: journalSourceIds.map(seededId) } } } });
+    await prisma.journal.deleteMany({ where: { sourceId: { in: journalSourceIds.map(seededId) } } });
     await prisma.adminNotification.deleteMany({ where: { id: { in: notificationIds.map(seededId) } } });
     await prisma.paymentAllocation.deleteMany({ where: { paymentId: { in: paymentIds.map(seededId) } } });
     await prisma.payment.deleteMany({ where: { storeId: seededId(storeId) } });

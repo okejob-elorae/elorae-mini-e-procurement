@@ -966,8 +966,8 @@ d("listFieldReturns — needsPriceLineCount (test bed only)", () => {
     await prisma.fieldReturnLine.deleteMany({ where: { returnId: seededId(returnId) } });
     await prisma.fieldReturn.deleteMany({ where: { id: seededId(returnId) } });
     const deliveryIds = [seededId(deliveryAId), seededId(deliveryBId)];
-    await prisma.fieldSalesDeliveryLine.deleteMany({ where: { deliveryId: { in: deliveryIds } } });
-    await prisma.fieldSalesDelivery.deleteMany({ where: { id: { in: deliveryIds } } });
+    await prisma.fieldSalesDeliveryLine.deleteMany({ where: { deliveryId: { in: deliveryIds.map(seededId) } } });
+    await prisma.fieldSalesDelivery.deleteMany({ where: { id: { in: deliveryIds.map(seededId) } } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });

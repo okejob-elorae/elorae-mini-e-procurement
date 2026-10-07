@@ -403,8 +403,8 @@ d("createFieldReturn (test bed only)", () => {
      */
     afterEach(async () => {
       const seededReturnIds = returnIds.map((id) => seededId(id));
-      await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: seededReturnIds } } });
-      await prisma.fieldReturn.deleteMany({ where: { id: { in: seededReturnIds } } });
+      await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: seededReturnIds.map(seededId) } } });
+      await prisma.fieldReturn.deleteMany({ where: { id: { in: seededReturnIds.map(seededId) } } });
       await prisma.storeStock.deleteMany({ where: { id: { in: storeStockIds.map((id) => seededId(id)) } } });
       await prisma.inventoryValue.deleteMany({ where: { id: { in: inventoryIds.map((id) => seededId(id)) } } });
       await prisma.item.deleteMany({ where: { id: seededId(variantItemId) } });

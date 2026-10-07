@@ -118,8 +118,8 @@ d("paymentJournalPendingWhilePaid (test bed only)", () => {
         });
         const ids = journals.map((j) => j.id);
         if (ids.length) {
-          await prisma.journalLine.deleteMany({ where: { journalId: { in: ids } } });
-          await prisma.journal.deleteMany({ where: { id: { in: ids } } });
+          await prisma.journalLine.deleteMany({ where: { journalId: { in: ids.map(seededId) } } });
+          await prisma.journal.deleteMany({ where: { id: { in: ids.map(seededId) } } });
         }
         await prisma.purchaseOrder.delete({ where: { id: seededId(poId) } });
       } catch (e) {

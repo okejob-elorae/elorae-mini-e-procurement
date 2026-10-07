@@ -736,7 +736,7 @@ d("postSettlementJournal (test bed only)", () => {
 
   it("refuses LINES_UNMATCHED when a line has no matched order, posting nothing", async () => {
     await prisma.settlementLine.updateMany({
-      where: { settlementId },
+      where: { settlementId: seededId(settlementId) },
       data: { matchStatus: "UNMATCHED", matchedSalesOrderId: null },
     });
     const r = await postSettlementJournal(settlementId, adminId, prisma);
@@ -883,7 +883,7 @@ d("postSettlementJournal (test bed only)", () => {
 
   it("reports CHECKSUM_BLOCKED and NOTHING_TO_POST ahead of the gate", async () => {
     await prisma.settlementLine.updateMany({
-      where: { settlementId },
+      where: { settlementId: seededId(settlementId) },
       data: { matchStatus: "UNMATCHED", matchedSalesOrderId: null },
     });
     await prisma.settlement.update({ where: { id: settlementId }, data: { checksumOk: false } });

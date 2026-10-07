@@ -54,10 +54,9 @@ async function cleanupDoc(doc: TrackedDoc): Promise<void> {
     /* best-effort */
   }
   try {
-    const id = seededId(doc.id);
-    if (doc.model === "vanLoad") await prisma.vanLoad.deleteMany({ where: { id } });
-    else if (doc.model === "vanSale") await prisma.vanSale.deleteMany({ where: { id } });
-    else await prisma.vanReconcile.deleteMany({ where: { id } });
+    if (doc.model === "vanLoad") await prisma.vanLoad.deleteMany({ where: { id: seededId(doc.id) } });
+    else if (doc.model === "vanSale") await prisma.vanSale.deleteMany({ where: { id: seededId(doc.id) } });
+    else await prisma.vanReconcile.deleteMany({ where: { id: seededId(doc.id) } });
   } catch {
     /* best-effort */
   }
