@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { loadSmartRequestCandidates } from "./load-candidates";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -15,6 +15,11 @@ d("loadSmartRequestCandidates (test bed only)", () => {
   let inactiveItemId = "";
 
   beforeEach(async () => {
+    uomId = "";
+    categoryId = "";
+    itemAId = "";
+    itemBId = "";
+    inactiveItemId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
     const category = await prisma.itemCategory.create({ data: { code: `C-${sku}`, name: "Test Category", isActive: true } });
@@ -44,10 +49,10 @@ d("loadSmartRequestCandidates (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.inventoryValue.deleteMany({ where: { itemId: { in: [itemAId, itemBId, inactiveItemId] } } });
-    await prisma.item.deleteMany({ where: { id: { in: [itemAId, itemBId, inactiveItemId] } } });
-    await prisma.itemCategory.deleteMany({ where: { id: categoryId } });
-    await prisma.uOM.deleteMany({ where: { id: uomId } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: { in: [itemAId, itemBId, inactiveItemId].map(seededId) } } });
+    await prisma.item.deleteMany({ where: { id: { in: [itemAId, itemBId, inactiveItemId].map(seededId) } } });
+    await prisma.itemCategory.deleteMany({ where: { id: seededId(categoryId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
 
   it("returns active FG items keyed by category, with trimmed variants and available = qtyOnHand - reservedQty", async () => {

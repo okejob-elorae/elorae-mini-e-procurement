@@ -171,12 +171,12 @@ d("listPriceCandidates / resolveLinePrice (test bed only)", () => {
   });
 
   afterEach(async () => {
-    const deliveryIds = [seededId(deliveryAId), seededId(deliveryBId), seededId(otherDeliveryId)];
-    const orderIds = [seededId(orderId), seededId(otherOrderId)];
-    await prisma.fieldSalesDeliveryLine.deleteMany({ where: { deliveryId: { in: deliveryIds } } });
-    await prisma.fieldSalesDelivery.deleteMany({ where: { id: { in: deliveryIds } } });
-    await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: { in: orderIds } } });
-    await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: orderIds } } });
+    const deliveryIds = [deliveryAId, deliveryBId, otherDeliveryId];
+    const orderIds = [orderId, otherOrderId];
+    await prisma.fieldSalesDeliveryLine.deleteMany({ where: { deliveryId: { in: deliveryIds.map(seededId) } } });
+    await prisma.fieldSalesDelivery.deleteMany({ where: { id: { in: deliveryIds.map(seededId) } } });
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: { in: orderIds.map(seededId) } } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: orderIds.map(seededId) } } });
     await prisma.store.deleteMany({ where: { id: { in: [seededId(storeId), seededId(otherStoreId)] } } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
