@@ -28,7 +28,8 @@ import {
 } from '@/components/ui/table';
 import { Loader2, ArrowLeft, Edit, CheckCircle, XCircle, Printer, AlertTriangle, PackageCheck } from 'lucide-react';
 import { buildPOPrintHtml, labelStatusCetakPo } from '@/lib/print/po-html';
-import { variantDetailForSku } from '@/lib/items/variants';
+import { barisCetakPo } from '@/lib/purchase-orders/cetak-po';
+import type { SuratPo } from '@/lib/purchase-orders/surat-po';
 import { logPrint } from '@/app/actions/audit';
 import { toast } from 'sonner';
 import Link from 'next/link';
@@ -41,6 +42,7 @@ import { formatDisplayDate, formatDisplayDateTime } from '@/lib/date-only';
 import { getStatusMeta } from '@/lib/ui/status-map';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 import { TutupPoDialog } from './TutupPoDialog';
+import { DialogCetakPo } from './DialogCetakPo';
 import { RingkasanUtangPo } from './RingkasanUtangPo';
 import { pesanTolakBatalPo, type TolakBatalPo } from '../pesan-batal-po';
 import { pesanTolakEditPo, type TolakEditPo } from '../pesan-edit-po';
@@ -50,6 +52,7 @@ import { TAUTAN_DOKUMEN } from '../tautan-dokumen';
 import { catatanRiwayatPo } from './catatan-riwayat';
 import { KonfirmasiBayarDialog } from '../../supplier-payments/KonfirmasiBayarDialog';
 import { pisahUtangPo } from '../../supplier-payments/nilai-utang';
+import { labelTahap, tautanRuangKerjaTahap, type TahapPo } from '@/lib/purchase-orders/tahap';
 
 const statusColors: Record<POStatus, string> = {
   DRAFT: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200',
@@ -77,6 +80,7 @@ export default function PODetailPage() {
   const [isTogglingPaid, setIsTogglingPaid] = useState(false);
   const [isPostingReversal, setIsPostingReversal] = useState(false);
   const [konfirmasiBayar, setKonfirmasiBayar] = useState<'bayar' | 'batal' | null>(null);
+  const [cetakOpen, setCetakOpen] = useState(false);
   const tSupplierPayments = useTranslations('supplierPayments');
   const tPO = useTranslations('purchaseOrders');
   const tSecurity = useTranslations('security');
@@ -455,6 +459,9 @@ export default function PODetailPage() {
   );
   // Rincian GRN ada di bawah /backoffice/inventory (inventory:view); tanpa izin itu nomornya teks biasa.
   const bolehBukaGrn = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.INVENTORY_VIEW);
+  // Tahap produksi PO ini; ruang kerjanya di Plan Kerja (production_planning:view), selain itu teks biasa.
+  const tahap: TahapPo | null = po.tahap ?? null;
+  const bolehBukaTahap = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.PRODUCTION_PLANNING_VIEW);
   /*
    * While an earlier mark's payment journal still stands on an unpaid PO,
    * marking it paid is the one click that destroys its own recovery control:
@@ -466,27 +473,16 @@ export default function PODetailPage() {
    */
   const markPaidBlockedByStandingPayment = Boolean(po.paymentJournalStandingWhileUnpaid);
 
-  const handlePrint = async () => {
+  // Surat pembuka/penutup dari dialog cetak (bawaan Pengaturan → Pajak, bisa diubah per cetak).
+  const handlePrint = async (surat: SuratPo) => {
     await logPrint('PurchaseOrder', String(params.id));
     const supplier = po.supplier as {
       name: string;
       code?: string;
       address?: string | null;
     };
-    const lines = (po.items as any[]).map((item: any) => {
-      const variantSku = item.variantSku ?? null;
-      return {
-        itemName: item.item?.nameId ?? item.item?.nameEn ?? item.item?.sku ?? '',
-        itemSku: item.item?.sku,
-        variantSku,
-        variantDetail: variantDetailForSku(item.item?.variants, variantSku),
-        lineNotes: item.notes?.trim() ? String(item.notes).trim() : null,
-        qty: Number(item.qty ?? 0),
-        uomCode: item.item?.uom?.code ?? '',
-        price: Number(item.price ?? 0),
-        amount: Number(item.qty ?? 0) * Number(item.price ?? 0),
-      };
-    });
+    // Bahan berwarna mendapat kolom Warna, bahan kg dengan kg per roll kolom Roll.
+    const lines = barisCetakPo(po.items as Parameters<typeof barisCetakPo>[0]);
     const html = buildPOPrintHtml({
       docNumber: po.docNumber,
       issuedAt: po.createdAt,
@@ -503,6 +499,8 @@ export default function PODetailPage() {
       notes: po.notes ?? null,
       terms: po.terms ?? null,
       lines,
+      suratPembuka: surat.pembuka,
+      suratPenutup: surat.penutup,
     });
     const iframe = document.createElement('iframe');
     iframe.setAttribute('style', 'position:absolute;width:0;height:0;border:0;visibility:hidden;');
@@ -548,7 +546,7 @@ export default function PODetailPage() {
               </Link>
             </Button>
           )}
-          <Button variant="outline" size="sm" onClick={handlePrint}>
+          <Button variant="outline" size="sm" onClick={() => setCetakOpen(true)}>
             <Printer className="mr-2 h-4 w-4" />
             {tPO('printPO')}
           </Button>
@@ -621,6 +619,7 @@ export default function PODetailPage() {
       {isEditMode && canOpenEditForm ? (
         <POForm
           ppnRatePercent={po.ppnRatePercent ?? null}
+          tahap={tahap}
           initialData={{
             supplierId: po.supplierId,
             etaDate: po.etaDate ? new Date(po.etaDate) : null,
@@ -695,6 +694,18 @@ export default function PODetailPage() {
                     {formatDisplayDate(po.createdAt, locale)}
                   </p>
                 </div>
+                {tahap && (
+                  <div>
+                    <p className="text-sm text-muted-foreground">{tPO('tahap.label')}</p>
+                    {bolehBukaTahap ? (
+                      <Link href={tautanRuangKerjaTahap(tahap.id)} className={TAUTAN_DOKUMEN}>
+                        {labelTahap(tahap)}
+                      </Link>
+                    ) : (
+                      <p className="font-medium">{labelTahap(tahap)}</p>
+                    )}
+                  </div>
+                )}
               </div>
               {po.notes && (
                 <div>
@@ -995,6 +1006,8 @@ export default function PODetailPage() {
           void handlePaidToggle(konfirmasiBayar === 'bayar' ? paidAt : null);
         }}
       />
+
+      <DialogCetakPo open={cetakOpen} onOpenChange={setCetakOpen} onCetak={handlePrint} />
 
       <BatalPoDialog
         open={cancelDialogOpen}

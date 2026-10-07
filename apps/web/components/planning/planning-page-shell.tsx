@@ -47,7 +47,7 @@ type PlanningPageShellProps = {
   children: React.ReactNode;
 };
 
-const TAB_KEYS = ["grid", "dashboard", "rincian", "warna", "jahitan", "aksesoris"] as const;
+const TAB_KEYS = ["grid", "dashboard", "rincian", "kalender", "warna", "jahitan", "aksesoris"] as const;
 
 export function PlanningPageShell({
   activeTab,
@@ -72,6 +72,7 @@ export function PlanningPageShell({
 }: PlanningPageShellProps) {
   const t = useTranslations("planning");
   const tt = useTranslations("planning.tabs");
+  const tj = useTranslations("jadwalProduksi.plan");
   const tl = useTranslations("planning.lock");
   const tls = useTranslations("planning.status");
   const ta = useTranslations("planning.actions");
@@ -219,7 +220,7 @@ export function PlanningPageShell({
         <TabsList className="flex flex-wrap h-auto">
           {TAB_KEYS.map((key) => (
             <TabsTrigger key={key} value={key}>
-              {tt(key)}
+              {key === "kalender" ? tj("tabKalender") : tt(key)}
             </TabsTrigger>
           ))}
         </TabsList>

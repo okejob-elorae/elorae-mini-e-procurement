@@ -213,3 +213,58 @@ describe('hapusBanyakKonten', () => {
     expect(h).toMatchObject({ ok: true, dihapus: 1 });
   });
 });
+
+describe('simpanKonten — mengubah sebagian kolom', () => {
+  it('kolom yang tidak dikirim tidak dikosongkan', async () => {
+    /*
+     * Dialog ubah konten tidak membawa link posting, tanggal tayang, catatan,
+     * barang, dan penanggung jawab. Dulu setiap simpan menulis null ke semua
+     * kolom itu, jadi data yang sudah diisi hilang tanpa tanda.
+     */
+    const r = await simpanKonten({
+      isi: {
+        title: `${tag} lengkap`,
+        platform: 'TIKTOK',
+        format: 'VIDEO',
+        status: 'TAYANG',
+        scheduledAt: new Date('2026-09-01T03:00:00Z'),
+        publishedAt: new Date('2026-09-01T05:00:00Z'),
+        postUrl: 'https://contoh.test/video/1',
+        note: 'catatan awal',
+        assigneeId: userId,
+      },
+      olehUserId: userId,
+    });
+    if (!r.ok) throw new Error(r.alasan);
+    ids.push(r.id);
+
+    const ubah = await simpanKonten({
+      id: r.id,
+      isi: { title: `${tag} judul baru`, platform: 'TIKTOK', format: 'VIDEO', caption: 'caption baru' },
+      olehUserId: userId,
+    });
+    expect(ubah.ok).toBe(true);
+
+    const baris = await prisma.contentPlan.findUniqueOrThrow({ where: { id: r.id } });
+    expect(baris.title).toBe(`${tag} judul baru`);
+    expect(baris.caption).toBe('caption baru');
+    expect(baris.status).toBe('TAYANG');
+    expect(baris.postUrl).toBe('https://contoh.test/video/1');
+    expect(baris.publishedAt?.toISOString()).toBe('2026-09-01T05:00:00.000Z');
+    expect(baris.scheduledAt?.toISOString()).toBe('2026-09-01T03:00:00.000Z');
+    expect(baris.note).toBe('catatan awal');
+    expect(baris.assigneeId).toBe(userId);
+  });
+
+  it('null yang dikirim dengan sengaja tetap mengosongkan kolomnya', async () => {
+    const id = await buat('kosongkan', '2026-09-03');
+    const ubah = await simpanKonten({
+      id,
+      isi: { title: `${tag} kosongkan`, platform: 'INSTAGRAM', format: 'FEED', scheduledAt: null },
+      olehUserId: userId,
+    });
+    expect(ubah.ok).toBe(true);
+    const baris = await prisma.contentPlan.findUniqueOrThrow({ where: { id } });
+    expect(baris.scheduledAt).toBeNull();
+  });
+});

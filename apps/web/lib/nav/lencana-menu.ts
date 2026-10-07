@@ -10,6 +10,7 @@ import { ringkasPiutangBeranda } from "@/lib/dashboard/piutang-ringkas";
 import { getDraftPOCount, getOverduePOCount } from "@/lib/purchase-orders/queries";
 import { getMarketplaceKpi } from "@/lib/sales-orders/queries";
 import { kartuBeranda } from "@/app/backoffice/dashboard/kartu-beranda";
+import { hitungTugasKreatif } from "@/lib/creative/tugas-queries";
 import { bagiLencana } from "./lencana";
 import { grupUntukRute } from "./menu";
 
@@ -48,8 +49,9 @@ export async function hitungLencanaMenu(
 ): Promise<{ grup: Record<string, number>; halaman: Record<string, number> }> {
   const kartu = kartuBeranda(izin);
   const bolehPo = hasPermission(izin, PERMISSIONS.PURCHASE_ORDERS_VIEW);
+  const bolehKreatif = hasPermission(izin, PERMISSIONS.CREATIVE_VIEW);
 
-  const [counts, overduePOs, draftPOs, stokMinus, marketplace, piutang, klaim, antrean] = await Promise.all([
+  const [counts, overduePOs, draftPOs, stokMinus, marketplace, piutang, klaim, antrean, kreatif] = await Promise.all([
     aman("hitungan", () => getActionItemCounts(izin), NOL),
     bolehPo ? aman("PO terlambat", getOverduePOCount, 0) : 0,
     bolehPo ? aman("PO draf", getDraftPOCount, 0) : 0,
@@ -59,6 +61,8 @@ export async function hitungLencanaMenu(
     kartu.piutang ? aman("piutang", ringkasPiutangBeranda, null) : null,
     kartu.klaimMenunggu ? aman("BKM", () => getClaimsAwaitingVerification(userId), null) : null,
     aman("antrean kantor", () => getAntreanKantor(izin), {}),
+    // Hari ini Ruang KOL — angka yang sama dengan lencana tab Hari ini (agendanya pribadi).
+    bolehKreatif ? aman("kreatif", () => hitungTugasKreatif(userId), 0) : 0,
   ]);
 
   const items = buildActionItems(
@@ -75,5 +79,7 @@ export async function hitungLencanaMenu(
     izin,
   ).filter((item) => !item.permission || hasPermission(izin, item.permission));
 
-  return bagiLencana(items, (b) => grupUntukRute(jalurTautan(b.href)));
+  const kreatifButir = kreatif > 0 ? [{ key: "kreatifHariIni", href: "/backoffice/kreatif", count: kreatif }] : [];
+
+  return bagiLencana([...items, ...kreatifButir], (b) => grupUntukRute(jalurTautan(b.href)));
 }

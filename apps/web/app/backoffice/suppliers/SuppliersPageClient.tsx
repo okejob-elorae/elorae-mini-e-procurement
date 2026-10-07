@@ -8,16 +8,10 @@ import * as z from 'zod';
 import {
   Plus,
   Search,
-  MoreHorizontal,
-  Edit,
-  Trash2,
-  Eye,
   Building2,
   CreditCard,
   Lock,
   Loader2,
-  CheckCircle,
-  XCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -43,42 +37,37 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { useTranslations } from 'next-intl';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
-import { CategoryBadge } from '@/components/ui/category-badge';
 import { PinAuthModal } from '@/components/security/PinAuthModal';
 import { useSorotBaris } from '@/components/gerak/useSorotBaris';
 import { toast } from 'sonner';
 import { queueOperation } from '@/lib/offline/db';
 import { isOnline } from '@/lib/offline/sync';
 import { Pager } from '@/components/Pager';
+import { PilihTampilan } from '@/components/tampilan/PilihTampilan';
+import type { AktivitasBaris } from '@/lib/suppliers/aktivitas-queries';
+import {
+  ambilTampilanTersimpan,
+  ingatTampilan,
+  JENIS_TAMPILAN,
+  kunciSimpanTampilan,
+  type JenisTampilan,
+} from '@/lib/tampilan/tampilan';
+import { TampilanPemasok } from './TampilanPemasok';
 import {
   aksiPemasok,
   alamatSaringPemasok,
   bisaDipilihDiPo,
-  bolehMemutuskan,
+  UKURAN_PAPAN_PEMASOK,
   type SaringPemasok,
   type StatusPersetujuanPemasok,
 } from './status-pemasok';
@@ -149,7 +138,18 @@ function LencanaPersetujuan({ status, t }: { status?: StatusPersetujuanPemasok; 
   );
 }
 
-export function SuppliersPageClient({ awal, izin }: { awal: SaringPemasok; izin: string[] }) {
+export function SuppliersPageClient({
+  awal,
+  izin,
+  tampilanDariAlamat,
+  userId,
+}: {
+  awal: SaringPemasok;
+  izin: string[];
+  /** Alamat membawa `?tampilan=` sendiri — pilihan tersimpan di perangkat tidak dipakai. */
+  tampilanDariAlamat: boolean;
+  userId: string;
+}) {
   const t = useTranslations('toasts');
   const tSecurity = useTranslations('security');
   const tSupplier = useTranslations('supplier');
@@ -192,6 +192,10 @@ export function SuppliersPageClient({ awal, izin }: { awal: SaringPemasok; izin:
   const [rejectReason, setRejectReason] = useState('');
   const [isApproving, setIsApproving] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
+  // Ringkasan kerja per pemasok (PO, SPK, utang, terakhir, WhatsApp); null = sedang dimuat.
+  const [aktivitas, setAktivitas] = useState<Record<string, AktivitasBaris> | null>(null);
+  const kunciTampilan = kunciSimpanTampilan('pemasok', userId);
+  const modePapan = saring.tampilan === 'papan';
 
   const {
     register,
@@ -222,23 +226,29 @@ export function SuppliersPageClient({ awal, izin }: { awal: SaringPemasok; izin:
   const fetchSuppliers = async () => {
     setIsLoading(true);
     try {
-      const { getSuppliers } = await import('@/app/actions/suppliers');
+      const { getSuppliers, getSupplierActivityAction } = await import('@/app/actions/suppliers');
+      const status = (saring.status || undefined) as import('@/lib/constants/enums').SupplierStatus | undefined;
+      const search = saring.cari.trim() || undefined;
       const json = await getSuppliers(
-        {
-          search: saring.cari.trim() || undefined,
-          typeId: saring.jenis || undefined,
-          status: (saring.status || undefined) as import('@/lib/constants/enums').SupplierStatus | undefined,
-        },
-        { page: saring.page, pageSize: saring.pageSize }
+        { search, typeId: saring.jenis || undefined, status },
+        // Papan menampilkan semua pemasok per jenis sekaligus, tidak per halaman.
+        modePapan ? { page: 1, pageSize: UKURAN_PAPAN_PEMASOK } : { page: saring.page, pageSize: saring.pageSize },
       );
+      let daftar: Supplier[];
       if (json != null && typeof json === 'object' && 'data' in json && 'totalCount' in json) {
-        setSuppliers((Array.isArray(json.data) ? json.data : []) as Supplier[]);
+        daftar = (Array.isArray(json.data) ? json.data : []) as Supplier[];
         setTotalCount(Number(json.totalCount) || 0);
       } else {
-        const list = Array.isArray(json) ? json : [];
-        setSuppliers(list as Supplier[]);
-        setTotalCount(list.length);
+        daftar = (Array.isArray(json) ? json : []) as Supplier[];
+        setTotalCount(daftar.length);
       }
+      setSuppliers(daftar);
+      setAktivitas(null);
+      setIsLoading(false);
+      // Ringkasan kerja menyusul: daftar sudah tampil, kolomnya terisi sesudahnya.
+      getSupplierActivityAction(daftar.map((d) => d.id))
+        .then(setAktivitas)
+        .catch(() => setAktivitas({}));
     } catch (error) {
       console.error('Failed to fetch suppliers:', error);
       toast.error(t('failedToLoadSuppliers'));
@@ -272,8 +282,33 @@ export function SuppliersPageClient({ awal, izin }: { awal: SaringPemasok; izin:
 
   useEffect(() => {
     fetchSuppliers();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchSuppliers depends on filters
-  }, [saring]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchSuppliers depends on filters; Tabel↔Galeri tidak memuat ulang
+  }, [saring.cari, saring.jenis, saring.status, saring.page, saring.pageSize, modePapan]);
+
+  // Tampilan yang tersimpan di perangkat ini, kecuali alamat sudah memilih sendiri.
+  useEffect(() => {
+    if (tampilanDariAlamat) return;
+    let simpanan: Storage | null = null;
+    try {
+      simpanan = window.localStorage;
+    } catch {
+      simpanan = null;
+    }
+    const tersimpan = ambilTampilanTersimpan(simpanan, kunciTampilan, JENIS_TAMPILAN);
+    if (tersimpan && tersimpan !== saring.tampilan) ubahSaring({ tampilan: tersimpan });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sekali saat halaman dibuka
+  }, []);
+
+  const ubahTampilan = (v: JenisTampilan) => {
+    let simpanan: Storage | null = null;
+    try {
+      simpanan = window.localStorage;
+    } catch {
+      simpanan = null;
+    }
+    ingatTampilan(simpanan, kunciTampilan, v);
+    ubahSaring({ tampilan: v, page: v === 'papan' ? 1 : saring.page });
+  };
 
   const isSupplierFormOpen = supplierDialogMode !== null;
   const adaSaringan = Boolean(saring.cari.trim() || saring.jenis || saring.status);
@@ -695,7 +730,7 @@ export function SuppliersPageClient({ awal, izin }: { awal: SaringPemasok; izin:
       </div>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0">
           <CardTitle className="flex items-center gap-2">
             <Building2 className="h-5 w-5" />
             {tSupplier('listTitle')}
@@ -703,6 +738,7 @@ export function SuppliersPageClient({ awal, izin }: { awal: SaringPemasok; izin:
               ({tSupplier('count', { count: totalCount })})
             </span>
           </CardTitle>
+          <PilihTampilan nilai={saring.tampilan} pilihan={JENIS_TAMPILAN} onUbah={ubahTampilan} />
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -724,127 +760,49 @@ export function SuppliersPageClient({ awal, izin }: { awal: SaringPemasok; izin:
               }
             />
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{tSupplier('colCode')}</TableHead>
-                    <TableHead>{tSupplier('colName')}</TableHead>
-                    <TableHead className="hidden 2xl:table-cell">{tSupplier('colContact')}</TableHead>
-                    <TableHead>{tSupplier('colApproval')}</TableHead>
-                    <TableHead className="text-right">
-                      <span className="sr-only">{tSupplier('colActions')}</span>
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody className="baris-berurutan">
-                  {suppliers.map((supplier) => {
-                    const bolehPutuskan = bolehMemutuskan(supplier.status, izin);
-                    return (
-                      <TableRow key={supplier.id} {...sorot(supplier.id)}>
-                        <TableCell className="font-mono text-sm">{supplier.code}</TableCell>
-                        <TableCell className="min-w-[12rem] whitespace-normal">
-                          <button
-                            type="button"
-                            className="text-left font-medium hover:underline underline-offset-4"
-                            onClick={() => bukaRincian(supplier)}
-                          >
-                            {supplier.name}
-                          </button>
-                          <div className="mt-1">
-                            <CategoryBadge label={supplier.type?.name} />
-                          </div>
-                        </TableCell>
-                        <TableCell className="hidden whitespace-normal text-sm text-muted-foreground 2xl:table-cell">
-                          {supplier.phone ? <p>{supplier.phone}</p> : null}
-                          {supplier.email ? <p>{supplier.email}</p> : null}
-                          {!supplier.phone && !supplier.email ? '—' : null}
-                        </TableCell>
-                        <TableCell className="whitespace-normal">
-                          <LencanaPersetujuan status={supplier.status} t={tSupplier} />
-                          {supplier.status && !bisaDipilihDiPo(supplier.status) ? (
-                            <p className="mt-1 text-xs text-muted-foreground">{tSupplier('notInPo')}</p>
-                          ) : null}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            {bolehPutuskan ? (
-                              <>
-                                <Button size="sm" onClick={() => void setujui(supplier)} disabled={isApproving}>
-                                  <CheckCircle className="h-4 w-4" />
-                                  {tSupplier('approve')}
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => {
-                                    setRejectTargetId(supplier.id);
-                                    setRejectReason('');
-                                  }}
-                                  disabled={isApproving}
-                                >
-                                  <XCircle className="h-4 w-4" />
-                                  {tSupplier('reject')}
-                                </Button>
-                              </>
-                            ) : null}
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  aria-label={tSupplier('cardMenu', { name: supplier.name })}
-                                  title={tSupplier('cardMenu', { name: supplier.name })}
-                                >
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => bukaRincian(supplier)}>
-                                  <Eye className="mr-2 h-4 w-4" />
-                                  {tSupplier('viewDetails')}
-                                </DropdownMenuItem>
-                                {aksi.ubah ? (
-                                  <DropdownMenuItem
-                                    onClick={() => {
-                                      setEditSupplier(supplier);
-                                      setSupplierDialogMode('edit');
-                                    }}
-                                  >
-                                    <Edit className="mr-2 h-4 w-4" />
-                                    {tUi('edit')}
-                                  </DropdownMenuItem>
-                                ) : null}
-                                {aksi.hapus ? (
-                                  <DropdownMenuItem
-                                    className="text-destructive"
-                                    onClick={() => setDeleteConfirmTarget(supplier)}
-                                  >
-                                    <Trash2 className="mr-2 h-4 w-4" />
-                                    {tUi('delete')}
-                                  </DropdownMenuItem>
-                                ) : null}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
+            <TampilanPemasok
+              tampilan={saring.tampilan}
+              pemasok={suppliers}
+              aktivitas={aktivitas}
+              jenis={supplierTypes}
+              izin={izin}
+              sibuk={isApproving}
+              sorot={sorot}
+              aksi={{
+                buka: (s) => bukaRincian(s as Supplier),
+                setujui: (s) => void setujui(s as Supplier),
+                tolak: (s) => {
+                  setRejectTargetId(s.id);
+                  setRejectReason('');
+                },
+                ubah: aksi.ubah
+                  ? (s) => {
+                      setEditSupplier(s as Supplier);
+                      setSupplierDialogMode('edit');
+                    }
+                  : null,
+                hapus: aksi.hapus ? (s) => setDeleteConfirmTarget(s as Supplier) : null,
+              }}
+            />
           )}
         </CardContent>
       </Card>
 
-      <Pager
-        page={saring.page}
-        pageSize={saring.pageSize}
-        total={totalCount}
-        onPageChange={(p) => ubahSaring({ page: p })}
-        onPageSizeChange={(size) => ubahSaring({ pageSize: size, page: 1 })}
-      />
+      {modePapan ? (
+        totalCount > UKURAN_PAPAN_PEMASOK ? (
+          <p className="text-sm text-muted-foreground">
+            {tSupplier('boardTruncated', { shown: UKURAN_PAPAN_PEMASOK, total: totalCount })}
+          </p>
+        ) : null
+      ) : (
+        <Pager
+          page={saring.page}
+          pageSize={saring.pageSize}
+          total={totalCount}
+          onPageChange={(p) => ubahSaring({ page: p })}
+          onPageSizeChange={(size) => ubahSaring({ pageSize: size, page: 1 })}
+        />
+      )}
 
       {/* Rincian pemasok */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>

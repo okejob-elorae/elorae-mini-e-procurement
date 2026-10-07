@@ -290,7 +290,10 @@ const ISIAN: Record<KodeIzin, Isian> = {
   // ── Produksi ──
   [P.FORECAST_VIEW]: { grup: "produksi", halaman: ["/backoffice/forecast", "/backoffice/forecast/reconciliation"] },
   [P.FORECAST_MANAGE]: { grup: "produksi", halaman: ["/backoffice/forecast/import"], butuh: P.FORECAST_VIEW },
-  [P.PRODUCTION_PLANNING_VIEW]: { grup: "produksi", halaman: ["/backoffice/production/planning"] },
+  [P.PRODUCTION_PLANNING_VIEW]: {
+    grup: "produksi",
+    halaman: ["/backoffice/production/planning", "/backoffice/production/follow-up"],
+  },
   [P.PRODUCTION_PLANNING_MANAGE]: { grup: "produksi", butuh: P.PRODUCTION_PLANNING_VIEW },
   [P.WORK_ORDERS_VIEW]: { grup: "produksi", halaman: ["/backoffice/work-orders"] },
   [P.WORK_ORDERS_CREATE]: { grup: "produksi", halaman: ["/backoffice/work-orders/new"], butuh: P.WORK_ORDERS_VIEW },
@@ -305,7 +308,19 @@ const ISIAN: Record<KodeIzin, Isian> = {
   // ── Kreatif ──
   [P.CREATIVE_VIEW]: {
     grup: "kreatif",
-    halaman: ["/backoffice/kreatif/konten", "/backoffice/kreatif/brief", "/backoffice/kreatif/kol"],
+    halaman: [
+      "/backoffice/kreatif",
+      "/backoffice/kreatif/kolaborasi",
+      "/backoffice/kreatif/kol",
+      "/backoffice/kreatif/campaign",
+      "/backoffice/kreatif/sampel",
+      "/backoffice/kreatif/konten-kol",
+      "/backoffice/kreatif/pembayaran",
+      "/backoffice/kreatif/kalender",
+      "/backoffice/kreatif/laporan",
+      "/backoffice/kreatif/konten",
+      "/backoffice/kreatif/pengaturan",
+    ],
   },
   [P.CREATIVE_MANAGE]: { grup: "kreatif", butuh: P.CREATIVE_VIEW },
 

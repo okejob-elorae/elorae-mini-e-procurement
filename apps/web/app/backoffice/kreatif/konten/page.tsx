@@ -18,7 +18,7 @@ export default async function KontenPage() {
     <KontenClient
       baris={baris}
       ringkas={ringkas}
-      brief={brief.map((b) => ({ id: b.id, label: `${b.docNo} · ${b.campaign}` }))}
+      brief={brief.map((b) => ({ id: b.id, label: [b.docNo, b.kolNama, b.campaignNama].filter(Boolean).join(" · ") }))}
       bolehMengelola={kelola}
     />
   );

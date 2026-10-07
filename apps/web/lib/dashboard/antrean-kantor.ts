@@ -49,6 +49,8 @@ export const KUNCI_ANTREAN = [
   "shiftSwapsPending",
   "stockRequestsUnheld",
   "spgCommissionsUnset",
+  "productionStepsOverdue",
+  "productionStepsDueToday",
 ] as const;
 
 export type KunciAntrean = (typeof KUNCI_ANTREAN)[number];
@@ -70,6 +72,7 @@ const storesManage = izinTunggal(PERMISSIONS.STORES_MANAGE);
 const fsoApprove = izinTunggal(PERMISSIONS.FIELD_SALES_ORDERS_APPROVE);
 const inventoryManage = izinTunggal(PERMISSIONS.INVENTORY_MANAGE);
 const receivablesManage = izinTunggal(PERMISSIONS.RECEIVABLES_MANAGE);
+const productionView = izinTunggal(PERMISSIONS.PRODUCTION_PLANNING_VIEW);
 
 export const ANTREAN_KANTOR: Readonly<Record<KunciAntrean, DefinisiAntrean>> = {
   // Izin, sakit & cuti tim lapangan (LeaveRequest DIAJUKAN), semua bulan.
@@ -173,6 +176,19 @@ export const ANTREAN_KANTOR: Readonly<Record<KunciAntrean, DefinisiAntrean>> = {
     bolehBuka: spgView,
     bolehBertindak: receivablesManage,
   },
+  // Jadwal produksi per tahap: langkah yang belum selesai padahal targetnya
+  // sudah lewat / jatuh hari ini. Tindak lanjutnya menanyai pemasok (WA dari
+  // halaman follow-up), jadi izin lihat sudah cukup untuk bertindak.
+  productionStepsOverdue: {
+    href: "/backoffice/production/follow-up?saring=terlambat",
+    bolehBuka: productionView,
+    bolehBertindak: productionView,
+  },
+  productionStepsDueToday: {
+    href: "/backoffice/production/follow-up?saring=hari-ini",
+    bolehBuka: productionView,
+    bolehBertindak: productionView,
+  },
 };
 
 /** Jalur halaman tanpa saringan — kunci `ROUTE_PERMISSIONS`. */
@@ -270,6 +286,9 @@ const HITUNG_ANTREAN: Readonly<Record<KunciAntrean, () => Promise<number>>> = {
   stockRequestsUnheld: () => prisma.stockRequest.count({ where: { status: "BARU", store: { salesmanId: null } } }),
   // Definisi yang sama dengan "belum ditetapkan" di halaman Komisi SPG.
   spgCommissionsUnset: async () => (await import("@/lib/spg/komisi-queries")).jumlahKomisiPutusBelumDitetapkan(),
+  // Satu definisi dengan tab "Terlambat"/"Hari ini" follow-up produksi (`whereFollowUp`).
+  productionStepsOverdue: async () => (await import("@/lib/production/jadwal-queries")).hitungLangkahTelat(),
+  productionStepsDueToday: async () => (await import("@/lib/production/jadwal-queries")).hitungLangkahHariIni(),
 };
 
 export type AngkaAntrean = Partial<Record<KunciAntrean, number>>;

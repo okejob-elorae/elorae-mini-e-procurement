@@ -57,6 +57,7 @@ vi.mock("@/lib/purchase-orders/queries", () => ({
 }));
 vi.mock("@/lib/sales-orders/queries", () => ({ getMarketplaceKpi: catat("marketplace", { pendingFulfillmentCount: 6 }) }));
 vi.mock("@/lib/dashboard/piutang-ringkas", () => ({ ringkasPiutangBeranda: catat("piutang", { lewatJumlah: 7, lewatNilai: 70 }) }));
+vi.mock("@/lib/creative/tugas-queries", () => ({ hitungTugasKreatif: catat("kreatif", 9) }));
 
 const { hitungLencanaMenu } = await import("./lencana-menu");
 
@@ -117,6 +118,18 @@ describe("hitungLencanaMenu", () => {
     expect(halaman["/backoffice/pelunasan"]).toBeUndefined();
     expect(grup["/backoffice/pelunasan-dasbor"]).toBe(7);
     expect(kueri).not.toContain("klaim");
+  });
+
+  it("Hari ini Ruang KOL: grup Kreatif dan anak Hari ini memakai total tugas; tanpa izin tidak dihitung", async () => {
+    const { grup, halaman } = await hitungLencanaMenu(["creative:view"], "u-kreatif");
+    expect(grup["/backoffice/kreatif"]).toBe(9);
+    expect(halaman["/backoffice/kreatif"]).toBe(9);
+    expect(kueri).toContain("kreatif");
+
+    kueri.length = 0;
+    const tanpa = await hitungLencanaMenu(["dashboard:view"], "u-lain");
+    expect(tanpa.grup["/backoffice/kreatif"]).toBeUndefined();
+    expect(kueri).not.toContain("kreatif");
   });
 
   it("satu hitungan yang gagal tidak mengosongkan lencana lain", async () => {

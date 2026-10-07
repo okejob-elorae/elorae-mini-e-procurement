@@ -56,8 +56,105 @@ export const ENTRI: EntriBantuan[] = [
       "Membuat dan mengubah plan butuh izin mengelola plan kerja. Mengunci dan membuka kunci plan hanya bisa dilakukan admin; plan yang terkunci tidak bisa diubah, tetapi perintah kerja tetap bisa dibuat.",
       "Tahun plan baru dibuat lewat tombol Tambah tahun. Tahun yang sedang dibuka tersimpan di alamat halaman (?tahun=), jadi tautannya bisa dibagikan.",
       "Buat perintah kerja dari satu tahap butuh vendor CMT dan varian SKU di tahap itu, dan barang jadi bervarian di kategorinya. Bila berhasil, halaman pindah ke perintah kerja yang baru; bila tidak, alasannya disebut.",
+      "Bulan target dan varian setiap tahap dipilih langsung di baris tahapnya. Bulan target menentukan di bulan mana tahap muncul di tab Kalender, dan varian dipilih dari varian barang jadi yang terhubung ke jenis itu — tanpa varian, \"Buat WO\" dari tahap ditolak. Sesudah plan diaktifkan atau dikunci, bulan, varian, dan penjahit tahap masih bisa diubah (nama dan qty tidak), tetapi varian dikunci selama tahap punya WO aktif.",
+      "Tautan Ruang kerja di baris tahap membuka jadwal proses, dokumen (SPK dan PO), dan kebutuhan bahan tahap itu. Lencana di sampingnya meringkas jadwalnya: belum dijadwalkan, berapa proses selesai, berapa yang terlambat.",
     ],
-    kartu: [{ judul: { kunci: "planning.tabs.jahitan" }, isi: { kunci: "planning.cmt.subtitle" } }],
+    kartu: [
+      { judul: { kunci: "planning.tabs.jahitan" }, isi: { kunci: "planning.cmt.subtitle" } },
+      {
+        judul: { kunci: "jadwalProduksi.plan.tabKalender" },
+        isi: [
+          "Tab Kalender menampilkan dua belas bulan tahun plan: banyaknya tahap dan qty per bulan target, langkah jadwal yang telat, serta tahap yang belum punya jadwal atau PO — tahap tanpa bulan target tidak ikut terhitung.",
+          "Klik satu bulan untuk melihat tahapnya beserta ringkasan jadwal, WO, dan PO, lalu buka ruang kerja tahap untuk mengatur jadwal prosesnya. Tab dan bulan yang dibuka tersimpan di alamat halaman (?tab=kalender&bulan=), jadi bisa dibagikan.",
+          "Kolom PO menyebut nomor setiap PO tahap itu yang tidak batal; klik nomornya untuk membuka PO. Tahap yang belum punya PO sama sekali diberi latar kuning lembut dan lencana Belum ada PO, supaya batch yang bahannya belum dipesan terlihat sekilas. Kolom PO dan penanda ini hanya tampil bagi yang boleh melihat PO.",
+        ],
+      },
+      {
+        judul: { kunci: "planning.tabs.dashboard" },
+        isi: [
+          "Dasbor membandingkan target plan dengan yang sudah terpenuhi, per jenis dan per bulan.",
+          "Sudah ada PO = jumlah qty tahap yang punya paling sedikit satu PO yang tidak batal, per jenis (jenis induk menjumlah semua turunannya), ditaruh di samping Terpenuhi. Kartu Sudah ada PO di atas menjumlah seluruh plan dan menyebut persennya terhadap total plan. Definisi \"punya PO\" sama dengan penanda Belum ada PO di tab Kalender. Angka ini hanya tampil bagi yang boleh melihat PO.",
+        ],
+      },
+    ],
+  },
+  {
+    rute: "/backoffice/production/planning/tahap/[id]",
+    bagian: "production",
+    judul: "Ruang kerja tahap",
+    isi: [
+      "Ruang kerja satu tahap Plan Kerja, yaitu satu batch jahit: jadwal proses bertanggal, SPK dan PO tahap, dan kebutuhan bahannya. Dibuka dari tautan Ruang kerja di baris tahap, dari tab Kalender Plan Kerja, atau dari Follow-up produksi.",
+      "Kepala halaman menyebut jenis, barang dan varian, qty, bulan target, penjahit, status plan, dan ringkasan jadwal: berapa proses selesai, berapa yang terlambat, dan perkiraan tanggal selesai.",
+      "Jadwal tetap boleh diubah walau plan sudah aktif atau terkunci, karena jadwal adalah pekerjaan yang sedang berjalan. Melihat butuh izin melihat plan kerja; mengubah jadwal butuh izin mengelola plan kerja. SPK hanya tampil bagi yang boleh melihat perintah kerja, dan PO hanya bagi yang boleh melihat PO.",
+    ],
+    kartu: [
+      {
+        judul: "Jadwal proses",
+        isi: [
+          "Proses berurutan dengan pemasoknya, lama dalam hari kerja, tanggal target, dan tanggal selesai. Tanggal target dihitung dalam hari kerja produksi: hari libur mingguan dan tanggal merah di Lead Time → Hari kerja & libur dilewati, dan hari mulai tidak ikut dihitung.",
+          "Proses bisa ditambah manual, diubah, dipindah naik atau turun, dan dihapus. Setiap perubahan menyusun ulang tanggal semua proses di tahap itu.",
+          "Urutan juga bisa diubah dengan menyeret pegangan ⠿ di depan nomor proses, dengan mouse atau jari. Selama diseret, garis menunjukkan posisi jatuhnya, tanggal target yang akan berubah tampil di kolom Target, dan perkiraan selesai tahap tampil di atas tabel — dihitung dengan hari kerja yang sama dengan saat disimpan. Lepas untuk menyimpan; Esc membatalkan. Tombol panah naik/turun tetap ada untuk papan ketik.",
+          "Tombol WhatsApp di samping pemasok membuka percakapan dengan pesan siap kirim yang menyebut proses, tahap, dan tanggal targetnya.",
+        ],
+      },
+      {
+        judul: "Tarik dari Lead Time",
+        isi: [
+          "Mengambil proses dari rantai Lead Time pemasok. Pemasok dipilih berurutan dan boleh lebih dari satu, misalnya pabrik kain, lalu penjahit, lalu sablon; langkah tiap pemasok bisa dicentang satu per satu. Lama proses per qty dihitung sebanding qty tahap.",
+          "Maju: isi tanggal mulai, tanggal target dihitung ke depan. Mundur: isi tenggat, tanggal mulai dihitung mundur dari tenggat itu.",
+          "Tambah menyambung proses baru di akhir jadwal. Ganti mengganti seluruh jadwal, dan ditolak bila sudah ada proses yang sedang dikerjakan atau selesai. Tanggal hasilnya tampil sebagai pratinjau sebelum disimpan.",
+        ],
+      },
+      {
+        judul: "Status dan tanggal selesai",
+        isi: [
+          "Status proses: Belum, Proses, Selesai. Menandai Selesai meminta tanggal selesai sebenarnya, bawaan hari ini dan tidak boleh sesudah hari ini.",
+          "Proses sesudahnya bergeser mengikuti tanggal selesai itu: selesai lebih cepat menarik maju, selesai lebih lambat mendorong mundur. Status Proses tidak menggeser apa pun.",
+          "Proses yang belum selesai ditandai terlambat baru sesudah hari targetnya lewat.",
+        ],
+      },
+      {
+        judul: "Dokumen",
+        isi: "SPK: tombol Buat WO dari tahap ini, atau tautan ke SPK yang sudah ada. PO tahap: semua PO yang dibuat untuk tahap ini (kain, aksesoris, sablon); Buat PO membuka formulir PO yang sudah terhubung ke tahap ini.",
+      },
+      {
+        judul: "Kebutuhan bahan",
+        isi: [
+          "Kebutuhan tiap bahan = aturan konsumsi barang jadi tahap ini × qty tahap, ditambah susut. Di-PO dan diterima menjumlah baris PO tahap yang tidak batal untuk bahan itu, jadi terlihat bahan mana yang masih kurang, pas, atau lebih. Kosong bila tahap belum punya barang jadi.",
+          "Buat PO di baris bahan yang kurang membuka formulir PO baru untuk tahap ini dengan bahan itu dan qty kekurangannya sudah terisi; Buat PO semua yang kurang mengisi semua bahan yang kurang sekaligus. Catatan PO terisi \"Produksi <tahap> · <jenis>\". Tombolnya hanya ada bagi yang boleh melihat dan membuat PO.",
+        ],
+      },
+    ],
+  },
+  {
+    rute: "/backoffice/production/follow-up",
+    bagian: "production",
+    judul: { kunci: "jadwalProduksi.followUp.judul" },
+    isi: [
+      "Proses jadwal produksi yang belum selesai dari semua tahap, untuk ditanyakan ke pemasok setiap hari. Prosesnya berasal dari jadwal yang disusun di ruang kerja tahap.",
+      "Tab Hari ini berisi proses yang targetnya hari ini; Terlambat, yang targetnya sudah lewat; Minggu ini, dari hari ini sampai enam hari ke depan; Semua, seluruh proses yang belum selesai. Angka di tab memakai saringan pemasok yang sama.",
+      "Baris Beranda \"Proses produksi terlambat\" dan \"Proses produksi jatuh tempo hari ini\" membuka tab yang sama, dan angkanya dihitung dengan definisi yang sama.",
+      "Tab, pemasok, halaman, tampilan, dan bulan kalender tersimpan di alamat halaman, jadi daftar yang tersaring bisa dibagikan.",
+      "Melihat cukup dengan izin melihat plan kerja; mengubah status butuh izin mengelola plan kerja.",
+    ],
+    kartu: [
+      {
+        judul: { kunci: "jadwalProduksi.followUp.tampilan.daftar" },
+        isi: "Satu baris per proses: tanggal target dan berapa hari lagi atau sudah lewat, lama proses dalam hari kerja, tahap beserta jenis, qty, dan tahun plan, pemasok, serta status. Nama tahap membuka ruang kerja tahap. Lima puluh baris per halaman, urut tanggal target.",
+      },
+      {
+        judul: { kunci: "jadwalProduksi.followUp.tampilan.kalender" },
+        isi: "Proses diletakkan pada tanggal targetnya, satu chip per proses, termasuk yang sudah selesai (dicoret). Merah berarti terlambat, kuning hari ini, biru mendatang, hijau selesai. Hari libur mingguan dan tanggal merah dari Lead Time diberi latar redup. Klik chip untuk mengubah status prosesnya.",
+      },
+      {
+        judul: "WhatsApp ke pemasok",
+        isi: "Tombol WhatsApp membuka percakapan dengan pemasok berisi pesan siap kirim yang menyebut proses, tahap, dan tanggal targetnya, selalu dalam bahasa Indonesia. Tombolnya hanya muncul bila nomor pemasok adalah nomor HP. Anda sendiri yang menekan kirim.",
+      },
+      {
+        judul: { kunci: "jadwalProduksi.followUp.ubahStatus" },
+        isi: "Belum, Proses, atau Selesai. Selesai meminta tanggal selesai sebenarnya, bawaan hari ini dan tidak boleh sesudah hari ini. Tanggal itu menggeser target proses sesudahnya di tahap yang sama; status Proses tidak menggeser apa pun.",
+      },
+    ],
   },
   {
     rute: "/backoffice/production/colors",

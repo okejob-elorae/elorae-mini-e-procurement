@@ -7,21 +7,25 @@ import { PageHeader } from "@/components/ui/page-header";
 import { PustakaTab } from "@/components/lead-time/pustaka-tab";
 import { PapanTab } from "@/components/lead-time/papan-tab";
 import { SopTab } from "@/components/lead-time/sop-tab";
+import { HariKerjaTab } from "@/components/lead-time/hari-kerja-tab";
 
-type TabKey = "pustaka" | "papan" | "sop";
+export type TabKey = "pustaka" | "papan" | "sop" | "hari-kerja";
 
 type Props = {
   initialTab: TabKey;
   canManage: boolean;
+  /** Hari kerja & libur produksi: `production_planning:manage` ATAU `lead_time:manage`. */
+  bolehAturKalender: boolean;
 };
 
 function resolveTab(raw: string | null, fallback: TabKey): TabKey {
-  if (raw === "papan" || raw === "sop" || raw === "pustaka") return raw;
+  if (raw === "papan" || raw === "sop" || raw === "pustaka" || raw === "hari-kerja") return raw;
   return fallback;
 }
 
-export function LeadTimePageClient({ initialTab, canManage }: Props) {
+export function LeadTimePageClient({ initialTab, canManage, bolehAturKalender }: Props) {
   const t = useTranslations("leadTime");
+  const tJadwal = useTranslations("jadwalProduksi");
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -43,6 +47,7 @@ export function LeadTimePageClient({ initialTab, canManage }: Props) {
           <TabsTrigger value="pustaka">{t("tabs.pustaka")}</TabsTrigger>
           <TabsTrigger value="papan">{t("tabs.papan")}</TabsTrigger>
           <TabsTrigger value="sop">{t("tabs.sop")}</TabsTrigger>
+          <TabsTrigger value="hari-kerja">{tJadwal("hariKerja.tab")}</TabsTrigger>
         </TabsList>
         <TabsContent value="pustaka">
           <PustakaTab canManage={canManage} />
@@ -52,6 +57,9 @@ export function LeadTimePageClient({ initialTab, canManage }: Props) {
         </TabsContent>
         <TabsContent value="sop">
           <SopTab canManage={canManage} />
+        </TabsContent>
+        <TabsContent value="hari-kerja">
+          <HariKerjaTab bolehUbah={bolehAturKalender} />
         </TabsContent>
       </Tabs>
     </div>

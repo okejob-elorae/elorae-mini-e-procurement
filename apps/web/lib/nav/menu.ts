@@ -246,6 +246,7 @@ export const navItems: NavItem[] = [
     children: [
       { labelKey: "navForecast", href: "/backoffice/forecast", permission: PERMISSIONS.FORECAST_VIEW },
       { labelKey: "navProductionPlanning", href: "/backoffice/production/planning", permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW },
+      { labelKey: "navProductionFollowUp", href: "/backoffice/production/follow-up", permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW },
       { labelKey: "navProductionColors", href: "/backoffice/production/colors", permission: PERMISSIONS.PRODUCTION_COLORS_VIEW },
       { labelKey: "navProductionPalette", href: "/backoffice/production/palette", permission: PERMISSIONS.PRODUCTION_COLORS_VIEW },
       { labelKey: "navWorkOrdersList", href: "/backoffice/work-orders", permission: PERMISSIONS.WORK_ORDERS_VIEW },
@@ -305,16 +306,26 @@ export const navItems: NavItem[] = [
   // Instagram bukan orang yang menyetujui pesanan lapangan, dan tidak satu pun
   // dari mereka boleh mewarisi layar yang lain hanya karena keduanya menyentuh
   // kata "marketing". Izinnya pun terpisah.
+  // Urutannya sama dengan tab di `app/backoffice/kreatif/KreatifTabs.tsx`;
+  // bawaan grup = Hari ini.
   {
     section: "secCreative",
     labelKey: "navGroupCreative",
-    href: "/backoffice/kreatif/konten",
+    href: "/backoffice/kreatif",
     icon: Megaphone,
     permission: PERMISSIONS.CREATIVE_VIEW,
     children: [
-      { labelKey: "navContentCalendar", href: "/backoffice/kreatif/konten", permission: PERMISSIONS.CREATIVE_VIEW },
-      { labelKey: "navKolBrief", href: "/backoffice/kreatif/brief", permission: PERMISSIONS.CREATIVE_VIEW },
+      { labelKey: "navKreatifHariIni", href: "/backoffice/kreatif", permission: PERMISSIONS.CREATIVE_VIEW },
+      { labelKey: "navKolaborasi", href: "/backoffice/kreatif/kolaborasi", permission: PERMISSIONS.CREATIVE_VIEW },
       { labelKey: "navKolDirectory", href: "/backoffice/kreatif/kol", permission: PERMISSIONS.CREATIVE_VIEW },
+      { labelKey: "navKolCampaign", href: "/backoffice/kreatif/campaign", permission: PERMISSIONS.CREATIVE_VIEW },
+      { labelKey: "navKolSampel", href: "/backoffice/kreatif/sampel", permission: PERMISSIONS.CREATIVE_VIEW },
+      { labelKey: "navKolKonten", href: "/backoffice/kreatif/konten-kol", permission: PERMISSIONS.CREATIVE_VIEW },
+      { labelKey: "navKolPembayaran", href: "/backoffice/kreatif/pembayaran", permission: PERMISSIONS.CREATIVE_VIEW },
+      { labelKey: "navKolKalender", href: "/backoffice/kreatif/kalender", permission: PERMISSIONS.CREATIVE_VIEW },
+      { labelKey: "navKolLaporan", href: "/backoffice/kreatif/laporan", permission: PERMISSIONS.CREATIVE_VIEW },
+      { labelKey: "navContentCalendar", href: "/backoffice/kreatif/konten", permission: PERMISSIONS.CREATIVE_VIEW },
+      { labelKey: "navKreatifPengaturan", href: "/backoffice/kreatif/pengaturan", permission: PERMISSIONS.CREATIVE_VIEW },
     ],
   },
 

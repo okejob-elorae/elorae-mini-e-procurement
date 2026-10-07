@@ -1,69 +1,55 @@
 import { describe, expect, it } from 'vitest';
 import {
   bebanDiakui,
-  bolehPindahBrief,
   bolehPindahKonten,
   kontenTerlambat,
-  langkahBerikutBrief,
+  LABEL_PLATFORM,
   nilaiBebanDiakui,
-  stokKeluarSaat,
+  pengirimanBerangkat,
+  SEMUA_PLATFORM,
   stokKembaliSaatBatal,
+  stokPerluKeluar,
   tierKol,
-  type StatusBrief,
 } from './aturan';
+import type { Tahap } from './tahap';
 
-const SEMUA_BRIEF: StatusBrief[] = [
-  'DRAFT',
-  'DIKIRIM',
-  'DISETUJUI',
-  'KONTEN_DITERIMA',
-  'TAYANG',
-  'SELESAI',
-  'BATAL',
-];
-
-describe('Aturan 1 — brief terkirim bukan beban', () => {
+describe('Aturan 1 — kolaborasi yang disepakati bukan beban', () => {
   it('TIDAK mengakui fee selama kontennya belum tayang', () => {
     /*
      * Bentuk yang sama persis dengan "klaim bukan lunas" di modul piutang:
      * sebelum ada bukti bahwa yang dijanjikan terjadi, angkanya nol.
      */
-    for (const s of ['DRAFT', 'DIKIRIM', 'DISETUJUI', 'KONTEN_DITERIMA'] as StatusBrief[]) {
-      expect(bebanDiakui(s)).toBe(false);
-      expect(nilaiBebanDiakui(s, 2_500_000)).toBe(0);
+    for (const t of ['PROSPEK', 'DEAL', 'SAMPEL_DIKIRIM', 'DRAF', 'DRAF_DISETUJUI'] as Tahap[]) {
+      expect(bebanDiakui(t)).toBe(false);
+      expect(nilaiBebanDiakui(t, 2_500_000)).toBe(0);
     }
   });
 
-  it('mengakui fee begitu tayang', () => {
-    expect(nilaiBebanDiakui('TAYANG', 2_500_000)).toBe(2_500_000);
+  it('mengakui fee begitu tayang, dan tetap sesudahnya', () => {
+    // Mencabut pengakuan di tahap sesudahnya akan membuat beban muncul lalu
+    // hilang lagi tanpa ada yang membatalkannya.
+    for (const t of ['TAYANG', 'ANGKA_MASUK', 'DIBAYAR', 'SELESAI'] as Tahap[]) {
+      expect(nilaiBebanDiakui(t, 2_500_000)).toBe(2_500_000);
+    }
   });
 
-  it('tetap mengakui fee setelah selesai', () => {
-    // SELESAI hanya bisa dicapai lewat TAYANG; mencabut pengakuannya di sana
-    // akan membuat beban muncul lalu hilang lagi tanpa ada yang membatalkannya.
-    expect(nilaiBebanDiakui('SELESAI', 2_500_000)).toBe(2_500_000);
-  });
-
-  it('TIDAK mengakui fee brief yang dibatalkan', () => {
-    expect(nilaiBebanDiakui('BATAL', 2_500_000)).toBe(0);
+  it('TIDAK mengakui fee kolaborasi yang keluar jalur', () => {
+    for (const t of ['DITOLAK', 'GHOSTING', 'BATAL'] as Tahap[]) expect(nilaiBebanDiakui(t, 2_500_000)).toBe(0);
   });
 });
 
-describe('Aturan 2 — stok bergerak saat dikirim, bukan saat direncanakan', () => {
-  it('mengeluarkan stok TEPAT pada perpindahan draft ke dikirim', () => {
-    expect(stokKeluarSaat('DRAFT', 'DIKIRIM')).toBe(true);
+describe('Aturan 2 — stok bergerak saat pengiriman berangkat, bukan saat direncanakan', () => {
+  it('berangkat = tanggal kirim DAN resi terisi', () => {
+    expect(pengirimanBerangkat({ sentAt: '2026-10-07', trackingNo: 'JNE1' })).toBe(true);
+    expect(pengirimanBerangkat({ sentAt: null, trackingNo: 'JNE1' })).toBe(false);
+    expect(pengirimanBerangkat({ sentAt: '2026-10-07', trackingNo: '  ' })).toBe(false);
   });
 
-  it('TIDAK mengeluarkan stok dua kali pada perpindahan berikutnya', () => {
-    // Kalau setiap tahap sesudahnya juga mengeluarkan stok, satu brief menguras
-    // gudang lima kali untuk satu paket yang sama.
-    expect(stokKeluarSaat('DIKIRIM', 'DISETUJUI')).toBe(false);
-    expect(stokKeluarSaat('DISETUJUI', 'KONTEN_DITERIMA')).toBe(false);
-    expect(stokKeluarSaat('KONTEN_DITERIMA', 'TAYANG')).toBe(false);
-  });
-
-  it('TIDAK mengeluarkan stok saat draft dibatalkan', () => {
-    expect(stokKeluarSaat('DRAFT', 'BATAL')).toBe(false);
+  it('stok keluar sekali saja per pengiriman', () => {
+    expect(stokPerluKeluar({ sentAt: '2026-10-07', trackingNo: 'A', stockIssuedAt: null })).toBe(true);
+    // Kalau setiap simpan berikutnya juga mengeluarkan stok, satu paket
+    // menguras gudang berkali-kali.
+    expect(stokPerluKeluar({ sentAt: '2026-10-07', trackingNo: 'A', stockIssuedAt: '2026-10-07' })).toBe(false);
   });
 
   it('TIDAK PERNAH menarik kembali barang yang sudah berangkat', () => {
@@ -73,6 +59,13 @@ describe('Aturan 2 — stok bergerak saat dikirim, bukan saat direncanakan', () 
      * tidak ada.
      */
     expect(stokKembaliSaatBatal()).toBe(false);
+  });
+});
+
+describe('platform', () => {
+  it('Shopee ikut jadi platform, dan setiap platform berlabel', () => {
+    expect(SEMUA_PLATFORM).toContain('SHOPEE');
+    for (const p of SEMUA_PLATFORM) expect(LABEL_PLATFORM[p].length).toBeGreaterThan(0);
   });
 });
 
@@ -92,35 +85,6 @@ describe('tierKol', () => {
     expect(tierKol([99_999])).toBe('mikro');
     expect(tierKol([100_000])).toBe('makro');
     expect(tierKol([1_000_000])).toBe('mega');
-  });
-});
-
-describe('perpindahan status brief', () => {
-  it('menolak lompatan yang melewati tahap', () => {
-    // Langsung dari DRAFT ke TAYANG berarti stoknya tidak pernah keluar.
-    expect(bolehPindahBrief('DRAFT', 'TAYANG')).toBe(false);
-    expect(bolehPindahBrief('DRAFT', 'DIKIRIM')).toBe(true);
-  });
-
-  it('TIDAK BISA menghidupkan kembali brief yang dibatalkan', () => {
-    /*
-     * Menghidupkannya berarti stoknya harus dikeluarkan ulang, dan tidak ada
-     * yang mengingatkan. Yang benar adalah membuat brief baru.
-     */
-    for (const s of SEMUA_BRIEF) expect(bolehPindahBrief('BATAL', s)).toBe(false);
-    expect(langkahBerikutBrief('BATAL')).toEqual([]);
-  });
-
-  it('tidak membawa brief selesai ke mana pun', () => {
-    for (const s of SEMUA_BRIEF) expect(bolehPindahBrief('SELESAI', s)).toBe(false);
-  });
-
-  it('membolehkan pembatalan dari setiap tahap yang belum tayang', () => {
-    for (const s of ['DRAFT', 'DIKIRIM', 'DISETUJUI', 'KONTEN_DITERIMA'] as StatusBrief[]) {
-      expect(bolehPindahBrief(s, 'BATAL')).toBe(true);
-    }
-    // ...tapi tidak setelah tayang: kontennya sudah terlanjur ada di publik.
-    expect(bolehPindahBrief('TAYANG', 'BATAL')).toBe(false);
   });
 });
 

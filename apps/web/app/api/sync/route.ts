@@ -15,6 +15,7 @@ import {
   type OfflinePOCreatePayload,
   type POFormData,
 } from "@/lib/purchase-orders/mutations";
+import { TahapTidakAdaError } from "@/lib/purchase-orders/tahap";
 import { getActorName, notifyPOCreated, notifySupplierCreated } from "@/app/actions/notifications";
 
 export const dynamic = "force-dynamic";
@@ -188,6 +189,10 @@ async function poDariAntrean(payload: OfflinePOCreatePayload): Promise<POFormDat
     paymentDueDate: tanggalAtauKosong(payload.paymentDueDate),
     notes: payload.notes,
     terms: payload.terms,
+    // Tahap produksi diteruskan bila antrean membawanya (PO dari ruang kerja tahap).
+    ...(typeof payload.planStageId === "string" && payload.planStageId.trim()
+      ? { planStageId: payload.planStageId.trim() }
+      : {}),
     items: items as POFormData["items"],
   };
 }
@@ -207,6 +212,9 @@ async function handlePOCreate(payload: unknown, userId: string) {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return tolak(400, "Invalid purchase order payload", error.issues);
+    }
+    if (error instanceof TahapTidakAdaError) {
+      return NextResponse.json({ error: "Plan stage not found", code: "TAHAP_TIDAK_ADA" }, { status: 400 });
     }
     console.error("Failed to sync PO create:", error);
     return tolak(500, "Failed to create purchase order");

@@ -37,6 +37,7 @@ import {
   upsertAccessoryPlans,
   upsertMonthlyCmtAllocations,
   upsertMonthlyColorAllocations,
+  type HasilTahap,
 } from "@/app/actions/planning";
 import { PlanningPageShell, PlanningTabPanel } from "@/components/planning/planning-page-shell";
 import { PlanGridTab } from "@/components/planning/plan-grid-tab";
@@ -45,7 +46,14 @@ import { PlanDetailsTab } from "@/components/planning/plan-details-tab";
 import { PlanColorsTab } from "@/components/planning/plan-colors-tab";
 import { PlanCmtTab } from "@/components/planning/plan-cmt-tab";
 import { PlanAccessoriesTab } from "@/components/planning/plan-accessories-tab";
-import type { ComboboxOption, PlanDashboardData, PlanYearDetail } from "@/components/planning/types";
+import { PlanKalenderTab } from "@/components/planning/plan-kalender-tab";
+import type {
+  ComboboxOption,
+  PlanDashboardData,
+  PlanStageAddData,
+  PlanStageUpdateData,
+  PlanYearDetail,
+} from "@/components/planning/types";
 
 export function PlanningPageClient() {
   const searchParams = useSearchParams();
@@ -55,6 +63,7 @@ export function PlanningPageClient() {
   const tColors = useTranslations("planning.colors");
   const tToast = useTranslations("planning.toasts");
   const tEmpty = useTranslations("planning.empty");
+  const tTolak = useTranslations("jadwalProduksi.plan.tolak");
   const activeTab = searchParams.get("tab") || "grid";
 
   const isAdmin = session?.user?.role === "ADMIN";
@@ -66,6 +75,8 @@ export function PlanningPageClient() {
     session?.user?.permissions || [],
     PERMISSIONS.WORK_ORDERS_CREATE
   );
+  const lihatPo = hasPermission(session?.user?.permissions || [], PERMISSIONS.PURCHASE_ORDERS_VIEW);
+  const lihatSpk = hasPermission(session?.user?.permissions || [], PERMISSIONS.WORK_ORDERS_VIEW);
 
   const [years, setYears] = useState<
     Array<{ id: string; year: number; isLocked: boolean; status: "DRAFT" | "ACTIVE" }>
@@ -207,6 +218,33 @@ export function PlanningPageClient() {
       }
     }
     return null;
+  };
+
+  // Tambah/ubah tahap mengembalikan kode penolakan (tidak melempar); `true` = tersimpan.
+  const hasilTahap = (hasil: HasilTahap): boolean => {
+    if (hasil.ok) return true;
+    toast.error(
+      hasil.code === "SUDAH_ADA_WO"
+        ? tTolak("SUDAH_ADA_WO", { docNumber: hasil.docNumber ?? "" })
+        : tTolak(hasil.code)
+    );
+    return false;
+  };
+  const handleAddStage = async (planCategoryId: string, data: PlanStageAddData) => {
+    try {
+      return hasilTahap(await createPlanStage({ planCategoryId, ...data }));
+    } catch {
+      toast.error(tTolak("GAGAL"));
+      return false;
+    }
+  };
+  const handleUpdateStage = async (stageId: string, data: PlanStageUpdateData) => {
+    try {
+      return hasilTahap(await updatePlanStage(stageId, data));
+    } catch {
+      toast.error(tTolak("GAGAL"));
+      return false;
+    }
   };
 
   // Klik ganda pada "Buat WO" tidak boleh membuat dua WO untuk satu tahap.
@@ -396,12 +434,8 @@ export function PlanningPageClient() {
             onResetAllMonths={async (id) => {
               await resetMonthlyToAuto(id);
             }}
-            onAddStage={async (id, data) => {
-              await createPlanStage({ planCategoryId: id, ...data });
-            }}
-            onUpdateStage={async (id, data) => {
-              await updatePlanStage(id, data);
-            }}
+            onAddStage={handleAddStage}
+            onUpdateStage={handleUpdateStage}
             onDeleteStage={async (id) => {
               await deletePlanStage(id);
             }}
@@ -420,18 +454,19 @@ export function PlanningPageClient() {
             detail={detail}
             supplierOptions={tailorOptions}
             disabled={disabled}
+            canManage={canManage}
             canCreateWo={canCreateWorkOrder}
             onRefresh={() => refreshAll(detail.id)}
-            onAddStage={async (id, data) => {
-              await createPlanStage({ planCategoryId: id, ...data });
-            }}
-            onUpdateStage={async (id, data) => {
-              await updatePlanStage(id, data);
-            }}
+            onAddStage={handleAddStage}
+            onUpdateStage={handleUpdateStage}
             onDeleteStage={(id) => deletePlanStage(id)}
             onCreateWo={handleCreateWo}
           />
         ) : emptyPlan}
+      </PlanningTabPanel>
+
+      <PlanningTabPanel value="kalender">
+        {detail ? <PlanKalenderTab tahun={detail.year} lihatPo={lihatPo} lihatSpk={lihatSpk} /> : emptyPlan}
       </PlanningTabPanel>
 
       <PlanningTabPanel value="warna">

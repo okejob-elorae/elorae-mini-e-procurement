@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useTranslations } from "next-intl";
-import { ArrowDown, ArrowUp, ChevronDown, Pencil, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, GripVertical, Pencil, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,7 +21,16 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  ATRIBUT_BUTIR,
+  atributDaftar,
+  garisSisipDi,
+  type PropsPegangan,
+  type SesiSeret,
+} from "@/components/gerak/useSeretUrut";
+import { cn } from "@/lib/utils";
 import { StepOverridePopover } from "./step-override-popover";
+import { daftarPemasok, sedangDibawa, type DataSeretPapan } from "./seret-papan";
 import type { SupplierChainCard } from "@/app/actions/lead-time";
 
 export type SopOption = {
@@ -45,6 +54,11 @@ type Props = {
     sopName: string,
     stepCount: number
   ) => void;
+  /** Seret-lepas (hanya untuk yang boleh mengelola). */
+  seret?: {
+    sesi: SesiSeret<DataSeretPapan> | null;
+    pegangan: (data: DataSeretPapan) => PropsPegangan;
+  };
 };
 
 export function SupplierChainCardView({
@@ -57,6 +71,7 @@ export function SupplierChainCardView({
   onReorder,
   onUpdated,
   onApplySop,
+  seret,
 }: Props) {
   const t = useTranslations("leadTime.papan");
   const tp = useTranslations("leadTime.pustaka");
@@ -71,6 +86,19 @@ export function SupplierChainCardView({
     months,
   })}`;
   const isEmpty = card.steps.length === 0;
+
+  const daftar = daftarPemasok(card.supplierId);
+  const dataSeret = seret?.sesi?.data ?? null;
+  const membawaProses = dataSeret?.jenis === "proses";
+  const jadiSasaran = seret?.sesi?.sasaran?.daftar === daftar;
+  const dariSeret =
+    dataSeret?.jenis === "langkah" && dataSeret.supplierId === card.supplierId
+      ? card.steps.findIndex((x) => x.id === dataSeret.stepId)
+      : -1;
+  const garisSisip = (i: number) =>
+    garisSisipDi(seret?.sesi ?? null, daftar, i, dariSeret >= 0 ? dariSeret : null) ? (
+      <div aria-hidden className="my-0.5 h-0.5 rounded-full bg-primary" />
+    ) : null;
 
   function move(index: number, dir: -1 | 1) {
     const ids = card.steps.map((s) => s.id);
@@ -130,7 +158,12 @@ export function SupplierChainCardView({
 
   return (
     <Card
-      className={assignMode ? "cursor-pointer ring-1 ring-amber-400/60 hover:ring-2" : undefined}
+      {...(seret ? atributDaftar(daftar) : {})}
+      className={cn(
+        assignMode && "cursor-pointer ring-1 ring-amber-400/60 hover:ring-2",
+        membawaProses && "outline-dashed outline-2 outline-offset-2 outline-primary/40",
+        membawaProses && jadiSasaran && "bg-primary/5 outline-primary",
+      )}
       onClick={assignMode ? onAssignClick : undefined}
     >
       <CardHeader className="pb-2 flex flex-row items-start justify-between gap-2 space-y-0">
@@ -142,7 +175,10 @@ export function SupplierChainCardView({
       </CardHeader>
       <CardContent className="space-y-1" onClick={(e) => e.stopPropagation()}>
         {isEmpty ? (
-          <p className="text-sm text-muted-foreground">{t("emptyChain")}</p>
+          <>
+            {garisSisip(0)}
+            <p className="text-sm text-muted-foreground">{t("emptyChain")}</p>
+          </>
         ) : (
           card.steps.map((step, index) => {
             const tmpl = step.processTemplate;
@@ -157,13 +193,35 @@ export function SupplierChainCardView({
                   rateQty: effectiveRateQty ?? 0,
                 })
               : `${effectiveDays}h`;
+            const diangkat = sedangDibawa(dataSeret, { jenis: "langkah", stepId: step.id });
             return (
+              <div key={step.id}>
+              {garisSisip(index)}
               <div
-                key={step.id}
-                className={`flex items-center gap-2 text-sm py-1 border-b last:border-0 ${
-                  archived ? "opacity-50" : ""
-                }`}
+                {...ATRIBUT_BUTIR}
+                className={cn(
+                  "flex items-center gap-2 text-sm py-1",
+                  index < card.steps.length - 1 && "border-b",
+                  archived && "opacity-50",
+                  diangkat &&
+                    "rounded-md bg-primary/10 shadow-md ring-1 ring-primary/40 motion-safe:scale-[1.01] motion-safe:transition-transform",
+                )}
               >
+                {canManage && seret ? (
+                  <span
+                    {...seret.pegangan({
+                      jenis: "langkah",
+                      supplierId: card.supplierId,
+                      stepId: step.id,
+                      nama: tmpl.name,
+                    })}
+                    aria-hidden
+                    title={t("seretLangkah")}
+                    className="-ml-1 flex h-7 w-5 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground hover:bg-muted active:cursor-grabbing"
+                  >
+                    <GripVertical className="h-3.5 w-3.5" />
+                  </span>
+                ) : null}
                 <div className="flex-1 min-w-0">
                   <div className="font-medium flex items-center gap-1 flex-wrap">
                     <span className="truncate">
@@ -261,6 +319,8 @@ export function SupplierChainCardView({
                     </Button>
                   </div>
                 )}
+              </div>
+              {index === card.steps.length - 1 ? garisSisip(card.steps.length) : null}
               </div>
             );
           })

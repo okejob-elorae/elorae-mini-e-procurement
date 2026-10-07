@@ -212,6 +212,8 @@ export async function getPOById(id: string) {
     where: { id },
     include: {
       supplier: true,
+      // Tahap produksi PO ini ("Buat PO" dari ruang kerja tahap).
+      planStage: { select: { id: true, name: true, planCategory: { select: { code: true, name: true } } } },
       items: {
         include: {
           item: {
@@ -222,6 +224,7 @@ export async function getPOById(id: string) {
               nameEn: true,
               type: true,
               variants: true,
+              kgPerRoll: true,
               uom: true,
             },
           },

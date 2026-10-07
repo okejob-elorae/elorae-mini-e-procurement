@@ -8,6 +8,7 @@ import { auth } from '@/lib/auth';
 import { z } from 'zod';
 import { getActorName, notifyPOCreated, notifyPOStatusUpdated, notifyPOPaymentToggled } from '@/app/actions/notifications';
 import { createPurchaseOrder, type POFormData } from '@/lib/purchase-orders/mutations';
+import { pastikanTahapAda, tahapKiriman, TahapTidakAdaError } from '@/lib/purchase-orders/tahap';
 import { listPOs, getPOById as getPOByIdQuery } from '@/lib/purchase-orders/queries';
 import { assertLinesVariantSkusMatchItemDefinitions } from '@/lib/items/validate-variant-lines';
 import { resolvePoLeadTimeFields } from '@/lib/leadtime/po-snapshot';
@@ -50,7 +51,17 @@ function poReceiptLineKey(itemId: string, variantSku?: string | null) {
  * ditulis apa adanya, jadi pemegang izin PO bisa mencatat persetujuan atau
  * pembatalan atas nama orang lain di riwayat status.
  */
-export async function createPO(data: POFormData, _userId?: string) {
+/**
+ * Hasil `createPO`. Penolakan tahap DIKEMBALIKAN sebagai kode (pesan lemparan
+ * aksi server disamarkan di build produksi); galat lama (izin, validasi) masih
+ * dilempar seperti sebelumnya.
+ */
+export type CreatePOResult =
+  | { ok: true; id: string; docNumber: string }
+  /** `planStageId` menunjuk tahap produksi yang sudah tidak ada. */
+  | { ok: false; code: 'TAHAP_TIDAK_ADA' };
+
+export async function createPO(data: POFormData, _userId?: string): Promise<CreatePOResult> {
   void _userId;
   const session = await auth();
   if (!session?.user?.id) throw new Error('Unauthorized');
@@ -61,6 +72,7 @@ export async function createPO(data: POFormData, _userId?: string) {
   try {
     po = await createPurchaseOrder(data, userId);
   } catch (error) {
+    if (error instanceof TahapTidakAdaError) return { ok: false, code: 'TAHAP_TIDAK_ADA' };
     if (error instanceof z.ZodError) {
       throw new Error(error.issues[0]?.message ?? 'Invalid purchase order data');
     }
@@ -71,7 +83,8 @@ export async function createPO(data: POFormData, _userId?: string) {
     .then((triggeredByName) => notifyPOCreated(po.id, po.docNumber, triggeredByName))
     .catch(() => {});
 
-  return { id: po.id, docNumber: po.docNumber };
+  if (po.planStageId) revalidatePath(`/backoffice/production/planning/tahap/${po.planStageId}`);
+  return { ok: true, id: po.id, docNumber: po.docNumber };
 }
 
 /*
@@ -81,7 +94,7 @@ export async function createPO(data: POFormData, _userId?: string) {
  * Di dalam transaksi penolakan tetap DILEMPAR (`EditPoDitolak`) supaya semua
  * tulisan batal, lalu diterjemahkan di luar.
  */
-export type KodeTolakEditPo = 'TIDAK_DITEMUKAN' | 'PO_TERTUTUP' | 'PIN_WAJIB';
+export type KodeTolakEditPo = 'TIDAK_DITEMUKAN' | 'PO_TERTUTUP' | 'PIN_WAJIB' | 'TAHAP_TIDAK_ADA';
 
 export type UpdatePOResult =
   | { ok: true; id: string }
@@ -183,7 +196,7 @@ async function tulisEditPo(id: string, data: POFormData, userId: string, pinTerv
   return runSerializable(async (tx) => {
     const existing = await tx.purchaseOrder.findUnique({
       where: { id },
-      select: { status: true, ppnRatePercent: true },
+      select: { status: true, ppnRatePercent: true, planStageId: true },
     });
     if (!existing) throw new EditPoDitolak({ ok: false, code: 'TIDAK_DITEMUKAN' });
     if (STATUS_TIDAK_BISA_DIEDIT.has(existing.status)) throw new EditPoDitolak({ ok: false, code: 'PO_TERTUTUP' });
@@ -197,6 +210,19 @@ async function tulisEditPo(id: string, data: POFormData, userId: string, pinTerv
       const barang = barangVarianDitolak(error);
       if (barang == null) throw error;
       throw new EditPoDitolak({ ok: false, code: 'VARIAN_TIDAK_VALID', barang });
+    }
+
+    // Tahap produksi: `undefined` = tidak disentuh, `null`/'' = dilepas. Tahap
+    // yang sama dengan yang tersimpan tidak diperiksa ulang — edit biasa tidak
+    // boleh gagal karena tahapnya; tahap BARU harus ada.
+    const tahapBaru = tahapKiriman(data.planStageId);
+    if (tahapBaru && tahapBaru !== existing.planStageId) {
+      try {
+        await pastikanTahapAda(tx, tahapBaru);
+      } catch (error) {
+        if (error instanceof TahapTidakAdaError) throw new EditPoDitolak({ ok: false, code: 'TAHAP_TIDAK_ADA' });
+        throw error;
+      }
     }
 
     const oldItems = await tx.pOItem.findMany({
@@ -282,6 +308,7 @@ async function tulisEditPo(id: string, data: POFormData, userId: string, pinTerv
         paymentDueDate: data.paymentDueDate ?? undefined,
         notes: data.notes,
         terms: data.terms,
+        ...(tahapBaru !== undefined ? { planStageId: tahapBaru } : {}),
         totalAmount: total.subtotal,
         taxAmount: total.taxAmount,
         grandTotal: total.grandTotal,

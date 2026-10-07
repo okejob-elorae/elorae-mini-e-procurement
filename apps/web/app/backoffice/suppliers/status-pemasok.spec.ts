@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { PERMISSIONS } from "@/lib/rbac";
 import {
   aksiPemasok,
+  alamatMemilihTampilan,
   alamatSaringPemasok,
   bacaSaringPemasok,
   bisaDipilihDiPo,
@@ -47,6 +48,7 @@ describe("saringan pemasok di alamat", () => {
       status: "PENDING_APPROVAL",
       page: 2,
       pageSize: 25,
+      tampilan: "tabel",
     });
     expect(bacaSaringPemasok({ status: "AKTIF", page: "-3", pageSize: "7" })).toEqual({
       cari: "",
@@ -54,16 +56,21 @@ describe("saringan pemasok di alamat", () => {
       status: "",
       page: 1,
       pageSize: UKURAN_HALAMAN_PEMASOK,
+      tampilan: "tabel",
     });
+    expect(bacaSaringPemasok({ tampilan: "papan" }).tampilan).toBe("papan");
+    expect(bacaSaringPemasok({ tampilan: "kanban" }).tampilan).toBe("tabel");
+    expect(alamatMemilihTampilan({ tampilan: "galeri" })).toBe(true);
+    expect(alamatMemilihTampilan({})).toBe(false);
   });
 
   it("menulis hanya parameter yang terisi", () => {
-    expect(alamatSaringPemasok("/backoffice/suppliers", { cari: "", jenis: "", status: "", page: 1, pageSize: UKURAN_HALAMAN_PEMASOK })).toBe(
+    expect(alamatSaringPemasok("/backoffice/suppliers", { cari: "", jenis: "", status: "", page: 1, pageSize: UKURAN_HALAMAN_PEMASOK, tampilan: "tabel" })).toBe(
       "/backoffice/suppliers",
     );
     expect(
-      alamatSaringPemasok("/backoffice/suppliers", { cari: "kain", jenis: "t1", status: "REJECTED", page: 3, pageSize: 50 }),
-    ).toBe("/backoffice/suppliers?cari=kain&jenis=t1&status=REJECTED&page=3&pageSize=50");
+      alamatSaringPemasok("/backoffice/suppliers", { cari: "kain", jenis: "t1", status: "REJECTED", page: 3, pageSize: 50, tampilan: "galeri" }),
+    ).toBe("/backoffice/suppliers?cari=kain&jenis=t1&status=REJECTED&page=3&pageSize=50&tampilan=galeri");
   });
 });
 
@@ -81,14 +88,18 @@ describe("aksiPemasok — tombol tambah/ubah/hapus menurut izin aksi servernya",
 
 describe("layar pemasok memakai aturan di atas", () => {
   const layar = readFileSync(path.join(__dirname, "SuppliersPageClient.tsx"), "utf8");
+  // Tabel, Galeri, dan Papan dirender di sini; tombol Setujui/Tolak tinggal di dalamnya.
+  const tampilan = readFileSync(path.join(__dirname, "TampilanPemasok.tsx"), "utf8");
 
   it("Setujui/Tolak menurut izin, bukan nama peran", () => {
-    expect(layar).toContain("bolehMemutuskan(supplier.status, izin)");
-    expect(layar).not.toMatch(/Role\.ADMIN|role ===/);
+    expect(tampilan).toContain("bolehMemutuskan(s.status, izin)");
+    expect(layar + tampilan).not.toMatch(/Role\.ADMIN|role ===/);
   });
 
   it("tambah, ubah, dan hapus dijaga aksiPemasok", () => {
     expect(layar).toContain("aksiPemasok(izin)");
-    for (const syarat of ["aksi.tambah ?", "aksi.ubah ?", "aksi.hapus ?"]) expect(layar).toContain(syarat);
+    for (const syarat of [/aksi\.tambah\s*\?/, /aksi\.ubah\s*\?/, /aksi\.hapus\s*\?/]) expect(layar).toMatch(syarat);
+    expect(tampilan).toContain("aksi.ubah ?");
+    expect(tampilan).toContain("aksi.hapus ?");
   });
 });

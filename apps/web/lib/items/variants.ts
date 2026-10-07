@@ -55,7 +55,8 @@ export function variantSelectOptions(variants: ItemVariantRow[]): { sku: string;
   for (const v of variants) {
     const sku = (v.sku ?? '').trim();
     if (!sku) continue;
-    const labelParts = [v.color, v.size, v.name, v.nameId]
+    // `warna`: varian warna bahan yang ditambah dari formulir PO.
+    const labelParts = [v.color, v.warna, v.size, v.name, v.nameId]
       .map((x) => (x != null ? String(x).trim() : ''))
       .filter(Boolean);
     const label = labelParts.length > 0 ? `${labelParts.join(' · ')} (${sku})` : sku;

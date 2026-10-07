@@ -89,7 +89,13 @@ export const ENTRI: EntriBantuan[] = [
     bagian: "settings",
     judul: { kunci: "tax.pageTitle" },
     isi: { kunci: "tax.pageDescription" },
-    kartu: [{ judul: { kunci: "tax.cardTitle" }, isi: { kunci: "tax.cardDescription" } }],
+    kartu: [
+      { judul: { kunci: "tax.cardTitle" }, isi: { kunci: "tax.cardDescription" } },
+      {
+        judul: { kunci: "tax.suratPo.judul" },
+        isi: "Paragraf pembuka dan penutup yang tercetak di setiap PO, di atas tabel barang dan di bawah total. Saat mencetak, teksnya masih bisa diubah untuk PO itu saja. Paragraf yang dikosongkan tidak dicetak. Mengubahnya butuh izin yang sama dengan tarif PPN, dan setiap perubahan tercatat di jejak audit.",
+      },
+    ],
   },
   {
     rute: "/backoffice/settings/uom",

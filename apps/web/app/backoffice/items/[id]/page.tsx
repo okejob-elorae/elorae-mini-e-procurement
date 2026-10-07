@@ -42,6 +42,7 @@ export default async function ItemDetailPage({
     material: item.material ?? null,
     careInstructions: item.careInstructions ?? null,
     sizeChartId: item.sizeChartId ?? null,
+    kgPerRoll: item.kgPerRoll != null ? Number(item.kgPerRoll) : null,
     consumptionRules: (
       item.fgConsumptions as Array<{
         materialId: string;

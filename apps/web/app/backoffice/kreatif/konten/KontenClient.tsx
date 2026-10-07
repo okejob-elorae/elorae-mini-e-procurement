@@ -58,6 +58,22 @@ import {
 import { GridFeed } from './GridFeed';
 import type { BarisKonten, RingkasanKreatif } from '@/lib/creative/queries';
 import { TanggalInput } from '@/components/ui/tanggal-input';
+import { formatDateOnlyJakarta } from '@/lib/date-only';
+import { geserHari, hariIniWib } from '@/lib/tanggal-isian';
+import {
+  butuhAlasanKonten,
+  idPilihSemua,
+  kodeGalatUnggah,
+  periksaBerkasFoto,
+  pilihanStatusKonten,
+} from '@/lib/creative/rencana-konten';
+
+/** Kode galat aksi yang punya terjemahan `creative.err*`; sisanya (mis. jaringan putus) jadi GAGAL. */
+const GALAT_KONTEN = new Set(['TIDAK_DITEMUKAN', 'NAMA_WAJIB', 'ALASAN_WAJIB', 'STATUS_TIDAK_VALID', 'TANPA_AKSES', 'GAGAL', 'TIDAK_VALID']);
+const kodeGalatKonten = (err: unknown): string => {
+  const k = err instanceof Error ? err.message : typeof err === 'string' ? err : '';
+  return GALAT_KONTEN.has(k) ? k : 'GAGAL';
+};
 
 const PLATFORM = ['INSTAGRAM', 'TIKTOK', 'YOUTUBE', 'LAINNYA'] as const;
 const FORMAT = ['FEED', 'REELS', 'STORY', 'VIDEO', 'LIVE', 'CAROUSEL'] as const;
@@ -88,7 +104,13 @@ type Draf = {
   platform: (typeof PLATFORM)[number];
   format: (typeof FORMAT)[number];
   status: (typeof STATUS)[number];
+  /** Status saat dialog dibuka — dasar pilihan status yang sah (bug F). Null untuk konten baru. */
+  statusAwal: (typeof STATUS)[number] | null;
+  /** Wajib bila status dimundurkan. */
+  alasan: string;
   scheduledAt: string;
+  /** Hari jadwal saat dialog dibuka; jadwal hanya dikirim bila harinya diubah (jam aslinya terjaga). */
+  scheduledAtAwal: string | null;
   caption: string;
   note: string;
   briefId: string;
@@ -101,7 +123,10 @@ const KOSONG: Draf = {
   platform: 'INSTAGRAM',
   format: 'REELS',
   status: 'IDE',
+  statusAwal: null,
+  alasan: '',
   scheduledAt: '',
+  scheduledAtAwal: null,
   caption: '',
   note: '',
   briefId: '',
@@ -120,6 +145,8 @@ export function KontenClient({
   bolehMengelola: boolean;
 }) {
   const t = useTranslations('creative');
+  const tFoto = useTranslations('foto');
+  const tRk = useTranslations('kreatifRuang.rencanaKonten');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [buka, setBuka] = useState(false);
@@ -223,8 +250,24 @@ export function KontenClient({
    * diklik.
    */
   const unggahDiUbin = async (k: BarisKonten | null, file: File) => {
+    /*
+     * Bug H: galat unggah (berkas bukan gambar, terlalu besar, jaringan putus)
+     * diterjemahkan lewat namespace `foto` — dulu kodenya dicari di
+     * `creative` dan tampil sebagai kunci mentah ("creative.errTERLALU_BESAR").
+     */
+    const salahBerkas = periksaBerkasFoto(file);
+    if (salahBerkas) {
+      toast.error(tFoto(`err${salahBerkas}` as never));
+      return;
+    }
+    let imageUrl: string;
     try {
-      const imageUrl = await unggahFoto(file);
+      imageUrl = await unggahFoto(file);
+    } catch (err) {
+      toast.error(tFoto(`err${kodeGalatUnggah(err)}` as never));
+      return;
+    }
+    try {
       if (k) {
         const h = await gantiGambarKontenAction(k.id, imageUrl);
         if (!h.ok) throw new Error(h.kode);
@@ -234,21 +277,21 @@ export function KontenClient({
           .filter((x): x is string => Boolean(x))
           .sort()
           .at(-1);
-        const dasar = terbaru ? new Date(terbaru) : new Date();
-        dasar.setDate(dasar.getDate() + (terbaru ? 1 : 0));
+        // Hari WIB: sehari sesudah jadwal terbaru, atau hari ini.
+        const jadwal = terbaru ? geserHari(formatDateOnlyJakarta(new Date(terbaru)), 1) : hariIniWib();
         const h = await simpanKontenAction(null, {
           title: t('untitled'),
           platform: 'INSTAGRAM',
           format: 'FEED',
           status: 'IDE',
-          scheduledAt: dasar.toISOString().slice(0, 10),
+          scheduledAt: jadwal,
           imageUrl,
         });
         if (!h.ok) throw new Error(h.kode);
       }
       router.refresh();
     } catch (err) {
-      toast.error(t(`err${err instanceof Error ? err.message : 'GAGAL'}` as never));
+      toast.error(t(`err${kodeGalatKonten(err)}` as never));
     }
   };
 
@@ -259,8 +302,12 @@ export function KontenClient({
       platform: k.platform as Draf['platform'],
       format: k.format as Draf['format'],
       status: k.status as Draf['status'],
-      // Input date hanya menerima YYYY-MM-DD.
-      scheduledAt: k.scheduledAt ? k.scheduledAt.slice(0, 10) : '',
+      statusAwal: k.status as Draf['status'],
+      alasan: '',
+      // Hari WIB jadwalnya, bukan tanggal UTC: jadwal 23.00 WIB tidak boleh
+      // bergeser sehari hanya karena dialognya dibuka lalu disimpan.
+      scheduledAt: k.scheduledAt ? formatDateOnlyJakarta(new Date(k.scheduledAt)) : '',
+      scheduledAtAwal: k.scheduledAt ? formatDateOnlyJakarta(new Date(k.scheduledAt)) : '',
       caption: k.caption ?? '',
       note: '',
       briefId: k.briefId ?? '',
@@ -286,6 +333,12 @@ export function KontenClient({
     [efektif, saring],
   );
 
+  /*
+   * Bug F: dialog ubah hanya menawarkan status yang sah dari status awalnya;
+   * memundurkan status menuntut alasan (masuk jejak).
+   */
+  const perluAlasan = draf.statusAwal !== null && butuhAlasanKonten(draf.statusAwal, draf.status);
+
   const simpan = () => {
     startTransition(async () => {
       const hasil = await simpanKontenAction(draf.id, {
@@ -293,12 +346,12 @@ export function KontenClient({
         platform: draf.platform,
         format: draf.format,
         status: draf.status,
-        scheduledAt: draf.scheduledAt || null,
+        scheduledAt: draf.scheduledAtAwal !== null && draf.scheduledAt === draf.scheduledAtAwal ? undefined : draf.scheduledAt || null,
         caption: draf.caption || null,
-        note: draf.note || null,
+        // Dialog ini tidak menampilkan catatan; mengirimnya (kosong) akan menghapus isinya.
         briefId: draf.briefId || null,
         imageUrl: foto?.url ?? null,
-      });
+      }, perluAlasan ? draf.alasan : null);
       if (hasil.ok) {
         toast.success(t('okSaved'));
         setBuka(false);
@@ -306,7 +359,7 @@ export function KontenClient({
         setFoto(null);
         router.refresh();
       } else {
-        toast.error(t(`err${hasil.kode}` as never));
+        toast.error(t(`err${kodeGalatKonten(hasil.kode)}` as never));
       }
     });
   };
@@ -397,7 +450,8 @@ export function KontenClient({
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => setTerpilih(new Set(terlihat.map((k) => k.id)))}
+            // Bug I: hanya ubin terlihat yang bergambar — hanya ubin itu yang punya kotak centang.
+            onClick={() => setTerpilih(new Set(idPilihSemua(terlihat)))}
           >
             {t('selectAll')}
           </Button>
@@ -606,9 +660,23 @@ export function KontenClient({
                 label={t('colStatus')}
                 value={draf.status}
                 onChange={(v) => setDraf((d) => ({ ...d, status: v as Draf['status'] }))}
-                opsi={STATUS.map((s) => ({ value: s, label: t(`status${s}` as never) }))}
+                opsi={pilihanStatusKonten(draf.statusAwal).map((s) => ({ value: s, label: t(`status${s}` as never) }))}
               />
             </div>
+            {perluAlasan ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="alasan-status">{tRk('alasanLabel')}</Label>
+                <Textarea
+                  id="alasan-status"
+                  rows={2}
+                  maxLength={1000}
+                  value={draf.alasan}
+                  placeholder={tRk('alasanPlaceholder')}
+                  onChange={(e) => setDraf((d) => ({ ...d, alasan: e.target.value }))}
+                />
+                {!draf.alasan.trim() ? <p className="text-xs text-muted-foreground">{tRk('alasanWajib')}</p> : null}
+              </div>
+            ) : null}
             {brief.length > 0 && (
               <Pilih
                 label={t('colBrief')}
@@ -631,7 +699,7 @@ export function KontenClient({
             </div>
           </div>
           <DialogFooter>
-            <Button disabled={pending || draf.title.trim().length === 0} onClick={simpan}>
+            <Button disabled={pending || draf.title.trim().length === 0 || (perluAlasan && !draf.alasan.trim())} onClick={simpan}>
               {t('save')}
             </Button>
           </DialogFooter>

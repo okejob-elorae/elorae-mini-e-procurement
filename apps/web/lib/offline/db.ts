@@ -64,6 +64,8 @@ export interface PendingPO {
   }>;
   totalAmount: number;
   notes?: string;
+  /** Tahap produksi PO ini (dibuat dari ruang kerja tahap), bila ada. */
+  planStageId?: string;
   status: 'DRAFT' | 'PENDING_SYNC';
   createdAt: Date;
   syncError?: string;

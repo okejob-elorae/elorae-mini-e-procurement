@@ -3,7 +3,8 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { auth } from '@/lib/auth';
-import { PERMISSIONS, requirePermission } from '@/lib/rbac';
+import { PERMISSIONS, hasPermission, requirePermission } from '@/lib/rbac';
+import { aktivitasPemasok, type AktivitasBaris } from '@/lib/suppliers/aktivitas-queries';
 import { getActorName, notifySupplierCreated, notifySupplierApproved } from '@/app/actions/notifications';
 import { verifyPinForAction } from '@/app/actions/security/pin-auth';
 import {
@@ -79,6 +80,24 @@ export async function getSuppliers(
   opts?: { page?: number; pageSize?: number }
 ) {
   return listSuppliersAction({ ...filters, ...opts });
+}
+
+/**
+ * Ringkasan kerja per pemasok untuk satu halaman daftar (PO terbuka, SPK di
+ * penjahit, utang, terakhir order, tautan WhatsApp). Tiap bagian hanya diisi
+ * bila penampil memegang izin layar asalnya: PO = `purchase_orders:view`,
+ * utang = `supplier_payments:view`, SPK = `work_orders:view`.
+ */
+export async function getSupplierActivityAction(supplierIds: string[]): Promise<Record<string, AktivitasBaris>> {
+  const session = await requireSession();
+  const izin = session.user.permissions ?? [];
+  requirePermission(izin, PERMISSIONS.SUPPLIERS_VIEW);
+  if (!Array.isArray(supplierIds)) return {};
+  return aktivitasPemasok(supplierIds, {
+    lihatPo: hasPermission(izin, PERMISSIONS.PURCHASE_ORDERS_VIEW),
+    lihatUtang: hasPermission(izin, PERMISSIONS.SUPPLIER_PAYMENTS_VIEW),
+    lihatSpk: hasPermission(izin, PERMISSIONS.WORK_ORDERS_VIEW),
+  });
 }
 
 export async function getSupplierByIdAction(id: string) {

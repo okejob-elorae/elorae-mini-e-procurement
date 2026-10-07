@@ -5,6 +5,7 @@ import { assertLinesVariantSkusMatchItemDefinitions } from "@/lib/items/validate
 import { resolvePoLeadTimeFields } from "@/lib/leadtime/po-snapshot";
 import { getPpnRatePercent } from "@/app/actions/settings/ppn";
 import { bulatkanTarifPpn, hitungTotalPo } from "@/lib/purchase-orders/ppn";
+import { pastikanTahapAda } from "@/lib/purchase-orders/tahap";
 import type { z } from "zod";
 
 export type POFormData = z.infer<typeof poSchema>;
@@ -15,6 +16,8 @@ export type OfflinePOCreatePayload = {
   paymentDueDate?: Date | string | null;
   notes?: string;
   terms?: string;
+  /** Tahap produksi PO ini, bila dibuat dari ruang kerja tahap. */
+  planStageId?: string | null;
   items: Array<{
     itemId: string;
     variantSku?: string | null;
@@ -40,6 +43,7 @@ export async function createPurchaseOrder(
 
   return prisma.$transaction(async (tx) => {
     await assertLinesVariantSkusMatchItemDefinitions(tx.item, validated.items);
+    if (validated.planStageId) await pastikanTahapAda(tx, validated.planStageId);
 
     const docNumber = await generateDocNumber("PO", tx);
     const total = hitungTotalPo(validated.items, ppnRatePercent);
@@ -68,6 +72,7 @@ export async function createPurchaseOrder(
         paymentDueDate: validated.paymentDueDate ?? undefined,
         notes: validated.notes,
         terms: validated.terms,
+        planStageId: validated.planStageId ?? null,
         totalAmount: total.subtotal,
         taxAmount: total.taxAmount,
         grandTotal: total.grandTotal,

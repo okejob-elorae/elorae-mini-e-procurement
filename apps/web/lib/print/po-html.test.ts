@@ -67,6 +67,44 @@ describe("buildPOPrintHtml", () => {
   });
 });
 
+describe("buildPOPrintHtml — surat dan rincian warna bahan", () => {
+  const kain = {
+    ...dasar,
+    suratPembuka: "Dengan hormat,\nKami memesan kain <katun>:",
+    suratPenutup: "Terima kasih.",
+    lines: [
+      { itemName: "Kain Katun", itemSku: "FAB-1", variantSku: "FAB-1-HITAM", qty: 60, uomCode: "KG", price: 50_000, amount: 3_000_000, warna: "HITAM · 19-4005 TCX", roll: 3 },
+      { itemName: "Kain Katun", itemSku: "FAB-1", variantSku: "FAB-1-NAVY", qty: 40.5, uomCode: "KG", price: 50_000, amount: 2_025_000, warna: "NAVY", roll: 2 },
+      { itemName: "Kancing", itemSku: "AC-1", qty: 100, uomCode: "PCS", price: 100, amount: 10_000 },
+    ],
+  };
+  const html = buildPOPrintHtml(kain);
+
+  it("paragraf pembuka sebelum tabel dan penutup sesudah total, teks di-escape, baris baru dipertahankan", () => {
+    expect(html).toContain("Dengan hormat,\nKami memesan kain &lt;katun&gt;:");
+    expect(html).toContain("white-space: pre-line");
+    expect(html.indexOf("surat-pembuka")).toBeLessThan(html.indexOf('<table class="lines">'));
+    expect(html.indexOf("Terima kasih.")).toBeGreaterThan(html.indexOf("grand-row"));
+  });
+
+  it("kolom Warna dan Roll tercetak bila ada barisnya; baris lain bertanda —", () => {
+    expect(html).toContain("<th>Warna</th>");
+    expect(html).toContain(">Roll</th>");
+    expect(html).toContain("HITAM · 19-4005 TCX");
+    expect(html).toContain("Total roll");
+    expect(html).toMatch(/<span class="tv">5<\/span>/);
+    expect(html).toContain("40,5");
+  });
+
+  it("PO tanpa warna, roll, dan surat tetap lima kolom tanpa paragraf", () => {
+    const biasa = buildPOPrintHtml(dasar);
+    expect(biasa).not.toContain("<th>Warna</th>");
+    expect(biasa).not.toContain(">Roll</th>");
+    expect(biasa).not.toContain('<section class="surat');
+    expect(biasa).not.toContain("Total roll");
+  });
+});
+
 describe("labelStatusCetakPo", () => {
   it("kode status → label Indonesia; kode tak dikenal apa adanya", () => {
     expect(labelStatusCetakPo("SUBMITTED")).toBe("Dikirim ke pemasok");

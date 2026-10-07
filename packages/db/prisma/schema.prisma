@@ -118,6 +118,11 @@ model User {
   contentsAssigned  ContentPlan[] @relation("ContentAssignee")
   contentsCreated   ContentPlan[] @relation("ContentCreator")
   colorPalettesCreated ColorPalette[] @relation("ColorPaletteCreator")
+  kolCampaignsCreated  KolCampaign[]  @relation("KolCampaignCreator")
+  kolBriefsPic         KolBrief[]     @relation("KolBriefPic")
+  kolContentsApproved  KolContent[]   @relation("KolContentApprover")
+  kolNotesWritten      KolNote[]      @relation("KolNoteAuthor")
+  kolAgendasOwned      KolAgenda[]    @relation("KolAgendaOwner")
 }
 
 model VerificationToken {
@@ -203,6 +208,7 @@ model Supplier {
   vendorReturns    VendorReturn[]
   planCmtAllocations PlanCmtAllocation[]
   planStages       PlanStage[]      @relation("PlanStageSupplier")
+  planStageSteps   PlanStageStep[]  @relation("PlanStageStepSupplier")
   processChain     SupplierProcess[]
   @@index([typeId])
   @@index([code])
@@ -751,9 +757,11 @@ model Item {
   material         String?
   careInstructions String?  @db.Text
   sizeChartId      String?
+  kgPerRoll        Decimal?  @db.Decimal(10, 2)
 
   kolBriefItems     KolBriefItem[]
   contentPlans      ContentPlan[]
+  kolShipmentLines  KolShipmentLine[]
 }
 
 model ItemImage {
@@ -827,7 +835,11 @@ model PurchaseOrder {
   closeReason             String?         @db.Text
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
+  planStageId             String?
+  planStage               PlanStage?      @relation("PurchaseOrderPlanStage", fields: [planStageId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
   @@index([supplierId])
+  @@index([planStageId])
   @@index([createdById])
   @@index([status])
   @@index([etaDate])
@@ -1369,12 +1381,45 @@ model PlanStage {
   planCmtAllocationId   String?             @unique
   planCmtAllocation     PlanCmtAllocation?  @relation(fields: [planCmtAllocationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   sortOrder             Int                 @default(0)
+  scheduleStart         DateTime?
+  deadline              DateTime?
+  steps                 PlanStageStep[]
+  purchaseOrders        PurchaseOrder[]     @relation("PurchaseOrderPlanStage")
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
 
   @@index([planCategoryId])
   @@index([supplierId])
   @@index([workOrderId])
+}
+
+enum PlanStepStatus {
+  BELUM
+  PROSES
+  SELESAI
+}
+
+model PlanStageStep {
+  id                String         @id @default(cuid())
+  planStageId       String
+  planStage         PlanStage      @relation(fields: [planStageId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sequence          Int
+  name              String
+  processTemplateId String?
+  supplierId        String?
+  supplier          Supplier?      @relation("PlanStageStepSupplier", fields: [supplierId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  durationDays      Int
+  targetDate        DateTime
+  doneDate          DateTime?
+  status            PlanStepStatus @default(BELUM)
+  note              String?        @db.Text
+  createdById       String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@index([planStageId])
+  @@index([status, targetDate])
+  @@index([supplierId])
 }
 
 model PlanColorAllocation {
@@ -3141,16 +3186,56 @@ enum KolPlatform {
   TIKTOK
   YOUTUBE
   LAINNYA
+  SHOPEE
 }
 
-enum KolBriefStatus {
-  DRAFT
-  DIKIRIM
-  DISETUJUI
-  KONTEN_DITERIMA
+enum KolTahap {
+  PROSPEK
+  DIHUBUNGI
+  NEGO
+  DEAL
+  BRIEF_DIKIRIM
+  SAMPEL_DIKIRIM
+  SAMPEL_DITERIMA
+  DRAF
+  DRAF_DISETUJUI
   TAYANG
+  ANGKA_MASUK
+  DIBAYAR
   SELESAI
+  DITOLAK
+  GHOSTING
   BATAL
+}
+
+enum KolJenisKerjaSama {
+  BARTER
+  BAYAR
+  CAMPURAN
+  KOMISI
+}
+
+enum KolStatusBayar {
+  TIDAK_PERLU
+  BELUM
+  SEBAGIAN
+  LUNAS
+}
+
+enum KolStatusDraf {
+  MENUNGGU
+  REVISI
+  DISETUJUI
+}
+
+enum KolJenisAgenda {
+  TUGAS
+  MEETING
+  DEADLINE
+  KIRIM
+  KONTEN
+  BAYAR
+  LAINNYA
 }
 
 enum ContentFormat {
@@ -3182,6 +3267,18 @@ model Kol {
   rateNote    String?  @db.Text
   note        String?  @db.Text
   isActive    Boolean  @default(true)
+  label          String?   @db.Text
+  waNormal       String?
+  recipientName  String?
+  address        String?   @db.Text
+  province       String?
+  postalCode     String?
+  sizeProfile    String?   @db.Text
+  engagementRate Decimal?  @db.Decimal(6, 2)
+  avgViews       Int?
+  blockedAt      DateTime?
+  blockReason    String?   @db.Text
+  lastContactAt  DateTime?
   createdById String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -3189,9 +3286,12 @@ model Kol {
   createdBy   User?    @relation("KolCreator", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   accounts    KolAccount[]
   briefs      KolBrief[]
+  notes       KolNote[]
+  agendas     KolAgenda[]
 
   @@index([isActive, name])
   @@index([createdById])
+  @@index([waNormal])
 }
 
 model KolAccount {
@@ -3201,41 +3301,106 @@ model KolAccount {
   handle    String
   followers Int         @default(0)
   url       String?
+  updatedAt DateTime    @default(now()) @updatedAt
 
   kol       Kol @relation(fields: [kolId], references: [id], onDelete: Cascade)
+  snapshots KolFollowerSnapshot[]
 
   @@unique([kolId, platform, handle])
   @@index([kolId])
 }
 
-model KolBrief {
-  id           String         @id @default(cuid())
-  docNo        String         @unique
-  kolId        String
-  campaign     String
-  status       KolBriefStatus @default(DRAFT)
-  fee          Decimal        @default(0) @db.Decimal(15, 2)
-  briefText    String?        @db.Text
-  doList       String?        @db.Text
-  dontList     String?        @db.Text
-  startDate    DateTime?
-  dueDate      DateTime?
-  sentAt       DateTime?
-  liveAt       DateTime?
-  stockIssuedAt DateTime?
-  cancelReason String?        @db.Text
-  createdById  String?
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+model KolFollowerSnapshot {
+  id         String   @id @default(cuid())
+  accountId  String
+  followers  Int
+  recordedAt DateTime @default(now())
+  source     String?
 
-  kol          Kol   @relation(fields: [kolId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  createdBy    User? @relation("KolBriefCreator", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  deliverables KolBriefDeliverable[]
-  items        KolBriefItem[]
-  contents     ContentPlan[]
+  account    KolAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([recordedAt])
+}
+
+model KolCampaign {
+  id            String    @id @default(cuid())
+  name          String
+  brand         String?
+  product       String?
+  objective     String?   @db.Text
+  startDate     DateTime?
+  endDate       DateTime?
+  budget        Decimal?  @db.Decimal(15, 2)
+  targetKol     Int?
+  targetContent Int?
+  brief         String?   @db.Text
+  note          String?   @db.Text
+  archivedAt    DateTime?
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  createdBy     User?     @relation("KolCampaignCreator", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  collabs       KolBrief[]
+  agendas       KolAgenda[]
+
+  @@index([archivedAt])
+  @@index([name])
+  @@index([createdById])
+}
+
+model KolBrief {
+  id            String            @id @default(cuid())
+  docNo         String            @unique
+  kolId         String
+  tahap         KolTahap          @default(PROSPEK)
+  tahapAt       DateTime          @default(now())
+  campaignId    String?
+  jenis         KolJenisKerjaSama @default(BARTER)
+  fee           Decimal           @default(0) @db.Decimal(15, 2)
+  commissionPct Decimal?          @db.Decimal(5, 2)
+  picId         String?
+  briefText     String?           @db.Text
+  doList        String?           @db.Text
+  dontList      String?           @db.Text
+  startDate     DateTime?
+  dueDate       DateTime?
+  outreachAt    DateTime?
+  dealAt        DateTime?
+  lastContactAt DateTime?
+  plannedLiveAt DateTime?
+  sentAt        DateTime?
+  liveAt        DateTime?
+  stockIssuedAt DateTime?
+  boostCost     Decimal           @default(0) @db.Decimal(15, 2)
+  payStatus     KolStatusBayar    @default(TIDAK_PERLU)
+  paidAmount    Decimal           @default(0) @db.Decimal(15, 2)
+  paidAt        DateTime?
+  payNote       String?           @db.Text
+  rating        Int?
+  cancelReason  String?           @db.Text
+  createdById   String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  kol           Kol          @relation(fields: [kolId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  campaign      KolCampaign? @relation(fields: [campaignId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  pic           User?        @relation("KolBriefPic", fields: [picId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdBy     User?        @relation("KolBriefCreator", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  deliverables  KolBriefDeliverable[]
+  items         KolBriefItem[]
+  contents      ContentPlan[]
+  shipments     KolShipment[]
+  kolContents   KolContent[]
+  sales         KolSale[]
+  notes         KolNote[]
+  agendas       KolAgenda[]
 
   @@index([kolId])
-  @@index([status])
+  @@index([tahap])
+  @@index([campaignId])
+  @@index([picId])
   @@index([createdById])
 }
 
@@ -3265,6 +3430,156 @@ model KolBriefItem {
 
   @@index([briefId])
   @@index([itemId])
+}
+
+model KolShipment {
+  id            String    @id @default(cuid())
+  collabId      String
+  courier       String?
+  trackingNo    String?
+  sentAt        DateTime?
+  receivedAt    DateTime?
+  shippingCost  Decimal   @default(0) @db.Decimal(15, 2)
+  stockIssuedAt DateTime?
+  note          String?   @db.Text
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  collab        KolBrief  @relation(fields: [collabId], references: [id], onDelete: Cascade)
+  lines         KolShipmentLine[]
+
+  @@index([collabId])
+  @@index([trackingNo])
+}
+
+model KolShipmentLine {
+  id         String  @id @default(cuid())
+  shipmentId String
+  itemId     String
+  itemName   String
+  variantSku String?
+  qty        Int
+  unitCost   Decimal @default(0) @db.Decimal(15, 2)
+
+  shipment   KolShipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  item       Item        @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([shipmentId])
+  @@index([itemId])
+}
+
+model KolContent {
+  id           String         @id @default(cuid())
+  collabId     String
+  platform     KolPlatform
+  format       ContentFormat
+  link         String?        @db.Text
+  liveAt       DateTime?
+  plannedAt    DateTime?
+  draftLink    String?        @db.Text
+  draftStatus  KolStatusDraf?
+  draftNote    String?        @db.Text
+  draftAt      DateTime?
+  approvedById String?
+  approvedAt   DateTime?
+  adCode       String?
+  adCodeUntil  DateTime?
+  createdById  String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  collab       KolBrief       @relation(fields: [collabId], references: [id], onDelete: Cascade)
+  approvedBy   User?          @relation("KolContentApprover", fields: [approvedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  metrics      KolContentMetric[]
+
+  @@index([collabId])
+  @@index([liveAt])
+  @@index([plannedAt])
+  @@index([approvedById])
+}
+
+model KolContentMetric {
+  id          String   @id @default(cuid())
+  contentId   String
+  recordedAt  DateTime @default(now())
+  views       Int      @default(0)
+  likes       Int      @default(0)
+  comments    Int      @default(0)
+  shares      Int      @default(0)
+  saves       Int      @default(0)
+  source      String?
+  note        String?  @db.Text
+  createdById String?
+
+  content     KolContent @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@index([contentId])
+  @@index([recordedAt])
+}
+
+model KolSale {
+  id          String   @id @default(cuid())
+  collabId    String
+  date        DateTime
+  orders      Int      @default(0)
+  gmv         Decimal  @default(0) @db.Decimal(15, 2)
+  commission  Decimal  @default(0) @db.Decimal(15, 2)
+  source      String?
+  note        String?  @db.Text
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  collab      KolBrief @relation(fields: [collabId], references: [id], onDelete: Cascade)
+
+  @@index([collabId])
+  @@index([date])
+}
+
+model KolNote {
+  id          String    @id @default(cuid())
+  kolId       String?
+  collabId    String?
+  body        String    @db.Text
+  createdById String?
+  createdAt   DateTime  @default(now())
+
+  kol         Kol?      @relation(fields: [kolId], references: [id], onDelete: Cascade)
+  collab      KolBrief? @relation(fields: [collabId], references: [id], onDelete: Cascade)
+  createdBy   User?     @relation("KolNoteAuthor", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([kolId])
+  @@index([collabId])
+  @@index([createdById])
+}
+
+model KolAgenda {
+  id               String         @id @default(cuid())
+  title            String
+  date             DateTime
+  time             String?
+  kind             KolJenisAgenda @default(TUGAS)
+  checklist        String?        @db.Text
+  note             String?        @db.Text
+  campaignId       String?
+  kolId            String?
+  collabId         String?
+  remindDaysBefore Int            @default(0)
+  doneAt           DateTime?
+  ownerId          String
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  owner            User           @relation("KolAgendaOwner", fields: [ownerId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  campaign         KolCampaign?   @relation(fields: [campaignId], references: [id], onDelete: SetNull, onUpdate: Restrict)
+  kol              Kol?           @relation(fields: [kolId], references: [id], onDelete: SetNull, onUpdate: Restrict)
+  collab           KolBrief?      @relation(fields: [collabId], references: [id], onDelete: SetNull, onUpdate: Restrict)
+
+  @@index([date])
+  @@index([ownerId])
+  @@index([campaignId])
+  @@index([kolId])
+  @@index([collabId])
 }
 
 model ContentPlan {

@@ -1,151 +1,36 @@
-'use client';
+import { auth } from "@/lib/auth";
+import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { isiPoDariTahap, type IsiPoDariTahap } from "@/lib/purchase-orders/isi-dari-tahap";
+import { bacaPilihanBahan } from "@/lib/purchase-orders/tahap";
+import { PoBaruClient } from "./PoBaruClient";
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { useSession } from 'next-auth/react';
-import { useTranslations } from 'next-intl';
-import { PageHeader } from '@/components/ui/page-header';
-import { POForm } from '@/components/forms/POForm';
-import { createPO } from '@/app/actions/purchase-orders';
-import { toast } from 'sonner';
-import { offlineDB, savePOLocally } from '@/lib/offline/db';
-import { isOnline } from '@/lib/offline/sync';
-import { getSuppliersForSelect } from '@/app/actions/suppliers';
-import { getPpnRatePercent } from '@/app/actions/settings/ppn';
-import { bulatkanTarifPpn } from '@/lib/purchase-orders/ppn';
+export const dynamic = "force-dynamic";
 
-interface Supplier {
-  id: string;
-  code: string;
-  name: string;
-}
+/**
+ * PO baru. `?planStageId=` datang dari ruang kerja tahap produksi: tahapnya
+ * diperiksa di server (ada, dan pembuka boleh membuat PO) lalu dibawa formulir
+ * sebagai chip "Untuk tahap" yang bisa dilepas, bersama kebutuhan bahan tahap
+ * untuk panel "Kebutuhan vs tahap". `&isi=kurang` (tombol "Buat PO" di kartu
+ * Kebutuhan bahan) mengisi baris dengan kekurangan tiap bahan — semua, atau
+ * hanya `&bahan=a,b` — dan catatan "Produksi <tahap> · <jenis>".
+ */
+export default async function NewPOPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ planStageId?: string; isi?: string; bahan?: string | string[] }>;
+}) {
+  const { planStageId, isi, bahan } = await searchParams;
+  const id = typeof planStageId === "string" ? planStageId.trim() : "";
 
-export default function NewPOPage() {
-  const router = useRouter();
-  const { data: session } = useSession();
-  const tPO = useTranslations('purchaseOrders');
-  const tToasts = useTranslations('toasts');
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingSuppliers, setIsLoadingSuppliers] = useState(true);
-  // Tarif PPN Pengaturan → Pajak untuk pratinjau total; server tetap membaca tarifnya sendiri.
-  // `undefined` = belum diketahui (belum termuat / luring) — PPN tetap dihitung saat disimpan.
-  const [ppnRatePercent, setPpnRatePercent] = useState<number | undefined>(undefined);
-
-  useEffect(() => {
-    if (!isOnline()) return;
-    getPpnRatePercent()
-      .then((tarif) => setPpnRatePercent(bulatkanTarifPpn(tarif)))
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    const fetchSuppliers = async () => {
-      try {
-        // Try to get from cache first (for offline)
-        const cached = await offlineDB.suppliers.toArray();
-        if (cached.length > 0) {
-          setSuppliers(cached.map(s => ({ id: s.id, code: s.code, name: s.name })));
-        }
-
-        // Fetch from API if online
-        if (isOnline()) {
-          const data = await getSuppliersForSelect({ sync: true, approvedOnly: true });
-          const list = Array.isArray(data) ? data : [];
-          setSuppliers(list.map((s: { id: string; code: string; name: string }) => ({ id: s.id, code: s.code, name: s.name })));
-        }
-      } catch (error) {
-        console.error('Failed to fetch suppliers:', error);
-        toast.error(tPO('loadSuppliersFailed'));
-      } finally {
-        setIsLoadingSuppliers(false);
-      }
-    };
-
-    fetchSuppliers();
-  }, [tPO]);
-
-  const handleSubmit = async (data: Parameters<typeof POForm>[0]['onSubmit'] extends (data: infer T) => any ? T : never) => {
-    if (!session?.user?.id) {
-      toast.error(tToasts('youMustBeLoggedIn'));
-      return;
+  let dariTahap: IsiPoDariTahap | null = null;
+  let tahapHilang = false;
+  if (id) {
+    const session = await auth();
+    if (hasPermission(session?.user?.permissions ?? [], PERMISSIONS.PURCHASE_ORDERS_CREATE)) {
+      dariTahap = await isiPoDariTahap(id, { isiKurang: isi === "kurang", bahan: bacaPilihanBahan(bahan) });
+      tahapHilang = dariTahap == null;
     }
-
-    setIsLoading(true);
-    try {
-      const po = await createPO(data, session.user.id);
-      toast.success(tPO('toastCreated'));
-      router.push(`/backoffice/purchase-orders/${po.id}`);
-    } catch (error: any) {
-      toast.error(error.message || tPO('createFailed'));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSaveLocally = async (
-    data: Parameters<typeof POForm>[0]['onSubmit'] extends (data: infer T) => any ? T : never,
-    context: {
-      enrichedItems: Array<{
-        itemId: string;
-        qty: number;
-        price: number;
-        uomId: string;
-        sku?: string;
-        itemName?: string;
-        uomCode?: string;
-      }>;
-      totalAmount: number;
-      supplier?: Supplier;
-    }
-  ) => {
-    setIsLoading(true);
-    try {
-      await savePOLocally({
-        supplierId: data.supplierId,
-        supplierName: context.supplier?.name,
-        etaDate: data.etaDate || undefined,
-        paymentDueDate: data.paymentDueDate || undefined,
-        items: context.enrichedItems.map((item) => ({
-          itemId: item.itemId,
-          qty: item.qty,
-          price: item.price,
-          uomId: item.uomId,
-          sku: item.sku,
-          itemName: item.itemName,
-        })),
-        totalAmount: context.totalAmount,
-        notes: data.notes,
-        status: 'PENDING_SYNC',
-      });
-      toast.success(tPO('savedLocally'));
-      router.push('/backoffice/purchase-orders');
-    } catch (error: any) {
-      toast.error(error.message || tPO('saveLocallyFailed'));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  if (isLoadingSuppliers) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-      </div>
-    );
   }
 
-  return (
-    <div className="space-y-6">
-      <PageHeader title={tPO('newPageTitle')} />
-
-      <POForm
-        suppliers={suppliers}
-        ppnRatePercent={ppnRatePercent}
-        onSubmit={handleSubmit}
-        onSaveLocally={handleSaveLocally}
-        isLoading={isLoading}
-      />
-    </div>
-  );
+  return <PoBaruClient dariTahap={dariTahap} tahapHilang={tahapHilang} />;
 }

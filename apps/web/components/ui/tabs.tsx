@@ -50,7 +50,14 @@ function TabsList({
     <TabsPrimitive.List
       data-slot="tabs-list"
       data-variant={variant}
-      className={cn(tabsListVariants({ variant }), className)}
+      className={cn(
+        tabsListVariants({ variant }),
+        // `h-auto` dari pemanggil (daftar tab yang boleh turun baris) kalah oleh
+        // tinggi tetap ber-varian di atas; tanpa ini baris kedua menimpa isi di
+        // bawahnya di layar sempit.
+        /(^|\s)h-auto(\s|$)/.test(className ?? "") && "group-data-[orientation=horizontal]/tabs:h-auto",
+        className
+      )}
       {...props}
     />
   )

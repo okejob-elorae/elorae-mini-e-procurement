@@ -1,5 +1,6 @@
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
+import { bacaTampilan, JENIS_TAMPILAN, type JenisTampilan } from "@/lib/tampilan/tampilan";
 
 export type StatusPersetujuanPemasok = "PENDING_APPROVAL" | "ACTIVE" | "REJECTED";
 export const STATUS_PERSETUJUAN_PEMASOK: readonly StatusPersetujuanPemasok[] = ["PENDING_APPROVAL", "ACTIVE", "REJECTED"];
@@ -39,13 +40,25 @@ export type SaringPemasok = {
   status: StatusPersetujuanPemasok | "";
   page: number;
   pageSize: number;
+  /** Tabel (bawaan) / Galeri / Papan. Kosong di alamat = belum dipilih lewat alamat. */
+  tampilan: JenisTampilan;
 };
+
+/** Papan menampilkan semua pemasok per jenis dalam satu layar, bukan per halaman. */
+export const UKURAN_PAPAN_PEMASOK = 100;
 
 type Param = string | string[] | undefined;
 const pertama = (v: Param): string => (Array.isArray(v) ? (v[0] ?? "") : (v ?? "")).trim();
 
 /** Saringan daftar pemasok dari alamat (`?cari=&jenis=&status=&page=&pageSize=`). */
-export function bacaSaringPemasok(sp: { cari?: Param; jenis?: Param; status?: Param; page?: Param; pageSize?: Param }): SaringPemasok {
+export function bacaSaringPemasok(sp: {
+  cari?: Param;
+  jenis?: Param;
+  status?: Param;
+  page?: Param;
+  pageSize?: Param;
+  tampilan?: Param;
+}): SaringPemasok {
   const status = pertama(sp.status);
   const page = Number.parseInt(pertama(sp.page), 10);
   const pageSize = Number.parseInt(pertama(sp.pageSize), 10);
@@ -55,7 +68,13 @@ export function bacaSaringPemasok(sp: { cari?: Param; jenis?: Param; status?: Pa
     status: STATUS_PERSETUJUAN_PEMASOK.includes(status as StatusPersetujuanPemasok) ? (status as StatusPersetujuanPemasok) : "",
     page: Number.isFinite(page) && page > 1 ? page : 1,
     pageSize: UKURAN_HALAMAN_SAH.includes(pageSize) ? pageSize : UKURAN_HALAMAN_PEMASOK,
+    tampilan: bacaTampilan(pertama(sp.tampilan), JENIS_TAMPILAN, "tabel"),
   };
+}
+
+/** Alamat membawa tampilan sendiri (`?tampilan=`) — yang tersimpan di perangkat tidak dipakai. */
+export function alamatMemilihTampilan(sp: { tampilan?: Param }): boolean {
+  return pertama(sp.tampilan) !== "";
 }
 
 export function alamatSaringPemasok(pathname: string, s: SaringPemasok): string {
@@ -65,6 +84,7 @@ export function alamatSaringPemasok(pathname: string, s: SaringPemasok): string 
   if (s.status) params.set("status", s.status);
   if (s.page > 1) params.set("page", String(s.page));
   if (s.pageSize !== UKURAN_HALAMAN_PEMASOK) params.set("pageSize", String(s.pageSize));
+  if (s.tampilan !== "tabel") params.set("tampilan", s.tampilan);
   const qs = params.toString();
   return qs ? `${pathname}?${qs}` : pathname;
 }

@@ -7,9 +7,12 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "supplier.pageTitle" },
     isi: [
       { kunci: "supplier.pageDescription" },
-      "Pemasok baru berstatus Menunggu persetujuan dan BELUM bisa dipilih di pesanan pembelian (PO) sampai disetujui; pemasok yang ditolak juga tidak bisa dipilih. Kolom Persetujuan menuliskan hal itu di setiap baris.",
-      "Tombol Setujui dan Tolak tampil langsung di baris pemasok yang menunggu, untuk siapa pun yang memegang izin menyetujui pemasok (tidak harus peran ADMIN). Menolak butuh alasan.",
-      "Cari, jenis, dan persetujuan tersimpan di alamat halaman, jadi daftar yang tersaring bisa dibagikan.",
+      "Satu daftar, tiga cara melihat (seperti Notion/Airtable): Tabel untuk membandingkan, Galeri berupa kartu, dan Papan dengan satu kolom per jenis pemasok. Pilihan tampilan diingat di perangkat Anda dan ikut di alamat halaman. Papan menampilkan sampai 100 pemasok sekaligus, tanpa halaman.",
+      "Sedang dikerjakan: untuk penjahit, jumlah SPK yang berjalan dan pcs-nya (merah bila lewat target); untuk pemasok kain/aksesoris, jumlah PO terbuka dan tanggal tiba terdekat (merah bila terlambat). Utang: nilai barang yang SUDAH diterima pada PO yang belum dibayar, dikurangi kredit retur — sama dengan Pembayaran Pemasok; PO yang barangnya belum datang bukan utang. Terakhir: PO, penerimaan barang, atau SPK terakhir. Kolom ini hanya tampil untuk yang boleh melihat PO, SPK, atau pembayaran pemasok.",
+      "Tombol WhatsApp muncul bila nomor pemasok adalah nomor HP; nomor kantor tidak.",
+      "Pemasok baru berstatus Menunggu persetujuan dan BELUM bisa dipilih di pesanan pembelian (PO) sampai disetujui; pemasok yang ditolak juga tidak bisa dipilih.",
+      "Tombol Setujui dan Tolak tampil langsung di pemasok yang menunggu, untuk siapa pun yang memegang izin menyetujui pemasok (tidak harus peran ADMIN). Menolak butuh alasan.",
+      "Cari, jenis, persetujuan, dan tampilan tersimpan di alamat halaman, jadi daftar yang tersaring bisa dibagikan.",
       "Nomor rekening pemasok disimpan terenkripsi dan selalu tampil tersamar; untuk melihatnya, buka rincian pemasok lalu masukkan PIN Anda. Menghapus pemasok meminta konfirmasi lalu PIN.",
     ],
   },
@@ -163,6 +166,7 @@ export const ENTRI: EntriBantuan[] = [
       "Nama Inggris tidak wajib: bila kosong, nama Indonesia dipakai di tempat yang membutuhkan nama Inggris. SKU bisa diketik atau dibuat otomatis menurut jenisnya.",
       "Varian: tambahkan atribut (mis. Warna, Ukuran) beserta nilainya; setiap kombinasi menjadi satu varian. SKU varian harus diawali kode kategori (bila kategorinya berkode) atau SKU barang; dibiarkan kosong, SKU varian dibuat otomatis saat disimpan dengan bentuk awalan-nilai1-nilai2 (mis. KAOS-MERAH-S). Barcode varian dibuat menurut format di Pengaturan → Kode barang.",
       "Resep bahan (BOM) hanya untuk barang jadi: bahan, kebutuhan per pcs, dan susut dalam persen.",
+      "Kg per roll muncul untuk bahan (bukan barang jadi) yang satuannya kg. Isinya dipakai formulir dan cetak PO untuk menghitung jumlah roll: qty ÷ kg per roll, dibulatkan ke atas.",
     ],
     kartu: [
       {
@@ -180,6 +184,7 @@ export const ENTRI: EntriBantuan[] = [
       "Tombol Label barcode membuka cetak label untuk barang ini. Admin juga punya tombol Kirim stok ke Jubelio, yang memasukkan stok barang ini ke antrean kiriman ke Jubelio setelah dikonfirmasi.",
       "Tombol Simpan barang menyimpan isian formulir. Galeri produk di bawahnya punya tombol Simpan gambar sendiri — gambar yang ditambah atau digeser belum tersimpan sebelum tombol itu ditekan.",
       "Nama Inggris tidak wajib: bila dikosongkan, nama Indonesia yang dipakai.",
+      "Kg per roll (bahan bersatuan kg) dipakai formulir dan cetak PO untuk kolom Roll. Varian warna bahan yang ditambah dari formulir PO tampil di sini sebagai atribut warna; kode Pantone-nya ikut tersimpan dan tidak menjadi atribut kombinasi.",
     ],
     kartu: [
       {
@@ -233,18 +238,35 @@ export const ENTRI: EntriBantuan[] = [
         isi: [
           "Daftar semua proses beserta lamanya.",
           { kunci: "leadTime.pustaka.banner" },
+          "Proses per qty dihitung sebanding jumlah: lama = hari × jumlah ÷ kapasitas, dibulatkan ke atas menjadi hari utuh. Contoh: 7 hari per 10.000 pcs untuk 12.000 pcs = 9 hari (8,4 dibulatkan). Jumlah di bawah kapasitas memakan hari yang lebih sedikit, paling sedikit 1 hari.",
           { kunci: "leadTime.pustaka.bannerApproval" },
         ],
       },
       {
         judul: { kunci: "leadTime.tabs.papan" },
-        isi: "Memasang proses ke tiap pemasok: pilih proses di kiri lalu klik kartu pemasoknya, atau terapkan SOP (mengganti rantai yang ada atau menambahkannya di belakang). Lama tiap langkah bisa ditimpa khusus untuk pemasok itu.",
+        isi: [
+          "Memasang proses ke tiap pemasok: pilih proses di kiri lalu klik kartu pemasoknya, atau terapkan SOP (mengganti rantai yang ada atau menambahkannya di belakang). Lama tiap langkah bisa ditimpa khusus untuk pemasok itu.",
+          "Seret-lepas, dengan mouse atau jari: seret proses dari palet kiri ke kartu pemasok — dilepas di antara dua langkah, proses disisipkan tepat di posisi itu; dilepas di bawah langkah terakhir, ditaruh di belakang. Seret pegangan ⠿ di depan langkah untuk mengubah urutan di dalam kartu. Garis di kartu menunjukkan tempat jatuhnya, dan Esc membatalkan seretan. Dengan jari, tekan pegangan ⠿ (bukan bagian lain) supaya halaman tetap bisa digulir; tombol panah naik/turun tetap ada untuk papan ketik.",
+          "Centang pemasok…: pilih satu proses di palet, lalu tekan Centang pemasok… di kotak kuning. Semua pemasok tampil dengan kotak centang; yang sudah tercentang adalah pemasok yang sudah punya proses itu. Centang untuk memasangnya di akhir rantai pemasok itu, lepas centang untuk melepasnya. Melepas menghapus SEMUA langkah proses itu dari rantai pemasoknya, termasuk lama khusus yang pernah diatur, jadi sebelum diterapkan nama pemasoknya disebut dan diminta konfirmasi.",
+          "Yang diterapkan hanya perubahan yang Anda buat di dialog: pemasok yang tidak Anda ubah tidak disentuh, walau orang lain sedang mengubahnya. Setiap pemasangan dan pelepasan tercatat di jejak audit.",
+        ],
       },
       {
         judul: { kunci: "leadTime.tabs.sop" },
         isi: [
           "Rantai proses baku yang bisa diterapkan ke pemasok.",
           { kunci: "leadTime.sop.helper" },
+          "Di dialog SOP, urutan langkah bisa diubah dengan menyeret pegangan ⠿ di depan tiap langkah (mouse atau jari), atau dengan tombol panah naik/turun. Urutan baru tersimpan saat Simpan ditekan.",
+        ],
+      },
+      {
+        judul: { kunci: "jadwalProduksi.hariKerja.tab" },
+        isi: [
+          "Kalender kerja produksi yang dipakai jadwal setiap tahap Plan Kerja: lama proses dihitung dalam hari kerja, sedangkan hari libur mingguan dan tanggal merah dilewati.",
+          "Hari kerja bawaan Senin–Jumat, sama dengan program SSG. Centang hari lain, misalnya Sabtu, bila produksi juga berjalan di hari itu.",
+          "Tombol Isi libur tanggal tetap menambahkan lima libur yang tanggalnya sama setiap tahun (Tahun Baru, Hari Buruh, Hari Lahir Pancasila, Kemerdekaan RI, Natal) untuk tahun ini atau tahun depan, tanpa menggandakan tanggal yang sudah ada. Libur yang tanggalnya bergerak (Idulfitri, Iduladha, Imlek, Nyepi, Waisak, Kenaikan, cuti bersama) ditetapkan pemerintah tiap tahun dan diketik tim sendiri setiap tahun.",
+          "Tambah dan hapus tanggal merah baru berlaku setelah disimpan. Menyimpan hari kerja atau tanggal merah menyusun ulang tanggal semua tahap yang masih punya proses belum selesai, jadi selalu diminta konfirmasi dulu.",
+          "Mengubah butuh izin mengelola plan kerja atau mengelola Lead Time; tanpa izin itu tab ini hanya bisa dilihat.",
         ],
       },
     ],

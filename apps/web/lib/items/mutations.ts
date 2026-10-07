@@ -1,6 +1,7 @@
 import { prisma, type Prisma } from '@elorae/db';
 import { generateSKU } from '@/lib/sku-generator';
 import { bacaInfoProduk, periksaInfoProduk, type InfoProdukBarang } from "./info-produk";
+import { bacaKgPerRoll, periksaKgPerRoll } from "./kg-per-roll";
 
 export type ItemFormData = {
   sku?: string;
@@ -16,6 +17,8 @@ export type ItemFormData = {
   sellingPrice?: number;
   targetMarginPercent?: number;
   additionalCost?: number;
+  /** Bahan bersatuan kg: kg per roll (kolom Roll di PO). `undefined` = tidak disentuh. */
+  kgPerRoll?: number | null;
 } & InfoProdukBarang;
 
 export type SerializedItem = {
@@ -62,6 +65,8 @@ function validateItemPayload(p: ReturnType<typeof normalizeItemPayload>): assert
   }
   const infoProduk = periksaInfoProduk(p);
   if (infoProduk) throw new Error(infoProduk);
+  const kgPerRoll = periksaKgPerRoll(p.kgPerRoll);
+  if (kgPerRoll) throw new Error(kgPerRoll);
 }
 
 /** Tabel ukuran yang dipilih harus ada (kosong = ikut bawaan kategori). */
@@ -81,7 +86,8 @@ function slugVariantAttributeValue(value: string): string {
 
 function variantSuffixFromRecord(v: Record<string, string>): string {
   const segments = Object.entries(v)
-    .filter(([key]) => key !== 'sku' && key !== 'barcode')
+    // `pantone` = kode Pantone warna bahan (kunci cadangan seperti sku/barcode), bukan atribut.
+    .filter(([key]) => key !== 'sku' && key !== 'barcode' && key !== 'pantone')
     .map(([, value]) => slugVariantAttributeValue(value))
     .filter((s) => s.length > 0);
   if (segments.length > 0) return segments.join('-');
@@ -217,6 +223,7 @@ export function normalizeItemPayload(data: unknown): ItemFormData {
     additionalCost: additionalCostNum,
     sku: raw.sku != null ? String(raw.sku) : undefined,
     ...bacaInfoProduk(raw),
+    kgPerRoll: bacaKgPerRoll(raw.kgPerRoll),
   };
 }
 

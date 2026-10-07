@@ -1,25 +1,9 @@
-import { auth } from "@/lib/auth";
-import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { daftarBrief, daftarKol } from "@/lib/creative/queries";
-import { katalogBarang } from "@/lib/receivables/return-queries";
-import { BriefClient } from "./BriefClient";
+import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-
-export default async function BriefPage() {
-  const session = await auth();
-  const kelola = hasPermission(session?.user.permissions ?? [], PERMISSIONS.CREATIVE_MANAGE);
-  const [baris, kol, katalog] = await Promise.all([
-    daftarBrief(),
-    daftarKol({ hanyaAktif: true }),
-    kelola ? katalogBarang() : Promise.resolve([]),
-  ]);
-  return (
-    <BriefClient
-      baris={baris}
-      kol={kol.map((k) => ({ id: k.id, name: k.name }))}
-      katalog={katalog}
-      bolehMengelola={kelola}
-    />
-  );
+/**
+ * Layar Brief lama digantikan Kolaborasi (Ruang KOL, 2026-10-07). Alamat lama
+ * tetap hidup supaya tautan dan markah yang tersimpan tidak berakhir di 404.
+ */
+export default function BriefPage() {
+  redirect("/backoffice/kreatif/kolaborasi");
 }

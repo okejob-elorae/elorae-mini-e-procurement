@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { prisma, seededId } from '@elorae/db';
-import { buatBrief, pindahStatusBrief, simpanKol } from './writer';
+import { buatBrief, pindahTahapKolaborasi, simpanKol } from './writer';
 
 /**
  * Penulis creative marketing, terhadap basis data sungguhan.
@@ -18,6 +18,7 @@ let uomId = '';
 let invId = '';
 let userId = '';
 let briefId = '';
+let campaignId = '';
 
 beforeEach(async () => {
   kolId = '';
@@ -26,6 +27,7 @@ beforeEach(async () => {
   invId = '';
   userId = '';
   briefId = '';
+  campaignId = '';
 
   const user = await prisma.user.findFirstOrThrow({ select: { id: true } });
   userId = user.id;
@@ -54,6 +56,7 @@ beforeEach(async () => {
   const kol = await simpanKol({
     isi: {
       name: `${tag} Selebgram`,
+      phone: '0812-3456-7890',
       akun: [{ platform: 'INSTAGRAM', handle: '@ujicoba', followers: 25_000 }],
     },
     olehUserId: userId,
@@ -68,6 +71,7 @@ afterEach(async () => {
   await prisma.kolBriefItem.deleteMany({ where: { briefId: seededId(briefId) } });
   await prisma.kolBriefDeliverable.deleteMany({ where: { briefId: seededId(briefId) } });
   await prisma.kolBrief.deleteMany({ where: { id: seededId(briefId) } });
+  await prisma.kolCampaign.deleteMany({ where: { id: seededId(campaignId) } });
   await prisma.kolAccount.deleteMany({ where: { kolId: seededId(kolId) } });
   await prisma.kol.deleteMany({ where: { id: seededId(kolId) } });
   await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
@@ -78,14 +82,14 @@ afterEach(async () => {
 
 const DELIVERABLE = [{ platform: 'INSTAGRAM' as const, format: 'REELS' as const, qty: 1 }];
 
-async function briefDenganBarang(qty = 3) {
+async function briefDenganBarang(qty = 3, tambahan: Partial<Parameters<typeof buatBrief>[0]> = {}) {
   const r = await buatBrief({
     kolId,
-    campaign: `${tag} Kampanye`,
     fee: 2_500_000,
     deliverables: DELIVERABLE,
     barang: [{ itemId, qty }],
     olehUserId: userId,
+    ...tambahan,
   });
   if (!r.ok) throw new Error(`buatBrief gagal: ${r.alasan}`);
   briefId = r.id;
@@ -95,120 +99,117 @@ async function briefDenganBarang(qty = 3) {
 const stok = async () =>
   (await prisma.inventoryValue.findUniqueOrThrow({ where: { id: invId } })).qtyOnHand.toNumber();
 
-describe('buatBrief', () => {
-  it('TIDAK menyentuh stok saat brief masih draft', async () => {
-    // Draft masih boleh berubah isinya. Stok tidak boleh bergerak karena rencana.
+const kolaborasi = () => prisma.kolBrief.findUniqueOrThrow({ where: { id: briefId } });
+
+describe('simpanKol', () => {
+  it('menurunkan waNormal dari nomor telepon', async () => {
+    const k = await prisma.kol.findUniqueOrThrow({ where: { id: kolId } });
+    expect(k.waNormal).toBe('6281234567890');
+  });
+});
+
+describe('buatBrief — kolaborasi baru', () => {
+  it('lahir di PROSPEK tanpa menyentuh stok, dengan status bayar dari fee', async () => {
+    // Rencana sampel bukan pengiriman. Stok baru bergerak saat paketnya berangkat.
     await briefDenganBarang();
     expect(await stok()).toBe(10);
-    const b = await prisma.kolBrief.findUniqueOrThrow({ where: { id: briefId } });
-    expect(b.status).toBe('DRAFT');
+    const b = await kolaborasi();
+    expect(b.tahap).toBe('PROSPEK');
+    expect(b.payStatus).toBe('BELUM');
     expect(b.stockIssuedAt).toBeNull();
+    expect(b.dealAt).toBeNull();
   });
 
-  it('menolak brief tanpa deliverable', async () => {
-    // Brief tanpa deliverable tidak menugaskan apa pun; ia cuma catatan.
-    const r = await buatBrief({
-      kolId,
-      campaign: `${tag} Kosong`,
-      fee: 0,
-      deliverables: [],
-      olehUserId: userId,
-    });
-    expect(r).toMatchObject({ ok: false, alasan: 'TANPA_DELIVERABLE' });
+  it('kolaborasi barter tanpa fee tidak perlu dibayar', async () => {
+    await briefDenganBarang(1, { fee: 0 });
+    expect((await kolaborasi()).payStatus).toBe('TIDAK_PERLU');
   });
 
-  it('memberi nomor berurutan', async () => {
+  it('boleh tanpa deliverable — prospek belum menugaskan apa pun', async () => {
+    const r = await buatBrief({ kolId, fee: 0, olehUserId: userId });
+    expect(r.ok).toBe(true);
+    if (r.ok) briefId = r.id;
+  });
+
+  it('mewarisi brief campaign bila brief-nya kosong, dan mencatat tanggal deal bila lahir sesudah deal', async () => {
+    campaignId = (await prisma.kolCampaign.create({ data: { name: `${tag} Lebaran`, brief: 'Tunjukkan bahan adem' } })).id;
+    await briefDenganBarang(1, { campaignId, tahap: 'DEAL' });
+    const b = await kolaborasi();
+    expect(b.campaignId).toBe(campaignId);
+    expect(b.briefText).toBe('Tunjukkan bahan adem');
+    expect(b.dealAt).not.toBeNull();
+    expect(b.outreachAt).not.toBeNull();
+  });
+
+  it('menolak lahir langsung di jalur keluar', async () => {
+    const r = await buatBrief({ kolId, fee: 0, tahap: 'BATAL', olehUserId: userId });
+    expect(r).toMatchObject({ ok: false, alasan: 'STATUS_TIDAK_VALID' });
+  });
+
+  it('memberi nomor berurutan BRIEF/YYYY/NNNN', async () => {
     const a = await briefDenganBarang();
     expect(a.ok && a.docNo).toMatch(/^BRIEF\/\d{4}\/\d{4}$/);
   });
 });
 
-describe('pindahStatusBrief — pengeluaran stok', () => {
-  it('mengeluarkan stok TEPAT SEKALI saat dikirim', async () => {
-    await briefDenganBarang(3);
-    const r = await pindahStatusBrief({ briefId, ke: 'DIKIRIM', olehUserId: userId });
-    expect(r).toMatchObject({ ok: true, stokKeluar: 3 });
-    expect(await stok()).toBe(7);
-  });
-
-  it('TIDAK mengeluarkan stok lagi pada tahap-tahap berikutnya', async () => {
+describe('pindahTahapKolaborasi', () => {
+  it('maju boleh melompat, dan TIDAK PERNAH menggerakkan stok', async () => {
     /*
-     * Kalau setiap tahap ikut mengurangi, satu brief menguras gudang lima kali
-     * untuk satu paket yang sama — dan tidak ada yang menyadarinya sampai opname.
+     * Stok sampel bergerak lewat pengiriman sampel, bukan lewat tahap. Kalau
+     * tahap ikut mengurangi, satu paket bisa menguras gudang dua kali.
      */
     await briefDenganBarang(3);
-    await pindahStatusBrief({ briefId, ke: 'DIKIRIM', olehUserId: userId });
-    for (const ke of ['DISETUJUI', 'KONTEN_DITERIMA', 'TAYANG'] as const) {
-      const r = await pindahStatusBrief({ briefId, ke, olehUserId: userId });
-      expect(r).toMatchObject({ ok: true, stokKeluar: 0 });
+    for (const ke of ['DEAL', 'SAMPEL_DIKIRIM', 'TAYANG'] as const) {
+      const r = await pindahTahapKolaborasi({ kolaborasiId: briefId, ke, olehUserId: userId });
+      expect(r.ok).toBe(true);
     }
-    expect(await stok()).toBe(7);
-  });
-
-  it('menulis kartu stok yang menyebut ke mana barangnya pergi', async () => {
-    // Tanpa ini, gudang cuma melihat stok berkurang tanpa sebab.
-    await briefDenganBarang(2);
-    await pindahStatusBrief({ briefId, ke: 'DIKIRIM', olehUserId: userId });
-    const adj = await prisma.stockAdjustment.findFirstOrThrow({ where: { itemId } });
-    expect(adj.source).toBe('KOL_SEEDING');
-    expect(adj.qtyChange.toNumber()).toBe(-2);
-    expect(adj.reason).toContain('Seeding KOL');
-    expect(adj.reason).toContain(tag);
-  });
-
-  it('MENOLAK pengiriman saat stoknya kurang, tanpa menyentuh apa pun', async () => {
-    // Barang yang tidak ada tidak bisa dikirim, dan gudang minus tidak pernah
-    // bisa dijelaskan siapa pun.
-    await briefDenganBarang(99);
-    const r = await pindahStatusBrief({ briefId, ke: 'DIKIRIM', olehUserId: userId });
-    expect(r).toMatchObject({ ok: false, alasan: 'STOK_KURANG' });
     expect(await stok()).toBe(10);
-    const b = await prisma.kolBrief.findUniqueOrThrow({ where: { id: briefId } });
-    expect(b.status).toBe('DRAFT');
+    expect(await prisma.stockAdjustment.count({ where: { itemId } })).toBe(0);
+    const b = await kolaborasi();
+    expect(b.tahap).toBe('TAYANG');
+    expect(b.dealAt).not.toBeNull();
+    expect(b.liveAt).not.toBeNull();
   });
-});
 
-describe('pindahStatusBrief — perpindahan', () => {
-  it('menolak lompatan yang melewati tahap', async () => {
+  it('mundur ditolak tanpa alasan dan diterima dengan alasan', async () => {
     await briefDenganBarang();
-    const r = await pindahStatusBrief({ briefId, ke: 'TAYANG', olehUserId: userId });
-    expect(r).toMatchObject({ ok: false, alasan: 'STATUS_TIDAK_VALID' });
-    expect(await stok()).toBe(10);
-  });
-
-  it('menolak pembatalan tanpa alasan', async () => {
-    await briefDenganBarang();
-    const r = await pindahStatusBrief({ briefId, ke: 'BATAL', olehUserId: userId });
-    expect(r).toMatchObject({ ok: false, alasan: 'ALASAN_WAJIB' });
-  });
-
-  it('TIDAK mengembalikan stok saat brief dibatalkan setelah barangnya berangkat', async () => {
-    /*
-     * Pembatalan adalah keputusan di atas kertas, bukan kurir yang berbalik
-     * arah. Barangnya sudah di tangan KOL; mengembalikan stoknya membuat gudang
-     * mengaku punya barang yang tidak ada.
-     */
-    await briefDenganBarang(3);
-    await pindahStatusBrief({ briefId, ke: 'DIKIRIM', olehUserId: userId });
-    const r = await pindahStatusBrief({
-      briefId,
-      ke: 'BATAL',
-      alasan: 'KOL mundur setelah paket dikirim',
-      olehUserId: userId,
+    await pindahTahapKolaborasi({ kolaborasiId: briefId, ke: 'NEGO', olehUserId: userId });
+    expect(await pindahTahapKolaborasi({ kolaborasiId: briefId, ke: 'DIHUBUNGI', olehUserId: userId })).toMatchObject({
+      ok: false,
+      alasan: 'ALASAN_WAJIB',
     });
-    expect(r.ok).toBe(true);
-    expect(await stok()).toBe(7);
+    expect(
+      await pindahTahapKolaborasi({ kolaborasiId: briefId, ke: 'DIHUBUNGI', alasan: 'salah klik', olehUserId: userId }),
+    ).toMatchObject({ ok: true, dari: 'NEGO', ke: 'DIHUBUNGI' });
   });
 
-  it('mencatat di jejaknya bahwa barangnya sudah berangkat saat dibatalkan', async () => {
-    // Supaya pembatalan setelah pengiriman bisa dibaca sebagai kehilangan
-    // barang, bukan sekadar brief yang batal.
-    await briefDenganBarang(3);
-    await pindahStatusBrief({ briefId, ke: 'DIKIRIM', olehUserId: userId });
-    await pindahStatusBrief({ briefId, ke: 'BATAL', alasan: 'mundur', olehUserId: userId });
+  it('keluar jalur wajib beralasan dan menyimpan alasannya; buka lagi mengosongkannya', async () => {
+    await briefDenganBarang();
+    expect(await pindahTahapKolaborasi({ kolaborasiId: briefId, ke: 'GHOSTING', olehUserId: userId })).toMatchObject({
+      ok: false,
+      alasan: 'ALASAN_WAJIB',
+    });
+    await pindahTahapKolaborasi({ kolaborasiId: briefId, ke: 'GHOSTING', alasan: 'dua minggu tanpa balasan', olehUserId: userId });
+    expect((await kolaborasi()).cancelReason).toBe('dua minggu tanpa balasan');
+
+    // Dari jalur keluar hanya boleh kembali ke PROSPEK/DIHUBUNGI.
+    expect(await pindahTahapKolaborasi({ kolaborasiId: briefId, ke: 'DEAL', alasan: 'x', olehUserId: userId })).toMatchObject({
+      ok: false,
+      alasan: 'STATUS_TIDAK_VALID',
+    });
+    await pindahTahapKolaborasi({ kolaborasiId: briefId, ke: 'DIHUBUNGI', alasan: 'membalas lagi', olehUserId: userId });
+    const b = await kolaborasi();
+    expect(b.tahap).toBe('DIHUBUNGI');
+    expect(b.cancelReason).toBeNull();
+  });
+
+  it('menulis jejak perpindahan beserta alasannya', async () => {
+    await briefDenganBarang();
+    await pindahTahapKolaborasi({ kolaborasiId: briefId, ke: 'BATAL', alasan: 'KOL mundur', olehUserId: userId });
     const jejak = await prisma.auditLog.findFirstOrThrow({
-      where: { entityId: briefId, action: 'KOL_BRIEF_CANCELLED' },
+      where: { entityId: briefId, action: 'KOL_COLLAB_STAGE_CHANGED' },
     });
-    expect((jejak.metadata as { barangSudahBerangkat: boolean }).barangSudahBerangkat).toBe(true);
+    expect(jejak.reason).toBe('KOL mundur');
+    expect(jejak.changes).toMatchObject({ before: { tahap: 'PROSPEK' }, after: { tahap: 'BATAL' } });
   });
 });

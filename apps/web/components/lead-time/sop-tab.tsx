@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { formatDisplayDate } from "@/lib/date-only";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, GripVertical, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   createChainTemplate,
@@ -12,6 +12,10 @@ import {
   getProcessTemplates,
   updateChainTemplate,
 } from "@/app/actions/lead-time";
+import { HantuSeret } from "@/components/gerak/HantuSeret";
+import { ATRIBUT_BUTIR, atributDaftar, garisSisipDi, useSeretUrut } from "@/components/gerak/useSeretUrut";
+import { celahDiam, indeksTujuan, pindahkan } from "@/lib/gerak/seret-urut";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -73,7 +77,14 @@ type ChainRow = {
   hasArchivedSteps: boolean;
 };
 
-type StepDraft = { processTemplateId: string; notes: string | null };
+/** `kunci` = identitas baris di formulir (bukan id basis data) supaya seret-lepas tidak mencampur baris. */
+type StepDraft = { kunci: string; processTemplateId: string; notes: string | null };
+
+let urutKunci = 0;
+const kunciBaru = () => `langkah-${++urutKunci}`;
+
+/** `data-seret-daftar` daftar langkah di dialog SOP. */
+const DAFTAR_SOP = "sop-langkah";
 
 type Props = { canManage: boolean };
 
@@ -135,7 +146,7 @@ export function SopTab({ canManage }: Props) {
     setEditing(null);
     setFormName("");
     setFormDescription("");
-    setFormSteps([{ processTemplateId: "", notes: null }]);
+    setFormSteps([{ kunci: kunciBaru(), processTemplateId: "", notes: null }]);
     setDialogOpen(true);
   }
 
@@ -145,6 +156,7 @@ export function SopTab({ canManage }: Props) {
     setFormDescription(row.description ?? "");
     setFormSteps(
       row.steps.map((s) => ({
+        kunci: kunciBaru(),
         processTemplateId: s.processTemplateId,
         notes: s.notes,
       }))
@@ -163,6 +175,24 @@ export function SopTab({ canManage }: Props) {
       return next;
     });
   }
+
+  // Seret-lepas urutan langkah di dialog; panah ↑/↓ tetap jalan papan ketik.
+  const seret = useSeretUrut<string>({
+    bolehLepas: (_, daftar) => daftar === DAFTAR_SOP,
+    onLepas: (kunci, { celah }) =>
+      setFormSteps((prev) => {
+        const dari = prev.findIndex((s) => s.kunci === kunci);
+        if (dari < 0 || celahDiam(dari, celah)) return prev;
+        return pindahkan(prev, dari, indeksTujuan(dari, celah));
+      }),
+  });
+  const dariSeret = seret.sesi ? formSteps.findIndex((s) => s.kunci === seret.sesi?.data) : -1;
+  const langkahSeret = dariSeret >= 0 ? formSteps[dariSeret] : null;
+  const celahSeret = seret.sesi?.sasaran?.celah ?? null;
+  const garisSisip = (i: number) =>
+    garisSisipDi(seret.sesi, DAFTAR_SOP, i, dariSeret >= 0 ? dariSeret : null) ? (
+      <div aria-hidden className="mb-2 h-0.5 rounded-full bg-primary" />
+    ) : null;
 
   async function onSave() {
     const steps = formSteps.filter((s) => s.processTemplateId);
@@ -400,7 +430,7 @@ export function SopTab({ canManage }: Props) {
                   onClick={() =>
                     setFormSteps((prev) => [
                       ...prev,
-                      { processTemplateId: "", notes: null },
+                      { kunci: kunciBaru(), processTemplateId: "", notes: null },
                     ])
                   }
                 >
@@ -408,8 +438,26 @@ export function SopTab({ canManage }: Props) {
                   {t("form.addStep")}
                 </Button>
               </div>
+              <div {...atributDaftar(DAFTAR_SOP)}>
               {formSteps.map((step, index) => (
-                <div key={index} className="flex items-center gap-2">
+                <div key={step.kunci}>
+                {garisSisip(index)}
+                <div
+                  {...ATRIBUT_BUTIR}
+                  className={cn(
+                    "mb-2 flex items-center gap-2 rounded-md",
+                    seret.sesi?.data === step.kunci &&
+                      "bg-primary/10 shadow-md ring-1 ring-primary/40 motion-safe:scale-[1.01] motion-safe:transition-transform",
+                  )}
+                >
+                  <span
+                    {...seret.pegangan(step.kunci)}
+                    aria-hidden
+                    title={t("form.seretLangkah")}
+                    className="flex h-8 w-5 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground hover:bg-muted active:cursor-grabbing"
+                  >
+                    <GripVertical className="h-4 w-4" />
+                  </span>
                   <Select
                     value={step.processTemplateId || undefined}
                     onValueChange={(v) =>
@@ -470,7 +518,27 @@ export function SopTab({ canManage }: Props) {
                     ×
                   </Button>
                 </div>
+                {index === formSteps.length - 1 ? garisSisip(formSteps.length) : null}
+                </div>
               ))}
+              </div>
+              <HantuSeret
+                sesi={seret.sesi}
+                label={
+                  processes.find((p) => p.id === langkahSeret?.processTemplateId)?.name ??
+                  t("form.pickProcess")
+                }
+                keterangan={
+                  dariSeret >= 0 && celahSeret !== null
+                    ? celahDiam(dariSeret, celahSeret)
+                      ? t("form.seretTetap")
+                      : t("form.seretPosisi", {
+                          posisi: indeksTujuan(dariSeret, celahSeret) + 1,
+                          jumlah: formSteps.length,
+                        })
+                    : null
+                }
+              />
             </div>
           </div>
           <DialogFooter>

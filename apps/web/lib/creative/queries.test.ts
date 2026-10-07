@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { prisma, seededId } from '@elorae/db';
-import { buatBrief, pindahStatusBrief, simpanKol, simpanKonten } from './writer';
+import { buatBrief, pindahTahapKolaborasi, simpanKol, simpanKonten } from './writer';
 import { daftarBrief, daftarKol, daftarKonten, ringkasKreatif } from './queries';
 
 /**
@@ -68,7 +68,7 @@ beforeEach(async () => {
 
   const brief = await buatBrief({
     kolId,
-    campaign: `${tag} Launching`,
+    tahap: 'DEAL',
     fee: 3_000_000,
     deliverables: [
       { platform: 'INSTAGRAM', format: 'REELS', qty: 2 },
@@ -101,6 +101,7 @@ afterEach(async () => {
   await prisma.auditLog.deleteMany({ where: { entityId: seededId(briefId) } });
   await prisma.auditLog.deleteMany({ where: { entityId: seededId(kolId) } });
   await prisma.contentPlan.deleteMany({ where: { id: seededId(kontenId) } });
+  await prisma.kolShipment.deleteMany({ where: { collabId: seededId(briefId) } });
   await prisma.kolBriefItem.deleteMany({ where: { briefId: seededId(briefId) } });
   await prisma.kolBriefDeliverable.deleteMany({ where: { briefId: seededId(briefId) } });
   await prisma.kolBrief.deleteMany({ where: { id: seededId(briefId) } });
@@ -134,6 +135,12 @@ describe('daftarKol', () => {
 });
 
 describe('daftarBrief — Aturan 1 diterapkan di KUERI', () => {
+  it('membawa tahap dan campaign, bukan status dan teks campaign', async () => {
+    const b = await briefSaya();
+    expect(b.tahap).toBe('DEAL');
+    expect(b.campaignNama).toBeNull();
+  });
+
   it('melaporkan beban NOL selama kontennya belum tayang', async () => {
     /*
      * Diterapkan di kueri, bukan di layar: setiap pembaca daftar ini mendapat
@@ -146,10 +153,10 @@ describe('daftarBrief — Aturan 1 diterapkan di KUERI', () => {
     expect(b.bebanDiakui).toBe(0);
   });
 
-  it('mengakui bebannya begitu brief tayang', async () => {
-    for (const ke of ['DIKIRIM', 'DISETUJUI', 'KONTEN_DITERIMA', 'TAYANG'] as const) {
-      await pindahStatusBrief({ briefId, ke, olehUserId: userId });
-    }
+  it('mengakui bebannya begitu kolaborasinya tayang', async () => {
+    await pindahTahapKolaborasi({ kolaborasiId: briefId, ke: 'DRAF_DISETUJUI', olehUserId: userId });
+    expect((await briefSaya()).bebanDiakui).toBe(0);
+    await pindahTahapKolaborasi({ kolaborasiId: briefId, ke: 'TAYANG', olehUserId: userId });
     expect((await briefSaya()).bebanDiakui).toBe(3_000_000);
   });
 
@@ -158,14 +165,16 @@ describe('daftarBrief — Aturan 1 diterapkan di KUERI', () => {
     expect((await briefSaya()).jumlahDeliverable).toBe(3);
   });
 
-  it('melaporkan barang belum berangkat selama masih draft', async () => {
+  it('melaporkan barang belum berangkat selama hanya direncanakan — tahap tidak menggerakkannya', async () => {
+    await pindahTahapKolaborasi({ kolaborasiId: briefId, ke: 'SAMPEL_DIKIRIM', olehUserId: userId });
     const b = await briefSaya();
     expect(b.jumlahBarang).toBe(2);
     expect(b.barangSudahBerangkat).toBe(false);
+    expect(b.tahap).toBe('SAMPEL_DIKIRIM');
   });
 
-  it('melaporkan barang sudah berangkat setelah dikirim', async () => {
-    await pindahStatusBrief({ briefId, ke: 'DIKIRIM', olehUserId: userId });
+  it('melaporkan barang sudah berangkat begitu ada pengiriman yang stoknya keluar', async () => {
+    await prisma.kolShipment.create({ data: { collabId: briefId, trackingNo: 'JNE1', sentAt: new Date(), stockIssuedAt: new Date() } });
     expect((await briefSaya()).barangSudahBerangkat).toBe(true);
   });
 });
@@ -199,18 +208,16 @@ describe('ringkasKreatif', () => {
     const awal = await ringkasKreatif();
     expect(awal.feeBelumDiakui).toBeGreaterThanOrEqual(3_000_000);
 
-    for (const ke of ['DIKIRIM', 'DISETUJUI', 'KONTEN_DITERIMA', 'TAYANG'] as const) {
-      await pindahStatusBrief({ briefId, ke, olehUserId: userId });
-    }
+    await pindahTahapKolaborasi({ kolaborasiId: briefId, ke: 'TAYANG', olehUserId: userId });
     const akhir = await ringkasKreatif();
     // Angkanya BERPINDAH sisi, bukan bertambah di kedua sisi.
     expect(akhir.bebanDiakui - awal.bebanDiakui).toBe(3_000_000);
     expect(awal.feeBelumDiakui - akhir.feeBelumDiakui).toBe(3_000_000);
   });
 
-  it('tidak menghitung fee brief yang dibatalkan sebagai janji apa pun', async () => {
+  it('tidak menghitung fee kolaborasi yang keluar jalur sebagai janji apa pun', async () => {
     const awal = await ringkasKreatif();
-    await pindahStatusBrief({ briefId, ke: 'BATAL', alasan: 'KOL mundur', olehUserId: userId });
+    await pindahTahapKolaborasi({ kolaborasiId: briefId, ke: 'BATAL', alasan: 'KOL mundur', olehUserId: userId });
     const akhir = await ringkasKreatif();
     expect(awal.feeBelumDiakui - akhir.feeBelumDiakui).toBe(3_000_000);
     expect(akhir.bebanDiakui).toBe(awal.bebanDiakui);

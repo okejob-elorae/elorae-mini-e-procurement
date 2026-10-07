@@ -19,6 +19,26 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "purchaseOrders.newPageDescription" },
       "Hanya pemasok yang sudah disetujui yang bisa dipilih. Tombol Simpan draf menyimpan PO sebagai draf; PO baru sampai ke pemasok setelah diajukan dari halaman rinciannya. Tanpa sinyal, tombolnya menjadi Simpan di perangkat dan PO dikirim saat sinyal kembali.",
+      "Dari ruang kerja tahap produksi, tombol Buat PO di kartu Kebutuhan bahan membuka formulir ini sudah terisi: satu baris per bahan yang masih kurang (kebutuhan tahap dikurangi PO tahap yang tidak batal), satuannya, dan catatan \"Produksi <tahap> · <jenis>\". Varian dan harga diisi sendiri. Chip Untuk tahap bisa dilepas; PO lalu disimpan tanpa tahap.",
+    ],
+    kartu: [
+      {
+        judul: { kunci: "purchaseOrders.kebutuhan.judul" },
+        isi: [
+          "Hanya untuk PO yang dibuat dari tahap produksi. Per bahan: konsumsi per pcs (dari aturan pemakaian barang jadi, ditambah susut), qty yang dipesan di PO ini, dan hasilnya dalam pcs. Ubah salah satu, yang lain ikut terhitung: hasil = qty ÷ (konsumsi × (1 + susut)). Mengubah konsumsi di sini hanya untuk menghitung — aturan pemakaian barang jadi tidak berubah.",
+          "Qty dipesan adalah jumlah baris PO bahan itu. Mengubahnya menulis ulang baris tersebut; bila bahannya sudah dirinci per warna, qty dibagi rata ke semua baris warnanya.",
+          "Kolom Terhadap tahap membandingkan PO ini ditambah PO tahap lain dengan kebutuhan qty tahap: ✓ pas, ▲ lebih sekian pcs, atau ▼ kurang sekian pcs. Lebih kurang dari satu pcs dihitung pas; kurang sedikit pun dihitung kurang, karena pcs terakhirnya tidak jadi.",
+        ],
+      },
+      {
+        judul: { kunci: "purchaseOrders.form.kartuBarang" },
+        isi: [
+          "Hitung warna (ikon palet di baris bahan): total ÷ minimum per warna menjadi sekian baris bahan yang sama, qty rata dua desimal, dan baris terakhir menyerap sisa pembulatan sehingga jumlahnya tetap sama dengan total. Warnanya dipilih sesudahnya di kolom Varian.",
+          "Warna kain adalah varian bahan. Pilih varian yang sudah ada, atau + Warna baru untuk menambah varian ke bahan itu (SKU varian = SKU bahan-WARNA), dengan kode Pantone TCX opsional dari katalog Pantone. Barang jadi tidak bisa diberi warna dari sini karena variannya datang dari Jubelio; bahan yang variannya punya atribut lain (mis. ukuran) juga ditolak.",
+          "Kolom Roll terisi otomatis untuk bahan bersatuan kg yang kg per roll-nya diisi di Master Barang: qty ÷ kg per roll, dibulatkan ke atas.",
+          "Isi massal: Qty semua baris dan Harga semua baris mengisi semua baris yang sudah berisi barang. Bagi rata kebutuhan (PO tahap) mengisi kekurangan tiap bahan tahap ke baris bahan itu yang sudah ada, dibagi rata.",
+        ],
+      },
     ],
   },
   {
@@ -30,6 +50,7 @@ export const ENTRI: EntriBantuan[] = [
       "Terima barang (untuk PO yang sudah dikirim ke pemasok atau baru diterima sebagian) membuka formulir GRN dengan PO dan pemasok sudah terisi. Setiap GRN milik PO ini tampil di kartu Penerimaan barang dan nomornya membuka rinciannya (bila Anda boleh membuka inventori). GRN terima-lebih yang masih menunggu pemilik diberi tanda, dan yang ditolak pemilik dicoret nilainya karena penerimaannya sudah dibalik.",
       "PO draf bisa diubah dan diajukan langsung. Mengubah PO yang sudah diajukan atau sudah ada penerimaannya butuh PIN; membatalkan PO selalu butuh alasan dan PIN. Begitu ada barang diterima, PO tidak bisa dibatalkan lagi — gunakan Tutup PO bila sisanya tidak akan datang.",
       "Tandai lunas meminta konfirmasi tanggal bayar (tidak boleh sesudah hari ini) dan memperlihatkan utang barang yang sudah diterima, sisa komitmen, serta peringatan bila barangnya belum diterima.",
+      "Cetak PO membuka dialog berisi paragraf pembuka dan penutup surat dari Pengaturan → Pajak → Surat PO. Teksnya boleh diubah untuk cetakan itu saja; bawaannya tidak berubah. Baris bahan berwarna tercetak dengan kolom Warna (nama warna dan kode Pantone), dan bahan bersatuan kg dengan kolom Roll serta total roll.",
     ],
   },
   {

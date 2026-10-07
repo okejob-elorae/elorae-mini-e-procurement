@@ -18,7 +18,7 @@ const JAGA_MS = 8000;
 /** Baris yang ditandai sendiri tidak dinyalakan lagi oleh deteksi perubahan selama ini. */
 const TAHAN_TANDA_MS = 10_000;
 
-type PropsSorot = {
+export type PropsSorot = {
   "data-sorot"?: "baru";
   onAnimationEnd?: (e: AnimationEvent<HTMLElement>) => void;
 };

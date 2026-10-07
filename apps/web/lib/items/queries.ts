@@ -99,6 +99,7 @@ export const KOLOM_DECIMAL_ITEM = [
   'targetMarginPercent',
   'additionalCost',
   'commissionPerPcs',
+  'kgPerRoll',
 ] as const;
 
 /**

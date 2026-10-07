@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { itemHasSkuVariants, parseItemVariants } from "./variants";
+import { itemHasSkuVariants, parseItemVariants, variantSelectOptions } from "./variants";
 
 describe("itemHasSkuVariants", () => {
   it("is true when a variant row has a sku", () => {
@@ -26,5 +26,13 @@ describe("parseItemVariants — data lama", () => {
 
   it("normalises upper-case SKU and Barcode keys without touching other keys", () => {
     expect(parseItemVariants([{ SKU: "A-L", Barcode: "123", Size: "L" }])).toEqual([{ sku: "A-L", barcode: "123", Size: "L" }]);
+  });
+});
+
+describe("variantSelectOptions — varian warna bahan", () => {
+  it("label memakai kunci warna", () => {
+    expect(variantSelectOptions([{ warna: "HITAM", sku: "FAB-1-HITAM", pantone: "19-4005 TCX" }])).toEqual([
+      { sku: "FAB-1-HITAM", label: "HITAM (FAB-1-HITAM)" },
+    ]);
   });
 });

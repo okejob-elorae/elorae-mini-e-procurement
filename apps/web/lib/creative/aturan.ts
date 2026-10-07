@@ -2,24 +2,33 @@
  * Aturan creative marketing — murni, tanpa menyentuh basis data.
  *
  * Dua di antaranya soal uang dan stok, dan keduanya bentuknya sama: YANG
- * DIJANJIKAN BUKAN YANG TERJADI. Brief yang dikirim belum tentu tayang; barang
- * yang direncanakan dikirim belum tentu berangkat. Mencampur keduanya membuat
+ * DIJANJIKAN BUKAN YANG TERJADI. Kolaborasi yang disepakati belum tentu tayang;
+ * sampel yang direncanakan belum tentu berangkat. Mencampur keduanya membuat
  * anggaran marketing terbaca lebih besar daripada yang benar-benar keluar, dan
  * stok terbaca lebih kecil daripada yang benar-benar ada.
+ *
+ * Tahap kolaborasi (13 tahap + 3 jalur keluar) ada di `tahap.ts`; berkas ini
+ * menyimpan tier, aturan beban/stok yang dibaca lintas layar, dan aturan
+ * rencana konten (grid feed).
  */
 
-export type StatusBrief =
-  | 'DRAFT'
-  | 'DIKIRIM'
-  | 'DISETUJUI'
-  | 'KONTEN_DITERIMA'
-  | 'TAYANG'
-  | 'SELESAI'
-  | 'BATAL';
+import { feeDiakui, type Tahap } from './tahap';
 
 export type StatusKonten = 'IDE' | 'DRAFT' | 'REVIEW' | 'DIJADWALKAN' | 'TAYANG' | 'BATAL';
 
-export type Platform = 'INSTAGRAM' | 'TIKTOK' | 'YOUTUBE' | 'LAINNYA';
+export type Platform = 'INSTAGRAM' | 'TIKTOK' | 'YOUTUBE' | 'SHOPEE' | 'LAINNYA';
+
+/** Urutan tampil platform. */
+export const SEMUA_PLATFORM: readonly Platform[] = ['INSTAGRAM', 'TIKTOK', 'YOUTUBE', 'SHOPEE', 'LAINNYA'];
+
+/** Label platform untuk teks buatan mesin (pesan WA, rekap). Layar memakai i18n `creative.platform*`. */
+export const LABEL_PLATFORM: Record<Platform, string> = {
+  INSTAGRAM: 'Instagram',
+  TIKTOK: 'TikTok',
+  YOUTUBE: 'YouTube',
+  SHOPEE: 'Shopee',
+  LAINNYA: 'Lainnya',
+};
 
 export type Tier = 'nano' | 'mikro' | 'makro' | 'mega';
 
@@ -42,80 +51,56 @@ export function tierKol(pengikut: number[]): Tier {
 }
 
 /**
- * Sudah bolehkah fee brief ini dihitung sebagai beban?
+ * Sudah bolehkah fee kolaborasi ini dihitung sebagai beban?
  *
- * ATURAN 1: brief terkirim BUKAN beban. Fee diakui saat kontennya benar-benar
- * TAYANG. Bentuknya persis "klaim bukan lunas" di modul piutang — sebelum ada
- * bukti bahwa yang dijanjikan terjadi, angkanya nol.
- *
- * `SELESAI` ikut diakui karena ia hanya bisa dicapai lewat `TAYANG`.
+ * ATURAN 1: kolaborasi yang disepakati BUKAN beban. Fee diakui saat kontennya
+ * benar-benar TAYANG (lalu ANGKA_MASUK, DIBAYAR, SELESAI). Bentuknya persis
+ * "klaim bukan lunas" di modul piutang — sebelum ada bukti bahwa yang
+ * dijanjikan terjadi, angkanya nol.
  */
-export function bebanDiakui(status: StatusBrief): boolean {
-  return status === 'TAYANG' || status === 'SELESAI';
+export function bebanDiakui(tahap: Tahap): boolean {
+  return feeDiakui(tahap);
 }
 
 /** Nilai fee yang boleh masuk laporan biaya. Nol selama belum tayang. */
-export function nilaiBebanDiakui(status: StatusBrief, fee: number): number {
-  return bebanDiakui(status) ? fee : 0;
+export function nilaiBebanDiakui(tahap: Tahap, fee: number): number {
+  return bebanDiakui(tahap) ? fee : 0;
 }
 
 /**
- * Apakah perpindahan ini yang MENGELUARKAN stok?
+ * Sudah berangkatkah sebuah pengiriman sampel?
  *
- * ATURAN 2: stok bergerak tepat saat brief DIKIRIM, bukan saat dibuat. Draft
- * masih boleh berubah isinya; stok tidak boleh bergerak karena rencana yang
- * belum tentu jadi.
- *
- * Ditanyakan pada PERPINDAHANNYA, bukan pada statusnya. Sempat saya tulis
- * sebagai `stokSudahKeluar(status)` dan itu salah: brief `BATAL` menjawab
- * "belum keluar", padahal brief yang dibatalkan SETELAH dikirim barangnya sudah
- * ada di tangan KOL. Yang benar-benar terjadi disimpan sebagai
- * `KolBrief.stockIssuedAt` — dicatat, bukan disimpulkan.
+ * ATURAN 2: stok keluar TEPAT SEKALI, saat pengiriman berangkat — tanggal
+ * kirim DAN nomor resi terisi — bukan saat kolaborasi disepakati atau saat
+ * sampelnya direncanakan. Yang benar-benar terjadi dicatat di
+ * `KolShipment.stockIssuedAt`, tidak disimpulkan dari tahap.
  */
-export function stokKeluarSaat(dari: StatusBrief, ke: StatusBrief): boolean {
-  return dari === 'DRAFT' && ke === 'DIKIRIM';
+export function pengirimanBerangkat(p: { sentAt: Date | string | null; trackingNo: string | null }): boolean {
+  return p.sentAt !== null && Boolean(p.trackingNo?.trim());
+}
+
+/** Perlukah stok dikeluarkan sekarang untuk pengiriman ini? Sekali saja per pengiriman. */
+export function stokPerluKeluar(p: {
+  sentAt: Date | string | null;
+  trackingNo: string | null;
+  stockIssuedAt: Date | string | null;
+}): boolean {
+  return pengirimanBerangkat(p) && p.stockIssuedAt === null;
 }
 
 /**
- * Apakah barangnya bisa ditarik kembali saat brief dibatalkan.
+ * Apakah barangnya bisa ditarik kembali saat kolaborasi dibatalkan.
  *
  * TIDAK PERNAH. Begitu paket berangkat ke KOL, barangnya hilang dari gudang
- * apa pun yang terjadi pada briefnya — pembatalan adalah keputusan di atas
- * kertas, bukan kurir yang berbalik arah. Mengembalikan stoknya akan membuat
- * gudang mengaku punya barang yang tidak ada.
+ * apa pun yang terjadi pada kolaborasinya — pembatalan adalah keputusan di
+ * atas kertas, bukan kurir yang berbalik arah. Mengembalikan stoknya akan
+ * membuat gudang mengaku punya barang yang tidak ada.
  *
  * Ada sebagai fungsi bernama, bukan sekadar tidak ditulis, karena "kenapa
  * pembatalan tidak mengembalikan stok" adalah pertanyaan yang pasti muncul.
  */
 export function stokKembaliSaatBatal(): false {
   return false;
-}
-
-/**
- * Perpindahan status brief yang diizinkan.
- *
- * Ditulis sebagai peta, bukan rantai `if`, supaya seluruh jalannya terlihat
- * sekaligus — termasuk yang TIDAK ada: dari `SELESAI` tidak ke mana-mana, dan
- * `BATAL` tidak bisa dihidupkan lagi. Menghidupkan brief yang dibatalkan berarti
- * stoknya harus dikeluarkan ulang, dan tidak ada yang mengingatkan.
- */
-const JALAN_BRIEF: Record<StatusBrief, StatusBrief[]> = {
-  DRAFT: ['DIKIRIM', 'BATAL'],
-  DIKIRIM: ['DISETUJUI', 'BATAL'],
-  DISETUJUI: ['KONTEN_DITERIMA', 'BATAL'],
-  KONTEN_DITERIMA: ['TAYANG', 'BATAL'],
-  TAYANG: ['SELESAI'],
-  SELESAI: [],
-  BATAL: [],
-};
-
-export function bolehPindahBrief(dari: StatusBrief, ke: StatusBrief): boolean {
-  return JALAN_BRIEF[dari].includes(ke);
-}
-
-/** Langkah berikutnya yang wajar dari sebuah status — untuk tombol di layar. */
-export function langkahBerikutBrief(dari: StatusBrief): StatusBrief[] {
-  return JALAN_BRIEF[dari];
 }
 
 const JALAN_KONTEN: Record<StatusKonten, StatusKonten[]> = {

@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Plus, Trash2, Loader2, AlertTriangle, WifiOff } from 'lucide-react';
+import { Plus, Trash2, Loader2, AlertTriangle, WifiOff, Factory, X, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { z } from 'zod';
 import { isOnline } from '@/lib/offline/sync';
@@ -39,6 +39,20 @@ import { parseItemVariants, variantSelectOptions } from '@/lib/items/variants';
 import { previewChainDays } from '@/app/actions/lead-time';
 import { EtaSuggestionHint } from '@/components/lead-time/eta-suggestion-hint';
 import { sumPcsQty } from '@/lib/leadtime/calculations';
+import { labelTahap, type TahapPo } from '@/lib/purchase-orders/tahap';
+import {
+  kekurangan,
+  qtyDariHasil,
+  tulisQtyBahan,
+  type KebutuhanTahapPo,
+} from '@/lib/purchase-orders/kebutuhan-tahap';
+import { jumlahRoll } from '@/lib/purchase-orders/rincian-warna';
+import { opsiVarianWarna, tcxDariLabel } from '@/lib/purchase-orders/varian-warna';
+import { hexPantoneAction } from '@/app/actions/po-varian-warna';
+import { PanelKebutuhanTahap } from '@/components/forms/po/PanelKebutuhanTahap';
+import { AlatMassalPo } from '@/components/forms/po/AlatMassalPo';
+import { HitungWarnaPopover } from '@/components/forms/po/HitungWarnaPopover';
+import { DialogWarnaBaru } from '@/components/forms/po/DialogWarnaBaru';
 
 type POFormData = z.infer<ReturnType<typeof createPoSchema>>;
 type POItemData = z.infer<typeof poItemSchema>;
@@ -59,7 +73,14 @@ interface Item {
     code: string;
   };
   variants?: Array<Record<string, string>>;
+  /** `ItemType`; varian warna baru hanya untuk bahan (bukan `FINISHED_GOOD`). */
+  type?: string;
+  /** Kg per roll bahan berbahan kg — kolom Roll. */
+  kgPerRoll?: number | null;
 }
+
+/** Bahan, bukan barang jadi — boleh dirinci per warna dan diberi warna baru. */
+const bahanNonJadi = (item: Item | undefined): item is Item => !!item?.type && item.type !== 'FINISHED_GOOD';
 
 interface POFormProps {
   initialData?: {
@@ -93,6 +114,19 @@ interface POFormProps {
    * saat PO disimpan, jadi pratinjau tidak boleh menyebutnya "tidak dihitung".
    */
   ppnRatePercent?: number | null;
+  /**
+   * Tahap produksi yang dilayani PO ini (PO baru dari ruang kerja tahap, atau
+   * tautan PO yang diedit). Tampil sebagai chip yang bisa dilepas; tanpa prop
+   * ini `planStageId` tidak dikirim, jadi edit tidak menyentuh tautan lama.
+   */
+  tahap?: TahapPo | null;
+  /**
+   * Kebutuhan bahan tahap (PO baru dari ruang kerja tahap): panel "Kebutuhan
+   * vs tahap" dengan kalkulator 3 arah, dan alat "Bagi rata kebutuhan".
+   */
+  kebutuhanTahap?: KebutuhanTahapPo | null;
+  /** Isian awal PO baru (kekurangan bahan tahap + catatan); diabaikan bila `initialData` ada. */
+  isiAwal?: { notes: string; items: Array<{ itemId: string; uomId: string; qty: number }> } | null;
   onSubmit: (data: POFormData) => Promise<void>;
   onSaveLocally?: (
     data: POFormData,
@@ -161,6 +195,9 @@ export function POForm({
   initialData,
   suppliers,
   ppnRatePercent,
+  tahap = null,
+  kebutuhanTahap = null,
+  isiAwal = null,
   onSubmit,
   onSaveLocally,
   isLoading = false,
@@ -172,6 +209,8 @@ export function POForm({
   const tPlaceholders = useTranslations('placeholders');
   const tValidation = useTranslations('validation');
   const tf = useTranslations('purchaseOrders.form');
+  const tTahap = useTranslations('purchaseOrders.tahap');
+  const tRincian = useTranslations('purchaseOrders.rincian');
   const poSchemaT = useMemo(() => createPoSchema((k) => tValidation(k)), [tValidation]);
   const [items, setItems] = useState<Item[]>([]);
   const [lineItems, setLineItems] = useState<Array<POItemData & { id: string }>>(
@@ -184,10 +223,30 @@ export function POForm({
       ppnIncluded: item.ppnIncluded ?? true,
       uomId: item.uomId,
       notes: item.notes,
-    })) || [
-      { id: 'line-0', itemId: '', variantSku: undefined, qty: 0, price: 0, ppnIncluded: true, uomId: '' },
-    ]
+    })) ||
+      (isiAwal && isiAwal.items.length > 0
+        ? isiAwal.items.map((b, idx) => ({
+            id: `line-${idx}`,
+            itemId: b.itemId,
+            variantSku: undefined,
+            qty: b.qty,
+            price: 0,
+            ppnIncluded: true,
+            uomId: b.uomId,
+          }))
+        : [{ id: 'line-0', itemId: '', variantSku: undefined, qty: 0, price: 0, ppnIncluded: true, uomId: '' }])
   );
+  // Konsumsi/pcs di panel "Kebutuhan vs tahap" — hanya untuk menghitung, tidak disimpan.
+  const [konsumsiPanel, setKonsumsiPanel] = useState<Record<string, number>>({});
+  // Hex swatch per kode TCX ("19-4005") dari varian bahan yang dipakai baris.
+  const [hexPantone, setHexPantone] = useState<Record<string, string>>({});
+  // Baris yang sedang menambah "+ Warna baru" (tetap diingat selama dialog menutup, supaya isinya tidak kosong).
+  const [warnaBaruUntuk, setWarnaBaruUntuk] = useState<{ lineId: string; itemId: string } | null>(null);
+  const [warnaBaruBuka, setWarnaBaruBuka] = useState(false);
+  const bukaWarnaBaru = (lineId: string, itemId: string) => {
+    setWarnaBaruUntuk({ lineId, itemId });
+    setWarnaBaruBuka(true);
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [etaPreview, setEtaPreview] = useState<{
     totalDays: number;
@@ -195,6 +254,9 @@ export function POForm({
     supplierCode: string;
   } | null>(null);
   const [etaTouched, setEtaTouched] = useState(Boolean(initialData?.etaDate));
+  // Chip "Untuk tahap": dilepas = PO disimpan tanpa tahap (null), bisa dipasang lagi.
+  const [tahapDilepas, setTahapDilepas] = useState(false);
+  const planStageIdKirim: string | null | undefined = tahap ? (tahapDilepas ? null : tahap.id) : undefined;
 
   const {
     register,
@@ -208,7 +270,7 @@ export function POForm({
       supplierId: initialData?.supplierId || '',
       etaDate: initialData?.etaDate ?? null,
       paymentDueDate: initialData?.paymentDueDate ?? null,
-      notes: initialData?.notes || '',
+      notes: initialData?.notes || (!initialData ? isiAwal?.notes : '') || '',
       terms: initialData?.terms || '',
       items: initialData?.items?.map(item => ({
         itemId: item.itemId,
@@ -239,6 +301,7 @@ export function POForm({
                   code: item.uomCode || '',
                 },
                 variants: item.variants,
+                type: item.type,
               }))
             );
             return;
@@ -256,6 +319,8 @@ export function POForm({
             uomId?: string;
             uom?: { id?: string; code: string };
             variants?: unknown;
+            type?: string;
+            kgPerRoll?: number | null;
           };
           return {
             id: r.id,
@@ -264,6 +329,8 @@ export function POForm({
             nameEn: r.nameEn,
             uom: { id: r.uomId ?? r.uom?.id ?? '', code: r.uom?.code ?? '' },
             variants: parseItemVariants(r.variants),
+            type: r.type,
+            kgPerRoll: typeof r.kgPerRoll === 'number' ? r.kgPerRoll : null,
           };
         });
         setItems(mapped);
@@ -344,6 +411,114 @@ export function POForm({
     return qty * price;
   };
 
+  // ─── Kebutuhan tahap, rincian per warna, isi massal ───────────────────────
+
+  /** Panel kebutuhan hanya untuk PO yang (masih) ditautkan ke tahap. */
+  const kebutuhanAktif = tahap && !tahapDilepas ? kebutuhanTahap : null;
+
+  /** Qty satu bahan ditulis ke barisnya (dibagi rata bila dirinci per warna); bahan tanpa baris mendapat baris. */
+  const tulisQtyBahanKeBaris = (itemId: string, qty: number) => {
+    const ditulis = tulisQtyBahan(lineItems, itemId, qty);
+    if (ditulis) {
+      setLineItems(ditulis);
+      return;
+    }
+    if (!(qty > 0)) return;
+    const uomId = items.find((i) => i.id === itemId)?.uom.id ?? '';
+    const baru = { id: `line-${Date.now()}`, itemId, variantSku: undefined, qty, price: 0, ppnIncluded: true, uomId };
+    const kosong = lineItems.findIndex((l) => !l.itemId);
+    setLineItems(
+      kosong >= 0 ? lineItems.map((l, i) => (i === kosong ? { ...baru, id: l.id } : l)) : [...lineItems, baru]
+    );
+  };
+
+  /** "Bagi rata kebutuhan": kekurangan tiap bahan tahap dibagi rata ke baris bahan itu yang sudah ada. */
+  const bagiRataKebutuhan = () => {
+    if (!kebutuhanAktif) return;
+    let hasil = lineItems;
+    let jumlah = 0;
+    for (const b of kebutuhanAktif.bahan) {
+      const konsumsi = konsumsiPanel[b.itemId] ?? b.perPcs;
+      const sisa = kekurangan(qtyDariHasil(kebutuhanAktif.targetQty, konsumsi, b.wastePercent), b.diPo);
+      const ditulis = tulisQtyBahan(hasil, b.itemId, sisa);
+      if (!ditulis) continue;
+      hasil = ditulis;
+      jumlah += hasil.filter((l) => l.itemId === b.itemId).length;
+    }
+    if (jumlah === 0) {
+      toast.info(tRincian('bagiRataKosong'));
+      return;
+    }
+    setLineItems(hasil);
+    toast.success(tRincian('toastBagiRata', { n: jumlah }));
+  };
+
+  /** Isi qty atau harga semua baris yang sudah berisi barang. */
+  const isiSemuaBaris = (kolom: 'qty' | 'price', nilai: number) => {
+    const jumlah = lineItems.filter((l) => l.itemId).length;
+    if (jumlah === 0) {
+      toast.error(tToasts('addAtLeastOneValidLineItem'));
+      return;
+    }
+    setLineItems(lineItems.map((l) => (l.itemId ? { ...l, [kolom]: nilai } : l)));
+    toast.success(tRincian(kolom === 'qty' ? 'toastQtySemua' : 'toastHargaSemua', { n: jumlah }));
+  };
+
+  /** "Hitung warna": satu baris bahan menjadi N baris bahan yang sama; warnanya dipilih sesudahnya. */
+  const pecahPerWarna = (lineId: string, bagian: number[]) => {
+    const i = lineItems.findIndex((l) => l.id === lineId);
+    if (i < 0 || bagian.length === 0) return;
+    const asal = lineItems[i];
+    const cap = Date.now();
+    const baru = bagian.map((qty, k) => ({
+      ...asal,
+      id: k === 0 ? asal.id : `line-${cap}-${k}`,
+      qty,
+      variantSku: k === 0 ? asal.variantSku : undefined,
+    }));
+    setLineItems([...lineItems.slice(0, i), ...baru, ...lineItems.slice(i + 1)]);
+    toast.success(tRincian('toastHitungWarna', { n: bagian.length }));
+  };
+
+  // Swatch Pantone varian bahan yang dipakai baris (kode TCX → hex), dibaca sekali per kode.
+  const kodePantoneBaris = useMemo(() => {
+    const kode = new Set<string>();
+    for (const l of lineItems) {
+      const item = items.find((i) => i.id === l.itemId);
+      if (!bahanNonJadi(item)) continue;
+      for (const o of opsiVarianWarna(item.variants)) {
+        const tcx = tcxDariLabel(o.pantone);
+        if (tcx) kode.add(tcx);
+      }
+    }
+    return [...kode].sort().join(',');
+  }, [lineItems, items]);
+
+  useEffect(() => {
+    if (!kodePantoneBaris || !isOnline()) return;
+    const belum = kodePantoneBaris.split(',').filter((k) => !hexPantone[k]);
+    if (belum.length === 0) return;
+    let batal = false;
+    hexPantoneAction(belum)
+      .then((peta) => {
+        if (!batal) setHexPantone((lama) => ({ ...lama, ...peta }));
+      })
+      .catch(() => {});
+    return () => {
+      batal = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hex yang sudah ada hanya dibaca untuk melewatinya
+  }, [kodePantoneBaris]);
+
+  const swatchPantone = (pantone: string | null): string | undefined => {
+    const tcx = tcxDariLabel(pantone);
+    return tcx ? hexPantone[tcx] : undefined;
+  };
+
+  const bahanWarnaBaru = warnaBaruUntuk ? items.find((i) => i.id === warnaBaruUntuk.itemId) : undefined;
+  const pakaiVarianWarna = (lineId: string, sku: string) =>
+    setLineItems((lama) => lama.map((l) => (l.id === lineId ? { ...l, variantSku: sku } : l)));
+
   // Pratinjau total dengan rumus yang sama dengan server (PPN baris "belum termasuk PPN").
   const ringkasanTotal = useMemo(() => {
     try {
@@ -392,6 +567,7 @@ export function POForm({
 
     await onSubmit({
       ...data,
+      planStageId: planStageIdKirim,
       items: validItems.map((lineItem) => {
         const { id: _omitId, ...item } = lineItem;
         void _omitId;
@@ -419,7 +595,7 @@ export function POForm({
     );
     const supplier = suppliers.find((s) => s.id === data.supplierId);
 
-    await onSaveLocally(data, { enrichedItems, totalAmount, supplier });
+    await onSaveLocally({ ...data, planStageId: planStageIdKirim }, { enrichedItems, totalAmount, supplier });
   });
 
   const onValidationError = (err: FieldErrors<POFormData>) => {
@@ -491,6 +667,32 @@ export function POForm({
           <CardTitle>{tf('kartuPemasok')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {tahap &&
+            (tahapDilepas ? (
+              <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                <span>{tTahap('dilepas', { tahap: labelTahap(tahap) })}</span>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setTahapDilepas(false)}>
+                  <Undo2 className="mr-1 h-4 w-4" />
+                  {tTahap('tautkanLagi')}
+                </Button>
+              </div>
+            ) : (
+              <div className="inline-flex max-w-full items-center gap-2 rounded-full border bg-secondary py-0.5 pl-3 pr-1 text-sm text-secondary-foreground">
+                <Factory className="h-4 w-4 shrink-0" />
+                <span className="min-w-0 truncate">{tTahap('untukTahap', { tahap: labelTahap(tahap) })}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 shrink-0 rounded-full"
+                  onClick={() => setTahapDilepas(true)}
+                  aria-label={tTahap('lepas')}
+                  title={tTahap('lepas')}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="supplierId">{tf('pemasok')} *</Label>
@@ -569,6 +771,16 @@ export function POForm({
         </CardContent>
       </Card>
 
+      {kebutuhanAktif && (
+        <PanelKebutuhanTahap
+          kebutuhan={kebutuhanAktif}
+          baris={lineItems}
+          konsumsi={konsumsiPanel}
+          onKonsumsi={(itemId, nilai) => setKonsumsiPanel((lama) => ({ ...lama, [itemId]: nilai }))}
+          onTulisQty={tulisQtyBahanKeBaris}
+        />
+      )}
+
       {/* Daftar barang */}
       <Card>
         <CardHeader>
@@ -594,6 +806,12 @@ export function POForm({
             </Button>
           </div>
 
+          <AlatMassalPo
+            onQtySemua={(n) => isiSemuaBaris('qty', n)}
+            onHargaSemua={(n) => isiSemuaBaris('price', n)}
+            onBagiRata={kebutuhanAktif ? bagiRataKebutuhan : undefined}
+          />
+
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -602,11 +820,12 @@ export function POForm({
                   <TableHead>{tf('colVarian')}</TableHead>
                   <TableHead>{tf('colQty')}</TableHead>
                   <TableHead>{tf('colSatuan')}</TableHead>
+                  <TableHead className="text-right">{tRincian('colRoll')}</TableHead>
                   <TableHead>{tf('colHarga')}</TableHead>
                   <TableHead>{tf('colPpn')}</TableHead>
                   <TableHead className="text-right">{tf('colTotal')}</TableHead>
                   <TableHead>{tf('colCatatan')}</TableHead>
-                  <TableHead className="w-12">
+                  <TableHead className="w-20">
                     <span className="sr-only">{tf('colAksi')}</span>
                   </TableHead>
                 </TableRow>
@@ -616,6 +835,10 @@ export function POForm({
                   const selectedItem = items.find((i) => i.id === lineItem.itemId);
                   const lineTotal = calculateLineTotal(lineItem.qty, lineItem.price);
                   const variantOpts = variantSelectOptions(parseItemVariants(selectedItem?.variants));
+                  const bahan = bahanNonJadi(selectedItem) ? selectedItem : null;
+                  const warnaOpts = bahan ? opsiVarianWarna(bahan.variants) : [];
+                  const roll = jumlahRoll(lineItem.qty, selectedItem?.kgPerRoll, selectedItem?.uom.code);
+                  const swatchTerpilih = warnaOpts.find((o) => o.sku === lineItem.variantSku)?.pantone ?? null;
 
                   return (
                     <TableRow key={lineItem.id}>
@@ -631,8 +854,62 @@ export function POForm({
                           triggerClassName="max-w-[16rem] min-w-0"
                         />
                       </TableCell>
-                      <TableCell className="min-w-[10rem] max-w-[14rem]">
-                        {variantOpts.length === 0 ? (
+                      <TableCell className="min-w-[10rem] max-w-[16rem]">
+                        {bahan ? (
+                          warnaOpts.length === 0 ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => bukaWarnaBaru(lineItem.id, bahan.id)}
+                            >
+                              <Plus className="mr-1 h-4 w-4" />
+                              {tRincian('tambahWarna')}
+                            </Button>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              {swatchPantone(swatchTerpilih) ? (
+                                <span
+                                  className="h-4 w-4 shrink-0 rounded-sm border"
+                                  style={{ backgroundColor: swatchPantone(swatchTerpilih) }}
+                                  aria-hidden
+                                />
+                              ) : null}
+                              <Select
+                                value={lineItem.variantSku?.trim() ? lineItem.variantSku : '__none__'}
+                                onValueChange={(v) => {
+                                  if (v === '__baru__') {
+                                    bukaWarnaBaru(lineItem.id, bahan.id);
+                                    return;
+                                  }
+                                  updateLineItem(lineItem.id, 'variantSku', v === '__none__' ? undefined : v);
+                                }}
+                              >
+                                <SelectTrigger className="w-full max-w-[14rem]">
+                                  <SelectValue placeholder={tf('colVarian')} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="__none__">{tf('pilihVarian')}</SelectItem>
+                                  {warnaOpts.map((o) => (
+                                    <SelectItem key={o.sku} value={o.sku}>
+                                      <span className="flex items-center gap-2">
+                                        {swatchPantone(o.pantone) ? (
+                                          <span
+                                            className="h-3 w-3 shrink-0 rounded-sm border"
+                                            style={{ backgroundColor: swatchPantone(o.pantone) }}
+                                            aria-hidden
+                                          />
+                                        ) : null}
+                                        {o.label}
+                                      </span>
+                                    </SelectItem>
+                                  ))}
+                                  <SelectItem value="__baru__">{tRincian('warnaBaru')}</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          )
+                        ) : variantOpts.length === 0 ? (
                           <span className="text-sm text-muted-foreground">—</span>
                         ) : (
                           <Select
@@ -680,6 +957,9 @@ export function POForm({
                           {selectedItem?.uom.code || '-'}
                         </span>
                       </TableCell>
+                      <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
+                        {roll == null ? '—' : roll.toLocaleString('id-ID')}
+                      </TableCell>
                       <TableCell>
                         <Input
                           type="number"
@@ -725,16 +1005,26 @@ export function POForm({
                         />
                       </TableCell>
                       <TableCell>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => removeLineItem(lineItem.id)}
-                          aria-label={tf('hapusBaris')}
-                          title={tf('hapusBaris')}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center justify-end">
+                          {bahan ? (
+                            <HitungWarnaPopover
+                              namaBahan={getItemDisplayName(bahan)}
+                              satuan={bahan.uom.code}
+                              qtyAwal={lineItem.qty}
+                              onBuat={(bagian) => pecahPerWarna(lineItem.id, bagian)}
+                            />
+                          ) : null}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeLineItem(lineItem.id)}
+                            aria-label={tf('hapusBaris')}
+                            title={tf('hapusBaris')}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -817,6 +1107,31 @@ export function POForm({
           </div>
         </CardContent>
       </Card>
+
+      <DialogWarnaBaru
+        bahan={
+          bahanWarnaBaru
+            ? { id: bahanWarnaBaru.id, sku: bahanWarnaBaru.sku, nama: getItemDisplayName(bahanWarnaBaru) }
+            : null
+        }
+        open={warnaBaruBuka}
+        onOpenChange={setWarnaBaruBuka}
+        onDibuat={(varian, variants) => {
+          const sasaran = warnaBaruUntuk;
+          if (!sasaran) return;
+          setItems((lama) => lama.map((i) => (i.id === sasaran.itemId ? { ...i, variants } : i)));
+          const tcx = tcxDariLabel(varian.pantone);
+          const hex = varian.hex;
+          if (tcx && hex) setHexPantone((lama) => ({ ...lama, [tcx]: hex }));
+          pakaiVarianWarna(sasaran.lineId, varian.sku);
+        }}
+        onSudahAda={(sku, variants) => {
+          const sasaran = warnaBaruUntuk;
+          if (!sasaran) return;
+          if (variants) setItems((lama) => lama.map((i) => (i.id === sasaran.itemId ? { ...i, variants } : i)));
+          pakaiVarianWarna(sasaran.lineId, sku);
+        }}
+      />
 
       {/* Tombol simpan */}
       <div className="flex justify-end gap-2">

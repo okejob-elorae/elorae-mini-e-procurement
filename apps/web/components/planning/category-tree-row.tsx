@@ -30,6 +30,7 @@ type CategoryTreeRowProps = {
   onToggleExpand: () => void;
   onToggleDetail: () => void;
   disabled?: boolean;
+  canManage?: boolean;
   canCreateWo?: boolean;
   allowWoWhenLocked?: boolean;
   itemOptions: ComboboxOption[];
@@ -58,6 +59,7 @@ export function CategoryTreeRow({
   onToggleExpand,
   onToggleDetail,
   disabled,
+  canManage,
   canCreateWo,
   allowWoWhenLocked,
   itemOptions,
@@ -285,6 +287,7 @@ export function CategoryTreeRow({
               category={category}
               supplierOptions={supplierOptions}
               disabled={disabled}
+              canManage={canManage}
               canCreateWo={canCreateWo}
               allowWoWhenLocked={allowWoWhenLocked}
               onSaveMonth={onSaveMonth}

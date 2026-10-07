@@ -38,10 +38,16 @@ import { pilihanTabelUkuranAction } from "@/app/actions/size-charts";
 import { BATAS_INFO_PRODUK } from "@/lib/items/info-produk";
 import type { PilihanTabelUkuran } from "@/lib/items/size-chart-queries";
 import { rapikanNamaBarang } from "@/app/backoffice/items/nama-barang";
+import { bacaAngkaIsian, satuanKg } from "@/lib/purchase-orders/rincian-warna";
 
 type ItemFormData = z.infer<typeof itemSchema>;
 /** Info produk untuk pembeli (barang jadi): bahan, cara rawat, tabel ukuran (null = ikut bawaan kategori). */
-type InfoProdukIsian = { material?: string | null; careInstructions?: string | null; sizeChartId?: string | null };
+type InfoProdukIsian = {
+  material?: string | null;
+  careInstructions?: string | null;
+  sizeChartId?: string | null;
+  kgPerRoll?: number | null;
+};
 /** Nilai pilihan "ikut bawaan kategori" di pemilih tabel ukuran. */
 const IKUT_KATEGORI = "__kategori__";
 type ConsumptionRuleData = z.infer<typeof consumptionRuleSchema>;
@@ -126,6 +132,8 @@ interface ItemFormProps {
     material?: string | null;
     careInstructions?: string | null;
     sizeChartId?: string | null;
+    /** Bahan bersatuan kg: kg per roll (kolom Roll di PO). */
+    kgPerRoll?: number | null;
     consumptionRules?: Array<{
       materialId: string;
       material: {
@@ -187,8 +195,9 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     const map = new Map<string, Set<string>>();
     normalizedVariants.forEach((variant) => {
       Object.entries(variant).forEach(([key, value]) => {
-        // Exclude reserved keys — not variant attributes
-        if (key === 'sku' || key === 'barcode') return;
+        // Exclude reserved keys — not variant attributes. `pantone` = kode Pantone
+        // warna bahan (ditambah dari formulir PO), bukan dimensi kombinasi.
+        if (key === 'sku' || key === 'barcode' || key === 'pantone') return;
         if (!map.has(key)) map.set(key, new Set());
         map.get(key)!.add(value);
       });
@@ -210,6 +219,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   const [material, setMaterial] = useState(initialData?.material ?? "");
   const [careInstructions, setCareInstructions] = useState(initialData?.careInstructions ?? "");
   const [sizeChartId, setSizeChartId] = useState(initialData?.sizeChartId ?? "");
+  const [kgPerRoll, setKgPerRoll] = useState(initialData?.kgPerRoll != null ? String(initialData.kgPerRoll) : "");
   const [pilihanTabel, setPilihanTabel] = useState<PilihanTabelUkuran[]>([]);
 
   const {
@@ -237,6 +247,10 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   });
 
   const itemType = watch('type');
+  const watchedUomId = watch('uomId');
+  // Kg per roll hanya untuk bahan (bukan barang jadi) yang satuannya kg.
+  const tampilKgPerRoll =
+    itemType !== ItemType.FINISHED_GOOD && satuanKg(uoms.find((u) => u.id === watchedUomId)?.code);
   const watchedCategoryId = watch('categoryId');
 
   const categoryCodePrefix = useMemo(() => {
@@ -495,10 +509,15 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                 variantSku = `${autoBase}-${bare}`;
               }
             }
+            // Kode Pantone warna bahan (kunci cadangan) ikut varian lama yang sama.
+            const pantone = normalizedVariants
+              .find((v) => Object.keys(combo).every((k) => v[k] === combo[k]))
+              ?.pantone?.trim();
             return {
               ...combo,
               ...(variantSku ? { sku: variantSku } : {}),
               ...(variantBarcode ? { barcode: variantBarcode } : {}),
+              ...(pantone ? { pantone } : {}),
             };
           })
         : undefined;
@@ -514,11 +533,21 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       }
     }
 
+    // Kg per roll: bahan bersatuan kg saja; selain itu dikosongkan (bahan) atau tidak disentuh (barang jadi).
+    let kgRoll: number | null = null;
+    if (tampilKgPerRoll && kgPerRoll.trim()) {
+      kgRoll = bacaAngkaIsian(kgPerRoll);
+      if (kgRoll == null || kgRoll <= 0) {
+        toast.error(tForm('kgPerRollTidakSah'));
+        return;
+      }
+    }
+
     // Info produk hanya untuk barang jadi; jenis lain tidak menyentuh kolomnya.
     const infoProduk: InfoProdukIsian =
       itemType === ItemType.FINISHED_GOOD
         ? { material: material.trim() || null, careInstructions: careInstructions.trim() || null, sizeChartId: sizeChartId || null }
-        : {};
+        : { kgPerRoll: kgRoll };
 
     await onSubmit(
       { ...dataWithSku, variants, ...infoProduk },
@@ -743,6 +772,21 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
               </p>
             )}
           </div>
+
+          {tampilKgPerRoll && (
+            <div className="space-y-2">
+              <Label htmlFor="kgPerRoll">{tForm('kgPerRoll')}</Label>
+              <Input
+                id="kgPerRoll"
+                inputMode="decimal"
+                autoComplete="off"
+                value={kgPerRoll}
+                onChange={(e) => setKgPerRoll(e.target.value)}
+                placeholder={tForm('kgPerRollContoh')}
+                className="max-w-[12rem] tabular-nums"
+              />
+            </div>
+          )}
 
           {/* Pricing (Finished goods only) */}
           {itemType === ItemType.FINISHED_GOOD && (

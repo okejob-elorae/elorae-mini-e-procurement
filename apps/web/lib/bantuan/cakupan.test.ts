@@ -16,6 +16,7 @@ const APP = path.resolve(__dirname, "../../app");
 const DIKECUALIKAN: Record<string, string> = {
   "/backoffice": "hanya mengalihkan ke beranda",
   "/backoffice/bantuan": "halaman Bantuan itu sendiri",
+  "/backoffice/kreatif/brief": "alamat lama, hanya mengalihkan ke Kolaborasi",
   "/backoffice/sales-orders/[id]/pick-list": "halaman cetak, langsung memanggil print",
   "/backoffice/sales-orders/[id]/packing-slip": "halaman cetak, langsung memanggil print",
   "/pwa/offline": "pemberitahuan sedang tidak ada sinyal",

@@ -12,10 +12,16 @@ import {
   getProcessTemplates,
   removeSupplierProcessStep,
   reorderSupplierChain,
+  sisipkanProsesPemasokAction,
   type SupplierChainCard,
 } from "@/app/actions/lead-time";
+import { HantuSeret } from "@/components/gerak/HantuSeret";
+import { useSeretUrut } from "@/components/gerak/useSeretUrut";
 import { Input } from "@/components/ui/input";
+import { celahDiam, indeksTujuan, pindahkan } from "@/lib/gerak/seret-urut";
+import { CentangPemasokDialog } from "./centang-pemasok-dialog";
 import { ProcessPicker, type PickerTemplate } from "./process-picker";
+import { bolehLepasPapan, pemasokDariDaftar, type DataSeretPapan } from "./seret-papan";
 import { SupplierChainCardView, type SopOption } from "./supplier-chain-card";
 
 type Props = { canManage: boolean };
@@ -29,6 +35,8 @@ export function PapanTab({ canManage }: Props) {
   const [pickerSearch, setPickerSearch] = useState("");
   const [supplierSearch, setSupplierSearch] = useState("");
   const [selected, setSelected] = useState<PickerTemplate | null>(null);
+  const [centangUntuk, setCentangUntuk] = useState<PickerTemplate | null>(null);
+  const tServer = useTranslations("leadTime.server");
 
   async function reload() {
     try {
@@ -104,6 +112,19 @@ export function PapanTab({ canManage }: Props) {
   }
 
   async function onReorder(supplierId: string, orderedStepIds: string[]) {
+    // Tampilkan urutan baru seketika; muat ulang sesudah server menjawab.
+    setCards((lama) =>
+      lama.map((c) =>
+        c.supplierId === supplierId
+          ? {
+              ...c,
+              steps: orderedStepIds
+                .map((id) => c.steps.find((s) => s.id === id))
+                .filter((s): s is SupplierChainCard["steps"][number] => !!s),
+            }
+          : c
+      )
+    );
     const result = await reorderSupplierChain({ supplierId, orderedStepIds });
     if (!result.success) {
       toast.error(result.error ?? tc("failed"));
@@ -111,6 +132,60 @@ export function PapanTab({ canManage }: Props) {
     }
     void reload();
   }
+
+  async function onSisipkan(supplierId: string, template: PickerTemplate, celah: number) {
+    const hasil = await sisipkanProsesPemasokAction({
+      supplierId,
+      processTemplateId: template.id,
+      celah,
+    }).catch(() => ({ ok: false as const, code: "GAGAL" as const }));
+    if (!hasil.ok) {
+      toast.error(tServer.has(`err${hasil.code}`) ? tServer(`err${hasil.code}`) : tServer("errGAGAL"));
+      return;
+    }
+    toast.success(tc("saved"));
+    void reload();
+  }
+
+  // Seret-lepas: proses dari palet ke kartu mana pun, langkah di dalam kartunya sendiri.
+  const seret = useSeretUrut<DataSeretPapan>({
+    nonaktif: !canManage,
+    bolehLepas: bolehLepasPapan,
+    onLepas: (data, { daftar, celah }) => {
+      const supplierId = pemasokDariDaftar(daftar);
+      if (!supplierId) return;
+      if (data.jenis === "proses") {
+        void onSisipkan(supplierId, data.template, celah);
+        return;
+      }
+      const kartu = cards.find((c) => c.supplierId === supplierId);
+      const ids = kartu?.steps.map((s) => s.id) ?? [];
+      const dari = ids.indexOf(data.stepId);
+      if (dari < 0 || celahDiam(dari, celah)) return;
+      void onReorder(supplierId, pindahkan(ids, dari, indeksTujuan(dari, celah)));
+    },
+  });
+
+  const dataSeret = seret.sesi?.data ?? null;
+  const sasaranSeret = seret.sesi?.sasaran ?? null;
+  const kartuSasaran = sasaranSeret
+    ? cards.find((c) => c.supplierId === pemasokDariDaftar(sasaranSeret.daftar)) ?? null
+    : null;
+  const keteranganSeret = (() => {
+    if (!dataSeret || !sasaranSeret || !kartuSasaran) return null;
+    if (dataSeret.jenis === "proses") {
+      return t("seretKe", {
+        posisi: Math.min(sasaranSeret.celah, kartuSasaran.steps.length) + 1,
+        pemasok: kartuSasaran.name,
+      });
+    }
+    const dari = kartuSasaran.steps.findIndex((s) => s.id === dataSeret.stepId);
+    if (dari < 0 || celahDiam(dari, sasaranSeret.celah)) return t("seretTetap");
+    return t("seretPosisi", {
+      posisi: indeksTujuan(dari, sasaranSeret.celah) + 1,
+      jumlah: kartuSasaran.steps.length,
+    });
+  })();
 
   async function onApplySop(
     supplierId: string,
@@ -154,6 +229,9 @@ export function PapanTab({ canManage }: Props) {
         onSearchChange={setPickerSearch}
         selectedId={canManage ? selected?.id ?? null : null}
         onSelect={(tmpl) => setSelected(canManage ? tmpl : null)}
+        pegangan={canManage ? seret.pegangan : undefined}
+        dibawaId={dataSeret?.jenis === "proses" ? dataSeret.template.id : null}
+        onCentang={canManage && selected ? () => setCentangUntuk(selected) : undefined}
       />
       <div className="flex-1 space-y-3 min-w-0">
         <div className="relative max-w-sm">
@@ -178,6 +256,7 @@ export function PapanTab({ canManage }: Props) {
                 void onRemove(stepId, name, card.name)
               }
               onReorder={(ids) => void onReorder(card.supplierId, ids)}
+              seret={canManage ? { sesi: seret.sesi, pegangan: seret.pegangan } : undefined}
               onUpdated={() => void reload()}
               onApplySop={(chainTemplateId, mode, sopName, stepCount) =>
                 void onApplySop(
@@ -193,6 +272,19 @@ export function PapanTab({ canManage }: Props) {
           ))}
         </div>
       </div>
+      <HantuSeret
+        sesi={seret.sesi}
+        label={dataSeret ? (dataSeret.jenis === "proses" ? dataSeret.template.name : dataSeret.nama) : ""}
+        keterangan={keteranganSeret}
+      />
+      {canManage ? (
+        <CentangPemasokDialog
+          template={centangUntuk}
+          cards={cards}
+          onOpenChange={(buka) => !buka && setCentangUntuk(null)}
+          onApplied={() => void reload()}
+        />
+      ) : null}
     </div>
   );
 }

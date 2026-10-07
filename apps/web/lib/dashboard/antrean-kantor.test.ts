@@ -34,6 +34,10 @@ const IZIN_TERKECIL: Record<KunciAntrean, string[]> = {
   stockRequestsUnheld: ["spg_sales:view", "stores:manage"],
   // /backoffice/komisi-spg: ROUTE_PERMISSIONS + penjaga halaman spg_sales:view; menetapkan = receivables:manage.
   spgCommissionsUnset: ["spg_sales:view", "receivables:manage"],
+  // /backoffice/production/follow-up: penjaga halaman production_planning:view; tindak lanjutnya
+  // menanyai pemasok, jadi izin lihat juga izin bertindak.
+  productionStepsOverdue: ["production_planning:view"],
+  productionStepsDueToday: ["production_planning:view"],
 };
 
 /** Saringan yang WAJIB ada di tautan tiap baris — angka Beranda dihitung dengan saringan ini. */
@@ -55,6 +59,8 @@ const SARINGAN: Record<KunciAntrean, Record<string, string>> = {
   shiftSwapsPending: { tab: "tukar" },
   stockRequestsUnheld: { status: "BARU", pemegang: "tanpa" },
   spgCommissionsUnset: { bulan: "lalu" },
+  productionStepsOverdue: { saring: "terlambat" },
+  productionStepsDueToday: { saring: "hari-ini" },
 };
 
 const nol: BuildActionItemsInput = {

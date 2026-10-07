@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
@@ -25,6 +26,12 @@ import {
   updateProcessTemplateSchema,
   updateSupplierProcessSchema,
 } from "@/lib/validations/lead-time";
+import {
+  MAKS_PEMASOK_MASSAL,
+  aturProsesBanyakPemasok,
+  sisipkanLangkahPemasok,
+  type HasilRantai,
+} from "@/lib/leadtime/rantai-pemasok-writer";
 
 type Result<T = unknown> = { success: boolean; data?: T; error?: string };
 
@@ -441,6 +448,64 @@ export async function reorderSupplierChain(data: unknown): Promise<Result> {
       error: err instanceof Error ? err.message : "Failed to reorder",
     };
   }
+}
+
+// ─── Seret-lepas & "Centang pemasok…" (Papan Pemasok) ───────────────────────
+//
+// Pembungkus `lib/leadtime/rantai-pemasok-writer.ts`. Pelaku SELALU dari sesi;
+// penolakan dikembalikan `{ ok:false, code }` (teks: `leadTime.server.err<KODE>`),
+// galat tak terduga menjadi `GAGAL` — tidak ada yang dilempar ke klien.
+
+async function sesiKelolaLeadTime(): Promise<string | null> {
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId || !hasPermission(session.user.permissions ?? [], PERMISSIONS.LEAD_TIME_MANAGE)) return null;
+  return userId;
+}
+
+async function jagaRantai<T extends object>(nama: string, fn: () => Promise<HasilRantai<T>>): Promise<HasilRantai<T>> {
+  try {
+    const hasil = await fn();
+    if (hasil.ok) revalidatePath(LEAD_TIME_PATH);
+    return hasil;
+  } catch (e) {
+    console.error(`[lead-time] ${nama}`, e);
+    return { ok: false, code: "GAGAL" };
+  }
+}
+
+const idRantai = z.string().min(1).max(64);
+const skemaSisip = z.object({ supplierId: idRantai, processTemplateId: idRantai, celah: z.number().int().min(0).max(10_000) });
+
+/** Proses dari palet dilepas di antara dua langkah kartu pemasok (`celah` 0 = paling depan). */
+export async function sisipkanProsesPemasokAction(
+  masukan: z.infer<typeof skemaSisip>
+): Promise<HasilRantai<{ id: string; sequence: number }>> {
+  const userId = await sesiKelolaLeadTime();
+  if (!userId) return { ok: false, code: "TANPA_AKSES" };
+  const p = skemaSisip.safeParse(masukan);
+  if (!p.success) return { ok: false, code: "ISIAN_TIDAK_SAH" };
+  return jagaRantai("sisipkanProsesPemasok", () => sisipkanLangkahPemasok({ ...p.data, olehUserId: userId }));
+}
+
+const skemaMassal = z.object({
+  processTemplateId: idRantai,
+  tambah: z.array(idRantai).max(MAKS_PEMASOK_MASSAL),
+  lepas: z.array(idRantai).max(MAKS_PEMASOK_MASSAL),
+});
+
+/**
+ * "Centang pemasok…": pasang satu proses ke pemasok `tambah` (di akhir rantai)
+ * dan lepas dari pemasok `lepas`, dalam satu transaksi.
+ */
+export async function aturProsesBanyakPemasokAction(
+  masukan: z.infer<typeof skemaMassal>
+): Promise<HasilRantai<{ ditambah: string[]; dilepas: string[] }>> {
+  const userId = await sesiKelolaLeadTime();
+  if (!userId) return { ok: false, code: "TANPA_AKSES" };
+  const p = skemaMassal.safeParse(masukan);
+  if (!p.success) return { ok: false, code: "ISIAN_TIDAK_SAH" };
+  return jagaRantai("aturProsesBanyakPemasok", () => aturProsesBanyakPemasok({ ...p.data, olehUserId: userId }));
 }
 
 export async function previewChainDays(

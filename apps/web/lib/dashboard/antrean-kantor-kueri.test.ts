@@ -31,6 +31,9 @@ vi.mock("@elorae/db", () => {
     );
   return {
     prisma: new Proxy({}, { get: (_t, nama: string) => model(nama) }),
+    // Hitungan jadwal produksi dimuat lewat modul yang juga memuat `runSerializable`,
+    // yang membaca tingkat isolasi saat modulnya dimuat.
+    Prisma: { TransactionIsolationLevel: { Serializable: "Serializable" } },
   };
 });
 vi.mock("@/lib/stores/usulan-queries", () => ({
@@ -88,6 +91,12 @@ describe("getAntreanKantor", () => {
     expect(hasil.claimCorrectionsPending).toBe(1);
     expect(catatan.dipanggil).not.toContain("usulan");
     expect(catatan.dipanggil).not.toContain("shift");
+  });
+
+  it("produksi: hanya dua hitungan langkah jadwal produksi (terlambat, hari ini)", async () => {
+    const hasil = await getAntreanKantor(["dashboard:view", "production_planning:view"]);
+    expect(hasil).toEqual({ productionStepsOverdue: 3, productionStepsDueToday: 3 });
+    expect(catatan.dipanggil.sort()).toEqual(["planStageStep.count", "planStageStep.count"]);
   });
 
   it("admin: setiap antrean dihitung", async () => {

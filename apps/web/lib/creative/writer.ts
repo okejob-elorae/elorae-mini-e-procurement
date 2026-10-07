@@ -1,16 +1,24 @@
 import { Prisma } from '@elorae/db';
 import { runSerializable } from '@/lib/db/tx-retry';
-import { generateDocNumber } from '@/lib/docNumber';
+import { formatDateOnlyJakarta } from '@/lib/date-only';
 import { catatJejak, JEJAK } from '@/lib/receivables/jejak';
 import { denganNomorUnik } from '@/lib/receivables/nomor';
-import { bolehPindahBrief, stokKeluarSaat, type StatusBrief } from './aturan';
+import {
+  bolehPindahTahap,
+  indeksTahap,
+  statusBayarBawaan,
+  type JenisKerjaSama,
+  type Tahap,
+} from './tahap';
+import { bolehPindahStatusKonten, type StatusRencanaKonten } from './rencana-konten';
 
 /**
  * Penulis creative marketing.
  *
- * Di sinilah dua aturan rancangannya benar-benar dipaksa: fee tidak pernah jadi
- * beban sebelum kontennya tayang, dan stok bergerak TEPAT SEKALI — pada
- * perpindahan draft → dikirim, dicatat sebagai `stockIssuedAt`.
+ * Kolaborasi (tabel `KolBrief`) berjalan lewat 13 tahap + 3 jalur keluar
+ * (`tahap.ts`). Memindah tahap TIDAK PERNAH menggerakkan stok: stok sampel
+ * bergerak per pengiriman sampel (`KolShipment`), tepat sekali saat
+ * pengirimannya berangkat — dicatat di `KolShipment.stockIssuedAt`.
  */
 
 type Klien = Prisma.TransactionClient;
@@ -25,6 +33,10 @@ export type AlasanGagalKreatif =
   | 'BARANG_TIDAK_DITEMUKAN'
   | 'STOK_KURANG'
   | 'QTY_TIDAK_VALID'
+  /** KOL diblokir: tidak boleh diajak kolaborasi baru atau dimajukan (keluar jalur tetap boleh). */
+  | 'KOL_DIBLOKIR'
+  /** Campaign diarsipkan: tidak menerima kolaborasi baru. */
+  | 'CAMPAIGN_DIARSIPKAN'
   /** Menukar sebuah ubin dengan dirinya sendiri — tidak ada yang berubah. */
   | 'TIDAK_VALID';
 
@@ -34,112 +46,32 @@ export type HasilKreatif<T = void> =
 
 /* ────────────────────────────── KOL ────────────────────────────── */
 
-export type AkunKol = { platform: 'INSTAGRAM' | 'TIKTOK' | 'YOUTUBE' | 'LAINNYA'; handle: string; followers: number; url?: string | null };
-
-export type IsiKol = {
-  name: string;
-  niche?: string | null;
-  city?: string | null;
-  phone?: string | null;
-  email?: string | null;
-  rateCard?: number | null;
-  rateNote?: string | null;
-  note?: string | null;
-  isActive?: boolean;
-  akun: AkunKol[];
-};
-
-/**
- * Simpan KOL beserta akun-akunnya.
- *
- * Akunnya ditulis ulang seluruhnya, bukan ditambal per baris: daftar akun
- * pendek dan seluruhnya ada di formulir, jadi menyandingkan yang lama dengan
- * yang baru hanya menambah cara untuk salah. Tier TIDAK disimpan — ia dihitung
- * saat dibaca.
+/*
+ * KOL disimpan oleh `kol-writer.ts` (2026-10-07): akun diubah DI TEMPAT (id
+ * tetap, riwayat pengikut tidak hilang) dan setiap jumlah pengikut yang
+ * berubah dicatat sebagai baris riwayat. Bentuk lama `simpanKol` tetap ada
+ * untuk pemanggil lama.
  */
-export async function simpanKol(input: {
-  id?: string | null;
-  isi: IsiKol;
-  olehUserId: string;
-}): Promise<HasilKreatif<{ id: string }>> {
-  const nama = input.isi.name?.trim();
-  if (!nama) return { ok: false, alasan: 'NAMA_WAJIB' };
+export { simpanKol, type AkunKol, type IsiKol } from './kol-writer';
 
-  const akun = input.isi.akun
-    .filter((a) => a.handle.trim())
-    .map((a) => ({
-      platform: a.platform,
-      // Handle diseragamkan tanpa @ supaya "@toko" dan "toko" tidak jadi dua akun.
-      handle: a.handle.trim().replace(/^@/, ''),
-      followers: Math.max(0, Math.trunc(a.followers || 0)),
-      url: a.url?.trim() || null,
-    }));
-
-  return runSerializable(async (tx) => {
-    const data = {
-      name: nama,
-      niche: input.isi.niche?.trim() || null,
-      city: input.isi.city?.trim() || null,
-      phone: input.isi.phone?.trim() || null,
-      email: input.isi.email?.trim() || null,
-      rateCard: input.isi.rateCard == null ? null : D(input.isi.rateCard),
-      rateNote: input.isi.rateNote?.trim() || null,
-      note: input.isi.note?.trim() || null,
-      isActive: input.isi.isActive ?? true,
-    };
-
-    if (input.id) {
-      const lama = await tx.kol.findUnique({
-        where: { id: input.id },
-        select: { id: true, name: true, isActive: true },
-      });
-      if (!lama) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
-
-      await tx.kol.update({ where: { id: lama.id }, data });
-      await tx.kolAccount.deleteMany({ where: { kolId: lama.id } });
-      if (akun.length) {
-        await tx.kolAccount.createMany({ data: akun.map((a) => ({ ...a, kolId: lama.id })) });
-      }
-      await catatJejak(tx, {
-        userId: input.olehUserId,
-        action: JEJAK.KOL_DIUBAH,
-        entityType: 'Kol',
-        entityId: lama.id,
-        changes: { before: { name: lama.name, isActive: lama.isActive }, after: { name: nama, isActive: data.isActive } },
-        metadata: { jumlahAkun: akun.length },
-      });
-      return { ok: true as const, id: lama.id };
-    }
-
-    const dibuat = await tx.kol.create({
-      data: { ...data, createdById: input.olehUserId, accounts: { create: akun } },
-      select: { id: true },
-    });
-    await catatJejak(tx, {
-      userId: input.olehUserId,
-      action: JEJAK.KOL_DIBUAT,
-      entityType: 'Kol',
-      entityId: dibuat.id,
-      changes: { after: { name: nama } },
-      metadata: { jumlahAkun: akun.length },
-    });
-    return { ok: true as const, id: dibuat.id };
-  });
-}
-
-/* ───────────────────────────── BRIEF ───────────────────────────── */
+/* ──────────────────── KOLABORASI (tabel KolBrief) ──────────────────── */
 
 export type BarisDeliverable = {
-  platform: 'INSTAGRAM' | 'TIKTOK' | 'YOUTUBE' | 'LAINNYA';
+  platform: 'INSTAGRAM' | 'TIKTOK' | 'YOUTUBE' | 'SHOPEE' | 'LAINNYA';
   format: 'FEED' | 'REELS' | 'STORY' | 'VIDEO' | 'LIVE' | 'CAROUSEL';
   qty: number;
   dueDate?: Date | null;
 };
 
+/** Rencana sampel (`KolBriefItem`) — rencana saja; stok bergerak per pengiriman. */
 export type BarisBarangKirim = { itemId: string; variantSku?: string | null; qty: number };
 
-/** Nomor brief berikutnya dalam tahun berjalan. */
-async function nomorBrief(tx: Klien, tahun: number): Promise<string> {
+/**
+ * Nomor kolaborasi berikutnya dalam tahun WIB berjalan. Formatnya tetap BRIEF/YYYY/NNNN.
+ * Di dalam satu transaksi, pemanggilan berikutnya membaca nomor yang baru dibuat
+ * (dipakai `masukkanKeCampaign` yang membuat banyak kolaborasi sekaligus).
+ */
+export async function nomorBrief(tx: Klien, tahun: string): Promise<string> {
   const depan = `BRIEF/${tahun}/`;
   const terakhir = await tx.kolBrief.findFirst({
     where: { docNo: { startsWith: depan } },
@@ -150,34 +82,74 @@ async function nomorBrief(tx: Klien, tahun: number): Promise<string> {
   return `${depan}${String(urutan).padStart(4, '0')}`;
 }
 
+/** Tanggal yang ikut terisi saat sebuah kolaborasi MENCAPAI tahap tertentu. */
+export function tanggalTahap(ke: Tahap, sekarang: Date, lama?: { outreachAt: Date | null; dealAt: Date | null; liveAt: Date | null }) {
+  const sampai = (t: Tahap) => indeksTahap(ke) >= indeksTahap(t);
+  return {
+    ...(sampai('DIHUBUNGI') && !lama?.outreachAt ? { outreachAt: sekarang } : {}),
+    ...(sampai('DEAL') && !lama?.dealAt ? { dealAt: sekarang } : {}),
+    ...(sampai('TAYANG') && !lama?.liveAt ? { liveAt: sekarang } : {}),
+  };
+}
+
+/**
+ * Buat kolaborasi baru.
+ *
+ * Tahap awal bawaan PROSPEK. Deliverable dan rencana sampel boleh kosong —
+ * kolaborasi yang baru diincar memang belum menugaskan apa pun. Brief yang
+ * kosong mewarisi brief campaign-nya. Stok TIDAK bergerak di sini.
+ */
 export async function buatBrief(input: {
   kolId: string;
-  campaign: string;
+  campaignId?: string | null;
+  tahap?: Tahap;
+  jenis?: JenisKerjaSama;
   fee: number;
+  commissionPct?: number | null;
+  picId?: string | null;
+  plannedLiveAt?: Date | null;
   briefText?: string | null;
   doList?: string | null;
   dontList?: string | null;
   startDate?: Date | null;
   dueDate?: Date | null;
-  deliverables: BarisDeliverable[];
+  deliverables?: BarisDeliverable[];
   barang?: BarisBarangKirim[];
   olehUserId: string;
 }): Promise<HasilKreatif<{ id: string; docNo: string }>> {
-  if (!input.campaign?.trim()) return { ok: false, alasan: 'NAMA_WAJIB' };
-
-  const deliverables = input.deliverables.filter((d) => d.qty > 0);
-  // Brief tanpa deliverable tidak menugaskan apa pun; ia cuma catatan.
-  if (deliverables.length === 0) return { ok: false, alasan: 'TANPA_DELIVERABLE' };
-
-  const barang = (input.barang ?? []).filter((b) => b.itemId && b.qty > 0);
+  const deliverables = (input.deliverables ?? []).filter((d) => d.qty > 0);
+  const barang = (input.barang ?? []).filter((b) => b.itemId && b.qty !== 0);
   if (barang.some((b) => !Number.isInteger(b.qty) || b.qty <= 0)) {
     return { ok: false, alasan: 'QTY_TIDAK_VALID' };
   }
+  const tahap = input.tahap ?? 'PROSPEK';
+  if (tahap === 'DITOLAK' || tahap === 'GHOSTING' || tahap === 'BATAL') {
+    // Kolaborasi tidak lahir di jalur keluar: tidak ada alasan yang bisa dicatat.
+    return { ok: false, alasan: 'STATUS_TIDAK_VALID', detail: tahap };
+  }
+  const fee = Number.isFinite(input.fee) && input.fee > 0 ? input.fee : 0;
 
   return denganNomorUnik(() =>
     runSerializable(async (tx) => {
-      const kol = await tx.kol.findUnique({ where: { id: input.kolId }, select: { id: true, name: true } });
+      const kol = await tx.kol.findUnique({
+        where: { id: input.kolId },
+        select: { id: true, name: true, blockedAt: true },
+      });
       if (!kol) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
+      // KOL yang diblokir tidak diajak kerja sama baru — dicek di penulis, bukan
+      // hanya di layar, supaya jalur massal dan impor tidak bisa melewatinya.
+      if (kol.blockedAt) return { ok: false as const, alasan: 'KOL_DIBLOKIR' as const };
+
+      let briefCampaign: string | null = null;
+      if (input.campaignId) {
+        const c = await tx.kolCampaign.findUnique({
+          where: { id: input.campaignId },
+          select: { id: true, brief: true, archivedAt: true },
+        });
+        if (!c) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const, detail: 'campaign' };
+        if (c.archivedAt) return { ok: false as const, alasan: 'CAMPAIGN_DIARSIPKAN' as const };
+        briefCampaign = c.brief;
+      }
 
       const namaBarang = new Map<string, string>();
       if (barang.length) {
@@ -191,14 +163,23 @@ export async function buatBrief(input: {
         for (const i of items) namaBarang.set(i.id, i.nameId);
       }
 
+      const sekarang = new Date();
       const brief = await tx.kolBrief.create({
         data: {
-          docNo: await nomorBrief(tx, (input.startDate ?? new Date()).getFullYear()),
+          docNo: await nomorBrief(tx, formatDateOnlyJakarta(input.startDate ?? sekarang).slice(0, 4)),
           kolId: kol.id,
-          campaign: input.campaign.trim(),
-          status: 'DRAFT',
-          fee: D(input.fee || 0),
-          briefText: input.briefText?.trim() || null,
+          campaignId: input.campaignId || null,
+          tahap,
+          tahapAt: sekarang,
+          ...tanggalTahap(tahap, sekarang),
+          lastContactAt: indeksTahap(tahap) >= indeksTahap('DIHUBUNGI') ? sekarang : null,
+          jenis: input.jenis ?? 'BARTER',
+          fee: D(fee),
+          commissionPct: input.commissionPct == null ? null : D(input.commissionPct),
+          payStatus: statusBayarBawaan(fee),
+          picId: input.picId || null,
+          plannedLiveAt: input.plannedLiveAt ?? null,
+          briefText: input.briefText?.trim() || briefCampaign?.trim() || null,
           doList: input.doList?.trim() || null,
           dontList: input.dontList?.trim() || null,
           startDate: input.startDate ?? null,
@@ -217,17 +198,13 @@ export async function buatBrief(input: {
         select: { id: true, docNo: true },
       });
 
-      /*
-       * Stok TIDAK bergerak di sini. Brief lahir sebagai DRAFT, dan draft masih
-       * boleh berubah isinya — barangnya baru berangkat saat briefnya dikirim.
-       */
       await catatJejak(tx, {
         userId: input.olehUserId,
         action: JEJAK.BRIEF_DIBUAT,
         entityType: 'KolBrief',
         entityId: brief.id,
-        changes: { after: { docNo: brief.docNo, status: 'DRAFT', fee: input.fee } },
-        metadata: { kol: kol.name, campaign: input.campaign.trim(), jumlahBarang: barang.length },
+        changes: { after: { docNo: brief.docNo, tahap, fee } },
+        metadata: { kol: kol.name, campaignId: input.campaignId || null, jumlahBarang: barang.length },
       });
 
       return { ok: true as const, id: brief.id, docNo: brief.docNo };
@@ -236,135 +213,83 @@ export async function buatBrief(input: {
 }
 
 /**
- * Cari baris persediaan sebuah barang.
+ * Pindahkan kolaborasi ke tahap lain, menurut `bolehPindahTahap`: maju bebas
+ * melompat; mundur, keluar jalur, dan "buka lagi" wajib beralasan.
  *
- * Toleran terhadap `variantSku` null ATAU string kosong — pelajaran yang sudah
- * mahal di modul field sales: barang tanpa varian menulis `null` di satu jalur
- * dan `""` di jalur lain, dan pencarian yang ketat diam-diam tidak menemukan
- * apa-apa lalu melaporkan stok nol.
- */
-async function cariPersediaan(tx: Klien, itemId: string, variantSku: string | null) {
-  const kosong = !variantSku || variantSku.trim() === '';
-  return tx.inventoryValue.findFirst({
-    where: {
-      itemId,
-      ...(kosong ? { OR: [{ variantSku: null }, { variantSku: '' }] } : { variantSku }),
-    },
-    select: { id: true, qtyOnHand: true, reservedQty: true, avgCost: true },
-  });
-}
-
-/**
- * Pindahkan brief ke status berikutnya.
+ * Tanggal yang menandai sebuah tahap (outreachAt, dealAt, liveAt) terisi saat
+ * tahapnya PERTAMA kali dicapai dan tidak ditimpa sesudahnya. Kontak terakhir
+ * ikut diperbarui — memindah tahap berarti ada yang baru saja terjadi dengan
+ * KOL-nya — kecuali saat keluar jalur.
  *
- * Perpindahan draft → dikirim adalah satu-satunya yang menggerakkan stok, dan
- * ia menstempel `stockIssuedAt` supaya yang benar-benar terjadi TERCATAT, bukan
- * disimpulkan dari status. Bedanya nyata: brief yang dibatalkan setelah
- * dikirim barangnya sudah di tangan KOL, dan tidak ada status yang bisa
- * menceritakan itu sendirian.
+ * Stok TIDAK bergerak di sini; stok sampel bergerak lewat pengiriman sampel.
  */
-export async function pindahStatusBrief(input: {
-  briefId: string;
-  ke: StatusBrief;
+export async function pindahTahapKolaborasi(input: {
+  kolaborasiId: string;
+  ke: Tahap;
   alasan?: string | null;
   olehUserId: string;
-}): Promise<HasilKreatif<{ stokKeluar: number }>> {
-  if (input.ke === 'BATAL' && !input.alasan?.trim()) {
-    return { ok: false, alasan: 'ALASAN_WAJIB' };
-  }
-
+}): Promise<HasilKreatif<{ dari: Tahap; ke: Tahap }>> {
   return runSerializable(async (tx) => {
-    const brief = await tx.kolBrief.findUnique({
-      where: { id: input.briefId },
+    const c = await tx.kolBrief.findUnique({
+      where: { id: input.kolaborasiId },
       select: {
         id: true,
         docNo: true,
-        status: true,
-        stockIssuedAt: true,
-        kol: { select: { name: true } },
-        items: { select: { itemId: true, itemName: true, variantSku: true, qty: true } },
+        tahap: true,
+        outreachAt: true,
+        dealAt: true,
+        liveAt: true,
+        cancelReason: true,
+        tahapAt: true,
+        kol: { select: { name: true, blockedAt: true } },
       },
     });
-    if (!brief) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
+    if (!c) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
 
-    const dari = brief.status as StatusBrief;
-    if (!bolehPindahBrief(dari, input.ke)) {
-      return { ok: false as const, alasan: 'STATUS_TIDAK_VALID' as const, detail: dari };
+    const dari = c.tahap as Tahap;
+    const boleh = bolehPindahTahap(dari, input.ke, input.alasan);
+    if (!boleh.boleh) {
+      return boleh.sebab === 'ALASAN_WAJIB'
+        ? { ok: false as const, alasan: 'ALASAN_WAJIB' as const }
+        : { ok: false as const, alasan: 'STATUS_TIDAK_VALID' as const, detail: dari };
+    }
+    /*
+     * KOL yang diblokir: kolaborasinya tidak boleh dimajukan atau dibuka lagi.
+     * Keluar jalur dan mundur (membetulkan salah catat) tetap boleh — itulah
+     * cara menyelesaikan tugas "KOL diblokir tapi kolaborasinya berjalan".
+     */
+    if (c.kol.blockedAt && (boleh.jenis === 'MAJU' || boleh.jenis === 'BUKA_LAGI')) {
+      return { ok: false as const, alasan: 'KOL_DIBLOKIR' as const };
     }
 
-    let stokKeluar = 0;
-    if (stokKeluarSaat(dari, input.ke) && brief.stockIssuedAt === null) {
-      for (const b of brief.items) {
-        const inv = await cariPersediaan(tx, b.itemId, b.variantSku);
-        if (!inv) {
-          return { ok: false as const, alasan: 'BARANG_TIDAK_DITEMUKAN' as const, detail: b.itemName };
-        }
-        const ada = inv.qtyOnHand.toNumber();
-        // Seeding TIDAK boleh menembus stok jadi negatif: barang yang tidak ada
-        // tidak bisa dikirim, dan gudang minus tidak pernah bisa dijelaskan.
-        if (ada < b.qty) {
-          return { ok: false as const, alasan: 'STOK_KURANG' as const, detail: b.itemName };
-        }
-        const avg = inv.avgCost.toNumber();
-        const baru = ada - b.qty;
-        await tx.inventoryValue.update({
-          where: { id: inv.id },
-          data: { qtyOnHand: baru, totalValue: baru * avg },
-        });
-        await tx.stockAdjustment.create({
-          data: {
-            /*
-             * Nomor ADJ dari generator bersama, bukan dirakit dari nomor brief.
-             * Rakitan `${docNo}/${itemId}` bentrok begitu satu barang muncul dua
-             * baris di brief yang sama — dan kolomnya `@unique`, jadi yang kalah
-             * membatalkan seluruh pengiriman.
-             */
-            docNumber: await generateDocNumber('ADJ', tx),
-            itemId: b.itemId,
-            type: 'NEGATIVE',
-            qtyChange: -b.qty,
-            reason: `Seeding KOL ${brief.docNo} → ${brief.kol.name}`,
-            prevQty: ada,
-            newQty: baru,
-            prevAvgCost: avg,
-            newAvgCost: avg,
-            createdById: input.olehUserId,
-            source: 'KOL_SEEDING',
-          },
-        });
-        stokKeluar += b.qty;
-      }
-    }
-
+    const sekarang = new Date();
+    const keluar = boleh.jenis === 'KELUAR';
     await tx.kolBrief.update({
-      where: { id: brief.id },
+      where: { id: c.id },
       data: {
-        status: input.ke,
-        ...(input.ke === 'DIKIRIM' ? { sentAt: new Date() } : {}),
-        ...(input.ke === 'TAYANG' ? { liveAt: new Date() } : {}),
-        ...(input.ke === 'BATAL' ? { cancelReason: input.alasan?.trim() || null } : {}),
-        ...(stokKeluar > 0 ? { stockIssuedAt: new Date() } : {}),
+        tahap: input.ke,
+        tahapAt: sekarang,
+        ...(keluar ? {} : { lastContactAt: sekarang }),
+        ...tanggalTahap(input.ke, sekarang, c),
+        ...(keluar ? { cancelReason: input.alasan?.trim() || null } : {}),
+        ...(boleh.jenis === 'BUKA_LAGI' ? { cancelReason: null } : {}),
       },
     });
 
     await catatJejak(tx, {
       userId: input.olehUserId,
-      action: input.ke === 'BATAL' ? JEJAK.BRIEF_DIBATALKAN : input.ke === 'DIKIRIM' ? JEJAK.BRIEF_DIKIRIM : JEJAK.BRIEF_PINDAH_STATUS,
+      action: JEJAK.KOLABORASI_PINDAH_TAHAP,
       entityType: 'KolBrief',
-      entityId: brief.id,
-      changes: { before: { status: dari }, after: { status: input.ke } },
-      metadata: {
-        docNo: brief.docNo,
-        kol: brief.kol.name,
-        stokKeluar,
-        // Dicatat supaya pembatalan setelah pengiriman bisa dibaca sebagai
-        // kehilangan barang, bukan sekadar brief yang batal.
-        barangSudahBerangkat: brief.stockIssuedAt !== null || stokKeluar > 0,
+      entityId: c.id,
+      changes: {
+        before: { tahap: dari, tahapAt: c.tahapAt.toISOString() },
+        after: { tahap: input.ke, tahapAt: sekarang.toISOString() },
       },
+      metadata: { docNo: c.docNo, kol: c.kol.name, jenis: boleh.jenis, otomatis: false },
       reason: input.alasan,
     });
 
-    return { ok: true as const, stokKeluar };
+    return { ok: true as const, dari, ke: input.ke };
   });
 }
 
@@ -586,34 +511,59 @@ export async function tukarJadwalKonten(input: {
 export async function simpanKonten(input: {
   id?: string | null;
   isi: IsiKonten;
+  /** Wajib bila status dimundurkan; ikut tercatat di jejak bila status berubah. */
+  alasan?: string | null;
   olehUserId: string;
 }): Promise<HasilKreatif<{ id: string }>> {
   const judul = input.isi.title?.trim();
   if (!judul) return { ok: false, alasan: 'NAMA_WAJIB' };
 
-  return runSerializable(async (tx) => {
-    const data = {
-      title: judul,
-      platform: input.isi.platform,
-      format: input.isi.format,
-      status: input.isi.status ?? 'IDE',
-      scheduledAt: input.isi.scheduledAt ?? null,
-      publishedAt: input.isi.publishedAt ?? null,
-      postUrl: input.isi.postUrl?.trim() || null,
-      imageUrl: input.isi.imageUrl?.trim() || null,
-      caption: input.isi.caption?.trim() || null,
-      note: input.isi.note?.trim() || null,
-      itemId: input.isi.itemId || null,
-      assigneeId: input.isi.assigneeId || null,
-      briefId: input.isi.briefId || null,
-    };
+  /*
+   * Kolom yang TIDAK dikirim (undefined) tidak disentuh saat mengubah; null
+   * yang dikirim dengan sengaja tetap mengosongkan. Dulu setiap simpan menulis
+   * null ke semua kolom opsional, jadi dialog ubah — yang tidak membawa link
+   * posting, tanggal tayang, catatan, barang, dan penanggung jawab — diam-diam
+   * menghapus isinya, dan status kembali ke IDE.
+   */
+  const teks = (v: string | null | undefined) => (v === undefined ? undefined : v?.trim() || null);
+  const ruj = (v: string | null | undefined) => (v === undefined ? undefined : v || null);
+  const isian = {
+    title: judul,
+    platform: input.isi.platform,
+    format: input.isi.format,
+    status: input.isi.status,
+    scheduledAt: input.isi.scheduledAt,
+    publishedAt: input.isi.publishedAt,
+    postUrl: teks(input.isi.postUrl),
+    imageUrl: teks(input.isi.imageUrl),
+    caption: teks(input.isi.caption),
+    note: teks(input.isi.note),
+    itemId: ruj(input.isi.itemId),
+    assigneeId: ruj(input.isi.assigneeId),
+    briefId: ruj(input.isi.briefId),
+  };
 
+  return runSerializable(async (tx) => {
     if (input.id) {
       const lama = await tx.contentPlan.findUnique({
         where: { id: input.id },
         select: { id: true, title: true, status: true, scheduledAt: true },
       });
       if (!lama) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
+      /*
+       * Status mengikuti aturan perpindahan (`rencana-konten.ts`, bug F):
+       * maju boleh melompat, mundur wajib beralasan dan alasannya masuk jejak.
+       * Dibaca di dalam transaksi supaya dua dialog yang terbuka bersamaan
+       * tidak bisa memundurkan status tanpa alasan.
+       */
+      const pindahStatus = isian.status !== undefined && isian.status !== lama.status;
+      if (pindahStatus) {
+        const cek = bolehPindahStatusKonten(lama.status as StatusRencanaKonten, isian.status!, input.alasan);
+        if (!cek.boleh) {
+          return { ok: false as const, alasan: cek.sebab === 'ALASAN_WAJIB' ? ('ALASAN_WAJIB' as const) : ('STATUS_TIDAK_VALID' as const) };
+        }
+      }
+      const data = Object.fromEntries(Object.entries(isian).filter(([, v]) => v !== undefined)) as Partial<typeof isian>;
       await tx.contentPlan.update({ where: { id: lama.id }, data });
       await catatJejak(tx, {
         userId: input.olehUserId,
@@ -622,12 +572,30 @@ export async function simpanKonten(input: {
         entityId: lama.id,
         changes: {
           before: { title: lama.title, status: lama.status, scheduledAt: lama.scheduledAt },
-          after: { title: judul, status: data.status, scheduledAt: data.scheduledAt },
+          after: {
+            title: judul,
+            status: data.status ?? lama.status,
+            scheduledAt: data.scheduledAt === undefined ? lama.scheduledAt : data.scheduledAt,
+          },
         },
+        reason: pindahStatus ? input.alasan?.trim() || null : null,
       });
       return { ok: true as const, id: lama.id };
     }
 
+    const data = {
+      ...isian,
+      status: isian.status ?? 'IDE',
+      scheduledAt: isian.scheduledAt ?? null,
+      publishedAt: isian.publishedAt ?? null,
+      postUrl: isian.postUrl ?? null,
+      imageUrl: isian.imageUrl ?? null,
+      caption: isian.caption ?? null,
+      note: isian.note ?? null,
+      itemId: isian.itemId ?? null,
+      assigneeId: isian.assigneeId ?? null,
+      briefId: isian.briefId ?? null,
+    };
     const dibuat = await tx.contentPlan.create({
       data: { ...data, createdById: input.olehUserId },
       select: { id: true },

@@ -38,7 +38,7 @@ export function Pagination({
           {t('showing', { start, end, total: totalCount })}
         </p>
       )}
-      <div className="flex items-center gap-2 order-1 sm:order-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-2 order-1 sm:order-2">
         <p className="text-sm text-muted-foreground whitespace-nowrap">
           {t('page', { page, total: totalPages })}
         </p>
@@ -50,7 +50,8 @@ export function Pagination({
           aria-label={t('previousAria')}
         >
           <ChevronLeft className="h-4 w-4" />
-          {t('previous')}
+          {/* Label disembunyikan di layar sempit supaya tombol tidak keluar dari kartunya (375 px). */}
+          <span className="hidden sm:inline">{t('previous')}</span>
         </Button>
         <Button
           variant="outline"
@@ -59,7 +60,7 @@ export function Pagination({
           disabled={page >= totalPages}
           aria-label={t('nextAria')}
         >
-          {t('next')}
+          <span className="hidden sm:inline">{t('next')}</span>
           <ChevronRight className="h-4 w-4" />
         </Button>
       </div>

@@ -62,6 +62,8 @@ export const SUMBER_PUSH_STOK = [
   "RETUR_PEMASOK",
   /** Rilis jendela pre-order: pesanan yang disetujui dicadangkan. */
   "INDEN",
+  /** Sampel KOL berangkat (Kreatif → Sampel). */
+  "KOL_SAMPEL",
 ] as const;
 
 export type SumberPushStok = (typeof SUMBER_PUSH_STOK)[number];

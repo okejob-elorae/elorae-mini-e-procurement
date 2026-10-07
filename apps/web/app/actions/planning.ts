@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { ItemType } from "@elorae/db";
+import { ItemType, type Prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { prisma } from "@elorae/db";
 import { logAudit } from "@/lib/audit";
@@ -37,6 +37,8 @@ import {
   createPlanCategorySchema,
   createPlanStageSchema,
   createPlanYearSchema,
+  rapikanVarianTahap,
+  tolakUbahTahap,
   updateMonthlyTargetSchema,
   updatePlanCategorySchema,
   updatePlanStageSchema,
@@ -45,9 +47,15 @@ import {
   upsertColorAllocationsSchema,
   upsertMonthlyCmtAllocationsSchema,
   upsertMonthlyColorAllocationsSchema,
+  varianTahapSah,
 } from "@/lib/validations/planning";
+import { runSerializable } from "@/lib/db/tx-retry";
+import { formatDateOnlyJakarta } from "@/lib/date-only";
+import { hariIniWib } from "@/lib/tanggal-isian";
+import { ringkasJadwal, type RingkasanJadwal, type StatusLangkah } from "@/lib/production/jadwal";
 import { createWorkOrder } from "@/app/actions/production";
 import { generateMaterialPlan } from "@/lib/production/planning";
+import { qtySudahAdaPoPerKategori, totalSudahAdaPo } from "@/lib/production/sudah-ada-po";
 import { Decimal } from "decimal.js";
 
 const PLANNING_PATH = "/backoffice/production/planning";
@@ -229,6 +237,7 @@ type RawCategory = {
     workOrderId: string | null;
     planCmtAllocationId: string | null;
     sortOrder: number;
+    steps?: Array<{ name: string; status: StatusLangkah; targetDate: Date }>;
   }>;
   colorAllocations?: Array<{
     id: string;
@@ -331,6 +340,8 @@ interface EnrichedPlanCategory {
     workOrderDocNumber: string | null;
     workOrderStatus: string | null;
     planCmtAllocationId: string | null;
+    /** Ringkasan jadwal proses tahap (lencana di baris tahap). */
+    jadwal: RingkasanJadwal;
   }>;
   colorAllocations: NonNullable<RawCategory["colorAllocations"]>;
   cmtAllocations: NonNullable<RawCategory["cmtAllocations"]>;
@@ -350,7 +361,8 @@ function enrichCategoryNode(
   itemNames: Map<string, string>,
   itemVariants: Map<string, Array<{ variantSku: string; label: string }>>,
   supplierNames: Map<string, string>,
-  workOrders: Map<string, { docNumber: string; status: string }>
+  workOrders: Map<string, { docNumber: string; status: string }>,
+  hariIni: string
 ): EnrichedPlanCategory {
   const planningNode = toPlanningNode(node, byId);
   const effectiveTarget = getEffectiveTarget(planningNode);
@@ -385,7 +397,8 @@ function enrichCategoryNode(
       itemNames,
       itemVariants,
       supplierNames,
-      workOrders
+      workOrders,
+      hariIni
     )
   );
 
@@ -422,7 +435,7 @@ function enrichCategoryNode(
     monthlyMismatch: monthlyMismatch.hasMismatch ? monthlyMismatch : null,
     children: enrichedChildren,
     stages: isLeaf
-      ? node.stages.map((stage) => {
+      ? node.stages.map(({ steps, ...stage }) => {
           const wo = stage.workOrderId ? workOrders.get(stage.workOrderId) : null;
           return {
             ...stage,
@@ -430,6 +443,14 @@ function enrichCategoryNode(
             workOrderDocNumber: wo?.docNumber ?? null,
             workOrderStatus: wo?.status ?? null,
             planCmtAllocationId: stage.planCmtAllocationId ?? null,
+            jadwal: ringkasJadwal(
+              (steps ?? []).map((l) => ({
+                name: l.name,
+                status: l.status,
+                targetDate: formatDateOnlyJakarta(l.targetDate),
+              })),
+              hariIni
+            ),
           };
         })
       : [],
@@ -485,6 +506,10 @@ export async function getPlanYear(planYearId: string) {
               workOrderId: true,
               planCmtAllocationId: true,
               sortOrder: true,
+              steps: {
+                orderBy: [{ sequence: "asc" }, { id: "asc" }],
+                select: { name: true, status: true, targetDate: true },
+              },
             },
           },
           colorAllocations: { orderBy: [{ month: "asc" }, { variantSku: "asc" }] },
@@ -554,8 +579,9 @@ export async function getPlanYear(planYearId: string) {
       : [];
   const supplierNames = new Map(suppliers.map((s) => [s.id, s.name]));
 
+  const hariIni = hariIniWib();
   const categories = roots.map((root) =>
-    enrichCategoryNode(root, byId, lookup, itemNames, itemVariants, supplierNames, workOrders)
+    enrichCategoryNode(root, byId, lookup, itemNames, itemVariants, supplierNames, workOrders, hariIni)
   );
 
   const totalPlan = categories.reduce((sum, c) => sum + c.effectiveTarget, 0);
@@ -990,93 +1016,227 @@ export async function resetMonthlyToAuto(planCategoryId: string) {
   revalidatePath(PLANNING_PATH);
 }
 
+export type KodeTolakTahap =
+  | "TANPA_AKSES"
+  | "ISIAN_TIDAK_SAH"
+  | "KATEGORI_TIDAK_ADA"
+  | "TAHAP_TIDAK_ADA"
+  | "PLAN_TERKUNCI"
+  | "PENJAHIT_TIDAK_SAH"
+  | "BARANG_BELUM_DIHUBUNGKAN"
+  | "VARIAN_TIDAK_SAH"
+  | "SUDAH_ADA_WO"
+  | "GAGAL";
+
+export type HasilTahap =
+  | { ok: true; id: string }
+  | { ok: false; code: KodeTolakTahap; docNumber?: string };
+
+async function sesiKelolaPlan(): Promise<{ userId: string } | null> {
+  const session = await auth();
+  if (!session?.user?.id) return null;
+  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.PRODUCTION_PLANNING_MANAGE)) return null;
+  return { userId: session.user.id };
+}
+
+/** Penjahit tahap harus pemasok berjenis TAILOR. */
+async function penjahitSah(client: Prisma.TransactionClient, supplierId: string): Promise<boolean> {
+  const supplier = await client.supplier.findUnique({
+    where: { id: supplierId },
+    select: { type: { select: { code: true } } },
+  });
+  return supplier?.type.code === "TAILOR";
+}
+
+/**
+ * Tambah tahap ke jenis (leaf) plan yang masih DRAFT dan terbuka. Varian (bila
+ * diisi) harus varian barang jadi jenis itu — tanpa varian, "Buat WO" dari
+ * tahap ini selalu ditolak `TAHAP_TANPA_VARIAN`. Penolakan dikembalikan
+ * sebagai kode, tidak dilempar.
+ */
 export async function createPlanStage(input: {
   planCategoryId: string;
   name: string;
   targetQty: number;
   targetMonth?: number | null;
+  variantSku?: string | null;
   supplierId?: string | null;
   fabricNotes?: string;
   colorNotes?: string;
-}) {
-  const session = await requirePlanningManage();
-  const parsed = createPlanStageSchema.parse(input);
-  const category = await prisma.planCategory.findUnique({
-    where: { id: parsed.planCategoryId },
-    select: { planYearId: true },
-  });
-  if (!category) throw new Error("Category not found");
-  await requirePlanYearUnlocked(category.planYearId);
-  await validateTailorSupplier(parsed.supplierId ?? null);
+}): Promise<HasilTahap> {
+  const sesi = await sesiKelolaPlan();
+  if (!sesi) return { ok: false, code: "TANPA_AKSES" };
+  const parsed = createPlanStageSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, code: "ISIAN_TIDAK_SAH" };
+  const data = parsed.data;
+  const variantSku = rapikanVarianTahap(data.variantSku) ?? null;
+  const supplierId = data.supplierId || null;
 
-  const sortOrder = await prisma.planStage.count({
-    where: { planCategoryId: parsed.planCategoryId },
-  });
-  const created = await prisma.planStage.create({
-    data: {
-      planCategoryId: parsed.planCategoryId,
-      name: parsed.name,
-      targetQty: parsed.targetQty,
-      targetMonth: parsed.targetMonth ?? null,
-      supplierId: parsed.supplierId ?? null,
-      fabricNotes: parsed.fabricNotes ?? null,
-      colorNotes: parsed.colorNotes ?? null,
-      sortOrder,
-    },
-  });
-  await logAudit({
-    userId: session.user.id,
-    action: "CREATE",
-    entityType: "PlanStage",
-    entityId: created.id,
-    changes: { after: { name: created.name } },
-  });
-  revalidatePath(PLANNING_PATH);
-  return created;
+  try {
+    return await runSerializable(async (tx): Promise<HasilTahap> => {
+      const category = await tx.planCategory.findUnique({
+        where: { id: data.planCategoryId },
+        select: {
+          planYear: { select: { status: true, isLocked: true } },
+          item: { select: { variants: true } },
+        },
+      });
+      if (!category) return { ok: false, code: "KATEGORI_TIDAK_ADA" };
+      if (category.planYear.status !== "DRAFT" || category.planYear.isLocked) {
+        return { ok: false, code: "PLAN_TERKUNCI" };
+      }
+      if (supplierId && !(await penjahitSah(tx, supplierId))) {
+        return { ok: false, code: "PENJAHIT_TIDAK_SAH" };
+      }
+      if (variantSku) {
+        if (!category.item) return { ok: false, code: "BARANG_BELUM_DIHUBUNGKAN" };
+        if (!varianTahapSah(variantSku, category.item.variants)) return { ok: false, code: "VARIAN_TIDAK_SAH" };
+      }
+
+      const sortOrder = await tx.planStage.count({ where: { planCategoryId: data.planCategoryId } });
+      const created = await tx.planStage.create({
+        data: {
+          planCategoryId: data.planCategoryId,
+          name: data.name,
+          targetQty: data.targetQty,
+          targetMonth: data.targetMonth ?? null,
+          variantSku,
+          supplierId,
+          fabricNotes: data.fabricNotes ?? null,
+          colorNotes: data.colorNotes ?? null,
+          sortOrder,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          userId: sesi.userId,
+          action: "CREATE",
+          entityType: "PlanStage",
+          entityId: created.id,
+          changes: {
+            after: {
+              name: created.name,
+              targetQty: created.targetQty,
+              targetMonth: created.targetMonth,
+              variantSku: created.variantSku,
+              supplierId: created.supplierId,
+            },
+          },
+        },
+      });
+      return { ok: true, id: created.id };
+    }).then((hasil) => {
+      if (hasil.ok) revalidatePath(PLANNING_PATH);
+      return hasil;
+    });
+  } catch (error) {
+    console.error("[createPlanStage]", error);
+    return { ok: false, code: "GAGAL" };
+  }
 }
 
+/**
+ * Ubah satu tahap. Plan DRAFT dan terbuka: semua kolom. Plan yang sudah aktif
+ * atau terkunci: hanya bulan target, varian, dan penjahit (`KOLOM_TAHAP_BERJALAN`)
+ * — itulah masukan "Buat WO" dan tab Kalender, yang tetap berjalan sesudah plan
+ * dikunci. Varian (dan penjahit saat terkunci) ditolak `SUDAH_ADA_WO` selama
+ * tahap punya WO yang hidup. Pemeriksaan dan penulisan di satu transaksi
+ * serializable, jejak di transaksi yang sama.
+ */
 export async function updatePlanStage(
   stageId: string,
   input: {
     name?: string;
     targetQty?: number;
     targetMonth?: number | null;
+    variantSku?: string | null;
     supplierId?: string | null;
     fabricNotes?: string | null;
     colorNotes?: string | null;
   }
-) {
-  const session = await requirePlanningManage();
-  const parsed = updatePlanStageSchema.parse(input);
-  const stage = await prisma.planStage.findUnique({
-    where: { id: stageId },
-    include: { planCategory: { select: { planYearId: true } } },
-  });
-  if (!stage) throw new Error("Stage not found");
-  await requirePlanYearUnlocked(stage.planCategory.planYearId);
-  if (parsed.supplierId) await validateTailorSupplier(parsed.supplierId);
+): Promise<HasilTahap> {
+  const sesi = await sesiKelolaPlan();
+  if (!sesi) return { ok: false, code: "TANPA_AKSES" };
+  if (typeof stageId !== "string" || stageId.trim() === "") return { ok: false, code: "ISIAN_TIDAK_SAH" };
+  const parsed = updatePlanStageSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, code: "ISIAN_TIDAK_SAH" };
+  const data = parsed.data;
+  const variantSku = rapikanVarianTahap(data.variantSku);
+  const supplierId = data.supplierId === undefined ? undefined : data.supplierId || null;
 
-  const before = await prisma.planStage.findUnique({ where: { id: stageId } });
-  const updated = await prisma.planStage.update({
-    where: { id: stageId },
-    data: {
-      ...(parsed.name !== undefined ? { name: parsed.name } : {}),
-      ...(parsed.targetQty !== undefined ? { targetQty: parsed.targetQty } : {}),
-      ...(parsed.targetMonth !== undefined ? { targetMonth: parsed.targetMonth } : {}),
-      ...(parsed.supplierId !== undefined ? { supplierId: parsed.supplierId } : {}),
-      ...(parsed.fabricNotes !== undefined ? { fabricNotes: parsed.fabricNotes } : {}),
-      ...(parsed.colorNotes !== undefined ? { colorNotes: parsed.colorNotes } : {}),
-    },
-  });
-  await logAudit({
-    userId: session.user.id,
-    action: "UPDATE",
-    entityType: "PlanStage",
-    entityId: stageId,
-    changes: { before, after: updated },
-  });
-  revalidatePath(PLANNING_PATH);
-  return updated;
+  try {
+    return await runSerializable(async (tx): Promise<HasilTahap> => {
+      const stage = await tx.planStage.findUnique({
+        where: { id: stageId },
+        include: {
+          planCategory: {
+            select: {
+              planYear: { select: { status: true, isLocked: true } },
+              item: { select: { variants: true } },
+            },
+          },
+          workOrder: { select: { docNumber: true, status: true } },
+        },
+      });
+      if (!stage) return { ok: false, code: "TAHAP_TIDAK_ADA" };
+
+      const baru = {
+        name: data.name,
+        targetQty: data.targetQty,
+        targetMonth: data.targetMonth,
+        variantSku,
+        supplierId,
+        fabricNotes: data.fabricNotes,
+        colorNotes: data.colorNotes,
+      };
+      const kolomBerubah = (Object.keys(baru) as Array<keyof typeof baru>).filter(
+        (k) => baru[k] !== undefined && baru[k] !== stage[k]
+      );
+      if (kolomBerubah.length === 0) return { ok: true, id: stage.id };
+
+      const { planYear, item } = stage.planCategory;
+      const planBisaDiubah = planYear.status === "DRAFT" && !planYear.isLocked;
+      const woHidup = stage.workOrder != null && stage.workOrder.status !== "CANCELLED";
+      const tolak = tolakUbahTahap({ planBisaDiubah, kolomBerubah, woHidup });
+      if (tolak === "SUDAH_ADA_WO") {
+        return { ok: false, code: "SUDAH_ADA_WO", docNumber: stage.workOrder?.docNumber };
+      }
+      if (tolak) return { ok: false, code: tolak };
+
+      if (kolomBerubah.includes("supplierId") && supplierId && !(await penjahitSah(tx, supplierId))) {
+        return { ok: false, code: "PENJAHIT_TIDAK_SAH" };
+      }
+      if (kolomBerubah.includes("variantSku") && variantSku) {
+        if (!item) return { ok: false, code: "BARANG_BELUM_DIHUBUNGKAN" };
+        if (!varianTahapSah(variantSku, item.variants)) return { ok: false, code: "VARIAN_TIDAK_SAH" };
+      }
+
+      const ubah: Record<string, unknown> = {};
+      const sebelum: Record<string, unknown> = {};
+      for (const k of kolomBerubah) {
+        ubah[k] = baru[k];
+        sebelum[k] = stage[k];
+      }
+      await tx.planStage.update({ where: { id: stage.id }, data: ubah });
+      await tx.auditLog.create({
+        data: {
+          userId: sesi.userId,
+          action: "UPDATE",
+          entityType: "PlanStage",
+          entityId: stage.id,
+          changes: { before: sebelum, after: ubah } as Prisma.InputJsonValue,
+          ...(planBisaDiubah ? {} : { metadata: { planTerkunci: true } }),
+        },
+      });
+      return { ok: true, id: stage.id };
+    }).then((hasil) => {
+      if (hasil.ok) revalidatePath(PLANNING_PATH);
+      return hasil;
+    });
+  } catch (error) {
+    console.error("[updatePlanStage]", error);
+    return { ok: false, code: "GAGAL" };
+  }
 }
 
 export async function deletePlanStage(stageId: string) {
@@ -1125,7 +1285,22 @@ export async function reorderPlanStages(planCategoryId: string, orderedIds: stri
 }
 
 export async function getPlanDashboard(planYearId: string) {
+  const session = await requirePlanningView();
   const plan = await getPlanYear(planYearId);
+  // "Sudah ada PO" (qty tahap dengan ≥ 1 PO tidak batal) hanya untuk pemegang
+  // purchase_orders:view — sama dengan kolom PO di tab Kalender.
+  const sudahAdaPo = hasPermission(session.user.permissions ?? [], PERMISSIONS.PURCHASE_ORDERS_VIEW)
+    ? qtySudahAdaPoPerKategori(
+        plan.categories,
+        await prisma.planStage.findMany({
+          where: {
+            planCategory: { planYearId: plan.id },
+            purchaseOrders: { some: { status: { not: "CANCELLED" } } },
+          },
+          select: { planCategoryId: true, targetQty: true },
+        })
+      )
+    : null;
   const rows: Array<{
     id: string;
     code: string;
@@ -1138,6 +1313,7 @@ export async function getPlanDashboard(planYearId: string) {
     variance: number;
     completionPercent: number;
     completionBand: "red" | "yellow" | "green";
+    sudahAdaPo: number | null;
   }> = [];
 
   const visitParents = (node: (typeof plan.categories)[0], parentName: string | null = null) => {
@@ -1155,6 +1331,7 @@ export async function getPlanDashboard(planYearId: string) {
         variance: node.variance,
         completionPercent: node.completionPercent,
         completionBand: node.completionBand,
+        sudahAdaPo: sudahAdaPo ? sudahAdaPo.get(node.id) ?? 0 : null,
       });
     }
     if (hasChildren) {
@@ -1171,6 +1348,7 @@ export async function getPlanDashboard(planYearId: string) {
           variance: child.variance,
           completionPercent: child.completionPercent,
           completionBand: child.completionBand,
+          sudahAdaPo: sudahAdaPo ? sudahAdaPo.get(child.id) ?? 0 : null,
         });
       }
     }
@@ -1262,6 +1440,7 @@ export async function getPlanDashboard(planYearId: string) {
       totalVariance: plan.totals.totalVariance,
       completionPercent: plan.totals.completionPercent,
       completionBand: plan.totals.completionBand,
+      sudahAdaPo: sudahAdaPo ? totalSudahAdaPo(plan.categories, sudahAdaPo) : null,
     },
     rows,
     variantRows,

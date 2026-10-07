@@ -1,6 +1,9 @@
 import { prisma } from '@elorae/db';
 import { cariTeks } from "@/lib/db/cari-teks";
-import { kontenTerlambat, tierKol, type StatusBrief, type StatusKonten, type Tier } from './aturan';
+import { nilaiBebanDiakui, tierKol, type StatusKonten, type Tier } from './aturan';
+import { kontenTelat } from './rencana-konten';
+import { hariIniWib } from '@/lib/tanggal-isian';
+import { isJalurKeluar, tahapAktif, type Tahap } from './tahap';
 
 /**
  * Kueri creative marketing.
@@ -23,6 +26,9 @@ export type BarisKol = {
   tier: Tier;
   akun: { platform: string; handle: string; followers: number; url: string | null }[];
   jumlahBrief: number;
+  /** "Jangan diajak lagi" — kolaborasi baru dengannya ditolak (`kolDiblokir`). */
+  diblokir: boolean;
+  alasanBlokir: string | null;
 };
 
 export async function daftarKol(opts?: { hanyaAktif?: boolean; cari?: string }): Promise<BarisKol[]> {
@@ -48,6 +54,8 @@ export async function daftarKol(opts?: { hanyaAktif?: boolean; cari?: string }):
       phone: true,
       isActive: true,
       rateCard: true,
+      blockedAt: true,
+      blockReason: true,
       accounts: { select: { platform: true, handle: true, followers: true, url: true } },
       _count: { select: { briefs: true } },
     },
@@ -64,6 +72,8 @@ export async function daftarKol(opts?: { hanyaAktif?: boolean; cari?: string }):
     tier: tierKol(k.accounts.map((a) => a.followers)),
     akun: k.accounts.map((a) => ({ ...a, platform: String(a.platform) })),
     jumlahBrief: k._count.briefs,
+    diblokir: k.blockedAt !== null,
+    alasanBlokir: k.blockReason,
   }));
 }
 
@@ -71,55 +81,66 @@ export type BarisBrief = {
   id: string;
   docNo: string;
   kolNama: string;
-  campaign: string;
-  status: StatusBrief;
+  campaignId: string | null;
+  campaignNama: string | null;
+  tahap: Tahap;
   fee: number;
   /** Fee yang BOLEH dihitung sebagai beban. Nol selama kontennya belum tayang. */
   bebanDiakui: number;
   dueDate: string | null;
   jumlahDeliverable: number;
+  /** Jumlah barang dalam RENCANA sampel (bukan yang sudah dikirim). */
   jumlahBarang: number;
+  /** Ada pengiriman sampel yang stoknya sudah keluar. */
   barangSudahBerangkat: boolean;
 };
 
-export async function daftarBrief(opts?: { status?: StatusBrief; kolId?: string }): Promise<BarisBrief[]> {
+/**
+ * Daftar kolaborasi ringkas (tabel `KolBrief`). Dipakai pemilih "kaitkan ke
+ * kolaborasi" di rencana konten dan angka ringkas; daftar Kolaborasi lengkap
+ * punya kuerinya sendiri.
+ */
+export async function daftarBrief(opts?: { tahap?: Tahap; kolId?: string }): Promise<BarisBrief[]> {
   const rows = await prisma.kolBrief.findMany({
     where: {
-      ...(opts?.status ? { status: opts.status } : {}),
+      ...(opts?.tahap ? { tahap: opts.tahap } : {}),
       ...(opts?.kolId ? { kolId: opts.kolId } : {}),
     },
     orderBy: [{ createdAt: 'desc' }],
     select: {
       id: true,
       docNo: true,
-      campaign: true,
-      status: true,
+      tahap: true,
       fee: true,
       dueDate: true,
       stockIssuedAt: true,
+      campaignId: true,
+      campaign: { select: { name: true } },
       kol: { select: { name: true } },
       deliverables: { select: { qty: true } },
       items: { select: { qty: true } },
+      shipments: { where: { stockIssuedAt: { not: null } }, select: { id: true }, take: 1 },
     },
   });
 
   return rows.map((b) => {
-    const status = b.status as StatusBrief;
+    const tahap = b.tahap as Tahap;
     const fee = angka(b.fee);
     return {
       id: b.id,
       docNo: b.docNo,
       kolNama: b.kol.name,
-      campaign: b.campaign,
-      status,
+      campaignId: b.campaignId,
+      campaignNama: b.campaign?.name ?? null,
+      tahap,
       fee,
       // Aturan 1 diterapkan di kueri, bukan di layar: setiap pembaca daftar ini
       // mendapat angka yang sama tanpa harus mengingat aturannya.
-      bebanDiakui: status === 'TAYANG' || status === 'SELESAI' ? fee : 0,
+      bebanDiakui: nilaiBebanDiakui(tahap, fee),
       dueDate: b.dueDate?.toISOString() ?? null,
       jumlahDeliverable: b.deliverables.reduce((s, d) => s + d.qty, 0),
       jumlahBarang: b.items.reduce((s, i) => s + i.qty, 0),
-      barangSudahBerangkat: b.stockIssuedAt !== null,
+      barangSudahBerangkat: b.stockIssuedAt !== null || b.shipments.length > 0,
     };
   });
 }
@@ -181,7 +202,8 @@ export async function daftarKonten(opts?: {
     },
   });
 
-  const sekarang = new Date();
+  // Lewat jadwal menurut HARI WIB (bug G): jadwal hari ini belum terlambat.
+  const hariIni = hariIniWib();
   return rows.map((k) => ({
     id: k.id,
     title: k.title,
@@ -197,13 +219,14 @@ export async function daftarKonten(opts?: {
     briefDocNo: k.brief?.docNo ?? null,
     briefId: k.briefId,
     caption: k.caption,
-    terlambat: kontenTerlambat(k.status as StatusKonten, k.scheduledAt, sekarang),
+    terlambat: kontenTelat(k.status as StatusKonten, k.scheduledAt, hariIni),
   }));
 }
 
 export type RingkasanKreatif = {
   kontenTerjadwal: number;
   kontenTerlambat: number;
+  /** Kolaborasi yang masih berjalan (bukan SELESAI, bukan jalur keluar). */
   briefBerjalan: number;
   /** Total fee yang SUDAH boleh dihitung sebagai beban — bukan yang dijanjikan. */
   bebanDiakui: number;
@@ -221,14 +244,14 @@ export type RingkasanKreatif = {
  */
 export async function ringkasKreatif(): Promise<RingkasanKreatif> {
   const [konten, brief] = await Promise.all([daftarKonten(), daftarBrief()]);
-  const berjalan: StatusBrief[] = ['DIKIRIM', 'DISETUJUI', 'KONTEN_DITERIMA'];
   return {
     kontenTerjadwal: konten.filter((k) => k.status === 'DIJADWALKAN').length,
     kontenTerlambat: konten.filter((k) => k.terlambat).length,
-    briefBerjalan: brief.filter((b) => berjalan.includes(b.status)).length,
+    briefBerjalan: brief.filter((b) => tahapAktif(b.tahap)).length,
     bebanDiakui: brief.reduce((s, b) => s + b.bebanDiakui, 0),
+    // Kolaborasi yang keluar jalur tidak menjanjikan apa pun lagi.
     feeBelumDiakui: brief
-      .filter((b) => b.status !== 'BATAL')
+      .filter((b) => !isJalurKeluar(b.tahap))
       .reduce((s, b) => s + (b.fee - b.bebanDiakui), 0),
   };
 }

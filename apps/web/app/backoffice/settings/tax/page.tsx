@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
+import { KartuSuratPo } from './KartuSuratPo';
 
 export default function TaxSettingsPage() {
   const t = useTranslations('tax');
@@ -96,6 +97,8 @@ export default function TaxSettingsPage() {
           </Button>
         </CardContent>
       </Card>
+
+      <KartuSuratPo />
     </div>
   );
 }
