@@ -1,4 +1,17 @@
-import type { Prisma } from "@elorae/db";
+import type { Prisma, PrismaClient } from "@elorae/db";
+import { matchKey } from "@/lib/items/variant-rows";
+
+type AnyClient = PrismaClient | Prisma.TransactionClient;
+
+/**
+ * The key every stocktake map matches stock and ledger rows on. The `(storeId, itemId,
+ * variantSku)` unique index is `utf8mb4_unicode_ci`, so the database — and `setStoreStock`, which
+ * reads through it — treats `ABC-01` and `abc-01` as one row; an exact-match map would read a
+ * line spelled one way as having no stock under the other. A MATCH key only: never write it.
+ */
+export function stockMatchKey(itemId: string, variantSku: string | null): string {
+  return `${itemId}::${matchKey(variantSku)}`;
+}
 
 export type CountMomentLine = { key: string; itemId: string; variantSku: string; moment: Date };
 
@@ -9,7 +22,8 @@ export type CountMomentLine = { key: string; itemId: string; variantSku: string;
  * detail screen's booked preview reads too), and `saveStocktakeCounts` subtracts it from live
  * stock to re-baseline `expectedQty`, so none of them can disagree about which rows a count
  * already saw. One read covers every line: the ledger rows after the EARLIEST moment, then
- * each line keeps only its own item::variant's rows stamped strictly after its own moment. A line
+ * each line keeps only its own item::variant's rows (matched on `stockMatchKey`, case-folded like
+ * the balance row they moved) stamped strictly after its own moment. A line
  * with no entry here re-applies nothing.
  *
  * Excluded per line: a retur's store row whose retur was RAISED on or before that line's
@@ -42,7 +56,7 @@ export type CountMomentLine = { key: string; itemId: string; variantSku: string;
  * approval writes its rows at or a few milliseconds after the `approvedAt` it stamps.
  */
 export async function sumMovementsSinceCountCents(
-  tx: Prisma.TransactionClient,
+  tx: AnyClient,
   storeId: string,
   lines: CountMomentLine[],
 ): Promise<Map<string, number>> {
@@ -75,7 +89,7 @@ export async function sumMovementsSinceCountCents(
 
   const rowsByKey = new Map<string, typeof postCount>();
   for (const r of postCount) {
-    const key = `${r.itemId}::${r.variantSku}`;
+    const key = stockMatchKey(r.itemId, r.variantSku);
     const rows = rowsByKey.get(key);
     if (rows) rows.push(r);
     else rowsByKey.set(key, [r]);
@@ -84,7 +98,7 @@ export async function sumMovementsSinceCountCents(
   for (const l of lines) {
     const momentMs = l.moment.getTime();
     let cents = 0;
-    for (const r of rowsByKey.get(`${l.itemId}::${l.variantSku ?? ""}`) ?? []) {
+    for (const r of rowsByKey.get(stockMatchKey(l.itemId, l.variantSku)) ?? []) {
       if (r.createdAt.getTime() <= momentMs) continue;
       if (r.refType === "StoreStocktake") continue;
       if (r.refType === "FieldReturn" && (returRaisedAtMs.get(r.refId) ?? Infinity) <= momentMs) continue;
@@ -117,11 +131,11 @@ type BookedLine = {
  * A line's moment is its own `countFinishedAt`, falling back to the document's for a line saved
  * before the line column existed; a line with neither re-applies nothing and books
  * `counted − live`. A key with no `StoreStock` row is live `0`. One read covers every line's live
- * qty — every row of the counted items at the store — and `variantSku` is non-nullable on both
- * sides, so the keys match exactly.
+ * qty — every row of the counted items at the store — matched on `stockMatchKey`, so a line and
+ * its stock row spelled in different case still meet, exactly as `setStoreStock` will find it.
  */
 export async function bookedCountCents(
-  tx: Prisma.TransactionClient,
+  tx: AnyClient,
   storeId: string,
   documentCountFinishedAt: Date | null,
   lines: BookedLine[],
@@ -141,12 +155,12 @@ export async function bookedCountCents(
     where: { storeId, itemId: { in: itemIds } },
     select: { itemId: true, variantSku: true, qty: true },
   });
-  const liveCentsByStockKey = new Map(liveRows.map((s) => [`${s.itemId}::${s.variantSku}`, Math.round(s.qty.toNumber() * 100)]));
+  const liveCentsByStockKey = new Map(liveRows.map((s) => [stockMatchKey(s.itemId, s.variantSku), Math.round(s.qty.toNumber() * 100)]));
 
   for (const l of lines) {
     bookedByKey.set(l.key, {
       targetCents: Math.round(l.countedQty * 100) + (sinceCentsByKey.get(l.key) ?? 0),
-      liveCents: liveCentsByStockKey.get(`${l.itemId}::${l.variantSku}`) ?? 0,
+      liveCents: liveCentsByStockKey.get(stockMatchKey(l.itemId, l.variantSku)) ?? 0,
     });
   }
   return bookedByKey;

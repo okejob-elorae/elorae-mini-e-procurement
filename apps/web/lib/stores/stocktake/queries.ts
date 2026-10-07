@@ -1,6 +1,6 @@
 import { prisma, Prisma, type PrismaClient } from "@elorae/db";
 import { KONSI_COUNT_SYSTEM_ACTOR } from "@/lib/konsi-count-schedule/schedule";
-import { bookedCountCents } from "./booked";
+import { bookedCountCents, stockMatchKey } from "./booked";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
@@ -334,8 +334,8 @@ export async function getStoreStocktakeById(id: string): Promise<StoreStocktakeD
   const labelFor = (userId: string | null): string | null => (userId ? labelById.get(userId) ?? "—" : null);
 
   /**
-   * One batched read of the store's CURRENT StoreStock, keyed the same way the writer keys its
-   * own upsert (itemId + variantSku, defaulting a null variantSku to ""). Never trusted as a
+   * One batched read of the store's CURRENT StoreStock, matched on `stockMatchKey` — case-folded,
+   * the way the writer's own upsert resolves a row through the unique index. Never trusted as a
    * substitute for `expectedQty` — this is purely the live figure the approve dialog shows
    * alongside it, and what the detail screen previews an edited count against.
    */
@@ -346,7 +346,7 @@ export async function getStoreStocktakeById(id: string): Promise<StoreStocktakeD
         select: { itemId: true, variantSku: true, qty: true },
       })
     : [];
-  const liveQtyByKey = new Map(liveStock.map((s) => [`${s.itemId}::${s.variantSku}`, s.qty.toNumber()]));
+  const liveQtyByKey = new Map(liveStock.map((s) => [stockMatchKey(s.itemId, s.variantSku), s.qty.toNumber()]));
 
   /* Only an open document can still be approved, so only its counted lines carry a booked figure. */
   const isOpen = r.status === "DRAFT" || r.status === "PENDING_VERIFICATION";
@@ -398,7 +398,7 @@ export async function getStoreStocktakeById(id: string): Promise<StoreStocktakeD
       qtyAtApproval: l.qtyAtApproval === null ? null : l.qtyAtApproval.toNumber(),
       appliedQty: l.appliedQty === null ? null : l.appliedQty.toNumber(),
       isAdded: l.isAdded,
-      liveQty: liveQtyByKey.get(`${l.itemId}::${l.variantSku}`) ?? 0,
+      liveQty: liveQtyByKey.get(stockMatchKey(l.itemId, l.variantSku)) ?? 0,
       bookedVarianceQty: bookedOf(l.id),
     })),
   };

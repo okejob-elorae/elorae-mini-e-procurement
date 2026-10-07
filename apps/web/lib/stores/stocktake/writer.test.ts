@@ -559,6 +559,51 @@ d("store stocktake writer (test bed only)", () => {
       expect(approved!.lines[0].bookedVarianceQty).toBeNull();
       expect(approved!.lines[0].varianceQty).toBe(-1);
     });
+
+    it("matches a line and its stock and ledger rows across variant-key case, as the unique index does", async () => {
+      /* The line is spelled `abc-01`; the store's row and its sale are `ABC-01` — one key to the database. */
+      const id = await mkStocktake({ lines: [{ itemId: itemMainId, variantSku: "abc-01", expectedQty: 0, countedQty: null }] });
+      await prisma.storeStock.create({ data: { storeId, itemId: itemMainId, variantSku: "ABC-01", qty: 10, avgCost: 0 } });
+      const row = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id) }, select: { id: true } });
+      await saveStocktakeCounts({ stocktakeId: id, lines: [{ lineId: row.id, countedQty: 8, cause: "SHRINKAGE", reason: "two missing" }], submit: true, userId: adminId });
+      await backdateCountStamps(id, 1000);
+
+      const saved = await prisma.storeStocktakeLine.findUniqueOrThrow({ where: { id: row.id } });
+      expect(Number(saved.expectedQty)).toBe(10);
+      expect(Number(saved.varianceQty)).toBe(-2);
+
+      /* One sold after the count, recorded under the stock row's own spelling. */
+      await prisma.$transaction((tx) =>
+        moveStoreStock(tx, {
+          storeId,
+          itemId: itemMainId,
+          variantSku: "ABC-01",
+          qtyDelta: -1,
+          refType: "SpgSale",
+          refId: `${tag}-SpgSale-case`,
+          refDocNumber: `SpgSale/${tag}`,
+          createdById: adminId,
+        }),
+      );
+
+      /* Target 8 − 1 = 7 against live 9: the same −2, not +8 against a missed row or −1 against a missed sale. */
+      const open = await getStoreStocktakeById(id);
+      expect(open!.lines[0].liveQty).toBe(9);
+      expect(open!.lines[0].bookedVarianceQty).toBe(-2);
+
+      await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+      const rows = await stocktakeLedgerRows(id, itemMainId);
+      expect(rows).toHaveLength(1);
+      expect(Number(rows[0].qty)).toBe(-2);
+      const approved = await prisma.storeStocktakeLine.findUniqueOrThrow({ where: { id: row.id } });
+      expect(Number(approved.varianceQty)).toBe(-2);
+      expect(Number(approved.appliedQty)).toBe(7);
+      const stock = await prisma.storeStock.findMany({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId) } });
+      const folded = stock.filter((s) => s.variantSku.toLowerCase() === "abc-01");
+      expect(folded).toHaveLength(1);
+      expect(Number(folded[0].qty)).toBe(7);
+    });
   });
 
   it("still re-applies the store row of a retur raised after the count", async () => {

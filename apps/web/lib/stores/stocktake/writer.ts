@@ -5,7 +5,7 @@ import { generateDocNumber } from "@/lib/docNumber";
 import { buildStocktakeLines, previousApprovedCountedAt } from "./queries";
 import { StoreStocktakeError } from "./errors";
 import { resolveLineCountMoment } from "./count-moment";
-import { bookedCountCents, sumMovementsSinceCountCents, type CountMomentLine } from "./booked";
+import { bookedCountCents, stockMatchKey, sumMovementsSinceCountCents, type CountMomentLine } from "./booked";
 
 type CauseValue = "SHRINKAGE" | "UNRECORDED_SALE";
 
@@ -299,8 +299,8 @@ export async function saveStocktakeCounts(input: {
 
     /*
      * The re-baselined expected figure per line, in cents — only on a save that stamps the count.
-     * One read of the store's whole StoreStock covers every line, added ones included, and both
-     * variantSku columns are non-nullable `""`, so the keys match exactly.
+     * One read of the store's whole StoreStock covers every line, added ones included, matched on
+     * `stockMatchKey` — case-folded, as the unique index and `setStoreStock` match them.
      */
     const expectedCentsByKey = new Map<string, number>();
     if (countsChanged) {
@@ -308,7 +308,7 @@ export async function saveStocktakeCounts(input: {
         where: { storeId: st.storeId },
         select: { itemId: true, variantSku: true, qty: true },
       });
-      const liveCentsByStockKey = new Map(liveRows.map((s) => [`${s.itemId}::${s.variantSku}`, Math.round(s.qty.toNumber() * 100)]));
+      const liveCentsByStockKey = new Map(liveRows.map((s) => [stockMatchKey(s.itemId, s.variantSku), Math.round(s.qty.toNumber() * 100)]));
 
       const momentLines: CountMomentLine[] = [];
       for (const e of existing) {
@@ -320,7 +320,7 @@ export async function saveStocktakeCounts(input: {
       const sinceCentsByKey = await sumMovementsSinceCountCents(tx, st.storeId, momentLines);
 
       const rebaseline = (key: string, itemId: string, variantSku: string) =>
-        expectedCentsByKey.set(key, (liveCentsByStockKey.get(`${itemId}::${variantSku}`) ?? 0) - (sinceCentsByKey.get(key) ?? 0));
+        expectedCentsByKey.set(key, (liveCentsByStockKey.get(stockMatchKey(itemId, variantSku)) ?? 0) - (sinceCentsByKey.get(key) ?? 0));
       for (const e of existing) rebaseline(e.line.id, e.line.itemId, e.line.variantSku);
       for (const a of added) rebaseline(a.key, a.al.itemId, a.al.variantSku);
     }
