@@ -488,6 +488,8 @@ d("store stocktake writer (test bed only)", () => {
       expect(Number(saved.expectedQty)).toBe(10);
       expect(Number(saved.varianceQty)).toBe(-2);
       await moveAfterCount(itemMainId, -2, "FieldReturn", returnId);
+      /* The retur must be settled before the count can approve (RETUR_PENDING), so model its approval too. */
+      await prisma.fieldReturn.update({ where: { id: returnId }, data: { status: "APPROVED", approvedAt: new Date() } });
 
       await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
 
@@ -505,6 +507,8 @@ d("store stocktake writer (test bed only)", () => {
       const returnId = await raiseReturBeforeCount();
       const id = await countThroughSave({ itemId: itemMainId, expectedQty: 10, countedQty: 7, reason: "one missing" });
       await moveAfterCount(itemMainId, -2, "FieldReturn", returnId);
+      /* The retur must be settled before the count can approve (RETUR_PENDING), so model its approval too. */
+      await prisma.fieldReturn.update({ where: { id: returnId }, data: { status: "APPROVED", approvedAt: new Date() } });
 
       /* Target 7 against live 8: a shortfall of one, with a reason but no cause. */
       await expect(approveStoreStocktake({ stocktakeId: id, approvedById: adminId })).rejects.toMatchObject({ code: "SHORTFALL_NEEDS_CAUSE" });
@@ -1326,6 +1330,8 @@ d("store stocktake writer (test bed only)", () => {
         /* The shelf was counted a minute ago with the two already gone; the retur settles before the sheet is sent. */
         const countedAtMs = Date.now() - 60_000;
         await moveAfterCount(itemMainId, -2, "FieldReturn", returnId);
+        /* The retur must be settled before the count can approve (RETUR_PENDING), so model its approval too. */
+        await prisma.fieldReturn.update({ where: { id: returnId }, data: { status: "APPROVED", approvedAt: new Date() } });
 
         const sentAtMs = Date.now();
         await saveStocktakeCounts({
