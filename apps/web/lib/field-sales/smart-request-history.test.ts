@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { getSmartRequestHistory } from "./queries";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -18,6 +18,14 @@ d("getSmartRequestHistory (test bed only)", () => {
   let visitId = "";
 
   beforeEach(async () => {
+    uomId = "";
+    itemAId = "";
+    itemBId = "";
+    itemCId = "";
+    itemDId = "";
+    storeId = "";
+    salesmanId = "";
+    visitId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
     const itemA = await prisma.item.create({ data: { sku: `${sku}-A`, nameId: "A", nameEn: "A", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 10000 } });
@@ -64,12 +72,12 @@ d("getSmartRequestHistory (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId: { in: [itemAId, itemBId, itemCId, itemDId] } } });
-    await prisma.fieldSalesOrder.deleteMany({ where: { storeId } });
-    await prisma.storeVisit.deleteMany({ where: { id: visitId } });
-    await prisma.store.deleteMany({ where: { id: storeId } });
-    await prisma.item.deleteMany({ where: { id: { in: [itemAId, itemBId, itemCId, itemDId] } } });
-    await prisma.uOM.deleteMany({ where: { id: uomId } });
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId: { in: [itemAId, itemBId, itemCId, itemDId].map(seededId) } } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.storeVisit.deleteMany({ where: { id: seededId(visitId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.item.deleteMany({ where: { id: { in: [itemAId, itemBId, itemCId, itemDId].map(seededId) } } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
 
   it("neverOrdered = candidates minus any non-rejected order's items", async () => {

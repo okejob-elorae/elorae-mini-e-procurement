@@ -91,6 +91,11 @@ d("konsi queries (test bed only)", () => {
   let transferOrderId = "";
 
   beforeEach(async () => {
+    uomId = "";
+    itemId = "";
+    storeId = "";
+    salesmanId = "";
+    visitId = "";
     itemId2 = "";
     transferOrderId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
@@ -111,26 +116,26 @@ d("konsi queries (test bed only)", () => {
     await prisma.konsiTransfer.deleteMany({ where: { orderId: seededId(transferOrderId) } });
     await prisma.deliveryShipmentLine.deleteMany({ where: { shipment: { orderId: seededId(transferOrderId) } } });
     await prisma.deliveryShipment.deleteMany({ where: { orderId: seededId(transferOrderId) } });
-    await prisma.salesHistory.deleteMany({ where: { itemId } });
-    await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId } });
+    await prisma.salesHistory.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId: seededId(itemId) } });
     if (itemId2) {
-      await prisma.salesHistory.deleteMany({ where: { itemId: itemId2 } });
-      await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId: itemId2 } });
+      await prisma.salesHistory.deleteMany({ where: { itemId: seededId(itemId2) } });
+      await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId: seededId(itemId2) } });
     }
-    await prisma.fieldSalesOrder.deleteMany({ where: { storeId } });
-    await prisma.storeVisit.deleteMany({ where: { id: visitId } });
-    await prisma.store.deleteMany({ where: { id: storeId } });
-    await prisma.stockReservation.deleteMany({ where: { itemId } });
-    await prisma.stockAdjustment.deleteMany({ where: { itemId } });
-    await prisma.inventoryValue.deleteMany({ where: { itemId } });
-    await prisma.item.deleteMany({ where: { id: itemId } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.storeVisit.deleteMany({ where: { id: seededId(visitId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
     if (itemId2) {
-      await prisma.stockReservation.deleteMany({ where: { itemId: itemId2 } });
-      await prisma.stockAdjustment.deleteMany({ where: { itemId: itemId2 } });
-      await prisma.inventoryValue.deleteMany({ where: { itemId: itemId2 } });
-      await prisma.item.deleteMany({ where: { id: itemId2 } });
+      await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId2) } });
+      await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId2) } });
+      await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId2) } });
+      await prisma.item.deleteMany({ where: { id: seededId(itemId2) } });
     }
-    await prisma.uOM.deleteMany({ where: { id: uomId } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
 
   const seedOrder = async (opts: { orderType: "PUTUS" | "KONSI"; status?: "PENDING_APPROVAL" | "APPROVED" | "REJECTED"; forItemId?: string }) => {
@@ -321,6 +326,11 @@ d("getStoreSentItems (test bed only)", () => {
   let visitId = "";
 
   beforeEach(async () => {
+    uomId = "";
+    itemId = "";
+    storeId = "";
+    salesmanId = "";
+    visitId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
     const item = await prisma.item.create({ data: { sku, nameId: "Kaos Test", nameEn: "Test Shirt", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 35000 } });
@@ -339,15 +349,15 @@ d("getStoreSentItems (test bed only)", () => {
     await prisma.salesHistory.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { order: { storeId: seededId(storeId) } } });
-    await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId } });
-    await prisma.fieldSalesOrder.deleteMany({ where: { storeId } });
-    await prisma.storeVisit.deleteMany({ where: { id: visitId } });
-    await prisma.store.deleteMany({ where: { id: storeId } });
-    await prisma.stockReservation.deleteMany({ where: { itemId } });
-    await prisma.stockAdjustment.deleteMany({ where: { itemId } });
-    await prisma.inventoryValue.deleteMany({ where: { itemId } });
-    await prisma.item.deleteMany({ where: { id: itemId } });
-    await prisma.uOM.deleteMany({ where: { id: uomId } });
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.storeVisit.deleteMany({ where: { id: seededId(visitId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
 
   const seedOrder = async (opts: {
@@ -453,6 +463,11 @@ d("putus detail with promo (test bed only)", () => {
   let promoId = "";
 
   beforeEach(async () => {
+    uomId = "";
+    itemId = "";
+    storeId = "";
+    salesmanId = "";
+    visitId = "";
     promoId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
@@ -470,16 +485,16 @@ d("putus detail with promo (test bed only)", () => {
   });
 
   afterEach(async () => {
-    if (promoId) await prisma.promo.deleteMany({ where: { id: promoId } });
-    await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId } });
-    await prisma.fieldSalesOrder.deleteMany({ where: { storeId } });
-    await prisma.storeVisit.deleteMany({ where: { id: visitId } });
-    await prisma.store.deleteMany({ where: { id: storeId } });
-    await prisma.stockReservation.deleteMany({ where: { itemId } });
-    await prisma.stockAdjustment.deleteMany({ where: { itemId } });
-    await prisma.inventoryValue.deleteMany({ where: { itemId } });
-    await prisma.item.deleteMany({ where: { id: itemId } });
-    await prisma.uOM.deleteMany({ where: { id: uomId } });
+    if (promoId) await prisma.promo.deleteMany({ where: { id: seededId(promoId) } });
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.storeVisit.deleteMany({ where: { id: seededId(visitId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
 
   it("getFieldSalesOrderById exposes discountAmount, appliedPromoName, and order discount fields", async () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { createFieldSalesOrder } from "./writer";
 import { MinQtyViolationError } from "./errors";
 
@@ -19,6 +19,11 @@ d("createFieldSalesOrder — skipMinQty (test bed only)", () => {
   let visitId = "";
 
   beforeEach(async () => {
+    uomId = "";
+    itemId = "";
+    storeId = "";
+    salesmanId = "";
+    visitId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
     const item = await prisma.item.create({ data: { sku, nameId: "T", nameEn: "T", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 35000 } });
@@ -33,16 +38,16 @@ d("createFieldSalesOrder — skipMinQty (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.salesHistory.deleteMany({ where: { itemId } });
-    await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId } });
-    await prisma.fieldSalesOrder.deleteMany({ where: { storeId } });
-    await prisma.storeVisit.deleteMany({ where: { id: visitId } });
-    await prisma.store.deleteMany({ where: { id: storeId } });
-    await prisma.stockReservation.deleteMany({ where: { itemId } });
-    await prisma.stockAdjustment.deleteMany({ where: { itemId } });
-    await prisma.inventoryValue.deleteMany({ where: { itemId } });
-    await prisma.item.deleteMany({ where: { id: itemId } });
-    await prisma.uOM.deleteMany({ where: { id: uomId } });
+    await prisma.salesHistory.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.storeVisit.deleteMany({ where: { id: seededId(visitId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
 
   const subMinLine = () => ({ itemId, variantSku: "", productName: "X", qty: 1, unitPrice: 0 });

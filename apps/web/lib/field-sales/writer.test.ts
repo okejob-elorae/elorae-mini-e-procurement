@@ -22,6 +22,11 @@ d("field-sales lifecycle writers (test bed only)", () => {
   let promoId = "";
 
   beforeEach(async () => {
+    uomId = "";
+    itemId = "";
+    storeId = "";
+    salesmanId = "";
+    visitId = "";
     itemId2 = "";
     promoId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
@@ -38,12 +43,12 @@ d("field-sales lifecycle writers (test bed only)", () => {
   });
 
   afterEach(async () => {
-    if (promoId) await prisma.promo.deleteMany({ where: { id: promoId } });
-    await prisma.salesHistory.deleteMany({ where: { itemId } });
-    await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId } });
+    if (promoId) await prisma.promo.deleteMany({ where: { id: seededId(promoId) } });
+    await prisma.salesHistory.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId: seededId(itemId) } });
     if (itemId2) {
-      await prisma.salesHistory.deleteMany({ where: { itemId: itemId2 } });
-      await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId: itemId2 } });
+      await prisma.salesHistory.deleteMany({ where: { itemId: seededId(itemId2) } });
+      await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId: seededId(itemId2) } });
     }
     /**
      * The "a konsi order is never gated regardless of the store's limit" test issues a real
@@ -62,7 +67,7 @@ d("field-sales lifecycle writers (test bed only)", () => {
      */
     const orderIds = (await prisma.fieldSalesOrder.findMany({ where: { storeId: seededId(storeId) }, select: { id: true } })).map((o) => o.id);
     if (orderIds.length > 0) {
-      await prisma.auditLog.deleteMany({ where: { entityType: "FieldSalesOrder", entityId: { in: orderIds } } });
+      await prisma.auditLog.deleteMany({ where: { entityType: "FieldSalesOrder", entityId: { in: orderIds.map(seededId) } } });
     }
     /**
      * createFieldSalesOrder writes one AdminNotification (PENDING_ORDER_APPROVAL, always) and
@@ -81,23 +86,23 @@ d("field-sales lifecycle writers (test bed only)", () => {
       const leakedNotifIds = candidateNotifs
         .filter((n) => orderIds.includes((n.metadata as { orderId?: string } | null)?.orderId ?? ""))
         .map((n) => n.id);
-      if (leakedNotifIds.length > 0) await prisma.adminNotification.deleteMany({ where: { id: { in: leakedNotifIds } } });
+      if (leakedNotifIds.length > 0) await prisma.adminNotification.deleteMany({ where: { id: { in: leakedNotifIds.map(seededId) } } });
     }
-    await prisma.fieldSalesOrder.deleteMany({ where: { storeId } });
-    await prisma.storeVisit.deleteMany({ where: { id: visitId } });
-    await prisma.store.deleteMany({ where: { id: storeId } });
-    await prisma.stockReservation.deleteMany({ where: { itemId } });
-    await prisma.stockAdjustment.deleteMany({ where: { itemId } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.storeVisit.deleteMany({ where: { id: seededId(visitId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
     // covers both the base "" row and the extra per-variant rows seeded by the variant test cases
-    await prisma.inventoryValue.deleteMany({ where: { itemId } });
-    await prisma.item.deleteMany({ where: { id: itemId } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
     if (itemId2) {
-      await prisma.stockReservation.deleteMany({ where: { itemId: itemId2 } });
-      await prisma.stockAdjustment.deleteMany({ where: { itemId: itemId2 } });
-      await prisma.inventoryValue.deleteMany({ where: { itemId: itemId2 } });
-      await prisma.item.deleteMany({ where: { id: itemId2 } });
+      await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId2) } });
+      await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId2) } });
+      await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId2) } });
+      await prisma.item.deleteMany({ where: { id: seededId(itemId2) } });
     }
-    await prisma.uOM.deleteMany({ where: { id: uomId } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
 
   const line = () => ({ itemId, variantSku: "", productName: "T", qty: 6, unitPrice: 35000 });
@@ -668,6 +673,11 @@ d("createFieldSalesOrder — konsi", () => {
   let visitId = "";
 
   beforeEach(async () => {
+    uomId = "";
+    itemId = "";
+    storeId = "";
+    salesmanId = "";
+    visitId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
     const item = await prisma.item.create({
@@ -684,16 +694,16 @@ d("createFieldSalesOrder — konsi", () => {
   });
 
   afterEach(async () => {
-    await prisma.salesHistory.deleteMany({ where: { itemId } });
-    await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId } });
-    await prisma.fieldSalesOrder.deleteMany({ where: { storeId } });
-    await prisma.storeVisit.deleteMany({ where: { id: visitId } });
-    await prisma.store.deleteMany({ where: { id: storeId } });
-    await prisma.stockReservation.deleteMany({ where: { itemId } });
-    await prisma.stockAdjustment.deleteMany({ where: { itemId } });
-    await prisma.inventoryValue.deleteMany({ where: { itemId } });
-    await prisma.item.deleteMany({ where: { id: itemId } });
-    await prisma.uOM.deleteMany({ where: { id: uomId } });
+    await prisma.salesHistory.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.storeVisit.deleteMany({ where: { id: seededId(visitId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
 
   it("creates a KONSI order with zero money, no reservation, no min-qty gate", async () => {
@@ -737,6 +747,11 @@ d("approveFieldSalesOrder — konsi", () => {
   };
 
   beforeEach(async () => {
+    uomId = "";
+    itemId = "";
+    storeId = "";
+    salesmanId = "";
+    visitId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
     const store = await prisma.store.create({
@@ -750,20 +765,20 @@ d("approveFieldSalesOrder — konsi", () => {
   });
 
   afterEach(async () => {
-    await prisma.salesHistory.deleteMany({ where: { itemId } });
+    await prisma.salesHistory.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.konsiTransferLine.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.konsiTransfer.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.storeStock.deleteMany({ where: { storeId: seededId(storeId) } });
-    await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId } });
-    await prisma.fieldSalesOrder.deleteMany({ where: { storeId } });
-    await prisma.storeVisit.deleteMany({ where: { id: visitId } });
-    await prisma.store.deleteMany({ where: { id: storeId } });
-    await prisma.stockReservation.deleteMany({ where: { itemId } });
-    await prisma.stockAdjustment.deleteMany({ where: { itemId } });
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.storeVisit.deleteMany({ where: { id: seededId(visitId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
-    await prisma.inventoryValue.deleteMany({ where: { itemId } });
-    await prisma.item.deleteMany({ where: { id: itemId } });
-    await prisma.uOM.deleteMany({ where: { id: uomId } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
 
   it("reserves stock at approve, stores the retail value at markup, writes NO SalesHistory", async () => {
