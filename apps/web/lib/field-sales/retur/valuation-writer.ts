@@ -156,7 +156,8 @@ export async function priceApprovedReturnLine(input: PriceApprovedLineInput): Pr
             lineId: line.id,
             before: {
               unitPrice: line.unitPrice === null ? null : line.unitPrice.toNumber(),
-              lineValue: line.lineValue === null ? null : line.lineValue.toNumber(),
+              /* Always null here: a line that already holds a value is refused above. */
+              lineValue: null,
               priceSource: line.priceSource,
             },
             after: { unitPrice: round2(unitPrice), lineValue, priceSource },
