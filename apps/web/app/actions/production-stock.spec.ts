@@ -141,13 +141,13 @@ d("production stock movement (test bed only)", () => {
         failures.push(`${what}: ${String(e)}`);
       }
     };
-    const itemIds = [fgItemId, rawItemId].map(seededId);
-    await step("price change log", () => prisma.itemPriceChangeLog.deleteMany({ where: { itemId: { in: itemIds } } }));
+    const itemIds = [fgItemId, rawItemId];
+    await step("price change log", () => prisma.itemPriceChangeLog.deleteMany({ where: { itemId: { in: itemIds.map(seededId) } } }));
     await step("fg receipts", () => prisma.fGReceipt.deleteMany({ where: { woId: seededId(woId) } }));
     await step("material issues", () => prisma.materialIssue.deleteMany({ where: { woId: seededId(woId) } }));
     await step("work order", () => prisma.workOrder.deleteMany({ where: { id: seededId(woId) } }));
-    await step("ledger", () => prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: itemIds } } }));
-    await step("inventory", () => prisma.inventoryValue.deleteMany({ where: { itemId: { in: itemIds } } }));
+    await step("ledger", () => prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: itemIds.map(seededId) } } }));
+    await step("inventory", () => prisma.inventoryValue.deleteMany({ where: { itemId: { in: itemIds.map(seededId) } } }));
     await step("fg item", () => prisma.item.deleteMany({ where: { id: seededId(fgItemId) } }));
     await step("raw item", () => prisma.item.deleteMany({ where: { id: seededId(rawItemId) } }));
     await step("uom", () => prisma.uOM.deleteMany({ where: { id: seededId(uomId) } }));

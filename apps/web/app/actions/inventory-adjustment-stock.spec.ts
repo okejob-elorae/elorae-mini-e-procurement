@@ -82,7 +82,7 @@ d("createStockAdjustment stock and ledger writes (test bed only)", () => {
     });
     await step("audit log", () =>
       prisma.auditLog.deleteMany({
-        where: { entityType: "StockAdjustment", entityId: { in: adjustmentIds } },
+        where: { entityType: "StockAdjustment", entityId: { in: adjustmentIds.map(seededId) } },
       }),
     );
     await step("ledger", () => prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } }));
