@@ -1,0 +1,125 @@
+name: CI
+
+# Pemeriksaan untuk setiap PR ke master: type-check apps/api dan apps/web, lint
+# apps/web, dan tes penjaga statis yang TIDAK butuh basis data. Tanpa ini, galat
+# tipe apps/web baru ketahuan di docker build deploy.yml — sesudah PR digabung
+# (lihat CLAUDE.md, PR #229 → deploy 31293514640).
+#
+# Setiap langkah pemeriksaan tetap jalan walau langkah pemeriksaan sebelumnya
+# gagal (`!cancelled()` + syarat langkah persiapannya), jadi satu run melaporkan
+# SEMUA masalah sekaligus, bukan hanya yang pertama.
+
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Type-check + lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v7
+
+      # Node 22 = engines di package.json dan base image Dockerfile (node:22-slim).
+      # setup-node >= v6 hanya cache otomatis untuk npm, jadi tidak mencoba
+      # `pnpm store path` sebelum pnpm terpasang; cache pnpm diurus di bawah.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      # Versi pnpm diambil dari "packageManager" di package.json lewat corepack,
+      # sama seperti Dockerfile.
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack install
+          pnpm --version
+
+      - name: Locate pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # Tanpa DATABASE_URL, packages/db/prisma.config.ts memilih prisma/schema.prisma
+      # (MariaDB) — klien yang sama dengan image produksi. `generate` = prisma
+      # generate + tsc ke dist/, yang dibaca tipe apps/api dan apps/web.
+      - name: Generate Prisma client + build @elorae/db
+        id: db
+        run: pnpm --filter @elorae/db generate
+
+      - name: Type-check apps/api
+        if: ${{ !cancelled() && steps.db.outcome == 'success' }}
+        run: pnpm --filter @elorae/api type-check
+
+      # next-env.d.ts dan .next/types tidak dilacak git; `next build` membuatnya
+      # sebelum memeriksa tipe, jadi di sini dibuat dulu lewat typegen.
+      - name: Generate Next.js types
+        id: typegen
+        if: ${{ !cancelled() && steps.db.outcome == 'success' }}
+        run: pnpm --filter @elorae/web exec next typegen
+
+      # Batas heap sama dengan Dockerfile web (next build memeriksa tipe di sana).
+      - name: Type-check apps/web
+        if: ${{ !cancelled() && steps.typegen.outcome == 'success' }}
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: pnpm --filter @elorae/web type-check
+
+      # Hanya galat yang menggagalkan; peringatan (mis. penjaga teardown spec)
+      # tetap tampil di log tanpa memerahkan run.
+      - name: Lint apps/web
+        if: ${{ !cancelled() && steps.db.outcome == 'success' }}
+        run: pnpm --filter @elorae/web lint
+
+      # Tes penjaga yang TIDAK menyentuh basis data. DATABASE_URL palsu menunjuk
+      # port yang tidak bisa dihubungi, jadi tes yang diam-diam butuh basis data
+      # gagal cepat. (apps/api: src/jest.setup.ts menimpanya ke localhost:3306 —
+      # di runner tidak ada apa pun di sana, hasilnya sama.)
+      - name: Guard tests apps/api (no database)
+        if: ${{ !cancelled() && steps.db.outcome == 'success' }}
+        env:
+          DATABASE_URL: mysql://ci:ci@127.0.0.1:1/ci
+        run: pnpm --filter @elorae/api test -- src/auth/ src/jubelio/resync/jubelio-resync.controller
+
+      - name: Guard tests packages/db (no database)
+        if: ${{ !cancelled() && steps.db.outcome == 'success' }}
+        env:
+          DATABASE_URL: mysql://ci:ci@127.0.0.1:1/ci
+        run: pnpm --filter @elorae/db exec vitest run prisma/migrasi-mariadb.test.ts
+
+      - name: Guard tests apps/web (no database)
+        if: ${{ !cancelled() && steps.db.outcome == 'success' }}
+        env:
+          DATABASE_URL: mysql://ci:ci@127.0.0.1:1/ci
+        run: >-
+          pnpm --filter @elorae/web exec vitest run
+          lib/db/cari-teks.penjaga.test.ts
+          lib/tanpa-use-server.test.ts
+          lib/salesman/penjualan-hp.penjaga.test.ts
+          lib/bantuan/cakupan.test.ts
+          lib/bantuan/daftar.test.ts
+          lib/foto/pembersih-skema.test.ts
+          lib/notifications/tautan-kabar.test.ts
+          lib/finance/journals/role-account-types.test.ts
