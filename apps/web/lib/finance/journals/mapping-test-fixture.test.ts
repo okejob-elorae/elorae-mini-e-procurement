@@ -64,8 +64,10 @@ d("restoreMappings (test bed only)", () => {
   it("a failure on the first role still restores the rest", async () => {
     await pointBothAt(accountA);
     const original = prisma.journalAccountMapping.upsert.bind(prisma.journalAccountMapping);
+    /* The `prisma` proxy hands the spy no real original, so pass through to the bound one explicitly. */
     const spy = vi
       .spyOn(prisma.journalAccountMapping, "upsert")
+      .mockImplementation(original as unknown as typeof prisma.journalAccountMapping.upsert)
       .mockImplementationOnce((() => {
         throw new Error("boom");
       }) as unknown as typeof prisma.journalAccountMapping.upsert);
@@ -88,8 +90,10 @@ d("restoreMappings (test bed only)", () => {
   it("a null entry deletes the row after an earlier failure", async () => {
     await pointBothAt(accountA);
     const original = prisma.journalAccountMapping.upsert.bind(prisma.journalAccountMapping);
+    /* The `prisma` proxy hands the spy no real original, so pass through to the bound one explicitly. */
     const spy = vi
       .spyOn(prisma.journalAccountMapping, "upsert")
+      .mockImplementation(original as unknown as typeof prisma.journalAccountMapping.upsert)
       .mockImplementationOnce((() => {
         throw new Error("boom");
       }) as unknown as typeof prisma.journalAccountMapping.upsert);
