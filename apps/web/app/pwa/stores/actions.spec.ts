@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { prisma, Prisma } from "@elorae/db";
+import { prisma, Prisma, seededId } from "@elorae/db";
 
 // Guard: refuse to run against prod tunnel (port 3307) or api.elorae.cloud
 const DB_URL = process.env.DATABASE_URL ?? "";
@@ -32,6 +32,8 @@ vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 import { checkIn, checkOut } from "./actions";
 
 const TEST_USER_ID = "TEST_USER_ID";
+const RUN = Math.random().toString(36).slice(2, 8).toUpperCase();
+const createdStoreIds: string[] = [];
 
 async function ensureTestUser() {
   await prisma.user.upsert({
@@ -47,9 +49,9 @@ async function ensureTestUser() {
 }
 
 async function makeStore(code: string, opts: { active?: boolean } = {}) {
-  return prisma.store.create({
+  const store = await prisma.store.create({
     data: {
-      code,
+      code: `${code}-${RUN}`,
       name: `Store ${code}`,
       address: "Jl. Test",
       termsType: "PUTUS",
@@ -57,11 +59,15 @@ async function makeStore(code: string, opts: { active?: boolean } = {}) {
       isActive: opts.active ?? true,
     },
   });
+  createdStoreIds.push(store.id);
+  return store;
 }
 
 async function cleanupTestData() {
   await prisma.storeVisit.deleteMany({ where: { userId: TEST_USER_ID } });
-  await prisma.store.deleteMany({ where: { code: { startsWith: "TEST-" } } });
+  await prisma.storeVisit.deleteMany({ where: { storeId: { in: createdStoreIds.map(seededId) } } });
+  await prisma.store.deleteMany({ where: { id: { in: createdStoreIds.map(seededId) } } });
+  createdStoreIds.length = 0;
 }
 
 describe("checkIn / checkOut server actions", () => {
@@ -156,22 +162,23 @@ describe("checkIn / checkOut server actions", () => {
 
   it("checkOut returns FORBIDDEN for another user's visit", async () => {
     const otherUser = await prisma.user.create({
-      data: { email: "other@example.com", passwordHash: "x", name: "Other" },
+      data: { email: `other-${RUN}@example.com`, passwordHash: "x", name: "Other" },
     });
-    const store = await makeStore("TEST-A");
-    const visit = await prisma.storeVisit.create({
-      data: {
-        storeId: store.id,
-        userId: otherUser.id,
-        checkinLat: new Prisma.Decimal(1),
-        checkinLng: new Prisma.Decimal(2),
-      },
-    });
+    try {
+      const store = await makeStore("TEST-A");
+      const visit = await prisma.storeVisit.create({
+        data: {
+          storeId: store.id,
+          userId: otherUser.id,
+          checkinLat: new Prisma.Decimal(1),
+          checkinLng: new Prisma.Decimal(2),
+        },
+      });
 
-    await expect(checkOut({ visitId: visit.id, lat: 5, lng: 6 })).resolves.toEqual({ ok: false, code: "FORBIDDEN" });
-
-    // Cleanup extra user
-    await prisma.storeVisit.deleteMany({ where: { userId: otherUser.id } });
-    await prisma.user.delete({ where: { id: otherUser.id } });
+      await expect(checkOut({ visitId: visit.id, lat: 5, lng: 6 })).resolves.toEqual({ ok: false, code: "FORBIDDEN" });
+    } finally {
+      await prisma.storeVisit.deleteMany({ where: { userId: otherUser.id } });
+      await prisma.user.delete({ where: { id: otherUser.id } });
+    }
   });
 });

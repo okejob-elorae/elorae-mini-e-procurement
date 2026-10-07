@@ -25,7 +25,10 @@ export function useBarcodeWedgeScanner({
   const bufferRef = useRef("");
   const scanInputRef = useRef<HTMLInputElement>(null);
   const onScanRef = useRef(onScan);
-  onScanRef.current = onScan;
+  /* Synced after commit, not during render: scans only arrive from key events, which follow a commit. */
+  useEffect(() => {
+    onScanRef.current = onScan;
+  }, [onScan]);
 
   const emitScan = useCallback((code: string) => {
     const trimmed = code.trim();

@@ -37,6 +37,13 @@ export default async function CollectionsQueuePage({ searchParams }: PageProps) 
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const pageSize = DEFAULT_PAGE_SIZE;
 
+  let loaded: {
+    queueRows: CollectionQueueRow[];
+    total: number;
+    collectors: Awaited<ReturnType<typeof listCollectorCandidates>>;
+    storeOptions: Awaited<ReturnType<typeof listStoreOptions>>;
+  } | null = null;
+
   try {
     const [{ rows, total }, collectors, storeOptions] = await Promise.all([
       listPendingCollections({ collectorId, storeId, dateFrom, dateTo, page, pageSize }),
@@ -70,43 +77,29 @@ export default async function CollectionsQueuePage({ searchParams }: PageProps) 
       };
     });
 
-    return (
-      <CollectionsQueuePageClient
-        rows={queueRows}
-        total={total}
-        collectors={collectors}
-        storeOptions={storeOptions}
-        collectorId={collectorId ?? ""}
-        storeId={storeId ?? ""}
-        dateFrom={sp.from ?? ""}
-        dateTo={sp.to ?? ""}
-        page={page}
-        pageSize={pageSize}
-        canVerify={canVerify}
-        loadError={false}
-      />
-    );
+    loaded = { queueRows, total, collectors, storeOptions };
   } catch (err) {
     /**
      * The error card is the only user-facing signal, and it names no cause — without this the
      * container log holds nothing at all about why the page is blank.
      */
     console.error("[collections-queue] list query failed", err);
-    return (
-      <CollectionsQueuePageClient
-        rows={[]}
-        total={0}
-        collectors={[]}
-        storeOptions={[]}
-        collectorId={collectorId ?? ""}
-        storeId={storeId ?? ""}
-        dateFrom={sp.from ?? ""}
-        dateTo={sp.to ?? ""}
-        page={page}
-        pageSize={pageSize}
-        canVerify={canVerify}
-        loadError={true}
-      />
-    );
   }
+
+  return (
+    <CollectionsQueuePageClient
+      rows={loaded?.queueRows ?? []}
+      total={loaded?.total ?? 0}
+      collectors={loaded?.collectors ?? []}
+      storeOptions={loaded?.storeOptions ?? []}
+      collectorId={collectorId ?? ""}
+      storeId={storeId ?? ""}
+      dateFrom={sp.from ?? ""}
+      dateTo={sp.to ?? ""}
+      page={page}
+      pageSize={pageSize}
+      canVerify={canVerify}
+      loadError={loaded === null}
+    />
+  );
 }

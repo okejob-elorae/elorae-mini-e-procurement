@@ -73,7 +73,7 @@ d("listCollectionQueue (test bed only)", () => {
     const notifsB = await notificationsFor(receivableBId);
     const allNotifIds = [...notifsA, ...notifsB].map((n) => n.id);
     if (allNotifIds.length > 0) {
-      await prisma.adminNotification.deleteMany({ where: { id: { in: allNotifIds } } });
+      await prisma.adminNotification.deleteMany({ where: { id: { in: allNotifIds.map(seededId) } } });
     }
     await prisma.collectionSubmission.deleteMany({ where: { receivableId: { in: [seededId(receivableAId), seededId(receivableBId)] } } });
     await prisma.storeSettlementInvoice.deleteMany({ where: { receivableId: { in: [seededId(receivableAId), seededId(receivableBId)] } } });

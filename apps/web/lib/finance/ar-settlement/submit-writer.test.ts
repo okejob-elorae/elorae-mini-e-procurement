@@ -211,16 +211,16 @@ d("submitSettlement (test bed only)", () => {
       select: { id: true },
     });
     const settlementIds = settlements.map((s) => s.id);
-    await prisma.storeSettlementDeduction.deleteMany({ where: { settlementId: { in: settlementIds } } });
-    await prisma.storeSettlementInvoice.deleteMany({ where: { settlementId: { in: settlementIds } } });
-    await prisma.storeSettlement.deleteMany({ where: { id: { in: settlementIds } } });
+    await prisma.storeSettlementDeduction.deleteMany({ where: { settlementId: { in: settlementIds.map(seededId) } } });
+    await prisma.storeSettlementInvoice.deleteMany({ where: { settlementId: { in: settlementIds.map(seededId) } } });
+    await prisma.storeSettlement.deleteMany({ where: { id: { in: settlementIds.map(seededId) } } });
 
     const returIds = [
       seededId(retId), seededId(retNotApprovedId), seededId(retNotValuedId), seededId(retWrongStoreId),
       seededId(retAppliedId),
     ];
-    await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: returIds } } });
-    await prisma.fieldReturn.deleteMany({ where: { id: { in: returIds } } });
+    await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: returIds.map(seededId) } } });
+    await prisma.fieldReturn.deleteMany({ where: { id: { in: returIds.map(seededId) } } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
 
@@ -789,9 +789,9 @@ d("submitSettlement — sell-through source (test bed only)", () => {
       select: { id: true },
     });
     const settlementIds = settlements.map((s) => s.id);
-    await prisma.storeSettlementDeduction.deleteMany({ where: { settlementId: { in: settlementIds } } });
-    await prisma.storeSettlementInvoice.deleteMany({ where: { settlementId: { in: settlementIds } } });
-    await prisma.storeSettlement.deleteMany({ where: { id: { in: settlementIds } } });
+    await prisma.storeSettlementDeduction.deleteMany({ where: { settlementId: { in: settlementIds.map(seededId) } } });
+    await prisma.storeSettlementInvoice.deleteMany({ where: { settlementId: { in: settlementIds.map(seededId) } } });
+    await prisma.storeSettlement.deleteMany({ where: { id: { in: settlementIds.map(seededId) } } });
 
     /* Children of the 1:1 relation to KonsiSellThrough go before their parents. */
     await prisma.receivable.deleteMany({

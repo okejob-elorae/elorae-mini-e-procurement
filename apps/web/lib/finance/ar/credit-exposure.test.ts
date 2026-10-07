@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { computeStoreCreditExposure } from "./credit-exposure";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -23,15 +23,15 @@ d("computeStoreCreditExposure (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.receivable.deleteMany({ where: { storeId } });
-    await prisma.fieldSalesDeliveryLine.deleteMany({ where: { delivery: { order: { storeId } } } });
-    await prisma.fieldSalesDelivery.deleteMany({ where: { order: { storeId } } });
-    await prisma.fieldSalesOrderLine.deleteMany({ where: { order: { storeId } } });
-    await prisma.fieldSalesOrder.deleteMany({ where: { storeId } });
-    await prisma.store.deleteMany({ where: { id: storeId } });
+    await prisma.receivable.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.fieldSalesDeliveryLine.deleteMany({ where: { delivery: { order: { storeId: seededId(storeId) } } } });
+    await prisma.fieldSalesDelivery.deleteMany({ where: { order: { storeId: seededId(storeId) } } });
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { order: { storeId: seededId(storeId) } } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
     await prisma.item.deleteMany({ where: { sku: { startsWith: `TEST-CEX-ITEM-${token}` } } });
     await prisma.uOM.deleteMany({ where: { code: `TEST-CEX-UOM-${token}` } });
-    await prisma.user.deleteMany({ where: { id: userId } });
+    await prisma.user.deleteMany({ where: { id: seededId(userId) } });
   });
 
   async function makeDeliveredOrder(opts: { orderTotal: number; deliveryTotal: number; recStatus: "OUTSTANDING" | "PARTIAL" | "PAID" | "WRITTEN_OFF"; outstanding: number }) {

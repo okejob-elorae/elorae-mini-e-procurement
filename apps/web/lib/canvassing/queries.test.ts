@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { getLoadableInventory, getVanStock } from "./queries";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -11,6 +11,9 @@ d("canvassing queries (test bed only)", () => {
   let uomId = ""; let itemId = ""; let canvasserId = "";
 
   beforeEach(async () => {
+    uomId = "";
+    itemId = "";
+    canvasserId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${tag}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
     const item = await prisma.item.create({
@@ -28,11 +31,11 @@ d("canvassing queries (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.vanStock.deleteMany({ where: { itemId } });
-    await prisma.inventoryValue.deleteMany({ where: { itemId } });
-    await prisma.item.deleteMany({ where: { id: itemId } });
-    await prisma.uOM.deleteMany({ where: { id: uomId } });
-    await prisma.user.deleteMany({ where: { id: canvasserId } });
+    await prisma.vanStock.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+    await prisma.user.deleteMany({ where: { id: seededId(canvasserId) } });
   });
 
   it("getLoadableInventory returns per-variant available (qtyOnHand - reservedQty)", async () => {

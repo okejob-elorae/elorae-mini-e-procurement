@@ -11,6 +11,10 @@ d("recordVanReconcile (test bed only)", () => {
   let uomId = ""; let itemId = ""; let canvasserId = ""; let adminId = "";
 
   beforeEach(async () => {
+    uomId = "";
+    itemId = "";
+    canvasserId = "";
+    adminId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${tag}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
     const item = await prisma.item.create({ data: { sku: tag, nameId: "T", nameEn: "T", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 5000 } });
@@ -29,15 +33,15 @@ d("recordVanReconcile (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.vanReconcileLine.deleteMany({ where: { itemId } });
-    await prisma.vanReconcile.deleteMany({ where: { canvasserId } });
-    await prisma.vanStock.deleteMany({ where: { itemId } });
-    await prisma.stockAdjustment.deleteMany({ where: { itemId } });
+    await prisma.vanReconcileLine.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.vanReconcile.deleteMany({ where: { canvasserId: seededId(canvasserId) } });
+    await prisma.vanStock.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
-    await prisma.inventoryValue.deleteMany({ where: { itemId } });
-    await prisma.item.deleteMany({ where: { id: itemId } });
-    await prisma.uOM.deleteMany({ where: { id: uomId } });
-    await prisma.user.deleteMany({ where: { id: canvasserId } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+    await prisma.user.deleteMany({ where: { id: seededId(canvasserId) } });
   });
 
   const count = (qty: number) => [{ itemId, variantSku: null, qty }].map(() => ({ itemId, variantSku: null as string | null, countedQty: qty }));
@@ -79,7 +83,7 @@ d("recordVanReconcile (test bed only)", () => {
   });
 
   it("empty van → EMPTY_VAN", async () => {
-    await prisma.vanStock.updateMany({ where: { userId: canvasserId, itemId }, data: { qty: 0 } });
+    await prisma.vanStock.updateMany({ where: { userId: seededId(canvasserId), itemId: seededId(itemId) }, data: { qty: 0 } });
     const res = await recordVanReconcile({ canvasserId, reconciledById: adminId, counts: count(0) });
     expect(res).toEqual({ ok: false, code: "EMPTY_VAN" });
   });

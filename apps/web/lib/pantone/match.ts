@@ -94,8 +94,8 @@ export function buildGradient(hex: string, steps = 9): string[] {
   for (let i = 0; i < steps; i++) {
     const t = steps > 1 ? i / (steps - 1) : 0;
     let L = base.L + (95 - base.L) * (0.5 - t) * 1.2;
-    let a = base.a * (1 - Math.abs(t - 0.5));
-    let bVal = base.b * (1 - Math.abs(t - 0.5));
+    const a = base.a * (1 - Math.abs(t - 0.5));
+    const bVal = base.b * (1 - Math.abs(t - 0.5));
     let out = labToHex(Math.max(0, Math.min(100, L)), a, bVal);
 
     // LAB→RGB rounding can collapse adjacent steps to the same hex (e.g. dark colors → #010000).

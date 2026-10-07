@@ -51,6 +51,7 @@ function preserveSettings(keys: string[]): void {
     for (const key of keys) {
       const original = originals.get(key) ?? null;
       if (original === null) {
+        /* eslint-disable-next-line no-restricted-syntax -- key is the loop variable over the fixed keys array, never undefined */
         await prisma.systemSetting.deleteMany({ where: { key } });
       } else {
         await prisma.systemSetting.upsert({

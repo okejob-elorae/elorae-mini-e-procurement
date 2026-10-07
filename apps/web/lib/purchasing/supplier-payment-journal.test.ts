@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import {
   hasStandingPaymentJournalWhileUnpaid,
   poIdsWithStandingPaymentJournalWhileUnpaid,
@@ -44,8 +44,8 @@ async function deleteJournalsWithSourceIdPrefix(sourceType: string, prefix: stri
   });
   const ids = journals.map((j) => j.id);
   if (ids.length) {
-    await prisma.journalLine.deleteMany({ where: { journalId: { in: ids } } });
-    await prisma.journal.deleteMany({ where: { id: { in: ids } } });
+    await prisma.journalLine.deleteMany({ where: { journalId: { in: ids.map(seededId) } } });
+    await prisma.journal.deleteMany({ where: { id: { in: ids.map(seededId) } } });
   }
 }
 
@@ -80,7 +80,7 @@ async function cleanupPo(tracked: TrackedPo): Promise<void> {
     /* best-effort */
   }
   try {
-    await prisma.gRN.deleteMany({ where: { id: { in: tracked.grnIds } } });
+    await prisma.gRN.deleteMany({ where: { id: { in: tracked.grnIds.map(seededId) } } });
   } catch {
     /* best-effort */
   }
@@ -127,9 +127,9 @@ const ROLE_TYPES: Array<[PostingRole, AccountType]> = [
 
 d("supplier payment journal (test bed only)", () => {
   let token: string;
-  let userId: string;
-  let supplierTypeId: string;
-  let supplierId: string;
+  let userId = "";
+  let supplierTypeId = "";
+  let supplierId = "";
   let mappingSnapshot: MappingSnapshot;
   const accountIds: Record<string, string> = {};
   let createdPos: TrackedPo[] = [];
@@ -157,6 +157,9 @@ d("supplier payment journal (test bed only)", () => {
    * global vitest.config.ts ceiling.
    */
   beforeAll(async () => {
+    userId = "";
+    supplierTypeId = "";
+    supplierId = "";
     token = Math.floor(Math.random() * 10_000_000).toString();
     mappingSnapshot = await snapshotMappings(ROLE_TYPES.map(([role]) => role));
 
@@ -212,22 +215,22 @@ d("supplier payment journal (test bed only)", () => {
       }
     }
     try {
-      await prisma.chartAccount.deleteMany({ where: { id: { in: Object.values(accountIds) } } });
+      await prisma.chartAccount.deleteMany({ where: { id: { in: Object.values(accountIds).map(seededId) } } });
     } catch (e) {
       console.warn("[supplier-payment-journal.test.ts] failed to delete test chart accounts", accountIds, e);
     }
     try {
-      await prisma.supplier.deleteMany({ where: { id: supplierId } });
+      await prisma.supplier.deleteMany({ where: { id: seededId(supplierId) } });
     } catch (e) {
       console.warn("[supplier-payment-journal.test.ts] failed to delete test supplier", supplierId, e);
     }
     try {
-      await prisma.supplierType.deleteMany({ where: { id: supplierTypeId } });
+      await prisma.supplierType.deleteMany({ where: { id: seededId(supplierTypeId) } });
     } catch (e) {
       console.warn("[supplier-payment-journal.test.ts] failed to delete test supplier type", supplierTypeId, e);
     }
     try {
-      await prisma.user.deleteMany({ where: { id: userId } });
+      await prisma.user.deleteMany({ where: { id: seededId(userId) } });
     } catch (e) {
       console.warn("[supplier-payment-journal.test.ts] failed to delete test user", userId, e);
     }

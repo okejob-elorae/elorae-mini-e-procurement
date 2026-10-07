@@ -33,8 +33,7 @@ const eslintConfig = defineConfig([
    * the WHOLE TABLE — whenever the fixture hook threw before assigning that id.
    * Measured on the bed: `item.count({ where: { id: undefined } })` returns every
    * row. It has already happened: four separate runs left orphan rows behind, and
-   * the `packages/db` specs were one hook failure from truncating seven tables
-   * (fixed in PR #223).
+   * the `packages/db` specs were one hook failure from truncating seven tables.
    *
    * The rule matches on the VALUE being a bare identifier, not on shorthand.
    * Shorthand is only the prettier spelling: `{ where: { id: leafId } }` collapses
@@ -53,23 +52,25 @@ const eslintConfig = defineConfig([
    * - A member expression (`{ id: fixture.itemId }`) — 46 in the specs. Reading a
    *   property off an undefined object THROWS rather than silently yielding
    *   `undefined`, so that shape fails loud instead of truncating.
+   * - A SCREAMING_CASE identifier (`TEST_USER_ID`, `GL_CUTOVER_SETTING_KEY`). A
+   *   module constant is assigned at import, so a failed hook cannot leave it
+   *   unassigned and it can never be `undefined` by omission.
    * - A filter that over-matches real rows with no variable involved at all
    *   (`{ code: { startsWith: "TEST-" } }`, a bare `createdAt` range). Those need
    *   judgement, not a selector.
    *
-   * WARN, not error: 36 test files currently trip it (233 warnings, of which ~83%
-   * are unassigned `let` fixture ids — the real hazard — and ~2% are imported
-   * constants, harmless). A red `eslint .` helps nobody, so flip this to "error"
-   * once that sweep lands. A rule nobody must obey is decoration.
+   * This is an error, and CI's lint step runs it. A justified non-id value (a
+   * string-typed `key` or an order number that is never a fixture id) takes an
+   * inline `eslint-disable-next-line no-restricted-syntax -- <reason>`.
    */
   {
     files: ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx"],
     rules: {
       "no-restricted-syntax": [
-        "warn",
+        "error",
         {
           selector:
-            "CallExpression[callee.property.name=/^(deleteMany|updateMany)$/] Property[key.name='where'] ObjectExpression Property[value.type='Identifier']",
+            "CallExpression[callee.property.name=/^(deleteMany|updateMany)$/] Property[key.name='where'] ObjectExpression Property[value.type='Identifier'][value.name!=/^[A-Z][A-Z0-9_]*$/]",
           message:
             "Spec teardown: pass this id through a guard (`{ itemId: seededId(itemId) }`) instead of filtering on the bare variable. Prisma drops an undefined term, so the filter becomes an unfiltered delete of the whole table on the shared :3308 bed when the fixture hook failed before assigning it.",
         },

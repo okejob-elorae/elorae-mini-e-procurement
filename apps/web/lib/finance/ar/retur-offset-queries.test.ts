@@ -125,12 +125,12 @@ d("retur-offset-queries (test bed only)", () => {
 
   afterEach(async () => {
     const settlementIds = createdSettlementIds.map((id) => seededId(id));
-    await prisma.storeSettlementDeduction.deleteMany({ where: { settlementId: { in: settlementIds } } });
-    await prisma.storeSettlement.deleteMany({ where: { id: { in: settlementIds } } });
+    await prisma.storeSettlementDeduction.deleteMany({ where: { settlementId: { in: settlementIds.map(seededId) } } });
+    await prisma.storeSettlement.deleteMany({ where: { id: { in: settlementIds.map(seededId) } } });
 
     const returnIds = createdReturnIds.map((id) => seededId(id));
-    await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: returnIds } } });
-    await prisma.fieldReturn.deleteMany({ where: { id: { in: returnIds } } });
+    await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: returnIds.map(seededId) } } });
+    await prisma.fieldReturn.deleteMany({ where: { id: { in: returnIds.map(seededId) } } });
     await prisma.receivable.deleteMany({ where: { id: seededId(receivableId) } });
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { id: seededId(deliveryLineId) } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { id: seededId(deliveryId) } });
@@ -170,7 +170,7 @@ d("retur-offset-queries (test bed only)", () => {
   });
 
   it("suggestOffsetAllocations returns [] for a dangling priceDeliveryLineId", async () => {
-    await prisma.fieldSalesDeliveryLine.deleteMany({ where: { id: deliveryLineId } });
+    await prisma.fieldSalesDeliveryLine.deleteMany({ where: { id: seededId(deliveryLineId) } });
     const suggestion = await suggestOffsetAllocations(returAvailableId);
     expect(suggestion).toEqual([]);
     /* Re-create so afterEach's own teardown of deliveryLineId is a no-op, not a dangling id it never seeded. */

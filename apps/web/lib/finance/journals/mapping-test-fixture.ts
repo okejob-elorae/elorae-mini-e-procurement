@@ -23,15 +23,24 @@ export async function snapshotMappings(roles: PostingRole[]): Promise<MappingSna
 }
 
 export async function restoreMappings(snapshot: MappingSnapshot): Promise<void> {
+  const failures: string[] = [];
+  /* Every role is attempted, so one failure cannot strand the others on test accounts. */
   for (const [role, chartAccountId] of Object.entries(snapshot)) {
-    if (chartAccountId) {
-      await prisma.journalAccountMapping.upsert({
-        where: { role: role as PostingRole },
-        create: { role: role as PostingRole, chartAccountId },
-        update: { chartAccountId },
-      });
-    } else {
-      await prisma.journalAccountMapping.deleteMany({ where: { role: role as PostingRole } });
+    try {
+      if (chartAccountId) {
+        await prisma.journalAccountMapping.upsert({
+          where: { role: role as PostingRole },
+          create: { role: role as PostingRole, chartAccountId },
+          update: { chartAccountId },
+        });
+      } else {
+        await prisma.journalAccountMapping.deleteMany({ where: { role: role as PostingRole } });
+      }
+    } catch (e) {
+      failures.push(`${role} (→ ${chartAccountId ?? "no row"}): ${String(e)}`);
     }
+  }
+  if (failures.length > 0) {
+    throw new Error(`restoreMappings could not restore ${failures.length} role(s) — ${failures.join(" | ")}`);
   }
 }

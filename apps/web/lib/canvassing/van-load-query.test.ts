@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { getVanLoadById } from "./queries";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -15,6 +15,11 @@ d("getVanLoadById (test bed only)", () => {
   let adminId = "";
 
   beforeEach(async () => {
+    uomId = "";
+    itemId = "";
+    canvasserId = "";
+    adminId = "";
+    loadId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${tag}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
     const item = await prisma.item.create({
@@ -38,11 +43,11 @@ d("getVanLoadById (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.vanLoadLine.deleteMany({ where: { itemId } });
-    await prisma.vanLoad.deleteMany({ where: { id: loadId } });
-    await prisma.item.deleteMany({ where: { id: itemId } });
-    await prisma.uOM.deleteMany({ where: { id: uomId } });
-    await prisma.user.deleteMany({ where: { id: canvasserId } });
+    await prisma.vanLoadLine.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.vanLoad.deleteMany({ where: { id: seededId(loadId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+    await prisma.user.deleteMany({ where: { id: seededId(canvasserId) } });
   });
 
   it("returns lines with variant label for a variant line, null for variantless", async () => {

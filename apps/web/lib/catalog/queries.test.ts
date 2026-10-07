@@ -140,6 +140,12 @@ d("listCatalogForPwa — konsi neverSent (test bed only)", () => {
   let visitId = "";
 
   beforeEach(async () => {
+    uomId = "";
+    sentItemId = "";
+    freshItemId = "";
+    storeId = "";
+    salesmanId = "";
+    visitId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
 
@@ -181,15 +187,15 @@ d("listCatalogForPwa — konsi neverSent (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId: { in: [sentItemId, freshItemId] } } });
-    await prisma.fieldSalesOrder.deleteMany({ where: { storeId } });
-    await prisma.storeVisit.deleteMany({ where: { id: visitId } });
-    await prisma.store.deleteMany({ where: { id: storeId } });
-    await prisma.stockReservation.deleteMany({ where: { itemId: { in: [sentItemId, freshItemId] } } });
-    await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: [sentItemId, freshItemId] } } });
-    await prisma.inventoryValue.deleteMany({ where: { itemId: { in: [sentItemId, freshItemId] } } });
-    await prisma.item.deleteMany({ where: { id: { in: [sentItemId, freshItemId] } } });
-    await prisma.uOM.deleteMany({ where: { id: uomId } });
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId: { in: [sentItemId, freshItemId].map(seededId) } } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.storeVisit.deleteMany({ where: { id: seededId(visitId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.stockReservation.deleteMany({ where: { itemId: { in: [sentItemId, freshItemId].map(seededId) } } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: [sentItemId, freshItemId].map(seededId) } } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: { in: [sentItemId, freshItemId].map(seededId) } } });
+    await prisma.item.deleteMany({ where: { id: { in: [sentItemId, freshItemId].map(seededId) } } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
 
   it("marks the sent item neverSent:false and the untouched item neverSent:true", async () => {
@@ -209,6 +215,10 @@ d("listCatalogForPwa — effective min-qty (test bed only)", () => {
   let storeId = "";
 
   beforeEach(async () => {
+    uomId = "";
+    globalItemId = "";
+    overrideItemId = "";
+    storeId = "";
     await prisma.systemSetting.upsert({
       where: { key: "putus.minOrderQty" },
       create: { key: "putus.minOrderQty", value: "6" },
@@ -235,12 +245,12 @@ d("listCatalogForPwa — effective min-qty (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.store.deleteMany({ where: { id: storeId } });
-    await prisma.stockReservation.deleteMany({ where: { itemId: { in: [globalItemId, overrideItemId] } } });
-    await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: [globalItemId, overrideItemId] } } });
-    await prisma.inventoryValue.deleteMany({ where: { itemId: { in: [globalItemId, overrideItemId] } } });
-    await prisma.item.deleteMany({ where: { id: { in: [globalItemId, overrideItemId] } } });
-    await prisma.uOM.deleteMany({ where: { id: uomId } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.stockReservation.deleteMany({ where: { itemId: { in: [globalItemId, overrideItemId].map(seededId) } } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: [globalItemId, overrideItemId].map(seededId) } } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: { in: [globalItemId, overrideItemId].map(seededId) } } });
+    await prisma.item.deleteMany({ where: { id: { in: [globalItemId, overrideItemId].map(seededId) } } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
 
   it("catalog payload carries effective min-qty per item", async () => {

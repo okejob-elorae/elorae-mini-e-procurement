@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { postSalesReturnRevenueJournal, postSalesReturnCogsJournal, classifySaleLegs } from "./sales-return-journal";
 import { postSalesRevenueJournal, postSalesCogsJournal } from "./sales-journal";
 import { GL_CUTOVER_SETTING_KEY } from "./sweep";
@@ -11,16 +11,16 @@ const d = isProd ? describe.skip : describe;
 
 d("sales return auto-journal (test bed only)", () => {
   let token: number;
-  let userId: string;
-  let uomId: string;
-  let itemId: string;
-  let orderId: string;
-  let returnId: string;
-  let adjIds: string[];
-  let arId: string;
-  let revId: string;
-  let cogsId: string;
-  let invId: string;
+  let userId = "";
+  let uomId = "";
+  let itemId = "";
+  let orderId = "";
+  let returnId = "";
+  let adjIds: string[] = [];
+  let arId = "";
+  let revId = "";
+  let cogsId = "";
+  let invId = "";
   let mappingSnapshot: MappingSnapshot;
   let cutoverSnapshot: string | null;
 
@@ -147,14 +147,23 @@ d("sales return auto-journal (test bed only)", () => {
       select: { id: true },
     });
     const ids = journals.map((j) => j.id);
-    await prisma.journalLine.deleteMany({ where: { journalId: { in: ids } } });
-    await prisma.journal.deleteMany({ where: { id: { in: ids } } });
+    await prisma.journalLine.deleteMany({ where: { journalId: { in: ids.map(seededId) } } });
+    await prisma.journal.deleteMany({ where: { id: { in: ids.map(seededId) } } });
   }
 
   const returnJournalCount = (): Promise<number> =>
     prisma.journal.count({ where: { sourceId: returnId ?? "" } });
 
   beforeEach(async () => {
+    userId = "";
+    uomId = "";
+    itemId = "";
+    arId = "";
+    revId = "";
+    cogsId = "";
+    invId = "";
+    orderId = "";
+    returnId = "";
     token = Math.floor(Math.random() * 1_000_000);
     mappingSnapshot = await snapshotMappings(["AR", "SALES_REVENUE", "COGS", "INVENTORY"]);
     const setting = await prisma.systemSetting.findUnique({
@@ -218,22 +227,22 @@ d("sales return auto-journal (test bed only)", () => {
      * deleteMany with an empty where clears the whole table on the shared bed.
      */
     await step("journals", async () => {
-      const journals = await prisma.journal.findMany({ where: { postedById: userId ?? "" }, select: { id: true } });
+      const journals = await prisma.journal.findMany({ where: { postedById: seededId(userId) }, select: { id: true } });
       const jids = journals.map((j) => j.id);
       if (jids.length) {
-        await prisma.journalLine.deleteMany({ where: { journalId: { in: jids } } });
-        await prisma.journal.deleteMany({ where: { id: { in: jids } } });
+        await prisma.journalLine.deleteMany({ where: { journalId: { in: jids.map(seededId) } } });
+        await prisma.journal.deleteMany({ where: { id: { in: jids.map(seededId) } } });
       }
     });
-    await step("accounts", () => prisma.chartAccount.deleteMany({ where: { id: { in: [arId, revId, cogsId, invId].filter(Boolean) } } }));
-    await step("returnItems", () => prisma.salesReturnItem.deleteMany({ where: { salesReturnId: returnId ?? "" } }));
-    await step("returns", () => prisma.salesReturn.deleteMany({ where: { id: returnId ?? "" } }));
-    await step("orderItems", () => prisma.salesOrderItem.deleteMany({ where: { salesOrderId: orderId ?? "" } }));
-    await step("orders", () => prisma.salesOrder.deleteMany({ where: { id: orderId ?? "" } }));
-    await step("adjustments", () => prisma.stockAdjustment.deleteMany({ where: { id: { in: adjIds ?? [] } } }));
-    await step("item", () => prisma.item.deleteMany({ where: { id: itemId ?? "" } }));
-    await step("uom", () => prisma.uOM.deleteMany({ where: { id: uomId ?? "" } }));
-    await step("user", () => prisma.user.deleteMany({ where: { id: userId ?? "" } }));
+    await step("accounts", () => prisma.chartAccount.deleteMany({ where: { id: { in: [arId, revId, cogsId, invId].map(seededId).filter(Boolean) } } }));
+    await step("returnItems", () => prisma.salesReturnItem.deleteMany({ where: { salesReturnId: seededId(returnId) } }));
+    await step("returns", () => prisma.salesReturn.deleteMany({ where: { id: seededId(returnId) } }));
+    await step("orderItems", () => prisma.salesOrderItem.deleteMany({ where: { salesOrderId: seededId(orderId) } }));
+    await step("orders", () => prisma.salesOrder.deleteMany({ where: { id: seededId(orderId) } }));
+    await step("adjustments", () => prisma.stockAdjustment.deleteMany({ where: { id: { in: adjIds.map(seededId) } } }));
+    await step("item", () => prisma.item.deleteMany({ where: { id: seededId(itemId) } }));
+    await step("uom", () => prisma.uOM.deleteMany({ where: { id: seededId(uomId) } }));
+    await step("user", () => prisma.user.deleteMany({ where: { id: seededId(userId) } }));
 
     if (failures.length) throw new Error(`sales return journal spec teardown failed — ${failures.join(" | ")}`);
   });
@@ -256,7 +265,7 @@ d("sales return auto-journal (test bed only)", () => {
   });
 
   it("no accepted items → both NOTHING_TO_POST", async () => {
-    await prisma.salesReturnItem.updateMany({ where: { salesReturnId: returnId }, data: { decision: "REJECTED" } });
+    await prisma.salesReturnItem.updateMany({ where: { salesReturnId: seededId(returnId) }, data: { decision: "REJECTED" } });
     expect(await postSalesReturnRevenueJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "NOTHING_TO_POST" });
     expect(await postSalesReturnCogsJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "NOTHING_TO_POST" });
   });
@@ -315,7 +324,7 @@ d("sales return auto-journal (test bed only)", () => {
    */
   it("sale's cogs leg has nothing to post → cogs reversal refuses ORIGINAL_SALE_OUTSIDE_LEDGER", async () => {
     await unjournalTheSale(["SALESORDER_COGS"]);
-    await prisma.salesOrderItem.updateMany({ where: { salesOrderId: orderId ?? "" }, data: { cogs: 0 } });
+    await prisma.salesOrderItem.updateMany({ where: { salesOrderId: seededId(orderId) }, data: { cogs: 0 } });
     expect(await postSalesReturnCogsJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "ORIGINAL_SALE_OUTSIDE_LEDGER" });
     expect(await returnJournalCount()).toBe(0);
   });
@@ -329,7 +338,7 @@ d("sales return auto-journal (test bed only)", () => {
 
   it("zero-value return still reports NOTHING_TO_POST, even with no sale journal to reverse", async () => {
     await unjournalTheSale(["SALESORDER_REVENUE", "SALESORDER_COGS"]);
-    await prisma.salesReturnItem.updateMany({ where: { salesReturnId: returnId }, data: { decision: "REJECTED" } });
+    await prisma.salesReturnItem.updateMany({ where: { salesReturnId: seededId(returnId) }, data: { decision: "REJECTED" } });
     expect(await postSalesReturnRevenueJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "NOTHING_TO_POST" });
     expect(await postSalesReturnCogsJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "NOTHING_TO_POST" });
   });

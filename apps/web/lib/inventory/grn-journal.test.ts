@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { postGrnJournal, postGrnReversalJournal } from "./grn-journal";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../finance/journals/mapping-test-fixture";
 
@@ -9,15 +9,21 @@ const d = isProd ? describe.skip : describe;
 
 d("GRN auto-journal (test bed only)", () => {
   let token: string;
-  let userId: string;
-  let supplierId: string;
-  let grnId: string;
-  let supplierTypeId: string;
-  let inventoryId: string;
-  let apId: string;
+  let userId = "";
+  let supplierId = "";
+  let grnId = "";
+  let supplierTypeId = "";
+  let inventoryId = "";
+  let apId = "";
   let mappingSnapshot: MappingSnapshot;
 
   beforeEach(async () => {
+    userId = "";
+    supplierTypeId = "";
+    supplierId = "";
+    grnId = "";
+    inventoryId = "";
+    apId = "";
     token = Math.floor(Math.random() * 10_000_000).toString();
     mappingSnapshot = await snapshotMappings(["INVENTORY", "AP"]);
 
@@ -64,14 +70,14 @@ d("GRN auto-journal (test bed only)", () => {
   });
 
   afterEach(async () => {
-    const journals = await prisma.journal.findMany({ where: { postedById: userId }, select: { id: true } });
+    const journals = await prisma.journal.findMany({ where: { postedById: seededId(userId) }, select: { id: true } });
     const ids = journals.map((j) => j.id);
     if (ids.length) {
-      await prisma.journalLine.deleteMany({ where: { journalId: { in: ids } } });
-      await prisma.journal.deleteMany({ where: { id: { in: ids } } });
+      await prisma.journalLine.deleteMany({ where: { journalId: { in: ids.map(seededId) } } });
+      await prisma.journal.deleteMany({ where: { id: { in: ids.map(seededId) } } });
     }
     await restoreMappings(mappingSnapshot);
-    await prisma.chartAccount.deleteMany({ where: { id: { in: [inventoryId, apId] } } });
+    await prisma.chartAccount.deleteMany({ where: { id: { in: [inventoryId, apId].map(seededId) } } });
     await prisma.gRN.delete({ where: { id: grnId } });
     await prisma.supplier.delete({ where: { id: supplierId } });
     await prisma.supplierType.delete({ where: { id: supplierTypeId } });

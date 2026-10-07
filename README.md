@@ -124,6 +124,10 @@ autossh -fNL 3307:127.0.0.1:3306 elorae@api.elorae.cloud
 
 The MariaDB port is bound to `127.0.0.1` on the VPS — no public reach, tunnel is mandatory.
 
+## CI
+
+`.github/workflows/ci.yml` runs on every pull request to `master` and on every push to `master` that touches more than docs and markdown. Its `checks` job needs no database: it type-checks `apps/api` and `apps/web`, lints `apps/web` (`apps/api` has no ESLint config yet, so it is not linted) and runs the api jest suite. Its `db-specs` job runs the full `packages/db` and `apps/web` vitest suites against a throwaway MariaDB 11.4, migrated through the same `mariadb` client the deploy uses and seeded with `packages/db/prisma/seed.ts`. CI does not gate the deploy, and no check is required for merging. Local runs stay scoped to the specs you changed, as `AGENTS.md` describes.
+
 ## Production deploy — Hostinger VPS
 
 Both `apps/web` and `apps/api` run on the same Hostinger VPS alongside MariaDB + Redis + Caddy, all via Docker Compose. Vercel is no longer used (decommissioned 2026-06-18). Public URLs: `https://elorae.cloud` (web) and `https://api.elorae.cloud` (api).

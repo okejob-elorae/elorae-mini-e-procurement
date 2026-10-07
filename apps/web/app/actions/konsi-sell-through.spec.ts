@@ -115,13 +115,13 @@ d("konsi sell-through actions (test bed only)", () => {
           return ids.includes(m?.docId ?? "") || ids.includes(m?.sellThroughId ?? "");
         })
         .map((n) => n.id);
-      if (ownNotificationIds.length > 0) await prisma.adminNotification.deleteMany({ where: { id: { in: ownNotificationIds } } });
+      if (ownNotificationIds.length > 0) await prisma.adminNotification.deleteMany({ where: { id: { in: ownNotificationIds.map(seededId) } } });
 
-      await prisma.journalLine.deleteMany({ where: { journal: { sourceType: { startsWith: "KONSI_SELLTHRU_" }, sourceId: { in: ids } } } });
-      await prisma.journal.deleteMany({ where: { sourceType: { startsWith: "KONSI_SELLTHRU_" }, sourceId: { in: ids } } });
+      await prisma.journalLine.deleteMany({ where: { journal: { sourceType: { startsWith: "KONSI_SELLTHRU_" }, sourceId: { in: ids.map(seededId) } } } });
+      await prisma.journal.deleteMany({ where: { sourceType: { startsWith: "KONSI_SELLTHRU_" }, sourceId: { in: ids.map(seededId) } } });
       if (mappingSnapshot) await restoreMappings(mappingSnapshot);
       const chartAccountIds = [arId, salesRevenueId, cogsId, inventoryId, inventoryVarianceId].map((id) => seededId(id));
-      await prisma.chartAccount.deleteMany({ where: { id: { in: chartAccountIds } } });
+      await prisma.chartAccount.deleteMany({ where: { id: { in: chartAccountIds.map(seededId) } } });
     } finally {
       await fx.afterEach();
     }
@@ -423,8 +423,8 @@ d("konsi sell-through actions (test bed only)", () => {
   it("a reversal missing after the void is offered and posted by the retry", async () => {
     const id = await approvedInvoicedReport();
     await voidSellThroughAction(id, "wrong resolution");
-    await prisma.journalLine.deleteMany({ where: { journal: { sourceType: "KONSI_SELLTHRU_COGS_VOID", sourceId: id } } });
-    await prisma.journal.deleteMany({ where: { sourceType: "KONSI_SELLTHRU_COGS_VOID", sourceId: id } });
+    await prisma.journalLine.deleteMany({ where: { journal: { sourceType: "KONSI_SELLTHRU_COGS_VOID", sourceId: seededId(id) } } });
+    await prisma.journal.deleteMany({ where: { sourceType: "KONSI_SELLTHRU_COGS_VOID", sourceId: seededId(id) } });
     await expect(retrySellThroughJournalsAction(id)).resolves.toEqual({ ok: true, posted: ["konsi_sell_through_cogs_void"], stillPending: [] });
   }, SLOW);
 

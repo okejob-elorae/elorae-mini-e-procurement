@@ -66,10 +66,10 @@ d("getSellableCatalogForSpg (test bed only)", () => {
   });
 
   afterEach(async () => {
-    const storeIds = [seededId(storeAId), seededId(storeBId), seededId(discountStoreId), seededId(putusStoreId)];
-    await prisma.storeStock.deleteMany({ where: { storeId: { in: storeIds } } });
+    const storeIds = [storeAId, storeBId, discountStoreId, putusStoreId];
+    await prisma.storeStock.deleteMany({ where: { storeId: { in: storeIds.map(seededId) } } });
     await prisma.item.deleteMany({ where: { id: { in: [seededId(itemId), seededId(shortItemId), seededId(neverHeldItemId)] } } });
-    await prisma.store.deleteMany({ where: { id: { in: storeIds } } });
+    await prisma.store.deleteMany({ where: { id: { in: storeIds.map(seededId) } } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
 

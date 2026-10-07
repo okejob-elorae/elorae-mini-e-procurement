@@ -34,7 +34,7 @@ describe("reportStuckDeliveryCompletionAction", () => {
 
   afterEach(async () => {
     const created = [...(await stuckRows(carryId)), ...(await stuckRows(expeditionId))].map((r) => r.id);
-    await prisma.adminNotification.deleteMany({ where: { id: { in: created } } });
+    await prisma.adminNotification.deleteMany({ where: { id: { in: created.map(seededId) } } });
     await prisma.deliveryShipment.delete({ where: { id: seededId(carryId) } });
     await prisma.deliveryShipment.delete({ where: { id: seededId(expeditionId) } });
   });

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { postSettlementJournal } from "./journal";
 import { GL_CUTOVER_SETTING_KEY } from "../sales/sweep";
@@ -11,18 +11,21 @@ const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
 d("postSettlementJournal (test bed only)", () => {
-  let token: string; // unique per test — digits only (CoA codes are numeric)
-  let adminId: string;
-  let bankId: string;
-  let feeId: string;
-  let arId: string;
-  let feeAdminAccountId: string;
-  let feeServiceAccountId: string;
-  let feeCommissionAccountId: string;
-  let feeProcessingAccountId: string;
-  let feeOtherAccountId: string;
-  let settlementId: string;
-  let mappingSnapshot: MappingSnapshot;
+  let token = ""; // unique per file run — digits only (CoA codes are numeric)
+  let adminId = "";
+  let bankId = "";
+  let feeId = "";
+  let arId = "";
+  let feeAdminAccountId = "";
+  let feeServiceAccountId = "";
+  let feeCommissionAccountId = "";
+  let feeProcessingAccountId = "";
+  let feeOtherAccountId = "";
+  let settlementId = "";
+  let mappingSnapshot: MappingSnapshot | undefined;
+  /* The user and chart accounts are seeded once per file; each test gets its own sale, numbered by this counter. */
+  let orderSeq = 0;
+  let orderNo = "";
   /* `undefined` until this test's snapshot is taken, so a hook that died earlier restores nothing rather than a stale value. */
   let cutoverSnapshot: string | null | undefined;
   /* Set by the only two helpers that change the cutover, so `afterEach` restores it only after a test moved it. */
@@ -151,16 +154,23 @@ d("postSettlementJournal (test bed only)", () => {
     await prisma.settlement.delete({ where: { id } });
   }
 
-  beforeEach(async () => {
-    orderId = "";
-    orderJournalId = "";
-    cutoverSnapshot = undefined;
-    cutoverTouched = false;
-    const setting = await prisma.systemSetting.findUnique({
-      where: { key: GL_CUTOVER_SETTING_KEY },
-      select: { value: true },
-    });
-    cutoverSnapshot = setting?.value ?? null;
+  const accountIds = () =>
+    [bankId, feeId, arId, feeAdminAccountId, feeServiceAccountId, feeCommissionAccountId, feeProcessingAccountId, feeOtherAccountId].map(seededId);
+
+  /* Collects every teardown failure instead of stopping at the first, so one failed delete cannot strand the rest. */
+  const isolated = () => {
+    const failures: string[] = [];
+    const step = async (what: string, fn: () => Promise<unknown>) => {
+      try {
+        await fn();
+      } catch (e) {
+        failures.push(`${what}: ${String(e)}`);
+      }
+    };
+    return { failures, step };
+  };
+
+  beforeAll(async () => {
     token = Math.floor(Math.random() * 10_000_000).toString();
     mappingSnapshot = await snapshotMappings([
       "BANK",
@@ -210,6 +220,23 @@ d("postSettlementJournal (test bed only)", () => {
     });
     feeOtherAccountId = feeOther.id;
 
+  });
+
+  beforeEach(async () => {
+    orderId = "";
+    orderJournalId = "";
+    settlementId = "";
+    cutoverSnapshot = undefined;
+    cutoverTouched = false;
+    const setting = await prisma.systemSetting.findUnique({
+      where: { key: GL_CUTOVER_SETTING_KEY },
+      select: { value: true },
+    });
+    cutoverSnapshot = setting?.value ?? null;
+    orderSeq += 1;
+    orderNo = `SO-STL-${token}-${orderSeq}`;
+
+    /* Several tests clear category roles, so every test re-points all eight. */
     await setAccountMapping("BANK", bankId);
     await setAccountMapping("MARKETPLACE_FEE", feeId);
     await setAccountMapping("AR", arId);
@@ -222,8 +249,8 @@ d("postSettlementJournal (test bed only)", () => {
     /* Negative Jubelio id: real `salesorderId`s on the shared bed are positive, so this cannot collide with one. */
     const order = await prisma.salesOrder.create({
       data: {
-        salesorderId: -(1_000_000_000 + Number(token)),
-        salesorderNo: `SO-STL-${token}`,
+        salesorderId: -(1_000_000_000 + Number(token) * 100 + orderSeq),
+        salesorderNo: orderNo,
         channel: "SHOPEE",
         sourceName: "t",
         status: "COMPLETED",
@@ -261,7 +288,7 @@ d("postSettlementJournal (test bed only)", () => {
         lines: {
           create: [
             {
-              orderNo: `SO-STL-${token}`,
+              orderNo,
               netIncome: 1000,
               hargaAsliProduk: 0,
               totalDiskonProduk: 0,
@@ -282,45 +309,55 @@ d("postSettlementJournal (test bed only)", () => {
   });
 
   afterEach(async () => {
+    const { failures, step } = isolated();
     /* Live config first: the dev cron arms itself off the cutover, so no delete below may stand between a failure and restoring it. */
     if (cutoverTouched) {
-      if (cutoverSnapshot === null) {
-        await prisma.systemSetting.deleteMany({ where: { key: GL_CUTOVER_SETTING_KEY } });
-      } else if (cutoverSnapshot !== undefined) {
-        await writeCutover(cutoverSnapshot);
+      const snapshot = cutoverSnapshot;
+      await step("cutover", async () => {
+        if (snapshot === null) {
+          await prisma.systemSetting.deleteMany({ where: { key: GL_CUTOVER_SETTING_KEY } });
+        } else if (snapshot !== undefined) {
+          await writeCutover(snapshot);
+        }
+      });
+    }
+    await step("settlement journal", async () => {
+      const journal = await prisma.journal.findUnique({
+        where: { sourceType_sourceId: { sourceType: "SETTLEMENT", sourceId: seededId(settlementId) } },
+        select: { id: true },
+      });
+      if (journal) {
+        await prisma.journalLine.deleteMany({ where: { journalId: journal.id } });
+        await prisma.journal.delete({ where: { id: journal.id } });
       }
+    });
+    await step("settlement", () => prisma.settlement.deleteMany({ where: { id: seededId(settlementId) } }));
+    await step("order journal", () =>
+      prisma.journal.deleteMany({ where: { sourceType: "SALESORDER_REVENUE", sourceId: seededId(orderId) } }),
+    );
+    await step("order", () => prisma.salesOrder.deleteMany({ where: { id: seededId(orderId) } }));
+    if (failures.length > 0) throw new Error(failures.join(" | "));
+  });
+
+  afterAll(async () => {
+    const { failures, step } = isolated();
+    /* Mappings first: they point the shared bed's live roles at throwaway accounts until restored. */
+    if (mappingSnapshot === undefined) {
+      failures.push("mapping snapshot was never taken");
+    } else {
+      const snapshot = mappingSnapshot;
+      await step(`restoreMappings (→ ${JSON.stringify(snapshot)})`, () => restoreMappings(snapshot));
     }
-    const journal = await prisma.journal.findUnique({
-      where: { sourceType_sourceId: { sourceType: "SETTLEMENT", sourceId: settlementId } },
-      select: { id: true },
-    });
-    if (journal) {
-      await prisma.journalLine.deleteMany({ where: { journalId: journal.id } });
-      await prisma.journal.delete({ where: { id: journal.id } });
+    await step("chartAccount.deleteMany", () => prisma.chartAccount.deleteMany({ where: { id: { in: accountIds() } } }));
+    await step("user.deleteMany", () => prisma.user.deleteMany({ where: { id: seededId(adminId) } }));
+    if (failures.length > 0) {
+      console.error(
+        "[settlement/journal.test.ts] teardown failed — JournalAccountMapping may still point at throwaway test accounts. " +
+          "Check Finance → Pemetaan Akun on the :3308 dev DB and re-map by hand if needed.",
+        failures,
+      );
+      throw new Error(failures.join(" | "));
     }
-    await restoreMappings(mappingSnapshot);
-    await prisma.chartAccount.deleteMany({
-      where: {
-        id: {
-          in: [
-            bankId,
-            feeId,
-            arId,
-            feeAdminAccountId,
-            feeServiceAccountId,
-            feeCommissionAccountId,
-            feeProcessingAccountId,
-            feeOtherAccountId,
-          ],
-        },
-      },
-    });
-    await prisma.settlement.delete({ where: { id: settlementId } });
-    await prisma.journal.deleteMany({
-      where: { sourceType: "SALESORDER_REVENUE", sourceId: seededId(orderId) },
-    });
-    await prisma.salesOrder.deleteMany({ where: { id: seededId(orderId) } });
-    await prisma.user.delete({ where: { id: adminId } });
   });
 
   it("posts a balanced DR Bank + DR Fee, CR AR journal + marks RECONCILED", async () => {
@@ -387,7 +424,7 @@ d("postSettlementJournal (test bed only)", () => {
         lines: {
           create: [
             {
-              orderNo: `SO-STL-${token}`,
+              orderNo,
               netIncome: 4500,
               hargaAsliProduk: 0,
               totalDiskonProduk: 0,
@@ -699,7 +736,7 @@ d("postSettlementJournal (test bed only)", () => {
 
   it("refuses LINES_UNMATCHED when a line has no matched order, posting nothing", async () => {
     await prisma.settlementLine.updateMany({
-      where: { settlementId },
+      where: { settlementId: seededId(settlementId) },
       data: { matchStatus: "UNMATCHED", matchedSalesOrderId: null },
     });
     const r = await postSettlementJournal(settlementId, adminId, prisma);
@@ -739,7 +776,7 @@ d("postSettlementJournal (test bed only)", () => {
     await prisma.settlementLine.create({
       data: {
         settlementId,
-        orderNo: `SO-STL-${token}-unmatched`,
+        orderNo: `${orderNo}-unmatched`,
         netIncome: 0,
         hargaAsliProduk: 0,
         totalDiskonProduk: 0,
@@ -846,7 +883,7 @@ d("postSettlementJournal (test bed only)", () => {
 
   it("reports CHECKSUM_BLOCKED and NOTHING_TO_POST ahead of the gate", async () => {
     await prisma.settlementLine.updateMany({
-      where: { settlementId },
+      where: { settlementId: seededId(settlementId) },
       data: { matchStatus: "UNMATCHED", matchedSalesOrderId: null },
     });
     await prisma.settlement.update({ where: { id: settlementId }, data: { checksumOk: false } });

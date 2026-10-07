@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { postVanLoadJournal, postVanSaleJournal, postVanReconcileJournal } from "./van-journal";
 import { setAccountMapping } from "../finance/journals/mapping";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../finance/journals/mapping-test-fixture";
@@ -69,9 +69,9 @@ const ROLE_TYPES: Array<[PostingRole, AccountType]> = [
 
 d("van journals (test bed only)", () => {
   let token: string;
-  let userId: string;
-  let uomId: string;
-  let itemId: string;
+  let userId = "";
+  let uomId = "";
+  let itemId = "";
   let mappingSnapshot: MappingSnapshot;
   const accountIds: Record<string, string> = {};
   let createdDocs: TrackedDoc[] = [];
@@ -84,6 +84,9 @@ d("van journals (test bed only)", () => {
    * silently depend on the global vitest.config.ts ceiling.
    */
   beforeAll(async () => {
+    userId = "";
+    uomId = "";
+    itemId = "";
     token = Math.floor(Math.random() * 10_000_000).toString();
     mappingSnapshot = await snapshotMappings(ROLE_TYPES.map(([role]) => role));
 
@@ -145,22 +148,22 @@ d("van journals (test bed only)", () => {
       }
     }
     try {
-      await prisma.chartAccount.deleteMany({ where: { id: { in: Object.values(accountIds) } } });
+      await prisma.chartAccount.deleteMany({ where: { id: { in: Object.values(accountIds).map(seededId) } } });
     } catch {
       /* best-effort */
     }
     try {
-      await prisma.item.deleteMany({ where: { id: itemId } });
+      await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
     } catch {
       /* best-effort */
     }
     try {
-      await prisma.uOM.deleteMany({ where: { id: uomId } });
+      await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
     } catch {
       /* best-effort */
     }
     try {
-      await prisma.user.deleteMany({ where: { id: userId } });
+      await prisma.user.deleteMany({ where: { id: seededId(userId) } });
     } catch {
       /* best-effort */
     }

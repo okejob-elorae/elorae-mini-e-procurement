@@ -315,7 +315,7 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
   });
 
   afterEach(async () => {
-    const allItemIds = [
+    const allItemIds = () => [
       seededId(prevSentItemId),
       seededId(variantItemId),
       seededId(targetItemId),
@@ -325,7 +325,7 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
       seededId(openGapItemId),
       seededId(partialGapItemId),
     ];
-    const allOrderIds = [
+    const allOrderIds = () => [
       seededId(orderId),
       seededId(priorOrderId),
       seededId(putusOrderId),
@@ -337,22 +337,22 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
      * Transfers go BEFORE shipments: deleting several shipments that each hold a transfer trips
      * Prisma's emulated 1:1 relation check ("Expected zero or one element, got 2").
      */
-    await prisma.konsiTransferLine.deleteMany({ where: { itemId: { in: allItemIds } } });
-    await prisma.konsiTransfer.deleteMany({ where: { orderId: { in: allOrderIds } } });
-    await prisma.deliveryShipmentLine.deleteMany({ where: { shipment: { orderId: { in: allOrderIds } } } });
-    await prisma.deliveryShipment.deleteMany({ where: { orderId: { in: allOrderIds } } });
-    await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: allItemIds } } });
-    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: allItemIds } } });
+    await prisma.konsiTransferLine.deleteMany({ where: { itemId: { in: allItemIds() } } });
+    await prisma.konsiTransfer.deleteMany({ where: { orderId: { in: allOrderIds() } } });
+    await prisma.deliveryShipmentLine.deleteMany({ where: { shipment: { orderId: { in: allOrderIds() } } } });
+    await prisma.deliveryShipment.deleteMany({ where: { orderId: { in: allOrderIds() } } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: allItemIds() } } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: allItemIds() } } });
     await prisma.storeStock.deleteMany({ where: { storeId: seededId(storeId) } });
-    await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: { in: allOrderIds } } });
-    await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: allOrderIds } } });
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: { in: allOrderIds() } } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: allOrderIds() } } });
     /* approveFieldSalesOrder (KONSI) reserves via StockReservation, and closeFieldSalesOrderRemainder only flips it RELEASED, never deletes it. */
-    await prisma.stockReservation.deleteMany({ where: { itemId: { in: allItemIds } } });
-    await prisma.storeAssortmentLine.deleteMany({ where: { id: { in: assortmentLineIds } } });
-    await prisma.storeStock.deleteMany({ where: { id: { in: storeStockIds } } });
+    await prisma.stockReservation.deleteMany({ where: { itemId: { in: allItemIds() } } });
+    await prisma.storeAssortmentLine.deleteMany({ where: { id: { in: assortmentLineIds.map(seededId) } } });
+    await prisma.storeStock.deleteMany({ where: { id: { in: storeStockIds.map(seededId) } } });
     await prisma.store.deleteMany({ where: { id: { in: [seededId(storeId), seededId(putusStoreId)] } } });
-    await prisma.inventoryValue.deleteMany({ where: { itemId: { in: allItemIds } } });
-    await prisma.item.deleteMany({ where: { id: { in: allItemIds } } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: { in: allItemIds() } } });
+    await prisma.item.deleteMany({ where: { id: { in: allItemIds() } } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
     await prisma.user.deleteMany({ where: { id: seededId(userId) } });
   });

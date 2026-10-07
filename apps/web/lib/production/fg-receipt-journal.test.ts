@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { postFgReceiptJournal } from "./fg-receipt-journal";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../finance/journals/mapping-test-fixture";
 
@@ -9,15 +9,15 @@ const d = isProd ? describe.skip : describe;
 
 d("FG receipt auto-journal (test bed only)", () => {
   let token: string;
-  let userId: string;
-  let supplierTypeId: string;
-  let vendorId: string;
-  let uomId: string;
-  let itemId: string;
-  let woId: string;
-  let receiptId: string;
-  let fgId: string;
-  let rawId: string;
+  let userId = "";
+  let supplierTypeId = "";
+  let vendorId = "";
+  let uomId = "";
+  let itemId = "";
+  let woId = "";
+  let receiptId = "";
+  let fgId = "";
+  let rawId = "";
   let mappingSnapshot: MappingSnapshot;
 
   async function makeReceipt(qtyAccepted: number, totalCostValue: number): Promise<string> {
@@ -41,6 +41,15 @@ d("FG receipt auto-journal (test bed only)", () => {
   }
 
   beforeEach(async () => {
+    userId = "";
+    supplierTypeId = "";
+    vendorId = "";
+    uomId = "";
+    itemId = "";
+    woId = "";
+    receiptId = "";
+    fgId = "";
+    rawId = "";
     token = Math.floor(Math.random() * 10_000_000).toString();
     mappingSnapshot = await snapshotMappings(["INVENTORY", "INVENTORY_FG"]);
 
@@ -92,15 +101,15 @@ d("FG receipt auto-journal (test bed only)", () => {
   });
 
   afterEach(async () => {
-    const journals = await prisma.journal.findMany({ where: { postedById: userId }, select: { id: true } });
+    const journals = await prisma.journal.findMany({ where: { postedById: seededId(userId) }, select: { id: true } });
     const ids = journals.map((j) => j.id);
     if (ids.length) {
-      await prisma.journalLine.deleteMany({ where: { journalId: { in: ids } } });
-      await prisma.journal.deleteMany({ where: { id: { in: ids } } });
+      await prisma.journalLine.deleteMany({ where: { journalId: { in: ids.map(seededId) } } });
+      await prisma.journal.deleteMany({ where: { id: { in: ids.map(seededId) } } });
     }
     await restoreMappings(mappingSnapshot);
-    await prisma.chartAccount.deleteMany({ where: { id: { in: [fgId, rawId] } } });
-    await prisma.fGReceipt.deleteMany({ where: { woId } });
+    await prisma.chartAccount.deleteMany({ where: { id: { in: [fgId, rawId].map(seededId) } } });
+    await prisma.fGReceipt.deleteMany({ where: { woId: seededId(woId) } });
     await prisma.workOrder.delete({ where: { id: woId } });
     await prisma.item.delete({ where: { id: itemId } });
     await prisma.uOM.delete({ where: { id: uomId } });

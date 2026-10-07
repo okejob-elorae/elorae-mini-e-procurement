@@ -71,8 +71,16 @@ export default async function PiutangPage({ searchParams }: PageProps) {
    */
   const asOf = new Date();
 
+  let loaded: {
+    list: Awaited<ReturnType<typeof listReceivables>>;
+    storeOptions: Awaited<ReturnType<typeof listStoreOptions>>;
+    canvassers: Awaited<ReturnType<typeof listCanvassers>>;
+    collectorCandidates: Awaited<ReturnType<typeof listCollectorCandidates>>;
+    storeAvailableCredit: number;
+  } | null = null;
+
   try {
-    const [{ rows, total, bucketTotals, grandOutstanding }, storeOptions, canvassers, collectorCandidates, storeAvailableCredit] =
+    const [list, storeOptions, canvassers, collectorCandidates, storeAvailableCredit] =
       await Promise.all([
         listReceivables({ storeId, salesmanId, collectorId, status, bucket, dateFrom, dateTo, search, page, pageSize, asOf }),
         listStoreOptions(),
@@ -81,61 +89,38 @@ export default async function PiutangPage({ searchParams }: PageProps) {
         storeId ? getStoreAvailableCredit(storeId) : Promise.resolve(0),
       ]);
 
-    return (
-      <PiutangPageClient
-        rows={rows}
-        total={total}
-        bucketTotals={bucketTotals}
-        grandOutstanding={grandOutstanding}
-        storeOptions={storeOptions}
-        salesmen={canvassers.map((c) => ({ id: c.id, name: c.name }))}
-        collectors={collectorCandidates}
-        canManageCollections={canManageCollections}
-        storeAvailableCredit={storeId ? storeAvailableCredit : null}
-        storeId={storeId ?? ""}
-        salesmanId={salesmanId ?? ""}
-        collectorId={collectorId ?? ""}
-        status={status ?? "ALL"}
-        bucket={bucket}
-        dateFrom={sp.from ?? ""}
-        dateTo={sp.to ?? ""}
-        search={search ?? ""}
-        page={page}
-        pageSize={pageSize}
-        asOf={asOf}
-        loadError={false}
-      />
-    );
+    loaded = { list, storeOptions, canvassers, collectorCandidates, storeAvailableCredit };
   } catch (err) {
     /**
      * The error card is the only user-facing signal, and it names no cause — without this the
      * container log holds nothing at all about why the page is blank.
      */
     console.error("[piutang] list query failed", err);
-    return (
-      <PiutangPageClient
-        rows={[]}
-        total={0}
-        bucketTotals={emptyBucketTotals()}
-        grandOutstanding={0}
-        storeOptions={[]}
-        salesmen={[]}
-        collectors={[]}
-        canManageCollections={canManageCollections}
-        storeAvailableCredit={null}
-        storeId={storeId ?? ""}
-        salesmanId={salesmanId ?? ""}
-        collectorId={collectorId ?? ""}
-        status={status ?? "ALL"}
-        bucket={bucket}
-        dateFrom={sp.from ?? ""}
-        dateTo={sp.to ?? ""}
-        search={search ?? ""}
-        page={page}
-        pageSize={pageSize}
-        asOf={asOf}
-        loadError={true}
-      />
-    );
   }
+
+  return (
+    <PiutangPageClient
+      rows={loaded?.list.rows ?? []}
+      total={loaded?.list.total ?? 0}
+      bucketTotals={loaded?.list.bucketTotals ?? emptyBucketTotals()}
+      grandOutstanding={loaded?.list.grandOutstanding ?? 0}
+      storeOptions={loaded?.storeOptions ?? []}
+      salesmen={(loaded?.canvassers ?? []).map((c) => ({ id: c.id, name: c.name }))}
+      collectors={loaded?.collectorCandidates ?? []}
+      canManageCollections={canManageCollections}
+      storeAvailableCredit={loaded && storeId ? loaded.storeAvailableCredit : null}
+      storeId={storeId ?? ""}
+      salesmanId={salesmanId ?? ""}
+      collectorId={collectorId ?? ""}
+      status={status ?? "ALL"}
+      bucket={bucket}
+      dateFrom={sp.from ?? ""}
+      dateTo={sp.to ?? ""}
+      search={search ?? ""}
+      page={page}
+      pageSize={pageSize}
+      asOf={asOf}
+      loadError={loaded === null}
+    />
+  );
 }

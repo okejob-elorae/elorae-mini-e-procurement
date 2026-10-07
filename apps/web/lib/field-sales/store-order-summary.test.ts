@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { getStoreOrderSummary } from "./queries";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -25,13 +25,14 @@ d("getStoreOrderSummary (test bed only)", () => {
   }
 
   beforeEach(async () => {
+    storeId = "";
     const store = await prisma.store.create({ data: { code: tag, name: "T", address: "T", termsType: "PUTUS", isActive: true } });
     storeId = store.id;
   });
 
   afterEach(async () => {
-    await prisma.fieldSalesOrder.deleteMany({ where: { storeId } });
-    await prisma.store.deleteMany({ where: { id: storeId } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
   });
 
   it("returns empty for a store with no orders", async () => {

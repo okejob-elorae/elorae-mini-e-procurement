@@ -37,11 +37,12 @@ async function flaggedRowsFor(docId: string): Promise<FlaggedRow[]> {
 }
 
 d("notifySupplierPaymentJournalFailure dedup (test bed only)", () => {
-  let docId: string;
+  let docId = "";
 
   /* A synthetic PO id per test: nothing else in the dev DB can carry it, so
      every assertion and every delete below stays scoped to this spec's rows. */
   beforeEach(() => {
+    docId = "";
     docId = `po-notify-test-${Math.floor(Math.random() * 10_000_000)}`;
   });
 

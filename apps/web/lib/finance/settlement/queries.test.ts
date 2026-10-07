@@ -306,14 +306,17 @@ d("getSettlementById — jubelioNet/netDelta/matches wiring (test bed only)", ()
     });
 
     await prisma.settlementLine.updateMany({
+      /* eslint-disable-next-line no-restricted-syntax -- orderNoMatch is a const template string assigned at declaration */
       where: { settlementId: settlement.id, orderNo: orderNoMatch },
       data: { matchStatus: "MATCHED", matchedSalesOrderId: orderMatch.id },
     });
     await prisma.settlementLine.updateMany({
+      /* eslint-disable-next-line no-restricted-syntax -- orderNoDiffer is a const template string assigned at declaration */
       where: { settlementId: settlement.id, orderNo: orderNoDiffer },
       data: { matchStatus: "MATCHED", matchedSalesOrderId: orderDiffer.id },
     });
     await prisma.settlementLine.updateMany({
+      /* eslint-disable-next-line no-restricted-syntax -- orderNoNoData is a const template string assigned at declaration */
       where: { settlementId: settlement.id, orderNo: orderNoNoData },
       data: { matchStatus: "MATCHED", matchedSalesOrderId: orderNoData.id },
     });

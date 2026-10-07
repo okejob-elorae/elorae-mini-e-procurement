@@ -586,52 +586,52 @@ d("approveFieldReturn (test bed only)", () => {
 
   afterEach(async () => {
     const itemIds = [
-      seededId(itemId),
-      seededId(shortItemId),
-      seededId(noRowItemId),
-      seededId(unpricedItemId),
-      seededId(ambiguousItemId),
-      seededId(neverHeldItemId),
-      seededId(konsiSurplusItemId),
-      seededId(konsiBearsItemId),
+      itemId,
+      shortItemId,
+      noRowItemId,
+      unpricedItemId,
+      ambiguousItemId,
+      neverHeldItemId,
+      konsiSurplusItemId,
+      konsiBearsItemId,
     ];
     const returnIds = [
-      seededId(returnId),
-      seededId(mismatchedReturnId),
-      seededId(shortReturnId),
-      seededId(rejectedReturnId),
-      seededId(fullyRejectedReturnId),
-      seededId(noRowReturnId),
-      seededId(surplusReturnId),
-      seededId(unpricedReturnId),
-      seededId(ambiguousReturnId),
-      seededId(investigatingReturnId),
-      seededId(writeOffReturnId),
-      seededId(twoLineReturnId),
-      seededId(konsiReturnId),
-      seededId(putusReturnId),
-      seededId(shortStoreReturnId),
-      seededId(neverHeldReturnId),
-      seededId(konsiSurplusReturnId),
-      seededId(konsiBearsReturnId),
+      returnId,
+      mismatchedReturnId,
+      shortReturnId,
+      rejectedReturnId,
+      fullyRejectedReturnId,
+      noRowReturnId,
+      surplusReturnId,
+      unpricedReturnId,
+      ambiguousReturnId,
+      investigatingReturnId,
+      writeOffReturnId,
+      twoLineReturnId,
+      konsiReturnId,
+      putusReturnId,
+      shortStoreReturnId,
+      neverHeldReturnId,
+      konsiSurplusReturnId,
+      konsiBearsReturnId,
     ];
-    const storeIds = [seededId(storeId), seededId(konsiStoreId)];
-    await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: itemIds } } });
-    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: itemIds } } });
-    await prisma.rejectedGoodsLedger.deleteMany({ where: { itemId: { in: itemIds } } });
-    await prisma.storeStock.deleteMany({ where: { storeId: { in: storeIds } } });
-    await prisma.fieldReturnResolution.deleteMany({ where: { line: { returnId: { in: returnIds } } } });
-    await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: returnIds } } });
-    await prisma.fieldReturn.deleteMany({ where: { id: { in: returnIds } } });
+    const storeIds = [storeId, konsiStoreId];
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: itemIds.map(seededId) } } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: itemIds.map(seededId) } } });
+    await prisma.rejectedGoodsLedger.deleteMany({ where: { itemId: { in: itemIds.map(seededId) } } });
+    await prisma.storeStock.deleteMany({ where: { storeId: { in: storeIds.map(seededId) } } });
+    await prisma.fieldReturnResolution.deleteMany({ where: { line: { returnId: { in: returnIds.map(seededId) } } } });
+    await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: returnIds.map(seededId) } } });
+    await prisma.fieldReturn.deleteMany({ where: { id: { in: returnIds.map(seededId) } } });
     /* Delivery lines before deliveries, order lines before orders — FieldSalesDeliveryLine's
        orderLineId FK is real and enforced. */
-    await prisma.fieldSalesDeliveryLine.deleteMany({ where: { deliveryId: { in: deliveryIds } } });
-    await prisma.fieldSalesDelivery.deleteMany({ where: { id: { in: deliveryIds } } });
-    await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: { in: orderIds } } });
-    await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: orderIds } } });
-    await prisma.inventoryValue.deleteMany({ where: { itemId: { in: itemIds } } });
-    await prisma.store.deleteMany({ where: { id: { in: storeIds } } });
-    await prisma.item.deleteMany({ where: { id: { in: itemIds } } });
+    await prisma.fieldSalesDeliveryLine.deleteMany({ where: { deliveryId: { in: deliveryIds.map(seededId) } } });
+    await prisma.fieldSalesDelivery.deleteMany({ where: { id: { in: deliveryIds.map(seededId) } } });
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: { in: orderIds.map(seededId) } } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: orderIds.map(seededId) } } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: { in: itemIds.map(seededId) } } });
+    await prisma.store.deleteMany({ where: { id: { in: storeIds.map(seededId) } } });
+    await prisma.item.deleteMany({ where: { id: { in: itemIds.map(seededId) } } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
     await prisma.user.deleteMany({ where: { id: { in: [seededId(raisedById), seededId(adminId)] } } });
   });

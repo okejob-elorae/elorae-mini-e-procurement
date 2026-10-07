@@ -14,6 +14,10 @@ d("loadVan (test bed only)", () => {
   let adminId = "";
 
   beforeEach(async () => {
+    uomId = "";
+    itemId = "";
+    canvasserId = "";
+    adminId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${tag}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
     const item = await prisma.item.create({ data: { sku: tag, nameId: "T", nameEn: "T", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 5000 } });
@@ -26,14 +30,14 @@ d("loadVan (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.vanLoadLine.deleteMany({ where: { itemId } });
-    await prisma.vanLoad.deleteMany({ where: { canvasserId } });
-    await prisma.vanStock.deleteMany({ where: { itemId } });
-    await prisma.stockAdjustment.deleteMany({ where: { itemId } });
+    await prisma.vanLoadLine.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.vanLoad.deleteMany({ where: { canvasserId: seededId(canvasserId) } });
+    await prisma.vanStock.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
-    await prisma.inventoryValue.deleteMany({ where: { itemId } });
-    await prisma.item.deleteMany({ where: { id: itemId } });
-    await prisma.uOM.deleteMany({ where: { id: uomId } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
 
   const line = (qty: number) => ({ itemId, variantSku: null, qty });
@@ -103,7 +107,7 @@ d("loadVan (test bed only)", () => {
 
     // cleanup (this case created its own item/uom outside the shared afterEach)
     await prisma.vanLoadLine.deleteMany({ where: { itemId: vItem.id } });
-    await prisma.vanLoad.deleteMany({ where: { canvasserId } });
+    await prisma.vanLoad.deleteMany({ where: { canvasserId: seededId(canvasserId) } });
     await prisma.vanStock.deleteMany({ where: { itemId: vItem.id } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: vItem.id } });
     await prisma.stockLedgerEntry.deleteMany({ where: { itemId: vItem.id } });

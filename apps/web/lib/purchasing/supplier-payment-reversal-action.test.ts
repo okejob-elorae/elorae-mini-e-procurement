@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 
 /* Creates PO/supplier/user rows — never run against the shared prod DB. */
 const url = process.env.DATABASE_URL ?? "";
@@ -28,13 +28,13 @@ import { postSupplierPaymentReversalJournalAction } from "@/app/actions/purchase
  */
 d("postSupplierPaymentReversalJournalAction (test bed only)", () => {
   const token = Math.floor(Math.random() * 10_000_000).toString();
-  let userId: string;
-  let supplierTypeId: string;
-  let supplierId: string;
-  let unpaidPoId: string;
-  let paidPoId: string;
-  let apAccountId: string;
-  let bankAccountId: string;
+  let userId = "";
+  let supplierTypeId = "";
+  let supplierId = "";
+  let unpaidPoId = "";
+  let paidPoId = "";
+  let apAccountId = "";
+  let bankAccountId = "";
   let perTestPoIds: string[] = [];
 
   /**
@@ -75,6 +75,13 @@ d("postSupplierPaymentReversalJournalAction (test bed only)", () => {
   }
 
   beforeAll(async () => {
+    userId = "";
+    supplierTypeId = "";
+    supplierId = "";
+    unpaidPoId = "";
+    paidPoId = "";
+    apAccountId = "";
+    bankAccountId = "";
     const user = await prisma.user.create({
       data: { email: `test-sp-reversal-${token}@test.local`, name: "Test Finance User" },
     });
@@ -130,14 +137,14 @@ d("postSupplierPaymentReversalJournalAction (test bed only)", () => {
         });
         const ids = journals.map((j) => j.id);
         if (ids.length) {
-          await prisma.journalLine.deleteMany({ where: { journalId: { in: ids } } });
-          await prisma.journal.deleteMany({ where: { id: { in: ids } } });
+          await prisma.journalLine.deleteMany({ where: { journalId: { in: ids.map(seededId) } } });
+          await prisma.journal.deleteMany({ where: { id: { in: ids.map(seededId) } } });
         }
       } catch (e) {
         console.warn("[supplier-payment-reversal-action.test.ts] failed to delete test journals for PO", poId, e);
       }
       try {
-        await prisma.purchaseOrder.deleteMany({ where: { id: poId } });
+        await prisma.purchaseOrder.deleteMany({ where: { id: seededId(poId) } });
       } catch (e) {
         console.warn("[supplier-payment-reversal-action.test.ts] failed to delete test PO", poId, e);
       }
@@ -150,12 +157,12 @@ d("postSupplierPaymentReversalJournalAction (test bed only)", () => {
   afterAll(async () => {
     await cleanupPerTestPos();
     try {
-      await prisma.purchaseOrder.deleteMany({ where: { id: { in: [unpaidPoId, paidPoId] } } });
+      await prisma.purchaseOrder.deleteMany({ where: { id: { in: [unpaidPoId, paidPoId].map(seededId) } } });
     } catch (e) {
       console.warn("[supplier-payment-reversal-action.test.ts] failed to delete test POs", [unpaidPoId, paidPoId], e);
     }
     try {
-      await prisma.chartAccount.deleteMany({ where: { id: { in: [apAccountId, bankAccountId] } } });
+      await prisma.chartAccount.deleteMany({ where: { id: { in: [apAccountId, bankAccountId].map(seededId) } } });
     } catch (e) {
       console.warn(
         "[supplier-payment-reversal-action.test.ts] failed to delete test chart accounts",
@@ -164,17 +171,17 @@ d("postSupplierPaymentReversalJournalAction (test bed only)", () => {
       );
     }
     try {
-      await prisma.supplier.deleteMany({ where: { id: supplierId } });
+      await prisma.supplier.deleteMany({ where: { id: seededId(supplierId) } });
     } catch (e) {
       console.warn("[supplier-payment-reversal-action.test.ts] failed to delete test supplier", supplierId, e);
     }
     try {
-      await prisma.supplierType.deleteMany({ where: { id: supplierTypeId } });
+      await prisma.supplierType.deleteMany({ where: { id: seededId(supplierTypeId) } });
     } catch (e) {
       console.warn("[supplier-payment-reversal-action.test.ts] failed to delete test supplier type", supplierTypeId, e);
     }
     try {
-      await prisma.user.deleteMany({ where: { id: userId } });
+      await prisma.user.deleteMany({ where: { id: seededId(userId) } });
     } catch (e) {
       console.warn("[supplier-payment-reversal-action.test.ts] failed to delete test user", userId, e);
     }
