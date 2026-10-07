@@ -127,11 +127,11 @@ d("store transfer writer (test bed only)", () => {
   });
 
   afterEach(async () => {
-    const transferWhere = { OR: [{ fromStoreId: { in: stores() } }, { toStoreId: { in: stores() } }] };
-    const transferIds = (await prisma.storeTransfer.findMany({ where: transferWhere, select: { id: true } })).map((t) => t.id);
-    await prisma.auditLog.deleteMany({ where: { entityType: "StoreTransfer", entityId: { in: transferIds } } });
-    await prisma.storeTransferLine.deleteMany({ where: { transfer: transferWhere } });
-    await prisma.storeTransfer.deleteMany({ where: transferWhere });
+    const transferWhere = () => ({ OR: [{ fromStoreId: { in: stores() } }, { toStoreId: { in: stores() } }] });
+    const transferIds = (await prisma.storeTransfer.findMany({ where: transferWhere(), select: { id: true } })).map((t) => t.id);
+    await prisma.auditLog.deleteMany({ where: { entityType: "StoreTransfer", entityId: { in: transferIds.map(seededId) } } });
+    await prisma.storeTransferLine.deleteMany({ where: { transfer: transferWhere() } });
+    await prisma.storeTransfer.deleteMany({ where: transferWhere() });
     await prisma.storeStocktakeLine.deleteMany({ where: { stocktake: { storeId: { in: stores() } } } });
     await prisma.storeStocktake.deleteMany({ where: { storeId: { in: stores() } } });
     await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });

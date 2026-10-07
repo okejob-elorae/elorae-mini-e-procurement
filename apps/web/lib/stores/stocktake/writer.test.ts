@@ -216,22 +216,22 @@ d("store stocktake writer (test bed only)", () => {
 
   afterEach(async () => {
     /* The transfer before its shipment (an optional 1:1 under relationMode = "prisma"), both before the order and the store. */
-    await prisma.konsiTransfer.deleteMany({ where: { orderId: { in: konsiOrderIds } } });
-    await prisma.deliveryShipment.deleteMany({ where: { orderId: { in: konsiOrderIds } } });
-    await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: konsiOrderIds } } });
-    const bothStores = [seededId(storeId), seededId(storeBId)];
-    const transferWhere = { OR: [{ fromStoreId: { in: bothStores } }, { toStoreId: { in: bothStores } }] };
-    await prisma.storeTransferLine.deleteMany({ where: { transfer: transferWhere } });
-    await prisma.storeTransfer.deleteMany({ where: transferWhere });
+    await prisma.konsiTransfer.deleteMany({ where: { orderId: { in: konsiOrderIds.map(seededId) } } });
+    await prisma.deliveryShipment.deleteMany({ where: { orderId: { in: konsiOrderIds.map(seededId) } } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: konsiOrderIds.map(seededId) } } });
+    const bothStores = () => [seededId(storeId), seededId(storeBId)];
+    const transferWhere = () => ({ OR: [{ fromStoreId: { in: bothStores() } }, { toStoreId: { in: bothStores() } }] });
+    await prisma.storeTransferLine.deleteMany({ where: { transfer: transferWhere() } });
+    await prisma.storeTransfer.deleteMany({ where: transferWhere() });
     await prisma.fieldReturnLine.deleteMany({ where: { returnDoc: { storeId: seededId(storeId) } } });
     await prisma.fieldReturn.deleteMany({ where: { storeId: seededId(storeId) } });
-    await prisma.storeStocktakeLine.deleteMany({ where: { stocktakeId: { in: stocktakeIds } } });
-    await prisma.storeStocktake.deleteMany({ where: { id: { in: stocktakeIds } } });
-    await prisma.storeStock.deleteMany({ where: { storeId: { in: bothStores }, itemId: { in: itemIds } } });
-    await prisma.inventoryValue.deleteMany({ where: { itemId: { in: itemIds } } });
-    await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: itemIds } } });
-    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: itemIds } } });
-    await prisma.store.deleteMany({ where: { id: { in: bothStores } } });
+    await prisma.storeStocktakeLine.deleteMany({ where: { stocktakeId: { in: stocktakeIds.map(seededId) } } });
+    await prisma.storeStocktake.deleteMany({ where: { id: { in: stocktakeIds.map(seededId) } } });
+    await prisma.storeStock.deleteMany({ where: { storeId: { in: bothStores() }, itemId: { in: itemIds.map(seededId) } } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: { in: itemIds.map(seededId) } } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: itemIds.map(seededId) } } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: itemIds.map(seededId) } } });
+    await prisma.store.deleteMany({ where: { id: { in: bothStores() } } });
     await prisma.item.deleteMany({ where: { id: { in: [seededId(itemMainId), seededId(itemNegativeId), seededId(itemZeroId), seededId(itemAddedId)] } } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { submitStoreChangeRequest, approveStoreChangeRequest, rejectStoreChangeRequest, type ProposedStoreFields } from "./writer";
 
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
@@ -18,6 +18,9 @@ d("store-change lifecycle writer (test bed only)", () => {
   const base: ProposedStoreFields = { name: "New Name", address: "New Addr", phone: "0812", contactName: "Budi", lat: 1.23, lng: 4.56 };
 
   beforeEach(async () => {
+    storeId = "";
+    userId = "";
+    visitId = "";
     since = new Date();
     const store = await prisma.store.create({ data: { code: tag, name: "Old Name", address: "Old Addr", phone: null, contactName: null, termsType: "PUTUS", isActive: true } });
     storeId = store.id;
@@ -28,10 +31,18 @@ d("store-change lifecycle writer (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.storeChangeRequest.deleteMany({ where: { storeId } });
-    await prisma.storeVisit.deleteMany({ where: { storeId } });
-    await prisma.store.deleteMany({ where: { id: storeId } });
-    await prisma.adminNotification.deleteMany({ where: { category: "STORE_CHANGE_REQUEST", createdAt: { gte: since } } });
+    /* Notification metadata is filtered in JS: Prisma JSON-path filters are unreliable on this adapter. */
+    const candidates = await prisma.adminNotification.findMany({
+      where: { category: "STORE_CHANGE_REQUEST", createdAt: { gte: since } },
+      select: { id: true, metadata: true },
+    });
+    const ownNotifIds = candidates
+      .filter((n) => storeId !== "" && (n.metadata as { storeId?: string } | null)?.storeId === storeId)
+      .map((n) => n.id);
+    if (ownNotifIds.length > 0) await prisma.adminNotification.deleteMany({ where: { id: { in: ownNotifIds.map(seededId) } } });
+    await prisma.storeChangeRequest.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.storeVisit.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
   });
 
   it("submit creates a PENDING request + admin notification", async () => {

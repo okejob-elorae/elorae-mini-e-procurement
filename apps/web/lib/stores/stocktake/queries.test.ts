@@ -72,12 +72,12 @@ d("store stocktake queries (test bed only)", () => {
   afterEach(async () => {
     await prisma.fieldReturnLine.deleteMany({ where: { returnDoc: { storeId: seededId(storeId) } } });
     await prisma.fieldReturn.deleteMany({ where: { storeId: seededId(storeId) } });
-    await prisma.storeStocktakeLine.deleteMany({ where: { stocktakeId: { in: stocktakeIds } } });
-    await prisma.storeStocktake.deleteMany({ where: { id: { in: stocktakeIds } } });
-    await prisma.spgSaleLine.deleteMany({ where: { spgSaleId: { in: spgSaleIds } } });
-    await prisma.spgSale.deleteMany({ where: { id: { in: spgSaleIds } } });
-    await prisma.storeStock.deleteMany({ where: { id: { in: storeStockIds } } });
-    await prisma.storeAssortmentLine.deleteMany({ where: { id: { in: assortmentLineIds } } });
+    await prisma.storeStocktakeLine.deleteMany({ where: { stocktakeId: { in: stocktakeIds.map(seededId) } } });
+    await prisma.storeStocktake.deleteMany({ where: { id: { in: stocktakeIds.map(seededId) } } });
+    await prisma.spgSaleLine.deleteMany({ where: { spgSaleId: { in: spgSaleIds.map(seededId) } } });
+    await prisma.spgSale.deleteMany({ where: { id: { in: spgSaleIds.map(seededId) } } });
+    await prisma.storeStock.deleteMany({ where: { id: { in: storeStockIds.map(seededId) } } });
+    await prisma.storeAssortmentLine.deleteMany({ where: { id: { in: assortmentLineIds.map(seededId) } } });
     await prisma.store.deleteMany({ where: { id: { in: [seededId(storeId), seededId(freshStoreId), seededId(quietStoreId)] } } });
     await prisma.item.deleteMany({ where: { id: { in: [seededId(itemAId), seededId(itemBId), seededId(itemCId)] } } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });

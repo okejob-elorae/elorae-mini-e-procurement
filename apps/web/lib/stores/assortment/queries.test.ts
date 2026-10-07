@@ -53,8 +53,8 @@ d("store assortment queries (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.storeAssortmentLine.deleteMany({ where: { id: { in: assortmentLineIds } } });
-    await prisma.storeStock.deleteMany({ where: { id: { in: storeStockIds } } });
+    await prisma.storeAssortmentLine.deleteMany({ where: { id: { in: assortmentLineIds.map(seededId) } } });
+    await prisma.storeStock.deleteMany({ where: { id: { in: storeStockIds.map(seededId) } } });
     await prisma.store.deleteMany({ where: { id: { in: [seededId(storeId), seededId(otherStoreId)] } } });
     await prisma.item.deleteMany({ where: { id: { in: [seededId(itemAId), seededId(itemBId)] } } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });

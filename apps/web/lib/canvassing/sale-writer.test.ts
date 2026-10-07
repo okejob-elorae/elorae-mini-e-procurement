@@ -11,6 +11,9 @@ d("recordVanSale (test bed only)", () => {
   let uomId = ""; let itemId = ""; let salesmanId = "";
 
   beforeEach(async () => {
+    uomId = "";
+    itemId = "";
+    salesmanId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${tag}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
     const item = await prisma.item.create({ data: { sku: tag, nameId: "T", nameEn: "T", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 5000 } });
@@ -21,13 +24,13 @@ d("recordVanSale (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.salesHistory.deleteMany({ where: { itemId } });
-    await prisma.vanSaleLine.deleteMany({ where: { itemId } });
-    await prisma.vanSale.deleteMany({ where: { salesmanId, storeId: null } });
+    await prisma.salesHistory.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.vanSaleLine.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.vanSale.deleteMany({ where: { salesmanId: seededId(salesmanId), storeId: null } });
     await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
-    await prisma.vanStock.deleteMany({ where: { itemId } });
-    await prisma.item.deleteMany({ where: { id: itemId } });
-    await prisma.uOM.deleteMany({ where: { id: uomId } });
+    await prisma.vanStock.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
 
   const line = (qty: number) => ({ itemId, variantSku: null, qty });

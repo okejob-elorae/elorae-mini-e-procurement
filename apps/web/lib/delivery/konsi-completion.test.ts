@@ -93,7 +93,7 @@ d("completeDeliveryShipment konsi stock move (test bed only)", () => {
     const leakedNotifIds = candidateNotifs
       .filter((n) => (n.metadata as { orderId?: string } | null)?.orderId === orderId)
       .map((n) => n.id);
-    if (leakedNotifIds.length > 0) await prisma.adminNotification.deleteMany({ where: { id: { in: leakedNotifIds } } });
+    if (leakedNotifIds.length > 0) await prisma.adminNotification.deleteMany({ where: { id: { in: leakedNotifIds.map(seededId) } } });
 
     /**
      * Transfers BEFORE shipments: deleting several shipments that each hold a transfer trips

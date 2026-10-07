@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { getSalesmenSalesSummary } from "./queries";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -15,6 +15,9 @@ d("getSalesmenSalesSummary (test bed only)", () => {
   const vanSaleIds: string[] = [];
 
   beforeEach(async () => {
+    storeId = "";
+    salesmanAId = "";
+    salesmanBId = "";
     const store = await prisma.store.create({
       data: { code: tag, name: "T", address: "T", termsType: "PUTUS", isActive: true },
     });
@@ -31,11 +34,11 @@ d("getSalesmenSalesSummary (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.vanSale.deleteMany({ where: { id: { in: vanSaleIds } } });
-    await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: { in: fsoIds } } });
-    await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: fsoIds } } });
-    await prisma.user.deleteMany({ where: { id: { in: [salesmanAId, salesmanBId] } } });
-    await prisma.store.deleteMany({ where: { id: storeId } });
+    await prisma.vanSale.deleteMany({ where: { id: { in: vanSaleIds.map(seededId) } } });
+    await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: { in: fsoIds.map(seededId) } } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: fsoIds.map(seededId) } } });
+    await prisma.user.deleteMany({ where: { id: { in: [salesmanAId, salesmanBId].map(seededId) } } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
     fsoIds.length = 0;
     vanSaleIds.length = 0;
   });
