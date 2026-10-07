@@ -22,6 +22,7 @@ import { runForecast, type DataCoverage, type ForecastResultDetail } from '@/app
 import { MonthlyForecastRow } from './monthly-forecast-row';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { PERMISSIONS, hasPermission } from '@/lib/rbac';
+import { MIN_BULAN_DATA_MUSIMAN } from '@/app/backoffice/forecast/tahun-forecast';
 
 const PAGE_SIZE = 25;
 
@@ -236,7 +237,7 @@ export function ForecastOverviewTab({
             <Button variant="outline" size="sm" onClick={onEditConfig}>
               {t('config.editConfig')}
             </Button>
-            <Button size="sm" onClick={handleRun} disabled={running}>
+            <Button size="sm" onClick={handleRun} disabled={running || coverageMonths <= 0}>
               {running ? t('config.running') : t('config.run')}
             </Button>
             <Button variant="secondary" size="sm" asChild>
@@ -248,6 +249,13 @@ export function ForecastOverviewTab({
           </>
         )}
       </div>
+      {canManage && coverageMonths < MIN_BULAN_DATA_MUSIMAN ? (
+        <p className="text-sm text-muted-foreground">
+          {coverageMonths <= 0
+            ? t('results.belumAdaData')
+            : t('results.dataKurangSetahun', { bulan: coverageMonths, minimal: MIN_BULAN_DATA_MUSIMAN })}
+        </p>
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-5">
         <Card>

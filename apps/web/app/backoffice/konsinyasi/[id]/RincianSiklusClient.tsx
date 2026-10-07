@@ -22,6 +22,16 @@ import {
 } from '@/components/ui/dialog';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Table,
   TableBody,
   TableCell,
@@ -44,6 +54,7 @@ import {
 import { NADA_TAHAP } from '../tahap';
 import { TagihanKonsiCard } from "./TagihanKonsiCard";
 import { PencocokanBukuCard } from "./PencocokanBukuCard";
+import { alasanTolakBukaKunci } from "./buka-kunci";
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 const tanggal = (iso: string | null) =>
@@ -89,9 +100,18 @@ export function RincianSiklusClient({
   const [gajiPokok, setGajiPokok] = useState('0');
 
   const [nomorTerbuka, setNomorTerbuka] = useState<'NOTA' | 'PAJAK' | null>(null);
+  const [bukaKunciTerbuka, setBukaKunciTerbuka] = useState(false);
   const [nomor, setNomor] = useState('');
 
   const b = data.baris;
+  // Pembukaan yang pasti ditolak penulisnya: tombolnya mati dengan alasannya.
+  const tolakBuka = alasanTolakBukaKunci({
+    terkunci: data.terkunci,
+    noNota: b.noNota,
+    noFakturPajak: b.noFakturPajak,
+    komisi: data.komisi,
+    pembayaranToko: data.pelunasan.pembayaran,
+  });
 
   /* Angka resmi dimulai dari laporan SPG, bukan kosong: itulah yang paling
      sering benar, dan admin membetulkan selisihnya alih-alih mengetik ulang. */
@@ -171,7 +191,7 @@ export function RincianSiklusClient({
               <StatusPill tone={NADA_TAHAP[b.tahap]}>{td(`stage_${b.tahap}`)}</StatusPill>
               {b.giliran !== 'tidak_ada' && (
                 <span className="text-sm text-muted-foreground">
-                  {t('turnOf', { who: td(`who_${b.giliran}`) })}
+                  {t('turnOfSaja', { who: td(`who_${b.giliran}`) })}
                 </span>
               )}
             </span>
@@ -189,10 +209,9 @@ export function RincianSiklusClient({
             data.terkunci ? (
               <Button
                 variant="outline"
-                disabled={pending}
-                onClick={() =>
-                  jalankan(() => bukaKunciAction(b.id), t('okUnlocked'), () => {})
-                }
+                disabled={pending || tolakBuka !== null}
+                title={tolakBuka ? td(`err${tolakBuka}`) : undefined}
+                onClick={() => setBukaKunciTerbuka(true)}
               >
                 <LockOpen className="mr-1.5 h-4 w-4" />
                 {t('unlock')}
@@ -207,6 +226,32 @@ export function RincianSiklusClient({
           </span>
         }
       />
+
+      {bolehMengelola && data.terkunci && tolakBuka && (
+        <p className="text-sm text-muted-foreground">{td(`err${tolakBuka}`)}</p>
+      )}
+
+      <AlertDialog open={bukaKunciTerbuka} onOpenChange={(o) => !pending && setBukaKunciTerbuka(o)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('unlockTitle', { doc: b.noKonsi })}</AlertDialogTitle>
+            <AlertDialogDescription>{t('unlockBody')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>{t('unlockCancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={pending}
+              onClick={(e) => {
+                // Tetap terbuka sampai servernya menjawab.
+                e.preventDefault();
+                jalankan(() => bukaKunciAction(b.id), t('okUnlocked'), () => setBukaKunciTerbuka(false));
+              }}
+            >
+              {t('unlock')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Tiga nomor berdampingan. */}
       <Card>
@@ -303,11 +348,14 @@ export function RincianSiklusClient({
                         className={cn((beda || sepihak) && 'bg-destructive/[0.06]')}
                       >
                         <TableCell className="font-medium">{x.itemName}</TableCell>
+                        {/* "—" hanya untuk laporan yang belum masuk; barang yang tidak
+                            ada di laporan yang SUDAH masuk berarti nol terjual —
+                            sama dengan kartu pencocokan buku stok di bawahnya. */}
                         <TableCell className="text-right tabular-nums">
-                          {x.qtySpg ?? '—'}
+                          {x.qtySpg ?? (data.laporanSpg ? 0 : '—')}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {x.qtyToko ?? '—'}
+                          {x.qtyToko ?? (data.laporanToko ? 0 : '—')}
                         </TableCell>
                         <TableCell
                           className={cn(

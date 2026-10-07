@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { Gift, Loader2, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Gift, Loader2, Plus, Trash2 } from "lucide-react";
 import { createPromoAction, updatePromoAction, type PromoFormInput } from "@/app/actions/promos";
 import type { PromoDetail } from "@/lib/promos/queries";
 import { Input } from "@/components/ui/input";
@@ -14,8 +15,8 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
 
@@ -282,15 +283,20 @@ export function PromoForm({ mode, canManage, itemOptions, storeOptions, defaults
 
   return (
     <div className="space-y-4">
+      <Button asChild variant="ghost" size="sm" className="-ml-2">
+        <Link href="/backoffice/promos">
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          {t("kembaliKePromo")}
+        </Link>
+      </Button>
+      <PageHeader title={mode === "create" ? t("new") : t("edit")} />
       <form onSubmit={onSubmit}>
         <Card>
-          <CardHeader>
-            <div className="flex items-center gap-1">
-              <CardTitle>{mode === "create" ? t("new") : t("edit")}</CardTitle>
-              <TombolBantuan judul={mode === "create" ? t("new") : t("edit")} />
-            </div>
-            {readOnly && <CardDescription>{t("readOnlyBanner")}</CardDescription>}
-          </CardHeader>
+          {readOnly ? (
+            <CardHeader>
+              <CardDescription>{t("readOnlyBanner")}</CardDescription>
+            </CardHeader>
+          ) : null}
           <CardContent className="space-y-6">
             {/* Basic info */}
             <section className="space-y-4">

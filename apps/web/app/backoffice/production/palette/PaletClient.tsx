@@ -709,9 +709,12 @@ export function PaletClient({
                     {pending ? t('saving') : t('save')}
                   </Button>
                 </div>
-                {berkain && totalPorsi !== 100 && (
+                {berkain && totalPorsi !== 100 ? (
                   <p className="text-xs text-amber-700 dark:text-amber-400">{t('portionMustBe100', { total: totalPorsi })}</p>
-                )}
+                ) : !nama.trim() ? (
+                  /* Tombol mati menyebut alasannya. */
+                  <p className="text-xs text-muted-foreground">{t('isiNamaDulu')}</p>
+                ) : null}
               </form>
             )}
           </CardContent>

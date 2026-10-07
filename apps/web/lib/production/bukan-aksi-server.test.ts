@@ -12,7 +12,18 @@ import { describe, expect, it } from "vitest";
  * pembungkusnya. Pemanggilnya semua kode server, jadi direktif itu tidak perlu.
  */
 
-const PUSTAKA = ["consumption.ts", "planning.ts", "reconciliation.ts", "biaya-penerimaan.ts", "galat-produksi.ts"];
+const PUSTAKA = [
+  "consumption.ts",
+  "planning.ts",
+  "reconciliation.ts",
+  "biaya-penerimaan.ts",
+  "galat-produksi.ts",
+  "kembali-bahan.ts",
+  "kembali-bahan-writer.ts",
+  "kembali-bahan-queries.ts",
+  "terlambat.ts",
+  "rekonsiliasi-tampil.ts",
+];
 
 /** Direktif hanya berlaku sebagai pernyataan pertama berkas (setelah komentar). */
 function direktifPertama(sumber: string): string | null {

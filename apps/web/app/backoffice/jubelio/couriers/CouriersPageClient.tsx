@@ -4,16 +4,18 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { toast } from "sonner";
-import { ArrowDown, ArrowUp, ArrowUpDown, RefreshCw } from "lucide-react";
-import { Card } from "@/components/ui/card";
+import { ArrowDown, ArrowUp, ArrowUpDown, RefreshCw, Truck } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Pager } from "@/components/Pager";
 import { formatDisplayDateTime } from "@/lib/date-only";
-import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
+import { PageHeader } from "@/components/ui/page-header";
+import { Label } from "@/components/ui/label";
+import { usePesanGalatJubelio } from "../RincianGalat";
 import {
-  syncJubelioCouriers,
+  sinkronkanKurirJubelio,
   type CourierSortDir,
   type CourierSortField,
   type JubelioCourierRow,
@@ -33,21 +35,13 @@ type Props = {
 
 export function CouriersPageClient(props: Props) {
   const t = useTranslations("jubelioCouriers");
+  const pesanGalat = usePesanGalatJubelio();
   const locale = useLocale();
   const router = useRouter();
   const sp = useSearchParams();
   const [isSyncing, startSyncing] = useTransition();
   const [, startNav] = useTransition();
   const [searchInput, setSearchInput] = useState(props.search);
-
-  // Debounce search input → URL push
-  useEffect(() => {
-    const handle = setTimeout(() => {
-      if (searchInput !== props.search) pushParam("search", searchInput || undefined);
-    }, 300);
-    return () => clearTimeout(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchInput]);
 
   function pushParams(updates: Record<string, string | undefined>): void {
     const params = new URLSearchParams(sp.toString());
@@ -62,16 +56,24 @@ export function CouriersPageClient(props: Props) {
     pushParams({ [key]: value, page: undefined });
   }
 
+  // Debounce search input → URL push
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      if (searchInput !== props.search) pushParam("search", searchInput || undefined);
+    }, 300);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchInput]);
+
   function onSyncClick(): void {
     startSyncing(async () => {
-      try {
-        const r = await syncJubelioCouriers();
-        toast.success(t("toast.syncSuccess", { count: r.count }));
-        router.refresh();
-      } catch (err) {
-        const message = err instanceof Error ? err.message : t("toast.syncError");
-        toast.error(message);
+      const r = await sinkronkanKurirJubelio();
+      if (!r.ok) {
+        toast.error(pesanGalat(r));
+        return;
       }
+      toast.success(t("toast.syncSuccess", { count: r.data.count }));
+      router.refresh();
     });
   }
 
@@ -93,45 +95,47 @@ export function CouriersPageClient(props: Props) {
     : null;
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-1">
-          <h1 className="text-2xl font-semibold">{t("pageTitle")}</h1>
-          <TombolBantuan judul={t("pageTitle")} />
+    <div className="space-y-6">
+      <PageHeader
+        title={t("pageTitle")}
+        meta={
+          lastSyncedAt
+            ? t("lastSyncedAt", { when: formatDisplayDateTime(lastSyncedAt, locale) })
+            : undefined
+        }
+        actions={
+          <Button onClick={onSyncClick} disabled={isSyncing}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${isSyncing ? "animate-spin" : ""}`} />
+            {t("syncButton")}
+          </Button>
+        }
+      />
+
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="w-full max-w-sm space-y-1">
+          <Label htmlFor="kurir-cari" className="text-xs text-muted-foreground">
+            {t("filter.searchLabel")}
+          </Label>
+          <Input
+            id="kurir-cari"
+            placeholder={t("filter.searchPlaceholder")}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+          />
         </div>
-        <Button onClick={onSyncClick} disabled={isSyncing}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? "animate-spin" : ""}`} />
-          {t("syncButton")}
+        <Button variant="outline" onClick={reset}>
+          {t("filter.reset")}
         </Button>
       </div>
 
-      {lastSyncedAt && (
-        <p className="text-sm text-muted-foreground">
-          {t("lastSyncedAt", { when: formatDisplayDateTime(lastSyncedAt, locale) })}
-        </p>
-      )}
-
-      <Card className="p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
-          <div className="lg:col-span-3">
-            <label className="text-xs text-muted-foreground mb-1 block">
-              {t("filter.searchLabel")}
-            </label>
-            <Input
-              placeholder={t("filter.searchPlaceholder")}
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col justify-end">
-            <Button variant="outline" onClick={reset} className="w-full">
-              {t("filter.reset")}
-            </Button>
-          </div>
-        </div>
-      </Card>
-
       <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Truck className="h-5 w-5" />
+            {t("listTitle")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
         <Table>
           <TableHeader>
             <TableRow>
@@ -179,6 +183,7 @@ export function CouriersPageClient(props: Props) {
             )}
           </TableBody>
         </Table>
+        </CardContent>
       </Card>
 
       <Pager
@@ -214,7 +219,7 @@ function SortableHead({
       <button
         type="button"
         onClick={() => onClick(field)}
-        className="inline-flex items-center gap-1 hover:text-foreground"
+        className="inline-flex items-center gap-1 [letter-spacing:inherit] [text-transform:inherit] hover:text-foreground"
       >
         {label}
         <Icon className="h-3.5 w-3.5" />

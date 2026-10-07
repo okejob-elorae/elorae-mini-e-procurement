@@ -34,6 +34,7 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  --color-tautan: var(--tautan);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -124,6 +125,42 @@
   --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.551 0.027 264.364);
+}
+
+/*
+ * Tautan & teks bernada merek — token `--tautan` (kelas `text-tautan`).
+ *
+ * Tema TERANG: warna tema dengan kecerahan oklch dibatasi 0,45; kroma dan rona
+ * tetap, jadi tautan masih terasa "warna merek" tetapi terbaca. Limau #c0db3a di
+ * atas krem #f9fcde: 1,49:1 → 6,74:1 (cadangan color-mix 7,83:1). Terburuk dari
+ * 1.158 warna tema di atas latar/kartu/muted/accent/secondary terang ≥ 4,5:1 —
+ * dikunci `app/kontras-tautan.spec.ts`. Tema GELAP: sama dengan --primary.
+ *
+ * Hanya warna TEKS. Latar tombol (`bg-primary`) dan `--primary` tidak berubah.
+ */
+:root {
+  --tautan: color-mix(in oklab, var(--primary) 50%, black);
+}
+@supports (color: oklch(from red l c h)) {
+  :root {
+    --tautan: oklch(from var(--primary) min(l, 0.45) c h);
+  }
+}
+:root.dark {
+  --tautan: var(--primary);
+}
+
+/*
+ * `text-primary` lama ikut terbaca di tema terang tanpa menyentuh setiap
+ * berkas. Di lapisan utilities (bukan di luar lapisan) supaya varian seperti
+ * `hover:`/`data-[…]:` di elemen yang sama tetap menang. Keping
+ * `bg-primary-foreground text-primary` (menu aktif di sidebar limau) dikecualikan:
+ * di sana limau di atas gelap justru sudah terbaca.
+ */
+@layer utilities {
+  :where(:root:not(.dark)) .text-primary:not(:where(.bg-primary-foreground, .bg-primary-foreground *)) {
+    color: var(--tautan);
+  }
 }
 
 @layer base {

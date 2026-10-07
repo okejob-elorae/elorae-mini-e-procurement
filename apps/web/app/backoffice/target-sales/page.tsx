@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { bulanWib } from "@/lib/salesman/pengaturan";
+import { bacaTargetBulan, bulanWib, KUNCI_TARGET } from "@/lib/salesman/pengaturan";
 import { daftarSalesman, daftarSpg } from "@/lib/salesman/queries";
 import { bulanBerikutnya, bulanSah, bulanSebelumnya, capaianUntuk, type BarisTarget } from "@/lib/salesman/target-rinci";
 import {
@@ -67,11 +68,13 @@ export default async function TargetSalesPage({ searchParams }: PageProps) {
   const dipilih = salesman.find((s) => s.id === mintaSales)?.id ?? null;
   const ids = salesman.map((s) => s.id);
 
-  const [target, capaian, targetLalu, pilihan] = await Promise.all([
+  const [target, capaian, targetLalu, pilihan, setelanTarget] = await Promise.all([
     targetRinciBulan(bulan, ids),
     capaianRinciOrang({ salesmanIds: sales.map((s) => s.id), spgIds: spg.map((s) => s.id) }, bulan, hariIni),
     dipilih ? targetRinciBulan(bulanSebelumnya(bulan), [dipilih]) : Promise.resolve(new Map<string, BarisTarget[]>()),
     dipilih && bolehUbah ? pilihanAcuanTarget() : Promise.resolve(null),
+    // Target total rupiah per orang per bulan tinggal di Pengaturan → Salesman; di sini hanya dibaca.
+    prisma.systemSetting.findUnique({ where: { key: KUNCI_TARGET }, select: { value: true } }),
   ]);
   const semuaTarget = [...target.values()].flat();
   const nama = await namaAcuanTarget(semuaTarget);
@@ -93,6 +96,7 @@ export default async function TargetSalesPage({ searchParams }: PageProps) {
         toko: s.toko,
         jumlahTarget: milik.length,
         omzet: c.total,
+        targetTotal: bacaTargetBulan(setelanTarget?.value, s.id, bulan),
         sel: Object.fromEntries(
           milik
             .filter((t) => t.scope === "KATEGORI")

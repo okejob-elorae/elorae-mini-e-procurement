@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { formatDisplayDate } from "@/lib/date-only";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { bolehMembacaPelunasan } from "@/lib/receivables/izin";
 import type { TandaCheckin } from "@/lib/salesman/checkin-janggal";
 import { bacaRentang } from "@/lib/salesman/metrik-lapangan";
 import { kinerjaSatuSales } from "@/lib/salesman/metrik-queries";
@@ -72,6 +73,14 @@ export default async function RincianSalesPage({ params, searchParams }: PagePro
         .sort((a, b) => URUT_STATUS[a.status] - URUT_STATUS[b.status] || (a.dayKey < b.dayKey ? -1 : a.dayKey > b.dayKey ? 1 : 0))
         .map((j) => ({ ...j, tanggal: formatDisplayDate(new Date(`${j.dayKey}T00:00:00+07:00`)) }))}
       alamatJadwal={`/backoffice/jadwal-kunjungan?sales=${encodeURIComponent(salesmanId)}&minggu=${rentang.sampai}`}
+      // Daftar pelunasan dicari dengan nama sales — hanya untuk yang boleh membukanya; daftar
+      // pesanan lapangan belum bisa disaring per sales.
+      tautan={{
+        kunjungan: "#kunjungan",
+        pelunasan: bolehMembacaPelunasan(session.user.permissions)
+          ? `/backoffice/pelunasan?cari=${encodeURIComponent(kinerja.nama)}`
+          : undefined,
+      }}
       kunjungan={r.kunjungan.map((k) => ({
         id: k.id,
         storeId: k.storeId,

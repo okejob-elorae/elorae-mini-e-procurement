@@ -1,4 +1,3 @@
-import { prisma } from "@elorae/db";
 import { kunciHariWib } from "@/lib/dashboard/tren";
 import { formatDisplayDate } from "@/lib/date-only";
 import { jumlahkanPenjualan, susunPenjualanSalesman } from "./dasbor";
@@ -16,6 +15,8 @@ import {
   type JumlahHp,
   type TitikTrenHp,
 } from "./penjualan-hp";
+import { pcsDariLaku } from "./penjualan-konsi";
+import { lakuKonsiSatuSalesman } from "./penjualan-konsi-queries";
 import { penjualanSalesman } from "./queries";
 
 /**
@@ -32,29 +33,14 @@ import { penjualanSalesman } from "./queries";
 export const HARI_GRAFIK_BERANDA = 60;
 
 /**
- * Pcs konsinyasi salesman sejak `sejak` (dan sebelum `sebelum`, bila ada):
- * pesanan KONSI yang DISETUJUI menurut `approvedAt` — tanggal yang sama dengan
- * rupiah konsi di `penjualanSalesman`.
- * Baris bonus tidak dihitung, sama dengan toko/barang teratas dan target rinci.
+ * Pcs konsinyasi LAKU salesman sejak `sejak` (dan sebelum `sebelum`, bila
+ * ada): barang yang laku di toko konsinyasi yang ia pegang — sumber, tanggal,
+ * dan pemilik yang sama dengan baris konsi di `penjualanSalesman`
+ * (`penjualan-konsi.ts`). Hanya pcs; rupiahnya tidak pernah keluar ke HP.
  */
 export async function pcsKonsiSalesman(salesmanId: string, sejak: Date, sebelum?: Date): Promise<BarisPcsKonsi[]> {
   if (!salesmanId) return [];
-  const pesanan = await prisma.fieldSalesOrder.findMany({
-    where: {
-      salesmanId,
-      orderType: "KONSI",
-      status: "APPROVED",
-      // `sebelum` (eksklusif) membatasi bacaan satu bulan lampau — tanpa itu bulan
-      // lima bulan lalu membaca semua pesanan konsi sampai hari ini.
-      approvedAt: sebelum ? { gte: sejak, lt: sebelum } : { gte: sejak },
-    },
-    select: { approvedAt: true, lines: { select: { qty: true, isBonus: true } } },
-    orderBy: { approvedAt: "asc" },
-  });
-  return pesanan.map((o) => ({
-    tanggal: o.approvedAt as Date,
-    pcs: o.lines.reduce((n, l) => n + (l.isBonus ? 0 : l.qty), 0),
-  }));
+  return pcsDariLaku(await lakuKonsiSatuSalesman(salesmanId, sejak, { sebelum }));
 }
 
 /** Kartu "Bulan ini" dan grafik 30 hari di beranda HP. */
@@ -63,7 +49,9 @@ export async function berandaPenjualanHp(
   hariIni: Date,
 ): Promise<{ bulanIni: JumlahHp; tren: TitikTrenHp[] }> {
   const sejak = new Date(Date.parse(`${kunciHariWib(hariIni)}T00:00:00+07:00`) - HARI_GRAFIK_BERANDA * 86_400_000);
-  const [jual, pcs] = await Promise.all([penjualanSalesman(salesmanId, sejak), pcsKonsiSalesman(salesmanId, sejak)]);
+  // Laku konsi dibaca sekali: rupiahnya dibuang (`tanpaKonsi`), pcs-nya untuk kartu.
+  const laku = lakuKonsiSatuSalesman(salesmanId, sejak);
+  const [jual, pcs] = await Promise.all([penjualanSalesman(salesmanId, sejak, { lakuKonsi: laku }), laku.then(pcsDariLaku)]);
   const titik = susunPenjualanSalesman(tanpaKonsi(jual), hariIni, HARI_GRAFIK_BERANDA);
   const bulan = bulanWib(hariIni);
   // Bulan ini = titik harian yang tanggalnya di bulan kalender WIB yang sama.

@@ -19,6 +19,19 @@ import { fanOutAdminNotification } from '@/lib/notifications/admin-fanout';
 import { runSerializable } from "@/lib/db/tx-retry";
 import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 import { alasanTolakPenerimaanPo } from "@/lib/purchase-orders/penerimaan";
+import { bentrokKunciKiriman } from "@/lib/receivables/idempoten";
+import {
+  PESAN_PEMILIK_GRN,
+  kodeTolakPemilikGrn,
+  type KodeTolakPemilikGrn,
+} from "@/app/backoffice/inventory/grn/kode-pemilik";
+import {
+  fotoGrn,
+  keadaanPemilikGrn,
+  susunBarisGrn,
+  type BarangGrn,
+  type BarisRincianGrn,
+} from "@/app/backoffice/inventory/grn/[id]/rincian-grn";
 
 const grnItemSchema = z.object({
   itemId: z.string().min(1),
@@ -43,9 +56,68 @@ const grnSchema = z.object({
   items: z.array(grnItemSchema).min(1),
   notes: z.string().optional(),
   photoUrls: z.array(z.string()).optional(),
+  /** Kunci kiriman: dibuat formulir SEKALI per isian (disimpan bersama draf GRN). */
+  idempotencyKey: z.string().trim().min(8).max(100).optional(),
 });
 
 export type GRNFormData = z.infer<typeof grnSchema>;
+
+/** Hasil `createGRN`. `ulang` = kiriman ulang berkunci sama; GRN yang sudah ada dikembalikan. */
+export type HasilCreateGRN = {
+  id: string;
+  docNumber: string;
+  poId: string | null;
+  supplierId: string;
+  receivedBy: string;
+  totalAmount: number;
+  photoUrls: string | null;
+  items: unknown;
+  notes: string | null;
+  grnDate: Date;
+  createdAt: Date;
+  ulang: boolean;
+};
+
+const KOLOM_HASIL_GRN = {
+  id: true,
+  docNumber: true,
+  poId: true,
+  supplierId: true,
+  receivedBy: true,
+  totalAmount: true,
+  photoUrls: true,
+  items: true,
+  notes: true,
+  grnDate: true,
+  createdAt: true,
+} as const;
+
+type BarisHasilGrn = {
+  id: string;
+  docNumber: string;
+  poId: string | null;
+  supplierId: string;
+  receivedBy: string;
+  totalAmount: { toString(): string } | number;
+  photoUrls: string | null;
+  items: unknown;
+  notes: string | null;
+  grnDate: Date;
+  createdAt: Date;
+};
+
+function hasilGrn(grn: BarisHasilGrn, ulang: boolean): HasilCreateGRN {
+  return { ...grn, totalAmount: Number(grn.totalAmount), ulang };
+}
+
+/** GRN yang sudah tercatat dengan kunci kiriman ini (di luar atau di dalam transaksi). */
+async function grnDenganKunci(
+  db: Pick<typeof prisma, 'gRN'>,
+  kunci: string,
+): Promise<HasilCreateGRN | null> {
+  const lama = await db.gRN.findUnique({ where: { idempotencyKey: kunci }, select: KOLOM_HASIL_GRN });
+  return lama ? hasilGrn(lama, true) : null;
+}
 
 function grnPoLineKey(itemId: string, variantSku?: string | null) {
   const v = variantSku?.trim() ?? '';
@@ -110,8 +182,15 @@ class GrnDitolakError extends Error {
  * terisi) atau jalur tutup lama yang belum menulis `closedAt` (barang kurang).
  * Hanya yang lengkap boleh menerima terima-lebih yang sah (lewat ambang /
  * persetujuan pemilik), sama seperti PO berstatus OVER; sisanya `PO_DITUTUP`.
+ *
+ * `idempotencyKey` (dibuat formulir SEKALI per isian) diperiksa PALING DULU —
+ * sebelum penjaga status PO, karena GRN pertama bisa sudah menutup PO-nya — lalu
+ * sekali lagi DI DALAM transaksi: kiriman ulang sesudah jawaban hilang, klik
+ * ganda, atau percobaan ulang `runSerializable` sesudah balapan mendapat GRN
+ * yang sama (`ulang: true`) tanpa menyentuh stok, harga rata-rata, status PO,
+ * maupun jurnal hutang lagi.
  */
-export async function createGRN(data: z.infer<typeof grnSchema>, _userId?: string) {
+export async function createGRN(data: z.infer<typeof grnSchema>, _userId?: string): Promise<HasilCreateGRN> {
   void _userId;
   const session = await auth();
   if (!session?.user?.id) throw new Error('Unauthorized');
@@ -119,9 +198,20 @@ export async function createGRN(data: z.infer<typeof grnSchema>, _userId?: strin
   const userId = session.user.id;
 
   const validated = grnSchema.parse(data);
+  const kunci = validated.idempotencyKey ?? null;
+  if (kunci) {
+    const lama = await grnDenganKunci(prisma, kunci);
+    if (lama) return lama;
+  }
   await assertLinesVariantSkusMatchItemDefinitions(prisma.item, validated.items);
 
-  const result = await runSerializable(async (tx) => {
+  const terima = () => runSerializable(async (tx): Promise<HasilCreateGRN> => {
+    // Lagi, di dalam transaksi: percobaan ulang sesudah konflik melihat GRN pemenangnya.
+    if (kunci) {
+      const lama = await grnDenganKunci(tx, kunci);
+      if (lama) return lama;
+    }
+
     if (validated.poId) {
       const po = await tx.purchaseOrder.findUnique({
         where: { id: validated.poId },
@@ -258,6 +348,7 @@ export async function createGRN(data: z.infer<typeof grnSchema>, _userId?: strin
         photoUrls: validated.photoUrls ? JSON.stringify(validated.photoUrls) : null,
         items: JSON.stringify(processedItems),
         notes: validated.notes ?? null,
+        idempotencyKey: kunci,
       },
     });
 
@@ -373,20 +464,20 @@ export async function createGRN(data: z.infer<typeof grnSchema>, _userId?: strin
     }
 
     revalidatePath('/backoffice/inventory');
-    return {
-      id: grn.id,
-      docNumber: grn.docNumber,
-      poId: grn.poId,
-      supplierId: grn.supplierId,
-      receivedBy: grn.receivedBy,
-      totalAmount: Number(grn.totalAmount),
-      photoUrls: grn.photoUrls,
-      items: grn.items,
-      notes: grn.notes,
-      grnDate: grn.grnDate,
-      createdAt: grn.createdAt,
-    };
+    return hasilGrn(grn, false);
   });
+
+  let result: HasilCreateGRN;
+  try {
+    result = await terima();
+  } catch (err) {
+    // Kiriman kembarnya commit lebih dulu dan bentrok di kolom kunci (tidak
+    // diulang runSerializable): percobaan ini membaca kunci yang kini tercatat.
+    if (!kunci || !bentrokKunciKiriman(err)) throw err;
+    result = await terima();
+  }
+  // Ulangan: barang tidak masuk lagi — notifikasi, push stok, dan jurnal tidak dikirim lagi.
+  if (result.ulang) return result;
 
   getActorName(userId)
     .then((triggeredByName) => notifyGRNCreated(result.id, result.docNumber, triggeredByName))
@@ -449,7 +540,8 @@ export async function createGRN(data: z.infer<typeof grnSchema>, _userId?: strin
 export type KodeTolakGrn = keyof typeof PESAN_TOLAK_GRN;
 
 export type SimpanGRNResult =
-  | { ok: true; id: string; docNumber: string }
+  /** `ulang: true` hanya pada kiriman ulang berkunci sama (GRN yang sudah ada). */
+  | { ok: true; id: string; docNumber: string; ulang?: true }
   | { ok: false; code: KodeTolakGrn };
 
 /**
@@ -461,7 +553,7 @@ export type SimpanGRNResult =
 export async function simpanGRN(data: GRNFormData): Promise<SimpanGRNResult> {
   try {
     const grn = await createGRN(data);
-    return { ok: true, id: grn.id, docNumber: grn.docNumber };
+    return { ok: true, id: grn.id, docNumber: grn.docNumber, ...(grn.ulang ? { ulang: true as const } : {}) };
   } catch (error) {
     if (error instanceof GrnDitolakError) return { ok: false, code: error.code };
     throw error;
@@ -514,7 +606,7 @@ export async function getGRNs(
 
   const include = {
     supplier: { select: PEMASOK_AMAN },
-    po: { select: { docNumber: true } },
+    po: { select: { id: true, docNumber: true } },
   };
 
   if (opts?.page != null && opts?.pageSize != null && opts.pageSize > 0) {
@@ -743,10 +835,10 @@ export async function approveGRNByOwner(id: string, _userId?: string) {
 
   const grn = await runSerializable(async (tx) => {
     const cur = await tx.gRN.findUnique({ where: { id } });
-    if (!cur) throw new Error('GRN not found');
-    if (cur.ownerDeclinedAt != null) throw new Error('This GRN was already declined');
-    if (cur.ownerApprovedAt != null) throw new Error('This GRN was already approved');
-    if (!cur.requiresOwnerApproval) throw new Error('This GRN is not awaiting owner approval');
+    if (!cur) throw new Error(PESAN_PEMILIK_GRN.TIDAK_DITEMUKAN);
+    if (cur.ownerDeclinedAt != null) throw new Error(PESAN_PEMILIK_GRN.SUDAH_DITOLAK);
+    if (cur.ownerApprovedAt != null) throw new Error(PESAN_PEMILIK_GRN.SUDAH_DISETUJUI);
+    if (!cur.requiresOwnerApproval) throw new Error(PESAN_PEMILIK_GRN.TIDAK_MENUNGGU);
 
     const updated = await tx.gRN.update({
       where: { id },
@@ -803,14 +895,14 @@ export async function declineGRNByOwner(id: string, _userId?: string) {
     barangDibalik = [];
     nomorGrn = '';
     const grn = await tx.gRN.findUnique({ where: { id } });
-    if (!grn) throw new Error('GRN not found');
+    if (!grn) throw new Error(PESAN_PEMILIK_GRN.TIDAK_DITEMUKAN);
     poIdForRevalidate = grn.poId ?? null;
     nomorGrn = grn.docNumber;
     if (grn.ownerDeclinedAt != null) {
-      throw new Error('This GRN was already declined');
+      throw new Error(PESAN_PEMILIK_GRN.SUDAH_DITOLAK);
     }
     if (!grn.requiresOwnerApproval || grn.ownerApprovedAt != null) {
-      throw new Error('This GRN is not awaiting owner approval');
+      throw new Error(PESAN_PEMILIK_GRN.TIDAK_MENUNGGU);
     }
 
     const lines = parseGrnStoredLines(grn.items);
@@ -818,9 +910,7 @@ export async function declineGRNByOwner(id: string, _userId?: string) {
     const rolls = await tx.fabricRoll.findMany({ where: { grnId: id } });
     for (const r of rolls) {
       if (Number(r.remainingLength) !== Number(r.initialLength)) {
-        throw new Error(
-          'Cannot decline: fabric rolls from this GRN have been consumed. Adjust stock or contact support.'
-        );
+        throw new Error(PESAN_PEMILIK_GRN.ROL_SUDAH_DIPAKAI);
       }
     }
 
@@ -831,7 +921,7 @@ export async function declineGRNByOwner(id: string, _userId?: string) {
       if (!Number.isFinite(qty) || qty <= 0) continue;
       const unitCost = typeof line.unitCost === 'number' ? line.unitCost : Number(line.unitCost);
       if (!Number.isFinite(unitCost) || unitCost < 0) {
-        throw new Error(`Invalid unit cost on GRN line for item ${itemId}`);
+        throw new Error(`${PESAN_PEMILIK_GRN.HARGA_TIDAK_SAH} ${itemId}`);
       }
       const variantKey = line.variantSku?.trim() ? line.variantSku.trim() : null;
 
@@ -845,9 +935,7 @@ export async function declineGRNByOwner(id: string, _userId?: string) {
       });
       const onHand = inv ? new Decimal(inv.qtyOnHand.toString()) : new Decimal(0);
       if (onHand.lt(qty)) {
-        throw new Error(
-          'Cannot decline: insufficient on-hand stock (goods may have been issued or consumed).'
-        );
+        throw new Error(PESAN_PEMILIK_GRN.STOK_KURANG);
       }
 
       const costResult = await reverseMovingAverage(
@@ -880,7 +968,7 @@ export async function declineGRNByOwner(id: string, _userId?: string) {
     }
 
     if (reversedLines === 0) {
-      throw new Error('No valid GRN lines to reverse');
+      throw new Error(PESAN_PEMILIK_GRN.TANPA_BARIS);
     }
 
     if (rolls.length > 0) {
@@ -906,7 +994,7 @@ export async function declineGRNByOwner(id: string, _userId?: string) {
         const cur = Number(poItem.receivedQty);
         const next = cur - qty;
         if (next < 0) {
-          throw new Error('PO received quantity would become negative; data may be inconsistent.');
+          throw new Error(PESAN_PEMILIK_GRN.QTY_PO_NEGATIF);
         }
         await tx.pOItem.update({
           where: { id: poItem.id },
@@ -1003,21 +1091,26 @@ export async function getGrnJournalState(grnId: string): Promise<{
   return {
     receiptJournalId: receipt?.id ?? null,
     reversalJournalId: reversal?.id ?? null,
-    hasPostableReceiptJournal: hasValue && receipt == null,
+    // GRN yang ditolak pemilik tidak pernah memesan hutang — sama dengan penjaga aksinya.
+    hasPostableReceiptJournal: hasValue && !declined && receipt == null,
     hasPostableReversalJournal: hasValue && declined && reversal == null,
   };
 }
 
 export async function postGrnReceiptJournalAction(
   grnId: string,
-): Promise<GenerateAutoJournalResult | { ok: false; code: "FORBIDDEN" | "BAD_STATE" }> {
+): Promise<GenerateAutoJournalResult | { ok: false; code: "FORBIDDEN" | "BAD_STATE" | "DITOLAK_PEMILIK" }> {
   const session = await auth();
   if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE)) {
     return { ok: false, code: "FORBIDDEN" };
   }
 
-  const grn = await prisma.gRN.findUnique({ where: { id: grnId }, select: { id: true } });
+  const grn = await prisma.gRN.findUnique({ where: { id: grnId }, select: { id: true, ownerDeclinedAt: true } });
   if (!grn) return { ok: false, code: "BAD_STATE" };
+  // Ditolak pemilik: barangnya sudah dibalik dari persediaan. Jurnal terima di sini
+  // memesan hutang untuk barang yang tidak diterima — dan membuat pembayaran PO
+  // tertahan `GRN_REVERSAL_MISSING`. Layar menyembunyikan tombolnya; server menolak.
+  if (grn.ownerDeclinedAt != null) return { ok: false, code: "DITOLAK_PEMILIK" };
 
   const r = await postGrnJournal(grnId, session.user.id);
   // Jurnal berdiri → tanda "Jurnal gagal" dokumen ini selesai (Beranda).
@@ -1041,4 +1134,119 @@ export async function postGrnReversalJournalAction(
   if (r.ok) await tandaiJurnalTertundaSelesai([dokumenJurnal("GRN_REVERSAL", grnId)]);
   revalidatePath("/backoffice/inventory");
   return r;
+}
+
+export type PutuskanGRNPemilikResult = { ok: true } | { ok: false; code: KodeTolakPemilikGrn };
+
+/**
+ * Setuju/tolak terima-lebih untuk layar, dengan penolakan sebagai KODE
+ * (`inventory.grnPemilik.err.<kode>`): di build produksi Next menyamarkan
+ * pesan lemparan aksi server, jadi layar dulu hanya bisa berkata "gagal".
+ * Penjaga dan penulisnya tetap `approveGRNByOwner` / `declineGRNByOwner`.
+ */
+export async function putuskanGRNPemilik(
+  id: string,
+  keputusan: 'setuju' | 'tolak'
+): Promise<PutuskanGRNPemilikResult> {
+  const session = await auth();
+  const perms = session?.user?.permissions ?? [];
+  if (!session?.user?.id || !hasPermission(perms, PERMISSIONS.INVENTORY_MANAGE) || !perms.includes('*')) {
+    return { ok: false, code: 'TANPA_AKSES' };
+  }
+  try {
+    if (keputusan === 'setuju') await approveGRNByOwner(id);
+    else await declineGRNByOwner(id);
+    return { ok: true };
+  } catch (e) {
+    const code = kodeTolakPemilikGrn(e);
+    if (code === 'GAGAL') console.error('[putuskanGRNPemilik]', e);
+    return { ok: false, code };
+  }
+}
+
+export type RincianGRN = {
+  id: string;
+  docNumber: string;
+  grnDate: string;
+  createdAt: string;
+  supplier: { id: string; code: string; name: string };
+  po: { id: string; docNumber: string; status: string } | null;
+  penerima: string | null;
+  totalAmount: number;
+  notes: string | null;
+  foto: string[];
+  baris: BarisRincianGrn[];
+  pemilik: {
+    keadaan: 'menunggu' | 'disetujui' | 'ditolak' | null;
+    waktu: string | null;
+    oleh: string | null;
+  };
+  rolls: Awaited<ReturnType<typeof getRollsByGrnId>>;
+  returPemasok: Array<{ id: string; docNumber: string; status: string }>;
+};
+
+/**
+ * Rincian satu GRN untuk halaman `/backoffice/inventory/grn/[id]`: barang,
+ * qty, harga, foto, keadaan terima-lebih, roll kain, retur pemasok terkait.
+ * Dulu baris GRN di tab Penerimaan Barang hanya bisa dibuka untuk roll kain.
+ */
+export async function getRincianGRN(id: string): Promise<RincianGRN | null> {
+  await wajibSalahSatuIzin(PERMISSIONS.INVENTORY_VIEW);
+  const grn = await prisma.gRN.findUnique({
+    where: { id },
+    include: {
+      supplier: { select: { id: true, code: true, name: true } },
+      po: { select: { id: true, docNumber: true, status: true } },
+      ownerApprovedBy: { select: { name: true, email: true } },
+      ownerDeclinedBy: { select: { name: true, email: true } },
+      vendorReturns: { select: { id: true, docNumber: true, status: true }, orderBy: { createdAt: 'asc' } },
+    },
+  });
+  if (!grn) return null;
+
+  const mentah = parseGrnStoredLines(grn.items);
+  const idBarang = [...new Set(mentah.map((l) => l.itemId).filter((v): v is string => typeof v === 'string' && v !== ''))];
+  const [barangRows, penerima, rolls] = await Promise.all([
+    idBarang.length
+      ? prisma.item.findMany({
+          where: { id: { in: idBarang } },
+          select: { id: true, sku: true, nameId: true, variants: true, uom: { select: { code: true } } },
+        })
+      : Promise.resolve([]),
+    grn.receivedBy
+      ? prisma.user.findUnique({ where: { id: grn.receivedBy }, select: { name: true, email: true } })
+      : Promise.resolve(null),
+    getRollsByGrnId(id),
+  ]);
+  const barang = new Map<string, BarangGrn>(
+    barangRows.map((b) => [b.id, { sku: b.sku, nameId: b.nameId, uomCode: b.uom?.code ?? '', variants: b.variants }])
+  );
+  const keadaan = keadaanPemilikGrn(grn);
+  const pemutus = keadaan === 'ditolak' ? grn.ownerDeclinedBy : keadaan === 'disetujui' ? grn.ownerApprovedBy : null;
+
+  return {
+    id: grn.id,
+    docNumber: grn.docNumber,
+    grnDate: grn.grnDate.toISOString(),
+    createdAt: grn.createdAt.toISOString(),
+    supplier: grn.supplier,
+    po: grn.po,
+    penerima: penerima ? penerima.name || penerima.email || null : null,
+    totalAmount: Number(grn.totalAmount),
+    notes: grn.notes,
+    foto: fotoGrn(grn.photoUrls),
+    baris: susunBarisGrn(grn.items, barang),
+    pemilik: {
+      keadaan,
+      waktu:
+        keadaan === 'ditolak'
+          ? grn.ownerDeclinedAt?.toISOString() ?? null
+          : keadaan === 'disetujui'
+            ? grn.ownerApprovedAt?.toISOString() ?? null
+            : null,
+      oleh: pemutus ? pemutus.name || pemutus.email || null : null,
+    },
+    rolls,
+    returPemasok: grn.vendorReturns,
+  };
 }

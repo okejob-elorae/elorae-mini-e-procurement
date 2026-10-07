@@ -34,7 +34,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ExternalLink, Loader2, UploadCloud } from "lucide-react";
-import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
+import { PageHeader } from "@/components/ui/page-header";
+import { usePesanGalatJubelio } from "../RincianGalat";
 import {
   enqueueBulkMigration,
   type EligibleItem,
@@ -48,6 +49,7 @@ type Props = {
 
 export function MigrationClient({ initialItems, initialSummary }: Props) {
   const t = useTranslations("jubelio.migration");
+  const pesanGalat = usePesanGalatJubelio();
   const locale = useLocale();
   const [items, setItems] = useState<EligibleItem[]>(initialItems);
   const [summary] = useState<MigrationSummary>(initialSummary);
@@ -64,38 +66,37 @@ export function MigrationClient({ initialItems, initialSummary }: Props) {
     });
   };
 
+  // Barang tanpa pemetaan kategori pasti dilewati Jubelio, jadi tidak bisa dicentang.
+  const siap = items.filter((it) => it.hasJubelioCategoryMapping);
+
   const toggleAll = () => {
-    if (selected.size === items.length) {
+    if (selected.size === siap.length) {
       setSelected(new Set());
     } else {
-      setSelected(new Set(items.map((it) => it.id)));
+      setSelected(new Set(siap.map((it) => it.id)));
     }
   };
 
   const handleConfirm = () => {
     startTransition(async () => {
-      try {
-        const ids = Array.from(selected);
-        const result = await enqueueBulkMigration(ids);
-        toast.success(t("queued", { count: result.enqueued }));
-        setItems((prev) => prev.filter((it) => !selected.has(it.id)));
-        setSelected(new Set());
-        setConfirmOpen(false);
-      } catch (err) {
-        toast.error((err as Error).message);
-        setConfirmOpen(false);
+      const ids = Array.from(selected);
+      const r = await enqueueBulkMigration(ids);
+      setConfirmOpen(false);
+      if (!r.ok) {
+        toast.error(pesanGalat(r));
+        return;
       }
+      toast.success(t("queued", { count: r.data.enqueued }));
+      setItems((prev) => prev.filter((it) => !selected.has(it.id)));
+      setSelected(new Set());
     });
   };
 
-  const allSelected = items.length > 0 && selected.size === items.length;
+  const allSelected = siap.length > 0 && selected.size === siap.length;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-1">
-        <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
-        <TombolBantuan judul={t("title")} />
-      </div>
+      <PageHeader title={t("title")} />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <SummaryStat label={t("done")} value={summary.done} />
@@ -113,7 +114,6 @@ export function MigrationClient({ initialItems, initialSummary }: Props) {
               <CardDescription>{t("candidates", { count: items.length })}</CardDescription>
             </div>
             <Button
-              variant="destructive"
               disabled={selected.size === 0 || isPending}
               onClick={() => setConfirmOpen(true)}
             >
@@ -133,7 +133,12 @@ export function MigrationClient({ initialItems, initialSummary }: Props) {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-8">
-                      <Checkbox checked={allSelected} onCheckedChange={toggleAll} aria-label={t("selectAll")} />
+                      <Checkbox
+                        checked={allSelected}
+                        onCheckedChange={toggleAll}
+                        disabled={siap.length === 0}
+                        aria-label={t("selectAll")}
+                      />
                     </TableHead>
                     <TableHead>{t("colSku")}</TableHead>
                     <TableHead>{t("colName")}</TableHead>
@@ -149,6 +154,7 @@ export function MigrationClient({ initialItems, initialSummary }: Props) {
                         <Checkbox
                           checked={selected.has(it.id)}
                           onCheckedChange={() => toggle(it.id)}
+                          disabled={!it.hasJubelioCategoryMapping}
                           aria-label={t("selectOne", { sku: it.sku })}
                         />
                       </TableCell>
@@ -163,10 +169,21 @@ export function MigrationClient({ initialItems, initialSummary }: Props) {
                       <TableCell>
                         {it.hasJubelioCategoryMapping ? (
                           <Badge variant="default">{t("ready")}</Badge>
+                        ) : !it.categoryId ? (
+                          <Link
+                            href={`/backoffice/items/${it.id}`}
+                            className="text-sm text-tautan underline underline-offset-2"
+                          >
+                            {t("noCategory")}
+                          </Link>
                         ) : (
-                          <Badge variant="secondary" title={t("unmappedHint")}>
+                          <Link
+                            href="/backoffice/jubelio/categories"
+                            className="text-sm text-tautan underline underline-offset-2"
+                            title={t("unmappedHint")}
+                          >
                             {t("unmapped")}
-                          </Badge>
+                          </Link>
                         )}
                       </TableCell>
                     </TableRow>

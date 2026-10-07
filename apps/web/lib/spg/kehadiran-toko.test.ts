@@ -147,23 +147,27 @@ d("kehadiran SPG di toko hari ini (test bed only)", () => {
     );
     const per = Object.fromEntries(hasil.map((h) => [h.nama.split(" ")[1], h]));
 
-    expect(per.Ani).toMatchObject({ keadaan: "DI_TOKO", masuk: "08.15", pulang: null, jenisIzin: null });
+    expect(per.Ani).toMatchObject({ keadaan: "DI_TOKO", masuk: "08.15", pulang: null });
     expect(per.Budi).toMatchObject({ keadaan: "DI_TOKO", masuk: "08.00", pulang: null });
-    expect(per.Citra).toMatchObject({ keadaan: "IZIN", masuk: null, pulang: null, jenisIzin: "SAKIT" });
-    expect(per.Dewi).toMatchObject({ keadaan: "BELUM", masuk: null, jenisIzin: null, jadwalMulai: "14:00" });
+    // Sakit tertulis "izin" saja di HP salesman — jenisnya tidak dikirim.
+    expect(per.Citra).toEqual(expect.objectContaining({ keadaan: "IZIN", masuk: null, pulang: null }));
+    expect(per.Citra).not.toHaveProperty("jenisIzin");
+    expect(per.Dewi).toMatchObject({ keadaan: "BELUM", masuk: null, jadwalMulai: "14:00" });
     expect(per.Eka).toMatchObject({ keadaan: "LIBUR", masuk: null });
-    expect(per.Fani).toMatchObject({ keadaan: "BELUM", masuk: null, jenisIzin: null, jadwalMulai: null });
+    expect(per.Fani).toMatchObject({ keadaan: "BELUM", masuk: null, jadwalMulai: null });
     expect(per.Gita).toMatchObject({ keadaan: "PULANG", masuk: "00.30", pulang: "01.00" });
     expect(per.Hana).toMatchObject({ keadaan: "PULANG", masuk: "07.45", pulang: "12.40" });
   });
 
-  it("muatan ke HP hanya nama, keadaan, jam, jenis izin, dan jadwal — tanpa angka uang", async () => {
+  it("muatan ke HP hanya nama, keadaan, jam, dan jadwal — tanpa angka uang dan tanpa jenis izin", async () => {
     const hasil = tampilKehadiran(await kehadiranSpgToko(seededId(toko), SEKARANG, SETIAP_HARI));
     for (const h of hasil) {
-      expect(Object.keys(h).sort()).toEqual(["jadwalMulai", "jenisIzin", "keadaan", "masuk", "nama", "pulang", "userId"]);
+      expect(Object.keys(h).sort()).toEqual(["jadwalMulai", "keadaan", "masuk", "nama", "pulang", "userId"]);
     }
+    // Izin/sakit/cuti adalah urusan pribadi SPG: salesman hanya melihat "izin hari ini".
+    expect(JSON.stringify(hasil)).not.toMatch(/SAKIT|CUTI|jenisIzin/);
     // id dan nama uji acak (cuid bisa memuat "rp") — yang diperiksa isian lainnya.
-    const isi = hasil.map((h) => [h.keadaan, h.masuk, h.pulang, h.jenisIzin, h.jadwalMulai]);
+    const isi = hasil.map((h) => [h.keadaan, h.masuk, h.pulang, h.jadwalMulai]);
     expect(JSON.stringify(isi)).not.toMatch(/Rp|harga|price|total|nilai/i);
     expect(JSON.stringify(isi)).not.toMatch(/\d{4,}/);
   });

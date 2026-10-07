@@ -10,7 +10,7 @@ const NADA: Record<KeadaanInden, string> = {
   BELUM_BUKA: "bg-muted text-muted-foreground",
   BUKA: "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300",
   TUTUP: "bg-amber-500/15 text-amber-800 dark:text-amber-300",
-  DIRILIS: "bg-primary/10 text-primary",
+  DIRILIS: "bg-primary/20 text-foreground",
   NONAKTIF: "bg-muted text-muted-foreground line-through",
 };
 

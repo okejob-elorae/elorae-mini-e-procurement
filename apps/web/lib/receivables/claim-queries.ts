@@ -47,9 +47,11 @@ export type RincianKlaim = {
 };
 
 /**
- * Satu nota retur yang bisa dipilih sebagai potongan. `sisa` = nilai NRT
+ * Satu nota retur yang bisa dipilih sebagai potongan. `sisa` = batas potong NRT
  * dikurangi potongan atasnya di seluruh BKM yang masih hidup — yang benar-benar
- * masih boleh dipotongkan (penulisnya menolak yang melebihi).
+ * masih boleh dipotongkan (penulisnya menolak yang melebihi). Batasnya nilai
+ * NRT, atau fisik + beban yang ditagih balik sesudah selisihnya ditetapkan ke
+ * toko (`batasPotongNota`).
  */
 export type PilihanRetur = { id: string; noNrt: string; nilaiKlaim: number; sisa: number };
 
@@ -61,7 +63,8 @@ async function denganSisa(retur: { id: string; noNrt: string; claimedAmount: unk
   );
   return retur.map((r) => {
     const nilai = angka(r.claimedAmount);
-    return { id: r.id, noNrt: r.noNrt, nilaiKlaim: nilai, sisa: Math.max(0, nilai - (dipakai.get(r.id)?.terpakai ?? 0)) };
+    const u = dipakai.get(r.id);
+    return { id: r.id, noNrt: r.noNrt, nilaiKlaim: nilai, sisa: Math.max(0, Math.round(((u?.nilai ?? nilai) - (u?.terpakai ?? 0)) * 100) / 100) };
   });
 }
 

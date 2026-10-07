@@ -26,16 +26,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Loader2, ArrowLeft, Edit, CheckCircle, XCircle, Printer, AlertTriangle } from 'lucide-react';
-import { buildPOPrintHtml } from '@/lib/print/po-html';
+import { Loader2, ArrowLeft, Edit, CheckCircle, XCircle, Printer, AlertTriangle, PackageCheck } from 'lucide-react';
+import { buildPOPrintHtml, labelStatusCetakPo } from '@/lib/print/po-html';
 import { variantDetailForSku } from '@/lib/items/variants';
 import { logPrint } from '@/app/actions/audit';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import { POStatus } from '@/lib/constants/enums';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
 import { PinAuthModal } from '@/components/security/PinAuthModal';
 import { ChainPositionStrip } from '@/components/lead-time/chain-position-strip';
 import { PERMISSIONS, hasPermission } from '@/lib/rbac';
@@ -47,15 +44,12 @@ import { TutupPoDialog } from './TutupPoDialog';
 import { RingkasanUtangPo } from './RingkasanUtangPo';
 import { pesanTolakBatalPo, type TolakBatalPo } from '../pesan-batal-po';
 import { pesanTolakEditPo, type TolakEditPo } from '../pesan-edit-po';
-
-const statusLabels: Record<POStatus, string> = {
-  DRAFT: 'Draft',
-  SUBMITTED: 'Submitted',
-  PARTIAL: 'Partial',
-  CLOSED: 'Closed',
-  OVER: 'Over-received',
-  CANCELLED: 'Cancelled',
-};
+import { BatalPoDialog } from '../BatalPoDialog';
+import { bolehTerimaBarang, keadaanBatalPo, tampilStatusBayar } from '../aturan-po';
+import { TAUTAN_DOKUMEN } from '../tautan-dokumen';
+import { catatanRiwayatPo } from './catatan-riwayat';
+import { KonfirmasiBayarDialog } from '../../supplier-payments/KonfirmasiBayarDialog';
+import { pisahUtangPo } from '../../supplier-payments/nilai-utang';
 
 const statusColors: Record<POStatus, string> = {
   DRAFT: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200',
@@ -82,11 +76,13 @@ export default function PODetailPage() {
   const [pendingUpdateData, setPendingUpdateData] = useState<any>(null);
   const [isTogglingPaid, setIsTogglingPaid] = useState(false);
   const [isPostingReversal, setIsPostingReversal] = useState(false);
+  const [konfirmasiBayar, setKonfirmasiBayar] = useState<'bayar' | 'batal' | null>(null);
   const tSupplierPayments = useTranslations('supplierPayments');
   const tPO = useTranslations('purchaseOrders');
   const tSecurity = useTranslations('security');
   const tToasts = useTranslations('toasts');
   const tStatus = useTranslations('statuses');
+  const tInv = useTranslations('inventory.page');
   const locale = useLocale();
   const statusLabel = (status: string) =>
     tStatus(getStatusMeta('purchaseOrder', status).labelKey as never);
@@ -124,7 +120,9 @@ export default function PODetailPage() {
     setIsTogglingPaid(true);
     try {
       const result = await setPOPaidAt(po.id, next);
-      if (result.refusal) {
+      if (result.refusal === 'TANGGAL_TIDAK_SAH') {
+        toast.error(tSupplierPayments('konfirmasi.tanggalSalah'));
+      } else if (result.refusal) {
         toast.warning(tSupplierPayments('standingPayment.markRefused'), { duration: 12000 });
       } else if (!result.changed) {
         toast.info(
@@ -157,6 +155,7 @@ export default function PODetailPage() {
       toast.error(e.message || tSupplierPayments('actionFailed'));
     } finally {
       setIsTogglingPaid(false);
+      setKonfirmasiBayar(null);
     }
   };
 
@@ -204,9 +203,18 @@ export default function PODetailPage() {
           // Load suppliers for edit mode
           import('@/app/actions/suppliers')
             .then(({ getSuppliersForSelect }) => getSuppliersForSelect({ sync: true, approvedOnly: true }))
-            .then((data: unknown) => {
-              const list = Array.isArray(data) ? data : [];
-              setSuppliers(list.map((s: { id: string; code: string; name: string }) => ({ id: s.id, code: s.code, name: s.name })));
+            .then((rows: unknown) => {
+              const list = (Array.isArray(rows) ? rows : []).map((s: { id: string; code: string; name: string }) => ({
+                id: s.id,
+                code: s.code,
+                name: s.name,
+              }));
+              // Pemasok PO ini sendiri tetap bisa dipilih walau belum/tidak lagi disetujui.
+              const sendiri = data?.supplier as { id?: string; code?: string; name?: string } | undefined;
+              if (sendiri?.id && !list.some((s) => s.id === sendiri.id)) {
+                list.unshift({ id: sendiri.id, code: sendiri.code ?? '', name: sendiri.name ?? '' });
+              }
+              setSuppliers(list);
             })
             .catch(() => {});
         })
@@ -218,24 +226,20 @@ export default function PODetailPage() {
     }
   }, [params.id, router, tPO]);
 
-  const handleStatusChange = async (newStatus: 'SUBMITTED' | 'CANCELLED' | 'CLOSED', notes?: string) => {
-    if (!session?.user?.id || !po) return;
+  /** Alasan sudah diisi di dialog batal; lanjut ke PIN. */
+  const lanjutBatal = (alasan: string) => {
+    setCancelReason(alasan);
+    setPendingAction('cancel');
+    setPinModalOpen(true);
+  };
 
-    if (newStatus === 'CANCELLED') {
-      setCancelReason(notes ?? '');
-      setPendingAction('cancel');
-      setPinModalOpen(true);
-      return;
-    }
+  const handleStatusChange = async (newStatus: 'SUBMITTED' | 'CLOSED', notes?: string) => {
+    if (!session?.user?.id || !po) return;
 
     setIsSaving(true);
     try {
       await changePOStatus(po.id, newStatus, session.user.id, notes);
-      toast.success(
-        newStatus === 'SUBMITTED' ? tPO('toastSubmitted')
-        : newStatus === 'CLOSED' ? tPO('toastClosed')
-        : tPO('toastCancelled')
-      );
+      toast.success(newStatus === 'SUBMITTED' ? tPO('toastSubmitted') : tPO('toastClosed'));
       router.refresh();
       const updated = await getPOById(po.id);
       setPO(updated);
@@ -435,11 +439,22 @@ export default function PODetailPage() {
     router.refresh();
     setPO(await getPOById(po.id));
   };
-  const canCancel =
-    po.status === 'DRAFT' ||
-    po.status === 'SUBMITTED' ||
-    po.status === 'PARTIAL' ||
-    po.status === 'OVER';
+  // Batal: mati dengan alasan bila sudah ada penerimaan (server menolak SUDAH_ADA_PENERIMAAN).
+  const batal = keadaanBatalPo(po);
+  const canReceive =
+    bolehTerimaBarang(po.status) &&
+    hasPermission(session?.user?.permissions ?? [], PERMISSIONS.INVENTORY_MANAGE);
+  const grns: Array<{
+    id: string;
+    docNumber: string;
+    totalAmount: number;
+    grnDate: string;
+    keadaanPemilik?: 'menunggu' | 'disetujui' | 'ditolak' | null;
+  }> = [...(po.grns ?? [])].sort((a: { grnDate: string }, b: { grnDate: string }) =>
+    String(a.grnDate).localeCompare(String(b.grnDate)),
+  );
+  // Rincian GRN ada di bawah /backoffice/inventory (inventory:view); tanpa izin itu nomornya teks biasa.
+  const bolehBukaGrn = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.INVENTORY_VIEW);
   /*
    * While an earlier mark's payment journal still stands on an unpaid PO,
    * marking it paid is the one click that destroys its own recovery control:
@@ -478,7 +493,7 @@ export default function PODetailPage() {
       supplierName: supplier.name,
       supplierAddress: supplier.address ?? null,
       supplierCode: supplier.code?.trim() ? supplier.code : null,
-      status: statusLabels[po.status as POStatus],
+      status: labelStatusCetakPo(po.status),
       etaDate: po.etaDate,
       paymentDueDate: po.paymentDueDate,
       currency: po.currency ?? 'IDR',
@@ -488,33 +503,10 @@ export default function PODetailPage() {
       notes: po.notes ?? null,
       terms: po.terms ?? null,
       lines,
-      labels: {
-        title: 'Purchase Order',
-        doc: 'PO Number',
-        date: 'Date',
-        issuedBy: 'Issued by',
-        supplier: 'Supplier',
-        address: 'Address',
-        attn: 'Attn:',
-        status: 'Status',
-        etaDate: 'ETA',
-        terms: 'Terms',
-        paymentDue: 'Payment due',
-        item: 'Item description',
-        qty: 'Qty',
-        uom: 'UOM',
-        price: 'Unit price',
-        amount: 'Amount',
-        subtotal: 'Subtotal',
-        tax: 'Tax',
-        grandTotal: 'Grand total',
-        notes: 'Notes',
-        termsFooter: 'Terms & conditions',
-      },
     });
     const iframe = document.createElement('iframe');
     iframe.setAttribute('style', 'position:absolute;width:0;height:0;border:0;visibility:hidden;');
-    iframe.setAttribute('title', 'Print PO');
+    iframe.setAttribute('title', tPO('printPO'));
     document.body.appendChild(iframe);
     const doc = iframe.contentWindow?.document;
     if (doc) {
@@ -547,7 +539,15 @@ export default function PODetailPage() {
             <p className="text-muted-foreground">{po.supplier.name}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {canReceive && (
+            <Button size="sm" asChild>
+              <Link href={`/backoffice/inventory/grn/new?poId=${encodeURIComponent(po.id)}`}>
+                <PackageCheck className="mr-2 h-4 w-4" />
+                {tPO('terimaBarang')}
+              </Link>
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={handlePrint}>
             <Printer className="mr-2 h-4 w-4" />
             {tPO('printPO')}
@@ -555,11 +555,12 @@ export default function PODetailPage() {
           <Badge className={statusColors[po.status as POStatus]}>
             {statusLabel(po.status)}
           </Badge>
-          {po.paidAt ? (
-            <Badge variant="default" className="bg-green-600">{tSupplierPayments('paid')}</Badge>
-          ) : (
-            <Badge variant="secondary">{tSupplierPayments('unpaid')}</Badge>
-          )}
+          {tampilStatusBayar(po.status) &&
+            (po.paidAt ? (
+              <Badge variant="default" className="bg-green-600">{tSupplierPayments('paid')}</Badge>
+            ) : (
+              <Badge variant="secondary">{tSupplierPayments('unpaid')}</Badge>
+            ))}
           {po.etaDate && (
             <ETABadge etaDate={po.etaDate} status={po.status} />
           )}
@@ -716,7 +717,7 @@ export default function PODetailPage() {
                         variant="outline"
                         size="sm"
                         disabled={isTogglingPaid}
-                        onClick={() => handlePaidToggle(null)}
+                        onClick={() => setKonfirmasiBayar('batal')}
                       >
                         {isTogglingPaid && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                         {tSupplierPayments('unmarkPaid')}
@@ -726,7 +727,7 @@ export default function PODetailPage() {
                         variant="default"
                         size="sm"
                         disabled={isTogglingPaid || markPaidBlockedByStandingPayment}
-                        onClick={() => handlePaidToggle(new Date())}
+                        onClick={() => setKonfirmasiBayar('bayar')}
                       >
                         {isTogglingPaid && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                         {tSupplierPayments('markAsPaid')}
@@ -791,6 +792,66 @@ export default function PODetailPage() {
             </CardContent>
           </Card>
 
+          {/* Penerimaan barang (GRN) milik PO ini */}
+          {po.status !== 'DRAFT' && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <PackageCheck className="h-5 w-5" />
+                  {tPO('penerimaan.judul')}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {grns.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">{tPO('penerimaan.kosong')}</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{tPO('penerimaan.colNomor')}</TableHead>
+                        <TableHead>{tPO('penerimaan.colTanggal')}</TableHead>
+                        <TableHead className="text-right">{tPO('penerimaan.colNilai')}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {grns.map((g) => (
+                        <TableRow key={g.id}>
+                          <TableCell>
+                            <div className="flex flex-wrap items-center gap-2">
+                              {bolehBukaGrn ? (
+                                <Link href={`/backoffice/inventory/grn/${g.id}`} className={TAUTAN_DOKUMEN}>
+                                  {g.docNumber}
+                                </Link>
+                              ) : (
+                                <span className="font-medium">{g.docNumber}</span>
+                              )}
+                              {g.keadaanPemilik === 'menunggu' && (
+                                <Badge variant="outline" className="border-amber-500 text-amber-700 dark:text-amber-400">
+                                  {tInv('awaitingOwnerApproval')}
+                                </Badge>
+                              )}
+                              {g.keadaanPemilik === 'ditolak' && (
+                                <Badge variant="outline" className="border-destructive/50 text-destructive">
+                                  {tInv('declinedByOwner')}
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>{formatDisplayDate(g.grnDate, locale)}</TableCell>
+                          <TableCell
+                            className={`text-right tabular-nums ${g.keadaanPemilik === 'ditolak' ? 'text-muted-foreground line-through' : ''}`}
+                          >
+                            Rp {Number(g.totalAmount).toLocaleString('id-ID')}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {/* Status History */}
           <Card>
             <CardHeader>
@@ -836,9 +897,17 @@ export default function PODetailPage() {
                             {tPO('byUser', { name: history.changedBy.name || history.changedBy.email })}
                           </p>
                         )}
-                        {history.notes && !isPaymentEvent && (
-                          <p className="text-sm mt-1">{history.notes}</p>
-                        )}
+                        {!isPaymentEvent && (() => {
+                          const catatan = catatanRiwayatPo(history.notes);
+                          if (!catatan) return null;
+                          const teks =
+                            'teks' in catatan
+                              ? catatan.teks
+                              : catatan.kunci === 'statusBerubah'
+                                ? tPO('riwayat.statusBerubah', { status: statusLabel(catatan.nilai.status ?? '') })
+                                : tPO(`riwayat.${catatan.kunci}` as never, catatan.nilai as never);
+                          return <p className="text-sm mt-1 whitespace-pre-wrap break-words">{teks}</p>;
+                        })()}
                       </div>
                     </div>
                   );
@@ -848,7 +917,7 @@ export default function PODetailPage() {
           </Card>
 
           {/* Actions */}
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-wrap items-start justify-end gap-2">
             {canOpenEditForm && (
               <Button onClick={() => setIsEditMode(true)}>
                 <Edit className="h-4 w-4 mr-2" />
@@ -880,55 +949,59 @@ export default function PODetailPage() {
                 onSelesai={reloadPO}
               />
             )}
-            {canCancel && (
-              <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="destructive" disabled={isSaving}>
-                    <XCircle className="h-4 w-4 mr-2" />
-                    {tPO('cancelPO')}
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>{tPO('cancelDialogTitle')}</DialogTitle>
-                    <DialogDescription>{tPO('cancelDialogDescription')}</DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="cancelReason">{tPO('reasonLabel')}</Label>
-                      <Textarea
-                        id="cancelReason"
-                        value={cancelReason}
-                        onChange={(e) => setCancelReason(e.target.value)}
-                        placeholder={tPO('reasonPlaceholder')}
-                        rows={3}
-                      />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setCancelDialogOpen(false);
-                        setCancelReason('');
-                      }}
-                    >
-                      {tPO('keepPO')}
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      onClick={() => handleStatusChange('CANCELLED', cancelReason || 'PO Cancelled')}
-                      disabled={isSaving}
-                    >
-                      {tPO('confirmCancelButton')}
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
+            {batal !== 'sembunyi' && (
+              <div className="flex flex-col items-end gap-1">
+                <Button
+                  variant="destructive"
+                  disabled={isSaving || batal === 'mati'}
+                  onClick={() => setCancelDialogOpen(true)}
+                >
+                  <XCircle className="h-4 w-4 mr-2" />
+                  {tPO('cancelPO')}
+                </Button>
+                {batal === 'mati' && (
+                  <p className="max-w-xs text-right text-xs text-muted-foreground">{tPO('batal.matiAdaGrn')}</p>
+                )}
+              </div>
             )}
           </div>
         </>
       )}
+
+      <KonfirmasiBayarDialog
+        open={konfirmasiBayar !== null}
+        onOpenChange={(buka) => !buka && setKonfirmasiBayar(null)}
+        arah={konfirmasiBayar ?? 'bayar'}
+        po={(() => {
+          const pisah = pisahUtangPo({
+            grandTotal: po.grandTotal,
+            ppnRatePercent: po.ppnRatePercent ?? null,
+            utang: po.utang,
+            items: po.items ?? [],
+          });
+          return {
+            docNumber: po.docNumber,
+            supplierName: po.supplier?.name ?? '',
+            grandTotal: Number(po.grandTotal ?? 0),
+            utangDiterima: pisah.utangDiterima,
+            komitmen: pisah.komitmen,
+            adaPenerimaan: (po.items ?? []).some((l: { receivedQty: unknown }) => Number(l.receivedQty) > 0),
+          };
+        })()}
+        sibuk={isTogglingPaid}
+        onKonfirmasi={(paidAt) => {
+          // "Tandai lunas" tanpa tanggal sah tidak boleh jatuh menjadi "batal lunas".
+          if (konfirmasiBayar === 'bayar' && paidAt == null) return;
+          void handlePaidToggle(konfirmasiBayar === 'bayar' ? paidAt : null);
+        }}
+      />
+
+      <BatalPoDialog
+        open={cancelDialogOpen}
+        onOpenChange={setCancelDialogOpen}
+        docNumber={po.docNumber}
+        onLanjut={lanjutBatal}
+      />
 
       <PinAuthModal
         isOpen={pinModalOpen}

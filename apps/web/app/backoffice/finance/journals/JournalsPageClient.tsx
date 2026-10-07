@@ -26,17 +26,31 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Pagination } from "@/components/ui/pagination";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatDisplayDate } from "@/lib/date-only";
 import { journalSourceLabel } from "./journal-source-label";
 import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
 import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
+import { JENIS_SUMBER_JURNAL } from "./_sumber/tautan";
+import { STATUS_TERTUNDA, type StatusJurnal } from "./_tertunda/sebab";
+import type { BarisJurnalTertunda } from "./_tertunda/muat";
+import { DaftarJurnalTertunda } from "./_tertunda/DaftarJurnalTertunda";
+import { SpandukBukuBesar } from "../_kesiapan/SpandukBukuBesar";
+import type { KesiapanBukuBesar } from "../_kesiapan/kesiapan";
+import type { AksesSpanduk } from "../_kesiapan/baca";
 
 type Props = {
+  status: StatusJurnal;
   items: JournalListRow[];
   totalCount: number;
   page: number;
   pageSize: number;
   canManage: boolean;
+  /** Isi tab "Tertunda"; null saat tab terposting yang dibuka. */
+  tertunda: BarisJurnalTertunda[] | null;
+  jumlahTertunda: number;
+  kesiapan: KesiapanBukuBesar | null;
+  akses: AksesSpanduk;
   filters: { from: string; to: string; source: string; q: string };
 };
 
@@ -44,7 +58,19 @@ function formatRupiah(value: number): string {
   return `Rp ${Math.round(value).toLocaleString("id-ID")}`;
 }
 
-export function JournalsPageClient({ items, totalCount, page, pageSize, canManage, filters }: Props) {
+export function JournalsPageClient({
+  status,
+  items,
+  totalCount,
+  page,
+  pageSize,
+  canManage,
+  tertunda,
+  jumlahTertunda,
+  kesiapan,
+  akses,
+  filters,
+}: Props) {
   const router = useRouter();
   const sp = useSearchParams();
   const t = useTranslations("financeJournals");
@@ -87,6 +113,13 @@ export function JournalsPageClient({ items, totalCount, page, pageSize, canManag
 
   const hasFilter = !!(filters.from || filters.to || filters.source || filters.q);
 
+  function gantiTab(v: string) {
+    setSearchInput("");
+    startTransition(() =>
+      router.push(v === STATUS_TERTUNDA ? `/backoffice/finance/journals?status=${STATUS_TERTUNDA}` : "/backoffice/finance/journals"),
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -104,111 +137,133 @@ export function JournalsPageClient({ items, totalCount, page, pageSize, canManag
         )}
       </div>
 
-      <Card className="p-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="w-full min-w-[220px] sm:w-auto sm:flex-[2_1_260px]">
-            <label className="text-xs text-muted-foreground mb-1 block">{t("filter.search")}</label>
-            <Input
-              placeholder={t("filter.searchPlaceholder")}
-              aria-label={t("filter.searchPlaceholder")}
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-            />
-          </div>
-          <div className="w-full sm:w-auto sm:flex-[1_1_160px]">
-            <label className="text-xs text-muted-foreground mb-1 block">{t("filter.source")}</label>
-            <Select
-              value={filters.source || "ALL"}
-              onValueChange={(v) => pushParams({ source: v === "ALL" ? undefined : v })}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder={t("filter.source")} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">{t("filter.all")}</SelectItem>
-                <SelectItem value="manual">{t("sourceManual")}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="w-full sm:w-auto sm:flex-[1_1_240px]">
-            <label htmlFor="periode" className="text-xs text-muted-foreground mb-1 block">{tt("periode")}</label>
-            <RentangTanggalInput
-              id="periode"
-              dari={filters.from}
-              sampai={filters.to}
-              onChange={({ dari, sampai }) => pushParams({ from: dari || undefined, to: sampai || undefined })}
-            />
-          </div>
-          <Button variant="outline" onClick={reset}>
-            {t("filter.reset")}
-          </Button>
-        </div>
-      </Card>
+      <SpandukBukuBesar kesiapan={kesiapan} akses={akses} tanpaTautanTertunda />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <BookText className="h-5 w-5" />
-            {t("listTitle")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {items.length === 0 ? (
-            <div className="text-center py-12">
-              <BookText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">{hasFilter ? t("emptyFiltered") : t("empty")}</p>
-            </div>
-          ) : (
-            <>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{t("colDate")}</TableHead>
-                      <TableHead>{t("colDescription")}</TableHead>
-                      <TableHead>{t("colSource")}</TableHead>
-                      <TableHead className="text-right">{t("colTotal")}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {items.map((row) => (
-                      <TableRow
-                        key={row.id}
-                        className="cursor-pointer hover:bg-muted/50"
-                        onClick={() =>
-                          startTransition(() =>
-                            router.push(`/backoffice/finance/journals/${row.id}`),
-                          )
-                        }
-                      >
-                        <TableCell className="whitespace-nowrap">{formatDate(row.date)}</TableCell>
-                        <TableCell className="max-w-[320px] truncate">{row.description}</TableCell>
-                        <TableCell>
-                          {row.isManual ? (
-                            <Badge variant="secondary">{t("sourceManual")}</Badge>
-                          ) : (
-                            <Badge variant="outline">{journalSourceLabel(t, row.sourceType)}</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatRupiah(row.total)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+      <Tabs value={status} onValueChange={gantiTab}>
+        <TabsList>
+          <TabsTrigger value="terposting">{t("tabPosted")}</TabsTrigger>
+          <TabsTrigger value={STATUS_TERTUNDA}>
+            {t("tabPending")} ({jumlahTertunda})
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {status === "tertunda" ? (
+        <DaftarJurnalTertunda rows={tertunda ?? []} />
+      ) : (
+        <>
+          <Card className="p-4">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="w-full min-w-[220px] sm:w-auto sm:flex-[2_1_260px]">
+                <label className="text-xs text-muted-foreground mb-1 block">{t("filter.search")}</label>
+                <Input
+                  placeholder={t("filter.searchPlaceholder")}
+                  aria-label={t("filter.searchPlaceholder")}
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                />
               </div>
-              <Pagination
-                page={page}
-                totalPages={Math.max(1, Math.ceil(totalCount / pageSize))}
-                onPageChange={goToPage}
-                totalCount={totalCount}
-                pageSize={pageSize}
-              />
-            </>
-          )}
-        </CardContent>
-      </Card>
+              <div className="w-full sm:w-auto sm:flex-[1_1_160px]">
+                <label className="text-xs text-muted-foreground mb-1 block">{t("filter.source")}</label>
+                <Select
+                  value={filters.source || "ALL"}
+                  onValueChange={(v) => pushParams({ source: v === "ALL" ? undefined : v })}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={t("filter.source")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">{t("filter.all")}</SelectItem>
+                    <SelectItem value="manual">{t("sourceManual")}</SelectItem>
+                    {JENIS_SUMBER_JURNAL.map((jenis) => (
+                      <SelectItem key={jenis} value={jenis}>
+                        {journalSourceLabel(t, jenis)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="w-full sm:w-auto sm:flex-[1_1_240px]">
+                <label htmlFor="periode" className="text-xs text-muted-foreground mb-1 block">{tt("periode")}</label>
+                <RentangTanggalInput
+                  id="periode"
+                  dari={filters.from}
+                  sampai={filters.to}
+                  onChange={({ dari, sampai }) => pushParams({ from: dari || undefined, to: sampai || undefined })}
+                />
+              </div>
+              <Button variant="outline" onClick={reset}>
+                {t("filter.reset")}
+              </Button>
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BookText className="h-5 w-5" />
+                {t("listTitle")}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {items.length === 0 ? (
+                <div className="text-center py-12">
+                  <BookText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground">{hasFilter ? t("emptyFiltered") : t("empty")}</p>
+                </div>
+              ) : (
+                <>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{t("colDate")}</TableHead>
+                          <TableHead>{t("colDescription")}</TableHead>
+                          <TableHead>{t("colSource")}</TableHead>
+                          <TableHead className="text-right">{t("colTotal")}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {items.map((row) => (
+                          <TableRow
+                            key={row.id}
+                            className="cursor-pointer hover:bg-muted/50"
+                            onClick={() =>
+                              startTransition(() =>
+                                router.push(`/backoffice/finance/journals/${row.id}`),
+                              )
+                            }
+                          >
+                            <TableCell className="whitespace-nowrap">{formatDate(row.date)}</TableCell>
+                            <TableCell className="max-w-[320px] truncate">{row.description}</TableCell>
+                            <TableCell>
+                              {row.isManual ? (
+                                <Badge variant="secondary">{t("sourceManual")}</Badge>
+                              ) : (
+                                <Badge variant="outline">{journalSourceLabel(t, row.sourceType)}</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {formatRupiah(row.total)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <Pagination
+                    page={page}
+                    totalPages={Math.max(1, Math.ceil(totalCount / pageSize))}
+                    onPageChange={goToPage}
+                    totalCount={totalCount}
+                    pageSize={pageSize}
+                  />
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   );
 }

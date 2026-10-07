@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { AlertTriangle, Handshake, Plus, Truck } from 'lucide-react';
+import { AlertTriangle, Handshake, PackagePlus, Plus, Truck } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -49,6 +49,11 @@ import { bukaSiklusAction, kirimTitipanAction } from '@/app/actions/konsinyasi';
 import { NADA_TAHAP, URUT_TAHAP } from './tahap';
 import { tulisRupiah } from "./[id]/jumlah-bayar";
 import { TanggalInput } from '@/components/ui/tanggal-input';
+import { KeteranganKirim } from '@/app/pwa/KeteranganKirim';
+import type { SaringSiklus } from './saring';
+import { KotakCari } from '../piutang/_daftar/KotakCari';
+import { HalamanDaftar } from '../piutang/_daftar/HalamanDaftar';
+import { denganParam } from '../piutang/_daftar/halaman';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 const tanggal = (iso: string | null) =>
@@ -69,20 +74,37 @@ function hariIniWib(tambah = 0): string {
 
 export function KonsinyasiClient({
   baris,
+  halaman,
+  jumlah: hitung,
+  saring = 'berjalan',
+  cari = '',
   toko,
   katalog,
   bolehMengelola,
+  bolehIsiUlang = false,
 }: {
+  /** Satu halaman yang sudah disaring di server. */
   baris: BarisSiklus[];
+  halaman: { halaman: number; totalHalaman: number; total: number; ukuran: number };
+  /** Atas SEMUA siklus, bukan hanya halaman ini. */
+  jumlah: { semua: number; berjalan: number; terlambat: number; perTahap: Record<TahapSiklusLengkap, number> };
+  /** Dari `?tahap=`. */
+  saring?: SaringSiklus;
+  /** Dari `?cari=`. */
+  cari?: string;
   toko: { id: string; name: string }[];
   katalog: PilihanBarang[];
   bolehMengelola: boolean;
+  /** Boleh membuka Isi ulang toko konsinyasi (stores:view). */
+  bolehIsiUlang?: boolean;
 }) {
   const t = useTranslations('konsinyasi');
   const td = dinamis(t);
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [saring, setSaring] = useState<TahapSiklusLengkap | null>(null);
+  // Saringan hidup di alamat; kata kuncinya ikut, halaman kembali ke 1.
+  const hrefSaring = (x: SaringSiklus) =>
+    denganParam('/backoffice/konsinyasi', { cari }, { tahap: x === 'berjalan' ? null : x });
 
   const [siklusTerbuka, setSiklusTerbuka] = useState(false);
   const [storeId, setStoreId] = useState('');
@@ -104,9 +126,15 @@ export function KonsinyasiClient({
   const { varian, muat: muatVarian, segarkan: segarkanVarian } = useVarianKirim();
   const belumKirim = alasanBelumKirim(tokoKirim, barang, varian);
 
-  const jumlah = (x: TahapSiklusLengkap) => baris.filter((b) => b.tahap === x).length;
-  const tampil = saring ? baris.filter((b) => b.tahap === saring) : baris;
-  const terlambat = baris.filter((b) => b.gajiTerlambat).length;
+  const jumlah = (x: TahapSiklusLengkap) => hitung.perTahap[x] ?? 0;
+  const tampil = baris;
+  const terlambat = hitung.terlambat;
+  // Tombol "Simpan" di dialog Buka siklus menyebut kekurangan pertamanya.
+  const belumBuka = !storeId
+    ? t('whyCycleStore')
+    : !(Number(bulan) >= 1 && Number(bulan) <= 12)
+      ? t('whyCycleMonth')
+      : null;
 
   const jalankan = (
     fn: () => Promise<{ ok: boolean; kode?: string }>,
@@ -188,10 +216,20 @@ export function KonsinyasiClient({
     <div className="space-y-6">
       <PageHeader
         title={t('pageTitle')}
-        meta={t('summary', { count: baris.length, late: terlambat })}
+        meta={t('summary', { count: hitung.semua, late: terlambat })}
         actions={
-          bolehMengelola ? (
+          bolehMengelola || bolehIsiUlang ? (
             <span className="inline-flex flex-wrap gap-2">
+              {bolehIsiUlang && (
+                <Button variant="outline" asChild>
+                  <Link href="/backoffice/konsinyasi/isi-ulang">
+                    <PackagePlus className="mr-1.5 h-4 w-4" />
+                    {t('refillLink')}
+                  </Link>
+                </Button>
+              )}
+              {bolehMengelola && (
+              <>
               <Button variant="outline" onClick={() => setKirimTerbuka(true)} disabled={toko.length === 0}>
                 <Truck className="mr-1.5 h-4 w-4" />
                 {t('ship')}
@@ -200,6 +238,8 @@ export function KonsinyasiClient({
                 <Plus className="mr-1.5 h-4 w-4" />
                 {t('openCycle')}
               </Button>
+              </>
+              )}
             </span>
           ) : undefined
         }
@@ -214,27 +254,61 @@ export function KonsinyasiClient({
         </Card>
       )}
 
-      <div className="anim-stagger flex flex-wrap gap-2">
-        {URUT_TAHAP.filter((x) => jumlah(x) > 0).map((x) => (
-          <button
-            key={x}
-            type="button"
-            onClick={() => setSaring(saring === x ? null : x)}
-            className={cn(
-              'rounded-full border px-3 py-1.5 text-sm transition-colors',
-              saring === x ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted',
-            )}
-          >
-            <StatusPill tone={NADA_TAHAP[x]}>{td(`stage_${x}`)}</StatusPill>
-            <span className="ml-2 tabular-nums text-muted-foreground">{jumlah(x)}</span>
-          </button>
-        ))}
-      </div>
+      {hitung.semua > 0 && (
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          <KotakCari nilai={cari} placeholder={t('searchPlaceholder')} label={t('searchPlaceholder')} />
+          <div className="anim-stagger flex flex-wrap gap-2" role="group" aria-label={t('filterLabel')}>
+            <Link
+              href={hrefSaring('berjalan')}
+              replace
+              aria-current={saring === 'berjalan' ? 'true' : undefined}
+              className={cn(
+                'rounded-full border px-3 py-1.5 text-sm transition-colors',
+                saring === 'berjalan' ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted',
+              )}
+            >
+              {t('filterRunning')}
+              <span className="ml-2 tabular-nums text-muted-foreground">{hitung.berjalan}</span>
+            </Link>
+            {URUT_TAHAP.filter((x) => jumlah(x) > 0 || saring === x).map((x) => (
+              <Link
+                key={x}
+                href={hrefSaring(saring === x ? 'berjalan' : x)}
+                replace
+                aria-current={saring === x ? 'true' : undefined}
+                className={cn(
+                  'rounded-full border px-3 py-1.5 text-sm transition-colors',
+                  saring === x ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted',
+                )}
+              >
+                <StatusPill tone={NADA_TAHAP[x]}>{td(`stage_${x}`)}</StatusPill>
+                <span className="ml-2 tabular-nums text-muted-foreground">{jumlah(x)}</span>
+              </Link>
+            ))}
+            <Link
+              href={hrefSaring('semua')}
+              replace
+              aria-current={saring === 'semua' ? 'true' : undefined}
+              className={cn(
+                'rounded-full border px-3 py-1.5 text-sm transition-colors',
+                saring === 'semua' ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted',
+              )}
+            >
+              {t('filterAll')}
+              <span className="ml-2 tabular-nums text-muted-foreground">{hitung.semua}</span>
+            </Link>
+          </div>
+        </div>
+      )}
 
       <Card>
         <CardContent className={tampil.length === 0 ? 'p-0' : 'px-0'}>
           {tampil.length === 0 ? (
-            <EmptyState icon={Handshake} title={t('emptyTitle')} description={t('emptyBody')} />
+            hitung.semua > 0 ? (
+              <EmptyState icon={Handshake} title={t('emptyFilteredTitle')} />
+            ) : (
+              <EmptyState icon={Handshake} title={t('emptyTitle')} description={t('emptyBody')} />
+            )
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -244,11 +318,13 @@ export function KonsinyasiClient({
                     <TableHead>{t('colStore')}</TableHead>
                     <TableHead className="text-right">{t('colSold')}</TableHead>
                     {/* Buku stok toko vs laporan, hanya siklus yang belum dikunci. */}
-                    <TableHead title={t("matchHint")}>{t("colMatch")}</TableHead>
+                    <TableHead title={t("matchHint")} className="whitespace-normal">{t("colMatch")}</TableHead>
                     {/* Tiga nomor berdampingan — inilah yang dulu tersimpan di
                         kepala tiga orang berbeda. */}
-                    <TableHead>{t('colNota')}</TableHead>
-                    <TableHead>{t('colTax')}</TableHead>
+                    {/* Nomor nota dan faktur pajak boleh turun baris di tanda hubungnya:
+                        tanpa itu tabelnya tidak muat di laptop 1280 px. */}
+                    <TableHead className="whitespace-normal">{t('colNota')}</TableHead>
+                    <TableHead className="whitespace-normal">{t('colTax')}</TableHead>
                     <TableHead>{t('colStage')}</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -258,13 +334,13 @@ export function KonsinyasiClient({
                       <TableCell>
                         <Link
                           href={`/backoffice/konsinyasi/${b.id}`}
-                          className="font-medium text-primary underline-offset-2 hover:underline"
+                          className="whitespace-nowrap font-medium text-foreground underline decoration-primary underline-offset-2 hover:decoration-2"
                         >
                           {b.noKonsi}
                         </Link>
                         <span className="block text-xs text-muted-foreground">{b.periode}</span>
                       </TableCell>
-                      <TableCell>{b.storeName}</TableCell>
+                      <TableCell className="whitespace-normal min-w-[8rem] max-w-[12rem]">{b.storeName}</TableCell>
                       <TableCell className="text-right tabular-nums">
                         {b.nilaiTerjual > 0 ? rupiah(b.nilaiTerjual) : '—'}
                         {b.sisaTagihan !== null && b.sisaTagihan > 0 && (
@@ -282,10 +358,12 @@ export function KonsinyasiClient({
                           <StatusPill tone="attention">{t("matchDiff", { count: b.penandaCocok.berselisih })}</StatusPill>
                         )}
                       </TableCell>
-                      <TableCell className="font-mono text-xs">{b.noNota ?? '—'}</TableCell>
-                      <TableCell className="font-mono text-xs">{b.noFakturPajak ?? '—'}</TableCell>
-                      <TableCell>
-                        <div className="max-w-xs space-y-1">
+                      <TableCell className="whitespace-normal font-mono text-xs">{b.noNota ?? '—'}</TableCell>
+                      <TableCell className="whitespace-normal font-mono text-xs">{b.noFakturPajak ?? '—'}</TableCell>
+                      {/* Sel tabel bawaan tidak turun baris (components/ui/table.tsx);
+                          kalimat tahap dulu meluberkan tabel jauh ke kanan. */}
+                      <TableCell className="whitespace-normal min-w-[12rem] max-w-[18rem]">
+                        <div className="space-y-1">
                           <StatusPill tone={NADA_TAHAP[b.tahap]}>{td(`stage_${b.tahap}`)}</StatusPill>
                           <p className="text-xs leading-relaxed text-muted-foreground">
                             {b.giliran !== 'tidak_ada' && (
@@ -308,6 +386,7 @@ export function KonsinyasiClient({
               </Table>
             </div>
           )}
+          <HalamanDaftar {...halaman} />
         </CardContent>
       </Card>
 
@@ -349,9 +428,9 @@ export function KonsinyasiClient({
               <p className="text-xs text-muted-foreground">{t('spgDueHint')}</p>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex-col items-stretch gap-2 sm:flex-col sm:items-end">
             <Button
-              disabled={pending || !storeId || !(Number(bulan) >= 1 && Number(bulan) <= 12)}
+              disabled={pending || belumBuka !== null}
               onClick={() =>
                 jalankan(
                   () =>
@@ -371,6 +450,7 @@ export function KonsinyasiClient({
             >
               {t('save')}
             </Button>
+            <KeteranganKirim teks={belumBuka} />
           </DialogFooter>
         </DialogContent>
       </Dialog>

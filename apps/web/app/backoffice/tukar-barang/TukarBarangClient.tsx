@@ -155,7 +155,7 @@ export function TukarBarangClient({
                       <TableCell>
                         <Link
                           href={`/backoffice/tukar-barang/${b.id}`}
-                          className="font-medium text-primary underline-offset-2 hover:underline"
+                          className="font-medium underline decoration-muted-foreground/50 underline-offset-2 hover:decoration-foreground"
                         >
                           {b.docNo}
                         </Link>

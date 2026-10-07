@@ -16,6 +16,7 @@ import {
 } from "./riwayat-penjualan";
 import { jumlahHp, pcsKonsiBulan, seriHp, tanpaKonsi, type RingkasanBulanHp, type TitikBulanHp } from "./penjualan-hp";
 import { pcsKonsiSalesman } from "./penjualan-hp-queries";
+import { lakuKonsiSatuSalesman } from "./penjualan-konsi-queries";
 import { rentangBulanWib } from "./target-rinci";
 import { capaianRinciSales } from "./target-rinci-queries";
 
@@ -59,10 +60,7 @@ export async function jualKeTokoSebulan(salesmanId: string, bulan: string, hariI
       where: { deliveredAt: waktu, order: { salesmanId, orderType: "PUTUS" } },
       select: { total: true, order: { select: { storeId: true } }, lines: { select: { qty: true, orderLine: { select: { isBonus: true } } } } },
     }),
-    prisma.fieldSalesOrder.findMany({
-      where: { salesmanId, orderType: "KONSI", status: "APPROVED", approvedAt: waktu },
-      select: { storeId: true, lines: { select: { qty: true, isBonus: true } } },
-    }),
+    lakuKonsiSatuSalesman(salesmanId, rentang.awal, { sebelum: rentang.akhir }),
     prisma.vanSale.findMany({
       where: { salesmanId, createdAt: waktu },
       select: { storeId: true, total: true, lines: { select: { qty: true } } },
@@ -76,13 +74,8 @@ export async function jualKeTokoSebulan(salesmanId: string, bulan: string, hariI
       nilai: angka(d.total),
       pcs: d.lines.reduce((n, l) => n + (l.orderLine.isBonus ? 0 : l.qty), 0),
     })),
-    // Nilai konsi sengaja 0: tidak pernah ditampilkan per toko di HP.
-    ...konsi.map((o) => ({
-      storeId: o.storeId,
-      jenis: "konsi" as const,
-      nilai: 0,
-      pcs: o.lines.reduce((n, l) => n + (l.isBonus ? 0 : l.qty), 0),
-    })),
+    // Konsi = pcs LAKU di toko itu. Nilai sengaja 0: tidak pernah ditampilkan per toko di HP.
+    ...konsi.map((l) => ({ storeId: l.storeId, jenis: "konsi" as const, nilai: 0, pcs: l.pcs })),
     ...van.map((v) => ({
       storeId: v.storeId,
       jenis: "van" as const,

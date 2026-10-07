@@ -4,6 +4,7 @@ import { cariTeks } from "@/lib/db/cari-teks";
 import type { FilterTags } from "@elorae/db/pantone";
 import { DEFAULT_FILTER_OPTIONS, FILTER_DIMENSIONS } from "@elorae/db/pantone";
 import { COLOR_PAGE_SIZE } from '@/lib/production-colors/constants';
+import { hueEfektif, whereHueNetral } from '@/lib/production-colors/hue-netral';
 import type { FilterFacetCounts } from '@/components/production-colors/ColorsFilterBar';
 
 export { COLOR_PAGE_SIZE };
@@ -46,12 +47,17 @@ function buildTagWhere(filters: ListPantoneFilters): Prisma.PantoneColorWhereInp
        * fails at query time with PrismaClientValidationError, not at build, so
        * it only surfaces the moment someone clicks the filter.
        */
-      OR: values.map((v) => ({
-        filterTags: {
-          path: pakaiPostgres() ? [dim] : `$.${dim}`,
-          array_contains: v,
-        },
-      })),
+      OR: values.flatMap((v): Prisma.PantoneColorWhereInput[] => {
+        const tag = {
+          filterTags: {
+            path: pakaiPostgres() ? [dim] : `$.${dim}`,
+            array_contains: v,
+          },
+        } as Prisma.PantoneColorWhereInput;
+        // Hitam/putih juga dari L*a*b* (lib/production-colors/hue-netral.ts).
+        const netral = dim === 'hue' ? whereHueNetral(v) : null;
+        return netral ? [tag, netral] : [tag];
+      }),
     });
   }
   return and;
@@ -285,16 +291,18 @@ export async function getPantoneFilterFacetCounts(opts?: {
         where: {
           favorites: { some: { userId: opts.userId } },
         },
-        select: { filterTags: true },
+        select: { filterTags: true, labL: true, labA: true, labB: true },
       })
     : await prisma.pantoneColor.findMany({
-        select: { filterTags: true },
+        select: { filterTags: true, labL: true, labA: true, labB: true },
       });
 
   for (const row of rows) {
     const tags = row.filterTags as FilterTags;
     for (const dim of FILTER_DIMENSIONS) {
-      for (const value of tags[dim] ?? []) {
+      // Hitungan cip memakai aturan yang sama dengan saringannya.
+      const nilai = dim === 'hue' ? hueEfektif(tags.hue, row) : (tags[dim] ?? []);
+      for (const value of nilai) {
         if (value in counts[dim]) {
           counts[dim][value] += 1;
         }

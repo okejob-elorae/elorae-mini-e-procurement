@@ -333,7 +333,10 @@ export function TargetStokClient({
                   <TableRow>
                     <TableHead>{t("col.item")}</TableHead>
                     <TableHead>{t("col.variant")}</TableHead>
-                    <TableHead className="text-right">{t("col.stock")}</TableHead>
+                    {/* Sumber angka ditulis di kepala kolom: buku stok SPG atau titipan menurut kiriman. */}
+                    <TableHead className="text-right">
+                      {source === "BUKU_TOKO" ? t("col.stockBuku") : t("col.stockTitipan")}
+                    </TableHead>
                     <TableHead className="text-right">{t("col.sold30")}</TableHead>
                     <TableHead>{t("col.min")}</TableHead>
                     <TableHead>{t("col.max")}</TableHead>

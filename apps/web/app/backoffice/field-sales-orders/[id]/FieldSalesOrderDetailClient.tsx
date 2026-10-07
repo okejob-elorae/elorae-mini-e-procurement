@@ -24,6 +24,7 @@ import { KonsiSuggestionsCard, type StagedAddition } from "./KonsiSuggestionsCar
 import { KreditPanel } from "./KreditPanel";
 import type { PanelKredit } from "@/lib/field-sales/kredit-panel";
 import type { DeliverableLine } from "./DeliveryFormDialog";
+import type { FakturKreditTampil, PiutangKiriman } from "./tautan-pesanan";
 import { logPrint } from "@/app/actions/audit";
 import { buildSuratKeluarPrintHtml } from "@/lib/print/konsi-surat-keluar-html";
 import { formatDisplayDateTime } from "@/lib/date-only";
@@ -38,6 +39,12 @@ type Props = {
   konsiSuggestions: KonsiSuggestion[];
   /** Panel kredit toko (PUTUS saja); null = konsinyasi atau gagal dimuat. */
   kredit: PanelKredit | null;
+  /** Faktur panel kredit dengan janji bayar + keadaan per jatuh tempo; null = gagal dimuat (kolom lama). */
+  fakturKredit?: FakturKreditTampil[] | null;
+  /** Piutang tiap nota pengiriman (per `deliveryId`), hanya untuk yang boleh membaca piutang. */
+  piutangKiriman?: Record<string, PiutangKiriman>;
+  bolehBukaPiutang?: boolean;
+  bolehBukaFakturPajak?: boolean;
   /** Kredit ditahan saat dibuat — persetujuan butuh centang "sudah memeriksa tagihan". */
   kreditDitahan: boolean;
 };
@@ -68,7 +75,18 @@ function printHtml(html: string, title: string) {
   setTimeout(() => document.body.removeChild(iframe), 500);
 }
 
-export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver, konsiSuggestions, kredit, kreditDitahan }: Props) {
+export function FieldSalesOrderDetailClient({
+  order,
+  canApprove,
+  canDeliver,
+  konsiSuggestions,
+  kredit,
+  fakturKredit = null,
+  kreditDitahan,
+  piutangKiriman = {},
+  bolehBukaPiutang = false,
+  bolehBukaFakturPajak = false,
+}: Props) {
   const t = useTranslations("fieldSalesOrders");
   const tBonus = useTranslations("promoBonus");
   const tInden = useTranslations("fieldSalesOrders.inden");
@@ -216,7 +234,8 @@ export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver, kon
               {order.menggantikan.orderNo}
             </Link>
           </p>
-          <p className="text-muted-foreground">{t("batal.menggantikanIsi")}</p>
+          {/* Perintah memutuskan hanya untuk pesanan yang memang masih menunggu keputusan. */}
+          {order.status === "PENDING_APPROVAL" && <p className="text-muted-foreground">{t("batal.menggantikanIsi")}</p>}
         </div>
       )}
 
@@ -243,7 +262,14 @@ export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver, kon
         />
       )}
 
-      {kredit && <KreditPanel kredit={kredit} menunggu={order.status === "PENDING_APPROVAL"} />}
+      {kredit && (
+        <KreditPanel
+          kredit={kredit}
+          fakturTampil={fakturKredit}
+          menunggu={order.status === "PENDING_APPROVAL"}
+          bolehBukaPiutang={bolehBukaPiutang}
+        />
+      )}
 
       {canApprove && (
         <ApproveRejectCard
@@ -275,6 +301,9 @@ export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver, kon
         // Bukti terima boleh dicatat/dikoreksi penyetuju juga — sama dengan penulisnya.
         canRecordReceipt={canDeliver || canApprove}
         indenBelumRilis={!!order.preorder && !order.preorder.dirilis}
+        piutangKiriman={piutangKiriman}
+        bolehBukaPiutang={bolehBukaPiutang}
+        bolehBukaFakturPajak={bolehBukaFakturPajak}
       />
 
       <Card className="p-4 space-y-2">
@@ -325,6 +354,13 @@ export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver, kon
             </TableRow>
           </TableHeader>
           <TableBody>
+            {order.lines.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={lineColumnCount} className="py-6 text-center text-muted-foreground">
+                  {t("barisKosong")}
+                </TableCell>
+              </TableRow>
+            )}
             {order.lines.map((line) => (
               <Fragment key={line.id}>
                 <TableRow>

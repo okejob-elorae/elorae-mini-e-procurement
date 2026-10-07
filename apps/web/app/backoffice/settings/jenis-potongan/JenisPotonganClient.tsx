@@ -22,6 +22,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -62,6 +72,8 @@ export function JenisPotonganClient({ baris }: { baris: BarisJenisPotongan[] }) 
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [form, setForm] = useState<typeof KOSONG | null>(null);
+  // Menonaktifkan berlaku untuk semua orang (BKM baru tidak bisa memilihnya) — minta konfirmasi.
+  const [nonaktifTarget, setNonaktifTarget] = useState<BarisJenisPotongan | null>(null);
 
   const jalankan = (fn: () => Promise<{ ok: boolean; kode?: string }>, pesan: string, bersih: () => void) => {
     startTransition(async () => {
@@ -146,13 +158,7 @@ export function JenisPotonganClient({ baris }: { baris: BarisJenisPotongan[] }) 
                               size="sm"
                               variant="ghost"
                               disabled={pending}
-                              onClick={() =>
-                                jalankan(
-                                  () => nonaktifkanJenisPotonganAction(b.id),
-                                  t('okDisabled'),
-                                  () => {},
-                                )
-                              }
+                              onClick={() => setNonaktifTarget(b)}
                             >
                               {t('disable')}
                             </Button>
@@ -248,6 +254,32 @@ export function JenisPotonganClient({ baris }: { baris: BarisJenisPotongan[] }) 
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <AlertDialog open={nonaktifTarget !== null} onOpenChange={(o) => !o && !pending && setNonaktifTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('disableTitle', { nama: nonaktifTarget?.nama ?? '' })}</AlertDialogTitle>
+            <AlertDialogDescription>{t('disableBody')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={pending}
+              onClick={() => {
+                const target = nonaktifTarget;
+                if (!target) return;
+                jalankan(
+                  () => nonaktifkanJenisPotonganAction(target.id),
+                  t('okDisabled'),
+                  () => setNonaktifTarget(null),
+                );
+              }}
+            >
+              {t('disable')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

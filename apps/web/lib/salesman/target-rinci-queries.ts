@@ -17,6 +17,7 @@ import {
   type LingkupTarget,
   type UkuranTarget,
 } from "./target-rinci";
+import { lakuKonsiSalesman } from "./penjualan-konsi-queries";
 
 /**
  * Kueri target per kategori/barang.
@@ -25,7 +26,8 @@ import {
  * dengan `penjualanSalesman` (`lib/salesman/queries.ts`), yang menjadi angka
  * "Bulan ini" di beranda HP:
  *   putus = `FieldSalesDelivery` milik pesanan PUTUS sales itu, menurut tanggal kirim;
- *   konsi = `FieldSalesOrder` KONSI berstatus APPROVED, menurut tanggal disetujui;
+ *   konsi = barang LAKU di toko konsinyasi yang ia pegang (`lakuKonsiSalesman`,
+ *           aturannya di `penjualan-konsi.ts`), menurut tanggal laku;
  *   van   = `VanSale` sales itu, menurut tanggal jual;
  * dibatasi ke bulan kalender WIB dan tidak melewati akhir hari ini — persis
  * titik-titik grafik beranda yang dijumlahkan kartunya. Kalau aturan di
@@ -75,14 +77,7 @@ export async function capaianRinciSales(
         },
       },
     }),
-    prisma.fieldSalesOrder.findMany({
-      where: { salesmanId: { in: ids }, orderType: "KONSI", status: "APPROVED", approvedAt: waktu },
-      select: {
-        salesmanId: true,
-        total: true,
-        lines: { select: { itemId: true, qty: true, lineTotal: true, discountAmount: true, isBonus: true } },
-      },
-    }),
+    lakuKonsiSalesman(ids, rentang.awal, { sebelum: rentang.akhir }),
     prisma.vanSale.findMany({
       where: { salesmanId: { in: ids }, createdAt: waktu },
       select: { salesmanId: true, total: true, lines: { select: { itemId: true, qty: true, lineTotal: true } } },
@@ -109,15 +104,17 @@ export async function capaianRinciSales(
       }),
     });
   }
-  for (const o of konsi) {
-    masukkan(o.salesmanId, {
-      jenis: "konsi",
-      totalSen: sen(o.total),
-      baris: o.lines.map((l) => {
-        itemIds.add(l.itemId);
-        return { itemId: l.itemId, qty: l.qty, bobotSen: sen(l.lineTotal) - sen(l.discountAmount), bonus: l.isBonus };
-      }),
-    });
+  // Satu gerakan laku = satu dokumen satu baris: nilainya seluruhnya milik barang itu.
+  for (const [salesmanId, laku] of konsi) {
+    for (const l of laku) {
+      itemIds.add(l.itemId);
+      const totalSen = sen(l.nilai);
+      masukkan(salesmanId, {
+        jenis: "konsi",
+        totalSen,
+        baris: [{ itemId: l.itemId, qty: l.pcs, bobotSen: Math.abs(totalSen), bonus: false }],
+      });
+    }
   }
   for (const v of van) {
     masukkan(v.salesmanId, {

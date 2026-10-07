@@ -167,11 +167,12 @@ export function StoreListClient({
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-4 sm:items-center">
-        <div className="relative flex-1 max-w-sm">
+      <div className="flex flex-col sm:flex-row sm:flex-wrap gap-4 sm:items-center">
+        <div className="relative flex-1 min-w-[16rem] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder={tList("searchPlaceholder")}
+            aria-label={tList("searchPlaceholder")}
             value={searchInput}
             onChange={e => setSearchInput(e.target.value)}
             className="pl-9"

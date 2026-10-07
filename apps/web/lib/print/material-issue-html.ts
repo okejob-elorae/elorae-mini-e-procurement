@@ -3,6 +3,7 @@
  */
 
 import { esc, fmtDocDate, printCssBase, printPagePortrait } from '@/lib/print/print-theme';
+import { formatRupiah } from '@/lib/format/rupiah';
 
 export type MaterialIssuePrintLine = {
   itemName: string;
@@ -55,11 +56,11 @@ export function buildMaterialIssuePrintHtml(
     labels,
   } = opts;
 
-  const issuedByLabel = labels.issuedBy ?? 'Issued by';
+  const issuedByLabel = labels.issuedBy ?? 'Dibuat oleh';
 
   const hasPrice = lines.some((l) => l.unitPrice != null || l.lineTotal != null);
-  const priceLabel = labels.unitPrice ?? 'Unit Price';
-  const lineTotalLabel = labels.lineTotal ?? 'Line Total';
+  const priceLabel = labels.unitPrice ?? 'Harga satuan';
+  const lineTotalLabel = labels.lineTotal ?? 'Jumlah';
 
   const rows = lines
     .map((line) => {
@@ -68,8 +69,8 @@ export function buildMaterialIssuePrintHtml(
           ? `<div class="line-sku">SKU: ${esc(line.itemSku)}</div>`
           : '';
       const priceCells = hasPrice
-        ? `<td class="right">${line.unitPrice != null ? Number(line.unitPrice).toLocaleString(undefined, { minimumFractionDigits: 2 }) : '—'}</td>
-          <td class="right">${line.lineTotal != null ? Number(line.lineTotal).toLocaleString(undefined, { minimumFractionDigits: 2 }) : '—'}</td>`
+        ? `<td class="right">${line.unitPrice != null ? esc(formatRupiah(Number(line.unitPrice))) : '—'}</td>
+          <td class="right">${line.lineTotal != null ? esc(formatRupiah(Number(line.lineTotal))) : '—'}</td>`
         : '';
       return `<tr>
         <td class="col-desc"><div class="line-name">${esc(line.itemName)}</div>${sub}</td>
@@ -139,7 +140,7 @@ ${printPagePortrait}
     <div class="totals">
       <div class="grand-row">
         <span class="gk">${esc(labels.totalCost)}</span>
-        <span class="gv">${Number(totalCost).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+        <span class="gv">${esc(formatRupiah(Number(totalCost)))}</span>
       </div>
     </div>
   </div>

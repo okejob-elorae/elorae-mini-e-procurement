@@ -25,6 +25,8 @@ import {
 import type { SupplierPaymentDirection } from '@/lib/purchasing/supplier-payment-journal-message';
 import { tandaiJurnalTertundaSelesai, type SumberNotifikasiJurnal } from '@/lib/finance/jurnal-tertunda';
 import { runSerializable } from '@/lib/db/tx-retry';
+import { tanggalBayarSah } from '@/app/backoffice/supplier-payments/tanggal-bayar';
+import { keadaanPemilikGrn } from '@/app/backoffice/inventory/grn/[id]/rincian-grn';
 import { hitungTotalPo } from '@/lib/purchase-orders/ppn';
 import {
   PESAN_TOLAK_TUTUP_PO,
@@ -480,7 +482,7 @@ export async function cancelPO(id: string, _userId?: string, reason?: string, pi
 
 export type BatalkanPOResult =
   | { ok: true }
-  | { ok: false; code: KodeTolakBatalPo | 'TANPA_AKSES' | 'PIN_WAJIB' | 'GAGAL' }
+  | { ok: false; code: KodeTolakBatalPo | 'TANPA_AKSES' | 'ALASAN_WAJIB' | 'PIN_WAJIB' | 'GAGAL' }
   /** `kunciPesan` = kunci `security.*` dari pemeriksa PIN (mis. `pinInvalid`). */
   | { ok: false; code: 'PIN_DITOLAK'; kunciPesan: string };
 
@@ -497,6 +499,9 @@ export async function batalkanPO(id: string, alasan: string, pin: string): Promi
     return { ok: false, code: 'TANPA_AKSES' };
   }
   const userId = session.user.id;
+  // Alasan wajib: dulu daftar PO mengirim teks Inggris tetap tanpa bertanya.
+  const alasanBersih = (alasan ?? '').trim();
+  if (!alasanBersih) return { ok: false, code: 'ALASAN_WAJIB' };
   if (!pin) return { ok: false, code: 'PIN_WAJIB' };
 
   try {
@@ -504,7 +509,7 @@ export async function batalkanPO(id: string, alasan: string, pin: string): Promi
     if (!pinResult.success) {
       return { ok: false, code: 'PIN_DITOLAK', kunciPesan: pinResult.messageKey ?? 'pinInvalid' };
     }
-    const hasil = await batalkanPurchaseOrder({ poId: id, userId, alasan: alasan || 'PO Cancelled' });
+    const hasil = await batalkanPurchaseOrder({ poId: id, userId, alasan: alasanBersih });
     if (!hasil.ok) return hasil;
     kabariPoDibatalkan(id, hasil.docNumber, hasil.statusSebelum, userId);
   } catch (error) {
@@ -555,7 +560,52 @@ export async function getPOById(id: string) {
   // Rekening pemasok terenkripsi tidak pernah dikirim ke browser.
   const { bankAccountEnc: _rekening, ...supplier } = po.supplier;
   void _rekening;
-  return { ...po, supplier };
+  // Keadaan terima-lebih tiap GRN untuk kartu "Penerimaan barang": GRN yang
+  // ditolak pemilik sudah dibalik dan tidak boleh tampil seperti penerimaan biasa.
+  const keadaanGrn = po.grns.length
+    ? await prisma.gRN.findMany({
+        where: { id: { in: po.grns.map((g) => g.id) } },
+        select: { id: true, requiresOwnerApproval: true, ownerApprovedAt: true, ownerDeclinedAt: true },
+      })
+    : [];
+  const perGrn = new Map(keadaanGrn.map((g) => [g.id, keadaanPemilikGrn(g)]));
+  const grns = po.grns.map((g) => ({ ...g, keadaanPemilik: perGrn.get(g.id) ?? null }));
+  return { ...po, grns, supplier };
+}
+
+/** Pemasok untuk pemilih di formulir dokumen lama dan saringan (bukan PO baru). */
+export type PemasokPilihan = { id: string; code: string; name: string; disetujui: boolean };
+
+/**
+ * Pemilih pemasok untuk saringan dan dokumen yang SUDAH ada (GRN, register
+ * pembayaran, ubah retur, ubah PO): pemasok yang disetujui ATAU yang punya
+ * dokumen (PO, GRN, retur pemasok), ditambah `sertakanId` (pemasok dokumen
+ * yang sedang diubah). `approvedOnly` dulu dipakai di sini juga, jadi saringan
+ * tidak bisa memilih pemasok PO yang belum dibayar dan formulir ubah retur
+ * kehilangan pemasoknya sendiri. PO BARU tetap hanya untuk pemasok disetujui.
+ */
+export async function getPemasokPilihan(sertakanId?: string[]): Promise<PemasokPilihan[]> {
+  await wajibSalahSatuIzin([
+    ...IZIN_BACA_PO,
+    PERMISSIONS.PURCHASE_ORDERS_EDIT,
+    PERMISSIONS.INVENTORY_VIEW,
+    PERMISSIONS.VENDOR_RETURNS_VIEW,
+  ]);
+  const sertakan = (sertakanId ?? []).filter((id) => typeof id === 'string' && id.length > 0).slice(0, 50);
+  const rows = await prisma.supplier.findMany({
+    where: {
+      OR: [
+        { status: 'ACTIVE' },
+        { purchaseOrders: { some: {} } },
+        { grns: { some: {} } },
+        { vendorReturns: { some: {} } },
+        ...(sertakan.length > 0 ? [{ id: { in: sertakan } }] : []),
+      ],
+    },
+    select: { id: true, code: true, name: true, status: true },
+    orderBy: [{ name: 'asc' }, { code: 'asc' }],
+  });
+  return rows.map((r) => ({ id: r.id, code: r.code, name: r.name, disetujui: r.status === 'ACTIVE' }));
 }
 
 // Get PO statistics for dashboard
@@ -632,7 +682,12 @@ export async function getPOStats() {
  * from here rather than inferred by the caller from the button it pressed, so the
  * sentence describes the post that actually ran.
  */
-export type SetPOPaidAtRefusal = 'STANDING_PAYMENT_JOURNAL';
+/**
+ * `TANGGAL_TIDAK_SAH`: tanggal bayar sesudah hari ini (WIB). Jurnal pembayaran
+ * diberi tanggal `paidAt`, jadi tanggal di masa depan menaruh kas keluar di
+ * periode yang belum terjadi. Tidak ada yang ditulis.
+ */
+export type SetPOPaidAtRefusal = 'STANDING_PAYMENT_JOURNAL' | 'TANGGAL_TIDAK_SAH';
 
 export type SetPOPaidAtResult = {
   changed: boolean;
@@ -665,6 +720,10 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
    */
   const actorId = session.user?.id;
   if (!actorId) throw new Error('Unauthorized');
+
+  if (paidAt != null && !tanggalBayarSah(paidAt)) {
+    return { changed: false, refusal: 'TANGGAL_TIDAK_SAH', journalFailure: null };
+  }
 
   const direction: SupplierPaymentDirection = paidAt != null ? 'payment' : 'reversal';
   // Batas tanda "Jurnal gagal" yang boleh diselesaikan toggle ini (lihat sesudah commit).

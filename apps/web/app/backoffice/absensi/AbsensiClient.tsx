@@ -42,6 +42,9 @@ type Props =
 
 const ALAMAT = "/backoffice/absensi";
 
+/** "09:00" → "09.00" — gaya jam WIB yang sama dengan layar lain. */
+const jamTitik = (jam: string) => jam.replace(":", ".");
+
 export function AbsensiClient(props: Props) {
   const t = useTranslations("absensi");
   const router = useRouter();
@@ -98,7 +101,7 @@ export function AbsensiClient(props: Props) {
     <div className="space-y-6">
       <PageHeader
         title={t("judul")}
-        meta={t("metaJamMasuk", { jam: props.pengaturan.jamMasukPaling })}
+        meta={props.pengaturan.aktif ? t("metaJamMasuk", { jam: jamTitik(props.pengaturan.jamMasukPaling) }) : undefined}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" asChild>
@@ -184,7 +187,11 @@ export function AbsensiClient(props: Props) {
         )}
       </div>
 
-      {props.tampilan === "hari" ? <TabelHari {...props} durasi={durasi} /> : <TabelBulan rekap={props.rekap} />}
+      {props.tampilan === "hari" ? (
+        <TabelHari {...props} aktif={props.pengaturan.aktif} durasi={durasi} />
+      ) : (
+        <TabelBulan rekap={props.rekap} aktif={props.pengaturan.aktif} />
+      )}
     </div>
   );
 }
@@ -192,10 +199,13 @@ export function AbsensiClient(props: Props) {
 function TabelHari({
   labelTanggal,
   baris,
+  aktif,
   durasi,
 }: {
   labelTanggal: string;
   baris: BarisAbsenKantor[];
+  /** Absensi sedang dimatikan di Pengaturan → Salesman: tidak ada yang bisa absen, jadi tidak ada yang "belum absen". */
+  aktif: boolean;
   durasi: (menit: number) => string;
 }) {
   const t = useTranslations("absensi");
@@ -211,7 +221,7 @@ function TabelHari({
           <CalendarCheck className="h-5 w-5" />
           {labelTanggal}
           <span className="text-sm font-normal text-muted-foreground">
-            {t("ringkasHari", { hadir, total: baris.length, terlambat })}
+            {aktif ? t("ringkasHari", { hadir, total: baris.length, terlambat }) : t("absensiMati")}
             {izin > 0 ? ` · ${t("ringkasIzin", { n: izin })}` : ""}
           </span>
         </CardTitle>
@@ -253,6 +263,10 @@ function TabelHari({
                           <IkonJenisIzin jenis={b.izin} className="h-3.5 w-3.5" />
                           {td(`izin.${b.izin}`)}
                         </span>
+                      ) : !b.masuk && !aktif ? (
+                        <span className="text-xs" title={t("absensiMati")}>
+                          —
+                        </span>
                       ) : (
                         <span
                           className={cn(
@@ -292,13 +306,13 @@ function TabelHari({
                     <TableCell className="whitespace-normal">
                       <span className="flex flex-col gap-0.5 text-xs">
                         {b.petaMasuk ? (
-                          <a href={b.petaMasuk} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
+                          <a href={b.petaMasuk} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline decoration-muted-foreground/50 underline-offset-2 hover:decoration-foreground">
                             <MapPin className="h-3.5 w-3.5" aria-hidden />
                             {b.akurasi !== null ? t("petaMasukAkurasi", { m: b.akurasi }) : t("petaMasuk")}
                           </a>
                         ) : null}
                         {b.petaPulang ? (
-                          <a href={b.petaPulang} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
+                          <a href={b.petaPulang} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline decoration-muted-foreground/50 underline-offset-2 hover:decoration-foreground">
                             <MapPin className="h-3.5 w-3.5" aria-hidden />
                             {t("petaPulang")}
                           </a>
@@ -318,7 +332,7 @@ function TabelHari({
   );
 }
 
-function TabelBulan({ rekap }: { rekap: RekapOrangBulan[] }) {
+function TabelBulan({ rekap, aktif }: { rekap: RekapOrangBulan[]; aktif: boolean }) {
   const t = useTranslations("absensi");
   const td = dinamis(t);
   return (
@@ -353,7 +367,10 @@ function TabelBulan({ rekap }: { rekap: RekapOrangBulan[] }) {
                 {rekap.map((r) => (
                   <TableRow key={r.userId}>
                     <TableCell className="min-w-[10rem] whitespace-normal font-medium">{r.nama}</TableCell>
-                    <TableCell className="text-right tabular-nums">{r.hadir}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {/* Absensi mati: nol hari bukan berarti tidak hadir. */}
+                      {r.hadir === 0 && !aktif ? <span className="text-muted-foreground">—</span> : r.hadir}
+                    </TableCell>
                     <TableCell className={cn("text-right tabular-nums", r.terlambat > 0 && "font-semibold text-amber-700 dark:text-amber-400")}>
                       {r.terlambat}
                     </TableCell>

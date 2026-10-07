@@ -1,6 +1,8 @@
 import { prisma } from '@elorae/db';
 import { tokoLapangan } from '@/lib/receivables/pwa-queries';
 import type { BarisJual } from './dasbor';
+import type { BarisLakuKonsi } from './penjualan-konsi';
+import { lakuKonsiSatuSalesman } from './penjualan-konsi-queries';
 import { nilaiTokoMenurun, urutkanTokoMenurun, type PesananToko, type TokoMenurun } from './toko-menurun';
 import {
   bacaAturanKelasToko,
@@ -34,20 +36,25 @@ export const HARI_TOKO_SAYA = 90;
 /**
  * Penjualan salesman per baris, dari `sejak` sampai sekarang, tiga kanal:
  *   putus = pengiriman (tanggal kirim) — sama dengan "terealisasi" beranda;
- *   konsi = pesanan konsinyasi yang disetujui (konsi tidak pernah "dikirim";
- *           transfernya tercatat saat disetujui);
+ *   konsi = barang LAKU di toko konsinyasi yang ia pegang, pada harga Elorae
+ *           (`penjualan-konsi.ts`) — transfer konsi yang disetujui BUKAN omzet;
  *   van   = penjualan dari mobil.
+ *
+ * `opsi.lakuKonsi`: baris laku yang sudah dibaca pemanggil untuk salesman dan
+ * `sejak` yang SAMA (beranda HP butuh pcs-nya juga) — supaya bacaan laku yang
+ * berat tidak dijalankan dua kali.
  */
-export async function penjualanSalesman(salesmanId: string, sejak: Date): Promise<BarisJual[]> {
+export async function penjualanSalesman(
+  salesmanId: string,
+  sejak: Date,
+  opsi: { lakuKonsi?: Promise<BarisLakuKonsi[]> } = {},
+): Promise<BarisJual[]> {
   const [kirim, konsi, van] = await Promise.all([
     prisma.fieldSalesDelivery.findMany({
       where: { deliveredAt: { gte: sejak }, order: { salesmanId, orderType: 'PUTUS' } },
       select: { deliveredAt: true, total: true },
     }),
-    prisma.fieldSalesOrder.findMany({
-      where: { salesmanId, orderType: 'KONSI', status: 'APPROVED', approvedAt: { gte: sejak } },
-      select: { approvedAt: true, total: true },
-    }),
+    opsi.lakuKonsi ?? lakuKonsiSatuSalesman(salesmanId, sejak),
     prisma.vanSale.findMany({
       where: { salesmanId, createdAt: { gte: sejak } },
       select: { createdAt: true, total: true },
@@ -55,7 +62,7 @@ export async function penjualanSalesman(salesmanId: string, sejak: Date): Promis
   ]);
   return [
     ...kirim.map((d) => ({ tanggal: d.deliveredAt, jenis: 'putus' as const, nilai: angka(d.total) })),
-    ...konsi.map((o) => ({ tanggal: o.approvedAt as Date, jenis: 'konsi' as const, nilai: angka(o.total) })),
+    ...konsi.map((l) => ({ tanggal: l.tanggal, jenis: 'konsi' as const, nilai: l.nilai })),
     ...van.map((v) => ({ tanggal: v.createdAt, jenis: 'van' as const, nilai: angka(v.total) })),
   ];
 }

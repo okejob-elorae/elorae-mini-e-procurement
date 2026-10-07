@@ -12,8 +12,9 @@ import { tokoMenurunHp } from "./toko-menurun-queries";
  *
  * Aturan mutlak pemilik: harga dan total konsinyasi tidak pernah sampai ke
  * aplikasi salesman — tidak di layar, tidak di payload, dan tidak lewat angka
- * turunan (capaian × target − putus − van = konsi). Nilai konsi sengaja
- * 41.237 supaya bisa dicari di JSON; omzet resmi sales A dengan konsi =
+ * turunan (capaian × target − putus − van = konsi). Omzet konsi = barang LAKU
+ * di toko konsinyasi yang sales A pegang: 4 pcs bersih × 10.309,25 = 41.237,
+ * sengaja angka yang bisa dicari di JSON; omzet resmi sales A dengan konsi =
  * 49.500 + 41.237 + 10.000 = 100.737 (capaian resmi 100,7% dari 100.000).
  *
  * Bulan acak jauh di masa lalu; pengaturan bersama (`SystemSetting`) tidak
@@ -60,6 +61,7 @@ d("payload Peringkat, Target, dan toko menurun di HP tanpa rupiah konsinyasi (te
   let deliveryIds: string[] = [];
   let vanIds: string[] = [];
   let targetIds: string[] = [];
+  let gerakIds: string[] = [];
 
   beforeAll(async () => {
     uomId = "";
@@ -77,6 +79,7 @@ d("payload Peringkat, Target, dan toko menurun di HP tanpa rupiah konsinyasi (te
     deliveryIds = [];
     vanIds = [];
     targetIds = [];
+    gerakIds = [];
 
     uomId = (await prisma.uOM.create({ data: { code: `TEST-UOM-PHH-${token}`, nameId: "t", nameEn: "t" } })).id;
     katA = (await prisma.itemCategory.create({ data: { code: `PHH-A-${token}`, name: `Kaos ${token}` } })).id;
@@ -97,6 +100,7 @@ d("payload Peringkat, Target, dan toko menurun di HP tanpa rupiah konsinyasi (te
       (await prisma.store.create({ data: { code: `PHH-T${k}-${token}`, name: `Toko ${k} ${token}`, address: "x", termsType } })).id;
     tokoPutus = await toko("P", "PUTUS");
     tokoKonsi = await toko("K", "KONSI");
+    await prisma.store.update({ where: { id: tokoKonsi }, data: { salesmanId: salesA, marginPercent: 25 } });
     tokoTurun = await toko("T", "KONSI");
     // Toko yang dulu konsinyasi lalu dilayani van, dan toko yang hanya dilayani van.
     tokoCampur = await toko("M", "PUTUS");
@@ -149,11 +153,23 @@ d("payload Peringkat, Target, dan toko menurun di HP tanpa rupiah konsinyasi (te
       },
     });
     deliveryIds.push(dl.id);
-    // Sales A — konsi disetujui tanggal 10: 4 pcs bernilai 41.237 + 1 bonus.
-    await pesanan({ storeId: tokoKonsi, status: "APPROVED", orderType: "KONSI", approvedAt: tgl(10), subtotal: 41_237, total: 41_237 }, [
-      { itemId: i2, productName: "C", qty: 4, unitPrice: 10_309.25, lineTotal: 41_237 },
+    // Sales A — transfer konsi disetujui tanggal 9 (6 pcs @ 13.745,67 di toko + 1 bonus): bukan omzet.
+    await pesanan({ storeId: tokoKonsi, status: "APPROVED", orderType: "KONSI", approvedAt: tgl(9), subtotal: 82_474.02, total: 82_474.02 }, [
+      { itemId: i2, productName: "C", qty: 6, unitPrice: 13_745.67, lineTotal: 82_474.02 },
       { itemId: i2, productName: "C bonus", qty: 1, unitPrice: 0, lineTotal: 0, isBonus: true },
     ]);
+    // Laku di toko K: 4 + 1 − 1 kembali = 4 pcs × 10.309,25 = 41.237.
+    for (const [qty, kind, hari] of [
+      [7, "TERIMA", 9],
+      [-4, "JUAL", 10],
+      [-1, "JUAL", 14],
+      [1, "RETUR_PEMBELI", 15],
+    ] as const) {
+      const g = await prisma.storeStockMovement.create({
+        data: { storeId: tokoKonsi, itemId: i2, variantSku: "", qty, kind, createdById: salesA, createdAt: tgl(hari) },
+      });
+      gerakIds.push(g.id);
+    }
     // Sales A — van 10.000; sales B — van 70.000 (tanpa konsi).
     await van(salesA, 10_000, 1);
     await van(salesB, 70_000, 7);
@@ -221,6 +237,7 @@ d("payload Peringkat, Target, dan toko menurun di HP tanpa rupiah konsinyasi (te
   });
 
   afterAll(async () => {
+    await prisma.storeStockMovement.deleteMany({ where: { id: { in: seededIds(gerakIds) } } });
     await prisma.salesTarget.deleteMany({ where: { id: { in: seededIds(targetIds) } } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { id: { in: seededIds(deliveryIds) } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: seededIds(orderIds) } } });

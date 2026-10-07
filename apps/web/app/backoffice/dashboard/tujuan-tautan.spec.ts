@@ -240,7 +240,8 @@ describe("tujuan tautan Beranda — halaman menerapkan saringan yang sama dengan
   it("BKM menunggu verifikasi → hanya BKM DIKIRIM", async () => {
     const p = await buka(hrefBaris("claimsAwaitingVerification"), "@/app/backoffice/pelunasan/page");
     expect((p.baris as Klaim[]).map((b) => b.id)).toEqual(["k1", "k3"]);
-    expect(p.saring).toEqual({ status: "DIKIRIM", koreksi: false });
+    // Halaman kini juga meneruskan `cari`; yang diperiksa saringan tautannya.
+    expect(p.saring).toMatchObject({ status: "DIKIRIM", koreksi: false });
     // Chip saringan menghitung SEMUA BKM, bukan hanya yang sedang tampil.
     expect(p.jumlah).toMatchObject({ semua: 5, DIKIRIM: 2, TERVERIFIKASI: 1, DITOLAK: 1, koreksi: 1 });
   });
@@ -257,14 +258,16 @@ describe("tujuan tautan Beranda — halaman menerapkan saringan yang sama dengan
 
   it("Permintaan koreksi nota retur → saringan awal koreksi dan id notanya", async () => {
     const p = await buka(ANTREAN_KANTOR.returnCorrectionsPending.href, "@/app/backoffice/retur-toko/page");
-    expect(p.saringAwal).toBe("koreksi");
+    // Saringan kini diterapkan di server (`saring`, dulu `saringAwal` di klien).
+    expect(p.saring).toBe("koreksi");
     expect(p.koreksiIds).toEqual(["n2"]);
   });
 
   it("Janji bayar lapangan → kontrabon terbuka dengan saringan belum dikonfirmasi", async () => {
     const p = await buka(ANTREAN_KANTOR.fieldPromisesUnconfirmed.href, "@/app/backoffice/kontrabon/page");
-    expect(p.saringAwal).toBe("belum");
-    expect((await buka("/backoffice/kontrabon", "@/app/backoffice/kontrabon/page")).saringAwal).toBe("semua");
+    expect(p.saring).toBe("belum");
+    // Tanpa saringan: bawaan halamannya (yang masih berjalan), bukan "belum dikonfirmasi".
+    expect((await buka("/backoffice/kontrabon", "@/app/backoffice/kontrabon/page")).saring).toBe("berjalan");
   });
 
   it("Biaya menunggu persetujuan → semua bulan, bukan hanya bulan ini", async () => {

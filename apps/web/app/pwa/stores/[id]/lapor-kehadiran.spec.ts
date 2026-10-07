@@ -156,7 +156,7 @@ describe("halaman toko salesman — lapor dari toko dan kehadiran SPG", () => {
     expect(lapor?.props).toMatchObject({ storeId: "toko-1", termsType: "PUTUS" });
     const kehadiran = cari(slot, "KehadiranSpgToko");
     expect(kehadiran?.props.baris).toEqual([
-      { userId: "spg-1", nama: "Rina", keadaan: "DI_TOKO", masuk: "08.15", pulang: null, jenisIzin: null, jadwalMulai: null },
+      { userId: "spg-1", nama: "Rina", keadaan: "DI_TOKO", masuk: "08.15", pulang: null, jadwalMulai: null },
     ]);
     expect(state.kehadiranDibaca.map((k) => k.storeId)).toEqual(["toko-1"]);
   });

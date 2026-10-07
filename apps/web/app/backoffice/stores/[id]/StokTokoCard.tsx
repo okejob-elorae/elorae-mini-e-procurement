@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Boxes } from "lucide-react";
+import { Boxes, Target } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { dinamis } from "@/lib/i18n/dinamis";
 import type { BarisStok } from "@/lib/spg/queries";
@@ -41,7 +43,20 @@ const ribuan = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
  * pernah ditolak karena stok sistem nol, jadi minus adalah tanda opname
  * dibutuhkan, bukan galat.
  */
-export function StokTokoCard({ stok, gerakan }: { stok: BarisStok[]; gerakan: GerakanStokTampil[] }) {
+export function StokTokoCard({
+  stok,
+  gerakan,
+  tautanTitipan = null,
+}: {
+  stok: BarisStok[];
+  gerakan: GerakanStokTampil[];
+  /**
+   * Toko konsinyasi, untuk pemegang stores:manage (Target stok butuh izin itu):
+   * tautan ke Target stok. Tanpa buku SPG, angka di sana adalah titipan
+   * (kiriman − penjualan bulan terkunci − retur). Kartu ini hanya buku stok SPG.
+   */
+  tautanTitipan?: string | null;
+}) {
   const t = useTranslations("stores.stockCard");
   const td = dinamis(t);
 
@@ -69,6 +84,17 @@ export function StokTokoCard({ stok, gerakan }: { stok: BarisStok[]; gerakan: Ge
             </span>
           ) : null}
         </CardTitle>
+        {tautanTitipan ? (
+          <CardAction>
+            <Button asChild variant="outline" size="sm">
+              <Link href={tautanTitipan}>
+                <Target className="h-4 w-4" />
+                {/* Target stok memakai buku SPG bila ada; tanpa buku, angkanya titipan menurut kiriman. */}
+                {kosong ? t("titipanLink") : t("targetLink")}
+              </Link>
+            </Button>
+          </CardAction>
+        ) : null}
       </CardHeader>
       <CardContent>
         {kosong ? (

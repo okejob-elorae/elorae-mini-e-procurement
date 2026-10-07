@@ -4,6 +4,9 @@ import {
   bacaAturanPortalToko,
   bentukTokenSah,
   BATAS_TERBATAS,
+  batasPesanPortal,
+  emberPortal,
+  KELIPATAN_STOK_PORTAL,
   emberBarang,
   emberKetersediaan,
   keadaanTautan,
@@ -131,5 +134,30 @@ describe("ember ketersediaan", () => {
     expect(emberBarang(["HABIS", "TERSEDIA", "TERBATAS"])).toBe("TERSEDIA");
     expect(emberBarang(["HABIS"])).toBe("HABIS");
     expect(emberBarang([])).toBe("HABIS");
+  });
+});
+
+describe("batas pesan portal — stok dibulatkan ke bawah per kelipatan", () => {
+  it("portal menawarkan stok per kelipatan; sisa di bawah satu kelipatan tidak ditawarkan", () => {
+    expect(KELIPATAN_STOK_PORTAL).toBe(6);
+    expect(batasPesanPortal(0)).toBe(0);
+    expect(batasPesanPortal(-3)).toBe(0);
+    expect(batasPesanPortal(Number.NaN)).toBe(0);
+    expect(batasPesanPortal(5)).toBe(0);
+    expect(batasPesanPortal(6)).toBe(6);
+    expect(batasPesanPortal(11)).toBe(6);
+    expect(batasPesanPortal(100)).toBe(96);
+    expect(batasPesanPortal(101.9)).toBe(96);
+  });
+
+  it("dua stok di dalam kelipatan yang sama memberi jawaban yang sama — angka persisnya tidak bisa ditebak", () => {
+    for (let n = 36; n < 42; n++) expect(batasPesanPortal(n)).toBe(36);
+  });
+
+  it("ember portal mengikuti apa yang bisa dipesan, bukan stok mentah", () => {
+    expect(emberPortal(5)).toBe("HABIS");
+    expect(emberPortal(6)).toBe("TERBATAS");
+    expect(emberPortal(11)).toBe("TERBATAS");
+    expect(emberPortal(12)).toBe("TERSEDIA");
   });
 });

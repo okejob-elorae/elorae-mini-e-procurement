@@ -56,7 +56,8 @@ export default async function DashboardPage() {
     getActionItemCounts(izin),
     kartu.piutang ? ringkasPiutangBeranda() : null,
     kartu.tren ? getTrenPenjualan() : null,
-    kartu.klaimMenunggu ? getClaimsAwaitingVerification() : null,
+    // Dibagi untuk penonton ini: BKM yang ia laporkan/catat sendiri tidak boleh ia putuskan.
+    kartu.klaimMenunggu ? getClaimsAwaitingVerification(session.user.id) : null,
     // Antrean kantor: hanya baris yang boleh dilihat penonton ini yang dihitung.
     getAntreanKantor(izin),
   ]);
@@ -76,7 +77,8 @@ export default async function DashboardPage() {
     oversoldSkus: stokMinus ?? 0,
     unshippedOrders: marketplaceKpi?.pendingFulfillmentCount ?? 0,
     overduePromises: piutang ? { count: piutang.lewatJumlah, amount: piutang.lewatNilai } : undefined,
-    claimsAwaitingVerification: klaimMenunggu ?? undefined,
+    claimsAwaitingVerification: klaimMenunggu?.bisaDiputuskan,
+    claimsAwaitingOthers: klaimMenunggu?.milikSendiri,
     antrean,
   }, izin).filter((item) => !item.permission || hasPermission(izin, item.permission));
 

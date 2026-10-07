@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { muatIsiKeranjang } from "@/lib/field-sales/isi-keranjang";
 import { bacaSumberKeranjang, tulisSumberKeranjang } from "@/lib/field-sales/isi-keranjang-sumber";
 import { ambilTokoTetap } from "@/lib/pwa/peran";
+import { aksesTokoHp } from "@/lib/pwa/akses-toko";
 import { getStore, getActiveVisit } from "@/lib/stores/queries";
 import { barisPesananUntukUlang } from "@/lib/salesman/queries";
 import { muatKreditToko } from "@/lib/field-sales/kredit-toko";
@@ -16,6 +17,7 @@ import { bacaIdGanti } from "@/lib/field-sales/ganti-pesanan";
 import { pesananUntukDiganti } from "@/lib/field-sales/pwa-queries";
 import { getPackRatio } from "@/app/actions/settings/pack-ratio";
 import { muatUkuranPack } from "./ukuran-pack";
+import { BukanTokoSaya } from "../BukanTokoSaya";
 import { CatalogShell, type GantiKatalog, type IndenKatalog, type IndenTerbukaKatalog, type KreditKatalog } from "./CatalogShell";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +36,14 @@ export default async function PwaStoreCatalog({
   const { id } = await params;
   const store = await getStore(id);
   if (!store) notFound();
+  // Penjaga yang sama dengan rute datanya (/pwa/api/catalog): toko orang lain saat
+  // kunci "hanya toko sendiri" menyala melihat layar penjelas, bukan "katalog gagal
+  // dimuat" — sebelum apa pun dibaca, termasuk pratinjau pre-order (`?inden=`).
+  const akses = await aksesTokoHp(session.user.id, store.id);
+  if (!akses.ok) {
+    if (akses.code === "TOKO_TIDAK_ADA") notFound();
+    return <BukanTokoSaya nama={store.name} />;
+  }
 
   const active = await getActiveVisit(session.user.id);
   const hasActiveVisit = active?.storeId === store.id;

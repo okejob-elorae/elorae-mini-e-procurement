@@ -1,22 +1,20 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import type { DocType } from '@elorae/db';
 import {
   getDocNumberConfigs,
-  updateDocNumberConfig,
+  simpanNomorDokumenAction,
   type DocNumberConfigRow,
+  type IsianNomorDokumen,
 } from '@/app/actions/settings/doc-numbers';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -32,26 +30,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2 } from 'lucide-react';
+import { FileDigit, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { DocType } from '@/lib/constants/enums';
+import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
+import {
+  contohNomorBerikutnya,
+  kelompokDokumen,
+  periksaIsianNomor,
+  urutkanJenisDokumen,
+  type PeriodeReset,
+} from './jenis-dokumen';
 
-const DOC_TYPES: DocType[] = ['PO', 'GRN', 'WO', 'ADJ', 'RET', 'ISSUE', 'RECEIPT', 'OPN'];
+type Draf = { prefix: string; resetPeriod: PeriodeReset; padding: string };
 
-// Not shown on screen (the table reads `documents.docTypes.*`). Kept only for
-// the empty-prefix fallback in handleSave, whose output must not change with
-// the viewer's locale.
-const DOC_TYPE_LABELS: Record<DocType, string> = {
-  PO: 'Purchase Order',
-  GRN: 'Goods Receipt',
-  WO: 'Work Order',
-  ADJ: 'Stock Adjustment',
-  RET: 'Vendor Return',
-  ISSUE: 'Material Issue',
-  RECEIPT: 'FG Receipt',
-  OPN: 'Stock Opname',
-};
+const keDraf = (c: DocNumberConfigRow): Draf => ({
+  prefix: c.prefix,
+  resetPeriod: (c.resetPeriod as PeriodeReset) ?? 'YEARLY',
+  padding: String(c.padding),
+});
 
 export default function DocumentNumbersSettingsPage() {
   const t = useTranslations('documents');
@@ -60,13 +57,19 @@ export default function DocumentNumbersSettingsPage() {
   const router = useRouter();
   const [configs, setConfigs] = useState<DocNumberConfigRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [savingType, setSavingType] = useState<DocType | null>(null);
+  const [menyimpan, setMenyimpan] = useState(false);
+  const [edits, setEdits] = useState<Partial<Record<DocType, Draf>>>({});
+  // Pratinjau memakai jam peramban; dibaca sekali saat halaman dibuka.
+  const [kini] = useState(() => new Date());
+
+  const bolehUbah = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.SETTINGS_DOCUMENTS_MANAGE);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.replace('/login');
       return;
     }
+    if (status !== 'authenticated') return;
     getDocNumberConfigs()
       .then(setConfigs)
       .catch(() => toast.error(t('loadError')))
@@ -74,52 +77,64 @@ export default function DocumentNumbersSettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- t from useTranslations
   }, [status, router]);
 
-  const [edits, setEdits] = useState<Record<string, { prefix: string; resetPeriod: string; padding: string }>>({});
-
-  const getEdit = (docType: DocType) =>
-    edits[docType] ?? {
-      prefix: configs.find((c) => c.docType === docType)?.prefix ?? '',
-      resetPeriod: configs.find((c) => c.docType === docType)?.resetPeriod ?? 'YEARLY',
-      padding: String(configs.find((c) => c.docType === docType)?.padding ?? 4),
-    };
-
-  const setEdit = (docType: DocType, field: string, value: string) => {
-    setEdits((prev) => ({
-      ...prev,
-      [docType]: {
-        ...getEdit(docType),
-        [field]: value,
-      },
-    }));
+  const configOf = (docType: DocType) => configs.find((c) => c.docType === docType);
+  // Semua baris dari server (generator punya semua jenis), urut per kelompok.
+  const daftarJenis = urutkanJenisDokumen(configs.map((c) => c.docType));
+  // Jenis baru yang belum diberi nama tampil dengan kodenya.
+  const namaJenis = (d: DocType) => (t.has(`docTypes.${d}`) ? t(`docTypes.${d}`) : d);
+  const getEdit = (docType: DocType): Draf | null => {
+    const e = edits[docType];
+    if (e) return e;
+    const c = configOf(docType);
+    return c ? keDraf(c) : null;
   };
 
-  const handleSave = async (docType: DocType) => {
-    if (!session?.user?.id) return;
-    const e = getEdit(docType);
-    const padding = parseInt(e.padding, 10);
-    if (isNaN(padding) || padding < 1 || padding > 8) {
-      toast.error(tToasts('paddingMustBe1To8'));
-      return;
-    }
-    setSavingType(docType);
+  const setEdit = (docType: DocType, field: keyof Draf, value: string) => {
+    const lama = getEdit(docType);
+    if (!lama) return;
+    setEdits((prev) => ({ ...prev, [docType]: { ...lama, [field]: value } }));
+  };
+
+  // Tanpa useMemo: React Compiler yang menyimpan hasilnya.
+  /** Baris yang benar-benar berubah dari yang tersimpan. */
+  const berubah = daftarJenis.filter((d) => {
+    const e = edits[d];
+    const c = configs.find((x) => x.docType === d);
+    if (!e || !c) return false;
+    const asal = keDraf(c);
+    return e.prefix !== asal.prefix || e.resetPeriod !== asal.resetPeriod || e.padding !== asal.padding;
+  });
+
+  // Alasan pertama tombol Simpan mati, dalam urutan tabel.
+  const galatPertama =
+    berubah
+      .map((d) => ({ docType: d, kode: periksaIsianNomor({ prefix: edits[d]!.prefix, padding: edits[d]!.padding }) }))
+      .find((x) => x.kode !== null) ?? null;
+
+  const handleSave = async () => {
+    if (!session?.user?.id || berubah.length === 0 || galatPertama) return;
+    setMenyimpan(true);
     try {
-      await updateDocNumberConfig(docType, {
-        prefix: e.prefix.trim() || DOC_TYPE_LABELS[docType].slice(0, 2).toUpperCase() + '/',
-        resetPeriod: e.resetPeriod as 'YEARLY' | 'MONTHLY' | 'NEVER',
-        padding,
+      const isian: IsianNomorDokumen[] = berubah.map((d) => {
+        const e = edits[d]!;
+        return { docType: d, prefix: e.prefix.trim(), resetPeriod: e.resetPeriod, padding: Number(e.padding) };
       });
-      toast.success(tToasts('saved'));
-      const next = await getDocNumberConfigs();
-      setConfigs(next);
-      setEdits((prev) => {
-        const u = { ...prev };
-        delete u[docType];
-        return u;
-      });
+      const r = await simpanNomorDokumenAction(isian);
+      if (!r.ok) {
+        toast.error(
+          r.docType
+            ? t('errRow', { jenis: namaJenis(r.docType), pesan: t(`err.${r.code}`) })
+            : t(`err.${r.code}`),
+        );
+        return;
+      }
+      toast.success(t('savedCount', { count: r.diubah }));
+      setConfigs(await getDocNumberConfigs());
+      setEdits({});
     } catch {
       toast.error(tToasts('failedToSave'));
     } finally {
-      setSavingType(null);
+      setMenyimpan(false);
     }
   };
 
@@ -133,99 +148,134 @@ export default function DocumentNumbersSettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-1">
-        <h1 className="text-2xl font-bold tracking-tight">{t('pageTitle')}</h1>
-        <TombolBantuan judul={t('pageTitle')} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold tracking-tight">{t('pageTitle')}</h1>
+          <TombolBantuan judul={t('pageTitle')} />
+        </div>
+        {bolehUbah ? (
+          <div className="flex flex-col items-end gap-1">
+            <Button onClick={() => void handleSave()} disabled={menyimpan || berubah.length === 0 || galatPertama !== null}>
+              {menyimpan ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {berubah.length > 0 ? t('saveCount', { count: berubah.length }) : t('save')}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              {galatPertama
+                ? t('errRow', { jenis: namaJenis(galatPertama.docType), pesan: t(`err.${galatPertama.kode}`) })
+                : berubah.length === 0
+                  ? t('noChanges')
+                  : null}
+            </p>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">{t('readOnly')}</p>
+        )}
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>{t('configTitle')}</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <FileDigit className="h-5 w-5" />
+            {t('configTitle')}
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t('documentType')}</TableHead>
-                <TableHead>{t('prefix')}</TableHead>
-                <TableHead>{t('resetPeriod')}</TableHead>
-                <TableHead>{t('padding')}</TableHead>
-                <TableHead className="w-[100px]">{t('lastNumber')}</TableHead>
-                <TableHead className="w-[80px]">
-                  <span className="sr-only">{t('save')}</span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {DOC_TYPES.map((docType) => {
-                const c = configs.find((x) => x.docType === docType);
-                const e = getEdit(docType);
-                const label = t(`docTypes.${docType}`);
-                return (
-                  <TableRow key={docType}>
-                    <TableCell className="font-medium">
-                      {label}
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        aria-label={`${t('prefix')} — ${label}`}
-                        value={e.prefix}
-                        onChange={(ev) => setEdit(docType, 'prefix', ev.target.value)}
-                        placeholder="PO/"
-                        className="max-w-[120px]"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Select
-                        value={e.resetPeriod}
-                        onValueChange={(v) => setEdit(docType, 'resetPeriod', v)}
-                      >
-                        <SelectTrigger
-                          className="w-[140px]"
-                          aria-label={`${t('resetPeriod')} — ${label}`}
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t('documentType')}</TableHead>
+                  <TableHead>{t('prefix')}</TableHead>
+                  <TableHead>{t('resetPeriod')}</TableHead>
+                  <TableHead>{t('padding')}</TableHead>
+                  <TableHead>{t('lastNumber')}</TableHead>
+                  <TableHead>{t('nextExample')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {daftarJenis.map((docType, i) => {
+                  const c = configOf(docType);
+                  const e = getEdit(docType);
+                  if (!c || !e) return null;
+                  const label = namaJenis(docType);
+                  const kelompok = kelompokDokumen(docType);
+                  const kelompokBaru = i === 0 || kelompokDokumen(daftarJenis[i - 1]) !== kelompok;
+                  const galat = periksaIsianNomor({ prefix: e.prefix, padding: e.padding });
+                  const contoh = galat
+                    ? null
+                    : contohNomorBerikutnya(
+                        { prefix: e.prefix.trim(), resetPeriod: e.resetPeriod, padding: Number(e.padding), lastNumber: c.lastNumber, year: c.year, month: c.month },
+                        kini,
+                      );
+                  return [
+                    kelompokBaru ? (
+                      <TableRow key={`k-${kelompok}`} className="hover:bg-transparent">
+                        <TableCell colSpan={6} className="bg-muted/40 py-2">
+                          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                            {t(`group.${kelompok}`)}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    ) : null,
+                    <TableRow key={docType}>
+                      <TableCell className="whitespace-normal font-medium">
+                        {label}
+                        {berubah.includes(docType) ? (
+                          <Badge variant="secondary" className="ml-2">
+                            {t('changed')}
+                          </Badge>
+                        ) : null}
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          aria-label={`${t('prefix')} — ${label}`}
+                          aria-invalid={galat === 'AWALAN_KOSONG' || galat === 'AWALAN_PANJANG'}
+                          value={e.prefix}
+                          onChange={(ev) => setEdit(docType, 'prefix', ev.target.value)}
+                          className="max-w-[140px] font-mono"
+                          disabled={!bolehUbah || menyimpan}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Select
+                          value={e.resetPeriod}
+                          onValueChange={(v) => setEdit(docType, 'resetPeriod', v)}
+                          disabled={!bolehUbah || menyimpan}
                         >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="YEARLY">{t('period.YEARLY')}</SelectItem>
-                          <SelectItem value="MONTHLY">{t('period.MONTHLY')}</SelectItem>
-                          <SelectItem value="NEVER">{t('period.NEVER')}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        type="number"
-                        min={1}
-                        max={8}
-                        aria-label={`${t('padding')} — ${label}`}
-                        value={e.padding}
-                        onChange={(ev) => setEdit(docType, 'padding', ev.target.value)}
-                        className="w-20"
-                      />
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {c?.lastNumber ?? '-'}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        size="sm"
-                        onClick={() => handleSave(docType)}
-                        disabled={savingType === docType}
-                        aria-label={`${t('save')} — ${label}`}
-                      >
-                        {savingType === docType ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          t('save')
-                        )}
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                          <SelectTrigger className="w-[150px]" aria-label={`${t('resetPeriod')} — ${label}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="YEARLY">{t('period.YEARLY')}</SelectItem>
+                            <SelectItem value="MONTHLY">{t('period.MONTHLY')}</SelectItem>
+                            <SelectItem value="NEVER">{t('period.NEVER')}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          type="text"
+                          inputMode="numeric"
+                          aria-label={`${t('padding')} — ${label}`}
+                          aria-invalid={galat === 'DIGIT_TIDAK_SAH'}
+                          value={e.padding}
+                          onChange={(ev) => setEdit(docType, 'padding', ev.target.value.replace(/\D/g, '').slice(0, 1))}
+                          className="w-16 tabular-nums"
+                          disabled={!bolehUbah || menyimpan}
+                        />
+                      </TableCell>
+                      <TableCell className="tabular-nums text-muted-foreground">
+                        {c.id ? c.lastNumber.toLocaleString('id-ID') : t('notUsedYet')}
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">
+                        {contoh ?? <span className="font-sans text-xs text-destructive">{t(`err.${galat}`)}</span>}
+                      </TableCell>
+                    </TableRow>,
+                  ];
+                })}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
     </div>

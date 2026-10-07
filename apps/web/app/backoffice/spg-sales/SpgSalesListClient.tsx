@@ -29,6 +29,9 @@ import { formatDisplayDateTime } from "@/lib/date-only";
 import { formatRupiah } from "@/lib/format/rupiah";
 import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
 
+/** Pager disembunyikan selama semua baris muat di satu halaman terkecil. */
+const PAGER_MIN = 10;
+
 /** Baris daftar + potongan dan tanda nota yang dicatat tanpa sinyal (dibaca di halaman server). */
 export type BarisDaftarNotaSpg = SpgSaleListRow & { discountTotal: number; capturedOffline: boolean };
 
@@ -125,9 +128,12 @@ export function SpgSalesListClient({
           <CardTitle className="flex items-center gap-2">
             <Receipt className="h-5 w-5" />
             {t("cardTitle")}
-            <span className="text-sm font-normal text-muted-foreground ml-2">
-              ({t("count", { count: totalCount })})
-            </span>
+            {/* Kosong: keterangan kosong cukup sekali, di badan kartu. */}
+            {totalCount > 0 ? (
+              <span className="text-sm font-normal text-muted-foreground ml-2">
+                ({t("count", { count: totalCount })})
+              </span>
+            ) : null}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -197,22 +203,25 @@ export function SpgSalesListClient({
         </CardContent>
       </Card>
 
-      <Pager
-        page={page}
-        pageSize={pageSize}
-        total={totalCount}
-        onPageChange={(p) => {
-          const params = new URLSearchParams(sp.toString());
-          params.set("page", String(p));
-          startTransition(() => router.push(`/backoffice/spg-sales?${params.toString()}`));
-        }}
-        onPageSizeChange={(size) => {
-          const params = new URLSearchParams(sp.toString());
-          params.set("pageSize", String(size));
-          params.delete("page");
-          startTransition(() => router.push(`/backoffice/spg-sales?${params.toString()}`));
-        }}
-      />
+      {/* Satu halaman pendek tidak butuh pager. */}
+      {totalCount > PAGER_MIN || page > 1 ? (
+        <Pager
+          page={page}
+          pageSize={pageSize}
+          total={totalCount}
+          onPageChange={(p) => {
+            const params = new URLSearchParams(sp.toString());
+            params.set("page", String(p));
+            startTransition(() => router.push(`/backoffice/spg-sales?${params.toString()}`));
+          }}
+          onPageSizeChange={(size) => {
+            const params = new URLSearchParams(sp.toString());
+            params.set("pageSize", String(size));
+            params.delete("page");
+            startTransition(() => router.push(`/backoffice/spg-sales?${params.toString()}`));
+          }}
+        />
+      ) : null}
     </div>
   );
 }

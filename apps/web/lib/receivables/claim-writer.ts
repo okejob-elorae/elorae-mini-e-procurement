@@ -3,11 +3,13 @@ import { bentrokPengganti, catatDiganti, periksaKlaimLama, type AlasanPengganti 
 import { runSerializable } from '@/lib/db/tx-retry';
 import { bentrokKunciKiriman } from './idempoten';
 import { denganNomorUnik } from './nomor';
-import { hitungUlangPiutang, returYangMelebihi } from './writer';
+import { hitungUlangPiutang, hitungUlangPiutangDanTahanan, returYangMelebihi } from './writer';
+import { sisaBolehDilunasi } from './rules';
 import { tanggalWib } from '@/lib/dashboard/hari-wib';
 import { catatJejak, JEJAK } from './jejak';
 import { periksaGiro, STATUS_GIRO, type AlasanGiro, type GiroSah } from './giro';
 import { fotoBolehDipakai } from './foto-pencatat';
+import { periksaFotoKembar } from '@/lib/foto/kembar';
 import { PERMISSIONS } from '@/lib/rbac';
 
 /**
@@ -41,6 +43,12 @@ export type AlasanGagalKlaim =
   | 'BEDA_TOKO'
   | 'SUDAH_LUNAS'
   | 'MELEBIHI_SISA'
+  /**
+   * Nilai yang dilunasi masuk ke bagian sisa yang sedang ditahan potongan retur
+   * BKM lain yang sudah terverifikasi — bagian itu lepas sendiri begitu returnya
+   * beres, jadi melunasinya lagi membuat toko membayar dua kali.
+   */
+  | 'RETUR_DITAHAN'
   | 'NILAI_TIDAK_VALID'
   | 'POTONGAN_MELEBIHI'
   | 'RETUR_TIDAK_DITEMUKAN'
@@ -49,6 +57,8 @@ export type AlasanGagalKlaim =
   | 'FOTO_WAJIB'
   /** Foto `/api/foto/<id>` diunggah orang lain, dan pencatat bukan orang kantor. */
   | 'FOTO_BUKAN_MILIK'
+  /** Foto sama persis dengan foto orang lain yang sudah dipakai dokumen lain (foto dicuci). */
+  | 'FOTO_SUDAH_DIPAKAI'
   | 'JENIS_BUTUH_RETUR'
   | 'JENIS_BUTUH_CATATAN'
   | 'JENIS_HANYA_PKP'
@@ -184,6 +194,12 @@ export async function buatKlaimPembayaran(input: {
           izinKantor: [PERMISSIONS.RECEIVABLES_MANAGE, PERMISSIONS.JOURNALS_MANAGE],
         });
         if (!fotoSah) return { ok: false as const, alasan: 'FOTO_BUKAN_MILIK' as const };
+        // Unggahan ulang bukti orang lain yang sudah dipakai laporan lain.
+        const kembar = await periksaFotoKembar(tx, {
+          urls: [fotoTransfer, input.breakdownPhotoUrl],
+          userId: input.createdById,
+        });
+        if (!kembar.boleh) return { ok: false as const, alasan: kembar.kode };
 
         const lama = input.menggantikanId
           ? await periksaKlaimLama(tx, {
@@ -211,11 +227,17 @@ export async function buatKlaimPembayaran(input: {
         }
 
         for (const baris of pelunasan) {
-          const sisa = await hitungUlangPiutang(tx, baris.receivableId);
+          const { sisa, tertahan } = await hitungUlangPiutangDanTahanan(tx, baris.receivableId);
           if (sisa === 0) return { ok: false as const, alasan: 'SUDAH_LUNAS' as const };
           // Melunasi lebih dari sisanya membuat porsi klaim ini melebihi 100%
           // dan menggeser perhitungan setiap klaim lain atas faktur yang sama.
           if (baris.nilai > sisa) return { ok: false as const, alasan: 'MELEBIHI_SISA' as const };
+          // Bagian sisa yang hanya ditahan retur BKM terverifikasi lain lepas
+          // sendiri begitu returnya beres — tidak boleh dilunasi dua kali
+          // (KEPUTUSAN SEMENTARA PEMILIK 2026-10-06). Diperiksa lagi saat verifikasi.
+          if (baris.nilai > sisaBolehDilunasi(sisa, tertahan)) {
+            return { ok: false as const, alasan: 'RETUR_DITAHAN' as const };
+          }
         }
 
         /*

@@ -246,7 +246,8 @@ export function PantoneColorDetailDialog({
                     {t("similarColorsTitle")}
                   </p>
                   <div className="-mx-1 flex min-w-0 gap-2 overflow-x-auto overscroll-x-contain px-1 pb-2 [-webkit-overflow-scrolling:touch]">
-                    {detail.similar.map((s) => (
+                    {/* Urut ΔE terkecil dulu (daftar sumbernya tidak berurutan ΔE). */}
+                    {[...detail.similar].sort((a, b) => a.deltaE - b.deltaE).map((s) => (
                       <div
                         key={s.tcx}
                         role="button"
@@ -282,7 +283,7 @@ export function PantoneColorDetailDialog({
                             />
                           </div>
                           <p className="text-[10px] text-muted-foreground">
-                            {t("deltaE")} {s.deltaE.toFixed(2)}
+                            {t("deltaE")} {s.deltaE.toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </p>
                         </div>
                       </div>

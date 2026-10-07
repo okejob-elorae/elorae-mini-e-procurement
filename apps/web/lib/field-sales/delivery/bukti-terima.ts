@@ -44,6 +44,8 @@ export type KodeBuktiTerima =
   | "FOTO_WAJIB"
   | "FOTO_TIDAK_SAH"
   | "FOTO_TIDAK_DITEMUKAN"
+  /** Foto sama persis dengan foto orang lain yang sudah dipakai dokumen lain (foto dicuci). */
+  | "FOTO_SUDAH_DIPAKAI"
   | "JENIS_BUKTI_TIDAK_SAH"
   | "ALASAN_WAJIB"
   | "KUNCI_TIDAK_SAH"

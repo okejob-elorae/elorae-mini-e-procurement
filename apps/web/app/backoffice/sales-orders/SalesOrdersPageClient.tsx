@@ -18,7 +18,8 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ShoppingBag } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -86,6 +87,8 @@ export function SalesOrdersPageClient(props: Props) {
     props.dateFrom ||
     props.dateTo
   );
+  // Tanpa rentang tanggal, angka KPI mencakup semua pesanan — jangan menyebut "rentang terpilih".
+  const adaRentang = !!(props.dateFrom || props.dateTo);
 
   return (
     <div className="space-y-4">
@@ -101,7 +104,9 @@ export function SalesOrdersPageClient(props: Props) {
                   {props.kpi.totalCount.toLocaleString(locale)}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {t("kpi.totalValue", { value: formatIDR(props.kpi.totalValue) })}
+                  {adaRentang
+                    ? t("kpi.totalValue", { value: formatIDR(props.kpi.totalValue) })
+                    : t("kpi.totalValueAll", { value: formatIDR(props.kpi.totalValue) })}
                 </p>
               </div>
               <div className="sm:border-l sm:pl-4">
@@ -114,9 +119,14 @@ export function SalesOrdersPageClient(props: Props) {
                     count: Number(props.kpi.averageDailyCount.toFixed(1)).toLocaleString(locale),
                   })}
                 </p>
-                <p className="text-xs text-muted-foreground">
-                  {t("kpi.avgDailySalesDesc", { days: props.kpi.dayCount })}
-                </p>
+                {/* Tanpa rentang dan tanpa pesanan, "dari pesanan pertama sampai terakhir" tidak ada. */}
+                {adaRentang || props.kpi.totalCount > 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    {adaRentang
+                      ? t("kpi.avgDailySalesDesc", { days: props.kpi.dayCount })
+                      : t("kpi.avgDailySalesDescAll", { days: props.kpi.dayCount })}
+                  </p>
+                ) : null}
               </div>
             </div>
             {props.kpi.byChannel.length > 0 && (
@@ -252,71 +262,79 @@ export function SalesOrdersPageClient(props: Props) {
       </Card>
 
       <Card>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t("table.orderNo")}</TableHead>
-              <TableHead>{t("table.channel")}</TableHead>
-              <TableHead>{t("table.buyer")}</TableHead>
-              <TableHead className="text-right">{t("table.total")}</TableHead>
-              <TableHead>{t("table.status")}</TableHead>
-              <TableHead>{t("table.date")}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {props.orders.length === 0 ? (
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ShoppingBag className="h-5 w-5" />
+            {t("listTitle")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={6} className="whitespace-normal py-8 text-center text-muted-foreground">
-                  {hasFilter ? (
-                    <div className="flex flex-col items-center gap-3">
-                      <span>{t("emptyFiltered")}</span>
-                      <Button variant="outline" size="sm" onClick={reset}>
-                        {t("clearFilters")}
-                      </Button>
-                    </div>
-                  ) : (
-                    t("empty")
-                  )}
-                </TableCell>
+                <TableHead>{t("table.orderNo")}</TableHead>
+                <TableHead>{t("table.channel")}</TableHead>
+                <TableHead>{t("table.buyer")}</TableHead>
+                <TableHead className="text-right">{t("table.total")}</TableHead>
+                <TableHead>{t("table.status")}</TableHead>
+                <TableHead>{t("table.date")}</TableHead>
               </TableRow>
-            ) : (
-              props.orders.map((o) => (
-                <TableRow
-                  key={o.id}
-                  className="cursor-pointer hover:bg-muted/50"
-                  onClick={() =>
-                    startTransition(() => router.push(`/backoffice/sales-orders/${o.id}`))
-                  }
-                >
-                  <TableCell className="font-mono text-sm">
-                    {o.salesorderNo}
-                  </TableCell>
-                  <TableCell>
-                    <span
-                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${CHANNEL_BADGE[o.channel].tailwindClass}`}
-                    >
-                      {t(`channel.${CHANNEL_BADGE[o.channel].labelKey}` as never)}
-                    </span>
-                  </TableCell>
-                  <TableCell className="max-w-[200px] truncate">
-                    {o.customerName ?? "—"}
-                  </TableCell>
-                  <TableCell className="text-right">{formatIDR(o.grandTotal)}</TableCell>
-                  <TableCell>
-                    <span
-                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${STATUS_BADGE[o.status].tailwindClass}`}
-                    >
-                      {t(`status.${o.status}` as never)}
-                    </span>
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {formatDisplayDateTime(o.transactionDate, locale)}
+            </TableHeader>
+            <TableBody>
+              {props.orders.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="whitespace-normal py-8 text-center text-muted-foreground">
+                    {hasFilter ? (
+                      <div className="flex flex-col items-center gap-3">
+                        <span>{t("emptyFiltered")}</span>
+                        <Button variant="outline" size="sm" onClick={reset}>
+                          {t("clearFilters")}
+                        </Button>
+                      </div>
+                    ) : (
+                      t("empty")
+                    )}
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              ) : (
+                props.orders.map((o) => (
+                  <TableRow
+                    key={o.id}
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() =>
+                      startTransition(() => router.push(`/backoffice/sales-orders/${o.id}`))
+                    }
+                  >
+                    <TableCell className="font-mono text-sm">
+                      {o.salesorderNo}
+                    </TableCell>
+                    <TableCell>
+                      <span
+                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${CHANNEL_BADGE[o.channel].tailwindClass}`}
+                      >
+                        {t(`channel.${CHANNEL_BADGE[o.channel].labelKey}` as never)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="max-w-[200px] truncate">
+                      {o.customerName ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-right">{formatIDR(o.grandTotal)}</TableCell>
+                    <TableCell>
+                      <span
+                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${STATUS_BADGE[o.status].tailwindClass}`}
+                      >
+                        {t(`status.${o.status}` as never)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {formatDisplayDateTime(o.transactionDate, locale)}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
       </Card>
 
       <Pager

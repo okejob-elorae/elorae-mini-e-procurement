@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { ChevronRight, Truck } from "lucide-react";
 import type { CanvasserSummary } from "@/lib/canvassing/queries";
+import type { AlasanBukanKanvas } from "@/lib/canvassing/kelayakan-kanvas";
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -22,7 +24,8 @@ import {
 } from "@/components/ui/table";
 
 type Props = {
-  canvassers: CanvasserSummary[];
+  /** `bukanKanvas` terisi hanya untuk yang masih memegang stok mobil padahal bukan sales kanvas. */
+  canvassers: Array<CanvasserSummary & { bukanKanvas?: AlasanBukanKanvas | null }>;
 };
 
 export function CanvassingListClient({ canvassers }: Props) {
@@ -68,7 +71,14 @@ export function CanvassingListClient({ canvassers }: Props) {
                       }
                     >
                       <TableCell className="font-medium">
-                        <div>{c.name}</div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {c.name}
+                          {c.bukanKanvas && (
+                            <Badge variant="outline" className="border-amber-500/40 text-amber-700 dark:text-amber-300">
+                              {t(`lencanaBukanKanvas.${c.bukanKanvas}`)}
+                            </Badge>
+                          )}
+                        </div>
                         <div className="text-xs text-muted-foreground">{c.email}</div>
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{c.lineCount}</TableCell>

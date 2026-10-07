@@ -381,3 +381,57 @@ describe("segarkanAngkaPo — draf dipulihkan, angka PO dari PO terbaru", () => 
     ]);
   });
 });
+
+describe("kunci kiriman GRN ikut draf", () => {
+  const KUNCI = "3f1c9a52-7d0e-4b8a-9c11-5e2f60a7b8d4";
+
+  it("bolak-balik lewat JSON membawa kunci yang sama — simpan ulang sesudah muat ulang memakai kunci itu", () => {
+    const draf = drafDariIsian({ ...ISI, kunciKirim: KUNCI }, 7);
+    expect(draf.kunciKirim).toBe(KUNCI);
+    const dibaca = bacaDrafGrn(JSON.parse(JSON.stringify(draf)));
+    expect(dibaca).toEqual(draf);
+    expect(dibaca!.kunciKirim).toBe(KUNCI);
+  });
+
+  it("draf yang ditulis sebelum kunci ada tetap terbaca utuh; kuncinya kosong (formulir membuatkan)", () => {
+    const lama = JSON.parse(JSON.stringify(drafDariIsian(ISI, 7))) as Record<string, unknown>;
+    delete lama.kunciKirim;
+    const dibaca = bacaDrafGrn(lama);
+    expect(dibaca).not.toBeNull();
+    expect(dibaca!.kunciKirim).toBe("");
+    expect(dibaca!.lines.map((l) => l.itemId)).toEqual(["kain-katun", "kancing-12"]);
+  });
+
+  it("kunci bukan teks diabaikan tanpa membuang drafnya; spasi di tepi dirapikan", () => {
+    const d = JSON.parse(JSON.stringify(drafDariIsian({ ...ISI, kunciKirim: KUNCI }, 7)));
+    expect(bacaDrafGrn({ ...d, kunciKirim: 42 })!.kunciKirim).toBe("");
+    expect(bacaDrafGrn({ ...d, kunciKirim: `  ${KUNCI} ` })!.kunciKirim).toBe(KUNCI);
+    // Kunci yang akan ditolak server (terlalu pendek / panjang) diganti formulir.
+    expect(bacaDrafGrn({ ...d, kunciKirim: "pendek" })!.kunciKirim).toBe("");
+    expect(bacaDrafGrn({ ...d, kunciKirim: "x".repeat(101) })!.kunciKirim).toBe("");
+  });
+
+  it("isian tanpa kunci → draf berkunci kosong", () => {
+    expect(drafDariIsian(ISI, 1).kunciKirim).toBe("");
+  });
+
+  it("GRN lama dari antrean perangkat tidak pernah sampai ke server: kuncinya kosong (isian baru)", () => {
+    const d = drafDariGrnLama(
+      {
+        localId: 9,
+        supplierId: "sup-12",
+        items: [{ itemId: "kancing-12", qty: 10, unitCost: 150, uomId: "uom-pcs" }],
+        totalAmount: 1_500,
+        status: "PENDING" as const,
+        createdAt: new Date("2026-09-20T03:00:00Z"),
+      },
+      new Map(),
+      1,
+    );
+    expect(d.kunciKirim).toBe("");
+  });
+
+  it("kunci saja bukan isian yang layak disimpan", () => {
+    expect(drafBermakna(drafDariIsian({ ...KOSONG, kunciKirim: KUNCI }, 1), 0)).toBe(false);
+  });
+});

@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { TanggalInput } from "@/components/ui/tanggal-input";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { catatHitunganGudangAction } from "@/app/actions/store-returns";
 import { dinamis } from "@/lib/i18n/dinamis";
 import { nilaiHitunganAwal, type NotaHitung } from "./nilai";
@@ -51,6 +52,8 @@ type HasilHitung = {
 
 export function GudangClient({ baris }: { baris: NotaHitung[] }) {
   const t = useTranslations("pwaGudang");
+  // Judul sama dengan menu yang membukanya ("Hitung retur (gudang)").
+  const judul = useTranslations("navigation")("navHitungRetur");
   const tk = dinamis(useTranslations("spgRetur"));
   const td = dinamis(t);
   const router = useRouter();
@@ -121,7 +124,10 @@ export function GudangClient({ baris }: { baris: NotaHitung[] }) {
   return (
     <div className="space-y-4 p-4">
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold">{t("pageTitle")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{judul}</h1>
+          <TombolBantuan judul={judul} semuaHref="/backoffice/bantuan" />
+        </div>
         <p className="text-sm text-muted-foreground">{t("summary", { count: baris.length })}</p>
       </header>
 

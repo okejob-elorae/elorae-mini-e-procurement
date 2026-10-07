@@ -39,7 +39,12 @@ export type DeliveryActionResult =
          * Nomor nota sudah dipegang piutang lain (impor/faktur manual), jadi nota tidak bisa
          * menjadi piutang dan pengirimannya dibatalkan. `invoiceNo` menyebut nomornya.
          */
-        | "NOMOR_PIUTANG_DIPAKAI";
+        | "NOMOR_PIUTANG_DIPAKAI"
+        /**
+         * Sisa pesanan cukup tetapi cadangan stoknya sudah habis dikonsumsi atau tidak ada
+         * (pesanan yang disetujui image lama di jendela deploy). Bukan "melebihi sisa".
+         */
+        | "RESERVATION_MISMATCH";
       shortLines?: Array<{ orderLineId: string; requested: number; onHand: number }>;
       invoiceNo?: string;
     };
@@ -50,6 +55,30 @@ export type DeliveryActionResult =
  */
 function nomorPiutangDipakai(e: unknown): e is NomorPiutangDipakaiError {
   return e instanceof Error && e.name === "NomorPiutangDipakaiError";
+}
+
+/** `CadanganTidakCocokError` dari penulis — dikenali dari namanya, sama dengan di atas. */
+function cadanganTidakCocok(e: unknown): boolean {
+  return e instanceof Error && e.name === "CadanganTidakCocokError";
+}
+
+/**
+ * Bentuk baris kiriman: `orderLineId` teks tak kosong, `qty` bilangan bulat positif. Aksi server
+ * adalah titik jaringan — isian yang rusak dijawab INVALID_REQUEST, bukan "melebihi sisa".
+ */
+function barisKirimanSah(lines: unknown): lines is Array<{ orderLineId: string; qty: number }> {
+  return (
+    Array.isArray(lines) &&
+    lines.every(
+      (l) =>
+        typeof l === "object" &&
+        l !== null &&
+        typeof (l as { orderLineId?: unknown }).orderLineId === "string" &&
+        (l as { orderLineId: string }).orderLineId !== "" &&
+        Number.isInteger((l as { qty?: unknown }).qty) &&
+        (l as { qty: number }).qty > 0,
+    )
+  );
 }
 
 /**
@@ -174,8 +203,8 @@ export async function recordDeliveryAction(input: {
   if (typeof idempotencyKey !== "string" || idempotencyKey.trim() === "" || idempotencyKey.length > 64) {
     return { ok: false, reason: "INVALID_REQUEST" };
   }
-  if (!Array.isArray(lines) || lines.some((l) => typeof l.orderLineId !== "string" || !Number.isInteger(l.qty) || l.qty <= 0)) {
-    return { ok: false, reason: "OVER_DELIVER" };
+  if (typeof orderId !== "string" || orderId === "" || !barisKirimanSah(lines)) {
+    return { ok: false, reason: "INVALID_REQUEST" };
   }
   const parsedInvoiceDate = parseCalendarDay(invoiceDate);
   const parsedDueDate = parseCalendarDay(dueDate);
@@ -201,6 +230,7 @@ export async function recordDeliveryAction(input: {
     if (e instanceof DeliveryError) return { ok: false, reason: e.code, shortLines: e.shortLines };
     if (e instanceof IndenBelumRilisError) return { ok: false, reason: "INDEN_BELUM_RILIS" };
     if (nomorPiutangDipakai(e)) return { ok: false, reason: "NOMOR_PIUTANG_DIPAKAI", invoiceNo: e.invoiceNo };
+    if (cadanganTidakCocok(e)) return { ok: false, reason: "RESERVATION_MISMATCH" };
     throw e;
   }
   revalidatePath("/backoffice/field-sales-orders");
@@ -330,7 +360,10 @@ export async function updateDeliveryDatesAction(input: {
 export async function closeRemainderAction(orderId: string, reason: string): Promise<DeliveryActionResult> {
   const g = await guard();
   if ("ok" in g) return g;
-  if (reason.trim() === "") return { ok: false, reason: "INVALID_STATE" };
+  // Alasan wajib; isian yang bukan teks atau kosong adalah permintaan rusak, bukan keadaan pesanan.
+  if (typeof orderId !== "string" || orderId === "" || typeof reason !== "string" || reason.trim() === "") {
+    return { ok: false, reason: "INVALID_REQUEST" };
+  }
   try {
     await closeFieldSalesOrderRemainder({ orderId, closedById: g.userId, reason: reason.trim() });
   } catch (e) {

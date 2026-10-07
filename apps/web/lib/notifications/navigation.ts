@@ -109,6 +109,7 @@ export function getNotificationHref(type: string, raw: unknown): string | null {
       return id ? `/backoffice/pelunasan/${id}` : '/backoffice/pelunasan';
     }
     case 'KOREKSI_DIMINTA_RETUR':
+    case 'RETUR_SPG_TANPA_PEMEGANG':
     case 'RETUR_DIBATALKAN_SALES': {
       const id = typeof data?.storeReturnId === 'string' ? data.storeReturnId : null;
       return id ? `/backoffice/retur-toko/${id}` : '/backoffice/retur-toko';
@@ -205,7 +206,12 @@ export function getNotificationHref(type: string, raw: unknown): string | null {
 }
 
 const TAUTAN_GRN = '/backoffice/inventory?tab=grn';
-const TAUTAN_BUKU_JURNAL = '/backoffice/finance/journals';
+const TAUTAN_BUKU_JURNAL = '/backoffice/finance/journals?status=tertunda';
+
+/** `data` notifikasi sebagai objek — juga dipakai teks lonceng (`tampilan-lonceng.ts`). */
+export function bacaDataNotifikasi(raw: unknown): Record<string, unknown> {
+  return bacaData(raw);
+}
 
 function bacaData(raw: unknown): Record<string, unknown> {
   let nilai = raw;

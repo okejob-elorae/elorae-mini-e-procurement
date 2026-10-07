@@ -97,10 +97,14 @@ export function DaftarMutasiClient({
             variant="outline"
             aria-pressed={status === s}
             onClick={() => pindah({ status: status === s ? null : s })}
-            className={cn("h-auto flex-col items-start gap-0.5 whitespace-normal px-4 py-3 text-left", status === s && "border-primary ring-1 ring-primary")}
+            className={cn(
+              "h-auto flex-col items-start justify-between gap-0.5 whitespace-normal px-4 py-3 text-left",
+              status === s && "border-primary ring-1 ring-primary",
+            )}
           >
             <span className="text-xs font-normal text-muted-foreground">{td(`status.${s}`)}</span>
-            <span className="text-lg font-semibold tabular-nums">{data.perStatus[s]}</span>
+            {/* mt-auto: label dua baris tidak menurunkan angkanya — semua angka sejajar di bawah. */}
+            <span className="mt-auto text-lg font-semibold tabular-nums">{data.perStatus[s]}</span>
           </Button>
         ))}
       </div>
@@ -135,7 +139,7 @@ export function DaftarMutasiClient({
                   {data.baris.map((b) => (
                     <TableRow key={b.id} className={cn((b.status === "DIAJUKAN" || b.selisihStatus === "TERBUKA" || b.macet) && "bg-amber-500/[0.05]")}>
                       <TableCell>
-                        <Link href={`/backoffice/spg-transfers/${b.id}`} className="font-medium text-primary underline-offset-2 hover:underline">
+                        <Link href={`/backoffice/spg-transfers/${b.id}`} className="font-medium underline decoration-muted-foreground/50 underline-offset-2 hover:decoration-foreground">
                           {b.docNo}
                         </Link>
                         <span className="block text-xs text-muted-foreground">{b.dibuat}</span>

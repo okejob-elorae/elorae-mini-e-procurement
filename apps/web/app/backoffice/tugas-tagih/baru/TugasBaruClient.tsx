@@ -20,7 +20,8 @@ import { formatIDR } from "@/lib/sales-orders/format";
 import { dinamis } from "@/lib/i18n/dinamis";
 import { buatTugasTagihAction } from "@/app/actions/tugas-tagih";
 import type { BahanTugasBaru, FakturCalonTugas } from "@/lib/receivables/tugas-tagih-queries";
-import type { KeadaanPiutang } from "@/lib/receivables/rules";
+import type { KeadaanTampil } from "@/lib/receivables/jatuh-tempo";
+import { KeteranganKirim } from "@/app/pwa/KeteranganKirim";
 import { TanggalInput } from "@/components/ui/tanggal-input";
 
 export type BahanTugasTampil = Omit<BahanTugasBaru, "fakturPerToko"> & {
@@ -28,13 +29,25 @@ export type BahanTugasTampil = Omit<BahanTugasBaru, "fakturPerToko"> & {
 };
 
 /** Nada keadaan faktur — sama dengan layar Piutang, supaya satu faktur dibaca satu cara. */
-const NADA: Record<KeadaanPiutang, StatusTone> = {
+const NADA: Record<KeadaanTampil, StatusTone> = {
   lunas: "settled",
   klaim: "progress",
   tertahan: "attention",
   lewat: "attention",
+  jatuh_tempo: "attention",
   tt: "waiting",
   belum: "inactive",
+};
+
+/** Nama keadaan yang sama dengan layar Piutang (`receivables.state*`). */
+const KUNCI_LABEL: Record<KeadaanTampil, string> = {
+  lunas: "stateLunas",
+  klaim: "stateKlaim",
+  tertahan: "stateTertahan",
+  lewat: "stateLewat",
+  jatuh_tempo: "stateJatuhTempo",
+  tt: "stateTt",
+  belum: "stateBelum",
 };
 
 export function TugasBaruClient({
@@ -100,7 +113,18 @@ export function TugasBaruClient({
     });
   };
 
-  const bisaSimpan = !pending && storeId !== "" && terpilih.size > 0 && petugas !== "" && tenggat >= hariIni;
+  // Kekurangan PERTAMA menurut urutan isiannya — tombol yang mati menyebut alasannya.
+  const belumSimpan =
+    storeId === ""
+      ? t("whyStore")
+      : terpilih.size === 0
+        ? t("whyInvoices")
+        : petugas === ""
+          ? t("whyAssignee")
+          : !(tenggat >= hariIni)
+            ? t("whyDue")
+            : null;
+  const bisaSimpan = !pending && belumSimpan === null;
 
   return (
     <div className="space-y-6">
@@ -158,7 +182,7 @@ export function TugasBaruClient({
               faktur.map((f) => {
                 const aktif = terpilih.has(f.id);
                 const terkunci = f.ditugaskanKe !== null;
-                const keadaan = `state${f.keadaan.charAt(0).toUpperCase()}${f.keadaan.slice(1)}`;
+                const keadaan = KUNCI_LABEL[f.keadaanTampil];
                 return (
                   <label
                     key={f.id}
@@ -177,7 +201,7 @@ export function TugasBaruClient({
                         {terkunci && ` · ${t("alreadyAssigned", { name: f.ditugaskanKe ?? "—" })}`}
                       </span>
                     </span>
-                    <StatusPill tone={NADA[f.keadaan]}>{tr(keadaan)}</StatusPill>
+                    <StatusPill tone={NADA[f.keadaanTampil]}>{tr(keadaan)}</StatusPill>
                     <span className="w-32 text-right text-sm font-semibold tabular-nums">{formatIDR(f.sisa)}</span>
                   </label>
                 );
@@ -247,10 +271,11 @@ export function TugasBaruClient({
         </Card>
       )}
 
-      <div className="flex justify-end">
+      <div className="flex flex-col items-stretch gap-2 sm:items-end">
         <Button className="w-full sm:w-auto" disabled={!bisaSimpan} onClick={simpan}>
           {t("save")}
         </Button>
+        <KeteranganKirim teks={belumSimpan} />
       </div>
     </div>
   );

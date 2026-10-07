@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -21,7 +21,7 @@ import { createStockAdjustment } from '@/app/actions/inventory';
 import { getCurrentStockSummary, getItemVariantOptions } from '@/app/actions/stock-card';
 import { getInventoryValue } from '@/app/actions/nilai-persediaan';
 import { getItemUomAndConversions } from '@/app/actions/uom';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, ImagePlus, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSession } from 'next-auth/react';
 import { useTranslations } from 'next-intl';
@@ -38,6 +38,7 @@ export default function NewAdjustmentPage() {
   const [qty, setQty] = useState('');
   const [reason, setReason] = useState('');
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
+  const inputBuktiRef = useRef<HTMLInputElement>(null);
   const [pinOpen, setPinOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<{
@@ -195,6 +196,7 @@ export default function NewAdjustmentPage() {
                 value={itemId}
                 onValueChange={(v) => { setItemId(v); setErrors((e) => ({ ...e, itemId: undefined })); }}
                 placeholder={t('selectItem')}
+                searchPlaceholder={t('cariBarang')}
                 aria-invalid={!!errors.itemId}
                 className={errors.itemId ? 'border-destructive focus-visible:ring-destructive/20' : ''}
                 triggerClassName="min-h-[44px]"
@@ -343,14 +345,31 @@ export default function NewAdjustmentPage() {
 
             <div className="space-y-2">
               <Label htmlFor="evidence">{t('evidenceLabel')} {type === 'NEGATIVE' && '*'}</Label>
-              <Input
+              {/* Tombol sendiri: input berkas bawaan peramban berbahasa Inggris ("Choose File"). */}
+              <input
+                ref={inputBuktiRef}
                 id="evidence"
                 type="file"
                 accept="image/*"
-                className={`min-h-[44px] ${errors.evidence ? 'border-destructive focus-visible:ring-destructive/20' : ''}`}
-                aria-invalid={!!errors.evidence}
+                className="sr-only"
+                tabIndex={-1}
                 onChange={(e) => { setEvidenceFile(e.target.files?.[0] ?? null); setErrors((err) => ({ ...err, evidence: undefined })); }}
               />
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={`min-h-[44px] ${errors.evidence ? 'border-destructive' : ''}`}
+                  aria-invalid={!!errors.evidence}
+                  onClick={() => inputBuktiRef.current?.click()}
+                >
+                  <ImagePlus className="mr-2 h-4 w-4" />
+                  {evidenceFile ? t('gantiFoto') : t('pilihFoto')}
+                </Button>
+                <span className="min-w-0 truncate text-sm text-muted-foreground">
+                  {evidenceFile ? evidenceFile.name : t('belumAdaFoto')}
+                </span>
+              </div>
               {errors.evidence && (
                 <p className="text-sm text-destructive" role="alert">
                   {errors.evidence}

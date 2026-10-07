@@ -13,7 +13,7 @@ import {
 } from "@/lib/salesman/pengaturan";
 import { daftarSalesman, daftarSpg, penjualanSalesman } from "@/lib/salesman/queries";
 import { bacaAturanKredit, KUNCI_ATURAN_KREDIT } from "@/lib/salesman/kredit";
-import { PengaturanSalesmanClient } from "./PengaturanSalesmanClient";
+import { BatasKunjunganCard, JudulKelompok, JudulPengaturanSalesman, TargetBulananCard } from "./PengaturanSalesmanClient";
 import { PembagianTokoCard } from "./PembagianTokoCard";
 import { KreditTokoCard } from "./KreditTokoCard";
 import {
@@ -39,12 +39,8 @@ import { MinimumPesananCard } from "./MinimumPesananCard";
 import { PesananJarakJauhCard } from "./PesananJarakJauhCard";
 import { BiayaCard } from "./BiayaCard";
 import { AbsensiCard } from "./AbsensiCard";
-import { HariKerjaSpgCard } from "./HariKerjaSpgCard";
-import { bacaHariKerjaSpg, KUNCI_HARI_KERJA_SPG } from "@/lib/salesman/izin";
 import { KUNCI_PORTAL_TOKO } from "@/lib/field-sales/portal-toko-aturan";
 import { PortalTokoCard } from "./PortalTokoCard";
-import { KUNCI_ATURAN_MUTASI } from "@/lib/spg/mutasi-aturan";
-import { AturanMutasiCard } from "./AturanMutasiCard";
 
 export const dynamic = "force-dynamic";
 
@@ -89,9 +85,7 @@ export default async function PengaturanSalesmanPage() {
             KUNCI_JARAK_JAUH,
             KUNCI_PENGATURAN_BIAYA,
             KUNCI_PENGATURAN_ABSENSI,
-            KUNCI_HARI_KERJA_SPG,
             KUNCI_PORTAL_TOKO,
-            KUNCI_ATURAN_MUTASI,
           ],
         },
       },
@@ -152,63 +146,98 @@ export default async function PengaturanSalesmanPage() {
   }
 
   const bolehUbah = hasPermission(izin, PERMISSIONS.FIELD_SALES_ORDERS_APPROVE);
+  // Urutan kartu = urutan daftar isi (`daftar-isi.ts`); setiap kartu punya jangkar.
+  const jangkar = "scroll-mt-6";
   return (
     <div className="space-y-6">
-      <PengaturanSalesmanClient
-        bolehUbah={bolehUbah}
-        batas={bacaBatasHari(nilai(KUNCI_BATAS_HARI))}
-        bulan={[
-          {
-            kunci: bulanIni,
-            target: bacaTargetSemua(nilai(KUNCI_TARGET), bulanIni),
-          },
-          {
-            kunci: bulanDepan,
-            target: bacaTargetSemua(nilai(KUNCI_TARGET), bulanDepan),
-          },
-        ]}
-        salesman={salesman.map((s) => ({
-          id: s.id,
-          nama: s.nama,
-          capai: capai[s.id] ?? 0,
-        }))}
-        spg={spg.map((s) => ({
-          id: s.id,
-          nama: s.nama,
-          tokoNama: s.tokoNama,
-          capai: capaiSpg.get(s.id) ?? 0,
-        }))}
-      />
-      <PembagianTokoCard
-        bolehUbah={bolehUbah}
-        terkunci={bacaTokoTerkunci(nilai(KUNCI_TOKO_TERKUNCI))}
-        tanpaPemegang={toko.filter((t) => t.salesmanId === null).length}
-        ringkasan={ringkasan}
-      />
-      <KreditTokoCard
-        bolehUbah={bolehUbah}
-        aturan={bacaAturanKredit(nilai(KUNCI_ATURAN_KREDIT))}
-        tokoBatasSendiri={tokoBatasSendiri}
-      />
-      <AturanKunjunganCard bolehUbah={bolehUbah} aturan={bacaAturanHasilKunjungan(nilai(KUNCI_HASIL_KUNJUNGAN))} />
-      <AturanCheckinCard
-        bolehUbah={bolehUbah}
-        aturan={bacaAturanCheckin(nilai(KUNCI_ATURAN_CHECKIN))}
-        radiusMeter={parseRadiusSetting(nilai(KUNCI_RADIUS_GLOBAL))}
-      />
-      <KelasTokoCard bolehUbah={bolehUbah} aturan={bacaAturanKelasToko(nilai(KUNCI_KELAS_TOKO))} jumlah={jumlahPerKelas} />
-      <KomisiCard bolehUbah={bolehUbah} {...komisi} />
-      <MinimumPesananCard
-        bolehUbah={bolehUbah}
-        nilaiPertama={nilai(KUNCI_MIN_PERTAMA)}
-        nilaiUlang={nilai(KUNCI_MIN_ULANG)}
-      />
-      <PesananJarakJauhCard bolehUbah={bolehUbah} nilai={nilai(KUNCI_JARAK_JAUH)} />
-      <PortalTokoCard bolehUbah={bolehUbah} nilai={nilai(KUNCI_PORTAL_TOKO)} />
-      <AturanMutasiCard bolehUbah={bolehUbah} nilai={nilai(KUNCI_ATURAN_MUTASI)} />
-      <BiayaCard bolehUbah={bolehUbah} pengaturan={bacaPengaturanBiaya(nilai(KUNCI_PENGATURAN_BIAYA))} />
-      <AbsensiCard bolehUbah={bolehUbah} pengaturan={bacaPengaturanAbsensi(nilai(KUNCI_PENGATURAN_ABSENSI))} />
-      <HariKerjaSpgCard bolehUbah={bolehUbah} hariKerja={bacaHariKerjaSpg(nilai(KUNCI_HARI_KERJA_SPG))} />
+      <JudulPengaturanSalesman bolehUbah={bolehUbah} bolehBukaSpg={hasPermission(izin, PERMISSIONS.SPG_SALES_VIEW)} />
+
+      <JudulKelompok kunci="settings.salesman.toc.kunjungan" />
+      <div id="batas-kunjungan" className={jangkar}>
+        <BatasKunjunganCard bolehUbah={bolehUbah} batas={bacaBatasHari(nilai(KUNCI_BATAS_HARI))} />
+      </div>
+      <div id="hasil-kunjungan" className={jangkar}>
+        <AturanKunjunganCard bolehUbah={bolehUbah} aturan={bacaAturanHasilKunjungan(nilai(KUNCI_HASIL_KUNJUNGAN))} />
+      </div>
+      <div id="check-in" className={jangkar}>
+        <AturanCheckinCard
+          bolehUbah={bolehUbah}
+          aturan={bacaAturanCheckin(nilai(KUNCI_ATURAN_CHECKIN))}
+          radiusMeter={parseRadiusSetting(nilai(KUNCI_RADIUS_GLOBAL))}
+        />
+      </div>
+      <div id="kelas-toko" className={jangkar}>
+        <KelasTokoCard bolehUbah={bolehUbah} aturan={bacaAturanKelasToko(nilai(KUNCI_KELAS_TOKO))} jumlah={jumlahPerKelas} />
+      </div>
+      <div id="pembagian-toko" className={jangkar}>
+        <PembagianTokoCard
+          bolehUbah={bolehUbah}
+          terkunci={bacaTokoTerkunci(nilai(KUNCI_TOKO_TERKUNCI))}
+          tanpaPemegang={toko.filter((t) => t.salesmanId === null).length}
+          ringkasan={ringkasan}
+        />
+      </div>
+
+      <JudulKelompok kunci="settings.salesman.toc.targetKomisi" />
+      <div id="target" className={jangkar}>
+        <TargetBulananCard
+          bolehUbah={bolehUbah}
+          bulan={[
+            {
+              kunci: bulanIni,
+              target: bacaTargetSemua(nilai(KUNCI_TARGET), bulanIni),
+            },
+            {
+              kunci: bulanDepan,
+              target: bacaTargetSemua(nilai(KUNCI_TARGET), bulanDepan),
+            },
+          ]}
+          salesman={salesman.map((s) => ({
+            id: s.id,
+            nama: s.nama,
+            capai: capai[s.id] ?? 0,
+          }))}
+          spg={spg.map((s) => ({
+            id: s.id,
+            nama: s.nama,
+            tokoNama: s.tokoNama,
+            capai: capaiSpg.get(s.id) ?? 0,
+          }))}
+        />
+      </div>
+      <div id="komisi" className={jangkar}>
+        <KomisiCard bolehUbah={bolehUbah} {...komisi} />
+      </div>
+
+      <JudulKelompok kunci="settings.salesman.toc.pesananKredit" />
+      <div id="kredit" className={jangkar}>
+        <KreditTokoCard
+          bolehUbah={bolehUbah}
+          aturan={bacaAturanKredit(nilai(KUNCI_ATURAN_KREDIT))}
+          tokoBatasSendiri={tokoBatasSendiri}
+        />
+      </div>
+      <div id="minimum-pesanan" className={jangkar}>
+        <MinimumPesananCard
+          bolehUbah={bolehUbah}
+          nilaiPertama={nilai(KUNCI_MIN_PERTAMA)}
+          nilaiUlang={nilai(KUNCI_MIN_ULANG)}
+        />
+      </div>
+      <div id="jarak-jauh" className={jangkar}>
+        <PesananJarakJauhCard bolehUbah={bolehUbah} nilai={nilai(KUNCI_JARAK_JAUH)} />
+      </div>
+      <div id="portal-toko" className={jangkar}>
+        <PortalTokoCard bolehUbah={bolehUbah} nilai={nilai(KUNCI_PORTAL_TOKO)} />
+      </div>
+
+      <JudulKelompok kunci="settings.salesman.toc.biayaAbsensi" />
+      <div id="biaya" className={jangkar}>
+        <BiayaCard bolehUbah={bolehUbah} pengaturan={bacaPengaturanBiaya(nilai(KUNCI_PENGATURAN_BIAYA))} />
+      </div>
+      <div id="absensi" className={jangkar}>
+        <AbsensiCard bolehUbah={bolehUbah} pengaturan={bacaPengaturanAbsensi(nilai(KUNCI_PENGATURAN_ABSENSI))} />
+      </div>
     </div>
   );
 }

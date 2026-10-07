@@ -18,12 +18,14 @@ export default async function AccountMappingPage() {
     getPostableAccounts(),
   ]);
   const canManage = hasPermission(perms, PERMISSIONS.JOURNALS_MANAGE);
+  const canViewCoa = hasPermission(perms, PERMISSIONS.COA_VIEW);
 
   return (
     <AccountMappingClient
       mappings={mappings}
       accounts={accounts}
       canManage={canManage}
+      canViewCoa={canViewCoa}
     />
   );
 }

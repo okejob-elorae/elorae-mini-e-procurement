@@ -84,7 +84,12 @@ export function LaporanChecklistClient({
 
       <PageHeader
         title={t("judul")}
-        meta={t("ringkas", { hasil: data.jumlahHasil, toko: new Set(data.baris.map((b) => b.storeId)).size, rata: data.rataRata ?? "—" })}
+        meta={t("ringkasTeks", {
+          hasil: data.jumlahHasil,
+          toko: new Set(data.baris.map((b) => b.storeId)).size,
+          // Tanpa skor: "—" saja, bukan "—%".
+          rata: data.rataRata === null ? "—" : `${data.rataRata}%`,
+        })}
       />
 
       <Card className="p-4">

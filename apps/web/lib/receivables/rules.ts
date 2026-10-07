@@ -42,6 +42,12 @@ export type PotonganRetur = {
   nilaiFisik: number | null;
   /** Apakah selisihnya masih menunggu keputusan siapa yang menanggung. */
   bebanTerbuka: boolean;
+  /**
+   * Tahanan TETAP: notanya dibatalkan, atau potongannya menunjuk nota yang
+   * tidak ada. Tahanan ini tidak lepas sendiri — tokonya memang berutang
+   * sebesar potongan itu, jadi BKM lain BOLEH melunasinya (`tertahanPiutang`).
+   */
+  tetap?: boolean;
 };
 
 /**
@@ -135,6 +141,99 @@ export function returTerpakaiMelebihi(nilaiNota: number, sudahDipakai: number, a
   return sen(sudahDipakai) + sen(akanDipakai) > sen(nilaiNota);
 }
 
+const keSen = (n: number) => Math.round(n * 100);
+
+/**
+ * KEPUTUSAN SEMENTARA PEMILIK (2026-10-06, "ikuti usulan Claude dulu, nanti
+ * saya tindak lanjuti"): beban selisih retur yang ditetapkan ke TOKO menagih
+ * hanya yang benar-benar diambil toko melebihi barang yang sampai — bukan
+ * seluruh selisih. Satu tempat untuk mengubahnya:
+ * - `YANG_DIPOTONG`   — tagih min(selisih, dipotong − fisik); NRT sesudahnya
+ *                       hanya boleh dipotong sebesar fisik + yang ditagih.
+ * - `SELURUH_SELISIH` — aturan lama: tagih seluruh selisih, dengan anggapan
+ *                       toko memotong nota returnya penuh.
+ */
+export type AturanBebanToko = 'YANG_DIPOTONG' | 'SELURUH_SELISIH';
+export const ATURAN_BEBAN_TOKO: AturanBebanToko = 'YANG_DIPOTONG';
+
+/**
+ * Berapa beban selisih retur yang ditagihkan ke toko lewat faktur bebannya.
+ *
+ *   NRT 300.000, fisik 100.000 (selisih 200.000), faktur asli 1.000.000:
+ *   dipotong 300.000 → ditagih 200.000 (1 jt − 300 rb + 200 rb = 900 rb)
+ *   dipotong 150.000 → ditagih  50.000 (1 jt − 150 rb +  50 rb = 900 rb)
+ *   belum dipotong   → ditagih       0 (1 jt, dan NRT masih boleh dipotong
+ *                                       100 rb → 900 rb)
+ *   Aturan lama menagih 200.000 di ketiganya — yang terakhir menjadi 1,2 jt.
+ *
+ * `sudahDipotong` = jumlah potongan atas NRT ini di BKM yang masih hidup
+ * (DIKIRIM/TERVERIFIKASI). Dihitung dalam sen.
+ */
+export function bebanDitagihKeToko(
+  r: { nilaiKlaim: number; nilaiFisik: number; sudahDipotong: number },
+  aturan: AturanBebanToko = ATURAN_BEBAN_TOKO,
+): number {
+  const selisih = Math.max(0, keSen(r.nilaiKlaim) - keSen(r.nilaiFisik));
+  if (aturan === 'SELURUH_SELISIH') return selisih / 100;
+  const lebih = Math.max(0, keSen(r.sudahDipotong) - keSen(r.nilaiFisik));
+  return Math.min(selisih, lebih) / 100;
+}
+
+/**
+ * Batas potong sebuah NRT di seluruh BKM hidup.
+ *
+ * Umumnya nilai klaimnya. Sesudah bebannya ditetapkan ke TOKO, batasnya turun
+ * menjadi fisik + yang ditagih balik lewat faktur beban: toko boleh memotong
+ * barang yang benar-benar sampai, ditambah yang ia bayar kembali. Tanpa batas
+ * ini, toko yang belum memotong bisa memotong klaim penuh SESUDAH keputusan —
+ * keputusan sudah melepas tahanan, jadi selisihnya lepas tanpa ditagih.
+ *
+ * `bebanTokoDitagih: null` = tidak ada beban yang ditetapkan ke toko.
+ */
+export function batasPotongNota(r: {
+  nilaiKlaim: number;
+  nilaiFisik: number | null;
+  bebanTokoDitagih: number | null;
+}): number {
+  if (r.bebanTokoDitagih === null || r.nilaiFisik === null) return r.nilaiKlaim;
+  return Math.min(keSen(r.nilaiKlaim), keSen(r.nilaiFisik) + keSen(Math.max(0, r.bebanTokoDitagih))) / 100;
+}
+
+/**
+ * Bagian sisa sebuah piutang yang HANYA ditahan Aturan 2: potongan retur di BKM
+ * yang sudah terverifikasi, yang returnya belum dihitung gudang atau selisihnya
+ * belum diputuskan. Bagian ini lepas sendiri begitu returnya beres, jadi BKM
+ * lain tidak boleh melunasinya (KEPUTUSAN SEMENTARA PEMILIK 2026-10-06) —
+ * kalau boleh, toko membayar bagian itu dua kali: sekali lewat BKM kedua,
+ * sekali lagi lewat potongan yang dilepas.
+ *
+ * BKM yang belum terverifikasi tidak ikut: ia sendiri belum diakui (Aturan 1).
+ * BKM gabungan diprorata menurut porsi faktur ini.
+ *
+ * Tahanan TETAP (nota dibatalkan, penunjuk menggantung — `PotonganRetur.tetap`)
+ * tidak ikut: ia tidak pernah lepas sendiri, tokonya memang berutang sebesar
+ * potongan itu, dan BKM berikutnya adalah cara menagihnya (`batalkanRetur`).
+ */
+export function tertahanPiutang(klaimList: PorsiKlaim[]): number {
+  let tertahan = 0;
+  for (const k of klaimList) {
+    if (k.status !== 'TERVERIFIKASI' || !(k.nilaiFaktur > 0)) continue;
+    // Yang lepas sendiri = tahanan seluruhnya dikurangi yang tetap tertahan
+    // sesudahnya (keduanya dibatasi nilai BKM).
+    const tahan =
+      Math.min(k.nilaiFaktur, returTertahan(k.potonganRetur)) -
+      Math.min(k.nilaiFaktur, returTertahan(k.potonganRetur.filter((p) => p.tetap)));
+    if (tahan <= 0) continue;
+    tertahan += tahan * (k.nilaiDilunasiPiutangIni / k.nilaiFaktur);
+  }
+  return tertahan;
+}
+
+/** Yang masih boleh dilunasi BKM baru: sisa dikurangi yang sedang ditahan, dibulatkan ke rupiah. */
+export function sisaBolehDilunasi(sisa: number, tertahan: number): number {
+  return Math.max(0, Math.round(sisa - tertahan));
+}
+
 export type KeadaanPiutang = 'lunas' | 'klaim' | 'tertahan' | 'lewat' | 'tt' | 'belum';
 
 export type BahanKeadaan = {
@@ -188,6 +287,8 @@ export type PotonganPadaKlaim = {
     nilaiFisik: number | null;
     /** Sudah ada yang ditetapkan menanggung selisihnya. */
     bebanDiputuskan: boolean;
+    /** Nota dibatalkan / penunjuk menggantung — lihat `PotonganRetur.tetap`. */
+    tetap?: boolean;
   } | null;
 };
 
@@ -215,14 +316,16 @@ export function bahanPotonganRetur(potongan: PotonganPadaKlaim[]): PotonganRetur
   for (const p of potongan) {
     if (!p.retur) continue;
     const { nilaiKlaim, nilaiFisik, bebanDiputuskan } = p.retur;
+    const tetap = p.retur.tetap ? { tetap: true } : {};
     if (nilaiFisik === null || nilaiKlaim <= 0) {
-      hasil.push({ nilaiKlaim: p.nilaiPotongan, nilaiFisik: null, bebanTerbuka: true });
+      hasil.push({ nilaiKlaim: p.nilaiPotongan, nilaiFisik: null, bebanTerbuka: true, ...tetap });
       continue;
     }
     hasil.push({
       nilaiKlaim: p.nilaiPotongan,
       nilaiFisik: p.nilaiPotongan * (nilaiFisik / nilaiKlaim),
       bebanTerbuka: !bebanDiputuskan,
+      ...tetap,
     });
   }
   return hasil;

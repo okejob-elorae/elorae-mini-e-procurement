@@ -17,8 +17,10 @@ import {
 } from '@/components/ui/card';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { getWorkOrderById, terimaBarangJadi } from '@/app/actions/production';
+import { getBahanWo, getWorkOrderById, terimaBarangJadi } from '@/app/actions/production';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
+import { formatRupiah } from '@/lib/format/rupiah';
+import { hitungBiayaPenerimaanFG } from '@/lib/production/biaya-penerimaan';
 
 export default function WorkOrderReceivePage() {
   const t = useTranslations('toasts');
@@ -31,6 +33,8 @@ export default function WorkOrderReceivePage() {
   const [wo, setWO] = useState<Awaited<ReturnType<typeof getWorkOrderById>>>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  /** Σ nilai bahan yang sudah kembali ke gudang — tidak ikut dipikul barang jadi. */
+  const [nilaiKembali, setNilaiKembali] = useState(0);
 
   const [qtyReceived, setQtyReceived] = useState('');
   const [qtyRejected, setQtyRejected] = useState('0');
@@ -42,6 +46,9 @@ export default function WorkOrderReceivePage() {
 
   useEffect(() => {
     if (!id) return;
+    getBahanWo(id)
+      .then((r) => setNilaiKembali((r?.riwayat ?? []).reduce((s, b) => s + b.nilai, 0)))
+      .catch(() => setNilaiKembali(0));
     getWorkOrderById(id)
       .then((data) => {
         setWO(data);
@@ -63,23 +70,43 @@ export default function WorkOrderReceivePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- id, router drive fetch
   }, [id, router]);
 
+  // "Disetor" = semua yang diserahkan CMT, TERMASUK yang cacat; yang masuk
+  // stok = disetor − cacat (sama dengan rumus penulis receiveFG).
   const received = Number(qtyReceived) || 0;
   const rejected = Number(qtyRejected) || 0;
   const accepted = Math.max(0, received - rejected);
+  const cacatMelebihi = rejected > received;
   const issuesArr = Array.isArray(wo?.issues) ? wo.issues : [];
-  const totalMaterialCost = issuesArr.length
-    ? (issuesArr as any[]).reduce(
-        (sum: number, i: any) => sum + Number(i.totalCost ?? 0),
-        0
-      )
-    : 0;
-  const costPerUnit = accepted > 0 ? totalMaterialCost / accepted : 0;
+  const receiptsArr = (Array.isArray(wo?.receipts) ? wo.receipts : []) as Array<{
+    qtyReceived?: unknown;
+    totalCostValue?: unknown;
+  }>;
+  const target = Number((wo as { plannedQty?: unknown } | null)?.plannedQty ?? 0);
+  const sudahDisetor = receiptsArr.reduce((s, r) => s + (Number(r.qtyReceived) || 0), 0);
+  const sisaTarget = Math.max(0, target - sudahDisetor);
+  const totalMaterialCost = Math.max(
+    0,
+    (issuesArr as Array<{ totalCost?: unknown }>).reduce((sum, i) => sum + Number(i.totalCost ?? 0), 0) - nilaiKembali
+  );
+  // Pratinjau memakai rumus yang sama dengan yang dicatat (porsi sisa biaya).
+  const pratinjau = hitungBiayaPenerimaanFG({
+    totalBiayaBahan: totalMaterialCost,
+    qtyRencana: target,
+    sudahDibebankan: receiptsArr.reduce((s, r) => s + (Number(r.totalCostValue) || 0), 0),
+    sudahDiterima: sudahDisetor,
+    qtyDiterima: received,
+    qtyLolos: accepted,
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!session?.user?.id || !wo) return;
     if (received <= 0) {
       toast.error(t('qtyReceivedMustBePositive'));
+      return;
+    }
+    if (cacatMelebihi) {
+      toast.error(tRc('cacatMelebihi'));
       return;
     }
     const sb = (wo as { skuBreakdown?: unknown })?.skuBreakdown;
@@ -169,10 +196,16 @@ export default function WorkOrderReceivePage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="flex flex-wrap gap-x-6 gap-y-1 rounded-lg border p-3 text-sm">
+              <span>{tRc('ringkasTarget', { qty: target.toLocaleString('id-ID') })}</span>
+              <span>{tRc('ringkasSudah', { qty: sudahDisetor.toLocaleString('id-ID') })}</span>
+              <span className="font-medium">{tRc('ringkasSisa', { qty: sisaTarget.toLocaleString('id-ID') })}</span>
+            </div>
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-2">
-                <Label>{tRc('qtyReceived')}</Label>
+                <Label htmlFor="qty-disetor">{tRc('qtyReceived')}</Label>
                 <Input
+                  id="qty-disetor"
                   type="number"
                   min={0}
                   step={1}
@@ -182,8 +215,9 @@ export default function WorkOrderReceivePage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>{tRc('qtyRejected')}</Label>
+                <Label htmlFor="qty-cacat">{tRc('qtyRejected')}</Label>
                 <Input
+                  id="qty-cacat"
                   type="number"
                   min={0}
                   step={1}
@@ -193,8 +227,9 @@ export default function WorkOrderReceivePage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>{tRc('qtyAccepted')}</Label>
+                <Label htmlFor="qty-masuk">{tRc('qtyAccepted')}</Label>
                 <Input
+                  id="qty-masuk"
                   type="text"
                   readOnly
                   value={accepted.toLocaleString('id-ID')}
@@ -202,12 +237,26 @@ export default function WorkOrderReceivePage() {
                 />
               </div>
             </div>
+            <div className="space-y-1 text-sm">
+              <p className="font-medium">{tRc('masukStok', { qty: accepted.toLocaleString('id-ID') })}</p>
+              {cacatMelebihi ? <p className="text-destructive">{tRc('cacatMelebihi')}</p> : null}
+              {received > sisaTarget && received > 0 ? (
+                <p className="text-amber-700 dark:text-amber-400">
+                  {tRc('lebihTarget', { lebih: (received - sisaTarget).toLocaleString('id-ID') })}
+                </p>
+              ) : null}
+            </div>
             <div className="rounded-lg border bg-muted/50 p-4">
               <p className="text-sm font-medium">{tRc('costAllocation')}</p>
               <p className="text-muted-foreground">
-                {tRc('totalMaterialCost', { value: totalMaterialCost.toLocaleString('id-ID') })} →{' '}
+                {tRc('totalMaterialCost', { value: formatRupiah(totalMaterialCost) })}
+                {nilaiKembali > 0 ? ` ${tRc('sudahKembali', { value: formatRupiah(nilaiKembali) })}` : ''} →{' '}
                 {accepted > 0
-                  ? tRc('costPerUnit', { cost: costPerUnit.toFixed(2), accepted })
+                  ? tRc('costPerUnit', {
+                      cost: formatRupiah(pratinjau.biayaPerUnit.toNumber()),
+                      accepted: accepted.toLocaleString('id-ID'),
+                      total: formatRupiah(pratinjau.biaya.toNumber()),
+                    })
                   : tRc('notAvailable')}
               </p>
             </div>
@@ -272,8 +321,9 @@ export default function WorkOrderReceivePage() {
               </div>
             )}
             <div className="space-y-2">
-              <Label>{tRc('qcNotes')}</Label>
+              <Label htmlFor="catatan-qc">{tRc('qcNotes')}</Label>
               <Textarea
+                id="catatan-qc"
                 value={qcNotes}
                 onChange={(e) => setQcNotes(e.target.value)}
                 placeholder={tRc('qcNotesPlaceholder')}
@@ -281,7 +331,7 @@ export default function WorkOrderReceivePage() {
               />
             </div>
             <div className="flex gap-4">
-              <Button type="submit" disabled={isSubmitting || received <= 0}>
+              <Button type="submit" disabled={isSubmitting || received <= 0 || cacatMelebihi}>
                 {isSubmitting ? tRc('saving') : tRc('save')}
               </Button>
               <Link href={`/backoffice/work-orders/${id}`}>
@@ -290,6 +340,7 @@ export default function WorkOrderReceivePage() {
                 </Button>
               </Link>
             </div>
+            {received <= 0 ? <p className="text-xs text-muted-foreground">{tRc('isiDisetorDulu')}</p> : null}
           </form>
         </CardContent>
       </Card>

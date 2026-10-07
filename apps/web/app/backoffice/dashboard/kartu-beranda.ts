@@ -59,22 +59,28 @@ export function kartuBeranda(izin: string[] | undefined): KartuBeranda {
  */
 export type StatistikBeranda = {
   po: { draft: number };
-  workOrders: { inProduction: number; completedToday: number };
+  /**
+   * Dua angka, bukan "berjalan": tiap angka menaut ke daftar SPK dengan SATU
+   * status (`?status=IN_PRODUCTION` / `?status=PARTIAL`), dan daftar SPK hanya
+   * bisa menyaring satu status.
+   */
+  workOrders: { sedangDiproduksi: number; selesaiSebagian: number; completedToday: number };
   suppliers: { activeCount: number };
   grnsThisWeek: number;
-  /** `null` bila kartu stok tidak tampil. */
-  items: { lowStockCount: number } | null;
+  /** `null` bila kartu stok tidak tampil. Definisi ringkasan Inventori (Menipis, Habis). */
+  items: { lowStockCount: number; habisCount: number } | null;
 };
 
 export function statistikBeranda(stats: DashboardStats, kartu: KartuBeranda): StatistikBeranda {
   return {
     po: { draft: stats.po.draft },
     workOrders: {
-      inProduction: stats.workOrders.inProduction,
+      sedangDiproduksi: stats.workOrders.sedangDiproduksi,
+      selesaiSebagian: stats.workOrders.selesaiSebagian,
       completedToday: stats.workOrders.completedToday,
     },
     suppliers: { activeCount: stats.suppliers.activeCount },
     grnsThisWeek: stats.grnsThisWeek,
-    items: kartu.stok ? { lowStockCount: stats.items.lowStockCount } : null,
+    items: kartu.stok ? { lowStockCount: stats.items.lowStockCount, habisCount: stats.items.habisCount } : null,
   };
 }

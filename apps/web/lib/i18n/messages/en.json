@@ -52,8 +52,8 @@
   "navigation": {
     "dashboard": "Dashboard",
     "suppliers": "Suppliers",
-    "masterSuppliers": "Master Suppliers",
-    "supplierType": "Supplier Type",
+    "masterSuppliers": "Suppliers",
+    "supplierType": "Supplier types",
     "leadTime": "Lead Time",
     "sales": "Sales",
     "navSalesOrders": "Sales Orders",
@@ -76,12 +76,12 @@
     "navFinanceCashFlowSections": "Cash Flow Classification",
     "navFakturPajak": "Tax Invoices",
     "items": "Items",
-    "navItemsAll": "All Items",
+    "navItemsAll": "All items",
     "navItemsCategory": "Category",
     "navItemsRaw": "Raw Materials",
     "navItemsFinished": "Finished Goods",
     "stores": "Stores",
-    "masterStores": "Master Stores",
+    "masterStores": "Stores",
     "purchaseOrders": "Purchase Orders",
     "supplierPayment": "Supplier Payment",
     "inventory": "Inventory",
@@ -104,8 +104,8 @@
     "auditTrail": "Audit Trail",
     "jubelioAdmin": "Jubelio API",
     "jubelio": "Jubelio",
-    "navJubelioAdmin": "Jubelio API",
-    "navJubelioSettings": "Settings",
+    "navJubelioAdmin": "Monitor",
+    "navJubelioSettings": "Jubelio settings",
     "navJubelioCategories": "Categories",
     "navJubelioMigration": "Migration",
     "navJubelioCouriers": "Couriers",
@@ -131,8 +131,8 @@
     "navGroupReports": "Reports",
     "navGroupArchive": "Archive & Audit",
     "secCreative": "Creative",
-    "navGroupCreative": "Creative Marketing",
-    "navContentCalendar": "Content Calendar",
+    "navGroupCreative": "Creative marketing",
+    "navContentCalendar": "Content plan",
     "navKolBrief": "KOL Briefs",
     "navKolDirectory": "KOL Directory",
     "cariMenu": "Search menu…",
@@ -144,7 +144,7 @@
     "favoritPenuh": "Pinned list is full — {batas} maximum. Unpin one first.",
     "navSpgRequests": "SPG stock requests",
     "navSpgLostSales": "Items shoppers asked for",
-    "storeProposals": "New Store Proposals",
+    "storeProposals": "New store proposals",
     "navGroupFieldTeam": "Field Team",
     "navSalesLapangan": "Sales Summary",
     "navAbsensi": "Attendance",
@@ -177,7 +177,15 @@
     "navLabelBarcode": "Barcode labels",
     "navGudangRusak": "Damaged goods warehouse",
     "bantuan": "Help",
-    "navGroupPurchasing": "Purchasing"
+    "navGroupPurchasing": "Purchasing",
+    "akunSaya": "My account",
+    "tema": "Theme",
+    "temaTerang": "Light",
+    "temaGelap": "Dark",
+    "temaPerangkat": "Follow device",
+    "temaPerangkatTerang": "Follow device (now light)",
+    "temaPerangkatGelap": "Follow device (now dark)",
+    "bahasa": "Language"
   },
   "notifications": {
     "title": "Notifications",
@@ -187,7 +195,121 @@
     "testBody": "This is a test notification from the app.",
     "markAllRead": "Mark all as read",
     "loadMore": "Load more",
-    "loadMoreFailed": "Couldn't load more notifications. Try again."
+    "loadMoreFailed": "Couldn't load more notifications. Try again.",
+    "unreadAria": "{count} unread notifications",
+    "keterangan": "Your latest notifications",
+    "jenis": {
+      "PO_OVERDUE": {
+        "judul": "Overdue PO",
+        "isi": "{dokumen} ({pemasok}) — ETA has passed"
+      },
+      "WO_OVERDUE": {
+        "judul": "Overdue work order",
+        "isi": "{dokumen} ({vendor}) — target date has passed"
+      },
+      "MATERIAL_ARRIVED": {
+        "judul": "Materials arrived"
+      },
+      "ACCESSORIES_PENDING_CMT": {
+        "judul": "Accessories not yet sent to the CMT",
+        "isi": "{jumlah} work orders need accessories sent to the CMT."
+      },
+      "WO_COMPLETED": {
+        "judul": "Work order completed",
+        "isi": "{dokumen} — {barang} completed",
+        "isiOleh": "{dokumen} — {barang} completed by {oleh}"
+      },
+      "SUPPLIER_CREATED": {
+        "judul": "New supplier",
+        "isi": "{nama} added by {oleh}"
+      },
+      "SUPPLIER_APPROVED": {
+        "judul": "Supplier approved",
+        "isi": "{nama} approved by {oleh}"
+      },
+      "ITEM_CREATED": {
+        "judul": "New item",
+        "isi": "{nama} added by {oleh}"
+      },
+      "PO_CREATED": {
+        "judul": "New PO",
+        "isi": "PO {dokumen} created by {oleh}"
+      },
+      "PO_STATUS_UPDATED": {
+        "judul": "PO status changed",
+        "isi": "PO {dokumen}: {dari} → {ke}, by {oleh}"
+      },
+      "PO_PAYMENT_TOGGLED": {
+        "judul": "PO payment status changed",
+        "isiLunas": "PO {dokumen} marked paid by {oleh}",
+        "isiBelumLunas": "PO {dokumen} marked unpaid by {oleh}"
+      },
+      "GRN_CREATED": {
+        "judul": "Goods receipt recorded",
+        "isi": "GRN {dokumen} recorded by {oleh}"
+      },
+      "STOCK_ADJUSTMENT_CREATED": {
+        "judul": "Stock adjustment recorded",
+        "isi": "Stock adjustment {dokumen} recorded by {oleh}"
+      },
+      "WO_CREATED": {
+        "judul": "New work order",
+        "isi": "{dokumen} created by {oleh}"
+      },
+      "WO_STATUS_UPDATED": {
+        "judul": "Work order status changed",
+        "isi": "{dokumen}: {dari} → {ke}, by {oleh}"
+      },
+      "WO_MATERIALS_ISSUED": {
+        "judul": "Materials issued",
+        "isi": "Materials for {dokumen} issued by {oleh}"
+      },
+      "VENDOR_RETURN_CREATED": {
+        "judul": "Vendor return created",
+        "isi": "Return {dokumen} created by {oleh}"
+      },
+      "VENDOR_RETURN_STATUS_UPDATED": {
+        "judul": "Vendor return status changed",
+        "isi": "Return {dokumen}: {dari} → {ke}, by {oleh}"
+      },
+      "DOC_NUMBER_ALTERED": {
+        "judul": "Document numbering changed",
+        "isi": "{jenis} numbering changed by {oleh}"
+      },
+      "JOURNAL_PENDING": {
+        "judul": "Journal failed to post",
+        "isi": "{dokumen}: {sebab}.",
+        "isiNomor": "{dokumen} {nomor}: {sebab}.",
+        "dokumen": {
+          "van_sale": "Van sale",
+          "van_load": "Van load",
+          "van_reconcile": "Van reconciliation",
+          "supplier_payment": "Supplier payment",
+          "supplier_payment_reversal": "Supplier payment reversal",
+          "grn": "Goods receipt",
+          "grn_reversal": "Goods receipt reversal",
+          "fg_receipt": "Finished goods receipt",
+          "opname": "Stock count",
+          "sales_return": "Sales return",
+          "sales_order": "Marketplace sale",
+          "lain": "Document"
+        }
+      },
+      "PENDING_ORDER_APPROVAL": {
+        "judulPutus": "Putus order {nomor} awaiting approval",
+        "judulKonsi": "Consignment transfer {nomor} awaiting approval",
+        "isiPutus": "Putus order {nomor} worth {total} is awaiting approval.",
+        "isiKonsi": "Consignment transfer request {nomor} is awaiting approval.",
+        "kredit": "Credit on hold: check the store's bills before approving.",
+        "jarakJauh": "Remote order ({saluran}), taken without a store visit.",
+        "inden": "Pre-order ({jendela}): stock is held when the pre-order is released.",
+        "ganti": "Replaces {lama}, which the salesman cancelled."
+      },
+      "STORE_CHANGE_REQUEST": {
+        "judul": "Store data change awaiting approval",
+        "isi": "A salesman proposed changes to store {toko}. Review it on the store detail page."
+      }
+    }
   },
   "supplier": {
     "title": "Suppliers",
@@ -218,7 +340,7 @@
     "createSupplier": "New supplier",
     "searchPlaceholder": "Search supplier name or code...",
     "allTypes": "All types",
-    "allStatuses": "All statuses",
+    "allStatuses": "All approvals",
     "emptyTitle": "No suppliers yet",
     "emptyDescription": "Add a supplier first — POs, goods receipts, and payments all rest on this record.",
     "emptyFilteredTitle": "No suppliers match",
@@ -254,7 +376,25 @@
     "rejectTitle": "Reject supplier",
     "rejectDescription": "Provide a reason for rejection. The supplier status will be set to Rejected.",
     "rejectReason": "Reason",
-    "rejectReasonPlaceholder": "Reason for rejection..."
+    "rejectReasonPlaceholder": "Reason for rejection...",
+    "approvalFilter": "Filter approval",
+    "approvalLabel": "Approval",
+    "approvalApproved": "Approved",
+    "inPoLabel": "In purchase orders",
+    "inPoYes": "Can be picked on a PO",
+    "notInPo": "Cannot be picked on a PO yet",
+    "listTitle": "Supplier list",
+    "count": "{count} suppliers",
+    "colCode": "Code",
+    "colName": "Name",
+    "colContact": "Contact",
+    "colApproval": "Approval",
+    "colActions": "Actions",
+    "approveFailed": "The supplier could not be approved. Reload the page and try again.",
+    "rejectFailed": "The supplier could not be rejected. Reload the page and try again.",
+    "rejectNeedsReason": "Enter a reason first.",
+    "deleteTitle": "Delete supplier?",
+    "deleteBody": "{name} is deleted. A supplier already used on a PO or another document cannot be deleted. The next step asks for your PIN."
   },
   "common": {
     "save": "Save",
@@ -348,11 +488,22 @@
       "empty": "No audit logs found.",
       "expandRow": "Show details",
       "collapseRow": "Hide details",
-      "sensitive": "Sensitive:",
-      "reason": "Reason:",
-      "userAgent": "User-Agent:",
+      "sensitive": "Sensitive data",
+      "reason": "Reason",
+      "userAgent": "Device",
       "loadFailed": "Failed to load audit logs",
-      "exportFailed": "Export failed"
+      "exportFailed": "Export failed",
+      "allActions": "All actions",
+      "searchAction": "Search actions…",
+      "unnamedUser": "Unnamed user",
+      "logCount": "{total, plural, one {# entry} other {# entries}}",
+      "detailField": "Field",
+      "detailBefore": "Before",
+      "detailAfter": "After",
+      "detailValue": "Value",
+      "yes": "Yes",
+      "no": "No",
+      "recordId": "Record ID"
     }
   },
   "settings": {
@@ -360,11 +511,11 @@
     "subtitle": "System and security configuration",
     "security": {
       "title": "Security",
-      "description": "PIN, attempt history, reset PIN (admin)"
+      "description": "PIN, password and sign-in attempt history"
     },
     "documents": {
-      "title": "Document Numbers",
-      "description": "Prefix and reset period for document numbers"
+      "title": "Document numbers",
+      "description": "Prefix and next number for each document type"
     },
     "itemCodes": {
       "title": "Item codes",
@@ -375,15 +526,15 @@
       "description": "PPN rate used when PO line excludes tax"
     },
     "uom": {
-      "title": "UOM",
-      "description": "Units of measure and conversions"
+      "title": "Units",
+      "description": "Units of measure and their conversions"
     },
     "rbac": {
-      "title": "Roles & Permissions",
-      "description": "Manage user roles and permissions (RBAC)",
+      "title": "Roles & permissions",
+      "description": "User roles and the permissions of each role",
       "pageTitle": "RBAC Settings",
       "pageSubtitle": "Manage roles and permissions",
-      "createRole": "Create Role",
+      "createRole": "Create role",
       "system": "System",
       "usersAssigned": "{count, plural, one {# user} other {# users}} assigned",
       "permissionsCount": "{count, plural, one {# permission} other {# permissions}}",
@@ -413,9 +564,9 @@
       "delete": "Delete"
     },
     "packRatio": {
-      "title": "Pack Ratio",
+      "title": "Pack ratio",
       "description": "Set the global per-size pack ratio used for smart requests.",
-      "heading": "Global Pack Ratio",
+      "heading": "Global pack ratio",
       "subtitle": "One pack = the quantity per size below, applied across all articles.",
       "sizeLabel": "Size",
       "qtyLabel": "Qty",
@@ -507,7 +658,7 @@
     },
     "salesman": {
       "title": "Salesmen",
-      "description": "Monthly targets and the visit-day limit for the salesman dashboard.",
+      "description": "Visits, targets, credit, commission, orders, expenses and attendance of the field team.",
       "subtitle": "These numbers appear on each salesman's phone home screen.",
       "readOnly": "Only people who approve salesman orders can change these settings.",
       "visitTitle": "Visit-day limit",
@@ -518,7 +669,7 @@
       "visitNow": "In effect now: {days} days.",
       "visitNotSet": "Not set — the dashboard uses {days} days and says it isn't set.",
       "targetTitle": "Monthly sales targets",
-      "targetDesc": "Counts outright-order deliveries, approved consignment orders and van sales — salesmen see all three separately.",
+      "targetDesc": "Counted from outright order deliveries, consignment goods sold in store (at Elorae's price), and van sales — salespeople see all three separately.",
       "colSalesman": "Salesman",
       "colAchieved": "Achieved this month",
       "colTarget": "Target",
@@ -599,7 +750,15 @@
           "simpan": "Save"
         }
       },
-      "targetRinciLink": "Per category/product"
+      "targetRinciLink": "Per category/product",
+      "toc": {
+        "label": "Salesman settings contents",
+        "kunjungan": "Visits & stores",
+        "targetKomisi": "Targets & commission",
+        "pesananKredit": "Orders & credit",
+        "biayaAbsensi": "Expenses & attendance",
+        "spgLink": "Store transfers and SPG working days are in Settings → SPG"
+      }
     },
     "users": {
       "title": "Users",
@@ -657,12 +816,40 @@
         "PERAN_SENDIRI": "You cannot change the role of your own account.",
         "AKUN_SISTEM": "Only a system administrator can change a system administrator account.",
         "PERAN_SISTEM": "Only a system administrator can grant a full-access role."
+      },
+      "noRole": "No role — no menus",
+      "noPassword": "No password — cannot sign in yet",
+      "roleName": {
+        "ADMIN": "Administrator",
+        "PURCHASER": "Purchasing",
+        "WAREHOUSE": "Warehouse",
+        "PRODUCTION": "Production",
+        "SALESMAN": "Salesman",
+        "SPG": "SPG"
+      },
+      "belum": {
+        "NAMA_WAJIB": "Enter a name.",
+        "EMAIL_TIDAK_VALID": "Enter a valid email.",
+        "PERAN_WAJIB": "Pick a role.",
+        "TOKO_WAJIB": "Pick the SPG's fixed store.",
+        "SANDI_WAJIB": "Enter a password for the new account.",
+        "SANDI_PENDEK": "The password needs at least {min} characters.",
+        "SANDI_TIDAK_SAMA": "The repeated password does not match yet."
       }
     },
     "spg": {
       "title": "SPG",
-      "description": "Counter discounts, daily closing, hold requests, shifts, and commission at outright stores.",
+      "description": "Counter discounts, daily closing, hold requests, shifts, commission, lost goods, store transfers and SPG working days.",
       "subtitle": "How SPGs work at the store counter. Each card can only be changed by whoever decides that matter."
+    },
+    "hub": {
+      "groupField": "Field team & sales",
+      "groupData": "Data & documents",
+      "groupAccess": "Access & security",
+      "groupMine": "My appearance",
+      "companyClearTitle": "Clear the company colour?",
+      "companyClearBody": "Everyone who has not picked their own colour, including the phone app, goes back to the default colour.",
+      "cancel": "Cancel"
     }
   },
   "tax": {
@@ -676,31 +863,62 @@
     "invalidRate": "Enter a percentage between 0 and 100"
   },
   "documents": {
-    "pageTitle": "Document Numbering",
-    "pageDescription": "Configure prefix, reset period, and padding per document type. Changes apply to new documents only.",
+    "pageTitle": "Document numbers",
+    "pageDescription": "Prefix, reset period and number of digits for each document type. Changes apply to new documents only.",
     "tableDescription": "Prefix (e.g. PO/), reset period (when the sequence resets), and number padding (e.g. 4 → 0001).",
-    "documentType": "Document Type",
+    "documentType": "Document type",
     "prefix": "Prefix",
-    "resetPeriod": "Reset Period",
-    "padding": "Padding",
+    "resetPeriod": "Restart",
+    "padding": "Digits",
     "save": "Save",
     "loadError": "Failed to load config",
-    "configTitle": "Config",
-    "lastNumber": "Last #",
+    "configTitle": "Numbers per document type",
+    "lastNumber": "Last number",
     "docTypes": {
-      "PO": "Purchase Order",
-      "GRN": "Goods Receipt",
-      "WO": "Work Order",
-      "ADJ": "Stock Adjustment",
-      "RET": "Vendor Return",
-      "ISSUE": "Material Issue",
-      "RECEIPT": "FG Receipt",
-      "OPN": "Stock Opname"
+      "PO": "Purchase order",
+      "GRN": "Goods receipt",
+      "WO": "Work order",
+      "ADJ": "Stock adjustment",
+      "RET": "Vendor return",
+      "ISSUE": "Material issue",
+      "RECEIPT": "Finished-goods receipt",
+      "OPN": "Stock opname",
+      "PUTUS": "Putus order",
+      "KONSI": "Consignment order",
+      "DELIVERY": "Delivery / invoice note",
+      "SPGSALE": "SPG sales receipt",
+      "VANLOAD": "Van load",
+      "VANSALE": "Van sale",
+      "VANRECON": "Van reconciliation"
     },
     "period": {
-      "YEARLY": "Yearly",
-      "MONTHLY": "Monthly",
+      "YEARLY": "Every year",
+      "MONTHLY": "Every month",
       "NEVER": "Never"
+    },
+    "saveCount": "Save ({count})",
+    "savedCount": "{count} document types saved.",
+    "noChanges": "No changes yet.",
+    "readOnly": "Only document-number managers can change this page.",
+    "nextExample": "Next number",
+    "notUsedYet": "Not used yet",
+    "changed": "Changed",
+    "errRow": "{jenis}: {pesan}",
+    "err": {
+      "AWALAN_KOSONG": "The prefix is required.",
+      "AWALAN_PANJANG": "The prefix is at most 20 characters.",
+      "DIGIT_TIDAK_SAH": "Digits must be 1 to 8.",
+      "PERIODE_TIDAK_SAH": "Pick a restart period.",
+      "JENIS_TIDAK_DIKENAL": "Unknown document type. Reload the page.",
+      "UNAUTHORIZED": "Your session has ended. Sign in again.",
+      "FORBIDDEN": "You are not allowed to change document numbers."
+    },
+    "group": {
+      "pembelianGudang": "Purchasing & warehouse",
+      "produksi": "Production",
+      "penjualanLapangan": "Field sales",
+      "kanvas": "Canvassing",
+      "lainnya": "Other"
     }
   },
   "itemCodes": {
@@ -709,7 +927,7 @@
     "barcodeFormatTitle": "Variant barcode format",
     "barcodeFormatDescription": "Template for per-variant barcodes (SKU-level). Adjust placeholders to match your labeling convention.",
     "templateLabel": "Format template",
-    "placeholdersTitle": "Placeholders",
+    "placeholdersTitle": "Parts you can use",
     "exampleHintPrefix": "Default",
     "exampleHintSuffix": "produces values like 0224000016T03 when category is 0224, parent SKU is 2700016, and size is T03.",
     "save": "Save",
@@ -721,7 +939,14 @@
       "parentSeq": "numeric body from parent SKU, zero-padded (6 digits)",
       "attrs": "all variant attribute values concatenated (e.g. T03, PXL)",
       "attr": "one attribute by name"
-    }
+    },
+    "presetsLabel": "Ready-made:",
+    "presets": {
+      "pemilik": "01 + article + size",
+      "bawaan": "System default"
+    },
+    "previewLabel": "Result for the sample item",
+    "previewSample": "Sample: article 27000038P, category 01, colour Navy, size S."
   },
   "finance": {
     "coa": {
@@ -1006,13 +1231,19 @@
       "notEditable": "Return not found or cannot be edited",
       "updated": "Vendor return updated",
       "updateFailed": "Failed to update"
-    }
+    },
+    "poKreditLabel": "Reduces the payable of PO:",
+    "grnLabel": "GRN:"
   },
   "adjustment": {
     "notaBarangKeluar": "Nota Barang Keluar",
     "printNotaBarangKeluar": "Print Nota Barang Keluar",
     "adjustmentDetails": "Adjustment details",
-    "nota": "Nota"
+    "nota": "Nota",
+    "notaBarangMasuk": "Goods Received Note",
+    "printNotaBarangMasuk": "Print Goods Received Note",
+    "tidakDitemukan": "Adjustment not found",
+    "tidakDitemukanIsi": "The link may be wrong, or the adjustment no longer exists."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -1050,7 +1281,7 @@
     "todaySalesTitle": "Today's Sales",
     "todaySalesCount": "{count, plural, one {# order today} other {# orders today}}",
     "todaySalesTooltip": "Orders placed today (by transaction date). Excludes cancelled and returned. Includes pending, processing, shipped, and completed.",
-    "oversoldTitle": "Oversold stock",
+    "oversoldTitle": "Negative stock",
     "oversoldDesc": "SKUs where reserved exceeds on-hand",
     "oversoldTooltip": "Inventory rows where reservedQty > qtyOnHand, i.e. available stock is negative.",
     "oversoldNone": "No oversold SKUs",
@@ -1104,9 +1335,9 @@
     "kpiShortage": "Material shortfall",
     "kpiShortageCtx": "not yet issued, available stock short",
     "kpiActiveItems": "{count} active items",
-    "kpiOversoldCtx": "sold beyond what is on hand",
+    "kpiOversoldCtx": "available below zero",
     "kpiLowStock": "Low stock",
-    "kpiLowStockCtx": "below the minimum",
+    "kpiLowStockCtx": "available at or below the reorder point",
     "kpiUnshipped": "Orders not yet shipped",
     "kpiUnshippedCtx": "awaiting fulfilment",
     "roles": {
@@ -1133,11 +1364,11 @@
     "kpiFinishedValue": "Finished goods value",
     "kpiFinishedValueCtx": "{count} SKUs",
     "salesmanTitle": "Sales per salesman",
-    "salesmanDesc": "Realised = putus orders delivered + van sales (all time). Outstanding = putus orders awaiting approval. Consignment is not counted.",
+    "salesmanDesc": "Realised = putus orders delivered + van sales (all time). Approved, not delivered = approved putus orders with no delivery yet. Awaiting approval = putus orders not yet approved. Consignment is not counted.",
     "salesmanEmpty": "No salesman sales yet.",
     "colSalesman": "Salesman",
     "colRealised": "Realised",
-    "colOutstanding": "Outstanding",
+    "colOutstanding": "Awaiting approval",
     "txCount": "{count} transactions",
     "waitingCount": "{count} waiting",
     "totalRow": "Total",
@@ -1249,7 +1480,16 @@
     "trendBackTo": "← {saluran}",
     "trendTooltipTotal": "Total",
     "trendEmptyFor": "No {saluran} sales in the last {days} days",
-    "trendEmptyRangeFor": "No {saluran} sales in this range"
+    "trendEmptyRangeFor": "No {saluran} sales in this range",
+    "kpiRealisedCtxRinci": "{kirim} deliveries · {van} van sales",
+    "kpiAwaitingDelivery": "Approved, not yet delivered",
+    "ordersCount": "{count} orders",
+    "colAwaitingDelivery": "Approved, not delivered",
+    "kpiWoInProduction": "Work orders in production",
+    "kpiWoPartial": "Work orders partly received",
+    "kpiWoPartialCtx": "the rest not yet received",
+    "kpiStockOut": "Out of stock",
+    "kpiStockOutCtx": "nothing available"
   },
   "production": {
     "targetCutting": "Target cutting",
@@ -1264,8 +1504,8 @@
     "progressActual": "Setoran"
   },
   "toasts": {
-    "failedToLoadWorkOrder": "Failed to load work order",
-    "workOrderIssued": "Work Order issued",
+    "failedToLoadWorkOrder": "Failed to load the work order",
+    "workOrderIssued": "Work order issued",
     "failedToIssue": "Failed to issue",
     "workOrderCancelled": "Work Order cancelled",
     "failedToCancel": "Failed to cancel",
@@ -1388,10 +1628,10 @@
     "nothingToSync": "Nothing to sync",
     "syncFailed": "Sync failed",
     "failedToLoadWorkOrders": "Failed to load work orders",
-    "workOrderIssuedSuccessfully": "Work Order issued successfully",
-    "failedToIssueWorkOrder": "Failed to issue Work Order",
+    "workOrderIssuedSuccessfully": "Work order issued",
+    "failedToIssueWorkOrder": "Failed to issue the work order",
     "workOrderCancelledSuccessfully": "Work Order cancelled successfully",
-    "failedToCancelWorkOrder": "Failed to cancel Work Order",
+    "failedToCancelWorkOrder": "Failed to cancel the work order",
     "selectAnItem": "Select an item",
     "enterValidQuantity": "Enter a valid quantity",
     "reasonMinChars": "Reason must be at least 5 characters",
@@ -1534,7 +1774,7 @@
       "removeImage": "Remove image",
       "addImage": "Add image"
     },
-    "newItem": "New Item",
+    "newItem": "New item",
     "itemList": "Item List",
     "actions": "Actions",
     "toggleDetails": "Toggle details",
@@ -1544,7 +1784,7 @@
     "bomQty": "Qty: {qty}",
     "bomWaste": "Waste: {percent}%",
     "categories": {
-      "pageTitle": "Item – Category",
+      "pageTitle": "Item categories",
       "pageDescription": "Groups of goods (t-shirts, shirts, trousers …) for the catalogue, planning and sales targets. A category still assigned to goods cannot be deleted; deactivate it instead.",
       "cardTitle": "Categories",
       "cardDescription": "Add, edit, or remove item categories. Categories in use cannot be deleted.",
@@ -1595,7 +1835,7 @@
       "saveFirst": "Save the item first to see price history."
     },
     "newPage": {
-      "title": "Create New Item",
+      "title": "New item",
       "description": "Add a new item to your catalog",
       "createdToast": "Item created successfully",
       "createFailed": "Failed to create item"
@@ -1604,20 +1844,20 @@
   "workOrders": {
     "draft": "Draft",
     "issued": "Issued",
-    "inProduction": "In Production",
+    "inProduction": "In production",
     "partial": "Partial",
     "completed": "Completed",
     "completedAt": "Completed at",
     "cancelled": "Cancelled",
     "issue": "Issue",
-    "issueMaterials": "Issue Materials",
+    "issueMaterials": "Issue materials",
     "receiveFG": "Receive FG",
     "allocationPerRoll": "Allocation per roll",
     "notaKainPerRoll": "Nota kain per roll",
     "qty": "Qty",
     "notes": "Notes",
     "details": "Details",
-    "materialIssues": "Material Issues",
+    "materialIssues": "Material issues",
     "fgReceipts": "FG Receipts",
     "reconciliation": "Reconciliation",
     "consumptionPlan": "Consumption Plan",
@@ -1640,9 +1880,9 @@
     "theoretical": "Theoretical",
     "valueImpact": "Value Impact",
     "status": "Status",
-    "confirmCancelWO": "Cancel this Work Order?",
+    "confirmCancelWO": "Cancel this work order?",
     "plannedVsIssued": "Planned vs issued (remaining to issue)",
-    "noIssuesYet": "No issues yet.",
+    "noIssuesYet": "No material issues yet.",
     "noReceiptsYet": "No receipts yet.",
     "notaKainPerRollDesc": "Nota kain per roll",
     "docLabel": "Doc:",
@@ -1656,11 +1896,11 @@
     "variantSku": "Variant (SKU)",
     "selectVariant": "Select variant",
     "noVariantsDefineFirst": "Define variants for this finished good first",
-    "materialConsumptionDriver": "Material (consumption driver)",
+    "materialConsumptionDriver": "Main material (fabric)",
     "selectMaterial": "Select material",
-    "consumption": "Consumption",
-    "plannedQtyCalculated": "Planned Qty (calculated)",
-    "actualConsumption": "Actual consumption",
+    "consumption": "Main material available",
+    "plannedQtyCalculated": "Planned quantity",
+    "actualConsumption": "Main material needed",
     "remainder": "Remainder",
     "increaseConsumptionOrMaterial": "Increase consumption or choose a different material",
     "defineBomFirst": "Define BOM for this finished good first",
@@ -1679,8 +1919,8 @@
     },
     "pageTitle": "Work Orders",
     "pageDescription": "Production orders to tailors or CMT vendors. Materials are issued and finished goods received against these, forming cost of goods.",
-    "newWO": "New WO",
-    "searchPlaceholder": "Search WO number or vendor...",
+    "newWO": "New work order",
+    "searchPlaceholder": "Search number, vendor, or finished good...",
     "allStatus": "All statuses",
     "emptyTitle": "No work orders yet",
     "emptyDescription": "A WO is raised when production starts. Material issues and finished-goods receipts are recorded against it.",
@@ -1702,18 +1942,18 @@
       "hppUpdateFailed": "Failed to update HPP",
       "additionalQtyInvalid": "Enter a positive integer for additional qty",
       "previewFailed": "Failed to load preview",
-      "insufficientStock": "Cannot issue: some items have insufficient stock",
+      "insufficientStock": "Can't issue yet: some items are short",
       "additionalIssued": "Additional materials issued",
       "backToList": "Back to work orders",
-      "issueAdditional": "Issue Additional Materials",
+      "issueAdditional": "Issue additional materials",
       "progressTitle": "Progress",
       "expectedConsumption": "Expected consumption: {value}",
-      "rollStatusHint": "Initial / Remaining / Used = qty on roll when created; qty left after issues; qty already issued from this roll.",
+      "rollStatusHint": "Initial / Remaining / Used = qty on the roll when created; qty left after issues; qty already issued from this roll.",
       "colRollRef": "Roll / Ref",
       "colAllocated": "Allocated",
       "colUsed": "Used",
       "printNotaKain": "Print Nota Kain per Roll",
-      "hppTitle": "HPP Adjustment",
+      "hppTitle": "COGS",
       "hppDescription": "Owner/Admin only: margin and additional costs.",
       "marginLabel": "Margin %",
       "additionalCostLabel": "Additional cost",
@@ -1724,13 +1964,13 @@
       "colTotal": "Total",
       "stepN": "Step {n}",
       "consumptionPlanDesc": "{planned} vs {issued} per material",
-      "issuesCount": "{count} issue(s)",
+      "issuesCount": "{count} issues",
       "colDoc": "Doc #",
       "colActions": "Actions",
       "receiptsCount": "{count} receipt(s)",
       "colAccepted": "Accepted",
       "reconciliationDesc": "Actual vs theoretical usage",
-      "additionalDesc": "Issue only accessories for over-production. Fabric stays at vendor. Planned qty is not changed.",
+      "additionalDesc": "Only issues accessories for over-production. Fabric stays with the vendor. Planned qty does not change.",
       "additionalQtyLabel": "Additional qty (pcs)",
       "additionalQtyPlaceholder": "e.g. 200",
       "preview": "Preview",
@@ -1739,7 +1979,12 @@
       "ok": "OK",
       "short": "Short",
       "cancel": "Cancel",
-      "issueAccessories": "Issue accessories"
+      "issueAccessories": "Issue accessories",
+      "ubah": "Edit",
+      "selesaiTanpaAksi": "This work order is completed: no more materials can be issued and no more finished goods received.",
+      "bahanWoBatal": "This work order is cancelled.",
+      "bahanWoDraf": "This work order is a draft; no materials have been issued.",
+      "hppSekarang": "Current: margin {margin} · additional cost {biaya}"
     },
     "recon": {
       "loadFailed": "Failed to load reconciliation",
@@ -1747,15 +1992,25 @@
       "printFailed": "Print failed.",
       "backToWO": "Back to work order",
       "exportPdf": "Print / Export PDF",
-      "totalMaterialCost": "Total Material Cost (Used)",
-      "efficiency": "Efficiency %",
-      "usedVsIssued": "Used vs issued value",
+      "totalMaterialCost": "Material cost used",
+      "efficiency": "Material efficiency",
+      "usedVsIssued": "Used value vs issued value",
       "costVariance": "Cost Variance",
       "byMaterial": "{selisih} by material",
       "byMaterialDesc": "{planned} vs {issued} vs {setoran}; {estimate} per line.",
-      "statusOK": "OK",
-      "statusOVER": "OVER",
-      "statusUNDER": "UNDER"
+      "statusOK": "On target",
+      "statusOVER": "Over-used",
+      "statusUNDER": "Below theoretical",
+      "terpakai": "Used",
+      "statusBELUM_DIKIRIM": "Not issued yet",
+      "cetak": {
+        "judul": "Work order reconciliation",
+        "keterangan": "Issued to CMT, returned, used, and theoretical usage per material.",
+        "efisiensiArti": "Theoretical usage vs actual usage (100% = exact)",
+        "wo": "Work order",
+        "tanggal": "Date",
+        "dibuatOleh": "Issued by"
+      }
     },
     "form": {
       "noRollsFound": "No available fabric rolls found",
@@ -1789,7 +2044,7 @@
       "ppnExclude": "Exclude PPN",
       "ppnInclude": "Include PPN",
       "remove": "Remove",
-      "materialPlanTitle": "Material Plan",
+      "materialPlanTitle": "Material plan",
       "materialPlanDesc": "Required materials from BOM. Creation is blocked if any shortage.",
       "calculating": "Calculating…",
       "loadingPlan": "Loading plan...",
@@ -1811,42 +2066,55 @@
       "createWO": "Create Work Order",
       "updating": "Updating...",
       "updateWO": "Update Work Order",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "vendorBelumDisetujui": "not approved",
+      "caraIsiLabel": "How to set the quantity",
+      "caraIsiPcs": "Type the number of pcs",
+      "caraIsiBahan": "Calculate from the main material",
+      "jumlahPcsLabel": "Number of pcs"
     },
     "receive": {
-      "variantSumMismatch": "Sum of variant qtys must equal qty accepted",
+      "variantSumMismatch": "The per-variant total must equal the quantity into stock",
       "rejectedSumMismatch": "Sum of rejected variant qtys must equal qty rejected",
       "backToWO": "Back to work order",
-      "title": "Receive Finished Goods",
+      "title": "Receive finished goods",
       "cardTitle": "Receipt",
-      "cardDescription": "Enter received and rejected quantities. Material cost is allocated from issues.",
-      "qtyReceived": "Qty Received (good)",
-      "qtyRejected": "Qty Rejected (defects)",
-      "qtyAccepted": "Qty Accepted (net)",
+      "cardDescription": "Enter the quantity delivered and the defects. Material cost is allocated from the material issues.",
+      "qtyReceived": "Quantity delivered (incl. defects)",
+      "qtyRejected": "Defective",
+      "qtyAccepted": "Into stock (passed QC)",
       "costAllocation": "Cost allocation",
-      "totalMaterialCost": "Total material cost: {value}",
-      "costPerUnit": "{cost} per unit ({accepted} accepted)",
+      "totalMaterialCost": "Material cost: {value}",
+      "costPerUnit": "this delivery bears {total}, {cost} per pc ({accepted} pcs into stock)",
       "notAvailable": "N/A",
-      "variantBreakdown": "Per-variant breakdown (sum must equal qty accepted)",
-      "sumAccepted": "Sum: {sum} / {accepted} accepted",
+      "variantBreakdown": "Per-variant breakdown (total must equal the quantity into stock)",
+      "sumAccepted": "Total: {sum} / {accepted} into stock",
       "variantRejected": "Per-variant rejected (sum must equal qty rejected)",
       "sumRejected": "Sum: {sum} / {rejected} rejected",
       "qcNotes": "QC Notes",
       "qcNotesPlaceholder": "Quality check notes",
       "saving": "Saving...",
-      "save": "Save Receipt",
-      "cancel": "Cancel"
+      "save": "Save receipt",
+      "cancel": "Cancel",
+      "masukStok": "Into stock: {qty} pcs",
+      "cacatMelebihi": "Defects can't exceed the quantity delivered.",
+      "lebihTarget": "This delivery exceeds the remaining target by {lebih} pcs.",
+      "ringkasTarget": "Target {qty} pcs",
+      "ringkasSudah": "Delivered so far {qty} pcs",
+      "ringkasSisa": "Remaining {qty} pcs",
+      "sudahKembali": "(after subtracting returned materials {value})",
+      "isiDisetorDulu": "Enter the quantity delivered first."
     },
     "issuePage": {
-      "typeChanged": "Issue type changed. Cleared staged lines to keep the payload consistent.",
-      "nothingRemaining": "No remaining qty to issue for this type.",
+      "typeChanged": "Material type changed. Prepared lines were cleared to keep the data consistent.",
+      "nothingRemaining": "Nothing left to issue for this type.",
       "linesFilled": "{count, plural, one {# line filled.} other {# lines filled with remaining qty.}}",
-      "rollBelowFabric": "Total roll ({roll}) is less than issued fabric qty ({fabric}).",
-      "colIssued": "Issued",
+      "rollBelowFabric": "Total rolls ({roll}) is less than the fabric qty issued ({fabric}).",
+      "colIssued": "Issued (net)",
       "colRemaining": "Remaining",
-      "formTitle": "Issue Form",
-      "formDescription": "Add materials to issue. Use barcode to quick-add.",
-      "issueType": "Issue Type",
+      "formTitle": "Issue materials",
+      "formDescription": "Add the materials to issue. Use the barcode scanner to add quickly.",
+      "issueType": "Material type",
       "fabric": "Fabric",
       "accessories": "Accessories",
       "partial": "Partial / split allocation",
@@ -1858,9 +2126,73 @@
       "maxQty": "max {max}",
       "overIssueOk": "over-issue ok",
       "avgCost": "Avg cost",
-      "rollHint": "Pick whole rolls only. Total allocated must at least equal the issued fabric qty.",
+      "rollHint": "Pick whole rolls. The total allocated must be at least the fabric qty issued.",
       "allocatedTotal": "Total allocated: {total}.",
-      "issuing": "Issuing..."
+      "issuing": "Issuing...",
+      "lebihDariRencana": "{qty} over"
+    },
+    "kebutuhanTotalRencana": "Total requirement (planned)",
+    "colBarangJadi": "Finished good",
+    "terlambatHari": "{hari} days late",
+    "saringTarget": "Target date",
+    "semuaTarget": "All target dates",
+    "terlambatSaja": "Late only",
+    "menungguAcc": "Awaiting approval",
+    "batal": {
+      "judul": "Cancel {docNumber}?",
+      "deskripsi": "A cancelled work order can't be reopened.",
+      "alasanLabel": "Cancellation reason",
+      "alasanPlaceholder": "For example: order cancelled, vendor changed",
+      "alasanDulu": "Enter a reason to cancel.",
+      "masihDiCmt": "Can't cancel yet, materials are still at the CMT:",
+      "bukaRincian": "Open the work order to return materials",
+      "jangan": "Keep it",
+      "ya": "Yes, cancel",
+      "berhasil": "{docNumber} cancelled",
+      "gagal": "Failed to cancel the work order"
+    },
+    "terbit": {
+      "judul": "Issue {docNumber}?",
+      "deskripsi": "Once issued, the work order can no longer be edited and materials can be sent to the CMT.",
+      "jangan": "Not yet",
+      "ya": "Yes, issue",
+      "berhasil": "{docNumber} issued",
+      "gagal": "Failed to issue the work order"
+    },
+    "bahan": {
+      "judul": "Materials",
+      "tombol": "Return materials",
+      "tanpaIzin": "You don't have permission to manage work orders.",
+      "tidakAdaDiCmt": "No materials at the CMT.",
+      "gagalMuat": "Failed to load the work order's materials.",
+      "kosong": "No material plan yet.",
+      "kolBahan": "Material",
+      "kolPerPcs": "Per pc",
+      "kolRencana": "Total requirement (planned)",
+      "kolKeluar": "Issued",
+      "kolKembali": "Back in warehouse",
+      "kolDiCmt": "Still at CMT",
+      "susut": "waste {persen}%",
+      "riwayatJudul": "Returned materials",
+      "dialogJudul": "Return materials to the warehouse",
+      "dialogDeskripsi": "Enter the quantity that actually came back from the CMT.",
+      "maksimal": "Still at CMT: {qty} {satuan}",
+      "catatanLabel": "Note (optional)",
+      "catatanPlaceholder": "For example: cutting leftovers",
+      "isiDulu": "Enter a quantity for at least one material.",
+      "batal": "Cancel",
+      "simpan": "Save return",
+      "berhasil": "Materials returned to the warehouse, worth {nilai}",
+      "gagal": "Failed to return materials. Try again.",
+      "tolakMelebihi": "{barang}: quantity exceeds what is still at the CMT ({sisa}).",
+      "tolak": {
+        "QTY_TIDAK_VALID": "Invalid quantity for {barang}.",
+        "BUKAN_BAHAN_WO": "{barang} was never issued to this work order.",
+        "BARANG_GANDA": "{barang} was entered twice.",
+        "TANPA_BARIS": "Enter a quantity for at least one material.",
+        "CATATAN_TERLALU_PANJANG": "The note is too long."
+      },
+      "berhasilDibatasi": "Materials returned to the warehouse, valued at {nilai} (capped: the material cost was already charged to finished goods)"
     }
   },
   "supplierTypes": {
@@ -1909,23 +2241,23 @@
     "pageSubtitle": "List of material delivery (nota) to CMT",
     "filterSubtitle": "Vendor (CMT), date, and issue type",
     "issuesCount": "{count} issue(s)",
-    "emptyHint": "Select filters and click Load, or no data yet.",
-    "pageTitle": "CMT Nota Register",
+    "emptyHint": "No notes match these filters.",
+    "pageTitle": "CMT note register",
     "backToWorkOrders": "Back to work orders",
-    "filterTitle": "Filter",
+    "filterTitle": "Filters",
     "vendorLabel": "Vendor (CMT)",
     "dateRangeLabel": "From – To",
-    "typeLabel": "Type",
+    "typeLabel": "Material type",
     "typeFabric": "Fabric",
     "typeAccessories": "Accessories",
     "load": "Load",
-    "listTitle": "Nota List",
-    "colDoc": "Doc #",
-    "colWo": "WO",
+    "listTitle": "Notes",
+    "colDoc": "Doc no.",
+    "colWo": "Work order",
     "colVendor": "Vendor",
     "colType": "Type",
     "colDate": "Date",
-    "colTotalCost": "Total Cost",
+    "colTotalCost": "Total cost",
     "colActions": "Actions",
     "colUom": "UOM",
     "printNota": "Print nota {docNumber}",
@@ -1999,13 +2331,14 @@
       "errNOTHING_TO_POST": "Nothing to post.",
       "errBAD_STATE": "GRN is not in a postable state.",
       "errFORBIDDEN": "You don't have journal-posting permission.",
-      "errUnexpected": "Something went wrong posting the journal."
+      "errUnexpected": "Something went wrong posting the journal.",
+      "errDITOLAK_PEMILIK": "The owner declined this GRN — its goods were already reversed out of inventory, so its receipt journal is not posted."
     },
     "page": {
       "receiveGoods": "Receive Goods",
       "stockCard": "Stock Card",
       "adjustment": "Adjustment",
-      "rejectedGoods": "Rejected Goods",
+      "rejectedGoods": "Production defects",
       "printReport": "Print Report",
       "printReportFrameTitle": "Print Inventory Report",
       "printReportFailed": "Failed to load inventory report for print",
@@ -2055,7 +2388,10 @@
       "adjSourceManual": "Manual and opname",
       "adjSourceAuto": "Automatic only",
       "adjSourceAll": "All sources",
-      "adjEmpty": "No adjustments match this filter."
+      "adjEmpty": "No adjustments match this filter.",
+      "lihatRincianGrn": "View GRN details",
+      "nota": "Note",
+      "cariSumber": "Search sources…"
     },
     "adjNew": {
       "title": "Stock Adjustment",
@@ -2084,22 +2420,27 @@
       "errSelectVariant": "Select a variant",
       "errQty": "Enter a valid quantity",
       "errReason": "Reason must be at least 5 characters",
-      "errEvidence": "Photo evidence is required for negative adjustments"
+      "errEvidence": "Photo evidence is required for negative adjustments",
+      "cariBarang": "Search SKU or item name…",
+      "pilihFoto": "Choose photo",
+      "gantiFoto": "Change photo",
+      "belumAdaFoto": "No photo chosen"
     },
     "rejected": {
-      "title": "Rejected Goods",
+      "title": "Production defects",
       "subtitle": "Recap of rejected / waste quantities (not in active inventory)",
       "backToInventory": "Back to inventory",
-      "cardTitle": "Rejected goods ledger",
+      "cardTitle": "Production defect records",
       "cardDescription": "Items recorded as rejected on FG receipt. These quantities are stored separately from active stock.",
-      "emptyTitle": "No rejected goods recorded yet.",
+      "emptyTitle": "No production defects recorded yet.",
       "emptyHint": "Rejected qty is recorded when you receive FG with \"Rejected\" > 0.",
       "colDate": "Date",
       "colDoc": "Doc #",
       "colSku": "Item (SKU)",
       "colName": "Name",
       "colQty": "Rejected Qty",
-      "colNotes": "Notes"
+      "colNotes": "Notes",
+      "keGudangRusak": "Damaged goods from store returns"
     },
     "stockCard": {
       "title": "Stock Card",
@@ -2221,7 +2562,7 @@
       "butuhSinyal": "Saving a GRN needs a connection.",
       "tanpaSinyalDrafAman": "No connection. The GRN can only be saved online; your input is kept as a draft on this device.",
       "tanpaSinyalDrafBelum": "No connection. The GRN can only be saved online, and this input is not stored on the device yet — do not close this page.",
-      "sambunganPutus": "The connection dropped before an answer came back. Check the Goods Receipts tab before saving again; your input is still here.",
+      "sambunganPutus": "The connection dropped before an answer came back. Your input is still here — press Save again; a receipt that was already recorded will not be recorded twice.",
       "draf": {
         "pulih": "Draft restored from {time}.",
         "buang": "Discard draft"
@@ -2237,7 +2578,18 @@
         "hapusJudul": "Delete this GRN from the device?",
         "hapusIsi": "This GRN never reached the system. Once deleted, its contents are gone.",
         "gagalHapus": "Could not delete it from the device."
-      }
+      },
+      "sudahTercatat": "This receipt was already recorded ({doc}). Nothing was received twice.",
+      "belumDisetujui": "not approved",
+      "drafPoLain": "There is an unsaved GRN draft for another receipt. Continue that draft, or discard it and receive {po}.",
+      "poTautan": "the linked PO",
+      "lanjutkanDraf": "Continue draft",
+      "buangDanTerimaPo": "Discard draft, receive this PO",
+      "cariKategori": "Search categories…",
+      "cariPo": "Search PO number or supplier…",
+      "cariPemasok": "Search suppliers…",
+      "cariBarang": "Search SKU or item name…",
+      "pilihFoto": "Choose photos"
     },
     "stockMoveKind": {
       "GRN": "Goods receipt (GRN)",
@@ -2263,7 +2615,59 @@
       "KONSI_TRANSFER": "Sent to consignment store",
       "STORE_EXCHANGE_OUT": "Goods exchange: out to store",
       "STORE_EXCHANGE_IN": "Goods exchange: in from store",
-      "KOL_SEEDING": "Sent to KOL (seeding)"
+      "KOL_SEEDING": "Sent to KOL (seeding)",
+      "WO_MATERIAL_RETURN": "Material returned from production"
+    },
+    "grnRincian": {
+      "kembali": "Back to goods receipts",
+      "judulKosong": "Goods receipt",
+      "tidakDitemukan": "GRN not found",
+      "tidakDitemukanIsi": "The link may be wrong, or the GRN no longer exists.",
+      "ringkasan": "Summary",
+      "pemasok": "Supplier",
+      "po": "PO reference",
+      "tanpaPo": "No PO",
+      "tanggal": "Recorded",
+      "penerima": "Received by",
+      "nilai": "Receipt value",
+      "catatan": "Notes",
+      "lebihTerima": "Over-receipt",
+      "menungguIsi": "The quantity received exceeds the PO by more than the item's limit. The PO status changes only after the owner decides.",
+      "hanyaPemilik": "Only the owner can approve or decline.",
+      "disetujuiOleh": "Approved by the owner on {waktu} by {nama}.",
+      "ditolakOleh": "Declined by the owner on {waktu} by {nama}. Stock and the PO's received quantity were reversed.",
+      "barangDiterima": "Goods received",
+      "tanpaBaris": "This GRN records no item lines.",
+      "colVarian": "Variant",
+      "colHarga": "Unit cost",
+      "colTotal": "Total",
+      "total": "Total",
+      "jumlahRoll": "{count} fabric rolls",
+      "foto": "Photos",
+      "tanpaFoto": "No photos.",
+      "fotoKe": "Photo {index}",
+      "jurnal": "Journal and returns",
+      "returPemasok": "Supplier returns from this GRN"
+    },
+    "grnPemilik": {
+      "setujui": "Approve",
+      "tolak": "Decline",
+      "setujuJudul": "Approve over-receipt {doc}?",
+      "setujuIsi": "The extra goods are accepted as received and the PO status is updated.",
+      "tolakJudul": "Decline over-receipt {doc}?",
+      "tolakIsi": "Stock and the PO's received quantity for this receipt are reversed, and its fabric rolls are removed. This cannot be undone.",
+      "disetujuiToast": "Over-receipt approved. PO status updated.",
+      "ditolakToast": "Over-receipt declined. The receipt was reversed.",
+      "err": {
+        "TANPA_AKSES": "Only the owner can decide an over-receipt.",
+        "TIDAK_DITEMUKAN": "GRN not found. Reload this page.",
+        "SUDAH_DIPUTUSKAN": "This GRN has already been decided. Reload this page.",
+        "TIDAK_MENUNGGU": "This GRN is not waiting for the owner's decision.",
+        "ROL_SUDAH_DIPAKAI": "Cannot decline: fabric rolls from this GRN have been used. Adjust the stock first.",
+        "STOK_KURANG": "Cannot decline: there is not enough stock left (the goods may have been issued).",
+        "DATA_TIDAK_KONSISTEN": "This GRN's or PO's data do not match, so the receipt cannot be reversed. Contact the admin.",
+        "GAGAL": "The decision could not be saved. Try again."
+      }
     }
   },
   "stockOpname": {
@@ -2376,7 +2780,8 @@
       "counting": "Blind count: system figures and differences are hidden while counting. Once submitted, the approver sees both.",
       "waitingApproval": "The count has been submitted. System figures and differences are shown to the approver, and to everyone once the opname is approved.",
       "cancelled": "This opname was cancelled. Its system figures and differences are shown to approvers only."
-    }
+    },
+    "countCancelled": "This stock count was cancelled, so its counts can no longer be changed. Create a new stock count if you need to recount."
   },
   "stockReconciliation": {
     "title": "Jubelio Reconciliation",
@@ -2434,7 +2839,11 @@
     "failureApiUnreachable": "The Jubelio integration service could not be reached, so Jubelio stock could not be read. No stock was changed.",
     "failureSnapshot": "Jubelio stock could not be fetched. No stock was changed.",
     "failureTitle": "This run failed",
-    "failureTechnical": "Technical detail: {detail}"
+    "failureTechnical": "Technical detail: {detail}",
+    "runTitleWaktu": "Check of {waktu}",
+    "jumlahHasil": "{count} items checked",
+    "hasilKosong": "No items were compared in this check.",
+    "hasilKosongGagal": "The check failed, so no items were compared."
   },
   "supplierPayments": {
     "unpaid": "Unpaid",
@@ -2511,7 +2920,28 @@
     "loadFailed": "Failed to load POs",
     "poNotFound": "PO not found",
     "receiptNeedsPaid": "Mark this PO as paid before printing a receipt",
-    "printFailed": "Failed to print"
+    "printFailed": "Failed to print",
+    "utangDiterimaJudul": "Payable (goods received)",
+    "komitmenJudul": "PO commitment (not yet received)",
+    "utangSingkatDiterima": "Payable for goods received: {nilai}",
+    "belumDisetujui": "not approved",
+    "cariPemasok": "Search suppliers…",
+    "konfirmasi": {
+      "judulBayar": "Mark {doc} as paid?",
+      "isiBayar": "The payment journal (payables and bank) is posted with the payment date below.",
+      "judulBatal": "Remove the paid mark from {doc}?",
+      "isiBatal": "The payment's reversing journal is posted, and the PO returns to unpaid.",
+      "pemasok": "Supplier",
+      "totalPo": "PO total",
+      "utangDiterima": "Payable for goods received",
+      "komitmen": "Commitment (not yet received)",
+      "peringatanBelumDiterima": "No goods have been received for this PO yet, so no payable is booked and marking it paid posts no journal. Mark it paid only if an advance payment was actually transferred.",
+      "peringatanSebagian": "Part of the goods has not been received yet ({nilai} is still a commitment). The journal pays only the payable for goods already received.",
+      "tanggalBayar": "Payment date",
+      "tanggalSalah": "The payment date cannot be after today.",
+      "tombolBayar": "Mark as paid",
+      "tombolBatal": "Remove paid mark"
+    }
   },
   "purchaseOrders": {
     "noPurchaseOrdersFound": "No purchase orders found",
@@ -2630,8 +3060,12 @@
         "SUDAH_ADA_PENERIMAAN": "This purchase order cannot be cancelled because goods have already been received (GRN). Use Close PO if the remaining goods will not arrive.",
         "TANPA_AKSES": "You do not have permission to cancel purchase orders.",
         "PIN_WAJIB": "Enter your PIN to cancel the purchase order.",
-        "GAGAL": "The purchase order could not be cancelled. Try again."
-      }
+        "GAGAL": "The purchase order could not be cancelled. Try again.",
+        "ALASAN_WAJIB": "Write the reason for cancelling the PO."
+      },
+      "judul": "Cancel {docNumber}?",
+      "alasanDulu": "Write the cancellation reason first.",
+      "matiAdaGrn": "Goods have already been received (GRN), so this PO cannot be cancelled. Use Close PO if the rest will not arrive."
     },
     "edit": {
       "err": {
@@ -2643,6 +3077,59 @@
         "TANPA_AKSES": "You do not have permission to edit purchase orders.",
         "GAGAL": "The purchase order could not be saved. Try again."
       }
+    },
+    "riwayat": {
+      "grnDiterima": "Goods received: {nomor}",
+      "grnDisetujuiPemilik": "Over-receipt {nomor} approved by the owner",
+      "grnDitolakPemilik": "Over-receipt {nomor} declined by the owner",
+      "dibuat": "PO created",
+      "diubahPin": "PO edited (with PIN)",
+      "bayarDitandai": "Marked as paid",
+      "bayarDibatalkan": "Payment mark removed",
+      "grnSebagian": "Part of the goods received",
+      "dibatalkan": "PO cancelled",
+      "statusBerubah": "Status changed to {status}",
+      "ditutup": "Closed before complete: {alasan}",
+      "returDiproses": "Vendor return {retur} processed (work order {wo})",
+      "grnLengkap": "Fully received"
+    },
+    "terimaBarang": "Receive goods",
+    "penerimaan": {
+      "judul": "Goods receipts (GRN)",
+      "kosong": "No goods have been received for this PO yet.",
+      "colNomor": "GRN no.",
+      "colTanggal": "Date",
+      "colNilai": "Value"
+    },
+    "form": {
+      "kartuPemasok": "Supplier and delivery",
+      "pemasok": "Supplier",
+      "tanggalEta": "Estimated arrival",
+      "etaLewat": "The estimated arrival date has passed. Please check it.",
+      "jatuhTempo": "Payment due date",
+      "kartuBarang": "Line items",
+      "tambahBarang": "Add item",
+      "colBarang": "Item",
+      "colVarian": "Variant",
+      "colQty": "Qty",
+      "colSatuan": "Unit",
+      "colHarga": "Price (IDR)",
+      "colPpn": "VAT",
+      "colTotal": "Total",
+      "colCatatan": "Notes",
+      "colAksi": "Actions",
+      "pilihVarian": "Select variant",
+      "termasukPpn": "VAT included",
+      "belumPpn": "VAT excluded",
+      "hapusBaris": "Remove line",
+      "kartuLain": "Additional information",
+      "catatan": "Notes",
+      "syaratBayar": "Payment terms",
+      "simpanDraf": "Save draft",
+      "simpanPerubahan": "Save changes",
+      "simpanDiPerangkat": "Save on this device",
+      "menyimpan": "Saving...",
+      "errVarian": "Select a variant for every item that has variants."
     }
   },
   "workOrdersList": {
@@ -2687,14 +3174,24 @@
       "BUKTI_TIDAK_LENGKAP": "Fill in the tracking number and upload the shipping receipt.",
       "BELUM_DIPROSES": "This return has not been processed yet. Process it before completing it.",
       "SUDAH_SELESAI": "This return has already been completed. Reload this page.",
-      "GAGAL": "The return could not be saved. Try again."
-    }
+      "GAGAL": "The return could not be saved. Try again.",
+      "BUKAN_DRAF": "Only draft returns can be deleted. Reload this page."
+    },
+    "belumDisetujui": "not approved",
+    "cariPemasok": "Search suppliers…",
+    "colTerkait": "Related documents",
+    "refWo": "WO",
+    "refPo": "PO",
+    "prosesJudul": "Process return {doc}?",
+    "prosesIsi": "The returned goods leave warehouse stock (fabric rolls are closed). This cannot be undone.",
+    "hapusJudul": "Delete return {doc}?",
+    "hapusIsi": "This draft return is deleted. Stock does not change."
   },
   "hpp": {
     "title": "HPP (Harga Pokok Produksi)",
     "subtitle": "Cost of goods manufactured per work order — fabric, accessories, and service costs",
     "cardTitle": "HPP by Work Order",
-    "cardDescription": "Per-WO cost breakdown: fabric, accessories, service, margin, and selling price.",
+    "cardDescription": "Per work order cost breakdown: fabric, accessories, service, markup, and selling price.",
     "filters": "Filters",
     "finishedGood": "Finished good",
     "dateFrom": "Date from",
@@ -2712,7 +3209,7 @@
     "ppnStatus": "PPN Status",
     "ppnOk": "OK",
     "ppnMixed": "Mixed",
-    "marginPercent": "Margin %",
+    "marginPercent": "Markup %",
     "sellingPrice": "Selling Price",
     "detail": "Detail",
     "detailTitle": "HPP breakdown",
@@ -2721,8 +3218,8 @@
     "unitCost": "Unit cost",
     "qtyPerPcs": "Qty/pcs",
     "costPerPcs": "Cost/pcs",
-    "ppnIncluded": "PPN incl.",
-    "marginPercentEdit": "Margin %",
+    "ppnIncluded": "Price includes VAT",
+    "marginPercentEdit": "Markup %",
     "additionalCostEdit": "Additional cost",
     "saveAdjustments": "Save",
     "noRows": "No work orders match the filters.",
@@ -2735,30 +3232,30 @@
     "noFinishedGoods": "No finished goods found.",
     "helpAriaLabel": "How is HPP calculated?",
     "helpTitle": "How HPP is calculated",
-    "helpIntro": "HPP (Harga Pokok Produksi) aggregates fabric, accessories, and service costs per piece. Selling price = HPP × (1 + margin%) + additional cost.",
+    "helpIntro": "HPP (cost of goods manufactured) adds up fabric, accessories, and service cost per piece as recorded: some costs already include VAT and some do not (see the VAT status column and the \"Price includes VAT\" column in the breakdown). Selling price = HPP × (1 + markup%) + additional cost. Markup is taken on HPP, not on the selling price.",
     "helpWhenStored": "When production receives finished goods (via Work Order receipt), the system stores on each receipt:",
     "helpMaterialCost": "Material cost — total cost of materials issued for that production",
     "helpAvgCostPerUnit": "Avg cost per unit — total cost (e.g. material + CMT if applicable) divided by quantity received",
-    "helpTableExplanation": "The table shows for each work order: cost layers, HPP per piece, PPN status (Mixed if costs have mixed PPN), margin, and selling price.",
+    "helpTableExplanation": "The table shows for each work order: its status, cost layers, HPP per piece, VAT status (Mixed when some costs include VAT and some do not), markup, and selling price. The HPP/pcs in the table and in the breakdown is the same figure. The breakdown also gives the HPP if every cost included VAT: costs without VAT are raised by the VAT rate. Cancelled work orders are hidden unless chosen in the status filter.",
     "helpFuture": "Labor/CMT and overhead can be included in future updates via WO or allocation rules.",
     "backToDashboard": "Back to dashboard",
-    "setMarginSelected": "Set margin ({count} selected)",
+    "setMarginSelected": "Set markup ({count} selected)",
     "clearSelection": "Clear selection",
     "selectAll": "Select all",
     "selectRow": "Select {docNo}",
-    "bulkMarginTitle": "Set margin for selected work orders",
-    "bulkMarginLabel": "Margin %",
+    "bulkMarginTitle": "Set markup for selected work orders",
+    "bulkMarginLabel": "Markup %",
     "bulkMarginPlaceholder": "e.g. 25",
     "cancel": "Cancel",
     "applyToCount": "Apply to {count} WO(s)",
-    "finalPrice": "Final Price",
+    "finalPrice": "Cost/pcs incl. VAT",
     "yes": "Yes",
     "no": "No",
-    "subtotalPerPcs": "Subtotal (HPP/pcs):",
-    "marginInvalid": "Margin must be ≥ 0",
+    "subtotalPerPcs": "HPP/pcs:",
+    "marginInvalid": "Markup must be ≥ 0",
     "additionalCostInvalid": "Additional cost must be ≥ 0",
-    "marginSetSuccess": "Margin set for {count} work order(s)",
-    "marginSetFailed": "Failed to set margin",
+    "marginSetSuccess": "Markup set for {count} work order(s)",
+    "marginSetFailed": "Failed to set markup",
     "adjustmentsSaved": "HPP adjustments saved",
     "saveFailed": "Failed to save",
     "categoryLabel": {
@@ -2769,15 +3266,25 @@
     "costComponentsPcs": "Cost components/pcs",
     "componentFabric": "Fabric",
     "componentAccessories": "Acc.",
-    "componentService": "Service"
+    "componentService": "Service",
+    "subtotalTermasukPpn": "If every cost included VAT:",
+    "semuaBarang": "All finished goods",
+    "semuaPemasok": "All suppliers",
+    "rentangTanggal": "Work order created",
+    "colStatus": "Status",
+    "statusAktif": "All except cancelled",
+    "statusSemua": "All statuses",
+    "jumlahWo": "{count} work orders",
+    "detailDesc": "Cost per piece for this work order",
+    "bulkDesc": "The markup is applied to every selected work order"
   },
   "productionColors": {
-    "titleAll": "All Colors",
+    "titleAll": "Colours",
     "titleBook": "Fan Deck",
     "titleFavorites": "Favorites",
     "titlePhotoAnalyzer": "Photo Analyzer",
     "tabs": {
-      "all": "All Colors",
+      "all": "All colours",
       "book": "Fan Deck",
       "favorites": "Favorites",
       "photoAnalyzer": "Photo Analyzer"
@@ -2839,7 +3346,7 @@
     "groupKelompok": "Group",
     "groupLabel": "Group: {group}",
     "noResults": "No colors match your filters.",
-    "favoritesEmpty": "You have no favorite colors yet. Star colors on the All Colors page.",
+    "favoritesEmpty": "No favourite colours yet. Press the heart icon on a colour in the All colours tab.",
     "detailTitle": "Color details",
     "pantoneCode": "Pantone TCX",
     "pantoneCodeLabel": "Pantone code",
@@ -2899,7 +3406,7 @@
     "bookPositionRow": "Row",
     "bookPositionSaved": "Book position saved",
     "bookPositionSaveError": "Could not save book position",
-    "bookGoToPage": "Open in fan deck view",
+    "bookGoToPage": "Open in the colour book",
     "moreFilters": "More filters",
     "hideFilters": "Hide filters",
     "activeFilters": "{count} filters active",
@@ -2931,7 +3438,7 @@
     "hexInvalid": "Enter a 6-digit code, for example #2A78D6.",
     "copyHex": "Copy {hex}",
     "saveLabel": "Palette name",
-    "namePlaceholder": "For example: August feed",
+    "namePlaceholder": "For example: Eid tees 2027",
     "save": "Save palette",
     "saving": "Saving…",
     "saved": "Saved “{name}”",
@@ -3084,7 +3591,7 @@
     "bestSellers": {
       "title": "Best-selling colours in your store",
       "description": "The product colours that sold most in the last 90 days, from Shopee and TikTok orders. Used as a source for colour recommendations.",
-      "empty": "No sales data yet. Import Shopee or TikTok order files in Forecast → Import — best-selling colours and sales-based recommendations appear automatically.",
+      "empty": "No sales data yet.",
       "emptyLink": "Open Forecast → Import",
       "category": "Category",
       "allCategories": "All categories",
@@ -3221,7 +3728,8 @@
       "AKSEN": "Accent",
       "NETRAL": "Neutral",
       "NADA": "Tone-on-tone"
-    }
+    },
+    "isiNamaDulu": "Enter a palette name to save."
   },
   "productionPrint": {
     "copySummary": "Copy summary",
@@ -3430,13 +3938,13 @@
     },
     "empty": {
       "title": "No plan for this year yet",
-      "descriptionManage": "Enter the year in the field above and press \"Add Year\" to create a plan. The grid, dashboard and plan details then appear here.",
+      "descriptionManage": "Press \"Add year\" to create a plan. The grid, dashboard, and plan details then appear here.",
       "descriptionView": "This year's plan has not been created yet. Ask a user who can manage plans to create it."
     },
     "toasts": {
       "loadFailed": "Failed to load planning",
       "loadYearFailed": "Failed to load plan year",
-      "createWoFailed": "Failed to create WO",
+      "createWoFailed": "Failed to create the work order",
       "invalidYear": "Invalid year",
       "yearCreated": "Plan year created",
       "createYearFailed": "Failed to create year",
@@ -3448,8 +3956,21 @@
       "importSummary": "Import: {created} created, {updated} updated, {errors} errors",
       "importFailed": "Import failed",
       "colorsSaved": "Color allocations saved",
-      "cmtSaved": "CMT allocations saved"
-    }
+      "cmtSaved": "CMT allocations saved",
+      "woDariTahap": {
+        "berhasil": "{docNumber} created",
+        "TANPA_AKSES": "You don't have permission to create work orders from the plan.",
+        "TAHAP_TIDAK_ADA": "This stage was not found. Reload the page.",
+        "TANPA_VENDOR": "Choose a CMT vendor on this stage first.",
+        "TANPA_BARANG_JADI": "Link this category to a finished good first.",
+        "SUDAH_ADA_WO": "This stage already has an active work order ({docNumber}).",
+        "BARANG_BUKAN_JADI": "The linked item is not a finished good.",
+        "BARANG_TANPA_VARIAN": "This finished good has no SKU variants yet. Add variants on the item first.",
+        "TAHAP_TANPA_VARIAN": "Choose a variant SKU on this stage first."
+      }
+    },
+    "tambahTahun": "Add year",
+    "buatPlanTahun": "Create plan {year}"
   },
   "forecast": {
     "title": "Forecast & S&OP",
@@ -3464,12 +3985,12 @@
       "title": "Import Sales Data",
       "channel": "Channel",
       "period": "Period",
-      "upload": "Upload & Import",
-      "history": "Import History",
+      "upload": "Upload & import",
+      "history": "Import history",
       "coverage": "Data Coverage",
       "seasonalReady": "Enough data for seasonal analysis",
       "seasonalNotReady": "Need at least 12 months of data",
-      "deleteConfirm": "Delete {channel} {period} import? {count} rows will be removed.",
+      "deleteConfirm": "The {channel} {period} import and its {count} rows will be deleted.",
       "alreadyExists": "Data for {channel} {period} already imported. Delete the existing import to re-import.",
       "success": "{imported} rows imported, {skipped} skipped.",
       "skippedHelp": "Valid completed order lines that were not saved because the same channel, order ID, and SKU already exists (from a prior import or duplicate rows in the file).",
@@ -3505,7 +4026,13 @@
       "file": "File",
       "importedColumn": "Imported",
       "deleteImport": "Delete import",
-      "coverageSummary": "{articles} articles · {months} months covered · {mapping}% SKU mapping"
+      "coverageSummary": "{articles} articles · {months} months covered · {mapping}% SKU mapping",
+      "berkasLabel": "File (.xlsx)",
+      "pilihBerkas": "Choose file",
+      "belumAdaBerkas": "No file chosen yet",
+      "riwayatKosong": "No imports yet",
+      "hapusJudul": "Delete this import?",
+      "jangan": "Keep it"
     },
     "config": {
       "growth": "Growth Factor (%)",
@@ -3543,14 +4070,16 @@
       "mappingCoverage": "SKU Mapping",
       "unmappedWarn": "Over 10% of demand quantity comes from unmapped SKUs. Forecast still runs, but review product mappings in Items / Jubelio settings.",
       "runFailed": "Forecast failed",
-      "runComplete": "Forecast complete: {count} articles"
+      "runComplete": "Forecast complete: {count} articles",
+      "belumAdaData": "No sales data yet. Import sales data first to run a forecast.",
+      "dataKurangSetahun": "Only {bulan} months of sales data; seasonal patterns need at least {minimal} months."
     },
     "reconciliation": {
-      "title": "Sales Reconciliation",
+      "title": "Sales reconciliation",
       "subtitle": "Compare certified Excel sales vs Jubelio operational orders",
       "stockDisclaimer": "This report compares Excel sales data vs Jubelio orders. It does not change stock levels.",
       "periodSelector": "Period",
-      "selectPeriod": "Select import period",
+      "selectPeriod": "Choose an import period",
       "refresh": "Refresh",
       "loading": "Loading…",
       "loadFailed": "Failed to load reconciliation",
@@ -3571,7 +4100,10 @@
         "EXCEL_HIGHER": "Excel higher",
         "JUBELIO_HIGHER": "Jubelio higher"
       },
-      "backToImport": "Back to sales data import"
+      "backToImport": "Back to sales data import",
+      "backToForecast": "Back to forecast",
+      "kosongJudul": "No imported data to reconcile yet",
+      "keImpor": "Import sales data"
     },
     "abc": {
       "A": "High Revenue",
@@ -3607,25 +4139,25 @@
     },
     "bridge": {
       "title": "Suggestions to Plan Kerja",
-      "generate": "Generate Suggestions",
-      "apply": "Apply to Plan Kerja",
+      "generate": "Generate suggestions",
+      "apply": "Apply to Work Plan",
       "applied": "{count} plan rows applied to Plan Kerja {year}.",
       "appliedPartial": "Applied {count} plan rows to Plan Kerja {year}. {skipped} categories skipped.",
       "note": "Creates a parent row per item category (total target) and child rows per selected article (share %). Only selected articles count toward each category total. Monthly distribution, colors, and vendors remain managed in Plan Kerja.",
-      "create": "Create",
-      "update": "Update",
-      "skip": "Skip",
-      "planYear": "Target Plan Year",
+      "create": "Create new",
+      "update": "Update target",
+      "skip": "Already matches",
+      "planYear": "Target plan year",
       "planYearPlaceholder": "Select plan year",
-      "noPlanYears": "No plan years yet. Create one in Plan Kerja first.",
+      "noPlanYears": "No plan year yet.",
       "noEditablePlanYears": "No editable plan years. Unlock a DRAFT plan in Plan Kerja, or create a new year.",
       "planYearLocked": "locked",
       "planYearActive": "active",
       "noErpItemMapped": "No ERP item mapped",
       "selectCategory": "Select item category",
       "forecast": "Forecast",
-      "planNow": "Plan Now",
-      "categoryTotal": "Category Total",
+      "planNow": "Current plan",
+      "categoryTotal": "Category total",
       "delta": "Delta",
       "action": "Action",
       "loadFailed": "Failed to load",
@@ -3633,9 +4165,10 @@
       "noneSelected": "No valid suggestions selected",
       "applyFailed": "Apply failed",
       "article": "Article",
-      "itemCategory": "Item Category",
+      "itemCategory": "Item category",
       "emptyTable": "Generate suggestions to review plan targets.",
-      "openPlan": "Open Plan Kerja {year}"
+      "openPlan": "Open Plan Kerja {year}",
+      "bukaPlanKerja": "Create one in Work Plan"
     },
     "loadFailed": "Failed to load forecast",
     "backToForecast": "Back to forecast",
@@ -3682,7 +4215,7 @@
     }
   },
   "salesOrders": {
-    "pageTitle": "Sales Orders",
+    "pageTitle": "Marketplace orders",
     "pageSubtitle": "Marketplace orders received via Jubelio",
     "empty": "No marketplace orders yet. Orders appear here automatically once Jubelio sends them.",
     "emptyFiltered": "No orders match these filters.",
@@ -3826,9 +4359,12 @@
       "avgDailySales": "Average daily sales",
       "avgDailyCount": "{count} orders / day",
       "avgDailySalesDesc": "Over {days} day(s) in the selected range",
-      "byStatusEmpty": "No orders to show yet."
+      "byStatusEmpty": "No orders to show yet.",
+      "totalValueAll": "{value} all time",
+      "avgDailySalesDescAll": "Over {days} days, from the first order to the latest"
     },
-    "clearFilters": "Clear filters"
+    "clearFilters": "Clear filters",
+    "listTitle": "Order list"
   },
   "salesReturns": {
     "list": {
@@ -3972,7 +4508,8 @@
     "toast": {
       "syncSuccess": "Synced {count} couriers.",
       "syncError": "Sync failed. Try again."
-    }
+    },
+    "listTitle": "Couriers"
   },
   "fulfillmentQueue": {
     "pageTitle": "Fulfillment Queue",
@@ -4018,7 +4555,10 @@
     "emptyFiltered": "No orders match these filters.",
     "clearFilters": "Clear filters",
     "selectAll": "Select all",
-    "selectRow": "Select {orderNo}"
+    "selectRow": "Select {orderNo}",
+    "listTitle": "Orders in the queue",
+    "emptyPending": "No orders are waiting to be packed.",
+    "lihatSemua": "Show all"
   },
   "salesOrdersPrint": {
     "pickList": {
@@ -4055,7 +4595,7 @@
       "count": "{count, plural, =0 {no stores} one {# store} other {# stores}}",
       "subtitle": "Manage store master data and terms",
       "cardTitle": "Store list",
-      "searchPlaceholder": "Search by name or code",
+      "searchPlaceholder": "Search store name or code",
       "showInactive": "Show inactive",
       "table": {
         "code": "Code",
@@ -4167,7 +4707,7 @@
         "checkin": "Check-in",
         "checkout": "Check-out",
         "duration": "Duration",
-        "user": "Salesman",
+        "user": "Staff",
         "coords": "Coords",
         "outOfRadius": "Out of radius",
         "photos": "Photos",
@@ -4196,7 +4736,27 @@
         "KOORDINAT_KEMBAR": "Exactly the same coordinates as a check-in at {toko} ({waktu})",
         "KOORDINAT_KEMBAR_TANPA_NAMA": "Exactly the same coordinates as a check-in at another store ({waktu})"
       },
-      "targetStokButton": "Stock targets"
+      "targetStokButton": "Stock targets",
+      "kredit": {
+        "title": "Credit & receivables",
+        "storeClass": "Store class",
+        "pkp": "PKP (VAT-registered)",
+        "pkpYes": "Yes",
+        "pkpNo": "No",
+        "creditLimit": "Credit limit",
+        "maxInvoices": "Max open invoices",
+        "fromStore": "{nilai} (this store only)",
+        "fromDefault": "{nilai} (default)",
+        "noLimit": "No limit",
+        "invoiceCount": "{n} invoices",
+        "outstanding": "Outstanding",
+        "openInvoices": "Unpaid invoices",
+        "overdue": "Past payment promise",
+        "overdueNone": "None",
+        "receivablesFailed": "This store's receivables could not be read. Reload the page.",
+        "viewReceivables": "View this store's receivables",
+        "notApplicableKonsi": "Not applicable — consignment stores have no receivables."
+      }
     },
     "storeChanges": {
       "reviewTitle": "Change awaiting approval",
@@ -4234,7 +4794,7 @@
       "colTotal": "Total"
     },
     "sentItems": {
-      "cardTitle": "Items Sent",
+      "cardTitle": "Items sent",
       "empty": "No items have been sent to this store yet",
       "colArticle": "Article",
       "colSize": "Size",
@@ -4283,7 +4843,7 @@
       "errInvalid": "Code and name are required."
     },
     "stockCard": {
-      "title": "Stock at store",
+      "title": "SPG stock book",
       "hint": "Worked out from movements recorded by the SPG: deliveries received, sales, and stock counts. A negative balance means more was sold than was recorded coming in — a stock count resolves it.",
       "emptyTitle": "Store stock not tracked yet",
       "emptyBody": "Store stock starts being tracked once an SPG receives a delivery or does a stock count at this store.",
@@ -4308,7 +4868,9 @@
         "MUTASI_MASUK": "Received from another store",
         "RETUR_KELUAR": "Returned to warehouse",
         "RETUR_PEMBELI": "Returned by shopper"
-      }
+      },
+      "titipanLink": "Consigned stock by shipments",
+      "targetLink": "Stock targets"
     },
     "kredit": {
       "judul": "Credit limit",
@@ -4569,7 +5131,7 @@
       "targetReached": "This month's target is reached",
       "targetPerDay": "Needs {amount} a day · {days} days left",
       "channelPutus": "Outright",
-      "channelKonsi": "Consignment",
+      "channelKonsi": "Consignment sold",
       "channelVan": "Van",
       "trendTitle": "Last 30 days",
       "planTitle": "Today's visit plan",
@@ -4605,7 +5167,7 @@
       "targetRinci": "Target details",
       "totalPutusVan": "Outright + van",
       "konsiPcs": "{n} pcs",
-      "targetKonsiNote": "This percentage counts outright + van only. The office also counts consignment toward your target, but its value is not shown on the phone.",
+      "targetKonsiNote": "This percentage counts outright + van only. The office also counts consignment sold in store toward your target, but its value is not shown on the phone.",
       "trendTitlePutusVan": "Last 30 days · outright + van"
     },
     "saran": {
@@ -5926,7 +6488,8 @@
       "kurangTanggal": "Fill in a valid promised date.",
       "kurangPenerima": "Fill in the recipient's name at the store.",
       "kurangFoto": "Take a photo of the receipt.",
-      "errFOTO_BUKAN_MILIK": "This receipt photo was uploaded by someone else. Take your own photo."
+      "errFOTO_BUKAN_MILIK": "This receipt photo was uploaded by someone else. Take your own photo.",
+      "errFOTO_SUDAH_DIPAKAI": "This receipt-sheet photo is identical to someone else's photo already used on another report. Take your own photo."
     },
     "insentif": {
       "back": "Home",
@@ -5965,9 +6528,9 @@
       "rowOfInvoice": "of {amount} settled",
       "salesTitle": "Sales",
       "channel_putus": "Outright",
-      "channel_konsi": "Consignment",
+      "channel_konsi": "Consignment sold",
       "channel_van": "Van",
-      "salesHint": "Same as the \"This month\" card on the home screen: amounts from outright deliveries and van sales. Approved consignment is shown only as a number of pcs.",
+      "salesHint": "Same as the \"This month\" card on the home screen: amounts from outright deliveries and van sales. Consignment is shown only as the number of pcs sold in store.",
       "moreLabel": "More",
       "leaderboardLink": "Leaderboard",
       "leaderboardHint": "Your target progress against colleagues this month",
@@ -5980,10 +6543,10 @@
       "konsiBelumDihitung": "Consignment not included — the office's final figure may be higher.",
       "targetOfPutusVan": "Outright + van {omzet} of {target}",
       "noTargetPutusVan": "Outright + van {omzet}. No target set for this month — an admin sets it.",
-      "konsiNote": "Figures on this page count outright + van. This month's consignment ({n} pcs) is counted by the office toward your target, so your final achievement, rate and commission may be higher.",
+      "konsiNote": "Figures on this page count outright + van. Consignment sold this month ({n} pcs) is counted by the office toward your target, so your final achievement, rate and commission may be higher.",
       "konsiPcs": "{n} pcs",
-      "konsiNoteCapaian": "Figures on this page count outright + van. This month's consignment ({n} pcs) is counted by the office toward your target, so your final achievement may be higher.",
-      "konsiNotePcs": "Figures on this page count outright + van. Consignment this month: {n} pcs, not included in the amounts above."
+      "konsiNoteCapaian": "Figures on this page count outright + van. Consignment sold this month ({n} pcs) is counted by the office toward your target, so your final achievement may be higher.",
+      "konsiNotePcs": "Figures on this page count outright + van. Consignment sold this month: {n} pcs, not included in the amounts above."
     },
     "peringkat": {
       "back": "Home",
@@ -6007,7 +6570,7 @@
       "incentiveHint": "Estimated commission and its breakdown",
       "basisNote": "Achievement and sales on this board count outright deliveries and van sales. Consignment is not counted.",
       "yourSalesPutusVan": "Your outright + van sales {amount}",
-      "konsiPcs": "Consignment this month: {n} pcs, not counted on this board."
+      "konsiPcs": "Consignment sold this month: {n} pcs, not counted on this board."
     },
     "hariIni": {
       "back": "Home",
@@ -6654,7 +7217,7 @@
       "short": "{amount} to go",
       "paceOnTrack": "Keep up about {amount} a day.",
       "paceBehind": "Needs about {amount} a day for the next {days} days.",
-      "note": "Targets in rupiah count outright deliveries and van sales this month — the same as the turnover on your home screen. Targets in pcs also count approved consignment. Bonus items are not counted.",
+      "note": "Targets in rupiah count outright deliveries and van sales this month — the same as the turnover on your home screen. Targets in pcs also count consignment sold in store. Bonus items are not counted.",
       "pcs": "{n} pcs",
       "tanpaKonsi": "Value from outright and van sales — consignment is not counted here.",
       "noteSpg": "Counted from your sales receipts this month, minus items returned by shoppers. A return counts in the month of its receipt."
@@ -7134,12 +7697,12 @@
     "delivery": {
       "title": "Deliveries",
       "empty": "No deliveries recorded for this order yet.",
-      "create": "New Delivery",
+      "create": "New delivery",
       "createDescription": "Enter the quantity shipped for each line. A line left at 0 is not shipped.",
       "noOutstanding": "Nothing left to deliver.",
       "noStockForLine": "Out of stock — this line cannot be shipped yet.",
-      "close": "Close Remainder",
-      "closeTitle": "Close Remaining Quantity",
+      "close": "Close remainder",
+      "closeTitle": "Close remaining quantity",
       "closeDescription": "The undelivered remainder will be cancelled and its reserved stock released. This cannot be undone.",
       "closeReason": "Reason for closing (required)",
       "closeReasonLabel": "Remainder close reason",
@@ -7172,8 +7735,8 @@
       "successCreated": "Delivery recorded.",
       "successClosed": "Remaining quantity closed.",
       "status": {
-        "PENDING": "Not Delivered",
-        "PARTIAL": "Partially Delivered",
+        "PENDING": "Not delivered",
+        "PARTIAL": "Partially delivered",
         "DELIVERED": "Delivered",
         "CLOSED": "Closed"
       },
@@ -7188,13 +7751,23 @@
         "INVALID_DATES": "The due date cannot be earlier than the invoice date.",
         "CONFLICT": "Someone else just changed this nota's dates. Reload the page and try again.",
         "INDEN_BELUM_RILIS": "This pre-order cannot be delivered yet: the goods have not arrived. Release the pre-order first on the Pre-orders (Inden) page.",
-        "NOMOR_PIUTANG_DIPAKAI": "Delivery not recorded: the next nota numbers are already used by other receivables (imported or entered manually), so the nota cannot become a receivable. Ask a system administrator to check the clashing receivable numbers."
+        "NOMOR_PIUTANG_DIPAKAI": "Delivery not recorded: the next nota numbers are already used by other receivables (imported or entered manually), so the nota cannot become a receivable. Ask a system administrator to check the clashing receivable numbers.",
+        "RESERVATION_MISMATCH": "Delivery not recorded: this order's stock reservation is already used up although quantity is still outstanding (usually an order approved during an app update). Ask a system admin to repair this order."
+      },
+      "penagihan": {
+        "piutangSisa": "Receivable: {nilai} outstanding",
+        "piutangLunas": "Receivable: paid",
+        "fakturMenunggu": "Tax invoice: pending",
+        "fakturDibuat": "Tax invoice: {nomor}",
+        "fakturTidakPerlu": "Tax invoice: not required",
+        "lihatPiutang": "View receivable",
+        "lihatFakturPajak": "View tax invoice"
       }
     },
     "print": {
-      "notaGudang": "Print Warehouse Note",
-      "notaTagihan": "Print Invoice",
-      "suratKeluar": "Print Goods Issue Note",
+      "notaGudang": "Print warehouse note",
+      "notaTagihan": "Print invoice",
+      "suratKeluar": "Print goods issue note",
       "docLabel": "Doc No.",
       "orderRefLabel": "Ref. Order",
       "storeLabel": "Store",
@@ -7220,7 +7793,7 @@
       "regards": "Regards",
       "handedBy": "Handed over by",
       "issuedBy": "Issued by",
-      "tagihanDialogTitle": "Print Invoice",
+      "tagihanDialogTitle": "Print invoice",
       "tagihanDialogFootnote": "Footnote (optional)",
       "tagihanDialogFootnotePlaceholder": "e.g. Purchased items cannot be exchanged/returned",
       "tagihanDialogCancel": "Cancel",
@@ -7306,11 +7879,16 @@
       "kolomKeadaan": "Status",
       "lewatHari": "{hari, plural, one {# day late} other {# days late}}",
       "lencanaLewat": "Past promised date",
-      "belumLewat": "Not yet due",
+      "belumLewat": "Promise not yet passed",
       "fakturLainnya": "+{n, plural, one {# more invoice} other {# more invoices}}",
       "dialogPenjelasan": "This order's credit was put on hold when it was created. Check the store's bills in the Store credit panel before approving.",
       "centang": "I have checked this store's bills",
-      "errBelumDiperiksa": "Tick \"I have checked this store's bills\" before approving."
+      "errBelumDiperiksa": "Tick \"I have checked this store's bills\" before approving.",
+      "kolomJanji": "Payment promise",
+      "lewatJanjiHari": "{hari, plural, one {# day past promise} other {# days past promise}}",
+      "lewatTempoHari": "{hari, plural, one {# day overdue} other {# days overdue}}",
+      "belumJatuhTempo": "Not yet due",
+      "bukaPiutang": "Open receivables list"
     },
     "inden": {
       "saringan": "Pre-order",
@@ -7337,22 +7915,27 @@
     "appealPromoDropped": "This line had the {promo} promo ({amount} off). Once it gets a final price, that promo no longer applies.",
     "appealPromoDroppedUnnamed": "This line had a {amount} promo discount. Once it gets a final price, that promo no longer applies.",
     "rejectConfirmPreorder": "Reject this pre-order? No stock has been reserved for it yet, so none is released.",
-    "rejectConfirmUnknown": "Reject this order? Any stock already reserved for it will be released."
+    "rejectConfirmUnknown": "Reject this order? Any stock already reserved for it will be released.",
+    "barisKosong": "This order has no item lines.",
+    "saring": {
+      "ditolakKantor": "Rejected by office",
+      "pengiriman": "Delivery"
+    }
   },
   "promos": {
-    "pageTitle": "Promos",
+    "pageTitle": "Outright order promos",
     "subtitle": "Discount schemes for putus orders",
-    "new": "New Promo",
-    "edit": "Edit Promo",
+    "new": "New promo",
+    "edit": "Edit promo",
     "search": "Search by promo name",
     "type": "Type",
     "typeAll": "All",
     "typePercent": "Percentage",
     "typeFixed": "Fixed",
     "typeTiered": "Tiered",
-    "level": "Level",
-    "levelLine": "Per Product",
-    "levelOrder": "Per Order",
+    "level": "Applies to",
+    "levelLine": "Per product",
+    "levelOrder": "Per order",
     "value": "Value",
     "tiers": "Tiers",
     "addTier": "Add tier",
@@ -7392,30 +7975,32 @@
     "name": "Name",
     "emptyFiltered": "No promos match these filters.",
     "clearFilters": "Clear filters",
-    "masaBerlaku": "Valid period"
+    "masaBerlaku": "Valid period",
+    "kembaliKePromo": "Back to promos",
+    "listTitle": "Promo list"
   },
   "canvassing": {
     "pageTitle": "Canvassing",
     "subtitle": "Van stock and load history for canvassers",
     "listCardTitle": "Canvassers",
     "colCanvasser": "Canvasser",
-    "colLines": "Lines",
-    "colTotalQty": "Total Qty",
+    "colLines": "Products",
+    "colTotalQty": "Total qty",
     "emptyCanvassers": "No canvassers yet.",
     "detailSubtitle": "Van stock, load history, and loading form",
-    "vanStockCardTitle": "Van Stock",
+    "vanStockCardTitle": "Van stock",
     "colItem": "Item",
     "colVariant": "Variant",
     "colQty": "Qty",
     "colAvgCost": "Avg Cost",
     "emptyVanStock": "This van is empty.",
-    "loadHistoryCardTitle": "Load History",
+    "loadHistoryCardTitle": "Load history",
     "colDocNo": "Doc No.",
-    "colLoadedBy": "Loaded By",
+    "colLoadedBy": "Loaded by",
     "colDate": "Date",
     "colJournal": "Journal",
     "emptyLoads": "No loads yet.",
-    "loadFormTitle": "Load Van",
+    "loadFormTitle": "Load van",
     "item": "Item",
     "selectItem": "Select item",
     "variant": "Variant",
@@ -7428,7 +8013,7 @@
     "removeLine": "Remove line",
     "note": "Note",
     "notePlaceholder": "Optional note",
-    "submit": "Load Van",
+    "submit": "Load van",
     "submitting": "Loading…",
     "loadedSuccess": "Van loaded ({docNo})",
     "errInsufficientStock": "Not enough stock for one or more lines.",
@@ -7462,8 +8047,8 @@
       "totalVariance": "Total variance",
       "reasonLabel": "Reason"
     },
-    "reconcileSectionTitle": "EOD Reconciliation",
-    "reconcileHistoryCardTitle": "Reconciliation History",
+    "reconcileSectionTitle": "End-of-day reconciliation",
+    "reconcileHistoryCardTitle": "Reconciliation history",
     "emptyReconciles": "No reconciliations yet.",
     "colReconciledBy": "Reconciled By",
     "colTotalReturned": "Total Returned",
@@ -7496,6 +8081,18 @@
         "NOT_RETRYABLE": "This document never had a failed automatic posting attempt, so it can't be retried here — posting it now would create a one-sided journal entry. If it genuinely needs a journal, use a manual journal entry instead.",
         "UNEXPECTED": "Something unexpected went wrong posting the journal."
       }
+    },
+    "bukanKanvas": {
+      "SPG": "This user is an SPG with a fixed store. Vans are for salesmen only.",
+      "ADMIN_SISTEM": "A system admin account is not field staff. Vans are for salesmen only.",
+      "TANPA_AKSES_HP": "This user has no access to the field phone app, so cannot sell from a van.",
+      "TIDAK_ADA": "This user was not found."
+    },
+    "lencanaBukanKanvas": {
+      "SPG": "SPG · empty the van",
+      "ADMIN_SISTEM": "Admin · empty the van",
+      "TANPA_AKSES_HP": "No phone access · empty the van",
+      "TIDAK_ADA": "Not found"
     }
   },
   "vanSale": {
@@ -7685,9 +8282,9 @@
     "pageTitle": "Marketplace Settlements",
     "subtitle": "Upload marketplace settlement reports and match them against sales orders.",
     "back": "Back",
-    "listTitle": "Settlement List",
+    "listTitle": "Settlement list",
     "empty": "No settlements uploaded yet.",
-    "uploadTitle": "Upload Settlement",
+    "uploadTitle": "Upload settlement",
     "uploadMarketplaceLabel": "Marketplace",
     "marketplaceOption": {
       "SHOPEE": "Shopee",
@@ -7847,7 +8444,7 @@
     "pageTitle": "Journals",
     "subtitle": "Journal entries — automatic from transactions and manual.",
     "back": "Back",
-    "newJournal": "New Journal",
+    "newJournal": "New journal",
     "sourceManual": "Manual",
     "sourceAuto": "Automated",
     "filter": {
@@ -7859,7 +8456,7 @@
       "dateTo": "To date",
       "reset": "Reset"
     },
-    "listTitle": "Journal List",
+    "listTitle": "Journal list",
     "empty": "No journals yet.",
     "emptyFiltered": "No journals match the current filters.",
     "colDate": "Date",
@@ -7867,18 +8464,21 @@
     "colSource": "Source",
     "colTotal": "Total",
     "detail": {
-      "linesTitle": "Journal Lines",
+      "linesTitle": "Journal lines",
       "colAccount": "Account",
       "colMemo": "Memo",
       "colDebit": "Debit",
       "colCredit": "Credit",
-      "totalsLabel": "Total"
+      "totalsLabel": "Total",
+      "openSource": "Open source document",
+      "openSourceNumber": "Open {nomor}",
+      "openLedger": "Open this account's ledger"
     },
     "form": {
       "date": "Date",
       "description": "Description",
       "descriptionPlaceholder": "e.g. Petty cash adjustment for July",
-      "linesTitle": "Journal Lines",
+      "linesTitle": "Journal lines",
       "account": "Account",
       "selectAccount": "Select account…",
       "searchAccount": "Search account code or name…",
@@ -7888,14 +8488,21 @@
       "credit": "Credit",
       "memo": "Memo",
       "memoPlaceholder": "Line {n} memo (optional)",
-      "addLine": "Add Line",
-      "totalDebit": "Total Debit",
-      "totalCredit": "Total Credit",
+      "addLine": "Add line",
+      "totalDebit": "Total debit",
+      "totalCredit": "Total credit",
       "difference": "Difference",
       "balanced": "Balanced",
       "unbalanced": "Not balanced",
-      "submit": "Post Journal",
-      "submitting": "Posting…"
+      "submit": "Post journal",
+      "submitting": "Posting…",
+      "noAmount": "No amounts yet",
+      "reason": {
+        "description": "Fill in the journal description.",
+        "lineAccount": "Choose an account on line {n}.",
+        "twoLines": "Fill in an account and an amount on at least two lines.",
+        "unbalanced": "Make total debit equal total credit."
+      }
     },
     "createSuccess": "Journal posted successfully.",
     "error": {
@@ -7909,13 +8516,13 @@
     "ledger": {
       "title": "Ledger",
       "back": "Back",
-      "openingBalance": "Opening Balance",
-      "closingBalance": "Closing Balance",
+      "openingBalance": "Opening balance",
+      "closingBalance": "Closing balance",
       "colDate": "Date",
       "colDescription": "Description",
       "colDebit": "Debit",
       "colCredit": "Credit",
-      "colRunningBalance": "Running Balance",
+      "colRunningBalance": "Running balance",
       "dateFrom": "From date",
       "dateTo": "To date",
       "reset": "Reset",
@@ -7937,6 +8544,40 @@
       "VAN_RECONCILE": "Van reconcile",
       "SUPPLIER_PAYMENT": "Supplier payment",
       "SUPPLIER_PAYMENT_REVERSAL": "Supplier payment reversal"
+    },
+    "tabPosted": "Posted",
+    "tabPending": "Pending",
+    "tertunda": {
+      "listTitle": "Pending journals",
+      "empty": "No pending journals.",
+      "colDocument": "Document",
+      "colReason": "Reason",
+      "colRecorded": "Recorded",
+      "colAction": "Action",
+      "openDocument": "Open document",
+      "unknownDocument": "Unrecognised document",
+      "actionMapping": "Map account",
+      "actionRetry": "Post again",
+      "automatic": "Re-posted automatically every 5 minutes",
+      "sebab": {
+        "UNMAPPED_ROLE": "No account is mapped for the {peran} role",
+        "UNMAPPED_ROLE_TANPA_PERAN": "No account is mapped for one of the posting roles",
+        "UNBALANCED": "Journal debit and credit do not balance",
+        "NON_POSTABLE_ACCOUNT": "The mapped account is inactive or still has sub-accounts",
+        "ERROR": "An error occurred while posting — try posting again",
+        "NOTHING_TO_POST": "The PO is marked paid, but no payable was booked for it",
+        "AP_ACCOUNT_MISMATCH": "This PO's goods-receipt journals use a different payables account than the current mapping",
+        "GRN_APPROVAL_PENDING": "An over-receipt is still waiting for the owner's decision",
+        "GRN_JOURNALS_INCOMPLETE": "Some goods receipts of this PO have no journal yet",
+        "GRN_REVERSAL_MISSING": "A declined goods receipt has not been reversed yet",
+        "PAYMENT_SUPERSEDED": "An earlier payment journal with a different amount is still standing",
+        "PO_IS_PAID": "The PO is still marked paid",
+        "ORIGINAL_SALE_NOT_JOURNALED_YET": "The original sale has not been journaled yet",
+        "ORIGINAL_SALE_UNLINKED": "The return is not linked to its sales order",
+        "ORIGINAL_SALE_OUTSIDE_LEDGER": "The original sale is outside the ledger (before the start date)",
+        "GL_CUTOVER_NOT_CONFIGURED": "The ledger start date has not been set",
+        "LAIN": "Not posted for another reason"
+      }
     }
   },
   "financeReports": {
@@ -7952,7 +8593,7 @@
       "colCredit": "Credit",
       "colBalance": "Balance",
       "totalRow": "Total",
-      "balancedNote": "Debit and credit are equal. Every journal is validated as balanced when posted, so this equality is expected — the check only detects corrupted data.",
+      "balancedNote": "Debit and credit are equal.",
       "unbalancedNote": "Debit and credit are NOT equal. This indicates corrupted journal data — inspect the ledger."
     },
     "incomeStatement": {
@@ -7969,7 +8610,8 @@
       "labaBersih": "Net Profit",
       "sectionEmpty": "No accounts with a balance in this section yet.",
       "coverageTitle": "Data coverage",
-      "coverageBody": "This report covers only transactions that produce journals: marketplace sales, van sales, returns, settlements, goods receipts (GRN), finished-goods receipts, stock opname adjustments, supplier payments, and manual journals. NOT yet included: field sales (putus) and SPG sales."
+      "coverageBody": "This report covers only transactions that produce journals: marketplace sales, marketplace returns, settlements, van sales, goods receipts (GRN), finished-goods receipts, stock opname adjustments, supplier payments, and manual journals. NOT yet included: field sales (putus) and their invoices, receivable payments (BKM and giro), store returns (NRI), consignment (shipments, store sales, store payments, commissions), SPG sales, lost goods, goods exchanges, manual stock adjustments, returns to suppliers, and sales travel expenses.",
+      "empty": "No revenue, COGS or expense journals in this period."
     },
     "balanceSheet": {
       "pageTitle": "Balance Sheet",
@@ -7984,13 +8626,14 @@
       "unclosedEarnings": "Unclosed Profit (Loss)",
       "totalLiabilitasEkuitas": "Total Liabilities and Equity",
       "sectionEmpty": "No accounts with a balance in this section yet.",
-      "balancedNote": "Assets equal Liabilities + Equity. The \"Unclosed Profit (Loss)\" line stands in for the closing entry that does not exist yet; since every journal is balanced when posted, this equality is expected.",
+      "balancedNote": "Assets equal liabilities + equity.",
       "unbalancedNote": "Assets do NOT equal Liabilities + Equity. This indicates corrupted journal data — inspect the ledger.",
       "openingTitle": "Opening balances not recorded",
-      "openingBody": "The earliest journal is dated {date}. This position covers only journals from that date onward. Record a manual opening-balance journal (cash, receivables, inventory, payables, equity) dated before it so the balance sheet reflects the real position."
+      "openingBody": "The earliest journal is dated {date}. This position covers only journals from that date onward. Record a manual opening-balance journal (cash, receivables, inventory, payables, equity) dated before it so the balance sheet reflects the real position.",
+      "empty": "No journals up to this date yet."
     },
     "cashFlow": {
-      "pageTitle": "Cash Flow Statement",
+      "pageTitle": "Cash Flow",
       "subtitle": "Cash in and out for the selected period, indirect method.",
       "cardTitle": "Cash Flow",
       "sectionOperasional": "Cash Flow from Operating Activities",
@@ -8013,10 +8656,10 @@
       "unclassifiedTitle": "Some accounts are unclassified",
       "unclassifiedBody": "{count} accounts have not been assigned to operating, investing, or financing activities, so they are shown separately. Totals remain correct.",
       "unclassifiedCta": "Open Cash Flow Classification",
-      "reconciledNote": "The computed change in cash equals the actual movement in cash balances. Every journal is validated as balanced when posted, so this agreement is expected — this check only detects corrupt data.",
+      "reconciledNote": "The change in cash matches the movement in cash balances.",
       "unreconciledNote": "The computed change in cash does NOT equal the actual movement in cash balances. This indicates corrupt journal data — check the general ledger.",
       "coverageTitle": "Data coverage",
-      "coverageBody": "This report is built from general-ledger journals using the indirect method. Its coverage matches the income statement: it does NOT yet include field sales (putus/konsi) or SPG sales.",
+      "coverageBody": "This report is built from general-ledger journals using the indirect method. Its coverage matches the income statement: it does NOT yet include field sales (putus) and their invoices, receivable payments (BKM and giro), store returns (NRI), consignment (shipments, store sales, store payments, commissions), SPG sales, lost goods, goods exchanges, manual stock adjustments, returns to suppliers, and sales travel expenses.",
       "colCurrent": "This period",
       "colPrevious": "Previous period",
       "colDelta": "Change",
@@ -8034,11 +8677,16 @@
       "print": "Print / PDF",
       "started": "Download started",
       "failed": "Export failed"
+    },
+    "periode": {
+      "range": "Period {dari} – {sampai}",
+      "sinceStart": "Period from the start – {sampai}",
+      "asOf": "As of {tanggal}"
     }
   },
   "financeAccountMapping": {
     "title": "Account Mapping",
-    "cardTitle": "Posting Account Mapping",
+    "cardTitle": "Posting account mapping",
     "notSet": "Not set",
     "savedToast": "Account mapping saved.",
     "clear": "Unmap",
@@ -8097,12 +8745,22 @@
       "NON_POSTABLE_ACCOUNT": "The selected account cannot be posted to (not an active leaf account).",
       "WRONG_ACCOUNT_TYPE": "That account has the wrong type for this role — e.g. the Accounts Payable role must map to a LIABILITAS account."
     },
-    "subtitle": "Choose the ledger account for each posting role. Automatic journals can only post for roles that are mapped."
+    "subtitle": "Choose the ledger account for each posting role. Automatic journals can only post for roles that are mapped.",
+    "summary": "{mapped} of {total} roles mapped · required roles {required}/{requiredTotal}",
+    "openCoa": "Chart of accounts",
+    "badgeFallback": "Fallback",
+    "badgeOptional": "Optional",
+    "noValidAccount": "No {expected} account exists yet.",
+    "createInCoa": "Create one in the Chart of Accounts",
+    "replaceTitle": "Change this role's account?",
+    "replaceBody": "The next automatic journals for the {role} role will post to {to} instead of {from}. Journals already posted do not change.",
+    "replaceCancel": "Cancel",
+    "replaceConfirm": "Change account"
   },
   "financeCashFlowSections": {
     "title": "Cash Flow Classification",
     "subtitle": "Assign each balance-sheet account to operating, investing, or financing activities.",
-    "cardTitle": "Account Classification",
+    "cardTitle": "Account classification",
     "searchPlaceholder": "Search account code or name…",
     "searchSection": "Search classification…",
     "noSections": "No classifications.",
@@ -8136,7 +8794,7 @@
     }
   },
   "leadTime": {
-    "title": "Lead Time",
+    "title": "Lead time",
     "subtitle": "Process library & board to assign processes to each supplier",
     "tabs": {
       "pustaka": "Process Library",
@@ -8274,16 +8932,16 @@
   "fakturPajak": {
     "pageTitle": "Tax Invoices",
     "subtitle": "Track and manage tax invoice status for each putus delivery.",
-    "listTitle": "Tax Invoice List",
+    "listTitle": "Tax invoice list",
     "searchPlaceholder": "Search by nota number, store name, or invoice number...",
     "reset": "Reset",
     "statusAll": "All",
-    "statusPending": "Pending",
-    "statusCreated": "Created",
-    "statusNotRequired": "Not Required",
+    "statusPending": "No invoice yet",
+    "statusCreated": "Invoice issued",
+    "statusNotRequired": "Not required",
     "colDocNo": "Nota No.",
     "colStore": "Store",
-    "colInvoiceDate": "Invoice Date",
+    "colInvoiceDate": "Nota date",
     "colDueDate": "Due Date",
     "colTotal": "Total",
     "colPrinted": "Printed",
@@ -8295,16 +8953,16 @@
     "loadErrorRetry": "Reload",
     "actionMarkCreated": "Mark invoice created",
     "actionNotRequired": "Not required",
-    "actionRevert": "Revert to pending",
-    "markCreatedTitle": "Mark Invoice Created",
+    "actionRevert": "Revert status",
+    "markCreatedTitle": "Mark invoice created",
     "markCreatedDescription": "Mark the tax invoice for nota {docNo} as created.",
-    "markCreatedFieldLabel": "Invoice Number",
+    "markCreatedFieldLabel": "Invoice number",
     "markCreatedFieldPlaceholder": "e.g. 010.001-26.00000001",
     "markCreatedFieldRequired": "Invoice number is required.",
     "markCreatedSubmit": "Save",
     "markCreatedSubmitting": "Saving...",
     "markCreatedSuccess": "Tax invoice marked as created.",
-    "notRequiredTitle": "Mark As Not Required",
+    "notRequiredTitle": "Mark as not required",
     "notRequiredDescription": "Mark nota {docNo} as not requiring a tax invoice. A reason is required.",
     "notRequiredFieldLabel": "Reason",
     "notRequiredFieldPlaceholder": "Explain why a tax invoice is not required...",
@@ -8312,14 +8970,14 @@
     "notRequiredSubmit": "Save",
     "notRequiredSubmitting": "Saving...",
     "notRequiredSuccess": "Nota marked as not requiring a tax invoice.",
-    "revertTitle": "Revert To Pending",
-    "revertDescription": "Revert the tax invoice status for nota {docNo} back to pending. A reason is required.",
+    "revertTitle": "Revert to no invoice yet",
+    "revertDescription": "Revert the tax invoice status for nota {docNo} to no invoice yet. A reason is required.",
     "revertFieldLabel": "Reason",
-    "revertFieldPlaceholder": "Explain why this is being reverted to pending...",
+    "revertFieldPlaceholder": "Explain why the status is being reverted...",
     "revertFieldRequired": "A reason is required.",
     "revertSubmit": "Revert",
     "revertSubmitting": "Saving...",
-    "revertToPendingSuccess": "Tax invoice status reverted to pending.",
+    "revertToPendingSuccess": "Tax invoice status reverted to no invoice yet.",
     "errGeneric": "Something went wrong. Please try again.",
     "actionErr": {
       "FORBIDDEN": "You don't have permission to perform this action.",
@@ -8331,7 +8989,8 @@
       "NOMOR_FAKTUR_GANDA": "This tax invoice serial number is already used on another invoice.",
       "NOMOR_FAKTUR_FORMAT": "A tax invoice serial number must be 13–17 digits, e.g. 010.000-24.00000001 (e-Faktur) or a 17-digit Coretax number."
     },
-    "nomorFakturGandaDi": "This tax invoice serial number is already used on invoice {docNo}."
+    "nomorFakturGandaDi": "This tax invoice serial number is already used on invoice {docNo}.",
+    "actionMore": "More actions"
   },
   "dashboardActions": {
     "title": "{count} things need your attention",
@@ -8339,7 +8998,7 @@
     "emptyTitle": "Nothing is waiting",
     "emptyBody": "Every approval, shipment, and posting is settled for today.",
     "overduePOs": "Overdue POs — procurement",
-    "oversold": "Items sold beyond stock on hand — warehouse",
+    "oversold": "Negative stock — warehouse",
     "journalPending": "Journals that failed to post — finance",
     "fieldSalesPendingApproval": "Salesman orders awaiting your approval",
     "unshippedOrders": "Marketplace orders not yet shipped",
@@ -8366,7 +9025,9 @@
     "claimCorrectionsPending": "Sales asked to correct a payment claim (BKM)",
     "returnCorrectionsPending": "Sales asked to correct a store return note",
     "shiftSwapsPending": "SPG shift swaps awaiting a decision",
-    "stockRequestsUnheld": "SPG stock requests at stores with no salesperson"
+    "stockRequestsUnheld": "SPG stock requests at stores with no salesperson",
+    "amountPoValue": "PO value {nilai}",
+    "claimsAwaitingOthers": "Your payment claims (BKM) awaiting another finance admin"
   },
   "statuses": {
     "unknown": "Unknown",
@@ -8497,7 +9158,10 @@
     "docNo": "Note no.",
     "deliveredAt": "Delivered",
     "dueDate": "Due",
-    "taxInvoice": "Tax invoice"
+    "taxInvoice": "Tax invoice",
+    "hintLinkNota": "Fill in {count, plural, one {# missing tax invoice number} other {# missing tax invoice numbers}}",
+    "hintLinkRetur": "Finish {count, plural, one {# open vendor return} other {# open vendor returns}}",
+    "hintLinkWo": "View {count, plural, one {# running work order} other {# running work orders}}"
   },
   "receivables": {
     "pageTitle": "Invoices & receivables",
@@ -8516,20 +9180,27 @@
     "sourceIMPORT": "imported",
     "sourceMANUAL": "manual",
     "stateLunas": "Settled",
-    "stateKlaim": "Transfer claimed",
-    "stateTertahan": "Held by return",
-    "stateLewat": "Past promised date",
-    "stateTt": "Handed over",
-    "stateBelum": "Ready to hand over",
+    "stateKlaim": "Awaiting verification",
+    "stateTertahan": "Held by a return",
+    "stateLewat": "Past promised payment",
+    "stateTt": "On a collection note",
+    "stateBelum": "Not on a collection note",
     "reasonLunas": "Settled — verified by finance.",
     "reasonKlaim": "You reported a transfer via {no}. Finance has not seen the money land yet, so it does not count as settled.",
     "reasonTertahan": "Held by return {nilai} — the return deduction does not match what the warehouse received. The balance cannot reach zero until the shortfall is settled.",
     "reasonLewat": "The shop promised {tgl} — {hari} days past and no money has arrived. Chase it and get a new date.",
     "reasonTt": "Handed over ({no}). The shop promised {tgl} — wait for the date.",
-    "reasonBelum": "Ready to hand over — no return hanging and nothing overdue.",
+    "reasonBelum": "Not yet due and not on a collection note — no return hanging.",
     "import": "Import invoices",
     "manual": "Manual invoice",
-    "print": "Print"
+    "print": "Print",
+    "reasonJatuhTempo": "Due {tgl} — {hari} days past and not on a collection note. Chase the store or make a collection note.",
+    "reasonKlaimKantor": "Reported by {pelapor} via {no}. Not counted as settled until finance sees the money in the bank.",
+    "filterOpen": "Unsettled",
+    "filterLabel": "Filter invoice state",
+    "searchPlaceholder": "Search invoice no., store, or salesman",
+    "emptyFilteredTitle": "No invoices match this filter",
+    "stateJatuhTempo": "Past due date"
   },
   "payments": {
     "pageTitle": "Payments & claims",
@@ -8700,14 +9371,24 @@
     "errSUDAH_DIGANTI": "The old payment report already has a replacement — the same money cannot be reported twice.",
     "errTOKO_TIDAK_DIIZINKAN": "These invoices are not yours to collect — the store is held by another salesperson. Ask the office to assign the collection to you.",
     "errPEMERIKSA_SAMA": "You reported or recorded this payment receipt, so you cannot decide it yourself. Ask another finance admin to review it.",
-    "errRETUR_TERPAKAI": "That return note has already been deducted in full on another payment receipt. Pick another note or reduce the deduction to the remaining amount shown.",
+    "errRETUR_TERPAKAI": "That return note's deduction is more than can still be deducted: it is already used on another receipt, or its shortfall was assigned to the store so only the goods that arrived may be deducted. Pick another note or reduce the deduction to the remaining amount shown.",
     "errFOTO_BUKAN_MILIK": "This proof photo was uploaded by someone else. Take your own photo of the proof.",
     "errVerifikasiMELEBIHI_SISA": "Since this payment receipt was reported, its invoice has been settled by another receipt, so what is left is now less than this receipt's amount. Reject this receipt or ask the salesperson to correct the amount.",
     "pemeriksaSamaSingkat": "Your own receipt — another finance admin decides it.",
     "filterLabel": "Filter payment claims",
     "filterAll": "All",
     "filterKoreksi": "Correction requested",
-    "emptyFilteredTitle": "No payment claims match this filter"
+    "emptyFilteredTitle": "No payment claims match this filter",
+    "errFOTO_SUDAH_DIPAKAI": "This proof photo is identical to someone else's photo already used on another report. Take your own proof photo.",
+    "errRETUR_DITAHAN": "Part of this invoice's balance is still held by a return deduction on another verified receipt. That part is released by itself once the return is settled, so it must not be paid twice — lower the payment to the part that is not held.",
+    "alreadyReported": "Already reported in {bkm} — awaiting verification.",
+    "alreadyReportedTitle": "{no} has already been reported",
+    "alreadyReportedBody": "This invoice is already in {bkm}, which is still awaiting verification. Report it again only if this is a different payment.",
+    "alreadyReportedCancel": "Leave it unticked",
+    "alreadyReportedConfirm": "Report it anyway",
+    "searchPlaceholder": "Search BKM no., store, salesman, or cheque no.",
+    "deductionsCount": "{count} deductions",
+    "heldByReturn": "held for a return {value}"
   },
   "collections": {
     "pageTitle": "Collection notes",
@@ -8782,7 +9463,7 @@
     "noPhoto": "No photo of the signed sheet yet.",
     "okPhoto": "Photo saved.",
     "claimsTitle": "Payments against this note",
-    "claimsEmpty": "No payment report points at this collection note yet.",
+    "claimsEmpty": "No payment reports for the invoices on this collection note yet.",
     "colClaim": "Claim no.",
     "colReceived": "Received",
     "fromField": "From the field",
@@ -8806,7 +9487,16 @@
     "errFOTO_WAJIB": "A photo of the signed receipt is required.",
     "errPENERIMA_WAJIB": "Enter the name of the person at the store who received it.",
     "errKUNCI_DIPAKAI": "This report clashes with another salesperson report. Create a new report.",
-    "errFOTO_BUKAN_MILIK": "This receipt photo was uploaded by someone else. Take your own photo."
+    "errFOTO_BUKAN_MILIK": "This receipt photo was uploaded by someone else. Take your own photo.",
+    "errFOTO_SUDAH_DIPAKAI": "This receipt-sheet photo is identical to someone else's photo already used on another report. Take your own photo.",
+    "searchPlaceholder": "Search note no., store, or recipient",
+    "filterRunning": "Running ({count})",
+    "emptyFilteredTitle": "No collection notes match this filter",
+    "whyStore": "Pick a store first.",
+    "whyInvoices": "Tick at least one invoice.",
+    "photoKeptUntilReplaced": "The old photo stays saved until you pick a replacement.",
+    "photoKeepOld": "Show it again",
+    "claimNotLinked": "pays an invoice on this note without pointing to it"
   },
   "storeReturns": {
     "pageTitle": "Returns & matching",
@@ -9019,7 +9709,7 @@
     "errADA_BARIS_RUSAK": "This note sends back damaged goods (from a delivery or from a shopper) that belong to its original store, so it cannot be moved. Cancel it and record it again at the right store.",
     "countBodyButa": "{doc} — count the goods that actually arrived. The store's claim is deliberately not shown here.",
     "receivedAtLabel": "Date goods received",
-    "assignTokoInvoiceHint": "The {value} shortfall becomes a new invoice BEBAN/{doc} for the store, due per the store's payment terms. The original invoice is released.",
+    "assignTokoInvoiceHint": "The store is billed for what it already deducted beyond the goods that arrived — at most {value} — through a new invoice BEBAN/{doc}, due per the store's payment terms. If the store has not deducted this note yet, no invoice is made, and the note may afterwards only be deducted up to the goods that arrived.",
     "chargeInvoice": "Billed through invoice {no} · outstanding {sisa}.",
     "errPENGHITUNG_SAMA_PELAPOR": "The counter reported this note. The count must be recorded by someone else.",
     "errHITUNGAN_KOSONG": "Some lines have no quantity yet. Type 0 if nothing arrived.",
@@ -9028,7 +9718,20 @@
     "errPIUTANG_BEBAN_SUDAH_DITAGIH": "This store charge invoice is already in collection (a payment claim or collection note in any status, or an open collection task), so it cannot be removed and the charge can no longer be moved away from the store.",
     "errDITAGIH_LEWAT_PIUTANG": "A store charge is billed through its invoice. It is settled by a verified payment claim, not marked here.",
     "errFOTO_BUKAN_MILIK": "This return note photo was uploaded by someone else. Take your own photo of the note.",
-    "filterKoreksi": "Correction requested"
+    "filterKoreksi": "Correction requested",
+    "errFOTO_SUDAH_DIPAKAI": "This return-note photo is identical to someone else's photo already used on another report. Take your own photo of the note.",
+    "filterAll": "All",
+    "filterLabel": "Filter return step",
+    "searchPlaceholder": "Search note no., store, or salesman",
+    "emptyFilteredTitle": "No returns match this filter",
+    "claimHiddenBlind": "Hidden until counted",
+    "countOwnNote": "You reported this note. Ask a warehouse colleague to count it.",
+    "claimHiddenTitle": "Store claim hidden",
+    "claimHiddenBody": "You may count this note, so the store's claim, its photo, and its deductions stay hidden until the warehouse saves its count.",
+    "assignTokoEstimate": "Billed to the store if decided now: {value}.",
+    "assignTokoNothing": "The store has not deducted more than the goods that arrived — nothing is billed to the store.",
+    "chargeTokoBilled": "Billed to the store: {value}.",
+    "markSettledNothingBilled": "Nothing was billed to the store, so there is nothing to mark as paid back."
   },
   "foto": {
     "pick": "Take or choose a photo",
@@ -9122,7 +9825,9 @@
     "errKolomWajib": "An invoice number and an amount column are required. Check the headings.",
     "errBacaBerkas": "The file could not be read. Make sure it is Excel or CSV.",
     "errTANPA_AKSES": "You do not have access to import invoices.",
-    "errGAGAL": "Could not save. Try again."
+    "errGAGAL": "Could not save. Try again.",
+    "downloadSample": "Download a sample file",
+    "columnsRequired": "Required columns: invoice no. and amount. Also recognised: store code, store name, invoice date, due date, outstanding, sales."
   },
   "fakturManual": {
     "title": "Manual invoice",
@@ -9170,8 +9875,8 @@
     "todoTitle": "Needs action today",
     "todoHint": "Ordered by risk. Click a row to work on it.",
     "todoEmptyTitle": "Nothing hanging",
-    "todoEmptyBody": "No overdue invoices, no waiting claims, no unfinished returns.",
-    "todo_lewat": "Overdue",
+    "todoEmptyBody": "No invoices past their promised payment or due date, no claims waiting, and no unfinished returns.",
+    "todo_lewat": "Past promised payment",
     "todo_klaim": "Awaiting verification",
     "todo_tertahan": "Held by a return",
     "todo_cek": "Not counted yet",
@@ -9192,17 +9897,30 @@
     "photoClean": "No stray photos.",
     "invoiceCount": "{count} invoices",
     "state_lunas": "Settled",
-    "state_klaim": "Reported",
+    "state_klaim": "Awaiting verification",
     "state_tertahan": "Held by a return",
-    "state_lewat": "Past the promise",
+    "state_lewat": "Past promised payment",
     "state_tt": "On a collection note",
-    "state_belum": "Not chased yet",
+    "state_belum": "Not on a collection note",
     "why_lewat_today": "{toko} — the promise falls today and the money has not arrived.",
     "why_klaim_today": "{toko} — reported today, not yet matched against the statement.",
     "why_tertahan_today": "{toko} — the return deduction does not match what the warehouse received.",
     "why_cek_today": "{toko} — the goods are not recorded as received.",
     "why_keputusan_today": "{toko} — the warehouse received less than claimed and nobody bears it.",
-    "why_jodoh_today": "Goods arrived with no shop note and need matching."
+    "why_jodoh_today": "Goods arrived with no shop note and need matching.",
+    "kpiDue": "Past due date",
+    "kpiDueFoot": "{count} invoices without a collection note",
+    "todo_jatuh_tempo": "Past due date",
+    "todo_klaim_oleh": "Awaiting verification",
+    "todo_klaim_milikSaya": "Waiting for a colleague",
+    "why_jatuh_tempo": "{toko} — {hari} days past due and not yet on a collection note.",
+    "why_jatuh_tempo_today": "{toko} — due today and not yet on a collection note.",
+    "why_klaim_oleh": "{toko} — reported by {pelapor} {hari} days ago, not yet matched against the bank statement.",
+    "why_klaim_oleh_today": "{toko} — reported by {pelapor} today, not yet matched against the bank statement.",
+    "why_klaim_milikSaya": "{toko} — you recorded this {hari} days ago. Another finance admin matches it against the bank statement.",
+    "why_klaim_milikSaya_today": "{toko} — you recorded this today. Another finance admin matches it against the bank statement.",
+    "state_jatuh_tempo": "Past due date",
+    "noSalesman": "No salesman"
   },
   "bebanSelisih": {
     "pageTitle": "Return differences",
@@ -9247,7 +9965,7 @@
     "save": "Save",
     "errALASAN_WAJIB": "Write the reason.",
     "invoiceRow": "Invoice {no} · outstanding {sisa}",
-    "reassignToTokoHint": "A new invoice of {value} will be created for the store.",
+    "reassignToTokoHint": "A new invoice is created for the store for what it already deducted beyond the goods that arrived, at most {value}.",
     "reassignFromTokoHint": "Invoice {no} will be removed — only possible while it has not been collected.",
     "errPENANGGUNG_WAJIB": "Choose the salesperson who bears it.",
     "errTOKO_KONSI": "Consignment stores have no receivables, so the shortfall cannot be billed to the store. Record it as lost goods borne by the store, or choose another bearer.",
@@ -9256,7 +9974,9 @@
     "errTOKO_TIDAK_DITEMUKAN": "Store not found.",
     "errTIDAK_ADA_SELISIH": "There is no shortfall to assign.",
     "errNOMOR_BENTROK": "The invoice number clashed with one just created. Try saving again.",
-    "errNILAI_TIDAK_VALID": "That value is not valid."
+    "errNILAI_TIDAK_VALID": "That value is not valid.",
+    "tokoBilledRow": "Billed to the store {value}",
+    "markSettledNothingBilled": "Nothing was billed to the store."
   },
   "pwaPiutang": {
     "pageTitle": "Collections",
@@ -9353,7 +10073,8 @@
     "errRETUR_PEMBELI_MELEBIHI": "The quantity sent back exceeds the shopper-returned damaged pieces not yet sent.",
     "errFOTO_BUKAN_MILIK": "This return note photo was uploaded by someone else. Take your own photo of the note.",
     "dariSpg": "From SPG",
-    "dariSpgOleh": "From SPG · {nama}"
+    "dariSpgOleh": "From SPG · {nama}",
+    "errFOTO_SUDAH_DIPAKAI": "This return-note photo is identical to someone else's photo already used on another report. Take your own photo of the note."
   },
   "pwaBeban": {
     "pageTitle": "My charges",
@@ -9698,7 +10419,21 @@
       "whyVariant": "Row {n}: choose a size for {item}.",
       "okShippedNo": "Shipment {noKirim} saved.",
       "okAlreadyShipped": "This shipment is already recorded as {noKirim}. Stock was not deducted again."
-    }
+    },
+    "turnOfSaja": "{who}'s turn",
+    "unlockTitle": "Unlock {doc}?",
+    "unlockBody": "The official figures become editable again. The frozen promo share and lost-goods charge are released, and lost-goods deductions from SPG pay are returned. Everything is recalculated when the cycle is locked again.",
+    "unlockCancel": "Cancel",
+    "shipPriceInStore": "In-store price (per pc)",
+    "shipItemNameOr": "or type a name outside the catalogue",
+    "refillLink": "Store refill",
+    "searchPlaceholder": "Search consignment no., store, period, or note no.",
+    "filterLabel": "Filter cycle stage",
+    "filterRunning": "Not finished",
+    "filterAll": "All",
+    "emptyFilteredTitle": "No cycles match this filter",
+    "whyCycleStore": "Pick a store first.",
+    "whyCycleMonth": "Enter a month from 1 to 12."
   },
   "jenisPotongan": {
     "pageTitle": "Deduction types",
@@ -9743,7 +10478,10 @@
     "errTIDAK_DITEMUKAN": "Deduction type not found.",
     "errSEDANG_DIPAKAI": "This type is in use.",
     "errGAGAL": "Could not save. Try again.",
-    "ruleNoManual": "not typed manually"
+    "ruleNoManual": "not typed manually",
+    "cancel": "Cancel",
+    "disableTitle": "Deactivate {nama}?",
+    "disableBody": "New payment claims can no longer pick this type. Older claims that already use it are unchanged."
   },
   "ocr": {
     "title": "Read from photo",
@@ -9767,10 +10505,10 @@
     "errGAGAL": "Could not read the photo. Type it in by hand."
   },
   "creative": {
-    "tabContent": "Content Calendar",
+    "tabContent": "Content plan",
     "tabBrief": "KOL Briefs",
     "tabKol": "KOL Directory",
-    "contentTitle": "Content Calendar",
+    "contentTitle": "Content plan",
     "contentDescription": "Instagram and TikTok content plans — from idea to live.",
     "contentMeta": "{count} posts · {scheduled} scheduled · {late} past due",
     "contentEmptyTitle": "No content planned yet",
@@ -9917,7 +10655,8 @@
     "selected": "{count} selected",
     "deleteManyTitle": "Delete {count} posts?",
     "deleteManyBody": "All of them go at once. Their images are swept a few hours later unless another post uses them.",
-    "okDeletedMany": "{count} posts deleted."
+    "okDeletedMany": "{count} posts deleted.",
+    "gambarHilang": "Image missing — upload again"
   },
   "dateRangePicker": {
     "placeholder": "Pick a date range",
@@ -10132,7 +10871,10 @@
       "STORE_RECOMMENDATION_ORDER_CANCELLED": "Order from recommendation cancelled — recommendation reopened",
       "STORE_RECOMMENDATION_ORDER_REPLACED": "Recommendation order replaced",
       "MATERIAL_ISSUED": "Materials issued to work order",
-      "STORE_SHIPMENT_DEPARTED_NOTIFIED": "Store SPG told goods are on the way"
+      "STORE_SHIPMENT_DEPARTED_NOTIFIED": "Store SPG told goods are on the way",
+      "ROLE_CREATED": "Role created",
+      "WO_MATERIAL_RETURNED": "Work order materials returned to the warehouse",
+      "WO_CANCELLED": "Work order cancelled"
     },
     "entities": {
       "ChainTemplate": "Chain template",
@@ -10216,6 +10958,56 @@
       "DamagedStockMovement": "Damaged goods movement",
       "StockLoss": "Missing goods",
       "RoleDefinition": "Role"
+    },
+    "fields": {
+      "value": "Value",
+      "amount": "Amount",
+      "total": "Total",
+      "subtotal": "Subtotal",
+      "qty": "Quantity",
+      "quantity": "Quantity",
+      "price": "Price",
+      "unitPrice": "Unit price",
+      "discount": "Discount",
+      "discountAmount": "Discount amount",
+      "status": "Status",
+      "name": "Name",
+      "code": "Code",
+      "sku": "SKU",
+      "note": "Note",
+      "notes": "Notes",
+      "reason": "Reason",
+      "email": "Email",
+      "phone": "Phone",
+      "address": "Address",
+      "isActive": "Active",
+      "storeId": "Store",
+      "itemId": "Item",
+      "userId": "User",
+      "roleId": "Role",
+      "supplierId": "Supplier",
+      "salesmanId": "Salesperson",
+      "orderId": "Order",
+      "deliveryId": "Delivery",
+      "receivableId": "Receivable",
+      "assignedStoreId": "Fixed store",
+      "invoiceNo": "Invoice no.",
+      "invoiceNumber": "Invoice no.",
+      "docNo": "Document no.",
+      "docNumber": "Document no.",
+      "taxInvoiceNumber": "Tax invoice no.",
+      "invoiceDate": "Invoice date",
+      "dueDate": "Due date",
+      "date": "Date",
+      "paidAt": "Paid at",
+      "createdAt": "Created at",
+      "updatedAt": "Updated at",
+      "outstanding": "Outstanding",
+      "permissions": "Permissions",
+      "variantSku": "Variant",
+      "termsType": "Store type",
+      "marginPercent": "Margin (%)",
+      "creditLimit": "Credit limit"
     }
   },
   "jubelio": {
@@ -10227,7 +11019,7 @@
       "bulkPushConfirm": "Push stock for all mapped items to Jubelio?",
       "bulkPushOk": "Queued {count} items. Pushes drain over the next few minutes.",
       "bulkPushFailed": "Bulk push failed (admin only).",
-      "title": "Jubelio API Calls",
+      "title": "Jubelio monitor",
       "subtitle": "Outbound call log, latency, and rate-limit activity.",
       "refresh": "Refresh",
       "kpiTotal": "Total calls (last {hours}h)",
@@ -10239,10 +11031,10 @@
       "showErrorsOnly": "Show errors only",
       "showingErrorsOnly": "Showing errors only",
       "emptyCalls": "No API calls logged yet.",
-      "webhookEvents": "Webhook events",
-      "emptyWebhooks": "No webhook events.",
-      "outboxEvents": "Outbox events",
-      "emptyOutbox": "No outbox events.",
+      "webhookEvents": "Incoming webhooks from Jubelio",
+      "emptyWebhooks": "No webhooks received yet.",
+      "outboxEvents": "Send queue to Jubelio",
+      "emptyOutbox": "The send queue is empty.",
       "retry": "Retry",
       "webhookRetryOk": "Re-queued. Sweeper picks up within 10 min.",
       "outboxRetryConfirm": "Re-queue this row? Worker will re-push to Jubelio.",
@@ -10254,12 +11046,12 @@
       "col": {
         "time": "Time",
         "method": "Method",
-        "path": "Path",
+        "path": "Endpoint",
         "status": "Status",
         "latency": "Latency",
         "flags": "Flags",
         "event": "Event",
-        "entity": "Entity",
+        "entity": "Shipment",
         "attempts": "Attempts",
         "reason": "Flags / reason",
         "action": "Action",
@@ -10284,11 +11076,32 @@
       "status": {
         "RECEIVED": "RECEIVED",
         "PROCESSING": "PROCESSING",
-        "PROCESSED": "PROCESSED",
+        "PROCESSED": "Done",
         "SKIPPED": "SKIPPED",
         "DEAD": "DEAD",
         "PENDING": "PENDING",
         "DONE": "DONE"
+      },
+      "bulkPushDialogTitle": "Push stock for {count, plural, one {# item} other {# items}} to Jubelio?",
+      "bulkPushDialogAction": "Push stock",
+      "bulkPushCounting": "Counting linked items…",
+      "bulkPushNone": "No item is linked to Jubelio yet, so there is no stock to push.",
+      "cancel": "Cancel",
+      "outboxRetryTitle": "Resend \"{entity}\" to Jubelio?",
+      "outboxRetryAction": "Resend",
+      "event": {
+        "stock": "Stock change",
+        "product": "Product change",
+        "salesorder": "Sales order",
+        "salesreturn": "Sales return"
+      },
+      "entity": {
+        "stock_push": "Stock push",
+        "product_push": "Product push",
+        "salesorder_pick": "Order picked",
+        "salesorder_pack": "Order packed",
+        "salesorder_ship": "Order shipped",
+        "salesreturn_decision_push": "Return decision"
       }
     },
     "settings": {
@@ -10330,7 +11143,10 @@
         "group": "group {id}",
         "toastPreview": "preview: {created} create, {updated} update, {skipped} skip, {errors} error",
         "toastSync": "sync: {created} create, {updated} update, {skipped} skip, {errors} error",
-        "syncFailed": "Sync failed: {message}"
+        "syncFailed": "Sync failed: {message}",
+        "importConfirmTitle": "Import the catalog from Jubelio?",
+        "importConfirmBody": "Items from Jubelio will be created or updated in the ERP together with their product mappings. Run Preview first if you are not sure.",
+        "importConfirmAction": "Import now"
       },
       "defaults": {
         "title": "Push defaults",
@@ -10369,7 +11185,9 @@
           "isActive": "Is Active (default)",
           "useSingleImageSet": "Use Single Image Set",
           "useSerialNumber": "Use Serial Number"
-        }
+        },
+        "confirmTitle": "Recalculate selling prices?",
+        "confirmAction": "Save and recalculate"
       },
       "danger": {
         "heading": "Danger zone",
@@ -10386,7 +11204,8 @@
         "confirm": "Remove group_id {id} from Jubelio? This deletes the live marketplace listing and local mapping rows. This cannot be undone.",
         "yes": "Yes, delete",
         "cancel": "Cancel",
-        "deleted": "Deleted group {id} + {count} local mapping(s)"
+        "deleted": "Deleted group {id} + {count} local mapping(s)",
+        "confirmTitle": "Delete the product from Jubelio?"
       }
     },
     "categories": {
@@ -10436,7 +11255,17 @@
       "confirmBody": "This creates real product listings on the production Jubelio account. Items with unmapped categories will SKIP — fix them on <categories>/backoffice/jubelio/categories</categories> first to avoid SKIP rows. Rollback for individual items is available on the <settings>Jubelio settings</settings> page (Test cleanup card).",
       "cancel": "Cancel",
       "confirm": "Confirm migrate",
-      "queued": "Queued {count} item(s). Worker drains over ~5 min."
+      "queued": "Queued {count} item(s). Worker drains over ~5 min.",
+      "noCategory": "No category yet"
+    },
+    "galat": {
+      "TANPA_AKSES": "You do not have permission for this, or your session has ended. Sign in again and retry.",
+      "LAYANAN_MATI": "The Jubelio integration service cannot be reached. Try again shortly; if it keeps failing, contact the system administrator.",
+      "LAYANAN_MENOLAK": "The Jubelio integration service refused this request. Try again; if it keeps failing, open Details and send it to the system administrator.",
+      "BAWAAN_BELUM_ADA": "The product push defaults have not been created in the database yet. Ask the system administrator to set them up.",
+      "ISIAN_TIDAK_SAH": "This input cannot be processed. Check the selection or number you entered.",
+      "GAGAL": "Something went wrong. Try again; if it keeps failing, contact the system administrator.",
+      "rincian": "Details"
     }
   },
   "pwaMenuSpg": {
@@ -10803,8 +11632,9 @@
     "clearedOn": "Cleared {date}.",
     "errPEMERIKSA_SAMA": "You reported or recorded this giro payment receipt, so you cannot decide it yourself. Ask another finance admin to review it.",
     "errMELEBIHI_SISA": "This invoice was already settled by another payment receipt that was verified first. Reject this giro or ask the salesperson to correct the amount.",
-    "errRETUR_TERPAKAI": "A return note on this giro receipt has already been deducted in full on another receipt. Reject one of the receipts first.",
-    "pemeriksaSamaSingkat": "Your own receipt — another finance admin decides it."
+    "errRETUR_TERPAKAI": "A return note on this giro receipt is deducted beyond what can still be deducted. Reject one of the receipts first.",
+    "pemeriksaSamaSingkat": "Your own receipt — another finance admin decides it.",
+    "errRETUR_DITAHAN": "The invoice on this giro receipt is still held by a return deduction on another verified receipt, and this giro falls into that held part. Wait until the return is settled, or reject this giro."
   },
   "storeStockTargets": {
     "title": "Store stock targets",
@@ -10849,7 +11679,9 @@
       "sold30": "Sold in 30 days",
       "min": "Min",
       "max": "Max",
-      "clear": "Clear"
+      "clear": "Clear",
+      "stockBuku": "Stock (SPG book)",
+      "stockTitipan": "Consigned (by shipments)"
     },
     "row": {
       "SEBAGIAN": "Fill in both min and max, or clear both.",
@@ -10954,7 +11786,7 @@
       "dasarTERTAGIH": "Money collected (recommended)",
       "dasarTERTAGIHIsi": "From payments finance has verified. Sales a store hasn't paid for earn no commission.",
       "dasarPENJUALAN": "Sales",
-      "dasarPENJUALANIsi": "From sales as on the \"This month\" card: outright deliveries, approved consignment, van sales.",
+      "dasarPENJUALANIsi": "From sales as on the \"This month\" card: outright deliveries, consignment sold in store (at Elorae's price), van sales.",
       "tarifDasar": "Base rate",
       "tarifDasarIsi": "Percent of the basis, for every salesperson except those given a special rate.",
       "bagianPenagih": "Collector's share",
@@ -10989,7 +11821,7 @@
       "description": "Each salesperson's estimated commission per month from the scheme in Settings → Salesman — the same figures they see on their phones. The office's basis for deciding the commission paid.",
       "meta": "Total {total} · {count} people",
       "inactive": "Commission is switched off in settings — every commission is zero.",
-      "exportExcel": "Export Excel",
+      "exportExcel": "Download Excel",
       "exportStarted": "Download started",
       "exportFailed": "Export failed",
       "errForbidden": "You don't have permission to view the commission report.",
@@ -11163,7 +11995,8 @@
       }
     },
     "semuaBulan": "All months",
-    "eksporPerBulan": "Pick one month to export"
+    "eksporPerBulan": "Pick one month to export",
+    "kosongSemuaJudul": "No claims yet"
   },
   "absensi": {
     "judul": "Attendance",
@@ -11253,7 +12086,8 @@
     },
     "tanpaSwafoto": "No selfie",
     "lewatCheckin": "Via store check-in",
-    "metaJamMasuk": "Clock in by {jam} at the latest"
+    "metaJamMasuk": "Clock in by {jam} at the latest",
+    "absensiMati": "Attendance is switched off"
   },
   "salesLapangan": {
     "pageTitle": "Field Sales Performance",
@@ -11403,10 +12237,11 @@
       "autoClosed": "closed automatically",
       "open": "not checked out",
       "distance": "{jarak} m from the store pin",
-      "openMap": "Open map"
+      "openMap": "Open map",
+      "distanceTeks": "{jarak} from the store pin"
     },
     "export": {
-      "excel": "Export Excel",
+      "excel": "Download Excel",
       "working": "Preparing…",
       "started": "Excel file downloaded",
       "fileName": "field-sales-performance",
@@ -11485,6 +12320,9 @@
         "MENUNGGU": "Not visited yet",
         "IZIN": "On leave"
       }
+    },
+    "flagDetailTeks": {
+      "LUAR_RADIUS": "{jarak} from the store pin"
     }
   },
   "pesanToko": {
@@ -11615,7 +12453,11 @@
     "err_ALASAN_WAJIB": "A reason is required.",
     "err_TIDAK_DITEMUKAN": "Task not found.",
     "err_GAGAL": "Could not save. Please try again.",
-    "bukanPenagih": "This person does not hold this store. While the task is open, its invoices also appear in their Bills list and they can report the payment. The store holder can still collect them too."
+    "bukanPenagih": "This person does not hold this store. While the task is open, its invoices also appear in their Bills list and they can report the payment. The store holder can still collect them too.",
+    "whyStore": "Pick a store first.",
+    "whyInvoices": "Tick at least one invoice.",
+    "whyAssignee": "Pick who collects.",
+    "whyDue": "The deadline cannot be before today."
   },
   "tukarBarang": {
     "judul": "Goods exchange",
@@ -11913,7 +12755,8 @@
       "kolPertanyaan": "Question",
       "kolJenis": "Type",
       "kolCapaian": "Achievement",
-      "kolDinilai": "Stores rated"
+      "kolDinilai": "Stores rated",
+      "ringkasTeks": "{hasil} results · {toko} stores · average latest score {rata}"
     },
     "rincian": {
       "kembali": "Back to report",
@@ -11944,7 +12787,7 @@
     "judul": "Competitor prices",
     "deskripsi": "Prices of other brands recorded by salespeople in stores, to see where Elorae's prices stand per category.",
     "ringkas": "{catatan} entries · {kelompok} brand × category groups",
-    "eksporExcel": "Export to Excel",
+    "eksporExcel": "Download Excel",
     "ekspor": {
       "ringkasan": "Summary",
       "rincian": "Details"
@@ -12081,7 +12924,8 @@
       "BELUM_DITERIMA": "This shipment has no proof of delivery to correct yet.",
       "KONFLIK": "Someone else just changed this proof of delivery. Reload the page and try again.",
       "TIDAK_BERUBAH": "Nothing changed.",
-      "GAGAL": "Something went wrong. Please try again."
+      "GAGAL": "Something went wrong. Please try again.",
+      "FOTO_SUDAH_DIPAKAI": "This proof-of-delivery photo is identical to someone else's photo already used on another report. Take your own photo."
     },
     "hp": {
       "judulBagian": "Shipments & proof of delivery",
@@ -12216,7 +13060,8 @@
       "HUBUNGI_SALESMAN": "This order cannot be sent through the portal. Please contact your salesperson.",
       "TIDAK_SAH": "The order is not valid. Reload the page and try again.",
       "GAGAL": "The order was not sent. Try again shortly, or contact your salesperson.",
-      "JARINGAN": "The connection dropped. Check your internet and press Send again; the order will not be recorded twice."
+      "JARINGAN": "The connection dropped. Check your internet and press Send again; the order will not be recorded twice.",
+      "TERLALU_SERING": "Too many requests in a minute. Please wait a moment, then try again."
     },
     "selesai": {
       "judul": "Order sent",
@@ -12464,7 +13309,7 @@
   },
   "targetSales": {
     "judul": "Sales Targets",
-    "deskripsi": "Targets per category and per product for each salesperson and SPG, by month — alongside the total target in Settings → Salesman. Set by order approvers. A salesperson's achievement matches the turnover on their phone home (delivered outright sales, approved consignment, van sales); an SPG's comes from their in-store sales receipts, minus items returned by shoppers.",
+    "deskripsi": "Targets per category and per product for each salesperson and SPG, by month — alongside the total target in Settings → Salesman. Set by order approvers. A salesperson's achievement matches the turnover on their phone home (delivered outright sales, consignment sold in store at Elorae's price, van sales) — an approved consignment transfer is not a sale; an SPG's comes from their in-store sales receipts, minus items returned by shoppers.",
     "bulan": "Month",
     "sales": "Salesperson / SPG",
     "semuaSales": "All salespeople & SPGs — overview",
@@ -12544,7 +13389,7 @@
     "nonaktif": "Inactive — will not be copied to the next month",
     "jumlahBaris": "{jumlah} of at most {maks} targets",
     "belumDisimpan": "You have unsaved changes",
-    "catatanCapaian": "Achieved = outright sales by delivery date, consignment by approval date, van sales by sale date, up to today (WIB). Order discounts are spread across products by value, so all categories add up to the salesperson's turnover. Bonus items do not count as pcs.",
+    "catatanCapaian": "Achieved = outright sales by delivery date, consignment sold in store by sale date at Elorae's price, van sales by sale date, up to today (WIB). Order discounts are spread across products by value, so all categories add up to the salesperson's turnover. Bonus items do not count as pcs.",
     "salinJudul": "Replace this month's targets?",
     "salinIsi": "Last month's {jumlah} targets will replace all of this month's targets for this salesperson.",
     "salinDrafHilang": "Unsaved changes will be lost too.",
@@ -12559,7 +13404,10 @@
     "tanpaKategori": "No category",
     "total": "Total",
     "namaSpg": "{nama} — SPG {toko}",
-    "labelSpg": "SPG · {toko}"
+    "labelSpg": "SPG · {toko}",
+    "aturTargetTotal": "Set total targets in Settings → Salesman",
+    "kolomTargetTotal": "Total target",
+    "targetTotalBelum": "Not set"
   },
   "pengumuman": {
     "judul": "Announcements",
@@ -13120,7 +13968,7 @@
     "totalTitle": "Sales in {month}",
     "upToDay": "Up to day {day}",
     "channelPutus": "Outright",
-    "channelKonsi": "Consignment",
+    "channelKonsi": "Consignment sold",
     "channelVan": "Van",
     "targetTitle": "Target for that month",
     "targetOf": "{capai} of the {target} target",
@@ -13145,14 +13993,14 @@
     "productsHint": "Ranked by number of pieces. Bonus items are not counted.",
     "productsEmpty": "No products sold this month.",
     "pcs": "{n} pcs",
-    "konsiPcs": "Includes {n} pcs on consignment",
+    "konsiPcs": "Includes {n} consignment pcs sold",
     "valueNoKonsi": "{amount} excluding consignment",
     "rankLabel": "Rank {rank}",
     "emptyMonth": "No sales in {month} yet.",
     "totalPutusVan": "Outright + van",
-    "targetKonsiNote": "This percentage counts outright + van only. The office also counts consignment toward your target, but its value is not shown on the phone.",
+    "targetKonsiNote": "This percentage counts outright + van only. The office also counts consignment sold in store toward your target, but its value is not shown on the phone.",
     "comparePutusVan": "Amounts are outright + van.",
-    "tooltipKonsiPcs": "Consignment {n} pcs",
+    "tooltipKonsiPcs": "Consignment sold {n} pcs",
     "chartPutusVan": "Bars show outright + van amounts. Consignment is not in the bars; its pcs appear when you tap a bar."
   },
   "pwaAnalisaToko": {
@@ -14351,7 +15199,11 @@
         "cashierTotal": "Store cashier",
         "note": "Note",
         "photoUrls": "Photos"
-      }
+      },
+      "pengunjungDariLaporan": "from the closing report",
+      "pengunjungLaporan": "Report: {n}",
+      "pengunjungSebagianLaporan": "partly from closing reports",
+      "konversiLaporan": "Report conversion {n}"
     },
     "pengaturan": {
       "judul": "Day-close report",
@@ -14882,6 +15734,11 @@
         "KODE_GANDA": "Row {baris}: the code is already used by another shift.",
         "TOLERANSI_TIDAK_SAH": "Tolerance must be 0–{maks} minutes."
       }
+    },
+    "kosongPendek": "Empty",
+    "kenyataanPendek": {
+      "TERLAMBAT": "{menit} min late",
+      "MASUK_SAAT_LIBUR": "In on day off"
     }
   },
   "sizeCharts": {
@@ -15434,7 +16291,7 @@
       },
       "gayaBantuan": {
         "ELORAE": "STKCOD article, bars, code, size box and the Eloraé brand. No price.",
-        "RINCI": "Item name, size and colour, code. The price can be shown."
+        "RINCI": "Item name, size and colour, code. No price."
       },
       "ukuran": "Label size",
       "ukuranNama": {
@@ -15583,6 +16440,10 @@
         "target": "{capai} of {target}",
         "kembali": "{kembali} of {terjual} pieces"
       }
+    },
+    "tampilan": {
+      "penjualan": "Sales",
+      "kehadiran": "Attendance & service"
     }
   },
   "pwaSpgPengunjung": {
@@ -16233,7 +17094,7 @@
     "WO_BELUM_TERBIT": "This work order is still a draft. Issue it before receiving finished goods.",
     "WO_SUDAH_ADA_PENERIMAAN": "A work order that already has finished-goods receipts cannot be cancelled.",
     "WO_SUDAH_DIBATALKAN": "This work order has already been cancelled.",
-    "WO_SUDAH_KELUAR_BAHAN": "This work order cannot be cancelled because its materials have already been issued from the warehouse. There is no material return flow yet, so complete this work order or contact an admin.",
+    "WO_SUDAH_KELUAR_BAHAN": "This work order can't be cancelled while materials are still at the CMT. Return them first with \"Return materials\" on the work order.",
     "TANPA_AKSES": "You do not have permission to manage work orders.",
     "GAGAL": "The work order could not be processed. Try again.",
     "BAHAN_WO_DIBATALKAN": "This work order has been cancelled, so materials cannot be issued to it.",
@@ -16246,7 +17107,10 @@
     "STOK_RENCANA_KURANG": "Not enough stock for this plan: {daftar}.",
     "WO_BUKAN_PRODUKSI": "Additional materials can only be issued for work orders in production.",
     "QTY_TAMBAHAN_TIDAK_VALID": "The additional quantity must be a whole number above 0.",
-    "TANPA_AKSESORI_BOM": "This finished good has no accessories in its BOM, so there are no additional materials to issue."
+    "TANPA_AKSESORI_BOM": "This finished good has no accessories in its BOM, so there are no additional materials to issue.",
+    "ALASAN_WAJIB": "Enter a cancellation reason first.",
+    "ALASAN_TERLALU_PANJANG": "The cancellation reason is too long (190 characters max).",
+    "CACAT_MELEBIHI_SETORAN": "Rejected quantity cannot exceed the quantity handed over."
   },
   "grnErrors": {
     "PO_TIDAK_DITEMUKAN": "Purchase order not found.",
@@ -16266,5 +17130,512 @@
     "lihatAntrean": "View unsent items",
     "tidakDitemukan": "Page not found",
     "tidakDitemukanPesan": "The address is wrong, or the data no longer exists."
+  },
+  "izinPeran": {
+    "jumlahDipilih": "{count, plural, one {# permission} other {# permissions}} selected",
+    "membuka": "Opens: {daftar}",
+    "perluJuga": "Also needs: {izin}",
+    "tambahkan": "Add",
+    "cari": "Search permissions or menus…",
+    "tidakAdaHasil": "No permission matches.",
+    "mulaiDari": "Start from an existing role",
+    "mulaiDariPilih": "Choose a role to copy its permissions",
+    "disalin": "Permissions of {nama} copied. Adjust them as needed.",
+    "aplikasiHp": "Phone app",
+    "pekerjaan": "Work",
+    "semuaPekerjaan": "All work (full access)",
+    "tanpaIzin": "No permissions yet",
+    "lihat": "View permissions",
+    "lihatJudul": "Permissions of {name}",
+    "kelolaPeran": "Manage roles",
+    "menyimpan": "Saving…",
+    "galat": {
+      "TANPA_AKSES": "You are not allowed to manage roles.",
+      "NAMA_TIDAK_SAH": "A role name is required, at most 50 characters.",
+      "NAMA_SUDAH_ADA": "A role with that name already exists. Use another name.",
+      "IZIN_TIDAK_SAH": "A permission was not recognised. Reload the page and try again.",
+      "TIDAK_DITEMUKAN": "This role no longer exists. Reload the page.",
+      "PERAN_SISTEM": "A system role cannot be changed or deleted.",
+      "MASIH_DIPAKAI": "This role is still assigned to users. Move them to another role in Settings → Users first."
+    },
+    "grup": {
+      "beranda": "Home & reports",
+      "marketplace": "Marketplace sales",
+      "pesananLapangan": "Field orders & stores",
+      "timLapangan": "Field team (phone)",
+      "spg": "In-store promoters (SPG)",
+      "piutang": "Receivables & payments",
+      "konsinyasi": "Consignment",
+      "keuangan": "Finance & tax",
+      "pembelian": "Purchasing & suppliers",
+      "gudang": "Warehouse & stock",
+      "produksi": "Production",
+      "kreatif": "Creative",
+      "dataMaster": "Master data",
+      "pengaturan": "Settings & security",
+      "sistem": "System",
+      "lainnya": "Other"
+    },
+    "peranBawaan": {
+      "ADMIN": "System administrator with full access",
+      "PURCHASER": "Purchasing staff — manages suppliers, POs and payments",
+      "WAREHOUSE": "Warehouse staff — manages inventory",
+      "PRODUCTION": "Production staff — manages work orders",
+      "SALESMAN": "Field salesman — phone app only",
+      "SPG": "In-store promoter — phone app only, fixed to one store"
+    },
+    "izin": {
+      "dashboard_view": {
+        "label": "View home & operational reports",
+        "keterangan": "Opens the office home page (sales summary, to-do list, stock) and the operational reports."
+      },
+      "reports_hpp_view": {
+        "label": "View cost of goods (HPP) report",
+        "keterangan": "Opens the production cost report per product, calculated from work orders."
+      },
+      "sales_orders_view": {
+        "label": "View marketplace orders",
+        "keterangan": "Opens Shopee, TikTok and Tokopedia orders received through Jubelio, their details and the fulfilment queue."
+      },
+      "sales_orders_fulfill": {
+        "label": "Fulfil marketplace orders",
+        "keterangan": "Uses the pick, pack and ship buttons on marketplace orders; stock goes down when an order ships."
+      },
+      "sales_returns_view": {
+        "label": "View marketplace returns",
+        "keterangan": "Opens the list and details of items returned by marketplace buyers."
+      },
+      "sales_returns_decide": {
+        "label": "Decide marketplace returns",
+        "keterangan": "Accepts or rejects each returned marketplace item."
+      },
+      "field_sales_orders_view": {
+        "label": "View field orders & field team",
+        "keterangan": "Opens putus and consignment orders from salespeople, pre-orders, and the Field Team pages (summary, schedule, attendance, leave, targets, announcements)."
+      },
+      "field_sales_orders_approve": {
+        "label": "Approve field orders",
+        "keterangan": "Approves or rejects salespeople's orders, sets appealed prices, releases pre-orders, approves goods exchanges and store transfers, changes Settings → Salesman and opens the salesman commission report."
+      },
+      "field_sales_orders_deliver": {
+        "label": "Record putus deliveries",
+        "keterangan": "Records partial or full deliveries, prints warehouse and billing notes, closes an order's remainder and records proof of delivery."
+      },
+      "stores_view": {
+        "label": "View stores",
+        "keterangan": "Opens the store master, new-store proposals, store checklists, execution reports, display guides and competitor prices."
+      },
+      "stores_manage": {
+        "label": "Manage stores",
+        "keterangan": "Adds, edits and deactivates stores, moves stores to another salesperson, approves store-data changes from salespeople and processes SPG stock requests."
+      },
+      "promos_view": {
+        "label": "View promotions",
+        "keterangan": "Opens putus-order promotions and SPG counter promotions."
+      },
+      "promos_manage": {
+        "label": "Manage promotions",
+        "keterangan": "Creates, edits and deactivates putus and counter promotions, and sets the SPG manual discount."
+      },
+      "canvassing_manage": {
+        "label": "Manage van sales (canvassing)",
+        "keterangan": "Loads van stock from the warehouse, reconciles what is left in the van at day end and opens the van sales register."
+      },
+      "pwa_access": {
+        "label": "Use the phone app",
+        "keterangan": "Opens the phone app for salespeople and SPGs: store visits, catalogue, orders, payments and store returns."
+      },
+      "spg_sales_record": {
+        "label": "Sell at the store counter (SPG)",
+        "keterangan": "Records sales, receives deliveries, counts shelves, handles shopper returns and transfers in the SPG phone app; its users must be given one fixed store."
+      },
+      "spg_sales_view": {
+        "label": "Supervise SPGs",
+        "keterangan": "Opens SPG sales, performance, day close, customers, schedules, commission, stock requests, store transfers, damaged and lost goods, and Settings → SPG."
+      },
+      "receivables_view": {
+        "label": "View receivables",
+        "keterangan": "Opens invoices & receivables, collection notes, payments & claims, store returns, shortfall charges, collection tasks and the return-note archive."
+      },
+      "receivables_manage": {
+        "label": "Manage receivables",
+        "keterangan": "Imports invoices, creates collection notes, records receipts from the office, assigns collection tasks, decides who bears return shortfalls and lost goods, and manages deduction types."
+      },
+      "consignment_view": {
+        "label": "View consignment",
+        "keterangan": "Opens consignment cycles per store per month: consigned shipments, sales reports, bills and commission."
+      },
+      "consignment_manage": {
+        "label": "Manage consignment",
+        "keterangan": "Records consigned shipments and sales reports, locks the figures, records note and tax-invoice numbers, and commission payments."
+      },
+      "journals_view": {
+        "label": "View journals & ledger",
+        "keterangan": "Opens journals, the ledger per account, account mapping and cash-flow classification."
+      },
+      "journals_manage": {
+        "label": "Manage journals & verify incoming money",
+        "keterangan": "Creates manual journals, re-posts pending journals, matches receipts against bank statements, marks POs as paid and pays travel expenses."
+      },
+      "coa_view": {
+        "label": "View chart of accounts",
+        "keterangan": "Opens the list of accounts used by journals."
+      },
+      "coa_manage": {
+        "label": "Manage chart of accounts",
+        "keterangan": "Adds, edits and deactivates accounts."
+      },
+      "finance_settlements_view": {
+        "label": "View marketplace settlements",
+        "keterangan": "Opens uploaded marketplace payout files and how they match orders."
+      },
+      "finance_settlements_manage": {
+        "label": "Upload & match settlements",
+        "keterangan": "Uploads Shopee/TikTok settlement files, matches their orders, re-syncs orders from Jubelio and posts their journals."
+      },
+      "finance_reports_view": {
+        "label": "View financial reports",
+        "keterangan": "Opens the trial balance, income statement, balance sheet and cash flow, including Excel and PDF export."
+      },
+      "tax_invoices_view": {
+        "label": "View tax-invoice queue",
+        "keterangan": "Opens the list of billing notes waiting for a tax-invoice number."
+      },
+      "tax_invoices_manage": {
+        "label": "Record tax-invoice numbers",
+        "keterangan": "Records tax-invoice numbers, or marks a note as needing none with a reason."
+      },
+      "purchase_orders_view": {
+        "label": "View purchase orders (PO)",
+        "keterangan": "Opens the list and details of POs, and the document archive."
+      },
+      "purchase_orders_create": {
+        "label": "Create POs",
+        "keterangan": "Creates new purchase orders to suppliers."
+      },
+      "purchase_orders_edit": {
+        "label": "Edit & cancel POs",
+        "keterangan": "Changes a PO's content and cancels it."
+      },
+      "purchase_orders_approve": {
+        "label": "Approve & send POs",
+        "keterangan": "Approves a PO and sends it to the supplier, and closes a PO whose goods arrived short."
+      },
+      "supplier_payments_view": {
+        "label": "View supplier payments",
+        "keterangan": "Opens what is owed to suppliers per PO and its payment status."
+      },
+      "supplier_payments_create": {
+        "label": "Record supplier payments",
+        "keterangan": "Not used by any screen yet; marking a PO as paid uses the Manage journals & verify incoming money permission."
+      },
+      "supplier_payments_edit": {
+        "label": "Edit supplier payments",
+        "keterangan": "Not used by any screen yet; marking a PO as paid uses the Manage journals & verify incoming money permission."
+      },
+      "vendor_returns_view": {
+        "label": "View returns to suppliers",
+        "keterangan": "Opens the list of goods returned to suppliers."
+      },
+      "vendor_returns_create": {
+        "label": "Create returns to suppliers",
+        "keterangan": "Creates a return document for defective goods going back to a supplier."
+      },
+      "vendor_returns_manage": {
+        "label": "Manage returns to suppliers",
+        "keterangan": "Edits, processes, completes and deletes returns to suppliers."
+      },
+      "suppliers_view": {
+        "label": "View suppliers",
+        "keterangan": "Opens the supplier master and supplier details."
+      },
+      "suppliers_create": {
+        "label": "Add suppliers",
+        "keterangan": "Adds new suppliers."
+      },
+      "suppliers_edit": {
+        "label": "Edit suppliers",
+        "keterangan": "Changes supplier data."
+      },
+      "suppliers_delete": {
+        "label": "Delete suppliers",
+        "keterangan": "Deletes a supplier; requires your PIN."
+      },
+      "suppliers_approve": {
+        "label": "Approve suppliers",
+        "keterangan": "Approves or rejects new suppliers."
+      },
+      "supplier_types_view": {
+        "label": "View supplier types",
+        "keterangan": "Opens the list of supplier types (fabric, accessories, tailors and others)."
+      },
+      "supplier_types_create": {
+        "label": "Add supplier types",
+        "keterangan": "Adds new supplier types."
+      },
+      "supplier_types_edit": {
+        "label": "Edit supplier types",
+        "keterangan": "Changes a supplier type's name and order."
+      },
+      "supplier_types_delete": {
+        "label": "Delete supplier types",
+        "keterangan": "Deletes supplier types that are not in use."
+      },
+      "lead_time_view": {
+        "label": "View lead time",
+        "keterangan": "Opens the process library and supplier chains with their durations."
+      },
+      "lead_time_manage": {
+        "label": "Manage lead time",
+        "keterangan": "Changes the process library and supplier chains."
+      },
+      "inventory_view": {
+        "label": "View warehouse stock",
+        "keterangan": "Opens inventory, the stock card, goods receipts (GRN) and the damaged-goods warehouse."
+      },
+      "inventory_manage": {
+        "label": "Manage warehouse stock",
+        "keterangan": "Records goods receipts (GRN) and stock adjustments, decides damaged goods and completes goods exchanges."
+      },
+      "inventory_opname_view": {
+        "label": "View stock counts",
+        "keterangan": "Opens the list and results of warehouse stock counts (opname)."
+      },
+      "inventory_opname_count": {
+        "label": "Count stock (opname & returns)",
+        "keterangan": "Creates and fills in stock counts, and counts goods returned from stores on the Count returns screen."
+      },
+      "inventory_opname_approve": {
+        "label": "Approve stock counts",
+        "keterangan": "Approves or cancels a count; its differences adjust stock."
+      },
+      "inventory_reconciliation_view": {
+        "label": "View Jubelio reconciliation",
+        "keterangan": "Opens the comparison of ERP stock with stock in Jubelio."
+      },
+      "inventory_reconciliation_manage": {
+        "label": "Run Jubelio reconciliation",
+        "keterangan": "Runs the stock comparison and resolves its differences."
+      },
+      "forecast_view": {
+        "label": "View forecast & S&OP",
+        "keterangan": "Opens the demand forecast and sales reconciliation."
+      },
+      "forecast_manage": {
+        "label": "Manage forecast",
+        "keterangan": "Imports sales data and runs the forecast calculation."
+      },
+      "production_planning_view": {
+        "label": "View work plan",
+        "keterangan": "Opens the production plan (Plan Kerja)."
+      },
+      "production_planning_manage": {
+        "label": "Manage work plan",
+        "keterangan": "Changes the production plan."
+      },
+      "work_orders_view": {
+        "label": "View work orders",
+        "keterangan": "Opens the list and details of production work orders (WO)."
+      },
+      "work_orders_create": {
+        "label": "Create work orders",
+        "keterangan": "Creates new WOs, including from the work plan."
+      },
+      "work_orders_manage": {
+        "label": "Run work orders",
+        "keterangan": "Issues WOs, issues materials, receives finished goods and cancels WOs."
+      },
+      "nota_register_view": {
+        "label": "View CMT note register",
+        "keterangan": "Opens the material-issue notes sent to tailors (CMT) and their prints."
+      },
+      "production_colors_view": {
+        "label": "View colours & palettes",
+        "keterangan": "Opens the Pantone colour catalogue and the colour palette."
+      },
+      "production_colors_manage": {
+        "label": "Save palettes & inks",
+        "keterangan": "Saves colour palettes and the team's base print inks."
+      },
+      "creative_view": {
+        "label": "View creative",
+        "keterangan": "Opens the content calendar, KOL briefs and the KOL directory."
+      },
+      "creative_manage": {
+        "label": "Manage creative",
+        "keterangan": "Creates and changes content plans, briefs and KOL data."
+      },
+      "items_view": {
+        "label": "View products",
+        "keterangan": "Opens the product master, categories, size charts and barcode labels."
+      },
+      "items_create": {
+        "label": "Add products",
+        "keterangan": "Adds new products and categories."
+      },
+      "items_edit": {
+        "label": "Edit products",
+        "keterangan": "Changes product and category data."
+      },
+      "items_delete": {
+        "label": "Delete products",
+        "keterangan": "Deletes products and categories that are not in use."
+      },
+      "items_manage": {
+        "label": "Manage photos, sizes & push to Jubelio",
+        "keterangan": "Uploads product photos, changes size charts and sends products to Jubelio."
+      },
+      "settings_security_view": {
+        "label": "Open Settings",
+        "keterangan": "Opens the Settings page, account security and the Jubelio settings (categories, migration, couriers)."
+      },
+      "settings_security_manage": {
+        "label": "Manage users & security",
+        "keterangan": "Adds users, changes roles and passwords, resets PINs, changes the company theme and runs Jubelio settings actions."
+      },
+      "settings_rbac_view": {
+        "label": "View roles & permissions",
+        "keterangan": "Opens the list of roles and their permissions."
+      },
+      "settings_rbac_manage": {
+        "label": "Create & edit roles",
+        "keterangan": "Creates roles, changes their permissions and deletes roles nobody uses."
+      },
+      "settings_documents_view": {
+        "label": "View document numbering",
+        "keterangan": "Opens document number settings and the product code and barcode format."
+      },
+      "settings_documents_manage": {
+        "label": "Change document numbering",
+        "keterangan": "Changes document number formats and the barcode format."
+      },
+      "settings_tax_view": {
+        "label": "View VAT settings",
+        "keterangan": "Opens the VAT (PPN) rate used by POs and notes."
+      },
+      "settings_tax_manage": {
+        "label": "Change the VAT rate",
+        "keterangan": "Changes the VAT (PPN) rate."
+      },
+      "settings_uom_view": {
+        "label": "View units",
+        "keterangan": "Opens the list of product units and their conversions."
+      },
+      "settings_uom_manage": {
+        "label": "Manage units",
+        "keterangan": "Adds and changes units and their conversions."
+      },
+      "settings_pack_ratio_view": {
+        "label": "View pack ratio",
+        "keterangan": "Opens the quantity per size in one pack for putus orders."
+      },
+      "settings_pack_ratio_manage": {
+        "label": "Change pack ratio",
+        "keterangan": "Changes the quantity per size in one pack."
+      },
+      "audit_trail_view": {
+        "label": "View audit trail",
+        "keterangan": "Opens the record of who changed what and when."
+      },
+      "jubelio_admin_view": {
+        "label": "Open the Jubelio API dashboard",
+        "keterangan": "Opens the token status, API call log and Jubelio sync tools; best kept for admins."
+      }
+    }
+  },
+  "itemForm": {
+    "basicInfo": "Basic information",
+    "sku": "SKU",
+    "skuGenerate": "Generate",
+    "nameId": "Name (Indonesian)",
+    "nameIdPlaceholder": "Kain katun merah",
+    "nameEn": "Name (English)",
+    "nameEnPlaceholder": "Red cotton fabric",
+    "optional": "optional",
+    "type": "Type",
+    "typePlaceholder": "Select type",
+    "typeName": {
+      "FABRIC": "Fabric",
+      "ACCESSORIES": "Accessories",
+      "FINISHED_GOOD": "Finished good"
+    },
+    "uom": "Unit of measure",
+    "uomPlaceholder": "Select unit",
+    "category": "Category",
+    "noCategory": "No category",
+    "categoryPlaceholder": "Select category",
+    "overReceive": "Over-receive threshold",
+    "description": "Description",
+    "descriptionPlaceholder": "Item description…",
+    "reorderPoint": "Reorder point",
+    "sellingPrice": "Selling price",
+    "targetMargin": "Target margin (%)",
+    "targetMarginHint": "Leave blank to use the default from the Jubelio push settings.",
+    "additionalCost": "Additional cost per pcs (Rp)",
+    "additionalCostHint": "Flat add-on per pcs (packaging, etc.).",
+    "variantsTitle": "Variants (optional)",
+    "noAttributes": "No attributes yet.",
+    "addAttribute": "Add attribute",
+    "attributeName": "Attribute name",
+    "attributeNamePlaceholder": "Color",
+    "attributeValues": "Values (comma separated)",
+    "attributeValuesPlaceholder": "Red, Blue, Green",
+    "removeAttribute": "Remove attribute",
+    "variantSkuHint": "An empty variant SKU is filled in when you save, e.g. {contoh}.",
+    "variantSkuNoPrefix": "Pick a category with a code or set the item SKU first to build variant codes.",
+    "generateAll": "Generate all codes",
+    "colVariantSku": "Variant SKU",
+    "colBarcode": "Barcode",
+    "generateCode": "Generate code",
+    "skuButtonTitle": "Build the SKU from {awalan} and the attribute values",
+    "barcodeButtonTitle": "Build the barcode from the format in Settings → Item codes",
+    "variantSkuPlaceholder": "e.g. TEE-RED",
+    "barcodePlaceholder": "e.g. 0127000038PS",
+    "bomTitle": "Bill of materials (BOM)",
+    "noBom": "No materials yet.",
+    "addMaterial": "Add material",
+    "colMaterial": "Material",
+    "colQtyRequired": "Qty per pcs",
+    "colWaste": "Waste %",
+    "colNotes": "Notes",
+    "selectMaterial": "Select material",
+    "notesPlaceholder": "Notes (optional)",
+    "removeMaterial": "Remove material",
+    "submitUpdate": "Save item",
+    "submitCreate": "Create item"
+  },
+  "itemList": {
+    "filterCategory": "Filter category",
+    "allCategories": "All categories",
+    "filterStatus": "Filter status",
+    "allStatuses": "All statuses ({count})",
+    "statusActive": "Active ({count})",
+    "statusInactive": "Inactive ({count})",
+    "inactive": "Inactive",
+    "deleteTitle": "Delete item?",
+    "deleteBody": "{nama} ({sku}) is removed from the catalog. An item already used on documents cannot be deleted; deactivate it instead.",
+    "cancel": "Cancel",
+    "deleteConfirm": "Delete"
+  },
+  "itemDetail": {
+    "cancel": "Cancel",
+    "pushConfirm": "Send now"
+  },
+  "spgTerkait": {
+    "titip": "Shopper requests",
+    "dicari": "Items shoppers asked for",
+    "permintaan": "SPG stock requests"
+  },
+  "financeLedgerStatus": {
+    "titleInactive": "The ledger is not active yet — this report does not reflect operational transactions",
+    "titlePending": "{count} journals failed to post — the report does not include their documents yet",
+    "mapping": "Required roles mapped {done}/{total}",
+    "journals": "Journals recorded: {count}",
+    "cutover": "Ledger start date: {date}",
+    "noCutover": "The ledger start date has not been set",
+    "pending": "Pending journals: {count}",
+    "linkCoa": "Chart of accounts",
+    "linkMapping": "Account mapping",
+    "linkPending": "View pending journals"
   }
 }

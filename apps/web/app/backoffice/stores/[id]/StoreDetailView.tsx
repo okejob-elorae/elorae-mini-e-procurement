@@ -51,6 +51,18 @@ import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import type { CatatanTampil } from "@/lib/stores/catatan-queries";
 import type { BarisStok } from "@/lib/spg/queries";
 import { formatRupiah } from "@/lib/format/rupiah";
+import type { KeadaanTagihan } from "@/lib/salesman/kredit";
+import { formatJarak, type BatasBerlaku } from "./ringkasan-toko";
+
+/**
+ * Kredit toko PUTUS di rincian toko. `piutang`: keadaan tagihan, "GAGAL" bila
+ * tidak terbaca, "TERSEMBUNYI" bila penonton tidak boleh membaca piutang.
+ */
+export type KreditTokoTampil = {
+  batasNilai: BatasBerlaku;
+  batasFaktur: BatasBerlaku;
+  piutang: KeadaanTagihan | "GAGAL" | "TERSEMBUNYI";
+};
 
 let lastMapsOpenAt = 0;
 
@@ -105,6 +117,8 @@ type Props = {
   store: StoreListItem;
   canEdit: boolean;
   catatan: CatatanTampil[];
+  /** null untuk toko konsinyasi. */
+  kredit: KreditTokoTampil | null;
   visits: Visit[];
   orders: OrderRow[];
   sentItems: StoreSentItemRow[];
@@ -211,7 +225,7 @@ function DetailField({ label, children }: { label: string; children: React.React
   );
 }
 
-export function StoreDetailView({ store, canEdit, catatan, visits, orders, sentItems, stokToko, pembagian, pendingChange }: Props) {
+export function StoreDetailView({ store, canEdit, catatan, kredit, visits, orders, sentItems, stokToko, pembagian, pendingChange }: Props) {
   const t = useTranslations("stores");
   const tBadge = useTranslations("stores.badge");
   const tDetail = useTranslations("stores.detail");
@@ -222,6 +236,12 @@ export function StoreDetailView({ store, canEdit, catatan, visits, orders, sentI
   const tFso = useTranslations("fieldSalesOrders");
   const tHasil = useTranslations("pwa.hasilKunjungan");
   const tTanda = useTranslations("stores.detail.tanda");
+  const tKredit = useTranslations("stores.detail.kredit");
+  const tKelas = useTranslations("kelasToko.daftar");
+  const teksBatas = (b: BatasBerlaku, format: (n: number) => string) =>
+    b.sumber === "TANPA"
+      ? tKredit("noLimit")
+      : tKredit(b.sumber === "TOKO" ? "fromStore" : "fromDefault", { nilai: format(b.nilai) });
   const locale = useLocale();
   const formatDateTime = (iso: string) => formatDisplayDateTime(iso, locale);
   const router = useRouter();
@@ -404,11 +424,65 @@ export function StoreDetailView({ store, canEdit, catatan, visits, orders, sentI
               <DetailField label={tForm("termsType")}>
                 {store.termsType === "PUTUS" ? tForm("termsPutus") : tForm("termsKonsi")}
               </DetailField>
-              <DetailField label={tForm("paymentTempo")}>{store.paymentTempo}</DetailField>
+              <DetailField label={tForm("paymentTempo")}>{tTable("tempoDays", { days: store.paymentTempo })}</DetailField>
               <DetailField label={tForm("marginPercent")}>
                 {store.marginPercent !== null ? `${store.marginPercent}%` : "—"}
               </DetailField>
+              <DetailField label={tKredit("storeClass")}>
+                {store.storeClass ? tKelas("kelas", { kelas: store.storeClass }) : tKelas("tanpa")}
+              </DetailField>
+              <DetailField label={tKredit("pkp")}>{store.isPkp ? tKredit("pkpYes") : tKredit("pkpNo")}</DetailField>
             </dl>
+          </section>
+
+          <Separator />
+
+          <section className="space-y-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{tKredit("title")}</h3>
+            {kredit === null ? (
+              <p className="text-sm text-muted-foreground">{tKredit("notApplicableKonsi")}</p>
+            ) : (
+              <>
+                <dl className="grid gap-4 sm:grid-cols-3">
+                  <DetailField label={tKredit("creditLimit")}>{teksBatas(kredit.batasNilai, formatRupiah)}</DetailField>
+                  <DetailField label={tKredit("maxInvoices")}>
+                    {teksBatas(kredit.batasFaktur, (n) => tKredit("invoiceCount", { n }))}
+                  </DetailField>
+                </dl>
+                {kredit.piutang === "TERSEMBUNYI" ? null : kredit.piutang === "GAGAL" ? (
+                  <p className="text-sm text-amber-700 dark:text-amber-400">{tKredit("receivablesFailed")}</p>
+                ) : (
+                  <div className="flex flex-wrap items-end justify-between gap-4 rounded-md border bg-muted/30 p-3">
+                    <dl className="grid flex-1 gap-4 sm:grid-cols-3">
+                      <DetailField label={tKredit("outstanding")}>
+                        <span className="font-semibold tabular-nums">{formatRupiah(kredit.piutang.sisa)}</span>
+                      </DetailField>
+                      <DetailField label={tKredit("openInvoices")}>
+                        <span className="tabular-nums">{tKredit("invoiceCount", { n: kredit.piutang.fakturTerbuka })}</span>
+                      </DetailField>
+                      <DetailField label={tKredit("overdue")}>
+                        <span
+                          className={
+                            kredit.piutang.fakturLewatJanji > 0
+                              ? "tabular-nums font-medium text-red-600 dark:text-red-400"
+                              : "tabular-nums text-muted-foreground"
+                          }
+                        >
+                          {kredit.piutang.fakturLewatJanji > 0
+                            ? `${formatRupiah(kredit.piutang.lewatJanji)} · ${tKredit("invoiceCount", { n: kredit.piutang.fakturLewatJanji })}`
+                            : tKredit("overdueNone")}
+                        </span>
+                      </DetailField>
+                    </dl>
+                    <Button asChild variant="outline" size="sm">
+                      <Link href={`/backoffice/piutang?cari=${encodeURIComponent(store.name)}`}>
+                        {tKredit("viewReceivables")}
+                      </Link>
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
           </section>
 
           <Separator />
@@ -420,18 +494,17 @@ export function StoreDetailView({ store, canEdit, catatan, visits, orders, sentI
             <DetailField label={tDetail("stats.lastVisit")}>
               {lastVisit ? formatDateTime(lastVisit.checkinAtIso) : tDetail("noVisits")}
             </DetailField>
-            <DetailField label={tDetail("stats.terms")}>
-              <span className="tabular-nums">
-                {tTable("tempoDays", { days: store.paymentTempo })} · {store.marginPercent ?? "—"}%
-              </span>
-            </DetailField>
           </dl>
         </CardContent>
       </Card>
 
       <CatatanTokoCard storeId={store.id} catatan={catatan} />
 
-      <StokTokoCard stok={stokToko.stok} gerakan={stokToko.gerakan} />
+      <StokTokoCard
+        stok={stokToko.stok}
+        gerakan={stokToko.gerakan}
+        tautanTitipan={store.termsType === "KONSI" && canEdit ? `/backoffice/stores/${store.id}/target-stok` : null}
+      />
 
       <TautanPortalCard storeId={store.id} namaToko={store.name} teleponToko={store.phone} bolehKelola={canEdit} />
 
@@ -468,7 +541,9 @@ export function StoreDetailView({ store, canEdit, catatan, visits, orders, sentI
                       ))}
                     </div>
                   )}
-                  <p className="text-xs text-muted-foreground">{tDetail("hasilRingkas.cakupan", { n: totalVisits })}</p>
+                  {ringkasan.total > 0 ? (
+                    <p className="text-xs text-muted-foreground">{tDetail("hasilRingkas.cakupan", { n: ringkasan.total })}</p>
+                  ) : null}
                 </div>
               )}
               <div className="overflow-auto max-h-96 rounded-md border">
@@ -533,7 +608,7 @@ export function StoreDetailView({ store, canEdit, catatan, visits, orders, sentI
                           {v.checkinOutOfRadius && (
                             <Badge variant="outline" className="ml-2 border-amber-500/40 text-amber-700">
                               {tDetail("visitTable.outOfRadius")}
-                              {v.checkinDistanceMeters !== null ? ` · ${v.checkinDistanceMeters} m` : ""}
+                              {v.checkinDistanceMeters !== null ? ` · ${formatJarak(v.checkinDistanceMeters)}` : ""}
                             </Badge>
                           )}
                           {v.hasil?.akurasiMeter != null && (

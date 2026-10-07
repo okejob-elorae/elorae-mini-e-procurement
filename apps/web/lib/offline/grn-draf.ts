@@ -41,6 +41,13 @@ export type IsianGrn = {
   notes: string;
   /** `localId` GRN lama di `pendingGRNs` yang sedang dimuat ke formulir. */
   pendingLamaId: number | null;
+  /**
+   * Kunci kiriman GRN (`idempotencyKey`), dibuat SEKALI per isian. Ikut draf:
+   * GRN yang disimpan ulang sesudah sinyal putus atau muat ulang membawa kunci
+   * yang sama, jadi server mengembalikan GRN yang sudah tercatat — barang tidak
+   * diterima dua kali. Kosong = belum ada (draf lama); formulir membuatkannya.
+   */
+  kunciKirim?: string;
   lines: BarisIsianGrn[];
 };
 
@@ -66,6 +73,8 @@ export type DrafGrn = {
   categoryId: string;
   notes: string;
   pendingLamaId: number | null;
+  /** Lihat `IsianGrn.kunciKirim`. "" pada draf yang ditulis sebelum kunci ada. */
+  kunciKirim: string;
   lines: BarisDrafGrn[];
   /** Epoch ms saat draf ditulis. */
   disimpanPada: number;
@@ -79,6 +88,7 @@ export function drafDariIsian(isian: IsianGrn, sekarang: number): DrafGrn {
     categoryId: isian.categoryId,
     notes: isian.notes,
     pendingLamaId: isian.pendingLamaId,
+    kunciKirim: isian.kunciKirim ?? "",
     lines: isian.lines.map((l) => {
       const baris: BarisDrafGrn = {
         itemId: l.itemId,
@@ -151,6 +161,13 @@ function bacaBaris(v: unknown): BarisDrafGrn | null {
   return baris;
 }
 
+/** Kunci kiriman yang diterima server (8–100 huruf, lihat `grnSchema`), selain itu "". */
+function kunciKirimSah(v: unknown): string {
+  if (!teks(v)) return "";
+  const k = v.trim();
+  return k.length >= 8 && k.length <= 100 ? k : "";
+}
+
 /** Simpanan dari perangkat → draf sah, atau null (rusak / versi lain). Baris rusak dibuang. */
 export function bacaDrafGrn(mentah: unknown): DrafGrn | null {
   if (!mentah || typeof mentah !== "object") return null;
@@ -166,6 +183,8 @@ export function bacaDrafGrn(mentah: unknown): DrafGrn | null {
     categoryId: d.categoryId as string,
     notes: d.notes as string,
     pendingLamaId: d.pendingLamaId as number | null,
+    // Draf lama tanpa kunci (atau kunci rusak) tetap sah; formulir membuatkan kunci baru.
+    kunciKirim: kunciKirimSah(d.kunciKirim),
     lines: d.lines.map(bacaBaris).filter((b): b is BarisDrafGrn => b !== null),
     disimpanPada: d.disimpanPada,
   };
@@ -210,6 +229,8 @@ export function drafDariGrnLama(
     categoryId: "",
     notes: lama.notes ?? "",
     pendingLamaId: lama.localId ?? null,
+    // GRN lama tidak pernah sampai ke server: isian baru, kunci baru (dibuat formulir).
+    kunciKirim: "",
     lines: lama.items.map((it) => {
       const info = barang.get(it.itemId);
       const rolls = it.rolls ?? [];

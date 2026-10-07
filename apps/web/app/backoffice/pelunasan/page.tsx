@@ -10,18 +10,20 @@ import { bolehMembacaPelunasan } from "@/lib/receivables/izin";
 import { koreksiTertunda } from "@/lib/receivables/koreksi";
 import { PelunasanClient, type BarisKlaim, type StatusKlaim } from "./PelunasanClient";
 import { pemeriksaSamaKlaim } from "./[id]/putusan-klaim";
+import { bacaCari, bacaHalaman, cocokCari, potongHalaman } from "../piutang/_daftar/halaman";
 
 export const dynamic = "force-dynamic";
 
 const STATUS_KLAIM: readonly StatusKlaim[] = ["DIKIRIM", "TERVERIFIKASI", "DITOLAK"];
 
 /**
- * `?status=` (DIKIRIM/TERVERIFIKASI/DITOLAK) dan `?koreksi=1` disaring di
- * server, supaya tautan Beranda ("BKM menunggu verifikasi", "Permintaan
- * koreksi BKM") mendarat di daftar yang angkanya sama.
+ * `?status=` (DIKIRIM/TERVERIFIKASI/DITOLAK), `?koreksi=1`, `?cari=`, dan
+ * `?halaman=` disaring di server, supaya tautan Beranda ("BKM menunggu
+ * verifikasi", "Permintaan koreksi BKM") mendarat di daftar yang angkanya sama
+ * dan peramban hanya menerima satu halaman.
  */
 export default async function PelunasanPage(props?: {
-  searchParams: Promise<{ status?: string; koreksi?: string }>;
+  searchParams: Promise<{ status?: string; koreksi?: string; cari?: string; halaman?: string }>;
 }) {
   const session = await auth();
   if (!session) redirect("/login");
@@ -32,6 +34,7 @@ export default async function PelunasanPage(props?: {
   const sp = (await props?.searchParams) ?? {};
   const saringStatus = (STATUS_KLAIM as readonly string[]).includes(sp.status ?? "") ? (sp.status as StatusKlaim) : null;
   const saringKoreksi = sp.koreksi === "1";
+  const cari = bacaCari(sp.cari);
 
   const rows = await prisma.paymentClaim.findMany({
     orderBy: [{ status: "asc" }, { createdAt: "desc" }],
@@ -109,14 +112,21 @@ export default async function PelunasanPage(props?: {
     DITOLAK: semua.filter((b) => b.status === "DITOLAK").length,
     koreksi: semua.filter((b) => b.mintaKoreksi).length,
   };
-  const baris = semua.filter(
-    (b) => (!saringStatus || b.status === saringStatus) && (!saringKoreksi || b.mintaKoreksi),
+  const halaman = potongHalaman(
+    semua.filter(
+      (b) =>
+        (!saringStatus || b.status === saringStatus) &&
+        (!saringKoreksi || b.mintaKoreksi) &&
+        cocokCari(cari, b.docNo, b.storeName, b.salesmanName, b.giro?.nomor),
+    ),
+    bacaHalaman(sp.halaman),
   );
 
   return (
     <PelunasanClient
-      baris={baris}
-      saring={{ status: saringStatus, koreksi: saringKoreksi }}
+      baris={halaman.baris}
+      halaman={{ halaman: halaman.halaman, totalHalaman: halaman.totalHalaman, total: halaman.total, ukuran: halaman.ukuran }}
+      saring={{ status: saringStatus, koreksi: saringKoreksi, cari }}
       jumlah={jumlah}
       giroMenunggu={giroMenunggu}
       bolehMemutuskan={hasPermission(

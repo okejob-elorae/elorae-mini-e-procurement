@@ -7,6 +7,7 @@ import { hitungUlangPiutang } from './writer';
 import { tanggalWib } from '@/lib/dashboard/hari-wib';
 import { catatJejak, JEJAK } from './jejak';
 import { fotoBolehDipakai } from './foto-pencatat';
+import { periksaFotoKembar } from '@/lib/foto/kembar';
 import { PERMISSIONS } from '@/lib/rbac';
 
 /**
@@ -58,6 +59,8 @@ export type AlasanGagalKontrabon =
   | 'FOTO_WAJIB'
   /** Foto `/api/foto/<id>` diunggah orang lain, dan pencatat bukan pengelola piutang. */
   | 'FOTO_BUKAN_MILIK'
+  /** Foto sama persis dengan foto orang lain yang sudah dipakai dokumen lain (foto dicuci). */
+  | 'FOTO_SUDAH_DIPAKAI'
   | 'PENERIMA_WAJIB'
   | 'KUNCI_DIPAKAI';
 
@@ -157,6 +160,8 @@ export async function buatKontrabon(input: {
         if (!(await fotoBolehDipakai(tx, { urls: [input.photoUrl], userId: input.salesmanId, izinKantor: IZIN_KANTOR }))) {
           return { ok: false as const, alasan: 'FOTO_BUKAN_MILIK' as const };
         }
+        const kembar = await periksaFotoKembar(tx, { urls: [input.photoUrl], userId: input.salesmanId });
+        if (!kembar.boleh) return { ok: false as const, alasan: kembar.kode };
 
         const piutang = await tx.receivable.findMany({
           where: { id: { in: ids } },
@@ -375,6 +380,13 @@ export async function pasangFotoKontrabon(input: {
     if (!(await fotoBolehDipakai(tx, { urls: [input.photoUrl], userId: input.olehUserId, izinKantor: IZIN_KANTOR }))) {
       return { ok: false as const, alasan: 'FOTO_BUKAN_MILIK' as const };
     }
+    // Koreksi: kembaran yang hanya dipakai kontrabon ini sendiri tidak dihitung.
+    const kembar = await periksaFotoKembar(tx, {
+      urls: [input.photoUrl],
+      userId: input.olehUserId,
+      kecuali: { model: 'collectionNote', id: nota.id },
+    });
+    if (!kembar.boleh) return { ok: false as const, alasan: kembar.kode };
 
     await tx.collectionNote.update({
       where: { id: nota.id },

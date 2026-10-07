@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { AlertTriangle, ArrowLeft, BarChart3, CalendarRange, ExternalLink, Footprints, MapPin, Store } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,8 @@ import type { AlasanRencana, KodeJanggal } from "@/lib/salesman/metrik-lapangan"
 import type { AngkaSales, BarisHasil, BarisTanda, FilterRentangData } from "../bentuk";
 import { FilterRentang } from "../FilterRentang";
 import { GrafikBatang } from "../GrafikBatang";
-import { KartuAngka } from "../KartuAngka";
+import { KartuAngka, type TautanKartu } from "../KartuAngka";
+import { jarakTeks, paramTandaTampil } from "../jarak";
 
 export type TandaRincian = { kode: KodeJanggal; param: Record<string, string | number> };
 
@@ -83,6 +84,7 @@ export function RincianSalesClient({
   kunjungan,
   jadwal = [],
   alamatJadwal,
+  tautan,
 }: {
   nama: string;
   kembali: string;
@@ -98,8 +100,11 @@ export function RincianSalesClient({
   jadwal?: JadwalRincian[];
   /** Tautan ke layar jadwal kantor untuk sales ini. */
   alamatJadwal?: string;
+  /** Kartu angka yang membuka dokumen sumbernya. */
+  tautan?: TautanKartu;
 }) {
   const t = useTranslations("salesLapangan");
+  const locale = useLocale();
   const td = dinamis(t);
   const durasi = (menit: number) =>
     menit >= 60 ? t("durationHours", { jam: Math.floor(menit / 60), menit: menit % 60 }) : t("durationMinutes", { menit });
@@ -119,7 +124,7 @@ export function RincianSalesClient({
 
       <FilterRentang key={`${filter.preset}|${filter.dari}|${filter.sampai}`} alamat={alamat} filter={filter} />
 
-      <KartuAngka angka={angka} />
+      <KartuAngka angka={angka} tautan={{ ...tautan, janggal: angka.janggal > 0 ? "#kunjungan" : undefined }} />
 
       {jadwal.length > 0 ? (
         <Card>
@@ -249,7 +254,7 @@ export function RincianSalesClient({
         </Card>
       </div>
 
-      <Card>
+      <Card id="kunjungan" className="scroll-mt-20">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Store className="h-5 w-5" aria-hidden />
@@ -324,7 +329,7 @@ export function RincianSalesClient({
                         <TableCell className="max-w-72 whitespace-normal">
                           {k.jarakMeter !== null && k.tanda.every((x) => x.kode !== "LUAR_RADIUS") ? (
                             <span className="block text-xs text-muted-foreground">
-                              {t("visits.distance", { jarak: k.jarakMeter })}
+                              {t("visits.distanceTeks", { jarak: jarakTeks(k.jarakMeter, locale) })}
                             </span>
                           ) : null}
                           {k.tanda.length === 0 ? (
@@ -341,7 +346,9 @@ export function RincianSalesClient({
                                     {td(`flag.${x.kode}`)}
                                   </Badge>
                                   <span className="block text-xs text-muted-foreground">
-                                    {td(`flagDetail.${x.kode}`, x.param)}
+                                    {x.kode === "LUAR_RADIUS"
+                                      ? t("flagDetailTeks.LUAR_RADIUS", paramTandaTampil(x.kode, x.param, locale))
+                                      : td(`flagDetail.${x.kode}`, paramTandaTampil(x.kode, x.param, locale))}
                                   </span>
                                 </li>
                               ))}

@@ -19,7 +19,7 @@ const sesi = vi.hoisted(() => ({ kini: null as SesiUji | null }));
 vi.mock("@/lib/auth", () => ({ auth: vi.fn(async () => sesi.kini) }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
-const { assignUserRole, deleteRole, updateRolePermissions } = await import("./rbac");
+const { assignUserRole, createRole, deleteRole, updateRolePermissions } = await import("./rbac");
 
 const url = process.env.DATABASE_URL ?? "";
 const d = url.includes(":3307") || url.includes("api.elorae.cloud") ? describe.skip : describe;
@@ -104,7 +104,7 @@ d("rbac — jejak izin peran dan toko tetap SPG (test bed only)", () => {
     it("menulis jejak berisi daftar izin sebelum dan sesudah", async () => {
       const peran = await buatPeran("UBAH", ["pwa:access"]);
       masuk(["settings_rbac:manage"]);
-      await updateRolePermissions(peran, [izinId["stores:view"], izinId["pwa:access"]]);
+      expect(await updateRolePermissions(peran, [izinId["stores:view"], izinId["pwa:access"]])).toEqual({ ok: true });
 
       const baris = await jejak(peran, "ROLE_PERMISSIONS_UPDATED");
       expect(baris).toHaveLength(1);
@@ -115,13 +115,54 @@ d("rbac — jejak izin peran dan toko tetap SPG (test bed only)", () => {
       });
     });
 
-    it("izin yang tidak ada → lemparan, tanpa perubahan dan tanpa jejak", async () => {
+    it("izin yang tidak ada → IZIN_TIDAK_SAH, tanpa perubahan dan tanpa jejak", async () => {
       const peran = await buatPeran("SALAH", ["pwa:access"]);
       masuk(["settings_rbac:manage"]);
-      await expect(updateRolePermissions(peran, [izinId["stores:view"], `${tag}-tidak-ada`])).rejects.toThrow();
+      expect(await updateRolePermissions(peran, [izinId["stores:view"], `${tag}-tidak-ada`])).toEqual({
+        ok: false,
+        code: "IZIN_TIDAK_SAH",
+      });
       expect(await jejak(peran, "ROLE_PERMISSIONS_UPDATED")).toEqual([]);
       const tautan = await prisma.rolePermission.findMany({ where: { roleId: seededId(peran) }, select: { permissionId: true } });
       expect(tautan.map((t) => t.permissionId)).toEqual([izinId["pwa:access"]]);
+    });
+  });
+
+  describe("createRole", () => {
+    it("membuat peran dan menulis jejak berisi nama, keterangan, dan izinnya", async () => {
+      masuk(["settings_rbac:manage"]);
+      const hasil = await createRole(
+        { name: `  ${tag}-BARU `, description: "Admin toko" },
+        [izinId["stores:view"], izinId["pwa:access"], izinId["stores:view"]],
+      );
+      expect(hasil.ok).toBe(true);
+      if (!hasil.ok) return;
+      peranIds.push(hasil.id);
+
+      const peran = await prisma.roleDefinition.findUniqueOrThrow({
+        where: { id: seededId(hasil.id) },
+        select: { name: true, isSystem: true, permissions: { select: { permission: { select: { code: true } } } } },
+      });
+      expect(peran.name).toBe(`${tag}-BARU`);
+      expect(peran.isSystem).toBe(false);
+      expect(peran.permissions.map((p) => p.permission.code).sort()).toEqual(["pwa:access", "stores:view"]);
+      const baris = await jejak(hasil.id, "ROLE_CREATED");
+      expect(baris).toHaveLength(1);
+      expect(baris[0]).toMatchObject({ userId: pelaku, entityType: "RoleDefinition" });
+      expect(baris[0].changes).toEqual({
+        after: { name: `${tag}-BARU`, description: "Admin toko", permissions: ["pwa:access", "stores:view"] },
+      });
+    });
+
+    it("nama yang sudah dipakai → NAMA_SUDAH_ADA; nama kosong → NAMA_TIDAK_SAH; tanpa izin → TANPA_AKSES", async () => {
+      masuk(["settings_rbac:manage"]);
+      expect(await createRole({ name: `${tag}-BIASA` }, [])).toEqual({ ok: false, code: "NAMA_SUDAH_ADA" });
+      expect(await createRole({ name: "   " }, [])).toEqual({ ok: false, code: "NAMA_TIDAK_SAH" });
+      expect(await createRole({ name: `${tag}-X` }, [`${tag}-tidak-ada`])).toEqual({ ok: false, code: "IZIN_TIDAK_SAH" });
+      masuk(["settings_rbac:view"]);
+      expect(await createRole({ name: `${tag}-Y` }, [])).toEqual({ ok: false, code: "TANPA_AKSES" });
+      const dibuat = await prisma.roleDefinition.count({ where: { name: { in: [`${tag}-X`, `${tag}-Y`] } } });
+      expect(dibuat).toBe(0);
     });
   });
 
@@ -138,6 +179,13 @@ d("rbac — jejak izin peran dan toko tetap SPG (test bed only)", () => {
       expect(baris[0].changes).toMatchObject({
         before: { name: `${tag}-HAPUS`, permissions: ["pwa:access", "stores:view"] },
       });
+    });
+
+    it("peran yang masih dipakai pengguna → MASIH_DIPAKAI, tidak terhapus dan tanpa jejak", async () => {
+      masuk(["settings_rbac:manage"]);
+      expect(await deleteRole(peranBiasa)).toEqual({ ok: false, code: "MASIH_DIPAKAI" });
+      expect(await prisma.roleDefinition.findUnique({ where: { id: seededId(peranBiasa) }, select: { id: true } })).not.toBeNull();
+      expect(await jejak(peranBiasa, "ROLE_DELETED")).toEqual([]);
     });
   });
 

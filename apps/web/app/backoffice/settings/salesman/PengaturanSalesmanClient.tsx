@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { CalendarClock, ListTree, Loader2, Target } from 'lucide-react';
+import { CalendarClock, ListTree, Loader2, Store, Target } from 'lucide-react';
 import { simpanBatasHariKunjungan, simpanTargetBulan } from '@/app/actions/settings/salesman';
 import { Badge } from "@/components/ui/badge";
 import { Button } from '@/components/ui/button';
@@ -16,27 +16,151 @@ import { BATAS_HARI_BAWAAN } from '@/lib/salesman/pengaturan';
 import { formatIDR } from '@/lib/sales-orders/format';
 import { cn } from '@/lib/utils';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
+import { DAFTAR_ISI_SALESMAN } from "./daftar-isi";
 
-type Props = {
+const angkaSaja = (s: string) => s.replace(/\D/g, '');
+const kelompok = new Intl.NumberFormat('id-ID');
+
+type KodeGalat = 'UNAUTHORIZED' | 'FORBIDDEN' | 'INVALID';
+
+function useGalat() {
+  const t = useTranslations('settings.salesman');
+  return (code: KodeGalat) => toast.error(code === 'INVALID' ? t('errInvalid') : t('errForbidden'));
+}
+
+/**
+ * Kepala halaman + daftar isi. Halaman ini panjang (13 kartu); daftar isi
+ * mengelompokkan kartunya dan melompat ke jangkar masing-masing.
+ */
+export function JudulPengaturanSalesman({ bolehUbah, bolehBukaSpg }: { bolehUbah: boolean; bolehBukaSpg: boolean }) {
+  const t = useTranslations('settings.salesman');
+  const tAkar = useTranslations();
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold tracking-tight">{t('title')}</h1>
+          <TombolBantuan judul={t('title')} />
+        </div>
+        {!bolehUbah ? <p className="mt-2 text-sm text-amber-700 dark:text-amber-400">{t('readOnly')}</p> : null}
+      </div>
+      <nav aria-label={t('toc.label')} className="rounded-lg border bg-card p-4">
+        <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
+          {DAFTAR_ISI_SALESMAN.map((g) => (
+            <div key={g.id} className="space-y-1.5">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{tAkar(g.judul as never)}</p>
+              <ul className="space-y-1">
+                {g.kartu.map((k) => (
+                  <li key={k.id}>
+                    <a href={`#${k.id}`} className="text-sm text-foreground underline-offset-4 hover:underline">
+                      {tAkar(k.judul as never)}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+        {/* Pengaturan → SPG dijaga spg_sales:view; tautan hanya untuk yang bisa membukanya. */}
+        {bolehBukaSpg ? (
+          <div className="mt-3 border-t pt-3">
+            <Link href="/backoffice/settings/spg" className="inline-flex items-center gap-1.5 text-sm font-medium underline-offset-4 hover:underline">
+              <Store className="h-4 w-4" aria-hidden />
+              {t('toc.spgLink')}
+            </Link>
+          </div>
+        ) : null}
+      </nav>
+    </div>
+  );
+}
+
+/** Judul kelompok di halaman, sejajar dengan daftar isi. */
+export function JudulKelompok({ kunci }: { kunci: string }) {
+  const tAkar = useTranslations();
+  return (
+    <h2 className="border-t pt-6 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+      {tAkar(kunci as never)}
+    </h2>
+  );
+}
+
+export function BatasKunjunganCard({ bolehUbah, batas }: { bolehUbah: boolean; batas: { hari: number; diatur: boolean } }) {
+  const t = useTranslations('settings.salesman');
+  const tToasts = useTranslations('toasts');
+  const router = useRouter();
+  const galat = useGalat();
+  const [sibuk, mulai] = useTransition();
+  const [hari, setHari] = useState(batas.diatur ? String(batas.hari) : '');
+
+  const simpanHari = (nilai: number | null) =>
+    mulai(async () => {
+      const r = await simpanBatasHariKunjungan(nilai);
+      if (!r.ok) {
+        galat(r.code);
+        return;
+      }
+      if (nilai === null) setHari('');
+      toast.success(tToasts('saved'));
+      router.refresh();
+    });
+
+  const hariValid = /^\d+$/.test(hari) && Number(hari) >= 1 && Number(hari) <= 365;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <CalendarClock className="h-5 w-5" />
+          {t('visitTitle')}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            type="text"
+            inputMode="numeric"
+            aria-label={t('visitTitle')}
+            className="w-24 tabular-nums"
+            value={hari}
+            placeholder={String(BATAS_HARI_BAWAAN)}
+            onChange={(e) => setHari(angkaSaja(e.target.value).slice(0, 3))}
+            disabled={!bolehUbah || sibuk}
+          />
+          <span className="text-sm text-muted-foreground">{t('visitDays')}</span>
+          <Button onClick={() => simpanHari(Number(hari))} disabled={!bolehUbah || sibuk || !hariValid || Number(hari) === (batas.diatur ? batas.hari : -1)}>
+            {sibuk ? <Loader2 className="h-4 w-4 animate-spin" /> : t('visitSave')}
+          </Button>
+          {batas.diatur ? (
+            <Button variant="ghost" onClick={() => simpanHari(null)} disabled={!bolehUbah || sibuk}>
+              {t('visitUseDefault', { days: BATAS_HARI_BAWAAN })}
+            </Button>
+          ) : null}
+        </div>
+        <p className="text-sm text-muted-foreground">
+          {batas.diatur ? t('visitNow', { days: batas.hari }) : t('visitNotSet', { days: BATAS_HARI_BAWAAN })}
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+type PropsTarget = {
   bolehUbah: boolean;
-  batas: { hari: number; diatur: boolean };
   bulan: { kunci: string; target: Record<string, number> }[];
   salesman: { id: string; nama: string; capai: number }[];
   /** SPG: target per orang, pencapaian = total nota SPG bulan ini. */
   spg: { id: string; nama: string; tokoNama: string | null; capai: number }[];
 };
 
-const angkaSaja = (s: string) => s.replace(/\D/g, '');
-const kelompok = new Intl.NumberFormat('id-ID');
-
-export function PengaturanSalesmanClient({ bolehUbah, batas, bulan, salesman, spg }: Props) {
+export function TargetBulananCard({ bolehUbah, bulan, salesman, spg }: PropsTarget) {
   const t = useTranslations('settings.salesman');
   const tToasts = useTranslations('toasts');
   const locale = useLocale();
   const router = useRouter();
+  const galat = useGalat();
   const [sibuk, mulai] = useTransition();
 
-  const [hari, setHari] = useState(batas.diatur ? String(batas.hari) : '');
   const [pilihBulan, setPilihBulan] = useState(bulan[0].kunci);
   const awal = useMemo(() => bulan.find((b) => b.kunci === pilihBulan)?.target ?? {}, [bulan, pilihBulan]);
   // Draf per bulan: berpindah bulan tidak membuang angka yang belum disimpan.
@@ -57,21 +181,6 @@ export function PengaturanSalesmanClient({ bolehUbah, batas, bulan, salesman, sp
     return isi;
   }, [draf, pilihBulan, awal]);
 
-  const galat = (code: 'UNAUTHORIZED' | 'FORBIDDEN' | 'INVALID') =>
-    toast.error(code === 'INVALID' ? t('errInvalid') : t('errForbidden'));
-
-  const simpanHari = (nilai: number | null) =>
-    mulai(async () => {
-      const r = await simpanBatasHariKunjungan(nilai);
-      if (!r.ok) {
-        galat(r.code);
-        return;
-      }
-      if (nilai === null) setHari('');
-      toast.success(tToasts('saved'));
-      router.refresh();
-    });
-
   const simpanTarget = () =>
     mulai(async () => {
       const r = await simpanTargetBulan(pilihBulan, berubah);
@@ -84,7 +193,6 @@ export function PengaturanSalesmanClient({ bolehUbah, batas, bulan, salesman, sp
       router.refresh();
     });
 
-  const hariValid = /^\d+$/.test(hari) && Number(hari) >= 1 && Number(hari) <= 365;
   const bulanIni = pilihBulan === bulan[0].kunci;
 
   // Satu bentuk baris untuk salesman dan SPG: target keduanya disimpan di peta
@@ -131,128 +239,83 @@ export function PengaturanSalesmanClient({ bolehUbah, batas, bulan, salesman, sp
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <div className="flex items-center gap-1">
-          <h1 className="text-2xl font-bold tracking-tight">{t('title')}</h1>
-          <TombolBantuan judul={t('title')} />
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Target className="h-5 w-5" />
+          {t('targetTitle')}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div role="group" aria-label={t('targetTitle')} className="inline-flex rounded-lg border p-0.5">
+          {bulan.map((b) => (
+            <button
+              key={b.kunci}
+              type="button"
+              aria-pressed={b.kunci === pilihBulan}
+              onClick={() => setPilihBulan(b.kunci)}
+              className={cn(
+                'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                b.kunci === pilihBulan ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted',
+              )}
+            >
+              {namaBulan(b.kunci)}
+            </button>
+          ))}
         </div>
-        {!bolehUbah ? <p className="mt-2 text-sm text-amber-700 dark:text-amber-400">{t('readOnly')}</p> : null}
-      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <CalendarClock className="h-5 w-5" />
-            {t('visitTitle')}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Input
-              type="text"
-              inputMode="numeric"
-              aria-label={t('visitTitle')}
-              className="w-24 tabular-nums"
-              value={hari}
-              placeholder={String(BATAS_HARI_BAWAAN)}
-              onChange={(e) => setHari(angkaSaja(e.target.value).slice(0, 3))}
-              disabled={!bolehUbah || sibuk}
-            />
-            <span className="text-sm text-muted-foreground">{t('visitDays')}</span>
-            <Button onClick={() => simpanHari(Number(hari))} disabled={!bolehUbah || sibuk || !hariValid || Number(hari) === (batas.diatur ? batas.hari : -1)}>
-              {sibuk ? <Loader2 className="h-4 w-4 animate-spin" /> : t('visitSave')}
-            </Button>
-            {batas.diatur ? (
-              <Button variant="ghost" onClick={() => simpanHari(null)} disabled={!bolehUbah || sibuk}>
-                {t('visitUseDefault', { days: BATAS_HARI_BAWAAN })}
-              </Button>
-            ) : null}
-          </div>
-          <p className="text-sm text-muted-foreground">
-            {batas.diatur ? t('visitNow', { days: batas.hari }) : t('visitNotSet', { days: BATAS_HARI_BAWAAN })}
-          </p>
-        </CardContent>
-      </Card>
+        {salesman.length === 0 && spg.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{t("noSalesman")}</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{spg.length > 0 ? t("spgColPerson") : t("colSalesman")}</TableHead>
+                {bulanIni ? <TableHead className="text-right">{t("colAchieved")}</TableHead> : null}
+                <TableHead className="w-48">{t("colTarget")}</TableHead>
+                {bulanIni ? <TableHead className="w-24 text-right">{t("colProgress")}</TableHead> : null}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {salesman.map((s) => barisTarget(s))}
+              {spg.length > 0 ? (
+                <>
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={bulanIni ? 4 : 2} className="whitespace-normal bg-muted/40 py-2">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        {t("spgGroup")}
+                      </span>
+                      <span className="ml-2 text-xs text-muted-foreground">{t("spgGroupHint")}</span>
+                    </TableCell>
+                  </TableRow>
+                  {spg.map((s) =>
+                    barisTarget(
+                      s,
+                      <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs font-normal text-muted-foreground">
+                        <Badge variant="secondary">{t("spgBadge")}</Badge>
+                        {s.tokoNama ?? t("spgNoStore")}
+                      </span>,
+                    ),
+                  )}
+                </>
+              ) : null}
+            </TableBody>
+          </Table>
+        )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Target className="h-5 w-5" />
-            {t('targetTitle')}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div role="group" aria-label={t('targetTitle')} className="inline-flex rounded-lg border p-0.5">
-            {bulan.map((b) => (
-              <button
-                key={b.kunci}
-                type="button"
-                aria-pressed={b.kunci === pilihBulan}
-                onClick={() => setPilihBulan(b.kunci)}
-                className={cn(
-                  'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                  b.kunci === pilihBulan ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted',
-                )}
-              >
-                {namaBulan(b.kunci)}
-              </button>
-            ))}
-          </div>
-
-          {salesman.length === 0 && spg.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{t("noSalesman")}</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{spg.length > 0 ? t("spgColPerson") : t("colSalesman")}</TableHead>
-                  {bulanIni ? <TableHead className="text-right">{t("colAchieved")}</TableHead> : null}
-                  <TableHead className="w-48">{t("colTarget")}</TableHead>
-                  {bulanIni ? <TableHead className="w-24 text-right">{t("colProgress")}</TableHead> : null}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {salesman.map((s) => barisTarget(s))}
-                {spg.length > 0 ? (
-                  <>
-                    <TableRow className="hover:bg-transparent">
-                      <TableCell colSpan={bulanIni ? 4 : 2} className="whitespace-normal bg-muted/40 py-2">
-                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                          {t("spgGroup")}
-                        </span>
-                        <span className="ml-2 text-xs text-muted-foreground">{t("spgGroupHint")}</span>
-                      </TableCell>
-                    </TableRow>
-                    {spg.map((s) =>
-                      barisTarget(
-                        s,
-                        <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs font-normal text-muted-foreground">
-                          <Badge variant="secondary">{t("spgBadge")}</Badge>
-                          {s.tokoNama ?? t("spgNoStore")}
-                        </span>,
-                      ),
-                    )}
-                  </>
-                ) : null}
-              </TableBody>
-            </Table>
-          )}
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={simpanTarget} disabled={!bolehUbah || sibuk || Object.keys(berubah).length === 0}>
-              {sibuk ? <Loader2 className="h-4 w-4 animate-spin" /> : t('targetSave')}
-            </Button>
-            {/* Rincian per kategori/barang hidup di halamannya sendiri; target total tetap di sini. */}
-            <Button asChild variant="link">
-              <Link href={`/backoffice/target-sales?bulan=${pilihBulan}`}>
-                <ListTree className="h-4 w-4" aria-hidden />
-                {t("targetRinciLink")}
-              </Link>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={simpanTarget} disabled={!bolehUbah || sibuk || Object.keys(berubah).length === 0}>
+            {sibuk ? <Loader2 className="h-4 w-4 animate-spin" /> : t('targetSave')}
+          </Button>
+          {/* Rincian per kategori/barang hidup di halamannya sendiri; target total tetap di sini. */}
+          <Button asChild variant="link">
+            <Link href={`/backoffice/target-sales?bulan=${pilihBulan}`}>
+              <ListTree className="h-4 w-4" aria-hidden />
+              {t("targetRinciLink")}
+            </Link>
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

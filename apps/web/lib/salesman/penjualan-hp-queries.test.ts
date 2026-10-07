@@ -12,7 +12,10 @@ import { riwayatPenjualan } from "./riwayat-penjualan-queries";
  * Aturan mutlak: rupiah konsinyasi tidak pernah sampai ke HP — tidak sebagai
  * kanal, tidak di dalam total, dan tidak lewat angka turunan (capaian, komisi,
  * kekurangan ke tingkat berikut) yang memungkinkan total − putus − van = konsi.
- * Nilai konsi sengaja 41.237 supaya bisa dicari di JSON; total resmi dengan
+ * Omzet konsi = barang LAKU di toko konsinyasi yang ia pegang, pada harga
+ * Elorae (`penjualan-konsi.ts`): 4 pcs bersih × 10.309,25 (harga di toko
+ * 13.745,67 dikurangi margin 25%) = 41.237 — sengaja angka yang bisa dicari di
+ * JSON. Transfer konsi yang disetujui (6 pcs) bukan omzet. Total resmi dengan
  * konsi = 49.500 + 41.237 + 10.000 = 100.737.
  *
  * Bulan acak jauh di masa lalu; pengaturan bersama (`SystemSetting`) tidak
@@ -63,6 +66,7 @@ d("payload penjualan HP salesman tanpa rupiah konsinyasi (test bed only)", () =>
   let orderIds: string[] = [];
   let deliveryIds: string[] = [];
   let vanIds: string[] = [];
+  let gerakIds: string[] = [];
 
   beforeAll(async () => {
     uomId = "";
@@ -74,6 +78,7 @@ d("payload penjualan HP salesman tanpa rupiah konsinyasi (test bed only)", () =>
     orderIds = [];
     deliveryIds = [];
     vanIds = [];
+    gerakIds = [];
 
     uomId = (await prisma.uOM.create({ data: { code: `TEST-UOM-PHP-${token}`, nameId: "t", nameEn: "t" } })).id;
     const barang = async (k: string) =>
@@ -87,7 +92,11 @@ d("payload penjualan HP salesman tanpa rupiah konsinyasi (test bed only)", () =>
 
     salesId = (await prisma.user.create({ data: { email: `php-${token}@test.local`, name: `Sales PHP ${token}` } })).id;
     tokoA = (await prisma.store.create({ data: { code: `TEST-PHP-A-${token}`, name: `Toko A ${token}`, address: "x", termsType: "PUTUS" } })).id;
-    tokoB = (await prisma.store.create({ data: { code: `TEST-PHP-B-${token}`, name: `Toko B ${token}`, address: "x", termsType: "KONSI" } })).id;
+    tokoB = (
+      await prisma.store.create({
+        data: { code: `TEST-PHP-B-${token}`, name: `Toko B ${token}`, address: "x", termsType: "KONSI", salesmanId: salesId, marginPercent: 25 },
+      })
+    ).id;
 
     let n = 0;
     const pesanan = async (x: object, lines: object[]) => {
@@ -120,11 +129,23 @@ d("payload penjualan HP salesman tanpa rupiah konsinyasi (test bed only)", () =>
     });
     deliveryIds.push(dl.id);
 
-    // Konsi disetujui tanggal 10: 4 pcs bernilai 41.237 + 1 bonus (tidak dihitung pcs-nya).
-    await pesanan({ storeId: tokoB, status: "APPROVED", orderType: "KONSI", approvedAt: tgl(10), subtotal: 41_237, total: 41_237 }, [
-      { itemId: i2, productName: "C", qty: 4, unitPrice: 10_309.25, lineTotal: 41_237 },
+    // Transfer konsi disetujui tanggal 9: 6 pcs @ 13.745,67 di toko + 1 bonus — BUKAN omzet.
+    await pesanan({ storeId: tokoB, status: "APPROVED", orderType: "KONSI", approvedAt: tgl(9), subtotal: 82_474.02, total: 82_474.02 }, [
+      { itemId: i2, productName: "C", qty: 6, unitPrice: 13_745.67, lineTotal: 82_474.02 },
       { itemId: i2, productName: "C bonus", qty: 1, unitPrice: 0, lineTotal: 0, isBonus: true },
     ]);
+    // Laku di toko B (buku stok SPG): 4 tanggal 10, 1 tanggal 14, kembali 1 tanggal 15 → bersih 4.
+    for (const [qty, kind, hari] of [
+      [7, "TERIMA", 9],
+      [-4, "JUAL", 10],
+      [-1, "JUAL", 14],
+      [1, "RETUR_PEMBELI", 15],
+    ] as const) {
+      const g = await prisma.storeStockMovement.create({
+        data: { storeId: tokoB, itemId: i2, variantSku: "", qty, kind, createdById: salesId, createdAt: tgl(hari) },
+      });
+      gerakIds.push(g.id);
+    }
     // Konsi menunggu: tidak dihitung sama sekali.
     await pesanan({ storeId: tokoB, status: "PENDING_APPROVAL", orderType: "KONSI", subtotal: 90_000, total: 90_000 }, [
       { itemId: i2, productName: "C", qty: 9, unitPrice: 10_000, lineTotal: 90_000 },
@@ -149,6 +170,7 @@ d("payload penjualan HP salesman tanpa rupiah konsinyasi (test bed only)", () =>
   });
 
   afterAll(async () => {
+    await prisma.storeStockMovement.deleteMany({ where: { id: { in: seededIds(gerakIds) } } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { id: { in: seededIds(deliveryIds) } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: seededIds(orderIds) } } });
     await prisma.vanSale.deleteMany({ where: { id: { in: seededIds(vanIds) } } });
@@ -158,10 +180,14 @@ d("payload penjualan HP salesman tanpa rupiah konsinyasi (test bed only)", () =>
     await prisma.user.deleteMany({ where: { id: { in: seededIds([salesId].filter(Boolean)) } } });
   });
 
-  it("pcs konsinyasi: hanya pesanan disetujui, baris bonus tidak dihitung", async () => {
+  it("pcs konsinyasi: barang laku di toko (retur pembeli mengurangi), bukan transfer yang disetujui", async () => {
     const pcs = await pcsKonsiSalesman(salesId, tgl(1, "00:00"));
-    expect(pcs).toEqual([{ tanggal: tgl(10), pcs: 4 }]);
-    // Batas atas eksklusif: disetujui tepat pukul 10.00 tanggal 10.
+    expect(pcs).toEqual([
+      { tanggal: tgl(10), pcs: 4 },
+      { tanggal: tgl(14), pcs: 1 },
+      { tanggal: tgl(15), pcs: -1 },
+    ]);
+    // Batas atas eksklusif: laku tepat pukul 10.00 tanggal 10.
     expect(await pcsKonsiSalesman(salesId, tgl(1, "00:00"), tgl(10))).toEqual([]);
     expect(await pcsKonsiSalesman(salesId, tgl(1, "00:00"), tgl(11, "00:00"))).toEqual([{ tanggal: tgl(10), pcs: 4 }]);
   });

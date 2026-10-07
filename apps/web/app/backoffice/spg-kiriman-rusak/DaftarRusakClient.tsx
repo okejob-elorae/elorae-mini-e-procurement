@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { dinamis } from "@/lib/i18n/dinamis";
 import { BATAS_TEKS_RUSAK, KEPUTUSAN_RUSAK, type KeputusanRusak, type StatusRusak } from "@/lib/spg/rusak";
@@ -82,14 +83,12 @@ export function DaftarRusakClient({
         meta={t("kantor.ringkas", { baris: terbuka.length, pcs: pcsTerbuka })}
       />
 
-      <div className="flex flex-wrap gap-2" role="tablist" aria-label={t("kantor.judul")}>
-        <Button role="tab" aria-selected={tab === "terbuka"} variant={tab === "terbuka" ? "default" : "outline"} onClick={() => pindahTab("terbuka")}>
-          {t("kantor.tabTerbuka", { n: terbuka.length })}
-        </Button>
-        <Button role="tab" aria-selected={tab === "riwayat"} variant={tab === "riwayat" ? "default" : "outline"} onClick={() => pindahTab("riwayat")}>
-          {t("kantor.tabRiwayat")}
-        </Button>
-      </div>
+      <Tabs value={tab} onValueChange={(v) => pindahTab(v as "terbuka" | "riwayat")}>
+        <TabsList aria-label={t("kantor.judul")}>
+          <TabsTrigger value="terbuka">{t("kantor.tabTerbuka", { n: terbuka.length })}</TabsTrigger>
+          <TabsTrigger value="riwayat">{t("kantor.tabRiwayat")}</TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {!bolehPutuskan && tab === "terbuka" && terbuka.length > 0 ? (
         <p className="text-sm text-muted-foreground">{t("kantor.hanyaLihat")}</p>

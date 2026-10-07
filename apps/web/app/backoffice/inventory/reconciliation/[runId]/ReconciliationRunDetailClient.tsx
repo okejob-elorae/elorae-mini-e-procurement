@@ -92,16 +92,18 @@ export function ReconciliationRunDetailClient({ runId }: { runId: string }) {
   }
 
   const failure = run.status === "FAILED" ? reconciliationFailureReason(run.errorMessage, t) : null;
+  // Judul memakai waktu pemeriksaan, bukan potongan id basis data ("Pemeriksaan cmuw7me8").
+  const judul = t("runTitleWaktu", { waktu: formatDisplayDateTime(run.startedAt, locale) });
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-1">
-            <h1 className="text-2xl font-bold">{t("runTitle", { id: runId.slice(0, 8) })}</h1>
-            <TombolBantuan judul={t("runTitle", { id: runId.slice(0, 8) })} />
+            <h1 className="text-2xl font-bold">{judul}</h1>
+            <TombolBantuan judul={judul} />
           </div>
-          <p className="text-muted-foreground">{formatDisplayDateTime(run.startedAt, locale)}</p>
+          <p className="text-muted-foreground">{t("jumlahHasil", { count: run.results.length })}</p>
         </div>
         <Link href="/backoffice/inventory/reconciliation">
           <Button variant="outline">{t("back")}</Button>
@@ -188,7 +190,7 @@ export function ReconciliationRunDetailClient({ runId }: { runId: string }) {
               {run.results.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={canManage ? 6 : 5} className="py-8 text-center text-muted-foreground">
-                    —
+                    {run.status === "FAILED" ? t("hasilKosongGagal") : t("hasilKosong")}
                   </TableCell>
                 </TableRow>
               )}

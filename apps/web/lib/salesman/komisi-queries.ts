@@ -45,8 +45,9 @@ export type OmzetBulan = { putus: number; konsi: number; van: number; total: num
 
 /**
  * Omzet satu bulan WIB, dengan definisi yang SAMA PERSIS dengan kartu "Bulan
- * ini" di beranda HP: `penjualanSalesman` (putus terkirim, konsi disetujui,
- * van), dikelompokkan menurut bulan kalender WIB. Tidak disalin — dipanggil.
+ * ini" di beranda HP: `penjualanSalesman` (putus terkirim, konsi laku di toko
+ * pada harga Elorae, van), dikelompokkan menurut bulan kalender WIB. Tidak
+ * disalin — dipanggil.
  */
 export async function omzetBulan(salesmanId: string, bulan: string): Promise<OmzetBulan> {
   const r = rentangBulanWib(bulan);

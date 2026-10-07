@@ -1,21 +1,15 @@
-'use client';
+"use client";
 
-import { useTranslations } from 'next-intl';
-
-import { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
+import { useSession } from "next-auth/react";
+import { toast } from "sonner";
+import { Edit2, Eye, Plus, Trash2 } from "lucide-react";
+import { deleteRole, getPermissions, getRoles } from "@/app/actions/rbac";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,383 +19,187 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Badge } from '@/components/ui/badge';
-import { Trash2, Plus, Edit2 } from 'lucide-react';
-import { getRoles, getPermissions, createRole, updateRolePermissions, deleteRole } from '@/app/actions/rbac';
-import { toast } from 'sonner';
-import { useSession } from 'next-auth/react';
-import { hasPermission, PERMISSIONS } from '@/lib/rbac';
-import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
+} from "@/components/ui/alert-dialog";
+import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { grupTercakup, kunciDeskripsiPeran } from "@/lib/rbac/penjelasan-izin";
+import { EditorPeran, type IzinDb, type ModeEditor } from "./EditorPeran";
 
-type Role = {
-  id: string;
-  name: string;
-  description: string | null;
-  isSystem: boolean;
-  permissionsVersion: number;
-  userCount: number;
-  permissions: Array<{
-    id: string;
-    code: string;
-    module: string;
-    action: string;
-    description: string | null;
-  }>;
-};
-
-type Permission = {
-  id: string;
-  code: string;
-  module: string;
-  action: string;
-  description: string | null;
-};
+type Role = Awaited<ReturnType<typeof getRoles>>[number];
 
 export default function RBACSettingsPage() {
-  const tUi = useTranslations('ui');
-  const t = useTranslations('settings.rbac');
-  const { data: session } = useSession();
+  const tUi = useTranslations("ui");
+  const t = useTranslations("settings.rbac");
+  const tIzin = useTranslations("izinPeran");
+  const { data: session, update } = useSession();
   const [roles, setRoles] = useState<Role[]>([]);
-  const [permissions, setPermissions] = useState<Record<string, Permission[]>>({});
+  const [izin, setIzin] = useState<IzinDb[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedRole, setSelectedRole] = useState<Role | null>(null);
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [editor, setEditor] = useState<{ mode: ModeEditor; peran: Role | null; kunci: number } | null>(null);
   const [roleToDelete, setRoleToDelete] = useState<Role | null>(null);
-  const [formData, setFormData] = useState({ name: '', description: '' });
-  const [selectedPermissions, setSelectedPermissions] = useState<Set<string>>(new Set());
+  const [menghapus, setMenghapus] = useState(false);
 
-  const canManage = session?.user?.permissions && hasPermission(session.user.permissions, PERMISSIONS.SETTINGS_RBAC_MANAGE);
+  const canManage = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.SETTINGS_RBAC_MANAGE);
+
+  // Dinaikkan setelah menyimpan atau menghapus supaya daftar dimuat ulang.
+  const [versi, setVersi] = useState(0);
+  const loadData = () => setVersi((v) => v + 1);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    let batal = false;
+    Promise.all([getRoles(), getPermissions()])
+      .then(([rolesData, permissionsData]) => {
+        if (batal) return;
+        setRoles(rolesData);
+        setIzin(permissionsData);
+      })
+      .catch(() => toast.error(t("loadFailed")))
+      .finally(() => {
+        if (!batal) setLoading(false);
+      });
+    return () => {
+      batal = true;
+    };
+  }, [t, versi]);
 
-  async function loadData() {
-    try {
-      setLoading(true);
-      const [rolesData, permissionsData] = await Promise.all([
-        getRoles(),
-        getPermissions(),
-      ]);
-      setRoles(rolesData);
-      setPermissions(permissionsData);
-    } catch (error: any) {
-      toast.error(error.message || t('loadFailed'));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function handleCreateRole() {
-    setFormData({ name: '', description: '' });
-    setSelectedPermissions(new Set());
-    setIsCreateDialogOpen(true);
-  }
-
-  function handleEditRole(role: Role) {
-    setSelectedRole(role);
-    setFormData({ name: role.name, description: role.description || '' });
-    setSelectedPermissions(new Set(role.permissions.map(p => p.id)));
-    setIsEditDialogOpen(true);
-  }
-
-  function handleDeleteRole(role: Role) {
-    setRoleToDelete(role);
-    setIsDeleteDialogOpen(true);
-  }
-
-  async function handleSaveCreate() {
-    try {
-      await createRole(formData, Array.from(selectedPermissions));
-      toast.success(t('created'));
-      setIsCreateDialogOpen(false);
-      loadData();
-    } catch (error: any) {
-      toast.error(error.message || t('createFailed'));
-    }
-  }
-
-  async function handleSaveEdit() {
-    if (!selectedRole) return;
-    try {
-      await updateRolePermissions(selectedRole.id, Array.from(selectedPermissions));
-      toast.success(t('updated'));
-      setIsEditDialogOpen(false);
-      setSelectedRole(null);
-      loadData();
-    } catch (error: any) {
-      toast.error(error.message || t('updateFailed'));
-    }
-  }
+  const bukaEditor = (mode: ModeEditor, peran: Role | null) => setEditor({ mode, peran, kunci: Date.now() });
 
   async function handleConfirmDelete() {
     if (!roleToDelete) return;
+    setMenghapus(true);
     try {
-      await deleteRole(roleToDelete.id);
-      toast.success(t('deleted'));
-      setIsDeleteDialogOpen(false);
+      const hasil = await deleteRole(roleToDelete.id);
+      if (!hasil.ok) {
+        toast.error(tIzin(`galat.${hasil.code}` as never));
+        return;
+      }
+      toast.success(t("deleted"));
       setRoleToDelete(null);
       loadData();
-    } catch (error: any) {
-      toast.error(error.message || t('deleteFailed'));
+    } catch {
+      toast.error(t("deleteFailed"));
+    } finally {
+      setMenghapus(false);
     }
-  }
-
-  function togglePermission(permissionId: string) {
-    const newSet = new Set(selectedPermissions);
-    if (newSet.has(permissionId)) {
-      newSet.delete(permissionId);
-    } else {
-      newSet.add(permissionId);
-    }
-    setSelectedPermissions(newSet);
-  }
-
-  function toggleModule(module: string) {
-    const modulePerms = permissions[module] || [];
-    const modulePermIds = modulePerms.map(p => p.id);
-    const allSelected = modulePermIds.every(id => selectedPermissions.has(id));
-    
-    const newSet = new Set(selectedPermissions);
-    if (allSelected) {
-      modulePermIds.forEach(id => newSet.delete(id));
-    } else {
-      modulePermIds.forEach(id => newSet.add(id));
-    }
-    setSelectedPermissions(newSet);
   }
 
   if (loading) {
-    return <div className="flex items-center justify-center p-8">{tUi('loading')}</div>;
+    return <div className="flex items-center justify-center p-8">{tUi("loading")}</div>;
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-1">
-          <h1 className="text-2xl font-bold tracking-tight">{t('pageTitle')}</h1>
-          <TombolBantuan judul={t('pageTitle')} />
-        </div>
-        {canManage && (
-          <Button onClick={handleCreateRole}>
-            <Plus className="mr-2 h-4 w-4" />
-            {t('createRole')}
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        title={t("pageTitle")}
+        actions={
+          canManage ? (
+            <Button onClick={() => bukaEditor("buat", null)}>
+              <Plus className="mr-2 h-4 w-4" />
+              {t("createRole")}
+            </Button>
+          ) : null
+        }
+      />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {roles.map((role) => (
-          <Card key={role.id} className="h-full">
-            <CardHeader>
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <CardTitle className="flex items-center gap-2">
-                    {role.name}
-                    {role.isSystem && (
-                      <Badge variant="secondary" className="text-xs">{t('system')}</Badge>
-                    )}
-                  </CardTitle>
-                  {role.description && (
-                    <CardDescription className="mt-1">{role.description}</CardDescription>
+        {roles.map((role) => {
+          const kunciDeskripsi = kunciDeskripsiPeran(role.name, role.description);
+          const deskripsi = kunciDeskripsi ? tIzin(kunciDeskripsi as never) : role.description;
+          const grup = grupTercakup(role.permissions.map((p) => p.code));
+          const pekerjaan = role.isSystem
+            ? tIzin("semuaPekerjaan")
+            : grup.length > 0
+              ? grup.map((g) => tIzin(`grup.${g}` as never)).join(", ")
+              : tIzin("tanpaIzin");
+          const bisaUbah = canManage && !role.isSystem;
+          return (
+            <Card key={role.id} className="h-full">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  {role.name}
+                  {role.isSystem && (
+                    <Badge variant="secondary" className="text-xs">
+                      {t("system")}
+                    </Badge>
                   )}
-                </div>
-              </div>
-            </CardHeader>
-            {/* Card is already a flex column; growing the content and pushing the
-                button row to its end keeps Edit at the same height across cards
-                whose descriptions differ in length. */}
-            <CardContent className="flex flex-1 flex-col">
-              <div className="flex flex-1 flex-col gap-2">
-                <div className="text-sm text-muted-foreground">
-                  {t('usersAssigned', { count: role.userCount })}
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {t('permissionsCount', { count: role.permissions.length })}
-                </div>
-                {canManage && !role.isSystem && (
+                </CardTitle>
+                {deskripsi && <CardDescription className="mt-1">{deskripsi}</CardDescription>}
+              </CardHeader>
+              {/* Card is already a flex column; growing the content and pushing the
+                  button row to its end keeps the buttons at the same height across
+                  cards whose descriptions differ in length. */}
+              <CardContent className="flex flex-1 flex-col">
+                <div className="flex flex-1 flex-col gap-2">
+                  <div className="text-sm">
+                    <span className="font-medium">{tIzin("pekerjaan")}: </span>
+                    <span className="text-muted-foreground">{pekerjaan}</span>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {t("usersAssigned", { count: role.userCount })}
+                    {!role.isSystem ? ` · ${t("permissionsCount", { count: role.permissions.length })}` : null}
+                  </div>
                   <div className="mt-auto flex gap-2 pt-2">
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => handleEditRole(role)}
+                      onClick={() => bukaEditor(bisaUbah ? "ubah" : "lihat", role)}
                       className="flex-1"
                     >
-                      <Edit2 className="mr-1 h-3 w-3" />
-                      {t('edit')}
+                      {bisaUbah ? <Edit2 className="mr-1 h-3 w-3" /> : <Eye className="mr-1 h-3 w-3" />}
+                      {bisaUbah ? t("edit") : tIzin("lihat")}
                     </Button>
-                    {role.userCount === 0 && (
+                    {bisaUbah && role.userCount === 0 && (
                       <Button
                         variant="destructive"
                         size="sm"
-                        onClick={() => handleDeleteRole(role)}
-                        aria-label={t('deleteAria', { name: role.name })}
-                        title={t('deleteAria', { name: role.name })}
+                        onClick={() => setRoleToDelete(role)}
+                        aria-label={t("deleteAria", { name: role.name })}
+                        title={t("deleteAria", { name: role.name })}
                       >
                         <Trash2 className="h-3 w-3" />
                       </Button>
                     )}
                   </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
-      {/* Create Role Dialog */}
-      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{t('createRole')}</DialogTitle>
-            <DialogDescription>{t('createDescription')}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">{t('roleName')} *</Label>
-              <Input
-                id="name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder={t('roleNamePlaceholder')}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="description">{tUi('description')}</Label>
-              <Textarea
-                id="description"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder={t('descriptionPlaceholder')}
-                rows={2}
-              />
-            </div>
-            <div className="space-y-4">
-              <Label>{t('permissions')}</Label>
-              {Object.entries(permissions).map(([module, perms]) => (
-                <div key={module} className="space-y-2 border rounded-lg p-4">
-                  <div className="flex items-center justify-between">
-                    <Label className="font-semibold capitalize">{module.replace(/_/g, ' ')}</Label>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => toggleModule(module)}
-                    >
-                      {perms.every(p => selectedPermissions.has(p.id)) ? t('deselectAll') : t('selectAll')}
-                    </Button>
-                  </div>
-                  <div className="space-y-2 pl-4">
-                    {perms.map((perm) => (
-                      <div key={perm.id} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={perm.id}
-                          checked={selectedPermissions.has(perm.id)}
-                          onCheckedChange={() => togglePermission(perm.id)}
-                        />
-                        <Label
-                          htmlFor={perm.id}
-                          className="text-sm font-normal cursor-pointer flex-1"
-                        >
-                          {perm.description || perm.code}
-                        </Label>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
-              {t('cancel')}
-            </Button>
-            <Button onClick={handleSaveCreate} disabled={!formData.name}>
-              {t('createRole')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {editor ? (
+        <EditorPeran
+          key={editor.kunci}
+          mode={editor.mode}
+          peran={editor.peran}
+          semuaPeran={roles}
+          semuaIzin={izin}
+          onTutup={() => setEditor(null)}
+          onTersimpan={() => {
+            setEditor(null);
+            loadData();
+            // Bila peran Anda sendiri yang berubah, sesi Anda ikut dibaca ulang sekarang.
+            void update();
+          }}
+        />
+      ) : null}
 
-      {/* Edit Role Dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{t('editTitle', { name: selectedRole?.name ?? '' })}</DialogTitle>
-            <DialogDescription>{t('editDescription')}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            {selectedRole?.isSystem && (
-              <div className="bg-muted p-3 rounded-md text-sm text-muted-foreground">
-                {t('systemNote')}
-              </div>
-            )}
-            <div className="space-y-4">
-              <Label>{t('permissions')}</Label>
-              {Object.entries(permissions).map(([module, perms]) => (
-                <div key={module} className="space-y-2 border rounded-lg p-4">
-                  <div className="flex items-center justify-between">
-                    <Label className="font-semibold capitalize">{module.replace(/_/g, ' ')}</Label>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => toggleModule(module)}
-                      disabled={selectedRole?.isSystem}
-                    >
-                      {perms.every(p => selectedPermissions.has(p.id)) ? t('deselectAll') : t('selectAll')}
-                    </Button>
-                  </div>
-                  <div className="space-y-2 pl-4">
-                    {perms.map((perm) => (
-                      <div key={perm.id} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={`edit-${perm.id}`}
-                          checked={selectedPermissions.has(perm.id)}
-                          onCheckedChange={() => togglePermission(perm.id)}
-                          disabled={selectedRole?.isSystem}
-                        />
-                        <Label
-                          htmlFor={`edit-${perm.id}`}
-                          className="text-sm font-normal cursor-pointer flex-1"
-                        >
-                          {perm.description || perm.code}
-                        </Label>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
-              {t('cancel')}
-            </Button>
-            <Button onClick={handleSaveEdit} disabled={selectedRole?.isSystem}>
-              {t('saveChanges')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+      <AlertDialog open={roleToDelete !== null} onOpenChange={(buka) => !buka && !menghapus && setRoleToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t('deleteTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('deleteBody', { name: roleToDelete?.name ?? '' })}
-            </AlertDialogDescription>
+            <AlertDialogTitle>{t("deleteTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("deleteBody", { name: roleToDelete?.name ?? "" })}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{tUi('cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmDelete} variant="destructive">
-              {t('delete')}
+            <AlertDialogCancel disabled={menghapus}>{tUi("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void handleConfirmDelete();
+              }}
+              disabled={menghapus}
+              variant="destructive"
+            >
+              {t("delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -36,6 +36,11 @@ import { formatDisplayDate } from '@/lib/date-only';
 import { buatKontrabonAction, tutupKontrabonAction } from '@/app/actions/collections';
 import type { BarisKontrabon, TokoSiapKontrabon } from '@/lib/receivables/collection-queries';
 import { LencanaAsal, TombolKonfirmasi } from './KonfirmasiLapangan';
+import { KeteranganKirim } from '@/app/pwa/KeteranganKirim';
+import type { SaringKontrabon } from './saring';
+import { KotakCari } from '../piutang/_daftar/KotakCari';
+import { HalamanDaftar } from '../piutang/_daftar/HalamanDaftar';
+import { denganParam } from '../piutang/_daftar/halaman';
 import { TanggalInput } from '@/components/ui/tanggal-input';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
@@ -54,15 +59,24 @@ const NADA: Record<BarisKontrabon['status'], StatusTone> = {
 
 export function KontrabonClient({
   baris,
+  halaman,
+  jumlah,
   kandidat,
   bolehMengelola,
-  saringAwal = 'semua',
+  saring = 'berjalan',
+  cari = '',
 }: {
+  /** Satu halaman yang sudah disaring di server. */
   baris: BarisKontrabon[];
+  halaman: { halaman: number; totalHalaman: number; total: number; ukuran: number };
+  /** Jumlah atas SEMUA kontrabon, bukan hanya halaman ini. */
+  jumlah: { berjalan: number; lewat: number; belum: number; semua: number };
   kandidat: TokoSiapKontrabon[];
   bolehMengelola: boolean;
-  /** Dari `?saring=belum` — tautan Beranda "Janji bayar lapangan belum dikonfirmasi". */
-  saringAwal?: 'semua' | 'belum';
+  /** Dari `?saring=` — `belum` dari tautan Beranda "Janji bayar lapangan belum dikonfirmasi". */
+  saring?: SaringKontrabon;
+  /** Dari `?cari=`. */
+  cari?: string;
 }) {
   const t = useTranslations('collections');
   const locale = useLocale();
@@ -79,16 +93,13 @@ export function KontrabonClient({
   const [catatan, setCatatan] = useState('');
   const [tutupId, setTutupId] = useState<string | null>(null);
   const [alasanBatal, setAlasanBatal] = useState('');
-  // "Belum dikonfirmasi" = janji lapangan yang masih berjalan dan belum
-  // dicocokkan kantor. Yang sudah ditutup tidak menunggu siapa pun lagi.
-  const [saring, setSaring] = useState<'semua' | 'belum'>(saringAwal);
 
-  const lewat = baris.filter((b) => b.status === 'BERJALAN' && (b.sisaHari ?? 0) < 0).length;
-  const berjalan = baris.filter((b) => b.status === 'BERJALAN').length;
-  const perluKonfirmasi = (b: BarisKontrabon) => b.status === 'BERJALAN' && !b.dikonfirmasi;
-  const belumDikonfirmasi = baris.filter(perluKonfirmasi).length;
-  const tampil = saring === 'belum' ? baris.filter(perluKonfirmasi) : baris;
+  const tampil = baris;
   const tutupDariLapangan = baris.find((b) => b.id === tutupId)?.dariLapangan ?? false;
+  const hrefSaring = (x: SaringKontrabon) =>
+    denganParam('/backoffice/kontrabon', { cari }, { saring: x === 'berjalan' ? null : x });
+  // Tombol simpan yang mati menyebut kekurangan pertamanya.
+  const belumSimpan = !tokoDipilih ? t('whyStore') : terpilih.size === 0 ? t('whyInvoices') : null;
 
   const toko = kandidat.find((k) => k.storeId === tokoDipilih) ?? null;
   const nilaiTerpilih = useMemo(
@@ -162,7 +173,7 @@ export function KontrabonClient({
     <div className="space-y-6">
       <PageHeader
         title={t('pageTitle')}
-        meta={t('summary', { running: berjalan, late: lewat })}
+        meta={t('summary', { running: jumlah.berjalan, late: jumlah.lewat })}
         actions={
           bolehMengelola ? (
             <Button onClick={bukaBuat} disabled={kandidat.length === 0}>
@@ -173,29 +184,31 @@ export function KontrabonClient({
         }
       />
 
-      <div className="flex flex-wrap gap-2" role="group" aria-label={t('filterLabel')}>
-        <Button
-          size="sm"
-          variant={saring === 'semua' ? 'default' : 'outline'}
-          aria-pressed={saring === 'semua'}
-          onClick={() => setSaring('semua')}
-        >
-          {t('filterAll')}
-        </Button>
-        <Button
-          size="sm"
-          variant={saring === 'belum' ? 'default' : 'outline'}
-          aria-pressed={saring === 'belum'}
-          onClick={() => setSaring('belum')}
-        >
-          {t('filterUnconfirmed', { count: belumDikonfirmasi })}
-        </Button>
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <KotakCari nilai={cari} placeholder={t('searchPlaceholder')} label={t('searchPlaceholder')} />
+        <div className="flex flex-wrap gap-2" role="group" aria-label={t('filterLabel')}>
+          {(
+            [
+              { x: 'berjalan', teks: t('filterRunning', { count: jumlah.berjalan }) },
+              { x: 'belum', teks: t('filterUnconfirmed', { count: jumlah.belum }) },
+              { x: 'semua', teks: `${t('filterAll')} (${jumlah.semua})` },
+            ] as { x: SaringKontrabon; teks: string }[]
+          ).map((p) => (
+            <Button key={p.x} size="sm" variant={saring === p.x ? 'default' : 'outline'} asChild>
+              <Link href={hrefSaring(p.x)} replace aria-current={saring === p.x ? 'true' : undefined}>
+                {p.teks}
+              </Link>
+            </Button>
+          ))}
+        </div>
       </div>
 
       <Card>
         <CardContent className={tampil.length === 0 ? 'p-0' : 'px-0'}>
           {tampil.length === 0 ? (
-            saring === 'belum' ? (
+            cari || (saring === 'berjalan' && jumlah.semua > 0) ? (
+              <EmptyState icon={ClipboardList} title={t('emptyFilteredTitle')} />
+            ) : saring === 'belum' ? (
               <EmptyState
                 icon={ClipboardList}
                 title={t('emptyUnconfirmedTitle')}
@@ -232,7 +245,7 @@ export function KontrabonClient({
                         <TableCell>
                         <Link
                           href={`/backoffice/kontrabon/${b.id}`}
-                          className="font-medium text-primary underline-offset-2 hover:underline"
+                          className="whitespace-nowrap font-medium text-foreground underline decoration-primary underline-offset-2 hover:decoration-2"
                         >
                           {b.docNo}
                         </Link>
@@ -325,6 +338,7 @@ export function KontrabonClient({
               </Table>
             </div>
           )}
+          <HalamanDaftar {...halaman} />
         </CardContent>
       </Card>
 
@@ -430,10 +444,11 @@ export function KontrabonClient({
             </div>
           </div>
 
-          <DialogFooter>
-            <Button disabled={pending || terpilih.size === 0} onClick={simpan}>
+          <DialogFooter className="flex-col items-stretch gap-2 sm:flex-col sm:items-end">
+            <Button disabled={pending || belumSimpan !== null} onClick={simpan}>
               {t('save')}
             </Button>
+            <KeteranganKirim teks={belumSimpan} />
           </DialogFooter>
         </DialogContent>
       </Dialog>

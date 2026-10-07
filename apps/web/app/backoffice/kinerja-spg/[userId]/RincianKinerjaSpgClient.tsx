@@ -191,12 +191,13 @@ function BagianToko({
                 <TableHead className="pl-6">{t("rincian.kolom.hari")}</TableHead>
                 <TableHead>{t("rincian.kolom.shift")}</TableHead>
                 <TableHead>{t("rincian.kolom.masuk")}</TableHead>
-                <TableHead>{t("rincian.kolom.keterangan")}</TableHead>
+                <TableHead className="min-w-[9rem]">{t("rincian.kolom.keterangan")}</TableHead>
                 <TableHead className="text-right">{t("kolom.nota")}</TableHead>
                 <TableHead className="text-right">{t("kolom.potong")}</TableHead>
                 <TableHead className="text-right">{t("kolom.nilai")}</TableHead>
                 <TableHead className="text-right">{t("kolom.pengunjung")}</TableHead>
-                <TableHead className="text-right">{t("kolom.konversi")}</TableHead>
+                {/* Konversi = nota ÷ pengunjung: disembunyikan di bawah 2xl supaya tabel muat di laptop 1280 px. */}
+                <TableHead className="hidden text-right 2xl:table-cell">{t("kolom.konversi")}</TableHead>
                 <TableHead>{t("kolom.tutup")}</TableHead>
                 <TableHead className="pr-6 text-right">{t("kolom.titip")}</TableHead>
               </TableRow>
@@ -207,7 +208,7 @@ function BagianToko({
                   <TableCell className="pl-6 font-medium">{h.label}</TableCell>
                   <TableCell>{shift(h)}</TableCell>
                   <TableCell className="tabular-nums">{h.jamMasuk ?? <span className="text-muted-foreground">—</span>}</TableCell>
-                  <TableCell>{keterangan(h)}</TableCell>
+                  <TableCell className="whitespace-normal">{keterangan(h)}</TableCell>
                   <TableCell className="text-right tabular-nums">{h.depan ? "" : angka.format(h.nota)}</TableCell>
                   <TableCell className="text-right tabular-nums">{h.depan ? "" : angka.format(h.potong)}</TableCell>
                   <TableCell className="text-right tabular-nums">{h.depan ? "" : formatRupiah(h.nilai)}</TableCell>
@@ -225,7 +226,7 @@ function BagianToko({
                       </span>
                     )}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{h.konversiPersen === null ? (h.depan ? "" : <span className="text-muted-foreground">—</span>) : persen(h.konversiPersen)}</TableCell>
+                  <TableCell className="hidden text-right tabular-nums 2xl:table-cell">{h.konversiPersen === null ? (h.depan ? "" : <span className="text-muted-foreground">—</span>) : persen(h.konversiPersen)}</TableCell>
                   <TableCell>{tutup(h)}</TableCell>
                   <TableCell className="pr-6 text-right tabular-nums">{h.titipDibuat > 0 ? angka.format(h.titipDibuat) : ""}</TableCell>
                 </TableRow>

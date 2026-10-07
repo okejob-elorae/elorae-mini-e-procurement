@@ -457,6 +457,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "pwaPenjualan.subtitle" },
       "Angka bulan berjalan sama dengan kartu \"Bulan ini\" di beranda. Pilih bulan dengan panah atau daftar bulan di atas.",
+      "Konsinyasi dihitung saat barangnya laku di toko yang Anda pegang (dicatat SPG, atau laporan laku bulanan untuk toko tanpa SPG), bukan saat dikirim — dan hanya dalam pcs.",
     ],
     kartu: [
       {
@@ -502,7 +503,7 @@ export const ENTRI: EntriBantuan[] = [
       },
       {
         judul: { kunci: "pwa.insentif.salesTitle" },
-        isi: "Sama dengan kartu \"Bulan ini\" di beranda: rupiah dari pengiriman putus dan penjualan van. Konsinyasi yang disetujui hanya tampil sebagai jumlah pcs; angka final dari kantor bisa ikut menghitungnya.",
+        isi: "Sama dengan kartu \"Bulan ini\" di beranda: rupiah dari pengiriman putus dan penjualan van. Konsinyasi hanya tampil sebagai jumlah pcs yang laku di toko yang Anda pegang (bukan barang yang dikirim); angka final dari kantor ikut menghitung nilainya.",
       },
     ],
   },

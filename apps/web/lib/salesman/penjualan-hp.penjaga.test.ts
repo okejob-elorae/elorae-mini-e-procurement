@@ -46,6 +46,9 @@ const RESMI = [
   "capaianRinciOrang",
   // Nilai 90 hari per toko = total konsi di toko konsinyasi.
   "tokoMenurun",
+  // Baris laku konsinyasi membawa rupiah (harga Elorae) — HP hanya boleh pcs-nya.
+  "lakuKonsiSalesman",
+  "lakuKonsiSatuSalesman",
 ];
 
 const HALAMAN: { berkas: string; wajib: string[] }[] = [

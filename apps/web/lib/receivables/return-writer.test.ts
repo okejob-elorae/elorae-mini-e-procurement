@@ -42,7 +42,8 @@ const state = {
   saldoToko: [] as { itemId: string; variantSku: string; _sum: { qty: number } }[],
   bukuNota: [] as { storeId: string; itemId: string; variantSku: string; _sum: { qty: number } }[],
   gerakBuku: [] as Record<string, unknown>[],
-  toko: null as { termsType: 'PUTUS' | 'KONSI'; marginPercent: number | null } | null,
+  // Berpemegang: lonceng kantor untuk toko tanpa pemegang diuji di `retur-tanpa-pemegang.test.ts`.
+  toko: null as { termsType: 'PUTUS' | 'KONSI'; marginPercent: number | null; salesmanId?: string | null } | null,
   barang: [] as { id: string; nameId: string; sellingPrice: number | null; variants: unknown }[],
   /** Nomor TRK terakhir yang sudah ada di basis data. */
   trkTerakhir: null as { noNrt: string } | null,
@@ -257,7 +258,7 @@ beforeEach(() => {
   state.saldoToko = [];
   state.bukuNota = [];
   state.gerakBuku = [];
-  state.toko = { termsType: 'KONSI', marginPercent: 20 };
+  state.toko = { termsType: 'KONSI', marginPercent: 20, salesmanId: 'pemegang1' };
   state.barang = [
     { id: 'brg1', nameId: 'Kemeja', sellingPrice: 80_000, variants: [{ sku: 'KMJ-M', size: 'M' }] },
     { id: 'brg2', nameId: 'Blus', sellingPrice: null, variants: [] },
@@ -758,7 +759,7 @@ describe('catatReturToko — NRT dari SPG', () => {
   });
 
   it('PUTUS: nomor nota toko wajib', async () => {
-    state.toko = { termsType: 'PUTUS', marginPercent: null };
+    state.toko = { termsType: 'PUTUS', marginPercent: null, salesmanId: 'pemegang1' };
     expect(await catatReturToko({ ...SPG, claimedAmount: 150_000, photoUrl: '/api/foto/1' })).toEqual({
       ok: false,
       alasan: 'NOMOR_WAJIB',
@@ -766,7 +767,7 @@ describe('catatReturToko — NRT dari SPG', () => {
   });
 
   it('PUTUS: foto nota toko wajib', async () => {
-    state.toko = { termsType: 'PUTUS', marginPercent: null };
+    state.toko = { termsType: 'PUTUS', marginPercent: null, salesmanId: 'pemegang1' };
     expect(await catatReturToko({ ...SPG, noNrt: 'RT-9', claimedAmount: 150_000 })).toEqual({
       ok: false,
       alasan: 'FOTO_WAJIB',
@@ -774,7 +775,7 @@ describe('catatReturToko — NRT dari SPG', () => {
   });
 
   it('PUTUS: nilainya total nota toko yang diketik; barisnya hanya qty', async () => {
-    state.toko = { termsType: 'PUTUS', marginPercent: null };
+    state.toko = { termsType: 'PUTUS', marginPercent: null, salesmanId: 'pemegang1' };
     const h = await catatReturToko({ ...SPG, noNrt: 'RT-9', claimedAmount: 150_000, photoUrl: '/api/foto/1' });
     expect(h).toEqual({ ok: true, id: 'nrt1', noNrt: 'RT-9' });
     expect(Number((state.nrtDibuat[0].claimedAmount as { value: number }).value)).toBe(150_000);

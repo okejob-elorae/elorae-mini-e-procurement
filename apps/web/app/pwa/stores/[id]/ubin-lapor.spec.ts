@@ -93,7 +93,6 @@ describe("kartu SPG hari ini", () => {
     keadaan: "BELUM" as const,
     masuk: null,
     pulang: null,
-    jenisIzin: null,
     jadwalMulai: null,
     ...b,
   });
@@ -108,7 +107,7 @@ describe("kartu SPG hari ini", () => {
         baris: [
           baris({ nama: "Ani", keadaan: "DI_TOKO", masuk: "08.15" }),
           baris({ nama: "Budi", keadaan: "PULANG", masuk: "08.00", pulang: "16.30" }),
-          baris({ nama: "Citra", keadaan: "IZIN", jenisIzin: "SAKIT" }),
+          baris({ nama: "Citra", keadaan: "IZIN" }),
           baris({ nama: "Dewi", keadaan: "BELUM", jadwalMulai: "14:00" }),
           baris({ nama: "Eka", keadaan: "LIBUR" }),
           baris({ nama: "Gani", keadaan: "BUKAN_HARI_KERJA" }),
@@ -119,7 +118,9 @@ describe("kartu SPG hari ini", () => {
     expect(html).toContain("pwa.kehadiranSpg.judul");
     expect(html).toContain('pwa.kehadiranSpg.diToko{"jam":"08.15"}');
     expect(html).toContain('pwa.kehadiranSpg.pulang{"pulang":"16.30","masuk":"08.00"}');
-    expect(html).toContain("pwa.kehadiranSpg.izin.SAKIT");
+    // Izin, sakit, dan cuti sama-sama "Izin hari ini" di HP salesman.
+    expect(html).toContain("pwa.kehadiranSpg.izin.IZIN");
+    expect(html).not.toMatch(/SAKIT|CUTI/);
     expect(html).toContain('pwa.kehadiranSpg.belumJadwal{"jam":"14:00"}');
     expect(html).toContain("pwa.kehadiranSpg.libur");
     expect(html).toMatch(/Gani<\/p><p[^>]*>pwa\.kehadiranSpg\.bukanHariKerja</);

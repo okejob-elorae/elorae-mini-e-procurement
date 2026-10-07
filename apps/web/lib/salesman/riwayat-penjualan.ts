@@ -8,8 +8,8 @@ import { bulanWib } from "./pengaturan";
  *
  * Bahannya SELALU baris `penjualanSalesman` (`lib/salesman/queries.ts`), yaitu
  * sumber angka "Bulan ini" di beranda HP: putus = kiriman menurut tanggal
- * kirim, konsi = pesanan konsinyasi disetujui menurut tanggal disetujui, van =
- * penjualan mobil menurut tanggal jual. Bulan = bulan kalender WIB, dan baris
+ * kirim, konsi = barang laku di toko konsinyasi menurut tanggal laku
+ * (`penjualan-konsi.ts`), van = penjualan mobil menurut tanggal jual. Bulan = bulan kalender WIB, dan baris
  * bertanggal sesudah hari ini (WIB) tidak dihitung — sama dengan grafik beranda
  * yang berhenti di hari ini. Dengan begitu angka bulan ini di halaman riwayat
  * tidak pernah berbeda dari kartu beranda.

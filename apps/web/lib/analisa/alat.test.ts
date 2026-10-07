@@ -27,7 +27,7 @@ describe("ALAT", () => {
     }
   });
 
-  it("never offers a receivables tool while the SSG decision is open", () => {
+  it("offers no receivables tool until the owner asks for one", () => {
     expect(ALAT.map((a) => a.name).join(" ")).not.toMatch(/piutang|receivable|konsinyasi/);
   });
 });

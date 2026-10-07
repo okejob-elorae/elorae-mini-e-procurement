@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { ArrowLeft, ArrowRightLeft, Camera, MessageSquareWarning, Printer, Unlink } from 'lucide-react';
+import { ArrowLeft, ArrowRightLeft, Camera, EyeOff, MessageSquareWarning, Printer, Unlink } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -122,8 +122,11 @@ export function RincianReturClient({
   koreksi = null,
   riwayat = [],
   rincianBarang = null,
+  klaimTersembunyi = false,
 }: {
   data: RincianRetur;
+  /** Penonton akan menghitung nota ini: klaimnya sudah dibuang di server. */
+  klaimTersembunyi?: boolean;
   kandidat: { id: string; name: string }[];
   bolehMengelola: boolean;
   /** Toko aktif untuk "Pindahkan ke toko lain" — hanya dimuat untuk yang boleh mengelola. */
@@ -158,6 +161,10 @@ export function RincianReturClient({
   const [setujuSiklus, setSetujuSiklus] = useState(false);
 
   const b = data.baris;
+  // Beban TOKO yang ditagih 0 (toko belum memotong melebihi barang yang sampai):
+  // tidak ada faktur, dan tidak ada yang bisa ditandai "sudah diganti".
+  const tanpaTagihanToko =
+    data.beban?.penanggung === 'TOKO' && !data.beban.faktur && data.beban.tagihTokoTercatat === 0;
 
   /*
    * Barang disandingkan menurut namanya, bukan menurut urutan barisnya. Gudang
@@ -261,12 +268,15 @@ export function RincianReturClient({
         }
         actions={
           <span className="inline-flex flex-wrap gap-2">
-            <Button variant="outline" asChild>
-              <a href={`/print/retur/${b.id}`} target="_blank" rel="noreferrer">
-                <Printer className="mr-1.5 h-4 w-4" />
-                {t('print')}
-              </a>
-            </Button>
+            {/* Lembar cetaknya memuat klaim — tidak ditawarkan selama hitungannya buta. */}
+            {!klaimTersembunyi && (
+              <Button variant="outline" asChild>
+                <a href={`/print/retur/${b.id}`} target="_blank" rel="noreferrer">
+                  <Printer className="mr-1.5 h-4 w-4" />
+                  {t('print')}
+                </a>
+              </Button>
+            )}
             {bolehMengelola && b.langkah !== 'batal' && (
               <>
               {data.gudang && (
@@ -359,7 +369,15 @@ export function RincianReturClient({
             <p className="text-xs text-muted-foreground">
               {b.nomor} · {tanggal(b.tanggal)}
             </p>
-            {data.photoUrl ? (
+            {klaimTersembunyi ? (
+              <div className="flex items-start gap-2 rounded-lg border border-dashed p-4 text-sm">
+                <EyeOff className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                <span>
+                  <span className="block font-medium">{t('claimHiddenTitle')}</span>
+                  <span className="block text-muted-foreground">{t('claimHiddenBody')}</span>
+                </span>
+              </div>
+            ) : data.photoUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={data.photoUrl}
@@ -372,12 +390,14 @@ export function RincianReturClient({
                 {t('noPhoto')}
               </div>
             )}
-            <Ringkas
-              label={t('totalClaimed')}
-              value={rupiah(b.nilaiKlaim ?? 0)}
-              qty={data.barangKlaim.reduce((s, i) => s + i.qty, 0)}
-              adaRincian={adaRincian}
-            />
+            {!klaimTersembunyi && (
+              <Ringkas
+                label={t('totalClaimed')}
+                value={rupiah(b.nilaiKlaim ?? 0)}
+                qty={data.barangKlaim.reduce((s, i) => s + i.qty, 0)}
+                adaRincian={adaRincian}
+              />
+            )}
           </div>
 
           {/* Sisi gudang */}
@@ -596,13 +616,16 @@ export function RincianReturClient({
                     })}
                   </p>
                 )}
+                {data.beban.penanggung === 'TOKO' && data.beban.tagihTokoTercatat !== null && !data.beban.faktur && (
+                  <p className="text-sm">{t('chargeTokoBilled', { value: rupiah(data.beban.tagihTokoTercatat) })}</p>
+                )}
                 {/* Beban toko lunas lewat BKM atas fakturnya — tidak ditandai lunas di sini. */}
                 {data.beban.status === 'DITETAPKAN' && bolehMengelola && !data.beban.faktur && (
                   <div className="space-y-2">
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={pending}
+                      disabled={pending || tanpaTagihanToko}
                       onClick={() =>
                         data.beban &&
                         jalankan(
@@ -614,7 +637,9 @@ export function RincianReturClient({
                     >
                       {t('markSettled')}
                     </Button>
-                    <p className="text-xs text-muted-foreground">{t('markSettledHint')}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {tanpaTagihanToko ? t('markSettledNothingBilled') : t('markSettledHint')}
+                    </p>
                   </div>
                 )}
               </>
@@ -623,7 +648,10 @@ export function RincianReturClient({
         </Card>
       )}
 
-      {/* Dipakai sebagai potongan di BKM */}
+      {/* Dipakai sebagai potongan di BKM. Tidak tampil selama hitungannya buta:
+          potongannya sudah dibuang di server, dan kartu kosong akan berbohong
+          "belum menahan apa-apa". */}
+      {!klaimTersembunyi && (
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">{t('usedInClaims')}</CardTitle>
@@ -657,6 +685,7 @@ export function RincianReturClient({
           )}
         </CardContent>
       </Card>
+      )}
 
       <RiwayatDokumen baris={riwayat} />
 
@@ -675,6 +704,13 @@ export function RincianReturClient({
           {bebanTerbuka === 'TOKO' && (
             <p className="text-sm text-muted-foreground">
               {t('assignTokoInvoiceHint', { doc: data.baris.nomor, value: rupiah(data.beban?.amount ?? 0) })}
+            </p>
+          )}
+          {bebanTerbuka === 'TOKO' && data.beban?.perkiraanTagihToko != null && (
+            <p className="text-sm font-medium">
+              {data.beban.perkiraanTagihToko > 0
+                ? t('assignTokoEstimate', { value: rupiah(data.beban.perkiraanTagihToko) })
+                : t('assignTokoNothing')}
             </p>
           )}
           {bebanTerbuka === 'SALES' && (

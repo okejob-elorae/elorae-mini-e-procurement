@@ -19,6 +19,7 @@ import {
 import { EmptyState } from "@/components/ui/empty-state";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
+import { TautanTerkaitSpg } from "../spg-pelanggan/TautanTerkaitSpg";
 import { StatusPill, type StatusTone } from "@/components/ui/status-pill";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -74,6 +75,7 @@ export function PermintaanKirimanClient({
   jumlahAktif,
   terpotong,
   bolehUbah,
+  bolehLihatSpg = true,
 }: {
   saringan: SaringanPermintaan;
   /** `?pemegang=tanpa` — hanya toko yang belum punya salesman pemegang. */
@@ -82,6 +84,8 @@ export function PermintaanKirimanClient({
   jumlahAktif: number;
   terpotong: boolean;
   bolehUbah: boolean;
+  /** Boleh membuka layar SPG lain (`spg_sales:view`); tanpa itu tautan silangnya tidak tampil. */
+  bolehLihatSpg?: boolean;
 }) {
   const t = useTranslations("spgRequests");
   const td = dinamis(t);
@@ -138,6 +142,7 @@ export function PermintaanKirimanClient({
       <PageHeader
         title={t("pageTitle")}
         meta={!bolehUbah ? <span className="text-amber-700 dark:text-amber-400">{t("readOnly")}</span> : undefined}
+        actions={bolehLihatSpg ? <TautanTerkaitSpg kecuali="permintaan" /> : undefined}
       />
 
       <Tabs value={saringan} onValueChange={gantiTab} className="overflow-x-auto">

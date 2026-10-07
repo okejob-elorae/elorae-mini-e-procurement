@@ -97,6 +97,18 @@ d("gudang barang rusak (test bed only)", () => {
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(kaos) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(kaos) } });
     await prisma.returnCharge.deleteMany({ where: { storeReturnId: { in: seededIds(idNota) } } });
+    // NRT SPG dari toko uji tanpa pemegang membunyikan lonceng kantor — dicocokkan di JS lewat metadata.
+    const lonceng = await prisma.adminNotification.findMany({
+      where: { category: "RETUR_SPG_TANPA_PEMEGANG" },
+      select: { id: true, metadata: true },
+    });
+    const loncengUji = lonceng
+      .filter((c) => {
+        const m = c.metadata as Record<string, unknown> | null;
+        return typeof m?.storeReturnId === "string" && idNota.includes(m.storeReturnId);
+      })
+      .map((c) => c.id);
+    await prisma.adminNotification.deleteMany({ where: { id: { in: seededIds(loncengUji) } } });
     await prisma.warehouseReturn.deleteMany({ where: { id: { in: seededIds(idNri) } } });
     await prisma.storeReturn.deleteMany({ where: { id: { in: seededIds(idNota) } } });
     await prisma.storeStockMovement.deleteMany({ where: { storeId: { in: tokoIds() } } });

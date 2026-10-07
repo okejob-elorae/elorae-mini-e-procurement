@@ -1,29 +1,27 @@
 import { prisma } from '@elorae/db';
 import { daftarPiutang, ringkasPiutang, type BarisPiutang } from './queries';
 import { daftarKerjaRetur, ringkasKerjaRetur } from './return-queries';
-import { selisihHari, type KeadaanPiutang } from './rules';
+import { URUT_KEADAAN_TAMPIL, type KeadaanTampil } from './jatuh-tempo';
+import { susunTindakan, type TindakanHariIni } from './tindakan-dasbor';
 import { pemakaianFoto, type PemakaianFoto } from '@/lib/foto/pembersih';
 
 const angka = (v: unknown): number => Number(v ?? 0);
 
-export type TindakanHariIni = {
-  jenis: 'lewat' | 'klaim' | 'tertahan' | 'cek' | 'keputusan' | 'jodoh';
-  /** Makin besar makin mendesak. Dipakai mengurutkan, tidak ditampilkan. */
-  risiko: number;
-  judul: string;
-  tautan: string;
-  nilai: number;
-  /** Bahan kalimat; kalimatnya dirakit di klien supaya ikut berganti bahasa. */
-  konteks: { toko?: string; hari?: number; doc?: string };
-};
+export type { TindakanHariIni };
 
-export type PiutangPerSales = { nama: string; nilai: number; jumlah: number };
+/** `nama: null` = faktur tanpa salesman (impor lama, faktur manual). */
+export type PiutangPerSales = { nama: string | null; nilai: number; jumlah: number };
 
 export type Dasbor = {
   totalPiutang: number;
+  /** Faktur yang sisanya masih di atas nol — yang lunas tidak dihitung. */
   jumlahPiutang: number;
+  /** Lewat JANJI BAYAR kontrabon. */
   lewatTempo: number;
   nilaiLewatTempo: number;
+  /** Lewat JATUH TEMPO faktur dan belum dikontrabon. */
+  jatuhTempo: number;
+  nilaiJatuhTempo: number;
   menungguVerifikasi: number;
   nilaiMenungguVerifikasi: number;
   tertahanRetur: number;
@@ -32,7 +30,7 @@ export type Dasbor = {
   nilaiBebanTerbuka: number;
   tindakan: TindakanHariIni[];
   perSales: PiutangPerSales[];
-  perKeadaan: { keadaan: KeadaanPiutang; jumlah: number; nilai: number }[];
+  perKeadaan: { keadaan: KeadaanTampil; jumlah: number; nilai: number }[];
   /**
    * Berapa besar foto yang sedang disimpan, dan berapa di antaranya sampah.
    *
@@ -51,8 +49,12 @@ export type Dasbor = {
  * bukan dari agregat tersendiri. Beranda yang menghitung dengan caranya sendiri
  * akan menyebut angka berbeda dari halaman yang dituju tautannya — dan orang
  * akan berhenti mempercayai keduanya.
+ *
+ * `penontonId` = pengguna yang membuka beranda. BKM yang ia laporkan/catat
+ * sendiri tidak boleh ia putuskan, jadi barisnya berbunyi lain dan turun ke
+ * bawah daftar tindakan.
  */
-export async function muatDasbor(): Promise<Dasbor> {
+export async function muatDasbor(penontonId = '', opsi?: { bolehMenghitung?: boolean }): Promise<Dasbor> {
   const [piutang, retur, klaimMenunggu, beban, foto] = await Promise.all([
     daftarPiutang(),
     daftarKerjaRetur(),
@@ -63,7 +65,11 @@ export async function muatDasbor(): Promise<Dasbor> {
         docNo: true,
         receivedAmount: true,
         createdAt: true,
+        salesmanId: true,
+        createdById: true,
         store: { select: { name: true } },
+        salesman: { select: { name: true } },
+        createdBy: { select: { name: true } },
       },
     }),
     prisma.returnCharge.findMany({
@@ -80,80 +86,43 @@ export async function muatDasbor(): Promise<Dasbor> {
 
   const ringkas = ringkasPiutang(piutang);
   const ringkasRetur = ringkasKerjaRetur(retur);
-  const hariIni = new Date();
 
-  const tindakan: TindakanHariIni[] = [];
-
-  for (const p of piutang) {
-    if (p.keadaan === 'lewat') {
-      const hari = p.alasan.hariTerlambat ?? Math.max(0, selisihHari(new Date(p.dueDate), hariIni));
-      tindakan.push({
-        jenis: 'lewat',
-        // Makin lama lewat makin mendesak, dan nilainya ikut menimbang — sepuluh
-        // hari atas sepuluh juta lebih genting dari sepuluh hari atas seratus ribu.
-        risiko: 1000 + hari * 10 + Math.log10(Math.max(p.outstanding, 1)),
-        judul: p.invoiceNo,
-        tautan: '/backoffice/piutang',
-        nilai: p.outstanding,
-        konteks: { toko: p.storeName, hari },
-      });
-    } else if (p.keadaan === 'tertahan') {
-      tindakan.push({
-        jenis: 'tertahan',
-        risiko: 800 + Math.log10(Math.max(p.alasan.nilaiTertahan ?? 1, 1)),
-        judul: p.invoiceNo,
-        tautan: '/backoffice/retur-toko',
-        nilai: p.alasan.nilaiTertahan ?? 0,
-        konteks: { toko: p.storeName },
-      });
-    }
-  }
-
-  for (const k of klaimMenunggu) {
-    const hari = Math.max(0, selisihHari(k.createdAt, hariIni));
-    tindakan.push({
-      jenis: 'klaim',
-      // Klaim yang menunggu lama adalah uang yang mungkin sudah di rekening
-      // tapi belum diakui — dan sales yang merasa laporannya diabaikan.
-      risiko: 900 + hari * 10,
-      judul: k.docNo,
-      tautan: `/backoffice/pelunasan/${k.id}`,
-      nilai: angka(k.receivedAmount),
-      konteks: { toko: k.store.name, hari },
-    });
-  }
-
-  for (const r of retur) {
-    if (r.langkah === 'beres' || r.langkah === 'batal') continue;
-    tindakan.push({
-      jenis: r.langkah,
-      risiko: r.langkah === 'keputusan' ? 950 : r.langkah === 'jodoh' ? 700 : 600,
-      judul: r.nomor,
-      tautan: r.jenis === 'NRT' ? `/backoffice/retur-toko/${r.id}` : '/backoffice/retur-toko',
-      nilai: r.langkah === 'keputusan' ? r.selisih : (r.nilaiKlaim ?? r.nilaiFisik ?? 0),
-      konteks: { toko: r.storeName ?? undefined },
-    });
-  }
-
-  tindakan.sort((a, b) => b.risiko - a.risiko);
+  const tindakan = susunTindakan({
+    piutang,
+    klaimMenunggu: klaimMenunggu.map((k) => ({
+      id: k.id,
+      docNo: k.docNo,
+      receivedAmount: angka(k.receivedAmount),
+      createdAt: k.createdAt,
+      storeName: k.store.name,
+      salesmanId: k.salesmanId,
+      createdById: k.createdById,
+      // Dicatat kantor atas nama sales → yang disebut pencatatnya.
+      pelapor: k.createdById === k.salesmanId ? (k.salesman?.name ?? null) : (k.createdBy?.name ?? null),
+    })),
+    retur,
+    penontonId,
+    bolehMenghitung: opsi?.bolehMenghitung ?? false,
+    hariIni: new Date(),
+  });
 
   const perSales = new Map<string, PiutangPerSales>();
   for (const p of piutang) {
     if (p.outstanding <= 0) continue;
-    const nama = p.salesmanName ?? '—';
-    const grup = perSales.get(nama) ?? { nama, nilai: 0, jumlah: 0 };
+    const kunci = p.salesmanName ?? '';
+    const grup = perSales.get(kunci) ?? { nama: p.salesmanName, nilai: 0, jumlah: 0 };
     grup.nilai += p.outstanding;
     grup.jumlah += 1;
-    perSales.set(nama, grup);
+    perSales.set(kunci, grup);
   }
-
-  const URUT: KeadaanPiutang[] = ['lewat', 'tertahan', 'klaim', 'tt', 'belum', 'lunas'];
 
   return {
     totalPiutang: ringkas.total,
     jumlahPiutang: ringkas.jumlahPiutang,
-    lewatTempo: ringkas.perKeadaan.lewat.jumlah,
-    nilaiLewatTempo: ringkas.perKeadaan.lewat.nilai,
+    lewatTempo: ringkas.perKeadaanTampil.lewat.jumlah,
+    nilaiLewatTempo: ringkas.perKeadaanTampil.lewat.nilai,
+    jatuhTempo: ringkas.perKeadaanTampil.jatuh_tempo.jumlah,
+    nilaiJatuhTempo: ringkas.perKeadaanTampil.jatuh_tempo.nilai,
     menungguVerifikasi: klaimMenunggu.length,
     nilaiMenungguVerifikasi: klaimMenunggu.reduce((s, k) => s + angka(k.receivedAmount), 0),
     /*
@@ -169,15 +138,13 @@ export async function muatDasbor(): Promise<Dasbor> {
     returPerluDikerjakan: ringkasRetur.perluDikerjakan,
     bebanTerbuka: beban.length,
     nilaiBebanTerbuka: beban.reduce((s, b) => s + angka(b.amount), 0),
-    // Dua puluh teratas. Daftar tindakan yang panjangnya ratusan bukan daftar
-    // tindakan lagi — ia jadi laporan, dan tidak ada yang mengerjakannya.
-    tindakan: tindakan.slice(0, 20),
+    tindakan,
     foto,
     perSales: [...perSales.values()].sort((a, b) => b.nilai - a.nilai),
-    perKeadaan: URUT.map((k) => ({
+    perKeadaan: URUT_KEADAAN_TAMPIL.map((k) => ({
       keadaan: k,
-      jumlah: ringkas.perKeadaan[k].jumlah,
-      nilai: ringkas.perKeadaan[k].nilai,
+      jumlah: ringkas.perKeadaanTampil[k].jumlah,
+      nilai: ringkas.perKeadaanTampil[k].nilai,
     })),
   };
 }

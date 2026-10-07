@@ -8,9 +8,9 @@ import { prisma, seededId, seededIds } from "@elorae/db";
  *    IN_PRODUCTION di akhir: pembatalan yang commit di tengahnya tertimpa (WO
  *    batal hidup lagi, stok bahan sudah keluar). Sekarang `runSerializable` +
  *    penjaga status; yang kalah diulang dan ditolak.
- * 2. WO yang sudah mengeluarkan bahan tidak bisa dibatalkan — belum ada alur
- *    pengembalian bahan ke gudang, jadi pembatalan meninggalkan stok bahan
- *    yang sudah keluar tanpa jejak balik.
+ * 2. WO yang bahannya masih di CMT tidak bisa dibatalkan — penolakannya
+ *    menyebut bahan dan qty-nya; bahan dikembalikan dulu lewat "Kembalikan
+ *    bahan" (kembali-bahan-wo.spec.ts). Alasan pembatalan wajib.
  * 3. Penolakan sampai ke layar sebagai `{ ok:false, code }`: `cancelWorkOrder`
  *    dan `terimaBarangJadi` (layar terima barang jadi).
  */
@@ -217,20 +217,24 @@ d("pembatalan perintah kerja (test bed only)", () => {
     it("WO yang sudah mengeluarkan 10 pcs bahan → WO_SUDAH_KELUAR_BAHAN, WO tetap IN_PRODUCTION, stok bahan tetap 90", async () => {
       woId = await buatWo("ISSUED");
       await keluarkan(woId);
-      expect(await cancelWorkOrder(woId, userId, "batal")).toEqual({ ok: false, code: "WO_SUDAH_KELUAR_BAHAN" });
+      expect(await cancelWorkOrder(woId, userId, "batal")).toEqual({
+        ok: false,
+        code: "WO_SUDAH_KELUAR_BAHAN",
+        sisa: [{ nama: "Kancing uji", qty: 10, satuan: expect.any(String) }],
+      });
       expect(await keadaan(woId)).toEqual({ status: "IN_PRODUCTION", alasanBatal: null, pengeluaran: 1, stokBahan: [90] });
     });
 
     it("WO yang sudah batal → WO_SUDAH_DIBATALKAN; WO tidak ada → WO_TIDAK_DITEMUKAN", async () => {
       woId = await buatWo("CANCELLED");
-      expect(await cancelWorkOrder(woId, userId)).toEqual({ ok: false, code: "WO_SUDAH_DIBATALKAN" });
-      expect(await cancelWorkOrder("wo-tidak-ada", userId)).toEqual({ ok: false, code: "WO_TIDAK_DITEMUKAN" });
+      expect(await cancelWorkOrder(woId, userId, "batal lagi")).toEqual({ ok: false, code: "WO_SUDAH_DIBATALKAN" });
+      expect(await cancelWorkOrder("wo-tidak-ada", userId, "batal")).toEqual({ ok: false, code: "WO_TIDAK_DITEMUKAN" });
     });
 
     it("tanpa work_orders:manage → TANPA_AKSES, WO tidak berubah", async () => {
       woId = await buatWo("ISSUED");
       sesi.izin = ["work_orders:view"];
-      expect(await cancelWorkOrder(woId, userId)).toEqual({ ok: false, code: "TANPA_AKSES" });
+      expect(await cancelWorkOrder(woId, userId, "batal")).toEqual({ ok: false, code: "TANPA_AKSES" });
       expect((await keadaan(woId)).status).toBe("ISSUED");
     });
   });
@@ -255,7 +259,7 @@ d("pembatalan perintah kerja (test bed only)", () => {
         () => keluarkan(woId),
       );
       expect(keluar.status).toBe("fulfilled");
-      expect(batal).toEqual({ status: "fulfilled", value: { ok: false, code: "WO_SUDAH_KELUAR_BAHAN" } });
+      expect(batal).toMatchObject({ status: "fulfilled", value: { ok: false, code: "WO_SUDAH_KELUAR_BAHAN", sisa: [{ qty: 10 }] } });
       expect(await keadaan(woId)).toEqual({ status: "IN_PRODUCTION", alasanBatal: null, pengeluaran: 1, stokBahan: [90] });
     });
   });

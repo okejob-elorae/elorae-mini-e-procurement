@@ -5,10 +5,13 @@ import {
   nilaiDiakui,
   returTertahan,
   selisihHari,
+  sisaBolehDilunasi,
+  tertahanPiutang,
   type KeadaanPiutang,
   type StatusKlaim,
 } from './rules';
 import { PILIH_POTONGAN, potonganRetur } from './deductions';
+import { hariLewatJatuhTempo, keadaanTampil, type KeadaanTampil } from './jatuh-tempo';
 
 /**
  * Baris piutang siap tampil, lengkap dengan keadaannya dan bahan untuk
@@ -27,14 +30,34 @@ export type BarisPiutang = {
   dueDate: string;
   amount: number;
   outstanding: number;
+  /**
+   * Yang masih boleh dilunasi BKM baru: sisa dikurangi bagian yang sedang
+   * ditahan potongan retur BKM terverifikasi (`sisaBolehDilunasi`). Penulis BKM
+   * menolak yang melebihinya dengan `RETUR_DITAHAN`.
+   */
+  bolehDilunasi: number;
   source: string;
   keadaan: KeadaanPiutang;
+  /**
+   * Keadaan untuk layar kantor: enam keadaan uang ditambah `jatuh_tempo` —
+   * faktur `belum` yang jatuh temponya sudah lewat (`lib/receivables/jatuh-tempo.ts`).
+   */
+  keadaanTampil: KeadaanTampil;
   alasan: {
     noKlaim?: string;
+    /** Semua BKM yang masih menunggu verifikasi atas faktur ini (nomornya). */
+    klaimMenunggu?: string[];
+    /**
+     * Siapa yang melaporkan BKM `noKlaim`: salesnya kalau dilaporkan dari
+     * lapangan, pencatatnya kalau dicatat kantor atas nama sales.
+     */
+    pelaporKlaim?: string | null;
     nilaiTertahan?: number;
     noKontrabon?: string;
     janjiBayar?: string;
     hariTerlambat?: number;
+    /** Hari kalender WIB sejak jatuh tempo — hanya untuk `jatuh_tempo`. */
+    hariLewatJatuhTempo?: number;
   };
 };
 
@@ -148,6 +171,10 @@ export async function daftarPiutang(opts?: LingkupPiutang): Promise<BarisPiutang
               docNo: true,
               status: true,
               invoiceAmount: true,
+              salesmanId: true,
+              createdById: true,
+              salesman: { select: { name: true } },
+              createdBy: { select: { name: true } },
               deductions: { select: PILIH_POTONGAN },
             },
           },
@@ -175,7 +202,14 @@ export async function daftarPiutang(opts?: LingkupPiutang): Promise<BarisPiutang
 
     const sisa = hitungSisaPiutang(angka(r.amount), klaimList, angka(r.paidBeforeImport));
 
-    const klaimMenunggu = r.claimLinks.find((l) => l.paymentClaim.status === 'DIKIRIM');
+    const semuaMenunggu = r.claimLinks.filter((l) => l.paymentClaim.status === 'DIKIRIM');
+    const klaimMenunggu = semuaMenunggu[0];
+    // Dicatat kantor atas nama sales → yang disebut pencatatnya, bukan salesnya.
+    const pelaporKlaim = klaimMenunggu
+      ? klaimMenunggu.paymentClaim.createdById === klaimMenunggu.paymentClaim.salesmanId
+        ? (klaimMenunggu.paymentClaim.salesman?.name ?? null)
+        : (klaimMenunggu.paymentClaim.createdBy?.name ?? null)
+      : undefined;
     const tertahan = r.claimLinks
       .filter((l) => l.paymentClaim.status === 'TERVERIFIKASI')
       .reduce((sum, l) => sum + returTertahan(potonganRetur(l.paymentClaim.deductions)), 0);
@@ -193,6 +227,7 @@ export async function daftarPiutang(opts?: LingkupPiutang): Promise<BarisPiutang
         : null,
       hariIni,
     });
+    const hariJatuhTempo = hariLewatJatuhTempo({ keadaan, dueDate: r.dueDate, hariIni });
 
     return {
       id: r.id,
@@ -204,11 +239,16 @@ export async function daftarPiutang(opts?: LingkupPiutang): Promise<BarisPiutang
       dueDate: r.dueDate.toISOString(),
       amount: angka(r.amount),
       outstanding: sisa,
+      bolehDilunasi: sisaBolehDilunasi(sisa, tertahanPiutang(klaimList)),
       source: r.source,
       keadaan,
+      keadaanTampil: keadaanTampil({ keadaan, hariLewatJatuhTempo: hariJatuhTempo }),
       alasan: {
         noKlaim: klaimMenunggu?.paymentClaim.docNo,
+        klaimMenunggu: semuaMenunggu.length > 0 ? semuaMenunggu.map((l) => l.paymentClaim.docNo) : undefined,
+        pelaporKlaim,
         nilaiTertahan: tertahan > 0 ? tertahan : undefined,
+        hariLewatJatuhTempo: hariJatuhTempo ?? undefined,
         noKontrabon: kontrabonAktif?.docNo,
         janjiBayar: kontrabonAktif?.promisedDate.toISOString(),
         hariTerlambat: kontrabonAktif
@@ -221,8 +261,11 @@ export async function daftarPiutang(opts?: LingkupPiutang): Promise<BarisPiutang
 
 export type RingkasanPiutang = {
   total: number;
+  /** Faktur yang sisanya masih di atas nol. Yang lunas bukan piutang lagi. */
   jumlahPiutang: number;
   perKeadaan: Record<KeadaanPiutang, { jumlah: number; nilai: number }>;
+  /** Sama, tetapi `belum` yang lewat jatuh tempo dipisah ke `jatuh_tempo`. */
+  perKeadaanTampil: Record<KeadaanTampil, { jumlah: number; nilai: number }>;
 };
 
 /** Ringkasan untuk kepala halaman: berapa banyak, dan menumpuk di keadaan mana. */
@@ -236,13 +279,21 @@ export function ringkasPiutang(baris: BarisPiutang[]): RingkasanPiutang {
     tt: { ...kosong },
     belum: { ...kosong },
   };
+  const perKeadaanTampil: Record<KeadaanTampil, { jumlah: number; nilai: number }> = {
+    ...structuredClone(perKeadaan),
+    jatuh_tempo: { ...kosong },
+  };
   let total = 0;
+  let terbuka = 0;
   for (const b of baris) {
     perKeadaan[b.keadaan].jumlah += 1;
     perKeadaan[b.keadaan].nilai += b.outstanding;
+    perKeadaanTampil[b.keadaanTampil].jumlah += 1;
+    perKeadaanTampil[b.keadaanTampil].nilai += b.outstanding;
     total += b.outstanding;
+    if (b.outstanding > 0) terbuka += 1;
   }
-  return { total, jumlahPiutang: baris.length, perKeadaan };
+  return { total, jumlahPiutang: terbuka, perKeadaan, perKeadaanTampil };
 }
 
 export { nilaiDiakui };

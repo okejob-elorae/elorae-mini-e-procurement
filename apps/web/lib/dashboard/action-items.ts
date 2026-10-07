@@ -31,8 +31,8 @@ const IZIN_HITUNGAN: Readonly<Record<keyof ActionItemCounts, string>> = {
  * loads anyway (overdue POs, oversold stock, submitted POs, unshipped orders)
  * is folded in by `buildActionItems` instead of being counted twice.
  *
- * Dengan `izin` (Beranda), hitungan baris yang tidak boleh dilihat penonton
- * tidak dijalankan — nol, dan barisnya dibuang. Tanpa `izin` (lencana menu)
+ * Dengan `izin` (Beranda dan lencana menu), hitungan baris yang tidak boleh
+ * dilihat penonton tidak dijalankan — nol, dan barisnya dibuang. Tanpa `izin`
  * semuanya dihitung dan disaring sesudahnya.
  */
 export async function getActionItemCounts(izin?: string[]): Promise<ActionItemCounts> {
@@ -62,23 +62,53 @@ export async function getActionItemCounts(izin?: string[]): Promise<ActionItemCo
   };
 }
 
+export type AngkaUang = { count: number; amount: number };
+
+type AgregatKlaim = { _count: { _all: number }; _sum: { receivedAmount: unknown } };
+
+function angkaKlaim(x: AgregatKlaim | null): AngkaUang {
+  return { count: x?._count._all ?? 0, amount: Number(x?._sum.receivedAmount ?? 0) };
+}
+
 /**
  * Payment claims (BKM) a salesperson reported that finance has not yet matched
  * against the bank statement — status `DIKIRIM`. Same definition as the
  * receivables dashboard (`muatDasbor`: count of DIKIRIM claims, Σ
- * `receivedAmount`), as a single aggregate: that helper also loads every
- * receivable, return and photo, which this panel has no use for.
+ * `receivedAmount`), as aggregates: that helper also loads every receivable,
+ * return and photo, which this panel has no use for.
  *
- * Dashboard-only on purpose — not part of `getActionItemCounts`, which also
- * feeds the sidebar badges on every navigation.
+ * Dibagi dua untuk penonton `userId`: BKM yang ia laporkan atau catat sendiri
+ * TIDAK BOLEH ia putuskan (PEMERIKSA_SAMA, `lib/receivables/writer.ts`). Di
+ * prod hanya ada satu admin, jadi tanpa pembagian ini baris "menunggu
+ * verifikasi" menetap di berandanya untuk BKM yang tidak bisa ia sentuh.
+ * `bisaDiputuskan + milikSendiri` = isi daftar Pelunasan `?status=DIKIRIM`.
  */
-export async function getClaimsAwaitingVerification(): Promise<{ count: number; amount: number }> {
-  const agg = await prisma.paymentClaim.aggregate({
-    where: { status: "DIKIRIM" },
-    _count: { _all: true },
-    _sum: { receivedAmount: true },
-  });
-  return { count: agg._count._all, amount: Number(agg._sum.receivedAmount ?? 0) };
+export async function getClaimsAwaitingVerification(
+  userId?: string | null,
+): Promise<{ bisaDiputuskan: AngkaUang; milikSendiri: AngkaUang }> {
+  const [semua, sendiri] = await Promise.all([
+    prisma.paymentClaim.aggregate({
+      where: { status: "DIKIRIM" },
+      _count: { _all: true },
+      _sum: { receivedAmount: true },
+    }),
+    userId
+      ? prisma.paymentClaim.aggregate({
+          where: { status: "DIKIRIM", OR: [{ salesmanId: userId }, { createdById: userId }] },
+          _count: { _all: true },
+          _sum: { receivedAmount: true },
+        })
+      : null,
+  ]);
+  const total = angkaKlaim(semua);
+  const milikSendiri = angkaKlaim(sendiri);
+  return {
+    bisaDiputuskan: {
+      count: Math.max(0, total.count - milikSendiri.count),
+      amount: Math.max(0, Math.round((total.amount - milikSendiri.amount) * 100) / 100),
+    },
+    milikSendiri,
+  };
 }
 
 export type BuildActionItemsInput = ActionItemCounts & {
@@ -91,8 +121,10 @@ export type BuildActionItemsInput = ActionItemCounts & {
   overduePOsAmount?: number;
   /** Invoices past the promised payment date (receivables state `lewat`). */
   overduePromises?: { count: number; amount: number };
-  /** BKM claims waiting for finance to verify. */
-  claimsAwaitingVerification?: { count: number; amount: number };
+  /** BKM claims waiting for finance to verify — yang BISA diputuskan penonton. */
+  claimsAwaitingVerification?: AngkaUang;
+  /** BKM yang dilaporkan/dicatat penonton sendiri: menunggu admin keuangan lain. */
+  claimsAwaitingOthers?: AngkaUang;
   /**
    * Antrean kantor (izin, biaya, tukar, mutasi, …) dari `getAntreanKantor`.
    * Barisnya hanya ikut bila `buildActionItems` dipanggil DENGAN izin
@@ -141,6 +173,8 @@ export function buildActionItems(input: BuildActionItemsInput, izin?: string[]):
       permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
       tone: "overdue",
       amount: input.overduePOsAmount,
+      // Nilai seluruh PO, bukan nilai barang yang belum diterima (Laporan → Pengadaan).
+      amountLabelKey: "amountPoValue",
     },
     {
       key: "overduePromises",
@@ -164,7 +198,10 @@ export function buildActionItems(input: BuildActionItemsInput, izin?: string[]):
       key: "journalPending",
       labelKey: "journalPending",
       count: input.journalPending,
-      href: "/backoffice/finance/journals",
+      // Daftar "Jurnal tertunda": notifikasi yang SAMA dengan hitungannya
+      // (`hitungJurnalTertunda` = `daftarJurnalTertunda`), tiap baris dengan
+      // dokumen, sebab, dan tombol posting ulang.
+      href: "/backoffice/finance/journals?status=tertunda",
       permission: IZIN_HITUNGAN.journalPending,
       tone: "overdue",
     },
@@ -187,6 +224,18 @@ export function buildActionItems(input: BuildActionItemsInput, izin?: string[]):
       permission: PERMISSIONS.JOURNALS_MANAGE,
       tone: "waiting",
       amount: input.claimsAwaitingVerification?.amount,
+    },
+    {
+      // BKM penonton sendiri: ia tidak boleh memutuskannya (PEMERIKSA_SAMA),
+      // jadi barisnya "menunggu admin keuangan lain", bukan pekerjaannya.
+      key: "claimsAwaitingOthers",
+      labelKey: "claimsAwaitingOthers",
+      count: input.claimsAwaitingOthers?.count ?? 0,
+      href: "/backoffice/pelunasan?status=DIKIRIM",
+      permission: PERMISSIONS.JOURNALS_MANAGE,
+      tone: "waiting",
+      amount: input.claimsAwaitingOthers?.amount,
+      menungguOrangLain: true,
     },
     {
       key: "unshippedOrders",

@@ -62,6 +62,9 @@ const CATEGORY_PERMISSION: Record<string, string> = {
   // Permintaan stok SPG di toko tanpa salesman pemegang — tidak masuk kotak
   // masuk HP siapa pun, jadi pengelola toko yang menanganinya.
   SPG_STOCK_REQUEST_UNHELD: PERMISSIONS.STORES_MANAGE,
+  // Nota retur SPG di toko tanpa salesman pemegang — tidak ada orang lapangan
+  // yang menindaklanjutinya, jadi pengelola retur/piutang yang diberi tahu.
+  RETUR_SPG_TANPA_PEMEGANG: PERMISSIONS.RECEIVABLES_MANAGE,
 };
 
 /**

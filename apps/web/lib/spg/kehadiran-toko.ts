@@ -15,7 +15,8 @@ import { izinDisetujuiRentang } from "@/lib/salesman/izin-queries";
  * kunjungan kemarin yang lupa ditutup bukan bukti hadir hari ini. Datang
  * mengalahkan izin dan libur: yang datang tetap tercatat datang.
  *
- * Tanpa rupiah apa pun — kartunya hanya nama, keadaan, dan jam.
+ * Tanpa rupiah apa pun — kartunya hanya nama, keadaan, dan jam. Jenis izin
+ * (izin/sakit/cuti) tidak pernah sampai ke HP salesman (`tampilKehadiran`).
  */
 
 export type KeadaanHadir = "DI_TOKO" | "PULANG" | "IZIN" | "LIBUR" | "BUKAN_HARI_KERJA" | "BELUM";
@@ -122,6 +123,11 @@ export async function kehadiranSpgToko(
 /** Jam diformat di server, WIB — format di klien bisa berbeda antara Node dan Safari. */
 const JAM_WIB = new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
 
+/**
+ * Bentuk yang dikirim ke HP salesman. Izin, sakit, dan cuti sama-sama
+ * `IZIN` tanpa jenisnya (keputusan pemilik 2026-10-06): alasan tidak masuk
+ * urusan SPG dan kantor, bukan salesman yang mampir ke tokonya.
+ */
 export type KehadiranSpgTampil = {
   userId: string;
   nama: string;
@@ -129,11 +135,10 @@ export type KehadiranSpgTampil = {
   /** "08.15" (WIB). */
   masuk: string | null;
   pulang: string | null;
-  jenisIzin: JenisIzin | null;
   jadwalMulai: string | null;
 };
 
-/** Bentuk yang dikirim ke HP: jam sudah berupa teks WIB. */
+/** Bentuk yang dikirim ke HP: jam sudah berupa teks WIB, tanpa jenis izin. */
 export function tampilKehadiran(baris: readonly KehadiranSpg[]): KehadiranSpgTampil[] {
   return baris.map((b) => ({
     userId: b.userId,
@@ -141,7 +146,6 @@ export function tampilKehadiran(baris: readonly KehadiranSpg[]): KehadiranSpgTam
     keadaan: b.keadaan,
     masuk: b.masuk ? JAM_WIB.format(b.masuk) : null,
     pulang: b.pulang ? JAM_WIB.format(b.pulang) : null,
-    jenisIzin: b.jenisIzin,
     jadwalMulai: b.jadwalMulai,
   }));
 }

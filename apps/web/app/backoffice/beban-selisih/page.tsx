@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { daftarBeban } from "@/lib/receivables/dashboard-queries";
-import { fakturBebanToko, kandidatPenanggung } from "@/lib/receivables/return-queries";
+import { fakturBebanToko, kandidatPenanggung, tagihanBebanTokoTercatat } from "@/lib/receivables/return-queries";
 import { bolehMembacaPiutang } from "@/lib/receivables/izin";
 import { BebanClient } from "./BebanClient";
 
@@ -23,7 +23,12 @@ export default async function BebanSelisihPage() {
   // Beban yang ditanggung toko ditagih lewat fakturnya — nomornya dan sisanya
   // ditampilkan, dan "Tandai lunas" tidak ditawarkan untuknya.
   const bebanToko = baris.filter((b) => b.penanggung === "TOKO").map((b) => b.id);
-  const faktur = bebanToko.length > 0 ? await fakturBebanToko(bebanToko) : {};
+  const [faktur, tagihanToko] =
+    bebanToko.length > 0
+      ? await Promise.all([fakturBebanToko(bebanToko), tagihanBebanTokoTercatat(bebanToko)])
+      : [{}, {}];
 
-  return <BebanClient baris={baris} kandidat={kandidat} bolehMengelola={kelola} faktur={faktur} />;
+  return (
+    <BebanClient baris={baris} kandidat={kandidat} bolehMengelola={kelola} faktur={faktur} tagihanToko={tagihanToko} />
+  );
 }

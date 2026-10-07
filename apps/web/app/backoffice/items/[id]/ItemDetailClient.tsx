@@ -12,6 +12,16 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { ArrowLeft, Barcode } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
@@ -47,12 +57,14 @@ export function ItemDetailClient({
   const tItems = useTranslations('items');
   const tLabel = useTranslations("labelBarcode");
   const [isSaving, setIsSaving] = useState(false);
+  const [konfirmasiPush, setKonfirmasiPush] = useState(false);
+  const tDetail = useTranslations('itemDetail');
   const itemTypeLabel = tItems(itemTypeKeys[itemType]);
   const isAdmin = session?.user?.permissions?.includes("*") ?? false;
 
   const handlePushStock = async () => {
     if (!initialData?.id) return;
-    if (!confirm(tItems('detail.pushStockConfirm'))) return;
+    setKonfirmasiPush(false);
     const r = await pushItemStockToJubelio(initialData.id);
     if (r.ok) toast.success(tItems('detail.pushStockQueued'));
     else toast.error(tItems('detail.pushStockFailed'));
@@ -103,7 +115,8 @@ export function ItemDetailClient({
               <h1 className="text-2xl font-bold tracking-tight">{nameId}</h1>
               <TombolBantuan judul={nameId} />
             </div>
-            <p className="text-muted-foreground">{nameEn}</p>
+            {/* Nama Inggris kosong diisi nama Indonesia — jangan ditulis dua kali. */}
+            {nameEn.trim() && nameEn.trim() !== nameId.trim() ? <p className="text-muted-foreground">{nameEn}</p> : null}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -116,7 +129,7 @@ export function ItemDetailClient({
             </Button>
           ) : null}
           {isAdmin && (
-            <Button variant="outline" size="sm" onClick={() => void handlePushStock()}>
+            <Button variant="outline" size="sm" onClick={() => setKonfirmasiPush(true)}>
               {tItems('detail.pushStock')}
             </Button>
           )}
@@ -143,6 +156,19 @@ export function ItemDetailClient({
           )}
         </TabsContent>
       </Tabs>
+
+      <AlertDialog open={konfirmasiPush} onOpenChange={setKonfirmasiPush}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{tItems('detail.pushStock')}</AlertDialogTitle>
+            <AlertDialogDescription>{tItems('detail.pushStockConfirm')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{tDetail('cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void handlePushStock()}>{tDetail('pushConfirm')}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

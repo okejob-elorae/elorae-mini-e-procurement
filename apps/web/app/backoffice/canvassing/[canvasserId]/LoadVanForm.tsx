@@ -123,6 +123,8 @@ export function LoadVanForm({ canvasserId, itemOptions, loadableInventory }: Pro
         if (result.reason === "INSUFFICIENT_STOCK") {
           setShortLines(result.shortLines ?? []);
           toast.error(t("errInsufficientStock"));
+        } else if (result.reason === "NOT_CANVASSER") {
+          toast.error(t(`bukanKanvas.${result.sebab}`));
         } else if (result.reason === "FORBIDDEN") {
           toast.error(t("errForbidden"));
         } else if (result.reason === "VALIDATION") {

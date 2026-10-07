@@ -1,7 +1,8 @@
 import { prisma } from '@elorae/db';
-import { giliranRetur, langkahRetur, type LangkahRetur } from './rules';
-import { AWALAN_PENANDA_BEBAN, idBebanDariCatatan } from './return-writer';
+import { bebanDitagihKeToko, giliranRetur, langkahRetur, STATUS_KLAIM_HIDUP, type LangkahRetur } from './rules';
+import { AWALAN_PENANDA_BEBAN, idBebanDariCatatan } from './penanda-beban';
 import { bacaSisaPiutang } from './writer';
+import { JEJAK } from './jejak';
 
 const angka = (v: unknown): number => Number(v ?? 0);
 
@@ -275,6 +276,18 @@ export type RincianRetur = {
     diputuskanPada: string | null;
     /** Faktur yang lahir dari beban yang ditanggung TOKO; `null` kalau tidak ada. */
     faktur: FakturBebanRingkas | null;
+    /**
+     * Yang ditagihkan ke toko kalau selisihnya ditetapkan ke TOKO sekarang
+     * (`bebanDitagihKeToko`: yang sudah dipotong toko di BKM hidup melebihi
+     * barang yang sampai). Hanya untuk beban TERBUKA; `null` selain itu.
+     */
+    perkiraanTagihToko: number | null;
+    /**
+     * Beban TOKO yang sudah ditetapkan: yang ditagihkan ke toko saat itu
+     * (`tagihanBebanTokoTercatat`). `0` = tidak ada yang ditagih — "Tandai sudah
+     * diganti" tidak berarti apa-apa. `null` = bukan TOKO, atau beban lama.
+     */
+    tagihTokoTercatat: number | null;
   } | null;
   potongan: { docNo: string; amount: number; status: string }[];
 };
@@ -307,6 +320,39 @@ export async function fakturBebanToko(chargeIds: string[]): Promise<Record<strin
   cocok.forEach(({ chargeId, r }, i) => {
     hasil[chargeId] = { id: r.id, invoiceNo: r.invoiceNo, outstanding: sisa[i] ?? 0 };
   });
+  return hasil;
+}
+
+/**
+ * Yang ditagihkan ke toko saat beban terakhir kali ditetapkan/dialihkan ke TOKO,
+ * per id beban — dari metadata jejak keputusannya (`ditagihKeToko`). Beban toko
+ * lama (diputuskan sebelum ada faktur beban) tidak punya angka ini, jadi tidak
+ * masuk peta. `0` = toko belum memotong melebihi barang yang sampai: tidak ada
+ * faktur dan tidak ada yang bisa "diganti".
+ */
+export async function tagihanBebanTokoTercatat(chargeIds: string[]): Promise<Record<string, number>> {
+  if (chargeIds.length === 0) return {};
+  const jejak = await prisma.auditLog.findMany({
+    where: {
+      entityType: 'ReturnCharge',
+      entityId: { in: [...new Set(chargeIds)] },
+      action: { in: [JEJAK.BEBAN_DIPUTUSKAN, JEJAK.BEBAN_DIALIHKAN] },
+    },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    select: { entityId: true, changes: true, metadata: true },
+  });
+  const hasil: Record<string, number> = {};
+  const sudah = new Set<string>();
+  for (const j of jejak) {
+    if (!j.entityId || sudah.has(j.entityId)) continue;
+    sudah.add(j.entityId);
+    // Hanya keputusan TERAKHIR yang berlaku, dan hanya bila ke TOKO.
+    const sesudah = (j.changes as { after?: { bearer?: unknown } } | null)?.after;
+    if (sesudah?.bearer !== 'TOKO') continue;
+    const m = j.metadata as Record<string, unknown> | null;
+    const ditagih = m && typeof m === 'object' ? m.ditagihKeToko : undefined;
+    if (typeof ditagih === 'number' && Number.isFinite(ditagih)) hasil[j.entityId] = ditagih;
+  }
   return hasil;
 }
 
@@ -363,6 +409,22 @@ export async function rincianRetur(storeReturnId: string): Promise<RincianRetur 
   const nri = r.warehouseReturn;
   const beban = r.charges[0] ?? null;
   const faktur = beban?.bearer === 'TOKO' ? ((await fakturBebanToko([beban.id]))[beban.id] ?? null) : null;
+  const tagihTokoTercatat =
+    beban?.bearer === 'TOKO' && beban.status !== 'TERBUKA'
+      ? ((await tagihanBebanTokoTercatat([beban.id]))[beban.id] ?? null)
+      : null;
+  // Pratinjau keputusan ke TOKO, dengan aturan yang sama dengan penulisnya.
+  const hidup = STATUS_KLAIM_HIDUP as readonly string[];
+  const perkiraanTagihToko =
+    beban?.status === 'TERBUKA' && nri?.status === 'FINAL'
+      ? bebanDitagihKeToko({
+          nilaiKlaim: angka(r.claimedAmount),
+          nilaiFisik: angka(nri.physicalAmount),
+          sudahDipotong: r.deductions
+            .filter((d) => hidup.includes(d.paymentClaim.status))
+            .reduce((s, d) => s + angka(d.amount), 0),
+        })
+      : null;
 
   return {
     baris: dariNrt({
@@ -406,6 +468,8 @@ export async function rincianRetur(storeReturnId: string): Promise<RincianRetur 
           diputuskanOleh: beban.decidedBy?.name ?? null,
           diputuskanPada: beban.decidedAt?.toISOString() ?? null,
           faktur,
+          perkiraanTagihToko,
+          tagihTokoTercatat,
         }
       : null,
     potongan: r.deductions.map((d) => ({

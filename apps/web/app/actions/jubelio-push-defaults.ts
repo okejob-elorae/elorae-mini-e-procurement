@@ -5,6 +5,11 @@ import { prisma, recalcItemSellingPrice } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { apiFetch } from "@/lib/internal-api";
 import { PERMISSIONS, requirePermission } from "@/lib/rbac";
+import {
+  gagalJubelio,
+  jalankanAksiJubelio,
+  type HasilJubelio,
+} from "@/app/backoffice/jubelio/galat-jubelio";
 
 export type JubelioPushDefaultsState = {
   id: string;
@@ -45,8 +50,9 @@ export type SaveJubelioPushDefaultsResult = JubelioPushDefaultsState & {
   fanOutCount: number;
 };
 
-function serialize(row: Awaited<ReturnType<typeof prisma.jubelioPushDefaults.findFirst>>): JubelioPushDefaultsState {
-  if (!row) throw new Error("JubelioPushDefaults singleton row missing — re-run migrations");
+type BarisBawaan = NonNullable<Awaited<ReturnType<typeof prisma.jubelioPushDefaults.findFirst>>>;
+
+function serialize(row: BarisBawaan): JubelioPushDefaultsState {
   return {
     ...row,
     buyPrice: Number(row.buyPrice),
@@ -56,20 +62,32 @@ function serialize(row: Awaited<ReturnType<typeof prisma.jubelioPushDefaults.fin
   };
 }
 
-export async function getJubelioPushDefaults(): Promise<JubelioPushDefaultsState> {
-  const session = await auth();
-  if (!session) throw new Error("Unauthorized");
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_VIEW);
+// Baris tunggal (singleton) yang hilang = BAWAAN_BELUM_ADA, bukan Error mentah.
+const RINCIAN_TANPA_BARIS = "JubelioPushDefaults singleton row missing — re-run migrations";
 
-  const row = await prisma.jubelioPushDefaults.findFirst();
-  return serialize(row);
+export async function getJubelioPushDefaults(): Promise<HasilJubelio<JubelioPushDefaultsState>> {
+  return jalankanAksiJubelio(async () => {
+    const session = await auth();
+    if (!session) return gagalJubelio("TANPA_AKSES");
+    requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_VIEW);
+
+    const row = await prisma.jubelioPushDefaults.findFirst();
+    if (!row) return gagalJubelio("BAWAAN_BELUM_ADA", RINCIAN_TANPA_BARIS);
+    return { ok: true, data: serialize(row) };
+  });
 }
 
 export async function saveJubelioPushDefaults(
   input: JubelioPushDefaultsInput,
-): Promise<SaveJubelioPushDefaultsResult> {
+): Promise<HasilJubelio<SaveJubelioPushDefaultsResult>> {
+  return jalankanAksiJubelio(() => simpanBawaan(input));
+}
+
+async function simpanBawaan(
+  input: JubelioPushDefaultsInput,
+): Promise<HasilJubelio<SaveJubelioPushDefaultsResult>> {
   const session = await auth();
-  if (!session) throw new Error("Unauthorized");
+  if (!session) return gagalJubelio("TANPA_AKSES");
   requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_MANAGE);
 
   const userId = session.user.id;
@@ -78,6 +96,7 @@ export async function saveJubelioPushDefaults(
   const previous = await prisma.jubelioPushDefaults.findFirst({
     select: { defaultMarginPercent: true, defaultAdditionalCost: true },
   });
+  if (!previous) return gagalJubelio("BAWAAN_BELUM_ADA", RINCIAN_TANPA_BARIS);
 
   const prevMargin = previous?.defaultMarginPercent != null ? Number(previous.defaultMarginPercent) : null;
   const nextMargin = input.defaultMarginPercent != null ? Number(input.defaultMarginPercent) : null;
@@ -151,19 +170,22 @@ export async function saveJubelioPushDefaults(
   }
 
   revalidatePath("/backoffice/jubelio/settings");
-  return { ...saved, fanOutCount: outboxRowIds.length };
+  return { ok: true, data: { ...saved, fanOutCount: outboxRowIds.length } };
 }
 
-export async function getMarginFallbackItemCount(): Promise<number> {
-  const session = await auth();
-  if (!session) throw new Error("Unauthorized");
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_VIEW);
+export async function getMarginFallbackItemCount(): Promise<HasilJubelio<number>> {
+  return jalankanAksiJubelio(async () => {
+    const session = await auth();
+    if (!session) return gagalJubelio("TANPA_AKSES");
+    requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_VIEW);
 
-  return prisma.item.count({
-    where: {
-      type: "FINISHED_GOOD",
-      targetMarginPercent: null,
-      source: { not: "JUBELIO_INGEST" },
-    },
+    const count = await prisma.item.count({
+      where: {
+        type: "FINISHED_GOOD",
+        targetMarginPercent: null,
+        source: { not: "JUBELIO_INGEST" },
+      },
+    });
+    return { ok: true, data: count };
   });
 }

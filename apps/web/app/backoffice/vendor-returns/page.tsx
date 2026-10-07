@@ -50,8 +50,20 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { getVendorReturns, processReturn, deleteVendorReturn } from '@/app/actions/vendor-returns';
+import { getVendorReturns, processReturn, hapusReturPemasok } from '@/app/actions/vendor-returns';
+import { getPemasokPilihan } from '@/app/actions/purchase-orders';
+import { TAUTAN_DOKUMEN } from '@/app/backoffice/purchase-orders/tautan-dokumen';
 import { pesanTolakRetur, tolakReturBasi } from './pesan-tolak-retur';
 import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
@@ -62,7 +74,10 @@ interface SupplierOption {
   id: string;
   code: string;
   name: string;
+  disetujui: boolean;
 }
+
+const rp = (n: number) => `Rp ${n.toLocaleString('id-ID', { maximumFractionDigits: 2 })}`;
 
 type VendorReturnRow = Extract<
   Awaited<ReturnType<typeof getVendorReturns>>,
@@ -93,6 +108,9 @@ export default function VendorReturnsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // Proses dan hapus lewat dialog aplikasi (dulu proses tanpa konfirmasi, hapus lewat dialog bawaan peramban).
+  const [konfirmasi, setKonfirmasi] = useState<{ jenis: 'proses' | 'hapus'; id: string; docNumber: string } | null>(null);
+  const tUmum = useTranslations('common');
   const [page, setPage] = useState(1);
   const [pageSize] = useState(DEFAULT_PAGE_SIZE);
   const [totalCount, setTotalCount] = useState(0);
@@ -126,10 +144,8 @@ export default function VendorReturnsPage() {
   useEffect(() => {
     const loadVendors = async () => {
       try {
-        const { getSuppliersForSelect } = await import('@/app/actions/suppliers');
-        const data = await getSuppliersForSelect({ approvedOnly: true });
-        const list = Array.isArray(data) ? data : [];
-        setVendors((list as SupplierOption[]) || []);
+        // Pemasok disetujui ATAU yang punya dokumen — saringan harus bisa memilih pemasok retur lama.
+        setVendors(await getPemasokPilihan());
       } catch {
         // non-blocking
       }
@@ -168,17 +184,30 @@ export default function VendorReturnsPage() {
 
   const handleDelete = async (id: string) => {
     if (!session?.user?.id) return;
-    if (!confirm(t('confirmDelete'))) return;
     setDeletingId(id);
     try {
-      await deleteVendorReturn(id, session.user.id);
+      // Penolakan datang sebagai kode (pesan lemparan disamarkan di produksi).
+      const hasil = await hapusReturPemasok(id);
+      if (!hasil.ok) {
+        toast.error(hasil.code === 'GAGAL' ? t('deleteFailed') : t(`err.${hasil.code}` as never));
+        if (hasil.code !== 'GAGAL') fetchReturns();
+        return;
+      }
       toast.success(t('deleted'));
       fetchReturns();
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : t('deleteFailed'));
+    } catch {
+      toast.error(t('deleteFailed'));
     } finally {
       setDeletingId(null);
     }
+  };
+
+  const jalankanKonfirmasi = async () => {
+    const k = konfirmasi;
+    setKonfirmasi(null);
+    if (!k) return;
+    if (k.jenis === 'proses') await handleProcess(k.id);
+    else await handleDelete(k.id);
   };
 
   return (
@@ -210,12 +239,16 @@ export default function VendorReturnsPage() {
         <SearchableCombobox
           options={[
             { value: '__all__', label: t('allVendors') },
-            ...vendors.map((v) => ({ value: v.id, label: `${v.code} – ${v.name}` })),
+            ...vendors.map((v) => ({
+              value: v.id,
+              label: `${v.code} – ${v.name}${v.disetujui ? '' : ` · ${t('belumDisetujui')}`}`,
+            })),
           ]}
           value={vendorFilter}
           onValueChange={setVendorFilter}
           placeholder={t('vendorPlaceholder')}
-          triggerClassName="w-[180px]"
+          searchPlaceholder={t('cariPemasok')}
+          triggerClassName="w-[220px]"
         />
         <Select
           value={statusFilter}
@@ -259,7 +292,7 @@ export default function VendorReturnsPage() {
                     <TableRow>
                       <TableHead>{t('colDoc')}</TableHead>
                       <TableHead className="min-w-[160px]">{t('colVendor')}</TableHead>
-                      <TableHead>{t('colWorkOrder')}</TableHead>
+                      <TableHead>{t('colTerkait')}</TableHead>
                       <TableHead className="text-right">{tUi('totalValue')}</TableHead>
                       <TableHead>{tTable('status')}</TableHead>
                       <TableHead>{t('colCreated')}</TableHead>
@@ -269,26 +302,43 @@ export default function VendorReturnsPage() {
                   <TableBody>
                     {returns.map((r) => (
                         <TableRow key={r.id}>
-                          <TableCell className="font-medium">{r.docNumber}</TableCell>
+                          <TableCell>
+                            <Link href={`/backoffice/vendor-returns/${r.id}`} className={TAUTAN_DOKUMEN}>
+                              {r.docNumber}
+                            </Link>
+                          </TableCell>
                           <TableCell className="whitespace-normal">
                             {(r.vendor as { name?: string; code?: string })?.name ?? r.vendorId}
                           </TableCell>
-                          <TableCell>
-                            {r.wo
-                              ? (
-                                  <Link
-                                    href={`/backoffice/work-orders/${(r.wo as { id: string }).id}`}
-                                    className="text-primary hover:underline"
-                                  >
-                                    {(r.wo as { docNumber?: string }).docNumber}
-                                  </Link>
-                                )
-                              : '—'}
+                          <TableCell className="text-sm">
+                            {!r.wo && !r.po ? (
+                              '—'
+                            ) : (
+                              <div className="flex flex-col gap-0.5">
+                                {r.wo && (
+                                  <span>
+                                    <span className="text-muted-foreground">{t('refWo')} </span>
+                                    <Link
+                                      href={`/backoffice/work-orders/${(r.wo as { id: string }).id}`}
+                                      className={TAUTAN_DOKUMEN}
+                                    >
+                                      {(r.wo as { docNumber?: string }).docNumber}
+                                    </Link>
+                                  </span>
+                                )}
+                                {r.po && (
+                                  <span>
+                                    <span className="text-muted-foreground">{t('refPo')} </span>
+                                    <Link href={`/backoffice/purchase-orders/${r.po.id}`} className={TAUTAN_DOKUMEN}>
+                                      {r.po.docNumber}
+                                    </Link>
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </TableCell>
-                          <TableCell className="text-right">
-                            {Number(r.totalValue).toLocaleString(undefined, {
-                              minimumFractionDigits: 2
-                            })}
+                          <TableCell className="text-right tabular-nums whitespace-nowrap">
+                            {rp(Number(r.totalValue))}
                           </TableCell>
                           <TableCell>
                             <Badge
@@ -339,7 +389,7 @@ export default function VendorReturnsPage() {
                                       </Link>
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
-                                      onClick={() => handleProcess(r.id)}
+                                      onClick={() => setKonfirmasi({ jenis: 'proses', id: r.id, docNumber: r.docNumber })}
                                       disabled={processingId === r.id}
                                     >
                                       {processingId === r.id ? (
@@ -351,7 +401,7 @@ export default function VendorReturnsPage() {
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
                                       className="text-destructive"
-                                      onClick={() => handleDelete(r.id)}
+                                      onClick={() => setKonfirmasi({ jenis: 'hapus', id: r.id, docNumber: r.docNumber })}
                                       disabled={deletingId === r.id}
                                     >
                                       {deletingId === r.id ? (
@@ -382,6 +432,30 @@ export default function VendorReturnsPage() {
             )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={konfirmasi !== null} onOpenChange={(buka) => !buka && setKonfirmasi(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {konfirmasi?.jenis === 'hapus'
+                ? t('hapusJudul', { doc: konfirmasi?.docNumber ?? '' })
+                : t('prosesJudul', { doc: konfirmasi?.docNumber ?? '' })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {konfirmasi?.jenis === 'hapus' ? t('hapusIsi') : t('prosesIsi')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{tUmum('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              variant={konfirmasi?.jenis === 'hapus' ? 'destructive' : 'default'}
+              onClick={() => void jalankanKonfirmasi()}
+            >
+              {konfirmasi?.jenis === 'hapus' ? t('delete') : t('process')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

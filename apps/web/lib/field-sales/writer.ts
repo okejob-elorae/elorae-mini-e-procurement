@@ -2,6 +2,7 @@ import { reserveFieldSalesOrder, releaseFieldSalesOrder, transferKonsiFieldSales
 import { effectiveMinQty, validateMinQtyLines } from "@elorae/db/field-sales";
 import { muatMinimumToko } from "./minimum-toko";
 import { JarakJauhDitolakError, periksaJarakJauh, SALURAN_PORTAL, type SaluranPesanan } from "./jarak-jauh";
+import { BatasHarianPortalError } from "./portal-toko-batas";
 import { muatAturanJarakJauh } from "./jarak-jauh-toko";
 import { susunBonusPesanan } from "./bonus";
 import { catatanKurangBonus } from "./bonus-alokasi";
@@ -15,6 +16,7 @@ import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 import { NoActiveVisitError, MinQtyViolationError, InvalidOrderTransitionError, InsufficientStockError, InvalidAddedLineError } from "./errors";
 import { sentItemIds } from "./queries";
 import { nilaiKredit } from "@/lib/salesman/kredit";
+import { betulkanHasilKunjunganDiTx } from "@/lib/salesman/transaksi-kunjungan";
 import { kabariPengguna, type Kabar } from "@/lib/notifications/kabar-pengguna";
 import { muatKreditToko } from "./kredit-toko";
 import { KreditBelumDiperiksaError, KreditDiblokirError, putuskanKreditPesanan } from "./kredit-pesanan";
@@ -22,6 +24,7 @@ import { kabarPesananDisetujui, kabarPesananDitolak } from "./kabar-pesanan";
 import { BarangIndenBelumTercatatError, IndenDitolakError, periksaPesananInden } from "./inden";
 import { BarangTanpaHargaError, barangTanpaHarga } from "./harga-wajib";
 import { cadangkanPesananInden } from "./inden-writer";
+import { bukaSumberPesananDitolak } from "./isi-keranjang-tolak";
 import {
   AKSI_PESANAN_DIBATALKAN,
   ENTITAS_PESANAN,
@@ -56,6 +59,16 @@ export class HargaFinalTidakSahError extends Error {
     super(`Harga final tidak sah untuk baris ${lineId}: ${finalUnitPrice}`);
     this.name = "HargaFinalTidakSahError";
   }
+}
+
+/**
+ * Potongan promo tingkat pesanan yang boleh berlaku: tidak pernah melewati
+ * subtotal bersih (subtotal − potongan baris) dan tidak pernah minus, jadi
+ * total pesanan tidak bisa di bawah 0. Satu tempat — keputusan pemilik
+ * 2026-10-06 (sementara).
+ */
+export function batasiPromoPesanan(potongan: number, subtotalBersih: number): number {
+  return Math.max(0, Math.min(potongan, subtotalBersih));
 }
 
 type CreateLine = {
@@ -99,6 +112,12 @@ export async function createFieldSalesOrder(input: {
    * pesanan lama tetap menunggu.
    */
   replacesOrderId?: string | null;
+  /**
+   * Portal toko: batas pesanan PORTAL per toko sejak `sejak` (awal hari WIB),
+   * dihitung DI DALAM transaksi serializable ini — kiriman serentak tidak bisa
+   * sama-sama lolos. Penuh → `BatasHarianPortalError`.
+   */
+  batasHarianPortal?: { maks: number; sejak: Date } | null;
 }): Promise<{ orderId: string; orderNo: string; oversell: OversellAlert[]; kreditDitahan: boolean }> {
   if (input.lines.length === 0) throw new MinQtyViolationError([]);
   /**
@@ -167,6 +186,13 @@ export async function createFieldSalesOrder(input: {
       // nama sembarang orang. Aturan WA/telepon salesman tidak berlaku di sini.
       const toko = await tx.store.findUnique({ where: { id: input.storeId }, select: { salesmanId: true } });
       if (!toko?.salesmanId || toko.salesmanId !== input.salesmanId) throw new JarakJauhDitolakError("BUKAN_TOKO_SENDIRI");
+      if (input.batasHarianPortal) {
+        const { maks, sejak } = input.batasHarianPortal;
+        const hariIni = await tx.fieldSalesOrder.count({
+          where: { storeId: input.storeId, remoteChannel: SALURAN_PORTAL, createdAt: { gte: sejak } },
+        });
+        if (hariIni >= maks) throw new BatasHarianPortalError(maks);
+      }
     } else if (remoteChannel) {
       // Tanpa kunjungan, kepemilikan toko yang menggantikan bukti bahwa salesman
       // ini berurusan dengan toko itu. Aturan pemilik dibaca di transaksi ini.
@@ -673,7 +699,13 @@ export async function approveFieldSalesOrder(input: {
       finalLines.push({ ...l, unitPrice, lineTotal, discountAmount });
     }
     const discountTotal = finalLines.reduce((s, l) => s + l.discountAmount, 0);
-    const total = subtotal - discountTotal - Number(order.orderDiscountAmount);
+    /*
+     * Promo pesanan dihormati sejak dibuat, tapi tidak boleh melewati subtotal bersih
+     * sesudah harga final banding (keputusan pemilik 2026-10-06) — kalau tidak, total
+     * minus. Angka yang DIBATASI yang disimpan: pengiriman memprorata `orderDiscountAmount`.
+     */
+    const orderDiscountAmount = batasiPromoPesanan(Number(order.orderDiscountAmount), subtotal - discountTotal);
+    const total = subtotal - discountTotal - orderDiscountAmount;
 
     /*
      * Pre-order yang disetujui SESUDAH jendelanya dirilis: rilis sudah lewat dan
@@ -708,7 +740,7 @@ export async function approveFieldSalesOrder(input: {
      */
     await tx.fieldSalesOrder.update({
       where: { id: order.id },
-      data: { status: "APPROVED", approvedAt: new Date(), approvedById: input.approvedById, subtotal, total },
+      data: { status: "APPROVED", approvedAt: new Date(), approvedById: input.approvedById, subtotal, total, orderDiscountAmount },
     });
     kabar = {
       salesmanId: order.salesmanId,
@@ -760,6 +792,12 @@ export async function rejectFieldSalesOrder(input: { orderId: string; rejectedBy
   });
   // Tolak ulang pesanan yang sudah ditolak tidak mengabari lagi — `kabar` hanya terisi saat status benar-benar berpindah.
   if (kabar) kirimKabar(kabar.salesmanId, kabar.isi);
+  /*
+   * Sesudah commit: permintaan SPG / rekomendasi yang dibuatkan pesanan ini dibuka lagi
+   * (keputusan pemilik 2026-10-06). Idempoten dan tidak pernah melempar, jadi dipanggil
+   * juga pada tolak ulang — kalau panggilan pertama gagal di tengah jalan, ini yang memperbaikinya.
+   */
+  await bukaSumberPesananDitolak(input.orderId);
   // Cadangan putus dilepas, available naik (konsi belum memegang stok: tanpa baris cadangan, push tetap aman).
   await antrekanPushStok(barangDilepas, { sumber: "ADJUSTMENT", ref: `tolak pesanan ${nomorPesanan}`, userId: input.rejectedById });
   return hasil;
@@ -842,7 +880,15 @@ export async function cancelFieldSalesOrderBySalesman(input: {
     barangDilepas = [];
     const order = await tx.fieldSalesOrder.findUnique({
       where: { id: input.orderId },
-      select: { id: true, orderNo: true, status: true, salesmanId: true, cancelledById: true, lines: { select: { id: true, itemId: true } } },
+      select: {
+        id: true,
+        orderNo: true,
+        status: true,
+        salesmanId: true,
+        cancelledById: true,
+        visitId: true,
+        lines: { select: { id: true, itemId: true } },
+      },
     });
     if (!order || order.salesmanId !== input.salesmanId) throw new BatalPesananError("TIDAK_DITEMUKAN");
     if (order.status === "REJECTED" && order.cancelledById === input.salesmanId) {
@@ -857,6 +903,19 @@ export async function cancelFieldSalesOrderBySalesman(input: {
       alasan: alasan.alasan,
     });
     if (!berhasil) throw new BatalPesananError("SUDAH_DIPUTUSKAN");
+    /*
+     * Kunjungan yang sudah check-out dengan hasil TRANSAKSI hanya karena pesanan
+     * ini: hasilnya dicabut di transaksi yang sama (keputusan pemilik 2026-10-06).
+     * Dinilai SESUDAH pembatalan di atas, jadi pesanan ini sudah tidak terhitung.
+     */
+    if (order.visitId) {
+      await betulkanHasilKunjunganDiTx(tx, {
+        visitId: order.visitId,
+        olehId: input.salesmanId,
+        alasan: alasan.alasan,
+        sebab: { orderId: order.id, orderNo: order.orderNo },
+      });
+    }
     barangDilepas = order.lines.map((l) => l.itemId);
     return { ok: true as const, orderNo: order.orderNo, sudahDibatalkan: false };
   });

@@ -14,6 +14,7 @@ import {
 } from "@/app/actions/jubelio-webhooks";
 import {
   bulkPushAllStockToJubelio,
+  countBulkStockPushItems,
   getJubelioOutboxRows,
   getJubelioOutboxStats,
   retryJubelioOutboxRow,
@@ -37,9 +38,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ChevronDown, ChevronRight, Loader2, RefreshCw } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { PageHeader } from "@/components/ui/page-header";
+import { ChevronDown, ChevronRight, Loader2, RefreshCw, UploadCloud } from "lucide-react";
 import { Pager } from "@/components/Pager";
-import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 
 type CallsResult = Awaited<ReturnType<typeof getJubelioApiCalls>>;
 type CallRow = CallsResult["calls"][number];
@@ -135,6 +146,10 @@ export default function JubelioAdminPage() {
   const [outboxStats, setOutboxStats] = useState<OutboxStats>(null);
   const [expandedOutboxId, setExpandedOutboxId] = useState<string | null>(null);
   const [bulkPushing, setBulkPushing] = useState(false);
+  // Dialog kirim massal: null = jumlah barang masih dihitung.
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [bulkCount, setBulkCount] = useState<number | null>(null);
+  const [retryOutboxRow, setRetryOutboxRow] = useState<OutboxRow | null>(null);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -216,8 +231,20 @@ export default function JubelioAdminPage() {
     }
   };
 
+  const openBulkDialog = async () => {
+    setBulkCount(null);
+    setBulkDialogOpen(true);
+    const r = await countBulkStockPushItems();
+    if (!r.ok) {
+      setBulkDialogOpen(false);
+      toast.error(t("bulkPushFailed"));
+      return;
+    }
+    setBulkCount(r.count);
+  };
+
   const handleBulkPush = async () => {
-    if (!confirm(t("bulkPushConfirm"))) return;
+    setBulkDialogOpen(false);
     setBulkPushing(true);
     try {
       const r = await bulkPushAllStockToJubelio();
@@ -230,7 +257,7 @@ export default function JubelioAdminPage() {
   };
 
   const handleOutboxRetry = async (id: string) => {
-    if (!confirm(t("outboxRetryConfirm"))) return;
+    setRetryOutboxRow(null);
     const r = await retryJubelioOutboxRow(id);
     if (r.ok) {
       toast.success(t("outboxRetryOk"));
@@ -255,25 +282,30 @@ export default function JubelioAdminPage() {
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardContent className="flex items-center justify-between gap-4 pt-6">
-          <p className="font-medium">{t("bulkPushTitle")}</p>
-          <Button onClick={() => void handleBulkPush()} disabled={bulkPushing}>
-            {bulkPushing ? t("bulkPushQueuing") : t("bulkPushButton")}
-          </Button>
-        </CardContent>
-      </Card>
-
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-center gap-1">
-          <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
-          <TombolBantuan judul={t("title")} />
-        </div>
-        <Button variant="outline" size="sm" onClick={() => void load()}>
-          <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-          {t("refresh")}
-        </Button>
-      </div>
+      <PageHeader
+        title={t("title")}
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={() => void load()}>
+              <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+              {t("refresh")}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void openBulkDialog()}
+              disabled={bulkPushing}
+            >
+              {bulkPushing ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <UploadCloud className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              {bulkPushing ? t("bulkPushQueuing") : t("bulkPushButton")}
+            </Button>
+          </>
+        }
+      />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
@@ -494,7 +526,9 @@ export default function JubelioAdminPage() {
                             <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
                               {formatDisplayDateTime(e.receivedAt, locale)}
                             </TableCell>
-                            <TableCell className="font-mono text-xs">{e.event}</TableCell>
+                            <TableCell className="text-sm" title={e.event}>
+                              {t.has(`event.${e.event}`) ? t(`event.${e.event}`) : e.event}
+                            </TableCell>
                             <TableCell>
                               <Badge
                                 title={e.status}
@@ -681,8 +715,10 @@ export default function JubelioAdminPage() {
                             <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
                               {formatDisplayDateTime(r.createdAt, locale)}
                             </TableCell>
-                            <TableCell className="font-mono text-xs">
-                              {r.entityType}:{r.entityId.slice(0, 8)}
+                            <TableCell className="text-sm" title={`${r.entityType}:${r.entityId}`}>
+                              {t.has(`entity.${r.entityType}`)
+                                ? t(`entity.${r.entityType}`)
+                                : r.entityType}
                             </TableCell>
                             <TableCell>
                               <Badge
@@ -709,7 +745,7 @@ export default function JubelioAdminPage() {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  onClick={() => void handleOutboxRetry(r.id)}
+                                  onClick={() => setRetryOutboxRow(r)}
                                 >
                                   {t("retry")}
                                 </Button>
@@ -771,20 +807,78 @@ export default function JubelioAdminPage() {
           </div>
         </CardContent>
       </Card>
+
+      <AlertDialog open={bulkDialogOpen} onOpenChange={setBulkDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {bulkCount === null
+                ? t("bulkPushTitle")
+                : t("bulkPushDialogTitle", { count: bulkCount })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {bulkCount === null
+                ? t("bulkPushCounting")
+                : bulkCount === 0
+                  ? t("bulkPushNone")
+                  : t("bulkPushBody")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!bulkCount}
+              onClick={(ev) => {
+                ev.preventDefault();
+                void handleBulkPush();
+              }}
+            >
+              {t("bulkPushDialogAction")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={retryOutboxRow !== null}
+        onOpenChange={(open) => {
+          if (!open) setRetryOutboxRow(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("outboxRetryTitle", {
+                entity:
+                  retryOutboxRow && t.has(`entity.${retryOutboxRow.entityType}`)
+                    ? t(`entity.${retryOutboxRow.entityType}`)
+                    : (retryOutboxRow?.entityType ?? ""),
+              })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>{t("outboxRetryConfirm")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(ev) => {
+                ev.preventDefault();
+                if (retryOutboxRow) void handleOutboxRetry(retryOutboxRow.id);
+              }}
+            >
+              {t("outboxRetryAction")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
 
-/** Indonesian label first; the technical state name stays underneath, small, when it differs. */
+/** Label Indonesia saja; nama status teknisnya hanya di tooltip. */
 function StatusTileLabel({ label, code }: { label: string; code: string }) {
   return (
-    <div className="text-sm text-muted-foreground">
+    <div className="text-sm text-muted-foreground" title={code}>
       {label}
-      {label !== code && (
-        <span className="block font-mono text-[10px] uppercase tracking-wide opacity-70">
-          {code}
-        </span>
-      )}
     </div>
   );
 }

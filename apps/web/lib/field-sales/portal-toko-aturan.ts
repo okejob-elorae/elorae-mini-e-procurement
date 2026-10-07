@@ -151,3 +151,24 @@ export function emberBarang(ember: Ketersediaan[]): Ketersediaan {
   if (ember.includes("TERBATAS")) return "TERBATAS";
   return "HABIS";
 }
+
+/**
+ * Portal menawarkan stok PER KELIPATAN ini (dibulatkan ke bawah). Tanpanya,
+ * pemegang tautan bisa menebak stok persis: pesan 50 → ditolak, 25 → diterima,
+ * dan seterusnya (pencarian biner, ±14 percobaan per barang). Dengan kelipatan
+ * 6, jawabannya sama untuk 36–41 pcs. Akibatnya sisa di bawah satu kelipatan
+ * tidak bisa dipesan lewat portal — lewat salesman tetap bisa. Keputusan
+ * sementara (2026-10-06, usulan Claude); 1 = tanpa pembulatan.
+ */
+export const KELIPATAN_STOK_PORTAL = 6;
+
+/** Jumlah terbanyak yang boleh dipesan lewat portal untuk stok tersedia ini. */
+export function batasPesanPortal(tersedia: number): number {
+  if (!Number.isFinite(tersedia) || tersedia <= 0) return 0;
+  return Math.floor(tersedia / KELIPATAN_STOK_PORTAL) * KELIPATAN_STOK_PORTAL;
+}
+
+/** Ember yang dilihat toko: dari apa yang BISA dipesan lewat portal, bukan stok mentah. */
+export function emberPortal(tersedia: number): Ketersediaan {
+  return emberKetersediaan(batasPesanPortal(tersedia));
+}

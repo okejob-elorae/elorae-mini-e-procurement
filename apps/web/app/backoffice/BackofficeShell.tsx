@@ -5,11 +5,6 @@ import { useSession, signOut } from 'next-auth/react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  Megaphone,
-  LayoutDashboard,
-  Database,
-  Package,
-  ReceiptText,
   Settings,
   Menu,
   ChevronDown,
@@ -19,17 +14,6 @@ import {
   Moon,
   Monitor,
   Check,
-  Factory,
-  Plug,
-  ShoppingCart,
-  ShoppingBag,
-  BookOpen,
-  BookOpenText,
-  BarChart2,
-  FolderArchive,
-  Handshake,
-  MapPinned,
-  Store,
   Search,
   Star,
   X,
@@ -48,15 +32,18 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { Role } from '@/lib/constants/enums';
-import { hasPermission, PERMISSIONS } from '@/lib/rbac';
-import { saringNav, type ItemTerlabel } from '@/lib/nav/saring';
+import { hasPermission } from '@/lib/rbac';
+import { bolehAnak, grupUntukRute, navItems } from '@/lib/nav/menu';
+import { grupTerbuka, saringNav, type ItemTerlabel } from '@/lib/nav/saring';
+import { BAHASA, keadaanTema } from '@/lib/nav/tampilan-pengguna';
 import { bacaFavorit, tulisFavorit, ubahFavorit, BATAS_FAVORIT } from '@/lib/nav/favorit';
 import { OfflineIndicator } from '@/components/offline/OfflineIndicator';
 import { QuickActionFAB } from '@/components/QuickActionFAB';
 import { FcmRegistration } from '@/components/notifications/FcmRegistration';
 import { NotificationIcon } from '@/components/notifications/NotificationIcon';
 import { setupSyncListeners, syncReferenceData } from '@/lib/offline/sync';
-import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
+import { useLocaleContext } from '@/components/providers/LocaleProvider';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import {
@@ -108,400 +95,8 @@ function NavCountBadge({ count }: { count: number }) {
   );
 }
 
-interface NavChild {
-  labelKey: string;
-  href: string;
-  /**
-   * Izin untuk melihat entri ini. Daftar = SALAH SATU cukup — untuk halaman yang
-   * dibuka dua kelompok orang (mis. tukar barang: sales menyetujui, gudang
-   * menyelesaikan), supaya entri ini tidak hilang bagi kelompok kedua.
-   */
-  permission?: string | readonly string[];
-}
-
-/** Entri anak terlihat: tanpa izin, atau memegang salah satu izinnya. Diekspor untuk tes menu. */
-export function bolehAnak(permissions: string[], izin: NavChild['permission']): boolean {
-  if (!izin) return true;
-  return typeof izin === 'string' ? hasPermission(permissions, izin) : izin.some((p) => hasPermission(permissions, p));
-}
-
-interface NavItem {
-  labelKey: string;
-  href: string;
-  /**
-   * Ikon garis menu. Menggantikan emoji: emoji warna-warni tidak seragam satu
-   * sama lain, digambar berbeda di Windows dan Mac, dan menjadi satu-satunya
-   * warna yang tidak ikut tema di menu samping.
-   */
-  icon: React.ElementType;
-  /** Izin untuk melihat entri ini; kosong = semua orang yang membuka kantor (mis. Bantuan). */
-  permission?: string;
-  /**
-   * Judul pemisah di atas entri ini. Ditulis pada entri PERTAMA tiap bagian;
-   * yang berikutnya membiarkannya kosong dan ikut bagian di atasnya.
-   */
-  section?: string;
-  children?: NavChild[];
-}
-
-/**
- * Susunan menu samping.
- *
- * DIKELOMPOKKAN MENURUT LINGKUP PEKERJAAN, dan itu bukan soal kerapian.
- * Sebelumnya modul piutang menambahkan delapan entri DATAR di tingkat atas —
- * piutang, kontrabon, pelunasan, retur toko, beban, arsip, dasbor, konsinyasi —
- * sehingga daftarnya jadi dua puluh baris tanpa hierarki. Daftar sepanjang itu
- * berhenti dibaca; orang menghafal posisi, lalu tersesat begitu ada yang
- * bergeser.
- *
- * `section` memberi judul pemisah. Satu bagian dibiarkan tanpa judul (Beranda)
- * karena ia bukan kelompok, melainkan titik berangkat.
- *
- * SETIAP ANAK WAJIB PUNYA `permission` SENDIRI. Anak tanpa izin terlihat oleh
- * siapa pun yang lolos izin INDUKNYA, jadi memindahkannya ke induk lain diam-
- * diam mengubah siapa yang bisa melihatnya. Izin yang tertulis di sini persis
- * izin induk lamanya, supaya pengelompokan ulang ini tidak menggeser satu pun
- * hak akses.
- */
-/*
- * Izin anak menu Piutang & Pelunasan — SAMA dengan pagar halamannya di
- * `lib/receivables/izin.ts` (rute modul ini tidak dipetakan di
- * ROUTE_PERMISSIONS; tiap halaman memagari dirinya). Dulu seluruh grup hanya
- * untuk `receivables:view`, jadi keuangan yang memverifikasi BKM, gudang yang
- * menghitung retur, dan pemegang `receivables:manage` saja tidak pernah
- * menemukan halaman yang boleh mereka buka. `menu-piutang.spec.ts` mencocokkan
- * daftar ini dengan fungsi pagarnya untuk setiap gabungan izin.
- */
-/** `bolehMembacaPiutang`: buku piutang, kontrabon, beban selisih, dasbor. */
-const IZIN_BACA_PIUTANG = [PERMISSIONS.RECEIVABLES_VIEW, PERMISSIONS.RECEIVABLES_MANAGE] as const;
-/** `bolehMembacaPelunasan`: ditambah keuangan yang memverifikasi BKM. */
-const IZIN_BACA_PELUNASAN = [...IZIN_BACA_PIUTANG, PERMISSIONS.JOURNALS_MANAGE] as const;
-/** `bolehMembacaRetur`: ditambah gudang yang menghitung dan keuangan. */
-const IZIN_BACA_RETUR = [
-  ...IZIN_BACA_PIUTANG,
-  PERMISSIONS.INVENTORY_OPNAME_COUNT,
-  PERMISSIONS.JOURNALS_MANAGE,
-] as const;
-/** `bolehMembacaArsip`: arsip nota retur dan tugas tagih — `receivables:view` saja. */
-const IZIN_BACA_ARSIP = PERMISSIONS.RECEIVABLES_VIEW;
-
-/** Diekspor untuk tes menu (`menu-piutang.spec.ts`). */
-export const navItems: NavItem[] = [
-  {
-    labelKey: 'dashboard',
-    href: '/backoffice/dashboard',
-    icon: LayoutDashboard,
-    permission: PERMISSIONS.DASHBOARD_VIEW,
-  },
-
-  // ── Operasional ────────────────────────────────────────────────────────────
-  {
-    section: 'secOperations',
-    labelKey: 'navGroupMasterData',
-    href: '/backoffice/suppliers',
-    icon: Database,
-    permission: PERMISSIONS.SUPPLIERS_VIEW,
-    children: [
-      { labelKey: 'masterSuppliers', href: '/backoffice/suppliers', permission: PERMISSIONS.SUPPLIERS_VIEW },
-      { labelKey: 'supplierType', href: '/backoffice/suppliers/types', permission: PERMISSIONS.SUPPLIER_TYPES_VIEW },
-      { labelKey: 'masterStores', href: '/backoffice/stores', permission: PERMISSIONS.STORES_VIEW },
-      { labelKey: 'storeProposals', href: '/backoffice/stores/usulan', permission: PERMISSIONS.STORES_VIEW },
-      { labelKey: 'navItemsAll', href: '/backoffice/items', permission: PERMISSIONS.ITEMS_VIEW },
-      { labelKey: 'navItemsCategory', href: '/backoffice/items/categories', permission: PERMISSIONS.ITEMS_VIEW },
-      { labelKey: 'navSizeChart', href: '/backoffice/items/size-charts', permission: PERMISSIONS.ITEMS_VIEW },
-      { labelKey: 'navLabelBarcode', href: '/backoffice/items/labels', permission: PERMISSIONS.ITEMS_VIEW },
-      { labelKey: 'leadTime', href: '/backoffice/lead-time', permission: PERMISSIONS.LEAD_TIME_VIEW },
-    ],
-  },
-  {
-    section: 'secOperations',
-    labelKey: 'inventory',
-    href: '/backoffice/inventory',
-    icon: Package,
-    permission: PERMISSIONS.INVENTORY_VIEW,
-    children: [
-      { labelKey: 'inventory', href: '/backoffice/inventory', permission: PERMISSIONS.INVENTORY_VIEW },
-      { labelKey: 'navStockOpname', href: '/backoffice/inventory/stock-opname', permission: PERMISSIONS.INVENTORY_OPNAME_VIEW },
-      // Layar gudang menghitung barang retur dari toko — di luar /backoffice
-      // (lihat CLAUDE.md "Layar gudang ada di /gudang-retur"); sebelumnya tidak
-      // ada satu tautan pun ke sana.
-      { labelKey: 'navHitungRetur', href: '/gudang-retur', permission: PERMISSIONS.INVENTORY_OPNAME_COUNT },
-      { labelKey: 'navStockReconciliation', href: '/backoffice/inventory/reconciliation', permission: PERMISSIONS.INVENTORY_RECONCILIATION_VIEW },
-      // Barang RUSAK/EXPIRED yang kembali lewat nota retur toko; memutuskan = `inventory:manage`.
-      { labelKey: 'navGudangRusak', href: '/backoffice/gudang-rusak', permission: PERMISSIONS.INVENTORY_VIEW },
-    ],
-  },
-  {
-    section: 'secOperations',
-    labelKey: 'sales',
-    href: '/backoffice/sales-orders',
-    icon: ShoppingCart,
-    permission: PERMISSIONS.SALES_ORDERS_VIEW,
-    children: [
-      { labelKey: 'navSalesOrders', href: '/backoffice/sales-orders', permission: PERMISSIONS.SALES_ORDERS_VIEW },
-      { labelKey: 'navFulfillment', href: '/backoffice/fulfillment', permission: PERMISSIONS.SALES_ORDERS_VIEW },
-      { labelKey: 'navSalesReturns', href: '/backoffice/returns', permission: PERMISSIONS.SALES_ORDERS_VIEW },
-      { labelKey: 'navFieldSalesOrders', href: '/backoffice/field-sales-orders', permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
-      { labelKey: 'navInden', href: '/backoffice/inden', permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
-      { labelKey: 'navCanvassing', href: '/backoffice/canvassing', permission: PERMISSIONS.CANVASSING_MANAGE },
-      { labelKey: 'navVanSales', href: '/backoffice/van-sales', permission: PERMISSIONS.CANVASSING_MANAGE },
-      { labelKey: 'promos', href: '/backoffice/promos', permission: PERMISSIONS.PROMOS_VIEW },
-    ],
-  },
-  // Pekerjaan MENGAWASI tim lapangan (kehadiran, biaya, ringkasan, komisi) —
-  // dipisah dari Penjualan, yang berisi DOKUMEN penjualan. Penjualan sudah
-  // sepuluh anak; menambah enam lagi di sana membuatnya tidak terbaca.
-  {
-    section: 'secOperations',
-    labelKey: 'navGroupFieldTeam',
-    href: '/backoffice/sales-lapangan',
-    icon: MapPinned,
-    permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW,
-    children: [
-      { labelKey: 'navSalesLapangan', href: '/backoffice/sales-lapangan', permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
-      { labelKey: 'navJadwalKunjungan', href: '/backoffice/jadwal-kunjungan', permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
-      { labelKey: 'navPengumuman', href: '/backoffice/pengumuman', permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
-      { labelKey: 'navAbsensi', href: '/backoffice/absensi', permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
-      { labelKey: 'navIzinCuti', href: '/backoffice/izin', permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
-      { labelKey: 'navTargetSales', href: '/backoffice/target-sales', permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
-      // Juga untuk keuangan (`journals:manage`) yang membayar biayanya — sama dengan `bolehMelihatBiaya`.
-      {
-        labelKey: 'navBiayaPerjalanan',
-        href: '/backoffice/biaya-perjalanan',
-        permission: [PERMISSIONS.FIELD_SALES_ORDERS_VIEW, PERMISSIONS.JOURNALS_MANAGE],
-      },
-      // Sales menyetujui, gudang (`inventory:manage`) menyelesaikan — sama dengan `bolehMelihatTukar`.
-      {
-        labelKey: 'navTukarBarang',
-        href: '/backoffice/tukar-barang',
-        permission: [PERMISSIONS.FIELD_SALES_ORDERS_VIEW, PERMISSIONS.FIELD_SALES_ORDERS_APPROVE, PERMISSIONS.INVENTORY_MANAGE],
-      },
-      { labelKey: 'navKomisiSalesman', href: '/backoffice/laporan/komisi-salesman', permission: PERMISSIONS.FIELD_SALES_ORDERS_APPROVE },
-      { labelKey: 'navChecklistToko', href: '/backoffice/checklist-toko', permission: PERMISSIONS.STORES_VIEW },
-      { labelKey: 'navLaporanEksekusi', href: '/backoffice/checklist-toko/laporan', permission: PERMISSIONS.STORES_VIEW },
-      { labelKey: 'navPanduanDisplay', href: '/backoffice/panduan-display', permission: PERMISSIONS.STORES_VIEW },
-      { labelKey: 'navHargaPesaing', href: '/backoffice/harga-pesaing', permission: PERMISSIONS.STORES_VIEW },
-    ],
-  },
-  // Semua pekerjaan SPG di satu tempat: nota konter, promo konter, tutup hari,
-  // pelanggan, jadwal, komisi, kiriman, dan barang rusak.
-  {
-    section: 'secOperations',
-    labelKey: 'navGroupSpg',
-    href: '/backoffice/spg-sales',
-    icon: Store,
-    // Grup tetap tampil untuk gudang lewat anak "Barang rusak dari kiriman".
-    permission: PERMISSIONS.SPG_SALES_VIEW,
-    children: [
-      { labelKey: 'navSpgSales', href: '/backoffice/spg-sales', permission: PERMISSIONS.SPG_SALES_VIEW },
-      { labelKey: 'navKinerjaSpg', href: '/backoffice/kinerja-spg', permission: PERMISSIONS.SPG_SALES_VIEW },
-      { labelKey: 'navSpgTutupHari', href: '/backoffice/spg-tutup-hari', permission: PERMISSIONS.SPG_SALES_VIEW },
-      { labelKey: 'navPromoKonter', href: '/backoffice/promo-konter', permission: PERMISSIONS.PROMOS_VIEW },
-      { labelKey: 'navSpgPelanggan', href: '/backoffice/spg-pelanggan', permission: PERMISSIONS.SPG_SALES_VIEW },
-      { labelKey: 'navJadwalSpg', href: '/backoffice/jadwal-spg', permission: PERMISSIONS.SPG_SALES_VIEW },
-      { labelKey: 'navKomisiSpg', href: '/backoffice/komisi-spg', permission: PERMISSIONS.SPG_SALES_VIEW },
-      { labelKey: 'navSpgRequests', href: '/backoffice/spg-requests', permission: [PERMISSIONS.SPG_SALES_VIEW, PERMISSIONS.STORES_MANAGE] },
-      { labelKey: 'navSpgLostSales', href: '/backoffice/spg-lost-sales', permission: PERMISSIONS.SPG_SALES_VIEW },
-      // Mutasi antar toko oleh SPG — barang KONSI berpindah rak, bukan dokumen penjualan.
-      { labelKey: 'navSpgTransfers', href: '/backoffice/spg-transfers', permission: PERMISSIONS.SPG_SALES_VIEW },
-      // Pengawas SPG melihat, gudang (`inventory:manage`) yang memutuskan.
-      {
-        labelKey: 'navSpgKirimanRusak',
-        href: '/backoffice/spg-kiriman-rusak',
-        permission: [PERMISSIONS.SPG_SALES_VIEW, PERMISSIONS.INVENTORY_MANAGE],
-      },
-      // Pengawas SPG melihat; yang menetapkan penanggung = receivables:manage.
-      {
-        labelKey: 'navBarangHilang',
-        href: '/backoffice/barang-hilang',
-        permission: [PERMISSIONS.SPG_SALES_VIEW, PERMISSIONS.RECEIVABLES_MANAGE],
-      },
-    ],
-  },
-  {
-    section: 'secOperations',
-    labelKey: 'production',
-    href: '/backoffice/production/planning',
-    icon: Factory,
-    permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW,
-    children: [
-      { labelKey: 'navForecast', href: '/backoffice/forecast', permission: PERMISSIONS.FORECAST_VIEW },
-      { labelKey: 'navProductionPlanning', href: '/backoffice/production/planning', permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW },
-      { labelKey: 'navProductionColors', href: '/backoffice/production/colors', permission: PERMISSIONS.PRODUCTION_COLORS_VIEW },
-      { labelKey: 'navProductionPalette', href: '/backoffice/production/palette', permission: PERMISSIONS.PRODUCTION_COLORS_VIEW },
-      { labelKey: 'navWorkOrdersList', href: '/backoffice/work-orders', permission: PERMISSIONS.WORK_ORDERS_VIEW },
-      { labelKey: 'registerNotaCmt', href: '/backoffice/work-orders/nota-register', permission: PERMISSIONS.NOTA_REGISTER_VIEW },
-    ],
-  },
-  /*
-   * Pembelian berdiri sendiri: PO, pembayaran ke pemasok, dan retur ke pemasok
-   * dulu terselip di Produksi, padahal dikerjakan bagian pembelian/keuangan.
-   * Izin tiap anak SAMA dengan sebelumnya. Master Pemasok tetap di Data Master;
-   * daftar GRN tetap tab di Inventori.
-   */
-  {
-    section: 'secOperations',
-    labelKey: 'navGroupPurchasing',
-    href: '/backoffice/purchase-orders',
-    icon: ShoppingBag,
-    permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
-    children: [
-      { labelKey: 'purchaseOrders', href: '/backoffice/purchase-orders', permission: PERMISSIONS.PURCHASE_ORDERS_VIEW },
-      { labelKey: 'supplierPayment', href: '/backoffice/supplier-payments', permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
-      { labelKey: 'vendorReturns', href: '/backoffice/vendor-returns', permission: PERMISSIONS.VENDOR_RETURNS_VIEW },
-    ],
-  },
-
-  // ── Piutang & konsinyasi ───────────────────────────────────────────────────
-  // Berdiri sebagai bagiannya sendiri, bukan diselipkan ke Keuangan: orang yang
-  // mengerjakannya berbeda (sales melapor, admin keuangan memverifikasi, gudang
-  // menghitung), dan izinnya pun terpisah.
-  {
-    section: 'secReceivables',
-    labelKey: 'navGroupReceivables',
-    href: '/backoffice/pelunasan-dasbor',
-    icon: ReceiptText,
-    permission: PERMISSIONS.RECEIVABLES_VIEW,
-    children: [
-      { labelKey: 'dasborPelunasan', href: '/backoffice/pelunasan-dasbor', permission: IZIN_BACA_PIUTANG },
-      { labelKey: 'receivables', href: '/backoffice/piutang', permission: IZIN_BACA_PIUTANG },
-      { labelKey: 'collections', href: '/backoffice/kontrabon', permission: IZIN_BACA_PIUTANG },
-      { labelKey: 'payments', href: '/backoffice/pelunasan', permission: IZIN_BACA_PELUNASAN },
-      { labelKey: 'tugasTagih', href: '/backoffice/tugas-tagih', permission: IZIN_BACA_ARSIP },
-      { labelKey: 'storeReturns', href: '/backoffice/retur-toko', permission: IZIN_BACA_RETUR },
-      { labelKey: 'bebanSelisih', href: '/backoffice/beban-selisih', permission: IZIN_BACA_PIUTANG },
-      { labelKey: 'arsipRetur', href: '/backoffice/arsip-retur', permission: IZIN_BACA_ARSIP },
-    ],
-  },
-  {
-    section: 'secReceivables',
-    labelKey: 'konsinyasi',
-    href: '/backoffice/konsinyasi',
-    icon: Handshake,
-    permission: PERMISSIONS.CONSIGNMENT_VIEW,
-  },
-
-  // ── Kreatif ────────────────────────────────────────────────────────────────
-  // Bagiannya sendiri, bukan anak Penjualan: orang yang merencanakan konten
-  // Instagram bukan orang yang menyetujui pesanan lapangan, dan tidak satu pun
-  // dari mereka boleh mewarisi layar yang lain hanya karena keduanya menyentuh
-  // kata "marketing". Izinnya pun terpisah.
-  {
-    section: 'secCreative',
-    labelKey: 'navGroupCreative',
-    href: '/backoffice/kreatif/konten',
-    icon: Megaphone,
-    permission: PERMISSIONS.CREATIVE_VIEW,
-    children: [
-      { labelKey: 'navContentCalendar', href: '/backoffice/kreatif/konten', permission: PERMISSIONS.CREATIVE_VIEW },
-      { labelKey: 'navKolBrief', href: '/backoffice/kreatif/brief', permission: PERMISSIONS.CREATIVE_VIEW },
-      { labelKey: 'navKolDirectory', href: '/backoffice/kreatif/kol', permission: PERMISSIONS.CREATIVE_VIEW },
-    ],
-  },
-
-  // ── Keuangan ───────────────────────────────────────────────────────────────
-  // Dipecah dua: yang MENCATAT dan yang MEMBACA. Sebelas anak dalam satu daftar
-  // tidak lagi bisa dipindai, dan keduanya memang pekerjaan yang berbeda.
-  {
-    section: 'secFinance',
-    labelKey: 'navGroupLedger',
-    href: '/backoffice/finance/journals',
-    icon: BookOpenText,
-    permission: PERMISSIONS.JOURNALS_VIEW,
-    children: [
-      { labelKey: 'navFinanceJournals', href: '/backoffice/finance/journals', permission: PERMISSIONS.JOURNALS_VIEW },
-      { labelKey: 'navCoa', href: '/backoffice/finance/coa', permission: PERMISSIONS.COA_VIEW },
-      { labelKey: 'navFinanceAccountMapping', href: '/backoffice/finance/account-mapping', permission: PERMISSIONS.JOURNALS_VIEW },
-      { labelKey: 'navFinanceCashFlowSections', href: '/backoffice/finance/cash-flow-sections', permission: PERMISSIONS.JOURNALS_VIEW },
-      { labelKey: 'navFinanceSettlements', href: '/backoffice/finance/settlements', permission: PERMISSIONS.SETTLEMENTS_VIEW },
-      { labelKey: 'navFakturPajak', href: '/backoffice/finance/faktur-pajak', permission: PERMISSIONS.TAX_INVOICES_VIEW },
-    ],
-  },
-  {
-    section: 'secFinance',
-    labelKey: 'navGroupReports',
-    href: '/backoffice/finance/reports/trial-balance',
-    icon: BarChart2,
-    permission: PERMISSIONS.FINANCE_REPORTS_VIEW,
-    children: [
-      // Laporan operasional yang dulu jadi tab di bawah beranda — izinnya sama
-      // dengan beranda, jadi siapa pun yang dulu melihat tabnya tetap melihatnya.
-      { labelKey: 'navOperationalReports', href: '/backoffice/laporan', permission: PERMISSIONS.DASHBOARD_VIEW },
-      { labelKey: 'navFinanceTrialBalance', href: '/backoffice/finance/reports/trial-balance', permission: PERMISSIONS.FINANCE_REPORTS_VIEW },
-      { labelKey: 'navFinanceIncomeStatement', href: '/backoffice/finance/reports/income-statement', permission: PERMISSIONS.FINANCE_REPORTS_VIEW },
-      { labelKey: 'navFinanceBalanceSheet', href: '/backoffice/finance/reports/balance-sheet', permission: PERMISSIONS.FINANCE_REPORTS_VIEW },
-      { labelKey: 'navFinanceCashFlow', href: '/backoffice/finance/reports/cash-flow', permission: PERMISSIONS.FINANCE_REPORTS_VIEW },
-      { labelKey: 'hppReport', href: '/backoffice/reports/hpp', permission: PERMISSIONS.REPORTS_HPP_VIEW },
-    ],
-  },
-
-  // ── Sistem ─────────────────────────────────────────────────────────────────
-  {
-    section: 'secSystem',
-    labelKey: 'jubelio',
-    href: '/backoffice/jubelio/admin',
-    icon: Plug,
-    permission: PERMISSIONS.JUBELIO_ADMIN_VIEW,
-    children: [
-      { labelKey: 'navJubelioAdmin', href: '/backoffice/jubelio/admin', permission: PERMISSIONS.JUBELIO_ADMIN_VIEW },
-      { labelKey: 'navJubelioSettings', href: '/backoffice/jubelio/settings', permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
-      { labelKey: 'navJubelioCategories', href: '/backoffice/jubelio/categories', permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
-      { labelKey: 'navJubelioMigration', href: '/backoffice/jubelio/migration', permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
-      { labelKey: 'navJubelioCouriers', href: '/backoffice/jubelio/couriers', permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
-    ],
-  },
-  {
-    section: 'secSystem',
-    labelKey: 'navGroupArchive',
-    href: '/backoffice/archive',
-    icon: FolderArchive,
-    permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
-    children: [
-      { labelKey: 'archive', href: '/backoffice/archive', permission: PERMISSIONS.PURCHASE_ORDERS_VIEW },
-      { labelKey: 'auditTrail', href: '/backoffice/audit-trail', permission: PERMISSIONS.AUDIT_TRAIL_VIEW },
-    ],
-  },
-  {
-    section: 'secSystem',
-    labelKey: 'settings',
-    href: '/backoffice/settings',
-    icon: Settings,
-    permission: PERMISSIONS.SETTINGS_SECURITY_VIEW,
-  },
-  // Penjelasan setiap halaman (keputusan pemilik 2026-10-05: keterangan
-  // dipindah dari layar ke sini). Tanpa izin — membaca penjelasan tidak
-  // membuka data apa pun.
-  {
-    labelKey: 'bantuan',
-    href: '/backoffice/bantuan',
-    icon: BookOpen,
-  },
-];
-
-/**
- * Grup mana yang harus terbuka untuk sebuah rute — DITURUNKAN dari `navItems`.
- *
- * Dulu ini daftar `startsWith` yang ditulis tangan, salinan kedua dari pohon
- * menu yang harus diperbarui setiap kali ada rute baru. Yang lupa diperbarui
- * tidak pernah gagal dengan berisik: grupnya cuma tidak terbuka, dan orang
- * mengira menunya hilang.
- *
- * Kecocokan TERPANJANG menang, supaya `/backoffice/items/categories` menunjuk
- * anaknya sendiri dan bukan induk yang kebetulan berawalan sama.
- */
-function petaBuka(path: string): string | null {
-  let terbaik: { panjang: number; induk: string } | null = null;
-  for (const item of navItems) {
-    if (!item.children?.length) continue;
-    for (const anak of item.children) {
-      if (path !== anak.href && !path.startsWith(`${anak.href}/`)) continue;
-      if (!terbaik || anak.href.length > terbaik.panjang) {
-        terbaik = { panjang: anak.href.length, induk: item.href };
-      }
-    }
-  }
-  return terbaik?.induk ?? null;
-}
+// Susunan menu tinggal di `lib/nav/menu.ts` — juga dibaca lencana menu dan editor peran.
+export { navItems, bolehAnak } from '@/lib/nav/menu';
 
 /**
  * Title of the page actually open.
@@ -530,29 +125,55 @@ function useCurrentPageLabel(): string | null {
 }
 
 function ThemeDropdownItems() {
-  const { theme, setTheme, resolvedTheme } = useTheme();
-  const current = theme ?? 'system';
-  const isLight = current === 'light' || (current === 'system' && resolvedTheme === 'light');
-  const isDark = current === 'dark' || (current === 'system' && resolvedTheme === 'dark');
-  const isSystem = current === 'system';
+  const { theme, setTheme, systemTheme } = useTheme();
+  const tNav = useTranslations('navigation');
+  // Centang hanya pada pilihan yang TERSIMPAN; "ikuti perangkat" menyebut tema perangkat sekarang.
+  const { terpilih, perangkat } = keadaanTema(theme, systemTheme);
+  const labelPerangkat =
+    perangkat === 'light' ? tNav('temaPerangkatTerang') : perangkat === 'dark' ? tNav('temaPerangkatGelap') : tNav('temaPerangkat');
   return (
     <>
       <DropdownMenuItem onClick={() => setTheme('light')}>
         <Sun className="mr-2 h-4 w-4" />
-        Light
-        {isLight && <Check className="ml-auto h-4 w-4" />}
+        {tNav('temaTerang')}
+        {terpilih === 'light' && <Check className="ml-auto h-4 w-4" />}
       </DropdownMenuItem>
       <DropdownMenuItem onClick={() => setTheme('dark')}>
         <Moon className="mr-2 h-4 w-4" />
-        Dark
-        {isDark && <Check className="ml-auto h-4 w-4" />}
+        {tNav('temaGelap')}
+        {terpilih === 'dark' && <Check className="ml-auto h-4 w-4" />}
       </DropdownMenuItem>
       <DropdownMenuItem onClick={() => setTheme('system')}>
         <Monitor className="mr-2 h-4 w-4" />
-        System
-        {isSystem && <Check className="ml-auto h-4 w-4" />}
+        {labelPerangkat}
+        {terpilih === 'system' && <Check className="ml-auto h-4 w-4" />}
       </DropdownMenuItem>
     </>
+  );
+}
+
+/** Pilihan bahasa di kepala halaman — nama bahasanya lengkap ("Bahasa Indonesia", bukan "Bahasa"). */
+function PilihBahasa() {
+  const { locale, setLocale } = useLocaleContext();
+  const tNav = useTranslations('navigation');
+  const terpilih = BAHASA.find((b) => b.kode === locale) ?? BAHASA[0];
+  return (
+    <Select value={locale} onValueChange={(value) => setLocale(value as 'id' | 'en')}>
+      <SelectTrigger className="w-auto" aria-label={tNav('bahasa')}>
+        {/* Layar sempit: kodenya saja, supaya kepala halaman tidak meluap. */}
+        <SelectValue>
+          <span className="sm:hidden">{terpilih.kode.toUpperCase()}</span>
+          <span className="hidden sm:inline">{terpilih.nama}</span>
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        {BAHASA.map((b) => (
+          <SelectItem key={b.kode} value={b.kode}>
+            {b.nama}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -568,7 +189,7 @@ function Sidebar({
   const pathname = usePathname();
   const tNav = useTranslations('navigation');
   const navCounts = useNavCounts();
-  const getOpenKeyFromPath = (path: string) => petaBuka(path);
+  const getOpenKeyFromPath = (path: string) => grupUntukRute(path);
 
   const [openNavKey, setOpenNavKey] = useState<string | null>(() => getOpenKeyFromPath(pathname));
   const [cari, setCari] = useState('');
@@ -796,7 +417,8 @@ function Sidebar({
               <Fragment key={item.href}>
                 {bagian}
               <Collapsible
-                open={openNavKey === item.href}
+                // Saat mencari, grup yang lolos saringan terbuka — anak yang cocok langsung terlihat.
+                open={grupTerbuka(item.href, openNavKey, sedangMencari, lolos.has(item.href))}
                 onOpenChange={(open) => setOpenNavKey(open ? item.href : null)}
                 className="group/collapsible"
               >
@@ -931,6 +553,7 @@ export function BackofficeShell({
 }) {
   const pageLabel = useCurrentPageLabel();
   const tRole = useTranslations('auth.roles');
+  const tAuth = useTranslations('auth');
   const tNav = useTranslations('navigation');
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -1016,7 +639,7 @@ export function BackofficeShell({
           <div className="flex items-center gap-2 sm:gap-3">
             <QuickActionFAB />
             <NotificationIcon />
-            <LanguageSwitcher />
+            <PilihBahasa />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="flex items-center gap-2">
@@ -1035,21 +658,21 @@ export function BackofficeShell({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                <DropdownMenuLabel>{tNav('akunSaya')}</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuLabel>Theme</DropdownMenuLabel>
+                <DropdownMenuLabel>{tNav('tema')}</DropdownMenuLabel>
                 <ThemeDropdownItems />
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
                   <Link href="/backoffice/settings" className="flex items-center">
                     <Settings className="mr-2 h-4 w-4" />
-                    Settings
+                    {tNav('settings')}
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => signOut({ callbackUrl: '/login' })} data-testid="sign-out">
                   <LogOut className="mr-2 h-4 w-4" />
-                  Sign out
+                  {tAuth('logout')}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

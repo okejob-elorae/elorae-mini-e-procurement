@@ -61,8 +61,16 @@ async function requireSession(): Promise<{ userId: string; permissions: string[]
   return { userId: session.user.id, permissions: session.user.permissions };
 }
 
+/**
+ * Status pesanan marketplace yang tidak pernah masuk antrean pemenuhan, di
+ * saringan mana pun: pesanan batal dan pesanan retur bukan pekerjaan gudang —
+ * penulis pemenuhan menolak keduanya (`assertNotCancelled`), dan hitungan
+ * "belum dikirim" di Beranda (`getMarketplaceKpi`) hanya NEW/PROCESSING.
+ */
+const STATUS_DI_LUAR_ANTREAN: readonly SalesOrderStatus[] = ["CANCELLED", "RETURNED"];
+
 function buildWhere(opts: ListFulfillmentQueueOpts): Record<string, unknown> {
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = { status: { notIn: [...STATUS_DI_LUAR_ANTREAN] } };
   const fStatus = opts.fulfillmentStatus ?? "PENDING";
   if (fStatus !== "ALL") {
     where.fulfillmentStatus = fStatus;

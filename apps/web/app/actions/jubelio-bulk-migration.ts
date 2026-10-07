@@ -4,6 +4,11 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { PERMISSIONS, requirePermission } from "@/lib/rbac";
+import {
+  gagalJubelio,
+  jalankanAksiJubelio,
+  type HasilJubelio,
+} from "@/app/backoffice/jubelio/galat-jubelio";
 
 export type EligibleItem = {
   id: string;
@@ -71,43 +76,50 @@ export async function getEligibleItems(): Promise<EligibleItem[]> {
   });
 }
 
-export async function enqueueBulkMigration(itemIds: string[]): Promise<{ enqueued: number }> {
-  const session = await auth();
-  if (!session) throw new Error("Unauthorized");
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_MANAGE);
+export async function enqueueBulkMigration(
+  itemIds: string[],
+): Promise<HasilJubelio<{ enqueued: number }>> {
+  return jalankanAksiJubelio(async () => {
+    const session = await auth();
+    if (!session) return gagalJubelio("TANPA_AKSES");
+    requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_MANAGE);
 
-  if (itemIds.length === 0) {
-    throw new Error("No items selected");
-  }
+    if (itemIds.length === 0) {
+      return gagalJubelio("ISIAN_TIDAK_SAH", "No items selected");
+    }
 
-  const eligibleIds = new Set(
-    (await prisma.item.findMany({
-      where: {
-        id: { in: itemIds },
-        type: "FINISHED_GOOD",
-        source: "ERP",
-        jubelioProductMappings: { none: {} },
-      },
-      select: { id: true },
-    })).map((it) => it.id),
-  );
+    const eligibleIds = new Set(
+      (await prisma.item.findMany({
+        where: {
+          id: { in: itemIds },
+          type: "FINISHED_GOOD",
+          source: "ERP",
+          jubelioProductMappings: { none: {} },
+        },
+        select: { id: true },
+      })).map((it) => it.id),
+    );
 
-  const invalid = itemIds.filter((id) => !eligibleIds.has(id));
-  if (invalid.length > 0) {
-    throw new Error(`${invalid.length} item(s) not eligible (already mapped or wrong type)`);
-  }
+    const invalid = itemIds.filter((id) => !eligibleIds.has(id));
+    if (invalid.length > 0) {
+      return gagalJubelio(
+        "ISIAN_TIDAK_SAH",
+        `${invalid.length} item(s) not eligible (already mapped or wrong type)`,
+      );
+    }
 
-  await prisma.jubelioOutbox.createMany({
-    data: itemIds.map((id) => ({
-      entityType: "product_push",
-      entityId: id,
-      payload: {},
-      enqueuedById: session.user.id,
-    })),
+    await prisma.jubelioOutbox.createMany({
+      data: itemIds.map((id) => ({
+        entityType: "product_push",
+        entityId: id,
+        payload: {},
+        enqueuedById: session.user.id,
+      })),
+    });
+
+    revalidatePath("/backoffice/jubelio/migration");
+    return { ok: true, data: { enqueued: itemIds.length } };
   });
-
-  revalidatePath("/backoffice/jubelio/migration");
-  return { enqueued: itemIds.length };
 }
 
 export async function getMigrationSummary(): Promise<MigrationSummary> {

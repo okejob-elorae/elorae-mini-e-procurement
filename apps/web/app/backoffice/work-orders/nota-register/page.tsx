@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Loader2, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -22,7 +23,8 @@ import {
 } from '@/components/ui/table';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
-import { formatDateOnly, formatDisplayDate, parseDateOnly } from '@/lib/date-only';
+import { formatDateOnly, formatDisplayDate, parseDateOnly, parseDateOnlyEnd } from '@/lib/date-only';
+import { formatRupiah } from '@/lib/format/rupiah';
 import {
   Select,
   SelectContent,
@@ -47,9 +49,11 @@ import { logPrint } from '@/app/actions/audit';
 import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
+import { LABEL_NOTA_CMT } from '../label-nota-cmt';
 
 type RegisterRow = {
   id: string;
+  woId?: string;
   docNumber: string;
   issueType: string;
   issuedAt: Date;
@@ -70,16 +74,37 @@ export default function NotaRegisterPage() {
     type === 'FABRIC' ? tNota('typeFabric') : type === 'ACCESSORIES' ? tNota('typeAccessories') : type;
   const [issues, setIssues] = useState<RegisterRow[]>([]);
   const [suppliers, setSuppliers] = useState<{ id: string; name: string; code: string }[]>([]);
-  const [vendorId, setVendorId] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [issueType, setIssueType] = useState<'FABRIC' | 'ACCESSORIES' | ''>('');
+  // Saringan tinggal di URL (?vendor=&dari=&sampai=&jenis=&page=): berlaku
+  // langsung saat diubah, bisa dibagikan, dan bertahan saat kembali.
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const vendorId = searchParams.get('vendor') ?? '';
+  const dateFrom = searchParams.get('dari') ?? '';
+  const dateTo = searchParams.get('sampai') ?? '';
+  const jenisUrl = searchParams.get('jenis');
+  const issueType: 'FABRIC' | 'ACCESSORIES' | '' = jenisUrl === 'FABRIC' || jenisUrl === 'ACCESSORIES' ? jenisUrl : '';
+  const page = Math.max(1, Number(searchParams.get('page')) || 1);
   const [isLoading, setIsLoading] = useState(false);
   const [printIssueId, setPrintIssueId] = useState<string | null>(null);
   const [printData, setPrintData] = useState<Awaited<ReturnType<typeof getMaterialIssueForPrint>>>(null);
-  const [page, setPage] = useState(1);
-  const [pageSize] = useState(DEFAULT_PAGE_SIZE);
+  const pageSize = DEFAULT_PAGE_SIZE;
   const [totalCount, setTotalCount] = useState(0);
+
+  /** Ganti parameter URL sekaligus; saringan baru kembali ke halaman 1. */
+  const setParams = useCallback(
+    (ubah: Record<string, string | null>) => {
+      const q = new URLSearchParams(searchParams.toString());
+      for (const [k, v] of Object.entries(ubah)) {
+        if (v == null || v === '') q.delete(k);
+        else q.set(k, v);
+      }
+      if (!('page' in ubah)) q.delete('page');
+      const qs = q.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams]
+  );
 
   useEffect(() => {
     import('@/app/actions/suppliers')
@@ -96,8 +121,9 @@ export default function NotaRegisterPage() {
     try {
       const filters: { vendorId?: string; dateFrom?: Date; dateTo?: Date; issueType?: 'FABRIC' | 'ACCESSORIES' } = {};
       if (vendorId) filters.vendorId = vendorId;
-      if (dateFrom) filters.dateFrom = new Date(dateFrom);
-      if (dateTo) filters.dateTo = new Date(dateTo);
+      // Tanggal WIB; "sampai" inklusif sampai akhir harinya (dulu tengah malam UTC → hari terakhir hilang).
+      if (dateFrom) filters.dateFrom = parseDateOnly(dateFrom);
+      if (dateTo) filters.dateTo = parseDateOnlyEnd(dateTo);
       if (issueType) filters.issueType = issueType;
       const result = await getMaterialIssuesForCMTRegister(filters, { page, pageSize });
       if (result != null && typeof result === 'object' && 'items' in result && 'totalCount' in result) {
@@ -146,18 +172,7 @@ export default function NotaRegisterPage() {
       issueType: printData.issueType,
       totalCost: printData.totalCost,
       lines: printData.lines,
-      labels: {
-        title: 'Nota ke CMT',
-        doc: 'Doc',
-        wo: 'WO',
-        vendor: 'Vendor',
-        date: 'Date',
-        type: 'Type',
-        item: 'Item',
-        qty: 'Qty',
-        uom: 'UOM',
-        totalCost: 'Total cost',
-      },
+      labels: LABEL_NOTA_CMT,
     });
     const iframe = document.createElement('iframe');
     iframe.setAttribute('style', 'position:absolute;width:0;height:0;border:0;visibility:hidden;');
@@ -207,7 +222,6 @@ export default function NotaRegisterPage() {
       <Card>
         <CardHeader>
           <CardTitle>{tNota('filterTitle')}</CardTitle>
-          <CardDescription>{tNota('filterSubtitle')}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-4 items-end">
           <div className="space-y-2">
@@ -218,7 +232,7 @@ export default function NotaRegisterPage() {
                 ...suppliers.map((s) => ({ value: s.id, label: `${s.name} (${s.code})` })),
               ]}
               value={vendorId || '_'}
-              onValueChange={(v) => setVendorId(v === '_' ? '' : v)}
+              onValueChange={(v) => setParams({ vendor: v === '_' ? null : v })}
               placeholder={tPlaceholders('all')}
               triggerClassName="w-[220px]"
             />
@@ -232,16 +246,18 @@ export default function NotaRegisterPage() {
                 from: parseDateOnly(dateFrom),
                 to: parseDateOnly(dateTo),
               }}
-              onChange={(range) => {
-                setDateFrom(range?.from ? formatDateOnly(range.from) : '');
-                setDateTo(range?.to ? formatDateOnly(range.to) : '');
-              }}
+              onChange={(range) =>
+                setParams({
+                  dari: range?.from ? formatDateOnly(range.from) : null,
+                  sampai: range?.to ? formatDateOnly(range.to) : null,
+                })
+              }
             />
           </div>
           <div className="space-y-2">
             <Label>{tNota('typeLabel')}</Label>
-            <Select value={issueType || '_'} onValueChange={(v) => setIssueType(v === '_' ? '' : (v as 'FABRIC' | 'ACCESSORIES'))}>
-              <SelectTrigger className="w-[140px]">
+            <Select value={issueType || '_'} onValueChange={(v) => setParams({ jenis: v === '_' ? null : v })}>
+              <SelectTrigger className="w-[140px]" aria-label={tNota('typeLabel')}>
                 <SelectValue placeholder={tPlaceholders('all')} />
               </SelectTrigger>
               <SelectContent>
@@ -251,19 +267,20 @@ export default function NotaRegisterPage() {
               </SelectContent>
             </Select>
           </div>
-          <Button onClick={() => setPage(1)} disabled={isLoading}>
-            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : tNota('load')}
-          </Button>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
           <CardTitle>{tNota('listTitle')}</CardTitle>
-          <CardDescription>{tNota('issuesCount', { count: issues.length })}</CardDescription>
+          <CardDescription>{tNota('issuesCount', { count: totalCount })}</CardDescription>
         </CardHeader>
         <CardContent>
-          {issues.length === 0 ? (
+          {isLoading && issues.length === 0 ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : issues.length === 0 ? (
             <p className="text-muted-foreground py-8 text-center">{tNota('emptyHint')}</p>
           ) : (
             <div className="border rounded-md overflow-auto max-h-[500px]">
@@ -283,11 +300,19 @@ export default function NotaRegisterPage() {
                   {issues.map((row) => (
                     <TableRow key={row.id}>
                       <TableCell className="font-medium">{row.docNumber}</TableCell>
-                      <TableCell>{row.woDocNumber}</TableCell>
+                      <TableCell>
+                        {row.woId ? (
+                          <Link href={`/backoffice/work-orders/${row.woId}`} className="hover:underline">
+                            {row.woDocNumber}
+                          </Link>
+                        ) : (
+                          row.woDocNumber
+                        )}
+                      </TableCell>
                       <TableCell className="min-w-[140px] whitespace-normal">{row.vendorName}</TableCell>
                       <TableCell>{issueTypeLabel(row.issueType)}</TableCell>
                       <TableCell>{formatDisplayDate(row.issuedAt, locale)}</TableCell>
-                      <TableCell className="text-right">{row.totalCost.toLocaleString('id-ID')}</TableCell>
+                      <TableCell className="text-right">{formatRupiah(row.totalCost)}</TableCell>
                       <TableCell>
                         <Button
                           variant="ghost"
@@ -308,7 +333,7 @@ export default function NotaRegisterPage() {
           <Pagination
             page={page}
             totalPages={Math.max(1, Math.ceil(totalCount / pageSize))}
-            onPageChange={setPage}
+            onPageChange={(p) => setParams({ page: p > 1 ? String(p) : null })}
             totalCount={totalCount}
             pageSize={pageSize}
           />
@@ -353,7 +378,7 @@ export default function NotaRegisterPage() {
                 </TableBody>
               </Table>
               <p className="font-semibold">
-                {tWO('totalCost')}: {printData.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                {tWO('totalCost')}: {formatRupiah(printData.totalCost)}
               </p>
               <div className="flex gap-2 no-print">
                 <Button variant="outline" onClick={closePrint}>{tWO('close')}</Button>

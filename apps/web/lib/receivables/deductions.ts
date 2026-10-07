@@ -63,7 +63,8 @@ export function potonganRetur(deductions: PotonganBasisData[]): PotonganRetur[] 
       if (d.storeReturnId === null) return { nilaiPotongan: angka(d.amount), retur: null };
       return {
         nilaiPotongan: angka(d.amount),
-        retur: { nilaiKlaim: angka(d.amount), nilaiFisik: null, bebanDiputuskan: false },
+        // Tahanan tetap: tidak lepas sendiri, BKM lain boleh melunasinya.
+        retur: { nilaiKlaim: angka(d.amount), nilaiFisik: null, bebanDiputuskan: false, tetap: true },
       };
     }
 
@@ -77,7 +78,9 @@ export function potonganRetur(deductions: PotonganBasisData[]): PotonganRetur[] 
     if (r.status === 'BATAL') {
       return {
         nilaiPotongan: angka(d.amount),
-        retur: { nilaiKlaim: angka(r.claimedAmount), nilaiFisik: 0, bebanDiputuskan: false },
+        // Tahanan tetap: nota batal tidak pernah dihitung atau diputuskan, jadi
+        // potongannya ditagih lewat BKM berikutnya (`tertahanPiutang`).
+        retur: { nilaiKlaim: angka(r.claimedAmount), nilaiFisik: 0, bebanDiputuskan: false, tetap: true },
       };
     }
 

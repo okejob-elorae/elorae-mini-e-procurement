@@ -151,7 +151,7 @@ export function KomisiSalesmanClient({ bulan, pilihan, skema, baris, potonganHil
           })}{" "}
           <Link
             href="/backoffice/settings/salesman"
-            className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+            className="inline-flex items-center gap-1 font-medium underline decoration-muted-foreground/50 underline-offset-2 hover:decoration-foreground"
           >
             {t("openSettings")}
             <ArrowRight className="h-3.5 w-3.5" />

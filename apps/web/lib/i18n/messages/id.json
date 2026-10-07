@@ -52,9 +52,9 @@
   "navigation": {
     "dashboard": "Beranda",
     "suppliers": "Pemasok",
-    "masterSuppliers": "Master Pemasok",
-    "supplierType": "Jenis Pemasok",
-    "leadTime": "Lead Time",
+    "masterSuppliers": "Pemasok",
+    "supplierType": "Jenis pemasok",
+    "leadTime": "Lead time",
     "sales": "Penjualan",
     "navSalesOrders": "Pesanan",
     "navFulfillment": "Pemenuhan",
@@ -76,12 +76,12 @@
     "navFinanceCashFlowSections": "Klasifikasi Arus Kas",
     "navFakturPajak": "Faktur Pajak",
     "items": "Item",
-    "navItemsAll": "Semua Item",
+    "navItemsAll": "Semua barang",
     "navItemsCategory": "Kategori",
     "navItemsRaw": "Barang Mentah",
     "navItemsFinished": "Barang Jadi",
     "stores": "Toko",
-    "masterStores": "Master Toko",
+    "masterStores": "Toko",
     "purchaseOrders": "Pesanan Pembelian",
     "supplierPayment": "Pembayaran Pemasok",
     "inventory": "Inventori",
@@ -104,8 +104,8 @@
     "auditTrail": "Jejak Audit",
     "jubelioAdmin": "Jubelio API",
     "jubelio": "Jubelio",
-    "navJubelioAdmin": "Jubelio API",
-    "navJubelioSettings": "Pengaturan",
+    "navJubelioAdmin": "Pemantauan",
+    "navJubelioSettings": "Pengaturan Jubelio",
     "navJubelioCategories": "Kategori",
     "navJubelioMigration": "Migrasi",
     "navJubelioCouriers": "Kurir",
@@ -131,8 +131,8 @@
     "navGroupReports": "Laporan",
     "navGroupArchive": "Arsip & Jejak",
     "secCreative": "Kreatif",
-    "navGroupCreative": "Creative Marketing",
-    "navContentCalendar": "Kalender Konten",
+    "navGroupCreative": "Pemasaran kreatif",
+    "navContentCalendar": "Rencana konten",
     "navKolBrief": "Brief KOL",
     "navKolDirectory": "Daftar KOL",
     "cariMenu": "Cari menu…",
@@ -144,7 +144,7 @@
     "favoritPenuh": "Sematan penuh — maksimal {batas}. Lepas salah satu dulu.",
     "navSpgRequests": "Permintaan kiriman SPG",
     "navSpgLostSales": "Barang dicari pembeli",
-    "storeProposals": "Usulan Toko Baru",
+    "storeProposals": "Usulan toko baru",
     "navGroupFieldTeam": "Tim Lapangan",
     "navSalesLapangan": "Ringkasan Sales",
     "navAbsensi": "Absensi",
@@ -177,7 +177,15 @@
     "navLabelBarcode": "Label barcode",
     "navGudangRusak": "Gudang barang rusak",
     "bantuan": "Bantuan",
-    "navGroupPurchasing": "Pembelian"
+    "navGroupPurchasing": "Pembelian",
+    "akunSaya": "Akun saya",
+    "tema": "Tema",
+    "temaTerang": "Terang",
+    "temaGelap": "Gelap",
+    "temaPerangkat": "Ikuti perangkat",
+    "temaPerangkatTerang": "Ikuti perangkat (sekarang terang)",
+    "temaPerangkatGelap": "Ikuti perangkat (sekarang gelap)",
+    "bahasa": "Bahasa"
   },
   "notifications": {
     "title": "Notifikasi",
@@ -187,23 +195,137 @@
     "testBody": "Ini adalah notifikasi uji dari aplikasi.",
     "markAllRead": "Tandai semua dibaca",
     "loadMore": "Muat lebih",
-    "loadMoreFailed": "Notifikasi berikutnya gagal dimuat. Coba lagi."
+    "loadMoreFailed": "Notifikasi berikutnya gagal dimuat. Coba lagi.",
+    "unreadAria": "{count} notifikasi belum dibaca",
+    "keterangan": "Pemberitahuan terbaru untuk Anda",
+    "jenis": {
+      "PO_OVERDUE": {
+        "judul": "PO terlambat",
+        "isi": "{dokumen} ({pemasok}) — tanggal tiba sudah lewat"
+      },
+      "WO_OVERDUE": {
+        "judul": "Perintah kerja terlambat",
+        "isi": "{dokumen} ({vendor}) — tanggal target sudah lewat"
+      },
+      "MATERIAL_ARRIVED": {
+        "judul": "Bahan sudah tiba"
+      },
+      "ACCESSORIES_PENDING_CMT": {
+        "judul": "Aksesoris belum dikirim ke CMT",
+        "isi": "{jumlah} perintah kerja membutuhkan pengiriman aksesoris ke CMT."
+      },
+      "WO_COMPLETED": {
+        "judul": "Perintah kerja selesai",
+        "isi": "{dokumen} — {barang} selesai",
+        "isiOleh": "{dokumen} — {barang} diselesaikan oleh {oleh}"
+      },
+      "SUPPLIER_CREATED": {
+        "judul": "Pemasok baru",
+        "isi": "{nama} ditambahkan oleh {oleh}"
+      },
+      "SUPPLIER_APPROVED": {
+        "judul": "Pemasok disetujui",
+        "isi": "{nama} disetujui oleh {oleh}"
+      },
+      "ITEM_CREATED": {
+        "judul": "Barang baru",
+        "isi": "{nama} ditambahkan oleh {oleh}"
+      },
+      "PO_CREATED": {
+        "judul": "PO baru",
+        "isi": "PO {dokumen} dibuat oleh {oleh}"
+      },
+      "PO_STATUS_UPDATED": {
+        "judul": "Status PO berubah",
+        "isi": "PO {dokumen}: {dari} → {ke}, oleh {oleh}"
+      },
+      "PO_PAYMENT_TOGGLED": {
+        "judul": "Status bayar PO berubah",
+        "isiLunas": "PO {dokumen} ditandai lunas oleh {oleh}",
+        "isiBelumLunas": "PO {dokumen} ditandai belum lunas oleh {oleh}"
+      },
+      "GRN_CREATED": {
+        "judul": "Penerimaan barang dicatat",
+        "isi": "GRN {dokumen} dicatat oleh {oleh}"
+      },
+      "STOCK_ADJUSTMENT_CREATED": {
+        "judul": "Penyesuaian stok dicatat",
+        "isi": "Penyesuaian stok {dokumen} dicatat oleh {oleh}"
+      },
+      "WO_CREATED": {
+        "judul": "Perintah kerja baru",
+        "isi": "{dokumen} dibuat oleh {oleh}"
+      },
+      "WO_STATUS_UPDATED": {
+        "judul": "Status perintah kerja berubah",
+        "isi": "{dokumen}: {dari} → {ke}, oleh {oleh}"
+      },
+      "WO_MATERIALS_ISSUED": {
+        "judul": "Bahan dikeluarkan",
+        "isi": "Bahan untuk {dokumen} dikeluarkan oleh {oleh}"
+      },
+      "VENDOR_RETURN_CREATED": {
+        "judul": "Retur ke pemasok dibuat",
+        "isi": "Retur {dokumen} dibuat oleh {oleh}"
+      },
+      "VENDOR_RETURN_STATUS_UPDATED": {
+        "judul": "Status retur ke pemasok berubah",
+        "isi": "Retur {dokumen}: {dari} → {ke}, oleh {oleh}"
+      },
+      "DOC_NUMBER_ALTERED": {
+        "judul": "Pengaturan nomor dokumen diubah",
+        "isi": "Penomoran {jenis} diubah oleh {oleh}"
+      },
+      "JOURNAL_PENDING": {
+        "judul": "Jurnal gagal diposting",
+        "isi": "{dokumen}: {sebab}.",
+        "isiNomor": "{dokumen} {nomor}: {sebab}.",
+        "dokumen": {
+          "van_sale": "Penjualan van",
+          "van_load": "Muatan van",
+          "van_reconcile": "Rekonsiliasi van",
+          "supplier_payment": "Pembayaran ke pemasok",
+          "supplier_payment_reversal": "Pembatalan pembayaran ke pemasok",
+          "grn": "Penerimaan barang",
+          "grn_reversal": "Pembalikan penerimaan barang",
+          "fg_receipt": "Penerimaan barang jadi",
+          "opname": "Opname",
+          "sales_return": "Retur penjualan",
+          "sales_order": "Penjualan marketplace",
+          "lain": "Dokumen"
+        }
+      },
+      "PENDING_ORDER_APPROVAL": {
+        "judulPutus": "Pesanan putus {nomor} menunggu persetujuan",
+        "judulKonsi": "Transfer konsinyasi {nomor} menunggu persetujuan",
+        "isiPutus": "Pesanan putus {nomor} senilai {total} menunggu persetujuan.",
+        "isiKonsi": "Permintaan transfer konsinyasi {nomor} menunggu persetujuan.",
+        "kredit": "Kredit ditahan: periksa tagihan toko sebelum menyetujui.",
+        "jarakJauh": "Pesanan jarak jauh ({saluran}), tanpa kunjungan ke toko.",
+        "inden": "Pre-order ({jendela}): stok dipegang saat pre-order dirilis.",
+        "ganti": "Menggantikan {lama}, yang dibatalkan salesman."
+      },
+      "STORE_CHANGE_REQUEST": {
+        "judul": "Perubahan data toko menunggu persetujuan",
+        "isi": "Salesman mengusulkan perubahan data toko {toko}. Tinjau di halaman rincian toko."
+      }
+    }
   },
   "supplier": {
     "title": "Pemasok",
-    "new": "Pemasok Baru",
-    "edit": "Edit Pemasok",
-    "code": "Kode Pemasok",
-    "name": "Nama Pemasok",
-    "type": "Jenis Pemasok",
+    "new": "Pemasok baru",
+    "edit": "Ubah pemasok",
+    "code": "Kode pemasok",
+    "name": "Nama pemasok",
+    "type": "Jenis pemasok",
     "category": "Kategori",
     "address": "Alamat",
     "phone": "Telepon",
     "email": "Email",
-    "bankName": "Nama Bank",
-    "bankAccount": "Rekening Bank",
-    "bankAccountName": "Nama Pemilik Rekening",
-    "viewBankAccount": "Lihat Rekening Bank",
+    "bankName": "Nama bank",
+    "bankAccount": "Rekening bank",
+    "bankAccountName": "Nama pemilik rekening",
+    "viewBankAccount": "Lihat rekening bank",
     "bankAccountMasked": "Rekening bank disembunyikan untuk keamanan",
     "types": {
       "FABRIC": "Pemasok Kain",
@@ -213,12 +335,12 @@
     },
     "pageTitle": "Pemasok",
     "pageDescription": "Vendor kain, aksesoris, dan penjahit. Dari sinilah PO dibuat dan hutang pemasok dicatat.",
-    "newSupplier": "Tambah Pemasok",
-    "editSupplier": "Ubah Pemasok",
-    "createSupplier": "Pemasok Baru",
+    "newSupplier": "Tambah pemasok",
+    "editSupplier": "Ubah pemasok",
+    "createSupplier": "Pemasok baru",
     "searchPlaceholder": "Cari nama atau kode pemasok...",
     "allTypes": "Semua jenis",
-    "allStatuses": "Semua status",
+    "allStatuses": "Semua persetujuan",
     "emptyTitle": "Belum ada pemasok",
     "emptyDescription": "Tambahkan pemasok lebih dulu — PO, penerimaan barang, dan pembayaran semuanya bersandar pada data ini.",
     "emptyFilteredTitle": "Tidak ada pemasok yang cocok",
@@ -229,13 +351,13 @@
     "deleteConfirm": "Yakin ingin menghapus pemasok ini?",
     "editDescription": "Perbarui data pemasok",
     "createDescription": "Tambahkan pemasok baru",
-    "codeOptional": "Kode Pemasok (opsional)",
+    "codeOptional": "Kode pemasok (opsional)",
     "codePlaceholder": "Kosongkan untuk dibuat otomatis",
     "selectType": "Pilih jenis",
-    "bankInfo": "Informasi Bank",
-    "accountNumber": "Nomor Rekening",
-    "updateButton": "Simpan Perubahan",
-    "createButton": "Tambah Pemasok",
+    "bankInfo": "Informasi bank",
+    "accountNumber": "Nomor rekening",
+    "updateButton": "Simpan perubahan",
+    "createButton": "Tambah pemasok",
     "typeFilter": "Jenis",
     "statusFilter": "Status",
     "statusPendingApproval": "Menunggu persetujuan",
@@ -248,13 +370,31 @@
     "reject": "Tolak",
     "approvedToast": "Pemasok disetujui",
     "rejectedToast": "Pemasok ditolak",
-    "viewAccountNumber": "Lihat Nomor Rekening",
+    "viewAccountNumber": "Lihat nomor rekening",
     "pinActionViewBank": "melihat nomor rekening bank",
     "pinActionDelete": "menghapus pemasok",
     "rejectTitle": "Tolak pemasok",
     "rejectDescription": "Tuliskan alasan penolakan. Status pemasok akan menjadi Ditolak.",
     "rejectReason": "Alasan",
-    "rejectReasonPlaceholder": "Alasan penolakan..."
+    "rejectReasonPlaceholder": "Alasan penolakan...",
+    "approvalFilter": "Saring persetujuan",
+    "approvalLabel": "Persetujuan",
+    "approvalApproved": "Disetujui",
+    "inPoLabel": "Di pesanan pembelian",
+    "inPoYes": "Bisa dipilih di PO",
+    "notInPo": "Belum bisa dipilih di PO",
+    "listTitle": "Daftar pemasok",
+    "count": "{count} pemasok",
+    "colCode": "Kode",
+    "colName": "Nama",
+    "colContact": "Kontak",
+    "colApproval": "Persetujuan",
+    "colActions": "Aksi",
+    "approveFailed": "Pemasok gagal disetujui. Muat ulang halaman, lalu coba lagi.",
+    "rejectFailed": "Pemasok gagal ditolak. Muat ulang halaman, lalu coba lagi.",
+    "rejectNeedsReason": "Isi alasan dulu.",
+    "deleteTitle": "Hapus pemasok?",
+    "deleteBody": "{name} dihapus. Pemasok yang sudah dipakai di PO atau dokumen lain tidak bisa dihapus. Langkah berikutnya meminta PIN Anda."
   },
   "common": {
     "save": "Simpan",
@@ -348,11 +488,22 @@
       "empty": "Tidak ada log audit yang cocok.",
       "expandRow": "Tampilkan rincian",
       "collapseRow": "Sembunyikan rincian",
-      "sensitive": "Data sensitif:",
-      "reason": "Alasan:",
-      "userAgent": "Perangkat (user agent):",
+      "sensitive": "Data sensitif",
+      "reason": "Alasan",
+      "userAgent": "Perangkat",
       "loadFailed": "Gagal memuat log audit",
-      "exportFailed": "Ekspor gagal"
+      "exportFailed": "Ekspor gagal",
+      "allActions": "Semua aksi",
+      "searchAction": "Cari aksi…",
+      "unnamedUser": "Pengguna tanpa nama",
+      "logCount": "{total} catatan",
+      "detailField": "Kolom",
+      "detailBefore": "Sebelum",
+      "detailAfter": "Sesudah",
+      "detailValue": "Isi",
+      "yes": "Ya",
+      "no": "Tidak",
+      "recordId": "ID data"
     }
   },
   "settings": {
@@ -360,30 +511,30 @@
     "subtitle": "Pengaturan sistem dan keamanan",
     "security": {
       "title": "Keamanan",
-      "description": "PIN, riwayat percobaan, reset PIN (admin)"
+      "description": "PIN, sandi, dan riwayat percobaan masuk"
     },
     "documents": {
-      "title": "Nomor Dokumen",
-      "description": "Prefix dan periode reset untuk nomor dokumen"
+      "title": "Nomor dokumen",
+      "description": "Awalan dan nomor berikutnya untuk setiap jenis dokumen"
     },
     "itemCodes": {
-      "title": "Kode item",
-      "description": "Format barcode varian untuk label item"
+      "title": "Kode barang",
+      "description": "Format barcode varian untuk label barang"
     },
     "tax": {
       "title": "Pajak (PPN)",
       "description": "Tarif PPN yang dipakai saat baris PO belum termasuk pajak"
     },
     "uom": {
-      "title": "UOM",
-      "description": "Unit ukur dan konversi"
+      "title": "Satuan",
+      "description": "Satuan ukur dan konversinya"
     },
     "rbac": {
-      "title": "Peran & Izin",
-      "description": "Kelola peran pengguna dan izin (RBAC)",
+      "title": "Peran & izin",
+      "description": "Peran pengguna dan izin setiap peran",
       "pageTitle": "Peran & Izin",
       "pageSubtitle": "Kelola peran pengguna dan izinnya",
-      "createRole": "Buat Peran",
+      "createRole": "Buat peran",
       "system": "Sistem",
       "usersAssigned": "{count} pengguna memakai peran ini",
       "permissionsCount": "{count} izin",
@@ -413,9 +564,9 @@
       "delete": "Hapus"
     },
     "packRatio": {
-      "title": "Rasio Pack",
+      "title": "Rasio pack",
       "description": "Atur rasio ukuran per pack (global) untuk smart request.",
-      "heading": "Rasio Pack Global",
+      "heading": "Rasio pack global",
       "subtitle": "Satu pack = jumlah per ukuran di bawah ini, berlaku untuk semua artikel.",
       "sizeLabel": "Ukuran",
       "qtyLabel": "Jumlah",
@@ -491,7 +642,7 @@
       "noteOneDark": "Ungu editor, dikenal dari Atom dan VS Code"
     },
     "jenisPotongan": {
-      "title": "Jenis Potongan",
+      "title": "Jenis potongan",
       "description": "Daftar potongan yang boleh dipakai pada BKM, beserta aturan yang melekat padanya."
     },
     "font": {
@@ -507,7 +658,7 @@
     },
     "salesman": {
       "title": "Salesman",
-      "description": "Target bulanan dan batas hari kunjungan untuk dasbor salesman.",
+      "description": "Kunjungan, target, kredit, komisi, pesanan, biaya, dan absensi tim lapangan.",
       "subtitle": "Angka ini muncul di beranda aplikasi HP setiap salesman.",
       "readOnly": "Hanya penyetuju pesanan salesman yang bisa mengubah pengaturan ini.",
       "visitTitle": "Batas hari kunjungan",
@@ -518,7 +669,7 @@
       "visitNow": "Berlaku sekarang: {days} hari.",
       "visitNotSet": "Belum diatur — dasbor memakai {days} hari dan menyebutnya belum diatur.",
       "targetTitle": "Target penjualan bulanan",
-      "targetDesc": "Dihitung dari pengiriman pesanan putus, pesanan konsinyasi yang disetujui, dan penjualan van — salesman melihat ketiganya terpisah.",
+      "targetDesc": "Dihitung dari pengiriman pesanan putus, barang konsinyasi yang laku di toko (pada harga Elorae), dan penjualan van — salesman melihat ketiganya terpisah.",
       "colSalesman": "Salesman",
       "colAchieved": "Tercapai bulan ini",
       "colTarget": "Target",
@@ -599,7 +750,15 @@
           "simpan": "Simpan"
         }
       },
-      "targetRinciLink": "Rincian per kategori/barang"
+      "targetRinciLink": "Rincian per kategori/barang",
+      "toc": {
+        "label": "Daftar isi pengaturan salesman",
+        "kunjungan": "Kunjungan & toko",
+        "targetKomisi": "Target & komisi",
+        "pesananKredit": "Pesanan & kredit",
+        "biayaAbsensi": "Biaya & absensi",
+        "spgLink": "Mutasi antar toko dan hari kerja SPG ada di Pengaturan → SPG"
+      }
     },
     "users": {
       "title": "Pengguna",
@@ -657,12 +816,40 @@
         "PERAN_SENDIRI": "Anda tidak bisa mengganti peran akun Anda sendiri.",
         "AKUN_SISTEM": "Akun admin sistem hanya bisa diubah oleh admin sistem.",
         "PERAN_SISTEM": "Hanya admin sistem yang bisa memberi peran dengan akses penuh."
+      },
+      "noRole": "Tanpa peran — tidak ada menu",
+      "noPassword": "Belum ada sandi — belum bisa masuk",
+      "roleName": {
+        "ADMIN": "Administrator",
+        "PURCHASER": "Pembelian",
+        "WAREHOUSE": "Gudang",
+        "PRODUCTION": "Produksi",
+        "SALESMAN": "Salesman",
+        "SPG": "SPG"
+      },
+      "belum": {
+        "NAMA_WAJIB": "Isi nama.",
+        "EMAIL_TIDAK_VALID": "Isi email yang benar.",
+        "PERAN_WAJIB": "Pilih peran.",
+        "TOKO_WAJIB": "Pilih toko tetap SPG.",
+        "SANDI_WAJIB": "Isi sandi untuk akun baru.",
+        "SANDI_PENDEK": "Sandi minimal {min} karakter.",
+        "SANDI_TIDAK_SAMA": "Ulangan sandi belum sama."
       }
     },
     "spg": {
       "title": "SPG",
-      "description": "Diskon di konter, tutup hari, titip pesan, shift, dan komisi SPG toko putus.",
+      "description": "Diskon di konter, tutup hari, titip pesan, shift, komisi, barang hilang, mutasi antar toko, dan hari kerja SPG.",
       "subtitle": "Aturan kerja SPG di konter toko. Setiap kartu hanya bisa diubah oleh yang memutuskan hal itu."
+    },
+    "hub": {
+      "groupField": "Tim lapangan & penjualan",
+      "groupData": "Data & dokumen",
+      "groupAccess": "Akses & keamanan",
+      "groupMine": "Tampilan saya",
+      "companyClearTitle": "Hapus warna perusahaan?",
+      "companyClearBody": "Semua orang yang belum memilih warna sendiri, termasuk aplikasi HP, kembali ke warna bawaan.",
+      "cancel": "Batal"
     }
   },
   "tax": {
@@ -676,40 +863,71 @@
     "invalidRate": "Isi persentase antara 0 dan 100"
   },
   "documents": {
-    "pageTitle": "Penomoran Dokumen",
-    "pageDescription": "Konfigurasi prefix, periode reset, dan padding per tipe dokumen. Perubahan berlaku untuk dokumen baru saja.",
+    "pageTitle": "Nomor dokumen",
+    "pageDescription": "Awalan, periode reset, dan jumlah digit nomor setiap jenis dokumen. Perubahan berlaku untuk dokumen baru saja.",
     "tableDescription": "Prefix (mis. PO/), periode reset (kapan urutan direset), dan padding nomor (mis. 4 → 0001).",
-    "documentType": "Tipe Dokumen",
-    "prefix": "Prefix",
-    "resetPeriod": "Periode Reset",
-    "padding": "Padding",
+    "documentType": "Jenis dokumen",
+    "prefix": "Awalan",
+    "resetPeriod": "Mulai ulang",
+    "padding": "Jumlah digit",
     "save": "Simpan",
     "loadError": "Gagal memuat konfigurasi",
-    "configTitle": "Konfigurasi",
+    "configTitle": "Nomor per jenis dokumen",
     "lastNumber": "Nomor terakhir",
     "docTypes": {
-      "PO": "Pesanan Pembelian",
-      "GRN": "Penerimaan Barang",
-      "WO": "Perintah Kerja",
-      "ADJ": "Penyesuaian Stok",
-      "RET": "Retur Pemasok",
-      "ISSUE": "Pengeluaran Bahan",
-      "RECEIPT": "Penerimaan Barang Jadi",
-      "OPN": "Stock Opname"
+      "PO": "Pesanan pembelian",
+      "GRN": "Penerimaan barang",
+      "WO": "Perintah kerja",
+      "ADJ": "Penyesuaian stok",
+      "RET": "Retur pemasok",
+      "ISSUE": "Pengeluaran bahan",
+      "RECEIPT": "Penerimaan barang jadi",
+      "OPN": "Stok opname",
+      "PUTUS": "Pesanan putus",
+      "KONSI": "Pesanan konsinyasi",
+      "DELIVERY": "Pengiriman / nota tagihan",
+      "SPGSALE": "Nota penjualan SPG",
+      "VANLOAD": "Muat mobil kanvas",
+      "VANSALE": "Penjualan kanvas",
+      "VANRECON": "Rekonsiliasi kanvas"
     },
     "period": {
-      "YEARLY": "Tahunan",
-      "MONTHLY": "Bulanan",
+      "YEARLY": "Tiap tahun",
+      "MONTHLY": "Tiap bulan",
       "NEVER": "Tidak pernah"
+    },
+    "saveCount": "Simpan ({count})",
+    "savedCount": "{count} jenis dokumen disimpan.",
+    "noChanges": "Belum ada perubahan.",
+    "readOnly": "Hanya pengelola nomor dokumen yang bisa mengubah halaman ini.",
+    "nextExample": "Nomor berikutnya",
+    "notUsedYet": "Belum dipakai",
+    "changed": "Diubah",
+    "errRow": "{jenis}: {pesan}",
+    "err": {
+      "AWALAN_KOSONG": "Awalan wajib diisi.",
+      "AWALAN_PANJANG": "Awalan paling banyak 20 huruf.",
+      "DIGIT_TIDAK_SAH": "Jumlah digit 1 sampai 8.",
+      "PERIODE_TIDAK_SAH": "Pilih periode mulai ulang.",
+      "JENIS_TIDAK_DIKENAL": "Jenis dokumen tidak dikenal. Muat ulang halaman.",
+      "UNAUTHORIZED": "Sesi Anda berakhir. Masuk lagi.",
+      "FORBIDDEN": "Anda tidak punya izin mengubah nomor dokumen."
+    },
+    "group": {
+      "pembelianGudang": "Pembelian & gudang",
+      "produksi": "Produksi",
+      "penjualanLapangan": "Penjualan lapangan",
+      "kanvas": "Kanvas",
+      "lainnya": "Lainnya"
     }
   },
   "itemCodes": {
-    "title": "Kode item",
+    "title": "Kode barang",
     "description": "Format barcode varian yang dipakai saat membuat kode di formulir item.",
     "barcodeFormatTitle": "Format barcode varian",
     "barcodeFormatDescription": "Template barcode per varian (tingkat SKU). Sesuaikan placeholder dengan konvensi label Anda.",
     "templateLabel": "Template format",
-    "placeholdersTitle": "Placeholder",
+    "placeholdersTitle": "Bagian yang bisa dipakai",
     "exampleHintPrefix": "Template bawaan",
     "exampleHintSuffix": "menghasilkan nilai seperti 0224000016T03 jika kategori 0224, SKU induk 2700016, dan ukuran T03.",
     "save": "Simpan",
@@ -721,7 +939,14 @@
       "parentSeq": "angka dari SKU induk, diisi nol di depan (6 digit)",
       "attrs": "semua nilai atribut varian digabung (mis. T03, PXL)",
       "attr": "satu atribut berdasarkan namanya"
-    }
+    },
+    "presetsLabel": "Siap pakai:",
+    "presets": {
+      "pemilik": "01 + artikel + ukuran",
+      "bawaan": "Bawaan sistem"
+    },
+    "previewLabel": "Hasil untuk contoh barang",
+    "previewSample": "Contoh: artikel 27000038P, kategori 01, warna Navy, ukuran S."
   },
   "finance": {
     "coa": {
@@ -871,44 +1096,44 @@
     "systemAccountPinReset": "PIN akun admin sistem hanya bisa direset oleh admin sistem."
   },
   "uom": {
-    "pageTitle": "Satuan (UOM)",
+    "pageTitle": "Satuan",
     "pageDescription": "Kelola unit ukur dan konversi",
     "unitsTitle": "Unit Ukur",
-    "unitsDescription": "Semua UOM aktif di sistem",
+    "unitsDescription": "Semua satuan aktif di sistem",
     "nameId": "Nama (Indonesia)",
     "nameEn": "Nama (English)",
-    "conversionsTitle": "Konversi UOM",
-    "conversionsDescription": "Faktor konversi antar UOM",
+    "conversionsTitle": "Konversi satuan",
+    "conversionsDescription": "Faktor konversi antarsatuan",
     "noConversions": "Belum ada konversi",
-    "editUOM": "Ubah UOM",
-    "editUOMTitle": "Ubah UOM",
+    "editUOM": "Ubah satuan",
+    "editUOMTitle": "Ubah satuan",
     "editUOMDescription": "Perbarui unit ukur ini",
     "deleteConversion": "Hapus konversi",
     "deleteConversionTitle": "Hapus konversi ini?",
     "deleteConversionDescription": "Konversi dari {from} ke {to} akan dihapus. Anda dapat menambahkannya lagi nanti.",
-    "deleteConversionDescriptionFallback": "Konversi UOM ini akan dihapus. Anda dapat menambahkannya lagi nanti.",
-    "newUom": "UOM Baru",
-    "createTitle": "Buat UOM Baru",
+    "deleteConversionDescriptionFallback": "Konversi satuan ini akan dihapus. Anda bisa menambahkannya lagi nanti.",
+    "newUom": "Satuan baru",
+    "createTitle": "Buat satuan baru",
     "createDescription": "Tambahkan unit ukur baru ke sistem",
-    "createButton": "Buat UOM",
+    "createButton": "Buat satuan",
     "code": "Kode",
     "description": "Keterangan",
     "addConversion": "Tambah Konversi",
-    "createConversionTitle": "Buat Konversi UOM",
-    "createConversionDescription": "Tentukan faktor konversi antara dua UOM",
-    "fromUom": "Dari UOM",
-    "toUom": "Ke UOM",
+    "createConversionTitle": "Buat konversi satuan",
+    "createConversionDescription": "Tentukan faktor konversi antara dua satuan",
+    "fromUom": "Dari satuan",
+    "toUom": "Ke satuan",
     "factor": "Faktor Konversi",
     "factorPlaceholder": "mis. 25 (1 Roll = 25 Yard)",
-    "factorHint": "Kalikan UOM asal dengan faktor ini untuk mendapat UOM tujuan",
+    "factorHint": "Kalikan satuan asal dengan faktor ini untuk mendapat satuan tujuan",
     "createConversion": "Buat Konversi",
     "from": "Dari",
     "to": "Ke",
     "factorShort": "Faktor",
     "errCode": "Kode wajib diisi, maksimal 10 karakter",
     "errRequired": "Wajib diisi",
-    "errFromUom": "Pilih UOM asal",
-    "errToUom": "Pilih UOM tujuan",
+    "errFromUom": "Pilih satuan asal",
+    "errToUom": "Pilih satuan tujuan",
     "errFactor": "Faktor harus angka lebih dari 0"
   },
   "vendorReturn": {
@@ -923,7 +1148,7 @@
     "nilaiRetur": "Nilai retur",
     "totalValueAndWO": "Total nilai dan WO terkait",
     "itemsReturned": "Item dikembalikan",
-    "workOrderLabel": "Work order:",
+    "workOrderLabel": "Perintah kerja:",
     "trackingLabel": "Resi:",
     "receiptLabel": "Resi:",
     "createReturnSubtitle": "Buat retur ke pemasok (kain, aksesoris, atau barang jadi ditolak)",
@@ -1006,13 +1231,19 @@
       "notEditable": "Retur tidak ditemukan atau sudah tidak bisa diubah",
       "updated": "Retur ke pemasok diperbarui",
       "updateFailed": "Gagal memperbarui retur"
-    }
+    },
+    "poKreditLabel": "Mengurangi utang PO:",
+    "grnLabel": "GRN:"
   },
   "adjustment": {
     "notaBarangKeluar": "Nota Barang Keluar",
     "printNotaBarangKeluar": "Cetak Nota Barang Keluar",
     "adjustmentDetails": "Detail penyesuaian",
-    "nota": "Nota"
+    "nota": "Nota",
+    "notaBarangMasuk": "Nota Barang Masuk",
+    "printNotaBarangMasuk": "Cetak Nota Barang Masuk",
+    "tidakDitemukan": "Penyesuaian tidak ditemukan",
+    "tidakDitemukanIsi": "Mungkin tautannya salah atau penyesuaiannya sudah tidak ada."
   },
   "dashboard": {
     "title": "Beranda",
@@ -1050,7 +1281,7 @@
     "todaySalesTitle": "Penjualan Hari Ini",
     "todaySalesCount": "{count, plural, other {# pesanan hari ini}}",
     "todaySalesTooltip": "Pesanan yang dibuat hari ini (berdasarkan tanggal transaksi). Tidak termasuk yang dibatalkan atau dikembalikan. Termasuk baru, diproses, dikirim, dan selesai.",
-    "oversoldTitle": "Stok kelebihan pesan",
+    "oversoldTitle": "Stok minus",
     "oversoldDesc": "SKU dengan reservasi melebihi stok on-hand",
     "oversoldTooltip": "Baris inventaris dengan reservedQty > qtyOnHand, artinya stok tersedia bernilai negatif.",
     "oversoldNone": "Tidak ada SKU kelebihan pesan",
@@ -1104,9 +1335,9 @@
     "kpiShortage": "Bahan kurang",
     "kpiShortageCtx": "belum dikeluarkan, stok tersedia kurang",
     "kpiActiveItems": "{count} item aktif",
-    "kpiOversoldCtx": "stok terjual melebihi yang ada",
+    "kpiOversoldCtx": "tersedia di bawah nol",
     "kpiLowStock": "Stok menipis",
-    "kpiLowStockCtx": "di bawah batas minimum",
+    "kpiLowStockCtx": "tersedia sampai titik pesan ulang",
     "kpiUnshipped": "Pesanan belum dikirim",
     "kpiUnshippedCtx": "menunggu pemenuhan",
     "roles": {
@@ -1133,11 +1364,11 @@
     "kpiFinishedValue": "Nilai barang jadi",
     "kpiFinishedValueCtx": "{count} SKU",
     "salesmanTitle": "Penjualan per salesman",
-    "salesmanDesc": "Terealisasi = pesanan putus yang sudah dikirim + penjualan van (sejak awal). Belum selesai = pesanan putus yang menunggu persetujuan. Konsinyasi tidak dihitung.",
+    "salesmanDesc": "Terealisasi = pesanan putus yang sudah dikirim + penjualan van (sejak awal). Disetujui, belum dikirim = pesanan putus yang sudah disetujui tetapi belum satu pun dikirim. Menunggu persetujuan = pesanan putus yang belum disetujui. Konsinyasi tidak dihitung.",
     "salesmanEmpty": "Belum ada data penjualan salesman.",
     "colSalesman": "Salesman",
     "colRealised": "Terealisasi",
-    "colOutstanding": "Belum selesai",
+    "colOutstanding": "Menunggu persetujuan",
     "txCount": "{count} transaksi",
     "waitingCount": "{count} menunggu",
     "totalRow": "Total",
@@ -1249,7 +1480,16 @@
     "trendBackTo": "← {saluran}",
     "trendTooltipTotal": "Jumlah",
     "trendEmptyFor": "Belum ada penjualan {saluran} dalam {days} hari terakhir",
-    "trendEmptyRangeFor": "Tidak ada penjualan {saluran} pada rentang ini"
+    "trendEmptyRangeFor": "Tidak ada penjualan {saluran} pada rentang ini",
+    "kpiRealisedCtxRinci": "{kirim} pengiriman · {van} nota van",
+    "kpiAwaitingDelivery": "Disetujui, belum dikirim",
+    "ordersCount": "{count} pesanan",
+    "colAwaitingDelivery": "Disetujui, belum dikirim",
+    "kpiWoInProduction": "Perintah kerja sedang diproduksi",
+    "kpiWoPartial": "Perintah kerja selesai sebagian",
+    "kpiWoPartialCtx": "sisa barangnya belum diterima",
+    "kpiStockOut": "Stok habis",
+    "kpiStockOutCtx": "tidak ada yang tersedia"
   },
   "production": {
     "targetCutting": "Target cutting",
@@ -1264,8 +1504,8 @@
     "progressActual": "Setoran"
   },
   "toasts": {
-    "failedToLoadWorkOrder": "Gagal memuat work order",
-    "workOrderIssued": "Work order diterbitkan",
+    "failedToLoadWorkOrder": "Gagal memuat perintah kerja",
+    "workOrderIssued": "Perintah kerja diterbitkan",
     "failedToIssue": "Gagal menerbitkan",
     "workOrderCancelled": "Work order dibatalkan",
     "failedToCancel": "Gagal membatalkan",
@@ -1280,7 +1520,7 @@
     "failedToReceive": "Gagal menerima",
     "failedToLoadData": "Gagal memuat data",
     "addAtLeastOneLine": "Tambahkan minimal satu baris dengan qty > 0",
-    "materialsIssued": "Material diterbitkan",
+    "materialsIssued": "Bahan dikeluarkan",
     "failedToLoadMaterialPlan": "Gagal memuat rencana material",
     "workOrderCreated": "Work order dibuat",
     "failedToCreateWO": "Gagal membuat WO",
@@ -1387,11 +1627,11 @@
     "failedToSyncOperations": "Gagal sinkron {count} operasi",
     "nothingToSync": "Tidak ada yang perlu sinkron",
     "syncFailed": "Sinkron gagal",
-    "failedToLoadWorkOrders": "Gagal memuat work order",
-    "workOrderIssuedSuccessfully": "Work order berhasil diterbitkan",
-    "failedToIssueWorkOrder": "Gagal menerbitkan work order",
+    "failedToLoadWorkOrders": "Gagal memuat perintah kerja",
+    "workOrderIssuedSuccessfully": "Perintah kerja berhasil diterbitkan",
+    "failedToIssueWorkOrder": "Gagal menerbitkan perintah kerja",
     "workOrderCancelledSuccessfully": "Work order berhasil dibatalkan",
-    "failedToCancelWorkOrder": "Gagal membatalkan work order",
+    "failedToCancelWorkOrder": "Gagal membatalkan perintah kerja",
     "selectAnItem": "Pilih item",
     "enterValidQuantity": "Masukkan qty yang valid",
     "reasonMinChars": "Alasan minimal 5 karakter",
@@ -1534,7 +1774,7 @@
       "removeImage": "Hapus gambar",
       "addImage": "Tambah gambar"
     },
-    "newItem": "Item Baru",
+    "newItem": "Barang baru",
     "itemList": "Daftar Item",
     "actions": "Aksi",
     "toggleDetails": "Tampilkan atau sembunyikan detail",
@@ -1544,7 +1784,7 @@
     "bomQty": "Jumlah: {qty}",
     "bomWaste": "Susut: {percent}%",
     "categories": {
-      "pageTitle": "Kategori Item",
+      "pageTitle": "Kategori barang",
       "pageDescription": "Pengelompokan barang (kaos, kemeja, celana …) untuk katalog, perencanaan, dan target sales. Kategori yang masih dipasang di barang tidak bisa dihapus; nonaktifkan saja.",
       "cardTitle": "Kategori",
       "cardDescription": "Tambah, ubah, atau hapus kategori item. Kategori yang masih dipakai tidak bisa dihapus.",
@@ -1595,7 +1835,7 @@
       "saveFirst": "Simpan item dulu untuk melihat riwayat harga."
     },
     "newPage": {
-      "title": "Item Baru",
+      "title": "Barang baru",
       "description": "Tambahkan item baru ke katalog",
       "createdToast": "Item berhasil dibuat",
       "createFailed": "Gagal membuat item"
@@ -1604,24 +1844,24 @@
   "workOrders": {
     "draft": "Draf",
     "issued": "Diterbitkan",
-    "inProduction": "Dalam Produksi",
+    "inProduction": "Sedang diproduksi",
     "partial": "Sebagian",
     "completed": "Selesai",
     "completedAt": "Selesai pada",
     "cancelled": "Dibatalkan",
     "issue": "Terbitkan",
-    "issueMaterials": "Terbitkan Material",
+    "issueMaterials": "Keluarkan bahan",
     "receiveFG": "Terima Barang Jadi",
     "allocationPerRoll": "Alokasi per roll",
     "notaKainPerRoll": "Nota kain per roll",
     "qty": "Qty",
     "notes": "Catatan",
     "details": "Detail",
-    "materialIssues": "Terbitan Material",
+    "materialIssues": "Pengeluaran bahan",
     "fgReceipts": "Penerimaan Barang Jadi",
     "reconciliation": "Rekonsiliasi",
     "consumptionPlan": "Rencana Konsumsi",
-    "material": "Material",
+    "material": "Bahan",
     "planned": "Rencana",
     "estimatedConsumptionPerPcs": "Taksiran konsumsi per pcs",
     "returned": "Dikembalikan",
@@ -1640,9 +1880,9 @@
     "theoretical": "Teoretis",
     "valueImpact": "Dampak Nilai",
     "status": "Status",
-    "confirmCancelWO": "Batalkan Work Order ini?",
-    "plannedVsIssued": "Rencana vs terbit (sisa yang belum diterbitkan)",
-    "noIssuesYet": "Belum ada terbitan.",
+    "confirmCancelWO": "Batalkan perintah kerja ini?",
+    "plannedVsIssued": "Rencana vs dikeluarkan (sisa yang belum dikeluarkan)",
+    "noIssuesYet": "Belum ada pengeluaran bahan.",
     "noReceiptsYet": "Belum ada penerimaan.",
     "notaKainPerRollDesc": "Nota kain per roll",
     "docLabel": "Dok:",
@@ -1656,11 +1896,11 @@
     "variantSku": "Varian (SKU)",
     "selectVariant": "Pilih varian",
     "noVariantsDefineFirst": "Definisikan varian untuk barang jadi ini terlebih dahulu",
-    "materialConsumptionDriver": "Material (penggerak konsumsi)",
+    "materialConsumptionDriver": "Bahan utama (kain)",
     "selectMaterial": "Pilih material",
-    "consumption": "Konsumsi",
-    "plannedQtyCalculated": "Qty rencana (dihitung)",
-    "actualConsumption": "Konsumsi aktual",
+    "consumption": "Jumlah bahan utama tersedia",
+    "plannedQtyCalculated": "Jumlah rencana",
+    "actualConsumption": "Kebutuhan bahan utama",
     "remainder": "Sisa",
     "increaseConsumptionOrMaterial": "Tambah konsumsi atau pilih material lain",
     "defineBomFirst": "Definisikan BOM untuk barang jadi ini terlebih dahulu",
@@ -1679,8 +1919,8 @@
     },
     "pageTitle": "Perintah Kerja",
     "pageDescription": "Perintah produksi ke penjahit atau CMT. Dari sini bahan dikeluarkan, hasil jadi diterima, dan HPP terbentuk.",
-    "newWO": "Buat WO",
-    "searchPlaceholder": "Cari nomor WO atau vendor...",
+    "newWO": "Buat perintah kerja",
+    "searchPlaceholder": "Cari nomor, vendor, atau barang jadi...",
     "allStatus": "Semua status",
     "emptyTitle": "Belum ada perintah kerja",
     "emptyDescription": "WO dibuat saat produksi dimulai. Pengeluaran bahan dan penerimaan barang jadi dicatat terhadap dokumen ini.",
@@ -1702,18 +1942,18 @@
       "hppUpdateFailed": "Gagal menyimpan penyesuaian HPP",
       "additionalQtyInvalid": "Isi qty tambahan dengan bilangan bulat positif",
       "previewFailed": "Gagal memuat pratinjau",
-      "insufficientStock": "Tidak bisa diterbitkan: stok sebagian barang kurang",
-      "additionalIssued": "Material tambahan diterbitkan",
+      "insufficientStock": "Belum bisa dikeluarkan: stok sebagian barang kurang",
+      "additionalIssued": "Bahan tambahan dikeluarkan",
       "backToList": "Kembali ke daftar perintah kerja",
-      "issueAdditional": "Terbitkan Material Tambahan",
+      "issueAdditional": "Keluarkan bahan tambahan",
       "progressTitle": "Kemajuan",
       "expectedConsumption": "Perkiraan konsumsi: {value}",
-      "rollStatusHint": "Awal / Sisa / Terpakai = qty di roll saat dibuat; qty yang tersisa setelah terbitan; qty yang sudah diterbitkan dari roll ini.",
+      "rollStatusHint": "Awal / Sisa / Terpakai = qty di roll saat dibuat; qty yang tersisa sesudah pengeluaran; qty yang sudah dikeluarkan dari roll ini.",
       "colRollRef": "Roll / Ref",
       "colAllocated": "Dialokasikan",
       "colUsed": "Terpakai",
       "printNotaKain": "Cetak Nota Kain per Roll",
-      "hppTitle": "Penyesuaian HPP",
+      "hppTitle": "HPP",
       "hppDescription": "Khusus owner/admin: margin dan biaya tambahan.",
       "marginLabel": "Margin %",
       "additionalCostLabel": "Biaya tambahan",
@@ -1724,13 +1964,13 @@
       "colTotal": "Total",
       "stepN": "Tahap {n}",
       "consumptionPlanDesc": "{planned} vs {issued} per material",
-      "issuesCount": "{count} terbitan",
+      "issuesCount": "{count} pengeluaran",
       "colDoc": "No. Dok",
       "colActions": "Aksi",
       "receiptsCount": "{count} penerimaan",
       "colAccepted": "Lolos QC",
       "reconciliationDesc": "Pemakaian aktual vs teoretis",
-      "additionalDesc": "Hanya menerbitkan aksesoris untuk kelebihan produksi. Kain tetap di vendor. Qty rencana tidak berubah.",
+      "additionalDesc": "Hanya mengeluarkan aksesori untuk kelebihan produksi. Kain tetap di vendor. Qty rencana tidak berubah.",
       "additionalQtyLabel": "Qty tambahan (pcs)",
       "additionalQtyPlaceholder": "mis. 200",
       "preview": "Pratinjau",
@@ -1739,7 +1979,12 @@
       "ok": "Cukup",
       "short": "Kurang",
       "cancel": "Batal",
-      "issueAccessories": "Terbitkan aksesoris"
+      "issueAccessories": "Keluarkan aksesori",
+      "ubah": "Ubah",
+      "selesaiTanpaAksi": "Perintah kerja sudah selesai: bahan tidak bisa dikeluarkan dan barang jadi tidak bisa diterima lagi.",
+      "bahanWoBatal": "Perintah kerja sudah dibatalkan.",
+      "bahanWoDraf": "Perintah kerja masih draf, belum ada bahan keluar.",
+      "hppSekarang": "Sekarang: margin {margin} · biaya tambahan {biaya}"
     },
     "recon": {
       "loadFailed": "Gagal memuat rekonsiliasi",
@@ -1747,15 +1992,25 @@
       "printFailed": "Gagal mencetak.",
       "backToWO": "Kembali ke perintah kerja",
       "exportPdf": "Cetak / Ekspor PDF",
-      "totalMaterialCost": "Total Biaya Material (Terpakai)",
-      "efficiency": "Efisiensi %",
-      "usedVsIssued": "Nilai terpakai vs nilai diterbitkan",
+      "totalMaterialCost": "Biaya bahan terpakai",
+      "efficiency": "Efisiensi bahan",
+      "usedVsIssued": "Nilai terpakai vs nilai dikeluarkan",
       "costVariance": "Selisih Biaya",
       "byMaterial": "{selisih} per material",
       "byMaterialDesc": "{planned} vs {issued} vs {setoran}; {estimate} per baris.",
       "statusOK": "Sesuai",
-      "statusOVER": "Lebih",
-      "statusUNDER": "Kurang"
+      "statusOVER": "Lebih pakai",
+      "statusUNDER": "Di bawah teori",
+      "terpakai": "Terpakai",
+      "statusBELUM_DIKIRIM": "Belum dikirim",
+      "cetak": {
+        "judul": "Rekonsiliasi perintah kerja",
+        "keterangan": "Dikirim ke CMT, dikembalikan, terpakai, dan pemakaian teoretis per bahan.",
+        "efisiensiArti": "Pemakaian teoretis dibanding yang terpakai (100% = pas)",
+        "wo": "Perintah kerja",
+        "tanggal": "Tanggal",
+        "dibuatOleh": "Dibuat oleh"
+      }
     },
     "form": {
       "noRollsFound": "Tidak ada roll kain yang tersedia",
@@ -1789,7 +2044,7 @@
       "ppnExclude": "Belum termasuk PPN",
       "ppnInclude": "Sudah termasuk PPN",
       "remove": "Hapus",
-      "materialPlanTitle": "Rencana Material",
+      "materialPlanTitle": "Rencana bahan",
       "materialPlanDesc": "Kebutuhan material dari BOM. WO tidak bisa dibuat kalau ada yang kurang.",
       "calculating": "Menghitung…",
       "loadingPlan": "Memuat rencana...",
@@ -1811,42 +2066,55 @@
       "createWO": "Buat Perintah Kerja",
       "updating": "Menyimpan...",
       "updateWO": "Simpan Perubahan",
-      "cancel": "Batal"
+      "cancel": "Batal",
+      "vendorBelumDisetujui": "belum disetujui",
+      "caraIsiLabel": "Cara isi jumlah",
+      "caraIsiPcs": "Ketik jumlah pcs",
+      "caraIsiBahan": "Hitung dari bahan utama",
+      "jumlahPcsLabel": "Jumlah pcs"
     },
     "receive": {
-      "variantSumMismatch": "Jumlah qty per varian harus sama dengan qty lolos QC",
+      "variantSumMismatch": "Jumlah per varian harus sama dengan jumlah masuk stok",
       "rejectedSumMismatch": "Jumlah qty ditolak per varian harus sama dengan qty ditolak",
       "backToWO": "Kembali ke perintah kerja",
-      "title": "Terima Barang Jadi",
+      "title": "Terima barang jadi",
       "cardTitle": "Penerimaan",
-      "cardDescription": "Isi qty diterima dan ditolak. Biaya material dialokasikan dari terbitan.",
-      "qtyReceived": "Qty Diterima (baik)",
-      "qtyRejected": "Qty Ditolak (cacat)",
-      "qtyAccepted": "Qty Lolos QC (bersih)",
+      "cardDescription": "Isi jumlah disetor dan yang cacat. Biaya bahan dibebankan dari pengeluaran bahan.",
+      "qtyReceived": "Jumlah disetor (termasuk cacat)",
+      "qtyRejected": "Cacat",
+      "qtyAccepted": "Masuk stok (lolos QC)",
       "costAllocation": "Alokasi biaya",
-      "totalMaterialCost": "Total biaya material: {value}",
-      "costPerUnit": "{cost} per unit ({accepted} lolos QC)",
+      "totalMaterialCost": "Biaya bahan: {value}",
+      "costPerUnit": "setoran ini memikul {total}, {cost} per pcs ({accepted} pcs masuk stok)",
       "notAvailable": "Tidak ada",
-      "variantBreakdown": "Rincian per varian (total harus sama dengan qty lolos QC)",
-      "sumAccepted": "Total: {sum} / {accepted} lolos QC",
+      "variantBreakdown": "Rincian per varian (total harus sama dengan jumlah masuk stok)",
+      "sumAccepted": "Total: {sum} / {accepted} masuk stok",
       "variantRejected": "Ditolak per varian (total harus sama dengan qty ditolak)",
       "sumRejected": "Total: {sum} / {rejected} ditolak",
       "qcNotes": "Catatan QC",
       "qcNotesPlaceholder": "Catatan quality check",
       "saving": "Menyimpan...",
-      "save": "Simpan Penerimaan",
-      "cancel": "Batal"
+      "save": "Simpan penerimaan",
+      "cancel": "Batal",
+      "masukStok": "Masuk stok: {qty} pcs",
+      "cacatMelebihi": "Jumlah cacat tidak boleh lebih dari jumlah disetor.",
+      "lebihTarget": "Setoran ini melebihi sisa target sebanyak {lebih} pcs.",
+      "ringkasTarget": "Target {qty} pcs",
+      "ringkasSudah": "Sudah disetor {qty} pcs",
+      "ringkasSisa": "Sisa {qty} pcs",
+      "sudahKembali": "(sesudah dikurangi bahan yang kembali {value})",
+      "isiDisetorDulu": "Isi jumlah disetor dulu."
     },
     "issuePage": {
-      "typeChanged": "Jenis terbitan diganti. Baris yang sudah disiapkan dikosongkan agar datanya konsisten.",
-      "nothingRemaining": "Tidak ada sisa qty untuk diterbitkan pada jenis ini.",
+      "typeChanged": "Jenis bahan diganti. Baris yang sudah disiapkan dikosongkan supaya datanya konsisten.",
+      "nothingRemaining": "Tidak ada sisa qty untuk dikeluarkan pada jenis ini.",
       "linesFilled": "{count} baris diisi dengan sisa qty.",
-      "rollBelowFabric": "Total roll ({roll}) kurang dari qty kain yang diterbitkan ({fabric}).",
-      "colIssued": "Diterbitkan",
+      "rollBelowFabric": "Total roll ({roll}) kurang dari qty kain yang dikeluarkan ({fabric}).",
+      "colIssued": "Dikeluarkan (bersih)",
       "colRemaining": "Sisa",
-      "formTitle": "Form Terbitan",
-      "formDescription": "Tambahkan material yang akan diterbitkan. Pakai barcode untuk menambah cepat.",
-      "issueType": "Jenis Terbitan",
+      "formTitle": "Keluarkan bahan",
+      "formDescription": "Tambahkan bahan yang akan dikeluarkan. Pakai barcode untuk menambah cepat.",
+      "issueType": "Jenis bahan",
       "fabric": "Kain",
       "accessories": "Aksesoris",
       "partial": "Alokasi sebagian / dipecah",
@@ -1858,14 +2126,78 @@
       "maxQty": "maks {max}",
       "overIssueOk": "boleh lebih",
       "avgCost": "Harga rata-rata",
-      "rollHint": "Pilih roll utuh. Total alokasi minimal sama dengan qty kain yang diterbitkan.",
+      "rollHint": "Pilih roll utuh. Total alokasi minimal sama dengan qty kain yang dikeluarkan.",
       "allocatedTotal": "Total dialokasikan: {total}.",
-      "issuing": "Menerbitkan..."
+      "issuing": "Mengeluarkan...",
+      "lebihDariRencana": "lebih {qty}"
+    },
+    "kebutuhanTotalRencana": "Kebutuhan total (rencana)",
+    "colBarangJadi": "Barang jadi",
+    "terlambatHari": "Terlambat {hari} hari",
+    "saringTarget": "Tanggal target",
+    "semuaTarget": "Semua tanggal target",
+    "terlambatSaja": "Terlambat saja",
+    "menungguAcc": "Menunggu ACC",
+    "batal": {
+      "judul": "Batalkan {docNumber}?",
+      "deskripsi": "Perintah kerja yang dibatalkan tidak bisa dihidupkan lagi.",
+      "alasanLabel": "Alasan pembatalan",
+      "alasanPlaceholder": "Misalnya: pesanan dibatalkan, ganti vendor",
+      "alasanDulu": "Tulis alasan dulu untuk membatalkan.",
+      "masihDiCmt": "Belum bisa dibatalkan, masih ada bahan di CMT:",
+      "bukaRincian": "Buka rincian untuk mengembalikan bahan",
+      "jangan": "Jangan batalkan",
+      "ya": "Ya, batalkan",
+      "berhasil": "{docNumber} dibatalkan",
+      "gagal": "Gagal membatalkan perintah kerja"
+    },
+    "terbit": {
+      "judul": "Terbitkan {docNumber}?",
+      "deskripsi": "Sesudah diterbitkan, isian perintah kerja tidak bisa diubah lagi dan bahan bisa dikeluarkan ke CMT.",
+      "jangan": "Belum",
+      "ya": "Ya, terbitkan",
+      "berhasil": "{docNumber} diterbitkan",
+      "gagal": "Gagal menerbitkan perintah kerja"
+    },
+    "bahan": {
+      "judul": "Bahan",
+      "tombol": "Kembalikan bahan",
+      "tanpaIzin": "Anda tidak punya izin mengelola perintah kerja.",
+      "tidakAdaDiCmt": "Tidak ada bahan di CMT.",
+      "gagalMuat": "Gagal memuat bahan perintah kerja.",
+      "kosong": "Belum ada rencana bahan.",
+      "kolBahan": "Bahan",
+      "kolPerPcs": "Per pcs",
+      "kolRencana": "Kebutuhan total (rencana)",
+      "kolKeluar": "Dikeluarkan",
+      "kolKembali": "Kembali ke gudang",
+      "kolDiCmt": "Masih di CMT",
+      "susut": "susut {persen}%",
+      "riwayatJudul": "Bahan yang kembali",
+      "dialogJudul": "Kembalikan bahan ke gudang",
+      "dialogDeskripsi": "Isi jumlah yang benar-benar kembali dari CMT.",
+      "maksimal": "Masih di CMT: {qty} {satuan}",
+      "catatanLabel": "Catatan (boleh kosong)",
+      "catatanPlaceholder": "Misalnya: sisa potong",
+      "isiDulu": "Isi jumlah minimal satu bahan.",
+      "batal": "Batal",
+      "simpan": "Simpan pengembalian",
+      "berhasil": "Bahan kembali ke gudang, senilai {nilai}",
+      "gagal": "Gagal mengembalikan bahan. Coba lagi.",
+      "tolakMelebihi": "{barang}: jumlah melebihi yang masih di CMT ({sisa}).",
+      "tolak": {
+        "QTY_TIDAK_VALID": "Jumlah {barang} tidak valid.",
+        "BUKAN_BAHAN_WO": "{barang} tidak pernah dikeluarkan ke perintah kerja ini.",
+        "BARANG_GANDA": "{barang} terisi dua kali.",
+        "TANPA_BARIS": "Isi jumlah minimal satu bahan.",
+        "CATATAN_TERLALU_PANJANG": "Catatan terlalu panjang."
+      },
+      "berhasilDibatasi": "Bahan kembali ke gudang, senilai {nilai} (dibatasi: biaya bahan sudah dibebankan ke barang jadi)"
     }
   },
   "supplierTypes": {
     "cardDescription": "Tambah, edit, atau hapus tipe pemasok. Tipe yang masih dipakai tidak dapat dihapus.",
-    "pageTitle": "Jenis Pemasok",
+    "pageTitle": "Jenis pemasok",
     "pageDescription": "Pengelompokan pemasok — kain, aksesoris, penjahit, dan lainnya — yang dipilih saat menambah pemasok. Jenis yang masih dipakai tidak bisa dihapus; nonaktifkan saja supaya tidak muncul lagi di pilihan.",
     "cardTitle": "Daftar jenis",
     "newType": "Jenis baru",
@@ -1909,23 +2241,23 @@
     "pageSubtitle": "Daftar pengiriman material (nota) ke CMT",
     "filterSubtitle": "Vendor (CMT), tanggal, dan tipe issue",
     "issuesCount": "{count} nota",
-    "emptyHint": "Pilih filter dan klik Muat, atau belum ada data.",
-    "pageTitle": "Register Nota ke CMT",
+    "emptyHint": "Tidak ada nota untuk saringan ini.",
+    "pageTitle": "Register nota CMT",
     "backToWorkOrders": "Kembali ke perintah kerja",
-    "filterTitle": "Filter",
+    "filterTitle": "Saringan",
     "vendorLabel": "Vendor (CMT)",
     "dateRangeLabel": "Dari – Sampai",
-    "typeLabel": "Jenis",
+    "typeLabel": "Jenis bahan",
     "typeFabric": "Kain",
     "typeAccessories": "Aksesoris",
     "load": "Muat",
-    "listTitle": "Daftar Nota",
-    "colDoc": "No. Dok",
-    "colWo": "WO",
+    "listTitle": "Daftar nota",
+    "colDoc": "No. dok",
+    "colWo": "Perintah kerja",
     "colVendor": "Vendor",
     "colType": "Jenis",
     "colDate": "Tanggal",
-    "colTotalCost": "Total Biaya",
+    "colTotalCost": "Total biaya",
     "colActions": "Aksi",
     "colUom": "Satuan",
     "printNota": "Cetak nota {docNumber}",
@@ -1999,13 +2331,14 @@
       "errNOTHING_TO_POST": "Tidak ada nilai untuk diposting.",
       "errBAD_STATE": "GRN tidak dalam status yang bisa diposting.",
       "errFORBIDDEN": "Anda tidak punya akses posting jurnal.",
-      "errUnexpected": "Terjadi kesalahan saat memposting jurnal."
+      "errUnexpected": "Terjadi kesalahan saat memposting jurnal.",
+      "errDITOLAK_PEMILIK": "GRN ini ditolak pemilik — barangnya sudah dibalik dari persediaan, jadi jurnal terimanya tidak diposting."
     },
     "page": {
       "receiveGoods": "Terima Barang",
       "stockCard": "Kartu Stok",
       "adjustment": "Penyesuaian",
-      "rejectedGoods": "Barang Reject",
+      "rejectedGoods": "Barang cacat produksi",
       "printReport": "Cetak Laporan",
       "printReportFrameTitle": "Cetak laporan inventori",
       "printReportFailed": "Gagal memuat laporan inventori untuk dicetak",
@@ -2055,7 +2388,10 @@
       "adjSourceManual": "Manual dan opname",
       "adjSourceAuto": "Otomatis saja",
       "adjSourceAll": "Semua sumber",
-      "adjEmpty": "Tidak ada penyesuaian yang cocok dengan saringan ini."
+      "adjEmpty": "Tidak ada penyesuaian yang cocok dengan saringan ini.",
+      "lihatRincianGrn": "Lihat rincian GRN",
+      "nota": "Nota",
+      "cariSumber": "Cari sumber…"
     },
     "adjNew": {
       "title": "Penyesuaian Stok",
@@ -2084,22 +2420,27 @@
       "errSelectVariant": "Pilih varian",
       "errQty": "Masukkan jumlah yang valid",
       "errReason": "Alasan minimal 5 karakter",
-      "errEvidence": "Foto bukti wajib untuk pengurangan stok"
+      "errEvidence": "Foto bukti wajib untuk pengurangan stok",
+      "cariBarang": "Cari SKU atau nama barang…",
+      "pilihFoto": "Pilih foto",
+      "gantiFoto": "Ganti foto",
+      "belumAdaFoto": "Belum ada foto dipilih"
     },
     "rejected": {
-      "title": "Barang Reject",
+      "title": "Barang cacat produksi",
       "subtitle": "Rekap jumlah reject / sisa produksi (tidak masuk stok aktif)",
       "backToInventory": "Kembali ke inventori",
-      "cardTitle": "Catatan barang reject",
+      "cardTitle": "Catatan barang cacat produksi",
       "cardDescription": "Barang yang dicatat reject saat penerimaan barang jadi. Jumlahnya disimpan terpisah dari stok aktif.",
-      "emptyTitle": "Belum ada barang reject yang tercatat.",
+      "emptyTitle": "Belum ada barang cacat produksi yang tercatat.",
       "emptyHint": "Qty reject tercatat saat menerima barang jadi dengan isian \"Reject\" > 0.",
       "colDate": "Tanggal",
       "colDoc": "No. Dok",
       "colSku": "Barang (SKU)",
       "colName": "Nama",
       "colQty": "Qty Reject",
-      "colNotes": "Catatan"
+      "colNotes": "Catatan",
+      "keGudangRusak": "Barang rusak dari retur toko"
     },
     "stockCard": {
       "title": "Kartu Stok",
@@ -2221,7 +2562,7 @@
       "butuhSinyal": "Butuh sinyal untuk menyimpan GRN.",
       "tanpaSinyalDrafAman": "Tidak ada sinyal. GRN baru bisa disimpan saat online; isian Anda tersimpan sebagai draf di perangkat ini.",
       "tanpaSinyalDrafBelum": "Tidak ada sinyal. GRN baru bisa disimpan saat online, dan isian ini belum tersimpan di perangkat — jangan tutup halaman ini.",
-      "sambunganPutus": "Sambungan terputus sebelum ada jawaban. Periksa tab Penerimaan Barang sebelum menyimpan ulang; isian Anda masih di sini.",
+      "sambunganPutus": "Sambungan terputus sebelum ada jawaban. Isian Anda masih di sini — tekan Simpan lagi; penerimaan yang sudah tercatat tidak akan tercatat dua kali.",
       "draf": {
         "pulih": "Draf dipulihkan dari {time}.",
         "buang": "Buang draf"
@@ -2237,7 +2578,18 @@
         "hapusJudul": "Hapus GRN ini dari perangkat?",
         "hapusIsi": "GRN ini belum pernah masuk ke sistem. Setelah dihapus, isiannya hilang.",
         "gagalHapus": "Gagal menghapus dari perangkat."
-      }
+      },
+      "sudahTercatat": "Penerimaan ini sudah tercatat sebelumnya ({doc}). Barang tidak diterima dua kali.",
+      "belumDisetujui": "belum disetujui",
+      "drafPoLain": "Ada draf GRN yang belum disimpan untuk penerimaan lain. Lanjutkan draf itu, atau buang dan terima {po}.",
+      "poTautan": "PO dari tautan",
+      "lanjutkanDraf": "Lanjutkan draf",
+      "buangDanTerimaPo": "Buang draf, terima PO ini",
+      "cariKategori": "Cari kategori…",
+      "cariPo": "Cari nomor PO atau pemasok…",
+      "cariPemasok": "Cari pemasok…",
+      "cariBarang": "Cari SKU atau nama barang…",
+      "pilihFoto": "Pilih foto"
     },
     "stockMoveKind": {
       "GRN": "Penerimaan barang (GRN)",
@@ -2263,7 +2615,59 @@
       "KONSI_TRANSFER": "Kirim ke toko konsinyasi",
       "STORE_EXCHANGE_OUT": "Tukar barang: keluar ke toko",
       "STORE_EXCHANGE_IN": "Tukar barang: masuk dari toko",
-      "KOL_SEEDING": "Kirim ke KOL (seeding)"
+      "KOL_SEEDING": "Kirim ke KOL (seeding)",
+      "WO_MATERIAL_RETURN": "Bahan kembali dari produksi"
+    },
+    "grnRincian": {
+      "kembali": "Kembali ke penerimaan barang",
+      "judulKosong": "Penerimaan barang",
+      "tidakDitemukan": "GRN tidak ditemukan",
+      "tidakDitemukanIsi": "Mungkin tautannya salah atau GRN-nya sudah tidak ada.",
+      "ringkasan": "Ringkasan",
+      "pemasok": "Pemasok",
+      "po": "Referensi PO",
+      "tanpaPo": "Tanpa PO",
+      "tanggal": "Dicatat",
+      "penerima": "Diterima oleh",
+      "nilai": "Nilai penerimaan",
+      "catatan": "Catatan",
+      "lebihTerima": "Terima-lebih",
+      "menungguIsi": "Jumlah yang diterima melebihi PO lebih dari batas barangnya. Status PO baru berubah setelah pemilik memutuskan.",
+      "hanyaPemilik": "Hanya pemilik yang bisa menyetujui atau menolak.",
+      "disetujuiOleh": "Disetujui pemilik pada {waktu} oleh {nama}.",
+      "ditolakOleh": "Ditolak pemilik pada {waktu} oleh {nama}. Stok dan qty diterima di PO sudah dibalik.",
+      "barangDiterima": "Barang diterima",
+      "tanpaBaris": "GRN ini tidak mencatat baris barang.",
+      "colVarian": "Varian",
+      "colHarga": "Harga satuan",
+      "colTotal": "Total",
+      "total": "Total",
+      "jumlahRoll": "{count} roll kain",
+      "foto": "Foto",
+      "tanpaFoto": "Tidak ada foto.",
+      "fotoKe": "Foto {index}",
+      "jurnal": "Jurnal dan retur",
+      "returPemasok": "Retur ke pemasok dari GRN ini"
+    },
+    "grnPemilik": {
+      "setujui": "Setujui",
+      "tolak": "Tolak",
+      "setujuJudul": "Setujui terima-lebih {doc}?",
+      "setujuIsi": "Kelebihan barang diterima apa adanya dan status PO diperbarui.",
+      "tolakJudul": "Tolak terima-lebih {doc}?",
+      "tolakIsi": "Stok dan qty diterima di PO untuk penerimaan ini dibalik, dan roll kain dari GRN ini dihapus. Tidak bisa dibatalkan.",
+      "disetujuiToast": "Terima-lebih disetujui. Status PO diperbarui.",
+      "ditolakToast": "Terima-lebih ditolak. Penerimaan dibalik.",
+      "err": {
+        "TANPA_AKSES": "Hanya pemilik yang bisa memutuskan terima-lebih.",
+        "TIDAK_DITEMUKAN": "GRN tidak ditemukan. Muat ulang halaman ini.",
+        "SUDAH_DIPUTUSKAN": "GRN ini sudah diputuskan. Muat ulang halaman ini.",
+        "TIDAK_MENUNGGU": "GRN ini tidak sedang menunggu keputusan pemilik.",
+        "ROL_SUDAH_DIPAKAI": "Tidak bisa ditolak: roll kain dari GRN ini sudah dipakai. Sesuaikan stoknya dulu.",
+        "STOK_KURANG": "Tidak bisa ditolak: stok di gudang sudah tidak cukup (barangnya mungkin sudah keluar).",
+        "DATA_TIDAK_KONSISTEN": "Data GRN atau PO ini tidak cocok, jadi penerimaan tidak bisa dibalik. Hubungi admin.",
+        "GAGAL": "Keputusan gagal disimpan. Coba lagi."
+      }
     }
   },
   "stockOpname": {
@@ -2376,7 +2780,8 @@
       "counting": "Hitungan buta: angka sistem dan selisih tidak ditampilkan selama menghitung. Setelah dikirim, keduanya tampil untuk penyetuju.",
       "waitingApproval": "Hitungan sudah dikirim. Angka sistem dan selisihnya tampil untuk penyetuju, dan untuk semua setelah opname disetujui.",
       "cancelled": "Opname ini dibatalkan. Angka sistem dan selisihnya hanya tampil untuk penyetuju."
-    }
+    },
+    "countCancelled": "Opname ini dibatalkan, jadi hitungannya tidak bisa diubah lagi. Buat opname baru bila perlu menghitung ulang."
   },
   "stockReconciliation": {
     "title": "Rekonsiliasi Jubelio",
@@ -2434,7 +2839,11 @@
     "failureApiUnreachable": "Layanan integrasi Jubelio tidak bisa dihubungi, jadi stok Jubelio tidak terbaca. Tidak ada stok yang diubah.",
     "failureSnapshot": "Stok dari Jubelio gagal diambil. Tidak ada stok yang diubah.",
     "failureTitle": "Pemeriksaan ini gagal",
-    "failureTechnical": "Detail teknis: {detail}"
+    "failureTechnical": "Detail teknis: {detail}",
+    "runTitleWaktu": "Pemeriksaan {waktu}",
+    "jumlahHasil": "{count} barang diperiksa",
+    "hasilKosong": "Tidak ada barang yang dibandingkan pada pemeriksaan ini.",
+    "hasilKosongGagal": "Pemeriksaan gagal, jadi belum ada barang yang dibandingkan."
   },
   "supplierPayments": {
     "unpaid": "Belum dibayar",
@@ -2511,7 +2920,28 @@
     "loadFailed": "Gagal memuat PO",
     "poNotFound": "PO tidak ditemukan",
     "receiptNeedsPaid": "Tandai PO ini lunas dulu sebelum mencetak kuitansi",
-    "printFailed": "Gagal mencetak"
+    "printFailed": "Gagal mencetak",
+    "utangDiterimaJudul": "Utang (barang sudah diterima)",
+    "komitmenJudul": "Komitmen PO (belum diterima)",
+    "utangSingkatDiterima": "Utang barang diterima: {nilai}",
+    "belumDisetujui": "belum disetujui",
+    "cariPemasok": "Cari pemasok…",
+    "konfirmasi": {
+      "judulBayar": "Tandai {doc} lunas?",
+      "isiBayar": "Jurnal pembayaran (utang dan bank) diposting dengan tanggal bayar di bawah.",
+      "judulBatal": "Batalkan tanda lunas {doc}?",
+      "isiBatal": "Jurnal pembalik pembayarannya diposting, dan PO kembali berstatus belum dibayar.",
+      "pemasok": "Pemasok",
+      "totalPo": "Total PO",
+      "utangDiterima": "Utang barang diterima",
+      "komitmen": "Komitmen (belum diterima)",
+      "peringatanBelumDiterima": "Belum ada barang diterima untuk PO ini, jadi belum ada utang yang dibukukan dan tanda lunas tidak memposting jurnal. Tandai lunas hanya bila uang muka memang sudah ditransfer.",
+      "peringatanSebagian": "Sebagian barang belum diterima ({nilai} masih komitmen). Jurnal hanya membayar utang barang yang sudah diterima.",
+      "tanggalBayar": "Tanggal bayar",
+      "tanggalSalah": "Tanggal bayar tidak boleh sesudah hari ini.",
+      "tombolBayar": "Tandai lunas",
+      "tombolBatal": "Batalkan tanda lunas"
+    }
   },
   "purchaseOrders": {
     "noPurchaseOrdersFound": "Tidak ada pesanan pembelian ditemukan",
@@ -2630,8 +3060,12 @@
         "SUDAH_ADA_PENERIMAAN": "PO ini tidak bisa dibatalkan karena sudah ada barang yang diterima (GRN). Gunakan Tutup PO bila sisa barang tidak akan datang.",
         "TANPA_AKSES": "Anda tidak punya izin membatalkan PO.",
         "PIN_WAJIB": "Masukkan PIN Anda untuk membatalkan PO.",
-        "GAGAL": "PO gagal dibatalkan. Coba lagi."
-      }
+        "GAGAL": "PO gagal dibatalkan. Coba lagi.",
+        "ALASAN_WAJIB": "Tulis alasan pembatalan PO."
+      },
+      "judul": "Batalkan {docNumber}?",
+      "alasanDulu": "Tulis alasan pembatalan dulu.",
+      "matiAdaGrn": "Sudah ada barang diterima (GRN), jadi PO tidak bisa dibatalkan. Gunakan Tutup PO bila sisanya tidak akan datang."
     },
     "edit": {
       "err": {
@@ -2643,6 +3077,59 @@
         "TANPA_AKSES": "Anda tidak punya izin mengubah PO.",
         "GAGAL": "PO gagal disimpan. Coba lagi."
       }
+    },
+    "riwayat": {
+      "grnDiterima": "Barang diterima: {nomor}",
+      "grnDisetujuiPemilik": "Terima-lebih {nomor} disetujui pemilik",
+      "grnDitolakPemilik": "Terima-lebih {nomor} ditolak pemilik",
+      "dibuat": "PO dibuat",
+      "diubahPin": "PO diubah (dengan PIN)",
+      "bayarDitandai": "Ditandai lunas",
+      "bayarDibatalkan": "Tanda lunas dibatalkan",
+      "grnSebagian": "Sebagian barang diterima",
+      "dibatalkan": "PO dibatalkan",
+      "statusBerubah": "Status menjadi {status}",
+      "ditutup": "Ditutup sebelum lengkap: {alasan}",
+      "returDiproses": "Retur pemasok {retur} diproses (perintah kerja {wo})",
+      "grnLengkap": "Semua barang diterima"
+    },
+    "terimaBarang": "Terima barang",
+    "penerimaan": {
+      "judul": "Penerimaan barang (GRN)",
+      "kosong": "Belum ada barang yang diterima untuk PO ini.",
+      "colNomor": "No. GRN",
+      "colTanggal": "Tanggal",
+      "colNilai": "Nilai"
+    },
+    "form": {
+      "kartuPemasok": "Pemasok dan pengiriman",
+      "pemasok": "Pemasok",
+      "tanggalEta": "Perkiraan tiba",
+      "etaLewat": "Tanggal perkiraan tiba sudah lewat. Periksa lagi.",
+      "jatuhTempo": "Jatuh tempo pembayaran",
+      "kartuBarang": "Daftar barang",
+      "tambahBarang": "Tambah barang",
+      "colBarang": "Barang",
+      "colVarian": "Varian",
+      "colQty": "Qty",
+      "colSatuan": "Satuan",
+      "colHarga": "Harga (Rp)",
+      "colPpn": "PPN",
+      "colTotal": "Total",
+      "colCatatan": "Catatan",
+      "colAksi": "Aksi",
+      "pilihVarian": "Pilih varian",
+      "termasukPpn": "Termasuk PPN",
+      "belumPpn": "Belum termasuk PPN",
+      "hapusBaris": "Hapus baris",
+      "kartuLain": "Informasi tambahan",
+      "catatan": "Catatan",
+      "syaratBayar": "Syarat pembayaran",
+      "simpanDraf": "Simpan draf",
+      "simpanPerubahan": "Simpan perubahan",
+      "simpanDiPerangkat": "Simpan di perangkat",
+      "menyimpan": "Menyimpan...",
+      "errVarian": "Pilih varian untuk setiap barang yang punya varian."
     }
   },
   "workOrdersList": {
@@ -2687,14 +3174,24 @@
       "BUKTI_TIDAK_LENGKAP": "Isi nomor resi dan unggah bukti pengiriman.",
       "BELUM_DIPROSES": "Retur ini belum diproses. Proses retur dulu sebelum menyelesaikannya.",
       "SUDAH_SELESAI": "Retur ini sudah diselesaikan. Muat ulang halaman ini.",
-      "GAGAL": "Retur gagal disimpan. Coba lagi."
-    }
+      "GAGAL": "Retur gagal disimpan. Coba lagi.",
+      "BUKAN_DRAF": "Hanya retur draf yang bisa dihapus. Muat ulang halaman ini."
+    },
+    "belumDisetujui": "belum disetujui",
+    "cariPemasok": "Cari pemasok…",
+    "colTerkait": "Dokumen terkait",
+    "refWo": "WO",
+    "refPo": "PO",
+    "prosesJudul": "Proses retur {doc}?",
+    "prosesIsi": "Stok barang yang diretur keluar dari gudang (roll kain ditutup) dan tidak bisa dibatalkan.",
+    "hapusJudul": "Hapus retur {doc}?",
+    "hapusIsi": "Retur draf ini dihapus. Stok tidak berubah."
   },
   "hpp": {
     "title": "HPP (Harga Pokok Produksi)",
     "subtitle": "Harga pokok produksi per perintah kerja — biaya kain, aksesoris, dan jasa",
     "cardTitle": "HPP per Perintah Kerja",
-    "cardDescription": "Rincian biaya per WO: kain, aksesoris, jasa, margin, dan harga jual.",
+    "cardDescription": "Rincian biaya per perintah kerja: kain, aksesoris, jasa, markup, dan harga jual.",
     "filters": "Filter",
     "finishedGood": "Barang jadi",
     "dateFrom": "Tanggal dari",
@@ -2712,7 +3209,7 @@
     "ppnStatus": "Status PPN",
     "ppnOk": "OK",
     "ppnMixed": "Campuran",
-    "marginPercent": "Margin %",
+    "marginPercent": "Markup %",
     "sellingPrice": "Harga jual",
     "detail": "Rincian",
     "detailTitle": "Rincian HPP",
@@ -2721,8 +3218,8 @@
     "unitCost": "Biaya/unit",
     "qtyPerPcs": "Qty/pcs",
     "costPerPcs": "Biaya/pcs",
-    "ppnIncluded": "Termasuk PPN",
-    "marginPercentEdit": "Margin %",
+    "ppnIncluded": "Harga sudah ber-PPN",
+    "marginPercentEdit": "Markup %",
     "additionalCostEdit": "Biaya tambahan",
     "saveAdjustments": "Simpan",
     "noRows": "Tidak ada perintah kerja yang sesuai filter.",
@@ -2735,30 +3232,30 @@
     "noFinishedGoods": "Tidak ada barang jadi ditemukan.",
     "helpAriaLabel": "Bagaimana HPP dihitung?",
     "helpTitle": "Cara perhitungan HPP",
-    "helpIntro": "HPP (Harga Pokok Produksi) menjumlahkan biaya kain, aksesoris, dan jasa per pcs. Harga jual = HPP × (1 + margin%) + biaya tambahan.",
+    "helpIntro": "HPP (Harga Pokok Produksi) menjumlahkan biaya kain, aksesoris, dan jasa per pcs sebagaimana tercatat: sebagian biaya sudah termasuk PPN, sebagian belum (lihat kolom Status PPN dan kolom \"Harga sudah ber-PPN\" di rincian). Harga jual = HPP × (1 + markup%) + biaya tambahan. Markup dihitung dari HPP, bukan dari harga jual.",
     "helpWhenStored": "Saat produksi menerima barang jadi (melalui penerimaan Work Order), sistem menyimpan pada setiap penerimaan:",
     "helpMaterialCost": "Biaya material — total biaya material yang dikeluarkan untuk produksi tersebut",
     "helpAvgCostPerUnit": "Rata-rata biaya per unit — total biaya (mis. material + CMT jika ada) dibagi kuantitas diterima",
-    "helpTableExplanation": "Tabel menampilkan per perintah kerja: lapisan biaya, HPP per pcs, status PPN (Campuran jika biaya PPN campur), margin, dan harga jual.",
+    "helpTableExplanation": "Tabel menampilkan per perintah kerja: statusnya, lapisan biaya, HPP per pcs, status PPN (Campuran bila sebagian biaya sudah ber-PPN dan sebagian belum), markup, dan harga jual. HPP/pcs di tabel dan di rincian adalah angka yang sama. Rincian juga menyebut berapa HPP-nya bila semua biaya termasuk PPN: biaya yang belum ber-PPN dinaikkan sebesar tarif PPN. Perintah kerja yang dibatalkan disembunyikan kecuali dipilih di saringan status.",
     "helpFuture": "Tenaga kerja/CMT dan overhead dapat ditambahkan di pembaruan mendatang melalui WO atau aturan alokasi.",
     "backToDashboard": "Kembali ke beranda",
-    "setMarginSelected": "Atur margin ({count} dipilih)",
+    "setMarginSelected": "Atur markup ({count} dipilih)",
     "clearSelection": "Batalkan pilihan",
     "selectAll": "Pilih semua",
     "selectRow": "Pilih {docNo}",
-    "bulkMarginTitle": "Atur margin untuk perintah kerja terpilih",
-    "bulkMarginLabel": "Margin %",
+    "bulkMarginTitle": "Atur markup untuk perintah kerja terpilih",
+    "bulkMarginLabel": "Markup %",
     "bulkMarginPlaceholder": "mis. 25",
     "cancel": "Batal",
     "applyToCount": "Terapkan ke {count} WO",
-    "finalPrice": "Harga akhir",
+    "finalPrice": "Biaya/pcs termasuk PPN",
     "yes": "Ya",
     "no": "Tidak",
-    "subtotalPerPcs": "Subtotal (HPP/pcs):",
-    "marginInvalid": "Margin harus ≥ 0",
+    "subtotalPerPcs": "HPP/pcs:",
+    "marginInvalid": "Markup harus ≥ 0",
     "additionalCostInvalid": "Biaya tambahan harus ≥ 0",
-    "marginSetSuccess": "Margin diatur untuk {count} perintah kerja",
-    "marginSetFailed": "Gagal mengatur margin",
+    "marginSetSuccess": "Markup diatur untuk {count} perintah kerja",
+    "marginSetFailed": "Gagal mengatur markup",
     "adjustmentsSaved": "Penyesuaian HPP disimpan",
     "saveFailed": "Gagal menyimpan",
     "categoryLabel": {
@@ -2769,15 +3266,25 @@
     "costComponentsPcs": "Komponen biaya/pcs",
     "componentFabric": "Kain",
     "componentAccessories": "Aks.",
-    "componentService": "Jasa"
+    "componentService": "Jasa",
+    "subtotalTermasukPpn": "Bila semua biaya termasuk PPN:",
+    "semuaBarang": "Semua barang jadi",
+    "semuaPemasok": "Semua pemasok",
+    "rentangTanggal": "Tanggal perintah kerja dibuat",
+    "colStatus": "Status",
+    "statusAktif": "Semua kecuali dibatalkan",
+    "statusSemua": "Semua status",
+    "jumlahWo": "{count} perintah kerja",
+    "detailDesc": "Rincian biaya per pcs untuk perintah kerja ini",
+    "bulkDesc": "Markup diterapkan ke setiap perintah kerja yang dipilih"
   },
   "productionColors": {
-    "titleAll": "Semua Warna",
+    "titleAll": "Warna",
     "titleBook": "Buku Warna",
     "titleFavorites": "Favorit",
     "titlePhotoAnalyzer": "Analisis Foto",
     "tabs": {
-      "all": "Semua Warna",
+      "all": "Semua warna",
       "book": "Buku Warna",
       "favorites": "Favorit",
       "photoAnalyzer": "Analisis Foto"
@@ -2839,7 +3346,7 @@
     "groupKelompok": "Kelompok",
     "groupLabel": "Kelompok: {group}",
     "noResults": "Tidak ada warna yang cocok dengan filter.",
-    "favoritesEmpty": "Belum ada warna favorit. Bintangi warna di halaman Semua Warna.",
+    "favoritesEmpty": "Belum ada warna favorit. Tekan ikon hati pada warna di tab Semua warna.",
     "detailTitle": "Detail warna",
     "pantoneCode": "Pantone TCX",
     "pantoneCodeLabel": "Kode Pantone",
@@ -2856,7 +3363,7 @@
     "gradientCopyHint": "Klik untuk copy HEX",
     "copyHex": "Salin HEX",
     "copyTcx": "Salin TCX",
-    "copy": "Copy",
+    "copy": "Salin",
     "copied": "Disalin ke clipboard",
     "deltaE": "ΔE",
     "addFavorite": "Tambah ke favorit",
@@ -2889,8 +3396,8 @@
     "bookPositionCalloutValue": "Halaman {page} · Kolom {column} · Baris {row}",
     "bookLocationTitle": "Lokasi di buku Pantone",
     "bookPositionEmpty": "Belum ada posisi",
-    "bookPositionEdit": "Edit",
-    "bookPositionCopy": "Copy",
+    "bookPositionEdit": "Ubah",
+    "bookPositionCopy": "Salin",
     "bookPositionSave": "Simpan",
     "bookPositionCancel": "Batal",
     "bookPositionClear": "Hapus posisi",
@@ -2899,7 +3406,7 @@
     "bookPositionRow": "Baris",
     "bookPositionSaved": "Posisi buku disimpan",
     "bookPositionSaveError": "Gagal menyimpan posisi",
-    "bookGoToPage": "Buka di tampilan fan deck",
+    "bookGoToPage": "Buka di buku warna",
     "moreFilters": "Filter lainnya",
     "hideFilters": "Sembunyikan filter",
     "activeFilters": "{count} filter aktif",
@@ -2931,7 +3438,7 @@
     "hexInvalid": "Tulis kode 6 digit, misalnya #2A78D6.",
     "copyHex": "Salin {hex}",
     "saveLabel": "Nama palet",
-    "namePlaceholder": "Misalnya: Feed Agustus",
+    "namePlaceholder": "Misalnya: Kaos lebaran 2027",
     "save": "Simpan palet",
     "saving": "Menyimpan…",
     "saved": "Palet “{name}” disimpan",
@@ -3084,7 +3591,7 @@
     "bestSellers": {
       "title": "Warna laris di toko Anda",
       "description": "Warna produk yang paling banyak terjual 90 hari terakhir, dari pesanan Shopee dan TikTok. Dipakai sebagai sumber rekomendasi warna.",
-      "empty": "Belum ada data penjualan. Impor file pesanan Shopee atau TikTok di Forecast → Impor — warna laris dan rekomendasi berbasis penjualan muncul otomatis.",
+      "empty": "Belum ada data penjualan.",
       "emptyLink": "Buka Forecast → Impor",
       "category": "Kategori",
       "allCategories": "Semua kategori",
@@ -3221,7 +3728,8 @@
       "AKSEN": "Aksen",
       "NETRAL": "Netral",
       "NADA": "Tone-on-tone"
-    }
+    },
+    "isiNamaDulu": "Isi nama palet dulu untuk menyimpan."
   },
   "productionPrint": {
     "copySummary": "Salin ringkasan",
@@ -3430,13 +3938,13 @@
     },
     "empty": {
       "title": "Belum ada plan untuk tahun ini",
-      "descriptionManage": "Isi tahunnya di kolom di atas lalu tekan \"Tambah Tahun\" untuk membuat plan. Setelah itu grid, dashboard, dan rincian plan muncul di sini.",
+      "descriptionManage": "Tekan \"Tambah tahun\" untuk membuat plan. Setelah itu grid, dasbor, dan rincian plan muncul di sini.",
       "descriptionView": "Plan tahun ini belum dibuat. Minta pengguna yang boleh mengelola plan untuk membuatnya."
     },
     "toasts": {
       "loadFailed": "Gagal memuat plan kerja",
       "loadYearFailed": "Gagal memuat plan tahun ini",
-      "createWoFailed": "Gagal membuat work order",
+      "createWoFailed": "Gagal membuat perintah kerja",
       "invalidYear": "Tahun tidak valid",
       "yearCreated": "Tahun plan dibuat",
       "createYearFailed": "Gagal membuat tahun plan",
@@ -3448,8 +3956,21 @@
       "importSummary": "Impor: {created} dibuat, {updated} diperbarui, {errors} gagal",
       "importFailed": "Gagal mengimpor",
       "colorsSaved": "Pembagian warna disimpan",
-      "cmtSaved": "Pembagian jahitan disimpan"
-    }
+      "cmtSaved": "Pembagian jahitan disimpan",
+      "woDariTahap": {
+        "berhasil": "{docNumber} dibuat",
+        "TANPA_AKSES": "Anda tidak punya izin membuat perintah kerja dari plan.",
+        "TAHAP_TIDAK_ADA": "Tahap ini tidak ditemukan. Muat ulang halaman.",
+        "TANPA_VENDOR": "Pilih vendor CMT di tahap ini dulu.",
+        "TANPA_BARANG_JADI": "Hubungkan kategori ini ke barang jadi dulu.",
+        "SUDAH_ADA_WO": "Tahap ini sudah punya perintah kerja aktif ({docNumber}).",
+        "BARANG_BUKAN_JADI": "Barang yang terhubung bukan barang jadi.",
+        "BARANG_TANPA_VARIAN": "Barang jadi ini belum punya varian SKU. Tambahkan varian di master barang dulu.",
+        "TAHAP_TANPA_VARIAN": "Pilih varian SKU di tahap ini dulu."
+      }
+    },
+    "tambahTahun": "Tambah tahun",
+    "buatPlanTahun": "Buat plan {year}"
   },
   "forecast": {
     "title": "Forecast & S&OP",
@@ -3464,12 +3985,12 @@
       "title": "Impor Data Penjualan",
       "channel": "Channel",
       "period": "Periode",
-      "upload": "Unggah & Impor",
-      "history": "Riwayat Impor",
+      "upload": "Unggah & impor",
+      "history": "Riwayat impor",
       "coverage": "Cakupan Data",
       "seasonalReady": "Cukup untuk analisis seasonal",
       "seasonalNotReady": "Butuh minimal 12 bulan data",
-      "deleteConfirm": "Hapus import {channel} {period}? {count} baris data akan dihapus.",
+      "deleteConfirm": "Impor {channel} {period} akan dihapus beserta {count} baris datanya.",
       "alreadyExists": "Data untuk {channel} {period} sudah diimport. Hapus import sebelumnya jika ingin re-import.",
       "success": "{imported} baris berhasil diimport, {skipped} dilewati.",
       "skippedHelp": "Baris pesanan selesai yang valid, tetapi tidak disimpan karena channel, ID pesanan, dan SKU yang sama sudah ada (dari import sebelumnya atau baris duplikat dalam file).",
@@ -3505,7 +4026,13 @@
       "file": "Berkas",
       "importedColumn": "Diimpor",
       "deleteImport": "Hapus impor",
-      "coverageSummary": "{articles} artikel · {months} bulan tercakup · pemetaan SKU {mapping}%"
+      "coverageSummary": "{articles} artikel · {months} bulan tercakup · pemetaan SKU {mapping}%",
+      "berkasLabel": "Berkas (.xlsx)",
+      "pilihBerkas": "Pilih berkas",
+      "belumAdaBerkas": "Belum ada berkas dipilih",
+      "riwayatKosong": "Belum ada impor",
+      "hapusJudul": "Hapus impor ini?",
+      "jangan": "Jangan hapus"
     },
     "config": {
       "growth": "Growth Factor (%)",
@@ -3543,14 +4070,16 @@
       "mappingCoverage": "Pemetaan SKU",
       "unmappedWarn": "Lebih dari 10% kuantitas permintaan berasal dari SKU yang belum terpetakan. Forecast tetap dijalankan, tetapi tinjau pemetaan produk di Items / pengaturan Jubelio.",
       "runFailed": "Forecast gagal dijalankan",
-      "runComplete": "Forecast selesai: {count} artikel"
+      "runComplete": "Forecast selesai: {count} artikel",
+      "belumAdaData": "Belum ada data penjualan. Impor data penjualan dulu untuk menjalankan forecast.",
+      "dataKurangSetahun": "Data penjualan baru {bulan} bulan; pola musiman butuh minimal {minimal} bulan."
     },
     "reconciliation": {
-      "title": "Rekonsiliasi Penjualan",
+      "title": "Rekonsiliasi penjualan",
       "subtitle": "Bandingkan penjualan Excel bersertifikat vs pesanan operasional Jubelio",
       "stockDisclaimer": "Laporan ini membandingkan data penjualan Excel vs Jubelio. Tidak mengubah stok.",
       "periodSelector": "Periode",
-      "selectPeriod": "Pilih periode import",
+      "selectPeriod": "Pilih periode impor",
       "refresh": "Muat ulang",
       "loading": "Memuat…",
       "loadFailed": "Gagal memuat rekonsiliasi",
@@ -3571,7 +4100,10 @@
         "EXCEL_HIGHER": "Excel lebih tinggi",
         "JUBELIO_HIGHER": "Jubelio lebih tinggi"
       },
-      "backToImport": "Kembali ke impor data penjualan"
+      "backToImport": "Kembali ke impor data penjualan",
+      "backToForecast": "Kembali ke forecast",
+      "kosongJudul": "Belum ada data impor untuk direkonsiliasi",
+      "keImpor": "Impor data penjualan"
     },
     "abc": {
       "A": "Omzet tinggi",
@@ -3607,25 +4139,25 @@
     },
     "bridge": {
       "title": "Saran ke Plan Kerja",
-      "generate": "Buat Saran",
+      "generate": "Buat saran",
       "apply": "Terapkan ke Plan Kerja",
       "applied": "{count} baris plan berhasil diterapkan ke Plan Kerja {year}.",
       "appliedPartial": "Diterapkan {count} baris plan ke Plan Kerja {year}. {skipped} kategori dilewati.",
       "note": "Membuat baris parent per kategori item (total target) dan baris child per artikel terpilih (share %). Hanya artikel terpilih yang dihitung dalam total kategori. Distribusi bulanan, warna, dan vendor tetap dikelola manual di Plan Kerja.",
-      "create": "Buat Baru",
-      "update": "Perbarui Target",
-      "skip": "Sudah Sesuai",
-      "planYear": "Tahun Plan Tujuan",
+      "create": "Buat baru",
+      "update": "Perbarui target",
+      "skip": "Sudah sesuai",
+      "planYear": "Tahun plan tujuan",
       "planYearPlaceholder": "Pilih tahun plan",
-      "noPlanYears": "Belum ada tahun plan. Buat dulu di Plan Kerja.",
+      "noPlanYears": "Belum ada tahun plan.",
       "noEditablePlanYears": "Tidak ada tahun plan yang bisa diedit. Buka kunci plan DRAFT di Plan Kerja, atau buat tahun baru.",
       "planYearLocked": "terkunci",
       "planYearActive": "aktif",
       "noErpItemMapped": "Belum dipetakan ke item ERP",
       "selectCategory": "Pilih kategori item",
       "forecast": "Forecast",
-      "planNow": "Plan Sekarang",
-      "categoryTotal": "Total Kategori",
+      "planNow": "Plan sekarang",
+      "categoryTotal": "Total kategori",
       "delta": "Delta",
       "action": "Aksi",
       "loadFailed": "Gagal memuat data",
@@ -3633,9 +4165,10 @@
       "noneSelected": "Belum ada saran valid yang dipilih",
       "applyFailed": "Gagal menerapkan saran",
       "article": "Artikel",
-      "itemCategory": "Kategori Barang",
+      "itemCategory": "Kategori barang",
       "emptyTable": "Tekan \"Buat Saran\" untuk meninjau target plan.",
-      "openPlan": "Buka Plan Kerja {year}"
+      "openPlan": "Buka Plan Kerja {year}",
+      "bukaPlanKerja": "Buat di Plan Kerja"
     },
     "loadFailed": "Gagal memuat forecast",
     "backToForecast": "Kembali ke forecast",
@@ -3682,7 +4215,7 @@
     }
   },
   "salesOrders": {
-    "pageTitle": "Pesanan",
+    "pageTitle": "Pesanan marketplace",
     "pageSubtitle": "Pesanan dari marketplace via Jubelio",
     "empty": "Belum ada pesanan marketplace. Pesanan akan muncul di sini secara otomatis setelah dikirim oleh Jubelio.",
     "emptyFiltered": "Tidak ada pesanan yang cocok dengan filter ini.",
@@ -3709,11 +4242,11 @@
       "back": "Kembali ke daftar",
       "section": {
         "buyer": "Pembeli",
-        "orderMeta": "Info Pesanan",
-        "lineItems": "Item Pesanan",
+        "orderMeta": "Info pesanan",
+        "lineItems": "Item pesanan",
         "totals": "Total",
         "rawStatus": "Status (mentah)",
-        "feeBreakdown": "Rincian Biaya"
+        "feeBreakdown": "Rincian biaya"
       },
       "field": {
         "customerName": "Nama",
@@ -3826,13 +4359,16 @@
       "avgDailySales": "Rata-rata penjualan harian",
       "avgDailyCount": "{count} pesanan / hari",
       "avgDailySalesDesc": "Selama {days} hari dalam rentang terpilih",
-      "byStatusEmpty": "Belum ada pesanan untuk ditampilkan."
+      "byStatusEmpty": "Belum ada pesanan untuk ditampilkan.",
+      "totalValueAll": "{value} sepanjang waktu",
+      "avgDailySalesDescAll": "Selama {days} hari, dari pesanan pertama sampai terakhir"
     },
-    "clearFilters": "Hapus filter"
+    "clearFilters": "Hapus filter",
+    "listTitle": "Daftar pesanan"
   },
   "salesReturns": {
     "list": {
-      "pageTitle": "Pengembalian Penjualan",
+      "pageTitle": "Pengembalian penjualan",
       "pageSubtitle": "Pengembalian marketplace yang diterima via Jubelio",
       "empty": "Belum ada pengembalian. Pengembalian dari marketplace akan muncul di sini secara otomatis setelah dikirim oleh Jubelio.",
       "emptyFiltered": "Tidak ada pengembalian yang cocok dengan filter ini.",
@@ -3858,13 +4394,13 @@
         "received": "Diterima"
       },
       "kpi": {
-        "totalCount": "Total Retur",
+        "totalCount": "Total retur",
         "totalCountDesc": "30 hari terakhir",
-        "pendingCount": "Menunggu Keputusan",
+        "pendingCount": "Menunggu keputusan",
         "pendingCountDesc": "Belum diterima atau ditolak",
-        "acceptanceRate": "Tingkat Penerimaan",
+        "acceptanceRate": "Tingkat penerimaan",
         "acceptanceRateDesc": "Diterima dari yang diputuskan",
-        "totalValue": "Total Nilai",
+        "totalValue": "Total nilai",
         "totalValueDesc": "30 hari terakhir"
       },
       "status": {
@@ -3962,7 +4498,7 @@
     "filter": {
       "searchLabel": "Cari berdasarkan nama",
       "searchPlaceholder": "JNE, J&T, …",
-      "reset": "Atur ulang"
+      "reset": "Reset"
     },
     "table": {
       "id": "ID",
@@ -3972,10 +4508,11 @@
     "toast": {
       "syncSuccess": "Berhasil sinkron {count} kurir.",
       "syncError": "Sinkron gagal. Coba lagi."
-    }
+    },
+    "listTitle": "Daftar kurir"
   },
   "fulfillmentQueue": {
-    "pageTitle": "Antrian Pemenuhan",
+    "pageTitle": "Antrean pemenuhan",
     "pageSubtitle": "Pesanan marketplace yang menunggu diambil, dikemas, atau dikirim.",
     "empty": "Belum ada pesanan marketplace.",
     "filter": {
@@ -4018,7 +4555,10 @@
     "emptyFiltered": "Tidak ada pesanan yang cocok dengan filter ini.",
     "clearFilters": "Hapus filter",
     "selectAll": "Pilih semua pesanan",
-    "selectRow": "Pilih {orderNo}"
+    "selectRow": "Pilih {orderNo}",
+    "listTitle": "Pesanan dalam antrean",
+    "emptyPending": "Tidak ada pesanan yang menunggu dikemas.",
+    "lihatSemua": "Lihat semua"
   },
   "salesOrdersPrint": {
     "pickList": {
@@ -4055,7 +4595,7 @@
       "count": "{count, plural, =0 {tidak ada toko} other {# toko}}",
       "subtitle": "Kelola data toko beserta syarat kerja samanya",
       "cardTitle": "Daftar toko",
-      "searchPlaceholder": "Cari berdasarkan nama atau kode",
+      "searchPlaceholder": "Cari nama atau kode toko",
       "showInactive": "Tampilkan nonaktif",
       "table": {
         "code": "Kode",
@@ -4167,7 +4707,7 @@
         "checkin": "Check-in",
         "checkout": "Check-out",
         "duration": "Durasi",
-        "user": "Salesman",
+        "user": "Petugas",
         "coords": "Koordinat",
         "outOfRadius": "Di luar radius",
         "photos": "Foto",
@@ -4196,7 +4736,27 @@
         "KOORDINAT_KEMBAR": "Koordinat sama persis dengan check-in di {toko} ({waktu})",
         "KOORDINAT_KEMBAR_TANPA_NAMA": "Koordinat sama persis dengan check-in di toko lain ({waktu})"
       },
-      "targetStokButton": "Target stok"
+      "targetStokButton": "Target stok",
+      "kredit": {
+        "title": "Kredit & piutang",
+        "storeClass": "Kelas toko",
+        "pkp": "PKP",
+        "pkpYes": "Ya",
+        "pkpNo": "Tidak",
+        "creditLimit": "Batas kredit",
+        "maxInvoices": "Maks faktur terbuka",
+        "fromStore": "{nilai} (khusus toko ini)",
+        "fromDefault": "{nilai} (ikut bawaan)",
+        "noLimit": "Tidak dibatasi",
+        "invoiceCount": "{n} faktur",
+        "outstanding": "Sisa piutang",
+        "openInvoices": "Faktur belum lunas",
+        "overdue": "Lewat janji bayar",
+        "overdueNone": "Tidak ada",
+        "receivablesFailed": "Piutang toko ini gagal dibaca. Muat ulang halaman.",
+        "viewReceivables": "Lihat piutang toko ini",
+        "notApplicableKonsi": "Tidak berlaku — toko konsinyasi tidak punya piutang."
+      }
     },
     "storeChanges": {
       "reviewTitle": "Perubahan menunggu persetujuan",
@@ -4234,7 +4794,7 @@
       "colTotal": "Total"
     },
     "sentItems": {
-      "cardTitle": "Barang Terkirim",
+      "cardTitle": "Barang terkirim",
       "empty": "Belum ada barang terkirim ke toko ini",
       "colArticle": "Artikel",
       "colSize": "Ukuran",
@@ -4283,7 +4843,7 @@
       "errInvalid": "Kode dan nama wajib diisi."
     },
     "stockCard": {
-      "title": "Stok di toko",
+      "title": "Buku stok SPG",
       "hint": "Dihitung dari gerakan yang dicatat SPG: kiriman yang diterima, penjualan, dan opname. Saldo minus berarti barang terjual lebih banyak dari yang tercatat masuk — dibereskan lewat opname.",
       "emptyTitle": "Stok toko belum tercatat",
       "emptyBody": "Stok toko mulai tercatat setelah SPG menerima kiriman atau melakukan opname di toko ini.",
@@ -4308,7 +4868,9 @@
         "MUTASI_MASUK": "Terima dari toko lain",
         "RETUR_KELUAR": "Retur ke gudang",
         "RETUR_PEMBELI": "Dikembalikan pembeli"
-      }
+      },
+      "titipanLink": "Titipan menurut kiriman",
+      "targetLink": "Target stok"
     },
     "kredit": {
       "judul": "Batas kredit",
@@ -4569,7 +5131,7 @@
       "targetReached": "Target bulan ini tercapai",
       "targetPerDay": "Perlu {amount} per hari · sisa {days} hari",
       "channelPutus": "Putus",
-      "channelKonsi": "Konsinyasi",
+      "channelKonsi": "Konsinyasi laku",
       "channelVan": "Van",
       "trendTitle": "30 hari terakhir",
       "planTitle": "Rencana kunjungan hari ini",
@@ -4605,7 +5167,7 @@
       "targetRinci": "Rincian target",
       "totalPutusVan": "Putus + van",
       "konsiPcs": "{n} pcs",
-      "targetKonsiNote": "Persen ini dari putus + van. Kantor juga menghitung konsinyasi ke target, tetapi nilainya tidak ditampilkan di HP.",
+      "targetKonsiNote": "Persen ini dari putus + van. Kantor juga menghitung konsinyasi yang laku di toko ke target, tetapi nilainya tidak ditampilkan di HP.",
       "trendTitlePutusVan": "30 hari terakhir · putus + van"
     },
     "saran": {
@@ -5926,7 +6488,8 @@
       "kurangTanggal": "Isi tanggal janji bayar yang benar.",
       "kurangPenerima": "Isi nama penerima di toko.",
       "kurangFoto": "Ambil foto tanda terimanya.",
-      "errFOTO_BUKAN_MILIK": "Foto lembar tanda terima ini diunggah orang lain. Ambil foto Anda sendiri."
+      "errFOTO_BUKAN_MILIK": "Foto lembar tanda terima ini diunggah orang lain. Ambil foto Anda sendiri.",
+      "errFOTO_SUDAH_DIPAKAI": "Foto lembar tanda terima ini sama persis dengan foto milik orang lain yang sudah dipakai laporan lain. Ambil foto Anda sendiri."
     },
     "insentif": {
       "back": "Beranda",
@@ -5965,9 +6528,9 @@
       "rowOfInvoice": "dari {amount} yang dilunasi",
       "salesTitle": "Omzet",
       "channel_putus": "Putus",
-      "channel_konsi": "Konsinyasi",
+      "channel_konsi": "Konsinyasi laku",
       "channel_van": "Van",
-      "salesHint": "Sama dengan kartu \"Bulan ini\" di beranda: rupiah dari pengiriman putus dan penjualan van. Konsinyasi yang disetujui hanya tampil sebagai jumlah pcs.",
+      "salesHint": "Sama dengan kartu \"Bulan ini\" di beranda: rupiah dari pengiriman putus dan penjualan van. Konsinyasi hanya tampil sebagai jumlah pcs yang laku di toko.",
       "moreLabel": "Lainnya",
       "leaderboardLink": "Peringkat",
       "leaderboardHint": "Capaian target Anda dibanding rekan bulan ini",
@@ -5980,10 +6543,10 @@
       "konsiBelumDihitung": "Belum termasuk konsinyasi — angka final dari kantor bisa lebih tinggi.",
       "targetOfPutusVan": "Putus + van {omzet} dari {target}",
       "noTargetPutusVan": "Putus + van {omzet}. Belum ada target bulan ini — admin yang mengaturnya.",
-      "konsiNote": "Angka di halaman ini dari putus + van. Konsinyasi bulan ini ({n} pcs) ikut dihitung kantor ke capaian target, jadi capaian, tarif, dan komisi final bisa lebih tinggi.",
+      "konsiNote": "Angka di halaman ini dari putus + van. Konsinyasi yang laku bulan ini ({n} pcs) ikut dihitung kantor ke capaian target, jadi capaian, tarif, dan komisi final bisa lebih tinggi.",
       "konsiPcs": "{n} pcs",
-      "konsiNoteCapaian": "Angka di halaman ini dari putus + van. Konsinyasi bulan ini ({n} pcs) ikut dihitung kantor ke capaian target, jadi capaian final bisa lebih tinggi.",
-      "konsiNotePcs": "Angka di halaman ini dari putus + van. Konsinyasi bulan ini: {n} pcs, tidak termasuk rupiah di atas."
+      "konsiNoteCapaian": "Angka di halaman ini dari putus + van. Konsinyasi yang laku bulan ini ({n} pcs) ikut dihitung kantor ke capaian target, jadi capaian final bisa lebih tinggi.",
+      "konsiNotePcs": "Angka di halaman ini dari putus + van. Konsinyasi yang laku bulan ini: {n} pcs, tidak termasuk rupiah di atas."
     },
     "peringkat": {
       "back": "Beranda",
@@ -6007,7 +6570,7 @@
       "incentiveHint": "Perkiraan komisi dan rinciannya",
       "basisNote": "Capaian dan omzet di papan ini dihitung dari pengiriman putus dan penjualan van. Konsinyasi tidak ikut dihitung.",
       "yourSalesPutusVan": "Omzet putus + van Anda {amount}",
-      "konsiPcs": "Konsinyasi bulan ini: {n} pcs, tidak ikut dihitung di papan ini."
+      "konsiPcs": "Konsinyasi laku bulan ini: {n} pcs, tidak ikut dihitung di papan ini."
     },
     "hariIni": {
       "back": "Beranda",
@@ -6654,7 +7217,7 @@
       "short": "Kurang {amount} lagi",
       "paceOnTrack": "Pertahankan sekitar {amount} per hari.",
       "paceBehind": "Perlu sekitar {amount} per hari selama {days} hari lagi.",
-      "note": "Target dalam rupiah dihitung dari pengiriman putus dan penjualan van bulan ini — sama dengan omzet di beranda. Target dalam pcs ikut menghitung konsinyasi yang disetujui. Barang bonus tidak dihitung.",
+      "note": "Target dalam rupiah dihitung dari pengiriman putus dan penjualan van bulan ini — sama dengan omzet di beranda. Target dalam pcs ikut menghitung konsinyasi yang laku di toko. Barang bonus tidak dihitung.",
       "pcs": "{n} pcs",
       "tanpaKonsi": "Nilai dari penjualan putus dan van — konsinyasi tidak dihitung di sini.",
       "noteSpg": "Dihitung dari nota penjualan Anda bulan ini, dikurangi barang yang dikembalikan pembeli. Retur dihitung pada bulan notanya."
@@ -7134,12 +7697,12 @@
     "delivery": {
       "title": "Pengiriman",
       "empty": "Belum ada pengiriman untuk pesanan ini.",
-      "create": "Buat Pengiriman",
+      "create": "Buat pengiriman",
       "createDescription": "Isi jumlah yang dikirim untuk tiap baris. Baris yang dibiarkan 0 tidak ikut dikirim.",
       "noOutstanding": "Tidak ada sisa yang bisa dikirim.",
       "noStockForLine": "Stok kosong — baris ini belum bisa dikirim.",
-      "close": "Tutup Sisa",
-      "closeTitle": "Tutup Sisa Pesanan",
+      "close": "Tutup sisa",
+      "closeTitle": "Tutup sisa pesanan",
       "closeDescription": "Sisa yang belum dikirim akan dibatalkan dan stok yang direservasi dilepas. Tindakan ini tidak bisa dibatalkan.",
       "closeReason": "Alasan penutupan (wajib diisi)",
       "closeReasonLabel": "Alasan Penutupan Sisa",
@@ -7172,8 +7735,8 @@
       "successCreated": "Pengiriman berhasil dibuat.",
       "successClosed": "Sisa pesanan ditutup.",
       "status": {
-        "PENDING": "Belum Dikirim",
-        "PARTIAL": "Terkirim Sebagian",
+        "PENDING": "Belum dikirim",
+        "PARTIAL": "Terkirim sebagian",
         "DELIVERED": "Terkirim",
         "CLOSED": "Ditutup"
       },
@@ -7188,13 +7751,23 @@
         "INVALID_DATES": "Tanggal jatuh tempo tidak boleh lebih awal dari tanggal nota.",
         "CONFLICT": "Tanggal nota ini baru saja diubah orang lain. Muat ulang halaman dan coba lagi.",
         "INDEN_BELUM_RILIS": "Pesanan pre-order ini belum bisa dikirim: barangnya belum datang. Rilis dulu pre-order-nya di halaman Pre-order (Inden).",
-        "NOMOR_PIUTANG_DIPAKAI": "Pengiriman tidak dicatat: beberapa nomor nota berikutnya sudah dipakai piutang lain (impor atau faktur manual), jadi nota tidak bisa menjadi piutang. Hubungi admin sistem untuk memeriksa nomor piutang yang bentrok."
+        "NOMOR_PIUTANG_DIPAKAI": "Pengiriman tidak dicatat: beberapa nomor nota berikutnya sudah dipakai piutang lain (impor atau faktur manual), jadi nota tidak bisa menjadi piutang. Hubungi admin sistem untuk memeriksa nomor piutang yang bentrok.",
+        "RESERVATION_MISMATCH": "Pengiriman tidak dicatat: cadangan stok pesanan ini sudah habis walau sisanya masih ada (biasanya pesanan yang disetujui saat aplikasi diperbarui). Hubungi admin sistem untuk membetulkan pesanan ini."
+      },
+      "penagihan": {
+        "piutangSisa": "Piutang: sisa {nilai}",
+        "piutangLunas": "Piutang: lunas",
+        "fakturMenunggu": "Faktur pajak: menunggu",
+        "fakturDibuat": "Faktur pajak: {nomor}",
+        "fakturTidakPerlu": "Faktur pajak: tidak perlu",
+        "lihatPiutang": "Lihat piutang",
+        "lihatFakturPajak": "Lihat faktur pajak"
       }
     },
     "print": {
-      "notaGudang": "Cetak Nota Gudang",
-      "notaTagihan": "Cetak Nota Tagihan",
-      "suratKeluar": "Cetak Surat Keluar Barang",
+      "notaGudang": "Cetak nota gudang",
+      "notaTagihan": "Cetak nota tagihan",
+      "suratKeluar": "Cetak surat keluar barang",
       "docLabel": "No. Dokumen",
       "orderRefLabel": "Ref. Pesanan",
       "storeLabel": "Toko",
@@ -7220,7 +7793,7 @@
       "regards": "Hormat kami",
       "handedBy": "Diserahkan",
       "issuedBy": "Diterbitkan oleh",
-      "tagihanDialogTitle": "Cetak Nota Tagihan",
+      "tagihanDialogTitle": "Cetak nota tagihan",
       "tagihanDialogFootnote": "Catatan Kaki (opsional)",
       "tagihanDialogFootnotePlaceholder": "Contoh: Barang yang sudah dibeli tidak dapat ditukar/dikembalikan",
       "tagihanDialogCancel": "Batal",
@@ -7306,11 +7879,16 @@
       "kolomKeadaan": "Keadaan",
       "lewatHari": "Lewat {hari} hari",
       "lencanaLewat": "Lewat janji",
-      "belumLewat": "Belum lewat",
+      "belumLewat": "Belum lewat janji",
       "fakturLainnya": "+{n} faktur lainnya",
       "dialogPenjelasan": "Kredit pesanan ini ditahan saat dibuat. Periksa tagihan toko di panel Kredit toko sebelum menyetujui.",
       "centang": "Saya sudah memeriksa tagihan toko ini",
-      "errBelumDiperiksa": "Centang \"Saya sudah memeriksa tagihan toko ini\" sebelum menyetujui."
+      "errBelumDiperiksa": "Centang \"Saya sudah memeriksa tagihan toko ini\" sebelum menyetujui.",
+      "kolomJanji": "Janji bayar",
+      "lewatJanjiHari": "Lewat janji {hari} hari",
+      "lewatTempoHari": "Lewat jatuh tempo {hari} hari",
+      "belumJatuhTempo": "Belum jatuh tempo",
+      "bukaPiutang": "Buka daftar piutang"
     },
     "inden": {
       "saringan": "Pre-order",
@@ -7337,30 +7915,35 @@
     "appealPromoDropped": "Baris ini mendapat promo {promo} (potongan {amount}). Begitu diberi harga final, promo itu tidak berlaku lagi.",
     "appealPromoDroppedUnnamed": "Baris ini mendapat potongan promo {amount}. Begitu diberi harga final, promo itu tidak berlaku lagi.",
     "rejectConfirmPreorder": "Tolak pesanan pre-order ini? Stoknya belum dicadangkan, jadi tidak ada stok yang dilepas.",
-    "rejectConfirmUnknown": "Tolak pesanan ini? Stok yang sudah dicadangkan untuk pesanan ini, bila ada, akan dilepas."
+    "rejectConfirmUnknown": "Tolak pesanan ini? Stok yang sudah dicadangkan untuk pesanan ini, bila ada, akan dilepas.",
+    "barisKosong": "Tidak ada baris barang di pesanan ini.",
+    "saring": {
+      "ditolakKantor": "Ditolak kantor",
+      "pengiriman": "Pengiriman"
+    }
   },
   "promos": {
-    "pageTitle": "Promo",
+    "pageTitle": "Promo pesanan putus",
     "subtitle": "Skema diskon untuk pesanan putus",
-    "new": "Promo Baru",
-    "edit": "Ubah Promo",
+    "new": "Promo baru",
+    "edit": "Ubah promo",
     "search": "Cari nama promo",
     "type": "Tipe",
     "typeAll": "Semua",
     "typePercent": "Persen",
     "typeFixed": "Nominal",
     "typeTiered": "Bertingkat",
-    "level": "Level",
-    "levelLine": "Per Produk",
-    "levelOrder": "Per Pesanan",
+    "level": "Berlaku untuk",
+    "levelLine": "Per produk",
+    "levelOrder": "Per pesanan",
     "value": "Nilai",
     "tiers": "Tingkatan",
     "addTier": "Tambah tingkatan",
-    "tierMinQty": "Jml Minimum",
-    "tierUnitPrice": "Harga Satuan",
-    "minQty": "Jumlah Minimum",
-    "minOrderSubtotal": "Minimum Subtotal",
-    "minOrderQty": "Jumlah Minimum Pesanan",
+    "tierMinQty": "Jml minimum",
+    "tierUnitPrice": "Harga satuan",
+    "minQty": "Jumlah minimum",
+    "minOrderSubtotal": "Minimum subtotal",
+    "minOrderQty": "Jumlah minimum pesanan",
     "allStores": "Semua toko",
     "stores": "Toko",
     "items": "Produk",
@@ -7371,7 +7954,7 @@
     "active": "Status",
     "activeAll": "Semua",
     "activeYes": "Aktif",
-    "activeNo": "Tidak Aktif",
+    "activeNo": "Tidak aktif",
     "reset": "Reset",
     "colName": "Nama",
     "colType": "Tipe",
@@ -7385,37 +7968,39 @@
     "errForbidden": "Anda tidak memiliki izin untuk melakukan aksi ini.",
     "errGeneric": "Terjadi kesalahan. Silakan coba lagi.",
     "readOnlyBanner": "Anda hanya dapat melihat promo ini.",
-    "sectionBasic": "Informasi Dasar",
+    "sectionBasic": "Informasi dasar",
     "sectionConditions": "Syarat",
     "sectionScope": "Cakupan",
     "sectionSchedule": "Jadwal",
     "name": "Nama",
     "emptyFiltered": "Tidak ada promo yang cocok dengan filter ini.",
     "clearFilters": "Hapus filter",
-    "masaBerlaku": "Masa berlaku"
+    "masaBerlaku": "Masa berlaku",
+    "kembaliKePromo": "Kembali ke promo",
+    "listTitle": "Daftar promo"
   },
   "canvassing": {
-    "pageTitle": "Sales Kanvas",
+    "pageTitle": "Sales kanvas",
     "subtitle": "Stok mobil dan riwayat muat untuk sales kanvas",
-    "listCardTitle": "Daftar Sales Kanvas",
-    "colCanvasser": "Sales Kanvas",
-    "colLines": "Baris",
-    "colTotalQty": "Jumlah Total",
+    "listCardTitle": "Daftar sales kanvas",
+    "colCanvasser": "Sales kanvas",
+    "colLines": "Jenis barang",
+    "colTotalQty": "Jumlah barang",
     "emptyCanvassers": "Belum ada sales kanvas.",
     "detailSubtitle": "Stok mobil, riwayat muat, dan formulir muat",
-    "vanStockCardTitle": "Stok Mobil",
+    "vanStockCardTitle": "Stok mobil",
     "colItem": "Item",
     "colVariant": "Varian",
     "colQty": "Jml",
     "colAvgCost": "Rata-rata Biaya",
     "emptyVanStock": "Mobil ini kosong.",
-    "loadHistoryCardTitle": "Riwayat Muat",
+    "loadHistoryCardTitle": "Riwayat muat",
     "colDocNo": "No. Dokumen",
-    "colLoadedBy": "Dimuat Oleh",
+    "colLoadedBy": "Dimuat oleh",
     "colDate": "Tanggal",
     "colJournal": "Jurnal",
     "emptyLoads": "Belum ada muatan.",
-    "loadFormTitle": "Muat Mobil",
+    "loadFormTitle": "Muat mobil",
     "item": "Item",
     "selectItem": "Pilih item",
     "variant": "Varian",
@@ -7428,7 +8013,7 @@
     "removeLine": "Hapus baris",
     "note": "Catatan",
     "notePlaceholder": "Catatan opsional",
-    "submit": "Muat Mobil",
+    "submit": "Muat mobil",
     "submitting": "Memuat…",
     "loadedSuccess": "Mobil dimuat ({docNo})",
     "errInsufficientStock": "Stok tidak cukup untuk satu atau lebih baris.",
@@ -7462,8 +8047,8 @@
       "totalVariance": "Total selisih",
       "reasonLabel": "Alasan"
     },
-    "reconcileSectionTitle": "Rekonsiliasi Akhir Hari",
-    "reconcileHistoryCardTitle": "Riwayat Rekonsiliasi",
+    "reconcileSectionTitle": "Rekonsiliasi akhir hari",
+    "reconcileHistoryCardTitle": "Riwayat rekonsiliasi",
     "emptyReconciles": "Belum ada rekonsiliasi.",
     "colReconciledBy": "Direkonsiliasi Oleh",
     "colTotalReturned": "Total Dikembalikan",
@@ -7496,6 +8081,18 @@
         "NOT_RETRYABLE": "Dokumen ini belum pernah gagal diposting otomatis, jadi tidak bisa diposting ulang di sini — memposting sekarang akan menghasilkan jurnal timpang sebelah. Jika dokumen ini benar-benar perlu dijurnal, gunakan entri jurnal manual.",
         "UNEXPECTED": "Terjadi kesalahan tak terduga saat memposting jurnal."
       }
+    },
+    "bukanKanvas": {
+      "SPG": "Pengguna ini SPG dengan toko tetap. Mobil kanvas hanya untuk salesman.",
+      "ADMIN_SISTEM": "Akun admin sistem bukan sales lapangan. Mobil kanvas hanya untuk salesman.",
+      "TANPA_AKSES_HP": "Pengguna ini tidak punya akses aplikasi HP lapangan, jadi tidak bisa menjual dari mobil.",
+      "TIDAK_ADA": "Pengguna ini tidak ditemukan."
+    },
+    "lencanaBukanKanvas": {
+      "SPG": "SPG · kosongkan mobil",
+      "ADMIN_SISTEM": "Admin · kosongkan mobil",
+      "TANPA_AKSES_HP": "Tanpa akses HP · kosongkan mobil",
+      "TIDAK_ADA": "Tidak ditemukan"
     }
   },
   "vanSale": {
@@ -7685,9 +8282,9 @@
     "pageTitle": "Settlement Marketplace",
     "subtitle": "Unggah laporan settlement marketplace dan cocokkan dengan pesanan penjualan.",
     "back": "Kembali",
-    "listTitle": "Daftar Settlement",
+    "listTitle": "Daftar settlement",
     "empty": "Belum ada settlement yang diunggah.",
-    "uploadTitle": "Unggah Settlement",
+    "uploadTitle": "Unggah settlement",
     "uploadMarketplaceLabel": "Marketplace",
     "marketplaceOption": {
       "SHOPEE": "Shopee",
@@ -7847,7 +8444,7 @@
     "pageTitle": "Jurnal",
     "subtitle": "Daftar entri jurnal — otomatis dari transaksi dan manual.",
     "back": "Kembali",
-    "newJournal": "Jurnal Baru",
+    "newJournal": "Jurnal baru",
     "sourceManual": "Manual",
     "sourceAuto": "Otomatis",
     "filter": {
@@ -7859,7 +8456,7 @@
       "dateTo": "Sampai tanggal",
       "reset": "Reset"
     },
-    "listTitle": "Daftar Jurnal",
+    "listTitle": "Daftar jurnal",
     "empty": "Belum ada jurnal.",
     "emptyFiltered": "Tidak ada jurnal yang cocok dengan filter.",
     "colDate": "Tanggal",
@@ -7867,18 +8464,21 @@
     "colSource": "Sumber",
     "colTotal": "Total",
     "detail": {
-      "linesTitle": "Baris Jurnal",
+      "linesTitle": "Baris jurnal",
       "colAccount": "Akun",
       "colMemo": "Memo",
       "colDebit": "Debit",
       "colCredit": "Kredit",
-      "totalsLabel": "Total"
+      "totalsLabel": "Total",
+      "openSource": "Buka dokumen sumber",
+      "openSourceNumber": "Buka {nomor}",
+      "openLedger": "Buka buku besar akun ini"
     },
     "form": {
       "date": "Tanggal",
       "description": "Deskripsi",
       "descriptionPlaceholder": "Contoh: Penyesuaian kas kecil bulan Juli",
-      "linesTitle": "Baris Jurnal",
+      "linesTitle": "Baris jurnal",
       "account": "Akun",
       "selectAccount": "Pilih akun…",
       "searchAccount": "Cari kode atau nama akun…",
@@ -7888,14 +8488,21 @@
       "credit": "Kredit",
       "memo": "Memo",
       "memoPlaceholder": "Memo baris {n} (opsional)",
-      "addLine": "Tambah Baris",
-      "totalDebit": "Total Debit",
-      "totalCredit": "Total Kredit",
+      "addLine": "Tambah baris",
+      "totalDebit": "Total debit",
+      "totalCredit": "Total kredit",
       "difference": "Selisih",
       "balanced": "Seimbang",
       "unbalanced": "Belum seimbang",
-      "submit": "Posting Jurnal",
-      "submitting": "Memposting…"
+      "submit": "Posting jurnal",
+      "submitting": "Memposting…",
+      "noAmount": "Belum ada nominal",
+      "reason": {
+        "description": "Isi deskripsi jurnal.",
+        "lineAccount": "Pilih akun di baris {n}.",
+        "twoLines": "Isi akun dan nominal di minimal dua baris.",
+        "unbalanced": "Samakan total debit dan kredit."
+      }
     },
     "createSuccess": "Jurnal berhasil diposting.",
     "error": {
@@ -7907,15 +8514,15 @@
       "UNKNOWN": "Gagal memposting jurnal. Silakan coba lagi."
     },
     "ledger": {
-      "title": "Buku Besar",
+      "title": "Buku besar",
       "back": "Kembali",
-      "openingBalance": "Saldo Awal",
-      "closingBalance": "Saldo Akhir",
+      "openingBalance": "Saldo awal",
+      "closingBalance": "Saldo akhir",
       "colDate": "Tanggal",
       "colDescription": "Deskripsi",
       "colDebit": "Debit",
       "colCredit": "Kredit",
-      "colRunningBalance": "Saldo Berjalan",
+      "colRunningBalance": "Saldo berjalan",
       "dateFrom": "Dari tanggal",
       "dateTo": "Sampai tanggal",
       "reset": "Reset",
@@ -7937,6 +8544,40 @@
       "VAN_RECONCILE": "Rekonsiliasi van",
       "SUPPLIER_PAYMENT": "Pembayaran pemasok",
       "SUPPLIER_PAYMENT_REVERSAL": "Pembatalan pembayaran pemasok"
+    },
+    "tabPosted": "Terposting",
+    "tabPending": "Tertunda",
+    "tertunda": {
+      "listTitle": "Jurnal tertunda",
+      "empty": "Tidak ada jurnal tertunda.",
+      "colDocument": "Dokumen",
+      "colReason": "Sebab",
+      "colRecorded": "Dicatat",
+      "colAction": "Tindakan",
+      "openDocument": "Buka dokumen",
+      "unknownDocument": "Dokumen tidak dikenali",
+      "actionMapping": "Petakan akun",
+      "actionRetry": "Posting ulang",
+      "automatic": "Diposting ulang otomatis tiap 5 menit",
+      "sebab": {
+        "UNMAPPED_ROLE": "Akun untuk peran {peran} belum dipetakan",
+        "UNMAPPED_ROLE_TANPA_PERAN": "Akun untuk salah satu peran posting belum dipetakan",
+        "UNBALANCED": "Debit dan kredit jurnal tidak seimbang",
+        "NON_POSTABLE_ACCOUNT": "Akun yang dipetakan tidak aktif atau masih punya sub-akun",
+        "ERROR": "Terjadi galat saat memposting — coba posting ulang",
+        "NOTHING_TO_POST": "PO ditandai lunas, tetapi belum ada utang yang tercatat untuknya",
+        "AP_ACCOUNT_MISMATCH": "Jurnal penerimaan barang PO ini memakai akun utang yang berbeda dari pemetaan sekarang",
+        "GRN_APPROVAL_PENDING": "Penerimaan barang berlebih masih menunggu keputusan pemilik",
+        "GRN_JOURNALS_INCOMPLETE": "Sebagian penerimaan barang PO ini belum berjurnal",
+        "GRN_REVERSAL_MISSING": "Penerimaan barang yang ditolak belum dibalik jurnalnya",
+        "PAYMENT_SUPERSEDED": "Jurnal pembayaran lama dengan nilai berbeda masih berdiri",
+        "PO_IS_PAID": "PO masih ditandai lunas",
+        "ORIGINAL_SALE_NOT_JOURNALED_YET": "Penjualan asalnya belum dijurnal",
+        "ORIGINAL_SALE_UNLINKED": "Retur belum tertaut ke pesanan penjualannya",
+        "ORIGINAL_SALE_OUTSIDE_LEDGER": "Penjualan asalnya di luar buku besar (sebelum tanggal mulai)",
+        "GL_CUTOVER_NOT_CONFIGURED": "Tanggal mulai buku besar belum ditetapkan",
+        "LAIN": "Gagal diposting karena sebab lain"
+      }
     }
   },
   "financeReports": {
@@ -7952,11 +8593,11 @@
       "colCredit": "Kredit",
       "colBalance": "Saldo",
       "totalRow": "Total",
-      "balancedNote": "Debit dan kredit seimbang. Setiap jurnal sudah divalidasi seimbang saat diposting, jadi kesamaan ini memang diharapkan — pemeriksaan ini hanya mendeteksi data yang rusak.",
+      "balancedNote": "Debit dan kredit seimbang.",
       "unbalancedNote": "Debit dan kredit TIDAK seimbang. Ini menandakan data jurnal rusak — periksa buku besar."
     },
     "incomeStatement": {
-      "pageTitle": "Laporan Laba Rugi",
+      "pageTitle": "Laba Rugi",
       "subtitle": "Pendapatan, harga pokok, dan beban untuk periode terpilih.",
       "cardTitle": "Laba Rugi",
       "sectionPendapatan": "Pendapatan",
@@ -7969,7 +8610,8 @@
       "labaBersih": "Laba Bersih",
       "sectionEmpty": "Belum ada akun bersaldo pada bagian ini.",
       "coverageTitle": "Cakupan data",
-      "coverageBody": "Laporan ini hanya mencakup transaksi yang sudah menghasilkan jurnal: penjualan marketplace, penjualan kanvas, retur, settlement, penerimaan barang (GRN), hasil produksi, penyesuaian stock opname, pembayaran ke pemasok, dan jurnal manual. BELUM termasuk: penjualan lapangan (putus) dan penjualan SPG."
+      "coverageBody": "Laporan ini hanya mencakup transaksi yang sudah menghasilkan jurnal: penjualan marketplace, retur marketplace, settlement, penjualan kanvas, penerimaan barang (GRN), hasil produksi, penyesuaian stock opname, pembayaran ke pemasok, dan jurnal manual. BELUM termasuk: penjualan lapangan (putus) dan nota tagihannya, pelunasan piutang (BKM dan giro), retur toko (NRI), konsinyasi (kiriman, penjualan toko, pembayaran toko, komisi), penjualan SPG, barang hilang, tukar barang, penyesuaian stok manual, retur ke pemasok, dan biaya perjalanan sales.",
+      "empty": "Belum ada jurnal pendapatan, HPP, atau beban pada periode ini."
     },
     "balanceSheet": {
       "pageTitle": "Neraca",
@@ -7984,13 +8626,14 @@
       "unclosedEarnings": "Laba (Rugi) Belum Ditutup",
       "totalLiabilitasEkuitas": "Total Liabilitas dan Ekuitas",
       "sectionEmpty": "Belum ada akun bersaldo pada bagian ini.",
-      "balancedNote": "Aset seimbang dengan Liabilitas + Ekuitas. Baris \"Laba (Rugi) Belum Ditutup\" menggantikan jurnal penutup yang belum ada; karena setiap jurnal sudah seimbang saat diposting, kesamaan ini memang diharapkan.",
+      "balancedNote": "Aset seimbang dengan liabilitas + ekuitas.",
       "unbalancedNote": "Aset TIDAK seimbang dengan Liabilitas + Ekuitas. Ini menandakan data jurnal rusak — periksa buku besar.",
       "openingTitle": "Saldo awal belum dicatat",
-      "openingBody": "Jurnal paling awal bertanggal {date}. Posisi ini hanya mencakup jurnal sejak tanggal tersebut. Catat jurnal manual saldo awal (kas, piutang, persediaan, utang, ekuitas) bertanggal sebelum itu agar neraca mencerminkan posisi sebenarnya."
+      "openingBody": "Jurnal paling awal bertanggal {date}. Posisi ini hanya mencakup jurnal sejak tanggal tersebut. Catat jurnal manual saldo awal (kas, piutang, persediaan, utang, ekuitas) bertanggal sebelum itu agar neraca mencerminkan posisi sebenarnya.",
+      "empty": "Belum ada jurnal sampai tanggal ini."
     },
     "cashFlow": {
-      "pageTitle": "Laporan Arus Kas",
+      "pageTitle": "Arus Kas",
       "subtitle": "Arus kas masuk dan keluar untuk periode terpilih, metode tidak langsung.",
       "cardTitle": "Arus Kas",
       "sectionOperasional": "Arus Kas dari Aktivitas Operasional",
@@ -8013,10 +8656,10 @@
       "unclassifiedTitle": "Ada akun yang belum diklasifikasi",
       "unclassifiedBody": "{count} akun belum ditetapkan masuk aktivitas operasional, investasi, atau pendanaan, sehingga ditampilkan terpisah. Total tetap benar.",
       "unclassifiedCta": "Buka Klasifikasi Arus Kas",
-      "reconciledNote": "Perubahan kas hasil perhitungan sama dengan pergerakan saldo kas sebenarnya. Karena setiap jurnal sudah divalidasi seimbang saat diposting, kesamaan ini memang diharapkan — pemeriksaan ini hanya mendeteksi data yang rusak.",
+      "reconciledNote": "Perubahan kas cocok dengan pergerakan saldo kas.",
       "unreconciledNote": "Perubahan kas hasil perhitungan TIDAK sama dengan pergerakan saldo kas sebenarnya. Ini menandakan data jurnal rusak — periksa buku besar.",
       "coverageTitle": "Cakupan data",
-      "coverageBody": "Laporan ini disusun dari jurnal buku besar dengan metode tidak langsung. Cakupannya sama dengan Laba Rugi: BELUM termasuk penjualan lapangan (putus/konsi) dan penjualan SPG.",
+      "coverageBody": "Laporan ini disusun dari jurnal buku besar dengan metode tidak langsung. Cakupannya sama dengan Laba Rugi: BELUM termasuk penjualan lapangan (putus) dan nota tagihannya, pelunasan piutang (BKM dan giro), retur toko (NRI), konsinyasi (kiriman, penjualan toko, pembayaran toko, komisi), penjualan SPG, barang hilang, tukar barang, penyesuaian stok manual, retur ke pemasok, dan biaya perjalanan sales.",
       "colCurrent": "Periode ini",
       "colPrevious": "Periode sebelumnya",
       "colDelta": "Selisih",
@@ -8034,11 +8677,16 @@
       "print": "Cetak / PDF",
       "started": "Unduhan dimulai",
       "failed": "Ekspor gagal"
+    },
+    "periode": {
+      "range": "Periode {dari} – {sampai}",
+      "sinceStart": "Periode sejak awal – {sampai}",
+      "asOf": "Per {tanggal}"
     }
   },
   "financeAccountMapping": {
     "title": "Pemetaan Akun",
-    "cardTitle": "Pemetaan Akun Posting",
+    "cardTitle": "Pemetaan akun posting",
     "notSet": "Belum diatur",
     "savedToast": "Pemetaan akun berhasil disimpan.",
     "clear": "Hapus pemetaan",
@@ -8097,24 +8745,34 @@
       "NON_POSTABLE_ACCOUNT": "Akun yang dipilih tidak dapat diposting (bukan akun aktif tanpa turunan).",
       "WRONG_ACCOUNT_TYPE": "Akun ini bertipe salah untuk peran tersebut — mis. peran Utang Usaha harus dipetakan ke akun bertipe LIABILITAS."
     },
-    "subtitle": "Tentukan akun buku besar untuk setiap peran posting. Jurnal otomatis hanya bisa dibuat untuk peran yang sudah dipetakan."
+    "subtitle": "Tentukan akun buku besar untuk setiap peran posting. Jurnal otomatis hanya bisa dibuat untuk peran yang sudah dipetakan.",
+    "summary": "{mapped} dari {total} peran terpetakan · peran wajib {required}/{requiredTotal}",
+    "openCoa": "Bagan akun",
+    "badgeFallback": "Cadangan",
+    "badgeOptional": "Opsional",
+    "noValidAccount": "Belum ada akun bertipe {expected}.",
+    "createInCoa": "Buat di Bagan Akun",
+    "replaceTitle": "Ganti akun peran ini?",
+    "replaceBody": "Jurnal otomatis berikutnya untuk peran {role} akan diposting ke {to}, bukan lagi ke {from}. Jurnal yang sudah diposting tidak berubah.",
+    "replaceCancel": "Batal",
+    "replaceConfirm": "Ganti akun"
   },
   "financeCashFlowSections": {
     "title": "Klasifikasi Arus Kas",
     "subtitle": "Tetapkan setiap akun neraca ke aktivitas operasional, investasi, atau pendanaan.",
-    "cardTitle": "Klasifikasi Akun",
+    "cardTitle": "Klasifikasi akun",
     "searchPlaceholder": "Cari kode atau nama akun…",
     "searchSection": "Cari klasifikasi…",
     "noSections": "Tidak ada klasifikasi.",
     "empty": "Tidak ada akun yang cocok.",
     "notSet": "Belum ditetapkan",
-    "clear": "Kembalikan ke default",
+    "clear": "Kembalikan ke bawaan",
     "unclassifiedBadge": "Belum diklasifikasi",
     "derivedPlaceholder": "Bawaan: {section}",
-    "derivedHint": "Mengikuti default: {section}.",
+    "derivedHint": "Mengikuti bawaan: {section}.",
     "unclassifiedBanner": "{count} akun belum diklasifikasi. Akun ini tetap dihitung dalam total arus kas, tetapi ditampilkan terpisah pada laporan.",
     "savedToast": "Klasifikasi disimpan.",
-    "clearedToast": "Klasifikasi dikembalikan ke default.",
+    "clearedToast": "Klasifikasi dikembalikan ke bawaan.",
     "col": {
       "code": "Kode",
       "name": "Nama Akun",
@@ -8136,7 +8794,7 @@
     }
   },
   "leadTime": {
-    "title": "Lead Time",
+    "title": "Lead time",
     "subtitle": "Daftar proses (pustaka) & papan untuk memasang proses ke tiap pemasok",
     "tabs": {
       "pustaka": "Pustaka Proses",
@@ -8274,16 +8932,16 @@
   "fakturPajak": {
     "pageTitle": "Faktur Pajak",
     "subtitle": "Pantau dan kelola status faktur pajak untuk setiap pengiriman putus.",
-    "listTitle": "Daftar Faktur Pajak",
+    "listTitle": "Daftar faktur pajak",
     "searchPlaceholder": "Cari nomor nota, nama toko, atau nomor faktur...",
     "reset": "Reset",
     "statusAll": "Semua",
-    "statusPending": "Menunggu",
-    "statusCreated": "Dibuat",
-    "statusNotRequired": "Tidak Perlu",
+    "statusPending": "Belum ada faktur",
+    "statusCreated": "Faktur terbit",
+    "statusNotRequired": "Tidak perlu faktur",
     "colDocNo": "No. Nota",
     "colStore": "Toko",
-    "colInvoiceDate": "Tanggal Faktur",
+    "colInvoiceDate": "Tanggal nota",
     "colDueDate": "Jatuh Tempo",
     "colTotal": "Total",
     "colPrinted": "Dicetak",
@@ -8295,16 +8953,16 @@
     "loadErrorRetry": "Muat Ulang",
     "actionMarkCreated": "Tandai faktur dibuat",
     "actionNotRequired": "Tidak perlu faktur",
-    "actionRevert": "Kembalikan ke menunggu",
-    "markCreatedTitle": "Tandai Faktur Dibuat",
+    "actionRevert": "Kembalikan status",
+    "markCreatedTitle": "Tandai faktur dibuat",
     "markCreatedDescription": "Tandai faktur pajak untuk nota {docNo} sebagai sudah dibuat.",
-    "markCreatedFieldLabel": "Nomor Faktur",
+    "markCreatedFieldLabel": "Nomor faktur",
     "markCreatedFieldPlaceholder": "Contoh: 010.001-26.00000001",
     "markCreatedFieldRequired": "Nomor faktur wajib diisi.",
     "markCreatedSubmit": "Simpan",
     "markCreatedSubmitting": "Menyimpan...",
     "markCreatedSuccess": "Faktur pajak berhasil ditandai sebagai dibuat.",
-    "notRequiredTitle": "Tandai Tidak Perlu Faktur",
+    "notRequiredTitle": "Tandai tidak perlu faktur",
     "notRequiredDescription": "Tandai nota {docNo} sebagai tidak memerlukan faktur pajak. Alasan wajib diisi.",
     "notRequiredFieldLabel": "Alasan",
     "notRequiredFieldPlaceholder": "Jelaskan alasan faktur tidak diperlukan...",
@@ -8312,14 +8970,14 @@
     "notRequiredSubmit": "Simpan",
     "notRequiredSubmitting": "Menyimpan...",
     "notRequiredSuccess": "Nota ditandai tidak memerlukan faktur pajak.",
-    "revertTitle": "Kembalikan ke Menunggu",
-    "revertDescription": "Kembalikan status faktur pajak nota {docNo} ke menunggu. Alasan wajib diisi.",
+    "revertTitle": "Kembalikan ke belum ada faktur",
+    "revertDescription": "Kembalikan status faktur pajak nota {docNo} ke belum ada faktur. Alasan wajib diisi.",
     "revertFieldLabel": "Alasan",
-    "revertFieldPlaceholder": "Jelaskan alasan pengembalian ke menunggu...",
+    "revertFieldPlaceholder": "Jelaskan alasan status dikembalikan...",
     "revertFieldRequired": "Alasan wajib diisi.",
     "revertSubmit": "Kembalikan",
     "revertSubmitting": "Menyimpan...",
-    "revertToPendingSuccess": "Status faktur pajak dikembalikan ke menunggu.",
+    "revertToPendingSuccess": "Status faktur pajak dikembalikan ke belum ada faktur.",
     "errGeneric": "Terjadi kesalahan. Silakan coba lagi.",
     "actionErr": {
       "FORBIDDEN": "Anda tidak memiliki izin untuk melakukan aksi ini.",
@@ -8331,7 +8989,8 @@
       "NOMOR_FAKTUR_GANDA": "Nomor seri faktur pajak ini sudah dipakai di nota lain.",
       "NOMOR_FAKTUR_FORMAT": "Nomor seri faktur pajak harus 13–17 digit angka, misalnya 010.000-24.00000001 (e-Faktur) atau 17 digit Coretax."
     },
-    "nomorFakturGandaDi": "Nomor seri faktur pajak ini sudah dipakai di nota {docNo}."
+    "nomorFakturGandaDi": "Nomor seri faktur pajak ini sudah dipakai di nota {docNo}.",
+    "actionMore": "Aksi lain"
   },
   "dashboardActions": {
     "title": "{count} hal perlu ditindaklanjuti",
@@ -8339,7 +8998,7 @@
     "emptyTitle": "Tidak ada yang menunggu",
     "emptyBody": "Semua persetujuan, pengiriman, dan pencatatan sudah beres hari ini.",
     "overduePOs": "PO terlambat — tim pengadaan",
-    "oversold": "Barang terjual melebihi stok — tim gudang",
+    "oversold": "Stok minus — tim gudang",
     "journalPending": "Jurnal gagal diposting — tim keuangan",
     "fieldSalesPendingApproval": "Order salesman menunggu persetujuan Anda",
     "unshippedOrders": "Pesanan marketplace belum dikirim",
@@ -8366,7 +9025,9 @@
     "claimCorrectionsPending": "Sales minta koreksi BKM",
     "returnCorrectionsPending": "Sales minta koreksi nota retur",
     "shiftSwapsPending": "Tukar shift SPG menunggu keputusan",
-    "stockRequestsUnheld": "Permintaan stok SPG di toko tanpa pemegang"
+    "stockRequestsUnheld": "Permintaan stok SPG di toko tanpa pemegang",
+    "amountPoValue": "nilai PO {nilai}",
+    "claimsAwaitingOthers": "BKM Anda menunggu admin keuangan lain"
   },
   "statuses": {
     "unknown": "Tidak diketahui",
@@ -8399,7 +9060,7 @@
     "taxPending": "Belum ada faktur",
     "taxCreated": "Faktur terbit",
     "taxNotRequired": "Tidak perlu faktur",
-    "woIssued": "Sudah dikeluarkan",
+    "woIssued": "Diterbitkan",
     "woInProduction": "Sedang diproduksi",
     "woPartial": "Selesai sebagian"
   },
@@ -8497,7 +9158,10 @@
     "docNo": "No. Nota",
     "deliveredAt": "Tanggal Kirim",
     "dueDate": "Jatuh Tempo",
-    "taxInvoice": "Faktur Pajak"
+    "taxInvoice": "Faktur Pajak",
+    "hintLinkNota": "Isi {count} nomor faktur pajak yang belum ada",
+    "hintLinkRetur": "Selesaikan {count} retur pemasok yang menggantung",
+    "hintLinkWo": "Lihat {count} perintah kerja yang masih berjalan"
   },
   "receivables": {
     "pageTitle": "Faktur & Piutang",
@@ -8516,20 +9180,27 @@
     "sourceIMPORT": "impor",
     "sourceMANUAL": "manual",
     "stateLunas": "Lunas",
-    "stateKlaim": "Klaim transfer",
+    "stateKlaim": "Menunggu verifikasi",
     "stateTertahan": "Tertahan retur",
     "stateLewat": "Lewat janji bayar",
     "stateTt": "Sudah dikontrabon",
-    "stateBelum": "Siap dikontrabon",
+    "stateBelum": "Belum dikontrabon",
     "reasonLunas": "Lunas — sudah diverifikasi admin keuangan.",
     "reasonKlaim": "Anda melapor transfer lewat {no}. Admin belum melihat uangnya masuk rekening, jadi belum dihitung lunas.",
     "reasonTertahan": "Tertahan retur {nilai} — potongan retur belum cocok dengan barang yang diterima gudang. Sisa faktur belum bisa nol sampai selisih beres.",
     "reasonLewat": "Toko janji bayar {tgl} — sudah lewat {hari} hari dan uang belum masuk. Tagih ulang dan minta tanggal baru.",
     "reasonTt": "Sudah dikontrabon ({no}). Toko janji bayar {tgl} — tunggu tanggalnya.",
-    "reasonBelum": "Siap dikontrabon — tidak ada retur menggantung dan tidak ada tunggakan.",
+    "reasonBelum": "Belum jatuh tempo dan belum dikontrabon — tidak ada retur menggantung.",
     "import": "Impor faktur",
     "manual": "Faktur manual",
-    "print": "Cetak"
+    "print": "Cetak",
+    "reasonJatuhTempo": "Jatuh tempo {tgl} — sudah lewat {hari} hari dan belum dikontrabon. Tagih ke toko atau buat kontrabon.",
+    "reasonKlaimKantor": "Dilaporkan {pelapor} lewat {no}. Belum dihitung lunas sampai admin keuangan melihat uangnya masuk rekening.",
+    "filterOpen": "Belum lunas",
+    "filterLabel": "Saring keadaan faktur",
+    "searchPlaceholder": "Cari no. faktur, toko, atau salesman",
+    "emptyFilteredTitle": "Tidak ada faktur dengan saringan ini",
+    "stateJatuhTempo": "Lewat jatuh tempo"
   },
   "payments": {
     "pageTitle": "Pelunasan & Klaim",
@@ -8700,14 +9371,24 @@
     "errSUDAH_DIGANTI": "BKM lama sudah punya pengganti — uang yang sama tidak bisa dilaporkan dua kali.",
     "errTOKO_TIDAK_DIIZINKAN": "Faktur ini bukan tagihan Anda — tokonya dipegang sales lain. Minta kantor menugaskan penagihannya kepada Anda.",
     "errPEMERIKSA_SAMA": "Anda yang melaporkan atau mencatatkan BKM ini, jadi tidak bisa memutuskannya sendiri. Minta admin keuangan lain memeriksanya.",
-    "errRETUR_TERPAKAI": "Nota retur itu sudah dipotongkan di BKM lain sebesar nilainya. Pilih nota lain atau kurangi potongannya sampai sebesar sisa yang tertulis.",
+    "errRETUR_TERPAKAI": "Potongan nota retur itu melebihi yang masih boleh dipotong: sudah dipakai di BKM lain, atau selisihnya sudah ditetapkan ke toko sehingga yang boleh dipotong tinggal barang yang sampai. Pilih nota lain atau kurangi potongannya sampai sebesar sisa yang tertulis.",
     "errFOTO_BUKAN_MILIK": "Foto bukti ini diunggah orang lain. Ambil foto bukti Anda sendiri.",
     "errVerifikasiMELEBIHI_SISA": "Sejak BKM ini dilaporkan, fakturnya sudah dilunasi BKM lain, jadi sisanya kini kurang dari nilai di BKM ini. Tolak BKM ini atau minta sales membetulkan nominalnya.",
     "pemeriksaSamaSingkat": "BKM Anda sendiri — admin keuangan lain yang memutuskan.",
     "filterLabel": "Saring BKM",
     "filterAll": "Semua",
     "filterKoreksi": "Minta koreksi",
-    "emptyFilteredTitle": "Tidak ada BKM dengan saringan ini"
+    "emptyFilteredTitle": "Tidak ada BKM dengan saringan ini",
+    "errFOTO_SUDAH_DIPAKAI": "Foto bukti ini sama persis dengan foto milik orang lain yang sudah dipakai laporan lain. Ambil foto bukti Anda sendiri.",
+    "errRETUR_DITAHAN": "Sebagian sisa faktur ini masih ditahan potongan retur di BKM lain yang sudah terverifikasi. Bagian itu lepas sendiri begitu returnya beres, jadi tidak boleh dibayar dua kali — kurangi nilai pelunasannya sampai sisa yang tidak ditahan.",
+    "alreadyReported": "Sudah dilaporkan di {bkm} — menunggu verifikasi.",
+    "alreadyReportedTitle": "{no} sudah dilaporkan",
+    "alreadyReportedBody": "Faktur ini sudah ada di {bkm} yang masih menunggu verifikasi. Laporkan lagi hanya kalau ini pembayaran yang berbeda.",
+    "alreadyReportedCancel": "Jangan dicentang",
+    "alreadyReportedConfirm": "Tetap laporkan",
+    "searchPlaceholder": "Cari no. BKM, toko, salesman, atau no. giro",
+    "deductionsCount": "{count} potongan",
+    "heldByReturn": "ditahan retur {value}"
   },
   "collections": {
     "pageTitle": "Kontrabon / Tanda Terima",
@@ -8782,7 +9463,7 @@
     "noPhoto": "Belum ada foto lembar tanda terima.",
     "okPhoto": "Foto tersimpan.",
     "claimsTitle": "Pelunasan atas kontrabon ini",
-    "claimsEmpty": "Belum ada laporan pelunasan yang menunjuk kontrabon ini.",
+    "claimsEmpty": "Belum ada laporan pelunasan atas faktur-faktur kontrabon ini.",
     "colClaim": "No. BKM",
     "colReceived": "Diterima",
     "fromField": "Dari lapangan",
@@ -8806,7 +9487,16 @@
     "errFOTO_WAJIB": "Foto lembar tanda terima wajib diisi.",
     "errPENERIMA_WAJIB": "Isi nama orang toko yang menerima.",
     "errKUNCI_DIPAKAI": "Laporan ini bentrok dengan laporan sales lain. Buat laporan baru.",
-    "errFOTO_BUKAN_MILIK": "Foto lembar tanda terima ini diunggah orang lain. Ambil foto Anda sendiri."
+    "errFOTO_BUKAN_MILIK": "Foto lembar tanda terima ini diunggah orang lain. Ambil foto Anda sendiri.",
+    "errFOTO_SUDAH_DIPAKAI": "Foto lembar tanda terima ini sama persis dengan foto milik orang lain yang sudah dipakai laporan lain. Ambil foto Anda sendiri.",
+    "searchPlaceholder": "Cari no. kontrabon, toko, atau penerima",
+    "filterRunning": "Berjalan ({count})",
+    "emptyFilteredTitle": "Tidak ada kontrabon dengan saringan ini",
+    "whyStore": "Pilih toko dulu.",
+    "whyInvoices": "Centang minimal satu faktur.",
+    "photoKeptUntilReplaced": "Foto lama tetap tersimpan sampai Anda memilih foto pengganti.",
+    "photoKeepOld": "Tampilkan lagi",
+    "claimNotLinked": "melunasi faktur di TT ini, tidak menunjuk TT-nya"
   },
   "storeReturns": {
     "pageTitle": "Retur & Pencocokan",
@@ -9019,7 +9709,7 @@
     "errADA_BARIS_RUSAK": "Nota ini mengirim balik barang rusak (dari kiriman atau dari pembeli) milik toko asalnya, jadi tidak bisa dipindah toko. Batalkan lalu catat ulang di toko yang benar.",
     "countBodyButa": "{doc} — hitung barang yang benar-benar sampai. Klaim toko sengaja tidak ditampilkan di sini.",
     "receivedAtLabel": "Tanggal barang diterima",
-    "assignTokoInvoiceHint": "Selisih {value} akan menjadi faktur baru BEBAN/{doc} atas nama toko, jatuh tempo menurut tempo toko. Faktur aslinya dilepas.",
+    "assignTokoInvoiceHint": "Toko ditagih sebesar yang sudah ia potong melebihi barang yang sampai — paling banyak {value} — lewat faktur baru BEBAN/{doc}, jatuh tempo menurut tempo toko. Kalau toko belum memotong nota ini, tidak ada faktur, dan nota ini sesudahnya hanya boleh dipotong sebesar barang yang sampai.",
     "chargeInvoice": "Ditagih lewat faktur {no} · sisa {sisa}.",
     "errPENGHITUNG_SAMA_PELAPOR": "Yang menghitung adalah pelapor nota ini. Hitungan harus dicatat orang lain.",
     "errHITUNGAN_KOSONG": "Masih ada baris yang jumlahnya kosong. Ketik 0 kalau barangnya tidak ada.",
@@ -9028,7 +9718,20 @@
     "errPIUTANG_BEBAN_SUDAH_DITAGIH": "Faktur beban toko ini sudah masuk penagihan (BKM atau kontrabon, apa pun statusnya, atau tugas tagih yang masih terbuka), jadi tidak bisa dihapus dan bebannya tidak bisa lagi dialihkan dari toko.",
     "errDITAGIH_LEWAT_PIUTANG": "Beban toko ditagih lewat fakturnya. Lunasnya mengikuti BKM yang terverifikasi, bukan ditandai di sini.",
     "errFOTO_BUKAN_MILIK": "Foto nota retur ini diunggah orang lain. Ambil foto nota Anda sendiri.",
-    "filterKoreksi": "Minta koreksi"
+    "filterKoreksi": "Minta koreksi",
+    "errFOTO_SUDAH_DIPAKAI": "Foto nota retur ini sama persis dengan foto milik orang lain yang sudah dipakai laporan lain. Ambil foto nota Anda sendiri.",
+    "filterAll": "Semua",
+    "filterLabel": "Saring langkah retur",
+    "searchPlaceholder": "Cari no. nota, toko, atau salesman",
+    "emptyFilteredTitle": "Tidak ada retur dengan saringan ini",
+    "claimHiddenBlind": "Disembunyikan sampai dihitung",
+    "countOwnNote": "Anda pelapor nota ini. Minta rekan gudang yang menghitungnya.",
+    "claimHiddenTitle": "Klaim toko disembunyikan",
+    "claimHiddenBody": "Anda boleh menghitung nota ini, jadi klaim toko, fotonya, dan potongannya tidak ditampilkan sampai gudang menyimpan hitungannya.",
+    "assignTokoEstimate": "Ditagih ke toko bila diputuskan sekarang: {value}.",
+    "assignTokoNothing": "Toko belum memotong melebihi barang yang sampai — tidak ada yang ditagih ke toko.",
+    "chargeTokoBilled": "Ditagih ke toko: {value}.",
+    "markSettledNothingBilled": "Tidak ada yang ditagih ke toko, jadi tidak ada yang bisa ditandai sudah diganti."
   },
   "foto": {
     "pick": "Ambil atau pilih foto",
@@ -9122,7 +9825,9 @@
     "errKolomWajib": "Kolom nomor faktur dan nilai wajib ada. Periksa judul kolomnya.",
     "errBacaBerkas": "Berkasnya tidak bisa dibaca. Pastikan formatnya Excel atau CSV.",
     "errTANPA_AKSES": "Anda tidak punya akses mengimpor faktur.",
-    "errGAGAL": "Gagal menyimpan. Coba lagi."
+    "errGAGAL": "Gagal menyimpan. Coba lagi.",
+    "downloadSample": "Unduh contoh berkas",
+    "columnsRequired": "Kolom wajib: no. faktur dan nilai. Juga dikenali: kode toko, nama toko, tanggal faktur, jatuh tempo, sisa, sales."
   },
   "fakturManual": {
     "title": "Faktur manual",
@@ -9170,8 +9875,8 @@
     "todoTitle": "Perlu tindakan hari ini",
     "todoHint": "Terurut dari yang paling berisiko. Klik barisnya untuk mengerjakannya.",
     "todoEmptyTitle": "Tidak ada yang menggantung",
-    "todoEmptyBody": "Tidak ada faktur lewat tempo, klaim menunggu, atau retur belum tuntas.",
-    "todo_lewat": "Lewat tempo",
+    "todoEmptyBody": "Tidak ada faktur lewat janji bayar atau jatuh tempo, klaim menunggu, atau retur belum tuntas.",
+    "todo_lewat": "Lewat janji bayar",
     "todo_klaim": "Menunggu verifikasi",
     "todo_tertahan": "Tertahan retur",
     "todo_cek": "Belum dicek gudang",
@@ -9192,17 +9897,30 @@
     "photoClean": "Tidak ada foto menganggur.",
     "invoiceCount": "{count} faktur",
     "state_lunas": "Lunas",
-    "state_klaim": "Sudah dilapor",
+    "state_klaim": "Menunggu verifikasi",
     "state_tertahan": "Tertahan retur",
     "state_lewat": "Lewat janji bayar",
     "state_tt": "Sudah dikontrabon",
-    "state_belum": "Belum ditagih",
+    "state_belum": "Belum dikontrabon",
     "why_lewat_today": "{toko} — janji bayarnya hari ini dan uang belum masuk.",
     "why_klaim_today": "{toko} — sales baru lapor hari ini, belum dicocokkan dengan mutasi.",
     "why_tertahan_today": "{toko} — potongan retur belum cocok dengan barang yang diterima gudang.",
     "why_cek_today": "{toko} — barang belum tercatat masuk gudang.",
     "why_keputusan_today": "{toko} — gudang menerima kurang dari klaim, belum ada yang menanggung.",
-    "why_jodoh_today": "Barang datang tanpa nota toko, perlu dijodohkan."
+    "why_jodoh_today": "Barang datang tanpa nota toko, perlu dijodohkan.",
+    "kpiDue": "Lewat jatuh tempo",
+    "kpiDueFoot": "{count} faktur belum dikontrabon",
+    "todo_jatuh_tempo": "Lewat jatuh tempo",
+    "todo_klaim_oleh": "Menunggu verifikasi",
+    "todo_klaim_milikSaya": "Menunggu rekan Anda",
+    "why_jatuh_tempo": "{toko} — jatuh tempo lewat {hari} hari dan belum dikontrabon.",
+    "why_jatuh_tempo_today": "{toko} — jatuh tempo hari ini dan belum dikontrabon.",
+    "why_klaim_oleh": "{toko} — dilaporkan {pelapor} {hari} hari lalu, belum dicocokkan dengan mutasi.",
+    "why_klaim_oleh_today": "{toko} — dilaporkan {pelapor} hari ini, belum dicocokkan dengan mutasi.",
+    "why_klaim_milikSaya": "{toko} — Anda yang mencatat {hari} hari lalu. Admin keuangan lain yang mencocokkannya dengan mutasi.",
+    "why_klaim_milikSaya_today": "{toko} — Anda yang mencatat hari ini. Admin keuangan lain yang mencocokkannya dengan mutasi.",
+    "state_jatuh_tempo": "Lewat jatuh tempo",
+    "noSalesman": "Tanpa salesman"
   },
   "bebanSelisih": {
     "pageTitle": "Beban Selisih",
@@ -9247,7 +9965,7 @@
     "save": "Simpan",
     "errALASAN_WAJIB": "Tulis alasannya.",
     "invoiceRow": "Faktur {no} · sisa {sisa}",
-    "reassignToTokoHint": "Faktur baru sebesar {value} akan dibuat atas nama toko.",
+    "reassignToTokoHint": "Faktur baru dibuat atas nama toko sebesar yang sudah ia potong melebihi barang yang sampai, paling banyak {value}.",
     "reassignFromTokoHint": "Faktur {no} akan dihapus — hanya bisa selama belum ditagih.",
     "errPENANGGUNG_WAJIB": "Pilih sales yang menanggungnya.",
     "errTOKO_KONSI": "Toko konsinyasi tidak punya piutang, jadi selisihnya tidak bisa ditagihkan ke toko. Catat sebagai barang hilang dengan penanggung toko, atau pilih penanggung lain.",
@@ -9256,7 +9974,9 @@
     "errTOKO_TIDAK_DITEMUKAN": "Tokonya tidak ditemukan.",
     "errTIDAK_ADA_SELISIH": "Tidak ada selisih yang perlu ditanggung.",
     "errNOMOR_BENTROK": "Nomor faktur bentrok dengan yang baru saja dibuat. Coba simpan lagi.",
-    "errNILAI_TIDAK_VALID": "Nilainya tidak sah."
+    "errNILAI_TIDAK_VALID": "Nilainya tidak sah.",
+    "tokoBilledRow": "Ditagih ke toko {value}",
+    "markSettledNothingBilled": "Tidak ada yang ditagih ke toko."
   },
   "pwaPiutang": {
     "pageTitle": "Tagihan",
@@ -9353,7 +10073,8 @@
     "errRETUR_PEMBELI_MELEBIHI": "Jumlah yang dikirim balik melebihi barang rusak dari pembeli yang belum dikirim.",
     "errFOTO_BUKAN_MILIK": "Foto nota retur ini diunggah orang lain. Ambil foto nota Anda sendiri.",
     "dariSpg": "Dari SPG",
-    "dariSpgOleh": "Dari SPG · {nama}"
+    "dariSpgOleh": "Dari SPG · {nama}",
+    "errFOTO_SUDAH_DIPAKAI": "Foto nota retur ini sama persis dengan foto milik orang lain yang sudah dipakai laporan lain. Ambil foto nota Anda sendiri."
   },
   "pwaBeban": {
     "pageTitle": "Beban saya",
@@ -9698,10 +10419,24 @@
       "whyVariant": "Baris {n}: pilih ukuran untuk {item}.",
       "okShippedNo": "Pengiriman {noKirim} tersimpan.",
       "okAlreadyShipped": "Kiriman ini sudah tercatat sebagai {noKirim}. Stok tidak dipotong lagi."
-    }
+    },
+    "turnOfSaja": "Giliran {who}",
+    "unlockTitle": "Buka kunci {doc}?",
+    "unlockBody": "Angka resmi bisa diubah lagi. Potongan promo dan beban barang hilang yang dibekukan dilepas, dan potongan barang hilang dari gaji SPG dikembalikan. Semuanya dihitung ulang saat siklus dikunci lagi.",
+    "unlockCancel": "Batal",
+    "shipPriceInStore": "Harga di toko (per pcs)",
+    "shipItemNameOr": "atau ketik nama di luar katalog",
+    "refillLink": "Isi ulang toko",
+    "searchPlaceholder": "Cari no. konsi, toko, periode, atau no. nota",
+    "filterLabel": "Saring tahap siklus",
+    "filterRunning": "Belum selesai",
+    "filterAll": "Semua",
+    "emptyFilteredTitle": "Tidak ada siklus dengan saringan ini",
+    "whyCycleStore": "Pilih toko dulu.",
+    "whyCycleMonth": "Isi bulan 1 sampai 12."
   },
   "jenisPotongan": {
-    "pageTitle": "Jenis Potongan",
+    "pageTitle": "Jenis potongan",
     "pageDescription": "Daftar potongan yang boleh dipakai pada BKM, beserta aturan yang melekat padanya.",
     "summary": "{count} jenis aktif",
     "add": "Tambah jenis",
@@ -9743,7 +10478,10 @@
     "errTIDAK_DITEMUKAN": "Jenis potongan tidak ditemukan.",
     "errSEDANG_DIPAKAI": "Jenis ini sedang dipakai.",
     "errGAGAL": "Gagal menyimpan. Coba lagi.",
-    "ruleNoManual": "tidak boleh diketik manual"
+    "ruleNoManual": "tidak boleh diketik manual",
+    "cancel": "Batal",
+    "disableTitle": "Nonaktifkan {nama}?",
+    "disableBody": "BKM baru tidak bisa memilih jenis ini lagi. BKM lama yang sudah memakainya tidak berubah."
   },
   "ocr": {
     "title": "Baca dari foto",
@@ -9767,10 +10505,10 @@
     "errGAGAL": "Gagal membaca foto. Ketik manual saja."
   },
   "creative": {
-    "tabContent": "Kalender Konten",
+    "tabContent": "Rencana konten",
     "tabBrief": "Brief KOL",
     "tabKol": "Daftar KOL",
-    "contentTitle": "Kalender Konten",
+    "contentTitle": "Rencana konten",
     "contentDescription": "Rencana konten Instagram dan TikTok — dari ide sampai tayang.",
     "contentMeta": "{count} konten · {scheduled} terjadwal · {late} lewat jadwal",
     "contentEmptyTitle": "Belum ada rencana konten",
@@ -9839,7 +10577,7 @@
     "kpiFeeCommittedHint": "Belum keluar — diakui saat kontennya tayang.",
     "filterAll": "Semua status",
     "save": "Simpan",
-    "saveDraft": "Simpan sebagai draft",
+    "saveDraft": "Simpan sebagai draf",
     "cancelReason": "Alasan pembatalan",
     "confirmMove": "Status brief akan berpindah.",
     "confirmSendWithStock": "{qty} barang akan KELUAR dari gudang sekarang, dan tidak bisa ditarik kembali lewat pembatalan.",
@@ -9849,12 +10587,12 @@
     "okStatusMoved": "Status berpindah.",
     "okSentWithStock": "Brief dikirim. {qty} barang keluar dari gudang.",
     "statusIDE": "Ide",
-    "statusDRAFT": "Draft",
+    "statusDRAFT": "Draf",
     "statusREVIEW": "Review",
     "statusDIJADWALKAN": "Dijadwalkan",
     "statusTAYANG": "Tayang",
     "statusBATAL": "Batal",
-    "briefStatusDRAFT": "Draft",
+    "briefStatusDRAFT": "Draf",
     "briefStatusDIKIRIM": "Dikirim",
     "briefStatusDISETUJUI": "Disetujui",
     "briefStatusKONTEN_DITERIMA": "Konten diterima",
@@ -9917,7 +10655,8 @@
     "selected": "{count} dipilih",
     "deleteManyTitle": "Hapus {count} konten?",
     "deleteManyBody": "Semuanya akan dihapus sekaligus. Gambarnya ikut terhapus otomatis beberapa jam kemudian kalau tidak dipakai konten lain.",
-    "okDeletedMany": "{count} konten dihapus."
+    "okDeletedMany": "{count} konten dihapus.",
+    "gambarHilang": "Gambar hilang — unggah ulang"
   },
   "dateRangePicker": {
     "placeholder": "Pilih rentang tanggal",
@@ -10132,7 +10871,10 @@
       "STORE_RECOMMENDATION_ORDER_CANCELLED": "Pesanan dari rekomendasi dibatalkan — rekomendasi dibuka lagi",
       "STORE_RECOMMENDATION_ORDER_REPLACED": "Pesanan rekomendasi diganti",
       "MATERIAL_ISSUED": "Bahan dikeluarkan ke perintah kerja",
-      "STORE_SHIPMENT_DEPARTED_NOTIFIED": "SPG toko dikabari barang berangkat"
+      "STORE_SHIPMENT_DEPARTED_NOTIFIED": "SPG toko dikabari barang berangkat",
+      "ROLE_CREATED": "Peran dibuat",
+      "WO_MATERIAL_RETURNED": "Bahan perintah kerja kembali ke gudang",
+      "WO_CANCELLED": "Perintah kerja dibatalkan"
     },
     "entities": {
       "ChainTemplate": "Templat rantai proses",
@@ -10216,6 +10958,56 @@
       "DamagedStockMovement": "Gerakan gudang barang rusak",
       "StockLoss": "Barang hilang",
       "RoleDefinition": "Peran"
+    },
+    "fields": {
+      "value": "Nilai",
+      "amount": "Jumlah",
+      "total": "Total",
+      "subtotal": "Subtotal",
+      "qty": "Jumlah barang",
+      "quantity": "Jumlah barang",
+      "price": "Harga",
+      "unitPrice": "Harga satuan",
+      "discount": "Diskon",
+      "discountAmount": "Potongan",
+      "status": "Status",
+      "name": "Nama",
+      "code": "Kode",
+      "sku": "SKU",
+      "note": "Catatan",
+      "notes": "Catatan",
+      "reason": "Alasan",
+      "email": "Email",
+      "phone": "Telepon",
+      "address": "Alamat",
+      "isActive": "Aktif",
+      "storeId": "Toko",
+      "itemId": "Barang",
+      "userId": "Pengguna",
+      "roleId": "Peran",
+      "supplierId": "Pemasok",
+      "salesmanId": "Salesman",
+      "orderId": "Pesanan",
+      "deliveryId": "Pengiriman",
+      "receivableId": "Piutang",
+      "assignedStoreId": "Toko tetap",
+      "invoiceNo": "No. faktur",
+      "invoiceNumber": "No. faktur",
+      "docNo": "No. dokumen",
+      "docNumber": "No. dokumen",
+      "taxInvoiceNumber": "No. faktur pajak",
+      "invoiceDate": "Tanggal faktur",
+      "dueDate": "Jatuh tempo",
+      "date": "Tanggal",
+      "paidAt": "Dibayar pada",
+      "createdAt": "Dibuat pada",
+      "updatedAt": "Diubah pada",
+      "outstanding": "Sisa",
+      "permissions": "Izin",
+      "variantSku": "Varian",
+      "termsType": "Jenis toko",
+      "marginPercent": "Margin (%)",
+      "creditLimit": "Batas kredit"
     }
   },
   "jubelio": {
@@ -10227,7 +11019,7 @@
       "bulkPushConfirm": "Kirim stok semua barang yang terhubung ke Jubelio?",
       "bulkPushOk": "{count} barang masuk antrean. Pengiriman selesai dalam beberapa menit.",
       "bulkPushFailed": "Kirim massal gagal (khusus admin).",
-      "title": "Panggilan API Jubelio",
+      "title": "Pemantauan Jubelio",
       "subtitle": "Catatan panggilan keluar, waktu respons, dan pembatasan laju.",
       "refresh": "Muat ulang",
       "kpiTotal": "Total panggilan ({hours} jam terakhir)",
@@ -10239,10 +11031,10 @@
       "showErrorsOnly": "Tampilkan yang gagal saja",
       "showingErrorsOnly": "Menampilkan yang gagal saja",
       "emptyCalls": "Belum ada panggilan API yang tercatat.",
-      "webhookEvents": "Event webhook masuk",
-      "emptyWebhooks": "Belum ada event webhook.",
-      "outboxEvents": "Antrean kirim (outbox)",
-      "emptyOutbox": "Belum ada event outbox.",
+      "webhookEvents": "Webhook masuk dari Jubelio",
+      "emptyWebhooks": "Belum ada webhook masuk.",
+      "outboxEvents": "Antrean kirim ke Jubelio",
+      "emptyOutbox": "Antrean kirim masih kosong.",
       "retry": "Coba lagi",
       "webhookRetryOk": "Masuk antrean lagi. Diproses dalam 10 menit.",
       "outboxRetryConfirm": "Masukkan baris ini ke antrean lagi? Sistem akan mengirim ulang ke Jubelio.",
@@ -10254,12 +11046,12 @@
       "col": {
         "time": "Waktu",
         "method": "Metode",
-        "path": "Path",
+        "path": "Alamat",
         "status": "Status",
         "latency": "Waktu respons",
         "flags": "Tanda",
-        "event": "Event",
-        "entity": "Entitas",
+        "event": "Kejadian",
+        "entity": "Kiriman",
         "attempts": "Percobaan",
         "reason": "Tanda / alasan",
         "action": "Aksi",
@@ -10284,11 +11076,32 @@
       "status": {
         "RECEIVED": "Diterima",
         "PROCESSING": "Sedang diproses",
-        "PROCESSED": "Selesai diproses",
+        "PROCESSED": "Selesai",
         "SKIPPED": "Dilewati",
         "DEAD": "Gagal permanen",
         "PENDING": "Menunggu",
         "DONE": "Selesai"
+      },
+      "bulkPushDialogTitle": "Kirim stok {count} barang ke Jubelio?",
+      "bulkPushDialogAction": "Kirim stok",
+      "bulkPushCounting": "Menghitung barang yang terhubung…",
+      "bulkPushNone": "Belum ada barang yang terhubung ke Jubelio, jadi tidak ada stok yang dikirim.",
+      "cancel": "Batal",
+      "outboxRetryTitle": "Kirim ulang \"{entity}\" ke Jubelio?",
+      "outboxRetryAction": "Kirim ulang",
+      "event": {
+        "stock": "Perubahan stok",
+        "product": "Perubahan produk",
+        "salesorder": "Pesanan penjualan",
+        "salesreturn": "Retur penjualan"
+      },
+      "entity": {
+        "stock_push": "Kirim stok",
+        "product_push": "Kirim produk",
+        "salesorder_pick": "Pesanan diambil",
+        "salesorder_pack": "Pesanan dikemas",
+        "salesorder_ship": "Pesanan dikirim",
+        "salesreturn_decision_push": "Keputusan retur"
       }
     },
     "settings": {
@@ -10330,7 +11143,10 @@
         "group": "grup {id}",
         "toastPreview": "Pratinjau: {created} dibuat, {updated} diperbarui, {skipped} dilewati, {errors} error",
         "toastSync": "Sinkron: {created} dibuat, {updated} diperbarui, {skipped} dilewati, {errors} error",
-        "syncFailed": "Sinkron gagal: {message}"
+        "syncFailed": "Sinkron gagal: {message}",
+        "importConfirmTitle": "Impor katalog dari Jubelio?",
+        "importConfirmBody": "Barang dari Jubelio akan dibuat atau diperbarui di ERP beserta pemetaan produknya. Jalankan Pratinjau dulu bila belum yakin.",
+        "importConfirmAction": "Impor sekarang"
       },
       "defaults": {
         "title": "Nilai bawaan kirim produk",
@@ -10369,7 +11185,9 @@
           "isActive": "Aktif (bawaan)",
           "useSingleImageSet": "Satu set gambar untuk semua varian",
           "useSerialNumber": "Pakai nomor seri"
-        }
+        },
+        "confirmTitle": "Hitung ulang harga jual?",
+        "confirmAction": "Simpan dan hitung ulang"
       },
       "danger": {
         "heading": "Zona berbahaya",
@@ -10386,7 +11204,8 @@
         "confirm": "Hapus group_id {id} dari Jubelio? Listing marketplace yang tayang dan baris pemetaan lokalnya ikut terhapus. Tindakan ini tidak bisa dibatalkan.",
         "yes": "Ya, hapus",
         "cancel": "Batal",
-        "deleted": "Grup {id} dihapus, beserta {count} pemetaan lokal"
+        "deleted": "Grup {id} dihapus, beserta {count} pemetaan lokal",
+        "confirmTitle": "Hapus produk dari Jubelio?"
       }
     },
     "categories": {
@@ -10436,7 +11255,17 @@
       "confirmBody": "Ini membuat listing produk sungguhan di akun Jubelio produksi. Barang dengan kategori yang belum dipetakan akan dilewati — perbaiki dulu di <categories>halaman kategori Jubelio</categories> supaya tidak ada yang dilewati. Penghapusan per barang tersedia di halaman <settings>pengaturan Jubelio</settings> (bagian Zona berbahaya).",
       "cancel": "Batal",
       "confirm": "Ya, migrasikan",
-      "queued": "{count} barang masuk antrean. Selesai diproses dalam ~5 menit."
+      "queued": "{count} barang masuk antrean. Selesai diproses dalam ~5 menit.",
+      "noCategory": "Belum punya kategori"
+    },
+    "galat": {
+      "TANPA_AKSES": "Anda tidak punya izin untuk tindakan ini, atau sesi Anda sudah berakhir. Masuk ulang lalu coba lagi.",
+      "LAYANAN_MATI": "Layanan integrasi Jubelio tidak bisa dihubungi. Coba lagi beberapa saat lagi; kalau tetap gagal, hubungi pengelola sistem.",
+      "LAYANAN_MENOLAK": "Layanan integrasi Jubelio menolak permintaan ini. Coba lagi; kalau tetap gagal, buka Rincian dan kirimkan ke pengelola sistem.",
+      "BAWAAN_BELUM_ADA": "Pengaturan bawaan kirim produk belum dibuat di basis data. Hubungi pengelola sistem untuk menyiapkannya.",
+      "ISIAN_TIDAK_SAH": "Isian tidak bisa diproses. Periksa lagi pilihan atau nomor yang Anda masukkan.",
+      "GAGAL": "Terjadi kesalahan. Coba lagi; kalau tetap gagal, hubungi pengelola sistem.",
+      "rincian": "Rincian"
     }
   },
   "pwaMenuSpg": {
@@ -10803,8 +11632,9 @@
     "clearedOn": "Cair {date}.",
     "errPEMERIKSA_SAMA": "Anda yang melaporkan atau mencatatkan BKM giro ini, jadi tidak bisa memutuskannya sendiri. Minta admin keuangan lain memeriksanya.",
     "errMELEBIHI_SISA": "Faktur ini sudah dilunasi BKM lain yang terverifikasi lebih dulu. Tolak giro ini atau minta sales membetulkan nominalnya.",
-    "errRETUR_TERPAKAI": "Nota retur di BKM giro ini sudah dipotongkan di BKM lain sebesar nilainya. Tolak salah satu BKM lebih dulu.",
-    "pemeriksaSamaSingkat": "BKM Anda sendiri — admin keuangan lain yang memutuskan."
+    "errRETUR_TERPAKAI": "Nota retur di BKM giro ini sudah dipotong melebihi yang masih boleh dipotong. Tolak salah satu BKM lebih dulu.",
+    "pemeriksaSamaSingkat": "BKM Anda sendiri — admin keuangan lain yang memutuskan.",
+    "errRETUR_DITAHAN": "Faktur di BKM giro ini masih menahan potongan retur dari BKM lain yang sudah terverifikasi, dan nilai giro ini masuk ke bagian yang ditahan itu. Tunggu returnya beres, atau tolak giro ini."
   },
   "storeStockTargets": {
     "title": "Target stok toko",
@@ -10849,7 +11679,9 @@
       "sold30": "Laku 30 hari",
       "min": "Min",
       "max": "Maks",
-      "clear": "Kosongkan"
+      "clear": "Kosongkan",
+      "stockBuku": "Stok (buku SPG)",
+      "stockTitipan": "Titipan (menurut kiriman)"
     },
     "row": {
       "SEBAGIAN": "Isi min dan maks, atau kosongkan keduanya.",
@@ -10954,7 +11786,7 @@
       "dasarTERTAGIH": "Uang tertagih (disarankan)",
       "dasarTERTAGIHIsi": "Dari pelunasan yang sudah diverifikasi keuangan. Omzet yang belum dibayar toko tidak berkomisi.",
       "dasarPENJUALAN": "Omzet",
-      "dasarPENJUALANIsi": "Dari omzet seperti kartu \"Bulan ini\": pengiriman putus, konsinyasi disetujui, penjualan van.",
+      "dasarPENJUALANIsi": "Dari omzet seperti kartu \"Bulan ini\": pengiriman putus, konsinyasi yang laku di toko (harga Elorae), penjualan van.",
       "tarifDasar": "Tarif dasar",
       "tarifDasarIsi": "Persen dari nilai dasar, untuk semua salesman kecuali yang diberi tarif khusus.",
       "bagianPenagih": "Bagian penagih",
@@ -10989,7 +11821,7 @@
       "description": "Perkiraan komisi setiap salesman per bulan dari skema di Pengaturan → Salesman — angka yang sama dengan yang mereka lihat di HP. Bahan kantor untuk menetapkan komisi yang dibayar.",
       "meta": "Total {total} · {count} orang",
       "inactive": "Komisi sedang dimatikan di pengaturan — semua komisi nol.",
-      "exportExcel": "Ekspor Excel",
+      "exportExcel": "Unduh Excel",
       "exportStarted": "Unduhan dimulai",
       "exportFailed": "Ekspor gagal",
       "errForbidden": "Anda tidak punya izin melihat laporan komisi.",
@@ -11163,7 +11995,8 @@
       }
     },
     "semuaBulan": "Semua bulan",
-    "eksporPerBulan": "Pilih satu bulan untuk mengekspor"
+    "eksporPerBulan": "Pilih satu bulan untuk mengekspor",
+    "kosongSemuaJudul": "Belum ada klaim"
   },
   "absensi": {
     "judul": "Absensi",
@@ -11253,10 +12086,11 @@
     },
     "tanpaSwafoto": "Tanpa swafoto",
     "lewatCheckin": "Lewat check-in toko",
-    "metaJamMasuk": "Masuk paling lambat pukul {jam}"
+    "metaJamMasuk": "Masuk paling lambat pukul {jam}",
+    "absensiMati": "Absensi sedang mati"
   },
   "salesLapangan": {
-    "pageTitle": "Kinerja Sales Lapangan",
+    "pageTitle": "Kinerja sales lapangan",
     "pageDescription": "Kunjungan, pesanan, pelunasan dan toko baru setiap sales lapangan. Dipakai atasan untuk melihat siapa yang perlu dibantu; angkanya sama dengan ringkasan yang dilihat sales di HP.",
     "rangeMeta": "{label} · {count} sales",
     "durationHours": "{jam} j {menit} mnt",
@@ -11403,10 +12237,11 @@
       "autoClosed": "ditutup otomatis",
       "open": "belum check-out",
       "distance": "{jarak} m dari titik toko",
-      "openMap": "Buka peta"
+      "openMap": "Buka peta",
+      "distanceTeks": "{jarak} dari titik toko"
     },
     "export": {
-      "excel": "Ekspor Excel",
+      "excel": "Unduh Excel",
       "working": "Menyiapkan…",
       "started": "Berkas Excel diunduh",
       "fileName": "kinerja-sales-lapangan",
@@ -11485,6 +12320,9 @@
         "MENUNGGU": "Belum dikunjungi",
         "IZIN": "Izin/cuti"
       }
+    },
+    "flagDetailTeks": {
+      "LUAR_RADIUS": "{jarak} dari titik toko"
     }
   },
   "pesanToko": {
@@ -11615,7 +12453,11 @@
     "err_ALASAN_WAJIB": "Alasan wajib diisi.",
     "err_TIDAK_DITEMUKAN": "Tugas tidak ditemukan.",
     "err_GAGAL": "Gagal menyimpan. Coba lagi.",
-    "bukanPenagih": "Orang ini bukan pemegang toko ini. Selama tugasnya terbuka, faktur di tugas ini ikut muncul di daftar Tagihan-nya dan ia bisa melapor BKM-nya. Pemegang toko tetap bisa menagihnya juga."
+    "bukanPenagih": "Orang ini bukan pemegang toko ini. Selama tugasnya terbuka, faktur di tugas ini ikut muncul di daftar Tagihan-nya dan ia bisa melapor BKM-nya. Pemegang toko tetap bisa menagihnya juga.",
+    "whyStore": "Pilih toko dulu.",
+    "whyInvoices": "Centang minimal satu faktur.",
+    "whyAssignee": "Pilih petugas yang menagih.",
+    "whyDue": "Tenggat tidak boleh sebelum hari ini."
   },
   "tukarBarang": {
     "judul": "Tukar barang",
@@ -11913,7 +12755,8 @@
       "kolPertanyaan": "Pertanyaan",
       "kolJenis": "Jenis",
       "kolCapaian": "Capaian",
-      "kolDinilai": "Toko dinilai"
+      "kolDinilai": "Toko dinilai",
+      "ringkasTeks": "{hasil} hasil · {toko} toko · rata-rata skor terakhir {rata}"
     },
     "rincian": {
       "kembali": "Kembali ke laporan",
@@ -11944,7 +12787,7 @@
     "judul": "Harga pesaing",
     "deskripsi": "Harga merek lain yang dicatat salesman di toko, untuk melihat posisi harga Elorae per kategori.",
     "ringkas": "{catatan} catatan · {kelompok} kelompok merek × kategori",
-    "eksporExcel": "Ekspor Excel",
+    "eksporExcel": "Unduh Excel",
     "ekspor": {
       "ringkasan": "Ringkasan",
       "rincian": "Rincian"
@@ -12081,7 +12924,8 @@
       "BELUM_DITERIMA": "Pengiriman ini belum punya bukti terima untuk dikoreksi.",
       "KONFLIK": "Bukti terima baru saja diubah orang lain. Muat ulang halaman lalu coba lagi.",
       "TIDAK_BERUBAH": "Tidak ada yang berubah.",
-      "GAGAL": "Terjadi kesalahan. Silakan coba lagi."
+      "GAGAL": "Terjadi kesalahan. Silakan coba lagi.",
+      "FOTO_SUDAH_DIPAKAI": "Foto bukti terima ini sama persis dengan foto milik orang lain yang sudah dipakai laporan lain. Ambil foto Anda sendiri."
     },
     "hp": {
       "judulBagian": "Pengiriman & bukti terima",
@@ -12216,7 +13060,8 @@
       "HUBUNGI_SALESMAN": "Pesanan belum bisa dikirim lewat portal. Silakan hubungi salesman Anda.",
       "TIDAK_SAH": "Isi pesanan tidak sah. Muat ulang halaman lalu coba lagi.",
       "GAGAL": "Pesanan belum terkirim. Coba lagi sebentar lagi, atau hubungi salesman Anda.",
-      "JARINGAN": "Sambungan terputus. Periksa internet Anda lalu tekan Kirim lagi — pesanan tidak akan tercatat dua kali."
+      "JARINGAN": "Sambungan terputus. Periksa internet Anda lalu tekan Kirim lagi — pesanan tidak akan tercatat dua kali.",
+      "TERLALU_SERING": "Terlalu banyak permintaan dalam semenit. Tunggu sebentar, lalu coba lagi."
     },
     "selesai": {
       "judul": "Pesanan terkirim",
@@ -12463,8 +13308,8 @@
     }
   },
   "targetSales": {
-    "judul": "Target Sales",
-    "deskripsi": "Target per kategori dan per barang untuk tiap sales dan SPG, per bulan — di samping target total di Pengaturan → Salesman. Diatur penyetuju pesanan. Capaian sales sama dengan omzet di beranda HP-nya (putus terkirim, konsinyasi disetujui, penjualan van); capaian SPG dari nota penjualannya di toko, dikurangi barang yang dikembalikan pembeli.",
+    "judul": "Target sales",
+    "deskripsi": "Target per kategori dan per barang untuk tiap sales dan SPG, per bulan — di samping target total di Pengaturan → Salesman. Diatur penyetuju pesanan. Capaian sales sama dengan omzet di beranda HP-nya (putus terkirim, konsinyasi yang laku di toko pada harga Elorae, penjualan van) — transfer konsinyasi yang disetujui bukan penjualan; capaian SPG dari nota penjualannya di toko, dikurangi barang yang dikembalikan pembeli.",
     "bulan": "Bulan",
     "sales": "Sales / SPG",
     "semuaSales": "Semua sales & SPG — ringkasan",
@@ -12544,7 +13389,7 @@
     "nonaktif": "Nonaktif — tidak ikut tersalin ke bulan berikutnya",
     "jumlahBaris": "{jumlah} dari paling banyak {maks} target",
     "belumDisimpan": "Ada perubahan yang belum disimpan",
-    "catatanCapaian": "Capaian = putus menurut tanggal kirim, konsinyasi menurut tanggal disetujui, van menurut tanggal jual, sampai hari ini (WIB). Diskon pesanan dibagi ke barangnya sebanding nilai, jadi jumlah semua kategori sama dengan omzet sales. Barang bonus tidak dihitung pcs-nya.",
+    "catatanCapaian": "Capaian = putus menurut tanggal kirim, konsinyasi yang laku di toko menurut tanggal laku pada harga Elorae, van menurut tanggal jual, sampai hari ini (WIB). Diskon pesanan dibagi ke barangnya sebanding nilai, jadi jumlah semua kategori sama dengan omzet sales. Barang bonus tidak dihitung pcs-nya.",
     "salinJudul": "Timpa target bulan ini?",
     "salinIsi": "{jumlah} target bulan lalu akan menggantikan semua target bulan ini untuk sales ini.",
     "salinDrafHilang": "Perubahan yang belum disimpan juga hilang.",
@@ -12559,7 +13404,10 @@
     "tanpaKategori": "Tanpa kategori",
     "total": "Total",
     "namaSpg": "{nama} — SPG {toko}",
-    "labelSpg": "SPG · {toko}"
+    "labelSpg": "SPG · {toko}",
+    "aturTargetTotal": "Atur target total di Pengaturan → Salesman",
+    "kolomTargetTotal": "Target total",
+    "targetTotalBelum": "Belum diatur"
   },
   "pengumuman": {
     "judul": "Pengumuman",
@@ -12840,7 +13688,7 @@
     }
   },
   "jadwalKunjungan": {
-    "judul": "Jadwal Kunjungan",
+    "judul": "Jadwal kunjungan",
     "deskripsi": "Toko yang harus didatangi tiap sales per hari. Tampil paling atas di beranda HP sales dengan tanda \"Dari kantor\", dan masuk rute hari itu.",
     "rentangMinggu": "{dari} – {sampai}",
     "pilihSales": "Pilih sales",
@@ -13120,7 +13968,7 @@
     "totalTitle": "Penjualan {month}",
     "upToDay": "Sampai tanggal {day}",
     "channelPutus": "Putus",
-    "channelKonsi": "Konsinyasi",
+    "channelKonsi": "Konsinyasi laku",
     "channelVan": "Van",
     "targetTitle": "Target bulan itu",
     "targetOf": "{capai} dari target {target}",
@@ -13145,14 +13993,14 @@
     "productsHint": "Diurutkan menurut jumlah barang (pcs). Barang bonus tidak dihitung.",
     "productsEmpty": "Belum ada barang terjual di bulan ini.",
     "pcs": "{n} pcs",
-    "konsiPcs": "Termasuk {n} pcs konsinyasi",
+    "konsiPcs": "Termasuk {n} pcs konsinyasi laku",
     "valueNoKonsi": "{amount} tanpa konsinyasi",
     "rankLabel": "Peringkat {rank}",
     "emptyMonth": "Belum ada penjualan di {month}.",
     "totalPutusVan": "Putus + van",
-    "targetKonsiNote": "Persen ini dari putus + van. Kantor juga menghitung konsinyasi ke target, tetapi nilainya tidak ditampilkan di HP.",
+    "targetKonsiNote": "Persen ini dari putus + van. Kantor juga menghitung konsinyasi yang laku di toko ke target, tetapi nilainya tidak ditampilkan di HP.",
     "comparePutusVan": "Angkanya rupiah putus + van.",
-    "tooltipKonsiPcs": "Konsinyasi {n} pcs",
+    "tooltipKonsiPcs": "Konsinyasi laku {n} pcs",
     "chartPutusVan": "Batang menunjukkan rupiah putus + van. Konsinyasi tidak ikut di batang; jumlah pcs-nya muncul saat batang disentuh."
   },
   "pwaAnalisaToko": {
@@ -14351,7 +15199,11 @@
         "cashierTotal": "Kasir toko",
         "note": "Catatan",
         "photoUrls": "Foto"
-      }
+      },
+      "pengunjungDariLaporan": "dari laporan tutup hari",
+      "pengunjungLaporan": "Laporan: {n}",
+      "pengunjungSebagianLaporan": "sebagian dari laporan tutup hari",
+      "konversiLaporan": "Konversi laporan {n}"
     },
     "pengaturan": {
       "judul": "Laporan tutup hari",
@@ -14882,6 +15734,11 @@
         "KODE_GANDA": "Baris {baris}: kode sudah dipakai shift lain.",
         "TOLERANSI_TIDAK_SAH": "Toleransi harus 0–{maks} menit."
       }
+    },
+    "kosongPendek": "Kosong",
+    "kenyataanPendek": {
+      "TERLAMBAT": "Terlambat {menit} mnt",
+      "MASUK_SAAT_LIBUR": "Masuk saat libur"
     }
   },
   "sizeCharts": {
@@ -15434,7 +16291,7 @@
       },
       "gayaBantuan": {
         "ELORAE": "STKCOD artikel, batang, kode, kotak size, dan merek Eloraé. Tanpa harga.",
-        "RINCI": "Nama barang, ukuran dan warna, kode. Harga bisa ditampilkan."
+        "RINCI": "Nama barang, ukuran dan warna, kode. Tanpa harga."
       },
       "ukuran": "Ukuran label",
       "ukuranNama": {
@@ -15583,6 +16440,10 @@
         "target": "{capai} dari {target}",
         "kembali": "{kembali} dari {terjual} potong"
       }
+    },
+    "tampilan": {
+      "penjualan": "Penjualan",
+      "kehadiran": "Kehadiran & layanan"
     }
   },
   "pwaSpgPengunjung": {
@@ -16233,7 +17094,7 @@
     "WO_BELUM_TERBIT": "Perintah kerja ini masih draf. Terbitkan dulu sebelum menerima barang jadi.",
     "WO_SUDAH_ADA_PENERIMAAN": "Perintah kerja yang sudah punya penerimaan barang jadi tidak bisa dibatalkan.",
     "WO_SUDAH_DIBATALKAN": "Perintah kerja ini sudah dibatalkan.",
-    "WO_SUDAH_KELUAR_BAHAN": "Perintah kerja ini tidak bisa dibatalkan karena bahannya sudah dikeluarkan dari gudang. Belum ada alur pengembalian bahan, jadi selesaikan perintah kerja ini atau hubungi admin.",
+    "WO_SUDAH_KELUAR_BAHAN": "Perintah kerja ini tidak bisa dibatalkan karena masih ada bahan di CMT. Kembalikan bahannya dulu lewat \"Kembalikan bahan\" di rincian perintah kerja.",
     "TANPA_AKSES": "Anda tidak punya izin mengelola perintah kerja.",
     "GAGAL": "Perintah kerja gagal diproses. Coba lagi.",
     "BAHAN_WO_DIBATALKAN": "Perintah kerja ini sudah dibatalkan, jadi bahan tidak bisa dikeluarkan.",
@@ -16246,7 +17107,10 @@
     "STOK_RENCANA_KURANG": "Stok tidak cukup untuk rencana ini: {daftar}.",
     "WO_BUKAN_PRODUKSI": "Bahan tambahan hanya bisa dikeluarkan untuk perintah kerja yang sedang diproduksi.",
     "QTY_TAMBAHAN_TIDAK_VALID": "Qty tambahan harus bilangan bulat lebih dari 0.",
-    "TANPA_AKSESORI_BOM": "Barang jadi ini tidak punya aksesori di BOM, jadi tidak ada bahan tambahan yang bisa dikeluarkan."
+    "TANPA_AKSESORI_BOM": "Barang jadi ini tidak punya aksesori di BOM, jadi tidak ada bahan tambahan yang bisa dikeluarkan.",
+    "ALASAN_WAJIB": "Tulis alasan pembatalan dulu.",
+    "ALASAN_TERLALU_PANJANG": "Alasan pembatalan terlalu panjang (maksimal 190 huruf).",
+    "CACAT_MELEBIHI_SETORAN": "Jumlah cacat tidak boleh lebih dari jumlah disetor."
   },
   "grnErrors": {
     "PO_TIDAK_DITEMUKAN": "PO tidak ditemukan.",
@@ -16266,5 +17130,512 @@
     "lihatAntrean": "Lihat yang belum terkirim",
     "tidakDitemukan": "Halaman tidak ditemukan",
     "tidakDitemukanPesan": "Alamatnya salah, atau datanya sudah tidak ada."
+  },
+  "izinPeran": {
+    "jumlahDipilih": "{count} izin dipilih",
+    "membuka": "Membuka: {daftar}",
+    "perluJuga": "Perlu juga: {izin}",
+    "tambahkan": "Tambahkan",
+    "cari": "Cari izin atau menu…",
+    "tidakAdaHasil": "Tidak ada izin yang cocok.",
+    "mulaiDari": "Mulai dari peran yang ada",
+    "mulaiDariPilih": "Pilih peran untuk disalin izinnya",
+    "disalin": "Izin {nama} disalin. Ubah sesuai kebutuhan.",
+    "aplikasiHp": "Aplikasi HP",
+    "pekerjaan": "Pekerjaan",
+    "semuaPekerjaan": "Semua pekerjaan (akses penuh)",
+    "tanpaIzin": "Belum ada izin",
+    "lihat": "Lihat izin",
+    "lihatJudul": "Izin peran {name}",
+    "kelolaPeran": "Kelola peran",
+    "menyimpan": "Menyimpan…",
+    "galat": {
+      "TANPA_AKSES": "Anda tidak punya izin mengelola peran.",
+      "NAMA_TIDAK_SAH": "Nama peran wajib diisi, paling banyak 50 huruf.",
+      "NAMA_SUDAH_ADA": "Sudah ada peran dengan nama itu. Pakai nama lain.",
+      "IZIN_TIDAK_SAH": "Ada izin yang tidak dikenal. Muat ulang halaman, lalu coba lagi.",
+      "TIDAK_DITEMUKAN": "Peran ini sudah tidak ada. Muat ulang halaman.",
+      "PERAN_SISTEM": "Peran sistem tidak bisa diubah atau dihapus.",
+      "MASIH_DIPAKAI": "Peran ini masih dipakai pengguna. Pindahkan mereka ke peran lain di Pengaturan → Pengguna dulu."
+    },
+    "grup": {
+      "beranda": "Beranda & laporan",
+      "marketplace": "Penjualan marketplace",
+      "pesananLapangan": "Pesanan lapangan & toko",
+      "timLapangan": "Tim lapangan (HP)",
+      "spg": "SPG",
+      "piutang": "Piutang & pelunasan",
+      "konsinyasi": "Konsinyasi",
+      "keuangan": "Keuangan & pajak",
+      "pembelian": "Pembelian & pemasok",
+      "gudang": "Gudang & stok",
+      "produksi": "Produksi",
+      "kreatif": "Kreatif",
+      "dataMaster": "Data master",
+      "pengaturan": "Pengaturan & keamanan",
+      "sistem": "Sistem",
+      "lainnya": "Lainnya"
+    },
+    "peranBawaan": {
+      "ADMIN": "Administrator sistem dengan akses penuh",
+      "PURCHASER": "Bagian pembelian — mengelola pemasok, PO, dan pembayaran",
+      "WAREHOUSE": "Bagian gudang — mengelola stok",
+      "PRODUCTION": "Bagian produksi — mengelola perintah kerja",
+      "SALESMAN": "Salesman lapangan — hanya aplikasi HP",
+      "SPG": "SPG di toko — hanya aplikasi HP, terikat ke satu toko"
+    },
+    "izin": {
+      "dashboard_view": {
+        "label": "Lihat beranda & laporan operasional",
+        "keterangan": "Membuka beranda kantor (ringkasan penjualan, daftar pekerjaan, stok) dan Laporan operasional."
+      },
+      "reports_hpp_view": {
+        "label": "Lihat laporan HPP",
+        "keterangan": "Membuka laporan harga pokok produksi per barang yang dihitung dari perintah kerja."
+      },
+      "sales_orders_view": {
+        "label": "Lihat pesanan marketplace",
+        "keterangan": "Membuka pesanan Shopee, TikTok, dan Tokopedia yang masuk lewat Jubelio, rinciannya, dan antrean pemenuhan."
+      },
+      "sales_orders_fulfill": {
+        "label": "Proses kirim pesanan marketplace",
+        "keterangan": "Menekan tombol ambil, kemas, dan kirim pada pesanan marketplace; stok berkurang saat pesanan dikirim."
+      },
+      "sales_returns_view": {
+        "label": "Lihat retur marketplace",
+        "keterangan": "Membuka daftar dan rincian barang yang dikembalikan pembeli marketplace."
+      },
+      "sales_returns_decide": {
+        "label": "Putuskan retur marketplace",
+        "keterangan": "Menerima atau menolak setiap barang retur marketplace."
+      },
+      "field_sales_orders_view": {
+        "label": "Lihat pesanan lapangan & tim lapangan",
+        "keterangan": "Membuka pesanan putus dan konsi dari salesman, pre-order, dan halaman Tim Lapangan (ringkasan, jadwal, absensi, izin, target, pengumuman)."
+      },
+      "field_sales_orders_approve": {
+        "label": "Setujui pesanan lapangan",
+        "keterangan": "Menyetujui atau menolak pesanan salesman, menetapkan harga yang dibanding, merilis pre-order, menyetujui tukar barang dan mutasi antar toko, mengubah Pengaturan → Salesman, dan membuka laporan komisi salesman."
+      },
+      "field_sales_orders_deliver": {
+        "label": "Catat pengiriman pesanan putus",
+        "keterangan": "Mencatat pengiriman sebagian atau penuh, mencetak nota gudang dan nota tagihan, menutup sisa pesanan, dan mencatat bukti terima."
+      },
+      "stores_view": {
+        "label": "Lihat toko",
+        "keterangan": "Membuka master toko, usulan toko baru, daftar periksa toko, laporan eksekusi, panduan display, dan harga pesaing."
+      },
+      "stores_manage": {
+        "label": "Kelola toko",
+        "keterangan": "Menambah, mengubah, dan menonaktifkan toko, memindah toko ke salesman lain, menyetujui perubahan data toko dari salesman, dan memproses permintaan kiriman SPG."
+      },
+      "promos_view": {
+        "label": "Lihat promo",
+        "keterangan": "Membuka promo pesanan putus dan promo konter SPG."
+      },
+      "promos_manage": {
+        "label": "Kelola promo",
+        "keterangan": "Membuat, mengubah, dan menonaktifkan promo putus dan promo konter, serta mengatur diskon manual SPG."
+      },
+      "canvassing_manage": {
+        "label": "Kelola sales kanvas (van)",
+        "keterangan": "Mengisi stok van dari gudang, mencocokkan sisa van di akhir hari, dan membuka daftar penjualan van."
+      },
+      "pwa_access": {
+        "label": "Masuk aplikasi HP",
+        "keterangan": "Membuka aplikasi HP untuk salesman dan SPG: kunjungan toko, katalog, pesanan, pelunasan, dan retur toko."
+      },
+      "spg_sales_record": {
+        "label": "Jual di konter toko (SPG)",
+        "keterangan": "Mencatat penjualan, menerima kiriman, opname rak, retur pembeli, dan mutasi di aplikasi HP SPG; penggunanya wajib diberi satu toko tetap."
+      },
+      "spg_sales_view": {
+        "label": "Awasi SPG",
+        "keterangan": "Membuka penjualan SPG, kinerja, tutup hari, pelanggan, jadwal, komisi, permintaan kiriman, mutasi antar toko, barang rusak, barang hilang, dan Pengaturan → SPG."
+      },
+      "receivables_view": {
+        "label": "Lihat piutang",
+        "keterangan": "Membuka faktur & piutang, kontrabon, pelunasan & klaim, retur toko, beban selisih, tugas tagih, dan arsip nota retur."
+      },
+      "receivables_manage": {
+        "label": "Kelola piutang",
+        "keterangan": "Mengimpor faktur, membuat kontrabon, mencatat BKM dari kantor, menugaskan penagihan, menetapkan penanggung selisih retur dan barang hilang, dan mengatur jenis potongan."
+      },
+      "consignment_view": {
+        "label": "Lihat konsinyasi",
+        "keterangan": "Membuka siklus konsinyasi per toko per bulan: kiriman titipan, laporan penjualan, tagihan, dan komisi."
+      },
+      "consignment_manage": {
+        "label": "Kelola konsinyasi",
+        "keterangan": "Mencatat kiriman titipan dan laporan penjualan, mengunci angka, mencatat nomor nota dan faktur, serta pembayaran komisi."
+      },
+      "journals_view": {
+        "label": "Lihat jurnal & buku besar",
+        "keterangan": "Membuka jurnal, buku besar per akun, pemetaan akun, dan klasifikasi arus kas."
+      },
+      "journals_manage": {
+        "label": "Kelola jurnal & verifikasi uang masuk",
+        "keterangan": "Membuat jurnal manual, memposting ulang jurnal yang tertunda, mencocokkan BKM dengan mutasi rekening, menandai PO sudah dibayar, dan membayar biaya perjalanan."
+      },
+      "coa_view": {
+        "label": "Lihat bagan akun",
+        "keterangan": "Membuka daftar akun yang dipakai jurnal."
+      },
+      "coa_manage": {
+        "label": "Kelola bagan akun",
+        "keterangan": "Menambah, mengubah, dan menonaktifkan akun."
+      },
+      "finance_settlements_view": {
+        "label": "Lihat settlement marketplace",
+        "keterangan": "Membuka file pencairan dana marketplace yang sudah diunggah dan kecocokannya dengan pesanan."
+      },
+      "finance_settlements_manage": {
+        "label": "Unggah & cocokkan settlement",
+        "keterangan": "Mengunggah file settlement Shopee/TikTok, mencocokkan pesanannya, menyinkronkan ulang pesanan dari Jubelio, dan memposting jurnalnya."
+      },
+      "finance_reports_view": {
+        "label": "Lihat laporan keuangan",
+        "keterangan": "Membuka neraca saldo, laba rugi, neraca, dan arus kas, termasuk ekspor Excel dan PDF."
+      },
+      "tax_invoices_view": {
+        "label": "Lihat antrean faktur pajak",
+        "keterangan": "Membuka daftar nota tagihan yang menunggu nomor faktur pajak."
+      },
+      "tax_invoices_manage": {
+        "label": "Catat nomor faktur pajak",
+        "keterangan": "Mencatat nomor faktur pajak, atau menandai nota yang tidak butuh faktur beserta alasannya."
+      },
+      "purchase_orders_view": {
+        "label": "Lihat pesanan pembelian (PO)",
+        "keterangan": "Membuka daftar dan rincian PO, serta Arsip Dokumen."
+      },
+      "purchase_orders_create": {
+        "label": "Buat PO",
+        "keterangan": "Membuat pesanan pembelian baru ke pemasok."
+      },
+      "purchase_orders_edit": {
+        "label": "Ubah & batalkan PO",
+        "keterangan": "Mengubah isi PO dan membatalkannya."
+      },
+      "purchase_orders_approve": {
+        "label": "Setujui & kirim PO",
+        "keterangan": "Menyetujui PO lalu mengirimnya ke pemasok, dan menutup PO yang barangnya datang kurang."
+      },
+      "supplier_payments_view": {
+        "label": "Lihat pembayaran pemasok",
+        "keterangan": "Membuka daftar utang ke pemasok per PO beserta status bayarnya."
+      },
+      "supplier_payments_create": {
+        "label": "Catat pembayaran pemasok",
+        "keterangan": "Belum dipakai layar mana pun; menandai PO sudah dibayar memakai izin Kelola jurnal & verifikasi uang masuk."
+      },
+      "supplier_payments_edit": {
+        "label": "Ubah pembayaran pemasok",
+        "keterangan": "Belum dipakai layar mana pun; menandai PO sudah dibayar memakai izin Kelola jurnal & verifikasi uang masuk."
+      },
+      "vendor_returns_view": {
+        "label": "Lihat retur ke pemasok",
+        "keterangan": "Membuka daftar barang yang dikembalikan ke pemasok."
+      },
+      "vendor_returns_create": {
+        "label": "Buat retur ke pemasok",
+        "keterangan": "Membuat dokumen retur barang cacat ke pemasok."
+      },
+      "vendor_returns_manage": {
+        "label": "Kelola retur ke pemasok",
+        "keterangan": "Mengubah, memproses, menyelesaikan, dan menghapus retur ke pemasok."
+      },
+      "suppliers_view": {
+        "label": "Lihat pemasok",
+        "keterangan": "Membuka master pemasok dan rinciannya."
+      },
+      "suppliers_create": {
+        "label": "Tambah pemasok",
+        "keterangan": "Menambah pemasok baru."
+      },
+      "suppliers_edit": {
+        "label": "Ubah pemasok",
+        "keterangan": "Mengubah data pemasok."
+      },
+      "suppliers_delete": {
+        "label": "Hapus pemasok",
+        "keterangan": "Menghapus pemasok; butuh PIN Anda."
+      },
+      "suppliers_approve": {
+        "label": "Setujui pemasok",
+        "keterangan": "Menyetujui atau menolak pemasok baru."
+      },
+      "supplier_types_view": {
+        "label": "Lihat jenis pemasok",
+        "keterangan": "Membuka daftar jenis pemasok (kain, aksesori, penjahit, dan lainnya)."
+      },
+      "supplier_types_create": {
+        "label": "Tambah jenis pemasok",
+        "keterangan": "Menambah jenis pemasok baru."
+      },
+      "supplier_types_edit": {
+        "label": "Ubah jenis pemasok",
+        "keterangan": "Mengubah nama dan urutan jenis pemasok."
+      },
+      "supplier_types_delete": {
+        "label": "Hapus jenis pemasok",
+        "keterangan": "Menghapus jenis pemasok yang tidak dipakai."
+      },
+      "lead_time_view": {
+        "label": "Lihat lead time",
+        "keterangan": "Membuka pustaka proses dan rantai pemasok beserta lama pengerjaannya."
+      },
+      "lead_time_manage": {
+        "label": "Kelola lead time",
+        "keterangan": "Mengubah pustaka proses dan rantai pemasok."
+      },
+      "inventory_view": {
+        "label": "Lihat stok gudang",
+        "keterangan": "Membuka inventori, kartu stok, penerimaan barang (GRN), dan gudang barang rusak."
+      },
+      "inventory_manage": {
+        "label": "Kelola stok gudang",
+        "keterangan": "Mencatat penerimaan barang (GRN) dan penyesuaian stok, memutuskan barang rusak, dan menyelesaikan tukar barang."
+      },
+      "inventory_opname_view": {
+        "label": "Lihat stock opname",
+        "keterangan": "Membuka daftar dan hasil stock opname gudang."
+      },
+      "inventory_opname_count": {
+        "label": "Hitung stok (opname & retur)",
+        "keterangan": "Membuat dan mengisi hitungan stock opname, serta menghitung barang retur dari toko di layar Hitung retur."
+      },
+      "inventory_opname_approve": {
+        "label": "Setujui stock opname",
+        "keterangan": "Menyetujui atau membatalkan hasil opname; selisihnya menyesuaikan stok."
+      },
+      "inventory_reconciliation_view": {
+        "label": "Lihat rekonsiliasi Jubelio",
+        "keterangan": "Membuka hasil pencocokan stok ERP dengan stok di Jubelio."
+      },
+      "inventory_reconciliation_manage": {
+        "label": "Jalankan rekonsiliasi Jubelio",
+        "keterangan": "Menjalankan pencocokan stok dan menyelesaikan selisihnya."
+      },
+      "forecast_view": {
+        "label": "Lihat forecast & S&OP",
+        "keterangan": "Membuka perkiraan permintaan dan rekonsiliasi penjualan."
+      },
+      "forecast_manage": {
+        "label": "Kelola forecast",
+        "keterangan": "Mengimpor data penjualan dan menjalankan perhitungan forecast."
+      },
+      "production_planning_view": {
+        "label": "Lihat Plan Kerja",
+        "keterangan": "Membuka rencana produksi (Plan Kerja)."
+      },
+      "production_planning_manage": {
+        "label": "Kelola Plan Kerja",
+        "keterangan": "Mengubah rencana produksi."
+      },
+      "work_orders_view": {
+        "label": "Lihat perintah kerja",
+        "keterangan": "Membuka daftar dan rincian perintah kerja (WO) produksi."
+      },
+      "work_orders_create": {
+        "label": "Buat perintah kerja",
+        "keterangan": "Membuat WO baru, termasuk dari Plan Kerja."
+      },
+      "work_orders_manage": {
+        "label": "Jalankan perintah kerja",
+        "keterangan": "Menerbitkan WO, mengeluarkan bahan, menerima barang jadi, dan membatalkan WO."
+      },
+      "nota_register_view": {
+        "label": "Lihat register nota CMT",
+        "keterangan": "Membuka daftar nota pengeluaran bahan ke penjahit (CMT) dan cetakannya."
+      },
+      "production_colors_view": {
+        "label": "Lihat warna & palet",
+        "keterangan": "Membuka katalog warna Pantone dan Palet Warna."
+      },
+      "production_colors_manage": {
+        "label": "Simpan palet & tinta",
+        "keterangan": "Menyimpan palet warna dan daftar tinta dasar sablon tim."
+      },
+      "creative_view": {
+        "label": "Lihat kreatif",
+        "keterangan": "Membuka kalender konten, brief KOL, dan daftar KOL."
+      },
+      "creative_manage": {
+        "label": "Kelola kreatif",
+        "keterangan": "Membuat dan mengubah rencana konten, brief, dan data KOL."
+      },
+      "items_view": {
+        "label": "Lihat barang",
+        "keterangan": "Membuka master barang, kategori, tabel ukuran, dan label barcode."
+      },
+      "items_create": {
+        "label": "Tambah barang",
+        "keterangan": "Menambah barang dan kategori baru."
+      },
+      "items_edit": {
+        "label": "Ubah barang",
+        "keterangan": "Mengubah data barang dan kategori."
+      },
+      "items_delete": {
+        "label": "Hapus barang",
+        "keterangan": "Menghapus barang dan kategori yang belum dipakai."
+      },
+      "items_manage": {
+        "label": "Kelola foto, ukuran & kirim ke Jubelio",
+        "keterangan": "Mengunggah foto barang, mengubah tabel ukuran, dan mengirim produk ke Jubelio."
+      },
+      "settings_security_view": {
+        "label": "Buka Pengaturan",
+        "keterangan": "Membuka halaman Pengaturan, keamanan akun, dan pengaturan Jubelio (kategori, migrasi, kurir)."
+      },
+      "settings_security_manage": {
+        "label": "Kelola pengguna & keamanan",
+        "keterangan": "Menambah pengguna, mengganti peran dan sandi, mengatur ulang PIN, mengubah tema perusahaan, dan menjalankan tindakan pengaturan Jubelio."
+      },
+      "settings_rbac_view": {
+        "label": "Lihat peran & izin",
+        "keterangan": "Membuka daftar peran dan izinnya."
+      },
+      "settings_rbac_manage": {
+        "label": "Buat & ubah peran",
+        "keterangan": "Membuat peran, mengubah izinnya, dan menghapus peran yang tidak dipakai."
+      },
+      "settings_documents_view": {
+        "label": "Lihat penomoran dokumen",
+        "keterangan": "Membuka pengaturan nomor dokumen serta format kode barang dan barcode."
+      },
+      "settings_documents_manage": {
+        "label": "Ubah penomoran dokumen",
+        "keterangan": "Mengubah format nomor dokumen dan format barcode."
+      },
+      "settings_tax_view": {
+        "label": "Lihat pengaturan PPN",
+        "keterangan": "Membuka tarif PPN yang dipakai PO dan nota."
+      },
+      "settings_tax_manage": {
+        "label": "Ubah tarif PPN",
+        "keterangan": "Mengubah tarif PPN."
+      },
+      "settings_uom_view": {
+        "label": "Lihat satuan",
+        "keterangan": "Membuka daftar satuan barang dan konversinya."
+      },
+      "settings_uom_manage": {
+        "label": "Kelola satuan",
+        "keterangan": "Menambah dan mengubah satuan serta konversinya."
+      },
+      "settings_pack_ratio_view": {
+        "label": "Lihat rasio pack",
+        "keterangan": "Membuka jumlah per ukuran dalam satu pack untuk pesanan putus."
+      },
+      "settings_pack_ratio_manage": {
+        "label": "Ubah rasio pack",
+        "keterangan": "Mengubah jumlah per ukuran dalam satu pack."
+      },
+      "audit_trail_view": {
+        "label": "Lihat jejak audit",
+        "keterangan": "Membuka catatan siapa mengubah apa dan kapan."
+      },
+      "jubelio_admin_view": {
+        "label": "Buka dasbor API Jubelio",
+        "keterangan": "Membuka status token, catatan panggilan API, dan alat sinkron Jubelio; sebaiknya hanya untuk admin."
+      }
+    }
+  },
+  "itemForm": {
+    "basicInfo": "Informasi dasar",
+    "sku": "SKU",
+    "skuGenerate": "Buat otomatis",
+    "nameId": "Nama (Indonesia)",
+    "nameIdPlaceholder": "Kain katun merah",
+    "nameEn": "Nama (Inggris)",
+    "nameEnPlaceholder": "Red cotton fabric",
+    "optional": "opsional",
+    "type": "Jenis",
+    "typePlaceholder": "Pilih jenis",
+    "typeName": {
+      "FABRIC": "Kain",
+      "ACCESSORIES": "Aksesoris",
+      "FINISHED_GOOD": "Barang jadi"
+    },
+    "uom": "Satuan",
+    "uomPlaceholder": "Pilih satuan",
+    "category": "Kategori",
+    "noCategory": "Tanpa kategori",
+    "categoryPlaceholder": "Pilih kategori",
+    "overReceive": "Batas lebih terima",
+    "description": "Keterangan",
+    "descriptionPlaceholder": "Keterangan barang…",
+    "reorderPoint": "Titik pesan ulang",
+    "sellingPrice": "Harga jual",
+    "targetMargin": "Target margin (%)",
+    "targetMarginHint": "Kosongkan untuk memakai bawaan pengaturan push Jubelio.",
+    "additionalCost": "Biaya tambahan per pcs (Rp)",
+    "additionalCostHint": "Tambahan tetap per pcs (kemasan, dll.).",
+    "variantsTitle": "Varian (opsional)",
+    "noAttributes": "Belum ada atribut.",
+    "addAttribute": "Tambah atribut",
+    "attributeName": "Nama atribut",
+    "attributeNamePlaceholder": "Warna",
+    "attributeValues": "Nilai (pisahkan dengan koma)",
+    "attributeValuesPlaceholder": "Merah, Biru, Hijau",
+    "removeAttribute": "Hapus atribut",
+    "variantSkuHint": "SKU varian kosong dibuat otomatis saat disimpan, mis. {contoh}.",
+    "variantSkuNoPrefix": "Pilih kategori yang berkode atau isi SKU barang dulu untuk membuat kode varian.",
+    "generateAll": "Buat semua kode",
+    "colVariantSku": "SKU varian",
+    "colBarcode": "Barcode",
+    "generateCode": "Buat kode",
+    "skuButtonTitle": "Bentuk SKU dari {awalan} dan nilai atribut",
+    "barcodeButtonTitle": "Bentuk barcode dari format di Pengaturan → Kode barang",
+    "variantSkuPlaceholder": "mis. KAOS-MERAH",
+    "barcodePlaceholder": "mis. 0127000038PS",
+    "bomTitle": "Resep bahan (BOM)",
+    "noBom": "Belum ada bahan.",
+    "addMaterial": "Tambah bahan",
+    "colMaterial": "Bahan",
+    "colQtyRequired": "Kebutuhan per pcs",
+    "colWaste": "Susut %",
+    "colNotes": "Catatan",
+    "selectMaterial": "Pilih bahan",
+    "notesPlaceholder": "Catatan (opsional)",
+    "removeMaterial": "Hapus bahan",
+    "submitUpdate": "Simpan barang",
+    "submitCreate": "Tambah barang"
+  },
+  "itemList": {
+    "filterCategory": "Saring kategori",
+    "allCategories": "Semua kategori",
+    "filterStatus": "Saring status",
+    "allStatuses": "Semua status ({count})",
+    "statusActive": "Aktif ({count})",
+    "statusInactive": "Nonaktif ({count})",
+    "inactive": "Nonaktif",
+    "deleteTitle": "Hapus barang?",
+    "deleteBody": "{nama} ({sku}) dihapus dari katalog. Barang yang sudah dipakai di dokumen tidak bisa dihapus; nonaktifkan saja.",
+    "cancel": "Batal",
+    "deleteConfirm": "Hapus"
+  },
+  "itemDetail": {
+    "cancel": "Batal",
+    "pushConfirm": "Kirim sekarang"
+  },
+  "spgTerkait": {
+    "titip": "Titip pesan pembeli",
+    "dicari": "Barang dicari pembeli",
+    "permintaan": "Permintaan kiriman SPG"
+  },
+  "financeLedgerStatus": {
+    "titleInactive": "Buku besar belum aktif — laporan ini belum mencerminkan transaksi operasional",
+    "titlePending": "{count} jurnal gagal diposting — laporan belum memuat dokumennya",
+    "mapping": "Peran wajib terpetakan {done}/{total}",
+    "journals": "Jurnal tercatat: {count}",
+    "cutover": "Tanggal mulai buku besar: {date}",
+    "noCutover": "Tanggal mulai buku besar belum ditetapkan",
+    "pending": "Jurnal tertunda: {count}",
+    "linkCoa": "Bagan akun",
+    "linkMapping": "Pemetaan akun",
+    "linkPending": "Lihat jurnal tertunda"
   }
 }

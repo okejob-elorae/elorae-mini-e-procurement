@@ -5,7 +5,10 @@ export const ENTRI: EntriBantuan[] = [
     rute: "/backoffice/sales-lapangan",
     bagian: "navGroupFieldTeam",
     judul: { kunci: "salesLapangan.pageTitle" },
-    isi: { kunci: "salesLapangan.pageDescription" },
+    isi: [
+      { kunci: "salesLapangan.pageDescription" },
+      "Kartu angka dan angka di tabel membuka sumbernya: kunjungan dan check-in janggal ke rincian sales itu, pelunasan ke daftar BKM yang dicari dengan nama sales (hanya bila Anda boleh membuka daftar pelunasan), pesanan ke daftar pesanan lapangan. Admin kantor yang mencatat BKM dari kantor tidak dihitung sebagai sales.",
+    ],
     kartu: [
       { judul: { kunci: "salesLapangan.table.title" }, isi: { kunci: "salesLapangan.table.hint" } },
       { judul: { kunci: "salesLapangan.outcomes.title" }, isi: { kunci: "salesLapangan.outcomes.hint" } },
@@ -89,6 +92,7 @@ export const ENTRI: EntriBantuan[] = [
       "Absen masuk dan pulang salesman dengan swafoto dan lokasi. Batas jam masuk, dan menyalakan atau mematikan absensi, diatur di Pengaturan → Salesman.",
       "Tampilan per hari menunjukkan siapa yang sudah dan belum absen, jam masuk dan pulang, keterlambatan, swafoto, dan tautan peta. Tampilan per bulan merekap setiap orang dan bisa diunduh sebagai Excel.",
       "SPG tidak menekan tombol absen: check-in dan check-out di tokonya tercatat sebagai absen masuk dan pulang. Hari izin, sakit, atau cuti yang disetujui tampil sebagai izin, bukan tidak absen.",
+      "Selama absensi dimatikan, tidak ada yang bisa absen — orang yang tidak tercatat masuk ditulis \"—\", bukan \"Belum absen\", dan hitungan \"sudah absen\" tidak ditampilkan.",
     ],
   },
   {
@@ -108,7 +112,14 @@ export const ENTRI: EntriBantuan[] = [
     isi: { kunci: "targetSales.deskripsi" },
     kartu: [
       { judul: "Ringkasan bulan", isi: { kunci: "targetSales.ringkasanIsi" } },
-      { judul: "Target per sales", isi: [{ kunci: "targetSales.editorIsi" }, { kunci: "targetSales.catatanCapaian" }] },
+      {
+        judul: "Target per sales",
+        isi: [
+          { kunci: "targetSales.editorIsi" },
+          { kunci: "targetSales.catatanCapaian" },
+          "Target total bulanan (rupiah) per salesman diatur di Pengaturan → Salesman; halaman ini untuk target per kategori dan per barang.",
+        ],
+      },
       { judul: "Penjualan per kategori", isi: { kunci: "targetSales.penjualanIsi" } },
     ],
   },
@@ -156,6 +167,7 @@ export const ENTRI: EntriBantuan[] = [
         judul: "Komisi per salesman",
         isi: [
           { kunci: "komisiSalesman.laporan.footnote" },
+          "Omzet konsinyasi = barang yang LAKU di toko konsinyasi yang dipegang salesman itu saat barangnya laku (buku stok SPG: terjual dikurangi retur pembeli; toko tanpa buku: laporan laku siklus yang sudah dikunci, di akhir bulannya), dinilai dengan harga yang Elorae terima — harga di toko dikurangi margin toko. Transfer konsinyasi yang disetujui bukan omzet. Memindah toko ke salesman lain tidak memindah omzet bulan-bulan sebelumnya. Saat toko tanpa pemegang, lakunya dihitung ke salesman yang terakhir mengirim konsinyasi ke sana.",
           "Bila ada beban barang hilang yang ditanggung salesman, kolomnya tampil di tabel ini dan kantor menandai jumlah yang sudah dipotong per bulan. Bebannya ditetapkan keuangan di SPG → Barang hilang; batas potongan per pembayaran diatur di Pengaturan → SPG.",
         ],
       },

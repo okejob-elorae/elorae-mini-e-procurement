@@ -3,7 +3,7 @@ import { catatJanjiBayarAction } from "@/app/actions/collections";
 import { catatReturTokoAction } from "@/app/actions/store-returns";
 import { unggahFoto } from "@/lib/foto/unggah";
 import { pwaDb, type FotoTertunda } from "./db";
-import { nasibLaporan, nasibUnggah, type NasibKiriman } from "./laporan-classify";
+import { AWALAN_UNGGAH_LAPORAN, nasibLaporan, nasibUnggah, type NasibKiriman } from "./laporan-classify";
 
 /**
  * Kirim laporan lapangan yang tertahan di HP: pelunasan (BKM), retur (NRT),
@@ -70,7 +70,7 @@ export async function flushLaporanTertahan(): Promise<{ terkirim: number; gagal:
         if (!hasil.ok) alasan = hasil.kode;
       } catch (err) {
         nasib = err instanceof GagalUnggah ? err.nasib : "retry";
-        if (err instanceof GagalUnggah) alasan = `FOTO_${err.kode}`;
+        if (err instanceof GagalUnggah) alasan = `${AWALAN_UNGGAH_LAPORAN}${err.kode}`;
       }
       if (nasib === "evict") {
         await pwaDb.pendingClaims.delete(k.localId);
@@ -106,7 +106,7 @@ export async function flushLaporanTertahan(): Promise<{ terkirim: number; gagal:
         if (!hasil.ok) alasan = hasil.kode;
       } catch (err) {
         nasib = err instanceof GagalUnggah ? err.nasib : "retry";
-        if (err instanceof GagalUnggah) alasan = `FOTO_${err.kode}`;
+        if (err instanceof GagalUnggah) alasan = `${AWALAN_UNGGAH_LAPORAN}${err.kode}`;
       }
       if (nasib === "evict") {
         await pwaDb.pendingReturns.delete(r.localId);
@@ -141,7 +141,7 @@ export async function flushLaporanTertahan(): Promise<{ terkirim: number; gagal:
         if (!hasil.ok) alasan = hasil.kode;
       } catch (err) {
         nasib = err instanceof GagalUnggah ? err.nasib : "retry";
-        if (err instanceof GagalUnggah) alasan = `FOTO_${err.kode}`;
+        if (err instanceof GagalUnggah) alasan = `${AWALAN_UNGGAH_LAPORAN}${err.kode}`;
       }
       if (nasib === "evict") {
         await pwaDb.pendingPromises.delete(j.localId);

@@ -13,14 +13,18 @@
 
 export type ButirLencana = { key: string; href: string; count: number };
 
+/**
+ * `grupUntuk`: peta kunci butir → href grup, atau fungsi yang menurunkannya
+ * (lencana menu menurunkan grup dari halaman tujuan lewat `grupUntukRute`).
+ */
 export function bagiLencana(
   butir: ButirLencana[],
-  grupUntuk: Record<string, string>,
+  grupUntuk: Record<string, string> | ((b: ButirLencana) => string | null | undefined),
 ): { grup: Record<string, number>; halaman: Record<string, number> } {
   const grup: Record<string, number> = {};
   const halaman: Record<string, number> = {};
   for (const b of butir) {
-    const g = grupUntuk[b.key];
+    const g = typeof grupUntuk === 'function' ? grupUntuk(b) : grupUntuk[b.key];
     if (g) grup[g] = (grup[g] ?? 0) + b.count;
 
     /*

@@ -1,6 +1,7 @@
 'use client';
 
 import { useLocale, useTranslations } from 'next-intl';
+import { namaMarketplace } from '@/app/backoffice/forecast/label-marketplace';
 import type { DataCoverage } from '@/app/actions/forecast';
 import { formatDisplayDate } from '@/lib/date-only';
 
@@ -40,7 +41,7 @@ export function DataCoverageBar({ coverage }: { coverage: DataCoverage }) {
         return (
           <div key={ch.channel} className="space-y-3">
             <div className="flex items-center justify-between text-sm">
-              <span className="font-medium">{ch.channel}</span>
+              <span className="font-medium">{namaMarketplace(ch.channel)}</span>
               <span className="text-muted-foreground">
                 {t('coverage.rows', { count: ch.totalRows.toLocaleString('id-ID') })}
                 {ch.earliestDate && ch.latestDate ?

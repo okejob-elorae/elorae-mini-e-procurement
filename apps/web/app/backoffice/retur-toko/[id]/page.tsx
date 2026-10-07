@@ -7,6 +7,7 @@ import { prisma } from "@elorae/db";
 import { formatDisplayDate } from "@/lib/date-only";
 import { koreksiTertunda, penggantiUntuk, riwayatDokumen } from "@/lib/receivables/koreksi";
 import { bolehMembacaRetur } from "@/lib/receivables/izin";
+import { klaimDisembunyikan } from "../buta";
 
 export const dynamic = "force-dynamic";
 
@@ -22,12 +23,17 @@ export default async function RincianReturPage({
 
   const { id } = await params;
   const kelola = hasPermission(session.user.permissions ?? [], PERMISSIONS.RECEIVABLES_MANAGE);
+  const bolehMenghitung = hasPermission(session.user.permissions ?? [], PERMISSIONS.INVENTORY_OPNAME_COUNT);
   const [data, kandidat, tokoTujuan] = await Promise.all([
     rincianRetur(id),
     kelola ? kandidatPenanggung() : Promise.resolve([]),
     kelola ? tokoUntukRetur() : Promise.resolve([]),
   ]);
   if (!data) notFound();
+  // Hitungan gudang buta, juga di rincian: orang yang akan menghitung nota ini
+  // tidak menerima klaim, foto nota, rincian barang, atau potongannya sampai
+  // hitungannya tersimpan. Dibuang di server, bukan disembunyikan di layar.
+  const buta = klaimDisembunyikan(data.baris, { bolehMenghitung, penggunaId: session.user.id ?? "" });
 
   const [pengganti, asal, koreksi, riwayat, barang, barisBuku] = await Promise.all([
     penggantiUntuk("retur", [id]),
@@ -62,7 +68,7 @@ export default async function RincianReturPage({
     ? {
         dariSpg: barang.reportedBySpg,
         adaBukuToko: barisBuku > 0,
-        klaim: barang.items.map((i) => ({ ...i, amount: Number(i.amount) })),
+        klaim: buta ? [] : barang.items.map((i) => ({ ...i, amount: Number(i.amount) })),
         fisik: (barang.warehouseReturn?.items ?? []).map((i) => ({ ...i, amount: Number(i.amount) })),
       }
     : null;
@@ -70,7 +76,21 @@ export default async function RincianReturPage({
 
   return (
     <RincianReturClient
-      data={data}
+      data={
+        buta
+          ? {
+              ...data,
+              baris: { ...data.baris, nilaiKlaim: null, nilaiDipotong: 0, jumlahPotongan: 0 },
+              // Catatan nota toko sering menyebut jumlahnya ("3 dus"); layar
+              // gudang pun tidak mengirimnya.
+              note: null,
+              photoUrl: null,
+              barangKlaim: [],
+              potongan: [],
+            }
+          : data
+      }
+      klaimTersembunyi={buta}
       kandidat={kandidat}
       bolehMengelola={kelola}
       tokoTujuan={tokoTujuan}

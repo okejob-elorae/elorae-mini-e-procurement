@@ -1,0 +1,101 @@
+import { prisma } from "@elorae/db";
+import { kunciDokumen, type IndukDokumen } from "./tautan";
+
+/*
+ * Nomor dokumen sumber jurnal (dan induknya, untuk dokumen tanpa halaman
+ * sendiri), dicari per jenis dalam satu kueri per jenis. Hanya di server.
+ */
+
+export type InfoDokumen = IndukDokumen & { nomor: string | null };
+
+type Pasangan = { jenis: string; id: string };
+
+/** Nama marketplace untuk dibaca orang — kode mentah (`TIKTOK`) tidak ditampilkan apa adanya. */
+const NAMA_MARKETPLACE: Record<string, string> = { SHOPEE: "Shopee", TIKTOK: "TikTok", TOKOPEDIA: "Tokopedia" };
+
+function namaMarketplace(kode: string): string {
+  return NAMA_MARKETPLACE[kode] ?? kode;
+}
+
+function idsPer(pasangan: Pasangan[], ...jenis: string[]): string[] {
+  return [...new Set(pasangan.filter((p) => jenis.includes(p.jenis)).map((p) => p.id))];
+}
+
+/** Satu kueri yang gagal tidak menggagalkan halaman: dokumennya tampil tanpa nomor. */
+async function aman<T>(nama: string, ids: string[], kueri: () => Promise<T[]>): Promise<T[]> {
+  if (ids.length === 0) return [];
+  try {
+    return await kueri();
+  } catch (e) {
+    console.error(`[info-dokumen] gagal membaca ${nama}`, e);
+    return [];
+  }
+}
+
+/** Peta `kunciDokumen(jenis, id)` → nomor (+ induk). Dokumen yang tidak ditemukan tidak masuk peta. */
+export async function cariInfoDokumen(pasangan: Pasangan[]): Promise<Map<string, InfoDokumen>> {
+  const hasil = new Map<string, InfoDokumen>();
+  const isi = (jenisList: string[], id: string, info: InfoDokumen) => {
+    for (const jenis of jenisList) hasil.set(kunciDokumen(jenis, id), info);
+  };
+
+  const grnIds = idsPer(pasangan, "GRN", "GRN_REVERSAL");
+  const fgIds = idsPer(pasangan, "FG_RECEIPT");
+  const opnameIds = idsPer(pasangan, "OPNAME");
+  const soIds = idsPer(pasangan, "SALESORDER_REVENUE", "SALESORDER_COGS");
+  const returIds = idsPer(pasangan, "SALESRETURN_REVENUE", "SALESRETURN_COGS");
+  const muatIds = idsPer(pasangan, "VAN_LOAD");
+  const jualVanIds = idsPer(pasangan, "VAN_SALE");
+  const rekonIds = idsPer(pasangan, "VAN_RECONCILE");
+  const poIds = idsPer(pasangan, "SUPPLIER_PAYMENT", "SUPPLIER_PAYMENT_REVERSAL");
+  const settlementIds = idsPer(pasangan, "SETTLEMENT");
+
+  const [grn, fg, opname, so, retur, muat, jualVan, rekon, po, settlement] = await Promise.all([
+    aman("GRN", grnIds, () =>
+      prisma.gRN.findMany({ where: { id: { in: grnIds } }, select: { id: true, docNumber: true, poId: true } }),
+    ),
+    aman("FGReceipt", fgIds, () =>
+      prisma.fGReceipt.findMany({ where: { id: { in: fgIds } }, select: { id: true, docNumber: true, woId: true } }),
+    ),
+    aman("StockOpname", opnameIds, () =>
+      prisma.stockOpname.findMany({ where: { id: { in: opnameIds } }, select: { id: true, docNumber: true } }),
+    ),
+    aman("SalesOrder", soIds, () =>
+      prisma.salesOrder.findMany({ where: { id: { in: soIds } }, select: { id: true, salesorderNo: true } }),
+    ),
+    aman("SalesReturn", returIds, () =>
+      prisma.salesReturn.findMany({ where: { id: { in: returIds } }, select: { id: true, jubelioReturnNo: true } }),
+    ),
+    aman("VanLoad", muatIds, () =>
+      prisma.vanLoad.findMany({ where: { id: { in: muatIds } }, select: { id: true, docNo: true, canvasserId: true } }),
+    ),
+    aman("VanSale", jualVanIds, () =>
+      prisma.vanSale.findMany({ where: { id: { in: jualVanIds } }, select: { id: true, docNo: true } }),
+    ),
+    aman("VanReconcile", rekonIds, () =>
+      prisma.vanReconcile.findMany({ where: { id: { in: rekonIds } }, select: { id: true, docNo: true } }),
+    ),
+    aman("PurchaseOrder", poIds, () =>
+      prisma.purchaseOrder.findMany({ where: { id: { in: poIds } }, select: { id: true, docNumber: true } }),
+    ),
+    aman("Settlement", settlementIds, () =>
+      prisma.settlement.findMany({
+        where: { id: { in: settlementIds } },
+        select: { id: true, marketplace: true, seller: true },
+      }),
+    ),
+  ]);
+
+  for (const r of grn) isi(["GRN", "GRN_REVERSAL"], r.id, { nomor: r.docNumber, poId: r.poId });
+  for (const r of fg) isi(["FG_RECEIPT"], r.id, { nomor: r.docNumber, woId: r.woId });
+  for (const r of opname) isi(["OPNAME"], r.id, { nomor: r.docNumber });
+  for (const r of so) isi(["SALESORDER_REVENUE", "SALESORDER_COGS"], r.id, { nomor: r.salesorderNo });
+  for (const r of retur) isi(["SALESRETURN_REVENUE", "SALESRETURN_COGS"], r.id, { nomor: r.jubelioReturnNo });
+  for (const r of muat) isi(["VAN_LOAD"], r.id, { nomor: r.docNo, canvasserId: r.canvasserId });
+  for (const r of jualVan) isi(["VAN_SALE"], r.id, { nomor: r.docNo });
+  for (const r of rekon) isi(["VAN_RECONCILE"], r.id, { nomor: r.docNo });
+  for (const r of po) isi(["SUPPLIER_PAYMENT", "SUPPLIER_PAYMENT_REVERSAL"], r.id, { nomor: r.docNumber });
+  for (const r of settlement) isi(["SETTLEMENT"], r.id, { nomor: `${namaMarketplace(r.marketplace)} · ${r.seller}` });
+
+  return hasil;
+}

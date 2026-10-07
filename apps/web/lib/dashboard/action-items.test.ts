@@ -50,6 +50,7 @@ describe("buildActionItems", () => {
       salesReturnPending: 1,
       fieldSalesPendingApproval: 1,
       overduePromises: { count: 1, amount: 1 },
+      journalPending: 1,
     });
     const href = (k: string) => items.find((i) => i.key === k)?.href;
     expect(href("overduePOs")).toBe("/backoffice/purchase-orders?status=overdue");
@@ -58,6 +59,42 @@ describe("buildActionItems", () => {
     expect(href("salesReturnPending")).toBe("/backoffice/returns?status=PENDING");
     expect(href("fieldSalesPendingApproval")).toBe("/backoffice/field-sales-orders?status=PENDING_APPROVAL");
     expect(href("overduePromises")).toBe("/backoffice/piutang?keadaan=lewat");
+    // Daftar "Jurnal tertunda" di halaman Jurnal — bukan daftar jurnal yang terposting.
+    expect(href("journalPending")).toBe("/backoffice/finance/journals?status=tertunda");
+  });
+
+  it("nilai PO terlambat diberi label nilai PO, supaya tidak dicocokkan dengan nilai yang belum diterima", () => {
+    const po = buildActionItems({ ...nol, overduePOs: 3, overduePOsAmount: 11_450_000 }).find((i) => i.key === "overduePOs");
+    expect(po).toMatchObject({ amount: 11_450_000, amountLabelKey: "amountPoValue" });
+  });
+
+  it("BKM milik penonton sendiri dipisah: yang bisa ia putuskan dan yang menunggu admin keuangan lain", () => {
+    const items = buildActionItems(
+      {
+        ...nol,
+        claimsAwaitingVerification: { count: 1, amount: 750_000 },
+        claimsAwaitingOthers: { count: 2, amount: 400_000 },
+      },
+      ["journals:manage"],
+    );
+    const bisa = items.find((i) => i.key === "claimsAwaitingVerification");
+    const lain = items.find((i) => i.key === "claimsAwaitingOthers");
+    expect(bisa).toMatchObject({ count: 1, amount: 750_000, tone: "waiting" });
+    expect(lain).toMatchObject({ count: 2, amount: 400_000, tone: "waiting", permission: "journals:manage" });
+    // Dua baris, satu daftar: jumlah keduanya = isi daftar BKM berstatus DIKIRIM.
+    expect(bisa?.href).toBe("/backoffice/pelunasan?status=DIKIRIM");
+    expect(lain?.href).toBe("/backoffice/pelunasan?status=DIKIRIM");
+    // Baris "menunggu orang lain" bukan pekerjaan penonton: tidak ikut "N hal perlu ditindaklanjuti".
+    expect(lain?.menungguOrangLain).toBe(true);
+    expect(totalActionDocuments(items)).toBe(1);
+  });
+
+  it("hanya BKM milik sendiri: baris 'bisa diputuskan' hilang, tidak menetap di beranda", () => {
+    const items = buildActionItems(
+      { ...nol, claimsAwaitingVerification: { count: 0, amount: 0 }, claimsAwaitingOthers: { count: 2, amount: 1 } },
+      ["journals:manage"],
+    );
+    expect(items.map((i) => i.key)).toEqual(["claimsAwaitingOthers"]);
   });
 
   it("drops zero rows and puts overdue before waiting", () => {

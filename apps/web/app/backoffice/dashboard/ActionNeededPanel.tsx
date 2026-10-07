@@ -39,8 +39,9 @@ export function ActionNeededPanel({ items }: { items: ActionItem[] }) {
   }
 
   // Documents, not rows — a PO both overdue and still submitted counts once.
+  // Baris yang menunggu orang lain tidak ikut dihitung (`totalActionDocuments`).
   const total = totalActionDocuments(visible);
-  const hasOverdue = visible.some((item) => item.tone === "overdue");
+  const hasOverdue = visible.some((item) => item.tone === "overdue" && !item.menungguOrangLain);
 
   return (
     <section className="beranda-kartu" aria-labelledby="perlu-tindakan-judul">
@@ -48,15 +49,22 @@ export function ActionNeededPanel({ items }: { items: ActionItem[] }) {
         id="perlu-tindakan-judul"
         className={cn(
           "flex items-center gap-1.5 text-sm font-semibold",
-          hasOverdue ? "text-destructive" : "text-amber-700 dark:text-amber-300",
+          total === 0
+            ? "text-muted-foreground"
+            : hasOverdue
+              ? "text-destructive"
+              : "text-amber-700 dark:text-amber-300",
         )}
       >
-        {hasOverdue ? (
+        {total === 0 ? (
+          <CheckCircle2 aria-hidden className="h-4 w-4" />
+        ) : hasOverdue ? (
           <AlertTriangle aria-hidden className="h-4 w-4" />
         ) : (
           <Clock aria-hidden className="h-4 w-4" />
         )}
-        {t("title", { count: total })}
+        {/* Hanya baris yang menunggu orang lain: tidak ada yang menunggu Anda. */}
+        {total === 0 ? t("emptyTitle") : t("title", { count: total })}
       </h2>
       <ul className="-mx-1.5 mt-2 grid gap-x-6 md:grid-cols-2">
         {visible.map((item) => (
@@ -69,19 +77,31 @@ export function ActionNeededPanel({ items }: { items: ActionItem[] }) {
                 aria-hidden
                 className={cn(
                   "h-1.5 w-1.5 shrink-0 rounded-full",
-                  item.tone === "overdue" ? "bg-destructive" : "bg-amber-500",
+                  // Menunggu orang lain: titik netral — bukan pekerjaan penonton.
+                  item.menungguOrangLain
+                    ? "bg-muted-foreground/50"
+                    : item.tone === "overdue"
+                      ? "bg-destructive"
+                      : "bg-amber-500",
                 )}
               />
               <span className="min-w-0 flex-1 leading-snug">{t(item.labelKey as never)}</span>
               {item.amount != null && item.amount > 0 ? (
                 <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground">
-                  {formatRupiah(item.amount)}
+                  {/* Nilai yang bisa tertukar dengan angka lain diberi nama ("nilai PO …"). */}
+                  {item.amountLabelKey
+                    ? t(item.amountLabelKey as never, { nilai: formatRupiah(item.amount) } as never)
+                    : formatRupiah(item.amount)}
                 </span>
               ) : null}
               <span
                 className={cn(
                   "w-8 shrink-0 text-right font-semibold tabular-nums",
-                  item.tone === "overdue" ? "text-destructive" : "text-amber-700 dark:text-amber-300",
+                  item.menungguOrangLain
+                    ? "text-muted-foreground"
+                    : item.tone === "overdue"
+                      ? "text-destructive"
+                      : "text-amber-700 dark:text-amber-300",
                 )}
               >
                 {item.count}

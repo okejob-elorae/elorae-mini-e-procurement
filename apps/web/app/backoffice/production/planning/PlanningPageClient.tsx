@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
@@ -91,7 +91,10 @@ export function PlanningPageClient() {
         status: y.status as "DRAFT" | "ACTIVE",
       }))
     );
-    const nextYearId = preferredYearId || selectedYearId || planYears[0]?.id || "";
+    // ?tahun= di URL (dibagikan / kembali) dipakai sebelum tahun pertama.
+    const tahunUrl = new URLSearchParams(window.location.search).get("tahun");
+    const dariUrl = tahunUrl ? planYears.find((y) => String(y.year) === tahunUrl)?.id : undefined;
+    const nextYearId = preferredYearId || selectedYearId || dariUrl || planYears[0]?.id || "";
     setSelectedYearId(nextYearId);
     if (!nextYearId) {
       setDetail(null);
@@ -206,11 +209,31 @@ export function PlanningPageClient() {
     return null;
   };
 
+  // Klik ganda pada "Buat WO" tidak boleh membuat dua WO untuk satu tahap.
+  const woSedangDibuat = useRef(new Set<string>());
   const handleCreateWo = async (stageId: string) => {
+    if (woSedangDibuat.current.has(stageId)) return;
+    woSedangDibuat.current.add(stageId);
     try {
-      await createWorkOrderFromStage(stageId);
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : tToast("createWoFailed"));
+      // Penolakan datang sebagai kode; perpindahan ke WO baru dilakukan di sini
+      // (aksi server tidak lagi memanggil redirect()).
+      const hasil = await createWorkOrderFromStage(stageId);
+      if (!hasil.ok) {
+        toast.error(
+          hasil.code === "SUDAH_ADA_WO"
+            ? tToast("woDariTahap.SUDAH_ADA_WO", { docNumber: hasil.docNumber ?? "" })
+            : tToast.has(`woDariTahap.${hasil.code}`)
+              ? tToast(`woDariTahap.${hasil.code}`)
+              : tToast("createWoFailed")
+        );
+        return;
+      }
+      toast.success(tToast("woDariTahap.berhasil", { docNumber: hasil.docNumber }));
+      router.push(`/backoffice/work-orders/${hasil.id}`);
+    } catch {
+      toast.error(tToast("createWoFailed"));
+    } finally {
+      woSedangDibuat.current.delete(stageId);
     }
   };
 
@@ -231,7 +254,13 @@ export function PlanningPageClient() {
       onTabChange={setTab}
       years={years}
       selectedYearId={selectedYearId}
-      onYearChange={setSelectedYearId}
+      onYearChange={(id) => {
+        setSelectedYearId(id);
+        const tahun = years.find((y) => y.id === id)?.year;
+        const params = new URLSearchParams(searchParams.toString());
+        if (tahun != null) params.set("tahun", String(tahun));
+        router.replace(`/backoffice/production/planning?${params.toString()}`);
+      }}
       createdByName={detail?.createdBy.name}
       planStatus={detail?.status}
       isLocked={detail?.isLocked}

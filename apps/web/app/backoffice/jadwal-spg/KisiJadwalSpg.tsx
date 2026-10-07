@@ -101,6 +101,8 @@ export function KisiJadwalSpg({
   };
 
   const tanggalPanjang = (day: string) => formatDisplayDate(new Date(`${day}T00:00:00+07:00`), locale);
+  // Jam gaya WIB yang sama dengan layar lain: "10.00", bukan "10:00".
+  const jam = (j: string) => j.replace(":", ".");
   const kepalaHari = (day: string) => `${td(`hari.${hariKeMinggu(day)}`)} ${Number(day.slice(8))} ${td(`bulan.${Number(day.slice(5, 7))}`)}`;
   const labelShift = (kode: string) => {
     const s = data.aturan.daftar.find((x) => x.kode === kode);
@@ -160,18 +162,19 @@ export function KisiJadwalSpg({
     });
   };
 
-  const pilKenyataan = (k: Kenyataan) => {
+  // Label pendek di pil, jam di baris keterangannya — supaya kolom hari tetap sempit.
+  const pilKenyataan = (k: Kenyataan): { label: string; detail?: string } => {
     switch (k.status) {
       case "HADIR":
-        return t("kenyataan.HADIR", { jam: k.jamMasuk });
+        return { label: t("kenyataan.HADIR", { jam: jam(k.jamMasuk) }) };
       case "TERLAMBAT":
-        return t("kenyataan.TERLAMBAT", { menit: k.menit, jam: k.jamMasuk });
+        return { label: t("kenyataanPendek.TERLAMBAT", { menit: k.menit }), detail: jam(k.jamMasuk) };
       case "MASUK_SAAT_LIBUR":
-        return t("kenyataan.MASUK_SAAT_LIBUR", { jam: k.jamMasuk });
+        return { label: t("kenyataanPendek.MASUK_SAAT_LIBUR"), detail: jam(k.jamMasuk) };
       case "IZIN":
-        return t("kenyataan.IZIN", { jenis: td(`jenisIzin.${k.jenis}`) });
+        return { label: t("kenyataan.IZIN", { jenis: td(`jenisIzin.${k.jenis}`) }) };
       default:
-        return td(`kenyataan.${k.status}`);
+        return { label: td(`kenyataan.${k.status}`) };
     }
   };
 
@@ -180,7 +183,7 @@ export function KisiJadwalSpg({
     if (isi.jenis === "LIBUR") return <span className="text-muted-foreground">{t("libur")}</span>;
     return (
       <span className="font-medium">
-        {s?.label ?? isi.kode} <span className="tabular-nums text-muted-foreground">{s?.mulai && s?.selesai ? `${s.mulai}–${s.selesai}` : ""}</span>
+        {s?.label ?? isi.kode} <span className="tabular-nums text-muted-foreground">{s?.mulai && s?.selesai ? `${jam(s.mulai)}–${jam(s.selesai)}` : ""}</span>
       </span>
     );
   };
@@ -243,14 +246,14 @@ export function KisiJadwalSpg({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="sticky left-0 z-10 min-w-[160px] bg-card">{t("kolomSpg")}</TableHead>
+                    <TableHead className="sticky left-0 z-10 min-w-[120px] bg-card">{t("kolomSpg")}</TableHead>
                     {data.hari.map((day) => {
                       const bukanKerja = !data.hariKerja.includes(new Date(`${day}T00:00:00Z`).getUTCDay());
                       return (
                         <TableHead
                           key={day}
                           title={tanggalPanjang(day)}
-                          className={cn("min-w-[170px] align-bottom", day === data.hariIni && "bg-primary/10 text-foreground")}
+                          className={cn("min-w-[112px] whitespace-normal align-bottom", day === data.hariIni && "bg-primary/10 text-foreground")}
                         >
                           <span className="block">{kepalaHari(day)}</span>
                           {day === data.hariIni ? (
@@ -300,10 +303,10 @@ export function KisiJadwalSpg({
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value={KOSONG}>{t("kosong")}</SelectItem>
+                                  <SelectItem value={KOSONG}>{t("kosongPendek")}</SelectItem>
                                   {data.aturan.daftar.map((x) => (
                                     <SelectItem key={x.kode} value={`K:${x.kode}`}>
-                                      {x.label} {x.mulai}–{x.selesai}
+                                      {x.label} {jam(x.mulai)}–{jam(x.selesai)}
                                     </SelectItem>
                                   ))}
                                   {kodeLama ? <SelectItem value={`K:${kodeLama}`}>{labelShift(kodeLama)}</SelectItem> : null}
@@ -319,7 +322,9 @@ export function KisiJadwalSpg({
                               </Badge>
                             ) : null}
                             {kenyataan ? (
-                              <StatusPill tone={NADA[kenyataan.status]}>{pilKenyataan(kenyataan)}</StatusPill>
+                              <StatusPill tone={NADA[kenyataan.status]} detail={pilKenyataan(kenyataan).detail}>
+                                {pilKenyataan(kenyataan).label}
+                              </StatusPill>
                             ) : izin ? (
                               <StatusPill tone="inactive">{t("kenyataan.IZIN", { jenis: td(`jenisIzin.${izin}`) })}</StatusPill>
                             ) : null}

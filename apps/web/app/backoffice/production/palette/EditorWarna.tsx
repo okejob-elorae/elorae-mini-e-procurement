@@ -304,11 +304,7 @@ export function EditorWarna({
               </div>
             ))}
           </dl>
-
-          <div className="space-y-1 text-xs text-muted-foreground">
-            <p>{t('cmykNote')}</p>
-            <p>{t('pantoneNote')}</p>
-          </div>
+          {/* Catatan CMYK & Pantone ada di Bantuan (ⓘ) dan di berkas ekspor. */}
         </div>
       </div>
     </div>

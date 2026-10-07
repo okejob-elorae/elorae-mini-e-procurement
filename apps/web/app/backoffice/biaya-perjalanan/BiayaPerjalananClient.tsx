@@ -201,7 +201,7 @@ export function BiayaPerjalananClient({
           {data.baris.length === 0 ? (
             <EmptyState
               icon={Receipt}
-              title={disaring ? t("kosongSaringJudul") : t("kosongJudul")}
+              title={disaring ? t("kosongSaringJudul") : bulan === SEMUA_BULAN ? t("kosongSemuaJudul") : t("kosongJudul")}
               description={disaring ? t("kosongSaringIsi") : t("kosongIsi")}
             />
           ) : (
@@ -228,7 +228,7 @@ export function BiayaPerjalananClient({
                         <TableCell>
                           <Link
                             href={`/backoffice/biaya-perjalanan/${b.id}`}
-                            className="font-medium text-primary underline-offset-2 hover:underline"
+                            className="font-medium underline decoration-muted-foreground/50 underline-offset-2 hover:decoration-foreground"
                           >
                             {b.tanggal}
                           </Link>

@@ -32,44 +32,41 @@ export default async function FakturPajakPage({ searchParams }: PageProps) {
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const pageSize = DEFAULT_PAGE_SIZE;
   const canManage = hasPermission(permissions, PERMISSIONS.TAX_INVOICES_MANAGE);
+  const canViewOrder = hasPermission(permissions, PERMISSIONS.FIELD_SALES_ORDERS_VIEW);
 
+  // Data dibaca di dalam try/catch; JSX dibangun sekali di luarnya (aturan react-hooks/error-boundaries).
+  let data: Awaited<ReturnType<typeof listTaxInvoices>> = {
+    rows: [],
+    total: 0,
+    counts: { PENDING: 0, CREATED: 0, NOT_REQUIRED: 0 },
+  };
+  let loadError = false;
   try {
-    const { rows, total, counts } = await listTaxInvoices({
+    data = await listTaxInvoices({
       status,
       q: q || undefined,
       page,
       perPage: pageSize,
     });
-
-    return (
-      <FakturPajakPageClient
-        rows={rows}
-        total={total}
-        counts={counts}
-        status={status ?? "ALL"}
-        q={q}
-        page={page}
-        pageSize={pageSize}
-        canManage={canManage}
-        loadError={false}
-      />
-    );
   } catch (err) {
     /* The error card is the only user-facing signal, and it names no cause — without this the
        container log holds nothing at all about why the page is blank. */
     console.error("[faktur-pajak] list query failed", err);
-    return (
-      <FakturPajakPageClient
-        rows={[]}
-        total={0}
-        counts={{ PENDING: 0, CREATED: 0, NOT_REQUIRED: 0 }}
-        status={status ?? "ALL"}
-        q={q}
-        page={page}
-        pageSize={pageSize}
-        canManage={canManage}
-        loadError={true}
-      />
-    );
+    loadError = true;
   }
+
+  return (
+    <FakturPajakPageClient
+      rows={data.rows}
+      total={data.total}
+      counts={data.counts}
+      status={status ?? "ALL"}
+      q={q}
+      page={page}
+      pageSize={pageSize}
+      canManage={canManage}
+      canViewOrder={canViewOrder}
+      loadError={loadError}
+    />
+  );
 }

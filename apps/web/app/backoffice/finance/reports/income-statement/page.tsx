@@ -5,6 +5,8 @@ import { parseDateOnly, parseDateOnlyEnd, endOfTodayJakarta } from "@/lib/date-o
 import { getAccountBalances } from "@/lib/finance/reports/balances";
 import { buildIncomeStatement } from "@/lib/finance/reports/income-statement";
 import { IncomeStatementClient } from "./IncomeStatementClient";
+import { aksesSpanduk, bacaKesiapanBukuBesar, hariIniWib } from "../../_kesiapan/baca";
+import { adaMutasiLabaRugi } from "../../_kesiapan/kesiapan";
 
 export const dynamic = "force-dynamic";
 
@@ -25,10 +27,17 @@ export default async function IncomeStatementPage({ searchParams }: PageProps) {
   const to = parseDateOnlyEnd(sp.to ?? "") ?? endOfTodayJakarta();
   const from = parseDateOnly(sp.from ?? "");
 
-  const balances = await getAccountBalances({ from, to });
+  const [balances, kesiapan] = await Promise.all([getAccountBalances({ from, to }), bacaKesiapanBukuBesar()]);
   const report = buildIncomeStatement(balances);
 
   return (
-    <IncomeStatementClient report={report} filters={{ from: sp.from ?? "", to: sp.to ?? "" }} />
+    <IncomeStatementClient
+      report={report}
+      filters={{ from: sp.from ?? "", to: sp.to ?? "" }}
+      adaMutasi={adaMutasiLabaRugi(report)}
+      hariIni={hariIniWib()}
+      kesiapan={kesiapan}
+      akses={aksesSpanduk(permissions)}
+    />
   );
 }

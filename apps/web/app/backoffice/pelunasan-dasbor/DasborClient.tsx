@@ -2,14 +2,15 @@
 
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { AlertTriangle, Clock, PackageOpen, Scale, Wallet } from 'lucide-react';
+import { AlertTriangle, CalendarClock, Clock, PackageOpen, Scale, Wallet } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { cn } from '@/lib/utils';
 import type { Dasbor, TindakanHariIni } from '@/lib/receivables/dashboard-queries';
-import type { KeadaanPiutang } from '@/lib/receivables/rules';
+import type { KeadaanTampil } from '@/lib/receivables/jatuh-tempo';
+import { tautanPiutang } from '@/lib/receivables/tindakan-dasbor';
 import { dinamis } from '@/lib/i18n/dinamis';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
@@ -24,6 +25,7 @@ const ringkas = (n: number) =>
 
 const NADA_TINDAKAN: Record<TindakanHariIni['jenis'], StatusTone> = {
   lewat: 'attention',
+  jatuh_tempo: 'attention',
   keputusan: 'attention',
   klaim: 'waiting',
   tertahan: 'attention',
@@ -31,11 +33,12 @@ const NADA_TINDAKAN: Record<TindakanHariIni['jenis'], StatusTone> = {
   jodoh: 'progress',
 };
 
-const NADA_KEADAAN: Record<KeadaanPiutang, StatusTone> = {
+const NADA_KEADAAN: Record<KeadaanTampil, StatusTone> = {
   lunas: 'settled',
   klaim: 'progress',
   tertahan: 'attention',
   lewat: 'attention',
+  jatuh_tempo: 'attention',
   tt: 'waiting',
   belum: 'inactive',
 };
@@ -53,13 +56,14 @@ export function DasborClient({ data }: { data: Dasbor }) {
         meta={t('summary', { count: data.jumlahPiutang, value: rupiah(data.totalPiutang) })}
       />
 
-      <div className="anim-stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      {/* Setiap kartu membuka daftar yang SUDAH tersaring pada angka yang ia sebut. */}
+      <div className="anim-stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
         <Kartu
           ikon={Wallet}
           label={t('kpiTotal')}
           nilai={rupiah(data.totalPiutang)}
           kaki={t('kpiTotalFoot', { count: data.jumlahPiutang })}
-          href="/backoffice/piutang"
+          href={tautanPiutang({})}
         />
         <Kartu
           ikon={AlertTriangle}
@@ -67,14 +71,22 @@ export function DasborClient({ data }: { data: Dasbor }) {
           nilai={rupiah(data.nilaiLewatTempo)}
           kaki={t('kpiOverdueFoot', { count: data.lewatTempo })}
           nada={data.lewatTempo > 0 ? 'text-destructive' : undefined}
-          href="/backoffice/piutang"
+          href={tautanPiutang({ keadaan: 'lewat' })}
+        />
+        <Kartu
+          ikon={CalendarClock}
+          label={t('kpiDue')}
+          nilai={rupiah(data.nilaiJatuhTempo)}
+          kaki={t('kpiDueFoot', { count: data.jatuhTempo })}
+          nada={data.jatuhTempo > 0 ? 'text-destructive' : undefined}
+          href={tautanPiutang({ keadaan: 'jatuh_tempo' })}
         />
         <Kartu
           ikon={Clock}
           label={t('kpiAwaiting')}
           nilai={rupiah(data.nilaiMenungguVerifikasi)}
           kaki={t('kpiAwaitingFoot', { count: data.menungguVerifikasi })}
-          href="/backoffice/pelunasan"
+          href="/backoffice/pelunasan?status=DIKIRIM"
         />
         <Kartu
           ikon={PackageOpen}
@@ -107,21 +119,24 @@ export function DasborClient({ data }: { data: Dasbor }) {
                 href={a.tautan}
                 className="flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2 transition-colors hover:bg-muted/50"
               >
-                <StatusPill tone={NADA_TINDAKAN[a.jenis]}>
-                  {t(`todo_${a.jenis}` as never)}
+                <StatusPill tone={a.konteks.milikSaya ? 'inactive' : NADA_TINDAKAN[a.jenis]}>
+                  {td(`todo_${kunciTindakan(a)}`)}
                 </StatusPill>
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-medium">{a.judul}</span>
                   <span className="block text-xs text-muted-foreground">
                     {/* Kunci "hari ini" dipakai saat selisihnya nol — "0 hari
                         lalu" bukan bahasa Indonesia yang ditulis orang. */}
-                    {td(a.konteks.hari === 0 ? `why_${a.jenis}_today` : `why_${a.jenis}`, {
+                    {td(a.konteks.hari === 0 ? `why_${kunciTindakan(a)}_today` : `why_${kunciTindakan(a)}`, {
                       toko: a.konteks.toko ?? '—',
                       hari: a.konteks.hari ?? 0,
+                      pelapor: a.konteks.pelapor ?? '—',
                     })}
                   </span>
                 </span>
-                <span className="tabular-nums text-sm font-semibold">{rupiah(a.nilai)}</span>
+                <span className="tabular-nums text-sm font-semibold">
+                  {a.konteks.klaimTersembunyi ? '—' : rupiah(a.nilai)}
+                </span>
               </Link>
             ))
           )}
@@ -138,9 +153,9 @@ export function DasborClient({ data }: { data: Dasbor }) {
               <p className="text-sm text-muted-foreground">{t('perSalesEmpty')}</p>
             ) : (
               data.perSales.map((s) => (
-                <div key={s.nama} className="space-y-1">
+                <div key={s.nama ?? ''} className="space-y-1">
                   <div className="flex items-baseline justify-between text-sm">
-                    <span className="font-medium">{s.nama}</span>
+                    <span className="font-medium">{s.nama ?? t('noSalesman')}</span>
                     <span className="tabular-nums">
                       {rupiah(s.nilai)}
                       {/* Titik pemisah: angka telanjang di sebelah nominal
@@ -170,15 +185,19 @@ export function DasborClient({ data }: { data: Dasbor }) {
           </CardHeader>
           <CardContent className="space-y-2">
             {data.perKeadaan.map((k) => (
-              <div key={k.keadaan} className="flex flex-wrap items-center gap-3">
+              <Link
+                key={k.keadaan}
+                href={tautanPiutang({ keadaan: k.keadaan })}
+                className="-mx-2 flex flex-wrap items-center gap-3 rounded-md px-2 py-1 transition-colors hover:bg-muted/50"
+              >
                 <StatusPill tone={NADA_KEADAAN[k.keadaan]}>
-                  {t(`state_${k.keadaan}` as never)}
+                  {td(`state_${k.keadaan}`)}
                 </StatusPill>
                 <span className="flex-1 text-sm tabular-nums text-muted-foreground">
                   {t('invoiceCount', { count: k.jumlah })}
                 </span>
                 <span className="text-sm tabular-nums">{ringkas(k.nilai)}</span>
-              </div>
+              </Link>
             ))}
           </CardContent>
         </Card>
@@ -211,6 +230,17 @@ export function DasborClient({ data }: { data: Dasbor }) {
       )}
     </div>
   );
+}
+
+/**
+ * Kunci kalimat sebuah baris tindakan. BKM yang dicatat penonton sendiri
+ * berbunyi "menunggu rekan Anda"; BKM yang pelapornya diketahui menyebut
+ * namanya — dulu semuanya berbunyi "sales sudah lapor", juga yang dicatat admin.
+ */
+function kunciTindakan(a: TindakanHariIni): string {
+  if (a.jenis !== 'klaim') return a.jenis;
+  if (a.konteks.milikSaya) return 'klaim_milikSaya';
+  return a.konteks.pelapor ? 'klaim_oleh' : 'klaim';
 }
 
 /** Byte ke MB dengan satu desimal. Angka byte mentah tidak berarti apa pun. */

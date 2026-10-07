@@ -124,7 +124,7 @@ export function KomisiSpgClient({ periode, pilihan, bulanSelesai, aturan, bolehK
         {pindah ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden /> : null}
         <p className="text-sm text-muted-foreground">
           {td(`dasarAktif.${aturan.dasar}`)}{" "}
-          <Link href="/backoffice/settings/spg" className="text-primary underline-offset-2 hover:underline">
+          <Link href="/backoffice/settings/spg" className="underline decoration-muted-foreground/50 underline-offset-2 hover:decoration-foreground">
             {t("ubahPengaturan")}
           </Link>
         </p>

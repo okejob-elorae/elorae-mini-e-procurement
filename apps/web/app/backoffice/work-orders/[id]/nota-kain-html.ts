@@ -37,14 +37,14 @@ export function buildNotaKainHtml(d: NotaKainData): string {
                   <h2>Nota Kain per Roll</h2>
                   <p><strong>WO:</strong> ${t(d.docNumber)}</p>
                   <p><strong>Vendor:</strong> ${t(d.vendorName)}</p>
-                  <p><strong>FG:</strong> ${t(d.fgName)}</p>
+                  <p><strong>Barang jadi:</strong> ${t(d.fgName)}</p>
                   <table border="1" cellpadding="8" style="border-collapse:collapse;width:100%">
-                  <tr><th>Roll / Ref</th><th>Qty</th><th>Notes</th></tr>
+                  <tr><th>Roll / ref</th><th>Qty</th><th>Catatan</th></tr>
                   ${barisRol}
                   </table>
-                  <p style="margin-top:16px"><strong>Materials (consumption plan):</strong></p>
+                  <p style="margin-top:16px"><strong>Bahan (rencana):</strong></p>
                   <table border="1" cellpadding="8" style="border-collapse:collapse;width:100%">
-                  <tr><th>Material</th><th>${t(d.labelKonsumsi)}</th><th>UOM</th></tr>
+                  <tr><th>Bahan</th><th>${t(d.labelKonsumsi)}</th><th>Satuan</th></tr>
                   ${barisBahan}
                   </table>
                   </body></html>`;

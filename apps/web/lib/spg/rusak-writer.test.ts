@@ -115,13 +115,20 @@ d("barang rusak di kiriman — penulis (test bed only)", () => {
     // Catatan kantor dicocokkan di JS lewat metadata — penyaringan jalur JSON
     // tidak andal di semua adaptor — lalu dihapus per id.
     const catatan = await prisma.adminNotification.findMany({
-      where: { OR: [{ category: KATEGORI_NOTIF_RUSAK }, { category: { startsWith: "STORE_TRANSFER_" } }] },
+      where: {
+        OR: [{ category: KATEGORI_NOTIF_RUSAK }, { category: { startsWith: "STORE_TRANSFER_" } }, { category: "RETUR_SPG_TANPA_PEMEGANG" }],
+      },
       select: { id: true, metadata: true },
     });
     const milikUji = catatan
       .filter((c) => {
         const m = c.metadata as Record<string, unknown> | null;
-        return (typeof m?.receiptId === "string" && receiptIds.includes(m.receiptId)) || (typeof m?.transferId === "string" && mutasi.includes(m.transferId));
+        return (
+          (typeof m?.receiptId === "string" && receiptIds.includes(m.receiptId)) ||
+          (typeof m?.transferId === "string" && mutasi.includes(m.transferId)) ||
+          // NRT SPG dari toko uji tanpa pemegang membunyikan lonceng kantor.
+          (typeof m?.storeReturnId === "string" && notaIds.includes(m.storeReturnId))
+        );
       })
       .map((c) => c.id);
     await prisma.adminNotification.deleteMany({ where: { id: { in: seededIds(milikUji) } } });

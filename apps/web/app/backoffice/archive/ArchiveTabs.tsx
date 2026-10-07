@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/ui/page-header';
@@ -31,17 +32,34 @@ export function ArchiveTabs({
   workOrder: ArchiveData | null;
 }) {
   const t = useTranslations('archive');
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
-  const hint = (href: string) => (
-    <Link href={href} className="font-medium text-primary underline underline-offset-2">
-      {t('hintLink')}
-    </Link>
-  );
+  // Tab tersimpan di ?tab= supaya tautan dan tombol Kembali membuka tab yang sama.
+  const tersedia = ['nota', ...(retur ? ['retur'] : []), ...(workOrder ? ['wo'] : [])];
+  const dariUrl = searchParams?.get('tab') ?? '';
+  const tab = tersedia.includes(dariUrl) ? dariUrl : 'nota';
+  const gantiTab = (nilai: string) => {
+    const next = new URLSearchParams(searchParams?.toString() ?? '');
+    if (nilai === 'nota') next.delete('tab');
+    else next.set('tab', nilai);
+    const qs = next.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
+
+  // Tautan kerja menyebut tujuannya sendiri; tanpa dokumen menggantung, tidak tampil.
+  const hint = (href: string, label: string, pending: number) =>
+    pending > 0 ? (
+      <Link href={href} className="font-medium text-tautan underline underline-offset-2">
+        {label} →
+      </Link>
+    ) : null;
 
   return (
     <div className="space-y-6">
       <PageHeader title={t('pageTitle')} />
-      <Tabs defaultValue="nota" className="space-y-4">
+      <Tabs value={tab} onValueChange={gantiTab} className="space-y-4">
       <TabsList>
         <TabsTrigger value="nota">{t('tabNotaToko')}</TabsTrigger>
         {retur && <TabsTrigger value="retur">{t('tabReturPemasok')}</TabsTrigger>}
@@ -55,7 +73,11 @@ export function ArchiveTabs({
           summary={t('notaSummary', { docs: nota.totalDocs, pending: nota.totalPending })}
           searchPlaceholder={t('searchStore')}
           emptyLabel={t('empty')}
-          hint={hint('/backoffice/finance/faktur-pajak')}
+          hint={hint(
+            '/backoffice/finance/faktur-pajak',
+            t('hintLinkNota', { count: nota.totalPending }),
+            nota.totalPending,
+          )}
         />
       </TabsContent>
 
@@ -67,7 +89,11 @@ export function ArchiveTabs({
             summary={t('returSummary', { docs: retur.totalDocs, pending: retur.totalPending })}
             searchPlaceholder={t('searchVendor')}
             emptyLabel={t('empty')}
-            hint={hint('/backoffice/vendor-returns')}
+            hint={hint(
+              '/backoffice/vendor-returns',
+              t('hintLinkRetur', { count: retur.totalPending }),
+              retur.totalPending,
+            )}
           />
         </TabsContent>
       )}
@@ -80,7 +106,11 @@ export function ArchiveTabs({
             summary={t('woSummary', { docs: workOrder.totalDocs, pending: workOrder.totalPending })}
             searchPlaceholder={t('searchVendor')}
             emptyLabel={t('empty')}
-            hint={hint('/backoffice/work-orders')}
+            hint={hint(
+              '/backoffice/work-orders',
+              t('hintLinkWo', { count: workOrder.totalPending }),
+              workOrder.totalPending,
+            )}
           />
         </TabsContent>
       )}

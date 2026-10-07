@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@elorae/db';
 import { auth } from '@/lib/auth';
+import { sidikFoto } from '@/lib/foto/sidik';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,6 +18,10 @@ const JENIS_DIIZINKAN = new Set(['image/jpeg', 'image/png', 'image/webp']);
  * Yang dikembalikan adalah URL, bukan id mentah — kolom penyimpannya
  * (`photoUrl`, `transferPhotoUrl`, …) sudah bertipe URL, jadi pemanggilnya
  * tidak perlu tahu foto ini disimpan di mana.
+ *
+ * Sidik isinya (`sha256`) ikut disimpan: unggahan ulang berkas yang sama persis
+ * menjadi baris baru milik pengunggahnya, tetapi isinya tetap bisa dikenali
+ * sebagai kembaran foto orang lain (`lib/foto/kembar.ts`).
  */
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -48,6 +53,7 @@ export async function POST(req: NextRequest) {
       sizeBytes: bytes.byteLength,
       caption,
       uploadedById: session.user.id,
+      sha256: sidikFoto(bytes),
     },
     select: { id: true },
   });

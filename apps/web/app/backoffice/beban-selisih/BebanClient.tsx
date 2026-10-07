@@ -68,12 +68,15 @@ export function BebanClient({
   kandidat,
   bolehMengelola,
   faktur = {},
+  tagihanToko = {},
 }: {
   baris: BarisBeban[];
   kandidat: { id: string; name: string }[];
   bolehMengelola: boolean;
   /** Faktur beban toko per id beban. */
   faktur?: Record<string, FakturBebanRingkas>;
+  /** Yang ditagihkan ke toko saat beban TOKO terakhir ditetapkan (`tagihanBebanTokoTercatat`). */
+  tagihanToko?: Record<string, number>;
 }) {
   const t = useTranslations('bebanSelisih');
   const td = dinamis(t);
@@ -92,6 +95,9 @@ export function BebanClient({
   const nilaiTerbuka = baris
     .filter((b) => b.status === 'TERBUKA')
     .reduce((s, b) => s + b.nilai, 0);
+
+  // Beban TOKO yang ditagih 0: tidak ada faktur dan tidak ada yang bisa "diganti".
+  const tanpaTagihan = (b: BarisBeban) => b.penanggung === 'TOKO' && !faktur[b.id] && tagihanToko[b.id] === 0;
 
   const lunaskan = (id: string) => {
     startTransition(async () => {
@@ -201,6 +207,11 @@ export function BebanClient({
                                 })}
                               </span>
                             )}
+                            {b.penanggung === 'TOKO' && !faktur[b.id] && tagihanToko[b.id] !== undefined && (
+                              <span className="block text-xs text-muted-foreground">
+                                {t('tokoBilledRow', { value: rupiah(tagihanToko[b.id]) })}
+                              </span>
+                            )}
                           </>
                         ) : (
                           <span className="text-muted-foreground">{t('notAssigned')}</span>
@@ -251,13 +262,16 @@ export function BebanClient({
                               <Button
                                 size="sm"
                                 variant="outline"
-                                disabled={pending}
+                                disabled={pending || tanpaTagihan(b)}
                                 onClick={() => lunaskan(b.id)}
                               >
                                 {t('markSettled')}
                               </Button>
                             )}
                           </span>
+                        )}
+                        {b.status === 'DITETAPKAN' && bolehMengelola && tanpaTagihan(b) && (
+                          <span className="mt-1 block text-xs text-muted-foreground">{t('markSettledNothingBilled')}</span>
                         )}
                       </TableCell>
                     </TableRow>

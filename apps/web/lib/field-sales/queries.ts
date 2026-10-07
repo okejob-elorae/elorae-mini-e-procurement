@@ -8,6 +8,12 @@ import { lencanaIndenById, type LencanaInden } from "./inden-queries";
 
 export type FieldSalesOrderStatus = "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
 
+/**
+ * Saringan status di daftar: `REJECTED` = ditolak KANTOR saja, `CANCELLED` = dibatalkan
+ * salesman sendiri (status tersimpan tetap REJECTED, dibedakan `cancelledById`).
+ */
+export type FieldSalesOrderStatusFilter = FieldSalesOrderStatus | "CANCELLED";
+
 export type FieldSalesOrderType = "PUTUS" | "KONSI";
 
 export type FieldSalesDeliveryStatus = "PENDING" | "PARTIAL" | "DELIVERED" | "CLOSED";
@@ -38,6 +44,10 @@ export type FieldSalesDeliverySummary = {
   receivedAt: Date | null;
   podPhotoUrl: string | null;
   lines: FieldSalesDeliveryLineSummary[];
+  /** Piutang yang lahir dari nota tagihan ini; null = nota 0 rupiah atau nota lama tanpa piutang. */
+  receivable: { id: string; invoiceNo: string } | null;
+  /** Faktur pajak nota ini (satu per nota); null hanya untuk data rusak. */
+  taxInvoice: { status: "PENDING" | "CREATED" | "NOT_REQUIRED"; invoiceNo: string | null } | null;
 };
 
 export type FieldSalesOrderListItem = {
@@ -65,6 +75,8 @@ export type FieldSalesOrderListItem = {
   menggantikan?: TautanPesanan | null;
   /** Pesanan ini sudah diganti pesanan baru. Absen = tidak dibaca. */
   digantiDengan?: TautanPesanan | null;
+  /** Status pengiriman (bermakna untuk PUTUS yang disetujui). Absen = kueri tidak membacanya. */
+  deliveryStatus?: FieldSalesDeliveryStatus;
 };
 
 /** Nomor + id pesanan lain, untuk tautan "Menggantikan …" / "Diganti dengan …". */
@@ -124,6 +136,7 @@ export function serializeListItem(row: {
   salesman: { name: string | null };
   remoteChannel?: string | null;
   cancelledById?: string | null;
+  deliveryStatus?: FieldSalesDeliveryStatus;
 }): FieldSalesOrderListItem {
   return {
     id: row.id,
@@ -137,6 +150,7 @@ export function serializeListItem(row: {
     // Hanya diteruskan bila kuerinya memilih kolom itu (absen ≠ null).
     ...(row.remoteChannel !== undefined ? { remoteChannel: row.remoteChannel } : {}),
     ...(row.cancelledById !== undefined ? { dibatalkan: row.status === "REJECTED" && !!row.cancelledById } : {}),
+    ...(row.deliveryStatus !== undefined ? { deliveryStatus: row.deliveryStatus } : {}),
   };
 }
 
@@ -185,17 +199,27 @@ function lencanaPesanan(
 
 export async function listFieldSalesOrders(
   filter: {
-    status?: FieldSalesOrderStatus;
+    status?: FieldSalesOrderStatusFilter;
     search?: string;
     orderType?: FieldSalesOrderType;
     storeId?: string;
     /** INDEN = hanya pesanan pre-order; BIASA = hanya pesanan stok siap. */
     inden?: "INDEN" | "BIASA";
+    /**
+     * Status pengiriman. Hanya pesanan PUTUS yang DISETUJUI yang punya pengiriman — pesanan
+     * menunggu dan konsinyasi juga bernilai bawaan PENDING di kolomnya, jadi keduanya disaring keluar.
+     */
+    kirim?: FieldSalesDeliveryStatus;
   },
   paging: { page: number; pageSize: number },
 ): Promise<{ orders: FieldSalesOrderListItem[]; totalCount: number }> {
   const where: Prisma.FieldSalesOrderWhereInput = {};
-  if (filter.status) where.status = filter.status;
+  const dan: Prisma.FieldSalesOrderWhereInput[] = [];
+  if (filter.status === "CANCELLED") dan.push({ status: "REJECTED", cancelledById: { not: null } });
+  else if (filter.status === "REJECTED") dan.push({ status: "REJECTED", cancelledById: null });
+  else if (filter.status) dan.push({ status: filter.status });
+  if (filter.kirim) dan.push({ deliveryStatus: filter.kirim, status: "APPROVED", orderType: "PUTUS" });
+  if (dan.length > 0) where.AND = dan;
   if (filter.orderType) where.orderType = filter.orderType;
   if (filter.storeId) where.storeId = filter.storeId;
   if (filter.inden === "INDEN") where.preorderWindowId = { not: null };
@@ -212,7 +236,7 @@ export async function listFieldSalesOrders(
       take: paging.pageSize,
       select: {
         id: true, orderNo: true, orderType: true, status: true, total: true, createdAt: true, remoteChannel: true,
-        preorderWindowId: true, cancelledById: true, replacesOrderId: true,
+        preorderWindowId: true, cancelledById: true, replacesOrderId: true, deliveryStatus: true,
         store: { select: { name: true } },
         salesman: { select: { name: true } },
       },
@@ -257,6 +281,8 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
           subtotal: true, discountAmount: true, total: true,
           receivedByName: true, receivedAt: true, podPhotoUrl: true,
           deliveredBy: { select: { name: true } },
+          receivable: { select: { id: true, invoiceNo: true } },
+          taxInvoice: { select: { status: true, invoiceNo: true } },
           lines: {
             select: {
               id: true, orderLineId: true, productName: true, variantSku: true, qty: true,
@@ -275,6 +301,29 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
   });
   // Per-variant keyed (matches per-variant order lines). Variantless rows use null → "".
   const invKey = (itemId: string, variantSku: string | null | undefined) => `${itemId}::${variantSku ?? ""}`;
+  const barisPerKunci = new Map<string, typeof invs>();
+  for (const iv of invs) {
+    const k = invKey(iv.itemId, iv.variantSku);
+    barisPerKunci.set(k, [...(barisPerKunci.get(k) ?? []), iv]);
+  }
+  /*
+   * Satu baris per kunci, SAMA dengan baris yang dipakai penulis. Barang tanpa varian bisa punya
+   * baris kembar `null` dan `""`; penulis (`findFieldSalesInventory`) mengambil SATU lewat findFirst,
+   * jadi menjumlahkan keduanya menawarkan stok yang kemudian ditolak INSUFFICIENT_STOCK. Untuk
+   * kunci kembar, baris dipilih dengan kueri yang sama persis dengan penulis.
+   */
+  const barisDipakai = new Map<string, (typeof invs)[number]>();
+  for (const [k, baris] of barisPerKunci) {
+    if (baris.length === 1) {
+      barisDipakai.set(k, baris[0]);
+      continue;
+    }
+    const pilihan = await prisma.inventoryValue.findFirst({
+      where: { itemId: baris[0].itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
+      select: { itemId: true, variantSku: true, qtyOnHand: true, reservedQty: true, avgCost: true },
+    });
+    barisDipakai.set(k, pilihan ?? baris[0]);
+  }
   const availByKey = new Map<string, number>();
   /**
    * Parallel to availByKey but holds raw qtyOnHand, not qtyOnHand - reservedQty. The delivery
@@ -283,11 +332,10 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
    */
   const onHandByKey = new Map<string, number>();
   const avgCostByKey = new Map<string, number>();
-  for (const iv of invs) {
-    const k = invKey(iv.itemId, iv.variantSku);
-    availByKey.set(k, (availByKey.get(k) ?? 0) + (Number(iv.qtyOnHand) - Number(iv.reservedQty)));
-    onHandByKey.set(k, (onHandByKey.get(k) ?? 0) + Number(iv.qtyOnHand));
-    if (!avgCostByKey.has(k)) avgCostByKey.set(k, Number(iv.avgCost));
+  for (const [k, iv] of barisDipakai) {
+    availByKey.set(k, Number(iv.qtyOnHand) - Number(iv.reservedQty));
+    onHandByKey.set(k, Number(iv.qtyOnHand));
+    avgCostByKey.set(k, Number(iv.avgCost));
   }
 
   const promoIds = Array.from(
@@ -349,6 +397,8 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
         discountAmount: toNum(dl.discountAmount),
         lineTotal: dl.lineTotal === null ? null : toNum(dl.lineTotal),
       })),
+      receivable: d.receivable ? { id: d.receivable.id, invoiceNo: d.receivable.invoiceNo } : null,
+      taxInvoice: d.taxInvoice ? { status: d.taxInvoice.status, invoiceNo: d.taxInvoice.invoiceNo } : null,
     })),
     lines: row.lines.map((l) => {
       const qty = l.qty;
@@ -563,8 +613,9 @@ export async function listKonsiSuggestions(orderId: string): Promise<KonsiSugges
          * On a collision, keep the MINIMUM available rather than summing. The writer reserves
          * against a single row chosen by `findFieldSalesInventory`'s findFirst, so the minimum is
          * the only figure guaranteed not to exceed what that reservation can actually satisfy.
-         * Summing (as getFieldSalesOrderById does) would offer more than the writer can honor and
-         * fail the approval; under-offering only hides a little stock. Fail-safe direction wins.
+         * Summing would offer more than the writer can honor and fail the approval; under-offering
+         * only hides a little stock. Fail-safe direction wins. (getFieldSalesOrderById reads the
+         * writer's own row instead, since it needs the exact figure per order line.)
          */
         existing.available = Math.min(existing.available, available);
       } else {

@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, Printer } from 'lucide-react';
+import { ArrowLeft, Loader2, PackageX, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 import {
@@ -19,6 +19,10 @@ import { toast } from 'sonner';
 import { useLocale, useTranslations } from 'next-intl';
 import { formatDisplayDateTime } from '@/lib/date-only';
 import { labelJenisGerakan } from '@/lib/inventory/jenis-gerakan-stok';
+import { EmptyState } from '@/components/ui/empty-state';
+
+const angka = (n: number | null | undefined) =>
+  n == null ? '—' : Number(n).toLocaleString('id-ID', { maximumFractionDigits: 2 });
 
 export default function StockAdjustmentDetailPage() {
   const params = useParams();
@@ -31,7 +35,8 @@ export default function StockAdjustmentDetailPage() {
   const tToasts = useTranslations('toasts');
   const locale = useLocale();
   const [adj, setAdj] = useState<Awaited<ReturnType<typeof getStockAdjustmentById>>>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  // Tanpa id tidak ada yang dimuat: langsung keadaan "tidak ditemukan".
+  const [isLoading, setIsLoading] = useState(Boolean(id));
 
   useEffect(() => {
     if (!id) return;
@@ -49,13 +54,42 @@ export default function StockAdjustmentDetailPage() {
     window.print();
   };
 
-  if (isLoading || !adj) {
+  if (isLoading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
+
+  // Dulu id yang tidak ada membuat halaman berputar selamanya.
+  if (!adj) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <Link href="/backoffice/inventory?tab=adjustments">
+            <Button variant="ghost" size="icon" aria-label={t('page.backToInventory')} title={t('page.backToInventory')}>
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          </Link>
+          <h1 className="text-2xl font-bold">{t('stockAdjustment')}</h1>
+        </div>
+        <Card>
+          <CardContent>
+            <EmptyState
+              icon={PackageX}
+              title={tAdj('tidakDitemukan')}
+              description={tAdj('tidakDitemukanIsi')}
+            />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Judul nota mengikuti jenisnya: penyesuaian Tambah adalah barang MASUK.
+  const masuk = adj.type === 'POSITIVE';
+  const judulNota = masuk ? tAdj('notaBarangMasuk') : tAdj('notaBarangKeluar');
 
   const item = adj.item as { sku?: string; nameId?: string; nameEn?: string } | null;
   const itemLabel = item ? `${item.sku ?? '-'} – ${item.nameId ?? item.nameEn ?? '-'}` : adj.itemId;
@@ -70,7 +104,7 @@ export default function StockAdjustmentDetailPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between gap-4 no-print">
           <div className="flex items-center gap-4">
-            <Link href="/backoffice/inventory">
+            <Link href="/backoffice/inventory?tab=adjustments">
               <Button
                 variant="ghost"
                 size="icon"
@@ -90,13 +124,13 @@ export default function StockAdjustmentDetailPage() {
           </div>
           <Button variant="outline" size="sm" onClick={handlePrint}>
             <Printer className="mr-2 h-4 w-4" />
-            {tAdj('printNotaBarangKeluar')}
+            {masuk ? tAdj('printNotaBarangMasuk') : tAdj('printNotaBarangKeluar')}
           </Button>
         </div>
 
         <div ref={printRef}>
           <div className="mb-4 text-center print:block">
-            <h2 className="text-lg font-semibold">{tAdj('notaBarangKeluar')}</h2>
+            <h2 className="text-lg font-semibold">{judulNota}</h2>
             <p className="text-sm text-muted-foreground">{adj.docNumber}</p>
           </div>
 
@@ -130,8 +164,8 @@ export default function StockAdjustmentDetailPage() {
                 {labelJenisGerakan(tKind, adj.source)}
               </p>
               <p>
-                <span className="text-muted-foreground">{t('previousQtyLabel')}</span> {adj.prevQty} →{' '}
-                {t('page.newQtyLabel')} {adj.newQty}
+                <span className="text-muted-foreground">{t('previousQtyLabel')}</span> {angka(adj.prevQty)} →{' '}
+                {t('page.newQtyLabel')} {angka(adj.newQty)}
               </p>
               <p>
                 <span className="text-muted-foreground">{t('reasonLabel')}</span> {adj.reason}

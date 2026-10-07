@@ -1,6 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { AlertTriangle, CheckCircle2, Scale } from "lucide-react";
@@ -21,17 +22,26 @@ import { ReportExportButtons } from "../ReportExportButtons";
 import { exportTrialBalanceExcel } from "@/app/actions/finance-reports";
 import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
 import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
+import { LabelPeriode } from "../LabelPeriode";
+import { SpandukBukuBesar } from "../../_kesiapan/SpandukBukuBesar";
+import { periodeLaporan, type KesiapanBukuBesar } from "../../_kesiapan/kesiapan";
+import type { AksesSpanduk } from "../../_kesiapan/baca";
+import { tautanBukuBesar } from "../../journals/_sumber/tautan";
 
 type Props = {
   report: TrialBalance;
   filters: { from: string; to: string; zero: boolean };
+  /** Hari ini WIB — periode bila isian "sampai" kosong. */
+  hariIni: string;
+  kesiapan: KesiapanBukuBesar | null;
+  akses: AksesSpanduk;
 };
 
 function formatRupiah(value: number): string {
   return `Rp ${Math.round(value).toLocaleString("id-ID")}`;
 }
 
-export function TrialBalanceClient({ report, filters }: Props) {
+export function TrialBalanceClient({ report, filters, hariIni, kesiapan, akses }: Props) {
   const router = useRouter();
   const sp = useSearchParams();
   const t = useTranslations("financeReports");
@@ -49,6 +59,8 @@ export function TrialBalanceClient({ report, filters }: Props) {
     );
   }
 
+  const periode = periodeLaporan({ dari: filters.from, sampai: filters.to }, hariIni);
+
   function reset() {
     startTransition(() => router.push("/backoffice/finance/reports/trial-balance"));
   }
@@ -56,9 +68,12 @@ export function TrialBalanceClient({ report, filters }: Props) {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-1">
-          <h1 className="text-2xl font-bold tracking-tight">{t("trialBalance.pageTitle")}</h1>
-          <TombolBantuan judul={t("trialBalance.pageTitle")} />
+        <div>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-bold tracking-tight">{t("trialBalance.pageTitle")}</h1>
+            <TombolBantuan judul={t("trialBalance.pageTitle")} />
+          </div>
+          <LabelPeriode jenis="rentang" dari={periode.dari} sampai={periode.sampai} />
         </div>
         <ReportExportButtons
           onExcel={() =>
@@ -71,6 +86,8 @@ export function TrialBalanceClient({ report, filters }: Props) {
           printHref={`/print/finance/trial-balance?from=${encodeURIComponent(filters.from)}&to=${encodeURIComponent(filters.to)}&zero=${filters.zero ? "1" : "0"}`}
         />
       </div>
+
+      <SpandukBukuBesar kesiapan={kesiapan} akses={akses} />
 
       <Card className="p-4">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
@@ -134,7 +151,15 @@ export function TrialBalanceClient({ report, filters }: Props) {
                     {report.rows.map((row) => (
                       <TableRow key={row.accountId}>
                         <TableCell className="whitespace-nowrap font-mono text-xs">{row.code}</TableCell>
-                        <TableCell>{row.name}</TableCell>
+                        <TableCell>
+                          {akses.jurnal ? (
+                            <Link href={tautanBukuBesar(row.accountId, periode)} className="underline underline-offset-4">
+                              {row.name}
+                            </Link>
+                          ) : (
+                            row.name
+                          )}
+                        </TableCell>
                         <TableCell className="text-right tabular-nums">{formatRupiah(row.debit)}</TableCell>
                         <TableCell className="text-right tabular-nums">{formatRupiah(row.credit)}</TableCell>
                         <TableCell className="text-right tabular-nums">{formatRupiah(row.signed)}</TableCell>
@@ -149,18 +174,21 @@ export function TrialBalanceClient({ report, filters }: Props) {
                   </TableBody>
                 </Table>
               </div>
-              <div
-                className={`mt-4 flex items-start gap-2 rounded-md border p-3 text-sm ${report.isBalanced ? "border-emerald-500/40 text-muted-foreground" : "border-destructive/50 text-destructive"}`}
-              >
-                {report.isBalanced ? (
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                ) : (
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                )}
-                <p>
-                  {report.isBalanced ? t("trialBalance.balancedNote") : t("trialBalance.unbalancedNote")}
-                </p>
-              </div>
+              {/* "Seimbang" pada Rp 0 (baris nol ditampilkan) bukan hasil pemeriksaan apa pun. */}
+              {(report.totalDebit !== 0 || report.totalCredit !== 0) && (
+                <div
+                  className={`mt-4 flex items-start gap-2 rounded-md border p-3 text-sm ${report.isBalanced ? "border-emerald-500/40 text-muted-foreground" : "border-destructive/50 text-destructive"}`}
+                >
+                  {report.isBalanced ? (
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                  ) : (
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  )}
+                  <p>
+                    {report.isBalanced ? t("trialBalance.balancedNote") : t("trialBalance.unbalancedNote")}
+                  </p>
+                </div>
+              )}
             </>
           )}
         </CardContent>

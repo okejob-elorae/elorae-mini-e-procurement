@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, Fragment } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   Plus,
   Search,
@@ -49,13 +49,12 @@ import {
   getRollsByGrnId,
   getFabricRolls,
   getFabricRollFilterOptions,
-  approveGRNByOwner,
-  declineGRNByOwner,
-  getGrnJournalState,
-  postGrnReceiptJournalAction,
-  postGrnReversalJournalAction,
 } from '@/app/actions/grn';
-import { hasPermission } from "@/lib/rbac";
+import { KeputusanPemilikGrn } from '@/components/grn/KeputusanPemilikGrn';
+import { JurnalGrnPanel } from '@/components/grn/JurnalGrnPanel';
+import { TAUTAN_DOKUMEN } from '@/app/backoffice/purchase-orders/tautan-dokumen';
+import { tabInventori, type TabInventori } from './tab-inventori';
+import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { getStockAdjustments } from '@/app/actions/inventory';
 import {
   SARINGAN_SUMBER_BAWAAN,
@@ -70,7 +69,7 @@ import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 import { StockHealthKpis } from '@/components/inventory/StockHealthKpis';
 import { StockItemCard } from '@/components/inventory/StockItemCard';
-import type { StockSort, StockStatus } from '@/lib/inventory/stock-status';
+import { statusStokDariUrl, type StockSort, type StockStatus } from '@/lib/inventory/stock-status';
 
 interface InventoryItem {
   itemId: string;
@@ -110,7 +109,9 @@ interface GRN {
   supplier: {
     name: string;
   };
+  poId?: string | null;
   po?: {
+    id?: string;
     docNumber: string;
   };
 }
@@ -178,11 +179,11 @@ export function InventoryPageClient({
   const tToasts = useTranslations("toasts");
   const locale = useLocale();
   const { data: session } = useSession();
+  // Nomor PO menaut hanya bila rincian PO boleh dibuka (gudang biasanya tanpa purchase_orders:view).
+  const bolehBukaPo = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.PURCHASE_ORDERS_VIEW);
   const searchParams = useSearchParams();
   const [inventory, setInventory] = useState<InventoryItem[]>(initialInventory);
   const [grns, setGRNs] = useState<GRN[]>(initialGrns);
-  const [approvingGrnId, setApprovingGrnId] = useState<string | null>(null);
-  const [decliningGrnId, setDecliningGrnId] = useState<string | null>(null);
   const [adjustments, setAdjustments] = useState<Adjustment[]>(initialAdjustments);
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -191,8 +192,6 @@ export function InventoryPageClient({
   const [expandedAdjustmentId, setExpandedAdjustmentId] = useState<string | null>(null);
   const [expandedGrnId, setExpandedGrnId] = useState<string | null>(null);
   const [grnRolls, setGrnRolls] = useState<Array<{ id: string; rollCode: string; rollRef: string; initialLength: number; remainingLength: number; isClosed: boolean; item: { sku: string; nameId: string }; uom: { code: string } }>>([]);
-  const [grnJournal, setGrnJournal] = useState<Awaited<ReturnType<typeof getGrnJournalState>> | null>(null);
-  const [postingJournal, setPostingJournal] = useState(false);
   const [rolls, setRolls] = useState<
     Array<{
       id: string;
@@ -218,9 +217,20 @@ export function InventoryPageClient({
   const [rollsSearchQuery, setRollsSearchQuery] = useState('');
   const [rollsSearchDebounced, setRollsSearchDebounced] = useState('');
   const rollsSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [activeTab, setActiveTab] = useState(() => searchParams.get("tab") ?? "stock");
+  const pathname = usePathname();
+  const [activeTab, setActiveTabState] = useState<TabInventori>(() => tabInventori(searchParams.get("tab")));
+  // Tab ditulis ke URL (replace): tautannya bisa dibagikan dan muat ulang tetap di tab yang sama.
+  const setActiveTab = (nilai: string) => {
+    const tab = tabInventori(nilai);
+    setActiveTabState(tab);
+    const params = new URLSearchParams(searchParams.toString());
+    if (tab === "stock") params.delete("tab");
+    else params.set("tab", tab);
+    const qs = params.toString();
+    window.history.replaceState(null, "", qs ? `${pathname}?${qs}` : pathname);
+  };
   const [stockStatus, setStockStatus] = useState<StockStatus | null>(() =>
-    searchParams.get("oversold") === "1" ? "NEGATIF" : null,
+    statusStokDariUrl(searchParams.get("status"), searchParams.get("oversold")),
   );
   const [stockSort, setStockSort] = useState<StockSort>("stock_desc");
   const [summary, setSummary] = useState<InventorySummary>(initialSummary);
@@ -343,58 +353,12 @@ export function InventoryPageClient({
   useEffect(() => {
     if (!expandedGrnId) {
       setGrnRolls([]);
-      setGrnJournal(null);
       return;
     }
     getRollsByGrnId(expandedGrnId)
       .then(setGrnRolls)
       .catch(() => setGrnRolls([]));
-    getGrnJournalState(expandedGrnId)
-      .then(setGrnJournal)
-      .catch(() => setGrnJournal(null));
   }, [expandedGrnId]);
-
-  const canPostJournal = hasPermission(session?.user?.permissions ?? [], "journals:manage");
-
-  const handlePostJournal = async (grnId: string, kind: "receipt" | "reversal") => {
-    setPostingJournal(true);
-    try {
-      const res =
-        kind === "receipt"
-          ? await postGrnReceiptJournalAction(grnId)
-          : await postGrnReversalJournalAction(grnId);
-      if (res.ok) {
-        toast.success(t(res.created ? "grnJournal.postedToast" : "grnJournal.alreadyPostedToast"));
-      } else {
-        switch (res.code) {
-          case "UNMAPPED_ROLE":
-            toast.error(t("grnJournal.errUNMAPPED_ROLE", { role: res.role ?? "" }));
-            break;
-          case "UNBALANCED":
-            toast.error(t("grnJournal.errUNBALANCED"));
-            break;
-          case "NOTHING_TO_POST":
-            toast.error(t("grnJournal.errNOTHING_TO_POST"));
-            break;
-          case "BAD_STATE":
-            toast.error(t("grnJournal.errBAD_STATE"));
-            break;
-          case "FORBIDDEN":
-            toast.error(t("grnJournal.errFORBIDDEN"));
-            break;
-          default:
-            toast.error(t("grnJournal.errBAD_STATE"));
-        }
-      }
-      await getGrnJournalState(grnId)
-        .then(setGrnJournal)
-        .catch(() => setGrnJournal(null));
-    } catch {
-      toast.error(t("grnJournal.errUnexpected"));
-    } finally {
-      setPostingJournal(false);
-    }
-  };
 
   useEffect(() => {
     if (activeTab !== 'rolls') return;
@@ -480,6 +444,13 @@ export function InventoryPageClient({
   const setStatusFilter = (status: StockStatus | null) => {
     setStockStatus(status);
     setStockPage(1);
+    // Saringan ditulis ke URL (replace) seperti tab: tautan bisa dibagikan, muat ulang tetap tersaring.
+    const params = new URLSearchParams(window.location.search);
+    params.delete("oversold");
+    if (status) params.set("status", status);
+    else params.delete("status");
+    const qs = params.toString();
+    window.history.replaceState(null, "", qs ? `${pathname}?${qs}` : pathname);
   };
 
   return (
@@ -661,17 +632,19 @@ export function InventoryPageClient({
             </div>
           )}
 
-          <Pagination
-            page={stockPage}
-            totalPages={Math.max(1, Math.ceil(stockTotalCount / stockPageSize))}
-            onPageChange={setStockPage}
-            totalCount={stockTotalCount}
-            pageSize={stockPageSize}
-          />
+          {stockTotalCount > 0 && (
+            <Pagination
+              page={stockPage}
+              totalPages={Math.max(1, Math.ceil(stockTotalCount / stockPageSize))}
+              onPageChange={setStockPage}
+              totalCount={stockTotalCount}
+              pageSize={stockPageSize}
+            />
+          )}
         </TabsContent>
 
         <TabsContent value="grn" className="space-y-4">
-          <div className="relative max-w-sm">
+          <div className="relative w-full sm:w-80">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder={tp('grnSearchPlaceholder')}
@@ -716,12 +689,27 @@ export function InventoryPageClient({
                               )}
                             </Button>
                           </TableCell>
-                          <TableCell className="font-medium">{grn.docNumber}</TableCell>
+                          <TableCell>
+                            <Link href={`/backoffice/inventory/grn/${grn.id}`} className={TAUTAN_DOKUMEN}>
+                              {grn.docNumber}
+                            </Link>
+                          </TableCell>
                           <TableCell>
                             {formatDisplayDate(grn.grnDate, locale)}
                           </TableCell>
                           <TableCell className="whitespace-normal min-w-[160px]">{grn.supplier.name}</TableCell>
-                          <TableCell>{grn.po?.docNumber || '-'}</TableCell>
+                          <TableCell>
+                            {grn.po && (grn.po.id ?? grn.poId) && bolehBukaPo ? (
+                              <Link
+                                href={`/backoffice/purchase-orders/${grn.po.id ?? grn.poId}`}
+                                className={TAUTAN_DOKUMEN}
+                              >
+                                {grn.po.docNumber}
+                              </Link>
+                            ) : (
+                              grn.po?.docNumber || '-'
+                            )}
+                          </TableCell>
                           <TableCell className="text-right">
                             Rp {Number(grn.totalAmount).toLocaleString('id-ID')}
                           </TableCell>
@@ -737,60 +725,7 @@ export function InventoryPageClient({
                                 </Badge>
                                 {/* Pemilik = admin sistem (izin `*`), sama dengan penjaga server. */}
                                 {session?.user?.permissions?.includes('*') && (
-                                  <>
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      className="w-fit"
-                                      disabled={approvingGrnId === grn.id || decliningGrnId === grn.id}
-                                      onClick={async () => {
-                                        if (!session?.user?.id) return;
-                                        setApprovingGrnId(grn.id);
-                                        try {
-                                          await approveGRNByOwner(grn.id, session.user.id);
-                                          toast.success(tp('grnApprovedToast'));
-                                          await fetchData();
-                                        } catch (err) {
-                                          toast.error(
-                                            err instanceof Error ? err.message : tp('grnApproveFailed')
-                                          );
-                                        } finally {
-                                          setApprovingGrnId(null);
-                                        }
-                                      }}
-                                    >
-                                      {tp('approve')}
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="outline"
-                                      className="w-fit text-destructive hover:text-destructive"
-                                      disabled={approvingGrnId === grn.id || decliningGrnId === grn.id}
-                                      onClick={async () => {
-                                        if (!session?.user?.id) return;
-                                        if (
-                                          !window.confirm(tp('grnDeclineConfirm'))
-                                        ) {
-                                          return;
-                                        }
-                                        setDecliningGrnId(grn.id);
-                                        try {
-                                          await declineGRNByOwner(grn.id, session.user.id);
-                                          toast.success(tp('grnDeclinedToast'));
-                                          await fetchData();
-                                        } catch (err) {
-                                          toast.error(
-                                            err instanceof Error ? err.message : tp('grnDeclineFailed')
-                                          );
-                                        } finally {
-                                          setDecliningGrnId(null);
-                                        }
-                                      }}
-                                    >
-                                      {tp('decline')}
-                                    </Button>
-                                  </>
+                                  <KeputusanPemilikGrn grnId={grn.id} docNumber={grn.docNumber} onSelesai={fetchData} />
                                 )}
                               </div>
                             ) : grn.ownerApprovedAt ? (
@@ -835,50 +770,12 @@ export function InventoryPageClient({
                                 </Table>
                               )}
 
-                              {grnJournal && (
-                                <div className="flex flex-wrap items-center gap-2 pt-4">
-                                  {grnJournal.receiptJournalId ? (
-                                    <>
-                                      <Badge variant="default">{t("grnJournal.posted")}</Badge>
-                                      <Button asChild variant="outline" size="sm">
-                                        <Link href={`/backoffice/finance/journals/${grnJournal.receiptJournalId}`}>
-                                          {t("grnJournal.viewJournal")}
-                                        </Link>
-                                      </Button>
-                                    </>
-                                  ) : grnJournal.hasPostableReceiptJournal && canPostJournal ? (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      disabled={postingJournal}
-                                      onClick={() => handlePostJournal(grn.id, "receipt")}
-                                    >
-                                      {t("grnJournal.postJournal")}
-                                    </Button>
-                                  ) : null}
-
-                                  {grn.ownerDeclinedAt &&
-                                    (grnJournal.reversalJournalId ? (
-                                      <>
-                                        <Badge variant="secondary">{t("grnJournal.reversalPosted")}</Badge>
-                                        <Button asChild variant="outline" size="sm">
-                                          <Link href={`/backoffice/finance/journals/${grnJournal.reversalJournalId}`}>
-                                            {t("grnJournal.viewJournal")}
-                                          </Link>
-                                        </Button>
-                                      </>
-                                    ) : grnJournal.hasPostableReversalJournal && canPostJournal ? (
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        disabled={postingJournal}
-                                        onClick={() => handlePostJournal(grn.id, "reversal")}
-                                      >
-                                        {t("grnJournal.postReversal")}
-                                      </Button>
-                                    ) : null)}
-                                </div>
-                              )}
+                              <div className="flex flex-wrap items-center gap-2 pt-4">
+                                <Button asChild variant="outline" size="sm">
+                                  <Link href={`/backoffice/inventory/grn/${grn.id}`}>{tp('lihatRincianGrn')}</Link>
+                                </Button>
+                                <JurnalGrnPanel grnId={grn.id} ditolak={Boolean(grn.ownerDeclinedAt)} />
+                              </div>
                             </TableCell>
                           </TableRow>
                         )}
@@ -887,13 +784,15 @@ export function InventoryPageClient({
                   </TableBody>
                 </Table>
               </div>
-              <Pagination
-                page={grnPage}
-                totalPages={Math.max(1, Math.ceil(grnTotalCount / grnPageSize))}
-                onPageChange={setGrnPage}
-                totalCount={grnTotalCount}
-                pageSize={grnPageSize}
-              />
+              {grnTotalCount > 0 && (
+                <Pagination
+                  page={grnPage}
+                  totalPages={Math.max(1, Math.ceil(grnTotalCount / grnPageSize))}
+                  onPageChange={setGrnPage}
+                  totalCount={grnTotalCount}
+                  pageSize={grnPageSize}
+                />
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -988,13 +887,16 @@ export function InventoryPageClient({
                       </TableBody>
                     </Table>
                   </div>
-                  <Pagination
-                    page={rollsPage}
-                    totalPages={Math.max(1, Math.ceil(rollsTotalCount / rollsPageSize))}
-                    onPageChange={setRollsPage}
-                    totalCount={rollsTotalCount}
-                    pageSize={rollsPageSize}
-                  />
+                  {/* Tanpa data tidak ada ringkasan halaman ("Menampilkan 1–0 dari 0"). */}
+                  {rollsTotalCount > 0 && (
+                    <Pagination
+                      page={rollsPage}
+                      totalPages={Math.max(1, Math.ceil(rollsTotalCount / rollsPageSize))}
+                      onPageChange={setRollsPage}
+                      totalCount={rollsTotalCount}
+                      pageSize={rollsPageSize}
+                    />
+                  )}
                 </>
               )}
             </CardContent>
@@ -1003,7 +905,7 @@ export function InventoryPageClient({
 
         <TabsContent value="adjustments" className="space-y-4">
           <div className="flex flex-wrap items-center gap-4">
-            <div className="relative max-w-sm">
+            <div className="relative w-full sm:w-80">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder={tp('adjSearchPlaceholder')}
@@ -1028,6 +930,7 @@ export function InventoryPageClient({
                   setAdjPage(1);
                 }}
                 placeholder={tp('allItems')}
+                searchPlaceholder={tp('searchItem')}
                 triggerClassName="w-[220px]"
               />
             </div>
@@ -1041,6 +944,7 @@ export function InventoryPageClient({
                   setAdjPage(1);
                 }}
                 placeholder={tp('adjSourceManual')}
+                searchPlaceholder={tp('cariSumber')}
                 triggerClassName="w-[240px]"
               />
             </div>
@@ -1057,7 +961,8 @@ export function InventoryPageClient({
                       <TableHead>{tTable('item')}</TableHead>
                       <TableHead>{tTable('type')}</TableHead>
                       <TableHead className="text-right">{tTable('qty')}</TableHead>
-                      <TableHead>{tp('colSource')}</TableHead>
+                      {/* Sumber disembunyikan di bawah 2xl (tampil di baris yang dibuka) supaya tabel muat di 1280 px. */}
+                      <TableHead className="hidden 2xl:table-cell">{tp('colSource')}</TableHead>
                       <TableHead>{tp('reason')}</TableHead>
                       {/* Pembuat disembunyikan di bawah 2xl supaya kolom Nota
                           tidak terdorong keluar layar 1280 px. */}
@@ -1086,11 +991,15 @@ export function InventoryPageClient({
                               )}
                             </Button>
                           </TableCell>
-                          <TableCell className="font-medium">{adj.docNumber}</TableCell>
+                          <TableCell>
+                            <Link href={`/backoffice/inventory/adjustment/${adj.id}`} className={TAUTAN_DOKUMEN}>
+                              {adj.docNumber}
+                            </Link>
+                          </TableCell>
                           <TableCell>
                             {formatDisplayDate(adj.createdAt, locale)}
                           </TableCell>
-                          <TableCell className="whitespace-normal min-w-[160px]">{adj.item.nameId}</TableCell>
+                          <TableCell className="whitespace-normal min-w-[140px]">{adj.item.nameId}</TableCell>
                           <TableCell>
                             <Badge variant={adj.type === 'POSITIVE' ? 'default' : 'destructive'}>
                               {adj.type === 'POSITIVE' ? (
@@ -1105,10 +1014,10 @@ export function InventoryPageClient({
                           <TableCell className="text-right">
                             {Math.abs(Number(adj.qtyChange)).toLocaleString('id-ID')}
                           </TableCell>
-                          <TableCell className="whitespace-normal min-w-[140px] text-sm">
+                          <TableCell className="hidden 2xl:table-cell whitespace-normal min-w-[140px] text-sm">
                             {labelJenisGerakan(tKind, adj.source)}
                           </TableCell>
-                          <TableCell className="whitespace-normal min-w-[200px] max-w-[320px]">{adj.reason}</TableCell>
+                          <TableCell className="whitespace-normal break-words min-w-[160px] max-w-[280px]">{adj.reason}</TableCell>
                           <TableCell className="hidden 2xl:table-cell text-sm text-muted-foreground">
                             {adj.createdBy?.name || adj.createdBy?.email || '—'}
                           </TableCell>
@@ -1116,7 +1025,7 @@ export function InventoryPageClient({
                             <Link href={`/backoffice/inventory/adjustment/${adj.id}`}>
                               <Button variant="ghost" size="sm">
                                 <Printer className="mr-1 h-3 w-3" />
-                                Nota
+                                {tp('nota')}
                               </Button>
                             </Link>
                           </TableCell>
@@ -1128,6 +1037,10 @@ export function InventoryPageClient({
                                 <div className="space-y-1">
                                   <p className="text-sm font-semibold">{tp('reason')}</p>
                                   <p className="text-sm text-muted-foreground">{adj.reason}</p>
+                                </div>
+                                <div className="space-y-1 2xl:hidden">
+                                  <p className="text-sm font-semibold">{tp('colSource')}</p>
+                                  <p className="text-sm text-muted-foreground">{labelJenisGerakan(tKind, adj.source)}</p>
                                 </div>
                                 <div className="space-y-1 2xl:hidden">
                                   <p className="text-sm font-semibold">{tp('createdBy')}</p>
@@ -1164,13 +1077,15 @@ export function InventoryPageClient({
                   </TableBody>
                 </Table>
               </div>
-              <Pagination
-                page={adjPage}
-                totalPages={Math.max(1, Math.ceil(adjTotalCount / adjPageSize))}
-                onPageChange={setAdjPage}
-                totalCount={adjTotalCount}
-                pageSize={adjPageSize}
-              />
+              {adjTotalCount > 0 && (
+                <Pagination
+                  page={adjPage}
+                  totalPages={Math.max(1, Math.ceil(adjTotalCount / adjPageSize))}
+                  onPageChange={setAdjPage}
+                  totalCount={adjTotalCount}
+                  pageSize={adjPageSize}
+                />
+              )}
             </CardContent>
           </Card>
         </TabsContent>

@@ -28,6 +28,7 @@ let barangId = "";
 let adminId = "";
 let spgA = "";
 let spgB = "";
+let spgC = "";
 let siklusId = "";
 let lossId = "";
 
@@ -38,6 +39,7 @@ beforeEach(async () => {
   adminId = "";
   spgA = "";
   spgB = "";
+  spgC = "";
   siklusId = "";
   lossId = "";
 
@@ -83,7 +85,7 @@ afterEach(async () => {
   await prisma.consignmentCycle.deleteMany({ where: { id: seededId(siklusId) } });
   await prisma.item.deleteMany({ where: { id: seededId(barangId) } });
   await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
-  await prisma.user.deleteMany({ where: { id: { in: seededIds([adminId, spgA, spgB].filter(Boolean)) } } });
+  await prisma.user.deleteMany({ where: { id: { in: seededIds([adminId, spgA, spgB, spgC].filter(Boolean)) } } });
   await prisma.store.deleteMany({ where: { id: seededId(tokoId) } });
 });
 
@@ -193,7 +195,7 @@ describe("bukaKunci ditolak sesudah nota atau faktur pajak", () => {
   });
 });
 
-describe("kunciAngka membuang baris komisi SPG yang tidak lagi bertugas", () => {
+describe("kunciAngka ulang — baris komisi SPG yang sudah pindah toko", () => {
   /** Beban barang hilang SPG A Rp200.000, separuhnya sudah dipotong dari baris komisinya. */
   async function potonganLamaUntuk(commissionId: string) {
     lossId = (
@@ -221,40 +223,75 @@ describe("kunciAngka membuang baris komisi SPG yang tidak lagi bertugas", () => 
     return share.id;
   }
 
-  it("menghapus baris SPG lama yang belum dibayar, melepas potongannya, dan siklusnya bisa selesai", async () => {
+  /*
+   * KEPUTUSAN SEMENTARA PEMILIK 2026-10-06: baris SPG yang pindah toko sesudah
+   * kunci pertama TETAP miliknya — tidak dihapus, dan bagiannya tidak dibagi ke
+   * SPG yang baru ditugaskan. Peserta kunci ulang = peserta kunci pertama.
+   */
+  it("baris SPG yang pindah toko TETAP miliknya: tidak dihapus, dihitung ulang, potongan bebannya dipotong lagi, siklusnya bisa selesai", async () => {
     await kunci();
     expect(await bukaKunci({ cycleId: siklusId, olehUserId: adminId })).toEqual({ ok: true });
     const lama = (await komisiSiklus()).find((k) => k.spgUserId === spgA)!;
-    // Keadaan lama (data sebelum perbaikan): baris yang tertinggal masih membawa potongan.
     const shareId = await potonganLamaUntuk(lama.id);
 
-    // SPG A pindah toko.
+    // SPG A pindah toko sesudah bulan itu selesai.
     await prisma.user.update({ where: { id: spgA }, data: { assignedStoreId: null } });
-    expect(await kunci()).toMatchObject({ ok: true, jumlahSpg: 1 });
+    expect(await kunci()).toMatchObject({ ok: true, jumlahSpg: 2 });
 
-    const sisa = await komisiSiklus();
-    expect(sisa.map((k) => k.spgUserId)).toEqual([spgB]);
-    expect(Number(sisa[0].commission)).toBe(20_000);
-    expect(Number(sisa[0].total)).toBe(1_020_000);
+    const sesudah = await komisiSiklus();
+    expect(sesudah.map((k) => k.spgUserId).sort()).toEqual([spgA, spgB].sort());
+    const a = sesudah.find((k) => k.spgUserId === spgA)!;
+    const b = sesudah.find((k) => k.spgUserId === spgB)!;
+    // Baris yang sama (id tidak berganti), angka dibagi rata seperti kunci pertama.
+    expect(a.id).toBe(lama.id);
+    expect([Number(a.commission), Number(a.total)]).toEqual([10_000, 1_010_000]);
+    expect([Number(b.commission), Number(b.total)]).toEqual([10_000, 1_010_000]);
 
-    // Potongan pada baris yang dihapus kembali menjadi sisa beban SPG A.
-    expect(await prisma.stockLossDeduction.count({ where: { refId: lama.id } })).toBe(0);
-    expect(Number((await prisma.stockLossShare.findUniqueOrThrow({ where: { id: shareId } })).settledAmount)).toBe(0);
+    // Beban barang hilang SPG A dilepas lalu dipotong lagi dari barisnya sendiri.
+    const potonganA = await prisma.stockLossDeduction.findMany({ where: { refId: lama.id }, select: { amount: true } });
+    const totalPotonganA = potonganA.reduce((s, p) => s + Number(p.amount), 0);
+    expect(totalPotonganA).toBeGreaterThan(0);
+    expect(Number(a.deduction)).toBe(totalPotonganA);
+    expect(Number((await prisma.stockLossShare.findUniqueOrThrow({ where: { id: shareId } })).settledAmount)).toBe(totalPotonganA);
 
-    // Baris yang dihapus tidak bisa lagi dibayar.
-    expect(await bayarKomisi({ commissionId: lama.id, olehUserId: adminId })).toEqual({ ok: false, alasan: "TIDAK_DITEMUKAN" });
-
-    // Jejak mengunci menyebut baris yang dihapus.
+    // Jejak mengunci: tidak ada yang dihapus; baris SPG yang sudah pindah disebut.
     const jejak = await prisma.auditLog.findFirstOrThrow({
       where: { entityType: "ConsignmentCycle", entityId: siklusId, action: JEJAK.KONSI_DIKUNCI },
       orderBy: { createdAt: "desc" },
     });
-    const before = (jejak.changes as { before: { komisiDihapus: { id: string; spgUserId: string }[] } }).before;
-    expect(before.komisiDihapus).toEqual([expect.objectContaining({ id: lama.id, spgUserId: spgA })]);
+    const ubah = jejak.changes as {
+      before: { komisiDihapus: unknown[] };
+      after: { komisiSpgPindah: { id: string; spgUserId: string }[] };
+    };
+    expect(ubah.before.komisiDihapus).toEqual([]);
+    expect(ubah.after.komisiSpgPindah).toEqual([expect.objectContaining({ id: lama.id, spgUserId: spgA })]);
 
-    // Rantainya tidak lagi tersangkut di gaji SPG yang sudah pergi.
+    // Gaji SPG A tetap bisa dibayar; rantainya selesai.
     await bayarSemuaKomisi();
     expect(await tahapSiklusIni()).toBe("nota");
+  });
+
+  it("SPG yang baru ditugaskan sesudah kunci pertama tidak ikut dibagi saat dikunci ulang", async () => {
+    await kunci();
+    expect(await bukaKunci({ cycleId: siklusId, olehUserId: adminId })).toEqual({ ok: true });
+    // A pindah, C menggantikannya di toko ini.
+    await prisma.user.update({ where: { id: spgA }, data: { assignedStoreId: null } });
+    spgC = (
+      await prisma.user.create({
+        data: { email: `${tag.toLowerCase()}-c@uji.local`, name: `${tag} C`, passwordHash: "x", assignedStoreId: tokoId },
+      })
+    ).id;
+
+    expect(await kunci()).toMatchObject({ ok: true, jumlahSpg: 2 });
+    const sesudah = await komisiSiklus();
+    expect(sesudah.map((k) => k.spgUserId).sort()).toEqual([spgA, spgB].sort());
+    expect(sesudah.every((k) => Number(k.commission) === 10_000)).toBe(true);
+
+    const jejak = await prisma.auditLog.findFirstOrThrow({
+      where: { entityType: "ConsignmentCycle", entityId: siklusId, action: JEJAK.KONSI_DIKUNCI },
+      orderBy: { createdAt: "desc" },
+    });
+    expect((jejak.changes as { after: { spgBaruTidakIkut: string[] } }).after.spgBaruTidakIkut).toEqual([spgC]);
   });
 
   it("baris SPG lama yang SUDAH dibayar tidak disentuh", async () => {
@@ -269,6 +306,9 @@ describe("kunciAngka membuang baris komisi SPG yang tidak lagi bertugas", () => 
     const tetap = await prisma.consignmentCommission.findUniqueOrThrow({ where: { id: lama.id } });
     expect(tetap.paidAt).not.toBeNull();
     expect(Number(tetap.total)).toBe(1_010_000);
+    // Baris yang sudah dibayar tetap ikut dibagi: B tidak mendapat bagian A lagi.
+    const b = (await komisiSiklus()).find((k) => k.spgUserId === spgB)!;
+    expect(Number(b.commission)).toBe(10_000);
   });
 });
 

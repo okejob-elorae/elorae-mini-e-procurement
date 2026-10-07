@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { TautanTerkaitSpg } from "./TautanTerkaitSpg";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatDisplayDate } from "@/lib/date-only";
@@ -51,6 +52,7 @@ export function PelangganKantorClient({
       <PageHeader
         title={t("judul")}
         meta={tab === "pelanggan" ? t("ringkasPelanggan", { toko: ringkas.length, n: totalPelanggan }) : t("ringkasTitip", { toko: titip.length, n: totalTerbuka })}
+        actions={<TautanTerkaitSpg kecuali="titip" />}
       />
 
       <Tabs value={tab} onValueChange={(v) => router.replace(v === "titip" ? "/backoffice/spg-pelanggan?tab=titip" : "/backoffice/spg-pelanggan")}>
@@ -141,7 +143,7 @@ export function PelangganKantorClient({
                         <TableCell className="min-w-[12rem] whitespace-normal">
                           <Link
                             href={`/backoffice/spg-pelanggan?toko=${r.storeId}`}
-                            className="font-medium text-primary underline-offset-2 hover:underline"
+                            className="font-medium underline decoration-muted-foreground/50 underline-offset-2 hover:decoration-foreground"
                           >
                             {r.toko}
                           </Link>

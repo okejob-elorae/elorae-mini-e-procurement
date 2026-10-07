@@ -29,8 +29,8 @@ const props: Props = {
   actionItems: [],
   initialStats: {
     po: { draft: 1 },
-    workOrders: { inProduction: 0, completedToday: 0 },
-    items: { lowStockCount: 0 },
+    workOrders: { sedangDiproduksi: 3, selesaiSebagian: 1, completedToday: 0 },
+    items: { lowStockCount: 0, habisCount: 1 },
     suppliers: { activeCount: 0 },
     grnsThisWeek: 0,
   },
@@ -39,7 +39,15 @@ const props: Props = {
   shortageCount: 0,
   marketplaceKpi: null,
   oversoldCount: 2,
-  initialSalesmenSales: null,
+  initialSalesmenSales: {
+    rows: [],
+    totals: {
+      realised: { count: 3, amount: 22_850_000 },
+      realisedRincian: { pengiriman: 2, van: 1 },
+      outstanding: { count: 0, amount: 0 },
+      menungguKirim: { count: 2, amount: 4_000_000 },
+    },
+  },
   piutang: { total: 1, jumlah: 1, umur: [], lewatJumlah: 1, lewatNilai: 1, tertahanNilai: 5 },
   trenPenjualan: null,
   hariIniWib: "2026-10-06",
@@ -59,5 +67,23 @@ describe("klien beranda — tautan KPI membawa saringannya", () => {
 
   it("Stok kelebihan pesan → inventori tersaring negatif", () => {
     expect(html).toContain("[oversoldTitle=/backoffice/inventory?tab=stock&amp;oversold=1]");
+  });
+
+  it("SPK: dua angka, masing-masing ke daftar SPK dengan statusnya — bukan daftar tanpa saringan", () => {
+    expect(html).toContain("[kpiWoInProduction=/backoffice/work-orders?status=IN_PRODUCTION]");
+    expect(html).toContain("[kpiWoPartial=/backoffice/work-orders?status=PARTIAL]");
+    expect(html).not.toContain("=/backoffice/work-orders]");
+  });
+
+  it("pesanan putus disetujui yang belum dikirim → daftar pesanan tersaring belum dikirim", () => {
+    expect(html).toContain("[kpiAwaitingDelivery=/backoffice/field-sales-orders?kirim=PENDING&amp;orderType=PUTUS]");
+  });
+
+  it("stok habis punya barisnya sendiri, ke daftar Inventori tersaring HABIS", () => {
+    expect(html).toContain("[kpiStockOut=/backoffice/inventory?tab=stock&amp;status=HABIS]");
+  });
+
+  it("stok menipis → daftar Inventori tersaring MENIPIS", () => {
+    expect(html).toContain("[kpiLowStock=/backoffice/inventory?tab=stock&amp;status=MENIPIS]");
   });
 });

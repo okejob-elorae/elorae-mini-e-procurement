@@ -4,7 +4,12 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { useTranslations, useLocale } from "next-intl";
-import type { FieldSalesOrderListItem, FieldSalesOrderStatus } from "@/lib/field-sales/queries";
+import type {
+  FieldSalesDeliveryStatus,
+  FieldSalesOrderListItem,
+  FieldSalesOrderStatus,
+  FieldSalesOrderStatusFilter,
+} from "@/lib/field-sales/queries";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -32,7 +37,7 @@ import { formatRupiah } from "@/lib/format/rupiah";
 import { LencanaJarakJauh } from "@/app/pwa/orders/[id]/LencanaJarakJauh";
 import { LencanaInden } from "./LencanaInden";
 
-type StatusFilter = FieldSalesOrderStatus | "ALL";
+type StatusFilter = FieldSalesOrderStatusFilter | "ALL";
 
 type Props = {
   orders: FieldSalesOrderListItem[];
@@ -43,6 +48,8 @@ type Props = {
   storeId: string;
   /** Saringan pre-order. */
   inden?: "ALL" | "INDEN" | "BIASA";
+  /** Saringan status pengiriman (`?kirim=`); hanya pesanan PUTUS yang disetujui. */
+  kirim?: FieldSalesDeliveryStatus | "ALL";
   storeOptions: { id: string; name: string }[];
   page: number;
   pageSize: number;
@@ -62,6 +69,16 @@ const STATUS_LABEL_KEY: Record<FieldSalesOrderStatus, "statusPending" | "statusA
   REJECTED: "statusRejected",
 };
 
+const STATUS_KIRIM: FieldSalesDeliveryStatus[] = ["PENDING", "PARTIAL", "DELIVERED", "CLOSED"];
+
+/* Sama dengan kartu Pengiriman di rincian: yang masih ditunggu menonjol, yang selesai tenang. */
+const KELAS_LENCANA_KIRIM: Record<FieldSalesDeliveryStatus, string> = {
+  PENDING: "border-sky-500/40 text-sky-700 dark:text-sky-300",
+  PARTIAL: "border-amber-500/40 text-amber-700 dark:text-amber-300",
+  DELIVERED: "border-emerald-500/40 text-emerald-700 dark:text-emerald-300",
+  CLOSED: "text-muted-foreground",
+};
+
 
 export function FieldSalesOrdersPageClient(props: Props) {
   const router = useRouter();
@@ -70,6 +87,7 @@ export function FieldSalesOrdersPageClient(props: Props) {
   const tInden = useTranslations("fieldSalesOrders.inden");
   const locale = useLocale();
   const inden = props.inden ?? "ALL";
+  const kirim = props.kirim ?? "ALL";
   const [, startTransition] = useTransition();
 
   const [searchInput, setSearchInput] = useState(props.search);
@@ -84,11 +102,29 @@ export function FieldSalesOrdersPageClient(props: Props) {
   }, [searchInput]);
 
   function pushParam(key: string, value: string | undefined) {
+    pushParams({ [key]: value });
+  }
+
+  /* Beberapa kunci dalam SATU dorongan — dua dorongan berturut-turut saling menimpa. */
+  function pushParams(nilai: Record<string, string | undefined>) {
     const params = new URLSearchParams(sp.toString());
-    if (!value) params.delete(key);
-    else params.set(key, value);
+    for (const [key, value] of Object.entries(nilai)) {
+      if (!value) params.delete(key);
+      else params.set(key, value);
+    }
     params.delete("page");
     startTransition(() => router.push(`/backoffice/field-sales-orders?${params.toString()}`));
+  }
+
+  /* Status pengiriman hanya ada pada pesanan yang disetujui: memilihnya ikut menyetel status Disetujui. */
+  function pilihKirim(v: string) {
+    if (v === "ALL") pushParams({ kirim: undefined });
+    else pushParams({ kirim: v, status: "APPROVED" });
+  }
+
+  function pilihStatus(v: string) {
+    // Status selain Disetujui tidak punya pengiriman — saringan pengiriman dilepas supaya daftar tidak kosong diam-diam.
+    pushParams(v === "APPROVED" ? { status: v } : { status: v, kirim: undefined });
   }
 
   function reset() {
@@ -106,7 +142,12 @@ export function FieldSalesOrdersPageClient(props: Props) {
   }
 
   const hasFilter =
-    !!props.search || props.status !== "ALL" || props.orderType !== "ALL" || props.storeId !== "ALL" || inden !== "ALL";
+    !!props.search ||
+    props.status !== "ALL" ||
+    props.orderType !== "ALL" ||
+    props.storeId !== "ALL" ||
+    inden !== "ALL" ||
+    kirim !== "ALL";
 
   return (
     <div className="space-y-4">
@@ -124,7 +165,7 @@ export function FieldSalesOrdersPageClient(props: Props) {
           </div>
           <div className="w-full sm:w-52">
             <label className="text-xs text-muted-foreground mb-1 block">{t("status")}</label>
-            <Select value={props.status} onValueChange={(v) => pushParam("status", v)}>
+            <Select value={props.status} onValueChange={pilihStatus}>
               <SelectTrigger className="w-full">
                 <SelectValue placeholder={t("status")} />
               </SelectTrigger>
@@ -132,7 +173,24 @@ export function FieldSalesOrdersPageClient(props: Props) {
                 <SelectItem value="ALL">{t("statusAll")}</SelectItem>
                 <SelectItem value="PENDING_APPROVAL">{t("statusPending")}</SelectItem>
                 <SelectItem value="APPROVED">{t("statusApproved")}</SelectItem>
-                <SelectItem value="REJECTED">{t("statusRejected")}</SelectItem>
+                <SelectItem value="REJECTED">{t("saring.ditolakKantor")}</SelectItem>
+                <SelectItem value="CANCELLED">{t("batal.lencana")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="w-full sm:w-44">
+            <label className="text-xs text-muted-foreground mb-1 block">{t("saring.pengiriman")}</label>
+            <Select value={kirim} onValueChange={pilihKirim}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={t("saring.pengiriman")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">{t("statusAll")}</SelectItem>
+                {STATUS_KIRIM.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {t(`delivery.status.${s}`)}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -250,6 +308,12 @@ export function FieldSalesOrdersPageClient(props: Props) {
                       ) : (
                         <Badge variant={STATUS_BADGE_VARIANT[o.status]}>
                           {t(STATUS_LABEL_KEY[o.status])}
+                        </Badge>
+                      )}
+                      {/* Pengiriman hanya bermakna untuk PUTUS yang disetujui. */}
+                      {o.status === "APPROVED" && o.orderType === "PUTUS" && o.deliveryStatus && (
+                        <Badge variant="outline" className={KELAS_LENCANA_KIRIM[o.deliveryStatus]}>
+                          {t(`delivery.status.${o.deliveryStatus}`)}
                         </Badge>
                       )}
                       {kreditDitahan.has(o.id) && (

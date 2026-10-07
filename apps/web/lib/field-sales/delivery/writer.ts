@@ -21,6 +21,21 @@ export class NomorPiutangDipakaiError extends Error {
   }
 }
 
+/**
+ * Cadangan stok baris pesanan tidak bisa dikonsumsi sebanyak yang diminta walau sisa pesanannya
+ * cukup (`PartialConsumeError` OVER_CONSUME): cadangannya sudah CONSUMED atau tidak ada. Bentuk
+ * nyatanya: pesanan yang disetujui image lama sesudah migrasi backfill (stok sudah keluar saat
+ * disetujui, tanpa pengiriman `bf_`). Kode sendiri — bukan OVER_DELIVER ("melebihi sisa"), yang
+ * tidak benar dan menyembunyikan jalan keluarnya (backfill pesanan itu dengan tangan).
+ */
+export class CadanganTidakCocokError extends Error {
+  readonly code = "RESERVATION_MISMATCH" as const;
+  constructor() {
+    super("Cadangan stok pesanan tidak cocok dengan sisanya");
+    this.name = "CadanganTidakCocokError";
+  }
+}
+
 /** Rupiah → sen bulat; kolom uang 2 desimal. */
 const sen = (n: number) => Math.round(n * 100);
 
@@ -448,8 +463,9 @@ export async function recordFieldSalesDelivery(input: {
       });
     } catch (e) {
       if (e instanceof PartialConsumeError) {
+        if (e.code === "OVER_CONSUME") throw new CadanganTidakCocokError();
         throw new DeliveryError(
-          e.code === "INSUFFICIENT_STOCK" ? "INSUFFICIENT_STOCK" : "OVER_DELIVER",
+          "INSUFFICIENT_STOCK",
           e.shortLines.map((s) => ({ orderLineId: s.fieldSalesLineId, requested: s.requested, onHand: s.onHand })),
         );
       }

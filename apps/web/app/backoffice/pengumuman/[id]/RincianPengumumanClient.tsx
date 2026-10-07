@@ -31,7 +31,7 @@ import { LencanaAudiens, LencanaKeadaan } from "../Lencana";
 
 const NADA_STATUS: Record<StatusBaca, string> = {
   BELUM: "bg-amber-500/15 text-amber-800 dark:text-amber-300",
-  DIBACA: "bg-primary/10 text-primary",
+  DIBACA: "bg-primary/20 text-foreground",
   DIKONFIRMASI: "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300",
 };
 

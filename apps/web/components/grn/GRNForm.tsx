@@ -33,7 +33,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, Trash2, Loader2, Barcode, X } from 'lucide-react';
+import { Plus, Trash2, Loader2, Barcode, X, ImagePlus } from 'lucide-react';
 import { BarcodeScanner } from '@/components/scanners/BarcodeScanner';
 import { simpanGRN, type GRNFormData } from '@/app/actions/grn';
 import { getPOs } from '@/app/actions/purchase-orders';
@@ -57,11 +57,13 @@ import {
   type DrafGrn,
 } from '@/lib/offline/grn-draf';
 import { formatDisplayDateTime } from '@/lib/date-only';
+import { newLocalId } from '@/lib/pwa/id-lokal';
 import { toast } from 'sonner';
 import { useSession } from 'next-auth/react';
 import { useLocale, useTranslations } from 'next-intl';
 import { FabricRollInput, FabricRackPreview } from '@/components/grn/FabricRollInput';
 import { parseItemVariants, variantSelectOptions } from '@/lib/items/variants';
+import { awalFormulirGrn } from '@/app/backoffice/inventory/grn/new/awal-grn';
 import {
   Select,
   SelectContent,
@@ -74,6 +76,8 @@ interface Supplier {
   id: string;
   code: string;
   name: string;
+  /** false = pemasok belum/tidak disetujui (punya dokumen lama); ditandai di pilihan. */
+  disetujui?: boolean;
 }
 
 interface ItemOption {
@@ -117,6 +121,8 @@ interface LineRow {
 interface GRNFormProps {
   suppliers: Supplier[];
   onSuccess?: () => void;
+  /** `?poId=` dari tombol "Terima barang" di rincian PO: PO dan pemasoknya terisi. */
+  poIdAwal?: string;
 }
 
 function barisKosong(id: string): LineRow {
@@ -154,7 +160,7 @@ function sinyalSekarang(): boolean {
  * `lib/offline/grn-draf.ts`). Isian formulir disimpan sebagai draf per
  * pengguna di perangkat, dan dihapus hanya setelah GRN tersimpan atau dibuang.
  */
-export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
+export function GRNForm({ suppliers, onSuccess, poIdAwal = '' }: GRNFormProps) {
   const { data: session } = useSession();
   const t = useTranslations('inventory.grnForm');
   const tToasts = useTranslations('toasts');
@@ -173,10 +179,19 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
   const [lines, setLines] = useState<LineRow[]>([barisKosong('0')]);
   const [categoryId, setCategoryId] = useState<string>('');
   const [notes, setNotes] = useState('');
+  /**
+   * Kunci kiriman GRN, SEKALI per isian dan ikut draf: simpan ulang sesudah
+   * jawaban hilang mendapat GRN yang sama dari server, bukan GRN kedua. Diganti
+   * hanya saat isian diganti (draf dibuang / draf lain dimuat).
+   */
+  const [kunciKirim, setKunciKirim] = useState(() => newLocalId());
   const [photoUrls] = useState<string[]>([]);
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [poList, setPoList] = useState<Array<{ id: string; docNumber: string; supplierId: string }>>([]);
+  const [poList, setPoList] = useState<Array<{ id: string; docNumber: string; supplierId: string; namaPemasok: string }>>([]);
+  /** Ada draf berisi untuk PO lain saat dibuka dari "Terima barang": PO tautan menunggu pilihan pengguna. */
+  const [poTautanTertunda, setPoTautanTertunda] = useState<string | null>(null);
+  const inputFotoRef = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<ItemOption[]>([]);
   const [categories, setCategories] = useState<ItemCategoryOption[]>([]);
   const [scanOpen, setScanOpen] = useState(false);
@@ -215,8 +230,8 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
           ? (part as { items: unknown[] }).items
           : [];
       const combined = [...listArr, ...partArr].map((p: unknown) => {
-        const po = p as { id: string; docNumber: string; supplierId: string };
-        return { id: po.id, docNumber: po.docNumber, supplierId: po.supplierId };
+        const po = p as { id: string; docNumber: string; supplierId: string; supplier?: { name?: string } };
+        return { id: po.id, docNumber: po.docNumber, supplierId: po.supplierId, namaPemasok: po.supplier?.name ?? '' };
       });
       setPoList(combined);
     } catch {
@@ -312,6 +327,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
     setNotes(draf.notes);
     setLines(barisDariDraf(draf));
     setPendingLamaId(draf.pendingLamaId);
+    setKunciKirim(draf.kunciKirim || newLocalId());
     setPhotoFiles(
       foto.map((b, i) =>
         b instanceof File ? b : new File([b], `foto-${i + 1}.jpg`, { type: b.type || 'image/jpeg' })
@@ -330,16 +346,24 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
         getPendingGRNs().catch(() => [] as PendingGRN[]),
       ]);
       if (batal) return;
-      if (simpanan) {
+      const awal = awalFormulirGrn(
+        poIdAwal,
+        simpanan ? { poId: simpanan.draf.poId, bermakna: drafBermakna(simpanan.draf, simpanan.foto.length) } : null,
+      );
+      if (simpanan && (awal === 'draf' || awal === 'konflik')) {
         terapkanDraf(simpanan.draf, simpanan.foto);
         setDrafPulih(simpanan.draf.disimpanPada);
       }
+      if (awal === 'po') setPoId(poIdAwal);
+      if (awal === 'konflik') setPoTautanTertunda(poIdAwal);
       setGrnLama(lama);
       setDrafSiap(true);
     })();
     return () => {
       batal = true;
     };
+    // poIdAwal hanya dibaca saat formulir dibuka.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kunciDraf, terapkanDraf]);
 
   const tulisDraf = useCallback(
@@ -363,12 +387,12 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
   useEffect(() => {
     if (!drafSiap) return;
     drafTertunda.current = {
-      draf: drafDariIsian({ poId, supplierId, categoryId, notes, pendingLamaId, lines }, Date.now()),
+      draf: drafDariIsian({ poId, supplierId, categoryId, notes, pendingLamaId, kunciKirim, lines }, Date.now()),
       foto: photoFiles,
     };
     const pewaktu = window.setTimeout(siramDraf, 400);
     return () => window.clearTimeout(pewaktu);
-  }, [drafSiap, poId, supplierId, categoryId, notes, pendingLamaId, lines, photoFiles, siramDraf]);
+  }, [drafSiap, poId, supplierId, categoryId, notes, pendingLamaId, kunciKirim, lines, photoFiles, siramDraf]);
 
   // Tab ditutup/disembunyikan atau pindah halaman: sisa isian ditulis segera.
   useEffect(() => {
@@ -398,6 +422,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
   };
 
   const buangDraf = () => {
+    setPoTautanTertunda(null);
     lewatiBarisPo.current = null;
     setPoId('');
     setSupplierId('');
@@ -406,6 +431,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
     setLines([barisKosong('0')]);
     setPhotoFiles([]);
     setPendingLamaId(null);
+    setKunciKirim(newLocalId());
     setPoGrnCount(0);
     setDrafPulih(null);
     setErrors({});
@@ -643,6 +669,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
         }),
         notes: notes || undefined,
         photoUrls: urls.length > 0 ? urls : undefined,
+        idempotencyKey: kunciKirim,
       };
       // Penolakan berkode (PO batal/draf/ditutup) dikembalikan, bukan dilempar:
       // di build produksi pesan lemparan aksi server disamarkan.
@@ -652,7 +679,8 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
         return;
       }
       await selesaikanDraf();
-      toast.success(t('createdToast'));
+      // Kiriman ulang (jawaban sebelumnya hilang): GRN sudah tercatat, tidak ada yang masuk dua kali.
+      toast.success(hasil.ulang ? t('sudahTercatat', { doc: hasil.docNumber }) : t('createdToast'));
       onSuccess?.();
     } catch (err: unknown) {
       // Sambungan putus: GRN mungkin sudah tercatat, mungkin belum — jangan menebak.
@@ -667,9 +695,19 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
   };
 
   const isianBermakna = drafBermakna(
-    drafDariIsian({ poId, supplierId, categoryId, notes, pendingLamaId, lines }, 0),
+    drafDariIsian({ poId, supplierId, categoryId, notes, pendingLamaId, kunciKirim, lines }, 0),
     photoFiles.length
   );
+
+  /** Buang draf PO lain, lalu isi formulir dengan PO dari tautan "Terima barang". */
+  const terimaPoTautan = () => {
+    const id = poTautanTertunda;
+    buangDraf();
+    if (id) setPoId(id);
+  };
+
+  const labelPemasok = (s: Supplier) =>
+    `${s.code} – ${s.name}${s.disetujui === false ? ` · ${t('belumDisetujui')}` : ''}`;
 
   const namaPemasok = (id: string) => {
     const s = suppliers.find((x) => x.id === id);
@@ -685,7 +723,26 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
           </AlertDescription>
         </Alert>
       )}
-      {drafPulih !== null && (
+      {poTautanTertunda !== null && (
+        <Alert>
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+            <span>
+              {t('drafPoLain', {
+                po: poList.find((p) => p.id === poTautanTertunda)?.docNumber ?? t('poTautan'),
+              })}
+            </span>
+            <span className="flex gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setPoTautanTertunda(null)}>
+                {t('lanjutkanDraf')}
+              </Button>
+              <Button type="button" size="sm" onClick={terimaPoTautan}>
+                {t('buangDanTerimaPo')}
+              </Button>
+            </span>
+          </AlertDescription>
+        </Alert>
+      )}
+      {drafPulih !== null && poTautanTertunda === null && (
         <Alert>
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
             <span>{t('draf.pulih', { time: formatDisplayDateTime(drafPulih, locale) })}</span>
@@ -754,6 +811,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                 value={categoryId || '__all__'}
                 onValueChange={(v) => setCategoryId(v === '__all__' ? '' : v)}
                 placeholder={t('allCategories')}
+                searchPlaceholder={t('cariKategori')}
                 triggerClassName="min-h-[44px] w-full"
               />
             </div>
@@ -763,11 +821,15 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                 id="poId"
                 options={[
                   { value: '__none__', label: t('noPo') },
-                  ...poList.map((po) => ({ value: po.id, label: po.docNumber })),
+                  ...poList.map((po) => ({
+                    value: po.id,
+                    label: po.namaPemasok ? `${po.docNumber} · ${po.namaPemasok}` : po.docNumber,
+                  })),
                 ]}
                 value={poId || '__none__'}
                 onValueChange={(v) => setPoId(v === '__none__' ? '' : v)}
                 placeholder={t('selectPo')}
+                searchPlaceholder={t('cariPo')}
                 triggerClassName="min-h-[44px] w-full"
               />
             </div>
@@ -775,13 +837,20 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
               <Label htmlFor="supplierId">{t('supplier')} *</Label>
               <SearchableCombobox
                 id="supplierId"
-                options={suppliers.map((s) => ({ value: s.id, label: `${s.code} – ${s.name}` }))}
+                // Pemasok belum disetujui hanya ada di pilihan sebagai pemasok PO/draf yang
+                // sedang dipakai; GRN baru tanpa PO tetap untuk pemasok disetujui saja.
+                options={suppliers.map((s) => ({
+                  value: s.id,
+                  label: labelPemasok(s),
+                  disabled: s.disetujui === false && s.id !== supplierId,
+                }))}
                 value={supplierId}
                 onValueChange={(v) => {
                   setSupplierId(v);
                   setErrors((e) => ({ ...e, supplierId: undefined }));
                 }}
                 placeholder={t('selectSupplier')}
+                searchPlaceholder={t('cariPemasok')}
                 aria-invalid={!!errors.supplierId}
                 className={errors.supplierId ? 'border-destructive focus-visible:ring-destructive/20' : ''}
                 triggerClassName="min-h-[44px] w-full"
@@ -853,6 +922,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                               if (item) setLineItem(row.id, item);
                             }}
                             placeholder={t('selectItem')}
+                            searchPlaceholder={t('cariBarang')}
                             triggerClassName="min-h-[44px]"
                           />
                         </TableCell>
@@ -995,14 +1065,29 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
           </div>
 
           <div className="space-y-2">
-            <Label>{t('photosOptional')}</Label>
-            <Input
+            <Label htmlFor="grn-foto">{t('photosOptional')}</Label>
+            {/* Tombol sendiri: input berkas bawaan peramban berbahasa Inggris ("Choose Files"). */}
+            <input
+              ref={inputFotoRef}
+              id="grn-foto"
               type="file"
               accept="image/*"
               multiple
               onChange={handlePhotoChange}
-              className="min-h-[44px]"
+              className="sr-only"
+              tabIndex={-1}
             />
+            <div>
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-[44px]"
+                onClick={() => inputFotoRef.current?.click()}
+              >
+                <ImagePlus className="mr-2 h-4 w-4" />
+                {t('pilihFoto')}
+              </Button>
+            </div>
             {photoFiles.length > 0 && (
               <>
                 <p className="text-sm text-muted-foreground">{t('filesSelected', { count: photoFiles.length })}</p>

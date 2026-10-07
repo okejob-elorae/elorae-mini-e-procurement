@@ -1,81 +1,9 @@
-'use client';
+import { GrnBaruClient } from './GrnBaruClient';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { GRNForm } from '@/components/grn/GRNForm';
-import { Button } from '@/components/ui/button';
-import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
-import { ArrowLeft } from 'lucide-react';
-import { toast } from 'sonner';
-import { offlineDB } from '@/lib/offline/db';
-import { isOnline } from '@/lib/offline/sync';
-import { getSuppliersForSelect } from '@/app/actions/suppliers';
-import { useTranslations } from 'next-intl';
+export const dynamic = 'force-dynamic';
 
-interface Supplier {
-  id: string;
-  code: string;
-  name: string;
-}
-
-export default function NewGRNPage() {
-  const router = useRouter();
-  const t = useTranslations('inventory.grnForm');
-  const tToasts = useTranslations('toasts');
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [isLoadingSuppliers, setIsLoadingSuppliers] = useState(true);
-
-  useEffect(() => {
-    const fetchSuppliers = async () => {
-      try {
-        const cached = await offlineDB.suppliers.toArray();
-        if (cached.length > 0) {
-          setSuppliers(cached.map((s) => ({ id: s.id, code: s.code, name: s.name })));
-        }
-        if (isOnline()) {
-          const data = await getSuppliersForSelect({ sync: true, approvedOnly: true });
-          const list = Array.isArray(data) ? data : [];
-          setSuppliers(list.map((s: Supplier) => ({ id: s.id, code: s.code, name: s.name })));
-        }
-      } catch (error) {
-        console.error('Failed to fetch suppliers:', error);
-        toast.error(tToasts('failedToLoadSuppliers'));
-      } finally {
-        setIsLoadingSuppliers(false);
-      }
-    };
-    fetchSuppliers();
-  }, [tToasts]);
-
-  const handleSuccess = () => {
-    router.push('/backoffice/inventory');
-    router.refresh();
-  };
-
-  if (isLoadingSuppliers) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild className="shrink-0">
-          <Link href="/backoffice/inventory" aria-label={t('backToInventory')} title={t('backToInventory')}>
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-        </Button>
-        <div className="flex items-center gap-1">
-          <h1 className="text-2xl font-bold tracking-tight">{t('pageTitle')}</h1>
-          <TombolBantuan judul={t('pageTitle')} />
-        </div>
-      </div>
-
-      <GRNForm suppliers={suppliers} onSuccess={handleSuccess} />
-    </div>
-  );
+/** `?poId=` dari tombol "Terima barang" di rincian PO mengisi PO dan pemasoknya. */
+export default async function NewGRNPage({ searchParams }: { searchParams: Promise<{ poId?: string }> }) {
+  const { poId } = await searchParams;
+  return <GrnBaruClient poIdAwal={typeof poId === 'string' ? poId : ''} />;
 }

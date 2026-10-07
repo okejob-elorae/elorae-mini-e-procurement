@@ -24,6 +24,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "kinerjaSpg.deskripsi" },
       "Satu baris per SPG per toko untuk bulan yang dipilih. Pilih nama SPG untuk rincian hariannya.",
+      "Tabelnya dua tampilan supaya muat di laptop: Penjualan (nilai, capaian target, nota, potong, pengunjung, konversi) dan Kehadiran & layanan (jadwal, masuk, terlambat, tanpa izin, izin, tutup hari, titip pesan). Rata-rata per nota dan retur pembeli hanya tampil di layar lebar; angkanya juga ada di rincian SPG.",
     ],
     kartu: [
       {
@@ -61,6 +62,7 @@ export const ENTRI: EntriBantuan[] = [
       { kunci: "spgTutupHari.kantor.deskripsi" },
       "Tampilan per hari menunjukkan setiap toko yang punya SPG: sudah atau belum tutup, angka laporannya, pengunjung, konversi, total kasir, dan selisihnya. Tampilan rentang merekap beberapa hari per toko.",
       "Setiap hari pukul 21.30 WIB, SPG di toko yang hari itu sudah punya nota tetapi belum mengirim laporan tutup hari mendapat pengingat.",
+      "Angka pengunjung, seperti di Kinerja SPG, dari penghitung +1 di HP SPG; hari yang tidak dihitung memakai angka yang diketik di laporan tutup hari (ditandai \"dari laporan tutup hari\"). Bila SPG mengetik angka lain di laporannya, angka itu tampil di bawahnya sebagai \"Laporan\". Kinerja SPG membagi kelebihan angka laporan ke SPG yang hadir tetapi tidak menghitung, jadi totalnya bisa lebih besar daripada angka penghitung di sini. Konversi = nota ÷ pengunjung; di tampilan rentang konversinya dari laporan tutup hari.",
     ],
   },
   {
@@ -146,6 +148,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "spgPelanggan.kantor.deskripsi" },
       "Tab Pelanggan menunjukkan per toko berapa pembeli tercatat dan seberapa sering mereka belanja; pilih toko untuk melihat daftarnya. Tab Titip pesan menunjukkan per toko berapa permintaan di tiap status dan barang yang paling sering dititip.",
+      "Tiga layar ini saling terkait dan saling ditautkan di kepala halaman: titip pesan (pembeli menunggu barang tertentu), barang dicari pembeli (yang ditanyakan tetapi tidak ada di rak), dan permintaan kiriman SPG. Permintaan pembeli yang sering muncul sebaiknya diteruskan SPG menjadi permintaan kiriman ke salesman pemegang toko.",
     ],
     kartu: [
       { judul: "Pelanggan satu toko", isi: { kunci: "spgPelanggan.kantor.samarPetunjuk" } },
@@ -190,6 +193,7 @@ export const ENTRI: EntriBantuan[] = [
       { kunci: "spgRequests.pageDescription" },
       "Bawaannya hanya permintaan yang perlu ditangani (baru dan diproses); yang sudah selesai atau ditolak dibuka lewat tabnya sendiri. Mengubah status butuh izin mengelola toko.",
       "Penanda Toko tanpa pemegang: toko itu belum punya salesman pemegang, jadi permintaannya tidak sampai ke HP salesman mana pun dan kantor yang menanganinya. Setiap permintaan baru dari toko seperti itu membunyikan lonceng pengelola toko; saringan Hanya toko tanpa pemegang menampilkan permintaan itu saja.",
+      "Tiga layar ini saling terkait dan saling ditautkan di kepala halaman: titip pesan (pembeli menunggu barang tertentu), barang dicari pembeli (yang ditanyakan tetapi tidak ada di rak), dan permintaan kiriman SPG. Permintaan pembeli yang sering muncul sebaiknya diteruskan SPG menjadi permintaan kiriman ke salesman pemegang toko.",
     ],
   },
   {
@@ -199,6 +203,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "spgLostSales.pageDescription" },
       "Periode dihitung dalam hari kalender WIB termasuk hari ini.",
+      "Tiga layar ini saling terkait dan saling ditautkan di kepala halaman: titip pesan (pembeli menunggu barang tertentu), barang dicari pembeli (yang ditanyakan tetapi tidak ada di rak), dan permintaan kiriman SPG. Permintaan pembeli yang sering muncul sebaiknya diteruskan SPG menjadi permintaan kiriman ke salesman pemegang toko.",
     ],
     kartu: [{ judul: { kunci: "spgLostSales.summaryTitle" }, isi: { kunci: "spgLostSales.summaryHint" } }],
   },

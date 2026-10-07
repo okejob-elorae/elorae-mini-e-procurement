@@ -163,8 +163,10 @@ d("adaTransaksiKunjungan (test bed only)", () => {
       expect(await cek()).toBe(true);
     });
 
-    it("BKM yang ditolak keuangan tetap dihitung (aturan lama, bukan penarikan)", async () => {
+    it("BKM yang DITOLAK keuangan tidak dihitung — uangnya tidak pernah diakui", async () => {
       await klaim("DITOLAK");
+      expect(await cek()).toBe(false);
+      await klaim("TERVERIFIKASI");
       expect(await cek()).toBe(true);
     });
 

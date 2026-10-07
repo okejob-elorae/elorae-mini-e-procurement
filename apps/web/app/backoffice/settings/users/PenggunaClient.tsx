@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { Eye, EyeOff, Loader2, Pencil, Search, UserPlus, Users } from "lucide-react";
+import { Eye, EyeOff, KeyRound, Loader2, Pencil, Search, UserPlus, Users } from "lucide-react";
 import { simpanPenggunaAction, type KodeSimpanPengguna } from "@/app/actions/settings/users";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SANDI_MIN } from "@/lib/users/validasi";
 import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
+import { alasanBelumBisaSimpan, kunciNamaPeran } from "./aturan-pengguna";
 
 type Pengguna = { id: string; nama: string; email: string; roleId: string | null; tokoId: string | null; punyaSandi: boolean };
 type Peran = { id: string; nama: string; sistem: boolean; spg: boolean };
@@ -26,16 +28,19 @@ const KOSONG: Draf = { id: null, nama: "", email: "", roleId: "", tokoId: null, 
 
 export function PenggunaClient({
   sayaId,
+  bolehLihatPeran,
   pengguna,
   peran,
   toko,
 }: {
   sayaId: string;
+  bolehLihatPeran: boolean;
   pengguna: Pengguna[];
   peran: Peran[];
   toko: Toko[];
 }) {
   const t = useTranslations("settings.users");
+  const tIzin = useTranslations("izinPeran");
   const router = useRouter();
   const [cari, setCari] = useState("");
   const [draf, setDraf] = useState<Draf | null>(null);
@@ -52,6 +57,12 @@ export function PenggunaClient({
 
   const peranDipilih = draf ? peranById.get(draf.roleId) : undefined;
   const ubahSendiri = draf?.id === sayaId;
+  // Nama tampilan peran bawaan (Produksi, Gudang…); peran buatan sendiri tampil apa adanya.
+  const namaPeran = (p: Peran) => {
+    const kunci = kunciNamaPeran(p.nama);
+    return kunci ? t(kunci as never) : p.nama;
+  };
+  const alasanBelum = draf ? alasanBelumBisaSimpan(draf, peranDipilih) : null;
 
   const buka = (d: Draf) => {
     setGalat([]);
@@ -80,10 +91,20 @@ export function PenggunaClient({
           <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
           <TombolBantuan judul={t("title")} />
         </div>
-        <Button onClick={() => buka({ ...KOSONG })}>
-          <UserPlus className="h-4 w-4" />
-          {t("add")}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {bolehLihatPeran ? (
+            <Button variant="outline" asChild>
+              <Link href="/backoffice/settings/rbac">
+                <KeyRound className="h-4 w-4" />
+                {tIzin("kelolaPeran")}
+              </Link>
+            </Button>
+          ) : null}
+          <Button onClick={() => buka({ ...KOSONG })}>
+            <UserPlus className="h-4 w-4" />
+            {t("add")}
+          </Button>
+        </div>
       </div>
 
       <div className="relative max-w-sm">
@@ -124,8 +145,25 @@ export function PenggunaClient({
                           {u.nama || "—"}
                           {u.id === sayaId ? <span className="ml-2 text-xs text-muted-foreground">({t("you")})</span> : null}
                         </TableCell>
-                        <TableCell className="text-muted-foreground">{u.email}</TableCell>
-                        <TableCell>{p ? <Badge variant={p.sistem ? "default" : "secondary"}>{p.nama}</Badge> : "—"}</TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {u.email}
+                          {!u.punyaSandi ? (
+                            <Badge variant="outline" className="ml-2 border-amber-500/40 text-amber-800 dark:text-amber-300">
+                              {t("noPassword")}
+                            </Badge>
+                          ) : null}
+                        </TableCell>
+                        <TableCell>
+                          {p ? (
+                            <Badge variant={p.sistem ? "default" : "secondary"} title={p.nama}>
+                              {namaPeran(p)}
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="border-amber-500/40 text-amber-800 dark:text-amber-300">
+                              {t("noRole")}
+                            </Badge>
+                          )}
+                        </TableCell>
                         <TableCell className="whitespace-normal text-sm">{s ? s.name : "—"}</TableCell>
                         <TableCell className="text-right">
                           <Button
@@ -196,7 +234,7 @@ export function PenggunaClient({
                   <SelectContent>
                     {peran.map((p) => (
                       <SelectItem key={p.id} value={p.id}>
-                        {p.nama}
+                        {namaPeran(p)}
                         {p.sistem ? ` — ${t("roleFullAccess")}` : ""}
                       </SelectItem>
                     ))}
@@ -256,11 +294,16 @@ export function PenggunaClient({
                 </p>
               </div>
 
-              <DialogFooter>
+              <DialogFooter className="items-center">
+                {alasanBelum ? (
+                  <p className="mr-auto text-xs text-muted-foreground" aria-live="polite">
+                    {t(`belum.${alasanBelum}`, { min: SANDI_MIN })}
+                  </p>
+                ) : null}
                 <Button type="button" variant="ghost" onClick={() => setDraf(null)} disabled={sibuk}>
                   {t("cancel")}
                 </Button>
-                <Button type="submit" disabled={sibuk || !draf.roleId}>
+                <Button type="submit" disabled={sibuk || alasanBelum !== null}>
                   {sibuk ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   {t("save")}
                 </Button>

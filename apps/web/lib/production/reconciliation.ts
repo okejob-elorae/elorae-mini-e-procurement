@@ -8,6 +8,7 @@ import {
   barisBahan,
   parseVendorReturnLines,
 } from '@/lib/vendor-returns/baris-retur';
+import { SUMBER_KEMBALI_BAHAN } from './kembali-bahan';
 
 export interface ReconciliationResult {
   itemId: string;
@@ -51,7 +52,17 @@ export async function reconcileWorkOrder(woId: string): Promise<{
   if (!wo) throw new Error('Work Order not found');
 
   // Baris retur tersimpan sebagai TEKS JSON — dibaca sekali, hanya bahan (bukan FG_REJECT).
-  const barisKembali = wo.returns.flatMap((ret) => parseVendorReturnLines(ret.lines).filter(barisBahan));
+  const barisKembali: Array<{ itemId: string; qty: number | string }> = wo.returns.flatMap((ret) =>
+    parseVendorReturnLines(ret.lines).filter(barisBahan)
+  );
+  // Bahan yang dikembalikan CMT ke gudang ("Kembalikan bahan") juga tidak terpakai.
+  const kembaliGudang = await prisma.stockAdjustment.findMany({
+    where: { source: SUMBER_KEMBALI_BAHAN, externalRef: woId },
+    select: { itemId: true, qtyChange: true },
+  });
+  for (const k of kembaliGudang) {
+    barisKembali.push({ itemId: k.itemId, qty: Math.abs(Number(k.qtyChange)) });
+  }
 
   const consumptionPlanRaw = wo.consumptionPlan;
   let consumptionPlan: any[];

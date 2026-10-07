@@ -11,6 +11,11 @@ import { stokToko } from "@/lib/spg/queries";
 import { gerakanStokToko } from "@/lib/spg/kantor-queries";
 import { StoreDetailView } from "./StoreDetailView";
 import { catatanTokoUntuk } from "@/lib/stores/catatan-queries";
+import { muatKreditToko } from "@/lib/field-sales/kredit-toko";
+import { bacaAturanKreditDb } from "@/lib/salesman/tagihan-toko";
+import { bolehMembacaPiutang } from "@/lib/receivables/izin";
+import { batasBerlaku } from "./ringkasan-toko";
+import type { KreditTokoTampil } from "./StoreDetailView";
 
 export default async function StoreDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -42,11 +47,27 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
   // stores:view (dijaga di atas) = baca & tambah catatan; stores:manage = kelola semua catatan.
   const catatan = await catatanTokoUntuk(store.id, { userId: session.user.id ?? "", kelolaSemua: canEdit });
 
+  // Kredit & piutang hanya untuk toko PUTUS (konsinyasi tidak punya piutang).
+  // Batasnya data toko (boleh dilihat pemegang stores:view); ringkasan piutang
+  // hanya untuk yang boleh membaca piutang.
+  let kredit: KreditTokoTampil | null = null;
+  if (store.termsType === "PUTUS") {
+    const bolehPiutang = bolehMembacaPiutang(perms);
+    const muat = bolehPiutang ? await muatKreditToko(store.id) : null;
+    const aturan = muat?.aturan ?? (await bacaAturanKreditDb());
+    kredit = {
+      batasNilai: batasBerlaku(store.creditLimit, aturan.batasNilai),
+      batasFaktur: batasBerlaku(store.maxOpenInvoices, aturan.batasFaktur),
+      piutang: !bolehPiutang ? "TERSEMBUNYI" : muat?.keadaan ?? "GAGAL",
+    };
+  }
+
   return (
     <StoreDetailView
       store={store}
       canEdit={canEdit}
       catatan={catatan}
+      kredit={kredit}
       pendingChange={pending ? { requestId: pending.id, requestedByLabel: pending.requestedByLabel, proposed: pending.proposed, old: pending.old } : null}
       orders={orders}
       sentItems={sentItems}

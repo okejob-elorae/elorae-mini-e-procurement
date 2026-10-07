@@ -157,12 +157,13 @@ export function HargaPesaingKantorClient({
               placeholder={t("saring.kategoriPetunjuk")}
               onChange={(e) => setKategoriKetik(e.target.value)}
             />
-            <datalist id="hp-kategori-saran">
-              {kategori.map((k) => (
-                <option key={k} value={k} />
-              ))}
-            </datalist>
           </div>
+          {/* Di luar kotak berlabel: sebagai anak terakhir, datalist membuat input dapat jarak bawah dan naik 4 px. */}
+          <datalist id="hp-kategori-saran">
+            {kategori.map((k) => (
+              <option key={k} value={k} />
+            ))}
+          </datalist>
           <div className="w-full space-y-1 sm:w-52">
             <Label htmlFor="hp-area" className="text-xs text-muted-foreground">
               {t("saring.area")}

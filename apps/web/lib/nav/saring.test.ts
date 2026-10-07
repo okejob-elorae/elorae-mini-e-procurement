@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { saringNav, type ItemTerlabel } from './saring';
+import { grupTerbuka, saringNav, type ItemTerlabel } from './saring';
 
 const MENU: ItemTerlabel[] = [
   { href: '/beranda', label: 'Beranda' },
@@ -81,5 +81,24 @@ describe('saringNav', () => {
     // Orang mengingat potongan nama, bukan awalannya.
     expect(saringNav(MENU, 'kas')[0].anak[0].href).toBe('/arus-kas');
     expect(saringNav(MENU, 'siklus')[0].item.href).toBe('/konsi');
+  });
+});
+
+describe("grupTerbuka", () => {
+  it("saat mencari, grup yang lolos saringan terbuka — anak yang cocok terlihat tanpa klik", () => {
+    const hasil = saringNav(
+      [{ href: "/laporan", label: "Laporan", anak: [{ href: "/laba-rugi", label: "Laba Rugi" }] }],
+      "laba",
+    );
+    expect(grupTerbuka("/laporan", null, true, hasil.some((h) => h.item.href === "/laporan"))).toBe(true);
+  });
+
+  it("tanpa pencarian, hanya grup pilihan yang terbuka", () => {
+    expect(grupTerbuka("/laporan", null, false, true)).toBe(false);
+    expect(grupTerbuka("/laporan", "/laporan", false, true)).toBe(true);
+  });
+
+  it("saat mencari, grup yang tidak lolos tetap tertutup walau tadinya dipilih", () => {
+    expect(grupTerbuka("/laporan", "/laporan", true, false)).toBe(false);
   });
 });

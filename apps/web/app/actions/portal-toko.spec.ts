@@ -39,6 +39,7 @@ vi.mock("@/lib/field-sales/portal-writer", async () => {
   };
 });
 
+import { MAKS_PERIKSA_PORTAL_PER_MENIT, pembatasPeriksaPortal } from "@/lib/field-sales/portal-toko-batas";
 import {
   buatTautanPortalAksi,
   cabutTautanPortalAksi,
@@ -53,6 +54,7 @@ const sesi = (id: string, permissions: string[]) => ({ user: { id, permissions }
 
 beforeEach(() => {
   for (const f of Object.values(h)) f.mockReset();
+  pembatasPeriksaPortal.kosongkan();
   h.storeFind.mockResolvedValue({ id: "t1", salesmanId: "s1", isActive: true });
   h.aturan.mockResolvedValue({ aktif: true, masaBerlakuHari: 90, maksPesananPerHari: 5 });
   h.daftar.mockResolvedValue([]);
@@ -83,6 +85,29 @@ describe("aksi publik — token dibuka ulang di setiap panggilan", () => {
     h.buka.mockResolvedValue({ ok: true, akses });
     expect(await pratinjauPesananPortalAksi(TOKEN, [{ itemId: "i", variantSku: "", qty: 0 }])).toEqual({ ok: false, code: "TIDAK_SAH" });
     expect(h.pratinjau).not.toHaveBeenCalled();
+  });
+
+  it("pratinjau dan kiriman dibatasi per tautan per menit — penebak stok tidak bisa mencoba tanpa henti", async () => {
+    h.buka.mockResolvedValue({ ok: true, akses });
+    h.pratinjau.mockResolvedValue({ ok: true, jenis: "KONSI" });
+    h.kirim.mockResolvedValue({ ok: false, code: "BARIS", masalah: { code: "STOK_KURANG", nama: [], barang: [] } });
+    const baris = [{ itemId: "i", variantSku: "", qty: 1 }];
+    for (let i = 0; i < MAKS_PERIKSA_PORTAL_PER_MENIT - 1; i++) await pratinjauPesananPortalAksi(TOKEN, baris);
+    // Jatahnya bersama: kiriman ikut dihitung (penolakan stok kurang juga bisa dipakai menebak).
+    await kirimPesananPortalAksi(TOKEN, { lines: baris, idempotencyKey: "kunci-123" });
+    expect(await pratinjauPesananPortalAksi(TOKEN, baris)).toEqual({ ok: false, code: "TERLALU_SERING" });
+    expect(await kirimPesananPortalAksi(TOKEN, { lines: baris, idempotencyKey: "kunci-456" })).toEqual({ ok: false, code: "TERLALU_SERING" });
+    expect(h.pratinjau).toHaveBeenCalledTimes(MAKS_PERIKSA_PORTAL_PER_MENIT - 1);
+    expect(h.kirim).toHaveBeenCalledTimes(1);
+    // Tautan lain punya jatahnya sendiri.
+    h.buka.mockResolvedValue({ ok: true, akses: { ...akses, linkId: "l2" } });
+    expect(await pratinjauPesananPortalAksi(TOKEN, baris)).toEqual({ ok: true, jenis: "KONSI" });
+  });
+
+  it("tautan mati tidak memakan jatah siapa pun", async () => {
+    h.buka.mockResolvedValue({ ok: false, code: "DICABUT" });
+    for (let i = 0; i < MAKS_PERIKSA_PORTAL_PER_MENIT + 5; i++) await pratinjauPesananPortalAksi(TOKEN, []);
+    expect(pembatasPeriksaPortal.ukuran()).toBe(0);
   });
 });
 

@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { prisma, seededId } from "@elorae/db";
+import { prisma, seededId, seededIds } from "@elorae/db";
 import { catatReturToko } from "./return-writer";
 
 /**
@@ -62,9 +62,28 @@ beforeEach(async () => {
   ).id;
 });
 
+/** Lonceng kantor "retur SPG dari toko tanpa pemegang" milik nota uji — dicocokkan di JS lewat metadata. */
+async function hapusNotifReturTanpaPemegang(notaIds: string[]) {
+  if (notaIds.length === 0) return;
+  const catatan = await prisma.adminNotification.findMany({
+    where: { category: "RETUR_SPG_TANPA_PEMEGANG" },
+    select: { id: true, metadata: true },
+  });
+  const milikUji = catatan
+    .filter((c) => {
+      const m = c.metadata as Record<string, unknown> | null;
+      return typeof m?.storeReturnId === "string" && notaIds.includes(m.storeReturnId);
+    })
+    .map((c) => c.id);
+  if (milikUji.length) await prisma.adminNotification.deleteMany({ where: { id: { in: seededIds(milikUji) } } });
+}
+
 afterEach(async () => {
   if (nrtIds.length) await prisma.auditLog.deleteMany({ where: { entityId: { in: nrtIds.filter(Boolean).map(seededId) } } });
   if (tokoId) {
+    // Toko uji tanpa pemegang: setiap NRT SPG membunyikan lonceng kantor.
+    const notaToko = await prisma.storeReturn.findMany({ where: { storeId: seededId(tokoId) }, select: { id: true } });
+    await hapusNotifReturTanpaPemegang(notaToko.map((n) => n.id));
     await prisma.storeStockMovement.deleteMany({ where: { storeId: seededId(tokoId) } });
     await prisma.storeReturn.deleteMany({ where: { storeId: seededId(tokoId) } });
     await prisma.store.delete({ where: { id: seededId(tokoId) } });

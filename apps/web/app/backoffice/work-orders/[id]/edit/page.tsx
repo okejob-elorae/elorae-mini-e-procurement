@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
@@ -55,6 +55,8 @@ interface TailorSupplier {
   code: string;
   name: string;
   type?: { id: string; code: string; name: string } | null;
+  /** Vendor yang sudah tercatat di WO tetapi tidak (lagi) di daftar pemasok disetujui. */
+  belumDisetujui?: boolean;
 }
 
 interface FinishedGood {
@@ -223,7 +225,7 @@ export default function EditWorkOrderPage() {
   }, [wo, purchaseOrders]);
 
   useEffect(() => {
-    if (!wo || wo.status !== 'DRAFT' || !tailors.length || !finishedGoods.length) return;
+    if (!wo || wo.status !== 'DRAFT' || isLoadingSuppliers || !finishedGoods.length) return;
     if (prefillDoneRef.current) return;
     prefillDoneRef.current = true;
 
@@ -253,7 +255,25 @@ export default function EditWorkOrderPage() {
     })).sort((a: WorkOrderStepForm, b: WorkOrderStepForm) => a.sequence - b.sequence));
 
     // Variant (SKU) selection is applied after variants load (see variants effect) so options exist first
-  }, [wo, tailors.length, finishedGoods.length]);
+  }, [wo, isLoadingSuppliers, finishedGoods.length]);
+
+  // Pilihan vendor = pemasok disetujui + vendor yang SUDAH tercatat di WO (dan
+  // di tahapnya) walau belum/tidak lagi disetujui. Dulu vendor itu hilang dari
+  // pilihan, kotak jadi kosong, dan orang terpaksa memilih vendor lain.
+  const pilihanVendor = useMemo<TailorSupplier[]>(() => {
+    const w = wo as { vendor?: { id?: string; name?: string; code?: string } | null; steps?: Array<{ supplier?: { id?: string; name?: string; code?: string } | null }> } | null;
+    const tambahan: TailorSupplier[] = [];
+    const ada = new Set(tailors.map((x) => x.id));
+    const calon = [w?.vendor, ...(Array.isArray(w?.steps) ? w.steps.map((st) => st.supplier) : [])];
+    for (const v of calon) {
+      if (!v?.id || ada.has(v.id)) continue;
+      ada.add(v.id);
+      tambahan.push({ id: v.id, name: v.name ?? v.id, code: v.code ?? '', belumDisetujui: true });
+    }
+    return [...tailors, ...tambahan];
+  }, [tailors, wo]);
+  const labelVendor = (v: TailorSupplier) =>
+    `${v.name}${v.code ? ` (${v.code})` : ''}${v.belumDisetujui ? ` · ${tF('vendorBelumDisetujui')}` : ''}`;
 
   useEffect(() => {
     if (!finishedGoodId) {
@@ -418,7 +438,7 @@ export default function EditWorkOrderPage() {
             setTargetPreview(null);
             return;
           }
-          const vendor = tailors.find((x) => x.id === vendorId);
+          const vendor = pilihanVendor.find((x) => x.id === vendorId);
           const suggested = new Date(preview.suggestedEta);
           setTargetPreview({
             totalDays: preview.totalDays,
@@ -434,7 +454,7 @@ export default function EditWorkOrderPage() {
       })();
     }, 400);
     return () => clearTimeout(handle);
-  }, [vendorId, plannedNum, tailors, targetTouched, targetDate]);
+  }, [vendorId, plannedNum, pilihanVendor, targetTouched, targetDate]);
 
   useEffect(() => {
     if (!consumptionMaterialId) {
@@ -623,7 +643,7 @@ export default function EditWorkOrderPage() {
               <div className="space-y-2">
                 <Label>{tF('vendorLabel')}</Label>
                 <SearchableCombobox
-                  options={tailors.map((t) => ({ value: t.id, label: `${t.name} (${t.code})` }))}
+                  options={pilihanVendor.map((v) => ({ value: v.id, label: labelVendor(v) }))}
                   value={vendorId}
                   onValueChange={setVendorId}
                   placeholder={tF('selectVendor')}
@@ -795,7 +815,7 @@ export default function EditWorkOrderPage() {
                   <SearchableCombobox
                     options={[
                       { value: '__none__', label: tF('selectSupplier') },
-                      ...tailors.map((supplier) => ({ value: supplier.id, label: `${supplier.name} (${supplier.code})` })),
+                      ...pilihanVendor.map((supplier) => ({ value: supplier.id, label: labelVendor(supplier) })),
                     ]}
                     value={step.supplierId || '__none__'}
                     onValueChange={(v) =>
@@ -937,7 +957,7 @@ export default function EditWorkOrderPage() {
                               <TableRow>
                                 <TableHead>{tWO('material')}</TableHead>
                                 <TableHead className="text-right">
-                                  {tWO('estimatedConsumptionPerPcs')} {tF('wasteSuffix')}
+                                  {tWO('kebutuhanTotalRencana')} {tF('wasteSuffix')}
                                 </TableHead>
                                 <TableHead className="text-right">{tF('colAvailable')}</TableHead>
                                 <TableHead className="text-right">{tF('colShortage')}</TableHead>

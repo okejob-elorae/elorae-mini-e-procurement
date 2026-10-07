@@ -62,6 +62,10 @@ export default function RejectedGoodsPage() {
           <h1 className="text-2xl font-bold tracking-tight">{t('title')}</h1>
           <TombolBantuan judul={t('title')} />
         </div>
+        {/* Barang jelek dari retur toko ada di tempat lain — saling ditautkan. */}
+        <Button variant="outline" size="sm" asChild className="ml-auto">
+          <Link href="/backoffice/gudang-rusak">{t('keGudangRusak')}</Link>
+        </Button>
       </div>
 
       <Card>

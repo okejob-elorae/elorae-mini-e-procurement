@@ -4,7 +4,9 @@ import { auth } from "@/lib/auth";
 import { getFieldSalesOrderById, listKonsiSuggestions, type KonsiSuggestion } from "@/lib/field-sales/queries";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { muatPanelKredit, type PanelKredit } from "@/lib/field-sales/kredit-panel";
+import { bolehMembacaPiutang } from "@/lib/receivables/izin";
 import { FieldSalesOrderDetailClient } from "./FieldSalesOrderDetailClient";
+import { muatTautanPesanan, penagihanSesuaiIzin, type FakturKreditTampil, type PiutangKiriman } from "./tautan-pesanan";
 
 export const dynamic = "force-dynamic";
 
@@ -65,14 +67,47 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
     (order.orderType === "PUTUS" &&
       (await prisma.fieldSalesOrder.findUnique({ where: { id }, select: { kreditDitahan: true } }))?.kreditDitahan === true);
 
+  /*
+   * Tautan ke penagihan: keadaan piutang sesungguhnya untuk faktur di panel kredit dan untuk
+   * piutang tiap nota pengiriman. Piutang nota hanya dibaca untuk yang boleh membaca piutang.
+   * Gagal memuat tidak menjatuhkan halaman — panel kembali ke kolom lamanya.
+   */
+  const izin = session.user.permissions ?? [];
+  const bolehBukaPiutang = bolehMembacaPiutang(izin);
+  const bolehBukaFakturPajak = hasPermission(izin, PERMISSIONS.TAX_INVOICES_VIEW);
+  let fakturKredit: FakturKreditTampil[] | null = null;
+  let piutangKiriman: Record<string, PiutangKiriman> = {};
+  try {
+    const tautan = await muatTautanPesanan({
+      faktur: kredit?.faktur ?? [],
+      piutangNota: bolehBukaPiutang
+        ? order.deliveries.flatMap((d) => (d.receivable ? [{ deliveryId: d.id, receivableId: d.receivable.id }] : []))
+        : [],
+    });
+    fakturKredit = tautan.faktur;
+    piutangKiriman = tautan.piutangKiriman;
+  } catch (e) {
+    console.error("[field-sales-orders] muatTautanPesanan failed", { orderId: id, error: e });
+  }
+
+  // Faktur pajak dan piutang nota tidak dikirim ke peramban yang tidak boleh membukanya — izin tidak melebar lewat halaman ini.
+  const orderTampil = {
+    ...order,
+    deliveries: penagihanSesuaiIzin(order.deliveries, { piutang: bolehBukaPiutang, fakturPajak: bolehBukaFakturPajak }),
+  };
+
   return (
     <FieldSalesOrderDetailClient
-      order={order}
+      order={orderTampil}
       canApprove={canApprove}
       canDeliver={canDeliver}
       konsiSuggestions={konsiSuggestions}
       kredit={kredit}
+      fakturKredit={fakturKredit}
       kreditDitahan={kreditDitahan}
+      piutangKiriman={piutangKiriman}
+      bolehBukaPiutang={bolehBukaPiutang}
+      bolehBukaFakturPajak={bolehBukaFakturPajak}
     />
   );
 }

@@ -1,5 +1,6 @@
 import type { Prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
+import { periksaFotoKembar } from "@/lib/foto/kembar";
 import {
   bolehMengoreksiBuktiTerima,
   periksaMasukanBuktiTerima,
@@ -154,6 +155,8 @@ export async function catatBuktiTerima(
     const waktu = periksaWaktuTerima(v.receivedAt, k, sekarang);
     if (waktu) return tolak(waktu);
     if (!(await fotoMilik(tx, v.fotoId, pelaku.userId))) return tolak("FOTO_TIDAK_DITEMUKAN");
+    const kembar = await periksaFotoKembar(tx, { urls: [v.podPhotoUrl], userId: pelaku.userId });
+    if (!kembar.boleh) return tolak(kembar.kode);
 
     const swap = await tx.fieldSalesDelivery.updateMany({
       where: { id: k.id, receivedAt: null },
@@ -219,8 +222,15 @@ export async function koreksiBuktiTerima(
     const waktu = periksaWaktuTerima(v.receivedAt, k, sekarang);
     if (waktu) return tolak(waktu);
     // Foto yang dipertahankan sudah diperiksa saat dicatat; foto BARU harus milik pengoreksi.
-    if (v.podPhotoUrl !== lama.podPhotoUrl && !(await fotoMilik(tx, v.fotoId, pelaku.userId))) {
-      return tolak("FOTO_TIDAK_DITEMUKAN");
+    if (v.podPhotoUrl !== lama.podPhotoUrl) {
+      if (!(await fotoMilik(tx, v.fotoId, pelaku.userId))) return tolak("FOTO_TIDAK_DITEMUKAN");
+      // Kembaran yang hanya dipakai pengiriman yang dikoreksi ini tidak dihitung.
+      const kembar = await periksaFotoKembar(tx, {
+        urls: [v.podPhotoUrl],
+        userId: pelaku.userId,
+        kecuali: { model: "fieldSalesDelivery", id: k.id },
+      });
+      if (!kembar.boleh) return tolak(kembar.kode);
     }
 
     const swap = await tx.fieldSalesDelivery.updateMany({

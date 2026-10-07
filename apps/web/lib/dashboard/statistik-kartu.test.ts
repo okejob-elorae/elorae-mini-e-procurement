@@ -35,13 +35,14 @@ const { dipanggil, db } = vi.hoisted(() => {
       },
       item: { count: catat("item.count", 120) },
       inventoryValue: {
-        // Dua baris barang A (gudang + varian) dijumlahkan: 3 + 2 = 5 ≤ titik pesan 5 → menipis.
-        // Barang B 9 > 4 → aman. Barang C 0 ≤ 1 → menipis.
+        // Definisi ringkasan Inventori (per barang, tersedia = di tangan − dipesan):
+        // barang A dua baris dijumlahkan: 3 + 2 = 5 ≤ titik pesan 5 → menipis.
+        // Barang B 9 > 4 → aman. Barang C tersedia 0 → HABIS, bukan menipis.
         findMany: catat("inventory.findMany", [
-          { itemId: "A", qtyOnHand: 3, item: { reorderPoint: 5 } },
-          { itemId: "A", qtyOnHand: 2, item: { reorderPoint: 5 } },
-          { itemId: "B", qtyOnHand: 9, item: { reorderPoint: 4 } },
-          { itemId: "C", qtyOnHand: 0, item: { reorderPoint: 1 } },
+          { itemId: "A", qtyOnHand: 3, reservedQty: 0, item: { reorderPoint: 5 } },
+          { itemId: "A", qtyOnHand: 2, reservedQty: 0, item: { reorderPoint: 5 } },
+          { itemId: "B", qtyOnHand: 9, reservedQty: 0, item: { reorderPoint: 4 } },
+          { itemId: "C", qtyOnHand: 0, reservedQty: 0, item: { reorderPoint: 1 } },
         ]),
         aggregate: catat("inventory.aggregate", { _sum: { totalValue: 60_500_000 } }),
       },
@@ -72,7 +73,8 @@ describe("getDashboardStats — tanpa daftar kartu (pemanggil lama)", () => {
     expect(dipanggil).toContain("inventory.findMany");
     expect(s.po.totalValue).toBe(245_000_000);
     expect(s.inventory.totalValue).toBe(60_500_000);
-    expect(s.items.lowStockCount).toBe(2);
+    expect(s.items.lowStockCount).toBe(1);
+    expect(s.items.habisCount).toBe(1);
   });
 });
 
@@ -92,7 +94,8 @@ describe("getDashboardStats — dengan kartu beranda", () => {
     expect(dipanggil).toContain("inventory.findMany");
     expect(dipanggil).not.toContain("inventory.aggregate");
     expect(dipanggil).not.toContain("po.aggregate");
-    expect(s.items.lowStockCount).toBe(2);
+    expect(s.items.lowStockCount).toBe(1);
+    expect(s.items.habisCount).toBe(1);
     expect(s.po.totalValue).toBeNull();
     expect(s.inventory.totalValue).toBeNull();
   });
@@ -101,7 +104,8 @@ describe("getDashboardStats — dengan kartu beranda", () => {
     for (const stok of [false, true]) {
       const s = await getDashboardStats({ stok });
       expect(s.po.draft).toBe(2);
-      expect(s.workOrders).toEqual({ inProduction: 1, completedToday: 1 });
+      // Tiruan wo.count = 1 untuk setiap status: sedang diproduksi 1 + selesai sebagian 1.
+      expect(s.workOrders).toEqual({ inProduction: 2, sedangDiproduksi: 1, selesaiSebagian: 1, completedToday: 1 });
       expect(s.suppliers.activeCount).toBe(4);
       expect(s.grnsThisWeek).toBe(6);
     }

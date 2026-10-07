@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { getVanStock, listVanLoads, getLoadableInventory } from "@/lib/canvassing/queries";
 import { getVanForReconcile, listVanReconciles } from "@/lib/canvassing/reconcile-queries";
+import { periksaKanvas } from "@/lib/canvassing/kelayakan-kanvas";
 import { VanDetailClient } from "./VanDetailClient";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ export default async function CanvasserVanPage({ params }: { params: Promise<{ c
   });
   if (!canvasser) notFound();
 
-  const [vanStock, loads, items, reconcileRows, reconciles] = await Promise.all([
+  const [vanStock, loads, items, reconcileRows, reconciles, bukanKanvas] = await Promise.all([
     getVanStock(canvasserId),
     listVanLoads(canvasserId, LOAD_HISTORY_LIMIT),
     prisma.item.findMany({
@@ -35,6 +36,7 @@ export default async function CanvasserVanPage({ params }: { params: Promise<{ c
     }),
     getVanForReconcile(canvasserId),
     listVanReconciles(canvasserId, { page: 1, pageSize: RECONCILE_HISTORY_PAGE_SIZE }),
+    periksaKanvas(canvasserId),
   ]);
 
   const loadableInventory = await getLoadableInventory(items.map((i) => i.id));
@@ -54,6 +56,7 @@ export default async function CanvasserVanPage({ params }: { params: Promise<{ c
       loadableInventory={loadableInventory}
       reconcileRows={reconcileRows}
       reconciles={reconciles.items}
+      bukanKanvas={bukanKanvas}
     />
   );
 }

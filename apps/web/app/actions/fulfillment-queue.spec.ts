@@ -58,6 +58,22 @@ describe("listFulfillmentQueue", () => {
     expect(args.where.fulfillmentStatus).toBe("PENDING");
   });
 
+  // Pesanan marketplace yang BATAL atau RETUR bukan pekerjaan gudang (penulis
+  // pemenuhan menolak keduanya) — sama dengan hitungan "belum dikirim" di
+  // Beranda, yang hanya menghitung pesanan NEW/PROCESSING.
+  it.each(["PENDING", "ALL", "SHIPPED"] as const)("tidak pernah memuat pesanan batal atau retur (saringan %s)", async (fulfillmentStatus) => {
+    (auth as any).mockResolvedValue(sessionWithFulfill);
+    (prisma.salesOrder.findMany as any).mockResolvedValue([]);
+    (prisma.salesOrder.count as any).mockResolvedValue(0);
+
+    await listFulfillmentQueue({ fulfillmentStatus, search: "x", page: 1, pageSize: 10 });
+
+    const cari = (prisma.salesOrder.findMany as any).mock.calls[0][0].where;
+    const hitung = (prisma.salesOrder.count as any).mock.calls[0][0].where;
+    expect(cari.status).toEqual({ notIn: ["CANCELLED", "RETURNED"] });
+    expect(hitung.status).toEqual({ notIn: ["CANCELLED", "RETURNED"] });
+  });
+
   it("ALL skips the fulfillmentStatus filter", async () => {
     (auth as any).mockResolvedValue(sessionWithFulfill);
     (prisma.salesOrder.findMany as any).mockResolvedValue([]);

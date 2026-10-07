@@ -36,6 +36,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import {
   getAvailableFabricRolls,
+  getBahanWo,
   getWorkOrderById,
   keluarkanBahan,
   suggestFabricRollAllocation,
@@ -101,6 +102,8 @@ export default function WorkOrderIssuePage() {
   const { data: session } = useSession();
   const id = typeof params.id === 'string' ? params.id : '';
   const [wo, setWO] = useState<Awaited<ReturnType<typeof getWorkOrderById>>>(null);
+  /** Keluar/kembali per bahan dari DOKUMEN (bukan salinan di rencana). */
+  const [bahanDok, setBahanDok] = useState<Map<string, { keluar: number; kembali: number }>>(new Map());
   const [materials, setMaterials] = useState<Array<{ id: string; sku: string; nameId: string; uom: { id: string } }>>([]);
   const [lines, setLines] = useState<IssueLine[]>([]);
   const [issueType, setIssueType] = useState<'FABRIC' | 'ACCESSORIES'>('FABRIC');
@@ -121,6 +124,9 @@ export default function WorkOrderIssuePage() {
 
   useEffect(() => {
     if (!id) return;
+    getBahanWo(id)
+      .then((r) => setBahanDok(new Map((r?.baris ?? []).map((b) => [b.itemId, { keluar: b.keluar, kembali: b.kembali }]))))
+      .catch(() => setBahanDok(new Map()));
     Promise.all([getWorkOrderById(id), getItemsByType(ItemType.FABRIC)])
       .then(([woData, fabricItems]) => {
         setWO(woData);
@@ -201,7 +207,10 @@ export default function WorkOrderIssuePage() {
     uomId: p.uomId ?? '',
     uomCode: p.uomCode,
     plannedQty: Number(p.plannedQty ?? 0),
-    issuedQty: Number(p.issuedQty ?? 0),
+    // Dari dokumen bila ada: keluar − yang sudah kembali ke gudang.
+    issuedQty: bahanDok.has(p.itemId)
+      ? (bahanDok.get(p.itemId)!.keluar - bahanDok.get(p.itemId)!.kembali)
+      : Number(p.issuedQty ?? 0),
     availableStock: undefined
   }));
 
@@ -465,7 +474,7 @@ export default function WorkOrderIssuePage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>{tWO('material')}</TableHead>
-                  <TableHead className="text-right">{tWO('estimatedConsumptionPerPcs')}</TableHead>
+                  <TableHead className="text-right">{tWO('kebutuhanTotalRencana')}</TableHead>
                   <TableHead className="text-right">{tI('colIssued')}</TableHead>
                   <TableHead className="text-right">{tI('colRemaining')}</TableHead>
                 </TableRow>
@@ -475,13 +484,23 @@ export default function WorkOrderIssuePage() {
                   <TableRow key={p.itemId}>
                     <TableCell>{p.itemName}</TableCell>
                     <TableCell className="text-right">
-                      {p.plannedQty.toLocaleString('id-ID')}
+                      {p.plannedQty.toLocaleString('id-ID', { maximumFractionDigits: 2 })} {p.uomCode ?? ''}
                     </TableCell>
                     <TableCell className="text-right">
-                      {p.issuedQty.toLocaleString('id-ID')}
+                      {p.issuedQty.toLocaleString('id-ID', { maximumFractionDigits: 2 })} {p.uomCode ?? ''}
                     </TableCell>
-                    <TableCell className="text-right">
-                      {(p.plannedQty - p.issuedQty).toLocaleString('id-ID')}
+                    <TableCell
+                      className={
+                        p.plannedQty - p.issuedQty < 0
+                          ? 'text-right font-medium text-amber-700 dark:text-amber-400'
+                          : 'text-right'
+                      }
+                    >
+                      {p.plannedQty - p.issuedQty < 0
+                        ? tI('lebihDariRencana', {
+                            qty: Math.abs(p.plannedQty - p.issuedQty).toLocaleString('id-ID', { maximumFractionDigits: 2 }),
+                          })
+                        : (p.plannedQty - p.issuedQty).toLocaleString('id-ID', { maximumFractionDigits: 2 })}
                     </TableCell>
                   </TableRow>
                 ))}

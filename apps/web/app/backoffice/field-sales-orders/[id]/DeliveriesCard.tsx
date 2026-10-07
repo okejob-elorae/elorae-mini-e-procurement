@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { Eye, FileCheck2, MoreHorizontal, PackageCheck, Pencil, Printer, Receipt, Truck } from "lucide-react";
+import { Eye, FileCheck2, FileText, Landmark, MoreHorizontal, PackageCheck, Pencil, Printer, Receipt, Truck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -74,6 +75,7 @@ import {
   type DeliverableLine,
 } from "./DeliveryFormDialog";
 import { TanggalInput } from "@/components/ui/tanggal-input";
+import type { PiutangKiriman } from "./tautan-pesanan";
 
 type Props = {
   orderId: string;
@@ -98,6 +100,16 @@ type Props = {
    * Menutup sisa tetap boleh — toko yang membatalkan pre-order-nya.
    */
   indenBelumRilis?: boolean;
+  /** Piutang tiap nota (per `deliveryId`), sisa dihitung ulang; kosong = tidak boleh/ tidak termuat. */
+  piutangKiriman?: Record<string, PiutangKiriman>;
+  bolehBukaPiutang?: boolean;
+  bolehBukaFakturPajak?: boolean;
+};
+
+const KUNCI_FAKTUR: Record<"PENDING" | "CREATED" | "NOT_REQUIRED", "fakturMenunggu" | "fakturDibuat" | "fakturTidakPerlu"> = {
+  PENDING: "fakturMenunggu",
+  CREATED: "fakturDibuat",
+  NOT_REQUIRED: "fakturTidakPerlu",
 };
 
 const DELIVERY_BADGE_VARIANT: Record<FieldSalesDeliveryStatus, "secondary" | "default" | "outline"> = {
@@ -162,6 +174,9 @@ export function DeliveriesCard({
   canDeliver,
   canRecordReceipt = canDeliver,
   indenBelumRilis = false,
+  piutangKiriman = {},
+  bolehBukaPiutang = false,
+  bolehBukaFakturPajak = false,
 }: Props) {
   const t = useTranslations("fieldSalesOrders");
   const tCommon = useTranslations("common");
@@ -189,7 +204,8 @@ export function DeliveriesCard({
   if (status !== "APPROVED" && deliveries.length === 0) return null;
 
   const hasOutstanding = lines.some((line) => line.outstanding > 0);
-  const showActions = canDeliver && status === "APPROVED";
+  // Tanpa sisa, kedua tombol tidak punya arti — lencana Terkirim/Ditutup sudah mengatakannya.
+  const showActions = canDeliver && status === "APPROVED" && hasOutstanding;
   const statusKey = `delivery.status.${deliveryStatus}`;
 
   /**
@@ -425,7 +441,7 @@ export function DeliveriesCard({
           <CardAction className={ACTION_SLOT_CLASS}>
             <Button
               className="h-10"
-              disabled={isPending || !hasOutstanding || indenBelumRilis}
+              disabled={isPending || indenBelumRilis}
               title={indenBelumRilis ? t("delivery.err.INDEN_BELUM_RILIS") : undefined}
               onClick={() => setFormOpen(true)}
             >
@@ -435,7 +451,7 @@ export function DeliveriesCard({
             <Button
               variant="outline"
               className="h-10"
-              disabled={isPending || !hasOutstanding}
+              disabled={isPending}
               onClick={() => setCloseOpen(true)}
             >
               {t("delivery.close")}
@@ -467,7 +483,15 @@ export function DeliveriesCard({
             <TableBody>
               {deliveries.map((delivery) => (
                 <TableRow key={delivery.id}>
-                  <TableCell className="font-mono whitespace-nowrap">{delivery.docNo}</TableCell>
+                  <TableCell className="min-w-[10rem] whitespace-normal">
+                    <div className="font-mono whitespace-nowrap">{delivery.docNo}</div>
+                    <PenagihanKiriman
+                      delivery={delivery}
+                      piutang={piutangKiriman[delivery.id] ?? null}
+                      bolehBukaPiutang={bolehBukaPiutang}
+                      bolehBukaFakturPajak={bolehBukaFakturPajak}
+                    />
+                  </TableCell>
                   <TableCell className="whitespace-nowrap">
                     {formatDisplayDateTime(delivery.deliveredAt, locale)}
                   </TableCell>
@@ -503,6 +527,22 @@ export function DeliveriesCard({
                           <Receipt className="mr-2 h-4 w-4" />
                           {t("print.notaTagihan")}
                         </DropdownMenuItem>
+                        {bolehBukaPiutang && piutangKiriman[delivery.id] && (
+                          <DropdownMenuItem asChild>
+                            <Link href={`/backoffice/piutang?keadaan=${piutangKiriman[delivery.id].keadaan}`}>
+                              <Landmark className="mr-2 h-4 w-4" />
+                              {t("delivery.penagihan.lihatPiutang")}
+                            </Link>
+                          </DropdownMenuItem>
+                        )}
+                        {bolehBukaFakturPajak && delivery.taxInvoice && (
+                          <DropdownMenuItem asChild>
+                            <Link href={`/backoffice/finance/faktur-pajak?q=${encodeURIComponent(delivery.docNo)}`}>
+                              <FileText className="mr-2 h-4 w-4" />
+                              {t("delivery.penagihan.lihatFakturPajak")}
+                            </Link>
+                          </DropdownMenuItem>
+                        )}
                         {canDeliver && (
                           <DropdownMenuItem onClick={() => openEditDialog(delivery)}>
                             <Pencil className="mr-2 h-4 w-4" />
@@ -693,5 +733,54 @@ export function DeliveriesCard({
         </DialogContent>
       </Dialog>
     </Card>
+  );
+}
+
+/**
+ * Langkah sesudah nota: piutang (sisa sesungguhnya) dan faktur pajak nota ini, di bawah nomornya.
+ * Tautan hanya untuk yang boleh membuka halaman tujuannya.
+ */
+function PenagihanKiriman({
+  delivery,
+  piutang,
+  bolehBukaPiutang,
+  bolehBukaFakturPajak,
+}: {
+  delivery: FieldSalesDeliverySummary;
+  piutang: PiutangKiriman | null;
+  bolehBukaPiutang: boolean;
+  bolehBukaFakturPajak: boolean;
+}) {
+  const t = useTranslations("fieldSalesOrders.delivery.penagihan");
+  const faktur = delivery.taxInvoice;
+  if (!piutang && !faktur) return null;
+  const teksPiutang = piutang ? (piutang.sisa > 0 ? t("piutangSisa", { nilai: formatIDR(piutang.sisa) }) : t("piutangLunas")) : null;
+  const teksFaktur = !faktur
+    ? null
+    : faktur.status === "CREATED"
+      ? t("fakturDibuat", { nomor: faktur.invoiceNo ?? "—" })
+      : t(KUNCI_FAKTUR[faktur.status]);
+  return (
+    <div className="mt-0.5 flex flex-col gap-0.5 text-xs text-muted-foreground">
+      {teksPiutang &&
+        (bolehBukaPiutang && piutang ? (
+          <Link href={`/backoffice/piutang?keadaan=${piutang.keadaan}`} className="underline underline-offset-2 hover:text-foreground">
+            {teksPiutang}
+          </Link>
+        ) : (
+          <span>{teksPiutang}</span>
+        ))}
+      {teksFaktur &&
+        (bolehBukaFakturPajak ? (
+          <Link
+            href={`/backoffice/finance/faktur-pajak?q=${encodeURIComponent(delivery.docNo)}`}
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            {teksFaktur}
+          </Link>
+        ) : (
+          <span>{teksFaktur}</span>
+        ))}
+    </div>
   );
 }

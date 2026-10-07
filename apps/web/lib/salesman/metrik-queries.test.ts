@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma, seededId, seededIds } from "@elorae/db";
-import { kinerjaSatuSales, kinerjaSemuaSales } from "./metrik-queries";
+import { kinerjaSatuSales, kinerjaSemuaSales, pilihPesertaTambahan } from "./metrik-queries";
 
 /*
  * Kueri kinerja lapangan terhadap basis data uji. Semua baris milik dua
@@ -219,5 +219,33 @@ d("kinerja lapangan — kueri (test bed only)", () => {
 
   it("pengguna yang tidak ada → null", async () => {
     expect(await kinerjaSatuSales("bukan-pengguna", { dari: HARI, sampai: HARI }, { sekarang: SEKARANG })).toBeNull();
+  });
+});
+
+describe("peserta tambahan laporan kinerja lapangan (murni)", () => {
+  const calon = (id: string, x: Partial<{ spg: boolean; sistem: boolean; aksesHp: boolean; lapangan: boolean }>) => ({
+    id,
+    nama: id,
+    spg: false,
+    sistem: false,
+    aksesHp: false,
+    lapangan: false,
+    ...x,
+  });
+
+  it("admin kantor yang mencatat BKM dari kantor tidak dihitung sebagai sales", () => {
+    expect(pilihPesertaTambahan([calon("admin", { sistem: true, aksesHp: true })])).toEqual([]);
+    expect(pilihPesertaTambahan([calon("admin", { sistem: true, lapangan: true })])).toEqual([]);
+  });
+
+  it("staf kantor tanpa aplikasi HP yang hanya punya pelunasan tidak ikut; mantan sales dengan kunjungan tetap ikut", () => {
+    expect(
+      pilihPesertaTambahan([
+        calon("keuangan", {}),
+        calon("mantan", { lapangan: true }),
+        calon("sales-hp", { aksesHp: true }),
+        calon("spg", { spg: true, lapangan: true, aksesHp: true }),
+      ]).map((p) => p.id),
+    ).toEqual(["mantan", "sales-hp"]);
   });
 });

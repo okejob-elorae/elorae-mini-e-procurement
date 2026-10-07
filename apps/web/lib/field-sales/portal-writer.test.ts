@@ -184,6 +184,41 @@ d("portal toko — alur publik (test bed only)", () => {
       expect(p).toMatchObject({ ok: true, jenis: "PUTUS", total: 105000 });
     });
 
+    it("stok kurang dijawab dengan EMBER, dan ambangnya dibulatkan per 6 pcs — angka stok persis tidak bisa ditebak", async () => {
+      const a = await akses(tokenPutus);
+      // Stok 100 → portal menawarkan 96; 97 sudah ditolak, sama seperti 101.
+      expect(await pratinjauPortal(a, kaos(96))).toMatchObject({ ok: true, jenis: "PUTUS", total: 96 * 35000 });
+      expect(await pratinjauPortal(a, kaos(97))).toEqual({
+        ok: false,
+        masalah: { code: "STOK_KURANG", nama: ["Kaos Portal"], barang: [{ nama: "Kaos Portal", ketersediaan: "TERSEDIA" }] },
+      });
+      // Varian S: stok 50 → 48. Varian M habis.
+      const varian = (qty: number, v: string) => [{ itemId: varianId, variantSku: `${sku}-V-${v}`, qty }];
+      expect((await pratinjauPortal(a, varian(48, "S"))).ok).toBe(true);
+      expect(await pratinjauPortal(a, varian(49, "S"))).toMatchObject({ ok: false, masalah: { code: "STOK_KURANG" } });
+      expect(await pratinjauPortal(a, varian(1, "M"))).toMatchObject({
+        ok: false,
+        masalah: { barang: [{ nama: `Kemeja Portal — ${sku}-V-M`, ketersediaan: "HABIS" }] },
+      });
+      // Tidak ada angka di jawaban penolakan.
+      const tolak = JSON.stringify(await pratinjauPortal(a, kaos(97)));
+      expect(tolak).not.toMatch(/\d/);
+    });
+
+    it("sisa di bawah 6 pcs: katalog menyebutnya Habis dan portal tidak menerimanya", async () => {
+      await prisma.inventoryValue.updateMany({ where: { itemId: seededId(varianId), variantSku: `${sku}-V-S` }, data: { qtyOnHand: 5 } });
+      const a = await akses(tokenPutus);
+      const k = await katalogPortal(a);
+      if (k?.jenis !== "PUTUS") throw new Error("bukan PUTUS");
+      const v = k.barang.find((b) => b.itemId === varianId)!;
+      expect(v.varian.find((x) => x.variantSku === `${sku}-V-S`)!.ketersediaan).toBe("HABIS");
+      expect(v.ketersediaan).toBe("HABIS");
+      expect(await pratinjauPortal(a, [{ itemId: varianId, variantSku: `${sku}-V-S`, qty: 1 }])).toMatchObject({
+        ok: false,
+        masalah: { code: "STOK_KURANG" },
+      });
+    });
+
     it("KONSI: exactly { ok, jenis } — no number of any kind", async () => {
       const p = await pratinjauPortal(await akses(tokenKonsi), kaos(3));
       expect(p).toEqual({ ok: true, jenis: "KONSI" });
@@ -253,6 +288,15 @@ d("portal toko — alur publik (test bed only)", () => {
       expect(await prisma.fieldSalesOrder.count({ where: { storeId: seededId(putusId) } })).toBe(2);
     });
 
+    it("batas harian dihitung DI DALAM transaksi penulis: tiga kiriman serentak dengan batas 1 → tepat satu pesanan", async () => {
+      const a = await akses(tokenPutus, { maksPesananPerHari: 1 });
+      const hasil = await Promise.all([1, 2, 3].map(() => kirimPesananPortal(a, { lines: kaos(1), idempotencyKey: kunci() })));
+      expect(hasil.filter((r) => r.ok)).toHaveLength(1);
+      for (const r of hasil.filter((x) => !x.ok)) expect(r).toEqual({ ok: false, code: "BATAS_HARIAN", batas: 1 });
+      expect(await prisma.fieldSalesOrder.count({ where: { storeId: seededId(putusId) } })).toBe(1);
+      expect(mockKabar).toHaveBeenCalledTimes(1);
+    });
+
     it("KONSI success carries no total", async () => {
       const r = await kirimPesananPortal(await akses(tokenKonsi), { lines: kaos(3), idempotencyKey: kunci() });
       expect(r).toMatchObject({ ok: true, jenis: "KONSI", ulang: false });
@@ -266,7 +310,7 @@ d("portal toko — alur publik (test bed only)", () => {
       expect(await kirimPesananPortal(a, { lines: kaos(101), idempotencyKey: kunci() })).toEqual({
         ok: false,
         code: "BARIS",
-        masalah: { code: "STOK_KURANG", nama: ["Kaos Portal"] },
+        masalah: { code: "STOK_KURANG", nama: ["Kaos Portal"], barang: [{ nama: "Kaos Portal", ketersediaan: "TERSEDIA" }] },
       });
       expect(await kirimPesananPortal(a, { lines: [{ itemId: varianId, variantSku: `${sku}-V-M`, qty: 1 }], idempotencyKey: kunci() })).toMatchObject({
         code: "BARIS",

@@ -17,6 +17,7 @@ export const KODE_TOLAK_PRODUKSI = {
   WO_BELUM_TERBIT: "Perintah kerja ini masih draf. Terbitkan dulu sebelum menerima barang jadi.",
   WO_SUDAH_ADA_PENERIMAAN: "Perintah kerja yang sudah punya penerimaan barang jadi tidak bisa dibatalkan.",
   WO_SUDAH_DIBATALKAN: "Perintah kerja ini sudah dibatalkan.",
+  CACAT_MELEBIHI_SETORAN: "Jumlah cacat tidak boleh lebih dari jumlah disetor.",
 } as const;
 
 export type KodeTolakProduksi = keyof typeof KODE_TOLAK_PRODUKSI;

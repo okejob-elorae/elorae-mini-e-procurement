@@ -302,12 +302,18 @@ export async function catatPembayaranTokoAction(input: {
   tanggal: string;
   cara: string;
   catatan?: string;
+  /** Dibuat dialog SEKALI per isian: klik ganda / simpan ulang = pembayaran yang sama. */
+  idempotencyKey?: string;
 }): Promise<HasilAksiKonsi> {
   const userId = await butuhKeuangan();
   if (!userId) return { ok: false, kode: "TANPA_AKSES" };
 
   const tanggal = tanggalWib(input.tanggal);
   if (!tanggal) return { ok: false, kode: "TANGGAL_TIDAK_VALID" };
+  const kunci =
+    typeof input.idempotencyKey === "string" && input.idempotencyKey.trim().length <= 100
+      ? input.idempotencyKey.trim() || null
+      : null;
 
   try {
     const hasil = await catatPembayaranToko({
@@ -317,6 +323,7 @@ export async function catatPembayaranTokoAction(input: {
       cara: input.cara,
       catatan: input.catatan,
       olehUserId: userId,
+      idempotencyKey: kunci,
     });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
     segarkan();

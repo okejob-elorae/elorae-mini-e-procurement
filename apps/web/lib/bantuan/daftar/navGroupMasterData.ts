@@ -7,7 +7,10 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "supplier.pageTitle" },
     isi: [
       { kunci: "supplier.pageDescription" },
-      "Nomor rekening pemasok disimpan terenkripsi dan selalu tampil tersamar; untuk melihatnya, buka rincian pemasok lalu masukkan PIN Anda. Menghapus pemasok juga meminta PIN.",
+      "Pemasok baru berstatus Menunggu persetujuan dan BELUM bisa dipilih di pesanan pembelian (PO) sampai disetujui; pemasok yang ditolak juga tidak bisa dipilih. Kolom Persetujuan menuliskan hal itu di setiap baris.",
+      "Tombol Setujui dan Tolak tampil langsung di baris pemasok yang menunggu, untuk siapa pun yang memegang izin menyetujui pemasok (tidak harus peran ADMIN). Menolak butuh alasan.",
+      "Cari, jenis, dan persetujuan tersimpan di alamat halaman, jadi daftar yang tersaring bisa dibagikan.",
+      "Nomor rekening pemasok disimpan terenkripsi dan selalu tampil tersamar; untuk melihatnya, buka rincian pemasok lalu masukkan PIN Anda. Menghapus pemasok meminta konfirmasi lalu PIN.",
     ],
   },
   {
@@ -35,7 +38,11 @@ export const ENTRI: EntriBantuan[] = [
     rute: "/backoffice/stores/[id]",
     bagian: "navGroupMasterData",
     judul: { kunci: "stores.detail.infoTitle" },
-    isi: "Satu halaman untuk satu toko: data dan syarat kerja samanya, catatan tim, stok di toko, tautan portal pesan, riwayat kunjungan, pesanan terakhir, dan barang yang pernah dikirim. Bila salesman mengusulkan perubahan data toko dari HP, usulannya tampil paling atas untuk disetujui atau ditolak.",
+    isi: [
+      "Satu halaman untuk satu toko: data dan syarat kerja samanya, kredit dan piutang, catatan tim, buku stok SPG, tautan portal pesan, riwayat kunjungan, pesanan terakhir, dan barang yang pernah dikirim. Bila salesman mengusulkan perubahan data toko dari HP, usulannya tampil paling atas untuk disetujui atau ditolak.",
+      "Bagian Kredit & piutang (hanya toko putus) menampilkan kelas toko, status PKP, batas kredit, dan maksimal faktur terbuka. Batas yang ditulis khusus toko ini menimpa bawaan di Pengaturan → Salesman; kosong berarti ikut bawaan. Pemegang izin piutang juga melihat sisa piutang toko, jumlah faktur yang belum lunas, dan piutang yang lewat janji bayar, dengan tautan ke daftar Faktur & Piutang tersaring toko ini. Sisa piutang selalu dihitung ulang dari pelunasan yang sudah diverifikasi.",
+      "Ada dua angka stok di toko konsinyasi. Buku stok SPG (di halaman ini) dicatat SPG: kiriman yang diterima, penjualan, opname, mutasi, dan retur. Titipan menurut kiriman (di Target stok) dihitung dari kiriman dikurangi penjualan bulan yang sudah dikunci dan retur. Keduanya bisa berbeda; opname di toko yang membereskannya.",
+    ],
     kartu: [
       {
         judul: { kunci: "stores.storeChanges.reviewTitle" },
@@ -80,7 +87,10 @@ export const ENTRI: EntriBantuan[] = [
     rute: "/backoffice/stores/[id]/target-stok",
     bagian: "navGroupMasterData",
     judul: { kunci: "storeStockTargets.title" },
-    isi: "Stok minimum dan maksimum per ukuran untuk toko ini. Begitu stok di toko menyentuh minimum, salesman diberi saran isi ulang sampai maksimum.",
+    isi: [
+      "Stok minimum dan maksimum per ukuran untuk toko ini. Begitu stok di toko menyentuh minimum, salesman diberi saran isi ulang sampai maksimum.",
+      "Kepala kolom stok menyebut sumbernya: Stok (buku SPG) bila toko punya buku stok yang dicatat SPG, atau Titipan (menurut kiriman) bila belum — kiriman dikurangi penjualan bulan yang sudah dikunci dan retur. Angka titipan bisa minus bila penjualan tercatat lebih banyak dari kiriman.",
+    ],
     kartu: [
       {
         judul: "Toko putus",
@@ -139,13 +149,21 @@ export const ENTRI: EntriBantuan[] = [
     rute: "/backoffice/items",
     bagian: "navGroupMasterData",
     judul: { kunci: "navigation.navItemsAll" },
-    isi: "Katalog semua barang: kain, aksesoris, dan barang jadi. Saring menurut jenis atau cari nama dan SKU. Buka baris untuk melihat varian dan resep bahan (BOM) barangnya; mengubah dan menghapus ada di menu titik tiga setiap baris.",
+    isi: [
+      "Katalog semua barang: kain, aksesoris, dan barang jadi. Tab di atas menyaring menurut jenis beserta jumlahnya; kotak di sebelah cari menyaring menurut kategori dan status aktif. Saringan tersimpan di alamat halaman, jadi daftar yang tersaring bisa dibagikan.",
+      "Klik SKU atau nama barang untuk membuka dan mengubahnya. Panah di kiri baris menampilkan varian dan resep bahan (BOM). Menghapus ada di menu titik tiga dan meminta konfirmasi; barang yang sudah dipakai di dokumen tidak bisa dihapus — nonaktifkan saja.",
+    ],
   },
   {
     rute: "/backoffice/items/new",
     bagian: "navGroupMasterData",
     judul: { kunci: "items.newPage.title" },
-    isi: "Menambah barang baru ke katalog: jenis, nama, satuan, kategori, harga, titik pesan ulang, varian, dan untuk barang jadi resep bahannya (BOM).",
+    isi: [
+      "Menambah barang baru ke katalog: jenis, nama, satuan, kategori, harga, titik pesan ulang, varian, dan untuk barang jadi resep bahannya (BOM).",
+      "Nama Inggris tidak wajib: bila kosong, nama Indonesia dipakai di tempat yang membutuhkan nama Inggris. SKU bisa diketik atau dibuat otomatis menurut jenisnya.",
+      "Varian: tambahkan atribut (mis. Warna, Ukuran) beserta nilainya; setiap kombinasi menjadi satu varian. SKU varian harus diawali kode kategori (bila kategorinya berkode) atau SKU barang; dibiarkan kosong, SKU varian dibuat otomatis saat disimpan dengan bentuk awalan-nilai1-nilai2 (mis. KAOS-MERAH-S). Barcode varian dibuat menurut format di Pengaturan → Kode barang.",
+      "Resep bahan (BOM) hanya untuk barang jadi: bahan, kebutuhan per pcs, dan susut dalam persen.",
+    ],
     kartu: [
       {
         judul: { kunci: "itemProductInfo.title" },
@@ -159,7 +177,9 @@ export const ENTRI: EntriBantuan[] = [
     judul: "Rincian barang",
     isi: [
       "Mengubah data barang dan foto galerinya (foto produk dan foto per varian). Tab Riwayat Harga mencatat setiap perubahan harga jual beserta pemicunya: penerimaan barang jadi, perubahan margin, perubahan default, atau edit manual.",
-      "Tombol Label barcode membuka cetak label untuk barang ini. Admin juga punya tombol Kirim stok ke Jubelio, yang memasukkan stok barang ini ke antrean kiriman ke Jubelio.",
+      "Tombol Label barcode membuka cetak label untuk barang ini. Admin juga punya tombol Kirim stok ke Jubelio, yang memasukkan stok barang ini ke antrean kiriman ke Jubelio setelah dikonfirmasi.",
+      "Tombol Simpan barang menyimpan isian formulir. Galeri produk di bawahnya punya tombol Simpan gambar sendiri — gambar yang ditambah atau digeser belum tersimpan sebelum tombol itu ditekan.",
+      "Nama Inggris tidak wajib: bila dikosongkan, nama Indonesia yang dipakai.",
     ],
     kartu: [
       {
@@ -188,7 +208,10 @@ export const ENTRI: EntriBantuan[] = [
     kartu: [
       {
         judul: { kunci: "labelBarcode.opsi.judul" },
-        isi: "Pilihan cetak (gaya label dan lainnya) diingat di peramban ini.",
+        isi: [
+          "Pilihan cetak (gaya label dan lainnya) diingat di peramban ini.",
+          "Label tidak pernah mencetak harga, baik gaya Eloraé maupun gaya Rinci (keputusan pemilik). Harga eceran hanya tampil di layar ini sebagai keterangan.",
+        ],
       },
       {
         judul: { kunci: "labelBarcode.pratinjau.judul" },

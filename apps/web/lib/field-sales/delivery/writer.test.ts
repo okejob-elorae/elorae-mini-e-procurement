@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { recordFieldSalesDelivery, closeFieldSalesOrderRemainder } from "./writer";
+import { recordFieldSalesDelivery, closeFieldSalesOrderRemainder, CadanganTidakCocokError } from "./writer";
 import { DeliveryError } from "../errors";
 
 /* Stock-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host). */
@@ -142,6 +142,24 @@ d("recordFieldSalesDelivery (test bed only)", () => {
     expect(err.code).toBe("OVER_DELIVER");
     const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: invId } });
     expect(Number(inv.qtyOnHand)).toBe(10);
+  });
+
+  it("cadangan yang sudah habis dikonsumsi (balapan deploy) punya kode sendiri, bukan OVER_DELIVER, dan stok tidak bergerak", async () => {
+    // Pesanan disetujui oleh image lama: stoknya sudah keluar, cadangannya CONSUMED, tapi sisa tetap penuh.
+    await prisma.stockReservation.update({ where: { fieldSalesLineId: lineAId }, data: { state: "CONSUMED", consumedQty: 5 } });
+    const err = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineAId, qty: 2 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(CadanganTidakCocokError);
+    expect(err.code).toBe("RESERVATION_MISMATCH");
+    expect(err).not.toBeInstanceOf(DeliveryError);
+    const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: invId } });
+    expect(Number(inv.qtyOnHand)).toBe(10);
+    expect(await prisma.fieldSalesDelivery.count({ where: { orderId: seededId(orderId) } })).toBe(0);
   });
 
   it("hard-blocks when on-hand is short and names every short line", async () => {

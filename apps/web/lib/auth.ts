@@ -6,6 +6,7 @@ import { prisma } from '@elorae/db';
 import { Role } from '@elorae/db';
 import { ServerUnavailableSignin, TooManyAttemptsSignin } from '@/lib/auth/login-errors';
 import { loginThrottle, throttleKey } from '@/lib/auth/login-throttle';
+import { ingatIsiSesi, isiSesiDari, segarkanToken } from '@/lib/auth/segarkan-sesi';
 
 export const {
   handlers: { GET, POST },
@@ -88,30 +89,15 @@ export const {
 
         loginThrottle.reset(key);
 
-        // Get permissions from role
-        let permissions: string[] = [];
-        let roleId: string | null = null;
-        let roleName: string = user.role;
-
-        if (user.roleDefinition) {
-          roleId = user.roleDefinition.id;
-          roleName = user.roleDefinition.name;
-          // If system role (ADMIN), grant wildcard
-          if (user.roleDefinition.isSystem) {
-            permissions = ['*'];
-          } else {
-            permissions = user.roleDefinition.permissions.map(rp => rp.permission.code);
-          }
-        }
+        // Peran sistem (ADMIN) mendapat wildcard — aturan yang sama dengan penyegaran sesi.
+        const isi = isiSesiDari(user);
+        ingatIsiSesi(user.id, isi);
 
         return {
           id: user.id,
           email: user.email,
           name: user.name,
-          role: user.role,
-          roleId,
-          roleName,
-          permissions,
+          ...isi,
         };
       },
     }),
@@ -125,36 +111,14 @@ export const {
         token.roleName = (user as any).roleName as string;
         token.permissions = (user as any).permissions as string[];
         token.permissionsVersion = (user as any).permissionsVersion as number | undefined;
+        token.assignedStoreId = ((user as any).assignedStoreId ?? null) as string | null;
+        token.disegarkanPada = Date.now();
+        return token;
       }
-      // Refresh permissions if permissionsVersion changed (triggered by session update)
-      if (trigger === 'update' && token.id) {
-        const user = await prisma.user.findUnique({
-          where: { id: token.id as string },
-          include: {
-            roleDefinition: {
-              include: {
-                permissions: {
-                  include: {
-                    permission: true,
-                  },
-                },
-              },
-            },
-          },
-        });
-        if (user?.roleDefinition) {
-          const currentVersion = user.roleDefinition.permissionsVersion;
-          if (token.permissionsVersion !== currentVersion) {
-            if (user.roleDefinition.isSystem) {
-              token.permissions = ['*'];
-            } else {
-              token.permissions = user.roleDefinition.permissions.map(rp => rp.permission.code);
-            }
-            token.permissionsVersion = currentVersion;
-          }
-        }
-      }
-      return token;
+      // Isi sesi dibaca ulang dari basis data bila token lebih tua dari semenit
+      // (atau selalu, saat halaman peran memanggil `update()`). Akun yang sudah
+      // tidak ada → null → sesi tidak sah. Lihat lib/auth/segarkan-sesi.ts.
+      return segarkanToken(token, { paksa: trigger === 'update' });
     },
     async session({ session, token }) {
       if (token) {
@@ -163,6 +127,7 @@ export const {
         session.user.roleId = token.roleId as string | null;
         session.user.roleName = token.roleName as string;
         session.user.permissions = (token.permissions || []) as string[];
+        session.user.assignedStoreId = (token.assignedStoreId ?? null) as string | null;
       }
       return session;
     },

@@ -27,6 +27,7 @@ describe("nasibBuktiTerima", () => {
       "FOTO_WAJIB",
       "FOTO_TIDAK_SAH",
       "FOTO_TIDAK_DITEMUKAN",
+      "FOTO_SUDAH_DIPAKAI",
       "KUNCI_TIDAK_SAH",
     ]) {
       expect(nasibBuktiTerima({ ok: false, kode }), kode).toBe("terminal");

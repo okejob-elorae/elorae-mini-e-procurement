@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { ArrowLeft, BookText, ChevronRight, ClipboardCheck, Clock, ExternalLink, Package, Truck } from "lucide-react";
 import type { VanStockRow, VanLoadRow, LoadableInventoryRow } from "@/lib/canvassing/queries";
 import type { VanReconcileRow, VanReconcileListRow } from "@/lib/canvassing/reconcile-queries";
+import type { AlasanBukanKanvas } from "@/lib/canvassing/kelayakan-kanvas";
 import { logPrint } from "@/app/actions/audit";
 import { getVanLoadPrintData } from "@/app/actions/van-load-print";
 import { postVanLoadJournalAction } from "@/app/actions/canvassing";
@@ -43,6 +44,8 @@ type Props = {
   loadableInventory: LoadableInventoryRow[];
   reconcileRows: VanReconcileRow[];
   reconciles: VanReconcileListRow[];
+  /** Pengguna ini bukan sales kanvas: muat mobil disembunyikan (server juga menolaknya). Absen = boleh. */
+  bukanKanvas?: AlasanBukanKanvas | null;
 };
 
 function printHtml(html: string, title: string) {
@@ -58,7 +61,17 @@ function printHtml(html: string, title: string) {
   setTimeout(() => document.body.removeChild(iframe), 500);
 }
 
-export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, itemOptions, loadableInventory, reconcileRows, reconciles }: Props) {
+export function VanDetailClient({
+  canvasserId,
+  canvasserName,
+  vanStock,
+  loads,
+  itemOptions,
+  loadableInventory,
+  reconcileRows,
+  reconciles,
+  bukanKanvas = null,
+}: Props) {
   const t = useTranslations("canvassing");
   const locale = useLocale();
   const router = useRouter();
@@ -331,7 +344,12 @@ export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, i
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <LoadVanForm canvasserId={canvasserId} itemOptions={itemOptions} loadableInventory={loadableInventory} />
+              {bukanKanvas ? (
+                // Tombol muat tidak ditawarkan — alasannya disebut. Stok yang sudah terlanjur di mobil tetap bisa dikembalikan lewat hitung akhir hari.
+                <p className="text-sm text-muted-foreground">{t(`bukanKanvas.${bukanKanvas}`)}</p>
+              ) : (
+                <LoadVanForm canvasserId={canvasserId} itemOptions={itemOptions} loadableInventory={loadableInventory} />
+              )}
             </CardContent>
           </Card>
 

@@ -105,6 +105,11 @@ const AKSI: Array<{ nama: string; panggil: () => Promise<unknown>; sah: string[]
     sah: [["work_orders:view"], ["work_orders:create"], ["work_orders:manage"]],
   },
   {
+    nama: "getBahanWo",
+    panggil: () => produksi.getBahanWo(TIDAK_ADA),
+    sah: [["work_orders:view"], ["work_orders:manage"]],
+  },
+  {
     nama: "getReconciliation",
     panggil: () => produksi.getReconciliation(TIDAK_ADA),
     sah: [["work_orders:view"]],

@@ -45,6 +45,8 @@ export const SUMBER_PENYESUAIAN = [
   "STORE_EXCHANGE_OUT",
   "STORE_EXCHANGE_IN",
   "KOL_SEEDING",
+  // Bahan yang dikembalikan dari SPK ke gudang (lib/production/kembali-bahan-writer.ts).
+  "WO_MATERIAL_RETURN",
 ] as const;
 
 /** Keputusan orang kantor/gudang: penyesuaian manual (termasuk stok awal) dan opname. */

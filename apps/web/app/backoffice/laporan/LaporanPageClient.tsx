@@ -63,10 +63,10 @@ import { PipelineBar } from '@/components/dashboard/PipelineBar';
 import {
   WO_STATUS_BADGE_CLASS,
   WO_STATUS_BAR_CLASS,
-  WO_STATUS_LABEL_KEY,
 } from '@/components/dashboard/warna-status-wo';
 import { formatRupiah as formatIdr } from '@/lib/format/rupiah';
-import { LAPORAN_TABS, tabLaporanAktif, tabLaporanTerlihat, type LaporanTab } from './tab-izin';
+import { LAPORAN_TABS, nilaiUrlTab, tabLaporanAktif, tabLaporanTerlihat, type LaporanTab } from './tab-izin';
+import { batasRentangWib, bulanIniWib } from '@/lib/dashboard/hari-wib';
 
 /**
  * Laporan operasional — dipindah utuh dari tab-tab di bawah beranda
@@ -82,18 +82,19 @@ function isLaporanTab(value: string | null): value is LaporanTab {
   return value != null && (LAPORAN_TABS as readonly string[]).includes(value);
 }
 
-function getCurrentMonthDateRange(): { from: string; to: string } {
-  const d = new Date();
-  const first = new Date(d.getFullYear(), d.getMonth(), 1);
-  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-  return {
-    from: first.toISOString().slice(0, 10),
-    to: last.toISOString().slice(0, 10),
-  };
-}
-
 function formatNumber(n: number): string {
   return new Intl.NumberFormat('id-ID').format(n);
+}
+
+/** Persen gaya Indonesia ("66,1%"), sama dengan angka lain di aplikasi. */
+function formatPersen(n: number, digit: number): string {
+  return `${new Intl.NumberFormat('id-ID', { minimumFractionDigits: digit, maximumFractionDigits: digit }).format(n)}%`;
+}
+
+/** Saringan tanggal laporan → batas instan WIB (lihat `batasRentangWib`). */
+function saringanTanggal(dari: string, sampai: string): { fromDate?: Date; toDate?: Date } {
+  const b = batasRentangWib(dari, sampai);
+  return { ...(b.dari ? { fromDate: b.dari } : {}), ...(b.sampai ? { toDate: b.sampai } : {}) };
 }
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -142,7 +143,6 @@ export function LaporanPageClient({
   const searchParams = useSearchParams();
   const tDashboard = useTranslations('dashboard');
   const tTable = useTranslations('tableHeaders');
-  const tWO = useTranslations('workOrders');
   const tStatuses = useTranslations('statuses');
   const tItems = useTranslations('items');
   const locale = useLocale();
@@ -156,8 +156,10 @@ export function LaporanPageClient({
   const setActiveTab = (value: string) => {
     if (!isLaporanTab(value) || !boleh(value)) return;
     const params = new URLSearchParams(searchParams.toString());
-    if (value === 'production') params.delete('tab');
-    else params.set('tab', value);
+    // Nama tab yang bermakna di alamat (pengadaan, setoran-cmt, stok).
+    const diUrl = nilaiUrlTab(value);
+    if (diUrl === null) params.delete('tab');
+    else params.set('tab', diUrl);
     const qs = params.toString();
     router.replace(qs ? `/backoffice/laporan?${qs}` : '/backoffice/laporan', {
       scroll: false,
@@ -191,9 +193,9 @@ export function LaporanPageClient({
   const [rp1Exporting, setRp1Exporting] = useState<'csv' | 'excel' | null>(null);
 
   const [rp2VendorId, setRp2VendorId] = useState('');
-  const currentMonth = getCurrentMonthDateRange();
-  const [rp2From, setRp2From] = useState(currentMonth.from);
-  const [rp2To, setRp2To] = useState(currentMonth.to);
+  // "Bulan ini" WIB — dulu bergeser sehari (30 Sep – 30 Okt) karena zona waktu peramban.
+  const [rp2From, setRp2From] = useState(() => bulanIniWib().dari);
+  const [rp2To, setRp2To] = useState(() => bulanIniWib().sampai);
   const [rp2Data, setRp2Data] = useState<Awaited<ReturnType<typeof getVendorPerformanceReport>> | null>(null);
   const [rp2Loading, setRp2Loading] = useState(false);
   const [rp2Exporting, setRp2Exporting] = useState<'csv' | 'excel' | null>(null);
@@ -205,9 +207,7 @@ export function LaporanPageClient({
   const loadRp1 = async () => {
     setRp1Loading(true);
     try {
-      const filters: ProcurementReportFilters = {};
-      if (rp1Filters.fromDate) filters.fromDate = new Date(rp1Filters.fromDate);
-      if (rp1Filters.toDate) filters.toDate = new Date(rp1Filters.toDate);
+      const filters: ProcurementReportFilters = saringanTanggal(rp1Filters.fromDate, rp1Filters.toDate);
       if (rp1Filters.supplierId) filters.supplierId = rp1Filters.supplierId;
       if (rp1Filters.status.length) filters.status = rp1Filters.status as ProcurementReportFilters['status'];
       const result = await getProcurementReport(filters);
@@ -222,9 +222,7 @@ export function LaporanPageClient({
   const exportRp1 = async (format: 'csv' | 'excel') => {
     setRp1Exporting(format);
     try {
-      const filters: ProcurementReportFilters = {};
-      if (rp1Filters.fromDate) filters.fromDate = new Date(rp1Filters.fromDate);
-      if (rp1Filters.toDate) filters.toDate = new Date(rp1Filters.toDate);
+      const filters: ProcurementReportFilters = saringanTanggal(rp1Filters.fromDate, rp1Filters.toDate);
       if (rp1Filters.supplierId) filters.supplierId = rp1Filters.supplierId;
       if (rp1Filters.status.length) filters.status = rp1Filters.status as ProcurementReportFilters['status'];
       const result = await exportProcurementReport(filters, format);
@@ -255,11 +253,12 @@ export function LaporanPageClient({
     }
     setRp2Loading(true);
     try {
-      const data = await getVendorPerformanceReport(
-        rp2VendorId,
-        new Date(rp2From),
-        new Date(rp2To)
-      );
+      const rentang = batasRentangWib(rp2From, rp2To);
+      if (!rentang.dari || !rentang.sampai) {
+        toast.error(tDashboard('toast.selectVendorRange'));
+        return;
+      }
+      const data = await getVendorPerformanceReport(rp2VendorId, rentang.dari, rentang.sampai);
       setRp2Data(data);
     } catch {
       toast.error(tDashboard('toast.loadVendorFailed'));
@@ -275,12 +274,12 @@ export function LaporanPageClient({
     }
     setRp2Exporting(format);
     try {
-      const result = await exportVendorPerformanceReport(
-        rp2VendorId,
-        new Date(rp2From),
-        new Date(rp2To),
-        format
-      );
+      const rentang = batasRentangWib(rp2From, rp2To);
+      if (!rentang.dari || !rentang.sampai) {
+        toast.error(tDashboard('toast.selectVendorRange'));
+        return;
+      }
+      const result = await exportVendorPerformanceReport(rp2VendorId, rentang.dari, rentang.sampai, format);
       if ('data' in result) {
         downloadBlob(new Blob([result.data], { type: 'text/csv;charset=utf-8' }), result.filename);
       } else {
@@ -476,7 +475,7 @@ export function LaporanPageClient({
                 baris={woStatusCounts.map((row) => ({
                   status: row.status,
                   count: Number(row.count),
-                  label: WO_STATUS_LABEL_KEY[row.status] ? tWO(WO_STATUS_LABEL_KEY[row.status]) : row.status,
+                  label: tStatuses(getStatusMeta('workOrder', row.status).labelKey),
                   // Sewarna lencana statusnya di kartu-kartu di bawah batang.
                   kelas: WO_STATUS_BAR_CLASS[row.status],
                 }))}
@@ -496,7 +495,8 @@ export function LaporanPageClient({
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                       {woStatusCounts.map((row) => {
                         const pct = totalPlanned > 0 ? (Number(row.totalPlannedQty) / totalPlanned) * 100 : 0;
-                        const label = WO_STATUS_LABEL_KEY[row.status] ? tWO(WO_STATUS_LABEL_KEY[row.status]) : row.status;
+                        // Label yang sama dengan daftar SPK ("Sedang diproduksi", "Selesai sebagian").
+                        const label = tStatuses(getStatusMeta('workOrder', row.status).labelKey);
                         const badgeClass = WO_STATUS_BADGE_CLASS[row.status] ?? 'bg-muted text-muted-foreground';
                         return (
                           <div
@@ -560,7 +560,7 @@ export function LaporanPageClient({
                       <div className="text-right">
                         <p className="font-medium">{formatIdr(po.grandTotal)}</p>
                         <p className="text-sm text-muted-foreground">
-                          {tDashboard('unitsPending', { count: (po.pendingQty ?? 0).toLocaleString('id-ID') })}
+                          {tDashboard('unitsPending', { count: formatNumber(po.pendingQty ?? 0) })}
                         </p>
                       </div>
                     </Link>
@@ -704,7 +704,7 @@ export function LaporanPageClient({
                                 {r.etaMessage}
                               </Badge>
                             </TableCell>
-                            <TableCell className="text-right">{r.outstandingQty}</TableCell>
+                            <TableCell className="text-right tabular-nums">{formatNumber(r.outstandingQty)}</TableCell>
                             <TableCell className="text-right">
                               {formatIdr(r.outstandingValue)}
                             </TableCell>
@@ -801,13 +801,15 @@ export function LaporanPageClient({
                         <TableRow key={i}>
                           <TableCell className="font-medium">{r.docNumber}</TableCell>
                           <TableCell>{r.finishedGood}</TableCell>
-                          <TableCell className="text-right">{r.plannedQty}</TableCell>
-                          <TableCell className="text-right">{r.actualQty}</TableCell>
-                          <TableCell className="text-right">{r.efficiency}</TableCell>
+                          <TableCell className="text-right tabular-nums">{formatNumber(r.plannedQty)}</TableCell>
+                          <TableCell className="text-right tabular-nums">{formatNumber(r.actualQty)}</TableCell>
+                          <TableCell className="text-right tabular-nums">{formatPersen(r.efficiency, 1)}</TableCell>
                           <TableCell className="text-right">{formatIdr(r.materialCost)}</TableCell>
                           <TableCell className="text-right">{formatIdr(r.returnValue)}</TableCell>
                           <TableCell>{tStatuses(getStatusMeta('workOrder', r.status).labelKey)}</TableCell>
-                          <TableCell className="text-right">{r.completionTimeDays ?? '-'}</TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {r.completionTimeDays != null ? formatNumber(r.completionTimeDays) : '—'}
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -865,7 +867,7 @@ export function LaporanPageClient({
                         <CardTitle className="text-sm">{tDashboard('totalSkus')}</CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <div className="text-2xl font-bold">{rp3Data.summary.totalSKUs}</div>
+                        <div className="text-2xl font-bold">{formatNumber(rp3Data.summary.totalSKUs)}</div>
                       </CardContent>
                     </Card>
                     <Card>
@@ -873,7 +875,7 @@ export function LaporanPageClient({
                         <CardTitle className="text-sm">{tDashboard('totalQuantity')}</CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <div className="text-2xl font-bold">{rp3Data.summary.totalQuantity.toLocaleString('id-ID')}</div>
+                        <div className="text-2xl font-bold">{formatNumber(rp3Data.summary.totalQuantity)}</div>
                       </CardContent>
                     </Card>
                     <Card>
@@ -902,7 +904,7 @@ export function LaporanPageClient({
                       </CardHeader>
                       <CardContent>
                         <div className="text-2xl font-bold text-destructive">
-                          {rp3Data.lowStockAlerts.length}
+                          {formatNumber(rp3Data.lowStockAlerts.length)}
                         </div>
                       </CardContent>
                     </Card>
@@ -922,7 +924,7 @@ export function LaporanPageClient({
                               />
                             </div>
                             <span className="text-sm tabular-nums w-28">
-                              {formatIdr(totalValue)} ({pct.toFixed(1)}%)
+                              {formatIdr(totalValue)} ({formatPersen(pct, 1)})
                             </span>
                             <span className="text-muted-foreground text-sm">{tDashboard('itemsCount', { count })}</span>
                           </div>
@@ -939,7 +941,12 @@ export function LaporanPageClient({
                       <ul className="list-disc list-inside text-sm space-y-1">
                         {rp3Data.lowStockAlerts.map((a) => (
                           <li key={a.itemId}>
-                            {tDashboard('lowStockLine', { sku: a.sku, name: a.name, qty: a.qtyOnHand, reorder: a.reorderPoint })}
+                            {tDashboard('lowStockLine', {
+                              sku: a.sku,
+                              name: a.name,
+                              qty: formatNumber(Number(a.qtyOnHand)),
+                              reorder: formatNumber(Number(a.reorderPoint)),
+                            })}
                           </li>
                         ))}
                       </ul>
@@ -963,9 +970,9 @@ export function LaporanPageClient({
                             <TableCell className="font-medium">{d.sku}</TableCell>
                             <TableCell>{d.name}</TableCell>
                             <TableCell>{itemTypeLabel(d.type)}</TableCell>
-                            <TableCell className="text-right">{d.qtyOnHand}</TableCell>
-                            <TableCell className="text-right">{formatIdr(d.totalValue)}</TableCell>
-                            <TableCell className="text-right">{d.percentageOfTotal.toFixed(2)}%</TableCell>
+                            <TableCell className="text-right tabular-nums">{formatNumber(Number(d.qtyOnHand))}</TableCell>
+                            <TableCell className="text-right tabular-nums">{formatIdr(d.totalValue)}</TableCell>
+                            <TableCell className="text-right tabular-nums">{formatPersen(d.percentageOfTotal, 2)}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>

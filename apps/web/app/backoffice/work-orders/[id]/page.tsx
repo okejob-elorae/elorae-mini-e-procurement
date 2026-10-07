@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import {
@@ -11,7 +11,8 @@ import {
   Calendar,
   ClipboardList,
   Truck,
-  BarChart3
+  BarChart3,
+  Pencil
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -47,8 +48,6 @@ import { formatDisplayDate, formatDisplayDateTime } from '@/lib/date-only';
 import {
   getWorkOrderById,
   getWorkOrderRollAllocationStatus,
-  terbitkanWorkOrder,
-  cancelWorkOrder,
   getMaterialIssueForPrint,
   updateWOHppAdjustments,
   getAdditionalMaterialsPreview,
@@ -64,6 +63,15 @@ import type { SnapshotStep } from '@/lib/leadtime/calculations';
 import { PERMISSIONS, hasPermission } from '@/lib/rbac';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 import { newLocalId } from '@/lib/pwa/id-lokal';
+import { formatRupiah } from '@/lib/format/rupiah';
+import { hariTerlambatWo } from '@/lib/production/terlambat';
+import { DialogBatalWo } from '../DialogBatalWo';
+import { DialogTerbitWo } from '../DialogTerbitWo';
+import { KartuBahanWo } from './KartuBahanWo';
+import { LABEL_NOTA_CMT } from '../label-nota-cmt';
+
+/** Tab yang boleh ada di `?tab=`. */
+const TAB_WO = ['details', 'issues', 'receipts', 'hpp'] as const;
 
 
 const statusColors: Record<WOStatus, string> = {
@@ -79,6 +87,7 @@ const statusColors: Record<WOStatus, string> = {
 export default function WorkOrderDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { data: session } = useSession();
   const t = useTranslations('production');
   const tToasts = useTranslations('toasts');
@@ -115,7 +124,25 @@ export default function WorkOrderDetailPage() {
   // Kunci idempotensi per isian qty tambahan: simpan ulang dengan qty sama tidak mengeluarkan bahan dua kali.
   const [kunciTambahan, setKunciTambahan] = useState(() => newLocalId());
   const canPostJournal = hasPermission(session?.user?.permissions ?? [], "journals:manage");
+  const bolehKelola = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.WORK_ORDERS_MANAGE);
   const [postingReceiptId, setPostingReceiptId] = useState<string | null>(null);
+  const [dialogBatal, setDialogBatal] = useState(false);
+  const [dialogTerbit, setDialogTerbit] = useState(false);
+  const [versiBahan, setVersiBahan] = useState(0);
+  const tabMentah = searchParams.get('tab') ?? 'details';
+  const tab = (TAB_WO as readonly string[]).includes(tabMentah) ? tabMentah : 'details';
+  const gantiTab = (v: string) => {
+    const q = new URLSearchParams(searchParams.toString());
+    if (v === 'details') q.delete('tab');
+    else q.set('tab', v);
+    const qs = q.toString();
+    router.replace(qs ? `?${qs}` : '?', { scroll: false });
+  };
+  const muatUlang = async () => {
+    const updated = await getWorkOrderById(id);
+    setWO(updated);
+    setVersiBahan((v) => v + 1);
+  };
 
   async function handlePostReceiptJournal(receiptId: string) {
     setPostingReceiptId(receiptId);
@@ -173,42 +200,6 @@ export default function WorkOrderDetailPage() {
       .catch(() => setRollAllocationStatus(null));
   }, [id, wo]);
 
-  const handleIssue = async () => {
-    if (!session?.user?.id || !wo) return;
-    try {
-      // Penolakan (sudah dibatalkan, sudah terbit, …) dikembalikan sebagai kode.
-      const hasil = await terbitkanWorkOrder(String(wo.id));
-      if (!hasil.ok) {
-        toast.error(tTolak.has(hasil.code) ? tTolak(hasil.code) : tToasts('failedToIssue'));
-        setWO(await getWorkOrderById(id));
-        return;
-      }
-      toast.success(tToasts('workOrderIssued'));
-      const updated = await getWorkOrderById(id);
-      setWO(updated);
-    } catch {
-      toast.error(tToasts('failedToIssue'));
-    }
-  };
-
-  const handleCancel = async () => {
-    if (!session?.user?.id || !wo || !confirm(tWO('confirmCancelWO'))) return;
-    try {
-      // Penolakan (bahan sudah keluar, sudah ada penerimaan, …) dikembalikan sebagai kode.
-      const hasil = await cancelWorkOrder(String(wo.id), session.user.id);
-      if (!hasil.ok) {
-        toast.error(tTolak.has(hasil.code) ? tTolak(hasil.code) : tToasts('failedToCancel'));
-        setWO(await getWorkOrderById(id)); // tampilkan keadaan WO yang sebenarnya
-        return;
-      }
-      toast.success(tToasts('workOrderCancelled'));
-      const updated = await getWorkOrderById(id);
-      setWO(updated);
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : tToasts('failedToCancel'));
-    }
-  };
-
   const openPrintNota = (issueId: string) => {
     setPrintIssueId(issueId);
     setPrintData(null);
@@ -235,18 +226,7 @@ export default function WorkOrderDetailPage() {
       issueType: printData.issueType,
       totalCost: printData.totalCost,
       lines: printData.lines,
-      labels: {
-        title: 'Nota ke CMT',
-        doc: 'Doc',
-        wo: 'WO',
-        vendor: 'Vendor',
-        date: 'Date',
-        type: 'Type',
-        item: 'Item',
-        qty: 'Qty',
-        uom: 'UOM',
-        totalCost: 'Total cost',
-      },
+      labels: LABEL_NOTA_CMT,
     });
     const iframe = document.createElement('iframe');
     iframe.setAttribute('style', 'position:absolute;width:0;height:0;border:0;visibility:hidden;');
@@ -333,8 +313,7 @@ export default function WorkOrderDetailPage() {
       setAdditionalMaterialsOpen(false);
       setAdditionalQtyInput('');
       setAdditionalPreview(null);
-      const updated = await getWorkOrderById(id);
-      setWO(updated);
+      await muatUlang();
     } catch {
       toast.error(tWO('issueFailed'));
     } finally {
@@ -354,6 +333,12 @@ export default function WorkOrderDetailPage() {
   const actual = Number(wo.actualQty ?? 0);
   const progressPct = planned > 0 ? Math.min(100, Math.round((actual / planned) * 100)) : 0;
   const consumptionPlan = (wo.consumptionPlan as any[]) || [];
+  const status = wo.status as WOStatus;
+  const adaPenerimaan = ((wo as any).receipts?.length ?? 0) > 0;
+  const bolehBatal = (status === 'DRAFT' || status === 'ISSUED' || status === 'IN_PRODUCTION') && !adaPenerimaan;
+  const berjalan = status === 'ISSUED' || status === 'IN_PRODUCTION' || status === 'PARTIAL';
+  const terlambat = hariTerlambatWo((wo as any).targetDate, status);
+  const isAdmin = session?.user?.role === 'ADMIN';
   const rollBreakdown: Array<{ rollRef: string; qty: number; notes?: string }> | null = Array.isArray((wo as any).rollBreakdown)
     ? (wo as any).rollBreakdown
     : null;
@@ -389,20 +374,30 @@ export default function WorkOrderDetailPage() {
               {formatDisplayDateTime((wo as { completedAt: string | Date }).completedAt, locale)}
             </span>
           )}
-          {wo.status === 'DRAFT' && (
-            <Button onClick={handleIssue}>{tWO('issue')}</Button>
+          {status === 'DRAFT' && bolehKelola && (
+            <>
+              <Button asChild variant="outline">
+                <Link href={`/backoffice/work-orders/${id}/edit`}>
+                  <Pencil className="mr-2 h-4 w-4" />
+                  {tD('ubah')}
+                </Link>
+              </Button>
+              <Button onClick={() => setDialogTerbit(true)}>{tWO('issue')}</Button>
+            </>
           )}
-          {(wo.status === 'DRAFT' || wo.status === 'ISSUED') && (
-            <Button variant="destructive" onClick={handleCancel}>
+          {bolehBatal && bolehKelola && (
+            <Button variant="destructive" onClick={() => setDialogBatal(true)}>
               {tWO('cancelWO')}
             </Button>
           )}
-          {wo.status !== 'DRAFT' && wo.status !== 'CANCELLED' && (
+          {berjalan && (
             <>
-              <Link href={`/backoffice/work-orders/${id}/issue`}>
-                <Button variant="outline">{tWO('issueMaterials')}</Button>
-              </Link>
-              {wo.status === 'IN_PRODUCTION' && (
+              {status !== 'PARTIAL' && (
+                <Link href={`/backoffice/work-orders/${id}/issue`}>
+                  <Button variant="outline">{tWO('issueMaterials')}</Button>
+                </Link>
+              )}
+              {status === 'IN_PRODUCTION' && (
                 <Button
                   variant="outline"
                   onClick={() => {
@@ -419,8 +414,19 @@ export default function WorkOrderDetailPage() {
               </Link>
             </>
           )}
+          {status !== 'DRAFT' && (
+            <Button asChild variant="outline">
+              <Link href={`/backoffice/work-orders/${id}/reconciliation`}>
+                <BarChart3 className="mr-2 h-4 w-4" />
+                {tWO('reconciliation')}
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
+      {status === 'COMPLETED' ? (
+        <p className="text-sm text-muted-foreground">{tD('selesaiTanpaAksi')}</p>
+      ) : null}
 
       {Array.isArray((wo as { chainSnapshot?: unknown }).chainSnapshot) &&
         ((wo as { chainSnapshot: unknown[] }).chainSnapshot?.length ?? 0) > 0 &&
@@ -490,6 +496,9 @@ export default function WorkOrderDetailPage() {
             <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
               <Calendar className="h-4 w-4" />
               {t('progressTarget')}: {formatDisplayDate((wo as any).targetDate, locale)}
+              {terlambat != null ? (
+                <Badge variant="destructive">{tWO('terlambatHari', { hari: terlambat })}</Badge>
+              ) : null}
             </div>
           )}
           {(wo as any).expectedConsumption != null && Number((wo as any).expectedConsumption) > 0 && (
@@ -562,7 +571,7 @@ export default function WorkOrderDetailPage() {
                     docNumber: String(wo.docNumber ?? ""),
                     vendorName: (wo.vendor as { name?: string | null } | null)?.name,
                     fgName: (wo.finishedGood as { nameId?: string | null } | null)?.nameId,
-                    labelKonsumsi: tWO("estimatedConsumptionPerPcs"),
+                    labelKonsumsi: tWO("kebutuhanTotalRencana"),
                     rolls: rollBreakdown,
                     materials: consumptionPlan,
                   }),
@@ -579,48 +588,24 @@ export default function WorkOrderDetailPage() {
         </Card>
       )}
 
-      {session?.user?.role === 'ADMIN' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>{tD('hppTitle')}</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-3">
-            <div className="space-y-2">
-              <Label>{tD('marginLabel')}</Label>
-              <Input
-                type="number"
-                min={0}
-                max={100}
-                step="0.01"
-                value={hppMarginPercent}
-                onChange={(e) => setHppMarginPercent(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>{tD('additionalCostLabel')}</Label>
-              <Input
-                type="number"
-                min={0}
-                step="0.01"
-                value={hppAdditionalCost}
-                onChange={(e) => setHppAdditionalCost(e.target.value)}
-              />
-            </div>
-            <div className="flex items-end">
-              <Button onClick={handleSaveHpp}>{tD('saveHpp')}</Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <Tabs defaultValue="details">
-        <TabsList className="grid w-full grid-cols-4">
+      <Tabs value={tab === 'hpp' && !isAdmin ? 'details' : tab} onValueChange={gantiTab}>
+        <TabsList className={isAdmin ? 'grid w-full grid-cols-4' : 'grid w-full grid-cols-3'}>
           <TabsTrigger value="details">{tWO('details')}</TabsTrigger>
           <TabsTrigger value="issues">{tWO('materialIssues')}</TabsTrigger>
           <TabsTrigger value="receipts">{tWO('fgReceipts')}</TabsTrigger>
-          <TabsTrigger value="reconciliation">{tWO('reconciliation')}</TabsTrigger>
+          {isAdmin && <TabsTrigger value="hpp">{tD('hppTitle')}</TabsTrigger>}
         </TabsList>
         <TabsContent value="details" className="space-y-4">
+          <KartuBahanWo
+            woId={id}
+            bolehKelola={bolehKelola}
+            bolehKembali={status !== 'CANCELLED' && status !== 'DRAFT'}
+            alasanTidakBoleh={status === 'CANCELLED' ? tD('bahanWoBatal') : tD('bahanWoDraf')}
+            versi={versiBahan}
+            onBerubah={() => {
+              void getWorkOrderById(id).then(setWO);
+            }}
+          />
           {Array.isArray((wo as any).steps) && (wo as any).steps.length > 0 && (
             <Card>
               <CardHeader>
@@ -643,13 +628,13 @@ export default function WorkOrderDetailPage() {
                         <TableCell>{step.stepName || tD('stepN', { n: step.sequence })}</TableCell>
                         <TableCell>{step.supplier?.name || step.supplier?.code || '-'}</TableCell>
                         <TableCell className="text-right">
-                          {Number(step.servicePrice || 0).toLocaleString('id-ID')}
+                          {formatRupiah(Number(step.servicePrice || 0))}
                         </TableCell>
                         <TableCell className="text-right">
                           {step.qty != null ? Number(step.qty).toLocaleString('id-ID') : '-'}
                         </TableCell>
                         <TableCell className="text-right">
-                          {step.totalCost != null ? Number(step.totalCost).toLocaleString('id-ID') : '-'}
+                          {step.totalCost != null ? formatRupiah(Number(step.totalCost)) : '-'}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -658,39 +643,6 @@ export default function WorkOrderDetailPage() {
               </CardContent>
             </Card>
           )}
-          <Card>
-            <CardHeader>
-              <CardTitle>{tWO('consumptionPlan')}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{tWO('material')}</TableHead>
-                    <TableHead className="text-right" title={t('cuttingPlanned')}>{tWO('estimatedConsumptionPerPcs')}</TableHead>
-                    <TableHead className="text-right" title={t('issuedToCmt')}>{t('issuedToCmt')}</TableHead>
-                    <TableHead className="text-right">{tWO('returned')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {consumptionPlan.map((p: any) => (
-                    <TableRow key={p.itemId}>
-                      <TableCell>{p.itemName}</TableCell>
-                      <TableCell className="text-right">
-                        {Number(p.plannedQty ?? 0).toLocaleString('id-ID')}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {Number(p.issuedQty ?? 0).toLocaleString('id-ID')}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {Number(p.returnedQty ?? 0).toLocaleString('id-ID')}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
         </TabsContent>
         <TabsContent value="issues" className="space-y-4">
           <Card>
@@ -728,7 +680,7 @@ export default function WorkOrderDetailPage() {
                           {formatDisplayDate(iss.issuedAt, locale)}
                         </TableCell>
                         <TableCell className="text-right">
-                          {Number(iss.totalCost).toLocaleString('id-ID')}
+                          {formatRupiah(Number(iss.totalCost))}
                         </TableCell>
                         <TableCell>
                           <Button
@@ -820,21 +772,53 @@ export default function WorkOrderDetailPage() {
             </CardContent>
           </Card>
         </TabsContent>
-        <TabsContent value="reconciliation" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <BarChart3 className="h-5 w-5" />
-                {tWO('reconciliation')}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Link href={`/backoffice/work-orders/${id}/reconciliation`}>
-                <Button variant="outline">{tWO('viewFullReconciliationReport')}</Button>
-              </Link>
-            </CardContent>
-          </Card>
-        </TabsContent>
+        {isAdmin && (
+          <TabsContent value="hpp" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>{tD('hppTitle')}</CardTitle>
+                <CardDescription>
+                  {tD('hppSekarang', {
+                    margin:
+                      (wo as any).hppMarginPercent != null
+                        ? `${Number((wo as any).hppMarginPercent).toLocaleString('id-ID', { maximumFractionDigits: 2 })}%`
+                        : '—',
+                    biaya:
+                      (wo as any).hppAdditionalCost != null ? formatRupiah(Number((wo as any).hppAdditionalCost)) : '—',
+                  })}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4 sm:grid-cols-3">
+                <div className="space-y-2">
+                  <Label htmlFor="hpp-margin">{tD('marginLabel')}</Label>
+                  <Input
+                    id="hpp-margin"
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="0.01"
+                    value={hppMarginPercent}
+                    onChange={(e) => setHppMarginPercent(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="hpp-biaya">{tD('additionalCostLabel')}</Label>
+                  <Input
+                    id="hpp-biaya"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={hppAdditionalCost}
+                    onChange={(e) => setHppAdditionalCost(e.target.value)}
+                  />
+                </div>
+                <div className="flex items-end">
+                  <Button onClick={handleSaveHpp}>{tD('saveHpp')}</Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
       </Tabs>
 
       <Dialog open={!!printIssueId} onOpenChange={(open) => !open && closePrintNota()}>
@@ -875,7 +859,7 @@ export default function WorkOrderDetailPage() {
                 </TableBody>
               </Table>
               <p className="font-semibold">
-                {tWO('totalCost')}: {Number(printData.totalCost ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                {tWO('totalCost')}: {formatRupiah(Number(printData.totalCost ?? 0))}
               </p>
               <div className="flex gap-2 no-print">
                 <Button variant="outline" onClick={closePrintNota}>{tWO('close')}</Button>
@@ -887,6 +871,22 @@ export default function WorkOrderDetailPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <DialogBatalWo
+        open={dialogBatal}
+        onOpenChange={setDialogBatal}
+        woId={id}
+        docNumber={String(wo.docNumber ?? '')}
+        diRincian
+        onSelesai={() => void muatUlang()}
+      />
+      <DialogTerbitWo
+        open={dialogTerbit}
+        onOpenChange={setDialogTerbit}
+        woId={id}
+        docNumber={String(wo.docNumber ?? '')}
+        onSelesai={() => void muatUlang()}
+      />
 
       <Dialog open={additionalMaterialsOpen} onOpenChange={(open) => !open && setAdditionalMaterialsOpen(false)}>
         <DialogContent className="max-w-lg">

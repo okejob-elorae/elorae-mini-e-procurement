@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { CreditCard } from "lucide-react";
 import type { PanelKredit } from "@/lib/field-sales/kredit-panel";
+import type { FakturKreditTampil } from "./tautan-pesanan";
 import type { AlasanKredit, TingkatKredit } from "@/lib/salesman/kredit";
 import { formatIDR } from "@/lib/sales-orders/format";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,9 +44,22 @@ const KUNCI_TINGKAT: Record<TingkatKredit, "tingkatAman" | "tingkatPeringatan" |
  * berdampingan dengan tagihan toko sekarang, supaya penyetuju melihat apakah
  * toko sudah membayar (atau makin menunggak) sejak salesman mengambil pesanan.
  */
-export function KreditPanel({ kredit, menunggu }: { kredit: PanelKredit; menunggu: boolean }) {
+export function KreditPanel({
+  kredit,
+  fakturTampil = null,
+  menunggu,
+  bolehBukaPiutang = false,
+}: {
+  kredit: PanelKredit;
+  /** Faktur dengan janji bayar + keadaan per jatuh tempo; null = tidak termuat (kolom lama). */
+  fakturTampil?: FakturKreditTampil[] | null;
+  menunggu: boolean;
+  /** Nomor faktur menjadi tautan ke daftar piutang (tersaring keadaannya) bila boleh membacanya. */
+  bolehBukaPiutang?: boolean;
+}) {
   const t = useTranslations("fieldSalesOrders.kredit");
   const { sekarang } = kredit;
+  const lengkap = fakturTampil !== null;
 
   return (
     <Card className={cn(kredit.ditahan && menunggu && "border-destructive/50")}>
@@ -128,27 +143,62 @@ export function KreditPanel({ kredit, menunggu }: { kredit: PanelKredit; menungg
                 <TableRow>
                   <TableHead>{t("kolomFaktur")}</TableHead>
                   <TableHead>{t("kolomJatuhTempo")}</TableHead>
+                  {lengkap && <TableHead>{t("kolomJanji")}</TableHead>}
                   <TableHead className="text-right">{t("kolomSisa")}</TableHead>
                   <TableHead>{t("kolomKeadaan")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {kredit.faktur.map((f) => (
-                  <TableRow key={f.id}>
-                    <TableCell className="font-mono text-xs">{f.invoiceNo}</TableCell>
-                    <TableCell>{f.jatuhTempo}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatIDR(f.sisa)}</TableCell>
-                    <TableCell>
-                      {f.lewat ? (
-                        <Badge variant="outline" className="border-destructive/50 text-destructive">
-                          {f.hariTerlambat ? t("lewatHari", { hari: f.hariTerlambat }) : t("lencanaLewat")}
-                        </Badge>
-                      ) : (
-                        <span className="text-muted-foreground">{t("belumLewat")}</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {lengkap
+                  ? fakturTampil.map((f) => (
+                      <TableRow key={f.id}>
+                        <TableCell className="font-mono text-xs">
+                          {bolehBukaPiutang && f.keadaanPiutang ? (
+                            <Link
+                              href={`/backoffice/piutang?keadaan=${f.keadaanPiutang}`}
+                              className="underline underline-offset-2"
+                              title={t("bukaPiutang")}
+                            >
+                              {f.invoiceNo}
+                            </Link>
+                          ) : (
+                            f.invoiceNo
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">{f.jatuhTempo}</TableCell>
+                        <TableCell className="whitespace-nowrap">{f.janjiBayar ?? "—"}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatIDR(f.sisa)}</TableCell>
+                        <TableCell>
+                          {f.keadaanTampil.jenis === "LEWAT_JANJI" ? (
+                            <Badge variant="outline" className="border-destructive/50 text-destructive">
+                              {t("lewatJanjiHari", { hari: f.keadaanTampil.hari })}
+                            </Badge>
+                          ) : f.keadaanTampil.jenis === "LEWAT_TEMPO" ? (
+                            <Badge variant="outline" className="border-amber-500/50 text-amber-700 dark:text-amber-400">
+                              {t("lewatTempoHari", { hari: f.keadaanTampil.hari })}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground">{t("belumJatuhTempo")}</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  : kredit.faktur.map((f) => (
+                      <TableRow key={f.id}>
+                        <TableCell className="font-mono text-xs">{f.invoiceNo}</TableCell>
+                        <TableCell>{f.jatuhTempo}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatIDR(f.sisa)}</TableCell>
+                        <TableCell>
+                          {f.lewat ? (
+                            <Badge variant="outline" className="border-destructive/50 text-destructive">
+                              {f.hariTerlambat ? t("lewatJanjiHari", { hari: f.hariTerlambat }) : t("lencanaLewat")}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground">{t("belumLewat")}</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
               </TableBody>
             </Table>
             {kredit.fakturLainnya > 0 && (

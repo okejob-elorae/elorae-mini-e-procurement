@@ -4,11 +4,15 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { getIncomeStatementReport } from "@/app/actions/finance-reports";
+import { bacaKesiapanCetakAction, type KesiapanCetak } from "@/app/backoffice/finance/_kesiapan/aksi";
+import { CatatanBukuBesar } from "../CatatanBukuBesar";
 import type { RollupNode } from "@/lib/finance/reports/rollup";
 import {
   INCOME_STATEMENT_COVERAGE_BODY,
   INCOME_STATEMENT_COVERAGE_TITLE,
+  INCOME_STATEMENT_EMPTY_NOTE,
 } from "@/lib/finance/reports/disclosures";
+import { adaMutasiLabaRugi } from "@/app/backoffice/finance/_kesiapan/kesiapan";
 
 type Report = Awaited<ReturnType<typeof getIncomeStatementReport>>;
 
@@ -32,13 +36,20 @@ export default function PrintIncomeStatementPage() {
   const sp = useSearchParams();
   const printedRef = useRef(false);
   const [report, setReport] = useState<Report | "error" | null>(null);
+  const [kesiapan, setKesiapan] = useState<KesiapanCetak | null>(null);
 
   useEffect(() => {
-    getIncomeStatementReport({
-      from: sp.get("from") ?? undefined,
-      to: sp.get("to") ?? undefined,
-    })
-      .then(setReport)
+    Promise.all([
+      getIncomeStatementReport({
+        from: sp.get("from") ?? undefined,
+        to: sp.get("to") ?? undefined,
+      }),
+      bacaKesiapanCetakAction().catch(() => null),
+    ])
+      .then(([r, k]) => {
+        setKesiapan(k);
+        setReport(r);
+      })
       .catch(() => setReport("error"));
   }, [sp]);
 
@@ -88,48 +99,55 @@ export default function PrintIncomeStatementPage() {
         <p className="mt-1 text-xs text-gray-600">Disiapkan oleh: {report.preparedBy}</p>
         <p className="text-xs text-gray-600">Dicetak: {report.printedAt}</p>
       </div>
-      <table className="w-full text-sm">
-        <tbody>
-          <tr className="print-statement-band bg-gray-100 font-semibold">
-            <td className="py-1" colSpan={2}>
-              PENDAPATAN
-            </td>
-          </tr>
-          {nodeRows(report.pendapatan)}
-          <tr className="font-semibold">
-            <td className="py-1">Total Pendapatan</td>
-            <td className="py-1 text-right">{formatRupiah(report.totalPendapatan)}</td>
-          </tr>
-          <tr className="print-statement-band bg-gray-100 font-semibold">
-            <td className="py-1" colSpan={2}>
-              HARGA POKOK PENJUALAN
-            </td>
-          </tr>
-          {nodeRows(report.hpp)}
-          <tr className="font-semibold">
-            <td className="py-1">Total Harga Pokok Penjualan</td>
-            <td className="py-1 text-right">{formatRupiah(report.totalHpp)}</td>
-          </tr>
-          <tr className="border-t-2 border-black font-bold">
-            <td className="py-1">Laba Kotor</td>
-            <td className="py-1 text-right">{formatRupiah(report.labaKotor)}</td>
-          </tr>
-          <tr className="print-statement-band bg-gray-100 font-semibold">
-            <td className="py-1" colSpan={2}>
-              BEBAN OPERASIONAL
-            </td>
-          </tr>
-          {nodeRows(report.beban)}
-          <tr className="font-semibold">
-            <td className="py-1">Total Beban Operasional</td>
-            <td className="py-1 text-right">{formatRupiah(report.totalBeban)}</td>
-          </tr>
-          <tr className="border-t-2 border-black font-bold">
-            <td className="py-1">Laba Bersih</td>
-            <td className="py-1 text-right">{formatRupiah(report.labaBersih)}</td>
-          </tr>
-        </tbody>
-      </table>
+      <CatatanBukuBesar kesiapan={kesiapan} />
+      {!adaMutasiLabaRugi(report) ? (
+        <p className="py-6 text-center text-sm">{INCOME_STATEMENT_EMPTY_NOTE}</p>
+      ) : (
+        <>
+          <table className="w-full text-sm">
+            <tbody>
+              <tr className="print-statement-band bg-gray-100 font-semibold">
+                <td className="py-1" colSpan={2}>
+                  PENDAPATAN
+                </td>
+              </tr>
+              {nodeRows(report.pendapatan)}
+              <tr className="font-semibold">
+                <td className="py-1">Total Pendapatan</td>
+                <td className="py-1 text-right">{formatRupiah(report.totalPendapatan)}</td>
+              </tr>
+              <tr className="print-statement-band bg-gray-100 font-semibold">
+                <td className="py-1" colSpan={2}>
+                  HARGA POKOK PENJUALAN
+                </td>
+              </tr>
+              {nodeRows(report.hpp)}
+              <tr className="font-semibold">
+                <td className="py-1">Total Harga Pokok Penjualan</td>
+                <td className="py-1 text-right">{formatRupiah(report.totalHpp)}</td>
+              </tr>
+              <tr className="border-t-2 border-black font-bold">
+                <td className="py-1">Laba Kotor</td>
+                <td className="py-1 text-right">{formatRupiah(report.labaKotor)}</td>
+              </tr>
+              <tr className="print-statement-band bg-gray-100 font-semibold">
+                <td className="py-1" colSpan={2}>
+                  BEBAN OPERASIONAL
+                </td>
+              </tr>
+              {nodeRows(report.beban)}
+              <tr className="font-semibold">
+                <td className="py-1">Total Beban Operasional</td>
+                <td className="py-1 text-right">{formatRupiah(report.totalBeban)}</td>
+              </tr>
+              <tr className="border-t-2 border-black font-bold">
+                <td className="py-1">Laba Bersih</td>
+                <td className="py-1 text-right">{formatRupiah(report.labaBersih)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </>
+      )}
       <div className="mt-4 text-xs text-gray-700">
         <p className="font-semibold">{INCOME_STATEMENT_COVERAGE_TITLE}</p>
         <p>{INCOME_STATEMENT_COVERAGE_BODY}</p>

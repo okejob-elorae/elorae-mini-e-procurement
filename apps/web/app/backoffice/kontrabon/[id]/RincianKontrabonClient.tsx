@@ -43,6 +43,7 @@ export function RincianKontrabonClient({
 }) {
   const t = useTranslations('collections');
   const td = dinamis(t);
+  const tBkm = dinamis(useTranslations('payments'));
   const locale = useLocale();
   const tanggal = (iso: string) => formatDisplayDate(iso, locale);
   const router = useRouter();
@@ -55,6 +56,10 @@ export function RincianKontrabonClient({
   const terlambat = b.status === 'BERJALAN' && (b.sisaHari ?? 0) < 0;
   const sudahDibayar = b.nilaiSerah - b.sisaSekarang;
 
+  // Foto yang sudah tersimpan tidak bisa dihapus dari sini — × hanya membuka
+  // pemilih untuk foto pengganti. Kalimat di bawahnya mengatakannya, supaya
+  // tidak ada yang mengira fotonya sudah terhapus.
+  const fotoTersimpan = data.fotoUrl ? { url: data.fotoUrl, nama: data.baris.docNo } : null;
   const simpanFoto = (nilai: NilaiFoto) => {
     setFoto(nilai);
     if (!nilai) return;
@@ -178,13 +183,27 @@ export function RincianKontrabonClient({
           </CardHeader>
           <CardContent>
             {bolehMengelola ? (
-              <UnggahFoto
-                label={t('photoLabel')}
-                petunjuk={t('photoHint')}
-                nilai={foto}
-                onChange={simpanFoto}
-                disabled={pending}
-              />
+              <>
+                <UnggahFoto
+                  label={t('photoLabel')}
+                  petunjuk={t('photoHint')}
+                  nilai={foto}
+                  onChange={simpanFoto}
+                  disabled={pending}
+                />
+                {!foto && fotoTersimpan && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {t('photoKeptUntilReplaced')}{' '}
+                    <button
+                      type="button"
+                      className="font-medium text-foreground underline underline-offset-2"
+                      onClick={() => setFoto(fotoTersimpan)}
+                    >
+                      {t('photoKeepOld')}
+                    </button>
+                  </p>
+                )}
+              </>
             ) : foto ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={foto.url} alt={b.docNo} className="w-full rounded-lg border object-contain" />
@@ -217,17 +236,29 @@ export function RincianKontrabonClient({
                     <TableCell>
                       <Link
                         href={`/backoffice/pelunasan/${k.id}`}
-                        className="font-medium text-primary underline-offset-2 hover:underline"
+                        className="font-medium text-foreground underline decoration-primary underline-offset-2 hover:decoration-2"
                       >
                         {k.docNo}
                       </Link>
+                      {/* BKM yang melunasi faktur di TT ini tanpa menunjuk TT-nya. */}
+                      {!k.tertautTt && (
+                        <span className="block text-xs text-muted-foreground">{t('claimNotLinked')}</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {rupiah(k.nilaiDiterima)}
                     </TableCell>
                     <TableCell>
-                      <StatusPill tone={k.status === 'TERVERIFIKASI' ? 'settled' : 'waiting'}>
-                        {k.status}
+                      <StatusPill
+                        tone={
+                          k.status === 'TERVERIFIKASI'
+                            ? 'settled'
+                            : k.status === 'DIKIRIM'
+                              ? 'waiting'
+                              : 'inactive'
+                        }
+                      >
+                        {tBkm(`status${k.status}`)}
                       </StatusPill>
                     </TableCell>
                   </TableRow>

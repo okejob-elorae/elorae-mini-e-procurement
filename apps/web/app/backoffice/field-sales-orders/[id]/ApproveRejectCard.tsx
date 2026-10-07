@@ -381,6 +381,7 @@ export function ApproveRejectCard({
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isPending}>{tCommon("cancel")}</AlertDialogCancel>
             <AlertDialogAction
+              variant="destructive"
               disabled={isPending || !rejectReason.trim()}
               onClick={callReject}
             >

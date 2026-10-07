@@ -23,6 +23,11 @@ import { KomisiPutusCard } from "./KomisiPutusCard";
 import { TitipPesanCard } from "./TitipPesanCard";
 import { TutupHariCard } from "./TutupHariCard";
 import { BarangHilangCard } from "./BarangHilangCard";
+// Dua kartu SPG ini dulu ada di Pengaturan → Salesman; tetap memakai izin yang sama (penyetuju pesanan).
+import { AturanMutasiCard } from "../salesman/AturanMutasiCard";
+import { HariKerjaSpgCard } from "../salesman/HariKerjaSpgCard";
+import { KUNCI_ATURAN_MUTASI } from "@/lib/spg/mutasi-aturan";
+import { bacaHariKerjaSpg, KUNCI_HARI_KERJA_SPG } from "@/lib/salesman/izin";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +43,20 @@ export default async function PengaturanSpgPage() {
   if (!hasPermission(izin, PERMISSIONS.SPG_SALES_VIEW)) redirect("/backoffice/dashboard");
 
   const setelan = await prisma.systemSetting.findMany({
-    where: { key: { in: [KUNCI_DISKON_MANUAL, KUNCI_SHIFT, KUNCI_KOMISI_PUTUS, KUNCI_TITIP_PESAN, KUNCI_TUTUP_HARI, KUNCI_BARANG_HILANG] } },
+    where: {
+      key: {
+        in: [
+          KUNCI_DISKON_MANUAL,
+          KUNCI_SHIFT,
+          KUNCI_KOMISI_PUTUS,
+          KUNCI_TITIP_PESAN,
+          KUNCI_TUTUP_HARI,
+          KUNCI_BARANG_HILANG,
+          KUNCI_ATURAN_MUTASI,
+          KUNCI_HARI_KERJA_SPG,
+        ],
+      },
+    },
     select: { key: true, value: true },
   });
   const nilai = (kunci: string) => setelan.find((s) => s.key === kunci)?.value ?? null;
@@ -52,6 +70,11 @@ export default async function PengaturanSpgPage() {
       <ShiftCard bolehUbah={hasPermission(izin, PERMISSIONS.STORES_MANAGE)} nilai={bacaAturanShift(nilai(KUNCI_SHIFT))} />
       <KomisiPutusCard bolehUbah={hasPermission(izin, PERMISSIONS.RECEIVABLES_MANAGE)} nilai={bacaKomisiPutus(nilai(KUNCI_KOMISI_PUTUS))} />
       <BarangHilangCard bolehUbah={hasPermission(izin, PERMISSIONS.RECEIVABLES_MANAGE)} nilai={bacaBarangHilang(nilai(KUNCI_BARANG_HILANG))} />
+      <AturanMutasiCard bolehUbah={hasPermission(izin, PERMISSIONS.FIELD_SALES_ORDERS_APPROVE)} nilai={nilai(KUNCI_ATURAN_MUTASI)} />
+      <HariKerjaSpgCard
+        bolehUbah={hasPermission(izin, PERMISSIONS.FIELD_SALES_ORDERS_APPROVE)}
+        hariKerja={bacaHariKerjaSpg(nilai(KUNCI_HARI_KERJA_SPG))}
+      />
     </div>
   );
 }

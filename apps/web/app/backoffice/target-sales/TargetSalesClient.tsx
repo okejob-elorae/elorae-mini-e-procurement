@@ -62,6 +62,8 @@ export type DataTargetSales = {
       toko: string | null;
       jumlahTarget: number;
       omzet: number;
+      /** Target total rupiah bulan ini (Pengaturan → Salesman); null = belum diatur. */
+      targetTotal: number | null;
       sel: Record<string, { measure: UkuranTarget; target: number; capai: number }>;
       barang: { jumlah: number; tercapai: number };
     }[];
@@ -211,10 +213,15 @@ function Ringkasan({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <LayoutGrid className="h-5 w-5" aria-hidden />
-          {t("ringkasanJudul", { bulan: judulBulan })}
-        </CardTitle>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <CardTitle className="flex items-center gap-2">
+            <LayoutGrid className="h-5 w-5" aria-hidden />
+            {t("ringkasanJudul", { bulan: judulBulan })}
+          </CardTitle>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/backoffice/settings/salesman">{t("aturTargetTotal")}</Link>
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
         {!adaTarget ? <p className="text-sm text-muted-foreground">{t("ringkasanKosong")}</p> : null}
@@ -224,6 +231,7 @@ function Ringkasan({
               <TableRow>
                 <TableHead>{t("kolomSales")}</TableHead>
                 <TableHead className="text-right">{t("kolomOmzet")}</TableHead>
+                <TableHead className="min-w-32">{t("kolomTargetTotal")}</TableHead>
                 {kategori.map((k) => (
                   <TableHead key={k.id} className="min-w-36 whitespace-normal">
                     {k.nama}
@@ -247,6 +255,24 @@ function Ringkasan({
                     ) : null}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{formatIDR(b.omzet)}</TableCell>
+                  <TableCell className="whitespace-normal">
+                    {b.targetTotal === null ? (
+                      <span className="text-sm text-muted-foreground">{t("targetTotalBelum")}</span>
+                    ) : (
+                      (() => {
+                        const km = kemajuanRinci(b.targetTotal, b.omzet, data.bulan, hariIni);
+                        return (
+                          <>
+                            <div className="text-sm tabular-nums">{formatIDR(b.targetTotal)}</div>
+                            <div className="mt-1 flex items-center gap-2">
+                              <Progress value={Math.min(100, km.persen)} className="h-1.5 w-16" aria-label={`${t("kolomTargetTotal")} ${km.persen}%`} />
+                              <span className="text-xs tabular-nums text-muted-foreground">{km.persen}%</span>
+                            </div>
+                          </>
+                        );
+                      })()
+                    )}
+                  </TableCell>
                   {kategori.map((k) => {
                     const sel = b.sel[k.id];
                     if (!sel) {

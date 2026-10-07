@@ -31,6 +31,18 @@ export type ActionItem = {
   /** Rupiah at stake, for rows about money. Absent = the row is a count only. */
   amount?: number;
   /**
+   * Kunci `dashboardActions.<kunci>` yang menamai nilainya ("nilai PO {nilai}"),
+   * bila nilai itu bisa tertukar dengan angka lain di aplikasi — nilai PO
+   * terlambat bukan nilai barang yang belum diterima di Laporan.
+   */
+  amountLabelKey?: string;
+  /**
+   * Menunggu ORANG LAIN, bukan penonton (mis. BKM yang ia catat sendiri — ia
+   * tidak boleh memutuskannya). Tetap tampil supaya ia tahu, tetapi tidak ikut
+   * angka "N hal perlu ditindaklanjuti".
+   */
+  menungguOrangLain?: boolean;
+  /**
    * Documents this row shares with another row, so the panel total counts each
    * DOCUMENT once. A PO that is both past its ETA and still SUBMITTED appears on
    * both PO rows; the headline "N things need attention" must not count it twice.
@@ -39,7 +51,8 @@ export type ActionItem = {
 };
 
 /**
- * How many DOCUMENTS the visible rows add up to. Pure.
+ * How many DOCUMENTS the visible rows add up to. Pure. Rows waiting for someone
+ * else (`menungguOrangLain`) are not the viewer's work and are not counted.
  *
  * Rows are not documents: one PO can be both past its ETA and still SUBMITTED.
  * An overlap is subtracted only when the row it points at is visible too —
@@ -47,7 +60,7 @@ export type ActionItem = {
  */
 export function totalActionDocuments(visible: readonly ActionItem[]): number {
   const keys = new Set(visible.map((item) => item.key));
-  return visible.reduce(
+  return visible.filter((item) => !item.menungguOrangLain).reduce(
     (sum, item) =>
       sum + item.count - (item.overlap && keys.has(item.overlap.key) ? Math.min(item.overlap.count, item.count) : 0),
     0,

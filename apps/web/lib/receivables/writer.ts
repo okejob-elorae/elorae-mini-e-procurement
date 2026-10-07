@@ -1,7 +1,16 @@
 import { prisma, Prisma } from '@elorae/db';
 import { runSerializable } from '@/lib/db/tx-retry';
-import { hitungSisaPiutang, returTerpakaiMelebihi, STATUS_KLAIM_HIDUP, type StatusKlaim } from './rules';
+import {
+  batasPotongNota,
+  hitungSisaPiutang,
+  returTerpakaiMelebihi,
+  sisaBolehDilunasi,
+  STATUS_KLAIM_HIDUP,
+  tertahanPiutang,
+  type StatusKlaim,
+} from './rules';
 import { PILIH_POTONGAN, potonganRetur } from './deductions';
+import { idBebanDariCatatan, penandaBebanRetur } from './penanda-beban';
 import { catatJejak, JEJAK } from './jejak';
 import { giroMenahanVerifikasi, STATUS_GIRO } from './giro';
 
@@ -22,12 +31,15 @@ type Klien = typeof prisma | Prisma.TransactionClient;
 const angka = (v: unknown): number => Number(v ?? 0);
 
 /**
- * Sisa satu piutang dihitung dari nol, TANPA menyimpannya.
+ * Sisa satu piutang dihitung dari nol, TANPA menyimpannya — beserta bagian
+ * sisa yang hanya ditahan Aturan 2 (`tertahanPiutang`).
  *
- * `null` berarti piutangnya tidak ada. Dipakai penjaga yang perlu tahu sisanya
- * sebelum memutuskan apa pun; yang menyimpan adalah `hitungUlangPiutang`.
+ * `null` berarti piutangnya tidak ada.
  */
-export async function bacaSisaPiutang(client: Klien, receivableId: string): Promise<number | null> {
+export async function bacaSisaDanTahanan(
+  client: Klien,
+  receivableId: string,
+): Promise<{ sisa: number; tertahan: number } | null> {
   const piutang = await client.receivable.findUnique({
     where: { id: receivableId },
     select: {
@@ -49,17 +61,26 @@ export async function bacaSisaPiutang(client: Klien, receivableId: string): Prom
   });
   if (!piutang) return null;
 
-  const sisa = hitungSisaPiutang(
-    angka(piutang.amount),
-    piutang.claimLinks.map((link) => ({
-      status: link.paymentClaim.status as StatusKlaim,
-      nilaiFaktur: angka(link.paymentClaim.invoiceAmount),
-      potonganRetur: potonganRetur(link.paymentClaim.deductions),
-      nilaiDilunasiPiutangIni: angka(link.settledAmount),
-    })),
-    angka(piutang.paidBeforeImport),
-  );
-  return sisa;
+  const klaimList = piutang.claimLinks.map((link) => ({
+    status: link.paymentClaim.status as StatusKlaim,
+    nilaiFaktur: angka(link.paymentClaim.invoiceAmount),
+    potonganRetur: potonganRetur(link.paymentClaim.deductions),
+    nilaiDilunasiPiutangIni: angka(link.settledAmount),
+  }));
+  return {
+    sisa: hitungSisaPiutang(angka(piutang.amount), klaimList, angka(piutang.paidBeforeImport)),
+    tertahan: tertahanPiutang(klaimList),
+  };
+}
+
+/**
+ * Sisa satu piutang dihitung dari nol, TANPA menyimpannya.
+ *
+ * `null` berarti piutangnya tidak ada. Dipakai penjaga yang perlu tahu sisanya
+ * sebelum memutuskan apa pun; yang menyimpan adalah `hitungUlangPiutang`.
+ */
+export async function bacaSisaPiutang(client: Klien, receivableId: string): Promise<number | null> {
+  return (await bacaSisaDanTahanan(client, receivableId))?.sisa ?? null;
 }
 
 /**
@@ -69,8 +90,20 @@ export async function bacaSisaPiutang(client: Klien, receivableId: string): Prom
  * membaca ulang dari database.
  */
 export async function hitungUlangPiutang(client: Klien, receivableId: string): Promise<number> {
-  const sisa = await bacaSisaPiutang(client, receivableId);
-  if (sisa === null) return 0;
+  return (await hitungUlangPiutangDanTahanan(client, receivableId)).sisa;
+}
+
+/**
+ * `hitungUlangPiutang` yang juga mengembalikan bagian sisa yang sedang ditahan
+ * Aturan 2 — untuk penjaga "BKM lain tidak boleh melunasi yang ditahan".
+ */
+export async function hitungUlangPiutangDanTahanan(
+  client: Klien,
+  receivableId: string,
+): Promise<{ sisa: number; tertahan: number }> {
+  const baca = await bacaSisaDanTahanan(client, receivableId);
+  if (baca === null) return { sisa: 0, tertahan: 0 };
+  const { sisa } = baca;
 
   await client.receivable.update({
     where: { id: receivableId },
@@ -82,7 +115,7 @@ export async function hitungUlangPiutang(client: Klien, receivableId: string): P
     },
   });
 
-  return sisa;
+  return baca;
 }
 
 /** Hitung ulang setiap piutang yang disentuh sebuah klaim. */
@@ -97,17 +130,23 @@ export async function hitungUlangDariKlaim(client: Klien, paymentClaimId: string
 }
 
 export type PemakaianRetur = {
-  /** Nilai yang diklaim toko di NRT. */
+  /**
+   * Batas potong NRT ini di seluruh BKM hidup (`batasPotongNota`): nilai
+   * klaimnya, atau — sesudah bebannya ditetapkan ke TOKO — fisik + yang
+   * ditagih balik lewat faktur beban.
+   */
   nilai: number;
+  /** Nilai yang diklaim toko di NRT. */
+  nilaiKlaim: number;
   /** Jumlah potongan atas NRT ini di seluruh BKM yang masih hidup. */
   terpakai: number;
 };
 
 /**
  * Berapa dari setiap nota retur yang sudah dipotongkan di BKM yang masih hidup
- * (DIKIRIM atau TERVERIFIKASI).
+ * (DIKIRIM atau TERVERIFIKASI), dan berapa batasnya.
  *
- * Penjaga "satu NRT tidak dipakai melebihi nilainya" hanya utuh kalau dibaca
+ * Penjaga "satu NRT tidak dipakai melebihi batasnya" hanya utuh kalau dibaca
  * DI DALAM transaksi serializable yang juga menulis potongannya: dua BKM yang
  * membaca pemakaian nol bersamaan lalu sama-sama menulis adalah persis celah
  * yang ditutup, dan basis data sendirilah yang menolak salah satunya.
@@ -128,9 +167,44 @@ export async function pemakaianRetur(
 
   const retur = await client.storeReturn.findMany({
     where: { id: { in: unik } },
-    select: { id: true, claimedAmount: true },
+    select: {
+      id: true,
+      claimedAmount: true,
+      warehouseReturn: { select: { physicalAmount: true, status: true } },
+      // Beban yang sudah ditetapkan ke toko menurunkan batas potongnya.
+      charges: { where: { bearer: 'TOKO', status: { not: 'TERBUKA' } }, select: { id: true } },
+    },
   });
-  for (const r of retur) hasil.set(r.id, { nilai: angka(r.claimedAmount), terpakai: 0 });
+
+  // Yang ditagih ke toko = faktur bebannya (penanda di catatan). Beban toko
+  // tanpa faktur berarti tidak ada yang ditagih: toko tidak memotong lebih dari
+  // barang yang sampai.
+  const idBebanToko = retur.flatMap((r) => r.charges.map((c) => c.id));
+  const ditagih = new Map<string, number>();
+  if (idBebanToko.length > 0) {
+    const faktur = await client.receivable.findMany({
+      where: { source: 'MANUAL', OR: idBebanToko.map((id) => ({ note: { contains: penandaBebanRetur(id) } })) },
+      select: { amount: true, note: true },
+    });
+    for (const f of faktur) {
+      const id = idBebanDariCatatan(f.note);
+      if (id) ditagih.set(id, (ditagih.get(id) ?? 0) + angka(f.amount));
+    }
+  }
+
+  for (const r of retur) {
+    const nri = r.warehouseReturn;
+    const nilaiKlaim = angka(r.claimedAmount);
+    hasil.set(r.id, {
+      nilai: batasPotongNota({
+        nilaiKlaim,
+        nilaiFisik: nri && nri.status === 'FINAL' ? angka(nri.physicalAmount) : null,
+        bebanTokoDitagih: r.charges.length > 0 ? r.charges.reduce((s, c) => s + (ditagih.get(c.id) ?? 0), 0) : null,
+      }),
+      nilaiKlaim,
+      terpakai: 0,
+    });
+  }
 
   const potongan = await client.paymentClaimDeduction.findMany({
     where: {
@@ -149,8 +223,8 @@ export async function pemakaianRetur(
 }
 
 /**
- * Nota retur pertama yang akan terpakai melebihi nilainya kalau potongan baru
- * ini ditambahkan, atau `null` kalau semuanya muat. `baru` boleh memuat NRT
+ * Nota retur pertama yang akan terpakai melebihi batasnya (`PemakaianRetur.nilai`)
+ * kalau potongan baru ini ditambahkan, atau `null` kalau semuanya muat. `baru` boleh memuat NRT
  * yang sama lebih dari sekali — dijumlahkan.
  */
 export async function returYangMelebihi(
@@ -348,6 +422,7 @@ export type HasilVerifikasi =
         | 'BUKAN_GIRO_MENUNGGU'
         | 'PEMERIKSA_SAMA'
         | 'MELEBIHI_SISA'
+        | 'RETUR_DITAHAN'
         | 'RETUR_TERPAKAI';
     };
 
@@ -437,9 +512,19 @@ export async function putuskanKlaim(input: {
         select: { receivableId: true, settledAmount: true },
       });
       for (const t of tautan) {
-        const sisa = await bacaSisaPiutang(tx, t.receivableId);
-        if (sisa !== null && angka(t.settledAmount) > sisa) {
+        const baca = await bacaSisaDanTahanan(tx, t.receivableId);
+        if (baca === null) continue;
+        if (angka(t.settledAmount) > baca.sisa) {
           return { ok: false, alasan: 'MELEBIHI_SISA' as const };
+        }
+        /*
+         * Bagian sisa yang hanya ditahan potongan retur BKM lain yang sudah
+         * terverifikasi lepas sendiri begitu returnya beres. Melunasinya lagi
+         * di sini membuat toko membayarnya dua kali (KEPUTUSAN SEMENTARA
+         * PEMILIK 2026-10-06). Dibaca ulang di transaksi serializable ini.
+         */
+        if (angka(t.settledAmount) > sisaBolehDilunasi(baca.sisa, baca.tertahan)) {
+          return { ok: false, alasan: 'RETUR_DITAHAN' as const };
         }
       }
 

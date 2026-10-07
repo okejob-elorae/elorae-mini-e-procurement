@@ -200,6 +200,8 @@ export type FakturCalonTugas = {
   dueDate: string;
   sisa: number;
   keadaan: BarisPiutang["keadaan"];
+  /** Keadaan untuk layar kantor — `belum` yang lewat jatuh tempo menjadi `jatuh_tempo`. */
+  keadaanTampil: BarisPiutang["keadaanTampil"];
   /** Nomor BKM / kontrabon yang menempel pada keadaannya. */
   doc: string | null;
   /** Nama petugas kalau faktur ini sudah berada di tugas terbuka lain. */
@@ -260,6 +262,7 @@ export async function bahanTugasBaru(): Promise<BahanTugasBaru> {
       dueDate: p.dueDate,
       sisa: p.outstanding,
       keadaan: p.keadaan,
+      keadaanTampil: p.keadaanTampil,
       doc: p.alasan.noKlaim ?? p.alasan.noKontrabon ?? null,
       ditugaskanKe: ditugaskan.get(p.id) ?? null,
     });

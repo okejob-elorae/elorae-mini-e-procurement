@@ -325,7 +325,7 @@ d("penerimaan barang jadi (test bed only)", () => {
       woId = await buatWo();
       await receiveFG({ woId, qtyReceived: 10, qtyRejected: 0 }, userId);
       // Penolakan batal kini dikembalikan sebagai { ok:false, code }, bukan dilempar.
-      expect(await cancelWorkOrder(woId, userId)).toEqual({ ok: false, code: "WO_SUDAH_ADA_PENERIMAAN" });
+      expect(await cancelWorkOrder(woId, userId, "batal")).toEqual({ ok: false, code: "WO_SUDAH_ADA_PENERIMAAN" });
       expect(await statusWo(woId)).toBe("PARTIAL");
     });
   });

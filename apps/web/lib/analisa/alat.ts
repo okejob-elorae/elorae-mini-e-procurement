@@ -6,10 +6,10 @@
  * Claude tidak pernah menulis SQL sendiri. Angka yang ia sebut karenanya sama
  * dengan angka di Beranda.
  *
- * PIUTANG DAN KONSINYASI SENGAJA TIDAK ADA. Keduanya port "SSG Pelunasan",
- * yang briefnya mensyaratkan "tidak ada foto atau data yang keluar dari
- * komputer ini"; lewat Claude Desktop datanya diproses di server Anthropic.
- * Menambahkannya menunggu keputusan pemilik (lihat CLAUDE.md, bagian Piutang).
+ * PIUTANG DAN KONSINYASI BELUM ADA. Dulu ditahan karena syarat program SSG
+ * ("tidak ada data yang keluar dari komputer ini"); sejak 2026-10-06 Elorae
+ * tidak memuat data SSG sama sekali, jadi alatnya boleh ditambahkan bila
+ * pemilik memintanya — lewat Claude Desktop datanya diproses di server Anthropic.
  *
  * Logika di sini murni — sumber datanya disuntikkan — supaya bisa diuji tanpa
  * basis data.

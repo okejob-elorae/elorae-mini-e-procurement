@@ -82,14 +82,22 @@ describe("jubelio-bulk-migration server actions", () => {
   });
 
   describe("enqueueBulkMigration", () => {
-    it("throws Unauthorized when session is null", async () => {
+    it("returns TANPA_AKSES (not a thrown Error) when session is null", async () => {
       (auth as any).mockResolvedValue(null);
-      await expect(enqueueBulkMigration(["i1"])).rejects.toThrow("Unauthorized");
+      await expect(enqueueBulkMigration(["i1"])).resolves.toEqual({ ok: false, code: "TANPA_AKSES" });
+    });
+
+    it("returns TANPA_AKSES when the user lacks settings_security:manage", async () => {
+      (auth as any).mockResolvedValue({ user: { id: "u1", permissions: ["settings_security:view"] } });
+      const r = await enqueueBulkMigration(["i1"]);
+      expect(r).toMatchObject({ ok: false, code: "TANPA_AKSES" });
+      expect(prisma.jubelioOutbox.createMany).not.toHaveBeenCalled();
     });
 
     it("rejects empty array", async () => {
       (auth as any).mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
-      await expect(enqueueBulkMigration([])).rejects.toThrow(/no items/i);
+      const r = await enqueueBulkMigration([]);
+      expect(r).toMatchObject({ ok: false, code: "ISIAN_TIDAK_SAH" });
       expect(prisma.jubelioOutbox.createMany).not.toHaveBeenCalled();
     });
 
@@ -97,7 +105,9 @@ describe("jubelio-bulk-migration server actions", () => {
       (auth as any).mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
       (prisma.item.findMany as any).mockResolvedValue([{ id: "i1" }]);
       (prisma.jubelioCategoryMapping.findMany as any).mockResolvedValue([]);
-      await expect(enqueueBulkMigration(["i1", "ghost"])).rejects.toThrow(/not eligible/i);
+      const r = await enqueueBulkMigration(["i1", "ghost"]);
+      expect(r).toMatchObject({ ok: false, code: "ISIAN_TIDAK_SAH" });
+      expect(r.ok ? "" : r.rincian).toMatch(/not eligible/i);
       expect(prisma.jubelioOutbox.createMany).not.toHaveBeenCalled();
     });
 
@@ -115,7 +125,7 @@ describe("jubelio-bulk-migration server actions", () => {
           { entityType: "product_push", entityId: "i2", payload: {}, enqueuedById: "u1" },
         ],
       });
-      expect(result).toEqual({ enqueued: 2 });
+      expect(result).toEqual({ ok: true, data: { enqueued: 2 } });
     });
   });
 

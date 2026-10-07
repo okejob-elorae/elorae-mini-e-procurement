@@ -26,6 +26,17 @@ import { formatDisplayDate } from '@/lib/date-only';
 import { getWorkOrderById, getReconciliation } from '@/app/actions/production';
 import { buildReconciliationPrintHtml } from '@/lib/print/reconciliation-html';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
+import { formatRupiah } from '@/lib/format/rupiah';
+import {
+  efisiensiBahan,
+  persenBertanda,
+  qtyBahan,
+  statusTampilRekon,
+  type StatusTampilRekon,
+} from '@/lib/production/rekonsiliasi-tampil';
+
+/** Rupiah bertanda: "+Rp 3.031.250". */
+const rupiahBertanda = (n: number) => (n > 0 ? `+${formatRupiah(n)}` : formatRupiah(n));
 
 type ReconLine = {
   itemId: string;
@@ -76,10 +87,9 @@ export default function WorkOrderReconciliationPage() {
       .finally(() => setIsLoading(false));
   }, [id, tR]);
 
-  const efficiencyPercent =
-    recon && recon.summary.totalIssuedValue > 0
-      ? (recon.summary.totalUsedValue / recon.summary.totalIssuedValue) * 100
-      : 0;
+  // Teoretis ÷ terpakai (lib/production/rekonsiliasi-tampil.ts); null = belum ada pemakaian.
+  const efficiencyPercent = recon ? efisiensiBahan(recon.lines) : null;
+  const labelStatus = (s: StatusTampilRekon) => tR(`status${s}`);
 
   const handleExportPDF = () => {
     if (!wo || !recon) return;
@@ -88,9 +98,8 @@ export default function WorkOrderReconciliationPage() {
       locale
     );
     const subtitle =
-      wo.finishedGood && typeof wo.finishedGood === 'object' && 'nameEn' in wo.finishedGood
-        ? (wo.finishedGood as { nameEn?: string; nameId?: string }).nameEn ??
-          (wo.finishedGood as { nameId?: string }).nameId
+      wo.finishedGood && typeof wo.finishedGood === 'object'
+        ? (wo.finishedGood as { nameId?: string }).nameId
         : undefined;
 
     const html = buildReconciliationPrintHtml({
@@ -101,21 +110,31 @@ export default function WorkOrderReconciliationPage() {
       efficiencyPercent,
       lines: recon.lines,
       labels: {
-        title: 'Work Order Reconciliation',
-        targetCutting: t('targetCutting'),
+        title: tR('cetak.judul'),
+        targetCutting: tWO('kebutuhanTotalRencana'),
         issuedToCmt: t('issuedToCmt'),
-        returned: 'Returned',
-        setoran: t('setoran'),
-        theoretical: 'Theoretical',
+        returned: tWO('returned'),
+        setoran: tR('terpakai'),
+        theoretical: tWO('theoretical'),
         selisih: t('selisih'),
-        value: 'Value',
-        status: 'Status',
-        varianceByMaterial: `${t('selisih')} by material`,
-        varianceByMaterialDesc: `${t('cuttingPlanned')} vs ${t('issuedToCmt')} vs ${t('setoran')}; ${t('selisihFromEstimate')} per line.`,
-        totalMaterialCost: 'Total Material Cost (Used)',
-        efficiencyPct: 'Efficiency %',
-        costVariance: 'Cost Variance',
-        usedVsIssued: 'Used vs issued value',
+        value: tWO('valueImpact'),
+        status: tWO('status'),
+        varianceByMaterial: tR('byMaterial', { selisih: t('selisih') }),
+        varianceByMaterialDesc: tR('cetak.keterangan'),
+        totalMaterialCost: tR('totalMaterialCost'),
+        efficiencyPct: tR('efficiency'),
+        costVariance: tR('costVariance'),
+        usedVsIssued: tR('cetak.efisiensiArti'),
+        wo: tR('cetak.wo'),
+        date: tR('cetak.tanggal'),
+        issuedBy: tR('cetak.dibuatOleh'),
+        material: tWO('material'),
+        statusLabels: {
+          OK: labelStatus('OK'),
+          OVER: labelStatus('OVER'),
+          UNDER: labelStatus('UNDER'),
+          BELUM_DIKIRIM: labelStatus('BELUM_DIKIRIM'),
+        },
       },
     });
 
@@ -205,11 +224,7 @@ export default function WorkOrderReconciliationPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">
-              {recon.summary.totalUsedValue.toLocaleString(undefined, {
-                minimumFractionDigits: 2
-              })}
-            </p>
+            <p className="text-2xl font-bold">{formatRupiah(recon.summary.totalUsedValue)}</p>
           </CardContent>
         </Card>
         <Card>
@@ -220,7 +235,9 @@ export default function WorkOrderReconciliationPage() {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">
-              {efficiencyPercent.toFixed(1)}%
+              {efficiencyPercent == null
+                ? '—'
+                : `${efficiencyPercent.toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`}
             </p>
           </CardContent>
         </Card>
@@ -240,10 +257,7 @@ export default function WorkOrderReconciliationPage() {
                     : ''
               }`}
             >
-              {recon.summary.netVarianceValue >= 0 ? '+' : ''}
-              {recon.summary.netVarianceValue.toLocaleString(undefined, {
-                minimumFractionDigits: 2
-              })}
+              {rupiahBertanda(recon.summary.netVarianceValue)}
             </p>
           </CardContent>
         </Card>
@@ -259,81 +273,65 @@ export default function WorkOrderReconciliationPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>{tWO('material')}</TableHead>
-                  <TableHead className="text-right" title={t('cuttingPlanned')}>{tWO('estimatedConsumptionPerPcs')}</TableHead>
-                  <TableHead className="text-right" title={t('issuedToCmt')}>{t('issuedToCmt')}</TableHead>
-                  <TableHead className="text-right">{tWO('returned')}</TableHead>
-                  <TableHead className="text-right">{t('setoran')}</TableHead>
+                  <TableHead>{tWO('status')}</TableHead>
+                  <TableHead className="hidden text-right 2xl:table-cell">{tWO('kebutuhanTotalRencana')}</TableHead>
+                  <TableHead className="text-right">{t('issuedToCmt')}</TableHead>
+                  <TableHead className="hidden text-right 2xl:table-cell">{tWO('returned')}</TableHead>
+                  <TableHead className="text-right">{tR('terpakai')}</TableHead>
                   <TableHead className="text-right">{tWO('theoretical')}</TableHead>
-                  <TableHead className="text-right" title={t('selisihFromEstimate')}>{t('selisih')}</TableHead>
+                  <TableHead className="text-right">{t('selisih')}</TableHead>
                   <TableHead className="text-right">{t('selisih')} %</TableHead>
                   <TableHead className="text-right">{tWO('valueImpact')}</TableHead>
-                  <TableHead>{tWO('status')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {recon.lines.map((line) => (
+                {recon.lines.map((line) => {
+                  const statusTampil = statusTampilRekon(line);
+                  return (
                   <TableRow
                     key={line.itemId}
-                    className={
-                      line.status === 'OVER'
-                        ? 'bg-amber-50 dark:bg-amber-950/20'
-                        : line.status === 'UNDER'
-                          ? 'bg-green-50 dark:bg-green-950/20'
-                          : undefined
-                    }
+                    className={statusTampil === 'OVER' ? 'bg-amber-50 dark:bg-amber-950/20' : undefined}
                   >
-                    <TableCell className="min-w-[180px] whitespace-normal">
-                      <span className="font-medium">{line.itemName}</span>
-                      {line.itemSku && (
-                        <span className="ml-1 text-muted-foreground">
-                          ({line.itemSku})
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {line.plannedQty.toLocaleString('id-ID')} {line.uomCode}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {line.issuedQty.toLocaleString('id-ID')} {line.uomCode}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {line.returnedQty.toLocaleString('id-ID')} {line.uomCode}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {line.actualUsed.toLocaleString('id-ID')} {line.uomCode}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {line.theoreticalUsage.toLocaleString('id-ID')} {line.uomCode}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {line.variance >= 0 ? '+' : ''}
-                      {line.variance.toLocaleString('id-ID')} {line.uomCode}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {line.variancePercent >= 0 ? '+' : ''}
-                      {line.variancePercent.toFixed(1)}%
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {line.varianceValue >= 0 ? '+' : ''}
-                      {line.varianceValue.toLocaleString(undefined, {
-                        minimumFractionDigits: 2
-                      })}
+                    <TableCell className="min-w-[160px] whitespace-normal">
+                      <span className="block font-medium">{line.itemName}</span>
+                      {line.itemSku && <span className="block text-xs text-muted-foreground">{line.itemSku}</span>}
                     </TableCell>
                     <TableCell>
                       <Badge
-                        variant={
-                          line.status === 'OK'
-                            ? 'secondary'
-                            : line.status === 'OVER'
-                              ? 'destructive'
-                              : 'default'
+                        variant={statusTampil === 'OVER' ? 'destructive' : 'outline'}
+                        className={
+                          statusTampil === 'UNDER'
+                            ? 'border-amber-500 text-amber-700 dark:text-amber-400'
+                            : undefined
                         }
                       >
-                        {tR(`status${line.status}`)}
+                        {labelStatus(statusTampil)}
                       </Badge>
                     </TableCell>
+                    <TableCell className="hidden text-right 2xl:table-cell">
+                      {qtyBahan(line.plannedQty)} {line.uomCode}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {qtyBahan(line.issuedQty)} {line.uomCode}
+                    </TableCell>
+                    <TableCell className="hidden text-right 2xl:table-cell">
+                      {qtyBahan(line.returnedQty)} {line.uomCode}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {qtyBahan(line.actualUsed)} {line.uomCode}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {qtyBahan(line.theoreticalUsage)} {line.uomCode}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {line.variance > 0 ? '+' : ''}
+                      {qtyBahan(line.variance)} {line.uomCode}
+                    </TableCell>
+                    <TableCell className="text-right">{persenBertanda(line.variancePercent)}</TableCell>
+                    <TableCell className="text-right">{rupiahBertanda(line.varianceValue)}</TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </div>

@@ -2,14 +2,18 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { formatDistanceToNow } from 'date-fns';
+import { enGB, id as idLocale } from 'date-fns/locale';
 import { getNotificationHref } from '@/lib/notifications/navigation';
+import { tampilanLonceng, type Penerjemah } from '@/lib/notifications/tampilan-lonceng';
+import { formatRupiah } from '@/lib/format/rupiah';
 import { cn } from '@/lib/utils';
 import {
   dariHalamanPertama,
@@ -33,6 +37,8 @@ function NotificationInbox({
   loadMoreFailed,
   onLoadMore,
   t,
+  penerjemah,
+  localeWaktu,
 }: {
   items: NotificationItem[];
   onItemClick: (item: NotificationItem) => void;
@@ -41,6 +47,9 @@ function NotificationInbox({
   loadMoreFailed: boolean;
   onLoadMore: () => void;
   t: (key: string) => string;
+  /** Judul/isi dalam bahasa pembaca — kalimat Inggris tersimpan diterjemahkan per jenis. */
+  penerjemah: Penerjemah;
+  localeWaktu: typeof idLocale;
 }) {
   if (items.length === 0) {
     return (
@@ -55,6 +64,7 @@ function NotificationInbox({
       <ul className="flex flex-col gap-0">
         {items.map((item) => {
           const isUnread = !item.readAt;
+          const teks = tampilanLonceng(item, penerjemah);
           return (
             <li key={item.id}>
               <button
@@ -66,10 +76,10 @@ function NotificationInbox({
                   isUnread && "bg-muted",
                 )}
               >
-                <p className="font-medium text-foreground">{item.title}</p>
-                <p className="line-clamp-2 text-sm text-muted-foreground">{item.body}</p>
+                <p className="font-medium text-foreground">{teks.judul}</p>
+                <p className="line-clamp-2 text-sm text-muted-foreground">{teks.isi}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
+                  {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true, locale: localeWaktu })}
                 </p>
               </button>
             </li>
@@ -94,7 +104,16 @@ function NotificationInbox({
 
 export function NotificationIcon() {
   const t = useTranslations();
+  const locale = useLocale();
   const router = useRouter();
+  const { data: session } = useSession();
+  // Tombol uji kirim hanya untuk admin sistem — alat pemeriksa, bukan pekerjaan.
+  const bolehUji = (session?.user?.permissions ?? []).includes('*');
+  const penerjemah: Penerjemah = {
+    t: (kunci, nilai) => t(kunci as never, nilai as never),
+    has: (kunci) => t.has(kunci as never),
+    rupiah: formatRupiah,
+  };
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<KeadaanLonceng | null>(null);
   const [loading, setLoading] = useState(false);
@@ -241,7 +260,7 @@ export function NotificationIcon() {
             <Badge
               variant="destructive"
               className="absolute -right-1 -top-1 h-5 min-w-5 px-1 text-xs"
-              aria-label={`${unreadCount} unread notifications`}
+              aria-label={t('notifications.unreadAria', { count: unreadCount })}
             >
               {badgeLabel}
             </Badge>
@@ -253,6 +272,7 @@ export function NotificationIcon() {
         <SheetHeader>
           <div className="flex items-center justify-between gap-2">
             <SheetTitle>{t('notifications.title')}</SheetTitle>
+            <SheetDescription className="sr-only">{t('notifications.keterangan')}</SheetDescription>
             {unreadCount > 0 && (
               <Button
                 variant="ghost"
@@ -279,20 +299,24 @@ export function NotificationIcon() {
               loadMoreFailed={loadMoreFailed}
               onLoadMore={() => void loadMore()}
               t={(key) => t(key)}
+              penerjemah={penerjemah}
+              localeWaktu={locale === 'en' ? enGB : idLocale}
             />
           )}
         </div>
-        <div className="border-t p-4">
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full"
-            onClick={handleSendTest}
-            disabled={sendTestLoading}
-          >
-            {sendTestLoading ? t('common.loading') : t('notifications.sendTest')}
-          </Button>
-        </div>
+        {bolehUji ? (
+          <div className="border-t p-4">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={handleSendTest}
+              disabled={sendTestLoading}
+            >
+              {sendTestLoading ? t('common.loading') : t('notifications.sendTest')}
+            </Button>
+          </div>
+        ) : null}
       </SheetContent>
     </Sheet>
   );

@@ -141,6 +141,42 @@ d("getFieldSalesOrderById — deliveries (test bed only)", () => {
     expect(lineB.onHand).toBe(8); /* same item + variant inventory row as line A */
   });
 
+  it("setiap pengiriman membawa piutang dan faktur pajaknya (id + nomor + status) untuk tautan di rincian", async () => {
+    const { deliveryId, docNo } = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineAId, qty: 2 }],
+      invoiceDate: new Date("2026-01-01T00:00:00.000+07:00"),
+      dueDate: new Date("2026-01-08T00:00:00.000+07:00"),
+    });
+    const piutang = await prisma.receivable.findUniqueOrThrow({ where: { deliveryId: seededId(deliveryId) } });
+
+    const detail = await getFieldSalesOrderById(orderId);
+    const d = detail!.deliveries[0];
+    expect(d.receivable).toEqual({ id: piutang.id, invoiceNo: docNo });
+    expect(d.taxInvoice).toEqual({ status: "PENDING", invoiceNo: null });
+  });
+
+  it("baris stok kembar null + \"\": angka stok di rincian = baris yang dipakai penulis, bukan jumlah keduanya", async () => {
+    // Baris kembar "" (10/10) dan null (3/0) untuk barang tanpa varian yang sama.
+    const kembar = await prisma.inventoryValue.create({
+      data: { itemId, variantSku: null, qtyOnHand: 3, reservedQty: 0, avgCost: 500, totalValue: 1500 },
+    });
+    try {
+      // Pilihan penulis (`findFieldSalesInventory`): findFirst dengan OR null/"" — dibaca persis sama.
+      const pilihanPenulis = await prisma.inventoryValue.findFirstOrThrow({
+        where: { itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
+      });
+      const detail = await getFieldSalesOrderById(orderId);
+      const lineA = detail!.lines.find((l) => l.id === lineAId)!;
+      expect(lineA.onHand).toBe(Number(pilihanPenulis.qtyOnHand));
+      expect(lineA.available).toBe(Number(pilihanPenulis.qtyOnHand) - Number(pilihanPenulis.reservedQty));
+      expect(lineA.onHand).not.toBe(13);
+    } finally {
+      await prisma.inventoryValue.delete({ where: { id: seededId(kembar.id) } });
+    }
+  });
+
   it("reports full outstanding and raw on-hand for an order with no deliveries yet", async () => {
     const detail = await getFieldSalesOrderById(orderId);
     expect(detail!.deliveryStatus).toBe("PENDING");

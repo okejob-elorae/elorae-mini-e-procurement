@@ -11,15 +11,11 @@ import {
   ShoppingCart, 
   Eye,
   Calendar,
-  AlertCircle,
-  CheckCircle,
-  Clock,
   Send,
   XCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/ui/page-header';
 import { StatusPill } from '@/components/ui/status-pill';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -48,6 +44,9 @@ import {
 import { toast } from 'sonner';
 import { getPOs, submitPO, batalkanPO } from '@/app/actions/purchase-orders';
 import { pesanTolakBatalPo } from './pesan-batal-po';
+import { BatalPoDialog } from './BatalPoDialog';
+import { keadaanBatalPo, tampilStatusBayar } from './aturan-po';
+import { TAUTAN_DOKUMEN } from './tautan-dokumen';
 import { PinAuthModal } from '@/components/security/PinAuthModal';
 import { POStatus } from '@/lib/constants/enums';
 import { ETABadge } from '@/components/ui/ETABadge';
@@ -93,32 +92,7 @@ export interface PurchaseOrder {
   };
 }
 
-const statusLabels: Record<POStatus, string> = {
-  DRAFT: 'Draft',
-  SUBMITTED: 'Submitted',
-  PARTIAL: 'Partial',
-  CLOSED: 'Closed',
-  OVER: 'Over-received',
-  CANCELLED: 'Cancelled'
-};
-
-const statusColors: Record<POStatus, string> = {
-  DRAFT: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200',
-  SUBMITTED: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-  PARTIAL: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
-  CLOSED: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-  OVER: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
-  CANCELLED: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-};
-
-const statusIcons: Record<POStatus, React.ReactNode> = {
-  DRAFT: <Clock className="h-4 w-4" />,
-  SUBMITTED: <CheckCircle className="h-4 w-4" />,
-  PARTIAL: <AlertCircle className="h-4 w-4" />,
-  CLOSED: <CheckCircle className="h-4 w-4" />,
-  OVER: <AlertCircle className="h-4 w-4" />,
-  CANCELLED: <XCircle className="h-4 w-4" />,
-};
+const SEMUA_STATUS: POStatus[] = ['DRAFT', 'SUBMITTED', 'PARTIAL', 'CLOSED', 'OVER', 'CANCELLED'];
 
 export function PurchaseOrdersPageClient({
   initialPOs,
@@ -159,6 +133,9 @@ export function PurchaseOrdersPageClient({
   };
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [cancelTargetId, setCancelTargetId] = useState<string | null>(null);
+  const [cancelTargetDoc, setCancelTargetDoc] = useState('');
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
   const [page, setPage] = useState(initialPage);
   const [pageSize] = useState(DEFAULT_PAGE_SIZE);
   const [totalCount, setTotalCount] = useState(initialTotalCount ?? 0);
@@ -211,13 +188,19 @@ export function PurchaseOrdersPageClient({
     }
   };
 
-  const handleCancel = (id: string) => {
+  /** Batal dari daftar: dialog alasan (wajib) → PIN. Dulu dialog bawaan peramban + alasan Inggris tetap. */
+  const handleCancel = (po: PurchaseOrder) => {
     if (!session?.user?.id) {
       toast.error(tToasts('youMustBeLoggedIn'));
       return;
     }
-    if (!confirm(tPO('confirmCancelPO'))) return;
-    setCancelTargetId(id);
+    setCancelTargetId(po.id);
+    setCancelTargetDoc(po.docNumber);
+    setCancelDialogOpen(true);
+  };
+
+  const lanjutBatal = (alasan: string) => {
+    setCancelReason(alasan);
     setPinModalOpen(true);
   };
 
@@ -232,7 +215,7 @@ export function PurchaseOrdersPageClient({
 
     let hasil: Awaited<ReturnType<typeof batalkanPO>>;
     try {
-      hasil = await batalkanPO(cancelTargetId, 'PO cancelled from list', pin);
+      hasil = await batalkanPO(cancelTargetId, cancelReason, pin);
     } catch {
       // Galat jaringan/server: tampil di jendela PIN, bukan "PIN tidak valid".
       throw new Error(tToasts('failedToCancelPO'));
@@ -250,6 +233,7 @@ export function PurchaseOrdersPageClient({
     }
     setPinModalOpen(false);
     setCancelTargetId(null);
+    setCancelReason('');
     fetchPOs();
   };
 
@@ -313,7 +297,7 @@ export function PurchaseOrdersPageClient({
           <SelectContent>
             <SelectItem value="__all__">{tPO('allStatus')}</SelectItem>
             <SelectItem value="overdue">{tPO('filterOverdue')}</SelectItem>
-            {(Object.keys(statusLabels) as POStatus[]).map((status) => (
+            {SEMUA_STATUS.map((status) => (
               <SelectItem key={status} value={status}>
                 {tStatus(getStatusMeta('purchaseOrder', status).labelKey as never)}
               </SelectItem>
@@ -371,7 +355,11 @@ export function PurchaseOrdersPageClient({
                 <TableBody>
                   {filteredPOs.map((po) => (
                     <TableRow key={po.id}>
-                      <TableCell className="font-medium">{po.docNumber}</TableCell>
+                      <TableCell>
+                        <Link href={`/backoffice/purchase-orders/${po.id}`} className={TAUTAN_DOKUMEN}>
+                          {po.docNumber}
+                        </Link>
+                      </TableCell>
                       <TableCell className="whitespace-normal">
                         <div>
                           <p className="font-medium">{po.supplier.name}</p>
@@ -387,13 +375,15 @@ export function PurchaseOrdersPageClient({
                             const meta = getStatusMeta('purchaseOrder', po.status);
                             return <StatusPill tone={meta.tone}>{tStatus(meta.labelKey as never)}</StatusPill>;
                           })()}
-                          <span className="2xl:hidden">
-                            {po.paidAt ? (
-                              <StatusPill tone="settled">{tPO('paid')}</StatusPill>
-                            ) : (
-                              <StatusPill tone="waiting">{tPO('unpaid')}</StatusPill>
-                            )}
-                          </span>
+                          {tampilStatusBayar(po.status) && (
+                            <span className="2xl:hidden">
+                              {po.paidAt ? (
+                                <StatusPill tone="settled">{tPO('paid')}</StatusPill>
+                              ) : (
+                                <StatusPill tone="waiting">{tPO('unpaid')}</StatusPill>
+                              )}
+                            </span>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -410,7 +400,9 @@ export function PurchaseOrdersPageClient({
                         )}
                       </TableCell>
                       <TableCell className="hidden 2xl:table-cell">
-                        {po.paidAt ? (
+                        {!tampilStatusBayar(po.status) ? (
+                          <span className="text-muted-foreground">—</span>
+                        ) : po.paidAt ? (
                           <StatusPill tone="settled">{tPO('paid')}</StatusPill>
                         ) : (
                           <StatusPill tone="waiting">{tPO('unpaid')}</StatusPill>
@@ -474,12 +466,12 @@ export function PurchaseOrdersPageClient({
                               <Send className="h-4 w-4" />
                             </Button>
                           )}
-                          {(po.status === 'DRAFT' || po.status === 'SUBMITTED') && (
+                          {keadaanBatalPo({ status: po.status, items: po.items, jumlahGrn: po._count?.grns }) === 'boleh' && (
                             <Button
                               variant="ghost"
                               size="icon"
                               className="text-destructive"
-                              onClick={() => handleCancel(po.id)}
+                              onClick={() => handleCancel(po)}
                               aria-label={`${tPO('cancel')} — ${po.docNumber}`}
                               title={tPO('cancel')}
                             >
@@ -505,11 +497,19 @@ export function PurchaseOrdersPageClient({
         </CardContent>
       </Card>
 
+      <BatalPoDialog
+        open={cancelDialogOpen}
+        onOpenChange={setCancelDialogOpen}
+        docNumber={cancelTargetDoc}
+        onLanjut={lanjutBatal}
+      />
+
       <PinAuthModal
         isOpen={pinModalOpen}
         onClose={() => {
           setPinModalOpen(false);
           setCancelTargetId(null);
+          setCancelReason('');
         }}
         onConfirm={handlePinConfirm}
         action={tPO('pinActionCancelPO')}

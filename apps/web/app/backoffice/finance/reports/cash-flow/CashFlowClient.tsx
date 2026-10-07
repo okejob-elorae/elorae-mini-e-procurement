@@ -23,6 +23,11 @@ import { exportCashFlowExcel } from "@/app/actions/finance-reports";
 import { formatDisplayDate, parseDateOnly } from "@/lib/date-only";
 import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
 import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
+import { LabelPeriode } from "../LabelPeriode";
+import { CASH_FLOW_COVERAGE_BODY } from "@/lib/finance/reports/disclosures";
+import { SpandukBukuBesar } from "../../_kesiapan/SpandukBukuBesar";
+import { periodeLaporan, type KesiapanBukuBesar } from "../../_kesiapan/kesiapan";
+import type { AksesSpanduk } from "../../_kesiapan/baca";
 
 type Report = Awaited<ReturnType<typeof getCashFlowReport>>;
 
@@ -37,6 +42,9 @@ type Props = {
    * each state names the fix, so a reader still learns what is wrong.
    */
   canManageJournals: boolean;
+  hariIni: string;
+  kesiapan: KesiapanBukuBesar | null;
+  akses: AksesSpanduk;
 };
 
 function formatRupiah(value: number): string {
@@ -51,7 +59,7 @@ function displayPeriodLabel(label: string, locale: string): string {
   return label.replace(/\d{4}-\d{2}-\d{2}/g, (iso) => formatDisplayDate(parseDateOnly(iso), locale));
 }
 
-export function CashFlowClient({ report, filters, canManageJournals }: Props) {
+export function CashFlowClient({ report, filters, canManageJournals, hariIni, kesiapan, akses }: Props) {
   const router = useRouter();
   const sp = useSearchParams();
   const t = useTranslations("financeReports");
@@ -60,6 +68,9 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
   const [isPending, startTransition] = useTransition();
 
   const cmp = report.comparison;
+  const periode = periodeLaporan({ dari: filters.from, sampai: filters.to }, hariIni);
+  // Daftar sumber yang belum berjurnal hanya ditulis di satu tempat (`disclosures.ts`).
+  const cakupan = locale.toLowerCase().startsWith("id") ? CASH_FLOW_COVERAGE_BODY : t("cashFlow.coverageBody");
   const columns = cmp ? 4 : 2;
 
   /**
@@ -164,9 +175,12 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-1">
-          <h1 className="text-2xl font-bold tracking-tight">{t("cashFlow.pageTitle")}</h1>
-          <TombolBantuan judul={t("cashFlow.pageTitle")} />
+        <div>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-bold tracking-tight">{t("cashFlow.pageTitle")}</h1>
+            <TombolBantuan judul={t("cashFlow.pageTitle")} />
+          </div>
+          <LabelPeriode jenis="rentang" dari={periode.dari} sampai={periode.sampai} />
         </div>
         {canExport && (
           <ReportExportButtons
@@ -175,6 +189,8 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
           />
         )}
       </div>
+
+      <SpandukBukuBesar kesiapan={kesiapan} akses={akses} />
 
       <Card className="p-4">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -344,7 +360,7 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
                 <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                 <div>
                   <p className="font-medium">{t("cashFlow.coverageTitle")}</p>
-                  <p className="text-muted-foreground">{t("cashFlow.coverageBody")}</p>
+                  <p className="text-muted-foreground">{cakupan}</p>
                 </div>
               </div>
             </CardContent>

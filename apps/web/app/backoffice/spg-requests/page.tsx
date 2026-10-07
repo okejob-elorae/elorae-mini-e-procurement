@@ -88,6 +88,7 @@ export default async function PermintaanKirimanPage({
       jumlahAktif={baru.length + diproses.length}
       terpotong={terpotong}
       bolehUbah={hasPermission(izin, PERMISSIONS.STORES_MANAGE)}
+      bolehLihatSpg={hasPermission(izin, PERMISSIONS.SPG_SALES_VIEW)}
     />
   );
 }

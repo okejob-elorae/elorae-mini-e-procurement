@@ -24,8 +24,8 @@ vi.mock("@/lib/dashboard/queries", () => ({
     state.argStats.push(arg);
     return {
       po: { draft: 2, submitted: 0, inProduction: 0, thisWeek: 0, overdue: 0, totalValue: null },
-      workOrders: { inProduction: 1, completedToday: 0 },
-      items: { activeCount: 0, lowStockCount: 3 },
+      workOrders: { inProduction: 1, sedangDiproduksi: 1, selesaiSebagian: 0, completedToday: 0 },
+      items: { activeCount: 0, lowStockCount: 3, habisCount: 0 },
       suppliers: { activeCount: 4 },
       inventory: { totalValue: null },
       grnsThisWeek: 1,
@@ -53,7 +53,7 @@ vi.mock("@/lib/dashboard/action-items", async (importOriginal) => {
       salesReturnPending: 0,
       journalPending: 0,
     })),
-    getClaimsAwaitingVerification: vi.fn(async () => ({ count: 0, amount: 0 })),
+    getClaimsAwaitingVerification: vi.fn(async () => ({ bisaDiputuskan: { count: 0, amount: 0 }, milikSendiri: { count: 0, amount: 0 } })),
   };
 });
 vi.mock("@/lib/dashboard/antrean-kantor", async (importOriginal) => ({

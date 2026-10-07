@@ -1,13 +1,29 @@
 /**
- * Vendor Return (Nota Retur) — shared print theme.
+ * Nota retur ke pemasok — tema cetak bersama. Label, kode jenis/kondisi/status,
+ * angka, dan tanggal berbahasa Indonesia (WIB); label bawaan `LABEL_CETAK_RETUR`.
  */
 
-import {
-  esc,
-  fmtDocDateTime,
-  printCssBase,
-  printPagePortrait,
-} from '@/lib/print/print-theme';
+import { esc, printCssBase, printPagePortrait } from '@/lib/print/print-theme';
+import { uangCetak } from '@/lib/print/po-html';
+
+/** "6 Okt 2026, 00.30" (WIB). */
+function waktuCetak(d: Date | string | null | undefined): string {
+  if (d == null || d === '') return '';
+  const x = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(x.getTime())) return '';
+  return new Intl.DateTimeFormat('id-ID', {
+    timeZone: 'Asia/Jakarta',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(x);
+}
+
+const JENIS_RETUR: Record<string, string> = { FABRIC: 'Kain', ACCESSORIES: 'Aksesoris', FG_REJECT: 'Barang jadi reject' };
+const KONDISI_RETUR: Record<string, string> = { GOOD: 'Baik', DAMAGED: 'Rusak', DEFECTIVE: 'Cacat' };
+const STATUS_RETUR: Record<string, string> = { DRAFT: 'Draf', PROCESSED: 'Diproses', COMPLETED: 'Selesai' };
 
 export type VendorReturnPrintLine = {
   type: string;
@@ -26,12 +42,17 @@ export interface BuildVendorReturnPrintHtmlOptions {
   totalValue: number;
   status: string;
   woDocNumber?: string;
+  /** PO yang utangnya dikurangi retur ini. */
+  poDocNumber?: string | null;
   processedAt?: Date | string | null;
   completedAt?: Date | string | null;
   trackingNumber?: string | null;
   lines: VendorReturnPrintLine[];
   issuerName?: string;
-  labels: {
+  labels?: LabelCetakRetur;
+}
+
+export type LabelCetakRetur = {
     title: string;
     doc: string;
     vendor: string;
@@ -46,11 +67,31 @@ export interface BuildVendorReturnPrintHtmlOptions {
     condition: string;
     reason: string;
     value: string;
-    /** Label for status row (default "Status"). */
+    /** Label baris status (bawaan "Status"). */
     status?: string;
     issuedBy?: string;
-  };
-}
+    po?: string;
+};
+
+export const LABEL_CETAK_RETUR: LabelCetakRetur = {
+  title: 'Nota Retur',
+  doc: 'No. dokumen',
+  vendor: 'Pemasok',
+  totalValue: 'Nilai retur',
+  workOrder: 'Perintah kerja',
+  processed: 'Diproses',
+  completed: 'Selesai',
+  tracking: 'Resi',
+  type: 'Jenis',
+  item: 'Barang',
+  qty: 'Qty',
+  condition: 'Kondisi',
+  reason: 'Alasan',
+  value: 'Nilai',
+  status: 'Status',
+  issuedBy: 'Diterbitkan oleh',
+  po: 'Mengurangi utang PO',
+};
 
 export function buildVendorReturnPrintHtml(
   opts: BuildVendorReturnPrintHtmlOptions
@@ -61,21 +102,22 @@ export function buildVendorReturnPrintHtml(
     totalValue,
     status,
     woDocNumber,
+    poDocNumber,
     processedAt,
     completedAt,
     trackingNumber,
     lines,
-    issuerName = 'Elorae ERP',
-    labels,
+    issuerName = 'Eloraé',
+    labels = LABEL_CETAK_RETUR,
   } = opts;
 
-  const issuedByLabel = labels.issuedBy ?? 'Issued by';
+  const issuedByLabel = labels.issuedBy ?? LABEL_CETAK_RETUR.issuedBy ?? '';
   const statusLabel = labels.status ?? 'Status';
 
   const itemDisplay = (line: VendorReturnPrintLine) => {
     const name = line.itemName ?? line.itemId;
     if (line.type === 'FABRIC' && line.rollRef) return `${name} – ${line.rollRef} (${line.qty})`;
-    if (line.type === 'FG_REJECT') return `${name} — Source: Reject stock`;
+    if (line.type === 'FG_REJECT') return `${name} — Sumber: stok reject`;
     return name;
   };
 
@@ -83,32 +125,37 @@ export function buildVendorReturnPrintHtml(
     .map(
       (line) =>
         `<tr>
-          <td class="uom">${esc(line.type)}</td>
+          <td class="uom">${esc(JENIS_RETUR[line.type] ?? line.type)}</td>
           <td class="col-desc"><div class="line-name">${esc(itemDisplay(line))}</div></td>
           <td class="right">${Number(line.qty).toLocaleString('id-ID')}</td>
-          <td>${esc(line.condition)}</td>
+          <td>${esc(KONDISI_RETUR[line.condition] ?? line.condition)}</td>
           <td>${esc(line.reason)}</td>
-          <td class="right">${(line.costValue ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+          <td class="right">${esc(uangCetak('IDR', line.costValue ?? 0))}</td>
         </tr>`
     )
     .join('');
 
   const metaRows: string[] = [
-    `<div class="meta-row"><span class="mk">${esc(statusLabel)}</span><span class="mv">${esc(status)}</span></div>`,
+    `<div class="meta-row"><span class="mk">${esc(statusLabel)}</span><span class="mv">${esc(STATUS_RETUR[status] ?? status)}</span></div>`,
   ];
   if (woDocNumber) {
     metaRows.push(
       `<div class="meta-row"><span class="mk">${esc(labels.workOrder)}</span><span class="mv">${esc(woDocNumber)}</span></div>`
     );
   }
+  if (poDocNumber) {
+    metaRows.push(
+      `<div class="meta-row"><span class="mk">${esc(labels.po ?? LABEL_CETAK_RETUR.po ?? '')}</span><span class="mv">${esc(poDocNumber)}</span></div>`
+    );
+  }
   if (processedAt != null && processedAt !== '') {
     metaRows.push(
-      `<div class="meta-row"><span class="mk">${esc(labels.processed)}</span><span class="mv">${esc(fmtDocDateTime(processedAt))}</span></div>`
+      `<div class="meta-row"><span class="mk">${esc(labels.processed)}</span><span class="mv">${esc(waktuCetak(processedAt))}</span></div>`
     );
   }
   if (completedAt != null && completedAt !== '') {
     metaRows.push(
-      `<div class="meta-row"><span class="mk">${esc(labels.completed)}</span><span class="mv">${esc(fmtDocDateTime(completedAt))}</span></div>`
+      `<div class="meta-row"><span class="mk">${esc(labels.completed)}</span><span class="mv">${esc(waktuCetak(completedAt))}</span></div>`
     );
   }
   if (trackingNumber?.trim()) {
@@ -153,7 +200,7 @@ ${printPagePortrait}
     <div class="totals">
       <div class="grand-row">
         <span class="gk">${esc(labels.totalValue)}</span>
-        <span class="gv">Rp ${Number(totalValue).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+        <span class="gv">${esc(uangCetak('IDR', Number(totalValue)))}</span>
       </div>
     </div>
   </div>

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId, seededIds } from "@elorae/db";
 import { getSalesmenSalesSummary } from "./queries";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -15,6 +15,9 @@ d("getSalesmenSalesSummary (test bed only)", () => {
   const vanSaleIds: string[] = [];
 
   beforeEach(async () => {
+    storeId = "";
+    salesmanAId = "";
+    salesmanBId = "";
     const store = await prisma.store.create({
       data: { code: tag, name: "T", address: "T", termsType: "PUTUS", isActive: true },
     });
@@ -31,11 +34,11 @@ d("getSalesmenSalesSummary (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.vanSale.deleteMany({ where: { id: { in: vanSaleIds } } });
-    await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: { in: fsoIds } } });
-    await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: fsoIds } } });
-    await prisma.user.deleteMany({ where: { id: { in: [salesmanAId, salesmanBId] } } });
-    await prisma.store.deleteMany({ where: { id: storeId } });
+    await prisma.vanSale.deleteMany({ where: { id: { in: seededIds(vanSaleIds) } } });
+    await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: { in: seededIds(fsoIds) } } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: seededIds(fsoIds) } } });
+    await prisma.user.deleteMany({ where: { id: { in: seededIds([salesmanAId, salesmanBId].filter(Boolean)) } } });
+    if (storeId) await prisma.store.delete({ where: { id: seededId(storeId) } });
     fsoIds.length = 0;
     vanSaleIds.length = 0;
   });
@@ -45,10 +48,11 @@ d("getSalesmenSalesSummary (test bed only)", () => {
     salesmanId: string,
     status: "PENDING_APPROVAL" | "APPROVED" | "REJECTED",
     orderType: "PUTUS" | "KONSI",
-    total: number
+    total: number,
+    deliveryStatus: "PENDING" | "PARTIAL" | "DELIVERED" | "CLOSED" = "PENDING",
   ) {
     const order = await prisma.fieldSalesOrder.create({
-      data: { orderNo: `${tag}-${seq}`, storeId, salesmanId, status, orderType, subtotal: total, total },
+      data: { orderNo: `${tag}-${seq}`, storeId, salesmanId, status, orderType, subtotal: total, total, deliveryStatus },
     });
     fsoIds.push(order.id);
     return order;
@@ -87,7 +91,7 @@ d("getSalesmenSalesSummary (test bed only)", () => {
 
   it("realised = delivered putus + van sale; outstanding = pending putus; konsi/rejected/undelivered excluded; sorted by realised desc; totals correct", async () => {
     // Salesman A: approved putus 1000 delivered in full, pending putus 500, konsi approved 300 (excluded), rejected putus 200 (excluded), van sale 400
-    const orderA = await makeOrder(1, salesmanAId, "APPROVED", "PUTUS", 1000);
+    const orderA = await makeOrder(1, salesmanAId, "APPROVED", "PUTUS", 1000, "DELIVERED");
     await makeDelivery(1, orderA.id, salesmanAId, 1000);
     await makeOrder(2, salesmanAId, "PENDING_APPROVAL", "PUTUS", 500);
     await makeOrder(3, salesmanAId, "APPROVED", "KONSI", 300);
@@ -95,7 +99,7 @@ d("getSalesmenSalesSummary (test bed only)", () => {
     await makeVanSale(1, salesmanAId, 400);
 
     // Salesman B: approved putus 2000 delivered in full, pending putus 100, van sale 50
-    const orderB = await makeOrder(5, salesmanBId, "APPROVED", "PUTUS", 2000);
+    const orderB = await makeOrder(5, salesmanBId, "APPROVED", "PUTUS", 2000, "DELIVERED");
     await makeDelivery(2, orderB.id, salesmanBId, 2000);
     await makeOrder(6, salesmanBId, "PENDING_APPROVAL", "PUTUS", 100);
     await makeVanSale(2, salesmanBId, 50);
@@ -108,7 +112,10 @@ d("getSalesmenSalesSummary (test bed only)", () => {
     expect(rowB).toBeDefined();
     // 1000 delivered putus + 400 van = 1400, 2 realised transactions (1 delivery + 1 van sale)
     expect(rowA!.realised).toEqual({ count: 2, amount: 1400 });
+    // Rinciannya disebut apa adanya — "2 transaksi" membuka daftar pesanan yang berisi 1.
+    expect(rowA!.realisedRincian).toEqual({ pengiriman: 1, van: 1 });
     expect(rowA!.outstanding).toEqual({ count: 1, amount: 500 });
+    expect(rowA!.menungguKirim).toEqual({ count: 0, amount: 0 });
     // 2000 delivered putus + 50 van = 2050
     expect(rowB!.realised).toEqual({ count: 2, amount: 2050 });
     expect(rowB!.outstanding).toEqual({ count: 1, amount: 100 });
@@ -133,13 +140,31 @@ d("getSalesmenSalesSummary (test bed only)", () => {
     /* Approved and never delivered — the goods are still in the warehouse, so nothing is realised. */
     await makeOrder(7, salesmanAId, "APPROVED", "PUTUS", 900);
     /* Approved for 800, only 300 of it shipped. */
-    const partly = await makeOrder(8, salesmanBId, "APPROVED", "PUTUS", 800);
+    const partly = await makeOrder(8, salesmanBId, "APPROVED", "PUTUS", 800, "PARTIAL");
     await makeDelivery(3, partly.id, salesmanBId, 300);
 
     const summary = await getSalesmenSalesSummary();
-    expect(summary.rows.some((r) => r.salesmanId === salesmanAId)).toBe(false);
+    const rowA = summary.rows.find((r) => r.salesmanId === salesmanAId);
+    expect(rowA!.realised).toEqual({ count: 0, amount: 0 });
     const rowB = summary.rows.find((r) => r.salesmanId === salesmanBId);
     expect(rowB!.realised).toEqual({ count: 1, amount: 300 });
+    expect(rowB!.menungguKirim).toEqual({ count: 0, amount: 0 });
+  });
+
+  it("pesanan putus yang sudah disetujui tetapi belum dikirim punya embernya sendiri — tidak hilang dari kedua angka", async () => {
+    // Sama dengan daftar `?kirim=PENDING`: DISETUJUI, PUTUS, belum satu pun pengiriman.
+    await makeOrder(9, salesmanAId, "APPROVED", "PUTUS", 900);
+    await makeOrder(10, salesmanAId, "APPROVED", "PUTUS", 100);
+    await makeOrder(11, salesmanAId, "APPROVED", "KONSI", 700); // transfer, bukan penjualan
+    await makeOrder(12, salesmanAId, "PENDING_APPROVAL", "PUTUS", 50); // masih menunggu persetujuan
+    await makeOrder(13, salesmanAId, "REJECTED", "PUTUS", 60); // ditolak/dibatalkan
+
+    const summary = await getSalesmenSalesSummary();
+    const rowA = summary.rows.find((r) => r.salesmanId === salesmanAId);
+    expect(rowA!.menungguKirim).toEqual({ count: 2, amount: 1000 });
+    expect(rowA!.outstanding).toEqual({ count: 1, amount: 50 });
+    expect(rowA!.realised).toEqual({ count: 0, amount: 0 });
+    expect(summary.totals.menungguKirim.count).toBeGreaterThanOrEqual(2);
   });
 
   it("returns no row for a salesman with no eligible orders/van sales", async () => {

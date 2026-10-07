@@ -5,7 +5,9 @@ import { listItems, getItemCounts } from '@/lib/items/queries';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 import { ItemType } from '@elorae/db';
 import { getPrimaryImagesBatch } from '@/lib/items/images/queries';
+import { listItemCategories } from '@/lib/item-categories/queries';
 import { ItemsPageClient } from './ItemsPageClient';
+import { bacaSaringBarang, isActiveDariStatus } from './saring-barang';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +16,8 @@ type PageProps = {
     search?: string;
     type?: string;
     page?: string;
+    kategori?: string;
+    status?: string;
   }>;
 };
 
@@ -36,17 +40,21 @@ export default async function ItemsPage({ searchParams }: PageProps) {
   const search = sp.search?.trim() ?? '';
   const typeFilter = parseTypeFilter(sp.type);
   const page = Math.max(1, parseInt(sp.page ?? '1', 10) || 1);
+  const saring = bacaSaringBarang(sp);
 
-  const [listResult, counts, itemTypeMasters] = await Promise.all([
+  const [listResult, counts, itemTypeMasters, kategori] = await Promise.all([
     listItems(
       {
         search: search || undefined,
         type: typeFilter,
+        categoryId: saring.kategori || undefined,
+        isActive: isActiveDariStatus(saring.status),
       },
       { page, pageSize: DEFAULT_PAGE_SIZE }
     ),
     getItemCounts(),
     getItemTypeMasters(),
+    listItemCategories(true),
   ]);
 
   const items = 'items' in listResult ? listResult.items : [];
@@ -65,6 +73,9 @@ export default async function ItemsPage({ searchParams }: PageProps) {
       itemTypeMasters={itemTypeMasters}
       search={search}
       typeFilter={typeFilter ?? ''}
+      kategoriFilter={saring.kategori}
+      statusFilter={saring.status}
+      kategori={kategori.map((k) => ({ id: k.id, name: k.name, code: k.code ?? null }))}
       page={page}
       pageSize={DEFAULT_PAGE_SIZE}
       primaryImages={primaryImages}

@@ -4,12 +4,16 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { getBalanceSheetReport } from "@/app/actions/finance-reports";
+import { bacaKesiapanCetakAction, type KesiapanCetak } from "@/app/backoffice/finance/_kesiapan/aksi";
+import { CatatanBukuBesar } from "../CatatanBukuBesar";
 import type { RollupNode } from "@/lib/finance/reports/rollup";
 import {
+  BALANCE_SHEET_EMPTY_NOTE,
   BALANCE_SHEET_OPENING_TITLE,
   balanceSheetOpeningBody,
   formatOpeningDate,
 } from "@/lib/finance/reports/disclosures";
+import { adaMutasiPohon } from "@/app/backoffice/finance/_kesiapan/kesiapan";
 
 type Report = Awaited<ReturnType<typeof getBalanceSheetReport>>;
 
@@ -33,10 +37,17 @@ export default function PrintBalanceSheetPage() {
   const sp = useSearchParams();
   const printedRef = useRef(false);
   const [report, setReport] = useState<Report | "error" | null>(null);
+  const [kesiapan, setKesiapan] = useState<KesiapanCetak | null>(null);
 
   useEffect(() => {
-    getBalanceSheetReport({ asOf: sp.get("asOf") ?? undefined })
-      .then(setReport)
+    Promise.all([
+      getBalanceSheetReport({ asOf: sp.get("asOf") ?? undefined }),
+      bacaKesiapanCetakAction().catch(() => null),
+    ])
+      .then(([r, k]) => {
+        setKesiapan(k);
+        setReport(r);
+      })
       .catch(() => setReport("error"));
   }, [sp]);
 
@@ -86,48 +97,55 @@ export default function PrintBalanceSheetPage() {
         <p className="mt-1 text-xs text-gray-600">Disiapkan oleh: {report.preparedBy}</p>
         <p className="text-xs text-gray-600">Dicetak: {report.printedAt}</p>
       </div>
-      <table className="w-full text-sm">
-        <tbody>
-          <tr className="print-statement-band bg-gray-100 font-semibold">
-            <td className="py-1" colSpan={2}>
-              ASET
-            </td>
-          </tr>
-          {nodeRows(report.aset)}
-          <tr className="font-semibold">
-            <td className="py-1">Total Aset</td>
-            <td className="py-1 text-right">{formatRupiah(report.totalAset)}</td>
-          </tr>
-          <tr className="print-statement-band bg-gray-100 font-semibold">
-            <td className="py-1" colSpan={2}>
-              LIABILITAS
-            </td>
-          </tr>
-          {nodeRows(report.liabilitas)}
-          <tr className="font-semibold">
-            <td className="py-1">Total Liabilitas</td>
-            <td className="py-1 text-right">{formatRupiah(report.totalLiabilitas)}</td>
-          </tr>
-          <tr className="print-statement-band bg-gray-100 font-semibold">
-            <td className="py-1" colSpan={2}>
-              EKUITAS
-            </td>
-          </tr>
-          {nodeRows(report.ekuitas)}
-          <tr className="font-semibold">
-            <td className="py-1">Total Ekuitas</td>
-            <td className="py-1 text-right">{formatRupiah(report.totalEkuitas)}</td>
-          </tr>
-          <tr className="border-b border-gray-200">
-            <td className="py-1 pl-4">Laba (Rugi) Belum Ditutup</td>
-            <td className="py-1 text-right">{formatRupiah(report.unclosedEarnings)}</td>
-          </tr>
-          <tr className="border-t-2 border-black font-bold">
-            <td className="py-1">Total Liabilitas dan Ekuitas</td>
-            <td className="py-1 text-right">{formatRupiah(report.totalLiabilitasEkuitas)}</td>
-          </tr>
-        </tbody>
-      </table>
+      <CatatanBukuBesar kesiapan={kesiapan} />
+      {!adaMutasiPohon([...report.aset, ...report.liabilitas, ...report.ekuitas]) && report.unclosedEarnings === 0 ? (
+        <p className="py-6 text-center text-sm">{BALANCE_SHEET_EMPTY_NOTE}</p>
+      ) : (
+        <>
+          <table className="w-full text-sm">
+            <tbody>
+              <tr className="print-statement-band bg-gray-100 font-semibold">
+                <td className="py-1" colSpan={2}>
+                  ASET
+                </td>
+              </tr>
+              {nodeRows(report.aset)}
+              <tr className="font-semibold">
+                <td className="py-1">Total Aset</td>
+                <td className="py-1 text-right">{formatRupiah(report.totalAset)}</td>
+              </tr>
+              <tr className="print-statement-band bg-gray-100 font-semibold">
+                <td className="py-1" colSpan={2}>
+                  LIABILITAS
+                </td>
+              </tr>
+              {nodeRows(report.liabilitas)}
+              <tr className="font-semibold">
+                <td className="py-1">Total Liabilitas</td>
+                <td className="py-1 text-right">{formatRupiah(report.totalLiabilitas)}</td>
+              </tr>
+              <tr className="print-statement-band bg-gray-100 font-semibold">
+                <td className="py-1" colSpan={2}>
+                  EKUITAS
+                </td>
+              </tr>
+              {nodeRows(report.ekuitas)}
+              <tr className="font-semibold">
+                <td className="py-1">Total Ekuitas</td>
+                <td className="py-1 text-right">{formatRupiah(report.totalEkuitas)}</td>
+              </tr>
+              <tr className="border-b border-gray-200">
+                <td className="py-1 pl-4">Laba (Rugi) Belum Ditutup</td>
+                <td className="py-1 text-right">{formatRupiah(report.unclosedEarnings)}</td>
+              </tr>
+              <tr className="border-t-2 border-black font-bold">
+                <td className="py-1">Total Liabilitas dan Ekuitas</td>
+                <td className="py-1 text-right">{formatRupiah(report.totalLiabilitasEkuitas)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </>
+      )}
       {report.openingWarningDate && (
         <div className="mt-4 text-xs text-gray-700">
           <p className="font-semibold">{BALANCE_SHEET_OPENING_TITLE}</p>

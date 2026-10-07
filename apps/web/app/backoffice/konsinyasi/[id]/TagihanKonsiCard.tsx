@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { newLocalId } from "@/lib/pwa/id-lokal";
 import { dinamis } from "@/lib/i18n/dinamis";
 import type { PelunasanToko, PembayaranToko, TagihanSiklus } from "@/lib/konsinyasi/queries";
 import type { CaraBayarToko } from "@/lib/konsinyasi/writer";
@@ -69,6 +70,9 @@ export function TagihanKonsiCard({
   const [tgl, setTgl] = useState(hariIniWib());
   const [cara, setCara] = useState<CaraBayarToko>("transfer");
   const [catatan, setCatatan] = useState("");
+  // Kunci kiriman pembayaran: diganti HANYA sesudah simpan berhasil. Jawaban yang
+  // hilang lalu dialog ditutup-buka dan diketik ulang tetap pembayaran yang sama.
+  const [kunciBayar, setKunciBayar] = useState(() => newLocalId());
 
   const [batal, setBatal] = useState<PembayaranToko | null>(null);
   const [alasan, setAlasan] = useState("");
@@ -273,9 +277,13 @@ export function TagihanKonsiCard({
               disabled={pending || !jumlahSah || !tgl}
               onClick={() =>
                 jalankan(
-                  () => catatPembayaranTokoAction({ cycleId, jumlah: nilaiJumlah, tanggal: tgl, cara, catatan }),
+                  () =>
+                    catatPembayaranTokoAction({ cycleId, jumlah: nilaiJumlah, tanggal: tgl, cara, catatan, idempotencyKey: kunciBayar }),
                   t("okRecorded"),
-                  () => setCatatTerbuka(false),
+                  () => {
+                    setCatatTerbuka(false);
+                    setKunciBayar(newLocalId());
+                  },
                 )
               }
             >

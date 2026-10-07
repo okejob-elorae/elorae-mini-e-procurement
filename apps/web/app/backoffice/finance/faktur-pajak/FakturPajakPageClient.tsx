@@ -1,10 +1,17 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { Receipt, Search, AlertCircle } from "lucide-react";
+import { Receipt, Search, AlertCircle, MoreHorizontal } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -52,6 +59,8 @@ type Props = {
   page: number;
   pageSize: number;
   canManage: boolean;
+  /** No. Nota menjadi tautan ke pesanan (tempat nota & isi barangnya) hanya bila boleh membukanya. */
+  canViewOrder: boolean;
   loadError: boolean;
 };
 
@@ -292,7 +301,7 @@ export function FakturPajakPageClient(props: Props) {
                           <TableHead>{t("colInvoiceDate")}</TableHead>
                           <TableHead>{t("colDueDate")}</TableHead>
                           <TableHead className="text-right">{t("colTotal")}</TableHead>
-                          <TableHead>{t("colPrinted")}</TableHead>
+                          <TableHead className="hidden 2xl:table-cell">{t("colPrinted")}</TableHead>
                           <TableHead>{t("colStatus")}</TableHead>
                           {props.canManage && <TableHead>{tCommon("actions")}</TableHead>}
                         </TableRow>
@@ -302,7 +311,18 @@ export function FakturPajakPageClient(props: Props) {
                           const status = row.status as TaxInvoiceStatusFilter;
                           return (
                             <TableRow key={row.id}>
-                              <TableCell className="font-medium whitespace-nowrap">{row.docNo}</TableCell>
+                              <TableCell className="font-medium whitespace-nowrap">
+                                {props.canViewOrder ? (
+                                  <Link
+                                    href={`/backoffice/field-sales-orders/${encodeURIComponent(row.orderId)}`}
+                                    className="underline underline-offset-4"
+                                  >
+                                    {row.docNo}
+                                  </Link>
+                                ) : (
+                                  row.docNo
+                                )}
+                              </TableCell>
                               <TableCell className="max-w-[180px] truncate">{row.storeName}</TableCell>
                               <TableCell className="whitespace-nowrap">
                                 {formatDisplayDate(row.invoiceDate, locale)}
@@ -313,7 +333,7 @@ export function FakturPajakPageClient(props: Props) {
                               <TableCell className="text-right whitespace-nowrap">
                                 {formatRupiah(row.total)}
                               </TableCell>
-                              <TableCell className="whitespace-nowrap">
+                              <TableCell className="hidden 2xl:table-cell whitespace-nowrap">
                                 {row.notaPrintedAt ? (
                                   formatDisplayDate(row.notaPrintedAt, locale)
                                 ) : (
@@ -335,25 +355,35 @@ export function FakturPajakPageClient(props: Props) {
                               </TableCell>
                               {props.canManage && (
                                 <TableCell>
-                                  <div className="flex flex-wrap items-center gap-2">
+                                  <div className="flex flex-nowrap items-center gap-1">
                                     {status === "PENDING" ? (
                                       <>
                                         <Button
                                           variant="outline"
                                           size="sm"
-                                          className="h-10"
+                                          className="h-10 whitespace-nowrap"
                                           onClick={() => openDialog("markCreated", row)}
                                         >
                                           {t("actionMarkCreated")}
                                         </Button>
-                                        <Button
-                                          variant="outline"
-                                          size="sm"
-                                          className="h-10"
-                                          onClick={() => openDialog("notRequired", row)}
-                                        >
-                                          {t("actionNotRequired")}
-                                        </Button>
+                                        <DropdownMenu>
+                                          <DropdownMenuTrigger asChild>
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-10 w-10"
+                                              aria-label={t("actionMore")}
+                                              title={t("actionMore")}
+                                            >
+                                              <MoreHorizontal className="h-4 w-4" />
+                                            </Button>
+                                          </DropdownMenuTrigger>
+                                          <DropdownMenuContent align="end">
+                                            <DropdownMenuItem onClick={() => openDialog("notRequired", row)}>
+                                              {t("actionNotRequired")}
+                                            </DropdownMenuItem>
+                                          </DropdownMenuContent>
+                                        </DropdownMenu>
                                       </>
                                     ) : (
                                       <Button

@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatDisplayDate } from "@/lib/date-only";
@@ -75,27 +76,22 @@ export function JadwalSpgClient(props: PropsJadwalSpg) {
     <div className="space-y-6">
       <PageHeader title={t("judul")} />
 
-      <div className="flex flex-wrap gap-2" role="tablist" aria-label={t("judul")}>
-        <Button
-          role="tab"
-          aria-selected={props.tab === "jadwal"}
-          variant={props.tab === "jadwal" ? "default" : "outline"}
-          onClick={() => props.tab !== "jadwal" && pindah(alamat({ tab: "jadwal" }))}
-        >
-          <CalendarRange className="mr-2 h-4 w-4" aria-hidden />
-          {t("tab.jadwal")}
-        </Button>
-        <Button
-          role="tab"
-          aria-selected={props.tab === "tukar"}
-          variant={props.tab === "tukar" ? "default" : "outline"}
-          onClick={() => props.tab !== "tukar" && pindah(alamat({ tab: "tukar" }))}
-        >
-          <ArrowLeftRight className="mr-2 h-4 w-4" aria-hidden />
-          {t("tab.tukar")}
-          {props.menungguKantor > 0 ? <Badge className="ml-2 px-1.5 py-0 tabular-nums">{props.menungguKantor}</Badge> : null}
-        </Button>
-      </div>
+      <Tabs
+        value={props.tab}
+        onValueChange={(v) => v !== props.tab && pindah(alamat({ tab: v === "tukar" ? "tukar" : "jadwal" }))}
+      >
+        <TabsList aria-label={t("judul")}>
+          <TabsTrigger value="jadwal">
+            <CalendarRange className="mr-2 h-4 w-4" aria-hidden />
+            {t("tab.jadwal")}
+          </TabsTrigger>
+          <TabsTrigger value="tukar">
+            <ArrowLeftRight className="mr-2 h-4 w-4" aria-hidden />
+            {t("tab.tukar")}
+            {props.menungguKantor > 0 ? <Badge className="ml-2 px-1.5 py-0 tabular-nums">{props.menungguKantor}</Badge> : null}
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {props.tab === "tukar" ? (
         <TukarShiftKantor data={props.tukar ?? { menunggu: [], riwayat: [], menungguRekan: 0 }} bolehUbah={props.bolehUbah} />

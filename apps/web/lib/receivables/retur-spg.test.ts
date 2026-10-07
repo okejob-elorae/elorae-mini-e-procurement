@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { prisma, seededId } from "@elorae/db";
+import { prisma, seededId, seededIds } from "@elorae/db";
 import { catatHitunganGudang, catatReturToko } from "./return-writer";
 import { batalkanReturSendiri, KATEGORI_NOTIF_RETUR_DIBATALKAN_SALES, pindahkanReturKeToko } from "./koreksi";
 
@@ -11,6 +11,22 @@ import { batalkanReturSendiri, KATEGORI_NOTIF_RETUR_DIBATALKAN_SALES, pindahkanR
  * Pengguna DIPINJAM; setiap penghapusan lewat `seededId()`; id fixture
  * dideklarasikan "" dan direset di awal hook.
  */
+
+/** Lonceng kantor "retur SPG dari toko tanpa pemegang" milik nota uji — dicocokkan di JS lewat metadata. */
+async function hapusNotifReturTanpaPemegang(notaIds: string[]) {
+  if (notaIds.length === 0) return;
+  const catatan = await prisma.adminNotification.findMany({
+    where: { category: "RETUR_SPG_TANPA_PEMEGANG" },
+    select: { id: true, metadata: true },
+  });
+  const milikUji = catatan
+    .filter((c) => {
+      const m = c.metadata as Record<string, unknown> | null;
+      return typeof m?.storeReturnId === "string" && notaIds.includes(m.storeReturnId);
+    })
+    .map((c) => c.id);
+  if (milikUji.length) await prisma.adminNotification.deleteMany({ where: { id: { in: seededIds(milikUji) } } });
+}
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -84,6 +100,9 @@ d("NRT SPG (test bed only)", () => {
     });
     if (notif.length) await prisma.adminNotification.deleteMany({ where: { id: { in: notif.map((n) => seededId(n.id)) } } });
     const toko = () => [tokoKonsiId, tokoPutusId].filter(Boolean).map(seededId);
+    // Toko uji tanpa pemegang: setiap NRT SPG membunyikan lonceng kantor.
+    const notaToko = await prisma.storeReturn.findMany({ where: { storeId: { in: toko() } }, select: { id: true } });
+    await hapusNotifReturTanpaPemegang(notaToko.map((n) => n.id));
     await prisma.storeStockMovement.deleteMany({ where: { storeId: { in: toko() } } });
     await prisma.storeOpname.deleteMany({ where: { storeId: { in: toko() } } });
     await prisma.returnCharge.deleteMany({ where: { storeReturnId: { in: nrtIds.filter(Boolean).map(seededId) } } });

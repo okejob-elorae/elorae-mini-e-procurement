@@ -34,7 +34,7 @@ import type {
   MasalahBaris,
   PratinjauPortal,
 } from "@/lib/field-sales/portal-writer";
-import { kirimPesananPortalAksi, pratinjauPesananPortalAksi } from "@/app/actions/portal-toko";
+import { kirimPesananPortalAksi, pratinjauPesananPortalAksi, type TerlaluSeringPortal } from "@/app/actions/portal-toko";
 import { TautanMati } from "./TautanMati";
 
 type Barang = BarangPortalPutus | BarangPortalKonsi;
@@ -289,7 +289,10 @@ export function PortalTokoShell({ token, katalog }: { token: string; katalog: Ka
         const r = await pratinjauPesananPortalAksi(token, masukan);
         if (batal) return;
         if (!r.ok && "code" in r && r.code === "TAUTAN_TIDAK_BERLAKU") setMati(true);
-        else if (r.ok && r.jenis === "PUTUS") {
+        else if (!r.ok && "code" in r && r.code === "TERLALU_SERING") {
+          setPratinjau(null);
+          setGalat([t("gagal.TERLALU_SERING")]);
+        } else if (r.ok && r.jenis === "PUTUS") {
           setPratinjau(r);
           setGalat(null);
         } else if (!r.ok && "masalah" in r) {
@@ -313,13 +316,17 @@ export function PortalTokoShell({ token, katalog }: { token: string; katalog: Ka
   const pratinjauTampil = perluPratinjau && !memuatPratinjau ? pratinjau : null;
 
   function pesanMasalah(m: MasalahBaris): string[] {
-    const daftar = m.nama.length > 0 ? m.nama.join(", ") : null;
+    // Stok kurang: hanya ember (Terbatas/Habis) per barang, tidak pernah angka.
+    const nama = m.code === "STOK_KURANG" && m.barang ? m.barang.map((b) => `${b.nama} (${t(`stok.${b.ketersediaan}`)})`) : m.nama;
+    const daftar = nama.length > 0 ? nama.join(", ") : null;
     const kepala = t(`masalah.${m.code}`);
     return daftar ? [kepala, daftar] : [kepala];
   }
 
-  function pesanGagal(r: Exclude<HasilKirimPortal, { ok: true }>): string[] {
+  function pesanGagal(r: Exclude<HasilKirimPortal, { ok: true }> | TerlaluSeringPortal): string[] {
     switch (r.code) {
+      case "TERLALU_SERING":
+        return [t("gagal.TERLALU_SERING")];
       case "BARIS":
         return pesanMasalah(r.masalah);
       case "BATAS_HARIAN":

@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
   sesi: null as { user: { id: string; name: string; permissions: string[] } } | null,
   dimuat: [] as string[],
   izinAntrean: [] as string[][],
+  klaimUntuk: [] as (string | null)[],
 }));
 
 const catat = <T,>(nama: string, nilai: T) =>
@@ -34,8 +35,8 @@ vi.mock("@/lib/dashboard/queries", () => ({
   // digambar beranda: nilai seluruh persediaan dan nilai seluruh PO.
   getDashboardStats: catat("stats", {
     po: { draft: 2, submitted: 5, inProduction: 1, thisWeek: 3, overdue: 1, totalValue: 245_000_000 },
-    workOrders: { inProduction: 1, completedToday: 0 },
-    items: { activeCount: 120, lowStockCount: 3 },
+    workOrders: { inProduction: 1, sedangDiproduksi: 1, selesaiSebagian: 0, completedToday: 0 },
+    items: { activeCount: 120, lowStockCount: 3, habisCount: 2 },
     suppliers: { activeCount: 4 },
     inventory: { totalValue: 60_500_000 },
     grnsThisWeek: 1,
@@ -73,7 +74,11 @@ vi.mock("@/lib/dashboard/action-items", async (importOriginal) => {
       salesReturnPending: 1,
       journalPending: 1,
     }),
-    getClaimsAwaitingVerification: catat("klaimMenunggu", { count: 2, amount: 900_000 }),
+    getClaimsAwaitingVerification: vi.fn(async (userId?: string | null) => {
+      state.dimuat.push("klaimMenunggu");
+      state.klaimUntuk.push(userId ?? null);
+      return { bisaDiputuskan: { count: 2, amount: 900_000 }, milikSendiri: { count: 1, amount: 50_000 } };
+    }),
   };
 });
 vi.mock("@/lib/dashboard/antrean-kantor", async (importOriginal) => {
@@ -121,6 +126,7 @@ beforeEach(() => {
   state.sesi = null;
   state.dimuat = [];
   state.izinAntrean = [];
+  state.klaimUntuk = [];
 });
 
 describe("beranda — kartu per izin, dari server", () => {
@@ -196,13 +202,13 @@ describe("beranda — kartu per izin, dari server", () => {
     const pembelian = await bukaBeranda(PURCHASER);
     expect(pembelian.initialStats).toEqual({
       po: { draft: 2 },
-      workOrders: { inProduction: 1, completedToday: 0 },
+      workOrders: { sedangDiproduksi: 1, selesaiSebagian: 0, completedToday: 0 },
       suppliers: { activeCount: 4 },
       grnsThisWeek: 1,
       items: null,
     });
     const gudang = await bukaBeranda(WAREHOUSE);
-    expect(gudang.initialStats).toMatchObject({ items: { lowStockCount: 3 } });
+    expect(gudang.initialStats).toMatchObject({ items: { lowStockCount: 3, habisCount: 2 } });
   });
 
   it("tanpa sales_orders:view, angka marketplace tidak dimuat", async () => {
@@ -244,5 +250,13 @@ describe("beranda — kartu per izin, dari server", () => {
     ]);
     const admin = await bukaBeranda(["*"]);
     expect(admin.actionItems.filter((i) => antrean.has(i.key))).toHaveLength(KUNCI_ANTREAN.length);
+  });
+
+  it("BKM menunggu: dihitung untuk penonton ini — yang bisa ia putuskan dan miliknya sendiri jadi dua baris", async () => {
+    const p = await bukaBeranda(["*"]);
+    expect(state.klaimUntuk).toEqual(["u1"]);
+    const baris = p.actionItems as Array<{ key: string; count?: number }>;
+    expect(baris.find((i) => i.key === "claimsAwaitingVerification")).toMatchObject({ count: 2 });
+    expect(baris.find((i) => i.key === "claimsAwaitingOthers")).toMatchObject({ count: 1 });
   });
 });

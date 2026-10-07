@@ -60,12 +60,15 @@ export function KinerjaSalesClient({
   total,
   hasil,
   perTanda,
+  bolehPelunasan = false,
 }: {
   filter: FilterRentangData;
   baris: BarisKinerja[];
   total: AngkaSales;
   hasil: BarisHasil[];
   perTanda: BarisTanda[];
+  /** Penonton boleh membuka daftar pelunasan; tanpa itu angka pelunasan bukan tautan. */
+  bolehPelunasan?: boolean;
 }) {
   const t = useTranslations("salesLapangan");
   const td = dinamis(t);
@@ -81,7 +84,10 @@ export function KinerjaSalesClient({
 
       <FilterRentang key={`${filter.preset}|${filter.dari}|${filter.sampai}`} alamat="/backoffice/sales-lapangan" filter={filter} />
 
-      <KartuAngka angka={{ ...total, jadwal: tambahan.jadwal }} />
+      <KartuAngka
+        angka={{ ...total, jadwal: tambahan.jadwal }}
+        tautan={{ pesanan: "/backoffice/field-sales-orders?status=ALL", pelunasan: bolehPelunasan ? "/backoffice/pelunasan" : undefined }}
+      />
 
       <Card>
         <CardHeader className="pb-3">
@@ -115,6 +121,10 @@ export function KinerjaSalesClient({
                   {baris.map((b) => (
                     <BarisSales
                       key={b.salesmanId}
+                      tautan={{
+                        rincian: b.href,
+                        pelunasan: bolehPelunasan ? `/backoffice/pelunasan?cari=${encodeURIComponent(b.nama)}` : undefined,
+                      }}
                       nama={<Link href={b.href} className="font-medium hover:underline">{b.nama}</Link>}
                       angka={b.angka}
                       rencana={b.angka.rencana}
@@ -181,13 +191,26 @@ function Sub({ children }: { children: ReactNode }) {
   return <span className="block text-xs font-normal text-muted-foreground">{children}</span>;
 }
 
+/** Angka di sel yang membuka dokumen sumbernya; tanpa alamat tetap teks biasa. */
+function Taut({ href, children }: { href?: string; children: ReactNode }) {
+  if (!href) return <>{children}</>;
+  return (
+    <Link href={href} className="underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground">
+      {children}
+    </Link>
+  );
+}
+
 function BarisSales({
   nama,
   angka,
   rencana,
   menurun,
   target,
+  tautan,
 }: {
+  /** Baris total tidak punya tautan. */
+  tautan?: { rincian: string; pelunasan?: string };
   nama: ReactNode;
   angka: AngkaSales;
   rencana: AngkaSales["rencana"];
@@ -199,7 +222,7 @@ function BarisSales({
     <TableRow>
       <TableCell>{nama}</TableCell>
       <TableCell className="text-right tabular-nums">
-        {angka.kunjungan}
+        <Taut href={tautan ? `${tautan.rincian}#kunjungan` : undefined}>{angka.kunjungan}</Taut>
         <Sub>{t("table.subStores", { count: angka.tokoDikunjungi })}</Sub>
         {/* Jadwal dari kantor: berapa toko terjadwal yang didatangi pada harinya. */}
         {angka.jadwal ? (
@@ -230,14 +253,14 @@ function BarisSales({
       </TableCell>
       <TableCell className="text-right tabular-nums">{formatIDR(angka.pesanan.nilaiPutus)}</TableCell>
       <TableCell className="text-right tabular-nums">
-        {formatIDR(angka.pelunasan.nilaiTerverifikasi)}
+        <Taut href={tautan?.pelunasan}>{formatIDR(angka.pelunasan.nilaiTerverifikasi)}</Taut>
         <Sub>
           {t("table.subCollections", { terverifikasi: angka.pelunasan.terverifikasi, dilaporkan: angka.pelunasan.dilaporkan })}
         </Sub>
       </TableCell>
       <TableCell className="text-right tabular-nums">{angka.tokoBaru}</TableCell>
       <TableCell className={cn("text-right tabular-nums", angka.janggal > 0 && "font-semibold text-amber-600 dark:text-amber-500")}>
-        {angka.janggal}
+        <Taut href={tautan && angka.janggal > 0 ? `${tautan.rincian}#kunjungan` : undefined}>{angka.janggal}</Taut>
       </TableCell>
       <TableCell className="text-right tabular-nums">{menurun ?? "—"}</TableCell>
       <TableCell className="hidden text-right tabular-nums 2xl:table-cell">

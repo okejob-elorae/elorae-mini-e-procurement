@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { PERMISSIONS } from "@/lib/rbac";
-import { IZIN_TAB_LAPORAN, tabLaporanAktif, tabLaporanTerlihat } from "./tab-izin";
+import { IZIN_TAB_LAPORAN, nilaiUrlTab, tabLaporanAktif, tabLaporanTerlihat } from "./tab-izin";
 
 /*
  * Tab laporan per izin.
@@ -45,6 +45,34 @@ describe("tabLaporanAktif", () => {
     expect(tabLaporanAktif("rp2", tabLaporanTerlihat(["work_orders:view"]))).toBe("rp2");
     expect(tabLaporanAktif("apa", terbatas)).toBe("production");
     expect(tabLaporanAktif(null, terbatas)).toBe("production");
+  });
+});
+
+describe("?tab= bermakna — pengadaan, setoran-cmt, stok", () => {
+  const semua = tabLaporanTerlihat(["*"]);
+
+  it("nama tab di alamat dibaca ke tab-nya", () => {
+    expect(tabLaporanAktif("pengadaan", semua)).toBe("rp1");
+    expect(tabLaporanAktif("setoran-cmt", semua)).toBe("rp2");
+    expect(tabLaporanAktif("stok", semua)).toBe("rp3");
+    expect(tabLaporanAktif("po-terlambat", semua)).toBe("overdue");
+  });
+
+  it("tautan lama (?tab=rp1…) tetap terbuka di tab yang sama", () => {
+    expect(tabLaporanAktif("rp2", semua)).toBe("rp2");
+    expect(tabLaporanAktif("overdue", semua)).toBe("overdue");
+  });
+
+  it("tab ditulis ke alamat dengan namanya; Produksi tanpa ?tab=", () => {
+    expect(nilaiUrlTab("rp1")).toBe("pengadaan");
+    expect(nilaiUrlTab("rp2")).toBe("setoran-cmt");
+    expect(nilaiUrlTab("rp3")).toBe("stok");
+    expect(nilaiUrlTab("overdue")).toBe("po-terlambat");
+    expect(nilaiUrlTab("production")).toBeNull();
+  });
+
+  it("nama tab tetap mengikuti izin", () => {
+    expect(tabLaporanAktif("pengadaan", tabLaporanTerlihat(["dashboard:view"]))).toBe("production");
   });
 });
 

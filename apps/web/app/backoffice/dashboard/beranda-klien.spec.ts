@@ -34,8 +34,8 @@ const LENGKAP: Props = {
   actionItems: [],
   initialStats: {
     po: { draft: 1 },
-    workOrders: { inProduction: 2, completedToday: 0 },
-    items: { lowStockCount: 3 },
+    workOrders: { sedangDiproduksi: 2, selesaiSebagian: 0, completedToday: 0 },
+    items: { lowStockCount: 3, habisCount: 0 },
     suppliers: { activeCount: 4 },
     grnsThisWeek: 0,
   },
@@ -50,10 +50,17 @@ const LENGKAP: Props = {
         salesmanId: "s1",
         salesmanName: "Budi",
         realised: { amount: 7_250_000, count: 3 },
+        realisedRincian: { pengiriman: 2, van: 1 },
         outstanding: { amount: 0, count: 0 },
+        menungguKirim: { amount: 1_500_000, count: 1 },
       },
     ],
-    totals: { realised: { amount: 7_250_000, count: 3 }, outstanding: { amount: 0, count: 0 } },
+    totals: {
+      realised: { amount: 7_250_000, count: 3 },
+      realisedRincian: { pengiriman: 2, van: 1 },
+      outstanding: { amount: 0, count: 0 },
+      menungguKirim: { amount: 1_500_000, count: 1 },
+    },
   } as unknown as Props["initialSalesmenSales"],
   piutang: { total: 18_450_000, umur: [], lewatJumlah: 2, lewatNilai: 3_100_000, tertahanNilai: 0 } as unknown as Props["piutang"],
   trenPenjualan: [],
@@ -70,6 +77,8 @@ describe("klien beranda — bagian mengikuti data dari server", () => {
     expect(html).toContain('id="beranda-penjualan"');
     expect(html).toContain("salesmanTitle");
     expect(html).toContain("Budi");
+    // Kolom ketiga: putus disetujui yang belum dikirim — dulu tidak ada di kedua angka.
+    expect(html).toContain("colAwaitingDelivery");
     expect(html).toContain('id="beranda-piutang"');
     expect(html).toContain('id="beranda-stok"');
     expect(html).toContain("[BATANG stockMixTitle]");
@@ -102,7 +111,7 @@ describe("klien beranda — bagian mengikuti data dari server", () => {
 
   it("penjualan lapangan saja → baris marketplace tidak digambar", () => {
     const html = gambar({ marketplaceKpi: null });
-    expect(html).toContain("[KPI kpiSalesSummary: kpiRealisedAllTime]");
+    expect(html).toContain("[KPI kpiSalesSummary: kpiRealisedAllTime|kpiAwaitingDelivery]");
     expect(html).toContain("Budi");
   });
 });

@@ -348,7 +348,7 @@ async function rencanaSales(
     if (nilaiTarget) {
       // Capaian = penjualan terealisasi bulan itu sampai akhir rentang — definisi
       // yang sama dengan kartu target di beranda HP (putus terkirim + konsi
-      // disetujui + jual van).
+      // laku di toko + jual van).
       const { akhir } = batasRentang(rentang);
       const jual = await penjualanSalesman(salesmanId, awalHari(`${bulan}-01`));
       const capai = jual.filter((x) => x.tanggal < akhir).reduce((s, x) => s + x.nilai, 0);
@@ -359,11 +359,35 @@ async function rencanaSales(
   return { rencana, tokoMenurun: menurun.length, target };
 }
 
+/** Calon peserta laporan di luar `daftarSalesman`, dengan peran dan asal kegiatannya. */
+export type CalonLaporan = {
+  id: string;
+  nama: string;
+  /** SPG (terikat satu toko): check-in mereka absensi, bukan kunjungan jualan. */
+  spg: boolean;
+  /** Peran sistem (admin kantor). */
+  sistem: boolean;
+  /** Perannya membuka aplikasi HP (`pwa:access`). */
+  aksesHp: boolean;
+  /** Punya kunjungan atau pesanan di rentang — kegiatan lapangan, bukan hanya pelunasan. */
+  lapangan: boolean;
+};
+
+/**
+ * Siapa di luar daftar salesman yang ikut laporan. Mantan sales yang perannya
+ * sudah diubah tetap ikut kalau punya kunjungan/pesanan di rentang. Admin
+ * kantor (peran sistem) tidak pernah ikut — BKM yang ia catat dari kantor
+ * bukan kerja lapangan. Yang hanya punya pelunasan ikut hanya bila perannya
+ * aplikasi HP, supaya staf keuangan yang mencatat BKM tidak dihitung sales.
+ */
+export function pilihPesertaTambahan(calon: readonly CalonLaporan[]): { id: string; nama: string }[] {
+  return calon.filter((c) => !c.spg && !c.sistem && (c.lapangan || c.aksesHp)).map((c) => ({ id: c.id, nama: c.nama }));
+}
+
 /**
  * Sales yang dilaporkan: semua "salesman" (`daftarSalesman`) — juga yang tidak
- * berbuat apa-apa, justru itu yang perlu dilihat atasan — ditambah siapa pun
- * yang bukan SPG tapi punya kunjungan/pesanan/pelunasan di rentang, supaya
- * sales yang perannya sudah diubah tidak hilang dari laporan bulan lalu.
+ * berbuat apa-apa, justru itu yang perlu dilihat atasan — ditambah peserta
+ * tambahan menurut `pilihPesertaTambahan`.
  */
 async function salesUntukLaporan(b: Batas): Promise<{ id: string; nama: string }[]> {
   const rentang = { gte: b.mulai, lt: b.akhir };
@@ -374,18 +398,32 @@ async function salesUntukLaporan(b: Batas): Promise<{ id: string; nama: string }
     prisma.paymentClaim.groupBy({ by: ["salesmanId"], where: { createdAt: rentang } }),
   ]);
   const dikenal = new Set(daftar.map((s) => s.id));
-  const lain = [
-    ...new Set([...kunjungan.map((x) => x.userId), ...pesanan.map((x) => x.salesmanId), ...klaim.map((x) => x.salesmanId)]),
-  ].filter((id) => !dikenal.has(id));
+  const lapangan = new Set([...kunjungan.map((x) => x.userId), ...pesanan.map((x) => x.salesmanId)]);
+  const lain = [...new Set([...lapangan, ...klaim.map((x) => x.salesmanId)])].filter((id) => !dikenal.has(id));
   if (lain.length === 0) return daftar;
-  const tambahan = await prisma.user.findMany({
-    // SPG: check-in mereka absensi, bukan kunjungan jualan.
-    where: { id: { in: lain }, assignedStoreId: null },
-    select: { id: true, name: true, email: true },
+  const pengguna = await prisma.user.findMany({
+    where: { id: { in: lain } },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      assignedStoreId: true,
+      roleDefinition: {
+        select: { isSystem: true, permissions: { where: { permission: { code: "pwa:access" } }, select: { permissionId: true } } },
+      },
+    },
   });
-  return [...daftar, ...tambahan.map((u) => ({ id: u.id, nama: u.name ?? u.email }))].sort((a, c) =>
-    a.nama.localeCompare(c.nama, "id"),
+  const tambahan = pilihPesertaTambahan(
+    pengguna.map((u) => ({
+      id: u.id,
+      nama: u.name ?? u.email,
+      spg: u.assignedStoreId !== null,
+      sistem: u.roleDefinition?.isSystem === true,
+      aksesHp: (u.roleDefinition?.permissions.length ?? 0) > 0,
+      lapangan: lapangan.has(u.id),
+    })),
   );
+  return [...daftar, ...tambahan].sort((a, c) => a.nama.localeCompare(c.nama, "id"));
 }
 
 function barisKunjungan(bahan: BahanSales, sekarang: Date): BarisKunjunganLapangan[] {

@@ -27,8 +27,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TagsInput } from '@/components/ui/tags-input';
 import { Plus, Trash2, Loader2, Wand2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { useTranslations } from 'next-intl';
-import type { z } from 'zod';
+import { useLocale, useTranslations } from 'next-intl';
+import { z } from 'zod';
 import {
   buildVariantBarcode,
   type VariantBarcodeFormatConfig,
@@ -37,6 +37,7 @@ import Link from "next/link";
 import { pilihanTabelUkuranAction } from "@/app/actions/size-charts";
 import { BATAS_INFO_PRODUK } from "@/lib/items/info-produk";
 import type { PilihanTabelUkuran } from "@/lib/items/size-chart-queries";
+import { rapikanNamaBarang } from "@/app/backoffice/items/nama-barang";
 
 type ItemFormData = z.infer<typeof itemSchema>;
 /** Info produk untuk pembeli (barang jadi): bahan, cara rawat, tabel ukuran (null = ikut bawaan kategori). */
@@ -146,7 +147,13 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   const tValidation = useTranslations('validation');
   const tToasts = useTranslations('toasts');
   const tInfo = useTranslations("itemProductInfo");
-  const itemSchemaT = useMemo(() => createItemSchema((k) => tValidation(k)), [tValidation]);
+  const tForm = useTranslations('itemForm');
+  const locale = useLocale();
+  // Nama Inggris tidak wajib: kosong diisi nama Indonesia saat disimpan (rapikanNamaBarang).
+  const itemSchemaT = useMemo(
+    () => createItemSchema((k) => tValidation(k)).extend({ nameEn: z.string().optional() }),
+    [tValidation]
+  );
   const [uoms, setUOMs] = useState<UOM[]>([]);
   const [materials, setMaterials] = useState<Item[]>([]);
   const [itemCategories, setItemCategories] = useState<ItemCategoryOption[]>([]);
@@ -451,10 +458,10 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   }, [variantCombinationsKey, variantCombinations, normalizedVariants]);
 
   const onFormSubmit = async (data: ItemFormData) => {
-    const dataWithSku: ItemFormData = {
+    const dataWithSku: ItemFormData = rapikanNamaBarang({
       ...data,
       sku: sku || undefined,
-    };
+    });
 
     const hasAttributes =
       attributes.length > 0 &&
@@ -521,15 +528,15 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
 
   return (
     <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-6">
-      {/* Basic Information */}
+      {/* Informasi dasar */}
       <Card>
         <CardHeader>
-          <CardTitle>Basic Information</CardTitle>
+          <CardTitle>{tForm('basicInfo')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* SKU */}
           <div className="space-y-2">
-            <Label htmlFor="sku">SKU</Label>
+            <Label htmlFor="sku">{tForm('sku')}</Label>
             <div className="flex gap-2">
               <Input
                 id="sku"
@@ -548,7 +555,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                   {isGeneratingSKU ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    'Generate'
+                    tForm('skuGenerate')
                   )}
                 </Button>
               )}
@@ -558,11 +565,11 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
           {/* Bilingual Names */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="nameId">Nama (Indonesia) *</Label>
+              <Label htmlFor="nameId">{tForm('nameId')} *</Label>
               <Input
                 id="nameId"
                 {...register('nameId')}
-                placeholder="Kain Katun Merah"
+                placeholder={tForm('nameIdPlaceholder')}
                 aria-invalid={!!errors.nameId}
                 className={errors.nameId ? 'border-destructive focus-visible:ring-destructive/20' : ''}
               />
@@ -573,11 +580,13 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="nameEn">Name (English) *</Label>
+              <Label htmlFor="nameEn">
+                {tForm('nameEn')} <span className="text-xs text-muted-foreground">({tForm('optional')})</span>
+              </Label>
               <Input
                 id="nameEn"
                 {...register('nameEn')}
-                placeholder="Red Cotton Fabric"
+                placeholder={tForm('nameEnPlaceholder')}
                 aria-invalid={!!errors.nameEn}
                 className={errors.nameEn ? 'border-destructive focus-visible:ring-destructive/20' : ''}
               />
@@ -592,7 +601,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
           {/* Type and UOM */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="type">Type *</Label>
+              <Label htmlFor="type">{tForm('type')} *</Label>
               <Controller
                 name="type"
                 control={control}
@@ -601,16 +610,16 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                     id="type"
                     options={
                       itemTypeMasters.length > 0
-                        ? itemTypeMasters.map((m) => ({ value: m.code, label: m.nameEn }))
+                        ? itemTypeMasters.map((m) => ({ value: m.code, label: locale === 'en' ? m.nameEn : m.nameId }))
                         : [
-                            { value: ItemType.FABRIC, label: 'Fabric' },
-                            { value: ItemType.ACCESSORIES, label: 'Accessories' },
-                            { value: ItemType.FINISHED_GOOD, label: 'Finished Good' },
+                            { value: ItemType.FABRIC, label: tForm('typeName.FABRIC') },
+                            { value: ItemType.ACCESSORIES, label: tForm('typeName.ACCESSORIES') },
+                            { value: ItemType.FINISHED_GOOD, label: tForm('typeName.FINISHED_GOOD') },
                           ]
                     }
                     value={field.value}
                     onValueChange={field.onChange}
-                    placeholder="Select type"
+                    placeholder={tForm('typePlaceholder')}
                     aria-invalid={!!errors.type}
                     className={errors.type ? 'border-destructive focus-visible:ring-destructive/20' : ''}
                   />
@@ -623,7 +632,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="uomId">Unit of Measure *</Label>
+              <Label htmlFor="uomId">{tForm('uom')} *</Label>
               <Controller
                 name="uomId"
                 control={control}
@@ -632,11 +641,11 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                     id="uomId"
                     options={uoms.map((uom) => ({
                       value: uom.id,
-                      label: `${uom.code} - ${uom.nameId}`,
+                      label: `${uom.code} - ${locale === 'en' ? uom.nameEn : uom.nameId}`,
                     }))}
                     value={field.value}
                     onValueChange={field.onChange}
-                    placeholder="Select UOM"
+                    placeholder={tForm('uomPlaceholder')}
                     aria-invalid={!!errors.uomId}
                     className={errors.uomId ? 'border-destructive focus-visible:ring-destructive/20' : ''}
                   />
@@ -652,7 +661,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="categoryId">Category</Label>
+              <Label htmlFor="categoryId">{tForm('category')}</Label>
               <Controller
                 name="categoryId"
                 control={control}
@@ -660,7 +669,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                   <SearchableCombobox
                     id="categoryId"
                     options={[
-                      { value: '__none__', label: 'No category' },
+                      { value: '__none__', label: tForm('noCategory') },
                       ...itemCategories.map((category) => ({
                         value: category.id,
                         label: (category.code ? `${category.code} - ` : '') + category.name,
@@ -668,13 +677,13 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                     ]}
                     value={field.value || '__none__'}
                     onValueChange={(value) => field.onChange(value === '__none__' ? '' : value)}
-                    placeholder="Select category"
+                    placeholder={tForm('categoryPlaceholder')}
                   />
                 )}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="overReceiveThreshold">Over-receive threshold</Label>
+              <Label htmlFor="overReceiveThreshold">{tForm('overReceive')}</Label>
               <Input
                 id="overReceiveThreshold"
                 type="number"
@@ -697,11 +706,11 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
 
           {/* Description */}
           <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
+            <Label htmlFor="description">{tForm('description')}</Label>
             <Textarea
               id="description"
               {...register('description')}
-              placeholder="Item description..."
+              placeholder={tForm('descriptionPlaceholder')}
               rows={3}
               aria-invalid={!!errors.description}
               className={errors.description ? 'border-destructive focus-visible:ring-destructive/20' : ''}
@@ -715,7 +724,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
 
           {/* Reorder Point */}
           <div className="space-y-2">
-            <Label htmlFor="reorderPoint">Reorder Point</Label>
+            <Label htmlFor="reorderPoint">{tForm('reorderPoint')}</Label>
             <Input
               id="reorderPoint"
               type="number"
@@ -739,7 +748,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
           {itemType === ItemType.FINISHED_GOOD && (
             <div className="space-y-4 border-t pt-4">
               <div className="space-y-2">
-                <Label htmlFor="sellingPrice">Harga Jual (Selling price)</Label>
+                <Label htmlFor="sellingPrice">{tForm('sellingPrice')}</Label>
                 <Input
                   id="sellingPrice"
                   type="number"
@@ -759,7 +768,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
 
               <div className="space-y-2">
                 <Label htmlFor="targetMarginPercent">
-                  Target Margin (%) <span className="text-xs text-muted-foreground">(optional)</span>
+                  {tForm('targetMargin')} <span className="text-xs text-muted-foreground">({tForm('optional')})</span>
                 </Label>
                 <Input
                   id="targetMarginPercent"
@@ -773,7 +782,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                   className={errors.targetMarginPercent ? "border-destructive focus-visible:ring-destructive/20" : ""}
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  Leave blank to use the default from Jubelio push settings.
+                  {tForm('targetMarginHint')}
                 </p>
                 {errors.targetMarginPercent && (
                   <p className="text-sm text-destructive" role="alert">
@@ -784,7 +793,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
 
               <div className="space-y-2">
                 <Label htmlFor="additionalCost">
-                  Additional Cost per pcs (Rp) <span className="text-xs text-muted-foreground">(optional)</span>
+                  {tForm('additionalCost')} <span className="text-xs text-muted-foreground">({tForm('optional')})</span>
                 </Label>
                 <Input
                   id="additionalCost"
@@ -798,7 +807,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                   className={errors.additionalCost ? "border-destructive focus-visible:ring-destructive/20" : ""}
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  Flat add-on per unit (packaging, etc).
+                  {tForm('additionalCostHint')}
                 </p>
                 {errors.additionalCost && (
                   <p className="text-sm text-destructive" role="alert">
@@ -877,35 +886,33 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       {/* Variants */}
       <Card>
         <CardHeader>
-          <CardTitle>Variants (Optional)</CardTitle>
+          <CardTitle>{tForm('variantsTitle')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-start justify-between gap-4">
-            <p className="text-sm text-muted-foreground">
-              Define attributes (e.g., Color, Size) and their values to generate variant combinations.
-            </p>
+            {attributes.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{tForm('noAttributes')}</p>
+            ) : (
+              <span />
+            )}
             <Button type="button" variant="outline" onClick={addAttribute}>
               <Plus className="h-4 w-4 mr-2" />
-              Add Attribute
+              {tForm('addAttribute')}
             </Button>
           </div>
-
-          {attributes.length === 0 && (
-            <p className="text-sm text-muted-foreground">No attributes added yet.</p>
-          )}
 
           {attributes.map((attr, index) => (
             <div key={index} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
               <div className="space-y-2">
-                <Label>Attribute Name</Label>
+                <Label>{tForm('attributeName')}</Label>
                 <Input
                   value={attr.key}
                   onChange={(e) => updateAttributeKey(index, e.target.value)}
-                  placeholder="Color"
+                  placeholder={tForm('attributeNamePlaceholder')}
                 />
               </div>
               <div className="space-y-2 md:col-span-2">
-                <Label>Values (comma separated)</Label>
+                <Label>{tForm('attributeValues')}</Label>
                 <div className="flex gap-2">
                   <TagsInput
                     value={attr.values}
@@ -914,7 +921,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                       updated[index] = { ...updated[index], values };
                       setAttributes(updated);
                     }}
-                    placeholder="Red, Blue, Green"
+                    placeholder={tForm('attributeValuesPlaceholder')}
                     separator={[',', '\n']}
                   />
                   <Button
@@ -922,6 +929,8 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                     variant="ghost"
                     size="icon"
                     onClick={() => removeAttribute(index)}
+                    aria-label={tForm('removeAttribute')}
+                    title={tForm('removeAttribute')}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -934,21 +943,9 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
             <div className="space-y-2 pt-2 border-t">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <p className="text-sm text-muted-foreground">
-                  Variant SKU must start with the category code
-                  {categoryCodePrefix ? ` (${categoryCodePrefix})` : ' (when the category has one)'} or the parent item SKU
-                  {parentSku ? ` (${parentSku})` : ''}. Leave empty to save and the server will auto-fill using the same
-                  base. Use <span className="font-medium text-foreground">Generate code</span> for{' '}
-                  <code className="rounded bg-muted px-1 py-0.5 text-xs">{`{base}-{attr1}-…-{attrN}`}</code>
-                  {variantSkuBasePrefix ? (
-                    <>
-                      {' '}
-                      (e.g. {variantSkuBasePrefix}-RED-S).
-                    </>
-                  ) : (
-                    <> (pick a category with a code or set the item SKU first).</>
-                  )}
-                  {' '}Barcodes follow the format in{' '}
-                  <span className="font-medium text-foreground">Settings → Item codes</span>.
+                  {variantSkuBasePrefix
+                    ? tForm('variantSkuHint', { contoh: `${variantSkuBasePrefix}-MERAH-S` })
+                    : tForm('variantSkuNoPrefix')}
                 </p>
                 <Button
                   type="button"
@@ -959,7 +956,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                   disabled={!variantSkuBasePrefix || !barcodeFormatConfig}
                 >
                   <Wand2 className="mr-1.5 h-3.5 w-3.5" />
-                  Generate all
+                  {tForm('generateAll')}
                 </Button>
               </div>
               <Table>
@@ -968,8 +965,8 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                     {attributes.map((attr) => (
                       <TableHead key={attr.key}>{attr.key}</TableHead>
                     ))}
-                    <TableHead className="min-w-56">Variant SKU</TableHead>
-                    <TableHead className="min-w-56">Barcode</TableHead>
+                    <TableHead className="min-w-56">{tForm('colVariantSku')}</TableHead>
+                    <TableHead className="min-w-56">{tForm('colBarcode')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -989,7 +986,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                               next[idx] = e.target.value;
                               setVariantSkus(next);
                             }}
-                            placeholder={variantSkuBasePrefix ? `${variantSkuBasePrefix}-…` : 'e.g. OUTERWEAR-RED'}
+                            placeholder={variantSkuBasePrefix ? `${variantSkuBasePrefix}-…` : tForm('variantSkuPlaceholder')}
                           />
                           <Button
                             type="button"
@@ -1000,12 +997,12 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                             disabled={!variantSkuBasePrefix}
                             title={
                               variantSkuBasePrefix
-                                ? `Build ${variantSkuBasePrefix}-{values}`
-                                : 'Select a category with code or set item SKU'
+                                ? tForm('skuButtonTitle', { awalan: variantSkuBasePrefix })
+                                : tForm('variantSkuNoPrefix')
                             }
                           >
                             <Wand2 className="mr-1.5 h-3.5 w-3.5" />
-                            Generate code
+                            {tForm('generateCode')}
                           </Button>
                         </div>
                       </TableCell>
@@ -1020,7 +1017,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                               next[idx] = e.target.value;
                               setVariantBarcodes(next);
                             }}
-                            placeholder="e.g. 0224000016T03"
+                            placeholder={tForm('barcodePlaceholder')}
                           />
                           <Button
                             type="button"
@@ -1029,10 +1026,10 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                             className="shrink-0"
                             onClick={() => applyVariantBarcodeAt(idx)}
                             disabled={!barcodeFormatConfig}
-                            title="Build barcode from global format template"
+                            title={tForm('barcodeButtonTitle')}
                           >
                             <Wand2 className="mr-1.5 h-3.5 w-3.5" />
-                            Generate code
+                            {tForm('generateCode')}
                           </Button>
                         </div>
                       </TableCell>
@@ -1050,13 +1047,15 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       {itemType === ItemType.FINISHED_GOOD && (
         <Card>
           <CardHeader>
-            <CardTitle>Consumption Rules (BOM)</CardTitle>
+            <CardTitle>{tForm('bomTitle')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex justify-between items-center">
-              <p className="text-sm text-muted-foreground">
-                Define materials required to produce this finished good
-              </p>
+              {consumptionRules.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{tForm('noBom')}</p>
+              ) : (
+                <span />
+              )}
               <Button
                 type="button"
                 variant="outline"
@@ -1064,23 +1063,21 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                 onClick={addConsumptionRule}
               >
                 <Plus className="h-4 w-4 mr-2" />
-                Add Material
+                {tForm('addMaterial')}
               </Button>
             </div>
 
-            {consumptionRules.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                No consumption rules added yet
-              </p>
-            ) : (
+            {consumptionRules.length === 0 ? null : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Material</TableHead>
-                    <TableHead>Qty Required</TableHead>
-                    <TableHead>Waste %</TableHead>
-                    <TableHead>Notes</TableHead>
-                    <TableHead className="w-12"></TableHead>
+                    <TableHead>{tForm('colMaterial')}</TableHead>
+                    <TableHead>{tForm('colQtyRequired')}</TableHead>
+                    <TableHead>{tForm('colWaste')}</TableHead>
+                    <TableHead>{tForm('colNotes')}</TableHead>
+                    <TableHead className="w-12">
+                      <span className="sr-only">{tForm('removeMaterial')}</span>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1090,13 +1087,13 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                         <SearchableCombobox
                           options={materials.map((material) => ({
                             value: material.id,
-                            label: `${material.sku} - ${material.nameId}`,
+                            label: `${material.sku} - ${locale === 'en' ? material.nameEn : material.nameId}`,
                           }))}
                           value={rule.materialId}
                           onValueChange={(value) =>
                             updateConsumptionRule(index, 'materialId', value)
                           }
-                          placeholder="Select material"
+                          placeholder={tForm('selectMaterial')}
                           triggerClassName="max-w-[16rem] min-w-0"
                         />
                       </TableCell>
@@ -1171,7 +1168,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                           onChange={(e) =>
                             updateConsumptionRule(index, 'notes', e.target.value)
                           }
-                          placeholder="Optional notes"
+                          placeholder={tForm('notesPlaceholder')}
                         />
                       </TableCell>
                       <TableCell>
@@ -1180,6 +1177,8 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                           variant="ghost"
                           size="icon"
                           onClick={() => removeConsumptionRule(index)}
+                          aria-label={tForm('removeMaterial')}
+                          title={tForm('removeMaterial')}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -1193,11 +1192,11 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
         </Card>
       )}
 
-      {/* Submit Button */}
+      {/* Tombol simpan */}
       <div className="flex justify-end gap-2">
         <Button type="submit" disabled={isLoading}>
           {isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-          {initialData ? 'Update Item' : 'Create Item'}
+          {initialData ? tForm('submitUpdate') : tForm('submitCreate')}
         </Button>
       </div>
     </form>

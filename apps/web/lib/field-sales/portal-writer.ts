@@ -15,7 +15,8 @@ import { JarakJauhDitolakError, SALURAN_PORTAL } from "./jarak-jauh";
 import { BarangTanpaHargaError, hargaSah } from "./harga-wajib";
 import { keadaanPesanan, type KeadaanPesanan } from "./pwa-queries";
 import { capTautanDipakai, type AksesPortal } from "./portal-toko";
-import { emberBarang, emberKetersediaan, type Ketersediaan } from "./portal-toko-aturan";
+import { batasPesanPortal, emberBarang, emberKetersediaan, emberPortal, type Ketersediaan } from "./portal-toko-aturan";
+import { BatasHarianPortalError } from "./portal-toko-batas";
 
 /**
  * Portal pesan mandiri toko — alur PUBLIK: katalog, pratinjau, kirim pesanan,
@@ -24,7 +25,8 @@ import { emberBarang, emberKetersediaan, type Ketersediaan } from "./portal-toko
  * mempercayai id toko dari peramban.
  *
  * Yang tidak pernah keluar ke toko: angka stok (hanya ember Tersedia/Terbatas/
- * Habis), harga pokok, margin, keadaan tagihan/kredit, alasan penolakan
+ * Habis, dihitung dari stok yang DITAWARKAN portal — dibulatkan ke bawah per
+ * `KELIPATAN_STOK_PORTAL`, supaya penolakan tidak membuka angka persis), harga pokok, margin, keadaan tagihan/kredit, alasan penolakan
  * internal, dan — untuk toko KONSINYASI — harga atau total dalam bentuk apa
  * pun: kuncinya tidak ada di muatan, bukan sekadar disembunyikan di layar.
  */
@@ -59,7 +61,7 @@ export type KatalogPortal =
   | { jenis: "KONSI"; kepala: KepalaPortal; barang: BarangPortalKonsi[] };
 
 function varianDari(c: CatalogItem): VarianPortal[] {
-  return c.variants.map((v) => ({ variantSku: v.variantSku, label: v.variantLabel, ketersediaan: emberKetersediaan(v.available) }));
+  return c.variants.map((v) => ({ variantSku: v.variantSku, label: v.variantLabel, ketersediaan: emberPortal(v.available) }));
 }
 
 function dasarDari(c: CatalogItem): BarangDasar {
@@ -71,7 +73,7 @@ function dasarDari(c: CatalogItem): BarangDasar {
     kategoriId: c.categoryId,
     kategori: c.categoryName,
     gambar: c.primaryImageUrl,
-    ketersediaan: varian.length > 0 ? emberBarang(varian.map((v) => v.ketersediaan)) : emberKetersediaan(c.available),
+    ketersediaan: varian.length > 0 ? emberBarang(varian.map((v) => v.ketersediaan)) : emberPortal(c.available),
     varian,
   };
 }
@@ -129,7 +131,8 @@ export const skemaKirimPortal = z.object({
 /** Barang yang bermasalah, disebut dengan NAMANYA — tanpa angka stok. */
 export type MasalahBaris =
   | { code: "BARANG_TIDAK_TERSEDIA"; nama: string[] }
-  | { code: "STOK_KURANG"; nama: string[] }
+  /** Stok kurang: per barang hanya EMBER dari yang ditawarkan portal, tidak pernah angka. */
+  | { code: "STOK_KURANG"; nama: string[]; barang: Array<{ nama: string; ketersediaan: Ketersediaan }> }
   | { code: "HARGA_BELUM_ADA"; nama: string[] }
   | { code: "QTY_TERLALU_BANYAK"; nama: string[] };
 
@@ -193,7 +196,9 @@ async function muatBarangDiminta(akses: AksesPortal, itemIds: string[]): Promise
  * Stok yang kurang DITOLAK di portal — tidak seperti pesanan salesman yang
  * hanya diberi peringatan — karena pesanan portal mencadangkan stok tanpa ada
  * orang kantor yang melihatnya dulu; tautan yang bocor tidak boleh bisa
- * mengunci stok yang tidak ada.
+ * mengunci stok yang tidak ada. Ambangnya `batasPesanPortal` (dibulatkan ke
+ * bawah per kelipatan), dan penolakannya hanya menyebut ember — pratinjau
+ * berulang tidak bisa dipakai menebak angka stok persis.
  */
 export async function periksaBarisPortal(
   akses: AksesPortal,
@@ -208,7 +213,7 @@ export async function periksaBarisPortal(
   const isKonsi = akses.toko.termsType === "KONSI";
 
   const tidakAda: string[] = [];
-  const kurang: string[] = [];
+  const kurang: Array<{ nama: string; ketersediaan: Ketersediaan }> = [];
   const tanpaHarga: string[] = [];
   const baris: BarisSah[] = [];
   for (const l of lines) {
@@ -234,14 +239,15 @@ export async function periksaBarisPortal(
       }
       tersedia = c.available;
     }
-    if (tersedia <= 0 || l.qty > tersedia) kurang.push(nama);
+    const batas = batasPesanPortal(tersedia);
+    if (l.qty > batas) kurang.push({ nama, ketersediaan: emberKetersediaan(batas) });
     // Rp 0 = harga belum diset, sama dengan penulis pesanan (`BARANG_TANPA_HARGA`).
     if (!isKonsi && !hargaSah(c.price)) tanpaHarga.push(nama);
     baris.push({ itemId: l.itemId, variantSku: l.variantSku, productName: nama, qty: l.qty, unitPrice: isKonsi ? 0 : c.price ?? 0, namaBarang: c.nameId });
   }
   if (tidakAda.length > 0) return { ok: false, masalah: { code: "BARANG_TIDAK_TERSEDIA", nama: tidakAda.filter((n) => n !== "—") } };
   if (tanpaHarga.length > 0) return { ok: false, masalah: { code: "HARGA_BELUM_ADA", nama: tanpaHarga } };
-  if (kurang.length > 0) return { ok: false, masalah: { code: "STOK_KURANG", nama: kurang } };
+  if (kurang.length > 0) return { ok: false, masalah: { code: "STOK_KURANG", nama: kurang.map((k) => k.nama), barang: kurang } };
   return { ok: true, baris };
 }
 
@@ -285,8 +291,12 @@ export async function pratinjauPortal(akses: AksesPortal, masuk: BarisPortalMasu
   const kotor = baris.reduce((s, l) => s + l.qty * l.unitPrice, 0);
   const total = kotor - applied.lineDiscounts.reduce((s, d) => s + d, 0) - applied.orderDiscountAmount;
 
-  // Bonus: gagal di sini hanya menghilangkan baris bonus dari pratinjau. Angka
-  // "kurang" sengaja tidak dikirim — itu membuka stok barang bonusnya.
+  // Bonus: gagal di sini hanya menghilangkan baris bonus dari pratinjau.
+  // Ditampilkan HAK bonus menurut promo (`diminta`), bukan yang dibatasi stok:
+  // pcs yang dibatasi stok = sisa stok persis (untuk hadiah barang yang sama:
+  // stok − jumlah dipesan), jadi itu membuka angka stok yang disembunyikan
+  // pembulatan portal. Penulis pesanan tetap memberi sebanyak yang ada dan
+  // mencatat kekurangannya untuk kantor.
   let bonus: Array<{ nama: string; qty: number }> = [];
   try {
     const hasil = await susunBonusPesanan(prisma, {
@@ -295,7 +305,7 @@ export async function pratinjauPortal(akses: AksesPortal, masuk: BarisPortalMasu
       lines: baris.map((l) => ({ itemId: l.itemId, variantSku: l.variantSku, qty: l.qty, productName: l.productName })),
       pesananBelumDicadangkan: true,
     });
-    bonus = hasil.filter((b) => b.qty > 0).map((b) => ({ nama: b.productName, qty: b.qty }));
+    bonus = hasil.filter((b) => b.diminta > 0).map((b) => ({ nama: b.productName, qty: b.diminta }));
   } catch {
     bonus = [];
   }
@@ -374,14 +384,13 @@ export function kabarPesananPortal(k: {
  * 1. bentuk masukan (zod) — termasuk kunci idempoten WAJIB;
  * 2. kiriman ulang (kunci yang sama dari tautan yang sama) → pesanan yang sudah
  *    ada, apa adanya, TANPA dihitung ke batas harian dan tanpa kabar ulang;
- * 3. batas harian pemilik;
+ * 3. batas harian pemilik (pemeriksaan cepat, tanpa transaksi);
  * 4. baris terhadap katalog saat ini;
  * 5. penulis pesanan biasa (`createFieldSalesOrder`, saluran `PORTAL`): harga,
  *    promo, minimum, kredit, cadangan stok, dan kabar ke kantor semuanya dari sana.
- *
- * Batas harian dihitung di luar transaksi penulis: dua kiriman yang tiba
- * bersamaan bisa sama-sama lolos dan melewati batas satu-dua pesanan. Itu
- * diterima — batasnya penahan banjir, bukan pembukuan.
+ *    Batas harian dihitung ULANG di dalam transaksi serializable-nya
+ *    (`batasHarianPortal`), jadi kiriman yang tiba bersamaan tidak bisa sama-sama
+ *    lolos — salah satunya diulang dan melihat pesanan yang lain.
  */
 export async function kirimPesananPortal(akses: AksesPortal, input: unknown, sekarang: Date = new Date()): Promise<HasilKirimPortal> {
   const parsed = skemaKirimPortal.safeParse(input);
@@ -417,8 +426,10 @@ export async function kirimPesananPortal(akses: AksesPortal, input: unknown, sek
       note: catatan,
       idempotencyKey: kunci,
       remoteChannel: SALURAN_PORTAL,
+      batasHarianPortal: { maks: akses.aturan.maksPesananPerHari, sejak: awalHariWib(sekarang) },
     });
   } catch (e) {
+    if (e instanceof BatasHarianPortalError) return { ok: false, code: "BATAS_HARIAN", batas: e.batas };
     if (e instanceof MinQtyViolationError) {
       const namaPer = new Map(cek.baris.map((b) => [b.itemId, b.namaBarang]));
       return {

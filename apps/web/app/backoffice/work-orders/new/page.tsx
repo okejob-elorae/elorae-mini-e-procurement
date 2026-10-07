@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/select';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { itemHasSkuVariants } from '@/lib/items/variants';
 import { createWorkOrder, getMaterialPlan, computePlannedQtyFromConsumption, suggestFabricRollAllocation, getAvailableFabricRolls } from '@/app/actions/production';
 import { previewChainDays } from '@/app/actions/lead-time';
 import { EtaSuggestionHint } from '@/components/lead-time/eta-suggestion-hint';
@@ -113,6 +114,12 @@ export default function NewWorkOrderPage() {
   const [outputMode, setOutputMode] = useState<'GENERIC' | 'SKU'>('GENERIC');
   const [consumptionRules, setConsumptionRules] = useState<ConsumptionRuleOption[]>([]);
   const [consumptionMaterialId, setConsumptionMaterialId] = useState('');
+  /**
+   * Cara mengisi jumlah: "pcs" = ketik jumlah pcs langsung (bawaan), "bahan" =
+   * hitung pcs dari jumlah bahan utama (kain) yang tersedia.
+   */
+  const [caraIsi, setCaraIsi] = useState<'pcs' | 'bahan'>('pcs');
+  const [pcsInput, setPcsInput] = useState('');
   const [consumptionInput, setConsumptionInput] = useState('');
   const [consumptionInputDebounced, setConsumptionInputDebounced] = useState('');
   const [consumptionResult, setConsumptionResult] = useState<ConsumptionResult | null>(null);
@@ -211,12 +218,15 @@ export default function NewWorkOrderPage() {
     };
   }, [consumptionInput]);
 
+  const pcsDiketik = Math.floor(Number(pcsInput));
+
   useEffect(() => {
-    if (!finishedGoodId || !consumptionMaterialId || consumptionInputDebounced === '') {
+    const modePcs = caraIsi === 'pcs';
+    if (!finishedGoodId || !consumptionMaterialId || (modePcs ? !(pcsDiketik > 0) : consumptionInputDebounced === '')) {
       setConsumptionResult(null);
       return;
     }
-    const amount = Number(consumptionInputDebounced);
+    const amount = modePcs ? 1 : Number(consumptionInputDebounced);
     if (!Number.isFinite(amount) || amount <= 0) {
       setConsumptionResult(null);
       return;
@@ -225,7 +235,18 @@ export default function NewWorkOrderPage() {
     setIsComputingConsumption(true);
     computePlannedQtyFromConsumption(finishedGoodId, consumptionMaterialId, amount)
       .then((res) => {
-        if (!cancelled) setConsumptionResult(res);
+        if (cancelled) return;
+        // Mode pcs: jumlah pcs dari isian, kebutuhan bahan = pcs × konsumsi per pcs.
+        setConsumptionResult(
+          modePcs
+            ? {
+                plannedQty: pcsDiketik,
+                remainder: 0,
+                actualConsumption: Math.round(pcsDiketik * res.consumptionPerPiece * 10000) / 10000,
+                uomCode: res.uomCode,
+              }
+            : res
+        );
       })
       .catch(() => {
         if (!cancelled) {
@@ -239,7 +260,15 @@ export default function NewWorkOrderPage() {
     return () => {
       cancelled = true;
     };
-  }, [finishedGoodId, consumptionMaterialId, consumptionInputDebounced, t]);
+  }, [finishedGoodId, consumptionMaterialId, consumptionInputDebounced, caraIsi, pcsDiketik, t]);
+
+  // Barang jadi bervarian → bawaan "SKU (per varian)": stok hasil produksi
+  // masuk per ukuran, bukan ke baris gabungan yang tidak terlihat per ukuran.
+  const pilihBarangJadi = (id: string) => {
+    setFinishedGoodId(id);
+    const fg = finishedGoods.find((f) => f.id === id);
+    setOutputMode(fg && itemHasSkuVariants(fg.variants) ? 'SKU' : 'GENERIC');
+  };
 
   useEffect(() => {
     if (!consumptionMaterialId) {
@@ -423,7 +452,10 @@ export default function NewWorkOrderPage() {
           finishedGoodId,
           outputMode,
           plannedQty: plannedNum,
-          expectedConsumption: consumptionInput.trim() ? Number(consumptionInput) : undefined,
+          expectedConsumption:
+            caraIsi === 'pcs'
+              ? consumptionResult?.actualConsumption || undefined
+              : consumptionInput.trim() ? Number(consumptionInput) : undefined,
           consumptionMaterialId: consumptionMaterialId || undefined,
           targetDate: parseDateOnly(targetDate),
           poId: poId.trim() || undefined,
@@ -499,7 +531,7 @@ export default function NewWorkOrderPage() {
                 <SearchableCombobox
                   options={finishedGoods.map((fg) => ({ value: fg.id, label: `${fg.nameId} (${fg.sku})` }))}
                   value={finishedGoodId}
-                  onValueChange={setFinishedGoodId}
+                  onValueChange={pilihBarangJadi}
                   placeholder={tF('selectFinishedGood')}
                   disabled={isLoadingFG}
                 />
@@ -727,6 +759,24 @@ export default function NewWorkOrderPage() {
                 <p className="text-sm text-muted-foreground">{tWO('defineBomFirst')}</p>
               ) : (
                 <>
+                  <div className="space-y-2">
+                    <Label>{tF('caraIsiLabel')}</Label>
+                    <Select
+                      value={caraIsi}
+                      onValueChange={(v) => {
+                        setCaraIsi(v as 'pcs' | 'bahan');
+                        setConsumptionResult(null);
+                      }}
+                    >
+                      <SelectTrigger className="w-full sm:w-[280px]" aria-label={tF('caraIsiLabel')}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pcs">{tF('caraIsiPcs')}</SelectItem>
+                        <SelectItem value="bahan">{tF('caraIsiBahan')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label>{tWO('materialConsumptionDriver')}</Label>
@@ -745,6 +795,20 @@ export default function NewWorkOrderPage() {
                         placeholder={tWO('selectMaterial')}
                       />
                     </div>
+                    {caraIsi === 'pcs' ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="wo-jumlah-pcs">{tF('jumlahPcsLabel')}</Label>
+                      <Input
+                        id="wo-jumlah-pcs"
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={pcsInput}
+                        onChange={(e) => setPcsInput(e.target.value)}
+                        placeholder="pcs"
+                      />
+                    </div>
+                    ) : (
                     <div className="space-y-2">
                       <Label>{tWO('consumption')}</Label>
                       <div className="relative">
@@ -765,6 +829,7 @@ export default function NewWorkOrderPage() {
                         )}
                       </div>
                     </div>
+                    )}
                     {(isComputingConsumption || consumptionResult) && (
                       <div className="sm:col-span-2 space-y-1 text-sm">
                         <p className="flex items-center gap-2">
@@ -781,16 +846,18 @@ export default function NewWorkOrderPage() {
                         {consumptionResult && (
                           <>
                             <p className="text-muted-foreground">
-                              {tWO('actualConsumption')}: {consumptionResult.actualConsumption.toLocaleString(undefined, { maximumFractionDigits: 4 })} {consumptionResult.uomCode}
+                              {tWO('actualConsumption')}: {consumptionResult.actualConsumption.toLocaleString('id-ID', { maximumFractionDigits: 4 })} {consumptionResult.uomCode}
                             </p>
-                            <p className="text-muted-foreground">
-                              {tWO('remainder')}: {consumptionResult.remainder.toLocaleString(undefined, { maximumFractionDigits: 4 })} {consumptionResult.uomCode}
-                            </p>
+                            {caraIsi === 'bahan' && (
+                              <p className="text-muted-foreground">
+                                {tWO('remainder')}: {consumptionResult.remainder.toLocaleString('id-ID', { maximumFractionDigits: 4 })} {consumptionResult.uomCode}
+                              </p>
+                            )}
                           </>
                         )}
                       </div>
                     )}
-                    {consumptionMaterialId && consumptionInput && !consumptionResult && plannedNum === 0 && Number(consumptionInput) > 0 && !isComputingConsumption && (
+                    {caraIsi === 'bahan' && consumptionMaterialId && consumptionInput && !consumptionResult && plannedNum === 0 && Number(consumptionInput) > 0 && !isComputingConsumption && (
                       <p className="sm:col-span-2 text-sm text-destructive">{tWO('increaseConsumptionOrMaterial')}</p>
                     )}
                   </div>
@@ -808,7 +875,7 @@ export default function NewWorkOrderPage() {
                               <TableRow>
                                 <TableHead>{tWO('material')}</TableHead>
                                 <TableHead className="text-right">
-                                  {tWO('estimatedConsumptionPerPcs')} {tF('wasteSuffix')}
+                                  {tWO('kebutuhanTotalRencana')} {tF('wasteSuffix')}
                                 </TableHead>
                                 <TableHead className="text-right">{tF('colAvailable')}</TableHead>
                                 <TableHead className="text-right">{tF('colShortage')}</TableHead>

@@ -14,6 +14,7 @@ import {
   type GagalBuatTautan,
 } from "@/lib/field-sales/portal-toko";
 import type { KeadaanTautan } from "@/lib/field-sales/portal-toko-aturan";
+import { pembatasPeriksaPortal } from "@/lib/field-sales/portal-toko-batas";
 import {
   kirimPesananPortal,
   pratinjauPortal,
@@ -31,7 +32,10 @@ import {
  *    Pemanggilnya hanya memegang token. Token dibuka ULANG di setiap panggilan —
  *    tautan yang dicabut semenit lalu langsung mati — dan id toko TIDAK PERNAH
  *    diterima dari peramban: tokonya adalah toko milik tautan itu. Galat apa pun
- *    tentang tautan dijawab satu kode, `TAUTAN_TIDAK_BERLAKU`.
+ *    tentang tautan dijawab satu kode, `TAUTAN_TIDAK_BERLAKU`. Pratinjau dan
+ *    kiriman berbagi satu jatah per tautan per menit (`pembatasPeriksaPortal`):
+ *    tanpa itu, pratinjau berulang bisa dipakai menebak stok. Lewat jatah →
+ *    `TERLALU_SERING`.
  *
  * 2. PENGELOLA (sesi wajib): buat / cabut / daftar tautan. Boleh bagi pemegang
  *    `stores:manage` (kantor), atau salesman yang MEMEGANG toko itu
@@ -41,18 +45,24 @@ import {
  */
 
 export type GagalTautanPublik = { ok: false; code: "TAUTAN_TIDAK_BERLAKU" };
+export type TerlaluSeringPortal = { ok: false; code: "TERLALU_SERING" };
 
-export async function pratinjauPesananPortalAksi(token: unknown, lines: unknown): Promise<PratinjauPortal | GagalTautanPublik | { ok: false; code: "TIDAK_SAH" }> {
+export async function pratinjauPesananPortalAksi(
+  token: unknown,
+  lines: unknown,
+): Promise<PratinjauPortal | GagalTautanPublik | TerlaluSeringPortal | { ok: false; code: "TIDAK_SAH" }> {
   const buka = await bukaTautanPortal(token);
   if (!buka.ok) return { ok: false, code: "TAUTAN_TIDAK_BERLAKU" };
+  if (!pembatasPeriksaPortal.coba(buka.akses.linkId)) return { ok: false, code: "TERLALU_SERING" };
   const parsed = skemaBarisPortal.safeParse(lines);
   if (!parsed.success) return { ok: false, code: "TIDAK_SAH" };
   return pratinjauPortal(buka.akses, parsed.data);
 }
 
-export async function kirimPesananPortalAksi(token: unknown, input: unknown): Promise<HasilKirimPortal | GagalTautanPublik> {
+export async function kirimPesananPortalAksi(token: unknown, input: unknown): Promise<HasilKirimPortal | GagalTautanPublik | TerlaluSeringPortal> {
   const buka = await bukaTautanPortal(token);
   if (!buka.ok) return { ok: false, code: "TAUTAN_TIDAK_BERLAKU" };
+  if (!pembatasPeriksaPortal.coba(buka.akses.linkId)) return { ok: false, code: "TERLALU_SERING" };
   return kirimPesananPortal(buka.akses, input);
 }
 

@@ -4,7 +4,7 @@ import { hariIniWib } from "@/lib/tanggal-isian";
 import { bentrokKunciKiriman } from './idempoten';
 import { denganNomorUnik } from './nomor';
 import { generateDocNumber } from '@/lib/docNumber';
-import { hitungUlangPiutang } from './writer';
+import { hitungUlangPiutang, pemakaianRetur } from './writer';
 import { tulisPiutangManual } from "./manual-writer";
 import { catatJejak, JEJAK } from './jejak';
 import { bentrokPengganti, catatDiganti, periksaReturLama, type AlasanPengganti } from './pengganti';
@@ -12,8 +12,12 @@ import { computeStorePrice } from "@elorae/db/pricing";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { masukkanGudangRusakDariNri } from "@/lib/spg/gudang-rusak-writer";
 import { fotoBolehDipakai } from "./foto-pencatat";
+import { periksaFotoKembar } from "@/lib/foto/kembar";
 import { PERMISSIONS } from "@/lib/rbac";
 import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
+import { AWALAN_PENANDA_BEBAN, idBebanDariCatatan, penandaBebanRetur } from "./penanda-beban";
+import { bebanDitagihKeToko } from "./rules";
+import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 
 /**
  * Penulis retur toko — dua dokumen, dua tangan.
@@ -136,6 +140,8 @@ export type AlasanGagalRetur =
   | 'KUNCI_DIPAKAI'
   /** Foto nota `/api/foto/<id>` diunggah orang lain, dan pencatat bukan pengelola piutang. */
   | "FOTO_BUKAN_MILIK"
+  /** Foto nota sama persis dengan foto orang lain yang sudah dipakai dokumen lain (foto dicuci). */
+  | "FOTO_SUDAH_DIPAKAI"
   /** NRT dari SPG wajib membawa baris barang. */
   | "BARIS_WAJIB"
   | "BARANG_TIDAK_DITEMUKAN"
@@ -709,6 +715,17 @@ export async function balikkanBukuRetur(tx: Klien, storeReturnId: string, olehUs
 }
 
 /**
+ * Kategori `AdminNotification` untuk nota retur yang dilaporkan SPG di toko
+ * TANPA salesman pemegang (`Store.salesmanId` kosong). Tidak ada orang lapangan
+ * yang menindaklanjuti notanya — mengantar barangnya ke gudang, memotongkannya
+ * di BKM — jadi kantor (`receivables:manage`, `admin-fanout.ts`) yang diberi
+ * tahu (KEPUTUSAN SEMENTARA PEMILIK 2026-10-06).
+ */
+export const KATEGORI_NOTIF_RETUR_TANPA_PEMEGANG = "RETUR_SPG_TANPA_PEMEGANG";
+
+type NotifikasiKantor = { id: string; category: string; title: string; message: string; metadata: Prisma.JsonValue };
+
+/**
  * Catat klaim retur dari toko (NRT).
  *
  * Nomornya diketik, bukan dihasilkan: ia nomor milik toko. Unik per toko, bukan
@@ -761,11 +778,15 @@ export async function catatReturToko(input: {
 
   const kunci = input.idempotencyKey?.trim() || null;
   let nomorDibuat = false;
+  // Diisi di dalam transaksi; disetel ulang di setiap percobaan supaya
+  // notifikasi dari transaksi yang batal tidak pernah disebar.
+  let notifikasi: NotifikasiKantor | null = null;
 
   const simpan = () =>
     denganNomorUnik(() =>
       runSerializable(async (tx) => {
         nomorDibuat = false;
+        notifikasi = null;
         /*
          * Kiriman ulang dari HP dikenali lebih dulu. Tanpa ini ia ditolak
          * "nomor sudah dipakai" — oleh notanya sendiri — dan sales mengira
@@ -791,17 +812,21 @@ export async function catatReturToko(input: {
           izinKantor: [PERMISSIONS.RECEIVABLES_MANAGE],
         });
         if (!fotoSah) return { ok: false as const, alasan: "FOTO_BUKAN_MILIK" as const };
+        const kembar = await periksaFotoKembar(tx, { urls: [input.photoUrl], userId: input.olehUserId });
+        if (!kembar.boleh) return { ok: false as const, alasan: kembar.kode };
 
         let nomor = nomorDiketik;
         let items: BarisTersusun[] = itemsBiasa;
         let total = nilaiDariRincian(itemsBiasa, input.claimedAmount);
+        let tokoSpg: { name: string; salesmanId: string | null } | null = null;
 
         if (dariSpg) {
           const toko = await tx.store.findUnique({
             where: { id: input.storeId },
-            select: { termsType: true, marginPercent: true },
+            select: { termsType: true, marginPercent: true, name: true, salesmanId: true },
           });
           if (!toko) return { ok: false as const, alasan: "TOKO_TIDAK_DITEMUKAN" as const };
+          tokoSpg = { name: toko.name, salesmanId: toko.salesmanId };
           const susun = await susunBarisSpg(tx, barisSpg, toko);
           if (!susun) return { ok: false as const, alasan: "BARANG_TIDAK_DITEMUKAN" as const };
           // Retur pembeli dulu: ia juga menolak baris yang menunjuk DUA asal.
@@ -914,6 +939,23 @@ export async function catatReturToko(input: {
           });
         }
 
+        // Toko tanpa pemegang: lonceng kantor, ditulis di transaksi yang sama
+        // dengan notanya dan disebar sesudahnya. Tanpa rupiah — barisnya pcs.
+        if (dariSpg && tokoSpg && !tokoSpg.salesmanId) {
+          const pelapor = await tx.user.findUnique({ where: { id: input.olehUserId }, select: { name: true, email: true } });
+          const potong = items.reduce((n, b) => n + b.qty, 0);
+          notifikasi = await tx.adminNotification.create({
+            data: {
+              category: KATEGORI_NOTIF_RETUR_TANPA_PEMEGANG,
+              severity: "INFO",
+              title: `Nota retur SPG dari toko tanpa pemegang: ${tokoSpg.name}`,
+              message: `${pelapor?.name ?? pelapor?.email ?? "SPG"} melaporkan nota retur ${nota.noNrt} (${items.length} barang, ${potong} potong) di ${tokoSpg.name}. Toko ini belum punya salesman pemegang, jadi kantor yang menindaklanjutinya.`,
+              metadata: { storeReturnId: nota.id, storeId: input.storeId, noNrt: nota.noNrt },
+            },
+            select: { id: true, category: true, title: true, message: true, metadata: true },
+          });
+        }
+
         return { ok: true as const, id: nota.id, noNrt: nota.noNrt };
       }),
     );
@@ -923,7 +965,11 @@ export async function catatReturToko(input: {
     // Nomor buatan sistem yang keburu diambil nota lain → ambil nomor berikutnya.
     for (let percobaan = 0; ; percobaan++) {
       try {
-        return await simpan();
+        const hasil = await simpan();
+        // Sesudah transaksi, tidak pernah ditunggu (lihat `fanOutAdminNotification`).
+        const kabar = notifikasi as NotifikasiKantor | null;
+        if (hasil.ok && kabar) void fanOutAdminNotification(kabar);
+        return hasil;
       } catch (err) {
         const ulangi = bentrokKunciKiriman(err) || (nomorDibuat && bentrokNomorNota(err));
         if (!ulangi || percobaan >= 2) throw err;
@@ -1252,26 +1298,9 @@ export async function lepasPasangan(input: {
   });
 }
 
-/**
- * Penanda faktur beban di catatannya.
- *
- * Skema tidak punya kolom yang menautkan beban ke faktur, jadi tautannya adalah
- * penanda ini di `Receivable.note` — id beban (cuid) unik, sehingga pencarian
- * `contains` atasnya tepat satu. Jangan mengubah bentuknya tanpa memindahkan
- * faktur lama: pembacanya hanya mengenali bentuk ini.
- */
-export function penandaBebanRetur(chargeId: string): string {
-  return `[beban-retur:${chargeId}]`;
-}
-
-/** Awalan penanda — untuk membaca semua faktur beban sekaligus. */
-export const AWALAN_PENANDA_BEBAN = "[beban-retur:";
-
-/** Id beban dari catatan faktur, atau `null` kalau faktur itu bukan faktur beban. */
-export function idBebanDariCatatan(note: string | null | undefined): string | null {
-  const m = note?.match(/\[beban-retur:([^\]\s]+)\]/);
-  return m ? m[1] : null;
-}
+// Penanda faktur beban tinggal di `penanda-beban.ts`; diekspor ulang di sini
+// untuk pemanggil lama.
+export { AWALAN_PENANDA_BEBAN, idBebanDariCatatan, penandaBebanRetur };
 
 type FakturBeban = { id: string; invoiceNo: string; amount: number; storeId: string };
 
@@ -1290,35 +1319,57 @@ function tengahMalamWib(hari = 0): Date {
   return new Date(d.getTime() + hari * 86_400_000);
 }
 
+/** Rincian angka keputusan beban ke toko — ikut tersimpan di jejaknya. */
+type RincianTagihToko = {
+  /** Selisih NRT − fisik (nilai bebannya). */
+  selisih: number;
+  /** Potongan atas NRT ini di BKM yang masih hidup saat diputuskan. */
+  dipotongToko: number;
+  /** Yang ditagihkan lewat faktur beban (`bebanDitagihKeToko`). */
+  ditagihKeToko: number;
+};
+
 /**
- * Tagihkan beban ke toko: lahirkan faktur sebesar bebannya.
+ * Tagihkan beban ke toko: lahirkan faktur sebesar yang benar-benar diambil toko.
  *
  * Tanpa ini, menetapkan TOKO melepas tahanan sehingga faktur asli lunas, dan
  * utang toko hanya hidup sebagai baris beban yang tidak pernah muncul di
  * penagihan, di batas kredit, atau di layar piutang siapa pun.
+ *
+ * KEPUTUSAN SEMENTARA PEMILIK 2026-10-06 (`ATURAN_BEBAN_TOKO` di rules.ts):
+ * jumlahnya bukan seluruh selisih, melainkan yang dipotong toko melebihi barang
+ * yang sampai — NRT 300 rb, fisik 100 rb, belum dipotong → TIDAK ada faktur
+ * (dulu 200 rb, sehingga toko tertagih 1,2 jt atas faktur 1 jt). Sesudahnya NRT
+ * itu hanya boleh dipotong sebesar fisik + yang ditagih (`batasPotongNota`),
+ * jadi selisih yang belum diambil tidak bisa diambil belakangan tanpa ditagih.
  *
  * Nomornya menunjuk NRT (`BEBAN/<nomor nota toko>`, berakhiran `/2` dst. kalau
  * nomor itu sudah dipakai toko lain), jatuh tempo = hari ini + tempo toko.
  * Ditagih oleh pemegang toko; selama toko belum punya pemegang, oleh sales yang
  * melaporkan notanya (bukan SPG — SPG tidak menagih).
  *
- * Catatan: jumlahnya sebesar beban, dengan anggapan toko memotong nilai NRT
- * penuh di pembayarannya (itulah gunanya nota retur). Kalau toko belum/tidak
- * memotongnya sama sekali, faktur ini lebih besar dari yang dilepas.
- *
- * Tidak menulis apa pun kalau gagal — pemanggil boleh menulis bebannya sesudah.
+ * Faktur yang sudah ada dikembalikan apa adanya (keputusan ulang ke toko tidak
+ * menagih dua kali). Tidak menulis apa pun kalau gagal — pemanggil boleh
+ * menulis bebannya sesudah.
  */
 async function tagihkanBebanKeToko(
   tx: Klien,
-  input: { chargeId: string; amount: number; storeReturnId: string | null; storeId: string | null; olehUserId: string },
-): Promise<{ ok: true; faktur: FakturBeban; baru: boolean } | Gagal> {
+  input: { chargeId: string; storeReturnId: string | null; storeId: string | null; olehUserId: string },
+): Promise<{ ok: true; faktur: FakturBeban | null; baru: boolean; rincian: RincianTagihToko | null } | Gagal> {
   const ada = await cariFakturBeban(tx, input.chargeId);
-  if (ada) return { ok: true, faktur: ada, baru: false };
+  if (ada) return { ok: true, faktur: ada, baru: false, rincian: null };
 
   const nrt = input.storeReturnId
     ? await tx.storeReturn.findUnique({
         where: { id: input.storeReturnId },
-        select: { noNrt: true, storeId: true, salesmanId: true, reportedBySpg: true },
+        select: {
+          noNrt: true,
+          storeId: true,
+          salesmanId: true,
+          reportedBySpg: true,
+          claimedAmount: true,
+          warehouseReturn: { select: { physicalAmount: true, status: true } },
+        },
       })
     : null;
   if (!nrt) return { ok: false, alasan: "TIDAK_DITEMUKAN" };
@@ -1331,7 +1382,23 @@ async function tagihkanBebanKeToko(
   // Toko konsinyasi tidak pernah punya piutang. Barang yang hilang di toko
   // konsi ditagih lewat siklusnya (Barang hilang, penanggung toko).
   if (toko.termsType === "KONSI") return { ok: false, alasan: "TOKO_KONSI" };
-  if (!(input.amount > 0)) return { ok: false, alasan: "TIDAK_ADA_SELISIH" };
+  // Beban hanya lahir dari hitungan gudang yang final; tanpanya tidak ada selisih.
+  const nri = nrt.warehouseReturn;
+  if (!nri || nri.status !== "FINAL") return { ok: false, alasan: "TIDAK_ADA_SELISIH" };
+
+  const nilaiKlaim = angka(nrt.claimedAmount);
+  const nilaiFisik = angka(nri.physicalAmount);
+  const dipotongToko = input.storeReturnId
+    ? ((await pemakaianRetur(tx, [input.storeReturnId])).get(input.storeReturnId)?.terpakai ?? 0)
+    : 0;
+  const ditagihKeToko = bebanDitagihKeToko({ nilaiKlaim, nilaiFisik, sudahDipotong: dipotongToko });
+  const rincian: RincianTagihToko = {
+    selisih: Math.max(0, Math.round((nilaiKlaim - nilaiFisik) * 100) / 100),
+    dipotongToko: Math.round(dipotongToko * 100) / 100,
+    ditagihKeToko,
+  };
+  // Toko belum mengambil lebih dari barang yang sampai: tidak ada yang ditagih.
+  if (!(ditagihKeToko > 0)) return { ok: true, faktur: null, baru: false, rincian };
 
   const dasar = `BEBAN/${nrt.noNrt}`;
   let nomor = dasar;
@@ -1347,13 +1414,14 @@ async function tagihkanBebanKeToko(
     invoiceDate,
     dueDate: new Date(invoiceDate.getTime() + Math.max(0, toko.paymentTempo) * 86_400_000),
     olehUserId: input.olehUserId,
-    total: input.amount,
+    total: ditagihKeToko,
     note: `Selisih retur ${nrt.noNrt} ditanggung toko. ${penandaBebanRetur(input.chargeId)}`,
     metadataJejak: {
       sumber: "BEBAN_RETUR",
       returnChargeId: input.chargeId,
       storeReturnId: input.storeReturnId,
       noNrt: nrt.noNrt,
+      ...rincian,
     },
   });
   if (!hasil.ok) {
@@ -1362,7 +1430,12 @@ async function tagihkanBebanKeToko(
     if (hasil.alasan === "NOMOR_SUDAH_ADA") return { ok: false, alasan: "NOMOR_BENTROK" };
     return { ok: false, alasan: "NILAI_TIDAK_VALID" };
   }
-  return { ok: true, faktur: { id: hasil.id, invoiceNo: nomor, amount: input.amount, storeId }, baru: true };
+  return {
+    ok: true,
+    faktur: { id: hasil.id, invoiceNo: nomor, amount: ditagihKeToko, storeId },
+    baru: true,
+    rincian,
+  };
 }
 
 /**
@@ -1419,19 +1492,21 @@ export async function putuskanBeban(input: {
     if (beban.status !== 'TERBUKA') return { ok: false as const, alasan: 'SUDAH_DIPUTUSKAN' as const };
     if (!(angka(beban.amount) > 0)) return { ok: false as const, alasan: 'TIDAK_ADA_SELISIH' as const };
 
-    // Ditanggung toko = toko berutang sebesar bebannya. Fakturnya lahir DULU,
-    // di transaksi yang sama: kalau gagal, keputusannya pun tidak tertulis.
+    // Ditanggung toko = toko berutang sebesar yang ia ambil melebihi barang
+    // yang sampai (`tagihkanBebanKeToko`). Fakturnya lahir DULU, di transaksi
+    // yang sama: kalau gagal, keputusannya pun tidak tertulis.
     let faktur: FakturBeban | null = null;
+    let rincianToko: RincianTagihToko | null = null;
     if (input.bearer === "TOKO") {
       const t = await tagihkanBebanKeToko(tx, {
         chargeId: beban.id,
-        amount: angka(beban.amount),
         storeReturnId: beban.storeReturnId,
         storeId: beban.storeId,
         olehUserId: input.olehUserId,
       });
       if (!t.ok) return t;
       faktur = t.faktur;
+      rincianToko = t.rincian;
     }
 
     await tx.returnCharge.update({
@@ -1460,6 +1535,8 @@ export async function putuskanBeban(input: {
       metadata: {
         amount: angka(beban.amount),
         bearerUserId: orang,
+        // Angka keputusan ke toko: selisih, yang sudah dipotong toko, yang ditagih.
+        ...(rincianToko ?? {}),
         ...(faktur ? { receivableId: faktur.id, invoiceNo: faktur.invoiceNo } : {}),
       },
       reason: input.alasan,
@@ -1616,16 +1693,17 @@ export async function alihkanBeban(input: {
     // Dari toko: fakturnya dihapus — hanya selama belum ditagih.
     let fakturDibuat: FakturBeban | null = null;
     let fakturDihapus: FakturBeban | null = null;
+    let rincianToko: RincianTagihToko | null = null;
     if (input.bearer === "TOKO") {
       const t = await tagihkanBebanKeToko(tx, {
         chargeId: beban.id,
-        amount: angka(beban.amount),
         storeReturnId: beban.storeReturnId,
         storeId: beban.storeId,
         olehUserId: input.olehUserId,
       });
       if (!t.ok) return t;
       if (t.baru) fakturDibuat = t.faktur;
+      rincianToko = t.rincian;
     } else {
       const lama = await cariFakturBeban(tx, beban.id);
       if (lama) {
@@ -1657,9 +1735,10 @@ export async function alihkanBeban(input: {
       },
       // Faktur yang dihapus hanya hidup di sini sesudahnya — nomornya dan
       // nilainya ikut tersimpan supaya bisa dicari.
-      ...(fakturDibuat || fakturDihapus
+      ...(fakturDibuat || fakturDihapus || rincianToko
         ? {
             metadata: {
+              ...(rincianToko ?? {}),
               ...(fakturDibuat ? { piutangDibuat: fakturDibuat } : {}),
               ...(fakturDihapus ? { piutangDihapus: fakturDihapus } : {}),
             },

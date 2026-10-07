@@ -1,22 +1,47 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { prisma } from '@elorae/db';
-import { requirePermission, PERMISSIONS } from '@/lib/rbac';
+import { prisma, Prisma } from '@elorae/db';
+import { hasPermission, requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
 import { z } from 'zod';
 import { runSerializable } from '@/lib/db/tx-retry';
 import { perannyaSpg, tolakAkunSistem, type KodeAkunSistem } from '@/lib/users/validasi';
 
+/** Batas kolom VARCHAR(191) di MariaDB untuk keterangan peran. */
 const roleSchema = z.object({
-  name: z.string().min(1).max(50),
-  description: z.string().optional(),
+  name: z.string().trim().min(1).max(50),
+  description: z.string().trim().max(191).optional(),
 });
 
-const _updateRolePermissionsSchema = z.object({
-  permissionIds: z.array(z.string()),
-});
-void _updateRolePermissionsSchema;
+/**
+ * Hasil aksi tulis peran. Ditolak dengan kode, bukan dilempar: pesan galat
+ * aksi server disamarkan di produksi, jadi layar hanya bisa menerjemahkan kode.
+ */
+export type KodeGalatPeran =
+  | 'TANPA_AKSES'
+  | 'NAMA_TIDAK_SAH'
+  | 'NAMA_SUDAH_ADA'
+  | 'IZIN_TIDAK_SAH'
+  | 'TIDAK_DITEMUKAN'
+  | 'PERAN_SISTEM'
+  | 'MASIH_DIPAKAI';
+
+export type HasilPeran = { ok: true } | { ok: false; code: KodeGalatPeran };
+
+/** Sesi pengelola peran, atau null bila tidak masuk / tidak berizin. */
+async function pengelolaPeran(): Promise<string | null> {
+  const session = await auth();
+  if (!session?.user?.id) return null;
+  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.SETTINGS_RBAC_MANAGE)) return null;
+  return session.user.id;
+}
+
+/** Daftar id izin yang sah bentuknya (teks, tanpa ganda), atau null. */
+function idIzinRapi(permissionIds: unknown): string[] | null {
+  if (!Array.isArray(permissionIds) || !permissionIds.every((id) => typeof id === 'string' && id.length > 0)) return null;
+  return [...new Set(permissionIds as string[])];
+}
 
 /**
  * Get all roles with their permissions and user counts
@@ -62,88 +87,90 @@ export async function getRoles() {
 }
 
 /**
- * Get all permissions grouped by module
+ * Semua izin di basis data, rata. Pengelompokan dan urutannya dilakukan layar
+ * menurut bidang kerja (`lib/rbac/penjelasan-izin.ts`), bukan menurut modul kode.
  */
 export async function getPermissions() {
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_RBAC_VIEW);
 
-  const permissions = await prisma.permission.findMany({
-    orderBy: [
-      { module: 'asc' },
-      { action: 'asc' },
-    ],
+  return prisma.permission.findMany({
+    select: { id: true, code: true, module: true, action: true, description: true },
+    orderBy: { code: 'asc' },
   });
-
-  // Group by module
-  const grouped: Record<string, typeof permissions> = {};
-  for (const perm of permissions) {
-    if (!grouped[perm.module]) {
-      grouped[perm.module] = [];
-    }
-    grouped[perm.module].push(perm);
-  }
-
-  return grouped;
-}
-
-/**
- * Create a new role
- */
-export async function createRole(
-  data: z.infer<typeof roleSchema>,
-  permissionIds: string[]
-) {
-  const session = await auth();
-  if (!session) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_RBAC_MANAGE);
-
-  const validated = roleSchema.parse(data);
-
-  // Check if role name already exists
-  const existing = await prisma.roleDefinition.findUnique({
-    where: { name: validated.name },
-  });
-  if (existing) {
-    throw new Error('Role with this name already exists');
-  }
-
-  // Validate permission IDs exist
-  const permissionCount = await prisma.permission.count({
-    where: { id: { in: permissionIds } },
-  });
-  if (permissionCount !== permissionIds.length) {
-    throw new Error('One or more permission IDs are invalid');
-  }
-
-  const role = await prisma.roleDefinition.create({
-    data: {
-      name: validated.name,
-      description: validated.description || null,
-      isSystem: false,
-      permissions: {
-        create: permissionIds.map((permissionId) => ({
-          permissionId,
-        })),
-      },
-    },
-    include: {
-      permissions: {
-        include: {
-          permission: true,
-        },
-      },
-    },
-  });
-
-  revalidatePath('/backoffice/settings/rbac');
-  return role;
 }
 
 /** Kode izin sebuah peran, terurut — bentuk jejak sebelum/sesudah. */
 function kodeIzin(rows: { permission: { code: string } }[]): string[] {
   return rows.map((r) => r.permission.code).sort();
+}
+
+/**
+ * Create a new role
+ *
+ * Peran baru, tautan izinnya, dan `AuditLog` (`ROLE_CREATED`, nama, keterangan,
+ * dan daftar izinnya) di SATU transaksi serializable — membuat peran berizin
+ * keuangan sama saja dengan memberi izin itu, jadi jejaknya sama wajibnya
+ * dengan mengubah izin.
+ */
+export async function createRole(
+  data: z.infer<typeof roleSchema>,
+  permissionIds: string[],
+): Promise<{ ok: true; id: string } | { ok: false; code: KodeGalatPeran }> {
+  const pelakuId = await pengelolaPeran();
+  if (!pelakuId) return { ok: false, code: 'TANPA_AKSES' };
+
+  const validated = roleSchema.safeParse(data);
+  if (!validated.success) return { ok: false, code: 'NAMA_TIDAK_SAH' };
+  const ids = idIzinRapi(permissionIds);
+  if (!ids) return { ok: false, code: 'IZIN_TIDAK_SAH' };
+  const { name } = validated.data;
+  const description = validated.data.description || null;
+
+  try {
+    const hasil = await runSerializable(
+      async (tx): Promise<{ ok: true; id: string } | { ok: false; code: KodeGalatPeran }> => {
+        const ada = await tx.roleDefinition.findUnique({ where: { name }, select: { id: true } });
+        if (ada) return { ok: false, code: 'NAMA_SUDAH_ADA' };
+
+        const izin = await tx.permission.findMany({ where: { id: { in: ids } }, select: { code: true } });
+        if (izin.length !== ids.length) return { ok: false, code: 'IZIN_TIDAK_SAH' };
+
+        const role = await tx.roleDefinition.create({
+          data: {
+            name,
+            description,
+            isSystem: false,
+            permissions: { create: ids.map((permissionId) => ({ permissionId })) },
+          },
+          select: { id: true },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            userId: pelakuId,
+            action: 'ROLE_CREATED',
+            entityType: 'RoleDefinition',
+            entityId: role.id,
+            changes: {
+              after: { name, description, permissions: izin.map((p) => p.code).sort() },
+            },
+            metadata: { roleName: name },
+          },
+        });
+        return { ok: true, id: role.id };
+      },
+    );
+    if (hasil.ok) revalidatePath('/backoffice/settings/rbac');
+    return hasil;
+  } catch (e) {
+    // Dua orang membuat nama yang sama bersamaan: indeks unik yang memutuskan.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      return { ok: false, code: 'NAMA_SUDAH_ADA' };
+    }
+    throw e;
+  }
 }
 
 /**
@@ -154,36 +181,27 @@ function kodeIzin(rows: { permission: { code: string } }[]): string[] {
  * menyimpan izin terakhir — siapa yang memberi peran lapangan akses keuangan,
  * dan kapan, hanya bisa ditanyakan dari jejak ini.
  */
-export async function updateRolePermissions(
-  roleId: string,
-  permissionIds: string[]
-) {
-  const session = await auth();
-  if (!session?.user?.id) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_RBAC_MANAGE);
-  const pelakuId = session.user.id;
-  const ids = [...new Set(permissionIds)];
+export async function updateRolePermissions(roleId: string, permissionIds: string[]): Promise<HasilPeran> {
+  const pelakuId = await pengelolaPeran();
+  if (!pelakuId) return { ok: false, code: 'TANPA_AKSES' };
+  if (typeof roleId !== 'string' || !roleId) return { ok: false, code: 'TIDAK_DITEMUKAN' };
+  const ids = idIzinRapi(permissionIds);
+  if (!ids) return { ok: false, code: 'IZIN_TIDAK_SAH' };
 
-  await runSerializable(async (tx) => {
+  const hasil = await runSerializable(async (tx): Promise<HasilPeran> => {
     const role = await tx.roleDefinition.findUnique({
       where: { id: roleId },
       select: { id: true, name: true, isSystem: true, permissions: { select: { permission: { select: { code: true } } } } },
     });
-    if (!role) {
-      throw new Error('Role not found');
-    }
-    if (role.isSystem) {
-      throw new Error('Cannot modify system role permissions');
-    }
+    if (!role) return { ok: false, code: 'TIDAK_DITEMUKAN' };
+    if (role.isSystem) return { ok: false, code: 'PERAN_SISTEM' };
 
     // Validate permission IDs exist
     const baru = await tx.permission.findMany({
       where: { id: { in: ids } },
       select: { code: true },
     });
-    if (baru.length !== ids.length) {
-      throw new Error('One or more permission IDs are invalid');
-    }
+    if (baru.length !== ids.length) return { ok: false, code: 'IZIN_TIDAK_SAH' };
 
     await tx.rolePermission.deleteMany({
       where: { roleId },
@@ -220,9 +238,11 @@ export async function updateRolePermissions(
         metadata: { roleName: role.name },
       },
     });
+    return { ok: true };
   });
 
-  revalidatePath('/backoffice/settings/rbac');
+  if (hasil.ok) revalidatePath('/backoffice/settings/rbac');
+  return hasil;
 }
 
 /**
@@ -232,13 +252,12 @@ export async function updateRolePermissions(
  * satu transaksi: setelah barisnya hilang, jejak inilah satu-satunya tempat
  * izin peran itu masih bisa dibaca.
  */
-export async function deleteRole(roleId: string) {
-  const session = await auth();
-  if (!session?.user?.id) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_RBAC_MANAGE);
-  const pelakuId = session.user.id;
+export async function deleteRole(roleId: string): Promise<HasilPeran> {
+  const pelakuId = await pengelolaPeran();
+  if (!pelakuId) return { ok: false, code: 'TANPA_AKSES' };
+  if (typeof roleId !== 'string' || !roleId) return { ok: false, code: 'TIDAK_DITEMUKAN' };
 
-  await runSerializable(async (tx) => {
+  const hasil = await runSerializable(async (tx): Promise<HasilPeran> => {
     const role = await tx.roleDefinition.findUnique({
       where: { id: roleId },
       select: {
@@ -255,15 +274,9 @@ export async function deleteRole(roleId: string) {
       },
     });
 
-    if (!role) {
-      throw new Error('Role not found');
-    }
-    if (role.isSystem) {
-      throw new Error('Cannot delete system role');
-    }
-    if (role._count.users > 0) {
-      throw new Error('Cannot delete role that is assigned to users');
-    }
+    if (!role) return { ok: false, code: 'TIDAK_DITEMUKAN' };
+    if (role.isSystem) return { ok: false, code: 'PERAN_SISTEM' };
+    if (role._count.users > 0) return { ok: false, code: 'MASIH_DIPAKAI' };
 
     await tx.roleDefinition.delete({
       where: { id: roleId },
@@ -280,9 +293,11 @@ export async function deleteRole(roleId: string) {
         },
       },
     });
+    return { ok: true };
   });
 
-  revalidatePath('/backoffice/settings/rbac');
+  if (hasil.ok) revalidatePath('/backoffice/settings/rbac');
+  return hasil;
 }
 
 export type AssignUserRoleResult =

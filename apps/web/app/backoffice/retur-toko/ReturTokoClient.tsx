@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { ArrowRightLeft, Camera, Link2, PackageOpen, Plus, Scale } from 'lucide-react';
+import { ArrowRightLeft, Camera, EyeOff, Link2, PackageOpen, Plus, Scale } from 'lucide-react';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent } from '@/components/ui/card';
@@ -47,13 +47,14 @@ import {
   jodohkanReturAction,
   pindahkanNriAction,
 } from '@/app/actions/store-returns';
-import type {
-  BarisKerjaRetur,
-  RingkasanKerjaRetur,
-} from '@/lib/receivables/return-queries';
+import type { RingkasanKerjaRetur } from '@/lib/receivables/return-queries';
 import type { LangkahRetur } from '@/lib/receivables/rules';
+import { pelaporNota, type BarisReturTampil, type SaringRetur } from './buta';
+import { KotakCari } from '../piutang/_daftar/KotakCari';
+import { HalamanDaftar } from '../piutang/_daftar/HalamanDaftar';
+import { denganParam } from '../piutang/_daftar/halaman';
 import type { BarisBarang } from '@/lib/receivables/return-writer';
-import { NADA_LANGKAH, URUT_LANGKAH } from './langkah';
+import { NADA_LANGKAH } from './langkah';
 import { UnggahFoto, type NilaiFoto } from '@/components/foto/UnggahFoto';
 import { BarisBarangEditor, type PilihanBarang } from './BarisBarangEditor';
 import { BacaNota } from '@/components/ocr/BacaNota';
@@ -73,35 +74,53 @@ export type CalonPasangan = {
   noNrt: string;
   storeId: string;
   storeName: string;
-  nilaiKlaim: number;
+  /** `null` = nota belum dihitung dan penonton ini boleh menghitungnya (buta). */
+  nilaiKlaim: number | null;
   tanggal: string;
 };
 
+const JALUR = '/backoffice/retur-toko';
+
 export function ReturTokoClient({
   baris,
+  halaman,
+  adaBaris,
   ringkasan,
   toko,
   katalog,
   calonPasangan,
   bolehMengelola,
   bolehMenghitung,
+  penggunaId = '',
   dariSpg = [],
+  jumlahKoreksi = 0,
   koreksiIds = [],
-  saringAwal = 'kerja',
+  saring = 'kerja',
+  cari = '',
 }: {
-  baris: BarisKerjaRetur[];
+  /** Satu halaman yang sudah disaring di server; klaim baris buta sudah dibuang. */
+  baris: BarisReturTampil[];
+  halaman: { halaman: number; totalHalaman: number; total: number; ukuran: number };
+  /** Ada nota sama sekali (sebelum disaring). */
+  adaBaris: boolean;
+  /** Atas SEMUA nota, bukan hanya halaman ini. */
   ringkasan: RingkasanKerjaRetur;
   toko: { id: string; name: string }[];
   katalog: PilihanBarang[];
   calonPasangan: CalonPasangan[];
   bolehMengelola: boolean;
   bolehMenghitung: boolean;
+  /** Pengguna yang membuka — pelapor nota tidak boleh menghitung notanya sendiri. */
+  penggunaId?: string;
   /** Id nota retur yang dilaporkan SPG. */
   dariSpg?: string[];
-  /** Id nota retur yang koreksinya diminta sales dan belum ditangani kantor. */
+  /** Nota yang koreksinya diminta sales dan belum ditangani kantor. */
+  jumlahKoreksi?: number;
   koreksiIds?: string[];
-  /** Dari `?koreksi=1` — tautan Beranda mendarat di daftar yang tersaring. */
-  saringAwal?: 'kerja' | 'koreksi';
+  /** Dari `?langkah=` / `?koreksi=1`. */
+  saring?: SaringRetur;
+  /** Dari `?cari=`. */
+  cari?: string;
 }) {
   const t = useTranslations('storeReturns');
   const notaSpg = useMemo(() => new Set(dariSpg), [dariSpg]);
@@ -110,7 +129,9 @@ export function ReturTokoClient({
   const tanggal = (iso: string) => formatDisplayDate(iso, locale);
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [saring, setSaring] = useState<LangkahRetur | 'kerja' | 'koreksi' | null>(saringAwal);
+  // Saringan hidup di alamat; kata kuncinya ikut, halamannya kembali ke 1.
+  const hrefSaring = (x: SaringRetur) =>
+    denganParam(JALUR, { cari }, { langkah: x === 'kerja' || x === 'koreksi' ? null : x, koreksi: x === 'koreksi' ? '1' : null });
 
   const [buatTerbuka, setBuatTerbuka] = useState(false);
   const [noNrt, setNoNrt] = useState('');
@@ -122,7 +143,7 @@ export function ReturTokoClient({
   const [foto, setFoto] = useState<NilaiFoto>(null);
   const [catatan, setCatatan] = useState('');
 
-  const [hitungBaris, setHitungBaris] = useState<BarisKerjaRetur | null>(null);
+  const [hitungBaris, setHitungBaris] = useState<BarisReturTampil | null>(null);
   const [terimaTerbuka, setTerimaTerbuka] = useState(false);
   const [nilaiFisik, setNilaiFisik] = useState('');
   const [catatanHitung, setCatatanHitung] = useState('');
@@ -130,9 +151,9 @@ export function ReturTokoClient({
   const [kirimFisik, setKirimFisik] = useState<(typeof KIRIM)[number]>('EKSPEDISI');
   const [tanggalTerima, setTanggalTerima] = useState(hariIniWib());
 
-  const [jodohBaris, setJodohBaris] = useState<BarisKerjaRetur | null>(null);
+  const [jodohBaris, setJodohBaris] = useState<BarisReturTampil | null>(null);
   // Hitungan gudang yatim yang dicatat ke toko yang salah (atau tanpa toko).
-  const [pindahBaris, setPindahBaris] = useState<BarisKerjaRetur | null>(null);
+  const [pindahBaris, setPindahBaris] = useState<BarisReturTampil | null>(null);
   const [tokoPindahId, setTokoPindahId] = useState('');
   const [alasanPindah, setAlasanPindah] = useState('');
   const [siklusTerkunci, setSiklusTerkunci] = useState<string[] | null>(null);
@@ -141,14 +162,7 @@ export function ReturTokoClient({
 
   const label = (k: LangkahRetur) => t(`step${k.charAt(0).toUpperCase()}${k.slice(1)}` as never);
 
-  const tampil =
-    saring === 'kerja'
-      ? baris.filter((b) => b.langkah !== 'beres' && b.langkah !== 'batal')
-      : saring === 'koreksi'
-        ? baris.filter((b) => b.jenis === 'NRT' && notaKoreksi.has(b.id))
-        : saring
-        ? baris.filter((b) => b.langkah === saring)
-        : baris;
+  const tampil = baris;
 
   const jalankan = (
     fn: () => Promise<{ ok: boolean; kode?: string }>,
@@ -167,12 +181,13 @@ export function ReturTokoClient({
     });
   };
 
-  /* Kartu-kartu langkah. Angkanya besar, tapi yang penting kalimat di bawahnya:
-     ia menyebut AKIBAT langkah itu, bukan sekadar namanya lagi. */
+  /* Kartu-kartu langkah, sekaligus saringannya — dulu angka yang sama diulang
+     di pil tepat di bawahnya. Warna hanya kalau angkanya lebih dari nol: nol
+     merah membaca seperti peringatan. */
   const KARTU: { langkah: LangkahRetur; nada: string }[] = [
     { langkah: 'keputusan', nada: 'text-destructive' },
     { langkah: 'cek', nada: 'text-amber-600 dark:text-amber-500' },
-    { langkah: 'jodoh', nada: 'text-primary' },
+    { langkah: 'jodoh', nada: 'text-sky-700 dark:text-sky-400' },
     { langkah: 'beres', nada: 'text-emerald-600 dark:text-emerald-500' },
   ];
 
@@ -213,64 +228,71 @@ export function ReturTokoClient({
       />
 
       <div className="anim-stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {KARTU.map(({ langkah, nada }) => (
-          <Card key={langkah}>
-            <CardContent className="space-y-1 py-4">
-              <p className="text-sm text-muted-foreground">{label(langkah)}</p>
-              <p className={cn('text-2xl font-semibold tabular-nums', nada)}>
-                {ringkasan.perLangkah[langkah]}
-              </p>
-            </CardContent>
-          </Card>
-        ))}
+        {KARTU.map(({ langkah, nada }) => {
+          const n = ringkasan.perLangkah[langkah];
+          const aktif = saring === langkah;
+          return (
+            <Link
+              key={langkah}
+              href={hrefSaring(aktif ? 'kerja' : langkah)}
+              replace
+              aria-current={aktif ? 'true' : undefined}
+            >
+              <Card
+                className={cn(
+                  'h-full transition-colors hover:bg-muted/40',
+                  aktif && 'border-primary ring-1 ring-primary/40',
+                )}
+              >
+                <CardContent className="space-y-1 py-4">
+                  <p className="text-sm text-muted-foreground">{label(langkah)}</p>
+                  <p className={cn('text-2xl font-semibold tabular-nums', n > 0 && nada)}>{n}</p>
+                </CardContent>
+              </Card>
+            </Link>
+          );
+        })}
       </div>
 
-      <div className="anim-stagger flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => setSaring('kerja')}
-          className={cn(
-            'rounded-full border px-3 py-1.5 text-sm transition-colors',
-            saring === 'kerja' ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted',
-          )}
-        >
-          {t('filterWork', { count: ringkasan.perluDikerjakan })}
-        </button>
-        {notaKoreksi.size > 0 || saring === 'koreksi' ? (
-          <button
-            type="button"
-            onClick={() => setSaring(saring === 'koreksi' ? null : 'koreksi')}
-            className={cn(
-              'rounded-full border px-3 py-1.5 text-sm transition-colors',
-              saring === 'koreksi' ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted',
-            )}
-          >
-            {t('filterKoreksi')}
-            <span className="ml-2 tabular-nums text-muted-foreground">{notaKoreksi.size}</span>
-          </button>
-        ) : null}
-        {URUT_LANGKAH.filter((k) => ringkasan.perLangkah[k] > 0).map((k) => (
-          <button
-            key={k}
-            type="button"
-            onClick={() => setSaring(saring === k ? null : k)}
-            className={cn(
-              'rounded-full border px-3 py-1.5 text-sm transition-colors',
-              saring === k ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted',
-            )}
-          >
-            <StatusPill tone={NADA_LANGKAH[k]}>{label(k)}</StatusPill>
-            <span className="ml-2 tabular-nums text-muted-foreground">
-              {ringkasan.perLangkah[k]}
-            </span>
-          </button>
-        ))}
-      </div>
+      {adaBaris && (
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          <KotakCari nilai={cari} placeholder={t('searchPlaceholder')} label={t('searchPlaceholder')} />
+          <div className="anim-stagger flex flex-wrap gap-2" role="group" aria-label={t('filterLabel')}>
+            {(
+              [
+                { x: 'kerja', teks: t('filterWork', { count: ringkasan.perluDikerjakan }), tampil: true },
+                { x: 'koreksi', teks: `${t('filterKoreksi')} · ${jumlahKoreksi}`, tampil: jumlahKoreksi > 0 || saring === 'koreksi' },
+                { x: 'batal', teks: `${label('batal')} · ${ringkasan.perLangkah.batal}`, tampil: ringkasan.perLangkah.batal > 0 || saring === 'batal' },
+                { x: 'semua', teks: t('filterAll'), tampil: true },
+              ] as { x: SaringRetur; teks: string; tampil: boolean }[]
+            )
+              .filter((p) => p.tampil)
+              .map((p) => (
+                <Link
+                  key={p.x}
+                  href={hrefSaring(p.x)}
+                  replace
+                  aria-current={saring === p.x ? 'true' : undefined}
+                  className={cn(
+                    'rounded-full border px-3 py-1.5 text-sm transition-colors',
+                    saring === p.x ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted',
+                  )}
+                >
+                  {p.teks}
+                </Link>
+              ))}
+          </div>
+        </div>
+      )}
 
       <Card>
         <CardContent className={tampil.length === 0 ? 'p-0' : 'px-0'}>
           {tampil.length === 0 ? (
-            <EmptyState icon={PackageOpen} title={t('emptyTitle')} description={t('emptyBody')} />
+            cari || (saring !== 'kerja' && saring !== 'semua') ? (
+              <EmptyState icon={PackageOpen} title={t('emptyFilteredTitle')} />
+            ) : (
+              <EmptyState icon={PackageOpen} title={t('emptyTitle')} description={t('emptyBody')} />
+            )
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -299,6 +321,11 @@ export function ReturTokoClient({
                             {t("fromSpg" as never)}
                           </Badge>
                         )}
+                        {b.jenis === 'NRT' && notaKoreksi.has(b.id) && (
+                          <span className="block text-xs font-medium text-amber-700 dark:text-amber-300">
+                            {t('filterKoreksi')}
+                          </span>
+                        )}
                         {b.nomorPasangan && (
                           <span className="block text-xs text-muted-foreground">
                             ↔ {b.nomorPasangan}
@@ -325,7 +352,18 @@ export function ReturTokoClient({
                         )}
                       </TableCell>
                       <TableCell className="align-top text-right tabular-nums">
-                        {b.nilaiKlaim === null ? '—' : rupiah(b.nilaiKlaim)}
+                        {b.klaimTersembunyi ? (
+                          /* Hitungan gudang buta: klaimnya tidak sampai ke peramban
+                             orang yang akan menghitung nota ini. */
+                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                            <EyeOff className="h-3.5 w-3.5" aria-hidden />
+                            {t('claimHiddenBlind')}
+                          </span>
+                        ) : b.nilaiKlaim === null ? (
+                          '—'
+                        ) : (
+                          rupiah(b.nilaiKlaim)
+                        )}
                         {b.jumlahPotongan > 0 && (
                           <span className="block text-xs text-muted-foreground">
                             {t('deducted', { value: rupiah(b.nilaiDipotong) })}
@@ -371,7 +409,21 @@ export function ReturTokoClient({
                       </TableCell>
                       <TableCell className="sticky right-0 bg-card align-top text-right">
                         <span className="inline-flex flex-wrap justify-end gap-2">
-                          {b.langkah === 'cek' && bolehMenghitung && (
+                          {b.langkah === 'cek' && bolehMenghitung && pelaporNota(b, penggunaId) && (
+                            /* Penulis menolak pelapor menghitung notanya sendiri
+                               (PENGHITUNG_SAMA_PELAPOR) — tombolnya mati sejak awal,
+                               dengan alasannya, seperti di layar gudang. */
+                            <span className="inline-flex max-w-[11rem] flex-col items-end gap-1">
+                              <Button size="sm" disabled title={t('countOwnNote')}>
+                                <Scale className="mr-1.5 h-3.5 w-3.5" />
+                                {t('count')}
+                              </Button>
+                              <span className="whitespace-normal text-right text-xs text-muted-foreground">
+                                {t('countOwnNote')}
+                              </span>
+                            </span>
+                          )}
+                          {b.langkah === 'cek' && bolehMenghitung && !pelaporNota(b, penggunaId) && (
                             <Button
                               size="sm"
                               disabled={pending}
@@ -435,6 +487,7 @@ export function ReturTokoClient({
               </Table>
             </div>
           )}
+          <HalamanDaftar {...halaman} />
         </CardContent>
       </Card>
 
@@ -798,7 +851,8 @@ export function ReturTokoClient({
                 <SelectContent>
                   {calonPasangan.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
-                      {c.noNrt} · {c.storeName} · {rupiah(c.nilaiKlaim)}
+                      {c.noNrt} · {c.storeName} · {tanggal(c.tanggal)}
+                      {c.nilaiKlaim !== null && ` · ${rupiah(c.nilaiKlaim)}`}
                     </SelectItem>
                   ))}
                 </SelectContent>

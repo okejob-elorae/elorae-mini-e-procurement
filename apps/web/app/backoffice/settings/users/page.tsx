@@ -15,6 +15,8 @@ export default async function PenggunaPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
   if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.SETTINGS_SECURITY_MANAGE)) redirect("/backoffice/settings");
+  // Peran dibuat dan diubah di Pengaturan → Peran & Izin; tautannya hanya untuk yang boleh membukanya.
+  const bolehLihatPeran = hasPermission(session.user.permissions ?? [], PERMISSIONS.SETTINGS_RBAC_VIEW);
 
   const [users, roles, stores] = await Promise.all([
     prisma.user.findMany({
@@ -31,6 +33,7 @@ export default async function PenggunaPage() {
   return (
     <PenggunaClient
       sayaId={session.user.id}
+      bolehLihatPeran={bolehLihatPeran}
       pengguna={users.map((u) => ({
         id: u.id,
         nama: u.name ?? "",

@@ -263,7 +263,10 @@ export default function StockOpnameCountPageClient({ opnameId }: { opnameId: str
         </div>
         <Card>
           <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">{t("countClosed")}</p>
+            {/* Opname yang dibatalkan bukan "sudah dikirim untuk persetujuan". */}
+            <p className="text-sm text-muted-foreground">
+              {String(opname.status) === "CANCELLED" ? t("countCancelled") : t("countClosed")}
+            </p>
           </CardContent>
         </Card>
       </div>

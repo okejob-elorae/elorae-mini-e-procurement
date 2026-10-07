@@ -42,6 +42,9 @@ type Props = {
 const ALL_SALESMEN = "__all__";
 
 
+/** Pager disembunyikan selama semua baris muat di satu halaman terkecil. */
+const PAGER_MIN = 10;
+
 export function VanSalesListClient({
   sales,
   totalCount,
@@ -121,9 +124,12 @@ export function VanSalesListClient({
           <CardTitle className="flex items-center gap-2">
             <Receipt className="h-5 w-5" />
             {t("cardTitle")}
-            <span className="text-sm font-normal text-muted-foreground ml-2">
-              ({t("count", { count: totalCount })})
-            </span>
+            {/* Kosong: keterangan kosong cukup sekali, di badan kartu. */}
+            {totalCount > 0 ? (
+              <span className="text-sm font-normal text-muted-foreground ml-2">
+                ({t("count", { count: totalCount })})
+              </span>
+            ) : null}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -181,22 +187,25 @@ export function VanSalesListClient({
         </CardContent>
       </Card>
 
-      <Pager
-        page={page}
-        pageSize={pageSize}
-        total={totalCount}
-        onPageChange={(p) => {
-          const params = new URLSearchParams(sp.toString());
-          params.set("page", String(p));
-          startTransition(() => router.push(`/backoffice/van-sales?${params.toString()}`));
-        }}
-        onPageSizeChange={(size) => {
-          const params = new URLSearchParams(sp.toString());
-          params.set("pageSize", String(size));
-          params.delete("page");
-          startTransition(() => router.push(`/backoffice/van-sales?${params.toString()}`));
-        }}
-      />
+      {/* Satu halaman pendek tidak butuh pager. */}
+      {totalCount > PAGER_MIN || page > 1 ? (
+        <Pager
+          page={page}
+          pageSize={pageSize}
+          total={totalCount}
+          onPageChange={(p) => {
+            const params = new URLSearchParams(sp.toString());
+            params.set("page", String(p));
+            startTransition(() => router.push(`/backoffice/van-sales?${params.toString()}`));
+          }}
+          onPageSizeChange={(size) => {
+            const params = new URLSearchParams(sp.toString());
+            params.set("pageSize", String(size));
+            params.delete("page");
+            startTransition(() => router.push(`/backoffice/van-sales?${params.toString()}`));
+          }}
+        />
+      ) : null}
     </div>
   );
 }

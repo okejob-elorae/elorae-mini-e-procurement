@@ -29,6 +29,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "fulfillmentQueue.pageSubtitle" },
       "Centang beberapa pesanan untuk menyelesaikan ambil barang atau kemas sekaligus. Pengiriman dilakukan per pesanan di halaman rinciannya karena butuh pilihan kurir.",
+      "Bawaannya pesanan yang menunggu diambil. Pesanan marketplace yang batal atau diretur tidak pernah masuk antrean, di saringan mana pun — keduanya bukan pekerjaan gudang, sama dengan hitungan pesanan belum dikirim di Beranda.",
     ],
   },
   {
@@ -51,7 +52,8 @@ export const ENTRI: EntriBantuan[] = [
     bagian: "sales",
     judul: { kunci: "fieldSalesOrders.pageTitle" },
     isi: [
-      "Pesanan putus dan transfer konsinyasi yang dicatat tim sales lapangan dari HP. Daftar ini terbuka pada pesanan yang menunggu persetujuan; ganti saringan status untuk melihat yang sudah disetujui atau ditolak.",
+      "Pesanan putus dan transfer konsinyasi yang dicatat tim sales lapangan dari HP. Daftar ini terbuka pada pesanan yang menunggu persetujuan; ganti saringan status untuk melihat yang sudah disetujui, ditolak kantor, atau dibatalkan sendiri oleh salesman.",
+      "Saringan Pengiriman menampilkan pesanan putus yang sudah disetujui menurut keadaan kirimnya (belum dikirim, terkirim sebagian, terkirim, ditutup) — gudang memakainya untuk melihat pesanan yang masih harus dikirim. Lencana yang sama tampil di kolom Status.",
       "Saring juga menurut jenis (putus atau konsinyasi), pre-order, dan toko.",
     ],
   },
@@ -62,7 +64,9 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       "Barang, harga, promo, dan total satu pesanan lapangan, beserta tombol Setujui dan Tolak selama pesanan menunggu persetujuan. Menolak butuh alasan.",
       "Pesanan putus: menyetujui belum mengeluarkan stok. Barang keluar dari gudang saat pengiriman dicatat di kartu Pengiriman, dan pengirimannya boleh bertahap. Bila salesman mengajukan harga lain, harga final setiap baris yang diajukan ditentukan saat menyetujui.",
-      "Transfer konsinyasi bukan penjualan: saat disetujui, stoknya dicadangkan untuk toko itu.",
+      "Transfer konsinyasi bukan penjualan: saat disetujui, barangnya keluar dari gudang utama dan menjadi stok titipan toko itu. Barang kembali ke gudang hanya lewat retur.",
+      "Promo tingkat pesanan dihormati seperti saat pesanan dibuat, tetapi tidak pernah membuat total di bawah nol: bila harga final banding menurunkan subtotal, potongannya dibatasi sebesar subtotal bersih.",
+      "Pesanan yang ditolak kantor membuka lagi permintaan barang SPG atau rekomendasi toko yang dibuatkan pesanan itu, supaya pemegang toko bisa membuatkan pesanan baru. SPG-nya diberi kabar.",
     ],
     kartu: [
       {
@@ -71,13 +75,18 @@ export const ENTRI: EntriBantuan[] = [
       },
       {
         judul: { kunci: "fieldSalesOrders.kredit.judul" },
-        isi: "Keadaan tagihan toko saat pesanan dibuat dan saat ini: sisa tagihan, faktur yang lewat janji bayar, jumlah faktur belum lunas, dan batas kreditnya. Aturannya (peringatan, tahan, atau blokir) diatur di Pengaturan → Salesman. Pesanan yang ditahan karena tagihan baru bisa disetujui setelah Anda mencentang bahwa tagihan toko sudah diperiksa.",
+        isi: [
+          "Keadaan tagihan toko saat pesanan dibuat dan saat ini: sisa tagihan, faktur yang lewat janji bayar, jumlah faktur belum lunas, dan batas kreditnya. Aturannya (peringatan, tahan, atau blokir) diatur di Pengaturan → Salesman. Pesanan yang ditahan karena tagihan baru bisa disetujui setelah Anda mencentang bahwa tagihan toko sudah diperiksa.",
+          "Kolom Keadaan per faktur: bila toko sudah berjanji bayar (tukar faktur) dan janjinya lewat, harinya dihitung dari tanggal janji; selain itu dari jatuh tempo faktur. Nomor faktur membuka daftar piutang dengan keadaan yang sama.",
+        ],
       },
       {
         judul: { kunci: "fieldSalesOrders.delivery.title" },
         isi: [
           "Setiap pengiriman mencatat jumlah yang dikirim per baris, tanggal nota, dan tanggal jatuh tempo. Satu pengiriman mengeluarkan stoknya, menjadi satu nota gudang dan satu nota tagihan, dan nota tagihannya otomatis menjadi piutang toko.",
           "Tanggal nota bisa dibetulkan kemudian dengan alasan; nomor dokumennya tidak berubah. Tutup sisa membatalkan semua yang belum dikirim dan melepas stok yang dicadangkan, dan tidak bisa dibatalkan. Bukti terima (foto nota bertanda tangan atau tanda tangan di layar) tampil per pengiriman.",
+          "Di bawah nomor tiap pengiriman tampil sisa piutangnya (dihitung ulang dari pembayaran) dan keadaan faktur pajaknya; keduanya membuka halaman piutang dan antrean faktur pajak. Tombol Buat pengiriman dan Tutup sisa hilang begitu tidak ada sisa yang bisa dikirim.",
+          "Bila pengiriman ditolak dengan pesan cadangan stok tidak cocok, sisa pesanan masih tercatat tetapi cadangan stoknya sudah habis — biasanya pesanan yang disetujui saat pembaruan aplikasi. Hubungi admin sistem untuk membetulkan pesanan itu; jangan diulang-ulang.",
         ],
       },
     ],
@@ -132,7 +141,10 @@ export const ENTRI: EntriBantuan[] = [
     rute: "/backoffice/canvassing",
     bagian: "sales",
     judul: { kunci: "canvassing.pageTitle" },
-    isi: "Daftar sales kanvas, yaitu salesman yang menjual langsung dari stok mobil. Buka salah satu untuk melihat stok mobilnya, memuat barang, dan merekonsiliasi akhir hari.",
+    isi: [
+      "Daftar sales kanvas, yaitu salesman yang menjual langsung dari stok mobil. Buka salah satu untuk melihat stok mobilnya, memuat barang, dan merekonsiliasi akhir hari.",
+      "SPG (yang punya toko tetap) dan akun admin sistem tidak termasuk: mereka tidak bisa menjual dari mobil, jadi barang yang dimuat ke sana terjebak. Bila salah satunya masih memegang stok mobil, ia tetap tampil dengan tanda supaya stoknya dikembalikan lewat rekonsiliasi.",
+    ],
   },
   {
     rute: "/backoffice/canvassing/[canvasserId]",
@@ -142,7 +154,7 @@ export const ENTRI: EntriBantuan[] = [
     kartu: [
       {
         judul: { kunci: "canvassing.loadFormTitle" },
-        isi: "Memindahkan barang dari gudang utama ke mobil, per varian. Hanya stok yang tersedia (stok dikurangi yang dicadangkan) yang bisa dimuat; bila satu baris kurang, seluruh muatan ditolak.",
+        isi: "Memindahkan barang dari gudang utama ke mobil, per varian. Hanya stok yang tersedia (stok dikurangi yang dicadangkan) yang bisa dimuat; bila satu baris kurang, seluruh muatan ditolak. Mobil hanya bisa dimuat untuk salesman: SPG, admin sistem, dan pengguna tanpa akses aplikasi HP ditolak.",
       },
       {
         judul: { kunci: "canvassing.reconcileSectionTitle" },

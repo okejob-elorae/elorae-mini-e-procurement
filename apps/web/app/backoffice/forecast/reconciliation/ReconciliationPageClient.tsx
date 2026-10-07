@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, FileSpreadsheet } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
+import { labelBulanTahun, namaMarketplace } from "../label-marketplace";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Button } from "@/components/ui/button";
@@ -24,7 +26,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { ReconciliationReport } from "@/lib/sales/sales-reconciliation";
 import {
   getReconciliationPeriods,
@@ -68,6 +69,8 @@ export function ReconciliationPageClient({
   const [selectedKey, setSelectedKey] = useState<string>("");
   const [report, setReport] = useState<ReconciliationReport | null>(null);
   const [loading, setLoading] = useState(false);
+  const [periodeDimuat, setPeriodeDimuat] = useState(false);
+  const locale = useLocale();
 
   const selectedPeriod = useMemo(
     () => periods.find((p) => periodKey(p) === selectedKey) ?? null,
@@ -81,6 +84,7 @@ export function ReconciliationPageClient({
         r.channel === "SHOPEE" || r.channel === "TIKTOK"
     );
     setPeriods(filtered);
+    setPeriodeDimuat(true);
     if (filtered.length > 0 && !selectedKey) {
       setSelectedKey(periodKey(filtered[0]!));
     }
@@ -120,9 +124,9 @@ export function ReconciliationPageClient({
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
           <Link
-            href="/backoffice/forecast/import"
-            aria-label={t("backToImport")}
-            title={t("backToImport")}
+            href="/backoffice/forecast"
+            aria-label={t("backToForecast")}
+            title={t("backToForecast")}
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>
@@ -133,10 +137,18 @@ export function ReconciliationPageClient({
         </div>
       </div>
 
-      <Alert>
-        <AlertDescription>{t("stockDisclaimer")}</AlertDescription>
-      </Alert>
-
+      {periodeDimuat && periods.length === 0 ? (
+        <EmptyState
+          icon={FileSpreadsheet}
+          className="rounded-xl border bg-card"
+          title={t("kosongJudul")}
+          action={
+            <Button asChild>
+              <Link href="/backoffice/forecast/import">{t("keImpor")}</Link>
+            </Button>
+          }
+        />
+      ) : (
       <Card>
         <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle>{t("periodSelector")}</CardTitle>
@@ -148,7 +160,7 @@ export function ReconciliationPageClient({
               <SelectContent>
                 {periods.map((p) => (
                   <SelectItem key={periodKey(p)} value={periodKey(p)}>
-                    {p.channel} — {p.periodMonth}/{p.periodYear}
+                    {namaMarketplace(p.channel)} — {labelBulanTahun(p.periodMonth, p.periodYear, locale === "en" ? "en-GB" : "id-ID")}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -166,6 +178,7 @@ export function ReconciliationPageClient({
           </div>
         </CardHeader>
       </Card>
+      )}
 
       {report && (
         <>

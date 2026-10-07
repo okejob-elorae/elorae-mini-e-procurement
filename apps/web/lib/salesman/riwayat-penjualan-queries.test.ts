@@ -54,6 +54,7 @@ d("riwayat penjualan salesman (test bed only)", () => {
   let orderIds: string[] = [];
   let deliveryIds: string[] = [];
   let vanIds: string[] = [];
+  let gerakIds: string[] = [];
 
   beforeAll(async () => {
     uomId = "";
@@ -66,6 +67,7 @@ d("riwayat penjualan salesman (test bed only)", () => {
     orderIds = [];
     deliveryIds = [];
     vanIds = [];
+    gerakIds = [];
 
     uomId = (await prisma.uOM.create({ data: { code: `TEST-UOM-RP-${token}`, nameId: "t", nameEn: "t" } })).id;
     const barang = async (k: string) =>
@@ -80,7 +82,12 @@ d("riwayat penjualan salesman (test bed only)", () => {
     salesId = (await prisma.user.create({ data: { email: `rp-${token}@test.local`, name: `Sales RP ${token}` } })).id;
     lainId = (await prisma.user.create({ data: { email: `rp-lain-${token}@test.local`, name: `Lain RP ${token}` } })).id;
     tokoA = (await prisma.store.create({ data: { code: `TEST-RP-A-${token}`, name: `Toko A ${token}`, address: "x", termsType: "PUTUS" } })).id;
-    tokoB = (await prisma.store.create({ data: { code: `TEST-RP-B-${token}`, name: `Toko B ${token}`, address: "x", termsType: "KONSI" } })).id;
+    // Toko konsinyasi yang dipegang sales ini; margin kosong → harga di toko = harga Elorae.
+    tokoB = (
+      await prisma.store.create({
+        data: { code: `TEST-RP-B-${token}`, name: `Toko B ${token}`, address: "x", termsType: "KONSI", salesmanId: salesId },
+      })
+    ).id;
 
     let n = 0;
     const pesanan = async (x: object, lines: object[]) => {
@@ -145,10 +152,18 @@ d("riwayat penjualan salesman (test bed only)", () => {
       { orderLineId: lA.id, itemId: i1, productName: "A", qty: 2, unitPrice: 10_000, lineTotal: 20_000 },
     ]);
 
-    // Konsi ke toko B disetujui tanggal 10: 4 pcs barang 2, nilai 40.000 (tidak boleh tampil per toko/barang).
-    await pesanan({ storeId: tokoB, status: "APPROVED", orderType: "KONSI", approvedAt: tgl(10), subtotal: 40_000, total: 40_000 }, [
-      { itemId: i2, productName: "C", qty: 4, unitPrice: 10_000, lineTotal: 40_000 },
+    // Transfer konsi ke toko B disetujui tanggal 9 (6 pcs barang 2) — bukan penjualan.
+    await pesanan({ storeId: tokoB, status: "APPROVED", orderType: "KONSI", approvedAt: tgl(9), subtotal: 60_000, total: 60_000 }, [
+      { itemId: i2, productName: "C", qty: 6, unitPrice: 10_000, lineTotal: 60_000 },
     ]);
+    // Laku di toko B tanggal 10: 4 pcs, nilai 40.000 (tidak boleh tampil per toko/barang).
+    gerakIds.push(
+      (
+        await prisma.storeStockMovement.create({
+          data: { storeId: tokoB, itemId: i2, variantSku: "", qty: -4, kind: "JUAL", createdById: salesId, createdAt: tgl(10) },
+        })
+      ).id,
+    );
     // Konsi menunggu: tidak dihitung.
     await pesanan({ storeId: tokoB, status: "PENDING_APPROVAL", orderType: "KONSI", subtotal: 90_000, total: 90_000 }, [
       { itemId: i2, productName: "C", qty: 9, unitPrice: 10_000, lineTotal: 90_000 },
@@ -172,6 +187,7 @@ d("riwayat penjualan salesman (test bed only)", () => {
   });
 
   afterAll(async () => {
+    await prisma.storeStockMovement.deleteMany({ where: { id: { in: seededIds(gerakIds) } } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { id: { in: seededIds(deliveryIds) } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: seededIds(orderIds) } } });
     await prisma.vanSale.deleteMany({ where: { id: { in: seededIds(vanIds) } } });

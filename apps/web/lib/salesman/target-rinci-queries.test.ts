@@ -11,7 +11,8 @@ import { TANPA_KATEGORI } from "./target-rinci";
  * per kategori SAMA PERSIS dengan omzet "Bulan ini" di beranda HP, dihitung
  * dengan fungsi beranda sendiri (`penjualanSalesman` → `susunPenjualanSalesman`
  * → `jumlahkanPenjualan`), pada data putus (kiriman berdiskon, baris bonus,
- * kiriman tanpa baris), konsi (disetujui/menunggu/ditolak), dan van — termasuk
+ * kiriman tanpa baris), konsi (LAKU di toko konsinyasi yang ia pegang —
+ * transfer disetujui/menunggu/ditolak tidak dihitung), dan van — termasuk
  * baris di luar bulan, sesudah hari ini, dan milik sales lain.
  *
  * Semua baris milik pengguna buatan tes pada bulan lampau yang acak; teardown
@@ -45,6 +46,7 @@ d("target rinci — capaian per kategori/barang (test bed only)", () => {
   let salesId = "";
   let lainId = "";
   let tokoId = "";
+  let tokoKonsi = "";
   let katA = "";
   let katB = "";
   let i1 = "";
@@ -54,12 +56,14 @@ d("target rinci — capaian per kategori/barang (test bed only)", () => {
   let deliveryIds: string[] = [];
   let vanIds: string[] = [];
   let targetIds: string[] = [];
+  let gerakIds: string[] = [];
 
   beforeAll(async () => {
     uomId = "";
     salesId = "";
     lainId = "";
     tokoId = "";
+    tokoKonsi = "";
     katA = "";
     katB = "";
     i1 = "";
@@ -69,6 +73,7 @@ d("target rinci — capaian per kategori/barang (test bed only)", () => {
     deliveryIds = [];
     vanIds = [];
     targetIds = [];
+    gerakIds = [];
 
     uomId = (await prisma.uOM.create({ data: { code: `TEST-UOM-TR-${token}`, nameId: "t", nameEn: "t" } })).id;
     katA = (await prisma.itemCategory.create({ data: { code: `TR-A-${token}`, name: `Kaos ${token}` } })).id;
@@ -87,6 +92,12 @@ d("target rinci — capaian per kategori/barang (test bed only)", () => {
     lainId = (await prisma.user.create({ data: { email: `tr-lain-${token}@test.local`, name: `Lain TR ${token}` } })).id;
     tokoId = (
       await prisma.store.create({ data: { code: `TEST-TR-${token}`, name: "Toko TR", address: "x", termsType: "PUTUS" } })
+    ).id;
+    // Toko konsinyasi yang dipegang sales ini; margin kosong → harga di toko = harga Elorae.
+    tokoKonsi = (
+      await prisma.store.create({
+        data: { code: `TR-K-${token}`, name: "Toko TR konsi", address: "x", termsType: "KONSI", salesmanId: salesId },
+      })
     ).id;
 
     let n = 0;
@@ -169,11 +180,21 @@ d("target rinci — capaian per kategori/barang (test bed only)", () => {
       { orderLineId: lKemeja.id, itemId: i2, productName: "B kemeja", qty: 1, unitPrice: 5_000, lineTotal: 5_000 },
     ]);
 
-    // Konsi disetujui tanggal 10: dihitung.
-    await pesanan({ status: "APPROVED", orderType: "KONSI", approvedAt: tgl(10), subtotal: 52_500, total: 52_500 }, [
-      { itemId: i3, productName: "C polos", qty: 4, unitPrice: 10_000, lineTotal: 40_000 },
+    // Transfer konsi disetujui tanggal 9 (72.500): bukan omzet. Yang laku tanggal 10:
+    // 4 polos × 10.000 + 1 kaos × 12.500 = 52.500.
+    await pesanan({ storeId: tokoKonsi, status: "APPROVED", orderType: "KONSI", approvedAt: tgl(9), subtotal: 72_500, total: 72_500 }, [
+      { itemId: i3, productName: "C polos", qty: 6, unitPrice: 10_000, lineTotal: 60_000 },
       { itemId: i1, productName: "A kaos", qty: 1, unitPrice: 12_500, lineTotal: 12_500 },
     ]);
+    for (const [itemId, qty] of [
+      [i3, -4],
+      [i1, -1],
+    ] as const) {
+      const g = await prisma.storeStockMovement.create({
+        data: { storeId: tokoKonsi, itemId, variantSku: "", qty, kind: "JUAL", createdById: salesId, createdAt: tgl(10) },
+      });
+      gerakIds.push(g.id);
+    }
     // Konsi menunggu dan ditolak: tidak dihitung.
     await pesanan({ status: "PENDING_APPROVAL", orderType: "KONSI", subtotal: 99_000, total: 99_000 }, [
       { itemId: i3, productName: "C polos", qty: 9, unitPrice: 11_000, lineTotal: 99_000 },
@@ -206,11 +227,12 @@ d("target rinci — capaian per kategori/barang (test bed only)", () => {
   });
 
   afterAll(async () => {
+    await prisma.storeStockMovement.deleteMany({ where: { id: { in: seededIds(gerakIds) } } });
     await prisma.salesTarget.deleteMany({ where: { id: { in: seededIds(targetIds) } } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { id: { in: seededIds(deliveryIds) } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: seededIds(orderIds) } } });
     await prisma.vanSale.deleteMany({ where: { id: { in: seededIds(vanIds) } } });
-    await prisma.store.deleteMany({ where: { id: seededId(tokoId) } });
+    await prisma.store.deleteMany({ where: { id: { in: seededIds([tokoId, tokoKonsi].filter(Boolean)) } } });
     await prisma.item.deleteMany({ where: { id: { in: seededIds([i1, i2, i3].filter(Boolean)) } } });
     await prisma.itemCategory.deleteMany({ where: { id: { in: seededIds([katA, katB].filter(Boolean)) } } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
@@ -269,7 +291,7 @@ d("target rinci — capaian per kategori/barang (test bed only)", () => {
     expect(brg).toMatchObject({ refId: i3, nama: "Barang 3", sku: `TEST-TR-3-${token}`, tanpaKonsi: true });
     // Barang 3 terjual Rp 52.999,99 semuanya, Rp 40.000 di antaranya lewat
     // konsinyasi. Di HP target barang dalam rupiah dihitung TANPA konsinyasi —
-    // nilai konsi satu barang ÷ pcs yang ia kirim = harga satuan konsi.
+    // nilai konsi satu barang ÷ pcs lakunya = harga satuan konsi.
     expect(brg.kemajuan).toMatchObject({ target: 100_000, capai: 12_999.99 });
     expect(kat.tanpaKonsi).toBe(false);
   });

@@ -22,6 +22,24 @@ import { Badge } from '@/components/ui/badge';
 import { CategoryBadge } from '@/components/ui/category-badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { alamatDaftarBarang, type StatusBarang } from './saring-barang';
+import {
   Table,
   TableBody,
   TableCell,
@@ -86,6 +104,9 @@ type ItemCounts = {
  * pill in the app, and a per-page map drifts from every other page's idea of
  * what a fabric badge looks like.
  */
+/** Nilai Select untuk "semua" — Select tidak menerima string kosong. */
+const SEMUA = '__semua__';
+
 const ITEM_TYPE_CATEGORY: Record<ItemType, string> = {
   FABRIC: 'fabric',
   ACCESSORIES: 'accessories',
@@ -99,6 +120,9 @@ type ItemsPageClientProps = {
   itemTypeMasters: ItemTypeMasterRow[];
   search: string;
   typeFilter: ItemType | 'raw' | '';
+  kategoriFilter: string;
+  statusFilter: StatusBarang;
+  kategori: Array<{ id: string; name: string; code: string | null }>;
   page: number;
   pageSize: number;
   primaryImages?: Record<string, string>;
@@ -111,6 +135,9 @@ export function ItemsPageClient({
   itemTypeMasters,
   search: initialSearch,
   typeFilter,
+  kategoriFilter,
+  statusFilter,
+  kategori,
   page,
   pageSize,
   primaryImages = {},
@@ -123,10 +150,14 @@ export function ItemsPageClient({
   const tNav = useTranslations('navigation');
   const tItems = useTranslations('items');
   const tPlaceholders = useTranslations('placeholders');
+  const tDaftar = useTranslations('itemList');
+  const [hapusTarget, setHapusTarget] = useState<ItemsListRow | null>(null);
+  const [menghapus, setMenghapus] = useState(false);
+  const tForm = useTranslations('itemForm');
   const itemTypeLabels: Record<ItemType, string> = {
-    FABRIC: tItems('fabric'),
-    ACCESSORIES: tItems('accessories'),
-    FINISHED_GOOD: tItems('finishedGood'),
+    FABRIC: tForm('typeName.FABRIC'),
+    ACCESSORIES: tForm('typeName.ACCESSORIES'),
+    FINISHED_GOOD: tForm('typeName.FINISHED_GOOD'),
   };
 
   const [searchInput, setSearchInput] = useState(initialSearch);
@@ -135,26 +166,37 @@ export function ItemsPageClient({
   const activeTab =
     typeFilter && typeFilter !== 'raw' ? typeFilter : 'all';
 
+  // Label tab dari kode jenis (sentence case, satu istilah); jenis asing memakai nama di master.
   const typeTabLabel = (master: ItemTypeMasterRow) =>
-    locale === 'en' ? master.nameEn : master.nameId;
+    master.code === 'FABRIC' || master.code === 'ACCESSORIES' || master.code === 'FINISHED_GOOD'
+      ? tForm(`typeName.${master.code}`)
+      : locale === 'en'
+        ? master.nameEn
+        : master.nameId;
 
   useEffect(() => {
     setSearchInput(initialSearch);
   }, [initialSearch]);
 
   const pushParams = useCallback(
-    (updates: { search?: string; page?: number; type?: ItemType | 'raw' | '' }) => {
-      const params = new URLSearchParams();
-      const search = updates.search ?? initialSearch;
-      const nextPage = updates.page ?? page;
-      const nextType = updates.type !== undefined ? updates.type : typeFilter;
-      if (nextType) params.set('type', nextType);
-      if (search.trim()) params.set('search', search.trim());
-      if (nextPage > 1) params.set('page', String(nextPage));
-      const qs = params.toString();
-      router.push(qs ? `${pathname}?${qs}` : pathname);
+    (updates: {
+      search?: string;
+      page?: number;
+      type?: ItemType | 'raw' | '';
+      kategori?: string;
+      status?: StatusBarang;
+    }) => {
+      router.push(
+        alamatDaftarBarang(pathname, {
+          type: updates.type !== undefined ? updates.type : typeFilter,
+          search: updates.search ?? initialSearch,
+          kategori: updates.kategori !== undefined ? updates.kategori : kategoriFilter,
+          status: updates.status !== undefined ? updates.status : statusFilter,
+          page: updates.page ?? page,
+        })
+      );
     },
-    [initialSearch, page, pathname, router, typeFilter]
+    [initialSearch, kategoriFilter, page, pathname, router, statusFilter, typeFilter]
   );
 
   const handleTabChange = (value: string) => {
@@ -169,15 +211,23 @@ export function ItemsPageClient({
     return () => clearTimeout(timer);
   }, [searchInput, initialSearch, pushParams]);
 
-  const handleDelete = async (id: string) => {
-    if (!confirm(tItems('confirmDeleteItem'))) return;
-    const result = await deleteItem(id);
-    if (!result.success) {
-      toast.error(t(result.messageKey));
-      return;
+  const handleDelete = async () => {
+    if (!hapusTarget) return;
+    setMenghapus(true);
+    try {
+      const result = await deleteItem(hapusTarget.id);
+      if (!result.success) {
+        toast.error(t(result.messageKey));
+        return;
+      }
+      toast.success(t('itemDeletedSuccessfully'));
+      setHapusTarget(null);
+      router.refresh();
+    } catch {
+      toast.error(t('anErrorOccurred'));
+    } finally {
+      setMenghapus(false);
     }
-    toast.success(t('itemDeletedSuccessfully'));
-    router.refresh();
   };
 
   const isLowStock = (item: ItemsListRow) => {
@@ -198,49 +248,6 @@ export function ItemsPageClient({
           </Link>
         }
       />
-
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tItems('totalItems')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{counts.total}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tItems('fabric')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{counts.byType.FABRIC}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tItems('accessories')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{counts.byType.ACCESSORIES}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tItems('finishedGood')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{counts.byType.FINISHED_GOOD}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{tItems('active')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{counts.active}</p>
-          </CardContent>
-        </Card>
-      </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList className="flex flex-wrap h-auto gap-1">
@@ -265,16 +272,46 @@ export function ItemsPageClient({
         </TabsList>
       </Tabs>
 
-      <div className="flex flex-col sm:flex-row gap-4">
-        <div className="relative flex-1 max-w-sm">
+      <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-4">
+        <div className="relative flex-1 min-w-[16rem] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder={tPlaceholders('searchBySkuOrName')}
+            aria-label={tPlaceholders('searchBySkuOrName')}
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             className="pl-9"
           />
         </div>
+        <Select
+          value={kategoriFilter || SEMUA}
+          onValueChange={(v) => pushParams({ kategori: v === SEMUA ? '' : v, page: 1 })}
+        >
+          <SelectTrigger className="w-full sm:w-52" aria-label={tDaftar('filterCategory')}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={SEMUA}>{tDaftar('allCategories')}</SelectItem>
+            {kategori.map((k) => (
+              <SelectItem key={k.id} value={k.id}>
+                {k.code ? `${k.code} — ${k.name}` : k.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={statusFilter || SEMUA}
+          onValueChange={(v) => pushParams({ status: v === SEMUA ? '' : (v as StatusBarang), page: 1 })}
+        >
+          <SelectTrigger className="w-full sm:w-44" aria-label={tDaftar('filterStatus')}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={SEMUA}>{tDaftar('allStatuses', { count: counts.total })}</SelectItem>
+            <SelectItem value="aktif">{tDaftar('statusActive', { count: counts.active })}</SelectItem>
+            <SelectItem value="nonaktif">{tDaftar('statusInactive', { count: counts.total - counts.active })}</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <Card>
@@ -348,11 +385,23 @@ export function ItemsPageClient({
                             <div className="w-10 h-10 rounded bg-muted" />
                           )}
                         </TableCell>
-                        <TableCell className="font-medium">{item.sku}</TableCell>
+                        <TableCell className="font-medium">
+                          <Link href={`/backoffice/items/${item.id}`} className="hover:underline underline-offset-4">
+                            {item.sku}
+                          </Link>
+                        </TableCell>
                         <TableCell className="whitespace-normal min-w-[160px]">
-                          <p className="font-medium">
+                          <Link
+                            href={`/backoffice/items/${item.id}`}
+                            className="font-medium hover:underline underline-offset-4"
+                          >
                             {locale === 'en' ? item.nameEn : item.nameId}
-                          </p>
+                          </Link>
+                          {!item.isActive ? (
+                            <Badge variant="outline" className="ml-2 align-middle">
+                              {tDaftar('inactive')}
+                            </Badge>
+                          ) : null}
                         </TableCell>
                         <TableCell>
                           <CategoryBadge label={ITEM_TYPE_CATEGORY[item.type]}>
@@ -413,7 +462,7 @@ export function ItemsPageClient({
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 className="text-destructive"
-                                onClick={() => handleDelete(item.id)}
+                                onClick={() => setHapusTarget(item)}
                               >
                                 <Trash2 className="mr-2 h-4 w-4" />
                                 {tItems('delete')}
@@ -515,6 +564,35 @@ export function ItemsPageClient({
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={hapusTarget !== null} onOpenChange={(o) => !o && !menghapus && setHapusTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{tDaftar('deleteTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {hapusTarget
+                ? tDaftar('deleteBody', {
+                    nama: locale === 'en' ? hapusTarget.nameEn : hapusTarget.nameId,
+                    sku: hapusTarget.sku,
+                  })
+                : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={menghapus}>{tDaftar('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={menghapus}
+              onClick={(e) => {
+                e.preventDefault();
+                void handleDelete();
+              }}
+            >
+              {tDaftar('deleteConfirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

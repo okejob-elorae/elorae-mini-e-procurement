@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { bolehMembacaPelunasan } from "@/lib/receivables/izin";
 import { bacaRentang } from "@/lib/salesman/metrik-lapangan";
 import { kinerjaSemuaSales } from "@/lib/salesman/metrik-queries";
 import { keAngka, labelRentang, paramRentang } from "./bentuk";
@@ -41,6 +42,7 @@ export default async function KinerjaSalesPage({ searchParams }: PageProps) {
       total={keAngka(tim.total)}
       hasil={tim.total.hasil.perKode}
       perTanda={tim.total.perTanda}
+      bolehPelunasan={bolehMembacaPelunasan(session.user.permissions)}
     />
   );
 }

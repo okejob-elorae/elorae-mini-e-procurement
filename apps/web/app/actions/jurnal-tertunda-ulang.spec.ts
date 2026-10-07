@@ -73,6 +73,15 @@ vi.mock("@elorae/db", async (importOriginal) => {
   };
   const prisma = new Proxy(asli.prisma, {
     get(t, p) {
+      // GRN terima belum ditolak pemilik; GRN pembalikan sudah (keduanya dijaga aksinya).
+      if (p === "gRN") {
+        return {
+          findUnique: async (a?: { where?: { id?: string } }) => ({
+            id: a?.where?.id ?? "grn-uji",
+            ownerDeclinedAt: (a?.where?.id ?? "").startsWith("grn_reversal") ? new Date("2026-01-01") : null,
+          }),
+        };
+      }
       if (typeof p === "string" && p in dokumen) return { findUnique: async () => dokumen[p] };
       const v = Reflect.get(t, p);
       return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(t) : v;

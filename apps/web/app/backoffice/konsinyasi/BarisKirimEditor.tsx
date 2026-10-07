@@ -93,6 +93,7 @@ export function BarisKirimEditor({
 }) {
   const t = useTranslations("konsinyasi.kirimBaris");
   const tr = useTranslations("storeReturns");
+  const tk = useTranslations("konsinyasi");
   const total = rows.reduce((s, r) => s + (Number.isFinite(r.qty) ? r.qty : 0) * (r.price || 0), 0);
 
   const ubah = (uid: string, patch: Partial<BarisKirimIsian>) =>
@@ -180,8 +181,8 @@ export function BarisKirimEditor({
                   <Input
                     value={r.itemName}
                     onChange={(e) => ubah(r.uid, { itemName: e.target.value })}
-                    placeholder={tr("itemNamePlaceholder")}
-                    aria-label={tr("itemNamePlaceholder")}
+                    placeholder={tk("shipItemNameOr")}
+                    aria-label={tk("shipItemNameOr")}
                     disabled={disabled}
                     className="min-w-0 flex-1"
                   />
@@ -225,14 +226,16 @@ export function BarisKirimEditor({
                       onChange={(e) => ubah(r.uid, { qty: Number(e.target.value) })}
                     />
                   </div>
-                  <div className="w-36 space-y-1">
-                    <span className="text-xs text-muted-foreground">{tr("colPrice")}</span>
+                  <div className="w-44 space-y-1">
+                    {/* Harga DI TOKO: penilaian barang hilang mengubahnya menjadi
+                        harga yang diterima Elorae dengan margin toko. */}
+                    <span className="text-xs text-muted-foreground">{tk("shipPriceInStore")}</span>
                     <Input
                       type="number"
                       inputMode="numeric"
                       min={0}
                       value={r.price}
-                      aria-label={tr("colPrice")}
+                      aria-label={tk("shipPriceInStore")}
                       disabled={disabled}
                       onChange={(e) => ubah(r.uid, { price: Number(e.target.value) })}
                     />

@@ -1,12 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { ItemType } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { prisma } from "@elorae/db";
 import { logAudit } from "@/lib/audit";
-import { PERMISSIONS, requirePermission } from "@/lib/rbac";
+import { PERMISSIONS, hasPermission, requirePermission } from "@/lib/rbac";
 import {
   buildActualsLookup,
   checkMonthlyMismatch,
@@ -26,7 +25,6 @@ import {
 } from "@/lib/planning/calculations";
 import {
   VARIANTLESS_FG_FOR_PLAN_MESSAGE,
-  assertVariantSkuForPlanWo,
   buildWoPayloadFromCmtRow,
   stageNameFromAllocation,
   validateCmtAllocations,
@@ -2081,9 +2079,36 @@ export async function generateWorkOrdersFromPlan(
   };
 }
 
-export async function createWorkOrderFromStage(stageId: string) {
-  const session = await requirePlanningManage();
-  requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_CREATE);
+export type KodeTolakWoDariTahap =
+  | "TANPA_AKSES"
+  | "TAHAP_TIDAK_ADA"
+  | "TANPA_VENDOR"
+  | "TANPA_BARANG_JADI"
+  | "SUDAH_ADA_WO"
+  | "BARANG_BUKAN_JADI"
+  | "BARANG_TANPA_VARIAN"
+  | "TAHAP_TANPA_VARIAN"
+  | "GAGAL";
+
+export type WoDariTahapResult =
+  | { ok: true; id: string; docNumber: string }
+  | { ok: false; code: KodeTolakWoDariTahap; docNumber?: string };
+
+/**
+ * Buat WO dari satu tahap Plan Kerja. Penolakan DIKEMBALIKAN sebagai
+ * `{ ok:false, code }` (di build produksi pesan lemparan aksi server
+ * disamarkan) dan layar yang berpindah ke WO baru — dulu aksi ini memanggil
+ * `redirect()`, yang ditangkap `try/catch` layar sebagai galat.
+ */
+export async function createWorkOrderFromStage(stageId: string): Promise<WoDariTahapResult> {
+  const session = await auth();
+  if (
+    !session?.user?.id ||
+    !hasPermission(session.user.permissions ?? [], PERMISSIONS.PRODUCTION_PLANNING_MANAGE) ||
+    !hasPermission(session.user.permissions ?? [], PERMISSIONS.WORK_ORDERS_CREATE)
+  ) {
+    return { ok: false, code: "TANPA_AKSES" };
+  }
 
   const stage = await prisma.planStage.findUnique({
     where: { id: stageId },
@@ -2091,13 +2116,9 @@ export async function createWorkOrderFromStage(stageId: string) {
       planCategory: { select: { itemId: true, code: true } },
     },
   });
-  if (!stage) throw new Error("Stage not found");
-  if (!stage.supplierId) {
-    throw new Error("Pilih vendor CMT di tahap ini sebelum membuat Work Order.");
-  }
-  if (!stage.planCategory.itemId) {
-    throw new Error("Kategori harus terhubung ke item barang jadi sebelum membuat Work Order.");
-  }
+  if (!stage) return { ok: false, code: "TAHAP_TIDAK_ADA" };
+  if (!stage.supplierId) return { ok: false, code: "TANPA_VENDOR" };
+  if (!stage.planCategory.itemId) return { ok: false, code: "TANPA_BARANG_JADI" };
 
   if (stage.workOrderId) {
     const existingWo = await prisma.workOrder.findUnique({
@@ -2105,42 +2126,52 @@ export async function createWorkOrderFromStage(stageId: string) {
       select: { docNumber: true, status: true },
     });
     if (existingWo && existingWo.status !== "CANCELLED") {
-      throw new Error(
-        `Tahap ini sudah memiliki Work Order aktif (${existingWo.docNumber}).`
-      );
+      return { ok: false, code: "SUDAH_ADA_WO", docNumber: existingWo.docNumber };
     }
   }
 
-  await validateFinishedGoodItem(stage.planCategory.itemId);
-  const stageVariantSku = assertVariantSkuForPlanWo(stage.variantSku);
-
-  const result = await createWorkOrder(
-    {
-      vendorId: stage.supplierId,
-      finishedGoodId: stage.planCategory.itemId,
-      outputMode: "SKU",
-      plannedQty: stage.targetQty,
-      targetDate: undefined,
-      skuBreakdown: [{ variantSku: stageVariantSku, ratioPercent: 100 }],
-      notes: `Created from Plan Kerja stage: ${stage.name}`,
-    },
-    session.user.id,
-    { skipStockCheck: true }
-  );
-
-  await prisma.planStage.update({
-    where: { id: stage.id },
-    data: { workOrderId: result.id },
+  const item = await prisma.item.findUnique({
+    where: { id: stage.planCategory.itemId },
+    select: { type: true, variants: true },
   });
+  if (!item) return { ok: false, code: "TANPA_BARANG_JADI" };
+  if (item.type !== ItemType.FINISHED_GOOD) return { ok: false, code: "BARANG_BUKAN_JADI" };
+  if (!itemHasSkuVariants(item.variants)) return { ok: false, code: "BARANG_TANPA_VARIAN" };
+  const stageVariantSku = (stage.variantSku ?? "").trim();
+  if (!stageVariantSku) return { ok: false, code: "TAHAP_TANPA_VARIAN" };
 
-  await logAudit({
-    userId: session.user.id,
-    action: "CREATE",
-    entityType: "WorkOrder",
-    entityId: result.id,
-    metadata: { source: "PlanStage", stageId },
-  });
+  try {
+    const result = await createWorkOrder(
+      {
+        vendorId: stage.supplierId,
+        finishedGoodId: stage.planCategory.itemId,
+        outputMode: "SKU",
+        plannedQty: stage.targetQty,
+        targetDate: undefined,
+        skuBreakdown: [{ variantSku: stageVariantSku, ratioPercent: 100 }],
+        notes: `Dibuat dari tahap Plan Kerja: ${stage.name}`,
+      },
+      session.user.id,
+      { skipStockCheck: true }
+    );
 
-  revalidatePath(PLANNING_PATH);
-  redirect(`/backoffice/work-orders/${result.id}`);
+    await prisma.planStage.update({
+      where: { id: stage.id },
+      data: { workOrderId: result.id },
+    });
+
+    await logAudit({
+      userId: session.user.id,
+      action: "CREATE",
+      entityType: "WorkOrder",
+      entityId: result.id,
+      metadata: { source: "PlanStage", stageId },
+    });
+
+    revalidatePath(PLANNING_PATH);
+    return { ok: true, id: result.id, docNumber: result.docNumber };
+  } catch (error) {
+    console.error("[createWorkOrderFromStage]", error);
+    return { ok: false, code: "GAGAL" };
+  }
 }

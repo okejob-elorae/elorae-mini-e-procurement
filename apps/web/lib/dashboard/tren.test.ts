@@ -7,6 +7,7 @@ import {
   kunciHariWib,
   MAKS_HARI_RENTANG,
   nilaiBersihSpg,
+  nilaiSpgElorae,
   nilaiTitik,
   rentangTren,
   SALURAN,
@@ -216,5 +217,25 @@ describe("nilaiBersihSpg", () => {
   it("memakai harga bersih per potong untuk nota berpotongan", () => {
     // 2 × 100.000 diskon 20% → lineTotal 160.000; satu dikembalikan = 80.000, bukan 100.000.
     expect(nilaiBersihSpg(160_000, [{ unitPrice: 100_000, qty: 2, lineTotal: 160_000, returnedQty: 1 }])).toBe(80_000);
+  });
+});
+
+describe("nilaiSpgElorae — KEPUTUSAN 19: penjualan SPG di toko KONSI dihitung dengan harga Elorae", () => {
+  it("toko KONSI: nilai harga toko dikurangi margin toko (100.000 margin 25% → 75.000)", () => {
+    expect(nilaiSpgElorae(100_000, { termsType: "KONSI", marginPercent: "25" })).toBe(75_000);
+    expect(nilaiSpgElorae(200_000, { termsType: "KONSI", marginPercent: 25 })).toBe(150_000);
+  });
+
+  it("toko PUTUS: nilai nota apa adanya — kasir sudah mencatat harga Elorae", () => {
+    expect(nilaiSpgElorae(100_000, { termsType: "PUTUS", marginPercent: 25 })).toBe(100_000);
+  });
+
+  it("margin KONSI yang tidak sah: harga tidak pernah dinaikkan, jadi dipakai apa adanya", () => {
+    expect(nilaiSpgElorae(100_000, { termsType: "KONSI", marginPercent: null })).toBe(100_000);
+    expect(nilaiSpgElorae(100_000, { termsType: "KONSI", marginPercent: 100 })).toBe(100_000);
+  });
+
+  it("nota bernilai nol (semua barang dikembalikan) tetap nol", () => {
+    expect(nilaiSpgElorae(0, { termsType: "KONSI", marginPercent: 25 })).toBe(0);
   });
 });

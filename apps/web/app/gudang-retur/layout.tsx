@@ -22,10 +22,13 @@ export default async function LayoutGudangRetur({ children }: { children: React.
 
   return (
     <div className="min-h-dvh bg-background">
-      <div className="px-4 pt-3">
-        <TautanDashboard />
+      {/* Lebar dibatasi di desktop: kartu nota tidak melebar sepanjang layar 1440 px. */}
+      <div className="mx-auto w-full max-w-3xl">
+        <div className="px-4 pt-3">
+          <TautanDashboard />
+        </div>
+        {children}
       </div>
-      {children}
     </div>
   );
 }

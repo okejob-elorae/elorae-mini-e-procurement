@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getOpnames } from "@/app/actions/stock-opname";
+import { TAUTAN_DOKUMEN } from "@/app/backoffice/purchase-orders/tautan-dokumen";
 
 type OpnameRow = Awaited<ReturnType<typeof getOpnames>>[number];
 
@@ -115,7 +116,7 @@ export function StockOpnameListClient() {
                     <TableCell>
                       <Link
                         href={`/backoffice/inventory/stock-opname/${row.id}`}
-                        className="font-medium text-primary hover:underline"
+                        className={TAUTAN_DOKUMEN}
                       >
                         {String(row.docNumber)}
                       </Link>

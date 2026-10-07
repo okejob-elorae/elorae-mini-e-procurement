@@ -423,6 +423,57 @@ export async function deleteVendorReturn(id: string, _userId: string) {
   revalidatePath('/backoffice/vendor-returns');
 }
 
+export type HapusReturPemasokResult =
+  | { ok: true }
+  | { ok: false; code: 'TANPA_AKSES' | 'TIDAK_DITEMUKAN' | 'BUKAN_DRAF' | 'GAGAL' };
+
+/**
+ * Hapus retur draf untuk layar, dengan penolakan sebagai KODE
+ * (`vendorReturnsList.err.<kode>`) — `deleteVendorReturn` melempar, dan di
+ * build produksi pesan lemparan disamarkan. Penjaga DRAFT + hapus tetap dalam
+ * satu transaksi serializable.
+ */
+export async function hapusReturPemasok(id: string): Promise<HapusReturPemasokResult> {
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.VENDOR_RETURNS_MANAGE)) {
+    return { ok: false, code: 'TANPA_AKSES' };
+  }
+  try {
+    const hasil = await runSerializable(async (tx): Promise<HapusReturPemasokResult> => {
+      const ada = await tx.vendorReturn.findUnique({ where: { id }, select: { status: true } });
+      if (!ada) return { ok: false, code: 'TIDAK_DITEMUKAN' };
+      if (ada.status !== 'DRAFT') return { ok: false, code: 'BUKAN_DRAF' };
+      await tx.vendorReturn.delete({ where: { id } });
+      return { ok: true };
+    });
+    if (hasil.ok) revalidatePath('/backoffice/vendor-returns');
+    return hasil;
+  } catch (e) {
+    console.error('[hapusReturPemasok]', e);
+    return { ok: false, code: 'GAGAL' };
+  }
+}
+
+/**
+ * Nomor PO untuk retur yang mengkredit PO (`VendorReturn.poId` tanpa relasi
+ * Prisma), dan `poCreditAmount` sebagai angka — Decimal tidak bisa dikirim ke
+ * browser lewat aksi server.
+ */
+async function denganPo<T extends { poId: string | null; poCreditAmount: unknown }>(
+  rows: T[]
+): Promise<Array<Omit<T, 'poCreditAmount'> & { poCreditAmount: number | null; po: { id: string; docNumber: string } | null }>> {
+  const ids = [...new Set(rows.map((r) => r.poId).filter((v): v is string => typeof v === 'string' && v !== ''))];
+  const pos = ids.length
+    ? await prisma.purchaseOrder.findMany({ where: { id: { in: ids } }, select: { id: true, docNumber: true } })
+    : [];
+  const per = new Map(pos.map((p) => [p.id, p]));
+  return rows.map((r) => ({
+    ...r,
+    poCreditAmount: r.poCreditAmount == null ? null : Number(r.poCreditAmount),
+    po: r.poId ? per.get(r.poId) ?? null : null,
+  }));
+}
+
 /*
  * Penolakan proses/selesai retur DIKEMBALIKAN sebagai `{ ok:false, code }`:
  * di build produksi Next menyamarkan pesan galat yang dilempar aksi server,
@@ -838,10 +889,12 @@ export async function getVendorReturns(
       }),
       prisma.vendorReturn.count({ where }),
     ]);
-    const items = rows.map((r) => ({
-      ...r,
-      totalValue: Number(r.totalValue)
-    }));
+    const items = await denganPo(
+      rows.map((r) => ({
+        ...r,
+        totalValue: Number(r.totalValue)
+      }))
+    );
     return { items, totalCount };
   }
 
@@ -851,10 +904,12 @@ export async function getVendorReturns(
     orderBy: { createdAt: 'desc' }
   });
 
-  return rows.map((r) => ({
-    ...r,
-    totalValue: Number(r.totalValue)
-  }));
+  return denganPo(
+    rows.map((r) => ({
+      ...r,
+      totalValue: Number(r.totalValue)
+    }))
+  );
 }
 
 export async function getVendorReturnById(id: string) {
@@ -868,8 +923,6 @@ export async function getVendorReturnById(id: string) {
     }
   });
   if (!ret) return null;
-  return {
-    ...ret,
-    totalValue: Number(ret.totalValue)
-  };
+  const [denganNomorPo] = await denganPo([{ ...ret, totalValue: Number(ret.totalValue) }]);
+  return denganNomorPo;
 }

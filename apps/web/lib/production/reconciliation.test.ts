@@ -121,9 +121,26 @@ d("reconcileWorkOrder (test bed only)", () => {
       { type: "FG_REJECT", itemId: kancingId, qty: 7, costValue: 0 },
     ]);
     await retur(3, "DRAFT", [{ type: "ACCESSORIES", itemId: kancingId, qty: 50, costValue: 75_000 }]);
+    // CMT mengembalikan 4 pcs ke gudang ("Kembalikan bahan").
+    await prisma.stockAdjustment.create({
+      data: {
+        docNumber: `ADJ-RK-${token}`,
+        itemId: kancingId,
+        type: "POSITIVE",
+        qtyChange: 4,
+        reason: "Kembali bahan uji",
+        prevQty: 200,
+        newQty: 204,
+        prevAvgCost: 1_500,
+        newAvgCost: 1_500,
+        source: "WO_MATERIAL_RETURN",
+        externalRef: woId,
+      },
+    });
   });
 
   afterAll(async () => {
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(kancingId) } });
     await prisma.vendorReturn.deleteMany({ where: { woId: seededId(woId) } });
     await prisma.materialIssue.deleteMany({ where: { woId: seededId(woId) } });
     await prisma.workOrder.deleteMany({ where: { id: seededId(woId) } });
@@ -135,7 +152,7 @@ d("reconcileWorkOrder (test bed only)", () => {
     await prisma.user.deleteMany({ where: { id: seededId(userId) } });
   });
 
-  it("bahan keluar 115, kembali 11 (teks JSON, PROCESSED + COMPLETED) → terpakai 104 vs teori 88: lebih 16 (Rp24.000)", async () => {
+  it("bahan keluar 115, kembali 11 retur pemasok (teks JSON, PROCESSED + COMPLETED) + 4 ke gudang → terpakai 100 vs teori 88: lebih 12 (Rp18.000)", async () => {
     const { lines, summary } = await reconcileWorkOrder(woId);
     expect(lines).toHaveLength(1);
     const baris = lines[0];
@@ -152,20 +169,20 @@ d("reconcileWorkOrder (test bed only)", () => {
       status: baris.status,
     }).toEqual({
       keluar: 115,
-      kembali: 11,
-      terpakai: 104,
+      kembali: 15,
+      terpakai: 100,
       teori: 88,
-      selisih: 16,
-      selisihPersen: 18.18,
-      nilaiSelisih: 24_000,
+      selisih: 12,
+      selisihPersen: 13.64,
+      nilaiSelisih: 18_000,
       nilaiKeluar: 172_500,
-      nilaiTerpakai: 156_000,
+      nilaiTerpakai: 150_000,
       status: "OVER",
     });
     expect({
       keluar: summary.totalIssuedValue.toNumber(),
       terpakai: summary.totalUsedValue.toNumber(),
       selisih: summary.netVarianceValue.toNumber(),
-    }).toEqual({ keluar: 172_500, terpakai: 156_000, selisih: 24_000 });
+    }).toEqual({ keluar: 172_500, terpakai: 150_000, selisih: 18_000 });
   });
 });

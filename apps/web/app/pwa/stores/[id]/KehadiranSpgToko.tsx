@@ -29,7 +29,8 @@ export function KehadiranSpgToko({ baris }: { baris: KehadiranSpgTampil[] }) {
       case "PULANG":
         return t("pulang", { pulang: b.pulang ?? "", masuk: b.masuk ?? "" });
       case "IZIN":
-        return t(`izin.${b.jenisIzin ?? "IZIN"}`);
+        // Jenisnya (sakit/cuti) sengaja tidak dikirim ke HP salesman.
+        return t("izin.IZIN");
       case "LIBUR":
         return t("libur");
       case "BUKAN_HARI_KERJA":

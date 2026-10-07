@@ -226,7 +226,12 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
             </SelectContent>
           </Select>
           {planYears.length === 0 && (
-            <p className="text-xs text-muted-foreground">{t("noPlanYears")}</p>
+            <p className="text-xs text-muted-foreground">
+              {t("noPlanYears")}{" "}
+              <Link href="/backoffice/production/planning" className="font-medium underline underline-offset-2">
+                {t("bukaPlanKerja")}
+              </Link>
+            </p>
           )}
           {planYears.length > 0 && editablePlanYears.length === 0 && (
             <p className="text-xs text-muted-foreground">{t("noEditablePlanYears")}</p>

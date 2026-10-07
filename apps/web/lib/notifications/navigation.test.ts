@@ -22,7 +22,8 @@ function dataLonceng(metadata: Record<string, unknown>): Record<string, unknown>
   return { adminNotificationId: "notif-1", ...toFcmData(metadata) };
 }
 
-const FALLBACK_JURNAL = "/backoffice/finance/journals";
+// Jurnal yang gagal diposting tidak ada di daftar terposting — cadangannya tab Tertunda.
+const FALLBACK_JURNAL = "/backoffice/finance/journals?status=tertunda";
 
 /*
  * Bentuk metadata nyata dari setiap penulis JOURNAL_PENDING (dibaca dari

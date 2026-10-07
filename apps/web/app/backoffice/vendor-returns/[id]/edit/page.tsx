@@ -49,7 +49,8 @@ interface Supplier {
   id: string;
   code: string;
   name: string;
-  type: string;
+  type?: string;
+  belumDisetujui?: boolean;
 }
 
 interface WorkOrderOption {
@@ -117,6 +118,7 @@ export default function EditVendorReturnPage() {
   const router = useRouter();
   const { data: session } = useSession();
   const t = useTranslations('vendorReturn');
+  const tList = useTranslations('vendorReturnsList');
   const lineTypeLabel = (type: string) =>
     type === 'FABRIC' || type === 'ACCESSORIES' || type === 'FG_REJECT'
       ? t(`lineType.${type}`)
@@ -267,8 +269,14 @@ export default function EditVendorReturnPage() {
         }
         setEvidenceUrls(urlsStr);
 
-        const vendorList = Array.isArray(suppliersRes) ? suppliersRes : [];
-        setVendors(vendorList as unknown as Supplier[]);
+        const vendorList = (Array.isArray(suppliersRes) ? suppliersRes : []) as unknown as Supplier[];
+        // Pemasok retur ini sendiri tetap ada di pilihan walau belum/tidak lagi disetujui
+        // (dulu formulir ubah tampil "Pilih pemasok" kosong).
+        const sendiri = ret.vendor as { id: string; code: string; name: string } | null;
+        if (sendiri && !vendorList.some((v) => v.id === sendiri.id)) {
+          vendorList.unshift({ id: sendiri.id, code: sendiri.code, name: sendiri.name, belumDisetujui: true });
+        }
+        setVendors(vendorList);
         setWorkOrders(
           (woList as { id: string; docNumber: string }[]).map((w) => ({
             id: w.id,
@@ -504,7 +512,10 @@ export default function EditVendorReturnPage() {
               <div className="space-y-2">
                 <Label>{t('form.vendorLabel')}</Label>
                 <SearchableCombobox
-                  options={vendors.map((v) => ({ value: v.id, label: `${v.code} – ${v.name}` }))}
+                  options={vendors.map((v) => ({
+                    value: v.id,
+                    label: `${v.code} – ${v.name}${v.belumDisetujui ? ` · ${tList('belumDisetujui')}` : ''}`,
+                  }))}
                   value={vendorId}
                   onValueChange={setVendorId}
                   placeholder={t('form.selectVendor')}

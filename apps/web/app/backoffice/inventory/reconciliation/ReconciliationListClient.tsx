@@ -38,6 +38,7 @@ import {
 } from "@/app/actions/stock-reconciliation";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { useSession } from "next-auth/react";
+import { TAUTAN_DOKUMEN } from "@/app/backoffice/purchase-orders/tautan-dokumen";
 
 function actionBadgeVariant(action: string): "default" | "secondary" | "destructive" | "outline" {
   switch (action) {
@@ -214,7 +215,7 @@ export function ReconciliationListClient() {
                       <TableCell className="align-top">
                         <Link
                           href={`/backoffice/inventory/reconciliation/${run.id}`}
-                          className="text-primary hover:underline"
+                          className={TAUTAN_DOKUMEN}
                         >
                           {formatDisplayDateTime(run.startedAt, locale)}
                         </Link>

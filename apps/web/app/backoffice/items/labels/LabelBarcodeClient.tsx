@@ -49,6 +49,7 @@ import {
   formatHargaLabel,
   tataLembarA4,
 } from "@/lib/print/label-barcode-html";
+import { opsiCetakLabel } from "./aturan-label";
 import { cn } from "@/lib/utils";
 
 export type DokumenLabelLayar = {
@@ -104,8 +105,10 @@ export function LabelBarcodeClient({
   const opsi: OpsiLayarLabel = { ...bacaOpsiLabel(tersimpan), ...ubahan };
   // Nilai tunggal, supaya hitungan di bawah hanya diulang bila pilihannya berubah.
   const { gaya, ukuran, tataLetak, tampilHarga, tampilNama, sumberKode } = opsi;
-  // Harga dan nama hanya ada di gaya RINCI; gaya ELORAE tidak pernah mencetak harga.
-  const hargaDicetak = gaya === "RINCI" && tampilHarga;
+  // Nama hanya ada di gaya RINCI. Harga tidak pernah dicetak, gaya apa pun
+  // (keputusan pemilik — `opsiCetakLabel` / LABEL_MENCETAK_HARGA).
+  const opsiCetak = opsiCetakLabel({ gaya, ukuran, tataLetak, tampilHarga, tampilNama });
+  const hargaDicetak = opsiCetak.tampilHarga;
   function ubahOpsi(patch: Partial<OpsiLayarLabel>) {
     setUbahan((u) => ({ ...u, ...patch }));
     try {
@@ -174,7 +177,7 @@ export function LabelBarcodeClient({
 
   const html = terlaluBanyak
     ? null
-    : buildLabelBarcodeHtml(susunBarisCetak(barang, jumlah, sumberKode), { gaya, ukuran, tataLetak, tampilHarga, tampilNama, lewati: lewatiSah });
+    : buildLabelBarcodeHtml(susunBarisCetak(barang, jumlah, sumberKode), { ...opsiCetak, lewati: lewatiSah });
   // Pratinjau boleh tertinggal sesaat saat jumlah diketik; yang DICETAK selalu `html` terbaru.
   const htmlPratinjau = useDeferredValue(html);
 
@@ -593,16 +596,10 @@ export function LabelBarcodeClient({
               </div>
 
               {gaya === "RINCI" ? (
-                <>
-                  <div className="flex items-center justify-between gap-3">
-                    <Label htmlFor="label-harga">{t("opsi.tampilHarga")}</Label>
-                    <Switch id="label-harga" checked={tampilHarga} onCheckedChange={(c) => ubahOpsi({ tampilHarga: c })} />
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <Label htmlFor="label-nama">{t("opsi.tampilNama")}</Label>
-                    <Switch id="label-nama" checked={tampilNama} onCheckedChange={(c) => ubahOpsi({ tampilNama: c })} />
-                  </div>
-                </>
+                <div className="flex items-center justify-between gap-3">
+                  <Label htmlFor="label-nama">{t("opsi.tampilNama")}</Label>
+                  <Switch id="label-nama" checked={tampilNama} onCheckedChange={(c) => ubahOpsi({ tampilNama: c })} />
+                </div>
               ) : null}
 
               <div className="space-y-2 border-t pt-4">

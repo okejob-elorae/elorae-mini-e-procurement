@@ -70,3 +70,18 @@ export function saringNav(items: ItemTerlabel[], kueri: string): HasilSaring[] {
   }
   return hasil;
 }
+
+/**
+ * Apakah sebuah grup menu terbuka. Saat mencari, SETIAP grup yang lolos
+ * saringan dibuka — dulu grup yang anaknya cocok ("laba" → Laba Rugi) tetap
+ * tertutup dan anaknya baru terlihat setelah grupnya diklik. Tanpa pencarian,
+ * hanya grup pilihan (yang diklik, atau grup halaman yang sedang dibuka).
+ */
+export function grupTerbuka(
+  href: string,
+  pilihan: string | null,
+  sedangMencari: boolean,
+  lolosSaringan: boolean,
+): boolean {
+  return sedangMencari ? lolosSaringan : pilihan === href;
+}

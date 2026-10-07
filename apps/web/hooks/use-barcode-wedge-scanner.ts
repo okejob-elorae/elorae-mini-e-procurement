@@ -25,7 +25,10 @@ export function useBarcodeWedgeScanner({
   const bufferRef = useRef("");
   const scanInputRef = useRef<HTMLInputElement>(null);
   const onScanRef = useRef(onScan);
-  onScanRef.current = onScan;
+  // Ref diperbarui sesudah render (bukan saat render) — aturan react-hooks.
+  useEffect(() => {
+    onScanRef.current = onScan;
+  }, [onScan]);
 
   const emitScan = useCallback((code: string) => {
     const trimmed = code.trim();

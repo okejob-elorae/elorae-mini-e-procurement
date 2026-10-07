@@ -6,9 +6,30 @@ export const ENTRI: EntriBantuan[] = [
     bagian: "inventory",
     judul: { kunci: "inventory.pageTitle" },
     isi: [
-      "Stok gudang utama: level stok, penerimaan barang, kain per roll, dan penyesuaian. Tombol di atas membuka Terima Barang, Kartu Stok, Penyesuaian, dan Barang Reject; Cetak Laporan mencetak nilai persediaan saat ini.",
+      "Stok gudang utama: level stok, penerimaan barang, kain per roll, dan penyesuaian. Tombol di atas membuka Terima Barang, Kartu Stok, Penyesuaian, dan Barang cacat produksi; Cetak Laporan mencetak nilai persediaan saat ini. Tab yang sedang dibuka ikut tersimpan di alamat halaman, jadi tautannya bisa dibagikan.",
       "Di tab Level Stok, tersedia = stok fisik dikurangi yang sudah dicadangkan pesanan. Statusnya: Negatif (tersedia di bawah nol), Habis (tepat nol), Menipis (di bawah atau sama dengan titik pesan ulang barangnya), dan Aman.",
-      "Di tab Penerimaan Barang, penerimaan yang melebihi jumlah PO lebih dari batas lebih-terima barangnya menunggu persetujuan pemilik; pemilik bisa menyetujui atau menolaknya dari baris itu.",
+      "Di tab Penerimaan Barang, nomor GRN membuka rinciannya (barang, qty, harga, foto, jurnal) dan nomor PO membuka PO-nya. Penerimaan yang melebihi jumlah PO lebih dari batas lebih-terima barangnya menunggu persetujuan pemilik; pemilik menyetujui atau menolaknya dari baris itu atau dari rincian GRN.",
+      "Di tab Penyesuaian, penyesuaian otomatis (penjualan, muat van, dan sejenisnya) disembunyikan kecuali dipilih lewat saringan Sumber. Di layar selebar 1280 px kolom Sumber pindah ke baris yang dibuka.",
+    ],
+  },
+  {
+    rute: "/backoffice/inventory/grn/[id]",
+    bagian: "inventory",
+    judul: "Rincian penerimaan barang (GRN)",
+    isi: [
+      "Satu GRN: pemasok, PO asalnya, siapa yang menerima, nilai, barang yang diterima beserta qty dan harga satuannya, foto, roll kain, serta retur pemasok yang berasal dari GRN ini.",
+      "Bila penerimaan melebihi jumlah PO lebih dari batas barangnya, kartu Terima-lebih menunggu keputusan pemilik. Menyetujui menerima kelebihannya apa adanya; menolak membalik stok dan qty diterima di PO, dan tidak bisa dilakukan lagi bila roll kainnya sudah dipakai atau stoknya sudah keluar.",
+      "Jurnal GRN (persediaan dan utang) diposting saat GRN dibuat. Bila gagal, pemegang izin kelola jurnal bisa memposting ulang dari sini; GRN yang ditolak pemilik memakai jurnal pembalik.",
+    ],
+  },
+  {
+    rute: "/gudang-retur",
+    bagian: "inventory",
+    judul: { kunci: "navigation.navHitungRetur" },
+    isi: [
+      "Layar gudang untuk menghitung barang retur toko yang datang (NRT). Hitung setiap baris yang benar-benar sampai beserta kondisinya; klaim toko baru diperlihatkan sesudah hitungan disimpan, supaya hitungan tidak ikut angka klaim.",
+      "Hitungan hanya bisa dicatat sekali, dan orang yang melaporkan nota tidak boleh menghitungnya sendiri. Barang layak masuk stok jual; barang rusak atau kedaluwarsa masuk Gudang barang rusak. Selisih antara klaim dan fisik diputuskan kantor.",
+      "Layar ini berdiri di luar menu samping karena dibuka orang gudang yang hanya punya izin menghitung.",
     ],
   },
   {
@@ -24,7 +45,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "inventory.grnForm.pageSubtitle" },
       "Untuk kain, panjang setiap roll dicatat satu per satu. Bila jumlah yang diterima melebihi jumlah PO lebih dari batas lebih-terima barangnya, penerimaan ini menunggu persetujuan pemilik di tab Penerimaan Barang sebelum status PO ikut berubah.",
-      "Menyimpan GRN butuh sinyal. Selama diisi, isian formulir (termasuk foto) disimpan sebagai draf di perangkat ini untuk akun Anda, jadi sinyal putus atau halaman tertutup tidak menghapusnya; draf hilang setelah GRN tersimpan atau setelah Anda menekan Buang draf. Bila sambungan putus tepat saat menyimpan, periksa tab Penerimaan Barang dulu sebelum menyimpan ulang supaya GRN tidak tercatat dua kali.",
+      "Menyimpan GRN butuh sinyal. Selama diisi, isian formulir (termasuk foto) disimpan sebagai draf di perangkat ini untuk akun Anda, jadi sinyal putus atau halaman tertutup tidak menghapusnya; draf hilang setelah GRN tersimpan atau setelah Anda menekan Buang draf. Bila sambungan putus tepat saat menyimpan, tekan Simpan lagi tanpa mengubah isian: setiap isian membawa tanda kirimnya sendiri (ikut tersimpan di draf), jadi penerimaan yang sudah tercatat dikembalikan apa adanya dan barang tidak diterima dua kali. Membuang draf memulai isian baru.",
       "GRN yang dulu disimpan di perangkat saat offline tidak pernah terkirim ke sistem. Daftarnya muncul di atas formulir: muat ke formulir lalu simpan, atau hapus bila sudah dicatat ulang.",
     ],
   },
@@ -38,13 +59,17 @@ export const ENTRI: EntriBantuan[] = [
     rute: "/backoffice/inventory/adjustment/[id]",
     bagian: "inventory",
     judul: { kunci: "inventory.stockAdjustment" },
-    isi: "Rincian satu penyesuaian stok: barang, jenis, perubahan jumlah, jumlah sebelum dan sesudah, alasan, serta siapa dan kapan. Tombol cetak menghasilkan Nota Barang Keluar.",
+    isi: "Rincian satu penyesuaian stok: barang, jenis, perubahan jumlah, jumlah sebelum dan sesudah, alasan, serta siapa dan kapan. Tombol cetak menghasilkan Nota Barang Masuk untuk penambahan dan Nota Barang Keluar untuk pengurangan.",
   },
   {
     rute: "/backoffice/inventory/rejected-goods",
     bagian: "inventory",
     judul: { kunci: "inventory.rejected.title" },
-    isi: [{ kunci: "inventory.rejected.subtitle" }, { kunci: "inventory.rejected.cardDescription" }],
+    isi: [
+      { kunci: "inventory.rejected.subtitle" },
+      { kunci: "inventory.rejected.cardDescription" },
+      "Barang rusak atau kedaluwarsa dari retur toko tidak di sini, melainkan di Gudang barang rusak (tombol di kanan atas).",
+    ],
   },
   {
     rute: "/backoffice/inventory/stock-opname",

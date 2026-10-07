@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useTranslations, useLocale } from "next-intl";
-import { ArrowLeft, BookText } from "lucide-react";
+import { ArrowLeft, BookText, ExternalLink } from "lucide-react";
 import type { JournalDetail } from "@/lib/finance/journals/queries";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,17 +18,26 @@ import {
 } from "@/components/ui/table";
 import { formatDisplayDate } from "@/lib/date-only";
 import { journalSourceLabel } from "../journal-source-label";
+import { tautanBukuBesar } from "../_sumber/tautan";
 import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
+
+/** Dokumen yang membuat jurnal otomatis ini. */
+export type SumberJurnalTampil = { href: string; nomor: string | null };
 
 type Props = {
   journal: JournalDetail;
+  sumber: SumberJurnalTampil | null;
+  /** Kode akun → id akun, untuk tautan ke buku besarnya. */
+  akunIds: Record<string, string>;
+  /** Bulan jurnal ini — buku besar akun dibuka pada rentang yang sama. */
+  rentangBukuBesar: { dari: string; sampai: string } | null;
 };
 
 function formatRupiah(value: number): string {
   return `Rp ${Math.round(value).toLocaleString("id-ID")}`;
 }
 
-export function JournalDetailClient({ journal }: Props) {
+export function JournalDetailClient({ journal, sumber, akunIds, rentangBukuBesar }: Props) {
   const t = useTranslations("financeJournals");
   const locale = useLocale();
 
@@ -36,6 +45,11 @@ export function JournalDetailClient({ journal }: Props) {
 
   const totalDebit = journal.lines.reduce((sum, l) => sum + l.debit, 0);
   const totalCredit = journal.lines.reduce((sum, l) => sum + l.credit, 0);
+
+  function bukuBesarAkun(kode: string): string | null {
+    const akunId = akunIds[kode];
+    return akunId ? tautanBukuBesar(akunId, rentangBukuBesar ?? undefined) : null;
+  }
 
   return (
     <div className="space-y-6">
@@ -53,11 +67,21 @@ export function JournalDetailClient({ journal }: Props) {
           </div>
           <p className="text-sm text-muted-foreground">{formatDate(journal.date)}</p>
         </div>
-        <div className="ml-auto">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           {journal.isManual ? (
             <Badge variant="secondary">{t("sourceManual")}</Badge>
           ) : (
             <Badge variant="outline">{journalSourceLabel(t, journal.sourceType)}</Badge>
+          )}
+          {sumber && (
+            <Button variant="outline" size="sm" asChild>
+              <Link href={sumber.href}>
+                <ExternalLink className="h-4 w-4 mr-2" />
+                {sumber.nomor
+                  ? t("detail.openSourceNumber", { nomor: sumber.nomor })
+                  : t("detail.openSource")}
+              </Link>
+            </Button>
           )}
         </div>
       </div>
@@ -81,11 +105,23 @@ export function JournalDetailClient({ journal }: Props) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {journal.lines.map((line, idx) => (
+                {journal.lines.map((line, idx) => {
+                  const bukuBesar = bukuBesarAkun(line.accountCode);
+                  return (
                   <TableRow key={idx}>
                     <TableCell className="whitespace-normal min-w-[200px]">
                       <span className="font-mono text-sm mr-2">{line.accountCode}</span>
-                      <span>{line.accountName}</span>
+                      {bukuBesar ? (
+                        <Link
+                          href={bukuBesar}
+                          className="underline underline-offset-4"
+                          title={t("detail.openLedger")}
+                        >
+                          {line.accountName}
+                        </Link>
+                      ) : (
+                        <span>{line.accountName}</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground whitespace-normal min-w-[160px] max-w-[360px]">
                       {line.memo ?? "—"}
@@ -97,7 +133,8 @@ export function JournalDetailClient({ journal }: Props) {
                       {line.credit > 0 ? formatRupiah(line.credit) : "—"}
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
               <TableFooter>
                 <TableRow>

@@ -21,7 +21,8 @@ import {
 } from "@/components/ui/table";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import { Loader2, RefreshCw, Save, Tags } from "lucide-react";
-import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
+import { PageHeader } from "@/components/ui/page-header";
+import { usePesanGalatJubelio } from "../RincianGalat";
 import {
   fetchJubelioCategoryList,
   saveJubelioCategoryMappings,
@@ -35,6 +36,7 @@ type Props = {
 
 export function CategoryMappingsClient({ initialRows }: Props) {
   const t = useTranslations("jubelio.categories");
+  const pesanGalat = usePesanGalatJubelio();
   const [rows, setRows] = useState<CategoryMappingRow[]>(initialRows);
   const [jubelioList, setJubelioList] = useState<JubelioCategoryFlat[]>([]);
   const [draft, setDraft] = useState<Record<string, number | null>>({});
@@ -49,11 +51,13 @@ export function CategoryMappingsClient({ initialRows }: Props) {
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      const list = await fetchJubelioCategoryList();
-      setJubelioList(list);
-      toast.success(t("loaded", { count: list.length }));
-    } catch (err) {
-      toast.error((err as Error).message);
+      const r = await fetchJubelioCategoryList();
+      if (!r.ok) {
+        toast.error(pesanGalat(r));
+        return;
+      }
+      setJubelioList(r.data);
+      toast.success(t("loaded", { count: r.data.length }));
     } finally {
       setIsRefreshing(false);
     }
@@ -77,8 +81,12 @@ export function CategoryMappingsClient({ initialRows }: Props) {
         itemCategoryId: erpId,
         jubelioCategoryId: jubelioId as number,
       }));
-      const result = await saveJubelioCategoryMappings(mappings);
-      toast.success(t("saved", { count: result.saved }));
+      const r = await saveJubelioCategoryMappings(mappings);
+      if (!r.ok) {
+        toast.error(pesanGalat(r));
+        return;
+      }
+      toast.success(t("saved", { count: r.data.saved }));
       setRows((prev) =>
         prev.map((r) => {
           const newId = draft[r.erpCategoryId];
@@ -86,8 +94,6 @@ export function CategoryMappingsClient({ initialRows }: Props) {
         }),
       );
       setDraft({});
-    } catch (err) {
-      toast.error((err as Error).message);
     } finally {
       setIsSaving(false);
     }
@@ -100,16 +106,15 @@ export function CategoryMappingsClient({ initialRows }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-center gap-1">
-          <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
-          <TombolBantuan judul={t("title")} />
-        </div>
-        <Button variant="outline" onClick={() => void handleRefresh()} disabled={isRefreshing}>
-          {isRefreshing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-          {t("refresh")}
-        </Button>
-      </div>
+      <PageHeader
+        title={t("title")}
+        actions={
+          <Button variant="outline" onClick={() => void handleRefresh()} disabled={isRefreshing}>
+            {isRefreshing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+            {t("refresh")}
+          </Button>
+        }
+      />
 
       <Card>
         <CardHeader>

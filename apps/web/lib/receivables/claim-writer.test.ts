@@ -82,6 +82,12 @@ vi.mock('./writer', () => ({
     state.dihitungUlang.push(id);
     return state.sisa.get(id) ?? 0;
   },
+  // Tahanan retur diuji terhadap basis data di `retur-ditahan.test.ts`; di sini
+  // tidak ada BKM terverifikasi yang menahan apa pun.
+  hitungUlangPiutangDanTahanan: async (_c: unknown, id: string) => {
+    state.dihitungUlang.push(id);
+    return { sisa: state.sisa.get(id) ?? 0, tertahan: 0 };
+  },
   // Pemakaian NRT diuji terhadap basis data di `pelunasan-ganda.test.ts`;
   // di sini setiap nota dianggap belum terpakai.
   returYangMelebihi: async () => null,

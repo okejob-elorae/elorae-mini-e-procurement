@@ -6,6 +6,8 @@
  * menaruh penjualan tengah malam di hari yang salah.
  */
 
+import { hargaTerimaKonsi } from "@/lib/spg/hilang";
+
 const WIB_MS = 7 * 3_600_000;
 const HARI_MS = 86_400_000;
 
@@ -143,6 +145,25 @@ export function nilaiBersihSpg(
     return s + (Number(b.returnedQty) || 0) * harga;
   }, 0);
   return Math.max(0, Math.round(((Number(total) || 0) - kembali) * 100) / 100);
+}
+
+/**
+ * KEPUTUSAN 19 (pemilik 2026-10-06, sementara — "ikuti usulan Claude dulu"):
+ * penjualan SPG di toko KONSI masuk grafik tren dengan harga ELORAE, bukan
+ * harga toko. Kasir SPG di toko KONSI mencatat harga yang dibayar pembeli
+ * (harga jual ÷ (1 − margin), `hargaKasirSpg`); tanpa konversi ini grafik
+ * mencampur harga toko dengan harga Elorae dari putus dan van, dan omzet
+ * lapangan naik 1/(1 − margin) di toko KONSI.
+ *
+ * Konversinya `hargaTerimaKonsi` (100.000 margin 25% → 75.000) memakai margin
+ * toko SEKARANG, diterapkan pada nilai bersih nota. Bagian potongan promo yang
+ * ditanggung toko tidak dibedakan di sini (siklus konsinyasi yang menghitung
+ * tagihan sebenarnya). Toko PUTUS dan margin tidak sah: nilai apa adanya.
+ */
+export function nilaiSpgElorae(nilaiBersih: number, toko: { termsType: unknown; marginPercent: unknown }): number {
+  if (toko.termsType !== "KONSI") return nilaiBersih;
+  const m = toko.marginPercent === null || toko.marginPercent === undefined ? null : Number(toko.marginPercent);
+  return hargaTerimaKonsi(nilaiBersih, m !== null && Number.isFinite(m) ? m : null) ?? 0;
 }
 
 /** `h` hari terakhir dibanding `h` hari sebelumnya, untuk saluran pilihan. */

@@ -29,8 +29,12 @@ import { computeActualLeadDays } from '@/lib/leadtime/calculations';
 import { applyChainSignal } from '@/lib/leadtime/auto-confirm';
 import { fanOutAdminNotification } from '@/lib/notifications/admin-fanout';
 import { runSerializable } from "@/lib/db/tx-retry";
+import { bentrokKunciKiriman } from "@/lib/receivables/idempoten";
 import { bagiBiayaPerBaris, hitungBiayaPenerimaanFG } from "@/lib/production/biaya-penerimaan";
 import { ProduksiDitolakError, type KodeTolakProduksi } from "@/lib/production/galat-produksi";
+import { bacaSisaBahanWo, kembalikanBahanWo, nilaiBahanKembaliWo, type HasilKembaliBahan } from "@/lib/production/kembali-bahan-writer";
+import { BATAS_ALASAN_BATAL_WO, bahanMasihDiCmt, type KodeTolakKembaliBahan } from "@/lib/production/kembali-bahan";
+import { ringkasanBahanWo, type RingkasanBahanWo } from "@/lib/production/kembali-bahan-queries";
 
 // Prisma uses CUID, not UUID - accept non-empty string for IDs
 const idStr = z.string().min(1);
@@ -757,20 +761,37 @@ const issueSchema = z.object({
 export type IssueFormData = z.infer<typeof issueSchema>;
 
 /*
- * Kunci idempotensi pengeluaran bahan disimpan TANPA kolom baru: satu baris
- * `AuditLog` (`MATERIAL_ISSUED`, entitas = WO) per pengeluaran berkunci, ditulis
- * di transaksi yang sama, metadata membawa kunci + hasilnya. Dicocokkan di JS
- * (penyaringan jalur JSON tidak andal di semua adaptor) — jumlah barisnya
- * sebanyak pengeluaran berkunci WO itu, kecil.
+ * Kunci idempotensi pengeluaran bahan: kolom unik `MaterialIssue.idempotencyKey`
+ * berisi `<woId>:<kunci>` — kunci formulir berlaku per WO, jadi kunci yang sama
+ * di WO lain tetap isian baru. Dua kiriman kembar yang lolos pembacaan kunci
+ * bersamaan bentrok di indeks unik, dan yang kalah membaca pemenangnya.
+ *
+ * Sebelum kolom itu ada (2026-10-06), kuncinya hanya di `AuditLog`
+ * (`MATERIAL_ISSUED`, entitas = WO, metadata membawa kunci + hasilnya). Baris itu
+ * tetap ditulis sebagai jejak, dan tetap dibaca sebagai cadangan supaya kunci
+ * pengeluaran lama yang dikirim ulang dikenali.
  */
 const AKSI_KELUAR_BAHAN = 'MATERIAL_ISSUED';
 type HasilKeluarBahan = { id: string; docNumber: string; totalCost: number };
 
+/** Nilai kolom `MaterialIssue.idempotencyKey` untuk kunci formulir di satu WO. */
+function kunciKolomPengeluaran(woId: string, kunci: string): string {
+  return `${woId}:${kunci}`;
+}
+
 async function pengeluaranDenganKunci(
-  client: Pick<typeof prisma, 'auditLog'>,
+  client: Pick<typeof prisma, 'auditLog' | 'materialIssue'>,
   woId: string,
   kunci: string
 ): Promise<HasilKeluarBahan | null> {
+  const baris = await client.materialIssue.findUnique({
+    where: { idempotencyKey: kunciKolomPengeluaran(woId, kunci) },
+    select: { id: true, docNumber: true, totalCost: true },
+  });
+  if (baris) return { id: baris.id, docNumber: baris.docNumber, totalCost: Number(baris.totalCost) };
+
+  // Cadangan untuk pengeluaran lama (sebelum kolom kunci): dicocokkan di JS —
+  // penyaringan jalur JSON tidak andal di semua adaptor; barisnya sedikit per WO.
   const jejak = await client.auditLog.findMany({
     where: { entityType: 'WorkOrder', entityId: woId, action: AKSI_KELUAR_BAHAN },
     select: { metadata: true },
@@ -840,7 +861,7 @@ export async function issueMaterials(data: IssueFormData, _userId?: string) {
   const validated = issueSchema.parse(data);
   const kunci = validated.idempotencyKey ?? null;
 
-  const { hasil: issueResult, ulangan } = await runSerializable(async (tx) => {
+  const keluarkan = () => runSerializable(async (tx) => {
     // Kunci PALING DULU: pengeluaran yang sudah tercatat dikembalikan apa adanya,
     // sebelum penjaga status/stok (WO bisa sudah berubah sejak simpan pertama).
     if (kunci) {
@@ -1053,7 +1074,8 @@ export async function issueMaterials(data: IssueFormData, _userId?: string) {
         notes: data.notes ?? undefined,
         items: JSON.stringify(issueItemsForJson),
         totalCost: totalCost.toNumber(),
-        issuedById: userId
+        issuedById: userId,
+        idempotencyKey: kunci ? kunciKolomPengeluaran(data.woId, kunci) : null,
       }
     });
 
@@ -1110,6 +1132,16 @@ export async function issueMaterials(data: IssueFormData, _userId?: string) {
     }
     return { hasil, ulangan: false };
   });
+  let hasilTx: Awaited<ReturnType<typeof keluarkan>>;
+  try {
+    hasilTx = await keluarkan();
+  } catch (err) {
+    // Kembarannya commit lebih dulu dan bentrok di kolom kunci (tidak diulang
+    // runSerializable): percobaan ini membaca kunci yang kini tercatat.
+    if (!kunci || !bentrokKunciKiriman(err)) throw err;
+    hasilTx = await keluarkan();
+  }
+  const { hasil: issueResult, ulangan } = hasilTx;
   revalidatePath(`/backoffice/work-orders/${data.woId}`);
   // Ulangan: bahan tidak keluar lagi, jadi notifikasi & sinyal tidak dikirim lagi.
   if (ulangan) return issueResult;
@@ -1352,6 +1384,12 @@ export async function receiveFG(data: ReceiptFormData, _userId: string) {
   requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_MANAGE);
   const userId = session.user.id;
 
+  // Cacat adalah bagian dari setoran: tidak boleh negatif atau melebihi
+  // setoran (dulu hanya dicegah layar; lewat aksi langsung qtyAccepted negatif).
+  const cacatSetoran = Number(data?.qtyRejected ?? 0);
+  if (!Number.isFinite(cacatSetoran) || cacatSetoran < 0 || cacatSetoran > Number(data?.qtyReceived)) {
+    throw new ProduksiDitolakError('CACAT_MELEBIHI_SETORAN');
+  }
   receiptSchema.parse(data);
 
   const receiveResult = await runSerializable(async (tx) => {
@@ -1371,9 +1409,13 @@ export async function receiveFG(data: ReceiptFormData, _userId: string) {
 
     const docNumber = await generateDocNumber('RECEIPT', tx);
 
-    const totalMaterialCost = wo.issues.reduce((sum, issue) => {
-      return sum.plus(issue.totalCost.toString());
-    }, new Decimal(0));
+    // Bahan yang sudah kembali ke gudang tidak ikut dipikul barang jadi.
+    const totalMaterialCost = Decimal.max(
+      0,
+      wo.issues
+        .reduce((sum, issue) => sum.plus(issue.totalCost.toString()), new Decimal(0))
+        .minus(await nilaiBahanKembaliWo(tx, data.woId))
+    );
 
     // Penerimaan ini hanya memikul bagiannya dari biaya bahan (dulu: seluruhnya,
     // pada SETIAP penerimaan sebagian). Penerimaan penutup memikul sisanya.
@@ -1686,24 +1728,37 @@ export async function postFgReceiptJournalAction(
 
 export type KodeTolakBatalWo =
   | 'TANPA_AKSES'
+  | 'ALASAN_WAJIB'
+  | 'ALASAN_TERLALU_PANJANG'
   | 'WO_TIDAK_DITEMUKAN'
   | 'WO_SUDAH_DIBATALKAN'
   | 'WO_SUDAH_ADA_PENERIMAAN'
-  /** Bahan sudah keluar gudang dan belum ada alur pengembalian bahan. */
+  /** Masih ada bahan di CMT — kembalikan dulu lewat "Kembalikan bahan". */
   | 'WO_SUDAH_KELUAR_BAHAN'
   | 'GAGAL';
 
-export type CancelWorkOrderResult = { ok: true } | { ok: false; code: KodeTolakBatalWo };
+/** Bahan yang masih di CMT, disebut di penolakan pembatalan. */
+export type BahanBelumKembali = { nama: string; qty: number; satuan: string };
+
+export type CancelWorkOrderResult =
+  | { ok: true }
+  | { ok: false; code: Exclude<KodeTolakBatalWo, 'WO_SUDAH_KELUAR_BAHAN'> }
+  | { ok: false; code: 'WO_SUDAH_KELUAR_BAHAN'; sisa: BahanBelumKembali[] };
+
 
 /**
  * Penolakan DIKEMBALIKAN sebagai `{ ok:false, code }` — di build produksi Next
  * menyamarkan pesan lemparan aksi server, jadi tombol batal hanya bisa
  * menjelaskan alasannya lewat kode.
  *
- * Penjaga "belum ada penerimaan" dan "belum ada bahan keluar" dibaca DI DALAM
- * transaksi serializable yang sama dengan pembaruannya: penerimaan atau
- * pengeluaran bahan yang commit di antara baca dan tulis membuat salah satunya
- * konflik dan diulang dengan keadaan baru.
+ * Penjaga "belum ada penerimaan" dan "tidak ada bahan di CMT" dibaca DI DALAM
+ * transaksi serializable yang sama dengan pembaruannya: penerimaan,
+ * pengeluaran, atau pengembalian bahan yang commit di antara baca dan tulis
+ * membuat salah satunya konflik dan diulang dengan keadaan baru.
+ *
+ * Bahan yang sudah keluar tidak lagi menghalangi selamanya: bila SEMUANYA
+ * sudah kembali ke gudang ("Kembalikan bahan"), WO boleh dibatalkan. Selama
+ * masih ada sisa di CMT, penolakannya menyebut bahan dan qty-nya. Alasan wajib.
  */
 export async function cancelWorkOrder(
   id: string,
@@ -1717,10 +1772,11 @@ export async function cancelWorkOrder(
     return { ok: false, code: 'TANPA_AKSES' };
   }
   const userId = session.user.id;
+  const alasan = (reason ?? '').trim();
+  if (!alasan) return { ok: false, code: 'ALASAN_WAJIB' };
+  if (alasan.length > BATAS_ALASAN_BATAL_WO) return { ok: false, code: 'ALASAN_TERLALU_PANJANG' };
 
-  type HasilTx =
-    | { ok: true; docNumber: string; status: string }
-    | { ok: false; code: KodeTolakBatalWo };
+  type HasilTx = { ok: true; docNumber: string; status: string } | Exclude<CancelWorkOrderResult, { ok: true }>;
   let hasil: HasilTx;
   try {
     hasil = await runSerializable(async (tx): Promise<HasilTx> => {
@@ -1730,21 +1786,49 @@ export async function cancelWorkOrder(
           docNumber: true,
           status: true,
           receipts: { select: { id: true }, take: 1 },
-          issues: { select: { id: true }, take: 1 },
+          issues: { select: { items: true } },
         },
       });
       if (!found) return { ok: false, code: 'WO_TIDAK_DITEMUKAN' };
       if (found.status === 'CANCELLED') return { ok: false, code: 'WO_SUDAH_DIBATALKAN' };
       if (found.receipts.length > 0) return { ok: false, code: 'WO_SUDAH_ADA_PENERIMAAN' };
-      if (found.issues.length > 0) return { ok: false, code: 'WO_SUDAH_KELUAR_BAHAN' };
+      if (found.issues.length > 0) {
+        const diCmt = bahanMasihDiCmt(await bacaSisaBahanWo(tx, id, found.issues));
+        if (diCmt.length > 0) {
+          const barang = await tx.item.findMany({
+            where: { id: { in: diCmt.map((d) => d.itemId) } },
+            select: { id: true, nameId: true, uom: { select: { code: true } } },
+          });
+          const per = new Map(barang.map((b) => [b.id, b]));
+          return {
+            ok: false,
+            code: 'WO_SUDAH_KELUAR_BAHAN',
+            sisa: diCmt.map((d) => ({
+              nama: per.get(d.itemId)?.nameId ?? d.itemId,
+              qty: d.sisa.toNumber(),
+              satuan: per.get(d.itemId)?.uom?.code ?? '',
+            })),
+          };
+        }
+      }
 
       await tx.workOrder.update({
         where: { id },
         data: {
           status: 'CANCELLED',
           canceledAt: new Date(),
-          canceledReason: reason
+          canceledReason: alasan
         }
+      });
+      await tx.auditLog.create({
+        data: {
+          userId,
+          action: 'WO_CANCELLED',
+          entityType: 'WorkOrder',
+          entityId: id,
+          reason: alasan,
+          changes: { status: { sebelum: found.status, sesudah: 'CANCELLED' } },
+        },
       });
       return { ok: true, docNumber: found.docNumber, status: found.status };
     });
@@ -1764,6 +1848,62 @@ export async function cancelWorkOrder(
   revalidatePath('/backoffice/work-orders');
   revalidatePath(`/backoffice/work-orders/${id}`);
   return { ok: true };
+}
+
+export type KembalikanBahanInput = {
+  woId: string;
+  baris: Array<{ itemId: string; qty: number | string }>;
+  catatan?: string;
+  /** Kunci idempotensi per isian formulir (dibuat sekali di layar, dipakai ulang saat simpan diulang). */
+  kunci: string;
+};
+
+export type KembalikanBahanResult =
+  | Extract<HasilKembaliBahan, { ok: true }>
+  | { ok: false; code: KodeTolakKembaliBahan; itemId?: string; sisa?: number };
+
+/**
+ * Bahan kembali dari CMT ke gudang (sisa potong, WO yang akan dibatalkan).
+ * Penulisnya `kembalikanBahanWo` (lib/production/kembali-bahan-writer.ts);
+ * penolakan DIKEMBALIKAN sebagai `{ ok:false, code }`. Pelaku dari sesi.
+ */
+export async function kembalikanBahan(data: KembalikanBahanInput): Promise<KembalikanBahanResult> {
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.WORK_ORDERS_MANAGE)) {
+    return { ok: false, code: 'TANPA_AKSES' };
+  }
+  const kunci = typeof data?.kunci === 'string' ? data.kunci.trim() : '';
+  const woId = typeof data?.woId === 'string' ? data.woId : '';
+  // Kunci tanpa ":" — kunci baris disusun "woret:<wo>:<kunci>:<barang>" dan dicari per awalan.
+  if (!woId || !/^[A-Za-z0-9_-]{8,100}$/.test(kunci) || !Array.isArray(data.baris)) {
+    return { ok: false, code: 'QTY_TIDAK_VALID' };
+  }
+  const baris = data.baris
+    .filter((b) => b && typeof b.itemId === 'string' && b.itemId)
+    .map((b) => ({ itemId: b.itemId, qty: b.qty }));
+  try {
+    const hasil = await kembalikanBahanWo({
+      woId,
+      baris,
+      catatan: typeof data.catatan === 'string' ? data.catatan : null,
+      kunci,
+      userId: session.user.id,
+    });
+    if (hasil.ok && !hasil.ulangan) {
+      revalidatePath(`/backoffice/work-orders/${woId}`);
+      revalidatePath('/backoffice/work-orders');
+    }
+    return hasil;
+  } catch (error) {
+    console.error('[kembalikanBahan]', error);
+    return { ok: false, code: 'GAGAL' };
+  }
+}
+
+/** Tabel bahan WO (rencana, keluar, kembali, di CMT) + riwayat bahan kembali. */
+export async function getBahanWo(woId: string): Promise<RingkasanBahanWo | null> {
+  await wajibBolehBaca(IZIN_BACA_WO);
+  return ringkasanBahanWo(woId);
 }
 
 export async function getWorkOrders(
@@ -2250,6 +2390,7 @@ export async function getMaterialIssuesForCMTRegister(
       issueType: i.issueType,
       issuedAt: i.issuedAt,
       totalCost: Number(i.totalCost),
+      woId: (i as { woId?: string }).woId ?? '',
       woDocNumber: wo?.docNumber ?? '',
       vendorName: wo?.vendor?.name ?? wo?.vendor?.code ?? '',
     };

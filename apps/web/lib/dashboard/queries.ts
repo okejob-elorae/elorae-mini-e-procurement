@@ -1,7 +1,8 @@
 import { prisma, Prisma, sqlId } from '@elorae/db';
-import { nilaiBersihSpg, rentangTren, saluranMarketplace, susunTren, type BarisSaluran, type TitikTren } from './tren';
+import { nilaiBersihSpg, nilaiSpgElorae, rentangTren, saluranMarketplace, susunTren, type BarisSaluran, type TitikTren } from './tren';
 import { awalMingguIniWib, batasHariIniWib } from './hari-wib';
 import { overduePOWhere } from '@/lib/purchase-orders/overdue';
+import { kesehatanStokPerBarang } from './kesehatan-stok';
 import {
   bacaRencana,
   hitungKekuranganBahan,
@@ -27,11 +28,22 @@ export type DashboardStats = {
   };
   items: {
     activeCount: number;
-    /** 0 dan TIDAK dimuat bila kartu stok tersembunyi — `statistikBeranda` membuangnya. */
+    /**
+     * Barang MENIPIS (tersedia > 0 dan ≤ titik pesan ulang) — definisi ringkasan
+     * Inventori (`kesehatanStokPerBarang`). 0 dan TIDAK dimuat bila kartu stok
+     * tersembunyi — `statistikBeranda` membuangnya.
+     */
     lowStockCount: number;
+    /** Barang HABIS (tersedia = 0), definisi yang sama. */
+    habisCount: number;
   };
   workOrders: {
+    /** Berjalan = sedang diproduksi + selesai sebagian. */
     inProduction: number;
+    /** `IN_PRODUCTION` saja — daftar SPK `?status=IN_PRODUCTION`. */
+    sedangDiproduksi: number;
+    /** `PARTIAL` saja — daftar SPK `?status=PARTIAL`. */
+    selesaiSebagian: number;
     completedToday: number;
   };
   suppliers: {
@@ -69,6 +81,7 @@ export async function getDashboardStats(kartu?: { stok: boolean }): Promise<Dash
     inventoryRows,
     inventoryTotalValue,
     woInProduction,
+    woPartial,
     woCompletedToday,
     suppliersActive,
     grnsThisWeek,
@@ -83,16 +96,15 @@ export async function getDashboardStats(kartu?: { stok: boolean }): Promise<Dash
     prisma.purchaseOrder.count({ where: overduePOWhere(now) }),
     kartu ? null : prisma.purchaseOrder.aggregate({ _sum: { grandTotal: true } }),
     prisma.item.count({ where: { isActive: true } }),
+    // Semua baris (bukan hanya yang bertitik pesan ulang): "habis" berlaku untuk setiap barang.
     kartu && !kartu.stok
       ? []
       : prisma.inventoryValue.findMany({
-          where: { item: { reorderPoint: { not: null } } },
-          include: { item: { select: { reorderPoint: true } } },
+          select: { itemId: true, qtyOnHand: true, reservedQty: true, item: { select: { reorderPoint: true } } },
         }),
     kartu ? null : prisma.inventoryValue.aggregate({ _sum: { totalValue: true } }),
-    prisma.workOrder.count({
-      where: { status: { in: ['IN_PRODUCTION', 'PARTIAL'] } },
-    }),
+    prisma.workOrder.count({ where: { status: 'IN_PRODUCTION' } }),
+    prisma.workOrder.count({ where: { status: 'PARTIAL' } }),
     prisma.workOrder.count({
       where: {
         status: 'COMPLETED',
@@ -110,19 +122,15 @@ export async function getDashboardStats(kartu?: { stok: boolean }): Promise<Dash
     // audit), jadi log audit tidak lagi dibaca di sini.
   ]);
 
-  const inventoryByItem = new Map<string, { qtyOnHand: number; reorderPoint: number | null }>();
-  for (const r of inventoryRows) {
-    const rp = r.item.reorderPoint != null ? Number(r.item.reorderPoint) : null;
-    const existing = inventoryByItem.get(r.itemId);
-    if (existing) {
-      existing.qtyOnHand += Number(r.qtyOnHand);
-    } else {
-      inventoryByItem.set(r.itemId, { qtyOnHand: Number(r.qtyOnHand), reorderPoint: rp });
-    }
-  }
-  const lowStockCount = Array.from(inventoryByItem.values()).filter(
-    (a) => a.reorderPoint != null && a.qtyOnHand <= a.reorderPoint
-  ).length;
+  // Sama dengan ringkasan Inventori: per barang, tersedia = di tangan − dipesan.
+  const kesehatan = kesehatanStokPerBarang(
+    inventoryRows.map((r) => ({
+      itemId: r.itemId,
+      qtyOnHand: r.qtyOnHand,
+      reservedQty: r.reservedQty,
+      reorderPoint: r.item.reorderPoint,
+    })),
+  );
 
   return {
     po: {
@@ -135,10 +143,13 @@ export async function getDashboardStats(kartu?: { stok: boolean }): Promise<Dash
     },
     items: {
       activeCount: itemsActive,
-      lowStockCount,
+      lowStockCount: kesehatan.menipis,
+      habisCount: kesehatan.habis,
     },
     workOrders: {
-      inProduction: woInProduction,
+      inProduction: woInProduction + woPartial,
+      sedangDiproduksi: woInProduction,
+      selesaiSebagian: woPartial,
       completedToday: woCompletedToday,
     },
     suppliers: {
@@ -310,18 +321,26 @@ export type SalesmenSalesBucket = {
   amount: number;
 };
 
+/** Apa yang dihitung `realised.count` — disebut apa adanya, bukan "transaksi". */
+export type RincianTerealisasi = { pengiriman: number; van: number };
+
 export type SalesmanSalesRow = {
   salesmanId: string;
   salesmanName: string;
   realised: SalesmenSalesBucket;
+  realisedRincian: RincianTerealisasi;
   outstanding: SalesmenSalesBucket;
+  /** Putus DISETUJUI yang belum satu pun dikirim (`deliveryStatus` PENDING) — daftar `?kirim=PENDING`. */
+  menungguKirim: SalesmenSalesBucket;
 };
 
 export type SalesmenSalesSummary = {
   rows: SalesmanSalesRow[];
   totals: {
     realised: SalesmenSalesBucket;
+    realisedRincian: RincianTerealisasi;
     outstanding: SalesmenSalesBucket;
+    menungguKirim: SalesmenSalesBucket;
   };
 };
 
@@ -339,16 +358,19 @@ type RealisedDeliveryRow = {
  * All-time per-salesman realised vs outstanding sales.
  * Realised = sum of FieldSalesDelivery.total on PUTUS orders + all VanSale.total.
  * Outstanding = PENDING_APPROVAL PUTUS FieldSalesOrder.total.
- * KONSI excluded from every bucket; REJECTED never counts.
+ * Menunggu kirim = APPROVED PUTUS orders with no delivery yet (`deliveryStatus` PENDING),
+ *   at the order total — exactly the rows of `/backoffice/field-sales-orders?kirim=PENDING`.
+ * KONSI excluded from every bucket; REJECTED (incl. cancelled) never counts.
  *
  * Realised counts DELIVERIES, not approved orders. Approval stopped moving stock once delivery
  * became its own document, and nothing recomputes FieldSalesOrder.total when only part of an order
  * ships or a remainder is closed — so an approved order's total permanently overstates what the
- * store actually received. Known gap this leaves: an approved order still awaiting its first
- * delivery lands in NEITHER bucket, because outstanding still means "awaiting approval" only.
+ * store actually received. An approved order awaiting its first delivery used to land in NEITHER
+ * bucket; it now has its own (`menungguKirim`). Remaining gap: the undelivered remainder of a
+ * PARTIAL order is in no bucket (its order total minus its deliveries is not computed here).
  */
 export async function getSalesmenSalesSummary(): Promise<SalesmenSalesSummary> {
-  const [realisedDeliveries, realisedVan, outstandingPutus] = await Promise.all([
+  const [realisedDeliveries, realisedVan, outstandingPutus, approvedUndelivered] = await Promise.all([
     prisma.$queryRaw<RealisedDeliveryRow[]>(Prisma.sql`
       SELECT o.${sqlId('salesmanId')} AS ${sqlId('salesmanId')},
              COUNT(*) AS ${sqlId('deliveryCount')},
@@ -369,16 +391,31 @@ export async function getSalesmenSalesSummary(): Promise<SalesmenSalesSummary> {
       _count: true,
       _sum: { total: true },
     }),
+    // Saringan yang SAMA dengan `listFieldSalesOrders({ kirim: 'PENDING' })`.
+    prisma.fieldSalesOrder.groupBy({
+      by: ['salesmanId'],
+      where: { orderType: 'PUTUS', status: 'APPROVED', deliveryStatus: 'PENDING' },
+      _count: true,
+      _sum: { total: true },
+    }),
   ]);
 
-  const bySalesman = new Map<
-    string,
-    { realised: SalesmenSalesBucket; outstanding: SalesmenSalesBucket }
-  >();
+  type Rekap = {
+    realised: SalesmenSalesBucket;
+    realisedRincian: RincianTerealisasi;
+    outstanding: SalesmenSalesBucket;
+    menungguKirim: SalesmenSalesBucket;
+  };
+  const bySalesman = new Map<string, Rekap>();
   const ensure = (id: string) => {
     let rec = bySalesman.get(id);
     if (!rec) {
-      rec = { realised: { count: 0, amount: 0 }, outstanding: { count: 0, amount: 0 } };
+      rec = {
+        realised: { count: 0, amount: 0 },
+        realisedRincian: { pengiriman: 0, van: 0 },
+        outstanding: { count: 0, amount: 0 },
+        menungguKirim: { count: 0, amount: 0 },
+      };
       bySalesman.set(id, rec);
     }
     return rec;
@@ -386,18 +423,27 @@ export async function getSalesmenSalesSummary(): Promise<SalesmenSalesSummary> {
 
   for (const r of realisedDeliveries) {
     const rec = ensure(r.salesmanId);
-    rec.realised.count += Number(r.deliveryCount ?? 0);
+    const n = Number(r.deliveryCount ?? 0);
+    rec.realised.count += n;
+    rec.realisedRincian.pengiriman += n;
     rec.realised.amount += Number(r.totalAmount ?? 0);
   }
   for (const r of realisedVan) {
     const rec = ensure(r.salesmanId);
-    rec.realised.count += Number(r._count ?? 0);
+    const n = Number(r._count ?? 0);
+    rec.realised.count += n;
+    rec.realisedRincian.van += n;
     rec.realised.amount += Number(r._sum.total ?? 0);
   }
   for (const r of outstandingPutus) {
     const rec = ensure(r.salesmanId);
     rec.outstanding.count += Number(r._count ?? 0);
     rec.outstanding.amount += Number(r._sum.total ?? 0);
+  }
+  for (const r of approvedUndelivered) {
+    const rec = ensure(r.salesmanId);
+    rec.menungguKirim.count += Number(r._count ?? 0);
+    rec.menungguKirim.amount += Number(r._sum.total ?? 0);
   }
 
   const salesmanIds = Array.from(bySalesman.keys());
@@ -415,21 +461,29 @@ export async function getSalesmenSalesSummary(): Promise<SalesmenSalesSummary> {
     return {
       salesmanId: id,
       salesmanName: nameById.get(id) ?? '—',
-      realised: rec.realised,
-      outstanding: rec.outstanding,
+      ...rec,
     };
   });
   rows.sort((a, b) => b.realised.amount - a.realised.amount);
 
-  const totals = rows.reduce(
+  const totals = rows.reduce<SalesmenSalesSummary['totals']>(
     (acc, r) => {
       acc.realised.count += r.realised.count;
       acc.realised.amount += r.realised.amount;
+      acc.realisedRincian.pengiriman += r.realisedRincian.pengiriman;
+      acc.realisedRincian.van += r.realisedRincian.van;
       acc.outstanding.count += r.outstanding.count;
       acc.outstanding.amount += r.outstanding.amount;
+      acc.menungguKirim.count += r.menungguKirim.count;
+      acc.menungguKirim.amount += r.menungguKirim.amount;
       return acc;
     },
-    { realised: { count: 0, amount: 0 }, outstanding: { count: 0, amount: 0 } }
+    {
+      realised: { count: 0, amount: 0 },
+      realisedRincian: { pengiriman: 0, van: 0 },
+      outstanding: { count: 0, amount: 0 },
+      menungguKirim: { count: 0, amount: 0 },
+    },
   );
 
   return { rows, totals };
@@ -455,20 +509,8 @@ export async function getOversoldInventory(): Promise<OversoldInventoryRow[]> {
     .sort((a, b) => a.available - b.available);
 }
 
-/**
- * Oversold SKU count for the sidebar badge.
- *
- * `available` is derived (qtyOnHand − reservedQty), never stored, so it cannot
- * be a WHERE clause — hence the same read-then-filter shape as
- * getOversoldInventory, narrowed to the two columns the arithmetic needs.
- */
-export async function countOversoldInventory(): Promise<number> {
-  const rows = await prisma.inventoryValue.findMany({
-    where: { reservedQty: { gt: 0 } },
-    select: { qtyOnHand: true, reservedQty: true },
-  });
-  return rows.filter((r) => Number(r.qtyOnHand) - Number(r.reservedQty) < 0).length;
-}
+// Lencana menu "stok minus" memakai `hitungBarangStokMinus` (per BARANG, sama
+// dengan Beranda dan Inventori `?oversold=1`), bukan hitungan per baris varian.
 
 /**
  * Penjualan per hari untuk grafik tren beranda, 180 hari terakhir — cukup
@@ -478,7 +520,8 @@ export async function countOversoldInventory(): Promise<number> {
  * tidak berselisih: marketplace = SalesOrder per `transactionDate` tanpa yang
  * batal/retur (seperti `getMarketplaceKpi`); lapangan = pengiriman pesanan
  * PUTUS per `deliveredAt` + penjualan van per `createdAt` + penjualan SPG per
- * `createdAt`, bersih dari barang yang dikembalikan pembeli. Transfer
+ * `createdAt`, bersih dari barang yang dikembalikan pembeli — nota SPG di toko
+ * KONSI dengan harga Elorae, bukan harga toko (KEPUTUSAN 19, `nilaiSpgElorae`). Transfer
  * konsinyasi BUKAN penjualan dan tidak dihitung. Setiap baris membawa
  * salurannya (Shopee/TikTok/Tokopedia/lain, putus/van/SPG) supaya grafik bisa
  * dilihat per saluran tanpa kueri kedua.
@@ -529,7 +572,13 @@ async function ambilPenjualan(dari: Date, sampai?: Date): Promise<BarisSaluran[]
     // tergambar sama sekali.
     prisma.spgSale.findMany({
       where: { createdAt: waktu },
-      select: { createdAt: true, total: true, lines: { select: { unitPrice: true, returnedQty: true, qty: true, lineTotal: true } } },
+      select: {
+        createdAt: true,
+        total: true,
+        lines: { select: { unitPrice: true, returnedQty: true, qty: true, lineTotal: true } },
+        // KEPUTUSAN 19: nota toko KONSI dikonversi ke harga Elorae (`nilaiSpgElorae`).
+        store: { select: { termsType: true, marginPercent: true } },
+      },
     }),
   ]);
   return [
@@ -540,6 +589,10 @@ async function ambilPenjualan(dari: Date, sampai?: Date): Promise<BarisSaluran[]
     })),
     ...kiriman.map((k) => ({ tanggal: k.deliveredAt, nilai: Number(k.total), saluran: 'putus' as const })),
     ...van.map((v) => ({ tanggal: v.createdAt, nilai: Number(v.total), saluran: 'van' as const })),
-    ...spg.map((n) => ({ tanggal: n.createdAt, nilai: nilaiBersihSpg(n.total, n.lines), saluran: 'spg' as const })),
+    ...spg.map((n) => ({
+      tanggal: n.createdAt,
+      nilai: nilaiSpgElorae(nilaiBersihSpg(n.total, n.lines), n.store),
+      saluran: 'spg' as const,
+    })),
   ];
 }

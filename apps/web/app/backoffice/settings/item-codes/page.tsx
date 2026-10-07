@@ -21,6 +21,7 @@ import {
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
+import { contohBarcode, FORMAT_SIAP_PAKAI } from "./contoh-barcode";
 
 // Tokens are literal template syntax and stay as typed; only the explanation
 // beside each one is translated (itemCodes.hints.*).
@@ -54,7 +55,10 @@ export default function ItemCodesSettingsPage() {
       .finally(() => setIsLoading(false));
   }, [status, router, t]);
 
+  const contoh = contohBarcode(template);
+
   const handleSave = async () => {
+    if (!template.trim()) return;
     setIsSaving(true);
     try {
       await saveVariantBarcodeFormat(template);
@@ -95,6 +99,26 @@ export default function ItemCodesSettingsPage() {
               className="font-mono text-sm"
               placeholder={DEFAULT_VARIANT_BARCODE_TEMPLATE}
             />
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted-foreground">{t("presetsLabel")}</span>
+              {FORMAT_SIAP_PAKAI.map((f) => (
+                <Button
+                  key={f.id}
+                  type="button"
+                  size="sm"
+                  variant={template.trim() === f.template ? "secondary" : "outline"}
+                  onClick={() => setTemplate(f.template)}
+                >
+                  {t(`presets.${f.id}`)}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-1 rounded-md border p-3">
+            <p className="text-xs text-muted-foreground">{t("previewLabel")}</p>
+            <p className="font-mono text-lg font-semibold tracking-wide">{contoh || "—"}</p>
+            <p className="text-xs text-muted-foreground">{t("previewSample")}</p>
           </div>
 
           <div className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
@@ -107,14 +131,9 @@ export default function ItemCodesSettingsPage() {
                 </li>
               ))}
             </ul>
-            <p className="mt-3 text-xs">
-              {t("exampleHintPrefix")}{" "}
-              <code className="text-xs">{DEFAULT_VARIANT_BARCODE_TEMPLATE}</code>{" "}
-              {t("exampleHintSuffix")}
-            </p>
           </div>
 
-          <Button type="button" onClick={() => void handleSave()} disabled={isSaving}>
+          <Button type="button" onClick={() => void handleSave()} disabled={isSaving || !template.trim()}>
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             {t("save")}
           </Button>

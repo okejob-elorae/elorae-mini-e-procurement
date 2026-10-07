@@ -7,6 +7,7 @@ import { ListOrdered, SearchX, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { TautanTerkaitSpg } from "../spg-pelanggan/TautanTerkaitSpg";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { dinamis } from "@/lib/i18n/dinamis";
@@ -44,7 +45,7 @@ export function BarangDicariClient({
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t("pageTitle")} />
+      <PageHeader title={t("pageTitle")} actions={<TautanTerkaitSpg kecuali="dicari" />} />
 
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-sm text-muted-foreground">{t("periodLabel")}</span>

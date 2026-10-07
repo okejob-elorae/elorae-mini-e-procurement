@@ -1,20 +1,45 @@
 /**
- * Purchase Order / invoice print — shared theme with po-payment-receipt-html.ts.
+ * Cetak PO / faktur pembelian — tema bersama dengan po-payment-receipt-html.ts.
+ *
+ * Dokumen ini dikirim ke pemasok lokal, jadi label, angka, dan tanggal
+ * berbahasa Indonesia (tanggal WIB). Label bawaan ada di sini (`LABEL_CETAK_PO`,
+ * `LABEL_CETAK_FAKTUR_PO`); pemanggil boleh menimpanya.
  */
 
-import {
-  esc,
-  fmtDocDate,
-  money,
-  printCssBase,
-  printPagePortrait,
-} from '@/lib/print/print-theme';
+import { esc, printCssBase, printPagePortrait } from '@/lib/print/print-theme';
 
-function fmtMetaDate(d: Date | string | null | undefined): string {
+const ZONA = 'Asia/Jakarta';
+
+/** "6 Okt 2026" (WIB). */
+export function tanggalCetak(d: Date | string | null | undefined): string {
   if (d == null) return '';
   const x = d instanceof Date ? d : new Date(d);
   if (Number.isNaN(x.getTime())) return '';
-  return x.toLocaleDateString('id-ID');
+  return new Intl.DateTimeFormat('id-ID', { timeZone: ZONA, day: 'numeric', month: 'short', year: 'numeric' }).format(x);
+}
+
+/** "Rp 1.887.000" / "Rp 1.133,33"; mata uang lain memakai kodenya. */
+export function uangCetak(currency: string, n: number): string {
+  const angka = Number(n).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  return `${currency === 'IDR' ? 'Rp' : currency} ${angka}`;
+}
+
+function angkaCetak(n: number): string {
+  return Number(n).toLocaleString('id-ID', { maximumFractionDigits: 2 });
+}
+
+const STATUS_CETAK_PO: Record<string, string> = {
+  DRAFT: 'Draf',
+  SUBMITTED: 'Dikirim ke pemasok',
+  PARTIAL: 'Diterima sebagian',
+  CLOSED: 'Selesai',
+  OVER: 'Lebih dari pesanan',
+  CANCELLED: 'Dibatalkan',
+};
+
+/** Kode status PO → label di kertas (sama dengan `statuses.po*`). */
+export function labelStatusCetakPo(status: string): string {
+  return STATUS_CETAK_PO[status] ?? status;
 }
 
 export type POPrintLine = {
@@ -46,7 +71,10 @@ export interface BuildPOPrintHtmlOptions {
   notes?: string | null;
   terms?: string | null;
   lines: POPrintLine[];
-  labels: {
+  labels?: LabelCetakPo;
+}
+
+export type LabelCetakPo = {
     title: string;
     doc: string;
     date: string;
@@ -68,14 +96,43 @@ export interface BuildPOPrintHtmlOptions {
     grandTotal: string;
     notes: string;
     termsFooter: string;
-  };
-}
+};
+
+export const LABEL_CETAK_PO: LabelCetakPo = {
+  title: 'Pesanan Pembelian',
+  doc: 'No. PO',
+  date: 'Tanggal',
+  issuedBy: 'Diterbitkan oleh',
+  supplier: 'Pemasok',
+  address: 'Alamat',
+  attn: 'Kode:',
+  status: 'Status',
+  etaDate: 'Perkiraan tiba',
+  terms: 'Syarat',
+  paymentDue: 'Jatuh tempo bayar',
+  item: 'Barang',
+  qty: 'Qty',
+  uom: 'Satuan',
+  price: 'Harga satuan',
+  amount: 'Jumlah',
+  subtotal: 'Subtotal',
+  tax: 'PPN',
+  grandTotal: 'Total',
+  notes: 'Catatan:',
+  termsFooter: 'Syarat & ketentuan',
+};
+
+export const LABEL_CETAK_FAKTUR_PO: LabelCetakPo = {
+  ...LABEL_CETAK_PO,
+  title: 'Faktur Pembelian',
+  supplier: 'Ditagih oleh',
+};
 
 export function buildPOPrintHtml(opts: BuildPOPrintHtmlOptions): string {
   const {
     docNumber,
     issuedAt,
-    issuerName = 'Elorae ERP',
+    issuerName = 'Eloraé',
     supplierName,
     supplierAddress,
     supplierCode,
@@ -89,11 +146,11 @@ export function buildPOPrintHtml(opts: BuildPOPrintHtmlOptions): string {
     notes,
     terms,
     lines,
-    labels,
+    labels = LABEL_CETAK_PO,
   } = opts;
 
-  const etaStr = fmtMetaDate(etaDate);
-  const dueStr = fmtMetaDate(paymentDueDate);
+  const etaStr = tanggalCetak(etaDate);
+  const dueStr = tanggalCetak(paymentDueDate);
   const termsShort =
     terms?.trim() != null && terms.trim() !== ''
       ? terms.trim().length > 56
@@ -107,7 +164,7 @@ export function buildPOPrintHtml(opts: BuildPOPrintHtmlOptions): string {
         ? `<div class="line-sku">SKU: ${esc(line.itemSku)}</div>`
         : '';
       const variantSkuLine = line.variantSku
-        ? `<div class="line-meta">Variant SKU: ${esc(line.variantSku)}</div>`
+        ? `<div class="line-meta">SKU varian: ${esc(line.variantSku)}</div>`
         : '';
       const variantDetailLine = line.variantDetail
         ? `<div class="line-meta">${esc(line.variantDetail)}</div>`
@@ -123,10 +180,10 @@ export function buildPOPrintHtml(opts: BuildPOPrintHtmlOptions): string {
           ${variantDetailLine}
           ${notesLine}
         </td>
-        <td class="col-num">${Number(line.qty).toLocaleString('id-ID')}</td>
+        <td class="col-num">${angkaCetak(line.qty)}</td>
         <td class="col-uom">${esc(line.uomCode)}</td>
-        <td class="col-num">${Number(line.price).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-        <td class="col-num">${Number(line.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+        <td class="col-num">${esc(uangCetak(currency, line.price))}</td>
+        <td class="col-num">${esc(uangCetak(currency, line.amount))}</td>
       </tr>`;
     })
     .join('');
@@ -168,7 +225,7 @@ ${printPagePortrait}
       <span class="lbl">${esc(labels.doc)}</span>
       <span class="val">${esc(docNumber)}</span>
       <span class="lbl">${esc(labels.date)}</span>
-      <span class="val">${esc(fmtDocDate(issuedAt))}</span>
+      <span class="val">${esc(tanggalCetak(issuedAt) || '—')}</span>
     </div>
   </div>
 
@@ -208,15 +265,15 @@ ${printPagePortrait}
     <div class="totals">
       <div class="tot-row">
         <span class="tk">${esc(labels.subtotal)}</span>
-        <span class="tv">${esc(money(currency, subtotal))}</span>
+        <span class="tv">${esc(uangCetak(currency, subtotal))}</span>
       </div>
       <div class="tot-row">
         <span class="tk">${esc(labels.tax)}</span>
-        <span class="tv">${esc(money(currency, taxAmount))}</span>
+        <span class="tv">${esc(uangCetak(currency, taxAmount))}</span>
       </div>
       <div class="grand-row">
         <span class="gk">${esc(labels.grandTotal)}</span>
-        <span class="gv">${esc(money(currency, grandTotal))}</span>
+        <span class="gv">${esc(uangCetak(currency, grandTotal))}</span>
       </div>
     </div>
   </div>

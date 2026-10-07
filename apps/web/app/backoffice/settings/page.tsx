@@ -15,7 +15,17 @@ import {
   type PantoneThemeSelection,
 } from '@/components/settings/PantoneThemePickerDialog';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import {
   Building2,
@@ -79,19 +89,36 @@ export default function SettingsPage() {
   const [isThemeLoading, setIsThemeLoading] = useState(true);
   const [isThemeSaving, setIsThemeSaving] = useState(false);
 
-  const items = [
-    { titleKey: 'security.title' as const, href: '/backoffice/settings/security', icon: Shield },
-    { titleKey: 'documents.title' as const, href: '/backoffice/settings/documents', icon: FileDigit },
-    { titleKey: 'itemCodes.title' as const, href: '/backoffice/settings/item-codes', icon: FileDigit },
-    { titleKey: 'tax.title' as const, href: '/backoffice/settings/tax', icon: Percent },
-    { titleKey: 'uom.title' as const, href: '/backoffice/settings/uom', icon: Ruler },
-    { titleKey: 'users.title' as const, href: '/backoffice/settings/users', icon: UserPlus },
-    { titleKey: 'rbac.title' as const, href: '/backoffice/settings/rbac', icon: Users },
-    { titleKey: 'packRatio.title' as const, href: '/backoffice/settings/pack-ratio', icon: Layers },
-    { titleKey: 'jenisPotongan.title' as const, href: '/backoffice/settings/jenis-potongan', icon: Tags },
-    { titleKey: 'salesman.title' as const, href: '/backoffice/settings/salesman', icon: Target },
-    { titleKey: 'spg.title' as const, href: '/backoffice/settings/spg', icon: Store },
+  // Pengaturan usaha di atas (dipakai bersama semua orang), tampilan pribadi di bawah.
+  const kelompok = [
+    {
+      judulKey: 'hub.groupField' as const,
+      items: [
+        { key: 'salesman' as const, href: '/backoffice/settings/salesman', icon: Target },
+        { key: 'spg' as const, href: '/backoffice/settings/spg', icon: Store },
+        { key: 'jenisPotongan' as const, href: '/backoffice/settings/jenis-potongan', icon: Tags },
+        { key: 'packRatio' as const, href: '/backoffice/settings/pack-ratio', icon: Layers },
+      ],
+    },
+    {
+      judulKey: 'hub.groupData' as const,
+      items: [
+        { key: 'documents' as const, href: '/backoffice/settings/documents', icon: FileDigit },
+        { key: 'itemCodes' as const, href: '/backoffice/settings/item-codes', icon: FileDigit },
+        { key: 'uom' as const, href: '/backoffice/settings/uom', icon: Ruler },
+        { key: 'tax' as const, href: '/backoffice/settings/tax', icon: Percent },
+      ],
+    },
+    {
+      judulKey: 'hub.groupAccess' as const,
+      items: [
+        { key: 'users' as const, href: '/backoffice/settings/users', icon: UserPlus },
+        { key: 'rbac' as const, href: '/backoffice/settings/rbac', icon: Users },
+        { key: 'security' as const, href: '/backoffice/settings/security', icon: Shield },
+      ],
+    },
   ];
+  const [konfirmasiHapusPerusahaan, setKonfirmasiHapusPerusahaan] = useState(false);
 
   const userId = session?.user?.id ?? null;
   const bolehAturPerusahaan = hasPermission(
@@ -313,6 +340,31 @@ export default function SettingsPage() {
         <TombolBantuan judul={t('title')} />
       </div>
 
+      {kelompok.map((k) => (
+        <section key={k.judulKey} className="space-y-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">{t(k.judulKey)}</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+            {k.items.map((item) => (
+              <Link key={item.href} href={item.href} className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <Card className="h-full transition-colors hover:bg-muted/50">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <item.icon className="h-5 w-5" />
+                      {t(`${item.key}.title`)}
+                    </CardTitle>
+                    <CardDescription>{t(`${item.key}.description`)}</CardDescription>
+                  </CardHeader>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ))}
+
+      <h2 className="border-t pt-6 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+        {t('hub.groupMine')}
+      </h2>
+
       <UIThemePicker
         onPickAccent={(seed) =>
           handlePantoneSelect({ tcx: seed.tcx, name: seed.name, hex: seed.hex } as PantoneThemeSelection)
@@ -518,7 +570,7 @@ export default function SettingsPage() {
                 {tTheme('choosePantone')}
               </Button>
               {perusahaan ? (
-                <Button variant="ghost" disabled={simpanPerusahaan} onClick={() => void aturPerusahaan({ reset: true })}>
+                <Button variant="ghost" disabled={simpanPerusahaan} onClick={() => setKonfirmasiHapusPerusahaan(true)}>
                   {tTheme('companyClear')}
                 </Button>
               ) : null}
@@ -537,20 +589,26 @@ export default function SettingsPage() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {items.map((item) => (
-          <Link key={item.href} href={item.href}>
-            <Card className="h-full transition-colors hover:bg-muted/50">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <item.icon className="h-5 w-5" />
-                  {t(item.titleKey)}
-                </CardTitle>
-              </CardHeader>
-            </Card>
-          </Link>
-        ))}
-      </div>
+      <AlertDialog open={konfirmasiHapusPerusahaan} onOpenChange={setKonfirmasiHapusPerusahaan}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('hub.companyClearTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('hub.companyClearBody')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('hub.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                setKonfirmasiHapusPerusahaan(false);
+                void aturPerusahaan({ reset: true });
+              }}
+            >
+              {tTheme('companyClear')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

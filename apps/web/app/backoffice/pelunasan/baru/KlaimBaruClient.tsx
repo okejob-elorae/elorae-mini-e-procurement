@@ -11,6 +11,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { PageHeader } from '@/components/ui/page-header';
 import {
   Select,
@@ -48,6 +58,10 @@ function hariIniWib(): string {
 }
 
 const CARA = ['transfer', 'tunai', 'giro'] as const;
+
+/** Bagian sisa yang boleh dilunasi BKM baru (tidak ditahan retur), tak pernah melebihi sisa. */
+export const bolehDilunasiDari = (p: { outstanding: number; bolehDilunasi?: number }) =>
+  Math.max(0, Math.min(p.outstanding, p.bolehDilunasi ?? p.outstanding));
 
 type Potongan = {
   nama: string;
@@ -186,13 +200,48 @@ export function KlaimBaruClient({
     setPotongan([]);
   };
 
-  const alihkan = (p: { id: string; outstanding: number }) =>
+  // Nilai awal = bagian sisa yang tidak ditahan retur, supaya RETUR_DITAHAN
+  // tidak baru muncul saat simpan. Baris tanpa `bolehDilunasi` (tiruan lama) = sisa.
+  const alihkan = (p: { id: string; outstanding: number; bolehDilunasi?: number }) =>
     setDipilih((lama) => {
       const baru = { ...lama };
       if (baru[p.id] !== undefined) delete baru[p.id];
-      else baru[p.id] = p.outstanding;
+      else baru[p.id] = bolehDilunasiDari(p);
       return baru;
     });
+  /*
+   * Faktur yang sudah punya BKM menunggu verifikasi: dicentang lewat konfirmasi.
+   * Laporan kedua untuk uang yang sama tidak mengurangi apa pun (Aturan 1),
+   * tapi membuat keuangan mencocokkan dua kali dan toko ditagih bukti dua kali.
+   */
+  const [konfirmasiFaktur, setKonfirmasiFaktur] = useState<{
+    id: string;
+    invoiceNo: string;
+    outstanding: number;
+    bolehDilunasi?: number;
+    bkm: string;
+  } | null>(null);
+  // `alasan` opsional: baris yang dikirim pemanggil lama (dan tiruan tes) bisa tanpanya.
+  const pilihFaktur = (p: {
+    id: string;
+    invoiceNo: string;
+    outstanding: number;
+    bolehDilunasi?: number;
+    alasan?: { klaimMenunggu?: string[] };
+  }) => {
+    const menunggu = p.alasan?.klaimMenunggu ?? [];
+    if (dipilih[p.id] === undefined && menunggu.length > 0) {
+      setKonfirmasiFaktur({
+        id: p.id,
+        invoiceNo: p.invoiceNo,
+        outstanding: p.outstanding,
+        bolehDilunasi: p.bolehDilunasi,
+        bkm: menunggu.join(', '),
+      });
+      return;
+    }
+    alihkan(p);
+  };
 
   const simpan = () => {
     startTransition(async () => {
@@ -470,6 +519,8 @@ export function KlaimBaruClient({
             ) : (
               piutang.map((p) => {
                 const aktif = dipilih[p.id] !== undefined;
+                const batas = bolehDilunasiDari(p);
+                const ditahan = Math.max(0, p.outstanding - batas);
                 return (
                   <div
                     key={p.id}
@@ -478,12 +529,17 @@ export function KlaimBaruClient({
                       aktif && 'border-primary/50 bg-primary/[0.04]',
                     )}
                   >
-                    <Checkbox checked={aktif} onCheckedChange={() => alihkan(p)} />
+                    <Checkbox checked={aktif} onCheckedChange={() => pilihFaktur(p)} />
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-medium">{p.invoiceNo}</span>
                       <span className="block text-xs text-muted-foreground">
                         {t('dueOn', { date: tanggal(p.dueDate) })} · {t('outstanding', { value: rupiah(p.outstanding) })}
                       </span>
+                      {(p.alasan?.klaimMenunggu?.length ?? 0) > 0 && (
+                        <span className="mt-0.5 block text-xs font-medium text-amber-700 dark:text-amber-300">
+                          {t('alreadyReported', { bkm: (p.alasan?.klaimMenunggu ?? []).join(', ') })}
+                        </span>
+                      )}
                     </span>
                     {aktif && (
                       <span className="w-40 space-y-1">
@@ -492,12 +548,17 @@ export function KlaimBaruClient({
                           type="number"
                           inputMode="numeric"
                           min={1}
-                          max={p.outstanding}
+                          max={batas}
                           value={dipilih[p.id]}
                           onChange={(e) =>
                             setDipilih((lama) => ({ ...lama, [p.id]: Number(e.target.value) }))
                           }
                         />
+                        {ditahan > 0 && (
+                          <span className="block text-xs text-amber-700 dark:text-amber-300">
+                            {t('heldByReturn', { value: rupiah(ditahan) })}
+                          </span>
+                        )}
                       </span>
                     )}
                   </div>
@@ -750,6 +811,28 @@ export function KlaimBaruClient({
           </button>
         )}
       </div>
+
+      <AlertDialog open={konfirmasiFaktur !== null} onOpenChange={(o) => !o && setKonfirmasiFaktur(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('alreadyReportedTitle', { no: konfirmasiFaktur?.invoiceNo ?? '' })}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('alreadyReportedBody', { bkm: konfirmasiFaktur?.bkm ?? '' })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('alreadyReportedCancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (konfirmasiFaktur) alihkan(konfirmasiFaktur);
+                setKonfirmasiFaktur(null);
+              }}
+            >
+              {t('alreadyReportedConfirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

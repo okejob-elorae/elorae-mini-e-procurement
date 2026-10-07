@@ -10,6 +10,8 @@ export const ENTRI: EntriBantuan[] = [
       "Tahapnya berurutan: menunggu laporan SPG dan laporan toko, mencocokkan dan mengunci angka resmi, membayar gaji dan komisi SPG (dilewati bila toko tidak punya SPG), nota dari admin penjualan, lalu nomor faktur pajak dari admin pajak.",
       { kunci: "konsinyasi.matchHint" },
       "Melihat butuh izin melihat konsinyasi; membuka siklus dan mencatat kiriman butuh izin mengelola konsinyasi.",
+      "Daftar bawaan menampilkan siklus yang belum selesai; saringan tahap dan Semua ada di atas tabel, kotak cari mencocokkan nomor konsi, toko, periode, dan nomor nota. Tombol Isi ulang toko membuka ringkasan stok toko konsinyasi (butuh izin melihat toko).",
+      "Harga di dialog Kirim barang titipan adalah harga DI TOKO per potong. Penilaian barang hilang mengubahnya menjadi harga yang diterima Elorae memakai margin toko saat itu. Barang di luar katalog cukup diketik namanya; barang seperti itu tidak menggerakkan stok gudang.",
     ],
   },
   {
@@ -28,7 +30,10 @@ export const ENTRI: EntriBantuan[] = [
     judul: "Rincian siklus konsinyasi",
     isi: [
       "Satu siklus konsinyasi (satu toko × satu bulan): tiga nomornya, laporan SPG dan laporan toko yang disandingkan, angka resmi setelah dikunci, gaji dan komisi SPG, stok titipan, pencocokan buku stok toko, dan tagihan ke toko.",
-      "Mengunci butuh kedua laporan. Tarif komisi per potong disalin dari master barang saat mengunci, jadi mengubah tarifnya sesudah itu tidak mengubah komisi bulan tersebut. Membuka kunci ditolak begitu ada gaji SPG yang sudah dibayar.",
+      "Mengunci butuh kedua laporan. Tarif komisi per potong disalin dari master barang saat mengunci, jadi mengubah tarifnya sesudah itu tidak mengubah komisi bulan tersebut.",
+      "Membuka kunci ditolak begitu ada gaji SPG yang sudah dibayar, nomor nota atau nomor faktur pajak sudah dicatat, atau toko sudah membayar (pembayaran yang dibatalkan tidak dihitung); tombolnya mati dan alasannya tertulis di bawah judul. Bila masih boleh, pembukaan meminta konfirmasi: angka resmi bisa diubah lagi, potongan promo dan beban barang hilang yang dibekukan dilepas, dan potongan barang hilang dari gaji SPG dikembalikan sampai siklus dikunci ulang.",
+      "Di kartu dua laporan, tanda — berarti laporannya belum masuk. Barang yang tidak tercantum di laporan yang sudah masuk ditulis 0, sama seperti di kartu pencocokan buku stok.",
+      "Saat dikunci ulang, komisi dibagi di antara SPG yang ikut di kunci pertama. SPG yang sudah pindah toko tetap memegang baris gaji dan komisinya, dan SPG yang baru ditugaskan sesudahnya tidak ikut dibagi untuk bulan itu.",
     ],
     kartu: [
       { judul: { kunci: "konsinyasi.threeNumbers" }, isi: { kunci: "konsinyasi.threeNumbersHint" } },
@@ -45,7 +50,11 @@ export const ENTRI: EntriBantuan[] = [
       },
       {
         judul: { kunci: "konsinyasi.tagihan.title" },
-        isi: [{ kunci: "konsinyasi.tagihan.hint" }, { kunci: "konsinyasi.tagihan.storeShare" }],
+        isi: [
+          { kunci: "konsinyasi.tagihan.hint" },
+          { kunci: "konsinyasi.tagihan.storeShare" },
+          "Bila sambungan putus saat menyimpan pembayaran toko, simpan lagi pembayaran itu, boleh sesudah dialognya ditutup dan dibuka lagi: pembayaran yang sudah tercatat dikembalikan apa adanya, jadi uang yang sama tidak tercatat dua kali. Selama simpanan terakhir belum berhasil, Simpan berikutnya dianggap pembayaran yang sama — periksa daftar pembayaran sebelum mencatat cicilan lain.",
+        ],
       },
     ],
   },

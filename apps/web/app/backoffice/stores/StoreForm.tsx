@@ -32,6 +32,16 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const StoreMapPicker = dynamic(() => import("./StoreMapPicker"), {
   ssr: false,
@@ -244,9 +254,11 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
     });
   }
 
+  const [konfirmasiNonaktif, setKonfirmasiNonaktif] = useState(false);
+
   async function onDeactivate() {
     if (!storeId) return;
-    if (!confirm(t("deactivateConfirm"))) return;
+    setKonfirmasiNonaktif(false);
     startTransition(async () => {
       const result = await deactivateStoreAction(storeId);
       if (!result.ok) {
@@ -742,13 +754,27 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
               <Button
                 type="button"
                 variant="destructive"
-                onClick={onDeactivate}
+                onClick={() => setKonfirmasiNonaktif(true)}
                 disabled={pending}
                 className="ml-auto"
               >
                 {t("deactivate")}
               </Button>
             )}
+            <AlertDialog open={konfirmasiNonaktif} onOpenChange={setKonfirmasiNonaktif}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{t("deactivate")}</AlertDialogTitle>
+                  <AlertDialogDescription>{t("deactivateConfirm")}</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+                  <AlertDialogAction variant="destructive" onClick={() => void onDeactivate()}>
+                    {t("deactivate")}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         )}
         {readOnly && (

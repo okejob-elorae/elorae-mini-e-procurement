@@ -159,7 +159,13 @@ export type RincianKontrabon = {
     sisaSekarang: number;
     keadaan: string;
   }[];
-  klaim: { id: string; docNo: string; nilaiDiterima: number; status: string }[];
+  /**
+   * BKM atas kontrabon ini: yang ditautkan ke TT-nya, DITAMBAH yang melunasi
+   * faktur-fakturnya tanpa menunjuk TT ini (`tertautTt: false`). Tanpa yang
+   * kedua, kartu "Pelunasan atas kontrabon ini" kosong padahal fakturnya sudah
+   * dilaporkan bayar.
+   */
+  klaim: { id: string; docNo: string; nilaiDiterima: number; status: string; tertautTt: boolean }[];
 };
 
 /**
@@ -197,10 +203,26 @@ export async function rincianKontrabon(id: string): Promise<RincianKontrabon | n
   });
   if (!r) return null;
 
+  const idFaktur = r.receivableLinks.map((l) => l.receivable.id);
   // Satu kontrabon, jadi hanya faktur yang ada di dalamnya.
-  const semua = await daftarPiutang({
-    receivableIds: r.receivableLinks.map((l) => l.receivable.id),
-  });
+  const [semua, klaimFaktur] = await Promise.all([
+    daftarPiutang({ receivableIds: idFaktur }),
+    idFaktur.length
+      ? prisma.paymentClaim.findMany({
+          where: {
+            receivableLinks: { some: { receivableId: { in: idFaktur } } },
+            // Yang dibatalkan adalah salah catat, bukan pelunasan.
+            status: { not: 'DIBATALKAN' },
+            // Yang menunjuk TT ini sudah ada di `r.claims`. Ditulis OR dengan
+            // `null` karena NOT pada kolom nullable ikut membuang baris NULL —
+            // justru BKM tanpa tautan TT yang dicari di sini.
+            OR: [{ collectionNoteId: null }, { collectionNoteId: { not: r.id } }],
+          },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, docNo: true, receivedAmount: true, status: true },
+        })
+      : Promise.resolve([]),
+  ]);
   const perPiutang = new Map(semua.map((p) => [p.id, p]));
   const hariIni = new Date();
   // `confirmedById` tidak punya relasi di skema; namanya dibaca terpisah.
@@ -241,11 +263,21 @@ export async function rincianKontrabon(id: string): Promise<RincianKontrabon | n
       ? { oleh: pengonfirmasi?.name ?? null, pada: r.confirmedAt.toISOString() }
       : null,
     faktur,
-    klaim: r.claims.map((k) => ({
-      id: k.id,
-      docNo: k.docNo,
-      nilaiDiterima: angka(k.receivedAmount),
-      status: k.status,
-    })),
+    klaim: [
+      ...r.claims.map((k) => ({
+        id: k.id,
+        docNo: k.docNo,
+        nilaiDiterima: angka(k.receivedAmount),
+        status: k.status,
+        tertautTt: true,
+      })),
+      ...klaimFaktur.map((k) => ({
+        id: k.id,
+        docNo: k.docNo,
+        nilaiDiterima: angka(k.receivedAmount),
+        status: k.status,
+        tertautTt: false,
+      })),
+    ],
   };
 }

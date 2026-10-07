@@ -27,13 +27,10 @@ import {
   type ForecastConfigDetail,
   type ForecastResultDetail,
 } from '@/app/actions/forecast';
+import { pilihanTahunForecast, tahunForecastDariUrl } from './tahun-forecast';
 
 const TABS = ['overview', 'articles', 'abc', 'plan-bridge'] as const;
 
-function yearOptions(): number[] {
-  const current = new Date().getFullYear();
-  return [current - 2, current - 1, current];
-}
 
 export function ForecastPageClient() {
   const t = useTranslations('forecast');
@@ -43,8 +40,8 @@ export function ForecastPageClient() {
 
   const tabParam = searchParams.get('tab') ?? 'overview';
   const activeTab = TABS.includes(tabParam as (typeof TABS)[number]) ? tabParam : 'overview';
-  const yearParam = searchParams.get('year');
-  const initialYear = yearParam ? Number(yearParam) : new Date().getFullYear();
+  // Tahun berjalan − 2 … + 2; bawaan tahun depan mulai Juli (tahun-forecast.ts).
+  const initialYear = tahunForecastDariUrl(searchParams.get('year'));
 
   const [year, setYear] = useState(initialYear);
   const [results, setResults] = useState<ForecastResultDetail[]>([]);
@@ -106,11 +103,11 @@ export function ForecastPageClient() {
           <>
             <span className="text-sm text-muted-foreground">{t('config.year')}</span>
             <Select value={String(year)} onValueChange={handleYearChange}>
-              <SelectTrigger className="w-[120px]">
+              <SelectTrigger className="w-[120px]" aria-label={t('config.year')}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {yearOptions().map((y) => (
+                {pilihanTahunForecast().map((y) => (
                   <SelectItem key={y} value={String(y)}>
                     {y}
                   </SelectItem>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { DollarSign, Eye, CheckCircle, ChevronDown, Printer } from 'lucide-react';
+import { DollarSign, Eye, CheckCircle, ChevronDown, Printer, Hourglass } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -33,14 +33,16 @@ import { PageHeader } from '@/components/ui/page-header';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useLocale, useTranslations } from 'next-intl';
-import { getPOById, getPOs, setPOPaidAt } from '@/app/actions/purchase-orders';
-import { totalUtangBelumDibayar, utangBaris } from './nilai-utang';
+import { getPOById, getPOs, getPemasokPilihan, setPOPaidAt } from '@/app/actions/purchase-orders';
+import { pisahUtangPo, ringkasUtangBelumDibayar, utangBaris } from './nilai-utang';
+import { KonfirmasiBayarDialog } from './KonfirmasiBayarDialog';
+import { TAUTAN_DOKUMEN } from '@/app/backoffice/purchase-orders/tautan-dokumen';
 import { supplierPaymentJournalErrorKey } from '@/lib/purchasing/supplier-payment-journal-message';
 import { logPrint } from '@/app/actions/audit';
-import { buildPOPrintHtml } from '@/lib/print/po-html';
+import { LABEL_CETAK_FAKTUR_PO, buildPOPrintHtml, labelStatusCetakPo } from '@/lib/print/po-html';
 import { buildPOPaymentReceiptHtml } from '@/lib/print/po-payment-receipt-html';
 import { variantDetailForSku } from '@/lib/items/variants';
-import { POStatus } from '@/lib/constants/enums';
+import type { POStatus } from '@/lib/constants/enums';
 import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 import {
@@ -49,15 +51,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-
-const statusLabels: Record<POStatus, string> = {
-  DRAFT: 'Draft',
-  SUBMITTED: 'Submitted',
-  PARTIAL: 'Partial',
-  CLOSED: 'Closed',
-  OVER: 'Over-received',
-  CANCELLED: 'Cancelled',
-};
 
 function printHtmlInIframe(html: string, iframeTitle: string) {
   const iframe = document.createElement('iframe');
@@ -87,6 +80,10 @@ interface POForPayment {
   grandTotal: number;
   /** Utang sesudah sisa yang tidak datang (Tutup PO) dan retur pemasok — dari `listPOs`. */
   utang: number;
+  /** Utang barang yang SUDAH diterima vs komitmen PO yang belum datang (`pisahUtangPo`). */
+  utangDiterima: number;
+  komitmen: number;
+  adaPenerimaan: boolean;
   supplier: { name: string; code: string };
   /**
    * Unpaid while a payment journal from an earlier mark still stands on the
@@ -99,7 +96,7 @@ interface POForPayment {
 
 export default function SupplierPaymentsPage() {
   const [pos, setPOs] = useState<POForPayment[]>([]);
-  const [suppliers, setSuppliers] = useState<Array<{ id: string; name: string; code: string }>>([]);
+  const [suppliers, setSuppliers] = useState<Array<{ id: string; name: string; code: string; disetujui: boolean }>>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [supplierId, setSupplierId] = useState<string>('');
   const [dateFrom, setDateFrom] = useState('');
@@ -110,6 +107,8 @@ export default function SupplierPaymentsPage() {
   const [totalCount, setTotalCount] = useState(0);
   const [printingPoId, setPrintingPoId] = useState<string | null>(null);
   const [togglingPoId, setTogglingPoId] = useState<string | null>(null);
+  // Konfirmasi tandai/batal lunas (dulu satu klik langsung memposting jurnal).
+  const [konfirmasi, setKonfirmasi] = useState<{ po: POForPayment; arah: 'bayar' | 'batal' } | null>(null);
   const tSupplierPayments = useTranslations('supplierPayments');
   const tTable = useTranslations('tableHeaders');
   const tPO = useTranslations('purchaseOrders');
@@ -117,10 +116,9 @@ export default function SupplierPaymentsPage() {
 
   const fetchSuppliers = async () => {
     try {
-      const { getSuppliersForSelect } = await import('@/app/actions/suppliers');
-      const data = await getSuppliersForSelect({ sync: true, approvedOnly: true });
-      const list = Array.isArray(data) ? data : [];
-      setSuppliers(list.map((s: { id: string; name: string; code: string }) => ({ id: s.id, name: s.name, code: s.code })));
+      // Pemasok yang disetujui ATAU punya dokumen: saringan "disetujui saja" dulu menyembunyikan
+      // pemasok PO yang belum dibayar, jadi saringannya tidak bisa dipakai.
+      setSuppliers(await getPemasokPilihan());
     } catch {
       // ignore
     }
@@ -146,17 +144,28 @@ export default function SupplierPaymentsPage() {
            the whole page, not three per row. */
         { withStandingPaymentJournal: true }
       );
-      const mapPo = (po: any) => ({
-        id: po.id,
-        docNumber: po.docNumber,
-        status: po.status,
-        paymentDueDate: po.paymentDueDate ? new Date(po.paymentDueDate) : null,
-        paidAt: po.paidAt ? new Date(po.paidAt) : null,
-        grandTotal: Number(po.grandTotal),
-        utang: utangBaris(po),
-        supplier: po.supplier,
-        paymentJournalStandingWhileUnpaid: Boolean(po.paymentJournalStandingWhileUnpaid),
-      });
+      const mapPo = (po: any): POForPayment => {
+        const pisah = pisahUtangPo({
+          grandTotal: po.grandTotal,
+          ppnRatePercent: po.ppnRatePercent ?? null,
+          utang: po.utang,
+          items: po.items ?? [],
+        });
+        return {
+          id: po.id,
+          docNumber: po.docNumber,
+          status: po.status,
+          paymentDueDate: po.paymentDueDate ? new Date(po.paymentDueDate) : null,
+          paidAt: po.paidAt ? new Date(po.paidAt) : null,
+          grandTotal: Number(po.grandTotal),
+          utang: utangBaris(po),
+          utangDiterima: pisah.utangDiterima,
+          komitmen: pisah.komitmen,
+          adaPenerimaan: (po.items ?? []).some((l: { receivedQty: unknown }) => Number(l.receivedQty) > 0),
+          supplier: po.supplier,
+          paymentJournalStandingWhileUnpaid: Boolean(po.paymentJournalStandingWhileUnpaid),
+        };
+      };
       if (result != null && typeof result === 'object' && 'items' in result && 'totalCount' in result) {
         const r = result as { items: any[]; totalCount: number };
         setPOs(r.items.map(mapPo));
@@ -188,8 +197,8 @@ export default function SupplierPaymentsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchPOs depends on filters
   }, [supplierId, dateFrom, dateTo, paymentFilter, page, pageSize]);
 
-  // Belum dibayar = utang (sesudah Tutup PO dan retur pemasok), bukan total PO penuh.
-  const unpaidTotal = totalUtangBelumDibayar(pos);
+  // Belum dibayar dipisah: utang barang yang SUDAH diterima vs komitmen PO yang belum datang.
+  const ringkasan = ringkasUtangBelumDibayar(pos);
   const paidCount = pos.filter((p) => p.paidAt).length;
   const unpaidCount = pos.filter((p) => !p.paidAt).length;
 
@@ -221,11 +230,14 @@ export default function SupplierPaymentsPage() {
    * state the PO is actually in and points at the only remedy that reopens a
    * journal attempt.
    */
-  const handleMarkPaid = async (poId: string, paid: boolean) => {
+  const handleMarkPaid = async (poId: string, paidAt: Date | null) => {
+    const paid = paidAt != null;
     setTogglingPoId(poId);
     try {
-      const result = await setPOPaidAt(poId, paid ? new Date() : null);
-      if (result.refusal) {
+      const result = await setPOPaidAt(poId, paidAt);
+      if (result.refusal === 'TANGGAL_TIDAK_SAH') {
+        toast.error(tSupplierPayments('konfirmasi.tanggalSalah'));
+      } else if (result.refusal) {
         toast.warning(tSupplierPayments('standingPayment.markRefusedRegister'), { duration: 12000 });
       } else if (!result.changed) {
         toast.info(
@@ -257,6 +269,7 @@ export default function SupplierPaymentsPage() {
       toast.error(e.message || tSupplierPayments('actionFailed'));
     } finally {
       setTogglingPoId(null);
+      setKonfirmasi(null);
     }
   };
 
@@ -297,7 +310,7 @@ export default function SupplierPaymentsPage() {
         supplierName: supplier.name,
         supplierAddress: supplier.address ?? null,
         supplierCode: supplier.code?.trim() ? supplier.code : null,
-        status: statusLabels[po.status as POStatus],
+        status: labelStatusCetakPo(po.status),
         etaDate: po.etaDate,
         paymentDueDate: po.paymentDueDate,
         currency: po.currency ?? 'IDR',
@@ -307,31 +320,9 @@ export default function SupplierPaymentsPage() {
         notes: po.notes ?? null,
         terms: po.terms ?? null,
         lines: buildLinesFromPO(po),
-        labels: {
-          title: 'Purchase invoice',
-          doc: 'PO Number',
-          date: 'Date',
-          issuedBy: 'Issued by',
-          supplier: 'Bill to',
-          address: 'Address',
-          attn: 'Attn:',
-          status: 'Status',
-          etaDate: 'ETA',
-          terms: 'Terms',
-          paymentDue: 'Payment due',
-          item: 'Item description',
-          qty: 'Qty',
-          uom: 'UOM',
-          price: 'Unit price',
-          amount: 'Amount',
-          subtotal: 'Subtotal',
-          tax: 'Tax',
-          grandTotal: 'Grand total',
-          notes: 'Notes',
-          termsFooter: 'Terms & conditions',
-        },
+        labels: LABEL_CETAK_FAKTUR_PO,
       });
-      printHtmlInIframe(html, 'Print purchase invoice');
+      printHtmlInIframe(html, tSupplierPayments('printInvoice'));
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : tSupplierPayments('printFailed'));
     } finally {
@@ -367,25 +358,10 @@ export default function SupplierPaymentsPage() {
         paidAt: po.paidAt,
         printedAt: new Date(),
         currency: po.currency ?? 'IDR',
-        amountPaid: Number(po.grandTotal ?? 0),
-        labels: {
-          title: 'Receipt',
-          issuedBy: 'Issued by',
-          receiptNo: 'Receipt No.',
-          paymentDate: 'Payment date',
-          payee: 'Payee',
-          supplierCode: 'Code',
-          poRef: 'PO reference',
-          status: 'Status',
-          statusPaid: 'Paid in full',
-          printed: 'Printed',
-          grandLabel: 'Amount paid',
-          footerTitle: 'Notice',
-          footerNote:
-            'This receipt reflects the payment status recorded in Elorae. Retain for your records.',
-        },
+        // Yang dibayar = utang PO (sesudah sisa yang tidak datang dan retur pemasok), bukan total PO.
+        amountPaid: Number(po.utang?.utang ?? po.grandTotal ?? 0),
       });
-      printHtmlInIframe(html, 'Print payment receipt');
+      printHtmlInIframe(html, tSupplierPayments('printReceipt'));
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : tSupplierPayments('printFailed'));
     } finally {
@@ -410,12 +386,16 @@ export default function SupplierPaymentsPage() {
             <SearchableCombobox
               options={[
                 { value: 'all', label: tSupplierPayments('allSuppliers') },
-                ...suppliers.map((s) => ({ value: s.id, label: `${s.name} (${s.code})` })),
+                ...suppliers.map((s) => ({
+                  value: s.id,
+                  label: `${s.name} (${s.code})${s.disetujui ? '' : ` · ${tSupplierPayments('belumDisetujui')}`}`,
+                })),
               ]}
               value={supplierId || 'all'}
               onValueChange={(v) => setSupplierId(v === 'all' ? '' : v)}
               placeholder={tSupplierPayments('allSuppliers')}
-              triggerClassName="w-[200px]"
+              searchPlaceholder={tSupplierPayments('cariPemasok')}
+              triggerClassName="w-[220px]"
             />
           </div>
           <div className="space-y-2">
@@ -449,19 +429,33 @@ export default function SupplierPaymentsPage() {
         </CardContent>
       </Card>
 
-      {/* Mini dashboard */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* Mini dashboard: utang (barang diterima) dipisah dari komitmen PO (belum diterima). */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
               <DollarSign className="h-4 w-4" />
-              {tSupplierPayments('outstandingTitle')}
+              {tSupplierPayments('utangDiterimaJudul')}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">Rp {unpaidTotal.toLocaleString('id-ID')}</p>
+            <p className="text-2xl font-bold tabular-nums">Rp {ringkasan.utangDiterima.toLocaleString('id-ID')}</p>
             <p className="text-xs text-muted-foreground">
-              {tSupplierPayments('poCount', { count: unpaidCount })}
+              {tSupplierPayments('poCount', { count: ringkasan.jumlahPoUtang })}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <Hourglass className="h-4 w-4" />
+              {tSupplierPayments('komitmenJudul')}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold tabular-nums">Rp {ringkasan.komitmen.toLocaleString('id-ID')}</p>
+            <p className="text-xs text-muted-foreground">
+              {tSupplierPayments('poCount', { count: ringkasan.jumlahPoKomitmen })}
             </p>
           </CardContent>
         </Card>
@@ -524,7 +518,7 @@ export default function SupplierPaymentsPage() {
                 {pos.map((po) => (
                   <TableRow key={po.id}>
                     <TableCell className="font-medium">
-                      <Link href={`/backoffice/purchase-orders/${po.id}`} className="text-primary hover:underline">
+                      <Link href={`/backoffice/purchase-orders/${po.id}`} className={TAUTAN_DOKUMEN}>
                         {po.docNumber}
                       </Link>
                     </TableCell>
@@ -536,7 +530,12 @@ export default function SupplierPaymentsPage() {
                     </TableCell>
                     <TableCell className="whitespace-nowrap">
                       Rp {po.grandTotal.toLocaleString('id-ID')}
-                      {po.utang !== po.grandTotal && (
+                      {!po.paidAt && (
+                        <div className="text-xs text-muted-foreground">
+                          {tSupplierPayments('utangSingkatDiterima', { nilai: `Rp ${po.utangDiterima.toLocaleString('id-ID')}` })}
+                        </div>
+                      )}
+                      {po.paidAt && po.utang !== po.grandTotal && (
                         <div className="text-xs text-muted-foreground">
                           {tPO('ringkasan.utangSingkat', { nilai: `Rp ${po.utang.toLocaleString('id-ID')}` })}
                         </div>
@@ -606,7 +605,7 @@ export default function SupplierPaymentsPage() {
                             variant="outline"
                             size="sm"
                             disabled={togglingPoId === po.id}
-                            onClick={() => handleMarkPaid(po.id, false)}
+                            onClick={() => setKonfirmasi({ po, arah: 'batal' })}
                           >
                             {togglingPoId === po.id
                               ? tSupplierPayments('unmarking')
@@ -616,7 +615,7 @@ export default function SupplierPaymentsPage() {
                           <Button
                             size="sm"
                             disabled={togglingPoId === po.id || po.paymentJournalStandingWhileUnpaid}
-                            onClick={() => handleMarkPaid(po.id, true)}
+                            onClick={() => setKonfirmasi({ po, arah: 'bayar' })}
                           >
                             {togglingPoId === po.id
                               ? tSupplierPayments('marking')
@@ -645,6 +644,31 @@ export default function SupplierPaymentsPage() {
           )}
         </CardContent>
       </Card>
+
+      <KonfirmasiBayarDialog
+        open={konfirmasi !== null}
+        onOpenChange={(buka) => !buka && setKonfirmasi(null)}
+        arah={konfirmasi?.arah ?? 'bayar'}
+        po={
+          konfirmasi
+            ? {
+                docNumber: konfirmasi.po.docNumber,
+                supplierName: konfirmasi.po.supplier.name,
+                grandTotal: konfirmasi.po.grandTotal,
+                utangDiterima: konfirmasi.po.utangDiterima,
+                komitmen: konfirmasi.po.komitmen,
+                adaPenerimaan: konfirmasi.po.adaPenerimaan,
+              }
+            : null
+        }
+        sibuk={konfirmasi != null && togglingPoId === konfirmasi.po.id}
+        onKonfirmasi={(paidAt) => {
+          if (!konfirmasi) return;
+          // "Tandai lunas" tanpa tanggal sah tidak boleh jatuh menjadi "batal lunas".
+          if (konfirmasi.arah === 'bayar' && paidAt == null) return;
+          void handleMarkPaid(konfirmasi.po.id, konfirmasi.arah === 'bayar' ? paidAt : null);
+        }}
+      />
     </div>
   );
 }

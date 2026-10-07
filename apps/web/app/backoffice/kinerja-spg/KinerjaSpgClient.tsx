@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatRupiah } from "@/lib/format/rupiah";
 import { dinamis } from "@/lib/i18n/dinamis";
 import { urutkanBaris, type ArahUrut } from "@/lib/spg/kinerja";
@@ -47,6 +48,18 @@ type Kolom = {
 };
 
 /**
+ * Tabel dipecah dua tampilan supaya muat di laptop 1280 px tanpa digulir ke
+ * samping. Nama dan toko ada di keduanya; kolom yang `sekunder` disembunyikan
+ * di bawah lebar 2xl (1536 px) — angkanya tetap ada di halaman rincian SPG.
+ */
+type Tampilan = "penjualan" | "kehadiran";
+const KOLOM_TAMPILAN: Record<Tampilan, KunciKolom[]> = {
+  penjualan: ["nama", "toko", "nilai", "target", "nota", "potong", "pengunjung", "konversi", "rata", "retur"],
+  kehadiran: ["nama", "toko", "jadwal", "masuk", "terlambat", "tidakMasuk", "izin", "tutup", "titip"],
+};
+const KOLOM_SEKUNDER: ReadonlySet<KunciKolom> = new Set(["rata", "retur"]);
+
+/**
  * Kinerja SPG di kantor: bulan dan toko di alamat (keduanya ditulis dalam SATU
  * navigasi `replace`), tabel yang bisa diurutkan per kolom, baris membuka
  * rincian harian SPG itu. Kolom jadwal tampil "—" bila jadwal belum disusun —
@@ -59,6 +72,7 @@ export function KinerjaSpgClient({ data }: { data: DataKinerjaSpg }) {
   const router = useRouter();
   const [menunggu, mulai] = useTransition();
   const [urut, setUrut] = useState<{ kunci: KunciKolom; arah: ArahUrut }>({ kunci: "nama", arah: "naik" });
+  const [tampilan, setTampilan] = useState<Tampilan>("penjualan");
 
   const angka = new Intl.NumberFormat(locale === "en" ? "en-US" : "id-ID", { maximumFractionDigits: 1 });
   const persen = (n: number | null) => (n === null ? "—" : `${angka.format(n)}%`);
@@ -84,7 +98,11 @@ export function KinerjaSpgClient({ data }: { data: DataKinerjaSpg }) {
       teks: true,
       nilai: (b) => b.nama,
       isi: (b) => (
-        <Link href={alamatRincian(b)} className="font-medium text-primary underline-offset-2 hover:underline" onClick={(e) => e.stopPropagation()}>
+        <Link
+          href={alamatRincian(b)}
+          className="font-medium underline decoration-muted-foreground/50 underline-offset-2 hover:decoration-foreground"
+          onClick={(e) => e.stopPropagation()}
+        >
           {b.nama}
         </Link>
       ),
@@ -172,8 +190,12 @@ export function KinerjaSpgClient({ data }: { data: DataKinerjaSpg }) {
     { kunci: "retur", nilai: (b) => b.persenKembali, isi: (b) => (b.persenKembali === null ? kosong : persen(b.persenKembali)) },
   ];
 
-  const kolomUrut = kolom.find((x) => x.kunci === urut.kunci) ?? kolom[0];
-  const baris = urutkanBaris(data.baris, kolomUrut.nilai, urut.arah, (b) => `${b.nama} ${b.toko}`);
+  const kolomTampil = KOLOM_TAMPILAN[tampilan].flatMap((k) => kolom.filter((x) => x.kunci === k));
+  const sekunder = (k: Kolom) => KOLOM_SEKUNDER.has(k.kunci) && "hidden 2xl:table-cell";
+  // Kolom urut yang tidak ada di tampilan ini jatuh ke urutan nama.
+  const kolomUrut = kolomTampil.find((x) => x.kunci === urut.kunci) ?? kolomTampil[0];
+  const arahUrut: ArahUrut = kolomUrut.kunci === urut.kunci ? urut.arah : "naik";
+  const baris = urutkanBaris(data.baris, kolomUrut.nilai, arahUrut, (b) => `${b.nama} ${b.toko}`);
 
   const pilihUrut = (k: Kolom) =>
     setUrut((u) => (u.kunci === k.kunci ? { kunci: k.kunci, arah: u.arah === "naik" ? "turun" : "naik" } : { kunci: k.kunci, arah: k.teks ? "naik" : "turun" }));
@@ -224,11 +246,17 @@ export function KinerjaSpgClient({ data }: { data: DataKinerjaSpg }) {
       </div>
 
       <Card className={cn("transition-opacity", menunggu && "opacity-60")} aria-busy={menunggu}>
-        <CardHeader>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
           <CardTitle className="flex items-center gap-2">
             <Gauge className="h-5 w-5" />
             {t("daftarJudul")}
           </CardTitle>
+          <Tabs value={tampilan} onValueChange={(v) => setTampilan(v as Tampilan)}>
+            <TabsList>
+              <TabsTrigger value="penjualan">{t("tampilan.penjualan")}</TabsTrigger>
+              <TabsTrigger value="kehadiran">{t("tampilan.kehadiran")}</TabsTrigger>
+            </TabsList>
+          </Tabs>
         </CardHeader>
         <CardContent className={baris.length === 0 ? undefined : "px-0"}>
           {baris.length === 0 ? (
@@ -238,19 +266,22 @@ export function KinerjaSpgClient({ data }: { data: DataKinerjaSpg }) {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    {kolom.map((k) => {
-                      const aktif = urut.kunci === k.kunci;
-                      const Ikon = !aktif ? ArrowUpDown : urut.arah === "naik" ? ArrowUp : ArrowDown;
+                    {kolomTampil.map((k) => {
+                      const aktif = kolomUrut.kunci === k.kunci;
+                      const Ikon = !aktif ? ArrowUpDown : arahUrut === "naik" ? ArrowUp : ArrowDown;
                       return (
                         <TableHead
                           key={k.kunci}
-                          className={cn(!k.teks && "text-right")}
-                          aria-sort={aktif ? (urut.arah === "naik" ? "ascending" : "descending") : "none"}
+                          className={cn(!k.teks && "text-right", sekunder(k))}
+                          aria-sort={aktif ? (arahUrut === "naik" ? "ascending" : "descending") : "none"}
                         >
                           <Button
                             variant="ghost"
                             size="sm"
-                            className={cn("-mx-2 h-8 gap-1 px-2 font-medium", !k.teks && "ml-auto flex")}
+                            className={cn(
+                              "-mx-2 h-8 gap-1 px-2 font-medium [letter-spacing:inherit] [text-transform:inherit]",
+                              !k.teks && "ml-auto flex",
+                            )}
                             onClick={() => pilihUrut(k)}
                             aria-label={t("urut", { kolom: td(`kolom.${k.kunci}`) })}
                           >
@@ -269,8 +300,8 @@ export function KinerjaSpgClient({ data }: { data: DataKinerjaSpg }) {
                       className={cn("cursor-pointer", (b.tidakMasuk ?? 0) > 0 && "bg-destructive/[0.04]")}
                       onClick={() => router.push(alamatRincian(b))}
                     >
-                      {kolom.map((k) => (
-                        <TableCell key={k.kunci} className={cn(!k.teks && "text-right tabular-nums")}>
+                      {kolomTampil.map((k) => (
+                        <TableCell key={k.kunci} className={cn(!k.teks && "text-right tabular-nums", sekunder(k))}>
                           {k.isi(b)}
                         </TableCell>
                       ))}

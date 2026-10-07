@@ -16,6 +16,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import { TanggalInput } from "@/components/ui/tanggal-input";
 import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
+import { formatDateOnlyJakarta } from "@/lib/date-only";
+import { alasanBelumBisaPosting, keadaanSaldo } from "./alasan-posting";
 
 type AccountOption = { id: string; code: string; name: string; type: AccountType };
 
@@ -35,12 +37,9 @@ function emptyLine(): Line {
   return { id: `ln-${Date.now()}-${Math.random().toString(36).slice(2)}`, chartAccountId: "", debit: "", credit: "", memo: "" };
 }
 
+/** Hari ini menurut WIB, bukan zona peramban. */
 function todayDateOnly(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return formatDateOnlyJakarta(new Date());
 }
 
 function formatRupiah(value: number): string {
@@ -86,12 +85,14 @@ export function ManualJournalForm({ accounts }: Props) {
   const sumDebit = lines.reduce((sum, l) => sum + (parseFloat(l.debit) || 0), 0);
   const sumCredit = lines.reduce((sum, l) => sum + (parseFloat(l.credit) || 0), 0);
   const diff = sumDebit - sumCredit;
-  const balanced = Math.abs(diff) < 0.01;
+  const saldo = keadaanSaldo(sumDebit, sumCredit);
+  const balanced = saldo === "seimbang";
 
   const qualifyingLines = lines.filter(
     (l) => l.chartAccountId && ((parseFloat(l.debit) || 0) > 0 || (parseFloat(l.credit) || 0) > 0),
   );
-  const canSubmit = balanced && qualifyingLines.length >= 2 && description.trim().length > 0 && sumDebit > 0;
+  const alasan = alasanBelumBisaPosting({ description, lines });
+  const canSubmit = alasan === null && sumDebit > 0;
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -258,26 +259,41 @@ export function ManualJournalForm({ accounts }: Props) {
               <SummaryTile
                 label={t("form.difference")}
                 value={formatRupiah(Math.abs(diff))}
-                tone={balanced ? "ok" : "warn"}
+                tone={saldo === "kosong" ? undefined : balanced ? "ok" : "warn"}
               />
-              <div
-                className={
-                  balanced
-                    ? "flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm font-medium text-green-700 dark:border-green-900 dark:bg-green-950/30 dark:text-green-400"
-                    : "flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-400"
-                }
-              >
-                {balanced ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertTriangle className="h-4 w-4 shrink-0" />}
-                <span>{balanced ? t("form.balanced") : t("form.unbalanced")}</span>
-              </div>
+              {saldo === "kosong" ? (
+                <div className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-muted-foreground">
+                  <span>{t("form.noAmount")}</span>
+                </div>
+              ) : (
+                <div
+                  className={
+                    balanced
+                      ? "flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm font-medium text-green-700 dark:border-green-900 dark:bg-green-950/30 dark:text-green-400"
+                      : "flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-400"
+                  }
+                >
+                  {balanced ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertTriangle className="h-4 w-4 shrink-0" />}
+                  <span>{balanced ? t("form.balanced") : t("form.unbalanced")}</span>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
 
-        <Button type="submit" disabled={pending || !canSubmit} className="w-full sm:w-auto">
-          {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {pending ? t("form.submitting") : t("form.submit")}
-        </Button>
+        <div className="space-y-2">
+          <Button type="submit" disabled={pending || !canSubmit} className="w-full sm:w-auto">
+            {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {pending ? t("form.submitting") : t("form.submit")}
+          </Button>
+          {alasan && !pending && (
+            <p className="text-sm text-muted-foreground" aria-live="polite">
+              {alasan.kunci === "lineAccount"
+                ? t("form.reason.lineAccount", { n: alasan.n })
+                : t(`form.reason.${alasan.kunci}`)}
+            </p>
+          )}
+        </div>
       </form>
     </div>
   );

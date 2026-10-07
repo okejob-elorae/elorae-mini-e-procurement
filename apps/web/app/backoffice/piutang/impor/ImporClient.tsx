@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { ArrowLeft, FileSpreadsheet, Loader2 } from 'lucide-react';
+import { ArrowLeft, Download, FileSpreadsheet, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
@@ -23,6 +23,21 @@ import { formatDisplayDate } from '@/lib/date-only';
 import { bacaLembar, type BarisImpor } from '@/lib/receivables/impor/baris';
 import { simpanImporAction, tinjauImporAction } from '@/app/actions/receivable-import';
 import type { TinjauanImpor } from '@/lib/receivables/impor/writer';
+import { CONTOH_BERKAS_IMPOR, NAMA_BERKAS_CONTOH } from './contoh';
+
+/** Unduh contoh berkas — dirakit di peramban, tidak ada yang dikirim ke server. */
+function unduhContoh() {
+  const url = URL.createObjectURL(new Blob([CONTOH_BERKAS_IMPOR], { type: 'text/csv;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = NAMA_BERKAS_CONTOH;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Dilepas sesudah unduhan mulai — dilepas seketika, Safari dan Firefox bisa
+  // membatalkan unduhannya.
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 
@@ -118,7 +133,15 @@ export function ImporClient() {
         </Link>
       </Button>
 
-      <PageHeader title={t('pageTitle')} />
+      <PageHeader
+        title={t('pageTitle')}
+        actions={
+          <Button variant="outline" onClick={unduhContoh}>
+            <Download className="mr-1.5 h-4 w-4" />
+            {t('downloadSample')}
+          </Button>
+        }
+      />
 
       <Card>
         <CardContent className="py-6">
@@ -146,6 +169,8 @@ export function ImporClient() {
               }}
             />
           </label>
+          {/* Syarat kolom disebut SEBELUM mengunggah, bukan baru dari galatnya. */}
+          <p className="mt-3 text-xs text-muted-foreground">{t('columnsRequired')}</p>
           {galat && <p className="mt-3 text-sm text-destructive">{galat}</p>}
         </CardContent>
       </Card>

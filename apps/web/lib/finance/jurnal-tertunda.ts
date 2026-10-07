@@ -236,3 +236,65 @@ export async function hitungJurnalTertunda(opts: { notifikasiIds?: string[] } = 
   const sudah = await idSudahBerjurnal(belum);
   return belum.length - sudah.size;
 }
+
+/** Metadata notifikasi sebagai objek. Kolom JSON bisa tiba sebagai teks (MariaDB) — dibaca sama. */
+export function metadataNotifikasi(metadata: unknown): Record<string, unknown> {
+  let nilai = metadata;
+  if (typeof nilai === "string") {
+    try {
+      nilai = JSON.parse(nilai);
+    } catch {
+      return {};
+    }
+  }
+  return nilai !== null && typeof nilai === "object" && !Array.isArray(nilai)
+    ? (nilai as Record<string, unknown>)
+    : {};
+}
+
+export type JurnalTertunda = {
+  notifikasiId: string;
+  dicatatPada: Date;
+  /** null = bentuk metadata tidak dikenal; tetap tampil, sama seperti tetap dihitung. */
+  sumber: SumberNotifikasiJurnal | null;
+  /** Kode kegagalan dari penulisnya (`UNMAPPED_ROLE`, `GRN_JOURNALS_INCOMPLETE`, …). */
+  sebab: string | null;
+  /** Peran posting yang belum dipetakan, bila penulisnya mencatatnya. */
+  peran: string | null;
+  metadata: Record<string, unknown>;
+};
+
+/**
+ * Daftar notifikasi `JOURNAL_PENDING` yang masih tertunda — baris yang SAMA
+ * dengan yang dihitung `hitungJurnalTertunda` (belum ditandai selesai DAN
+ * dokumennya belum berjurnal), terbaru lebih dulu. Dipakai tab "Tertunda" di
+ * halaman Jurnal, tujuan baris "Jurnal gagal" di Beranda.
+ *
+ * `notifikasiIds` membatasi ke notifikasi tertentu (tes di basis data bersama).
+ */
+export async function daftarJurnalTertunda(opts: { notifikasiIds?: string[] } = {}): Promise<JurnalTertunda[]> {
+  const belum = await prisma.adminNotification.findMany({
+    where: {
+      category: "JOURNAL_PENDING",
+      readAt: null,
+      ...(opts.notifikasiIds !== undefined ? { id: { in: opts.notifikasiIds } } : {}),
+    },
+    orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+    select: { id: true, metadata: true, createdAt: true },
+  });
+  if (belum.length === 0) return [];
+  const sudah = await idSudahBerjurnal(belum);
+  return belum
+    .filter((n) => !sudah.has(n.id))
+    .map((n) => {
+      const metadata = metadataNotifikasi(n.metadata);
+      return {
+        notifikasiId: n.id,
+        dicatatPada: n.createdAt,
+        sumber: sumberNotifikasiJurnal(metadata),
+        sebab: teks(metadata.reason),
+        peran: teks(metadata.role),
+        metadata,
+      };
+    });
+}

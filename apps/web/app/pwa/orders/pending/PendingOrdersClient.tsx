@@ -31,6 +31,7 @@ import {
 } from "@/lib/pwa/offline/bukti-terima-queue";
 import { flushBuktiTerimaTertahan } from "@/lib/pwa/offline/bukti-terima-sync";
 import { letakAlasanBuktiTerima } from "@/lib/pwa/offline/bukti-terima-classify";
+import { letakAlasanLaporan } from "@/lib/pwa/offline/laporan-classify";
 import { dinamis } from "@/lib/i18n/dinamis";
 import { formatDisplayDateTime } from "@/lib/date-only";
 import { formatIDR } from "@/lib/sales-orders/format";
@@ -211,10 +212,11 @@ export function PendingOrdersClient({ kunjungan }: { kunjungan: Record<string, N
     }
   };
 
-  /** Alasan laporan ditolak. `FOTO_*` = fotonya yang ditolak saat diunggah. */
+  /** Alasan laporan ditolak: penolakan unggah di `foto`, selebihnya di ruang nama laporannya. */
   const alasanLaporan = (kode: string | undefined, tJenis: typeof tPay) => {
     if (!kode) return t("errGeneric");
-    return kode.startsWith("FOTO_") ? tFoto(`err${kode.slice(5)}`) : tJenis(`err${kode}`);
+    const letak = letakAlasanLaporan(kode);
+    return letak.ruang === "foto" ? tFoto(letak.kunci) : tJenis(letak.kunci);
   };
 
   async function jalankan(id: string, kerja: () => Promise<void>) {

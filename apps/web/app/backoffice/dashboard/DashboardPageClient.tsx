@@ -142,10 +142,25 @@ export function DashboardPageClient({
       label: tDashboard('kpiRealisedAllTime'),
       nilai: salesmenSales.totals.realised.amount,
       format: formatIdr,
-      konteks: tDashboard('kpiRealisedCtx', { count: formatNumber(salesmenSales.totals.realised.count) }),
+      // Disebut apa adanya: pengiriman putus dan nota van — bukan "transaksi",
+      // yang terbaca sebagai jumlah pesanan di daftar tujuannya.
+      konteks: tDashboard('kpiRealisedCtxRinci', {
+        kirim: formatNumber(salesmenSales.totals.realisedRincian.pengiriman),
+        van: formatNumber(salesmenSales.totals.realisedRincian.van),
+      }),
       // Daftar pesanan bawaannya "menunggu persetujuan"; yang
       // terealisasi adalah putus yang sudah disetujui.
       href: '/backoffice/field-sales-orders?status=APPROVED&orderType=PUTUS',
+    });
+    // Putus disetujui yang belum satu pun dikirim — dulu tidak ada di
+    // "terealisasi" maupun "belum selesai". Angkanya = daftar `?kirim=PENDING`.
+    barisPenjualan.push({
+      label: tDashboard('kpiAwaitingDelivery'),
+      nilai: salesmenSales.totals.menungguKirim.amount,
+      format: formatIdr,
+      konteks: tDashboard('ordersCount', { count: formatNumber(salesmenSales.totals.menungguKirim.count) }),
+      href: '/backoffice/field-sales-orders?kirim=PENDING&orderType=PUTUS',
+      nada: salesmenSales.totals.menungguKirim.count > 0 ? 'perhatian' : 'netral',
     });
   }
   if (marketplaceKpi) {
@@ -209,6 +224,7 @@ export function DashboardPageClient({
                         ukuran yang sama justru membingungkan. */}
                     <TableHead className="w-[38%]" aria-hidden />
                     <TableHead className="text-right">{tDashboard('colRealised')}</TableHead>
+                    <TableHead className="text-right">{tDashboard('colAwaitingDelivery')}</TableHead>
                     <TableHead className="text-right">{tDashboard('colOutstanding')}</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -250,7 +266,23 @@ export function DashboardPageClient({
                           {formatIdr(row.realised.amount)}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          {tDashboard('txCount', { count: formatNumber(row.realised.count) })}
+                          {tDashboard('kpiRealisedCtxRinci', {
+                            kirim: formatNumber(row.realisedRincian.pengiriman),
+                            van: formatNumber(row.realisedRincian.van),
+                          })}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        <div
+                          className={cn(
+                            'font-medium',
+                            row.menungguKirim.count > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground',
+                          )}
+                        >
+                          {formatIdr(row.menungguKirim.amount)}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {tDashboard('ordersCount', { count: formatNumber(row.menungguKirim.count) })}
                         </div>
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
@@ -277,7 +309,25 @@ export function DashboardPageClient({
                         {formatIdr(salesmenSales.totals.realised.amount)}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {tDashboard('txCount', { count: formatNumber(salesmenSales.totals.realised.count) })}
+                        {tDashboard('kpiRealisedCtxRinci', {
+                          kirim: formatNumber(salesmenSales.totals.realisedRincian.pengiriman),
+                          van: formatNumber(salesmenSales.totals.realisedRincian.van),
+                        })}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      <div
+                        className={cn(
+                          'font-semibold',
+                          salesmenSales.totals.menungguKirim.count > 0
+                            ? 'text-amber-600 dark:text-amber-400'
+                            : 'text-muted-foreground',
+                        )}
+                      >
+                        {formatIdr(salesmenSales.totals.menungguKirim.amount)}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {tDashboard('ordersCount', { count: formatNumber(salesmenSales.totals.menungguKirim.count) })}
                       </div>
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
@@ -359,12 +409,21 @@ export function DashboardPageClient({
           <KpiDaftar
             judul={tDashboard('kpiProductionOnly')}
             baris={[
+              // Dua angka, bukan "berjalan": daftar SPK hanya bisa menyaring satu
+              // status, dan angka harus sama dengan isi daftar yang dibukanya.
               {
-                label: tDashboard('kpiWoRunning'),
-                nilai: s.workOrders.inProduction,
+                label: tDashboard('kpiWoInProduction'),
+                nilai: s.workOrders.sedangDiproduksi,
                 format: formatNumber,
                 konteks: tDashboard('kpiWoDoneToday', { count: formatNumber(s.workOrders.completedToday) }),
-                href: '/backoffice/work-orders',
+                href: '/backoffice/work-orders?status=IN_PRODUCTION',
+              },
+              {
+                label: tDashboard('kpiWoPartial'),
+                nilai: s.workOrders.selesaiSebagian,
+                format: formatNumber,
+                konteks: tDashboard('kpiWoPartialCtx'),
+                href: '/backoffice/work-orders?status=PARTIAL',
               },
               {
                 label: tDashboard('kpiShortage'),
@@ -439,13 +498,23 @@ export function DashboardPageClient({
           <KpiDaftar
             judul={tDashboard('kpiStockAttention')}
             baris={[
+              // Menipis dan habis: definisi dan angka yang SAMA dengan ringkasan
+              // Inventori (per barang, tersedia = di tangan − dipesan).
               {
                 label: tDashboard('kpiLowStock'),
                 nilai: s.items.lowStockCount,
                 format: formatNumber,
                 konteks: tDashboard('kpiLowStockCtx'),
-                href: '/backoffice/inventory',
+                href: '/backoffice/inventory?tab=stock&status=MENIPIS',
                 nada: s.items.lowStockCount > 0 ? 'perhatian' : 'netral',
+              },
+              {
+                label: tDashboard('kpiStockOut'),
+                nilai: s.items.habisCount,
+                format: formatNumber,
+                konteks: tDashboard('kpiStockOutCtx'),
+                href: '/backoffice/inventory?tab=stock&status=HABIS',
+                nada: s.items.habisCount > 0 ? 'perhatian' : 'netral',
               },
               {
                 label: tDashboard('oversoldTitle'),

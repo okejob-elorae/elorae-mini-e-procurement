@@ -1,7 +1,9 @@
 'use client';
 
-import React, { useState, useCallback, useEffect, Fragment } from 'react';
+import React, { useState, useCallback, useEffect, useRef, Fragment } from 'react';
 import Link from 'next/link';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { bacaParamKartuStok, tulisParamKartuStok } from './param-kartu-stok';
 import { subDays, startOfDay, endOfDay, format } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
@@ -87,6 +89,7 @@ function printHtmlInIframe(html: string, iframeTitle: string, loadFailedMessage:
 
 const defaultFrom = startOfDay(subDays(new Date(), 30));
 const defaultTo = endOfDay(new Date());
+const RENTANG_BAWAAN = { dari: format(defaultFrom, 'yyyy-MM-dd'), sampai: format(defaultTo, 'yyyy-MM-dd') };
 
 type ViewMode = 'by-item' | 'by-type' | 'by-category';
 
@@ -96,11 +99,15 @@ export default function StockCardPage() {
   // Label jenis gerakan (GRN, penjualan marketplace, muat van, …) lewat i18n.
   const ket = (jenis: string) => labelJenisGerakan(tKind, jenis);
   const locale = useLocale();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  // Barang, varian, dan rentang dibaca dari URL sekali (?itemId=&varian=&dari=&sampai=).
+  const [awalUrl] = useState(() => bacaParamKartuStok(searchParams, RENTANG_BAWAAN));
   const [viewMode, setViewMode] = useState<ViewMode>('by-item');
-  const [itemId, setItemId] = useState<string>('');
-  const [dateFrom, setDateFrom] = useState(format(defaultFrom, 'yyyy-MM-dd'));
-  const [dateTo, setDateTo] = useState(format(defaultTo, 'yyyy-MM-dd'));
-  const [variantSku, setVariantSku] = useState<string>('');
+  const [itemId, setItemId] = useState<string>(awalUrl.itemId);
+  const [dateFrom, setDateFrom] = useState(awalUrl.dari);
+  const [dateTo, setDateTo] = useState(awalUrl.sampai);
+  const [variantSku, setVariantSku] = useState<string>(awalUrl.varian);
   const [summary, setSummary] = useState<Awaited<ReturnType<typeof getCurrentStockSummary>>>([]);
   const [data, setData] = useState<Awaited<ReturnType<typeof getStockCard>> | null>(null);
   const [dataByType, setDataByType] = useState<Awaited<ReturnType<typeof getStockCardByType>> | null>(null);
@@ -191,6 +198,21 @@ export default function StockCardPage() {
   useEffect(() => {
     loadSummary();
   }, [loadSummary]);
+
+  // Pilihan per barang ditulis ke URL (replace) supaya tautannya bisa dibagikan.
+  useEffect(() => {
+    if (viewMode !== 'by-item') return;
+    const qs = tulisParamKartuStok({ itemId, varian: variantSku, dari: dateFrom, sampai: dateTo }, RENTANG_BAWAAN);
+    window.history.replaceState(null, '', qs ? `${pathname}?${qs}` : pathname);
+  }, [viewMode, itemId, variantSku, dateFrom, dateTo, pathname]);
+
+  // Dibuka dengan ?itemId= (mis. dari rincian GRN): kartu stoknya langsung ditampilkan.
+  const sudahMuatAwal = useRef(false);
+  useEffect(() => {
+    if (sudahMuatAwal.current || !awalUrl.itemId) return;
+    sudahMuatAwal.current = true;
+    void loadStockCard();
+  }, [awalUrl.itemId, loadStockCard]);
 
   useEffect(() => {
     loadCategories();

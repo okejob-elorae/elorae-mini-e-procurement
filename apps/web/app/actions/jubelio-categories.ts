@@ -5,6 +5,12 @@ import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { PERMISSIONS, requirePermission } from "@/lib/rbac";
 import { apiFetch, extractApiMessage } from "@/lib/internal-api";
+import {
+  gagalJubelio,
+  galatDariBalasanApi,
+  jalankanAksiJubelio,
+  type HasilJubelio,
+} from "@/app/backoffice/jubelio/galat-jubelio";
 
 export type CategoryMappingRow = {
   erpCategoryId: string;
@@ -48,34 +54,41 @@ export async function getJubelioCategoryMappings(): Promise<CategoryMappingRow[]
   }));
 }
 
-export async function fetchJubelioCategoryList(): Promise<JubelioCategoryFlat[]> {
-  const session = await auth();
-  if (!session) throw new Error("Unauthorized");
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_VIEW);
+export async function fetchJubelioCategoryList(): Promise<HasilJubelio<JubelioCategoryFlat[]>> {
+  return jalankanAksiJubelio(async () => {
+    const session = await auth();
+    if (!session) return gagalJubelio("TANPA_AKSES");
+    requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_VIEW);
 
-  const r = await apiFetch<JubelioCategoryFlat[]>("POST", "/jubelio/categories/list", {
-    userId: session.user.id,
+    const r = await apiFetch<JubelioCategoryFlat[]>("POST", "/jubelio/categories/list", {
+      userId: session.user.id,
+    });
+    if (!r.ok) {
+      return galatDariBalasanApi(
+        r.status,
+        extractApiMessage(r.error, `Failed to load Jubelio categories (${r.status})`),
+      );
+    }
+    return { ok: true, data: r.data ?? [] };
   });
-  if (!r.ok) {
-    throw new Error(extractApiMessage(r.error, `Failed to load Jubelio categories (${r.status})`));
-  }
-  return r.data ?? [];
 }
 
 export async function saveJubelioCategoryMappings(
   mappings: Array<{ itemCategoryId: string; jubelioCategoryId: number }>,
-): Promise<{ saved: number }> {
-  const session = await auth();
-  if (!session) throw new Error("Unauthorized");
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_MANAGE);
+): Promise<HasilJubelio<{ saved: number }>> {
+  return jalankanAksiJubelio(async () => {
+    const session = await auth();
+    if (!session) return gagalJubelio("TANPA_AKSES");
+    requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_MANAGE);
 
-  const r = await apiFetch<{ saved: number }>("POST", "/jubelio/categories/mappings", {
-    userId: session.user.id,
-    body: { mappings },
+    const r = await apiFetch<{ saved: number }>("POST", "/jubelio/categories/mappings", {
+      userId: session.user.id,
+      body: { mappings },
+    });
+    if (!r.ok) {
+      return galatDariBalasanApi(r.status, extractApiMessage(r.error, `Save failed (${r.status})`));
+    }
+    revalidatePath("/backoffice/jubelio/categories");
+    return { ok: true, data: r.data ?? { saved: 0 } };
   });
-  if (!r.ok) {
-    throw new Error(extractApiMessage(r.error, `Save failed (${r.status})`));
-  }
-  revalidatePath("/backoffice/jubelio/categories");
-  return r.data ?? { saved: 0 };
 }

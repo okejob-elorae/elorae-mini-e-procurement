@@ -3,6 +3,11 @@
  */
 
 import { esc, printCssBase, printPageLandscape } from '@/lib/print/print-theme';
+import { formatRupiah } from '@/lib/format/rupiah';
+import { persenBertanda, qtyBahan, statusTampilRekon, type StatusTampilRekon } from '@/lib/production/rekonsiliasi-tampil';
+
+/** Rupiah bertanda: "+Rp 3.031.250" / "-Rp 200". */
+const rupiahBertanda = (n: number) => (n > 0 ? `+${formatRupiah(n)}` : formatRupiah(n));
 
 export type ReconLine = {
   itemId: string;
@@ -31,7 +36,8 @@ export interface BuildReconciliationPrintHtmlOptions {
   printDate: string;
   subtitle?: string;
   summary: ReconSummary;
-  efficiencyPercent: number;
+  /** null = belum ada pemakaian. */
+  efficiencyPercent: number | null;
   lines: ReconLine[];
   issuerName?: string;
   labels: {
@@ -53,6 +59,9 @@ export interface BuildReconciliationPrintHtmlOptions {
     wo?: string;
     date?: string;
     issuedBy?: string;
+    material?: string;
+    /** Label status per baris (sudah diterjemahkan). */
+    statusLabels?: Partial<Record<StatusTampilRekon, string>>;
   };
 }
 
@@ -81,28 +90,28 @@ export function buildReconciliationPrintHtml(
         ? 'color:#166534'
         : 'color:var(--ink)';
 
-  const badgeClass = (s: ReconLine['status']) =>
+  const badgeClass = (s: StatusTampilRekon) =>
     s === 'OK' ? 'badge badge-ok' : s === 'OVER' ? 'badge badge-over' : 'badge badge-under';
 
   const rows = lines
     .map((line) => {
-      const rowClass =
-        line.status === 'OVER' ? 'row-over' : line.status === 'UNDER' ? 'row-under' : '';
+      const statusTampil = statusTampilRekon(line);
+      const rowClass = statusTampil === 'OVER' ? 'row-over' : '';
       return `<tr class="${rowClass}">
         <td class="col-desc"><div class="line-name">${esc(line.itemName)}</div>${
           line.itemSku
             ? `<div class="line-sku">${esc(line.itemSku)}</div>`
             : ''
         }</td>
-        <td class="right">${line.plannedQty.toLocaleString('id-ID')} ${esc(line.uomCode)}</td>
-        <td class="right">${line.issuedQty.toLocaleString('id-ID')} ${esc(line.uomCode)}</td>
-        <td class="right">${line.returnedQty.toLocaleString('id-ID')} ${esc(line.uomCode)}</td>
-        <td class="right">${line.actualUsed.toLocaleString('id-ID')} ${esc(line.uomCode)}</td>
-        <td class="right">${line.theoreticalUsage.toLocaleString('id-ID')} ${esc(line.uomCode)}</td>
-        <td class="right">${line.variance >= 0 ? '+' : ''}${line.variance.toLocaleString('id-ID')} ${esc(line.uomCode)}</td>
-        <td class="right">${line.variancePercent >= 0 ? '+' : ''}${line.variancePercent.toFixed(1)}%</td>
-        <td class="right">${line.varianceValue >= 0 ? '+' : ''}${line.varianceValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-        <td class="center"><span class="${badgeClass(line.status)}">${esc(line.status)}</span></td>
+        <td class="right">${qtyBahan(line.plannedQty)} ${esc(line.uomCode)}</td>
+        <td class="right">${qtyBahan(line.issuedQty)} ${esc(line.uomCode)}</td>
+        <td class="right">${qtyBahan(line.returnedQty)} ${esc(line.uomCode)}</td>
+        <td class="right">${qtyBahan(line.actualUsed)} ${esc(line.uomCode)}</td>
+        <td class="right">${qtyBahan(line.theoreticalUsage)} ${esc(line.uomCode)}</td>
+        <td class="right">${line.variance > 0 ? '+' : ''}${qtyBahan(line.variance)} ${esc(line.uomCode)}</td>
+        <td class="right">${persenBertanda(line.variancePercent)}</td>
+        <td class="right">${esc(rupiahBertanda(line.varianceValue))}</td>
+        <td class="center"><span class="${badgeClass(statusTampil)}">${esc(labels.statusLabels?.[statusTampil] ?? statusTampil)}</span></td>
       </tr>`;
     })
     .join('');
@@ -138,16 +147,16 @@ ${printPageLandscape}
   <div class="stat-cards">
     <div class="stat-card">
       <div class="sk">${esc(labels.totalMaterialCost)}</div>
-      <div class="sv">${summary.totalUsedValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+      <div class="sv">${esc(formatRupiah(summary.totalUsedValue))}</div>
     </div>
     <div class="stat-card">
       <div class="sk">${esc(labels.efficiencyPct)}</div>
-      <div class="sv">${efficiencyPercent.toFixed(1)}%</div>
+      <div class="sv">${efficiencyPercent == null ? '—' : esc(`${efficiencyPercent.toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`)}</div>
       <p class="sh">${esc(labels.usedVsIssued)}</p>
     </div>
     <div class="stat-card">
       <div class="sk">${esc(labels.costVariance)}</div>
-      <div class="sv" style="${varianceClass}">${summary.netVarianceValue >= 0 ? '+' : ''}${summary.netVarianceValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+      <div class="sv" style="${varianceClass}">${esc(rupiahBertanda(summary.netVarianceValue))}</div>
     </div>
   </div>
 
@@ -159,7 +168,7 @@ ${printPageLandscape}
     </colgroup>
     <thead>
       <tr>
-        <th>Material</th>
+        <th>${esc(labels.material ?? 'Bahan')}</th>
         <th class="right">${esc(labels.targetCutting)}</th>
         <th class="right">${esc(labels.issuedToCmt)}</th>
         <th class="right">${esc(labels.returned)}</th>

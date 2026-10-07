@@ -89,7 +89,15 @@ describe("kirimPesananPortal — galat penulis", () => {
       note: undefined,
       idempotencyKey: "portal:l1:kunci-uji-1",
       remoteChannel: "PORTAL",
+      // Batas harian dihitung ulang DI DALAM transaksi penulis, sejak awal hari WIB.
+      batasHarianPortal: { maks: 5, sejak: expect.any(Date) },
     });
+  });
+
+  it("the writer's in-transaction daily cap comes back as BATAS_HARIAN, with nothing told to the holder", async () => {
+    const { BatasHarianPortalError } = await import("./portal-toko-batas");
+    h.create.mockRejectedValue(new BatasHarianPortalError(5));
+    expect(await kirimPesananPortal(akses, input)).toEqual({ ok: false, code: "BATAS_HARIAN", batas: 5 });
   });
 
   it("a replayed key that somehow belongs to another store is refused, not returned", async () => {

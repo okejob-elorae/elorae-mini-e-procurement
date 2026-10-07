@@ -270,6 +270,8 @@ describe("alihkanBeban — mengubah keputusan menyesuaikan faktur bebannya", () 
 
   it("dua pengalihan ke TOKO bersamaan hanya membuat SATU faktur", async () => {
     const nrt = await buatNrt();
+    // Toko sudah memotong NRT penuh — hanya itu yang melahirkan faktur beban.
+    await buatBkmDenganPotongan(nrt.id);
     const beban = await hitungKurang(nrt.id);
     await putuskanBeban({ chargeId: beban.id, bearer: "GUDANG", alasan: "awal", olehUserId: gudangId });
 
@@ -285,6 +287,8 @@ describe("alihkanBeban — mengubah keputusan menyesuaikan faktur bebannya", () 
 
   it("TOKO → TOKO tidak membuat faktur kedua", async () => {
     const nrt = await buatNrt();
+    // Toko sudah memotong NRT penuh — hanya itu yang melahirkan faktur beban.
+    await buatBkmDenganPotongan(nrt.id);
     const beban = await hitungKurang(nrt.id);
     await putuskanBeban({ chargeId: beban.id, bearer: "TOKO", alasan: "awal", olehUserId: gudangId });
     const h = await alihkanBeban({ chargeId: beban.id, bearer: "TOKO", alasan: "ulang", olehUserId: gudangId });
@@ -294,6 +298,8 @@ describe("alihkanBeban — mengubah keputusan menyesuaikan faktur bebannya", () 
 
   it("MENOLAK mengalihkan kalau faktur bebannya sudah dipakai di BKM", async () => {
     const nrt = await buatNrt();
+    // Toko sudah memotong NRT penuh — hanya itu yang melahirkan faktur beban.
+    await buatBkmDenganPotongan(nrt.id);
     const beban = await hitungKurang(nrt.id);
     await putuskanBeban({ chargeId: beban.id, bearer: "TOKO", alasan: "awal", olehUserId: gudangId });
     const [p] = await piutangBeban(tokoId);
@@ -322,6 +328,8 @@ describe("alihkanBeban — mengubah keputusan menyesuaikan faktur bebannya", () 
 
   it("MENOLAK mengalihkan kalau faktur bebannya ada di kontrabon atau tugas tagih yang terbuka", async () => {
     const nrt = await buatNrt();
+    // Toko sudah memotong NRT penuh — hanya itu yang melahirkan faktur beban.
+    await buatBkmDenganPotongan(nrt.id);
     const beban = await hitungKurang(nrt.id);
     await putuskanBeban({ chargeId: beban.id, bearer: "TOKO", alasan: "awal", olehUserId: gudangId });
     const [p] = await piutangBeban(tokoId);
@@ -372,6 +380,8 @@ describe("alihkanBeban — mengubah keputusan menyesuaikan faktur bebannya", () 
 describe("tandaiBebanLunas — beban toko lunas lewat piutangnya", () => {
   it("menolak menandai lunas beban TOKO yang punya faktur — pelunasannya lewat BKM terverifikasi", async () => {
     const nrt = await buatNrt();
+    // Toko sudah memotong NRT penuh — hanya itu yang melahirkan faktur beban.
+    await buatBkmDenganPotongan(nrt.id);
     const beban = await hitungKurang(nrt.id);
     await putuskanBeban({ chargeId: beban.id, bearer: "TOKO", alasan: "awal", olehUserId: gudangId });
     const h = await tandaiBebanLunas({ chargeId: beban.id, olehUserId: gudangId });
@@ -397,6 +407,8 @@ describe("catatHitunganGudang — penghitung bukan pelapor", () => {
 describe("pembaca — faktur beban toko terlihat di layar beban dan rincian retur", () => {
   it("menunjukkan nomor faktur dan sisanya untuk beban TOKO, dan tidak untuk yang lain", async () => {
     const nrt = await buatNrt();
+    // Toko sudah memotong NRT penuh — hanya itu yang melahirkan faktur beban.
+    await buatBkmDenganPotongan(nrt.id);
     const beban = await hitungKurang(nrt.id);
     await putuskanBeban({ chargeId: beban.id, bearer: "TOKO", alasan: "awal", olehUserId: gudangId });
 
@@ -414,6 +426,8 @@ describe("pembaca — faktur beban toko terlihat di layar beban dan rincian retu
 
   it("sisa faktur beban DIHITUNG ULANG dari klaimnya, bukan dibaca dari kolom cache", async () => {
     const nrt = await buatNrt();
+    // Toko sudah memotong NRT penuh — hanya itu yang melahirkan faktur beban.
+    await buatBkmDenganPotongan(nrt.id);
     const beban = await hitungKurang(nrt.id);
     await putuskanBeban({ chargeId: beban.id, bearer: "TOKO", alasan: "awal", olehUserId: gudangId });
     const [p] = await piutangBeban(tokoId);

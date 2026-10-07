@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { CalendarRange, CheckSquare, LayoutGrid, List, Plus, Trash2 } from 'lucide-react';
@@ -124,13 +124,27 @@ export function KontenClient({
   const [pending, startTransition] = useTransition();
   const [buka, setBuka] = useState(false);
   const [draf, setDraf] = useState<Draf>(KOSONG);
-  const [saring, setSaring] = useState<string>('SEMUA');
   /*
+   * Saringan status dan tampilan tinggal di URL (?status=&tampilan=), supaya
+   * bertahan saat kembali dan bisa dibagikan.
+   *
    * Grid dulu, bukan daftar. Inilah yang tim pakai sehari-hari — daftar berguna
    * saat mencari satu baris, grid berguna saat menilai komposisi feed, dan yang
    * kedua jauh lebih sering.
    */
-  const [tampilan, setTampilan] = useState<'grid' | 'daftar'>('grid');
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const saring = searchParams.get('status') || 'SEMUA';
+  const tampilan: 'grid' | 'daftar' = searchParams.get('tampilan') === 'daftar' ? 'daftar' : 'grid';
+  const gantiUrl = (kunci: string, nilai: string | null) => {
+    const q = new URLSearchParams(searchParams.toString());
+    if (nilai == null) q.delete(kunci);
+    else q.set(kunci, nilai);
+    const qs = q.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
+  const setSaring = (v: string) => gantiUrl('status', v === 'SEMUA' ? null : v);
+  const setTampilan = (v: 'grid' | 'daftar') => gantiUrl('tampilan', v === 'grid' ? null : v);
   const [foto, setFoto] = useState<NilaiFoto>(null);
   const [hapus, setHapus] = useState<BarisKonten | null>(null);
   /** Non-null berarti mode pilih menyala. Kosong berarti menyala tanpa pilihan. */

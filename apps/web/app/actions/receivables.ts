@@ -125,6 +125,7 @@ export type HasilAksiKlaim =
         | 'BUKAN_GIRO_MENUNGGU'
         | 'PEMERIKSA_SAMA'
         | 'MELEBIHI_SISA'
+        | 'RETUR_DITAHAN'
         | 'RETUR_TERPAKAI'
         | 'GAGAL';
     };

@@ -180,7 +180,11 @@ function Ubin({
   onPilih: (id: string) => void;
 }) {
   const t = useTranslations('creative');
-  const adaGambar = Boolean(konten.imageUrl);
+  // Gambar yang gagal dimuat (mis. fotonya sudah tidak ada: 404 dari /api/foto)
+  // diperlakukan seperti slot kosong — judul terbaca dan bisa langsung diunggah
+  // ulang — bukan kotak pucat dengan sisa teks alt.
+  const [gambarGagal, setGambarGagal] = useState<string | null>(null);
+  const adaGambar = Boolean(konten.imageUrl) && gambarGagal !== konten.imageUrl;
   const [tujuanSeret, setTujuanSeret] = useState(false);
 
   /*
@@ -282,6 +286,7 @@ function Ubin({
             fill
             sizes="(max-width: 768px) 33vw, 220px"
             className="object-cover"
+            onError={() => setGambarGagal(konten.imageUrl)}
           />
           {konten.terlambat && (
             <span className="absolute left-1 top-1 rounded bg-destructive px-1.5 py-0.5 text-[10px] font-medium text-destructive-foreground">
@@ -318,15 +323,23 @@ function Ubin({
       ) : (
         /* Slot tanpa gambar TETAP terlihat dan langsung bisa diisi: ia bagian
            dari komposisi yang sedang dinilai, bukan baris yang boleh dirapatkan. */
-        <SlotUnggah
-          label={konten.title}
-          sibuk={sibuk}
-          onFile={onFile}
-          ikon={ImagePlus}
-          onSunting={bolehMengelola && !modePilih ? onSunting : undefined}
-          onHapus={bolehMengelola && !modePilih ? onHapus : undefined}
-          mati={!bolehMengelola || modePilih}
-        />
+        <div className="relative">
+          <SlotUnggah
+            label={konten.title}
+            keterangan={konten.imageUrl ? t('gambarHilang') : undefined}
+            sibuk={sibuk}
+            onFile={onFile}
+            ikon={ImagePlus}
+            onSunting={bolehMengelola && !modePilih ? onSunting : undefined}
+            onHapus={bolehMengelola && !modePilih ? onHapus : undefined}
+            mati={!bolehMengelola || modePilih}
+          />
+          {konten.terlambat && (
+            <span className="pointer-events-none absolute bottom-1 left-1 rounded bg-destructive px-1.5 py-0.5 text-[10px] font-medium text-destructive-foreground">
+              {t('late')}
+            </span>
+          )}
+        </div>
       )}
     </div>
   );
@@ -341,6 +354,7 @@ function Ubin({
  */
 function SlotUnggah({
   label,
+  keterangan,
   sibuk,
   onFile,
   ikon: Ikon,
@@ -350,6 +364,8 @@ function SlotUnggah({
   onHapus,
 }: {
   label: string;
+  /** Baris kedua yang terlihat, mis. "Gambar hilang — unggah ulang". */
+  keterangan?: string;
   sibuk: boolean;
   onFile: (f: File | undefined) => void;
   ikon: typeof Plus;
@@ -426,9 +442,17 @@ function SlotUnggah({
       ) : (
         <Ikon className="h-5 w-5 text-muted-foreground" />
       )}
-      <span className="pointer-events-none line-clamp-2 px-1 text-[11px] leading-tight text-muted-foreground">
+      <span
+        className={cn(
+          'pointer-events-none line-clamp-2 px-1 text-[11px] leading-tight',
+          keterangan ? 'font-medium text-foreground' : 'text-muted-foreground',
+        )}
+      >
         {sibuk ? t('uploading') : label}
       </span>
+      {!sibuk && keterangan ? (
+        <span className="pointer-events-none text-[10px] text-destructive">{keterangan}</span>
+      ) : null}
       {!sibuk && !mati && (
         <span className="pointer-events-none hidden text-[10px] text-muted-foreground/70 sm:block">
           {t('dropHint')}

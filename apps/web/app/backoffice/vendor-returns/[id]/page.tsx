@@ -30,6 +30,16 @@ import {
   DialogTitle,
   DialogTrigger
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { useLocale, useTranslations } from 'next-intl';
 import { formatDisplayDateTime } from '@/lib/date-only';
@@ -42,6 +52,10 @@ import { logPrint } from '@/app/actions/audit';
 import { buildVendorReturnPrintHtml } from '@/lib/print/vendor-return-html';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 import { pesanTolakRetur, tolakReturBasi } from '../pesan-tolak-retur';
+import { TAUTAN_DOKUMEN } from '@/app/backoffice/purchase-orders/tautan-dokumen';
+import { hasPermission, PERMISSIONS } from '@/lib/rbac';
+
+const rp = (n: number) => `Rp ${n.toLocaleString('id-ID', { maximumFractionDigits: 2 })}`;
 
 export default function VendorReturnDetailPage() {
   const params = useParams();
@@ -68,6 +82,8 @@ export default function VendorReturnDetailPage() {
   const [ret, setRet] = useState<Awaited<ReturnType<typeof getVendorReturnById>>>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
+  // Proses retur mengeluarkan stok dan tidak bisa dibatalkan: konfirmasi dulu.
+  const [konfirmasiProses, setKonfirmasiProses] = useState(false);
   const [completeOpen, setCompleteOpen] = useState(false);
   const [trackingNumber, setTrackingNumber] = useState('');
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
@@ -138,22 +154,7 @@ export default function VendorReturnDetailPage() {
       completedAt: ret.completedAt,
       trackingNumber: ret.trackingNumber ?? undefined,
       lines: printLines,
-      labels: {
-        title: t('notaReturTitle'),
-        doc: 'Doc',
-        vendor: 'Vendor',
-        totalValue: t('nilaiRetur'),
-        workOrder: t('workOrderLabel'),
-        processed: 'Processed',
-        completed: t('completed'),
-        tracking: t('trackingLabel'),
-        type: 'Type',
-        item: 'Item',
-        qty: 'Qty',
-        condition: 'Condition',
-        reason: 'Reason',
-        value: 'Value',
-      },
+      poDocNumber: ret.po?.docNumber ?? null,
     });
     const iframe = document.createElement('iframe');
     iframe.setAttribute('style', 'position:absolute;width:0;height:0;border:0;visibility:hidden;');
@@ -233,6 +234,10 @@ export default function VendorReturnDetailPage() {
   const vendor = ret.vendor as { name?: string; code?: string } | null;
   const wo = ret.wo as { id: string; docNumber: string } | null;
   const grn = (ret as { grn?: { id: string; docNumber: string } | null }).grn ?? null;
+  // Tautan hanya ke halaman yang boleh dibuka (pembeli biasanya tanpa inventory:view).
+  const izin = session?.user?.permissions ?? [];
+  const bolehBukaGrn = hasPermission(izin, PERMISSIONS.INVENTORY_VIEW);
+  const bolehBukaPo = hasPermission(izin, PERMISSIONS.PURCHASE_ORDERS_VIEW);
   const rawLines = ret.lines;
   const lines: Array<{
     type: string;
@@ -300,7 +305,7 @@ export default function VendorReturnDetailPage() {
               {t('printNotaRetur')}
             </Button>
             {ret.status === 'DRAFT' && (
-              <Button onClick={handleProcess} disabled={isProcessing}>
+              <Button onClick={() => setKonfirmasiProses(true)} disabled={isProcessing}>
                 {isProcessing ? tList('processing') : t('processReturn')}
               </Button>
             )}
@@ -374,11 +379,7 @@ export default function VendorReturnDetailPage() {
             <CardContent className="space-y-2">
               <div>
                 <p className="text-sm text-muted-foreground">{t('nilaiRetur')}</p>
-                <p className="text-2xl font-bold">
-                  Rp {Number(ret.totalValue).toLocaleString(undefined, {
-                    minimumFractionDigits: 2
-                  })}
-                </p>
+                <p className="text-2xl font-bold tabular-nums">{rp(Number(ret.totalValue))}</p>
                 <p className="text-xs text-muted-foreground mt-1">{t('nilaiReturCmtNote')}</p>
               </div>
               {wo && (
@@ -386,7 +387,7 @@ export default function VendorReturnDetailPage() {
                   <span className="text-muted-foreground">{t('workOrderLabel')}</span>{' '}
                   <Link
                     href={`/backoffice/work-orders/${wo.id}`}
-                    className="text-primary hover:underline print:no-underline print:text-inherit"
+                    className={`${TAUTAN_DOKUMEN} print:no-underline print:text-inherit`}
                   >
                     {wo.docNumber}
                   </Link>
@@ -394,8 +395,29 @@ export default function VendorReturnDetailPage() {
               )}
               {grn && (
                 <p>
-                  <span className="text-muted-foreground">GRN:</span>{' '}
-                  <span>{grn.docNumber}</span>
+                  <span className="text-muted-foreground">{t('grnLabel')}</span>{' '}
+                  {bolehBukaGrn ? (
+                    <Link href={`/backoffice/inventory/grn/${grn.id}`} className={TAUTAN_DOKUMEN}>
+                      {grn.docNumber}
+                    </Link>
+                  ) : (
+                    <span>{grn.docNumber}</span>
+                  )}
+                </p>
+              )}
+              {ret.po && (
+                <p>
+                  <span className="text-muted-foreground">{t('poKreditLabel')}</span>{' '}
+                  {bolehBukaPo ? (
+                    <Link href={`/backoffice/purchase-orders/${ret.po.id}`} className={TAUTAN_DOKUMEN}>
+                      {ret.po.docNumber}
+                    </Link>
+                  ) : (
+                    <span>{ret.po.docNumber}</span>
+                  )}
+                  {ret.poCreditAmount != null && (
+                    <span className="text-muted-foreground"> ({rp(ret.poCreditAmount)})</span>
+                  )}
                 </p>
               )}
               {ret.processedAt && (
@@ -416,7 +438,7 @@ export default function VendorReturnDetailPage() {
                     href={ret.receiptFileUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-primary hover:underline"
+                    className={TAUTAN_DOKUMEN}
                   >
                     {t('viewReceipt')}
                   </a>
@@ -457,14 +479,12 @@ export default function VendorReturnDetailPage() {
                             ? t('sourceReject', { name: line.itemName ?? line.itemId })
                             : line.itemName ?? line.itemId}
                       </TableCell>
-                      <TableCell className="text-right">{line.qty}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {Number(line.qty).toLocaleString('id-ID', { maximumFractionDigits: 2 })}
+                      </TableCell>
                       <TableCell>{conditionLabel(line.condition)}</TableCell>
                       <TableCell className="min-w-[160px] whitespace-normal">{line.reason}</TableCell>
-                      <TableCell className="text-right">
-                        {(line.costValue ?? 0).toLocaleString(undefined, {
-                          minimumFractionDigits: 2
-                        })}
-                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{rp(line.costValue ?? 0)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -485,7 +505,7 @@ export default function VendorReturnDetailPage() {
                         href={url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-primary hover:underline"
+                        className={`${TAUTAN_DOKUMEN} break-all`}
                       >
                         {url}
                       </a>
@@ -497,6 +517,26 @@ export default function VendorReturnDetailPage() {
           )}
         </div>
       </div>
+
+      <AlertDialog open={konfirmasiProses} onOpenChange={setKonfirmasiProses}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{tList('prosesJudul', { doc: ret.docNumber })}</AlertDialogTitle>
+            <AlertDialogDescription>{tList('prosesIsi')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setKonfirmasiProses(false);
+                void handleProcess();
+              }}
+            >
+              {t('processReturn')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

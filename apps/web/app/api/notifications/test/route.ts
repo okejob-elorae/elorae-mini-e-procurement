@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@elorae/db';
 import { messaging } from '@/lib/firebase/admin';
+import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 export const dynamic = 'force-dynamic';
 
 
@@ -17,6 +18,10 @@ export async function POST() {
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    // Alat pemeriksa push: admin sistem (`*`, lewat hasPermission) atau pengelola keamanan.
+    if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.SETTINGS_SECURITY_MANAGE)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const user = await prisma.user.findUnique({

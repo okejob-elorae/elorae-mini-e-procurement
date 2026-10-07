@@ -35,11 +35,14 @@ import { dinamis } from '@/lib/i18n/dinamis';
 import type { StatusGiro } from '@/lib/receivables/giro';
 import { TombolGiro } from './giro/TombolGiro';
 import { kunciGalatPutusan } from './[id]/putusan-klaim';
+import { KotakCari } from '../piutang/_daftar/KotakCari';
+import { HalamanDaftar } from '../piutang/_daftar/HalamanDaftar';
+import { denganParam } from '../piutang/_daftar/halaman';
 
 export type StatusKlaim = 'DIKIRIM' | 'TERVERIFIKASI' | 'DITOLAK';
 
-/** Saringan dari alamat (`?status=`, `?koreksi=1`) — diterapkan di server. */
-export type SaringKlaim = { status: StatusKlaim | null; koreksi: boolean };
+/** Saringan dari alamat (`?status=`, `?koreksi=1`, `?cari=`) — diterapkan di server. */
+export type SaringKlaim = { status: StatusKlaim | null; koreksi: boolean; cari?: string };
 
 export type JumlahKlaim = Record<StatusKlaim, number> & { semua: number; koreksi: number };
 
@@ -81,13 +84,16 @@ const NADA: Record<string, StatusTone> = {
 
 export function PelunasanClient({
   baris,
+  halaman,
   saring,
   jumlah,
   giroMenunggu,
   bolehMemutuskan,
   bolehMengelola,
 }: {
+  /** Satu halaman yang sudah disaring di server. */
   baris: BarisKlaim[];
+  halaman: { halaman: number; totalHalaman: number; total: number; ukuran: number };
   saring: SaringKlaim;
   /** Jumlah per saringan atas SEMUA BKM, bukan hanya yang sedang tampil. */
   jumlah: JumlahKlaim;
@@ -104,11 +110,17 @@ export function PelunasanClient({
   const [alasan, setAlasan] = useState('');
 
   const menunggu = jumlah.DIKIRIM;
-  const disaring = saring.status !== null || saring.koreksi;
+  const cari = saring.cari ?? '';
+  const disaring = saring.status !== null || saring.koreksi || cari !== '';
+  // Pil saringan membawa kata kuncinya; halamannya kembali ke 1.
+  const dgnCari = (href: string) => {
+    const [jalur, qs = ''] = href.split('?');
+    return denganParam(jalur, new URLSearchParams(qs), { cari });
+  };
   // Satu saringan aktif pada satu waktu; `replace` supaya "Kembali" tidak
   // berjalan mundur melewati setiap pilihan.
   const pilihan: { kunci: string; label: string; n: number; href: string; aktif: boolean }[] = [
-    { kunci: 'semua', label: t('filterAll'), n: jumlah.semua, href: '/backoffice/pelunasan', aktif: !disaring },
+    { kunci: 'semua', label: t('filterAll'), n: jumlah.semua, href: '/backoffice/pelunasan', aktif: saring.status === null && !saring.koreksi },
     ...(['DIKIRIM', 'TERVERIFIKASI', 'DITOLAK'] as const).map((s) => ({
       kunci: s,
       label: t(`status${s}` as never),
@@ -168,11 +180,13 @@ export function PelunasanClient({
         }
       />
 
+      <KotakCari nilai={cari} placeholder={t('searchPlaceholder')} label={t('searchPlaceholder')} />
+
       <div className="flex flex-wrap gap-2" role="group" aria-label={t('filterLabel')}>
         {pilihan.map((p) => (
           <Link
             key={p.kunci}
-            href={p.href}
+            href={dgnCari(p.href)}
             replace
             aria-current={p.aktif ? 'true' : undefined}
             className={cn(
@@ -219,7 +233,7 @@ export function PelunasanClient({
                       <TableCell>
                         <Link
                           href={`/backoffice/pelunasan/${b.id}`}
-                          className="font-medium text-primary underline-offset-2 hover:underline"
+                          className="whitespace-nowrap font-medium text-foreground underline decoration-primary underline-offset-2 hover:decoration-2"
                         >
                           {b.docNo}
                         </Link>
@@ -233,15 +247,15 @@ export function PelunasanClient({
                         )}
                       </TableCell>
                       <TableCell>{tanggal(b.claimedTransferAt)}</TableCell>
-                      <TableCell className="text-right text-muted-foreground whitespace-normal min-w-[7.5rem]">
+                      <TableCell className="text-right text-muted-foreground">
                         {rupiah(b.invoiceAmount)}
+                        {/* Potongan di baris sendiri dan tidak dipatahkan: di 1280 px
+                            "Rp" dan angkanya dulu terbelah ke dua baris. */}
                         {b.deductionCount > 0 && (
-                          <span className="block text-xs">
-                            {t('deductions', {
-                              count: b.deductionCount,
-                              value: rupiah(b.deductionTotal),
-                            })}
-                          </span>
+                          <>
+                            <span className="block text-xs">{t('deductionsCount', { count: b.deductionCount })}</span>
+                            <span className="block whitespace-nowrap text-xs">− {rupiah(b.deductionTotal)}</span>
+                          </>
                         )}
                       </TableCell>
                       <TableCell className="text-right font-semibold">
@@ -327,6 +341,7 @@ export function PelunasanClient({
               </Table>
             </div>
           )}
+          <HalamanDaftar {...halaman} />
         </CardContent>
       </Card>
 

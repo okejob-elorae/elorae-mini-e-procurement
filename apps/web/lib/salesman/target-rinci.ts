@@ -10,8 +10,9 @@ import { bulanWib } from "./pengaturan";
  * satu kategori barang atau satu barang jadi (`SalesTarget`).
  *
  * Capaiannya memakai definisi omzet yang SAMA dengan kartu beranda
- * (`penjualanSalesman`): putus = kiriman, konsi = pesanan konsinyasi yang
- * disetujui, van = penjualan mobil, per hari kalender WIB sampai hari ini.
+ * (`penjualanSalesman`): putus = kiriman, konsi = barang laku di toko
+ * konsinyasi yang ia pegang (`penjualan-konsi.ts`), van = penjualan mobil, per
+ * hari kalender WIB sampai hari ini.
  * Nilai satu dokumen dibagi ke baris-barisnya sebanding nilai bersih baris
  * (`bagiSen`), dihitung dalam sen bulat — jadi jumlah semua kategori SELALU
  * tepat sama dengan omzet di beranda, termasuk diskon pesanan yang tidak
@@ -250,8 +251,8 @@ export function bagiSen(totalSen: number, bobot: readonly number[]): number[] {
 export type JenisDokumen = "putus" | "konsi" | "van" | "spg";
 
 /**
- * Satu dokumen penjualan dalam bentuk netral: kiriman putus, pesanan konsi
- * yang disetujui, penjualan van — atau, untuk SPG, nota penjualan di tokonya
+ * Satu dokumen penjualan dalam bentuk netral: kiriman putus, satu gerakan
+ * laku konsinyasi, penjualan van — atau, untuk SPG, nota penjualan di tokonya
  * (`dokumenSpg`). `totalSen` = total dokumen persis seperti yang dijumlahkan
  * kartu beranda; `bobotSen` = nilai bersih baris (sebelum diskon pesanan),
  * hanya dipakai sebagai perbandingan.
@@ -372,7 +373,7 @@ export function dokumenSpg(nota: {
  * maupun barang.
  *
  * Aplikasi salesman tidak pernah menampilkan harga atau total konsinyasi:
- * - barang: nilai konsi satu barang ÷ pcs yang ia kirim = harga satuan konsi;
+ * - barang: nilai konsi satu barang ÷ pcs lakunya = harga satuan konsi;
  * - kategori: nilai kategori − putus − van kategori itu = total konsi
  *   kategori itu (kartu "Bulan ini" di beranda kini putus + van saja, jadi
  *   nilai gabungan kategori tidak lagi "sudah tampil" di mana pun).

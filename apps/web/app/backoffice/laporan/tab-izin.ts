@@ -22,8 +22,25 @@ export function tabLaporanTerlihat(izin: string[]): LaporanTab[] {
   });
 }
 
-/** Tab dari `?tab=`; yang asing atau tidak boleh dilihat jatuh ke Produksi. */
+/**
+ * Nama tab di alamat (`?tab=`) — bermakna, bukan kode internal. Produksi =
+ * tanpa `?tab=`. Kode lama (`rp1`, `rp2`, `rp3`, `overdue`) tetap dibaca supaya
+ * tautan yang sudah dibagikan tidak mati.
+ */
+const URL_TAB: Readonly<Record<LaporanTab, string | null>> = {
+  production: null,
+  overdue: "po-terlambat",
+  rp1: "pengadaan",
+  rp2: "setoran-cmt",
+  rp3: "stok",
+};
+
+export function nilaiUrlTab(tab: LaporanTab): string | null {
+  return URL_TAB[tab];
+}
+
+/** Tab dari `?tab=` (nama atau kode lama); yang asing atau tidak boleh dilihat jatuh ke Produksi. */
 export function tabLaporanAktif(dariUrl: string | null, terlihat: readonly LaporanTab[]): LaporanTab {
-  const tab = terlihat.find((t) => t === dariUrl);
+  const tab = terlihat.find((t) => t === dariUrl || (URL_TAB[t] !== null && URL_TAB[t] === dariUrl));
   return tab ?? "production";
 }

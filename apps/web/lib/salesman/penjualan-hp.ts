@@ -11,9 +11,9 @@ import type { Perubahan, TitikBulan } from "./riwayat-penjualan";
  * Aturan mutlak pemilik: harga dan total konsinyasi tidak pernah sampai ke
  * aplikasi salesman, tidak di layar dan tidak di payload. Jadi di HP:
  * - rupiah hanya putus + van, dan setiap total rupiah = putus + van;
- * - konsinyasi hanya sebagai pcs (pesanan konsi yang disetujui, baris bonus
- *   tidak dihitung, menurut tanggal disetujui — tanggal yang sama dengan
- *   `penjualanSalesman`).
+ * - konsinyasi hanya sebagai pcs LAKU di toko konsinyasi yang ia pegang
+ *   (`penjualan-konsi.ts` — sumber dan tanggal yang sama dengan
+ *   `penjualanSalesman`). Transfer konsi yang disetujui bukan penjualan.
  *
  * Total yang memuat konsi pun dibuang, bukan hanya kanal konsinya: total −
  * putus − van = konsi, dan konsi ÷ pcs konsi = harga satuan konsinyasi.
@@ -21,7 +21,7 @@ import type { Perubahan, TitikBulan } from "./riwayat-penjualan";
  * berubah hanya angka yang dibentuk untuk HP.
  */
 
-/** Satu pesanan konsinyasi yang disetujui: pcs-nya saja, tanpa nilai. */
+/** Satu gerakan laku konsinyasi: pcs-nya saja, tanpa nilai. */
 export type BarisPcsKonsi = { tanggal: Date; pcs: number };
 
 /** Jumlah di HP: rupiah putus + van, konsinyasi dalam pcs. Tidak ada kunci `konsi`. */

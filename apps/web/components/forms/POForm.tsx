@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useSyncExternalStore } from 'react';
 import { useForm, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createPoSchema, poItemSchema } from '@/lib/validations';
@@ -30,11 +30,10 @@ import {
 } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Plus, Trash2, Loader2, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, Loader2, AlertTriangle, WifiOff } from 'lucide-react';
 import { toast } from 'sonner';
 import type { z } from 'zod';
 import { OfflineIndicator } from '@/components/offline/OfflineIndicator';
-import { OfflinePOButton } from '@/components/offline/OfflinePOButton';
 import { isOnline } from '@/lib/offline/sync';
 import { useLocale, useTranslations } from 'next-intl';
 import { parseItemVariants, variantSelectOptions } from '@/lib/items/variants';
@@ -109,6 +108,56 @@ interface POFormProps {
   isLoading?: boolean;
 }
 
+/** Langganan sinyal (online/offline) untuk `useSyncExternalStore`. */
+function langgananSinyal(berubah: () => void): () => void {
+  window.addEventListener('online', berubah);
+  window.addEventListener('offline', berubah);
+  return () => {
+    window.removeEventListener('online', berubah);
+    window.removeEventListener('offline', berubah);
+  };
+}
+
+/**
+ * Tombol simpan PO baru. PO yang dibuat berstatus DRAF — belum sampai ke
+ * pemasok sampai diajukan dari rinciannya — jadi tombolnya "Simpan draf" (dulu
+ * labelnya menjanjikan PO terkirim). Tanpa sinyal: "Simpan di perangkat".
+ */
+function TombolSimpanPo({
+  onSimpan,
+  onSimpanDiPerangkat,
+  isLoading,
+}: {
+  onSimpan: () => Promise<void>;
+  onSimpanDiPerangkat: () => Promise<void>;
+  isLoading: boolean;
+}) {
+  const t = useTranslations('purchaseOrders.form');
+  const daring = useSyncExternalStore(langgananSinyal, () => isOnline(), () => true);
+  return (
+    <Button
+      type="button"
+      variant={daring ? 'default' : 'secondary'}
+      disabled={isLoading}
+      onClick={() => void (daring ? onSimpan() : onSimpanDiPerangkat())}
+    >
+      {isLoading ? (
+        <>
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          {t('menyimpan')}
+        </>
+      ) : daring ? (
+        t('simpanDraf')
+      ) : (
+        <>
+          <WifiOff className="mr-2 h-4 w-4" />
+          {t('simpanDiPerangkat')}
+        </>
+      )}
+    </Button>
+  );
+}
+
 export function POForm({
   initialData,
   suppliers,
@@ -123,6 +172,7 @@ export function POForm({
   const tSecurity = useTranslations('security');
   const tPlaceholders = useTranslations('placeholders');
   const tValidation = useTranslations('validation');
+  const tf = useTranslations('purchaseOrders.form');
   const poSchemaT = useMemo(() => createPoSchema((k) => tValidation(k)), [tValidation]);
   const [items, setItems] = useState<Item[]>([]);
   const [lineItems, setLineItems] = useState<Array<POItemData & { id: string }>>(
@@ -295,7 +345,7 @@ export function POForm({
     return qty * price;
   };
 
-  // Pratinjau total dengan rumus yang sama dengan server (PPN baris "Exclude PPN").
+  // Pratinjau total dengan rumus yang sama dengan server (PPN baris "belum termasuk PPN").
   const ringkasanTotal = useMemo(() => {
     try {
       return hitungTotalPo(
@@ -331,7 +381,7 @@ export function POForm({
       const cat = items.find((i) => i.id === line.itemId);
       const opts = variantSelectOptions(parseItemVariants(cat?.variants));
       if (opts.length > 0 && !line.variantSku?.trim()) {
-        toast.error('Select a variant for each line item that has variants');
+        toast.error(tf('errVarian'));
         return;
       }
     }
@@ -439,15 +489,15 @@ export function POForm({
       {/* Offline Indicator */}
       <OfflineIndicator />
 
-      {/* Supplier and ETA */}
+      {/* Pemasok dan perkiraan tiba */}
       <Card>
         <CardHeader>
-          <CardTitle>Supplier & Delivery</CardTitle>
+          <CardTitle>{tf('kartuPemasok')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="supplierId">Supplier *</Label>
+              <Label htmlFor="supplierId">{tf('pemasok')} *</Label>
               <SearchableCombobox
                 id="supplierId"
                 options={suppliers.map((s) => ({ value: s.id, label: `${s.code} - ${s.name}` }))}
@@ -464,7 +514,7 @@ export function POForm({
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="etaDate">ETA Date</Label>
+              <Label htmlFor="etaDate">{tf('tanggalEta')}</Label>
               <DatePicker
                 id="etaDate"
                 value={watch('etaDate') ?? null}
@@ -497,13 +547,13 @@ export function POForm({
                 <Alert variant="destructive">
                   <AlertTriangle className="h-4 w-4" />
                   <AlertDescription>
-                    ETA date is in the past. Please verify.
+                    {tf('etaLewat')}
                   </AlertDescription>
                 </Alert>
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="paymentDueDate">Payment due date</Label>
+              <Label htmlFor="paymentDueDate">{tf('jatuhTempo')}</Label>
               <DatePicker
                 id="paymentDueDate"
                 value={watch('paymentDueDate') ?? null}
@@ -523,10 +573,10 @@ export function POForm({
         </CardContent>
       </Card>
 
-      {/* Line Items */}
+      {/* Daftar barang */}
       <Card>
         <CardHeader>
-          <CardTitle>Line Items</CardTitle>
+          <CardTitle>{tf('kartuBarang')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {errors.items?.message && (
@@ -544,7 +594,7 @@ export function POForm({
             </div>
             <Button type="button" variant="outline" size="sm" onClick={addLineItem}>
               <Plus className="h-4 w-4 mr-2" />
-              Add Item
+              {tf('tambahBarang')}
             </Button>
           </div>
 
@@ -552,15 +602,17 @@ export function POForm({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Item</TableHead>
-                  <TableHead>Variant</TableHead>
-                  <TableHead>Qty</TableHead>
-                  <TableHead>UOM</TableHead>
-                  <TableHead>Price (IDR)</TableHead>
-                  <TableHead>PPN</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                  <TableHead>Notes</TableHead>
-                  <TableHead className="w-12"></TableHead>
+                  <TableHead>{tf('colBarang')}</TableHead>
+                  <TableHead>{tf('colVarian')}</TableHead>
+                  <TableHead>{tf('colQty')}</TableHead>
+                  <TableHead>{tf('colSatuan')}</TableHead>
+                  <TableHead>{tf('colHarga')}</TableHead>
+                  <TableHead>{tf('colPpn')}</TableHead>
+                  <TableHead className="text-right">{tf('colTotal')}</TableHead>
+                  <TableHead>{tf('colCatatan')}</TableHead>
+                  <TableHead className="w-12">
+                    <span className="sr-only">{tf('colAksi')}</span>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -598,10 +650,10 @@ export function POForm({
                             }
                           >
                             <SelectTrigger className="w-full max-w-[14rem]">
-                              <SelectValue placeholder="Variant" />
+                              <SelectValue placeholder={tf('colVarian')} />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="__none__">Select variant</SelectItem>
+                              <SelectItem value="__none__">{tf('pilihVarian')}</SelectItem>
                               {variantOpts.map((o) => (
                                 <SelectItem key={o.sku} value={o.sku}>
                                   {o.label}
@@ -659,8 +711,8 @@ export function POForm({
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="include">Include PPN</SelectItem>
-                            <SelectItem value="exclude">Exclude PPN</SelectItem>
+                            <SelectItem value="include">{tf('termasukPpn')}</SelectItem>
+                            <SelectItem value="exclude">{tf('belumPpn')}</SelectItem>
                           </SelectContent>
                         </Select>
                       </TableCell>
@@ -682,6 +734,8 @@ export function POForm({
                           variant="ghost"
                           size="icon"
                           onClick={() => removeLineItem(lineItem.id)}
+                          aria-label={tf('hapusBaris')}
+                          title={tf('hapusBaris')}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -727,14 +781,14 @@ export function POForm({
         </CardContent>
       </Card>
 
-      {/* Notes and Terms */}
+      {/* Catatan dan syarat */}
       <Card>
         <CardHeader>
-          <CardTitle>Additional Information</CardTitle>
+          <CardTitle>{tf('kartuLain')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="notes">Notes</Label>
+            <Label htmlFor="notes">{tf('catatan')}</Label>
             <Textarea
               id="notes"
               {...register('notes')}
@@ -750,7 +804,7 @@ export function POForm({
             )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="terms">Payment Terms</Label>
+            <Label htmlFor="terms">{tf('syaratBayar')}</Label>
             <Textarea
               id="terms"
               {...register('terms')}
@@ -768,19 +822,18 @@ export function POForm({
         </CardContent>
       </Card>
 
-      {/* Submit Button */}
+      {/* Tombol simpan */}
       <div className="flex justify-end gap-2">
         {onSaveLocally ? (
-          <OfflinePOButton
-            onSaveLocally={handleSaveLocally}
-            onSubmit={handleSubmitForm}
-            disabled={isLoading}
+          <TombolSimpanPo
+            onSimpan={handleSubmitForm}
+            onSimpanDiPerangkat={handleSaveLocally}
             isLoading={isLoading}
           />
         ) : (
           <Button type="submit" disabled={isLoading}>
             {isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            {initialData ? 'Update PO' : 'Create PO'}
+            {initialData ? tf('simpanPerubahan') : tf('simpanDraf')}
           </Button>
         )}
       </div>

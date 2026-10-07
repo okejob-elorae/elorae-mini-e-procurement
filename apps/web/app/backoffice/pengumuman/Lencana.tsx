@@ -8,7 +8,7 @@ import type { Audiens, KeadaanPengumuman } from "@/lib/pengumuman/aturan";
 /** Hijau = tampil di HP sekarang; biru = menunggu waktunya; abu = sudah tidak tampil. */
 const NADA: Record<KeadaanPengumuman, string> = {
   AKTIF: "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300",
-  TERJADWAL: "bg-primary/10 text-primary",
+  TERJADWAL: "bg-primary/20 text-foreground",
   KEDALUWARSA: "bg-muted text-muted-foreground",
   DIARSIPKAN: "bg-muted text-muted-foreground line-through",
 };
