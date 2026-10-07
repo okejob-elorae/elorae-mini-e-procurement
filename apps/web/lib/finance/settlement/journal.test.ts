@@ -381,6 +381,24 @@ d("postSettlementJournal (test bed only)", () => {
         summaryRaw: {},
         sellerFeesRaw: [],
         adjustmentsRaw: [],
+        /* One line matched to the journaled fixture sale, or the revenue gate refuses a line-less settlement. TikTok shape: fee columns zeroed. */
+        lines: {
+          create: [
+            {
+              orderNo: `SO-STL-${token}`,
+              netIncome: 4500,
+              hargaAsliProduk: 0,
+              totalDiskonProduk: 0,
+              biayaAdministrasi: 0,
+              biayaLayanan: 0,
+              biayaKomisiAms: 0,
+              biayaProsesPesanan: 0,
+              raw: {},
+              matchStatus: "MATCHED",
+              matchedSalesOrderId: orderId,
+            },
+          ],
+        },
       },
       select: { id: true },
     });
