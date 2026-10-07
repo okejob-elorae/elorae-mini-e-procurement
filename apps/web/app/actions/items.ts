@@ -25,7 +25,9 @@ import {
   createItem as createItemLib,
   updateItem as updateItemLib,
   deleteItem as deleteItemLib,
+  getItemDeleteImpact as getItemDeleteImpactLib,
   ITEM_DELETE_BLOCKED,
+  type ItemDeleteImpact,
   type ItemFormData,
   type SerializedItem,
 } from '@/lib/items/mutations';
@@ -158,6 +160,12 @@ export async function updateItem(id: string, data: ItemFormData) {
 export type DeleteItemActionResult =
   | { success: true }
   | { success: false; messageKey: "cannotDeleteItemInUse" | "failedToDeleteItem" };
+
+export async function getItemDeleteImpactAction(id: string): Promise<ItemDeleteImpact> {
+  const session = await requireSession();
+  requirePermission(session.user.permissions, PERMISSIONS.ITEMS_DELETE);
+  return getItemDeleteImpactLib(id);
+}
 
 export async function deleteItem(id: string): Promise<DeleteItemActionResult> {
   const session = await requireSession();

@@ -12,6 +12,7 @@ import {
   validateDocNumberConfigInput,
   type DocNumberConfigErrorCode,
 } from "@/lib/doc-numbers/validate";
+import { docNumberPeriod } from "@/lib/doc-numbers/period";
 import { DOC_TYPE_GROUP, type DocTypeGroup } from "@/lib/doc-numbers/doc-type-groups";
 
 export type DocNumberConfigRow = {
@@ -89,9 +90,7 @@ export async function getDocNumberConfigs(): Promise<DocNumberConfigRow[]> {
  * a `generateDocNumber` creating the same row in between would fail the page load on P2002.
  */
 async function seedDocNumberConfigs() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
+  const { year, month } = docNumberPeriod(new Date());
   await prisma.docNumberConfig.createMany({
     data: (Object.keys(DEFAULT_CONFIGS) as DocType[]).map((docType) => ({
       docType,
@@ -146,8 +145,7 @@ export async function updateDocNumberConfig(
       resetPeriod,
       padding,
       lastNumber: 0,
-      year: new Date().getFullYear(),
-      month: new Date().getMonth() + 1,
+      ...docNumberPeriod(new Date()),
     },
     update: { prefix, resetPeriod, padding },
   });

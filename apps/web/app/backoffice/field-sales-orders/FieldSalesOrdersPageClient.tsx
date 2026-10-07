@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { useTranslations, useLocale } from "next-intl";
-import type { FieldSalesOrderListItem, FieldSalesOrderStatus } from "@/lib/field-sales/queries";
+import type { DeliveryStatusFilter, FieldSalesOrderListItem, FieldSalesOrderStatus } from "@/lib/field-sales/queries";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -25,6 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Pager } from "@/components/Pager";
+import { DELIVERY_BADGE_CLASS, DELIVERY_BADGE_VARIANT } from "./delivery-status-badge";
 
 type StatusFilter = FieldSalesOrderStatus | "ALL";
 
@@ -36,6 +37,7 @@ type Props = {
   orderType: "ALL" | "PUTUS" | "KONSI";
   origin: "ALL" | "FIELD" | "ADMIN";
   storeId: string;
+  deliveryStatus: DeliveryStatusFilter | "ALL";
   storeOptions: { id: string; name: string }[];
   page: number;
   pageSize: number;
@@ -86,6 +88,16 @@ export function FieldSalesOrdersPageClient(props: Props) {
     startTransition(() => router.push(`/backoffice/field-sales-orders?${params.toString()}`));
   }
 
+  function pushParams(updates: Record<string, string | undefined>) {
+    const params = new URLSearchParams(sp.toString());
+    for (const [key, value] of Object.entries(updates)) {
+      if (!value) params.delete(key);
+      else params.set(key, value);
+    }
+    params.delete("page");
+    startTransition(() => router.push(`/backoffice/field-sales-orders?${params.toString()}`));
+  }
+
   function reset() {
     setSearchInput("");
     startTransition(() => router.push("/backoffice/field-sales-orders"));
@@ -108,7 +120,7 @@ export function FieldSalesOrdersPageClient(props: Props) {
       </div>
 
       <Card className="p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-7">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-8">
           <div className="lg:col-span-2">
             <label className="text-xs text-muted-foreground mb-1 block">{t("search")}</label>
             <Input
@@ -119,7 +131,16 @@ export function FieldSalesOrdersPageClient(props: Props) {
           </div>
           <div>
             <label className="text-xs text-muted-foreground mb-1 block">{t("status")}</label>
-            <Select value={props.status} onValueChange={(v) => pushParam("status", v)}>
+            <Select
+              value={props.status}
+              onValueChange={(v) =>
+                pushParams({
+                  status: v,
+                  deliveryStatus:
+                    (v === "ALL" || v === "APPROVED") && props.deliveryStatus !== "ALL" ? props.deliveryStatus : undefined,
+                })
+              }
+            >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder={t("status")} />
               </SelectTrigger>
@@ -128,6 +149,29 @@ export function FieldSalesOrdersPageClient(props: Props) {
                 <SelectItem value="PENDING_APPROVAL">{t("statusPending")}</SelectItem>
                 <SelectItem value="APPROVED">{t("statusApproved")}</SelectItem>
                 <SelectItem value="REJECTED">{t("statusRejected")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">{t("deliveryFilter")}</label>
+            <Select
+              value={props.deliveryStatus}
+              onValueChange={(v) =>
+                v === "ALL"
+                  ? pushParam("deliveryStatus", undefined)
+                  : pushParams({ deliveryStatus: v, status: "APPROVED" })
+              }
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={t("deliveryFilter")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">{t("deliveryFilterAll")}</SelectItem>
+                <SelectItem value="OPEN">{t("deliveryFilterOpen")}</SelectItem>
+                <SelectItem value="PENDING">{t("delivery.status.PENDING")}</SelectItem>
+                <SelectItem value="PARTIAL">{t("delivery.status.PARTIAL")}</SelectItem>
+                <SelectItem value="DELIVERED">{t("delivery.status.DELIVERED")}</SelectItem>
+                <SelectItem value="CLOSED">{t("delivery.status.CLOSED")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -191,12 +235,13 @@ export function FieldSalesOrdersPageClient(props: Props) {
               <TableHead className="text-right">{t("colTotal")}</TableHead>
               <TableHead>{t("colCreated")}</TableHead>
               <TableHead>{t("colStatus")}</TableHead>
+              <TableHead>{t("colDelivery")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {props.orders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                   {t("empty")}
                 </TableCell>
               </TableRow>
@@ -240,6 +285,18 @@ export function FieldSalesOrdersPageClient(props: Props) {
                       <Badge variant="outline" className="ml-2 border-amber-500/40 text-amber-700">
                         {t("creditHoldBadge")}
                       </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {o.status === "APPROVED" ? (
+                      <Badge
+                        variant={DELIVERY_BADGE_VARIANT[o.deliveryStatus]}
+                        className={DELIVERY_BADGE_CLASS[o.deliveryStatus]}
+                      >
+                        {t(`delivery.status.${o.deliveryStatus}`)}
+                      </Badge>
+                    ) : (
+                      "—"
                     )}
                   </TableCell>
                 </TableRow>

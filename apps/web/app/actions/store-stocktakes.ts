@@ -39,12 +39,18 @@ type CauseValue = "SHRINKAGE" | "UNRECORDED_SALE";
 const CAUSE_VALUES: ReadonlySet<string> = new Set(["SHRINKAGE", "UNRECORDED_SALE"]);
 
 type SaveCountsLineInput = { lineId: string; countedQty: number | null; cause?: CauseValue | null; reason?: string | null };
+/**
+ * `countedAtMs` is the SPG sheet's DEVICE time that row's figure was last edited. It is only ever
+ * used together with the request's `clientSentAtMs`, on the `{ storeId }` branch — see
+ * `saveCountsAction`.
+ */
 type SaveCountsAddedLineInput = {
   itemId: string;
   variantSku: string;
   countedQty: number | null;
   cause?: CauseValue | null;
   reason?: string | null;
+  countedAtMs?: number;
 };
 
 /**
@@ -64,8 +70,23 @@ type SaveCountsItemKeyedLineInput = SaveCountsAddedLineInput;
  * exist client-side before the document does.
  */
 export type SaveCountsActionInput =
-  | { stocktakeId: string; storeId?: undefined; lines: SaveCountsLineInput[]; addedLines?: SaveCountsAddedLineInput[]; submit?: boolean }
-  | { storeId: string; stocktakeId?: undefined; lines: SaveCountsItemKeyedLineInput[]; addedLines?: SaveCountsAddedLineInput[]; submit?: boolean };
+  /* `clientSentAtMs?: undefined` is load-bearing: without it `isValidSaveCountsInput`'s predicate, which declares the field, filters this member out under the subtype rule. */
+  | {
+      stocktakeId: string;
+      storeId?: undefined;
+      lines: SaveCountsLineInput[];
+      addedLines?: SaveCountsAddedLineInput[];
+      submit?: boolean;
+      clientSentAtMs?: undefined;
+    }
+  | {
+      storeId: string;
+      stocktakeId?: undefined;
+      lines: SaveCountsItemKeyedLineInput[];
+      addedLines?: SaveCountsAddedLineInput[];
+      submit?: boolean;
+      clientSentAtMs?: number;
+    };
 
 /**
  * Every `StoreStocktakeErrorCode` maps onto its own result code, one to one — a `Record` over
@@ -119,6 +140,11 @@ function isValidCountsLine(l: unknown): l is SaveCountsLineInput {
   return true;
 }
 
+/* Absent, or a finite number — a device time that is present but anything else is a malformed request. */
+function isOptionalFiniteNumber(v: unknown): boolean {
+  return v === undefined || (typeof v === "number" && Number.isFinite(v));
+}
+
 function isValidAddedLine(l: unknown): l is SaveCountsAddedLineInput {
   if (typeof l !== "object" || l === null) return false;
   const ll = l as Record<string, unknown>;
@@ -127,6 +153,7 @@ function isValidAddedLine(l: unknown): l is SaveCountsAddedLineInput {
   if (ll.countedQty !== null && typeof ll.countedQty !== "number") return false;
   if (ll.cause !== undefined && ll.cause !== null && !CAUSE_VALUES.has(ll.cause as string)) return false;
   if (ll.reason !== undefined && ll.reason !== null && typeof ll.reason !== "string") return false;
+  if (!isOptionalFiniteNumber(ll.countedAtMs)) return false;
   return true;
 }
 
@@ -146,6 +173,7 @@ function isValidSaveCountsInput(input: unknown): input is {
   lines: unknown[];
   addedLines?: SaveCountsAddedLineInput[];
   submit?: boolean;
+  clientSentAtMs?: number;
 } {
   if (typeof input !== "object" || input === null) return false;
   const i = input as Record<string, unknown>;
@@ -157,6 +185,7 @@ function isValidSaveCountsInput(input: unknown): input is {
   if (hasStoreId && !i.lines.every(isValidAddedLine)) return false;
   if (i.addedLines !== undefined && (!Array.isArray(i.addedLines) || !i.addedLines.every(isValidAddedLine))) return false;
   if (i.submit !== undefined && typeof i.submit !== "boolean") return false;
+  if (!isOptionalFiniteNumber(i.clientSentAtMs)) return false;
   return true;
 }
 
@@ -252,8 +281,17 @@ export async function createAction(input: { storeId: string; countedAt: string }
  * it first) and rewrites them into the `lineId`-keyed shape `saveStocktakeCounts` requires, which
  * is untouched by this — a pair matching no line on the document falls back into `addedLines`
  * rather than being dropped, so a count the SPG typed never vanishes silently.
+ *
+ * The `{ storeId }` branch alone forwards the sheet's device times: each line's `countedAtMs`
+ * (carried through that resolution, into either shape) and, when the request carries
+ * `clientSentAtMs`, a `clientClock` pairing it with `receivedAtMs` — the server instant this
+ * action started, taken before any await so request latency stays out of it. The writer turns the
+ * pair into a skew correction and clamps the result. The `{ stocktakeId }` branch never forwards a
+ * `clientClock`, so any device time on that payload is ignored: an admin's correction is true as
+ * of the save.
  */
 export async function saveCountsAction(input: SaveCountsActionInput): Promise<StoreStocktakeActionResult> {
+  const receivedAtMs = Date.now();
   let stocktakeId = "";
   let storeIdForRevalidate = "";
   try {
@@ -266,8 +304,9 @@ export async function saveCountsAction(input: SaveCountsActionInput): Promise<St
     if (!isValidSaveCountsInput(input)) return { ok: false, code: "INVALID_REQUEST" };
 
     let submit = input.submit ?? false;
-    let lines: SaveCountsLineInput[];
+    let lines: Array<SaveCountsLineInput & { countedAtMs?: number }>;
     let addedLines: SaveCountsAddedLineInput[] | undefined;
+    let clientClock: { sentAtMs: number; receivedAtMs: number } | undefined;
 
     if (input.storeId) {
       if (!isSpg) return { ok: false, code: "FORBIDDEN" };
@@ -311,13 +350,14 @@ export async function saveCountsAction(input: SaveCountsActionInput): Promise<St
       });
       const lineIdByKey = new Map(docLines.map((l) => [`${l.itemId}::${l.variantSku}`, l.id]));
 
-      const resolvedLines: SaveCountsLineInput[] = [];
+      const resolvedLines: Array<SaveCountsLineInput & { countedAtMs?: number }> = [];
       const fallbackAddedLines: SaveCountsAddedLineInput[] = [];
       for (const line of itemKeyedLines) {
         const key = `${line.itemId}::${line.variantSku ?? ""}`;
         const lineId = lineIdByKey.get(key);
+        const countedAt = line.countedAtMs !== undefined ? { countedAtMs: line.countedAtMs } : {};
         if (lineId) {
-          resolvedLines.push({ lineId, countedQty: line.countedQty, cause: line.cause, reason: line.reason });
+          resolvedLines.push({ lineId, countedQty: line.countedQty, cause: line.cause, reason: line.reason, ...countedAt });
         } else {
           fallbackAddedLines.push({
             itemId: line.itemId,
@@ -325,11 +365,13 @@ export async function saveCountsAction(input: SaveCountsActionInput): Promise<St
             countedQty: line.countedQty,
             cause: line.cause,
             reason: line.reason,
+            ...countedAt,
           });
         }
       }
       lines = resolvedLines;
       addedLines = [...(input.addedLines ?? []), ...fallbackAddedLines];
+      if (input.clientSentAtMs !== undefined) clientClock = { sentAtMs: input.clientSentAtMs, receivedAtMs };
     } else {
       /*
        * `if (input.storeId)` above does NOT narrow this branch to the `{ stocktakeId }` member:
@@ -361,6 +403,7 @@ export async function saveCountsAction(input: SaveCountsActionInput): Promise<St
       addedLines,
       submit,
       userId: session.user.id,
+      ...(clientClock ? { clientClock } : {}),
     });
   } catch (e) {
     return toResult(e);

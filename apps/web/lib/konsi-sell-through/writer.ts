@@ -98,9 +98,10 @@ async function assertNoReturInFlight(
  *
  * Unlike `assertNoReturInFlight` there is deliberately no "approved after the count" arm. A
  * transfer approved after the count has its ledger rows inside this report's window, and stocktake
- * approval skipped exactly those rows when it re-applied post-count movements (its
- * `movedAt ≤ countFinishedAt` exclusion), so StoreStock and the window both carry the move once and
- * the report derives it as in/out with no gap. Copying the retur's approved-later arm across would
+ * approval either skipped those rows (a line counted after `movedAt`) or re-applied them onto a
+ * line counted before the goods moved — judged per line against that line's own count moment —
+ * so StoreStock and the window both carry the move once and the report derives it as in/out with
+ * no gap. Copying the retur's approved-later arm across would
  * refuse a correct report.
  */
 async function assertNoTransferInFlight(

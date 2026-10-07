@@ -1016,6 +1016,11 @@
     "variants": "Varian",
     "bom": "BOM",
     "confirmDeleteItem": "Yakin ingin menghapus item ini?",
+    "deleteImpactImages": "{count} foto akan dihapus",
+    "deleteImpactPriceChanges": "{count} riwayat perubahan harga akan dihapus",
+    "deleteImpactSalesHistory": "{count} baris riwayat penjualan akan menjadi belum terpetakan",
+    "deleteImpactHint": "Nonaktifkan item jika ingin menyimpannya.",
+    "deleteImpactLoadFailed": "Gagal memeriksa data yang ikut terhapus bersama item ini. Tutup lalu coba lagi.",
     "noVariants": "Item ini tidak memiliki varian.",
     "noBOM": "Item ini tidak memiliki BOM.",
     "variantLabel": "Varian {index}:",
@@ -3300,6 +3305,13 @@
     "creditOverLimitDetail": "Eksposur saat ini {exposure}, limit {limit}. Setujui dengan alasan untuk melanjutkan.",
     "creditOverrideReasonLabel": "Alasan override limit kredit",
     "creditWasOverLimitNote": "Melebihi limit saat dibuat — sudah kembali normal.",
+    "approveOverCommittedTitle": "{count, plural, other {# baris}} punya stok yang dijanjikan melebihi stok fisik",
+    "approveOverCommittedLine": "stok {onHand}, {reserved} dipesan",
+    "approveOverCommittedHint": "Order tetap bisa disetujui. Pengiriman dibatasi stok fisik yang ada.",
+    "colDelivery": "Pengiriman",
+    "deliveryFilter": "Pengiriman",
+    "deliveryFilterAll": "Semua pengiriman",
+    "deliveryFilterOpen": "Menunggu pengiriman",
     "creditLimitExceeded": "Toko melebihi limit kredit (eksposur {exposure}, limit {limit}). Berikan alasan untuk override.",
     "delivery": {
       "title": "Pengiriman",
@@ -3795,13 +3807,13 @@
     "approve": {
       "button": "Setujui",
       "confirmTitle": "Konfirmasi Persetujuan Perhitungan",
-      "confirmDescription": "Menyetujui akan menulis stok toko sesuai hasil hitung pada dokumen ini, ditambah pergerakan stok toko yang tercatat setelah hasil hitung disimpan — penjualan atau pengiriman selama perhitungan ini menunggu tetap dihitung, tidak terhapus. Retur yang diajukan dan transfer toko yang dipindahkan sebelum perhitungan tidak diterapkan ulang, karena perhitungan sudah mencakupnya. Baris yang dibiarkan kosong tidak akan disentuh — stok yang ada tetap seperti sekarang.",
+      "confirmDescription": "Menyetujui akan menulis stok toko sesuai hasil hitung pada dokumen ini, ditambah pergerakan stok toko yang tercatat setelah tiap baris dihitung — penjualan atau pengiriman selama perhitungan ini menunggu tetap dihitung, tidak terhapus. Retur yang diajukan dan transfer toko yang dipindahkan sebelum suatu baris dihitung tidak diterapkan ulang pada baris itu, karena perhitungan sudah mencakupnya. Baris yang dibiarkan kosong tidak akan disentuh — stok yang ada tetap seperti sekarang.",
       "confirmAction": "Setujui",
       "submitting": "Menyetujui…",
       "success": "Perhitungan disetujui, stok toko telah diperbarui.",
       "driftTitle": "Stok berubah sejak perhitungan ini dibuka",
       "driftLine": "{product}{variant}: seharusnya {expected}, sekarang {live}",
-      "driftNote": "Ini hanya informasi — selisih ini sendiri tidak menghalangi persetujuan. Yang ditulis adalah hasil hitung ditambah pergerakan yang terjadi setelah hasil hitung disimpan, kecuali retur yang diajukan dan transfer toko yang dipindahkan sebelum perhitungan, karena perhitungan sudah mencakupnya. Transfer toko yang masih menunggu persetujuan dan memindahkan barang yang dihitung sebelum perhitungan tetap menghalangi persetujuan sampai transfer tersebut disetujui atau dibatalkan."
+      "driftNote": "Ini hanya informasi — selisih ini sendiri tidak menghalangi persetujuan. Yang ditulis adalah hasil hitung tiap baris ditambah pergerakan yang terjadi setelah baris itu dihitung, kecuali retur yang diajukan dan transfer toko yang dipindahkan sebelum baris itu dihitung, karena perhitungan sudah mencakupnya. Transfer toko yang masih menunggu persetujuan dan memindahkan barang yang dihitung sebelum perhitungan tetap menghalangi persetujuan sampai transfer tersebut disetujui atau dibatalkan."
     },
     "cancel": {
       "button": "Batalkan Perhitungan",

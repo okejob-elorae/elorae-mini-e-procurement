@@ -227,6 +227,18 @@ describe("store stocktake actions (unit — writers mocked)", () => {
         expect(mockSave).not.toHaveBeenCalled();
       });
 
+      /* An admin's correction is true as of the save: device times on this path never reach the writer as a clock. */
+      it("never forwards a clientClock, even when the payload carries device times", async () => {
+        await saveCountsAction({
+          stocktakeId: "st1",
+          lines: [{ lineId: "l1", countedQty: 5 }],
+          addedLines: [{ itemId: "item-3", variantSku: "", countedQty: 1, countedAtMs: 3_000 }],
+          clientSentAtMs: 5_000,
+        } as never);
+        expect(mockSave).toHaveBeenCalledTimes(1);
+        expect(mockSave.mock.calls[0][0]).not.toHaveProperty("clientClock");
+      });
+
       it("never touches the SPG active-visit gate on the admin path", async () => {
         await saveCountsAction({ stocktakeId: "st1", lines: [] });
         expect(mockActiveVisit).not.toHaveBeenCalled();
@@ -427,6 +439,66 @@ describe("store stocktake actions (unit — writers mocked)", () => {
           submit: true,
           userId: "user-1",
         });
+      });
+
+      /**
+       * The sheet's device times reach the writer on this branch only: each line's countedAtMs
+       * through the item-key resolution (both the resolved and the fallback shape), and a
+       * clientClock pairing the request's clientSentAtMs with the server's own receive instant.
+       */
+      it("forwards countedAtMs per line and a clientClock built from clientSentAtMs and the server's receive time", async () => {
+        mockFindStocktakeFirst.mockResolvedValue({ id: "existing-st" });
+        mockFindStocktakeLineMany.mockResolvedValue([{ id: "line-1", itemId: "item-1", variantSku: "" }]);
+        const before = Date.now();
+        const res = await saveCountsAction({
+          storeId: "s1",
+          lines: [
+            { itemId: "item-1", variantSku: "", countedQty: 5, countedAtMs: 1_000 },
+            { itemId: "item-2", variantSku: "red", countedQty: 3, countedAtMs: 2_000 },
+          ],
+          addedLines: [{ itemId: "item-3", variantSku: "", countedQty: 1, countedAtMs: 3_000 }],
+          clientSentAtMs: 5_000,
+        });
+        const after = Date.now();
+        expect(res).toEqual({ ok: true, id: "existing-st" });
+        expect(mockSave).toHaveBeenCalledWith({
+          stocktakeId: "existing-st",
+          lines: [{ lineId: "line-1", countedQty: 5, cause: undefined, reason: undefined, countedAtMs: 1_000 }],
+          addedLines: [
+            { itemId: "item-3", variantSku: "", countedQty: 1, countedAtMs: 3_000 },
+            { itemId: "item-2", variantSku: "red", countedQty: 3, cause: undefined, reason: undefined, countedAtMs: 2_000 },
+          ],
+          submit: true,
+          userId: "user-1",
+          clientClock: { sentAtMs: 5_000, receivedAtMs: expect.any(Number) },
+        });
+        const { receivedAtMs } = mockSave.mock.calls[0][0].clientClock;
+        expect(receivedAtMs).toBeGreaterThanOrEqual(before);
+        expect(receivedAtMs).toBeLessThanOrEqual(after);
+      });
+
+      it("sends no clientClock when the request carries no clientSentAtMs", async () => {
+        mockFindStocktakeFirst.mockResolvedValue({ id: "existing-st" });
+        mockFindStocktakeLineMany.mockResolvedValue([{ id: "line-1", itemId: "item-1", variantSku: "" }]);
+        await saveCountsAction({ storeId: "s1", lines: [{ itemId: "item-1", variantSku: "", countedQty: 5, countedAtMs: 1_000 }] });
+        expect(mockSave).toHaveBeenCalledTimes(1);
+        expect(mockSave.mock.calls[0][0]).not.toHaveProperty("clientClock");
+      });
+
+      it("returns INVALID_REQUEST for a countedAtMs that is not a finite number", async () => {
+        const res = await saveCountsAction({
+          storeId: "s1",
+          lines: [{ itemId: "item-1", variantSku: "", countedQty: 5, countedAtMs: "1000" }],
+          clientSentAtMs: 5_000,
+        } as never);
+        expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
+        expect(mockSave).not.toHaveBeenCalled();
+      });
+
+      it("returns INVALID_REQUEST for a clientSentAtMs that is not a finite number", async () => {
+        const res = await saveCountsAction({ storeId: "s1", lines: [], clientSentAtMs: Number.NaN });
+        expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
+        expect(mockSave).not.toHaveBeenCalled();
       });
     });
 

@@ -1152,6 +1152,7 @@ model StoreStocktakeLine {
   qtyAtApproval   Decimal?             @db.Decimal(10, 2)
   appliedQty      Decimal?             @db.Decimal(10, 2)
   isAdded         Boolean              @default(false)
+  countFinishedAt DateTime?
   stocktake       StoreStocktake       @relation(fields: [stocktakeId], references: [id], onDelete: Cascade)
   item            Item                 @relation(fields: [itemId], references: [id])
 

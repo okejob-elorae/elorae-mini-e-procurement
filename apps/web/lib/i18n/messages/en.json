@@ -1016,6 +1016,11 @@
     "variants": "Variants",
     "bom": "BOM",
     "confirmDeleteItem": "Are you sure you want to delete this item?",
+    "deleteImpactImages": "{count, plural, one {# photo} other {# photos}} will be deleted",
+    "deleteImpactPriceChanges": "{count, plural, one {# price change} other {# price changes}} in its history will be deleted",
+    "deleteImpactSalesHistory": "{count, plural, one {# imported sales row} other {# imported sales rows}} will become unmapped",
+    "deleteImpactHint": "Deactivate the item instead to keep them.",
+    "deleteImpactLoadFailed": "Couldn't check what deleting this item would remove. Close this and try again.",
     "noVariants": "This item has no variants.",
     "noBOM": "This item has no BOM.",
     "variantLabel": "Variant {index}:",
@@ -3300,6 +3305,13 @@
     "creditOverLimitDetail": "Current exposure {exposure}, limit {limit}. Approve with a reason to proceed.",
     "creditOverrideReasonLabel": "Credit limit override reason",
     "creditWasOverLimitNote": "Was over limit when raised — since settled.",
+    "approveOverCommittedTitle": "{count, plural, one {# line has} other {# lines have}} more stock promised than on hand",
+    "approveOverCommittedLine": "{onHand} on hand, {reserved} reserved",
+    "approveOverCommittedHint": "You can still approve. Deliveries are limited to the stock on hand.",
+    "colDelivery": "Delivery",
+    "deliveryFilter": "Delivery",
+    "deliveryFilterAll": "All deliveries",
+    "deliveryFilterOpen": "Awaiting delivery",
     "creditLimitExceeded": "Store is over its credit limit (exposure {exposure}, limit {limit}). Provide a reason to override.",
     "delivery": {
       "title": "Deliveries",
@@ -3795,13 +3807,13 @@
     "approve": {
       "button": "Approve",
       "confirmTitle": "Confirm Stocktake Approval",
-      "confirmDescription": "Approving writes the store's stock to the counted figures on this document, plus any stock movement recorded at the store after the count was saved — a sale or delivery while this count waited is kept, not erased. Returns raised and store transfers moved before the count are not re-applied, because the count already saw them. Any line left blank is not touched — its existing stock stands as-is.",
+      "confirmDescription": "Approving writes the store's stock to the counted figures on this document, plus any stock movement recorded at the store after each line was counted — a sale or delivery while this count waited is kept, not erased. Returns raised and store transfers moved before a line was counted are not re-applied to it, because the count already saw them. Any line left blank is not touched — its existing stock stands as-is.",
       "confirmAction": "Approve",
       "submitting": "Approving…",
       "success": "Stocktake approved, store stock updated.",
       "driftTitle": "Stock has moved since this count was opened",
       "driftLine": "{product}{variant}: snapshot {expected}, now {live}",
-      "driftNote": "This is informational only — the drift itself does not block approval. It writes the counted figure plus whatever moved after the count was saved, except returns raised and store transfers moved before the count, which the count already saw. A pending store transfer that moved counted goods before the count does block approval until it is approved or cancelled."
+      "driftNote": "This is informational only — the drift itself does not block approval. It writes each counted figure plus whatever moved after that line was counted, except returns raised and store transfers moved before it was counted, which the count already saw. A pending store transfer that moved counted goods before the count does block approval until it is approved or cancelled."
     },
     "cancel": {
       "button": "Cancel Stocktake",

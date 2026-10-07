@@ -17,6 +17,7 @@ describe("serializeListItem", () => {
       store: { name: "Toko A" },
       salesman: { name: "Budi" },
       creditHoldAtCreate: false,
+      deliveryStatus: "PENDING" as const,
     };
     expect(serializeListItem(row)).toEqual({
       id: "o1",
@@ -29,7 +30,18 @@ describe("serializeListItem", () => {
       total: 210000,
       createdAt: new Date("2026-07-04T00:00:00Z"),
       creditHoldAtCreate: false,
+      deliveryStatus: "PENDING",
     });
+  });
+  it("passes deliveryStatus through", () => {
+    const row = {
+      id: "o5", orderNo: "PUTUS/2026/0005", orderType: "PUTUS" as const, origin: "FIELD" as const, status: "APPROVED" as const,
+      total: new Prisma.Decimal("0"), createdAt: new Date("2026-07-04T00:00:00Z"),
+      store: { name: "Toko E" }, salesman: { name: "Budi" },
+      creditHoldAtCreate: false,
+      deliveryStatus: "PARTIAL" as const,
+    };
+    expect(serializeListItem(row).deliveryStatus).toBe("PARTIAL");
   });
   it("falls back when salesman name is null", () => {
     const row = {
@@ -37,6 +49,7 @@ describe("serializeListItem", () => {
       total: new Prisma.Decimal("0"), createdAt: new Date("2026-07-04T00:00:00Z"),
       store: { name: "Toko B" }, salesman: { name: null },
       creditHoldAtCreate: false,
+      deliveryStatus: "PENDING" as const,
     };
     expect(serializeListItem(row).salesmanName).toBe("—");
   });
@@ -46,6 +59,7 @@ describe("serializeListItem", () => {
       total: new Prisma.Decimal("0"), createdAt: new Date("2026-07-04T00:00:00Z"),
       store: { name: "Toko C" }, salesman: { name: "Budi" },
       creditHoldAtCreate: false,
+      deliveryStatus: "PENDING" as const,
     };
     expect(serializeListItem(row).orderType).toBe("KONSI");
   });
@@ -55,6 +69,7 @@ describe("serializeListItem", () => {
       total: new Prisma.Decimal("0"), createdAt: new Date("2026-07-04T00:00:00Z"),
       store: { name: "Toko D" }, salesman: { name: "Budi" },
       creditHoldAtCreate: false,
+      deliveryStatus: "PENDING" as const,
     };
     expect(serializeListItem(row).origin).toBe("ADMIN");
   });
@@ -520,5 +535,186 @@ d("putus detail with promo (test bed only)", () => {
     const plainDetail = await getFieldSalesOrderById(plainOrderId);
     expect(plainDetail!.lines[0].requestedUnitPrice).toBeNull();
     expect(plainDetail!.lines[0].appealReason).toBeNull();
+  });
+});
+
+d("getFieldSalesOrderById stock row (test bed only)", () => {
+  const sku = `TEST-FSQ-ROW-${Math.random().toString(36).slice(2, 10)}`;
+  let uomId = "";
+  let itemId = "";
+  let storeId = "";
+  let salesmanId = "";
+  let visitId = "";
+  let emptyRowId = "";
+  let nullRowId = "";
+
+  beforeEach(async () => {
+    uomId = "";
+    itemId = "";
+    storeId = "";
+    salesmanId = "";
+    visitId = "";
+    emptyRowId = "";
+    nullRowId = "";
+    const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
+    uomId = uom.id;
+    const item = await prisma.item.create({
+      data: { sku, nameId: "T", nameEn: "T", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 100 },
+    });
+    itemId = item.id;
+    const emptyRow = await prisma.inventoryValue.create({ data: { itemId, variantSku: "", qtyOnHand: 3, reservedQty: 0, avgCost: 10, totalValue: 30 } });
+    emptyRowId = emptyRow.id;
+    const nullRow = await prisma.inventoryValue.create({ data: { itemId, variantSku: null, qtyOnHand: 10, reservedQty: 0, avgCost: 20, totalValue: 200 } });
+    nullRowId = nullRow.id;
+    const store = await prisma.store.create({ data: { code: `S-${sku}`, name: "T", address: "T", termsType: "PUTUS", isActive: true } });
+    storeId = store.id;
+    const user = await prisma.user.findFirst({ where: { email: "salesman@elorae.com" } });
+    salesmanId = user!.id;
+    const visit = await prisma.storeVisit.create({ data: { storeId, userId: salesmanId, checkinLat: 0, checkinLng: 0 } });
+    visitId = visit.id;
+  });
+
+  afterEach(async () => {
+    await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.storeVisit.deleteMany({ where: { id: seededId(visitId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+  });
+
+  const seedOrder = (orderType: "PUTUS" | "KONSI", status: "PENDING_APPROVAL" | "APPROVED", qty: number) =>
+    prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `${orderType}/TEST/${Math.random().toString(36).slice(2, 10)}`,
+        storeId,
+        salesmanId,
+        visitId,
+        status,
+        orderType,
+        subtotal: 0,
+        total: 0,
+        lines: { create: [{ itemId, variantSku: "", productName: "T", qty, unitPrice: 0, lineTotal: 0 }] },
+      },
+      include: { lines: true },
+    });
+
+  it("reads the empty-string row an unreserved konsi line would reserve against, not the sum of both rows", async () => {
+    const order = await seedOrder("KONSI", "PENDING_APPROVAL", 5);
+    const detail = await getFieldSalesOrderById(order.id);
+    expect(detail!.lines[0].onHand).toBe(3);
+    expect(detail!.lines[0].available).toBe(3);
+  });
+
+  it("reads the row the reservation is pinned to", async () => {
+    const order = await seedOrder("PUTUS", "APPROVED", 4);
+    await prisma.stockReservation.create({
+      data: {
+        source: "FIELD_SALES",
+        fieldSalesLineId: order.lines[0].id,
+        itemId,
+        variantSku: "",
+        qty: 4,
+        state: "RESERVED",
+        inventoryValueId: nullRowId,
+      },
+    });
+    await prisma.inventoryValue.update({ where: { id: nullRowId }, data: { reservedQty: { increment: 4 } } });
+    const detail = await getFieldSalesOrderById(order.id);
+    expect(detail!.lines[0].onHand).toBe(10);
+    expect(detail!.lines[0].available).toBe(6);
+  });
+
+  it("falls back to the empty-string row when the reservation pins no row", async () => {
+    const order = await seedOrder("PUTUS", "APPROVED", 2);
+    await prisma.stockReservation.create({
+      data: {
+        source: "FIELD_SALES",
+        fieldSalesLineId: order.lines[0].id,
+        itemId,
+        variantSku: "",
+        qty: 2,
+        state: "RESERVED",
+        inventoryValueId: null,
+      },
+    });
+    const detail = await getFieldSalesOrderById(order.id);
+    expect(emptyRowId).not.toBe("");
+    expect(detail!.lines[0].onHand).toBe(3);
+    expect(detail!.lines[0].available).toBe(3);
+  });
+});
+
+d("listFieldSalesOrders delivery filter (test bed only)", () => {
+  const sku = `TEST-FSQ-DLVF-${Math.random().toString(36).slice(2, 10)}`;
+  let uomId = "";
+  let itemId = "";
+  let storeId = "";
+  let salesmanId = "";
+  let visitId = "";
+
+  beforeEach(async () => {
+    uomId = "";
+    itemId = "";
+    storeId = "";
+    salesmanId = "";
+    visitId = "";
+    const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
+    uomId = uom.id;
+    const item = await prisma.item.create({
+      data: { sku, nameId: "T", nameEn: "T", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 100 },
+    });
+    itemId = item.id;
+    const store = await prisma.store.create({ data: { code: `S-${sku}`, name: "T", address: "T", termsType: "PUTUS", isActive: true } });
+    storeId = store.id;
+    const user = await prisma.user.findFirst({ where: { email: "salesman@elorae.com" } });
+    salesmanId = user!.id;
+    const visit = await prisma.storeVisit.create({ data: { storeId, userId: salesmanId, checkinLat: 0, checkinLng: 0 } });
+    visitId = visit.id;
+  });
+
+  afterEach(async () => {
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.storeVisit.deleteMany({ where: { id: seededId(visitId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+  });
+
+  const seedOrder = (status: "PENDING_APPROVAL" | "APPROVED", deliveryStatus: "PENDING" | "PARTIAL" | "DELIVERED" | "CLOSED") =>
+    prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `PUTUS/TEST/${Math.random().toString(36).slice(2, 10)}`,
+        storeId,
+        salesmanId,
+        visitId,
+        status,
+        orderType: "PUTUS",
+        deliveryStatus,
+        subtotal: 0,
+        total: 0,
+        lines: { create: [{ itemId, variantSku: "", productName: "T", qty: 1, unitPrice: 0, lineTotal: 0 }] },
+      },
+    });
+
+  it("OPEN returns only awaiting-delivery approved orders; a specific state returns only that one; unapproved orders never match", async () => {
+    const partial = await seedOrder("APPROVED", "PARTIAL");
+    const delivered = await seedOrder("APPROVED", "DELIVERED");
+    const pendingApproval = await seedOrder("PENDING_APPROVAL", "PENDING");
+    const paging = { page: 1, pageSize: 50 };
+
+    const open = await listFieldSalesOrders({ storeId, deliveryStatus: "OPEN" }, paging);
+    expect(open.orders.map((o) => o.id)).toEqual([partial.id]);
+
+    const done = await listFieldSalesOrders({ storeId, deliveryStatus: "DELIVERED" }, paging);
+    expect(done.orders.map((o) => o.id)).toEqual([delivered.id]);
+
+    for (const deliveryStatus of ["OPEN", "PENDING", "PARTIAL", "DELIVERED", "CLOSED"] as const) {
+      const res = await listFieldSalesOrders({ storeId, deliveryStatus }, paging);
+      expect(res.orders.map((o) => o.id)).not.toContain(pendingApproval.id);
+    }
   });
 });

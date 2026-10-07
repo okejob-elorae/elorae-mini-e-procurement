@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { createFieldSalesOrder, approveFieldSalesOrder, rejectFieldSalesOrder } from "./writer";
-import { NoActiveVisitError, MinQtyViolationError, InsufficientStockError, CreditLimitExceededError } from "./errors";
+import { NoActiveVisitError, MinQtyViolationError, InsufficientStockError, CreditLimitExceededError, InvalidFinalPriceError } from "./errors";
 
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
 const { mockSendNotification } = vi.hoisted(() => ({ mockSendNotification: vi.fn() }));
@@ -540,7 +540,7 @@ d("field-sales lifecycle writers (test bed only)", () => {
     expect(order!.lines[0].appealReason).toBeNull();
   });
 
-  it("approve applies finalPrices only to the appealed line, recomputes the total, and ignores a stray finalPrice for a non-appealed line", async () => {
+  it("approve applies finalPrices to the appealed line only and recomputes the total", async () => {
     const sku2 = `${sku}-APPEAL`;
     const item2 = await prisma.item.create({ data: { sku: sku2, nameId: "T2", nameEn: "T2", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 40000 } });
     itemId2 = item2.id;
@@ -563,10 +563,7 @@ d("field-sales lifecycle writers (test bed only)", () => {
     await approveFieldSalesOrder({
       orderId,
       approvedById: salesmanId,
-      finalPrices: [
-        { lineId: appealedLineId, finalUnitPrice: 30000 },
-        { lineId: plainLineId, finalUnitPrice: 99999 }, // stray — plainLine was never appealed, must be ignored
-      ],
+      finalPrices: [{ lineId: appealedLineId, finalUnitPrice: 30000 }],
     });
 
     const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId }, include: { lines: true } });
@@ -582,6 +579,60 @@ d("field-sales lifecycle writers (test bed only)", () => {
     /* Stock consumption and SalesHistory happen at delivery now, not at approve. */
     const hist = await prisma.salesHistory.findMany({ where: { orderId: orderNo } });
     expect(hist).toHaveLength(0);
+  });
+
+  it("approve refuses a stray finalPrice for a non-appealed line and leaves the order untouched", async () => {
+    const sku2 = `${sku}-APPEAL`;
+    const item2 = await prisma.item.create({ data: { sku: sku2, nameId: "T2", nameEn: "T2", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 40000 } });
+    itemId2 = item2.id;
+    await prisma.inventoryValue.create({ data: { itemId: itemId2, variantSku: "", qtyOnHand: 100, reservedQty: 0, avgCost: 1000, totalValue: 100000 } });
+
+    const { orderId } = await createFieldSalesOrder({
+      storeId,
+      salesmanId,
+      visitId,
+      lines: [
+        { ...line(), requestedUnitPrice: 30000, appealReason: "Nego" }, // appealed: qty 6, store price 35000
+        { itemId: itemId2, variantSku: "", productName: "T2", qty: 6, unitPrice: 40000 }, // not appealed
+      ],
+    });
+    const created = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId }, include: { lines: true } });
+    const appealedLineId = created!.lines.find((l) => l.itemId === itemId)!.id;
+    const plainLineId = created!.lines.find((l) => l.itemId === itemId2)!.id;
+    expect(Number(created!.subtotal)).toBe(6 * 35000 + 6 * 40000); // store price honored at create, not the ask
+
+    const refused = approveFieldSalesOrder({
+      orderId,
+      approvedById: salesmanId,
+      finalPrices: [
+        { lineId: appealedLineId, finalUnitPrice: 30000 },
+        { lineId: plainLineId, finalUnitPrice: 99999 },
+      ],
+    });
+    await expect(refused).rejects.toBeInstanceOf(InvalidFinalPriceError);
+    await expect(refused).rejects.toMatchObject({ code: "NOT_APPEALED", lineId: plainLineId });
+
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId }, include: { lines: true } });
+    expect(order!.status).toBe("PENDING_APPROVAL");
+    expect(Number(order!.lines.find((l) => l.id === appealedLineId)!.unitPrice)).toBe(35000);
+    expect(Number(order!.lines.find((l) => l.id === plainLineId)!.unitPrice)).toBe(40000);
+  });
+
+  it("approve of an appealed order with finalPrices omitted is refused with MISSING_FINAL_PRICE", async () => {
+    const { orderId } = await createFieldSalesOrder({
+      storeId,
+      salesmanId,
+      visitId,
+      lines: [{ ...line(), requestedUnitPrice: 30000, appealReason: "Nego" }],
+    });
+    const appealedLine = await prisma.fieldSalesOrderLine.findFirstOrThrow({ where: { orderId }, select: { id: true } });
+
+    const refused = approveFieldSalesOrder({ orderId, approvedById: salesmanId });
+    await expect(refused).rejects.toBeInstanceOf(InvalidFinalPriceError);
+    await expect(refused).rejects.toMatchObject({ code: "MISSING_FINAL_PRICE", lineId: appealedLine.id });
+
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId } });
+    expect(order!.status).toBe("PENDING_APPROVAL");
   });
 });
 
