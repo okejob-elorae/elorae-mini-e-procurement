@@ -93,8 +93,10 @@ d("konsi sell-through journals (test bed only)", () => {
         { billedQty: 4, shrinkageQty: 0, unitCost: 10000 },
         { billedQty: 1.5, shrinkageQty: 2, unitCost: 333.34 },
       ]),
-    ).toEqual({ cogs: 40500.01, shrinkage: 666.68 });
+    ).toEqual({ cogs: 40500.01, shrinkage: 666.68, surplus: 0 });
     /* 1.5 × 333.34 = 500.01 → cogs 40500.01; 2 × 333.34 = 666.68 (values chosen off the half-cent boundary) */
+    /* A line with no `surplusQty` (every report from before the surplus journal) adds 0; 3 × 333.34 = 1000.02. */
+    expect(sellThroughCostTotals([{ billedQty: 0, shrinkageQty: 0, surplusQty: 3, unitCost: 333.34 }]).surplus).toBe(1000.02);
   });
 
   it("posts revenue Dr AR / Cr SALES_REVENUE for the total and COGS Dr COGS / Cr INVENTORY at unit cost, dated on the invoice date", async () => {
