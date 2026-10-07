@@ -111,7 +111,7 @@ Open [http://localhost:3000](http://localhost:3000). Unauthenticated users are s
 | `seed:production-login` | Seed a production-style login user (see `docs/local-db-testbed.md`) |
 | `test:connection` | DB connection test helper |
 
-Testing: `apps/web/package.json` has `test: vitest run` — run via `pnpm --filter @elorae/web test`.
+Testing: run the specs you changed with `pnpm -F @elorae/web exec vitest run <pattern> [<pattern>...]`. The specs run against the shared `:3308` test bed, so locally stay scoped; the full suite runs in CI (the `db-specs` job in `.github/workflows/ci.yml`). Do not use `pnpm -F @elorae/web test -- <pattern>`: vitest drops what follows the `--` and runs the whole suite.
 
 ## Default login (after `pnpm --filter @elorae/db seed`)
 
