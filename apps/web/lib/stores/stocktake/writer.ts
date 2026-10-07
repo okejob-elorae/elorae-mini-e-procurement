@@ -5,6 +5,7 @@ import { generateDocNumber } from "@/lib/docNumber";
 import { buildStocktakeLines, previousApprovedCountedAt } from "./queries";
 import { StoreStocktakeError } from "./errors";
 import { resolveLineCountMoment } from "./count-moment";
+import { bookedCountCents, stockMatchKey, sumMovementsSinceCountCents, type CountMomentLine } from "./booked";
 
 type CauseValue = "SHRINKAGE" | "UNRECORDED_SALE";
 
@@ -86,22 +87,44 @@ export async function createStoreStocktake(input: {
 /**
  * Writes counts onto an already-open document. Never touches `StoreStock` — a save is a claim,
  * not yet the truth; only `approveStoreStocktake` writes the ledger. `varianceQty` is
- * recomputed here too (same `counted − expected` formula `approveStoreStocktake` uses) purely so
- * the detail page can show a live variance before approval — approval does not trust this value
- * and recomputes it independently from whatever is on the line at that moment.
+ * recomputed here too (`counted − expected`) purely so the detail page can show a variance before
+ * approval — approval does not trust this value: it gates on, and stores, the delta it actually
+ * books (`bookedCountCents`).
+ *
+ * Every save that stamps the count — one that changes any line's figure or adds a line — also
+ * re-baselines `expectedQty` on EVERY line of the document, not only the lines it was sent, and
+ * recomputes each `varianceQty` from the line's own `countedQty`. A line's new `expectedQty` is
+ * the store's live `StoreStock` qty for its `itemId::variantSku`, read inside this transaction,
+ * MINUS every store movement after that line's count moment (`sumMovementsSinceCountCents`, the
+ * same rows and the same exclusions approval re-applies) — so it is what the shelf should have
+ * held at the moment it was counted. Approval sets `countedQty` plus those same movements, so the
+ * ledger row it writes is `countedQty − expectedQty`: the variance the counter and the admin saw
+ * here. A movement after this save cancels out of that (it is in live stock and in the re-applied
+ * movements alike), except a row the count had already seen that only lands later — a retur
+ * raised before the count and settled after this save, say — which is why approval gates and
+ * stores the delta it actually books rather than this figure. The opening snapshot alone would go
+ * stale: a sale or a delivery between the document opening and the count would read as shrinkage
+ * or surplus, and demand a cause for a shortfall that never happened. A line
+ * whose moment is this save's instant is simply its live qty; an uncounted line, having no moment,
+ * takes its live qty too, so it shows what to count against; a key with no `StoreStock` row at
+ * all re-baselines to `0`. A line this save was not sent keeps its cause and reason as they were,
+ * even where a new baseline makes one moot: approval only demands them, never refuses one that is
+ * present. A line it was sent takes the cause and reason it was sent, null included.
+ *
+ * A save that changes only causes or reasons re-baselines nothing: it stamps nothing (below), and
+ * moving the baseline under an admin who is only filling in why a line is short would change the
+ * variance they are explaining.
  *
  * `addedLines` is the add-item picker's path: a line for an item that was not on the document's
- * own snapshot. `expectedQty` is seeded from the store's LIVE `StoreStock` row for that
- * `itemId::variantSku`, looked up inside this same transaction — falling back to `0` only when no
- * such row exists at all. The snapshot and "live" can genuinely diverge (a konsi transfer landing
- * between the document opening and this save), and the SPG's own screen renders from live stock,
- * so a pair that lands here as "added" may still have real expected stock; seeding `0` in that
- * case would misreport a shortfall as a surplus. `productName` is resolved from `Item` the same
- * way `buildStocktakeLines` fills it. Its variance is `countedQty − expectedQty`, computed with
- * the now-correct `expectedQty`, so `approveStoreStocktake`'s `SHORTFALL_NEEDS_CAUSE` check can
- * fire on an added line exactly as it would have had the line existed on the original snapshot.
- * The reason check is NOT enforced here at save time — see the comment at the added-lines block
- * below for why — only the structural guards (`ITEM_NOT_FOUND`, `DUPLICATE_LINE`) are.
+ * own snapshot. Its `expectedQty` comes from the same live read as every other line — never a
+ * hardcoded `0`, which is only the fallback for a key the store has genuinely never held stock
+ * for: the SPG's own screen renders from live stock, so a pair that lands here as "added" may
+ * still have real expected stock, and seeding `0` would misreport a shortfall as a surplus.
+ * `productName` is resolved from `Item` the same way `buildStocktakeLines` fills it.
+ * `approveStoreStocktake`'s `SHORTFALL_NEEDS_CAUSE` check then fires on an added line exactly as
+ * it would have had the line existed on the original snapshot. The reason check is NOT enforced
+ * here at save time — see the comment at the added-lines block below for why — only the
+ * structural guards (`ITEM_NOT_FOUND`, `DUPLICATE_LINE`) are.
  *
  * Each line carries its own `countFinishedAt`, the moment its counted figure is true:
  * `approveStoreStocktake` re-applies every store movement recorded after THAT LINE's moment. It is
@@ -145,7 +168,7 @@ export async function saveStocktakeCounts(input: {
         id: true,
         storeId: true,
         status: true,
-        lines: { select: { id: true, itemId: true, variantSku: true, expectedQty: true, countedQty: true } },
+        lines: { select: { id: true, itemId: true, variantSku: true, expectedQty: true, countedQty: true, countFinishedAt: true } },
       },
     });
     if (!st) throw new StoreStocktakeError("NOT_FOUND");
@@ -155,8 +178,8 @@ export async function saveStocktakeCounts(input: {
      * A device-reported count moment is never allowed before the store's previous approval: that
      * approval SET the balance, so a moment before it would have this count re-apply movements the
      * previous count already absorbed (approval also skips earlier counts' own ledger rows — see
-     * `approveStoreStocktake`). Anything the device sent that cannot be used falls back to the
-     * server instant, which is exactly what a line got before device times were sent at all.
+     * `sumMovementsSinceCountCents`). Anything the device sent that cannot be used falls back to
+     * the server instant, which is exactly what a line got before device times were sent at all.
      */
     const clientClock = input.clientClock;
     let lowerBound: Date | null = null;
@@ -179,8 +202,7 @@ export async function saveStocktakeCounts(input: {
       return moment ?? now;
     };
 
-    const expectedByLineId = new Map(st.lines.map((l) => [l.id, l.expectedQty.toNumber()]));
-    const storedCountByLineId = new Map(st.lines.map((l) => [l.id, l.countedQty === null ? null : l.countedQty.toNumber()]));
+    const storedLineById = new Map(st.lines.map((l) => [l.id, l]));
 
     /*
      * Every line id must already belong to this document, and every countedQty must be a
@@ -189,7 +211,7 @@ export async function saveStocktakeCounts(input: {
      * that would misdescribe a malformed request as a legitimate refusal.
      */
     for (const line of input.lines) {
-      if (!expectedByLineId.has(line.lineId)) throw new StoreStocktakeError("INVALID_REQUEST");
+      if (!storedLineById.has(line.lineId)) throw new StoreStocktakeError("INVALID_REQUEST");
       if (line.countedQty !== null && (typeof line.countedQty !== "number" || !Number.isFinite(line.countedQty) || line.countedQty < 0)) {
         throw new StoreStocktakeError("INVALID_REQUEST");
       }
@@ -198,7 +220,6 @@ export async function saveStocktakeCounts(input: {
     const addedLines = input.addedLines ?? [];
     const normalizedAdded = addedLines.map((al) => ({ ...al, variantSku: al.variantSku ?? "" }));
     const addedItemNameById = new Map<string, string>();
-    const liveQtyByAddedKey = new Map<string, number>();
 
     if (normalizedAdded.length > 0) {
       /*
@@ -236,25 +257,12 @@ export async function saveStocktakeCounts(input: {
       }
 
       /*
-       * Live StoreStock for these items, batched — the snapshot the document opened with may
-       * already be stale by the time an added line is saved (a konsi transfer landing after
-       * `createStoreStocktake` ran), so `expectedQty` below comes from the CURRENT row, never a
-       * hardcoded 0. `0` is only the fallback for an item::variant the store has genuinely never
-       * held stock for.
-       */
-      const liveAddedStock = await tx.storeStock.findMany({
-        where: { storeId: st.storeId, itemId: { in: addedItemIds } },
-        select: { itemId: true, variantSku: true, qty: true },
-      });
-      for (const s of liveAddedStock) liveQtyByAddedKey.set(`${s.itemId}::${s.variantSku}`, s.qty.toNumber());
-
-      /*
        * The reason check is deliberately NOT here. A save is a batch of counts from one sitting
        * (the PWA submits up to a whole store's worth of lines in one call) — aborting the entire
        * transaction over one added line missing a reason would discard every other line's count
        * with an error that names none of them. `approveStoreStocktake` already runs the identical
        * VARIANCE_NEEDS_REASON check over every line uniformly (added or not — an added line is
-       * just a StoreStocktakeLine, and its `expectedQty` is now seeded from live stock rather than
+       * just a StoreStocktakeLine, and its `expectedQty` is seeded from live stock rather than
        * hardcoded), so deferring it there keeps the rule in one place and makes losing a batch at
        * save time impossible. ITEM_NOT_FOUND and DUPLICATE_LINE stay here because both are
        * structural — either would write a bad row.
@@ -263,42 +271,106 @@ export async function saveStocktakeCounts(input: {
 
     /* Compared at the column's own 2dp scale, so a resend of the same figure is never a change. */
     const toCents = (n: number | null) => (n === null ? null : Math.round(n * 100));
-    const countChanged = (line: { lineId: string; countedQty: number | null }) =>
-      toCents(line.countedQty) !== toCents(storedCountByLineId.get(line.lineId) ?? null);
+    const countChanged = (line: { lineId: string; countedQty: number | null }) => {
+      const stored = storedLineById.get(line.lineId)!.countedQty;
+      return toCents(line.countedQty) !== toCents(stored === null ? null : stored.toNumber());
+    };
+    const countsChanged = normalizedAdded.length > 0 || input.lines.some(countChanged);
 
-    for (const line of input.lines) {
-      const expected = expectedByLineId.get(line.lineId)!;
-      const variance = line.countedQty === null ? null : line.countedQty - expected;
-      await tx.storeStocktakeLine.update({
-        where: { id: line.lineId },
-        data: {
-          countedQty: line.countedQty,
-          varianceQty: variance,
-          cause: line.cause ?? null,
-          reason: line.reason ?? null,
-          ...(countChanged(line) ? { countFinishedAt: line.countedQty === null ? null : momentOf(line.countedAtMs) } : {}),
-        },
+    /*
+     * Each line as it stands once this save is written: its count, the stamp it will carry, and —
+     * for a counted line — the moment approval will re-apply movements from. A counted line with
+     * no stamp of its own falls back to the document's, which this save is about to set to `now`
+     * whenever it re-baselines, exactly as approval falls back.
+     */
+    const payloadByLineId = new Map(input.lines.map((l) => [l.lineId, l]));
+    const existing = st.lines.map((l) => {
+      const sent = payloadByLineId.get(l.id);
+      const counted = sent ? sent.countedQty : (l.countedQty === null ? null : l.countedQty.toNumber());
+      const stampChange = sent && countChanged(sent) ? { countFinishedAt: sent.countedQty === null ? null : momentOf(sent.countedAtMs) } : null;
+      const stamp = stampChange ? stampChange.countFinishedAt : l.countFinishedAt;
+      return { line: l, sent, counted, stampChange, moment: counted === null ? null : (stamp ?? now) };
+    });
+    const added = normalizedAdded.map((al, i) => ({
+      key: `added:${i}`,
+      al,
+      stamp: al.countedQty === null ? null : momentOf(al.countedAtMs),
+    }));
+
+    /*
+     * The re-baselined expected figure per line, in cents — only on a save that stamps the count.
+     * One read of the store's whole StoreStock covers every line, added ones included, matched on
+     * `stockMatchKey` — case-folded, as the unique index and `setStoreStock` match them.
+     */
+    const expectedCentsByKey = new Map<string, number>();
+    if (countsChanged) {
+      const liveRows = await tx.storeStock.findMany({
+        where: { storeId: st.storeId },
+        select: { itemId: true, variantSku: true, qty: true },
       });
+      const liveCentsByStockKey = new Map(liveRows.map((s) => [stockMatchKey(s.itemId, s.variantSku), Math.round(s.qty.toNumber() * 100)]));
+
+      const momentLines: CountMomentLine[] = [];
+      for (const e of existing) {
+        if (e.moment) momentLines.push({ key: e.line.id, itemId: e.line.itemId, variantSku: e.line.variantSku, moment: e.moment });
+      }
+      for (const a of added) {
+        if (a.stamp) momentLines.push({ key: a.key, itemId: a.al.itemId, variantSku: a.al.variantSku, moment: a.stamp });
+      }
+      const sinceCentsByKey = await sumMovementsSinceCountCents(tx, st.storeId, momentLines);
+
+      const rebaseline = (key: string, itemId: string, variantSku: string) =>
+        expectedCentsByKey.set(key, (liveCentsByStockKey.get(stockMatchKey(itemId, variantSku)) ?? 0) - (sinceCentsByKey.get(key) ?? 0));
+      for (const e of existing) rebaseline(e.line.id, e.line.itemId, e.line.variantSku);
+      for (const a of added) rebaseline(a.key, a.al.itemId, a.al.variantSku);
     }
 
-    for (const al of normalizedAdded) {
-      const expected = liveQtyByAddedKey.get(`${al.itemId}::${al.variantSku}`) ?? 0;
-      const variance = al.countedQty === null ? null : al.countedQty - expected;
+    const varianceOf = (counted: number | null, expectedCents: number) =>
+      counted === null ? null : (Math.round(counted * 100) - expectedCents) / 100;
+
+    for (const e of existing) {
+      const storedExpectedCents = Math.round(e.line.expectedQty.toNumber() * 100);
+      const rebased = expectedCentsByKey.get(e.line.id);
+      const expectedCents = rebased ?? storedExpectedCents;
+
+      if (e.sent) {
+        await tx.storeStocktakeLine.update({
+          where: { id: e.line.id },
+          data: {
+            countedQty: e.counted,
+            varianceQty: varianceOf(e.counted, expectedCents),
+            cause: e.sent.cause ?? null,
+            reason: e.sent.reason ?? null,
+            ...(rebased !== undefined ? { expectedQty: rebased / 100 } : {}),
+            ...(e.stampChange ?? {}),
+          },
+        });
+      } else if (rebased !== undefined && rebased !== storedExpectedCents) {
+        /* A line this save was not sent keeps its count, cause and reason; only its baseline moves. */
+        await tx.storeStocktakeLine.update({
+          where: { id: e.line.id },
+          data: { expectedQty: rebased / 100, varianceQty: varianceOf(e.counted, rebased) },
+        });
+      }
+    }
+
+    for (const a of added) {
+      const expectedCents = expectedCentsByKey.get(a.key) ?? 0;
       try {
         await tx.storeStocktakeLine.create({
           data: {
             stocktakeId: st.id,
-            itemId: al.itemId,
-            variantSku: al.variantSku,
-            productName: addedItemNameById.get(al.itemId)!,
-            expectedQty: expected,
-            countedQty: al.countedQty,
-            varianceQty: variance,
+            itemId: a.al.itemId,
+            variantSku: a.al.variantSku,
+            productName: addedItemNameById.get(a.al.itemId)!,
+            expectedQty: expectedCents / 100,
+            countedQty: a.al.countedQty,
+            varianceQty: varianceOf(a.al.countedQty, expectedCents),
             soldInPeriodQty: 0,
-            cause: al.cause ?? null,
-            reason: al.reason ?? null,
+            cause: a.al.cause ?? null,
+            reason: a.al.reason ?? null,
             isAdded: true,
-            countFinishedAt: al.countedQty === null ? null : momentOf(al.countedAtMs),
+            countFinishedAt: a.stamp,
           },
         });
       } catch (e) {
@@ -308,8 +380,6 @@ export async function saveStocktakeCounts(input: {
         throw e;
       }
     }
-
-    const countsChanged = normalizedAdded.length > 0 || input.lines.some(countChanged);
 
     let status = st.status;
     if (input.submit || countsChanged) {
@@ -337,8 +407,8 @@ export async function saveStocktakeCounts(input: {
  * back to the document's `countFinishedAt` for a line saved before the line column existed, so an
  * admin correcting one line never moves the moment of the others. A retur raised before a line's
  * moment, and a store-to-store transfer whose goods moved before it, are excluded for that line —
- * the count already saw their goods gone or arrived, even though their ledger rows land later (see
- * the post-count block below).
+ * the count already saw their goods gone or arrived, even though their ledger rows land later
+ * (`sumMovementsSinceCountCents` holds every one of those rules).
  *
  * A transfer whose goods moved on or before the DOCUMENT's count moment, which is still PENDING
  * and moves an item::variant this count counted, refuses the approval instead
@@ -357,10 +427,17 @@ export async function saveStocktakeCounts(input: {
  * post-count sale can take a line below zero too — and that is recorded and surfaced, never
  * blocked.
  *
- * `varianceQty` is (re)computed here from the line's own `countedQty`/`expectedQty` rather than
- * trusted from whatever `saveStocktakeCounts` last wrote — the two computations use the exact
- * same formula, so this is not a second derivation, just the one place that is authoritative at
- * approval time regardless of how the line got its count.
+ * `varianceQty` is recomputed here, never trusted from whatever `saveStocktakeCounts` last wrote:
+ * it is the delta this approval books — the target above minus the live qty it replaces — and the
+ * `VARIANCE_NEEDS_REASON`/`SHORTFALL_NEEDS_CAUSE` checks gate on that same figure. The save
+ * measures `countedQty − expectedQty` against a baseline of live stock minus the same post-count
+ * movements, and a movement after that save cancels out of both (it is in live stock and in the
+ * re-applied movements alike), so until a late row lands the two are equal. They part only when a
+ * row the count already saw lands after the save — a retur raised before the count and settled
+ * later, a transfer moved before it and approved later, which is every counted line of that
+ * transfer once a `TRANSFER_PENDING` refusal is cleared by approving it — and then the booked
+ * delta is the truth: the stored figure would demand a cause for a shortfall that books nothing,
+ * and no cause-only resave could clear it. A line with no moment books `counted − live`.
  */
 export async function approveStoreStocktake(input: {
   stocktakeId: string;
@@ -380,7 +457,6 @@ export async function approveStoreStocktake(input: {
             id: true,
             itemId: true,
             variantSku: true,
-            expectedQty: true,
             countedQty: true,
             cause: true,
             reason: true,
@@ -399,12 +475,38 @@ export async function approveStoreStocktake(input: {
      */
     const approvedAt = new Date();
 
-    const computed = st.lines.map((l) => {
-      const expected = l.expectedQty.toNumber();
-      const counted = l.countedQty === null ? null : l.countedQty.toNumber();
-      const variance = counted === null ? null : counted - expected;
-      const moment = counted === null ? null : (l.countFinishedAt ?? st.countFinishedAt);
-      return { id: l.id, itemId: l.itemId, variantSku: l.variantSku, counted, variance, cause: l.cause, reason: l.reason, moment };
+    const counts = st.lines.map((l) => ({
+      id: l.id,
+      itemId: l.itemId,
+      variantSku: l.variantSku,
+      counted: l.countedQty === null ? null : l.countedQty.toNumber(),
+      cause: l.cause,
+      reason: l.reason,
+      lineCountFinishedAt: l.countFinishedAt,
+    }));
+
+    /*
+     * What each counted line will book, read before any guard: the target it SETs (counted plus
+     * what moved since its moment; a line with no moment at all re-applies nothing, the old
+     * SET-the-counted-figure behaviour), the live qty that SET replaces, and the difference —
+     * exactly the ledger row `setStoreStock` writes. That booked delta, not the stored
+     * `counted − expected`, is the variance the cause and reason checks below gate on and the
+     * `varianceQty` stored: a row the count already saw that landed after the last save (a retur
+     * raised before the count and settled later, a transfer moved before it and approved later, an
+     * offline konsi delivery that synced later) is still in the stored `expectedQty` but skipped
+     * here, so the stored figure can ask for an explanation of a shortfall that books nothing, or
+     * miss one that books a real loss. Until such a row lands the two are equal.
+     */
+    const bookedByLineId = await bookedCountCents(
+      tx,
+      st.storeId,
+      st.countFinishedAt,
+      counts.flatMap((l) => (l.counted === null ? [] : [{ key: l.id, itemId: l.itemId, variantSku: l.variantSku, countedQty: l.counted, lineCountFinishedAt: l.lineCountFinishedAt }])),
+    );
+    const computed = counts.map((l) => {
+      const booked = bookedByLineId.get(l.id);
+      if (l.counted === null || !booked) return { ...l, variance: null, target: null, liveQty: null };
+      return { ...l, variance: (booked.targetCents - booked.liveCents) / 100, target: booked.targetCents / 100, liveQty: booked.liveCents / 100 };
     });
 
     for (const l of computed) {
@@ -445,7 +547,7 @@ export async function approveStoreStocktake(input: {
      * `COUNTED_SINCE_MOVE` uses for a null-`countFinishedAt` count; without it a legacy count could
      * approve first and strand the transfer behind `COUNTED_SINCE_MOVE` forever, unable to ever
      * approve. This fallback governs the refusal only — a counted line with no moment of its own
-     * or the document's still re-applies nothing below. Both variantSku columns are non-nullable,
+     * or the document's still re-applies nothing above. Both variantSku columns are non-nullable,
      * so the keys match exactly.
      */
     const countedKeys = computed
@@ -468,103 +570,14 @@ export async function approveStoreStocktake(input: {
       }
     }
 
-    /**
-     * Every store movement recorded after each counted line's own moment, summed per line in
-     * cents. One read covers every line: the ledger rows after the EARLIEST line moment, then each
-     * line keeps only its own item::variant's rows stamped strictly after its own moment. A line
-     * with no moment re-applies nothing, which is exactly the old SET-the-counted-figure behaviour.
-     *
-     * Excluded per line: a retur's store row whose retur was RAISED on or before that line's
-     * moment. A retur's ledger row lags the physical movement — the goods leave the shelf when it
-     * is raised, but its store row lands later, at approve for a FIELD retur, at receipt plus an
-     * approve-time delta for an ADMIN one — so a shelf counted after the raise already saw those
-     * units gone, and re-applying the row would take them off twice. Both retur writers stamp the
-     * FieldReturn id as the row's `refId`. A retur raised after the line was counted still counts:
-     * its goods left after the shelf was counted. Excluded the same way: a store-to-store
-     * transfer's rows — BOTH legs, the source's −q and the destination's +q — whose transfer's
-     * `movedAt` is on or before the line's moment. Stock moves at transfer approve, which can land
-     * after the goods physically moved, so a shelf counted in between already saw them gone or
-     * arrived. Both legs stamp the StoreTransfer id as `refId`. A transfer whose goods moved after
-     * the line was counted is still re-applied. Both exclusions are judged against each line's own
-     * moment, so one retur or transfer can be excluded for a line counted after it and re-applied
-     * for a line counted before it. Only a counted line reads these sums at all, so a row for an
-     * uncounted item never reaches a target either way.
-     *
-     * Excluded likewise: a konsi transfer's store row whose delivery shipment's `deliveredAt`
-     * is on or before the line's moment. An offline completion stamps `deliveredAt` from the
-     * device (up to three days back), while the transfer and its +q row are written only when the
-     * completion syncs, so a shelf counted between the two already holds the delivered units. The
-     * transfer stamps its own id as `refId`. A legacy transfer with no shipment is never excluded,
-     * and neither is one whose goods were delivered after the line's moment.
-     *
-     * Never re-applied: an earlier count's own `StoreStocktake` rows. That approval SET the
-     * balance to what its own count saw, so it is never a movement this count's shelf missed. A
-     * line moment can sit at or before such a row only when it came from the SPG sheet's device
-     * time, which `saveStocktakeCounts` clamps to the previous approval's `approvedAt` — and that
-     * approval writes its rows at or a few milliseconds after the `approvedAt` it stamps.
-     */
-    const postCountCentsByLineId = new Map<string, number>();
-    const momentLines = computed.filter((l) => l.counted !== null && l.moment !== null);
-    if (momentLines.length > 0) {
-      const earliest = new Date(momentLines.reduce((min, l) => Math.min(min, l.moment!.getTime()), Infinity));
-      const postCount = await tx.stockLedgerEntry.findMany({
-        where: { locationType: "STORE", locationId: st.storeId, createdAt: { gt: earliest } },
-        select: { itemId: true, variantSku: true, qty: true, refType: true, refId: true, createdAt: true },
-      });
-      const returIds = Array.from(new Set(postCount.filter((r) => r.refType === "FieldReturn").map((r) => r.refId)));
-      const returs = returIds.length > 0
-        ? await tx.fieldReturn.findMany({ where: { id: { in: returIds } }, select: { id: true, createdAt: true } })
-        : [];
-      const returRaisedAtMs = new Map(returs.map((r) => [r.id, r.createdAt.getTime()]));
-      const transferIds = Array.from(new Set(postCount.filter((r) => r.refType === "StoreTransfer").map((r) => r.refId)));
-      const transfers = transferIds.length > 0
-        ? await tx.storeTransfer.findMany({ where: { id: { in: transferIds } }, select: { id: true, movedAt: true } })
-        : [];
-      const transferMovedAtMs = new Map(transfers.map((t) => [t.id, t.movedAt.getTime()]));
-      const konsiTransferIds = Array.from(new Set(postCount.filter((r) => r.refType === "KonsiTransfer").map((r) => r.refId)));
-      const konsiTransfers = konsiTransferIds.length > 0
-        ? await tx.konsiTransfer.findMany({ where: { id: { in: konsiTransferIds } }, select: { id: true, shipment: { select: { deliveredAt: true } } } })
-        : [];
-      const konsiDeliveredAtMs = new Map<string, number>();
-      for (const t of konsiTransfers) {
-        if (t.shipment?.deliveredAt) konsiDeliveredAtMs.set(t.id, t.shipment.deliveredAt.getTime());
-      }
-
-      const rowsByKey = new Map<string, typeof postCount>();
-      for (const r of postCount) {
-        const key = `${r.itemId}::${r.variantSku}`;
-        const rows = rowsByKey.get(key);
-        if (rows) rows.push(r);
-        else rowsByKey.set(key, [r]);
-      }
-
-      for (const l of momentLines) {
-        const momentMs = l.moment!.getTime();
-        let cents = 0;
-        for (const r of rowsByKey.get(`${l.itemId}::${l.variantSku ?? ""}`) ?? []) {
-          if (r.createdAt.getTime() <= momentMs) continue;
-          if (r.refType === "StoreStocktake") continue;
-          if (r.refType === "FieldReturn" && (returRaisedAtMs.get(r.refId) ?? Infinity) <= momentMs) continue;
-          if (r.refType === "StoreTransfer" && (transferMovedAtMs.get(r.refId) ?? Infinity) <= momentMs) continue;
-          if (r.refType === "KonsiTransfer" && (konsiDeliveredAtMs.get(r.refId) ?? Infinity) <= momentMs) continue;
-          cents += Math.round(r.qty.toNumber() * 100);
-        }
-        postCountCentsByLineId.set(l.id, cents);
-      }
-    }
-
     let isFullCount = st.lines.length > 0;
 
     for (const l of computed) {
-      if (l.counted === null) {
+      if (l.target === null) {
         isFullCount = false;
         continue;
       }
-
-      const key = { storeId_itemId_variantSku: { storeId: st.storeId, itemId: l.itemId, variantSku: l.variantSku ?? "" } };
-      const live = await tx.storeStock.findUnique({ where: key, select: { qty: true } });
-      const postCountCents = postCountCentsByLineId.get(l.id) ?? 0;
-      const target = (Math.round(l.counted * 100) + postCountCents) / 100;
+      const target = l.target;
 
       /*
        * avgCost is NEVER touched — not on update, and 0 on a created row. Both existing
@@ -591,7 +604,7 @@ export async function approveStoreStocktake(input: {
         where: { id: l.id },
         data: {
           varianceQty: l.variance,
-          qtyAtApproval: live ? live.qty.toNumber() : 0,
+          qtyAtApproval: l.liveQty,
           appliedQty: target,
         },
       });
