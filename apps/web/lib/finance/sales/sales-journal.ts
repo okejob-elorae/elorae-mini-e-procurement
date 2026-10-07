@@ -1,5 +1,6 @@
 import { prisma, Prisma, type PrismaClient } from "@elorae/db";
 import { generateAutoJournal, type GenerateAutoJournalResult } from "@/lib/finance/journal";
+import { nilaiPerPeranPersediaan } from "@/lib/finance/journals/peran-persediaan";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
@@ -56,15 +57,24 @@ export async function postSalesCogsJournal(
     select: { salesorderNo: true, shippedAt: true, transactionDate: true },
   });
   if (!order) return { ok: false, code: "NOTHING_TO_POST" };
-  const agg = await client.salesOrderItem.aggregate({
-    where: { salesOrderId: orderId },
-    _sum: { cogs: true },
+  const items = await client.salesOrderItem.findMany({
+    where: { salesOrderId: orderId, cogs: { not: null } },
+    select: { itemId: true, cogs: true },
   });
-  const value = agg._sum.cogs == null ? 0 : Number(agg._sum.cogs);
+  // Persediaan yang dikredit mengikuti tipe barangnya: barang jadi keluar dari
+  // `INVENTORY_FG`, tempat penerimaan barang jadi mendebitnya (peran-persediaan.ts).
+  const itemIds = [...new Set(items.map((i) => i.itemId).filter((id): id is string => !!id))];
+  const tipe = new Map(
+    itemIds.length
+      ? (await client.item.findMany({ where: { id: { in: itemIds } }, select: { id: true, type: true } })).map((i) => [i.id, i.type as string])
+      : [],
+  );
+  const perPeran = nilaiPerPeranPersediaan(items.map((i) => ({ tipeBarang: i.itemId ? tipe.get(i.itemId) : null, nilai: Number(i.cogs) })));
+  const value = perPeran.reduce((s, p) => s + Math.round(p.nilai * 100), 0) / 100;
   if (Math.abs(value) < 0.01) return { ok: false, code: "NOTHING_TO_POST" };
   const lines = [
     { role: "COGS" as const, debit: value, credit: 0 },
-    { role: "INVENTORY" as const, debit: 0, credit: value },
+    ...perPeran.map((p) => ({ role: p.role, debit: 0, credit: p.nilai })),
   ];
   return generateAutoJournal(client, "SALESORDER_COGS", orderId, lines, {
     date: saleGlDate(order),

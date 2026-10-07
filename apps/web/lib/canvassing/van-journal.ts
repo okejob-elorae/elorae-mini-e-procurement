@@ -1,6 +1,7 @@
 import { prisma, Prisma, type PrismaClient } from "@elorae/db";
 import { generateAutoJournal, type AutoJournalLine, type GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { lineCostTotal, reconcileSplit } from "./van-journal-values";
+import { nilaiPerPeranPersediaan } from "@/lib/finance/journals/peran-persediaan";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
@@ -18,12 +19,15 @@ export async function postVanLoadJournal(
 ): Promise<GenerateAutoJournalResult> {
   const load = await client.vanLoad.findUnique({
     where: { id: vanLoadId },
-    select: { docNo: true, createdAt: true, lines: { select: { qty: true, unitCost: true } } },
+    select: { docNo: true, createdAt: true, lines: { select: { qty: true, unitCost: true, item: { select: { type: true } } } } },
   });
   if (!load) return { ok: false, code: "NOTHING_TO_POST" };
 
   const value = lineCostTotal(load.lines.map((l) => ({ qty: num(l.qty), unitCost: num(l.unitCost) })));
   if (value < 0.01) return { ok: false, code: "NOTHING_TO_POST" };
+  // Barang kanvas adalah barang jadi: keluar dari `INVENTORY_FG`, tempat penerimaan
+  // barang jadi mendebitnya (peran-persediaan.ts). Σ pecahan = `value` (sen per baris).
+  const asal = nilaiPerPeranPersediaan(load.lines.map((l) => ({ tipeBarang: l.item.type, nilai: num(l.qty) * num(l.unitCost) })));
 
   return generateAutoJournal(
     client,
@@ -31,7 +35,7 @@ export async function postVanLoadJournal(
     vanLoadId,
     [
       { role: "INVENTORY_VAN" as const, debit: value, credit: 0 },
-      { role: "INVENTORY" as const, debit: 0, credit: value },
+      ...asal.map((p) => ({ role: p.role, debit: 0, credit: p.nilai })),
     ],
     { date: load.createdAt, description: `Van load ${load.docNo}`, postedById },
   );
@@ -89,7 +93,7 @@ export async function postVanReconcileJournal(
     select: {
       docNo: true,
       createdAt: true,
-      lines: { select: { countedQty: true, varianceQty: true, unitCost: true } },
+      lines: { select: { countedQty: true, varianceQty: true, unitCost: true, item: { select: { type: true } } } },
     },
   });
   if (!recon) return { ok: false, code: "NOTHING_TO_POST" };
@@ -104,7 +108,9 @@ export async function postVanReconcileJournal(
 
   const lines: AutoJournalLine[] = [];
   if (returned >= 0.01) {
-    lines.push({ role: "INVENTORY" as const, debit: returned, credit: 0 });
+    // Barang yang kembali ke gudang masuk lagi ke persediaan menurut tipenya (barang jadi → INVENTORY_FG).
+    const tujuan = nilaiPerPeranPersediaan(recon.lines.map((l) => ({ tipeBarang: l.item.type, nilai: num(l.countedQty) * num(l.unitCost) })));
+    for (const p of tujuan) lines.push({ role: p.role, debit: p.nilai, credit: 0 });
     lines.push({ role: "INVENTORY_VAN" as const, debit: 0, credit: returned });
   }
   if (variance >= 0.01) {

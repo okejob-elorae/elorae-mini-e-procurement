@@ -21,7 +21,7 @@ d("opname approve auto-journal integration (test bed only)", () => {
 
   beforeEach(async () => {
     token = Math.floor(Math.random() * 10_000_000).toString();
-    mappingSnapshot = await snapshotMappings(["INVENTORY", "INVENTORY_VARIANCE"]);
+    mappingSnapshot = await snapshotMappings(["INVENTORY", "INVENTORY_FG", "INVENTORY_VARIANCE"]);
 
     const user = await prisma.user.create({
       data: { email: `test-opname-approve-journal-${token}@test.local`, name: "Test Admin" },
@@ -93,10 +93,11 @@ d("opname approve auto-journal integration (test bed only)", () => {
     });
   }
 
-  it("roles mapped: postOpnameJournal posts a balanced DR INVENTORY / CR INVENTORY_VARIANCE journal", async () => {
+  // Opname barang jadi (scope FINISHED_GOOD) menyesuaikan INVENTORY_FG — akun yang didebit penerimaan barang jadi.
+  it("roles mapped: postOpnameJournal posts a balanced DR INVENTORY_FG / CR INVENTORY_VARIANCE journal", async () => {
     await prisma.journalAccountMapping.upsert({
-      where: { role: "INVENTORY" },
-      create: { role: "INVENTORY", chartAccountId: inventoryId },
+      where: { role: "INVENTORY_FG" },
+      create: { role: "INVENTORY_FG", chartAccountId: inventoryId },
       update: { chartAccountId: inventoryId },
     });
     await prisma.journalAccountMapping.upsert({
@@ -127,9 +128,9 @@ d("opname approve auto-journal integration (test bed only)", () => {
     expect(Number(varLine!.credit)).toBe(400);
   });
 
-  it("INVENTORY unmapped: postOpnameJournal returns UNMAPPED_ROLE", async () => {
-    // Simulate INVENTORY unmapped explicitly — don't assume the operator's config is absent.
-    await prisma.journalAccountMapping.deleteMany({ where: { role: "INVENTORY" } });
+  it("INVENTORY_FG unmapped: postOpnameJournal returns UNMAPPED_ROLE", async () => {
+    // Simulate INVENTORY_FG unmapped explicitly — don't assume the operator's config is absent.
+    await prisma.journalAccountMapping.deleteMany({ where: { role: "INVENTORY_FG" } });
     await prisma.journalAccountMapping.upsert({
       where: { role: "INVENTORY_VARIANCE" },
       create: { role: "INVENTORY_VARIANCE", chartAccountId: varianceId },
@@ -139,6 +140,6 @@ d("opname approve auto-journal integration (test bed only)", () => {
     await seedMovement(400, 4);
 
     const r = await postOpnameJournal(opnameId, userId, prisma);
-    expect(r).toMatchObject({ ok: false, code: "UNMAPPED_ROLE", role: "INVENTORY" });
+    expect(r).toMatchObject({ ok: false, code: "UNMAPPED_ROLE", role: "INVENTORY_FG" });
   });
 });

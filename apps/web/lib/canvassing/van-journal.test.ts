@@ -60,6 +60,7 @@ function amountsFor(lines: Array<{ chartAccountId: string; debit: unknown; credi
 
 const ROLE_TYPES: Array<[PostingRole, AccountType]> = [
   ["INVENTORY", "ASET"],
+  ["INVENTORY_FG", "ASET"],
   ["INVENTORY_VAN", "ASET"],
   ["CASH", "ASET"],
   ["SALES_REVENUE", "PENDAPATAN"],
@@ -166,7 +167,7 @@ d("van journals (test bed only)", () => {
     }
     if (restoreFailed) {
       console.error(
-        "[van-journal.test.ts] FAILED TO RESTORE JournalAccountMapping for INVENTORY, INVENTORY_VAN, CASH, " +
+        "[van-journal.test.ts] FAILED TO RESTORE JournalAccountMapping for INVENTORY, INVENTORY_FG, INVENTORY_VAN, CASH, " +
           "SALES_REVENUE, COGS, INVENTORY_VARIANCE — these roles may now point at throwaway test accounts. " +
           "Check Finance → Pemetaan Akun on the :3308 dev DB and re-map by hand if needed.",
         restoreFailed,
@@ -188,7 +189,7 @@ d("van journals (test bed only)", () => {
     createdDocs = [];
   });
 
-  it("postVanLoadJournal posts a balanced DR INVENTORY_VAN / CR INVENTORY at Σ qty × unitCost, dated the load's own createdAt, idempotent on repost", async () => {
+  it("postVanLoadJournal posts a balanced DR INVENTORY_VAN / CR INVENTORY_FG (van stock is finished goods) at Σ qty × unitCost, dated the load's own createdAt, idempotent on repost", async () => {
     const load = await prisma.vanLoad.create({
       data: {
         docNo: `VANLOAD-TEST-${token}`,
@@ -215,7 +216,9 @@ d("van journals (test bed only)", () => {
       });
       expect(journal.lines).toHaveLength(2);
       expect(amountsFor(journal.lines, accountIds.INVENTORY_VAN)).toEqual({ debit: 8000, credit: 0 });
-      expect(amountsFor(journal.lines, accountIds.INVENTORY)).toEqual({ debit: 0, credit: 8000 });
+      expect(amountsFor(journal.lines, accountIds.INVENTORY_FG)).toEqual({ debit: 0, credit: 8000 });
+      // Barang jadi tidak pernah keluar dari persediaan bahan baku (dulu: CR INVENTORY).
+      expect(amountsFor(journal.lines, accountIds.INVENTORY)).toEqual({ debit: 0, credit: 0 });
       expect(journal.date).toEqual(load.createdAt);
 
       const b = await postVanLoadJournal(load.id, userId, prisma);
@@ -269,7 +272,7 @@ d("van journals (test bed only)", () => {
     }
   });
 
-  it("postVanReconcileJournal with nonzero variance posts DR INVENTORY/CR INVENTORY_VAN for returned AND DR INVENTORY_VARIANCE/CR INVENTORY_VAN for the shortfall, dated the reconcile's own createdAt", async () => {
+  it("postVanReconcileJournal with nonzero variance posts DR INVENTORY_FG/CR INVENTORY_VAN for returned AND DR INVENTORY_VARIANCE/CR INVENTORY_VAN for the shortfall, dated the reconcile's own createdAt", async () => {
     const recon = await prisma.vanReconcile.create({
       data: {
         docNo: `VANRECON-TEST-${token}-A`,
@@ -296,7 +299,8 @@ d("van journals (test bed only)", () => {
         include: { lines: true },
       });
       expect(journal.lines).toHaveLength(4);
-      expect(amountsFor(journal.lines, accountIds.INVENTORY)).toEqual({ debit: 7000, credit: 0 });
+      expect(amountsFor(journal.lines, accountIds.INVENTORY_FG)).toEqual({ debit: 7000, credit: 0 });
+      expect(amountsFor(journal.lines, accountIds.INVENTORY)).toEqual({ debit: 0, credit: 0 });
       expect(amountsFor(journal.lines, accountIds.INVENTORY_VARIANCE)).toEqual({ debit: 3000, credit: 0 });
       /* INVENTORY_VAN is credited twice — once for the returned leg, once for the variance leg. */
       expect(amountsFor(journal.lines, accountIds.INVENTORY_VAN)).toEqual({ debit: 0, credit: 10_000 });
@@ -333,7 +337,7 @@ d("van journals (test bed only)", () => {
         include: { lines: true },
       });
       expect(journal.lines).toHaveLength(2);
-      expect(amountsFor(journal.lines, accountIds.INVENTORY)).toEqual({ debit: 5000, credit: 0 });
+      expect(amountsFor(journal.lines, accountIds.INVENTORY_FG)).toEqual({ debit: 5000, credit: 0 });
       expect(amountsFor(journal.lines, accountIds.INVENTORY_VAN)).toEqual({ debit: 0, credit: 5000 });
       expect(amountsFor(journal.lines, accountIds.INVENTORY_VARIANCE)).toEqual({ debit: 0, credit: 0 });
     } finally {
@@ -368,7 +372,7 @@ d("van journals (test bed only)", () => {
         include: { lines: true },
       });
       expect(journal.lines).toHaveLength(4);
-      expect(amountsFor(journal.lines, accountIds.INVENTORY)).toEqual({ debit: 12_000, credit: 0 });
+      expect(amountsFor(journal.lines, accountIds.INVENTORY_FG)).toEqual({ debit: 12_000, credit: 0 });
       /* INVENTORY_VAN nets a debit (surplus reversal) and a credit (returned leg) on separate lines. */
       expect(amountsFor(journal.lines, accountIds.INVENTORY_VAN)).toEqual({ debit: 2000, credit: 12_000 });
       expect(amountsFor(journal.lines, accountIds.INVENTORY_VARIANCE)).toEqual({ debit: 0, credit: 2000 });

@@ -1,5 +1,6 @@
 import { prisma, Prisma, type PrismaClient } from "@elorae/db";
 import { generateAutoJournal, type GenerateAutoJournalResult } from "@/lib/finance/journal";
+import { nilaiPerPeranPersediaan } from "@/lib/finance/journals/peran-persediaan";
 import { saleGlDate } from "./sales-journal";
 import { readGlCutover } from "./sweep";
 
@@ -12,7 +13,7 @@ type SaleLeg = "SALESORDER_REVENUE" | "SALESORDER_COGS";
  * not on this ledger, so there is nothing here to reverse.
  *
  * A return journal is a counter-entry by construction — the revenue leg debits
- * SALES_REVENUE and credits AR, the COGS leg debits INVENTORY and credits COGS —
+ * SALES_REVENUE and credits AR, the COGS leg debits inventory (INVENTORY_FG for finished goods) and credits COGS —
  * and posting one against a sale this GL never recognized undoes nothing: it
  * drives revenue negative and credits AR against a receivable that was never
  * booked here. Refusing is correct in every case below. These are four codes
@@ -193,18 +194,23 @@ export async function postSalesReturnCogsJournal(
   if (!meta) return { ok: false, code: "NOTHING_TO_POST" };
   const items = await client.salesReturnItem.findMany({
     where: { salesReturnId: returnId, decision: "ACCEPTED", stockAdjustmentId: { not: null } },
-    select: { stockAdjustment: { select: { qtyChange: true, newAvgCost: true } } },
+    select: { item: { select: { type: true } }, stockAdjustment: { select: { qtyChange: true, newAvgCost: true } } },
   });
-  const value = items.reduce(
-    (sum, it) => sum + (it.stockAdjustment ? Number(it.stockAdjustment.qtyChange) * Number(it.stockAdjustment.newAvgCost) : 0),
-    0,
+  // Barang yang kembali ke rak masuk lagi ke persediaan menurut tipenya — barang
+  // jadi ke `INVENTORY_FG`, tempat HPP penjualannya dulu dikredit.
+  const perPeran = nilaiPerPeranPersediaan(
+    items.map((it) => ({
+      tipeBarang: it.item?.type ?? null,
+      nilai: it.stockAdjustment ? Number(it.stockAdjustment.qtyChange) * Number(it.stockAdjustment.newAvgCost) : 0,
+    })),
   );
+  const value = perPeran.reduce((s, p) => s + Math.round(p.nilai * 100), 0) / 100;
   /* Value guard before the gate — same reasoning as the revenue leg. */
   if (Math.abs(value) < 0.01) return { ok: false, code: "NOTHING_TO_POST" };
   const gate = await classifySaleLeg(meta.salesOrderId, "SALESORDER_COGS", client);
   if (gate != null) return { ok: false, code: gate };
   const lines = [
-    { role: "INVENTORY" as const, debit: value, credit: 0 },
+    ...perPeran.map((p) => ({ role: p.role, debit: p.nilai, credit: 0 })),
     { role: "COGS" as const, debit: 0, credit: value },
   ];
   return generateAutoJournal(client, "SALESRETURN_COGS", returnId, lines, {
