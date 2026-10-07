@@ -13,6 +13,7 @@ d("createItemsFromImport (test bed only)", () => {
   let skus: string[] = [];
 
   beforeEach(async () => {
+    skus = [];
     token = Math.random().toString(36).slice(2, 10).toUpperCase();
     uomId = "";
     skus = [`TEST-IMP-${token}-A`, `TEST-IMP-${token}-B`];
@@ -23,8 +24,8 @@ d("createItemsFromImport (test bed only)", () => {
   afterEach(async () => {
     const items = await prisma.item.findMany({ where: { sku: { in: skus } }, select: { id: true } });
     const ids = items.map((i) => i.id);
-    await prisma.inventoryValue.deleteMany({ where: { itemId: { in: ids } } });
-    await prisma.item.deleteMany({ where: { sku: { in: skus } } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: { in: ids.map(seededId) } } });
+    await prisma.item.deleteMany({ where: { sku: { in: skus.map(seededId) } } });
     if (uomId !== "") await prisma.uOM.delete({ where: { id: seededId(uomId) } });
   });
 

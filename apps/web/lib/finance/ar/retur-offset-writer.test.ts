@@ -142,9 +142,9 @@ d("applyReturnOffset (test bed only)", () => {
     const payments = await prisma.payment.findMany({ where: { storeId: { in: [seededId(storeId), seededId(otherStoreId)] } }, select: { id: true } });
     const paymentIds = payments.map((p) => p.id);
     if (paymentIds.length) {
-      await prisma.payment.updateMany({ where: { id: { in: paymentIds } }, data: { fieldReturnId: null } });
-      await prisma.paymentAllocation.deleteMany({ where: { paymentId: { in: paymentIds } } });
-      await prisma.payment.deleteMany({ where: { id: { in: paymentIds } } });
+      await prisma.payment.updateMany({ where: { id: { in: paymentIds.map(seededId) } }, data: { fieldReturnId: null } });
+      await prisma.paymentAllocation.deleteMany({ where: { paymentId: { in: paymentIds.map(seededId) } } });
+      await prisma.payment.deleteMany({ where: { id: { in: paymentIds.map(seededId) } } });
     }
     await prisma.fieldReturnLine.deleteMany({ where: { returnId: seededId(returnId) } });
     await prisma.fieldReturn.deleteMany({ where: { id: seededId(returnId) } });

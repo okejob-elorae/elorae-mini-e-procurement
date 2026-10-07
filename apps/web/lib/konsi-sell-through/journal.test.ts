@@ -77,11 +77,11 @@ d("konsi sell-through journals (test bed only)", () => {
      */
     try {
       const ids = reportIds.map((id) => seededId(id));
-      await prisma.journalLine.deleteMany({ where: { journal: { sourceType: { startsWith: "KONSI_SELLTHRU_" }, sourceId: { in: ids } } } });
-      await prisma.journal.deleteMany({ where: { sourceType: { startsWith: "KONSI_SELLTHRU_" }, sourceId: { in: ids } } });
+      await prisma.journalLine.deleteMany({ where: { journal: { sourceType: { startsWith: "KONSI_SELLTHRU_" }, sourceId: { in: ids.map(seededId) } } } });
+      await prisma.journal.deleteMany({ where: { sourceType: { startsWith: "KONSI_SELLTHRU_" }, sourceId: { in: ids.map(seededId) } } });
       if (mappingSnapshot) await restoreMappings(mappingSnapshot);
       const chartAccountIds = [arId, salesRevenueId, cogsId, inventoryId, inventoryVarianceId].map((id) => seededId(id));
-      await prisma.chartAccount.deleteMany({ where: { id: { in: chartAccountIds } } });
+      await prisma.chartAccount.deleteMany({ where: { id: { in: chartAccountIds.map(seededId) } } });
     } finally {
       await fx.afterEach();
     }

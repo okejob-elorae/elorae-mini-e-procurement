@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { generateAutoJournal } from "./journal";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "./journals/mapping-test-fixture";
 
@@ -10,13 +10,16 @@ const d = isProd ? describe.skip : describe;
 
 d("generateAutoJournal (test bed only)", () => {
   let token: string;
-  let userId: string;
-  let inventoryId: string;
-  let varianceId: string;
+  let userId = "";
+  let inventoryId = "";
+  let varianceId = "";
   let mappingSnapshot: MappingSnapshot;
   const sourceId = () => `test-src-${token}`;
 
   beforeEach(async () => {
+    userId = "";
+    inventoryId = "";
+    varianceId = "";
     token = Math.floor(Math.random() * 10_000_000).toString();
     mappingSnapshot = await snapshotMappings(["INVENTORY", "INVENTORY_VARIANCE"]);
     const user = await prisma.user.create({
@@ -47,16 +50,16 @@ d("generateAutoJournal (test bed only)", () => {
 
   afterEach(async () => {
     const journals = await prisma.journal.findMany({
-      where: { postedById: userId },
+      where: { postedById: seededId(userId) },
       select: { id: true },
     });
     const journalIds = journals.map((j) => j.id);
     if (journalIds.length) {
-      await prisma.journalLine.deleteMany({ where: { journalId: { in: journalIds } } });
-      await prisma.journal.deleteMany({ where: { id: { in: journalIds } } });
+      await prisma.journalLine.deleteMany({ where: { journalId: { in: journalIds.map(seededId) } } });
+      await prisma.journal.deleteMany({ where: { id: { in: journalIds.map(seededId) } } });
     }
     await restoreMappings(mappingSnapshot);
-    await prisma.chartAccount.deleteMany({ where: { id: { in: [inventoryId, varianceId] } } });
+    await prisma.chartAccount.deleteMany({ where: { id: { in: [inventoryId, varianceId].map(seededId) } } });
     await prisma.user.delete({ where: { id: userId } });
   });
 

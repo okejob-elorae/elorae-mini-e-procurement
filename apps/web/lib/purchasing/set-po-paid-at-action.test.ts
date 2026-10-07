@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 
 /* Creates PO/supplier/user rows — never run against the shared prod DB. */
 const url = process.env.DATABASE_URL ?? "";
@@ -47,11 +47,11 @@ import { setPOPaidAt } from "@/app/actions/purchase-orders";
  */
 d("setPOPaidAt standing-payment refusal (test bed only)", () => {
   const token = Math.floor(Math.random() * 10_000_000).toString();
-  let userId: string;
-  let supplierTypeId: string;
-  let supplierId: string;
-  let apAccountId: string;
-  let bankAccountId: string;
+  let userId = "";
+  let supplierTypeId = "";
+  let supplierId = "";
+  let apAccountId = "";
+  let bankAccountId = "";
   let perTestPoIds: string[] = [];
 
   async function seedPo(label: string, paidAt: Date | null): Promise<string> {
@@ -130,7 +130,7 @@ d("setPOPaidAt standing-payment refusal (test bed only)", () => {
     const poIds = [...perTestPoIds];
     try {
       const ids = await journalPendingIdsFor(poIds);
-      if (ids.length) await prisma.adminNotification.deleteMany({ where: { id: { in: ids } } });
+      if (ids.length) await prisma.adminNotification.deleteMany({ where: { id: { in: ids.map(seededId) } } });
     } catch (e) {
       console.warn("[set-po-paid-at-action.test.ts] failed to delete test notifications for POs", poIds, e);
     }
@@ -145,19 +145,19 @@ d("setPOPaidAt standing-payment refusal (test bed only)", () => {
         });
         const ids = journals.map((j) => j.id);
         if (ids.length) {
-          await prisma.journalLine.deleteMany({ where: { journalId: { in: ids } } });
-          await prisma.journal.deleteMany({ where: { id: { in: ids } } });
+          await prisma.journalLine.deleteMany({ where: { journalId: { in: ids.map(seededId) } } });
+          await prisma.journal.deleteMany({ where: { id: { in: ids.map(seededId) } } });
         }
       } catch (e) {
         console.warn("[set-po-paid-at-action.test.ts] failed to delete test journals for PO", poId, e);
       }
       try {
-        await prisma.pOStatusHistory.deleteMany({ where: { poId } });
+        await prisma.pOStatusHistory.deleteMany({ where: { poId: seededId(poId) } });
       } catch (e) {
         console.warn("[set-po-paid-at-action.test.ts] failed to delete test PO history", poId, e);
       }
       try {
-        await prisma.purchaseOrder.deleteMany({ where: { id: poId } });
+        await prisma.purchaseOrder.deleteMany({ where: { id: seededId(poId) } });
       } catch (e) {
         console.warn("[set-po-paid-at-action.test.ts] failed to delete test PO", poId, e);
       }
@@ -166,6 +166,11 @@ d("setPOPaidAt standing-payment refusal (test bed only)", () => {
   }
 
   beforeAll(async () => {
+    userId = "";
+    supplierTypeId = "";
+    supplierId = "";
+    apAccountId = "";
+    bankAccountId = "";
     const user = await prisma.user.create({
       data: { email: `test-sp-toggle-${token}@test.local`, name: "Test Finance User" },
     });
@@ -195,7 +200,7 @@ d("setPOPaidAt standing-payment refusal (test bed only)", () => {
   afterAll(async () => {
     await cleanupPerTestPos();
     try {
-      await prisma.chartAccount.deleteMany({ where: { id: { in: [apAccountId, bankAccountId] } } });
+      await prisma.chartAccount.deleteMany({ where: { id: { in: [apAccountId, bankAccountId].map(seededId) } } });
     } catch (e) {
       console.warn(
         "[set-po-paid-at-action.test.ts] failed to delete test chart accounts",
@@ -204,17 +209,17 @@ d("setPOPaidAt standing-payment refusal (test bed only)", () => {
       );
     }
     try {
-      await prisma.supplier.deleteMany({ where: { id: supplierId } });
+      await prisma.supplier.deleteMany({ where: { id: seededId(supplierId) } });
     } catch (e) {
       console.warn("[set-po-paid-at-action.test.ts] failed to delete test supplier", supplierId, e);
     }
     try {
-      await prisma.supplierType.deleteMany({ where: { id: supplierTypeId } });
+      await prisma.supplierType.deleteMany({ where: { id: seededId(supplierTypeId) } });
     } catch (e) {
       console.warn("[set-po-paid-at-action.test.ts] failed to delete test supplier type", supplierTypeId, e);
     }
     try {
-      await prisma.user.deleteMany({ where: { id: userId } });
+      await prisma.user.deleteMany({ where: { id: seededId(userId) } });
     } catch (e) {
       console.warn("[set-po-paid-at-action.test.ts] failed to delete test user", userId, e);
     }

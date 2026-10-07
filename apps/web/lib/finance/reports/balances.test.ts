@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
 import { getAccountBalances } from "./balances";
 
@@ -24,11 +24,11 @@ d("getAccountBalances (test bed only)", () => {
 
   afterEach(async () => {
     const steps = [
-      () => prisma.journalLine.deleteMany({ where: { journalId: { in: journalIds } } }),
-      () => prisma.journal.deleteMany({ where: { id: { in: journalIds } } }),
-      () => prisma.chartAccount.deleteMany({ where: { parentId: { in: accountIds } } }),
-      () => prisma.chartAccount.deleteMany({ where: { id: { in: accountIds } } }),
-      () => prisma.user.deleteMany({ where: { id: { in: userIds } } }),
+      () => prisma.journalLine.deleteMany({ where: { journalId: { in: journalIds.map(seededId) } } }),
+      () => prisma.journal.deleteMany({ where: { id: { in: journalIds.map(seededId) } } }),
+      () => prisma.chartAccount.deleteMany({ where: { parentId: { in: accountIds.map(seededId) } } }),
+      () => prisma.chartAccount.deleteMany({ where: { id: { in: accountIds.map(seededId) } } }),
+      () => prisma.user.deleteMany({ where: { id: { in: userIds.map(seededId) } } }),
     ];
     const failures: unknown[] = [];
     for (const step of steps) {

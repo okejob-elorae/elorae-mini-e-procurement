@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import {
   resolveAccount,
   listAccountMappings,
@@ -17,11 +17,13 @@ const d = isProd ? describe.skip : describe;
 
 d("mapping (test bed only)", () => {
   const tag = Math.floor(Math.random() * 10_000_000).toString(); // digits only — CoA codes are numeric
-  let parentId: string;
-  let leafId: string;
+  let parentId = "";
+  let leafId = "";
   let mappingSnapshot: MappingSnapshot;
 
   beforeEach(async () => {
+    parentId = "";
+    leafId = "";
     mappingSnapshot = await snapshotMappings(["BANK", "COGS", "AR", "TAX"]);
     const parent = await prisma.chartAccount.create({
       data: { code: `9${tag}1`, name: "Mapping Parent (test)", type: "ASET", depth: 1, isActive: true },
@@ -37,8 +39,8 @@ d("mapping (test bed only)", () => {
     await restoreMappings(mappingSnapshot);
     // Delete leaf before parent — the CoaParent self-FK (onDelete: NoAction) blocks
     // removing a parent while a child still references it.
-    await prisma.chartAccount.deleteMany({ where: { id: leafId } });
-    await prisma.chartAccount.deleteMany({ where: { id: parentId } });
+    await prisma.chartAccount.deleteMany({ where: { id: seededId(leafId) } });
+    await prisma.chartAccount.deleteMany({ where: { id: seededId(parentId) } });
   });
 
   it("resolveAccount returns the mapped account id", async () => {

@@ -11,9 +11,9 @@ const d = isProd ? describe.skip : describe;
 
 d("postPendingSalesJournals (test bed only)", () => {
   let token: number;
-  let userId: string;
-  let orderId: string;
-  let acctIds: string[];
+  let userId = "";
+  let orderId = "";
+  let acctIds: string[] = [];
   let mappingSnapshot: MappingSnapshot;
   let cutoverSnapshot: string | null;
 
@@ -25,6 +25,9 @@ d("postPendingSalesJournals (test bed only)", () => {
     });
 
   beforeEach(async () => {
+    userId = "";
+    orderId = "";
+    acctIds = [];
     token = Math.floor(Math.random() * 1_000_000);
     mappingSnapshot = await snapshotMappings(["AR", "SALES_REVENUE", "COGS", "INVENTORY"]);
     /* The sweep is fail-closed on the GL cutover floor — without a setting it selects nothing. */
@@ -78,18 +81,18 @@ d("postPendingSalesJournals (test bed only)", () => {
      * deleteMany with an empty where clears the whole table on the shared bed.
      */
     await step("journals", async () => {
-      const journals = await prisma.journal.findMany({ where: { postedById: userId ?? "" }, select: { id: true } });
+      const journals = await prisma.journal.findMany({ where: { postedById: seededId(userId) }, select: { id: true } });
       const ids = journals.map((j) => j.id);
       if (ids.length) {
-        await prisma.journalLine.deleteMany({ where: { journalId: { in: ids } } });
-        await prisma.journal.deleteMany({ where: { id: { in: ids } } });
+        await prisma.journalLine.deleteMany({ where: { journalId: { in: ids.map(seededId) } } });
+        await prisma.journal.deleteMany({ where: { id: { in: ids.map(seededId) } } });
       }
     });
     await step("notifications", () => prisma.adminNotification.deleteMany({ where: { category: "JOURNAL_PENDING", message: { contains: `SO-${token}` } } }));
-    await step("accounts", () => prisma.chartAccount.deleteMany({ where: { id: { in: acctIds ?? [] } } }));
-    await step("items", () => prisma.salesOrderItem.deleteMany({ where: { salesOrderId: orderId ?? "" } }));
-    await step("orders", () => prisma.salesOrder.deleteMany({ where: { id: orderId ?? "" } }));
-    await step("user", () => prisma.user.deleteMany({ where: { id: userId ?? "" } }));
+    await step("accounts", () => prisma.chartAccount.deleteMany({ where: { id: { in: acctIds.map(seededId) } } }));
+    await step("items", () => prisma.salesOrderItem.deleteMany({ where: { salesOrderId: seededId(orderId) } }));
+    await step("orders", () => prisma.salesOrder.deleteMany({ where: { id: seededId(orderId) } }));
+    await step("user", () => prisma.user.deleteMany({ where: { id: seededId(userId) } }));
 
     if (failures.length) throw new Error(`sales sweep spec teardown failed — ${failures.join(" | ")}`);
   });

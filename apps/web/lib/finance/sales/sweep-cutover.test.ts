@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { postPendingSalesJournals, GL_CUTOVER_SETTING_KEY } from "./sweep";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../journals/mapping-test-fixture";
 
@@ -19,8 +19,8 @@ const CUTOVER = "2026-06-01";
  */
 d("postPendingSalesJournals — GL cutover floor (test bed only)", () => {
   let token: number;
-  let userId: string;
-  let acctIds: string[];
+  let userId = "";
+  let acctIds: string[] = [];
   let orderIds: Record<"before" | "boundary" | "after" | "nullBefore" | "nullAfter", string>;
   let mappingSnapshot: MappingSnapshot;
   let cutoverSnapshot: string | null;
@@ -81,6 +81,7 @@ d("postPendingSalesJournals — GL cutover floor (test bed only)", () => {
     prisma.journal.count({ where: { sourceId: orderId } });
 
   beforeEach(async () => {
+    userId = "";
     token = Math.floor(Math.random() * 1_000_000);
     mappingSnapshot = await snapshotMappings(["AR", "SALES_REVENUE", "COGS", "INVENTORY"]);
     const setting = await prisma.systemSetting.findUnique({
@@ -161,11 +162,11 @@ d("postPendingSalesJournals — GL cutover floor (test bed only)", () => {
      */
     const ids = Object.values(orderIds ?? {});
     await step("journals", async () => {
-      const journals = await prisma.journal.findMany({ where: { postedById: userId ?? "" }, select: { id: true } });
+      const journals = await prisma.journal.findMany({ where: { postedById: seededId(userId) }, select: { id: true } });
       const journalIds = journals.map((j) => j.id);
       if (journalIds.length) {
-        await prisma.journalLine.deleteMany({ where: { journalId: { in: journalIds } } });
-        await prisma.journal.deleteMany({ where: { id: { in: journalIds } } });
+        await prisma.journalLine.deleteMany({ where: { journalId: { in: journalIds.map(seededId) } } });
+        await prisma.journal.deleteMany({ where: { id: { in: journalIds.map(seededId) } } });
       }
     });
     await step("notifications", () =>
@@ -173,10 +174,10 @@ d("postPendingSalesJournals — GL cutover floor (test bed only)", () => {
         where: { category: "JOURNAL_PENDING", message: { contains: `SO-CUT-${token}-` } },
       }),
     );
-    await step("items", () => prisma.salesOrderItem.deleteMany({ where: { salesOrderId: { in: ids } } }));
-    await step("orders", () => prisma.salesOrder.deleteMany({ where: { id: { in: ids } } }));
-    await step("accounts", () => prisma.chartAccount.deleteMany({ where: { id: { in: acctIds ?? [] } } }));
-    await step("user", () => prisma.user.deleteMany({ where: { id: userId ?? "" } }));
+    await step("items", () => prisma.salesOrderItem.deleteMany({ where: { salesOrderId: { in: ids.map(seededId) } } }));
+    await step("orders", () => prisma.salesOrder.deleteMany({ where: { id: { in: ids.map(seededId) } } }));
+    await step("accounts", () => prisma.chartAccount.deleteMany({ where: { id: { in: acctIds.map(seededId) } } }));
+    await step("user", () => prisma.user.deleteMany({ where: { id: seededId(userId) } }));
 
     if (failures.length) throw new Error(`cutover spec teardown failed — ${failures.join(" | ")}`);
   });

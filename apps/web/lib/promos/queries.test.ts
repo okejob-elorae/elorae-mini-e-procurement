@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { fetchActivePromosForStore } from "./queries";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -15,6 +15,10 @@ d("fetchActivePromosForStore (test bed only)", () => {
   const promoIds: string[] = [];
 
   beforeEach(async () => {
+    uomId = "";
+    itemId = "";
+    storeId = "";
+    otherStoreId = "";
     promoIds.length = 0;
     const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
@@ -27,10 +31,10 @@ d("fetchActivePromosForStore (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.promo.deleteMany({ where: { id: { in: promoIds } } });
-    await prisma.store.deleteMany({ where: { id: { in: [storeId, otherStoreId] } } });
-    await prisma.item.deleteMany({ where: { id: itemId } });
-    await prisma.uOM.deleteMany({ where: { id: uomId } });
+    await prisma.promo.deleteMany({ where: { id: { in: promoIds.map(seededId) } } });
+    await prisma.store.deleteMany({ where: { id: { in: [storeId, otherStoreId].map(seededId) } } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
 
   it("returns active putus store-eligible promos as PromoInput; excludes inactive/out-of-window/other-store", async () => {

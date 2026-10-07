@@ -264,21 +264,21 @@ d("approveSettlement (test bed only)", () => {
       select: { id: true },
     });
     const paymentIds = payments.map((payment) => payment.id);
-    await prisma.paymentAllocation.deleteMany({ where: { paymentId: { in: paymentIds } } });
-    await prisma.payment.deleteMany({ where: { id: { in: paymentIds } } });
+    await prisma.paymentAllocation.deleteMany({ where: { paymentId: { in: paymentIds.map(seededId) } } });
+    await prisma.payment.deleteMany({ where: { id: { in: paymentIds.map(seededId) } } });
 
     await prisma.auditLog.deleteMany({ where: { userId: seededId(approverId) } });
 
     const ids = settlementIds.map(seededId);
-    await prisma.storeSettlementDeduction.deleteMany({ where: { settlementId: { in: ids } } });
-    await prisma.storeSettlementInvoice.deleteMany({ where: { settlementId: { in: ids } } });
-    await prisma.storeSettlement.deleteMany({ where: { id: { in: ids } } });
+    await prisma.storeSettlementDeduction.deleteMany({ where: { settlementId: { in: ids.map(seededId) } } });
+    await prisma.storeSettlementInvoice.deleteMany({ where: { settlementId: { in: ids.map(seededId) } } });
+    await prisma.storeSettlement.deleteMany({ where: { id: { in: ids.map(seededId) } } });
 
     const returIds = [
       seededId(retId), seededId(retSmallId), seededId(retNotApprovedId), seededId(retWrongStoreId),
     ];
-    await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: returIds } } });
-    await prisma.fieldReturn.deleteMany({ where: { id: { in: returIds } } });
+    await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: returIds.map(seededId) } } });
+    await prisma.fieldReturn.deleteMany({ where: { id: { in: returIds.map(seededId) } } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
 

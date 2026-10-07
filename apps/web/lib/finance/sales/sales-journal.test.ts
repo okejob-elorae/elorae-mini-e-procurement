@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { postSalesRevenueJournal, postSalesCogsJournal } from "./sales-journal";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../journals/mapping-test-fixture";
 import { type PostingRole } from "@/lib/constants/journal-roles";
@@ -11,12 +11,12 @@ const d = isProd ? describe.skip : describe;
 
 d("sales auto-journal (test bed only)", () => {
   let token: number;
-  let userId: string;
-  let orderId: string;
-  let arId: string;
-  let revId: string;
-  let cogsId: string;
-  let invId: string;
+  let userId = "";
+  let orderId = "";
+  let arId = "";
+  let revId = "";
+  let cogsId = "";
+  let invId = "";
   let mappingSnapshot: MappingSnapshot;
 
   let soSeq = 0;
@@ -69,6 +69,12 @@ d("sales auto-journal (test bed only)", () => {
   }
 
   beforeEach(async () => {
+    userId = "";
+    orderId = "";
+    arId = "";
+    revId = "";
+    cogsId = "";
+    invId = "";
     token = Math.floor(Math.random() * 1_000_000);
     mappingSnapshot = await snapshotMappings(["AR", "SALES_REVENUE", "COGS", "INVENTORY"]);
     const user = await prisma.user.create({ data: { email: `test-sales-journal-${token}@test.local`, name: "Test Admin" } });
@@ -113,17 +119,17 @@ d("sales auto-journal (test bed only)", () => {
      * deleteMany with an empty where clears the whole table on the shared bed.
      */
     await step("journals", async () => {
-      const journals = await prisma.journal.findMany({ where: { postedById: userId ?? "" }, select: { id: true } });
+      const journals = await prisma.journal.findMany({ where: { postedById: seededId(userId) }, select: { id: true } });
       const ids = journals.map((j) => j.id);
       if (ids.length) {
-        await prisma.journalLine.deleteMany({ where: { journalId: { in: ids } } });
-        await prisma.journal.deleteMany({ where: { id: { in: ids } } });
+        await prisma.journalLine.deleteMany({ where: { journalId: { in: ids.map(seededId) } } });
+        await prisma.journal.deleteMany({ where: { id: { in: ids.map(seededId) } } });
       }
     });
-    await step("accounts", () => prisma.chartAccount.deleteMany({ where: { id: { in: [arId, revId, cogsId, invId].filter(Boolean) } } }));
+    await step("accounts", () => prisma.chartAccount.deleteMany({ where: { id: { in: [arId, revId, cogsId, invId].map(seededId).filter(Boolean) } } }));
     await step("items", () => prisma.salesOrderItem.deleteMany({ where: { salesOrder: { salesorderNo: { startsWith: `SO-${token}` } } } }));
     await step("orders", () => prisma.salesOrder.deleteMany({ where: { salesorderNo: { startsWith: `SO-${token}` } } }));
-    await step("user", () => prisma.user.deleteMany({ where: { id: userId ?? "" } }));
+    await step("user", () => prisma.user.deleteMany({ where: { id: seededId(userId) } }));
 
     if (failures.length) throw new Error(`sales journal spec teardown failed — ${failures.join(" | ")}`);
   });

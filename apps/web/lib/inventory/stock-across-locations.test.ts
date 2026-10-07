@@ -71,10 +71,10 @@ d("getStockAcrossLocations", () => {
 
   afterEach(async () => {
     const itemIds = [seededId(dualItemId), seededId(itemId), seededId(storeOnlyItemId), seededId(emptyItemId)];
-    await prisma.storeStock.deleteMany({ where: { itemId: { in: itemIds } } });
-    await prisma.vanStock.deleteMany({ where: { itemId: { in: itemIds } } });
-    await prisma.inventoryValue.deleteMany({ where: { itemId: { in: itemIds } } });
-    await prisma.item.deleteMany({ where: { id: { in: itemIds } } });
+    await prisma.storeStock.deleteMany({ where: { itemId: { in: itemIds.map(seededId) } } });
+    await prisma.vanStock.deleteMany({ where: { itemId: { in: itemIds.map(seededId) } } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: { in: itemIds.map(seededId) } } });
+    await prisma.item.deleteMany({ where: { id: { in: itemIds.map(seededId) } } });
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
     await prisma.user.deleteMany({ where: { id: seededId(canvasserId) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });

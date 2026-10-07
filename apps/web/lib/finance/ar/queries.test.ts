@@ -170,8 +170,8 @@ d("AR queries (test bed only)", () => {
 
   afterEach(async () => {
     const settlementIds = createdSettlementIds.map((id) => seededId(id));
-    await prisma.storeSettlementInvoice.deleteMany({ where: { settlementId: { in: settlementIds } } });
-    await prisma.storeSettlement.deleteMany({ where: { id: { in: settlementIds } } });
+    await prisma.storeSettlementInvoice.deleteMany({ where: { settlementId: { in: settlementIds.map(seededId) } } });
+    await prisma.storeSettlement.deleteMany({ where: { id: { in: settlementIds.map(seededId) } } });
 
     /* Defensive, same as void-writer.test.ts: neither writer under test posts a journal itself, but
      * clean up the slot children-first in case that ever changes. */

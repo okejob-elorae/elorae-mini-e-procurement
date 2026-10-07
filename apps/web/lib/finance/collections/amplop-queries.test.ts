@@ -415,30 +415,30 @@ d("amplop queries (test bed only)", () => {
       partialReceivableId, salesmanReceivableId, bothReceivableId, storeHighReceivableId, storeMedReceivableId,
       storeLowReceivableId, storeZeroReceivableId,
     ].map(seededId);
-    await prisma.receivable.deleteMany({ where: { id: { in: receivableIds } } });
+    await prisma.receivable.deleteMany({ where: { id: { in: receivableIds.map(seededId) } } });
 
     const deliveryIds = [
       writtenOffDeliveryId, paidDeliveryId, noFakturDeliveryId, submittedDeliveryId,
       partialDeliveryId, salesmanDeliveryId, bothDeliveryId, storeHighDeliveryId, storeMedDeliveryId,
       storeLowDeliveryId, storeZeroDeliveryId,
     ].map(seededId);
-    await prisma.fieldSalesDelivery.deleteMany({ where: { id: { in: deliveryIds } } });
+    await prisma.fieldSalesDelivery.deleteMany({ where: { id: { in: deliveryIds.map(seededId) } } });
 
     const orderIds = [
       writtenOffOrderId, paidOrderId, noFakturOrderId, submittedOrderId,
       partialOrderId, salesmanOrderId, bothOrderId, storeHighOrderId, storeMedOrderId,
       storeLowOrderId, storeZeroOrderId,
     ].map(seededId);
-    await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: orderIds } } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: orderIds.map(seededId) } } });
 
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
 
     const storeIds = [collectorStoreId, salesmanStoreId, bothStoreId, storeHighId, storeMedId, storeLowId, storeZeroId].map(seededId);
-    await prisma.store.deleteMany({ where: { id: { in: storeIds } } });
+    await prisma.store.deleteMany({ where: { id: { in: storeIds.map(seededId) } } });
 
     const userIds = [collectorUserId, salesmanUserId, adminUserId, bothRoleUserId, multiStoreUserId, emptyUserId].map(seededId);
-    await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+    await prisma.user.deleteMany({ where: { id: { in: userIds.map(seededId) } } });
   });
 
   it("includes a store where the user is the assigned collector", async () => {
