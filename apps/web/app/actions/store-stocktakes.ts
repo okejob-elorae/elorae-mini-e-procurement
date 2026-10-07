@@ -70,7 +70,15 @@ type SaveCountsItemKeyedLineInput = SaveCountsAddedLineInput;
  * exist client-side before the document does.
  */
 export type SaveCountsActionInput =
-  | { stocktakeId: string; storeId?: undefined; lines: SaveCountsLineInput[]; addedLines?: SaveCountsAddedLineInput[]; submit?: boolean }
+  /* `clientSentAtMs?: undefined` is load-bearing: without it `isValidSaveCountsInput`'s predicate, which declares the field, filters this member out under the subtype rule. */
+  | {
+      stocktakeId: string;
+      storeId?: undefined;
+      lines: SaveCountsLineInput[];
+      addedLines?: SaveCountsAddedLineInput[];
+      submit?: boolean;
+      clientSentAtMs?: undefined;
+    }
   | {
       storeId: string;
       stocktakeId?: undefined;
