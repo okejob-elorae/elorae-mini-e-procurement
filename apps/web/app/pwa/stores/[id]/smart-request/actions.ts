@@ -6,7 +6,7 @@ import { prisma } from "@elorae/db";
 import { computeStorePrice } from "@elorae/db/pricing";
 import { auth } from "@/lib/auth";
 import { createFieldSalesOrder } from "@/lib/field-sales/writer";
-import { NoActiveVisitError, MinQtyViolationError } from "@/lib/field-sales/errors";
+import { NoActiveVisitError, MinQtyViolationError, ItemUnavailableError } from "@/lib/field-sales/errors";
 import { getPackRatio } from "@/app/actions/settings/pack-ratio";
 import { getSmartRequestHistory } from "@/lib/field-sales/queries";
 import { loadSmartRequestCandidates } from "@/lib/field-sales/smart-request/load-candidates";
@@ -118,6 +118,7 @@ export async function submitSmartRequestOrder(input: unknown): Promise<SubmitRes
   } catch (e) {
     if (e instanceof NoActiveVisitError) return { ok: false, code: "NO_ACTIVE_VISIT" };
     if (e instanceof MinQtyViolationError) return { ok: false, code: "MIN_QTY", violations: e.violations };
+    if (e instanceof ItemUnavailableError) return { ok: false, code: "ITEM_UNAVAILABLE", itemIds: e.itemIds };
     throw e;
   }
 }

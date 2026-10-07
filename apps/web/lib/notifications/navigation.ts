@@ -101,6 +101,11 @@ export function getNotificationHref(
       return '/backoffice/finance/faktur-pajak';
     }
     case 'FIELD_RETURN_MISMATCH': {
+      /* The PWA copy goes to the salesman who raised the retur, and the PWA has no retur detail page. */
+      if (context === "pwa") {
+        const storeId = data.storeId;
+        return typeof storeId === "string" && storeId !== "" ? `/pwa/stores/${storeId}` : "/pwa/notifications";
+      }
       const returnId = data.returnId;
       if (typeof returnId === 'string') {
         return `/backoffice/field-returns/${returnId}`;

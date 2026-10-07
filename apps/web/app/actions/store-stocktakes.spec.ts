@@ -587,6 +587,12 @@ describe("store stocktake actions (unit — writers mocked)", () => {
       expect(res).toEqual({ ok: false, code: "TRANSFER_PENDING", detail: "STRF/2609/0001" });
     });
 
+    it("maps a writer RETUR_PENDING onto its own code and carries the returs it names", async () => {
+      mockApprove.mockRejectedValue(new StoreStocktakeError("RETUR_PENDING", "FIELDRET/2610/0001, FIELDRET/2610/0002"));
+      const res = await approveAction("st1");
+      expect(res).toEqual({ ok: false, code: "RETUR_PENDING", detail: "FIELDRET/2610/0001, FIELDRET/2610/0002" });
+    });
+
     it("maps an unknown throw onto ERROR without leaking it", async () => {
       mockApprove.mockRejectedValue(new Error("boom"));
       const res = await approveAction("st1");

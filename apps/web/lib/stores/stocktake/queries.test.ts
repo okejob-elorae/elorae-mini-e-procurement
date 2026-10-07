@@ -70,6 +70,8 @@ d("store stocktake queries (test bed only)", () => {
   });
 
   afterEach(async () => {
+    await prisma.fieldReturnLine.deleteMany({ where: { returnDoc: { storeId: seededId(storeId) } } });
+    await prisma.fieldReturn.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.storeStocktakeLine.deleteMany({ where: { stocktakeId: { in: stocktakeIds } } });
     await prisma.storeStocktake.deleteMany({ where: { id: { in: stocktakeIds } } });
     await prisma.spgSaleLine.deleteMany({ where: { spgSaleId: { in: spgSaleIds } } });
@@ -286,5 +288,94 @@ d("store stocktake queries (test bed only)", () => {
     const byUser = await getStoreStocktakeById(human.id);
     expect(byUser?.createdByIsSystem).toBe(false);
     expect(byUser?.createdByLabel).toBe("Test Stocktake User");
+  });
+
+  /* returInFlight — the advisory naming returs in flight at the count moment */
+
+  const countMoment = new Date(Date.now() - 10 * 60_000);
+  const before = new Date(countMoment.getTime() - 60 * 60_000);
+  const after = new Date(countMoment.getTime() + 60_000);
+
+  const mkRetur = (
+    n: number,
+    opts: { status: "PENDING_WAREHOUSE_RECEIVING" | "APPROVED" | "CANCELLED"; createdAt: Date; approvedAt?: Date },
+    lines: Array<{ itemId: string; variantSku: string; qty: number }>,
+  ) =>
+    prisma.fieldReturn.create({
+      data: {
+        docNo: `FRET/${tag}/${n}`,
+        storeId,
+        raisedById: userId,
+        status: opts.status,
+        createdAt: opts.createdAt,
+        approvedAt: opts.approvedAt ?? null,
+        lines: { create: lines.map((l) => ({ ...l, reason: "UNSOLD" as const })) },
+      },
+      select: { docNo: true },
+    });
+
+  const mkCountedStocktake = async (countFinishedAt: Date | null) => {
+    const st = await prisma.storeStocktake.create({
+      data: {
+        docNo: `STK/${tag}/rif-${stocktakeIds.length}`,
+        storeId,
+        status: "PENDING_VERIFICATION",
+        countedAt: countMoment,
+        countFinishedAt,
+        createdById: userId,
+        lines: {
+          create: [
+            { itemId: itemAId, variantSku: "", productName: "A", expectedQty: 10, countedQty: 6 },
+            { itemId: itemBId, variantSku: "", productName: "B", expectedQty: 5, countedQty: 5 },
+            { itemId: itemCId, variantSku: "RED-S", productName: "C", expectedQty: 4, countedQty: 3 },
+          ],
+        },
+      },
+      select: { id: true, lines: { select: { id: true, itemId: true } } },
+    });
+    stocktakeIds.push(st.id);
+    const lineIdOf = (itemId: string) => st.lines.find((l) => l.itemId === itemId)!.id;
+    return { id: st.id, lineA: lineIdOf(itemAId), lineC: lineIdOf(itemCId) };
+  };
+
+  it("sums the returs in flight at the count moment onto the lines they match, and leaves the figures alone", async () => {
+    const { id, lineA, lineC } = await mkCountedStocktake(countMoment);
+    /* Open, raised before the count: in flight. Its variant spelling differs only in case from the line's. */
+    const open = await mkRetur(1, { status: "PENDING_WAREHOUSE_RECEIVING", createdAt: before }, [
+      { itemId: itemAId, variantSku: "", qty: 2 },
+      { itemId: itemCId, variantSku: "red-s", qty: 1 },
+    ]);
+    /* Approved only after the count: still in flight at the count moment. */
+    const lateApproved = await mkRetur(2, { status: "APPROVED", createdAt: before, approvedAt: after }, [{ itemId: itemAId, variantSku: "", qty: 1 }]);
+    /* Settled before the count, cancelled, and raised after the count: none of them in flight. */
+    await mkRetur(3, { status: "APPROVED", createdAt: before, approvedAt: new Date(countMoment.getTime() - 60_000) }, [{ itemId: itemAId, variantSku: "", qty: 5 }]);
+    await mkRetur(4, { status: "CANCELLED", createdAt: before }, [{ itemId: itemAId, variantSku: "", qty: 5 }]);
+    await mkRetur(5, { status: "PENDING_WAREHOUSE_RECEIVING", createdAt: after }, [{ itemId: itemBId, variantSku: "", qty: 5 }]);
+
+    const detail = await getStoreStocktakeById(id);
+
+    expect(detail?.returInFlight).toEqual({ docNos: [open.docNo, lateApproved.docNo], qtyByLineId: { [lineA]: 3, [lineC]: 1 } });
+    const a = detail?.lines.find((l) => l.id === lineA);
+    expect(a?.expectedQty).toBe(10);
+    expect(a?.countedQty).toBe(6);
+  });
+
+  it("returns an empty advisory at a PUTUS store, where a retur never moves StoreStock", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { termsType: "PUTUS" } });
+    const { id } = await mkCountedStocktake(countMoment);
+    await mkRetur(1, { status: "PENDING_WAREHOUSE_RECEIVING", createdAt: before }, [{ itemId: itemAId, variantSku: "", qty: 2 }]);
+
+    const detail = await getStoreStocktakeById(id);
+
+    expect(detail?.returInFlight).toEqual({ docNos: [], qtyByLineId: {} });
+  });
+
+  it("returns an empty advisory for a count with neither countFinishedAt nor approvedAt", async () => {
+    const { id } = await mkCountedStocktake(null);
+    await mkRetur(1, { status: "PENDING_WAREHOUSE_RECEIVING", createdAt: before }, [{ itemId: itemAId, variantSku: "", qty: 2 }]);
+
+    const detail = await getStoreStocktakeById(id);
+
+    expect(detail?.returInFlight).toEqual({ docNos: [], qtyByLineId: {} });
   });
 });

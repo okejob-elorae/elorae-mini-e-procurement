@@ -1,6 +1,7 @@
 import { defaultCache } from "@serwist/next/worker";
 import type { PrecacheEntry, SerwistGlobalConfig } from "serwist";
 import { ExpirationPlugin, NetworkFirst, Serwist, StaleWhileRevalidate } from "serwist";
+import { parsePushPayload } from "../../lib/pwa/push-payload";
 
 declare global {
   interface WorkerGlobalScope extends SerwistGlobalConfig {
@@ -61,5 +62,52 @@ const serwist = new Serwist({
     ...defaultCache,
   ],
 });
+
+/**
+ * FCM push for the PWA, handled here rather than by a Firebase messaging service worker: two
+ * service workers cannot share the `/pwa/` scope, and the PWA obtains its FCM token against this
+ * registration. Every push MUST show a notification (Chrome's `userVisibleOnly` contract), so an
+ * unreadable payload still shows a generic one.
+ */
+self.addEventListener("push", (event) => {
+  let raw: unknown = null;
+  try {
+    raw = event.data?.json() ?? null;
+  } catch {
+    raw = null;
+  }
+  const payload = parsePushPayload(raw);
+  event.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      tag: payload.tag,
+      icon: "/pwa/icon-192.png",
+      data: { url: payload.url },
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const data = event.notification.data as { url?: unknown } | null;
+  const url = typeof data?.url === "string" ? data.url : "/pwa/notifications";
+  event.waitUntil(openPushTarget(url));
+});
+
+/* Reuses an open PWA window when there is one, else opens a new one. */
+async function openPushTarget(url: string): Promise<void> {
+  const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  const pwaWindow = windows.find((client) => new URL(client.url).pathname.startsWith("/pwa"));
+  if (pwaWindow) {
+    try {
+      const focused = await pwaWindow.focus();
+      await focused.navigate(url);
+      return;
+    } catch {
+      /* navigate() refuses a window this worker does not control; open a fresh one instead. */
+    }
+  }
+  await self.clients.openWindow(url);
+}
 
 serwist.addEventListeners();

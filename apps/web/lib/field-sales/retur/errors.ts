@@ -3,6 +3,7 @@ export type FieldReturnErrorCode =
   | "BAD_QTY"
   | "BAD_LINE_SHAPE"
   | "ITEM_NOT_FOUND"
+  | "BAD_VARIANT"
   | "STORE_NOT_FOUND"
   | "VISIT_NOT_OWNED"
   | "MISSING_RESI"
@@ -19,7 +20,8 @@ export type FieldReturnErrorCode =
   | "NO_VARIANCE"
   | "RESOLUTION_DIRECTION_MISMATCH"
   | "SALESMAN_BEARS_NOT_ALLOWED"
-  | "UNRESOLVED_LINES";
+  | "UNRESOLVED_LINES"
+  | "MISSING_REASON";
 
 export class FieldReturnError extends Error {
   constructor(public code: FieldReturnErrorCode) {

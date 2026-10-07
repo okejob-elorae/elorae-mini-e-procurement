@@ -6,6 +6,12 @@ export class NoActiveVisitError extends Error {
     this.name = "NoActiveVisitError";
   }
 }
+export class ItemUnavailableError extends Error {
+  constructor(public itemIds: string[]) {
+    super("ITEM_UNAVAILABLE");
+    this.name = "ItemUnavailableError";
+  }
+}
 export type MinQtyViolation = { itemId: string; requiredMin: number; actualQty: number };
 export class MinQtyViolationError extends Error {
   constructor(public violations: MinQtyViolation[]) {

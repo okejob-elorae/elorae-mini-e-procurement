@@ -14,9 +14,8 @@ export async function GET(req: NextRequest) {
 
   const storeId = req.nextUrl.searchParams.get("storeId");
   if (!storeId) return NextResponse.json({ error: "storeId required" }, { status: 400 });
-  const includeInactive = req.nextUrl.searchParams.get("includeInactive") === "1";
 
-  const payload = await listCatalogForPwa(storeId, { includeInactive });
+  const payload = await listCatalogForPwa(storeId);
   if (!payload) return NextResponse.json({ error: "Store not found" }, { status: 404 });
 
   return NextResponse.json(payload);

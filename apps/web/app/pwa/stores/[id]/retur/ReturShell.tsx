@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import {
   ArrowLeft,
   Camera,
@@ -83,6 +84,8 @@ function messageForFailure(status: number, body: unknown): string {
         return "Data baris retur tidak terbaca. Muat ulang halaman lalu isi ulang barangnya.";
       case "ITEM_NOT_FOUND":
         return "Ada barang yang tidak dikenali sistem. Muat ulang katalog lalu pilih ulang barangnya.";
+      case "BAD_VARIANT":
+        return "Varian yang dipilih tidak bisa diretur untuk barang ini. Muat ulang katalog lalu pilih ulang barangnya.";
       case "STORE_NOT_FOUND":
         return "Toko tidak ditemukan atau sudah nonaktif.";
       case "VISIT_NOT_OWNED":
@@ -109,6 +112,7 @@ function messageForFailure(status: number, body: unknown): string {
 }
 
 export function ReturShell({ storeId, storeName, visitId }: { storeId: string; storeName: string; visitId: string | null }) {
+  const t = useTranslations("pwa.retur");
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [state, setState] = useState<LoadState>("loading");
   const [q, setQ] = useState("");
@@ -139,7 +143,7 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
   useEffect(() => {
     let alive = true;
     setState("loading");
-    fetch(`/pwa/api/catalog?storeId=${encodeURIComponent(storeId)}&includeInactive=1`)
+    fetch(`/pwa/api/retur/catalog?storeId=${encodeURIComponent(storeId)}`)
       .then((r) => {
         if (!r.ok) throw new Error(String(r.status));
         return r.json() as Promise<Payload>;
@@ -560,17 +564,18 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
                   <div className="mt-3 flex flex-col gap-2 border-t pt-3">
                     {it.variants.map((v) => {
                       const vQty = lines.get(lineKey(it.itemId, v.variantSku))?.qty ?? 0;
+                      const vLabel = v.variantSku === "" ? t("pooledVariant") : v.variantLabel;
                       return (
                         <div key={v.variantSku} className="flex items-center justify-between gap-2">
-                          <span className="text-sm">{v.variantLabel}</span>
+                          <span className="min-w-0 truncate text-sm">{vLabel}</span>
                           <div className="flex items-center gap-1.5">
                             <Button
                               type="button"
                               variant="outline"
                               size="icon-lg"
                               disabled={vQty <= 0}
-                              onClick={() => setLineQty(it, v.variantSku, v.variantLabel, vQty - 1)}
-                              aria-label={`Kurangi ${it.nameId} ${v.variantLabel}`}
+                              onClick={() => setLineQty(it, v.variantSku, vLabel, vQty - 1)}
+                              aria-label={`Kurangi ${it.nameId} ${vLabel}`}
                             >
                               <Minus className="h-4 w-4" />
                             </Button>
@@ -579,8 +584,8 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
                               type="button"
                               variant="outline"
                               size="icon-lg"
-                              onClick={() => setLineQty(it, v.variantSku, v.variantLabel, vQty + 1)}
-                              aria-label={`Tambah ${it.nameId} ${v.variantLabel}`}
+                              onClick={() => setLineQty(it, v.variantSku, vLabel, vQty + 1)}
+                              aria-label={`Tambah ${it.nameId} ${vLabel}`}
                             >
                               <Plus className="h-4 w-4" />
                             </Button>

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { listPriceCandidates, resolveLinePrice } from "./pricing";
+import { listPriceCandidates, listPriceCandidatesForKeys, priceCandidateKey, resolveLinePrice } from "./pricing";
 
 /**
  * Read-only queries under test, but the fixture writes real FieldSalesOrder / FieldSalesDelivery
@@ -243,5 +243,37 @@ d("listPriceCandidates / resolveLinePrice (test bed only)", () => {
   it("reports UNPRICEABLE when nothing was ever delivered", async () => {
     const res = await resolveLinePrice(prisma, { storeId, itemId, variantSku: "NEVERSENT" });
     expect(res.kind).toBe("UNPRICEABLE");
+  });
+
+  it("listPriceCandidatesForKeys returns, per key, exactly what listPriceCandidates returns", async () => {
+    const keys = ["XL", "M", "AMBIG"].map((variantSku) => ({ storeId, itemId, variantSku }));
+    const grouped = await listPriceCandidatesForKeys(prisma, keys);
+    for (const key of keys) {
+      const single = await listPriceCandidates(prisma, key);
+      const batched = grouped.get(priceCandidateKey(key)) ?? [];
+      expect(batched.map((c) => c.deliveryLineId)).toEqual(single.map((c) => c.deliveryLineId));
+    }
+    expect(grouped.get(priceCandidateKey(keys[2]))).toHaveLength(2);
+  });
+
+  it("listPriceCandidatesForKeys gives a key from another store only that store's candidates", async () => {
+    const grouped = await listPriceCandidatesForKeys(prisma, [
+      { storeId, itemId, variantSku: "XL" },
+      { storeId: otherStoreId, itemId, variantSku: "M" },
+    ]);
+    expect(grouped.get(priceCandidateKey({ storeId, itemId, variantSku: "XL" }))).toHaveLength(1);
+    expect(grouped.get(priceCandidateKey({ storeId: otherStoreId, itemId, variantSku: "M" }))).toBeUndefined();
+  });
+
+  it("listPriceCandidatesForKeys folds the variant case when grouping", async () => {
+    const grouped = await listPriceCandidatesForKeys(prisma, [{ storeId, itemId, variantSku: "xl" }]);
+    const found = grouped.get(priceCandidateKey({ storeId, itemId, variantSku: "XL" }));
+    expect(found).toHaveLength(1);
+    expect(found?.[0].unitPrice).toBeCloseTo(833_333.3333, 4);
+  });
+
+  it("listPriceCandidatesForKeys returns an empty map for no keys", async () => {
+    const grouped = await listPriceCandidatesForKeys(prisma, []);
+    expect(grouped.size).toBe(0);
   });
 });

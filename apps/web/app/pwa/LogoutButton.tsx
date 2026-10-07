@@ -17,6 +17,7 @@ import {
 import { flushPendingOrders } from "@/lib/pwa/offline/sync";
 import { flushPendingPhotos } from "@/lib/pwa/offline/photo-sync";
 import { flushPendingCompletions } from "@/lib/pwa/offline/completion-sync";
+import { deleteFcmToken } from "@/components/notifications/fcm-client";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -68,6 +69,8 @@ export function LogoutButton() {
       });
       return;
     }
+    /* A shared phone must stop receiving this user's pushes; never throws, so it cannot block logout. */
+    await deleteFcmToken();
     await logout();
   };
 

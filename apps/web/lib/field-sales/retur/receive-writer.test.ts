@@ -2,8 +2,14 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { createFieldReturn } from "./writer";
 import { receiveFieldReturn } from "./receive-writer";
+import { notifySalesmanOfMismatch } from "./mismatch-notice";
 
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
+/* The writer chains `.catch` on the sender, so the stub must return a promise. */
+vi.mock("./mismatch-notice", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./mismatch-notice")>()),
+  notifySalesmanOfMismatch: vi.fn(async () => undefined),
+}));
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -34,6 +40,7 @@ d("receiveFieldReturn (test bed only)", () => {
   let returnId = "";
   let lineAId = "";
   let lineBId = "";
+  let adminReturnId = "";
 
   const cleanCounts = () => [
     { lineId: lineAId, receivedQty: 3, sellableQty: 3, rejectedQty: 0 },
@@ -50,6 +57,8 @@ d("receiveFieldReturn (test bed only)", () => {
     returnId = "";
     lineAId = "";
     lineBId = "";
+    adminReturnId = "";
+    vi.mocked(notifySalesmanOfMismatch).mockClear();
 
     const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-FRR-${token}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
@@ -94,11 +103,16 @@ d("receiveFieldReturn (test bed only)", () => {
   });
 
   afterEach(async () => {
-    if (returnId) {
-      const notifications = await mismatchNotificationsFor(returnId);
+    for (const id of [returnId, adminReturnId]) {
+      if (!id) continue;
+      const notifications = await mismatchNotificationsFor(id);
       if (notifications.length) {
         await prisma.adminNotification.deleteMany({ where: { id: { in: notifications.map((n) => n.id) } } });
       }
+    }
+    if (adminReturnId) {
+      await prisma.fieldReturnLine.deleteMany({ where: { returnId: seededId(adminReturnId) } });
+      await prisma.fieldReturn.deleteMany({ where: { id: seededId(adminReturnId) } });
     }
     await prisma.fieldReturnLine.deleteMany({ where: { returnId: seededId(returnId) } });
     await prisma.fieldReturn.deleteMany({ where: { id: seededId(returnId) } });
@@ -185,6 +199,52 @@ d("receiveFieldReturn (test bed only)", () => {
 
     const after = await mismatchNotificationsFor(returnId);
     expect(after).toHaveLength(0);
+  });
+
+  it("a mismatched FIELD retur tells the raising salesman, once", async () => {
+    await receiveFieldReturn({
+      returnId,
+      receivedById: adminId,
+      counts: [
+        { lineId: lineAId, receivedQty: 1, sellableQty: 1, rejectedQty: 0 },
+        { lineId: lineBId, receivedQty: 2, sellableQty: 2, rejectedQty: 0 },
+      ],
+    });
+
+    const retDoc = await prisma.fieldReturn.findUniqueOrThrow({ where: { id: seededId(returnId) } });
+    expect(notifySalesmanOfMismatch).toHaveBeenCalledTimes(1);
+    expect(notifySalesmanOfMismatch).toHaveBeenCalledWith({
+      raisedById,
+      returnId,
+      docNo: retDoc.docNo,
+      storeId,
+      mismatchedLineCount: 1,
+    });
+  });
+
+  it("a clean count does not notify the salesman", async () => {
+    await receiveFieldReturn({ returnId, receivedById: adminId, counts: cleanCounts() });
+    expect(notifySalesmanOfMismatch).not.toHaveBeenCalled();
+  });
+
+  it("an ADMIN-origin mismatch does not notify a salesman", async () => {
+    const created = await createFieldReturn({
+      storeId,
+      raisedById,
+      origin: "ADMIN",
+      lines: [{ itemId: itemAId, variantSku: "", qty: 3, reason: "UNSOLD" }],
+    });
+    adminReturnId = created.returnId;
+    const line = await prisma.fieldReturnLine.findFirstOrThrow({ where: { returnId: seededId(adminReturnId) } });
+
+    const res = await receiveFieldReturn({
+      returnId: adminReturnId,
+      receivedById: adminId,
+      counts: [{ lineId: line.id, receivedQty: 1, sellableQty: 1, rejectedQty: 0 }],
+    });
+
+    expect(res.status).toBe("MISMATCH_PENDING_RESOLUTION");
+    expect(notifySalesmanOfMismatch).not.toHaveBeenCalled();
   });
 
   it("accepts an ALL-ZERO count — the lost-sack case", async () => {

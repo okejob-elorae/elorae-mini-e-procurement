@@ -8,7 +8,7 @@ import { runSerializable } from "@/lib/db/tx-retry";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { sendNotificationToUsers } from "@/lib/notifications/recipients";
 import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
-import { NoActiveVisitError, MinQtyViolationError, InvalidOrderTransitionError, InsufficientStockError, InvalidAddedLineError, InvalidFinalPriceError, CreditLimitExceededError } from "./errors";
+import { NoActiveVisitError, MinQtyViolationError, InvalidOrderTransitionError, InsufficientStockError, InvalidAddedLineError, InvalidFinalPriceError, CreditLimitExceededError, ItemUnavailableError } from "./errors";
 import { checkFinalPrices } from "./final-prices";
 import { sentItemIds } from "./queries";
 import { openKonsiQtyByKey } from "./konsi-open-qty";
@@ -67,6 +67,16 @@ export async function createFieldSalesOrder(input: {
       if (!active) throw new NoActiveVisitError(input.storeId, input.salesmanId);
       visitId = active.id;
     }
+
+    /* Same predicate as the konsi approve path's added lines. */
+    const lineItemIds = Array.from(new Set(input.lines.map((l) => l.itemId)));
+    const sellable = await tx.item.findMany({
+      where: { id: { in: lineItemIds }, isActive: true, type: "FINISHED_GOOD" },
+      select: { id: true },
+    });
+    const sellableIds = new Set(sellable.map((i) => i.id));
+    const unavailable = lineItemIds.filter((id) => !sellableIds.has(id));
+    if (unavailable.length > 0) throw new ItemUnavailableError(unavailable);
 
     const store = await tx.store.findUniqueOrThrow({
       where: { id: input.storeId },

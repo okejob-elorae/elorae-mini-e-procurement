@@ -1,7 +1,7 @@
 import { prisma, Prisma } from "@elorae/db";
 import { roundCents } from "@elorae/db/pricing";
 import { lineVariance, creditedQtyForLine } from "./variance";
-import { listPriceCandidates, type PriceCandidate } from "./pricing";
+import { listPriceCandidates, listPriceCandidatesForKeys, priceCandidateKey, type PriceCandidate } from "./pricing";
 import { classifyPriceCandidates } from "./pricing-rules";
 
 export type FieldReturnStatus =
@@ -46,6 +46,12 @@ export type FieldReturnRow = {
    * available for the remainder.
    */
   offsetStatus: FieldReturnOffsetStatus;
+  /**
+   * Lines of a still-open retur that have no recorded price and cannot be priced automatically
+   * (several deliveries disagree, or none exist) — what an admin has to act on before approval.
+   * Always 0 outside `PRICEABLE_STATUSES`.
+   */
+  needsPriceLineCount: number;
 };
 
 export async function listFieldReturns(params: {
@@ -89,12 +95,17 @@ export async function listFieldReturns(params: {
         appliedValue: true,
         valuationStatus: true,
         offsetStatus: true,
+        storeId: true,
         store: { select: { name: true } },
         _count: { select: { lines: true } },
       },
     }),
     prisma.fieldReturn.count({ where }),
   ]);
+
+  const needsPriceByReturn = await countLinesNeedingPrice(
+    rows.filter((r) => PRICEABLE_STATUS_SET.has(r.status)).map((r) => ({ id: r.id, storeId: r.storeId })),
+  );
 
   return {
     rows: rows.map((r) => {
@@ -114,10 +125,45 @@ export async function listFieldReturns(params: {
         remainingValue: totalValue === null ? null : roundCents(totalValue - appliedValue),
         valuationStatus: r.valuationStatus,
         offsetStatus: r.offsetStatus,
+        needsPriceLineCount: needsPriceByReturn.get(r.id) ?? 0,
       };
     }),
     total,
   };
+}
+
+/**
+ * Per return, how many unpriced lines `classifyPriceCandidates` cannot auto-resolve — the same
+ * verdict the detail page derives per line, here from one candidates query for the whole page.
+ */
+async function countLinesNeedingPrice(
+  openReturns: Array<{ id: string; storeId: string }>,
+): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  if (openReturns.length === 0) return counts;
+
+  const storeIdByReturn = new Map(openReturns.map((r) => [r.id, r.storeId]));
+  const lines = await prisma.fieldReturnLine.findMany({
+    where: { returnId: { in: openReturns.map((r) => r.id) }, priceSource: null },
+    select: { returnId: true, itemId: true, variantSku: true },
+  });
+  if (lines.length === 0) return counts;
+
+  const keyed = lines.map((l) => ({
+    returnId: l.returnId,
+    key: { storeId: storeIdByReturn.get(l.returnId) ?? "", itemId: l.itemId, variantSku: l.variantSku },
+  }));
+  const candidates = await listPriceCandidatesForKeys(
+    prisma,
+    keyed.map((k) => k.key),
+  );
+  for (const { returnId, key } of keyed) {
+    const prices = (candidates.get(priceCandidateKey(key)) ?? []).map((c) => c.unitPrice);
+    if (classifyPriceCandidates(prices).kind !== "AUTO") {
+      counts.set(returnId, (counts.get(returnId) ?? 0) + 1);
+    }
+  }
+  return counts;
 }
 
 export type FieldReturnResolutionDetail = {
@@ -209,6 +255,11 @@ export type FieldReturnDetail = {
    * list, not the single terminal payment the pre-draw-down shape used to hand back.
    */
   offsetPayments: { id: string; docNo: string }[];
+  /**
+   * Who cancelled the retur, when and why — read from its `FIELD_RETURN_CANCEL` `AuditLog` row,
+   * since `FieldReturn` carries no cancel columns. `null` unless the status is CANCELLED.
+   */
+  cancellation: { byLabel: string; at: Date; reason: string | null } | null;
   lines: FieldReturnLineDetail[];
 };
 
@@ -308,13 +359,26 @@ export async function getFieldReturnById(
     );
   }
 
+  const cancelAudit =
+    r.status === "CANCELLED"
+      ? await prisma.auditLog.findFirst({
+          where: { entityType: "FieldReturn", entityId: r.id, action: "FIELD_RETURN_CANCEL" },
+          orderBy: { createdAt: "desc" },
+          select: { userId: true, createdAt: true, reason: true },
+        })
+      : null;
+
   /**
    * `raisedById` on `FieldReturn` and `createdById` on each `FieldReturnResolution` are bare
    * scalars with no relation, so every label is a separate batch lookup rather than an
-   * `include`. One query covers the salesman plus every resolution's author.
+   * `include`. One query covers the salesman, every resolution's author and the canceller.
    */
   const userIds = Array.from(
-    new Set([r.raisedById, ...r.lines.flatMap((l) => l.resolutions.map((res) => res.createdById))])
+    new Set([
+      r.raisedById,
+      ...r.lines.flatMap((l) => l.resolutions.map((res) => res.createdById)),
+      ...(cancelAudit ? [cancelAudit.userId] : []),
+    ])
   );
   const users = await prisma.user.findMany({
     where: { id: { in: userIds } },
@@ -343,6 +407,9 @@ export async function getFieldReturnById(
     valuationStatus: r.valuationStatus,
     offsetStatus: r.offsetStatus,
     offsetPayments: r.offsetPayments,
+    cancellation: cancelAudit
+      ? { byLabel: labelFor(cancelAudit.userId), at: cancelAudit.createdAt, reason: cancelAudit.reason }
+      : null,
     lines: r.lines.map((l) => {
       const priceCandidates = candidatesByLineId.get(l.id);
       const priceState: FieldReturnPriceState = l.priceSource

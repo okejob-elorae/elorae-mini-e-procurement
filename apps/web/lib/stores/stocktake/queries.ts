@@ -1,6 +1,7 @@
 import { prisma, Prisma, type PrismaClient } from "@elorae/db";
 import { KONSI_COUNT_SYSTEM_ACTOR } from "@/lib/konsi-count-schedule/schedule";
 import { bookedCountCents, stockMatchKey } from "./booked";
+import { matchKey } from "@/lib/items/variant-rows";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
@@ -273,7 +274,63 @@ export type StoreStocktakeDetail = {
   cancelledAt: Date | null;
   cancelReason: string | null;
   lines: StoreStocktakeLineDetail[];
+  returInFlight: StocktakeReturInFlight;
 };
+
+/**
+ * Field returs that were in flight at a count's moment, and the units they explain per stocktake
+ * line. Advisory only — `expectedQty` and `varianceQty` keep their meaning; this tells the admin
+ * that part of a shortfall may be goods on a retur rather than shrinkage. `qtyByLineId` holds only
+ * lines that received a sum, and `docNos` only returs that reached at least one line.
+ */
+export type StocktakeReturInFlight = { docNos: string[]; qtyByLineId: Record<string, number> };
+
+const RETUR_OPEN_STATUSES = ["PENDING_WAREHOUSE_RECEIVING", "MISMATCH_PENDING_RESOLUTION", "PENDING_APPROVAL"] as const;
+
+/**
+ * In flight means the same thing here as in the sell-through report's `RETUR_IN_FLIGHT`: raised on
+ * or before the count moment (`countFinishedAt ?? approvedAt`) and not settled by it — still open,
+ * or approved only after it. CANCELLED never counts. A count with neither timestamp has no moment
+ * yet, so nothing is in flight. KONSI-only, like the stocktake approval's `RETUR_PENDING`: a retur
+ * moves `StoreStock` only at a KONSI store, so only there does a retur's lagging store row make a
+ * count's shortfall a timing artefact. Retur lines are matched onto stocktake lines by item and the
+ * case-folded variant key (`matchKey`), the same display grouping the database's collation implies.
+ */
+async function returInFlightForCount(input: {
+  storeId: string;
+  termsType: string;
+  countMoment: Date | null;
+  lines: Array<{ id: string; itemId: string; variantSku: string }>;
+}): Promise<StocktakeReturInFlight> {
+  const empty: StocktakeReturInFlight = { docNos: [], qtyByLineId: {} };
+  if (input.termsType !== "KONSI" || input.countMoment === null || input.lines.length === 0) return empty;
+
+  const returs = await prisma.fieldReturn.findMany({
+    where: {
+      storeId: input.storeId,
+      createdAt: { lte: input.countMoment },
+      OR: [{ status: { in: [...RETUR_OPEN_STATUSES] } }, { status: "APPROVED", approvedAt: { gt: input.countMoment } }],
+    },
+    orderBy: { docNo: "asc" },
+    select: { docNo: true, lines: { select: { itemId: true, variantSku: true, qty: true } } },
+  });
+  if (returs.length === 0) return empty;
+
+  const lineIdByKey = new Map(input.lines.map((l) => [`${l.itemId}::${matchKey(l.variantSku)}`, l.id]));
+  const qtyByLineId: Record<string, number> = {};
+  const docNos: string[] = [];
+  for (const r of returs) {
+    let reached = false;
+    for (const rl of r.lines) {
+      const lineId = lineIdByKey.get(`${rl.itemId}::${matchKey(rl.variantSku)}`);
+      if (lineId === undefined) continue;
+      qtyByLineId[lineId] = (qtyByLineId[lineId] ?? 0) + rl.qty;
+      reached = true;
+    }
+    if (reached) docNos.push(r.docNo);
+  }
+  return { docNos, qtyByLineId };
+}
 
 export async function getStoreStocktakeById(id: string): Promise<StoreStocktakeDetail | null> {
   const r = await prisma.storeStocktake.findUnique({
@@ -297,7 +354,7 @@ export async function getStoreStocktakeById(id: string): Promise<StoreStocktakeD
       cancelledAt: true,
       cancelReason: true,
       countFinishedAt: true,
-      store: { select: { name: true } },
+      store: { select: { name: true, termsType: true } },
       lines: {
         orderBy: { id: "asc" },
         select: {
@@ -363,6 +420,13 @@ export async function getStoreStocktakeById(id: string): Promise<StoreStocktakeD
     return booked ? (booked.targetCents - booked.liveCents) / 100 : null;
   };
 
+  const returInFlight = await returInFlightForCount({
+    storeId: r.storeId,
+    termsType: r.store.termsType,
+    countMoment: r.countFinishedAt ?? r.approvedAt,
+    lines: r.lines,
+  });
+
   return {
     id: r.id,
     docNo: r.docNo,
@@ -401,5 +465,6 @@ export async function getStoreStocktakeById(id: string): Promise<StoreStocktakeD
       liveQty: liveQtyByKey.get(stockMatchKey(l.itemId, l.variantSku)) ?? 0,
       bookedVarianceQty: bookedOf(l.id),
     })),
+    returInFlight,
   };
 }

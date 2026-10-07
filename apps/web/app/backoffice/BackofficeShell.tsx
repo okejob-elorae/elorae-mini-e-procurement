@@ -26,6 +26,7 @@ import {
   PanelLeftClose,
   PanelLeft,
   Users,
+  Loader2,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -51,6 +52,7 @@ import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { OfflineIndicator } from '@/components/offline/OfflineIndicator';
 import { QuickActionFAB } from '@/components/QuickActionFAB';
 import { FcmRegistration } from '@/components/notifications/FcmRegistration';
+import { deleteFcmToken } from "@/components/notifications/fcm-client";
 import { NotificationIcon } from '@/components/notifications/NotificationIcon';
 import { setupSyncListeners, syncReferenceData } from '@/lib/offline/sync';
 import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
@@ -200,7 +202,7 @@ const navItems: NavItem[] = [
       {
         labelKey: 'navFieldReturns',
         href: '/backoffice/field-returns',
-        permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW,
+        anyPermissions: [PERMISSIONS.FIELD_SALES_ORDERS_VIEW, PERMISSIONS.FIELD_RETURNS_MANAGE],
       },
       {
         labelKey: 'navDeliveries',
@@ -716,6 +718,7 @@ export function BackofficeShell({
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
     try {
@@ -866,8 +869,21 @@ export function BackofficeShell({
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => signOut({ callbackUrl: '/login' })} data-testid="sign-out">
-                  <LogOut className="mr-2 h-4 w-4" />
+                <DropdownMenuItem
+                  disabled={signingOut}
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    if (signingOut) return;
+                    setSigningOut(true);
+                    void deleteFcmToken().then(() => signOut({ callbackUrl: "/login" }));
+                  }}
+                  data-testid="sign-out"
+                >
+                  {signingOut ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <LogOut className="mr-2 h-4 w-4" />
+                  )}
                   Sign out
                 </DropdownMenuItem>
               </DropdownMenuContent>

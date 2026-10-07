@@ -102,6 +102,19 @@ export const {
     signIn: "/login",
     error: "/login",
   },
+  events: {
+    /**
+     * Every sign-out path (PWA, backoffice, packer, password change) ends here. The device's
+     * FCM token stays on the user row until something clears it, so without this a shared
+     * phone keeps receiving the previous user's pushes after they log out. Auth.js logs and
+     * swallows a throw here, so a failed write never blocks the logout itself.
+     */
+    async signOut(message) {
+      const userId = "token" in message ? message.token?.id : undefined;
+      if (typeof userId !== "string" || userId === "") return;
+      await prisma.user.updateMany({ where: { id: userId }, data: { fcmToken: null } });
+    },
+  },
   providers: [
     Credentials({
       name: "credentials",

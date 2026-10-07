@@ -2894,6 +2894,7 @@
       "lines": "{count} baris",
       "back": "Kembali",
       "errMinQty": "Qty di bawah minimum pemesanan.",
+      "errItemUnavailable": "Ada produk di pesanan ini yang sudah tidak dijual. Hapus pesanan lalu buat ulang tanpa produk itu.",
       "errNoVisit": "Tidak ada kunjungan aktif saat pesanan dibuat.",
       "errUnauthorized": "Sesi tidak valid. Silakan login ulang.",
       "errGeneric": "Terjadi kesalahan. Silakan coba lagi.",
@@ -3120,14 +3121,26 @@
       "errorNoActiveVisit": "Check in dulu untuk memesan.",
       "errorUnauthorized": "Sesi berakhir. Masuk lagi.",
       "errorEmpty": "Tidak ada item.",
-      "errorMinQty": "Jumlah di bawah minimum."
+      "errorMinQty": "Jumlah di bawah minimum.",
+      "errorItemUnavailable": "Ada produk di pesanan ini yang sudah tidak dijual. Hapus produknya lalu kirim ulang."
     },
     "notifications": {
       "title": "Notifikasi",
       "unreadCount": "{count} belum dibaca",
       "markAllRead": "Tandai semua dibaca",
       "empty": "Belum ada notifikasi",
-      "offlineError": "Gagal terhubung — periksa koneksi internet dan coba lagi"
+      "offlineError": "Gagal terhubung — periksa koneksi internet dan coba lagi",
+      "push": {
+        "title": "Aktifkan notifikasi push",
+        "body": "Dapatkan pemberitahuan di HP ini soal retur, tagihan, dan tugas baru, walau aplikasi sedang ditutup.",
+        "enable": "Aktifkan",
+        "enabling": "Mengaktifkan…",
+        "enabled": "Notifikasi push aktif",
+        "denied": "Notifikasi diblokir. Izinkan notifikasi untuk aplikasi ini di pengaturan browser atau situs, lalu buka ulang halaman ini.",
+        "failed": "Gagal mengaktifkan notifikasi push.",
+        "retry": "Coba lagi",
+        "unsupported": "HP atau browser ini tidak mendukung notifikasi push."
+      }
     },
     "deliveries": {
       "homeCta": "Pengiriman Saya",
@@ -3215,6 +3228,9 @@
       "discarded": "Foto yang gagal sudah dibuang.",
       "discardError": "Foto gagal dibuang. Silakan coba lagi.",
       "queueChanged": "Ada data baru yang belum terkirim, jadi Anda belum keluar."
+    },
+    "retur": {
+      "pooledVariant": "Tanpa ukuran (stok gabungan)"
     },
     "visitPhoto": {
       "delete": "Hapus foto",
@@ -3539,6 +3555,7 @@
     },
     "colValue": "Nilai",
     "valuationIncomplete": "Belum Ternilai",
+    "needsPrice": "{count} baris perlu harga",
     "originalValueHint": "dari total awal {total}",
     "colCredit": "Kredit",
     "creditFilterLabel": "Status Kredit",
@@ -3616,10 +3633,35 @@
     "rejectedExceedsReceived": "Jumlah ditolak tidak boleh lebih besar dari jumlah diterima.",
     "receiveSubmit": "Simpan Penerimaan",
     "receiveConfirmTitle": "Konfirmasi Penerimaan Gudang",
-    "receiveConfirmDescription": "Jumlah yang dicatat akan mengunci retur ini untuk pemeriksaan selisih dan tidak bisa diubah lagi dari sini. Pastikan hitungan sudah benar sebelum menyimpan.",
+    "receiveConfirmDescription": "Jumlah yang dicatat akan membawa retur ini ke pemeriksaan selisih. Sebelum disetujui, hitungan masih bisa dikoreksi, tapi hanya dengan alasan tertulis. Pastikan hitungan sudah benar sebelum menyimpan.",
     "receiveConfirmAction": "Simpan",
     "submitting": "Menyimpan...",
     "successReceived": "Penerimaan gudang berhasil disimpan.",
+    "correctOpen": "Koreksi Hitungan",
+    "correctTitle": "Koreksi Hitungan Gudang",
+    "correctHint": "Ubah hitungan hanya pada baris yang salah dicatat. Baris yang jumlah diterimanya berubah akan kehilangan penyelesaiannya dan harus diselesaikan ulang (kecuali sekarang sudah sesuai klaim). Untuk retur yang diajukan admin di toko konsinyasi, stok toko ikut bergerak sebesar selisihnya.",
+    "correctReason": "Alasan koreksi",
+    "correctReasonRequired": "Wajib diisi",
+    "correctNoChange": "Ubah setidaknya satu hitungan untuk menyimpan koreksi.",
+    "correctWas": "sebelumnya {n}",
+    "correctSubmit": "Simpan Koreksi",
+    "correctConfirmTitle": "Konfirmasi Koreksi Hitungan",
+    "correctConfirmDescription": "Hitungan baru akan menggantikan yang sudah dicatat, dan alasannya disimpan di log audit. Baris yang jumlah diterimanya berubah perlu penyelesaian baru sebelum retur ini bisa disetujui, kecuali sekarang sudah sesuai klaim.",
+    "correctConfirmAction": "Simpan Koreksi",
+    "successCorrected": "Hitungan gudang berhasil dikoreksi.",
+    "cancelOpen": "Batalkan Retur",
+    "cancelTitle": "Batalkan retur {docNo}?",
+    "cancelDescription": "Retur ini belum diterima gudang, jadi pembatalan tidak menggerakkan stok apa pun — stok gudang maupun stok toko tidak berubah. Retur yang dibatalkan tidak bisa dibuka lagi.",
+    "cancelFieldGoodsNote": "Kalau barangnya sudah diambil salesman, barang harus dikembalikan ke toko — stok toko masih menghitungnya.",
+    "cancelAdminGoodsNote": "Kalau toko sudah mengirim barangnya, barang harus dikembalikan ke toko — stok toko masih menghitungnya.",
+    "cancelReason": "Alasan pembatalan",
+    "cancelReasonRequired": "Alasan wajib diisi untuk membatalkan.",
+    "cancelConfirm": "Batalkan Retur",
+    "cancelling": "Membatalkan...",
+    "successCancelled": "Retur berhasil dibatalkan.",
+    "cancelledByLabel": "Dibatalkan oleh",
+    "cancelledAtLabel": "Dibatalkan pada",
+    "cancelledReasonLabel": "Alasan pembatalan",
     "resolutionTitle": "Penyelesaian Selisih",
     "varianceNone": "Sesuai",
     "varianceSurplus": "Lebih {n}",
@@ -3786,7 +3828,12 @@
           "UNEXPECTED": "Terjadi kesalahan. Coba lagi."
         }
       },
-      "createdBySystem": "Sistem"
+      "createdBySystem": "Sistem",
+      "returInFlight": {
+        "title": "Retur dalam perjalanan saat perhitungan",
+        "body": "Retur {docNos} mengambil barang dari rak toko ini sebelum perhitungan dan belum selesai saat perhitungan dilakukan. Selisih kurang pada baris yang ditandai di bawah bisa jadi barang retur tersebut, bukan susut.",
+        "lineHint": "termasuk {qty} unit retur dalam perjalanan"
+      }
     },
     "footer": {
       "tally": "{counted}/{total} terhitung",
@@ -3848,6 +3895,7 @@
       "INVALID_REQUEST": "Data yang dikirim tidak valid. Muat ulang halaman dan coba lagi.",
       "DUPLICATE_LINE": "Barang dan varian ini sudah ada pada dokumen ini.",
       "TRANSFER_PENDING": "Transfer toko {detail} memindahkan barang yang dihitung di perhitungan ini sebelum perhitungan dilakukan, dan masih menunggu persetujuan. Setujui transfer tersebut terlebih dahulu, lalu setujui perhitungan ini. Jika transfernya keliru, batalkan lalu buat ulang dengan barang dan waktu pemindahan yang benar.",
+      "RETUR_PENDING": "Retur {detail} mengambil barang yang dihitung di perhitungan ini dari rak sebelum perhitungan dilakukan, dan belum selesai. Terima dan setujui retur tersebut terlebih dahulu (atau batalkan jika barangnya tidak pernah dikirim), lalu setujui perhitungan ini.",
       "NO_ASSIGNED_STORE": "Anda tidak ditugaskan ke toko manapun.",
       "NO_ACTIVE_VISIT": "Anda harus check-in di toko Anda terlebih dahulu.",
       "ERROR": "Terjadi kesalahan. Coba lagi."

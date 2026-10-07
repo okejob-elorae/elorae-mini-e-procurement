@@ -5,8 +5,10 @@ import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { receiveFieldReturn } from "@/lib/field-sales/retur/receive-writer";
+import { correctFieldReturnReceipt } from "@/lib/field-sales/retur/correct-receipt-writer";
 import { resolveFieldReturnLine } from "@/lib/field-sales/retur/resolve-writer";
 import { approveFieldReturn } from "@/lib/field-sales/retur/approve-writer";
+import { cancelFieldReturn } from "@/lib/field-sales/retur/cancel-writer";
 import { createFieldReturn } from "@/lib/field-sales/retur/writer";
 import { listPriceCandidates, resolveLinePrice } from "@/lib/field-sales/retur/pricing";
 import { round2 } from "@/lib/field-sales/retur/pricing-rules";
@@ -50,10 +52,10 @@ type ResolutionType = "SALESMAN_BEARS" | "INVESTIGATE" | "WRITE_OFF" | "ACCEPT_S
 const RESOLUTION_TYPES: ReadonlySet<string> = new Set(["SALESMAN_BEARS", "INVESTIGATE", "WRITE_OFF", "ACCEPT_SURPLUS"]);
 
 /**
- * Every `FieldReturnErrorCode` mapped explicitly, even the ones these three writers can never
- * actually throw (they belong to `createFieldReturn`, Task 1's writer) — a `Record` over the
- * whole union means a future code added to `errors.ts` fails TypeScript here instead of
- * silently falling through to `ERROR`. Shape errors map to `INVALID_REQUEST`, missing
+ * Every `FieldReturnErrorCode` mapped explicitly, even the ones the five writers mapped here
+ * (receive, correct, resolve, approve, cancel) can never actually throw (they belong to
+ * `createFieldReturn`) — a `Record` over the whole union means a future code added to
+ * `errors.ts` fails TypeScript here instead of silently falling through to `ERROR`. Shape errors map to `INVALID_REQUEST`, missing
  * documents to `NOT_FOUND`, wrong-state and split/line/variance codes keep their own name —
  * never a shape error onto a state error, or a missing document onto a wrong-state one.
  */
@@ -62,6 +64,7 @@ const ERROR_CODE_MAP: Record<FieldReturnErrorCode, Exclude<FieldReturnActionResu
   BAD_QTY: "INVALID_REQUEST",
   BAD_LINE_SHAPE: "INVALID_REQUEST",
   ITEM_NOT_FOUND: "NOT_FOUND",
+  BAD_VARIANT: "INVALID_REQUEST",
   STORE_NOT_FOUND: "NOT_FOUND",
   VISIT_NOT_OWNED: "INVALID_REQUEST",
   MISSING_RESI: "INVALID_REQUEST",
@@ -86,6 +89,7 @@ const ERROR_CODE_MAP: Record<FieldReturnErrorCode, Exclude<FieldReturnActionResu
    */
   SALESMAN_BEARS_NOT_ALLOWED: "SALESMAN_BEARS_NOT_ALLOWED",
   UNRESOLVED_LINES: "UNRESOLVED_LINES",
+  MISSING_REASON: "INVALID_REQUEST",
 };
 
 /**
@@ -234,6 +238,36 @@ export async function receiveAction(input: {
   return { ok: true };
 }
 
+/**
+ * Same shape as `receiveAction` plus a required reason. A blank reason is the writer's
+ * `MISSING_REASON`, which lands on `INVALID_REQUEST` like every other shape refusal — the form
+ * never submits one.
+ */
+export async function correctReceiptAction(input: {
+  returnId: string;
+  counts: ReceiveCount[];
+  reason: string;
+}): Promise<FieldReturnActionResult> {
+  try {
+    const g = await guard();
+    if ("ok" in g) return g;
+    if (!isValidReceiveInput(input) || typeof input.reason !== "string") {
+      return { ok: false, code: "INVALID_REQUEST" };
+    }
+    await correctFieldReturnReceipt({
+      returnId: input.returnId,
+      correctedById: g.userId,
+      reason: input.reason,
+      counts: input.counts,
+    });
+  } catch (e) {
+    return toResult(e);
+  }
+  revalidatePath("/backoffice/field-returns");
+  revalidatePath(`/backoffice/field-returns/${input.returnId}`);
+  return { ok: true };
+}
+
 export async function resolveAction(input: {
   lineId: string;
   type: ResolutionType;
@@ -281,10 +315,11 @@ export async function resolveAction(input: {
  * The error side is deliberately NARROWER than `FieldReturnActionResult`'s full 21-code union,
  * not a reuse of it — `guard()` can only ever return `FORBIDDEN`, shape validation can only ever
  * return `INVALID_REQUEST`, and of everything `createFieldReturn` can throw for this call, only
- * `ITEM_NOT_FOUND`/`STORE_NOT_FOUND` (→ `NOT_FOUND`) and `MISSING_REASON_NOTE` (→
- * `INVALID_REQUEST`) are reachable: `isValidRaiseAdminReturnInput` already rules out
- * `NO_LINES`/`BAD_QTY`/`BAD_LINE_SHAPE` before the writer runs, this call never passes `visitId`
- * or `transport` so `VISIT_NOT_OWNED`/`MISSING_EXPEDITION_NAME`/`MISSING_RESI` can't fire, and
+ * `ITEM_NOT_FOUND`/`STORE_NOT_FOUND` (→ `NOT_FOUND`) and `MISSING_REASON_NOTE`/`BAD_VARIANT` (→
+ * `INVALID_REQUEST`, `BAD_VARIANT` because the variant rule binds both origins) are reachable:
+ * `isValidRaiseAdminReturnInput` already rules out `NO_LINES`/`BAD_QTY`/`BAD_LINE_SHAPE` before
+ * the writer runs, this call never passes `visitId` or `transport` so
+ * `VISIT_NOT_OWNED`/`MISSING_EXPEDITION_NAME`/`MISSING_RESI` can't fire, and
  * `origin` is always `"ADMIN"` so the `FIELD`-only `MISSING_TRANSPORT`/`MISSING_NOTA_PHOTO` rule
  * can't either. Reusing the full union here would let a code this action can never actually
  * produce reach the UI typed as valid, with nothing to catch a missing translation for it — see
@@ -306,6 +341,7 @@ const RAISE_ADMIN_RETURN_ERROR_CODE_MAP: Record<FieldReturnErrorCode, "INVALID_R
   BAD_QTY: "ERROR",
   BAD_LINE_SHAPE: "ERROR",
   ITEM_NOT_FOUND: "NOT_FOUND",
+  BAD_VARIANT: "INVALID_REQUEST",
   STORE_NOT_FOUND: "NOT_FOUND",
   VISIT_NOT_OWNED: "ERROR",
   MISSING_RESI: "ERROR",
@@ -323,6 +359,7 @@ const RAISE_ADMIN_RETURN_ERROR_CODE_MAP: Record<FieldReturnErrorCode, "INVALID_R
   RESOLUTION_DIRECTION_MISMATCH: "ERROR",
   SALESMAN_BEARS_NOT_ALLOWED: "ERROR",
   UNRESOLVED_LINES: "ERROR",
+  MISSING_REASON: "ERROR",
 };
 
 /** Mirrors `toResult` above, but stays inside `RaiseAdminReturnActionResult`'s narrower type. */
@@ -385,6 +422,43 @@ export async function approveAction(returnId: string): Promise<FieldReturnAction
   }
   revalidatePath("/backoffice/field-returns");
   revalidatePath(`/backoffice/field-returns/${returnId}`);
+  return { ok: true };
+}
+
+/**
+ * Cancels a retur the warehouse never received. The store detail page revalidates too — its
+ * in-transit admin retur figure (`getInTransitAdminReturnQty`) counts this one until now — which is
+ * why the writer hands back the `storeId`.
+ */
+export async function cancelFieldReturnAction(input: {
+  returnId: string;
+  reason: string;
+}): Promise<FieldReturnActionResult> {
+  let storeId = "";
+  try {
+    const g = await guard();
+    if ("ok" in g) return g;
+    if (
+      typeof input !== "object" ||
+      input === null ||
+      typeof input.returnId !== "string" ||
+      input.returnId === "" ||
+      typeof input.reason !== "string"
+    ) {
+      return { ok: false, code: "INVALID_REQUEST" };
+    }
+    const result = await cancelFieldReturn({
+      returnId: input.returnId,
+      cancelledById: g.userId,
+      reason: input.reason,
+    });
+    storeId = result.storeId;
+  } catch (e) {
+    return toResult(e);
+  }
+  revalidatePath("/backoffice/field-returns");
+  revalidatePath(`/backoffice/field-returns/${input.returnId}`);
+  revalidatePath(`/backoffice/stores/${storeId}`);
   return { ok: true };
 }
 

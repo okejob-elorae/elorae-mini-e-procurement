@@ -202,32 +202,36 @@ d("konsi sell-through writer (test bed only)", () => {
 
   /* create — returns in flight at the closing count */
 
-  it("refuses RETUR_IN_FLIGHT while a retur raised before the count is unsettled, still refuses that count once the retur settles after it, and a later count bills the returned units 0", async () => {
+  it("refuses the count's approval while a retur raised before it is unsettled, refuses RETUR_IN_FLIGHT for that count once the retur settles after it, and a later count bills the returned units 0", async () => {
     await setMethod("SHELF_COUNT");
     await transferIn(6);
     /* The salesman takes 2 back before the count; StoreStock still holds 6 until the retur is approved. */
     const { returnId, docNo } = await raiseRetur(2);
     await tick();
-    const contaminated = await count(4, { cause: "SHRINKAGE", reason: "two units off the shelf" });
-    await expect(createSellThrough({ closingStocktakeId: contaminated, createdById: state.userId })).rejects.toMatchObject({
-      code: "RETUR_IN_FLIGHT",
+    const contaminated = await count(4, { approve: false, cause: "SHRINKAGE", reason: "two units off the shelf" });
+    /* Approving now would SET 4 and the retur's row would later take 2 more, so the count waits for the retur. */
+    await expect(approveStoreStocktake({ stocktakeId: contaminated, approvedById: state.userId })).rejects.toMatchObject({
+      code: "RETUR_PENDING",
       detail: docNo,
     });
 
-    /* Settling it after the count does not clean the count — it saw 2 fewer units than StoreStock held. */
+    /* The retur settles (StoreStock 6 − 2 = 4); approval then skips its pre-count row and SETs 4 — no stocktake row. */
     await tick();
     await settleRetur(returnId);
+    await approveStoreStocktake({ stocktakeId: contaminated, approvedById: state.userId });
+
+    /* Settling it after the count does not make the count usable for a report — the retur was in flight at the count moment. */
     await expect(createSellThrough({ closingStocktakeId: contaminated, createdById: state.userId })).rejects.toMatchObject({
       code: "RETUR_IN_FLIGHT",
       detail: docNo,
     });
 
-    /* StoreStock 4 − 2 = 2; the shelf still holds 4, so the later count finds a +2 surplus that nets out the earlier −2. */
+    /* StoreStock is 4 and the shelf holds 4, so the later count finds no variance and writes no stocktake row either. */
     await tick();
-    const closing = await count(4, { reason: "the earlier count missed the returned units" });
+    const closing = await count(4);
     const { id } = await createSellThrough({ closingStocktakeId: closing, createdById: state.userId });
     const line = await onlyLine(id);
-    /* opening 0 + in 6 − out 2 − pos 0 − gap (2 − 2 = 0) = closing 4; billed = 0 + 6 − 2 − 4 = 0. */
+    /* opening 0 + in 6 − out 2 − pos 0 − gap 0 = closing 4; billed = 0 + 6 − 2 − 4 = 0. */
     expect(Number(line.inQty)).toBe(6);
     expect(Number(line.outQty)).toBe(2);
     expect(Number(line.gapQty)).toBe(0);

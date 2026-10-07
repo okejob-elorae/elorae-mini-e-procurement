@@ -70,10 +70,11 @@ function VarianceBadge({ variance }: { variance: number }) {
 }
 
 /**
- * The card that turns a warehouse count into a settled retur. Renders for any status past
- * PENDING_WAREHOUSE_RECEIVING (MISMATCH_PENDING_RESOLUTION, PENDING_APPROVAL, APPROVED,
- * CANCELLED) so the counts and resolution history stay visible read-only once the retur moves
- * on — only the action controls are gated on status and canManage.
+ * The card that turns a warehouse count into a settled retur. Renders for every received status
+ * (MISMATCH_PENDING_RESOLUTION, PENDING_APPROVAL, APPROVED) so the counts and resolution history
+ * stay visible read-only once the retur moves on — only the action controls are gated on status
+ * and canManage. Not for CANCELLED: a retur can only be cancelled before receipt, so it has no
+ * counts to show.
  */
 export function ResolutionControls({ status, origin, lines, canManage, canWriteOff }: Props) {
   const t = useTranslations("fieldReturnReceiving");

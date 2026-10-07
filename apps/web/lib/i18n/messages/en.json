@@ -2894,6 +2894,7 @@
       "lines": "{count} lines",
       "back": "Back",
       "errMinQty": "Qty is below the minimum order quantity.",
+      "errItemUnavailable": "An item in this order is no longer sold. Delete the order and re-enter it without that item.",
       "errNoVisit": "No active visit when the order was created.",
       "errUnauthorized": "Session invalid. Please log in again.",
       "errGeneric": "Something went wrong. Please try again.",
@@ -3120,14 +3121,26 @@
       "errorNoActiveVisit": "Check in first to order.",
       "errorUnauthorized": "Session expired. Log in again.",
       "errorEmpty": "No items.",
-      "errorMinQty": "Quantity below the minimum."
+      "errorMinQty": "Quantity below the minimum.",
+      "errorItemUnavailable": "An item in this order is no longer sold. Remove it and send again."
     },
     "notifications": {
       "title": "Notifications",
       "unreadCount": "{count} unread",
       "markAllRead": "Mark all read",
       "empty": "No notifications yet",
-      "offlineError": "Couldn't connect — check your connection and try again"
+      "offlineError": "Couldn't connect — check your connection and try again",
+      "push": {
+        "title": "Turn on push notifications",
+        "body": "Get alerts on this phone about returns, invoices and new tasks, even when the app is closed.",
+        "enable": "Turn on",
+        "enabling": "Turning on…",
+        "enabled": "Push notifications are on",
+        "denied": "Notifications are blocked. Allow them for this app in your browser or site settings, then reopen this page.",
+        "failed": "Couldn't turn on push notifications.",
+        "retry": "Try again",
+        "unsupported": "This phone or browser doesn't support push notifications."
+      }
     },
     "deliveries": {
       "homeCta": "My Deliveries",
@@ -3215,6 +3228,9 @@
       "discarded": "Failed photos discarded.",
       "discardError": "Couldn't discard the photos. Please try again.",
       "queueChanged": "New unsynced items appeared, so you were not logged out."
+    },
+    "retur": {
+      "pooledVariant": "No size (pooled stock)"
     },
     "visitPhoto": {
       "delete": "Delete photo",
@@ -3539,6 +3555,7 @@
     },
     "colValue": "Value",
     "valuationIncomplete": "Not Fully Valued",
+    "needsPrice": "{count} line(s) need a price",
     "originalValueHint": "of {total} original",
     "colCredit": "Credit",
     "creditFilterLabel": "Credit Status",
@@ -3616,10 +3633,35 @@
     "rejectedExceedsReceived": "Rejected quantity cannot exceed the received quantity.",
     "receiveSubmit": "Save Receiving",
     "receiveConfirmTitle": "Confirm Warehouse Receiving",
-    "receiveConfirmDescription": "Saving these counts locks this return in for discrepancy review and cannot be edited from here afterwards. Make sure the counts are correct before saving.",
+    "receiveConfirmDescription": "Saving these counts moves this return into discrepancy review. Until it is approved, a count can still be corrected, but only with a written reason. Make sure the counts are correct before saving.",
     "receiveConfirmAction": "Save",
     "submitting": "Saving...",
     "successReceived": "Warehouse receiving saved.",
+    "correctOpen": "Correct Count",
+    "correctTitle": "Correct Warehouse Count",
+    "correctHint": "Change the recorded count only where it was entered wrong. A line whose received quantity changes loses its current resolution and must be resolved again (unless it now matches the claim). For an admin-raised return at a consignment store, the store's stock moves by the difference.",
+    "correctReason": "Reason for the correction",
+    "correctReasonRequired": "Required",
+    "correctNoChange": "Change at least one count to save a correction.",
+    "correctWas": "was {n}",
+    "correctSubmit": "Save Correction",
+    "correctConfirmTitle": "Confirm Count Correction",
+    "correctConfirmDescription": "The corrected counts replace the recorded ones, and the reason is kept in the audit log. A line whose received quantity changed needs a new resolution before this return can be approved, unless it now matches the claim.",
+    "correctConfirmAction": "Save Correction",
+    "successCorrected": "Warehouse count corrected.",
+    "cancelOpen": "Cancel Return",
+    "cancelTitle": "Cancel return {docNo}?",
+    "cancelDescription": "This return has not been received, so cancelling it moves no stock anywhere — neither the warehouse nor the store's stock changes. A cancelled return cannot be reopened.",
+    "cancelFieldGoodsNote": "If the salesman already picked these goods up, they must go back to the store — the store's stock still counts them.",
+    "cancelAdminGoodsNote": "If the store already sent these goods out, they must go back to the store — the store's stock still counts them.",
+    "cancelReason": "Reason for cancelling",
+    "cancelReasonRequired": "A reason is required to cancel.",
+    "cancelConfirm": "Cancel Return",
+    "cancelling": "Cancelling...",
+    "successCancelled": "Return cancelled.",
+    "cancelledByLabel": "Cancelled by",
+    "cancelledAtLabel": "Cancelled on",
+    "cancelledReasonLabel": "Cancellation reason",
     "resolutionTitle": "Discrepancy Resolution",
     "varianceNone": "Matches",
     "varianceSurplus": "Over {n}",
@@ -3786,7 +3828,12 @@
           "UNEXPECTED": "Something went wrong. Try again."
         }
       },
-      "createdBySystem": "System"
+      "createdBySystem": "System",
+      "returInFlight": {
+        "title": "Returns in transit at the count",
+        "body": "Return {docNos} took goods off this store's shelf before the count and had not been settled when the count was taken. A shortfall on the lines marked below may be those returned units rather than shrinkage.",
+        "lineHint": "includes {qty} units on a return in transit"
+      }
     },
     "footer": {
       "tally": "{counted}/{total} counted",
@@ -3848,6 +3895,7 @@
       "INVALID_REQUEST": "The submitted data was invalid. Reload the page and try again.",
       "DUPLICATE_LINE": "That item and variant is already on this document.",
       "TRANSFER_PENDING": "Store transfer {detail} moved goods this count includes before the count was taken, and is still pending. Approve it first, then approve this count. If the transfer is wrong, cancel it and raise it again with the right items and move time.",
+      "RETUR_PENDING": "Return {detail} took goods this count includes off the shelf before the count, and has not been settled yet. Receive and approve it first (or cancel it if it was never sent), then approve this count.",
       "NO_ASSIGNED_STORE": "You are not assigned to a store.",
       "NO_ACTIVE_VISIT": "You must be checked in at your store first.",
       "ERROR": "Something went wrong. Please try again."

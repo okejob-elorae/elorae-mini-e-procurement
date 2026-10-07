@@ -60,6 +60,10 @@ const RETUR_IN_FLIGHT_STATUSES = ["PENDING_WAREHOUSE_RECEIVING", "MISMATCH_PENDI
  * why a later approval refuses as well as a pending status. CANCELLED never refuses. `approvedAt`
  * is the settle moment for both origins — conservative for an ADMIN retur, whose clean receipt
  * already decremented at `receivedAt`, but its approve-time delta still lands at `approvedAt`.
+ * Stocktake approval already refuses the open case for the keys a count counted (`RETUR_PENDING`),
+ * so a count usually reaches here through the approved-later arm — its retur was settled so the
+ * count could approve — while the open arm still catches a retur of keys the count did not count,
+ * or a count approved before that refusal existed.
  *
  * The remedy is never to use this count: finish or cancel the returns, then close the period with
  * a later count. This count's own ledger rows then sit mid-period and net out against the later

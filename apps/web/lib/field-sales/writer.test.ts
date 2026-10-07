@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { createFieldSalesOrder, approveFieldSalesOrder, rejectFieldSalesOrder } from "./writer";
-import { NoActiveVisitError, MinQtyViolationError, InsufficientStockError, CreditLimitExceededError, InvalidFinalPriceError } from "./errors";
+import { NoActiveVisitError, MinQtyViolationError, InsufficientStockError, CreditLimitExceededError, InvalidFinalPriceError, ItemUnavailableError } from "./errors";
 
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
 const { mockSendNotification } = vi.hoisted(() => ({ mockSendNotification: vi.fn() }));
@@ -116,6 +116,29 @@ d("field-sales lifecycle writers (test bed only)", () => {
   it("create throws when qty below minimum (default 6)", async () => {
     await expect(createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [{ ...line(), qty: 3 }] }))
       .rejects.toBeInstanceOf(MinQtyViolationError);
+  });
+
+  it("create refuses a line on an inactive item and writes no order", async () => {
+    await prisma.item.update({ where: { id: itemId }, data: { isActive: false } });
+    await expect(createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [line()] }))
+      .rejects.toMatchObject({ name: "ItemUnavailableError", itemIds: [itemId] });
+    await expect(createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [line()] }))
+      .rejects.toBeInstanceOf(ItemUnavailableError);
+    const orders = await prisma.fieldSalesOrder.findMany({ where: { storeId: seededId(storeId) } });
+    expect(orders).toHaveLength(0);
+  });
+
+  it("create refuses a line on a nonexistent item", async () => {
+    await expect(createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [{ ...line(), itemId: "does-not-exist" }] }))
+      .rejects.toMatchObject({ name: "ItemUnavailableError", itemIds: ["does-not-exist"] });
+  });
+
+  it("a replayed idempotency key returns the recorded order even after the item is deactivated", async () => {
+    const idempotencyKey = `idem-${sku}`;
+    const first = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [line()], idempotencyKey });
+    await prisma.item.update({ where: { id: itemId }, data: { isActive: false } });
+    const replay = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [line()], idempotencyKey });
+    expect(replay.orderId).toBe(first.orderId);
   });
 
   it("create throws without an active visit", async () => {
