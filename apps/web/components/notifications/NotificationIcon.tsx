@@ -24,6 +24,8 @@ import {
   type JawabanLonceng,
   type KeadaanLonceng,
 } from './keadaan-lonceng';
+import { kabarBaru, type PenandaKabar } from '@/lib/pulau/kabar-baru';
+import { kabarNotifikasi } from '@/lib/pulau/pulau';
 
 export const NOTIFICATION_RECEIVED_EVENT = 'notification-received';
 
@@ -133,6 +135,13 @@ export function NotificationIcon() {
   const lanjut = useRef(0);
   /** Halaman pertama sedang dimuat (dipakai "Tandai semua dibaca"). */
   const memuatPertama = useRef(false);
+  /*
+   * Pulau status: notifikasi yang masuk SESUDAH halaman dibuka dikabarkan di
+   * kapsul tengah atas ("1 notifikasi baru · <judul>"). Muatan pertama hanya
+   * patokan, jadi notifikasi lama tidak pernah dimunculkan saat halaman dimuat.
+   */
+  const penandaKabar = useRef<PenandaKabar | null>(null);
+  const kabarkanBaru = useRef<(baru: NotificationItem[]) => void>(() => {});
 
   const fetchNotifications = useCallback(async () => {
     const gen = ++generasi.current;
@@ -147,6 +156,9 @@ export function NotificationIcon() {
         if (gen === generasi.current) {
           setData(dariHalamanPertama(json));
           setLoadMoreFailed(false);
+          const hasil = kabarBaru(penandaKabar.current, json.items);
+          penandaKabar.current = hasil.penanda;
+          if (hasil.baru.length > 0) kabarkanBaru.current(hasil.baru);
         }
       }
     } catch {
@@ -247,6 +259,23 @@ export function NotificationIcon() {
       setSendTestLoading(false);
     }
   };
+
+  // Selalu memakai penerjemah dan pengendali klik terbaru (fetchNotifications stabil).
+  useEffect(() => {
+    kabarkanBaru.current = (baru) => {
+      if (open) return; // Panelnya sedang terbuka — notifikasinya sudah terlihat di sana.
+      const terbaru = baru[0];
+      const bukaDaftar = () => setOpen(true);
+      kabarNotifikasi({
+        judul: tampilanLonceng(terbaru, penerjemah).judul,
+        jumlah: baru.length,
+        // Satu notifikasi bertujuan: buka langsung (sekaligus tandai dibaca).
+        // Tanpa tujuan, atau kapsulnya menyebut lebih dari satu: buka daftarnya.
+        diketuk: getNotificationHref(terbaru.type, terbaru.data) ? () => void handleItemClick(terbaru) : bukaDaftar,
+        semua: { diketuk: bukaDaftar },
+      });
+    };
+  });
 
   const unreadCount = data?.unreadCount ?? 0;
   const badgeLabel = unreadCount > 99 ? '99+' : unreadCount;

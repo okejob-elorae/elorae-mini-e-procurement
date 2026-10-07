@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { ChevronRight } from "lucide-react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip } from "recharts";
-import { AngkaNaik } from "@/components/dashboard/AngkaNaik";
+import { AngkaNaik } from "@/components/gerak/AngkaNaik";
 import { bandingkanPeriode, kalimatBanding } from "@/lib/dashboard/tren";
 import { formatIDR } from "@/lib/sales-orders/format";
 import type { Kemajuan } from "@/lib/salesman/dasbor";

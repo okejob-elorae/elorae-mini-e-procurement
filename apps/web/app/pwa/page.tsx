@@ -1,9 +1,9 @@
 import { auth } from "@/lib/auth";
 import { ambilTokoTetap } from "@/lib/pwa/peran";
-import { hariIniWib } from "@/lib/tanggal-isian";
 import { kembaliAman } from "@/lib/pwa/kembali-setelah-checkin";
 import { getActiveVisit } from "@/lib/stores/queries";
 import { ringkasanSpg, tokoSpg } from "@/lib/spg/queries";
+import { hariWib, labelMasuk, labelMasukUntuk } from "@/lib/spg/beranda-spg";
 import { prisma } from "@elorae/db";
 import { shiftHariIni } from "@/lib/spg/shift-queries";
 import { daftarTitipHp } from "@/lib/spg/titip-queries";
@@ -94,6 +94,10 @@ export default async function PwaHome({ searchParams }: { searchParams: Promise<
     const jam = (d: Date | string) =>
       new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }).format(new Date(d));
     const resmi = r.gajiKomisi.resmi[0] ?? null;
+    // Jam masuk dalam dua bentuk, diformat di server; HP memilih menurut harinya
+    // sendiri (halaman dari cache bisa dibuka keesokan harinya).
+    const masuk = disini ? labelMasuk(disini.checkinAt) : null;
+    const hariIniKunci = hariWib(sekarang);
 
     const data: DataBerandaSpg = {
       toko: {
@@ -103,20 +107,20 @@ export default async function PwaHome({ searchParams }: { searchParams: Promise<
         address: toko.address,
         mapsUrl: toko.lat !== null && toko.lng !== null ? `https://www.google.com/maps?q=${toko.lat},${toko.lng}` : null,
       },
-      kunjungan: disini
-        ? {
-            id: disini.id,
-            // Check-in yang dibiarkan terbuka dari hari lain menyebut tanggalnya —
-            // "Masuk pukul 15.59" saja terbaca seperti hari ini.
-            lama: hariIniWib(new Date(disini.checkinAt)) !== hariIniWib(),
-            jamMasuk:
-              hariIniWib(new Date(disini.checkinAt)) !== hariIniWib()
-                ? new Intl.DateTimeFormat("id-ID", { weekday: "long", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }).format(new Date(disini.checkinAt))
-                : jam(disini.checkinAt),
-            diLuarRadius: disini.checkinOutOfRadius,
-            jarak: disini.checkinDistanceMeters,
-          }
-        : null,
+      kunjungan:
+        disini && masuk
+          ? {
+              id: disini.id,
+              // Check-in yang dibiarkan terbuka dari hari lain menyebut tanggalnya —
+              // "Masuk pukul 15.59" saja terbaca seperti hari ini.
+              lama: labelMasukUntuk(masuk, hariIniKunci).lama,
+              jamMasuk: labelMasukUntuk(masuk, hariIniKunci).teks,
+              masuk,
+              diLuarRadius: disini.checkinOutOfRadius,
+              jarak: disini.checkinDistanceMeters,
+            }
+          : null,
+      hariKunci: hariIniKunci,
       tokoLainTerbuka: active && active.storeId !== toko.id ? active.store.name : null,
       hariIniLabel: new Intl.DateTimeFormat("id-ID", { weekday: "long", day: "numeric", month: "long", timeZone: "Asia/Jakarta" }).format(sekarang),
       hariIni: r.hariIni,
@@ -130,6 +134,7 @@ export default async function PwaHome({ searchParams }: { searchParams: Promise<
       hampirHabis: r.hampirHabis.length,
       stokDilacak: r.stokDilacak,
       kirimanMenunggu: r.kirimanMenunggu,
+      kirimanMenungguKunci: r.kirimanMenungguKunci,
       pesananDiproses,
       notaHariIni: r.notaHariIni.map((n) => ({ id: n.id, docNo: n.docNo, jam: jam(n.waktu), total: n.total, jumlahBarang: n.jumlahBarang })),
       gaji: {

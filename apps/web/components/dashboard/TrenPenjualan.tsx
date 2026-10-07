@@ -35,7 +35,7 @@ import {
   type KunciSeri,
   type TitikTren,
 } from '@/lib/dashboard/tren';
-import { AngkaNaik } from './AngkaNaik';
+import { AngkaNaik } from '@/components/gerak/AngkaNaik';
 
 /**
  * Tren penjualan beranda: marketplace dan lapangan, dua garis sendiri-sendiri,

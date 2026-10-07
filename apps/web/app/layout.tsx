@@ -24,6 +24,7 @@ import {
 } from 'next/font/google';
 import { SessionProvider } from 'next-auth/react';
 import { Toaster } from '@/components/ui/sonner';
+import { PulauStatus } from '@/components/pulau/PulauStatus';
 import { ThemeProvider } from '@/components/theme-provider';
 import { LocaleProvider } from '@/components/providers/LocaleProvider';
 import { ThemeColorProvider } from '@/components/providers/ThemeColorProvider';
@@ -204,12 +205,17 @@ export default function RootLayout({
               {/* Tirai SEBELUM halaman: di HTML yang dialirkan ia terurai lebih
                   dulu, jadi dasbornya tidak sempat terlukis di bawah tirai. */}
               <LocaleProvider>
+                {/* Pulau status (pengganti tumpukan toast dan label "Online") —
+                    dipasang SEKALI di sini untuk kantor, HP, dan gudang. Jembatan
+                    toast dipasang sebelum halaman supaya toast dari efek pertama
+                    halaman tidak terlewat. */}
+                <Toaster />
+                <PulauStatus />
                 <TiraiLanjutan />
                 {children}
               </LocaleProvider>
             </ThemeColorProvider>
           </SessionProvider>
-          <Toaster position="top-center" richColors />
         </ThemeProvider>
       </body>
     </html>

@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils';
 import { formatDisplayDate } from '@/lib/date-only';
 import { bacaLembar, type BarisImpor } from '@/lib/receivables/impor/baris';
 import { simpanImporAction, tinjauImporAction } from '@/app/actions/receivable-import';
+import { mulaiProses, selesaiProses } from '@/lib/pulau/pulau';
 import type { TinjauanImpor } from '@/lib/receivables/impor/writer';
 import { CONTOH_BERKAS_IMPOR, NAMA_BERKAS_CONTOH } from './contoh';
 
@@ -43,6 +44,7 @@ const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 
 export function ImporClient() {
   const t = useTranslations('imporPiutang');
+  const tPulau = useTranslations('pulau.proses');
   const locale = useLocale();
   const tanggal = (d: Date | string | null) => formatDisplayDate(d, locale);
   const router = useRouter();
@@ -108,7 +110,9 @@ export function ImporClient() {
 
   const simpan = () => {
     startTransition(async () => {
-      const hasil = await simpanImporAction(baris);
+      // Pulau status: tanpa persen — satu aksi server, tidak ada kemajuan yang dilaporkan.
+      mulaiProses('impor-piutang', tPulau('imporPiutang', { count: baris.length }));
+      const hasil = await simpanImporAction(baris).finally(() => selesaiProses('impor-piutang'));
       if (!hasil.ok) {
         toast.error(t(`err${hasil.kode}` as never));
         return;

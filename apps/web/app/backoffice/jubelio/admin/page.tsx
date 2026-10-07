@@ -22,6 +22,7 @@ import {
 import { toast } from "sonner";
 import { useLocale, useTranslations } from "next-intl";
 import { formatDisplayDateTime } from "@/lib/date-only";
+import { mulaiProses, selesaiProses } from "@/lib/pulau/pulau";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -75,6 +76,7 @@ type OutboxStatus = "PENDING" | "PROCESSING" | "DONE" | "SKIPPED" | "DEAD";
 
 export default function JubelioAdminPage() {
   const t = useTranslations("jubelio.admin");
+  const tPulau = useTranslations("pulau.proses");
   const locale = useLocale();
   const { status } = useSession();
   const router = useRouter();
@@ -246,12 +248,15 @@ export default function JubelioAdminPage() {
   const handleBulkPush = async () => {
     setBulkDialogOpen(false);
     setBulkPushing(true);
+    // Pulau status: tanpa persen — servernya mengantrekan sekaligus, tidak melapor kemajuan.
+    mulaiProses("jubelio-push-stok", tPulau("pushStokJubelio"));
     try {
       const r = await bulkPushAllStockToJubelio();
       if (r.ok) toast.success(t("bulkPushOk", { count: r.count }));
       else toast.error(t("bulkPushFailed"));
       void loadOutbox();
     } finally {
+      selesaiProses("jubelio-push-stok");
       setBulkPushing(false);
     }
   };

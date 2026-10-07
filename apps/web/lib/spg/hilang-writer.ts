@@ -36,6 +36,7 @@ import {
   segarkanStatusHilang,
   sisaBebanOrangSen,
 } from "./hilang-db";
+import { balikBukuHilang, tulisBukuHilang } from "./hilang-buku";
 
 /**
  * Penulis barang hilang (`StockLoss`): membuka catatan (manual oleh kantor
@@ -125,6 +126,19 @@ export async function bukaCatatanHilang(input: {
         select: { id: true },
       });
 
+      // Catatan MANUAL di toko berbuku mengurangi bukunya (lihat `hilang-buku.ts`):
+      // opname berikutnya atas potong yang sama tidak membuka catatan kedua.
+      const bukuToko =
+        input.source === "MANUAL" && input.storeId
+          ? await tulisBukuHilang(tx, {
+              lossId: loss.id,
+              storeId: input.storeId,
+              baris: dinilai.map((b) => ({ itemId: b.itemId, variantSku: b.variantSku, qty: b.qty })),
+              createdById: input.createdById,
+              waktu: sekarang,
+            })
+          : 0;
+
       const tanpaNilai = dinilai.filter((b) => b.unitSen === 0).length;
       // Dasar HARGA_TERIMA: baris yang toko itu belum pernah terima memakai harga jual Elorae.
       const hargaCadangan = dinilai
@@ -157,6 +171,7 @@ export async function bukaCatatanHilang(input: {
           dasarNilai: aturan.dasarNilai,
           barisTanpaNilai: tanpaNilai,
           ...(aturan.dasarNilai === "HARGA_TERIMA" ? { hargaCadangan } : {}),
+          ...(bukuToko > 0 ? { bukuToko: { baris: bukuToko } } : {}),
         },
         reason: input.note,
       });
@@ -534,6 +549,8 @@ export async function batalkanBarangHilang(input: {
     });
     if (cas.count !== 1) return { ok: false, kode: "BERUBAH" };
     await tx.stockLossShare.deleteMany({ where: { lossId: loss.id } });
+    // Catatan MANUAL yang mengurangi buku toko: potongnya dikembalikan ke buku.
+    const buku = await balikBukuHilang(tx, { lossId: loss.id, storeId: loss.storeId, createdById: input.olehUserId, waktu: sekarang });
 
     const lama = ringkasBagian(loss.shares);
     await jejakHilang(tx, {
@@ -544,6 +561,7 @@ export async function batalkanBarangHilang(input: {
         before: { status: loss.status, totalAmount: angka(loss.totalAmount), bagian: lama, decisionNote: loss.decisionNote },
         after: { status: "DIBATALKAN", bagian: [] },
       },
+      ...(buku.balik.length > 0 || buku.dilewati.length > 0 ? { metadata: { bukuToko: buku } } : {}),
       reason: alasan.teks,
     });
 

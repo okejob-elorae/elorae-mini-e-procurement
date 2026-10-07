@@ -69,6 +69,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
 import { CategoryBadge } from '@/components/ui/category-badge';
 import { PinAuthModal } from '@/components/security/PinAuthModal';
+import { useSorotBaris } from '@/components/gerak/useSorotBaris';
 import { toast } from 'sonner';
 import { queueOperation } from '@/lib/offline/db';
 import { isOnline } from '@/lib/offline/sync';
@@ -157,6 +158,11 @@ export function SuppliersPageClient({ awal, izin }: { awal: SaringPemasok; izin:
   const aksi = aksiPemasok(izin);
   const { data: session } = useSession();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  // Pemasok yang baru disetujui/ditolak menyala sebentar di barisnya.
+  const { sorot, tandai } = useSorotBaris(
+    'pemasok',
+    suppliers.map((s) => ({ id: s.id, tanda: s.status ?? '' })),
+  );
   const [supplierTypes, setSupplierTypes] = useState<SupplierTypeOption[]>([]);
   const [saring, setSaring] = useState<SaringPemasok>(awal);
   const [searchInput, setSearchInput] = useState(awal.cari);
@@ -405,6 +411,7 @@ export function SuppliersPageClient({ awal, izin }: { awal: SaringPemasok; izin:
       const { approveSupplierAction } = await import('@/app/actions/suppliers');
       await approveSupplierAction(supplier.id);
       toast.success(tSupplier('approvedToast'));
+      tandai(supplier.id);
       fetchSuppliers();
     } catch {
       toast.error(tSupplier('approveFailed'));
@@ -730,11 +737,11 @@ export function SuppliersPageClient({ awal, izin }: { awal: SaringPemasok; izin:
                     </TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
+                <TableBody className="baris-berurutan">
                   {suppliers.map((supplier) => {
                     const bolehPutuskan = bolehMemutuskan(supplier.status, izin);
                     return (
-                      <TableRow key={supplier.id}>
+                      <TableRow key={supplier.id} {...sorot(supplier.id)}>
                         <TableCell className="font-mono text-sm">{supplier.code}</TableCell>
                         <TableCell className="min-w-[12rem] whitespace-normal">
                           <button
@@ -1015,6 +1022,7 @@ export function SuppliersPageClient({ awal, izin }: { awal: SaringPemasok; izin:
                   const { rejectSupplierAction } = await import('@/app/actions/suppliers');
                   await rejectSupplierAction(rejectTargetId, rejectReason.trim());
                   toast.success(tSupplier('rejectedToast'));
+                  tandai(rejectTargetId);
                   setRejectTargetId(null);
                   setRejectReason('');
                   fetchSuppliers();

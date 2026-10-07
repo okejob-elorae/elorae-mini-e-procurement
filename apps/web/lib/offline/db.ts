@@ -233,12 +233,15 @@ export async function queueOperation(
   });
 }
 
+/** Operasi yang sudah gagal sebanyak ini tidak dicoba lagi. */
+export const BATAS_ULANG = 3;
+
 // Get pending operations
 export async function getPendingOperations(): Promise<PendingOperation[]> {
-  return await offlineDB.pendingOperations
-    .where('retries')
-    .below(3)
-    .toArray();
+  // `retries` tidak diindeks (lihat `stores`), jadi disaring di sini —
+  // `.where('retries')` melempar SchemaError setiap kali sinyal kembali.
+  const semua = await offlineDB.pendingOperations.toArray();
+  return semua.filter((op) => (op.retries ?? 0) < BATAS_ULANG);
 }
 
 // Remove completed operation
@@ -253,7 +256,7 @@ export async function updateOperationError(
 ): Promise<void> {
   await offlineDB.pendingOperations.update(id, {
     error,
-    retries: (await offlineDB.pendingOperations.get(id))?.retries || 0 + 1,
+    retries: ((await offlineDB.pendingOperations.get(id))?.retries ?? 0) + 1,
   });
 }
 

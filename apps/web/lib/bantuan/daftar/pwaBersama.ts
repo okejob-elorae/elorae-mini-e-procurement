@@ -79,6 +79,14 @@ export const ENTRI: EntriBantuan[] = [
         judul: "Gaji & komisi (SPG)",
         isi: "Perkiraan komisi bulan ini, atau gaji dan komisi resmi terakhir beserta keterangan sudah atau belum dibayar. Ketuk untuk rinciannya.",
       },
+      {
+        judul: "Kapsul di tengah atas",
+        isi: [
+          "Kapsul di tengah atas layar memberi kabar tentang apa yang sedang terjadi, di semua layar. Bila tidak ada apa-apa, kapsulnya tidak tampil.",
+          "\"Tanpa sinyal · 3 belum terkirim\" berarti HP tidak tersambung dan ada 3 kiriman yang masih tersimpan di HP. Sesudah beberapa detik kapsulnya menyusut menjadi ikon dan angka supaya tidak menutupi judul layar; ketuk sekali untuk melebarkannya, ketuk lagi untuk membuka daftarnya. Begitu sinyal kembali kapsulnya berubah menjadi \"Mengirim…\", lalu \"Terkirim\". Bila masih ada yang tertahan, kapsulnya menyebut jumlahnya sebentar; daftarnya ada di layar kiriman yang belum terkirim.",
+          "\"1 notifikasi baru\" muncul saat kabar baru masuk sementara aplikasi terbuka; ketuk untuk membukanya. Hasil tindakan (tersimpan, gagal) juga muncul di sini dan hilang sendiri. Bila HP disetel \"kurangi gerakan\", kapsulnya muncul tanpa animasi.",
+        ],
+      },
     ],
   },
   {

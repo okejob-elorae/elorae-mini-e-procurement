@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { AngkaNaik } from './AngkaNaik';
+import { AngkaNaik } from '@/components/gerak/AngkaNaik';
 
 /**
  * Satu kelompok angka beranda sebagai DAFTAR, bukan empat ubin.

@@ -205,10 +205,19 @@ export function bulanSudahSelesai(periode: string, bulanIni: string): boolean {
   return periode < bulanIni;
 }
 
-/** Parameter `?bulan=`: salah satu pilihan, selain itu bulan terakhir yang sudah selesai. */
+/** `?bulan=lalu`: bulan sebelum bulan WIB berjalan — tautan Beranda yang tetap benar bulan depan. */
+export const BULAN_LALU = "lalu";
+
+/** Bulan sebelum `periode` ("2026-01" → "2025-12"). */
+export function bulanSebelum(periode: string): string {
+  const [th, bl] = periode.split("-").map(Number);
+  return bl === 1 ? `${th - 1}-12` : `${th}-${String(bl - 1).padStart(2, "0")}`;
+}
+
+/** Parameter `?bulan=`: salah satu pilihan; `lalu` atau selain itu = bulan terakhir yang sudah selesai. */
 export function bacaPeriodeKomisi(nilai: string | string[] | undefined, pilihan: readonly string[]): string {
   const x = Array.isArray(nilai) ? nilai[0] : nilai;
-  if (x && pilihan.includes(x)) return x;
+  if (x && x !== BULAN_LALU && pilihan.includes(x)) return x;
   return pilihan[1] ?? pilihan[0];
 }
 

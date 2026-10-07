@@ -36,6 +36,7 @@ import { formatDisplayDateTime } from "@/lib/date-only";
 import { formatRupiah } from "@/lib/format/rupiah";
 import { LencanaJarakJauh } from "@/app/pwa/orders/[id]/LencanaJarakJauh";
 import { LencanaInden } from "./LencanaInden";
+import { useSorotBaris } from "@/components/gerak/useSorotBaris";
 
 type StatusFilter = FieldSalesOrderStatusFilter | "ALL";
 
@@ -92,6 +93,14 @@ export function FieldSalesOrdersPageClient(props: Props) {
 
   const [searchInput, setSearchInput] = useState(props.search);
   const kreditDitahan = new Set(props.kreditDitahanIds ?? []);
+  // Disetujui/ditolak di halaman rincian: saat kembali ke daftar, barisnya menyala sebentar.
+  const { sorot } = useSorotBaris(
+    "pesanan-lapangan",
+    props.orders.map((o) => ({
+      id: o.id,
+      tanda: `${o.status}|${o.dibatalkan ? 1 : 0}|${o.deliveryStatus ?? ""}`,
+    })),
+  );
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -257,7 +266,7 @@ export function FieldSalesOrdersPageClient(props: Props) {
               <TableHead>{t("colStatus")}</TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody>
+          <TableBody className="baris-berurutan">
             {props.orders.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="whitespace-normal py-8 text-center text-muted-foreground">
@@ -277,6 +286,7 @@ export function FieldSalesOrdersPageClient(props: Props) {
               props.orders.map((o) => (
                 <TableRow
                   key={o.id}
+                  {...sorot(o.id)}
                   className="cursor-pointer hover:bg-muted/50"
                   onClick={() =>
                     startTransition(() => router.push(`/backoffice/field-sales-orders/${o.id}`))

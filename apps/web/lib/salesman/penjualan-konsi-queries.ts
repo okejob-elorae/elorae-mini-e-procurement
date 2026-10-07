@@ -1,6 +1,7 @@
 import { prisma } from "@elorae/db";
 import { kunciHariWib } from "@/lib/dashboard/tren";
 import { nilaiBarisHilang } from "@/lib/spg/hilang-db";
+import { gerakLakuBersih } from "@/lib/spg/laku-bersih";
 import { AKSI_PINDAH_TOKO } from "@/lib/stores/penanggung-jawab-writer";
 import {
   kunciBulanSiklus,
@@ -155,14 +156,7 @@ export async function lakuKonsiSalesman(
 
   const [awalBuku, gerak, laporan] = await Promise.all([
     prisma.storeStockMovement.groupBy({ by: ["storeId"], where: { storeId: { in: storeIds } }, _min: { createdAt: true } }),
-    prisma.storeStockMovement.findMany({
-      where: {
-        storeId: { in: storeIds },
-        kind: { in: ["JUAL", "RETUR_PEMBELI"] },
-        createdAt: opsi.sebelum ? { gte: sejak, lt: opsi.sebelum } : { gte: sejak },
-      },
-      select: { storeId: true, itemId: true, variantSku: true, qty: true, createdAt: true },
-    }),
+    gerakLakuBersih(storeIds.map((storeId) => ({ storeId, dari: sejak, sebelum: opsi.sebelum }))),
     prisma.consignmentSold.findMany({
       where: {
         itemId: { not: null },
@@ -184,9 +178,9 @@ export async function lakuKonsiSalesman(
     if (daftar) daftar.push(b);
     else perToko.set(b.storeId, [b]);
   };
-  // JUAL ditulis negatif, RETUR_PEMBELI positif: laku bersih = kebalikannya.
+  // JUAL ditulis negatif, retur pembeli (layak maupun rusak) positif: laku bersih = kebalikannya.
   for (const g of gerak) {
-    tambah({ tanggal: g.createdAt, storeId: g.storeId, itemId: g.itemId, variantSku: g.variantSku ?? "", pcs: -g.qty });
+    tambah({ tanggal: g.createdAt, storeId: g.storeId, itemId: g.itemId, variantSku: g.variantSku, pcs: -g.qty });
   }
   for (const s of laporan) {
     const { storeId, periodYear, periodMonth } = s.cycle;

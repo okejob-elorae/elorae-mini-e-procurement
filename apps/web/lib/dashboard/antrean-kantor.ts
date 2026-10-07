@@ -48,6 +48,7 @@ export const KUNCI_ANTREAN = [
   "returnCorrectionsPending",
   "shiftSwapsPending",
   "stockRequestsUnheld",
+  "spgCommissionsUnset",
 ] as const;
 
 export type KunciAntrean = (typeof KUNCI_ANTREAN)[number];
@@ -68,6 +69,7 @@ const spgView = izinTunggal(PERMISSIONS.SPG_SALES_VIEW);
 const storesManage = izinTunggal(PERMISSIONS.STORES_MANAGE);
 const fsoApprove = izinTunggal(PERMISSIONS.FIELD_SALES_ORDERS_APPROVE);
 const inventoryManage = izinTunggal(PERMISSIONS.INVENTORY_MANAGE);
+const receivablesManage = izinTunggal(PERMISSIONS.RECEIVABLES_MANAGE);
 
 export const ANTREAN_KANTOR: Readonly<Record<KunciAntrean, DefinisiAntrean>> = {
   // Izin, sakit & cuti tim lapangan (LeaveRequest DIAJUKAN), semua bulan.
@@ -162,6 +164,14 @@ export const ANTREAN_KANTOR: Readonly<Record<KunciAntrean, DefinisiAntrean>> = {
     href: "/backoffice/spg-requests?status=BARU&pemegang=tanpa",
     bolehBuka: spgView,
     bolehBertindak: storesManage,
+  },
+  // Komisi SPG toko putus bulan lalu yang belum ditetapkan — baris resminya
+  // hanya terbentuk saat keuangan menekan "Tetapkan" per toko. `bulan=lalu`
+  // tetap berarti bulan sebelum bulan berjalan, jadi tautannya tidak basi.
+  spgCommissionsUnset: {
+    href: "/backoffice/komisi-spg?bulan=lalu",
+    bolehBuka: spgView,
+    bolehBertindak: receivablesManage,
   },
 };
 
@@ -258,6 +268,8 @@ const HITUNG_ANTREAN: Readonly<Record<KunciAntrean, () => Promise<number>>> = {
   returnCorrectionsPending: async () => (await dokumenKoreksiTertunda("retur")).size,
   shiftSwapsPending: async () => (await import("@/lib/spg/shift-queries")).jumlahTukarMenungguKantor(),
   stockRequestsUnheld: () => prisma.stockRequest.count({ where: { status: "BARU", store: { salesmanId: null } } }),
+  // Definisi yang sama dengan "belum ditetapkan" di halaman Komisi SPG.
+  spgCommissionsUnset: async () => (await import("@/lib/spg/komisi-queries")).jumlahKomisiPutusBelumDitetapkan(),
 };
 
 export type AngkaAntrean = Partial<Record<KunciAntrean, number>>;

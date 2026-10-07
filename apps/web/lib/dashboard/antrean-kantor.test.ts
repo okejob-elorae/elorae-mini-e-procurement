@@ -32,6 +32,8 @@ const IZIN_TERKECIL: Record<KunciAntrean, string[]> = {
   returnCorrectionsPending: ["receivables:manage"],
   shiftSwapsPending: ["spg_sales:view", "stores:manage"],
   stockRequestsUnheld: ["spg_sales:view", "stores:manage"],
+  // /backoffice/komisi-spg: ROUTE_PERMISSIONS + penjaga halaman spg_sales:view; menetapkan = receivables:manage.
+  spgCommissionsUnset: ["spg_sales:view", "receivables:manage"],
 };
 
 /** Saringan yang WAJIB ada di tautan tiap baris — angka Beranda dihitung dengan saringan ini. */
@@ -52,6 +54,7 @@ const SARINGAN: Record<KunciAntrean, Record<string, string>> = {
   returnCorrectionsPending: { koreksi: "1" },
   shiftSwapsPending: { tab: "tukar" },
   stockRequestsUnheld: { status: "BARU", pemegang: "tanpa" },
+  spgCommissionsUnset: { bulan: "lalu" },
 };
 
 const nol: BuildActionItemsInput = {

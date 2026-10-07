@@ -15,6 +15,8 @@ const h = vi.hoisted(() => ({
   userId: "",
   absenMasuk: vi.fn(async () => "LEWATI"),
   absenPulang: vi.fn(async () => "LEWATI"),
+  absenLampau: vi.fn(async () => "LEWATI"),
+  absenKoreksi: vi.fn(async () => "LEWATI"),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn(async () => ({ user: { id: h.userId, permissions: ["pwa:access"] } })) }));
@@ -24,7 +26,12 @@ vi.mock("next/navigation", () => ({
     throw new Error(`__REDIRECT__:${url}`);
   },
 }));
-vi.mock("@/lib/salesman/absensi-writer", () => ({ absenMasukLewatCheckin: h.absenMasuk, absenPulangLewatCheckout: h.absenPulang }));
+vi.mock("@/lib/salesman/absensi-writer", () => ({
+  absenMasukLewatCheckin: h.absenMasuk,
+  absenPulangLewatCheckout: h.absenPulang,
+  absenMasukKunjunganLampau: h.absenLampau,
+  absenPulangKoreksi: h.absenKoreksi,
+}));
 
 const { checkInLuringAction, checkOutLuringAction } = await import("./actions");
 const { cariKunjunganAntrean } = await import("@/lib/pwa/kunjungan-antrean");

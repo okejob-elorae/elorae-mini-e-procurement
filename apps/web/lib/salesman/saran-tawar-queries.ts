@@ -124,7 +124,7 @@ export async function beliTokoIni(storeId: string, sejak: Date): Promise<BeliTok
  * barang yang ditimbun toko tidak membuktikan apa pun. Karena itu per toko
  * dipilih SATU sumber, yang terbaik yang tersedia — tidak pernah dijumlahkan,
  * sebab laporan konsinyasi sering disusun dari penjualan SPG yang sama:
- *   1. penjualan SPG (`SpgSaleLine`) — laku sungguhan, per hari;
+ *   1. penjualan SPG (`SpgSaleLine`, bersih dari retur pembeli) — laku sungguhan, per hari;
  *   2. angka laku konsinyasi yang sudah dikunci (`ConsignmentSold`) — laku
  *      sungguhan, tapi per bulan; bulan di tepi jendela dihitung sebanding
  *      porsinya. Bulan berjalan biasanya belum dikunci, jadi toko ini sedikit
@@ -141,7 +141,7 @@ export async function jualTokoSejenis(peerIds: string[], hariIni: Date): Promise
   const [spg, konsiLaku] = await Promise.all([
     prisma.spgSaleLine.findMany({
       where: { spgSale: { storeId: { in: peerIds }, createdAt: { gte: sejak } } },
-      select: { itemId: true, qty: true, spgSale: { select: { storeId: true } } },
+      select: { itemId: true, qty: true, returnedQty: true, spgSale: { select: { storeId: true } } },
     }),
     prisma.consignmentSold.findMany({
       where: {
@@ -158,7 +158,8 @@ export async function jualTokoSejenis(peerIds: string[], hariIni: Date): Promise
 
   const baris: Baris[] = [];
   const tokoSpg = new Set(spg.map((l) => l.spgSale.storeId));
-  for (const l of spg) baris.push({ storeId: l.spgSale.storeId, itemId: l.itemId, pcs: l.qty });
+  // Bersih: barang yang dikembalikan pembeli (layak maupun rusak) bukan laku.
+  for (const l of spg) baris.push({ storeId: l.spgSale.storeId, itemId: l.itemId, pcs: l.qty - l.returnedQty });
 
   const tokoKonsi = new Set<string>();
   for (const l of konsiLaku) {

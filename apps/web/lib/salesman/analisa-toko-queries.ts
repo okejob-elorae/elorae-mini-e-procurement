@@ -1,5 +1,6 @@
 import { prisma } from "@elorae/db";
 import { akhirBulanWib, stokDiToko } from "@/lib/konsinyasi/stok-di-toko";
+import { gerakLakuBersih } from "@/lib/spg/laku-bersih";
 import {
   rentangAnalisa,
   susunAnalisa,
@@ -30,7 +31,7 @@ import { bagiSen } from "./target-rinci";
  *   van   = penjualan mobil ke toko ini (tanggal jual);
  *   konsi = baris pesanan konsinyasi DISETUJUI (tanggal disetujui) +
  *           kiriman modul konsinyasi — "terkirim", TANPA rupiah;
- *   laku konsinyasi = buku stok toko (JUAL dikurangi RETUR_PEMBELI) bila toko
+ *   laku konsinyasi = laku bersih buku stok toko (`gerakLakuBersih`) bila toko
  *           punya buku, selain itu laporan laku konsinyasi (`ConsignmentSold`,
  *           per barang, bertanggal akhir bulan siklusnya) — pilihan yang sama
  *           dengan `stokDiToko`, supaya dua sumber tidak pernah dijumlahkan.
@@ -136,12 +137,9 @@ export async function analisaToko(storeId: string, periode: PeriodeAnalisa, hari
   let terjual: BarisAnalisa[] = [];
   if (konsiToko && stok) {
     if (stok.source === "BUKU_TOKO") {
-      const gerak = await prisma.storeStockMovement.findMany({
-        where: { storeId, kind: { in: ["JUAL", "RETUR_PEMBELI"] }, createdAt: waktu },
-        select: { itemId: true, variantSku: true, qty: true, createdAt: true },
-      });
-      // JUAL ditulis negatif, RETUR_PEMBELI positif: laku bersih = kebalikannya.
-      terjual = gerak.map((g) => ({ tanggal: g.createdAt, itemId: g.itemId, variantSku: g.variantSku ?? "", pcs: -g.qty, nilai: null }));
+      const gerak = await gerakLakuBersih([{ storeId, dari: rentang.awalSebelumnya, sebelum: rentang.akhir }]);
+      // JUAL ditulis negatif, retur pembeli (layak maupun rusak) positif: laku bersih = kebalikannya.
+      terjual = gerak.map((g) => ({ tanggal: g.createdAt, itemId: g.itemId, variantSku: g.variantSku, pcs: -g.qty, nilai: null }));
     } else {
       const laporan = await prisma.consignmentSold.findMany({
         where: { itemId: { not: null }, cycle: { storeId } },

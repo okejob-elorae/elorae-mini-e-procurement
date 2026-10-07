@@ -3331,6 +3331,7 @@ enum StoreStockKind {
   MUTASI_MASUK
   RETUR_KELUAR
   RETUR_PEMBELI
+  HILANG
 }
 
 enum StoreRecommendationStatus {

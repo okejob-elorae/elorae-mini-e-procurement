@@ -12,6 +12,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({ lokal: null as null | { keadaan: string; waktu: number } }));
 
 vi.mock("next-intl", () => ({ useTranslations: () => (k: string) => k }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {} }) }));
 vi.mock("next/link", () => ({
   default: ({ href, children }: { href: string; children: unknown }) => createElement("a", { href }, children as never),
 }));
@@ -22,7 +23,7 @@ vi.mock("./kabar/TombolKabar", () => ({ TombolKabar: () => createElement("i", nu
 vi.mock("./TombolBantuanHp", () => ({ TombolBantuanHp: () => createElement("i", null, "[BANTUAN]") }));
 vi.mock("./beranda/KartuPengumuman", () => ({ KartuPengumuman: () => null }));
 vi.mock("@/components/spg/PenghitungPengunjungMini", () => ({ PenghitungPengunjungMini: () => null }));
-vi.mock("@/components/dashboard/AngkaNaik", () => ({ AngkaNaik: () => createElement("span", null, "0") }));
+vi.mock("@/components/gerak/AngkaNaik", () => ({ AngkaNaik: () => createElement("span", null, "0") }));
 vi.mock("@/lib/pwa/offline/hitung", () => ({ hitungBelumTerkirim: async () => 0, PERISTIWA_ANTREAN: "antrean" }));
 vi.mock("@/lib/pwa/offline/luring-kunjungan-hook", () => ({ useKunjunganLokal: () => ({ kunjungan: h.lokal }) }));
 vi.mock("@/lib/pwa/offline/luring-kunjungan", () => ({
@@ -105,6 +106,16 @@ describe("beranda SPG — urutan tombol kunjungan dan Jual", () => {
     expect(html).not.toContain(JUAL);
     expect(html.indexOf("[CHECKOUT]")).toBeLessThan(html.indexOf("sellNeedsCheckin"));
     expect(html).not.toContain("checkoutTitle");
+  });
+
+  it("check-in tanpa sinyal dari hari lain: tanpa Jual, kartu kunjungan HP-nya SEKALI di kartu absen, jamnya bertanggal", () => {
+    // Senin 5 Okt 2026 19.16 WIB; halaman dibuat Selasa 6 Okt.
+    h.lokal = { keadaan: "antre", waktu: Date.UTC(2026, 9, 5, 12, 16) };
+    const html = gambar({ hariKunci: "2026-10-06" });
+    expect(html).not.toContain(JUAL);
+    expect(html.split("[CHECKIN]")).toHaveLength(2);
+    expect(html.indexOf("[CHECKIN]")).toBeLessThan(html.indexOf("sellNeedsCheckin"));
+    expect(html).toContain("checkedInEarlier");
   });
 
   it("kepala beranda hanya ⓘ dan lonceng — Tema dan Keluar ada di Lainnya", () => {

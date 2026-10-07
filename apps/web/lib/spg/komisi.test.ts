@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   bacaPeriodeKomisi,
+  BULAN_LALU,
+  bulanSebelum,
   bulanSudahSelesai,
   hitungKomisiToko,
   periodeSah,
@@ -239,6 +241,12 @@ describe("bulan", () => {
     expect(bacaPeriodeKomisi("2026-08", pilihan)).toBe("2026-08");
     expect(bacaPeriodeKomisi(["2026-10"], pilihan)).toBe("2026-10");
     expect(bacaPeriodeKomisi("2025-01", pilihan)).toBe("2026-09");
+  });
+
+  it("`?bulan=lalu` (tautan Beranda) is the month before the current WIB month", () => {
+    expect(bacaPeriodeKomisi(BULAN_LALU, ["2026-10", "2026-09", "2026-08"])).toBe("2026-09");
+    expect(bulanSebelum("2026-10")).toBe("2026-09");
+    expect(bulanSebelum("2026-01")).toBe("2025-12");
   });
 });
 

@@ -3,6 +3,7 @@ import { bulanWib } from "@/lib/salesman/pengaturan";
 import { bacaKomisiPutus, KUNCI_KOMISI_PUTUS, type AturanKomisiPutus, type DasarKomisi } from "./pengaturan";
 import { sisaBebanHilangPerOrang } from "./hilang-db";
 import {
+  bulanSebelum,
   bulanSudahSelesai,
   hitungKomisiToko,
   rentangBulanWib,
@@ -357,4 +358,41 @@ export async function daftarKomisiKantor(periode: string, sekarang: Date): Promi
       tokoBelum: toko.filter((t) => !t.adaResmi && t.baris.some((b) => b.penerima)).length,
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Antrean Beranda
+// ---------------------------------------------------------------------------
+
+/**
+ * Toko PUTUS yang komisi SPG bulan `periode`-nya BELUM ditetapkan — definisi
+ * yang sama dengan `ringkas.tokoBelum` di halaman Komisi SPG: toko tanpa satu
+ * pun baris resmi bulan itu yang punya penerima (`hitungKomisiToko`): SPG yang
+ * ditugaskan di sana, ditambah pada dasar PER_SPG siapa pun yang berjualan di
+ * sana bulan itu. Tanpa menghitung rupiahnya — cukup untuk Beranda.
+ */
+export async function tokoKomisiPutusBelumDitetapkan(periode: string, db: Klien = prisma): Promise<string[]> {
+  const { awal, akhir } = rentangBulanWib(periode);
+  const [aturan, bertugas, berjualan, resmi] = await Promise.all([
+    aturanKomisiPutus(db),
+    db.user.findMany({ where: { assignedStoreId: { not: null } }, select: { assignedStoreId: true }, distinct: ["assignedStoreId"] }),
+    db.spgSale.findMany({ where: { createdAt: { gte: awal, lt: akhir }, lines: { some: {} } }, select: { storeId: true }, distinct: ["storeId"] }),
+    db.spgCommission.findMany({ where: { period: periode }, select: { storeId: true }, distinct: ["storeId"] }),
+  ]);
+  const berpenerima = new Set(bertugas.map((u) => u.assignedStoreId).filter((x): x is string => Boolean(x)));
+  if (aturan.dasar === "PER_SPG") for (const s of berjualan) berpenerima.add(s.storeId);
+  for (const r of resmi) berpenerima.delete(r.storeId);
+  if (berpenerima.size === 0) return [];
+  const putus = await db.store.findMany({ where: { id: { in: [...berpenerima] }, termsType: "PUTUS" }, select: { id: true } });
+  return putus.map((t) => t.id);
+}
+
+/**
+ * Angka baris Beranda "komisi SPG bulan lalu belum ditetapkan": nol saat
+ * komisi toko putus dimatikan (menetapkan ditolak `KOMISI_MATI`).
+ */
+export async function jumlahKomisiPutusBelumDitetapkan(sekarang = new Date()): Promise<number> {
+  const aturan = await aturanKomisiPutus();
+  if (!aturan.aktif) return 0;
+  return (await tokoKomisiPutusBelumDitetapkan(bulanSebelum(bulanWib(sekarang)))).length;
 }

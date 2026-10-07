@@ -27,9 +27,9 @@ import { PERISTIWA_ANTREAN } from "@/lib/pwa/offline/hitung";
 import { hapusLuring, ulangLuring } from "@/lib/pwa/offline/luring-antrean";
 import { kunciAlasanLuring } from "@/lib/pwa/offline/luring-klasifikasi";
 import { aturanKunjunganDiHp, lupakanKunjunganTerkirim, type KunjunganLokal } from "@/lib/pwa/offline/luring-kunjungan";
+import { hariWib, labelMasuk, labelMasukUntuk } from "@/lib/spg/beranda-spg";
 
 /** Jam diformat di klien dengan sengaja: datanya dari HP (IndexedDB), tidak pernah dirender server. */
-const JAM_WIB = new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
 
 /** Teks alasan penolakan check-in — sama dengan layar "Belum terkirim". */
 export function useAlasanLuring() {
@@ -73,6 +73,8 @@ export function KunjunganLuring({
   const alasanTeks = useAlasanLuring();
   const [sibuk, setSibuk] = useState(false);
   const [yakin, setYakin] = useState(false);
+  // Kunjungan yang masih di HP bisa dari hari lain: jam saja akan terbaca seperti hari ini.
+  const [hariIni] = useState(() => hariWib(Date.now()));
   const diperiksa = useRef<string | null>(null);
   const tujuan = kembaliAman(kembali);
 
@@ -179,7 +181,7 @@ export function KunjunganLuring({
       <section className="beranda-kartu space-y-3" style={{ borderColor: "var(--primary)", borderWidth: 2 }}>
         <div className="flex items-baseline justify-between gap-2">
           <h2 className="beranda-judul">{t("berjalanJudul")}</h2>
-          <span className="text-sm text-muted-foreground">{t("sejak", { jam: JAM_WIB.format(kunjungan.waktu) })}</span>
+          <span className="text-sm text-muted-foreground">{t("sejak", { jam: labelMasukUntuk(labelMasuk(kunjungan.waktu), hariIni).teks })}</span>
         </div>
         <p className="flex items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
           <CloudOff className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />

@@ -2,6 +2,7 @@ import { prisma } from "@elorae/db";
 import { formatDisplayDate } from "@/lib/date-only";
 import { akhirBulanWib, bagiSebanding, stokDiToko } from "@/lib/konsinyasi/stok-di-toko";
 import { kunciStok } from "@/lib/konsinyasi/isi-ulang";
+import { gerakLakuBersih } from "@/lib/spg/laku-bersih";
 import { rentangAnalisa, type PeriodeAnalisa, type RentangAnalisa } from "./analisa-toko";
 import { labelVarianSerap, susunPenyerapan, type BahanSerap, type InfoBarangSerap, type Penyerapan } from "./penyerapan";
 
@@ -78,8 +79,8 @@ function ambil(peta: Map<string, BahanSerap>, k: Kunci): BahanSerap {
  *   awal  = saldo gerakan sebelum awal periode;
  *   masuk = TERIMA + MUTASI_MASUK dalam periode;
  *   tambahLain = selisih lebih opname dalam periode;
- *   laku  = −(JUAL + RETUR_PEMBELI) dalam periode — JUAL ditulis negatif,
- *           barang kembali dari pembeli positif;
+ *   laku  = laku bersih dalam periode (`gerakLakuBersih`): JUAL dikurangi
+ *           barang kembali dari pembeli, termasuk yang rusak;
  *   sisa  = saldo sekarang (dari `stokDiToko`, dengan tanggal masuk pertamanya).
  */
 async function bahanBukuToko(storeId: string, rentang: RentangAnalisa, baris: BarisStok[]) {
@@ -92,11 +93,7 @@ async function bahanBukuToko(storeId: string, rentang: RentangAnalisa, baris: Ba
       where: { storeId, kind: { in: ["TERIMA", "MUTASI_MASUK"] }, createdAt: dalam },
       _sum: { qty: true },
     }),
-    prisma.storeStockMovement.groupBy({
-      by: [...by],
-      where: { storeId, kind: { in: ["JUAL", "RETUR_PEMBELI"] }, createdAt: dalam },
-      _sum: { qty: true },
-    }),
+    gerakLakuBersih([{ storeId, dari: rentang.awal, sebelum: rentang.akhir }]),
     prisma.storeStockMovement.groupBy({
       by: [...by],
       where: { storeId, kind: "OPNAME", qty: { gt: 0 }, createdAt: dalam },
@@ -112,7 +109,7 @@ async function bahanBukuToko(storeId: string, rentang: RentangAnalisa, baris: Ba
   }
   for (const g of awal) ambil(peta, g).awal = g._sum.qty ?? 0;
   for (const g of masuk) ambil(peta, g).masuk = g._sum.qty ?? 0;
-  for (const g of laku) ambil(peta, g).laku = -(g._sum.qty ?? 0);
+  for (const g of laku) ambil(peta, g).laku -= g.qty;
   for (const g of opname) ambil(peta, g).tambahLain = g._sum.qty ?? 0;
   // Buku punya saldo harian yang pasti: awal tidak pernah diturunkan.
   for (const b of peta.values()) if (b.awal === null) b.awal = 0;

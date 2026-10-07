@@ -31,6 +31,7 @@ const WARNA_JENIS: Record<GerakanStokTampil["jenis"], string> = {
   MUTASI_MASUK: "border-teal-500/40 text-teal-700 dark:text-teal-300",
   RETUR_KELUAR: "border-rose-500/40 text-rose-700 dark:text-rose-300",
   RETUR_PEMBELI: "border-orange-500/40 text-orange-700 dark:text-orange-300",
+  HILANG: "border-red-500/40 text-red-700 dark:text-red-300",
 };
 
 const bertanda = (n: number) => (n > 0 ? `+${n}` : String(n));

@@ -2,6 +2,7 @@ import { prisma } from "@elorae/db";
 import { formatDisplayDate } from "@/lib/date-only";
 import { parseItemVariants, variantDetailForSku } from "@/lib/items/variants";
 import { kirimanMenunggu } from "@/lib/spg/kiriman";
+import { jumlahLakuBersihSejak } from "@/lib/spg/laku-bersih";
 import {
   kunciStok,
   nilaiIsiUlang,
@@ -298,32 +299,28 @@ export async function muatStokDiToko(storeIds: string[], sekarang = new Date()):
 
   if (idBuku.length > 0) {
     const jual = { storeId: { in: idBuku }, kind: "JUAL" as const };
-    // Laku bersih: barang yang dikembalikan pembeli ke counter (RETUR_PEMBELI,
-    // qty positif) mengurangi angka laku, supaya barang yang banyak kembali
-    // tidak terbaca sebagai barang cepat laku. Tanggal terakhir laku tetap
-    // dari penjualan saja.
-    const lakuBersih = { storeId: { in: idBuku }, kind: { in: ["JUAL" as const, "RETUR_PEMBELI" as const] } };
+    // Laku BERSIH (`gerakLakuBersih`): barang yang dikembalikan pembeli —
+    // layak (RETUR_PEMBELI) maupun rusak (tanpa baris buku) — mengurangi angka
+    // laku, supaya barang yang banyak kembali tidak terbaca cepat laku.
+    // Tanggal terakhir laku tetap dari penjualan saja.
     const [terakhir, j30, j60] = await Promise.all([
       prisma.storeStockMovement.groupBy({ by: ["storeId", "itemId", "variantSku"], where: jual, _max: { createdAt: true } }),
-      prisma.storeStockMovement.groupBy({
-        by: ["storeId", "itemId", "variantSku"],
-        where: { ...lakuBersih, createdAt: { gte: batas30 } },
-        _sum: { qty: true },
-      }),
-      prisma.storeStockMovement.groupBy({
-        by: ["storeId", "itemId", "variantSku"],
-        where: { ...lakuBersih, createdAt: { gte: batas60 } },
-        _sum: { qty: true },
-      }),
+      jumlahLakuBersihSejak(idBuku, batas30),
+      jumlahLakuBersihSejak(idBuku, batas60),
     ]);
+    const keBaris = (peta: Map<string, number> | undefined) =>
+      [...(peta ?? new Map<string, number>())].map(([k, qty]) => {
+        const i = k.indexOf("::");
+        return { itemId: k.slice(0, i), variantSku: k.slice(i + 2), qty };
+      });
     for (const id of idBuku) {
       mentah.set(id, {
         source: "BUKU_TOKO",
         baris: gabungBukuToko({
           saldo: saldo.filter((s) => s.storeId === id).map((s) => ({ itemId: s.itemId, variantSku: s.variantSku, qty: s._sum.qty ?? 0, pertama: s._min.createdAt })),
           jualTerakhir: terakhir.filter((s) => s.storeId === id).map((s) => ({ itemId: s.itemId, variantSku: s.variantSku, terakhir: s._max.createdAt })),
-          jual30: j30.filter((s) => s.storeId === id).map((s) => ({ itemId: s.itemId, variantSku: s.variantSku, qty: s._sum.qty ?? 0 })),
-          jual60: j60.filter((s) => s.storeId === id).map((s) => ({ itemId: s.itemId, variantSku: s.variantSku, qty: s._sum.qty ?? 0 })),
+          jual30: keBaris(j30.get(id)),
+          jual60: keBaris(j60.get(id)),
         }),
       });
     }

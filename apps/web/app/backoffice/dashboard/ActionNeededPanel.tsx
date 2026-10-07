@@ -7,6 +7,7 @@ import { AlertTriangle, ArrowRight, CheckCircle2, Clock } from "lucide-react";
 import { hasPermission } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { formatRupiah } from "@/lib/format/rupiah";
+import { AngkaNaik } from "@/components/gerak/AngkaNaik";
 import { totalActionDocuments, type ActionItem } from "@/lib/dashboard/action-items-shared";
 
 /**
@@ -104,7 +105,7 @@ export function ActionNeededPanel({ items }: { items: ActionItem[] }) {
                       : "text-amber-700 dark:text-amber-300",
                 )}
               >
-                {item.count}
+                <AngkaNaik nilai={item.count} format={String} />
               </span>
               <ArrowRight
                 aria-hidden

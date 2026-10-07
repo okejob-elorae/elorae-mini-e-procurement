@@ -1,4 +1,6 @@
 import { prisma } from "@elorae/db";
+import { gerakLakuBersih, returRusakLaku } from "@/lib/spg/laku-bersih";
+import { REF_BUKU_HILANG } from "@/lib/spg/hilang-buku";
 import { rentangBulanWib } from "./laporan-spg";
 import {
   buatPenyelesaiKunci,
@@ -26,6 +28,9 @@ const bulanDari = (d: Date): string => BULAN_WIB.format(d);
 const periodeKunci = (tahun: number, bulan: number): string => `${tahun}-${String(bulan).padStart(2, "0")}`;
 
 type BarisNama = { itemId: string | null; itemName: string; qty: number };
+
+/** Status catatan barang hilang yang dibatalkan (`STATUS_HILANG`). */
+const STATUS_BATAL = "DIBATALKAN";
 type Penyelesai = (itemId: string | null | undefined, nama: string) => string;
 
 /** Master barang untuk kunci + nama tampil: yang terlibat (id) dan yang namanya disebut laporan. */
@@ -103,19 +108,10 @@ export async function pencocokanSiklus(cycleId: string): Promise<PencocokanSiklu
 
   const stokMentah = adaBuku
     ? await (async () => {
-        const [gerakJual, saldo, pesanan, kiriman, terimaMutasi, mutasiKeluar, mutasiKembali, retur, diterima, returKeluar, rusak, hilang] =
+        const [gerakJual, saldo, pesanan, kiriman, terimaMutasi, mutasiKeluar, mutasiKembali, retur, diterima, returKeluar, rusak, hilang, bukuHilang, rusakPembeli] =
           await Promise.all([
-            prisma.storeStockMovement.findMany({
-              where: {
-                storeId,
-                kind: { in: ["JUAL", "RETUR_PEMBELI"] },
-                createdAt: { lt: akhir },
-                ...(bulanResmiLain.length > 0
-                  ? { NOT: bulanResmiLain.map((r) => ({ createdAt: { gte: r.awal, lt: r.akhir } })) }
-                  : {}),
-              },
-              select: { itemId: true, qty: true, createdAt: true },
-            }),
+            // Laku bersih (`gerakLakuBersih`): JUAL, RETUR_PEMBELI, dan retur rusak dari pembeli.
+            gerakLakuBersih([{ storeId, sebelum: akhir, kecuali: bulanResmiLain }]),
             prisma.storeStockMovement.groupBy({
               by: ["itemId"],
               where: { storeId, createdAt: { lt: akhir } },
@@ -181,18 +177,33 @@ export async function pencocokanSiklus(cycleId: string): Promise<PencocokanSiklu
               select: { id: true, itemId: true, qtyDamaged: true, damageStatus: true, damageDecidedAt: true },
             }),
             // Barang hilang yang sudah dicatat dan sudah memotong buku tapi tidak titipan.
+            // Catatan yang dibatalkan SESUDAH akhir bulan masih berlaku di bulan itu.
             prisma.stockLossLine.findMany({
               where: {
                 itemId: { not: null },
-                loss: { storeId, source: { in: ["OPNAME", "PENERIMAAN"] }, status: { not: "BATAL" }, createdAt: { lt: akhir } },
+                loss: {
+                  storeId,
+                  source: { in: ["OPNAME", "PENERIMAAN"] },
+                  createdAt: { lt: akhir },
+                  OR: [{ status: { not: STATUS_BATAL } }, { decidedAt: { gte: akhir } }],
+                },
               },
               select: { itemId: true, qty: true },
             }),
+            // Catatan MANUAL memotong buku lewat gerakan HILANG-nya sendiri (`hilang-buku.ts`).
+            prisma.storeStockMovement.findMany({
+              where: { storeId, kind: "HILANG", refType: REF_BUKU_HILANG, createdAt: { lt: akhir } },
+              select: { itemId: true, qty: true, refId: true },
+            }),
+            // Barang rusak yang dikembalikan pembeli: masih di toko, tapi tidak di buku.
+            returRusakLaku([{ storeId, sebelum: akhir }]),
           ]);
 
         const idNrt = [...new Set(returKeluar.map((r) => r.refId).filter((x): x is string => Boolean(x)))];
         const idRusak = rusak.map((r) => r.id);
-        const [nriNrt, rusakKembali] = await Promise.all([
+        const idRusakPembeli = rusakPembeli.map((r) => r.lineId);
+        const idHilangBuku = [...new Set(bukuHilang.map((g) => g.refId).filter((x): x is string => Boolean(x)))];
+        const [nriNrt, rusakKembali, rusakPembeliKembali, catatanHilangBuku] = await Promise.all([
           idNrt.length
             ? prisma.warehouseReturn.findMany({
                 where: { storeReturnId: { in: idNrt } },
@@ -209,8 +220,40 @@ export async function pencocokanSiklus(cycleId: string): Promise<PencocokanSiklu
                 },
               })
             : Promise.resolve([]),
+          idRusakPembeli.length
+            ? prisma.storeReturnItem.findMany({
+                where: { spgSaleReturnLineId: { in: idRusakPembeli } },
+                select: {
+                  spgSaleReturnLineId: true,
+                  qty: true,
+                  storeReturn: { select: { warehouseReturn: { select: { status: true, finalisedAt: true, receivedAt: true } } } },
+                },
+              })
+            : Promise.resolve([]),
+          idHilangBuku.length
+            ? prisma.stockLoss.findMany({ where: { id: { in: idHilangBuku } }, select: { id: true, status: true, decidedAt: true } })
+            : Promise.resolve([]),
         ]);
-        return { gerakJual, saldo, pesanan, kiriman, terimaMutasi, mutasiKeluar, mutasiKembali, retur, diterima, returKeluar, rusak, nriNrt, rusakKembali, hilang };
+        return {
+          gerakJual,
+          saldo,
+          pesanan,
+          kiriman,
+          terimaMutasi,
+          mutasiKeluar,
+          mutasiKembali,
+          retur,
+          diterima,
+          returKeluar,
+          rusak,
+          nriNrt,
+          rusakKembali,
+          hilang,
+          bukuHilang,
+          catatanHilangBuku,
+          rusakPembeli,
+          rusakPembeliKembali,
+        };
       })()
     : null;
 
@@ -235,6 +278,8 @@ export async function pencocokanSiklus(cycleId: string): Promise<PencocokanSiklu
           ...stokMentah.returKeluar.map((g) => g.itemId),
           ...stokMentah.rusak.map((g) => g.itemId as string),
           ...stokMentah.hilang.map((g) => g.itemId as string),
+          ...stokMentah.bukuHilang.map((g) => g.itemId),
+          ...stokMentah.rusakPembeli.map((g) => g.itemId),
         ]
       : []),
   ];
@@ -250,7 +295,7 @@ export async function pencocokanSiklus(cycleId: string): Promise<PencocokanSiklu
     if (!nama.has(k)) nama.set(k, { nama: x.itemName.trim(), sku: null, itemId: k === kunciNama(x.itemName) ? null : k });
   }
 
-  // Terjual menurut buku per bulan: JUAL (−) dan RETUR_PEMBELI (+) → laku bersih.
+  // Terjual menurut buku per bulan: JUAL (−), RETUR_PEMBELI dan retur rusak (+) → laku bersih.
   const bukuPerBulan = new Map<string, JumlahBarang[]>();
   for (const g of stokMentah?.gerakJual ?? []) {
     const p = bulanDari(g.createdAt);
@@ -342,6 +387,25 @@ export async function pencocokanSiklus(cycleId: string): Promise<PencocokanSiklu
       .filter((r) => !(r.damageStatus === "LAYAK_JUAL" && r.damageDecidedAt && r.damageDecidedAt < akhir))
       .map((r) => ({ kunci: r.itemId as string, qty: Math.max(0, r.qtyDamaged - (kembaliPerBaris.get(r.id) ?? 0)) }));
 
+    // Barang rusak dari pembeli: bukan terjual (titipan masih memuatnya) dan
+    // tidak di buku — dalam proses sampai NRI-nya final sebelum akhir bulan.
+    const pembeliKembali = new Map<string, number>();
+    for (const k of s.rusakPembeliKembali) {
+      if (!k.spgSaleReturnLineId || !sudahDihitungGudang(k.storeReturn.warehouseReturn)) continue;
+      pembeliKembali.set(k.spgSaleReturnLineId, (pembeliKembali.get(k.spgSaleReturnLineId) ?? 0) + k.qty);
+    }
+    const rusakPembeliBelum = s.rusakPembeli.map((r) => ({ kunci: r.itemId, qty: Math.max(0, r.qty - (pembeliKembali.get(r.lineId) ?? 0)) }));
+
+    // Catatan MANUAL yang memotong buku: sebesar gerakan HILANG-nya sampai akhir
+    // bulan, kecuali catatannya dibatalkan sebelum akhir bulan (opname yang
+    // sudah meluruskan buku tidak dibalik, jadi gerakannya tinggal).
+    const catatanBatal = new Set(
+      s.catatanHilangBuku.filter((l) => l.status === STATUS_BATAL && l.decidedAt && l.decidedAt < akhir).map((l) => l.id),
+    );
+    const hilangManual = s.bukuHilang
+      .filter((g) => g.refId && !catatanBatal.has(g.refId))
+      .map((g) => ({ kunci: g.itemId, qty: -g.qty }));
+
     stok = {
       buku: s.saldo.map((g) => ({ kunci: g.itemId, qty: g._sum.qty ?? 0 })),
       titipan: titipanPerBarang({
@@ -351,8 +415,8 @@ export async function pencocokanSiklus(cycleId: string): Promise<PencocokanSiklu
       }),
       kirimanBelumDiterima: kirimanBelum,
       returBelumDihitung: returBelum,
-      rusakBelumMasukBuku: rusakBelum,
-      hilangTercatat: s.hilang.map((l) => ({ kunci: l.itemId as string, qty: l.qty })),
+      rusakBelumMasukBuku: [...rusakBelum, ...rusakPembeliBelum],
+      hilangTercatat: [...s.hilang.map((l) => ({ kunci: l.itemId as string, qty: l.qty })), ...hilangManual],
     };
   }
 
@@ -394,16 +458,13 @@ export async function penandaTerjualSiklus(
       select: { cycleId: true, source: true, items: { select: { itemId: true, itemName: true, qty: true } } },
     }),
     prisma.storeStockMovement.groupBy({ by: ["storeId"], where: { storeId: { in: storeIds } }, _min: { createdAt: true } }),
-    prisma.storeStockMovement.findMany({
-      where: {
-        kind: { in: ["JUAL", "RETUR_PEMBELI"] },
-        OR: daftar.map((d) => {
-          const r = rentang.get(d.id) as { awal: Date; akhir: Date };
-          return { storeId: d.storeId, createdAt: { gte: r.awal, lt: r.akhir } };
-        }),
-      },
-      select: { storeId: true, itemId: true, qty: true, createdAt: true },
-    }),
+    // Laku bersih — definisi yang sama dengan rincian (`gerakLakuBersih`).
+    gerakLakuBersih(
+      daftar.map((d) => {
+        const r = rentang.get(d.id) as { awal: Date; akhir: Date };
+        return { storeId: d.storeId, dari: r.awal, sebelum: r.akhir };
+      }),
+    ),
   ]);
 
   const barisLaporan = laporan.flatMap((l) => l.items);

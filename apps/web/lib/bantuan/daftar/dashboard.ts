@@ -65,6 +65,15 @@ export const ENTRI: EntriBantuan[] = [
         judul: { kunci: "dashboard.kpiStockAttention" },
         isi: "Dihitung per barang (semua varian dijumlah), dengan tersedia = stok di tangan dikurangi yang sudah dipesan, sama dengan ringkasan di Inventori. Stok menipis: tersedianya di atas nol tetapi sudah sampai titik pesan ulang. Stok habis: tidak ada yang tersedia. Stok minus: tersedianya di bawah nol, karena yang sudah dipesan (dicadangkan) lebih banyak dari stok yang ada. Satu barang hanya masuk satu kelompok.",
       },
+      {
+        judul: "Kapsul di tengah atas",
+        isi: [
+          "Kapsul gelap di tengah atas layar (terang bila tema gelap) memberi kabar tentang apa yang sedang terjadi, di semua halaman. Bila tidak ada apa-apa, kapsulnya tidak tampil.",
+          "Yang bisa muncul: hasil tindakan (\"Menyimpan…\" lalu \"Tersimpan\", atau pesan galat), proses panjang seperti resync settlement beserta persennya, \"Tanpa sinyal\" dengan jumlah yang belum terkirim, \"Mengirim…\" lalu \"Terkirim\" saat sinyal kembali, dan notifikasi baru beserta judulnya.",
+          "Bila beberapa hal terjadi bersamaan, yang paling penting tampil di kapsul: galat, lalu proses, lalu sinyal, lalu notifikasi, lalu pesan biasa. Yang berikutnya tampil sebagai lingkaran kecil di sampingnya, dan \"+N\" berarti masih ada N pesan lain sejenis.",
+          "Ketuk kapsul untuk menutup pesan, membuka notifikasinya, atau mengirim ulang yang belum terkirim. Pesan biasa hilang sendiri dalam beberapa detik, pesan galat sekitar delapan detik. Keadaan yang berlangsung lama (tanpa sinyal, proses panjang, antrean yang belum terkirim) menyusut menjadi ikon dan angka sesudah beberapa detik supaya tidak menutupi judul halaman; ketuk untuk melebarkannya lagi. Bila perangkat Anda disetel \"kurangi gerakan\", kapsulnya muncul tanpa animasi.",
+        ],
+      },
     ],
   },
 ];

@@ -107,8 +107,10 @@ describe("stokDiToko / nilaiStokToko (basis data)", () => {
   let siklusId = "";
   let kirimId = "";
   let uomId = "";
+  let notaId = "";
 
   beforeEach(async () => {
+    notaId = "";
     tokoId = "";
     barangId = "";
     orangId = "";
@@ -129,6 +131,10 @@ describe("stokDiToko / nilaiStokToko (basis data)", () => {
   });
 
   afterEach(async () => {
+    await prisma.spgSaleReturnLine.deleteMany({ where: { saleReturn: { spgSaleId: seededId(notaId) } } });
+    await prisma.spgSaleReturn.deleteMany({ where: { spgSaleId: seededId(notaId) } });
+    await prisma.spgSaleLine.deleteMany({ where: { spgSaleId: seededId(notaId) } });
+    await prisma.spgSale.deleteMany({ where: { id: seededId(notaId) } });
     await prisma.storeStockTarget.deleteMany({ where: { storeId: seededId(tokoId) } });
     await prisma.storeStockMovement.deleteMany({ where: { storeId: seededId(tokoId) } });
     await prisma.consignmentSold.deleteMany({ where: { cycleId: seededId(siklusId) } });
@@ -181,6 +187,52 @@ describe("stokDiToko / nilaiStokToko (basis data)", () => {
     const s = await stokDiToko(tokoId, SEKARANG);
     expect(s.source).toBe("BUKU_TOKO");
     expect(s.baris).toEqual([expect.objectContaining({ qty: 2, soldLast30: 1, source: "BUKU_TOKO" })]);
+  });
+
+  it("laku bersih: barang rusak yang dikembalikan pembeli bukan penjualan, walau tidak kembali ke rak", async () => {
+    // Opname pembuka 10, nota 3 potong 5 hari lalu, pembeli mengembalikan 1 layak dan 1 rusak.
+    const nota = await prisma.spgSale.create({
+      data: {
+        docNo: `${tag}/SPG`,
+        salesmanId: orangId,
+        storeId: tokoId,
+        subtotal: 0,
+        total: 0,
+        cashReceived: 0,
+        changeGiven: 0,
+        createdById: orangId,
+        createdAt: hariLalu(5),
+        lines: { create: [{ itemId: barangId, productName: `${tag} Blus`, qty: 3, unitPrice: 0, lineTotal: 0, returnedQty: 2 }] },
+      },
+      select: { id: true, lines: { select: { id: true } } },
+    });
+    notaId = nota.id;
+    await prisma.storeStockMovement.createMany({
+      data: [
+        { storeId: tokoId, itemId: barangId, variantSku: "", qty: 10, kind: "OPNAME", createdById: orangId, createdAt: hariLalu(40) },
+        { storeId: tokoId, itemId: barangId, variantSku: "", qty: -3, kind: "JUAL", refType: "SpgSale", refId: nota.id, createdById: orangId, createdAt: hariLalu(5) },
+        { storeId: tokoId, itemId: barangId, variantSku: "", qty: 1, kind: "RETUR_PEMBELI", createdById: orangId, createdAt: hariLalu(4) },
+      ],
+    });
+    await prisma.spgSaleReturn.create({
+      data: {
+        spgSaleId: nota.id,
+        storeId: tokoId,
+        createdById: orangId,
+        reason: "uji",
+        idempotencyKey: `${tag}-RET`,
+        createdAt: hariLalu(4),
+        lines: {
+          create: [
+            { spgSaleLineId: nota.lines[0].id, itemId: barangId, qty: 1, condition: "LAYAK" },
+            { spgSaleLineId: nota.lines[0].id, itemId: barangId, qty: 1, condition: "RUSAK" },
+          ],
+        },
+      },
+    });
+    const s = await stokDiToko(tokoId, SEKARANG);
+    // Rak: 10 − 3 + 1 = 8 (yang rusak tidak kembali ke rak); laku bersih 3 − 1 − 1 = 1.
+    expect(s.baris).toEqual([expect.objectContaining({ qty: 8, soldLast30: 1, soldLast60: 1, source: "BUKU_TOKO" })]);
   });
 
   it("penilaian: target MIN tersentuh → saran sampai MAKS, dibatasi gudang", async () => {

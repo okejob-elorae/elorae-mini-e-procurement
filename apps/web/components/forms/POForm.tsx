@@ -33,7 +33,6 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Plus, Trash2, Loader2, AlertTriangle, WifiOff } from 'lucide-react';
 import { toast } from 'sonner';
 import type { z } from 'zod';
-import { OfflineIndicator } from '@/components/offline/OfflineIndicator';
 import { isOnline } from '@/lib/offline/sync';
 import { useLocale, useTranslations } from 'next-intl';
 import { parseItemVariants, variantSelectOptions } from '@/lib/items/variants';
@@ -486,9 +485,6 @@ export function POForm({
 
   return (
     <form onSubmit={handleSubmitForm} className="space-y-6">
-      {/* Offline Indicator */}
-      <OfflineIndicator />
-
       {/* Pemasok dan perkiraan tiba */}
       <Card>
         <CardHeader>

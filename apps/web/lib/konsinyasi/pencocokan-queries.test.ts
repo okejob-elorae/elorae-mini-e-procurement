@@ -100,7 +100,13 @@ async function kirim(noKirim: string, shippedAt: string, itemId: string, nama: s
   return k.id;
 }
 
-async function gerak(itemId: string, qty: number, kind: "TERIMA" | "JUAL" | "OPNAME" | "RETUR_PEMBELI" | "RETUR_KELUAR", iso: string, ref?: { refType: string; refId: string }) {
+async function gerak(
+  itemId: string,
+  qty: number,
+  kind: "TERIMA" | "JUAL" | "OPNAME" | "RETUR_PEMBELI" | "RETUR_KELUAR" | "HILANG",
+  iso: string,
+  ref?: { refType: string; refId: string },
+) {
   await prisma.storeStockMovement.create({
     data: { storeId: tokoId, itemId, variantSku: "", qty, kind, createdById: orangId, createdAt: pada(iso), ...(ref ?? {}) },
   });
@@ -149,8 +155,8 @@ async function siapkanBuku() {
     select: { id: true, lines: { select: { id: true, itemId: true } } },
   });
   jualId = jual.id;
-  await gerak(barangA, -3, "JUAL", "2026-08-10T03:00:00Z");
-  await gerak(barangB, -1, "JUAL", "2026-08-10T03:00:00Z");
+  await gerak(barangA, -3, "JUAL", "2026-08-10T03:00:00Z", { refType: "SpgSale", refId: jual.id });
+  await gerak(barangB, -1, "JUAL", "2026-08-10T03:00:00Z", { refType: "SpgSale", refId: jual.id });
 
   const barisA = jual.lines.find((l) => l.itemId === barangA)!;
   returId = (
@@ -213,7 +219,7 @@ describe("pencocokanSiklus (basis data)", () => {
 
   it("barang yang sudah dicatat hilang dari opname tidak dihitung lagi; hilang di mutasi dan yang dibatalkan tidak ikut", async () => {
     await siapkanBuku();
-    const hilang = async (source: string, status: string, qty: number) => {
+    const hilang = async (source: string, status: string, qty: number, decidedAt: string | null = null) => {
       const l = await prisma.stockLoss.create({
         data: {
           storeId: tokoId,
@@ -222,6 +228,7 @@ describe("pencocokanSiklus (basis data)", () => {
           totalAmount: 0,
           valueBasis: "HARGA_ELORAE",
           status,
+          decidedAt: decidedAt ? pada(decidedAt) : null,
           createdById: orangId,
           createdAt: pada("2026-08-20T03:00:00Z"),
           lines: { create: [{ itemId: barangA, productName: `${tag} Blus`, qty, unitValue: 0, amount: 0 }] },
@@ -230,12 +237,82 @@ describe("pencocokanSiklus (basis data)", () => {
       hilangIds.push(l.id);
     };
     await hilang("OPNAME", "DITETAPKAN", 1);
-    await hilang("OPNAME", "BATAL", 5);
+    await hilang("OPNAME", "DIBATALKAN", 5, "2026-08-22T03:00:00Z");
     await hilang("MUTASI", "TERBUKA", 2);
     const p = (await pencocokanSiklus(siklusId))!;
     const a = p.baris.find((b) => b.itemId === barangA)!;
     expect(a.stok).toMatchObject({ buku: 6, titipan: 8, dalamProses: 1, hilangTercatat: 1, seharusnya: 6, selisih: 0, kemungkinanHilang: 0 });
     expect(p.ringkas).toMatchObject({ barangKemungkinanHilang: 0, pcsKemungkinanHilang: 0 });
+  });
+
+  it("catatan yang dibatalkan SESUDAH akhir bulan masih berlaku untuk bulan itu", async () => {
+    await siapkanBuku();
+    const l = await prisma.stockLoss.create({
+      data: {
+        storeId: tokoId,
+        source: "OPNAME",
+        totalQty: 1,
+        totalAmount: 0,
+        valueBasis: "HARGA_ELORAE",
+        status: "DIBATALKAN",
+        decidedAt: pada("2026-09-03T03:00:00Z"),
+        createdById: orangId,
+        createdAt: pada("2026-08-20T03:00:00Z"),
+        lines: { create: [{ itemId: barangA, productName: `${tag} Blus`, qty: 1, unitValue: 0, amount: 0 }] },
+      },
+    });
+    hilangIds.push(l.id);
+    const a = (await pencocokanSiklus(siklusId))!.baris.find((b) => b.itemId === barangA)!;
+    expect(a.stok).toMatchObject({ hilangTercatat: 1, selisih: 0, kemungkinanHilang: 0 });
+  });
+
+  it("catatan MANUAL dihitung sebesar gerakan HILANG-nya di buku; yang dibatalkan sebelum akhir bulan tidak", async () => {
+    await siapkanBuku();
+    const manual = async (status: string, decidedAt: string | null, qty: number, gerakan: number[]) => {
+      const l = await prisma.stockLoss.create({
+        data: {
+          storeId: tokoId,
+          source: "MANUAL",
+          totalQty: qty,
+          totalAmount: 0,
+          valueBasis: "HARGA_ELORAE",
+          status,
+          decidedAt: decidedAt ? pada(decidedAt) : null,
+          createdById: orangId,
+          createdAt: pada("2026-08-21T03:00:00Z"),
+          lines: { create: [{ itemId: barangA, productName: `${tag} Blus`, qty, unitValue: 0, amount: 0 }] },
+        },
+      });
+      hilangIds.push(l.id);
+      for (const [i, q] of gerakan.entries()) {
+        await gerak(barangA, q, "HILANG", `2026-08-2${1 + i}T04:00:00Z`, { refType: "StockLoss", refId: l.id });
+      }
+    };
+    // Tercatat 2 dan memotong buku 2. Satu lagi (1) ternyata ada: opname sudah
+    // meluruskan buku (+1), lalu catatannya dibatalkan dalam bulan itu — gerakannya
+    // tinggal, tapi catatan batal tidak dihitung hilang.
+    await manual("DITETAPKAN", "2026-08-22T03:00:00Z", 2, [-2]);
+    await manual("DIBATALKAN", "2026-08-23T03:00:00Z", 1, [-1]);
+    await gerak(barangA, 1, "OPNAME", "2026-08-22T06:00:00Z");
+    // Catatan MANUAL tanpa gerakan buku (toko belum berbuku saat dicatat) tidak ikut.
+    await manual("TERBUKA", null, 4, []);
+    const a = (await pencocokanSiklus(siklusId))!.baris.find((b) => b.itemId === barangA)!;
+    // Buku 6 − 2 = 4; titipan 8; retur belum dihitung 1; tercatat hilang 2 → seharusnya 5 → kurang 1 (sama seperti tanpa catatan).
+    expect(a.stok).toMatchObject({ buku: 4, titipan: 8, dalamProses: 1, hilangTercatat: 2, seharusnya: 5, selisih: -1, kemungkinanHilang: 1 });
+  });
+
+  it("barang rusak yang dikembalikan pembeli bukan terjual; ia dalam proses sampai NRI-nya final", async () => {
+    await siapkanBuku();
+    const baris = await prisma.spgSaleLine.findFirstOrThrow({ where: { spgSaleId: jualId, itemId: barangA }, select: { id: true } });
+    await prisma.spgSaleReturnLine.create({ data: { returnId: returId, spgSaleLineId: baris.id, itemId: barangA, qty: 1, condition: "RUSAK" } });
+    await prisma.spgSaleLine.update({ where: { id: baris.id }, data: { returnedQty: 2 } });
+    const p = (await pencocokanSiklus(siklusId))!;
+    const a = p.baris.find((b) => b.itemId === barangA)!;
+    // Buku: 3 − 1 layak − 1 rusak = 1; nota bersih 3 − 2 = 1.
+    expect(a.terjual).toMatchObject({ buku: 1, nota: 1 });
+    // Titipan (dasar laporan toko 2) tetap 8; buku tidak berubah (6); rusak di toko 1 + retur belum dihitung 1.
+    expect(a.stok).toMatchObject({ buku: 6, titipan: 8, dalamProses: 2, seharusnya: 6, selisih: 0, kemungkinanHilang: 0 });
+    expect((await daftarSiklus()).find((x) => x.id === siklusId)?.penandaCocok).toEqual({ berselisih: 2 });
   });
 
   it("kiriman yang belum diterima SPG dihitung dalam proses", async () => {

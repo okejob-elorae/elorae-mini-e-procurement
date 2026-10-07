@@ -12,7 +12,8 @@ import { stokTitipan } from "./aturan";
  * Dua bagian:
  *
  * 1. TERJUAL bulan itu, dari sumber yang ada:
- *    - buku stok toko: JUAL − RETUR_PEMBELI bulan itu (toko yang punya buku);
+ *    - buku stok toko: laku bersih bulan itu (`gerakLakuBersih`: JUAL dikurangi
+ *      barang yang dikembalikan pembeli, layak maupun rusak) — toko yang punya buku;
  *    - nota SPG bersih (qty − returnedQty, menurut tanggal nota) — PEMBANDING
  *      saja, tidak ikut menentukan selisih: nota bisa sah berbeda dari buku
  *      (penjualan luring yang tertinggal di belakang opname tidak mendapat
@@ -27,10 +28,12 @@ import { stokTitipan } from "./aturan";
  *    titipan (dikirim − terjual − diretur, dihitung lewat `stokTitipan`).
  *    Barang yang menurut dokumen sedang DALAM PROSES tidak dianggap hilang:
  *    kiriman yang belum diterima SPG, retur yang sudah dikirim SPG tapi belum
- *    dihitung gudang, dan barang rusak saat diterima yang belum masuk buku.
+ *    dihitung gudang, barang rusak saat diterima yang belum masuk buku, dan
+ *    barang rusak dari pembeli yang belum kembali ke gudang.
  *    Barang yang SUDAH dicatat hilang juga tidak dihitung lagi: catatan dari
  *    opname dan dari kekurangan penerimaan (`StockLoss` OPNAME/PENERIMAAN yang
- *    tidak dibatalkan) — keduanya sudah memotong buku tapi tidak titipan.
+ *    tidak dibatalkan sebelum akhir bulan), dan catatan MANUAL sebesar gerakan
+ *    HILANG-nya di buku — semuanya sudah memotong buku tapi tidak titipan.
  *    Seharusnya di toko = titipan − dalam proses − tercatat hilang. Buku lebih
  *    kecil dari itu = "kemungkinan hilang" — hanya angka; pencatatannya
  *    dikerjakan di modul barang hilang.
@@ -142,9 +145,10 @@ export type BahanStok = {
   returBelumDihitung: JumlahBarang[];
   rusakBelumMasukBuku: JumlahBarang[];
   /**
-   * Barang hilang yang sudah dicatat dari opname / kekurangan penerimaan.
-   * Hilang di MUTASI tidak ikut (buku dan titipan toko asal sama-sama sudah
-   * melepasnya saat dikirim); MANUAL tidak ikut (tidak menggeser buku).
+   * Barang hilang yang sudah dicatat dari opname / kekurangan penerimaan, dan
+   * catatan MANUAL sebesar gerakan HILANG yang ditulisnya di buku. Hilang di
+   * MUTASI tidak ikut (buku dan titipan toko asal sama-sama sudah melepasnya
+   * saat dikirim).
    */
   hilangTercatat?: JumlahBarang[];
 };

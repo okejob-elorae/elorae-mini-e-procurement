@@ -107,7 +107,7 @@ export const ENTRI: EntriBantuan[] = [
     bagian: "pwaSpg",
     judul: { kunci: "pwa.spgStok.title" },
     isi: [
-      "Saldo setiap barang di toko Anda menurut buku stok toko. Saldo bertambah saat Anda menerima kiriman atau barang layak jual kembali dari pembeli, berkurang saat barang terjual, dikirim ke toko lain, atau diretur ke gudang, dan disesuaikan oleh opname. Saringan Hampir habis menampilkan barang dengan saldo 2 potong atau kurang.",
+      "Saldo setiap barang di toko Anda menurut buku stok toko. Saldo bertambah saat Anda menerima kiriman atau barang layak jual kembali dari pembeli, berkurang saat barang terjual, dikirim ke toko lain, diretur ke gudang, atau dicatat hilang oleh kantor, dan disesuaikan oleh opname. Saringan Hampir habis menampilkan barang dengan saldo 2 potong atau kurang.",
       "Saldo boleh minus: penjualan tidak pernah ditolak karena saldo kosong, dan opname yang membetulkannya. Ubin di atas membuka Terima kiriman, Opname, Minta kiriman, dan Kirim ke toko lain.",
     ],
     kartu: [
@@ -138,7 +138,10 @@ export const ENTRI: EntriBantuan[] = [
     rute: "/pwa/spg/terima",
     bagian: "pwaSpg",
     judul: { kunci: "pwa.spgTerima.title" },
-    isi: "Kiriman ke toko Anda yang belum dihitung dan diterima: pengiriman pesanan, pesanan dan kiriman konsinyasi, serta mutasi dari toko lain. Buka satu kiriman untuk menghitung dan menerimanya. Menerima butuh check-in di toko; tanpa sinyal, penerimaan disimpan di HP dan kirimannya ditandai sudah diterima di HP sampai terkirim.",
+    isi: [
+      "Kiriman ke toko Anda yang belum dihitung dan diterima: pengiriman pesanan, pesanan dan kiriman konsinyasi, serta mutasi dari toko lain. Buka satu kiriman untuk menghitung dan menerimanya. Menerima butuh check-in di toko; tanpa sinyal, penerimaan disimpan di HP dan kirimannya ditandai sudah diterima di HP sampai terkirim.",
+      "Angka Kiriman menunggu di beranda tidak menghitung kiriman yang penerimaannya sudah tersimpan di HP ini; yang belum terkirim atau ditolak server tampil di tugas Belum terkirim.",
+    ],
     kartu: [
       {
         judul: "Menunggu diterima",

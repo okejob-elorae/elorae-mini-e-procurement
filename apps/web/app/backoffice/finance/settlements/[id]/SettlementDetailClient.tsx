@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Fragment, useEffect, useState, useTransition } from "react";
+import { Fragment, useEffect, useRef, useState, useTransition } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { toast } from "sonner";
 import {
@@ -42,6 +42,7 @@ import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-only";
 import type { UnggahanPertamaTampil } from "../ganda";
 import { HapusUnggahanSettlement } from "./HapusUnggahanSettlement";
 import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
+import { perbaruiProses, selesaiProses, tampilkanPesan } from "@/lib/pulau/pulau";
 
 const RESYNC_POLL_INTERVAL_MS = 2000;
 
@@ -58,6 +59,7 @@ function formatRupiah(value: number): string {
 
 export function SettlementDetailClient({ settlement, canManage, ganda = null }: Props) {
   const t = useTranslations("financeSettlements");
+  const tPulau = useTranslations("pulau.proses");
   const locale = useLocale();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -179,6 +181,32 @@ export function SettlementDetailClient({ settlement, canManage, ganda = null }: 
       if (timer) clearInterval(timer);
     };
   }, [resyncBatchId]);
+
+  // Pulau status: resync yang berjalan tampil di kapsul tengah atas dengan
+  // persen nyata dari ringkasan antrean; selesai = satu pesan singkat.
+  const idProsesResync = `resync-settlement:${settlement.id}`;
+  const resyncBerjalan =
+    resyncBatchId !== null && resyncSummary !== null && resyncSummary.total > 0 && !resyncTerminal && !resyncPollError;
+  const resyncTadiBerjalan = useRef(false);
+  useEffect(() => {
+    if (!resyncBerjalan) return;
+    return () => selesaiProses(idProsesResync);
+  }, [resyncBerjalan, idProsesResync]);
+  useEffect(() => {
+    // Label dan persen dikirim bersama: penerjemah yang berganti tidak boleh
+    // mengulang proses dari "tanpa persen".
+    if (resyncBerjalan) perbaruiProses(idProsesResync, resyncProgressPct, tPulau("resyncSettlement"));
+  }, [resyncBerjalan, idProsesResync, resyncProgressPct, tPulau]);
+  const resyncAdaGagal = (resyncSummary?.dead ?? 0) > 0;
+  useEffect(() => {
+    if (resyncBerjalan) {
+      resyncTadiBerjalan.current = true;
+    } else if (resyncTadiBerjalan.current && resyncTerminal) {
+      resyncTadiBerjalan.current = false;
+      // Ada pesanan yang gagal: bukan centang hijau — rinciannya di panel resync.
+      tampilkanPesan({ jenis: resyncAdaGagal ? "peringatan" : "sukses", teks: tPulau("resyncSettlementSelesai") });
+    }
+  }, [resyncBerjalan, resyncTerminal, resyncAdaGagal, tPulau]);
 
   function handleResync() {
     startResyncTransition(async () => {

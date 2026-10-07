@@ -4867,7 +4867,8 @@
         "MUTASI_KELUAR": "Kirim ke toko lain",
         "MUTASI_MASUK": "Terima dari toko lain",
         "RETUR_KELUAR": "Retur ke gudang",
-        "RETUR_PEMBELI": "Dikembalikan pembeli"
+        "RETUR_PEMBELI": "Dikembalikan pembeli",
+        "HILANG": "Barang hilang"
       },
       "titipanLink": "Titipan menurut kiriman",
       "targetLink": "Target stok"
@@ -9027,7 +9028,8 @@
     "shiftSwapsPending": "Tukar shift SPG menunggu keputusan",
     "stockRequestsUnheld": "Permintaan stok SPG di toko tanpa pemegang",
     "amountPoValue": "nilai PO {nilai}",
-    "claimsAwaitingOthers": "BKM Anda menunggu admin keuangan lain"
+    "claimsAwaitingOthers": "BKM Anda menunggu admin keuangan lain",
+    "spgCommissionsUnset": "Komisi SPG toko putus bulan lalu belum ditetapkan"
   },
   "statuses": {
     "unknown": "Tidak diketahui",
@@ -10364,7 +10366,7 @@
       "maybeLost": "kemungkinan hilang",
       "over": "Lebih {qty}",
       "notaHint": "Nota SPG (bersih, menurut tanggal nota) hanya pembanding dan tidak ikut menentukan selisih.",
-      "stockHint": "Seharusnya di toko = stok titipan − dalam proses: kiriman yang belum diterima SPG, retur yang belum dihitung gudang, dan barang rusak saat diterima yang belum masuk buku.",
+      "stockHint": "Seharusnya di toko = stok titipan − dalam proses: kiriman yang belum diterima SPG, retur yang belum dihitung gudang, barang rusak saat diterima yang belum masuk buku, dan barang rusak dari pembeli yang belum kembali ke gudang.",
       "provisional": "Bulan yang belum dikunci memakai angka sementara: {months}.",
       "dasar": {
         "RESMI": "resmi",
@@ -10376,7 +10378,7 @@
       "empty": "Belum ada barang untuk dicocokkan.",
       "emptyFiltered": "Tidak ada barang yang berselisih.",
       "colRecordedLost": "Sudah dicatat hilang",
-      "recordedLostHint": "Barang yang sudah dicatat hilang dari opname atau kekurangan penerimaan tidak dihitung lagi sebagai kemungkinan hilang."
+      "recordedLostHint": "Barang yang sudah dicatat hilang — dari opname, kekurangan penerimaan, atau dicatat kantor dan mengurangi buku toko — tidak dihitung lagi sebagai kemungkinan hilang."
     },
     "lossDeducted": "Dipotong beban barang hilang {value} · dibayar {paid}",
     "stage_bayar_toko": "Menunggu pembayaran toko",
@@ -17637,5 +17639,20 @@
     "linkCoa": "Bagan akun",
     "linkMapping": "Pemetaan akun",
     "linkPending": "Lihat jurnal tertunda"
+  },
+  "pulau": {
+    "tanpaSinyal": "Tanpa sinyal",
+    "belumTerkirim": "{count} belum terkirim",
+    "mengirim": "Mengirim…",
+    "terkirim": "Terkirim",
+    "kirim": "Kirim",
+    "notifikasiBaru": "{count} notifikasi baru",
+    "lainnya": "dan {count} lainnya",
+    "proses": {
+      "resyncSettlement": "Resync settlement",
+      "resyncSettlementSelesai": "Resync settlement selesai",
+      "pushStokJubelio": "Mengantrekan stok ke Jubelio",
+      "imporPiutang": "Menyimpan {count} faktur"
+    }
   }
 }

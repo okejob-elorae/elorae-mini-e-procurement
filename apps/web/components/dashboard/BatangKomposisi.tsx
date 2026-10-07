@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
-import { AngkaNaik } from './AngkaNaik';
+import { AngkaNaik } from '@/components/gerak/AngkaNaik';
 
 /**
  * Satu batang yang dibelah menurut bagiannya, dengan keterangan di bawahnya.

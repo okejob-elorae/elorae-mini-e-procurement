@@ -4867,7 +4867,8 @@
         "MUTASI_KELUAR": "Sent to another store",
         "MUTASI_MASUK": "Received from another store",
         "RETUR_KELUAR": "Returned to warehouse",
-        "RETUR_PEMBELI": "Returned by shopper"
+        "RETUR_PEMBELI": "Returned by shopper",
+        "HILANG": "Lost goods"
       },
       "titipanLink": "Consigned stock by shipments",
       "targetLink": "Stock targets"
@@ -9027,7 +9028,8 @@
     "shiftSwapsPending": "SPG shift swaps awaiting a decision",
     "stockRequestsUnheld": "SPG stock requests at stores with no salesperson",
     "amountPoValue": "PO value {nilai}",
-    "claimsAwaitingOthers": "Your payment claims (BKM) awaiting another finance admin"
+    "claimsAwaitingOthers": "Your payment claims (BKM) awaiting another finance admin",
+    "spgCommissionsUnset": "Last month's SPG commissions at direct-sale stores not yet set"
   },
   "statuses": {
     "unknown": "Unknown",
@@ -10364,7 +10366,7 @@
       "maybeLost": "possibly lost",
       "over": "Over {qty}",
       "notaHint": "SPG receipts (net, by receipt date) are for comparison only and do not decide a difference.",
-      "stockHint": "Expected at the store = consigned stock − in process: shipments the SPG has not received, returns the warehouse has not counted, and goods damaged on arrival that have not entered the book.",
+      "stockHint": "Expected at the store = consigned stock − in process: shipments the SPG has not received, returns the warehouse has not counted, goods damaged on arrival that have not entered the book, and damaged goods returned by shoppers that have not gone back to the warehouse.",
       "provisional": "Months not locked yet use provisional figures: {months}.",
       "dasar": {
         "RESMI": "official",
@@ -10376,7 +10378,7 @@
       "empty": "No products to reconcile yet.",
       "emptyFiltered": "No products with a difference.",
       "colRecordedLost": "Already recorded lost",
-      "recordedLostHint": "Goods already recorded lost from a stock count or a short delivery are not counted again as possibly lost."
+      "recordedLostHint": "Goods already recorded lost — from a stock count, a short delivery, or recorded by the office against the store book — are not counted again as possibly lost."
     },
     "lossDeducted": "Lost goods deduction {value} · paid out {paid}",
     "stage_bayar_toko": "Awaiting shop payment",
@@ -17637,5 +17639,20 @@
     "linkCoa": "Chart of accounts",
     "linkMapping": "Account mapping",
     "linkPending": "View pending journals"
+  },
+  "pulau": {
+    "tanpaSinyal": "No signal",
+    "belumTerkirim": "{count} not sent yet",
+    "mengirim": "Sending…",
+    "terkirim": "Sent",
+    "kirim": "Send",
+    "notifikasiBaru": "{count, plural, one {# new notification} other {# new notifications}}",
+    "lainnya": "and {count} more",
+    "proses": {
+      "resyncSettlement": "Settlement resync",
+      "resyncSettlementSelesai": "Settlement resync finished",
+      "pushStokJubelio": "Queuing stock for Jubelio",
+      "imporPiutang": "Saving {count, plural, one {# invoice} other {# invoices}}"
+    }
   }
 }

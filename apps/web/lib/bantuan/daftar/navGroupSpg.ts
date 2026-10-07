@@ -182,6 +182,7 @@ export const ENTRI: EntriBantuan[] = [
       { kunci: "komisiSpg.deskripsi" },
       "Dasar pembagian antar SPG di satu toko dan menyalakan komisi ini diatur di Pengaturan → SPG. Komisi bisa ditetapkan mulai tanggal 1 bulan berikutnya. Menetapkan dan menandai dibayar butuh izin mengelola piutang; bulan yang sudah ada pembayarannya tidak bisa ditetapkan ulang.",
       "Beban barang hilang yang ditanggung SPG dipotong dari komisinya saat ditetapkan; batas potongannya diatur di Pengaturan → SPG.",
+      "Komisi tidak terbentuk sendiri: baris resminya baru ada setelah keuangan menekan Tetapkan per toko. Beranda mengingatkan pemegang izin mengelola piutang dengan jumlah toko putus ber-SPG yang komisi bulan lalunya belum ditetapkan; tautannya membuka bulan lalu di halaman ini.",
     ],
     kartu: [{ judul: { kunci: "komisiSpg.konsi.judul" }, isi: { kunci: "komisiSpg.konsi.isi" } }],
   },
@@ -243,6 +244,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "barangHilang.kantor.deskripsi" },
       "Pengawas SPG bisa melihat. Mencatat barang hilang secara manual, menetapkan penanggung, dan menandai pelunasan butuh izin mengelola piutang.",
+      "Barang hilang yang dicatat manual untuk toko yang sudah punya buku stok langsung mengurangi buku toko itu (gerakan Barang hilang di kartu stok toko), jadi opname berikutnya atas potong yang sama tidak membuka catatan kedua. Membatalkan catatannya mengembalikan potong itu ke buku, kecuali barangnya sudah dihitung opname sesudah catatan dibuat — opname itu yang berlaku. Toko tanpa buku stok tidak dibukakan buku; stok titipannya dikurangi catatan yang sudah ditetapkan.",
     ],
   },
   {

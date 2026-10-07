@@ -25,7 +25,12 @@ import {
   normalkanAkurasi,
   type TandaCheckin,
 } from "@/lib/salesman/checkin-janggal";
-import { absenMasukLewatCheckin, absenPulangLewatCheckout } from "@/lib/salesman/absensi-writer";
+import {
+  absenMasukKunjunganLampau,
+  absenMasukLewatCheckin,
+  absenPulangKoreksi,
+  absenPulangLewatCheckout,
+} from "@/lib/salesman/absensi-writer";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { BATAS_CHECKIN_LURING_MS, jepitWaktuLuring } from "@/lib/pwa/waktu-luring";
 
@@ -487,7 +492,9 @@ async function kunjunganDenganClientId(clientId: string, userId: string): Promis
  *   ditautkan, tidak digandakan;
  * - kunjungan terbuka lain → ditutup otomatis pada waktu check-in ini.
  *
- * SPG: kunjungan yang menjadi kunjungan berjalan = absen masuk pada waktu HP.
+ * SPG: kunjungan yang menjadi kunjungan berjalan = absen masuk pada waktu HP;
+ * kunjungan yang dicatat sudah selesai tetap mencatat absen hari itu (jam
+ * masuk = check-in pertama hari itu, `absenMasukKunjunganLampau`).
  * Tidak pernah mengalihkan halaman — antrean berjalan di latar.
  */
 export async function checkInLuringAction(input: unknown): Promise<CheckInLuringHasil> {
@@ -510,7 +517,7 @@ export async function checkInLuringAction(input: unknown): Promise<CheckInLuring
   if (!nilai.ok) return nilai.hasil;
   const { spg, radius, tanda, tutupOtomatisBertransaksi } = nilai;
 
-  let hasil: { visitId: string; berjalan: boolean };
+  let hasil: { visitId: string; berjalan: boolean; selesai?: boolean };
   try {
     hasil = await runSerializable(async (tx) => {
       const sama = await tx.storeVisit.findUnique({ where: { clientId: d.clientId }, select: { id: true } });
@@ -541,7 +548,7 @@ export async function checkInLuringAction(input: unknown): Promise<CheckInLuring
           data: { ...dasar, checkoutAt: berikut.checkinAt, autoClosed: true },
           select: { id: true },
         });
-        return { visitId: v.id, berjalan: false };
+        return { visitId: v.id, berjalan: false, selesai: true };
       }
 
       const aktif = await tx.storeVisit.findFirst({
@@ -579,6 +586,9 @@ export async function checkInLuringAction(input: unknown): Promise<CheckInLuring
 
   if (spg && hasil.berjalan) {
     await absenMasukLewatCheckin({ userId, lat: d.lat, lng: d.lng, akurasi, sekarang: waktu });
+    revalidatePath("/pwa/absen");
+  } else if (spg && hasil.selesai) {
+    await absenMasukKunjunganLampau({ userId, lat: d.lat, lng: d.lng, akurasi, waktu });
     revalidatePath("/pwa/absen");
   }
   revalidatePath("/pwa");
@@ -680,10 +690,14 @@ export async function checkOutLuringAction(input: unknown): Promise<CheckOutLuri
   });
   if (berubah === 0) return { ok: true, storeId: visit.storeId, sudahTertutup: true };
 
-  // SPG: check-out = absen pulang pada waktu HP. Hanya untuk kunjungan yang
-  // memang masih berjalan — kunjungan yang diluruskan sudah lewat harinya.
+  // SPG: check-out = absen pulang pada waktu HP. Kunjungan yang diluruskan
+  // (ditutup otomatis oleh check-in berikutnya) memulangkan HARI check-in-nya,
+  // kecuali hari itu masih ada kunjungan sesudahnya (`absenPulangKoreksi`).
   if (spg && !luruskan) {
     await absenPulangLewatCheckout({ userId, lat: d.lat, lng: d.lng, sekarang: waktuKeluar });
+    revalidatePath("/pwa/absen");
+  } else if (spg && luruskan) {
+    await absenPulangKoreksi({ userId, visitId: visit.id, checkinAt: visit.checkinAt, lat: d.lat, lng: d.lng, waktuKeluar });
     revalidatePath("/pwa/absen");
   }
   revalidatePath("/pwa");

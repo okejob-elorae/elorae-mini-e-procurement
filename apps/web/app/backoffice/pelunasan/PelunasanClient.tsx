@@ -30,6 +30,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import { useSorotBaris } from '@/components/gerak/useSorotBaris';
 import { verifikasiKlaimAction } from '@/app/actions/receivables';
 import { dinamis } from '@/lib/i18n/dinamis';
 import type { StatusGiro } from '@/lib/receivables/giro';
@@ -108,6 +109,11 @@ export function PelunasanClient({
   const [pending, startTransition] = useTransition();
   const [tolakId, setTolakId] = useState<string | null>(null);
   const [alasan, setAlasan] = useState('');
+  // BKM yang baru diverifikasi/ditolak menyala sebentar lalu tampil dengan status barunya.
+  const { sorot, tandai } = useSorotBaris(
+    'pelunasan',
+    baris.map((b) => ({ id: b.id, tanda: `${b.status}|${b.giro?.status ?? ''}` })),
+  );
 
   const menunggu = jumlah.DIKIRIM;
   const cari = saring.cari ?? '';
@@ -146,6 +152,7 @@ export function PelunasanClient({
       const hasil = await verifikasiKlaimAction(id, keputusan, catatan);
       if (hasil.ok) {
         toast.success(keputusan === 'TERVERIFIKASI' ? t('okVerified') : t('okRejected'));
+        tandai(id);
         setTolakId(null);
         setAlasan('');
         router.refresh();
@@ -222,10 +229,11 @@ export function PelunasanClient({
                     <TableHead className="sticky right-0 bg-card text-right">{t('colAction')}</TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
+                <TableBody className="baris-berurutan">
                   {baris.map((b) => (
                     <TableRow
                       key={b.id}
+                      {...sorot(b.id)}
                       /* Klaim yang menunggu keputusan diberi latar tipis: inilah
                          satu-satunya baris yang menuntut tindakan hari ini. */
                       className={cn(b.status === 'DIKIRIM' && 'bg-amber-500/[0.05]')}

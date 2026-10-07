@@ -122,6 +122,7 @@ export const JENIS_GERAKAN_STOK = [
   "MUTASI_MASUK",
   "RETUR_KELUAR",
   "RETUR_PEMBELI",
+  "HILANG",
 ] as const;
 export type JenisGerakanStok = (typeof JENIS_GERAKAN_STOK)[number];
 

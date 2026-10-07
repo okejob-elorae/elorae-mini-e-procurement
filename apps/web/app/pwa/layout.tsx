@@ -10,6 +10,8 @@ import { ServiceWorkerRegistrar } from "./ServiceWorkerRegistrar";
 import { SinkronLatar } from "./SinkronLatar";
 import { SegarkanPush } from "./kabar/SegarkanPush";
 import { RiwayatNavigasi } from "./RiwayatNavigasi";
+import { PemantauLuringHp } from "@/components/pulau/PemantauLuringHp";
+import { PemantauKabarHp } from "@/components/pulau/PemantauKabarHp";
 
 export const metadata = {
   manifest: "/manifest.webmanifest",
@@ -32,6 +34,9 @@ export default async function PwaLayout({ children }: { children: React.ReactNod
       <ServiceWorkerRegistrar />
       <SinkronLatar />
       <SegarkanPush />
+      {/* Sinyal, antrean, dan kabar baru → pulau status di tengah atas (dipasang di app/layout.tsx). */}
+      <PemantauLuringHp tautanAntrean={spg ? "/pwa/spg/antrean" : "/pwa/orders/pending"} />
+      <PemantauKabarHp />
       {/* useSearchParams di dalamnya butuh batas Suspense supaya tata letak tetap dirender di server. */}
       <Suspense fallback={null}>
         <RiwayatNavigasi />

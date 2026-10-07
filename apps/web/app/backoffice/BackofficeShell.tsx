@@ -538,10 +538,6 @@ function Sidebar({
           className="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-primary to-transparent"
         />
       </div>
-
-      <div className="p-4 border-t border-primary-foreground/20 [&_button]:text-primary-foreground [&_button]:hover:bg-primary-foreground/10 [&_button]:hover:text-primary-foreground">
-        <OfflineIndicator />
-      </div>
     </div>
   );
 }
@@ -684,6 +680,8 @@ export function BackofficeShell({
           {children}
         </main>
         <FcmRegistration />
+        {/* Sinyal dan antrean kantor → pulau status di tengah atas (dulu label "Online" di menu samping). */}
+        <OfflineIndicator />
       </div>
     </div>
   );

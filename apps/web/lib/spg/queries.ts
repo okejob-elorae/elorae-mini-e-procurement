@@ -4,6 +4,7 @@ import { capaianRinciSpg } from "@/lib/salesman/target-rinci-queries";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { bacaTargetBulan, bulanWib, KUNCI_TARGET } from "@/lib/salesman/pengaturan";
 import { kirimanMenunggu } from "./kiriman";
+import { kunciKiriman } from "./beranda-spg";
 import { hampirHabis, kunciBaris } from "./stok";
 import { komisiPutusResmiSaya, perkiraanKomisiHp, type PerkiraanKomisiHp } from "./komisi-queries";
 import type { DasarKomisi } from "./pengaturan";
@@ -110,18 +111,24 @@ export async function terlarisToko(storeId: string, hariIni: Date, batas = 5): P
   const grup = await prisma.spgSaleLine.groupBy({
     by: ["itemId", "variantSku", "productName"],
     where: { spgSale: { storeId, createdAt: { gte: sejak } } },
-    _sum: { qty: true },
+    _sum: { qty: true, returnedQty: true },
   });
   // Nama tampilan bisa berbeda antar nota untuk varian yang sama (label
   // varian diubah di master) — jumlahkan per varian, ambil nama terakhir.
+  // Laku BERSIH: barang yang dikembalikan pembeli (layak maupun rusak) bukan
+  // penjualan — sama dengan analisa SPG (`qty − returnedQty` menurut tanggal nota).
   const peta = new Map<string, Terlaris>();
   for (const g of grup) {
     const k = kunciBaris(g.itemId, g.variantSku);
+    const bersih = (g._sum.qty ?? 0) - (g._sum.returnedQty ?? 0);
     const ada = peta.get(k);
-    if (ada) ada.qty += g._sum.qty ?? 0;
-    else peta.set(k, { itemId: g.itemId, variantSku: g.variantSku, nama: g.productName, qty: g._sum.qty ?? 0 });
+    if (ada) ada.qty += bersih;
+    else peta.set(k, { itemId: g.itemId, variantSku: g.variantSku, nama: g.productName, qty: bersih });
   }
-  return [...peta.values()].sort((a, b) => b.qty - a.qty).slice(0, batas);
+  return [...peta.values()]
+    .filter((t) => t.qty > 0)
+    .sort((a, b) => b.qty - a.qty)
+    .slice(0, batas);
 }
 
 export type GajiKomisi = {
@@ -215,6 +222,8 @@ export type RingkasanSpg = {
   hampirHabis: BarisStok[];
   stokDilacak: boolean;
   kirimanMenunggu: number;
+  /** `jenis:id` kiriman yang menunggu — HP menguranginya dengan tanda terima yang sudah tersimpan di HP. */
+  kirimanMenungguKunci: string[];
   notaHariIni: NotaSingkat[];
   gajiKomisi: GajiKomisi;
 };
@@ -248,6 +257,7 @@ export async function ringkasanSpg(userId: string, toko: TokoSpg, hariIni: Date)
     hampirHabis: hampirHabis(stok, BATAS_HAMPIR_HABIS),
     stokDilacak: stok.length > 0,
     kirimanMenunggu: kiriman.length,
+    kirimanMenungguKunci: kiriman.map((k) => kunciKiriman(k.sourceType, k.sourceId)),
     notaHariIni: notaHari.slice(0, 5),
     gajiKomisi,
   };

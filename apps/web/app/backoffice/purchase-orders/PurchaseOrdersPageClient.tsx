@@ -48,6 +48,7 @@ import { BatalPoDialog } from './BatalPoDialog';
 import { keadaanBatalPo, tampilStatusBayar } from './aturan-po';
 import { TAUTAN_DOKUMEN } from './tautan-dokumen';
 import { PinAuthModal } from '@/components/security/PinAuthModal';
+import { useSorotBaris } from '@/components/gerak/useSorotBaris';
 import { POStatus } from '@/lib/constants/enums';
 import { ETABadge } from '@/components/ui/ETABadge';
 import { Progress } from '@/components/ui/progress';
@@ -113,6 +114,8 @@ export function PurchaseOrdersPageClient({
   const tTable = useTranslations('tableHeaders');
   const locale = useLocale();
   const [pos, setPOs] = useState<PurchaseOrder[]>(initialPOs ?? []);
+  // PO yang statusnya baru berubah (dikirim, dibatalkan, atau di halaman rinciannya) menyala sebentar.
+  const { sorot, tandai } = useSorotBaris('po', pos.map((po) => ({ id: po.id, tanda: po.status })));
   const [isLoading, setIsLoading] = useState(!initialPOs);
   const [searchQuery, setSearchQuery] = useState('');
   const pathname = usePathname();
@@ -181,6 +184,7 @@ export function PurchaseOrdersPageClient({
     try {
       await submitPO(id, session.user.id);
       toast.success(tToasts('poSubmittedSuccessfully'));
+      tandai(id);
       fetchPOs();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : tToasts('failedToSubmitPO');
@@ -230,6 +234,7 @@ export function PurchaseOrdersPageClient({
       toast.error(teks);
     } else {
       toast.success(tToasts('poCancelledSuccessfully'));
+      tandai(cancelTargetId);
     }
     setPinModalOpen(false);
     setCancelTargetId(null);
@@ -352,9 +357,9 @@ export function PurchaseOrdersPageClient({
                     </TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
+                <TableBody className="baris-berurutan">
                   {filteredPOs.map((po) => (
-                    <TableRow key={po.id}>
+                    <TableRow key={po.id} {...sorot(po.id)}>
                       <TableCell>
                         <Link href={`/backoffice/purchase-orders/${po.id}`} className={TAUTAN_DOKUMEN}>
                           {po.docNumber}

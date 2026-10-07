@@ -1054,3 +1054,139 @@ body:has(.pwa-app) [data-slot='calendar'] {
   color: color-mix(in oklab, var(--kode-warna-gelap) 72%, white);
   border-color: color-mix(in oklab, var(--kode-warna-gelap) 38%, transparent);
 }
+
+/* ==========================================================================
+   Gerak kecil yang membantu kerja (lib/gerak, components/gerak)
+   --------------------------------------------------------------------------
+   Angka-angkanya juga tertulis di lib/gerak/kurva.ts dan lib/gerak/sorot.ts.
+   lib/gerak/gerak-statis.test.ts menjaga keduanya tetap sama, dan memastikan
+   setiap gerak di sini punya penawarnya di `prefers-reduced-motion` di bawah.
+   ========================================================================== */
+
+/* `ease-pegas` (dialog, popover, menu) melonjak ±1 % lalu diam;
+   `ease-lembar` (panel samping, lembar bawah HP) mengendap tanpa melonjak —
+   lembar yang melonjak membuka celah beberapa piksel di tepi layar. */
+@theme {
+  --ease-pegas: cubic-bezier(0.22, 1.2, 0.36, 1);
+  --ease-lembar: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/*
+ * Baris tabel muncul berurutan (`<TableBody className="baris-berurutan">`).
+ * Hanya baris yang BARU dipasang yang bergerak: baris yang sama setelah
+ * router.refresh tidak diputar ulang. Jeda berhenti di baris ke-12 — sisanya
+ * muncul bersamanya, jadi daftar panjang tidak terasa lambat. `backwards`,
+ * bukan `both`: setelah selesai tidak ada transform yang tertinggal di <tr>
+ * (transform yang menetap mengubah kolom sticky dan elemen fixed di dalamnya).
+ * Barisnya sudah bisa diklik sejak awal.
+ */
+@keyframes baris-masuk {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.baris-berurutan > tr {
+  animation: baris-masuk 220ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+.baris-berurutan > tr:nth-child(2) { animation-delay: 24ms; }
+.baris-berurutan > tr:nth-child(3) { animation-delay: 48ms; }
+.baris-berurutan > tr:nth-child(4) { animation-delay: 72ms; }
+.baris-berurutan > tr:nth-child(5) { animation-delay: 96ms; }
+.baris-berurutan > tr:nth-child(6) { animation-delay: 120ms; }
+.baris-berurutan > tr:nth-child(7) { animation-delay: 144ms; }
+.baris-berurutan > tr:nth-child(8) { animation-delay: 168ms; }
+.baris-berurutan > tr:nth-child(9) { animation-delay: 192ms; }
+.baris-berurutan > tr:nth-child(10) { animation-delay: 216ms; }
+.baris-berurutan > tr:nth-child(11) { animation-delay: 240ms; }
+.baris-berurutan > tr:nth-child(n + 12) { animation-delay: 264ms; }
+
+/*
+ * Sorot baris yang baru berubah (`useSorotBaris`): latar menyala sebentar lalu
+ * memudar ke latar selnya sendiri. Pada <tr> yang dianimasikan SEL-nya, bukan
+ * barisnya: kolom sticky `bg-card` tetap buram (warna sorot selalu pekat,
+ * bukan transparan), dan animasi masuk baris di <tr> tidak tertimpa.
+ */
+/* Warna sorot: rona merek dengan kecerahan TETAP per tema. Campuran dengan
+   --primary saja tidak terlihat bila merek seterang kartunya (limau di tema
+   terang, biru tua di tema gelap), dan pada merek gelap menurunkan kontras teks
+   redup di bawah 3:1. lib/gerak/sorot-kontras.test.ts mengukur keduanya. */
+:root {
+  --sorot-baru: color-mix(in oklab, var(--primary) 18%, var(--card));
+}
+.dark {
+  --sorot-baru: color-mix(in oklab, var(--primary) 22%, var(--card));
+}
+@supports (color: oklch(from red l c h)) {
+  :root {
+    --sorot-baru: oklch(from var(--primary) 0.88 min(c, 0.1) h);
+  }
+  .dark {
+    --sorot-baru: oklch(from var(--primary) 0.38 min(c, 0.1) h);
+  }
+}
+
+@keyframes sorot-baru {
+  0%,
+  30% {
+    background-color: var(--sorot-baru);
+  }
+}
+
+.sorot-baru:not(tr),
+[data-sorot="baru"]:not(tr),
+tr.sorot-baru > td,
+tr[data-sorot="baru"] > td {
+  animation: sorot-baru 1200ms ease-out;
+}
+
+@keyframes sorot-baru-diam {
+  from,
+  to {
+    background-color: var(--sorot-baru);
+  }
+}
+
+/*
+ * Transisi halaman (components/gerak/TransisiHalaman, dipasang lewat
+ * app/backoffice/template.tsx dan app/pwa/template.tsx): konten baru memudar
+ * masuk sementara yang lama memudar keluar. Klik tetap sampai ke halaman
+ * selama transisi — tanpa ini lapisan transisi menelan klik ±200 ms. Menu
+ * bawah HP diberi nama sendiri supaya digambar DI ATAS konten yang sedang
+ * masuk, bukan ikut berkedip di bawahnya.
+ */
+::view-transition {
+  pointer-events: none;
+}
+::view-transition-group(*) {
+  animation-duration: 200ms;
+}
+.pwa-app > nav {
+  view-transition-name: menu-bawah;
+}
+/* Kapsul pulau status (components/pulau) melayang di atas konten; tanpa nama
+   sendiri ia ikut tertutup konten yang sedang masuk. Elemen bernama menjadi
+   "backdrop root": bila kapsulnya kelak memakai backdrop-blur, pindahkan nama
+   ini ke kapsul itu sendiri, bukan ke wadahnya. */
+[data-pulau-status] {
+  view-transition-name: pulau-status;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .baris-berurutan > tr {
+    animation: none !important;
+  }
+  /* Warna bukan gerak: sorotan tetap tampil, hanya tanpa memudar. */
+  .sorot-baru:not(tr),
+  [data-sorot="baru"]:not(tr),
+  tr.sorot-baru > td,
+  tr[data-sorot="baru"] > td {
+    animation: sorot-baru-diam 1200ms linear !important;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
