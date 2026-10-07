@@ -13,6 +13,7 @@ import {
   ExternalLink,
   FileText,
   ImageOff,
+  Info,
   ListChecks,
   Loader2,
   Printer,
@@ -268,6 +269,13 @@ export function SettlementApprovalClient({ settlement: s, canViewAccountMapping 
   };
 
   /**
+   * The mapping link only for a cause a mapping can cure. A payment waiting on its invoice's
+   * revenue journal is cured on that invoice's page, never in Account Mapping, so a gap whose
+   * every cause is that one gets no link; outside-the-ledger payments never reach this list.
+   */
+  const mappingCanHelp = s.journalGapCauses.some((cause) => cause.reason !== "RECEIVABLE_REVENUE_NOT_POSTED_YET");
+
+  /**
    * Names one journal-gap cause in the operator's own words. Both halves fall back to the raw code
    * rather than an "unknown reason" placeholder: a `JOURNAL_PENDING` row carries whatever the
    * builder returned, and a posting role added later has its `financeAccountMapping.role.*` copy
@@ -354,8 +362,10 @@ export function SettlementApprovalClient({ settlement: s, canViewAccountMapping 
    * not appear either. Against a post that was attempted and REFUSED — the unmapped-role state
    * every fresh environment starts in — this button re-runs into the same refusal, and
    * `alreadyFlagged` dedups the notification, so nothing visible changes. That is why the alert
-   * renders `journalGapCauses` and a link to the account-mapping screen beside it: the button
-   * alone would look broken, and the operator would have nothing to act on.
+   * renders `journalGapCauses` and, where a mapping can cure one, a link to the account-mapping
+   * screen beside it: the button alone would look broken, and the operator would have nothing to
+   * act on. Payments refused `RECEIVABLE_OUTSIDE_LEDGER` never reach that alert — they owe no
+   * journal, so they render as a separate note with neither the button nor the link.
    *
    * It calls the approve action deliberately rather than a second endpoint of its own. On an
    * already-`APPROVED` settlement that action takes `approveSettlement`'s write-free
@@ -598,7 +608,7 @@ export function SettlementApprovalClient({ settlement: s, canViewAccountMapping 
                 {postingJournals && <Loader2 className="h-4 w-4 animate-spin" />}
                 {t("journalGapButton")}
               </Button>
-              {s.journalGapCauses.length > 0 && canViewAccountMapping && (
+              {mappingCanHelp && canViewAccountMapping && (
                 <Button variant="outline" className="h-10" asChild>
                   <Link href={ACCOUNT_MAPPING_PATH}>
                     {t("journalGapMappingLink")}
@@ -607,6 +617,16 @@ export function SettlementApprovalClient({ settlement: s, canViewAccountMapping 
                 </Button>
               )}
             </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {s.paymentsOutsideLedger.length > 0 && (
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertTitle>{t("journalOutsideLedgerTitle")}</AlertTitle>
+          <AlertDescription>
+            {t("journalOutsideLedgerMessage", { count: s.paymentsOutsideLedger.length })}
           </AlertDescription>
         </Alert>
       )}

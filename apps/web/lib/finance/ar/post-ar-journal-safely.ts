@@ -53,7 +53,21 @@ const RETRY_HINT: Record<ArJournalKind, string> = {
   konsi_sell_through_surplus_void: "retry from the voided sell-through report's page",
 };
 
-export type ArPostOutcome = GenerateAutoJournalResult | { ok: false; code: "ERROR" };
+/**
+ * Remedies for the refusals a counterpart gate returns. Each one replaces the "Map the account"
+ * advice, which would send the operator after a mapping that has nothing to do with the refusal.
+ */
+const GATE_REMEDY: Record<string, string> = {
+  RECEIVABLE_REVENUE_NOT_POSTED_YET:
+    "The invoice's own revenue journal has not posted yet. Post it first (a nota tagihan from the receivable's detail page, a konsi sell-through invoice from the sell-through report's page), then retry this payment's journal from the payment's detail page. If that revenue was booked by manual journal instead, this payment stays refused for good, because the gate looks for the invoice's own revenue journal; book the receipt by manual journal too.",
+  RECEIVABLE_OUTSIDE_LEDGER:
+    "Every receivable this payment settles predates the ledger (no revenue journal was ever posted for it), so there is no receivable on the books to credit. A retry will not post it; record it by manual journal if the opening balance carries that receivable.",
+};
+
+export type ArPostOutcome =
+  | GenerateAutoJournalResult
+  | { ok: false; code: string }
+  | { ok: false; code: "ERROR" };
 
 /**
  * Posts an AR journal without ever failing the caller. Recording a delivery or collecting a payment
@@ -70,7 +84,7 @@ export type ArPostOutcome = GenerateAutoJournalResult | { ok: false; code: "ERRO
 export async function postArJournalSafely(
   kind: ArJournalKind,
   docId: string,
-  post: () => Promise<GenerateAutoJournalResult>,
+  post: () => Promise<GenerateAutoJournalResult | { ok: false; code: string }>,
 ): Promise<ArPostOutcome> {
   try {
     const res = await post();
@@ -142,7 +156,8 @@ async function notify(
         title: TITLE[kind],
         message:
           `${TITLE[kind]} (${reason}${role ? `: ${role}` : ""}${detail ? `: ${detail}` : ""}). ` +
-          `Map the account, then ${RETRY_HINT[kind]}.`,
+          /* `in` rather than an index-and-`??`: a Record lookup types as present even for the codes not in it. */
+          (reason in GATE_REMEDY ? GATE_REMEDY[reason] : `Map the account, then ${RETRY_HINT[kind]}.`),
         metadata: { docId, kind, reason, role, ...(receivableId ? { receivableId } : {}) },
       },
     });

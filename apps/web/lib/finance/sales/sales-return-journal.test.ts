@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma } from "@elorae/db";
-import { postSalesReturnRevenueJournal, postSalesReturnCogsJournal } from "./sales-return-journal";
+import { postSalesReturnRevenueJournal, postSalesReturnCogsJournal, classifySaleLegs } from "./sales-return-journal";
 import { postSalesRevenueJournal, postSalesCogsJournal } from "./sales-journal";
 import { GL_CUTOVER_SETTING_KEY } from "./sweep";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../journals/mapping-test-fixture";
@@ -344,5 +344,53 @@ d("sales return auto-journal (test bed only)", () => {
     expect(await postSalesReturnRevenueJournal(returnId, userId, prisma)).toMatchObject({ ok: true, created: true });
     expect(await postSalesReturnCogsJournal(returnId, userId, prisma)).toMatchObject({ ok: true, created: true });
     expect(await returnJournalCount()).toBe(2);
+  });
+
+  /*
+   * The batch gate the single one delegates to. The outer fixture applies: one
+   * sale dated 2026-03-02 with both legs journaled, under a 2026-01-01 floor.
+   */
+  describe("classifySaleLegs", () => {
+    it("a journaled order maps to null", async () => {
+      const map = await classifySaleLegs([orderId], "SALESORDER_REVENUE", prisma);
+      expect(map.get(orderId)).toBeNull();
+    });
+
+    it("an unjournaled order maps by the cutover: NOT_JOURNALED_YET inside, OUTSIDE_LEDGER before, NOT_CONFIGURED unset", async () => {
+      await unjournalTheSale(["SALESORDER_REVENUE"]);
+      expect((await classifySaleLegs([orderId], "SALESORDER_REVENUE", prisma)).get(orderId)).toBe("ORIGINAL_SALE_NOT_JOURNALED_YET");
+
+      await setCutover(CUTOVER_AFTER_THE_SALE);
+      expect((await classifySaleLegs([orderId], "SALESORDER_REVENUE", prisma)).get(orderId)).toBe("ORIGINAL_SALE_OUTSIDE_LEDGER");
+
+      await prisma.systemSetting.deleteMany({ where: { key: GL_CUTOVER_SETTING_KEY } });
+      expect((await classifySaleLegs([orderId], "SALESORDER_REVENUE", prisma)).get(orderId)).toBe("GL_CUTOVER_NOT_CONFIGURED");
+    });
+
+    it("an id with no SalesOrder row maps to ORIGINAL_SALE_UNLINKED", async () => {
+      const missingId = `nonexistent-${token}`;
+      const map = await classifySaleLegs([missingId], "SALESORDER_REVENUE", prisma);
+      expect(map.get(missingId)).toBe("ORIGINAL_SALE_UNLINKED");
+    });
+
+    it("the COGS leg of an order whose items carry no cost maps to ORIGINAL_SALE_OUTSIDE_LEDGER", async () => {
+      await unjournalTheSale(["SALESORDER_COGS"]);
+      await prisma.salesOrderItem.updateMany({ where: { salesOrderId: orderId ?? "" }, data: { cogs: 0 } });
+      const map = await classifySaleLegs([orderId], "SALESORDER_COGS", prisma);
+      expect(map.get(orderId)).toBe("ORIGINAL_SALE_OUTSIDE_LEDGER");
+    });
+
+    it("a mixed call dedupes its ids and classifies each one", async () => {
+      const missingId = `nonexistent-${token}`;
+      const map = await classifySaleLegs([orderId, missingId, orderId], "SALESORDER_REVENUE", prisma);
+      expect(map.size).toBe(2);
+      expect(map.get(orderId)).toBeNull();
+      expect(map.get(missingId)).toBe("ORIGINAL_SALE_UNLINKED");
+    });
+
+    it("an empty list returns an empty map", async () => {
+      const map = await classifySaleLegs([], "SALESORDER_REVENUE", prisma);
+      expect(map.size).toBe(0);
+    });
   });
 });

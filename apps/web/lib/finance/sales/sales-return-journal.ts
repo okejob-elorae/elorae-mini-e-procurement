@@ -5,7 +5,7 @@ import { readGlCutover } from "./sweep";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
-type SaleLeg = "SALESORDER_REVENUE" | "SALESORDER_COGS";
+export type SaleLeg = "SALESORDER_REVENUE" | "SALESORDER_COGS";
 
 /**
  * Why a return leg was refused: the leg of the original sale it would reverse is
@@ -60,6 +60,15 @@ type SaleLeg = "SALESORDER_REVENUE" | "SALESORDER_COGS";
  * None of these is `NOTHING_TO_POST`, which means the computed value is zero: a
  * genuine no-op needing no action. These mean there IS something to post and it
  * must not be posted here.
+ *
+ * The marketplace settlement journal gate (`settlementGate` in
+ * `lib/finance/settlement/journal.ts`) consumes these codes too, through
+ * `classifySaleLegs`, and refines two of them for its own remedy: a zero-value
+ * order whose settlement line also carries no amounts does not block a
+ * settlement at all, and an unswept order the sweep will
+ * never admit reports `ORIGINAL_SALE_NOT_SHIPPED` there instead of
+ * `ORIGINAL_SALE_NOT_JOURNALED_YET`. Neither refinement applies to returns; the
+ * never-shipped blind spot on this side is logged in `docs/FOLLOWUPS.md`.
  */
 export type SalesReturnGateCode =
   | "ORIGINAL_SALE_NOT_JOURNALED_YET"
@@ -98,8 +107,9 @@ async function returnMeta(
  * mirrors exactly what is on the books instead of half-reversing a pair that was
  * never whole.
  *
- * A refusal reads up to three more rows to classify itself; the accepting path
- * stays at the single journal lookup it has always been.
+ * A refusal is classified by `classifySaleLegs`, the one implementation, so the
+ * single and batch gates cannot drift; the accepting path stays at the single
+ * journal lookup it has always been.
  *
  * Order matters. The missing link is checked first because it is a defect of the
  * return in front of the operator and is answerable without reading any setting.
@@ -113,43 +123,96 @@ async function classifySaleLeg(
   client: AnyClient,
 ): Promise<SalesReturnGateCode | null> {
   if (salesOrderId == null) return "ORIGINAL_SALE_UNLINKED";
-  const journal = await client.journal.findUnique({
-    where: { sourceType_sourceId: { sourceType, sourceId: salesOrderId } },
-    select: { id: true },
-  });
-  if (journal != null) return null;
-
-  const order = await client.salesOrder.findUnique({
-    where: { id: salesOrderId },
-    select: { grandTotal: true, shippedAt: true, transactionDate: true },
-  });
-  if (order == null) return "ORIGINAL_SALE_UNLINKED";
-
-  const cutover = await readGlCutover();
-  if (cutover == null) return "GL_CUTOVER_NOT_CONFIGURED";
-  if (saleGlDate(order) < cutover) return "ORIGINAL_SALE_OUTSIDE_LEDGER";
-
-  /*
-   * Mirrors the value each sale writer computes (`postSalesRevenueJournal` on
-   * `grandTotal`, `postSalesCogsJournal` on Σ item cogs) and its 0.01 floor: a
-   * leg the sale itself would report `NOTHING_TO_POST` for has no journal to
-   * wait for, so calling it unswept would send the operator back forever.
-   */
-  const legValue =
-    sourceType === "SALESORDER_REVENUE"
-      ? Number(order.grandTotal)
-      : await sumOrderCogs(salesOrderId, client);
-  if (Math.abs(legValue) < 0.01) return "ORIGINAL_SALE_OUTSIDE_LEDGER";
-
-  return "ORIGINAL_SALE_NOT_JOURNALED_YET";
+  const code = (await classifySaleLegs([salesOrderId], sourceType, client)).get(salesOrderId);
+  /* `null` is the accepting answer, so only an absent entry may fall back; `??` would turn it into a refusal. */
+  return code === undefined ? "ORIGINAL_SALE_UNLINKED" : code;
 }
 
-async function sumOrderCogs(salesOrderId: string, client: AnyClient): Promise<number> {
-  const agg = await client.salesOrderItem.aggregate({
-    where: { salesOrderId },
-    _sum: { cogs: true },
-  });
-  return agg._sum.cogs == null ? 0 : Number(agg._sum.cogs);
+const SALE_LEG_CHUNK = 1000;
+
+/**
+ * `classifySaleLeg` for many sales orders at once: one entry per distinct id,
+ * `null` where the named leg's journal stands, otherwise the code saying why it
+ * does not. Same checks in the same order as the single gate, which delegates
+ * here, at a fixed number of queries per chunk of ids instead of per order. An
+ * empty list returns an empty map without querying.
+ */
+export async function classifySaleLegs(
+  salesOrderIds: string[],
+  sourceType: SaleLeg,
+  client: AnyClient,
+): Promise<Map<string, SalesReturnGateCode | null>> {
+  const result = new Map<string, SalesReturnGateCode | null>();
+  const ids = [...new Set(salesOrderIds)];
+  let cutover: Date | null | undefined;
+
+  for (let i = 0; i < ids.length; i += SALE_LEG_CHUNK) {
+    const chunk = ids.slice(i, i + SALE_LEG_CHUNK);
+    const journals = await client.journal.findMany({
+      where: { sourceType, sourceId: { in: chunk } },
+      select: { sourceId: true },
+    });
+    const journaled = new Set(journals.map((j) => j.sourceId));
+    const missing: string[] = [];
+    for (const id of chunk) {
+      if (journaled.has(id)) result.set(id, null);
+      else missing.push(id);
+    }
+    if (missing.length === 0) continue;
+
+    const orders = await client.salesOrder.findMany({
+      where: { id: { in: missing } },
+      select: { id: true, grandTotal: true, shippedAt: true, transactionDate: true },
+    });
+    const found = new Set(orders.map((o) => o.id));
+    for (const id of missing) {
+      if (!found.has(id)) result.set(id, "ORIGINAL_SALE_UNLINKED");
+    }
+    if (orders.length === 0) continue;
+
+    if (cutover === undefined) cutover = await readGlCutover();
+    if (cutover == null) {
+      for (const order of orders) result.set(order.id, "GL_CUTOVER_NOT_CONFIGURED");
+      continue;
+    }
+    const floor = cutover;
+    const remaining: typeof orders = [];
+    for (const order of orders) {
+      if (saleGlDate(order) < floor) result.set(order.id, "ORIGINAL_SALE_OUTSIDE_LEDGER");
+      else remaining.push(order);
+    }
+    if (remaining.length === 0) continue;
+
+    /*
+     * Mirrors the value each sale writer computes (`postSalesRevenueJournal` on
+     * `grandTotal`, `postSalesCogsJournal` on Σ item cogs) and its 0.01 floor: a
+     * leg the sale itself would report `NOTHING_TO_POST` for has no journal to
+     * wait for, so calling it unswept would send the operator back forever.
+     */
+    const cogsByOrder = new Map<string, number>();
+    if (sourceType === "SALESORDER_COGS") {
+      const groups = await client.salesOrderItem.groupBy({
+        by: ["salesOrderId"],
+        where: { salesOrderId: { in: remaining.map((o) => o.id) } },
+        _sum: { cogs: true },
+      });
+      for (const g of groups) {
+        cogsByOrder.set(g.salesOrderId, g._sum.cogs == null ? 0 : Number(g._sum.cogs));
+      }
+    }
+    for (const order of remaining) {
+      const legValue =
+        sourceType === "SALESORDER_REVENUE"
+          ? Number(order.grandTotal)
+          : cogsByOrder.get(order.id) ?? 0;
+      result.set(
+        order.id,
+        Math.abs(legValue) < 0.01 ? "ORIGINAL_SALE_OUTSIDE_LEDGER" : "ORIGINAL_SALE_NOT_JOURNALED_YET",
+      );
+    }
+  }
+
+  return result;
 }
 
 export async function postSalesReturnRevenueJournal(

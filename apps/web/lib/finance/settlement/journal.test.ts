@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { postSettlementJournal } from "./journal";
+import { GL_CUTOVER_SETTING_KEY } from "../sales/sweep";
 import { setAccountMapping, clearAccountMapping } from "../journals/mapping";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../journals/mapping-test-fixture";
 
@@ -22,6 +23,65 @@ d("postSettlementJournal (test bed only)", () => {
   let feeOtherAccountId: string;
   let settlementId: string;
   let mappingSnapshot: MappingSnapshot;
+  /* `undefined` until this test's snapshot is taken, so a hook that died earlier restores nothing rather than a stale value. */
+  let cutoverSnapshot: string | null | undefined;
+  /* Set by the only two helpers that change the cutover, so `afterEach` restores it only after a test moved it. */
+  let cutoverTouched = false;
+  let orderId = "";
+  let orderJournalId = "";
+
+  /*
+   * The revenue-journal gate needs every line matched to a sales order whose
+   * `SALESORDER_REVENUE` journal stands, so each settlement here is matched to
+   * one fixture sale (dated 2026-03-02) carrying a bare journal; the gate only
+   * checks that the journal exists. The cutover is read only to classify a
+   * refusal, so only the tests that refuse on an unjournaled sale set it, and
+   * `afterEach` puts back what they found. It is never armed for the whole
+   * spec: this bed is shared, and a `next dev` running beside it would let its
+   * cron sweep journal real dev orders for as long as the cutover stays set.
+   */
+  const CUTOVER_BEFORE_THE_SALE = "2026-01-01";
+  const CUTOVER_AFTER_THE_SALE = "2026-06-01";
+
+  const writeCutover = async (value: string): Promise<void> => {
+    await prisma.systemSetting.upsert({
+      where: { key: GL_CUTOVER_SETTING_KEY },
+      create: { key: GL_CUTOVER_SETTING_KEY, value },
+      update: { value },
+    });
+  };
+
+  const setCutover = async (value: string): Promise<void> => {
+    cutoverTouched = true;
+    await writeCutover(value);
+  };
+
+  const clearCutover = async (): Promise<void> => {
+    cutoverTouched = true;
+    await prisma.systemSetting.deleteMany({ where: { key: GL_CUTOVER_SETTING_KEY } });
+  };
+
+  async function journalTheOrder(): Promise<void> {
+    const journal = await prisma.journal.create({
+      data: {
+        date: new Date("2026-03-02"),
+        description: "fixture",
+        sourceType: "SALESORDER_REVENUE",
+        sourceId: orderId,
+        postedById: adminId,
+      },
+      select: { id: true },
+    });
+    orderJournalId = journal.id;
+  }
+
+  async function unjournalTheOrder(): Promise<void> {
+    await prisma.journal.delete({ where: { id: seededId(orderJournalId) } });
+    orderJournalId = "";
+  }
+
+  const settlementJournalCount = (): Promise<number> =>
+    prisma.journal.count({ where: { sourceType: "SETTLEMENT", sourceId: seededId(settlementId) } });
 
   /**
    * Creates a Settlement with SettlementLine rows so `postSettlementJournal`
@@ -68,6 +128,8 @@ d("postSettlementJournal (test bed only)", () => {
             biayaKomisiAms: l.biayaKomisiAms,
             biayaProsesPesanan: l.biayaProsesPesanan,
             raw: {},
+            matchStatus: "MATCHED",
+            matchedSalesOrderId: orderId,
           })),
         },
       },
@@ -90,6 +152,15 @@ d("postSettlementJournal (test bed only)", () => {
   }
 
   beforeEach(async () => {
+    orderId = "";
+    orderJournalId = "";
+    cutoverSnapshot = undefined;
+    cutoverTouched = false;
+    const setting = await prisma.systemSetting.findUnique({
+      where: { key: GL_CUTOVER_SETTING_KEY },
+      select: { value: true },
+    });
+    cutoverSnapshot = setting?.value ?? null;
     token = Math.floor(Math.random() * 10_000_000).toString();
     mappingSnapshot = await snapshotMappings([
       "BANK",
@@ -148,6 +219,27 @@ d("postSettlementJournal (test bed only)", () => {
     await setAccountMapping("MARKETPLACE_FEE_PROCESSING", feeProcessingAccountId);
     await setAccountMapping("MARKETPLACE_FEE_OTHER", feeOtherAccountId);
 
+    /* Negative Jubelio id: real `salesorderId`s on the shared bed are positive, so this cannot collide with one. */
+    const order = await prisma.salesOrder.create({
+      data: {
+        salesorderId: -(1_000_000_000 + Number(token)),
+        salesorderNo: `SO-STL-${token}`,
+        channel: "SHOPEE",
+        sourceName: "t",
+        status: "COMPLETED",
+        subTotal: 1000,
+        totalDisc: 0,
+        totalTax: 0,
+        shippingCost: 0,
+        grandTotal: 1000,
+        transactionDate: new Date("2026-03-01"),
+        shippedAt: new Date("2026-03-02"),
+      },
+      select: { id: true },
+    });
+    orderId = order.id;
+    await journalTheOrder();
+
     const settlement = await prisma.settlement.create({
       data: {
         marketplace: "SHOPEE",
@@ -166,6 +258,23 @@ d("postSettlementJournal (test bed only)", () => {
         summaryRaw: {},
         sellerFeesRaw: [],
         adjustmentsRaw: [],
+        lines: {
+          create: [
+            {
+              orderNo: `SO-STL-${token}`,
+              netIncome: 1000,
+              hargaAsliProduk: 0,
+              totalDiskonProduk: 0,
+              biayaAdministrasi: 0,
+              biayaLayanan: 0,
+              biayaKomisiAms: 0,
+              biayaProsesPesanan: 0,
+              raw: {},
+              matchStatus: "MATCHED",
+              matchedSalesOrderId: orderId,
+            },
+          ],
+        },
       },
       select: { id: true },
     });
@@ -173,6 +282,14 @@ d("postSettlementJournal (test bed only)", () => {
   });
 
   afterEach(async () => {
+    /* Live config first: the dev cron arms itself off the cutover, so no delete below may stand between a failure and restoring it. */
+    if (cutoverTouched) {
+      if (cutoverSnapshot === null) {
+        await prisma.systemSetting.deleteMany({ where: { key: GL_CUTOVER_SETTING_KEY } });
+      } else if (cutoverSnapshot !== undefined) {
+        await writeCutover(cutoverSnapshot);
+      }
+    }
     const journal = await prisma.journal.findUnique({
       where: { sourceType_sourceId: { sourceType: "SETTLEMENT", sourceId: settlementId } },
       select: { id: true },
@@ -199,6 +316,10 @@ d("postSettlementJournal (test bed only)", () => {
       },
     });
     await prisma.settlement.delete({ where: { id: settlementId } });
+    await prisma.journal.deleteMany({
+      where: { sourceType: "SALESORDER_REVENUE", sourceId: seededId(orderId) },
+    });
+    await prisma.salesOrder.deleteMany({ where: { id: seededId(orderId) } });
     await prisma.user.delete({ where: { id: adminId } });
   });
 
@@ -262,6 +383,24 @@ d("postSettlementJournal (test bed only)", () => {
         summaryRaw: {},
         sellerFeesRaw: [],
         adjustmentsRaw: [],
+        /* One line matched to the journaled fixture sale, or the revenue gate refuses a line-less settlement. TikTok shape: fee columns zeroed. */
+        lines: {
+          create: [
+            {
+              orderNo: `SO-STL-${token}`,
+              netIncome: 4500,
+              hargaAsliProduk: 0,
+              totalDiskonProduk: 0,
+              biayaAdministrasi: 0,
+              biayaLayanan: 0,
+              biayaKomisiAms: 0,
+              biayaProsesPesanan: 0,
+              raw: {},
+              matchStatus: "MATCHED",
+              matchedSalesOrderId: orderId,
+            },
+          ],
+        },
       },
       select: { id: true },
     });
@@ -556,5 +695,170 @@ d("postSettlementJournal (test bed only)", () => {
     expect(journal).toBeNull();
     const s = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
     expect(s.status).toBe("MATCHED");
+  });
+
+  it("refuses LINES_UNMATCHED when a line has no matched order, posting nothing", async () => {
+    await prisma.settlementLine.updateMany({
+      where: { settlementId },
+      data: { matchStatus: "UNMATCHED", matchedSalesOrderId: null },
+    });
+    const r = await postSettlementJournal(settlementId, adminId, prisma);
+    expect(r).toEqual({ ok: false, code: "LINES_UNMATCHED", count: 1 });
+    expect(await settlementJournalCount()).toBe(0);
+    const s = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
+    expect(s.status).toBe("MATCHED");
+  });
+
+  it("refuses ORIGINAL_SALE_NOT_JOURNALED_YET when the matched sale is inside the ledger but unswept", async () => {
+    await unjournalTheOrder();
+    await setCutover(CUTOVER_BEFORE_THE_SALE);
+    const r = await postSettlementJournal(settlementId, adminId, prisma);
+    expect(r).toEqual({ ok: false, code: "ORIGINAL_SALE_NOT_JOURNALED_YET", count: 1 });
+    expect(await settlementJournalCount()).toBe(0);
+  });
+
+  it("refuses ORIGINAL_SALE_OUTSIDE_LEDGER when the matched sale predates the cutover", async () => {
+    await unjournalTheOrder();
+    await setCutover(CUTOVER_AFTER_THE_SALE);
+    const r = await postSettlementJournal(settlementId, adminId, prisma);
+    expect(r).toEqual({ ok: false, code: "ORIGINAL_SALE_OUTSIDE_LEDGER", count: 1 });
+    expect(await settlementJournalCount()).toBe(0);
+  });
+
+  it("refuses GL_CUTOVER_NOT_CONFIGURED when no cutover is set", async () => {
+    await unjournalTheOrder();
+    await clearCutover();
+    const r = await postSettlementJournal(settlementId, adminId, prisma);
+    expect(r).toEqual({ ok: false, code: "GL_CUTOVER_NOT_CONFIGURED", count: 1 });
+    expect(await settlementJournalCount()).toBe(0);
+  });
+
+  it("reports the permanent refusal ahead of an unmatched line", async () => {
+    await unjournalTheOrder();
+    await setCutover(CUTOVER_AFTER_THE_SALE);
+    await prisma.settlementLine.create({
+      data: {
+        settlementId,
+        orderNo: `SO-STL-${token}-unmatched`,
+        netIncome: 0,
+        hargaAsliProduk: 0,
+        totalDiskonProduk: 0,
+        biayaAdministrasi: 0,
+        biayaLayanan: 0,
+        biayaKomisiAms: 0,
+        biayaProsesPesanan: 0,
+        raw: {},
+      },
+    });
+    const r = await postSettlementJournal(settlementId, adminId, prisma);
+    expect(r).toEqual({ ok: false, code: "ORIGINAL_SALE_OUTSIDE_LEDGER", count: 1 });
+    expect(await settlementJournalCount()).toBe(0);
+  });
+
+  it("posts on retry once the refused sale is journaled, and flips RECONCILED", async () => {
+    await unjournalTheOrder();
+    await setCutover(CUTOVER_BEFORE_THE_SALE);
+    expect(await postSettlementJournal(settlementId, adminId, prisma)).toMatchObject({
+      ok: false,
+      code: "ORIGINAL_SALE_NOT_JOURNALED_YET",
+    });
+
+    await journalTheOrder();
+    expect(await postSettlementJournal(settlementId, adminId, prisma)).toMatchObject({ ok: true, created: true });
+    const s = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
+    expect(s.status).toBe("RECONCILED");
+  });
+
+  /* A voucher-covered order: nothing to journal on the order, so only the line's own amounts decide. */
+  async function zeroTheOrder(): Promise<void> {
+    await prisma.salesOrder.update({ where: { id: orderId }, data: { subTotal: 0, grandTotal: 0 } });
+  }
+
+  async function zeroTheLines(): Promise<void> {
+    await prisma.settlementLine.updateMany({ where: { settlementId: seededId(settlementId) }, data: { netIncome: 0 } });
+  }
+
+  it("does not block on a zero-value order whose line carries nothing, before the cutover", async () => {
+    await unjournalTheOrder();
+    await zeroTheOrder();
+    await zeroTheLines();
+    await setCutover(CUTOVER_AFTER_THE_SALE);
+    expect(await postSettlementJournal(settlementId, adminId, prisma)).toMatchObject({ ok: true, created: true });
+  });
+
+  it("does not block on a zero-value order whose line carries nothing, above the cutover", async () => {
+    await unjournalTheOrder();
+    await zeroTheOrder();
+    await zeroTheLines();
+    await setCutover(CUTOVER_BEFORE_THE_SALE);
+    expect(await postSettlementJournal(settlementId, adminId, prisma)).toMatchObject({ ok: true, created: true });
+  });
+
+  it("refuses ORIGINAL_SALE_OUTSIDE_LEDGER for a zero-value order whose line the marketplace still paid income on", async () => {
+    await unjournalTheOrder();
+    await zeroTheOrder();
+    await setCutover(CUTOVER_BEFORE_THE_SALE);
+    const r = await postSettlementJournal(settlementId, adminId, prisma);
+    expect(r).toEqual({ ok: false, code: "ORIGINAL_SALE_OUTSIDE_LEDGER", count: 1 });
+    expect(await settlementJournalCount()).toBe(0);
+    const s = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
+    expect(s.status).toBe("MATCHED");
+  });
+
+  it("refuses a zero-value TikTok line, whose stored columns cannot show its fees", async () => {
+    await unjournalTheOrder();
+    await zeroTheOrder();
+    await zeroTheLines();
+    await prisma.settlement.update({ where: { id: settlementId }, data: { marketplace: "TIKTOK" } });
+    await setCutover(CUTOVER_BEFORE_THE_SALE);
+    const r = await postSettlementJournal(settlementId, adminId, prisma);
+    expect(r).toEqual({ ok: false, code: "ORIGINAL_SALE_OUTSIDE_LEDGER", count: 1 });
+    expect(await settlementJournalCount()).toBe(0);
+  });
+
+  it("refuses ORIGINAL_SALE_NOT_SHIPPED when the matched sale is one the sweep will not journal", async () => {
+    await unjournalTheOrder();
+    await prisma.salesOrder.update({ where: { id: orderId }, data: { status: "PROCESSING", fulfillmentStatus: "PACKED" } });
+    await setCutover(CUTOVER_BEFORE_THE_SALE);
+    const r = await postSettlementJournal(settlementId, adminId, prisma);
+    expect(r).toEqual({ ok: false, code: "ORIGINAL_SALE_NOT_SHIPPED", count: 1 });
+    expect(await settlementJournalCount()).toBe(0);
+    const s = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
+    expect(s.status).toBe("MATCHED");
+  });
+
+  it("keeps ORIGINAL_SALE_NOT_JOURNALED_YET for an order the sweep admits by its local fulfilment status alone", async () => {
+    await unjournalTheOrder();
+    await prisma.salesOrder.update({ where: { id: orderId }, data: { status: "PROCESSING", fulfillmentStatus: "SHIPPED" } });
+    await setCutover(CUTOVER_BEFORE_THE_SALE);
+    const r = await postSettlementJournal(settlementId, adminId, prisma);
+    expect(r).toEqual({ ok: false, code: "ORIGINAL_SALE_NOT_JOURNALED_YET", count: 1 });
+  });
+
+  it("refuses LINES_UNMATCHED with a count of 0 when the settlement has no lines at all", async () => {
+    await prisma.settlementLine.deleteMany({ where: { settlementId: seededId(settlementId) } });
+    const r = await postSettlementJournal(settlementId, adminId, prisma);
+    expect(r).toEqual({ ok: false, code: "LINES_UNMATCHED", count: 0 });
+    expect(await settlementJournalCount()).toBe(0);
+    const s = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
+    expect(s.status).toBe("MATCHED");
+  });
+
+  it("reports CHECKSUM_BLOCKED and NOTHING_TO_POST ahead of the gate", async () => {
+    await prisma.settlementLine.updateMany({
+      where: { settlementId },
+      data: { matchStatus: "UNMATCHED", matchedSalesOrderId: null },
+    });
+    await prisma.settlement.update({ where: { id: settlementId }, data: { checksumOk: false } });
+    expect(await postSettlementJournal(settlementId, adminId, prisma)).toMatchObject({
+      ok: false,
+      code: "CHECKSUM_BLOCKED",
+    });
+
+    await prisma.settlement.update({
+      where: { id: settlementId },
+      data: { checksumOk: true, totalPendapatan: 0, totalPengeluaran: 0, totalDilepas: 0, parsedNetTotal: 0 },
+    });
+    expect(await postSettlementJournal(settlementId, adminId, prisma)).toEqual({ ok: false, code: "NOTHING_TO_POST" });
   });
 });

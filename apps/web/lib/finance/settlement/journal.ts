@@ -2,6 +2,8 @@ import { prisma, postJournal, JournalError, Prisma, type PrismaClient } from "@e
 import { resolveAccount, UnmappedRoleError } from "@/lib/finance/journals/mapping";
 import { splitMarketplaceFees, type MarketplaceFeeRole } from "./fee-split";
 import { lockSettlementRow } from "./lock";
+import { classifySaleLegs } from "@/lib/finance/sales/sales-return-journal";
+import { isSweepEligibleOrder } from "@/lib/finance/sales/sweep";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
@@ -21,7 +23,160 @@ export type PostSettlementJournalResult =
         | "NON_POSTABLE_ACCOUNT"
         | "NOTHING_TO_POST";
       role?: string;
-    };
+    }
+  | { ok: false; code: SettlementGateCode; count: number };
+
+export type SettlementGateCode =
+  | "GL_CUTOVER_NOT_CONFIGURED"
+  | "ORIGINAL_SALE_OUTSIDE_LEDGER"
+  | "LINES_UNMATCHED"
+  | "ORIGINAL_SALE_NOT_SHIPPED"
+  | "ORIGINAL_SALE_NOT_JOURNALED_YET";
+
+/**
+ * Refusals no wait can cure come first, so the operator is never told to wait for a post that
+ * cannot come. `ORIGINAL_SALE_NOT_SHIPPED` sits ahead of the 5-minute sweep's code because the
+ * order may never ship at all.
+ */
+const GATE_PRIORITY: SettlementGateCode[] = [
+  "GL_CUTOVER_NOT_CONFIGURED",
+  "ORIGINAL_SALE_OUTSIDE_LEDGER",
+  "LINES_UNMATCHED",
+  "ORIGINAL_SALE_NOT_SHIPPED",
+  "ORIGINAL_SALE_NOT_JOURNALED_YET",
+];
+
+/**
+ * Marketplaces whose parser stores every money figure of a line in the line's own columns. The
+ * TikTok parser stores only `netIncome` and keeps its fees in `raw` (see its own note), so a
+ * TikTok line with zero payout can still carry fees that `totalPendapatan` includes.
+ */
+const LINE_AMOUNTS_COMPLETE: ReadonlySet<string> = new Set(["SHOPEE"]);
+
+type SettlementLineAmounts = {
+  netIncome: Prisma.Decimal;
+  hargaAsliProduk: Prisma.Decimal;
+  totalDiskonProduk: Prisma.Decimal;
+  biayaAdministrasi: Prisma.Decimal;
+  biayaLayanan: Prisma.Decimal;
+  biayaKomisiAms: Prisma.Decimal;
+  biayaProsesPesanan: Prisma.Decimal;
+};
+
+/* True only when the line provably adds nothing to the settlement's income or fees. */
+function lineAmountsAreZero(line: SettlementLineAmounts, marketplace: string): boolean {
+  if (!LINE_AMOUNTS_COMPLETE.has(marketplace)) return false;
+  return [
+    line.netIncome,
+    line.hargaAsliProduk,
+    line.totalDiskonProduk,
+    line.biayaAdministrasi,
+    line.biayaLayanan,
+    line.biayaKomisiAms,
+    line.biayaProsesPesanan,
+  ].every((amount) => Math.abs(Number(amount)) < 0.01);
+}
+
+/**
+ * `null` when every line of the settlement belongs to a sales order whose
+ * `SALESORDER_REVENUE` journal stands, otherwise the refusal and how many LINES
+ * it covers.
+ *
+ * The journal below credits AR with `totalPendapatan`, and the only journals on
+ * this ledger that debit AR for a marketplace sale are the sales sweep's
+ * `SALESORDER_REVENUE` ones. Crediting AR for a sale that never debited it
+ * drives Piutang negative, so the settlement may post only against sales this
+ * ledger recognized — the same counterpart gate `classifySaleLeg` applies to
+ * marketplace returns.
+ *
+ * The gate is whole-settlement, not per order: `totalPendapatan` and the fees
+ * are summary-level figures with no per-order split, so a partial post could
+ * not balance. A line matched to an order that no longer exists counts as
+ * unmatched, because rematching is its remedy, and a settlement with no lines
+ * at all refuses `LINES_UNMATCHED` (count 0) rather than vouching for a
+ * `totalPendapatan` no line stands behind. A settlement straddling the GL
+ * cutover (the first one per marketplace after go-live) is permanently
+ * `ORIGINAL_SALE_OUTSIDE_LEDGER`; its remedy is a manual journal.
+ *
+ * Two refinements over `classifySaleLegs`, both because a settlement must never
+ * wait on a journal the sweep will never post.
+ *
+ * A line whose matched order is worth nothing (`grandTotal` under 0.01, the
+ * floor the revenue writer itself applies) AND whose own amounts are all zero
+ * does not block, on either side of the cutover: no revenue journal will ever
+ * exist for it, and it adds nothing to `totalPendapatan`. Both halves are
+ * needed. The credit is built from the settlement's own income figures, not
+ * from the order, so a voucher-covered order at `grandTotal` 0 whose line the
+ * marketplace still paid income on would put that income on AR with nothing
+ * debiting it — such a line keeps `classifySaleLegs`' refusal,
+ * `ORIGINAL_SALE_OUTSIDE_LEDGER`, whose remedy is a manual journal. The line
+ * test only trusts a marketplace whose lines store their whole breakdown
+ * (`LINE_AMOUNTS_COMPLETE`); anywhere else a zero-value line refuses too.
+ *
+ * And an order the sweep will not admit (`isSweepEligibleOrder` false) is
+ * `ORIGINAL_SALE_NOT_SHIPPED` rather than `ORIGINAL_SALE_NOT_JOURNALED_YET`: it
+ * posts once the order reads shipped and the sweep journals it, and otherwise
+ * needs a manual journal. Neither refinement applies while the cutover is
+ * unset, since then no sale is journaled at all.
+ */
+async function settlementGate(
+  settlementId: string,
+  marketplace: string,
+  tx: Prisma.TransactionClient,
+): Promise<{ code: SettlementGateCode; count: number } | null> {
+  const lines = await tx.settlementLine.findMany({
+    where: { settlementId },
+    select: {
+      matchedSalesOrderId: true,
+      netIncome: true,
+      hargaAsliProduk: true,
+      totalDiskonProduk: true,
+      biayaAdministrasi: true,
+      biayaLayanan: true,
+      biayaKomisiAms: true,
+      biayaProsesPesanan: true,
+    },
+  });
+  if (lines.length === 0) return { code: "LINES_UNMATCHED", count: 0 };
+  const orderIds = lines.flatMap((l) => (l.matchedSalesOrderId == null ? [] : [l.matchedSalesOrderId]));
+  const verdicts = await classifySaleLegs(orderIds, "SALESORDER_REVENUE", tx);
+
+  const refinable = [...verdicts.entries()]
+    .filter(([, v]) => v === "ORIGINAL_SALE_OUTSIDE_LEDGER" || v === "ORIGINAL_SALE_NOT_JOURNALED_YET")
+    .map(([id]) => id);
+  const orders =
+    refinable.length === 0
+      ? []
+      : await tx.salesOrder.findMany({
+          where: { id: { in: refinable } },
+          select: { id: true, grandTotal: true, status: true, fulfillmentStatus: true },
+        });
+  const zeroValue = new Set<string>();
+  const notShipped = new Set<string>();
+  for (const order of orders) {
+    if (Math.abs(Number(order.grandTotal)) < 0.01) zeroValue.add(order.id);
+    else if (!isSweepEligibleOrder(order)) notShipped.add(order.id);
+  }
+
+  const counts = new Map<SettlementGateCode, number>();
+  for (const line of lines) {
+    const orderId = line.matchedSalesOrderId;
+    const verdict = orderId == null ? "ORIGINAL_SALE_UNLINKED" : verdicts.get(orderId);
+    if (verdict === null) continue;
+    if (orderId != null && zeroValue.has(orderId) && lineAmountsAreZero(line, marketplace)) continue;
+    let code: SettlementGateCode;
+    if (verdict === undefined || verdict === "ORIGINAL_SALE_UNLINKED") code = "LINES_UNMATCHED";
+    else if (verdict === "ORIGINAL_SALE_NOT_JOURNALED_YET" && orderId != null && notShipped.has(orderId)) {
+      code = "ORIGINAL_SALE_NOT_SHIPPED";
+    } else code = verdict;
+    counts.set(code, (counts.get(code) ?? 0) + 1);
+  }
+  for (const code of GATE_PRIORITY) {
+    const count = counts.get(code) ?? 0;
+    if (count > 0) return { code, count };
+  }
+  return null;
+}
 
 /**
  * Falls back to the legacy lumped `MARKETPLACE_FEE` account when a per-category
@@ -57,6 +212,7 @@ export async function postSettlementJournal(
       totalPengeluaran: true,
       totalPendapatan: true,
       seller: true,
+      marketplace: true,
       periodTo: true,
     },
   });
@@ -141,9 +297,13 @@ export async function postSettlementJournal(
      * no separate transaction: those reads run inside the caller's, before this lock, so such a
      * caller must not depend on that snapshot, since a locking read after an earlier consistent
      * read can raise ER_CHECKREAD under `innodb_snapshot_isolation` on newer MariaDB. No caller
-     * passes one today.
+     * passes one today. The revenue-journal gate reads the lines only after this lock, because
+     * `matchSettlement` rewrites `matchedSalesOrderId` under it.
      */
     await lockSettlementRow(tx, s.id);
+    const gate = await settlementGate(s.id, s.marketplace, tx);
+    /* Write-free so far (the lock is a read), so this return commits nothing. */
+    if (gate != null) return { ok: false as const, code: gate.code, count: gate.count };
     const res = await postJournal(tx, {
       source: { type: "SETTLEMENT", id: s.id },
       date: s.periodTo,

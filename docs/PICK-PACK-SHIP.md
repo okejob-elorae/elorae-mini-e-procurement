@@ -94,7 +94,9 @@ Only when the order is **consumed**, which happens on exactly two paths: Elorae'
 Pick and Pack never touch the ledger. They are workflow stamps plus a push.
 
 Downstream, the sales-journal sweep (`apps/web/lib/finance/sales/sweep.ts`) treats an order as
-journalable when `status IN ('SHIPPED','COMPLETED') OR fulfillmentStatus = 'SHIPPED'`.
+journalable when `status IN ('SHIPPED','COMPLETED') OR fulfillmentStatus = 'SHIPPED'` — defined
+once as `isSweepEligibleOrder` and its constants, which the marketplace settlement journal gate also
+asks.
 
 ## 5. Pushing to Jubelio
 

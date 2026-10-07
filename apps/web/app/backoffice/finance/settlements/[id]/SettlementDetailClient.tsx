@@ -317,6 +317,21 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
             case "NOT_FOUND":
               toast.error(t("journalErr.NOT_FOUND"));
               break;
+            case "LINES_UNMATCHED":
+              toast.error(t("journalErr.LINES_UNMATCHED", { count: result.count }));
+              break;
+            case "ORIGINAL_SALE_NOT_SHIPPED":
+              toast.error(t("journalErr.ORIGINAL_SALE_NOT_SHIPPED", { count: result.count }));
+              break;
+            case "ORIGINAL_SALE_NOT_JOURNALED_YET":
+              toast.error(t("journalErr.ORIGINAL_SALE_NOT_JOURNALED_YET", { count: result.count }));
+              break;
+            case "ORIGINAL_SALE_OUTSIDE_LEDGER":
+              toast.error(t("journalErr.ORIGINAL_SALE_OUTSIDE_LEDGER", { count: result.count }));
+              break;
+            case "GL_CUTOVER_NOT_CONFIGURED":
+              toast.error(t("journalErr.GL_CUTOVER_NOT_CONFIGURED", { count: result.count }));
+              break;
             default:
               toast.error(t("errGeneric"));
           }

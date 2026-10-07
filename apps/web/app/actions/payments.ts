@@ -31,6 +31,9 @@ export type PaymentActionReason =
   | "INSUFFICIENT_OUTSTANDING"
   | "EXCEEDS_REMAINING"
   | "PAYMENT_VOIDED"
+  | "RECEIVABLE_REVENUE_NOT_POSTED_YET"
+  | "RECEIVABLE_OUTSIDE_LEDGER"
+  | "NOTHING_TO_POST"
   | "ERROR";
 
 export type PaymentActionResult =
@@ -239,6 +242,18 @@ export async function voidPaymentAction(input: { paymentId: string; reason: stri
 }
 
 /**
+ * A retry that hit one of the journal gates says which one, so the toast names the actual obstacle
+ * instead of "still pending" — the outside-ledger and nothing-to-post answers will never change on
+ * another retry. Everything else stays `STILL_PENDING`.
+ */
+function retryFailureReason(code: string): PaymentActionReason {
+  if (code === "RECEIVABLE_REVENUE_NOT_POSTED_YET" || code === "RECEIVABLE_OUTSIDE_LEDGER" || code === "NOTHING_TO_POST") {
+    return code;
+  }
+  return "STILL_PENDING";
+}
+
+/**
  * Retries the receipt journal for one payment.
  *
  * The ENTRY gate — attempt only when `isArJournalRetryable` says this payment was flagged — is
@@ -264,7 +279,7 @@ export async function postPaymentJournalAction(paymentId: string): Promise<Payme
   }
 
   const outcome = await postArJournalSafely("ar_payment", paymentId, () => postPaymentReceiptJournal(paymentId, userId));
-  if (!outcome.ok) return { ok: false, reason: "STILL_PENDING" };
+  if (!outcome.ok) return { ok: false, reason: retryFailureReason(outcome.code) };
 
   revalidatePath("/backoffice/finance/piutang");
   revalidatePath("/backoffice/finance/payments");
@@ -295,7 +310,7 @@ export async function postPaymentVoidJournalAction(paymentId: string): Promise<P
   }
 
   const outcome = await postArJournalSafely("ar_payment_void", paymentId, () => postPaymentVoidJournal(paymentId, userId));
-  if (!outcome.ok) return { ok: false, reason: "STILL_PENDING" };
+  if (!outcome.ok) return { ok: false, reason: retryFailureReason(outcome.code) };
 
   revalidatePath("/backoffice/finance/piutang");
   revalidatePath("/backoffice/finance/payments");
