@@ -512,9 +512,11 @@ export async function previewKonsiReturStockImpact(returnId: string): Promise<Ko
  * Together these cover every ADMIN-origin status except `APPROVED` (by then the decrement is
  * complete and the return is settled) and `CANCELLED` (nothing left the store). Deliberately NOT
  * folded into `getStoreStockCard` or netted out of the stocktake's `expectedQty`: the card renders
- * the `StockLedgerEntry` rows as they stand and `expectedQty` reads the `StoreStock` balance as it
- * stands — two different tables, neither of them adjusted for a return in flight. This is a
- * separate, purely informational pair for the store card to display alongside them.
+ * the `StockLedgerEntry` rows as they stand and `expectedQty` is the `StoreStock` balance read at
+ * the save that stamped the count, less the store rows recorded after each line's count moment —
+ * still the balance, never adjusted for a return in flight, whose units count until its store row
+ * lands. This is a separate, purely informational pair for the store card to display alongside
+ * them.
  */
 export type InTransitAdminReturnQty = {
   raisedQty: number;

@@ -230,10 +230,13 @@ export type StoreStocktakeLineDetail = {
   appliedQty: number | null;
   isAdded: boolean;
   /**
-   * `StoreStock.qty` as it stands right now, read fresh on every detail fetch — never the
-   * `expectedQty` snapshot frozen at creation. This is the field the approve dialog's drift list
-   * compares `expectedQty` against; 0 when the store has no `StoreStock` row for this item/variant
-   * at all (an added line, or one the ledger genuinely never held).
+   * `StoreStock.qty` as it stands right now, read fresh on every detail fetch — never
+   * `expectedQty`, which is the figure the shelf should have held at the line's count moment as
+   * of the last save that stamped the count. This is the field the approve dialog's drift list
+   * compares `expectedQty` against, and the baseline the detail screen previews an edited count
+   * against, since saving that edit re-baselines the line to live stock; 0 when the store has no
+   * `StoreStock` row for this item/variant at all (an added line, or one the ledger genuinely
+   * never held).
    */
   liveQty: number;
 };
@@ -322,7 +325,7 @@ export async function getStoreStocktakeById(id: string): Promise<StoreStocktakeD
    * One batched read of the store's CURRENT StoreStock, keyed the same way the writer keys its
    * own upsert (itemId + variantSku, defaulting a null variantSku to ""). Never trusted as a
    * substitute for `expectedQty` — this is purely the live figure the approve dialog shows
-   * alongside the frozen snapshot.
+   * alongside it, and what the detail screen previews an edited count against.
    */
   const itemIds = Array.from(new Set(r.lines.map((l) => l.itemId)));
   const liveStock = itemIds.length > 0

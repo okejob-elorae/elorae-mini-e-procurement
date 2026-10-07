@@ -3811,7 +3811,7 @@
       "confirmAction": "Setujui",
       "submitting": "Menyetujui…",
       "success": "Perhitungan disetujui, stok toko telah diperbarui.",
-      "driftTitle": "Stok berubah sejak angka seharusnya ditetapkan",
+      "driftTitle": "Stok berubah sejak tiap baris dihitung",
       "driftLine": "{product}{variant}: seharusnya {expected}, sekarang {live}",
       "driftNote": "Ini hanya informasi — selisih ini sendiri tidak menghalangi persetujuan. Yang ditulis adalah hasil hitung tiap baris ditambah pergerakan yang terjadi setelah baris itu dihitung, kecuali retur yang diajukan dan transfer toko yang dipindahkan sebelum baris itu dihitung, karena perhitungan sudah mencakupnya. Transfer toko yang masih menunggu persetujuan dan memindahkan barang yang dihitung sebelum perhitungan tetap menghalangi persetujuan sampai transfer tersebut disetujui atau dibatalkan."
     },

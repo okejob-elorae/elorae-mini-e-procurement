@@ -256,11 +256,21 @@ export function StocktakeDetailClient({
     return reasons[row.key] ?? (row.storedReason ?? "");
   }
 
+  /**
+   * A row whose figure differs from the stored one (compared in cents, as the writer compares it)
+   * is re-baselined to live stock when it is saved, because its count moment becomes the save. Its
+   * preview, the expected figure shown beside it, and whether a cause is sent with it are therefore
+   * measured against `liveQty`; a row left at its stored figure keeps its own moment and its stored
+   * `expectedQty`.
+   */
   const computedRows = rows.map((row) => {
     const raw = effectiveCountedRaw(row);
     const { value, valid } = parseCountedInput(raw);
-    const variance = value === null ? null : value - row.expectedQty;
-    return { row, raw, counted: value, valid, variance };
+    const storedCents = row.storedCountedQty === null ? null : Math.round(row.storedCountedQty * 100);
+    const countEdited = (value === null ? null : Math.round(value * 100)) !== storedCents;
+    const baseline = countEdited ? row.liveQty : row.expectedQty;
+    const variance = value === null ? null : (Math.round(value * 100) - Math.round(baseline * 100)) / 100;
+    return { row, raw, counted: value, valid, expected: baseline, variance };
   });
 
   const countedCount = computedRows.filter((c) => c.counted !== null).length;
@@ -627,7 +637,7 @@ export function StocktakeDetailClient({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {computedRows.map(({ row, raw, counted, valid, variance }) => (
+                {computedRows.map(({ row, raw, counted, valid, expected, variance }) => (
                   <TableRow key={row.key}>
                     <TableCell>
                       <div className="flex items-center gap-2">
@@ -639,7 +649,7 @@ export function StocktakeDetailClient({
                       </div>
                     </TableCell>
                     <TableCell className="font-mono text-sm">{row.variantSku || "—"}</TableCell>
-                    <TableCell className="text-right tabular-nums">{row.expectedQty}</TableCell>
+                    <TableCell className="text-right tabular-nums">{expected}</TableCell>
                     <TableCell className="text-right">
                       <Input
                         type="number"

@@ -469,6 +469,71 @@ d("store stocktake writer (test bed only)", () => {
     expect(Number(line.appliedQty)).toBe(8);
   });
 
+  describe("gating on the delta approval books", () => {
+    /* A FIELD retur of two raised a minute before the count, test-only; StoreStock stays 10 until it settles. */
+    const raiseReturBeforeCount = async () => {
+      const returnId = await raiseRetur(2);
+      await prisma.fieldReturn.update({ where: { id: returnId }, data: { createdAt: new Date(Date.now() - 60_000) } });
+      return returnId;
+    };
+
+    it("asks no cause or reason when a retur raised before the count settles after the save, and books nothing", async () => {
+      const returnId = await raiseReturBeforeCount();
+      const id = await countThroughSave({ itemId: itemMainId, expectedQty: 10, countedQty: 8 });
+      /* At the save the retur's row had not landed: live 10, so the stored variance is a shortfall of two. */
+      const saved = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id) } });
+      expect(Number(saved.expectedQty)).toBe(10);
+      expect(Number(saved.varianceQty)).toBe(-2);
+      await moveAfterCount(itemMainId, -2, "FieldReturn", returnId);
+
+      await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+      /* Target 8 (the retur row is skipped) against live 8: nothing booked, so nothing to explain. */
+      expect(await stocktakeLedgerRows(id, itemMainId)).toHaveLength(0);
+      const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId) } });
+      expect(Number(ss.qty)).toBe(8);
+      const line = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id) } });
+      expect(Number(line.varianceQty)).toBe(0);
+      expect(Number(line.appliedQty)).toBe(8);
+      expect(Number(line.qtyAtApproval)).toBe(8);
+    });
+
+    it("still demands a cause for a real shortfall beyond the late retur, and books exactly that shortfall", async () => {
+      const returnId = await raiseReturBeforeCount();
+      const id = await countThroughSave({ itemId: itemMainId, expectedQty: 10, countedQty: 7, reason: "one missing" });
+      await moveAfterCount(itemMainId, -2, "FieldReturn", returnId);
+
+      /* Target 7 against live 8: a shortfall of one, with a reason but no cause. */
+      await expect(approveStoreStocktake({ stocktakeId: id, approvedById: adminId })).rejects.toMatchObject({ code: "SHORTFALL_NEEDS_CAUSE" });
+      expect(await stocktakeLedgerRows(id, itemMainId)).toHaveLength(0);
+
+      const line = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id) }, select: { id: true } });
+      await saveStocktakeCounts({ stocktakeId: id, lines: [{ lineId: line.id, countedQty: 7, cause: "SHRINKAGE", reason: "one missing" }], submit: true, userId: adminId });
+      await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+      const rows = await stocktakeLedgerRows(id, itemMainId);
+      expect(rows).toHaveLength(1);
+      expect(Number(rows[0].qty)).toBe(-1);
+      const approved = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id) } });
+      expect(Number(approved.varianceQty)).toBe(-1);
+      const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId) } });
+      expect(Number(ss.qty)).toBe(7);
+    });
+
+    it("asks no cause or reason once a transfer that refused TRANSFER_PENDING is approved, and books nothing", async () => {
+      const { transferId } = await recordTransfer(storeId, storeBId, new Date(Date.now() - 120_000));
+      const id = await countThroughSave({ itemId: itemMainId, expectedQty: 10, countedQty: 7 });
+      await approveStoreTransfer({ transferId, approvedById: adminId });
+
+      await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+      expect(await stocktakeLedgerRows(id, itemMainId)).toHaveLength(0);
+      const line = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id) } });
+      expect(Number(line.varianceQty)).toBe(0);
+      expect(Number(line.appliedQty)).toBe(7);
+    });
+  });
+
   it("still re-applies the store row of a retur raised after the count", async () => {
     const id = await countThroughSave({ itemId: itemMainId, expectedQty: 10, countedQty: 10 });
     /* Raised after the count was saved, so its goods left a shelf the count had already seen full. */
@@ -620,6 +685,10 @@ d("store stocktake writer (test bed only)", () => {
     expect(await stocktakeLedgerRows(idB, itemMainId, storeBId)).toHaveLength(0);
     const lineA = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(idA) } });
     expect(Number(lineA.appliedQty)).toBe(7);
+    /* Each line's stored variance is what it booked — nothing — not the −3 and +3 its save measured. */
+    expect(Number(lineA.varianceQty)).toBe(0);
+    const lineB = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(idB) } });
+    expect(Number(lineB.varianceQty)).toBe(0);
   });
 
   it("still re-applies a transfer whose goods moved moments after the count", async () => {
