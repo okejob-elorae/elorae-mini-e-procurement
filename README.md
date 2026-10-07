@@ -404,8 +404,8 @@ crontab -e
 # from an interactive shell keeps working — the worst kind of divergence.
 PATH=/home/elorae/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-# 02:15 WIB — the VPS runs UTC, so 19:15 UTC the previous day
-15 19 * * * /srv/elorae/scripts/backup-db.sh >> /home/elorae/backup.log 2>&1
+# 02:15 WIB — the VPS clock runs on WIB (Asia/Jakarta), so cron reads the hour as WIB
+15 2 * * * /srv/elorae/scripts/backup-db.sh >> /home/elorae/backup.log 2>&1
 ```
 
 Run it once by hand first. The last line is `OK — backup complete, verified and uploaded`
