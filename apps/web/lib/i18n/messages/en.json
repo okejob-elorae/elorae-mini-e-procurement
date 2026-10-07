@@ -1591,7 +1591,7 @@
     "paid": "Paid",
     "noPOsMatchFilters": "No POs match the filters.",
     "noop": {
-      "alreadyPaid": "This PO was already marked paid — nothing changed and no journal was posted. If the earlier mark's payment journal never posted, unmark payment and mark it paid again.",
+      "alreadyPaid": "This PO was already marked paid — nothing changed and no journal was posted. If the earlier mark's payment journal never posted, use \"Post payment journal\" on this PO's page when it offers one; otherwise unmark payment and mark it paid again.",
       "alreadyUnpaid": "This PO was already marked unpaid — nothing changed and no journal was posted. If its reversal journal never posted, this PO shows a standing-payment warning with a button that posts the reversal."
     },
     "standingPayment": {
@@ -1608,21 +1608,30 @@
       "errBadState": "This PO is no longer in that state — either the reversal has been posted or the PO was marked paid again. The page has been reloaded.",
       "errFailed": "The reversal journal could not be posted ({code}). Check the account mapping and this PO's journals in Finance, then try again."
     },
+    "pendingPayment": {
+      "title": "This PO is marked paid, but its payment journal did not post",
+      "action": "Post payment journal",
+      "needsPermission": "Posting this journal needs the journals:manage permission. Ask a Finance user to do it from this PO's page — or unmark payment and mark it paid again once the cause above is fixed.",
+      "posted": "Payment journal posted. Payables and bank now reflect this payment.",
+      "errForbidden": "You do not have the journals:manage permission needed to post this payment journal.",
+      "errBadState": "This PO is no longer in that state — the payment journal has been posted or the PO was unmarked. The page has been reloaded.",
+      "reasonUnknown": "A payment journal post failed for this PO, but the latest attempt's reason is not on record. Check this PO's journals and the account mapping in Finance, fix the cause, then use \"Post payment journal\"."
+    },
     "journal": {
       "err": {
-        "GRN_APPROVAL_PENDING": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. One of this PO's receipts is still awaiting the owner's decision. Have the owner approve or decline it first, then unmark payment and mark it paid again.",
-        "GRN_JOURNALS_INCOMPLETE": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. One of this PO's receipts has no GRN journal. Post the missing GRN journal from its GRN row, then unmark payment and mark it paid again.",
-        "GRN_REVERSAL_MISSING": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. A receipt was declined by the owner and its GRN journal was never reversed. Post the reversal journal from the declined GRN's row, then unmark payment and mark it paid again.",
-        "AP_ACCOUNT_MISMATCH": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. The receipts booked their payable to a different account than the AP posting role now resolves to. Check the AP account mapping in Account Mapping, then unmark payment and mark it paid again.",
+        "GRN_APPROVAL_PENDING": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. One of this PO's receipts is still awaiting the owner's decision. Have the owner approve or decline it first, then use \"Post payment journal\" on this PO's page.",
+        "GRN_JOURNALS_INCOMPLETE": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. One of this PO's receipts has no GRN journal. Post the missing GRN journal from its GRN row, then use \"Post payment journal\" on this PO's page.",
+        "GRN_REVERSAL_MISSING": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. A receipt was declined by the owner and its GRN journal was never reversed. Post the reversal journal from the declined GRN's row, then use \"Post payment journal\" on this PO's page.",
+        "AP_ACCOUNT_MISMATCH": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. The receipts booked their payable to a different account than the AP posting role now resolves to. Check the AP account mapping in Account Mapping, then use \"Post payment journal\" on this PO's page.",
         "PAYMENT_SUPERSEDED": "The payment status was saved, but a payment journal from an earlier mark is still standing for a different amount than this PO now owes, so no new journal was posted. Payables and bank are NOT untouched here — they still hold that earlier payment, which no longer clears this PO's payable. Unmark payment, confirm in Finance that the reversal journal actually posted this time, then mark it paid again. If that reversal fails too, this PO raises a standing-payment warning with a button that posts the reversal directly.",
-        "UNMAPPED_ROLE": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. The posting role \"{role}\" is not mapped to an account. Map it in Account Mapping, then unmark payment and mark it paid again.",
-        "NOTHING_TO_POST": "The PO was marked paid, but no payable was found booked to the GL for it, so no journal was posted — payables and bank are both untouched. Confirm this PO should be marked paid at all; if a receipt is missing, receive it first, then unmark payment and mark it paid again.",
+        "UNMAPPED_ROLE": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. The posting role \"{role}\" is not mapped to an account. Map it in Account Mapping, then use \"Post payment journal\" on this PO's page.",
+        "NOTHING_TO_POST": "The PO was marked paid, but no payable was found booked to the GL for it, so no journal was posted — payables and bank are both untouched. Confirm this PO should be marked paid at all; if a receipt is missing, receive it first, then use \"Post payment journal\" on this PO's page.",
         "UNBALANCED": {
-          "payment": "The payment status was saved, but the payment journal was unbalanced (debit ≠ credit) so it was not posted — payables and bank are both untouched. Check this PO's journals in Finance, then unmark payment and mark it paid again.",
+          "payment": "The payment status was saved, but the payment journal was unbalanced (debit ≠ credit) so it was not posted — payables and bank are both untouched. Check this PO's journals in Finance, then use \"Post payment journal\" on this PO's page.",
           "reversal": "The paid mark was removed, but its reversal journal was unbalanced (debit ≠ credit) so it was not posted. Payables and bank are NOT untouched here — the earlier payment journal is still standing, so payables are cleared and bank is credited for a PO that now reads unpaid. This PO shows a standing-payment warning; post the reversal from the button on that warning."
         },
         "GENERIC": {
-          "payment": "The payment status was saved, but the payment journal failed to post because of an unexpected error. Check this PO's journals and the account mapping in Finance; if the payment journal really is missing, unmark payment and mark it paid again.",
+          "payment": "The payment status was saved, but the payment journal failed to post because of an unexpected error. Check this PO's journals and the account mapping in Finance; if the payment journal really is missing, fix the cause, then use \"Post payment journal\" on this PO's page.",
           "reversal": "The paid mark was removed, but its reversal journal failed to post because of an unexpected error, so the earlier payment journal is most likely still standing — payables cleared and bank credited for a PO that now reads unpaid. Check this PO's journals in Finance; if the standing-payment warning is shown on this PO, post the reversal from the button on it."
         }
       }
@@ -4527,6 +4536,18 @@
         "FORBIDDEN": "You don't have permission to post journals.",
         "NOT_RETRYABLE": "This document never had a failed automatic posting attempt, so it can't be retried here — posting it now would create a one-sided journal entry. If it genuinely needs a journal, use a manual journal entry instead.",
         "UNEXPECTED": "Something unexpected went wrong posting the journal."
+      }
+    },
+    "journalWarn": {
+      "load": {
+        "UNMAPPED_ROLE": "Van loaded ({docNo}) — the load is saved and stock has moved, but its GL journal did not post: the posting role \"{role}\" is not mapped. Ask Finance to map it in Account Mapping, then post the journal from Load History on this page.",
+        "UNBALANCED": "Van loaded ({docNo}) — the load is saved and stock has moved, but its GL journal did not post: the entry did not balance (debit ≠ credit). Ask Finance to check it, then post the journal from Load History on this page.",
+        "ERROR": "Van loaded ({docNo}) — the load is saved and stock has moved, but its GL journal did not post because of an unexpected error. Ask Finance to post the journal from Load History on this page."
+      },
+      "reconcile": {
+        "UNMAPPED_ROLE": "Reconciled ({docNo}), total variance {variance} — the reconcile is saved and stock has moved, but its GL journal did not post: the posting role \"{role}\" is not mapped. Ask Finance to map it in Account Mapping, then post the journal from the reconcile's detail page (Reconciliation History).",
+        "UNBALANCED": "Reconciled ({docNo}), total variance {variance} — the reconcile is saved and stock has moved, but its GL journal did not post: the entry did not balance (debit ≠ credit). Ask Finance to check it, then post the journal from the reconcile's detail page (Reconciliation History).",
+        "ERROR": "Reconciled ({docNo}), total variance {variance} — the reconcile is saved and stock has moved, but its GL journal did not post because of an unexpected error. Ask Finance to post the journal from the reconcile's detail page (Reconciliation History)."
       }
     }
   },

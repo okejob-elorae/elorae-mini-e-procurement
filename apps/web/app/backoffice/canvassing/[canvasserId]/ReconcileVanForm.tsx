@@ -72,7 +72,17 @@ export function ReconcileVanForm({ canvasserId, rows }: Props) {
           note: note.trim() || undefined,
         });
         if (result.ok) {
-          toast.success(t("reconcileSuccess", { docNo: result.docNo, variance: result.totalVarianceQty }));
+          const f = result.journalFailure;
+          const values = { docNo: result.docNo, variance: result.totalVarianceQty };
+          if (!f) {
+            toast.success(t("reconcileSuccess", values));
+          } else if (f.reason === "UNMAPPED_ROLE") {
+            toast.warning(t("journalWarn.reconcile.UNMAPPED_ROLE", { ...values, role: f.role ?? "" }), { duration: 12000 });
+          } else if (f.reason === "UNBALANCED") {
+            toast.warning(t("journalWarn.reconcile.UNBALANCED", values), { duration: 12000 });
+          } else {
+            toast.warning(t("journalWarn.reconcile.ERROR", values), { duration: 12000 });
+          }
           router.refresh();
           return;
         }

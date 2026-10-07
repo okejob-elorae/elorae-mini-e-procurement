@@ -114,7 +114,16 @@ export function LoadVanForm({ canvasserId, itemOptions, loadableInventory }: Pro
       try {
         const result = await loadVanAction({ canvasserId, lines: validLines, note: note.trim() || undefined });
         if (result.ok) {
-          toast.success(t("loadedSuccess", { docNo: result.docNo }));
+          const f = result.journalFailure;
+          if (!f) {
+            toast.success(t("loadedSuccess", { docNo: result.docNo }));
+          } else if (f.reason === "UNMAPPED_ROLE") {
+            toast.warning(t("journalWarn.load.UNMAPPED_ROLE", { docNo: result.docNo, role: f.role ?? "" }), { duration: 12000 });
+          } else if (f.reason === "UNBALANCED") {
+            toast.warning(t("journalWarn.load.UNBALANCED", { docNo: result.docNo }), { duration: 12000 });
+          } else {
+            toast.warning(t("journalWarn.load.ERROR", { docNo: result.docNo }), { duration: 12000 });
+          }
           router.refresh();
           setBlocks([emptyBlock()]);
           setNote("");

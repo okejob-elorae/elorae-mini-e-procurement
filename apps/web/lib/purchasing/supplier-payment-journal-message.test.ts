@@ -122,16 +122,19 @@ describe("supplier payment journal messages", () => {
 
   /*
    * Both directions must carry a remedy. The payment half is retried through the
-   * toggle; the reversal half cannot be, so it has to name the standing-payment
-   * control instead of the mark/unmark dance.
+   * PO page's "Post payment journal" control, never by unmarking and re-marking
+   * paid, which rewrites `paidAt`; the reversal half has to name the
+   * standing-payment control instead.
    */
   it("gives each direction the remedy that direction actually has", () => {
+    const postRetry: Record<string, string> = { id: "Posting jurnal pembayaran", en: "Post payment journal" };
     const markAgain: Record<string, string> = { id: "tandai lunas lagi", en: "mark it paid again" };
     const standing: Record<string, string> = { id: "peringatan pembayaran menggantung", en: "standing-payment warning" };
     for (const [locale, messages] of Object.entries(locales)) {
       for (const code of DIRECTION_SPECIFIC) {
         const entry = messages.supplierPayments.journal.err[code] as Record<SupplierPaymentDirection, string>;
-        expect(entry.payment, `${locale}.${code}.payment`).toContain(markAgain[locale]);
+        expect(entry.payment, `${locale}.${code}.payment`).toContain(postRetry[locale]);
+        expect(entry.payment, `${locale}.${code}.payment`).not.toContain(markAgain[locale]);
         expect(entry.reversal, `${locale}.${code}.reversal`).toContain(standing[locale]);
       }
     }

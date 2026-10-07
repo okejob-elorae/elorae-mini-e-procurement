@@ -58,6 +58,12 @@ export async function recordVanSaleAction(input: unknown): Promise<RecordVanSale
     saleLat: d.saleLat, saleLng: d.saleLng, lines: d.lines, amountPaid: d.amountPaid, note: d.note, idempotencyKey: d.idempotencyKey,
   });
   if (res.ok) {
+    /**
+     * The returned failure is deliberately not surfaced to the canvasser. The
+     * sale and its nota are real either way, the canvasser at the counter cannot
+     * fix an account mapping, and the `JOURNAL_PENDING` row already reaches
+     * `journals:manage` holders by bell and by the van-sale detail badge.
+     */
     await postVanJournalSafely("sale", res.saleId, () => postVanSaleJournal(res.saleId, session.user.id));
     return { ok: true, saleId: res.saleId, docNo: res.docNo, changeAmount: res.changeAmount };
   }

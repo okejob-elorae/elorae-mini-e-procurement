@@ -472,9 +472,19 @@ export async function hasStandingPaymentJournalWhileUnpaid(
   const po = await client.purchaseOrder.findUnique({ where: { id: poId }, select: { paidAt: true } });
   if (!po || po.paidAt != null) return false;
 
+  return hasCurrentPaymentJournal(poId, client);
+}
+
+/**
+ * True when a `SUPPLIER_PAYMENT` journal stands at this PO's current generation,
+ * whatever `paidAt` reads. The one place the generation is read for that question,
+ * shared by the standing-while-unpaid detector above and the paid-without-journal
+ * banner (`paymentJournalPendingWhilePaid`), so the two cannot disagree about
+ * which generation counts.
+ */
+export async function hasCurrentPaymentJournal(poId: string, client: AnyClient = prisma): Promise<boolean> {
   const gen = await currentGeneration(poId, client);
-  const standing = await postedPaymentJournal(poId, gen, client);
-  return standing != null;
+  return (await postedPaymentJournal(poId, gen, client)) != null;
 }
 
 /**

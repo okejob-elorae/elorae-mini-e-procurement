@@ -33,7 +33,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 import { getPOById, getPOs, setPOPaidAt } from '@/app/actions/purchase-orders';
-import { supplierPaymentJournalErrorKey } from '@/lib/purchasing/supplier-payment-journal-message';
+import { useSupplierPaymentJournalFailureMessage } from "@/hooks/use-supplier-payment-journal-failure-message";
 import { logPrint } from '@/app/actions/audit';
 import { buildPOPrintHtml } from '@/lib/print/po-html';
 import { buildPOPaymentReceiptHtml } from '@/lib/print/po-payment-receipt-html';
@@ -89,6 +89,7 @@ export default function SupplierPaymentsPage() {
   const [printingPoId, setPrintingPoId] = useState<string | null>(null);
   const [togglingPoId, setTogglingPoId] = useState<string | null>(null);
   const tSupplierPayments = useTranslations('supplierPayments');
+  const journalFailureMessage = useSupplierPaymentJournalFailureMessage();
 
   const fetchSuppliers = async () => {
     try {
@@ -174,8 +175,9 @@ export default function SupplierPaymentsPage() {
    * earlier payment for a different amount, and on the reversal half because they
    * still hold the payment this unmark failed to undo. Reporting "Marked as paid"
    * for any of those is positive confirmation of something that did not happen,
-   * and the only other trace is an `AdminNotification` row nothing in the UI
-   * renders yet. Which case it is, and the remedy, come from the message the code
+   * and the only other trace is an `AdminNotification` row this register does
+   * not render — the PO detail page renders it, as a banner with a retry for a
+   * failed payment. Which case it is, and the remedy, come from the message the code
    * AND the direction resolve to — the same failure means opposite things on the
    * two halves of the toggle.
    *
@@ -207,19 +209,7 @@ export default function SupplierPaymentsPage() {
         );
       } else if (result.journalFailure) {
         const failure = result.journalFailure;
-        /*
-         * `UNMAPPED_ROLE` is the only one of these messages that interpolates a
-         * value, so it is resolved from its literal key to keep next-intl's
-         * parameter typing intact. Passing values alongside the computed key
-         * would widen the whole call to `never` and drop that check.
-         */
-        const warning =
-          failure.code === 'UNMAPPED_ROLE'
-            ? tSupplierPayments('journal.err.UNMAPPED_ROLE', { role: failure.role ?? '' })
-            : tSupplierPayments(
-                supplierPaymentJournalErrorKey(failure.code, failure.direction) as never
-              );
-        toast.warning(warning, { duration: 12000 });
+        toast.warning(journalFailureMessage(failure.code, failure.role, failure.direction), { duration: 12000 });
       } else {
         toast.success(paid ? 'Marked as paid' : 'Marked as unpaid');
       }

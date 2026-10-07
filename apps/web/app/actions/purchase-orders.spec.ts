@@ -45,12 +45,14 @@ vi.mock("@/lib/items/validate-variant-lines", () => ({
 }));
 vi.mock("@/lib/leadtime/po-snapshot", () => ({ resolvePoLeadTimeFields: vi.fn() }));
 vi.mock("@/lib/purchasing/supplier-payment-journal", () => ({
+  hasCurrentPaymentJournal: vi.fn(),
   hasStandingPaymentJournalWhileUnpaid: vi.fn(),
   postSupplierPaymentJournal: vi.fn(),
   postSupplierPaymentReversalJournal: vi.fn(),
 }));
 vi.mock("@/lib/purchasing/post-supplier-payment-journal-safely", () => ({
   attemptSupplierPaymentJournal: vi.fn(),
+  latestPaymentJournalFailure: vi.fn(),
   notifySupplierPaymentJournalFailure: vi.fn(),
 }));
 vi.mock("@/lib/db/tx-retry", () => ({ runSerializable: vi.fn() }));

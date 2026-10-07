@@ -7,12 +7,13 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { loadVan } from "@/lib/canvassing/writer";
 import { postVanJournalSafely } from "@/lib/canvassing/post-van-journal-safely";
+import type { VanJournalFailure } from "@/lib/canvassing/post-van-journal-safely";
 import { postVanLoadJournal } from "@/lib/canvassing/van-journal";
 import { isJournalRetryable } from "@/lib/canvassing/journal-pending";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 
 export type LoadVanActionResult =
-  | { ok: true; docNo: string }
+  | { ok: true; docNo: string; journalFailure: VanJournalFailure | null }
   | { ok: false; reason: "FORBIDDEN" | "EMPTY" | "INSUFFICIENT_STOCK" | "VALIDATION"; shortLines?: Array<{ itemId: string; variantSku: string | null; requested: number; available: number }> };
 
 const schema = z.object({
@@ -41,10 +42,10 @@ export async function loadVanAction(input: {
     if (res.code === "INSUFFICIENT_STOCK") return { ok: false, reason: "INSUFFICIENT_STOCK", shortLines: res.shortLines };
     return { ok: false, reason: "EMPTY" };
   }
-  await postVanJournalSafely("load", res.loadId, () => postVanLoadJournal(res.loadId, session.user.id));
+  const journalFailure = await postVanJournalSafely("load", res.loadId, () => postVanLoadJournal(res.loadId, session.user.id));
   revalidatePath("/backoffice/canvassing");
   revalidatePath(`/backoffice/canvassing/${parsed.data.canvasserId}`);
-  return { ok: true, docNo: res.docNo };
+  return { ok: true, docNo: res.docNo, journalFailure };
 }
 
 /**

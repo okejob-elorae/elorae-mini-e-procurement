@@ -1591,7 +1591,7 @@
     "paid": "Sudah dibayar",
     "noPOsMatchFilters": "Tidak ada PO yang sesuai filter.",
     "noop": {
-      "alreadyPaid": "PO ini sudah bertanda lunas — tidak ada yang berubah dan tidak ada jurnal yang diposting. Kalau jurnal pembayaran dari penandaan sebelumnya belum terposting, batalkan tanda lunas dan tandai lunas lagi.",
+      "alreadyPaid": "PO ini sudah bertanda lunas — tidak ada yang berubah dan tidak ada jurnal yang diposting. Kalau jurnal pembayaran dari penandaan sebelumnya belum terposting, gunakan \"Posting jurnal pembayaran\" di halaman PO ini kalau tersedia; kalau tidak, batalkan tanda lunas dan tandai lunas lagi.",
       "alreadyUnpaid": "PO ini sudah bertanda belum dibayar — tidak ada yang berubah dan tidak ada jurnal yang diposting. Kalau jurnal pembaliknya belum terposting, PO ini akan menampilkan peringatan pembayaran menggantung beserta tombol untuk memposting pembaliknya."
     },
     "standingPayment": {
@@ -1608,21 +1608,30 @@
       "errBadState": "PO ini sudah tidak dalam kondisi tersebut — jurnal pembaliknya sudah diposting atau PO-nya sudah ditandai lunas lagi. Halaman sudah dimuat ulang.",
       "errFailed": "Jurnal pembalik gagal diposting ({code}). Periksa pemetaan akun dan jurnal PO ini di Finance, lalu coba lagi."
     },
+    "pendingPayment": {
+      "title": "PO ini sudah ditandai lunas, tapi jurnal pembayarannya belum diposting",
+      "action": "Posting jurnal pembayaran",
+      "needsPermission": "Butuh izin journals:manage untuk memposting jurnal ini. Minta pengguna Finance melakukannya dari halaman PO ini — atau batalkan tanda lunas dan tandai lunas lagi setelah penyebab di atas diperbaiki.",
+      "posted": "Jurnal pembayaran diposting. Utang dan bank sekarang sudah mencerminkan pembayaran ini.",
+      "errForbidden": "Anda tidak punya izin journals:manage untuk memposting jurnal pembayaran ini.",
+      "errBadState": "PO ini sudah tidak dalam kondisi tersebut — jurnal pembayarannya sudah diposting atau tanda lunas PO-nya sudah dibatalkan. Halaman sudah dimuat ulang.",
+      "reasonUnknown": "Posting jurnal pembayaran untuk PO ini pernah gagal, tapi alasan percobaan terakhirnya tidak tercatat. Periksa jurnal PO ini dan pemetaan akun di Finance, perbaiki penyebabnya, lalu gunakan \"Posting jurnal pembayaran\"."
+    },
     "journal": {
       "err": {
-        "GRN_APPROVAL_PENDING": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Ada penerimaan barang yang masih menunggu keputusan owner. Minta owner menyetujui atau menolak penerimaan itu dulu, lalu batalkan tanda lunas dan tandai lunas lagi.",
-        "GRN_JOURNALS_INCOMPLETE": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Ada penerimaan barang yang belum punya jurnal GRN. Posting jurnal GRN yang belum ada dari baris GRN-nya, lalu batalkan tanda lunas dan tandai lunas lagi.",
-        "GRN_REVERSAL_MISSING": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Ada penerimaan yang ditolak owner tapi jurnal GRN-nya belum dibalik. Posting jurnal pembalik dari baris GRN yang ditolak, lalu batalkan tanda lunas dan tandai lunas lagi.",
-        "AP_ACCOUNT_MISMATCH": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Penerimaan mencatat utang ke akun yang berbeda dari akun yang dipetakan ke peran AP sekarang. Periksa pemetaan akun AP di Pemetaan Akun, lalu batalkan tanda lunas dan tandai lunas lagi.",
+        "GRN_APPROVAL_PENDING": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Ada penerimaan barang yang masih menunggu keputusan owner. Minta owner menyetujui atau menolak penerimaan itu dulu, lalu gunakan \"Posting jurnal pembayaran\" di halaman PO ini.",
+        "GRN_JOURNALS_INCOMPLETE": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Ada penerimaan barang yang belum punya jurnal GRN. Posting jurnal GRN yang belum ada dari baris GRN-nya, lalu gunakan \"Posting jurnal pembayaran\" di halaman PO ini.",
+        "GRN_REVERSAL_MISSING": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Ada penerimaan yang ditolak owner tapi jurnal GRN-nya belum dibalik. Posting jurnal pembalik dari baris GRN yang ditolak, lalu gunakan \"Posting jurnal pembayaran\" di halaman PO ini.",
+        "AP_ACCOUNT_MISMATCH": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Penerimaan mencatat utang ke akun yang berbeda dari akun yang dipetakan ke peran AP sekarang. Periksa pemetaan akun AP di Pemetaan Akun, lalu gunakan \"Posting jurnal pembayaran\" di halaman PO ini.",
         "PAYMENT_SUPERSEDED": "Status bayar tersimpan, tapi jurnal pembayaran dari penandaan sebelumnya masih berdiri dengan nilai yang berbeda dari utang PO ini sekarang, jadi tidak ada jurnal baru yang diposting. Di sini utang dan bank BUKAN belum tersentuh — keduanya masih memuat pembayaran lama itu, yang sudah tidak lagi menutup utang PO ini. Batalkan tanda lunas, pastikan di Finance jurnal pembaliknya benar-benar terposting kali ini, lalu tandai lunas lagi. Kalau pembaliknya gagal lagi, PO ini akan menampilkan peringatan pembayaran menggantung beserta tombol untuk memposting pembaliknya langsung.",
-        "UNMAPPED_ROLE": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Peran akun \"{role}\" belum dipetakan. Petakan di Pemetaan Akun, lalu batalkan tanda lunas dan tandai lunas lagi.",
-        "NOTHING_TO_POST": "PO ditandai lunas, tapi tidak ada utang yang tercatat di buku besar untuk PO ini, jadi tidak ada jurnal yang diposting — utang dan bank belum tersentuh. Pastikan PO ini memang layak ditandai lunas; kalau ada penerimaan yang belum dibuat, terima barangnya dulu, lalu batalkan tanda lunas dan tandai lunas lagi.",
+        "UNMAPPED_ROLE": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Peran akun \"{role}\" belum dipetakan. Petakan di Pemetaan Akun, lalu gunakan \"Posting jurnal pembayaran\" di halaman PO ini.",
+        "NOTHING_TO_POST": "PO ditandai lunas, tapi tidak ada utang yang tercatat di buku besar untuk PO ini, jadi tidak ada jurnal yang diposting — utang dan bank belum tersentuh. Pastikan PO ini memang layak ditandai lunas; kalau ada penerimaan yang belum dibuat, terima barangnya dulu, lalu gunakan \"Posting jurnal pembayaran\" di halaman PO ini.",
         "UNBALANCED": {
-          "payment": "Status bayar tersimpan, tapi jurnal pembayaran tidak balance (debit ≠ kredit) jadi tidak diposting — utang dan bank belum tersentuh. Periksa jurnal PO ini di Finance, lalu batalkan tanda lunas dan tandai lunas lagi.",
+          "payment": "Status bayar tersimpan, tapi jurnal pembayaran tidak balance (debit ≠ kredit) jadi tidak diposting — utang dan bank belum tersentuh. Periksa jurnal PO ini di Finance, lalu gunakan \"Posting jurnal pembayaran\" di halaman PO ini.",
           "reversal": "Tanda lunas sudah dibatalkan, tapi jurnal pembaliknya tidak balance (debit ≠ kredit) jadi tidak diposting. Utang dan bank BUKAN belum tersentuh — jurnal pembayaran sebelumnya masih berdiri, jadi utang sudah dihapus dan bank sudah dikredit untuk PO yang sekarang berstatus belum dibayar. PO ini menampilkan peringatan pembayaran menggantung; posting jurnal pembaliknya dari tombol di peringatan itu."
         },
         "GENERIC": {
-          "payment": "Status bayar tersimpan, tapi jurnal pembayaran gagal diposting karena kesalahan tak terduga. Periksa jurnal PO ini dan pemetaan akun di Finance; kalau jurnal pembayarannya memang belum ada, batalkan tanda lunas dan tandai lunas lagi.",
+          "payment": "Status bayar tersimpan, tapi jurnal pembayaran gagal diposting karena kesalahan tak terduga. Periksa jurnal PO ini dan pemetaan akun di Finance; kalau jurnal pembayarannya memang belum ada, perbaiki penyebabnya, lalu gunakan \"Posting jurnal pembayaran\" di halaman PO ini.",
           "reversal": "Tanda lunas sudah dibatalkan, tapi jurnal pembaliknya gagal diposting karena kesalahan tak terduga, jadi jurnal pembayaran sebelumnya kemungkinan masih berdiri — utang sudah dihapus dan bank sudah dikredit untuk PO yang sekarang berstatus belum dibayar. Periksa jurnal PO ini di Finance; kalau peringatan pembayaran menggantung muncul di halaman PO ini, posting jurnal pembaliknya dari tombol di peringatan itu."
         }
       }
@@ -4527,6 +4536,18 @@
         "FORBIDDEN": "Anda tidak punya izin untuk posting jurnal.",
         "NOT_RETRYABLE": "Dokumen ini belum pernah gagal diposting otomatis, jadi tidak bisa diposting ulang di sini — memposting sekarang akan menghasilkan jurnal timpang sebelah. Jika dokumen ini benar-benar perlu dijurnal, gunakan entri jurnal manual.",
         "UNEXPECTED": "Terjadi kesalahan tak terduga saat memposting jurnal."
+      }
+    },
+    "journalWarn": {
+      "load": {
+        "UNMAPPED_ROLE": "Mobil dimuat ({docNo}) — muatan tersimpan dan stok sudah berpindah, tapi jurnal GL-nya belum terposting: role posting \"{role}\" belum dipetakan. Minta Finance memetakannya di Pemetaan Akun, lalu posting jurnalnya dari Riwayat Muat di halaman ini.",
+        "UNBALANCED": "Mobil dimuat ({docNo}) — muatan tersimpan dan stok sudah berpindah, tapi jurnal GL-nya belum terposting: jurnalnya tidak balance (debit ≠ kredit). Minta Finance memeriksanya, lalu posting jurnalnya dari Riwayat Muat di halaman ini.",
+        "ERROR": "Mobil dimuat ({docNo}) — muatan tersimpan dan stok sudah berpindah, tapi jurnal GL-nya belum terposting karena terjadi kesalahan tak terduga. Minta Finance memposting jurnalnya dari Riwayat Muat di halaman ini."
+      },
+      "reconcile": {
+        "UNMAPPED_ROLE": "Rekonsiliasi berhasil ({docNo}), total selisih {variance} — rekonsiliasi tersimpan dan stok sudah berpindah, tapi jurnal GL-nya belum terposting: role posting \"{role}\" belum dipetakan. Minta Finance memetakannya di Pemetaan Akun, lalu posting jurnalnya dari halaman detail rekonsiliasi (Riwayat Rekonsiliasi).",
+        "UNBALANCED": "Rekonsiliasi berhasil ({docNo}), total selisih {variance} — rekonsiliasi tersimpan dan stok sudah berpindah, tapi jurnal GL-nya belum terposting: jurnalnya tidak balance (debit ≠ kredit). Minta Finance memeriksanya, lalu posting jurnalnya dari halaman detail rekonsiliasi (Riwayat Rekonsiliasi).",
+        "ERROR": "Rekonsiliasi berhasil ({docNo}), total selisih {variance} — rekonsiliasi tersimpan dan stok sudah berpindah, tapi jurnal GL-nya belum terposting karena terjadi kesalahan tak terduga. Minta Finance memposting jurnalnya dari halaman detail rekonsiliasi (Riwayat Rekonsiliasi)."
       }
     }
   },
