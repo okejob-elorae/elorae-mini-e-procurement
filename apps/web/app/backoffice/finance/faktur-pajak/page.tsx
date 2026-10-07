@@ -41,43 +41,36 @@ export default async function FakturPajakPage({ searchParams }: PageProps) {
   const pageSize = DEFAULT_PAGE_SIZE;
   const canManage = hasPermission(permissions, PERMISSIONS.TAX_INVOICES_MANAGE);
 
+  let loaded: {
+    list: Awaited<ReturnType<typeof listTaxInvoices>>;
+    ppnRatePercent: Awaited<ReturnType<typeof getPpnRatePercent>>;
+  } | null = null;
+
   try {
-    const [{ rows, total, counts }, ppnRatePercent] = await Promise.all([
+    const [list, ppnRatePercent] = await Promise.all([
       listTaxInvoices({ status, q: q || undefined, page, perPage: pageSize }),
       getPpnRatePercent(),
     ]);
 
-    return (
-      <FakturPajakPageClient
-        rows={rows}
-        total={total}
-        counts={counts}
-        status={status ?? "ALL"}
-        q={q}
-        page={page}
-        pageSize={pageSize}
-        canManage={canManage}
-        loadError={false}
-        ppnRatePercent={ppnRatePercent}
-      />
-    );
+    loaded = { list, ppnRatePercent };
   } catch (err) {
     /* The error card is the only user-facing signal, and it names no cause — without this the
        container log holds nothing at all about why the page is blank. */
     console.error("[faktur-pajak] list query failed", err);
-    return (
-      <FakturPajakPageClient
-        rows={[]}
-        total={0}
-        counts={{ PENDING: 0, CREATED: 0, SENT_TO_STORE: 0, NOT_REQUIRED: 0, CANCELLED: 0 }}
-        status={status ?? "ALL"}
-        q={q}
-        page={page}
-        pageSize={pageSize}
-        canManage={canManage}
-        loadError={true}
-        ppnRatePercent={FALLBACK_PPN_RATE_PERCENT}
-      />
-    );
   }
+
+  return (
+    <FakturPajakPageClient
+      rows={loaded?.list.rows ?? []}
+      total={loaded?.list.total ?? 0}
+      counts={loaded?.list.counts ?? { PENDING: 0, CREATED: 0, SENT_TO_STORE: 0, NOT_REQUIRED: 0, CANCELLED: 0 }}
+      status={status ?? "ALL"}
+      q={q}
+      page={page}
+      pageSize={pageSize}
+      canManage={canManage}
+      loadError={loaded === null}
+      ppnRatePercent={loaded?.ppnRatePercent ?? FALLBACK_PPN_RATE_PERCENT}
+    />
+  );
 }

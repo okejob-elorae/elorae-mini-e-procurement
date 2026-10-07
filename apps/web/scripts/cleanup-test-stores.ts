@@ -115,7 +115,7 @@ async function main() {
     });
     // spgSale may be absent on older generated clients
     let spgSaleCount = 0;
-    if ("spgSale" in prisma && typeof (prisma as { spgSale?: { count: Function } }).spgSale?.count === "function") {
+    if ("spgSale" in prisma && typeof (prisma as { spgSale?: { count: unknown } }).spgSale?.count === "function") {
       spgSaleCount = await (prisma as { spgSale: { count: (args: unknown) => Promise<number> } }).spgSale.count({
         where: { storeId: { in: storeIds } },
       });

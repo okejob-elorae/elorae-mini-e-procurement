@@ -56,6 +56,13 @@ export default async function SettlementQueuePage({ searchParams }: PageProps) {
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const pageSize = DEFAULT_PAGE_SIZE;
 
+  let loaded: {
+    rows: Awaited<ReturnType<typeof listSettlementQueue>>["rows"];
+    total: number;
+    salesmen: Awaited<ReturnType<typeof listSettlementSalesmanCandidates>>;
+    storeOptions: Awaited<ReturnType<typeof listStoreOptions>>;
+  } | null = null;
+
   try {
     const [{ rows, total }, salesmen, storeOptions] = await Promise.all([
       listSettlementQueue({
@@ -71,43 +78,29 @@ export default async function SettlementQueuePage({ searchParams }: PageProps) {
       listStoreOptions(),
     ]);
 
-    return (
-      <SettlementQueuePageClient
-        rows={rows}
-        total={total}
-        salesmen={salesmen}
-        storeOptions={storeOptions}
-        storeId={storeId ?? ""}
-        salesmanId={salesmanId ?? ""}
-        status={status}
-        dateFrom={sp.from ?? ""}
-        dateTo={sp.to ?? ""}
-        page={page}
-        pageSize={pageSize}
-        loadError={false}
-      />
-    );
+    loaded = { rows, total, salesmen, storeOptions };
   } catch (err) {
     /**
      * The error card is the only user-facing signal, and it names no cause — without this the
      * container log holds nothing at all about why the page is blank.
      */
     console.error("[settlement-queue] list query failed", err);
-    return (
-      <SettlementQueuePageClient
-        rows={[]}
-        total={0}
-        salesmen={[]}
-        storeOptions={[]}
-        storeId={storeId ?? ""}
-        salesmanId={salesmanId ?? ""}
-        status={status}
-        dateFrom={sp.from ?? ""}
-        dateTo={sp.to ?? ""}
-        page={page}
-        pageSize={pageSize}
-        loadError={true}
-      />
-    );
   }
+
+  return (
+    <SettlementQueuePageClient
+      rows={loaded?.rows ?? []}
+      total={loaded?.total ?? 0}
+      salesmen={loaded?.salesmen ?? []}
+      storeOptions={loaded?.storeOptions ?? []}
+      storeId={storeId ?? ""}
+      salesmanId={salesmanId ?? ""}
+      status={status}
+      dateFrom={sp.from ?? ""}
+      dateTo={sp.to ?? ""}
+      page={page}
+      pageSize={pageSize}
+      loadError={loaded === null}
+    />
+  );
 }

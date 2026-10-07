@@ -57,47 +57,40 @@ export default async function PaymentsPage({ searchParams }: PageProps) {
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const pageSize = DEFAULT_PAGE_SIZE;
 
+  let loaded: {
+    rows: Awaited<ReturnType<typeof listPayments>>["rows"];
+    total: number;
+    storeOptions: Awaited<ReturnType<typeof listStoreOptions>>;
+  } | null = null;
+
   try {
     const [{ rows, total }, storeOptions] = await Promise.all([
       listPayments({ storeId, method, status, dateFrom, dateTo, page, pageSize }),
       listStoreOptions(),
     ]);
 
-    return (
-      <PaymentsPageClient
-        rows={rows}
-        total={total}
-        storeOptions={storeOptions}
-        storeId={storeId ?? ""}
-        method={method ?? "ALL"}
-        status={status ?? "ALL"}
-        dateFrom={sp.from ?? ""}
-        dateTo={sp.to ?? ""}
-        page={page}
-        pageSize={pageSize}
-        loadError={false}
-      />
-    );
+    loaded = { rows, total, storeOptions };
   } catch (err) {
     /**
      * The error card is the only user-facing signal, and it names no cause — without this the
      * container log holds nothing at all about why the page is blank.
      */
     console.error("[payments] list query failed", err);
-    return (
-      <PaymentsPageClient
-        rows={[]}
-        total={0}
-        storeOptions={[]}
-        storeId={storeId ?? ""}
-        method={method ?? "ALL"}
-        status={status ?? "ALL"}
-        dateFrom={sp.from ?? ""}
-        dateTo={sp.to ?? ""}
-        page={page}
-        pageSize={pageSize}
-        loadError={true}
-      />
-    );
   }
+
+  return (
+    <PaymentsPageClient
+      rows={loaded?.rows ?? []}
+      total={loaded?.total ?? 0}
+      storeOptions={loaded?.storeOptions ?? []}
+      storeId={storeId ?? ""}
+      method={method ?? "ALL"}
+      status={status ?? "ALL"}
+      dateFrom={sp.from ?? ""}
+      dateTo={sp.to ?? ""}
+      page={page}
+      pageSize={pageSize}
+      loadError={loaded === null}
+    />
+  );
 }

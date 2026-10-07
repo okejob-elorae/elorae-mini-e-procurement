@@ -56,7 +56,6 @@ export function readThemeFromLocalStorage(userId?: string | null): CachedThemePr
 
   let primary = DEFAULT_THEME_PRIMARY_COLOR;
   let pantoneTcx: string | null = null;
-  let palette: GeneratedThemePalette | undefined;
 
   if (pantoneRaw === '' || pantoneRaw === 'null') {
     pantoneTcx = null;
@@ -64,7 +63,7 @@ export function readThemeFromLocalStorage(userId?: string | null): CachedThemePr
     pantoneTcx = pantoneRaw;
   }
 
-  palette = parsePaletteJson(paletteRaw);
+  const palette: GeneratedThemePalette | undefined = parsePaletteJson(paletteRaw);
 
   if (primaryRaw) {
     try {
