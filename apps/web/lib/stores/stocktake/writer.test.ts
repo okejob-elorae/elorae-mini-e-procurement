@@ -3,6 +3,7 @@ import { prisma, seededId, moveStoreStock } from "@elorae/db";
 import { createStoreStocktake, saveStocktakeCounts, approveStoreStocktake, cancelStoreStocktake } from "./writer";
 import { createFieldReturn } from "@/lib/field-sales/retur/writer";
 import { createStoreTransfer, approveStoreTransfer } from "@/lib/stores/transfer/writer";
+import { getStoreStocktakeById } from "./queries";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -531,6 +532,32 @@ d("store stocktake writer (test bed only)", () => {
       const line = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id) } });
       expect(Number(line.varianceQty)).toBe(0);
       expect(Number(line.appliedQty)).toBe(7);
+    });
+
+    it("shows the booked shortfall a late incoming konsi delivery creates, where the stored variance is a surplus", async () => {
+      /* The shelf held 15 when counted (five delivered half an hour earlier, completion not yet synced); the SPG counted 14. */
+      const id = await countThroughSave({ itemId: itemMainId, expectedQty: 10, countedQty: 14, reason: "four found" });
+      await deliverKonsi(new Date(Date.now() - 30 * 60_000));
+
+      /* Stored +4 against the live 10 of the save; approval books 14 against the live 15 the sync left. */
+      const open = await getStoreStocktakeById(id);
+      expect(open!.lines[0].varianceQty).toBe(4);
+      expect(open!.lines[0].liveQty).toBe(15);
+      expect(open!.lines[0].bookedVarianceQty).toBe(-1);
+
+      await expect(approveStoreStocktake({ stocktakeId: id, approvedById: adminId })).rejects.toMatchObject({ code: "SHORTFALL_NEEDS_CAUSE" });
+
+      const row = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id) }, select: { id: true } });
+      await saveStocktakeCounts({ stocktakeId: id, lines: [{ lineId: row.id, countedQty: 14, cause: "SHRINKAGE", reason: "one missing" }], submit: true, userId: adminId });
+      await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+      const rows = await stocktakeLedgerRows(id, itemMainId);
+      expect(rows).toHaveLength(1);
+      expect(Number(rows[0].qty)).toBe(-1);
+      /* A closed document carries no booked figure: the stored variance is already what approval booked. */
+      const approved = await getStoreStocktakeById(id);
+      expect(approved!.lines[0].bookedVarianceQty).toBeNull();
+      expect(approved!.lines[0].varianceQty).toBe(-1);
     });
   });
 

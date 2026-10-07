@@ -1,5 +1,6 @@
 import { prisma, Prisma, type PrismaClient } from "@elorae/db";
 import { KONSI_COUNT_SYSTEM_ACTOR } from "@/lib/konsi-count-schedule/schedule";
+import { bookedCountCents } from "./booked";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
@@ -239,6 +240,15 @@ export type StoreStocktakeLineDetail = {
    * never held).
    */
   liveQty: number;
+  /**
+   * What approving this line right now would book — `target − live`, through the same
+   * `bookedCountCents` approval gates its cause and reason checks on — for a counted line of an
+   * open document; null otherwise. It parts from `varianceQty` only when a row the count already
+   * saw landed after the last save (a retur raised before the count and settled later, a transfer
+   * or an offline konsi delivery that moved before the count and was recorded later), and the
+   * screen then asks for a cause wherever this figure, not the stored one, is a shortfall.
+   */
+  bookedVarianceQty: number | null;
 };
 
 export type StoreStocktakeDetail = {
@@ -286,6 +296,7 @@ export async function getStoreStocktakeById(id: string): Promise<StoreStocktakeD
       cancelledById: true,
       cancelledAt: true,
       cancelReason: true,
+      countFinishedAt: true,
       store: { select: { name: true } },
       lines: {
         orderBy: { id: "asc" },
@@ -303,6 +314,7 @@ export async function getStoreStocktakeById(id: string): Promise<StoreStocktakeD
           qtyAtApproval: true,
           appliedQty: true,
           isAdded: true,
+          countFinishedAt: true,
           item: { select: { sku: true } },
         },
       },
@@ -335,6 +347,21 @@ export async function getStoreStocktakeById(id: string): Promise<StoreStocktakeD
       })
     : [];
   const liveQtyByKey = new Map(liveStock.map((s) => [`${s.itemId}::${s.variantSku}`, s.qty.toNumber()]));
+
+  /* Only an open document can still be approved, so only its counted lines carry a booked figure. */
+  const isOpen = r.status === "DRAFT" || r.status === "PENDING_VERIFICATION";
+  const bookedByLineId = isOpen
+    ? await bookedCountCents(
+        prisma,
+        r.storeId,
+        r.countFinishedAt,
+        r.lines.flatMap((l) => (l.countedQty === null ? [] : [{ key: l.id, itemId: l.itemId, variantSku: l.variantSku, countedQty: l.countedQty.toNumber(), lineCountFinishedAt: l.countFinishedAt }])),
+      )
+    : new Map<string, { targetCents: number; liveCents: number }>();
+  const bookedOf = (lineId: string): number | null => {
+    const booked = bookedByLineId.get(lineId);
+    return booked ? (booked.targetCents - booked.liveCents) / 100 : null;
+  };
 
   return {
     id: r.id,
@@ -372,6 +399,7 @@ export async function getStoreStocktakeById(id: string): Promise<StoreStocktakeD
       appliedQty: l.appliedQty === null ? null : l.appliedQty.toNumber(),
       isAdded: l.isAdded,
       liveQty: liveQtyByKey.get(`${l.itemId}::${l.variantSku}`) ?? 0,
+      bookedVarianceQty: bookedOf(l.id),
     })),
   };
 }

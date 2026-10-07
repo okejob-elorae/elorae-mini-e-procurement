@@ -134,6 +134,8 @@ type EditableRow = {
   isAdded: boolean;
   liveQty: number;
   storedCountedQty: number | null;
+  storedVarianceQty: number | null;
+  bookedVarianceQty: number | null;
   storedCause: StoreStocktakeCauseValue | null;
   storedReason: string | null;
 };
@@ -150,6 +152,8 @@ function toEditableRow(l: StoreStocktakeLineDetail): EditableRow {
     isAdded: l.isAdded,
     liveQty: l.liveQty,
     storedCountedQty: l.countedQty,
+    storedVarianceQty: l.varianceQty,
+    bookedVarianceQty: l.bookedVarianceQty,
     storedCause: l.cause,
     storedReason: l.reason,
   };
@@ -167,9 +171,15 @@ function pendingToEditableRow(p: PendingAddedLine): EditableRow {
     isAdded: true,
     liveQty: 0,
     storedCountedQty: null,
+    storedVarianceQty: null,
+    bookedVarianceQty: null,
     storedCause: null,
     storedReason: null,
   };
+}
+
+function signedQty(n: number): string {
+  return n > 0 ? `+${n}` : String(n);
 }
 
 function VarianceBadge({ counted, variance }: { counted: number | null; variance: number | null }) {
@@ -262,6 +272,13 @@ export function StocktakeDetailClient({
    * preview, the expected figure shown beside it, and whether a cause is sent with it are therefore
    * measured against `liveQty`; a row left at its stored figure keeps its own moment and its stored
    * `expectedQty`.
+   *
+   * Approval gates its cause check on what it will actually book, which parts from an untouched
+   * row's stored variance once a row the count already saw is recorded after the save — a konsi
+   * delivery completed before the count that synced later can turn a stored surplus into a booked
+   * shortfall. So an untouched row asks for, and sends, a cause when EITHER figure is a shortfall,
+   * and shows the booked one where they differ. A closed document shows its stored variance, which
+   * approval wrote as the delta it booked.
    */
   const computedRows = rows.map((row) => {
     const raw = effectiveCountedRaw(row);
@@ -269,8 +286,13 @@ export function StocktakeDetailClient({
     const storedCents = row.storedCountedQty === null ? null : Math.round(row.storedCountedQty * 100);
     const countEdited = (value === null ? null : Math.round(value * 100)) !== storedCents;
     const baseline = countEdited ? row.liveQty : row.expectedQty;
-    const variance = value === null ? null : (Math.round(value * 100) - Math.round(baseline * 100)) / 100;
-    return { row, raw, counted: value, valid, expected: baseline, variance };
+    const preview = value === null ? null : (Math.round(value * 100) - Math.round(baseline * 100)) / 100;
+    const variance = isOpenStatus ? preview : row.storedVarianceQty;
+    const booked = isOpenStatus && !countEdited && variance !== null && row.bookedVarianceQty !== null && row.bookedVarianceQty !== variance
+      ? row.bookedVarianceQty
+      : null;
+    const needsCause = (variance !== null && variance < 0) || (booked !== null && booked < 0);
+    return { row, raw, counted: value, valid, expected: baseline, variance, booked, needsCause };
   });
 
   const countedCount = computedRows.filter((c) => c.counted !== null).length;
@@ -309,7 +331,7 @@ export function StocktakeDetailClient({
       .map((c) => ({
         lineId: c.row.key,
         countedQty: c.counted,
-        cause: c.variance !== null && c.variance < 0 ? effectiveCause(c.row) || null : null,
+        cause: c.needsCause ? effectiveCause(c.row) || null : null,
         reason: effectiveReason(c.row).trim() || null,
       }));
     const addedLines = computedRows
@@ -318,7 +340,7 @@ export function StocktakeDetailClient({
         itemId: c.row.itemId,
         variantSku: c.row.variantSku,
         countedQty: c.counted,
-        cause: c.variance !== null && c.variance < 0 ? effectiveCause(c.row) || null : null,
+        cause: c.needsCause ? effectiveCause(c.row) || null : null,
         reason: effectiveReason(c.row).trim() || null,
       }));
 
@@ -637,7 +659,7 @@ export function StocktakeDetailClient({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {computedRows.map(({ row, raw, counted, valid, expected, variance }) => (
+                {computedRows.map(({ row, raw, counted, valid, expected, variance, booked, needsCause }) => (
                   <TableRow key={row.key}>
                     <TableCell>
                       <div className="flex items-center gap-2">
@@ -667,9 +689,14 @@ export function StocktakeDetailClient({
                     </TableCell>
                     <TableCell>
                       <VarianceBadge counted={counted} variance={variance} />
+                      {booked !== null && (
+                        <p className="mt-1 max-w-[200px] text-xs text-muted-foreground">
+                          {tDetail("bookedVariance", { n: signedQty(booked) })}
+                        </p>
+                      )}
                     </TableCell>
                     <TableCell>
-                      {variance !== null && variance < 0 ? (
+                      {needsCause ? (
                         <Select
                           value={effectiveCause(row) || "__none__"}
                           onValueChange={(v) => updateCause(row.key, v === "__none__" ? "" : (v as StoreStocktakeCauseValue))}
