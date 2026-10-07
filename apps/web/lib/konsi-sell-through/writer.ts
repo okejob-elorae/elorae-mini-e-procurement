@@ -7,6 +7,7 @@ import {
   isLineHeld,
   roundQty,
   SELL_THROUGH_RESOLUTIONS,
+  unabsorbedSurplusQty,
   type SellThroughMethodValue,
   type SellThroughResolutionValue,
 } from "./derive";
@@ -16,6 +17,7 @@ import { SellThroughError } from "./errors";
 import { priceSellThroughLines } from "./pricing";
 import { isInvoiceDateAllowed, dueDateFor } from "./invoice-dates";
 import { isSellThroughSalesmanCandidate } from "./salesman-candidates";
+import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 
 /* A UX bound on a free-text reason — all three columns (resolutionReason, baselineReason, cancelReason) are TEXT. The screens cap their inputs at the same figure. */
 const REASON_MAX_LENGTH = 1000;
@@ -266,6 +268,18 @@ export async function createSellThrough(input: {
       ? await tx.storeStock.findMany({ where: { storeId, itemId: { in: itemIds } }, select: { itemId: true, variantSku: true, avgCost: true } })
       : [];
     const avgCostByKey = new Map(stock.map((s) => [lineKey(s.itemId, s.variantSku), s.avgCost]));
+    /**
+     * A key with no store row, or a store average of 0, snapshots the main warehouse average for the
+     * same item::variant instead: konsi stock reaches a store at main's average cost, so it is the
+     * closest real cost, and no screen can set a store's average, so refusing here would wedge the
+     * report. Still 0 stays 0, and the approve dialog warns about it.
+     */
+    for (const l of lines) {
+      const key = lineKey(l.itemId, l.variantSku);
+      if (Number(avgCostByKey.get(key) ?? 0) > 0) continue;
+      const main = await findExistingInventoryValueRow(tx, l.itemId, l.variantSku);
+      if (main && Number(main.avgCost) > 0) avgCostByKey.set(key, main.avgCost);
+    }
     const stocktakeNameByKey = new Map(stocktake.lines.map((l) => [lineKey(l.itemId, l.variantSku), l.productName]));
 
     const docNo = await generateDocNumber("SELLTHRU", tx);
@@ -375,16 +389,22 @@ export async function resolveSellThroughLine(input: {
   });
 }
 
+/**
+ * `expectedTotal` is the total the admin was shown. The approve action always sends it; leaving it
+ * out skips the comparison, which only internal and fixture callers do.
+ */
 export type ApproveSellThroughInput =
-  | { id: string; approvedById: string; mode: "INVOICE"; invoiceDate: Date; salesmanId: string | null }
+  | { id: string; approvedById: string; mode: "INVOICE"; invoiceDate: Date; salesmanId: string | null; expectedTotal?: number }
   | { id: string; approvedById: string; mode: "BASELINE"; reason: string };
 
 /**
  * Freezes a DRAFT report — and approving IS invoicing. INVOICE mode prices every line at the
  * item's catalog selling price (the store keeps its markup), stamps the invoice date, the due date, the total and the salesman, and creates
- * the receivable and faktur when the total is above zero. BASELINE mode is for a store's first
+ * the receivable and faktur when the total is above zero. It also stores each line's `surplusQty`
+ * (`unabsorbedSurplusQty`), which the surplus journal values. BASELINE mode is for a store's first
  * report only: it freezes the figures with a reason and bills nothing, for a period already
- * invoiced by hand outside the ERP. Journals are posted by the action after commit, not here.
+ * invoiced by hand outside the ERP, and leaves `surplusQty` at 0. Journals are posted by the
+ * action after commit, not here.
  *
  * It moves no stock. Re-checks, in order: the store is still KONSI (`NOT_KONSI`), no retur and no
  * store transfer was in flight at the closing count (`RETUR_IN_FLIGHT`, `TRANSFER_IN_FLIGHT` — a
@@ -399,6 +419,12 @@ export type ApproveSellThroughInput =
  * remedy is cancel and recreate, never an in-place refresh, so an approved report always shows the
  * figures the admin actually reviewed. It runs BEFORE the hold, so an admin is never sent to
  * resolve lines on a report that has to be cancelled anyway.
+ *
+ * INVOICE mode then prices every line live and refuses, in order: `UNPRICED` (a billed line whose
+ * item has no selling price), `PRICE_CHANGED` when the caller sent the previewed `expectedTotal`
+ * and the live total differs from it to the cent (detail: the live total, so a selling price edited
+ * after the page loaded never invoices a figure the admin did not see; the remedy is to reload and
+ * approve again, no cancel), `INVALID_INVOICE_DATE`, `SALESMAN_REQUIRED` and `SALESMAN_INVALID`.
  */
 export async function approveSellThrough(input: ApproveSellThroughInput): Promise<{ ok: true; invoiced: boolean }> {
   return runSerializable(async (tx) => {
@@ -430,6 +456,7 @@ export async function approveSellThrough(input: ApproveSellThroughInput): Promis
             lateGapQty: true,
             resolution: true,
             billedQty: true,
+            shrinkageQty: true,
             item: { select: { sellingPrice: true } },
           },
         },
@@ -503,6 +530,9 @@ export async function approveSellThrough(input: ApproveSellThroughInput): Promis
       })),
     });
     if (pricing.unpricedKeys.length > 0) throw new SellThroughError("UNPRICED", pricing.unpricedKeys.join(","));
+    if (input.expectedTotal !== undefined && Math.round(pricing.total * 100) !== Math.round(input.expectedTotal * 100)) {
+      throw new SellThroughError("PRICE_CHANGED", String(pricing.total));
+    }
     if (!isInvoiceDateAllowed(input.invoiceDate, doc.periodEnd, approvedAt)) throw new SellThroughError("INVALID_INVOICE_DATE");
     if (pricing.total > 0 && input.salesmanId === null) throw new SellThroughError("SALESMAN_REQUIRED");
     if (input.salesmanId !== null && !(await isSellThroughSalesmanCandidate(tx, input.salesmanId))) {
@@ -525,9 +555,15 @@ export async function approveSellThrough(input: ApproveSellThroughInput): Promis
     if (flipped.count === 0) throw new SellThroughError("INVALID_STATE");
 
     for (const [i, l] of doc.lines.entries()) {
+      const surplusQty = unabsorbedSurplusQty({
+        posSoldQty: roundQty(l.posSoldQty.toNumber()),
+        gapQty: roundQty(l.gapQty.toNumber()),
+        billedQty: roundQty(l.billedQty.toNumber()),
+        shrinkageQty: roundQty(l.shrinkageQty.toNumber()),
+      });
       await tx.konsiSellThroughLine.update({
         where: { id: l.id },
-        data: { unitPrice: pricing.lines[i].unitPrice, lineTotal: pricing.lines[i].lineTotal },
+        data: { unitPrice: pricing.lines[i].unitPrice, lineTotal: pricing.lines[i].lineTotal, surplusQty },
       });
     }
 

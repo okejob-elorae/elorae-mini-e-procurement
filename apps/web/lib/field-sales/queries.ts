@@ -473,6 +473,7 @@ export type KonsiSuggestion = {
   name: string;
   variantLabel: string | null;
   available: number;
+  priceUnset: boolean;
 };
 
 /**
@@ -514,6 +515,7 @@ export async function listStoreNeverSentSuggestions(
       id: true,
       sku: true,
       nameId: true,
+      sellingPrice: true,
       variants: true,
       inventoryValues: { select: { variantSku: true, qtyOnHand: true, reservedQty: true, totalValue: true } },
     },
@@ -565,6 +567,7 @@ export async function listStoreNeverSentSuggestions(
       name: item.nameId,
       variantLabel: variantDetailForSku(item.variants, variantSku),
       available,
+      priceUnset: item.sellingPrice === null,
     }));
   return rows.sort((a, b) => a.sku.localeCompare(b.sku) || a.variantSku.localeCompare(b.variantSku));
 }
@@ -587,6 +590,7 @@ export type KonsiAssortmentGapSuggestion = {
   name: string;
   variantLabel: string | null;
   available: number;
+  priceUnset: boolean;
   targetQty: number | null;
   onHandQty: number;
   inTransitQty: number;
@@ -636,6 +640,7 @@ export async function listStoreGapSuggestions(
     where: { id: { in: itemIds }, isActive: true, type: "FINISHED_GOOD" },
     select: {
       id: true,
+      sellingPrice: true,
       variants: true,
       inventoryValues: { select: { variantSku: true, qtyOnHand: true, reservedQty: true, totalValue: true } },
     },
@@ -669,6 +674,7 @@ export async function listStoreGapSuggestions(
       name: gap.productName,
       variantLabel: variantDetailForSku(item.variants, gap.variantSku),
       available,
+      priceUnset: item.sellingPrice === null,
       targetQty: gap.targetQty,
       onHandQty: gap.onHandQty,
       inTransitQty: gap.inTransitQty,

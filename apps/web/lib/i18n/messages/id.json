@@ -2814,6 +2814,11 @@
         "noFullCount": "Belum ada perhitungan penuh yang disetujui"
       }
     },
+    "konsiPush": {
+      "cardTitle": "Kirim stok",
+      "button": "Kirim stok",
+      "description": "Kirim stok ke toko konsinyasi ini sebagai pesanan konsi yang sudah disetujui."
+    },
     "adminReturn": {
       "cardTitle": "Retur Admin ke Gudang",
       "description": "Ajukan penarikan stok toko ini ke gudang pusat langsung dari kantor. Foto nota dan info pengiriman dilengkapi nanti saat barang benar-benar dikirim.",
@@ -3480,6 +3485,8 @@
       "addLabel": "Tambah",
       "decreaseLabel": "Kurangi jumlah",
       "removeLabel": "Hapus",
+      "priceUnset": "Harga belum diset",
+      "priceUnsetNote": "Produk bertanda “Harga belum diset” tetap bisa dikirim, tetapi faktur sell-through-nya ditolak sampai harga jual diisi.",
       "empty": "Tidak ada produk yang bisa disarankan untuk toko ini.",
       "noMatch": "Tidak ada produk yang cocok dengan pencarian ini.",
       "approveSummary": "{count} produk baru akan ditambahkan ke transfer ini.",
@@ -3984,6 +3991,8 @@
     "invalidQty": "Isi angka bulat di atas 0.",
     "needSalesman": "Pilih salesman untuk melanjutkan.",
     "needLine": "Pilih minimal satu produk.",
+    "priceUnset": "Harga belum diset",
+    "priceUnsetNote": "Produk bertanda “Harga belum diset” tetap bisa dikirim, tetapi faktur sell-through-nya ditolak sampai harga jual diisi.",
     "qtyFor": "Jumlah untuk {product}",
     "err": {
       "NOT_FOUND": "Toko ini sudah tidak ada.",
@@ -3996,6 +4005,7 @@
       "UNKNOWN_ITEM": "{product} bukan lagi produk aktif.",
       "NO_INVENTORY": "{product} tidak dapat dikirim: tidak ada catatan stok gudang untuk varian tersebut.",
       "KEY_CONFLICT": "Pengiriman ini bentrok dengan yang lain. Muat ulang halaman dan coba lagi.",
+      "REPLAY_MISMATCH": "Percobaan sebelumnya sudah membuat pesanan {orderNo} dengan salesman, produk, atau jumlah yang berbeda. Buka pesanan itu untuk memeriksanya, atau muat ulang halaman ini untuk mengirim pengiriman baru.",
       "INSUFFICIENT_STOCK": "Stok gudang tidak cukup untuk: {products}.",
       "FORBIDDEN": "Anda tidak punya izin untuk mengirim stok.",
       "INVALID_REQUEST": "Ada isian yang tidak valid. Muat ulang dan coba lagi.",
@@ -4092,7 +4102,7 @@
       "button": "Setujui",
       "disabledHeld": "{n, plural, other {# baris}} perlu diselesaikan",
       "title": "Setujui laporan sell-through",
-      "confirmDescription": "Menyetujui akan menagihkan laporan ini: piutang dan faktur dibuat untuk total yang ditagih, lalu jurnalnya diposting. Total nol tidak membuat piutang maupun faktur, tetapi jurnal HPP dan susutnya tetap diposting bila biayanya tidak nol. Tidak ada stok yang bergerak.",
+      "confirmDescription": "Menyetujui akan menagihkan laporan ini: piutang dan faktur dibuat untuk total yang ditagih, lalu jurnalnya diposting. Total nol tidak membuat piutang maupun faktur, tetapi jurnal HPP, susut, dan surplusnya tetap diposting bila biayanya tidak nol. Tidak ada stok yang bergerak.",
       "baselineDescription": "Menyetujui sebagai baseline membekukan angka tanpa menagih: tidak ada piutang, faktur, maupun jurnal yang dibuat, dan laporan berikutnya dimulai dari angka akhir ini.",
       "modeLabel": "Jenis persetujuan",
       "modeInvoice": "Tagihkan",
@@ -4112,6 +4122,7 @@
       "salesmanRequiredHint": "Pilih siapa yang menagih tagihan ini ke toko.",
       "total": "Total ditagih",
       "unpriced": "{products} belum memiliki harga jual — atur harga jual barang, lalu muat ulang halaman ini untuk menyetujui.",
+      "uncosted": "{products} belum memiliki biaya tercatat, sehingga persetujuan ini membukukan HPP, susut, dan surplus nol untuk barang tersebut.",
       "confirmAction": "Setujui & Tagihkan",
       "confirmBaselineAction": "Setujui sebagai Baseline",
       "submitting": "Menyetujui…",
@@ -4215,6 +4226,7 @@
       "REASON_REQUIRED": "Alasan wajib diisi untuk resolusi ini.",
       "REASON_TOO_LONG": "Alasan terlalu panjang — maksimal 1.000 karakter.",
       "UNPRICED": "{products} belum memiliki harga jual — atur harga jual barang, lalu muat ulang halaman ini dan setujui kembali.",
+      "PRICE_CHANGED": "Total tagihan berubah sejak halaman ini dimuat — sekarang akan berjumlah {total}. Periksa laporannya, lalu setujui kembali.",
       "INVALID_INVOICE_DATE": "Tanggal tagihan harus berada di antara tanggal akhir periode dan hari ini.",
       "SALESMAN_REQUIRED": "Pilih sales yang menagih tagihan ini.",
       "SALESMAN_INVALID": "Sales tersebut sudah tidak bisa menagih. Pilih sales lain.",
@@ -5897,6 +5909,12 @@
     "formPassword": "Kata sandi",
     "formRole": "Peran",
     "formRolePlaceholder": "Pilih peran",
+    "formStore": "Toko penempatan",
+    "formStorePlaceholder": "Pilih toko",
+    "formStoreEmpty": "Toko tidak ditemukan",
+    "formStoreNone": "Tanpa toko",
+    "formStoreHint": "SPG bekerja di satu toko tetap; PWA langsung terbuka di toko itu.",
+    "formStoreInactiveSuffix": "(nonaktif)",
     "createAccountTitle": "Buat akun",
     "createAccountSubtitle": "Tambah login untuk backoffice atau PWA",
     "editAccountTitle": "Edit akun",
@@ -5916,7 +5934,10 @@
       "roleNotFound": "Peran tidak ditemukan",
       "userNotFound": "Pengguna tidak ditemukan",
       "lastAdmin": "Tidak dapat menurunkan akun admin terakhir",
-      "nameRequired": "Nama wajib diisi"
+      "nameRequired": "Nama wajib diisi",
+      "storeNotFound": "Toko tidak ditemukan",
+      "storeInactive": "Toko itu nonaktif",
+      "storeOnlyForSpg": "Hanya akun SPG yang bisa punya toko penempatan"
     }
   }
 }

@@ -169,6 +169,7 @@ export type SellThroughDetail = {
   storePaymentTempo: number;
   total: number | null;
   unpricedKeys: string[];
+  uncostedKeys: string[];
   invoiceDate: Date | null;
   dueDate: Date | null;
   salesmanId: string | null;
@@ -288,6 +289,13 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
           })),
         })
       : null;
+  /* DRAFT lines that bill or carry a gap at a zero unit cost: approving books no cost of goods, shrinkage or surplus for them, which the approve dialog warns about. */
+  const uncostedKeys =
+    doc.status === "DRAFT"
+      ? doc.lines
+          .filter((l) => l.unitCost.toNumber() === 0 && (roundQty(l.billedQty.toNumber()) > 0 || roundQty(l.gapQty.toNumber()) !== 0))
+          .map((l) => `${l.itemId}::${l.variantSku}`)
+      : [];
   const invoiced = doc.status === "APPROVED" && !doc.baseline;
   const [defaultSalesmanId, journalGaps] = await Promise.all([
     doc.status === "DRAFT" ? defaultSellThroughSalesmanId(doc.storeId) : Promise.resolve(null),
@@ -337,6 +345,7 @@ export async function getSellThrough(id: string): Promise<SellThroughDetail | nu
     storePaymentTempo: doc.store.paymentTempo,
     total: preview ? preview.total : doc.total === null ? null : Number(doc.total),
     unpricedKeys: preview?.unpricedKeys ?? [],
+    uncostedKeys,
     invoiceDate: doc.invoiceDate,
     dueDate: doc.dueDate,
     salesmanId: doc.salesmanId,

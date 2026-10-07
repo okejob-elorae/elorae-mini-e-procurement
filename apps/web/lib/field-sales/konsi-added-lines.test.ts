@@ -73,7 +73,7 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
     await prisma.inventoryValue.create({ data: { itemId: alreadySentItemId, variantSku: "", qtyOnHand: 50, reservedQty: 0, avgCost: 900, totalValue: 45000 } });
 
     const variantItem = await prisma.item.create({
-      data: { sku: `TEST-KAL-VAR-${token}`, nameId: "Variant item", nameEn: "Variant item", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 20000 },
+      data: { sku: `TEST-KAL-VAR-${token}`, nameId: "Variant item", nameEn: "Variant item", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 20000, variants: [{ sku: "RED" }, { sku: "BLUE" }] },
     });
     variantItemId = variantItem.id;
     await prisma.inventoryValue.create({ data: { itemId: variantItemId, variantSku: "RED", qtyOnHand: 20, reservedQty: 0, avgCost: 800, totalValue: 16000 } });
@@ -404,6 +404,30 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
     await expect(
       approveFieldSalesOrder({ orderId, approvedById: userId, addedLines: [{ itemId: neverSentItemId, variantSku: "GHOST-VARIANT", qty: 1 }] }),
     ).rejects.toMatchObject({ code: "NO_INVENTORY" });
+    const lines = await prisma.fieldSalesOrderLine.findMany({ where: { orderId: seededId(orderId) } });
+    expect(lines).toHaveLength(1);
+  });
+
+  it("refuses a pooled variantless line for an item with SKU variants, even when a pooled row exists", async () => {
+    await prisma.inventoryValue.create({ data: { itemId: variantItemId, variantSku: null, qtyOnHand: 10, reservedQty: 0, avgCost: 800, totalValue: 8000 } });
+
+    await expect(
+      approveFieldSalesOrder({ orderId, approvedById: userId, addedLines: [{ itemId: variantItemId, variantSku: "", qty: 1 }] }),
+    ).rejects.toMatchObject({ code: "NO_INVENTORY" });
+
+    const lines = await prisma.fieldSalesOrderLine.findMany({ where: { orderId: seededId(orderId) } });
+    expect(lines).toHaveLength(1);
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: seededId(orderId) }, select: { status: true } });
+    expect(order.status).toBe("PENDING_APPROVAL");
+  });
+
+  it("refuses a variantSku the item does not list, even with an InventoryValue row under that spelling", async () => {
+    await prisma.inventoryValue.create({ data: { itemId: variantItemId, variantSku: "GREEN", qtyOnHand: 10, reservedQty: 0, avgCost: 800, totalValue: 8000 } });
+
+    await expect(
+      approveFieldSalesOrder({ orderId, approvedById: userId, addedLines: [{ itemId: variantItemId, variantSku: "GREEN", qty: 1 }] }),
+    ).rejects.toMatchObject({ code: "NO_INVENTORY" });
+
     const lines = await prisma.fieldSalesOrderLine.findMany({ where: { orderId: seededId(orderId) } });
     expect(lines).toHaveLength(1);
   });

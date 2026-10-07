@@ -43,8 +43,8 @@ export function itemHasSkuVariants(variants: unknown): boolean {
 /**
  * True when a stock row can exist for this variant key on an item with these variant rows — a
  * variant item only stocks its own trimmed SKUs, and a variantless item only stocks the pooled
- * `""` key. Shared by the konsi push writer's refusal and the push page's own row filter, so the
- * two agree on which suggestion rows are stageable.
+ * `""` key. Shared by the konsi push and approve writers' refusals and by
+ * `filterStageableSuggestions`, so they agree on which suggestion rows are stageable.
  */
 export function isStockableVariantKey(variants: unknown, variantSku: string): boolean {
   if (!itemHasSkuVariants(variants)) return variantSku === "";

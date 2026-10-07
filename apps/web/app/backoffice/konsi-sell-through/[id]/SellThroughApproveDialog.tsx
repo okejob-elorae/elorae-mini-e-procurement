@@ -36,6 +36,7 @@ export function SellThroughApproveDialog({
   report,
   salesmanCandidates,
   onApproved,
+  onPriceChanged,
   describeError,
 }: {
   open: boolean;
@@ -43,6 +44,8 @@ export function SellThroughApproveDialog({
   report: SellThroughDetail;
   salesmanCandidates: Array<{ id: string; name: string }>;
   onApproved: () => void;
+  /* Called on a PRICE_CHANGED refusal so the page reloads the preview; the dialog stays open with the error and never retries on its own. */
+  onPriceChanged: () => void;
   describeError: (result: SellThroughActionFailure) => string;
 }) {
   const t = useTranslations("konsiSellThrough");
@@ -71,6 +74,8 @@ export function SellThroughApproveDialog({
   const effectiveMode: ApproveMode = canChooseBaseline ? mode : "INVOICE";
   const total = report.total ?? 0;
   const hasUnpriced = report.unpricedKeys.length > 0;
+  /* A warning only: a zero-cost line still approves, so this never feeds `submitDisabled`. */
+  const hasUncosted = report.uncostedKeys.length > 0;
   const salesmanRequired = total > 0;
   const noCandidates = salesmanCandidates.length === 0;
 
@@ -101,7 +106,14 @@ export function SellThroughApproveDialog({
     setError(null);
     const input = effectiveMode === "BASELINE"
       ? { id: report.id, mode: effectiveMode, reason: reason.trim() }
-      : { id: report.id, mode: effectiveMode, invoiceDate, salesmanId: salesmanId === "" ? null : salesmanId };
+      : {
+          id: report.id,
+          mode: effectiveMode,
+          invoiceDate,
+          salesmanId: salesmanId === "" ? null : salesmanId,
+          /* The total on screen; approve refuses PRICE_CHANGED if live pricing no longer matches it. */
+          expectedTotal: report.total ?? 0,
+        };
     startTransition(async () => {
       try {
         const result = await approveSellThroughAction(input);
@@ -111,6 +123,7 @@ export function SellThroughApproveDialog({
           return;
         }
         setError(describeError(result));
+        if (result.reason === "PRICE_CHANGED") onPriceChanged();
       } catch {
         setError(t("err.UNEXPECTED"));
       }
@@ -249,6 +262,18 @@ export function SellThroughApproveDialog({
                   {tApprove("unpriced", {
                     products: productNamesForKeys(report.lines, report.unpricedKeys),
                     n: report.unpricedKeys.length,
+                  })}
+                </p>
+              </div>
+            )}
+
+            {hasUncosted && (
+              <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <p className="min-w-0 break-words">
+                  {tApprove("uncosted", {
+                    products: productNamesForKeys(report.lines, report.uncostedKeys),
+                    n: report.uncostedKeys.length,
                   })}
                 </p>
               </div>

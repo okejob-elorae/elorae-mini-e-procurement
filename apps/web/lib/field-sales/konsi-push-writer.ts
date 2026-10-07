@@ -30,16 +30,41 @@ function isUniqueViolationOn(e: unknown, column: string): boolean {
   return `${e.message} ${JSON.stringify(e.meta ?? {})}`.includes(column);
 }
 
-/* A key already spent on another store, or on a salesman's own order, is never handed back as this push. */
-function replayOrConflict(
-  existing: { id: string; orderNo: string; storeId: string; origin: string },
-  storeId: string,
-): PushResult {
-  if (existing.storeId !== storeId || existing.origin !== "ADMIN") throw new KonsiPushError("KEY_CONFLICT");
+/**
+ * A key already spent on another store, or on a salesman's own order, is never handed back as
+ * this push. A key on this store's own push is a replay only when it carries the same salesman
+ * and the same lines (product, variant and qty, in any order); a changed retry is refused with
+ * the recorded order number rather than answered with an order that does not match what was sent.
+ * The note is not compared.
+ */
+function replayOrConflict(existing: ExistingPush, input: CreateKonsiPushOrderInput): PushResult {
+  if (existing.storeId !== input.storeId || existing.origin !== "ADMIN") throw new KonsiPushError("KEY_CONFLICT");
+  const lineKey = (l: { itemId: string; variantSku: string | null }) => `${l.itemId}::${l.variantSku ?? ""}`;
+  const recorded = new Map(existing.lines.map((l) => [lineKey(l), Number(l.qty)]));
+  const sent = new Map(input.lines.map((l) => [lineKey(l), Number(l.qty)]));
+  const sameLines = recorded.size === sent.size && existing.lines.length === input.lines.length
+    && Array.from(sent).every(([key, qty]) => recorded.get(key) === qty);
+  if (existing.salesmanId !== input.salesmanId || !sameLines) throw new KonsiPushError("REPLAY_MISMATCH", existing.orderNo);
   return { orderId: existing.id, orderNo: existing.orderNo };
 }
 
-const EXISTING_SELECT = { id: true, orderNo: true, storeId: true, origin: true } as const;
+const EXISTING_SELECT = {
+  id: true,
+  orderNo: true,
+  storeId: true,
+  origin: true,
+  salesmanId: true,
+  lines: { select: { itemId: true, variantSku: true, qty: true } },
+} as const;
+
+type ExistingPush = {
+  id: string;
+  orderNo: string;
+  storeId: string;
+  origin: string;
+  salesmanId: string | null;
+  lines: Array<{ itemId: string; variantSku: string | null; qty: unknown }>;
+};
 
 /**
  * An admin sends stock to a KONSI store without a salesman order: one serializable transaction
@@ -51,7 +76,8 @@ const EXISTING_SELECT = { id: true, orderNo: true, storeId: true, origin: true }
  *
  * Every check runs before the first write, and every refusal throws. A short line fails the whole
  * push with `InsufficientStockError`, leaving no order behind. The idempotency key is the caller's
- * to keep stable across retries of one submission; a replay returns the order it created. Two
+ * to keep stable across retries of one submission; a replay must carry the same salesman and lines and
+ * returns the order it created, while a changed one is refused with `REPLAY_MISMATCH`. Two
  * concurrent submissions of one key both return the order the first one committed: the loser's
  * unique violation is caught outside the transaction and answered with the winner.
  */
@@ -62,7 +88,7 @@ export async function createKonsiPushOrder(input: CreateKonsiPushOrderInput): Pr
         where: { idempotencyKey: input.idempotencyKey },
         select: EXISTING_SELECT,
       });
-      if (existing) return replayOrConflict(existing, input.storeId);
+      if (existing) return replayOrConflict(existing, input);
 
       const store = await tx.store.findUnique({ where: { id: input.storeId }, select: { termsType: true, isActive: true } });
       if (!store) throw new KonsiPushError("NOT_FOUND");
@@ -137,6 +163,6 @@ export async function createKonsiPushOrder(input: CreateKonsiPushOrderInput): Pr
       select: EXISTING_SELECT,
     });
     if (!winner) throw e;
-    return replayOrConflict(winner, input.storeId);
+    return replayOrConflict(winner, input);
   }
 }

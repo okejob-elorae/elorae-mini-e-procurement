@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId, type Prisma } from "@elorae/db";
-import { createSellThrough, resolveSellThroughLine, cancelSellThrough } from "./writer";
+import { createSellThrough, resolveSellThroughLine, cancelSellThrough, approveSellThrough } from "./writer";
 import { createSellThroughFixtures } from "./test-fixtures";
 import { approveStoreStocktake } from "@/lib/stores/stocktake/writer";
 
@@ -407,6 +407,51 @@ d("konsi sell-through writer (test bed only)", () => {
     expect(approved.status).toBe("APPROVED");
     expect(approved.approvedById).toBe(state.userId);
     expect(approved.approvedAt).not.toBeNull();
+  }, SLOW);
+
+  /* create — unit cost snapshot */
+
+  /* SHELF_COUNT, 6 transferred in and 2 counted: the approved closing count a report bills 4 from. */
+  async function shelfCountStocktake() {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    return count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
+  }
+
+  const setStoreAvgCost = (avgCost: number) =>
+    prisma.storeStock.updateMany({ where: { storeId: seededId(state.storeId), itemId: seededId(state.itemId) }, data: { avgCost } });
+  const setMainAvgCost = (avgCost: number) =>
+    prisma.inventoryValue.updateMany({ where: { itemId: seededId(state.itemId) }, data: { avgCost } });
+
+  it("a line whose store average is 0 snapshots the main warehouse average instead", async () => {
+    const stocktakeId = await shelfCountStocktake();
+    await setStoreAvgCost(0);
+    await setMainAvgCost(12000);
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+    expect(Number((await onlyLine(id)).unitCost)).toBe(12000);
+  }, SLOW);
+
+  it("a line with no store stock row snapshots the main warehouse average", async () => {
+    const stocktakeId = await shelfCountStocktake();
+    await prisma.storeStock.deleteMany({ where: { storeId: seededId(state.storeId), itemId: seededId(state.itemId) } });
+    await setMainAvgCost(12000);
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+    expect(Number((await onlyLine(id)).unitCost)).toBe(12000);
+  }, SLOW);
+
+  it("a non-zero store average wins over the main warehouse average", async () => {
+    const stocktakeId = await shelfCountStocktake();
+    await setMainAvgCost(12000);
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+    expect(Number((await onlyLine(id)).unitCost)).toBe(10000);
+  }, SLOW);
+
+  it("a line stays at unit cost 0 when neither the store nor the main warehouse has an average", async () => {
+    const stocktakeId = await shelfCountStocktake();
+    await setStoreAvgCost(0);
+    await setMainAvgCost(0);
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+    expect(Number((await onlyLine(id)).unitCost)).toBe(0);
   }, SLOW);
 
   /* SPG_POS — hold and resolution */
@@ -894,6 +939,25 @@ d("konsi sell-through writer (test bed only)", () => {
       expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id } })).status).toBe("DRAFT");
     }, SLOW);
 
+    it("refuses PRICE_CHANGED, naming the live total, when the expected total is off by a cent; the matching total approves", async () => {
+      const { id } = await buildShelfCountReportBilling4();
+      const invoice = (expectedTotal: number) =>
+        approveSellThrough({ id, approvedById: state.userId, mode: "INVOICE", invoiceDate: new Date(), salesmanId: state.salesmanId, expectedTotal });
+
+      await expect(invoice(159999.99)).rejects.toMatchObject({ code: "PRICE_CHANGED", detail: "160000" });
+      expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id } })).status).toBe("DRAFT");
+      expect(await prisma.receivable.count({ where: { sellThroughId: id } })).toBe(0);
+
+      await expect(invoice(160000)).resolves.toEqual({ ok: true, invoiced: true });
+    }, SLOW);
+
+    it("an approve with no expected total skips the comparison", async () => {
+      const { id } = await buildShelfCountReportBilling4();
+      await prisma.item.update({ where: { id: state.itemId }, data: { sellingPrice: 45000 } });
+      await expect(fx.approve(id)).resolves.toEqual({ ok: true, invoiced: true });
+      expect(Number((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id } })).total)).toBe(180000);
+    }, SLOW);
+
     it("a double approve creates exactly one receivable and one faktur", async () => {
       const { id } = await buildShelfCountReportBilling4();
       const results = await Promise.allSettled([fx.approve(id), fx.approve(id)]);
@@ -911,6 +975,31 @@ d("konsi sell-through writer (test bed only)", () => {
       expect(doc.lines[0].unitPrice).toBeNull();
       expect(doc.receivable).toBeNull();
       expect(doc.taxInvoice).toBeNull();
+    }, SLOW);
+
+    it("stores a BILL_POS-resolved surplus line's unabsorbed units as surplusQty", async () => {
+      /* SPG_POS: 2 in, POS 0, counted 5 → gap −3; BILL_POS bills the 0 sold, so all 3 units are unabsorbed. */
+      await setMethod("SPG_POS");
+      await transferIn(2);
+      const stocktakeId = await count(5, { reason: "three extra units found" });
+      const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+      const line = await onlyLine(id);
+      expect(Number(line.gapQty)).toBe(-3);
+      expect(Number(line.surplusQty)).toBe(0);
+      await resolveSellThroughLine({ lineId: line.id, resolution: "BILL_POS", reason: null, userId: state.userId });
+      await fx.approve(id, { salesmanId: null });
+      expect(Number((await onlyLine(id)).surplusQty)).toBe(3);
+    }, SLOW);
+
+    it("baseline: leaves surplusQty at 0 on a surplus line", async () => {
+      /* SHELF_COUNT: 2 in, counted 5 → gap −3, billed clamped at 0 — invoiced, this would store 3. */
+      await setMethod("SHELF_COUNT");
+      await transferIn(2);
+      const stocktakeId = await count(5, { reason: "three extra units found" });
+      const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+      expect(Number((await onlyLine(id)).gapQty)).toBe(-3);
+      await fx.approveBaseline(id);
+      expect(Number((await onlyLine(id)).surplusQty)).toBe(0);
     }, SLOW);
 
     it("baseline: refused BASELINE_NOT_FIRST on a store's second report, and the second report opens from the baseline's closing", async () => {

@@ -7,6 +7,7 @@ import {
   postSellThroughRevenueJournal,
   postSellThroughCogsJournal,
   postSellThroughShrinkageJournal,
+  postSellThroughSurplusJournal,
   postSellThroughVoidJournal,
   sellThroughJournalGaps,
 } from "./journal";
@@ -92,8 +93,10 @@ d("konsi sell-through journals (test bed only)", () => {
         { billedQty: 4, shrinkageQty: 0, unitCost: 10000 },
         { billedQty: 1.5, shrinkageQty: 2, unitCost: 333.34 },
       ]),
-    ).toEqual({ cogs: 40500.01, shrinkage: 666.68 });
+    ).toEqual({ cogs: 40500.01, shrinkage: 666.68, surplus: 0 });
     /* 1.5 × 333.34 = 500.01 → cogs 40500.01; 2 × 333.34 = 666.68 (values chosen off the half-cent boundary) */
+    /* A line with no `surplusQty` (every report from before the surplus journal) adds 0; 3 × 333.34 = 1000.02. */
+    expect(sellThroughCostTotals([{ billedQty: 0, shrinkageQty: 0, surplusQty: 3, unitCost: 333.34 }]).surplus).toBe(1000.02);
   });
 
   it("posts revenue Dr AR / Cr SALES_REVENUE for the total and COGS Dr COGS / Cr INVENTORY at unit cost, dated on the invoice date", async () => {
@@ -128,7 +131,7 @@ d("konsi sell-through journals (test bed only)", () => {
     expect(Number(cogsJournal!.lines.find((l) => l.chartAccountId === inventoryId)!.credit)).toBe(40000);
   }, SLOW);
 
-  it("returns NOTHING_TO_POST for shrinkage when nothing shrank, and for all three on a baseline report", async () => {
+  it("returns NOTHING_TO_POST for shrinkage and surplus when there is none, and for every kind on a baseline report", async () => {
     /**
      * The store's first report bills 4 of 6 and is approved as a baseline, so a billed amount
      * exists and only the baseline guard stops the posters.
@@ -143,6 +146,7 @@ d("konsi sell-through journals (test bed only)", () => {
     await expect(postSellThroughRevenueJournal(baselineId, state.userId)).resolves.toMatchObject({ ok: false, code: "NOTHING_TO_POST" });
     await expect(postSellThroughCogsJournal(baselineId, state.userId)).resolves.toMatchObject({ ok: false, code: "NOTHING_TO_POST" });
     await expect(postSellThroughShrinkageJournal(baselineId, state.userId)).resolves.toMatchObject({ ok: false, code: "NOTHING_TO_POST" });
+    await expect(postSellThroughSurplusJournal(baselineId, state.userId)).resolves.toMatchObject({ ok: false, code: "NOTHING_TO_POST" });
     expect(await sellThroughJournalGaps(baselineId)).toEqual([]);
 
     /* The second report of the chain bills a real amount but shrinks nothing (SHELF_COUNT never carries a shrinkageQty). */
@@ -153,6 +157,54 @@ d("konsi sell-through journals (test bed only)", () => {
     reportIds.push(id);
     await fx.approve(id);
     await expect(postSellThroughShrinkageJournal(id, state.userId)).resolves.toMatchObject({ ok: false, code: "NOTHING_TO_POST" });
+    /* A shortfall billed in full leaves no surplus behind. */
+    expect(Number((await onlyLine(id)).surplusQty)).toBe(0);
+    await expect(postSellThroughSurplusJournal(id, state.userId)).resolves.toMatchObject({ ok: false, code: "NOTHING_TO_POST" });
+  }, SLOW);
+
+  /**
+   * SPG_POS: 2 in, POS 0, counted 5 → gap −3, resolved BILL_POS → billed 0, shrinkage 0, so all
+   * three surplus units are unabsorbed. Approved with no salesman, since the total is 0.
+   */
+  async function approvedSurplusReport() {
+    await setMethod("SPG_POS");
+    await transferIn(2);
+    const stocktakeId = await count(5, { reason: "three extra units found" });
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+    reportIds.push(id);
+    const line = await onlyLine(id);
+    expect(Number(line.gapQty)).toBe(-3);
+    await resolveSellThroughLine({ lineId: line.id, resolution: "BILL_POS", reason: null, userId: state.userId });
+    await fx.approve(id, { salesmanId: null });
+    return id;
+  }
+
+  it("a resolved surplus owes a surplus journal Dr INVENTORY / Cr INVENTORY_VARIANCE at unit cost, dated on the invoice date", async () => {
+    const id = await approvedSurplusReport();
+    const line = await onlyLine(id);
+    expect(Number(line.billedQty)).toBe(0);
+    expect(Number(line.surplusQty)).toBe(3);
+    const unitCost = Number(line.unitCost);
+    expect(unitCost).toBeGreaterThan(0);
+    const value = 3 * unitCost;
+
+    expect(await sellThroughJournalGaps(id)).toEqual(["konsi_sell_through_surplus"]);
+    await expect(postSellThroughSurplusJournal(id, state.userId)).resolves.toMatchObject({ ok: true, created: true });
+
+    const doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } });
+    const journal = await prisma.journal.findUniqueOrThrow({
+      where: { sourceType_sourceId: { sourceType: "KONSI_SELLTHRU_SURPLUS", sourceId: id } },
+      include: { lines: true },
+    });
+    expect(journal.date.toISOString()).toBe(doc.invoiceDate!.toISOString());
+    expect(journal.lines).toHaveLength(2);
+    const inventoryLine = journal.lines.find((l) => l.chartAccountId === inventoryId)!;
+    const varianceLine = journal.lines.find((l) => l.chartAccountId === inventoryVarianceId)!;
+    expect(Number(inventoryLine.debit)).toBe(value);
+    expect(Number(inventoryLine.credit)).toBe(0);
+    expect(Number(varianceLine.credit)).toBe(value);
+    expect(Number(varianceLine.debit)).toBe(0);
+    expect(await sellThroughJournalGaps(id)).toEqual([]);
   }, SLOW);
 
   it("a report billing 0 with shrinkage posts only its shrinkage journal", async () => {
@@ -347,6 +399,33 @@ d("konsi sell-through journals (test bed only)", () => {
       await prisma.journal.deleteMany({ where: { sourceType: "KONSI_SELLTHRU_COGS", sourceId: seededId(id) } });
       await expect(postSellThroughCogsJournal(id, state.userId)).resolves.toEqual({ ok: false, code: "NOTHING_TO_POST" });
       expect(await sellThroughJournalGaps(id)).toEqual([]);
+    }, SLOW);
+
+    it("a voided report whose surplus journal posted owes its reversal, which mirrors it", async () => {
+      const id = await approvedSurplusReport();
+      await postSellThroughSurplusJournal(id, state.userId);
+      await voidSellThrough({ id, voidedById: state.userId, reason: "wrong count" });
+
+      expect(await sellThroughJournalGaps(id)).toEqual(["konsi_sell_through_surplus_void"]);
+      await expect(postSellThroughVoidJournal("konsi_sell_through_surplus_void", id, state.userId)).resolves.toMatchObject({
+        ok: true,
+        created: true,
+      });
+      const o = await linesOf("KONSI_SELLTHRU_SURPLUS", id);
+      const r = await linesOf("KONSI_SELLTHRU_SURPLUS_VOID", id);
+      expect(r.date.getTime()).toBe(o.date.getTime());
+      expect(r.lines).toEqual(o.lines.map((l) => ({ acc: l.acc, dr: l.cr, cr: l.dr })));
+      expect(await sellThroughJournalGaps(id)).toEqual([]);
+    }, SLOW);
+
+    it("a voided report whose surplus original never posted owes no surplus reversal", async () => {
+      const id = await approvedSurplusReport();
+      await voidSellThrough({ id, voidedById: state.userId, reason: "wrong count" });
+      expect(await sellThroughJournalGaps(id)).toEqual([]);
+      await expect(postSellThroughVoidJournal("konsi_sell_through_surplus_void", id, state.userId)).resolves.toEqual({
+        ok: false,
+        code: "NOTHING_TO_POST",
+      });
     }, SLOW);
 
     it("a voided baseline owes nothing", async () => {

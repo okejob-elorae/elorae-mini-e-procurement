@@ -8,6 +8,7 @@ import {
   type KonsiSuggestion,
   type KonsiAssortmentGapSuggestion,
 } from "@/lib/field-sales/queries";
+import { filterStageableSuggestions } from "@/lib/field-sales/stageable-suggestions";
 import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
 import { listShipmentsForOrder, type OrderShipmentSummary } from "@/lib/delivery/shipment-queries";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
@@ -72,6 +73,14 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
       konsiAssortmentGaps = gapsResult.value;
     } else {
       console.error("[field-sales-orders] listKonsiAssortmentGaps failed", { orderId: id, error: gapsResult.reason });
+    }
+    /* Same predicate the approve writer enforces, so the panel never offers a row it will refuse. */
+    try {
+      [konsiAssortmentGaps, konsiSuggestions] = await filterStageableSuggestions(konsiAssortmentGaps, konsiSuggestions);
+    } catch (error) {
+      console.error("[field-sales-orders] filterStageableSuggestions failed", { orderId: id, error });
+      konsiAssortmentGaps = [];
+      konsiSuggestions = [];
     }
   }
 

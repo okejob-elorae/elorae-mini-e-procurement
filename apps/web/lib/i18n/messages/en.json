@@ -2814,6 +2814,11 @@
         "noFullCount": "No approved full count yet"
       }
     },
+    "konsiPush": {
+      "cardTitle": "Send stock",
+      "button": "Send stock",
+      "description": "Send stock to this consignment store as an approved konsi order."
+    },
     "adminReturn": {
       "cardTitle": "Admin Return to Warehouse",
       "description": "Raise a pull-back of this store's stock to the main warehouse straight from the office. The nota photo and shipping details are filled in later, once the goods actually ship.",
@@ -3480,6 +3485,8 @@
       "addLabel": "Add",
       "decreaseLabel": "Decrease quantity",
       "removeLabel": "Remove",
+      "priceUnset": "Price not set",
+      "priceUnsetNote": "Products tagged “Price not set” can still be sent, but their sell-through invoice is refused until a selling price is set.",
       "empty": "No products can be suggested for this store.",
       "noMatch": "No products match this search.",
       "approveSummary": "{count} new product(s) will be added to this transfer.",
@@ -3984,6 +3991,8 @@
     "invalidQty": "Enter a whole number above 0.",
     "needSalesman": "Choose a salesman to continue.",
     "needLine": "Select at least one product.",
+    "priceUnset": "Price not set",
+    "priceUnsetNote": "Products tagged “Price not set” can still be sent, but their sell-through invoice is refused until a selling price is set.",
     "qtyFor": "Quantity for {product}",
     "err": {
       "NOT_FOUND": "This store no longer exists.",
@@ -3996,6 +4005,7 @@
       "UNKNOWN_ITEM": "{product} is no longer an active product.",
       "NO_INVENTORY": "{product} can't be sent: it has no warehouse stock record for that variant.",
       "KEY_CONFLICT": "This submission clashed with another. Reload the page and try again.",
+      "REPLAY_MISMATCH": "An earlier attempt already created order {orderNo} with a different salesman, products or quantities. Open that order to check it, or reload this page to send a new push.",
       "INSUFFICIENT_STOCK": "Not enough stock at the warehouse for: {products}.",
       "FORBIDDEN": "You do not have permission to send stock.",
       "INVALID_REQUEST": "Something in the form is invalid. Reload and try again.",
@@ -4092,7 +4102,7 @@
       "button": "Approve",
       "disabledHeld": "{n, plural, one {# line needs} other {# lines need}} a resolution",
       "title": "Approve sell-through report",
-      "confirmDescription": "Approving invoices this report: it creates the receivable and faktur for the billed total and posts the journals. A zero total creates no receivable or faktur, but its COGS and shrinkage journals still post wherever their cost is not zero. It moves no stock.",
+      "confirmDescription": "Approving invoices this report: it creates the receivable and faktur for the billed total and posts the journals. A zero total creates no receivable or faktur, but its COGS, shrinkage and surplus journals still post wherever their cost is not zero. It moves no stock.",
       "baselineDescription": "Approving as a baseline freezes the figures without invoicing: no receivable, faktur or journal is created, and the next report opens from these closing figures.",
       "modeLabel": "Approval type",
       "modeInvoice": "Invoice",
@@ -4112,6 +4122,7 @@
       "salesmanRequiredHint": "Choose who collects this invoice from the store.",
       "total": "Billed total",
       "unpriced": "{products} {n, plural, one {has} other {have}} no selling price — set the item's selling price, then reload this page to approve.",
+      "uncosted": "{products} {n, plural, one {has} other {have}} no recorded cost, so approving books zero cost of goods, shrinkage and surplus for {n, plural, one {it} other {them}}.",
       "confirmAction": "Approve & Invoice",
       "confirmBaselineAction": "Approve as Baseline",
       "submitting": "Approving…",
@@ -4215,6 +4226,7 @@
       "REASON_REQUIRED": "A reason is required for this resolution.",
       "REASON_TOO_LONG": "The reason is too long — keep it to 1,000 characters or fewer.",
       "UNPRICED": "{products} {n, plural, one {has} other {have}} no selling price — set the item's selling price, then reload this page and approve again.",
+      "PRICE_CHANGED": "The invoice total changed since this page loaded — it would now total {total}. Review the report and approve again.",
       "INVALID_INVOICE_DATE": "The invoice date must fall between the period's end date and today.",
       "SALESMAN_REQUIRED": "Choose the salesperson who collects this invoice.",
       "SALESMAN_INVALID": "That salesperson can no longer collect invoices. Choose another one.",
@@ -5897,6 +5909,12 @@
     "formPassword": "Password",
     "formRole": "Role",
     "formRolePlaceholder": "Select a role",
+    "formStore": "Assigned store",
+    "formStorePlaceholder": "Select a store",
+    "formStoreEmpty": "No stores found",
+    "formStoreNone": "No store",
+    "formStoreHint": "An SPG works at one fixed store; the PWA opens on that store.",
+    "formStoreInactiveSuffix": "(inactive)",
     "createAccountTitle": "Create account",
     "createAccountSubtitle": "Add a login for backoffice or PWA",
     "editAccountTitle": "Edit account",
@@ -5916,7 +5934,10 @@
       "roleNotFound": "Role not found",
       "userNotFound": "User not found",
       "lastAdmin": "Cannot demote the last admin account",
-      "nameRequired": "Name is required"
+      "nameRequired": "Name is required",
+      "storeNotFound": "Store not found",
+      "storeInactive": "That store is inactive",
+      "storeOnlyForSpg": "Only SPG accounts can have an assigned store"
     }
   }
 }

@@ -7,6 +7,7 @@ const {
   mockUserUpdate,
   mockUserCount,
   mockRoleFindUnique,
+  mockStoreFindUnique,
   mockRevalidatePath,
   mockBcryptHash,
 } = vi.hoisted(() => ({
@@ -16,6 +17,7 @@ const {
   mockUserUpdate: vi.fn(),
   mockUserCount: vi.fn(),
   mockRoleFindUnique: vi.fn(),
+  mockStoreFindUnique: vi.fn(),
   mockRevalidatePath: vi.fn(),
   mockBcryptHash: vi.fn(),
 }));
@@ -40,6 +42,9 @@ vi.mock("@elorae/db", () => ({
     roleDefinition: {
       findUnique: mockRoleFindUnique,
       findMany: vi.fn(),
+    },
+    store: {
+      findUnique: mockStoreFindUnique,
     },
   },
 }));
@@ -101,6 +106,75 @@ describe("createAccount", () => {
     });
   });
 
+  it("creates an SPG with an active assigned store", async () => {
+    mockRoleFindUnique.mockResolvedValue({ id: "role-spg", name: "SPG" });
+    mockStoreFindUnique.mockResolvedValue({ id: "store-1", isActive: true });
+    mockUserFindUnique.mockResolvedValue(null);
+    mockUserCreate.mockResolvedValue({ id: "new-3" });
+
+    const r = await createAccount({
+      name: "Spg",
+      email: "spg@x.com",
+      password: "secret1",
+      roleId: "role-spg",
+      assignedStoreId: "store-1",
+    });
+
+    expect(r).toEqual({ ok: true, id: "new-3" });
+    expect(mockUserCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ assignedStoreId: "store-1" }),
+      }),
+    );
+  });
+
+  it("refuses an SPG whose store does not exist", async () => {
+    mockRoleFindUnique.mockResolvedValue({ id: "role-spg", name: "SPG" });
+    mockStoreFindUnique.mockResolvedValue(null);
+
+    const r = await createAccount({
+      name: "Spg",
+      email: "spg@x.com",
+      password: "secret1",
+      roleId: "role-spg",
+      assignedStoreId: "store-x",
+    });
+
+    expect(r).toEqual({ ok: false, code: "storeNotFound" });
+    expect(mockUserCreate).not.toHaveBeenCalled();
+  });
+
+  it("refuses an SPG whose store is inactive", async () => {
+    mockRoleFindUnique.mockResolvedValue({ id: "role-spg", name: "SPG" });
+    mockStoreFindUnique.mockResolvedValue({ id: "store-1", isActive: false });
+
+    const r = await createAccount({
+      name: "Spg",
+      email: "spg@x.com",
+      password: "secret1",
+      roleId: "role-spg",
+      assignedStoreId: "store-1",
+    });
+
+    expect(r).toEqual({ ok: false, code: "storeInactive" });
+    expect(mockUserCreate).not.toHaveBeenCalled();
+  });
+
+  it("refuses a store on a non-SPG role", async () => {
+    mockRoleFindUnique.mockResolvedValue({ id: "role-sales", name: "SALESMAN" });
+
+    const r = await createAccount({
+      name: "Sam",
+      email: "sam@x.com",
+      password: "secret1",
+      roleId: "role-sales",
+      assignedStoreId: "store-1",
+    });
+
+    expect(r).toEqual({ ok: false, code: "storeOnlyForSpg" });
+    expect(mockUserCreate).not.toHaveBeenCalled();
+  });
+
   it("syncs legacy ADMIN when RoleDefinition is ADMIN", async () => {
     mockRoleFindUnique.mockResolvedValue({ id: "role-admin", name: "ADMIN" });
     mockUserFindUnique.mockResolvedValue(null);
@@ -156,8 +230,140 @@ describe("updateAccount", () => {
         name: "Sam",
         role: "USER",
         roleId: "role-sales",
+        assignedStoreId: null,
       },
     });
+  });
+
+  it("assigns a new active store when the role is SPG", async () => {
+    mockUserFindUnique.mockResolvedValue({
+      id: "u-1",
+      role: "USER",
+      assignedStoreId: null,
+    });
+    mockRoleFindUnique.mockResolvedValue({ id: "role-spg", name: "SPG" });
+    mockStoreFindUnique.mockResolvedValue({ id: "store-1", isActive: true });
+    mockUserUpdate.mockResolvedValue({});
+
+    const r = await updateAccount({
+      userId: "u-1",
+      name: "Spg",
+      roleId: "role-spg",
+      assignedStoreId: "store-1",
+    });
+
+    expect(r).toEqual({ ok: true, id: "u-1" });
+    expect(mockUserUpdate).toHaveBeenCalledWith({
+      where: { id: "u-1" },
+      data: {
+        name: "Spg",
+        role: "USER",
+        roleId: "role-spg",
+        assignedStoreId: "store-1",
+      },
+    });
+  });
+
+  it("allows keeping an SPG's current store after it went inactive", async () => {
+    mockUserFindUnique.mockResolvedValue({
+      id: "u-1",
+      role: "USER",
+      assignedStoreId: "store-old",
+    });
+    mockRoleFindUnique.mockResolvedValue({ id: "role-spg", name: "SPG" });
+    mockStoreFindUnique.mockResolvedValue({ id: "store-old", isActive: false });
+    mockUserUpdate.mockResolvedValue({});
+
+    const r = await updateAccount({
+      userId: "u-1",
+      name: "Spg",
+      roleId: "role-spg",
+      assignedStoreId: "store-old",
+    });
+
+    expect(r).toEqual({ ok: true, id: "u-1" });
+    expect(mockUserUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ assignedStoreId: "store-old" }),
+      }),
+    );
+  });
+
+  it("refuses moving an SPG onto an inactive store", async () => {
+    mockUserFindUnique.mockResolvedValue({
+      id: "u-1",
+      role: "USER",
+      assignedStoreId: "store-old",
+    });
+    mockRoleFindUnique.mockResolvedValue({ id: "role-spg", name: "SPG" });
+    mockStoreFindUnique.mockResolvedValue({ id: "store-2", isActive: false });
+
+    const r = await updateAccount({
+      userId: "u-1",
+      name: "Spg",
+      roleId: "role-spg",
+      assignedStoreId: "store-2",
+    });
+
+    expect(r).toEqual({ ok: false, code: "storeInactive" });
+    expect(mockUserUpdate).not.toHaveBeenCalled();
+  });
+
+  it("leaves the store unchanged for an SPG when the field is omitted", async () => {
+    mockUserFindUnique.mockResolvedValue({
+      id: "u-1",
+      role: "USER",
+      assignedStoreId: "store-old",
+    });
+    mockRoleFindUnique.mockResolvedValue({ id: "role-spg", name: "SPG" });
+    mockUserUpdate.mockResolvedValue({});
+
+    await updateAccount({ userId: "u-1", name: "Spg", roleId: "role-spg" });
+
+    const call = mockUserUpdate.mock.calls[0][0];
+    expect(call.data).not.toHaveProperty("assignedStoreId");
+  });
+
+  it("clears the store for an SPG when null is sent", async () => {
+    mockUserFindUnique.mockResolvedValue({
+      id: "u-1",
+      role: "USER",
+      assignedStoreId: "store-old",
+    });
+    mockRoleFindUnique.mockResolvedValue({ id: "role-spg", name: "SPG" });
+    mockUserUpdate.mockResolvedValue({});
+
+    await updateAccount({
+      userId: "u-1",
+      name: "Spg",
+      roleId: "role-spg",
+      assignedStoreId: null,
+    });
+
+    expect(mockUserUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ assignedStoreId: null }),
+      }),
+    );
+  });
+
+  it("refuses a store on a non-SPG role", async () => {
+    mockUserFindUnique.mockResolvedValue({
+      id: "u-1",
+      role: "USER",
+      assignedStoreId: null,
+    });
+    mockRoleFindUnique.mockResolvedValue({ id: "role-sales", name: "SALESMAN" });
+
+    const r = await updateAccount({
+      userId: "u-1",
+      name: "Sam",
+      roleId: "role-sales",
+      assignedStoreId: "store-1",
+    });
+
+    expect(r).toEqual({ ok: false, code: "storeOnlyForSpg" });
+    expect(mockUserUpdate).not.toHaveBeenCalled();
   });
 
   it("refuses demoting the last ADMIN", async () => {

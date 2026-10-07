@@ -159,7 +159,8 @@ export type KonsiPushErrorCode =
   | "DUPLICATE"
   | "UNKNOWN_ITEM"
   | "NO_INVENTORY"
-  | "KEY_CONFLICT";
+  | "KEY_CONFLICT"
+  | "REPLAY_MISMATCH";
 
 export class KonsiPushError extends Error {
   constructor(

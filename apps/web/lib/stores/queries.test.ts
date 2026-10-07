@@ -94,6 +94,17 @@ d("updateStore KONSI → PUTUS guard (test bed only)", () => {
     expect(stillKonsi?.termsType).toBe("KONSI");
   });
 
+  it("leaves the store row untouched when the switch is refused", async () => {
+    const before = await prisma.store.findUnique({ where: { id: laggingStoreId }, select: { termsType: true, name: true, updatedAt: true } });
+
+    await expect(
+      updateStore(laggingStoreId, { ...baseFields(`TEST-SQ-LAG-${token}`), name: "Changed by a refused switch" }),
+    ).rejects.toBeInstanceOf(StoreHasConsignmentStockError);
+
+    const after = await prisma.store.findUnique({ where: { id: laggingStoreId }, select: { termsType: true, name: true, updatedAt: true } });
+    expect(after).toEqual(before);
+  });
+
   it("allows KONSI → PUTUS once the StoreStock row nets to zero", async () => {
     const result = await updateStore(clearedStoreId, baseFields(`TEST-SQ-CLR-${token}`));
     expect(result.termsType).toBe("PUTUS");

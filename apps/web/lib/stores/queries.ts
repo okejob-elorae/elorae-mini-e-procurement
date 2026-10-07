@@ -1,4 +1,5 @@
 import { prisma, Prisma } from "@elorae/db";
+import { runSerializable } from "@/lib/db/tx-retry";
 import { isValidMarkupPercent, MARKUP_PERCENT_MAX } from "@elorae/db/pricing";
 
 export type StoreFields = {
@@ -308,61 +309,63 @@ export async function updateStore(id: string, rawInput: StoreFields): Promise<St
   assertValidPriceDiscount(input);
   assertValidSellThroughMethod(input);
 
-  if (input.termsType === "PUTUS") {
-    const current = await prisma.store.findUnique({ where: { id }, select: { termsType: true } });
-    if (current?.termsType === "KONSI") {
-      const draftSellThrough = await prisma.konsiSellThrough.findFirst({
-        where: { storeId: id, status: "DRAFT" },
-        select: { id: true },
-      });
-      if (draftSellThrough) throw new StoreHasDraftSellThroughError(id);
+  return runSerializable(async (tx) => {
+    if (input.termsType === "PUTUS") {
+      const current = await tx.store.findUnique({ where: { id }, select: { termsType: true } });
+      if (current?.termsType === "KONSI") {
+        const draftSellThrough = await tx.konsiSellThrough.findFirst({
+          where: { storeId: id, status: "DRAFT" },
+          select: { id: true },
+        });
+        if (draftSellThrough) throw new StoreHasDraftSellThroughError(id);
 
-      const strandedStock = await prisma.storeStock.findFirst({
-        where: { storeId: id, qty: { not: 0 } },
-        select: { id: true },
-      });
-      if (strandedStock) throw new StoreHasConsignmentStockError(id);
+        const strandedStock = await tx.storeStock.findFirst({
+          where: { storeId: id, qty: { not: 0 } },
+          select: { id: true },
+        });
+        if (strandedStock) throw new StoreHasConsignmentStockError(id);
 
-      const pendingKonsi = await prisma.fieldSalesOrder.findFirst({
-        where: { storeId: id, orderType: "KONSI", status: "PENDING_APPROVAL" },
-        select: { id: true },
-      });
-      if (pendingKonsi) throw new StoreHasConsignmentStockError(id);
+        const pendingKonsi = await tx.fieldSalesOrder.findFirst({
+          where: { storeId: id, orderType: "KONSI", status: "PENDING_APPROVAL" },
+          select: { id: true },
+        });
+        if (pendingKonsi) throw new StoreHasConsignmentStockError(id);
 
-      /* Prisma cannot compare columns, so the open remainder is summed in JS. */
-      const approvedKonsiLines = await prisma.fieldSalesOrderLine.findMany({
-        where: { order: { storeId: id, orderType: "KONSI", status: "APPROVED" } },
-        select: { qty: true, deliveredQty: true, cancelledQty: true },
-      });
-      const openKonsiQty = approvedKonsiLines.reduce(
-        (sum, l) => sum + Math.max(l.qty - l.deliveredQty - l.cancelledQty, 0),
-        0,
-      );
-      if (openKonsiQty > 0) throw new StoreHasConsignmentStockError(id);
+        /* Prisma cannot compare columns, so the open remainder is summed in JS. */
+        const approvedKonsiLines = await tx.fieldSalesOrderLine.findMany({
+          where: { order: { storeId: id, orderType: "KONSI", status: "APPROVED" } },
+          select: { qty: true, deliveredQty: true, cancelledQty: true },
+        });
+        const openKonsiQty = approvedKonsiLines.reduce(
+          (sum, l) => sum + Math.max(l.qty - l.deliveredQty - l.cancelledQty, 0),
+          0,
+        );
+        if (openKonsiQty > 0) throw new StoreHasConsignmentStockError(id);
+      }
     }
-  }
 
-  const updated = await prisma.store.update({
-    where: { id },
-    data: {
-      code: input.code,
-      name: input.name,
-      address: input.address,
-      phone: input.phone,
-      contactName: input.contactName,
-      termsType: input.termsType,
-      paymentTempo: input.paymentTempo,
-      markupPercent: toDecimalOrNull(input.markupPercent),
-      priceDiscountPercent: toDecimalOrNull(input.priceDiscountPercent),
-      creditLimit: toDecimalOrNull(input.creditLimit),
-      npwp: input.npwp,
-      lat: toDecimalOrNull(input.lat),
-      lng: toDecimalOrNull(input.lng),
-      checkinRadiusMeters: input.checkinRadiusMeters,
-      sellThroughMethod: input.sellThroughMethod,
-    },
+    const updated = await tx.store.update({
+      where: { id },
+      data: {
+        code: input.code,
+        name: input.name,
+        address: input.address,
+        phone: input.phone,
+        contactName: input.contactName,
+        termsType: input.termsType,
+        paymentTempo: input.paymentTempo,
+        markupPercent: toDecimalOrNull(input.markupPercent),
+        priceDiscountPercent: toDecimalOrNull(input.priceDiscountPercent),
+        creditLimit: toDecimalOrNull(input.creditLimit),
+        npwp: input.npwp,
+        lat: toDecimalOrNull(input.lat),
+        lng: toDecimalOrNull(input.lng),
+        checkinRadiusMeters: input.checkinRadiusMeters,
+        sellThroughMethod: input.sellThroughMethod,
+      },
+    });
+    return serializeStore(updated);
   });
-  return serializeStore(updated);
 }
 
 export async function deactivateStore(id: string): Promise<void> {

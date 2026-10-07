@@ -111,14 +111,17 @@ export function SellThroughDetailClient({
    * REASON_REQUIRED on cancel, BASELINE_REASON_REQUIRED on a baseline approve, VOID_REASON_REQUIRED
    * on a void) and gets its own copy on all four. UNPRICED carries the refused line keys,
    * comma-joined, which are named back as products; with no detail it falls back to the preview's
-   * own unpriced keys. HAS_SUCCESSOR and SETTLEMENT_PENDING carry the docNo of the document that
-   * blocks the void, which the copy names.
+   * own unpriced keys. PRICE_CHANGED carries the live total, formatted as money. HAS_SUCCESSOR and
+   * SETTLEMENT_PENDING carry the docNo of the document that blocks the void, which the copy names.
    */
   function errorMessage(result: SellThroughActionFailure): string {
     if (result.detail === "REASON_TOO_LONG") return t("err.REASON_TOO_LONG");
     if (result.reason === "UNPRICED") {
       const keys = result.detail ? result.detail.split(",") : report.unpricedKeys;
       return t("err.UNPRICED", { products: productNamesForKeys(report.lines, keys), n: keys.length });
+    }
+    if (result.reason === "PRICE_CHANGED") {
+      return t("err.PRICE_CHANGED", { total: formatRupiahExact(Number(result.detail ?? "0")) });
     }
     if (result.reason === "HAS_SUCCESSOR" || result.reason === "SETTLEMENT_PENDING") {
       return t(`err.${result.reason}`, { docNo: result.detail ?? "" });
@@ -551,6 +554,7 @@ export function SellThroughDetailClient({
             setApproveOpen(false);
             router.refresh();
           }}
+          onPriceChanged={() => router.refresh()}
           describeError={errorMessage}
         />
       )}

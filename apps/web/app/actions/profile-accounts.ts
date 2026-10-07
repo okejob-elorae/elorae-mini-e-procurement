@@ -13,6 +13,14 @@ export type AccountListItem = {
   roleId: string | null;
   roleName: string | null;
   hasPin: boolean;
+  assignedStoreId: string | null;
+};
+
+export type AssignableStoreOption = {
+  id: string;
+  code: string;
+  name: string;
+  isActive: boolean;
 };
 
 export type RoleOption = {
@@ -60,6 +68,7 @@ export async function listAccounts(): Promise<AccountListItem[] | { ok: false; c
       email: true,
       roleId: true,
       pinHash: true,
+      assignedStoreId: true,
       roleDefinition: { select: { name: true } },
     },
     orderBy: [{ name: "asc" }, { email: "asc" }],
@@ -72,7 +81,20 @@ export async function listAccounts(): Promise<AccountListItem[] | { ok: false; c
     roleId: u.roleId,
     roleName: u.roleDefinition?.name ?? null,
     hasPin: Boolean(u.pinHash),
+    assignedStoreId: u.assignedStoreId,
   }));
+}
+
+export async function listAssignableStores(): Promise<
+  AssignableStoreOption[] | { ok: false; code: string }
+> {
+  const gate = await requireAdminSession();
+  if (!gate.ok) return { ok: false, code: gate.code };
+
+  return prisma.store.findMany({
+    select: { id: true, code: true, name: true, isActive: true },
+    orderBy: { name: "asc" },
+  });
 }
 
 export async function listRoleOptions(): Promise<RoleOption[] | { ok: false; code: string }> {
@@ -99,6 +121,7 @@ export async function getAccount(
       email: true,
       roleId: true,
       pinHash: true,
+      assignedStoreId: true,
       roleDefinition: { select: { name: true } },
     },
   });
@@ -111,13 +134,14 @@ export async function getAccount(
     roleId: user.roleId,
     roleName: user.roleDefinition?.name ?? null,
     hasPin: Boolean(user.pinHash),
+    assignedStoreId: user.assignedStoreId,
   };
 }
 
 async function resolveRole(
   roleId: string,
 ): Promise<
-  | { ok: true; legacyRole: Role }
+  | { ok: true; legacyRole: Role; name: string }
   | { ok: false; code: string }
 > {
   const role = await prisma.roleDefinition.findUnique({
@@ -129,7 +153,41 @@ async function resolveRole(
   return {
     ok: true,
     legacyRole: legacyRoleFromDefinitionName(role.name),
+    name: role.name,
   };
+}
+
+/**
+ * Only an SPG carries an assigned store. `value: undefined` means "leave the
+ * column unchanged" and is only possible for an SPG role; any other role
+ * resolves to null so the column never leaks onto a salesman or admin.
+ */
+async function resolveAssignedStore(
+  roleName: string,
+  requested: string | null | undefined,
+  current: string | null,
+): Promise<
+  | { ok: true; value: string | null | undefined }
+  | { ok: false; code: string }
+> {
+  const requestedId = requested ? requested : null;
+
+  if (roleName !== "SPG") {
+    if (requestedId !== null) return { ok: false, code: "storeOnlyForSpg" };
+    return { ok: true, value: null };
+  }
+
+  if (requested === undefined) return { ok: true, value: undefined };
+  if (requestedId === null) return { ok: true, value: null };
+  if (requestedId === current) return { ok: true, value: requestedId };
+
+  const store = await prisma.store.findUnique({
+    where: { id: requestedId },
+    select: { id: true, isActive: true },
+  });
+  if (!store) return { ok: false, code: "storeNotFound" };
+  if (!store.isActive) return { ok: false, code: "storeInactive" };
+  return { ok: true, value: requestedId };
 }
 
 export async function createAccount(input: {
@@ -137,6 +195,7 @@ export async function createAccount(input: {
   email: string;
   password: string;
   roleId: string;
+  assignedStoreId?: string | null;
 }): Promise<AccountActionResult> {
   const gate = await requireAdminSession();
   if (!gate.ok) return { ok: false, code: gate.code };
@@ -154,6 +213,13 @@ export async function createAccount(input: {
   const resolved = await resolveRole(input.roleId);
   if (!resolved.ok) return resolved;
 
+  const store = await resolveAssignedStore(
+    resolved.name,
+    input.assignedStoreId,
+    null,
+  );
+  if (!store.ok) return store;
+
   const existing = await prisma.user.findUnique({
     where: { email },
     select: { id: true },
@@ -168,6 +234,9 @@ export async function createAccount(input: {
       passwordHash,
       role: resolved.legacyRole,
       roleId: input.roleId,
+      ...(typeof store.value === "string"
+        ? { assignedStoreId: store.value }
+        : {}),
     },
     select: { id: true },
   });
@@ -180,6 +249,7 @@ export async function updateAccount(input: {
   userId: string;
   name: string;
   roleId: string;
+  assignedStoreId?: string | null;
 }): Promise<AccountActionResult> {
   const gate = await requireAdminSession();
   if (!gate.ok) return { ok: false, code: gate.code };
@@ -190,12 +260,19 @@ export async function updateAccount(input: {
 
   const user = await prisma.user.findUnique({
     where: { id: input.userId },
-    select: { id: true, role: true },
+    select: { id: true, role: true, assignedStoreId: true },
   });
   if (!user) return { ok: false, code: "userNotFound" };
 
   const resolved = await resolveRole(input.roleId);
   if (!resolved.ok) return resolved;
+
+  const store = await resolveAssignedStore(
+    resolved.name,
+    input.assignedStoreId,
+    user.assignedStoreId,
+  );
+  if (!store.ok) return store;
 
   // Refuse demoting the last legacy ADMIN (would lock out Profile Accounts).
   if (user.role === "ADMIN" && resolved.legacyRole !== "ADMIN") {
@@ -211,6 +288,7 @@ export async function updateAccount(input: {
       name,
       role: resolved.legacyRole,
       roleId: input.roleId,
+      ...(store.value !== undefined ? { assignedStoreId: store.value } : {}),
     },
   });
 

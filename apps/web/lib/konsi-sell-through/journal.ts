@@ -8,6 +8,7 @@ export const SELL_THROUGH_JOURNAL_KINDS = [
   "konsi_sell_through_revenue",
   "konsi_sell_through_cogs",
   "konsi_sell_through_shrinkage",
+  "konsi_sell_through_surplus",
 ] as const;
 
 export type SellThroughJournalKind = (typeof SELL_THROUGH_JOURNAL_KINDS)[number];
@@ -17,12 +18,14 @@ export const SELL_THROUGH_JOURNAL_SOURCE_TYPES: Record<SellThroughJournalKind, s
   konsi_sell_through_revenue: "KONSI_SELLTHRU_REVENUE",
   konsi_sell_through_cogs: "KONSI_SELLTHRU_COGS",
   konsi_sell_through_shrinkage: "KONSI_SELLTHRU_SHRINKAGE",
+  konsi_sell_through_surplus: "KONSI_SELLTHRU_SURPLUS",
 };
 
 export const SELL_THROUGH_VOID_JOURNAL_KINDS = [
   "konsi_sell_through_revenue_void",
   "konsi_sell_through_cogs_void",
   "konsi_sell_through_shrinkage_void",
+  "konsi_sell_through_surplus_void",
 ] as const;
 
 export type SellThroughVoidJournalKind = (typeof SELL_THROUGH_VOID_JOURNAL_KINDS)[number];
@@ -34,6 +37,7 @@ const VOID_OF: Record<SellThroughVoidJournalKind, SellThroughJournalKind> = {
   konsi_sell_through_revenue_void: "konsi_sell_through_revenue",
   konsi_sell_through_cogs_void: "konsi_sell_through_cogs",
   konsi_sell_through_shrinkage_void: "konsi_sell_through_shrinkage",
+  konsi_sell_through_surplus_void: "konsi_sell_through_surplus",
 };
 
 /* The `Journal.sourceType` each reversal posts under — beside its original's, never the same one, so both stand in the GL. */
@@ -41,26 +45,35 @@ export const SELL_THROUGH_VOID_JOURNAL_SOURCE_TYPES: Record<SellThroughVoidJourn
   konsi_sell_through_revenue_void: "KONSI_SELLTHRU_REVENUE_VOID",
   konsi_sell_through_cogs_void: "KONSI_SELLTHRU_COGS_VOID",
   konsi_sell_through_shrinkage_void: "KONSI_SELLTHRU_SHRINKAGE_VOID",
+  konsi_sell_through_surplus_void: "KONSI_SELLTHRU_SURPLUS_VOID",
 };
 
 const VOID_DESCRIPTION: Record<SellThroughVoidJournalKind, string> = {
   konsi_sell_through_revenue_void: "Pembatalan nota tagihan konsi",
   konsi_sell_through_cogs_void: "Pembatalan HPP nota tagihan konsi",
   konsi_sell_through_shrinkage_void: "Pembatalan susut konsi",
+  konsi_sell_through_surplus_void: "Pembatalan surplus konsi",
 };
 
-/* Billed units leave inventory as COGS, shrunk units as a variance — both at the line's creation-time unit cost. */
-export function sellThroughCostTotals(lines: Array<{ billedQty: number; shrinkageQty: number; unitCost: number }>): {
+/**
+ * Billed units leave inventory as COGS and shrunk units as a variance; unabsorbed surplus units
+ * come back into inventory as a variance credit — all at the line's creation-time unit cost.
+ * `surplusQty` is optional so a caller that never reads `surplus` need not select it.
+ */
+export function sellThroughCostTotals(lines: Array<{ billedQty: number; shrinkageQty: number; surplusQty?: number; unitCost: number }>): {
   cogs: number;
   shrinkage: number;
+  surplus: number;
 } {
   let cogs = 0;
   let shrinkage = 0;
+  let surplus = 0;
   for (const l of lines) {
     cogs += l.billedQty * l.unitCost;
     shrinkage += l.shrinkageQty * l.unitCost;
+    surplus += (l.surplusQty ?? 0) * l.unitCost;
   }
-  return { cogs: roundCents(cogs), shrinkage: roundCents(shrinkage) };
+  return { cogs: roundCents(cogs), shrinkage: roundCents(shrinkage), surplus: roundCents(surplus) };
 }
 
 /**
@@ -77,7 +90,7 @@ async function loadInvoicedReport(client: AnyClient, id: string) {
       baseline: true,
       invoiceDate: true,
       total: true,
-      lines: { select: { billedQty: true, shrinkageQty: true, unitCost: true } },
+      lines: { select: { billedQty: true, shrinkageQty: true, surplusQty: true, unitCost: true } },
     },
   });
   if (!doc || doc.status !== "APPROVED" || doc.baseline || doc.invoiceDate === null) return null;
@@ -87,18 +100,24 @@ async function loadInvoicedReport(client: AnyClient, id: string) {
 type InvoicedReport = NonNullable<Awaited<ReturnType<typeof loadInvoicedReport>>>;
 
 /**
- * What each kind would post for this report: revenue at the invoice total, COGS and shrinkage at
- * the lines' unit cost. The posters and `sellThroughJournalGaps` both read it, so the gap check can
- * never call a journal owed that its poster would then decline as NOTHING_TO_POST.
+ * What each kind would post for this report: revenue at the invoice total, COGS, shrinkage and
+ * surplus at the lines' unit cost. The posters and `sellThroughJournalGaps` both read it, so the
+ * gap check can never call a journal owed that its poster would then decline as NOTHING_TO_POST.
  */
 function journalAmounts(doc: InvoicedReport): Record<SellThroughJournalKind, number> {
   const cost = sellThroughCostTotals(
-    doc.lines.map((l) => ({ billedQty: l.billedQty.toNumber(), shrinkageQty: l.shrinkageQty.toNumber(), unitCost: l.unitCost.toNumber() })),
+    doc.lines.map((l) => ({
+      billedQty: l.billedQty.toNumber(),
+      shrinkageQty: l.shrinkageQty.toNumber(),
+      surplusQty: l.surplusQty.toNumber(),
+      unitCost: l.unitCost.toNumber(),
+    })),
   );
   return {
     konsi_sell_through_revenue: doc.total === null ? 0 : Number(doc.total),
     konsi_sell_through_cogs: cost.cogs,
     konsi_sell_through_shrinkage: cost.shrinkage,
+    konsi_sell_through_surplus: cost.surplus,
   };
 }
 
@@ -120,6 +139,9 @@ const isPostable = (value: number): boolean => Math.abs(value) >= 0.01;
  * marked a baseline, so no un-invoiced history can read as owed. It covers a crash between a
  * commit and the posts, which leaves no JOURNAL_PENDING flag behind, and it clears the moment the
  * journal lands, which a flag never does.
+ *
+ * A report approved before `surplusQty` existed carries 0 on every line, so it owes no surplus
+ * journal — the surplus rule is not retroactive.
  */
 export async function sellThroughJournalGaps(id: string, client: AnyClient = prisma): Promise<SellThroughAnyJournalKind[]> {
   const head = await client.konsiSellThrough.findUnique({ where: { id }, select: { status: true } });
@@ -197,6 +219,24 @@ export async function postSellThroughShrinkageJournal(id: string, postedById: st
   );
 }
 
+/* Unabsorbed surplus comes back into inventory against the variance account — the main-opname surplus rule. */
+export async function postSellThroughSurplusJournal(id: string, postedById: string, client: AnyClient = prisma): Promise<GenerateAutoJournalResult> {
+  const doc = await loadInvoicedReport(client, id);
+  if (!doc) return { ok: false, code: "NOTHING_TO_POST" };
+  const value = journalAmounts(doc).konsi_sell_through_surplus;
+  if (!isPostable(value)) return { ok: false, code: "NOTHING_TO_POST" };
+  return generateAutoJournal(
+    client,
+    SELL_THROUGH_JOURNAL_SOURCE_TYPES.konsi_sell_through_surplus,
+    id,
+    [
+      { role: "INVENTORY", debit: value, credit: 0 },
+      { role: "INVENTORY_VARIANCE", debit: 0, credit: value },
+    ],
+    { date: doc.invoiceDate, description: `Surplus konsi ${doc.docNo}`, postedById },
+  );
+}
+
 /**
  * Reverses one original journal of a VOIDED report by mirroring it as posted: every line's debit
  * and credit swapped on the same chart account, dated on the original's date, under the reversal's
@@ -245,7 +285,9 @@ export const SELL_THROUGH_JOURNAL_POSTERS: Record<
   konsi_sell_through_revenue: postSellThroughRevenueJournal,
   konsi_sell_through_cogs: postSellThroughCogsJournal,
   konsi_sell_through_shrinkage: postSellThroughShrinkageJournal,
+  konsi_sell_through_surplus: postSellThroughSurplusJournal,
   konsi_sell_through_revenue_void: (id, postedById) => postSellThroughVoidJournal("konsi_sell_through_revenue_void", id, postedById),
   konsi_sell_through_cogs_void: (id, postedById) => postSellThroughVoidJournal("konsi_sell_through_cogs_void", id, postedById),
   konsi_sell_through_shrinkage_void: (id, postedById) => postSellThroughVoidJournal("konsi_sell_through_shrinkage_void", id, postedById),
+  konsi_sell_through_surplus_void: (id, postedById) => postSellThroughVoidJournal("konsi_sell_through_surplus_void", id, postedById),
 };

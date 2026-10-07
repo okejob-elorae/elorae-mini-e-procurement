@@ -2,6 +2,7 @@ import { redirect, notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import {
   getAccount,
+  listAssignableStores,
   listRoleOptions,
   type AccountListItem,
 } from "@/app/actions/profile-accounts";
@@ -30,12 +31,13 @@ export default async function EditAccountPage({ params }: PageProps) {
 
   const { id } = await params;
 
-  const [accountResult, rolesResult] = await Promise.all([
+  const [accountResult, rolesResult, storesResult] = await Promise.all([
     getAccount(id),
     listRoleOptions(),
+    listAssignableStores(),
   ]);
 
-  if (!Array.isArray(rolesResult)) {
+  if (!Array.isArray(rolesResult) || !Array.isArray(storesResult)) {
     redirect("/backoffice");
   }
   if (!isAccount(accountResult)) {
@@ -56,10 +58,12 @@ export default async function EditAccountPage({ params }: PageProps) {
         mode="edit"
         userId={accountResult.id}
         roles={rolesResult}
+        stores={storesResult}
         initial={{
           name: accountResult.name ?? "",
           email: accountResult.email,
           roleId: accountResult.roleId ?? "",
+          assignedStoreId: accountResult.assignedStoreId,
         }}
       />
     </div>

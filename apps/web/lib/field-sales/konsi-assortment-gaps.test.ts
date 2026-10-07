@@ -454,6 +454,28 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
     expect(row!.targetQty).toBe(10);
   });
 
+  it("flags a gap on a product with no selling price as priceUnset, and a priced one not", async () => {
+    const unpricedItem = await prisma.item.create({
+      data: { sku: `TEST-KAG-NOPRICE-${token}`, nameId: "Unpriced gap", nameEn: "Unpriced gap", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: null },
+    });
+    await prisma.inventoryValue.create({
+      data: { itemId: unpricedItem.id, variantSku: "", qtyOnHand: 5, reservedQty: 0, avgCost: 1000, totalValue: 5000 },
+    });
+    const line = await prisma.storeAssortmentLine.create({
+      data: { storeId, itemId: unpricedItem.id, variantSku: "", targetQty: null, createdById: userId },
+    });
+
+    try {
+      const rows = await listKonsiAssortmentGaps(orderId);
+      expect(rows.find((r) => r.itemId === unpricedItem.id)?.priceUnset).toBe(true);
+      expect(rows.find((r) => r.itemId === prevSentItemId)?.priceUnset).toBe(false);
+    } finally {
+      await prisma.storeAssortmentLine.delete({ where: { id: line.id } });
+      await prisma.inventoryValue.deleteMany({ where: { itemId: unpricedItem.id } });
+      await prisma.item.delete({ where: { id: unpricedItem.id } });
+    }
+  });
+
   it("the store-scoped core matches the order-scoped list", async () => {
     const order = await prisma.fieldSalesOrder.findUniqueOrThrow({
       where: { id: orderId },
