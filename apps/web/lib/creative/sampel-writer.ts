@@ -7,6 +7,7 @@ import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 import { catatJejak, JEJAK, type NamaJejak } from "@/lib/receivables/jejak";
 import { hariIniWib } from "@/lib/tanggal-isian";
 import { stokPerluKeluar } from "./aturan";
+import { postJurnalSampelKolAman } from "./jurnal-kol";
 import { terapkanMajuOtomatis } from "./maju-otomatis";
 import {
   BATAS_PENGIRIMAN,
@@ -569,6 +570,8 @@ export async function simpanPengiriman(input: IsiPengiriman): Promise<HasilSimpa
     if (hasil.ok && barangKeluar.length > 0) {
       await antrekanPushStok(barangKeluar, { sumber: "KOL_SAMPEL", ref: `sampel KOL ${nomorKolaborasi}`, userId: input.olehUserId });
     }
+    // Sesudah commit: sampel berangkat = beban KOL (DR Beban KOL / CR Persediaan), best-effort.
+    if (hasil.ok && hasil.berangkat && !hasil.ulang) await postJurnalSampelKolAman(hasil.id, input.olehUserId);
     return hasil;
   } catch (e) {
     if (e instanceof StokSampelKurang) return { ok: false, kode: "STOK_KURANG", kurang: e.kurang };

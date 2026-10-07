@@ -25,6 +25,10 @@ export const JENIS_SUMBER_JURNAL = [
   "VAN_RECONCILE",
   "SUPPLIER_PAYMENT",
   "SUPPLIER_PAYMENT_REVERSAL",
+  "KOL_FEE",
+  "KOL_PAYMENT",
+  "KOL_PAYMENT_REVERSAL",
+  "KOL_SAMPLE",
 ] as const;
 
 /** Nilai `?source=` → saringan kueri; nilai tak dikenal tidak menyaring apa pun. */
@@ -39,14 +43,23 @@ export type IndukDokumen = {
   poId?: string | null;
   woId?: string | null;
   canvasserId?: string | null;
+  /** Pengiriman sampel KOL tampil di rincian kolaborasinya. */
+  kolaborasiId?: string | null;
 };
 
 /** Pembayaran pemasok ber-sourceId `poId#generasi`; jenis lain memakai sourceId apa adanya. */
 export function idDokumenDariSumber(sourceType: string | null, sourceId: string | null): string | null {
   if (!sourceType || !sourceId) return null;
-  if (sourceType === "SUPPLIER_PAYMENT" || sourceType === "SUPPLIER_PAYMENT_REVERSAL") {
-    const poId = sourceId.split("#")[0];
-    return poId ? poId : null;
+  if (
+    sourceType === "SUPPLIER_PAYMENT" ||
+    sourceType === "SUPPLIER_PAYMENT_REVERSAL" ||
+    // Jurnal KOL ber-sourceId `<kolaborasi>#…`.
+    sourceType === "KOL_FEE" ||
+    sourceType === "KOL_PAYMENT" ||
+    sourceType === "KOL_PAYMENT_REVERSAL"
+  ) {
+    const id = sourceId.split("#")[0];
+    return id ? id : null;
   }
   return sourceId;
 }
@@ -93,6 +106,14 @@ export function tautanDokumenSumber(
     case "SUPPLIER_PAYMENT":
     case "SUPPLIER_PAYMENT_REVERSAL":
       return `/backoffice/purchase-orders/${seg(id)}`;
+    case "KOL_KOLABORASI":
+    case "KOL_FEE":
+    case "KOL_PAYMENT":
+    case "KOL_PAYMENT_REVERSAL":
+      return `/backoffice/kreatif/kolaborasi/${seg(id)}?tab=pembayaran`;
+    case "KOL_SAMPLE":
+      // Pengiriman sampel tidak punya halaman sendiri: tampil di kolaborasinya.
+      return induk.kolaborasiId ? `/backoffice/kreatif/kolaborasi/${seg(induk.kolaborasiId)}` : "/backoffice/kreatif/sampel";
     default:
       return null;
   }

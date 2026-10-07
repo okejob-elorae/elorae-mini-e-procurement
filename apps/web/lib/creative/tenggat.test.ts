@@ -106,6 +106,38 @@ describe("tenggatKolaborasi", () => {
     expect(tenggatKolaborasi({ ...d, payStatus: "LUNAS" }, AMBANG_BAWAAN, "2026-09-25")).toEqual([]);
   });
 
+  it("dengan termin: satu jatuh tempo per termin yang belum dibayar, dihitung dari pemicunya — bukan tayang + 14", () => {
+    const d: DataTenggat = {
+      ...dasar,
+      tahap: "DEAL",
+      dealAt: "2026-09-01",
+      liveAt: null,
+      fee: 1_000_000,
+      payStatus: "BELUM",
+      termin: [
+        { id: "dp", status: "BELUM", pemicu: "DEAL", hariSesudah: 3, tanggal: null },
+        { id: "lunas", status: "BELUM", pemicu: "TAYANG", hariSesudah: 14, tanggal: null },
+        { id: "tgl", status: "BELUM", pemicu: "TANGGAL", hariSesudah: 0, tanggal: "2026-09-20" },
+        { id: "sudah", status: "DIBAYAR", pemicu: "DEAL", hariSesudah: 0, tanggal: null },
+        { id: "batal", status: "BATAL", pemicu: "DEAL", hariSesudah: 0, tanggal: null },
+      ],
+    };
+    const bayar = tenggatKolaborasi(d, AMBANG_BAWAAN, "2026-09-10").filter((t) => t.jenis === "JATUH_TEMPO_BAYAR");
+    // Termin pelunasan belum punya tanggal (belum tayang); urut menurut tanggal.
+    expect(bayar.map((t) => [t.refId, t.tanggal, t.lewat])).toEqual([
+      ["dp", "2026-09-04", true],
+      ["tgl", "2026-09-20", false],
+    ]);
+    // Sesudah tayang, termin pelunasan ikut punya tanggal (KolBrief.liveAt + 14).
+    const tayang = tenggatKolaborasi({ ...d, tahap: "TAYANG", liveAt: "2026-09-12" }, AMBANG_BAWAAN, "2026-09-10").filter(
+      (t) => t.jenis === "JATUH_TEMPO_BAYAR",
+    );
+    expect(tayang.map((t) => t.refId)).toEqual(["dp", "tgl", "lunas"]);
+    // Semua termin dibayar/batal: tidak ada tenggat bayar, walau payStatus lama masih BELUM.
+    const lunas = { ...d, termin: d.termin!.map((t) => (t.status === "BELUM" ? { ...t, status: "DIBAYAR" as const } : t)) };
+    expect(jenis(lunas, "2026-09-10")).not.toContain("JATUH_TEMPO_BAYAR");
+  });
+
   it("angka konten: tanggal H+1/H+3/H+7 yang akan datang, tapi hanya SATU yang terlewat", () => {
     const k = { id: "k1", link: "https://x", liveAt: "2026-10-01", draftStatus: null, draftAt: null, angkaTerakhirHari: null };
     const d: DataTenggat = { ...dasar, tahap: "TAYANG", konten: [k] };

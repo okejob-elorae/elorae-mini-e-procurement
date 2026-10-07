@@ -97,6 +97,16 @@ const KASUS_JURNAL: { nama: string; metadata: Record<string, unknown>; href: str
     metadata: { orderId: "so-2", kind: "cogs", reason: "UNMAPPED_ROLE", role: "COGS" },
     href: "/backoffice/sales-orders/so-2",
   },
+  {
+    nama: "fee/pembayaran KOL (jurnal-kol)",
+    metadata: { docId: "kolab-1", kind: "kol_kolaborasi", reason: "UNMAPPED_ROLE", role: "KOL_EXPENSE", docNo: "BRIEF/2026/0001" },
+    href: "/backoffice/kreatif/kolaborasi/kolab-1?tab=pembayaran",
+  },
+  {
+    nama: "sampel KOL (jurnal-kol)",
+    metadata: { docId: "kirim-1", kind: "kol_sampel", reason: "UNMAPPED_ROLE", role: "KOL_EXPENSE", collabId: "kolab-1" },
+    href: "/backoffice/kreatif/kolaborasi/kolab-1?tab=pembayaran",
+  },
 ];
 
 describe("getNotificationHref — JOURNAL_PENDING menaut ke dokumennya", () => {

@@ -165,6 +165,20 @@ describe("muatMasukanTugas → 13 kelompok", () => {
     expect((await baca()).ada("BELUM_DIBAYAR", id)).toBe(false);
   });
 
+  it("dengan termin: DP yang jatuh tempo sesudah deal muncul sebelum tayang, nilainya jumlah termin — hilang begitu termin dibayar", async () => {
+    const id = await kolab({ tahap: "DEAL", dealAt: hari(-10), fee: 2_000_000, payStatus: "BELUM" });
+    const [dp] = await Promise.all([
+      prisma.kolPaymentTerm.create({ data: { collabId: id, urutan: 1, label: "DP", neto: 1_000_000, bruto: 1_000_000, pemicu: "DEAL", hariSesudah: 3 } }),
+      prisma.kolPaymentTerm.create({ data: { collabId: id, urutan: 2, label: "Pelunasan", neto: 1_000_000, bruto: 1_000_000, pemicu: "TAYANG", hariSesudah: 14 } }),
+    ]);
+    const b = (await baca()).baris("BELUM_DIBAYAR", id);
+    expect(b?.info.fee).toBe(1_000_000);
+    expect(b?.info.tanggal).toBe(geserHari(HARI_INI, -7));
+    await prisma.kolPaymentTerm.update({ where: { id: dp.id }, data: { status: "DIBAYAR", dibayarAt: hari(-1) } });
+    // Pelunasan belum punya jatuh tempo (belum tayang), walau payStatus kolaborasinya masih BELUM.
+    expect((await baca()).ada("BELUM_DIBAYAR", id)).toBe(false);
+  });
+
   it("kirim dobel: KOL sama di campaign sama yang sampelnya SUDAH berangkat, walau kolaborasinya selesai", async () => {
     const cp = (await prisma.kolCampaign.create({ data: { name: `${tag} cp` }, select: { id: true } })).id;
     campaignIds.push(cp);

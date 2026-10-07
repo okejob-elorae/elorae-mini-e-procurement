@@ -57,6 +57,7 @@ export function perluPemetaanAkun(sebab: string | null): boolean {
 export function jenisDanIdSumber(sumber: SumberNotifikasiJurnal | null): { jenis: string; id: string } | null {
   if (!sumber) return null;
   if (sumber.tipe === "dokumen") return { jenis: sumber.sourceType, id: sumber.sourceId };
+  if (sumber.tipe === "kolaborasiKol") return { jenis: "KOL_KOLABORASI", id: sumber.kolaborasiId };
   return {
     jenis: sumber.arah === "payment" ? "SUPPLIER_PAYMENT" : "SUPPLIER_PAYMENT_REVERSAL",
     id: sumber.poId,

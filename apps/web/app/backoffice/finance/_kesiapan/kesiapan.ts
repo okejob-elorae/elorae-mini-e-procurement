@@ -23,6 +23,12 @@ export const PERAN_OPSIONAL: readonly PostingRole[] = [
   "MARKETPLACE_FEE_PROCESSING",
   "MARKETPLACE_FEE_OTHER",
   "TAX",
+  // Ruang KOL: hanya dibutuhkan bila jurnal fee/pembayaran/sampel KOL dipakai.
+  "KOL_EXPENSE",
+  "KOL_PAYABLE",
+  "KOL_PREPAID",
+  "PPH21_PAYABLE",
+  "PPH23_PAYABLE",
 ];
 
 /** Peran cadangan: dipakai rincian biaya marketplace yang belum dipetakan. */

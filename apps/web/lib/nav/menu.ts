@@ -345,6 +345,7 @@ export const navItems: NavItem[] = [
       { labelKey: "navFinanceCashFlowSections", href: "/backoffice/finance/cash-flow-sections", permission: PERMISSIONS.JOURNALS_VIEW },
       { labelKey: "navFinanceSettlements", href: "/backoffice/finance/settlements", permission: PERMISSIONS.SETTLEMENTS_VIEW },
       { labelKey: "navFakturPajak", href: "/backoffice/finance/faktur-pajak", permission: PERMISSIONS.TAX_INVOICES_VIEW },
+      { labelKey: "navFinancePphDipotong", href: "/backoffice/finance/pph-dipotong", permission: PERMISSIONS.JOURNALS_VIEW },
     ],
   },
   {

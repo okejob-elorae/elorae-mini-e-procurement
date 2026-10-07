@@ -22,6 +22,7 @@ import {
   type Tahap,
 } from "./tahap";
 import { tenggatKolaborasi, umurHari, type DataTenggat, type Tenggat } from "./tenggat";
+import { keTerminTenggat, PILIH_TERMIN_TENGGAT } from "./termin-tenggat-queries";
 
 /*
  * Kueri daftar, papan, dan rincian Kolaborasi — KHUSUS SERVER. Klien hanya
@@ -94,6 +95,7 @@ const pilihBaris = {
       metrics: { select: { recordedAt: true }, orderBy: { recordedAt: "desc" as const }, take: 1 },
     },
   },
+  terms: { select: PILIH_TERMIN_TENGGAT },
 } satisfies Prisma.KolBriefSelect;
 
 type BarisDb = Prisma.KolBriefGetPayload<{ select: typeof pilihBaris }>;
@@ -121,6 +123,7 @@ function dataTenggat(b: BarisDb): DataTenggat {
       draftAt: hari(k.draftAt),
       angkaTerakhirHari: k.metrics[0] ? formatDateOnlyJakarta(k.metrics[0].recordedAt) : null,
     })),
+    termin: b.terms.map(keTerminTenggat),
   };
 }
 

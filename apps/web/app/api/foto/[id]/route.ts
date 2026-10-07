@@ -90,6 +90,8 @@ const PEMBACA_FOTO: Readonly<Record<string, Pembaca>> = {
       return toko ? { storeId: toko } : null;
     },
   },
+  // Bukti transfer fee KOL: tim Kreatif yang membayar dan keuangan yang memeriksa.
+  kolPaymentTerm: { semua: punya(PERMISSIONS.CREATIVE_VIEW, PERMISSIONS.JOURNALS_VIEW) },
   // Bukan dokumen pribadi: panduan display, foto produk, foto profil.
   displayGuide: { semua: siapaPunYangMasuk },
   itemImage: { semua: siapaPunYangMasuk },

@@ -259,6 +259,13 @@ function tautanJurnalTertunda(data: Record<string, unknown>): string {
       case 'supplier_payment':
       case 'supplier_payment_reversal':
         return `/backoffice/purchase-orders/${docId}`;
+      case 'kol_kolaborasi':
+        return `/backoffice/kreatif/kolaborasi/${docId}?tab=pembayaran`;
+      case 'kol_sampel': {
+        // Pengiriman sampel tampil di kolaborasinya; tombol posting ulang ada di tab Pembayaran.
+        const kolaborasi = idAman(data, 'collabId');
+        return kolaborasi ? `/backoffice/kreatif/kolaborasi/${kolaborasi}?tab=pembayaran` : '/backoffice/kreatif/sampel';
+      }
       default:
         return TAUTAN_BUKU_JURNAL;
     }

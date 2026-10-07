@@ -92,7 +92,7 @@ export const ENTRI: EntriBantuan[] = [
       "Rincian satu kolaborasi: views, order, GMV, dan ROAS-nya, tahap sekarang dan tombol untuk memajukannya, serta alamat kirim yang bisa disalin.",
       "Tab Pengiriman mencatat sampel per varian beserta kurir, resi, tanggal kirim dan terima. Tab Konten mencatat link, draf, dan angka (setiap pengisian angka disimpan sebagai baris baru, tidak menimpa yang lama). Tab Penjualan mencatat order, GMV, dan komisi afiliasi. Tab Catatan & riwayat menggabungkan catatan manual dengan riwayat otomatis.",
       "Tombol Maju memindah ke tahap berikutnya. Tahap lain… menawarkan semua tujuan yang sah; mundur, Keluar… (ditolak, ghosting, batal), dan Buka lagi… meminta alasan, yang tercatat di riwayat.",
-      "Ubah membuka formulir kolaborasi: semua isian boleh diubah. Sesudah kontennya tayang, mengubah fee atau jenis kerja sama wajib beralasan, karena fee-nya sudah dihitung sebagai biaya. Mengubah fee juga menyesuaikan status bayar selama belum ada pembayaran (fee nol = tidak perlu dibayar).",
+      "Ubah membuka formulir kolaborasi: semua isian boleh diubah. Sesudah kontennya tayang, mengubah fee atau jenis kerja sama wajib beralasan, karena fee-nya sudah dihitung sebagai biaya. Mengubah fee membagi ulang sisa fee ke termin yang belum dibayar (termin yang sudah dibayar tidak berubah); fee tidak bisa diturunkan di bawah yang sudah dibayar. Fee nol berarti tidak perlu dibayar.",
       "Tab yang dibuka ikut tercatat di alamat halaman (?tab=), jadi tautannya membuka tab yang sama.",
     ],
     kartu: [
@@ -107,6 +107,15 @@ export const ENTRI: EntriBantuan[] = [
       {
         judul: "Alamat kirim",
         isi: "Salin alamat menyalin nama penerima, nomor HP, alamat, lalu kota/provinsi/kode pos — siap ditempel ke aplikasi kurir. Bila alamat atau nomor HP kosong, lengkapi dulu di profil KOL sebelum mengirim barang.",
+      },
+      {
+        judul: { kunci: "kreatifRuang.panelBayar.judul" },
+        isi: [
+          "Mode pajak kolaborasi ini: Dipotong (fee = bruto, KOL menerima bruto dikurangi PPh) atau Gross-up (fee = neto yang diterima KOL, Elorae menanggung PPh). Mengganti mode menghitung ulang termin yang belum dibayar. Subjek pajak (perorangan/badan/tidak dipotong) dan NPWP diatur di profil KOL.",
+          "Tabel termin: pemicu dan jatuh tempo, bruto, PPh, neto, status. Panah di kiri membuka rincian hitungan — DPP, setiap lapisan tarif, tambahan tanpa NPWP, PPh, dan neto — supaya keuangan bisa memeriksanya. \"Atur termin\" memecah atau mengubah termin yang belum dibayar, dalam persen atau nominal, dengan pratinjau angka yang akan tersimpan; jumlahnya harus persis sama dengan sisa fee.",
+          "Bayar mencatat satu termin (tanggal, bukti transfer, nomor bukti potong). Batalkan bayar membatalkan pembayaran yang salah catat, wajib beralasan; ditolak bila PPh-nya sudah disetor. Semua perubahan tercatat di riwayat di bawah tabel.",
+          "Keuangan melihat peringatan bila jurnal kolaborasi ini (fee, pembayaran, atau sampel) belum terposting — biasanya karena akun belum dipetakan — dan tombol Posting ulang jurnal sesudah akunnya dipetakan. Kolaborasi yang uangnya sudah bergerak sebelum modul ini tidak dijurnal otomatis.",
+        ],
       },
     ],
   },
@@ -166,6 +175,14 @@ export const ENTRI: EntriBantuan[] = [
       {
         judul: { kunci: "kreatifRuang.kol.profil.tab.ukuran" },
         isi: "Salin alamat menyalin nama penerima, nomor WhatsApp, alamat, lalu kota, provinsi, dan kode pos — siap ditempel ke aplikasi kurir. Peringatan muncul bila alamat atau nomornya belum terisi.",
+      },
+      {
+        judul: { kunci: "kreatifRuang.pajakKol.judul" },
+        isi: [
+          "Di tab Ukuran & alamat. Subjek pajak KOL: perorangan (PPh 21), berbadan — agensi, PT, CV (PPh 23), atau tidak dipotong (wajib beralasan, mis. KOL luar negeri). Centang NPWP bila NIK-nya sudah terpadan atau NPWP-nya valid; tanpa itu tarifnya lebih tinggi. Gross-up bawaan membuat kolaborasi berbayar baru KOL ini langsung memakai mode gross-up. Mengubah subjek menghitung ulang termin yang belum dibayar.",
+          "Rekening (bank, nomor, atas nama), NIK, dan NPWP disimpan TERENKRIPSI. Pengelola Kreatif bisa mengisi dan mengganti, tetapi tidak pernah melihat isi lamanya — layar hanya menampilkan bank, empat digit terakhir rekening dan NIK, dan apakah NPWP tersimpan. Kosongkan isian untuk membiarkannya; centang Hapus untuk menghapusnya.",
+          "Buka data lengkap hanya untuk keuangan, dengan PIN; setiap pembukaan tercatat di jejak audit atas nama pembukanya.",
+        ],
       },
       {
         judul: { kunci: "kreatifRuang.kol.profil.tab.pengikut" },
@@ -303,18 +320,20 @@ export const ENTRI: EntriBantuan[] = [
     bagian: "navGroupCreative",
     judul: { kunci: "kreatifRuang.halaman.pembayaran" },
     isi: [
-      "Daftar fee KOL yang harus dibayar, untuk diserahkan ke keuangan. Hanya kolaborasi yang punya fee yang muncul; kerja sama barter tidak. Kolaborasi yang ditolak, ghosting, atau batal sebelum kontennya tayang dan belum dibayar apa pun juga tidak muncul — fee-nya tidak pernah terutang.",
-      "Pembayaran tahap ini sederhana: status (belum, sebagian, lunas), total yang sudah dibayar, tanggal bayar, dan catatan. Rekening, NIK/NPWP, PPh, dan termin belum dicatat di sini.",
-      "\"Sebagian\" berarti TOTAL yang sudah dibayar sampai sekarang — lebih dari 0 dan kurang dari fee — bukan cicilan terakhir. \"Lunas\" mengisi jumlahnya sebesar fee. \"Kembalikan ke belum\" mengosongkan jumlah dan tanggal. Tanggal bayar tidak boleh sesudah hari ini.",
-      "Kolaborasi yang sudah tayang lalu ditandai lunas maju sendiri ke tahap Dibayar. Fee yang dibayar di depan (sebelum tayang) tidak memindah tahap. Setiap perubahan tercatat di riwayat pembayaran kolaborasinya, lengkap dengan keadaan sebelum dan sesudahnya.",
-      "Jatuh tempo = tanggal tayang konten terakhir ditambah hari di Kreatif → Pengaturan (bawaan 14 hari). Merah berarti sudah lewat; \"belum tayang\" berarti jatuh temponya belum mulai dihitung.",
-      "Pilih beberapa baris lalu \"Tandai dibayar\". Pilihan bertahan saat Anda berpindah halaman, chip, atau pencarian; total di dialog menjumlah SEMUA yang dipilih, bukan hanya yang terlihat. Untuk \"Dibayar sebagian\" setiap kolaborasi diisi jumlahnya sendiri. Penyimpanannya utuh: bila satu baris ditolak, tidak ada yang tersimpan.",
-      "Ekspor CSV mengunduh daftar tagihan sesuai saringan yang sedang dibuka (semua halaman), ditutup baris TOTAL. Kolom username ditulis tanpa \"@\" supaya tidak terbaca sebagai rumus di Excel.",
+      "Daftar termin pembayaran fee KOL, satu baris per termin. Fee sebuah kolaborasi dibayar lewat satu atau beberapa termin; bawaannya satu termin \"Pelunasan\" yang jatuh tempo sekian hari sesudah konten tayang (Kreatif → Pengaturan, bawaan 14 hari). Termin diatur dan dipecah (mis. DP 50% saat deal + pelunasan 50% sesudah tayang) di tab Pembayaran rincian kolaborasi.",
+      "Setiap termin menampilkan bruto, PPh yang dipotong, dan neto — yang benar-benar ditransfer ke KOL. Mode DIPOTONG: fee yang disepakati adalah bruto, KOL menerima bruto dikurangi PPh. Mode GROSS-UP (\"KOL tidak mau dipotong\"): fee yang disepakati adalah neto yang diterima KOL, bruto dinaikkan supaya sesudah dipotong PPh tetap sebesar itu, dan PPh-nya ditanggung Elorae. Mode dipilih per kolaborasi; KOL bisa diberi gross-up bawaan di profilnya.",
+      "PPh 21 untuk KOL perorangan (DPP 50% bruto, tarif progresif Pasal 17, per pembayaran, 20% lebih tinggi tanpa NPWP); PPh 23 untuk KOL berbadan (2% bruto, dua kali lipat tanpa NPWP); nol untuk KOL yang ditandai tidak dipotong. Semua tarif adalah BAWAAN di Kreatif → Pengaturan dan wajib dikonfirmasi konsultan pajak.",
+      "Chip Belum dibayar, Jatuh tempo (sampai hari ini), Dibayar, dan Semua. Jatuh tempo dihitung dari pemicu terminnya: tanggal deal atau tanggal tayang ditambah harinya, atau tanggal tetap. \"Menunggu tayang\" berarti jatuh temponya belum mulai dihitung. Merah berarti sudah lewat.",
+      "Bayar: isi tanggal bayar (tidak boleh sesudah hari ini), unggah bukti transfer bila ada, dan nomor bukti potong bila sudah dibuat. Termin yang sudah dibayar terkunci; membatalkan pembayarannya (salah catat) hanya dari rincian kolaborasi, wajib beralasan, dan ditolak bila PPh-nya sudah disetor. Pilih beberapa termin lalu \"Bayar yang dipilih\" untuk satu transfer sekaligus — total menjumlah SEMUA yang dipilih, dan bila satu termin ditolak tidak ada yang tersimpan.",
+      "Tanda ⚠ di samping nama KOL berarti data pajaknya belum lengkap (rekening atau NIK/NPWP belum diisi di profil KOL). Pembayaran tetap bisa dicatat, tetapi bukti potong butuh identitasnya.",
+      "Status bayar kolaborasi (belum, sebagian, lunas) diturunkan dari terminnya. Kolaborasi yang sudah tayang dan semua terminnya dibayar maju sendiri ke tahap Dibayar.",
+      "Setiap pembayaran dijurnal ke buku besar sesudah tersimpan: sebelum tayang sebagai uang muka KOL, sesudah tayang mengurangi hutang KOL; bank berkurang sebesar neto dan hutang PPh bertambah sebesar PPh. Akunnya diatur keuangan di Pemetaan Akun; bila belum dipetakan pembayaran tetap tersimpan dan jurnalnya menunggu di Jurnal → Tertunda.",
+      "Ekspor CSV mengunduh termin sesuai saringan yang sedang dibuka (semua halaman), dengan rekening tersamar (bank + empat digit terakhir), ditutup baris TOTAL.",
     ],
     kartu: [
-      { judul: { kunci: "kreatifRuang.pembayaran.kartu.totalFee" }, isi: "Jumlah fee semua kolaborasi di saringan yang sedang dibuka (chip, pencarian, campaign)." },
-      { judul: { kunci: "kreatifRuang.pembayaran.kartu.dibayar" }, isi: "Total yang sudah dibayar menurut catatan pembayaran — termasuk pembayaran sebagian." },
-      { judul: { kunci: "kreatifRuang.pembayaran.kartu.sisa" }, isi: "Fee dikurangi yang sudah dibayar. Merah bila masih ada yang harus dibayar." },
+      { judul: { kunci: "kreatifRuang.termin.kartu.bruto" }, isi: "Jumlah bruto termin di saringan yang sedang dibuka (chip, pencarian, campaign) — dasar pengakuan beban KOL." },
+      { judul: { kunci: "kreatifRuang.termin.kartu.pph" }, isi: "Jumlah PPh 21 dan PPh 23 termin itu. Yang sudah dibayar disetor dan dilaporkan keuangan dari Keuangan → PPh dipotong." },
+      { judul: { kunci: "kreatifRuang.termin.kartu.neto" }, isi: "Jumlah yang ditransfer ke KOL. Baris bawahnya: neto termin yang belum dibayar." },
     ],
   },
   {
@@ -397,7 +416,7 @@ export const ENTRI: EntriBantuan[] = [
     bagian: "navGroupCreative",
     judul: { kunci: "kreatifRuang.halaman.pengaturan" },
     isi: [
-      "Pengaturan seluruh Ruang KOL, dalam tiga bagian yang disimpan terpisah. Yang bisa mengubah hanya pemegang izin kelola Kreatif; yang lain melihat angka yang sedang berlaku. Setiap simpanan tercatat di riwayat (sebelum dan sesudah).",
+      "Pengaturan seluruh Ruang KOL, dalam empat bagian yang disimpan terpisah. Yang bisa mengubah hanya pemegang izin kelola Kreatif (tarif pajak juga keuangan); yang lain melihat angka yang sedang berlaku. Setiap simpanan tercatat di riwayat (sebelum dan sesudah).",
     ],
     kartu: [
       {
@@ -417,6 +436,14 @@ export const ENTRI: EntriBantuan[] = [
           "Template yang muncul saat tombol WhatsApp ditekan di semua layar Kreatif. Pratinjau di daftar dan di formulir memakai data contoh supaya terlihat hasil akhirnya.",
           "Variabel yang bisa dipakai: {nama}, {username}, {platform}, {campaign}, {produk}, {resi}, {ekspedisi}, {brand}, {pengirim}, {fee}. Klik variabel di formulir untuk menyisipkannya. Variabel yang salah ketik ditolak, karena akan terkirim mentah ke KOL. Variabel yang datanya belum ada (mis. resi sebelum dikirim) dibiarkan tertulis supaya terlihat sebelum pesan dikirim.",
           "Paling banyak 30 template. Bila semua template dihapus, tombol WhatsApp hanya membuka obrolan tanpa pesan; 'Pakai template bawaan' mengembalikan tujuh template awal.",
+        ],
+      },
+      {
+        judul: { kunci: "kreatifRuang.pajakSetelan.judul" },
+        isi: [
+          "Tarif PPh fee KOL: PPh 21 bukan pegawai (porsi DPP dari bruto, lapisan tarif Pasal 17 atas DPP, tambahan tanpa NPWP) dan PPh 23 (tarif atas bruto, tambahan tanpa NPWP). Bawaan: DPP 50%; 5% sampai Rp 60 juta, 15% sampai Rp 250 juta, 25% sampai Rp 500 juta, 30% sampai Rp 5 miliar, 35% di atasnya; tanpa NPWP +20%. PPh 23 2%, tanpa NPWP +100%.",
+          "PPh dihitung per pembayaran (per termin), tidak dikumulatifkan, dan dibulatkan ke bawah ke rupiah penuh. Semua ini keputusan sementara — WAJIB dikonfirmasi konsultan pajak sebelum dipakai.",
+          "Menyimpan menghitung ulang semua termin yang belum dibayar dengan tarif baru; termin yang sudah dibayar tetap memakai tarif saat dibayar (tercatat di rinciannya). Lapisan terakhir selalu \"di atasnya\"; batas lapisan harus naik berurutan.",
         ],
       },
     ],

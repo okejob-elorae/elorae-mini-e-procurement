@@ -101,6 +101,28 @@ describe("angkaKolaborasi", () => {
     expect(total.roas).toBe(0.13);
   });
 
+  it("fee dihitung dari bruto termin hidup: gross-up ikut PPh-nya, termin batal tidak dihitung", async () => {
+    // Gross-up: KOL menerima 9.750.000 bersih, Elorae menanggung bruto 9.999.999.
+    const grossUp = await kolaborasi("gu", 9_750_000, new Date("2026-09-01T03:00:00Z"));
+    await prisma.kolPaymentTerm.createMany({
+      data: [
+        { collabId: grossUp, urutan: 1, label: "DP", neto: 4_875_000, bruto: 5_000_000, pph: 125_000, grossUp: true, status: "DIBAYAR" },
+        { collabId: grossUp, urutan: 2, label: "Pelunasan", neto: 4_875_000, bruto: 4_999_999, pph: 124_999, grossUp: true },
+        { collabId: grossUp, urutan: 3, label: "Lama", neto: 1_000_000, bruto: 1_025_641, pph: 25_641, grossUp: true, status: "BATAL" },
+      ],
+    });
+    // Dipotong: fee sudah bruto, termin sama dengan fee.
+    const dipotong = await kolaborasi("dp", 2_000_000, new Date("2026-09-01T03:00:00Z"));
+    await prisma.kolPaymentTerm.create({ data: { collabId: dipotong, label: "Pelunasan", neto: 1_950_000, bruto: 2_000_000, pph: 50_000 } });
+    // Tanpa termin sama sekali: fee apa adanya.
+    const tanpa = await kolaborasi("tt", 300_000, new Date("2026-09-01T03:00:00Z"));
+
+    const peta = await angkaKolaborasi([grossUp, dipotong, tanpa]);
+    expect(peta.get(grossUp)!.biaya.fee).toBe(9_999_999);
+    expect(peta.get(dipotong)!.biaya.fee).toBe(2_000_000);
+    expect(peta.get(tanpa)!.biaya.fee).toBe(300_000);
+  });
+
   it("id kosong atau tak dikenal tidak membuat galat", async () => {
     expect((await angkaKolaborasi([])).size).toBe(0);
     expect((await angkaKolaborasi(["tidak-ada"])).size).toBe(0);

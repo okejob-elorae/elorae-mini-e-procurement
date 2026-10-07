@@ -195,7 +195,8 @@
     "navKolPembayaran": "Pembayaran KOL",
     "navKolKalender": "Kalender KOL",
     "navKolLaporan": "Laporan KOL",
-    "navKreatifPengaturan": "Pengaturan Kreatif"
+    "navKreatifPengaturan": "Pengaturan Kreatif",
+    "navFinancePphDipotong": "PPh dipotong"
   },
   "notifications": {
     "title": "Notifikasi",
@@ -8684,7 +8685,12 @@
       "VAN_SALE": "Penjualan van",
       "VAN_RECONCILE": "Rekonsiliasi van",
       "SUPPLIER_PAYMENT": "Pembayaran pemasok",
-      "SUPPLIER_PAYMENT_REVERSAL": "Pembatalan pembayaran pemasok"
+      "SUPPLIER_PAYMENT_REVERSAL": "Pembatalan pembayaran pemasok",
+      "KOL_FEE": "Pengakuan fee KOL",
+      "KOL_PAYMENT": "Pembayaran KOL",
+      "KOL_PAYMENT_REVERSAL": "Pembatalan pembayaran KOL",
+      "KOL_SAMPLE": "Sampel KOL",
+      "KOL_KOLABORASI": "Kolaborasi KOL"
     },
     "tabPosted": "Terposting",
     "tabPending": "Tertunda",
@@ -8859,11 +8865,16 @@
       "MARKETPLACE_FEE_PROCESSING": "Biaya Proses Pesanan Marketplace",
       "MARKETPLACE_FEE_OTHER": "Biaya Marketplace Lainnya",
       "INVENTORY_VARIANCE": "Selisih Persediaan",
-      "TAX": "Pajak"
+      "TAX": "Pajak",
+      "KOL_EXPENSE": "Beban Pemasaran KOL",
+      "KOL_PAYABLE": "Hutang KOL",
+      "KOL_PREPAID": "Uang Muka KOL",
+      "PPH21_PAYABLE": "Hutang PPh 21",
+      "PPH23_PAYABLE": "Hutang PPh 23"
     },
     "desc": {
-      "INVENTORY": "Akun aset yang didebit saat stok masuk dan dikredit saat stok keluar.",
-      "INVENTORY_FG": "Akun persediaan barang jadi, didebit saat hasil work order diterima.",
+      "INVENTORY": "Persediaan bahan baku (kain, aksesori): didebit saat barang diterima dari pemasok, dikredit saat dipakai produksi atau berkurang di opname.",
+      "INVENTORY_FG": "Persediaan barang jadi: didebit saat hasil work order diterima atau barang jadi dibeli, dikredit saat terjual (HPP), dimuat ke kanvas, dikirim sebagai sampel KOL, atau berkurang di opname.",
       "INVENTORY_VAN": "Persediaan yang sedang dibawa di van kanvasser; didebit saat van dimuat, dikredit saat terjual atau dikembalikan.",
       "AP": "Akun kewajiban untuk utang ke pemasok.",
       "AR": "Akun aset untuk piutang dari pelanggan/marketplace.",
@@ -8878,7 +8889,12 @@
       "MARKETPLACE_FEE_PROCESSING": "Beban biaya proses pesanan, dari kolom Biaya Proses Pesanan.",
       "MARKETPLACE_FEE_OTHER": "Sisa potongan marketplace yang tidak terinci — termasuk biaya iklan, subsidi pengiriman, penyesuaian, dan seluruh biaya TikTok.",
       "INVENTORY_VARIANCE": "Akun untuk mencatat selisih stock opname/rekonsiliasi.",
-      "TAX": "Akun untuk kewajiban/beban pajak."
+      "TAX": "Akun untuk kewajiban/beban pajak.",
+      "KOL_EXPENSE": "Beban fee KOL (diakui saat kontennya tayang) dan sampel yang dikirim ke KOL.",
+      "KOL_PAYABLE": "Fee KOL yang sudah diakui sebagai beban tetapi belum dibayar.",
+      "KOL_PREPAID": "Termin fee KOL yang dibayar sebelum kontennya tayang; dipindah ke Hutang KOL saat fee diakui.",
+      "PPH21_PAYABLE": "PPh 21 bukan pegawai yang dipotong dari fee KOL perorangan, sampai disetor.",
+      "PPH23_PAYABLE": "PPh 23 yang dipotong dari fee KOL berbadan (agensi, PT, CV), sampai disetor."
     },
     "error": {
       "FORBIDDEN": "Anda tidak memiliki izin untuk mengubah pemetaan akun.",
@@ -11092,7 +11108,16 @@
       "KOL_AGENDA_UPDATED": "Agenda Kreatif diubah",
       "KOL_AGENDA_DONE": "Agenda Kreatif selesai",
       "KOL_AGENDA_DELETED": "Agenda Kreatif dihapus",
-      "CREATIVE_SETTINGS_UPDATED": "Pengaturan Kreatif diubah"
+      "CREATIVE_SETTINGS_UPDATED": "Pengaturan Kreatif diubah",
+      "KOL_PAYMENT_TERMS_SET": "Termin pembayaran KOL diatur",
+      "KOL_PAYMENT_TERM_PAID": "Termin pembayaran KOL dibayar",
+      "KOL_PAYMENT_TERM_PAYMENT_CANCELLED": "Pembayaran termin KOL dibatalkan",
+      "KOL_WITHHOLDING_SLIP_RECORDED": "Bukti potong PPh KOL dicatat",
+      "KOL_WITHHOLDING_DEPOSIT_RECORDED": "Setoran PPh KOL dicatat",
+      "KOL_COLLAB_TAX_MODE_CHANGED": "Mode pajak kolaborasi KOL diubah",
+      "KOL_TAX_PROFILE_UPDATED": "Data pajak KOL diubah",
+      "KOL_SENSITIVE_UPDATED": "Rekening/NIK/NPWP KOL diubah",
+      "KOL_SENSITIVE_VIEWED": "Data rekening/NIK/NPWP KOL dibuka"
     },
     "entities": {
       "ChainTemplate": "Templat rantai proses",
@@ -18350,7 +18375,7 @@
       "JADWAL_TAYANG_LEWAT": "Jadwal tayang lewat, konten belum ada",
       "BELUM_DIBALAS": "Belum dibalas, perlu follow-up",
       "ANGKA_BELUM_ADA": "Sudah tayang tapi angka belum diisi",
-      "BELUM_DIBAYAR": "Sudah tayang tapi belum dibayar",
+      "BELUM_DIBAYAR": "Termin jatuh tempo, belum dibayar",
       "KIRIM_DOBEL": "Berpotensi kirim dobel",
       "DATA_KIRIM_KURANG": "Data kirim belum lengkap",
       "KOL_DIBLOKIR": "KOL diblokir tapi kolaborasinya berjalan",
@@ -18365,7 +18390,7 @@
       "JADWAL_TAYANG_LEWAT": "Tanyakan ke KOL kapan kontennya tayang.",
       "BELUM_DIBALAS": "Follow-up ulang, atau tandai ghosting bila sudah terlalu lama.",
       "ANGKA_BELUM_ADA": "Waktunya mengisi angka konten (views, likes, komentar).",
-      "BELUM_DIBAYAR": "Buka Pembayaran dan selesaikan fee-nya.",
+      "BELUM_DIBAYAR": "Buka Pembayaran dan bayar termin yang jatuh tempo.",
       "KIRIM_DOBEL": "Cek dulu sebelum mengirim — nomor atau orangnya sudah pernah dikirimi.",
       "DATA_KIRIM_KURANG": "Lengkapi alamat, nomor HP, atau ukuran sebelum mengirim.",
       "KOL_DIBLOKIR": "Putuskan: lanjutkan atau keluarkan kolaborasinya.",
@@ -18687,7 +18712,8 @@
       "KOSONG": "Pilih minimal satu kolaborasi.",
       "TERLALU_BANYAK": "Paling banyak 500 kolaborasi sekaligus.",
       "TANPA_AKSES": "Anda tidak punya izin mengubah pembayaran KOL.",
-      "GAGAL": "Pembayaran gagal disimpan. Coba lagi."
+      "GAGAL": "Pembayaran gagal disimpan. Coba lagi.",
+      "SUDAH_DISETOR": "PPh salah satu termin sudah disetor — pembayarannya tidak bisa dibatalkan dari sini."
     },
     "pembayaran": {
       "meta": "{n} kolaborasi berbayar",
@@ -19289,6 +19315,9 @@
         },
         "deliverableBaris": "{platform} · {format} × {qty}",
         "sampelBaris": "{nama} × {qty}"
+      },
+      "errDetail": {
+        "fee_dibayar": "Fee tidak bisa lebih kecil dari yang sudah dibayar ke KOL. Batalkan dulu pembayaran terminnya di Pembayaran bila memang salah catat."
       }
     },
     "campaign": {
@@ -19786,7 +19815,7 @@
         "tab": {
           "kolaborasi": "Kolaborasi",
           "konten": "Konten",
-          "ukuran": "Ukuran & alamat",
+          "ukuran": "Ukuran, alamat & pajak",
           "pengikut": "Riwayat pengikut",
           "catatan": "Catatan & riwayat"
         },
@@ -19904,6 +19933,368 @@
           "rateCard": "Rate card tidak sah."
         }
       }
+    },
+    "termin": {
+      "meta": "{n} termin",
+      "kartu": {
+        "bruto": "Total bruto",
+        "brutoSub": "{n} termin",
+        "pph": "PPh dipotong",
+        "pphSub": "PPh 21 dan PPh 23",
+        "neto": "Neto ke KOL",
+        "netoSub": "Belum dibayar {jumlah} · {n} termin"
+      },
+      "chip": {
+        "BELUM": "Belum dibayar",
+        "JATUH_TEMPO": "Jatuh tempo",
+        "DIBAYAR": "Dibayar",
+        "SEMUA": "Semua"
+      },
+      "saringKolaborasi": "Kolaborasi {docNo}",
+      "dipilih": "{n} termin dipilih · neto {neto}",
+      "bayarDipilih": "Bayar yang dipilih",
+      "judulDaftar": "Termin pembayaran",
+      "kosong": {
+        "belumJudul": "Tidak ada termin yang belum dibayar"
+      },
+      "kolom": {
+        "termin": "Termin",
+        "bruto": "Bruto",
+        "pph": "PPh",
+        "neto": "Neto"
+      },
+      "pilihBaris": "Pilih {nama} — {label}",
+      "dataBelumLengkap": "Data pajak belum lengkap",
+      "pemicu": {
+        "DEAL": "Sesudah deal +{n} hari",
+        "TAYANG": "Sesudah tayang +{n} hari"
+      },
+      "pemicuTanggal": "Tanggal tetap",
+      "grossUp": "Gross-up",
+      "menunggu": {
+        "DEAL": "Menunggu deal",
+        "TAYANG": "Menunggu tayang",
+        "TANGGAL": "—"
+      },
+      "brutoPph": "Bruto {bruto} · PPh {pph}",
+      "status": {
+        "BELUM": "Belum dibayar",
+        "DIBAYAR": "Dibayar",
+        "BATAL": "Batal"
+      },
+      "bayar": "Bayar",
+      "lihatBukti": "Lihat bukti transfer",
+      "dialog": {
+        "judulSatu": "Bayar termin {label}",
+        "judulBanyak": "Bayar {n} termin",
+        "deskBanyak": "Satu transfer dan satu tanggal bayar untuk semua termin yang dipilih.",
+        "transfer": "Ditransfer",
+        "rekening": "Transfer ke {bank} ••••{last4}",
+        "bank": "Bank",
+        "rekeningKosong": "Rekening KOL belum diisi di profilnya.",
+        "grossUp": "Gross-up: PPh ditanggung Elorae — KOL menerima neto penuh.",
+        "peringatanRekening": "Rekening sebagian KOL belum diisi — isi di profil KOL sebelum mentransfer.",
+        "peringatanPajak": "Data pajak (NIK/NPWP) belum lengkap — bukti potong butuh identitas KOL.",
+        "tanggal": "Tanggal bayar",
+        "bukti": "Bukti transfer",
+        "buktiPetunjuk": "Opsional. Foto atau tangkapan layar transfer.",
+        "nomorBukti": "Nomor bukti potong",
+        "nomorBuktiPetunjuk": "Opsional — bisa diisi keuangan nanti di Keuangan → PPh dipotong.",
+        "catatan": "Catatan",
+        "batal": "Batal",
+        "simpan": "Bayar {neto}"
+      },
+      "ok": "Termin dibayar",
+      "okMaju": "Termin dibayar · tahap → {tahap}",
+      "okBanyak": "{n} termin dibayar",
+      "okBanyakMaju": "{n} termin dibayar · {m} kolaborasi maju ke Dibayar",
+      "errBaris": "{kol} — {label}: {pesan}",
+      "err": {
+        "TANPA_AKSES": "Anda tidak punya akses untuk ini.",
+        "GAGAL": "Gagal menyimpan. Coba lagi.",
+        "TIDAK_DITEMUKAN": "Termin atau kolaborasi tidak ditemukan.",
+        "TANPA_FEE": "Kolaborasi ini tanpa fee — tidak ada termin.",
+        "MODE_TIDAK_VALID": "Mode pajak tidak dikenal.",
+        "SUDAH_DIBAYAR": "Termin ini sudah dibayar.",
+        "TERMIN_BATAL": "Termin ini sudah dibatalkan.",
+        "TANGGAL_DEPAN": "Tanggal tidak boleh sesudah hari ini.",
+        "TANGGAL_TIDAK_VALID": "Tanggal tidak sah.",
+        "ALASAN_WAJIB": "Alasan wajib diisi.",
+        "TERLALU_PANJANG": "Isian terlalu panjang.",
+        "SUDAH_DISETOR": "PPh termin ini sudah disetor — pembayarannya tidak bisa dibatalkan.",
+        "BELUM_DIBAYAR": "Termin ini belum dibayar.",
+        "TANPA_PPH": "Termin ini tanpa PPh.",
+        "FOTO_BUKAN_MILIK": "Foto bukti itu milik orang lain — unggah foto Anda sendiri.",
+        "FOTO_SUDAH_DIPAKAI": "Foto bukti yang sama sudah dipakai dokumen lain.",
+        "KOSONG": "Belum ada termin.",
+        "TERLALU_BANYAK": "Terlalu banyak termin sekaligus.",
+        "SISA_NEGATIF": "Fee lebih kecil dari yang sudah dibayar.",
+        "SUDAH_LUNAS": "Fee sudah lunas — tidak ada sisa untuk dibagi.",
+        "LABEL_WAJIB": "Nama termin wajib diisi.",
+        "LABEL_PANJANG": "Nama termin paling banyak 60 huruf.",
+        "PEMICU_TIDAK_VALID": "Pilih dasar jatuh tempo.",
+        "HARI_TIDAK_VALID": "Hari harus angka bulat 0–365.",
+        "TANGGAL_WAJIB": "Tanggal jatuh tempo wajib diisi.",
+        "PERSEN_TIDAK_VALID": "Persen harus lebih dari 0 dan paling banyak 100.",
+        "TOTAL_PERSEN": "Jumlah persen harus tepat 100.",
+        "JUMLAH_TIDAK_VALID": "Nominal setiap termin harus lebih dari 0.",
+        "TOTAL_JUMLAH": "Jumlah nominal harus tepat sama dengan sisa fee.",
+        "CATATAN_PANJANG": "Catatan terlalu panjang."
+      },
+      "rincian": {
+        "warisan": "Dibayar sebelum modul pajak — PPh tidak dihitung.",
+        "bruto": "Bruto",
+        "brutoGrossUp": "Bruto (gross-up)",
+        "tidakDipotong": "Tidak dipotong PPh.",
+        "dpp": "DPP ({persen}% bruto)",
+        "lapisan": "{persen}% × {dasar}",
+        "tambahan": "+{persen}% karena tanpa NPWP",
+        "pph": "PPh {pasal} (efektif {efektif}%)",
+        "neto": "Neto ke KOL",
+        "ditanggung": "PPh ditanggung Elorae (gross-up)."
+      },
+      "aturTombol": "Atur termin",
+      "feeNeto": "Fee (neto, gross-up)",
+      "feeBruto": "Fee (bruto)",
+      "dibayarNeto": "Sudah ditransfer",
+      "sisaNeto": "Sisa ditransfer",
+      "modeJudul": "Mode pajak",
+      "subjek": {
+        "ORANG_PRIBADI": "Perorangan — PPh 21",
+        "BADAN": "Badan — PPh 23",
+        "TIDAK_DIPOTONG": "Tidak dipotong"
+      },
+      "npwpAda": "ber-NPWP",
+      "npwpTidak": "tanpa NPWP",
+      "ubahDiProfil": "Ubah di profil KOL",
+      "mode": {
+        "DIPOTONG": "Dipotong",
+        "GROSS_UP": "Gross-up"
+      },
+      "modeOk": {
+        "DIPOTONG": "Mode dipotong · termin belum dibayar dihitung ulang",
+        "GROSS_UP": "Mode gross-up · termin belum dibayar dihitung ulang"
+      },
+      "dataBelumLengkapPanjang": "Data pajak KOL belum lengkap (rekening atau NIK/NPWP) — lengkapi di profil KOL.",
+      "jurnal": {
+        "tertunda": "Jurnal buku besar kolaborasi ini belum terposting ({sebab}).",
+        "ulang": "Posting ulang jurnal",
+        "ok": "{n} jurnal terposting",
+        "gagal": "Jurnal masih gagal: {sebab}",
+        "luarBuku": "Uang kolaborasi ini sudah bergerak sebelum modul pajak — tidak dijurnal otomatis."
+      },
+      "rincianToggle": "Rincian",
+      "rincianAria": "Rincian hitungan {label}",
+      "batalkan": "Batalkan bayar",
+      "disetor": "PPh disetor",
+      "kosongPanel": "Belum ada termin.",
+      "riwayat": {
+        "dibayar": "{termin}: {neto} ditransfer {tanggal}",
+        "dibatalkan": "{termin}: pembayaran dibatalkan"
+      },
+      "batalOk": "Pembayaran {label} dibatalkan",
+      "batalJudul": "Batalkan pembayaran {label}?",
+      "batalIsi": "Termin kembali belum dibayar dan jurnal pembayarannya dibalik. {neto} yang sudah ditransfer perlu diselesaikan di luar sistem.",
+      "batalAlasan": "Alasan (wajib)",
+      "aturOk": "Termin disimpan",
+      "aturTanpa": "Tidak ada yang berubah",
+      "atur": {
+        "judul": "Atur termin",
+        "deskSisa": "Sisa {sisa} dari fee {fee} dibagi ke termin yang belum dibayar.",
+        "deskBruto": "Fee {fee} (bruto) dibagi ke termin.",
+        "deskNeto": "Fee {fee} (neto, gross-up) dibagi ke termin.",
+        "dasar": "Dasar pembagian",
+        "dasarPERSEN": "Persen",
+        "dasarJUMLAH": "Nominal",
+        "preset": "Cepat:",
+        "presetSekali": "Sekali bayar",
+        "presetDp": "DP 50% + pelunasan",
+        "label": "Nama termin",
+        "persen": "Persen",
+        "jumlah": "Nominal (Rp)",
+        "pemicu": "Jatuh tempo dari",
+        "pemicuPilihan": {
+          "DEAL": "Tanggal deal",
+          "TAYANG": "Tanggal tayang",
+          "TANGGAL": "Tanggal tetap"
+        },
+        "tanggal": "Tanggal",
+        "hari": "+ hari",
+        "hapus": "Hapus termin {label}",
+        "pratinjau": "{persen}% fee · bruto {bruto} · PPh {pph} · neto {neto}",
+        "tambah": "Tambah termin",
+        "total": "Total: bruto {bruto} · PPh {pph} · neto {neto}",
+        "simpan": "Simpan termin"
+      }
+    },
+    "pajakKol": {
+      "judul": "Pajak & rekening",
+      "lengkap": "Data pajak lengkap",
+      "belumLengkap": "Data pajak belum lengkap",
+      "tanpaKunci": "Kunci enkripsi server (ENCRYPTION_KEY) belum diatur — rekening/NIK/NPWP tidak bisa disimpan atau dibuka.",
+      "subjek": "Subjek pajak",
+      "alasan": "Alasan tidak dipotong",
+      "npwpStatus": "NPWP",
+      "npwpYa": "Ada (NIK terpadan/NPWP valid)",
+      "npwpTidak": "Tidak ada — tarif lebih tinggi",
+      "grossUpBawaan": "Gross-up bawaan",
+      "ya": "Ya",
+      "tidak": "Tidak",
+      "rekening": "Rekening",
+      "rekeningTersamar": "{bank} ••••{last4}",
+      "bank": "Bank",
+      "atasNamaAda": "atas nama tersimpan",
+      "belumDiisi": "Belum diisi",
+      "tersimpan": "Tersimpan",
+      "kolom": {
+        "bankName": "Nama bank",
+        "bankAccount": "Nomor rekening",
+        "bankHolder": "Atas nama",
+        "nik": "NIK",
+        "npwp": "NPWP"
+      },
+      "ubahSubjek": "Ubah data pajak",
+      "isiData": "Isi rekening & identitas",
+      "isiDataDesk": "Hanya kolom yang diisi yang disimpan. Isi lama tidak ditampilkan.",
+      "buka": "Buka data lengkap",
+      "npwpCentang": "KOL punya NPWP (atau NIK sudah terpadan)",
+      "grossUpCentang": "KOL tidak mau dipotong — kolaborasi berbayar baru memakai gross-up",
+      "simpan": "Simpan",
+      "subjekOk": "Data pajak disimpan",
+      "subjekOkHitung": "Data pajak disimpan · {n} kolaborasi dihitung ulang",
+      "dataOk": "Rekening & identitas disimpan",
+      "placeholderAda": "Tersimpan — isi untuk mengganti",
+      "hapusKolom": "Hapus yang tersimpan",
+      "pinAksi": "membuka rekening/NIK/NPWP KOL",
+      "dataLengkap": "Data lengkap",
+      "dataLengkapDesk": "Pembukaan ini tercatat di jejak audit atas nama Anda.",
+      "salin": "Salin {kolom}",
+      "disalin": "Disalin",
+      "gagalSalin": "Gagal menyalin",
+      "tutup": "Tutup",
+      "pin": {
+        "pinIncorrect": "PIN salah",
+        "pinNotSet": "PIN belum diatur — atur di Pengaturan → Keamanan.",
+        "tooManyAttempts": "Terlalu banyak percobaan gagal. Coba lagi dalam 15 menit.",
+        "pinInvalid": "PIN tidak valid",
+        "userNotFound": "Pengguna tidak ditemukan"
+      },
+      "err": {
+        "TANPA_AKSES": "Anda tidak punya akses untuk ini.",
+        "GAGAL": "Gagal. Coba lagi.",
+        "TIDAK_DITEMUKAN": "KOL tidak ditemukan.",
+        "JENIS_TIDAK_VALID": "Subjek pajak tidak dikenal.",
+        "ALASAN_WAJIB": "Alasan tidak dipotong wajib diisi.",
+        "TERLALU_PANJANG": "Isian terlalu panjang.",
+        "KUNCI_TIDAK_ADA": "Kunci enkripsi server belum diatur — data tidak disimpan.",
+        "DATA_RUSAK": "Data tersimpan tidak bisa dibuka (rusak atau kunci berganti).",
+        "KOSONG": "Tidak ada yang diisi.",
+        "BANK_NAMA_TIDAK_VALID": "Nama bank 2–60 huruf.",
+        "REKENING_TIDAK_VALID": "Nomor rekening 5–20 angka.",
+        "ATAS_NAMA_TIDAK_VALID": "Atas nama 2–100 huruf.",
+        "NIK_TIDAK_VALID": "NIK harus 16 angka.",
+        "NPWP_TIDAK_VALID": "NPWP harus 15 atau 16 angka.",
+        "PIN": "PIN salah."
+      }
+    },
+    "pajakSetelan": {
+      "judul": "Pajak (PPh) fee KOL",
+      "konsultan": "Tarif bawaan — konfirmasi ke konsultan pajak sebelum dipakai.",
+      "pph21": "PPh 21 bukan pegawai (KOL perorangan)",
+      "porsiDpp": "Porsi DPP dari bruto",
+      "tambahan": "Tambahan tanpa NPWP",
+      "lapisan": "Lapisan tarif Pasal 17 atas DPP",
+      "lapisanSampai": "DPP sampai (Rp)",
+      "lapisanAkhir": "Di atasnya",
+      "lapisanSeterusnya": "seterusnya",
+      "lapisanTarif": "Tarif %",
+      "hapusLapisan": "Hapus lapisan {n}",
+      "tambahLapisan": "Tambah lapisan",
+      "errLapisan": "Batas lapisan harus naik berurutan, tarif 0–100%, dan lapisan terakhir tanpa batas.",
+      "pph23": "PPh 23 (KOL berbadan)",
+      "tarif23": "Tarif atas bruto",
+      "contoh": "Contoh bruto {bruto}: PPh 21 {a} (ber-NPWP) / {b} (tanpa NPWP); PPh 23 {c}.",
+      "simpan": "Simpan tarif",
+      "bawaan": "Kembalikan bawaan",
+      "ok": "Tarif pajak disimpan",
+      "okHitung": "Tarif disimpan · {n} kolaborasi dihitung ulang",
+      "errTidakValid": "Ada isian tarif yang tidak sah.",
+      "errAkses": "Anda tidak punya akses untuk mengubah tarif.",
+      "errGagal": "Gagal menyimpan tarif."
+    }
+  },
+  "pphDipotong": {
+    "judul": "PPh dipotong",
+    "meta": "{n} termin · masa {masa}",
+    "ekspor": "Ekspor CSV",
+    "eksporLengkap": "Ekspor dengan identitas",
+    "eksporOk": "CSV diunduh (identitas tersamar)",
+    "eksporLengkapOk": "CSV beridentitas diunduh — tercatat di jejak audit",
+    "masaSebelum": "Masa sebelumnya",
+    "masaSesudah": "Masa berikutnya",
+    "kartu": {
+      "pph21": "PPh 21",
+      "pph23": "PPh 23",
+      "jumlah": "{n} termin",
+      "belum": "Belum disetor",
+      "belumBukti": "{n} belum ada bukti potong"
+    },
+    "daftar": "Termin ber-PPh",
+    "gagal": "Data tidak bisa dimuat. Coba muat ulang.",
+    "kosong": "Tidak ada PPh dipotong pada {masa}",
+    "kolom": {
+      "tanggal": "Tanggal bayar",
+      "kol": "KOL",
+      "jenis": "Jenis",
+      "identitas": "NIK/NPWP",
+      "bruto": "Bruto",
+      "dpp": "DPP",
+      "tarif": "Tarif",
+      "pph": "PPh",
+      "neto": "Neto",
+      "bukti": "Bukti potong",
+      "setor": "Setor"
+    },
+    "grossUp": "gross-up",
+    "tanpaNpwp": "tanpa NPWP",
+    "identitasKosong": "Belum diisi",
+    "belumAda": "Belum ada",
+    "ubahBukti": "Ubah bukti potong {kol}",
+    "sudahSetor": "Disetor",
+    "belumSetor": "Belum disetor",
+    "ubahSetor": "Ubah setoran {kol}",
+    "dialog": {
+      "buktiJudul": "Nomor bukti potong",
+      "setorJudul": "Setoran PPh",
+      "nomor": "Nomor bukti potong",
+      "ntpn": "NTPN",
+      "tanggalBukti": "Tanggal bukti potong",
+      "tanggalSetor": "Tanggal setor",
+      "hapus": "Hapus",
+      "batal": "Batal",
+      "simpan": "Simpan"
+    },
+    "buktiOk": "Bukti potong disimpan",
+    "setorOk": "Setoran disimpan",
+    "pinAksi": "mengekspor NIK/NPWP KOL",
+    "pin": {
+      "pinIncorrect": "PIN salah",
+      "pinNotSet": "PIN belum diatur — atur di Pengaturan → Keamanan.",
+      "tooManyAttempts": "Terlalu banyak percobaan gagal. Coba lagi dalam 15 menit.",
+      "pinInvalid": "PIN tidak valid",
+      "userNotFound": "Pengguna tidak ditemukan"
+    },
+    "err": {
+      "TANPA_AKSES": "Anda tidak punya akses untuk ini.",
+      "GAGAL": "Gagal. Coba lagi.",
+      "MASA_TIDAK_VALID": "Masa pajak tidak sah.",
+      "PIN": "PIN salah.",
+      "TIDAK_DITEMUKAN": "Termin tidak ditemukan.",
+      "BELUM_DIBAYAR": "Termin ini belum dibayar.",
+      "TANPA_PPH": "Termin ini tanpa PPh.",
+      "TANGGAL_TIDAK_VALID": "Tanggal tidak sah.",
+      "TANGGAL_DEPAN": "Tanggal tidak boleh sesudah hari ini.",
+      "TERLALU_PANJANG": "Isian terlalu panjang."
     }
   }
 }

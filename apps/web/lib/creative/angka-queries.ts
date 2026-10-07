@@ -18,7 +18,10 @@ import {
  *   ditimpa; setiap pengisian adalah baris baru, yang terakhir yang berlaku).
  * - Biaya = fee + boost + ongkir + HPP sampel yang sudah berangkat + komisi
  *   penjualan (`biayaKolaborasi`). Fee dihitung penuh (biaya rencana), bukan
- *   hanya yang sudah diakui sebagai beban.
+ *   hanya yang sudah diakui sebagai beban. Bila kolaborasi punya termin, fee =
+ *   Σ BRUTO termin yang tidak batal — angka yang sama dengan beban di jurnal
+ *   (`jurnal-kol-aturan.ts`): untuk gross-up `KolBrief.fee` adalah neto yang
+ *   diterima KOL, jadi PPh yang ditanggung Elorae ikut masuk biaya.
  * - Dengan `periode` (hari WIB "YYYY-MM-DD", inklusif): penjualan menurut
  *   tanggalnya, konten menurut tanggal tayang, pengiriman menurut tanggal
  *   berangkat, fee dan boost bila kolaborasi deal (atau dibuat) di periode itu.
@@ -71,7 +74,7 @@ export async function angkaKolaborasi(
   if (unik.length === 0) return hasil;
   const batas = batasPeriode(opsi.periode);
 
-  const [kolab, konten, penjualan, kiriman] = await Promise.all([
+  const [kolab, konten, penjualan, kiriman, termin] = await Promise.all([
     prisma.kolBrief.findMany({
       where: { id: { in: unik } },
       select: { id: true, fee: true, boostCost: true, dealAt: true, createdAt: true },
@@ -104,7 +107,14 @@ export async function angkaKolaborasi(
         lines: { select: { qty: true, unitCost: true } },
       },
     }),
+    prisma.kolPaymentTerm.findMany({
+      where: { collabId: { in: unik }, status: { not: "BATAL" } },
+      select: { collabId: true, bruto: true },
+    }),
   ]);
+
+  const brutoSen = new Map<string, number>();
+  for (const t of termin) brutoSen.set(t.collabId, (brutoSen.get(t.collabId) ?? 0) + Math.round(Number(t.bruto) * 100));
 
   for (const k of kolab) {
     const kontenIni = konten.filter((c) => c.collabId === k.id && c.link && dalam(c.liveAt, batas));
@@ -121,7 +131,7 @@ export async function angkaKolaborasi(
     const feeMasuk = dalam(k.dealAt ?? k.createdAt, batas);
     const gmv = jualIni.reduce((s, j) => s + Number(j.gmv), 0);
     const biaya = biayaKolaborasi({
-      fee: feeMasuk ? Number(k.fee) : 0,
+      fee: feeMasuk ? (brutoSen.has(k.id) ? brutoSen.get(k.id)! / 100 : Number(k.fee)) : 0,
       boostCost: feeMasuk ? Number(k.boostCost) : 0,
       ongkir: kirimIni.map((s) => Number(s.shippingCost)),
       sampel: kirimIni.flatMap((s) => s.lines.map((l) => ({ unitCost: Number(l.unitCost), qty: l.qty }))),

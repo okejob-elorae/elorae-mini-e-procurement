@@ -13,6 +13,7 @@
 import { bacaTanggal, geserHari } from "@/lib/tanggal-isian";
 import type { AmbangKreatif } from "./ambang";
 import { indeksTahap, isJalurKeluar, tahapAktif, type StatusBayar, type StatusDraf, type Tahap } from "./tahap";
+import { jatuhTempoTermin, type PemicuTermin, type StatusTermin } from "./termin-aturan";
 
 export type JenisTenggat =
   | "FOLLOW_UP"
@@ -42,6 +43,16 @@ export type KontenTenggat = {
   angkaTerakhirHari: string | null;
 };
 
+/** Termin pembayaran kolaborasi (`KolPaymentTerm`); jatuh temponya diturunkan di sini. */
+export type TerminTenggat = {
+  id: string;
+  status: StatusTermin;
+  pemicu: PemicuTermin;
+  hariSesudah: number;
+  /** Hari WIB untuk pemicu TANGGAL. */
+  tanggal: string | null;
+};
+
 export type DataTenggat = {
   tahap: Tahap;
   tahapAt: string;
@@ -53,6 +64,13 @@ export type DataTenggat = {
   payStatus: StatusBayar;
   pengiriman: PengirimanTenggat[];
   konten: KontenTenggat[];
+  /**
+   * Termin pembayaran. Bila diisi dan ada termin yang tidak batal, jatuh tempo
+   * bayar = satu tenggat per termin BELUM menurut pemicunya (sama dengan layar
+   * Pembayaran, `termin-queries.ts`). Tanpa termin: cara lama, tayang terakhir
+   * + `jatuhTempoBayarHari`.
+   */
+  termin?: TerminTenggat[];
 };
 
 export type Tenggat = {
@@ -140,7 +158,18 @@ export function tenggatKolaborasi(d: DataTenggat, ambang: AmbangKreatif, hariIni
 
   // Bayar: tetap ditagih sesudah SELESAI atau keluar jalur — fee yang sudah
   // diakui tidak hilang karena kolaborasinya ditutup.
-  if (d.fee > 0 && (d.payStatus === "BELUM" || d.payStatus === "SEBAGIAN") && !(isJalurKeluar(d.tahap) && !adaLink)) {
+  const terminHidup = (d.termin ?? []).filter((t) => t.status !== "BATAL");
+  if (terminHidup.length > 0) {
+    if (!(isJalurKeluar(d.tahap) && !adaLink)) {
+      const dasarTempo = { dealHari: d.dealAt ?? null, tayangHari: d.liveAt ?? null };
+      const tempo = terminHidup
+        .filter((t) => t.status === "BELUM")
+        .map((t) => ({ id: t.id, tanggal: jatuhTempoTermin(t, dasarTempo) }))
+        .filter((t): t is { id: string; tanggal: string } => t.tanggal !== null)
+        .sort((a, b) => a.tanggal.localeCompare(b.tanggal) || a.id.localeCompare(b.id));
+      for (const t of tempo) hasil.push(buat("JATUH_TEMPO_BAYAR", t.tanggal, 0, hariIni, t.id));
+    }
+  } else if (d.fee > 0 && (d.payStatus === "BELUM" || d.payStatus === "SEBAGIAN") && !(isJalurKeluar(d.tahap) && !adaLink)) {
     const tayangTerakhir = d.konten.reduce<string | null>((m, k) => (k.link?.trim() ? maks(m, k.liveAt) : m), null) ?? d.liveAt ?? null;
     if (tayangTerakhir) hasil.push(buat("JATUH_TEMPO_BAYAR", tayangTerakhir, ambang.jatuhTempoBayarHari, hariIni));
   }

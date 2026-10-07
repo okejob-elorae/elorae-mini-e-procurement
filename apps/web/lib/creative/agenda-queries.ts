@@ -220,7 +220,7 @@ export async function kalenderKreatif(o: {
         campaignId: c.campaignId,
         judul: labelKol(c.kolHandle, c.kolNama),
         sub: c.docNo,
-        nilai: t.jenis === "JATUH_TEMPO_BAYAR" ? c.fee : null,
+        nilai: t.jenis === "JATUH_TEMPO_BAYAR" ? (c.termin?.find((x) => x.id === t.refId)?.jumlah ?? c.fee) : null,
         lewat: t.lewat,
       });
     }

@@ -195,7 +195,8 @@
     "navKolPembayaran": "KOL payments",
     "navKolKalender": "KOL calendar",
     "navKolLaporan": "KOL reports",
-    "navKreatifPengaturan": "Creative settings"
+    "navKreatifPengaturan": "Creative settings",
+    "navFinancePphDipotong": "Withheld tax (KOL)"
   },
   "notifications": {
     "title": "Notifications",
@@ -8684,7 +8685,12 @@
       "VAN_SALE": "Van sale",
       "VAN_RECONCILE": "Van reconcile",
       "SUPPLIER_PAYMENT": "Supplier payment",
-      "SUPPLIER_PAYMENT_REVERSAL": "Supplier payment reversal"
+      "SUPPLIER_PAYMENT_REVERSAL": "Supplier payment reversal",
+      "KOL_FEE": "KOL fee recognition",
+      "KOL_PAYMENT": "KOL payment",
+      "KOL_PAYMENT_REVERSAL": "KOL payment reversal",
+      "KOL_SAMPLE": "KOL sample",
+      "KOL_KOLABORASI": "KOL collaboration"
     },
     "tabPosted": "Posted",
     "tabPending": "Pending",
@@ -8859,11 +8865,16 @@
       "MARKETPLACE_FEE_PROCESSING": "Marketplace Order Processing Fee",
       "MARKETPLACE_FEE_OTHER": "Other Marketplace Fees",
       "INVENTORY_VARIANCE": "Inventory Variance",
-      "TAX": "Tax"
+      "TAX": "Tax",
+      "KOL_EXPENSE": "KOL Marketing Expense",
+      "KOL_PAYABLE": "KOL Payable",
+      "KOL_PREPAID": "KOL Prepayment",
+      "PPH21_PAYABLE": "PPh 21 Payable",
+      "PPH23_PAYABLE": "PPh 23 Payable"
     },
     "desc": {
-      "INVENTORY": "Asset account debited on stock-in and credited on stock-out.",
-      "INVENTORY_FG": "Finished-goods inventory account, debited when a work order's output is received.",
+      "INVENTORY": "Raw-material inventory (fabric, accessories): debited when received from a supplier, credited when used in production or reduced by an opname.",
+      "INVENTORY_FG": "Finished-goods inventory: debited when a work order's output is received or finished goods are bought, credited when sold (COGS), loaded onto a van, sent as a KOL sample, or reduced by an opname.",
       "INVENTORY_VAN": "Stock currently loaded on a canvasser's van; debited when the van is loaded, credited when sold or returned.",
       "AP": "Liability account for amounts owed to suppliers.",
       "AR": "Asset account for amounts owed by customers/marketplaces.",
@@ -8878,7 +8889,12 @@
       "MARKETPLACE_FEE_PROCESSING": "Expense for the order processing fee, from the Biaya Proses Pesanan column.",
       "MARKETPLACE_FEE_OTHER": "Unitemized remainder of marketplace deductions — including ad fees, shipping subsidies, adjustments, and every TikTok fee.",
       "INVENTORY_VARIANCE": "Account for recording stock opname/reconciliation variances.",
-      "TAX": "Account for tax liabilities/expenses."
+      "TAX": "Account for tax liabilities/expenses.",
+      "KOL_EXPENSE": "Expense for KOL fees (recognised when the content goes live) and samples sent to KOLs.",
+      "KOL_PAYABLE": "KOL fees already recognised as expense but not yet paid.",
+      "KOL_PREPAID": "KOL fee instalments paid before the content goes live; moved to KOL Payable when the fee is recognised.",
+      "PPH21_PAYABLE": "Non-employee PPh 21 withheld from individual KOL fees, until deposited.",
+      "PPH23_PAYABLE": "PPh 23 withheld from fees of KOL companies (agencies, PT, CV), until deposited."
     },
     "error": {
       "FORBIDDEN": "You do not have permission to change account mappings.",
@@ -11092,7 +11108,16 @@
       "KOL_AGENDA_UPDATED": "Creative agenda updated",
       "KOL_AGENDA_DONE": "Creative agenda done",
       "KOL_AGENDA_DELETED": "Creative agenda deleted",
-      "CREATIVE_SETTINGS_UPDATED": "Creative settings updated"
+      "CREATIVE_SETTINGS_UPDATED": "Creative settings updated",
+      "KOL_PAYMENT_TERMS_SET": "KOL payment terms set",
+      "KOL_PAYMENT_TERM_PAID": "KOL payment term paid",
+      "KOL_PAYMENT_TERM_PAYMENT_CANCELLED": "KOL term payment cancelled",
+      "KOL_WITHHOLDING_SLIP_RECORDED": "KOL withholding slip recorded",
+      "KOL_WITHHOLDING_DEPOSIT_RECORDED": "KOL withholding deposit recorded",
+      "KOL_COLLAB_TAX_MODE_CHANGED": "KOL collaboration tax mode changed",
+      "KOL_TAX_PROFILE_UPDATED": "KOL tax profile updated",
+      "KOL_SENSITIVE_UPDATED": "KOL bank/NIK/NPWP updated",
+      "KOL_SENSITIVE_VIEWED": "KOL bank/NIK/NPWP viewed"
     },
     "entities": {
       "ChainTemplate": "Chain template",
@@ -18350,7 +18375,7 @@
       "JADWAL_TAYANG_LEWAT": "Planned go-live passed, no content yet",
       "BELUM_DIBALAS": "No reply yet, follow up",
       "ANGKA_BELUM_ADA": "Live but numbers not filled in",
-      "BELUM_DIBAYAR": "Live but not paid",
+      "BELUM_DIBAYAR": "Instalment due, not paid",
       "KIRIM_DOBEL": "Possible double shipment",
       "DATA_KIRIM_KURANG": "Shipping details incomplete",
       "KOL_DIBLOKIR": "Blocked KOL with a running collaboration",
@@ -18365,7 +18390,7 @@
       "JADWAL_TAYANG_LEWAT": "Ask the KOL when the content will go live.",
       "BELUM_DIBALAS": "Follow up again, or mark as ghosting if it has been too long.",
       "ANGKA_BELUM_ADA": "Time to fill in the content numbers (views, likes, comments).",
-      "BELUM_DIBAYAR": "Open Payments and settle the fee.",
+      "BELUM_DIBAYAR": "Open Payments and pay the instalment that is due.",
       "KIRIM_DOBEL": "Check before shipping — this number or person has already received a sample.",
       "DATA_KIRIM_KURANG": "Complete the address, phone number or size before shipping.",
       "KOL_DIBLOKIR": "Decide: continue or close the collaboration.",
@@ -18687,7 +18712,8 @@
       "KOSONG": "Select at least one collaboration.",
       "TERLALU_BANYAK": "At most 500 collaborations at once.",
       "TANPA_AKSES": "You are not allowed to change KOL payments.",
-      "GAGAL": "The payment could not be saved. Try again."
+      "GAGAL": "The payment could not be saved. Try again.",
+      "SUDAH_DISETOR": "The tax of one instalment was already deposited — its payment cannot be cancelled here."
     },
     "pembayaran": {
       "meta": "{n} paid collaborations",
@@ -19289,6 +19315,9 @@
         },
         "deliverableBaris": "{platform} · {format} × {qty}",
         "sampelBaris": "{nama} × {qty}"
+      },
+      "errDetail": {
+        "fee_dibayar": "The fee cannot be lower than what has already been paid to the KOL. Cancel the instalment payment in Payments first if it was recorded by mistake."
       }
     },
     "campaign": {
@@ -19786,7 +19815,7 @@
         "tab": {
           "kolaborasi": "Collaborations",
           "konten": "Content",
-          "ukuran": "Sizes & address",
+          "ukuran": "Sizes, address & tax",
           "pengikut": "Follower history",
           "catatan": "Notes & history"
         },
@@ -19904,6 +19933,368 @@
           "rateCard": "Rate card is not valid."
         }
       }
+    },
+    "termin": {
+      "meta": "{n} instalments",
+      "kartu": {
+        "bruto": "Total gross",
+        "brutoSub": "{n} instalments",
+        "pph": "Tax withheld",
+        "pphSub": "PPh 21 and PPh 23",
+        "neto": "Net to KOL",
+        "netoSub": "Unpaid {jumlah} · {n} instalments"
+      },
+      "chip": {
+        "BELUM": "Unpaid",
+        "JATUH_TEMPO": "Due",
+        "DIBAYAR": "Paid",
+        "SEMUA": "All"
+      },
+      "saringKolaborasi": "Collaboration {docNo}",
+      "dipilih": "{n} instalments selected · net {neto}",
+      "bayarDipilih": "Pay selected",
+      "judulDaftar": "Payment instalments",
+      "kosong": {
+        "belumJudul": "No unpaid instalments"
+      },
+      "kolom": {
+        "termin": "Instalment",
+        "bruto": "Gross",
+        "pph": "Tax",
+        "neto": "Net"
+      },
+      "pilihBaris": "Select {nama} — {label}",
+      "dataBelumLengkap": "Tax data incomplete",
+      "pemicu": {
+        "DEAL": "After deal +{n} days",
+        "TAYANG": "After going live +{n} days"
+      },
+      "pemicuTanggal": "Fixed date",
+      "grossUp": "Gross-up",
+      "menunggu": {
+        "DEAL": "Waiting for deal",
+        "TAYANG": "Waiting to go live",
+        "TANGGAL": "—"
+      },
+      "brutoPph": "Gross {bruto} · Tax {pph}",
+      "status": {
+        "BELUM": "Unpaid",
+        "DIBAYAR": "Paid",
+        "BATAL": "Cancelled"
+      },
+      "bayar": "Pay",
+      "lihatBukti": "View transfer proof",
+      "dialog": {
+        "judulSatu": "Pay instalment {label}",
+        "judulBanyak": "Pay {n} instalments",
+        "deskBanyak": "One transfer and one payment date for every selected instalment.",
+        "transfer": "Transferred",
+        "rekening": "Transfer to {bank} ••••{last4}",
+        "bank": "Bank",
+        "rekeningKosong": "The KOL's bank account is not filled in on their profile.",
+        "grossUp": "Gross-up: Elorae bears the tax — the KOL receives the full net.",
+        "peringatanRekening": "Some KOLs have no bank account yet — fill it in on the KOL profile before transferring.",
+        "peringatanPajak": "Tax data (NIK/NPWP) incomplete — a withholding slip needs the KOL's identity.",
+        "tanggal": "Payment date",
+        "bukti": "Transfer proof",
+        "buktiPetunjuk": "Optional. A photo or screenshot of the transfer.",
+        "nomorBukti": "Withholding slip number",
+        "nomorBuktiPetunjuk": "Optional — finance can fill it later in Finance → Withheld tax.",
+        "catatan": "Note",
+        "batal": "Cancel",
+        "simpan": "Pay {neto}"
+      },
+      "ok": "Instalment paid",
+      "okMaju": "Instalment paid · stage → {tahap}",
+      "okBanyak": "{n} instalments paid",
+      "okBanyakMaju": "{n} instalments paid · {m} collaborations moved to Paid",
+      "errBaris": "{kol} — {label}: {pesan}",
+      "err": {
+        "TANPA_AKSES": "You don't have access to this.",
+        "GAGAL": "Could not save. Try again.",
+        "TIDAK_DITEMUKAN": "Instalment or collaboration not found.",
+        "TANPA_FEE": "This collaboration has no fee — no instalments.",
+        "MODE_TIDAK_VALID": "Unknown tax mode.",
+        "SUDAH_DIBAYAR": "This instalment is already paid.",
+        "TERMIN_BATAL": "This instalment was cancelled.",
+        "TANGGAL_DEPAN": "The date cannot be after today.",
+        "TANGGAL_TIDAK_VALID": "Invalid date.",
+        "ALASAN_WAJIB": "A reason is required.",
+        "TERLALU_PANJANG": "Input is too long.",
+        "SUDAH_DISETOR": "This instalment's tax was already deposited — its payment cannot be cancelled.",
+        "BELUM_DIBAYAR": "This instalment is not paid yet.",
+        "TANPA_PPH": "This instalment has no withholding tax.",
+        "FOTO_BUKAN_MILIK": "That proof photo belongs to someone else — upload your own.",
+        "FOTO_SUDAH_DIPAKAI": "The same proof photo is already used by another document.",
+        "KOSONG": "No instalments yet.",
+        "TERLALU_BANYAK": "Too many instalments at once.",
+        "SISA_NEGATIF": "The fee is lower than what was already paid.",
+        "SUDAH_LUNAS": "The fee is fully paid — nothing left to split.",
+        "LABEL_WAJIB": "Instalment name is required.",
+        "LABEL_PANJANG": "Instalment name is at most 60 characters.",
+        "PEMICU_TIDAK_VALID": "Choose what the due date counts from.",
+        "HARI_TIDAK_VALID": "Days must be a whole number 0–365.",
+        "TANGGAL_WAJIB": "A due date is required.",
+        "PERSEN_TIDAK_VALID": "Percent must be above 0 and at most 100.",
+        "TOTAL_PERSEN": "Percentages must add up to exactly 100.",
+        "JUMLAH_TIDAK_VALID": "Every instalment amount must be above 0.",
+        "TOTAL_JUMLAH": "Amounts must add up to exactly the remaining fee.",
+        "CATATAN_PANJANG": "Note is too long."
+      },
+      "rincian": {
+        "warisan": "Paid before the tax module — no tax computed.",
+        "bruto": "Gross",
+        "brutoGrossUp": "Gross (gross-up)",
+        "tidakDipotong": "No tax withheld.",
+        "dpp": "Tax base ({persen}% of gross)",
+        "lapisan": "{persen}% × {dasar}",
+        "tambahan": "+{persen}% without NPWP",
+        "pph": "PPh {pasal} (effective {efektif}%)",
+        "neto": "Net to KOL",
+        "ditanggung": "Tax borne by Elorae (gross-up)."
+      },
+      "aturTombol": "Set instalments",
+      "feeNeto": "Fee (net, gross-up)",
+      "feeBruto": "Fee (gross)",
+      "dibayarNeto": "Transferred",
+      "sisaNeto": "Left to transfer",
+      "modeJudul": "Tax mode",
+      "subjek": {
+        "ORANG_PRIBADI": "Individual — PPh 21",
+        "BADAN": "Company — PPh 23",
+        "TIDAK_DIPOTONG": "Not withheld"
+      },
+      "npwpAda": "has NPWP",
+      "npwpTidak": "no NPWP",
+      "ubahDiProfil": "Change on the KOL profile",
+      "mode": {
+        "DIPOTONG": "Withheld",
+        "GROSS_UP": "Gross-up"
+      },
+      "modeOk": {
+        "DIPOTONG": "Withheld mode · unpaid instalments recalculated",
+        "GROSS_UP": "Gross-up mode · unpaid instalments recalculated"
+      },
+      "dataBelumLengkapPanjang": "The KOL's tax data is incomplete (bank account or NIK/NPWP) — complete it on the KOL profile.",
+      "jurnal": {
+        "tertunda": "This collaboration's ledger journal is not posted ({sebab}).",
+        "ulang": "Repost journal",
+        "ok": "{n} journals posted",
+        "gagal": "Journal still failing: {sebab}",
+        "luarBuku": "This collaboration's money moved before the tax module — it is not journaled automatically."
+      },
+      "rincianToggle": "Details",
+      "rincianAria": "Calculation details for {label}",
+      "batalkan": "Cancel payment",
+      "disetor": "Tax deposited",
+      "kosongPanel": "No instalments yet.",
+      "riwayat": {
+        "dibayar": "{termin}: {neto} transferred {tanggal}",
+        "dibatalkan": "{termin}: payment cancelled"
+      },
+      "batalOk": "Payment of {label} cancelled",
+      "batalJudul": "Cancel the payment of {label}?",
+      "batalIsi": "The instalment returns to unpaid and its payment journal is reversed. The {neto} already transferred must be settled outside the system.",
+      "batalAlasan": "Reason (required)",
+      "aturOk": "Instalments saved",
+      "aturTanpa": "Nothing changed",
+      "atur": {
+        "judul": "Set instalments",
+        "deskSisa": "The remaining {sisa} of the {fee} fee is split across unpaid instalments.",
+        "deskBruto": "The {fee} (gross) fee is split into instalments.",
+        "deskNeto": "The {fee} (net, gross-up) fee is split into instalments.",
+        "dasar": "Split by",
+        "dasarPERSEN": "Percent",
+        "dasarJUMLAH": "Amount",
+        "preset": "Quick:",
+        "presetSekali": "Single payment",
+        "presetDp": "50% deposit + settlement",
+        "label": "Instalment name",
+        "persen": "Percent",
+        "jumlah": "Amount (Rp)",
+        "pemicu": "Due date counts from",
+        "pemicuPilihan": {
+          "DEAL": "Deal date",
+          "TAYANG": "Live date",
+          "TANGGAL": "Fixed date"
+        },
+        "tanggal": "Date",
+        "hari": "+ days",
+        "hapus": "Remove instalment {label}",
+        "pratinjau": "{persen}% of fee · gross {bruto} · tax {pph} · net {neto}",
+        "tambah": "Add instalment",
+        "total": "Total: gross {bruto} · tax {pph} · net {neto}",
+        "simpan": "Save instalments"
+      }
+    },
+    "pajakKol": {
+      "judul": "Tax & bank account",
+      "lengkap": "Tax data complete",
+      "belumLengkap": "Tax data incomplete",
+      "tanpaKunci": "The server encryption key (ENCRYPTION_KEY) is not set — bank/NIK/NPWP cannot be stored or opened.",
+      "subjek": "Tax subject",
+      "alasan": "Reason not withheld",
+      "npwpStatus": "NPWP",
+      "npwpYa": "Yes (NIK matched/valid NPWP)",
+      "npwpTidak": "No — higher rate",
+      "grossUpBawaan": "Gross-up by default",
+      "ya": "Yes",
+      "tidak": "No",
+      "rekening": "Bank account",
+      "rekeningTersamar": "{bank} ••••{last4}",
+      "bank": "Bank",
+      "atasNamaAda": "holder name stored",
+      "belumDiisi": "Not filled in",
+      "tersimpan": "Stored",
+      "kolom": {
+        "bankName": "Bank name",
+        "bankAccount": "Account number",
+        "bankHolder": "Account holder",
+        "nik": "NIK",
+        "npwp": "NPWP"
+      },
+      "ubahSubjek": "Edit tax data",
+      "isiData": "Fill in bank & identity",
+      "isiDataDesk": "Only the fields you fill in are saved. Stored values are never shown.",
+      "buka": "Open full data",
+      "npwpCentang": "The KOL has an NPWP (or a matched NIK)",
+      "grossUpCentang": "The KOL does not accept withholding — new paid collaborations use gross-up",
+      "simpan": "Save",
+      "subjekOk": "Tax data saved",
+      "subjekOkHitung": "Tax data saved · {n} collaborations recalculated",
+      "dataOk": "Bank & identity saved",
+      "placeholderAda": "Stored — type to replace",
+      "hapusKolom": "Delete the stored value",
+      "pinAksi": "open the KOL's bank/NIK/NPWP",
+      "dataLengkap": "Full data",
+      "dataLengkapDesk": "This view is recorded in the audit trail under your name.",
+      "salin": "Copy {kolom}",
+      "disalin": "Copied",
+      "gagalSalin": "Could not copy",
+      "tutup": "Close",
+      "pin": {
+        "pinIncorrect": "Incorrect PIN",
+        "pinNotSet": "No PIN set — set one in Settings → Security.",
+        "tooManyAttempts": "Too many failed attempts. Try again in 15 minutes.",
+        "pinInvalid": "Invalid PIN",
+        "userNotFound": "User not found"
+      },
+      "err": {
+        "TANPA_AKSES": "You don't have access to this.",
+        "GAGAL": "Failed. Try again.",
+        "TIDAK_DITEMUKAN": "KOL not found.",
+        "JENIS_TIDAK_VALID": "Unknown tax subject.",
+        "ALASAN_WAJIB": "A reason for not withholding is required.",
+        "TERLALU_PANJANG": "Input is too long.",
+        "KUNCI_TIDAK_ADA": "The server encryption key is not set — nothing was saved.",
+        "DATA_RUSAK": "Stored data cannot be opened (damaged or the key changed).",
+        "KOSONG": "Nothing filled in.",
+        "BANK_NAMA_TIDAK_VALID": "Bank name 2–60 characters.",
+        "REKENING_TIDAK_VALID": "Account number 5–20 digits.",
+        "ATAS_NAMA_TIDAK_VALID": "Account holder 2–100 characters.",
+        "NIK_TIDAK_VALID": "NIK must be 16 digits.",
+        "NPWP_TIDAK_VALID": "NPWP must be 15 or 16 digits.",
+        "PIN": "Incorrect PIN."
+      }
+    },
+    "pajakSetelan": {
+      "judul": "KOL fee tax (PPh)",
+      "konsultan": "Default rates — confirm with a tax consultant before use.",
+      "pph21": "PPh 21 non-employee (individual KOLs)",
+      "porsiDpp": "Tax base share of gross",
+      "tambahan": "Surcharge without NPWP",
+      "lapisan": "Article 17 brackets on the tax base",
+      "lapisanSampai": "Tax base up to (Rp)",
+      "lapisanAkhir": "Above that",
+      "lapisanSeterusnya": "and above",
+      "lapisanTarif": "Rate %",
+      "hapusLapisan": "Remove bracket {n}",
+      "tambahLapisan": "Add bracket",
+      "errLapisan": "Bracket limits must increase, rates 0–100%, and the last bracket has no limit.",
+      "pph23": "PPh 23 (company KOLs)",
+      "tarif23": "Rate on gross",
+      "contoh": "Example gross {bruto}: PPh 21 {a} (with NPWP) / {b} (without NPWP); PPh 23 {c}.",
+      "simpan": "Save rates",
+      "bawaan": "Restore defaults",
+      "ok": "Tax rates saved",
+      "okHitung": "Rates saved · {n} collaborations recalculated",
+      "errTidakValid": "Some rate fields are invalid.",
+      "errAkses": "You don't have access to change rates.",
+      "errGagal": "Could not save the rates."
+    }
+  },
+  "pphDipotong": {
+    "judul": "Withheld tax",
+    "meta": "{n} instalments · period {masa}",
+    "ekspor": "Export CSV",
+    "eksporLengkap": "Export with identities",
+    "eksporOk": "CSV downloaded (identities masked)",
+    "eksporLengkapOk": "CSV with identities downloaded — recorded in the audit trail",
+    "masaSebelum": "Previous period",
+    "masaSesudah": "Next period",
+    "kartu": {
+      "pph21": "PPh 21",
+      "pph23": "PPh 23",
+      "jumlah": "{n} instalments",
+      "belum": "Not deposited",
+      "belumBukti": "{n} without a withholding slip"
+    },
+    "daftar": "Instalments with tax",
+    "gagal": "Data could not be loaded. Try reloading.",
+    "kosong": "No tax withheld in {masa}",
+    "kolom": {
+      "tanggal": "Paid on",
+      "kol": "KOL",
+      "jenis": "Type",
+      "identitas": "NIK/NPWP",
+      "bruto": "Gross",
+      "dpp": "Tax base",
+      "tarif": "Rate",
+      "pph": "Tax",
+      "neto": "Net",
+      "bukti": "Withholding slip",
+      "setor": "Deposit"
+    },
+    "grossUp": "gross-up",
+    "tanpaNpwp": "no NPWP",
+    "identitasKosong": "Not filled in",
+    "belumAda": "None yet",
+    "ubahBukti": "Edit withholding slip for {kol}",
+    "sudahSetor": "Deposited",
+    "belumSetor": "Not deposited",
+    "ubahSetor": "Edit deposit for {kol}",
+    "dialog": {
+      "buktiJudul": "Withholding slip number",
+      "setorJudul": "Tax deposit",
+      "nomor": "Withholding slip number",
+      "ntpn": "NTPN",
+      "tanggalBukti": "Slip date",
+      "tanggalSetor": "Deposit date",
+      "hapus": "Remove",
+      "batal": "Cancel",
+      "simpan": "Save"
+    },
+    "buktiOk": "Withholding slip saved",
+    "setorOk": "Deposit saved",
+    "pinAksi": "export KOL NIK/NPWP",
+    "pin": {
+      "pinIncorrect": "Incorrect PIN",
+      "pinNotSet": "No PIN set — set one in Settings → Security.",
+      "tooManyAttempts": "Too many failed attempts. Try again in 15 minutes.",
+      "pinInvalid": "Invalid PIN",
+      "userNotFound": "User not found"
+    },
+    "err": {
+      "TANPA_AKSES": "You don't have access to this.",
+      "GAGAL": "Failed. Try again.",
+      "MASA_TIDAK_VALID": "Invalid tax period.",
+      "PIN": "Incorrect PIN.",
+      "TIDAK_DITEMUKAN": "Instalment not found.",
+      "BELUM_DIBAYAR": "This instalment is not paid yet.",
+      "TANPA_PPH": "This instalment has no tax.",
+      "TANGGAL_TIDAK_VALID": "Invalid date.",
+      "TANGGAL_DEPAN": "The date cannot be after today.",
+      "TERLALU_PANJANG": "Input is too long."
     }
   }
 }

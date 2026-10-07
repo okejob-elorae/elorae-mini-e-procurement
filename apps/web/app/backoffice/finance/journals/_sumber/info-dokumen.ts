@@ -49,8 +49,10 @@ export async function cariInfoDokumen(pasangan: Pasangan[]): Promise<Map<string,
   const rekonIds = idsPer(pasangan, "VAN_RECONCILE");
   const poIds = idsPer(pasangan, "SUPPLIER_PAYMENT", "SUPPLIER_PAYMENT_REVERSAL");
   const settlementIds = idsPer(pasangan, "SETTLEMENT");
+  const kolabIds = idsPer(pasangan, "KOL_KOLABORASI", "KOL_FEE", "KOL_PAYMENT", "KOL_PAYMENT_REVERSAL");
+  const sampelIds = idsPer(pasangan, "KOL_SAMPLE");
 
-  const [grn, fg, opname, so, retur, muat, jualVan, rekon, po, settlement] = await Promise.all([
+  const [grn, fg, opname, so, retur, muat, jualVan, rekon, po, settlement, kolab, sampel] = await Promise.all([
     aman("GRN", grnIds, () =>
       prisma.gRN.findMany({ where: { id: { in: grnIds } }, select: { id: true, docNumber: true, poId: true } }),
     ),
@@ -84,6 +86,15 @@ export async function cariInfoDokumen(pasangan: Pasangan[]): Promise<Map<string,
         select: { id: true, marketplace: true, seller: true },
       }),
     ),
+    aman("KolBrief", kolabIds, () =>
+      prisma.kolBrief.findMany({ where: { id: { in: kolabIds } }, select: { id: true, docNo: true } }),
+    ),
+    aman("KolShipment", sampelIds, () =>
+      prisma.kolShipment.findMany({
+        where: { id: { in: sampelIds } },
+        select: { id: true, collabId: true, trackingNo: true, collab: { select: { docNo: true } } },
+      }),
+    ),
   ]);
 
   for (const r of grn) isi(["GRN", "GRN_REVERSAL"], r.id, { nomor: r.docNumber, poId: r.poId });
@@ -96,6 +107,8 @@ export async function cariInfoDokumen(pasangan: Pasangan[]): Promise<Map<string,
   for (const r of rekon) isi(["VAN_RECONCILE"], r.id, { nomor: r.docNo });
   for (const r of po) isi(["SUPPLIER_PAYMENT", "SUPPLIER_PAYMENT_REVERSAL"], r.id, { nomor: r.docNumber });
   for (const r of settlement) isi(["SETTLEMENT"], r.id, { nomor: `${namaMarketplace(r.marketplace)} · ${r.seller}` });
+  for (const r of kolab) isi(["KOL_KOLABORASI", "KOL_FEE", "KOL_PAYMENT", "KOL_PAYMENT_REVERSAL"], r.id, { nomor: r.docNo });
+  for (const r of sampel) isi(["KOL_SAMPLE"], r.id, { nomor: r.trackingNo ? `${r.collab.docNo} · ${r.trackingNo}` : r.collab.docNo, kolaborasiId: r.collabId });
 
   return hasil;
 }

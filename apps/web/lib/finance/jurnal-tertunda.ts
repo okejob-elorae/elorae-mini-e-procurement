@@ -25,7 +25,14 @@ export type SumberNotifikasiJurnal =
    * Jurnal pembayaran pemasok ber-`sourceId` `poId#generasi`, jadi dicocokkan
    * per PO dan arah, bukan per pasangan sumber.
    */
-  | { tipe: "pembayaranPemasok"; arah: "payment" | "reversal"; poId: string };
+  | { tipe: "pembayaranPemasok"; arah: "payment" | "reversal"; poId: string }
+  /*
+   * Jurnal fee/pembayaran KOL satu kolaborasi (`lib/creative/jurnal-kol.ts`)
+   * diselaraskan sekaligus — beberapa jurnal per kolaborasi, ber-sourceId
+   * `<kolaborasi>#…`. Selesai HANYA bila penyelarasnya berhasil penuh dan
+   * menandainya (`readAt`): keberadaan satu jurnal tidak membuktikan yang lain.
+   */
+  | { tipe: "kolaborasiKol"; kolaborasiId: string };
 
 export function dokumenJurnal(sourceType: string, sourceId: string): SumberNotifikasiJurnal {
   return { tipe: "dokumen", sourceType, sourceId };
@@ -65,6 +72,8 @@ export function sumberNotifikasiJurnal(metadata: unknown): SumberNotifikasiJurna
     if (van) return dokumenJurnal(van, docId);
     if (kind === "supplier_payment") return { tipe: "pembayaranPemasok", arah: "payment", poId: docId };
     if (kind === "supplier_payment_reversal") return { tipe: "pembayaranPemasok", arah: "reversal", poId: docId };
+    if (kind === "kol_kolaborasi") return { tipe: "kolaborasiKol", kolaborasiId: docId };
+    if (kind === "kol_sampel") return dokumenJurnal("KOL_SAMPLE", docId);
     return null;
   }
 
@@ -99,7 +108,9 @@ export function sumberNotifikasiJurnal(metadata: unknown): SumberNotifikasiJurna
 }
 
 function kunci(s: SumberNotifikasiJurnal): string {
-  return s.tipe === "dokumen" ? `d|${s.sourceType}|${s.sourceId}` : `p|${s.arah}|${s.poId}`;
+  if (s.tipe === "dokumen") return `d|${s.sourceType}|${s.sourceId}`;
+  if (s.tipe === "kolaborasiKol") return `k|${s.kolaborasiId}`;
+  return `p|${s.arah}|${s.poId}`;
 }
 
 /**
@@ -171,7 +182,7 @@ async function idSudahBerjurnal(baris: BarisNotifikasi[]): Promise<Set<string>> 
       const ids = perJenis.get(s.sourceType) ?? new Set<string>();
       ids.add(s.sourceId);
       perJenis.set(s.sourceType, ids);
-    } else {
+    } else if (s.tipe === "pembayaranPemasok") {
       poIds.add(s.poId);
     }
   }
@@ -205,6 +216,7 @@ async function idSudahBerjurnal(baris: BarisNotifikasi[]): Promise<Set<string>> 
       if (ada.has(kunci(s))) sudah.add(n.id);
       continue;
     }
+    if (s.tipe === "kolaborasiKol") continue;
     const sourceType = s.arah === "payment" ? "SUPPLIER_PAYMENT" : "SUPPLIER_PAYMENT_REVERSAL";
     const awalan = `${s.poId}#`;
     const pulih = jurnalPo.some(

@@ -59,12 +59,15 @@ export function ProfilKolClient({
   niche,
   labelSaran,
   panelCatatan,
+  kartuPajak,
 }: {
   profil: ProfilKol;
   bolehMengelola: boolean;
   niche: readonly string[];
   labelSaran: readonly string[];
   panelCatatan: ReactNode;
+  /** Kartu "Pajak & rekening" (komponen server `KartuPajakKol`). */
+  kartuPajak?: ReactNode;
 }) {
   const t = useTranslations("kreatifRuang");
   const tc = useTranslations("creative");
@@ -343,7 +346,7 @@ export function ProfilKolClient({
           )}
         </TabsContent>
 
-        <TabsContent value="ukuran">
+        <TabsContent value="ukuran" className="space-y-4">
           <div className="grid gap-4 lg:grid-cols-2">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2">
@@ -392,6 +395,7 @@ export function ProfilKolClient({
               </CardContent>
             </Card>
           </div>
+          {kartuPajak}
         </TabsContent>
 
         <TabsContent value="pengikut">

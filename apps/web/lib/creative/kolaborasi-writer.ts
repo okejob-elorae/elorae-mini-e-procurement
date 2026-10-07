@@ -3,6 +3,8 @@ import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { catatJejak, JEJAK } from "@/lib/receivables/jejak";
 import { denganNomorUnik } from "@/lib/receivables/nomor";
+import { sinkronJurnalKolAman } from "./jurnal-kol";
+import { periksaFeeBaru, selaraskanTermin } from "./termin-writer";
 import {
   feeDiakui,
   indeksTahap,
@@ -92,7 +94,7 @@ export async function ubahKolaborasi(input: {
   const deliverables = isi.deliverables?.filter((d) => d.qty > 0);
   if (deliverables?.some((d) => !Number.isInteger(d.qty))) return { ok: false, alasan: "QTY_TIDAK_VALID" };
 
-  return runSerializable(async (tx) => {
+  const hasil = await runSerializable(async (tx) => {
     const lama = await tx.kolBrief.findUnique({
       where: { id: input.id },
       select: {
@@ -122,6 +124,10 @@ export async function ubahKolaborasi(input: {
     if ((gantiFee || gantiJenis) && feeDiakui(lama.tahap as Tahap) && !input.alasan?.trim()) {
       return { ok: false as const, alasan: "ALASAN_WAJIB" as AlasanGagalKreatif, detail: "fee" };
     }
+    // Fee tidak boleh turun di bawah termin yang sudah dibayar (dicek sebelum menulis apa pun).
+    if (gantiFee && !(await periksaFeeBaru(tx, lama.id, isi.fee!)).ok) {
+      return { ok: false as const, alasan: "TIDAK_VALID" as AlasanGagalKreatif, detail: "fee_dibayar" };
+    }
 
     if (isi.campaignId !== undefined && isi.campaignId && isi.campaignId !== lama.campaignId) {
       const c = await tx.kolCampaign.findUnique({ where: { id: isi.campaignId }, select: { archivedAt: true } });
@@ -150,9 +156,6 @@ export async function ubahKolaborasi(input: {
       ...(isi.campaignId !== undefined ? { campaignId: isi.campaignId || null } : {}),
       ...(isi.jenis !== undefined ? { jenis: isi.jenis } : {}),
       ...(isi.fee !== undefined ? { fee: D(feeBaru) } : {}),
-      ...(isi.fee !== undefined
-        ? { payStatus: statusBayarSesudahUbahFee(lama.payStatus as StatusBayar, feeBaru) }
-        : {}),
       ...(isi.commissionPct !== undefined ? { commissionPct: isi.commissionPct == null ? null : D(isi.commissionPct) } : {}),
       ...(isi.boostCost !== undefined ? { boostCost: D(isi.boostCost) } : {}),
       ...(isi.picId !== undefined ? { picId: isi.picId || null } : {}),
@@ -162,6 +165,13 @@ export async function ubahKolaborasi(input: {
       ...(isi.dontList !== undefined ? { dontList: teks(isi.dontList) } : {}),
     };
     await tx.kolBrief.update({ where: { id: lama.id }, data });
+    // Termin mengikuti fee baru; status bayar diturunkan dari terminnya (satu penulis).
+    let payStatusBaru: StatusBayar | undefined;
+    if (isi.fee !== undefined) {
+      const termin = await selaraskanTermin(tx, { kolaborasiId: lama.id, olehUserId: input.olehUserId, sebab: "Fee kolaborasi diubah" });
+      if (!termin.ok) throw new Error(`TERMIN_${termin.kode}`);
+      payStatusBaru = termin.turunan.payStatus;
+    }
 
     if (deliverables !== undefined) {
       await tx.kolBriefDeliverable.deleteMany({ where: { briefId: lama.id } });
@@ -207,7 +217,7 @@ export async function ubahKolaborasi(input: {
     banding("campaignId", lama.campaignId, isi.campaignId === undefined ? undefined : isi.campaignId || null);
     banding("jenis", lama.jenis, isi.jenis);
     banding("fee", feeLama, isi.fee);
-    banding("payStatus", lama.payStatus, "payStatus" in data ? data.payStatus : undefined);
+    banding("payStatus", lama.payStatus, payStatusBaru);
     banding(
       "commissionPct",
       lama.commissionPct == null ? null : angka(lama.commissionPct),
@@ -240,6 +250,9 @@ export async function ubahKolaborasi(input: {
 
     return { ok: true as const, id: lama.id };
   });
+  // Sesudah commit: fee yang sudah diakui berubah → penyesuaian jurnal (best-effort).
+  if (hasil.ok && isi.fee !== undefined) await sinkronJurnalKolAman([hasil.id], input.olehUserId);
+  return hasil;
 }
 
 export type GagalMassal = { id: string; alasan: AlasanGagalKreatif };

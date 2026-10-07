@@ -14,7 +14,7 @@
 import type { AmbangKreatif } from "./ambang";
 import { keadaanBudget } from "./angka-konten";
 import { tahapAktif, type StatusBayar, type StatusDraf, type Tahap } from "./tahap";
-import { tenggatKolaborasi, umurHari, type JenisTenggat, type PengirimanTenggat, type Tenggat } from "./tenggat";
+import { tenggatKolaborasi, umurHari, type JenisTenggat, type PengirimanTenggat, type Tenggat, type TerminTenggat } from "./tenggat";
 
 export type KunciTugas =
   | "AGENDA"
@@ -60,7 +60,7 @@ export const JUDUL_TUGAS: Record<KunciTugas, string> = {
   JADWAL_TAYANG_LEWAT: "Jadwal tayang lewat, konten belum ada",
   BELUM_DIBALAS: "Belum dibalas, perlu follow-up",
   ANGKA_BELUM_ADA: "Sudah tayang tapi angka belum diisi",
-  BELUM_DIBAYAR: "Sudah tayang tapi belum dibayar",
+  BELUM_DIBAYAR: "Termin jatuh tempo, belum dibayar",
   KIRIM_DOBEL: "Berpotensi kirim dobel",
   DATA_KIRIM_KURANG: "Data kirim belum lengkap",
   KOL_DIBLOKIR: "KOL diblokir tapi kolaborasinya berjalan",
@@ -107,6 +107,8 @@ export type KolaborasiTugas = {
   payStatus: StatusBayar;
   pengiriman: PengirimanTugas[];
   konten: KontenTugas[];
+  /** Termin pembayaran; jumlah dalam basis fee. Tanpa termin: tenggat bayar cara lama. */
+  termin?: (TerminTenggat & { jumlah: number })[];
 };
 
 export type AgendaTugas = {
@@ -291,7 +293,10 @@ export function susunTugas(m: MasukanTugas): KelompokTugas[] {
     }
 
     const bayar = lewat("JATUH_TEMPO_BAYAR");
-    if (bayar) tambah("BELUM_DIBAYAR", barisKolaborasi(c, bayar.sejak, m.hariIni, { tanggal: bayar.tanggal, fee: c.fee }));
+    if (bayar) {
+      const termin = c.termin?.find((t) => t.id === bayar.refId);
+      tambah("BELUM_DIBAYAR", barisKolaborasi(c, bayar.sejak, m.hariIni, { tanggal: bayar.tanggal, fee: termin ? termin.jumlah : c.fee }));
+    }
 
     if (TAHAP_RAWAN_DOBEL.has(c.tahap)) {
       const dobel = terkirim.filter(

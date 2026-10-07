@@ -3238,6 +3238,29 @@ enum KolJenisAgenda {
   LAINNYA
 }
 
+enum KolJenisPajak {
+  ORANG_PRIBADI
+  BADAN
+  TIDAK_DIPOTONG
+}
+
+enum KolModePajak {
+  DIPOTONG
+  GROSS_UP
+}
+
+enum KolPemicuTermin {
+  DEAL
+  TAYANG
+  TANGGAL
+}
+
+enum KolStatusTermin {
+  BELUM
+  DIBAYAR
+  BATAL
+}
+
 enum ContentFormat {
   FEED
   REELS
@@ -3279,6 +3302,18 @@ model Kol {
   blockedAt      DateTime?
   blockReason    String?   @db.Text
   lastContactAt  DateTime?
+  jenisPajak          KolJenisPajak @default(ORANG_PRIBADI)
+  alasanTidakDipotong String?       @db.Text
+  adaNpwp             Boolean       @default(false)
+  grossUpBawaan       Boolean       @default(false)
+  bankNameEnc         String?       @db.Text
+  bankAccountEnc      String?       @db.Text
+  bankHolderEnc       String?       @db.Text
+  nikEnc              String?       @db.Text
+  npwpEnc             String?       @db.Text
+  bankLast4           String?
+  nikLast4            String?
+  dataPajakLengkap    Boolean       @default(false)
   createdById String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -3379,6 +3414,8 @@ model KolBrief {
   paidAt        DateTime?
   payNote       String?           @db.Text
   rating        Int?
+  modePajak     KolModePajak      @default(DIPOTONG)
+  jurnalOtomatis Boolean          @default(true)
   cancelReason  String?           @db.Text
   createdById   String?
   createdAt     DateTime          @default(now())
@@ -3396,6 +3433,7 @@ model KolBrief {
   sales         KolSale[]
   notes         KolNote[]
   agendas       KolAgenda[]
+  terms         KolPaymentTerm[]
 
   @@index([kolId])
   @@index([tahap])
@@ -3430,6 +3468,42 @@ model KolBriefItem {
 
   @@index([briefId])
   @@index([itemId])
+}
+
+model KolPaymentTerm {
+  id               String          @id @default(cuid())
+  collabId         String
+  urutan           Int             @default(1)
+  label            String
+  persen           Decimal?        @db.Decimal(5, 2)
+  neto             Decimal         @default(0) @db.Decimal(15, 2)
+  bruto            Decimal         @default(0) @db.Decimal(15, 2)
+  pph              Decimal         @default(0) @db.Decimal(15, 2)
+  dpp              Decimal         @default(0) @db.Decimal(15, 2)
+  jenisPajak       KolJenisPajak   @default(ORANG_PRIBADI)
+  grossUp          Boolean         @default(false)
+  tarifInfo        String?         @db.Text
+  pemicu           KolPemicuTermin @default(TAYANG)
+  hariSesudah      Int             @default(0)
+  jatuhTempo       DateTime?
+  status           KolStatusTermin @default(BELUM)
+  bayarKe          Int             @default(0)
+  dibayarAt        DateTime?
+  dibayarOlehId    String?
+  buktiTransferUrl String?
+  nomorBuktiPotong String?
+  buktiPotongAt    DateTime?
+  setorAt          DateTime?
+  ntpn             String?
+  catatan          String?         @db.Text
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  collab           KolBrief        @relation(fields: [collabId], references: [id], onDelete: Cascade)
+
+  @@index([collabId])
+  @@index([status])
+  @@index([dibayarAt])
 }
 
 model KolShipment {

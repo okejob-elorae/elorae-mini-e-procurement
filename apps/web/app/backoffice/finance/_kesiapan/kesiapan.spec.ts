@@ -38,7 +38,8 @@ describe("nilaiKesiapan", () => {
     expect(k.aktif).toBe(false);
     expect(k.alasan).toEqual(["PEMETAAN", "TANPA_JURNAL", "TANPA_TANGGAL_MULAI"]);
     expect(k.jumlahTerpetakan).toBe(0);
-    expect(k.totalPeran).toBe(17);
+    // 17 peran inti + 5 peran Ruang KOL (opsional).
+    expect(k.totalPeran).toBe(22);
     expect(k.jumlahWajibTerpetakan).toBe(0);
     expect(k.totalPeranWajib).toBe(11);
     expect(k.peranWajibBelum).toEqual(SEMUA_WAJIB);

@@ -2,6 +2,7 @@ import type { Prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { catatJejak, JEJAK } from "@/lib/receivables/jejak";
+import { sinkronJurnalKolAman } from "./jurnal-kol";
 import { terapkanMajuOtomatis } from "./maju-otomatis";
 import {
   FORMAT_BAWAAN,
@@ -118,7 +119,7 @@ export async function simpanKontenKol(input: IsiKontenKol): Promise<HasilKontenK
   if (draf === "LINK_TIDAK_SAH") return gagal("LINK_TIDAK_SAH");
   const adCode = input.adCode === undefined ? undefined : input.adCode?.trim().slice(0, MAKS_KODE_IKLAN) || null;
 
-  return runSerializable(async (tx) => {
+  const hasil = await runSerializable(async (tx) => {
     const sekarang = new Date();
     const kolab = await kolaborasiDanTebakan(tx, input.kolaborasiId);
     if (!kolab) return gagal("KOLABORASI_TIDAK_DITEMUKAN");
@@ -228,6 +229,9 @@ export async function simpanKontenKol(input: IsiKontenKol): Promise<HasilKontenK
     });
     return { ok: true as const, id: dibuat.id, maju };
   });
+  // Sesudah commit: link tayang bisa membuat fee kolaborasi diakui — selaraskan jurnalnya (best-effort).
+  if (hasil.ok) await sinkronJurnalKolAman([input.kolaborasiId], input.olehUserId);
+  return hasil;
 }
 
 /* ──────────────────────────── Draf ──────────────────────────── */

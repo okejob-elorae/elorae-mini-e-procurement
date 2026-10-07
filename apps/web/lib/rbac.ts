@@ -135,6 +135,7 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/jubelio/couriers': 'settings_security:view',
   '/backoffice/finance/coa': 'coa:view',
   '/backoffice/finance/faktur-pajak': 'tax_invoices:view',
+  '/backoffice/finance/pph-dipotong': 'journals:view',
   // Modul piutang sengaja TIDAK dipetakan — `/backoffice/piutang`, `pelunasan`
   // (termasuk `giro` dan `baru`), `pelunasan-dasbor`, `retur-toko`, `kontrabon`,
   // `beban-selisih`, `tugas-tagih`, `arsip-retur`, `konsinyasi`, dan cetakannya

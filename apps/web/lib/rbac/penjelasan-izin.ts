@@ -207,6 +207,7 @@ const ISIAN: Record<KodeIzin, Isian> = {
       "/backoffice/finance/journals",
       "/backoffice/finance/account-mapping",
       "/backoffice/finance/cash-flow-sections",
+      "/backoffice/finance/pph-dipotong",
     ],
   },
   [P.JOURNALS_MANAGE]: {

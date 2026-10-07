@@ -76,6 +76,7 @@ export const KOLOM_FOTO: readonly { model: string; kolom: readonly string[]; jso
   { model: "itemImage", kolom: ["url"], wajib: true },
   { model: "user", kolom: ["image"] },
   { model: "spgDailyClose", kolom: ["photoUrls"], json: true },
+  { model: "kolPaymentTerm", kolom: ["buktiTransferUrl"] },
 ];
 
 /**
@@ -91,6 +92,8 @@ export const KOLOM_BUKAN_FOTO_DB: Readonly<Record<string, string>> = {
   "Item.images": "relasi ke ItemImage (kolom url-nya terdaftar)",
   "StoreVisit.photos": "relasi ke VisitPhoto — foto kunjungan di R2, bukan tabel Foto",
   "User.fotoDiunggah": "relasi ke Foto itu sendiri",
+  "KolPaymentTerm.nomorBuktiPotong": "nomor bukti potong PPh dari Coretax (teks), bukan gambar",
+  "KolPaymentTerm.buktiPotongAt": "tanggal bukti potong PPh, bukan gambar",
 };
 
 const POLA_URL_FOTO = /\/api\/foto\/([A-Za-z0-9_-]+)/g;

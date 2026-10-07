@@ -233,7 +233,7 @@ function IsiDialog({
       }
       const r = await ubahKolaborasiAction(awal!.id, isi, butuhAlasan ? alasan.trim() : null);
       if (!r.ok) {
-        toast.error(galat(r.kode));
+        toast.error(r.detail === "fee_dibayar" ? t("kolaborasi.errDetail.fee_dibayar") : galat(r.kode));
         return;
       }
       toast.success(t("kolaborasi.ok.diubah"));

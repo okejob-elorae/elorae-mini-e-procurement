@@ -95,4 +95,21 @@ export const ENTRI: EntriBantuan[] = [
       "Melihat butuh izin melihat faktur pajak; mengubah status butuh izin mengelola faktur pajak.",
     ],
   },
+  {
+    rute: "/backoffice/finance/pph-dipotong",
+    bagian: "navGroupLedger",
+    judul: { kunci: "pphDipotong.judul" },
+    isi: [
+      "PPh yang dipotong dari fee KOL, per masa pajak (bulan WIB tanggal bayar): setiap termin pembayaran KOL yang sudah dibayar dan ber-PPh. Bahan untuk membuat bukti potong dan menyetor di Coretax — Elorae TIDAK melapor ke Coretax sendiri.",
+      "PPh 21 untuk KOL perorangan, PPh 23 untuk KOL berbadan. Kolom tarif adalah tarif efektif (PPh ÷ bruto); rincian lapisannya ada di rincian termin di tab Pembayaran kolaborasi. Termin gross-up ditandai: PPh-nya ditanggung Elorae.",
+      "Sesudah bukti potong dibuat di Coretax, ketik nomornya di kolom Bukti potong; sesudah PPh disetor, catat tanggal setor dan NTPN di kolom Setor. Keduanya bisa diubah atau dihapus, dan tercatat di riwayat kolaborasinya. Pembayaran yang PPh-nya sudah disetor tidak bisa dibatalkan lagi dari Ruang KOL.",
+      "Identitas (NIK/NPWP) selalu tersamar di layar. Ekspor CSV mengunduh bahan isian Coretax dengan identitas tersamar; \"Ekspor dengan identitas\" (keuangan, dengan PIN) mengisi NIK/NPWP lengkap, dan setiap KOL di berkas itu tercatat di jejak audit sebagai data yang dibuka.",
+      "Tarif PPh diatur di Kreatif → Pengaturan dan wajib dikonfirmasi konsultan pajak. Melihat halaman ini butuh izin melihat jurnal; mencatat bukti potong dan setoran butuh izin mengelola jurnal.",
+    ],
+    kartu: [
+      { judul: { kunci: "pphDipotong.kartu.pph21" }, isi: "Jumlah PPh 21 masa ini dan banyaknya termin." },
+      { judul: { kunci: "pphDipotong.kartu.pph23" }, isi: "Jumlah PPh 23 masa ini dan banyaknya termin." },
+      { judul: { kunci: "pphDipotong.kartu.belum" }, isi: "Termin yang PPh-nya belum dicatat disetor, dan berapa yang belum punya nomor bukti potong." },
+    ],
+  },
 ];

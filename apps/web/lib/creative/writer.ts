@@ -3,6 +3,8 @@ import { runSerializable } from '@/lib/db/tx-retry';
 import { formatDateOnlyJakarta } from '@/lib/date-only';
 import { catatJejak, JEJAK } from '@/lib/receivables/jejak';
 import { denganNomorUnik } from '@/lib/receivables/nomor';
+import { sinkronJurnalKolAman } from './jurnal-kol';
+import { selaraskanTermin } from './termin-writer';
 import {
   bolehPindahTahap,
   indeksTahap,
@@ -207,6 +209,12 @@ export async function buatBrief(input: {
         metadata: { kol: kol.name, campaignId: input.campaignId || null, jumlahBarang: barang.length },
       });
 
+      // Kolaborasi berbayar langsung punya termin bawaan (Pelunasan sesudah tayang, PPh dihitung).
+      if (fee > 0) {
+        const termin = await selaraskanTermin(tx, { kolaborasiId: brief.id, olehUserId: input.olehUserId, sebab: 'Kolaborasi dibuat' });
+        if (!termin.ok) throw new Error(`TERMIN_${termin.kode}`);
+      }
+
       return { ok: true as const, id: brief.id, docNo: brief.docNo };
     }),
   );
@@ -229,7 +237,7 @@ export async function pindahTahapKolaborasi(input: {
   alasan?: string | null;
   olehUserId: string;
 }): Promise<HasilKreatif<{ dari: Tahap; ke: Tahap }>> {
-  return runSerializable(async (tx) => {
+  const hasil = await runSerializable(async (tx) => {
     const c = await tx.kolBrief.findUnique({
       where: { id: input.kolaborasiId },
       select: {
@@ -291,6 +299,9 @@ export async function pindahTahapKolaborasi(input: {
 
     return { ok: true as const, dari, ke: input.ke };
   });
+  // Sesudah commit: masuk/keluar TAYANG mengubah fee yang diakui di buku besar (best-effort).
+  if (hasil.ok) await sinkronJurnalKolAman([input.kolaborasiId], input.olehUserId);
+  return hasil;
 }
 
 /* ───────────────────────────── KONTEN ───────────────────────────── */

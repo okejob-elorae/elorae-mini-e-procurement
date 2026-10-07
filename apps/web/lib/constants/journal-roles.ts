@@ -16,6 +16,11 @@ export const POSTING_ROLES = [
   "MARKETPLACE_FEE_OTHER",
   "INVENTORY_VARIANCE",
   "TAX",
+  "KOL_EXPENSE",
+  "KOL_PAYABLE",
+  "KOL_PREPAID",
+  "PPH21_PAYABLE",
+  "PPH23_PAYABLE",
 ] as const;
 
 export type PostingRole = (typeof POSTING_ROLES)[number];

@@ -4,7 +4,12 @@ import type { PostingRole } from "@/lib/constants/journal-roles";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
-export type AutoJournalLine = { role: PostingRole; debit: number; credit: number };
+/**
+ * `memo` (opsional) ikut tersimpan di `JournalLine.memo`. Jurnal KOL menandai
+ * setiap barisnya dengan nama perannya, supaya saldo per kolaborasi bisa
+ * dihitung ulang dari jurnalnya sendiri walau pemetaan akun berubah kemudian.
+ */
+export type AutoJournalLine = { role: PostingRole; debit: number; credit: number; memo?: string };
 
 export type GenerateAutoJournalResult =
   | { ok: true; journalId: string; created: boolean }
@@ -33,7 +38,7 @@ export async function generateAutoJournal(
       date: meta.date,
       description: meta.description,
       postedById: meta.postedById,
-      lines: lines.map((l) => ({ chartAccountId: roleToId.get(l.role)!, debit: l.debit, credit: l.credit })),
+      lines: lines.map((l) => ({ chartAccountId: roleToId.get(l.role)!, debit: l.debit, credit: l.credit, ...(l.memo ? { memo: l.memo } : {}) })),
     });
     return { ok: true, journalId: res.journalId, created: res.created };
   } catch (e) {

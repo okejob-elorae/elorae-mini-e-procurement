@@ -1,22 +1,29 @@
-import { Prisma } from "@elorae/db";
-import { formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
+import type { Prisma } from "@elorae/db";
+import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { catatJejak, JEJAK } from "@/lib/receivables/jejak";
 import { hariIniWib } from "@/lib/tanggal-isian";
 import { dariSen, keSen } from "./angka-konten";
 import { rencanaPembayaran, type KodeTolakBayar } from "./bayar-aturan";
+import { sinkronJurnalKolAman } from "./jurnal-kol";
 import { terapkanMajuOtomatis } from "./maju-otomatis";
 import type { StatusBayar, Tahap } from "./tahap";
+import { GagalTermin, selaraskanTermin, setelTotalDibayar, turunkanDanTulis } from "./termin-writer";
 
 /**
- * Penulis pembayaran fee KOL (`KolBrief.payStatus/paidAmount/paidAt/payNote`).
+ * "Tandai dibayar" per KOLABORASI (layar Pembayaran, panel lama, massal).
  *
- * Aturannya di `bayar-aturan.ts` (dipakai juga dialog layar). Setiap catatan
- * menulis jejak `PEMBAYARAN_KOL_DICATAT` dengan pasangan sebelum/sesudah di
- * transaksi yang sama — barisnya hanya menyimpan keadaan terakhir, jadi
- * pembayaran yang dibetulkan hanya hidup di jejak. Sesudah fakta bayar
- * ditulis, tahap dimajukan lewat `terapkanMajuOtomatis` (LUNAS → DIBAYAR
- * hanya bila kontennya sudah tayang; aturannya di sana, bukan di sini).
+ * Sejak termin pembayaran (2026-10-07) keadaan bayar kolaborasi DITURUNKAN
+ * dari terminnya — penulis ini tidak lagi menulis `payStatus/paidAmount`
+ * sendiri. Ia menerjemahkan status yang dipilih ke termin
+ * (`setelTotalDibayar`): LUNAS membayar semua termin yang belum dibayar;
+ * SEBAGIAN membayar termin berurutan sampai total yang diketik (termin yang
+ * lebih besar dipecah); BELUM membatalkan pembayarannya. Aturan isiannya
+ * tetap `bayar-aturan.ts` (dipakai juga dialog layar).
+ *
+ * Setiap catatan menulis jejak `PEMBAYARAN_KOL_DICATAT` dengan pasangan
+ * sebelum/sesudah di transaksi yang sama, lalu tahap dimajukan lewat
+ * `terapkanMajuOtomatis`. Jurnal diposting sesudah commit (`jurnal-kol.ts`).
  *
  * Mengembalikan kode, tidak pernah melempar ke layar.
  */
@@ -26,7 +33,14 @@ type Klien = Prisma.TransactionClient;
 export const BATAS_CATATAN_BAYAR = 1000;
 export const BATAS_BAYAR_MASSAL = 500;
 
-export type KodeGagalBayar = KodeTolakBayar | "TIDAK_DITEMUKAN" | "TERLALU_PANJANG" | "KOSONG" | "TERLALU_BANYAK";
+export type KodeGagalBayar =
+  | KodeTolakBayar
+  | "TIDAK_DITEMUKAN"
+  | "TERLALU_PANJANG"
+  | "KOSONG"
+  | "TERLALU_BANYAK"
+  /** Membatalkan pembayaran yang PPh-nya sudah disetor. */
+  | "SUDAH_DISETOR";
 
 export type Perpindahan = { dari: Tahap; ke: Tahap };
 
@@ -46,16 +60,27 @@ type Isian = {
 
 const hariDari = (d: Date | null): string | null => (d ? formatDateOnlyJakarta(d) : null);
 
-/** Inti bersama satu dan massal — DI DALAM transaksi pemanggil. */
+class TolakBayar extends Error {
+  constructor(readonly kode: KodeGagalBayar) {
+    super(kode);
+  }
+}
+
+/** Inti bersama satu dan massal — DI DALAM transaksi pemanggil. Penolakan sesudah menulis melempar `TolakBayar`. */
 async function terapkan(tx: Klien, isi: Isian, olehUserId: string, hariIni: string): Promise<HasilBayar> {
-  const c = await tx.kolBrief.findUnique({
+  const ada = await tx.kolBrief.findUnique({ where: { id: isi.kolaborasiId }, select: { id: true, payNote: true } });
+  if (!ada) return { ok: false, kode: "TIDAK_DITEMUKAN" };
+  const catatanBaru = isi.catatan === undefined ? ada.payNote : isi.catatan?.trim() || null;
+  if (catatanBaru && catatanBaru.length > BATAS_CATATAN_BAYAR) return { ok: false, kode: "TERLALU_PANJANG" };
+
+  // Termin dipastikan ada dan selaras dengan fee sekarang (kolaborasi lama tanpa termin).
+  const s = await selaraskanTermin(tx, { kolaborasiId: ada.id, olehUserId, sebab: "Pembayaran dicatat" });
+  if (!s.ok) throw new TolakBayar("JUMLAH_TIDAK_VALID");
+
+  const c = await tx.kolBrief.findUniqueOrThrow({
     where: { id: isi.kolaborasiId },
     select: { id: true, docNo: true, fee: true, payStatus: true, paidAmount: true, paidAt: true, payNote: true, kol: { select: { name: true } } },
   });
-  if (!c) return { ok: false, kode: "TIDAK_DITEMUKAN" };
-
-  const catatanBaru = isi.catatan === undefined ? c.payNote : isi.catatan?.trim() || null;
-  if (catatanBaru && catatanBaru.length > BATAS_CATATAN_BAYAR) return { ok: false, kode: "TERLALU_PANJANG" };
 
   const statusLama = c.payStatus as StatusBayar;
   const hariLama = hariDari(c.paidAt);
@@ -66,23 +91,27 @@ async function terapkan(tx: Klien, isi: Isian, olehUserId: string, hariIni: stri
   if (!r.ok) return r;
 
   const sebelum = { payStatus: statusLama, paidAmount: Number(c.paidAmount), paidAt: hariLama, payNote: c.payNote };
-  const sesudah = { payStatus: r.payStatus, paidAmount: r.paidAmount, paidAt: r.paidAtHari, payNote: catatanBaru };
   const sama =
-    sebelum.payStatus === sesudah.payStatus &&
-    keSen(sebelum.paidAmount) === keSen(sesudah.paidAmount) &&
-    sebelum.paidAt === sesudah.paidAt &&
-    (sebelum.payNote ?? null) === (sesudah.payNote ?? null);
+    sebelum.payStatus === r.payStatus &&
+    keSen(sebelum.paidAmount) === keSen(r.paidAmount) &&
+    sebelum.paidAt === r.paidAtHari &&
+    (sebelum.payNote ?? null) === (catatanBaru ?? null);
   if (sama) return { ok: true, berubah: false, payStatus: r.payStatus, paidAmount: r.paidAmount, tahap: null };
 
-  await tx.kolBrief.update({
-    where: { id: c.id },
-    data: {
-      payStatus: r.payStatus,
-      paidAmount: new Prisma.Decimal(r.paidAmount),
-      paidAt: r.paidAtHari ? (parseDateOnly(r.paidAtHari) ?? null) : null,
-      payNote: catatanBaru,
-    },
-  });
+  if (keSen(Number(c.fee)) > 0) {
+    const t = await setelTotalDibayar(tx, {
+      kolaborasiId: c.id,
+      targetSen: keSen(r.paidAmount),
+      hari: r.paidAtHari,
+      olehUserId,
+      alasan: `Ditandai ${r.payStatus.toLowerCase().replace("_", " ")} lewat Pembayaran`,
+    });
+    if (!t.ok) throw new TolakBayar(t.kode === "SUDAH_DISETOR" ? "SUDAH_DISETOR" : "JUMLAH_TIDAK_VALID");
+  }
+  if ((catatanBaru ?? null) !== (c.payNote ?? null)) await tx.kolBrief.update({ where: { id: c.id }, data: { payNote: catatanBaru } });
+  const turunan = await turunkanDanTulis(tx, c.id);
+
+  const sesudah = { payStatus: turunan.payStatus, paidAmount: turunan.paidAmount, paidAt: turunan.paidAtHari, payNote: catatanBaru };
   await catatJejak(tx, {
     userId: olehUserId,
     action: JEJAK.PEMBAYARAN_KOL_DICATAT,
@@ -95,15 +124,24 @@ async function terapkan(tx: Klien, isi: Isian, olehUserId: string, hariIni: stri
   const tahap = await terapkanMajuOtomatis(tx, {
     kolaborasiId: c.id,
     olehUserId,
-    sebab: `Pembayaran: ${r.payStatus}`,
+    sebab: `Pembayaran: ${turunan.payStatus}`,
   });
-  return { ok: true, berubah: true, payStatus: r.payStatus, paidAmount: r.paidAmount, tahap };
+  return { ok: true, berubah: true, payStatus: turunan.payStatus, paidAmount: turunan.paidAmount, tahap };
 }
 
 /** Catat pembayaran satu kolaborasi. */
 export async function catatPembayaran(input: Isian & { olehUserId: string }): Promise<HasilBayar> {
   const hariIni = hariIniWib();
-  return runSerializable((tx) => terapkan(tx, input, input.olehUserId, hariIni));
+  let hasil: HasilBayar;
+  try {
+    hasil = await runSerializable((tx) => terapkan(tx, input, input.olehUserId, hariIni));
+  } catch (e) {
+    if (e instanceof TolakBayar) return { ok: false, kode: e.kode };
+    if (e instanceof GagalTermin) return { ok: false, kode: "JUMLAH_TIDAK_VALID" };
+    throw e;
+  }
+  if (hasil.ok && hasil.berubah) await sinkronJurnalKolAman([input.kolaborasiId], input.olehUserId);
+  return hasil;
 }
 
 export type HasilBayarBanyak =
@@ -151,17 +189,24 @@ export async function catatPembayaranBanyak(input: {
   const hariIni = hariIniWib();
 
   try {
-    return await runSerializable(async (tx) => {
+    const hasil = await runSerializable(async (tx) => {
       let berubah = 0;
       let total = 0;
       const perpindahan: ({ kolaborasiId: string } & Perpindahan)[] = [];
       for (const it of unik.values()) {
-        const r = await terapkan(
-          tx,
-          { kolaborasiId: it.kolaborasiId, status: input.status, jumlah: it.jumlah, tanggal: input.tanggal, catatan: input.catatan },
-          input.olehUserId,
-          hariIni,
-        );
+        let r: HasilBayar;
+        try {
+          r = await terapkan(
+            tx,
+            { kolaborasiId: it.kolaborasiId, status: input.status, jumlah: it.jumlah, tanggal: input.tanggal, catatan: input.catatan },
+            input.olehUserId,
+            hariIni,
+          );
+        } catch (e) {
+          if (e instanceof TolakBayar) throw new GagalBaris(e.kode, it.kolaborasiId);
+          if (e instanceof GagalTermin) throw new GagalBaris("JUMLAH_TIDAK_VALID", it.kolaborasiId);
+          throw e;
+        }
         // Melempar membatalkan transaksinya; ditangkap di bawah dan dikembalikan sebagai kode.
         if (!r.ok) throw new GagalBaris(r.kode, it.kolaborasiId);
         if (r.berubah) berubah++;
@@ -170,6 +215,8 @@ export async function catatPembayaranBanyak(input: {
       }
       return { ok: true as const, jumlah: unik.size, berubah, totalDibayar: dariSen(total), perpindahan };
     });
+    if (hasil.berubah > 0) await sinkronJurnalKolAman([...unik.keys()], input.olehUserId);
+    return hasil;
   } catch (e) {
     if (e instanceof GagalBaris) return { ok: false, kode: e.kode, kolaborasiId: e.kolaborasiId };
     throw e;

@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { KartuPajakKol } from "@/components/kreatif/KartuPajakKol";
 import { PanelCatatan } from "@/components/kreatif/PanelCatatan";
 import { pilihanSaringKol, profilKol } from "@/lib/creative/kol-queries";
 import { ProfilKolClient } from "./ProfilKolClient";
@@ -26,6 +27,7 @@ export default async function ProfilKolPage({ params }: { params: Promise<{ id: 
       niche={pilihan?.niche ?? []}
       labelSaran={pilihan?.label ?? []}
       panelCatatan={<PanelCatatan kolId={id} bolehMengelola={bolehMengelola} />}
+      kartuPajak={<KartuPajakKol kolId={id} />}
     />
   );
 }

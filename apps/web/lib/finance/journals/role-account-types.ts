@@ -28,6 +28,11 @@ export const POSTING_ROLE_ACCOUNT_TYPES: Record<PostingRole, readonly AccountTyp
   MARKETPLACE_FEE_OTHER: ["BEBAN"],
   INVENTORY_VARIANCE: ["BEBAN"],
   TAX: ["LIABILITAS", "BEBAN"],
+  KOL_EXPENSE: ["BEBAN"],
+  KOL_PAYABLE: ["LIABILITAS"],
+  KOL_PREPAID: ["ASET"],
+  PPH21_PAYABLE: ["LIABILITAS"],
+  PPH23_PAYABLE: ["LIABILITAS"],
 };
 
 export function isAccountTypeValidForRole(role: PostingRole, type: AccountType): boolean {

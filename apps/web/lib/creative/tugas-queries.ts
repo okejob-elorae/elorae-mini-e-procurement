@@ -16,6 +16,7 @@ import {
   type MasukanTugas,
 } from "./tugas";
 import { normalisasiWa } from "./wa";
+import { keTerminTenggat, PILIH_TERMIN_TENGGAT } from "./termin-tenggat-queries";
 
 /*
  * Pembaca "Hari ini" Ruang KOL — KHUSUS SERVER (klien hanya `import type`).
@@ -81,6 +82,7 @@ const PILIH_KOLABORASI = {
       metrics: { select: { recordedAt: true }, orderBy: [{ recordedAt: "desc" as const }, { id: "desc" as const }], take: 1 },
     },
   },
+  terms: { select: PILIH_TERMIN_TENGGAT },
 } satisfies Prisma.KolBriefSelect;
 
 type BarisKolaborasi = Prisma.KolBriefGetPayload<{ select: typeof PILIH_KOLABORASI }>;
@@ -144,6 +146,7 @@ export function keKolaborasiTugas(c: BarisKolaborasi): KolaborasiTugas {
       draftLink: k.draftLink,
       angkaTerakhirHari: hari(k.metrics[0]?.recordedAt),
     })),
+    termin: c.terms.map(keTerminTenggat),
   };
 }
 
