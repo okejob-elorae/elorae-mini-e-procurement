@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { markTaxInvoiceCreated, markTaxInvoiceNotRequired, markTaxInvoiceSentToStore, revertTaxInvoiceToPending } from "./writer";
+import { markTaxInvoiceCreated, markTaxInvoiceNotRequired, markTaxInvoiceSentToStore, revertTaxInvoiceToCreated, revertTaxInvoiceToPending } from "./writer";
 import { recordFieldSalesDelivery } from "@/lib/field-sales/delivery/writer";
 
 /* Stock-mutating (goes through the real delivery writer) — never run against the shared prod DB. */
@@ -160,6 +160,37 @@ d("tax-invoice status transitions (test bed only)", () => {
       .rejects.toMatchObject({ code: "INVALID_REQUEST" });
   });
 
+  it("refuses a reason longer than AuditLog.reason holds with REASON_TOO_LONG on every reason-carrying transition, writing nothing", async () => {
+    const tooLong = "x".repeat(192);
+    await expect(markTaxInvoiceNotRequired({ taxInvoiceId, reason: tooLong, userId }))
+      .rejects.toMatchObject({ code: "REASON_TOO_LONG" });
+    await expect(revertTaxInvoiceToPending({ taxInvoiceId, reason: tooLong, userId }))
+      .rejects.toMatchObject({ code: "REASON_TOO_LONG" });
+
+    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000015", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
+    await expect(markTaxInvoiceSentToStore({ taxInvoiceId, reason: tooLong, userId }))
+      .rejects.toMatchObject({ code: "REASON_TOO_LONG" });
+    await markTaxInvoiceSentToStore({ taxInvoiceId, userId });
+    await expect(revertTaxInvoiceToCreated({ taxInvoiceId, reason: tooLong, userId }))
+      .rejects.toMatchObject({ code: "REASON_TOO_LONG" });
+
+    const row = await prisma.taxInvoice.findUniqueOrThrow({ where: { id: seededId(taxInvoiceId) } });
+    expect(row.status).toBe("SENT_TO_STORE");
+    const logs = await prisma.auditLog.findMany({
+      where: { entityType: "TaxInvoice", entityId: seededId(taxInvoiceId) },
+    });
+    expect(logs.map((l) => l.action).sort()).toEqual(["TAX_INVOICE_CREATED", "TAX_INVOICE_SENT_TO_STORE"]);
+  });
+
+  it("accepts a reason of exactly 191 characters, padding trimmed first", async () => {
+    const atLimit = "y".repeat(191);
+    await expect(markTaxInvoiceNotRequired({ taxInvoiceId, reason: `  ${atLimit}  `, userId })).resolves.toEqual({ ok: true });
+    const log = await prisma.auditLog.findFirstOrThrow({
+      where: { entityType: "TaxInvoice", entityId: seededId(taxInvoiceId), action: "TAX_INVOICE_NOT_REQUIRED" },
+    });
+    expect(log.reason).toBe(atLimit);
+  });
+
   it("CREATED -> CREATED is INVALID_STATE", async () => {
     await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000002", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
     await expect(markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000003", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId }))
@@ -220,6 +251,45 @@ d("tax-invoice status transitions (test bed only)", () => {
     expect(row.buyerNpwp).toBeNull();
     expect(row.taxableAmount).toBeNull();
     expect(row.ppnAmount).toBeNull();
+  });
+
+  it("SENT_TO_STORE -> CREATED leaves every filed value byte-identical", async () => {
+    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000011", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
+    await markTaxInvoiceSentToStore({ taxInvoiceId, userId });
+    const before = await prisma.taxInvoice.findUniqueOrThrow({ where: { id: seededId(taxInvoiceId) } });
+    await revertTaxInvoiceToCreated({ taxInvoiceId, reason: "clicked by mistake", userId });
+    const after = await prisma.taxInvoice.findUniqueOrThrow({ where: { id: seededId(taxInvoiceId) } });
+    expect(after.status).toBe("CREATED");
+    expect(after.invoiceNo).toBe(before.invoiceNo);
+    expect(after.buyerNpwp).toBe(before.buyerNpwp);
+    expect(Number(after.taxableAmount)).toBe(Number(before.taxableAmount));
+    expect(Number(after.ppnAmount)).toBe(Number(before.ppnAmount));
+    expect(after.markedAt?.getTime()).toBe(before.markedAt?.getTime());
+    expect(after.markedById).toBe(before.markedById);
+  });
+
+  it("writes a TAX_INVOICE_SENT_REVERTED audit row carrying the reason", async () => {
+    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000012", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
+    await markTaxInvoiceSentToStore({ taxInvoiceId, userId });
+    await revertTaxInvoiceToCreated({ taxInvoiceId, reason: "clicked by mistake", userId });
+    const logs = await prisma.auditLog.findMany({
+      where: { entityType: "TaxInvoice", entityId: seededId(taxInvoiceId), action: "TAX_INVOICE_SENT_REVERTED" },
+    });
+    expect(logs).toHaveLength(1);
+    expect(logs[0].reason).toBe("clicked by mistake");
+  });
+
+  it("refuses CREATED -> CREATED with INVALID_STATE", async () => {
+    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000013", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
+    await expect(revertTaxInvoiceToCreated({ taxInvoiceId, reason: "x", userId }))
+      .rejects.toMatchObject({ code: "INVALID_STATE" });
+  });
+
+  it("rejects a blank reason on SENT_TO_STORE -> CREATED with INVALID_REQUEST", async () => {
+    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000014", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
+    await markTaxInvoiceSentToStore({ taxInvoiceId, userId });
+    await expect(revertTaxInvoiceToCreated({ taxInvoiceId, reason: "   ", userId }))
+      .rejects.toMatchObject({ code: "INVALID_REQUEST" });
   });
 
   it("reverting an already-PENDING row is INVALID_STATE", async () => {

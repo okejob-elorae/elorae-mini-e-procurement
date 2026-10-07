@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +17,8 @@ import { fieldReturnErrorKey } from "./ReceiveForm";
 
 type Props = {
   line: FieldReturnLineDetail;
+  /** The retur is APPROVED with its valuation still PENDING — nothing will apply a price on its own any more. */
+  afterApproval?: boolean;
 };
 
 /** Same 2dp Rupiah formatting as the value display beside this control — money is always id-ID grouped. */
@@ -44,19 +47,21 @@ function parseMoneyInput(raw: string): number | null {
 
 /**
  * Lets an admin resolve a price `approveFieldReturn`'s auto-resolve could not pick on its own.
- * The parent only renders this while the retur is still priceable (not APPROVED/CANCELLED) and
- * the viewer holds `field_returns:manage` — this component never re-checks either, matching
+ * The parent only renders this while the line is still priceable — every line of an open retur,
+ * or an unvalued line of an APPROVED retur whose valuation is still PENDING (`afterApproval`) —
+ * and the viewer holds `field_returns:manage`; this component never re-checks either, matching
  * ResolutionControls' split of responsibility.
  *
- * `priceState` drives the shape: AUTO needs no control at all (just the delivery it will take
- * at approval); AMBIGUOUS must show a picker (never a free-text price, since genuine delivery
- * candidates already exist and picking wrong ones is the whole security concern the writer
- * guards against); UNPRICEABLE has no candidates to pick from at all, so only manual entry with
- * a required note makes sense; SET shows the chosen provenance read-only behind a "change"
- * button, which then offers whichever of picker/manual fits today's candidates, with an escape
- * back to read-only.
+ * `priceState` drives the shape: AUTO needs no control before approval (just the delivery it
+ * will take at approval), but after approval nothing would ever apply it, so it offers a button
+ * that applies that delivery's price; AMBIGUOUS must show a picker (never a free-text price,
+ * since genuine delivery candidates already exist and picking wrong ones is the whole security
+ * concern the writer guards against); UNPRICEABLE has no candidates to pick from at all, so
+ * only manual entry with a required note makes sense; SET shows the chosen provenance read-only
+ * behind a "change" button, which then offers whichever of picker/manual fits today's
+ * candidates, with an escape back to read-only.
  */
-export function LinePriceControls({ line }: Props) {
+export function LinePriceControls({ line, afterApproval = false }: Props) {
   const t = useTranslations("fieldReturnReceiving");
   const tCommon = useTranslations("common");
   const router = useRouter();
@@ -131,10 +136,19 @@ export function LinePriceControls({ line }: Props) {
 
   if (isAuto) {
     const c = candidates[0];
+    const autoBodyKey = afterApproval ? "pricing.autoBodyAfterApproval" : "pricing.autoBody";
     return (
-      <div className="rounded-md border bg-muted/30 p-2 text-xs space-y-0.5">
-        <p className="font-medium text-muted-foreground">{t("pricing.autoTitle")}</p>
-        {c && <p className="text-muted-foreground">{t("pricing.autoBody", { docNo: c.docNo, price: formatMoney2(c.unitPrice) })}</p>}
+      <div className="space-y-2">
+        <div className="rounded-md border bg-muted/30 p-2 text-xs space-y-0.5">
+          <p className="font-medium text-muted-foreground">{t("pricing.autoTitle")}</p>
+          {c && <p className="text-muted-foreground">{t(autoBodyKey, { docNo: c.docNo, price: formatMoney2(c.unitPrice) })}</p>}
+        </div>
+        {afterApproval && c && (
+          <Button size="sm" className="h-10" disabled={isPending} onClick={() => submitPick(c.deliveryLineId)}>
+            {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            {t("pricing.applyAutoPrice")}
+          </Button>
+        )}
       </div>
     );
   }

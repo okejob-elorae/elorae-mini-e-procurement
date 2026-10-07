@@ -3,6 +3,7 @@ import {
   parseVarianceTolerance,
   DEFAULT_VARIANCE_TOLERANCE,
   VARIANCE_TOLERANCE_SETTING_KEY,
+  validateVarianceToleranceInput,
 } from "./variance-tolerance";
 
 describe("parseVarianceTolerance", () => {
@@ -56,5 +57,24 @@ describe("parseVarianceTolerance", () => {
 
   it("defaults to zero, so an unconfigured environment demands a reason for any variance", () => {
     expect(DEFAULT_VARIANCE_TOLERANCE).toBe(0);
+  });
+});
+
+describe("validateVarianceToleranceInput", () => {
+  it.each(["500", "0", "12.50"])("accepts %s and round-trips through the parser", (v) => {
+    expect(validateVarianceToleranceInput(v)).toEqual({ ok: true, value: v });
+    expect(parseVarianceTolerance(v)).toBe(Number(v));
+  });
+
+  it("trims before validating and storing", () => {
+    expect(validateVarianceToleranceInput("  250 ")).toEqual({ ok: true, value: "250" });
+  });
+
+  it.each(["", "  "])("reports EMPTY for %j", (v) => {
+    expect(validateVarianceToleranceInput(v)).toEqual({ ok: false, code: "EMPTY" });
+  });
+
+  it.each(["-1", "1e3", "12.345", "abc", "9".repeat(400)])("reports INVALID for %j", (v) => {
+    expect(validateVarianceToleranceInput(v)).toEqual({ ok: false, code: "INVALID" });
   });
 });

@@ -7,13 +7,17 @@ import {
   markTaxInvoiceCreated,
   markTaxInvoiceNotRequired,
   markTaxInvoiceSentToStore,
+  revertTaxInvoiceToCreated,
   revertTaxInvoiceToPending,
 } from "@/lib/tax-invoices/writer";
 import { TaxInvoiceError } from "@/lib/tax-invoices/errors";
 
 export type TaxInvoiceActionResult =
   | { ok: true }
-  | { ok: false; code: "FORBIDDEN" | "NOT_FOUND" | "INVALID_STATE" | "INVALID_REQUEST" | "CONFLICT" | "ERROR" };
+  | {
+      ok: false;
+      code: "FORBIDDEN" | "NOT_FOUND" | "INVALID_STATE" | "INVALID_REQUEST" | "CONFLICT" | "REASON_TOO_LONG" | "ERROR";
+    };
 
 async function guard(): Promise<{ userId: string } | { ok: false; code: "FORBIDDEN" }> {
   const session = await auth();
@@ -106,6 +110,24 @@ export async function markSentToStoreAction(input: {
   }
   try {
     await markTaxInvoiceSentToStore({ taxInvoiceId: input.taxInvoiceId, reason: input.reason, userId: g.userId });
+  } catch (e) {
+    return toResult(e);
+  }
+  revalidatePath("/backoffice/finance/faktur-pajak");
+  return { ok: true };
+}
+
+export async function revertToCreatedAction(input: {
+  taxInvoiceId: string;
+  reason: string;
+}): Promise<TaxInvoiceActionResult> {
+  const g = await guard();
+  if ("ok" in g) return g;
+  if (typeof input?.taxInvoiceId !== "string" || input.taxInvoiceId === "" || typeof input?.reason !== "string") {
+    return { ok: false, code: "INVALID_REQUEST" };
+  }
+  try {
+    await revertTaxInvoiceToCreated({ taxInvoiceId: input.taxInvoiceId, reason: input.reason, userId: g.userId });
   } catch (e) {
     return toResult(e);
   }

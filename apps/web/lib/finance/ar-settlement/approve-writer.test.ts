@@ -524,9 +524,10 @@ d("approveSettlement (test bed only)", () => {
      * The half of the resume scoping that `agreedRemaining` alone cannot express, and the state
      * every other resume test here misses because it never sets up `agreed > live`.
      *
-     * recA is claimed at its full 1000, then a verified `CollectionSubmission` pays 600 of it off
-     * between submission and approval — a documented path, since that writer and this one
-     * deliberately do not net each other. The trade-program component then takes the remaining 400
+     * recA is claimed at its full 1000, then a payment recorded straight from the backoffice
+     * payment sheet pays 600 of it off between submission and approval — a documented path, since
+     * the submit-time netting covers pending collection submissions and other pending settlements
+     * but not a payment posted directly. The trade-program component then takes the remaining 400
      * and closes recA, while this settlement's AGREED share of it still has 600 unspent. Scoping
      * collectibility on `agreedRemaining` alone therefore sees 600 still owed against a PAID row
      * and throws `NOT_OUTSTANDING` on every retry, forever — over a receivable `min(live,
@@ -543,7 +544,7 @@ d("approveSettlement (test bed only)", () => {
       expectedAmount: 1100,
     });
 
-    /* The other channel: 600 of recA collected and verified after this settlement was filed. */
+    /* The other channel: 600 of recA paid directly after this settlement was filed. */
     await prisma.receivable.update({
       where: { id: recA },
       data: { outstandingAmount: 400, paidAmount: 600, status: "PARTIAL" },

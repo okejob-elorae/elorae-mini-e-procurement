@@ -16,6 +16,7 @@ export type CollectionQueueItem = {
   dueDateIso: string;
   daysOverdue: number;
   pendingSubmittedAmount: number;
+  pendingSettlementClaimAmount: number;
 };
 
 function formatRupiah(value: number): string {
@@ -53,7 +54,10 @@ export function CollectionsQueueList({ rows }: { rows: CollectionQueueItem[] }) 
       ) : (
         <ul className="space-y-2">
           {rows.map((r) => {
-            const collectable = r.outstandingAmount - r.pendingSubmittedAmount;
+            const collectable = Math.max(
+              0,
+              r.outstandingAmount - r.pendingSubmittedAmount - r.pendingSettlementClaimAmount,
+            );
             const overdue = r.daysOverdue > 0;
             return (
               <li key={r.receivableId}>

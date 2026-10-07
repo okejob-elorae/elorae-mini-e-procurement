@@ -27,7 +27,7 @@ import {
   type InvoiceRow,
 } from "./approve-writer";
 import { findArJournalPendingFlags } from "@/lib/finance/ar/journal-pending";
-import { RECEIVABLE_SOURCE_SELECT, resolveReceivableSource } from "@/lib/finance/ar/receivable-source";
+import { RECEIVABLE_SOURCE_SELECT, tryResolveReceivableSource } from "@/lib/finance/ar/receivable-source";
 
 /**
  * Re-exported so the screen components import their types from one place. The definitions live in
@@ -349,7 +349,7 @@ export async function getSettlementForApproval(
     const receivable = receivableById.get(row.receivableId);
     return {
       receivableId: row.receivableId,
-      docNo: receivable ? resolveReceivableSource(receivable).docNo : null,
+      docNo: receivable ? (tryResolveReceivableSource(receivable)?.docNo ?? null) : null,
       agreedAmount: row.amount,
       liveOutstanding: receivable ? roundCents(Number(receivable.outstandingAmount)) : null,
       receivableStatus: receivable?.status ?? null,
@@ -846,17 +846,20 @@ export async function getSettlementForPrint(
         })
       : [];
   /**
-   * `docNo` is read through `resolveReceivableSource`, which prefers `delivery.docNo` and falls
+   * `docNo` is read through `tryResolveReceivableSource`, which prefers `delivery.docNo` and falls
    * back to `sellThrough.docNo` — `Receivable.delivery` is OPTIONAL as of the delivery/sell-through
    * source split (`Receivable.sellThroughId`, `lib/finance/ar/receivable-source.ts`), so a
-   * receivable backed by a `KonsiSellThrough` report resolves through the `sellThrough` arm
-   * instead of throwing on a `null` `delivery`. A receivable whose delivery row was deleted (no FK
-   * under `relationMode = "prisma"`) resolves both arms to `null`, and the resolver throws
-   * `ReceivableSourceMissingError` here. Shared by `getSettlementForApproval`'s equivalent lookup.
+   * receivable backed by a `KonsiSellThrough` report resolves through the `sellThrough` arm. A
+   * receivable whose source row was deleted (no FK under `relationMode = "prisma"`) resolves both
+   * arms to `null`; it is left out of this map, so the printed row falls back to the receivable id
+   * rather than failing the whole BKM. `getSettlementForApproval` renders the same orphan with a
+   * `null` docNo.
    */
-  const docNoByReceivableId = new Map(
-    receivables.map((receivable) => [receivable.id, resolveReceivableSource(receivable).docNo] as const),
-  );
+  const docNoByReceivableId = new Map<string, string>();
+  for (const receivable of receivables) {
+    const docNo = tryResolveReceivableSource(receivable)?.docNo;
+    if (docNo !== undefined) docNoByReceivableId.set(receivable.id, docNo);
+  }
 
   /**
    * The retur `docNo` a `RETUR_OFFSET` deduction credits, so the printed receipt lets the store

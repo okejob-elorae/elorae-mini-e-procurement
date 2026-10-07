@@ -235,10 +235,61 @@ export function buildStoreLocationWhere(
   }
 }
 
+export const STORE_NPWP_FILTERS = ["missing", "present"] as const;
+export type StoreNpwpFilter = (typeof STORE_NPWP_FILTERS)[number];
+
+export function parseStoreNpwpFilter(raw: string | undefined): StoreNpwpFilter | undefined {
+  return STORE_NPWP_FILTERS.find((v) => v === raw);
+}
+
+/**
+ * The one definition of "this store has no NPWP" — the store list's `missing` filter, its `present`
+ * filter (the exact complement) and its "No NPWP" badge (`StoreListRow.npwpMissing`, read back from
+ * the database rather than re-derived in JS) all go through it, so the three cannot disagree.
+ *
+ * A store with no NPWP is stored as either null or an empty string, so both spellings count.
+ * `Store` is `utf8mb4_unicode_ci`, a PAD SPACE collation, so `npwp = ''` also matches a value of
+ * spaces only. A hand-written JS check (`trim()`, a regex) would have to restate the collation's
+ * idea of blank — `trim()` also strips tabs and newlines — which is exactly how the badge and the
+ * filter drifted apart once; that is why the badge asks the database instead.
+ */
+const NPWP_MISSING_WHERE: Prisma.StoreWhereInput = { OR: [{ npwp: null }, { npwp: "" }] };
+
+/** undefined is the only spelling of "no filter"; `missing` and `present` partition every store. */
+export function buildStoreNpwpWhere(
+  npwp: StoreNpwpFilter | undefined,
+): Prisma.StoreWhereInput | undefined {
+  switch (npwp) {
+    case "missing":
+      return NPWP_MISSING_WHERE;
+    case "present":
+      return { NOT: NPWP_MISSING_WHERE };
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * What the store writers persist: trimmed, and `null` when nothing is left, so no new
+ * whitespace-only NPWP is ever saved. Rows written before this normalisation are not rewritten.
+ */
+function normalizeStoreNpwp(npwp: string | null): string | null {
+  if (npwp === null) return null;
+  const trimmed = npwp.trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+export type StoreListRow = StoreListItem & { npwpMissing: boolean };
+
 export async function listStores(
-  opts: { activeOnly?: boolean; search?: string; location?: StoreLocationFilter } = {},
+  opts: {
+    activeOnly?: boolean;
+    search?: string;
+    location?: StoreLocationFilter;
+    npwp?: StoreNpwpFilter;
+  } = {},
   paging?: { page: number; pageSize: number },
-): Promise<{ items: StoreListItem[]; totalCount: number }> {
+): Promise<{ items: StoreListRow[]; totalCount: number }> {
   const where: Prisma.StoreWhereInput = {};
   if (opts.activeOnly) where.isActive = true;
   if (opts.search && opts.search.trim()) {
@@ -247,8 +298,10 @@ export async function listStores(
       { code: { contains: opts.search.trim() } },
     ];
   }
-  const locationWhere = buildStoreLocationWhere(opts.location);
-  if (locationWhere) where.AND = [locationWhere];
+  const filters = [buildStoreLocationWhere(opts.location), buildStoreNpwpWhere(opts.npwp)].filter(
+    (f): f is Prisma.StoreWhereInput => f !== undefined,
+  );
+  if (filters.length > 0) where.AND = filters;
   const [rows, totalCount] = await Promise.all([
     prisma.store.findMany({
       where,
@@ -257,7 +310,18 @@ export async function listStores(
     }),
     prisma.store.count({ where }),
   ]);
-  return { items: rows.map(serializeStore), totalCount };
+  const missing =
+    rows.length === 0
+      ? []
+      : await prisma.store.findMany({
+          where: { AND: [{ id: { in: rows.map((r) => r.id) } }, NPWP_MISSING_WHERE] },
+          select: { id: true },
+        });
+  const missingIds = new Set(missing.map((r) => r.id));
+  return {
+    items: rows.map((r) => ({ ...serializeStore(r), npwpMissing: missingIds.has(r.id) })),
+    totalCount,
+  };
 }
 
 // Lightweight {id,name} list for filter dropdowns — all stores (incl. inactive,
@@ -293,7 +357,7 @@ export async function createStore(rawInput: StoreFields): Promise<StoreListItem>
       markupPercent: toDecimalOrNull(input.markupPercent),
       priceDiscountPercent: toDecimalOrNull(input.priceDiscountPercent),
       creditLimit: toDecimalOrNull(input.creditLimit),
-      npwp: input.npwp,
+      npwp: normalizeStoreNpwp(input.npwp),
       lat: toDecimalOrNull(input.lat),
       lng: toDecimalOrNull(input.lng),
       checkinRadiusMeters: input.checkinRadiusMeters,
@@ -357,7 +421,7 @@ export async function updateStore(id: string, rawInput: StoreFields): Promise<St
         markupPercent: toDecimalOrNull(input.markupPercent),
         priceDiscountPercent: toDecimalOrNull(input.priceDiscountPercent),
         creditLimit: toDecimalOrNull(input.creditLimit),
-        npwp: input.npwp,
+        npwp: normalizeStoreNpwp(input.npwp),
         lat: toDecimalOrNull(input.lat),
         lng: toDecimalOrNull(input.lng),
         checkinRadiusMeters: input.checkinRadiusMeters,

@@ -35,10 +35,12 @@ import type { TaxInvoiceRow, TaxInvoiceStatusFilter } from "@/lib/tax-invoices/q
 import {
   markNotRequiredAction,
   markSentToStoreAction,
+  revertToCreatedAction,
   revertToPendingAction,
   type TaxInvoiceActionResult,
 } from "@/app/actions/tax-invoices";
 import { STATUS_BADGE_VARIANT, STATUS_LABEL_KEY } from "@/lib/tax-invoices/status-display";
+import { MAX_TAX_INVOICE_REASON_LENGTH } from "@/lib/tax-invoices/errors";
 import { MarkCreatedDialog } from "./MarkCreatedDialog";
 
 type StatusFilter = TaxInvoiceStatusFilter | "ALL";
@@ -56,7 +58,7 @@ type Props = {
   ppnRatePercent: number;
 };
 
-type DialogKind = "sentToStore" | "notRequired" | "revertToPending";
+type DialogKind = "sentToStore" | "notRequired" | "revertToCreated" | "revertToPending";
 
 type SelectedRow = { id: string; docNo: string };
 
@@ -151,6 +153,17 @@ export function FakturPajakPageClient(props: Props) {
           submittingLabel: t("notRequiredSubmitting"),
           multiline: true,
         };
+      case "revertToCreated":
+        return {
+          title: t("revertToCreatedTitle"),
+          description: t("revertToCreatedDescription", { docNo }),
+          fieldLabel: t("revertToCreatedFieldLabel"),
+          placeholder: t("revertToCreatedFieldPlaceholder"),
+          fieldRequired: t("revertToCreatedFieldRequired"),
+          submitLabel: t("revertToCreatedSubmit"),
+          submittingLabel: t("revertToCreatedSubmitting"),
+          multiline: true,
+        };
       case "revertToPending":
         return {
           title: t("revertTitle"),
@@ -173,6 +186,8 @@ export function FakturPajakPageClient(props: Props) {
         let result: TaxInvoiceActionResult;
         if (kind === "notRequired") {
           result = await markNotRequiredAction({ taxInvoiceId: row.id, reason: trimmedField });
+        } else if (kind === "revertToCreated") {
+          result = await revertToCreatedAction({ taxInvoiceId: row.id, reason: trimmedField });
         } else if (kind === "revertToPending") {
           result = await revertToPendingAction({ taxInvoiceId: row.id, reason: trimmedField });
         } else {
@@ -390,6 +405,25 @@ export function FakturPajakPageClient(props: Props) {
                                           {t("actionRevert")}
                                         </Button>
                                       </>
+                                    ) : status === "SENT_TO_STORE" ? (
+                                      <>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-10"
+                                          onClick={() => openDialog("revertToCreated", row)}
+                                        >
+                                          {t("actionRevertToCreated")}
+                                        </Button>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-10"
+                                          onClick={() => openDialog("revertToPending", row)}
+                                        >
+                                          {t("actionRevert")}
+                                        </Button>
+                                      </>
                                     ) : status === "CANCELLED" ? null : (
                                       <Button
                                         variant="outline"
@@ -440,6 +474,7 @@ export function FakturPajakPageClient(props: Props) {
                   value={fieldValue}
                   disabled={isActionPending}
                   placeholder={copy.placeholder}
+                  maxLength={MAX_TAX_INVOICE_REASON_LENGTH}
                   onChange={(e) => setFieldValue(e.target.value)}
                 />
               ) : (
@@ -449,12 +484,23 @@ export function FakturPajakPageClient(props: Props) {
                   value={fieldValue}
                   disabled={isActionPending}
                   placeholder={copy.placeholder}
+                  maxLength={MAX_TAX_INVOICE_REASON_LENGTH}
                   onChange={(e) => setFieldValue(e.target.value)}
                 />
               )}
-              {copy.fieldRequired !== null && trimmedField === "" && (
-                <p className="text-xs text-muted-foreground">{copy.fieldRequired}</p>
-              )}
+              <div className="flex items-start justify-between gap-3">
+                <p
+                  className={cn(
+                    "text-xs text-muted-foreground",
+                    (copy.fieldRequired === null || trimmedField !== "") && "invisible",
+                  )}
+                >
+                  {copy.fieldRequired}
+                </p>
+                <p className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                  {fieldValue.length}/{MAX_TAX_INVOICE_REASON_LENGTH}
+                </p>
+              </div>
             </div>
 
             <DialogFooter>

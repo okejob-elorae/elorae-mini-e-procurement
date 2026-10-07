@@ -22,6 +22,7 @@ type Props = {
   outstandingAmount: number;
   dueDateIso: string;
   pendingSubmittedAmount: number;
+  pendingSettlementClaimAmount: number;
 };
 
 type ProofState =
@@ -63,11 +64,15 @@ export function SubmitCollectionSheet({
   outstandingAmount,
   dueDateIso,
   pendingSubmittedAmount,
+  pendingSettlementClaimAmount,
 }: Props) {
   const t = useTranslations("pwa.collections");
   const [isPending, startTransition] = useTransition();
 
-  const collectable = roundCents(Math.max(0, outstandingAmount - pendingSubmittedAmount));
+  /* The same two pending kinds `submitCollection` nets, so the form never offers what it refuses. */
+  const collectable = roundCents(
+    Math.max(0, outstandingAmount - pendingSubmittedAmount - pendingSettlementClaimAmount),
+  );
 
   const [amountInput, setAmountInput] = useState(collectable > 0 ? collectable.toFixed(2) : "");
   const [method, setMethod] = useState<"CASH" | "TRANSFER">("CASH");
@@ -204,6 +209,11 @@ export function SubmitCollectionSheet({
               <p className="font-medium tabular-nums">{formatRupiah(collectable)}</p>
             </div>
           </div>
+          {pendingSettlementClaimAmount > 0 && (
+            <p className="truncate text-right text-xs text-muted-foreground tabular-nums">
+              {t("pendingSettlementClaimLabel")}: {formatRupiah(pendingSettlementClaimAmount)}
+            </p>
+          )}
         </CardContent>
       </Card>
 

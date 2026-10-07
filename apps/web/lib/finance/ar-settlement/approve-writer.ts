@@ -34,8 +34,11 @@ const MAX_OVERRIDE_REASON_LENGTH = 191;
  * is `PROGRAM_DEDUCTION`. A cast (`deduction.type as PaymentMethod`) therefore compiles cleanly
  * and then dies at the MariaDB `ENUM` column with a data-truncation error at runtime, mid
  * approval, with earlier components already posted. This map is the only permitted translation.
+ *
+ * PUBLIC API — do not strip the `export`. `reject-writer.ts` uses it to spell the component keys
+ * it checks for a posted payment, so both writers derive each key from the same method.
  */
-const DEDUCTION_TYPE_TO_PAYMENT_METHOD = {
+export const DEDUCTION_TYPE_TO_PAYMENT_METHOD = {
   RETUR_OFFSET: "RETUR_OFFSET",
   PROGRAM: "PROGRAM_DEDUCTION",
   ADMIN_FEE: "ADMIN_FEE",
@@ -69,9 +72,9 @@ export type InvoiceRow = { receivableId: string; amount: number };
  * from the writer it claims to mirror. Same fork shape as `EPSILON` in `calc.ts`, and the same
  * rule: change one, change the other by hand in the same commit.
  *
- * The four exports that ARE a shared seam — `computeComponentHeadroom`, `returComponentKey`,
- * `simpleComponentKey` and `InvoiceRow` — are the ones `queries.ts` actually imports, and those the
- * compiler does hold together.
+ * The five exports that ARE a shared seam — `computeComponentHeadroom`, `returComponentKey`,
+ * `simpleComponentKey`, `InvoiceRow` and `DEDUCTION_TYPE_TO_PAYMENT_METHOD` — are the ones
+ * `queries.ts` and `reject-writer.ts` actually import, and those the compiler does hold together.
  */
 export type HeadroomRow = AllocationInput & {
   agreedRemaining: number;
@@ -100,6 +103,11 @@ type Component =
  * EXACTLY rather than inventing a `settlement-` key of their own — this writer looks payments up
  * by key to decide what a resumed approval still owes, and a key that does not match the one
  * `applyReturnOffset` actually wrote would make every resume re-draw the retur.
+ *
+ * PUBLIC API — do not strip the `export`, here or on `simpleComponentKey`. `queries.ts` spells the
+ * approval screen's posted-component checks with them, and `reject-writer.ts` its refusal to reject
+ * a settlement with a posted component; a consumer that spelled a key itself would miss every
+ * payment this writer posted.
  */
 export function returComponentKey(returnId: string, deductionId: string): string {
   return `returoffset-${returnId}-${deductionId}`;
@@ -157,9 +165,10 @@ function allocateForComponent(amount: number, headroom: HeadroomRow[]): Allocati
  * rather than a second copy of it. The same applies to `returComponentKey`/`simpleComponentKey`
  * above and to the `InvoiceRow` they are fed: a preview that spelled the idempotency keys itself
  * would report every already-posted component as unposted and mis-state both the headroom and the
- * retur-credit checks. Those FOUR are the shared seam. `HeadroomRow` and `SettlementPaymentMethod`
- * are exported but imported nowhere — see the warning on `HeadroomRow` above for the fork that
- * hides behind that.
+ * retur-credit checks. `reject-writer.ts` imports the two key builders too, with
+ * `DEDUCTION_TYPE_TO_PAYMENT_METHOD`, to find a posted component before it rejects. Those FIVE are
+ * the shared seam. `HeadroomRow` and `SettlementPaymentMethod` are exported but imported nowhere —
+ * see the warning on `HeadroomRow` above for the fork that hides behind that.
  */
 export async function computeComponentHeadroom(
   invoiceRows: InvoiceRow[],
@@ -497,9 +506,10 @@ export async function approveSettlement(
    *   - `settlementAllocated > 0` — a component of THIS settlement already allocated against this
    *     receivable, so whatever closed it, this document is at least partly why. This is the case
    *     the `agreedRemaining` term alone misses: `StoreSettlementInvoice.amount` can exceed the
-   *     live balance (a verified `CollectionSubmission` paying the invoice down between submit and
-   *     approval is enough, since those two writers deliberately do not net each other), and then
-   *     a single component closes the receivable while leaving the agreed share partly unspent.
+   *     live balance (a payment recorded straight from the backoffice payment sheet between submit
+   *     and approval is enough, since the submit-time netting covers pending collection
+   *     submissions and other pending settlements but not a payment posted directly), and then a
+   *     single component closes the receivable while leaving the agreed share partly unspent.
    *     `agreedRemaining` stays positive against a now-`PAID` row and the resume throws
    *     `NOT_OUTSTANDING` forever. The tell that the refusal is spurious: `min(live,
    *     agreedRemaining)` is 0 for that row, so `allocateOldestFirst` skips it and no

@@ -251,16 +251,26 @@
       "errBadQty": "Jumlah harus bilangan bulat positif."
     },
     "overdueThresholds": {
-      "title": "Ambang Batas Jatuh Tempo",
-      "description": "Atur kapan notifikasi piutang jatuh tempo dikirim",
+      "title": "Piutang",
+      "description": "Ambang batas notifikasi jatuh tempo dan toleransi selisih pelunasan",
       "heading": "Ambang Batas Notifikasi Piutang Jatuh Tempo",
       "subtitle": "Daftar hari (dipisah koma) sejak jatuh tempo untuk memicu notifikasi",
       "fieldLabel": "Hari (contoh: 0,7,30,60)",
       "fieldHint": "Hanya ambang batas tertinggi yang baru dilewati yang memicu notifikasi, bukan satu per ambang batas",
       "save": "Simpan",
-      "loadError": "Gagal memuat pengaturan",
+      "loadError": "Gagal memuat ambang batas jatuh tempo",
       "errEmpty": "Isi minimal satu hari",
       "errInvalid": "Gunakan angka bulat non-negatif dipisah koma"
+    },
+    "varianceTolerance": {
+      "heading": "Toleransi Selisih Pelunasan",
+      "subtitle": "Seberapa jauh uang tunai salesman boleh berbeda dari jumlah yang diharapkan sebelum finance wajib mengisi alasan",
+      "fieldLabel": "Toleransi (Rp)",
+      "fieldHint": "Pelunasan yang selisih uang tunainya dari jumlah yang diharapkan paling banyak sebesar ini (rupiah) disetujui tanpa alasan override. 0 berarti setiap selisih butuh alasan.",
+      "save": "Simpan",
+      "loadError": "Gagal memuat toleransi selisih pelunasan",
+      "errEmpty": "Isi jumlah (0 atau lebih)",
+      "errInvalid": "Gunakan angka non-negatif dengan maksimal dua desimal"
     },
     "theme": {
       "title": "Tema akun",
@@ -2536,6 +2546,16 @@
         "defaultRadius": "Tidak ada toko yang memakai radius default.",
         "customRadius": "Tidak ada toko dengan radius khusus."
       },
+      "npwpFilter": {
+        "label": "NPWP",
+        "all": "Semua NPWP",
+        "missing": "NPWP kosong",
+        "present": "Sudah ada NPWP"
+      },
+      "npwpEmpty": {
+        "missing": "Semua toko aktif sudah punya NPWP.",
+        "present": "Belum ada toko yang punya NPWP."
+      },
       "table": {
         "code": "Kode",
         "name": "Nama",
@@ -2548,6 +2568,7 @@
         "active": "Aktif",
         "location": "Lokasi",
         "noCoordinates": "Tanpa koordinat",
+        "noNpwp": "Belum ada NPWP",
         "radiusMeters": "{meters} m",
         "radiusDefault": "default",
         "radiusCustom": "khusus"
@@ -2970,9 +2991,10 @@
       "submitButton": "Kirim Setoran",
       "submitting": "Mengirim…",
       "amountExceedsCollectable": "Jumlah melebihi sisa yang bisa ditagih.",
+      "pendingSettlementClaimLabel": "Diklaim pelunasan yang menunggu",
       "submitSuccess": "Setoran berhasil dikirim, menunggu verifikasi.",
       "errForbidden": "Anda tidak memiliki izin untuk menagih piutang ini.",
-      "errOverCollected": "Jumlah melebihi sisa piutang yang belum tertagih.",
+      "errOverCollected": "Jumlah melebihi sisa piutang setelah dikurangi setoran tertunda dan pelunasan yang menunggu.",
       "errAlreadySettled": "Piutang ini sudah lunas atau sudah dihapusbukukan.",
       "errNotAssignedCollector": "Piutang ini tidak ditugaskan kepada Anda.",
       "errGeneric": "Gagal mengirim setoran. Coba lagi."
@@ -3006,9 +3028,10 @@
       "reservedByOtherSettlementLabel": "Sudah diklaim pelunasan tertunda lain",
       "invoiceUnavailableReserved": "Tidak dipilih — pelunasan tertunda lain sudah mereservasi seluruh sisa piutang nota ini.",
       "invoiceUnavailableSetoran": "Tidak dipilih — setoran tertunda sudah menutup seluruh sisa piutang nota ini.",
+      "invoiceUnavailableCombined": "Tidak dipilih — setoran tertunda dan pelunasan tertunda lain bersama-sama sudah menutup seluruh sisa piutang nota ini.",
       "invoiceAmountLabel": "Jumlah yang dilunasi untuk nota ini",
       "invoiceAmountPlaceholder": "Jumlah pelunasan",
-      "invoiceAmountInvalid": "Jumlah harus lebih besar dari nol dan tidak melebihi sisa piutang setelah dikurangi jumlah yang sudah diklaim pelunasan tertunda lain.",
+      "invoiceAmountInvalid": "Jumlah harus lebih besar dari nol dan tidak melebihi sisa piutang setelah dikurangi setoran tertunda dan jumlah yang sudah diklaim pelunasan tertunda lain.",
       "returSectionTitle": "Kredit retur",
       "addReturButton": "Tambah retur",
       "noReturCredit": "Tidak ada kredit retur untuk toko ini.",
@@ -3062,7 +3085,7 @@
       "errMissingEvidence": "Setiap potongan program atau biaya admin wajib memiliki foto bukti.",
       "errDraftIdConflict": "Draf pelunasan ini bermasalah. Muat ulang dan coba lagi.",
       "errNotOutstanding": "Salah satu nota yang dipilih sudah tidak berstatus belum lunas.",
-      "errInvoiceOverclaimed": "Salah satu nota yang dipilih sudah diklaim oleh pelunasan lain yang masih tertunda.",
+      "errInvoiceOverclaimed": "Salah satu nota yang dipilih sudah diklaim oleh pelunasan lain atau setoran yang masih tertunda.",
       "errReturnNotApproved": "Salah satu retur yang dipilih belum disetujui.",
       "errNotValued": "Salah satu retur yang dipilih belum dinilai.",
       "errReturOverclaimed": "Salah satu retur yang dipilih tidak lagi memiliki sisa kredit yang cukup.",
@@ -3575,7 +3598,7 @@
       "notYetValuedBody": "Nilai retur akan dihitung otomatis saat retur ini disetujui.",
       "incompleteTitle": "Penilaian Belum Lengkap",
       "incompleteBody": "{count} baris masih memerlukan harga sebelum retur ini bisa ternilai penuh.",
-      "incompleteBodyApproved": "{count} baris tidak dapat ternilai dan tetap tidak termasuk dalam total retur ini secara permanen — nilai sudah dikunci saat persetujuan dan tidak bisa diubah lagi dari sini.",
+      "incompleteBodyApproved": "{count} baris belum memiliki harga, sehingga retur ini belum punya total dan belum bisa dioffset sampai semua baris memiliki harga.",
       "surplusNote": "Retur ini memiliki baris kelebihan yang dikreditkan pada jumlah yang diterima gudang, sehingga nilainya bisa lebih besar dari nota toko.",
       "colCreditedQty": "Qty Dikreditkan",
       "colUnitPriceRef": "Harga Satuan (Referensi)",
@@ -3589,7 +3612,7 @@
     },
     "credit": {
       "cardTitle": "Kredit Retur",
-      "neverOffsettable": "Valuasi retur ini tidak lengkap saat disetujui dan tidak akan pernah bisa dioffset — nilai sudah dibekukan dan tidak ada jalur repricing.",
+      "valuationIncomplete": "Valuasi retur ini belum lengkap — isi harga baris yang tersisa agar retur ini bisa dioffset.",
       "availableBody": "Tersedia untuk diterapkan ke saldo piutang toko ini.",
       "appliedBody": "Diterapkan ke pembayaran",
       "offsetAction": "Offset ke Piutang",
@@ -3713,12 +3736,14 @@
       "INVALID_REQUEST": "Data yang dikirim tidak valid. Muat ulang halaman dan coba lagi.",
       "ERROR": "Terjadi kesalahan. Coba lagi.",
       "PRICE_NOT_AVAILABLE": "Pengiriman yang dipilih bukan lagi sumber harga yang valid untuk baris ini. Muat ulang halaman dan coba lagi.",
-      "ALREADY_APPROVED": "Retur ini sudah disetujui sehingga harganya tidak bisa diubah lagi.",
+      "ALREADY_APPROVED": "Retur ini sudah disetujui atau dinilai sementara itu. Muat ulang halaman untuk melihat baris mana yang masih bisa diberi harga.",
       "AUTO_PRICE_AVAILABLE": "Baris ini punya harga otomatis yang valid dari pengiriman — harga manual tidak diizinkan selama harga otomatis itu masih berlaku."
     },
     "pricing": {
       "autoTitle": "Harga Otomatis",
       "autoBody": "Harga ini akan diambil otomatis dari pengiriman {docNo} ({price}).",
+      "autoBodyAfterApproval": "Pengiriman {docNo} memberi harga {price} untuk baris ini. Terapkan untuk menilai baris ini.",
+      "applyAutoPrice": "Terapkan Harga Ini",
       "pickerLabel": "Pilih pengiriman sumber harga",
       "pickerPlaceholder": "Pilih pengiriman...",
       "pickerHint": "Toko ini pernah menerima barang ini dari lebih dari satu pengiriman dengan harga berbeda — pilih salah satu sebagai acuan harga baris ini.",
@@ -3735,7 +3760,7 @@
       "unpriceableBody": "Barang ini belum pernah dikirim ke toko ini sehingga tidak ada harga otomatis untuk dipakai — masukkan harga manual beserta catatannya.",
       "successSet": "Harga baris berhasil disimpan."
     },
-    "approveConfirmValuationWarning": "{count} baris belum memiliki harga. Baris ini akan tetap disetujui dan dikembalikan ke stok, tetapi nilainya tidak akan pernah dihitung setelah ini.",
+    "approveConfirmValuationWarning": "{count} baris belum memiliki harga. Baris ini tetap akan disetujui dan dikembalikan ke stok, dan harganya masih bisa diisi setelahnya — tetapi retur ini tidak bisa dioffset sampai semua baris memiliki harga.",
     "konsiStockWarning": {
       "loading": "Memeriksa dampak ke stok toko…",
       "error": "Gagal memeriksa dampak ke stok toko. Anda tetap bisa melanjutkan persetujuan.",
@@ -5294,6 +5319,7 @@
     "rejectButton": "Tolak",
     "printBkmButton": "Cetak BKM",
     "approveBlockedHint": "Persetujuan terkunci sampai semua pemeriksaan di atas lolos.",
+    "rejectBlockedPostedHint": "Sebagian komponen sudah diposting. Lanjutkan persetujuan, atau batalkan setiap pembayaran yang sudah diposting sebelum menolak.",
     "approveDialogTitle": "Setujui pelunasan ini?",
     "approveDialogDescription": "{docNo} akan memposting potongannya dan uang tunai {amount} ke faktur toko ini. Tindakan ini tidak bisa dibatalkan dari sini.",
     "overrideReasonLabel": "Kenapa selisih {variance} bisa diterima?",
@@ -5321,7 +5347,7 @@
     "componentsTitlePosted": "Pembayaran yang diposting persetujuan ini",
     "componentsHintPosted": "Setiap komponen diposting sebagai pembayaran tersendiri. Buka salah satunya untuk melihat alokasi atau membatalkannya.",
     "componentsTitleOrphaned": "Pembayaran yang tertinggal dari pelunasan ini",
-    "componentsHintOrphaned": "Pelunasan ini ditolak, tetapi pembayaran berikut terlanjur diposting. Tidak ada dokumen yang menaunginya — batalkan atau laporkan ke finance.",
+    "componentsHintOrphaned": "Pelunasan ini ditolak setelah sebagian pembayarannya terlanjur diposting. Baris yang masih berstatus Tercatat tidak dinaungi dokumen yang disetujui — batalkan atau laporkan ke finance. Baris yang Dibatalkan tidak perlu ditindaklanjuti.",
     "componentUnlinked": "Retur belum tertaut",
     "subjectInvoiceId": "faktur {id}",
     "subjectReturId": "retur {id}",
@@ -5357,6 +5383,7 @@
       "ALLOCATION_MISMATCH": "Jumlah alokasi pembayaran tidak sesuai dengan jumlah pembayarannya.",
       "INVALID_AMOUNT": "Salah satu jumlah yang dimasukkan tidak valid.",
       "MISSING_REASON": "Alasan penolakan wajib diisi.",
+      "COMPONENTS_POSTED": "Sebagian pembayaran pelunasan ini sudah diposting. Lanjutkan persetujuan, atau batalkan setiap pembayaran yang sudah diposting sebelum menolak.",
       "FORBIDDEN": "Anda tidak memiliki izin untuk menyetujui atau menolak pelunasan.",
       "INVALID_REQUEST": "Permintaan tidak valid. Tutup dialog ini lalu buka kembali.",
       "UNEXPECTED": "Terjadi kesalahan. Silakan coba lagi.",
@@ -5651,6 +5678,7 @@
     "actionNotRequired": "Tidak perlu faktur",
     "actionMarkSentToStore": "Tandai terkirim ke toko",
     "actionRevert": "Kembalikan ke pending",
+    "actionRevertToCreated": "Kembalikan ke dibuat",
     "markCreatedTitle": "Tandai Faktur Dibuat",
     "markCreatedDescription": "Tandai faktur pajak untuk nota {docNo} sebagai sudah dibuat.",
     "markCreatedFieldLabel": "Nomor Faktur",
@@ -5689,6 +5717,14 @@
     "revertSubmit": "Kembalikan",
     "revertSubmitting": "Menyimpan...",
     "revertToPendingSuccess": "Status faktur pajak dikembalikan ke pending.",
+    "revertToCreatedTitle": "Kembalikan ke Dibuat",
+    "revertToCreatedDescription": "Kembalikan faktur pajak nota {docNo} dari terkirim ke dibuat. Nomor faktur, NPWP, dan jumlah tetap tersimpan. Alasan wajib diisi.",
+    "revertToCreatedFieldLabel": "Alasan",
+    "revertToCreatedFieldPlaceholder": "Jelaskan mengapa ini salah ditandai terkirim...",
+    "revertToCreatedFieldRequired": "Alasan wajib diisi.",
+    "revertToCreatedSubmit": "Kembalikan ke dibuat",
+    "revertToCreatedSubmitting": "Menyimpan...",
+    "revertToCreatedSuccess": "Status faktur pajak dikembalikan ke dibuat.",
     "errGeneric": "Terjadi kesalahan. Silakan coba lagi.",
     "actionErr": {
       "FORBIDDEN": "Anda tidak memiliki izin untuk melakukan aksi ini.",
@@ -5696,6 +5732,7 @@
       "INVALID_STATE": "Aksi ini tidak dapat dilakukan pada status faktur saat ini.",
       "INVALID_REQUEST": "Data yang dikirim tidak valid.",
       "CONFLICT": "Status faktur baru saja diubah oleh pengguna lain. Muat ulang halaman dan coba lagi.",
+      "REASON_TOO_LONG": "Alasan terlalu panjang. Maksimal 191 karakter.",
       "ERROR": "Terjadi kesalahan. Silakan coba lagi."
     }
   },

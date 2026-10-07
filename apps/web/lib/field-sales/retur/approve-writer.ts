@@ -192,8 +192,9 @@ export async function approveFieldReturn(input: {
        * and that choice failed to resolve (a manual price that was never actually set, or a
        * priceDeliveryLineId that is dangling / whose lineTotal has since gone null). That is
        * a recorded admin decision, not an absence of one — wiping priceSource/
-       * priceDeliveryLineId/priceNote here would destroy the only trace it existed, on a
-       * terminal APPROVED retur with no UI path back to re-enter it. Only the auto-resolve
+       * priceDeliveryLineId/priceNote here would destroy the only trace it existed, on an
+       * APPROVED retur where the post-approval pricing path (open only until the valuation is
+       * VALUED) is the only way back in. Only the auto-resolve
        * path (no priceSource chosen at all) is allowed to null them, because there nothing
        * was ever chosen.
        */
@@ -256,9 +257,9 @@ export async function approveFieldReturn(input: {
        * choice won, and must be stamped every time — including when preserveAdminChoice holds.
        * Only priceSource/priceDeliveryLineId are conditional: those are the admin's recorded
        * provenance choice, and wiping them here on a dangling/never-set choice would destroy
-       * the only trace it existed, on a terminal APPROVED retur with no UI path back to
-       * re-enter it. (priceNote is never part of this update at all, by any path — it is
-       * already implicitly preserved.)
+       * the only trace it existed, on an APPROVED retur where the post-approval pricing path
+       * is the only way back in. (priceNote is never part of this update at all, by any path —
+       * it is already implicitly preserved.)
        */
       await tx.fieldReturnLine.update({
         where: { id: line.id },

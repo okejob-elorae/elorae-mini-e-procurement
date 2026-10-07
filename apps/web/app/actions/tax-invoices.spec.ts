@@ -11,6 +11,7 @@ const {
   mockMarkTaxInvoiceCreated,
   mockMarkTaxInvoiceNotRequired,
   mockMarkTaxInvoiceSentToStore,
+  mockRevertTaxInvoiceToCreated,
   mockRevertTaxInvoiceToPending,
 } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
@@ -18,6 +19,7 @@ const {
   mockMarkTaxInvoiceCreated: vi.fn(),
   mockMarkTaxInvoiceNotRequired: vi.fn(),
   mockMarkTaxInvoiceSentToStore: vi.fn(),
+  mockRevertTaxInvoiceToCreated: vi.fn(),
   mockRevertTaxInvoiceToPending: vi.fn(),
 }));
 
@@ -30,12 +32,13 @@ vi.mock("@/lib/tax-invoices/writer", () => ({
   markTaxInvoiceCreated: mockMarkTaxInvoiceCreated,
   markTaxInvoiceNotRequired: mockMarkTaxInvoiceNotRequired,
   markTaxInvoiceSentToStore: mockMarkTaxInvoiceSentToStore,
+  revertTaxInvoiceToCreated: mockRevertTaxInvoiceToCreated,
   revertTaxInvoiceToPending: mockRevertTaxInvoiceToPending,
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
 import { TaxInvoiceError } from "@/lib/tax-invoices/errors";
-import { markCreatedAction, markNotRequiredAction, markSentToStoreAction, revertToPendingAction } from "./tax-invoices";
+import { markCreatedAction, markNotRequiredAction, markSentToStoreAction, revertToCreatedAction, revertToPendingAction } from "./tax-invoices";
 
 describe("tax invoice actions (unit — writer mocked)", () => {
   beforeEach(() => {
@@ -44,6 +47,7 @@ describe("tax invoice actions (unit — writer mocked)", () => {
     mockMarkTaxInvoiceCreated.mockReset();
     mockMarkTaxInvoiceNotRequired.mockReset();
     mockMarkTaxInvoiceSentToStore.mockReset();
+    mockRevertTaxInvoiceToCreated.mockReset();
     mockRevertTaxInvoiceToPending.mockReset();
     mockAuth.mockResolvedValue({ user: { id: "user-1", permissions: ["tax_invoices:manage"] } });
   });
@@ -214,6 +218,48 @@ describe("tax invoice actions (unit — writer mocked)", () => {
       mockMarkTaxInvoiceSentToStore.mockResolvedValue({ ok: true });
       await markSentToStoreAction({ taxInvoiceId: "x", reason: "handed to owner" });
       expect(mockMarkTaxInvoiceSentToStore).toHaveBeenCalledWith({ taxInvoiceId: "x", reason: "handed to owner", userId: "user-1" });
+    });
+  });
+
+  describe("revertToCreatedAction", () => {
+    it("returns FORBIDDEN when the user lacks tax_invoices:manage", async () => {
+      mockHasPermission.mockReturnValue(false);
+      const res = await revertToCreatedAction({ taxInvoiceId: "x", reason: "clicked by mistake" });
+      expect(res).toEqual({ ok: false, code: "FORBIDDEN" });
+      expect(mockRevertTaxInvoiceToCreated).not.toHaveBeenCalled();
+    });
+
+    it("returns INVALID_REQUEST for a non-string reason without calling the writer", async () => {
+      mockHasPermission.mockReturnValue(true);
+      const res = await revertToCreatedAction({ taxInvoiceId: "x", reason: 1 as unknown as string });
+      expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
+      expect(mockRevertTaxInvoiceToCreated).not.toHaveBeenCalled();
+    });
+
+    it("maps a writer INVALID_STATE onto its own code", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockRevertTaxInvoiceToCreated.mockRejectedValue(new TaxInvoiceError("INVALID_STATE"));
+      const res = await revertToCreatedAction({ taxInvoiceId: "x", reason: "clicked by mistake" });
+      expect(res).toEqual({ ok: false, code: "INVALID_STATE" });
+    });
+
+    it("maps a writer REASON_TOO_LONG onto its own code", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockRevertTaxInvoiceToCreated.mockRejectedValue(new TaxInvoiceError("REASON_TOO_LONG"));
+      const res = await revertToCreatedAction({ taxInvoiceId: "x", reason: "x".repeat(192) });
+      expect(res).toEqual({ ok: false, code: "REASON_TOO_LONG" });
+    });
+
+    it("calls the writer with the current user id and succeeds", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockRevertTaxInvoiceToCreated.mockResolvedValue({ ok: true });
+      const res = await revertToCreatedAction({ taxInvoiceId: "x", reason: "clicked by mistake" });
+      expect(res).toEqual({ ok: true });
+      expect(mockRevertTaxInvoiceToCreated).toHaveBeenCalledWith({
+        taxInvoiceId: "x",
+        reason: "clicked by mistake",
+        userId: "user-1",
+      });
     });
   });
 

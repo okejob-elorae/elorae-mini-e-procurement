@@ -1,6 +1,7 @@
 import { prisma, type Prisma } from "@elorae/db";
 import { daysOverdue, agingBucket, type AgingBucket } from "@/lib/finance/ar/aging";
 import { RECEIVABLE_SOURCE_SELECT, resolveReceivableSource } from "@/lib/finance/ar/receivable-source";
+import { getPendingSettlementInvoiceClaimsMap } from "@/lib/finance/ar/queries";
 
 export type CollectionQueueRow = {
   receivableId: string;
@@ -11,6 +12,7 @@ export type CollectionQueueRow = {
   daysOverdue: number;
   bucket: AgingBucket;
   pendingSubmittedAmount: number;
+  pendingSettlementClaimAmount: number;
 };
 
 export async function listCollectionQueue(collectorId: string, asOf: Date = new Date()): Promise<CollectionQueueRow[]> {
@@ -27,6 +29,13 @@ export async function listCollectionQueue(collectorId: string, asOf: Date = new 
     },
   });
 
+  /**
+   * `submitCollection` nets BOTH pending kinds — submissions and pending settlements' invoice
+   * claims — so the queue's collectable figure has to subtract both, or it offers headroom the
+   * writer refuses.
+   */
+  const settlementClaims = await getPendingSettlementInvoiceClaimsMap(receivables.map((r) => r.id));
+
   return receivables.map((r) => ({
     receivableId: r.id,
     storeName: r.store.name,
@@ -36,6 +45,7 @@ export async function listCollectionQueue(collectorId: string, asOf: Date = new 
     daysOverdue: daysOverdue(r.dueDate, asOf),
     bucket: agingBucket(r.dueDate, asOf),
     pendingSubmittedAmount: r.submissions.reduce((s, sub) => s + Number(sub.amount), 0),
+    pendingSettlementClaimAmount: settlementClaims.get(r.id) ?? 0,
   }));
 }
 
@@ -168,6 +178,7 @@ export type CollectionReceivableDetail = {
   outstandingAmount: number;
   dueDate: Date;
   pendingSubmittedAmount: number;
+  pendingSettlementClaimAmount: number;
 };
 
 /**
@@ -191,6 +202,8 @@ export async function getReceivableForCollection(receivableId: string, collector
   });
   if (!r || r.collectorId !== collectorId) return null;
 
+  const settlementClaims = await getPendingSettlementInvoiceClaimsMap([r.id]);
+
   return {
     receivableId: r.id,
     storeName: r.store.name,
@@ -198,5 +211,6 @@ export async function getReceivableForCollection(receivableId: string, collector
     outstandingAmount: Number(r.outstandingAmount),
     dueDate: r.dueDate,
     pendingSubmittedAmount: r.submissions.reduce((s, sub) => s + Number(sub.amount), 0),
+    pendingSettlementClaimAmount: settlementClaims.get(r.id) ?? 0,
   };
 }

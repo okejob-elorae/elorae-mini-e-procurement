@@ -96,8 +96,11 @@ function outstandingLineCount(lines: FieldReturnDetail["lines"]): number {
   }).length;
 }
 
-/** Mirrors setLinePriceAction's own PRICEABLE_STATUSES — the line price controls must stop
- *  rendering the instant a retur is no longer eligible to be repriced. */
+/**
+ * Mirrors setLinePriceAction's own PRICEABLE_STATUSES — the open statuses in which every line's
+ * price controls render. After approval only an unvalued line on a retur whose valuation is still
+ * PENDING gets them (`pricingAfterApproval` below); a VALUED retur is frozen.
+ */
 const PRICEABLE_STATUSES: ReadonlySet<FieldReturnStatus> = new Set([
   "PENDING_WAREHOUSE_RECEIVING",
   "MISMATCH_PENDING_RESOLUTION",
@@ -183,6 +186,7 @@ export function FieldReturnDetailClient({
   const showResolutionControls = r.status !== "PENDING_WAREHOUSE_RECEIVING" && r.status !== "CANCELLED";
   const showApprove = canManage && r.status === "PENDING_APPROVAL";
   const showLinePriceControls = canManage && PRICEABLE_STATUSES.has(r.status);
+  const pricingAfterApproval = canManage && r.status === "APPROVED" && r.valuationStatus === "PENDING";
   const unpricedCount = unpricedLineCount(r.lines);
   /* ACCEPT_SURPLUS is the one settlement path that credits a line above what the store's own
      paper claimed — surfaced once at the card header rather than only per-line, per the spec's
@@ -411,10 +415,9 @@ export function FieldReturnDetailClient({
           ) : r.status === "APPROVED" ? (
             /*
              * APPROVED but NOT valued — the same signal the register's own badge condition
-             * uses (status === APPROVED && valuationStatus === PENDING). Values are frozen at
-             * approval with no UI path back to re-enter them, so this is a STATEMENT of a
-             * permanent gap, never an instruction — there is nothing left for the operator to
-             * do about it here. unvaluedLineCount (lineValue === null), not the priceState-based
+             * uses (status === APPROVED && valuationStatus === PENDING). Each unvalued line below
+             * carries its price controls for a manager until the last one is priced and the
+             * retur flips VALUED. unvaluedLineCount (lineValue === null), not the priceState-based
              * unpricedCount, because a preserved dangling admin choice reads priceState "SET"
              * despite never having resolved to an actual value.
              */
@@ -448,6 +451,9 @@ export function FieldReturnDetailClient({
         <CardContent className="divide-y">
           {r.lines.map((line) => {
             const isSurplus = line.resolutions[0]?.type === "ACCEPT_SURPLUS";
+            /* After approval a line that already has a value is final — only the unvalued ones
+               are left to price. */
+            const showPriceControls = showLinePriceControls || (pricingAfterApproval && line.lineValue === null);
             return (
               <div key={line.id} className="space-y-2 py-4 first:pt-0 last:pb-0">
                 <div className="flex flex-wrap items-start justify-between gap-2">
@@ -507,7 +513,7 @@ export function FieldReturnDetailClient({
                   </Badge>
                 </div>
 
-                {showLinePriceControls && <LinePriceControls line={line} />}
+                {showPriceControls && <LinePriceControls line={line} afterApproval={pricingAfterApproval} />}
               </div>
             );
           })}
@@ -524,10 +530,9 @@ export function FieldReturnDetailClient({
           </CardHeader>
           <CardContent className="space-y-3">
             {r.valuationStatus !== "VALUED" || r.totalValue === null ? (
-              /* Terminal, not a transient state — post-approval repricing has no UI path, so an
-                 approved-but-incomplete valuation can never become offsettable. Say so plainly
-                 rather than rendering a control that would always refuse. */
-              <p className="text-sm text-muted-foreground">{t("credit.neverOffsettable")}</p>
+              /* Incomplete until the remaining lines on the valuation card are priced — no Offset
+                 button until then, since applyReturnOffset refuses a retur that is not VALUED. */
+              <p className="text-sm text-muted-foreground">{t("credit.valuationIncomplete")}</p>
             ) : (
               <div className="space-y-3">
                 {r.offsetPayments.length > 0 && (
@@ -590,9 +595,8 @@ export function FieldReturnDetailClient({
           {unpricedCount > 0 && (
             /*
              * Surfaced here, not just discovered afterwards on the card below — approving with
-             * an incomplete valuation must be a deliberate choice. There is no post-approval
-             * repricing path (values freeze at approval by design), so this is the only moment
-             * this warning can still change anyone's mind.
+             * an incomplete valuation must be a deliberate choice. The unpriced lines can still be
+             * priced after approval, but the retur cannot be offset until every one of them is.
              */
             <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-amber-700">
               <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />

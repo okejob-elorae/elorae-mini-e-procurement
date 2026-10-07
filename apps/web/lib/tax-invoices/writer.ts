@@ -1,7 +1,7 @@
 import { Prisma } from "@elorae/db";
 import { roundCents } from "@elorae/db/pricing";
 import { runSerializable } from "@/lib/db/tx-retry";
-import { TaxInvoiceError } from "./errors";
+import { MAX_TAX_INVOICE_REASON_LENGTH, TaxInvoiceError } from "./errors";
 
 type Status = "PENDING" | "CREATED" | "SENT_TO_STORE" | "NOT_REQUIRED" | "CANCELLED";
 
@@ -150,6 +150,10 @@ export async function markTaxInvoiceCreated(input: {
   });
 }
 
+function assertReasonFits(reason: string): void {
+  if (reason.length > MAX_TAX_INVOICE_REASON_LENGTH) throw new TaxInvoiceError("REASON_TOO_LONG");
+}
+
 export async function markTaxInvoiceNotRequired(input: {
   taxInvoiceId: string;
   reason: string;
@@ -157,6 +161,7 @@ export async function markTaxInvoiceNotRequired(input: {
 }): Promise<{ ok: true }> {
   const reason = input.reason.trim();
   if (reason === "") throw new TaxInvoiceError("INVALID_REQUEST");
+  assertReasonFits(reason);
   return transition({
     taxInvoiceId: input.taxInvoiceId,
     userId: input.userId,
@@ -181,6 +186,7 @@ export async function markTaxInvoiceSentToStore(input: {
   userId: string;
 }): Promise<{ ok: true }> {
   const reason = input.reason?.trim() || null;
+  if (reason !== null) assertReasonFits(reason);
   return transition({
     taxInvoiceId: input.taxInvoiceId,
     userId: input.userId,
@@ -191,6 +197,30 @@ export async function markTaxInvoiceSentToStore(input: {
   });
 }
 
+/**
+ * Undoes a mis-clicked "Sent to store" without destroying the filing: SENT_TO_STORE -> CREATED.
+ * `data` is `{ reason }` ONLY, the same rule as `markTaxInvoiceSentToStore`, so `invoiceNo`,
+ * `buyerNpwp`, both amounts and `markedAt`/`markedById` survive. The reason is required, like
+ * every other revert.
+ */
+export async function revertTaxInvoiceToCreated(input: {
+  taxInvoiceId: string;
+  reason: string;
+  userId: string;
+}): Promise<{ ok: true }> {
+  const reason = input.reason.trim();
+  if (reason === "") throw new TaxInvoiceError("INVALID_REQUEST");
+  assertReasonFits(reason);
+  return transition({
+    taxInvoiceId: input.taxInvoiceId,
+    userId: input.userId,
+    from: ["SENT_TO_STORE"],
+    to: "CREATED",
+    data: { reason },
+    action: "TAX_INVOICE_SENT_REVERTED",
+  });
+}
+
 export async function revertTaxInvoiceToPending(input: {
   taxInvoiceId: string;
   reason: string;
@@ -198,6 +228,7 @@ export async function revertTaxInvoiceToPending(input: {
 }): Promise<{ ok: true }> {
   const reason = input.reason.trim();
   if (reason === "") throw new TaxInvoiceError("INVALID_REQUEST");
+  assertReasonFits(reason);
   return transition({
     taxInvoiceId: input.taxInvoiceId,
     userId: input.userId,

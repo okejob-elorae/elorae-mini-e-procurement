@@ -1,7 +1,7 @@
 import { prisma, type Prisma } from "@elorae/db";
 import { roundCents } from "@elorae/db/pricing";
 import { agingBucket, AGING_BUCKETS, daysOverdue, type AgingBucket } from "./aging";
-import { RECEIVABLE_SOURCE_SELECT, resolveReceivableSource } from "./receivable-source";
+import { RECEIVABLE_SOURCE_SELECT, resolveReceivableSource, tryResolveReceivableSource } from "./receivable-source";
 import type { PaymentMethodValue } from "./payment-method-display";
 
 export type ReceivableFilters = {
@@ -264,9 +264,11 @@ export async function getReceivable(id: string, asOf: Date = new Date()) {
 }
 
 /**
- * `Receivable.outstandingAmount` alone is not what `submitSettlement` will honor —
- * the writer additionally nets every OTHER PENDING settlement's own claim on the same receivable
- * (`StoreSettlementInvoice.amount`) before refusing with `INVOICE_OVERCLAIMED`. Without this, a
+ * `Receivable.outstandingAmount` alone is not what `submitSettlement` or `submitCollection` will
+ * honor — both writers net every PENDING settlement's claim on the same receivable
+ * (`StoreSettlementInvoice.amount`), alongside PENDING collection submissions, before refusing
+ * with `INVOICE_OVERCLAIMED`/`OVER_COLLECTED` (`sumPendingClaimsOnReceivable`). This map is the
+ * settlement half; callers read the submission half themselves. Without this, a
  * screen defaulting or validating off raw `outstandingAmount` can show headroom the writer will
  * not honor the moment a colleague already holds a pending claim on the same invoice. Every
  * requested id is present in the returned map, defaulting to 0, same convention as
@@ -300,23 +302,28 @@ export type AllocationCandidate = {
 };
 
 /**
- * `listReceivables` takes a single `status`, so a store's full set of allocation candidates
- * (OUTSTANDING + PARTIAL) needs two calls merged rather than one. Each call is already scoped to
- * this one store, so it stays well clear of the "unpaginated fetch of the whole book" a payment
- * sheet must never do — `pageSize` is a generous ceiling on one store's own open invoices, not a
- * page cursor. Shared by the piutang receivable-detail sheet and the field-return offset sheet —
- * both need the same store-scoped candidate set.
+ * Every OUTSTANDING or PARTIAL receivable of ONE store, oldest due first, in a single query.
+ * Deliberately unpaged: the set is bounded by one store's own open invoices, and both consumers —
+ * the piutang record-payment sheet and the field-return offset sheet — need ALL of them, because a
+ * truncated list hides an invoice the operator means to allocate against and makes the offset
+ * banner refuse a valid draw. Do not reintroduce a page size here; a store-wide "all of them"
+ * caller with a silent ceiling is exactly the defect this replaced.
+ *
+ * An orphan (a receivable whose source row is gone, possible under `relationMode = "prisma"`) stays
+ * a candidate — its money is still owed — and shows its own id as `docNo`.
  */
-const CANDIDATE_PAGE_SIZE = 500;
-
 export async function listAllocationCandidatesForStore(storeId: string): Promise<AllocationCandidate[]> {
-  const [outstanding, partial] = await Promise.all([
-    listReceivables({ storeId, status: "OUTSTANDING", pageSize: CANDIDATE_PAGE_SIZE }),
-    listReceivables({ storeId, status: "PARTIAL", pageSize: CANDIDATE_PAGE_SIZE }),
-  ]);
-  return [...outstanding.rows, ...partial.rows]
-    .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
-    .map((r) => ({ id: r.id, docNo: r.docNo, dueDate: r.dueDate, outstandingAmount: r.outstandingAmount }));
+  const rows = await prisma.receivable.findMany({
+    where: { storeId, status: { in: ["OUTSTANDING", "PARTIAL"] } },
+    orderBy: [{ dueDate: "asc" }, { id: "asc" }],
+    select: { id: true, dueDate: true, outstandingAmount: true, ...RECEIVABLE_SOURCE_SELECT },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    docNo: tryResolveReceivableSource(r)?.docNo ?? r.id,
+    dueDate: r.dueDate,
+    outstandingAmount: Number(r.outstandingAmount),
+  }));
 }
 
 export type StorePiutangRow = {
@@ -336,36 +343,33 @@ export type StorePiutangSummary = {
 };
 
 /**
- * `bucketTotals`/`grandOutstanding` come from an unfiltered call because PAID/WRITTEN_OFF/VOIDED
- * rows always carry outstandingAmount 0 and so contribute nothing to either fold — filtering by status
- * for the totals call would be redundant, not more correct. `rows`/`total` from that call are
- * discarded (they'd include zero-balance historical docs); the display rows come from the same
- * OUTSTANDING+PARTIAL merge `listAllocationCandidatesForStore` already uses above.
+ * `bucketTotals`/`grandOutstanding` come from an unfiltered `listReceivables` call because
+ * PAID/WRITTEN_OFF/VOIDED rows always carry outstandingAmount 0 and so contribute nothing to either
+ * fold — filtering by status for the totals call would be redundant, not more correct. That call
+ * asks for `pageSize: 0`: only its totals are used, and fetching even one display row would resolve
+ * that row's source, which throws on an orphan. The display rows and `openCount` come from the
+ * unpaged `listAllocationCandidatesForStore`, so `openCount` is the store's full open count.
  */
 export async function getStorePiutangSummary(
   storeId: string,
   asOf: Date = new Date(),
   take = 5,
 ): Promise<StorePiutangSummary> {
-  const [totals, outstanding, partial] = await Promise.all([
-    listReceivables({ storeId, asOf, pageSize: 1 }),
-    listReceivables({ storeId, status: "OUTSTANDING", asOf, pageSize: CANDIDATE_PAGE_SIZE }),
-    listReceivables({ storeId, status: "PARTIAL", asOf, pageSize: CANDIDATE_PAGE_SIZE }),
+  const [totals, open] = await Promise.all([
+    listReceivables({ storeId, asOf, pageSize: 0 }),
+    listAllocationCandidatesForStore(storeId),
   ]);
-  const merged = [...outstanding.rows, ...partial.rows].sort(
-    (a, b) => a.dueDate.getTime() - b.dueDate.getTime(),
-  );
   return {
     grandOutstanding: totals.grandOutstanding,
     bucketTotals: totals.bucketTotals,
-    openCount: merged.length,
-    rows: merged.slice(0, take).map((r) => ({
+    openCount: open.length,
+    rows: open.slice(0, take).map((r) => ({
       id: r.id,
       docNo: r.docNo,
       dueDateIso: r.dueDate.toISOString(),
       outstandingAmount: r.outstandingAmount,
-      bucket: r.bucket,
-      daysOverdue: r.daysOverdue,
+      bucket: agingBucket(r.dueDate, asOf),
+      daysOverdue: daysOverdue(r.dueDate, asOf),
     })),
   };
 }

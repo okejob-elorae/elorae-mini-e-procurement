@@ -2,9 +2,11 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import {
   buildStoreLocationWhere,
+  buildStoreNpwpWhere,
   createStore,
   listStores,
   parseStoreLocationFilter,
+  parseStoreNpwpFilter,
   updateStore,
   StoreHasConsignmentStockError,
   InvalidPriceDiscountPercentError,
@@ -14,6 +16,7 @@ import {
   StoreHasDraftSellThroughError,
   type StoreFields,
   type StoreLocationFilter,
+  type StoreNpwpFilter,
 } from "./queries";
 import { closeFieldSalesOrderRemainder } from "@/lib/field-sales/delivery/writer";
 
@@ -663,5 +666,125 @@ d("listStores location filter (test bed only)", () => {
   it("combines with search instead of overwriting it", async () => {
     const { items } = await listStores({ search: `NONE-${token}`, location: "missing" });
     expect(items.map((s) => s.id)).toEqual([noCoordsId]);
+  });
+});
+
+describe("store NPWP filter where builder", () => {
+  it("treats undefined as no filter and never an empty where", () => {
+    expect(buildStoreNpwpWhere(undefined)).toBeUndefined();
+  });
+
+  it("parses only the known values", () => {
+    expect(parseStoreNpwpFilter("missing")).toBe("missing");
+    expect(parseStoreNpwpFilter("present")).toBe("present");
+    expect(parseStoreNpwpFilter("")).toBeUndefined();
+    expect(parseStoreNpwpFilter("bogus")).toBeUndefined();
+    expect(parseStoreNpwpFilter(undefined)).toBeUndefined();
+  });
+});
+
+d("listStores NPWP filter (test bed only)", () => {
+  const token = Math.random().toString(36).slice(2, 10);
+  const createdIds: string[] = [];
+
+  const fields = (suffix: string, over: Partial<StoreFields>): StoreFields => ({
+    code: `TEST-NPWP-${suffix}-${token}`,
+    name: `Npwp ${suffix}`,
+    address: "Test address",
+    phone: null,
+    contactName: null,
+    termsType: "PUTUS",
+    paymentTempo: 0,
+    markupPercent: null,
+    priceDiscountPercent: null,
+    creditLimit: null,
+    npwp: null,
+    lat: null,
+    lng: null,
+    checkinRadiusMeters: null,
+    sellThroughMethod: null,
+    ...over,
+  });
+
+  let nullNpwpId = "";
+  let emptyNpwpId = "";
+  let spacesNpwpId = "";
+  let tabNpwpId = "";
+  let filledNpwpId = "";
+
+  async function seed(suffix: string, over: Partial<StoreFields>): Promise<string> {
+    const created = await createStore(fields(suffix, over));
+    createdIds.push(created.id);
+    return created.id;
+  }
+
+  /* The writers now normalise a blank NPWP to null, so the legacy spellings are planted directly. */
+  async function seedLegacy(suffix: string, npwp: string): Promise<string> {
+    const id = await seed(suffix, { npwp: null });
+    await prisma.store.update({ where: { id: seededId(id) }, data: { npwp } });
+    return id;
+  }
+
+  beforeEach(async () => {
+    createdIds.length = 0;
+    nullNpwpId = "";
+    emptyNpwpId = "";
+    spacesNpwpId = "";
+    tabNpwpId = "";
+    filledNpwpId = "";
+    nullNpwpId = await seed("NULL", { npwp: null });
+    emptyNpwpId = await seedLegacy("EMPTY", "");
+    spacesNpwpId = await seedLegacy("SPACES", "   ");
+    tabNpwpId = await seedLegacy("TAB", "\t");
+    filledNpwpId = await seed("FILLED", { npwp: "01.234.567.8-901.000" });
+  });
+
+  afterEach(async () => {
+    for (const id of createdIds) await prisma.store.delete({ where: { id: seededId(id) } });
+  });
+
+  async function idsFor(opts: { npwp?: StoreNpwpFilter; location?: StoreLocationFilter }) {
+    const { items } = await listStores({ search: token, ...opts });
+    return items.map((s) => s.id).sort();
+  }
+
+  it("missing returns stores whose NPWP is null, empty or spaces only, and never a filled one", async () => {
+    const missing = await idsFor({ npwp: "missing" });
+    expect(missing).toEqual(expect.arrayContaining([nullNpwpId, emptyNpwpId, spacesNpwpId]));
+    expect(missing).not.toContain(filledNpwpId);
+  });
+
+  it("present is the exact complement of missing", async () => {
+    const all = await idsFor({});
+    const missing = await idsFor({ npwp: "missing" });
+    const present = await idsFor({ npwp: "present" });
+    expect(present).toContain(filledNpwpId);
+    expect(present.filter((id) => missing.includes(id))).toEqual([]);
+    expect([...missing, ...present].sort()).toEqual(all);
+  });
+
+  it("flags each row's npwpMissing exactly as the missing filter buckets it, whatever the collation does with a tab", async () => {
+    const missing = new Set(await idsFor({ npwp: "missing" }));
+    const { items } = await listStores({ search: token });
+    expect(items.map((s) => s.id).sort()).toEqual(
+      [nullNpwpId, emptyNpwpId, spacesNpwpId, tabNpwpId, filledNpwpId].sort(),
+    );
+    for (const s of items) expect(s.npwpMissing).toBe(missing.has(s.id));
+  });
+
+  it("applies the location filter and the NPWP filter together instead of one overwriting the other", async () => {
+    expect(await idsFor({ npwp: "present", location: "missing" })).toContain(filledNpwpId);
+    expect(await idsFor({ npwp: "missing", location: "missing" })).not.toContain(filledNpwpId);
+    expect(await idsFor({ npwp: "missing", location: "defaultRadius" })).toEqual([]);
+  });
+
+  it("trims the NPWP on create and update, storing a blank one as null", async () => {
+    const id = await seed("TRIM", { npwp: "  01.234.567.8-901.000\t" });
+    let row = await prisma.store.findUniqueOrThrow({ where: { id: seededId(id) }, select: { npwp: true } });
+    expect(row.npwp).toBe("01.234.567.8-901.000");
+
+    await updateStore(id, fields("TRIM", { npwp: " \t " }));
+    row = await prisma.store.findUniqueOrThrow({ where: { id: seededId(id) }, select: { npwp: true } });
+    expect(row.npwp).toBeNull();
   });
 });

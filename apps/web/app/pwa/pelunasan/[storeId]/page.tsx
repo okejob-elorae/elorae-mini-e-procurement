@@ -46,9 +46,10 @@ export default async function StoreSettlementPage({
    * Neither `row.outstandingAmount` nor `r.remainingValue` above is the headroom
    * `submitSettlement` will actually honor — the writer additionally nets every OTHER PENDING
    * settlement's own claim on the same receivable/retur before refusing with
-   * `INVOICE_OVERCLAIMED`/`RETUR_OVERCLAIMED`. Both maps are computed here, at the props layer,
-   * so the form can show and default from the SAME reduced headroom the writer enforces instead
-   * of one that looks valid and only fails at the counter.
+   * `INVOICE_OVERCLAIMED`/`RETUR_OVERCLAIMED`, and on the invoice side every PENDING collection
+   * submission too (carried on each amplop row as `pendingSubmittedAmount`). Both maps are
+   * computed here, at the props layer, so the form can show and default from the SAME reduced
+   * headroom the writer enforces instead of one that looks valid and only fails at the counter.
    */
   const [invoiceClaims, returClaims] = await Promise.all([
     getPendingSettlementInvoiceClaimsMap((storeCard?.rows ?? []).map((row) => row.receivableId)),

@@ -251,16 +251,26 @@
       "errBadQty": "Qty must be a positive whole number."
     },
     "overdueThresholds": {
-      "title": "Overdue Alert Thresholds",
-      "description": "Configure when overdue-receivable notifications are sent",
+      "title": "Receivables",
+      "description": "Overdue alert thresholds and settlement variance tolerance",
       "heading": "Overdue Notification Thresholds",
       "subtitle": "Comma-separated day list, counted from the due date, that triggers a notification",
       "fieldLabel": "Days (e.g. 0,7,30,60)",
       "fieldHint": "Only the highest newly-crossed threshold fires per invoice, not one per threshold",
       "save": "Save",
-      "loadError": "Failed to load settings",
+      "loadError": "Failed to load the overdue thresholds",
       "errEmpty": "Enter at least one day",
       "errInvalid": "Use comma-separated non-negative whole numbers"
+    },
+    "varianceTolerance": {
+      "heading": "Settlement Variance Tolerance",
+      "subtitle": "How far a salesman's cash may differ from the expected amount before finance must give a reason",
+      "fieldLabel": "Tolerance (Rp)",
+      "fieldHint": "A settlement whose cash differs from the expected amount by at most this many rupiah approves without an override reason. 0 means every difference needs one.",
+      "save": "Save",
+      "loadError": "Failed to load the variance tolerance",
+      "errEmpty": "Enter an amount (0 or more)",
+      "errInvalid": "Use a non-negative number with at most two decimals"
     },
     "theme": {
       "title": "Account theme",
@@ -2536,6 +2546,16 @@
         "defaultRadius": "No stores are using the default radius.",
         "customRadius": "No stores have a custom radius."
       },
+      "npwpFilter": {
+        "label": "NPWP",
+        "all": "All NPWP",
+        "missing": "Missing NPWP",
+        "present": "Has NPWP"
+      },
+      "npwpEmpty": {
+        "missing": "All active stores have an NPWP.",
+        "present": "No stores have an NPWP."
+      },
       "table": {
         "code": "Code",
         "name": "Name",
@@ -2548,6 +2568,7 @@
         "active": "Active",
         "location": "Location",
         "noCoordinates": "No coordinates",
+        "noNpwp": "No NPWP",
         "radiusMeters": "{meters} m",
         "radiusDefault": "default",
         "radiusCustom": "custom"
@@ -2970,9 +2991,10 @@
       "submitButton": "Submit Collection",
       "submitting": "Submitting…",
       "amountExceedsCollectable": "Amount exceeds the remaining collectable balance.",
+      "pendingSettlementClaimLabel": "Claimed by a pending settlement",
       "submitSuccess": "Collection submitted, awaiting verification.",
       "errForbidden": "You do not have permission to collect this receivable.",
-      "errOverCollected": "Amount exceeds the outstanding, uncollected balance.",
+      "errOverCollected": "Amount exceeds the outstanding balance left after pending collection submissions and pending settlements.",
       "errAlreadySettled": "This receivable is already paid or written off.",
       "errNotAssignedCollector": "This receivable is not assigned to you.",
       "errGeneric": "Failed to submit the collection. Try again."
@@ -3006,9 +3028,10 @@
       "reservedByOtherSettlementLabel": "Reserved by another pending settlement",
       "invoiceUnavailableReserved": "Not selected — another pending settlement already reserved this invoice's full outstanding amount.",
       "invoiceUnavailableSetoran": "Not selected — a pending collection already covers this invoice's full outstanding amount.",
+      "invoiceUnavailableCombined": "Not selected — pending collections and other pending settlements together already cover this invoice's full outstanding amount.",
       "invoiceAmountLabel": "Amount to settle for this invoice",
       "invoiceAmountPlaceholder": "Amount to settle",
-      "invoiceAmountInvalid": "Amount must be greater than zero and not exceed the outstanding balance after subtracting any amount reserved by another pending settlement.",
+      "invoiceAmountInvalid": "Amount must be greater than zero and not exceed the outstanding balance after subtracting pending collections and any amount reserved by another pending settlement.",
       "returSectionTitle": "Retur credit",
       "addReturButton": "Add retur",
       "noReturCredit": "No retur credit available for this store.",
@@ -3062,7 +3085,7 @@
       "errMissingEvidence": "Every program or admin fee deduction needs a proof photo.",
       "errDraftIdConflict": "This settlement draft is stuck. Reload and try again.",
       "errNotOutstanding": "One of the selected invoices is no longer outstanding.",
-      "errInvoiceOverclaimed": "One of the selected invoices is already claimed by another pending settlement.",
+      "errInvoiceOverclaimed": "One of the selected invoices is already claimed by another pending settlement or collection submission.",
       "errReturnNotApproved": "One of the selected returs is not yet approved.",
       "errNotValued": "One of the selected returs has not been valued yet.",
       "errReturOverclaimed": "One of the selected returs no longer has enough remaining credit.",
@@ -3575,7 +3598,7 @@
       "notYetValuedBody": "The return's value will be computed automatically once this return is approved.",
       "incompleteTitle": "Valuation Incomplete",
       "incompleteBody": "{count} line(s) still need a price before this return can be fully valued.",
-      "incompleteBodyApproved": "{count} line(s) could not be priced and are permanently excluded from this return's total — values were locked at approval and cannot be changed from here.",
+      "incompleteBodyApproved": "{count} line(s) still have no price, so this return has no total yet and can't be offset until every line is priced.",
       "surplusNote": "This return has a line credited at the quantity the warehouse actually received, so its value may exceed the store's own paper nota.",
       "colCreditedQty": "Credited Qty",
       "colUnitPriceRef": "Unit Price (Reference)",
@@ -3589,7 +3612,7 @@
     },
     "credit": {
       "cardTitle": "Retur Credit",
-      "neverOffsettable": "This return's valuation was left incomplete at approval and can never be offset — values are frozen and there is no repricing path.",
+      "valuationIncomplete": "This return's valuation is incomplete — price the remaining lines to make it offsettable.",
       "availableBody": "Available to apply against this store's outstanding balance.",
       "appliedBody": "Applied to payment",
       "offsetAction": "Offset ke Piutang",
@@ -3713,12 +3736,14 @@
       "INVALID_REQUEST": "The submitted data was invalid. Reload the page and try again.",
       "ERROR": "Something went wrong. Please try again.",
       "PRICE_NOT_AVAILABLE": "The selected delivery is no longer a valid price source for this line. Reload the page and try again.",
-      "ALREADY_APPROVED": "This return has already been approved, so its price can no longer be changed.",
+      "ALREADY_APPROVED": "This return was approved or valued in the meantime. Reload the page to see which lines can still be priced.",
       "AUTO_PRICE_AVAILABLE": "This line has a valid automatic price from a delivery — a manual price is not allowed while that automatic price still applies."
     },
     "pricing": {
       "autoTitle": "Automatic Price",
       "autoBody": "This price will be taken automatically from delivery {docNo} ({price}).",
+      "autoBodyAfterApproval": "Delivery {docNo} prices this line at {price}. Apply it to value this line.",
+      "applyAutoPrice": "Apply This Price",
       "pickerLabel": "Choose the source delivery",
       "pickerPlaceholder": "Choose a delivery...",
       "pickerHint": "This store received this item from more than one delivery at a different price — choose one as this line's reference.",
@@ -3735,7 +3760,7 @@
       "unpriceableBody": "This item has never been delivered to this store, so there is no automatic price to use — enter a manual price with a note.",
       "successSet": "Line price saved."
     },
-    "approveConfirmValuationWarning": "{count} line(s) still have no price. They will still be approved and restored to stock, but their value will never be computed after this.",
+    "approveConfirmValuationWarning": "{count} line(s) still have no price. They will still be approved and restored to stock, and you can price them afterwards — but this return can't be offset until every line is priced.",
     "konsiStockWarning": {
       "loading": "Checking the impact on store stock…",
       "error": "Could not check the impact on store stock. You can still proceed with approval.",
@@ -5294,6 +5319,7 @@
     "rejectButton": "Reject",
     "printBkmButton": "Print BKM",
     "approveBlockedHint": "Approval is blocked until every check above passes.",
+    "rejectBlockedPostedHint": "Some components already posted. Resume the approval, or void each posted payment before rejecting.",
     "approveDialogTitle": "Approve this settlement?",
     "approveDialogDescription": "{docNo} will post its deductions and {amount} in cash against this store's invoices. This cannot be undone from here.",
     "overrideReasonLabel": "Why is the variance of {variance} acceptable?",
@@ -5321,7 +5347,7 @@
     "componentsTitlePosted": "Payments this approval posted",
     "componentsHintPosted": "Each component posted as its own payment. Open one to see its allocations or void it.",
     "componentsTitleOrphaned": "Payments left behind by this settlement",
-    "componentsHintOrphaned": "This settlement was rejected, but these payments had already posted. They are not linked to any approved document — void them or raise it with finance.",
+    "componentsHintOrphaned": "This settlement was rejected after some of its payments had posted. A row still marked Posted is not linked to any approved document — void it or raise it with finance. A Voided row needs nothing more.",
     "componentUnlinked": "No retur linked",
     "subjectInvoiceId": "invoice {id}",
     "subjectReturId": "retur {id}",
@@ -5357,6 +5383,7 @@
       "ALLOCATION_MISMATCH": "The payment's allocations don't add up to its amount.",
       "INVALID_AMOUNT": "One of the amounts is invalid.",
       "MISSING_REASON": "A reject reason is required.",
+      "COMPONENTS_POSTED": "Some of this settlement's payments already posted. Resume the approval, or void each posted payment before rejecting.",
       "FORBIDDEN": "You don't have permission to approve or reject settlements.",
       "INVALID_REQUEST": "That request was not valid. Close this dialog and open it again.",
       "UNEXPECTED": "Something went wrong. Please try again.",
@@ -5651,6 +5678,7 @@
     "actionNotRequired": "Not required",
     "actionMarkSentToStore": "Mark sent to store",
     "actionRevert": "Revert to pending",
+    "actionRevertToCreated": "Revert to created",
     "markCreatedTitle": "Mark Invoice Created",
     "markCreatedDescription": "Mark the tax invoice for nota {docNo} as created.",
     "markCreatedFieldLabel": "Invoice Number",
@@ -5689,6 +5717,14 @@
     "revertSubmit": "Revert",
     "revertSubmitting": "Saving...",
     "revertToPendingSuccess": "Tax invoice status reverted to pending.",
+    "revertToCreatedTitle": "Revert To Created",
+    "revertToCreatedDescription": "Move the tax invoice for nota {docNo} back from sent to created. The invoice number, NPWP and amounts are kept. A reason is required.",
+    "revertToCreatedFieldLabel": "Reason",
+    "revertToCreatedFieldPlaceholder": "Explain why this was marked as sent by mistake...",
+    "revertToCreatedFieldRequired": "A reason is required.",
+    "revertToCreatedSubmit": "Revert to created",
+    "revertToCreatedSubmitting": "Saving...",
+    "revertToCreatedSuccess": "Tax invoice status reverted to created.",
     "errGeneric": "Something went wrong. Please try again.",
     "actionErr": {
       "FORBIDDEN": "You don't have permission to perform this action.",
@@ -5696,6 +5732,7 @@
       "INVALID_STATE": "This action cannot be performed on the invoice's current status.",
       "INVALID_REQUEST": "The submitted data is invalid.",
       "CONFLICT": "The invoice status was just changed by someone else. Reload the page and try again.",
+      "REASON_TOO_LONG": "The reason is too long. Keep it to 191 characters or fewer.",
       "ERROR": "Something went wrong. Please try again."
     }
   },

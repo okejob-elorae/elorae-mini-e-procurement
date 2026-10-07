@@ -57,11 +57,11 @@ d("getStorePiutangSummary (test bed only)", () => {
 
   /*
    * relationMode="prisma" puts no FK behind Receivable.deliveryId — a deliveryId that does not
-   * resolve to a real FieldSalesDelivery reads back with neither source relation, and
-   * resolveReceivableSource throws ReceivableSourceMissingError when the row is resolved
-   * (getStorePiutangSummary goes through listReceivables, which does). So every
-   * seeded row needs a real Store -> FieldSalesOrder -> FieldSalesDelivery -> Receivable chain, the
-   * same shape credit-exposure.test.ts and queries.test.ts already use for this exact model.
+   * resolve to a real FieldSalesDelivery reads back with neither source relation.
+   * getStorePiutangSummary tolerates that (it shows an orphan under its own id; queries.test.ts
+   * pins it), but these cases are about real documents, so every seeded row gets a real
+   * Store -> FieldSalesOrder -> FieldSalesDelivery -> Receivable chain, the same shape
+   * credit-exposure.test.ts and queries.test.ts already use for this exact model.
    */
   async function makeReceivable(opts: {
     storeId: string;

@@ -875,8 +875,9 @@ d("approveFieldReturn (test bed only)", () => {
      * The admin's priceDeliveryLineId points at a delivery line that does not exist (deleted,
      * or never existed) — a recorded choice that failed to resolve, not an absence of one.
      * The line must stay unpriced (goods still move; nothing is stamped), but priceSource,
-     * priceDeliveryLineId and priceNote must survive exactly as the admin left them, on a
-     * terminal APPROVED retur with no UI path back to re-enter them.
+     * priceDeliveryLineId and priceNote must survive exactly as the admin left them: the retur
+     * approves at valuation PENDING, and that provenance is the only record of what the admin
+     * chose until a post-approval price (priceApprovedReturnLine) replaces it.
      */
     const danglingDeliveryLineId = "clnonexistentdeliveryline0000";
     await prisma.fieldReturnLine.update({

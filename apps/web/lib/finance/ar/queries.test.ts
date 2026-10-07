@@ -6,6 +6,7 @@ import {
   listPayments,
   getPayment,
   listAllocationCandidatesForStore,
+  getStorePiutangSummary,
   getPendingSettlementInvoiceClaimsMap,
   listReceivablesForExport,
 } from "./queries";
@@ -364,9 +365,9 @@ d("AR queries (test bed only)", () => {
   });
 
   /*
-   * listAllocationCandidatesForStore merges two `listReceivables` calls (OUTSTANDING + PARTIAL) for
-   * one store. overdueRec is flipped to PARTIAL here to cover both statuses; thirdRec is flipped to
-   * PAID to prove it's excluded rather than merely untouched.
+   * listAllocationCandidatesForStore reads one store's OUTSTANDING + PARTIAL receivables in a single
+   * query. overdueRec is flipped to PARTIAL here to cover both statuses; thirdRec is flipped to PAID
+   * to prove it's excluded rather than merely untouched.
    */
   it("returns OUTSTANDING and PARTIAL receivables for a store, sorted by dueDate, excluding PAID", async () => {
     await prisma.receivable.update({
@@ -695,5 +696,99 @@ d("AR queries — sell-through source (test bed only)", () => {
     const sellThroughRow = byDocNo.get(`TEST-ARQ2-KST-${token}`);
     expect(sellThroughRow?.sourceKind).toBe("SELL_THROUGH");
     expect(sellThroughRow?.salesmanName).toBe(`Sales ST ${token}`);
+  });
+});
+
+/*
+ * The allocation candidates used to be two `listReceivables` calls capped at 500 rows per status,
+ * so a store with more open invoices than that silently lost the newest ones from the payment and
+ * offset sheets, and `getStorePiutangSummary` under-reported its open count. 501 rows is one past
+ * the old cap. Every row carries a fake `deliveryId` with no `FieldSalesDelivery` behind it
+ * (`relationMode = "prisma"` puts no FK on the column), so each one is also an orphan — which pins
+ * that an orphan stays a candidate and shows its own id as `docNo` rather than throwing.
+ */
+d("AR queries — unpaged allocation candidates (test bed only)", () => {
+  const OPEN_COUNT = 501;
+  let token = "";
+  let storeId = "";
+
+  beforeEach(async () => {
+    token = Math.random().toString(36).slice(2, 10);
+    storeId = "";
+
+    const store = await prisma.store.create({
+      data: { code: `TEST-ARQC-${token}`, name: `Toko ${token}`, address: "test", termsType: "PUTUS" },
+    });
+    storeId = store.id;
+
+    const base = Date.UTC(2026, 0, 1);
+    await prisma.receivable.createMany({
+      data: Array.from({ length: OPEN_COUNT }, (_, i) => ({
+        deliveryId: `cap-${token}-${i}`,
+        storeId,
+        invoiceDate: new Date(base),
+        /* Staggered one hour apart, so the expected oldest-due-first order is unambiguous. */
+        dueDate: new Date(base + i * 60 * 60 * 1000),
+        originalAmount: 1000,
+        outstandingAmount: 1000,
+        status: "OUTSTANDING" as const,
+      })),
+    });
+  });
+
+  afterEach(async () => {
+    await prisma.receivable.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+  });
+
+  it("returns every open receivable past the old 500-row cap, oldest due first, orphans under their own id", async () => {
+    const candidates = await listAllocationCandidatesForStore(storeId);
+
+    expect(candidates).toHaveLength(OPEN_COUNT);
+    const dueTimes = candidates.map((c) => c.dueDate.getTime());
+    expect(dueTimes).toEqual([...dueTimes].sort((a, b) => a - b));
+    for (const candidate of candidates) {
+      expect(candidate.docNo).toBe(candidate.id);
+      expect(candidate.outstandingAmount).toBe(1000);
+    }
+  });
+
+  it("includes a PARTIAL receivable and excludes a PAID one", async () => {
+    const partial = await prisma.receivable.create({
+      data: {
+        deliveryId: `cap-${token}-partial`, storeId,
+        invoiceDate: new Date(Date.UTC(2026, 0, 1)),
+        dueDate: new Date(Date.UTC(2025, 11, 1)),
+        originalAmount: 1000, paidAmount: 400, outstandingAmount: 600,
+        status: "PARTIAL",
+      },
+    });
+    const paid = await prisma.receivable.create({
+      data: {
+        deliveryId: `cap-${token}-paid`, storeId,
+        invoiceDate: new Date(Date.UTC(2026, 0, 1)),
+        dueDate: new Date(Date.UTC(2025, 11, 2)),
+        originalAmount: 1000, paidAmount: 1000, outstandingAmount: 0,
+        status: "PAID",
+      },
+    });
+
+    const candidates = await listAllocationCandidatesForStore(storeId);
+    const ids = candidates.map((c) => c.id);
+
+    expect(candidates).toHaveLength(OPEN_COUNT + 1);
+    /* The PARTIAL row is due before every OUTSTANDING one, so it leads the list. */
+    expect(ids[0]).toBe(partial.id);
+    expect(candidates[0].outstandingAmount).toBe(600);
+    expect(ids).not.toContain(paid.id);
+  });
+
+  it("getStorePiutangSummary counts every open receivable and still caps the display rows at take", async () => {
+    const summary = await getStorePiutangSummary(storeId, asOf, 5);
+
+    expect(summary.openCount).toBe(OPEN_COUNT);
+    expect(summary.rows).toHaveLength(5);
+    expect(summary.rows[0].docNo).toBe(summary.rows[0].id);
+    expect(summary.grandOutstanding).toBe(OPEN_COUNT * 1000);
   });
 });
