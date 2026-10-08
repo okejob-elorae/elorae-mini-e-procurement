@@ -11165,7 +11165,8 @@
     "errTANPA_AKSES": "You do not have access to import invoices.",
     "errGAGAL": "Could not save. Try again.",
     "downloadSample": "Download a sample file",
-    "columnsRequired": "Required columns: invoice no. and amount. Also recognised: store code, store name, invoice date, due date, outstanding, sales."
+    "columnsRequired": "Required columns: invoice no. and amount. Also recognised: store code, store name, invoice date, due date, outstanding, sales.",
+    "skipSESUDAH_TANGGAL_MULAI": "Dated on or after the ledger start date. Import is only for old invoices; new invoices are made through orders and deliveries."
   },
   "fakturManual": {
     "title": "Manual invoice",
@@ -11194,7 +11195,8 @@
     "errTOKO_KONSI": "A consignment shop creates no receivable — the goods are still ours until they sell.",
     "errNILAI_TIDAK_VALID": "The invoice amount must be more than zero.",
     "errTEMPO_SEBELUM_FAKTUR": "The due date cannot come before the invoice date.",
-    "errGAGAL": "Could not save. Try again."
+    "errGAGAL": "Could not save. Try again.",
+    "errSESUDAH_TANGGAL_MULAI": "The invoice date is on or after the ledger start date. From that date, store invoices for goods are made through orders and deliveries (nota tagihan), so stock and cost of goods are recorded too."
   },
   "dasborPelunasan": {
     "pageTitle": "Receivables home",

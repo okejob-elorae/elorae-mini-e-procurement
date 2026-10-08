@@ -1,6 +1,7 @@
-import { Prisma } from '@elorae/db';
+import { prisma, Prisma } from '@elorae/db';
 import { runSerializable } from '@/lib/db/tx-retry';
 import { catatJejak, JEJAK } from './jejak';
+import { bacaTanggalMulaiTagihan, tagihanSesudahMulaiBuku } from './gerbang-tanggal-mulai';
 
 /**
  * Penulis faktur yang diketik manual.
@@ -25,7 +26,9 @@ export type AlasanGagalFaktur =
   | 'TOKO_TIDAK_DITEMUKAN'
   | 'TOKO_KONSI'
   | 'NILAI_TIDAK_VALID'
-  | 'TEMPO_SEBELUM_FAKTUR';
+  | 'TEMPO_SEBELUM_FAKTUR'
+  /** Sejak tanggal mulai buku besar, tagihan barang hanya lewat nota tagihan pengiriman. */
+  | 'SESUDAH_TANGGAL_MULAI';
 
 export async function buatPiutangManual(input: {
   invoiceNo: string;
@@ -51,6 +54,15 @@ export async function buatPiutangManual(input: {
   // Jatuh tempo sebelum tanggal faktur akan langsung tampil lewat tempo pada
   // hari fakturnya dibuat — angka yang tidak berarti apa pun bagi siapa pun.
   if (input.dueDate < input.invoiceDate) return { ok: false, alasan: 'TEMPO_SEBELUM_FAKTUR' };
+
+  // Faktur yang diketik tidak membawa barang: stok tidak berkurang dan HPP-nya
+  // tidak ada. Sejak tanggal mulai buku besar penagihan barang hanya lewat nota
+  // tagihan pengiriman (pemilik, 2026-10-08); sebelumnya pintu ini tetap untuk
+  // memindahkan tagihan lama. `tulisPiutangManual` (beban retur yang dilahirkan
+  // sistem) sengaja tidak lewat gerbang ini.
+  if (tagihanSesudahMulaiBuku(input.invoiceDate, await bacaTanggalMulaiTagihan(prisma))) {
+    return { ok: false, alasan: 'SESUDAH_TANGGAL_MULAI' };
+  }
 
   return runSerializable((tx) =>
     tulisPiutangManual(tx, {

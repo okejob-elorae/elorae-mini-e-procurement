@@ -2,6 +2,7 @@ import { prisma, Prisma } from '@elorae/db';
 import { runSerializable } from '@/lib/db/tx-retry';
 import { catatJejak, JEJAK } from '../jejak';
 import type { BarisImpor } from './baris';
+import { bacaTanggalMulaiTagihan, tagihanSesudahMulaiBuku } from '../gerbang-tanggal-mulai';
 
 /**
  * Penyimpan hasil impor faktur.
@@ -19,7 +20,9 @@ export type AlasanLewat =
   | 'TOKO_TIDAK_DITEMUKAN'
   | 'TOKO_KONSI'
   | 'SUDAH_ADA'
-  | 'LUNAS';
+  | 'LUNAS'
+  /** Bertanggal pada/sesudah tanggal mulai buku besar — tagihan barang sejak itu hanya lewat nota tagihan. */
+  | 'SESUDAH_TANGGAL_MULAI';
 
 export type HasilImpor = {
   masuk: number;
@@ -39,15 +42,17 @@ type Konteks = {
   tokoPerKode: Map<string, { id: string; konsi: boolean }>;
   tokoPerNama: Map<string, { id: string; konsi: boolean }>;
   fakturAda: Set<string>;
+  tanggalMulai: string | null;
 };
 
 async function muatKonteks(noFaktur: string[]): Promise<Konteks> {
-  const [toko, ada] = await Promise.all([
+  const [toko, ada, tanggalMulai] = await Promise.all([
     prisma.store.findMany({ select: { id: true, code: true, name: true, termsType: true } }),
     prisma.receivable.findMany({
       where: { invoiceNo: { in: noFaktur } },
       select: { invoiceNo: true },
     }),
+    bacaTanggalMulaiTagihan(prisma),
   ]);
 
   const tokoPerKode = new Map<string, { id: string; konsi: boolean }>();
@@ -62,6 +67,7 @@ async function muatKonteks(noFaktur: string[]): Promise<Konteks> {
     tokoPerKode,
     tokoPerNama,
     fakturAda: new Set(ada.map((r) => r.invoiceNo)),
+    tanggalMulai,
   };
 }
 
@@ -96,6 +102,13 @@ function nilaiBaris(b: BarisImpor, k: Konteks): { ok: true; storeId: string } | 
   // Sisa nol berarti fakturnya memang sudah lunas; ia tidak perlu dibuat
   // sebagai piutang hidup, dan membuatnya akan menagih uang yang sudah masuk.
   if (b.sisa === 0) return { ok: false, alasan: 'LUNAS' };
+
+  // Impor memindahkan tagihan LAMA. Yang bertanggal pada/sesudah tanggal mulai
+  // buku besar adalah penjualan baru tanpa barang — sejak itu penagihan barang
+  // hanya lewat nota tagihan pengiriman (pemilik, 2026-10-08). Tanggal yang
+  // dinilai sama dengan yang akan disimpan sebagai tanggal faktur.
+  const tanggal = b.tglFaktur ?? b.jatuhTempo;
+  if (tanggal && tagihanSesudahMulaiBuku(tanggal, k.tanggalMulai)) return { ok: false, alasan: 'SESUDAH_TANGGAL_MULAI' };
 
   return { ok: true, storeId: toko.id };
 }

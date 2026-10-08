@@ -11165,7 +11165,8 @@
     "errTANPA_AKSES": "Anda tidak punya akses mengimpor faktur.",
     "errGAGAL": "Gagal menyimpan. Coba lagi.",
     "downloadSample": "Unduh contoh berkas",
-    "columnsRequired": "Kolom wajib: no. faktur dan nilai. Juga dikenali: kode toko, nama toko, tanggal faktur, jatuh tempo, sisa, sales."
+    "columnsRequired": "Kolom wajib: no. faktur dan nilai. Juga dikenali: kode toko, nama toko, tanggal faktur, jatuh tempo, sisa, sales.",
+    "skipSESUDAH_TANGGAL_MULAI": "Bertanggal pada atau sesudah tanggal mulai pembukuan. Impor hanya untuk tagihan lama; tagihan baru dibuat lewat pesanan dan pengiriman."
   },
   "fakturManual": {
     "title": "Faktur manual",
@@ -11194,7 +11195,8 @@
     "errTOKO_KONSI": "Toko konsinyasi tidak melahirkan piutang — barangnya masih milik kita sampai terjual.",
     "errNILAI_TIDAK_VALID": "Nilai fakturnya harus lebih dari nol.",
     "errTEMPO_SEBELUM_FAKTUR": "Jatuh tempo tidak boleh mendahului tanggal faktur.",
-    "errGAGAL": "Gagal menyimpan. Coba lagi."
+    "errGAGAL": "Gagal menyimpan. Coba lagi.",
+    "errSESUDAH_TANGGAL_MULAI": "Tanggal faktur jatuh pada atau sesudah tanggal mulai pembukuan. Sejak tanggal itu, tagihan barang ke toko dibuat lewat pesanan dan pengiriman (nota tagihan), supaya stok dan HPP ikut tercatat."
   },
   "dasborPelunasan": {
     "pageTitle": "Beranda Piutang",
