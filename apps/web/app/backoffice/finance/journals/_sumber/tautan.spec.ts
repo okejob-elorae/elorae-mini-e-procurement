@@ -121,3 +121,13 @@ describe("tautanBukuBesar — baris laporan & jurnal turun ke buku besar akun", 
     expect(tautanBukuBesar("a/b")).toBe("/backoffice/finance/journals/ledger/a%2Fb");
   });
 });
+
+describe("faktur piutang manual/impor (STORE_INVOICE)", () => {
+  it("jurnal bergenerasi menunjuk fakturnya; halaman = daftar Faktur & Piutang yang dicari nomornya", () => {
+    expect(JENIS_SUMBER_JURNAL).toContain("STORE_INVOICE");
+    expect(idDokumenDariSumber("STORE_INVOICE", "r1")).toBe("r1");
+    expect(idDokumenDariSumber("STORE_INVOICE", "r1#2")).toBe("r1");
+    expect(tautanDokumenSumber("STORE_INVOICE", "r1", { noFaktur: "INV/IMP/001" })).toBe("/backoffice/piutang?cari=INV%2FIMP%2F001");
+    expect(tautanDokumenSumber("STORE_INVOICE", "r1")).toBe("/backoffice/piutang");
+  });
+});

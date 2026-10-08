@@ -46,7 +46,7 @@ const JENIS_VAN = new Map([
 
 /*
  * Jurnal penjualan lapangan & piutang toko (`lib/finance/lapangan/`,
- * `JENIS_TERTUNDA_LAPANGAN`). BKM dan retur toko berjurnal bergenerasi
+ * `JENIS_TERTUNDA_LAPANGAN`). BKM, retur toko, dan faktur piutang manual/impor berjurnal bergenerasi
  * (`<id>`, `<id>#2`, …) — notifikasinya selesai lewat `readAt` dari
  * penyelarasnya, karena jurnal generasi pertama yang berdiri bukan bukti
  * bahwa keadaan terakhirnya sudah terjurnal.
@@ -56,8 +56,9 @@ const JENIS_LAPANGAN = new Map([
   ["bkm_lapangan", "FIELD_COLLECTION"],
   ["retur_toko", "STORE_RETURN"],
   ["tukar_barang", "STORE_EXCHANGE"],
+  ["faktur_piutang", "STORE_INVOICE"],
 ]);
-const LAPANGAN_BERGENERASI = new Set(["FIELD_COLLECTION", "STORE_RETURN"]);
+const LAPANGAN_BERGENERASI = new Set(["FIELD_COLLECTION", "STORE_RETURN", "STORE_INVOICE"]);
 
 /*
  * Jurnal operasional (`lib/finance/operasional/`, `JENIS_TERTUNDA_OPERASIONAL`):

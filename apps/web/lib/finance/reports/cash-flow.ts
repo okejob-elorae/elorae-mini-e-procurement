@@ -31,6 +31,33 @@ export type CashFlowStatement = {
 
 const toCents = (value: number): number => Math.round(value * 100);
 
+/** `accountId` baris penyesuaian pelepasan aset tetap (sepasang: operasional dan investasi). */
+export const ID_PENYESUAIAN_PELEPASAN_ASET = "penyesuaian:pelepasan-aset";
+/** Nama baris itu di cetak/Excel (layar menerjemahkannya lewat `cashFlow.penyesuaianPelepasanAset`). */
+export const NAMA_PENYESUAIAN_PELEPASAN_ASET = "Penyesuaian pelepasan aset tetap";
+
+/** Satu baris jurnal pelepasan aset tetap (atau pembatalannya) di jendela laporan. */
+export type BarisPelepasanAset = { accountId: string; type: AccountType; debit: number; credit: number };
+
+/**
+ * Bagian jurnal pelepasan aset tetap yang menurut metode tidak langsung jatuh
+ * di OPERASIONAL tetapi sebenarnya bagian dari hasil jual aset: baris laba/rugi
+ * (masuk laba bersih) dan baris akun berseksi OPERASIONAL (akumulasi penyusutan
+ * yang dihapus). Dalam sen, bertanda arus kas (kredit − debit — sumbangan baris
+ * non-kas mana pun ke kas, karena jurnalnya seimbang).
+ */
+function senPelepasanDiOperasional(
+  baris: readonly BarisPelepasanAset[],
+  sectionByAccountId: Map<string, CashFlowSection | null>,
+): number {
+  let sen = 0;
+  for (const b of baris) {
+    const keOperasional = !isClassifiableType(b.type) || (sectionByAccountId.get(b.accountId) ?? null) === "OPERASIONAL";
+    if (keOperasional) sen += toCents(b.credit) - toCents(b.debit);
+  }
+  return sen;
+}
+
 /**
  * Cash effect of one non-cash account's period movement. An asset rising
  * consumes cash; a liability or equity claim rising supplies it.
@@ -59,11 +86,20 @@ const byCode = (a: CashFlowLine, b: CashFlowLine) =>
  * cannot change any total. And unclassified accounts stay inside `netChange`
  * while rendering in their own bucket, so incomplete classification degrades
  * presentation without ever corrupting arithmetic.
+ *
+ * Pelepasan aset tetap (uji akuntansi gelombang 2, bug 7): tanpa koreksi,
+ * investasi hanya melihat harga perolehan yang dikredit dan laba/rugi
+ * pelepasan tertinggal di laba bersih (operasional). `pelepasanAset` = baris
+ * jurnal pelepasan di jendela ini; bagian yang jatuh di operasional (laba/rugi
+ * dan akumulasi penyusutan yang dihapus) dipindah ke investasi lewat sepasang
+ * baris penyesuaian, jadi investasi = hasil jual dan operasional bersih dari
+ * pelepasan. Total tidak berubah.
  */
 export function buildCashFlow(input: {
   rows: BalanceRow[];
   sectionByAccountId: Map<string, CashFlowSection | null>;
   kasAwal: number;
+  pelepasanAset?: readonly BarisPelepasanAset[];
 }): CashFlowStatement {
   const labaBersih = buildIncomeStatement(input.rows).labaBersih;
 
@@ -117,6 +153,13 @@ export function buildCashFlow(input: {
     else if (section === "INVESTASI") investasi.push(line);
     else if (section === "PENDANAAN") pendanaan.push(line);
     else unclassified.push(line);
+  }
+
+  const pindahSen = senPelepasanDiOperasional(input.pelepasanAset ?? [], input.sectionByAccountId);
+  if (pindahSen !== 0) {
+    const penyesuaian = { accountId: ID_PENYESUAIAN_PELEPASAN_ASET, code: "", name: NAMA_PENYESUAIAN_PELEPASAN_ASET };
+    operasional.push({ ...penyesuaian, amount: -pindahSen / 100 });
+    investasi.push({ ...penyesuaian, amount: pindahSen / 100 });
   }
 
   operasional.sort(byCode);

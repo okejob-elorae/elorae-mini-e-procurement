@@ -40,6 +40,7 @@ import type { PilihanTabelUkuran } from "@/lib/items/size-chart-queries";
 import { rapikanNamaBarang } from "@/app/backoffice/items/nama-barang";
 import { labelJenisBarang } from "@/app/backoffice/items/tampilan-barang";
 import { bacaAngkaIsian, satuanKg } from "@/lib/purchase-orders/rincian-warna";
+import { bacaKomisiPerPcs } from "@/lib/items/komisi-spg";
 
 type ItemFormData = z.infer<typeof itemSchema>;
 /** Info produk untuk pembeli (barang jadi): bahan, cara rawat, tabel ukuran (null = ikut bawaan kategori). */
@@ -48,6 +49,8 @@ type InfoProdukIsian = {
   careInstructions?: string | null;
   sizeChartId?: string | null;
   kgPerRoll?: number | null;
+  /** Komisi SPG per pcs (barang jadi); bahan/aksesori selalu 0. */
+  commissionPerPcs?: number | null;
 };
 /** Nilai pilihan "ikut bawaan kategori" di pemilih tabel ukuran. */
 const IKUT_KATEGORI = "__kategori__";
@@ -135,6 +138,8 @@ interface ItemFormProps {
     sizeChartId?: string | null;
     /** Bahan bersatuan kg: kg per roll (kolom Roll di PO). */
     kgPerRoll?: number | null;
+    /** Komisi SPG per pcs (barang jadi). */
+    commissionPerPcs?: number | null;
     consumptionRules?: Array<{
       materialId: string;
       material: {
@@ -226,6 +231,9 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   const [careInstructions, setCareInstructions] = useState(initialData?.careInstructions ?? "");
   const [sizeChartId, setSizeChartId] = useState(initialData?.sizeChartId ?? "");
   const [kgPerRoll, setKgPerRoll] = useState(initialData?.kgPerRoll != null ? String(initialData.kgPerRoll) : "");
+  const [komisiSpg, setKomisiSpg] = useState(
+    initialData?.commissionPerPcs != null && initialData.commissionPerPcs > 0 ? String(initialData.commissionPerPcs) : "",
+  );
   const [pilihanTabel, setPilihanTabel] = useState<PilihanTabelUkuran[]>([]);
 
   const {
@@ -549,11 +557,23 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       }
     }
 
+    // Komisi SPG per pcs: barang jadi saja; kosong = 0. Bahan/aksesori selalu 0 (tidak dijual SPG).
+    const komisi = itemType === ItemType.FINISHED_GOOD ? bacaKomisiPerPcs(komisiSpg) : 0;
+    if (komisi === undefined || !Number.isFinite(komisi) || komisi < 0) {
+      toast.error(tForm('komisiSpgTidakSah'));
+      return;
+    }
+
     // Info produk hanya untuk barang jadi; jenis lain tidak menyentuh kolomnya.
     const infoProduk: InfoProdukIsian =
       itemType === ItemType.FINISHED_GOOD
-        ? { material: material.trim() || null, careInstructions: careInstructions.trim() || null, sizeChartId: sizeChartId || null }
-        : { kgPerRoll: kgRoll };
+        ? {
+            material: material.trim() || null,
+            careInstructions: careInstructions.trim() || null,
+            sizeChartId: sizeChartId || null,
+            commissionPerPcs: komisi,
+          }
+        : { kgPerRoll: kgRoll, commissionPerPcs: 0 };
 
     await onSubmit(
       { ...dataWithSku, variants, ...infoProduk },
@@ -870,6 +890,21 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                     {errors.additionalCost.message}
                   </p>
                 )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="commissionPerPcs">
+                  {tForm('komisiSpg')} <span className="text-xs text-muted-foreground">({tForm('optional')})</span>
+                </Label>
+                <Input
+                  id="commissionPerPcs"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={komisiSpg}
+                  onChange={(e) => setKomisiSpg(e.target.value)}
+                  placeholder="0"
+                  className="max-w-[12rem] tabular-nums"
+                />
               </div>
             </div>
           )}

@@ -9,6 +9,7 @@ import { catatVoucherDalamTransaksi, type KodeTolakVoucher } from "@/lib/finance
 import { catatJejakKas, JEJAK_KAS } from "@/lib/finance/kas/jejak";
 import { kunciBerindeks, type BarisMutasi, type FormatMutasi } from "./baca-mutasi";
 import { cocokkanOtomatis, jumlahSenBarisBank, TOLERANSI_HARI_COCOK } from "./cocok";
+import { jurnalTerbatalkan, PILIH_JURNAL_CEK } from "./jurnal-batal";
 
 /**
  * Penulis rekonsiliasi bank — KHUSUS SERVER. Semua perubahan keadaan baris
@@ -18,7 +19,10 @@ import { cocokkanOtomatis, jumlahSenBarisBank, TOLERANSI_HARI_COCOK } from "./co
  * itu, `matchedJournalLineId` unik) atau IGNORED (diabaikan, dengan alasan).
  * "Buat voucher dari mutasi" mencatat voucher kas/bank (BKK untuk uang keluar,
  * BKMK untuk uang masuk) dan langsung mencocokkannya; membatalkan voucher itu
- * melepas barisnya lagi (`lepasMutasiDariJurnal`).
+ * melepas barisnya lagi (`lepasMutasiDariJurnal`). Baris jurnal voucher atau
+ * pembayaran yang dibatalkan (asli maupun pembaliknya) tidak pernah menjadi
+ * pasangan mutasi (`jurnalTerbatalkan`) — diperiksa di dalam transaksi yang
+ * sama dengan penulisannya, jadi pembatalan yang balapan tidak lolos.
  */
 
 export const STATUS_MUTASI = { BELUM: "UNMATCHED", COCOK: "MATCHED", ABAIKAN: "IGNORED" } as const;
@@ -31,6 +35,7 @@ export type KodeTolakMutasi =
   | "BUKAN_DIABAIKAN"
   | "JURNAL_TIDAK_SAH"
   | "JURNAL_SUDAH_DICOCOKKAN"
+  | "JURNAL_DIBATALKAN"
   | "JUMLAH_BERBEDA"
   | "DARI_VOUCHER"
   | "ALASAN_WAJIB"
@@ -144,10 +149,12 @@ export async function cocokkanOtomatisAkun(input: {
     const t = mutasi.map((m) => m.date.getTime());
     const dari = new Date(Math.min(...t) - (TOLERANSI_HARI_COCOK + 1) * 86_400_000);
     const sampai = new Date(Math.max(...t) + (TOLERANSI_HARI_COCOK + 1) * 86_400_000);
-    const barisJurnal = await tx.journalLine.findMany({
+    const semuaBaris = await tx.journalLine.findMany({
       where: { chartAccountId: input.akunId, journal: { status: "POSTED", date: { gte: dari, lte: sampai } } },
-      select: { id: true, debit: true, credit: true, journal: { select: { date: true } } },
+      select: { id: true, debit: true, credit: true, journal: { select: { date: true, ...PILIH_JURNAL_CEK } } },
     });
+    const batal = await jurnalTerbatalkan(tx, [...new Map(semuaBaris.map((b) => [b.journal.id, b.journal])).values()]);
+    const barisJurnal = semuaBaris.filter((b) => !batal.has(b.journal.id));
     const terpakai = new Set<string>();
     for (let i = 0; i < barisJurnal.length; i += 1000) {
       const r = await tx.bankStatementLine.findMany({
@@ -189,9 +196,10 @@ export async function cocokkanManual(input: { mutasiId: string; barisJurnalId: s
     if (m.status !== STATUS_MUTASI.BELUM) return { ok: false, kode: "BUKAN_BELUM_COCOK" };
     const j = await tx.journalLine.findUnique({
       where: { id: input.barisJurnalId },
-      select: { id: true, chartAccountId: true, debit: true, credit: true, journal: { select: { status: true } } },
+      select: { id: true, chartAccountId: true, debit: true, credit: true, journal: { select: { status: true, ...PILIH_JURNAL_CEK } } },
     });
     if (!j || j.chartAccountId !== m.chartAccountId || j.journal.status !== "POSTED") return { ok: false, kode: "JURNAL_TIDAK_SAH" };
+    if ((await jurnalTerbatalkan(tx, [j.journal])).size > 0) return { ok: false, kode: "JURNAL_DIBATALKAN" };
     const dipakai = await tx.bankStatementLine.findFirst({ where: { matchedJournalLineId: j.id }, select: { id: true } });
     if (dipakai) return { ok: false, kode: "JURNAL_SUDAH_DICOCOKKAN" };
     if (jumlahSenBarisBank(j.debit.toString(), j.credit.toString()) !== sen(m.amount)) return { ok: false, kode: "JUMLAH_BERBEDA" };

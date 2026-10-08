@@ -24,7 +24,16 @@ import { newLocalId } from "@/lib/pwa/id-lokal";
 import { labelPemasok } from "@/lib/suppliers/label-pemasok";
 import { bacaRupiahSen } from "@/lib/finance/kas/aturan";
 import { bacaJenisPotongPemasok, INFO_POTONG_PEMASOK, SEMUA_JENIS_POTONG_PEMASOK, type JenisPotongPemasok } from "@/lib/finance/pajak/pemotongan";
-import { CARA_BAYAR, dasarPotongBawaanSen, hitungPembayaran, kunciDokumenHutang, type AlokasiSah, type SisaDokumen } from "@/lib/purchasing/pembayaran-aturan";
+import {
+  batasDasarPotongSen,
+  CARA_BAYAR,
+  dasarPotongBawaanSen,
+  hitungPembayaran,
+  kunciDokumenHutang,
+  porsiPotongEfektif,
+  type AlokasiSah,
+  type SisaDokumen,
+} from "@/lib/purchasing/pembayaran-aturan";
 import type { TarifPajakKreatif } from "@/lib/creative/pph";
 import type { HutangPemasok } from "@/lib/purchasing/pembayaran-hutang-queries";
 import type { RekeningKasBank } from "@/lib/finance/pajak/setoran-queries";
@@ -77,7 +86,9 @@ export function FormPembayaranPemasok({ pemasok, rekening, tarif, hariIni, awal,
   const dokumen = useMemo(() => (hutang?.dokumen ?? []).filter((d) => d.sisaSen > 0), [hutang]);
   const sisa = useMemo(() => {
     const m = new Map<string, SisaDokumen>();
-    for (const d of hutang?.dokumen ?? []) m.set(kunciDokumenHutang(d.jenis, d.id), { sisaSen: d.sisaSen, porsiDasarPotong: d.porsiDasarPotong });
+    for (const d of hutang?.dokumen ?? []) {
+      m.set(kunciDokumenHutang(d.jenis, d.id), { sisaSen: d.sisaSen, porsiDasarPotong: d.porsiDasarPotong, uangMukaBelumDipotongSen: d.uangMukaBelumDipotongSen });
+    }
     return m;
   }, [hutang]);
 
@@ -109,7 +120,7 @@ export function FormPembayaranPemasok({ pemasok, rekening, tarif, hariIni, awal,
         ? t("alasan.melebihiSisa")
         : uangMukaSen == null
           ? t("alasan.uangMuka")
-          : dasarSen == null || dasarSen > brutoSen
+          : dasarSen == null || dasarSen > batasDasarPotongSen(alokasi, sisa, brutoSen)
             ? t("alasan.dasarPotong")
             : brutoSen <= 0
               ? t("alasan.kosong")
@@ -302,6 +313,9 @@ export function FormPembayaranPemasok({ pemasok, rekening, tarif, hariIni, awal,
                             {d.keterangan ? ` · ${d.keterangan}` : ""}
                           </p>
                           <p className="text-xs text-muted-foreground xl:hidden">{labelTanggal(d.tanggal, locale)}</p>
+                          {d.uangMukaBelumDipotongSen > 0 && porsiPotongEfektif(jenisPotong, sisa.get(k)) > 0 && (
+                            <p className="text-xs text-muted-foreground">{t("uangMukaBelumDipotong", { nilai: formatRupiah(d.uangMukaBelumDipotongSen / 100) })}</p>
+                          )}
                         </TableCell>
                         <TableCell className="hidden align-top xl:table-cell">{labelTanggal(d.tanggal, locale)}</TableCell>
                         <TableCell className="hidden align-top text-right tabular-nums 2xl:table-cell">{formatRupiah(d.hutangSen / 100)}</TableCell>

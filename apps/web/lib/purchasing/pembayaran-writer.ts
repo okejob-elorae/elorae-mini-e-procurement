@@ -11,7 +11,10 @@ import { lepasMutasiDariJurnal } from "@/lib/finance/kas/voucher-writer";
 import { catatJejakKas, JEJAK_KAS } from "@/lib/finance/kas/jejak";
 import {
   adalahCerminTandaiLunas,
+  batasDasarPotongSen,
+  cakupanUangMukaDipotong,
   dasarPotongBawaanSen,
+  faktorPotongPenuh,
   hitungPembayaran,
   ID_SALDO_AWAL,
   memoAlokasi,
@@ -20,6 +23,7 @@ import {
   STATUS_PEMBAYARAN,
   SUMBER_PEMBAYARAN_PEMASOK,
   SUMBER_PEMBAYARAN_PEMASOK_BALIK,
+  uangMukaTerpotongSen,
   uraianJurnalPembayaran,
   kunciDokumenHutang,
   type AlokasiSah,
@@ -28,6 +32,7 @@ import {
   type KodeGalatPembayaran,
 } from "./pembayaran-aturan";
 import { bacaHutangPemasok, keadaanBayarPo, petaSisaDokumen } from "./pembayaran-hutang-queries";
+import { AWALAN_KUNCI_POTONG_UANG_MUKA, kunciPotongUangMuka, rencanaPotongPenerapan } from "./pembayaran-uang-muka";
 import { adaJurnalTandaiLunasBerdiri } from "./supplier-payment-journal";
 
 /**
@@ -44,10 +49,24 @@ import { adaJurnalTandaiLunasBerdiri } from "./supplier-payment-journal";
  * hutangnya habis dan tidak menunggu barang lagi (CLOSED/OVER) ditandai lunas
  * otomatis (`paidAt` = tanggal bayar, riwayat PO "Lunas lewat pembayaran …");
  * pembatalan membukanya lagi — kecuali tanda lunasnya milik tombol lama.
+ *
+ * PPh atas uang muka (`pembayaran-uang-muka.ts`): dasar potongan pembayaran ikut
+ * uang muka yang sudah diterapkan ke dokumennya tetapi belum dipotong, dan
+ * jejaknya mencatat cakupan itu (`uangMukaDipotong`) serta bagian uang mukanya
+ * sendiri yang sudah dipotong (`uangMukaTerpotong`). Uang muka yang melunasi
+ * dokumen jasa dipotong saat diterapkan lewat pembayaran potongan tersendiri.
  */
 
 export type HasilPembayaranPemasok =
-  | { ok: true; id: string; nomor: string; journalId: string | null; ulang: boolean }
+  | {
+      ok: true;
+      id: string;
+      nomor: string;
+      journalId: string | null;
+      ulang: boolean;
+      /** Penerapan uang muka yang melunasi dokumen jasa: pembayaran potongan PPh yang dibuat (jumlah rupiah). */
+      potong?: { id: string; nomor: string; jumlah: number };
+    }
   | { ok: false; kode: KodeGalatPembayaran; baris?: number; peran?: string };
 
 class Tolak extends Error {
@@ -215,16 +234,23 @@ export async function catatPembayaranPemasok(input: IsianCatatPembayaran): Promi
       await tolakPoDitandaiLunas(tx, p.alokasi, poPerGrn);
 
       const jenisPotong = p.jenisPotong === undefined ? bacaJenisPotongPemasok(pemasok.taxWithholding) : p.jenisPotong;
+      // Dasar yang diketik paling banyak bruto + uang muka belum dipotong dokumen yang dibayar.
+      if (p.dasarPotongSen != null && p.dasarPotongSen > batasDasarPotongSen(p.alokasi, sisa, p.brutoSen)) throw new Tolak("DASAR_POTONG_TIDAK_SAH");
       const dasar = p.dasarPotongSen ?? dasarPotongBawaanSen(jenisPotong, p.alokasi, sisa, p.brutoSen);
       const tarif = jenisPotong === "PPH21" || jenisPotong === "PPH23" ? await bacaTarifPajakKreatif(tx) : undefined;
       const hitung = hitungPembayaran(p.brutoSen, jenisPotong, dasar, pemasok.hasNpwp, tarif);
+      // Jejak PPh atas uang muka: tertunda yang ditutup pembayaran ini, dan bagian uang mukanya sendiri yang sudah dipotong.
+      const faktor = faktorPotongPenuh(hitung, jenisPotong, pemasok.hasNpwp, tarif);
+      const cakupan = hitung.potongSen > 0 ? cakupanUangMukaDipotong(jenisPotong, p.alokasi, sisa, faktor) : [];
+      const terpotongUangMuka = hitung.potongSen > 0 ? uangMukaTerpotongSen(jenisPotong, p.alokasi, sisa, p.uangMukaSen, hitung.dasarPotongSen, faktor) : 0;
       // Peran wajib dipetakan SEBELUM menulis apa pun.
       await peranAkun("AP", tx);
       if (hitung.potongSen > 0 && jenisPotong) await peranAkun(INFO_POTONG_PEMASOK[jenisPotong].peranHutang, tx);
 
       const nomorDok = new Map((milik?.dokumen ?? []).map((d) => [kunciDokumenHutang(d.jenis, d.id), d.nomor]));
-      const nomor = await generateDocNumber("SUPPAY", tx);
       const tanggal = parseDateOnly(p.tanggal) as Date;
+      // Nomor BYR menurut tanggal pembayaran (bulan WIB), bukan bulan pencatatan.
+      const nomor = await generateDocNumber("SUPPAY", tx, { tanggal });
       const bayar = await tx.supplierPayment.create({
         data: {
           docNumber: nomor,
@@ -290,7 +316,13 @@ export async function catatPembayaranPemasok(input: IsianCatatPembayaran): Promi
             alokasi: p.alokasi.map((a) => ({ jenis: a.jenis, id: a.id, jumlah: a.sen / 100 })),
           },
         },
-        metadata: { journalId: j.journalId, dasarPotong: hitung.dasarPotongSen / 100, jenisPotong },
+        metadata: {
+          journalId: j.journalId,
+          dasarPotong: hitung.dasarPotongSen / 100,
+          jenisPotong,
+          uangMukaDipotong: cakupan.map((c) => ({ jenis: c.jenis, id: c.id, jumlah: c.sen / 100 })),
+          uangMukaTerpotong: terpotongUangMuka / 100,
+        },
       });
       await selaraskanLunasPo(tx, [...new Set(poPerGrn.values())], input.olehUserId, nomor, tanggal);
       return { ok: true, id: bayar.id, nomor, journalId: j.journalId, ulang: false };
@@ -306,52 +338,81 @@ export async function catatPembayaranPemasok(input: IsianCatatPembayaran): Promi
   }
 }
 
+const PILIH_BATAL = {
+  id: true,
+  docNumber: true,
+  status: true,
+  idempotencyKey: true,
+  grossAmount: true,
+  supplierId: true,
+  allocations: { select: { targetType: true, targetId: true } },
+} as const;
+
+/** Batalkan satu pembayaran BERLAKU di dalam transaksi: jurnal pembalik bertanggal jurnal aslinya, mutasi bank dilepas, jejak. */
+async function batalkanSatu(
+  tx: Prisma.TransactionClient,
+  b: { id: string; docNumber: string; grossAmount: Prisma.Decimal },
+  olehUserId: string,
+  alasan: string,
+  metadataTambahan: Record<string, unknown> = {},
+): Promise<string | null> {
+  const asli = await tx.journal.findUnique({
+    where: { sourceType_sourceId: { sourceType: SUMBER_PEMBAYARAN_PEMASOK, sourceId: b.id } },
+    select: { id: true, date: true, lines: { select: { chartAccountId: true, debit: true, credit: true, memo: true } } },
+  });
+  let balikId: string | null = null;
+  let dilepas = 0;
+  if (asli) {
+    const r = await postJournal(tx, {
+      source: { type: SUMBER_PEMBAYARAN_PEMASOK_BALIK, id: b.id },
+      date: asli.date,
+      description: `Pembatalan pembayaran pemasok ${b.docNumber}: ${alasan}`.slice(0, 500),
+      postedById: olehUserId,
+      reversalOfId: asli.id,
+      lines: asli.lines.map((l) => ({ chartAccountId: l.chartAccountId, debit: Number(l.credit), credit: Number(l.debit), ...(l.memo ? { memo: l.memo } : {}) })),
+    });
+    balikId = r.journalId;
+    dilepas = await lepasMutasiDariJurnal(tx, asli.id, `Dilepas: ${b.docNumber} dibatalkan`);
+  }
+  await tx.supplierPayment.update({
+    where: { id: b.id },
+    data: { status: STATUS_PEMBAYARAN.BATAL, cancelledAt: new Date(), cancelledById: olehUserId, cancelReason: alasan },
+  });
+  await catatJejakKas(tx, {
+    userId: olehUserId,
+    action: JEJAK_KAS.PEMBAYARAN_DIBATALKAN,
+    entityType: "SupplierPayment",
+    entityId: b.id,
+    changes: { before: { status: STATUS_PEMBAYARAN.BERLAKU }, after: { status: STATUS_PEMBAYARAN.BATAL } },
+    metadata: { nomor: b.docNumber, bruto: Number(b.grossAmount), jurnalPembalik: balikId, mutasiDilepas: dilepas, ...metadataTambahan },
+    reason: alasan,
+  });
+  return balikId;
+}
+
+/**
+ * Batalkan pembayaran. Pembayaran potongan PPh atas uang muka ini
+ * (`potong-uang-muka:<id>:…`) ikut dibatalkan di transaksi yang sama — tanpa
+ * uang mukanya, potongan itu tidak punya dasar lagi.
+ */
 export async function batalkanPembayaranPemasok(input: { id: string; olehUserId: string; alasan: string }): Promise<HasilPembayaranPemasok> {
   const alasan = input.alasan?.trim() ?? "";
   if (alasan.length < 5) return { ok: false, kode: "ALASAN_WAJIB" };
   try {
     return await runSerializable(async (tx): Promise<HasilPembayaranPemasok> => {
-      const b = await tx.supplierPayment.findUnique({
-        where: { id: input.id },
-        select: { id: true, docNumber: true, status: true, idempotencyKey: true, grossAmount: true, supplierId: true, allocations: { select: { targetType: true, targetId: true } } },
-      });
+      const b = await tx.supplierPayment.findUnique({ where: { id: input.id }, select: PILIH_BATAL });
       if (!b) return { ok: false, kode: "TIDAK_DITEMUKAN" };
       if (b.status === STATUS_PEMBAYARAN.BATAL) return { ok: false, kode: "SUDAH_DIBATALKAN" };
       if (adalahCerminTandaiLunas(b.idempotencyKey)) return { ok: false, kode: "PAKAI_BATAL_TANDAI_LUNAS" };
-      const asli = await tx.journal.findUnique({
-        where: { sourceType_sourceId: { sourceType: SUMBER_PEMBAYARAN_PEMASOK, sourceId: b.id } },
-        select: { id: true, date: true, lines: { select: { chartAccountId: true, debit: true, credit: true, memo: true } } },
+      const balikId = await batalkanSatu(tx, b, input.olehUserId, alasan);
+      const potongan = await tx.supplierPayment.findMany({
+        where: { supplierId: b.supplierId, status: STATUS_PEMBAYARAN.BERLAKU, idempotencyKey: { startsWith: `${AWALAN_KUNCI_POTONG_UANG_MUKA}${b.id}:` } },
+        select: PILIH_BATAL,
       });
-      let balikId: string | null = null;
-      let dilepas = 0;
-      if (asli) {
-        const r = await postJournal(tx, {
-          source: { type: SUMBER_PEMBAYARAN_PEMASOK_BALIK, id: b.id },
-          date: asli.date,
-          description: `Pembatalan pembayaran pemasok ${b.docNumber}: ${alasan}`.slice(0, 500),
-          postedById: input.olehUserId,
-          reversalOfId: asli.id,
-          lines: asli.lines.map((l) => ({ chartAccountId: l.chartAccountId, debit: Number(l.credit), credit: Number(l.debit), ...(l.memo ? { memo: l.memo } : {}) })),
-        });
-        balikId = r.journalId;
-        dilepas = await lepasMutasiDariJurnal(tx, asli.id, `Dilepas: ${b.docNumber} dibatalkan`);
-      }
-      await tx.supplierPayment.update({
-        where: { id: b.id },
-        data: { status: STATUS_PEMBAYARAN.BATAL, cancelledAt: new Date(), cancelledById: input.olehUserId, cancelReason: alasan },
-      });
-      await catatJejakKas(tx, {
-        userId: input.olehUserId,
-        action: JEJAK_KAS.PEMBAYARAN_DIBATALKAN,
-        entityType: "SupplierPayment",
-        entityId: b.id,
-        changes: { before: { status: STATUS_PEMBAYARAN.BERLAKU }, after: { status: STATUS_PEMBAYARAN.BATAL } },
-        metadata: { nomor: b.docNumber, bruto: Number(b.grossAmount), jurnalPembalik: balikId, mutasiDilepas: dilepas },
-        reason: alasan,
-      });
+      for (const w of potongan) await batalkanSatu(tx, w, input.olehUserId, alasan, { karenaPembatalan: b.docNumber });
       const poPerGrn = await poDariAlokasi(
         tx,
-        b.allocations.filter((a) => a.targetId).map((a) => ({ jenis: a.targetType as AlokasiSah["jenis"], id: a.targetId as string })),
+        [b, ...potongan].flatMap((x) => x.allocations.filter((a) => a.targetId).map((a) => ({ jenis: a.targetType as AlokasiSah["jenis"], id: a.targetId as string }))),
       );
       await selaraskanLunasPo(tx, [...new Set(poPerGrn.values())], input.olehUserId, b.docNumber, null);
       return { ok: true, id: b.id, nomor: b.docNumber, journalId: balikId, ulang: false };
@@ -365,15 +426,37 @@ export async function batalkanPembayaranPemasok(input: { id: string; olehUserId:
 
 /**
  * Terapkan uang muka (bagian pembayaran yang belum dialokasikan) ke dokumen
- * hutang pemasok yang sama. Tanpa jurnal: hutang usaha sudah didebit saat uang
- * muka dibayar; yang berubah hanya buku pembantu per dokumen.
+ * hutang pemasok yang sama. Tanpa jurnal untuk uang mukanya sendiri: hutang
+ * usaha sudah didebit saat uang muka dibayar; yang berubah hanya buku pembantu
+ * per dokumen.
+ *
+ * PPh (`rencanaPotongPenerapan`): uang muka yang diterapkan ke dokumen yang
+ * BELUM lunas tidak dipotong sekarang — menjadi "uang muka belum dipotong"
+ * dokumen itu dan ikut dasar pembayaran berikutnya. Bila penerapan ini
+ * MELUNASI dokumen yang ikut dasar potongan, PPh atas seluruh uang muka belum
+ * dipotongnya dipotong sekarang: pembayaran potongan tersendiri (BYR/…, neto 0,
+ * tanggal `hariIni`, rekening uang mukanya) menyelesaikan bagian dokumen sebesar
+ * PPh itu, jurnal DR Utang usaha / CR Utang PPh; uang muka yang terpakai
+ * berkurang sebesar itu.
  */
-export async function terapkanUangMuka(input: { pembayaranId: string; alokasi: unknown; olehUserId: string }): Promise<HasilPembayaranPemasok> {
+export async function terapkanUangMuka(input: { pembayaranId: string; alokasi: unknown; olehUserId: string; hariIni?: string }): Promise<HasilPembayaranPemasok> {
+  const hariIni = input.hariIni ?? hariIniWib();
   try {
     return await runSerializable(async (tx): Promise<HasilPembayaranPemasok> => {
       const b = await tx.supplierPayment.findUnique({
         where: { id: input.pembayaranId },
-        select: { id: true, docNumber: true, status: true, idempotencyKey: true, supplierId: true, grossAmount: true, date: true, allocations: { select: { targetType: true, targetId: true, amount: true } } },
+        select: {
+          id: true,
+          docNumber: true,
+          status: true,
+          idempotencyKey: true,
+          supplierId: true,
+          grossAmount: true,
+          date: true,
+          method: true,
+          cashAccountId: true,
+          allocations: { select: { targetType: true, targetId: true, amount: true } },
+        },
       });
       if (!b) return { ok: false, kode: "TIDAK_DITEMUKAN" };
       if (b.status !== STATUS_PEMBAYARAN.BERLAKU) return { ok: false, kode: "SUDAH_DIBATALKAN" };
@@ -392,33 +475,177 @@ export async function terapkanUangMuka(input: { pembayaranId: string; alokasi: u
       const sudah = new Set(b.allocations.map((a) => `${a.targetType}|${a.targetId}`));
       const ganda = alokasi.findIndex((a) => sudah.has(`${a.jenis}|${a.id}`));
       if (ganda >= 0) return { ok: false, kode: "ALOKASI_GANDA", baris: ganda + 1 };
+      const pemasok = await tx.supplier.findUnique({ where: { id: b.supplierId }, select: { name: true, taxWithholding: true, hasNpwp: true } });
+      if (!pemasok) return { ok: false, kode: "PEMASOK_TIDAK_DITEMUKAN" };
       const hutang = await bacaHutangPemasok({ supplierIds: [b.supplierId] }, tx);
       const milik = hutang.pemasok[0];
-      const cek = periksaAlokasiTerhadapSisa(alokasi, petaSisaDokumen(milik));
+      const sisa = petaSisaDokumen(milik);
+      const cek = periksaAlokasiTerhadapSisa(alokasi, sisa);
       if (!cek.ok) return { ok: false, kode: cek.kode, baris: cek.baris };
       const poPerGrn = await poDariAlokasi(tx, alokasi);
       await tolakPoDitandaiLunas(tx, alokasi, poPerGrn);
       const nomorDok = new Map((milik?.dokumen ?? []).map((d) => [kunciDokumenHutang(d.jenis, d.id), d.nomor]));
-      await tx.supplierPaymentAllocation.createMany({
-        data: alokasi.map((a) => ({ paymentId: b.id, targetType: a.jenis, targetId: a.id, amount: a.sen / 100, note: `${labelDokumen(a.jenis, a.id, nomorDok)} (dari uang muka)` })),
+
+      const jenis = bacaJenisPotongPemasok(pemasok.taxWithholding);
+      const tarif = jenis === "PPH21" || jenis === "PPH23" ? await bacaTarifPajakKreatif(tx) : undefined;
+      const rencana = rencanaPotongPenerapan({
+        jenis,
+        adaNpwp: pemasok.hasNpwp,
+        tarif,
+        alokasi,
+        sisa,
+        poolSen: milik?.uangMuka.find((u) => u.pembayaranId === b.id)?.sudahDipotongSen ?? 0,
       });
-      await tx.supplierPayment.update({ where: { id: b.id }, data: { isAdvance: totalBaru < sisaUangMuka } });
+      // Peran wajib dipetakan SEBELUM menulis apa pun.
+      if (rencana.potongSen > 0 && jenis) {
+        await peranAkun("AP", tx);
+        await peranAkun(INFO_POTONG_PEMASOK[jenis].peranHutang, tx);
+      }
+
+      const dariUangMuka = rencana.baris.filter((x) => x.dariUangMukaSen > 0);
+      if (dariUangMuka.length > 0) {
+        await tx.supplierPaymentAllocation.createMany({
+          data: dariUangMuka.map((a) => ({ paymentId: b.id, targetType: a.jenis, targetId: a.id, amount: a.dariUangMukaSen / 100, note: `${labelDokumen(a.jenis, a.id, nomorDok)} (dari uang muka)` })),
+        });
+      }
+      const terpakai = dariUangMuka.reduce((s, a) => s + a.dariUangMukaSen, 0);
+      await tx.supplierPayment.update({ where: { id: b.id }, data: { isAdvance: terpakai < sisaUangMuka } });
+
+      let potong: { id: string; nomor: string; jumlah: number } | undefined;
+      if (rencana.potongSen > 0 && jenis) {
+        potong = await catatPotonganUangMuka(tx, {
+          uangMuka: b,
+          namaPemasok: pemasok.name,
+          jenis,
+          rencana,
+          nomorDok,
+          tanggal: hariIni,
+          olehUserId: input.olehUserId,
+        });
+      }
+
       await catatJejakKas(tx, {
         userId: input.olehUserId,
         action: JEJAK_KAS.UANG_MUKA_DITERAPKAN,
         entityType: "SupplierPayment",
         entityId: b.id,
-        changes: { before: { sisaUangMuka: sisaUangMuka / 100 }, after: { sisaUangMuka: (sisaUangMuka - totalBaru) / 100 } },
-        metadata: { alokasi: alokasi.map((a) => ({ jenis: a.jenis, id: a.id, jumlah: a.sen / 100 })) },
+        changes: { before: { sisaUangMuka: sisaUangMuka / 100 }, after: { sisaUangMuka: (sisaUangMuka - terpakai) / 100 } },
+        metadata: {
+          alokasi: dariUangMuka.map((a) => ({ jenis: a.jenis, id: a.id, jumlah: a.dariUangMukaSen / 100 })),
+          diminta: alokasi.map((a) => ({ jenis: a.jenis, id: a.id, jumlah: a.sen / 100 })),
+          ...(potong ? { potongPph: { pembayaranId: potong.id, nomor: potong.nomor, jumlah: potong.jumlah, dasar: rencana.dasarSen / 100, jenisPotong: jenis } } : {}),
+        },
       });
       await selaraskanLunasPo(tx, [...new Set(poPerGrn.values())], input.olehUserId, b.docNumber, b.date);
-      return { ok: true, id: b.id, nomor: b.docNumber, journalId: null, ulang: false };
+      return { ok: true, id: b.id, nomor: b.docNumber, journalId: null, ulang: false, ...(potong ? { potong } : {}) };
     });
   } catch (e) {
     const g = petaGalat(e);
     if (g) return g;
     throw e;
   }
+}
+
+/**
+ * Pembayaran potongan PPh atas uang muka yang melunasi dokumen (di transaksi
+ * penerapannya): bruto = PPh, dialokasikan ke bagian dokumen yang diselesaikan
+ * PPh itu (sisanya — bila PPh melebihi bagian itu — menjadi uang muka), neto 0.
+ * Jurnal lewat bentuk yang sama dengan pembayaran biasa: DR Utang usaha / CR
+ * Utang PPh. Jejaknya `SUPPLIER_PAYMENT_RECORDED` dengan dasar potongan,
+ * sehingga halaman PPh dipotong membacanya di masa tanggal penerapan.
+ */
+async function catatPotonganUangMuka(
+  tx: Prisma.TransactionClient,
+  p: {
+    uangMuka: { id: string; docNumber: string; supplierId: string; method: string; cashAccountId: string | null };
+    namaPemasok: string;
+    jenis: JenisPotongPemasok;
+    rencana: ReturnType<typeof rencanaPotongPenerapan>;
+    nomorDok: Map<string, string>;
+    tanggal: string;
+    olehUserId: string;
+  },
+): Promise<{ id: string; nomor: string; jumlah: number }> {
+  const { rencana } = p;
+  const tanggal = parseDateOnly(p.tanggal) as Date;
+  const nomor = await generateDocNumber("SUPPAY", tx, { tanggal });
+  const alokasi = rencana.baris.filter((x) => x.alokasiPotongSen > 0);
+  const label = INFO_POTONG_PEMASOK[p.jenis].label.replace(/\s+\([^()]*\)$/, "");
+  const dokumen = rencana.baris.filter((x) => x.potongSen > 0).map((x) => labelDokumen(x.jenis, x.id, p.nomorDok));
+  const w = await tx.supplierPayment.create({
+    data: {
+      docNumber: nomor,
+      supplierId: p.uangMuka.supplierId,
+      date: tanggal,
+      method: p.uangMuka.method,
+      cashAccountId: p.uangMuka.cashAccountId,
+      reference: null,
+      grossAmount: rencana.potongSen / 100,
+      withholdingType: p.jenis,
+      withholdingAmount: rencana.potongSen / 100,
+      netAmount: 0,
+      isAdvance: rencana.potongSen > rencana.alokasiPotongSen,
+      status: STATUS_PEMBAYARAN.BERLAKU,
+      note: `${label} atas uang muka ${p.uangMuka.docNumber} yang melunasi ${dokumen.join(", ")}`.slice(0, 1000),
+      idempotencyKey: kunciPotongUangMuka(p.uangMuka.id, nomor),
+      createdById: p.olehUserId,
+      allocations: {
+        create: alokasi.map((a) => ({ targetType: a.jenis, targetId: a.id, amount: a.alokasiPotongSen / 100, note: `${labelDokumen(a.jenis, a.id, p.nomorDok)} (PPh atas uang muka)` })),
+      },
+    },
+    select: { id: true },
+  });
+  const baris = await barisJurnalPembayaran(
+    {
+      id: w.id,
+      nomor,
+      namaPemasok: p.namaPemasok,
+      referensi: null,
+      tanggal,
+      rekeningId: p.uangMuka.cashAccountId ?? "",
+      brutoSen: rencana.potongSen,
+      potongSen: rencana.potongSen,
+      jenisPotong: p.jenis,
+      alokasi: alokasi.map((a) => ({ sen: a.alokasiPotongSen, memo: memoAlokasi(a.jenis, labelDokumen(a.jenis, a.id, p.nomorDok)) })),
+    },
+    tx,
+  );
+  const j = await postJournal(tx, {
+    source: { type: SUMBER_PEMBAYARAN_PEMASOK, id: w.id },
+    date: tanggal,
+    description: uraianJurnalPembayaran(nomor, p.namaPemasok, `${label} atas uang muka ${p.uangMuka.docNumber}`),
+    postedById: p.olehUserId,
+    lines: baris,
+  });
+  await catatJejakKas(tx, {
+    userId: p.olehUserId,
+    action: JEJAK_KAS.PEMBAYARAN_DICATAT,
+    entityType: "SupplierPayment",
+    entityId: w.id,
+    changes: {
+      after: {
+        nomor,
+        pemasokId: p.uangMuka.supplierId,
+        tanggal: p.tanggal,
+        cara: p.uangMuka.method,
+        bruto: rencana.potongSen / 100,
+        potong: rencana.potongSen / 100,
+        neto: 0,
+        uangMuka: (rencana.potongSen - rencana.alokasiPotongSen) / 100,
+        alokasi: alokasi.map((a) => ({ jenis: a.jenis, id: a.id, jumlah: a.alokasiPotongSen / 100 })),
+      },
+    },
+    metadata: {
+      journalId: j.journalId,
+      dasarPotong: rencana.dasarSen / 100,
+      jenisPotong: p.jenis,
+      uangMukaDipotong: rencana.baris.filter((x) => x.cakupanSen !== 0).map((x) => ({ jenis: x.jenis, id: x.id, jumlah: x.cakupanSen / 100 })),
+      uangMukaTerpotong: 0,
+      dariUangMuka: p.uangMuka.id,
+      dariUangMukaNomor: p.uangMuka.docNumber,
+    },
+  });
+  return { id: w.id, nomor, jumlah: rencana.potongSen / 100 };
 }
 
 /**

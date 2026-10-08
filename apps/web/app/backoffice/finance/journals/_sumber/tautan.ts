@@ -33,6 +33,7 @@ export const JENIS_SUMBER_JURNAL = [
   "FIELD_COLLECTION",
   "STORE_RETURN",
   "STORE_EXCHANGE",
+  "STORE_INVOICE",
   "PPN_MASA",
   "PPN_MASA_REVERSAL",
   "PPH_FINAL",
@@ -94,6 +95,8 @@ export type IndukDokumen = {
   cycleId?: string | null;
   /** Komisi SPG toko putus tampil di halaman Komisi SPG bulan itu ("YYYY-MM"). */
   periode?: string | null;
+  /** Faktur piutang manual/impor tidak punya halaman sendiri: dicari di daftar Faktur & Piutang. */
+  noFaktur?: string | null;
 };
 
 /** Pembayaran pemasok ber-sourceId `poId#generasi`; jenis lain memakai sourceId apa adanya. */
@@ -109,6 +112,7 @@ export function idDokumenDariSumber(sourceType: string | null, sourceId: string 
     // Jurnal lapangan bergenerasi: `<id>`, `<id>#2`, … (lib/finance/lapangan/selaras.ts).
     sourceType === "FIELD_COLLECTION" ||
     sourceType === "STORE_RETURN" ||
+    sourceType === "STORE_INVOICE" ||
     // Penyelesaian masa PPN dan PPh final ber-sourceId `<masa>#<generasi>` (lib/finance/pajak/masa.ts).
     sourceType === "PPN_MASA" ||
     sourceType === "PPN_MASA_REVERSAL" ||
@@ -196,6 +200,9 @@ export function tautanDokumenSumber(
       return induk.storeReturnId ? `/backoffice/retur-toko/${seg(induk.storeReturnId)}` : "/backoffice/retur-toko";
     case "STORE_EXCHANGE":
       return `/backoffice/tukar-barang/${seg(id)}`;
+    case "STORE_INVOICE":
+      // Faktur piutang manual/impor: daftar Faktur & Piutang yang dicari nomornya (lunas pun tampil saat dicari).
+      return induk.noFaktur ? `/backoffice/piutang?cari=${encodeURIComponent(induk.noFaktur)}` : "/backoffice/piutang";
     case "PPN_MASA":
     case "PPN_MASA_REVERSAL":
       return `/backoffice/finance/pajak/ppn?masa=${seg(id)}`;

@@ -1,6 +1,7 @@
 import { prisma } from "@elorae/db";
 import { SUMBER_LAPANGAN, type SumberLapangan } from "./aturan";
 import { cariKlaimTanpaJurnal, cariNotaTanpaJurnal, cariReturTanpaJurnal, cariTukarTanpaJurnal } from "./sapuan";
+import { cariFakturTanpaJurnal } from "./sapuan-faktur";
 import { postingJurnalLapanganAman, type KodeGagalPosting } from "./tertunda";
 
 /*
@@ -34,10 +35,11 @@ async function jalankan(daftar: { sumber: SumberLapangan; id: string }[], userId
 
 /**
  * Semua dokumen lapangan satu toko: nota, BKM (semua status — yang batal
- * sesudah terverifikasi ikut dibalik), hitungan gudang, tukar barang.
+ * sesudah terverifikasi ikut dibalik), hitungan gudang, tukar barang, faktur
+ * piutang manual/impor.
  */
 export async function selaraskanJurnalToko(storeId: string, userId: string): Promise<HasilMassal> {
-  const [nota, bkm, nri, tukar] = await Promise.all([
+  const [nota, bkm, nri, tukar, faktur] = await Promise.all([
     prisma.fieldSalesDelivery.findMany({ where: { order: { storeId, orderType: "PUTUS" } }, select: { id: true }, orderBy: { invoiceDate: "asc" } }),
     prisma.paymentClaim.findMany({ where: { storeId }, select: { id: true }, orderBy: { createdAt: "asc" } }),
     prisma.warehouseReturn.findMany({
@@ -46,6 +48,7 @@ export async function selaraskanJurnalToko(storeId: string, userId: string): Pro
       orderBy: { createdAt: "asc" },
     }),
     prisma.storeExchange.findMany({ where: { storeId, status: "SELESAI" }, select: { id: true }, orderBy: { createdAt: "asc" } }),
+    prisma.receivable.findMany({ where: { storeId, source: { not: "DELIVERY" }, deliveryId: null }, select: { id: true }, orderBy: { invoiceDate: "asc" } }),
   ]);
   return jalankan(
     [
@@ -53,6 +56,7 @@ export async function selaraskanJurnalToko(storeId: string, userId: string): Pro
       ...bkm.map((d) => ({ sumber: SUMBER_LAPANGAN.BKM, id: d.id })),
       ...nri.map((d) => ({ sumber: SUMBER_LAPANGAN.RETUR, id: d.id })),
       ...tukar.map((d) => ({ sumber: SUMBER_LAPANGAN.TUKAR, id: d.id })),
+      ...faktur.map((d) => ({ sumber: SUMBER_LAPANGAN.FAKTUR, id: d.id })),
     ],
     userId,
   );
@@ -63,11 +67,12 @@ export type DokumenTanpaJurnalLapangan = { sumber: SumberLapangan; id: string; t
 /** Dokumen lapangan tanpa jurnal sejak tanggal mulai buku besar, `batas` per jenis. */
 export async function dokumenLapanganTanpaJurnal(batas: number, sampai = new Date()): Promise<DokumenTanpaJurnalLapangan[]> {
   const opsi = { sejak: new Date(0), sampai, batas };
-  const [nota, bkm, retur, tukar] = await Promise.all([
+  const [nota, bkm, retur, tukar, faktur] = await Promise.all([
     cariNotaTanpaJurnal(opsi),
     cariKlaimTanpaJurnal(opsi),
     cariReturTanpaJurnal(opsi),
     cariTukarTanpaJurnal(opsi),
+    cariFakturTanpaJurnal(opsi),
   ]);
   const ubah = (sumber: SumberLapangan) => (d: { id: string; tanggal: Date; label: string }) => ({ sumber, id: d.id, tanggal: d.tanggal.toISOString(), label: d.label });
   return [
@@ -75,6 +80,7 @@ export async function dokumenLapanganTanpaJurnal(batas: number, sampai = new Dat
     ...bkm.map(ubah(SUMBER_LAPANGAN.BKM)),
     ...retur.map(ubah(SUMBER_LAPANGAN.RETUR)),
     ...tukar.map(ubah(SUMBER_LAPANGAN.TUKAR)),
+    ...faktur.map(ubah(SUMBER_LAPANGAN.FAKTUR)),
   ];
 }
 

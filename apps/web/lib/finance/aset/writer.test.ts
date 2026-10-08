@@ -350,4 +350,21 @@ d("aset tetap — penulis & penyusutan (test bed only, 2000–2001)", () => {
     expect(await prisma.fixedAssetDepreciation.count({ where: { assetId: r.id } })).toBe(1);
     expect(await prisma.journal.count({ where: { sourceType: "DEPRECIATION", sourceId: `${r.id}/2001-09` } })).toBe(1);
   });
+
+  it("bulan yang belum berakhir (WIB) tidak disusutkan dan tidak dihitung terlewat oleh sapuan", async () => {
+    const r = await catat({ cara: "SUDAH_DICATAT", akunLawanId: null, tanggalPerolehan: "2001-06-04" });
+    // "Sekarang" 30 Juni 2001 10:00 WIB: Juni belum berakhir walau tanggal jurnalnya (30 Juni 00:00 WIB) sudah lewat.
+    const sekarang = new Date("2001-06-30T03:00:00.000Z");
+    expect(await postingPenyusutanSatu(r.id, { tahun: 2001, bulan: 6 }, userId, sekarang)).toEqual({ status: "BELUM_BERAKHIR" });
+    const h = await postingPenyusutan({ sampai: { tahun: 2001, bulan: 6 }, olehUserId: userId, asetIds: [r.id], tanggalMulai: null, sekarang });
+    expect(h.diposting).toBe(0);
+    expect(await prisma.fixedAssetDepreciation.count({ where: { assetId: r.id } })).toBe(0);
+    // Sapuan pada saat yang sama tidak menganggap Juni terlewat; sesudah bulan berakhir, ya.
+    const sapu = (sampai: Date) => cariPenyusutanTanpaJurnal({ sejak: new Date("2001-05-31T17:00:00.000Z"), sampai, batas: 500 });
+    expect((await sapu(sekarang)).filter((x) => x.id.startsWith(`${r.id}/`))).toEqual([]);
+    expect((await sapu(new Date("2001-06-30T16:59:59.999Z"))).filter((x) => x.id.startsWith(`${r.id}/`)).map((x) => x.id)).toEqual([`${r.id}/2001-06`]);
+    // Sesudah tengah malam WIB bulan itu diposting.
+    const sesudah = new Date("2001-06-30T17:00:00.000Z");
+    expect(await postingPenyusutanSatu(r.id, { tahun: 2001, bulan: 6 }, userId, sesudah)).toMatchObject({ status: "DIPOSTING" });
+  });
 });

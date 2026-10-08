@@ -120,7 +120,8 @@ d("voucher kas & bank (basis data uji)", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     voucherIds.push(r.id);
-    expect(r.nomor.startsWith("BKK/")).toBe(true);
+    // Nomor mengikuti tanggal voucher (bulan WIB), bukan bulan pencatatan.
+    expect(r.nomor.startsWith("BKK/2008/03/")).toBe(true);
     const v = await prisma.cashVoucher.findUnique({ where: { id: r.id }, include: { lines: { orderBy: { sortOrder: "asc" } } } });
     expect(Number(v!.totalAmount)).toBe(1_250_000);
     expect(Number(v!.withholdingAmount)).toBe(20_000);
@@ -155,7 +156,7 @@ d("voucher kas & bank (basis data uji)", () => {
     expect(masuk.ok).toBe(true);
     if (!masuk.ok) return;
     voucherIds.push(masuk.id);
-    expect(masuk.nomor.startsWith("BKMK/")).toBe(true);
+    expect(masuk.nomor.startsWith("BKMK/2008/03/")).toBe(true);
     expect((await jurnalDari("CASH_VOUCHER", masuk.id))!.baris).toEqual([
       ["BANK", 75_000, 0],
       ["PENDAPATAN_LAIN", 0, 75_000],
@@ -164,7 +165,7 @@ d("voucher kas & bank (basis data uji)", () => {
     expect(trf.ok).toBe(true);
     if (!trf.ok) return;
     voucherIds.push(trf.id);
-    expect(trf.nomor.startsWith("TRF/")).toBe(true);
+    expect(trf.nomor.startsWith("TRF/2008/03/")).toBe(true);
     expect((await jurnalDari("CASH_VOUCHER", trf.id))!.baris).toEqual([
       ["BANK", 0, 2_000_000],
       ["KAS", 2_000_000, 0],

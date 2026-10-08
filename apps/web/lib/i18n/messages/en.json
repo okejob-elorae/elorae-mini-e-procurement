@@ -3465,7 +3465,7 @@
       "tanpaPotong": "No withholding",
       "tanpaNpwp": "Supplier has no tax ID: higher rate applies.",
       "dasarPotong": "Withholding base",
-      "dasarPotongBawaan": "Leave empty to use the default base {nilai} (services before VAT; goods are not withheld).",
+      "dasarPotongBawaan": "Leave empty to use the default base {nilai} (services before VAT, including advances not yet withheld; goods are not withheld).",
       "ringkasanJudul": "Summary",
       "ringkasPotongBaris": "Withheld ({jenis})",
       "catatan": "Note",
@@ -3479,7 +3479,7 @@
         "rekening": "Choose the paying account.",
         "melebihiSisa": "An amount is more than its balance.",
         "uangMuka": "The advance is not a valid number.",
-        "dasarPotong": "The withholding base is invalid or larger than the gross.",
+        "dasarPotong": "The withholding base is invalid or larger than the gross plus the advance not yet withheld.",
         "kosong": "Enter an amount for at least one document, or an advance."
       },
       "barisKe": "(line {baris})",
@@ -3505,7 +3505,7 @@
       "alasanBatal": "Reason for cancelling",
       "tutup": "Close",
       "dibatalkan": "Payment {nomor} cancelled",
-      "terapkanIsi": "Advance left: {nilai}. Enter the amount applied to each document. No new journal: payables were debited when the advance was paid.",
+      "terapkanIsi": "Advance left: {nilai}. Enter the amount applied to each document.",
       "sisaDokumen": "Balance {nilai}",
       "akanDiterapkan": "To apply: {nilai}",
       "terapkan": "Apply",
@@ -3526,7 +3526,7 @@
         "BUKAN_PEMASOK_INI": "That document belongs to another supplier.",
         "KOSONG": "Enter an amount for at least one document, or an advance.",
         "POTONG_TIDAK_SAH": "Unknown withholding type.",
-        "DASAR_POTONG_TIDAK_SAH": "The withholding base is invalid or larger than the gross.",
+        "DASAR_POTONG_TIDAK_SAH": "The withholding base is invalid or larger than the gross plus the advance not yet withheld.",
         "TEKS_TERLALU_PANJANG": "Text is too long.",
         "PEMASOK_TIDAK_DITEMUKAN": "Supplier not found.",
         "PO_DITANDAI_LUNAS": "That document's PO is already marked paid with the Mark paid button. Undo that mark first if it is really still owed.",
@@ -3541,7 +3541,9 @@
         "FOTO_TIDAK_SAH": "The proof photo is invalid. Upload it again.",
         "TANPA_AKSES": "You do not have permission to do this.",
         "GAGAL": "Could not save. Try again."
-      }
+      },
+      "uangMukaBelumDipotong": "Advance {nilai} not yet withheld — included in the withholding base",
+      "uangMukaDiterapkanPotong": "Advance applied. {nilai} tax withheld on the advance via {nomor}."
     },
     "umur": {
       "judul": "Supplier payables aging",
@@ -9485,7 +9487,8 @@
       "CASH_VOUCHER": "Cash & bank voucher",
       "CASH_VOUCHER_REVERSAL": "Cash & bank voucher reversal",
       "SUPPLIER_PAYMENT_DOC": "Supplier payment (document)",
-      "SUPPLIER_PAYMENT_DOC_REVERSAL": "Supplier payment reversal (document)"
+      "SUPPLIER_PAYMENT_DOC_REVERSAL": "Supplier payment reversal (document)",
+      "STORE_INVOICE": "Manual/imported store invoice"
     },
     "tabPosted": "Posted",
     "tabPending": "Pending",
@@ -9745,7 +9748,8 @@
       "colCurrent": "This period",
       "colPrevious": "Previous period",
       "colDelta": "Change",
-      "comparisonHint": "Compared with {period}."
+      "comparisonHint": "Compared with {period}.",
+      "penyesuaianPelepasanAset": "Fixed asset disposal adjustment"
     },
     "filter": {
       "dateFrom": "From date",
@@ -11779,7 +11783,9 @@
     "laporanJudul": "SPG and store reports",
     "laporanRingkas": "{items} items · {pcs} pcs",
     "laporanBelumMasuk": "not in yet",
-    "laporanDiCocokkan": "Per-item figures from both reports are compared in the “Stock book matching” card below."
+    "laporanDiCocokkan": "Per-item figures from both reports are compared in the “Stock book matching” card below.",
+    "lockTanpaBarang": "{n} row(s) have no item picked — SPG commission and consignment COGS are not counted for them.",
+    "lockTanpaHarga": "{n} row(s) are priced at 0 — their sold value is 0 on the store's bill."
   },
   "jenisPotongan": {
     "pageTitle": "Deduction types",
@@ -11832,7 +11838,9 @@
     "peranJurnalOtomatis": "Automatic — sales discount, or prepaid PPh 23 when PKP stores only",
     "peranJurnalHint": "The account role debited when finance verifies a BKM carrying this deduction. The account itself is set in Finance → Account Mapping.",
     "peranJurnalRingkas": "Journal: {peran}",
-    "errPERAN_TIDAK_SAH": "That journal account cannot be used for a deduction."
+    "errPERAN_TIDAK_SAH": "That journal account cannot be used for a deduction.",
+    "peranDariRetur": "Through the return journal",
+    "peranOtomatisRingkas": "Automatic: {peran}"
   },
   "ocr": {
     "title": "Read from photo",
@@ -12330,7 +12338,8 @@
       "SUPPLIER_PAYMENT_CANCELLED": "Supplier payment cancelled",
       "SUPPLIER_ADVANCE_APPLIED": "Supplier advance applied",
       "PO_PAID_BY_SUPPLIER_PAYMENTS": "PO paid by supplier payments",
-      "PO_UNPAID_BY_PAYMENT_CANCEL": "PO paid mark removed (payment cancelled)"
+      "PO_UNPAID_BY_PAYMENT_CANCEL": "PO paid mark removed (payment cancelled)",
+      "JOURNAL_SWEEP_NOTHING_TO_POST": "Journal sweep: nothing to post"
     },
     "entities": {
       "ChainTemplate": "Chain template",
@@ -19132,7 +19141,9 @@
     "errBuatSku": "The SKU could not be generated. Try again.",
     "barcodeTanpaAwalan": "Pick a category with a code or set the item SKU first to build barcodes.",
     "lengkapiAtribut": "Give every attribute a name and at least one value.",
-    "lengkapiBahan": "Fill in the material and the quantity per pcs on every recipe row."
+    "lengkapiBahan": "Fill in the material and the quantity per pcs on every recipe row.",
+    "komisiSpg": "SPG commission per piece (Rp)",
+    "komisiSpgTidakSah": "SPG commission per piece must be a number of 0 or more."
   },
   "itemList": {
     "filterCategory": "Filter category",
@@ -22360,12 +22371,14 @@
       "bukaKembali": "Reopen",
       "periksaTutup": "Check & close",
       "periksa": "Check",
-      "belumBerakhir": "Not ended"
+      "belumBerakhir": "Not ended",
+      "terkunciSebelumBuku": "Before the ledger start date. Locked because the start month has been closed."
     },
     "status": {
       "CLOSED": "Closed",
       "OPEN": "Open",
-      "BERJALAN": "In progress"
+      "BERJALAN": "In progress",
+      "TERKUNCI": "Locked"
     },
     "tahun": {
       "judul": "Fiscal years",
@@ -22873,7 +22886,7 @@
       "judul": "Post depreciation",
       "isi": "Every month not yet depreciated up to the chosen month is journaled, dated the last day of that month.",
       "bulan": "Up to month",
-      "tertunda": "{n} assets are not yet depreciated this month.",
+      "tertunda": "{n} assets are not yet depreciated for {bulan}.",
       "tombol": "Post",
       "memposting": "Posting…",
       "hasil": "{n} depreciation journals posted, total {total}.",
@@ -23011,8 +23024,9 @@
       "AKUN_PENERIMAAN_WAJIB": "Choose the account that receives the sale proceeds.",
       "ALASAN_WAJIB": "Write the reason (at least 5 characters).",
       "TANPA_AKSES": "You are not allowed to manage journals.",
-      "BULAN_TIDAK_SAH": "Choose a valid month, not after this month.",
-      "GAGAL": "Could not save. Try again."
+      "BULAN_TIDAK_SAH": "Choose a valid month.",
+      "GAGAL": "Could not save. Try again.",
+      "BULAN_BELUM_BERAKHIR": "Depreciation for a month can only be posted after that month has ended. Choose a month that has passed."
     }
   },
   "jurnalBerulang": {
@@ -23381,7 +23395,8 @@
       "TAHUN_TIDAK_DIKETAHUI": "Dates in the file have no year and the file does not state its period.",
       "TANPA_BARIS": "No statement lines in the file.",
       "AKUN_HUTANG_ALUR": "This payable is settled on its own page (commissions, travel claims, or KOL fees → Mark paid), not with a cash voucher.",
-      "AKUN_HUTANG_PAJAK": "Tax payables are settled in Finance → Tax → Payments, not with a cash voucher."
+      "AKUN_HUTANG_PAJAK": "Tax payables are settled in Finance → Tax → Payments, not with a cash voucher.",
+      "JURNAL_DIBATALKAN": "That journal line belongs to a cancelled voucher or payment (or its reversal), so it cannot be matched to a bank statement line."
     }
   },
   "financeBank": {

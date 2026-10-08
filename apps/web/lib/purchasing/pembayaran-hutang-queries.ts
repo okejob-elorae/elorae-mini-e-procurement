@@ -7,8 +7,10 @@ import { resolveAccount, UnmappedRoleError } from "@/lib/finance/journals/mappin
 import { daftarHutangJasa } from "@/lib/production/hutang-jasa-queries";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { kunciJenis, SUMBER_JURNAL_SALDO_AWAL } from "@/lib/finance/saldo-awal/jenis";
+import { JEJAK_KAS } from "@/lib/finance/kas/jejak";
 import { AWALAN_KUNCI_TANDAI_LUNAS, ID_SALDO_AWAL, kunciDokumenHutang, type SisaDokumen } from "./pembayaran-aturan";
 import { terapkanFifo } from "./pembayaran-umur";
+import { hitungUangMukaBelumDipotong, susunJejakUangMuka, type DataUangMukaPembayaran } from "./pembayaran-uang-muka";
 
 type Klien = Prisma.TransactionClient | typeof prisma;
 
@@ -29,6 +31,8 @@ type Klien = Prisma.TransactionClient | typeof prisma;
  * - Hutang jasa produksi per langkah WO dari `daftarHutangJasa`.
  * - Hutang saldo awal per pemasok dari impor saldo awal `AP` yang berlaku.
  * - Uang muka = bagian pembayaran berlaku yang belum dialokasikan.
+ * - Uang muka belum dipotong per dokumen (dasar PPh pembayaran berikutnya) dari
+ *   jejak pembayarannya (`pembayaran-uang-muka.ts`).
  */
 
 export type JenisDokumenHutang = "GRN" | "WO_STEP" | "OTHER";
@@ -49,9 +53,21 @@ export type DokumenHutang = {
   sisaSen: number;
   /** 0..1, bagian alokasi yang menjadi dasar PPh 23/21 (jasa tanpa PPN). */
   porsiDasarPotong: number;
+  /**
+   * Bruto uang muka yang sudah diterapkan ke dokumen ini tetapi PPh-nya belum
+   * dipotong — ikut dasar potongan pembayaran berikutnya. Negatif = kredit.
+   */
+  uangMukaBelumDipotongSen: number;
 };
 
-export type UangMukaPemasok = { pembayaranId: string; nomor: string; tanggal: string; sisaSen: number };
+export type UangMukaPemasok = {
+  pembayaranId: string;
+  nomor: string;
+  tanggal: string;
+  sisaSen: number;
+  /** Bagian uang muka yang sudah dipotong PPh saat dibayar dan belum diterapkan. */
+  sudahDipotongSen: number;
+};
 
 export type HutangPemasok = {
   supplierId: string;
@@ -222,6 +238,7 @@ async function susunHutangGrn(
       dibayarSen: 0,
       sisaSen: hutangSen,
       porsiDasarPotong: 0,
+      uangMukaBelumDipotongSen: 0,
     };
     if (g.poId) {
       const daftar = perPo.get(g.poId) ?? [];
@@ -325,8 +342,23 @@ export async function bacaHutangPemasok(opsi: OpsiHutangPemasok = {}, klien: Kli
     const sisa = sen(p.grossAmount) - dialokasikan;
     if (sisa > 0) {
       const daftar = uangMukaPer.get(p.supplierId) ?? [];
-      daftar.push({ pembayaranId: p.id, nomor: p.docNumber, tanggal: tglWib(p.date), sisaSen: sisa });
+      daftar.push({ pembayaranId: p.id, nomor: p.docNumber, tanggal: tglWib(p.date), sisaSen: sisa, sudahDipotongSen: 0 });
       uangMukaPer.set(p.supplierId, daftar);
+    }
+  }
+
+  // Jejak pembayaran (pencatatan + penerapan uang muka), urut waktu, untuk uang muka belum dipotong.
+  const jejakPer = new Map<string, Array<{ action: string; changes: unknown; metadata: unknown }>>();
+  for (const ids of potong(pembayaran.map((p) => p.id), 500)) {
+    const jejak = await klien.auditLog.findMany({
+      where: { entityType: "SupplierPayment", entityId: { in: ids }, action: { in: [JEJAK_KAS.PEMBAYARAN_DICATAT, JEJAK_KAS.UANG_MUKA_DITERAPKAN] } },
+      select: { entityId: true, action: true, changes: true, metadata: true },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+    for (const j of jejak) {
+      const daftar = jejakPer.get(j.entityId) ?? [];
+      daftar.push(j);
+      jejakPer.set(j.entityId, daftar);
     }
   }
 
@@ -372,6 +404,7 @@ export async function bacaHutangPemasok(opsi: OpsiHutangPemasok = {}, klien: Kli
         dibayarSen: sen(l.dibayar),
         sisaSen: sen(l.sisa),
         porsiDasarPotong: hutangSen > 0 ? Math.min(1, sen(l.dasarPotong) / hutangSen) : 0,
+        uangMukaBelumDipotongSen: 0,
       });
     }
     const awal = saldoAwal?.perPemasok.get(p.id) ?? 0;
@@ -391,10 +424,22 @@ export async function bacaHutangPemasok(opsi: OpsiHutangPemasok = {}, klien: Kli
         dibayarSen: dibayar,
         sisaSen: awal - dibayar,
         porsiDasarPotong: 0,
+        uangMukaBelumDipotongSen: 0,
       });
     }
     dokumen.sort((a, b) => a.tanggal.localeCompare(b.tanggal) || a.nomor.localeCompare(b.nomor));
     const uangMuka = uangMukaPer.get(p.id) ?? [];
+    const porsi = new Map(dokumen.map((d) => [kunciDokumenHutang(d.jenis, d.id), d.porsiDasarPotong]));
+    const dataUangMuka: DataUangMukaPembayaran[] = pembayaran
+      .filter((b) => b.supplierId === p.id)
+      .map((b) => ({
+        id: b.id,
+        alokasi: b.allocations.filter((a) => a.targetId).map((a) => ({ kunci: kunciDokumenHutang(a.targetType, a.targetId as string), sen: sen(a.amount) })),
+        ...susunJejakUangMuka(jejakPer.get(b.id) ?? [], (k) => porsi.get(k) ?? 0),
+      }));
+    const belum = hitungUangMukaBelumDipotong(dataUangMuka);
+    for (const d of dokumen) d.uangMukaBelumDipotongSen = belum.perDokumen.get(kunciDokumenHutang(d.jenis, d.id)) ?? 0;
+    for (const u of uangMuka) u.sudahDipotongSen = Math.min(u.sisaSen, belum.sisaTerpotong.get(u.pembayaranId) ?? 0);
     const uangMukaSen = uangMuka.reduce((s, u) => s + u.sisaSen, 0);
     const lebihBayarSen = grn.lebihBayar.get(p.id) ?? 0;
     const sisaSen = dokumen.reduce((s, d) => s + Math.max(0, d.sisaSen), 0);
@@ -425,7 +470,9 @@ export async function bacaHutangPemasok(opsi: OpsiHutangPemasok = {}, klien: Kli
 /** Peta sisa dokumen satu pemasok untuk memeriksa alokasi (`periksaAlokasiTerhadapSisa`). */
 export function petaSisaDokumen(h: HutangPemasok | undefined): Map<string, SisaDokumen> {
   const peta = new Map<string, SisaDokumen>();
-  for (const d of h?.dokumen ?? []) peta.set(kunciDokumenHutang(d.jenis, d.id), { sisaSen: d.sisaSen, porsiDasarPotong: d.porsiDasarPotong });
+  for (const d of h?.dokumen ?? []) {
+    peta.set(kunciDokumenHutang(d.jenis, d.id), { sisaSen: d.sisaSen, porsiDasarPotong: d.porsiDasarPotong, uangMukaBelumDipotongSen: d.uangMukaBelumDipotongSen });
+  }
   return peta;
 }
 

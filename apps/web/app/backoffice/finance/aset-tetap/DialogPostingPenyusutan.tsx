@@ -14,9 +14,15 @@ import { bacaKunciBulan, bulanSebelum, kunciBulan, labelBulan } from "@/lib/fina
 import { postingPenyusutanAction } from "@/app/actions/finance-aset";
 import { pesanGalatAset } from "./pesan";
 
-/** Bulan ini dan sebelas bulan sebelumnya ("YYYY-MM"), terbaru dulu. */
+/** Bulan terakhir yang sudah berakhir ("YYYY-MM", bulan lalu dari `bulanIni`) — bulan berjalan tidak bisa disusutkan. */
+function bulanTerakhirSelesai(bulanIni: string): string {
+  const tb = bacaKunciBulan(bulanIni);
+  return tb ? kunciBulan(bulanSebelum(tb)) : bulanIni;
+}
+
+/** Bulan terakhir yang sudah berakhir dan sebelas bulan sebelumnya ("YYYY-MM"), terbaru dulu. */
 function duaBelasBulan(bulanIni: string): string[] {
-  const awal = bacaKunciBulan(bulanIni);
+  const awal = bacaKunciBulan(bulanTerakhirSelesai(bulanIni));
   if (!awal) return [bulanIni];
   const hasil: string[] = [];
   let tb = awal;
@@ -32,7 +38,7 @@ type Props = {
   bulanIni: string;
   /** Hanya aset ini (halaman rincian); tanpa = semua aset. */
   asetIds?: string[];
-  /** Aset yang bulan ini belum disusutkan (halaman daftar). */
+  /** Aset yang bulan lalu (bulan terakhir yang sudah berakhir) belum disusutkan (halaman daftar). */
   jumlahTertunda?: number;
   variant?: "default" | "outline";
 };
@@ -43,7 +49,8 @@ export function DialogPostingPenyusutan({ bulanIni, asetIds, jumlahTertunda, var
   const locale = useLocale();
   const router = useRouter();
   const [buka, setBuka] = useState(false);
-  const [bulan, setBulan] = useState(bulanIni);
+  const terakhir = bulanTerakhirSelesai(bulanIni);
+  const [bulan, setBulan] = useState(terakhir);
   const [pending, mulai] = useTransition();
 
   const pilihan = duaBelasBulan(bulanIni);
@@ -102,8 +109,8 @@ export function DialogPostingPenyusutan({ bulanIni, asetIds, jumlahTertunda, var
                 </SelectContent>
               </Select>
             </div>
-            {jumlahTertunda != null && jumlahTertunda > 0 && bulan === bulanIni ? (
-              <p className="text-sm text-muted-foreground">{t("posting.tertunda", { n: jumlahTertunda })}</p>
+            {jumlahTertunda != null && jumlahTertunda > 0 && bulan === terakhir ? (
+              <p className="text-sm text-muted-foreground">{t("posting.tertunda", { n: jumlahTertunda, bulan: label(terakhir) })}</p>
             ) : null}
           </div>
           <DialogFooter>

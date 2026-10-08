@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { hariIniWib } from "@/lib/tanggal-isian";
+import { bulanSebelum } from "@/lib/finance/periode/periode";
 import { bacaKategoriAset } from "@/lib/finance/aset/kelompok";
 import { bacaSaringanStatusAset, daftarAset, hitungPenyusutanTertunda, type BarisAset, type RingkasanAset } from "@/lib/finance/aset/queries";
 import { AsetTetapClient } from "./AsetTetapClient";
@@ -40,7 +41,8 @@ export default async function AsetTetapPage({ searchParams }: PageProps) {
   try {
     const [d, t] = await Promise.all([
       daftarAset({ status, kategori, cari, halaman, ukuran: UKURAN }),
-      hitungPenyusutanTertunda({ tahun: Number(bulanIni.slice(0, 4)), bulan: Number(bulanIni.slice(5, 7)) }),
+      // Bulan berjalan belum bisa disusutkan: yang tertunda dihitung untuk bulan lalu.
+      hitungPenyusutanTertunda(bulanSebelum({ tahun: Number(bulanIni.slice(0, 4)), bulan: Number(bulanIni.slice(5, 7)) })),
     ]);
     baris = d.baris;
     total = d.total;

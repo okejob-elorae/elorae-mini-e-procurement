@@ -92,6 +92,23 @@ describe('bandingkanLaporan', () => {
     const hasil = bandingkanLaporan([{ itemName: 'Blus', qty: 5 }], []);
     expect(hasil[0]).toMatchObject({ qtySpg: 5, qtyToko: null, selisih: null });
   });
+
+  it("membawa barang master dari laporan mana pun, supaya angka resmi tidak terkunci tanpa barang", () => {
+    // Tanpa itemId, kunci angka tidak menghitung komisi SPG maupun HPP konsinyasi baris itu.
+    const hasil = bandingkanLaporan(
+      [
+        { itemName: "Blus", itemId: "blus", qty: 5 },
+        { itemName: "Rok", itemId: null, qty: 3 },
+      ],
+      [
+        { itemName: "Rok", itemId: "rok", qty: 3 },
+        { itemName: "Syal", qty: 1 },
+      ],
+    );
+    expect(hasil.find((b) => b.itemName === "Blus")?.itemId).toBe("blus");
+    expect(hasil.find((b) => b.itemName === "Rok")?.itemId).toBe("rok");
+    expect(hasil.find((b) => b.itemName === "Syal")?.itemId).toBeNull();
+  });
 });
 
 describe('bagiKomisi', () => {

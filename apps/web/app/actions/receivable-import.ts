@@ -5,7 +5,8 @@ import { auth } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 import type { BarisImpor } from '@/lib/receivables/impor/baris';
 import { simpanImpor, tinjauImpor, type HasilImpor, type TinjauanImpor } from '@/lib/receivables/impor/writer';
-import { batalkanImpor } from '@/lib/receivables/impor/batal';
+import { batalkanImpor, idFakturImpor } from '@/lib/receivables/impor/batal';
+import { kaitFakturPiutang } from '@/lib/finance/lapangan/kait';
 import {
   buatPiutangManual,
   type AlasanGagalFaktur,
@@ -57,7 +58,10 @@ export async function simpanImporAction(baris: BarisImpor[]): Promise<HasilAksiS
   }
 
   try {
-    const hasil = await simpanImpor(pulihkanTanggal(baris), { olehUserId: session.user.id });
+    const { ids, ...hasil } = await simpanImpor(pulihkanTanggal(baris), { olehUserId: session.user.id });
+    // Faktur bertanggal sejak tanggal mulai buku besar dijurnal (DR piutang toko / CR penjualan);
+    // sesudah commit, tidak pernah menggagalkan impornya — yang gagal menjadi JOURNAL_PENDING.
+    await kaitFakturPiutang(ids ?? [], session.user.id);
     revalidatePath('/backoffice/piutang');
     return { ok: true, hasil };
   } catch (err) {
@@ -129,6 +133,7 @@ export async function buatFakturManualAction(input: {
       olehUserId: session.user.id,
     });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    await kaitFakturPiutang([hasil.id], session.user.id);
     revalidatePath('/backoffice/piutang');
     return { ok: true };
   } catch (err) {
@@ -158,6 +163,12 @@ export async function batalkanImporAction(
   try {
     const hasil = await batalkanImpor({ auditLogId, alasan, olehUserId: session.user.id });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan, dipakai: hasil.dipakai };
+    // Faktur yang sudah dijurnal dibalik (generasi berikutnya), bukan dihapus jurnalnya.
+    const ids = await idFakturImpor(auditLogId).catch((e) => {
+      console.error('idFakturImpor gagal — jurnal faktur batch ini tidak dibalik otomatis:', e);
+      return [] as string[];
+    });
+    await kaitFakturPiutang(ids, session.user.id);
     revalidatePath('/backoffice/piutang');
     revalidatePath('/backoffice/piutang/impor');
     return { ok: true, dihapus: hasil.dihapus };

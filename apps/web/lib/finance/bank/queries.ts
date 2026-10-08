@@ -8,6 +8,7 @@ import { idDokumenDariSumber } from "@/app/backoffice/finance/journals/_sumber/t
 import { jumlahSenBarisBank, selisihHari } from "./cocok";
 import { ringkasRekonsiliasi, saldoBankPadaTanggal, type RingkasanRekonsiliasi } from "./rekonsiliasi";
 import { STATUS_MUTASI } from "./mutasi-writer";
+import { jurnalTerbatalkan, PILIH_JURNAL_CEK } from "./jurnal-batal";
 
 type Klien = Prisma.TransactionClient | typeof prisma;
 const sen = (v: Prisma.Decimal | number | string | null | undefined) => Math.round(Number(v ?? 0) * 100);
@@ -126,9 +127,11 @@ export async function kandidatJurnal(mutasiId: string, klien: Klien = prisma): P
       journal: { status: "POSTED", date: { gte: dari, lte: sampai } },
       ...(target >= 0 ? { debit: target / 100 } : { credit: -target / 100 }),
     },
-    select: { id: true, debit: true, credit: true, journal: { select: { id: true, date: true, description: true, sourceType: true } } },
+    select: { id: true, debit: true, credit: true, journal: { select: { date: true, description: true, ...PILIH_JURNAL_CEK } } },
     take: 200,
   });
+  // Voucher/pembayaran yang dibatalkan (asli dan pembaliknya) bukan pasangan mutasi.
+  const batal = await jurnalTerbatalkan(klien, [...new Map(baris.map((b) => [b.journal.id, b.journal])).values()]);
   const terpakai = new Set(
     (
       await klien.bankStatementLine.findMany({ where: { matchedJournalLineId: { in: baris.map((b) => b.id) } }, select: { matchedJournalLineId: true } })
@@ -136,7 +139,7 @@ export async function kandidatJurnal(mutasiId: string, klien: Klien = prisma): P
   );
   const tMutasi = formatDateOnlyJakarta(m.date);
   return baris
-    .filter((b) => !terpakai.has(b.id) && jumlahSenBarisBank(b.debit.toString(), b.credit.toString()) === target)
+    .filter((b) => !terpakai.has(b.id) && !batal.has(b.journal.id) && jumlahSenBarisBank(b.debit.toString(), b.credit.toString()) === target)
     .map((b) => {
       const t = formatDateOnlyJakarta(b.journal.date);
       return { barisId: b.id, journalId: b.journal.id, tanggal: t, uraian: b.journal.description, jumlah: target / 100, selisihHari: selisihHari(tMutasi, t), sourceType: b.journal.sourceType };

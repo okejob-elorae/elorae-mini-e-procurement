@@ -65,7 +65,7 @@ export async function selaraskanCerminTandaiLunasDalam(tx: Klien, poId: string, 
     const nilai = j.lines.reduce((s, l) => s + Math.round(Number(l.debit) * 100), 0);
     if (nilai <= 0) continue;
     const rekening = j.lines.find((l) => Number(l.credit) > 0)?.chartAccountId ?? null;
-    const nomor = await generateDocNumber("SUPPAY", tx);
+    const nomor = await generateDocNumber("SUPPAY", tx, { tanggal: j.date });
     const p = await tx.supplierPayment.create({
       data: {
         docNumber: nomor,

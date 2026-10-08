@@ -2,6 +2,7 @@ import { prisma, Prisma, sqlId } from "@elorae/db";
 import type { PostingRole } from "@/lib/constants/journal-roles";
 import { endOfTodayJakarta, formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
 import { daftarJurnalTertunda } from "@/lib/finance/jurnal-tertunda";
+import { readGlCutover } from "@/lib/finance/sales/sweep";
 import { getAccountBalances } from "@/lib/finance/reports/balances";
 import { cariSemuaTanpaJurnal, rentangSapuan } from "@/lib/finance/sapuan/runner";
 import { STATUS_JURNAL } from "@/lib/finance/journals/status-jurnal";
@@ -167,11 +168,11 @@ export async function dokumenTanpaJurnal(opsi: { bulan?: { tahun: number; bulan:
     : (rentangBulanIni?.akhir ?? new Date());
   const rentang = await rentangSapuan({ sejak: rentangBulanIni?.awal, sampai });
   if (!rentang) {
-    const { readGlCutover } = await import("@/lib/finance/sales/sweep");
     return { berlaku: false, sebab: (await readGlCutover()) ? "SEBELUM_TANGGAL_MULAI" : "TANPA_TANGGAL_MULAI" };
   }
   const [hasil, tertunda] = await Promise.all([
-    cariSemuaTanpaJurnal({ ...rentang, batasPerSumber: BATAS_PER_SUMBER }),
+    // Dokumen yang sapuan dapati nihil (NOTHING_TO_POST) memang tidak akan pernah berjurnal.
+    cariSemuaTanpaJurnal({ ...rentang, batasPerSumber: BATAS_PER_SUMBER, abaikanNihil: true }),
     daftarJurnalTertunda(),
   ]);
   const gagal = new Set(
@@ -250,7 +251,10 @@ export type JurnalSesudahTutup = { id: string; tanggal: string; keterangan: stri
  * Jurnal BERLAKU di bulan tertutup yang dibuat SESUDAH bulan itu ditutup —
  * kunci periode `postJournal` mencegahnya; selain jurnal penutup tahun (yang
  * memang diposting ke bulan tertutup), ini hanya muncul dari data yang
- * ditulis di luar `postJournal`.
+ * ditulis di luar `postJournal`. Termasuk jurnal bertanggal SEBELUM tanggal
+ * mulai buku besar yang dibuat atau disetujui sesudah bulan tanggal mulai
+ * ditutup: bulan-bulan itu ikut terkunci (`terkunciSebelumBuku`), dan jurnal
+ * di sana mengubah neraca setiap bulan yang sudah ditutup.
  */
 export async function jurnalSesudahDitutup(): Promise<JurnalSesudahTutup[]> {
   const tertutup = await prisma.accountingPeriod.findMany({
@@ -278,6 +282,35 @@ export async function jurnalSesudahDitutup(): Promise<JurnalSesudahTutup[]> {
         bulan: kunciBulan(bulanWib(j.date)),
         dibuat: j.createdAt.toISOString(),
         ditutup: p.closedAt!.toISOString(),
+      });
+    }
+  }
+
+  const mulai = await readGlCutover();
+  const bulanMulai = mulai ? bulanWib(mulai) : null;
+  const pertama = bulanMulai ? tertutup.find((p) => p.year === bulanMulai.tahun && p.month === bulanMulai.bulan) : undefined;
+  if (bulanMulai && pertama?.closedAt) {
+    const jurnal = await prisma.journal.findMany({
+      where: {
+        status: STATUS_JURNAL.POSTED,
+        date: { lt: rentangBulan(bulanMulai).awal },
+        AND: [
+          { OR: [{ createdAt: { gt: pertama.closedAt } }, { approvedAt: { gt: pertama.closedAt } }] },
+          { OR: [{ sourceType: null }, { sourceType: { not: SUMBER_TUTUP_TAHUN } }] },
+        ],
+      },
+      select: { id: true, date: true, description: true, createdAt: true },
+      orderBy: { date: "asc" },
+      take: BATAS_BARIS,
+    });
+    for (const j of jurnal) {
+      hasil.push({
+        id: j.id,
+        tanggal: j.date.toISOString(),
+        keterangan: j.description,
+        bulan: kunciBulan(bulanWib(j.date)),
+        dibuat: j.createdAt.toISOString(),
+        ditutup: pertama.closedAt.toISOString(),
       });
     }
   }

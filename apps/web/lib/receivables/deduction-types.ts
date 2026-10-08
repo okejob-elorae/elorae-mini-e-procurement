@@ -1,6 +1,6 @@
 import { prisma } from '@elorae/db';
 import { runSerializable } from '@/lib/db/tx-retry';
-import { peranPotonganSah } from '@/lib/finance/lapangan/aturan';
+import { peranBawaanJenisPotongan, peranPotonganSah } from '@/lib/finance/lapangan/aturan';
 import { catatJejak, JEJAK } from './jejak';
 
 /**
@@ -112,6 +112,11 @@ export async function simpanJenisPotongan(input: {
     });
     if (kembar) return { ok: false as const, alasan: 'NAMA_SUDAH_ADA' as const };
 
+    // Jenis BARU yang tidak menyebut perannya: peran bawaan dari namanya (materai → biaya bank &
+    // administrasi, bukan potongan penjualan). `null` yang dipilih orang ("otomatis") dihormati,
+    // dan jenis yang sudah ada tidak pernah diubah diam-diam.
+    const peranBaru = input.peranJurnal === undefined && !input.id ? peranBawaanJenisPotongan(nama, input.cara) : undefined;
+    const peran = input.peranJurnal !== undefined ? input.peranJurnal : (peranBaru ?? undefined);
     const data = {
       name: nama,
       method: input.cara,
@@ -119,7 +124,7 @@ export async function simpanJenisPotongan(input: {
       pkpOnly: input.hanyaPkp,
       noteRequired: input.wajibCatatan,
       isActive: input.aktif,
-      ...(input.peranJurnal !== undefined ? { postingRole: input.peranJurnal } : {}),
+      ...(peran !== undefined ? { postingRole: peran } : {}),
     };
 
     if (input.id) {

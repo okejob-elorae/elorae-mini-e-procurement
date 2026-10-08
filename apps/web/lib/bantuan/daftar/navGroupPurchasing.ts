@@ -75,6 +75,7 @@ export const ENTRI: EntriBantuan[] = [
       "Satu pembayaran ke satu pemasok. Setelah pemasok dipilih, semua dokumen utangnya yang belum lunas tampil dengan sisanya; isi kolom Bayar sekarang (sebagian atau penuh) atau centang untuk melunasi. Jumlah tidak boleh melebihi sisa — diperiksa lagi di server saat menyimpan, jadi pembayaran ganda dari dua layar ditolak.",
       "Uang muka = bagian yang tidak dipasangkan ke dokumen. Uang muka ikut mendebit utang usaha pemasok itu (saldonya menjadi debit sampai barangnya datang) dan diterapkan ke dokumen utang kemudian dari rincian pembayarannya — tanpa jurnal baru.",
       "Potongan PPh mengikuti data pemasok dan bisa diubah. Dasar potongan bawaan: untuk PPh 23/21, bagian jasa tanpa PPN dari dokumen jasa produksi yang dibayar (barang dan saldo awal tidak dipotong); untuk PPh 4(2) sewa, seluruh bruto. Ketik dasar lain bila perlu. Yang keluar dari rekening = bruto − potongan.",
+      "PPh atas uang muka: uang muka PPh 23/21 tidak dipotong saat dibayar (dokumennya belum diketahui), kecuali dasar potongannya diketik. Bila uang muka itu kemudian diterapkan ke dokumen jasa yang belum lunas, nilainya ditandai \"belum dipotong PPh\" di dokumen itu dan ikut dasar potongan pembayaran berikutnya ke dokumen itu — jadi pelunasan memotong PPh atas seluruh tagihan (contoh: jasa 1.225.000, uang muka 500.000, pelunasan 725.000 → PPh 23 24.500, keluar 700.500). Dasar yang diketik boleh sampai bruto ditambah uang muka yang belum dipotong. Uang muka PPh 4(2) sudah dipotong saat dibayar dan tidak dipotong lagi.",
       "Tanggal bayar menjadi tanggal jurnal dan tidak boleh sesudah hari ini. Pembayaran yang dikirim dua kali (klik ganda, sinyal putus) hanya tercatat sekali.",
     ],
   },
@@ -84,7 +85,8 @@ export const ENTRI: EntriBantuan[] = [
     judul: "Rincian pembayaran pemasok",
     isi: [
       "Dokumen utang yang dibayar, bruto, potongan PPh, yang keluar dari rekening, uang muka yang belum terpakai, dan tautan ke jurnalnya.",
-      "Terapkan uang muka memasangkan sisa uang muka ke dokumen utang pemasok yang sama; tidak ada jurnal baru. Batalkan pembayaran memposting jurnal pembalik bertanggal sama dengan jurnal aslinya dan membuka lagi utang yang dibayar; mutasi bank yang sudah dicocokkan dengan pembayaran ini dilepas. Pembayaran dari tombol lama Tandai lunas dibatalkan lewat tombol itu di PO-nya.",
+      "Terapkan uang muka memasangkan sisa uang muka ke dokumen utang pemasok yang sama; uang mukanya sendiri tidak dijurnal lagi. Bila dokumen jasa itu belum lunas, PPh atas uang muka dipotong saat dokumen itu dibayar berikutnya. Bila uang muka itulah yang melunasi dokumen jasa, PPh atas uang muka yang belum dipotong dipotong saat itu juga: tercatat sebagai pembayaran potongan tersendiri (BYR/…, neto 0, jurnal utang usaha ke utang PPh) bertanggal hari penerapan, dan uang muka yang terpakai berkurang sebesar PPh itu — sisanya tetap uang muka, karena uang muka dulu dibayar tanpa potongan.",
+      "Batalkan pembayaran memposting jurnal pembalik bertanggal sama dengan jurnal aslinya dan membuka lagi utang yang dibayar; mutasi bank yang sudah dicocokkan dengan pembayaran ini dilepas. Membatalkan uang muka ikut membatalkan pembayaran potongan PPh atas uang muka itu. Pembayaran dari tombol lama Tandai lunas dibatalkan lewat tombol itu di PO-nya.",
     ],
   },
   {

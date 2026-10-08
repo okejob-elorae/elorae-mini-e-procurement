@@ -53,7 +53,7 @@ import {
   simpanJenisPotonganAction,
 } from '@/app/actions/deduction-types';
 import type { BarisJenisPotongan, CaraPotongan } from '@/lib/receivables/deduction-types';
-import { PERAN_POTONGAN_BOLEH } from '@/lib/finance/lapangan/aturan';
+import { PERAN_POTONGAN_BOLEH, peranIsianJenisBaru, peranPotongan } from '@/lib/finance/lapangan/aturan';
 
 const CARA: CaraPotongan[] = ['NOMINAL', 'PERSEN', 'DARI_RETUR'];
 
@@ -121,6 +121,7 @@ export function JenisPotonganClient({ baris }: { baris: BarisJenisPotongan[] }) 
                     <TableHead>{t('colName')}</TableHead>
                     <TableHead>{t('colMethod')}</TableHead>
                     <TableHead>{t('colRules')}</TableHead>
+                    <TableHead>{t('peranJurnal')}</TableHead>
                     <TableHead className="text-right">{t('colUsed')}</TableHead>
                     <TableHead className="text-right">{t('colAction')}</TableHead>
                   </TableRow>
@@ -146,10 +147,21 @@ export function JenisPotonganClient({ baris }: { baris: BarisJenisPotongan[] }) 
                           b.wajibCatatan && t('ruleNote'),
                           b.hanyaPkp && t('rulePkp'),
                           !b.bolehManual && t('ruleNoManual'),
-                          b.cara !== 'DARI_RETUR' && b.peranJurnal && t('peranJurnalRingkas', { peran: namaPeran(b.peranJurnal) }),
                         ]
                           .filter(Boolean)
                           .join(' · ') || '—'}
+                      </TableCell>
+                      {/* Peran yang BERLAKU, juga yang otomatis: keuangan melihat potongan ini jatuh ke akun mana. */}
+                      <TableCell className="min-w-[160px] whitespace-normal text-xs">
+                        {b.cara === 'DARI_RETUR' ? (
+                          <span className="text-muted-foreground">{t('peranDariRetur')}</span>
+                        ) : b.peranJurnal ? (
+                          namaPeran(b.peranJurnal)
+                        ) : (
+                          <span className="text-muted-foreground">
+                            {t('peranOtomatisRingkas', { peran: namaPeran(peranPotongan({ postingRole: null, pkpOnly: b.hanyaPkp })) })}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{b.jumlahDipakai}</TableCell>
                       <TableCell className="text-right">
@@ -196,7 +208,16 @@ export function JenisPotonganClient({ baris }: { baris: BarisJenisPotongan[] }) 
                 <Input
                   id="jp-nama"
                   value={form.nama}
-                  onChange={(e) => setForm({ ...form, nama: e.target.value })}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      nama: e.target.value,
+                      // Jenis baru: materai langsung diisi biaya bank & administrasi, selama perannya belum dipilih sendiri.
+                      ...(form.id
+                        ? {}
+                        : { peranJurnal: peranIsianJenisBaru({ namaLama: form.nama, namaBaru: e.target.value, cara: form.cara, peranSekarang: form.peranJurnal }) }),
+                    })
+                  }
                   placeholder={t('namePlaceholder')}
                 />
               </div>

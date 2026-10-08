@@ -280,6 +280,7 @@ function tautanJurnalTertunda(data: Record<string, unknown>): string {
       case 'bkm_lapangan':
       case 'retur_toko':
       case 'tukar_barang':
+      case 'faktur_piutang':
         return TAUTAN_REKONSILIASI_PIUTANG;
       // Jurnal operasional (konsinyasi, komisi, barang hilang, gudang rusak, stok manual,
       // retur pemasok, biaya perjalanan): posting ulangnya di layar rekonsiliasi persediaan.

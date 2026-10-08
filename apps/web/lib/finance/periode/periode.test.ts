@@ -13,6 +13,7 @@ import {
   nilaiDaftarPeriksa,
   rentangBulan,
   tanggalTutupTahun,
+  terkunciSebelumBuku,
   type DataPeriksa,
 } from "./periode";
 import { balikBaris, sumberIdMilikTahun, sumberIdPembalik, sumberIdPenutup, susunJurnalTutupTahun } from "./tutup-tahun-aturan";
@@ -79,6 +80,17 @@ describe("urutan tutup", () => {
   it("bulan sebelum bulan pertama buku (kosong) boleh ditutup kapan saja", () => {
     expect(bulanPenahanTutup({ tahun: 2002, bulan: 5 }, { tahun: 2026, bulan: 7 }, tutup())).toBeNull();
     expect(bulanPenahanTutup({ tahun: 2026, bulan: 9 }, null, tutup())).toBeNull();
+  });
+
+  it("bulan sebelum tanggal mulai buku besar terkunci begitu bulan tanggal mulai ditutup (cermin kunci periode @elorae/db)", () => {
+    const mulai = { tahun: 2002, bulan: 8 };
+    expect(terkunciSebelumBuku({ tahun: 2002, bulan: 7 }, mulai, tutup())).toBe(false);
+    expect(terkunciSebelumBuku({ tahun: 2002, bulan: 7 }, mulai, tutup("2002-08"))).toBe(true);
+    expect(terkunciSebelumBuku({ tahun: 2000, bulan: 1 }, mulai, tutup("2002-08", "2002-09"))).toBe(true);
+    // Bulan tanggal mulai dan sesudahnya mengikuti barisnya sendiri; tanpa tanggal mulai tidak ada kunci turunan.
+    expect(terkunciSebelumBuku({ tahun: 2002, bulan: 8 }, mulai, tutup("2002-08"))).toBe(false);
+    expect(terkunciSebelumBuku({ tahun: 2002, bulan: 10 }, mulai, tutup("2002-08"))).toBe(false);
+    expect(terkunciSebelumBuku({ tahun: 2002, bulan: 7 }, null, tutup("2002-08"))).toBe(false);
   });
 });
 

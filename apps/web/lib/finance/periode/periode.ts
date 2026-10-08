@@ -9,7 +9,9 @@
  * - Bulan ditutup BERURUTAN mulai dari bulan pertama buku (bulan tanggal mulai
  *   buku besar; tanpa itu, bulan jurnal paling awal): menutup Maret ditolak
  *   selama Februari masih terbuka. Bulan sebelum bulan pertama buku boleh
- *   ditutup kapan saja.
+ *   ditutup kapan saja — dan begitu bulan tanggal mulai buku besar ditutup,
+ *   bulan-bulan sebelumnya ikut TERKUNCI tanpa baris periodenya sendiri
+ *   (`terkunciSebelumBuku`; kuncinya ditegakkan `lockPeriodForPosting`).
  * - Bulan dibuka kembali dari BELAKANG: membuka Maret ditolak selama April
  *   tertutup, dan bulan di tahun yang sudah ditutup tidak bisa dibuka sebelum
  *   tahunnya dibuka. Membuka kembali WAJIB beralasan (jejak).
@@ -184,6 +186,16 @@ export function bulanPenahanTutup(
     if (!tertutup.has(kunciBulan(b))) return b;
   }
   return null;
+}
+
+/**
+ * Bulan sebelum bulan tanggal mulai buku besar TERKUNCI begitu bulan tanggal
+ * mulai ditutup: jurnal di sana mengubah neraca bulan-bulan yang sudah
+ * ditutup. Cermin aturan `lockPeriodForPosting` (`@elorae/db` period-lock) —
+ * ubah keduanya bersama. Tanpa tanggal mulai tidak ada kunci turunan.
+ */
+export function terkunciSebelumBuku(tb: TahunBulan, bulanMulai: TahunBulan | null, tertutup: ReadonlySet<string>): boolean {
+  return bulanMulai !== null && bandingBulan(tb, bulanMulai) < 0 && tertutup.has(kunciBulan(bulanMulai));
 }
 
 // ─── Daftar periksa sebelum tutup ────────────────────────────────────────────

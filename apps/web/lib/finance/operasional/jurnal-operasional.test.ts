@@ -18,7 +18,7 @@ const h = vi.hoisted(() => {
   return {
     kaitLama,
     akun: new Map<string, string>(),
-    mulai: new Date("2026-01-01T00:00:00+07:00") as Date | null,
+    mulai: new Date("2004-01-01T00:00:00+07:00") as Date | null,
     ppn: null as unknown as PengaturanPpn,
   };
 });
@@ -162,7 +162,7 @@ beforeEach(async () => {
   invIds = [];
   lossIds = [];
   mulaiTes = new Date(Date.now() - 1000);
-  h.mulai = wib("2026-01-01");
+  h.mulai = wib("2004-01-01");
   h.ppn = NON_PKP;
   urut += 1;
   tokoId = (await prisma.store.create({ data: { code: `${tag}-K${urut}`, name: `${tag} Konsi ${urut}`, address: "uji", termsType: "KONSI", isActive: true } })).id;
@@ -213,7 +213,7 @@ afterEach(async () => {
     ...adj.map((a) => a.id),
     ...potong.map((p) => p.id),
     ...lossIds,
-    ...(tokoPutusId ? [idKomisiSpg(tokoPutusId, "2026-03")] : []),
+    ...(tokoPutusId ? [idKomisiSpg(tokoPutusId, "2004-03")] : []),
   ];
   // Notifikasi yang ditulis tes ini (dicocokkan di JS, seperti penulisnya).
   const notif = await prisma.adminNotification.findMany({ where: { createdAt: { gte: mulaiTes } }, select: { id: true, metadata: true } });
@@ -280,7 +280,7 @@ async function jumlahGenerasi(sourceType: string, id: string): Promise<number> {
   return prisma.journal.count({ where: { sourceType, OR: [{ sourceId: id }, { sourceId: { startsWith: `${id}#` } }] } });
 }
 
-async function kirim(qty: number, shippedAt = wib("2026-09-10")) {
+async function kirim(qty: number, shippedAt = wib("2004-09-10")) {
   const r = await kirimTitipan({
     storeId: tokoId,
     olehUserId: adminId,
@@ -292,7 +292,7 @@ async function kirim(qty: number, shippedAt = wib("2026-09-10")) {
 }
 
 async function siklusDenganLaporan(qty: number) {
-  siklusId = (await prisma.consignmentCycle.create({ data: { noKonsi: `${tag}/K${urut}`, storeId: tokoId, periodYear: 2026, periodMonth: 9 } })).id;
+  siklusId = (await prisma.consignmentCycle.create({ data: { noKonsi: `${tag}/K${urut}`, storeId: tokoId, periodYear: 2004, periodMonth: 9 } })).id;
   for (const source of ["SPG", "TOKO"] as const) {
     await prisma.consignmentReport.create({
       data: { cycleId: siklusId, source, reportedAt: new Date(), items: { create: [{ itemId: barangId, itemName: `${tag} Kaos`, qty }] } },
@@ -336,7 +336,7 @@ describe("konsinyasi: kiriman, siklus, pembayaran toko, gaji SPG", () => {
     });
     expect(pendapatan).toMatchObject({ channel: "KONSINYASI", storeId: tokoId });
     // Akhir bulan periodenya (30 September WIB), bukan saat dikunci.
-    expect(pendapatan?.journal.date.toISOString()).toBe("2026-09-29T17:00:00.000Z");
+    expect(pendapatan?.journal.date.toISOString()).toBe("2004-09-29T17:00:00.000Z");
 
     expect(await selaraskanJurnalKomisiKonsi(siklusId, adminId)).toMatchObject({ ok: true, created: true });
     expect(await saldoPeran(SUMBER_OPERASIONAL.KOMISI_KONSI, siklusId)).toEqual({ SPG_COMMISSION_EXPENSE: 1_006_000, COMMISSION_PAYABLE: -1_006_000 });
@@ -363,7 +363,7 @@ describe("konsinyasi: kiriman, siklus, pembayaran toko, gaji SPG", () => {
     expect(await jumlahGenerasi(SUMBER_OPERASIONAL.SIKLUS_KONSI, siklusId)).toBe(3);
 
     // Pembayaran toko: piutang konsinyasi berkurang; dibatalkan → dibalik.
-    const bayar = await catatPembayaranToko({ cycleId: siklusId, jumlah: 150_000, tanggal: wib("2026-10-05"), cara: "transfer", olehUserId: adminId });
+    const bayar = await catatPembayaranToko({ cycleId: siklusId, jumlah: 150_000, tanggal: wib("2004-10-05"), cara: "transfer", olehUserId: adminId });
     if (!bayar.ok) throw new Error(`bayar gagal: ${bayar.alasan}`);
     await selaraskanJurnalBayarTokoKonsi(bayar.id, adminId);
     expect(await saldoPeran(SUMBER_OPERASIONAL.BAYAR_TOKO_KONSI, bayar.id)).toEqual({ BANK: 150_000, AR_CONSIGNMENT: -150_000 });
@@ -381,7 +381,7 @@ describe("konsinyasi: kiriman, siklus, pembayaran toko, gaji SPG", () => {
   it("siklus yang belum dikunci tidak dijurnal; periode sebelum tanggal mulai juga tidak", async () => {
     await siklusDenganLaporan(1);
     expect(await selaraskanJurnalSiklusKonsi(siklusId, adminId)).toEqual({ ok: false, code: "BELUM_BERLAKU" });
-    h.mulai = wib("2026-12-01");
+    h.mulai = wib("2004-12-01");
     expect(await kunci(1)).toMatchObject({ ok: true });
     expect(await selaraskanJurnalSiklusKonsi(siklusId, adminId)).toEqual({ ok: false, code: "BELUM_BERLAKU" });
     h.mulai = null;
@@ -489,13 +489,13 @@ describe("barang hilang di toko konsinyasi", () => {
 describe("komisi SPG toko putus dan potongan beban sales", () => {
   it("per toko × bulan diselaraskan; penetapan ulang menyesuaikan; pembayaran per baris", async () => {
     const a = await prisma.spgCommission.create({
-      data: { userId: spgId, storeId: tokoPutusId, period: "2026-03", unitsSold: 10, commission: 300_000, deduction: 50_000, basis: "PER_SPG", lockedById: adminId },
+      data: { userId: spgId, storeId: tokoPutusId, period: "2004-03", unitsSold: 10, commission: 300_000, deduction: 50_000, basis: "PER_SPG", lockedById: adminId },
     });
     const b = await prisma.spgCommission.create({
-      data: { userId: adminId, storeId: tokoPutusId, period: "2026-03", unitsSold: 5, commission: 200_000, basis: "PER_SPG", lockedById: adminId },
+      data: { userId: adminId, storeId: tokoPutusId, period: "2004-03", unitsSold: 5, commission: 200_000, basis: "PER_SPG", lockedById: adminId },
     });
-    const id = idKomisiSpg(tokoPutusId, "2026-03");
-    expect(await selaraskanJurnalKomisiSpg(tokoPutusId, "2026-03", adminId)).toMatchObject({ ok: true, created: true });
+    const id = idKomisiSpg(tokoPutusId, "2004-03");
+    expect(await selaraskanJurnalKomisiSpg(tokoPutusId, "2004-03", adminId)).toMatchObject({ ok: true, created: true });
     expect(await saldoPeran(SUMBER_OPERASIONAL.KOMISI_SPG, id)).toEqual({ SPG_COMMISSION_EXPENSE: 500_000, COMMISSION_PAYABLE: -450_000, LOSS_RECOVERY: -50_000 });
     const beban = await prisma.journalLine.findFirst({
       where: { journal: { sourceType: SUMBER_OPERASIONAL.KOMISI_SPG, sourceId: id }, chartAccountId: h.akun.get("SPG_COMMISSION_EXPENSE") },
@@ -504,16 +504,16 @@ describe("komisi SPG toko putus dan potongan beban sales", () => {
     expect(beban).toMatchObject({ channel: "PUTUS", storeId: tokoPutusId });
 
     await prisma.spgCommission.delete({ where: { id: b.id } });
-    await selaraskanJurnalKomisiSpg(tokoPutusId, "2026-03", adminId);
+    await selaraskanJurnalKomisiSpg(tokoPutusId, "2004-03", adminId);
     expect(await saldoPeran(SUMBER_OPERASIONAL.KOMISI_SPG, id)).toEqual({ SPG_COMMISSION_EXPENSE: 300_000, COMMISSION_PAYABLE: -250_000, LOSS_RECOVERY: -50_000 });
     expect(await jumlahGenerasi(SUMBER_OPERASIONAL.KOMISI_SPG, id)).toBe(2);
 
-    await prisma.spgCommission.update({ where: { id: a.id }, data: { paidAt: wib("2026-04-05"), paidById: adminId } });
+    await prisma.spgCommission.update({ where: { id: a.id }, data: { paidAt: wib("2004-04-05"), paidById: adminId } });
     expect(await postJurnalBayarKomisiSpg(a.id, adminId)).toMatchObject({ ok: true, created: true });
     expect(await saldoPeran(SUMBER_OPERASIONAL.BAYAR_KOMISI_SPG, a.id)).toEqual({ COMMISSION_PAYABLE: 250_000, BANK: -250_000 });
 
     const d = await prisma.stockLossDeduction.create({
-      data: { shareId: `${tag}-share`, amount: 40_000, refType: "KomisiSalesman", refId: `${tag}:2026-03:k${urut}`, createdById: adminId },
+      data: { shareId: `${tag}-share`, amount: 40_000, refType: "KomisiSalesman", refId: `${tag}:2004-03:k${urut}`, createdById: adminId },
     });
     expect(await postJurnalPotongSales(d.id, adminId)).toMatchObject({ ok: true, created: true });
     expect(await saldoPeran(SUMBER_OPERASIONAL.POTONG_SALES, d.id)).toEqual({ SALES_COMMISSION_EXPENSE: 40_000, LOSS_RECOVERY: -40_000 });
@@ -533,14 +533,14 @@ describe("stok manual, retur pemasok, biaya perjalanan", () => {
         newQty: 97,
         prevAvgCost: 50_000,
         newAvgCost: 50_000,
-        createdAt: wib("2026-09-15"),
+        createdAt: wib("2004-09-15"),
       },
     });
-    const temu = await cariStokManualTanpaJurnal({ sejak: wib("2026-09-14"), sampai: wib("2026-09-16"), batas: 500 });
+    const temu = await cariStokManualTanpaJurnal({ sejak: wib("2004-09-14"), sampai: wib("2004-09-16"), batas: 500 });
     expect(temu.map((d) => d.id)).toContain(adj.id);
     expect(await postJurnalStokManual(adj.id, adminId)).toMatchObject({ ok: true, created: true });
     expect(await saldoPeran(SUMBER_OPERASIONAL.STOK_MANUAL, adj.id)).toEqual({ INVENTORY_FG: -150_000, INVENTORY_VARIANCE: 150_000 });
-    expect((await cariStokManualTanpaJurnal({ sejak: wib("2026-09-14"), sampai: wib("2026-09-16"), batas: 500 })).map((d) => d.id)).not.toContain(adj.id);
+    expect((await cariStokManualTanpaJurnal({ sejak: wib("2004-09-14"), sampai: wib("2004-09-16"), batas: 500 })).map((d) => d.id)).not.toContain(adj.id);
 
     const awal = await prisma.stockAdjustment.create({
       data: {
@@ -548,7 +548,7 @@ describe("stok manual, retur pemasok, biaya perjalanan", () => {
         itemId: barangId,
         type: "POSITIVE",
         qtyChange: 5,
-        reason: "UMKM opening balance reconciliation (one-time); cutoff=2026-01-01",
+        reason: "UMKM opening balance reconciliation (one-time); cutoff=2004-01-01",
         prevQty: 97,
         newQty: 102,
         prevAvgCost: 50_000,
@@ -568,7 +568,7 @@ describe("stok manual, retur pemasok, biaya perjalanan", () => {
         totalItems: 10,
         totalValue: 100_000,
         status: "COMPLETED",
-        completedAt: wib("2026-09-20"),
+        completedAt: wib("2004-09-20"),
         createdById: adminId,
         poId: `${tag}-po`,
         poCreditAmount: 111_000,
@@ -583,13 +583,13 @@ describe("stok manual, retur pemasok, biaya perjalanan", () => {
 
   it("biaya perjalanan disetujui → beban + hutang penggantian; dibayar dari rekening yang dipilih", async () => {
     const k = await prisma.expenseClaim.create({
-      data: { userId: spgId, spentAt: wib("2026-09-03"), category: "BENSIN", amount: 75_000, status: "DISETUJUI", reviewedById: adminId, reviewedAt: wib("2026-09-04") },
+      data: { userId: spgId, spentAt: wib("2004-09-03"), category: "BENSIN", amount: 75_000, status: "DISETUJUI", reviewedById: adminId, reviewedAt: wib("2004-09-04") },
     });
     expect(await postJurnalBiayaPerjalanan(k.id, adminId)).toMatchObject({ ok: true, created: true });
     expect(await saldoPeran(SUMBER_OPERASIONAL.BIAYA_PERJALANAN, k.id)).toEqual({ TRAVEL_EXPENSE: 75_000, REIMBURSE_PAYABLE: -75_000 });
     // Belum dibayar: belum ada yang dijurnal.
     expect(await postJurnalBayarBiayaPerjalanan(k.id, adminId)).toEqual({ ok: false, code: "NOTHING_TO_POST" });
-    await prisma.expenseClaim.update({ where: { id: k.id }, data: { status: "DIBAYAR", paidById: adminId, paidAt: wib("2026-09-06"), paidAccountId: rekeningLainId } });
+    await prisma.expenseClaim.update({ where: { id: k.id }, data: { status: "DIBAYAR", paidById: adminId, paidAt: wib("2004-09-06"), paidAccountId: rekeningLainId } });
     expect(await postJurnalBayarBiayaPerjalanan(k.id, adminId)).toMatchObject({ ok: true, created: true });
     expect(await saldoPeran(SUMBER_OPERASIONAL.BAYAR_BIAYA_PERJALANAN, k.id)).toEqual({ REIMBURSE_PAYABLE: 75_000, BANK2: -75_000 });
   });
@@ -598,7 +598,7 @@ describe("stok manual, retur pemasok, biaya perjalanan", () => {
 describe("tertunda, sapuan, registri", () => {
   it("peran belum dipetakan → JOURNAL_PENDING bernomor dokumen; sesudah dipetakan, posting ulang menyelesaikannya", async () => {
     const id = await kirim(2);
-    const temu = await cariKirimKonsiTanpaJurnal({ sejak: wib("2026-09-09"), sampai: wib("2026-09-11"), batas: 500 });
+    const temu = await cariKirimKonsiTanpaJurnal({ sejak: wib("2004-09-09"), sampai: wib("2004-09-11"), batas: 500 });
     expect(temu.map((d) => d.id)).toContain(id);
 
     const akunKonsi = h.akun.get("INVENTORY_CONSIGNMENT")!;
@@ -625,7 +625,7 @@ describe("tertunda, sapuan, registri", () => {
     expect(await postingJurnalOperasionalAman(SUMBER_OPERASIONAL.KIRIM_KONSI, id, adminId)).toMatchObject({ ok: true, created: true });
     expect((await prisma.adminNotification.findUniqueOrThrow({ where: { id: tanda[0].id } })).readAt).not.toBeNull();
     expect(await hitungJurnalTertunda({ notifikasiIds: [tanda[0].id] })).toBe(0);
-    expect((await cariKirimKonsiTanpaJurnal({ sejak: wib("2026-09-09"), sampai: wib("2026-09-11"), batas: 500 })).map((d) => d.id)).not.toContain(id);
+    expect((await cariKirimKonsiTanpaJurnal({ sejak: wib("2004-09-09"), sampai: wib("2004-09-11"), batas: 500 })).map((d) => d.id)).not.toContain(id);
   });
 
   it("kait pasca-commit: menjurnal bila dinyalakan, diam di bawah vitest bila tidak (tes aksi lain tidak meninggalkan jurnal)", async () => {

@@ -57,6 +57,8 @@ export function giliranTahap(
 
 export type BarisBanding = {
   itemName: string;
+  /** Barang master dari laporan mana pun yang menyebutnya; null untuk baris ketikan. */
+  itemId: string | null;
   qtySpg: number | null;
   qtyToko: number | null;
   /** Selisih absolut antara dua laporan; null kalau salah satunya belum ada. */
@@ -71,13 +73,14 @@ export type BarisBanding = {
  * hanya muncul di satu laporan justru kasus yang paling perlu terlihat.
  */
 export function bandingkanLaporan(
-  spg: { itemName: string; qty: number }[],
-  toko: { itemName: string; qty: number }[],
+  spg: { itemName: string; itemId?: string | null; qty: number }[],
+  toko: { itemName: string; itemId?: string | null; qty: number }[],
 ): BarisBanding[] {
   const peta = new Map<string, BarisBanding>();
   for (const i of spg) {
     peta.set(i.itemName, {
       itemName: i.itemName,
+      itemId: i.itemId ?? null,
       qtySpg: i.qty,
       qtyToko: null,
       selisih: null,
@@ -85,10 +88,13 @@ export function bandingkanLaporan(
   }
   for (const i of toko) {
     const ada = peta.get(i.itemName);
-    if (ada) ada.qtyToko = i.qty;
-    else
+    if (ada) {
+      ada.qtyToko = i.qty;
+      ada.itemId ??= i.itemId ?? null;
+    } else
       peta.set(i.itemName, {
         itemName: i.itemName,
+        itemId: i.itemId ?? null,
         qtySpg: null,
         qtyToko: i.qty,
         selisih: null,

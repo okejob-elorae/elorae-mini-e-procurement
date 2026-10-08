@@ -297,6 +297,18 @@ d("GRN terima-lebih: persetujuan pemilik (test bed only)", () => {
       expect((await keadaanGrn()).ownerDeclinedById).toBe(pemilikId);
     });
 
+    it("baris stok tanpa varian bertanda NULL (bahan): tolak membalik baris itu, bukan STOK_KURANG", async () => {
+      sebagai(PEMILIK());
+      await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
+      await prisma.inventoryValue.create({
+        data: { itemId, variantSku: null, qtyOnHand: STOK_AWAL, avgCost: 1000, totalValue: STOK_AWAL * 1000 },
+      });
+      await declineGRNByOwner(grnId, pemilikId);
+      const baris = await prisma.inventoryValue.findMany({ where: { itemId: seededId(itemId) }, select: { variantSku: true, qtyOnHand: true } });
+      expect(baris.map((b) => [b.variantSku, Number(b.qtyOnHand)])).toEqual([[null, STOK_AWAL - QTY_GRN]]);
+      expect(await jumlahPembalikan()).toBe(1);
+    });
+
     it("tolak ganda serentak: tepat satu berhasil, stok dibalik SEKALI", async () => {
       sebagai(PEMILIK());
       const hasil = await balapan(

@@ -2,6 +2,7 @@ import { prisma, type Prisma } from '@elorae/db';
 import { generateSKU } from '@/lib/sku-generator';
 import { bacaInfoProduk, periksaInfoProduk, type InfoProdukBarang } from "./info-produk";
 import { bacaKgPerRoll, periksaKgPerRoll } from "./kg-per-roll";
+import { bacaKomisiPerPcs, periksaKomisiPerPcs } from "./komisi-spg";
 
 export type ItemFormData = {
   sku?: string;
@@ -19,6 +20,8 @@ export type ItemFormData = {
   additionalCost?: number;
   /** Bahan bersatuan kg: kg per roll (kolom Roll di PO). `undefined` = tidak disentuh. */
   kgPerRoll?: number | null;
+  /** Komisi SPG per pcs (barang jadi). `undefined` = tidak disentuh; `null`/kosong = 0. */
+  commissionPerPcs?: number | null;
 } & InfoProdukBarang;
 
 export type SerializedItem = {
@@ -67,6 +70,8 @@ function validateItemPayload(p: ReturnType<typeof normalizeItemPayload>): assert
   if (infoProduk) throw new Error(infoProduk);
   const kgPerRoll = periksaKgPerRoll(p.kgPerRoll);
   if (kgPerRoll) throw new Error(kgPerRoll);
+  const komisi = periksaKomisiPerPcs(p.commissionPerPcs ?? undefined, p.type);
+  if (komisi) throw new Error(komisi);
 }
 
 /** Tabel ukuran yang dipilih harus ada (kosong = ikut bawaan kategori). */
@@ -224,6 +229,7 @@ export function normalizeItemPayload(data: unknown): ItemFormData {
     sku: raw.sku != null ? String(raw.sku) : undefined,
     ...bacaInfoProduk(raw),
     kgPerRoll: bacaKgPerRoll(raw.kgPerRoll),
+    commissionPerPcs: bacaKomisiPerPcs(raw.commissionPerPcs),
   };
 }
 
@@ -298,6 +304,8 @@ export async function createItem(data: ItemFormData) {
         sellingPrice: rest.sellingPrice ?? null,
         targetMarginPercent: rest.targetMarginPercent ?? null,
         additionalCost: rest.additionalCost ?? null,
+        // Kolom wajib: `null` dari isian sudah menjadi 0 di `normalizeItemPayload`.
+        commissionPerPcs: rest.commissionPerPcs ?? undefined,
       },
     });
 
@@ -321,6 +329,7 @@ export async function updateItem(
   tx: Prisma.TransactionClient,
   id: string,
   data: ItemFormData,
+  opsi: { olehUserId?: string | null } = {},
 ) {
   const client = tx;
   const normalized = normalizeItemPayload(data);
@@ -341,6 +350,7 @@ export async function updateItem(
       additionalCost: true,
       variants: true,
       isActive: true,
+      commissionPerPcs: true,
     },
   });
   if (!existing) throw new Error('Item not found');
@@ -363,8 +373,23 @@ export async function updateItem(
       sellingPrice: rest.sellingPrice ?? null,
       targetMarginPercent: rest.targetMarginPercent ?? null,
       additionalCost: rest.additionalCost ?? null,
+      commissionPerPcs: rest.commissionPerPcs ?? undefined,
     },
   });
+
+  // Komisi SPG per pcs menentukan gaji orang: perubahannya tercatat di transaksi yang sama.
+  const komisiLama = Number(existing.commissionPerPcs ?? 0);
+  if (opsi.olehUserId && rest.commissionPerPcs != null && rest.commissionPerPcs !== komisiLama) {
+    await client.auditLog.create({
+      data: {
+        userId: opsi.olehUserId,
+        action: 'ITEM_SPG_COMMISSION_CHANGED',
+        entityType: 'Item',
+        entityId: id,
+        changes: { before: { commissionPerPcs: komisiLama }, after: { commissionPerPcs: rest.commissionPerPcs } },
+      },
+    });
+  }
 
   return {
     item,

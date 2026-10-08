@@ -42,7 +42,7 @@ const TOLAK_ASET: Record<KodeTolakAset, true> = {
   ALASAN_WAJIB: true,
 };
 /** Kode yang hanya dikembalikan aksi (`app/actions/finance-aset.ts`). */
-const AKSI_ASET = ["TANPA_AKSES", "GAGAL", "BULAN_TIDAK_SAH"];
+const AKSI_ASET = ["TANPA_AKSES", "GAGAL", "BULAN_TIDAK_SAH", "BULAN_BELUM_BERAKHIR"];
 
 const TOLAK_TEMPLAT: Record<KodeTolakTemplat, true> = {
   ...(Object.fromEntries(KODE_GALAT_TEMPLAT.map((k) => [k, true])) as Record<(typeof KODE_GALAT_TEMPLAT)[number], true>),

@@ -24,6 +24,8 @@ export type AlasanLewat =
 export type HasilImpor = {
   masuk: number;
   dilewati: { baris: number; noFaktur: string; alasan: AlasanLewat }[];
+  /** Id faktur yang dibuat — untuk kait jurnal pasca-commit (tidak dikirim ke layar). */
+  ids?: string[];
 };
 
 export type TinjauanImpor = {
@@ -148,9 +150,9 @@ export async function simpanImpor(
     siap.push({ b, storeId: hasil.storeId });
   }
 
-  if (siap.length === 0) return { masuk: 0, dilewati };
+  if (siap.length === 0) return { masuk: 0, dilewati, ids: [] };
 
-  await runSerializable(async (tx) => {
+  const ids = await runSerializable(async (tx) => {
     const dibuat: string[] = [];
     for (const { b, storeId } of siap) {
       const baru = await tx.receivable.create({
@@ -199,7 +201,8 @@ export async function simpanImpor(
         alasanDilewati: dilewati.map((d) => ({ baris: d.baris, alasan: d.alasan })),
       },
     });
+    return dibuat;
   });
 
-  return { masuk: siap.length, dilewati };
+  return { masuk: siap.length, dilewati, ids };
 }

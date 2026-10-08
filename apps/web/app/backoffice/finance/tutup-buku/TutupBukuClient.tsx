@@ -434,6 +434,10 @@ function BarisBulanTabel({
           <StatusPill tone="settled" detail={t("bulan.ditutupOleh", { nama: b.closedByName ?? "—", tanggal: tgl(b.closedAt) })}>
             {t("status.CLOSED")}
           </StatusPill>
+        ) : b.terkunciSebelumBuku ? (
+          <StatusPill tone="settled" detail={t("bulan.terkunciSebelumBuku")}>
+            {t("status.TERKUNCI")}
+          </StatusPill>
         ) : b.sudahBerakhir ? (
           <StatusPill tone="waiting" detail={b.reopenedAt ? t("bulan.dibukaKembali", { tanggal: tgl(b.reopenedAt) }) : undefined}>
             {t("status.OPEN")}
@@ -454,6 +458,8 @@ function BarisBulanTabel({
               {t("bulan.bukaKembali")}
             </Button>
           ) : null
+        ) : b.terkunciSebelumBuku ? (
+          <span className="text-sm text-muted-foreground">—</span>
         ) : b.sudahBerakhir ? (
           <Button variant={dipilih ? "secondary" : "outline"} size="sm" asChild>
             <Link href={`/backoffice/finance/tutup-buku?bulan=${b.kunci}`} scroll={false}>

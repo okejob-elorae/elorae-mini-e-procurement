@@ -11,6 +11,7 @@ import { bentrokPengganti, catatDiganti, periksaReturLama, type AlasanPengganti 
 import { computeStorePrice } from "@elorae/db/pricing";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { masukkanGudangRusakDariNri } from "@/lib/spg/gudang-rusak-writer";
+import { kunciStokReturMasuk } from "@/lib/finance/lapangan/aturan";
 import { fotoBolehDipakai } from "./foto-pencatat";
 import { periksaFotoKembar } from "@/lib/foto/kembar";
 import { PERMISSIONS } from "@/lib/rbac";
@@ -243,7 +244,8 @@ async function hitungUlangTersentuh(tx: Klien, storeReturnId: string | null): Pr
 async function masukkanKeStok(
   tx: Klien,
   input: {
-    items: BarisBarang[];
+    /** Baris hitungan gudang yang sudah tersimpan — id-nya menjadi kunci penyesuaian stoknya. */
+    items: { id: string; itemId: string | null; variantSku: string | null; itemName: string; qty: number; condition: string | null }[];
     noNri: string;
     olehUserId: string;
   },
@@ -314,6 +316,9 @@ async function masukkanKeStok(
         newAvgCost: hargaRata,
         createdById: input.olehUserId,
         source: 'STORE_RETURN_RECEIVE',
+        // Per baris hitungan: jurnal retur membaca biaya kartu stok SETIAP baris lewat kunci ini,
+        // untuk membandingkannya dengan HPP saat barang itu dijual (`hppJualTerakhir`).
+        idempotencyKey: kunciStokReturMasuk(b.id),
       },
     });
     jumlahBarisStok += 1;
@@ -1123,7 +1128,7 @@ export async function catatHitunganGudang(input: {
         });
 
         const stokMasuk = await masukkanKeStok(tx, {
-          items,
+          items: nri.items,
           noNri: nri.noNri,
           olehUserId: input.warehouseUserId,
         });
@@ -1135,6 +1140,10 @@ export async function catatHitunganGudang(input: {
           noNri: nri.noNri,
           olehUserId: input.warehouseUserId,
           baris: nri.items,
+          // Nilai barang rusak = HPP saat dijual ke toko ini (fallback rata-rata sekarang),
+          // sama dengan yang didebit jurnal returnya ke persediaan rusak.
+          storeId,
+          sebelum: new Date(),
         });
 
         await catatJejak(tx, {

@@ -8,7 +8,7 @@ import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Info, Wallet } from "lucide-react";
 import type { getCashFlowReport } from "@/app/actions/finance-reports";
 import type { CashFlowComparisonLine } from "@/lib/finance/reports/cash-flow-compare";
-import type { CashFlowLine } from "@/lib/finance/reports/cash-flow";
+import { ID_PENYESUAIAN_PELEPASAN_ASET, type CashFlowLine } from "@/lib/finance/reports/cash-flow";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -104,10 +104,12 @@ export function CashFlowClient({ report, filters, canManageJournals, hariIni, ke
     ));
   }
 
-  function labelCell(code: string, name: string) {
+  function labelCell(code: string, name: string, accountId?: string) {
+    // Baris penyesuaian pelepasan aset tetap bukan akun: namanya diterjemahkan di layar.
+    const tampil = accountId === ID_PENYESUAIAN_PELEPASAN_ASET ? t("cashFlow.penyesuaianPelepasanAset") : name;
     return (
       <TableCell className="pl-6">
-        <span className="font-mono text-xs text-muted-foreground">{code}</span> {name}
+        <span className="font-mono text-xs text-muted-foreground">{code}</span> {tampil}
       </TableCell>
     );
   }
@@ -132,7 +134,7 @@ export function CashFlowClient({ report, filters, canManageJournals, hariIni, ke
       if (paired.length === 0) return emptyRow();
       return paired.map((row) => (
         <TableRow key={row.accountId}>
-          {labelCell(row.code, row.name)}
+          {labelCell(row.code, row.name, row.accountId)}
           {amountCells([row.current, row.previous, row.delta])}
         </TableRow>
       ));
@@ -140,7 +142,7 @@ export function CashFlowClient({ report, filters, canManageJournals, hariIni, ke
     if (lines.length === 0) return emptyRow();
     return lines.map((row) => (
       <TableRow key={row.accountId}>
-        {labelCell(row.code, row.name)}
+        {labelCell(row.code, row.name, row.accountId)}
         {amountCells([row.amount])}
       </TableRow>
     ));

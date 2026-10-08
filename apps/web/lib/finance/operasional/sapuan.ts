@@ -26,8 +26,18 @@ const d = (kolom: string) => Prisma.sql`d.${sqlId(kolom)}`;
 const tokoKonsi = (kolom: Prisma.Sql) =>
   Prisma.sql`EXISTS (SELECT 1 FROM ${sqlId("Store")} s WHERE s.${sqlId("id")} = ${kolom} AND s.${sqlId("termsType")} = 'KONSI')`;
 
-/** Dokumen yang id-nya disusun di JS (bukan satu tabel): disaring dari daftar kandidat. */
-async function tanpaJurnalDari(sourceType: SumberOperasional, kandidat: DokumenTanpaJurnal[], batas: number): Promise<DokumenTanpaJurnal[]> {
+/**
+ * Dokumen yang id-nya disusun di JS (bukan satu tabel): disaring dari daftar
+ * kandidat. Cakupan (`ids`) diterapkan SEBELUM batas.
+ */
+async function tanpaJurnalDari(
+  sourceType: SumberOperasional,
+  semuaKandidat: DokumenTanpaJurnal[],
+  opsi: Pick<OpsiCariSapuan, "batas" | "ids">,
+): Promise<DokumenTanpaJurnal[]> {
+  const batas = opsi.batas;
+  const izinkan = opsi.ids ? new Set(opsi.ids) : null;
+  const kandidat = izinkan ? semuaKandidat.filter((k) => izinkan.has(k.id)) : semuaKandidat;
   const hasil: DokumenTanpaJurnal[] = [];
   for (let i = 0; i < kandidat.length && hasil.length < batas; i += 200) {
     const potong = kandidat.slice(i, i + 200);
@@ -91,14 +101,14 @@ export function cariReturKonsiTanpaJurnal(opsi: OpsiCariSapuan) {
 /** Siklus yang dikunci, bertanggal jurnal (akhir bulan periodenya, paling lambat saat dikunci) di rentang. */
 async function siklusTerkunci(opsi: OpsiCariSapuan, syarat: Prisma.ConsignmentCycleWhereInput, sourceType: SumberOperasional) {
   const rows = await prisma.consignmentCycle.findMany({
-    where: { lockedAt: { not: null, gte: opsi.sejak }, ...syarat },
+    where: { lockedAt: { not: null, gte: opsi.sejak }, ...syarat, ...(opsi.ids ? { id: { in: [...opsi.ids] } } : {}) },
     orderBy: [{ lockedAt: "asc" }, { id: "asc" }],
     select: { id: true, noKonsi: true, lockedAt: true, periodYear: true, periodMonth: true },
   });
   const kandidat = rows
     .map((r) => ({ id: r.id, tanggal: tanggalPeriode(r.periodYear, r.periodMonth, r.lockedAt), label: r.noKonsi }))
     .filter((r) => r.tanggal.getTime() >= opsi.sejak.getTime() && r.tanggal.getTime() <= opsi.sampai.getTime());
-  return tanpaJurnalDari(sourceType, kandidat, opsi.batas);
+  return tanpaJurnalDari(sourceType, kandidat, opsi);
 }
 
 export function cariSiklusKonsiTanpaJurnal(opsi: OpsiCariSapuan) {
@@ -146,7 +156,7 @@ export async function cariKomisiSpgTanpaJurnal(opsi: OpsiCariSapuan): Promise<Do
     kandidat.push({ id: idKomisiSpg(g.storeId, g.period), tanggal, label: `Komisi SPG ${g.period}` });
   }
   kandidat.sort((a, b) => a.tanggal.getTime() - b.tanggal.getTime() || a.id.localeCompare(b.id));
-  return tanpaJurnalDari(SUMBER_OPERASIONAL.KOMISI_SPG, kandidat, opsi.batas);
+  return tanpaJurnalDari(SUMBER_OPERASIONAL.KOMISI_SPG, kandidat, opsi);
 }
 
 export function cariBayarKomisiSpgTanpaJurnal(opsi: OpsiCariSapuan) {

@@ -23,7 +23,10 @@ function sumberTiruan(
     diposting: [] as string[],
     cariTanpaJurnal: async (opsi: OpsiCariSapuan) => {
       s.panggilan.push(opsi);
-      return dokumen.filter((d) => d.tanggal >= opsi.sejak && d.tanggal <= opsi.sampai).slice(0, opsi.batas);
+      return dokumen
+        .filter((d) => d.tanggal >= opsi.sejak && d.tanggal <= opsi.sampai)
+        .filter((d) => !opsi.ids || opsi.ids.includes(d.id))
+        .slice(0, opsi.batas);
     },
     posting: async (id: string) => {
       s.diposting.push(id);
@@ -111,8 +114,19 @@ describe("jalankanSapuan", () => {
         return { ok: true, journalId: "j", created: true };
       },
     );
-    const r = await jalankanSapuan({ sumber: [a], tanggalMulai: hari("2026-08-01"), sampai: hari("2026-09-01"), olehUserId: "u" });
+    const nihil: string[] = [];
+    const r = await jalankanSapuan({
+      sumber: [a],
+      tanggalMulai: hari("2026-08-01"),
+      sampai: hari("2026-09-01"),
+      olehUserId: "u",
+      catatNihil: async (sourceType, d, oleh) => {
+        nihil.push(`${sourceType}:${d.id}:${oleh}`);
+      },
+    });
     if (r.dilewati) throw new Error("tidak boleh dilewati");
+    // Hanya dokumen yang postingnya NOTHING_TO_POST ditandai nihil.
+    expect(nihil).toEqual(["A:nol:u"]);
     expect(r.sumber[0]).toMatchObject({
       ditemukan: 6,
       diposting: 2,
@@ -138,5 +152,44 @@ describe("jalankanSapuan", () => {
     });
     expect(a.diposting).toEqual(["a2"]);
     expect(b.panggilan).toHaveLength(0);
+  });
+
+  it("cakupan diteruskan ke pencari sebagai `ids` — dokumen bercakupan tidak terlewat walau ada lebih dari `batas` dokumen lain", async () => {
+    const a = sumberTiruan("A", [dok("a1", "2026-08-02"), dok("a2", "2026-08-03"), dok("a3", "2026-08-04")]);
+    const r = await jalankanSapuan({
+      sumber: [a],
+      cakupan: { A: ["a3"] },
+      batasPerSumber: 1,
+      tanggalMulai: hari("2026-08-01"),
+      sampai: hari("2026-09-01"),
+      olehUserId: "u",
+    });
+    expect(a.panggilan[0].ids).toEqual(["a3"]);
+    expect(a.diposting).toEqual(["a3"]);
+    if (r.dilewati) throw new Error("tidak boleh dilewati");
+    expect(r.sumber[0].ditemukan).toBe(1);
+  });
+});
+
+describe("cariSemuaTanpaJurnal — abaikan dokumen nihil", () => {
+  it("dokumen yang ditandai nihil dilewati hanya bila diminta; tanda terpotong tetap", async () => {
+    const a = sumberTiruan("A", [dok("a1", "2026-08-02"), dok("a2", "2026-08-03"), dok("a3", "2026-08-04")]);
+    const b = sumberTiruan("B", [dok("b1", "2026-08-02")]);
+    const ditanya: Array<[string, string[]]> = [];
+    const bacaNihil = async (sourceType: string, ids: readonly string[]) => {
+      ditanya.push([sourceType, [...ids]]);
+      return new Set(ids.filter((id) => id === "a1" || id === "b1"));
+    };
+    const opsi = { sejak: hari("2026-08-01"), sampai: hari("2026-08-31"), batasPerSumber: 2, sumber: [a, b], bacaNihil };
+
+    const biasa = await cariSemuaTanpaJurnal(opsi);
+    expect(biasa.map((h) => h.dokumen.map((d) => d.id))).toEqual([["a1", "a2"], ["b1"]]);
+    expect(ditanya).toEqual([]);
+
+    const tanpaNihil = await cariSemuaTanpaJurnal({ ...opsi, abaikanNihil: true });
+    expect(tanpaNihil.map((h) => [h.sourceType, h.dokumen.map((d) => d.id), h.terpotong])).toEqual([
+      ["A", ["a2", "a3"], true],
+      ["B", [], false],
+    ]);
   });
 });

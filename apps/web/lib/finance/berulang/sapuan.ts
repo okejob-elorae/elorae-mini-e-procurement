@@ -41,8 +41,9 @@ export async function cariBerulangTanpaJurnal(opsi: OpsiCariSapuan): Promise<Dok
   ]);
   const sudah = new Set(ada.map((j) => j.sourceId));
   const tutup = new Set(tertutup.map((p) => kunciBulan({ tahun: p.year, bulan: p.month })));
+  const izinkan = opsi.ids ? new Set(opsi.ids) : null;
   return calon
-    .filter((c) => !sudah.has(c.id) && !tutup.has(c.periode))
+    .filter((c) => !sudah.has(c.id) && !tutup.has(c.periode) && (!izinkan || izinkan.has(c.id)))
     .sort((a, b) => a.tanggal.getTime() - b.tanggal.getTime())
     .slice(0, batas)
     .map(({ id, tanggal, label }) => ({ id, tanggal, label }));

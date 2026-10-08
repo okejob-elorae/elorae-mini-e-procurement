@@ -6,7 +6,7 @@ import { jurnalLapangan, KODE_BUKAN_GAGAL, type HasilJurnalLapangan, type KodeGa
 
 /*
  * Posting jurnal lapangan yang TIDAK PERNAH menggagalkan dokumennya — KHUSUS
- * SERVER. Dokumen (nota, BKM, hitungan retur, tukar barang) sudah di-commit
+ * SERVER. Dokumen (nota, BKM, hitungan retur, tukar barang, faktur piutang) sudah di-commit
  * saat ini dipanggil; masalah keuangan (peran belum dipetakan, akun bukan daun)
  * menjadi notifikasi `JOURNAL_PENDING` yang bisa diposting ulang dari
  * Keuangan → Rekonsiliasi piutang. Keberhasilan menandai notifikasinya selesai.
@@ -23,6 +23,7 @@ const NAMA_SUMBER: Readonly<Record<SumberLapangan, string>> = {
   FIELD_COLLECTION: "pelunasan",
   STORE_RETURN: "retur toko",
   STORE_EXCHANGE: "tukar barang",
+  STORE_INVOICE: "faktur piutang",
 };
 
 /** Nomor dokumen untuk kalimat notifikasi — notifikasi tanpa nomor dokumen tidak bisa ditindaklanjuti. */
@@ -37,6 +38,8 @@ export async function nomorDokumenLapangan(sumber: SumberLapangan, id: string): 
         return (await prisma.warehouseReturn.findUnique({ where: { id }, select: { noNri: true } }))?.noNri ?? null;
       case SUMBER_LAPANGAN.TUKAR:
         return (await prisma.storeExchange.findUnique({ where: { id }, select: { docNo: true } }))?.docNo ?? null;
+      case SUMBER_LAPANGAN.FAKTUR:
+        return (await prisma.receivable.findUnique({ where: { id }, select: { invoiceNo: true } }))?.invoiceNo ?? null;
     }
   } catch {
     return null;

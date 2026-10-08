@@ -118,7 +118,7 @@ export function RincianSiklusClient({
   const bukaKunciDialog = () => {
     setResmi(
       data.banding.map((x) => ({
-        itemId: null,
+        itemId: x.itemId,
         itemName: x.itemName,
         qty: x.qtySpg ?? x.qtyToko ?? 0,
         price: 0,
@@ -132,6 +132,10 @@ export function RincianSiklusClient({
     () => resmi.reduce((s, r) => s + (r.qty || 0) * (r.price || 0), 0),
     [resmi],
   );
+  // Tidak memblokir — baris ketikan tetap sah — tetapi akibatnya pada komisi, HPP
+  // dan tagihan toko harus terlihat sebelum angka dikunci.
+  const resmiTanpaBarang = resmi.filter((r) => !r.itemId).length;
+  const resmiTanpaHarga = resmi.filter((r) => !(r.price > 0)).length;
 
   const jalankan = (
     fn: () => Promise<{ ok: boolean; kode?: string }>,
@@ -696,6 +700,12 @@ export function RincianSiklusClient({
                   total: rupiah(totalResmi - data.tagihan.promoElorae),
                 })}
               </p>
+            )}
+            {(resmiTanpaBarang > 0 || resmiTanpaHarga > 0) && (
+              <div className="space-y-1 text-xs text-amber-600 dark:text-amber-500">
+                {resmiTanpaBarang > 0 && <p>{t('lockTanpaBarang', { n: resmiTanpaBarang })}</p>}
+                {resmiTanpaHarga > 0 && <p>{t('lockTanpaHarga', { n: resmiTanpaHarga })}</p>}
+              </div>
             )}
             <p className="text-xs text-muted-foreground">{t('commissionFromMaster')}</p>
           </div>

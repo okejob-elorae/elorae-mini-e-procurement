@@ -1,7 +1,7 @@
 import { JournalError, lockPeriodForPosting, postJournal, prisma, Prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { resolveAccount, UnmappedRoleError } from "@/lib/finance/journals/mapping";
-import { bulanWib, deretBulan, kunciBulan, labelBulan, rentangBulan, type TahunBulan } from "@/lib/finance/periode/periode";
+import { bulanSudahBerakhir, bulanWib, deretBulan, kunciBulan, labelBulan, rentangBulan, type TahunBulan } from "@/lib/finance/periode/periode";
 import { readGlCutover } from "@/lib/finance/sales/sweep";
 import { dokumenJurnal, tandaiJurnalTertundaSelesai } from "@/lib/finance/jurnal-tertunda";
 import { catatGagalSapuan } from "@/lib/finance/sapuan/tertunda";
@@ -22,7 +22,9 @@ import { ENTITAS_ASET, JEJAK_ASET } from "./jejak";
  * DITUTUP tidak pernah diposting (`closedPeriod: "refuse"`) dan dilewati tanpa
  * baris — jumlahnya disusulkan bulan terbuka berikutnya (`jumlahPenyusutanBulan`
  * menghitung dari target kumulatif). Bulan pelepasan dan sesudahnya tidak
- * disusutkan.
+ * disusutkan. Bulan yang belum berakhir (WIB) tidak pernah diposting
+ * (`BELUM_BERAKHIR`) — pelepasan di sisa bulan itu membuat bulannya tidak
+ * disusutkan; cron memposting bulan lalu di tanggal 1.
  *
  * Akun: akun beban / akumulasi yang diisi di aset menimpa peran
  * `DEPRECIATION_EXPENSE` / `ACCUM_DEPRECIATION`.
@@ -80,6 +82,7 @@ export type HasilPenyusutanBulan =
   | { status: "SUDAH_ADA"; journalId: string | null }
   | { status: "NOL" }
   | { status: "DI_LUAR_MASA" }
+  | { status: "BELUM_BERAKHIR" }
   | { status: "PERIODE_DITUTUP" };
 
 /**
@@ -92,8 +95,10 @@ export async function postingPenyusutanDalamTx(
   a: AsetSusut,
   tb: TahunBulan,
   olehUserId: string,
+  sekarang: Date = new Date(),
 ): Promise<HasilPenyusutanBulan> {
   if (!bulanDisusutkan(a, tb)) return { status: "DI_LUAR_MASA" };
+  if (!bulanSudahBerakhir(tb, sekarang)) return { status: "BELUM_BERAKHIR" };
   const periode = kunciBulan(tb);
   const ada = await tx.fixedAssetDepreciation.findUnique({
     where: { assetId_period: { assetId: a.id, period: periode } },
@@ -142,12 +147,12 @@ export type GagalPenyusutan = { asetId: string; kode: string; periode: string; k
 export type HasilPenyusutanSatu = HasilPenyusutanBulan | { status: "GAGAL"; kodeGalat: GagalPenyusutan["kodeGalat"]; peran?: string; pesan?: string };
 
 /** Penyusutan satu aset satu bulan, transaksinya sendiri. Tidak melempar untuk kegagalan biasa. */
-export async function postingPenyusutanSatu(asetId: string, tb: TahunBulan, olehUserId: string): Promise<HasilPenyusutanSatu> {
+export async function postingPenyusutanSatu(asetId: string, tb: TahunBulan, olehUserId: string, sekarang: Date = new Date()): Promise<HasilPenyusutanSatu> {
   try {
     return await runSerializable(async (tx) => {
       const a = await tx.fixedAsset.findUnique({ where: { id: asetId }, select: PILIH_ASET_SUSUT });
       if (!a) return { status: "DI_LUAR_MASA" as const };
-      return postingPenyusutanDalamTx(tx, a, tb, olehUserId);
+      return postingPenyusutanDalamTx(tx, a, tb, olehUserId, sekarang);
     });
   } catch (e) {
     if (e instanceof UnmappedRoleError) return { status: "GAGAL", kodeGalat: "UNMAPPED_ROLE", peran: e.role };
@@ -200,7 +205,10 @@ export async function postingPenyusutan(isi: {
   asetIds?: readonly string[];
   /** Tes: lantai tanggal mulai buku besar tanpa membaca pengaturan. */
   tanggalMulai?: Date | null;
+  /** Tes: "sekarang" — bulan yang belum berakhir terhadapnya tidak diposting. */
+  sekarang?: Date;
 }): Promise<RingkasanPenyusutan> {
+  const sekarang = isi.sekarang ?? new Date();
   const lantaiTanggal = isi.tanggalMulai !== undefined ? isi.tanggalMulai : await readGlCutover();
   const lantai = lantaiTanggal ? bulanWib(lantaiTanggal) : null;
   const ringkas: RingkasanPenyusutan = { sampai: kunciBulan(isi.sampai), diposting: 0, totalNilai: 0, nol: 0, periodeDitutup: 0, gagal: [] };
@@ -233,7 +241,8 @@ export async function postingPenyusutan(isi: {
     const sampai = akhir.tahun * 12 + akhir.bulan < isi.sampai.tahun * 12 + isi.sampai.bulan ? akhir : isi.sampai;
     for (const tb of deretBulan(dari, sampai)) {
       if (!bulanDisusutkan(a, tb)) continue;
-      const h = await postingPenyusutanSatu(a.id, tb, isi.olehUserId);
+      if (!bulanSudahBerakhir(tb, sekarang)) break;
+      const h = await postingPenyusutanSatu(a.id, tb, isi.olehUserId, sekarang);
       const periode = kunciBulan(tb);
       if (h.status === "DIPOSTING") {
         ringkas.diposting += 1;

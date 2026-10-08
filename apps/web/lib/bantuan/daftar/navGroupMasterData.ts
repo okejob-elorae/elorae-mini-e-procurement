@@ -167,6 +167,7 @@ export const ENTRI: EntriBantuan[] = [
       "Varian: tambahkan atribut (mis. Warna, Ukuran) beserta nilainya; setiap kombinasi menjadi satu varian. SKU varian harus diawali kode kategori (bila kategorinya berkode) atau SKU barang; dibiarkan kosong, SKU varian dibuat otomatis saat disimpan dengan bentuk awalan-nilai1-nilai2 (mis. KAOS-MERAH-S). Barcode varian dibuat menurut format di Pengaturan → Kode barang.",
       "Resep bahan (BOM) hanya untuk barang jadi: bahan, kebutuhan per pcs, dan susut dalam persen.",
       "Kg per roll muncul untuk bahan (bukan barang jadi) yang satuannya kg. Isinya dipakai formulir dan cetak PO untuk menghitung jumlah roll: qty ÷ kg per roll, dibulatkan ke atas.",
+      "Komisi SPG per pcs (barang jadi saja): rupiah yang diterima SPG untuk setiap potong barang ini yang ia jual, bersih dari retur pembeli. Dipakai komisi SPG di toko konsinyasi (disalin ke siklus saat angkanya dikunci) dan di toko putus. Kosong = 0. Setiap perubahan tercatat di jejak audit barang.",
     ],
     kartu: [
       {
@@ -185,6 +186,7 @@ export const ENTRI: EntriBantuan[] = [
       "Tombol Simpan barang menyimpan isian formulir. Galeri produk di bawahnya punya tombol Simpan gambar sendiri — gambar yang ditambah atau digeser belum tersimpan sebelum tombol itu ditekan.",
       "Nama Inggris tidak wajib: bila dikosongkan, nama Indonesia yang dipakai.",
       "Kg per roll (bahan bersatuan kg) dipakai formulir dan cetak PO untuk kolom Roll. Varian warna bahan yang ditambah dari formulir PO tampil di sini sebagai atribut warna; kode Pantone-nya ikut tersimpan dan tidak menjadi atribut kombinasi.",
+      "Komisi SPG per pcs (barang jadi saja): rupiah yang diterima SPG untuk setiap potong barang ini yang ia jual, bersih dari retur pembeli. Dipakai komisi SPG di toko konsinyasi (disalin ke siklus saat angkanya dikunci) dan di toko putus. Kosong = 0. Setiap perubahan tercatat di jejak audit barang.",
     ],
     kartu: [
       {

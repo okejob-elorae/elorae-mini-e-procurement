@@ -57,7 +57,13 @@ describe("periksaPembayaran", () => {
     ).toEqual({ ok: false, kode: "ALOKASI_GANDA", baris: 2 });
     expect(periksaPembayaran({ ...dasar, alokasi: [{ jenis: "GRN", id: "g", jumlah: "-1" }] }, HARI_INI)).toEqual({ ok: false, kode: "JUMLAH_TIDAK_SAH", baris: 1 });
     expect(periksaPembayaran({ ...dasar, uangMuka: 5, jenisPotong: "PPH9" }, HARI_INI)).toEqual({ ok: false, kode: "POTONG_TIDAK_SAH" });
-    expect(periksaPembayaran({ ...dasar, uangMuka: 5, dasarPotong: 6 }, HARI_INI)).toEqual({ ok: false, kode: "DASAR_POTONG_TIDAK_SAH" });
+    expect(periksaPembayaran({ ...dasar, uangMuka: 5, dasarPotong: "abc" }, HARI_INI)).toEqual({ ok: false, kode: "DASAR_POTONG_TIDAK_SAH" });
+    expect(periksaPembayaran({ ...dasar, uangMuka: 5, dasarPotong: "-1" }, HARI_INI)).toEqual({ ok: false, kode: "DASAR_POTONG_TIDAK_SAH" });
+  });
+
+  it("dasar potongan di atas bruto tidak ditolak di sini: batasnya bruto + uang muka belum dipotong (dicek penulis, `batasDasarPotongSen`)", () => {
+    const r = periksaPembayaran({ ...dasar, uangMuka: 5, dasarPotong: 6 }, HARI_INI);
+    expect(r.ok && r.pembayaran.dasarPotongSen).toBe(600);
   });
 
   it("jenis potong: kosong berarti tidak dipotong, tidak diisi berarti ikut pemasok", () => {

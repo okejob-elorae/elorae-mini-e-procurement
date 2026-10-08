@@ -1,5 +1,6 @@
 import { semuaSumberSapuan, type SumberSapuan } from "./registri";
 import "@/lib/finance/lapangan/sapuan";
+import "@/lib/finance/lapangan/sapuan-faktur";
 import "@/lib/finance/sapuan/sumber-lama";
 import "@/lib/production/sapuan";
 import "@/lib/finance/aset/sapuan";

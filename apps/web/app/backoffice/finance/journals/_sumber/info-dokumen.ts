@@ -3,6 +3,7 @@ import { kunciDokumen, type IndukDokumen } from "./tautan";
 import { infoDokumenOperasional } from "@/lib/finance/operasional/info-dokumen";
 import { infoDokumenAset } from "@/lib/finance/aset/queries";
 import { infoDokumenBerulang } from "@/lib/finance/berulang/queries";
+import { fakturImporDibatalkan } from "@/lib/receivables/impor/batal";
 
 /*
  * Nomor dokumen sumber jurnal (dan induknya, untuk dokumen tanpa halaman
@@ -118,7 +119,8 @@ export async function cariInfoDokumen(pasangan: Pasangan[]): Promise<Map<string,
   const bkmIds = idsPer(pasangan, "FIELD_COLLECTION");
   const nriIds = idsPer(pasangan, "STORE_RETURN");
   const tukarIds = idsPer(pasangan, "STORE_EXCHANGE");
-  const [nota, bkm, nri, tukar] = await Promise.all([
+  const fakturIds = idsPer(pasangan, "STORE_INVOICE");
+  const [nota, bkm, nri, tukar, faktur] = await Promise.all([
     aman("FieldSalesDelivery", notaIds, () =>
       prisma.fieldSalesDelivery.findMany({ where: { id: { in: notaIds } }, select: { id: true, docNo: true, orderId: true } }),
     ),
@@ -131,11 +133,25 @@ export async function cariInfoDokumen(pasangan: Pasangan[]): Promise<Map<string,
     aman("StoreExchange", tukarIds, () =>
       prisma.storeExchange.findMany({ where: { id: { in: tukarIds } }, select: { id: true, docNo: true } }),
     ),
+    aman("Receivable", fakturIds, () =>
+      prisma.receivable.findMany({ where: { id: { in: fakturIds } }, select: { id: true, invoiceNo: true } }),
+    ),
   ]);
   for (const r of nota) isi(["FIELD_DELIVERY"], r.id, { nomor: r.docNo, fieldOrderId: r.orderId });
   for (const r of bkm) isi(["FIELD_COLLECTION"], r.id, { nomor: r.docNo });
   for (const r of nri) isi(["STORE_RETURN"], r.id, { nomor: r.noNri, storeReturnId: r.storeReturnId });
   for (const r of tukar) isi(["STORE_EXCHANGE"], r.id, { nomor: r.docNo });
+  for (const r of faktur) isi(["STORE_INVOICE"], r.id, { nomor: r.invoiceNo, noFaktur: r.invoiceNo });
+  // Faktur impor yang batch-nya dibatalkan (barisnya dihapus): jurnal + pembaliknya tetap menunjuk
+  // dokumen yang dikenal lewat jejak pembatalannya — bukan "yatim".
+  const fakturHilang = fakturIds.filter((id) => !faktur.some((r) => r.id === id));
+  if (fakturHilang.length) {
+    try {
+      for (const [id, no] of await fakturImporDibatalkan(fakturHilang)) isi(["STORE_INVOICE"], id, { nomor: `${no} (impor dibatalkan)` });
+    } catch (e) {
+      console.error("[info-dokumen] gagal membaca faktur impor yang dibatalkan", e);
+    }
+  }
 
   // Pajak (lib/finance/pajak): masa PPN / PPh final dinamai masanya, setoran NTPN-nya.
   for (const p of pasangan) {

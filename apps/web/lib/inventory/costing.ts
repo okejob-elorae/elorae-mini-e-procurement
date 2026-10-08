@@ -32,10 +32,6 @@ export interface CostCalculationResult {
 // Prisma compound unique keys don't accept null; use '' for non-variant items.
 const normalizeVariantSku = (variantSku?: string | null) => variantSku ?? '';
 
-const compositeKey = (itemId: string, variantSku?: string | null) => ({
-  itemId_variantSku: { itemId, variantSku: normalizeVariantSku(variantSku) },
-});
-
 export interface HasilRataRataMasuk {
   qtyBaru: Decimal;
   avgBaru: Decimal;
@@ -73,8 +69,14 @@ export function hitungRataRataMasuk(p: {
   return { qtyBaru, avgBaru, nilaiLama, nilaiMasuk, nilaiBaru: qtyBaru.mul(avgBaru) };
 }
 
-/** Baris stok tanpa varian di basis data bisa ber-`variantSku` null ATAU "" — terima keduanya. */
-async function cariBarisStok(client: any, itemId: string, variantSku?: string | null) {
+/**
+ * Baris stok tanpa varian di basis data bisa ber-`variantSku` null ATAU "" — terima keduanya.
+ * SATU pencari untuk semua penulis di berkas ini (masuk DAN keluar): pencarian
+ * ketat ke "" melewatkan baris bahan ber-null (retur ke pemasok kain/aksesori
+ * dulu bernilai 0 lalu ditolak STOK_KURANG). Baris kembar null + "" tidak
+ * dijumlah — `findFirst` seperti penulis masuk.
+ */
+export async function cariBarisStok(client: any, itemId: string, variantSku?: string | null) {
   const v = variantSku?.trim() ?? '';
   return v === ''
     ? client.inventoryValue.findFirst({ where: { itemId, OR: [{ variantSku: null }, { variantSku: '' }] } })
@@ -182,6 +184,9 @@ async function tulisRataRataMasuk(
 /**
  * Reverse inventory value for returns/negative adjustments.
  * Outgoing value is at current avg cost; throws if insufficient stock.
+ * `outgoingValue` = nilai yang BENAR-BENAR keluar dari kartu stok (qty ×
+ * rata-rata saat ini) — pencatat gerakan memakainya, bukan harga dokumen,
+ * supaya saldo kartu stok dan jurnalnya sama.
  */
 export async function reverseInventoryValue(
   itemId: string,
@@ -189,15 +194,12 @@ export async function reverseInventoryValue(
   outgoingUnitCost: Decimal,
   tx?: any,
   variantSku?: string | null
-): Promise<{ newQty: Decimal; newAvgCost: Decimal; newTotalValue: Decimal }> {
+): Promise<{ newQty: Decimal; newAvgCost: Decimal; newTotalValue: Decimal; outgoingValue: Decimal }> {
   const prismaClient = tx || prisma;
-  const where = compositeKey(itemId, variantSku);
-
-  const current = await prismaClient.inventoryValue.findUnique({
-    where,
-  });
+  const current = await cariBarisStok(prismaClient, itemId, variantSku);
 
   if (!current) throw new Error('No inventory record found');
+  const where = { id: current.id };
 
   const currentQty = new Decimal(current.qtyOnHand.toString());
   const currentAvgCost = new Decimal(current.avgCost.toString());
@@ -224,7 +226,7 @@ export async function reverseInventoryValue(
     },
   });
 
-  return { newQty, newAvgCost, newTotalValue };
+  return { newQty, newAvgCost, newTotalValue, outgoingValue };
 }
 
 // Reverse calculation for returns (negative quantity) - uses passed cost
@@ -236,12 +238,11 @@ export async function reverseMovingAverage(
   variantSku?: string | null
 ): Promise<CostCalculationResult> {
   const prismaClient = tx || prisma;
-  const where = compositeKey(itemId, variantSku);
 
-  // Get current inventory state
-  const current = await prismaClient.inventoryValue.findUnique({
-    where,
-  });
+  // Get current inventory state (toleran null/"", sama dengan penulis masuk)
+  const current = await cariBarisStok(prismaClient, itemId, variantSku);
+  if (!current) throw new Error('No inventory record found');
+  const where = { id: current.id };
 
   const previousQty = current?.qtyOnHand ? new Decimal(current.qtyOnHand.toString()) : new Decimal(0);
   const previousAvgCost = current?.avgCost ? new Decimal(current.avgCost.toString()) : new Decimal(0);
@@ -281,8 +282,10 @@ export async function reverseMovingAverage(
 
 // Get current inventory value for an item (or item+variant). Serialized for client.
 export async function getInventoryValue(itemId: string, variantSku?: string | null) {
+  const baris = await cariBarisStok(prisma, itemId, variantSku);
+  if (!baris) return null;
   const v = await prisma.inventoryValue.findUnique({
-    where: compositeKey(itemId, variantSku),
+    where: { id: baris.id },
     include: {
       item: {
         select: {

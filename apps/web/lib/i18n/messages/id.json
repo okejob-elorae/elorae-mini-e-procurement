@@ -3465,7 +3465,7 @@
       "tanpaPotong": "Tidak dipotong",
       "tanpaNpwp": "Pemasok tidak ber-NPWP: tarif lebih tinggi.",
       "dasarPotong": "Dasar potongan",
-      "dasarPotongBawaan": "Kosongkan untuk memakai dasar bawaan {nilai} (jasa tanpa PPN; barang tidak dipotong).",
+      "dasarPotongBawaan": "Kosongkan untuk memakai dasar bawaan {nilai} (jasa tanpa PPN, termasuk uang muka yang belum dipotong; barang tidak dipotong).",
       "ringkasanJudul": "Ringkasan",
       "ringkasPotongBaris": "Dipotong ({jenis})",
       "catatan": "Catatan",
@@ -3479,7 +3479,7 @@
         "rekening": "Pilih rekening pembayar.",
         "melebihiSisa": "Ada jumlah bayar yang melebihi sisa utangnya.",
         "uangMuka": "Uang muka bukan angka yang sah.",
-        "dasarPotong": "Dasar potongan tidak sah atau lebih besar dari bruto.",
+        "dasarPotong": "Dasar potongan tidak sah atau lebih besar dari bruto ditambah uang muka yang belum dipotong.",
         "kosong": "Isi jumlah bayar untuk minimal satu dokumen, atau uang muka."
       },
       "barisKe": "(baris {baris})",
@@ -3505,7 +3505,7 @@
       "alasanBatal": "Alasan pembatalan",
       "tutup": "Tutup",
       "dibatalkan": "Pembayaran {nomor} dibatalkan",
-      "terapkanIsi": "Uang muka tersisa {nilai}. Isi jumlah yang dipasangkan ke tiap dokumen. Tidak ada jurnal baru: utang usaha sudah didebit saat uang muka dibayar.",
+      "terapkanIsi": "Uang muka tersisa {nilai}. Isi jumlah yang dipasangkan ke tiap dokumen.",
       "sisaDokumen": "Sisa {nilai}",
       "akanDiterapkan": "Akan diterapkan: {nilai}",
       "terapkan": "Terapkan",
@@ -3526,7 +3526,7 @@
         "BUKAN_PEMASOK_INI": "Dokumen itu milik pemasok lain.",
         "KOSONG": "Isi jumlah bayar untuk minimal satu dokumen, atau uang muka.",
         "POTONG_TIDAK_SAH": "Jenis potongan PPh tidak dikenal.",
-        "DASAR_POTONG_TIDAK_SAH": "Dasar potongan tidak sah atau lebih besar dari bruto.",
+        "DASAR_POTONG_TIDAK_SAH": "Dasar potongan tidak sah atau lebih besar dari bruto ditambah uang muka yang belum dipotong.",
         "TEKS_TERLALU_PANJANG": "Teks terlalu panjang.",
         "PEMASOK_TIDAK_DITEMUKAN": "Pemasok tidak ditemukan.",
         "PO_DITANDAI_LUNAS": "PO dokumen itu sudah ditandai lunas dengan tombol Tandai lunas. Batalkan tanda lunasnya dulu bila memang masih berhutang.",
@@ -3541,7 +3541,9 @@
         "FOTO_TIDAK_SAH": "Foto bukti tidak sah. Unggah ulang fotonya.",
         "TANPA_AKSES": "Anda tidak berizin melakukan ini.",
         "GAGAL": "Gagal menyimpan. Coba lagi."
-      }
+      },
+      "uangMukaBelumDipotong": "Uang muka {nilai} belum dipotong PPh — ikut dasar potongan",
+      "uangMukaDiterapkanPotong": "Uang muka diterapkan. PPh {nilai} atas uang muka dipotong lewat {nomor}."
     },
     "umur": {
       "judul": "Umur utang pemasok",
@@ -9485,7 +9487,8 @@
       "CASH_VOUCHER": "Voucher kas & bank",
       "CASH_VOUCHER_REVERSAL": "Pembatalan voucher kas & bank",
       "SUPPLIER_PAYMENT_DOC": "Pembayaran pemasok (dokumen)",
-      "SUPPLIER_PAYMENT_DOC_REVERSAL": "Pembatalan pembayaran pemasok"
+      "SUPPLIER_PAYMENT_DOC_REVERSAL": "Pembatalan pembayaran pemasok",
+      "STORE_INVOICE": "Faktur piutang manual/impor"
     },
     "tabPosted": "Terposting",
     "tabPending": "Tertunda",
@@ -9745,7 +9748,8 @@
       "colCurrent": "Periode ini",
       "colPrevious": "Periode sebelumnya",
       "colDelta": "Selisih",
-      "comparisonHint": "Dibandingkan dengan {period}."
+      "comparisonHint": "Dibandingkan dengan {period}.",
+      "penyesuaianPelepasanAset": "Penyesuaian pelepasan aset tetap"
     },
     "filter": {
       "dateFrom": "Dari tanggal",
@@ -11779,7 +11783,9 @@
     "laporanJudul": "Laporan SPG dan toko",
     "laporanRingkas": "{items} barang · {pcs} pcs",
     "laporanBelumMasuk": "belum masuk",
-    "laporanDiCocokkan": "Angka per barang dari kedua laporan disandingkan di kartu “Pencocokan buku stok” di bawah."
+    "laporanDiCocokkan": "Angka per barang dari kedua laporan disandingkan di kartu “Pencocokan buku stok” di bawah.",
+    "lockTanpaBarang": "{n} baris belum dipilih barangnya — komisi SPG dan HPP konsinyasi baris itu tidak ikut dihitung.",
+    "lockTanpaHarga": "{n} baris berharga 0 — nilai terjualnya ikut 0 di tagihan toko."
   },
   "jenisPotongan": {
     "pageTitle": "Jenis potongan",
@@ -11832,7 +11838,9 @@
     "peranJurnalOtomatis": "Otomatis — potongan penjualan, atau PPh 23 dibayar dimuka bila khusus toko PKP",
     "peranJurnalHint": "Peran akun yang didebit saat BKM dengan potongan ini diverifikasi keuangan. Akunnya diatur di Keuangan → Pemetaan Akun.",
     "peranJurnalRingkas": "Jurnal: {peran}",
-    "errPERAN_TIDAK_SAH": "Akun jurnal itu tidak bisa dipakai untuk potongan."
+    "errPERAN_TIDAK_SAH": "Akun jurnal itu tidak bisa dipakai untuk potongan.",
+    "peranDariRetur": "Lewat jurnal retur",
+    "peranOtomatisRingkas": "Otomatis: {peran}"
   },
   "ocr": {
     "title": "Baca dari foto",
@@ -12330,7 +12338,8 @@
       "SUPPLIER_PAYMENT_CANCELLED": "Pembayaran pemasok dibatalkan",
       "SUPPLIER_ADVANCE_APPLIED": "Uang muka pemasok diterapkan",
       "PO_PAID_BY_SUPPLIER_PAYMENTS": "PO lunas lewat pembayaran pemasok",
-      "PO_UNPAID_BY_PAYMENT_CANCEL": "Tanda lunas PO dibuka (pembayaran dibatalkan)"
+      "PO_UNPAID_BY_PAYMENT_CANCEL": "Tanda lunas PO dibuka (pembayaran dibatalkan)",
+      "JOURNAL_SWEEP_NOTHING_TO_POST": "Sapuan jurnal: tidak ada yang perlu dijurnal"
     },
     "entities": {
       "ChainTemplate": "Templat rantai proses",
@@ -19132,7 +19141,9 @@
     "errBuatSku": "SKU gagal dibuat. Coba lagi.",
     "barcodeTanpaAwalan": "Pilih kategori yang berkode atau isi SKU barang dulu untuk membuat barcode.",
     "lengkapiAtribut": "Isi nama dan minimal satu nilai untuk setiap atribut.",
-    "lengkapiBahan": "Lengkapi bahan dan kebutuhan per pcs di setiap baris resep."
+    "lengkapiBahan": "Lengkapi bahan dan kebutuhan per pcs di setiap baris resep.",
+    "komisiSpg": "Komisi SPG per pcs (Rp)",
+    "komisiSpgTidakSah": "Komisi SPG per pcs harus angka 0 atau lebih."
   },
   "itemList": {
     "filterCategory": "Saring kategori",
@@ -22360,12 +22371,14 @@
       "bukaKembali": "Buka kembali",
       "periksaTutup": "Periksa & tutup",
       "periksa": "Periksa",
-      "belumBerakhir": "Belum berakhir"
+      "belumBerakhir": "Belum berakhir",
+      "terkunciSebelumBuku": "Sebelum tanggal mulai buku besar. Terkunci karena bulan tanggal mulai sudah ditutup."
     },
     "status": {
       "CLOSED": "Ditutup",
       "OPEN": "Terbuka",
-      "BERJALAN": "Berjalan"
+      "BERJALAN": "Berjalan",
+      "TERKUNCI": "Terkunci"
     },
     "tahun": {
       "judul": "Tahun buku",
@@ -22873,7 +22886,7 @@
       "judul": "Posting penyusutan",
       "isi": "Penyusutan setiap bulan yang belum diposting sampai bulan yang dipilih dijurnal, tertanggal hari terakhir bulannya.",
       "bulan": "Sampai bulan",
-      "tertunda": "{n} aset belum disusutkan bulan ini.",
+      "tertunda": "{n} aset belum disusutkan untuk {bulan}.",
       "tombol": "Posting",
       "memposting": "Memposting…",
       "hasil": "{n} jurnal penyusutan diposting, total {total}.",
@@ -23011,8 +23024,9 @@
       "AKUN_PENERIMAAN_WAJIB": "Pilih rekening yang menerima hasil penjualan.",
       "ALASAN_WAJIB": "Tulis alasannya (minimal 5 karakter).",
       "TANPA_AKSES": "Anda tidak berizin mengelola jurnal.",
-      "BULAN_TIDAK_SAH": "Pilih bulan yang sah, tidak sesudah bulan ini.",
-      "GAGAL": "Gagal menyimpan. Coba lagi."
+      "BULAN_TIDAK_SAH": "Pilih bulan yang sah.",
+      "GAGAL": "Gagal menyimpan. Coba lagi.",
+      "BULAN_BELUM_BERAKHIR": "Penyusutan sebuah bulan baru bisa diposting sesudah bulan itu berakhir. Pilih bulan yang sudah lewat."
     }
   },
   "jurnalBerulang": {
@@ -23381,7 +23395,8 @@
       "TAHUN_TIDAK_DIKETAHUI": "Tanggal di berkas tanpa tahun dan berkas tidak menyebut periodenya.",
       "TANPA_BARIS": "Tidak ada baris mutasi di berkas.",
       "AKUN_HUTANG_ALUR": "Utang ini dilunasi lewat halamannya sendiri (komisi, klaim biaya perjalanan, atau fee KOL → Tandai dibayar), bukan voucher kas.",
-      "AKUN_HUTANG_PAJAK": "Utang pajak dilunasi lewat Keuangan → Pajak → Setoran, bukan voucher kas."
+      "AKUN_HUTANG_PAJAK": "Utang pajak dilunasi lewat Keuangan → Pajak → Setoran, bukan voucher kas.",
+      "JURNAL_DIBATALKAN": "Baris jurnal itu milik voucher atau pembayaran yang sudah dibatalkan (atau pembaliknya), jadi tidak bisa dicocokkan dengan mutasi bank."
     }
   },
   "financeBank": {

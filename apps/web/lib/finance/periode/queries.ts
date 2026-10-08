@@ -17,6 +17,7 @@ import {
   kunciBulan,
   nilaiDaftarPeriksa,
   rentangBulan,
+  terkunciSebelumBuku,
   type DaftarPeriksa,
   type DataPeriksa,
   type StatusPeriode,
@@ -53,6 +54,8 @@ export type BarisBulan = {
   tahun: number;
   bulan: number;
   status: StatusPeriode;
+  /** Terbuka di barisnya sendiri, tetapi terkunci: sebelum tanggal mulai buku besar dan bulan tanggal mulai sudah ditutup. */
+  terkunciSebelumBuku: boolean;
   sudahBerakhir: boolean;
   jumlahJurnal: number;
   closedAt: string | null;
@@ -108,6 +111,10 @@ export async function daftarPeriode(sekarang: Date = new Date()): Promise<Daftar
   const daftarBulan = [...kunciSet.values()].sort((a, b) => bandingBulan(b, a));
 
   const perKunci = new Map(periode.map((p) => [kunciBulan({ tahun: p.year, bulan: p.month }), p]));
+  const kunciTertutup = new Set(
+    periode.filter((p) => p.status === STATUS_PERIODE.TERTUTUP).map((p) => kunciBulan({ tahun: p.year, bulan: p.month })),
+  );
+  const bulanMulai = tanggalMulai ? bulanWib(tanggalMulai) : null;
   const penggunaIds = [
     ...new Set(
       [...periode.flatMap((p) => [p.closedById, p.reopenedById]), ...tahunRows.map((t) => t.closedById)].filter(
@@ -135,6 +142,7 @@ export async function daftarPeriode(sekarang: Date = new Date()): Promise<Daftar
       tahun: b.tahun,
       bulan: b.bulan,
       status: p?.status === STATUS_PERIODE.TERTUTUP ? STATUS_PERIODE.TERTUTUP : STATUS_PERIODE.TERBUKA,
+      terkunciSebelumBuku: p?.status !== STATUS_PERIODE.TERTUTUP && terkunciSebelumBuku(b, bulanMulai, kunciTertutup),
       sudahBerakhir: bulanSudahBerakhir(b, sekarang),
       jumlahJurnal: jumlah[i],
       closedAt: p?.closedAt?.toISOString() ?? null,
@@ -194,12 +202,14 @@ export async function bacaDataPeriksa(tb: TahunBulan): Promise<DataPeriksa> {
     if (!tanggalMulai) return { belum: "TANPA_TANGGAL_MULAI" };
     const rentang = await rentangSapuan({ sejak: awal, sampai: akhir, tanggalMulai });
     if (!rentang) return { belum: "SEBELUM_TANGGAL_MULAI" };
-    const hasil = await cariSemuaTanpaJurnal({ ...rentang, batasPerSumber: BATAS_PERIKSA_PER_SUMBER });
+    // Dokumen yang sapuan dapati nihil (NOTHING_TO_POST) tidak menahan tutup buku (`abaikanNihil`).
+    const hasil = await cariSemuaTanpaJurnal({ ...rentang, batasPerSumber: BATAS_PERIKSA_PER_SUMBER, abaikanNihil: true });
     const rincian = hasil
-      .filter((h) => h.dokumen.length > 0 || h.galat)
+      // Terpotong tanpa dokumen tersisa (semua yang terbaca nihil): di luar batas mungkin masih ada — tetap menahan.
+      .filter((h) => h.dokumen.length > 0 || h.galat || h.terpotong)
       .map((h) => ({
         label: h.galat ? `${h.label} (tidak bisa diperiksa)` : h.terpotong ? `${h.label} (${h.dokumen.length}+)` : h.label,
-        jumlah: h.galat ? 1 : h.dokumen.length,
+        jumlah: h.galat ? 1 : Math.max(h.dokumen.length, h.terpotong ? 1 : 0),
       }));
     return { jumlah: rincian.reduce((s, r) => s + r.jumlah, 0), rincian };
   })();

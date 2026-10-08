@@ -24,7 +24,13 @@ import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
  *   `batas` (jumlah maksimum) — tidak pernah menyapu seluruh tabel tanpa batas.
  *   Ia mengembalikan dokumen yang SEHARUSNYA berjurnal (status final, nilai
  *   bukan nol, sesudah tanggal mulai buku besar) dan belum punya `Journal`
- *   ber-(sourceType, sourceId) itu.
+ *   ber-(sourceType, sourceId) itu. Dokumen yang postingnya akan
+ *   `NOTHING_TO_POST` (mis. tukar barang yang biayanya seimbang) TIDAK
+ *   dikembalikan — kalau tidak, ia tampil selamanya sebagai "tanpa jurnal" dan
+ *   menahan tutup buku bulannya.
+ * - `ids` (bila ada) WAJIB diterapkan di kueri pencari, SEBELUM `batas`:
+ *   sapuan bercakupan yang menyaring sesudah batas melewatkan dokumennya
+ *   sendiri begitu ada lebih dari `batas` dokumen lain di rentang itu.
  * - `posting` idempoten (lewat `generateAutoJournal`) dan TIDAK melempar untuk
  *   kegagalan biasa — kembalikan `{ ok: false, code }`; ia sendiri yang menulis
  *   / menyelesaikan `JOURNAL_PENDING` seperti tombol posting ulang sumbernya.
@@ -39,6 +45,11 @@ export type OpsiCariSapuan = {
   sampai: Date;
   /** Jumlah maksimum dokumen yang dikembalikan. */
   batas: number;
+  /**
+   * Hanya dokumen ber-id (`sourceId`) ini — cakupan sapuan terarah. Diterapkan
+   * di kueri sebelum `batas`. Daftar kosong = tidak ada dokumen.
+   */
+  ids?: readonly string[];
 };
 
 export type DokumenTanpaJurnal = {

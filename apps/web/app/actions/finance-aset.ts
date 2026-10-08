@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { hariIniWib } from "@/lib/tanggal-isian";
-import { bacaKunciBulan } from "@/lib/finance/periode/periode";
+import { bacaKunciBulan, bulanSudahBerakhir } from "@/lib/finance/periode/periode";
 import type { IsianAset } from "@/lib/finance/aset/aturan";
 import { batalkanAset, batalkanPelepasan, catatAset, lepasAset, ubahAset, type HasilAset } from "@/lib/finance/aset/writer";
 import { postingPenyusutan, type RingkasanPenyusutan } from "@/lib/finance/aset/penyusutan";
@@ -103,14 +103,17 @@ export async function batalkanPelepasanAction(input: { id: string; alasan: strin
 }
 
 /**
- * Posting penyusutan sampai bulan `bulan` ("YYYY-MM", tidak sesudah bulan ini)
- * untuk semua aset, atau `asetIds`.
+ * Posting penyusutan sampai bulan `bulan` ("YYYY-MM") untuk semua aset, atau
+ * `asetIds`. Bulan sesudah bulan ini tidak sah; bulan berjalan ditolak
+ * (`BULAN_BELUM_BERAKHIR`) sampai hari terakhirnya lewat (WIB) — cron
+ * memposting bulan lalu di tanggal 1.
  */
 export async function postingPenyusutanAction(input: { bulan: string; asetIds?: string[] }): Promise<({ ok: true } & RingkasanPenyusutan) | Gagal> {
   const userId = await pengelola();
   if (!userId) return { ok: false, kode: "TANPA_AKSES" };
   const tb = bacaKunciBulan(input.bulan);
   if (!tb || input.bulan > hariIniWib().slice(0, 7)) return { ok: false, kode: "BULAN_TIDAK_SAH" };
+  if (!bulanSudahBerakhir(tb, new Date())) return { ok: false, kode: "BULAN_BELUM_BERAKHIR" };
   return aman("posting penyusutan", async () => {
     const asetIds = Array.isArray(input.asetIds) ? input.asetIds.filter((x) => typeof x === "string" && x).slice(0, 500) : undefined;
     const r = await postingPenyusutan({ sampai: tb, olehUserId: userId, ...(asetIds ? { asetIds } : {}) });

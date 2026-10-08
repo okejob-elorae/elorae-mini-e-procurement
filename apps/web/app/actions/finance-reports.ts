@@ -25,6 +25,7 @@ import {
   type CashFlowComparisonLine,
 } from "@/lib/finance/reports/cash-flow-compare";
 import {
+  getBarisPelepasanAset,
   getCashOpeningBalance,
   getSectionByAccountId,
 } from "@/lib/finance/reports/cash-flow-queries";
@@ -178,12 +179,13 @@ async function buildCashFlowFor(
    * Jurnal saldo awal (`OPENING…`) bukan arus kas periode: dikeluarkan dari
    * mutasi dan kasnya dihitung sebagai kas awal (s.d. akhir jendela).
    */
-  const [rows, kasAwal] = await Promise.all([
+  const [rows, kasAwal, pelepasanAset] = await Promise.all([
     getAccountBalances({ from, to }, { kecualiSaldoAwal: true }),
     getCashOpeningBalance(from ? new Date(from.getTime() - 1) : undefined, cashAccountIds, { saldoAwalSampai: to }),
+    getBarisPelepasanAset({ from, to }),
   ]);
 
-  return buildCashFlow({ rows, sectionByAccountId, kasAwal });
+  return buildCashFlow({ rows, sectionByAccountId, kasAwal, pelepasanAset });
 }
 
 async function loadCashFlowReport(input: {

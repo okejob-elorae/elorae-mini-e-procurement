@@ -4,6 +4,7 @@ import { KANAL_JURNAL, type KanalJurnal } from "@/lib/finance/journals/kanal";
 import { nilaiPerPeranPersediaan } from "@/lib/finance/journals/peran-persediaan";
 import { memoPeranDpp } from "@/lib/finance/pajak/jurnal-ppn";
 import { pisahPpn, type PengaturanPpn } from "@/lib/finance/pajak/ppn";
+import { idBebanDariCatatan } from "@/lib/receivables/penanda-beban";
 import { bahanPotonganRetur, returTertahan, type PotonganPadaKlaim } from "@/lib/receivables/rules";
 
 /*
@@ -11,7 +12,7 @@ import { bahanPotonganRetur, returTertahan, type PotonganPadaKlaim } from "@/lib
  * untuk komponen klien dan dites tanpa basis data. Pembaca data dan penulisnya
  * di `jurnal.ts`, penyelarasnya di `selaras.ts`, kait pasca-commit di `kait.ts`.
  *
- * EMPAT SUMBER (sourceType jurnal):
+ * LIMA SUMBER (sourceType jurnal):
  * - `FIELD_DELIVERY` — nota tagihan pengiriman putus. Sekali posting, tidak
  *   pernah diselaraskan: piutang toko + pendapatan (DPP) + PPN keluaran, dan
  *   HPP dari biaya yang benar-benar keluar dari kartu stok.
@@ -25,6 +26,11 @@ import { bahanPotonganRetur, returTertahan, type PotonganPadaKlaim } from "@/lib
  *   diakui (Aturan uang 2), lalu menyesuaikan diri saat potongan toko diakui,
  *   beban selisih diputuskan, atau hitungannya dipindah toko.
  * - `STORE_EXCHANGE` — tukar barang selesai. Sekali posting.
+ * - `STORE_INVOICE` — faktur piutang yang diketik manual atau diimpor (bukan
+ *   nota pengiriman, bukan faktur beban retur), bertanggal sejak tanggal mulai
+ *   buku besar. DISELARASKAN: faktur yang dibatalkan (impor dibatalkan →
+ *   barisnya dihapus) atau nilainya berubah dibalik/disesuaikan generasi
+ *   berikutnya. Tanpa HPP — tidak ada barang yang keluar di sistem.
  *
  * MENGAPA BKM TIDAK MENJURNAL POTONGAN RETUR. Piutang modul (`hitungSisaPiutang`)
  * hanya berkurang lewat BKM terverifikasi; potongan retur di dalamnya diakui
@@ -41,6 +47,7 @@ export const SUMBER_LAPANGAN = {
   BKM: "FIELD_COLLECTION",
   RETUR: "STORE_RETURN",
   TUKAR: "STORE_EXCHANGE",
+  FAKTUR: "STORE_INVOICE",
 } as const;
 
 export type SumberLapangan = (typeof SUMBER_LAPANGAN)[keyof typeof SUMBER_LAPANGAN];
@@ -50,10 +57,11 @@ export const SEMUA_SUMBER_LAPANGAN: readonly SumberLapangan[] = [
   SUMBER_LAPANGAN.BKM,
   SUMBER_LAPANGAN.RETUR,
   SUMBER_LAPANGAN.TUKAR,
+  SUMBER_LAPANGAN.FAKTUR,
 ];
 
 /** Sumber yang jurnalnya diselaraskan bergenerasi (`<id>`, `<id>#2`, …). */
-export const SUMBER_BERGENERASI: readonly SumberLapangan[] = [SUMBER_LAPANGAN.BKM, SUMBER_LAPANGAN.RETUR];
+export const SUMBER_BERGENERASI: readonly SumberLapangan[] = [SUMBER_LAPANGAN.BKM, SUMBER_LAPANGAN.RETUR, SUMBER_LAPANGAN.FAKTUR];
 
 /**
  * `kind` di metadata `JOURNAL_PENDING` (`{ docId, kind, reason, role }`).
@@ -65,6 +73,7 @@ export const JENIS_TERTUNDA_LAPANGAN: Readonly<Record<SumberLapangan, string>> =
   FIELD_COLLECTION: "bkm_lapangan",
   STORE_RETURN: "retur_toko",
   STORE_EXCHANGE: "tukar_barang",
+  STORE_INVOICE: "faktur_piutang",
 };
 
 export function sumberDariJenisTertunda(kind: string): SumberLapangan | null {
@@ -163,6 +172,28 @@ export function keBarisJurnal(baris: readonly BarisBertanda[]): AutoJournalLine[
 
 const PUTUS: KanalJurnal = KANAL_JURNAL.PUTUS;
 
+// ── Kunci penyesuaian stok yang dibaca jurnal ───────────────────────────────
+
+/** Kunci penyesuaian stok pengiriman putus (`consumeFieldSalesOrderPartial`). */
+export function kunciStokPengiriman(orderNo: string, deliveryId: string, orderLineId: string): string {
+  return `fieldsales-${orderNo}-delivery-${deliveryId}-line-${orderLineId}`;
+}
+
+/** Kunci konsumsi lama saat disetujui (sebelum ada pengiriman bertahap; nota backfill). */
+export function kunciStokPersetujuan(orderNo: string, orderLineId: string): string {
+  return `fieldsales-${orderNo}-consume-line-${orderLineId}`;
+}
+
+/**
+ * Kunci penyesuaian stok barang retur toko LAYAK yang masuk lagi ke stok jual,
+ * satu per baris hitungan gudang (`WarehouseReturnItem.id`). Jurnal retur
+ * membacanya untuk tahu biaya kartu stok setiap baris; hitungan lama (sebelum
+ * kunci ini ada) dibaca lewat alasan penyesuaiannya.
+ */
+export function kunciStokReturMasuk(warehouseReturnItemId: string): string {
+  return `nri-masuk:${warehouseReturnItemId}`;
+}
+
 /** Barang keluar/masuk persediaan menurut tipenya (`peranPersediaan`), dalam sen. */
 function barisPersediaan(
   nilai: ReadonlyArray<{ tipeBarang: string | null | undefined; nilai: number }>,
@@ -218,6 +249,30 @@ const PERAN_SAH = new Set<string>(PERAN_POTONGAN_BOLEH.filter((p) => (POSTING_RO
 
 export function peranPotonganSah(v: unknown): v is (typeof PERAN_POTONGAN_BOLEH)[number] {
   return typeof v === "string" && PERAN_SAH.has(v);
+}
+
+/**
+ * Peran BAWAAN untuk jenis potongan BARU, dari namanya. Materai (bea meterai
+ * yang ditempel toko di tanda terima lalu dipotongkan dari pembayaran) adalah
+ * biaya administrasi, bukan potongan harga jual — tanpa peran ia jatuh ke
+ * potongan penjualan dan mengurangi penjualan bersih (uji akuntansi 2, temuan
+ * kecil). Keputusan sementara: `BANK_CHARGES` (biaya bank & administrasi).
+ * Jenis yang sudah ada TIDAK diubah diam-diam — keuangan mengaturnya di master.
+ */
+export function peranBawaanJenisPotongan(nama: string, cara: string): (typeof PERAN_POTONGAN_BOLEH)[number] | null {
+  if (cara === "DARI_RETUR") return null;
+  return /m[ae]t[e]?rai/i.test(nama) ? "BANK_CHARGES" : null;
+}
+
+/**
+ * Peran di formulir jenis potongan BARU saat namanya diketik: mengikuti nama
+ * selama peran yang terisi masih bawaan dari nama sebelumnya (atau kosong);
+ * peran yang dipilih orang sendiri tidak ditimpa.
+ */
+export function peranIsianJenisBaru(b: { namaLama: string; namaBaru: string; cara: string; peranSekarang: string | null }): string | null {
+  const bawaanLama = peranBawaanJenisPotongan(b.namaLama, b.cara);
+  if (b.peranSekarang !== null && b.peranSekarang !== bawaanLama) return b.peranSekarang;
+  return peranBawaanJenisPotongan(b.namaBaru, b.cara);
 }
 
 /**
@@ -330,9 +385,16 @@ export function nilaiReturBukuBesar(b: {
 /**
  * Hitungan gudang retur toko PUTUS (retur toko konsinyasi = jurnal konsinyasi):
  *   DR persediaan (layak, biaya kartu stok) + DR INVENTORY_DAMAGED (rusak/kedaluwarsa)
- *   / CR COGS
+ *   / CR COGS sebesar HPP saat barang itu DIJUAL ke toko (`hppKembali`)
+ *   ± INVENTORY_VARIANCE = selisih keduanya (kartu stok menilai barang layak
+ *     dengan harga rata-rata SAAT DIHITUNG, yang tidak digeser retur)
  *   DR SALES_RETURN (DPP fisik diakui) + DR PPN_KELUARAN / CR AR_STORE
  *   DR LOSS_EXPENSE (rugi) / CR AR_STORE
+ *
+ * HPP yang dibalik tidak boleh melebihi yang dulu dibebankan: barang yang
+ * dijual saat rata-ratanya 81.222,22 lalu kembali sesudah rata-rata naik ke
+ * 103.528,91 membalik HPP 81.222,22, bukan 103.528,91 (uji akuntansi 2, bug 6).
+ * `hppKembali` tidak diisi = sama dengan nilai barang yang masuk (tanpa selisih).
  */
 export function barisRetur(b: {
   konsinyasi: boolean;
@@ -342,6 +404,8 @@ export function barisRetur(b: {
   nilai: NilaiReturBukuBesar;
   stokLayak: ReadonlyArray<{ tipeBarang: string | null | undefined; nilai: number }>;
   nilaiRusak: number;
+  /** HPP saat dijual atas seluruh barang yang kembali (layak + rusak); null/undefined = nilai barang masuk. */
+  hppKembali?: number | null;
 }): BarisBertanda[] {
   if (b.konsinyasi) return [];
   const baris: BarisBertanda[] = [];
@@ -349,9 +413,12 @@ export function barisRetur(b: {
   const rusak = keSen(b.nilaiRusak);
   if (rusak !== 0) masuk.push({ role: "INVENTORY_DAMAGED", sen: rusak });
   const kembali = jumlahSen(masuk);
-  if (kembali !== 0) {
+  const hpp = b.hppKembali == null ? kembali : keSen(b.hppKembali);
+  if (kembali !== 0 || hpp !== 0) {
     baris.push(...masuk);
-    baris.push({ role: "COGS", sen: -kembali, channel: PUTUS, storeId: b.storeId });
+    if (hpp !== 0) baris.push({ role: "COGS", sen: -hpp, channel: PUTUS, storeId: b.storeId });
+    // Debit bila HPP saat dijual > nilai kartu stok (barang masuk lebih murah), kredit bila sebaliknya.
+    if (hpp !== kembali) baris.push({ role: "INVENTORY_VARIANCE", sen: hpp - kembali });
   }
   if (keSen(b.nilai.fisikDiakui) > 0) {
     const p = pisahPpn(b.nilai.fisikDiakui, { pengaturan: b.pengaturanPpn, tanggal: b.tanggal });
@@ -382,4 +449,41 @@ export function barisTukar(b: {
   const netto = jumlahSen(persediaan);
   if (netto === 0 && persediaan.length === 0) return [];
   return gabungBaris([...persediaan, { role: "COGS", sen: -netto, channel: PUTUS, storeId: b.storeId }]);
+}
+
+// ── Faktur piutang manual / impor ───────────────────────────────────────────
+
+/**
+ * Faktur piutang yang dijurnal SENDIRI (`STORE_INVOICE`): diketik manual atau
+ * diimpor. Bukan nota pengiriman (jurnal notanya, `FIELD_DELIVERY`), bukan
+ * faktur beban selisih retur (sudah dinetto di jurnal retur lewat
+ * `ditagihKeToko` — menjurnalnya lagi = piutang dua kali), dan bukan toko
+ * konsinyasi (tidak pernah punya piutang; baris kenari `INV/KONSI/TES`).
+ */
+export function fakturDijurnalSendiri(f: { source: string; deliveryId: string | null; note: string | null; konsinyasi: boolean }): boolean {
+  if (f.source === "DELIVERY" || f.deliveryId) return false;
+  if (idBebanDariCatatan(f.note) !== null) return false;
+  return !f.konsinyasi;
+}
+
+/**
+ * Nilai yang dijurnal = nilai faktur − yang sudah dibayar sebelum impor
+ * (`paidBeforeImport`) — persis bagian yang masih dipegang modul piutang
+ * sebagai sisa awal. Uang yang diterima sebelum impor tidak tercatat di sistem
+ * (tidak diketahui masuk kas atau bank), jadi tidak ditebak di sini
+ * (keputusan sementara, laporan perbaikan uji akuntansi 2).
+ */
+export function nilaiFakturDijurnal(f: { amount: number; paidBeforeImport: number }): number {
+  return Math.max(0, keSen(f.amount) - keSen(f.paidBeforeImport)) / 100;
+}
+
+/**
+ * Faktur piutang manual/impor:
+ *   DR AR_STORE (toko) / CR SALES_REVENUE (DPP, kanal PUTUS, toko) / CR PPN_KELUARAN
+ * Sama dengan sisi piutang nota tagihan (`barisNota`), TANPA HPP: tidak ada
+ * barang yang keluar dari kartu stok untuk faktur yang diketik (keputusan
+ * sementara — HPP barangnya tidak diketahui sistem).
+ */
+export function barisFaktur(b: { total: number; storeId: string; tanggal: Date; pengaturanPpn: PengaturanPpn }): BarisBertanda[] {
+  return barisNota({ ...b, hpp: [] });
 }

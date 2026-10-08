@@ -4,6 +4,7 @@ import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 import { lengkapiNilaiMasukRusak, nilaiKeluarBerikutnya, nilaiMasukRusak } from "@/lib/finance/operasional/nilai-rusak-queries";
+import { hppJualTerakhir } from "@/lib/receivables/hpp-retur";
 import {
   ENTITAS_GERAK_RUSAK,
   JEJAK_GUDANG_RUSAK,
@@ -47,6 +48,10 @@ export async function masukkanGudangRusakDariNri(
     noNri: string;
     olehUserId: string;
     baris: { id: string; itemId: string | null; variantSku: string | null; itemName: string; qty: number; condition: string }[];
+    /** Toko asal barang — nilai masuknya HPP saat dijual ke toko ini (`hppJualTerakhir`). */
+    storeId?: string | null;
+    /** Saat hitungan gudang: hanya penjualan sebelum ini yang dihitung. */
+    sebelum?: Date;
   },
 ): Promise<number> {
   const rusak = input.baris.filter(
@@ -60,9 +65,16 @@ export async function masukkanGudangRusakDariNri(
   const ada = new Set(sudah.map((s) => s.refId));
   const baru = rusak.filter((b) => !ada.has(b.id));
   if (baru.length === 0) return 0;
-  // Nilai masuk = qty × harga rata-rata barang itu sekarang — sama dengan yang didebit
-  // jurnal returnya ke `INVENTORY_DAMAGED`, supaya buku besar = nilai gudang rusak.
-  const nilai = await Promise.all(baru.map((b) => nilaiMasukRusak(tx, b.itemId, b.variantSku, b.qty)));
+  // Nilai masuk = qty × HPP saat barang itu dijual ke toko asalnya (uji akuntansi 2, bug 6),
+  // atau × harga rata-rata sekarang bila belum pernah dijual ke sana. Jurnal returnya membaca
+  // nilai ini untuk `INVENTORY_DAMAGED` DAN HPP yang dibalik, supaya buku besar = nilai gudang rusak.
+  const sebelum = input.sebelum ?? new Date();
+  const nilai = await Promise.all(
+    baru.map(async (b) => {
+      const hpp = await hppJualTerakhir(tx, { storeId: input.storeId, itemId: b.itemId, variantSku: b.variantSku, sebelum });
+      return hpp === null ? nilaiMasukRusak(tx, b.itemId, b.variantSku, b.qty) : Math.round(Math.abs(b.qty) * hpp * 100) / 100;
+    }),
+  );
   await tx.damagedStockMovement.createMany({
     data: baru.map((b, i) => ({
       itemId: b.itemId,

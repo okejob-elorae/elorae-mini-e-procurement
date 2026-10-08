@@ -163,6 +163,7 @@ export const ENTRI: EntriBantuan[] = [
       { kunci: "jenisPotongan.explain" },
       "Jenis dengan cara Dari retur wajib ditautkan ke nota retur, sehingga nilainya ditahan sampai gudang selesai menghitung. Halaman ini butuh izin mengelola piutang.",
       "Akun jurnal menentukan peran akun yang didebit saat BKM dengan potongan ini diverifikasi keuangan: potongan penjualan, PPh 23 atau PPh 22 dibayar dimuka (pajak yang dipotong toko), biaya bank, atau kerugian. Otomatis berarti potongan penjualan, atau PPh 23 dibayar dimuka untuk jenis yang khusus toko PKP. Potongan Dari retur tidak memakai pilihan ini: piutangnya sudah dikurangi jurnal retur saat gudang menghitung barangnya.",
+      "Kolom Akun jurnal di daftar menunjukkan akun yang berlaku untuk setiap jenis, termasuk yang otomatis, supaya terlihat potongan mana yang mengurangi penjualan. Jenis baru bernama materai/meterai langsung diisi biaya bank & administrasi (bea meterai adalah biaya, bukan potongan harga); bisa diganti sebelum disimpan. Jenis yang sudah ada tidak diubah otomatis — atur akunnya di sini.",
     ],
   },
   {

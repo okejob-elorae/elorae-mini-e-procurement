@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { prisma } from '@elorae/db';
 import { cariTeks } from "@/lib/db/cari-teks";
 import { generateDocNumber } from '@/lib/docNumber';
-import { reverseInventoryValue } from '@/lib/inventory/costing';
+import { cariBarisStok, reverseInventoryValue } from '@/lib/inventory/costing';
 import { getActorName, notifyVendorReturnCreated, notifyVendorReturnStatusUpdated } from '@/app/actions/notifications';
 import { getEffectiveHPPForItem } from '@/app/actions/hpp';
 import { auth } from '@/lib/auth';
@@ -232,10 +232,8 @@ export async function createVendorReturn(
           const avgCost = hpp?.materialCostPerUnit ?? hpp?.avgCostPerUnit ?? 0;
           costValue = avgCost * line.qty;
         } else {
-          const variantKey = (line.variantSku ?? '') as string;
-          const inventory = await tx.inventoryValue.findUnique({
-            where: { itemId_variantSku: { itemId: line.itemId, variantSku: variantKey } }
-          });
+          // Toleran null/"": baris bahan tanpa varian disimpan ber-NULL.
+          const inventory = await cariBarisStok(tx, line.itemId, line.variantSku ?? null);
           const avgCost = inventory
             ? new Decimal(inventory.avgCost.toString())
             : new Decimal(0);
@@ -352,10 +350,8 @@ export async function updateVendorReturn(
           const avgCost = hpp?.materialCostPerUnit ?? hpp?.avgCostPerUnit ?? 0;
           costValue = avgCost * line.qty;
         } else {
-          const variantKey = (line.variantSku ?? '') as string;
-          const inventory = await tx.inventoryValue.findUnique({
-            where: { itemId_variantSku: { itemId: line.itemId, variantSku: variantKey } }
-          });
+          // Toleran null/"": baris bahan tanpa varian disimpan ber-NULL.
+          const inventory = await cariBarisStok(tx, line.itemId, line.variantSku ?? null);
           const avgCost = inventory
             ? new Decimal(inventory.avgCost.toString())
             : new Decimal(0);
@@ -617,17 +613,20 @@ async function prosesReturDalamTransaksi(id: string, userId: string) {
           // Hanya penolakan stok yang diterjemahkan; galat basis data (mis. konflik
           // serializable) dilempar apa adanya supaya transaksinya diulang.
           if (!(error instanceof Error) || !PESAN_STOK_KURANG.has(error.message)) throw error;
-          const stok = await tx.inventoryValue.findUnique({
-            where: { itemId_variantSku: { itemId: line.itemId, variantSku: variantKey ?? '' } },
-            select: { qtyOnHand: true },
-          });
+          const stok = await cariBarisStok(tx, line.itemId, variantKey);
           throw new ReturDitolak('STOK_KURANG', {
             barang: await namaBarang(tx, line.itemId),
             perlu: parsedQty,
             ada: stok ? Number(stok.qtyOnHand) : 0,
           });
         }
-        const outgoingValue = qty.mul(unitCost);
+        // Gerakan mencatat nilai yang BENAR-BENAR keluar dari kartu stok (rata-rata
+        // saat diproses), bukan perkiraan saat retur dibuat: jurnal retur
+        // mengkredit persediaan sebesar `totalCost` ini. Draf yang dibuat dengan
+        // nilai 0 (dulu: bahan tanpa varian tidak ditemukan) tidak lagi keluar
+        // tanpa nilai.
+        const outgoingValue = costResult.outgoingValue;
+        const unitCostKeluar = outgoingValue.div(qty);
         await tx.stockMovement.create({
           data: {
             itemId: line.itemId,
@@ -637,7 +636,7 @@ async function prosesReturDalamTransaksi(id: string, userId: string) {
             refId: ret.id,
             refDocNumber: ret.docNumber,
             qty: -parsedQty,
-            unitCost: unitCost.toNumber(),
+            unitCost: unitCostKeluar.toNumber(),
             totalCost: outgoingValue.toNumber(),
             balanceQty: costResult.newQty.toNumber(),
             balanceValue: costResult.newTotalValue.toNumber(),

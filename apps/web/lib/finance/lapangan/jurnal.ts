@@ -4,14 +4,21 @@ import { bacaPengaturanPpn } from "@/lib/finance/pajak/ppn-pengaturan";
 import { readGlCutover } from "@/lib/finance/sales/sweep";
 import { potonganRetur } from "@/lib/receivables/deductions";
 import { idBebanDariCatatan, penandaBebanRetur } from "@/lib/receivables/penanda-beban";
+import { hppJualTerakhir } from "@/lib/receivables/hpp-retur";
 import { returTertahan } from "@/lib/receivables/rules";
 import {
+  barisFaktur,
   barisKlaim,
   barisNota,
   barisRetur,
   barisTukar,
+  fakturDijurnalSendiri,
   gabungBaris,
   keBarisJurnal,
+  kunciStokPengiriman,
+  kunciStokPersetujuan,
+  kunciStokReturMasuk,
+  nilaiFakturDijurnal,
   nilaiReturBukuBesar,
   peranPotongan,
   SUMBER_LAPANGAN,
@@ -71,15 +78,8 @@ function dariSelaras(r: HasilSelaras, adaCutover: boolean): HasilJurnalLapangan 
 
 // ── Nota tagihan putus (sekali posting) ─────────────────────────────────────
 
-/** Kunci penyesuaian stok pengiriman putus (`consumeFieldSalesOrderPartial`). */
-export function kunciStokPengiriman(orderNo: string, deliveryId: string, orderLineId: string): string {
-  return `fieldsales-${orderNo}-delivery-${deliveryId}-line-${orderLineId}`;
-}
-
-/** Kunci konsumsi lama saat disetujui (sebelum ada pengiriman bertahap; nota backfill). */
-export function kunciStokPersetujuan(orderNo: string, orderLineId: string): string {
-  return `fieldsales-${orderNo}-consume-line-${orderLineId}`;
-}
+// Kunci penyesuaian stok tinggal di `aturan.ts` (murni) — dipakai juga penilai HPP retur.
+export { kunciStokPengiriman, kunciStokPersetujuan };
 
 export type BahanNota = {
   docNo: string;
@@ -337,8 +337,15 @@ export async function bacaNilaiReturBanyak(client: Klien, nriIds: string[]): Pro
 
 export type BahanRetur = NilaiRetur & {
   stokLayak: { tipeBarang: string | null; nilai: number }[];
-  /** Barang rusak/kedaluwarsa ber-barang katalog: biaya rata-rata saat dibaca. */
+  /** Barang rusak/kedaluwarsa ber-barang katalog: nilai masuk gudang rusak (HPP saat dijual, atau rata-rata). */
   rusak: number;
+  /**
+   * HPP yang dibalik atas SEMUA barang yang kembali (layak + rusak): HPP saat
+   * barang itu dijual ke toko ini (`hppJualTerakhir`) untuk baris layak yang
+   * biaya kartu stoknya diketahui per baris (`kunciStokReturMasuk`); selain itu
+   * sebesar nilai masuknya. Selisihnya dengan nilai masuk = `INVENTORY_VARIANCE`.
+   */
+  hppKembali: number;
 };
 
 /** Data satu hitungan gudang untuk jurnalnya. */
@@ -354,9 +361,10 @@ export async function bacaBahanRetur(client: Klien, nriId: string): Promise<Baha
   const stok = nilai.final
     ? await client.stockAdjustment.findMany({
         where: { source: "STORE_RETURN_RECEIVE", reason: { startsWith: `Retur toko ${nri.noNri} — ` } },
-        select: { qtyChange: true, prevAvgCost: true, item: { select: { type: true } } },
+        select: { qtyChange: true, prevAvgCost: true, idempotencyKey: true, item: { select: { type: true } } },
       })
     : [];
+  const stokLayak = stok.map((s) => ({ tipeBarang: s.item.type, nilai: Math.abs(angka(s.qtyChange)) * angka(s.prevAvgCost) }));
 
   // Barang rusak: nilai gerakan masuk gudang barang rusak baris itu (`DamagedStockMovement.value`,
   // ditulis bersama hitungannya) — supaya buku besar = nilai gudang rusak; baris lama tanpa nilai:
@@ -387,10 +395,29 @@ export async function bacaBahanRetur(client: Klien, nriId: string): Promise<Baha
     }
   }
 
+  // HPP yang dibalik untuk barang layak: mulai dari nilai kartu stoknya, lalu setiap baris yang
+  // biaya kartu stoknya diketahui (kunci per baris) DAN pernah dijual ke toko ini diganti HPP saat
+  // dijual. Hitungan lama tanpa kunci per baris tetap sebesar nilai kartu stoknya (tanpa selisih).
+  let hppLayak = stokLayak.reduce((s, x) => s + x.nilai, 0);
+  if (nilai.final && nilai.storeId) {
+    const perKunci = new Map(stok.filter((s) => s.idempotencyKey).map((s) => [s.idempotencyKey!, s]));
+    const sebelum = nri.finalisedAt ?? nri.createdAt;
+    for (const i of nri.items) {
+      if (!i.itemId || !(i.qty > 0) || i.condition !== "LAYAK") continue;
+      const masuk = perKunci.get(kunciStokReturMasuk(i.id));
+      if (!masuk) continue;
+      const hppJual = await hppJualTerakhir(client, { storeId: nilai.storeId, itemId: i.itemId, variantSku: i.variantSku, sebelum });
+      if (hppJual === null) continue;
+      const qty = Math.abs(angka(masuk.qtyChange));
+      hppLayak += qty * hppJual - qty * angka(masuk.prevAvgCost);
+    }
+  }
+
   return {
     ...nilai,
-    stokLayak: stok.map((s) => ({ tipeBarang: s.item.type, nilai: Math.abs(angka(s.qtyChange)) * angka(s.prevAvgCost) })),
+    stokLayak,
     rusak,
+    hppKembali: hppLayak + rusak,
   };
 }
 
@@ -398,6 +425,17 @@ export async function bacaBahanRetur(client: Klien, nriId: string): Promise<Baha
 function rusakTerposting(terposting: readonly BarisBertanda[]): number | null {
   const sen = gabungBaris(terposting.filter((b) => b.role === "INVENTORY_DAMAGED")).reduce((s, b) => s + b.sen, 0);
   return sen === 0 ? null : sen / 100;
+}
+
+/**
+ * HPP yang sudah dibalik untuk dokumen ini (Σ kredit COGS di semua generasinya,
+ * dibekukan sejak jurnal pertama seperti biaya barang rusak). Jurnal yang
+ * diposting sebelum HPP-saat-dijual ada membawa HPP = nilai barang masuk, jadi
+ * tetap tanpa selisih — tidak ada penyesuaian diam-diam atas jurnal lama.
+ */
+function hppTerposting(terposting: readonly BarisBertanda[]): number | null {
+  const sen = gabungBaris(terposting.filter((b) => b.role === "COGS")).reduce((s, b) => s + b.sen, 0);
+  return sen === 0 ? null : -sen / 100;
 }
 
 export async function selaraskanJurnalRetur(nriId: string, postedById: string): Promise<HasilJurnalLapangan> {
@@ -416,6 +454,7 @@ export async function selaraskanJurnalRetur(nriId: string, postedById: string): 
        * hanya karena harga rata-ratanya sudah berubah.
        */
       const beku = rusakTerposting(terposting);
+      const hppBeku = hppTerposting(terposting);
       const sasaran = barisRetur({
         konsinyasi: b.konsinyasi,
         storeId: b.storeId,
@@ -424,6 +463,8 @@ export async function selaraskanJurnalRetur(nriId: string, postedById: string): 
         nilai: b.nilai,
         stokLayak: b.stokLayak,
         nilaiRusak: beku ?? b.rusak,
+        // HPP saat dijual (uji akuntansi 2, bug 6), dibekukan sejak jurnal pertama.
+        hppKembali: hppBeku ?? b.hppKembali,
       });
       return {
         sasaran,
@@ -484,6 +525,65 @@ export async function postJurnalTukar(exchangeId: string, postedById: string, cl
   return { ok: false, code: r.code, ...(r.role ? { role: r.role } : {}) };
 }
 
+// ── Faktur piutang manual / impor (diselaraskan) ────────────────────────────
+
+/**
+ * Faktur piutang yang diketik manual atau diimpor, bertanggal sejak tanggal
+ * mulai buku besar (uji akuntansi 2, bug 5 — sebelumnya tidak pernah dijurnal,
+ * jadi subbuku piutang ≠ buku besar). Faktur sebelum tanggal mulai tercakup
+ * saldo awal piutang dan tidak dijurnal di sini.
+ *
+ * Diselaraskan: faktur yang dihapus (impor dibatalkan) membalik jurnalnya
+ * lewat generasi berikutnya; nota pengiriman, faktur beban retur, dan toko
+ * konsinyasi bersasaran kosong (`fakturDijurnalSendiri`).
+ */
+export async function selaraskanJurnalFaktur(receivableId: string, postedById: string): Promise<HasilJurnalLapangan> {
+  const mulai = await readGlCutover();
+  const r = await selaraskanJurnal({
+    sourceType: SUMBER_LAPANGAN.FAKTUR,
+    entityId: receivableId,
+    postedById,
+    susun: async (tx) => {
+      const f = await tx.receivable.findUnique({
+        where: { id: receivableId },
+        select: {
+          invoiceNo: true,
+          storeId: true,
+          invoiceDate: true,
+          amount: true,
+          paidBeforeImport: true,
+          source: true,
+          deliveryId: true,
+          note: true,
+          store: { select: { name: true, termsType: true } },
+        },
+      });
+      if (!f) return { sasaran: [], bolehMulai: false, tanggal: new Date(), deskripsi: `Faktur piutang ${receivableId} (dihapus)` };
+      const dijurnal = fakturDijurnalSendiri({
+        source: f.source,
+        deliveryId: f.deliveryId,
+        note: f.note,
+        konsinyasi: f.store?.termsType === "KONSI",
+      });
+      const sasaran = dijurnal
+        ? barisFaktur({
+            total: nilaiFakturDijurnal({ amount: angka(f.amount), paidBeforeImport: angka(f.paidBeforeImport) }),
+            storeId: f.storeId,
+            tanggal: f.invoiceDate,
+            pengaturanPpn: await bacaPengaturanPpn(tx),
+          })
+        : [];
+      return {
+        sasaran,
+        bolehMulai: dijurnal && bolehMulai(mulai, f.invoiceDate),
+        tanggal: f.invoiceDate,
+        deskripsi: `Faktur piutang ${f.invoiceNo}${f.store ? ` — ${f.store.name}` : ""}`,
+      };
+    },
+  });
+  return dariSelaras(r, mulai !== null);
+}
+
 // ── Satu pintu ──────────────────────────────────────────────────────────────
 
 export function jurnalLapangan(sumber: SumberLapangan, id: string, postedById: string): Promise<HasilJurnalLapangan> {
@@ -496,5 +596,7 @@ export function jurnalLapangan(sumber: SumberLapangan, id: string, postedById: s
       return selaraskanJurnalRetur(id, postedById);
     case SUMBER_LAPANGAN.TUKAR:
       return postJurnalTukar(id, postedById);
+    case SUMBER_LAPANGAN.FAKTUR:
+      return selaraskanJurnalFaktur(id, postedById);
   }
 }

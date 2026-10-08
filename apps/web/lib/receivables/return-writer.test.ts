@@ -150,7 +150,10 @@ const tx = {
       state.penyesuaian.push(a.data);
       return {};
     }),
+    findMany: vi.fn(async () => []),
   },
+  // HPP saat dijual (`hppJualTerakhir`): tanpa penjualan sebelumnya → harga rata-rata (perilaku lama).
+  fieldSalesDeliveryLine: { findMany: vi.fn(async () => []) },
   // Buku stok toko — hanya disentuh oleh NRT dari SPG dan pembatalannya.
   storeStockMovement: {
     findFirst: vi.fn(async () => (state.bukuAda ? { id: 'g0' } : null)),

@@ -207,7 +207,8 @@ async function tulisVoucher(
     }
   }
 
-  const nomor = await generateDocNumber(DOC_TYPE_VOUCHER[siap.jenis], tx);
+  // Nomor menurut tanggal voucher (bulan WIB), bukan bulan pencatatan: BKK/2026/10/… untuk voucher 31 Oktober yang dicatat 1 November.
+  const nomor = await generateDocNumber(DOC_TYPE_VOUCHER[siap.jenis], tx, { tanggal: parseDateOnly(siap.tanggal) as Date });
   const voucher = await tx.cashVoucher.create({
     data: {
       docNumber: nomor,

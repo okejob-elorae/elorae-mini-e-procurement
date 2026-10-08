@@ -1,17 +1,25 @@
 import { describe, expect, it } from "vitest";
 import { PPN_BAWAAN, type PengaturanPpn } from "@/lib/finance/pajak/ppn";
 import {
+  barisFaktur,
   barisKlaim,
   barisNota,
   barisRetur,
   barisTukar,
   gabungBaris,
   generasiBerikutnya,
+  fakturDijurnalSendiri,
   generasiSourceId,
   idGenerasi,
   jumlahSen,
   keBarisJurnal,
+  kunciStokPengiriman,
+  kunciStokPersetujuan,
+  kunciStokReturMasuk,
+  nilaiFakturDijurnal,
   nilaiReturBukuBesar,
+  peranBawaanJenisPotongan,
+  peranIsianJenisBaru,
   peranPotongan,
   potonganReturDiakui,
   selisihBaris,
@@ -282,5 +290,128 @@ describe("tukar barang", () => {
     });
     expect(peta(b)).toEqual({ "INVENTORY_FG||": -20_000, "COGS|t1|PUTUS": 20_000 });
     expect(barisTukar({ storeId: "t1", masuk: [{ tipeBarang: "FINISHED_GOOD", nilai: 5 }], keluar: [{ tipeBarang: "FINISHED_GOOD", nilai: 5 }] })).toEqual([]);
+  });
+});
+
+describe("retur toko — HPP dibalik sebesar HPP saat dijual (bug 6)", () => {
+  const nol = nilaiReturBukuBesar({ nilaiFisik: 0, nilaiKlaimNota: 0, potonganDiakui: 0, ditagihKeToko: 0 });
+
+  it("kemeja M layak: persediaan sebesar kartu stok (103.528,91), HPP dibalik sebesar saat dijual (81.222,22), selisih ke INVENTORY_VARIANCE", () => {
+    const baris = barisRetur({
+      konsinyasi: false,
+      storeId: "t1",
+      tanggal: HARI,
+      pengaturanPpn: NON_PKP,
+      nilai: nol,
+      stokLayak: [{ tipeBarang: "FINISHED_GOOD", nilai: 103_528.91 }],
+      nilaiRusak: 0,
+      hppKembali: 81_222.22,
+    });
+    expect(peta(baris)).toEqual({
+      "INVENTORY_FG||": 103_528.91,
+      "COGS|t1|PUTUS": -81_222.22,
+      "INVENTORY_VARIANCE||": -22_306.69,
+    });
+    expect(jumlahSen(baris)).toBe(0);
+  });
+
+  it("kemeja M rusak dinilai HPP saat dijual: tanpa selisih", () => {
+    const baris = barisRetur({
+      konsinyasi: false,
+      storeId: "t1",
+      tanggal: HARI,
+      pengaturanPpn: NON_PKP,
+      nilai: nol,
+      stokLayak: [],
+      nilaiRusak: 81_222.22,
+      hppKembali: 81_222.22,
+    });
+    expect(peta(baris)).toEqual({ "INVENTORY_DAMAGED||": 81_222.22, "COGS|t1|PUTUS": -81_222.22 });
+  });
+
+  it("HPP saat dijual lebih tinggi dari kartu stok → selisih DIDEBIT; tanpa hppKembali = perilaku lama (HPP = nilai barang masuk)", () => {
+    const naik = barisRetur({
+      konsinyasi: false,
+      storeId: "t1",
+      tanggal: HARI,
+      pengaturanPpn: NON_PKP,
+      nilai: nol,
+      stokLayak: [{ tipeBarang: "FINISHED_GOOD", nilai: 50_000 }],
+      nilaiRusak: 0,
+      hppKembali: 60_000,
+    });
+    expect(peta(naik)).toEqual({ "INVENTORY_FG||": 50_000, "COGS|t1|PUTUS": -60_000, "INVENTORY_VARIANCE||": 10_000 });
+    const lama = barisRetur({
+      konsinyasi: false,
+      storeId: "t1",
+      tanggal: HARI,
+      pengaturanPpn: NON_PKP,
+      nilai: nol,
+      stokLayak: [{ tipeBarang: "FINISHED_GOOD", nilai: 50_000 }],
+      nilaiRusak: 20_000,
+    });
+    expect(peta(lama)).toEqual({ "INVENTORY_FG||": 50_000, "INVENTORY_DAMAGED||": 20_000, "COGS|t1|PUTUS": -70_000 });
+  });
+
+  it("kunci penyesuaian stok: pengiriman, persetujuan lama, dan barang retur yang masuk per baris NRI", () => {
+    expect(kunciStokPengiriman("PUTUS/1", "d1", "l1")).toBe("fieldsales-PUTUS/1-delivery-d1-line-l1");
+    expect(kunciStokPersetujuan("PUTUS/1", "l1")).toBe("fieldsales-PUTUS/1-consume-line-l1");
+    expect(kunciStokReturMasuk("w1")).toBe("nri-masuk:w1");
+  });
+});
+
+describe("faktur piutang manual/impor (bug 5)", () => {
+  it("dijurnal sendiri hanya bila bukan nota pengiriman, bukan faktur beban retur, dan bukan toko konsinyasi", () => {
+    expect(fakturDijurnalSendiri({ source: "MANUAL", deliveryId: null, note: null, konsinyasi: false })).toBe(true);
+    expect(fakturDijurnalSendiri({ source: "IMPORT", deliveryId: null, note: "catatan biasa", konsinyasi: false })).toBe(true);
+    expect(fakturDijurnalSendiri({ source: "DELIVERY", deliveryId: "d1", note: null, konsinyasi: false })).toBe(false);
+    // Nota tagihan lama yang sumbernya tertulis lain tetapi menunjuk pengiriman: jurnal notanya yang berlaku.
+    expect(fakturDijurnalSendiri({ source: "MANUAL", deliveryId: "d1", note: null, konsinyasi: false })).toBe(false);
+    expect(fakturDijurnalSendiri({ source: "MANUAL", deliveryId: null, note: "Selisih retur NRT-1 ditanggung toko. [beban-retur:c1]", konsinyasi: false })).toBe(false);
+    expect(fakturDijurnalSendiri({ source: "MANUAL", deliveryId: null, note: null, konsinyasi: true })).toBe(false);
+  });
+
+  it("nilai yang dijurnal = nilai faktur dikurangi yang dibayar sebelum impor, tidak pernah negatif", () => {
+    expect(nilaiFakturDijurnal({ amount: 2_220_000, paidBeforeImport: 0 })).toBe(2_220_000);
+    expect(nilaiFakturDijurnal({ amount: 1_250_000.75, paidBeforeImport: 250_000.5 })).toBe(1_000_000.25);
+    expect(nilaiFakturDijurnal({ amount: 100, paidBeforeImport: 300 })).toBe(0);
+  });
+
+  it("DR piutang toko / CR penjualan (kanal PUTUS, toko); PKP memisahkan PPN keluaran; tanpa HPP", () => {
+    expect(peta(barisFaktur({ total: 2_220_000, storeId: "t1", tanggal: HARI, pengaturanPpn: NON_PKP }))).toEqual({
+      "AR_STORE|t1|": 2_220_000,
+      "SALES_REVENUE|t1|PUTUS": -2_220_000,
+    });
+    expect(peta(barisFaktur({ total: 1_110_000, storeId: "t1", tanggal: HARI, pengaturanPpn: PKP }))).toEqual({
+      "AR_STORE|t1|": 1_110_000,
+      "SALES_REVENUE|t1|PUTUS": -1_000_000,
+      "PPN_KELUARAN||": -110_000,
+    });
+    expect(barisFaktur({ total: 0, storeId: "t1", tanggal: HARI, pengaturanPpn: NON_PKP })).toEqual([]);
+  });
+});
+
+describe("jenis potongan materai (temuan kecil uji akuntansi 2)", () => {
+  it("materai/meterai bawaannya biaya bank & administrasi, bukan potongan penjualan; jenis lain dan potongan retur tanpa bawaan", () => {
+    for (const nama of ["Materai", "meterai", "Bea meterai 10.000", "Biaya materai"]) {
+      expect(peranBawaanJenisPotongan(nama, "NOMINAL")).toBe("BANK_CHARGES");
+    }
+    expect(peranBawaanJenisPotongan("Materai", "DARI_RETUR")).toBeNull();
+    expect(peranBawaanJenisPotongan("Potongan promosi", "NOMINAL")).toBeNull();
+    expect(peranBawaanJenisPotongan("Lain-lain", "PERSEN")).toBeNull();
+    // Peran bawaan memang peran yang boleh dipilih di master.
+    expect(peranPotongan({ postingRole: peranBawaanJenisPotongan("Materai", "NOMINAL"), pkpOnly: false })).toBe("BANK_CHARGES");
+  });
+
+  it("formulir jenis BARU mengikuti nama selama peran belum dipilih sendiri; pilihan orang tidak ditimpa", () => {
+    expect(peranIsianJenisBaru({ namaLama: "", namaBaru: "Materai", cara: "NOMINAL", peranSekarang: null })).toBe("BANK_CHARGES");
+    expect(peranIsianJenisBaru({ namaLama: "Materai", namaBaru: "Materai 10rb", cara: "NOMINAL", peranSekarang: "BANK_CHARGES" })).toBe("BANK_CHARGES");
+    expect(peranIsianJenisBaru({ namaLama: "Materai", namaBaru: "Mat", cara: "NOMINAL", peranSekarang: "BANK_CHARGES" })).toBeNull();
+    expect(peranIsianJenisBaru({ namaLama: "Mat", namaBaru: "Materai", cara: "NOMINAL", peranSekarang: "LOSS_EXPENSE" })).toBe("LOSS_EXPENSE");
+  });
+
+  it("peran yang berlaku untuk ditampilkan di master: dipilih, atau otomatis", () => {
+    expect(peranPotongan({ postingRole: null, pkpOnly: false })).toBe("SALES_DISCOUNT");
+    expect(peranPotongan({ postingRole: null, pkpOnly: true })).toBe("PPH23_PREPAID");
   });
 });

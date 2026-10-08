@@ -161,4 +161,37 @@ d("penomoran dokumen (test bed only)", () => {
     await seedPenyesuaian(nomorAda);
     await expect(nomorSudahTerpakai(prisma, "ADJ", nomorAda)).resolves.toBe(true);
   });
+
+  it("nomor menurut tanggal DOKUMEN (bulan WIB), bukan bulan pencatatan; kembali ke bulan berjalan tanpa tabrakan", async () => {
+    // Voucher bertanggal 31 Okt dicatat 1 Nov dulu bernomor BKK/…/11/…. CASHOUT: penghitung dikembalikan bila tidak disentuh orang lain.
+    await generateDocNumber("CASHOUT");
+    const sebelum = await prisma.docNumberConfig.findUniqueOrThrow({ where: { docType: "CASHOUT" } });
+    let akhir: { year: number; month: number; lastNumber: number } | null = null;
+    try {
+      const maret = await generateDocNumber("CASHOUT", undefined, { tanggal: new Date("2002-03-31T20:00:00+07:00") });
+      expect(maret.startsWith("BKK/2002/03/")).toBe(true);
+      // 31 Mar 17:30 UTC = 1 Apr 00:30 WIB.
+      const april = await prisma.$transaction((tx) => generateDocNumber("CASHOUT", tx, { tanggal: new Date("2002-03-31T17:30:00.000Z") }));
+      expect(april.startsWith("BKK/2002/04/")).toBe(true);
+      // Tanpa tanggal: bulan berjalan seperti dulu.
+      const kini = new Date();
+      const awalan = `BKK/${kini.getFullYear()}/${String(kini.getMonth() + 1).padStart(2, "0")}/`;
+      const biasa = await generateDocNumber("CASHOUT");
+      expect(biasa.startsWith(awalan)).toBe(true);
+      // Kembali ke bulan berjalan: lanjut SESUDAH nomor terbesar yang sudah dipakai, tidak mengisi celah di bawahnya.
+      const terpakai = await prisma.cashVoucher.findMany({ where: { docNumber: { startsWith: awalan } }, select: { docNumber: true } });
+      const terbesar = Math.max(0, ...terpakai.map((v) => urai(v.docNumber).angka));
+      expect(urai(biasa).angka).toBeGreaterThan(terbesar);
+      const r = await prisma.docNumberConfig.findUniqueOrThrow({ where: { docType: "CASHOUT" } });
+      akhir = { year: r.year, month: r.month, lastNumber: r.lastNumber };
+    } finally {
+      const kini = await prisma.docNumberConfig.findUniqueOrThrow({ where: { docType: "CASHOUT" } });
+      if (akhir && kini.year === akhir.year && kini.month === akhir.month && kini.lastNumber === akhir.lastNumber && sebelum.year === akhir.year && sebelum.month === akhir.month) {
+        await prisma.docNumberConfig.updateMany({
+          where: { docType: "CASHOUT", lastNumber: akhir.lastNumber },
+          data: { lastNumber: Math.max(sebelum.lastNumber, 0) },
+        });
+      }
+    }
+  });
 });

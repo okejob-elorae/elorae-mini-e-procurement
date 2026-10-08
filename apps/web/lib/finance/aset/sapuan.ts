@@ -4,23 +4,28 @@
 import { prisma } from "@elorae/db";
 import { daftarkanSumberSapuan, type DokumenTanpaJurnal, type OpsiCariSapuan } from "@/lib/finance/sapuan/registri";
 import { dokumenJurnal, tandaiJurnalTertundaSelesai } from "@/lib/finance/jurnal-tertunda";
-import { bulanWib, deretBulan, kunciBulan, STATUS_PERIODE } from "@/lib/finance/periode/periode";
+import { bulanWib, deretBulan, kunciBulan, rentangBulan, STATUS_PERIODE } from "@/lib/finance/periode/periode";
 import { bacaIdSumberPenyusutan, idSumberPenyusutan, STATUS_ASET, SUMBER_ASET } from "./aturan";
 import { bulanDisusutkan, catatPenyusutanTertunda, PILIH_ASET_SUSUT, postingPenyusutanSatu, tanggalPenyusutan } from "./penyusutan";
 
 /**
  * Bulan aset yang SEHARUSNYA sudah disusutkan tetapi belum punya baris
  * penyusutan: tanggal penyusutannya (hari terakhir bulan) di [sejak, sampai],
+ * bulannya sudah BERAKHIR (akhir bulan ≤ `sampai` dan sebelum sekarang —
+ * bulan berjalan tidak pernah diposting, `BELUM_BERAKHIR`),
  * dalam masa manfaat, sebelum bulan pelepasan, dan bulannya TIDAK ditutup
  * (bulan tertutup tidak bisa diposting — jumlahnya disusulkan bulan terbuka
  * berikutnya, jadi bukan "terlewat"). Dokumen = `<aset>/<YYYY-MM>`.
  */
 export async function cariPenyusutanTanpaJurnal(opsi: OpsiCariSapuan): Promise<DokumenTanpaJurnal[]> {
   const batas = Math.max(1, Math.floor(opsi.batas));
-  if (opsi.sampai.getTime() < opsi.sejak.getTime()) return [];
+  if (opsi.sampai.getTime() < opsi.sejak.getTime() || opsi.ids?.length === 0) return [];
+  const izinkan = opsi.ids ? new Set(opsi.ids) : null;
+  const sekarang = Date.now();
   const bulan = deretBulan(bulanWib(opsi.sejak), bulanWib(opsi.sampai)).filter((tb) => {
     const t = tanggalPenyusutan(tb).getTime();
-    return t >= opsi.sejak.getTime() && t <= opsi.sampai.getTime();
+    const akhir = rentangBulan(tb).akhir.getTime();
+    return t >= opsi.sejak.getTime() && akhir <= opsi.sampai.getTime() && akhir < sekarang;
   });
   if (!bulan.length) return [];
   const periode = bulan.map(kunciBulan);
@@ -49,7 +54,9 @@ export async function cariPenyusutanTanpaJurnal(opsi: OpsiCariSapuan): Promise<D
     for (const a of aset) {
       if (a.depreciations.some((d) => d.period === p)) continue;
       if (!bulanDisusutkan(a, tb)) continue;
-      hasil.push({ id: idSumberPenyusutan(a.id, p), tanggal: tanggalPenyusutan(tb), label: `${a.code} · ${p}` });
+      const id = idSumberPenyusutan(a.id, p);
+      if (izinkan && !izinkan.has(id)) continue;
+      hasil.push({ id, tanggal: tanggalPenyusutan(tb), label: `${a.code} · ${p}` });
       if (hasil.length >= batas) return hasil;
     }
   }

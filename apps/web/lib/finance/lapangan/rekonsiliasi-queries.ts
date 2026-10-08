@@ -92,6 +92,15 @@ export async function rekonsiliasiPiutangToko(opsi: { storeIds?: string[] } = {}
       })
     ).map((j) => j.sourceId),
   );
+  // Faktur manual/impor yang sudah punya jurnal `STORE_INVOICE` sendiri (generasi pertama = id faktur).
+  const fakturBerjurnal = new Set(
+    (
+      await prisma.journal.findMany({
+        where: { sourceType: SUMBER_LAPANGAN.FAKTUR, sourceId: { in: detail.filter((d) => !d.deliveryId).map((d) => d.id) } },
+        select: { sourceId: true },
+      })
+    ).map((j) => j.sourceId),
+  );
 
   type Akumulasi = { nama: string; modul: number; diLuar: number; jumlah: number; kredit: number };
   const per = new Map<string, Akumulasi>();
@@ -111,7 +120,8 @@ export async function rekonsiliasiPiutangToko(opsi: { storeIds?: string[] } = {}
     const d = detailPer.get(p.id);
     const lewatJurnalNota = d?.deliveryId ? notaBerjurnal.has(d.deliveryId) : false;
     const fakturBeban = d?.source === "MANUAL" && idBebanDariCatatan(d.note) !== null;
-    if (!lewatJurnalNota && !fakturBeban) a.diLuar += sisa;
+    const lewatJurnalFaktur = d ? fakturBerjurnal.has(d.id) : false;
+    if (!lewatJurnalNota && !fakturBeban && !lewatJurnalFaktur) a.diLuar += sisa;
   }
 
   // Kredit retur yang belum dipotong toko, per toko.

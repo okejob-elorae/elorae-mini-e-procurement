@@ -3,15 +3,15 @@ import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { PPN_BAWAAN } from "@/lib/finance/pajak/ppn";
 import { readGlCutover } from "@/lib/finance/sales/sweep";
 import { daftarkanSumberSapuan, type DokumenTanpaJurnal, type OpsiCariSapuan } from "@/lib/finance/sapuan/registri";
-import { barisKlaim, barisRetur, peranPotongan, SUMBER_LAPANGAN, type SumberLapangan } from "./aturan";
+import { barisKlaim, barisRetur, barisTukar, peranPotongan, SUMBER_LAPANGAN, type SumberLapangan } from "./aturan";
 import { bacaBahanRetur } from "./jurnal";
 import { postingJurnalLapanganAman } from "./tertunda";
 
 /*
  * Pencari "dokumen lapangan tanpa jurnal" untuk sapuan terjadwal (registri
  * `lib/finance/sapuan/registri.ts`) dan layar Rekonsiliasi piutang. Setiap
- * pencari menghormati `sejak`/`sampai`/`batas`, tidak pernah menyapu sebelum
- * tanggal mulai buku besar (dokumen sebelum itu masuk saldo awal), dan
+ * pencari menghormati `sejak`/`sampai`/`batas`/`ids`, tidak pernah menyapu
+ * sebelum tanggal mulai buku besar (dokumen sebelum itu masuk saldo awal), dan
  * mengembalikan [] bila tanggal mulai belum ditetapkan.
  *
  * "Tanpa jurnal" = belum punya jurnal GENERASI PERTAMA (sourceId = id dokumen).
@@ -24,6 +24,11 @@ const HALAMAN = 100;
 
 type Kandidat = { id: string; tanggal: Date; label: string };
 
+/** Saringan cakupan (`opsi.ids`) untuk `where` Prisma — diterapkan di kueri, sebelum batas. */
+function saringId(opsi: OpsiCariSapuan): { id?: { in: string[] } } {
+  return opsi.ids ? { id: { in: [...opsi.ids] } } : {};
+}
+
 /** Ambil kandidat per halaman sampai `batas` dokumen tanpa jurnal terkumpul. */
 async function kumpulkan(
   sourceType: SumberLapangan,
@@ -32,7 +37,7 @@ async function kumpulkan(
   saring: (k: Kandidat[]) => Promise<Kandidat[]> = async (k) => k,
 ): Promise<DokumenTanpaJurnal[]> {
   const mulai = await readGlCutover();
-  if (!mulai || opsi.batas <= 0) return [];
+  if (!mulai || opsi.batas <= 0 || opsi.ids?.length === 0) return [];
   const sejak = opsi.sejak.getTime() < mulai.getTime() ? mulai : opsi.sejak;
   if (sejak.getTime() > opsi.sampai.getTime()) return [];
   const hasil: DokumenTanpaJurnal[] = [];
@@ -60,7 +65,7 @@ export function cariNotaTanpaJurnal(opsi: OpsiCariSapuan): Promise<DokumenTanpaJ
   return kumpulkan(SUMBER_LAPANGAN.NOTA, opsi, async (lewati, ambil, sejak) =>
     (
       await prisma.fieldSalesDelivery.findMany({
-        where: { invoiceDate: { gte: sejak, lte: opsi.sampai }, order: { orderType: "PUTUS" } },
+        where: { invoiceDate: { gte: sejak, lte: opsi.sampai }, order: { orderType: "PUTUS" }, ...saringId(opsi) },
         orderBy: [{ invoiceDate: "asc" }, { id: "asc" }],
         skip: lewati,
         take: ambil,
@@ -77,7 +82,7 @@ export function cariKlaimTanpaJurnal(opsi: OpsiCariSapuan): Promise<DokumenTanpa
     opsi,
     async (lewati, ambil, sejak) => {
       const rows = await prisma.paymentClaim.findMany({
-        where: { status: "TERVERIFIKASI", verifiedAt: { gte: sejak, lte: opsi.sampai }, store: { termsType: { not: "KONSI" } } },
+        where: { status: "TERVERIFIKASI", verifiedAt: { gte: sejak, lte: opsi.sampai }, store: { termsType: { not: "KONSI" } }, ...saringId(opsi) },
         orderBy: [{ verifiedAt: "asc" }, { id: "asc" }],
         skip: lewati,
         take: ambil,
@@ -114,7 +119,7 @@ export function cariReturTanpaJurnal(opsi: OpsiCariSapuan): Promise<DokumenTanpa
     async (lewati, ambil, sejak) =>
       (
         await prisma.warehouseReturn.findMany({
-          where: { status: "FINAL", finalisedAt: { gte: sejak, lte: opsi.sampai } },
+          where: { status: "FINAL", finalisedAt: { gte: sejak, lte: opsi.sampai }, ...saringId(opsi) },
           orderBy: [{ finalisedAt: "asc" }, { id: "asc" }],
           skip: lewati,
           take: ambil,
@@ -144,17 +149,58 @@ export function cariReturTanpaJurnal(opsi: OpsiCariSapuan): Promise<DokumenTanpa
   );
 }
 
+/**
+ * Tukar barang yang SEHARUSNYA berjurnal: biaya barang masuk ≠ biaya barang
+ * keluar (`barisTukar` tidak kosong), atau biaya salah satu barisnya belum
+ * tercatat di kartu stok (postingnya gagal `BIAYA_TIDAK_DIKETAHUI` — tetap
+ * ditampilkan supaya ditangani). Tukar yang biayanya seimbang tidak pernah
+ * berjurnal (`postJurnalTukar` → `NOTHING_TO_POST`), jadi tidak dihitung —
+ * dulu dihitung dan menahan tutup buku bulannya selamanya. Pembacaan biayanya
+ * meniru `postJurnalTukar` (biaya = |qty| × `prevAvgCost` penyesuaian stok
+ * ber-kunci `tukar:<baris>`); bila penulisnya berubah, ubah ini juga.
+ */
 export function cariTukarTanpaJurnal(opsi: OpsiCariSapuan): Promise<DokumenTanpaJurnal[]> {
-  return kumpulkan(SUMBER_LAPANGAN.TUKAR, opsi, async (lewati, ambil, sejak) =>
-    (
-      await prisma.storeExchange.findMany({
-        where: { status: "SELESAI", completedAt: { gte: sejak, lte: opsi.sampai } },
+  const tokoPerTukar = new Map<string, string>();
+  return kumpulkan(
+    SUMBER_LAPANGAN.TUKAR,
+    opsi,
+    async (lewati, ambil, sejak) => {
+      const rows = await prisma.storeExchange.findMany({
+        where: { status: "SELESAI", completedAt: { gte: sejak, lte: opsi.sampai }, ...saringId(opsi) },
         orderBy: [{ completedAt: "asc" }, { id: "asc" }],
         skip: lewati,
         take: ambil,
-        select: { id: true, docNo: true, completedAt: true },
-      })
-    ).map((d) => ({ id: d.id, tanggal: d.completedAt!, label: d.docNo })),
+        select: { id: true, docNo: true, completedAt: true, storeId: true },
+      });
+      for (const r of rows) tokoPerTukar.set(r.id, r.storeId);
+      return rows.map((d) => ({ id: d.id, tanggal: d.completedAt!, label: d.docNo }));
+    },
+    async (k) => {
+      if (k.length === 0) return k;
+      const baris = await prisma.storeExchangeLine.findMany({
+        where: { exchangeId: { in: k.map((x) => x.id) } },
+        select: { id: true, exchangeId: true, direction: true },
+      });
+      const stok = baris.length
+        ? await prisma.stockAdjustment.findMany({
+            where: { idempotencyKey: { in: baris.map((b) => `tukar:${b.id}`) } },
+            select: { idempotencyKey: true, qtyChange: true, prevAvgCost: true, item: { select: { type: true } } },
+          })
+        : [];
+      const perKunci = new Map(stok.map((s) => [s.idempotencyKey!, s]));
+      return k.filter((x) => {
+        const milik = baris.filter((b) => b.exchangeId === x.id);
+        if (milik.some((b) => !perKunci.has(`tukar:${b.id}`))) return true;
+        const nilai = (arah: string) =>
+          milik
+            .filter((b) => b.direction === arah)
+            .map((b) => {
+              const s = perKunci.get(`tukar:${b.id}`)!;
+              return { tipeBarang: s.item.type, nilai: Math.abs(Number(s.qtyChange)) * Number(s.prevAvgCost ?? 0) };
+            });
+        return barisTukar({ storeId: tokoPerTukar.get(x.id) ?? "", masuk: nilai("MASUK"), keluar: nilai("KELUAR") }).length > 0;
+      });
+    },
   );
 }
 

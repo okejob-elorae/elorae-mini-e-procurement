@@ -214,22 +214,39 @@ function susunNomor(row: ConfigRow): { nomor: string; awalanPeriode: string } {
 // kalau ada penulis lain yang terus menyisipkan nomor berformat sama.
 const BATAS_PERCOBAAN = 5;
 
-async function nomorBerikutnya(klien: Klien, type: DocType): Promise<string> {
+const WIB_MS = 7 * 60 * 60 * 1000;
+
+/** Tahun dan bulan penomoran: bulan WIB tanggal dokumen, atau bulan berjalan (jam server) tanpa tanggal. */
+function periodeNomor(tanggal?: Date): { tahun: number; bulan: number } {
+  if (tanggal && !Number.isNaN(tanggal.getTime())) {
+    const wib = new Date(tanggal.getTime() + WIB_MS);
+    return { tahun: wib.getUTCFullYear(), bulan: wib.getUTCMonth() + 1 };
+  }
   const now = new Date();
-  const tahun = now.getFullYear();
-  const bulan = now.getMonth() + 1;
+  return { tahun: now.getFullYear(), bulan: now.getMonth() + 1 };
+}
+
+async function nomorBerikutnya(klien: Klien, type: DocType, tanggal?: Date): Promise<string> {
+  const { tahun, bulan } = periodeNomor(tanggal);
   await pastikanKonfigurasi(klien, type, tahun, bulan);
 
   for (let percobaan = 0; percobaan < BATAS_PERCOBAAN; percobaan++) {
     const row = await naikkanPenghitung(klien, type, tahun, bulan);
     const { nomor, awalanPeriode } = susunNomor(row);
-    if (!(await nomorSudahTerpakai(klien, type, nomor))) return nomor;
+    /*
+     * Angka 1 = penghitung baru (kembali) masuk periode ini — awal bulan, atau
+     * dokumen bertanggal mundur memindahkannya ke bulan lain lalu kembali.
+     * Lanjutkan dari nomor terbesar yang sudah dipakai periode ini, bukan
+     * mengisi celah di bawahnya (nomor terbit tetap urut menurut waktu).
+     */
+    const terbesarAwal = row.lastNumber === 1 ? await angkaTerbesarTerpakai(klien, type, awalanPeriode) : 0;
+    if (terbesarAwal === 0 && !(await nomorSudahTerpakai(klien, type, nomor))) return nomor;
 
     // Nomor ini sudah dipakai data di luar penghitung: lompati SEMUA nomor
     // terpakai di periode ini sekaligus. GREATEST + baris penghitung yang masih
     // terkunci oleh UPDATE di atas → atomik; syarat tahun/bulan mencegah
     // menimpa penghitung yang baru saja direset ke periode lain.
-    const terbesar = await angkaTerbesarTerpakai(klien, type, awalanPeriode);
+    const terbesar = terbesarAwal || (await angkaTerbesarTerpakai(klien, type, awalanPeriode));
     await eksekusiMentah(klien, Prisma.sql`
       UPDATE ${sqlId("DocNumberConfig")}
       SET ${sqlId("lastNumber")} = GREATEST(${sqlId("lastNumber")}, ${terbesar})
@@ -247,10 +264,17 @@ async function nomorBerikutnya(klien: Klien, type: DocType): Promise<string> {
  * Tanpa `tx`, generator membuka transaksinya sendiri: UPDATE lalu SELECT di
  * luar transaksi membiarkan pemanggil paralel membaca angka milik pemanggil
  * lain (terukur: 12 panggilan paralel → 5 nomor unik).
+ *
+ * `opsi.tanggal` = tanggal DOKUMEN: periode nomornya bulan WIB tanggal itu,
+ * bukan bulan pencatatan (voucher bertanggal 31 Oktober yang dicatat 1
+ * November tetap BKK/…/10/…). Penghitung menyimpan satu periode; berpindah
+ * periode mereset ke 1 dan nomor yang sudah dipakai di periode itu dilompati
+ * (lihat `nomorBerikutnya`), jadi dokumen mundur tanggal tidak pernah
+ * bertabrakan. Tanpa tanggal: bulan berjalan seperti sebelumnya.
  */
-export async function generateDocNumber(type: DocType, tx?: any): Promise<string> {
-  if (tx) return nomorBerikutnya(tx as Klien, type);
-  return prisma.$transaction((t) => nomorBerikutnya(t, type));
+export async function generateDocNumber(type: DocType, tx?: any, opsi: { tanggal?: Date } = {}): Promise<string> {
+  if (tx) return nomorBerikutnya(tx as Klien, type, opsi.tanggal);
+  return prisma.$transaction((t) => nomorBerikutnya(t, type, opsi.tanggal));
 }
 
 // Generate supplier code (not using document number table)

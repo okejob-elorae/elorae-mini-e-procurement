@@ -9,6 +9,7 @@ import type { DokumenTanpaJurnal, OpsiCariSapuan } from "./registri";
  *
  * `tanggal` dan `syarat` adalah potongan SQL atas alias `d` (tabel sumber);
  * identifier ditulis lewat `sqlId` supaya sama di MariaDB dan Postgres.
+ * `opsi.ids` (cakupan) masuk ke WHERE, sebelum LIMIT.
  */
 export async function cariTanpaJurnalSql(isi: {
   tabel: string;
@@ -22,12 +23,16 @@ export async function cariTanpaJurnalSql(isi: {
   opsi: OpsiCariSapuan;
 }): Promise<DokumenTanpaJurnal[]> {
   const batas = Math.max(1, Math.floor(isi.opsi.batas));
+  const ids = isi.opsi.ids;
+  if (ids && ids.length === 0) return [];
+  const cakupan = ids ? Prisma.sql`AND d.${sqlId("id")} IN (${Prisma.join([...ids])})` : Prisma.empty;
   const rows = await prisma.$queryRaw<Array<{ id: string; tanggal: Date | string; label: string | null }>>(Prisma.sql`
     SELECT d.${sqlId("id")} AS ${sqlId("id")}, ${isi.tanggal} AS ${sqlId("tanggal")}, d.${sqlId(isi.kolomLabel)} AS ${sqlId("label")}
     FROM ${sqlId(isi.tabel)} d
     WHERE ${isi.tanggal} >= ${isi.opsi.sejak}
       AND ${isi.tanggal} <= ${isi.opsi.sampai}
       ${isi.syarat ?? Prisma.empty}
+      ${cakupan}
       AND NOT EXISTS (
         SELECT 1 FROM ${sqlId("Journal")} j
         WHERE j.${sqlId("sourceType")} = ${isi.sourceType} AND j.${sqlId("sourceId")} = d.${sqlId("id")}

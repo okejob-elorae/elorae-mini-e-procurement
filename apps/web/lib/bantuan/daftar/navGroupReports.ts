@@ -72,6 +72,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "financeReports.cashFlow.subtitle" },
       "Laporan disusun dari jurnal buku besar, dan hanya bisa disusun bila sudah ada akun kas: lewat peran Bank atau Kas di Pemetaan Akun, atau akun yang ditetapkan sebagai Kas di Klasifikasi Arus Kas. Akun yang belum diklasifikasi ke operasional, investasi, atau pendanaan ditampilkan terpisah, tetapi totalnya tetap benar.",
+      "Pelepasan aset tetap: laba atau rugi pelepasan dan akumulasi penyusutan yang dihapus dipindah dari operasional ke investasi lewat baris Penyesuaian pelepasan aset tetap, jadi investasi menampilkan hasil jualnya (bukan harga perolehan yang dikreditkan) dan operasional tidak ikut naik turun karena pelepasan.",
       "Selama belum ada jurnal pada periode itu, laporannya kosong. Bila tersedia, angkanya dibandingkan dengan periode sebelumnya yang sama panjangnya. Laporan bisa diunduh sebagai Excel atau dicetak sebagai PDF.",
       "Catatan bahwa perubahan kas cocok dengan pergerakan saldo kas adalah pemeriksaan kerusakan data: karena setiap jurnal sudah seimbang saat diposting, kecocokan itu memang diharapkan. Periode yang dipakai tertulis di bawah judul; isian kosong berarti sejak awal sampai hari ini.",
     ],

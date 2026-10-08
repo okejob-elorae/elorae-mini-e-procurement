@@ -12,7 +12,8 @@ import { SUMBER_LAPANGAN } from "./aturan";
  *   dipakai toko ikut menentukan jurnal retur);
  * - hitungan gudang dicatat/dijodohkan/dilepas/dipindah toko, beban selisih
  *   diputuskan/dialihkan → jurnal retur hitungan itu;
- * - tukar barang selesai → jurnal tukar.
+ * - tukar barang selesai → jurnal tukar;
+ * - faktur piutang manual/impor dibuat, atau impornya dibatalkan → jurnal faktur.
  *
  * Mesin jurnalnya dimuat saat dipanggil (impor dinamis), bukan saat modul aksi
  * dimuat: aksi piutang/retur/pengiriman tetap bisa diuji dengan tiruan
@@ -52,6 +53,18 @@ export function kaitNotaTerbit(deliveryId: string, userId: string): Promise<void
 
 export function kaitTukarSelesai(exchangeId: string, userId: string): Promise<void> {
   return aman("tukar", () => posting(SUMBER_LAPANGAN.TUKAR, exchangeId, userId));
+}
+
+/**
+ * Faktur piutang manual/impor dibuat atau dihapus (impor dibatalkan) →
+ * selaraskan jurnal `STORE_INVOICE` setiap faktur. Faktur yang tidak dijurnal
+ * sendiri (sebelum tanggal mulai, nota, beban retur, konsinyasi) tidak menulis
+ * apa pun; yang sudah dihapus dibalik jurnalnya.
+ */
+export function kaitFakturPiutang(receivableIds: string[], userId: string): Promise<void> {
+  return aman("faktur", async () => {
+    for (const id of [...new Set(receivableIds.filter(Boolean))]) await posting(SUMBER_LAPANGAN.FAKTUR, id, userId);
+  });
 }
 
 /** Hitungan gudang (NRI) dari nota retur, beban, atau id hitungan langsung. */

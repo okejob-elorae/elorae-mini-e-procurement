@@ -78,7 +78,7 @@ export function RincianPembayaranClient({ bayar: b, dokumenTerbuka, akses }: Pro
         .filter((a) => a.jumlah);
       const r = await terapkanUangMukaAction({ pembayaranId: b.id, alokasi });
       if (!r.ok) return void toast.error(pesan(r));
-      toast.success(t("uangMukaDiterapkan"));
+      toast.success(r.potong ? t("uangMukaDiterapkanPotong", { nilai: formatRupiah(r.potong.jumlah), nomor: r.potong.nomor }) : t("uangMukaDiterapkan"));
       setTerapkanBuka(false);
       setIsi({});
       router.refresh();

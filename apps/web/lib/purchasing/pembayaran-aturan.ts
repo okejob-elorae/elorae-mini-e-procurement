@@ -23,6 +23,16 @@ import type { TarifPajakKreatif } from "@/lib/creative/pph";
  * usaha pemasok itu (saldo debit = uang muka) — keputusan sementara: tidak ada
  * akun uang muka pembelian terpisah.
  *
+ * PPh atas dokumen yang sebagian dibayar dengan UANG MUKA (keputusan sementara
+ * 2026-10-08, uji akuntansi 2): total PPh yang dipotong atas satu dokumen =
+ * tarif × dasar dokumen itu, apa pun urutannya. Uang muka yang diterapkan ke
+ * dokumen tanpa dipotong menjadi "uang muka belum dipotong" dokumen itu
+ * (`SisaDokumen.uangMukaBelumDipotongSen`), dan ikut dasar pembayaran
+ * berikutnya ke dokumen itu. Bila uang muka itu sendiri yang melunasi dokumen,
+ * PPh-nya dipotong saat diterapkan (`rencanaPotongPenerapan`,
+ * `pembayaran-uang-muka.ts`). Uang muka yang sudah dipotong saat dibayar
+ * (PPh 4(2), atau dasar yang diketik) tidak dipotong lagi.
+ *
  * Semua uang dalam SEN.
  */
 
@@ -189,10 +199,12 @@ export function periksaPembayaran(
     if (!j) return { ok: false, kode: "POTONG_TIDAK_SAH" };
     jenisPotong = j;
   }
+  // Batas atasnya (bruto + uang muka belum dipotong dokumen yang dibayar,
+  // `batasDasarPotongSen`) diperiksa penulis sesudah membaca buku pembantu.
   let dasarPotongSen: number | null = null;
   if (input.dasarPotong != null && input.dasarPotong !== "") {
     const d = bacaRupiahSen(input.dasarPotong);
-    if (d == null || d > brutoSen) return { ok: false, kode: "DASAR_POTONG_TIDAK_SAH" };
+    if (d == null) return { ok: false, kode: "DASAR_POTONG_TIDAK_SAH" };
     dasarPotongSen = d;
   }
 
@@ -217,7 +229,17 @@ export function periksaPembayaran(
 }
 
 /** Sisa satu dokumen hutang, dengan dasar potongan per rupiah (jasa: DPP tanpa PPN ÷ tagihan). */
-export type SisaDokumen = { sisaSen: number; /** 0..1 — bagian alokasi yang menjadi dasar PPh 23/21. */ porsiDasarPotong: number };
+export type SisaDokumen = {
+  sisaSen: number;
+  /** 0..1 — bagian alokasi yang menjadi dasar PPh 23/21. */
+  porsiDasarPotong: number;
+  /**
+   * Bruto uang muka yang sudah diterapkan ke dokumen ini tetapi PPh-nya belum
+   * dipotong. Negatif = kredit: sudah dipotong lebih dulu (pembayaran uang
+   * mukanya kemudian dibatalkan) — mengurangi dasar pembayaran berikutnya.
+   */
+  uangMukaBelumDipotongSen?: number;
+};
 
 /** Kunci peta sisa: `GRN|<id>`, `WO_STEP|<id>`, `OTHER|SALDO_AWAL`. */
 export const kunciDokumenHutang = (jenis: string, id: string) => `${jenis}|${id}`;
@@ -236,12 +258,24 @@ export function periksaAlokasiTerhadapSisa(
   return { ok: true };
 }
 
+/** Porsi dasar potongan sebuah dokumen untuk jenis potong ini: PPh 4(2) memotong seluruh bruto. */
+export function porsiPotongEfektif(jenis: JenisPotongPemasok | null, s: SisaDokumen | undefined): number {
+  if (!jenis) return 0;
+  if (jenis === "PPH4_2") return 1;
+  return s?.porsiDasarPotong ?? 0;
+}
+
+const belumDipotong = (s: SisaDokumen | undefined) => s?.uangMukaBelumDipotongSen ?? 0;
+
 /**
  * Dasar potongan bawaan:
- * - PPh 4(2) (sewa): seluruh bruto;
+ * - PPh 4(2) (sewa): seluruh bruto (termasuk uang muka pembayaran ini);
  * - PPh 23/21 (jasa): Σ alokasi × porsi dasar potongan dokumennya — jasa
  *   langkah WO memakai nilai jasa tanpa PPN; barang (GRN) dan saldo awal tidak
- *   menjadi dasar. Uang muka tidak menjadi dasar (dipotong saat pelunasannya).
+ *   menjadi dasar. Uang muka pembayaran INI tidak menjadi dasar (dokumennya
+ *   belum diketahui).
+ * Keduanya ditambah uang muka yang sudah diterapkan ke dokumen yang dibayar
+ * tetapi belum dipotong (kredit mengurangi, tidak pernah di bawah nol per dokumen).
  */
 export function dasarPotongBawaanSen(
   jenis: JenisPotongPemasok | null,
@@ -250,8 +284,64 @@ export function dasarPotongBawaanSen(
   brutoSen: number,
 ): number {
   if (!jenis) return 0;
-  if (jenis === "PPH4_2") return brutoSen;
-  return alokasi.reduce((s, a) => s + Math.round(a.sen * (sisa.get(kunciDokumenHutang(a.jenis, a.id))?.porsiDasarPotong ?? 0)), 0);
+  if (jenis === "PPH4_2") {
+    return alokasi.reduce((s, a) => s + Math.max(0, a.sen + belumDipotong(sisa.get(kunciDokumenHutang(a.jenis, a.id)))) - a.sen, brutoSen);
+  }
+  return alokasi.reduce((s, a) => {
+    const d = sisa.get(kunciDokumenHutang(a.jenis, a.id));
+    return s + Math.round(Math.max(0, a.sen + belumDipotong(d)) * porsiPotongEfektif(jenis, d));
+  }, 0);
+}
+
+/** Dasar potongan terbesar yang boleh diketik: bruto + uang muka belum dipotong dokumen yang dibayar. */
+export function batasDasarPotongSen(alokasi: readonly AlokasiSah[], sisa: ReadonlyMap<string, SisaDokumen>, brutoSen: number): number {
+  return alokasi.reduce((s, a) => s + Math.max(0, belumDipotong(sisa.get(kunciDokumenHutang(a.jenis, a.id)))), brutoSen);
+}
+
+/**
+ * Uang muka tertunda yang DITUTUP pembayaran ini (dicatat di jejaknya,
+ * `uangMukaDipotong`): untuk setiap dokumen yang dibayar dan ikut dasar
+ * potongan, seluruh uang muka belum dipotongnya — atau, bila PPh terpotong
+ * bruto pembayaran (`faktor` < 1), sebagian sebanding. Kredit (negatif) dipakai
+ * sebesar yang mengurangi dasar alokasi itu.
+ */
+export function cakupanUangMukaDipotong(
+  jenis: JenisPotongPemasok | null,
+  alokasi: readonly AlokasiSah[],
+  sisa: ReadonlyMap<string, SisaDokumen>,
+  faktor = 1,
+): Array<{ jenis: AlokasiSah["jenis"]; id: string; sen: number }> {
+  if (!jenis) return [];
+  const hasil: Array<{ jenis: AlokasiSah["jenis"]; id: string; sen: number }> = [];
+  for (const a of alokasi) {
+    const d = sisa.get(kunciDokumenHutang(a.jenis, a.id));
+    const belum = belumDipotong(d);
+    if (belum === 0 || porsiPotongEfektif(jenis, d) <= 0) continue;
+    const sen = belum > 0 ? (faktor >= 1 ? belum : Math.floor(belum * Math.max(0, faktor))) : Math.max(belum, -a.sen);
+    if (sen !== 0) hasil.push({ jenis: a.jenis, id: a.id, sen });
+  }
+  return hasil;
+}
+
+/**
+ * Bagian UANG MUKA pembayaran ini yang sudah dipotong saat dibayar (dicatat di
+ * jejaknya, `uangMukaTerpotong`): dasar potongan dikurangi dasar alokasinya,
+ * paling banyak sebesar uang mukanya. PPh 4(2) bawaan → seluruh uang muka;
+ * PPh 23/21 bawaan → nol (dipotong kemudian); dasar yang diketik lebih besar →
+ * kelebihannya. Saat uang muka ini diterapkan, bagian ini tidak dipotong lagi.
+ */
+export function uangMukaTerpotongSen(
+  jenis: JenisPotongPemasok | null,
+  alokasi: readonly AlokasiSah[],
+  sisa: ReadonlyMap<string, SisaDokumen>,
+  uangMukaSen: number,
+  dasarPotongSen: number,
+  faktor = 1,
+): number {
+  if (!jenis || uangMukaSen <= 0 || dasarPotongSen <= 0) return 0;
+  const tanpaUangMuka = dasarPotongBawaanSen(jenis, alokasi, sisa, alokasi.reduce((s, a) => s + a.sen, 0));
+  const v = Math.min(uangMukaSen, Math.max(0, dasarPotongSen - tanpaUangMuka));
+  return faktor >= 1 ? v : Math.floor(v * Math.max(0, faktor));
 }
 
 export type HitunganPembayaran = { brutoSen: number; dasarPotongSen: number; potongSen: number; netoSen: number };
@@ -267,6 +357,22 @@ export function hitungPembayaran(
   const r = hitungPotongPemasok(dasarPotongSen / 100, jenis, { adaNpwp }, tarif);
   const potongSen = Math.min(Math.round(r.pph * 100), brutoSen);
   return { brutoSen, dasarPotongSen, potongSen, netoSen: brutoSen - potongSen };
+}
+
+/**
+ * Bagian PPh yang benar-benar terpotong: 1, kecuali PPh dibatasi bruto
+ * pembayaran (bayar kecil atas dokumen yang uang muka belum dipotongnya besar)
+ * — maka potongan ÷ PPh penuh. Dipakai untuk mencatat cakupan sebanding.
+ */
+export function faktorPotongPenuh(
+  h: HitunganPembayaran,
+  jenis: JenisPotongPemasok | null,
+  adaNpwp: boolean,
+  tarif?: TarifPajakKreatif,
+): number {
+  if (!jenis || h.potongSen <= 0) return 0;
+  const penuhSen = Math.round(hitungPotongPemasok(h.dasarPotongSen / 100, jenis, { adaNpwp }, tarif).pph * 100);
+  return penuhSen > h.potongSen ? h.potongSen / penuhSen : 1;
 }
 
 /** Uraian jurnal pembayaran pemasok (data, selalu Bahasa Indonesia). */

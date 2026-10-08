@@ -183,8 +183,8 @@ export type RincianSiklus = {
   terkunci: boolean;
   dikunciOleh: string | null;
   dikunciPada: string | null;
-  laporanSpg: { itemName: string; qty: number }[] | null;
-  laporanToko: { itemName: string; qty: number }[] | null;
+  laporanSpg: { itemName: string; itemId: string | null; qty: number }[] | null;
+  laporanToko: { itemName: string; itemId: string | null; qty: number }[] | null;
   banding: BarisBanding[];
   resmi: { itemId: string | null; itemName: string; qty: number; price: number; amount: number; komisiPerPcs: number }[];
   komisi: {
@@ -284,7 +284,7 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
       reports: {
         select: {
           source: true,
-          items: { select: { itemName: true, qty: true } },
+          items: { select: { itemName: true, itemId: true, qty: true } },
         },
       },
       sold: {

@@ -128,6 +128,9 @@ export async function batalkanImpor(input: {
         auditLogImpor: input.auditLogId,
         diimporPada: jejak.createdAt.toISOString(),
         noFaktur: masihAda.map((r) => r.invoiceNo),
+        // Sejajar dengan `noFaktur`: jurnal faktur yang sudah dibalik tetap bisa
+        // menyebut nomor fakturnya sesudah barisnya dihapus (`fakturImporDibatalkan`).
+        receivableIds: masihAda.map((r) => r.id),
       },
       reason: input.alasan,
     });
@@ -217,4 +220,48 @@ function idDari(metadata: Prisma.JsonValue | null): string[] {
   return Array.isArray(meta.receivableIds)
     ? meta.receivableIds.filter((x): x is string => typeof x === 'string')
     : [];
+}
+
+/**
+ * Id faktur sebuah batch impor (dari jejak impornya) — untuk kait jurnal
+ * pasca-commit sesudah batch itu dibatalkan. Kosong bila jejaknya bukan impor.
+ */
+export async function idFakturImpor(auditLogId: string): Promise<string[]> {
+  const jejak = await prisma.auditLog.findUnique({ where: { id: auditLogId }, select: { action: true, metadata: true } });
+  if (!jejak || jejak.action !== JEJAK.FAKTUR_IMPOR) return [];
+  return idDari(jejak.metadata);
+}
+
+/**
+ * Nomor faktur yang barisnya sudah dihapus karena impornya dibatalkan, per id
+ * — dibaca dari jejak pembatalannya (`receivableIds` sejajar `noFaktur`).
+ * Faktur yang tidak ditemukan tidak masuk peta.
+ */
+export async function fakturImporDibatalkan(ids: string[]): Promise<Map<string, string>> {
+  const hasil = new Map<string, string>();
+  if (ids.length === 0) return hasil;
+  const dicari = new Set(ids);
+  const jejak = await prisma.auditLog.findMany({
+    where: { action: JEJAK.IMPOR_DIBATALKAN },
+    orderBy: { createdAt: "desc" },
+    take: 500,
+    select: { metadata: true },
+  });
+  for (const j of jejak) {
+    let m: unknown = j.metadata;
+    if (typeof m === "string") {
+      try {
+        m = JSON.parse(m);
+      } catch {
+        continue;
+      }
+    }
+    const meta = (m ?? {}) as { receivableIds?: unknown; noFaktur?: unknown };
+    if (!Array.isArray(meta.receivableIds) || !Array.isArray(meta.noFaktur)) continue;
+    meta.receivableIds.forEach((id, i) => {
+      const no = (meta.noFaktur as unknown[])[i];
+      if (typeof id === "string" && dicari.has(id) && typeof no === "string" && !hasil.has(id)) hasil.set(id, no);
+    });
+  }
+  return hasil;
 }

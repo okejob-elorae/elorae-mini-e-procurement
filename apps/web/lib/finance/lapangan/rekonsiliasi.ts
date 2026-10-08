@@ -22,7 +22,7 @@ export type BarisRekonsiliasiToko = {
   /**
    * Bagian `modul` yang tidak lahir dari jurnal lapangan: faktur impor/manual
    * dan nota sebelum tanggal mulai (seharusnya tercakup jurnal saldo awal), atau
-   * nota yang jurnalnya belum berhasil diposting. Penjelas, tidak ikut rumus.
+   * nota/faktur yang jurnalnya belum berhasil diposting. Penjelas, tidak ikut rumus.
    */
   diLuarJurnal: number;
   jumlahPiutang: number;

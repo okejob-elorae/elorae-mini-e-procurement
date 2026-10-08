@@ -3,6 +3,9 @@ import { SARING_JURNAL_BERLAKU } from "@/lib/finance/journals/status-jurnal";
 import { AWALAN_SUMBER_SALDO_AWAL } from "@/lib/finance/periode/periode";
 import type { AccountType } from "@/lib/constants/enums";
 import type { PostingRole } from "@/lib/constants/journal-roles";
+import { SUMBER_ASET } from "@/lib/finance/aset/aturan";
+import { saringJurnalLaporan } from "./balances";
+import type { BarisPelepasanAset } from "./cash-flow";
 import { resolveCashFlowSection, type CashFlowSection } from "./cash-flow-classify";
 
 export type AccountSectionRow = {
@@ -194,4 +197,25 @@ export async function getCashOpeningBalance(
     0,
   );
   return cents / 100;
+}
+
+/**
+ * Baris jurnal pelepasan aset tetap dan pembatalannya di jendela laporan —
+ * bahan `buildCashFlow({ pelepasanAset })` untuk memindahkan laba/rugi
+ * pelepasan dan akumulasi penyusutan yang dihapus dari operasional ke
+ * investasi. Saringan jurnalnya sama dengan pembaca saldo (`saringJurnalLaporan`).
+ */
+export async function getBarisPelepasanAset(range: { from?: Date; to: Date }): Promise<BarisPelepasanAset[]> {
+  const baris = await prisma.journalLine.findMany({
+    where: {
+      journal: { ...saringJurnalLaporan(range), sourceType: { in: [SUMBER_ASET.PELEPASAN, SUMBER_ASET.PELEPASAN_BATAL] } },
+    },
+    select: { chartAccountId: true, debit: true, credit: true, account: { select: { type: true } } },
+  });
+  return baris.map((b) => ({
+    accountId: b.chartAccountId,
+    type: b.account.type as AccountType,
+    debit: Number(b.debit),
+    credit: Number(b.credit),
+  }));
 }

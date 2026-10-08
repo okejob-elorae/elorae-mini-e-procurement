@@ -4,7 +4,7 @@ import { Decimal } from 'decimal.js';
 import { z } from 'zod';
 import { prisma } from '@elorae/db';
 import { cariTeks } from "@/lib/db/cari-teks";
-import { calculateMovingAverage, reverseMovingAverage } from '@/lib/inventory/costing';
+import { calculateMovingAverage, cariBarisStok, reverseMovingAverage } from '@/lib/inventory/costing';
 import { revalidatePath } from 'next/cache';
 import { getActorName, notifyGRNCreated, notifyMaterialArrivedForPo } from '@/app/actions/notifications';
 import { logAudit } from '@/lib/audit';
@@ -974,14 +974,8 @@ export async function declineGRNByOwner(id: string, _userId?: string) {
       }
       const variantKey = line.variantSku?.trim() ? line.variantSku.trim() : null;
 
-      const inv = await tx.inventoryValue.findUnique({
-        where: {
-          itemId_variantSku: {
-            itemId,
-            variantSku: variantKey ?? '',
-          },
-        },
-      });
+      // Toleran null/"" (baris bahan tanpa varian ber-NULL), sama dengan `reverseMovingAverage`.
+      const inv = await cariBarisStok(tx, itemId, variantKey);
       const onHand = inv ? new Decimal(inv.qtyOnHand.toString()) : new Decimal(0);
       if (onHand.lt(qty)) {
         throw new Error(PESAN_PEMILIK_GRN.STOK_KURANG);

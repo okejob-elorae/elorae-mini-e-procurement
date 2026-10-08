@@ -21,7 +21,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "receivables.pageDescription" },
       "Sisa piutang tidak pernah diketik: setiap kali ada klaim, retur, atau keputusan baru, sisanya dihitung ulang dari seluruh klaim yang menyentuh faktur itu. Toko konsinyasi tidak pernah muncul di sini.",
-      "Setiap nota tagihan pengiriman putus otomatis menjadi faktur di sini. Faktur lain masuk lewat Impor faktur atau Faktur manual.",
+      "Setiap nota tagihan pengiriman putus otomatis menjadi faktur di sini. Faktur lain masuk lewat Impor faktur atau Faktur manual; yang bertanggal sejak tanggal mulai buku besar langsung dijurnal (piutang toko dan penjualan, tanpa HPP).",
       "Faktur lunas disembunyikan dari daftar bawaan; buka lewat saringan Lunas, atau cari nomor fakturnya. Kotak cari mencocokkan nomor faktur, nama toko, dan nama salesman.",
     ],
     kartu: [
@@ -46,6 +46,7 @@ export const ENTRI: EntriBantuan[] = [
       { kunci: "imporPiutang.pageDescription" },
       "Judul kolom dikenali otomatis, dan berkasnya diurai di browser tanpa dikirim ke mana pun. Kolom nomor faktur dan nilai wajib ada. Bila kolom sisa berisi nol, fakturnya dianggap sudah lunas dan dilewati; bila berkas tidak punya kolom sisa sama sekali, setiap faktur dianggap belum dibayar. Faktur toko konsinyasi dan nomor faktur yang sudah ada juga dilewati.",
       "Mengimpor butuh izin mengelola piutang.",
+      "Faktur bertanggal sejak tanggal mulai buku besar langsung dijurnal: piutang toko dan penjualan sebesar sisanya saat diimpor (bagian yang sudah dibayar sebelum impor tidak dijurnal, karena uangnya tidak tercatat di sistem). Faktur sebelum tanggal mulai masuk saldo awal. Membatalkan impor membalik jurnal faktur-fakturnya.",
       "Contoh berkas bisa diunduh dari tombol di kepala halaman. Judul kolom yang dikenali, selain bentuk persisnya: nomor faktur (No Faktur, No Invoice, No Nota, No Bukti), kode toko (Kode Customer, Kode Pelanggan), nama toko (Customer, Pelanggan), tanggal faktur (Tanggal, Tgl Nota), jatuh tempo (Due Date, Tempo), nilai (Total, Grand Total, Jumlah, Netto), sisa (Sisa Piutang, Outstanding, Saldo), sales (Salesman).",
     ],
     kartu: [

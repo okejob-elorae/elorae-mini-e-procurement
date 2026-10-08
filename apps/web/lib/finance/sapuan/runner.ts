@@ -16,7 +16,23 @@ import { sumberSapuanTerdaftar } from "./semua";
  *
  * Satu sumber yang gagal (kuerinya melempar) tidak menghentikan yang lain:
  * galatnya dicatat di hasil sumber itu.
+ *
+ * DOKUMEN NIHIL. Pencari seharusnya tidak pernah mengembalikan dokumen yang
+ * postingnya `NOTHING_TO_POST` (lihat `./registri.ts`), tetapi pencari yang
+ * terlalu longgar membuat dokumen itu tampil selamanya sebagai "tanpa jurnal"
+ * dan menahan tutup buku bulannya (tukar barang bernilai seimbang, uji
+ * akuntansi gelombang 2). Jaring pengamannya: setiap kali sapuan mendapat
+ * `NOTHING_TO_POST`, dokumen itu ditandai (`JEJAK_SAPUAN_NIHIL` di `AuditLog`,
+ * sekali per dokumen), dan pemeriksaan (daftar periksa tutup buku, halaman
+ * Integritas) memanggil `cariSemuaTanpaJurnal({ abaikanNihil: true })`, yang
+ * melewati dokumen bertanda — KECUALI dokumen itu punya `JOURNAL_PENDING`
+ * yang belum selesai (kegagalan sungguhan tetap tampil). Sapuan sendiri tidak
+ * melewatinya: setiap putaran mencoba lagi, jadi dokumen yang berubah menjadi
+ * bernilai tetap terjurnal.
  */
+
+/** Nama tindakan `AuditLog` penanda "sapuan mendapat NOTHING_TO_POST untuk dokumen ini" (entityType = sourceType). */
+export const JEJAK_SAPUAN_NIHIL = "JOURNAL_SWEEP_NOTHING_TO_POST";
 
 export type HasilCariSumber = {
   sourceType: string;
@@ -35,6 +51,15 @@ export type OpsiCariSemua = {
   jenis?: readonly string[];
   /** Sumber yang dipakai — bawaan registri (`sumberSapuanTerdaftar`). Tes menyuntikkan sumbernya sendiri. */
   sumber?: readonly SumberSapuan[];
+  /**
+   * Hanya dokumen ber-id ini per sourceType — diteruskan ke pencari sebagai
+   * `ids` (diterapkan SEBELUM batas). Sumber tanpa entri tidak disaring id.
+   */
+  cakupan?: Readonly<Record<string, readonly string[]>>;
+  /** Lewati dokumen bertanda nihil yang tidak punya `JOURNAL_PENDING` terbuka (pemeriksaan, bukan sapuan). */
+  abaikanNihil?: boolean;
+  /** Tes: pembaca tanda nihil. Bawaan `bacaTandaNihil` (basis data). */
+  bacaNihil?: (sourceType: string, ids: readonly string[]) => Promise<Set<string>>;
 };
 
 function pilihSumber(opsi: { jenis?: readonly string[]; sumber?: readonly SumberSapuan[] }): readonly SumberSapuan[] {
@@ -49,16 +74,29 @@ function pilihSumber(opsi: { jenis?: readonly string[]; sumber?: readonly Sumber
  */
 export async function cariSemuaTanpaJurnal(opsi: OpsiCariSemua): Promise<HasilCariSumber[]> {
   const batas = Math.max(1, Math.floor(opsi.batasPerSumber));
+  const bacaNihil = opsi.bacaNihil ?? bacaTandaNihil;
   const hasil: HasilCariSumber[] = [];
   for (const s of pilihSumber(opsi)) {
     try {
+      const ids = opsi.cakupan?.[s.sourceType];
       // Satu lebih dari batas: cukup untuk tahu ada yang terpotong tanpa menghitung semuanya.
-      const dok = await s.cariTanpaJurnal({ sejak: opsi.sejak, sampai: opsi.sampai, batas: batas + 1 });
+      let dok = await s.cariTanpaJurnal({ sejak: opsi.sejak, sampai: opsi.sampai, batas: batas + 1, ...(ids ? { ids } : {}) });
+      const terpotong = dok.length > batas;
+      // Pengaman bagi pencari yang lupa menerapkan `ids` di kuerinya.
+      if (ids) {
+        const izinkan = new Set(ids);
+        dok = dok.filter((d) => izinkan.has(d.id));
+      }
+      if (opsi.abaikanNihil && dok.length > 0) {
+        const nihil = await bacaNihil(s.sourceType, dok.map((d) => d.id));
+        if (nihil.size > 0) dok = dok.filter((d) => !nihil.has(d.id));
+      }
       hasil.push({
         sourceType: s.sourceType,
         label: s.label,
         dokumen: dok.slice(0, batas),
-        terpotong: dok.length > batas,
+        // Dokumen nihil yang dilewati tidak menghapus tanda terpotong: di luar batas mungkin masih ada yang sungguhan.
+        terpotong,
         galat: null,
       });
     } catch (e) {
@@ -73,6 +111,47 @@ export async function cariSemuaTanpaJurnal(opsi: OpsiCariSemua): Promise<HasilCa
     }
   }
   return hasil;
+}
+
+/**
+ * Dokumen (dari `ids`) yang bertanda nihil (`JEJAK_SAPUAN_NIHIL`) dan TIDAK
+ * punya `JOURNAL_PENDING` yang belum selesai.
+ */
+export async function bacaTandaNihil(sourceType: string, ids: readonly string[]): Promise<Set<string>> {
+  if (ids.length === 0) return new Set();
+  const tanda = await prisma.auditLog.findMany({
+    where: { action: JEJAK_SAPUAN_NIHIL, entityType: sourceType, entityId: { in: [...ids] } },
+    select: { entityId: true },
+  });
+  if (tanda.length === 0) return new Set();
+  // Impor malas: modul notifikasi (dan inisialisasinya) hanya dimuat bila ada dokumen bertanda.
+  const { daftarJurnalTertunda } = await import("@/lib/finance/jurnal-tertunda");
+  const gagal = new Set(
+    (await daftarJurnalTertunda()).flatMap((t) => (t.sumber?.tipe === "dokumen" && t.sumber.sourceType === sourceType ? [t.sumber.sourceId] : [])),
+  );
+  return new Set(tanda.map((t) => t.entityId).filter((id) => !gagal.has(id)));
+}
+
+/** Tandai dokumen nihil (sekali per dokumen). Tidak pernah melempar: tanda hanya penyaring pemeriksaan. */
+export async function catatTandaNihil(sourceType: string, d: DokumenTanpaJurnal, olehUserId: string): Promise<void> {
+  try {
+    const ada = await prisma.auditLog.findFirst({
+      where: { action: JEJAK_SAPUAN_NIHIL, entityType: sourceType, entityId: d.id },
+      select: { id: true },
+    });
+    if (ada) return;
+    await prisma.auditLog.create({
+      data: {
+        userId: olehUserId,
+        action: JEJAK_SAPUAN_NIHIL,
+        entityType: sourceType,
+        entityId: d.id,
+        metadata: { label: d.label, tanggal: d.tanggal.toISOString() },
+      },
+    });
+  } catch (e) {
+    console.error(`[sapuan] tanda nihil ${sourceType} ${d.id} gagal ditulis`, e);
+  }
 }
 
 /**
@@ -129,6 +208,8 @@ export type OpsiSapuan = {
   sumber?: readonly SumberSapuan[];
   /** Tes: lantai tanggal mulai tanpa membaca pengaturan. */
   tanggalMulai?: Date | null;
+  /** Tes: penulis tanda nihil. Bawaan `catatTandaNihil` (basis data). */
+  catatNihil?: (sourceType: string, d: DokumenTanpaJurnal, olehUserId: string) => Promise<void>;
 };
 
 async function penggunaSistem(olehUserId?: string): Promise<string | null> {
@@ -162,13 +243,15 @@ export async function jalankanSapuan(opsi: OpsiSapuan = {}): Promise<RingkasanSa
     sampai: rentang.sampai,
     batasPerSumber: opsi.batasPerSumber ?? 200,
     sumber: daftar,
+    ...(opsi.cakupan ? { cakupan: opsi.cakupan } : {}),
   });
+  const catatNihil = opsi.catatNihil ?? catatTandaNihil;
 
   const hasil: HasilSapuanSumber[] = [];
   for (const t of temuan) {
     const sumber = daftar.find((s) => s.sourceType === t.sourceType)!;
-    const izinkan = opsi.cakupan ? new Set(opsi.cakupan[t.sourceType]) : null;
-    const dok = izinkan ? t.dokumen.filter((d) => izinkan.has(d.id)) : t.dokumen;
+    // Cakupan sudah diterapkan pencari (`ids`) dan disaring ulang oleh `cariSemuaTanpaJurnal`.
+    const dok = t.dokumen;
     const r: HasilSapuanSumber = {
       sourceType: t.sourceType,
       label: t.label,
@@ -188,6 +271,7 @@ export async function jalankanSapuan(opsi: OpsiSapuan = {}): Promise<RingkasanSa
           else r.sudahAda += 1;
         } else if (p.code === "NOTHING_TO_POST") {
           r.nihil += 1;
+          await catatNihil(t.sourceType, d, poster);
         } else {
           r.gagal.push({ id: d.id, label: d.label, kode: p.code });
         }
