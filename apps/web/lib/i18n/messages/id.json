@@ -11570,7 +11570,7 @@
     "lock": "Kunci angka",
     "unlock": "Buka kunci",
     "lockTitle": "Kunci angka resmi",
-    "lockBody": "Angka inilah — bukan laporan mana pun — yang dipakai menagih toko, menghitung komisi, dan mengurangi stok titipan. Dimulai dari laporan SPG; betulkan yang perlu.",
+    "lockBody": "Angka inilah — bukan laporan mana pun — yang dipakai menagih toko, menghitung komisi, dan mengurangi stok titipan. Dimulai dari laporan toko (yang sah); laporan SPG hanya pembanding. Betulkan yang perlu.",
     "lockConfirm": "Kunci",
     "pickItem": "Pilih dari katalog",
     "baseSalary": "Gaji pokok per SPG",

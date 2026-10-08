@@ -113,14 +113,15 @@ export function RincianSiklusClient({
     pembayaranToko: data.pelunasan.pembayaran,
   });
 
-  /* Angka resmi dimulai dari laporan SPG, bukan kosong: itulah yang paling
-     sering benar, dan admin membetulkan selisihnya alih-alih mengetik ulang. */
+  /* Angka resmi dimulai dari laporan TOKO — itu yang sah (pemilik, 2026-10-08);
+     laporan SPG hanya pembanding internal dan dipakai bila toko belum melapor
+     barang itu. Admin membetulkan selisihnya alih-alih mengetik ulang. */
   const bukaKunciDialog = () => {
     setResmi(
       data.banding.map((x) => ({
         itemId: x.itemId,
         itemName: x.itemName,
-        qty: x.qtySpg ?? x.qtyToko ?? 0,
+        qty: x.qtyToko ?? x.qtySpg ?? 0,
         price: 0,
       })),
     );

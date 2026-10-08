@@ -11570,7 +11570,7 @@
     "lock": "Lock figures",
     "unlock": "Unlock",
     "lockTitle": "Lock the official figures",
-    "lockBody": "These figures — not either raw report — bill the shop, pay the commission and reduce consigned stock. Prefilled from the SPG report; correct what needs correcting.",
+    "lockBody": "These figures — not either raw report — bill the shop, pay the commission and reduce consigned stock. Prefilled from the store's report (the valid one); the SPG report is only a cross-check. Correct what needs correcting.",
     "lockConfirm": "Lock",
     "pickItem": "Pick from the catalogue",
     "baseSalary": "Base salary per SPG",
