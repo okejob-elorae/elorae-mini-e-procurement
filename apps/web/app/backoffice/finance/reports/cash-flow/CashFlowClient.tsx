@@ -108,7 +108,7 @@ export function CashFlowClient({ report, filters, canManageJournals, hariIni, ke
     // Baris penyesuaian pelepasan aset tetap bukan akun: namanya diterjemahkan di layar.
     const tampil = accountId === ID_PENYESUAIAN_PELEPASAN_ASET ? t("cashFlow.penyesuaianPelepasanAset") : name;
     return (
-      <TableCell className="pl-6">
+      <TableCell className="ps-[calc(var(--tabel-tepi,0.5rem)+1rem)]">
         <span className="font-mono text-xs text-muted-foreground">{code}</span> {tampil}
       </TableCell>
     );
@@ -117,7 +117,7 @@ export function CashFlowClient({ report, filters, canManageJournals, hariIni, ke
   function emptyRow() {
     return (
       <TableRow>
-        <TableCell colSpan={columns} className="pl-6 text-muted-foreground">
+        <TableCell colSpan={columns} className="ps-[calc(var(--tabel-tepi,0.5rem)+1rem)] text-muted-foreground">
           {t("cashFlow.sectionEmpty")}
         </TableCell>
       </TableRow>
@@ -287,7 +287,7 @@ export function CashFlowClient({ report, filters, canManageJournals, hariIni, ke
                   <TableBody>
                     {sectionHeader(t("cashFlow.sectionOperasional"))}
                     <TableRow>
-                      <TableCell className="pl-6">{t("cashFlow.labaBersih")}</TableCell>
+                      <TableCell className="ps-[calc(var(--tabel-tepi,0.5rem)+1rem)]">{t("cashFlow.labaBersih")}</TableCell>
                       {cmp
                         ? amountCells([
                             cmp.labaBersih.current,
@@ -333,7 +333,7 @@ export function CashFlowClient({ report, filters, canManageJournals, hariIni, ke
 
                     {totalRow(t("cashFlow.netChange"), report.netChange, cmp?.netChange, true)}
                     <TableRow>
-                      <TableCell className="pl-6">{t("cashFlow.kasAwal")}</TableCell>
+                      <TableCell className="ps-[calc(var(--tabel-tepi,0.5rem)+1rem)]">{t("cashFlow.kasAwal")}</TableCell>
                       {cmp
                         ? amountCells([cmp.kasAwal.current, cmp.kasAwal.previous, cmp.kasAwal.delta])
                         : amountCells([report.kasAwal])}

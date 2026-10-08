@@ -413,7 +413,7 @@ export function LaporanPageClient({
                           </TableRow>
                           {expanded && hasVendors ? (
                             <TableRow key={`${row.itemId}-vendors`} className="hover:bg-transparent">
-                              <TableCell colSpan={6} className="border-t-0 bg-muted/40 px-4 py-3 align-top">
+                              <TableCell colSpan={6} className="border-t-0 bg-muted/40 px-[var(--tabel-tepi,1rem)] py-3 align-top">
                                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                                   {tDashboard('vendorsToSupply')}
                                 </p>

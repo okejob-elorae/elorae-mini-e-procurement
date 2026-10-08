@@ -145,11 +145,11 @@ export function DaftarMenunggu({ baris, ambang, bolehMengelola }: { baris: Baris
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="pl-4">{t("kolom.kol")}</TableHead>
+            <TableHead>{t("kolom.kol")}</TableHead>
             <TableHead>{t("kolom.sejak")}</TableHead>
             <TableHead>{t("kolom.rencana")}</TableHead>
             <TableHead>{t("kolom.linkKonten")}</TableHead>
-            <TableHead className="pr-4 text-right">
+            <TableHead className="text-right">
               <span className="sr-only">{t("kolom.aksi")}</span>
             </TableHead>
           </TableRow>
@@ -157,7 +157,7 @@ export function DaftarMenunggu({ baris, ambang, bolehMengelola }: { baris: Baris
         <TableBody className="baris-berurutan">
           {baris.map((b) => (
             <TableRow key={b.kolaborasiId}>
-              <TableCell className="pl-4 whitespace-normal">
+              <TableCell className="whitespace-normal">
                 <SelKol b={b} />
               </TableCell>
               <TableCell className="text-sm tabular-nums">
@@ -175,7 +175,7 @@ export function DaftarMenunggu({ baris, ambang, bolehMengelola }: { baris: Baris
               <TableCell>
                 <TempelLink kolaborasiId={b.kolaborasiId} kontenId={b.kontenKosongId} denganDraf bolehMengelola={bolehMengelola} />
               </TableCell>
-              <TableCell className="pr-4">
+              <TableCell>
                 <Aksi b={b} bolehMengelola={bolehMengelola} />
               </TableCell>
             </TableRow>
@@ -216,12 +216,12 @@ export function DaftarDraf({ baris, ambang, bolehMengelola }: { baris: BarisDraf
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="pl-4">{t("kolom.kol")}</TableHead>
+            <TableHead>{t("kolom.kol")}</TableHead>
             <TableHead>{t("kolom.draf")}</TableHead>
             <TableHead>{t("kolom.status")}</TableHead>
             <TableHead>{t("kolom.rencana")}</TableHead>
             <TableHead>{t("kolom.menunggu")}</TableHead>
-            <TableHead className="pr-4 text-right">
+            <TableHead className="text-right">
               <span className="sr-only">{t("kolom.aksi")}</span>
             </TableHead>
           </TableRow>
@@ -229,7 +229,7 @@ export function DaftarDraf({ baris, ambang, bolehMengelola }: { baris: BarisDraf
         <TableBody className="baris-berurutan">
           {baris.map((b) => (
             <TableRow key={b.kontenId}>
-              <TableCell className="pl-4 whitespace-normal">
+              <TableCell className="whitespace-normal">
                 <SelKol b={b} />
               </TableCell>
               <TableCell className="max-w-64 whitespace-normal text-sm">
@@ -260,7 +260,7 @@ export function DaftarDraf({ baris, ambang, bolehMengelola }: { baris: BarisDraf
               >
                 {t("nHari", { n: b.menungguHari })}
               </TableCell>
-              <TableCell className="pr-4">
+              <TableCell>
                 <Aksi b={b} bolehMengelola={bolehMengelola}>
                   {bolehMengelola ? (
                     <>
@@ -334,11 +334,11 @@ export function DaftarDisetujui({ baris, bolehMengelola }: { baris: BarisDisetuj
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="pl-4">{t("kolom.kol")}</TableHead>
+            <TableHead>{t("kolom.kol")}</TableHead>
             <TableHead>{t("kolom.disetujui")}</TableHead>
             <TableHead>{t("kolom.rencana")}</TableHead>
             <TableHead>{t("kolom.linkTayang")}</TableHead>
-            <TableHead className="pr-4 text-right">
+            <TableHead className="text-right">
               <span className="sr-only">{t("kolom.aksi")}</span>
             </TableHead>
           </TableRow>
@@ -346,7 +346,7 @@ export function DaftarDisetujui({ baris, bolehMengelola }: { baris: BarisDisetuj
         <TableBody className="baris-berurutan">
           {baris.map((b) => (
             <TableRow key={b.kontenId}>
-              <TableCell className="pl-4 whitespace-normal">
+              <TableCell className="whitespace-normal">
                 <SelKol b={b} />
               </TableCell>
               <TableCell className="text-sm">
@@ -367,7 +367,7 @@ export function DaftarDisetujui({ baris, bolehMengelola }: { baris: BarisDisetuj
               <TableCell>
                 <TempelLink kolaborasiId={b.kolaborasiId} kontenId={b.kontenId} denganDraf={false} bolehMengelola={bolehMengelola} />
               </TableCell>
-              <TableCell className="pr-4">
+              <TableCell>
                 <Aksi b={b} bolehMengelola={bolehMengelola} />
               </TableCell>
             </TableRow>
@@ -393,12 +393,12 @@ export function DaftarTayang({ baris, ambang, bolehMengelola }: { baris: BarisTa
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="pl-4">{t("kolom.kol")}</TableHead>
+            <TableHead>{t("kolom.kol")}</TableHead>
             <TableHead>{t("kolom.tayang")}</TableHead>
             <TableHead>{t("kolom.angka")}</TableHead>
             <TableHead className="text-right">{t("kolom.er")}</TableHead>
             <TableHead>{t("kolom.angkaTerakhir")}</TableHead>
-            <TableHead className="pr-4 text-right">
+            <TableHead className="text-right">
               <span className="sr-only">{t("kolom.aksi")}</span>
             </TableHead>
           </TableRow>
@@ -406,7 +406,7 @@ export function DaftarTayang({ baris, ambang, bolehMengelola }: { baris: BarisTa
         <TableBody className="baris-berurutan">
           {baris.map((b) => (
             <TableRow key={b.kontenId}>
-              <TableCell className="pl-4 whitespace-normal">
+              <TableCell className="whitespace-normal">
                 <SelKol b={b} />
               </TableCell>
               <TableCell className="text-sm">
@@ -449,7 +449,7 @@ export function DaftarTayang({ baris, ambang, bolehMengelola }: { baris: BarisTa
                   </span>
                 ) : null}
               </TableCell>
-              <TableCell className="pr-4">
+              <TableCell>
                 <Aksi b={b} bolehMengelola={bolehMengelola}>
                   <RiwayatAngkaPopover kontenId={b.kontenId} jumlah={b.jumlahAngka} />
                 </Aksi>

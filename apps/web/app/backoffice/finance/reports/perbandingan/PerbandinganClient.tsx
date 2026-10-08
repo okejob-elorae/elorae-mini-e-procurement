@@ -73,7 +73,9 @@ function TabelBanding({
 }) {
   const tp = useTranslations("laporanLanjutan.perbandingan");
   const tk = useTranslations("financeReports.kolom");
-  const indent = (level: number) => ({ paddingLeft: `${level * 20 + 12}px` });
+  // Dasar = jarak tepi tabel (lib/ui/tepi-tabel.ts) + 4px, supaya tingkat 0 sejajar dengan
+  // judul kartu saat tabel menempel ke kartu, dan tetap 12px di tempat lain.
+  const indent = (level: number) => ({ paddingLeft: `calc(var(--tabel-tepi, 0.5rem) + ${level * 20 + 4}px)` });
   return (
     <div className="overflow-x-auto">
       <Table>
@@ -109,7 +111,7 @@ function TabelBanding({
               ...(baris.length === 0
                 ? [
                     <TableRow key={`k-${i}`}>
-                      <TableCell colSpan={8} className="pl-6 text-sm text-muted-foreground">
+                      <TableCell colSpan={8} className="ps-[calc(var(--tabel-tepi,0.5rem)+1rem)] text-sm text-muted-foreground">
                         {tp("bagianKosong")}
                       </TableCell>
                     </TableRow>,
@@ -149,7 +151,7 @@ function TabelBanding({
                     );
                   })),
               <TableRow key={`s-${i}`} className="font-semibold">
-                <TableCell className="pl-3">{b.labelTotal}</TableCell>
+                <TableCell className="ps-[calc(var(--tabel-tepi,0.5rem)+0.25rem)]">{b.labelTotal}</TableCell>
                 <SelBanding nilai={b.total} tebal />
               </TableRow>,
             ];

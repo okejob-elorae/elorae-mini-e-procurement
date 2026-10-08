@@ -81,7 +81,9 @@ export function RealisasiAnggaranClient({ laporan, pilihan, tahunPilihan, kesiap
     cakupan: pilihan.cakupan,
     nol: pilihan.nol ? "1" : "0",
   }).toString();
-  const indent = (level: number) => ({ paddingLeft: `${level * 20 + 12}px` });
+  // Dasar = jarak tepi tabel (lib/ui/tepi-tabel.ts) + 4px, supaya tingkat 0 sejajar dengan
+  // judul kartu saat tabel menempel ke kartu, dan tetap 12px di tempat lain.
+  const indent = (level: number) => ({ paddingLeft: `calc(var(--tabel-tepi, 0.5rem) + ${level * 20 + 4}px)` });
 
   const bagian = (judul: string, type: AccountType, akar: SimpulNilai[], total: [number, number], labelTotal: string) => {
     const baris = barisPohon(akar, { tampilkanNol: pilihan.nol });
@@ -94,7 +96,7 @@ export function RealisasiAnggaranClient({ laporan, pilihan, tahunPilihan, kesiap
       ...(baris.length === 0
         ? [
             <TableRow key={`k-${type}`}>
-              <TableCell colSpan={5} className="pl-6 text-sm text-muted-foreground">
+              <TableCell colSpan={5} className="ps-[calc(var(--tabel-tepi,0.5rem)+1rem)] text-sm text-muted-foreground">
                 {t("realisasi.bagianKosong")}
               </TableCell>
             </TableRow>,
@@ -124,7 +126,7 @@ export function RealisasiAnggaranClient({ laporan, pilihan, tahunPilihan, kesiap
             ),
           )),
       <TableRow key={`s-${type}`} className="font-semibold">
-        <TableCell className="pl-3">{labelTotal}</TableCell>
+        <TableCell className="ps-[calc(var(--tabel-tepi,0.5rem)+0.25rem)]">{labelTotal}</TableCell>
         <SelCapaian type={type} anggaran={total[0]} realisasi={total[1]} beranggaran={laporan.adaAnggaran} tebal />
       </TableRow>,
     ];

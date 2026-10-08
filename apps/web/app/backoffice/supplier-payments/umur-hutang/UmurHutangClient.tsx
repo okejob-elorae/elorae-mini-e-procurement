@@ -131,7 +131,7 @@ export function UmurHutangClient({ laporan, tanggal, hariIni, bolehBayar }: { la
                           {buka.has(b.supplierId) &&
                             b.dokumen.map((d) => (
                               <TableRow key={`${b.supplierId}|${d.jenis}|${d.id}`} className="bg-muted/40">
-                                <TableCell className="whitespace-normal pl-10 text-sm">
+                                <TableCell className="whitespace-normal ps-[calc(var(--tabel-tepi,0.5rem)+2rem)] text-sm">
                                   {d.poId ? (
                                     <Link href={`/backoffice/purchase-orders/${d.poId}`} className={TAUTAN_DOKUMEN}>
                                       {d.nomor}

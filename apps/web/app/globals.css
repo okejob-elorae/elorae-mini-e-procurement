@@ -491,6 +491,15 @@ html.backoffice-shell [data-slot="card-content"]:has(> table) {
   padding-inline: 0;
 }
 
+/* …and its first and last columns keep the card padding, so the first column
+   lines up with the card title instead of sitting 8px from the edge
+   (components/ui/table.tsx, lib/ui/tepi-tabel.ts). */
+html.backoffice-shell [data-slot="card-content"]:has(> [data-slot="table-container"]),
+html.backoffice-shell [data-slot="card-content"]:has(> table),
+html.backoffice-shell [data-slot="card-content"].px-0 {
+  --tabel-tepi: var(--ui-card-pad);
+}
+
 /* Section eyebrows, matching the uppercase labels used across the sidebar. */
 .eyebrow {
   font-size: 0.7rem;

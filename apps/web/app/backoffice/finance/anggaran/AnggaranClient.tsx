@@ -247,7 +247,7 @@ export function AnggaranClient({ tahun, tahunPilihan, akun, anggaran, bolehUbah,
                     </TableHeader>
                     <TableBody>
                       {daftar.map((a) => {
-                        const indent = { paddingLeft: `${(a.depth - dasar) * 16 + 12}px` };
+                        const indent = { paddingLeft: `calc(var(--tabel-tepi, 0.5rem) + ${(a.depth - dasar) * 16 + 4}px)` };
                         if (a.adaAnak) {
                           return (
                             <TableRow key={a.accountId}>

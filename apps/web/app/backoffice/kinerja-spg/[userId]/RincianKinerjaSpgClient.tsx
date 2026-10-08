@@ -187,12 +187,12 @@ function BagianToko({
           ))}
         </div>
 
-        <div className="-mx-6 overflow-x-auto">
+        <div className="-mx-6 overflow-x-auto [--tabel-tepi:1.5rem]">
           <Table>
             {/* Judul kolom boleh patah dua baris supaya tabel muat di laptop 1280 px. */}
             <TableHeader className="[&_th]:whitespace-normal">
               <TableRow>
-                <TableHead className="pl-6">{t("rincian.kolom.hari")}</TableHead>
+                <TableHead>{t("rincian.kolom.hari")}</TableHead>
                 <TableHead>{t("rincian.kolom.shift")}</TableHead>
                 <TableHead>{t("rincian.kolom.masuk")}</TableHead>
                 <TableHead className="min-w-[9rem]">{t("rincian.kolom.keterangan")}</TableHead>
@@ -203,13 +203,13 @@ function BagianToko({
                 {/* Konversi = nota ÷ pengunjung: disembunyikan di bawah 2xl supaya tabel muat di laptop 1280 px. */}
                 <TableHead className="hidden text-right 2xl:table-cell">{t("kolom.konversi")}</TableHead>
                 <TableHead>{t("kolom.tutup")}</TableHead>
-                <TableHead className="pr-6 text-right">{t("kolom.titip")}</TableHead>
+                <TableHead className="text-right">{t("kolom.titip")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {b.hari.map((h) => (
                 <TableRow key={h.day} className={cn(h.depan && "text-muted-foreground opacity-60", h.status === "TIDAK_MASUK" && "bg-destructive/[0.04]")}>
-                  <TableCell className="pl-6 font-medium">{h.label}</TableCell>
+                  <TableCell className="font-medium">{h.label}</TableCell>
                   <TableCell>{shift(h)}</TableCell>
                   <TableCell className="tabular-nums">{h.jamMasuk ?? <span className="text-muted-foreground">—</span>}</TableCell>
                   <TableCell className="whitespace-normal">{keterangan(h)}</TableCell>
@@ -232,7 +232,7 @@ function BagianToko({
                   </TableCell>
                   <TableCell className="hidden text-right tabular-nums 2xl:table-cell">{h.konversiPersen === null ? (h.depan ? "" : <span className="text-muted-foreground">—</span>) : persen(h.konversiPersen)}</TableCell>
                   <TableCell>{tutup(h)}</TableCell>
-                  <TableCell className="pr-6 text-right tabular-nums">{h.titipDibuat > 0 ? angka.format(h.titipDibuat) : ""}</TableCell>
+                  <TableCell className="text-right tabular-nums">{h.titipDibuat > 0 ? angka.format(h.titipDibuat) : ""}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

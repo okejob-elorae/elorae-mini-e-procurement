@@ -58,7 +58,9 @@ export function BarisTotalLaporan({ label, nilai, tebal = true, negatifMerah = f
 export function ReportSection({ title, nodes, total, totalLabel, emptyLabel, tautanAkun, tampilkanNol = false }: Props) {
   const t = useTranslations("financeReports.kolom");
   const baris = barisPohon(dariRollup(nodes), { tampilkanNol });
-  const indent = (level: number) => ({ paddingLeft: `${level * 20 + 12}px` });
+  // Dasar = jarak tepi tabel (lib/ui/tepi-tabel.ts) + 4px, supaya tingkat 0 sejajar dengan
+  // judul kartu saat tabel menempel ke kartu, dan tetap 12px di tempat lain.
+  const indent = (level: number) => ({ paddingLeft: `calc(var(--tabel-tepi, 0.5rem) + ${level * 20 + 4}px)` });
 
   return (
     <>
@@ -69,7 +71,7 @@ export function ReportSection({ title, nodes, total, totalLabel, emptyLabel, tau
       </TableRow>
       {baris.length === 0 ? (
         <TableRow>
-          <TableCell colSpan={3} className="pl-6 text-muted-foreground text-sm">
+          <TableCell colSpan={3} className="ps-[calc(var(--tabel-tepi,0.5rem)+1rem)] text-muted-foreground text-sm">
             {emptyLabel}
           </TableCell>
         </TableRow>
@@ -117,7 +119,7 @@ export function ReportSection({ title, nodes, total, totalLabel, emptyLabel, tau
         })
       )}
       <TableRow className="font-semibold">
-        <TableCell className="pl-3">{totalLabel}</TableCell>
+        <TableCell className="ps-[calc(var(--tabel-tepi,0.5rem)+0.25rem)]">{totalLabel}</TableCell>
         <TableCell />
         <TableCell className="text-right tabular-nums border-t">{rupiahLaporan(total)}</TableCell>
       </TableRow>
