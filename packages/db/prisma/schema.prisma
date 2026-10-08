@@ -198,6 +198,9 @@ model Supplier {
   hasNpwp          Boolean          @default(true)
   npwpEnc          String?          @db.Text
   npwpLast4        String?
+  skbNumber        String?
+  skbValidUntil    DateTime?
+  skbPhotoUrl      String?
   isActive         Boolean          @default(true)
   status           SupplierStatus  @default(PENDING_APPROVAL)
   approvedById     String?
@@ -344,6 +347,7 @@ model Store {
   isPkp          Boolean        @default(false)
   npwp           String?
   nitku          String?
+  consignmentVat Boolean        @default(false)
   isActive       Boolean        @default(true)
   groupId        String?
   salesmanId     String?
@@ -3209,6 +3213,7 @@ model ConsignmentCycle {
   lockedById    String?
   promoBorneByElorae Decimal @default(0) @db.Decimal(15, 2)
   lossChargedToStore Decimal @default(0) @db.Decimal(15, 2)
+  vatApplied    Boolean?
   note          String?   @db.MediumText
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
