@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma } from "./index";
 import { postJournal, JournalError } from "./journal-writer";
-import { firstDayOfMonthWib, nextYearMonth, wibDayLabel, wibYearMonth } from "./period-lock";
+import { firstDayOfMonthWib, lockPeriodForPosting, nextYearMonth, wibDayLabel, wibYearMonth } from "./period-lock";
 import { seededId, seededIds } from "./spec-teardown";
 
 describe("period-lock — kalender WIB (murni)", () => {
@@ -159,5 +159,120 @@ d("postJournal × periode tertutup (test bed only)", () => {
     await expect(
       postJournal(prisma, { date: tanggal(6, 1), description: "x", postedById: adminId, closedPeriod: "refuse", lines: baris() }),
     ).rejects.toMatchObject({ code: "PERIOD_CLOSED" });
+  });
+});
+
+/*
+ * Bulan SEBELUM tanggal mulai buku besar (uji akuntansi gelombang 2, bug 4):
+ * begitu bulan pertama buku ditutup, bulan-bulan sebelumnya ikut tertutup —
+ * jurnal bertanggal di sana mengubah neraca bulan yang sudah ditutup. Tanggal
+ * mulai buku besar di basis data bersama TIDAK dibaca di bawah vitest; tes ini
+ * memberinya lewat `UJI_TANGGAL_MULAI_BUKU` (tahun 2003, hanya disentuh tes ini).
+ */
+d("postJournal × bulan sebelum tanggal mulai buku besar (test bed only)", () => {
+  const TH = 2003;
+  let token = "";
+  let adminId = "";
+  let kasId = "";
+  let bebanId = "";
+  let periodeSebelum = new Set<string>();
+
+  const pada = (tahun: number, bulan: number, hari: number) => new Date(Date.UTC(tahun, bulan - 1, hari, 3)); // 10:00 WIB
+  const baris = () => [
+    { chartAccountId: bebanId, debit: 1000, credit: 0 },
+    { chartAccountId: kasId, debit: 0, credit: 1000 },
+  ];
+  async function atur(bulan: number, status: "OPEN" | "CLOSED") {
+    await prisma.accountingPeriod.upsert({
+      where: { year_month: { year: TH, month: bulan } },
+      create: { year: TH, month: bulan, status, closedAt: status === "CLOSED" ? new Date() : null },
+      update: { status, closedAt: status === "CLOSED" ? new Date() : null },
+    });
+  }
+
+  beforeEach(async () => {
+    adminId = "";
+    kasId = "";
+    bebanId = "";
+    process.env.UJI_TANGGAL_MULAI_BUKU = `${TH}-08-01`;
+    periodeSebelum = new Set((await prisma.accountingPeriod.findMany({ select: { id: true } })).map((p) => p.id));
+    token = Math.floor(Math.random() * 10_000_000).toString();
+    adminId = (await prisma.user.create({ data: { email: `test-mulai-buku-${token}@test.local`, name: "Uji Mulai Buku" } })).id;
+    kasId = (await prisma.chartAccount.create({ data: { code: `9${token}83`, name: "Kas uji mulai buku", type: "ASET", depth: 1 } })).id;
+    bebanId = (await prisma.chartAccount.create({ data: { code: `9${token}84`, name: "Beban uji mulai buku", type: "BEBAN", depth: 1 } })).id;
+  });
+
+  afterEach(async () => {
+    delete process.env.UJI_TANGGAL_MULAI_BUKU;
+    const jurnal = await prisma.journal.findMany({ where: { postedById: seededId(adminId) }, select: { id: true } });
+    const ids = jurnal.map((j) => j.id);
+    if (ids.length) {
+      await prisma.journalLine.deleteMany({ where: { journalId: { in: seededIds(ids) } } });
+      await prisma.journal.deleteMany({ where: { id: { in: seededIds(ids) } } });
+    }
+    // Hanya baris periode yang dibuat selama tes ini.
+    const baru = (await prisma.accountingPeriod.findMany({ select: { id: true } })).map((p) => p.id).filter((id) => !periodeSebelum.has(id));
+    if (baru.length) await prisma.accountingPeriod.deleteMany({ where: { id: { in: seededIds(baru) } } });
+    await prisma.chartAccount.deleteMany({ where: { id: { in: [seededId(kasId), seededId(bebanId)] } } });
+    if (adminId) await prisma.user.delete({ where: { id: adminId } });
+  });
+
+  it("selama bulan pertama buku terbuka, bulan sebelumnya terbuka (saldo awal boleh diposting)", async () => {
+    await atur(8, "OPEN");
+    const r = await postJournal(prisma, {
+      date: pada(TH, 7, 31),
+      description: "saldo awal",
+      postedById: adminId,
+      closedPeriod: "refuse",
+      source: { type: "OPENING", id: `uji-mulai-${token}` },
+      lines: baris(),
+    });
+    expect((await prisma.journal.findUniqueOrThrow({ where: { id: r.journalId } })).date.toISOString()).toBe(pada(TH, 7, 31).toISOString());
+  });
+
+  it("sesudah bulan pertama buku ditutup: jurnal manual, draf, dan saldo awal bertanggal sebelum tanggal mulai ditolak", async () => {
+    await atur(8, "CLOSED");
+    expect(await prisma.$transaction((tx) => lockPeriodForPosting(tx, pada(TH, 7, 31)))).toBe("CLOSED");
+    expect(await prisma.$transaction((tx) => lockPeriodForPosting(tx, pada(TH - 1, 2, 10)))).toBe("CLOSED");
+    // Bulan sesudah bulan pertama buku tidak terpengaruh.
+    expect(await prisma.$transaction((tx) => lockPeriodForPosting(tx, pada(TH, 9, 2)))).toBe("OPEN");
+    await expect(
+      postJournal(prisma, { date: pada(TH, 7, 31), description: "manual", postedById: adminId, isManual: true, lines: baris() }),
+    ).rejects.toMatchObject({ code: "PERIOD_CLOSED" });
+    await expect(
+      postJournal(prisma, { date: pada(TH - 1, 2, 10), description: "draf", postedById: adminId, status: "DRAFT", lines: baris() }),
+    ).rejects.toMatchObject({ code: "PERIOD_CLOSED" });
+    await expect(
+      postJournal(prisma, {
+        date: pada(TH, 7, 31),
+        description: "saldo awal",
+        postedById: adminId,
+        closedPeriod: "refuse",
+        source: { type: "OPENING", id: `uji-mulai-${token}` },
+        lines: baris(),
+      }),
+    ).rejects.toMatchObject({ code: "PERIOD_CLOSED" });
+    expect(await prisma.journal.count({ where: { postedById: adminId } })).toBe(0);
+  });
+
+  it("jurnal otomatis bertanggal sebelum tanggal mulai digeser ke bulan terbuka pertama sesudah bulan-bulan buku yang tertutup — walau tanggalnya jauh lebih awal", async () => {
+    await atur(8, "CLOSED");
+    await atur(9, "CLOSED");
+    for (const [asli, n] of [
+      [pada(TH, 7, 20), 1],
+      [pada(TH - 3, 1, 5), 2],
+    ] as const) {
+      const r = await postJournal(prisma, { date: asli, description: "GRN uji", postedById: adminId, source: { type: "UJI_MULAI_BUKU", id: `${token}-${n}` }, lines: baris() });
+      const j = await prisma.journal.findUniqueOrThrow({ where: { id: r.journalId } });
+      expect(j.date.toISOString()).toBe(firstDayOfMonthWib(TH, 10).toISOString());
+      expect(j.originalDate?.toISOString()).toBe(asli.toISOString());
+    }
+  });
+
+  it("bulan pertama buku dibuka kembali → bulan sebelumnya terbuka lagi", async () => {
+    await atur(8, "CLOSED");
+    expect(await prisma.$transaction((tx) => lockPeriodForPosting(tx, pada(TH, 7, 31)))).toBe("CLOSED");
+    await atur(8, "OPEN");
+    expect(await prisma.$transaction((tx) => lockPeriodForPosting(tx, pada(TH, 7, 31)))).toBe("OPEN");
   });
 });
