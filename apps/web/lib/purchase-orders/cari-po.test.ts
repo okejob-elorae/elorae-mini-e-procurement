@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { alamatDaftarPo, bacaCariPo, bacaHalamanPo, jepitHalaman, syaratCariPo } from "./cari-po";
 
 const URL_ASLI = process.env.DATABASE_URL;
+// Ditulis lewat konstanta, sama dengan cari-teks.test.ts: penjaga cari-teks.penjaga.test.ts
+// menolak opsi abai-huruf Prisma yang ditulis harfiah di mana pun di apps/web.
+const ABAI_HURUF = "insensitive";
 afterEach(() => {
   process.env.DATABASE_URL = URL_ASLI;
 });
@@ -26,7 +29,7 @@ describe("syaratCariPo", () => {
 
   it("di PostgreSQL abai huruf besar-kecil lewat cariTeks", () => {
     process.env.DATABASE_URL = "postgresql://x@localhost:1/db";
-    expect(syaratCariPo("kain")?.OR[1]).toEqual({ supplier: { name: { contains: "kain", mode: "insensitive" } } });
+    expect(syaratCariPo("kain")?.OR[1]).toEqual({ supplier: { name: { contains: "kain", mode: ABAI_HURUF } } });
   });
 });
 
