@@ -3720,10 +3720,17 @@ model KolAccount {
   handle    String
   followers Int         @default(0)
   url       String?
+  er             Decimal?  @db.Decimal(6, 2)
+  avgViews       Int?
+  erUpdatedAt    DateTime?
+  platformUserId String?
+  lastCheckedAt  DateTime?
+  checkStatus    String?
   updatedAt DateTime    @default(now()) @updatedAt
 
-  kol       Kol @relation(fields: [kolId], references: [id], onDelete: Cascade)
-  snapshots KolFollowerSnapshot[]
+  kol         Kol @relation(fields: [kolId], references: [id], onDelete: Cascade)
+  snapshots   KolFollowerSnapshot[]
+  tugasPantau KolTugasPantau[]
 
   @@unique([kolId, platform, handle])
   @@index([kolId])
@@ -3735,6 +3742,10 @@ model KolFollowerSnapshot {
   followers  Int
   recordedAt DateTime @default(now())
   source     String?
+  er           Decimal? @db.Decimal(6, 2)
+  avgViews     Int?
+  postsCounted Int?
+  perangkatId  String?
 
   account    KolAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
@@ -3950,6 +3961,7 @@ model KolContent {
   collab       KolBrief       @relation(fields: [collabId], references: [id], onDelete: Cascade)
   approvedBy   User?          @relation("KolContentApprover", fields: [approvedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
   metrics      KolContentMetric[]
+  tugasPantau  KolTugasPantau[]
 
   @@index([collabId])
   @@index([liveAt])
@@ -3969,6 +3981,7 @@ model KolContentMetric {
   source      String?
   note        String?  @db.Text
   createdById String?
+  perangkatId String?
 
   content     KolContent @relation(fields: [contentId], references: [id], onDelete: Cascade)
 
@@ -4038,6 +4051,67 @@ model KolAgenda {
   @@index([campaignId])
   @@index([kolId])
   @@index([collabId])
+}
+
+model KolPerangkat {
+  id                String    @id @default(cuid())
+  nama              String
+  dibuatOlehId      String
+  kodeHash          String?   @unique
+  kodeBerlakuSampai DateTime?
+  tokenHash         String?   @unique
+  tersambungAt      DateTime?
+  terakhirLaporAt   DateTime?
+  dicabutAt         DateTime?
+  dijedaSampai      DateTime?
+  alasanJeda        String?   @db.Text
+  versiEkstensi     String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([dibuatOlehId])
+}
+
+model KolTugasPantau {
+  id            String      @id @default(cuid())
+  jenis         String
+  platform      KolPlatform
+  accountId     String?
+  contentId     String?
+  url           String      @db.Text
+  titikH        Int?
+  prioritas     Int         @default(0)
+  jatuhAt       DateTime
+  status        String      @default("ANTRE")
+  perangkatId   String?
+  pinjamSampai  DateTime?
+  percobaan     Int         @default(0)
+  galatTerakhir String?     @db.Text
+  selesaiAt     DateTime?
+  kunci         String      @unique
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  account       KolAccount? @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  content       KolContent? @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@index([status, jatuhAt])
+  @@index([perangkatId])
+  @@index([accountId])
+  @@index([contentId])
+}
+
+model KolLogPantau {
+  id          String   @id @default(cuid())
+  perangkatId String?
+  tugasId     String?
+  jenis       String
+  kode        String?
+  pesan       String?  @db.Text
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([perangkatId])
 }
 
 model ContentPlan {
