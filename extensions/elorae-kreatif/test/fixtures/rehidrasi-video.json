@@ -1,0 +1,38 @@
+{
+  "__DEFAULT_SCOPE__": {
+    "webapp.app-context": { "language": "id-ID", "region": "ID" },
+    "webapp.video-detail": {
+      "itemInfo": {
+        "itemStruct": {
+          "id": "7421234567890123456",
+          "desc": "Review baju Elorae #ootd",
+          "createTime": "1727740800",
+          "author": {
+            "id": "6912345678901234567",
+            "uniqueId": "budi.santoso",
+            "nickname": "Budi Santoso",
+            "secUid": "MS4wLjABAAAAbudiSecUid"
+          },
+          "stats": {
+            "diggCount": 4210,
+            "shareCount": 87,
+            "commentCount": 156,
+            "playCount": 1200000,
+            "collectCount": "312"
+          },
+          "statsV2": {
+            "diggCount": "4210",
+            "shareCount": "87",
+            "commentCount": "156",
+            "playCount": "1234567",
+            "collectCount": "312",
+            "repostCount": "0"
+          },
+          "isPinned": false
+        }
+      },
+      "statusCode": 0,
+      "statusMsg": ""
+    }
+  }
+}

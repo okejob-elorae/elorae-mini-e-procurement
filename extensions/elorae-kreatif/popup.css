@@ -1,0 +1,245 @@
+:root {
+  --latar: #ffffff;
+  --teks: #111827;
+  --redup: #6b7280;
+  --garis: #e5e7eb;
+  --kartu: #f9fafb;
+  --utama: #111827;
+  --utama-teks: #ffffff;
+  --galat: #b91c1c;
+  --bahaya: #b91c1c;
+  --baik: #047857;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --latar: #111827;
+    --teks: #f3f4f6;
+    --redup: #9ca3af;
+    --garis: #374151;
+    --kartu: #1f2937;
+    --utama: #f3f4f6;
+    --utama-teks: #111827;
+    --galat: #fca5a5;
+    --bahaya: #f87171;
+    --baik: #6ee7b7;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  width: 320px;
+  padding: 14px;
+  background: var(--latar);
+  color: var(--teks);
+  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  display: grid;
+  gap: 12px;
+}
+
+header {
+  display: flex;
+  flex-direction: column;
+}
+
+header strong {
+  font-size: 15px;
+}
+
+section {
+  display: grid;
+  gap: 10px;
+}
+
+section[hidden],
+[hidden] {
+  display: none !important;
+}
+
+form {
+  display: grid;
+  gap: 6px;
+}
+
+label {
+  font-weight: 600;
+}
+
+input[type="url"],
+input[type="text"] {
+  font: inherit;
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--garis);
+  background: var(--latar);
+  color: var(--teks);
+}
+
+input:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--teks);
+  outline-offset: 1px;
+}
+
+button {
+  font: inherit;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  border: 1px solid var(--garis);
+  background: var(--kartu);
+  color: var(--teks);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+button.utama {
+  background: var(--utama);
+  color: var(--utama-teks);
+  border-color: var(--utama);
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+button.bahaya {
+  color: var(--bahaya);
+}
+
+.redup {
+  color: var(--redup);
+}
+
+.petunjuk {
+  margin: 0;
+  color: var(--redup);
+  font-size: 12px;
+}
+
+.galat {
+  margin: 0;
+  color: var(--galat);
+  min-height: 1em;
+}
+
+.peringatan {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--bahaya);
+  color: var(--galat);
+}
+
+.kartu {
+  border: 1px solid var(--garis);
+  background: var(--kartu);
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.baris {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.baris > :last-child {
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.baris.kolom {
+  flex-direction: column;
+  gap: 2px;
+}
+
+.baris.kolom > :last-child {
+  text-align: left;
+}
+
+.angka {
+  grid-template-columns: repeat(4, 1fr);
+  text-align: center;
+}
+
+.angka span {
+  display: block;
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.angka small {
+  color: var(--redup);
+}
+
+.sakelar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.sakelar input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.sakelar .jalur {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--garis);
+  transition: background 0.15s;
+  flex: none;
+}
+
+.sakelar .jalur::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--latar);
+  transition: transform 0.15s;
+}
+
+.sakelar input:checked + .jalur {
+  background: var(--baik);
+}
+
+.sakelar input:checked + .jalur::after {
+  transform: translateX(16px);
+}
+
+.sakelar input:focus-visible + .jalur {
+  outline: 2px solid var(--teks);
+  outline-offset: 2px;
+}
+
+footer {
+  font-size: 11px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sakelar .jalur,
+  .sakelar .jalur::after {
+    transition: none;
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "cursor": "1726000000000",
+  "hasMore": true,
+  "statusCode": 0,
+  "itemList": [
+    {
+      "id": "7420000000000000001",
+      "createTime": 1727000000,
+      "isPinned": true,
+      "author": { "uniqueId": "budi.santoso" },
+      "stats": { "playCount": 50000, "diggCount": 2500, "commentCount": 100, "shareCount": 40, "collectCount": 60 }
+    },
+    {
+      "id": "7420000000000000002",
+      "createTime": "1727600000",
+      "author": { "uniqueId": "budi.santoso" },
+      "stats": { "playCount": "8000", "diggCount": "400", "commentCount": "20", "shareCount": "5", "collectCount": "15" },
+      "statsV2": { "playCount": "8000", "diggCount": "400", "commentCount": "20", "shareCount": "5", "collectCount": "15" }
+    },
+    {
+      "id": "7420000000000000003",
+      "createTime": 1727500000,
+      "isPinned": false,
+      "author": { "uniqueId": "budi.santoso" },
+      "stats": { "playCount": 0, "diggCount": 0, "commentCount": 0, "shareCount": 0, "collectCount": 0 }
+    },
+    {
+      "id": "7420000000000000004",
+      "createTime": 1727400000,
+      "author": { "uniqueId": "budi.santoso" },
+      "stats": { "playCount": 3000, "diggCount": 120, "commentCount": 8, "shareCount": 2 }
+    },
+    {
+      "id": 7420000000000000005,
+      "createTime": 1727300000,
+      "author": { "uniqueId": "budi.santoso" },
+      "stats": { "playCount": 3000, "diggCount": 120, "commentCount": 8, "shareCount": 2, "collectCount": 9 }
+    },
+    {
+      "id": "7420000000000000006",
+      "author": { "uniqueId": "budi.santoso" },
+      "stats": { "playCount": 3000, "diggCount": 120, "commentCount": 8, "shareCount": 2, "collectCount": 9 }
+    },
+    {
+      "id": "7420000000000000007",
+      "createTime": 1727200000,
+      "author": { "uniqueId": "budi.santoso" },
+      "stats": { "playCount": "1.2M", "diggCount": 120, "commentCount": 8, "shareCount": 2, "collectCount": 9 }
+    }
+  ]
+}
